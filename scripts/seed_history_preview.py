@@ -11,12 +11,12 @@ import asyncio
 import random
 import shutil
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from app.core.history import HistoryStore
 from app.models.schema import HistoryAttachmentInput, HistoryWrite
-from app.utils.constants import UTC4
+from app.utils import UTC4
 
 # 生产环境真实节奏：用户 → (脚本, 每日时段档数)
 USERS = [

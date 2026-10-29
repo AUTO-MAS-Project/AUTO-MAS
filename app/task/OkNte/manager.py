@@ -31,15 +31,8 @@ from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import user_uses_native_base, user_uses_quick_config
 from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
-from app.utils import ProcessManager, get_logger
-from app.utils.constants import TASK_MODE_ZH
-from app.utils.io import (
-    clear_native_config_snapshot,
-    commit_native_config_snapshot,
-    force_rmtree,
-    recover_native_config,
-    swap_in_dir,
-)
+from app.utils import TASK_MODE_ZH, ProcessManager, get_logger
+from app.utils import io as _utils_io
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -55,6 +48,9 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 
 class OkNteManager(ScriptManagerBase):
     """OK-NTE 控制器（ok-script 线）"""
+
+    maintenance_message = "异环正在维护"
+    # 公告数据尚未接入，沿用 AutoProxy 的游戏画面检测。
 
     def __init__(self, script_info: ScriptItem):
         super().__init__()
@@ -165,7 +161,7 @@ class OkNteManager(ScriptManagerBase):
             if self.script_config_path.exists():
                 self.had_original_script_config = True
                 if self.script_config.Script.ConfigPathMode == "Folder":
-                    commit_native_config_snapshot(
+                    _utils_io.commit_native_config_snapshot(
                         self.temp_path,
                         self.script_config_path,
                         script_id=self.script_info.script_id,
@@ -186,7 +182,7 @@ class OkNteManager(ScriptManagerBase):
     def _recover_previous_run(self) -> None:
         """处置上次崩溃残留的原始配置快照。"""
 
-        result = recover_native_config(
+        result = _utils_io.recover_native_config(
             self.temp_path,
             self.script_config_path,
             expected_script_id=self.script_info.script_id,
@@ -224,10 +220,10 @@ class OkNteManager(ScriptManagerBase):
                     logger.info(
                         f"清理任务期写入的 OK-NTE 脚本配置目录: {self.script_config_path}"
                     )
-                    force_rmtree(self.script_config_path)
+                    _utils_io.force_rmtree(self.script_config_path)
                 else:
                     logger.info(f"复原 OK-NTE 脚本配置文件: {self.temp_path}")
-                    swap_in_dir(self.temp_path, self.script_config_path)
+                    _utils_io.swap_in_dir(self.temp_path, self.script_config_path)
             elif self.script_config.Script.ConfigPathMode == "File":
                 if (self.temp_path / "config.temp").exists():
                     logger.info(
@@ -243,7 +239,7 @@ class OkNteManager(ScriptManagerBase):
         except Exception as e:
             logger.opt(exception=True).warning(f"复原 OK-NTE 脚本配置失败: {e}")
         finally:
-            clear_native_config_snapshot(self.temp_path)
+            _utils_io.clear_native_config_snapshot(self.temp_path)
 
     async def main_task(self):
         self.check_result = await self.check()

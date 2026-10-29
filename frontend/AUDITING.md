@@ -57,5 +57,5 @@ Vue 容器计数，不能把所有格式的行数相加当成源码物理行数�
 前端检查使用当前 `package.json`：`yarn lint`、`yarn typecheck`、`yarn format:check`。
 行为测试按影响面选择，本机需要限并发时用 `yarn test --maxWorkers=4`。
 浏览器验证先运行 `yarn e2e:check`，再通过 `yarn e2e --grep '<标签>'` 启动隔离环境。
-独立检出必须检查自己的 `.env`；源码运行前按根目录说明使用 `.env.example`。
+独立检出默认按开发环境运行，无需 `.env`；验证生产行为须显式设置 `AUTO_MAS_ENV=production` 并隔离用户数据与遥测。
 一次性回归探针遵守 [TESTING.md](TESTING.md)，留在本地，不扩充长期测试集。

@@ -8,10 +8,10 @@ import json
 
 import pytest
 
-from app.utils.emulator.mumu import MumuManager
+from app.utils import emulator as _utils_emulator
 
-decode = MumuManager._decode_polluted_json
-has_devices = MumuManager._has_device_entries
+decode = _utils_emulator.mumu.MumuManager._decode_polluted_json
+has_devices = _utils_emulator.mumu.MumuManager._has_device_entries
 
 DEVICE_JSON = """{
     "0": {"index": 0, "name": "MuMu模拟器12", "is_android_started": true},

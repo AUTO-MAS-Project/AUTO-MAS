@@ -1,3 +1,4 @@
+import { beginMainFeature } from './featureAnalytics'
 /**
  * Runtime 可执行文件对齐到线上最新版
  *
@@ -1216,6 +1217,33 @@ export async function checkRuntimeBinaryLatest(
  * （`AUTO_MAS_RUNTIME_EXE`）连版本都不解析：解析了也不会替换，没必要为它联一次网。
  */
 export async function alignRuntimeBinaryWithLatest(
+  options: RuntimeBinaryAlignOptions
+): Promise<RuntimeBinaryAlignResult> {
+  const telemetry = beginMainFeature('runtime_alignment_finished')
+  try {
+    const result = await runRuntimeAlignment(options)
+    telemetry.finish({
+      operation: 'align',
+      release_channel: options.channel === 'stable' ? 'stable' : 'beta',
+      outcome:
+        result.status === 'upgraded'
+          ? 'updated'
+          : result.status === 'failed'
+            ? 'failure'
+            : result.status,
+    })
+    return result
+  } catch (error) {
+    telemetry.finish({
+      operation: 'align',
+      release_channel: options.channel === 'stable' ? 'stable' : 'beta',
+      outcome: 'unknown',
+    })
+    throw error
+  }
+}
+
+async function runRuntimeAlignment(
   options: RuntimeBinaryAlignOptions
 ): Promise<RuntimeBinaryAlignResult> {
   const { runtimePath, appRoot, channel } = options

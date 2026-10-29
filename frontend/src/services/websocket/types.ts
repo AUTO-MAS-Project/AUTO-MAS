@@ -21,6 +21,8 @@ export interface WSEnvelope<T = WSJsonObject> {
 // ==================== 固定路由 ID ====================
 
 export const WS_ID_MAIN = 'Main'
+export const WS_ID_I18N = 'I18n'
+export const WS_I18N_UPDATED = 'i18n.updated'
 export const WS_ID_TASK_MANAGER = 'TaskManager'
 export const WS_ID_UPDATE = 'Update'
 export const WS_ID_GAME_SIGN = 'GameSign'
@@ -38,6 +40,9 @@ export const WS_TASK_CONFIG_DISCARDED = 'task.config.discarded'
 
 // 任务创建通知（id=TaskManager）
 export const WS_TASK_CREATED = 'task.created'
+// 每次脚本执行（含循环中的每轮），不随快照重放（id=TaskManager）。
+export const WS_TASK_SCRIPT_STARTED = 'task.script.started'
+export const WS_TASK_SCRIPT_FINISHED = 'task.script.finished'
 
 // 应用生命周期与电源（id=Main）
 export const WS_BACKEND_SHUTDOWN_READY = 'backend.shutdown.ready'
@@ -92,10 +97,20 @@ export interface WSTaskConfigDiscardedData {
   reason: 'structure' | 'unreadable' | 'not_written'
 }
 
+/** 用户正在跑的任务进度（目前只有 MFW 给） */
+export interface WSTaskUserProgressData {
+  /** 第几个任务，从 1 起 */
+  current: number
+  total: number
+  task: string
+}
+
 export interface WSTaskUserInfoData {
   user_id: string
   name: string
   status: string
+  /** 没有任务在跑或该专项不提供时为空 */
+  progress?: WSTaskUserProgressData | null
 }
 
 export interface WSTaskScriptInfoData {
@@ -149,6 +164,19 @@ export interface WSTaskCompletedData {
   outcome: 'success' | 'error' | 'cancelled'
   error?: string | null
   task_info: WSTaskScriptInfoData[]
+}
+
+/** 一次脚本执行边界，关联字段仅用于本机订阅 (id=TaskManager)。 */
+export interface WSTaskScriptStartedData {
+  taskId: string
+  runId: string
+  scriptType: string
+  mode: 'AutoProxy' | 'CycleRun'
+}
+
+export interface WSTaskScriptFinishedData extends WSTaskScriptStartedData {
+  outcome: 'success' | 'failed' | 'skipped' | 'no_user' | 'incomplete' | 'error' | 'cancelled'
+  partialFailure?: 'yes' | 'no' | 'unknown'
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
@@ -300,12 +328,15 @@ type WSEmptyData = Record<string, never>
 
 /** 已知关键消息的 type → data 映射。未知消息回退到 WSJsonObject。 */
 interface WSMessageDataMap {
+  [WS_I18N_UPDATED]: { revision: string }
   [WS_TASK_INFO_UPDATED]: WSTaskInfoUpdatedData
   [WS_TASK_LOG_UPDATED]: WSTaskLogUpdatedData
   [WS_TASK_NOTICE]: WSTaskNoticeData
   [WS_TASK_COMPLETED]: WSTaskCompletedData
   [WS_TASK_CONFIG_DISCARDED]: WSTaskConfigDiscardedData
   [WS_TASK_CREATED]: WSTaskCreatedData
+  [WS_TASK_SCRIPT_STARTED]: WSTaskScriptStartedData
+  [WS_TASK_SCRIPT_FINISHED]: WSTaskScriptFinishedData
   [WS_BACKEND_SHUTDOWN_READY]: WSEmptyData
   [WS_FRONTEND_CLOSE_REQUESTED]: WSEmptyData
   [WS_FRONTEND_RESTART_REQUESTED]: WSEmptyData

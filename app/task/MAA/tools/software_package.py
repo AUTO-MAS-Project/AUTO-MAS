@@ -48,9 +48,9 @@ import shutil
 import zipfile
 from pathlib import Path
 
+from app.utils import config_archive as _utils_config_archive
 from app.utils import get_logger
-from app.utils.config_archive import config_root_key
-from app.utils.io import ConfigCorruptedError, read_dict_file, write_file
+from app.utils import io as _utils_io
 
 # 复用资源包的同款原语（哈希与覆盖式复制），避免第二套实现
 from .resource_package import _copy_if_changed, _file_sha256
@@ -83,7 +83,7 @@ def load_cache_manifest(cache_dir: Path) -> dict[str, str] | None:
     """读缓存清单；缺失、损坏或字段不全返回 None（缓存是 MAS 自产数据，
     按「无缓存、重建自愈」处理，不视为错误）。"""
     try:
-        manifest = read_dict_file(cache_dir / "manifest.json")
+        manifest = _utils_io.read_dict_file(cache_dir / "manifest.json")
     except Exception:
         return None
     fields = ("version", "channel", "os", "arch", "package_type", "sha256")
@@ -118,7 +118,7 @@ def store_cache(
     cache_dir.mkdir(parents=True, exist_ok=True)
     (cache_dir / "manifest.json").unlink(missing_ok=True)
     os.replace(part, cache_dir / "package.zip")
-    write_file(
+    _utils_io.write_file(
         cache_dir / "manifest.json",
         {**fields, "sha256": sha256},
     )
@@ -181,13 +181,13 @@ def read_pending_update(maa_root: Path) -> tuple[str, str]:
     优先，回落旧格式 gui.json 的 Global.VersionUpdate.*。配置损坏或读取
     失败上抛，由登记入口告警并停止，不把无法读取伪装成无登记。
     """
-    new_set = read_dict_file(maa_root / "config" / "gui.new.json")
+    new_set = _utils_io.read_dict_file(maa_root / "config" / "gui.new.json")
     update = new_set.get("Update")
     if isinstance(update, dict):
         package = str(update.get("UpdatePackage") or "")
         if package:
             return str(update.get("Name") or ""), package
-    old_set = read_dict_file(maa_root / "config" / "gui.json")
+    old_set = _utils_io.read_dict_file(maa_root / "config" / "gui.json")
     global_set = old_set.get("Global")
     if isinstance(global_set, dict):
         package = str(global_set.get("VersionUpdate.package") or "")
@@ -197,14 +197,22 @@ def read_pending_update(maa_root: Path) -> tuple[str, str]:
 
 
 def _deferred_update_path(maa_root: Path) -> Path:
-    return Path.cwd() / "data/maa_update/pending" / f"{config_root_key(maa_root)}.json"
+    return (
+        Path.cwd()
+        / "data/maa_update/pending"
+        / f"{_utils_config_archive.config_root_key(maa_root)}.json"
+    )
 
 
 def save_deferred_update(maa_root: Path, *, version: str, package: str) -> None:
     """清空托管启动配置的待安装登记前，按安装归属原子保存透传值。"""
-    write_file(
+    _utils_io.write_file(
         _deferred_update_path(maa_root),
-        {"install": config_root_key(maa_root), "version": version, "package": package},
+        {
+            "install": _utils_config_archive.config_root_key(maa_root),
+            "version": version,
+            "package": package,
+        },
     )
 
 
@@ -218,16 +226,16 @@ def load_deferred_update(maa_root: Path) -> tuple[str, str] | None:
     path = _deferred_update_path(maa_root)
     if not path.is_file():
         return None
-    data = read_dict_file(path)
+    data = _utils_io.read_dict_file(path)
     version, package = data.get("version"), data.get("package")
     if (
-        data.get("install") != config_root_key(maa_root)
+        data.get("install") != _utils_config_archive.config_root_key(maa_root)
         or not isinstance(version, str)
         or not version
         or not isinstance(package, str)
         or not package
     ):
-        raise ConfigCorruptedError(path)
+        raise _utils_io.ConfigCorruptedError(path)
     if not (maa_root / package).is_file():
         clear_deferred_update(maa_root)
         return None
@@ -272,7 +280,7 @@ def register_pending_update(
 
     try:
         existing_name, existing_package = read_pending_update(maa_root)
-    except (ConfigCorruptedError, OSError) as e:
+    except (_utils_io.ConfigCorruptedError, OSError) as e:
         logger.warning(f"MAA 本体更新: 无法确认已有待更新登记，跳过登记: {e}")
         return False
     existing_path = Path(existing_package) if existing_package else None
@@ -330,16 +338,16 @@ def write_pending_update(maa_root: Path, *, version: str, package: str) -> None:
     old_config = maa_root / "config" / "gui.json"
     if new_config.is_file():
         config_path = new_config
-        data = read_dict_file(config_path)
+        data = _utils_io.read_dict_file(config_path)
         update = data.setdefault("Update", {})
         update["Name"] = version
         update["UpdatePackage"] = package
     elif old_config.is_file():
         config_path = old_config
-        data = read_dict_file(config_path)
+        data = _utils_io.read_dict_file(config_path)
         global_set = data.setdefault("Global", {})
         global_set["VersionUpdate.name"] = version
         global_set["VersionUpdate.package"] = package
     else:
         raise FileNotFoundError("安装目录缺少 MAA 配置文件")
-    write_file(config_path, data)
+    _utils_io.write_file(config_path, data)

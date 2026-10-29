@@ -39,8 +39,7 @@ from app.tools.community_sign_provider import (
     read_community_token,
     run_community_provider,
 )
-from app.utils.constants import UTC8
-from app.utils.logger import get_logger
+from app.utils import UTC8, get_logger
 
 from .config import Config
 

@@ -28,7 +28,7 @@ const { modalContextHolder, installPreparedOnlineAppearance } = useAppearanceSet
 const account = useShareAccount({
   onAuthorized: state =>
     message.success(
-      t('themeStore.account.authorized', { name: state.displayName || state.username })
+      t('core.themeStore.account.authorized', { name: state.displayName || state.username })
     ),
   onError: text => message.error(text),
 })
@@ -69,9 +69,9 @@ const installing = computed(() =>
 const { authorized, state: accountState } = account
 
 const tabOptions = computed(() => [
-  { value: 'theme', label: t('themeStore.tabs.resources') },
-  { value: 'mascot', label: t('themeStore.tabs.mascot') },
-  { value: 'mine', label: t('themeStore.tabs.mine') },
+  { value: 'theme', label: t('core.themeStore.tabs.resources') },
+  { value: 'mascot', label: t('core.themeStore.tabs.mascot') },
+  { value: 'mine', label: t('core.themeStore.tabs.mine') },
 ])
 // 当前登录的账号；未登录为空。换账号或退出时之前账号的列表和封面都不能再用
 const accountKey = computed(() => (authorized.value ? `user:${accountState.value.username}` : ''))
@@ -161,16 +161,16 @@ onBeforeUnmount(() => {
   <div class="theme-store-page">
     <component :is="modalContextHolder" />
     <div class="theme-store-header">
-      <h1 class="page-title">{{ t('themeStore.title') }}</h1>
+      <h1 class="page-title">{{ t('core.themeStore.title') }}</h1>
       <div class="theme-store-actions">
         <ThemeStoreAccount :account="account" />
         <a-button type="primary" @click="openDocs">
           <template #icon><FileTextOutlined /></template>
-          {{ t('themeStore.openDocs') }}
+          {{ t('core.themeStore.openDocs') }}
         </a-button>
         <a-button type="primary" @click="openUpload()">
           <template #icon><UploadOutlined /></template>
-          {{ t('themeStore.upload.open') }}
+          {{ t('core.themeStore.upload.open') }}
         </a-button>
       </div>
     </div>
@@ -193,7 +193,7 @@ onBeforeUnmount(() => {
         />
       </template>
       <div v-else-if="!authorized" class="theme-store-login">
-        <a-empty :description="t('themeStore.mine.loginRequired')">
+        <a-empty :description="t('core.themeStore.mine.loginRequired')">
           <ThemeStoreAccount :account="account" class="theme-store-login-account" />
         </a-empty>
       </div>

@@ -17,8 +17,9 @@ from urllib.parse import quote
 import httpx
 from packaging import version
 
-from app.utils.constants import MIRROR_ERROR_INFO
+from app.utils import MIRROR_ERROR_INFO
 
+from ..file_lockers import describe_lockers_async
 from ..interface.models import MaaFWInterface
 from ..log_redact import mask_home_path
 from .apply import (
@@ -677,7 +678,7 @@ async def update_maafw_project_if_needed(
                 final=True,
             )
             raise
-        message = f"MaaFW project update failed: {_sanitize_log_message(str(exc))}"
+        message = f"MaaFW project update failed: {_exception_detail(exc)}"
         send_update_log(message)
         _report_progress(
             progress,
@@ -827,7 +828,7 @@ async def update_maafw_project_if_needed(
                 final=True,
             )
             raise
-        detail = _sanitize_log_message(str(exc))
+        detail = _exception_detail(exc)
         message = (
             detail
             if detail.startswith("MaaFW project update failed:")
@@ -1273,9 +1274,7 @@ async def _discover_project_update_detailed(
     except (MaaFWProjectUpdateError, httpx.HTTPError) as exc:
         # 查询失败不阻断任务：报为「有更新但不可安装」，原因留在
         # unavailable_reason / skipped_reason 里，让上层照常继续运行脚本。
-        return unavailable(
-            f"GitHub Release 查询失败: {_sanitize_log_message(str(exc))}"
-        )
+        return unavailable(f"GitHub Release 查询失败: {_exception_detail(exc)}")
 
     if github_discovery is None:
         return unavailable(
@@ -1789,8 +1788,13 @@ async def apply_maafw_project_update(
         # 载荷已在册，没切过去的视图下次运行前的组同步会补上，不算更新失败。
         try:
             await after_register(registered)
-        except Exception:
-            logger.warning("MaaFW 新版本登记后的切换失败", exc_info=True)
+        except Exception as exc:
+            # 换视图被占用（rename 拒绝访问）时尽力点出占用者；查不到就什么都不加。
+            lockers = await describe_lockers_async(exc)
+            logger.warning(
+                "MaaFW 新版本登记后的切换失败" + (f"（{lockers}）" if lockers else ""),
+                exc_info=True,
+            )
             send_update_log("新版本已就绪，但切换脚本时出错；下次运行前会再同步")
     return {
         "operationId": operation.operation_id,
@@ -2059,7 +2063,7 @@ async def _query_mirrorchyan_latest(
             response = await client.get(url, params=params, headers=HTTP_HEADERS)
     except httpx.HTTPError as exc:
         raise MaaFWProjectUpdateError(
-            f"MirrorChyan update check failed: {_sanitize_log_message(str(exc))}"
+            f"MirrorChyan update check failed: {_exception_detail(exc)}"
         ) from None
 
     result = _load_response_json(response)
@@ -3024,6 +3028,16 @@ def detect_maafw_project_shell_hint(project_path: Path) -> str:
     if "maafw" in directory_names:
         return "MXU"
     return ""
+
+
+def _exception_detail(exc: BaseException) -> str:
+    """异常的打码文案；超时、连不上这类 ``str`` 为空的异常退成类名（如 ``ConnectTimeout``）。
+
+    与 ``transport._reason`` 的区别：这里用本模块的 ``_sanitize_log_message`` 打码（含
+    Mirror 酱下载地址里的 CDK），且不截断——这几处日志 / 文案原来就是完整的 ``str(exc)``，
+    只在它为空时补类名，不改变非空时的样子。"""
+
+    return _sanitize_log_message(str(exc)).strip() or type(exc).__name__
 
 
 def _sanitize_log_message(message: str) -> str:

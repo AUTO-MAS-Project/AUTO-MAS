@@ -35,10 +35,8 @@ from app.models.notification_report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.task.notification_lifecycle import NotificationTaskBase
-from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH
-from app.utils.io import atomic_write, replace_dir
-from app.utils.platform import is_admin
+from app.utils import TASK_MODE_ZH, get_logger, is_admin
+from app.utils import io as _utils_io
 
 from .AutoProxy import HSRAutoProxyTask, _server_day_clock, resolve_daily_native_modes
 from .history import save_hsr_user_history
@@ -118,7 +116,7 @@ def _restore_path_from_backup(label: str, source: Path, backup: Path) -> None:
     source.parent.mkdir(parents=True, exist_ok=True)
 
     if backup.is_dir():
-        replace_dir(backup, source)
+        _utils_io.replace_dir(backup, source)
     else:
         _remove_path(source)
         shutil.copy2(backup, source)
@@ -1377,7 +1375,7 @@ class HSRManager(NotificationTaskBase):
                     "不刷新运行期备份，整轮结束按本轮开始前的配置还原"
                 )
                 return
-            atomic_write(backup, current)
+            _utils_io.atomic_write(backup, current)
         except Exception as e:  # noqa: BLE001
             logger.opt(exception=True).warning(
                 f"原生来源后刷新{label}运行期备份失败：{e}"

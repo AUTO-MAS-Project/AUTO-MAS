@@ -1,36 +1,12 @@
 <template>
-  <div class="user-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <router-link :to="`/scripts/${scriptId}/edit/baah`" class="breadcrumb-link">
-            {{ scriptName }}
-          </router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          {{ isEdit ? t('comp.editUser') : t('comp.addUser2') }}
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <a-button v-if="!!userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
-        <template #icon>
-          <FolderOpenOutlined />
-        </template>
-        {{ t('comp.openConfigFolder') }}
-      </a-button>
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+  <UserEditHeader
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    script-edit-segment="baah"
+    :user-id="userId"
+    @cancel="handleCancel"
+  />
 
   <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
     <a-card class="config-card">
@@ -38,92 +14,58 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ t('core.edit.basicInfo') }}</h3>
             <div class="section-header-actions">
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
+                {{ t('core.edit.configRestoreTitle') }}
               </a-button>
             </div>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
-              <a-form-item name="userName" required>
-                <template #label>
-                  <a-tooltip :title="t('edit.displayNameUsedIdentify')">
-                    <span class="form-label">
-                      {{ t('edit.username') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input
-                  v-model:value="formData.userName"
-                  :placeholder="t('edit.enterUsername')"
-                  :disabled="loading"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleFieldSave('userName', formData.userName)"
-                />
-              </a-form-item>
+              <UserNameField
+                name="userName"
+                required
+                v-model="formData.userName"
+                :hint="t('core.edit.displayNameUsedIdentify')"
+                :placeholder="t('core.edit.enterUsername')"
+                :disabled="loading"
+                enhanced
+                @save="handleFieldSave('userName', formData.userName)"
+              />
             </a-col>
             <a-col :span="4">
-              <a-form-item name="status">
-                <template #label>
-                  <a-tooltip :title="t('edit.whetherThisUserEnabled')">
-                    <span class="form-label">
-                      {{ t('edit.enabled') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select
-                  v-model:value="formData.Info.Status"
-                  :disabled="loading"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleFieldSave('Info.Status', formData.Info.Status)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
+              <UserStatusField
+                name="status"
+                v-model="formData.Info.Status"
+                :hint="t('core.edit.whetherThisUserEnabled')"
+                :disabled="loading"
+                @save="handleFieldSave('Info.Status', formData.Info.Status)"
+              />
             </a-col>
             <a-col :span="4">
-              <a-form-item name="remainedDay">
-                <template #label>
-                  <a-tooltip :title="t('edit.daysLeftAccount1')">
-                    <span class="form-label">
-                      {{ t('edit.daysLeft') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-number
-                  v-model:value="formData.Info.RemainedDay"
-                  :min="-1"
-                  :max="9999"
-                  placeholder="-1"
-                  :disabled="loading"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
-                />
-              </a-form-item>
+              <UserRemainedDayField
+                name="remainedDay"
+                v-model="formData.Info.RemainedDay"
+                :hint="t('core.edit.daysLeftAccount1')"
+                placeholder="-1"
+                :disabled="loading"
+                @save="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
+              />
             </a-col>
             <a-col :span="8">
               <a-form-item name="configName">
                 <template #label>
-                  <a-tooltip :title="t('edit.baahConfigNameHint')">
-                    <span class="form-label">
-                      {{ t('edit.baahConfigName') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.baahConfigName')"
+                    :hint="t('core.edit.baahConfigNameHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="formData.Info.ConfigName"
-                  :placeholder="t('edit.baahConfigNamePlaceholder')"
+                  :placeholder="t('core.edit.baahConfigNamePlaceholder')"
                   :disabled="loading"
                   :loading="configNamesLoading"
                   :options="configNameOptions"
@@ -147,12 +89,11 @@
             <a-col :span="8">
               <a-form-item name="stageMode">
                 <template #label>
-                  <a-tooltip :title="t('edit.baahStageModeHint')">
-                    <span class="form-label">
-                      {{ t('edit.baahStageMode') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.baahStageMode')"
+                    :hint="t('core.edit.baahStageModeHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="formData.Info.StageMode"
@@ -170,19 +111,18 @@
                   @click="handleGoToPlans"
                 >
                   <template #icon><CalendarOutlined /></template>
-                  {{ t('edit.goPlan') }}
+                  {{ t('core.edit.goPlan') }}
                 </a-button>
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="ifEventFirst">
                 <template #label>
-                  <a-tooltip :title="t('edit.baahIfEventFirstHint')">
-                    <span class="form-label">
-                      {{ t('edit.baahIfEventFirst') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.baahIfEventFirst')"
+                    :hint="t('core.edit.baahIfEventFirstHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="formData.Info.IfEventFirst"
@@ -191,8 +131,8 @@
                   style="width: 100%"
                   @change="handleFieldSave('Info.IfEventFirst', formData.Info.IfEventFirst)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -200,12 +140,11 @@
             <a-col :span="8">
               <a-form-item name="activityLineType">
                 <template #label>
-                  <a-tooltip :title="t('edit.baahActivityLineTypeHint')">
-                    <span class="form-label">
-                      {{ t('edit.baahActivityLineType') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.baahActivityLineType')"
+                    :hint="t('core.edit.baahActivityLineTypeHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="formData.Info.ActivityLineType"
@@ -215,13 +154,13 @@
                   @change="handleFieldSave('Info.ActivityLineType', formData.Info.ActivityLineType)"
                 >
                   <a-select-option value="CN">
-                    {{ t('edit.baahActivityLineCN') }}
+                    {{ t('core.edit.baahActivityLineCN') }}
                   </a-select-option>
                   <a-select-option value="JP">
-                    {{ t('edit.baahActivityLineJP') }}
+                    {{ t('core.edit.baahActivityLineJP') }}
                   </a-select-option>
                   <a-select-option value="Globle">
-                    {{ t('edit.baahActivityLineGloble') }}
+                    {{ t('core.edit.baahActivityLineGloble') }}
                   </a-select-option>
                 </a-select>
               </a-form-item>
@@ -230,34 +169,25 @@
 
           <a-row :gutter="24">
             <a-col :span="16">
-              <a-form-item name="notes">
-                <template #label>
-                  <a-tooltip :title="t('edit.addNoteAboutThis')">
-                    <span class="form-label">
-                      {{ t('edit.note') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-textarea
-                  v-model:value="formData.Info.Notes"
-                  :placeholder="t('edit.enterNote3')"
-                  :rows="3"
-                  :disabled="loading"
-                  class="modern-input"
-                  @blur="handleFieldSave('Info.Notes', formData.Info.Notes)"
-                />
-              </a-form-item>
+              <UserNotesField
+                name="notes"
+                v-model="formData.Info.Notes"
+                :hint="t('core.edit.addNoteAboutThis')"
+                :placeholder="t('core.edit.enterNote3')"
+                :disabled="loading"
+                :rows="3"
+                enhanced
+                @save="handleFieldSave('Info.Notes', formData.Info.Notes)"
+              />
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.baahUserTagHint')">
-                    <span class="form-label">
-                      {{ t('edit.baahUserTag') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.baahUserTag')"
+                    :hint="t('core.edit.baahUserTagHint')"
+                    variant="form"
+                  />
                 </template>
                 <div class="user-tag-list">
                   <a-tag
@@ -279,7 +209,7 @@
                 :model-value="formData.Info.Base"
                 :options="baahConfigModeOptions"
                 :disabled="loading"
-                :alert-message="t('edit.configSourceHintBase')"
+                :alert-message="t('core.edit.configSourceHintBase')"
                 @change="handleConfigModeChange"
               />
             </a-col>
@@ -289,18 +219,17 @@
         <!-- 数据统计（只读，由本软件自动写入） -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.statistics') }}</h3>
+            <h3>{{ t('core.edit.statistics') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.baahLastProxyDate') }}
-                    <a-tooltip :title="t('edit.baahDataReadOnlyHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.baahLastProxyDate')"
+                    :hint="t('core.edit.baahDataReadOnlyHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   :value="formatConfigDate(formData.Data.LastProxyDate, 4 * 60)"
@@ -312,12 +241,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.baahProxyTimes') }}
-                    <a-tooltip :title="t('edit.baahDataReadOnlyHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.baahProxyTimes')"
+                    :hint="t('core.edit.baahDataReadOnlyHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input :value="formData.Data.ProxyTimes" readonly size="large" />
               </a-form-item>
@@ -337,15 +265,15 @@
     :script-name="BAAH_DISPLAY_NAME"
     :targets="restoreTargets"
     :api="restoreApi"
-    :user-desc="t('edit.baahConfigRestoreUserDesc')"
-    :script-desc="t('edit.baahConfigRestoreScriptDesc')"
+    :user-desc="t('core.edit.baahConfigRestoreUserDesc')"
+    :script-desc="t('core.edit.baahConfigRestoreScriptDesc')"
     :on-restored="handleRestored"
   >
     <!-- mas 备份为字段侧车分区、native 备份为关键字段反读分区 -->
     <template #preview="{ raw }">
       <a-empty
         v-if="!previewSections(raw).length"
-        :description="t('edit.configRestorePreviewEmpty')"
+        :description="t('core.edit.configRestorePreviewEmpty')"
       />
       <div v-else>
         <template v-for="s in previewSections(raw)" :key="s.name">
@@ -376,20 +304,20 @@
 </template>
 
 <script setup lang="ts">
+import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
+import UserNotesField from '@/views/EditView/User/components/UserNotesField.vue'
+import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
+import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { formatConfigDate } from '@/utils/configDateTime'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import UserEditHeader from '@/components/UserEditHeader.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  CalendarOutlined,
-  FolderOpenOutlined,
-  HistoryOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { CalendarOutlined, HistoryOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
@@ -409,15 +337,7 @@ const logger = window.electronAPI.getLogger('BAAH用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const {
-  addUser,
-  updateUser,
-  getUsers,
-  loading: userLoading,
-  openUserConfigFolder,
-  loading: folderLoading,
-  error: userApiError,
-} = useUserApi()
+const { addUser, updateUser, getUsers, loading: userLoading, error: userApiError } = useUserApi()
 const { getScript, error: scriptApiError } = useScriptApi()
 
 const formRef = ref<FormInstance>()
@@ -428,10 +348,6 @@ const isSaving = ref(false) // 标记是否正在保存
 // 路由参数
 const scriptId = route.params.scriptId as string
 
-const handleOpenFolder = async () => {
-  if (!userId) return
-  await openUserConfigFolder(scriptId, userId)
-}
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 const { configLocked } = useScriptConfigLock(() => scriptId)
@@ -496,7 +412,7 @@ const loadConfigNames = async () => {
 // 关卡计划表下拉候选：后端按消费方 baah 返回 BAAH 计划表；「固定」始终排在第一项
 // 用本地词表的固定项，保证在英文/日文界面下也是自己的语言
 const stageModeOptions = ref<Array<{ label: string; value: string }>>([
-  { label: t('edit.fixed'), value: 'Fixed' },
+  { label: t('core.edit.fixed'), value: 'Fixed' },
 ])
 const isStagePlanMode = computed(() => formData.Info.StageMode !== 'Fixed')
 const loadStageModeOptions = async () => {
@@ -509,7 +425,7 @@ const loadStageModeOptions = async () => {
         .filter((item): item is ComboBoxItem & { value: string } => item.value !== null)
         .filter(item => item.value !== 'Fixed')
         .map(item => ({ label: item.label, value: item.value }))
-      stageModeOptions.value = [{ label: t('edit.fixed'), value: 'Fixed' }, ...planOptions]
+      stageModeOptions.value = [{ label: t('core.edit.fixed'), value: 'Fixed' }, ...planOptions]
     }
   } catch (error) {
     logger.error(`加载关卡计划表失败: ${error instanceof Error ? error.message : String(error)}`)
@@ -523,8 +439,8 @@ const userTags = computed(() => parseStatusTagList(formData.Info.Tag))
 const rules = computed(() => {
   const baseRules: Record<string, Rule[]> = {
     userName: [
-      { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
-      { min: 1, max: 50, message: t('edit.usernameMustBe1'), trigger: 'blur' },
+      { required: true, message: t('core.edit.enterUsername'), trigger: 'blur' },
+      { min: 1, max: 50, message: t('core.edit.usernameMustBe1'), trigger: 'blur' },
     ],
   }
   return baseRules
@@ -563,26 +479,26 @@ const baahConfigModeOptions: Array<{
   disabledReason?: string
 }> = [
   {
-    label: t('edit.script'),
+    label: t('core.edit.script'),
     value: 'shared',
-    title: t('edit.script'),
-    description: t('edit.useScriptS'),
+    title: t('core.edit.script'),
+    description: t('core.edit.useScriptS'),
     icon: 'database',
     disabled: true,
-    disabledReason: t('edit.scriptModeDisabled'),
+    disabledReason: t('core.edit.scriptModeDisabled'),
   },
   {
-    label: t('edit.user'),
+    label: t('core.edit.user'),
     value: 'independent',
-    title: t('edit.user'),
-    description: t('edit.useThisUserS'),
+    title: t('core.edit.user'),
+    description: t('core.edit.useThisUserS'),
     icon: 'database',
   },
   {
-    label: t('edit.directControl'),
+    label: t('core.edit.directControl'),
     value: 'native',
-    title: t('edit.directControl'),
-    description: t('edit.nativeConfigSourceDescription'),
+    title: t('core.edit.directControl'),
+    description: t('core.edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]
@@ -646,13 +562,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript2'))
   }
 }
 
@@ -674,13 +590,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -714,17 +630,17 @@ const loadUserData = async () => {
         // 数据加载完成，允许自动保存
         isInitializing.value = false
       } else {
-        message.error(t('edit.userDoesNotExist'))
+        message.error(t('core.edit.userDoesNotExist'))
         handleCancel()
       }
     } else {
-      if (!userApiError.value) message.error(t('edit.couldNotFetchUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    if (!userApiError.value) message.error(t('edit.couldNotLoadUser2'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser2'))
   }
 }
 
@@ -790,7 +706,7 @@ const ensureBAAHBackup = ensureBackup
 
 onMounted(async () => {
   if (!scriptId) {
-    message.error(t('edit.missingScriptIdParameter'))
+    message.error(t('core.edit.missingScriptIdParameter'))
     handleCancel()
     return
   }
@@ -810,27 +726,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.user-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-}
-
 .user-edit-content {
   max-width: 1200px;
   margin: 0 auto;
@@ -859,17 +754,6 @@ onUnmounted(() => {
 
 .section-header {
   margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 /* ══ 配置恢复预览（分区标题 + 表格 + 详情分组）══ */
@@ -899,61 +783,6 @@ onUnmounted(() => {
   width: 100%;
 }
 
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
-}
-
-.modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.modern-input:focus,
-.modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
-}
-
 .user-tag-list {
   display: flex;
   flex-wrap: wrap;
@@ -979,12 +808,6 @@ onUnmounted(() => {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .user-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
   .user-edit-content {
     max-width: 100%;
   }

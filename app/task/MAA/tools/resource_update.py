@@ -71,10 +71,11 @@ from typing import cast
 import psutil
 
 from app.core import Config
+from app.core.update import download_file
 from app.models.config import MaaConfig
-from app.services.update_transport import download_file, request_mirror_resource
+from app.services.update_transport import request_mirror_resource
 from app.utils import get_logger
-from app.utils.io import ConfigCorruptedError, force_rmtree, read_dict_file, write_file
+from app.utils import io as _utils_io
 
 from .resource_package import (
     count_zip_entries,
@@ -91,7 +92,7 @@ logger = get_logger("MAA 资源更新")
 _CLOCK_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
 _QUERY_TIMEOUT = 10  # 秒
-_DOWNLOAD_TIMEOUT = 10 * 60  # 秒，单次下载总上限
+_DOWNLOAD_TIMEOUT = 10 * 60  # 秒，单次网络操作上限（无下载总时限，停滞由操作超时兜底）
 _QUERY_FLOOR = 10 * 60  # 秒，两次成功查询最小间隔（只作用于刷新检查）
 _RETRY_INTERVAL = 60 * 60  # 秒，更新失败后的重试间隔
 _MB = 1024 * 1024
@@ -136,14 +137,14 @@ def _format_clock(value: datetime) -> str:
 
 
 def _read_clock_file(version_file: Path) -> datetime:
-    data = read_dict_file(version_file)
+    data = _utils_io.read_dict_file(version_file)
     raw = data.get("last_updated")
     if not isinstance(raw, str) or not raw:
-        raise ConfigCorruptedError(version_file)
+        raise _utils_io.ConfigCorruptedError(version_file)
     try:
         return _parse_clock(raw)
     except ValueError as e:
-        raise ConfigCorruptedError(version_file) from e
+        raise _utils_io.ConfigCorruptedError(version_file) from e
 
 
 def read_resource_clock(base: Path) -> datetime | None:
@@ -162,7 +163,7 @@ def read_resource_clock(base: Path) -> datetime | None:
 
 def _load_manifest() -> dict[str, object] | None:
     try:
-        manifest = read_dict_file(_MANIFEST_FILE)
+        manifest = _utils_io.read_dict_file(_MANIFEST_FILE)
         # 旧增量缓存及无内容摘要的旧清单不能安全分发，统一重新下载。
         if (
             manifest.get("full") is not True
@@ -382,14 +383,18 @@ async def _stream_download(url: str, progress: _Progress | None) -> None:
         await _report(progress, _download_line(downloaded, total, speed))
 
     try:
-        async with asyncio.timeout(_DOWNLOAD_TIMEOUT):
-            await download_file(
-                url,
-                _STAGE_ZIP,
-                timeout=_DOWNLOAD_TIMEOUT,
-                proxy=Config.proxy,
-                progress=report_progress,
-            )
+        # Mirror 酱临时授权 URL 显式声明来源并锁定内置下载器，不依赖全局
+        # Source/Downloader：FluxDown 不接短期授权链接（凭证泄漏风险）
+        # 不设外层总时限：timeout 只限单次网络操作，慢速但持续的下载不该被掐断
+        await download_file(
+            url,
+            _STAGE_ZIP,
+            timeout=_DOWNLOAD_TIMEOUT,
+            proxy=Config.proxy,
+            progress=report_progress,
+            source="MirrorChyan",
+            downloader="builtin",
+        )
     except TimeoutError as e:
         raise _DownloadError("下载超时") from e
     except Exception as e:
@@ -415,7 +420,7 @@ def _build_stage(zip_path: Path, target: datetime) -> None:
     work_root = _WORK_DIR.resolve()
     for leftover in _WORK_DIR.glob("stage.tmp.*"):
         if leftover.is_dir() and leftover.resolve().is_relative_to(work_root):
-            force_rmtree(leftover)
+            _utils_io.force_rmtree(leftover)
     try:
         extract_zip(zip_path, stage_tmp)
         root = stage_tmp / "resource"
@@ -448,7 +453,7 @@ def _build_stage(zip_path: Path, target: datetime) -> None:
             # 唯一的 stage_tmp 派生。
             retired = _WORK_DIR / f"{stage_tmp.name}.old"
             os.rename(_STAGE_DIR, retired)
-            force_rmtree(retired)
+            _utils_io.force_rmtree(retired)
         _STAGE_DIR.mkdir(parents=True)
         shutil.move(str(root), str(_STAGE_DIR / "resource"))
         actual = sum(1 for p in (_STAGE_DIR / "resource").rglob("*") if p.is_file())
@@ -460,7 +465,7 @@ def _build_stage(zip_path: Path, target: datetime) -> None:
                 f"暂存树不完整（{actual}/{expected} 个文件），拒绝提交"
             )
         # manifest 最后写：它是暂存自身的提交标记，半途失败视为无暂存
-        write_file(
+        _utils_io.write_file(
             _MANIFEST_FILE,
             {
                 "target": new_clock.isoformat(),
@@ -474,7 +479,7 @@ def _build_stage(zip_path: Path, target: datetime) -> None:
         raise _DownloadError(f"暂存重建失败: {e}") from e
     finally:
         if stage_tmp.exists():
-            force_rmtree(stage_tmp)
+            _utils_io.force_rmtree(stage_tmp)
 
 
 async def _refresh_stage(
@@ -674,13 +679,13 @@ async def _query_resource_version(
     try:
         target = await _fetch_latest_version(current)
         state["last_query_at"] = datetime.now(timezone.utc).isoformat()
-        write_file(_STATE_FILE, state)
+        _utils_io.write_file(_STATE_FILE, state)
         return target
     except _QueryError as e:
         state["query_fail_until"] = (
             datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
         ).isoformat()
-        write_file(_STATE_FILE, state)
+        _utils_io.write_file(_STATE_FILE, state)
         logger.warning(f"MAA 资源更新: 版本查询失败（1 小时内不再尝试）: {e}")
         return None
 
@@ -715,14 +720,14 @@ async def _refresh_resource_stage(
         # 凭据被拒、尚未取得下载地址时不消耗当天取包次数；不同 CDK 独立退避。
         url = await _mirror_download_url(cdk)
         state[attempt_field] = datetime.now(timezone.utc).isoformat()
-        write_file(_STATE_FILE, state)
+        _utils_io.write_file(_STATE_FILE, state)
         await _refresh_stage(target=target, url=url, progress=progress)
         return _load_manifest()
     except _DownloadError as e:
         state[failure_field] = (
             datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
         ).isoformat()
-        write_file(_STATE_FILE, state)
+        _utils_io.write_file(_STATE_FILE, state)
         logger.warning(f"MAA 资源更新: 取包失败（退避 1 小时，仍受每日限额约束）: {e}")
         await _report(progress, "资源包下载失败；至少 1 小时后且有当日额度时重试")
         # 换位失败可能已经作废清单，按盘上现状决定是否继续分发旧缓存。
@@ -827,7 +832,7 @@ async def _sweep(progress: _Progress | None = None, cdk: str = "") -> None:
         state.pop("last_download_attempt_at", None)
         state.pop("download_fail_until", None)
         state.pop("last_query_at", None)
-        write_file(_STATE_FILE, state)
+        _utils_io.write_file(_STATE_FILE, state)
     stage = await _run_write_thread(_load_valid_manifest)
     target = await _query_resource_version(clocks=clocks, stage=stage, state=state)
     stage = await _refresh_resource_stage(
@@ -851,7 +856,7 @@ async def _run_update(cdk: str) -> None:
                 # 不允许在另一个 MAS 正在写本安装时启动 MAA。
                 return
             await _sweep(_broadcast_progress, cdk)
-    except ConfigCorruptedError as e:
+    except _utils_io.ConfigCorruptedError as e:
         logger.opt(exception=True).error(
             f"MAA 资源更新已停止：资源版本文件损坏：{e.path}"
         )

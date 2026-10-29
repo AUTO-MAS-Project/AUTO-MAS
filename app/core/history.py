@@ -38,7 +38,7 @@ from app.models.schema import (
     HistoryWrite,
 )
 from app.utils import get_logger
-from app.utils.io import read_file, write_file
+from app.utils import io as _utils_io
 
 logger = get_logger("历史记录")
 _T = TypeVar("_T")
@@ -455,7 +455,7 @@ class HistoryStore:
                     try:
                         if cancel.is_set():
                             raise HistoryStorageError("历史服务正在关闭，归档已停止")
-                        write_file(log_target, record.logs)
+                        _utils_io.write_file(log_target, record.logs)
                         log_path = f"{relative}/0.log"
                         fallback = None
                     except OSError as error:
@@ -714,9 +714,10 @@ class HistoryStore:
         connection: sqlite3.Connection,
         query: HistoryRecordQuery,
         *,
+        columns: tuple[str, ...],
         limited: bool = True,
     ) -> list[sqlite3.Row]:
-        """按查询条件读取记录行，并按时间倒序排列。"""
+        """按查询条件读取所需列，并按时间倒序排列。"""
 
         where: list[str] = []
         args: list[object] = []
@@ -730,7 +731,7 @@ class HistoryStore:
             if value is not None:
                 where.append(f"{column} {operator} ?")
                 args.append(value)
-        statement = "SELECT * FROM records"
+        statement = f"SELECT {', '.join(columns)} FROM records"
         if where:
             statement += " WHERE " + " AND ".join(where)
         statement += " ORDER BY timestamp DESC, id DESC"
@@ -795,7 +796,7 @@ class HistoryStore:
                 reason = None
                 if detail.log_path is not None:
                     try:
-                        content = read_file(self.root / detail.log_path)
+                        content = _utils_io.read_file(self.root / detail.log_path)
                         if isinstance(content, str):
                             detail.log_content = content
                     except (OSError, UnicodeError) as error:
@@ -887,6 +888,17 @@ class HistoryStore:
                 rows = self._select(
                     connection,
                     HistoryRecordQuery(start_date=start_date, end_date=end_date),
+                    columns=(
+                        "id",
+                        "time",
+                        "date",
+                        "username",
+                        "script_name",
+                        "status",
+                        "message",
+                        "data",
+                        "storage_errors",
+                    ),
                     limited=False,
                 )
                 for row in reversed(rows):
@@ -966,6 +978,7 @@ class HistoryStore:
                 for row in self._select(
                     connection,
                     HistoryRecordQuery(start_date=day, end_date=day),
+                    columns=("id", "time", "username", "status", "message"),
                     limited=False,
                 ):
                     overview = result.setdefault(

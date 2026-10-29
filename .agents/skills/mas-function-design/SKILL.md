@@ -70,6 +70,7 @@ For functions reading or modifying config state, use [the configuration framewor
 3. Independent tasks do not join inherited transactions. A parent holding the global gate cannot await a child that needs config submission; use same-Task calls for associated changes, or start independent work after the transaction.
 4. Use X-lock tickets for a task's protected live writes and release them in `finally`; no detached config copy and end-of-task whole-document writeback. Business locks and transaction lifetimes differ.
 5. Commit, persistence and export have separate return guarantees. `flush()` and manager export occur outside transactions. The framework deliberately holds the execution gate during synchronous atomic writes; ordinary integration refactors do not introduce concurrent save workers or thread offloading into that path.
+6. `activate(fast_init=True)` is an optional Entry initialization optimization. It shares one transaction across that Entry's field loop, rolls the whole attempt back on a field or Init-signal failure, then reruns the original per-field path from the first field. Do not reuse successful fast-attempt values, suppress repeated callbacks, or treat external IO as transactional.
 
 ## Placement
 1. `api`: parse input, call core/service, map output.

@@ -3,10 +3,16 @@ import sys
 import pytest
 
 from app.services.platform.power import power
-from app.utils.platform import IS_WINDOWS, secret, window
-from app.utils.platform.common.errors import UnsupportedPlatformError
-from app.utils.platform.common.process import get_main_window_handle, get_window_handles
-from app.utils.platform.process import platform_process
+from app.utils import (
+    IS_WINDOWS,
+    UnsupportedPlatformError,
+    process_platform,
+    secret,
+    window,
+)
+from app.utils import process as _utils_process
+
+platform_process = process_platform.platform_process
 
 pytestmark = pytest.mark.skipif(IS_WINDOWS, reason="仅验证非 Windows 公共入口")
 
@@ -24,5 +30,8 @@ def test_unsupported_window_entry_reports_capability() -> None:
 
 
 def test_desktop_callers_use_common_fallbacks() -> None:
-    assert (get_window_handles(1), get_main_window_handle(1)) == ([], None)
+    assert (
+        _utils_process.get_window_handles(1),
+        _utils_process.get_main_window_handle(1),
+    ) == ([], None)
     assert "win32gui" not in sys.modules

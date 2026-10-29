@@ -48,7 +48,7 @@ _DRAIN_TIMEOUT = 30.0
 # internal/cli/backend.go 的 backendShutdownTimeoutDefault、
 # internal/backend/control.go 的 closeCtx），超时即强制回收进程树。这 5 秒要
 # 覆盖 main.py shutdown_services() 的全部步骤（停任务、DesktopGuard、本服务、
-# RuntimeTasks、Matomo）和 uvicorn 退出，所以本服务只占 2 秒：前 1 秒等在途
+# RuntimeTasks 等）和 uvicorn 退出，所以本服务只占 2 秒：前 1 秒等在途
 # 保存完成，余下留给取消生效与关闭 OBS 连接。被放弃的线程是守护线程：能跑完就
 # 各自收尾，进程先退出留下的半成品由下次启动时的 cleanup_temporary 清理。
 _STOP_TIMEOUT = 2.0

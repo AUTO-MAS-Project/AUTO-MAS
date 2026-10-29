@@ -1,6 +1,6 @@
 ---
 name: mas-frontend-standards
-description: Use when working on AUTO-MAS frontend Vue, TypeScript, Vite, Electron renderer, routing, API composables, state, styles, forms, validation, or frontend verification tasks.
+description: Use when working on AUTO-MAS frontend Vue, TypeScript, Vite, Electron renderer, routing, API composables, Vue Query, queued immediate saves, state, styles, forms, validation, or frontend verification tasks.
 ---
 
 # MAS Frontend Standards
@@ -28,6 +28,7 @@ Before editing frontend code:
 3. Classify the task as new page, fix, refactor, style/UI adjustment, API integration, route change, or documentation-only.
 4. Select `mas-frontend-ui` as a required companion for any UI, layout, component, form, table, modal, feedback, or visual-state change.
 5. Keep changes limited to files directly required by the task. Before editing a `.vue` file, record its line count at the task base commit and choose the applicable case in [Component Size Policy](#component-size-policy).
+6. For a new or changed user-visible workflow, page, API result or lifecycle operation, load [mas-telemetry](../mas-telemetry/SKILL.md) proactively. Reuse existing observation or add missing telemetry with the feature; document intentional omissions. Do not add a second event merely because a new component calls an already observed wrapper.
 
 ## Directory And Ownership
 
@@ -40,7 +41,8 @@ Before editing frontend code:
 | Reusable page flow | `src/views/<module>/useXxxLogic.ts` or composable | Template expressions |
 | Pure utility | `src/utils` | Copied inside components |
 | Domain type | `src/types` or generated `src/api/models` | Repeated local component types |
-| Shared reactive application state | `src/stores` with Pinia | Page-level `localStorage` access |
+| Shared reactive client-owned state | `src/stores` with Pinia | Page-level `localStorage` access |
+| Shared backend query cache | Existing Vue Query composables and `src/services/queryClient.ts` | Duplicated page caches or Pinia mirrors |
 | Global style token | `src/style.css` or future `src/styles` | Repeated page-local variables |
 | Global browser UI style such as scrollbars | `src/styles`, imported once by the renderer entry | Repeated component-level browser pseudo-elements |
 | Electron capability | `electron` and preload types | Direct renderer Node access |
@@ -85,6 +87,12 @@ Extract a meaningful UI region or workflow with clear ownership and a narrow int
 10. Generated services throw `ApiError` on non-2xx responses. Read the backend's message from `error.body` after narrowing it (`instanceof ApiError`, object check, `typeof message === 'string'`), then rethrow as `Error`. Wanting `AxiosError.response.data` is not a reason to skip the generated client. `useMaaFWUpdateApi.ts` and `useHSRPluginApi.ts` are the reference.
 11. Pass generated enums (e.g. `MaaFWProjectUpdateIn.action.CHECK`) instead of string literals cast to the request type.
 
+## Server State And Immediate Saves
+
+Reuse the installed `@tanstack/vue-query` for shared backend reads and script-edit save scheduling where its semantics fit. Keep form drafts local and client-owned shared state in Pinia; adopting a request library does not move business flow out of its page.
+
+When changing query caching, invalidation, repeated request-state code, or immediate-save queues, read [request state and immediate saves](references/request-state-and-saves.md). It covers the shared script-save entrypoint, page-owned callbacks, ordering, failure recovery, and mutation GC. Do not apply script-field coalescing to backup/restore operations or user-edit flows with different save semantics.
+
 ## Backend Config Payloads
 
 Config integration follows [the configuration framework reference](../mas-data-model/references/config-framework.md). Backend config fields are the single contract source; use generated `ConfigInput`/`ConfigPayload` projections through the actual generated client types.
@@ -100,7 +108,7 @@ Config integration follows [the configuration framework reference](../mas-data-m
 1. Route paths use lowercase kebab-case; route names use PascalCase.
 2. Route components are lazy-loaded and business routes include `meta.title`.
 3. Prefer `navigateTo` or `navigateToByName`; avoid scattered hardcoded paths.
-4. Prefer Pinia for reactive application data shared across components or pages, coordinated state with multiple readers or writers, and state that should survive component unmounts or route changes during the current session.
+4. Prefer Pinia for client-owned reactive application data shared across components or pages, coordinated state with multiple readers or writers, and state that should survive component unmounts or route changes during the current session. Reusable backend query results follow the Vue Query guidance above.
 5. Do not store Pinia-suitable state directly in `localStorage`, and do not keep Pinia and `localStorage` as competing sources of truth.
 6. Keep truly component-local, short-lived state in the owning component. Do not create a store for a single isolated control or form draft with no cross-component lifecycle.
 7. Use `localStorage` only for small, non-sensitive browser-local preferences that must survive application restarts and do not belong to Pinia, backend data, or Electron configuration. Namespace keys, validate parsed values, and provide safe defaults for missing or invalid data.
@@ -155,13 +163,13 @@ If a command cannot run, state the exact command and the reason. Never claim "co
 
 Vite Plus runs tests in the default node environment, configured by `frontend/vite.config.ts`. There is no DOM environment, `jsdom`, or `@vue/test-utils`. Tests are colocated next to their subject as `*.test.ts`.
 
-The permanent suite is intentionally small. Follow [frontend/TESTING.md](../../../frontend/TESTING.md): retain only inexpensive shared infrastructure checks whose failure would break multiple flows, lose configuration, prevent startup/shutdown, install an untrusted update, or expose secrets. Feature-specific regression tests remain local verification artifacts, even when they have some value; do not add them to the permanent suite by default. Do not retain tests just because the subject is a pure function.
+The permanent suite is intentionally small. Follow [frontend/TESTING.md](../../../frontend/TESTING.md): retain inexpensive, deterministic, isolated checks that protect shared infrastructure, user-visible behavior, or public contracts. Feature-specific regression tests remain local verification artifacts when they are exploratory or cannot be isolated; when a test is repeatable and protects a stable user-visible behavior or public contract, retain it with the implementation. Do not retain tests just because the subject is a pure function.
 
 Three established patterns, in order of preference:
 
 1. **Pure logic** — import existing shared logic directly. `electron/services/runtime/ndjson.test.ts` is a reference. Do not extract a module merely to test a simple expression or mapping.
 2. **Composables** — test in node with `vi.mock()` for boundaries. Mock generated services and Electron IPC rather than reaching for a DOM. See `composables/useSaveQueue.test.ts` and `composables/useTaskRuntimeState.test.ts`.
-3. **Component rendering** — for local feature verification, render with `createSSRApp` + `renderToString` from `@vue/server-renderer` (ships with `vue`) and assert on the HTML. Stub Ant Design Vue components with slot-passthrough placeholders so assertions cover the component's decisions. These tests are not permanent by default.
+3. **Component rendering** — for local feature verification, render with `createSSRApp` + `renderToString` from `@vue/server-renderer` (ships with `vue`) and assert on the HTML. Stub Ant Design Vue components with slot-passthrough placeholders so assertions cover the component's decisions. Retain the test when it is deterministic, isolated, and protects a stable user-visible behavior or public contract; otherwise keep it as local verification.
 
 Do not introduce `mount()`, `jsdom`, `happy-dom`, or `@vue/test-utils` for a routine change; that is a project-wide testing-stack decision, not a task-level one. If a behavior genuinely cannot be covered by these three patterns, say so in your result instead of adding a test dependency.
 
@@ -172,7 +180,7 @@ Do not write tests that `readFileSync` a `.vue`, `.ts`, or `.css` file and asser
 Reading source text is acceptable only when nothing importable exists:
 
 1. **Cross-language contracts** — a shared protocol value that must mirror the backend and has no importable contract; it must also meet the permanent-suite criteria above.
-2. **Repo-wide scans** — such as every literal `t('ns.key')` in `src` existing in `zh-CN`. See `i18n/locales.test.ts`.
+2. **Repo-wide scans** — such as every literal `t('ns.key')` in `src` existing in `zh-CN`, and `en-US` / `ja-JP` covering every `zh-CN` key. See `i18n/locales.test.ts`; `yarn audit:i18n` reports the same catalog facts (missing translations, dead keys, untranslated template text) without failing the build.
 
 When an existing source-text test fails because you refactored the code it greps, and it guards neither kind of contract, delete it rather than re-pinning the new string.
 
@@ -186,7 +194,7 @@ When an existing source-text test fails because you refactored the code it greps
 | "Shared state is easiest to put in localStorage." | Shared reactive application state belongs in Pinia; `localStorage` is only the narrow fallback for durable, non-sensitive local preferences. |
 | "Pinia should hold every frontend value." | Keep isolated short-lived state local, and keep persistent authoritative data in its backend or Electron configuration owner. |
 | "I can tweak generated API files." | `src/api` is generated; regenerate through the project command instead. |
-| "New UI text is just a string; inline is faster." | User-facing text goes through the i18n catalog in `src/i18n/locales`. Add the key to `zh-CN.ts` (source language); `en-US.ts` is partial by design and missing keys fall back. |
+| "New UI text is just a string; inline is faster." | User-facing text goes through the i18n catalog in `src/i18n/locales`. Add the key to `zh-CN.ts` (source language) **and** to `en-US.ts` / `ja-JP.ts` in the same change — both catalogs must cover every `zh-CN` key, and `locales.test.ts` fails otherwise. Run `yarn audit:i18n` to list what is missing. |
 | "This Chinese literal is untranslated; I'll translate it." | **Chinese literals that drive logic must stay verbatim** — e.g. `tab.status === '运行'`, `result.includes('异常')`, `SchedulerStatus` values. Translating them breaks behaviour silently, with no error. Leave them and add a comment saying why. |
 | "This UI-only change can ignore engineering rules." | UI tasks still obey module, state, API, and verification boundaries. |
 | "`yarn lint` is failing, but the repo baseline is dirty anyway." | Reproduce the same check on the untouched base commit before calling it pre-existing; never assume a historical baseline still holds. |

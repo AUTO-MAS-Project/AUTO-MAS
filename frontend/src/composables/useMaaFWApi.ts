@@ -1,3 +1,5 @@
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
+import { getAnalyticsScriptType } from '@/utils/analytics'
 import { ref } from 'vue'
 import { translate as t } from '@/i18n'
 import { getApiErrorMessage } from '@/utils/apiError'
@@ -130,12 +132,13 @@ const normalizePreviewData = (data: MaaFWInterfacePreviewData): MaaFWInterfacePr
     })),
     groups: (data.groups ?? []).map(group => ({
       ...group,
-      defaultExpand: group.defaultExpand ?? false,
+      // PI v2 与后端模型的缺省值都是 true（默认展开）
+      defaultExpand: group.defaultExpand ?? true,
     })),
     settings: (data.settings ?? []).map(setting => ({
       ...setting,
       option: setting.option ?? [],
-      defaultExpand: setting.defaultExpand ?? false,
+      defaultExpand: setting.defaultExpand ?? true,
     })),
     tasks: (data.tasks ?? []).map(task => ({
       ...task,
@@ -171,18 +174,28 @@ export function useMaaFWApi() {
     error.value = null
 
     try {
-      const response = await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({
-        path,
-        scriptId,
-      })
+      const response = await observeFeature(
+        'adapter_setup_finished',
+        {
+          script_type: scriptId ? getAnalyticsScriptType(scriptId) : 'MaaFW',
+          operation_kind: 'preview',
+          engine_kind: 'unknown',
+        },
+        () =>
+          MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({
+            path,
+            scriptId,
+          }),
+        apiOutcome
+      )
 
       if (response.code !== 200 || !response.data) {
-        throw new Error(response.message || t('apiErrors.maafwPreviewFailed'))
+        throw new Error(response.message || t('core.apiErrors.maafwPreviewFailed'))
       }
 
       return normalizePreviewData(response.data as MaaFWInterfacePreviewData)
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.maafwPreviewFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.maafwPreviewFailed'))
       error.value = errorMsg
       logger.error(`读取项目 interface 失败: ${errorMsg}`)
       message.error(errorMsg)

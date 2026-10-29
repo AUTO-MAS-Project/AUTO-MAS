@@ -4,7 +4,7 @@
       <div class="header-nav">
         <a-breadcrumb class="breadcrumb">
           <a-breadcrumb-item>
-            <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
+            <router-link to="/scripts">{{ t('core.edit.scripts') }}</router-link>
           </a-breadcrumb-item>
           <a-breadcrumb-item>
             <router-link :to="`/scripts/${scriptId}/edit/bettergi`" class="breadcrumb-link">
@@ -12,7 +12,7 @@
             </router-link>
           </a-breadcrumb-item>
           <a-breadcrumb-item>
-            {{ isEdit ? t('comp.editUser') : t('comp.addUser2') }}
+            {{ isEdit ? t('core.comp.editUser') : t('core.comp.addUser2') }}
           </a-breadcrumb-item>
         </a-breadcrumb>
       </div>
@@ -22,7 +22,7 @@
           <template #icon>
             <FolderOpenOutlined />
           </template>
-          {{ t('comp.openConfigFolder') }}
+          {{ t('core.comp.openConfigFolder') }}
         </a-button>
         <a-tooltip
           v-if="!showBettergiConfigMask && !pageLoading && masConfigEnabled"
@@ -30,7 +30,7 @@
         >
           <template #title>
             <span style="white-space: normal">
-              {{ t('edit.bettergiMasConfigTooltip') }}
+              {{ t('core.edit.bettergiMasConfigTooltip') }}
             </span>
           </template>
           <a-button
@@ -44,7 +44,7 @@
             <template #icon>
               <SettingOutlined />
             </template>
-            {{ t('edit.bettergiConfigure') }}
+            {{ t('core.edit.bettergiConfigure') }}
           </a-button>
         </a-tooltip>
         <a-button
@@ -59,19 +59,19 @@
           <template #icon>
             <SettingOutlined />
           </template>
-          {{ t('edit.bettergiConfigure') }}
+          {{ t('core.edit.bettergiConfigure') }}
         </a-button>
         <a-button v-else type="default" size="large" disabled class="configuring-button">
           <template #icon>
             <SettingOutlined />
           </template>
-          {{ t('edit.configuring') }}
+          {{ t('core.edit.configuring') }}
         </a-button>
         <a-button size="large" class="cancel-button" @click="handleCancel">
           <template #icon>
             <ArrowLeftOutlined />
           </template>
-          {{ t('edit.back') }}
+          {{ t('core.edit.back') }}
         </a-button>
       </a-space>
     </div>
@@ -80,8 +80,8 @@
     <GuiSessionMask
       :open="showBettergiConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.bettergiConfiguringTitle')"
-      :description="`${t('edit.bettergiConfiguringDesc')}\n${t('edit.bettergiConfiguringDesc2')}`"
+      :title="t('core.edit.bettergiConfiguringTitle')"
+      :description="`${t('core.edit.bettergiConfiguringDesc')}\n${t('core.edit.bettergiConfiguringDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -91,15 +91,15 @@
           :loading="stoppingBettergiConfig"
           @click="handleSaveBettergiConfig"
         >
-          {{ t('edit.saveSettings') }}
+          {{ t('core.edit.saveSettings') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showBettergiViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.bettergiViewingTitle')"
-      :description="`${t('edit.bettergiViewingDesc')}\n${t('edit.bettergiViewingDesc2')}`"
+      :title="t('core.edit.bettergiViewingTitle')"
+      :description="`${t('core.edit.bettergiViewingDesc')}\n${t('core.edit.bettergiViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -108,7 +108,7 @@
           :loading="stoppingBettergiConfig"
           @click="handleSaveBettergiConfig"
         >
-          {{ t('edit.bettergiViewClose') }}
+          {{ t('core.edit.bettergiViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
@@ -118,70 +118,33 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>{{ t('edit.basicInfo') }}</h3>
+              <h3>{{ t('core.edit.basicInfo') }}</h3>
             </div>
 
             <!-- 基本信息布局：用户名:启用状态:剩余天数 = 2:1:1 -->
             <a-row :gutter="24">
               <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.username') }}
-                      <a-tooltip :title="t('edit.bettergiUserNameHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input
-                    v-model:value="formData.userName"
-                    :placeholder="t('edit.enterUsername')"
-                    size="large"
-                    class="modern-input"
-                    @blur="saveField('Info.Name', formData.userName)"
-                  />
-                </a-form-item>
+                <UserNameField
+                  v-model="formData.userName"
+                  :hint="t('core.edit.bettergiUserNameHint')"
+                  :placeholder="t('core.edit.enterUsername')"
+                  enhanced
+                  @save="saveField('Info.Name', formData.userName)"
+                />
               </a-col>
               <a-col :span="6">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.enabled') }}
-                      <a-tooltip :title="t('edit.whetherThisUserEnabled')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Info.Status"
-                    size="large"
-                    class="modern-select"
-                    @change="saveField('Info.Status', formData.Info.Status)"
-                  >
-                    <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                    <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                  </a-select>
-                </a-form-item>
+                <UserStatusField
+                  v-model="formData.Info.Status"
+                  :hint="t('core.edit.whetherThisUserEnabled')"
+                  @save="saveField('Info.Status', formData.Info.Status)"
+                />
               </a-col>
               <a-col :span="6">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.daysLeft') }}
-                      <a-tooltip :title="t('edit.daysLeftAccount1')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input-number
-                    v-model:value="formData.Info.RemainedDay"
-                    :min="-1"
-                    :max="9999"
-                    size="large"
-                    style="width: 100%"
-                    @blur="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
-                  />
-                </a-form-item>
+                <UserRemainedDayField
+                  v-model="formData.Info.RemainedDay"
+                  :hint="t('core.edit.daysLeftAccount1')"
+                  @save="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
+                />
               </a-col>
             </a-row>
 
@@ -190,16 +153,15 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.bettergiAccount') }}
-                      <a-tooltip :title="t('edit.bettergiAccountHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.bettergiAccount')"
+                      :hint="t('core.edit.bettergiAccountHint')"
+                      variant="form"
+                    />
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
-                    :placeholder="t('edit.bettergiEnterAccount')"
+                    :placeholder="t('core.edit.bettergiEnterAccount')"
                     size="large"
                     class="modern-input"
                     @blur="saveField('Info.Id', formData.Info.Id)"
@@ -209,16 +171,15 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.password') }}
-                      <a-tooltip :title="t('edit.bettergiPasswordHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.password')"
+                      :hint="t('core.edit.bettergiPasswordHint')"
+                      variant="form"
+                    />
                   </template>
                   <a-input-password
                     v-model:value="formData.Info.Password"
-                    :placeholder="t('edit.bettergiEnterPasswordPlaceholder')"
+                    :placeholder="t('core.edit.bettergiEnterPasswordPlaceholder')"
                     size="large"
                     class="modern-input"
                     @blur="saveField('Info.Password', formData.Info.Password)"
@@ -241,16 +202,15 @@
                 <a-col :span="12">
                   <a-form-item>
                     <template #label>
-                      <span class="form-label">
-                        {{ t('edit.bettergiAccountUid') }}
-                        <a-tooltip :title="t('edit.bettergiUidHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
+                      <FieldLabelWithHint
+                        :text="t('core.edit.bettergiAccountUid')"
+                        :hint="t('core.edit.bettergiUidHint')"
+                        variant="form"
+                      />
                     </template>
                     <a-input
                       v-model:value="formData.Switch.Uid"
-                      :placeholder="t('edit.bettergiEnterUid')"
+                      :placeholder="t('core.edit.bettergiEnterUid')"
                       size="large"
                       class="modern-input"
                       @blur="saveField('Switch.Uid', formData.Switch.Uid)"
@@ -282,8 +242,11 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      {{ t('edit.collectNodeDetails') }}
-                      <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
+                      {{ t('core.edit.collectNodeDetails') }}
+                      <a-tooltip
+                        mouse-enter-delay="0.5"
+                        :title="t('core.edit.collectsKeyMomentsFrom')"
+                      >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -300,23 +263,14 @@
               </a-col>
             </a-row>
 
-            <a-form-item>
-              <template #label>
-                <span class="form-label">
-                  {{ t('edit.note') }}
-                  <a-tooltip :title="t('edit.addNoteAboutThis')">
-                    <QuestionCircleOutlined class="help-icon" />
-                  </a-tooltip>
-                </span>
-              </template>
-              <a-textarea
-                v-model:value="formData.Info.Notes"
-                :placeholder="t('edit.enterNote')"
-                :rows="4"
-                class="modern-input"
-                @blur="saveField('Info.Notes', formData.Info.Notes)"
-              />
-            </a-form-item>
+            <UserNotesField
+              v-model="formData.Info.Notes"
+              :hint="t('core.edit.addNoteAboutThis')"
+              :placeholder="t('core.edit.enterNote')"
+              :rows="4"
+              enhanced
+              @save="saveField('Info.Notes', formData.Info.Notes)"
+            />
           </div>
         </a-form>
       </a-card>
@@ -332,8 +286,8 @@
               gap="small"
             >
               <h3>
-                {{ t('edit.taskConfiguration') }}
-                <a-tooltip :title="t('edit.bettergiTaskConfigHint')">
+                {{ t('core.edit.taskConfiguration') }}
+                <a-tooltip :title="t('core.edit.bettergiTaskConfigHint')">
                   <QuestionCircleOutlined class="help-icon" />
                 </a-tooltip>
               </h3>
@@ -341,7 +295,7 @@
                 <template #icon>
                   <HistoryOutlined />
                 </template>
-                {{ t('edit.configRestoreTitle') }}
+                {{ t('core.edit.configRestoreTitle') }}
               </a-button>
             </a-flex>
 
@@ -353,7 +307,7 @@
             >
               <template #message>
                 <span class="mode-guide-message">
-                  {{ t('edit.bettergiDirectModeAlert') }}
+                  {{ t('core.edit.bettergiDirectModeAlert') }}
                 </span>
               </template>
             </a-alert>
@@ -365,11 +319,11 @@
               class="mode-guide-alert config-flow-hint"
             >
               <template #message>
-                <span class="config-flow-title">{{ t('edit.bettergiMasConfigHowTo') }}</span>
+                <span class="config-flow-title">{{ t('core.edit.bettergiMasConfigHowTo') }}</span>
               </template>
               <template #description>
                 <p class="config-flow-desc config-flow-p">
-                  {{ t('edit.bettergiMasConfigHowTo2') }}
+                  {{ t('core.edit.bettergiMasConfigHowTo2') }}
                 </p>
               </template>
             </a-alert>
@@ -380,8 +334,8 @@
                   <template #label>
                     <span class="form-label">
                       <span class="required-mark">*</span>
-                      {{ t('edit.bettergiOneDragonName') }}
-                      <a-tooltip :title="t('edit.bettergiOneDragonNameHint')">
+                      {{ t('core.edit.bettergiOneDragonName') }}
+                      <a-tooltip :title="t('core.edit.bettergiOneDragonNameHint')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -397,7 +351,7 @@
                         ? [{ label: MAS_ONE_DRAGON_SLOT_NAME, value: MAS_ONE_DRAGON_SLOT_NAME }]
                         : oneDragonConfigOptions
                     "
-                    :placeholder="t('edit.bettergiPickOneDragonName')"
+                    :placeholder="t('core.edit.bettergiPickOneDragonName')"
                     size="large"
                     :disabled="masConfigEnabled"
                     show-search
@@ -421,17 +375,16 @@
               <a-col :span="12">
                 <a-form-item v-if="masConfigEnabled">
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.bettergiDailyRewardParty') }}
-                      <a-tooltip :title="t('edit.bettergiKeepExistingHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.bettergiDailyRewardParty')"
+                      :hint="t('core.edit.bettergiKeepExistingHint')"
+                      variant="form"
+                    />
                   </template>
                   <a-input
                     v-model:value="formData.OneDragon.DailyRewardPartyName"
                     :disabled="!masConfigEnabled"
-                    :placeholder="t('edit.bettergiEnterDailyRewardParty')"
+                    :placeholder="t('core.edit.bettergiEnterDailyRewardParty')"
                     size="large"
                     class="modern-input"
                     @blur="
@@ -456,7 +409,7 @@
                     @click="handleBettergiConfig"
                   >
                     <template #icon><SettingOutlined /></template>
-                    {{ t('edit.bettergiConfigure') }}
+                    {{ t('core.edit.bettergiConfigure') }}
                   </a-button>
                 </a-form-item>
               </a-col>
@@ -468,16 +421,15 @@
                 <a-col :span="12">
                   <a-form-item>
                     <template #label>
-                      <span class="form-label">
-                        {{ t('edit.bettergiBattleParty') }}
-                        <a-tooltip :title="t('edit.bettergiKeepExistingHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
+                      <FieldLabelWithHint
+                        :text="t('core.edit.bettergiBattleParty')"
+                        :hint="t('core.edit.bettergiKeepExistingHint')"
+                        variant="form"
+                      />
                     </template>
                     <a-input
                       v-model:value="formData.OneDragon.PartyName"
-                      :placeholder="t('edit.bettergiEnterBattleParty')"
+                      :placeholder="t('core.edit.bettergiEnterBattleParty')"
                       size="large"
                       class="modern-input"
                       @blur="saveField('OneDragon.PartyName', formData.OneDragon.PartyName)"
@@ -487,18 +439,17 @@
                 <a-col :span="12">
                   <a-form-item>
                     <template #label>
-                      <span class="form-label">
-                        {{ t('edit.bettergiBattleStrategy') }}
-                        <a-tooltip :title="t('edit.bettergiBattleStrategyHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
+                      <FieldLabelWithHint
+                        :text="t('core.edit.bettergiBattleStrategy')"
+                        :hint="t('core.edit.bettergiBattleStrategyHint')"
+                        variant="form"
+                      />
                     </template>
                     <!-- 通用战斗策略：点击输入框弹出备选弹窗，单选纯文本 -->
                     <a-input
                       :value="formData.OneDragon.AutoBossStrategyName"
                       readonly
-                      :placeholder="t('edit.bettergiEnterBattleStrategy')"
+                      :placeholder="t('core.edit.bettergiEnterBattleStrategy')"
                       size="large"
                       class="modern-input bettergi-strategy-input"
                       @click="openStrategyPicker"
@@ -551,9 +502,9 @@
                       </div>
                       <a-tooltip
                         v-if="isGroupFrozen(selectedGroupIdentity)"
-                        :title="t('edit.bettergiGroupFrozenTip')"
+                        :title="t('core.edit.bettergiGroupFrozenTip')"
                       >
-                        <a-tag color="orange">{{ t('edit.bettergiGroupFrozen') }}</a-tag>
+                        <a-tag color="orange">{{ t('core.edit.bettergiGroupFrozen') }}</a-tag>
                       </a-tooltip>
                       <div
                         v-else
@@ -609,7 +560,7 @@
                       v-else-if="selectedGroupIdentity.kind !== 'builtin' && groupsEditable"
                       class="bettergi-groups-detail-note"
                     >
-                      {{ t('edit.bettergiGroupSettingsNone') }}
+                      {{ t('core.edit.bettergiGroupSettingsNone') }}
                     </div>
                   </template>
                   <div v-else class="bettergi-groups-detail-empty"></div>
@@ -624,9 +575,9 @@
                非空时表示右栏设置面板字段（写入 dragonSettings 由保存按钮统一落库） -->
           <a-modal
             v-model:open="strategyPickerOpen"
-            :title="t('edit.bettergiBattleStrategy')"
+            :title="t('core.edit.bettergiBattleStrategy')"
             :footer="null"
-            :cancel-text="t('edit.cancel')"
+            :cancel-text="t('core.edit.cancel')"
             width="560px"
             :z-index="1400"
             class="strategy-picker-modal"
@@ -643,15 +594,15 @@
                 <span class="add-dragon-candidate-label">{{ opt.label }}</span>
               </div>
             </div>
-            <p class="strategy-picker-tip">{{ t('edit.bettergiStrategyPickerTip') }}</p>
+            <p class="strategy-picker-tip">{{ t('core.edit.bettergiStrategyPickerTip') }}</p>
           </a-modal>
 
           <!-- 另存为弹窗：以当前行为前名（基名），用户输入后名，生成「前名-后名」的新引用行（不复制真实配置组 JSON） -->
           <a-modal
             v-model:open="duplicateModal.open"
-            :title="t('edit.bettergiDuplicateAsNew')"
-            :ok-text="t('edit.bettergiDuplicateOk')"
-            :cancel-text="t('edit.cancel')"
+            :title="t('core.edit.bettergiDuplicateAsNew')"
+            :ok-text="t('core.edit.bettergiDuplicateOk')"
+            :cancel-text="t('core.edit.cancel')"
             :confirm-loading="duplicateModal.saving"
             :z-index="1500"
             width="480px"
@@ -661,11 +612,11 @@
           >
             <div class="duplicate-group-form">
               <p v-if="duplicateModal.source" class="duplicate-group-source">
-                {{ t('edit.bettergiDuplicateSource', { name: duplicateSourceLabel }) }}
+                {{ t('core.edit.bettergiDuplicateSource', { name: duplicateSourceLabel }) }}
               </p>
               <a-input
                 v-model:value="duplicateModal.suffix"
-                :placeholder="t('edit.bettergiDuplicateNamePlaceholder')"
+                :placeholder="t('core.edit.bettergiDuplicateNamePlaceholder')"
                 :status="duplicateModal.error ? 'error' : ''"
                 size="large"
                 :maxlength="40"
@@ -675,7 +626,7 @@
               <p v-if="duplicateModal.error" class="duplicate-group-error">
                 {{ duplicateModal.error }}
               </p>
-              <p class="duplicate-group-tip">{{ t('edit.bettergiDuplicateTip') }}</p>
+              <p class="duplicate-group-tip">{{ t('core.edit.bettergiDuplicateTip') }}</p>
             </div>
           </a-modal>
 
@@ -683,9 +634,9 @@
                默认/专项两类的前名沿用系统固定名，窗口内锁定只读；两者都不进入 key，运行仍按原配置组执行。 -->
           <a-modal
             v-model:open="renameModal.open"
-            :title="t('edit.bettergiRenameTitle')"
-            :ok-text="t('edit.bettergiRenameOk')"
-            :cancel-text="t('edit.cancel')"
+            :title="t('core.edit.bettergiRenameTitle')"
+            :ok-text="t('core.edit.bettergiRenameOk')"
+            :cancel-text="t('core.edit.cancel')"
             :confirm-loading="renameModal.saving"
             :z-index="1500"
             width="480px"
@@ -695,16 +646,16 @@
           >
             <div class="rename-group-form">
               <p v-if="renameModal.source" class="rename-group-source">
-                {{ t('edit.bettergiRenameSource', { name: renameModal.source.key }) }}
+                {{ t('core.edit.bettergiRenameSource', { name: renameModal.source.key }) }}
               </p>
               <a-form layout="horizontal" :label-col="{ span: 6 }" :wrapper-col="{ span: 18 }">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">{{ t('edit.bettergiRenameNameLabel') }}</span>
+                    <span class="form-label">{{ t('core.edit.bettergiRenameNameLabel') }}</span>
                   </template>
                   <a-input
                     v-model:value="renameModal.name"
-                    :placeholder="t('edit.bettergiRenameNamePlaceholder')"
+                    :placeholder="t('core.edit.bettergiRenameNamePlaceholder')"
                     :status="renameModal.error ? 'error' : ''"
                     :disabled="renameNameLocked"
                     size="large"
@@ -715,11 +666,11 @@
                 </a-form-item>
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">{{ t('edit.bettergiRenameSuffixLabel') }}</span>
+                    <span class="form-label">{{ t('core.edit.bettergiRenameSuffixLabel') }}</span>
                   </template>
                   <a-input
                     v-model:value="renameModal.suffix"
-                    :placeholder="t('edit.bettergiRenamePlaceholder')"
+                    :placeholder="t('core.edit.bettergiRenamePlaceholder')"
                     size="large"
                     :maxlength="40"
                     @input="renameModal.error = ''"
@@ -728,12 +679,12 @@
                 </a-form-item>
               </a-form>
               <p v-if="renameNameLocked" class="rename-group-note">
-                {{ t('edit.bettergiRenameLockedTip') }}
+                {{ t('core.edit.bettergiRenameLockedTip') }}
               </p>
               <p v-if="renameModal.error" class="rename-group-error">
                 {{ renameModal.error }}
               </p>
-              <p class="rename-group-tip">{{ t('edit.bettergiRenameTip') }}</p>
+              <p class="rename-group-tip">{{ t('core.edit.bettergiRenameTip') }}</p>
             </div>
           </a-modal>
 
@@ -803,8 +754,8 @@
       :script-name="BETTERGI_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :user-desc="t('edit.bettergiConfigRestoreUserDesc')"
-      :script-desc="t('edit.bettergiConfigRestoreScriptDesc')"
+      :user-desc="t('core.edit.bettergiConfigRestoreUserDesc')"
+      :script-desc="t('core.edit.bettergiConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     >
@@ -812,7 +763,7 @@
       <template #preview="{ raw }">
         <a-empty
           v-if="!previewSections(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="t('core.edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="s in previewSections(raw)" :key="s.name">
@@ -836,6 +787,11 @@
 </template>
 
 <script setup lang="ts">
+import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
+import UserNotesField from '@/views/EditView/User/components/UserNotesField.vue'
+import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
+import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useBettergiDragonQueue } from './BetterGIUserEdit/useBettergiDragonQueue'
 import BettergiDragonQueueList from './BetterGIUserEdit/BettergiDragonQueueList.vue'
 
@@ -926,7 +882,7 @@ const {
 } = catalogs
 const gameClientSection = ref<InstanceType<typeof BettergiGameClientSection> | null>(null)
 const { configLocked } = useScriptConfigLock(() => scriptId)
-const scriptName = ref(t('edit.bettergiScriptFallbackName'))
+const scriptName = ref(t('core.edit.bettergiScriptFallbackName'))
 
 const pageLoading = ref(true)
 const isInitializing = ref(true)
@@ -940,23 +896,23 @@ const bettergiConfigModeOptions: Array<{
   disabledReason?: string
 }> = [
   {
-    title: t('edit.script'),
-    description: t('edit.useSharedScriptLevel'),
+    title: t('core.edit.script'),
+    description: t('core.edit.useSharedScriptLevel'),
     value: 'shared',
     icon: 'file',
     // 「共享」运行时与「独立」同分支（均按 per-user MAS 配置运行），选了不生效——禁用并说明
     disabled: true,
-    disabledReason: t('edit.scriptModeDisabled'),
+    disabledReason: t('core.edit.scriptModeDisabled'),
   },
   {
-    title: t('edit.perUserConfiguration'),
-    description: t('edit.perUserConfiguration'),
+    title: t('core.edit.perUserConfiguration'),
+    description: t('core.edit.perUserConfiguration'),
     value: 'independent',
     icon: 'database',
   },
   {
-    title: t('edit.scriptDirectControl'),
-    description: t('edit.useScriptSCurrent'),
+    title: t('core.edit.scriptDirectControl'),
+    description: t('core.edit.useScriptSCurrent'),
     value: 'native',
     icon: 'setting',
   },
@@ -978,9 +934,9 @@ type BetterGIUserFormData = {
 
 // 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
 const pushLogModeOptions = [
-  { label: t('edit.pushLogModeOff'), value: '关闭' },
-  { label: t('edit.pushLogModeList'), value: '逐条' },
-  { label: t('edit.pushLogModeSummary'), value: '汇总' },
+  { label: t('core.edit.pushLogModeOff'), value: '关闭' },
+  { label: t('core.edit.pushLogModeList'), value: '逐条' },
+  { label: t('core.edit.pushLogModeSummary'), value: '汇总' },
 ]
 
 const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
@@ -1044,7 +1000,7 @@ const createUserImmediately = async (): Promise<boolean> => {
 
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
-    message.error(userApiError.value || t('edit.couldNotCreateUser'))
+    message.error(userApiError.value || t('core.edit.couldNotCreateUser'))
     handleCancel()
     return false
   }
@@ -1214,19 +1170,19 @@ const builtinGroupLabels = computed<Record<string, string>>(() =>
 
 // 前缀 tag 文案
 const groupPrefix = (item: ConfigGroupIdentity): string => {
-  if (item.kind === 'builtin') return t('edit.bettergiGroupPrefixDefault')
-  if (item.kind === 'stamina') return t('edit.bettergiGroupKindStamina')
-  if (item.kind === 'pathing') return t('edit.bettergiGroupKindPathing')
-  if (item.kind === 'scriptgroup') return t('edit.bettergiGroupKindScriptGroup')
-  if (item.kind === 'keymouse') return t('edit.bettergiGroupKindKeyMouse')
+  if (item.kind === 'builtin') return t('core.edit.bettergiGroupPrefixDefault')
+  if (item.kind === 'stamina') return t('core.edit.bettergiGroupKindStamina')
+  if (item.kind === 'pathing') return t('core.edit.bettergiGroupKindPathing')
+  if (item.kind === 'scriptgroup') return t('core.edit.bettergiGroupKindScriptGroup')
+  if (item.kind === 'keymouse') return t('core.edit.bettergiGroupKindKeyMouse')
   // JS 脚本与现有自定义组同属「共享」来源（按需求：JS 的 tag 改为脚本）
-  return t('edit.bettergiGroupKindCustom')
+  return t('core.edit.bettergiGroupKindCustom')
 }
 
 // 前名（配置组名称）按来源类型回退的默认显示名（未自定义别名时使用）
 const defaultGroupBaseLabel = (item: ConfigGroupIdentity): string => {
   if (item.kind === 'builtin') return builtinGroupLabels.value[item.key] ?? item.key
-  if (item.kind === 'stamina') return t('edit.bettergiGroupStamina')
+  if (item.kind === 'stamina') return t('core.edit.bettergiGroupStamina')
   if (item.kind === 'js') return jsDisplayName(item.key)
   if (item.kind === 'pathing') return pathingDisplayName(item.key)
   return item.key
@@ -1337,7 +1293,7 @@ const canRenameGroup = (item: ConfigGroupIdentity): boolean => {
 const duplicateSameGroup = (item: ConfigGroupIdentity) => {
   if (!groupsEditable.value || isGroupFrozen(item)) return
   addToDragon({ kind: item.kind, key: item.key })
-  message.success(t('edit.bettergiDuplicateSameDone', { name: groupLabel(item) }))
+  message.success(t('core.edit.bettergiDuplicateSameDone', { name: groupLabel(item) }))
 }
 
 const duplicateModal = reactive<{
@@ -1383,7 +1339,7 @@ const confirmDuplicateGroup = () => {
     }
     addToDragon(newItem)
     duplicateModal.open = false
-    message.success(t('edit.bettergiDuplicateDone', { name: groupLabel(newItem) }))
+    message.success(t('core.edit.bettergiDuplicateDone', { name: groupLabel(newItem) }))
   } finally {
     duplicateModal.saving = false
   }
@@ -1442,7 +1398,7 @@ const confirmRename = () => {
     source.suffix = suffix || undefined
     renameModal.open = false
     persistDragonQueue()
-    message.success(t('edit.bettergiRenameDone', { name: groupLabel(source) }))
+    message.success(t('core.edit.bettergiRenameDone', { name: groupLabel(source) }))
   } finally {
     renameModal.saving = false
   }
@@ -1499,7 +1455,7 @@ const {
 const handleBettergiConfig = () => {
   if (configLocked.value) return
   if (!userId.value) return
-  void startSession(userId.value)
+  void startSession(userId.value, false, 'user')
 }
 
 const handleSaveBettergiConfig = async () => {
@@ -1571,18 +1527,18 @@ const handleRestoreView = (target: string, item: { time: string }) => {
 
   return new Promise<boolean>(resolve => {
     Modal.confirm({
-      title: t('edit.configRestoreDetailView'),
+      title: t('core.edit.configRestoreDetailView'),
       content: h(
         'p',
         { style: { color: 'var(--ant-color-error)', margin: 0 } },
-        t('edit.configRestoreDetailConfirm', { script: BETTERGI_DISPLAY_NAME })
+        t('core.edit.configRestoreDetailConfirm', { script: BETTERGI_DISPLAY_NAME })
       ),
-      okText: t('edit.configRestoreConfirmOk'),
+      okText: t('core.edit.configRestoreConfirmOk'),
       okType: 'danger',
-      cancelText: t('edit.cancel'),
+      cancelText: t('core.edit.cancel'),
       onOk: async () => {
         if (configLocked.value) {
-          message.error(t('edit.configLocked'))
+          message.error(t('core.edit.configLocked'))
           resolve(false)
           return
         }
@@ -1592,20 +1548,20 @@ const handleRestoreView = (target: string, item: { time: string }) => {
           // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
           // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
           if (resp.code !== 200) {
-            throw new Error(resp.message || t('edit.configRestoreFailed'))
+            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
           }
           restoreOpen.value = false
           if (target === 'mas') {
             // 恢复后重拉表单：后端 UserData 已回填，不重拉会让旧表单值在
             // 下次保存时整块写回、覆盖恢复结果（对齐一键恢复 handleRestored）
             await loadUser()
-            await startSession(userId.value, true)
+            await startSession(userId.value, true, 'user')
           } else {
-            await startSession(scriptId, true)
+            await startSession(scriptId, true, 'script')
           }
           resolve(true)
         } catch (e) {
-          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
           resolve(false)
         }
       },
@@ -1622,7 +1578,7 @@ const ensureBettergiBackup = ensureBackup
 const loadScriptInfo = async (): Promise<boolean> => {
   const detail = await getScript(scriptId)
   if (!detail || detail.type !== 'BetterGI') {
-    if (!scriptApiError.value) message.error(t('edit.bettergiScriptNotFound'))
+    if (!scriptApiError.value) message.error(t('core.edit.bettergiScriptNotFound'))
     handleCancel()
     return false
   }
@@ -1681,7 +1637,7 @@ const loadUser = async () => {
     initDragonList()
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    if (!userApiError.value) message.error(t('edit.couldNotLoadUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser'))
     handleCancel()
   } finally {
     isInitializing.value = false
@@ -1788,22 +1744,11 @@ const addProjects = (rows: unknown[]) =>
   padding: 32px;
 }
 
-.form-section {
-  margin-bottom: 32px;
-}
-
 .section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  border-bottom-width: 1px;
 }
 
 .section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
   gap: 8px;
 }
 

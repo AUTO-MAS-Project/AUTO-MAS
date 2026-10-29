@@ -21,11 +21,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from copy import deepcopy
 from datetime import datetime
-from pathlib import Path
 from pathlib import Path as NativePath
 from typing import Annotated, Any, ClassVar, Literal
 from uuid import UUID
@@ -57,18 +55,7 @@ from app.config.types import (
     WindowsNameString,
     path_policy,
 )
-from app.utils.constants import (
-    MAA_STAGE_KEY,
-    MAAEND_SANITY_TASK_DETAIL_LABELS,
-    MAAEND_SANITY_TASK_FIELDS,
-    MAAEND_SANITY_TASK_LABELS,
-    MAAEND_STAGE_WITH_AB,
-    RESOURCE_STAGE_INFO,
-    STARRAIL_STAGE_BOOK,
-    UTC4,
-    get_game_day_tz,
-    normalize_base_source,
-)
+from app.utils import constants as _utils_constants
 
 from .base import DomainEntry
 from .plan import BAAHPlanConfig, MaaEndPlanConfig, MaaPlanConfig, MSSPlanConfig
@@ -99,7 +86,7 @@ class MaaUserConfig(DomainEntry):
     class DataFields(ConfigGroup):
         def _game_day_timezone(self):
             """按当前用户服务器读取游戏日时间，不改变保存的 UTC 时刻。"""
-            return get_game_day_tz(self.__dict__["_entry"].Info.Server)
+            return _utils_constants.get_game_day_tz(self.__dict__["_entry"].Info.Server)
 
         AnnihilationCompletedWeek: Annotated[str, none_as("")] = Field(
             default_factory=lambda: "2000-W01",
@@ -116,7 +103,9 @@ class MaaUserConfig(DomainEntry):
         )
 
         GreenTicketStoreMonth: Annotated[
-            datetime | None, tz(UTC4), ui(widget="datetime", format="hms")
+            datetime | None,
+            tz(_utils_constants.UTC4),
+            ui(widget="datetime", format="hms"),
         ] = Field(
             default=None,
             description="上次完成绿票商店购买的完整时间，按 UTC+4 判断月份；空值表示尚未完成",
@@ -137,7 +126,7 @@ class MaaUserConfig(DomainEntry):
             ui(format="date"),
             ui(visibility=UiVisibility.HIDE),
         ] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="上次代理日期",
         )
 
@@ -166,7 +155,11 @@ class MaaUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "shared",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -448,7 +441,9 @@ class MaaUserConfig(DomainEntry):
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
-        tags.append(_tag_proxy(self, tz=get_game_day_tz(self.Info.Server)))
+        tags.append(
+            _tag_proxy(self, tz=_utils_constants.get_game_day_tz(self.Info.Server))
+        )
         tags.append(_tag_remained_days(self))
         if not self.Info.IfQuickConfig:
             tags.append(_tag_notes(self))
@@ -469,7 +464,7 @@ class MaaUserConfig(DomainEntry):
             tags.append({"text": "基建：关闭", "color": "red"})
         plan_data = {
             stage_key: self.get_stage_zh(getattr(self.Stage, stage_key))
-            for stage_key in MAA_STAGE_KEY[2:]
+            for stage_key in _utils_constants.MAA_STAGE_KEY[2:]
         }
         tag_color = "blue"
         if self.Stage.StageMode != "Fixed":
@@ -479,7 +474,7 @@ class MaaUserConfig(DomainEntry):
                     stage_key: self.get_stage_zh(
                         plan.get_current_info(stage_key, server=self.Info.Server)
                     )
-                    for stage_key in MAA_STAGE_KEY[2:]
+                    for stage_key in _utils_constants.MAA_STAGE_KEY[2:]
                 }
                 tag_color = "green"
         tags.append({"text": f"主关卡：{plan_data['Stage']}", "color": tag_color})
@@ -497,7 +492,7 @@ class MaaUserConfig(DomainEntry):
 
     @staticmethod
     def get_stage_zh(stage: str) -> str:
-        for stage_info in RESOURCE_STAGE_INFO:
+        for stage_info in _utils_constants.RESOURCE_STAGE_INFO:
             if stage_info.get("value") == stage:
                 return (
                     stage_info.get("text", stage)
@@ -645,8 +640,10 @@ class MaaEndUserConfig(DomainEntry):
     related_config: ClassVar = {}
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="上次代理日期",
         )
 
@@ -668,7 +665,11 @@ class MaaEndUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "shared",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -705,6 +706,10 @@ class MaaEndUserConfig(DomainEntry):
             default_factory=lambda: "官服", description="资源名称"
         )
 
+        SanityStrategy: Literal["MAS", "Native", "Inventory"] = Field(
+            default="MAS", description="理智任务策略：指定任务、原生策略或库存目标"
+        )
+
         SanityMode: Annotated[
             UUID | str,
             ref(
@@ -739,6 +744,10 @@ class MaaEndUserConfig(DomainEntry):
             default_factory=lambda: False, description="是否发送邮件"
         )
 
+        IfSendInventory: bool = Field(
+            default=False, description="是否推送本轮养成材料状态"
+        )
+
         IfSendStatistic: bool = Field(
             default_factory=lambda: False, description="是否发送统计信息"
         )
@@ -761,6 +770,16 @@ class MaaEndUserConfig(DomainEntry):
     Notify: NotifyFields = Field(default_factory=NotifyFields)
 
     class TaskFields(ConfigGroup):
+        SupplyPlanLimits: JsonDictString = Field(
+            default_factory=lambda: json.dumps(
+                _utils_constants.MAAEND_INVENTORY_TARGET_DEFAULTS
+            ),
+            description="上游库存目标输入值，原字段名与字符串值透传",
+        )
+        ProtocolSpaceObtainModeClaim: str = Field(
+            default="ObtainScaling2", description="库存任务领取方式，由 MaaEnd 声明"
+        )
+
         AutoCollectCommonRoutes: Any = Field(
             description="自动采集通用资源路线", default_factory=lambda: None
         )
@@ -786,14 +805,10 @@ class MaaEndUserConfig(DomainEntry):
             description="基质目标武器 ID 列表", default_factory=lambda: []
         )
 
-        CrisisDrills: Literal[
-            "AdvancedProgression1",
-            "AdvancedProgression2",
-            "AdvancedProgression3",
-            "AdvancedProgression4",
-            "AdvancedProgression5",
-        ] = Field(
-            description="危境预演任务", default_factory=lambda: "AdvancedProgression1"
+        CrisisDrills: str = Field(
+            description="危境预演任务，由 MaaEnd 声明",
+            default="AdvancedProgression1",
+            min_length=1,
         )
 
         DailyOnceTasks: JsonListString = Field(
@@ -903,6 +918,7 @@ class MaaEndUserConfig(DomainEntry):
     Task: TaskFields = Field(default_factory=TaskFields)
     Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
     _maaend_essence_location_labels: dict = PrivateAttr(default_factory=dict)
+    _maaend_crisis_drills_labels: dict[str, str] = PrivateAttr(default_factory=dict)
 
     def cache_maaend_resource(self, resource: dict[str, Any]) -> None:
         """缓存 MaaEnd 动态资源的展示文本。"""
@@ -910,6 +926,10 @@ class MaaEndUserConfig(DomainEntry):
             str(item["value"]): str(item["label"])
             for item in resource.get("essenceLocations", [])
             if isinstance(item, dict) and item.get("value") is not None
+        }
+        self._maaend_crisis_drills_labels = {
+            str(item["value"]): str(item["label"])
+            for item in resource.get("crisisDrills", [])
         }
 
     def _get_maaend_location_label(self, value: str) -> str:
@@ -925,7 +945,7 @@ class MaaEndUserConfig(DomainEntry):
                 normalize_maaend_plan_key(
                     {
                         field: getattr(self.Task, field)
-                        for field in MAAEND_SANITY_TASK_FIELDS
+                        for field in _utils_constants.MAAEND_SANITY_TASK_FIELDS
                     }
                 ),
                 "Fixed",
@@ -951,12 +971,19 @@ class MaaEndUserConfig(DomainEntry):
             tags.append(_tag_notes(self))
             return json.dumps(tags, ensure_ascii=False)
 
-        if self.Task.IfSanity:
+        if self.Task.IfSanity and self.Info.SanityStrategy in ("Native", "Inventory"):
+            label = (
+                "库存目标"
+                if self.Info.SanityStrategy == "Inventory"
+                else "MaaEnd 原生策略"
+            )
+            tags.append({"text": f"理智任务：{label}", "color": "blue"})
+        elif self.Task.IfSanity:
             task_key, _ = self.get_effective_sanity_task_key()
             sanity_task_type = task_key["SanityTaskType"]
             tags.append(
                 {
-                    "text": f"理智任务：{MAAEND_SANITY_TASK_LABELS[sanity_task_type]}",
+                    "text": f"理智任务：{_utils_constants.MAAEND_SANITY_TASK_LABELS[sanity_task_type]}",
                     "color": "blue",
                 }
             )
@@ -977,13 +1004,17 @@ class MaaEndUserConfig(DomainEntry):
                     if sanity_task_type == "Essence"
                     else task_key[sanity_task_type]
                 )
-                detail_label = (
-                    self._get_maaend_location_label(detail_key)
-                    if sanity_task_type == "Essence"
-                    else MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]
-                )
+                if sanity_task_type == "Essence":
+                    detail_label = self._get_maaend_location_label(detail_key)
+                else:
+                    detail_label = self._maaend_crisis_drills_labels.get(
+                        detail_key,
+                        _utils_constants.MAAEND_SANITY_TASK_DETAIL_LABELS.get(
+                            detail_key, detail_key
+                        ),
+                    )
             tags.append({"text": f"详细任务：{detail_label}", "color": "blue"})
-            if detail_key in MAAEND_STAGE_WITH_AB:
+            if detail_key in _utils_constants.MAAEND_STAGE_WITH_AB:
                 tags.append(
                     {
                         "text": "奖励组：奖励组 A"
@@ -1134,6 +1165,16 @@ class MaaEndConfig(DomainEntry):
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
+        IfSaveLogBundle: bool = Field(
+            default_factory=lambda: False,
+            description="任务失败时是否按 MaaEnd 的导出规则打包运行日志",
+        )
+
+        LogBundlePath: FolderPath = Field(
+            default_factory=lambda: None,
+            description="任务失败时保存日志包的目录，留空使用 MAS 目录下的 debug/maaend",
+        )
+
         ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="每日代理次数限制"
         )
@@ -1152,56 +1193,6 @@ class MaaEndConfig(DomainEntry):
 
     Run: RunFields = Field(default_factory=RunFields)
     UserData: ConfigCollection[MaaEndUserConfig] = collection(MaaEndUserConfig)
-    _loaded_resource: dict = PrivateAttr(default_factory=dict)
-    _preload_task: Any = PrivateAttr(default=None)
-
-    async def _activate_from_payload(
-        self, payload: dict[str, Any], *, regenerate_uuids: bool = False
-    ) -> None:
-        """按当前资源入口迁移历史 Client 启动方式，再激活配置。"""
-        from app.task.MaaEnd.resource_loader import try_load_maaend_options
-
-        payload = type(self).normalize_payload(payload)
-        game = payload.get("Game", {})
-        if isinstance(game, dict) and game.get("LaunchMode") == "Client":
-            root_path = payload.get("Info", {}).get("Path")
-            root = Path(root_path) if root_path else None
-            if root is not None and (root / "interface.json").is_file():
-                options = await asyncio.to_thread(try_load_maaend_options, root)
-                if options is not None:
-                    game["LaunchMode"] = (
-                        "MaaEnd"
-                        if game.get("ControllerType")
-                        in options["launchGameControllers"]
-                        else "MAS"
-                    )
-        await super()._activate_from_payload(payload, regenerate_uuids=regenerate_uuids)
-
-    async def preload_resource(self) -> None:
-        """尝试预加载 MaaEnd 动态资源，失败时保留现有配置。"""
-        root_path = str(self.Info.Path or "").strip()
-        if not root_path:
-            return
-
-        def _try_load_in_thread():
-            from app.task.MaaEnd.resource_loader import try_load_maaend_options
-
-            return try_load_maaend_options(Path(root_path))
-
-        resource = await asyncio.to_thread(_try_load_in_thread)
-        if resource is None:
-            return
-        for user_config in self.UserData.values():
-            user_config.cache_maaend_resource(resource)
-
-    def get_loaded_resource(self) -> dict[str, Any]:
-        """读取已经载入内存的 MaaEnd 动态资源。"""
-        root_path = str(self.Info.Path or "").strip()
-        if not root_path:
-            raise ValueError("MaaEnd 路径未配置")
-        from app.task.MaaEnd.resource_loader import get_loaded_maaend_options
-
-        return get_loaded_maaend_options(Path(root_path))
 
     @classmethod
     def normalize_payload(cls, data):
@@ -1224,8 +1215,10 @@ class SrcUserConfig(DomainEntry):
     related_config: ClassVar = {}
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="上次代理日期",
         )
 
@@ -1238,7 +1231,11 @@ class SrcUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "shared",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -1478,19 +1475,19 @@ class SrcUserConfig(DomainEntry):
 
         tags.append(
             {
-                "text": f"关卡：{STARRAIL_STAGE_BOOK.get(getattr(self.Stage, self.Stage.Channel), '未知关卡')}",
+                "text": f"关卡：{_utils_constants.STARRAIL_STAGE_BOOK.get(getattr(self.Stage, self.Stage.Channel), '未知关卡')}",
                 "color": "blue",
             }
         )
         tags.append(
             {
-                "text": f"周本：{STARRAIL_STAGE_BOOK.get(self.Stage.EchoOfWar, '未知关卡')}",
+                "text": f"周本：{_utils_constants.STARRAIL_STAGE_BOOK.get(self.Stage.EchoOfWar, '未知关卡')}",
                 "color": "blue",
             }
         )
         tags.append(
             {
-                "text": f"模拟宇宙：{STARRAIL_STAGE_BOOK.get(self.Stage.SimulatedUniverseWorld, '未知关卡')}",
+                "text": f"模拟宇宙：{_utils_constants.STARRAIL_STAGE_BOOK.get(self.Stage.SimulatedUniverseWorld, '未知关卡')}",
                 "color": "blue",
             }
         )
@@ -1597,9 +1594,9 @@ class HSRUserConfig(DomainEntry):
         )
 
         EchoOfWarLastCompletionDate: Annotated[
-            datetime, tz(UTC4), ui(format="date")
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
         ] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="历战余响最近一次完成日期",
         )
 
@@ -1608,8 +1605,10 @@ class HSRUserConfig(DomainEntry):
             description='历战余响上次重置 ISO 周（形如 "2025-W23"）',
         )
 
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="上次代理日期",
         )
 
@@ -1631,11 +1630,11 @@ class HSRUserConfig(DomainEntry):
             description="本周是否已完成周常（仅依据 Data 字段判断）",
         )
 
-        WeeklyLastCompletionDate: Annotated[datetime, tz(UTC4), ui(format="date")] = (
-            Field(
-                default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
-                description="周常（差分宇宙/货币战争）最近一次完成日期",
-            )
+        WeeklyLastCompletionDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
+            description="周常（差分宇宙/货币战争）最近一次完成日期",
         )
 
         WeeklyLastResetWeek: str = Field(
@@ -1648,7 +1647,11 @@ class HSRUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "shared",
             description="base 来源（shared/independent/native）：shared = 共用脚本级计划； independent = 本用户自己的计划；native = 原样运行 SRA / 三月七 当前的原生配置",
@@ -1816,7 +1819,7 @@ class HSRUserConfig(DomainEntry):
         tags.append({"text": f"服务器：{server_label}", "color": "blue"})
         tags.append(_tag_proxy(self))
         tags.append(_tag_remained_days(self))
-        now = datetime.now(tz=UTC4)
+        now = datetime.now(tz=_utils_constants.UTC4)
         iso_year, iso_week, _ = now.isocalendar()
         current_week = f"{iso_year:04d}-W{iso_week:02d}"
         eow_done = (
@@ -2095,8 +2098,10 @@ class MaaFWUserConfig(DomainEntry):
             default_factory=lambda: True, description="是否通过检查"
         )
 
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="上次代理日期",
         )
 
@@ -2144,7 +2149,11 @@ class MaaFWUserConfig(DomainEntry):
 
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "independent",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -2235,7 +2244,7 @@ class MaaFWUserConfig(DomainEntry):
         # 新队列的 keepUnchecked 标记随 JSON 原样保存；无标记的旧 false 实例仍隐藏。
         TaskSnapshot: JsonDictString = Field(
             default_factory=lambda: "{ }",
-            description="当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions/globalOptions， 可选 taskLabels（用户给某一份实例起的显示名，只影响界面显示）； 除 globalOptions 外各键都是任务实例 id，同一个任务可以重复入队（见 MaaFWTaskSnapshot）； globalOptions 是全局选项的值，每个用户一份、所有任务共用。 默认的空快照在建用户、读用户与运行前按项目默认（预设或默认勾选）补成实打实的队列， 见 app/task/MaaFW/tools/embedded/default_snapshot.py",
+            description="当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions/globalOptions， 可选 taskLabels（用户给某一份实例起的显示名，只影响界面显示）， 可选 taskSchedules（``{实例 id: {weekdays: [1..7]}}``，ISO 星期 1=周一，升序去重；只在本机今天的星期在其中时运行这一份，开跑建计划时判一次；七天全选即不限制、不写这一项，空表或非法值按不限制处理）； 除 globalOptions 外各键都是任务实例 id，同一个任务可以重复入队（见 MaaFWTaskSnapshot）； globalOptions 是全局选项的值，每个用户一份、所有任务共用。 默认的空快照在建用户、读用户与运行前按项目默认（预设或默认勾选）补成实打实的队列， 见 app/task/MaaFW/tools/embedded/default_snapshot.py",
         )
 
     Task: TaskFields = Field(default_factory=TaskFields)
@@ -2512,7 +2521,7 @@ class MaaFWConfig(DomainEntry):
     class TaskFields(ConfigGroup):
         Templates: JsonListString = Field(
             default_factory=lambda: "[ ]",
-            description='用户页任务队列的自定义模板，同一脚本的用户共用。JSON 列表，每项 ``{"name": 模板名, "snapshot": {taskOrder, taskChecked, taskOptions, taskLabels?}}``， 快照形状同用户的 Task.TaskSnapshot（键是任务实例 id），但不含受管任务、密码字段 与全局选项（globalOptions 归各用户自己）； 名称在脚本内唯一。运行流程不读它，只由用户页套用到某个用户的队列。',
+            description='用户页任务队列的自定义模板，同一脚本的用户共用。JSON 列表，每项 ``{"name": 模板名, "snapshot": {taskOrder, taskChecked, taskOptions, taskLabels?, taskSchedules?}}``， 快照形状同用户的 Task.TaskSnapshot（键是任务实例 id），但不含受管任务、密码字段 与全局选项（globalOptions 归各用户自己）； 名称在脚本内唯一。运行流程不读它，只由用户页套用到某个用户的队列。',
         )
 
     Task: TaskFields = Field(default_factory=TaskFields)
@@ -2533,25 +2542,6 @@ class MaaFWConfig(DomainEntry):
         Channel: Literal["stable", "beta"] = Field(
             default_factory=lambda: "stable",
             description="更新渠道只有稳定版与测试版，默认稳定版，要测试版由用户手动切。 不给「跟随全局」：全局那个 Update.Channel 是 MAS 自身的发布通道， 和脚本本体的版本档位是两回事，串在一起只会让人猜。 Mirror 酱还支持 channel=alpha，**故意不开放**——那是项目方的内部 验证档，稳定性无保证，而这里更新的是用户日常在跑的脚本本体。 这两个值必须与前端 updateChannelOptions 和 schema 的 Literal 一致： 三处任一多给一档，用户选了就会 422 或被静默纠回默认值。 旧配置里的空串现在是非法值，会被 correct() 回退成 options[0]， 即 stable——这里的顺序同样不能随意调换。",
-        )
-
-        GitHubAssetPattern: str = Field(
-            description="[已废弃] GitHub release asset 文件名匹配模式",
-            default_factory=lambda: "",
-        )
-
-        GitHubRepo: str = Field(
-            default_factory=lambda: "",
-            description="[已废弃] GitHub 仓库/tag/asset 覆盖：仓库与资产名改为从 interface.json 和目录名自动推导，运行流程不再读取；保留一个版本兼容旧配置文件后删除。",
-        )
-
-        GitHubTag: str = Field(
-            description="[已废弃] GitHub release tag 覆盖", default_factory=lambda: ""
-        )
-
-        IfAutoUpdate: bool = Field(
-            default_factory=lambda: True,
-            description="[已废弃] 旧布尔开关，只在 load() 里迁移为 AutoUpdateMode（False → Off）， 运行流程不再读取；保留一个版本兼容旧配置文件后删除。",
         )
 
         MirrorChyanCDK: Annotated[str, encrypted()] = Field(
@@ -2708,8 +2698,10 @@ class GeneralUserConfig(DomainEntry):
     "通用脚本用户配置"
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="上次代理日期",
         )
 
@@ -2722,7 +2714,11 @@ class GeneralUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "independent",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -2812,9 +2808,11 @@ class OkwwUserConfig(DomainEntry):
     OKWW_TASK_BOOK: ClassVar = {1: "日常"}
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
             description="上次代理日期",
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
         )
 
         LastProxyStatus: Literal["未知", "成功", "失败", "维护中"] = Field(
@@ -2835,7 +2833,11 @@ class OkwwUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             description="base 来源（shared=共享、independent=独立、native=脚本原生配置）",
             default_factory=lambda: "shared",
@@ -3010,9 +3012,11 @@ class OkNteUserConfig(DomainEntry):
     }
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
             description="上次代理日期",
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
         )
 
         LastProxyStatus: Literal["未知", "成功", "失败", "维护中"] = Field(
@@ -3033,7 +3037,11 @@ class OkNteUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             description="base 来源（shared=共享、independent=独立、native=脚本原生配置）",
             default_factory=lambda: "shared",
@@ -3161,9 +3169,11 @@ class BetterGIUserConfig(DomainEntry):
     "BetterGI 用户配置（更好的原神）"
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
             description="上次代理日期",
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
         )
 
         LastProxyStatus: Literal["未知", "成功", "失败", "维护中"] = Field(
@@ -3179,7 +3189,11 @@ class BetterGIUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "independent",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -3585,6 +3599,19 @@ class GeneralConfig(DomainEntry):
     Script: ScriptFields = Field(default_factory=ScriptFields)
     UserData: ConfigCollection[GeneralUserConfig] = collection(GeneralUserConfig)
 
+    @classmethod
+    def normalize_payload(cls, data: dict[str, Any]) -> dict[str, Any]:
+        data = super().normalize_payload(data)
+        script = data.get("Script")
+        if isinstance(script, dict):
+            # 保留旧文件选择器文案的变体兼容，无关未知值仍交给字段校验拒绝。
+            mode = script.get("ConfigPathMode")
+            if isinstance(mode, str) and "所有文件" in mode:
+                script["ConfigPathMode"] = "File"
+            elif mode == "文件夹":
+                script["ConfigPathMode"] = "Folder"
+        return data
+
 
 class OkwwConfig(DomainEntry):
     "OK-WW 配置（ok-script 线）"
@@ -3926,9 +3953,11 @@ class ZzzOdUserConfig(DomainEntry):
     """
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
             description="上次代理日期",
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
         )
 
         LastProxyStatus: Literal["未知", "成功", "失败"] = Field(
@@ -4029,7 +4058,11 @@ class ZzzOdUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "independent",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -4288,8 +4321,10 @@ class BAAHUserConfig(DomainEntry):
     related_config: ClassVar = {}
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="上次代理日期",
         )
 
@@ -4307,7 +4342,11 @@ class BAAHUserConfig(DomainEntry):
 
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "independent",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -4479,9 +4518,11 @@ class WhimboxUserConfig(DomainEntry):
     """
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
             description="上次代理日期",
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
         )
 
         LastProxyStatus: Literal["未知", "成功", "失败"] = Field(
@@ -4497,7 +4538,11 @@ class WhimboxUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "shared",
             description="base 来源三态（shared=共享/independent=独立/native=原生）：共享/独立= 用 MAS 面板配置（当前运行行为一致，为后续特殊功能预留），原生=直接用奇想盒 自带配置（MAS 零写入）",

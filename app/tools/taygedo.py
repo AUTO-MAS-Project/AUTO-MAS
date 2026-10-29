@@ -49,8 +49,7 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
 from app.services.community_http import create_community_client
-from app.utils.logger import get_logger
-from app.utils.security import format_exception_reason
+from app.utils import format_exception_reason, get_logger
 
 from .game_sign_result import merge_community_sign_result
 

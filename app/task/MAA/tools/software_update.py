@@ -78,10 +78,11 @@ from typing import NamedTuple
 import psutil
 
 from app.core import Config
+from app.core.update import download_file
 from app.models.config import MaaConfig
-from app.services.update_transport import download_file, request_mirror_resource
+from app.services.update_transport import request_mirror_resource
 from app.utils import get_logger
-from app.utils.io import read_dict_file, write_file
+from app.utils import io as _utils_io
 
 # 同包族内复用既有原语，避免第二套实现：路径归一化与反滥用识别码与资源
 # 更新保持同一事实源，状态记账原语在 update_state。下划线名限定在同一
@@ -106,7 +107,7 @@ _WORK_DIR = Path.cwd() / "data" / "maa_update" / "software"
 _STATE_FILE = _WORK_DIR / "state.json"
 
 _QUERY_TIMEOUT = 10  # 秒
-_DOWNLOAD_TIMEOUT = 30 * 60  # 秒，完整包远大于资源包，放宽总时限
+_DOWNLOAD_TIMEOUT = 30 * 60  # 秒，单次网络操作上限（无下载总时限，完整包余量放宽）
 _QUERY_FLOOR = 10 * 60  # 秒，两次成功查询最小间隔
 _RETRY_INTERVAL = 60 * 60  # 秒，失败退避
 _PRECHECK_GRACE = 60  # 秒，登记前等待其他安装释放共享缓存的上限
@@ -301,7 +302,7 @@ def read_config_channel(config_dir: Path) -> str | None:
         try:
             # read_dict_file 对非映射根节点响亮失败（#877 教训），此处捕获
             # 后告警并按未表达处理——读的是可选偏好，不是守卫
-            data = read_dict_file(path)
+            data = _utils_io.read_dict_file(path)
         except Exception as e:
             logger.warning(f"MAA 本体更新: 配置文件无法解析，跳过通道读取 {path}: {e}")
             continue
@@ -451,13 +452,20 @@ async def _ensure_cache(latest: _Latest, channel: str, arch: str, cdk: str) -> N
             return
         # 请求前持久记账：失败、取消或进程退出都不能再次消耗当天预算
         state[f"last_download_attempt_at/{key}"] = now.isoformat()
-        write_file(_STATE_FILE, state)
+        _utils_io.write_file(_STATE_FILE, state)
     part = cache_dir / "package.zip.part"
     try:
-        async with asyncio.timeout(_DOWNLOAD_TIMEOUT):
-            await download_file(
-                latest.url, part, timeout=_DOWNLOAD_TIMEOUT, proxy=Config.proxy
-            )
+        # Mirror 酱临时授权 URL 显式声明来源并锁定内置下载器，不依赖全局
+        # Source/Downloader：FluxDown 不接短期授权链接（凭证泄漏风险）
+        # 不设外层总时限：timeout 只限单次网络操作，慢速但持续的下载不该被掐断
+        await download_file(
+            latest.url,
+            part,
+            timeout=_DOWNLOAD_TIMEOUT,
+            proxy=Config.proxy,
+            source="MirrorChyan",
+            downloader="builtin",
+        )
         await _run_write_thread(
             _store_verified_cache, cache_dir, part, latest, channel, arch
         )
@@ -469,7 +477,7 @@ async def _ensure_cache(latest: _Latest, channel: str, arch: str, cdk: str) -> N
             state[f"download_fail_until/{key}"] = (
                 datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
             ).isoformat()
-            write_file(_STATE_FILE, state)
+            _utils_io.write_file(_STATE_FILE, state)
         logger.warning(f"MAA 本体更新: 取包失败（退避 1 小时，仍受每日限额约束）: {e}")
     finally:
         part.unlink(missing_ok=True)
@@ -531,7 +539,7 @@ async def _precheck_flow(maa_root: Path, channel: str, arch: str, cdk: str) -> N
                 state[f"query_fail_until/{_query_key(arch, channel, cdk)}"] = (
                     datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
                 ).isoformat()
-                write_file(_STATE_FILE, state)
+                _utils_io.write_file(_STATE_FILE, state)
             logger.warning(
                 f"MAA 本体更新: 该通道架构的版本查询失败（退避 1 小时）: {e}"
             )
@@ -561,7 +569,7 @@ async def _precheck_inner(maa_root: Path, channel: str, arch: str, cdk: str) -> 
         async with _state_lock:
             state = load_state(_STATE_FILE)
             state[f"last_query_at/{query_key}"] = datetime.now(timezone.utc).isoformat()
-            write_file(_STATE_FILE, state)
+            _utils_io.write_file(_STATE_FILE, state)
             _latest_queries[query_key] = latest
 
     # 高通道回落低通道版本（beta/alpha 返回正式版）是预期行为，不按响应

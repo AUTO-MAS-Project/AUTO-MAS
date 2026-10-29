@@ -22,7 +22,7 @@
 
 """MAA 专项的 API 业务实现。
 
-app/api/scripts.py 中的 MAA 端点只做三件事：解析请求参数、调用本模块的一个函数、
+本目录 api.py 中的 MAA 端点只做三件事：解析请求参数、调用本模块的一个函数、
 把返回值装进响应模型；需要 MAA 领域知识的逻辑（配置来源判定、原生配置读写、排班表
 解析、物品资源解析、森空岛绑定）都在这里实现。
 
@@ -30,26 +30,127 @@ app/api/scripts.py 中的 MAA 端点只做三件事：解析请求参数、调�
 app.task.MAA.tools 的导入留在各函数内惰性进行。
 """
 
+import asyncio
 import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping
+from typing import Any, Awaitable, Callable, Literal, Mapping
 
 from app.core import Config
 from app.models.config import MaaConfig
+from app.services.maa_copilot import CopilotRepository, CopilotScope
+from app.services.update_transport import MirrorCdkStatus
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
     read_config_base,
 )
+from app.utils import constants as _utils_constants
 from app.utils import get_logger
-from app.utils.constants import game_now
-from app.utils.io import write_file
+from app.utils import io as _utils_io
 
 from .constants import MAA_DEPOT_EXCLUDED_ITEM_IDS
 
 logger = get_logger("脚本管理 API")
+
+_copilot_repository: CopilotRepository | None = None
+
+
+async def query_mirror_cdk(cdk: str) -> tuple[MirrorCdkStatus, bool]:
+    """校验编辑草稿，并返回是否使用全局凭据；查询失败沿用错误状态。"""
+    from app.task.MAA.tools.update_credentials import query_takeover_cdk
+
+    using_global = not cdk.strip()
+    try:
+        result = await query_takeover_cdk(cdk)
+    except Exception as error:
+        logger.warning(f"脚本 Mirror 酱 CDK 查询失败: {type(error).__name__}")
+        result = MirrorCdkStatus(status="error")
+    return result, using_global
+
+
+def _get_copilot_repository() -> CopilotRepository:
+    global _copilot_repository
+    if _copilot_repository is None:
+        _copilot_repository = CopilotRepository(Path.cwd() / "data/cache/maa-copilot")
+    return _copilot_repository
+
+
+async def get_copilot_source(
+    source: CopilotScope, query: str, *, action: Literal["load", "refresh", "status"]
+) -> dict[str, Any]:
+    from app.services.maa_copilot import normalize_source
+
+    query = normalize_source(source, query)
+    repository = _get_copilot_repository()
+    if action == "status":
+        return repository.status(source, query)
+    return await repository.load(
+        source, query, refresh=action == "refresh", proxy=Config.proxy
+    )
+
+
+async def search_copilot_authors(keyword: str) -> list[dict[str, str]]:
+    import httpx
+
+    from app.services.maa_copilot import request_data
+
+    async with httpx.AsyncClient(proxy=Config.proxy or None, timeout=20) as client:
+        users = await request_data(
+            client, "/user/search", userName=keyword.strip(), page=1, size=20
+        )
+    return [
+        {"value": str(user["id"]), "label": str(user["user_name"])} for user in users
+    ]
+
+
+async def analyze_copilot_training(
+    script_id: str,
+    user_id: str,
+    *,
+    source: CopilotScope,
+    query: str,
+    coverage: int,
+    require_modules: bool,
+    binding_key: str = "",
+) -> dict[str, Any]:
+    from app.services.maa_copilot import normalize_source
+    from app.task.MAA.tools.cultivate import depot_cultivate_service
+    from app.task.MAA.tools.cultivate.copilot import analyze_copilots
+
+    script_config = _maa_script_config(script_id)
+    binding = _cultivate_skland_ref(script_config, user_id)
+    actual_binding_key = "|".join(binding) if binding else ""
+    if binding_key and binding_key != actual_binding_key:
+        raise ValueError("森空岛角色绑定尚未保存或已变更，请保存后重新分析")
+    snapshot = _get_copilot_repository().cached(source, normalize_source(source, query))
+    if snapshot is None:
+        raise ValueError("请先完成作业数据同步")
+    skland = await get_cultivate_skland_progression(script_id, user_id, force=True)
+    if skland is None:
+        raise ValueError("未能读取森空岛练度，请先绑定角色或重新登录后重试")
+    # 不用已过滤满练干员的编辑器选择器：分析需要完整目录与整表练度。
+    catalog = await depot_cultivate_service.operator_catalog(
+        config_path=Config.config_path, proxy=Config.proxy
+    )
+    result = await asyncio.to_thread(
+        analyze_copilots,
+        snapshot["assignments"],
+        catalog,
+        skland[0],
+        coverage=coverage,
+        require_modules=require_modules,
+    )
+    if binding != _cultivate_skland_ref(script_config, user_id):
+        raise ValueError("分析期间森空岛角色已变更，请重新分析")
+    return {
+        **result,
+        "bindingKey": actual_binding_key,
+        "capturedAt": skland[1],
+        "updatedAt": snapshot["updatedAt"],
+    }
+
 
 # MAA 的 resource/item_index.json 约 220 KB，编辑页与预览每次都要用；
 # 按文件 mtime 缓存解析结果，选择器与名称映射共用这一份
@@ -294,7 +395,7 @@ async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> i
         return index
     for task in tasks:
         task["PlanSelect"] = index
-    write_file(config_dir / "gui.new.json", data)
+    _utils_io.write_file(config_dir / "gui.new.json", data)
     return index
 
 
@@ -689,7 +790,9 @@ async def get_cultivate_preview(
         maa_data_dir=archive_dir,
         config_path=Config.config_path,
         proxy=Config.proxy,
-        today=game_now(script_config.UserData[uuid.UUID(user_id)].Info.Server).date(),
+        today=_utils_constants.game_now(
+            script_config.UserData[uuid.UUID(user_id)].Info.Server
+        ).date(),
         skland=skland,
     )
     # 目标干员当前练度（编辑器"当前等级 → 目标等级"展示用）；

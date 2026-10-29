@@ -106,6 +106,7 @@ export const useStellaActivitySource = () => {
   return {
     overview,
     loading: source.loading,
+    whenLoaded: source.whenLoaded,
     start: source.start,
     stop: source.stop,
     refresh: source.refresh,

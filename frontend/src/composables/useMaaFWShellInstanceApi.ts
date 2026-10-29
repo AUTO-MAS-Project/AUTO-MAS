@@ -1,3 +1,6 @@
+import { shellImportOutcome } from '@/utils/adapterAnalytics'
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
+import { getAnalyticsScriptType } from '@/utils/analytics'
 import { MaaFwService } from '@/api'
 import type { MaaFWShellInstanceImportItem, MaaFWShellInstanceItem } from '@/api'
 import { t } from '@/i18n'
@@ -34,7 +37,7 @@ export function useMaaFWShellInstanceApi() {
     scriptId: string
   ): Promise<{ dir: string; instances: MaaFWShellInstanceItem[] } | null> => {
     if (!window.electronAPI?.selectFolder) {
-      throw new Error(t('edit.filePickingUnavailableRun'))
+      throw new Error(t('core.edit.filePickingUnavailableRun'))
     }
     const dir = await window.electronAPI.selectFolder()
     if (!dir) return null
@@ -46,11 +49,20 @@ export function useMaaFWShellInstanceApi() {
     scriptId: string,
     instanceIds: string[]
   ): Promise<MaaFWShellInstanceImportItem[]> => {
-    const response =
-      await MaaFwService.importMaafwShellInstancesApiScriptsMaafwShellInstancesImportPost({
-        scriptId,
-        instanceIds,
-      })
+    const response = await observeFeature(
+      'adapter_setup_finished',
+      {
+        script_type: getAnalyticsScriptType(scriptId),
+        operation_kind: 'import',
+        engine_kind: 'shell',
+      },
+      () =>
+        MaaFwService.importMaafwShellInstancesApiScriptsMaafwShellInstancesImportPost({
+          scriptId,
+          instanceIds,
+        }),
+      shellImportOutcome
+    )
     if (response.code !== 200) {
       throw new Error(response.message || '导入外壳配置失败')
     }
@@ -75,13 +87,29 @@ export function useMaaFWShellInstanceApi() {
     snapshot: Record<string, unknown> | null
     info: Record<string, unknown>
   }> => {
-    const response =
-      await MaaFwService.applyMaafwShellInstanceApiScriptsMaafwShellInstancesApplyPost({
-        scriptId,
-        userId,
-        instanceId,
-        ...(path ? { path } : {}),
-      })
+    const response = await observeFeature(
+      'adapter_setup_finished',
+      {
+        script_type: getAnalyticsScriptType(scriptId),
+        operation_kind: 'import',
+        engine_kind: 'shell',
+      },
+      () =>
+        MaaFwService.applyMaafwShellInstanceApiScriptsMaafwShellInstancesApplyPost({
+          scriptId,
+          userId,
+          instanceId,
+          ...(path ? { path } : {}),
+        }),
+      result =>
+        result.code !== 200
+          ? apiOutcome(result)
+          : !result.data?.result?.success
+            ? 'failure'
+            : result.data.result.skipped?.length
+              ? 'partial'
+              : 'success'
+    )
     if (response.code !== 200) {
       throw new Error(response.message || '导入外壳配置失败')
     }

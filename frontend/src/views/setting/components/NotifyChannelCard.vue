@@ -25,13 +25,13 @@ const icon = computed(() => channelIcon(props.channel.icon))
 const iconColor = computed(() => channelIconColor(props.channel.icon))
 const groupTag = computed(() =>
   normalizeGroup(props.channel.group) === 'custom'
-    ? t('setting.notify.customGroup')
-    : t('setting.notify.channelsGroup')
+    ? t('core.setting.notify.customGroup')
+    : t('core.setting.notify.channelsGroup')
 )
 const hintText = computed(() =>
   props.channel.customBlock === 'webhook_list'
-    ? t('setting.notify.manage')
-    : t('setting.notify.configure')
+    ? t('core.setting.notify.manage')
+    : t('core.setting.notify.configure')
 )
 </script>
 
@@ -68,6 +68,8 @@ const hintText = computed(() =>
     <div class="chan-hint">{{ hintText }} ›</div>
   </button>
 </template>
+
+<style scoped src="./notifyChannel.css"></style>
 
 <style scoped>
 .chan-card {
@@ -156,12 +158,6 @@ const hintText = computed(() =>
 }
 
 .tag {
-  font-size: 12px;
-  line-height: 18px;
-  padding: 0 7px;
-  border-radius: 4px;
-  background: var(--ant-color-fill-tertiary);
-  color: var(--ant-color-text-secondary);
   font-weight: 400;
 }
 

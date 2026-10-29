@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import os
 from collections.abc import Iterable
 from pathlib import Path
@@ -19,6 +18,17 @@ from app.task.MaaFW.tools.core.runtime_pool._shared import (
 )
 
 from .models import MaaFWAgentCommandPlan
+from .venv_share import AGENT_VENV_DIR_PREFIX as AGENT_VENV_DIR_PREFIX
+from .venv_share import (
+    collect_orphan_agent_venvs as _collect_orphan_agent_venvs,
+)
+from .venv_share import (
+    legacy_isolated_venv_name,
+    read_venv_ref,
+    resolve_agent_venv_root,
+    shared_venv_key_inputs,
+    shared_venv_name,
+)
 
 
 class MaaFWAgentEnvError(RuntimeError):
@@ -47,59 +57,70 @@ def build_maafw_agent_command_plans(
     ]
 
 
+def planned_shared_venv_name(
+    base_dir: str | Path, *, runner_maafw_version: str | None = None
+) -> str:
+    """按依赖清单 + maafw requirement + 宿主身份算出的共用目录名（见 ``venv_share``）。"""
+
+    return shared_venv_name(
+        shared_venv_key_inputs(base_dir, runner_maafw_version=runner_maafw_version)
+    )
+
+
 def compute_isolated_venv_path(
     base_dir: str | Path,
     *,
     managed_env_root: str | Path | None = None,
+    runner_maafw_version: str | None = None,
 ) -> Path:
+    """该项目的 Python agent 用的隔离 venv。
+
+    不再按项目路径哈希：按依赖清单、maafw 版本与宿主身份跨视图共用（``venv_share``）。
+    建计划时还不知道 runner 这次的 maafw 版本（``runner_maafw_version`` 为空），项目没自带
+    原生库的那种算出来的键可能与准备时不同；所以先看本视图的引用记录——它记着上次准备
+    实际用的目录和当时建计划算出的键，键对得上就用它。准备时再按确切版本定一次、改写计划
+    （``env.prepare_agent_envs``）。依赖清单读不了时退回老规则的目录名，准备那一步会照原样
+    报出读不了的原因。
+    """
+
     resolved_base_dir = Path(base_dir).resolve()
-    key = str(resolved_base_dir)
-    if os.name == "nt":
-        key = key.lower()
-    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
-    root = (
-        Path(managed_env_root)
-        if managed_env_root is not None
-        else Path.cwd() / "config" / "maafw_agent_venvs"
-    )
-    return root.resolve() / f"maafw_venv_{digest}"
-
-
-AGENT_VENV_DIR_PREFIX = "maafw_venv_"
+    root = resolve_agent_venv_root(managed_env_root)
+    try:
+        plan_name = planned_shared_venv_name(
+            resolved_base_dir, runner_maafw_version=runner_maafw_version
+        )
+    except Exception:  # noqa: BLE001 - 准备时再按同样的读法报错
+        return root / legacy_isolated_venv_name(resolved_base_dir)
+    if runner_maafw_version is None:
+        ref = read_venv_ref(root, resolved_base_dir)
+        if ref is not None and ref.get("planKey") == plan_name:
+            return root / str(ref["venv"])
+    return root / plan_name
 
 
 def collect_orphan_agent_venvs(
     root: str | Path,
     live_project_paths: Iterable[str | Path],
 ) -> list[Path]:
-    """列出已无脚本引用的隔离 venv。
+    """列出已无存活视图引用的隔离 venv。
 
-    目录名就是项目路径的哈希（见 ``compute_isolated_venv_path``），所以判定
-    孤儿不需要读目录内的清单：把所有仍被脚本引用的项目路径算成目录名，
-    剩下的即孤儿。这样即使清单损坏或缺失也不会误判，而**存活项目的 venv
-    永远不会落进结果里**——这是这个实现最重要的性质。
+    venv 跨视图共用之后目录名不再能由项目路径推出，存活集合按各视图的引用记录算，
+    再加上建计划时会算出的目录（引用记录丢了也保得住）与升级前按路径建的老目录（还没
+    准备过的视图第一跑要沿用它），规则见 ``venv_share.collect_orphan_agent_venvs``。
+    存活视图的引用记录读不出来时抛 ``VenvRefError``、整轮不回收：**存活视图在用的
+    venv 永远不会落进结果里**——这仍是这个实现最重要的性质。
 
-    覆盖三种情形：用户删了脚本、改了项目路径、项目升级换了目录
-    （实测残留过一份指向 ``Maa_bbb-win-x86_64-v1.12.10`` 的 venv，
-    而用户早已升到 v1.12.14）。
+    覆盖的情形：用户删了脚本、项目升级后依赖变了（旧键没人用了）、升级前按路径建的老目录
+    在视图改用共用目录之后（实测残留过一份指向 ``Maa_bbb-win-x86_64-v1.12.10`` 的 venv，
+    而用户早已升到 v1.12.14）、重建时改名待删的 ``*.trash-*``。
     """
 
-    root_path = Path(root).resolve()
-    expected = {
-        compute_isolated_venv_path(path, managed_env_root=root_path).name
-        for path in live_project_paths
-    }
-    try:
-        entries = sorted(root_path.iterdir())
-    except OSError:
-        return []
-    return [
-        entry
-        for entry in entries
-        if entry.is_dir()
-        and entry.name.startswith(AGENT_VENV_DIR_PREFIX)
-        and entry.name not in expected
-    ]
+    def plan_name_for(project: Path) -> str | None:
+        return planned_shared_venv_name(project)
+
+    return _collect_orphan_agent_venvs(
+        root, live_project_paths, plan_name_for=plan_name_for
+    )
 
 
 def venv_python_exe(venv_path: str | Path) -> Path:
@@ -323,7 +344,10 @@ def _isolated_venv_executable(
     return {
         "command": str(venv_python),
         "exists": venv_python.exists(),
-        "fallback_reason": f"{fallback_reason}，将使用该项目专属隔离 venv: {venv_path}",
+        "fallback_reason": (
+            f"{fallback_reason}，将使用隔离 venv（依赖清单、maafw 版本相同的项目共用）:"
+            f" {venv_path}"
+        ),
         "runtime_kind": "isolated_venv",
         "isolated_venv_path": str(venv_path),
     }

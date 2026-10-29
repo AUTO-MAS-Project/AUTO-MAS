@@ -28,7 +28,7 @@ from typing import Any
 
 from app.config import ConfigCollection
 from app.core import Config
-from app.core.history import aggregate_data, history_store
+from app.core.history import aggregate_data
 from app.core.maa_capture import AdbCapture, Win32Capture
 from app.core.ws import Publisher, protocol
 from app.log_box import log_box
@@ -63,26 +63,20 @@ from app.task.proxy_helpers import (
     push_dispatch_log,
 )
 from app.utils import (
+    MAAEND_AUTO_COLLECT_TASK,
+    MAAEND_DELIVERY_TASK,
+    MAAEND_RUN_MOOD_BOOK,
+    MAAEND_TASKS,
+    UTC4,
     LogMonitor,
     ProcessManager,
     ProcessRunner,
     get_logger,
     is_process_running,
 )
-from app.utils.constants import (
-    MAAEND_AUTO_COLLECT_TASK,
-    MAAEND_DELIVERY_TASK,
-    MAAEND_RUN_MOOD_BOOK,
-    MAAEND_TASKS,
-    UTC4,
-)
-from app.utils.io import (
-    mark_native_config_injected,
-    read_file,
-    swap_in_dir,
-    write_file,
-)
+from app.utils import io as _utils_io
 
+from .inventory_report import INVENTORY_REPORT_RULE, InventoryReport, inventory_resolve
 from .push_log import MAAEND_PUSH_RULES, maaend_resolve
 from .resource_loader import (
     MaaEndResourceLoader,
@@ -100,8 +94,9 @@ from .tools.launcher_start import (
     async_start_game_via_launcher,
     find_launcher_pids,
 )
+from .tools.log_bundle import export_failure_logs
 from .tools.log_statistics import parse_maaend_failed_tasks, parse_maaend_statistics
-from .tools.notify import collect_recent_error_images
+from .tools.notify import build_inventory_payload, collect_recent_error_images
 from .update_takeover import (
     read_new_mxu_logs,
     snapshot_mxu_logs,
@@ -111,6 +106,7 @@ from .update_takeover import (
 logger = get_logger("MaaEnd 自动代理")
 
 _MAAEND_ACCOUNT_SWITCH_TASK = "AccountSwitch"
+_MAAEND_ANDROID_OPEN_GAME_TASK = "AndroidOpenGame"
 _MAAEND_GAME_SETTING_PRETASK = "__MXU_PRETASK__GameSetting"
 _MAAEND_LAUNCH_GAME_PRETASK = "__MXU_PRETASK__LaunchGamePC"
 _MAAEND_CLOSE_GAME_TASK = "CloseGamePC"
@@ -282,6 +278,11 @@ def _select_auto_collect_routes(
             selected = [
                 value for group in category_groups for value in group["defaultCases"]
             ]
+        elif set(selected) - available:
+            logger.warning(
+                "MaaEnd 自动采集的部分已选项不再受当前版本支持，已忽略；"
+                "请在自动采集配置中重新确认选择，旧路线不会自动转换为新物品"
+            )
         selected_by_key[key] = {
             route
             for index, route in enumerate(ordered)
@@ -441,6 +442,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self.on_error_screenshot = on_error_screenshot
         self._attempt_start_ns: int | None = None
         self._attempt_screenshot_paths: list[Path] = []
+        # 失败日志包：MXU 每次启动都会清空 debug/（开启日志包时由 set_maaend 强制打开），
+        # 所以取证时机只能是「一次尝试结束、MXU 已退出、下一次启动之前」。用启动次数与
+        # 已归档次数比对判断是否还有未归档的现场，重复调用只会等同一个打包作业。
+        self._mxu_launch_count = 0
+        self._archived_launch_count = 0
+        self._bundle_job: asyncio.Task | None = None
+        # 打包失败过就不再强制 MXU 清日志：宁可下一轮日志混一点，也要留下现场再试一次。
+        self._bundle_failed = False
         self._failure_capture = FailureCapture(stopped=lambda: self.stopped_manually)
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
@@ -455,6 +464,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         )
         # 用户级「节点详情推送」开关（Notify.PushLogMode），prepare 时按配置启用
         self.push_log_enabled = False
+        self.inventory_status_messages: set[str] = set()
         self.mode = "Routine"
         self.run_book: dict[str, bool] = {mode: False for mode in MAAEND_RUN_MOOD_BOOK}
         self.task_dict: dict[str, dict[str, bool]] | None = None
@@ -722,7 +732,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
     @staticmethod
     def _game_window_present() -> bool:
         """终末地客户端窗口是否真实存在：进程残留但窗口已消失时不能当作在运行。"""
-        from app.utils.platform import IS_WINDOWS
+        from app.utils import IS_WINDOWS
 
         if not IS_WINDOWS:
             return False
@@ -992,6 +1002,19 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             return self._daily_once_task_done(task_name)
         if self._daily_once_task_done(task_name):
             return True
+        if self.cur_user_config.Info.SanityStrategy == "Inventory":
+            return self._daily_once_task_done("ProtocolSpace")
+        if self.cur_user_config.Info.SanityStrategy == "Native":
+            tasks = self._source_maaend_tasks()
+            sanity_tasks = [
+                str(task["taskName"])
+                for task in tasks or []
+                if task.get("taskName") in _MAAEND_SANITY_TASK_NAMES
+                and task.get("enabled", False)
+            ]
+            return bool(sanity_tasks) and all(
+                self._daily_once_task_done(name) for name in sanity_tasks
+            )
         try:
             sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
         except ValueError:
@@ -1143,7 +1166,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if self.maaend_config_file is None:
             return None
         try:
-            source_config = read_file(self.maaend_config_file)
+            source_config = _utils_io.read_file(self.maaend_config_file)
         except (OSError, TypeError, ValueError):
             return None
         if not isinstance(source_config, dict):
@@ -1181,6 +1204,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
     def _quick_config_base_skip_reason(self, mode: str) -> tuple[str | None, bool]:
         """快速配置下按 MAS 任务开关与 MaaEnd 配置判断阶段是否可执行。"""
 
+        native_sanity = self.cur_user_config.Info.SanityStrategy == "Native"
+        inventory_sanity = self.cur_user_config.Info.SanityStrategy == "Inventory"
         if mode == "Delivery":
             if not self.cur_user_config.Task.IfSeizeDeliveryJobs:
                 return "快速配置未开启抢委托送货", False
@@ -1215,17 +1240,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
             # MaaEnd 2.28 的 AutoEssence 任务可能尚未出现在旧配置实例中；
             # set_maaend 会在临时运行配置中补齐任务，不能在这里提前跳过理智阶段。
-            if self.cur_user_config.Task.IfSanity and (
-                not self._quick_task_daily_once_done("Sanity")
+            if (
+                not native_sanity
+                and self.cur_user_config.Task.IfSanity
+                and not self._quick_task_daily_once_done("Sanity")
             ):
-                sanity_task_key, _ = (
-                    self.cur_user_config.get_effective_sanity_task_key()
-                )
-                target_sanity_task_name = (
-                    "AutoEssence"
-                    if sanity_task_key["SanityTaskType"] == "Essence"
-                    else "ProtocolSpace"
-                )
+                target_sanity_task_name = "ProtocolSpace"
+                if not inventory_sanity:
+                    sanity_task_key, _ = (
+                        self.cur_user_config.get_effective_sanity_task_key()
+                    )
+                    if sanity_task_key["SanityTaskType"] == "Essence":
+                        target_sanity_task_name = "AutoEssence"
                 if (
                     not any(
                         str(task.get("taskName", "")) == target_sanity_task_name
@@ -1239,6 +1265,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             target_sanity_task_name: str | None = None
             for task in tasks:
                 task_name = str(task.get("taskName", ""))
+                if (
+                    task_name == _MAAEND_ANDROID_OPEN_GAME_TASK
+                    and str(self.script_config.Game.ControllerType) == "CloudADB"
+                ):
+                    continue
                 if task_name.startswith("__MXU_") or task_name in {
                     _MAAEND_ACCOUNT_SWITCH_TASK,
                     _MAAEND_CLOSE_GAME_TASK,
@@ -1249,15 +1280,20 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 if task_name in _MAAEND_SANITY_TASK_NAMES:
                     if not self.cur_user_config.Task.IfSanity:
                         continue
+                    if native_sanity:
+                        if task.get(
+                            "enabled", False
+                        ) and not self._daily_once_task_done(task_name):
+                            return None, False
+                        continue
                     if target_sanity_task_name is None:
-                        sanity_task_key, _ = (
-                            self.cur_user_config.get_effective_sanity_task_key()
-                        )
-                        target_sanity_task_name = (
-                            "AutoEssence"
-                            if sanity_task_key["SanityTaskType"] == "Essence"
-                            else "ProtocolSpace"
-                        )
+                        target_sanity_task_name = "ProtocolSpace"
+                        if not inventory_sanity:
+                            sanity_task_key, _ = (
+                                self.cur_user_config.get_effective_sanity_task_key()
+                            )
+                            if sanity_task_key["SanityTaskType"] == "Essence":
+                                target_sanity_task_name = "AutoEssence"
                     if task_name == target_sanity_task_name:
                         if not self._quick_task_daily_once_done("Sanity"):
                             return None, False
@@ -1325,7 +1361,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     self.emulator_manager is None
                     and self.game_launch_result_path.is_file()
                 ):
-                    result = read_file(self.game_launch_result_path)
+                    result = _utils_io.read_file(self.game_launch_result_path)
                     if result["error"] is not None:
                         return str(result["error"])
                 await asyncio.sleep(0.5)
@@ -1397,10 +1433,21 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             )
             await self.maaend_log_monitor.stop()
 
-    async def _update_after_first_stage(self, log_offsets: dict[Path, int]) -> None:
+    async def _update_after_first_stage(
+        self, log_offsets: dict[Path, int], *, stage_label: str
+    ) -> None:
         """按首阶段的下载记录更新，独立记录结果并保留已完成任务。"""
         root_path = self.maaend_exe_path.parent
         update_log: LogRecord | None = None
+
+        async def before_update_session() -> bool:
+            # 更新会话会重新启动 MXU：先把失败阶段的现场归档，否则「启动时清理日志」
+            # 会在归档前把 debug/ 清掉。返回 False 表示现场没保存好，新会话要关掉清理。
+            return await self._archive_failure_logs(label=f"{stage_label}阶段失败的")
+
+        def after_update_session_launch() -> None:
+            # 会话真的起来了才记一次启动：debug/ 从此归它，收尾据此判断要不要补归档。
+            self._mxu_launch_count += 1
 
         def update_status(message: str) -> None:
             nonlocal update_log
@@ -1418,6 +1465,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 log_offsets,
                 process=self.maaend_process_manager.process,
                 on_status=update_status,
+                on_before_session=before_update_session,
+                on_session_launched=after_update_session_launch,
             )
             if version is not None:
                 await asyncio.to_thread(
@@ -1525,6 +1574,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self.script_info.log = "正在启动游戏..."
             account_switch_method = self._account_switch_method()
             use_mas_account_switch = account_switch_method == "MAS"
+            cloud_adb = str(self.script_config.Game.ControllerType) == "CloudADB"
+            if cloud_adb and str(self.cur_user_config.Info.Id).strip():
+                self.retryable = False
+                await self.handle_pre_maaend_error(
+                    "云终末地暂不支持自动切号，请清空账号并先登录游戏",
+                    kill_game=False,
+                )
+                break
             # 三种 PC 启动方式均由 MAS 编排，游戏就绪后再进入账号切换与任务。
             try:
                 if self.emulator_manager is None:
@@ -1535,7 +1592,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 else:
                     logger.info(f"启动模拟器: {self.script_config.Game.EmulatorIndex}")
                     self.emulator_info = await self.emulator_manager.open(
-                        self.script_config.Game.EmulatorIndex, "com.hypergryph.endfield"
+                        self.script_config.Game.EmulatorIndex,
+                        "" if cloud_adb else "com.hypergryph.endfield",
                     )
             except Exception as e:
                 # 启动阶段失败后游戏状态不再可信：清除保留标记，避免下一轮
@@ -1583,12 +1641,21 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 logger.info(
                     f"用户 {self.cur_user_item.user_id} 未配置账号，跳过账号切换"
                 )
-                self.script_info.log = "游戏已启动，未配置账号，跳过账号切换"
+                self.script_info.log = (
+                    "等待 MaaEnd 启动游戏"
+                    if cloud_adb
+                    else "游戏已启动，未配置账号，跳过账号切换"
+                )
 
             if self.emulator_manager is not None:
                 await self.set_maaend(self.emulator_info)
 
-            if not any(any(tasks.values()) for tasks in self.task_dict.values()):
+            if not any(
+                any(tasks.values())
+                for name, tasks in self.task_dict.items()
+                if not cloud_adb
+                or self.task_name_map.get(name) != _MAAEND_ANDROID_OPEN_GAME_TASK
+            ):
                 self.retryable = False
                 await self.handle_pre_maaend_error(
                     "MaaEnd 没有可执行任务，请检查任务配置"
@@ -1612,6 +1679,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 "--quit-after-run",
                 stdout=asyncio.subprocess.PIPE,
             )
+            # 只有进程真的起来了才算一次 MXU 启动；否则 debug/ 里还是上一轮的残留。
+            self._mxu_launch_count += 1
             await asyncio.sleep(3)  # 等待 MaaEnd 启动完成
             # 静默模式隐藏 MaaEnd 窗口
             if Config.setting.Function.IfSilence:
@@ -1629,7 +1698,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 # 更新接管和失败清理都可能结束游戏，先保留这次尝试的现场。
                 await self._take_failure_shot()
             if update_log_offsets is not None:
-                await self._update_after_first_stage(update_log_offsets)
+                await self._update_after_first_stage(
+                    update_log_offsets, stage_label=stage_label
+                )
 
             if self.cur_user_log.status == "Success!":
                 self.script_info.log = (
@@ -1651,6 +1722,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
                 # 中止相关程序
                 await self.kill_managed_process()
+
+                # MXU 已退出，这次尝试的现场要赶在更新接管或下一次重试启动 MXU
+                # 之前取证，因为 MXU 一启动就会清空 debug/。
+                await self._archive_failure_logs(
+                    label=f"{stage_label}阶段第 {i} 次尝试"
+                )
 
                 try:
                     await self.task_info.local_notifier.send_notice(
@@ -2119,7 +2196,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         maaend_local_config = None
         if (self.maaend_set_path / "mxu-MaaEnd.json").exists():
-            maaend_local_config = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
+            maaend_local_config = _utils_io.read_file(
+                self.maaend_set_path / "mxu-MaaEnd.json"
+            )
 
         config_base = maaend_config_base(self.cur_user_config.Info.Base)
         maaend_config_path = (
@@ -2150,13 +2229,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 base=config_base,
             )
 
-        swap_in_dir(maaend_config_path, self.maaend_set_path)
-        mark_native_config_injected(
+        _utils_io.swap_in_dir(maaend_config_path, self.maaend_set_path)
+        _utils_io.mark_native_config_injected(
             Path.cwd() / f"data/{self.script_info.script_id}/Temp",
             self.maaend_set_path,
             script_id=self.script_info.script_id,
         )
-        maaend_set = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
+        maaend_set = _utils_io.read_file(self.maaend_set_path / "mxu-MaaEnd.json")
         for field in ("version", "interfaceTaskSnapshot"):
             maaend_set.pop(field, None)
             if maaend_local_config is not None and field in maaend_local_config:
@@ -2221,17 +2300,26 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 task_id=f"mas{self.cur_user_uid.hex[:4]}",
             )
 
+        cloud_launch_task = None
+        if (
+            device_info is not None
+            and str(self.script_config.Game.ControllerType) == "CloudADB"
+        ):
+            maaend_instance["controllerName"] = "CloudADB"
+            if self._maaend_task_supported(_MAAEND_ANDROID_OPEN_GAME_TASK) is not True:
+                raise ValueError("当前 MaaEnd 不支持安卓启动游戏任务，请更新 MaaEnd")
+            # 游戏启动由上游任务完成，其选项决定客户端；先于账号切换执行。
+            cloud_launch_task = _place_managed_task(
+                maaend_tasks,
+                task_name=_MAAEND_ANDROID_OPEN_GAME_TASK,
+                task_id="automas-android-open-game",
+                controller_type="CloudADB",
+                enabled=True,
+                first=True,
+            )
+
         if self.emulator_manager is None:
             controller_type = str(self.script_config.Game.ControllerType)
-            remaining_modes = list(MAAEND_RUN_MOOD_BOOK)[
-                list(MAAEND_RUN_MOOD_BOOK).index(self.mode) + 1 :
-            ]
-            has_later_mode = any(not self.run_book[mode] for mode in remaining_modes)
-            close_after_mode = (
-                has_later_mode
-                and self.script_config.Run.TaskTransitionMethod == "ExitGame"
-                or (not has_later_mode and self.script_config.Game.CloseOnFinish)
-            )
             setting_pretask = self._game_setting_pretask()
             if setting_pretask is not None:
                 apply_settings = self.mode == self.first_run_mode and bool(
@@ -2265,15 +2353,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     _MAAEND_LAUNCH_GAME_PRETASK,
                 }:
                     task["enabled"] = False
-            if if_quick_config or close_after_mode:
-                _place_managed_task(
-                    maaend_tasks,
-                    task_name=_MAAEND_CLOSE_GAME_TASK,
-                    task_id="automas-close-game",
-                    controller_type=controller_type,
-                    enabled=close_after_mode,
-                    first=False,
-                )
             self.game_launch_result_path.unlink(missing_ok=True)
             _configure_game_pre_action(
                 maaend_instance,
@@ -2298,6 +2377,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self.maaend_root_path,
             str(settings["language"]),
         )
+        self.inventory_status_messages.update(
+            re.sub(r"<[^>]*>", "", message).strip()
+            for key, message in maaend_interface_i18n.items()
+            if key.startswith("task.ProtocolSpace.focus.supply_plan.")
+        )
         self.account_switch_task_name = maaend_i18n["AccountSwitch"]
         self.color_match_failed_message = maaend_interface_i18n[
             "task.SceneManager.focus.color_match_failed_prefix"
@@ -2320,14 +2404,41 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         sanity_task_key = {}
         sanity_task_type = ""
         target_task_name = ""
-        if if_quick_config:
-            sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
-            sanity_task_type = sanity_task_key["SanityTaskType"]
-            target_task_name = (
-                "AutoEssence" if sanity_task_type == "Essence" else "ProtocolSpace"
-            )
+        native_sanity = self.cur_user_config.Info.SanityStrategy == "Native"
+        inventory_sanity = self.cur_user_config.Info.SanityStrategy == "Inventory"
+        if if_quick_config and not native_sanity:
+            target_task_name = "ProtocolSpace"
+            if not inventory_sanity:
+                sanity_task_key, _ = (
+                    self.cur_user_config.get_effective_sanity_task_key()
+                )
+                sanity_task_type = sanity_task_key["SanityTaskType"]
+                target_task_name = (
+                    "AutoEssence" if sanity_task_type == "Essence" else "ProtocolSpace"
+                )
             if self.cur_user_config.Task.IfSanity:
                 self._ensure_sanity_task(maaend_tasks, target_task_name)
+
+        # 补齐业务任务后再放置关闭游戏任务，避免理智任务落到关游戏之后。
+        if self.emulator_manager is None:
+            remaining_modes = list(MAAEND_RUN_MOOD_BOOK)[
+                list(MAAEND_RUN_MOOD_BOOK).index(self.mode) + 1 :
+            ]
+            has_later_mode = any(not self.run_book[mode] for mode in remaining_modes)
+            close_after_mode = (
+                has_later_mode
+                and self.script_config.Run.TaskTransitionMethod == "ExitGame"
+                or (not has_later_mode and self.script_config.Game.CloseOnFinish)
+            )
+            if if_quick_config or close_after_mode:
+                _place_managed_task(
+                    maaend_tasks,
+                    task_name=_MAAEND_CLOSE_GAME_TASK,
+                    task_id="automas-close-game",
+                    controller_type=str(self.script_config.Game.ControllerType),
+                    enabled=close_after_mode,
+                    first=False,
+                )
 
         restore_task = self._configure_resolution_restore(maaend_tasks)
 
@@ -2340,7 +2451,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 if_quick_config and self.cur_user_config.Task.IfSanity
             )
             target_sanity_task_exists = any(
-                task.get("taskName") == target_task_name for task in maaend_tasks
+                (
+                    task.get("taskName") in _MAAEND_SANITY_TASK_NAMES
+                    and task.get("enabled", False)
+                    if native_sanity
+                    else task.get("taskName") == target_task_name
+                )
+                for task in maaend_tasks
             )
             sanity_missing = sanity_switch_enabled and not target_sanity_task_exists
             sanity_managed = if_quick_config and (
@@ -2360,7 +2477,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 task_enabled = bool(task.get("enabled", False))
                 if if_quick_config:
                     if task_name_value in ("ProtocolSpace", "AutoEssence"):
-                        if sanity_managed:
+                        if native_sanity:
+                            # 原生策略沿用已选任务，MAS 理智开关只控制整组是否运行。
+                            task_enabled = task_enabled and sanity_switch_enabled
+                        elif sanity_managed:
                             task_enabled = (
                                 sanity_switch_enabled
                                 and task_name_value == target_task_name
@@ -2403,7 +2523,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
             if sanity_missing:
                 warning_message = (
-                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 {target_task_name} 任务，"
+                    f"用户 {self.cur_user_item.name} 未在 MaaEnd 配置中启用理智任务，"
+                    "请在「配置库存目标」中启用协议空间或基质刷取"
+                    if native_sanity
+                    else f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 {target_task_name} 任务，"
                     "已跳过理智任务快速配置"
                 )
                 logger.warning(warning_message)
@@ -2453,6 +2576,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 self.task_dict.setdefault(task_name, {})[task["id"]] = True
                 self.task_name_map[task_name] = task_name_value
 
+            if cloud_launch_task is task:
+                # 模拟器可能在失败重试后重启，每轮都交由上游重新启动游戏。
+                task["enabled"] = True
+                self.task_dict.setdefault(task_name, {})[task["id"]] = True
+                self.task_name_map[task_name] = task_name_value
+
             if not task.get("enabled", False):
                 continue
 
@@ -2472,6 +2601,19 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 MaaEndResourceLoader.get_loaded(
                     self.maaend_root_path
                 ).write_auto_collect_options(task, self.auto_collect_routes)
+            elif (
+                if_quick_config
+                and inventory_sanity
+                and task_name_value == "ProtocolSpace"
+            ):
+                MaaEndResourceLoader.get_loaded(
+                    self.maaend_root_path
+                ).write_inventory_options(
+                    task=task,
+                    limits=self.cur_user_config.Task.SupplyPlanLimits,
+                    claim_mode=self.cur_user_config.Task.ProtocolSpaceObtainModeClaim,
+                    use_medication=self.cur_user_config.Task.IfAutoUseSpMedication,
+                )
             elif (
                 if_quick_config
                 and task_name_value == target_task_name
@@ -2512,6 +2654,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     "type": "select",
                     "caseName": sanity_task_type,
                 }
+                if sanity_task_type == "CrisisDrills":
+                    MaaEndResourceLoader.get_loaded(
+                        self.maaend_root_path
+                    ).validate_crisis_drills(sanity_task_key["CrisisDrills"])
                 for option in (
                     "OperatorProgression",
                     "WeaponProgression",
@@ -2614,8 +2760,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             ):
                 mirror_settings["cdk"] = global_cdk
 
-        write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
-        mark_native_config_injected(
+        # 失败日志包的取证时机取决于 MXU 是否每次启动都清空 debug/：要保存日志包时
+        # 强制打开「启动时清理日志」，一次尝试的现场就只有这一轮。打包失败过则反过来
+        # 强制关闭，宁可下一轮日志混一点，也要保住还没保存成功的现场。同样随 manager
+        # 的原生配置快照恢复，不写回脚本或用户配置来源。
+        if self.script_config.Run.IfSaveLogBundle:
+            settings["autoClearLogsOnLaunch"] = not self._bundle_failed
+
+        _utils_io.write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
+        _utils_io.mark_native_config_injected(
             Path.cwd() / f"data/{self.script_info.script_id}/Temp",
             self.maaend_set_path,
             script_id=self.script_info.script_id,
@@ -2832,6 +2985,86 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if shot is not None:
             self._record_error_screenshot(shot)
 
+    async def _archive_failure_logs(self, *, label: str) -> bool:
+        """在 MXU 退出后、下次启动清日志前归档；重复调用等待同一作业。
+
+        返回 False 表示现场未完整保存，后续会话必须关闭启动清理。
+        取消只能停止等待，后台线程由收尾继续等待，不能提前清掉现场。
+        """
+
+        if not self.script_config.Run.IfSaveLogBundle:
+            return True
+        target_dir = self.script_config.Run.LogBundlePath or Path.cwd() / "debug/maaend"
+        root_path = self.maaend_root_path
+        if root_path is None:
+            return True
+        if self._bundle_job is None:
+            if self._archived_launch_count >= self._mxu_launch_count:
+                return True
+            self._bundle_job = asyncio.create_task(
+                self._run_bundle_job(
+                    Path(target_dir),
+                    root_path,
+                    label=label,
+                    launches=self._mxu_launch_count,
+                )
+            )
+        job = self._bundle_job
+        try:
+            return await asyncio.shield(job)
+        except Exception:
+            return False  # 作业内部已记过日志
+        finally:
+            if job.done():
+                self._bundle_job = None
+
+    async def _run_bundle_job(
+        self,
+        target_dir: Path,
+        root_path: Path,
+        *,
+        label: str,
+        launches: int,
+    ) -> bool:
+        """打包作业本体：一次现场一份日志包，规则同 MXU 的日志导出。
+
+        Returns:
+            bool: 现场是否已经安全落盘。
+        """
+
+        try:
+            export = await asyncio.to_thread(export_failure_logs, target_dir, root_path)
+        except Exception as error:
+            self._bundle_failed = True
+            logger.opt(exception=True).warning(f"保存 MaaEnd 失败日志包失败: {error}")
+            return False
+        if export is None:
+            # 这份现场确实没有可打包的内容，反复重试没有意义，记下已归档。
+            self._archived_launch_count = launches
+            logger.warning(f"MaaEnd {label}失败日志包没有可打包的内容")
+            return True
+        if export.failed_files:
+            # 部分文件读不到时拿到的只是残缺包，不能当成「现场已保存」：既不消费这次
+            # 待归档现场（收尾还能再取一次，把当时读不到的文件补进去），也让本轮后续
+            # 启动不再清日志，免得漏包文件在安装目录里的唯一一份被删掉。
+            self._bundle_failed = True
+            message = (
+                f"MaaEnd {label}失败日志包不完整: {export.directory}"
+                f"（{len(export.volumes)} 卷，{export.failed_files} 个文件未能写入，"
+                "本轮后续启动不再清理日志）"
+            )
+            logger.warning(message)
+            await push_dispatch_log(self.script_info, message)
+            return False
+        self._archived_launch_count = launches
+        message = (
+            f"MaaEnd {label}失败日志包已保存: {export.directory}"
+            f"（{len(export.volumes)} 卷）"
+        )
+        logger.success(message)
+        await push_dispatch_log(self.script_info, message)
+        return True
+
     async def final_task(self):
 
         if self.check_result != "Pass":
@@ -2865,12 +3098,21 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             # 开发与生产使用一致的停止清理流程，便于实机验证。
             await self.kill_managed_process(kill_game=True)
 
+        # 失败日志包：主循环的失败分支已按尝试取证，这里补总时限、异常和更新会话这几条
+        # 绕过主循环的收尾。必须排在后置脚本之前，脚本可能改动或删掉 debug/ 里的现场。
+        if not completed:
+            await self._archive_failure_logs(label="本轮")
+
         await self.run_user_scripts_after()
 
         history_records = []
         stage_log_paths = []
         stage_directory = None
-        if self.push_log_enabled:
+        inventory_notify = (
+            self.cur_user_config.Notify.Enabled
+            and self.cur_user_config.Notify.IfSendInventory
+        )
+        if self.push_log_enabled or inventory_notify:
             try:
                 stage_directory = tempfile.TemporaryDirectory(
                     prefix="mas-maaend-stage-"
@@ -2972,6 +3214,34 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             except Exception as e:
                 logger.opt(exception=True).warning(f"MaaEnd 节点采集推送失败: {e}")
 
+        inventory_lines: list[str] = []
+        if inventory_notify and stage_log_paths:
+            try:
+                report = InventoryReport(
+                    task_names={
+                        name
+                        for name, task_name in self.task_name_map.items()
+                        if task_name == "ProtocolSpace"
+                    },
+                    status_messages=self.inventory_status_messages,
+                )
+
+                def append_inventory(log_type: str, text: str, ts: float) -> None:
+                    inventory_lines.append(
+                        f"[{datetime.fromtimestamp(ts):%H:%M:%S}] {text}"
+                    )
+                    if self.push_log_enabled:
+                        append_push_log(self.cur_user_item, log_type, text, ts)
+
+                collect = log_box.get_collect(
+                    paths=stage_log_paths, sink=append_inventory, start_from_end=False
+                )
+                collect.open(report.select)
+                collect.collect(*INVENTORY_REPORT_RULE)
+                collect.close(inventory_resolve)
+            except Exception as e:
+                logger.opt(exception=True).warning(f"MaaEnd 材料状态采集失败: {e}")
+
         if stage_directory is not None:
             try:
                 stage_directory.cleanup()
@@ -2986,6 +3256,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 ]
             ).data.items()
         }
+        statistics["inventory_report"] = inventory_lines
         statistics["user_info"] = self.cur_user_item.name
         statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
         statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2994,6 +3265,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         )
 
         success_symbol = "√" if completed else "X"
+
+        if inventory_notify and history_records:
+            try:
+                await self.task_info.notifications.send_user(
+                    payload=build_inventory_payload(
+                        title=f"{datetime.now():%m-%d} | {self.cur_user_item.name} 的本轮材料收获",
+                        message=statistics,
+                    ),
+                    user_config=self.cur_user_config,
+                )
+            except Exception as e:
+                logger.opt(exception=True).warning(f"养成材料通知推送失败: {e}")
 
         if history_records:
             try:
@@ -3038,38 +3321,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self.cur_user_item.status = "异常"
 
         if history_records:
-            try:
-                attachments = await self.task_info.collect_user_history_attachments(
-                    self.script_info, self.cur_user_item
-                )
-                history_records[-1].attachments.extend(attachments)
-            except Exception:
-                logger.opt(exception=True).warning(
-                    "收集用户历史附件失败，继续保存日志与执行结果"
-                )
-            try:
-                for record in history_records:
-                    try:
-                        await history_store.record(record)
-                    except Exception as error:
-                        logger.opt(exception=True).warning(f"保存历史失败：{error}")
-                        try:
-                            await Publisher.send(
-                                id=self.task_info.task_id,
-                                type=protocol.TASK_NOTICE,
-                                data=WSTaskNoticeData(
-                                    level="warning",
-                                    message=f"历史记录保存失败：{error}",
-                                ),
-                            )
-                        except Exception:
-                            logger.opt(exception=True).warning(
-                                "发送历史保存失败提示时出现异常"
-                            )
-            finally:
-                await self.task_info.discard_user_history_capture(
-                    self.script_info, self.cur_user_item
-                )
+            await self.task_info.save_user_history(
+                history_records,
+                script=self.script_info,
+                user=self.cur_user_item,
+                log_warning=logger.opt(exception=True).warning,
+            )
 
         if completed:
             await self.task_info.local_notifier.send_notice(

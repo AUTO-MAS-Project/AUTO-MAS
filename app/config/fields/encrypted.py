@@ -17,7 +17,7 @@ from pydantic import GetCoreSchemaHandler
 from pydantic.fields import FieldInfo
 from pydantic_core import core_schema
 
-from app.utils.security import dpapi_decrypt, dpapi_encrypt, looks_like_dpapi_blob
+from app.utils import dpapi_decrypt, dpapi_encrypt, looks_like_dpapi_blob
 
 from ..core.node import ExportContext
 

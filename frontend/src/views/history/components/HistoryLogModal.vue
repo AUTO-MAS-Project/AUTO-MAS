@@ -16,7 +16,7 @@
           <div class="header-info">
             <FileTextOutlined class="header-icon" />
             <div class="header-text">
-              <span class="header-title">{{ t('history.log.title') }}</span>
+              <span class="header-title">{{ t('core.history.log.title') }}</span>
               <span class="header-subtitle">{{ recordDate }}</span>
             </div>
             <a-tag :color="statusTagColor(recordStatus)" size="small">
@@ -32,7 +32,7 @@
               v-if="recruitStatistics && Object.keys(recruitStatistics).length > 0"
               class="stat-group"
             >
-              <span class="stat-label">{{ t('history.log.recruit') }}:</span>
+              <span class="stat-label">{{ t('core.history.log.recruit') }}:</span>
               <div class="stat-items">
                 <span v-for="(count, star) in recruitStatistics" :key="star" class="stat-item">
                   <span class="star-text" :class="`star-${star}`">{{ star }}：</span>
@@ -59,7 +59,7 @@
                 </div>
               </template>
               <a-button size="small" class="drop-btn">
-                <GiftOutlined /> {{ t('history.log.viewDrops') }}
+                <GiftOutlined /> {{ t('core.history.log.viewDrops') }}
               </a-button>
             </a-popover>
             <!-- 基质统计 -->
@@ -80,32 +80,34 @@
               </template>
               <a-button size="small" class="drop-btn">
                 <InboxOutlined />
-                {{ t('history.log.viewMatrix') }}
+                {{ t('core.history.log.viewMatrix') }}
               </a-button>
             </a-popover>
             <a-tag v-else-if="matrixStatistics !== null" color="default">{{
-              t('history.log.noMatrix')
+              t('core.history.log.noMatrix')
             }}</a-tag>
             <a-popover v-if="pullCountStatistics" placement="bottomLeft" trigger="hover">
               <template #content>
                 <div class="pull-count-popover">
                   <span>{{
-                    t('history.log.resourcePulls', { n: pullCountStatistics.resource_pulls })
+                    t('core.history.log.resourcePulls', { n: pullCountStatistics.resource_pulls })
                   }}</span>
                   <span>{{
-                    t('history.log.carryOver', { n: pullCountStatistics.carry_over_pulls })
+                    t('core.history.log.carryOver', { n: pullCountStatistics.carry_over_pulls })
                   }}</span>
                   <span>{{
-                    t('history.log.nextShop', { n: pullCountStatistics.next_pool_shop_pulls })
+                    t('core.history.log.nextShop', { n: pullCountStatistics.next_pool_shop_pulls })
                   }}</span>
                   <span>{{
-                    t('history.log.nextSignin', { n: pullCountStatistics.next_pool_signin_pulls })
+                    t('core.history.log.nextSignin', {
+                      n: pullCountStatistics.next_pool_signin_pulls,
+                    })
                   }}</span>
                 </div>
               </template>
               <a-button size="small" class="drop-btn">
                 {{
-                  t('history.log.poolSummary', {
+                  t('core.history.log.poolSummary', {
                     current: pullCountStatistics.current_pool_total,
                     next: pullCountStatistics.next_pool_total,
                   })
@@ -117,10 +119,10 @@
 
         <div class="header-actions">
           <a-checkbox v-model:checked="removeEmptyLines" class="empty-lines-checkbox">
-            {{ t('history.log.stripBlank') }}
+            {{ t('core.history.log.stripBlank') }}
           </a-checkbox>
           <a-divider type="vertical" />
-          <a-tooltip :title="t('history.log.openFile')">
+          <a-tooltip :title="t('core.history.log.openFile')">
             <a-button size="small" type="text" :disabled="!hasFile" @click="$emit('open-file')">
               <template #icon>
                 <FileOutlined />
@@ -128,7 +130,7 @@
             </a-button>
           </a-tooltip>
           <a-divider type="vertical" />
-          <a-tooltip :title="t('history.log.fontSize')">
+          <a-tooltip :title="t('core.history.log.fontSize')">
             <a-select
               :value="fontSize"
               size="small"
@@ -137,7 +139,7 @@
               @change="(v: number) => $emit('update:fontSize', v)"
             />
           </a-tooltip>
-          <a-tooltip :title="t('history.log.searchTip')">
+          <a-tooltip :title="t('core.history.log.searchTip')">
             <a-button size="small" type="text">
               <template #icon>
                 <SearchOutlined />
@@ -152,11 +154,15 @@
         type="warning"
         show-icon
         class="storage-warning"
-        :message="t('history.storageWarningCount', { count: storageErrors.length })"
+        :message="t('core.history.storageWarningCount', { count: storageErrors.length })"
       >
         <template #description>
           <div v-for="(issue, index) in storageErrors" :key="index">
-            {{ issue.recovered ? t('history.storageRecovered') : t('history.storageFailed') }}:
+            {{
+              issue.recovered
+                ? t('core.history.storageRecovered')
+                : t('core.history.storageFailed')
+            }}:
             {{ issue.message }}
           </div>
         </template>
@@ -176,14 +182,12 @@
             />
           </div>
           <div v-else class="empty-log">
-            <LoadingOutlined v-if="loading" style="font-size: 32px" />
-            <template v-else>
-              <FileExclamationOutlined class="empty-icon" />
-              <span class="empty-title">{{ t('history.log.emptyLog') }}</span>
+            <a-empty v-if="!loading" :description="t('core.history.log.emptyLog')">
+              <template #image><FileExclamationOutlined class="empty-icon" /></template>
               <span v-if="logUnavailableReason || errorMessage" class="error-message">{{
-                logUnavailableReason ? t('history.log.unavailable') : errorMessage
+                logUnavailableReason ? t('core.history.log.unavailable') : errorMessage
               }}</span>
-            </template>
+            </a-empty>
           </div>
         </a-spin>
       </div>
@@ -199,7 +203,6 @@ import {
   FileTextOutlined,
   GiftOutlined,
   InboxOutlined,
-  LoadingOutlined,
   SearchOutlined,
 } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
@@ -488,11 +491,6 @@ const displayLogContent = computed(() => {
 .empty-icon {
   font-size: 48px;
   color: var(--ant-color-text-quaternary);
-}
-
-.empty-title {
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
 }
 
 .error-message {

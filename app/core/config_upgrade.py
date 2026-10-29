@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+from collections.abc import Callable, Mapping
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Any, get_args
@@ -14,9 +15,8 @@ from app.config.fields import is_encrypted_model_field, is_reactive_model_field
 from app.config.fields.hints import migrate_legacy_fields
 from app.config.types import TzMarker
 from app.models.config.shared import local_timezone
-from app.utils.constants import UTC4
-from app.utils.io import read_dict_file, write_file
-from app.utils.security import looks_like_dpapi_blob
+from app.utils import UTC4, looks_like_dpapi_blob
+from app.utils import io as _utils_io
 
 MIGRATION_RECORD = ".config-migration-v2.json"
 CONFIG_FILES = (
@@ -29,9 +29,23 @@ CONFIG_FILES = (
     ("GameSignAccounts.json", "game_sign_accounts.yaml", "GameSignAccounts"),
 )
 
+# 专项只解释当前条目的旧载荷；递归、校验和持久化仍由升级管道负责。
+LegacyEntryMigrations = Mapping[type[ConfigEntry], Callable[[dict[str, Any]], None]]
+
+
+def contains_legacy_type(path: Path, entry_type: str) -> bool:
+    """按类型标签轻量筛选旧文档，避免无对应配置时加载专项。"""
+    try:
+        return f'"{entry_type}"'.encode() in path.read_bytes()
+    except OSError:
+        return False
+
 
 def convert_legacy(
-    document: dict[str, Any], node: ConfigEntry | ConfigCollection
+    document: dict[str, Any],
+    node: ConfigEntry | ConfigCollection,
+    *,
+    entry_migrations: LegacyEntryMigrations | None = None,
 ) -> dict[str, Any]:
     """转换旧分组和 instances/SubConfigsInfo，不推断或重建成员身份。"""
     if not isinstance(document, dict):
@@ -50,7 +64,9 @@ def convert_legacy(
             if uid in data or not isinstance(document.get(uid), dict):
                 raise ValueError("旧集合成员缺失或身份重复")
             order.append({"uid": uid, "type": item["type"]})
-            data[uid] = convert_legacy(document[uid], entry_type.build())
+            data[uid] = convert_legacy(
+                document[uid], entry_type.build(), entry_migrations=entry_migrations
+            )
         return {"order": order, "data": data}
 
     from app.models.config.plan import PlanDaysConfig
@@ -69,25 +85,9 @@ def convert_legacy(
     source = migrate_legacy_fields(
         type(node), normalize(document) if normalize else document
     )
-    if type(node).__name__ == "HSRUserConfig":
-        from app.task.HSR.tools.stage_runtime import migrate_sra_legacy_stage_labels
-
-        # 旧直控模式优先于 Info.Base，迁移后仍按原生模式运行。
-        control = source.get("Control", {})
-        if (
-            isinstance(control, dict)
-            and str(control.get("Mode") or "").strip().lower() == "direct"
-        ):
-            source["Info"]["Base"] = "native"
-
-        stage = source.get("Stage", {})
-        if isinstance(stage, dict):
-            for name in ("ScriptStage", "ScriptEchoOfWar"):
-                migrated, _count, _unresolved = migrate_sra_legacy_stage_labels(
-                    stage.get(name)
-                )
-                if migrated is not None:
-                    stage[name] = migrated
+    migrate = entry_migrations.get(type(node)) if entry_migrations else None
+    if migrate is not None:
+        migrate(source)
     groups = {}
     # 只在一次性升级中解释旧日期/钟点；运行时无时区输入统一按 UTC 解释。
     legacy_naive: list[tuple[str, str, datetime, bool]] = []
@@ -211,7 +211,11 @@ def convert_legacy(
     if not isinstance(subconfigs, dict):
         raise ValueError("嵌套配置无效")
     for name in node._cfg_collection_fields:
-        result[name] = convert_legacy(subconfigs.get(name, {}), getattr(node, name))
+        result[name] = convert_legacy(
+            subconfigs.get(name, {}),
+            getattr(node, name),
+            entry_migrations=entry_migrations,
+        )
     return result
 
 
@@ -265,11 +269,12 @@ def upgrade_json_configs(
     nodes: dict[str, ConfigEntry | ConfigCollection],
     *,
     prepared_documents: dict[str, dict[str, Any]] | None = None,
+    entry_migrations: LegacyEntryMigrations | None = None,
 ) -> None:
     """逐文件完成 JSON→YAML 转换；调用方须在激活及保存成功后提交 v2.0。"""
     config_path.mkdir(parents=True, exist_ok=True)
     record_path = config_path / MIGRATION_RECORD
-    record = read_dict_file(record_path)
+    record = _utils_io.read_dict_file(record_path)
     if record and record.get("version") != 2:
         raise ValueError("配置迁移记录版本无效")
     record.setdefault("version", 2)
@@ -284,7 +289,11 @@ def upgrade_json_configs(
     embedded_accounts = {}
     if tools_source.exists():
         # 空白工具配置没有内嵌账号可读，不判损坏。
-        tools = {} if is_blank_file(tools_source) else read_dict_file(tools_source)
+        tools = (
+            {}
+            if is_blank_file(tools_source)
+            else _utils_io.read_dict_file(tools_source)
+        )
         embedded_accounts = tools.get("SubConfigsInfo", {}).get("GameSign_Accounts", {})
 
     for old_name, new_name, key in CONFIG_FILES:
@@ -299,7 +308,7 @@ def upgrade_json_configs(
                 and not source.exists()
             ):
                 # 已归档的文件不再导入；保留迁移后正常校正或用户修改的 YAML。
-                read_dict_file(target)
+                _utils_io.read_dict_file(target)
                 continue
             if target.exists() and _digest(target) == progress["target_sha256"]:
                 if source.exists():
@@ -312,7 +321,7 @@ def upgrade_json_configs(
                     else:
                         raise ValueError(f"旧配置归档冲突：{old_name}")
                 progress["state"] = "complete"
-                write_file(record_path, record)
+                _utils_io.write_file(record_path, record)
                 continue
             if target.exists():
                 raise ValueError(f"迁移目标发生变化，已保留现有文件：{new_name}")
@@ -325,16 +334,22 @@ def upgrade_json_configs(
         if key in prepared_documents:
             payload = prepared_documents[key]
         elif source.exists() and not is_blank_file(source):
-            payload = convert_legacy(read_dict_file(source), node)
+            payload = convert_legacy(
+                _utils_io.read_dict_file(source),
+                node,
+                entry_migrations=entry_migrations,
+            )
         elif key == "GameSignAccounts" and embedded_accounts:
             # 空白的账号文件没有可迁数据，优先沿用 ToolsConfig 内嵌账号。
-            payload = convert_legacy(embedded_accounts, node)
+            payload = convert_legacy(
+                embedded_accounts, node, entry_migrations=entry_migrations
+            )
         else:
             # 空白遗留文件按默认配置生成目标，源文件仍照常记录摘要并归档。
             payload = node.model_dump(context=ExportContext(audience="persist"))
         temporary = target.with_name(target.name + ".migration.tmp")
-        write_file(temporary, payload, format=".yaml")
-        if read_dict_file(temporary, format=".yaml") != payload:
+        _utils_io.write_file(temporary, payload, format=".yaml")
+        if _utils_io.read_dict_file(temporary, format=".yaml") != payload:
             raise ValueError(f"迁移文件校验失败：{new_name}")
         files[old_name] = {
             "target": new_name,
@@ -342,7 +357,7 @@ def upgrade_json_configs(
             "target_sha256": _digest(temporary),
             "state": "prepared",
         }
-        write_file(record_path, record)
+        _utils_io.write_file(record_path, record)
         temporary.replace(target)
         if source.exists():
             if archived.exists() and _digest(archived) != _digest(source):
@@ -352,6 +367,6 @@ def upgrade_json_configs(
             else:
                 source.unlink()
         files[old_name]["state"] = "complete"
-        write_file(record_path, record)
+        _utils_io.write_file(record_path, record)
     record["complete"] = True
-    write_file(record_path, record)
+    _utils_io.write_file(record_path, record)

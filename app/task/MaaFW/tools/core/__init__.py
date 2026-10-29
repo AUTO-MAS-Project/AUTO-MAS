@@ -1,7 +1,6 @@
 """宿主内置的 MaaFW Core 服务实现。
 
-这些模块来自 MaaFW 插件仓的领域包，但在普通 AUTO-MAS 宿主中作为
-内部实现随程序发布，不参与插件发现或插件生命周期。
+MaaFW 通用引擎的核心包，作为内部实现随程序发布，由宿主直接导入。
 """
 
 from importlib import import_module

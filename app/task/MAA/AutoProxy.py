@@ -28,7 +28,8 @@ from pathlib import Path
 
 from app.config import ConfigCollection
 from app.core import Config
-from app.core.history import aggregate_data, history_store
+from app.core.history import aggregate_data
+from app.core.maa_stage import maa_stage_service
 from app.core.ws import Publisher, protocol
 from app.models.config import (
     MaaConfig,
@@ -62,22 +63,10 @@ from app.task.proxy_helpers import (
     resolve_config_base,
 )
 from app.utils import LogMonitor, ProcessManager, get_logger
-from app.utils.constants import (
-    MAA_STAGE_KEY,
-    UTC4,
-    game_now,
-)
-from app.utils.emulator2.avd.components import root_from_manager_exe
-from app.utils.emulator2.avd.constants import console_port as avd_console_port
-from app.utils.emulator2.facade import Emulator2Manager
-from app.utils.game_update import GameUpdateResult
-from app.utils.io import (
-    ConfigCorruptedError,
-    mark_native_config_injected,
-    read_dict_file,
-    read_file,
-    write_file,
-)
+from app.utils import constants as _utils_constants
+from app.utils import emulator2 as _utils_emulator2
+from app.utils import game_update as _utils_game_update
+from app.utils import io as _utils_io
 
 from . import api_service as maa_api
 from .base_preset import (
@@ -149,7 +138,6 @@ from .tools.software_update import (
     read_installed_release,
     start_maa_software_update_precheck,
 )
-from .tools.stage_service import maa_stage_service
 from .tools.task_templates import (
     MAA_ANNIHILATION_FIGHT_BASE,
     MAA_GREEN_TICKET_STORE_TASK,
@@ -251,7 +239,7 @@ def _current_month_marker(now: datetime) -> str:
     # TODO: 动态时区适配时按账号 Info.Server 的 get_game_day_tz() 判断绿票月份；
     # 同步 GreenTicketStoreMonth 的时区声明及前端完成态，保留完整 UTC 时间存储。
     # 固定 UTC+4 在 EN、JP/KR 的月界存在误判，待上述适配统一处理。
-    return now.astimezone(UTC4).strftime("%Y-%m")
+    return now.astimezone(_utils_constants.UTC4).strftime("%Y-%m")
 
 
 def _should_run_annihilation(
@@ -382,7 +370,7 @@ def read_maa_config_with_fallback(maa_set_path: Path) -> dict:
 
     path = maa_set_path / "gui.new.json"
     try:
-        doc = read_file(path)
+        doc = _utils_io.read_file(path)
     except (OSError, ValueError) as e:
         logger.opt(exception=True).warning(f"读取 MAA 配置失败(gui.new.json): {e}")
         doc = {}
@@ -392,7 +380,9 @@ def read_maa_config_with_fallback(maa_set_path: Path) -> dict:
         # 文件存在但读不出内容（损坏）：优先用 MAA 自己的 .bak——那是 MAA
         # 上一次成功落盘的完整现场，比预设少丢用户数据。（.bak 后缀不在
         # read_file 的编解码器表里，须显式指定 .json 解析）
-        bak = read_file(path.with_suffix(path.suffix + ".bak"), format=".json")
+        bak = _utils_io.read_file(
+            path.with_suffix(path.suffix + ".bak"), format=".json"
+        )
         if isinstance(bak, dict) and bak:
             logger.warning("MAA 配置损坏, 采用 MAA 自带备份(gui.new.json.bak)")
             return bak
@@ -1151,7 +1141,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         emulator_manager: DeviceBase,
         *,
         capture_adb: AdbCapture,
-        game_update_result: GameUpdateResult | None = None,
+        game_update_result: _utils_game_update.GameUpdateResult | None = None,
     ):
         super().__init__()
 
@@ -1263,7 +1253,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
             if completed_at is not None and _current_month_marker(
                 completed_at
-            ) == _current_month_marker(datetime.now(tz=UTC4)):
+            ) == _current_month_marker(datetime.now(tz=_utils_constants.UTC4)):
                 self.run_book["GreenTicketStore"] = True
                 logger.info(
                     f"用户 {self.cur_user_item.name} 本次跳过绿票商店："
@@ -1271,7 +1261,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 )
 
         if not self.run_book["Annihilation"]:
-            now = game_now(self.cur_user_config.Info.Server)
+            now = _utils_constants.game_now(self.cur_user_config.Info.Server)
             start_weekday = self.cur_user_config.Task.AnnihilationStartWeekday
 
             if not _should_run_annihilation(
@@ -1595,7 +1585,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             )
             if self._cultivate_archive_versions.get(name) == version:
                 return False
-            payload = read_dict_file(source)
+            payload = _utils_io.read_dict_file(source)
             source_stat = source.stat()
             if version != (
                 source_stat.st_ino,
@@ -1608,7 +1598,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 try:
                     _, sync_time = parse_depot_payload(payload)
                 except AttributeError as e:
-                    raise ConfigCorruptedError(source) from e
+                    raise _utils_io.ConfigCorruptedError(source) from e
                 if sync_time < int(self.log_start_time.timestamp()):
                     logger.warning(
                         f"用户 {self.cur_user_item.name} 的 {name} syncTime 早于本轮开始, 弃用本次采集"
@@ -1616,7 +1606,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     return False
             archive_dir = self._cultivate_archive_dir()
             archive_dir.mkdir(parents=True, exist_ok=True)
-            write_file(archive_dir / name, payload)
+            _utils_io.write_file(archive_dir / name, payload)
             self._cultivate_archive_versions[name] = version
             logger.info(f"用户 {self.cur_user_item.name} 的识别数据已落档案: {name}")
             return True
@@ -1844,7 +1834,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     data=WSTaskNoticeData(
                         level="warning",
                         message=message,
-                        messageKey="edit.maaCultivateSklandSyncFailed",
+                        messageKey="core.edit.maaCultivateSklandSyncFailed",
                     ),
                 )
             return None, True, None
@@ -1883,7 +1873,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                         data=WSTaskNoticeData(
                             level="warning",
                             message=message,
-                            messageKey="edit.maaCultivateTargetsDeferred",
+                            messageKey="core.edit.maaCultivateTargetsDeferred",
                         ),
                     )
             if not targets:
@@ -1899,7 +1889,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 maa_data_dir=self._cultivate_archive_dir(),
                 config_path=Config.config_path,
                 proxy=Config.proxy,
-                today=game_now(self.cur_user_config.Info.Server).date(),
+                today=_utils_constants.game_now(
+                    self.cur_user_config.Info.Server
+                ).date(),
                 context=context,
                 require_observations=True,
                 auto_raise=self.cur_user_config.Task.CultivateAutoRaise,
@@ -1918,7 +1910,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     data=WSTaskNoticeData(
                         level="warning",
                         message=message,
-                        messageKey="edit.maaCultivatePreparationUnavailable",
+                        messageKey="core.edit.maaCultivatePreparationUnavailable",
                     ),
                 )
             return None, True, None
@@ -1998,7 +1990,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     data=WSTaskNoticeData(
                         level="warning",
                         message=message,
-                        messageKey="edit.maaCultivateAutoRaiseUnsupported",
+                        messageKey="core.edit.maaCultivateAutoRaiseUnsupported",
                     ),
                 )
             return None
@@ -2022,7 +2014,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     data=WSTaskNoticeData(
                         level="warning",
                         message=message,
-                        messageKey="edit.maaCultivateAutoRaiseDataUnavailable",
+                        messageKey="core.edit.maaCultivateAutoRaiseDataUnavailable",
                     ),
                 )
             return None
@@ -2152,9 +2144,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # MAA 启动时会直接安装已登记的包，不受自动安装开关控制；延后到整批结束。
         gui_new_set.setdefault("Update", {})["UpdatePackage"] = ""
 
-        write_file(self.maa_set_path / "gui.new.json", gui_new_set)
+        _utils_io.write_file(self.maa_set_path / "gui.new.json", gui_new_set)
         self._snapshot_maa_config()
-        mark_native_config_injected(
+        _utils_io.mark_native_config_injected(
             Path.cwd() / f"data/{self.script_info.script_id}/Temp",
             self.maa_set_path,
             script_id=self.script_info.script_id,
@@ -2341,7 +2333,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         if self.cur_user_config.Stage.StageMode == "Fixed":
             plan_data = {
                 stage_key: getattr(self.cur_user_config.Stage, stage_key)
-                for stage_key in MAA_STAGE_KEY
+                for stage_key in _utils_constants.MAA_STAGE_KEY
             }
         else:
             plan = Config.PlanConfig[self.cur_user_config.Stage.StageMode]
@@ -2349,7 +2341,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 stage_key: plan.get_current_info(
                     stage_key, server=self.cur_user_config.Info.Server
                 )
-                for stage_key in MAA_STAGE_KEY
+                for stage_key in _utils_constants.MAA_STAGE_KEY
             }
 
         fight_source = deepcopy(task_set["Fight"])
@@ -2537,8 +2529,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         if device_ref is None or device_ref.emulator_type != "avd":
             return None
         return (
-            root_from_manager_exe(device_ref.manager_path),
-            avd_console_port(device_ref.native_index),
+            _utils_emulator2.avd.components.root_from_manager_exe(
+                device_ref.manager_path
+            ),
+            _utils_emulator2.avd.constants.console_port(device_ref.native_index),
         )
 
     async def _maa_process_env(self) -> dict[str, str] | None:
@@ -2588,7 +2582,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             )
             # 自定义管理器可无专用引用，多安装管理器仍须解析所选安装。
             if device_ref is None and isinstance(
-                self.emulator_manager, Emulator2Manager
+                self.emulator_manager, _utils_emulator2.facade.Emulator2Manager
             ):
                 raise ValueError("无法解析所选模拟器实例，请检查模拟器配置")
             connect_settings = current_gui["ConnectSettings"]
@@ -2670,7 +2664,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
         try:
             self._maa_config_baseline = {
-                name: deepcopy(read_file(self.maa_set_path / name))
+                name: deepcopy(_utils_io.read_file(self.maa_set_path / name))
                 for name in _MAA_CONFIG_FILES
             }
         except Exception as e:
@@ -2738,9 +2732,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             if not baseline.get(name):
                 continue
             try:
-                current = read_file(self.maa_set_path / name)
+                current = _utils_io.read_file(self.maa_set_path / name)
                 current = _without_maa_update_changes(current, baseline[name], name)
-                archive = read_file(archive_dir / name)
+                archive = _utils_io.read_file(archive_dir / name)
             except Exception as e:
                 logger.opt(exception=True).warning(
                     f"读取 MAA 配置以对比回写失败({name}): {e}"
@@ -2762,7 +2756,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 else frozenset(),
             ):
                 continue
-            write_file(archive_dir / name, archive_new)
+            _utils_io.write_file(archive_dir / name, archive_new)
             logger.info(
                 f"用户 {self.cur_user_item.name} 的 MAA 配置变更已回写存档: {name}"
             )
@@ -2782,7 +2776,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 self.run_book["Annihilation"] = True
                 if not self._annihilation_weekly_completion_recorded:
                     self.cur_user_config.Data.AnnihilationCompletedWeek = (
-                        _current_week_marker(game_now(self.cur_user_config.Info.Server))
+                        _current_week_marker(
+                            _utils_constants.game_now(self.cur_user_config.Info.Server)
+                        )
                     )
                     await self.cur_user_config.commit()
                     self._annihilation_weekly_completion_recorded = True
@@ -2801,7 +2797,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             and f"完成任务: {MAA_GREEN_TICKET_STORE_TASK['Name']}" in log
         ):
             self.run_book["GreenTicketStore"] = True
-            self.cur_user_config.Data.GreenTicketStoreMonth = datetime.now(tz=UTC4)
+            self.cur_user_config.Data.GreenTicketStoreMonth = datetime.now(
+                tz=_utils_constants.UTC4
+            )
             await self.cur_user_config.commit()
             logger.info(f"用户 {self.cur_user_item.name} 已完成本月绿票商店购买")
 
@@ -3068,7 +3066,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 log_item.content.append(f"\n{diagnostic}\n")
             history_records.append(
                 HistoryWrite(
-                    time=t.astimezone(UTC4),
+                    time=t.astimezone(_utils_constants.UTC4),
                     username=self.cur_user_item.name,
                     script_name=self.script_info.name,
                     status="success"
@@ -3183,38 +3181,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 logger.warning(diagnostic)
                 history_records[-1].logs += f"\n{diagnostic}\n"
         try:
-            if history_records:
-                try:
-                    attachments = await self.task_info.collect_user_history_attachments(
-                        self.script_info, self.cur_user_item
-                    )
-                    history_records[-1].attachments.extend(attachments)
-                except Exception:
-                    logger.opt(exception=True).warning(
-                        "收集用户历史附件失败，继续保存日志与执行结果"
-                    )
-                for record in history_records:
-                    try:
-                        await history_store.record(record)
-                    except Exception as error:
-                        logger.opt(exception=True).warning(f"保存历史失败：{error}")
-                        try:
-                            await Publisher.send(
-                                id=self.task_info.task_id,
-                                type=protocol.TASK_NOTICE,
-                                data=WSTaskNoticeData(
-                                    level="warning",
-                                    message=f"历史记录保存失败：{error}",
-                                ),
-                            )
-                        except Exception:
-                            logger.opt(exception=True).warning(
-                                "发送历史保存失败提示时出现异常"
-                            )
-        finally:
-            await self.task_info.discard_user_history_capture(
-                self.script_info, self.cur_user_item
+            await self.task_info.save_user_history(
+                history_records,
+                script=self.script_info,
+                user=self.cur_user_item,
+                log_warning=logger.opt(exception=True).warning,
             )
+        finally:
             if snapshot_directory is not None:
                 try:
                     snapshot_directory.cleanup()

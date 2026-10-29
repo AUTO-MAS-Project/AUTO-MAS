@@ -95,23 +95,23 @@ export function useLogPatternDebug(options: UseLogPatternDebugOptions = {}) {
   const loadLog = async () => {
     const logPath = resolveLogPath()
     if (!logPath || logPath === '.') {
-      message.warning(t('edit.setLogFilePath'))
+      message.warning(t('core.edit.setLogFilePath'))
       return
     }
     try {
       loadingLog.value = true
       const content = await window.electronAPI.readFile(logPath)
       if (!content) {
-        message.warning(t('edit.logFileEmptyCould'))
+        message.warning(t('core.edit.logFileEmptyCould'))
         return
       }
       const allLines = content.split('\n')
       const n = logLines.value
       const lines = n < 0 ? allLines : allLines.slice(Math.max(0, allLines.length - n))
       input.value = lines.join('\n')
-      message.success(t('edit.loadedP0P1Log', { p0: lines.length, p1: allLines.length }))
+      message.success(t('core.edit.loadedP0P1Log', { p0: lines.length, p1: allLines.length }))
     } catch (error) {
-      message.error(t('edit.couldNotLoadLog') + (error as Error).message)
+      message.error(t('core.edit.couldNotLoadLog') + (error as Error).message)
     } finally {
       loadingLog.value = false
     }

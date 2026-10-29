@@ -39,8 +39,8 @@ import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config, EmulatorManager
 from app.models.schema import DeviceInfo, EmulatorDeleteIn, OutBase
+from app.utils import emulator as _utils_emulator
 from app.utils import get_logger
-from app.utils.emulator.tools import search_all_emulators
 
 EmulatorConfig = ConfigPayload[_config_models.EmulatorConfig]
 EmulatorConfigInput = ConfigInput[_config_models.EmulatorConfig]
@@ -244,7 +244,7 @@ async def get_status(emulator: EmulatorGetIn = Body(...)) -> EmulatorStatusOut:
 async def search_emulators() -> EmulatorSearchOut:
     """枚举卸载表并解析主管理器路径（不依赖 ADB 设备枚举）。"""
     try:
-        emulators = await asyncio.to_thread(search_all_emulators)
+        emulators = await asyncio.to_thread(_utils_emulator.tools.search_all_emulators)
         results = [EmulatorSearchResult(**emulator) for emulator in emulators]
     except Exception as e:
         logger.opt(exception=True).warning(

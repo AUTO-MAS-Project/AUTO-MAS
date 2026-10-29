@@ -2,5 +2,5 @@
   "interface_version": 1,
   "id": "system",
   "entrypoint": "app.notification_channels.system:register",
-  "requires": ["plyer"]
+  "requires": []
 }

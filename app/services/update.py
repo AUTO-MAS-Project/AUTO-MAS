@@ -29,7 +29,7 @@ import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Protocol
 
 from packaging import version
 
@@ -40,16 +40,32 @@ from app.models.schema import (
     WSUpdateFailedData,
     WSUpdateProgressData,
 )
-from app.utils import LazyProxy, ProcessRunner, get_logger
-from app.utils.platform.process import platform_process
+from app.utils import LazyProxy, ProcessRunner, get_logger, process_platform
+from app.utils import fluxdown_cli as _utils_fluxdown_cli
 
 from .system import System
-from .update_transport import download_file, request_mirror_resource
+from .update_fluxdown import FluxdownResumableError
+from .update_transport import DownloadProgress, request_mirror_resource
 
 logger = get_logger("更新服务")
 
 # 延迟加载 Config，避免 app.services 初始化期间触发 app.core 循环导入
 Config = LazyProxy("app.core", "Config")
+
+
+class UpdateDownloader(Protocol):
+    """更新器只依赖下载能力，默认选项与历史由宿主装配。"""
+
+    async def __call__(
+        self,
+        url: str,
+        destination: Path,
+        *,
+        timeout: float,
+        progress: DownloadProgress | None = None,
+        downloader: str | None = None,
+        source: str | None = None,
+    ) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -60,6 +76,8 @@ class _DownloadJob:
     source: str
     mirror_chyan_download_url: Optional[str]
     download_url: Optional[str]
+    # 显式下载器覆盖（"builtin"/"fluxdown"）；None = 按 Update.Downloader 配置
+    downloader: Optional[str] = None
 
 
 def _describe_version_section_error(section: object) -> Optional[str]:
@@ -145,8 +163,9 @@ def parse_release_note(release_note: object) -> Dict[str, Any]:
     return parsed
 
 
-class _UpdateHandler:
-    def __init__(self) -> None:
+class UpdateHandler:
+    def __init__(self, *, download: UpdateDownloader) -> None:
+        self._download = download
         self.is_locked: bool = False
         self.download_task: Optional[asyncio.Task[None]] = None
         self.is_switching_source: bool = False
@@ -199,7 +218,9 @@ class _UpdateHandler:
             data=WSUpdateCompletedData(file=file_path),
         )
 
-    async def start_download(self, *, target_version: Optional[str] = None) -> bool:
+    async def start_download(
+        self, *, target_version: Optional[str] = None, downloader: Optional[str] = None
+    ) -> bool:
         if self.is_switching_source or self.is_locked:
             return False
 
@@ -208,7 +229,9 @@ class _UpdateHandler:
             await self._refresh_mirror_download_url()
 
         return self._start_download_task(
-            job=self._create_download_job(download_version=target_version)
+            job=self._create_download_job(
+                download_version=target_version, downloader=downloader
+            )
         )
 
     def _start_download_task(self, *, job: Optional[_DownloadJob] = None) -> bool:
@@ -248,6 +271,16 @@ class _UpdateHandler:
             await task
         except asyncio.CancelledError:
             pass
+        except _utils_fluxdown_cli.FluxdownCancelUnconfirmed as error:
+            # 暂停未确认：daemon 可能仍在写目标文件。按失败上报并抛出，
+            # 让调用方走失败路径（API 500 / 切源中止），绝不能继续覆写
+            # 同一目标或报告取消成功
+            logger.error(f"取消下载时无法确认 FluxDown 任务已停止: {error}")
+            await self._publish_failed(
+                "取消时无法确认 FluxDown 任务已停止，将在下次重试时续传"
+            )
+            self._cleanup_download()
+            raise
         self._cleanup_download()
 
         if notify:
@@ -256,11 +289,12 @@ class _UpdateHandler:
         return True
 
     async def switch_to_cnb(self) -> bool:
+        frozen_job = self._download_task_job
         download_version = (
-            self._download_task_job.version
-            if self._download_task_job is not None
-            else self.remote_version
+            frozen_job.version if frozen_job is not None else self.remote_version
         )
+        # 切源要重建 job：显式下载器与来源一样随任务冻结，不能因重建丢回配置默认
+        frozen_downloader = frozen_job.downloader if frozen_job is not None else None
         if self.is_switching_source:
             return False
 
@@ -290,7 +324,9 @@ class _UpdateHandler:
                 raise
 
             self.is_locked = False
-            restart_job = self._create_download_job(download_version=download_version)
+            restart_job = self._create_download_job(
+                download_version=download_version, downloader=frozen_downloader
+            )
             if not self._start_download_task(job=restart_job):
                 error = RuntimeError("切换至 CNB 源失败: 无法重新启动更新下载任务")
                 await self._publish_failed(str(error))
@@ -304,18 +340,17 @@ class _UpdateHandler:
                 self.is_locked = False
 
     def _cleanup_download(self) -> None:
-        temp_file = Path.cwd() / "download.temp"
-        try:
-            if temp_file.exists():
-                temp_file.unlink()
-        except OSError as error:
-            logger.exception(f"清理更新下载临时文件失败: {error}")
-        finally:
-            if not self.is_switching_source:
-                self.is_locked = False
+        # 不删 download.temp：取消/中断时保留它作为断点续传状态（httpx 追加、
+        # FluxDown server resume 都依赖它），仅在彻底放弃（重试耗尽）与成功
+        # 改名两条路径处理该文件
+        if not self.is_switching_source:
+            self.is_locked = False
 
     def _create_download_job(
-        self, *, download_version: Optional[str] = None
+        self,
+        *,
+        download_version: Optional[str] = None,
+        downloader: Optional[str] = None,
     ) -> _DownloadJob:
         frozen_version = (
             download_version if download_version is not None else self.remote_version
@@ -336,6 +371,7 @@ class _UpdateHandler:
             source=frozen_source,
             mirror_chyan_download_url=frozen_mirror_url,
             download_url=frozen_download_url,
+            downloader=downloader,
         )
 
     def _get_download_source(self) -> str:
@@ -497,6 +533,10 @@ class _UpdateHandler:
         except asyncio.CancelledError:
             logger.info("更新下载已取消")
             raise
+        except _utils_fluxdown_cli.FluxdownCancelUnconfirmed:
+            # 透传给 cancel_download 的 await task：由那里按失败上报，
+            # 不走通用"下载失败"路径，更不能在后台状态未知时报告取消成功
+            raise
         except Exception as error:
             logger.exception(f"更新下载任务异常: {type(error).__name__}: {error}")
             await self._publish_failed(f"下载失败: {type(error).__name__}: {error}")
@@ -554,17 +594,18 @@ class _UpdateHandler:
         check_times = 3
         while check_times != 0:
             try:
-                # 清理可能存在的临时文件
-                if (Path.cwd() / "download.temp").exists():
-                    (Path.cwd() / "download.temp").unlink()
+                # 注意：这里不能删 download.temp —— httpx（ab+Range 追加）与
+                # FluxDown server 的断点续传都以它为续传状态，删掉会让重试从头下载
 
                 start_time = time.time()
 
-                downloaded_size = await download_file(
+                downloaded_size = await self._download(
                     download_url,
                     Path.cwd() / "download.temp",
                     timeout=30,
                     progress=report_progress,
+                    downloader=download_job.downloader,
+                    source=download_job.source,
                 )
 
                 # 重命名临时文件为最终包
@@ -577,6 +618,21 @@ class _UpdateHandler:
                 await self._publish_completed(final_path)
                 self.is_locked = False
                 break
+
+            except _utils_fluxdown_cli.FluxdownCancelUnconfirmed:
+                # 取消但无法确认 FluxDown 任务已停止：不是可重试的下载错误，
+                # 必须退出取消流程，不能睡眠后自动 resume 状态未知的任务
+                raise
+
+            except FluxdownResumableError as e:
+                # 中断类失败不自动重试：立即弹出失败，由用户点击重试发起下一次尝试
+                # （同一 url+destination 走 resume 断点续传，不消耗 check_times）。
+                # 用户多次重试仍失败时，错误信息内已附带改用内置 httpx 的提示
+                # （由 update_fluxdown 按任务累计中断次数追加）。
+                logger.warning(f"下载中断: {download_url}, 错误信息: {e}")
+                await self._publish_failed(f"下载中断: {e}")
+                self.is_locked = False
+                return
 
             except Exception as e:
                 if check_times != -1:
@@ -669,9 +725,6 @@ class _UpdateHandler:
                 "/LANG=Chinese",
                 f"/DIR={Path.cwd()}",
             ],
-            creationflags=platform_process.detached_flags,
+            creationflags=process_platform.platform_process.detached_flags,
         )
         await System.set_power("KillSelf")
-
-
-Updater = _UpdateHandler()

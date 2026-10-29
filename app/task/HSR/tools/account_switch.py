@@ -316,7 +316,7 @@ def _is_config_value_readable(user_config: Any, group: str, key: str) -> bool:
     """检查配置项当前存储值是否能通过自身 validator。"""
 
     from app.config import EncryptedValue
-    from app.utils.security import dpapi_decrypt
+    from app.utils import dpapi_decrypt
 
     value = getattr(user_config.effective, group).__dict__.get(key)
     if not isinstance(value, EncryptedValue) or not value.ciphertext():

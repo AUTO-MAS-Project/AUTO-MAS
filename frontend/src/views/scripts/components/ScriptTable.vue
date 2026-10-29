@@ -32,7 +32,7 @@
               class="users-load-error"
               type="error"
               show-icon
-              :message="t('apiErrors.userLoadRetry', { reason: script.usersLoadError })"
+              :message="t('core.apiErrors.userLoadRetry', { reason: script.usersLoadError })"
             >
               <template #action>
                 <a-button
@@ -40,7 +40,7 @@
                   :loading="props.retryingUsers?.has(script.id)"
                   @click="emit('retryUsers', script.id)"
                 >
-                  {{ t('apiErrors.retry') }}
+                  {{ t('core.apiErrors.retry') }}
                 </a-button>
               </template>
             </a-alert>
@@ -83,9 +83,11 @@
               v-else-if="!script.usersLoadError && !isUsersCollapsed(script.id)"
               class="empty-users"
             >
-              <div class="empty-content">
-                <img src="@/assets/NoData.png" :alt="t('comp.noData')" class="empty-image" />
-              </div>
+              <a-empty
+                :image="noDataImage"
+                :image-style="{ height: '120px' }"
+                :description="false"
+              />
             </div>
           </a-card>
         </div>
@@ -94,6 +96,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.svg'
 import ScriptCardHeader, {
   type ScriptCardAction,
 } from '@/views/scripts/components/ScriptCardHeader.vue'
@@ -192,11 +195,11 @@ const handleDelete = (script: ScriptListItem) => {
 
 const handleDeleteConfirm = (script: ScriptListItem) => {
   Modal.confirm({
-    title: t('comp.deleteThisScript'),
-    content: t('comp.thisCannotBeUndone2'),
-    okText: t('comp.ok'),
+    title: t('core.comp.deleteThisScript'),
+    content: t('core.comp.thisCannotBeUndone2'),
+    okText: t('core.comp.ok'),
     okType: 'danger',
-    cancelText: t('comp.cancel'),
+    cancelText: t('core.comp.cancel'),
     onOk: () => handleDelete(script),
   })
 }

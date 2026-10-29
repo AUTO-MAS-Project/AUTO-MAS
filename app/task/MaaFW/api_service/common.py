@@ -63,6 +63,8 @@ class MaaFWApiReply:
     code: int = 200
     message: str | None = None
     data: Any = None
+    # 后台手动更新的身份标识；其它 MaaFW 端点不设置，不会出现在响应里。
+    job_id: str | None = None
 
     @classmethod
     def error(cls, code: int, message: str, data: Any = None) -> MaaFWApiReply:
@@ -77,6 +79,8 @@ class MaaFWApiReply:
             fields["message"] = self.message
         if self.data is not None:
             fields["data"] = self.data
+        if self.job_id is not None:
+            fields["jobId"] = self.job_id
         return fields
 
 

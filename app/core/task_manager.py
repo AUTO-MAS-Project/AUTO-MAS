@@ -25,18 +25,24 @@ import os
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Iterable, Literal
 
-import app.task as task
+from app.config import ConfigEntry
+from app.core.custom_script import execute_script_task
 from app.core.desktop_guard import ensure_desktop_available
-from app.models.config import CLASS_BOOK
+from app.core.history import history_store
+from app.core.script_registration import ManagerBuildContext, ManagerFactory
+from app.models.config import CLASS_BOOK, UserConfigType
+from app.models.game_maintenance import MaintenanceWindow
 from app.models.schema import (
     HistoryAttachmentInput,
+    HistoryWrite,
     TaskRuntimeSnapshot,
     TaskRuntimeSnapshotItem,
     TaskStatusOut,
@@ -47,7 +53,9 @@ from app.models.schema import (
     WSTaskInfoUpdatedData,
     WSTaskLogUpdatedData,
     WSTaskNoticeData,
+    WSTaskScriptFinishedData,
     WSTaskScriptIdentityData,
+    WSTaskScriptStartedData,
 )
 from app.models.task import (
     ScriptItem,
@@ -57,27 +65,12 @@ from app.models.task import (
     UserItem,
 )
 from app.runtime_tasks import RuntimeTasks
-from app.task.general.tools import execute_script_task
+from app.task.history_core import UserHistoryDependencies, save_user_history
 from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
 
-from .config import (
-    BAAHConfig,
-    BetterGIConfig,
-    Config,
-    GeneralConfig,
-    HSRConfig,
-    M9AConfig,
-    MaaConfig,
-    MaaEndConfig,
-    MaaFWConfig,
-    MSSConfig,
-    OkNteConfig,
-    OkwwConfig,
-    SrcConfig,
-    WhimboxConfig,
-    ZzzOdConfig,
-)
+from .config import Config
+from .game_maintenance import GameMaintenance
 from .queue_cycle import (
     SUCCESS_USER_STATUSES,
     CycleEntry,
@@ -107,66 +100,39 @@ if TYPE_CHECKING:
 
 # 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
+_script_observation_tasks: set[asyncio.Task[bool]] = set()
+
+
+def _publish_script_observation(
+    *,
+    message_type: str,
+    data: WSTaskScriptStartedData,
+    after: asyncio.Task[bool] | None = None,
+) -> asyncio.Task[bool] | None:
+    """有界、可丢弃的本地统计消息，不进入脚本的执行或收尾等待链。"""
+
+    if len(_script_observation_tasks) >= 32:
+        return None
+
+    async def send() -> bool:
+        if after is not None and not await asyncio.shield(after):
+            return False
+        return await Publisher.send(
+            id=protocol.ID_TASK_MANAGER, type=message_type, data=data
+        )
+
+    pending = RuntimeTasks.spawn(send(), name="script-run-observation")
+    if pending is not None:
+        _script_observation_tasks.add(pending)
+        pending.add_done_callback(_script_observation_tasks.discard)
+    return pending
+
 
 # 最近完成任务的状态留存：任务一结束就会从运行快照摘掉，凭 taskId 单点查询
 # 只能靠这里回读终态，所以留一个有限窗口（条数上限 + 留存时长）。
 _RECENT_RESULTS_MAX = 200
 _RECENT_RESULTS_TTL_SECONDS = 1800
 
-
-@dataclass(frozen=True)
-class _ManagerBuildContext:
-    """构造脚本调度器所需的额外输入（占用归属与互斥资源）。"""
-
-    script_uid: uuid.UUID
-    reservation_owner: str
-    root_paths: tuple[Path, ...]
-    emulator_key: str | None
-    reservations: "_ScriptTaskReservations"
-
-
-def _build_src_manager(
-    script_item: ScriptItem, ctx: _ManagerBuildContext
-) -> TaskExecuteBase:
-    """SRC 要把 src 根路径的占用回调交给调度器，占用记在构建上下文的预留表里。"""
-
-    if not ctx.root_paths:
-        raise RuntimeError("SRC 路径占用未初始化")
-    return task.SrcManager(
-        script_item,
-        reserved_src_root_path=ctx.root_paths[0],
-        # 追加历史根目录时要带上模拟器键，别在 re-acquire 时把它丢掉。
-        reserve_src_root=lambda root_path: ctx.reservations.try_acquire(
-            ctx.script_uid,
-            ctx.reservation_owner,
-            root_paths=(root_path,),
-            emulator_key=ctx.emulator_key,
-        ),
-    )
-
-
-# 脚本配置类 → 调度器工厂。各配置类互不为父子（都直接继承 ConfigEntry），
-# 按 type 精确查表；新增脚本类型在这里注册一条即可。工厂体内经 task 包
-# 惰性取类，维持 app/task/__init__.py 为 worker 子进程设的导入隔离。
-_MANAGER_BOOK: dict[
-    type, Callable[[ScriptItem, _ManagerBuildContext], TaskExecuteBase]
-] = {
-    MaaConfig: lambda script_item, _ctx: task.MaaManager(script_item),
-    GeneralConfig: lambda script_item, _ctx: task.GeneralManager(script_item),
-    OkwwConfig: lambda script_item, _ctx: task.OkwwManager(script_item),
-    OkNteConfig: lambda script_item, _ctx: task.OkNteManager(script_item),
-    MaaEndConfig: lambda script_item, _ctx: task.MaaEndManager(script_item),
-    # 特调类型是 MaaFWConfig 的子类，但这张表按类型精确查，得单独登记一行。
-    M9AConfig: lambda script_item, _ctx: task.MaaFWEmbeddedManager(script_item),
-    MSSConfig: lambda script_item, _ctx: task.MaaFWEmbeddedManager(script_item),
-    HSRConfig: lambda script_item, _ctx: task.HSRManager(script_item),
-    BetterGIConfig: lambda script_item, _ctx: task.BetterGIManager(script_item),
-    ZzzOdConfig: lambda script_item, _ctx: task.ZzzOdManager(script_item),
-    BAAHConfig: lambda script_item, _ctx: task.BAAHManager(script_item),
-    MaaFWConfig: lambda script_item, _ctx: task.MaaFWEmbeddedManager(script_item),
-    WhimboxConfig: lambda script_item, _ctx: task.WhimboxManager(script_item),
-    SrcConfig: _build_src_manager,
-}
 
 logger = get_logger("业务调度")
 
@@ -275,47 +241,16 @@ def _is_relative_src_root(path: Path | str, parent: Path | str) -> bool:
 
 
 def _exclusive_resources(
-    script_config: object,
+    script_config: ConfigEntry,
 ) -> tuple[tuple[Path, ...], str | None]:
-    """返回跨配置互斥所需的安装根目录与模拟器实例键。
-
-    安装目录只取运行期真的会写入的来源目录（MAA / MaaEnd / SRC）；MaaFW 跑的是
-    data 下的独立副本，来源目录不进安装目录互斥，否则会把合法的并发压成串行。
-    """
-
-    roots: tuple[Path, ...] = ()
-    if isinstance(script_config, (MaaConfig, SrcConfig, MaaEndConfig)):
-        raw = str(script_config.Info.Path or "").strip()
-        roots = (Path(raw),) if raw else ()
-    return roots, _emulator_key(script_config)
-
-
-def _emulator_key(script_config: object) -> str | None:
-    """返回「模拟器配置 Id:实例序号」互斥键；未绑定模拟器时返回 None。"""
-
-    if isinstance(script_config, (MaaConfig, SrcConfig, MaaFWConfig, BAAHConfig)):
-        # M9A / MSS 是 MaaFWConfig 的子类，自动覆盖；BAAH 与 MAA 同用 Emulator.Id / Index。
-        emulator_id = script_config.Emulator.Id
-        index = script_config.Emulator.Index
-    elif isinstance(script_config, MaaEndConfig):
-        # 这里不看 Game.ControllerType：它是控制器「名字」，协议（Adb/Win32）要读
-        # 控制器配置才知道，调度层不为此去碰文件。Win32 原生来源的配置留空 "-" 就自
-        # 然没有实例键；真写了模拟器就按占用处理，宁可多串一次也不漏一次冲突。
-        emulator_id = script_config.Game.EmulatorId
-        index = script_config.Game.EmulatorIndex
-    elif isinstance(script_config, GeneralConfig):
-        # 通用脚本只在「启用游戏 + 类型为模拟器」时才持有模拟器实例（见 General/manager.py
-        # 的配置检查与 get_emulator_instance 调用）；Client / URL 类型即便残留了模拟器绑定
-        # 也不占实例键，免得把合法并发压成串行。
-        if not script_config.Game.Enabled or script_config.Game.Type != "Emulator":
-            return None
-        emulator_id = script_config.Game.EmulatorId
-        index = script_config.Game.EmulatorIndex
-    else:
-        return None
+    """规范化专项声明；不解释专项字段或读取上游资源文件。"""
+    resources = Config.get_script_task_resources(script_config)
+    if resources.emulator is None:
+        return resources.root_paths, None
+    emulator_id, index = resources.emulator
     if str(emulator_id or "") in ("", "-") or str(index or "") in ("", "-"):
-        return None
-    return f"{emulator_id}:{index}"
+        return resources.root_paths, None
+    return resources.root_paths, f"{emulator_id}:{index}"
 
 
 @dataclass(eq=False)
@@ -346,6 +281,23 @@ class TaskInfo(TaskItem):
     _history_capture_files: dict[tuple[str, str], Path] = field(
         default_factory=dict, init=False, repr=False
     )
+
+    def get_script_user_configs(
+        self, script_id: str
+    ) -> Iterable[tuple[uuid.UUID, UserConfigType]]:
+        return Config.ScriptConfig[uuid.UUID(script_id)].UserData.items()
+
+    async def get_active_maintenance(self, game: str) -> MaintenanceWindow | None:
+        return await GameMaintenance.get_active(game, proxy=Config.proxy)
+
+    async def send_notice(
+        self, *, level: Literal["info", "warning", "error"], message: str
+    ) -> None:
+        await Publisher.send(
+            id=self.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level=level, message=message),
+        )
 
     def begin_script_run(self, script: ScriptItem) -> None:
         previous = self._replay_runs.get(script.script_id)
@@ -408,6 +360,40 @@ class TaskInfo(TaskItem):
         )
         if capture is not None:
             self._history_capture_tasks[key] = capture
+
+    async def save_user_history(
+        self,
+        records: Sequence[HistoryWrite],
+        *,
+        script: ScriptItem,
+        user: UserItem,
+        log_warning: Callable[[str], None] | None = None,
+    ) -> None:
+        """为本次用户历史装配能力，专项只交出已判定的条目与诊断入口。"""
+
+        await save_user_history(
+            records,
+            dependencies=UserHistoryDependencies(
+                record=history_store.record,
+                collect_attachments=partial(
+                    self.collect_user_history_attachments, script=script, user=user
+                ),
+                discard_capture=partial(
+                    self.discard_user_history_capture, script=script, user=user
+                ),
+                report_failure=self._report_history_save_failure,
+                log_warning=log_warning
+                if log_warning is not None
+                else logger.opt(exception=True).warning,
+            ),
+        )
+
+    async def _report_history_save_failure(self, message: str) -> None:
+        await Publisher.send(
+            id=self.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="warning", message=message),
+        )
 
     async def collect_user_history_attachments(
         self, script: ScriptItem, user: UserItem
@@ -594,8 +580,11 @@ class Task(TaskExecuteBase):
         on_finished: Callable[[TaskStatusOut], None] | None = None,
         create_report_coordinator: Callable[[TaskItem], "TaskReportCoordinator"]
         | None = None,
+        *,
+        manager_factories: Mapping[type[ConfigEntry], ManagerFactory | None],
     ):
         super().__init__()
+        self._manager_factories = manager_factories
         self.task_info = task_info
         self._create_report_coordinator = create_report_coordinator
         self.script_identities = script_identities
@@ -713,6 +702,26 @@ class Task(TaskExecuteBase):
         from app.services.telemetry import record_count
 
         outcome = "error"
+        partial_failure = "unknown"
+        run = (
+            WSTaskScriptStartedData(
+                taskId=self.task_info.task_id,
+                runId=str(uuid.uuid4()),
+                scriptType=_SCRIPT_TYPE_BY_CLASS.get(
+                    type(script_config).__name__, "unknown"
+                ),
+                mode="CycleRun" if self.task_info.is_cycle else "AutoProxy",
+            )
+            if self.task_info.mode == "AutoProxy"
+            else None
+        )
+        started = (
+            _publish_script_observation(
+                message_type=protocol.TASK_SCRIPT_STARTED, data=run
+            )
+            if run is not None
+            else None
+        )
         try:
             yield
             user_statuses = [
@@ -729,6 +738,7 @@ class Task(TaskExecuteBase):
                 outcome = "failed" if script_item.status == "异常" else "no_user"
             elif all(status in SUCCESS_USER_STATUSES for status in user_statuses):
                 outcome = "success"
+                partial_failure = "yes" if "部分失败" in user_statuses else "no"
             elif "异常" in user_statuses:
                 outcome = "failed"
             else:
@@ -747,6 +757,16 @@ class Task(TaskExecuteBase):
                     "outcome": outcome,
                 },
             )
+            if run is not None and started is not None:
+                _publish_script_observation(
+                    message_type=protocol.TASK_SCRIPT_FINISHED,
+                    data=WSTaskScriptFinishedData(
+                        **run.model_dump(),
+                        outcome=outcome,
+                        partialFailure=partial_failure,
+                    ),
+                    after=started,
+                )
 
     def _build_task_item(
         self,
@@ -760,21 +780,23 @@ class Task(TaskExecuteBase):
     ):
         """按脚本类型构造对应的脚本调度器，类型不支持时返回 None。
 
-        顺序执行与循环运行共用这一份分派，新增脚本类型在 _MANAGER_BOOK
-        注册一条工厂即可；各配置类互不为父子，按 type 精确查表。
+        顺序执行与循环运行共用宿主注入的工厂，按 type 精确查表。
         """
 
-        build = _MANAGER_BOOK.get(type(script_config))
+        build = self._manager_factories.get(type(script_config))
         if build is None:
             return None
         return build(
             script_item,
-            _ManagerBuildContext(
-                script_uid=script_uid,
-                reservation_owner=reservation_owner,
+            ManagerBuildContext(
                 root_paths=root_paths,
-                emulator_key=emulator_key,
-                reservations=self.script_reservations,
+                # 追加目录与初始预约使用同一归属及模拟器键。
+                reserve_root=lambda root_path: self.script_reservations.try_acquire(
+                    script_uid,
+                    reservation_owner,
+                    root_paths=(root_path,),
+                    emulator_key=emulator_key,
+                ),
             ),
         )
 
@@ -1498,6 +1520,9 @@ class _TaskManager:
     def __init__(self):
         super().__init__()
 
+        self._manager_factories: (
+            Mapping[type[ConfigEntry], ManagerFactory | None] | None
+        ) = None
         self.task_info: Dict[uuid.UUID, TaskInfo] = {}
         self.task_handler: Dict[uuid.UUID, Task] = {}
         # taskId → (结束时刻的单调读数, 终态)，供单点查询在任务摘掉后回读
@@ -1515,6 +1540,14 @@ class _TaskManager:
         self._startup_queue_started = False
         # 正在等待/执行启动队列的连接回调任务，同一时间只有一个
         self._startup_queue_task: asyncio.Task | None = None
+
+    def bind_manager_factories(
+        self, factories: Mapping[type[ConfigEntry], ManagerFactory | None]
+    ) -> None:
+        """启动时由宿主绑定；拒绝在已有任务时替换工厂。"""
+        if self._manager_factories is not None:
+            raise RuntimeError("任务工厂已经装配")
+        self._manager_factories = factories
 
     @staticmethod
     def _queue_script_entries(
@@ -1773,6 +1806,8 @@ class _TaskManager:
             uuid.UUID: 任务 UID
         """
 
+        if self._manager_factories is None:
+            raise RuntimeError("任务工厂未初始化：请先由宿主装配")
         uid = uuid.UUID(id)
 
         # 停止全部任务期间拒绝新任务，否则它不在停止快照里，却会让停止流程
@@ -1915,6 +1950,7 @@ class _TaskManager:
                 script_run_days=script_run_days,
                 on_finished=self._remember_result,
                 create_report_coordinator=self.notifications.create_task_report_coordinator,
+                manager_factories=self._manager_factories,
             )
             await Publisher.send(
                 id=protocol.ID_TASK_MANAGER,

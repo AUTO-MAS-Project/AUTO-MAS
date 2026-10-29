@@ -13,7 +13,7 @@ export interface ActivityModuleContext {
 /** 游戏模块声明来源、展示构建和专属交互；公共完成状态由编排层管理。 */
 export interface HomeActivityModule {
   game: GameCalendarActivityCompletionIn.game
-  source: Pick<HomeActivitySource, 'start' | 'stop' | 'refresh'>
+  source: Pick<HomeActivitySource, 'start' | 'stop' | 'refresh' | 'whenLoaded'>
   buildPanel: (now: number) => HomeActivityPanel
   completionServers?: GameCalendarActivityCompletionIn.server[]
   selectedServer?: () => GameCalendarActivityCompletionIn.server

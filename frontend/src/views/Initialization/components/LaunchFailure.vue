@@ -3,7 +3,7 @@
     <div class="failure-body">
       <h2 class="failure-title">
         <i class="failure-dot" aria-hidden="true"></i>
-        {{ t('init.step.failed', { title }) }}
+        {{ t('bootstrap.init.step.failed', { title }) }}
       </h2>
 
       <p v-if="message" class="failure-message">{{ message }}</p>
@@ -27,10 +27,10 @@
           :disabled="doctorRunning"
           @click="updateRuntime"
         >
-          {{ t('init.failure.updateRuntime') }}
+          {{ t('bootstrap.init.failure.updateRuntime') }}
         </a-button>
         <a-button v-if="docsUrl" type="text" @click="emit('open-docs')">
-          {{ t('init.backend.viewDocs') }}
+          {{ t('bootstrap.init.backend.viewDocs') }}
         </a-button>
       </div>
 
@@ -42,24 +42,34 @@
       />
 
       <div v-if="showMirrorSelection && mirrors.length > 0" class="failure-mirrors">
-        <p class="mirrors-title">{{ t('init.failure.mirrorTitle') }}</p>
-        <button
-          v-for="mirror in mirrors"
-          :key="mirror.key"
-          type="button"
-          class="mirror-option"
-          :class="{ selected: selectedMirror === mirror.key }"
-          role="radio"
-          :aria-checked="selectedMirror === mirror.key"
+        <p class="mirrors-title">{{ t('bootstrap.init.failure.mirrorTitle') }}</p>
+        <a-radio-group
+          :value="selectedMirror"
+          :name="mirrorGroupName"
           :disabled="updating"
-          @click="emit('update:selected-mirror', mirror.key)"
+          class="mirror-options"
+          role="radiogroup"
+          :aria-label="t('bootstrap.init.failure.mirrorTitle')"
+          @change="emit('update:selected-mirror', $event.target.value)"
         >
-          <span class="mirror-radio" aria-hidden="true"></span>
-          <span class="mirror-name">{{ mirror.name }}</span>
-          <span class="mirror-note">
-            {{ mirror.recommended ? t('init.failure.mirrorRecommended') : mirror.description }}
-          </span>
-        </button>
+          <a-radio
+            v-for="mirror in mirrors"
+            :key="mirror.key"
+            :value="mirror.key"
+            class="mirror-option"
+          >
+            <span class="mirror-content">
+              <span class="mirror-name">{{ mirror.name }}</span>
+              <span class="mirror-note">
+                {{
+                  mirror.recommended
+                    ? t('bootstrap.init.failure.mirrorRecommended')
+                    : mirror.description
+                }}
+              </span>
+            </span>
+          </a-radio>
+        </a-radio-group>
       </div>
 
       <details
@@ -68,9 +78,11 @@
         :open="detailsOpen"
         @toggle="detailsOpen = ($event.target as HTMLDetailsElement).open"
       >
-        <summary>{{ t('init.failure.details') }}</summary>
+        <summary>{{ t('bootstrap.init.failure.details') }}</summary>
 
-        <div v-if="doctorRunning" class="details-line">{{ t('init.failure.doctorRunning') }}</div>
+        <div v-if="doctorRunning" class="details-line">
+          {{ t('bootstrap.init.failure.doctorRunning') }}
+        </div>
         <template v-else-if="doctorChecks">
           <div v-if="doctorChecks.length > 0" class="doctor-checks">
             <span v-for="check in doctorChecks" :key="check.id" class="doctor-check">
@@ -78,38 +90,38 @@
               <b :class="{ bad: check.status !== 'ok' }">{{ check.message || check.status }}</b>
             </span>
           </div>
-          <div v-else class="details-line">{{ t('init.failure.doctorEmpty') }}</div>
+          <div v-else class="details-line">{{ t('bootstrap.init.failure.doctorEmpty') }}</div>
         </template>
 
         <pre v-if="failureLogs" class="failure-log">{{ failureLogs }}</pre>
       </details>
 
       <div class="failure-support">
-        <p class="support-hint">{{ t('init.failure.exportLogsHint') }}</p>
+        <p class="support-hint">{{ t('bootstrap.init.failure.exportLogsHint') }}</p>
         <a-space wrap>
           <a-button :loading="exportingLogs" @click="packageLogs">
             <template #icon><FileZipOutlined /></template>
-            {{ t('logs.package') }}
+            {{ t('bootstrap.logs.package') }}
           </a-button>
           <a-button class="failure-help" @click="handleJoinGroup">
             <template #icon><TeamOutlined /></template>
-            {{ t('init.failure.joinGroup') }}
+            {{ t('bootstrap.init.failure.joinGroup') }}
           </a-button>
         </a-space>
       </div>
 
       <p v-if="showSkipButton" class="failure-skip">
         <button type="button" :disabled="updating" @click="emit('skip')">
-          {{ t('init.step.skip') }}
+          {{ t('bootstrap.init.step.skip') }}
         </button>
-        {{ t('init.step.skipConsequence') }}
+        {{ t('bootstrap.init.step.skipConsequence') }}
       </p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message as feedback } from 'ant-design-vue'
 import { FileZipOutlined, TeamOutlined } from '@ant-design/icons-vue'
@@ -168,6 +180,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const mirrorGroupName = useId()
 const { exportingLogs, packageLogs } = useLogExport()
 const {
   updating,
@@ -183,9 +196,9 @@ const SUPPORT_GROUP_URL = 'https://qm.qq.com/q/DEG4a3p0FG'
 const noticeText = computed(() => {
   switch (props.failureNotice) {
     case 'internal-error':
-      return t('init.failure.internalErrorNotice')
+      return t('bootstrap.init.failure.internalErrorNotice')
     case 'contact-support':
-      return t('init.failure.contactSupportNotice')
+      return t('bootstrap.init.failure.contactSupportNotice')
     default:
       return ''
   }
@@ -209,7 +222,7 @@ async function handleJoinGroup() {
     if (!result.success) throw new Error(String(result.error))
   } catch (error) {
     logger.error(`打开初始化求助群失败: ${error instanceof Error ? error.message : String(error)}`)
-    feedback.error(t('comp.couldNotOpenLink'))
+    feedback.error(t('bootstrap.comp.couldNotOpenLink'))
   }
 }
 
@@ -329,42 +342,40 @@ watch(
   font-size: 12px;
 }
 
+.mirror-options {
+  display: block;
+}
+
 .mirror-option {
   display: flex;
   width: 100%;
   align-items: center;
   gap: 10px;
+  margin-inline-end: 0;
   padding: 9px 14px;
   border: 0;
   border-top: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-  font: inherit;
   font-size: 13px;
-  text-align: left;
-  cursor: pointer;
 }
 
-.mirror-option:hover {
+.mirror-option:hover:not(.ant-radio-wrapper-disabled) {
   background: var(--ant-color-fill-quaternary);
 }
 
-.mirror-option:disabled,
 .failure-skip button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.mirror-radio {
-  flex: none;
-  width: 13px;
-  height: 13px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 50%;
+.failure-mirrors .mirror-option :deep(.ant-radio + span) {
+  flex: 1;
+  min-width: 0;
 }
 
-.mirror-option.selected .mirror-radio {
-  border: 4px solid var(--ant-color-primary);
+.mirror-content {
+  display: flex;
+  align-items: center;
 }
 
 .mirror-name {

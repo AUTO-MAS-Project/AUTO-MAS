@@ -34,6 +34,7 @@ import type { EmulatorGetIn } from '../models/EmulatorGetIn';
 import type { EmulatorGetOut } from '../models/EmulatorGetOut';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
+import type { FluxdownDetectOut } from '../models/FluxdownDetectOut';
 import type { GameCalendarActivitiesOut } from '../models/GameCalendarActivitiesOut';
 import type { GetStageIn } from '../models/GetStageIn';
 import type { HistoryDetailGetIn } from '../models/HistoryDetailGetIn';
@@ -41,6 +42,11 @@ import type { HistoryDetailGetOut } from '../models/HistoryDetailGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
 import type { InfoOut } from '../models/InfoOut';
+import type { MaaCopilotAnalyzeIn } from '../models/MaaCopilotAnalyzeIn';
+import type { MaaCopilotAnalyzeOut } from '../models/MaaCopilotAnalyzeOut';
+import type { MaaCopilotAuthorsIn } from '../models/MaaCopilotAuthorsIn';
+import type { MaaCopilotSourceIn } from '../models/MaaCopilotSourceIn';
+import type { MaaCopilotSourceOut } from '../models/MaaCopilotSourceOut';
 import type { MaaCultivateImportIn } from '../models/MaaCultivateImportIn';
 import type { MaaCultivateImportOut } from '../models/MaaCultivateImportOut';
 import type { MaaCultivateOperatorsOut } from '../models/MaaCultivateOperatorsOut';
@@ -114,7 +120,7 @@ export class GetService {
      * @throws ApiError
      */
     public static getActivityCompletionsApiInfoActivityCompletionsGet(
-        game: 'endfield' | 'starrail' | 'genshin' | 'zenless' | 'wutheringwaves' | 'nte' | 'reverse1999' | 'bluearchive' | 'arknights' | 'stellasora' | 'infinitynikki',
+        game: 'endfield' | 'starrail' | 'genshin' | 'zenless' | 'wutheringwaves' | 'nte' | 'reverse1999' | 'bluearchive' | 'arknights' | 'stellasora' | 'infinitynikki' | 'azurlane',
         server: 'cn' | 'jp' | 'global' = 'cn',
     ): CancelablePromise<GameCalendarActivitiesOut> {
         return __request(OpenAPI, {
@@ -397,6 +403,25 @@ export class GetService {
         });
     }
     /**
+     * 获取碧蓝航线活动数据（BWIKI 中转）
+     * 取回碧蓝航线的活动一览。
+     *
+     * 数据来自碧蓝海事局 WIKI 的活动日历页：官方站与日服站都是纯前端渲染，HTML 里
+     * 没有活动内容，GameKee 也没开放这条线，能稳定拿到的只有这份维基文本。日历只写
+     * 月日，时刻由取数模块按当天 10:00 开始、23:59 结束落到北京时间。
+     *
+     * Returns:
+     * InfoOut: ``{"activities": [...]}``；取不到时返回 ``code=500`` 的错误信封。
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getAzurlaneActivityApiInfoAzurlaneActivityPost(): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/azurlane/activity',
+        });
+    }
+    /**
      * 查询脚本配置信息
      * @param requestBody
      * @returns ScriptGetOut Successful Response
@@ -408,6 +433,82 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询用户
+     * @param requestBody
+     * @returns UserGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getUserApiScriptsUserGetPost(
+        requestBody: UserGetIn,
+    ): CancelablePromise<UserGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取用户配置目录
+     * @param requestBody
+     * @returns UserConfigDirOut Successful Response
+     * @throws ApiError
+     */
+    public static getUserConfigDirApiScriptsUserConfigDirPost(
+        requestBody: UserConfigDirIn,
+    ): CancelablePromise<UserConfigDirOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/config-dir',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询 webhook 配置
+     * @param requestBody
+     * @returns WebhookGetOut_Webhook_ Successful Response
+     * @throws ApiError
+     */
+    public static getWebhookApiScriptsWebhookGetPost(
+        requestBody: WebhookGetIn,
+    ): CancelablePromise<WebhookGetOut_Webhook_> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/webhook/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 分享前检查脚本配置中的隐私风险
+     * @param requestBody
+     * @returns ShareInspectOut Successful Response
+     * @throws ApiError
+     */
+    public static inspectScriptShareApiScriptsShareInspectPost(
+        requestBody: ScriptShareInspectIn,
+    ): CancelablePromise<ShareInspectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/share/inspect',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -462,25 +563,6 @@ export class GetService {
         });
     }
     /**
-     * 分享前检查脚本配置中的隐私风险
-     * @param requestBody
-     * @returns ShareInspectOut Successful Response
-     * @throws ApiError
-     */
-    public static inspectScriptShareApiScriptsShareInspectPost(
-        requestBody: ScriptShareInspectIn,
-    ): CancelablePromise<ShareInspectOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/share/inspect',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 获取 MaaEnd 动态选项
      * @param requestBody
      * @returns MaaEndOptionsOut Successful Response
@@ -492,44 +574,6 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maaend/options',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询用户
-     * @param requestBody
-     * @returns UserGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getUserApiScriptsUserGetPost(
-        requestBody: UserGetIn,
-    ): CancelablePromise<UserGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/user/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取用户配置目录
-     * @param requestBody
-     * @returns UserConfigDirOut Successful Response
-     * @throws ApiError
-     */
-    public static getUserConfigDirApiScriptsUserConfigDirPost(
-        requestBody: UserConfigDirIn,
-    ): CancelablePromise<UserConfigDirOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/user/config-dir',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -720,17 +764,55 @@ export class GetService {
         });
     }
     /**
-     * 查询 webhook 配置
+     * 加载或同步作业站公开数据
      * @param requestBody
-     * @returns WebhookGetOut_Webhook_ Successful Response
+     * @returns MaaCopilotSourceOut Successful Response
      * @throws ApiError
      */
-    public static getWebhookApiScriptsWebhookGetPost(
-        requestBody: WebhookGetIn,
-    ): CancelablePromise<WebhookGetOut_Webhook_> {
+    public static loadMaaCopilotSourceApiScriptsMaaCopilotSourcePost(
+        requestBody: MaaCopilotSourceIn,
+    ): CancelablePromise<MaaCopilotSourceOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/scripts/webhook/get',
+            url: '/api/scripts/maa/copilot/source',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 搜索作业站作者
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static searchMaaCopilotAuthorsApiScriptsMaaCopilotAuthorsPost(
+        requestBody: MaaCopilotAuthorsIn,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/copilot/authors',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 比较作业练度并建议培养目标（不落库）
+     * @param requestBody
+     * @returns MaaCopilotAnalyzeOut Successful Response
+     * @throws ApiError
+     */
+    public static analyzeMaaCopilotTrainingApiScriptsMaaCopilotAnalyzePost(
+        requestBody: MaaCopilotAnalyzeIn,
+    ): CancelablePromise<MaaCopilotAnalyzeOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/copilot/analyze',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1403,6 +1485,18 @@ export class GetService {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 全盘检测 FluxDown 并择优推荐
+     * CLI 便携版优先，其次同盘、就近、新目录；无 CLI 只有全量版时提示污染风险。
+     * @returns FluxdownDetectOut Successful Response
+     * @throws ApiError
+     */
+    public static detectFluxdownApiUpdateFluxdownDetectGet(): CancelablePromise<FluxdownDetectOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/update/fluxdown/detect',
         });
     }
     /**

@@ -30,7 +30,7 @@ from pydantic import Field
 from app.config import (
     ConfigGroup,
 )
-from app.utils.constants import UTC4, game_now
+from app.utils import constants as _utils_constants
 
 from .base import DomainEntry
 from .shared import (
@@ -73,13 +73,15 @@ class PlanDaysConfig(DomainEntry):
 
 class WeeklyKeyPlan(PlanDaysConfig):
     def get_current_key(self):
-        key = getattr(self, self.current_group(datetime.now(tz=UTC4))).Key
-        return key.model_dump(exclude_none=True, exclude={"Event"})
+        key = getattr(
+            self, self.current_group(datetime.now(tz=_utils_constants.UTC4))
+        ).Key
+        return key.model_dump(exclude_none=True)
 
 
 class MaaPlanConfig(PlanDaysConfig):
     def get_current_info(self, name: str, server: str | None = None):
-        group = self.current_group(game_now(server))
+        group = self.current_group(_utils_constants.game_now(server))
         return getattr(getattr(self, group), name)
 
     "MAA计划表配置"
@@ -408,6 +410,12 @@ class MaaEndPlanConfig(WeeklyKeyPlan):
 
 class BAAHPlanConfig(WeeklyKeyPlan):
     "BAAH 计划表配置。"
+
+    def get_current_key(self) -> dict[str, list[int]]:
+        """活动关卡由 BAAH 自身配置维护，不从计划表下发。"""
+        key = super().get_current_key()
+        key.pop("Event", None)
+        return key
 
     class ALLFields(ConfigGroup):
         Key: schema_model.BAAHPlanKey = Field(

@@ -26,7 +26,7 @@ vi.mock('@vueuse/core', () => ({ useEventListener: vi.fn() }))
 vi.mock('ant-design-vue', () => ({
   message: { error: mocks.error, success: mocks.success, info: vi.fn() },
 }))
-vi.mock('@/api', () => ({ Service: mocks.service, EmulatorOperateIn: {} }))
+vi.mock('@/composables/useEmulatorApi', () => ({ Service: mocks.service, EmulatorOperateIn: {} }))
 vi.mock('@/stores/performance', () => ({
   usePerformanceStore: () => ({ isBackgrounded: false }),
 }))
@@ -228,7 +228,7 @@ describe('模拟器路径配置', () => {
     await vi.advanceTimersByTimeAsync(100_000)
     expect(mocks.service.getEmulatorApiEmulatorGetPost).toHaveBeenCalledTimes(4)
     expect(mocks.service.getStatusApiEmulatorStatusPost).not.toHaveBeenCalled()
-    expect(mocks.error).toHaveBeenCalledExactlyOnceWith('emulator.toast.loadFailed')
+    expect(mocks.error).toHaveBeenCalledExactlyOnceWith('core.emulator.toast.loadFailed')
     mocks.service.getEmulatorApiEmulatorGetPost.mockResolvedValue(
       configResponse('/normalized/manager.exe')
     )
@@ -256,7 +256,7 @@ describe('模拟器路径配置', () => {
     slowResponse.resolve({ code: 500, message: 'offline' })
     await vi.advanceTimersByTimeAsync(100_000)
     expect(mocks.service.getEmulatorApiEmulatorGetPost).toHaveBeenCalledTimes(4)
-    expect(mocks.error).toHaveBeenCalledExactlyOnceWith('emulator.toast.loadFailed')
+    expect(mocks.error).toHaveBeenCalledExactlyOnceWith('core.emulator.toast.loadFailed')
     expect(mocks.service.getStatusApiEmulatorStatusPost).not.toHaveBeenCalled()
   })
 

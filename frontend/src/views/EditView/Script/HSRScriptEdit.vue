@@ -1,10 +1,18 @@
 <template>
-  <ScriptEditHeader script-type="HSR" :title="t('edit.editHsrScript')" @cancel="handleCancel" />
+  <ScriptEditHeader
+    script-type="HSR"
+    :title="t('core.edit.editHsrScript')"
+    @cancel="handleCancel"
+  />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card :title="t('edit.hsrScriptConfiguration')" :loading="pageLoading" class="config-card">
+    <a-card
+      :title="t('core.edit.hsrScriptConfiguration')"
+      :loading="pageLoading"
+      class="config-card"
+    >
       <template #extra>
-        <a-tag color="purple" class="type-tag">{{ t('edit.hsrMarch7thSra') }}</a-tag>
+        <a-tag color="purple" class="type-tag">{{ t('core.edit.hsrMarch7thSra') }}</a-tag>
       </template>
 
       <a-alert
@@ -27,22 +35,21 @@
         <!-- 脚本名称 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ t('core.edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="24">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.giveHsrScriptName')">
-                    <span class="form-label">
-                      {{ t('edit.scriptName') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.scriptName')"
+                    :hint="t('core.edit.giveHsrScriptName')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.infoName"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="t('core.edit.enterScriptName')"
                   size="large"
                   @blur="handleChange('Info', 'Name', formData.infoName)"
                 />
@@ -54,30 +61,29 @@
         <!-- M7A / SRA / 游戏路径 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.scriptGameConfiguration') }}</h3>
+            <h3>{{ t('core.edit.scriptGameConfiguration') }}</h3>
           </div>
           <a-alert
             v-if="isCloud"
             type="info"
             show-icon
-            :message="t('edit.hsrCloudIntro')"
+            :message="t('core.edit.hsrCloudIntro')"
             class="cloud-intro"
           />
           <div class="engine-path-hint">
             <a-typography-text type="secondary">
-              {{ t('edit.fillingPathEnablesThat') }}
+              {{ t('core.edit.fillingPathEnablesThat') }}
             </a-typography-text>
           </div>
           <a-row :gutter="24">
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrGamePlatformTip')">
-                    <span class="form-label">
-                      {{ t('edit.hsrGamePlatform') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.hsrGamePlatform')"
+                    :hint="t('core.edit.hsrGamePlatformTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-segmented
                   :value="hsrConfig.Game.Platform"
@@ -91,12 +97,11 @@
             <a-col v-if="!isCloud" :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.turnThisOffWhen')">
-                    <span class="form-label">
-                      {{ t('edit.masManagesGame') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.masManagesGame')"
+                    :hint="t('core.edit.turnThisOffWhen')"
+                    variant="form"
+                  />
                 </template>
                 <a-switch
                   :checked="Boolean(hsrConfig.Game.Enabled)"
@@ -109,77 +114,65 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.march7thAssistantInstallDirectory')">
-                    <span class="form-label">
-                      {{ t('edit.march7thPath') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="hsrConfig.Info.M7APath"
-                    :placeholder="t('edit.pickMarch7thFolderContains')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('core.edit.march7thPath')"
+                    :hint="t('core.edit.march7thAssistantInstallDirectory')"
+                    variant="form"
                   />
-                  <a-button size="large" class="path-button" @click="selectPath('M7APath')">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFolder') }}
-                  </a-button>
-                  <a-button
-                    v-if="hsrConfig.Info.M7APath"
-                    :title="t('edit.clearMarch7thPath')"
-                    size="large"
-                    class="path-clear-button"
-                    @click="clearPath('M7APath')"
-                  >
-                    ×
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="hsrConfig.Info.M7APath"
+                  mode="folder"
+                  :placeholder="t('core.edit.pickMarch7thFolderContains')"
+                  :pick-label="t('core.edit.pickFolder')"
+                  @pick="selectPath('M7APath')"
+                >
+                  <template #after-pick>
+                    <a-button
+                      v-if="hsrConfig.Info.M7APath"
+                      :title="t('core.edit.clearMarch7thPath')"
+                      size="large"
+                      class="path-clear-button"
+                      @click="clearPath('M7APath')"
+                    >
+                      ×
+                    </a-button>
+                  </template>
+                </PathPickerField>
               </a-form-item>
             </a-col>
 
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.starrailassistantInstallDirectoryContain')">
-                    <span class="form-label">
-                      {{ t('edit.sraPath') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="hsrConfig.Info.SRAPath"
-                    :placeholder="t('edit.pickSraFolderContains')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('core.edit.sraPath')"
+                    :hint="t('core.edit.starrailassistantInstallDirectoryContain')"
+                    variant="form"
                   />
-                  <a-button size="large" class="path-button" @click="selectPath('SRAPath')">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFolder') }}
-                  </a-button>
-                  <a-button
-                    v-if="hsrConfig.Info.SRAPath"
-                    :title="t('edit.clearSraPath')"
-                    size="large"
-                    class="path-clear-button"
-                    @click="clearPath('SRAPath')"
-                  >
-                    ×
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="hsrConfig.Info.SRAPath"
+                  mode="folder"
+                  :placeholder="t('core.edit.pickSraFolderContains')"
+                  :pick-label="t('core.edit.pickFolder')"
+                  @pick="selectPath('SRAPath')"
+                >
+                  <template #after-pick>
+                    <a-button
+                      v-if="hsrConfig.Info.SRAPath"
+                      :title="t('core.edit.clearSraPath')"
+                      size="large"
+                      class="path-clear-button"
+                      @click="clearPath('SRAPath')"
+                    >
+                      ×
+                    </a-button>
+                  </template>
+                </PathPickerField>
                 <!-- 云平台保留 SRA 路径（外部脚本更新照常），但任务不经 SRA -->
                 <a-typography-text v-if="isCloud" type="secondary" class="field-hint">
-                  {{ t('edit.hsrCloudNoSra') }}
+                  {{ t('core.edit.hsrCloudNoSra') }}
                 </a-typography-text>
               </a-form-item>
             </a-col>
@@ -190,7 +183,7 @@
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">{{ t('edit.hsrCloudUsePaidTime') }}</span>
+                  <span class="form-label">{{ t('core.edit.hsrCloudUsePaidTime') }}</span>
                 </template>
                 <div class="game-toggle-option">
                   <a-switch
@@ -199,7 +192,7 @@
                     @change="handleCloudConfigChange('UsePaidTime', Boolean($event))"
                   />
                   <a-typography-text type="secondary">{{
-                    t('edit.hsrCloudUsePaidTimeHint')
+                    t('core.edit.hsrCloudUsePaidTimeHint')
                   }}</a-typography-text>
                 </div>
               </a-form-item>
@@ -207,18 +200,17 @@
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrCloudMaxQueueTip')">
-                    <span class="form-label">
-                      {{ t('edit.hsrCloudMaxQueue') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.hsrCloudMaxQueue')"
+                    :hint="t('core.edit.hsrCloudMaxQueueTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="hsrConfig.Cloud.MaxQueueMinutes"
                   :min="1"
                   :max="9999"
-                  :addon-after="t('edit.hsrCloudMinutes')"
+                  :addon-after="t('core.edit.hsrCloudMinutes')"
                   size="large"
                   style="width: 100%"
                   data-testid="hsr-cloud-max-queue"
@@ -229,18 +221,17 @@
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrCloudLoginWaitTip')">
-                    <span class="form-label">
-                      {{ t('edit.hsrCloudLoginWait') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.hsrCloudLoginWait')"
+                    :hint="t('core.edit.hsrCloudLoginWaitTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="hsrConfig.Cloud.LoginTimeoutMinutes"
                   :min="1"
                   :max="9999"
-                  :addon-after="t('edit.hsrCloudMinutes')"
+                  :addon-after="t('core.edit.hsrCloudMinutes')"
                   size="large"
                   style="width: 100%"
                   data-testid="hsr-cloud-login-wait"
@@ -255,12 +246,11 @@
             <a-col :span="12" :offset="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.sraProfileTooltip')">
-                    <span class="form-label">
-                      {{ t('edit.sraProfile') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.sraProfile')"
+                    :hint="t('core.edit.sraProfileTooltip')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   :value="hsrConfig.Info.SRAProfile || ''"
@@ -294,45 +284,35 @@
             <a-col :xs="24" :lg="16">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.starRailGameRoot')">
-                    <span class="form-label">
-                      {{ t('edit.gamePath') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="hsrConfig.Game.Path"
-                    :placeholder="t('edit.pickStarRailInstall')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('core.edit.gamePath')"
+                    :hint="t('core.edit.starRailGameRoot')"
+                    variant="form"
                   />
-                  <a-button size="large" class="path-button" @click="selectPath('Game.Path')">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFolder') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="hsrConfig.Game.Path"
+                  mode="folder"
+                  :placeholder="t('core.edit.pickStarRailInstall')"
+                  :pick-label="t('core.edit.pickFolder')"
+                  @pick="selectPath('Game.Path')"
+                />
               </a-form-item>
             </a-col>
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.howLongMasWaits')">
-                    <span class="form-label">
-                      {{ t('edit.maximumGameLaunchWait') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.maximumGameLaunchWait')"
+                    :hint="t('core.edit.howLongMasWaits')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="hsrConfig.Game.WaitTime"
                   :min="0"
                   :max="9999"
-                  :addon-after="t('edit.seconds')"
+                  :addon-after="t('core.edit.seconds')"
                   size="large"
                   style="width: 100%"
                   @change="handleGameConfigChange('WaitTime', $event)"
@@ -349,12 +329,11 @@
             <a-col v-if="hsrConfig.Game.Enabled" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.writtenCurrentUserS')">
-                    <span class="form-label">
-                      {{ t('edit.run1920x1080WindowedMode') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.run1920x1080WindowedMode')"
+                    :hint="t('core.edit.writtenCurrentUserS')"
+                    variant="form"
+                  />
                 </template>
                 <div class="game-toggle-option">
                   <a-switch
@@ -362,7 +341,7 @@
                     @change="handleGameResolutionChange"
                   />
                   <a-typography-text type="secondary">{{
-                    t('edit.restoreOriginalRegistryValue')
+                    t('core.edit.restoreOriginalRegistryValue')
                   }}</a-typography-text>
                 </div>
               </a-form-item>
@@ -371,12 +350,11 @@
             <a-col v-if="hsrConfig.Info.SRAPath" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.runsOncePerUser')">
-                    <span class="form-label">
-                      {{ t('edit.redeemCodesRunOnly') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.redeemCodesRunOnly')"
+                    :hint="t('core.edit.runsOncePerUser')"
+                    variant="form"
+                  />
                 </template>
                 <div class="game-toggle-option">
                   <a-switch
@@ -384,7 +362,7 @@
                     @change="handleRedeemCodePolicyChange"
                   />
                   <a-typography-text type="secondary">{{
-                    t('edit.runOnceNewUser')
+                    t('core.edit.runOnceNewUser')
                   }}</a-typography-text>
                 </div>
               </a-form-item>
@@ -395,64 +373,53 @@
         <!-- 执行限制 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runLimits') }}</h3>
+            <h3>{{ t('core.edit.runLimits') }}</h3>
           </div>
           <a-row :gutter="16">
             <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runsPerDayThis') }}
-                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="hsrConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleRunConfigChange('ProxyTimesLimit', $event)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="hsrConfig.Run.ProxyTimesLimit"
+                kind="daily"
+                :label="t('core.edit.runsPerDayThis')"
+                :hint="t('core.edit.k0MeansNoLimit')"
+                @change="handleChange('Run', 'ProxyTimesLimit', $event)"
+              />
             </a-col>
             <a-col :span="12">
-              <a-form-item :label="t('edit.maximumAttemptsFailedTask')">
+              <a-form-item :label="t('core.edit.maximumAttemptsFailedTask')">
                 <a-input-number
                   v-model:value="hsrConfig.Run.RunTimesLimit"
                   :min="1"
                   :max="9999"
                   size="large"
                   style="width: 100%"
-                  @change="handleRunConfigChange('RunTimesLimit', $event)"
+                  @change="handleChange('Run', 'RunTimesLimit', $event)"
                 />
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item :label="t('edit.dailyTaskTimeoutMinutes')">
+              <a-form-item :label="t('core.edit.dailyTaskTimeoutMinutes')">
                 <a-input-number
                   v-model:value="hsrConfig.Run.DailyTimeLimit"
                   :min="1"
                   :max="9999"
                   size="large"
                   style="width: 100%"
-                  @change="handleRunConfigChange('DailyTimeLimit', $event)"
+                  @change="handleChange('Run', 'DailyTimeLimit', $event)"
                 />
               </a-form-item>
             </a-col>
           </a-row>
           <a-row :gutter="16">
             <a-col :span="12">
-              <a-form-item :label="t('edit.weeklyTaskTimeoutMinutes')">
+              <a-form-item :label="t('core.edit.weeklyTaskTimeoutMinutes')">
                 <a-input-number
                   v-model:value="hsrConfig.Run.WeeklyTimeLimit"
                   :min="1"
                   :max="9999"
                   size="large"
                   style="width: 100%"
-                  @change="handleRunConfigChange('WeeklyTimeLimit', $event)"
+                  @change="handleChange('Run', 'WeeklyTimeLimit', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -460,13 +427,13 @@
           <!-- 低性能兼容只作用于三月七，没填三月七路径时不渲染 -->
           <a-row v-if="hsrConfig.Info.M7APath" :gutter="16">
             <a-col :span="12">
-              <a-form-item :label="t('edit.enableLowPerformanceCompatibility')">
+              <a-form-item :label="t('core.edit.enableLowPerformanceCompatibility')">
                 <a-switch
                   v-model:checked="hsrConfig.Run.LowPerformanceMode"
-                  @change="handleRunConfigChange('LowPerformanceMode', $event)"
+                  @change="handleChange('Run', 'LowPerformanceMode', $event)"
                 />
                 <div class="form-item-hint">
-                  {{ t('edit.appliesMarch7thDivergentUniverse') }}
+                  {{ t('core.edit.appliesMarch7thDivergentUniverse') }}
                 </div>
               </a-form-item>
             </a-col>
@@ -476,45 +443,43 @@
         <!-- 外部脚本更新 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.hsrExternalUpdate') }}</h3>
+            <h3>{{ t('core.edit.hsrExternalUpdate') }}</h3>
           </div>
-          <div class="section-hint">{{ t('edit.hsrUpdateSectionHint') }}</div>
+          <div class="section-hint">{{ t('core.edit.hsrUpdateSectionHint') }}</div>
           <a-row :gutter="24">
             <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateModeTip')">
-                    <span class="form-label">
-                      {{ t('edit.autoUpdateMode') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.autoUpdateMode')"
+                    :hint="t('core.edit.hsrUpdateModeTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="hsrConfig.Update.AutoUpdateMode"
                   :options="autoUpdateModeOptions"
                   size="large"
                   style="width: 100%"
-                  @change="handleUpdateConfigChange('AutoUpdateMode', $event)"
+                  @change="handleChange('Update', 'AutoUpdateMode', $event)"
                 />
               </a-form-item>
             </a-col>
             <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateChannelTip')">
-                    <span class="form-label">
-                      {{ t('edit.hsrUpdateChannel') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.hsrUpdateChannel')"
+                    :hint="t('core.edit.hsrUpdateChannelTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="hsrConfig.Update.Channel"
                   :options="updateChannelOptions"
                   size="large"
                   style="width: 100%"
-                  @change="handleUpdateConfigChange('Channel', $event)"
+                  @change="handleChange('Update', 'Channel', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -524,38 +489,36 @@
             <a-col v-if="hsrConfig.Info.M7APath" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateM7ASourceTip')">
-                    <span class="form-label">
-                      {{ t('edit.hsrUpdateM7ASource') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.hsrUpdateM7ASource')"
+                    :hint="t('core.edit.hsrUpdateM7ASourceTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="hsrConfig.Update.M7ASource"
                   :options="m7aSourceOptions"
                   size="large"
                   style="width: 100%"
-                  @change="handleUpdateConfigChange('M7ASource', $event)"
+                  @change="handleChange('Update', 'M7ASource', $event)"
                 />
               </a-form-item>
             </a-col>
             <a-col v-if="hsrConfig.Info.SRAPath" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateSRASourceTip')">
-                    <span class="form-label">
-                      {{ t('edit.hsrUpdateSRASource') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.hsrUpdateSRASource')"
+                    :hint="t('core.edit.hsrUpdateSRASourceTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="hsrConfig.Update.SRASource"
                   :options="sraSourceOptions"
                   size="large"
                   style="width: 100%"
-                  @change="handleUpdateConfigChange('SRASource', $event)"
+                  @change="handleChange('Update', 'SRASource', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -564,21 +527,18 @@
             <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateCdkTip')">
-                    <span class="form-label">
-                      {{ t('edit.hsrUpdateCdk') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.hsrUpdateCdk')"
+                    :hint="t('core.edit.hsrUpdateCdkTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-password
                   v-model:value="hsrConfig.Update.MirrorChyanCDK"
-                  :placeholder="t('edit.hsrUpdateCdkPlaceholder')"
+                  :placeholder="t('core.edit.hsrUpdateCdkPlaceholder')"
                   size="large"
                   autocomplete="off"
-                  @blur="
-                    handleUpdateConfigChange('MirrorChyanCDK', hsrConfig.Update.MirrorChyanCDK)
-                  "
+                  @blur="handleChange('Update', 'MirrorChyanCDK', hsrConfig.Update.MirrorChyanCDK)"
                 />
                 <div
                   class="form-item-hint"
@@ -586,14 +546,14 @@
                 >
                   {{
                     isCdkMissingForMirror
-                      ? t('edit.hsrUpdateCdkMissing')
-                      : t('edit.hsrUpdateCdkHint')
+                      ? t('core.edit.hsrUpdateCdkMissing')
+                      : t('core.edit.hsrUpdateCdkHint')
                   }}
                   <a
                     :href="MIRRORCHYAN_CDK_URL"
                     class="form-hint-link"
                     @click="handleExternalLink"
-                    >{{ t('edit.hsrUpdateCdkGetLink') }}</a
+                    >{{ t('core.edit.hsrUpdateCdkGetLink') }}</a
                   >
                 </div>
               </a-form-item>
@@ -602,15 +562,14 @@
 
           <a-form-item>
             <template #label>
-              <a-tooltip :title="t('edit.hsrUpdateManualTip')">
-                <span class="form-label">
-                  {{ t('edit.hsrUpdateManual') }}
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
+              <FieldLabelWithHint
+                :text="t('core.edit.hsrUpdateManual')"
+                :hint="t('core.edit.hsrUpdateManualTip')"
+                variant="form"
+              />
             </template>
             <a-typography-text v-if="!updateEngines.length" type="secondary">
-              {{ t('edit.hsrUpdateNeedPath') }}
+              {{ t('core.edit.hsrUpdateNeedPath') }}
             </a-typography-text>
             <a-row v-else :gutter="24">
               <a-col v-for="engine in updateEngines" :key="engine" :xs="24" :lg="12">
@@ -619,8 +578,9 @@
                     <span class="update-engine-name">{{ engineLabel(engine) }}</span>
                     <a-typography-text type="secondary" class="update-engine-version">
                       {{
-                        t('edit.hsrUpdateInstalledVersion', {
-                          version: installedVersion(engine) || t('edit.hsrUpdateVersionUnknown'),
+                        t('core.edit.hsrUpdateInstalledVersion', {
+                          version:
+                            installedVersion(engine) || t('core.edit.hsrUpdateVersionUnknown'),
                         })
                       }}
                     </a-typography-text>
@@ -631,7 +591,7 @@
                       :disabled="updateStates[engine].applying"
                       @click="runManualUpdate(engine, 'check')"
                     >
-                      {{ t('edit.hsrUpdateCheckNow') }}
+                      {{ t('core.edit.hsrUpdateCheckNow') }}
                     </a-button>
                     <a-button
                       type="primary"
@@ -639,7 +599,7 @@
                       :disabled="updateStates[engine].checking"
                       @click="runManualUpdate(engine, 'apply')"
                     >
-                      {{ t('edit.hsrUpdateApplyNow') }}
+                      {{ t('core.edit.hsrUpdateApplyNow') }}
                     </a-button>
                   </a-space>
                   <a-alert
@@ -647,7 +607,9 @@
                     type="error"
                     show-icon
                     class="update-alert"
-                    :message="t('edit.hsrUpdateRequestFailed', { engine: engineLabel(engine) })"
+                    :message="
+                      t('core.edit.hsrUpdateRequestFailed', { engine: engineLabel(engine) })
+                    "
                     :description="updateStates[engine].error"
                   />
                   <a-alert
@@ -669,16 +631,18 @@
 </template>
 
 <script setup lang="ts">
+import PathPickerField from '@/components/PathPickerField.vue'
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import type { HSRConfig_Update } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import {
   filterHSRCapabilityWarnings,
   useHSRPluginApi,
@@ -791,14 +755,24 @@ const logger = window.electronAPI.getLogger('HSR 脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript, error: scriptApiError } = useScriptApi()
+const { getScript, error: scriptApiError } = useScriptApi()
 const hsrPluginApi = useHSRPluginApi()
 
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue } = useSaveQueue()
+const { saveField: handleChange } = useScriptSaveMutation({
+  scriptId,
+  isInitializing,
+  logger,
+  afterFieldSave: async (category, key) => {
+    if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+      await refreshScript()
+      await Promise.all([loadCapabilities(), loadSraProfiles()])
+    }
+  },
+})
 const capabilitySnapshot = ref<HSRCapabilitySnapshot | null>(null)
 const visibleCapabilityWarnings = computed(() =>
   filterHSRCapabilityWarnings(capabilitySnapshot.value?.warnings)
@@ -850,30 +824,9 @@ const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>([
 const isCloud = computed(() => hsrConfig.Game.Platform === 'Cloud')
 
 const platformOptions = computed(() => [
-  { label: t('edit.hsrPlatformClient'), value: 'Client' },
-  { label: t('edit.hsrPlatformCloud'), value: 'Cloud' },
+  { label: t('core.edit.hsrPlatformClient'), value: 'Client' },
+  { label: t('core.edit.hsrPlatformCloud'), value: 'Cloud' },
 ])
-
-const handleChange = async (category: string, key: string, value: any): Promise<boolean> => {
-  if (isInitializing.value) return false
-  return enqueue(async () => {
-    try {
-      const updateData: any = { [category]: { [key]: value } }
-      const success = await updateScript(scriptId, updateData)
-      if (!success) return false
-      logger.info(`配置已保存: ${category}.${key}`)
-      if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
-        await refreshScript()
-        await Promise.all([loadCapabilities(), loadSraProfiles()])
-      }
-      return true
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
-      return false
-    }
-  }, `${category}.${key}`)
-}
 
 const refreshScript = async () => {
   try {
@@ -946,55 +899,25 @@ const applyScriptDetail = (scriptDetail: ScriptDetail) => {
   }
 }
 
-const handleRunConfigChange = async (key: string, value: any) => {
-  if (isInitializing.value) return
-  await enqueue(async () => {
-    try {
-      const updateData: any = { Run: { [key]: value } }
-      const success = await updateScript(scriptId, updateData)
-      if (!success) return
-      logger.info(`配置已保存: Run.${key}`)
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
-    }
-  }, `Run.${key}`)
-}
-
-const handleUpdateConfigChange = async (key: keyof HSRUpdateConfig, value: unknown) => {
-  if (isInitializing.value) return
-  await enqueue(async () => {
-    try {
-      const updateData: any = { Update: { [key]: value } }
-      const success = await updateScript(scriptId, updateData)
-      if (!success) return
-      logger.info(`配置已保存: Update.${key}`)
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
-    }
-  }, `Update.${key}`)
-}
-
 const autoUpdateModeOptions = computed(() => [
-  { label: t('edit.hsrUpdateModeOff'), value: 'Off' },
-  { label: t('edit.hsrUpdateModeAfterRun'), value: 'AfterRun' },
+  { label: t('core.edit.hsrUpdateModeOff'), value: 'Off' },
+  { label: t('core.edit.hsrUpdateModeAfterRun'), value: 'AfterRun' },
 ])
 
 const updateChannelOptions = computed(() => [
-  { label: t('edit.hsrUpdateChannelStable'), value: 'stable' },
-  { label: t('edit.hsrUpdateChannelBeta'), value: 'beta' },
+  { label: t('core.edit.hsrUpdateChannelStable'), value: 'stable' },
+  { label: t('core.edit.hsrUpdateChannelBeta'), value: 'beta' },
 ])
 
 const m7aSourceOptions = computed(() => [
-  { label: t('edit.hsrUpdateSourceGithub'), value: 'GitHub' },
-  { label: t('edit.hsrUpdateSourceMirrorChyan'), value: 'MirrorChyan' },
+  { label: t('core.edit.hsrUpdateSourceGithub'), value: 'GitHub' },
+  { label: t('core.edit.hsrUpdateSourceMirrorChyan'), value: 'MirrorChyan' },
 ])
 
 const sraSourceOptions = computed(() => [
-  { label: t('edit.hsrUpdateSourceAutoSite'), value: 'AutoSite' },
-  { label: t('edit.hsrUpdateSourceGithub'), value: 'GitHub' },
-  { label: t('edit.hsrUpdateSourceMirrorChyan'), value: 'MirrorChyan' },
+  { label: t('core.edit.hsrUpdateSourceAutoSite'), value: 'AutoSite' },
+  { label: t('core.edit.hsrUpdateSourceGithub'), value: 'GitHub' },
+  { label: t('core.edit.hsrUpdateSourceMirrorChyan'), value: 'MirrorChyan' },
 ])
 
 // 已渲染的下载源（对应引擎填了路径）里有一个选了 Mirror 酱，才需要 CDK 输入框。
@@ -1038,7 +961,7 @@ const updateEngines = computed<HSREngine[]>(() => {
 })
 
 const engineLabel = (engine: HSREngine) =>
-  engine === 'M7A' ? t('edit.hsrUpdateEngineM7A') : t('edit.hsrUpdateEngineSRA')
+  engine === 'M7A' ? t('core.edit.hsrUpdateEngineM7A') : t('core.edit.hsrUpdateEngineSRA')
 
 // 能力快照里的 adapters 可能是数组或字典，两种形态都取一遍。
 const installedVersion = (engine: HSREngine): string => {
@@ -1060,27 +983,27 @@ const describeUpdateResult = (
 ): HSRUpdateSummary | null => {
   if (!result) return null
   const name = engineLabel(engine)
-  const unknown = t('edit.hsrUpdateVersionUnknown')
+  const unknown = t('core.edit.hsrUpdateVersionUnknown')
   const current = result.current_version?.trim() || unknown
   const latest = result.latest_version?.trim() || unknown
   if (result.updated) {
     return {
       type: 'success',
-      title: t('edit.hsrUpdateDone', { engine: name, version: latest }),
+      title: t('core.edit.hsrUpdateDone', { engine: name, version: latest }),
       description: result.message,
     }
   }
   if (!result.checked) {
     return {
       type: 'error',
-      title: t('edit.hsrUpdateCheckFailed', { engine: name }),
+      title: t('core.edit.hsrUpdateCheckFailed', { engine: name }),
       description: result.message,
     }
   }
   if (!result.update_available) {
     return {
       type: 'success',
-      title: t('edit.hsrUpdateUpToDate', { engine: name, version: current }),
+      title: t('core.edit.hsrUpdateUpToDate', { engine: name, version: current }),
       description: result.message,
     }
   }
@@ -1088,13 +1011,13 @@ const describeUpdateResult = (
     // 有新版但装不了：多半是 CDK 问题，和「可更新」明确区分开。
     return {
       type: 'warning',
-      title: t('edit.hsrUpdateNotInstallable', { engine: name, version: latest }),
-      description: result.message || t('edit.hsrUpdateNotInstallableHint'),
+      title: t('core.edit.hsrUpdateNotInstallable', { engine: name, version: latest }),
+      description: result.message || t('core.edit.hsrUpdateNotInstallableHint'),
     }
   }
   return {
     type: 'info',
-    title: t('edit.hsrUpdateAvailable', { engine: name, latest, current }),
+    title: t('core.edit.hsrUpdateAvailable', { engine: name, latest, current }),
     description: result.message,
   }
 }
@@ -1128,7 +1051,7 @@ const runManualUpdate = async (engine: HSREngine, action: HSRUpdateAction) => {
     state.result = null
     state.error = errorMsg
     message.error(
-      `${t('edit.hsrUpdateRequestFailed', { engine: engineLabel(engine) })}: ${errorMsg}`
+      `${t('core.edit.hsrUpdateRequestFailed', { engine: engineLabel(engine) })}: ${errorMsg}`
     )
   } finally {
     state.checking = false
@@ -1204,7 +1127,7 @@ const joinPath = (folder: string, fileName: string) =>
 const selectPath = async (key: string) => {
   try {
     if (!window.electronAPI) {
-      message.error(t('edit.filePickingUnavailableRun'))
+      message.error(t('core.edit.filePickingUnavailableRun'))
       return
     }
     const path = await window.electronAPI.selectFolder()
@@ -1217,7 +1140,7 @@ const selectPath = async (key: string) => {
       const exists = await window.electronAPI.fileExists(exePath)
       if (!exists) {
         Modal.warning({
-          title: t('edit.invalidPath'),
+          title: t('core.edit.invalidPath'),
           content: `所选目录下未找到 ${expectedExe}，请重新选择正确的安装目录。`,
         })
         return
@@ -1233,11 +1156,11 @@ const selectPath = async (key: string) => {
       logger.warn(`未知的路径 key: ${key}`)
       return
     }
-    message.success(t('edit.pathSelected'))
+    message.success(t('core.edit.pathSelected'))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择路径失败: ${errorMsg}`)
-    message.error(t('edit.couldNotPickFolder'))
+    message.error(t('core.edit.couldNotPickFolder'))
   }
 }
 
@@ -1276,7 +1199,7 @@ const loadSraProfiles = async () => {
 const sraProfileOptions = computed(() => {
   const snapshot = sraProfiles.value
   const options = [
-    { value: '', label: t('edit.sraProfileAuto', { name: snapshot?.auto_id || 'Default' }) },
+    { value: '', label: t('core.edit.sraProfileAuto', { name: snapshot?.auto_id || 'Default' }) },
     ...(snapshot?.profiles ?? []).map(profile => ({ value: profile.id, label: profile.id })),
   ]
   const configured = hsrConfig.Info.SRAProfile || ''
@@ -1289,7 +1212,7 @@ const sraProfileOptions = computed(() => {
 // 下拉只在填了 SRA 路径时渲染，这里只剩「档案目录读不到」这类原因
 const sraProfileDisabledReason = computed(() => {
   if (sraProfilesError.value) {
-    return t('edit.sraProfileLoadFailed', { reason: sraProfilesError.value })
+    return t('core.edit.sraProfileLoadFailed', { reason: sraProfilesError.value })
   }
   const snapshot = sraProfiles.value
   if (snapshot && !snapshot.available) return snapshot.unavailable_reason || ''
@@ -1334,7 +1257,7 @@ onMounted(async () => {
   try {
     const scriptDetail = await getScript(scriptId)
     if (!scriptDetail) {
-      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist'))
       router.push('/scripts')
       return
     }
@@ -1344,7 +1267,7 @@ onMounted(async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
-    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript'))
     router.push('/scripts')
   } finally {
     pageLoading.value = false
@@ -1468,34 +1391,6 @@ onMounted(async () => {
   font-size: 14px;
 }
 
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
-}
-
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 2px solid var(--ant-color-border);
-  transition: all 0.3s ease;
-}
-
-.path-input-group:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.path-input-group:focus-within {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
-}
-
 .path-input-group :deep(.path-input.ant-input) {
   flex: 1;
   border: none;
@@ -1505,23 +1400,6 @@ onMounted(async () => {
 
 .path-input-group :deep(.path-input.ant-input:focus) {
   box-shadow: none;
-}
-
-.path-button {
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  transition: all 0.3s ease;
-  border-left: 1px solid var(--ant-color-border-secondary);
-}
-
-.path-button:hover {
-  background: var(--ant-color-primary);
-  color: white;
-  transform: none;
 }
 
 .path-clear-button {

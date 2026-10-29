@@ -18,7 +18,7 @@ import { handleExternalLink } from '@/utils/openExternal'
 
 const props = defineProps<{
   settings: GlobalConfig
-  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<void>
+  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<boolean>
   testNotify: () => Promise<void>
   testingNotify: boolean
 }>()
@@ -107,7 +107,7 @@ const policyFields = computed(() => {
 })
 
 const policyTitle = computed(() =>
-  groups.value.policy ? t(groups.value.policy.nameKey) : t('setting.notify.contentSection')
+  groups.value.policy ? t(groups.value.policy.nameKey) : t('core.setting.notify.contentSection')
 )
 
 // ==================== 配置弹窗 ====================
@@ -168,10 +168,10 @@ const modalPopupContainer = () =>
           class="toolbar-link"
           @click="handleExternalLink"
         >
-          {{ t('setting.notify.usageDoc') }}
+          {{ t('core.setting.notify.usageDoc') }}
         </a>
         <a-button type="primary" :loading="testingNotify" size="middle" @click="testNotify">
-          {{ t('setting.notify.sendTest') }}
+          {{ t('core.setting.notify.sendTest') }}
         </a-button>
       </div>
     </div>
@@ -180,12 +180,12 @@ const modalPopupContainer = () =>
       v-if="channelsError"
       type="error"
       show-icon
-      :message="t('setting.notify.loadFailed')"
+      :message="t('core.setting.notify.loadFailed')"
       class="channels-error"
     >
       <template #action>
         <a-button size="small" :loading="channelsLoading" @click="loadChannels">
-          {{ t('setting.notify.retryLoad') }}
+          {{ t('core.setting.notify.retryLoad') }}
         </a-button>
       </template>
     </a-alert>
@@ -213,7 +213,7 @@ const modalPopupContainer = () =>
         <div class="panel-head">
           <i class="dot" />
           <h3 class="count">
-            {{ t('setting.notify.countTemplate', { n: groups.active.length }) }}
+            {{ t('core.setting.notify.countTemplate', { n: groups.active.length }) }}
           </h3>
         </div>
         <div v-if="groups.active.length" class="cards">
@@ -222,7 +222,7 @@ const modalPopupContainer = () =>
             :key="channel.key"
             :channel="channel"
             variant="card"
-            :state-text="t('setting.notify.stateEnabled')"
+            :state-text="t('core.setting.notify.stateEnabled')"
             :state-active="true"
             :summary="summaryOf(channel)"
             @open="openChannel"
@@ -230,7 +230,7 @@ const modalPopupContainer = () =>
         </div>
         <a-empty
           v-else
-          :description="t('setting.notify.activeEmpty')"
+          :description="t('core.setting.notify.activeEmpty')"
           :image-style="{ height: '48px' }"
         />
       </section>
@@ -238,7 +238,7 @@ const modalPopupContainer = () =>
       <section class="panel dashed">
         <div class="panel-head">
           <i class="dot off" />
-          <h3 class="count">{{ t('setting.notify.idleSection') }}</h3>
+          <h3 class="count">{{ t('core.setting.notify.idleSection') }}</h3>
         </div>
         <div v-if="groups.idle.length" class="rows">
           <NotifyChannelCard
@@ -248,7 +248,7 @@ const modalPopupContainer = () =>
             variant="row"
             :state-text="
               t(
-                `setting.notify.${idleStateKey(channel, { clawConnected: clawConnected, webhookNames: [] })}`
+                `core.setting.notify.${idleStateKey(channel, { clawConnected: clawConnected, webhookNames: [] })}`
               )
             "
             :state-active="false"
@@ -258,7 +258,7 @@ const modalPopupContainer = () =>
         </div>
         <a-empty
           v-else
-          :description="t('setting.notify.idleEmpty')"
+          :description="t('core.setting.notify.idleEmpty')"
           :image-style="{ height: '48px' }"
         />
       </section>
@@ -266,7 +266,7 @@ const modalPopupContainer = () =>
       <section class="panel">
         <div class="panel-head">
           <i class="dot" :class="{ off: !webhookNames.length }" />
-          <h3>{{ t('setting.notify.customSection') }}</h3>
+          <h3>{{ t('core.setting.notify.customSection') }}</h3>
         </div>
         <div v-if="groups.custom.length" class="cards">
           <NotifyChannelCard
@@ -274,7 +274,7 @@ const modalPopupContainer = () =>
             :key="channel.key"
             :channel="channel"
             variant="card"
-            :state-text="t('setting.notify.webhookCount', { n: webhookNames.length })"
+            :state-text="t('core.setting.notify.webhookCount', { n: webhookNames.length })"
             :state-active="webhookNames.length > 0"
             :summary="summaryOf(channel)"
             @open="openChannel"
@@ -282,7 +282,7 @@ const modalPopupContainer = () =>
         </div>
         <a-empty
           v-else
-          :description="t('setting.notify.customEmpty')"
+          :description="t('core.setting.notify.customEmpty')"
           :image-style="{ height: '48px' }"
         />
       </section>

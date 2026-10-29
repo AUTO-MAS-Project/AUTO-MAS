@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.config import ConfigCollection
-from app.core.history import aggregate_data, history_store
+from app.core.history import aggregate_data
 from app.core.ws import Publisher, protocol
 from app.log_box.hooks import make_line_hook
 from app.log_box.markers import parse_marker
@@ -39,6 +39,8 @@ from app.task.base import ScriptAutoProxyBase
 from app.task.notify_core import build_script_statistics_payload
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import (
+    LOG_TYPE_NORMAL,
+    UTC4,
     LogMonitor,
     ProcessInfo,
     ProcessManager,
@@ -50,9 +52,7 @@ from app.utils import (
     load_patterns,
     strptime,
 )
-from app.utils.constants import UTC4
-from app.utils.io import mark_native_config_injected, swap_in_dir
-from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
+from app.utils import io as _utils_io
 
 logger = get_logger("通用脚本自动代理")
 
@@ -683,11 +683,11 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                     "无法按 「目录」 模式换入"
                 )
                 return
-            swap_in_dir(
+            _utils_io.swap_in_dir(
                 mas_config_dir,
                 self.script_config_path,
             )
-            mark_native_config_injected(
+            _utils_io.mark_native_config_injected(
                 Path.cwd() / f"data/{self.script_info.script_id}/Temp",
                 self.script_config_path,
                 script_id=self.script_info.script_id,
@@ -923,38 +923,12 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         self.cur_user_item.push_log = self.push_log_buffer
 
         if history_records:
-            try:
-                attachments = await self.task_info.collect_user_history_attachments(
-                    self.script_info, self.cur_user_item
-                )
-                history_records[-1].attachments.extend(attachments)
-            except Exception:
-                logger.opt(exception=True).warning(
-                    "收集用户历史附件失败，继续保存日志与执行结果"
-                )
-            try:
-                for record in history_records:
-                    try:
-                        await history_store.record(record)
-                    except Exception as error:
-                        logger.opt(exception=True).warning(f"保存历史失败：{error}")
-                        try:
-                            await Publisher.send(
-                                id=self.task_info.task_id,
-                                type=protocol.TASK_NOTICE,
-                                data=WSTaskNoticeData(
-                                    level="warning",
-                                    message=f"历史记录保存失败：{error}",
-                                ),
-                            )
-                        except Exception:
-                            logger.opt(exception=True).warning(
-                                "发送历史保存失败提示时出现异常"
-                            )
-            finally:
-                await self.task_info.discard_user_history_capture(
-                    self.script_info, self.cur_user_item
-                )
+            await self.task_info.save_user_history(
+                history_records,
+                script=self.script_info,
+                user=self.cur_user_item,
+                log_warning=logger.opt(exception=True).warning,
+            )
 
         if self.run_book:
             await self.task_info.local_notifier.send_notice(

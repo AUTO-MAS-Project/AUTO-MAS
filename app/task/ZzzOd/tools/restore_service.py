@@ -23,10 +23,8 @@
 （``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
-ZzzOd 是门面委托式：恢复与预览的业务语义（槽占用守卫、字段回填、预览
-构建）保留在 ``app.core.config`` 的门面公开方法中，本模块只做池声明与薄
-委托；声明式 ``files`` / ``backup_root`` 回调包装专项 backup_archive 函数
-（物化 + 收集），不读取门面内部状态。
+恢复与预览由专项 recovery 服务持有；池函数只装配配置集合与落盘能力，
+文件级归档与替换继续复用通用基座。
 
 mas 池 = 绑定槽目录整份 + 信息字段快照（mas_user_info.yml，内存 YAML）；
 归档前先物化本页账号+编排进槽（账号/编排只存在 UserData，槽要注入才带，
@@ -38,10 +36,12 @@ mas 池 = 绑定槽目录整份 + 信息字段快照（mas_user_info.yml，内�
 import uuid
 from pathlib import Path
 
-from app.utils.config_restore import ConfigRestorePool, RestoreContext
+from app.utils import config_restore as _utils_config_restore
+
+from ..api_service import get_service
 
 
-def _mas_user(ctx: RestoreContext):
+def _mas_user(ctx: _utils_config_restore.RestoreContext):
     """守卫 + 用户配置对象（恢复/归档前的「用户不存在」守卫）。"""
 
     uid = uuid.UUID(ctx.user_id)
@@ -50,14 +50,14 @@ def _mas_user(ctx: RestoreContext):
     return uid, ctx.script_config.UserData[uid]
 
 
-def _script_root(ctx: RestoreContext) -> Path | None:
+def _script_root(ctx: _utils_config_restore.RestoreContext) -> Path | None:
     """一条龙安装根目录（原始路径，不校验哨兵）；未配置返回 ``None``。"""
 
     raw = str(ctx.script_config.Info.RootPath or "").strip()
     return Path(raw) if raw else None
 
 
-def _mas_slot(ctx: RestoreContext) -> int | None:
+def _mas_slot(ctx: _utils_config_restore.RestoreContext) -> int | None:
     """当前用户绑定的槽 idx；未绑定（<=0）返回 ``None``。"""
 
     _, user_cfg = _mas_user(ctx)
@@ -65,13 +65,15 @@ def _mas_slot(ctx: RestoreContext) -> int | None:
     return slot if slot > 0 else None
 
 
-# ══════════════════ mas 池（声明式 + 门面预览/恢复） ══════════════════
+# ══════════════════ mas 池（声明式 + 专项预览/恢复） ══════════════════
 
 
-async def _mas_files(ctx: RestoreContext) -> dict[str, "Path | str"] | None:
+async def _mas_files(
+    ctx: _utils_config_restore.RestoreContext,
+) -> dict[str, "Path | str"] | None:
     """归档内容 = 绑定槽目录整份 + 信息字段快照（内存 YAML）。
 
-    与门面原快照入口同构：归档前先物化本页账号+编排进槽（不物化会漏、
+    归档前先物化本页账号+编排进槽（不物化会漏、
     恢复会把本页字段清空）；未绑定槽、安装路径未配置或槽目录缺失时返回
     ``None``（无可归档内容）。
     """
@@ -95,7 +97,7 @@ async def _mas_files(ctx: RestoreContext) -> dict[str, "Path | str"] | None:
     return collect_mas_files(slot_dir, collect_mas_user_info(user_cfg)) or None
 
 
-async def _mas_root(ctx: RestoreContext) -> Path | None:
+async def _mas_root(ctx: _utils_config_restore.RestoreContext) -> Path | None:
     from app.task.ZzzOd.tools import mas_backup_root
 
     slot = _mas_slot(ctx)
@@ -104,22 +106,24 @@ async def _mas_root(ctx: RestoreContext) -> Path | None:
     return mas_backup_root(ctx.script_id, slot)
 
 
-async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
-    return ctx.config.get_zzzod_backup_preview(
+async def _preview_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> dict:
+    return get_service(ctx.config).recovery.get_backup_preview(
         ctx.script_id, ctx.user_id, ts, target="mas"
     )
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
-    await ctx.config.restore_zzzod_backup(
+async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
+    await get_service(ctx.config).recovery.restore_backup(
         ctx.script_id, ctx.user_id, ts, target="mas", force=ctx.force
     )
 
 
-# ══════════════════ onedragon 池（声明式 + 门面预览/恢复） ══════════════════
+# ══════════════════ onedragon 池（声明式 + 专项预览/恢复） ══════════════════
 
 
-async def _onedragon_files(ctx: RestoreContext) -> dict[str, Path] | None:
+async def _onedragon_files(
+    ctx: _utils_config_restore.RestoreContext,
+) -> dict[str, Path] | None:
     """归档内容 = 一条龙原生配置文件集（排除 MAS 槽；缺失返回 ``None``）。"""
 
     from app.task.ZzzOd.tools import collect_onedragon_files
@@ -130,7 +134,7 @@ async def _onedragon_files(ctx: RestoreContext) -> dict[str, Path] | None:
     return collect_onedragon_files(root) or None
 
 
-async def _onedragon_root(ctx: RestoreContext) -> Path | None:
+async def _onedragon_root(ctx: _utils_config_restore.RestoreContext) -> Path | None:
     from app.task.ZzzOd.tools import onedragon_backup_root
 
     root = _script_root(ctx)
@@ -139,20 +143,24 @@ async def _onedragon_root(ctx: RestoreContext) -> Path | None:
     return onedragon_backup_root(root)
 
 
-async def _preview_onedragon(ctx: RestoreContext, ts: str) -> dict:
-    return ctx.config.get_zzzod_backup_preview(
+async def _preview_onedragon(
+    ctx: _utils_config_restore.RestoreContext, ts: str
+) -> dict:
+    return get_service(ctx.config).recovery.get_backup_preview(
         ctx.script_id, ctx.user_id, ts, target="onedragon"
     )
 
 
-async def _restore_onedragon(ctx: RestoreContext, ts: str) -> None:
-    await ctx.config.restore_zzzod_backup(
+async def _restore_onedragon(
+    ctx: _utils_config_restore.RestoreContext, ts: str
+) -> None:
+    await get_service(ctx.config).recovery.restore_backup(
         ctx.script_id, ctx.user_id, ts, target="onedragon", force=ctx.force
     )
 
 
 RESTORE_POOLS = [
-    ConfigRestorePool(
+    _utils_config_restore.ConfigRestorePool(
         key="mas",
         kind="user",
         mas_base="user_only",
@@ -161,7 +169,7 @@ RESTORE_POOLS = [
         preview=_preview_mas,
         restore=_restore_mas,
     ),
-    ConfigRestorePool(
+    _utils_config_restore.ConfigRestorePool(
         key="onedragon",
         kind="script",
         files=_onedragon_files,

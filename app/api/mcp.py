@@ -30,9 +30,11 @@ import asyncio
 import importlib
 import os
 
+import httpx
 from fastapi import FastAPI
+from fastapi.routing import APIRoute
 
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("MCP 服务")
 
@@ -180,16 +182,29 @@ def _patch_fastapi_mcp_ref_recursion(max_depth: int = 96) -> None:
 async def mount_mcp(app: FastAPI) -> None:
     """后台挂载配置工具，保持 /mcp 与 AUTO_MAS_ENABLE_MCP 开关兼容。"""
 
-    # MCP 构建需要遍历完整 OpenAPI schema (约 1s)，后移到后台
+    # 只为白名单路由生成 OpenAPI，避免先遍历全部接口再过滤工具。
     # 导入与构建均为重 CPU 操作，放入线程避免阻塞事件循环推迟 API 响应
     # Starlette 支持运行期追加路由，首个 /mcp 请求前挂载完成即可
     if os.getenv("AUTO_MAS_ENABLE_MCP", "1") == "1":
         fastapi_mcp = await asyncio.to_thread(importlib.import_module, "fastapi_mcp")
         _patch_fastapi_mcp_ref_recursion()
 
+        schema_app = FastAPI(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            openapi_url=None,
+            routes=[
+                route
+                for route in app.routes
+                if isinstance(route, APIRoute)
+                and (route.operation_id or route.unique_id) in MCP_INCLUDED_OPERATIONS
+            ],
+        )
+        schema_app.openapi_version = app.openapi_version
         mcp = await asyncio.to_thread(
             fastapi_mcp.FastApiMCP,
-            app,
+            schema_app,
             name="AUTO-MAS MCP",
             description=(
                 "配置已安装的 AUTO-MAS 脚本：创建脚本并设置安装路径，"
@@ -209,6 +224,12 @@ async def mount_mcp(app: FastAPI) -> None:
             ),
             describe_full_response_schema=False,
             describe_all_responses=False,
+            # 生成说明使用路由视图，实际调用仍走原应用的中间件、依赖与状态。
+            http_client=httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+                base_url="http://apiserver",
+                timeout=10.0,
+            ),
             # 仅暴露通用配置与试运行能力；新增 HTTP 接口不会自动成为工具。
             # fastapi-mcp 的操作与标签过滤取并集，白名单不能再搭配标签过滤。
             include_operations=list(MCP_INCLUDED_OPERATIONS),
@@ -249,7 +270,7 @@ async def mount_mcp(app: FastAPI) -> None:
                     "记录缺失或无法唯一对应时，结果仍未知，"
                     "不能把任务从运行快照消失视为成功。"
                 )
-        mcp.mount_http()
+        mcp.mount_http(router=app)
         logger.info(f"MCP 服务已挂载，共 {len(mcp.tools)} 个工具")
     else:
         logger.info("MCP 服务未启用，跳过路由挂载")

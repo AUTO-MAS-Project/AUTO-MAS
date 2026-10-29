@@ -8,7 +8,7 @@
           :disabled="loading"
           :quick-config="quickConfig"
           :quick-config-disabled="quickConfigDisabled"
-          :alert-message="t('edit.configSourceHintBase')"
+          :alert-message="t('core.edit.configSourceHintBase')"
           :show-gui-hint="false"
           @change="$emit('modeChange', $event)"
           @quick-config-change="$emit('quickConfigChange', $event)"
@@ -70,21 +70,33 @@ const maaEndConfigModeOptions: Array<{
 }> = [
   {
     value: 'shared',
-    title: t('edit.script'),
-    description: t('edit.useSharedScriptLevel'),
+    title: t('core.edit.script'),
+    description: t('core.edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {
     value: 'independent',
-    title: t('edit.user'),
-    description: t('edit.useThisUserS'),
+    title: t('core.edit.user'),
+    description: t('core.edit.useThisUserS'),
     icon: 'database',
   },
   {
     value: 'native',
-    title: t('edit.directControl'),
-    description: t('edit.nativeConfigSourceDescription'),
+    title: t('core.edit.directControl'),
+    description: t('core.edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]
 </script>
+
+<style scoped>
+@media (max-width: 900px) {
+  .config-source-section :deep(.config-mode-options) {
+    display: flex;
+    flex-direction: column;
+  }
+  .config-source-section :deep(.config-mode-option) {
+    min-height: auto;
+  }
+}
+</style>

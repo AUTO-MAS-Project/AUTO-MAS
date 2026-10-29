@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ScriptMirrorCdkData } from '@/api'
 import type { MAAScriptConfig } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -64,18 +64,17 @@ const handleEnabled = (enabled: boolean) => {
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.updateTakeover') }}</h3>
+      <h3>{{ t('core.edit.updateTakeover') }}</h3>
     </div>
     <a-row :gutter="24">
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.updateTakeoverTip')">
-              <span class="form-label">
-                {{ t('edit.updateTakeoverSwitch') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('core.edit.updateTakeoverSwitch')"
+              :hint="t('core.edit.updateTakeoverTip')"
+              variant="form"
+            />
           </template>
           <a-switch
             :checked="update.TakeoverEnabled"
@@ -88,16 +87,15 @@ const handleEnabled = (enabled: boolean) => {
       <a-col :span="16">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.updateTakeoverCdkTip')">
-              <span class="form-label">
-                {{ t('edit.updateTakeoverCdk') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('core.edit.updateTakeoverCdk')"
+              :hint="t('core.edit.updateTakeoverCdkTip')"
+              variant="form"
+            />
           </template>
           <a-input-password
             :value="update.MirrorChyanCDK"
-            :placeholder="t('edit.updateTakeoverCdkPlaceholder')"
+            :placeholder="t('core.edit.updateTakeoverCdkPlaceholder')"
             size="large"
             class="modern-input"
             autocomplete="off"

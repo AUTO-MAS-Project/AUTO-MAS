@@ -7,11 +7,7 @@ from app.log_box.hooks import (
     make_line_hook,
     validate_hook,
 )
-from app.utils.LogPatternExtractor import (
-    SIGN_MODE_REGEX,
-    SIGN_MODE_SPLIT,
-    compile_log_signs,
-)
+from app.utils import SIGN_MODE_REGEX, SIGN_MODE_SPLIT, compile_log_signs
 
 
 # ==================== 成功/失败标志匹配 ====================

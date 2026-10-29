@@ -14,7 +14,8 @@ import { useI18n } from 'vue-i18n'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
-import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
+import { useMaaFWApi } from '@/composables/useMaaFWApi'
+import { buildMaaFWScriptIconUrl } from '@/utils/maafwProjectIcon'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import {
@@ -22,6 +23,7 @@ import {
   maafwUserConfigTypes,
   prepareMaaFWFlavorPage,
   useMaaFWFlavor,
+  usesMaaFWProjectIcon,
   type MaaFWUserSlotContext,
 } from '@/composables/useMaaFWFlavor'
 import type {
@@ -107,8 +109,10 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const preferAdbController = ref(false)
   const previewData = shallowRef<MaaFWInterfacePreviewData | null>(null)
 
+  // 特调用自己声明的图标（模板里回退到 flavor.logo）；通用 MaaFW 与脚本列表同一个口径取项目图标，
+  // 不等 interface 读完（类型由页面宿主先读好，这里一开始就是对的）
   const projectIconUrl = computed(() =>
-    buildMaaFWAssetUrl(previewData.value?.path, previewData.value?.project.icon)
+    usesMaaFWProjectIcon(flavor.value) ? buildMaaFWScriptIconUrl(scriptId) : ''
   )
 
   const handleProjectIconError = (event: Event) => {
@@ -186,7 +190,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
       taskOptions: taskSnapshot.value.taskOptions,
       options: previewData.value?.options || [],
       displayName: task => getDisplayName(task),
-      separator: t('edit.maafwUnselectableTaskSeparator'),
+      separator: t('core.edit.maafwUnselectableTaskSeparator'),
     })
     if (state?.kind === 'split' && flavor.value.userPage.managed.warningKey) {
       return { type: 'warning', message: t(flavor.value.userPage.managed.warningKey, state) }
@@ -204,8 +208,8 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     ...unselectableMaaFWQueueNotices(
       presentQueuedTasks.value,
       task => getDisplayName(task),
-      t('edit.maafwUnselectableTaskSeparator')
-    ).map(notice => t('edit.maafwUnselectableTaskNotice', notice)),
+      t('core.edit.maafwUnselectableTaskSeparator')
+    ).map(notice => t('core.edit.maafwUnselectableTaskNotice', notice)),
   ])
 
   // 特调插入点的上下文：独有区块直接改 formData 草稿，落盘走 save 事件回到 handleFieldSave
@@ -226,13 +230,13 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
       const script = initialScript !== undefined ? initialScript : await getScript(scriptId)
       if (!script) {
         if (!scriptApiError.value && !host?.scriptLoadError.value)
-          message.error(t('edit.scriptDoesNotExist2'))
+          message.error(t('core.edit.scriptDoesNotExist2'))
         handleCancel()
         return
       }
       // MaaFW 与它的特调类型（M9A / MSS ……）都是同一个页面
       if (!isMaaFWFamily(script.type)) {
-        message.error(t('edit.scriptTypeNotMfw'))
+        message.error(t('core.edit.scriptTypeNotMfw'))
         handleCancel()
         return
       }
@@ -256,7 +260,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载脚本信息失败: ${errorMsg}`)
-      if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
+      if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript2'))
       handleCancel()
     } finally {
       pageLoading.value = false
@@ -277,13 +281,13 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
         )
         await loadUserData()
       } else {
-        if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
+        if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
         handleCancel()
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`创建用户失败: ${errorMsg}`)
-      if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
       handleCancel()
     }
   }
@@ -317,17 +321,17 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
           isInitializing.value = false
           userLoaded.value = true
         } else {
-          message.error(t('edit.userDoesNotExist'))
+          message.error(t('core.edit.userDoesNotExist'))
           handleCancel()
         }
       } else {
-        if (!userApiError.value) message.error(t('edit.couldNotFetchUser'))
+        if (!userApiError.value) message.error(t('core.edit.couldNotFetchUser'))
         handleCancel()
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载用户数据失败: ${errorMsg}`)
-      if (!userApiError.value) message.error(t('edit.couldNotLoadUser2'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser2'))
       isInitializing.value = false
       handleCancel()
     }
@@ -335,7 +339,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
 
   const reloadInterface = async (showMessage = true) => {
     if (!scriptPath.value) {
-      if (showMessage) message.warning(t('edit.importMfwProjectScript'))
+      if (showMessage) message.warning(t('core.edit.importMfwProjectScript'))
       return
     }
 
@@ -345,7 +349,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
       previewData.value = markRaw(data)
       taskSnapshot.value = normalizeTaskSnapshot(taskSnapshot.value, data, { keepMissing: true })
       await nextTick()
-      if (showMessage) message.success(t('edit.interfaceLoaded'))
+      if (showMessage) message.success(t('core.edit.interfaceLoaded'))
     }
   }
 
@@ -356,10 +360,10 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const confirmLeave = () =>
     new Promise<boolean>(resolve => {
       Modal.confirm({
-        title: t('edit.youHaveUnsavedChanges'),
-        content: t('edit.leaveWithoutSavingUnsaved'),
-        okText: t('edit.leave'),
-        cancelText: t('edit.keepEditing'),
+        title: t('core.edit.youHaveUnsavedChanges'),
+        content: t('core.edit.leaveWithoutSavingUnsaved'),
+        okText: t('core.edit.leave'),
+        cancelText: t('core.edit.keepEditing'),
         onOk: () => resolve(true),
         onCancel: () => resolve(false),
       })
@@ -412,7 +416,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   onMounted(() => {
     window.addEventListener('beforeunload', handleBeforeUnload)
     if (!scriptId) {
-      message.error(t('edit.missingScriptIdParameter'))
+      message.error(t('core.edit.missingScriptIdParameter'))
       handleCancel()
       return
     }
@@ -459,6 +463,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     taskByName: context.taskByName,
     effectiveControllerName: context.effectiveControllerName,
     effectiveResourceName,
+    managedTaskEntries,
     interfaceDependentDisabled: context.interfaceDependentDisabled,
     handleFieldSave,
     ...queue,

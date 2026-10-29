@@ -10,7 +10,7 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { Service } from '@/api'
+import { AdapterSetupService as Service } from '@/composables/useAdapterSetupApi'
 import type { TaskCard } from './zzzodTypes'
 export function useZzzodTaskConfig(options: {
   scriptId: string
@@ -84,7 +84,7 @@ export function useZzzodTaskConfig(options: {
     )
     if (version !== contextVersion || reads.get(card.app_id) !== request) return null
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodTaskConfigLoadFailed'))
+      throw new Error(resp.message || t('core.edit.zzzodTaskConfigLoadFailed'))
     }
     const fields = (resp.fields ?? []) as TaskConfigField[]
     taskConfigData.value = { ...taskConfigData.value, [card.app_id]: fields }
@@ -115,7 +115,7 @@ export function useZzzodTaskConfig(options: {
       }
     } catch (e) {
       if (current())
-        message.error(e instanceof Error ? e.message : t('edit.zzzodTaskConfigLoadFailed'))
+        message.error(e instanceof Error ? e.message : t('core.edit.zzzodTaskConfigLoadFailed'))
     } finally {
       if (current()) setTaskLoading(card.app_id, false)
     }
@@ -176,7 +176,7 @@ export function useZzzodTaskConfig(options: {
     context = getContext()
   ): Promise<boolean> => {
     if (configLocked.value) {
-      message.error(t('edit.configLocked'))
+      message.error(t('core.edit.configLocked'))
       return Promise.resolve(false)
     }
     // 数值框清空（change 拿到 null/空串/纯空白）与 NaN 一律不发请求（后端
@@ -194,13 +194,13 @@ export function useZzzodTaskConfig(options: {
           instanceIdx: context.instanceIdx,
         })
         if (resp.code !== 200) {
-          throw new Error(resp.message || t('edit.zzzodTaskConfigSaveFailed'))
+          throw new Error(resp.message || t('core.edit.zzzodTaskConfigSaveFailed'))
         }
         field.value = value
-        message.success(t('edit.zzzodTaskConfigSaved'))
+        message.success(t('core.edit.zzzodTaskConfigSaved'))
         return true
       } catch (e) {
-        message.error(e instanceof Error ? e.message : t('edit.zzzodTaskConfigSaveFailed'))
+        message.error(e instanceof Error ? e.message : t('core.edit.zzzodTaskConfigSaveFailed'))
         return false
       }
     }
@@ -247,13 +247,13 @@ export function useZzzodTaskConfig(options: {
         )
         if (version !== modalVersion) return
         if (resp.code !== 200) {
-          throw new Error(resp.message || t('edit.zzzodTaskConfigLoadFailed'))
+          throw new Error(resp.message || t('core.edit.zzzodTaskConfigLoadFailed'))
         }
         planModal.trainCategories = resp.trainCategories ?? []
       }
     } catch (e) {
       if (version !== modalVersion) return
-      message.error(e instanceof Error ? e.message : t('edit.zzzodTaskConfigLoadFailed'))
+      message.error(e instanceof Error ? e.message : t('core.edit.zzzodTaskConfigLoadFailed'))
       planModal.open = false
     } finally {
       if (version === modalVersion) planModal.loading = false
@@ -283,15 +283,15 @@ export function useZzzodTaskConfig(options: {
         instanceIdx: context.instanceIdx,
       })
       if (resp.code !== 200) {
-        throw new Error(resp.message || t('edit.zzzodTaskConfigSaveFailed'))
+        throw new Error(resp.message || t('core.edit.zzzodTaskConfigSaveFailed'))
       }
       if (version === modalVersion) {
         planModal.saving = false
         planModal.open = false
       }
-      message.success(t('edit.zzzodTaskConfigSaved'))
+      message.success(t('core.edit.zzzodTaskConfigSaved'))
     } catch (e) {
-      message.error(e instanceof Error ? e.message : t('edit.zzzodTaskConfigSaveFailed'))
+      message.error(e instanceof Error ? e.message : t('core.edit.zzzodTaskConfigSaveFailed'))
     } finally {
       if (version === modalVersion) planModal.saving = false
     }

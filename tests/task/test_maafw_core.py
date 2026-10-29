@@ -254,14 +254,15 @@ def test_worker_closure_only_uses_runner_venv_packages() -> None:
 # ---------------------------------------------------------------------------
 # 二、宿主 ↔ worker 的进程边界
 #
-# 宿主把运行计划写成 job 文件交给 worker，worker 把结果以 JSON 发回来，两边各自
-# ``model_validate``。任何一个方向序列化不回来，每一次 MFW 运行都直接失败；worker
-# 按键名取值，宿主改了键名而 worker 还读旧的，拿到的是 None 而不是报错。
+# 宿主把运行计划写成 job 经 stdin 交给 worker，worker 把结果作为事件经事件通道发回来
+# （``worker_protocol``），两边各自 ``model_validate``。任何一个方向序列化不回来，每一次
+# MFW 运行都直接失败；worker 按键名取值，宿主改了键名而 worker 还读旧的，拿到的是 None
+# 而不是报错。
 # ---------------------------------------------------------------------------
 
 
 def _worker_payload_keys() -> set[str]:
-    """worker 从 job 文件里读的顶层键：``payload["k"]`` 与 ``payload.get("k")``。"""
+    """worker 从 job 里读的顶层键：``payload["k"]`` 与 ``payload.get("k")``。"""
 
     path = _module_file(WORKER_MODULE)
     assert path is not None
@@ -327,12 +328,13 @@ def _sample_plan(project: Path):
     )
 
 
-def test_job_file_round_trips_to_worker(tmp_path: Path) -> None:
+def test_job_round_trips_to_worker(tmp_path: Path) -> None:
     from app.task.MaaFW.tools.core.runner.models import (
         MaaFWDeviceConfig,
         MaaFWRunnerJobPayload,
     )
     from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
+    from app.task.MaaFW.tools.core.worker_protocol import decode_job, encode_job
 
     service = MaaFWRunnerService()
     payload = service.create_job_payload(
@@ -353,18 +355,22 @@ def test_job_file_round_trips_to_worker(tmp_path: Path) -> None:
         task_time_limit_seconds=2700,
         task_time_limit_overrides={"切换账号": 600},
     )
-    job_path = service.write_job_file(payload, tmp_path / "jobs")
-    on_disk = json.loads(job_path.read_text(encoding="utf-8"))
+    channel = {"pipe": r"\\.\pipe\auto-mas-maafw-1-0123abcd", "token": "0123abcd"}
+    # 宿主写进 worker stdin 的字节，worker 读到 EOF 后解出来的就是这个。
+    received = decode_job(encode_job(payload, event_channel=channel))
 
     # worker 按这些键取值；宿主不写、或改了名，worker 拿到的就是 None。
     read_by_worker = _worker_payload_keys()
-    assert {"plan", "deviceConfig", "ownerPid"} <= read_by_worker, (
+    assert {"plan", "deviceConfig", "ownerPid", "eventChannel"} <= read_by_worker, (
         "没从 worker.py 里认出它读的键，守卫失效"
     )
     missing = read_by_worker - set(MaaFWRunnerJobPayload.model_fields)
     assert not missing, f"worker 读的键宿主不写：{sorted(missing)}"
 
-    assert MaaFWRunnerJobPayload.model_validate(on_disk) == payload
+    assert received["eventChannel"] == channel
+    assert MaaFWRunnerJobPayload.model_validate(received) == payload.model_copy(
+        update={"eventChannel": channel}
+    )
 
 
 def test_worker_result_survives_host_validation() -> None:
@@ -388,11 +394,15 @@ def test_worker_result_survives_host_validation() -> None:
         signal="server_maintenance",
         signalNode="MaintenanceNotice",
     )
-    # worker.py 发 {"type": "result", "data": model_dump(mode="json")}，宿主
-    # runner_task 用 models.MaaFWRunResult.model_validate 收。
-    wire = json.loads(json.dumps(result.model_dump(mode="json"), ensure_ascii=False))
+    # worker.py 发 {"type": "result", "data": model_dump(mode="json")}，经事件通道按帧
+    # 传给宿主，runner_task 用 models.MaaFWRunResult.model_validate 收。
+    from app.task.MaaFW.tools.core.worker_protocol import FrameDecoder, encode_message
 
-    assert MaaFWRunResult.model_validate(wire) == result
+    event = {"type": "result", "data": result.model_dump(mode="json")}
+    received = FrameDecoder().feed(encode_message(event))
+
+    assert received == [event]
+    assert MaaFWRunResult.model_validate(received[0]["data"]) == result
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { observeFeature } from '@/utils/featureAnalytics'
 
 import { Emulator20Service } from '@/api'
 import { getApiErrorMessage } from '@/utils/apiError'
@@ -47,19 +48,28 @@ export function useAvdApi() {
   const getStatus = (root: string, refresh = false): Promise<Emulator2AvdStatusOut> =>
     call(
       () => Emulator20Service.avdStatusApiEmulator2AvdStatusPost({ root, refresh }),
-      'emulator2.avd.toast.statusFailed'
+      'core.emulator2.avd.toast.statusFailed'
     )
 
   /** 把组件已齐的根目录加进配置。``ok=false`` 带 ``reason``（如 ``already_added``）原样返回。 */
   const addRoot = (emulatorId: string, root: string): Promise<Emulator2PathAddOut> =>
     call(
       () =>
-        Emulator20Service.addPathApiEmulator2PathsAddPost({
-          emulatorId,
-          installPath: root,
-          alias: null,
-        }),
-      'emulator2.avd.toast.addFailed'
+        observeFeature(
+          'avd_root_added',
+          { reason_kind: 'unknown' },
+          () =>
+            Emulator20Service.addPathApiEmulator2PathsAddPost({
+              emulatorId,
+              installPath: root,
+              alias: null,
+            }),
+          result => ({
+            outcome: result.code === 200 && result.ok ? ('success' as const) : ('failure' as const),
+            reason_kind: result.ok ? ('validated' as const) : ('invalid' as const),
+          })
+        ),
+      'core.emulator2.avd.toast.addFailed'
     )
 
   const getInstanceOptions = (
@@ -72,7 +82,7 @@ export function useAvdApi() {
           emulatorId,
           slot,
         }),
-      'emulator2.avd.toast.optionsLoadFailed'
+      'core.emulator2.avd.toast.optionsLoadFailed'
     )
 
   return {

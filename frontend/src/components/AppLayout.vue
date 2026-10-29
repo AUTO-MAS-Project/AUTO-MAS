@@ -48,6 +48,19 @@
 
     <a-layout style="flex: 1; min-width: 0; background: transparent">
       <a-layout-content class="content-area">
+        <a-alert
+          v-if="languageResources.error"
+          type="warning"
+          show-icon
+          :message="t('bootstrap.i18n.failed')"
+          :description="languageResources.error"
+        >
+          <template #action>
+            <a-button :loading="languageResources.loading" @click="languageResources.refresh()">
+              {{ t('bootstrap.i18n.retry') }}
+            </a-button>
+          </template>
+        </a-alert>
         <router-view v-slot="{ Component, route: currentRoute }">
           <keep-alive :include="['SchedulerPage']">
             <component :is="Component" :key="currentRoute.path" />
@@ -59,6 +72,7 @@
 </template>
 
 <script lang="ts" setup>
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { useI18n } from 'vue-i18n'
 import {
   BugOutlined,
@@ -73,7 +87,7 @@ import {
   SkinOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
-import { computed } from 'vue'
+import { computed, nextTick, watch } from 'vue'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
@@ -81,8 +95,10 @@ import { useRouteLock } from '../composables/useRouteLock.ts'
 import type { MenuProps } from 'ant-design-vue'
 import type { AppearanceMenuIconKey } from '@/types/appearance'
 import { createAppearanceMenuIcon } from './appearanceMenuIcon'
+import { useBackendI18nStore } from '@/stores/backendI18n'
 
 const { t } = useI18n()
+const languageResources = useBackendI18nStore()
 
 const SIDER_WIDTH = 160
 
@@ -91,41 +107,53 @@ const route = useRoute()
 const { isDark, activeAppearance } = useTheme()
 const { isRouteLocked, triggerBlockCallback } = useRouteLock()
 
+// 内容区滚动复位：滚动容器是 .content-area（div），路由 scrollBehavior 管不到。
+// 路径变化（页面切换）时回顶，避免旧页面的滚动位置被带到新页面；
+// 仅查询参数变化（如页签切换）不重置。取容器沿用 .content-area 查询惯例。
+watch(
+  () => route.path,
+  () =>
+    void nextTick(() => {
+      document.querySelector<HTMLElement>('.content-area')?.scrollTo({ top: 0 })
+    })
+)
+
 // 菜单图标依次使用外观包的专属图标、默认图标和内置图标。
 const icon =
   (key: AppearanceMenuIconKey, Comp: Component, menuIcons = activeAppearance.value?.menuIconUrls) =>
   () =>
     createAppearanceMenuIcon(key, Comp, menuIcons)
 
-// 判断是否为开发环境。必须与 router/index.ts 里注册调试路由的条件保持一致，
-// 否则菜单项会指向未注册的路由。之前这里还额外判断了 hostname === 'localhost'，
-// 生产环境走 loadFile（file:// 协议，hostname 为空）不会命中，但用 vite preview
-// 预览生产构建时会命中，导致菜单显示了实际不存在的路由。
-const isDevelopment = computed(() => import.meta.env.DEV)
+// 调试入口与路由同时要求开发构建和开发环境，避免指向已裁剪的页面。
+const isDevelopment = import.meta.env.DEV && isDev
 
 const mainMenuItems = computed(() => [
-  { key: '/home', label: t('comp.home'), icon: icon('home', HomeOutlined) },
-  { key: '/scripts', label: t('comp.scripts'), icon: icon('scripts', FileTextOutlined) },
-  { key: '/plans', label: t('comp.plans'), icon: icon('plans', CalendarOutlined) },
-  { key: '/emulators', label: t('comp.emulators'), icon: icon('emulators', DatabaseOutlined) },
-  { key: '/queue', label: t('comp.queue'), icon: icon('queue', UnorderedListOutlined) },
-  { key: '/scheduler', label: t('comp.scheduler'), icon: icon('scheduler', ControlOutlined) },
+  { key: '/home', label: t('core.comp.home'), icon: icon('home', HomeOutlined) },
+  { key: '/scripts', label: t('core.comp.scripts'), icon: icon('scripts', FileTextOutlined) },
+  { key: '/plans', label: t('core.comp.plans'), icon: icon('plans', CalendarOutlined) },
+  { key: '/emulators', label: t('core.comp.emulators'), icon: icon('emulators', DatabaseOutlined) },
+  { key: '/queue', label: t('core.comp.queue'), icon: icon('queue', UnorderedListOutlined) },
+  { key: '/scheduler', label: t('core.comp.scheduler'), icon: icon('scheduler', ControlOutlined) },
 ])
 
 // 开发环境专用菜单项
 const devMenuItems = computed(() => [
-  { key: '/TestRouter', label: t('comp.testRoute'), icon: icon('testRouter', SettingOutlined) },
-  { key: '/OCRdev', label: t('comp.ocrTest'), icon: icon('ocrDev', SettingOutlined) },
+  {
+    key: '/TestRouter',
+    label: t('core.comp.testRoute'),
+    icon: icon('testRouter', SettingOutlined),
+  },
+  { key: '/OCRdev', label: t('core.comp.ocrTest'), icon: icon('ocrDev', SettingOutlined) },
   {
     key: '/OverlayMaskDev',
-    label: t('comp.overlayEasterEggTest'),
+    label: t('core.comp.overlayEasterEggTest'),
     icon: icon('overlayMaskDev', SettingOutlined),
   },
-  ...(import.meta.env.DEV
+  ...(isDevelopment
     ? [
         {
           key: '/update-download-dev',
-          label: t('comp.updateDownloadTest'),
+          label: t('core.comp.updateDownloadTest'),
           icon: icon('updateDownloadDev', BugOutlined),
         },
       ]
@@ -133,10 +161,10 @@ const devMenuItems = computed(() => [
 ])
 
 const bottomMenuItems = computed(() => [
-  { key: '/gamesign', label: t('comp.checkIns'), icon: icon('gameSign', CarryOutOutlined) },
-  { key: '/history', label: t('comp.history'), icon: icon('history', HistoryOutlined) },
-  { key: '/theme-store', label: t('comp.themeStore'), icon: icon('themeStore', SkinOutlined) },
-  { key: '/settings', label: t('comp.settings'), icon: icon('settings', SettingOutlined) },
+  { key: '/gamesign', label: t('core.comp.checkIns'), icon: icon('gameSign', CarryOutOutlined) },
+  { key: '/history', label: t('core.comp.history'), icon: icon('history', HistoryOutlined) },
+  { key: '/theme-store', label: t('core.comp.themeStore'), icon: icon('themeStore', SkinOutlined) },
+  { key: '/settings', label: t('core.comp.settings'), icon: icon('settings', SettingOutlined) },
 ])
 
 type MenuEntry = NonNullable<MenuProps['items']>[number]
@@ -159,7 +187,7 @@ const flattenMenuItems = (items: readonly MenuEntry[]): MenuEntry[] => {
 
 const allItems = computed(() => [
   ...mainMenuItems.value,
-  ...(isDevelopment.value ? devMenuItems.value : []),
+  ...(isDevelopment ? devMenuItems.value : []),
   ...bottomMenuItems.value,
 ])
 
@@ -189,15 +217,16 @@ const onMenuClick: MenuProps['onClick'] = info => {
   }
 
   if (
-    target === '/update-download-dev' &&
     import.meta.env.DEV &&
+    target === '/update-download-dev' &&
+    isDevelopment &&
     !router.hasRoute('UpdateDownloadDev')
   ) {
     router.addRoute({
       path: '/update-download-dev',
       name: 'UpdateDownloadDev',
       component: () => import('@/views/UpdateDownloadDev.vue'),
-      meta: { title: t('comp.updateDownloadTest'), skipGuard: true },
+      meta: { title: t('core.comp.updateDownloadTest'), skipGuard: true },
     })
   }
 

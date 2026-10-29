@@ -3,8 +3,9 @@
     :script-type="flavor.type"
     :title="pageTitle"
     :doc-url="flavor.docUrl"
-    :logo-src="flavor.logo"
+    :logo-src="headerLogo"
     :logo-alt="flavor.typeTagLabel"
+    :logo-fallback-src="flavor.logo"
     :cancel-disabled="shellImporting"
     @cancel="handleCancel"
   />
@@ -188,7 +189,7 @@
           :disabled="shellImporting"
           @click="currentStep -= 1"
         >
-          {{ t('edit.previousStep') }}
+          {{ t('core.edit.previousStep') }}
         </a-button>
         <a-button
           v-if="currentStep < stepItems.length - 1"
@@ -197,7 +198,7 @@
           :disabled="!canLeaveCurrentStep"
           @click="currentStep += 1"
         >
-          {{ t('edit.next') }}
+          {{ t('core.edit.next') }}
         </a-button>
         <a-button
           v-else
@@ -217,11 +218,16 @@
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useI18n } from 'vue-i18n'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { updateChannelOptions, updateSourceOptions } from '@/composables/useMaaFWScriptConfig'
-import { resolveMaaFWFlavorSlot, useMaaFWSections } from '@/composables/useMaaFWFlavor'
+import {
+  resolveMaaFWFlavorSlot,
+  useMaaFWSections,
+  usesMaaFWProjectIcon,
+} from '@/composables/useMaaFWFlavor'
+import { buildMaaFWScriptIconUrl } from '@/utils/maafwProjectIcon'
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 // MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
 import { MAAFW_SCRIPT_PAGE_SECTIONS, useMaaFWScriptPage } from './MaaFWScriptEdit/pageKit'
@@ -311,6 +317,19 @@ const {
   handleCancel,
   flavorSlotContext,
 } = useMaaFWScriptPage({ scriptId })
+
+// 面包屑图标：特调用自己声明的；通用 MaaFW 与脚本列表同一个口径取项目图标（不等预览），
+// 取不到由 ScriptEditHeader 回退到 MaaFW 图标。每读到一次 interface 换一次地址：
+// 老脚本首次打开时预览才顺手导入、向导里刚导入、更新换了图标，都会重新取一次。
+const projectIconRevision = ref(0)
+watch(previewData, data => {
+  if (data) projectIconRevision.value += 1
+})
+const headerLogo = computed(() =>
+  usesMaaFWProjectIcon(flavor.value)
+    ? buildMaaFWScriptIconUrl(scriptId, projectIconRevision.value)
+    : flavor.value.logo
+)
 
 // 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
 const sections = useMaaFWSections(flavor, 'scriptPage', MAAFW_SCRIPT_PAGE_SECTIONS)

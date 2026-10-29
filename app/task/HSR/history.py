@@ -1,10 +1,7 @@
 """HSR 托管和原生用户的单轮历史结论。"""
 
-from app.core.history import history_store
-from app.core.ws import Publisher, protocol
-from app.models.schema import HistoryWrite, WSTaskNoticeData
-from app.utils import get_logger
-from app.utils.constants import UTC4
+from app.models.schema import HistoryWrite
+from app.utils import UTC4, get_logger
 
 logger = get_logger("HSR 历史记录")
 
@@ -42,30 +39,9 @@ async def save_hsr_user_history(
         )
     if not records:
         return
-    try:
-        attachments = await task_info.collect_user_history_attachments(
-            script_info, user_item
-        )
-        records[-1].attachments.extend(attachments)
-    except Exception:
-        logger.opt(exception=True).warning(
-            "收集用户历史附件失败，继续保存日志与执行结果"
-        )
-    try:
-        for record in records:
-            try:
-                await history_store.record(record)
-            except Exception as error:
-                logger.opt(exception=True).warning(f"保存历史失败：{error}")
-                try:
-                    await Publisher.send(
-                        id=task_info.task_id,
-                        type=protocol.TASK_NOTICE,
-                        data=WSTaskNoticeData(
-                            level="warning", message=f"历史记录保存失败：{error}"
-                        ),
-                    )
-                except Exception:
-                    logger.opt(exception=True).warning("发送历史保存失败提示时出现异常")
-    finally:
-        await task_info.discard_user_history_capture(script_info, user_item)
+    await task_info.save_user_history(
+        records,
+        script=script_info,
+        user=user_item,
+        log_warning=logger.opt(exception=True).warning,
+    )

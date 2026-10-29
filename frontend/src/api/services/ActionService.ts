@@ -20,6 +20,8 @@ import type { Emulator2StableModeIn } from '../models/Emulator2StableModeIn';
 import type { Emulator2StoreOpenIn } from '../models/Emulator2StoreOpenIn';
 import type { Emulator2StoreOpenOut } from '../models/Emulator2StoreOpenOut';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
+import type { MaaEndLogBundleIn } from '../models/MaaEndLogBundleIn';
+import type { MaaEndLogBundleOut } from '../models/MaaEndLogBundleOut';
 import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
@@ -52,6 +54,25 @@ export class ActionService {
         });
     }
     /**
+     * 从脚本目录导入配置文件
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static importScriptConfigFileApiScriptsConfigImportPost(
+        requestBody: ScriptConfigImportIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/config/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 分享脚本配置到配置中心
      * @param requestBody
      * @returns OutBase Successful Response
@@ -71,17 +92,17 @@ export class ActionService {
         });
     }
     /**
-     * 从脚本目录导入配置文件
+     * 打开已有 MaaEnd 日志包或保存当前日志
      * @param requestBody
-     * @returns OutBase Successful Response
+     * @returns MaaEndLogBundleOut Successful Response
      * @throws ApiError
      */
-    public static importScriptConfigFileApiScriptsConfigImportPost(
-        requestBody: ScriptConfigImportIn,
-    ): CancelablePromise<OutBase> {
+    public static resolveMaaendLogBundleApiScriptsMaaendLogBundlePost(
+        requestBody: MaaEndLogBundleIn,
+    ): CancelablePromise<MaaEndLogBundleOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/scripts/config/import',
+            url: '/api/scripts/maaend/log-bundle',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -490,17 +511,20 @@ export class ActionService {
     /**
      * 下载更新
      * @param version
+     * @param downloader
      * @returns OutBase Successful Response
      * @throws ApiError
      */
     public static downloadUpdateApiUpdateDownloadPost(
         version?: (string | null),
+        downloader?: (string | null),
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/download',
             query: {
                 'version': version,
+                'downloader': downloader,
             },
             errors: {
                 422: `Validation Error`,

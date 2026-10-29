@@ -140,11 +140,11 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
   }))
 
   const interfaceStats = computed(() => [
-    { label: t('edit.task'), value: previewData.value?.tasks.length ?? 0 },
-    { label: t('edit.preset'), value: previewData.value?.presets.length ?? 0 },
-    { label: t('edit.controller'), value: previewData.value?.controllers.length ?? 0 },
-    { label: t('edit.resource'), value: previewData.value?.resources.length ?? 0 },
-    { label: t('edit.maafwImportFiles'), value: previewData.value?.importCount ?? 0 },
+    { label: t('core.edit.task'), value: previewData.value?.tasks.length ?? 0 },
+    { label: t('core.edit.preset'), value: previewData.value?.presets.length ?? 0 },
+    { label: t('core.edit.controller'), value: previewData.value?.controllers.length ?? 0 },
+    { label: t('core.edit.resource'), value: previewData.value?.resources.length ?? 0 },
+    { label: t('core.edit.maafwImportFiles'), value: previewData.value?.importCount ?? 0 },
     { label: 'Agent', value: previewData.value?.agentCount ?? 0 },
   ])
 
@@ -168,7 +168,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
         previewData.value = null
         // 后端没给原因就不记：卡片标题已经是「读取项目失败」，不再重复一行
         previewError.value = response?.message || scriptApiError.value || ''
-        message.error(previewError.value || t('edit.maafwPreviewFailed'))
+        message.error(previewError.value || t('core.edit.maafwPreviewFailed'))
         return
       }
       previewData.value = response.data as MaaFWInterfacePreviewData
@@ -178,12 +178,12 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       // 读到 interface 就把运行环境备好。四个调用方（读取按钮 / 选目录 /
       // 路径变更 / 页面加载）都会经过这里，放在 runPreview 里才不会漏。
       // 脚本正在跑时不准备：运行占着项目目录，后端一定回 409，面板会平白报一次失败；
-      // 跑完后由下面的 watch 补上。
-      if (!configLocked.value) void runAgentEnvPrepare(path, options.forceEnv === true)
+      // 跑完后由下面的 watch 补上。手动更新还在后台跑时同理。
+      if (!configLocked.value) void prepareEnvUnlessUpdating(path, options.forceEnv === true)
     } catch (error) {
       previewData.value = null
       previewError.value = error instanceof Error ? error.message : String(error)
-      message.error(previewError.value || t('edit.maafwPreviewFailed'))
+      message.error(previewError.value || t('core.edit.maafwPreviewFailed'))
     } finally {
       previewLoading.value = false
     }
@@ -223,7 +223,21 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     handleChange,
     runPreview: () => runPreview(),
   })
-  const { prefillMirrorChyanCdk } = update
+  const { prefillMirrorChyanCdk, resumeManualUpdate, whenResumeChecked, updateApplying } = update
+
+  // 手动更新在后台跑（刚接回的，或本页点的）时不自动准备运行环境：更新占着项目，后端必然
+  // 拒绝。更新结束后补一次；更新换了文件的，收尾时重读 interface 也会走到这里，重复的那次
+  // 由 runAgentEnvPrepare 自己挡掉。
+  const prepareEnvUnlessUpdating = async (path: string, force: boolean) => {
+    await whenResumeChecked()
+    if (updateApplying.value) return
+    await runAgentEnvPrepare(path, force)
+  }
+  watch(updateApplying, applying => {
+    if (applying || configLocked.value || !previewData.value) return
+    if (env.envReady.value || env.envPreparing.value || env.envFailed.value) return
+    void runAgentEnvPrepare()
+  })
 
   const { syncGamePackageName, handleResourceChangeWithPackage } = useMaaFWGamePackage({
     scriptId,
@@ -249,7 +263,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       ])
       if (!scriptDetail) {
         if (!scriptApiError.value && !host?.scriptLoadError.value)
-          message.error(t('edit.scriptDoesNotExist'))
+          message.error(t('core.edit.scriptDoesNotExist'))
         router.push('/scripts')
         return
       }
@@ -259,6 +273,8 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       // 特调在脚本页的替换分节与插入点：与后面的加载并行备好，不等它，不改动请求顺序
       void prepareMaaFWFlavorPage(flavor.value, 'scriptPage')
       scriptLoaded = true
+      // 接回后台还在跑或刚跑完的手动更新；不等它，可能要几分钟
+      void resumeManualUpdate()
       if (!maafwConfig.Info.Name) {
         maafwConfig.Info.Name = scriptDetail.name ?? flavor.value.defaultScriptName
         formData.name = maafwConfig.Info.Name
@@ -275,7 +291,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       }
     } catch (error) {
       logger.error(`加载脚本失败: ${error instanceof Error ? error.message : String(error)}`)
-      message.error(t('edit.couldNotLoadScript'))
+      message.error(t('core.edit.couldNotLoadScript'))
       router.push('/scripts')
     } finally {
       pageLoading.value = false

@@ -29,6 +29,7 @@ _LAZY_EXPORTS = {
     "TaskManager": (".task_manager", "TaskManager"),
     "MaaFWManager": (".maa_manager", "MaaFWManager"),
     "MainTimer": (".timer", "MainTimer"),
+    "Updater": (".update", "Updater"),
 }
 
 
@@ -47,4 +48,5 @@ __all__ = [
     "TaskManager",
     "EmulatorManager",
     "MaaFWManager",
+    "Updater",
 ]

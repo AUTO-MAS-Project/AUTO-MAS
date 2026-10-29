@@ -4,7 +4,7 @@
     :script-name="scriptName"
     :is-edit="isEdit"
     @restore="openRestoreModal"
-    @back="handleCancel"
+    @cancel="handleCancel"
   />
 
   <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
@@ -47,15 +47,15 @@
     :script-name="WHIMBOX_DISPLAY_NAME"
     :targets="restoreTargets"
     :api="restoreApi"
-    :user-desc="t('edit.whimboxConfigRestoreUserDesc')"
-    :script-desc="t('edit.whimboxConfigRestoreScriptDesc')"
+    :user-desc="t('core.edit.whimboxConfigRestoreUserDesc')"
+    :script-desc="t('core.edit.whimboxConfigRestoreScriptDesc')"
     :on-restored="handleRestored"
   >
     <!-- 两池同构：预览载荷为分区行（文件清单由基座在预览区最下方统一渲染） -->
     <template #preview="{ raw }">
       <a-empty
         v-if="!previewSections(raw).length"
-        :description="t('edit.configRestorePreviewEmpty')"
+        :description="t('core.edit.configRestorePreviewEmpty')"
       />
       <template v-else>
         <template v-for="section in previewSections(raw)" :key="section.name">
@@ -185,8 +185,8 @@ const formData = reactive({
 const rules = computed(() => {
   const baseRules: Record<string, Rule[]> = {
     userName: [
-      { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
-      { min: 1, max: 50, message: t('edit.usernameMustBe1'), trigger: 'blur' },
+      { required: true, message: t('core.edit.enterUsername'), trigger: 'blur' },
+      { min: 1, max: 50, message: t('core.edit.usernameMustBe1'), trigger: 'blur' },
     ],
   }
   return baseRules
@@ -362,14 +362,14 @@ const ensureBackup = async (target: 'mas' | 'native') => {
   try {
     const resp = await ensureConfigBackup(target)
     if (resp.code !== 200) {
-      const detail = resp.message || t('edit.configRestoreEnsureFailed')
+      const detail = resp.message || t('core.edit.configRestoreEnsureFailed')
       logger.warn(`编辑页归档失败（不阻断编辑）: ${detail}`)
       message.warning(detail)
     }
   } catch (error) {
     // 传输层失败没有可透传的业务文案，退回通用提示
     logger.warn(`编辑页归档失败（不阻断编辑）: ${String(error)}`)
-    message.warning(t('edit.configRestoreEnsureFailed'))
+    message.warning(t('core.edit.configRestoreEnsureFailed'))
   }
 }
 
@@ -380,7 +380,7 @@ const loadScriptInfo = async () => {
     if (script) {
       scriptName.value = script.name
       if (script.type !== 'Whimbox') {
-        message.error(t('edit.whimboxNotWhimboxScript'))
+        message.error(t('core.edit.whimboxNotWhimboxScript'))
         handleCancel()
         return
       }
@@ -396,13 +396,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript2'))
     // 复位初始化标志：否则 loading 恒真、整页控件永久禁用（对齐 loadUserData 的 catch）
     isInitializing.value = false
   }
@@ -424,13 +424,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -480,17 +480,17 @@ const loadUserData = async () => {
         // 数据加载完成，允许自动保存
         isInitializing.value = false
       } else {
-        message.error(t('edit.userDoesNotExist'))
+        message.error(t('core.edit.userDoesNotExist'))
         handleCancel()
       }
     } else {
-      if (!userApiError.value) message.error(t('edit.couldNotFetchUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    if (!userApiError.value) message.error(t('edit.couldNotLoadUser2'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser2'))
     // 复位初始化标志：否则 loading 恒真、整页控件永久禁用（只能刷新页面）
     isInitializing.value = false
   }
@@ -502,7 +502,7 @@ const handleCancel = () => {
 
 onMounted(() => {
   if (!scriptId) {
-    message.error(t('edit.missingScriptIdParameter'))
+    message.error(t('core.edit.missingScriptIdParameter'))
     handleCancel()
     return
   }

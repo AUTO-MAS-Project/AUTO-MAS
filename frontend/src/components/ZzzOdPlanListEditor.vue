@@ -5,8 +5,8 @@
         <div class="plan-item">
           <span
             class="plan-drag-handle"
-            :title="t('edit.zzzodDragSortHint')"
-            :aria-label="t('edit.zzzodDragSortHint')"
+            :title="t('core.edit.zzzodDragSortHint')"
+            :aria-label="t('core.edit.zzzodDragSortHint')"
           >
             <span class="drag-dots" aria-hidden="true"></span>
           </span>
@@ -32,13 +32,13 @@
           </div>
           <div class="plan-item-side">
             <span class="plan-run-times">
-              {{ t('edit.zzzodPlanRunTimes', { count: Number(plan.run_times) || 0 }) }}
+              {{ t('core.edit.zzzodPlanRunTimes', { count: Number(plan.run_times) || 0 }) }}
             </span>
             <a-button
               size="small"
               type="text"
               class="plan-delete"
-              :aria-label="t('edit.zzzodPlanDelete')"
+              :aria-label="t('core.edit.zzzodPlanDelete')"
               @click="removePlan(index)"
             >
               <template #icon><DeleteOutlined /></template>
@@ -50,7 +50,7 @@
 
     <a-button size="small" type="dashed" block class="plan-add" @click="addPlan">
       <template #icon><PlusOutlined /></template>
-      {{ t('edit.zzzodPlanAdd') }}
+      {{ t('core.edit.zzzodPlanAdd') }}
     </a-button>
   </div>
 </template>

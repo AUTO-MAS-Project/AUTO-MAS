@@ -1,23 +1,30 @@
 <template>
   <div class="cultivate-preview" :aria-busy="loading">
+    <!-- 面板头：理智合计是侧栏的关键数字（tooltip 说明估算口径） -->
+    <div class="preview-head">
+      <span class="preview-title">{{ t('core.edit.maaCultivatePreviewTitle') }}</span>
+      <span
+        class="preview-total"
+        :title="t('core.edit.maaCultivatePreviewSanityTotal')"
+        role="status"
+        :aria-label="loading ? t('core.edit.maaCultivatePreviewComputing') : undefined"
+      >
+        <template v-if="preview?.totalExpectedSanity != null">
+          ≈ {{ preview.totalExpectedSanity }} {{ t('core.edit.maaCultivateSanityUnit') }}
+        </template>
+        <template v-else>—</template>
+      </span>
+      <a-spin v-if="loading" size="small" />
+    </div>
     <a-tabs default-active-key="stages" size="small">
-      <template #rightExtra>
-        <span
-          class="preview-loading"
-          role="status"
-          :aria-label="loading ? t('edit.maaCultivatePreviewComputing') : undefined"
-        >
-          <a-spin v-if="loading" size="small" />
-        </span>
-      </template>
       <a-tab-pane
         v-for="tab in ['stages', 'demands']"
         :key="tab"
         :tab="
           t(
             tab === 'stages'
-              ? 'edit.maaCultivatePreviewTitle'
-              : 'edit.maaCultivatePreviewDemandHeading'
+              ? 'core.edit.maaCultivatePreviewStageHeading'
+              : 'core.edit.maaCultivatePreviewDemandHeading'
           )
         "
       >
@@ -30,10 +37,9 @@
           class="cultivate-alert"
         />
         <div v-if="unobtainableText" class="preview-unobtainable">
-          {{ t('edit.maaCultivatePreviewUnobtainable') }}：{{ unobtainableText }}
+          {{ t('core.edit.maaCultivatePreviewUnobtainable') }}：{{ unobtainableText }}
         </div>
         <template v-if="preview && tab === 'stages'">
-          <div class="preview-heading">{{ t('edit.maaCultivatePreviewStageHeading') }}</div>
           <!-- 刷取计划四列：材料名称 → 关卡 → 数量 → 理智（固定列宽对齐） -->
           <div
             v-for="entry in preview.stages"
@@ -48,7 +54,7 @@
             <template v-if="entry.expectedSanity != null">
               <span class="preview-sanity-sym">≈</span>
               <span class="preview-sanity">
-                {{ entry.expectedSanity }} {{ t('edit.maaCultivateSanityUnit') }}
+                {{ entry.expectedSanity }} {{ t('core.edit.maaCultivateSanityUnit') }}
               </span>
             </template>
             <template v-else>
@@ -57,16 +63,7 @@
             </template>
           </div>
           <div v-if="!preview.stages.length" class="preview-empty">
-            {{ t('edit.maaCultivatePreviewNone') }}
-          </div>
-          <div v-if="preview.totalExpectedSanity != null" class="preview-line preview-total">
-            <span class="preview-item">
-              {{ t('edit.maaCultivatePreviewSanityTotal') }}
-            </span>
-            <span class="preview-sanity">
-              ≈ {{ preview.totalExpectedSanity }}
-              {{ t('edit.maaCultivateSanityUnit') }}
-            </span>
+            {{ t('core.edit.maaCultivatePreviewNone') }}
           </div>
         </template>
         <template v-else-if="preview">
@@ -77,7 +74,7 @@
             <span class="preview-count">× {{ item.count }}</span>
           </div>
           <div v-if="!preview.demands.length" class="preview-empty">
-            {{ t('edit.maaCultivatePreviewDemandNone') }}
+            {{ t('core.edit.maaCultivatePreviewDemandNone') }}
           </div>
         </template>
       </a-tab-pane>
@@ -114,12 +111,12 @@ const itemName = (itemId: string) => itemLabelById.value.get(itemId) ?? itemId
 const availabilityNotice = computed(() => {
   if (!props.preview) return ''
   const missing: string[] = []
-  if (!props.preview.hasProgression) missing.push(t('edit.maaCultivateMissingProgression'))
-  if (!props.preview.hasInventory) missing.push(t('edit.maaCultivateMissingInventory'))
+  if (!props.preview.hasProgression) missing.push(t('core.edit.maaCultivateMissingProgression'))
+  if (!props.preview.hasInventory) missing.push(t('core.edit.maaCultivateMissingInventory'))
   if (!missing.length) return ''
-  return `${t('edit.maaCultivateEstimatePrefix')}${missing.join(
-    t('edit.maaCultivateEstimateJoin')
-  )}${t('edit.maaCultivateEstimateSuffix')}`
+  return `${t('core.edit.maaCultivateEstimatePrefix')}${missing.join(
+    t('core.edit.maaCultivateEstimateJoin')
+  )}${t('core.edit.maaCultivateEstimateSuffix')}`
 })
 </script>
 
@@ -129,24 +126,41 @@ const availabilityNotice = computed(() => {
 }
 
 .cultivate-preview {
-  padding: 12px;
+  padding: 12px 16px;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
+  background: var(--ant-color-bg-container);
 }
 
-.preview-loading {
+.preview-head {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
 }
 
-.preview-heading {
-  margin: 8px 0 4px;
-  font-size: 12px;
+.preview-title {
+  font-size: 14px;
   font-weight: 600;
-  color: var(--ant-color-text-secondary);
+  color: var(--ant-color-text);
+}
+
+.preview-total {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ant-color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: help;
+}
+
+.preview-head .ant-spin {
+  align-self: center;
 }
 
 .preview-line {
@@ -200,11 +214,6 @@ const availabilityNotice = computed(() => {
 .preview-sanity {
   color: var(--ant-color-text-secondary);
   white-space: nowrap;
-}
-
-.preview-total {
-  margin-top: 4px;
-  font-weight: 600;
 }
 
 .preview-unobtainable {

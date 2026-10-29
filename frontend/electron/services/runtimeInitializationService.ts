@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 
 import { getLogger } from './logger'
+import { observeInitializationStage } from './initializationAnalytics'
 import { MirrorConfig, MirrorService } from './mirrorService'
 import {
   RUNTIME_BINARY_ALIGN_ERROR,
@@ -509,6 +510,8 @@ export interface RuntimeStageOutcome {
   logPath?: string
   /** 映射后的失败段名。 */
   failedStage?: InitializationRunStage
+  /** 仅用于区分第 0 步与界面上的 Python 失败段。 */
+  failureOrigin?: 'runtime_binary'
 }
 
 /** 第 0 步被取消时的结局：与 Runtime 自己的取消同码，调用方按「源码一动没动」处置。 */
@@ -520,6 +523,22 @@ function cancelledOutcome(): RuntimeStageOutcome {
     retryable: true,
     remediation: ['retry'],
     failedStage: 'python',
+  }
+}
+
+/**
+ * 手动更新 Runtime 的阶段观察口径：与第 0 步共用 runtime_binary 阶段观察，
+ * upgraded / current / skipped 记成功，失败与取消沿用第 0 步的错误码与失败段，
+ * 原始结果随行返回给失败页。
+ */
+function runtimeBinaryObservation(result: RuntimeBinaryAlignResult) {
+  const success =
+    result.status === 'upgraded' || result.status === 'current' || result.status === 'skipped'
+  return {
+    result,
+    success,
+    code: success ? undefined : (result.code ?? RUNTIME_BINARY_ALIGN_ERROR),
+    failedStage: success ? undefined : 'python',
   }
 }
 
@@ -713,15 +732,24 @@ export class RuntimeInitializationService {
     this.operating = true
     this.aligning = true
     try {
-      await stopBackends?.()
-      if (this.cancelRequested) return { status: 'cancelled', code: RUNTIME_BINARY_CANCELLED }
-      return await this.alignRuntimeBinary({
-        channel: this.releaseChannel,
-        runtimePath,
-        appRoot,
-        onProgress,
-        isCancelled: () => this.cancelRequested,
+      // 与第 0 步共用 runtime_binary 阶段观察，真实结局（含失败与取消）与耗时由此入库；
+      // 模式与占用守卫在观察之外，被拒绝的请求不算一次更新。
+      const observed = await observeInitializationStage('runtime_binary', mode, async () => {
+        await stopBackends?.()
+        if (this.cancelRequested) {
+          return runtimeBinaryObservation({ status: 'cancelled', code: RUNTIME_BINARY_CANCELLED })
+        }
+        return runtimeBinaryObservation(
+          await this.alignRuntimeBinary({
+            channel: this.releaseChannel,
+            runtimePath,
+            appRoot,
+            onProgress,
+            isCancelled: () => this.cancelRequested,
+          })
+        )
       })
+      return observed.result
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       logger.error(`更新 Runtime 失败: ${message}`)
@@ -802,7 +830,7 @@ export class RuntimeInitializationService {
       !this.cancelRequested
     if (!aligned.success && !reuseEnvironment) {
       bridge.fail('python', aligned.error ?? '解析并下载最新 Runtime 失败')
-      return aligned
+      return { ...aligned, failureOrigin: 'runtime_binary' }
     }
 
     const command = ['bootstrap', '--version', version]
@@ -894,7 +922,7 @@ export class RuntimeInitializationService {
       const aligned = await this.alignRuntime(bridge)
       if (!aligned.success) {
         bridge.fail('python', aligned.error ?? '解析并下载最新 Runtime 失败')
-        return aligned
+        return { ...aligned, failureOrigin: 'runtime_binary' }
       }
     }
     let outcome = await this.execute(command, mirror, bridge)
@@ -1001,7 +1029,6 @@ export class RuntimeInitializationService {
         runtimePath,
         appRoot: this.options.launchConfig.appRoot,
         dataRoot: this.options.launchConfig.dataRoot,
-        launchMode: this.options.launchConfig.mode,
       })
       const outcome = await client.run(['doctor'])
       if (!outcome.success) {
@@ -1028,6 +1055,16 @@ export class RuntimeInitializationService {
    * （原因只会是网络与文件占用，都是重试能解决的），并给「重试」与「打开日志」两个入口。
    */
   private async alignRuntime(bridge: BootstrapProgressBridge): Promise<RuntimeStageOutcome> {
+    const { mode, runtimePath } = this.options.launchConfig
+    if (mode !== 'managed' || !(runtimePath || process.resourcesPath)) {
+      return this.runRuntimeAlignment(bridge)
+    }
+    return observeInitializationStage('runtime_binary', this.options.launchConfig.mode, () =>
+      this.runRuntimeAlignment(bridge)
+    )
+  }
+
+  private async runRuntimeAlignment(bridge: BootstrapProgressBridge): Promise<RuntimeStageOutcome> {
     const outcome = await this.runAlignment(bridge)
     // 对齐期间收到的取消不能丢：exe 本来就最新、开发者自带 Runtime 这些路径不会去看取消判据，
     // 而此时 Runtime 命令还没起、stdin cancel 也没有去处，这里是它唯一的落点。
@@ -1122,6 +1159,26 @@ export class RuntimeInitializationService {
     mirror: RuntimeMirrorSelection | null | undefined,
     bridge: BootstrapProgressBridge
   ): Promise<RuntimeStageOutcome> {
+    const stage =
+      command[0] === 'bootstrap'
+        ? 'bootstrap'
+        : command[0] === 'workspace'
+          ? 'repository'
+          : command[0] === 'dependencies'
+            ? 'dependency'
+            : command[0] === 'repair' || command[0] === 'environment'
+              ? 'python'
+              : 'unknown'
+    return observeInitializationStage(stage, this.options.launchConfig.mode, () =>
+      this.executeCommand(command, mirror, bridge)
+    )
+  }
+
+  private async executeCommand(
+    command: string[],
+    mirror: RuntimeMirrorSelection | null | undefined,
+    bridge: BootstrapProgressBridge
+  ): Promise<RuntimeStageOutcome> {
     const runtimePath = this.options.launchConfig.runtimePath
     if (!runtimePath) {
       // 灰度期一次生命周期只走一条链路，找不到可执行文件时直接失败展示，不回退旧链路。
@@ -1146,7 +1203,6 @@ export class RuntimeInitializationService {
       runtimePath,
       appRoot: this.options.launchConfig.appRoot,
       dataRoot: this.options.launchConfig.dataRoot,
-      launchMode: this.options.launchConfig.mode,
       mirrors: mirror ? [mirror] : undefined,
     })
 

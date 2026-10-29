@@ -1,27 +1,27 @@
 <template>
   <a-modal
     :open="open"
-    :title="t('taskboard.editGames')"
+    :title="t('core.taskboard.editGames')"
     :width="'min(1000px, 92vw)'"
-    :ok-text="t('taskboard.save')"
-    :cancel-text="t('taskboard.cancel')"
+    :ok-text="t('core.taskboard.save')"
+    :cancel-text="t('core.taskboard.cancel')"
     @ok="onOk"
     @cancel="close"
   >
-    <p class="tb-edit-hint">{{ t('taskboard.editGamesHint') }}</p>
+    <p class="tb-edit-hint">{{ t('core.taskboard.editGamesHint') }}</p>
     <div class="tb-edit-tools">
       <a-input-search
         v-model:value="keyword"
-        :placeholder="t('taskboard.searchGames')"
+        :placeholder="t('core.taskboard.searchGames')"
         allow-clear
         style="flex: 1"
       />
       <a-button size="small" @click="draft = options.map(option => option.key)">
-        {{ t('taskboard.selectAll') }}
+        {{ t('core.taskboard.selectAll') }}
       </a-button>
-      <a-button size="small" @click="draft = []">{{ t('taskboard.clear') }}</a-button>
+      <a-button size="small" @click="draft = []">{{ t('core.taskboard.clear') }}</a-button>
       <span class="tb-edit-count-total">
-        {{ t('taskboard.selectedCount', { p0: draft.length }) }}
+        {{ t('core.taskboard.selectedCount', { p0: draft.length }) }}
       </span>
     </div>
     <div class="tb-pick-grid">
@@ -49,10 +49,12 @@
         </div>
         <div class="tb-pick-name" :title="option.name">{{ option.name }}</div>
         <div class="tb-pick-cnt">
-          {{ t('taskboard.activeCount', { p0: option.activeCount }) }}
+          {{ t('core.taskboard.activeCount', { p0: option.activeCount }) }}
         </div>
       </div>
-      <div v-if="!filteredOptions.length" class="tb-pick-empty">{{ t('taskboard.empty') }}</div>
+      <div v-if="!filteredOptions.length" class="tb-pick-empty">
+        {{ t('core.taskboard.empty') }}
+      </div>
     </div>
   </a-modal>
 </template>

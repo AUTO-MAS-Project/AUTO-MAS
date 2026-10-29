@@ -16,7 +16,7 @@
       <!-- 任务配置：任务级流程开关（沿用 MAA 任务行的形制：开关在左 + 名称 + 细分割线） -->
       <div class="form-section">
         <div class="section-header">
-          <h3>{{ t('edit.whimboxTaskSection') }}</h3>
+          <h3>{{ t('core.edit.whimboxTaskSection') }}</h3>
         </div>
         <div class="task-list">
           <div class="task-row" :class="{ 'is-off': !runAllAccounts }">
@@ -24,12 +24,12 @@
               <a-switch
                 :checked="runAllAccounts"
                 :disabled="loading"
-                :aria-label="t('edit.whimboxRunAllAccounts')"
+                :aria-label="t('core.edit.whimboxRunAllAccounts')"
                 @change="(v: unknown) => emit('save', 'OneDragon.IfRunAllAccounts', v === true)"
               />
             </span>
-            <span class="task-name">{{ t('edit.whimboxRunAllAccounts') }}</span>
-            <a-tooltip :title="t('edit.whimboxRunAllAccountsHint')">
+            <span class="task-name">{{ t('core.edit.whimboxRunAllAccounts') }}</span>
+            <a-tooltip :title="t('core.edit.whimboxRunAllAccountsHint')">
               <QuestionCircleOutlined class="help-icon task-help" />
             </a-tooltip>
           </div>
@@ -40,7 +40,7 @@
       <div class="form-section" style="margin-bottom: 0">
         <div class="section-header">
           <h3>
-            {{ t('edit.whimboxOneDragonSection') }}
+            {{ t('core.edit.whimboxOneDragonSection') }}
             <a-tag v-if="upstreamVersion" color="blue" class="version-tag">
               v{{ upstreamVersion }}
             </a-tag>
@@ -50,7 +50,7 @@
         <template v-if="catalogReady">
           <div class="config-pane">
             <div class="config-pane-header">
-              <span class="config-pane-title">{{ t('edit.whimboxFlowNodes') }}</span>
+              <span class="config-pane-title">{{ t('core.edit.whimboxFlowNodes') }}</span>
               <a-tag color="default" class="config-pane-count">{{ steps.length }}</a-tag>
             </div>
             <div v-if="steps.length" class="task-list">
@@ -72,10 +72,14 @@
                 <span class="task-name" :title="step.display">{{ step.display }}</span>
               </div>
             </div>
-            <a-empty v-else :description="t('edit.whimboxStepsEmpty')" class="config-pane-empty" />
+            <a-empty
+              v-else
+              :description="t('core.edit.whimboxStepsEmpty')"
+              class="config-pane-empty"
+            />
           </div>
           <a-typography-text type="secondary" class="catalog-hint">
-            {{ t('edit.whimboxStepHint') }}
+            {{ t('core.edit.whimboxStepHint') }}
           </a-typography-text>
         </template>
       </div>
@@ -86,7 +90,7 @@
       <div class="form-section" style="margin-bottom: 0">
         <div class="section-header">
           <h3>
-            {{ t('edit.whimboxOptionsSection') }}
+            {{ t('core.edit.whimboxOptionsSection') }}
             <!-- 计数只在目录就绪时渲染：加载中/失败时显示 0 会被读成「上游没有这些字段」 -->
             <a-tag v-if="catalogReady" color="default" class="version-tag">
               {{ options.length }}
@@ -140,7 +144,7 @@
                     size="large"
                     style="width: 100%"
                     allow-clear
-                    :placeholder="t('edit.whimboxSelectPlaceholder')"
+                    :placeholder="t('core.edit.whimboxSelectPlaceholder')"
                     @change="(v: unknown) => changeOption(opt.key, v)"
                   />
 
@@ -156,7 +160,7 @@
                     mode="multiple"
                     size="large"
                     style="width: 100%"
-                    :placeholder="t('edit.whimboxMultiSelectPlaceholder')"
+                    :placeholder="t('core.edit.whimboxMultiSelectPlaceholder')"
                     @change="(v: unknown) => changeOption(opt.key, v as string[])"
                   />
 
@@ -169,7 +173,7 @@
                     :disabled="loading"
                     size="large"
                     class="modern-input"
-                    :placeholder="t('edit.whimboxTextPlaceholder')"
+                    :placeholder="t('core.edit.whimboxTextPlaceholder')"
                     @blur="
                       commitTextOption(opt, ($event?.target as HTMLInputElement | undefined)?.value)
                     "
@@ -179,7 +183,7 @@
             </div>
             <a-empty
               v-else
-              :description="t('edit.whimboxOptionsEmpty')"
+              :description="t('core.edit.whimboxOptionsEmpty')"
               class="config-pane-empty"
             />
           </div>
@@ -287,26 +291,6 @@ const commitTextOption = (opt: WhimboxOptionCatalogItem, raw: unknown) => {
 
 .section-header {
   margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
 }
 
 .version-tag {

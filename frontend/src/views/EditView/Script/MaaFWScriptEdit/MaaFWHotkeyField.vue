@@ -3,7 +3,7 @@
   <a-col v-if="options.length > 0" :span="6">
     <a-form-item>
       <template #label>
-        <span class="form-label">{{ t('edit.mfwHotkey') }}</span>
+        <span class="form-label">{{ t('core.edit.mfwHotkey') }}</span>
       </template>
       <a-input-group compact class="path-input-group">
         <a-input :value="summary" size="large" class="path-input" readonly />
@@ -11,7 +11,7 @@
           <template #icon>
             <SettingOutlined />
           </template>
-          {{ t('edit.mfwHotkeySet') }}
+          {{ t('core.edit.mfwHotkeySet') }}
         </a-button>
       </a-input-group>
     </a-form-item>
@@ -79,7 +79,9 @@ const gates = computed(() =>
 
 const summary = computed(() => {
   const changed = countChangedHotkeys(options.value, storedMap.value)
-  return changed > 0 ? t('edit.mfwHotkeyChanged', { n: changed }) : t('edit.mfwHotkeyDefault')
+  return changed > 0
+    ? t('core.edit.mfwHotkeyChanged', { n: changed })
+    : t('core.edit.mfwHotkeyDefault')
 })
 
 // 「从项目导入」：第一次打开弹窗时读一次外壳配置实例，读不到（没有外壳配置、接口失败）就当没有
@@ -106,39 +108,4 @@ const handleSave = (values: MaaFWHotkeyMap) => {
 }
 </script>
 
-<style scoped>
-/* 与控制分节「选择 exe」那组同一套样式（scoped 样式不跨组件，照抄一份） */
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid var(--ant-color-border);
-}
-
-.path-input {
-  flex: 1;
-  border: none !important;
-  border-radius: 0 !important;
-}
-
-.path-input:focus {
-  box-shadow: none !important;
-}
-
-.path-button {
-  border: none;
-  border-left: 1px solid var(--ant-color-border-secondary);
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-}
-</style>
+<style scoped src="./maafwSection.css"></style>

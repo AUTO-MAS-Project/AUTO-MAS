@@ -78,11 +78,11 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 ## 实例槽回收、台账与撞号兜底（2026-09）
 
 - **槽分配台账**（`data/ZzzOdSlots/{安装根指纹}.json`，号 → 归属用户 uid）：自动回收只收「归属用户已不存在」的号。两条硬理由：① 一条龙原生流程是「先建目录后写注册表」，单看盘上目录会把用户正在新建的原生实例误判成残留；② 运行期绑定号只写在运行期副本（`final_task` 才回写），崩溃/断电/强杀留下「有目录、有台账、持久绑定查不到」的槽，按持久绑定判孤儿会收走在用槽（用户在原生 GUI 维护的配队随之消失）。归属未知（旧格式台账/没传 uid）一律保留：无法证明无主宁可不收。台账是**删除白名单，判定严进**：bool（`isinstance(True, int)` 为真）、越界号、脏值一律当没有。手动清理不受台账限制（用户显式动作），但失败原因要抛到界面。
-- **同安装运行守卫**：`recycle_unbound_slots` 在同安装另有 ZzzOd 脚本运行/开会话时整体跳过本轮（`running_zzzod_scripts` 按 `config_root_key` 分桶 + `is_locked`，排除调用方自己——自动路径的调用方本身处于锁定态）；手动清理在 core 层走 `_ensure_zzzod_install_unlocked` 拒绝。
+- **同安装运行守卫**：槽位服务按安装根指纹与脚本锁检查同安装的运行/配置会话；自动回收排除调用方自己（调用方本身处于锁定态），其他脚本在跑时跳过本轮。手动清理由专项配置上下文拒绝，不在配置总管中实现守卫。
 - **撞号兜底**：绑定号被一条龙原生实例抢走时，`ensure_user_slot` 先把残留存底进回收池（目录已归原生实例，**只存底不删**）、该槽 MAS 备份池跟着改绑到新号（`_follow_mas_backups`）、绑定改到高位空闲槽。前端槽总览对「原生 kind + 仍有 MAS 归属」打「MAS 绑定冲突」标。
 - **中断现场重认领**：绑定号缺失（首跑或上次没回写）时 `_reclaim_own_slot` 优先认领台账里属于本用户、未被原生/其他用户占用的号（盘上有目录的优先、同为有目录取号更大者——改绑只会往更大的号走）——配队跟着人走。
 - **删除路径**：删用户/删脚本回收绑定槽（归档后删目录）并把该号移出台账；注册表缺失时槽目录与 MAS 备份池都不动（宁可不收，两条口径一致；`recycle_slot` 的 False 不区分「无需回收」与「守卫放弃」，池回收要自己查 `_has_native_registry`）。
-- **回收池恢复落到用户绑定槽**：`restore_zzzod_recycle` 收 `targetUser`（现有用户）或 `newUserName`（新建用户，走 `add_user` 同一入口），落点=该用户的绑定槽（没有则分配/认领）。**不要恢复到裸槽号**——只物化内容不建立绑定的恢复没有出口（无绑定 MAS 不认领、新用户也不会认领旧号），前端不提供这类目标。覆盖目标槽前先存底；恢复出的槽记台账归属（不移出）；条目不存在先于建用户拒绝、恢复中失败撤回新建用户（不留半成品）。回收池条目 `kind=mas`（备份池快照）只能查看不能恢复。
+- **回收池恢复落到用户绑定槽**：专项恢复服务接收现有用户或新用户名，落点=该用户的绑定槽（没有则分配/认领）。新建用户复用宿主注入的通用 `add_user` 入口，初始化与守卫保持同源；不要在恢复路径另写一套集合添加流程。**不要恢复到裸槽号**——只物化内容不建立绑定的恢复没有出口（无绑定 MAS 不认领、新用户也不会认领旧号），前端不提供这类目标。覆盖目标槽前先存底；恢复出的槽记台账归属（不移出）；条目不存在先于建用户拒绝、恢复中失败撤回新建用户（不留半成品）。回收池条目 `kind=mas`（备份池快照）只能查看不能恢复。
 
 ## 注入运行与判态
 
@@ -121,18 +121,15 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 
 ZzzOd 的「配置恢复」接入通用基座（专项只声明池，详见 config-restore.md）：
 
-- 池声明：`app/task/ZzzOd/tools/restore_service.py` 的 `RESTORE_POOLS`
-  （mas=用户槽 / onedragon=原生）；备份内部
-  业务（槽占用守卫、字段回填、预览构建）依赖门面 helper，留在
-  `app.core.config`（`get_zzzod_backup_preview` / `restore_zzzod_backup` /
-  `ensure_zzzod_direct_backup`），池函数经 `ctx.config` 薄委托；两池均为
-  声明式（`files` + `backup_root` 包装专项 backup_archive 函数，预览与恢复
-  仍走门面），`ensure_zzzod_direct_backup` 保留供实例增删改等运行线调用。
-- core 门面：`restore_service()` isinstance 分发 + `list_config_backups /
-  ensure_config_backup / restore_config_backup / get_config_backup_preview /
-  get_config_backup_file` 五个通用方法；HTTP 层只有通用端点 `/backup/*`
-  （list/ensure/restore/preview/file），preview 的 `data` 载荷 = ZzzOd 结构
-  （info/account/tasks/instances）。
+- 专项池声明提供 mas（用户槽）与 onedragon（原生）两池，文件快照与替换复用
+  通用归档基座。实例与编辑业务由专项服务持有；恢复、字段回填与预览由专项恢复
+  服务持有；配置定位、安装校验与跨脚本占用检查由专项配置上下文负责。
+- 宿主通过窄接口注入配置集合、通用用户创建及落盘能力，不提供 ZzzOd 专用业务
+  门面；池函数调用专项服务，运行、配置会话与编辑复用专项槽位和启动器能力。
+  增删改原生实例前的备份保护也由专项服务编排。
+- core 只装配恢复池、绑定上下文并提供通用备份入口；HTTP 层沿用 `/backup/*`
+  （list/ensure/restore/preview/file），preview 的 `data` 载荷为专项定义的
+  info/account/tasks/instances，不把专项恢复语义放回配置总管。
 - 前端：`ZzzOdUserEdit.vue` 用 `ConfigRestoreSection` 组件（`scriptName`
   传统一名「一条龙」、内置预览渲染直接吃解包后的载荷），`restoreApi` 调
   `BackupService` 通用函数；三时机 ensure 走通用 ensure（`ensurePoolBackup`

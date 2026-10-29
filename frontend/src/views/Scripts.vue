@@ -22,45 +22,45 @@
   <!-- 主要内容 -->
   <div class="scripts-header">
     <div class="header-left">
-      <h1 class="page-title">{{ t('scripts.title') }}</h1>
+      <h1 class="page-title app-page-title">{{ t('core.scripts.title') }}</h1>
       <DocLink :url="MAS_DOC_URLS.scripts" />
       <a-input
         v-model:value="scriptSearchKeyword"
         allow-clear
         class="script-search"
-        :placeholder="t('scripts.searchPlaceholder')"
-        :aria-label="t('scripts.searchAria')"
+        :placeholder="t('core.scripts.searchPlaceholder')"
+        :aria-label="t('core.scripts.searchAria')"
       >
         <template #prefix><SearchOutlined /></template>
       </a-input>
     </div>
     <div class="header-actions">
       <a-space size="middle">
-        <a-tooltip :title="t('scripts.collapseAllTip')">
+        <a-tooltip :title="t('core.scripts.collapseAllTip')">
           <a-button
             size="large"
             :disabled="scripts.length === 0 || isSearching"
             @click="handleCollapseAll"
           >
             <template #icon><UpOutlined /></template>
-            {{ t('scripts.collapseAll') }}
+            {{ t('core.scripts.collapseAll') }}
           </a-button>
         </a-tooltip>
-        <a-tooltip :title="t('scripts.expandAllTip')">
+        <a-tooltip :title="t('core.scripts.expandAllTip')">
           <a-button
             size="large"
             :disabled="scripts.length === 0 || isSearching"
             @click="handleExpandAll"
           >
             <template #icon><DownOutlined /></template>
-            {{ t('scripts.expandAll') }}
+            {{ t('core.scripts.expandAll') }}
           </a-button>
         </a-tooltip>
         <a-button type="primary" size="large" class="link" @click="handleAddScript">
           <template #icon>
             <PlusOutlined />
           </template>
-          {{ t('scripts.create.title') }}
+          {{ t('core.scripts.create.title') }}
         </a-button>
       </a-space>
     </div>
@@ -74,7 +74,9 @@
     class="script-list-error"
   >
     <template #action>
-      <a-button :loading="listLoading" @click="loadScripts">{{ t('apiErrors.retry') }}</a-button>
+      <a-button :loading="listLoading" @click="loadScripts">{{
+        t('core.apiErrors.retry')
+      }}</a-button>
     </template>
   </a-alert>
 
@@ -91,11 +93,11 @@
   >
     <div class="empty-content">
       <div class="empty-image-container">
-        <img src="@/assets/NoData.png" :alt="t('scripts.empty.alt')" class="empty-image" />
+        <img src="@/assets/NoData.svg" :alt="t('core.scripts.empty.alt')" class="empty-image" />
       </div>
       <div class="empty-text-content">
-        <h3 class="empty-title">{{ t('scripts.empty.title') }}</h3>
-        <p class="empty-description">{{ t('scripts.empty.desc') }}</p>
+        <h3 class="empty-title">{{ t('core.scripts.empty.title') }}</h3>
+        <p class="empty-description">{{ t('core.scripts.empty.desc') }}</p>
       </div>
     </div>
   </div>
@@ -106,8 +108,8 @@
     "
     class="empty-state"
   >
-    <a-empty :description="t('scripts.empty.noMatch')">
-      <a-button @click="scriptSearchKeyword = ''">{{ t('scripts.clearSearch') }}</a-button>
+    <a-empty :description="t('core.scripts.empty.noMatch')">
+      <a-button @click="scriptSearchKeyword = ''">{{ t('core.scripts.clearSearch') }}</a-button>
     </a-empty>
   </div>
 
@@ -154,6 +156,8 @@
 </template>
 
 <script setup lang="ts">
+import { requestTaskStart, stopNativeConfig } from '@/composables/useTaskApi'
+
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -173,7 +177,6 @@ import type { ScriptListItem, ScriptListUser } from '@/views/scripts/scriptListM
 import {
   getScriptEditSegment,
   isMfwFamily,
-  type ScriptCreateRequest,
   type TemplateRequest,
 } from '@/views/scripts/components/scriptCreateFlow'
 import { maafwRouteLocation } from '@/router/maafwFlavorRoutes'
@@ -203,6 +206,7 @@ import DocLink from '@/components/DocLink.vue'
 import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { filterScriptsByKeyword } from '@/views/scripts/scriptSearch'
+import { useScriptCreation } from '@/views/scripts/useScriptCreation'
 
 const { t } = useI18n()
 
@@ -211,7 +215,7 @@ defineOptions({ name: 'ScriptsPage' })
 const logger = window.electronAPI.getLogger('脚本管理')
 
 const router = useRouter()
-const { addScript, deleteScript } = useScriptApi()
+const { deleteScript } = useScriptApi()
 const {
   getScriptsWithUsers,
   getScriptUsers,
@@ -238,8 +242,6 @@ const templates = ref<ShareTemplateItem[]>([])
 const templatePage = ref(1)
 const templateTotal = ref(0)
 let templateRequestId = 0
-const addLoading = ref(false)
-const copyingScriptId = ref<string | null>(null)
 const templateLoading = ref(false)
 // 新建 MFW 脚本第二步「复用已有脚本的项目」的候选：有健康副本的 MFW / M9A 脚本
 const mfwSources = ref<MaaFWEmbeddedSourceItem[]>([])
@@ -259,42 +261,42 @@ const configMaskView = computed(() => {
     case 'MAA':
       return {
         iconColor: '#1890ff',
-        title: t('scripts.mask.maaTitle'),
-        description: t('scripts.mask.maaDesc'),
-        tip: t('scripts.mask.unlockTip'),
-        button: t('scripts.mask.saveConfig'),
+        title: t('core.scripts.mask.maaTitle'),
+        description: t('core.scripts.mask.maaDesc'),
+        tip: t('core.scripts.mask.unlockTip'),
+        button: t('core.scripts.mask.saveConfig'),
       }
     case 'SRC':
       return {
         iconColor: '#722ed1',
-        title: t('scripts.mask.srcTitle'),
-        description: t('scripts.mask.srcDesc'),
-        tip: t('scripts.mask.unlockTip'),
-        button: t('scripts.mask.saveConfig'),
+        title: t('core.scripts.mask.srcTitle'),
+        description: t('core.scripts.mask.srcDesc'),
+        tip: t('core.scripts.mask.unlockTip'),
+        button: t('core.scripts.mask.saveConfig'),
       }
     case 'MaaEnd':
       return {
         iconColor: 'var(--ant-color-primary)',
-        title: t('scripts.mask.maaEndScriptTitle'),
-        description: t('scripts.mask.maaEndScriptDesc'),
-        tip: t('scripts.mask.maaEndUnlockTip'),
-        button: t('scripts.mask.saveConfig'),
+        title: t('core.scripts.mask.maaEndScriptTitle'),
+        description: t('core.scripts.mask.maaEndScriptDesc'),
+        tip: t('core.scripts.mask.maaEndUnlockTip'),
+        button: t('core.scripts.mask.saveConfig'),
       }
     case 'Okww':
       return {
         iconColor: 'var(--ant-color-primary)',
-        title: t('scripts.mask.okwwTitle'),
-        description: t('scripts.mask.okwwDesc'),
-        tip: t('scripts.mask.okwwUnlockTip'),
-        button: t('scripts.mask.saveSettings'),
+        title: t('core.scripts.mask.okwwTitle'),
+        description: t('core.scripts.mask.okwwDesc'),
+        tip: t('core.scripts.mask.okwwUnlockTip'),
+        button: t('core.scripts.mask.saveSettings'),
       }
     case 'Whimbox':
       return {
         iconColor: 'var(--ant-color-primary)',
-        title: t('scripts.mask.whimboxTitle'),
-        description: t('scripts.mask.whimboxDesc'),
-        tip: t('scripts.mask.whimboxUnlockTip'),
-        button: t('scripts.mask.saveSettings'),
+        title: t('core.scripts.mask.whimboxTitle'),
+        description: t('core.scripts.mask.whimboxDesc'),
+        tip: t('core.scripts.mask.whimboxUnlockTip'),
+        button: t('core.scripts.mask.saveSettings'),
       }
     default:
       return null
@@ -380,7 +382,7 @@ const loadScripts = async () => {
     const result = await getScriptsWithUsers()
     if (!scriptListError.value) scripts.value = result
   } catch (error) {
-    const errorMsg = getApiErrorMessage(error, t('apiErrors.scriptListFailed'))
+    const errorMsg = getApiErrorMessage(error, t('core.apiErrors.scriptListFailed'))
     logger.error(`加载脚本列表失败: ${errorMsg}`)
     scriptListError.value = errorMsg
   } finally {
@@ -421,80 +423,19 @@ const handleScriptsReordered = (reordered: ScriptListItem[]) => {
   scripts.value = [...reordered]
 }
 
-const navigateToCreatedScript = (
-  scriptId: string,
-  type: ScriptType,
-  data?: Record<string, unknown>
-) => {
-  const route = {
-    // MFW 家族新建后进各自类型的分步引导（同一个页面）；其余类型直接进编辑页
-    ...(isMfwFamily(type)
-      ? maafwRouteLocation(type, 'setup', { id: scriptId })
-      : { path: `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}` }),
-    ...(data
-      ? {
-          state: {
-            scriptData: {
-              id: scriptId,
-              type,
-              config: JSON.parse(JSON.stringify(data)),
-            },
-          },
-        }
-      : {}),
-  }
-  router.push(route)
-}
-
-const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
-  addLoading.value = true
-  try {
-    const type = request.kind === 'new' || request.kind === 'mfw-reuse' ? request.type : 'General'
-    const result = await addScript(type)
-    if (!result) return
-
-    if (request.kind === 'mfw-reuse') {
-      // 同一个项目再建一个脚本：从源脚本的副本克隆，秒级可用；类型随项目（M9A → M9A）。
-      // 克隆失败脚本也已经建好了，照样进引导页让用户自己选目录。
-      try {
-        const { message: text } = await cloneEmbedded(result.scriptId, request.sourceScriptId)
-        if (text) message.success(text)
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error)
-        logger.error(`复用已有脚本的项目失败: ${reason}`)
-        message.error(t('scripts.toast.reuseFailed', { reason }))
-      }
-      scriptCreateVisible.value = false
-      navigateToCreatedScript(result.scriptId, type)
-      return
-    }
-
-    if (request.kind === 'general-template') {
-      const imported = await importScriptFromTemplate(result.scriptId, request.template)
-      // 导入失败就把刚建出来的空脚本删掉，不给用户留一个没有配置的壳
-      if (!imported) {
-        await deleteScript(result.scriptId)
-        await loadScripts()
-        return
-      }
-      message.success(
-        t('scripts.toast.createdFromTemplate', { name: request.template.displayName })
-      )
-      await loadScripts()
-      scriptCreateVisible.value = false
-      navigateToCreatedScript(result.scriptId, 'General')
-      return
-    }
-
+const {
+  addLoading,
+  copyingScriptId,
+  submit: handleSubmitScriptCreate,
+  copy: handleCopyScript,
+} = useScriptCreation({
+  reloadScripts: () => loadScripts(),
+  closeDialog: () => {
     scriptCreateVisible.value = false
-    navigateToCreatedScript(result.scriptId, type, result.data)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`创建脚本失败: ${errorMsg}`)
-  } finally {
-    addLoading.value = false
-  }
-}
+  },
+  importTemplate: importScriptFromTemplate,
+  cloneProject: cloneEmbedded,
+})
 
 const loadMfwSources = async () => {
   mfwSourcesLoading.value = true
@@ -506,7 +447,7 @@ const loadMfwSources = async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载可复用的 MFW 脚本失败: ${errorMsg}`)
     mfwSources.value = []
-    mfwSourcesError.value = t('scripts.toast.mfwSourcesFailed', { error: errorMsg })
+    mfwSourcesError.value = t('core.scripts.toast.mfwSourcesFailed', { error: errorMsg })
   } finally {
     mfwSourcesLoading.value = false
   }
@@ -547,21 +488,6 @@ const handleDeleteScript = async (script: ScriptListItem) => {
   if (result) {
     // 后端已删除，本地直接移除即可，不必整份重拉
     scripts.value = scripts.value.filter(item => item.id !== script.id)
-  }
-}
-
-const handleCopyScript = async (script: ScriptListItem) => {
-  addLoading.value = true
-  copyingScriptId.value = script.id
-  try {
-    const result = await addScript(script.type, script.id)
-    if (result) {
-      await loadScripts()
-      message.success(t('scripts.toast.copied', { name: script.name }))
-    }
-  } finally {
-    addLoading.value = false
-    copyingScriptId.value = null
   }
 }
 
@@ -629,7 +555,7 @@ const handleEditUser = (user: ScriptListUser) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }
   } else {
-    message.error(t('scripts.toast.scriptNotFound'))
+    message.error(t('core.scripts.toast.scriptNotFound'))
   }
 }
 
@@ -637,7 +563,7 @@ const handleDeleteUser = async (user: ScriptListUser) => {
   // 从用户数据中找到对应的脚本
   const script = scripts.value.find(s => s.id === user.scriptId)
   if (!script) {
-    message.error(t('scripts.toast.scriptNotFound'))
+    message.error(t('core.scripts.toast.scriptNotFound'))
     return
   }
 
@@ -706,16 +632,19 @@ const startConfigSession = async (
   onCompleted?: (data: WSTaskCompletedData, discardedReason: string | null) => void
 ) => {
   if (activeConnections.value.has(targetId)) {
-    message.warning(t('scripts.toast.targetConfiguring'))
+    message.warning(t('core.scripts.toast.targetConfiguring'))
     return false
   }
 
-  const response = await Service.addTaskApiDispatchStartPost({
-    taskId: targetId,
-    mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-  })
+  const response = await requestTaskStart(
+    {
+      taskId: targetId,
+      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+    },
+    { source: 'script_config', target_kind: 'script' }
+  )
   if (response.code !== 200 || !response.taskId) {
-    throw new Error(response.message || t('scripts.toast.startFailedRaw', { label }))
+    throw new Error(response.message || t('core.scripts.toast.startFailedRaw', { label }))
   }
 
   setActiveState()
@@ -731,7 +660,7 @@ const startConfigSession = async (
     subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
       const data = wsMessage.data as unknown as WSTaskNoticeData
       if (data.level === 'error') {
-        message.error(t('scripts.toast.configFailed', { label, error: data.message }))
+        message.error(t('core.scripts.toast.configFailed', { label, error: data.message }))
       }
     }),
     subscribe({ id: response.taskId, type: WS_TASK_CONFIG_DISCARDED }, wsMessage => {
@@ -758,14 +687,12 @@ const startConfigSession = async (
 const stopConfigSession = async (targetId: string, label: string, clearState: () => void) => {
   const connection = activeConnections.value.get(targetId)
   if (!connection) {
-    message.error(t('scripts.toast.noSession'))
+    message.error(t('core.scripts.toast.noSession'))
     return false
   }
-  const response = await Service.stopTaskApiDispatchStopPost({
-    taskId: connection.taskId,
-  })
+  const response = await stopNativeConfig(connection.taskId, 'save')
   if (response.code !== 200) {
-    throw new Error(response.message || t('scripts.toast.saveFailedRaw', { label }))
+    throw new Error(response.message || t('core.scripts.toast.saveFailedRaw', { label }))
   }
   // 丢弃帧先于停止响应写出，但到达顺序不保证，等一个回合再判定改动是否生效
   await new Promise(resolve => setTimeout(resolve, DISCARD_FRAME_GRACE_MS))
@@ -787,31 +714,31 @@ const handleStartScriptConfig = async (script: ScriptListItem, kind: 'MAA' | 'SR
         // 改动被丢弃时弹窗已说明去向，再提示「已完成」互相矛盾
         if (discardedReason) return
         if (data.outcome === 'success') {
-          message.success(t('scripts.toast.configDone', { name: script.name }))
+          message.success(t('core.scripts.toast.configDone', { name: script.name }))
         }
       }
     )
     if (!started) return
 
-    message.success(t('scripts.toast.configStarted', { name: script.name, label: kind }))
+    message.success(t('core.scripts.toast.configStarted', { name: script.name, label: kind }))
     scheduleConfigSessionTimeout(script.id, clearConfigMask, () =>
-      message.info(t('scripts.toast.sessionTimeout', { name: script.name }))
+      message.info(t('core.scripts.toast.sessionTimeout', { name: script.name }))
     )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动${kind}配置失败: ${errorMsg}`)
-    message.error(t('scripts.toast.startConfigError', { label: kind, error: errorMsg }))
+    message.error(t('core.scripts.toast.startConfigError', { label: kind, error: errorMsg }))
   }
 }
 
 const handleSaveScriptConfig = async (script: ScriptListItem, kind: 'MAA' | 'SRC' | 'Whimbox') => {
   try {
     const saved = await stopConfigSession(script.id, kind, clearConfigMask)
-    if (saved) message.success(t('scripts.toast.configSaved', { name: script.name }))
+    if (saved) message.success(t('core.scripts.toast.configSaved', { name: script.name }))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存${kind}配置失败: ${errorMsg}`)
-    message.error(t('scripts.toast.saveConfigError', { label: kind, error: errorMsg }))
+    message.error(t('core.scripts.toast.saveConfigError', { label: kind, error: errorMsg }))
   }
 }
 
@@ -829,7 +756,7 @@ const handleStartMaaEndConfig = async (script: ScriptListItem) => {
   try {
     const controllerType = script.controllerType
     if (controllerType !== 'Win32-Front') {
-      message.warning(t('scripts.toast.maaEndUnsupported'))
+      message.warning(t('core.scripts.toast.maaEndUnsupported'))
       return
     }
 
@@ -843,14 +770,14 @@ const handleStartMaaEndConfig = async (script: ScriptListItem) => {
     )
     if (!started) return
 
-    message.success(t('scripts.toast.maaEndScriptStarted', { script: script.name }))
+    message.success(t('core.scripts.toast.maaEndScriptStarted', { script: script.name }))
     scheduleConfigSessionTimeout(script.id, clearConfigMask, () =>
-      message.info(t('scripts.toast.sessionTimeout', { name: script.name }))
+      message.info(t('core.scripts.toast.sessionTimeout', { name: script.name }))
     )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动 MaaEnd 配置失败: ${errorMsg}`)
-    message.error(t('scripts.toast.startConfigError', { label: 'MaaEnd', error: errorMsg }))
+    message.error(t('core.scripts.toast.startConfigError', { label: 'MaaEnd', error: errorMsg }))
   }
 }
 
@@ -858,12 +785,12 @@ const handleSaveMaaEndConfig = async (script: ScriptListItem) => {
   try {
     const saved = await stopConfigSession(script.id, 'MaaEnd', clearConfigMask)
     if (saved) {
-      message.success(t('scripts.toast.configSaved', { name: script.name }))
+      message.success(t('core.scripts.toast.configSaved', { name: script.name }))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 MaaEnd 配置失败: ${errorMsg}`)
-    message.error(t('scripts.toast.saveConfigError', { label: 'MaaEnd', error: errorMsg }))
+    message.error(t('core.scripts.toast.saveConfigError', { label: 'MaaEnd', error: errorMsg }))
   }
 }
 
@@ -877,22 +804,22 @@ const handleStartOkwwConfig = async (script: ScriptListItem) => {
       },
       clearConfigMask
     )
-    if (started) message.success(t('scripts.toast.okwwStarted', { name: script.name }))
+    if (started) message.success(t('core.scripts.toast.okwwStarted', { name: script.name }))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动 ok-ww 设置失败: ${errorMsg}`)
-    message.error(t('scripts.toast.okwwStartFailed', { error: errorMsg }))
+    message.error(t('core.scripts.toast.okwwStartFailed', { error: errorMsg }))
   }
 }
 
 const handleSaveOkwwConfig = async (script: ScriptListItem) => {
   try {
     const saved = await stopConfigSession(script.id, 'ok-ww', clearConfigMask)
-    if (saved) message.success(t('scripts.toast.okwwSaved', { name: script.name }))
+    if (saved) message.success(t('core.scripts.toast.okwwSaved', { name: script.name }))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 ok-ww 设置失败: ${errorMsg}`)
-    message.error(t('scripts.toast.okwwSaveFailed', { error: errorMsg }))
+    message.error(t('core.scripts.toast.okwwSaveFailed', { error: errorMsg }))
   }
 }
 
@@ -901,7 +828,7 @@ const handleToggleUserStatus = async (user: ScriptListUser) => {
     // 找到该用户对应的脚本
     const script = scripts.value.find(s => s.id === user.scriptId)
     if (!script) {
-      message.error(t('scripts.toast.scriptNotFound'))
+      message.error(t('core.scripts.toast.scriptNotFound'))
       return
     }
     const newStatus = !user.Info.Status
@@ -912,14 +839,14 @@ const handleToggleUserStatus = async (user: ScriptListUser) => {
     })
 
     if (result) {
-      message.success(t('scripts.toast.userStatusUpdated'))
+      message.success(t('core.scripts.toast.userStatusUpdated'))
       // 更新本地用户状态
       user.Info.Status = newStatus
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新用户状态失败: ${errorMsg}`)
-    message.error(t('scripts.toast.userStatusFailed', { error: errorMsg }))
+    message.error(t('core.scripts.toast.userStatusFailed', { error: errorMsg }))
   }
 }
 </script>
@@ -1073,16 +1000,6 @@ const handleToggleUserStatus = async (user: ScriptListUser) => {
 
 .page-title {
   margin: 0 0 8px 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: var(
-    --app-page-title-color,
-    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

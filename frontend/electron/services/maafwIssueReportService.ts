@@ -108,6 +108,7 @@ interface SelectedRun {
 
 interface IssueReportResult {
   success: boolean
+  incompleteCount?: number
   message?: string
   zipPath?: string
   error?: string
@@ -756,6 +757,7 @@ async function createIssueReport(
     logger.info(`${label} 问题包已导出: ${zipPath}`)
     return {
       success: true,
+      incompleteCount: state.entries.filter(entry => entry.status !== 'included').length,
       message: `${label} 问题包导出成功，已收集 ${collectedCount} 个文件`,
       zipPath,
     }

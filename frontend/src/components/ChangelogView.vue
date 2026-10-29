@@ -1,8 +1,11 @@
 <template>
   <div class="changelog-view">
-    <div v-if="sections.length === 0" class="changelog-empty">
-      {{ emptyText || t('comp.changelog.empty') }}
-    </div>
+    <a-empty
+      v-if="sections.length === 0"
+      class="changelog-empty"
+      :image="false"
+      :description="emptyText || t('core.comp.changelog.empty')"
+    />
 
     <!-- 多个版本：最新版默认展开，更老的版本折叠 -->
     <a-collapse

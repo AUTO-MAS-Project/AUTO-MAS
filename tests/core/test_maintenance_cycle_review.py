@@ -72,7 +72,7 @@ async def test_cycle_skip_preserves_last_run_and_schedules_future(
     monkeypatch.setattr(info, "schedule_on_change", lambda: None)
     script = ScriptItem(str(script_id), "test", "等待")
     info.script_list = [script]
-    task = scheduler.Task(info, [])
+    task = scheduler.Task(info, [], manager_factories={})
     monkeypatch.setattr(task, "_build_task_item", lambda *args, **kwargs: object())
     monkeypatch.setattr(task, "_publish_cycle_preview", AsyncMock())
     monkeypatch.setattr(task, "_observe_script_run", lambda *args: nullcontext())
@@ -103,7 +103,11 @@ async def test_cycle_skip_preserves_last_run_and_schedules_future(
 async def test_maintenance_does_not_trigger_immediate_retry(
     monkeypatch, result, retries
 ):
-    task = scheduler.Task(scheduler.TaskInfo("AutoProxy", "test", None, None, None), [])
+    task = scheduler.Task(
+        scheduler.TaskInfo("AutoProxy", "test", None, None, None),
+        [],
+        manager_factories={},
+    )
     entry = CycleEntry(
         str(uuid.uuid4()), str(uuid.uuid4()), "test", 0, datetime.now(), True
     )

@@ -11,7 +11,7 @@ const { t } = useI18n()
 <template>
   <div class="empty-devices" :class="{ 'path-required': needsPath }">
     <a-empty
-      :description="t(needsPath ? 'emulator.pathRequired' : 'emulator.noDevice')"
+      :description="t(needsPath ? 'core.emulator.pathRequired' : 'core.emulator.noDevice')"
       :image-style="needsPath ? { display: 'none' } : undefined"
       :style="needsPath ? { margin: 0 } : undefined"
     >
@@ -23,7 +23,7 @@ const { t } = useI18n()
           :icon="h(FolderOpenOutlined)"
           @click="emit('selectPath')"
         >
-          {{ t('emulator.selectPath') }}
+          {{ t('core.emulator.selectPath') }}
         </a-button>
         <a-button
           v-else
@@ -32,7 +32,7 @@ const { t } = useI18n()
           :icon="h(PlayCircleOutlined)"
           @click="emit('start')"
         >
-          {{ t('emulator.startEmulator') }}
+          {{ t('core.emulator.startEmulator') }}
         </a-button>
       </template>
     </a-empty>

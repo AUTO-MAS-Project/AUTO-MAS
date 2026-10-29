@@ -1,3 +1,5 @@
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
+import { appearanceCategory } from '@/utils/preferenceAnalytics'
 import { ref } from 'vue'
 import {
   ApiError,
@@ -261,25 +263,31 @@ export function useShareApi() {
     loading.value = true
     error.value = null
     try {
-      const response = await Service.uploadShareAppearanceApiShareAppearanceUploadPost({
-        ...(payload.categoryKey
-          ? {
-              categoryKey:
-                payload.categoryKey === 'mascot'
-                  ? ShareAppearanceUploadIn.categoryKey.MASCOT
-                  : ShareAppearanceUploadIn.categoryKey.THEME,
-            }
-          : {}),
-        zipPath: payload.zipPath,
-        displayName: payload.displayName,
-        description: payload.description,
-        changeNote: payload.changeNote,
-        fileId: payload.fileId ?? null,
-        coverMode: payload.coverMode,
-        coverPath: payload.coverMode === 'custom' ? (payload.coverPath ?? null) : null,
-      })
+      const response = await observeFeature(
+        'appearance_share_finished',
+        { category_kind: appearanceCategory(payload.categoryKey ?? 'theme') },
+        () =>
+          Service.uploadShareAppearanceApiShareAppearanceUploadPost({
+            ...(payload.categoryKey
+              ? {
+                  categoryKey:
+                    payload.categoryKey === 'mascot'
+                      ? ShareAppearanceUploadIn.categoryKey.MASCOT
+                      : ShareAppearanceUploadIn.categoryKey.THEME,
+                }
+              : {}),
+            zipPath: payload.zipPath,
+            displayName: payload.displayName,
+            description: payload.description,
+            changeNote: payload.changeNote,
+            fileId: payload.fileId ?? null,
+            coverMode: payload.coverMode,
+            coverPath: payload.coverMode === 'custom' ? (payload.coverPath ?? null) : null,
+          }),
+        apiOutcome
+      )
       if (response.code !== 200) {
-        const message = response.message || t('themeStore.upload.failed')
+        const message = response.message || t('core.themeStore.upload.failed')
         error.value = message
         return {
           ok: false,
@@ -303,7 +311,7 @@ export function useShareApi() {
         },
       }
     } catch (err) {
-      const failure = apiErrorMessage(err, t('themeStore.upload.failed'))
+      const failure = apiErrorMessage(err, t('core.themeStore.upload.failed'))
       error.value = failure.message
       return { ok: false, ...failure }
     } finally {
@@ -353,12 +361,12 @@ export function useShareApi() {
         return {
           ok: false,
           code: response.code ?? 500,
-          message: response.message || t('themeStore.mine.loadFailed'),
+          message: response.message || t('core.themeStore.mine.loadFailed'),
         }
       }
       return { ok: true, data: (response.data ?? []).map(toMyAppearance) }
     } catch (err) {
-      return { ok: false, ...apiErrorMessage(err, t('themeStore.mine.loadFailed')) }
+      return { ok: false, ...apiErrorMessage(err, t('core.themeStore.mine.loadFailed')) }
     }
   }
 
@@ -419,12 +427,12 @@ export function useShareApi() {
         return {
           ok: false,
           code: response.code ?? 500,
-          message: response.message || t('themeStore.mine.descriptionFailed'),
+          message: response.message || t('core.themeStore.mine.descriptionFailed'),
         }
       }
       return { ok: true, data: toMyAppearance(response.data) }
     } catch (err) {
-      return { ok: false, ...apiErrorMessage(err, t('themeStore.mine.descriptionFailed')) }
+      return { ok: false, ...apiErrorMessage(err, t('core.themeStore.mine.descriptionFailed')) }
     }
   }
 

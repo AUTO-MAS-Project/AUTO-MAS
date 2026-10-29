@@ -7,7 +7,7 @@ AUTO-MAS-Runtime 监督器接管后把 `<app-root>/runtime/` 当自己的地盘�
 
 from pathlib import Path
 
-from app.utils.io import migrate_legacy_dir
+from app.utils import io as _utils_io
 
 
 def test_moves_old_dir_to_new_path_when_new_path_is_missing(tmp_path: Path) -> None:
@@ -19,7 +19,7 @@ def test_moves_old_dir_to_new_path_when_new_path_is_missing(tmp_path: Path) -> N
 
     new_dir = tmp_path / "data" / "maafw_runner_jobs"
 
-    assert migrate_legacy_dir(old_dir, new_dir) is True
+    assert _utils_io.migrate_legacy_dir(old_dir, new_dir) is True
     assert (new_dir / "job.json").read_text(encoding="utf-8") == "{}"
     assert not old_dir.exists()
 
@@ -35,7 +35,7 @@ def test_does_nothing_when_new_path_already_exists(tmp_path: Path) -> None:
     new_dir.mkdir(parents=True)
     (new_dir / "new-job.json").write_text("new", encoding="utf-8")
 
-    assert migrate_legacy_dir(old_dir, new_dir) is False
+    assert _utils_io.migrate_legacy_dir(old_dir, new_dir) is False
     assert (new_dir / "new-job.json").read_text(encoding="utf-8") == "new"
     assert not (new_dir / "old-job.json").exists()
     assert (old_dir / "old-job.json").exists()
@@ -47,7 +47,7 @@ def test_does_nothing_when_old_path_is_missing(tmp_path: Path) -> None:
     old_dir = tmp_path / "runtime" / "maafw_runner_jobs"
     new_dir = tmp_path / "data" / "maafw_runner_jobs"
 
-    assert migrate_legacy_dir(old_dir, new_dir) is False
+    assert _utils_io.migrate_legacy_dir(old_dir, new_dir) is False
     assert not new_dir.exists()
 
 
@@ -65,9 +65,9 @@ def test_failure_is_swallowed_as_a_warning_and_does_not_raise(
     def boom(*_args, **_kwargs):
         raise OSError("simulated cross-device move failure")
 
-    monkeypatch.setattr("app.utils.io.shutil.move", boom)
+    monkeypatch.setattr("app.utils.common.io.shutil.move", boom)
 
-    assert migrate_legacy_dir(old_dir, new_dir) is False
+    assert _utils_io.migrate_legacy_dir(old_dir, new_dir) is False
     assert not new_dir.exists()
     # 旧目录原样保留，下次访问还有机会重试迁移。
     assert (old_dir / "job.json").exists()

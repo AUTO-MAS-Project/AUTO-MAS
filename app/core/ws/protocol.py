@@ -32,7 +32,7 @@ from typing import Dict, Mapping, Optional
 from pydantic import JsonValue, ValidationError
 
 from app.models.schema import WSEnvelope
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("WS协议")
 
@@ -40,6 +40,8 @@ logger = get_logger("WS协议")
 # ==================== 固定路由 ID ====================
 
 ID_MAIN = "Main"
+ID_I18N = "I18n"
+I18N_UPDATED = "i18n.updated"
 ID_TASK_MANAGER = "TaskManager"
 ID_UPDATE = "Update"
 ID_GAME_SIGN = "GameSign"
@@ -58,6 +60,9 @@ TASK_CONFIG_DISCARDED = "task.config.discarded"
 
 # 任务创建通知（id=TaskManager）
 TASK_CREATED = "task.created"
+# 逐脚本、逐轮的执行边界（id=TaskManager），不随任务快照重放。
+TASK_SCRIPT_STARTED = "task.script.started"
+TASK_SCRIPT_FINISHED = "task.script.finished"
 
 # 应用生命周期与电源（id=Main）
 BACKEND_SHUTDOWN_READY = "backend.shutdown.ready"

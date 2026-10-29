@@ -1,17 +1,21 @@
 <template>
-  <ScriptEditHeader script-type="MAA" :title="t('edit.editScript')" @cancel="handleCancel" />
+  <ScriptEditHeader script-type="MAA" :title="t('core.edit.editScript')" @cancel="handleCancel" />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card :title="t('edit.maaScriptConfiguration')" :loading="pageLoading" class="config-card">
+    <a-card
+      :title="t('core.edit.maaScriptConfiguration')"
+      :loading="pageLoading"
+      class="config-card"
+    >
       <template #extra>
         <a-tag color="blue" class="type-tag"> MAA </a-tag>
       </template>
 
-      <a-alert :message="t('edit.howUseThis')" type="info" show-icon class="notice-alert">
+      <a-alert :message="t('core.edit.howUseThis')" type="info" show-icon class="notice-alert">
         <template #description>
           <div class="notice-content">
-            <p>{{ t('edit.annihilationLaunchesItsOwn') }}</p>
-            <p>{{ t('edit.maaAdapterSupportsEmulators') }}</p>
+            <p>{{ t('core.edit.annihilationLaunchesItsOwn') }}</p>
+            <p>{{ t('core.edit.maaAdapterSupportsEmulators') }}</p>
           </div>
         </template>
       </a-alert>
@@ -20,22 +24,21 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ t('core.edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <a-tooltip :title="t('edit.giveScriptNameYou')">
-                    <span class="form-label">
-                      {{ t('edit.scriptName') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.scriptName')"
+                    :hint="t('core.edit.giveScriptNameYou')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="t('core.edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -45,28 +48,19 @@
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <a-tooltip :title="t('edit.pickFolderHoldingMaa2')">
-                    <span class="form-label">
-                      {{ t('edit.maaPath') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    :placeholder="t('edit.pickFolderHoldingMaa')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('core.edit.maaPath')"
+                    :hint="t('core.edit.pickFolderHoldingMaa2')"
+                    variant="form"
                   />
-                  <a-button size="large" class="path-button" @click="selectMAAPath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFolder') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="formData.path"
+                  mode="folder"
+                  :placeholder="t('core.edit.pickFolderHoldingMaa')"
+                  :pick-label="t('core.edit.pickFolder')"
+                  @pick="selectMAAPath"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -75,85 +69,25 @@
         <!-- 模拟器管理 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.emulators') }}</h3>
+            <h3>{{ t('core.edit.emulators') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip :title="t('edit.pickEmulatorUse')">
-                    <span class="form-label">
-                      {{ t('edit.emulator') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select
-                  v-model:value="maaConfig.Emulator.Id"
-                  size="large"
-                  :placeholder="t('edit.pickEmulator')"
-                  :loading="emulatorLoading"
-                  @change="handleEmulatorSelectChange"
-                >
-                  <a-select-option
-                    v-for="item in emulatorOptions"
-                    :key="item.value"
-                    :value="item.value"
-                  >
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
+              <EmulatorSelectField
+                v-model="maaConfig.Emulator.Id"
+                :options="emulatorOptions"
+                :loading="emulatorLoading"
+                @change="handleEmulatorSelectChange"
+              />
             </a-col>
             <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip
-                    :title="
-                      emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
-                        ? t('edit.thisEmulatorCannotBe')
-                        : t('edit.pickEmulatorInstance')
-                    "
-                  >
-                    <span class="form-label">
-                      {{ t('edit.emulatorInstance') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <!-- 当API返回空列表时显示输入框 -->
-                <a-input
-                  v-if="
-                    emulatorDeviceOptions.length === 0 &&
-                    !emulatorDeviceLoading &&
-                    maaConfig.Emulator.Id
-                  "
-                  v-model:value="maaConfig.Emulator.Index"
-                  size="large"
-                  :placeholder="t('edit.enterInstanceInfoAs')"
-                  class="modern-input"
-                  @blur="handleChange('Emulator', 'Index', maaConfig.Emulator.Index)"
-                />
-                <!-- 正常情况下显示下拉框 -->
-                <a-select
-                  v-else
-                  v-model:value="maaConfig.Emulator.Index"
-                  size="large"
-                  :placeholder="t('edit.pickEmulatorFirst')"
-                  :loading="emulatorDeviceLoading"
-                  :disabled="!maaConfig.Emulator.Id"
-                  @change="handleChange('Emulator', 'Index', $event)"
-                >
-                  <a-select-option
-                    v-for="item in emulatorDeviceOptions"
-                    :key="item.value"
-                    :value="item.value"
-                    :disabled="item.disabled"
-                  >
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
+              <EmulatorInstanceField
+                v-model="maaConfig.Emulator.Index"
+                :emulator-id="maaConfig.Emulator.Id"
+                :options="emulatorDeviceOptions"
+                :loading="emulatorDeviceLoading"
+                @save="handleChange('Emulator', 'Index', $event)"
+              />
             </a-col>
           </a-row>
         </div>
@@ -161,7 +95,7 @@
         <!-- 运行配置 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ t('core.edit.runConfiguration') }}</h3>
           </div>
           <ScriptHardTimeoutField
             v-model:value="maaConfig.Run.HardTimeLimit"
@@ -171,12 +105,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.whatDoWhenSwitching')">
-                    <span class="form-label">
-                      {{ t('edit.accountSwitchingMethod') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.accountSwitchingMethod')"
+                    :hint="t('core.edit.whatDoWhenSwitching')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="maaConfig.Run.TaskTransitionMethod"
@@ -184,49 +117,37 @@
                   @change="handleChange('Run', 'TaskTransitionMethod', $event)"
                 >
                   <a-select-option value="ExitEmulator">{{
-                    t('edit.restartEmulator')
+                    t('core.edit.restartEmulator')
                   }}</a-select-option>
                   <a-select-option value="ExitGame">{{
-                    t('edit.restartArknights')
+                    t('core.edit.restartArknights')
                   }}</a-select-option>
                   <a-select-option value="NoAction">{{
-                    t('edit.switchAccountDirectly')
+                    t('core.edit.switchAccountDirectly')
                   }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip :title="t('edit.skipRunOnceThis')">
-                    <span class="form-label">
-                      {{ t('edit.runsPerDayThis') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-number
-                  v-model:value="maaConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', maaConfig.Run.ProxyTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="maaConfig.Run.ProxyTimesLimit"
+                kind="daily"
+                :label="t('core.edit.runsPerDayThis')"
+                :hint="t('core.edit.skipRunOnceThis')"
+                enhanced
+                @save="handleChange('Run', 'ProxyTimesLimit', maaConfig.Run.ProxyTimesLimit)"
+              />
             </a-col>
           </a-row>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.treatAnnihilationRunAs')">
-                    <span class="form-label">
-                      {{ t('edit.annihilationTimeoutMinutes') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.annihilationTimeoutMinutes')"
+                    :hint="t('core.edit.treatAnnihilationRunAs')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="maaConfig.Run.AnnihilationTimeLimit"
@@ -248,12 +169,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.treatDailyRunAs2')">
-                    <span class="form-label">
-                      {{ t('edit.dailyRunTimeoutMinutes') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.dailyRunTimeoutMinutes')"
+                    :hint="t('core.edit.treatDailyRunAs2')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="maaConfig.Run.RoutineTimeLimit"
@@ -267,42 +187,30 @@
               </a-form-item>
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip :title="t('edit.ifRunStillUnfinished')">
-                    <span class="form-label">
-                      {{ t('edit.retryLimit') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-number
-                  v-model:value="maaConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', maaConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="maaConfig.Run.RunTimesLimit"
+                kind="retry"
+                :label="t('core.edit.retryLimit')"
+                :hint="t('core.edit.ifRunStillUnfinished')"
+                enhanced
+                @save="handleChange('Run', 'RunTimesLimit', maaConfig.Run.RunTimesLimit)"
+              />
             </a-col>
           </a-row>
         </div>
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.gameUpdate') }}</h3>
+            <h3>{{ t('core.edit.gameUpdate') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.beforeStartingMaaCompare')">
-                    <span class="form-label">
-                      {{ t('edit.checkGameUpdateBefore') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.checkGameUpdateBefore')"
+                    :hint="t('core.edit.beforeStartingMaaCompare')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="maaConfig.Run.IfCheckGameUpdate"
@@ -310,20 +218,19 @@
                   style="width: 100%"
                   @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.whenClientDetectedAs')">
-                    <span class="form-label">
-                      {{ t('edit.installGamePackageAutomatically') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.installGamePackageAutomatically')"
+                    :hint="t('core.edit.whenClientDetectedAs')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="maaConfig.Run.IfAutoInstallGameApk"
@@ -332,20 +239,19 @@
                   :disabled="!maaConfig.Run.IfCheckGameUpdate"
                   @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.timeoutDownloadingInstallingGame')">
-                    <span class="form-label">
-                      {{ t('edit.gameUpdateTimeoutMinutes') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.gameUpdateTimeoutMinutes')"
+                    :hint="t('core.edit.timeoutDownloadingInstallingGame')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="maaConfig.Run.GameUpdateTimeLimit"
@@ -376,10 +282,15 @@
 </template>
 
 <script setup lang="ts">
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import EmulatorInstanceField from './components/EmulatorInstanceField.vue'
+import EmulatorSelectField from './components/EmulatorSelectField.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import MaaUpdateSettings from './components/MaaUpdateSettings.vue'
 import { createMaaScriptDraft } from './maaScriptDraft'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import PathPickerField from '@/components/PathPickerField.vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
@@ -389,9 +300,8 @@ import { message } from 'ant-design-vue'
 import type { MAAScriptConfig, ScriptType } from '@/types/script.ts'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
-import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
-import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 
 const { t } = useI18n()
 
@@ -412,7 +322,16 @@ const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true) // 标记是否正在初始化
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue } = useSaveQueue()
+const { enqueue, saveField: handleChange } = useScriptSaveMutation({
+  scriptId,
+  isInitializing,
+  logger,
+  afterFieldSave: async (category, key) => {
+    if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+      await refreshNormalizedField(category, key)
+    }
+  },
+})
 
 const formData = reactive({
   name: '',
@@ -429,9 +348,9 @@ const formData = reactive({
 const maaConfig = reactive(createMaaScriptDraft())
 
 const rules = {
-  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
-  type: [{ required: true, message: t('edit.pickScriptType'), trigger: 'change' }],
-  path: [{ required: true, message: t('edit.pickMaaPath'), trigger: 'blur' }],
+  name: [{ required: true, message: t('core.edit.enterScriptName'), trigger: 'blur' }],
+  type: [{ required: true, message: t('core.edit.pickScriptType'), trigger: 'change' }],
+  path: [{ required: true, message: t('core.edit.pickMaaPath'), trigger: 'blur' }],
 }
 
 // 模拟器相关状态
@@ -448,28 +367,6 @@ const refreshNormalizedField = async (category: string, key: string) => {
   if (normalized !== undefined) {
     ;(maaConfig as Record<string, any>)[category][key] = normalized
   }
-}
-
-const handleChange = async (category: string, key: string, value: any) => {
-  if (isInitializing.value) return
-
-  await enqueue(async () => {
-    try {
-      // 构建只包含单个修改字段的更新数据（遵循最小原则）
-      const updateData: any = { [category]: { [key]: value } }
-
-      const success = await updateScript(scriptId, updateData)
-      if (success) {
-        logger.info(`配置已保存: ${category}.${key}`)
-        if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
-          await refreshNormalizedField(category, key)
-        }
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
-    }
-  }, `${category}.${key}`)
 }
 
 onMounted(async () => {
@@ -508,7 +405,7 @@ const loadScript = async () => {
       const scriptDetail = await getScript(scriptId)
 
       if (!scriptDetail) {
-        if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
+        if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist'))
         router.push('/scripts')
         return
       }
@@ -526,7 +423,7 @@ const loadScript = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
-    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript'))
     router.push('/scripts')
   } finally {
     pageLoading.value = false
@@ -571,7 +468,7 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
 const selectMAAPath = async () => {
   try {
     if (!window.electronAPI) {
-      message.error(t('edit.filePickingUnavailableRun'))
+      message.error(t('core.edit.filePickingUnavailableRun'))
       return
     }
 
@@ -580,12 +477,12 @@ const selectMAAPath = async () => {
       maaConfig.Info.Path = path
       // 选择路径后立即保存
       await handleChange('Info', 'Path', path)
-      message.success(t('edit.maaPathSelected'))
+      message.success(t('core.edit.maaPathSelected'))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择MAA路径失败: ${errorMsg}`)
-    message.error(t('edit.couldNotPickFolder'))
+    message.error(t('core.edit.couldNotPickFolder'))
   }
 }
 </script>

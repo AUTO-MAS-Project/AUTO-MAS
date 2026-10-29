@@ -1,4 +1,4 @@
-"""`app.utils.platform.secret` 在没有 pywin32 的环境里也必须能被 import。
+"""`app.utils.secret` 在没有 pywin32 的环境里也必须能被 import。
 
 MaaFW 内置 runner worker 跑在运行池的隔离 venv 中，那里没有 pywin32；worker 一旦
 import 到本仓的 ``app.utils``（logger -> security -> platform.secret），顶层的
@@ -14,9 +14,8 @@ import sys
 import pytest
 
 _SECRET_MODULES = (
-    "app.utils.platform.secret",
-    "app.utils.platform.windows.secret",
-    "app.utils.platform.common.secret",
+    "app.utils.windows.secret",
+    "app.utils.common.secret",
 )
 
 
@@ -29,12 +28,15 @@ def _without_win32crypt(monkeypatch: pytest.MonkeyPatch):
     for name in _SECRET_MODULES:
         if name in sys.modules:
             monkeypatch.delitem(sys.modules, name)
+    import app.utils as utils
+
+    monkeypatch.delattr(utils, "secret", raising=False)
     yield
 
 
 @pytest.mark.usefixtures("_without_win32crypt")
 def test_secret_module_imports_without_pywin32() -> None:
-    module = importlib.import_module("app.utils.platform.secret")
+    from app.utils import secret as module
 
     assert callable(module.dpapi_encrypt)
     assert callable(module.dpapi_decrypt)
@@ -46,7 +48,7 @@ def test_secret_module_imports_without_pywin32() -> None:
 @pytest.mark.skipif(sys.platform != "win32", reason="仅 Windows 走 DPAPI 实现")
 @pytest.mark.usefixtures("_without_win32crypt")
 def test_windows_secret_defers_win32crypt_to_call_time() -> None:
-    module = importlib.import_module("app.utils.platform.windows.secret")
+    module = importlib.import_module("app.utils.windows.secret")
 
     with pytest.raises(ModuleNotFoundError):
         module.dpapi_encrypt("plain-text")

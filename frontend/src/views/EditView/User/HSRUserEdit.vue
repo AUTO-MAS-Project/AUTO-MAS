@@ -5,7 +5,7 @@
       :script-name="scriptName"
       :is-edit="isEdit"
       script-edit-segment="hsr"
-      :current-label="isEdit ? t('edit.editHsrUser') : t('edit.addHsrUser')"
+      :current-label="isEdit ? t('core.edit.editHsrUser') : t('core.edit.addHsrUser')"
       :logo-src="hsrLogo"
       :user-id="userId"
       @cancel="handleCancel"
@@ -31,14 +31,14 @@
           <!-- 基本信息 -->
           <div class="form-section form-section-flat">
             <div class="section-header">
-              <h3>{{ t('edit.basicInfo') }}</h3>
+              <h3>{{ t('core.edit.basicInfo') }}</h3>
               <!-- 配置恢复入口固定在这里，不随配置来源跳动 -->
               <div class="section-header-actions">
                 <a-button size="small" @click="restoreOpen = true">
                   <template #icon>
                     <HistoryOutlined />
                   </template>
-                  {{ t('edit.configRestoreTitle') }}
+                  {{ t('core.edit.configRestoreTitle') }}
                 </a-button>
               </div>
             </div>
@@ -47,9 +47,9 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip :title="t('edit.thisNameAlsoWritten')">
+                    <a-tooltip :title="t('core.edit.thisNameAlsoWritten')">
                       <span class="form-label"
-                        >{{ t('edit.username') }} <QuestionCircleOutlined class="help-icon"
+                        >{{ t('core.edit.username') }} <QuestionCircleOutlined class="help-icon"
                       /></span>
                     </a-tooltip>
                   </template>
@@ -63,7 +63,7 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">{{ t('edit.enabled2') }}</span>
+                    <span class="form-label">{{ t('core.edit.enabled2') }}</span>
                   </template>
                   <!-- 和同一行的其他控件一样用下拉，别一个开关孤零零地矮一截 -->
                   <a-select v-model:value="statusValue" size="large" :options="statusOptions" />
@@ -72,9 +72,9 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip :title="t('edit.daysLeft1Means')">
+                    <a-tooltip :title="t('core.edit.daysLeft1Means')">
                       <span class="form-label"
-                        >{{ t('edit.daysLeft') }} <QuestionCircleOutlined class="help-icon"
+                        >{{ t('core.edit.daysLeft') }} <QuestionCircleOutlined class="help-icon"
                       /></span>
                     </a-tooltip>
                   </template>
@@ -94,11 +94,11 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">{{ t('edit.account') }}</span>
+                    <span class="form-label">{{ t('core.edit.account') }}</span>
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
-                    :placeholder="t('edit.enterAccount')"
+                    :placeholder="t('core.edit.enterAccount')"
                     size="large"
                     @blur="handleFieldSave('Info.Id', formData.Info.Id)"
                   />
@@ -108,15 +108,15 @@
                 <a-form-item>
                   <template #label>
                     <!-- 加密说明由原先的区块提示降为密码字段的悬停说明 -->
-                    <a-tooltip :title="t('edit.whenSavingMasEncrypts')">
+                    <a-tooltip :title="t('core.edit.whenSavingMasEncrypts')">
                       <span class="form-label"
-                        >{{ t('edit.password') }} <QuestionCircleOutlined class="help-icon"
+                        >{{ t('core.edit.password') }} <QuestionCircleOutlined class="help-icon"
                       /></span>
                     </a-tooltip>
                   </template>
                   <a-input-password
                     v-model:value="formData.Info.Password"
-                    :placeholder="t('edit.enterPassword')"
+                    :placeholder="t('core.edit.enterPassword')"
                     size="large"
                     @blur="handleFieldSave('Info.Password', formData.Info.Password)"
                   />
@@ -127,15 +127,17 @@
             <a-row v-if="isCloud && isEdit" :gutter="24" align="middle" class="cloud-login-row">
               <a-col :span="24">
                 <div class="cloud-login-line" data-testid="hsr-cloud-login-line">
-                  <span class="progress-label">{{ t('edit.hsrCloudLogin') }}</span>
+                  <span class="progress-label">{{ t('core.edit.hsrCloudLogin') }}</span>
                   <a-tag :color="cloudLastLogin ? 'green' : 'orange'">
                     {{
                       cloudLastLogin
-                        ? t('edit.hsrCloudLoggedIn', { time: formatCloudLoginTime(cloudLastLogin) })
-                        : t('edit.hsrCloudNotLoggedIn')
+                        ? t('core.edit.hsrCloudLoggedIn', {
+                            time: formatCloudLoginTime(cloudLastLogin),
+                          })
+                        : t('core.edit.hsrCloudNotLoggedIn')
                     }}
                   </a-tag>
-                  <a-tooltip :title="t('edit.hsrCloudLoginTip')">
+                  <a-tooltip :title="t('core.edit.hsrCloudLoginTip')">
                     <a-button
                       size="small"
                       :loading="cloudLoginLoading"
@@ -143,7 +145,7 @@
                       data-testid="hsr-cloud-login-button"
                       @click="handleCloudLogin"
                     >
-                      {{ t('edit.hsrCloudLoginButton') }}
+                      {{ t('core.edit.hsrCloudLoginButton') }}
                     </a-button>
                   </a-tooltip>
                 </div>
@@ -151,7 +153,7 @@
             </a-row>
             <a-form-item>
               <template #label>
-                <span class="form-label">{{ t('edit.note') }}</span>
+                <span class="form-label">{{ t('core.edit.note') }}</span>
               </template>
               <a-textarea
                 v-model:value="formData.Info.Notes"
@@ -221,23 +223,27 @@
           <!-- 进度（完成态恒按用户记，共享 / 独立来源都显示；历战余响开始日在体力模块设置里） -->
           <div v-if="formData.Info.Base !== 'native'" class="form-section">
             <div class="section-header">
-              <h3>{{ t('edit.progressReset') }}</h3>
+              <h3>{{ t('core.edit.progressReset') }}</h3>
             </div>
 
             <!-- 历战余响进度 -->
             <a-row :gutter="24" align="middle">
               <a-col :span="10">
                 <div class="progress-group">
-                  <span class="progress-label">{{ t('edit.echoOfWar') }}</span>
+                  <span class="progress-label">{{ t('core.edit.echoOfWar') }}</span>
                   <a-tag :color="eowCompletedThisWeek ? 'green' : 'orange'">
-                    {{ eowCompletedThisWeek ? t('edit.hsrWeekDone') : t('edit.hsrWeekNotDone') }}
+                    {{
+                      eowCompletedThisWeek
+                        ? t('core.edit.hsrWeekDone')
+                        : t('core.edit.hsrWeekNotDone')
+                    }}
                   </a-tag>
                   <span
                     v-if="hasValidCompletionDate(formData.Data.EchoOfWarLastCompletionDate)"
                     class="date-hint"
                   >
                     {{
-                      t('edit.hsrLastCompleted', {
+                      t('core.edit.hsrLastCompleted', {
                         date: formatConfigDate(formData.Data.EchoOfWarLastCompletionDate, 4 * 60),
                       })
                     }}
@@ -247,10 +253,10 @@
               <a-col :span="14">
                 <a-space>
                   <a-button size="small" :disabled="eowCompletedThisWeek" @click="markEowCompleted">
-                    {{ t('edit.markAsDone') }}
+                    {{ t('core.edit.markAsDone') }}
                   </a-button>
                   <a-button size="small" @click="resetEowProgress">{{
-                    t('edit.hsrMarkNotDone')
+                    t('core.edit.hsrMarkNotDone')
                   }}</a-button>
                 </a-space>
               </a-col>
@@ -260,12 +266,12 @@
             <a-row :gutter="24" align="middle" style="margin-top: 16px">
               <a-col :span="10">
                 <div class="progress-group">
-                  <span class="progress-label">{{ t('edit.weekly') }}</span>
+                  <span class="progress-label">{{ t('core.edit.weekly') }}</span>
                   <a-tag :color="formData.Data.WeeklyCompletedThisWeek ? 'green' : 'orange'">
                     {{
                       formData.Data.WeeklyCompletedThisWeek
-                        ? t('edit.hsrWeekDone')
-                        : t('edit.hsrWeekNotDone')
+                        ? t('core.edit.hsrWeekDone')
+                        : t('core.edit.hsrWeekNotDone')
                     }}
                   </a-tag>
                   <span
@@ -273,7 +279,7 @@
                     class="date-hint"
                   >
                     {{
-                      t('edit.hsrLastCompleted', {
+                      t('core.edit.hsrLastCompleted', {
                         date: formatConfigDate(formData.Data.WeeklyLastCompletionDate, 4 * 60),
                       })
                     }}
@@ -287,10 +293,10 @@
                     :disabled="formData.Data.WeeklyCompletedThisWeek"
                     @click="markWeeklyCompleted"
                   >
-                    {{ t('edit.markAsDone') }}
+                    {{ t('core.edit.markAsDone') }}
                   </a-button>
                   <a-button size="small" @click="resetWeeklyProgress">{{
-                    t('edit.hsrMarkNotDone')
+                    t('core.edit.hsrMarkNotDone')
                   }}</a-button>
                 </a-space>
               </a-col>
@@ -322,15 +328,15 @@
       :script-name="HSR_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :user-desc="t('edit.hsrConfigRestoreUserDesc')"
-      :script-desc="t('edit.hsrConfigRestoreScriptDesc')"
+      :user-desc="t('core.edit.hsrConfigRestoreUserDesc')"
+      :script-desc="t('core.edit.hsrConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
     >
       <!-- mas 备份为字段侧车分区、native 备份为两引擎文件清单 -->
       <template #preview="{ raw }">
         <a-empty
           v-if="!previewSections(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="t('core.edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="s in previewSections(raw)" :key="s.name">
@@ -524,7 +530,7 @@ const pageWarnings = computed<string[]>(() => {
 })
 // 用户可见的引擎名：不出现 M7A 这类内部代号
 const engineDisplayName = (engine: HSREngine) =>
-  engine === 'M7A' ? t('edit.directEngineM7a') : t('edit.directEngineSra')
+  engine === 'M7A' ? t('core.edit.directEngineM7a') : t('core.edit.directEngineSra')
 const capabilityView = computed(() => buildHSRCapabilityView(capabilitySnapshot.value))
 const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
 // 云·星穹铁道只用三月七：原生来源只剩三月七可选，引擎分配恒为三月七
@@ -553,11 +559,11 @@ const handleCloudLogin = async () => {
   cloudLoginLoading.value = true
   try {
     await hsrPluginApi.cloudLogin(scriptId, userId)
-    message.success(t('edit.hsrCloudLoginSuccess'))
+    message.success(t('core.edit.hsrCloudLoginSuccess'))
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     logger.error(`云·星穹铁道登录失败: ${reason}`)
-    message.error(t('edit.hsrCloudLoginFailed', { reason }))
+    message.error(t('core.edit.hsrCloudLoginFailed', { reason }))
   } finally {
     cloudLoginLoading.value = false
     // 登录时间由后端写进脚本配置，重拉一次让状态行跟上
@@ -572,8 +578,8 @@ const hsrStageOptionsError = ref('')
 
 // 启用状态用下拉表达；a-select 的值只认字符串 / 数字，这里和布尔互转
 const statusOptions = computed(() => [
-  { label: t('edit.enabled3'), value: 'on' },
-  { label: t('edit.disabled'), value: 'off' },
+  { label: t('core.edit.enabled3'), value: 'on' },
+  { label: t('core.edit.disabled'), value: 'off' },
 ])
 const statusValue = computed({
   get: () => (formData.Info.Status ? 'on' : 'off'),
@@ -594,24 +600,24 @@ const hsrConfigModeOptions: Array<{
   icon: 'database' | 'setting'
 }> = [
   {
-    label: t('edit.script'),
+    label: t('core.edit.script'),
     value: 'shared',
-    title: t('edit.script'),
-    description: t('edit.hsrUseScriptShared'),
+    title: t('core.edit.script'),
+    description: t('core.edit.hsrUseScriptShared'),
     icon: 'database',
   },
   {
-    label: t('edit.user'),
+    label: t('core.edit.user'),
     value: 'independent',
-    title: t('edit.user'),
-    description: t('edit.hsrUseUserOwn'),
+    title: t('core.edit.user'),
+    description: t('core.edit.hsrUseUserOwn'),
     icon: 'database',
   },
   {
-    label: t('edit.directControl'),
+    label: t('core.edit.directControl'),
     value: 'native',
-    title: t('edit.directControl'),
-    description: t('edit.hsrUseDirect'),
+    title: t('core.edit.directControl'),
+    description: t('core.edit.hsrUseDirect'),
     icon: 'setting',
   },
 ]
@@ -773,13 +779,13 @@ const dailySummary = computed(() => {
   const engine = dailyStageEngine.value
   if (!engine) return undefined
   const plan = planForm.value
-  if (hasLegacyEngineMismatch(plan.Stage, engine)) return t('edit.hsrRepickStage')
+  if (hasLegacyEngineMismatch(plan.Stage, engine)) return t('core.edit.hsrRepickStage')
   const channel = resolveStageChannel(plan.Stage.Channel)
   const weekday = EOW_WEEKDAY_LABEL_KEYS[plan.TaskOpt.EchoOfWarWeekday ?? 'Monday']
-  return t('edit.hsrDailySummary', {
+  return t('core.edit.hsrDailySummary', {
     type: t(CHANNEL_LABEL_KEYS[channel]),
-    stage: readChannelStage(plan.Stage, engine, channel)?.label || t('edit.hsrStageNotPicked'),
-    eow: readEowStage(plan.Stage, engine)?.label || t('edit.skip'),
+    stage: readChannelStage(plan.Stage, engine, channel)?.label || t('core.edit.hsrStageNotPicked'),
+    eow: readEowStage(plan.Stage, engine)?.label || t('core.edit.skip'),
     weekday: weekday ? t(weekday) : '',
   })
 })
@@ -854,11 +860,11 @@ const handleManagedModuleReset = async (engine: HSREngine, task: string) => {
   const saved = await removeManagedOverrides(engine, task, null)
   const engineName = engineDisplayName(engine)
   if (!saved) {
-    message.error(t('edit.hsrModuleResetFailed', { engine: engineName }))
+    message.error(t('core.edit.hsrModuleResetFailed', { engine: engineName }))
     return
   }
   await loadManagedConfig()
-  message.success(t('edit.hsrModuleResetDone', { engine: engineName }))
+  message.success(t('core.edit.hsrModuleResetDone', { engine: engineName }))
 }
 
 // 单项恢复：删掉该键的覆盖值，直接显示后端给的原值（只有带 native_value 的字段才有这个入口）
@@ -866,7 +872,7 @@ const handleManagedFieldReset = async (engine: HSREngine, task: string, key: str
   if (!userId || managedConfigLoading.value) return
   const saved = await removeManagedOverrides(engine, task, [key])
   if (!saved) {
-    message.error(t('edit.hsrFieldResetFailed'))
+    message.error(t('core.edit.hsrFieldResetFailed'))
     return
   }
   const field = findManagedField(engine, task, key)
@@ -885,11 +891,11 @@ const handleManagedInvalidOverridesClear = async (
   if (!userId || managedConfigLoading.value || keys.length === 0) return
   const saved = await removeManagedOverrides(engine, task, keys)
   if (!saved) {
-    message.error(t('edit.couldNotClearInvalidManagedOverrides'))
+    message.error(t('core.edit.couldNotClearInvalidManagedOverrides'))
     return
   }
   await loadManagedConfig()
-  message.success(t('edit.invalidManagedOverridesCleared', { n: keys.length }))
+  message.success(t('core.edit.invalidManagedOverridesCleared', { n: keys.length }))
 }
 
 // 原生来源下没勾任何引擎时，按已配路径的引擎全开（后端的同名回落保留兜底）
@@ -1153,14 +1159,14 @@ const loadCapabilities = async () => {
     capabilitySnapshot.value = {
       revision: 0,
       available: configuredEngines.length > 0,
-      unavailable_reason: configuredEngines.length ? null : t('edit.hsrNoEnginePath'),
+      unavailable_reason: configuredEngines.length ? null : t('core.edit.hsrNoEnginePath'),
       candidate_engines: configuredEngines,
       configured_engines: configuredEngines,
       effective_engines: configuredEngines,
       adapters: [],
       tasks: [],
       warnings: [
-        t('edit.hsrCapabilityFallback', {
+        t('core.edit.hsrCapabilityFallback', {
           reason: error instanceof Error ? error.message : String(error),
         }),
       ],
@@ -1213,14 +1219,14 @@ const ensureHSRBackup = ensureBackup
 
 onMounted(async () => {
   if (!scriptId) {
-    message.error(t('edit.missingScriptIdParameter'))
+    message.error(t('core.edit.missingScriptIdParameter'))
     handleCancel()
     return
   }
   try {
     const script = await getScript(scriptId)
     if (!script) {
-      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist2'))
       handleCancel()
       return
     }
@@ -1241,7 +1247,7 @@ onMounted(async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript2'))
   } finally {
     isInitializing.value = false
   }
@@ -1267,13 +1273,13 @@ const createUserImmediately = async () => {
       await loadUserData()
       if (controlMode.value === 'managed') await loadManagedConfig()
     } else {
-      if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -1308,17 +1314,17 @@ const loadUserData = async () => {
         }
         logger.info('用户数据加载成功')
       } else {
-        message.error(t('edit.userDoesNotExist'))
+        message.error(t('core.edit.userDoesNotExist'))
         handleCancel()
       }
     } else {
-      if (!userApiError.value) message.error(t('edit.couldNotFetchUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    if (!userApiError.value) message.error(t('edit.couldNotLoadUser2'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser2'))
   }
 }
 </script>
@@ -1366,16 +1372,7 @@ const loadUserData = async () => {
 }
 
 .section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   margin-bottom: 12px;
-}
-
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 /* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */

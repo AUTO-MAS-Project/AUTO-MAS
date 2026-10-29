@@ -1,3 +1,5 @@
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
+import { beginUserChanges, rememberUserAnalytics } from '@/utils/userAnalytics'
 import { getApiErrorCode, getApiErrorMessage } from '@/utils/apiError'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -15,6 +17,12 @@ import type {
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
 import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
+import {
+  analyticsConfigSection,
+  analyticsCountBucket,
+  beginAnalyticsOperation,
+  getAnalyticsScriptType,
+} from '@/utils/analytics'
 
 const logger = window.electronAPI.getLogger('用户API')
 
@@ -32,8 +40,11 @@ export function useUserApi() {
     scriptId: string,
     options: AddUserOptions = {}
   ): Promise<UserCreateOut | null> => {
+    const operation = beginAnalyticsOperation('user_create_finished')
+    const script_type = getAnalyticsScriptType(scriptId)
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
-      const errorMsg = t('edit.configLocked')
+      operation.finish({ script_type, outcome: 'blocked' })
+      const errorMsg = t('core.edit.configLocked')
       error.value = errorMsg
       addUserErrorCode.value = null
       if (options.showError ?? true) message.warning(errorMsg)
@@ -54,18 +65,20 @@ export function useUserApi() {
 
       if (response.code !== 200) {
         addUserErrorCode.value = response.code ?? null
-        const errorMsg = response.message || t('apiErrors.userAddFailed')
+        const errorMsg = response.message || t('core.apiErrors.userAddFailed')
         throw new Error(errorMsg)
       }
 
+      operation.finish({ script_type, outcome: response.userId ? 'success' : 'failure' })
       // 播放添加用户成功音频
       const { playSound } = useAudioPlayer()
       await playSound('add_user')
 
       return response
     } catch (err) {
+      operation.finish({ script_type, outcome: 'failure' })
       addUserErrorCode.value ??= getApiErrorCode(err)
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.userAddFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.userAddFailed'))
       error.value = errorMsg
       if (showError) {
         message.error(errorMsg)
@@ -82,8 +95,22 @@ export function useUserApi() {
     userId: string,
     userData: UserUpdateIn['data']
   ): Promise<boolean> => {
+    const finishChanges = beginUserChanges(
+      scriptId,
+      userId,
+      getAnalyticsScriptType(scriptId),
+      userData.Info
+    )
+    const operation = beginAnalyticsOperation('config_write_finished')
+    const dimensions = {
+      owner_kind: 'user' as const,
+      section_kind: analyticsConfigSection(userData),
+      script_type: getAnalyticsScriptType(scriptId),
+    }
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
-      const errorMsg = t('edit.configLocked')
+      finishChanges('blocked')
+      operation.finish({ ...dimensions, outcome: 'blocked' })
+      const errorMsg = t('core.edit.configLocked')
       error.value = errorMsg
       message.warning(errorMsg)
       return false
@@ -104,14 +131,18 @@ export function useUserApi() {
       logger.debug(`更新用户响应: ${JSON.stringify(response)}`)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userSaveFailed')
+        const errorMsg = response.message || t('core.apiErrors.userSaveFailed')
         logger.error(`更新用户失败: ${errorMsg}`)
         throw new Error(errorMsg)
       }
 
+      finishChanges('success')
+      operation.finish({ ...dimensions, outcome: 'success' })
       return true
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.userSaveFailed'))
+      finishChanges('failure')
+      operation.finish({ ...dimensions, outcome: 'failure' })
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.userSaveFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return false
@@ -134,13 +165,15 @@ export function useUserApi() {
       const response = await Service.getUserApiScriptsUserGetPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userListFailed')
+        const errorMsg = response.message || t('core.apiErrors.userListFailed')
         throw new Error(errorMsg)
       }
 
+      for (const [id, user] of Object.entries(response.data))
+        rememberUserAnalytics(scriptId, id, user.Info)
       return response
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.userListFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.userListFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return null
@@ -152,7 +185,7 @@ export function useUserApi() {
   // 删除用户
   const deleteUser = async (scriptId: string, userId: string): Promise<boolean> => {
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
-      const errorMsg = t('edit.configLocked')
+      const errorMsg = t('core.edit.configLocked')
       error.value = errorMsg
       message.warning(errorMsg)
       return false
@@ -167,10 +200,15 @@ export function useUserApi() {
         userId,
       }
 
-      const response = await Service.deleteUserApiScriptsUserDeletePost(requestData)
+      const response = await observeFeature(
+        'user_manage_finished',
+        { action: 'delete', script_type: getAnalyticsScriptType(scriptId), count_bucket: '1' },
+        () => Service.deleteUserApiScriptsUserDeletePost(requestData),
+        apiOutcome
+      )
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userDeleteFailed')
+        const errorMsg = response.message || t('core.apiErrors.userDeleteFailed')
         throw new Error(errorMsg)
       }
 
@@ -180,7 +218,7 @@ export function useUserApi() {
 
       return true
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.userDeleteFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.userDeleteFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return false
@@ -192,7 +230,7 @@ export function useUserApi() {
   // 重新排序用户
   const reorderUser = async (scriptId: string, userIds: string[]): Promise<boolean> => {
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
-      const errorMsg = t('edit.configLocked')
+      const errorMsg = t('core.edit.configLocked')
       error.value = errorMsg
       message.warning(errorMsg)
       return false
@@ -207,16 +245,25 @@ export function useUserApi() {
         indexList: userIds,
       }
 
-      const response = await Service.reorderUserApiScriptsUserOrderPost(requestData)
+      const response = await observeFeature(
+        'user_manage_finished',
+        {
+          action: 'reorder',
+          script_type: getAnalyticsScriptType(scriptId),
+          count_bucket: analyticsCountBucket(userIds.length),
+        },
+        () => Service.reorderUserApiScriptsUserOrderPost(requestData),
+        apiOutcome
+      )
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userOrderFailed')
+        const errorMsg = response.message || t('core.apiErrors.userOrderFailed')
         throw new Error(errorMsg)
       }
 
       return true
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.userOrderFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.userOrderFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return false
@@ -239,24 +286,24 @@ export function useUserApi() {
       const response = await Service.getUserConfigDirApiScriptsUserConfigDirPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userConfigPathFailed')
+        const errorMsg = response.message || t('core.apiErrors.userConfigPathFailed')
         throw new Error(errorMsg)
       }
 
       if (!response.path) {
-        throw new Error(t('apiErrors.userConfigPathFailed'))
+        throw new Error(t('core.apiErrors.userConfigPathFailed'))
       }
 
       const result = await window.electronAPI.openFile(response.path)
       if (!result.success) {
-        const openError = result.error || t('apiErrors.userConfigOpenFailed')
+        const openError = result.error || t('core.apiErrors.userConfigOpenFailed')
         logger.error(`打开用户配置目录失败: ${openError}`)
         throw new Error(openError)
       }
 
       return true
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.userConfigOpenFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.userConfigOpenFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return false

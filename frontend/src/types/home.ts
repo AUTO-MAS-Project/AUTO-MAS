@@ -15,6 +15,7 @@ export type HomeModuleKey =
   | 'stellasora'
   | 'infinitynikki'
   | 'arknights'
+  | 'azurlane'
 
 export interface HomeLayoutConfig {
   moduleOrder: HomeModuleKey[]

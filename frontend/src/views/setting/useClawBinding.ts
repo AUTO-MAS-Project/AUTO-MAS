@@ -1,7 +1,9 @@
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import QRCode from 'qrcode'
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import type { AnalyticsEventProps } from '@/types/analytics'
 import {
   QqService,
   OpenClawQQTargetIn,
@@ -26,11 +28,11 @@ export type ClawChannel = keyof typeof CHANNELS
 
 export function useClawBinding(
   channel: ClawChannel,
-  onBoundChange: (enabled: boolean) => Promise<void>
+  onBoundChange: (enabled: boolean) => Promise<unknown>
 ) {
   const api = CHANNELS[channel]
   const { t } = useI18n()
-  const label = (key: string) => t(`setting.notify.${api.prefix}${key}`)
+  const label = (key: string) => t(`core.setting.notify.${api.prefix}${key}`)
   const status = ref<OpenClawQQStatusOut | null>(null)
   const statusLoading = ref(false)
   const statusError = ref('')
@@ -42,6 +44,15 @@ export function useClawBinding(
   const state = ref('idle')
   const hint = ref('')
   const groups = ref<OpenClawQQGroupsOut | null>(null)
+  const groupWhitelistDraft = ref('')
+  watch(groups, (current, previous) => {
+    if (!current) return
+    if (
+      current.bindingId !== previous?.bindingId ||
+      groupWhitelistDraft.value === (previous?.groupCommandWhitelist || []).join('\n')
+    )
+      groupWhitelistDraft.value = (current.groupCommandWhitelist || []).join('\n')
+  })
   const groupsLoading = ref(false)
   const targetSaving = ref(false)
   const groupsError = ref('')
@@ -54,6 +65,16 @@ export function useClawBinding(
   let isBound = false
   let enableAfterBind = false
   let qqBindingObserved = false
+  let bindingAttempt: ReturnType<
+    typeof beginAnalyticsOperation<'notification_binding_finished'>
+  > | null = null
+  let bindingAction: 'bind' | 'rebind' = 'bind'
+  const finishBinding = (
+    outcome: AnalyticsEventProps['notification_binding_finished']['outcome']
+  ) => {
+    bindingAttempt?.finish({ channel_kind: 'openclaw_qq', action: bindingAction, outcome })
+    bindingAttempt = null
+  }
 
   const checkResponse = (result: OutBase) => {
     if (result.code !== 200) throw new Error(result.message || label('QrError'))
@@ -77,17 +98,16 @@ export function useClawBinding(
       groups.value = result
     } catch {
       if (disposed || id !== groupsRunId) return
-      groups.value = null
       groupsError.value = label('GroupsError')
     } finally {
       if (id === groupsRunId) groupsLoading.value = false
     }
   }
 
-  const selectTarget = async (value: string) => {
-    if (!groups.value?.bindingId || targetSaving.value) return
+  const selectTarget = async (value: string, groupCommandWhitelist?: string[]) => {
+    if (!groups.value?.bindingId || targetSaving.value) return false
     const targetType = Object.values(OpenClawQQTargetIn.targetType).find(type => type === value)
-    if (!targetType) return
+    if (!targetType) return false
     const id = ++groupsRunId
     targetSaving.value = true
     groupsLoading.value = false
@@ -96,16 +116,20 @@ export function useClawBinding(
       const result = await QqService.setTargetApiSettingOpenclawQqTargetPost({
         bindingId: groups.value.bindingId,
         targetType,
+        groupCommandWhitelist,
       })
-      if (disposed || id !== groupsRunId) return
+      if (disposed || id !== groupsRunId) return false
       if (result.code !== 200) {
         groupsError.value = groupError(result.errorCode)
-        return
+        return false
       }
       groups.value = result
-      message.success(label('TargetSaved'))
+      if (groupCommandWhitelist === undefined) message.success(label('TargetSaved'))
+      else groupWhitelistDraft.value = (result.groupCommandWhitelist || []).join('\n')
+      return true
     } catch {
       if (!disposed && id === groupsRunId) groupsError.value = label('TargetError')
+      return false
     } finally {
       targetSaving.value = false
     }
@@ -144,7 +168,8 @@ export function useClawBinding(
     }
   }
 
-  const close = () => {
+  const closeAttempt = (outcome: 'cancelled' | 'replaced' | 'unmounted') => {
+    finishBinding(outcome)
     runId++
     clearTimeout(timer)
     open.value = false
@@ -153,6 +178,7 @@ export function useClawBinding(
     state.value = 'idle'
     hint.value = ''
   }
+  const close = () => closeAttempt('cancelled')
 
   const poll = async (id: number) => {
     if (id !== runId || checking.value) return
@@ -165,6 +191,7 @@ export function useClawBinding(
       state.value = result.connected ? 'connected' : result.state || 'waiting'
       hint.value = result.message || label('QrWaiting')
       if (state.value === 'connected') {
+        finishBinding('connected')
         // 首次绑定默认启用；重新绑定只替换凭据，保留用户原来的开关状态。
         if (enableAfterBind) await onBoundChange(true)
         isBound = true
@@ -177,9 +204,12 @@ export function useClawBinding(
           void loadGroups()
         }
         timer = setTimeout(() => void poll(id), POLL_INTERVAL)
+      } else {
+        finishBinding(state.value === 'expired' ? 'expired' : 'failure')
       }
     } catch (error) {
       if (id !== runId) return
+      finishBinding('failure')
       state.value = 'error'
       hint.value = String(error)
     } finally {
@@ -193,7 +223,9 @@ export function useClawBinding(
     groupsLoading.value = false
     isBound ||= status.value?.connected === true
     enableAfterBind = !isBound
-    close()
+    closeAttempt('replaced')
+    bindingAction = isBound ? 'rebind' : 'bind'
+    bindingAttempt = beginAnalyticsOperation('notification_binding_finished')
     const id = runId
     open.value = loading.value = true
     state.value = 'loading'
@@ -212,6 +244,7 @@ export function useClawBinding(
       void poll(id)
     } catch (error) {
       if (id !== runId) return
+      finishBinding('failure')
       state.value = 'error'
       hint.value = String(error)
     } finally {
@@ -221,11 +254,15 @@ export function useClawBinding(
 
   const unbind = async () => {
     if (targetSaving.value) return
+    const activeBinding = bindingAttempt
+    const operation = beginAnalyticsOperation('notification_binding_finished')
     groupsRunId++
     groupsLoading.value = false
     unbinding.value = true
     try {
       checkResponse(await api.unbind())
+      if (bindingAttempt === activeBinding) finishBinding('cancelled')
+      operation.finish({ channel_kind: 'openclaw_qq', action: 'unbind', outcome: 'unbound' })
       isBound = false
       qqBindingObserved = false
       groups.value = null
@@ -233,6 +270,7 @@ export function useClawBinding(
       await loadStatus()
       message.success(label('UnbindSuccess'))
     } catch (error) {
+      operation.finish({ channel_kind: 'openclaw_qq', action: 'unbind', outcome: 'failure' })
       message.error(String(error))
     } finally {
       unbinding.value = false
@@ -244,7 +282,7 @@ export function useClawBinding(
     disposed = true
     groupsRunId++
     clearTimeout(statusTimer)
-    close()
+    closeAttempt('unmounted')
   })
 
   return {
@@ -260,11 +298,14 @@ export function useClawBinding(
     state,
     hint,
     groups,
+    groupWhitelistDraft,
     groupsLoading,
     groupsError,
     targetSaving,
     loadGroups,
     selectTarget,
+    saveGroupWhitelist: (values: string[]) =>
+      selectTarget(groups.value?.targetType || 'c2c', values),
     loadStatus,
     close,
     start,

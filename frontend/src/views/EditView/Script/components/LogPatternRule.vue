@@ -1,14 +1,9 @@
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useI18n } from 'vue-i18n'
-import {
-  BugOutlined,
-  DeleteOutlined,
-  DragOutlined,
-  EditOutlined,
-  QuestionCircleOutlined,
-  BookOutlined,
-} from '@ant-design/icons-vue'
-import { ref, watch, nextTick } from 'vue'
+import { BookOutlined, BugOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { ref, watch } from 'vue'
+import LogRuleCard from './LogRuleCard.vue'
 import type { PushLogPattern, PushLogPatternType } from '../composables/usePushLogPatterns'
 
 const { t } = useI18n()
@@ -49,25 +44,13 @@ const onEnabledChange = (enabled: boolean) => {
   commit()
 }
 
-const onLogTypeChange = (logType: string) => {
-  local.value.logType = logType
+const onNameChange = (name: string | undefined) => {
+  local.value.name = name
   commit()
 }
 
-const editingName = ref(false)
-const nameInputRef = ref<HTMLInputElement | null>(null)
-const nameValue = ref('')
-
-const startEditName = () => {
-  nameValue.value = local.value.name || ''
-  editingName.value = true
-  nextTick(() => nameInputRef.value?.focus())
-}
-
-const finishEditName = () => {
-  const trimmed = nameValue.value.trim()
-  local.value.name = trimmed || undefined
-  editingName.value = false
+const onLogTypeChange = (logType: string) => {
+  local.value.logType = logType
   commit()
 }
 
@@ -95,408 +78,280 @@ const getPatternTypeLabel = (type: PushLogPatternType): string => {
 }
 
 const typeOptions = [
-  { value: 'split', label: t('edit.stringSplitting') },
-  { value: 'regex', label: t('edit.expression') },
-  { value: 'multiline', label: t('edit.multiLineAggregation') },
+  { value: 'split', label: t('core.edit.stringSplitting') },
+  { value: 'regex', label: t('core.edit.expression') },
+  { value: 'multiline', label: t('core.edit.multiLineAggregation') },
 ]
 
 const logTypeOptions = [
-  { value: '普通', label: t('edit.normal'), color: 'primary' },
-  { value: '失败', label: t('edit.failed'), color: 'error' },
+  { value: '普通', label: t('core.edit.normal'), color: 'primary' },
+  { value: '失败', label: t('core.edit.failed'), color: 'error' },
 ]
 </script>
 
 <template>
-  <div :class="['log-pattern-rule', { 'rule-disabled': local.enabled === false }]">
-    <!-- 规则头部：拖拽、类型、标题、开关、操作 -->
-    <div class="rule-header">
-      <div class="rule-header-left">
-        <span class="drag-handle">
-          <DragOutlined />
-        </span>
-        <a-select :value="local.type" class="rule-type-select" size="small" @change="onTypeChange">
-          <a-select-option v-for="opt in typeOptions" :key="opt.value" :value="opt.value">
-            {{ opt.label }}
-          </a-select-option>
-        </a-select>
-      </div>
+  <LogRuleCard
+    :name="local.name"
+    :index="index"
+    :enabled="local.enabled !== false"
+    show-debug
+    @update:name="onNameChange"
+    @update:enabled="onEnabledChange"
+    @remove="emit('remove')"
+    @debug="emit('debug')"
+  >
+    <template #type>
+      <a-select :value="local.type" class="rule-type-select" size="small" @change="onTypeChange">
+        <a-select-option v-for="opt in typeOptions" :key="opt.value" :value="opt.value">
+          {{ opt.label }}
+        </a-select-option>
+      </a-select>
+    </template>
 
-      <div class="rule-title-wrap" @click="startEditName">
-        <EditOutlined v-if="!editingName" class="rule-title-icon" />
-        <span v-if="!editingName" class="rule-title">
-          {{ local.name?.trim() || `规则${index + 1}` }}
-        </span>
-        <a-input
-          v-else
-          ref="nameInputRef"
-          v-model:value="nameValue"
-          class="rule-title-input"
-          size="small"
-          :placeholder="t('edit.ruleTitle')"
-          @blur="finishEditName"
-          @press-enter="finishEditName"
-        />
-      </div>
-
-      <div class="rule-header-right">
-        <a-radio-group
-          :value="local.logType || '普通'"
-          size="small"
-          class="rule-log-type-group"
-          @change="(e: any) => onLogTypeChange(e.target.value)"
+    <template #header-extra>
+      <a-radio-group
+        :value="local.logType || '普通'"
+        size="small"
+        class="rule-log-type-group"
+        @change="(e: any) => onLogTypeChange(e.target.value)"
+      >
+        <a-radio-button
+          v-for="opt in logTypeOptions"
+          :key="opt.value"
+          :value="opt.value"
+          :class="`is-${opt.color}`"
         >
-          <a-radio-button
-            v-for="opt in logTypeOptions"
-            :key="opt.value"
-            :value="opt.value"
-            :class="`is-${opt.color}`"
-          >
-            {{ opt.label }}
-          </a-radio-button>
-        </a-radio-group>
+          {{ opt.label }}
+        </a-radio-button>
+      </a-radio-group>
+    </template>
 
-        <a-switch :checked="local.enabled !== false" size="small" @change="onEnabledChange" />
+    <template #debug-icon>
+      <BugOutlined />
+    </template>
 
-        <a-tooltip :title="t('edit.debug')">
-          <a-button size="small" class="rule-op-btn" @click="emit('debug')">
-            <BugOutlined />
-          </a-button>
-        </a-tooltip>
+    <!-- 字符串切割 -->
+    <template v-if="local.type === 'split'">
+      <a-row :gutter="16">
+        <a-col :span="24">
+          <a-form-item class="compact-form-item">
+            <template #label>
+              <a-tooltip :title="t('core.edit.requiredEmptyValueDisables2')">
+                <span class="form-label">
+                  {{ t('core.edit.keyword') }}
+                  <QuestionCircleOutlined class="help-icon" />
+                  <span class="doc-link" @click.stop="$emit('open-docs', 'split')">
+                    <BookOutlined />
+                    {{ t('core.edit.documentation') }}
+                  </span>
+                </span>
+              </a-tooltip>
+            </template>
+            <a-input
+              v-model:value="local.match"
+              :placeholder="t('core.edit.exampleTaskDoneSuccess')"
+              size="middle"
+              @blur="commit"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item class="compact-form-item">
+            <template #label>
+              <FieldLabelWithHint
+                :text="t('core.edit.leadingKeyword')"
+                :hint="t('core.edit.cutFromStartLine')"
+                variant="form"
+              />
+            </template>
+            <div class="inline-checkbox-row">
+              <a-input
+                v-model:value="local.head"
+                :placeholder="t('core.edit.leaveEmptySkipLeading')"
+                size="middle"
+                @blur="commit"
+              />
+              <a-checkbox v-model:checked="local.headInclude" @change="commit">{{
+                t('core.edit.include')
+              }}</a-checkbox>
+            </div>
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item class="compact-form-item">
+            <template #label>
+              <FieldLabelWithHint
+                :text="t('core.edit.trailingKeyword')"
+                :hint="t('core.edit.cutFromKeywordEnd')"
+                variant="form"
+              />
+            </template>
+            <div class="inline-checkbox-row">
+              <a-input
+                v-model:value="local.tail"
+                :placeholder="t('core.edit.leaveEmptySkipTrailing')"
+                size="middle"
+                @blur="commit"
+              />
+              <a-checkbox v-model:checked="local.tailInclude" @change="commit">{{
+                t('core.edit.include')
+              }}</a-checkbox>
+            </div>
+          </a-form-item>
+        </a-col>
+      </a-row>
+    </template>
 
-        <a-tooltip :title="t('edit.delete')">
-          <a-button size="small" danger class="rule-op-btn" @click="emit('remove')">
-            <DeleteOutlined />
-          </a-button>
-        </a-tooltip>
+    <!-- 正则 -->
+    <template v-else-if="local.type === 'regex'">
+      <a-row :gutter="16">
+        <a-col :span="24">
+          <a-form-item class="compact-form-item">
+            <template #label>
+              <a-tooltip :title="t('core.edit.requiredEmptyValueDisables4')">
+                <span class="form-label">
+                  {{ t('core.edit.matchPattern') }}
+                  <QuestionCircleOutlined class="help-icon" />
+                  <span class="doc-link" @click.stop="$emit('open-docs', 'regex')">
+                    <BookOutlined />
+                    {{ t('core.edit.documentation') }}
+                  </span>
+                </span>
+              </a-tooltip>
+            </template>
+            <a-input
+              v-model:value="local.match"
+              :placeholder="t('core.edit.exampleTaskRun')"
+              size="middle"
+              @blur="commit"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col :span="24">
+          <a-form-item class="compact-form-item">
+            <template #label>
+              <a-tooltip :title="t('core.edit.expressionSyntaxHint')">
+                <span class="form-label">
+                  {{ t('core.edit.extractionPattern') }}
+                  <QuestionCircleOutlined class="help-icon" />
+                  <span class="doc-link" @click.stop="$emit('open-docs', 'expression')">
+                    <BookOutlined />
+                    {{ t('core.edit.documentation') }}
+                  </span>
+                </span>
+              </a-tooltip>
+            </template>
+            <a-input
+              v-model:value="local.extract"
+              :placeholder="t('core.edit.exampleTaskRunS')"
+              size="middle"
+              @blur="commit"
+            />
+          </a-form-item>
+        </a-col>
+      </a-row>
+    </template>
+
+    <!-- 多行聚合 -->
+    <template v-else>
+      <a-row :gutter="16">
+        <a-col :span="12">
+          <a-form-item class="compact-form-item">
+            <template #label>
+              <FieldLabelWithHint
+                :text="t('core.edit.startPattern')"
+                :hint="t('core.edit.requiredEmptyValueDisables')"
+                variant="form"
+              />
+            </template>
+            <a-input
+              v-model:value="local.start"
+              :placeholder="t('core.edit.exampleFullRunStarted')"
+              size="middle"
+              @blur="commit"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item class="compact-form-item">
+            <template #label>
+              <FieldLabelWithHint
+                :text="t('core.edit.endPattern')"
+                :hint="t('core.edit.lineMatchingThisPattern')"
+                variant="form"
+              />
+            </template>
+            <a-input
+              v-model:value="local.end"
+              :placeholder="t('core.edit.exampleTaskFinished')"
+              size="middle"
+              @blur="commit"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col :span="20">
+          <a-form-item class="compact-form-item">
+            <template #label>
+              <a-tooltip :title="t('core.edit.windowExtractionHint')">
+                <span class="form-label">
+                  {{ t('core.edit.extractionPattern') }}
+                  <QuestionCircleOutlined class="help-icon" />
+                  <span class="doc-link" @click.stop="$emit('open-docs', 'expression')">
+                    <BookOutlined />
+                    {{ t('core.edit.documentation') }}
+                  </span>
+                </span>
+              </a-tooltip>
+            </template>
+            <a-input
+              v-model:value="local.extract"
+              :placeholder="t('core.edit.exampleStartSEnd')"
+              size="middle"
+              @blur="commit"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col :span="4">
+          <a-form-item class="compact-form-item">
+            <template #label>
+              <a-tooltip :title="t('core.edit.maximumLinesWindowBefore')">
+                <span class="form-label">{{ t('core.edit.maximumLines') }}</span>
+              </a-tooltip>
+            </template>
+            <a-input-number
+              v-model:value="local.maxLines"
+              :min="2"
+              :step="1"
+              size="middle"
+              style="width: 100%"
+              @blur="commit"
+              @change="commit"
+            />
+          </a-form-item>
+        </a-col>
+      </a-row>
+    </template>
+
+    <template #footer>
+      <div class="rule-footer-content">
+        <div class="footer-left">
+          <span class="footer-type-tag">{{ getPatternTypeLabel(local.type) }}</span>
+          <span class="footer-hint">{{ getPatternTypeHint(local.type) }}</span>
+        </div>
+        <div class="footer-right">
+          <a-tag size="small" :color="local.logType === '失败' ? 'error' : 'processing'">
+            {{ local.logType || t('core.edit.normal') }}
+          </a-tag>
+          <span class="footer-hint">{{ getLogTypeHint(local.logType) }}</span>
+        </div>
       </div>
-    </div>
-
-    <!-- 规则表单区 -->
-    <div class="rule-body">
-      <!-- 字符串切割 -->
-      <template v-if="local.type === 'split'">
-        <a-row :gutter="16">
-          <a-col :span="24">
-            <a-form-item class="compact-form-item">
-              <template #label>
-                <a-tooltip :title="t('edit.requiredEmptyValueDisables2')">
-                  <span class="form-label">
-                    {{ t('edit.keyword') }}
-                    <QuestionCircleOutlined class="help-icon" />
-                    <span class="doc-link" @click.stop="$emit('open-docs', 'split')">
-                      <BookOutlined />
-                      {{ t('edit.documentation') }}
-                    </span>
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="local.match"
-                :placeholder="t('edit.exampleTaskDoneSuccess')"
-                size="middle"
-                @blur="commit"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item class="compact-form-item">
-              <template #label>
-                <a-tooltip :title="t('edit.cutFromStartLine')">
-                  <span class="form-label">
-                    {{ t('edit.leadingKeyword') }}
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <div class="inline-checkbox-row">
-                <a-input
-                  v-model:value="local.head"
-                  :placeholder="t('edit.leaveEmptySkipLeading')"
-                  size="middle"
-                  @blur="commit"
-                />
-                <a-checkbox v-model:checked="local.headInclude" @change="commit">{{
-                  t('edit.include')
-                }}</a-checkbox>
-              </div>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item class="compact-form-item">
-              <template #label>
-                <a-tooltip :title="t('edit.cutFromKeywordEnd')">
-                  <span class="form-label">
-                    {{ t('edit.trailingKeyword') }}
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <div class="inline-checkbox-row">
-                <a-input
-                  v-model:value="local.tail"
-                  :placeholder="t('edit.leaveEmptySkipTrailing')"
-                  size="middle"
-                  @blur="commit"
-                />
-                <a-checkbox v-model:checked="local.tailInclude" @change="commit">{{
-                  t('edit.include')
-                }}</a-checkbox>
-              </div>
-            </a-form-item>
-          </a-col>
-        </a-row>
-      </template>
-
-      <!-- 正则 -->
-      <template v-else-if="local.type === 'regex'">
-        <a-row :gutter="16">
-          <a-col :span="24">
-            <a-form-item class="compact-form-item">
-              <template #label>
-                <a-tooltip :title="t('edit.requiredEmptyValueDisables4')">
-                  <span class="form-label">
-                    {{ t('edit.matchPattern') }}
-                    <QuestionCircleOutlined class="help-icon" />
-                    <span class="doc-link" @click.stop="$emit('open-docs', 'regex')">
-                      <BookOutlined />
-                      {{ t('edit.documentation') }}
-                    </span>
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="local.match"
-                :placeholder="t('edit.exampleTaskRun')"
-                size="middle"
-                @blur="commit"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="24">
-            <a-form-item class="compact-form-item">
-              <template #label>
-                <a-tooltip
-                  title='使用 $() 包裹正则提取内容，支持 +（同行拼接）、;（换行拼接）、""（字面量）和函数链；留空则返回整行'
-                >
-                  <span class="form-label">
-                    {{ t('edit.extractionPattern') }}
-                    <QuestionCircleOutlined class="help-icon" />
-                    <span class="doc-link" @click.stop="$emit('open-docs', 'expression')">
-                      <BookOutlined />
-                      {{ t('edit.documentation') }}
-                    </span>
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="local.extract"
-                :placeholder="t('edit.exampleTaskRunS')"
-                size="middle"
-                @blur="commit"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-      </template>
-
-      <!-- 多行聚合 -->
-      <template v-else>
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item class="compact-form-item">
-              <template #label>
-                <a-tooltip :title="t('edit.requiredEmptyValueDisables')">
-                  <span class="form-label">
-                    {{ t('edit.startPattern') }}
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="local.start"
-                :placeholder="t('edit.exampleFullRunStarted')"
-                size="middle"
-                @blur="commit"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item class="compact-form-item">
-              <template #label>
-                <a-tooltip :title="t('edit.lineMatchingThisPattern')">
-                  <span class="form-label">
-                    {{ t('edit.endPattern') }}
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="local.end"
-                :placeholder="t('edit.exampleTaskFinished')"
-                size="middle"
-                @blur="commit"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="20">
-            <a-form-item class="compact-form-item">
-              <template #label>
-                <a-tooltip
-                  title='使用 $() 语法从窗口内容中提取字段；留空返回窗口原文。详见"表达式"说明文档'
-                >
-                  <span class="form-label">
-                    {{ t('edit.extractionPattern') }}
-                    <QuestionCircleOutlined class="help-icon" />
-                    <span class="doc-link" @click.stop="$emit('open-docs', 'expression')">
-                      <BookOutlined />
-                      {{ t('edit.documentation') }}
-                    </span>
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="local.extract"
-                :placeholder="t('edit.exampleStartSEnd')"
-                size="middle"
-                @blur="commit"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="4">
-            <a-form-item class="compact-form-item">
-              <template #label>
-                <a-tooltip :title="t('edit.maximumLinesWindowBefore')">
-                  <span class="form-label">{{ t('edit.maximumLines') }}</span>
-                </a-tooltip>
-              </template>
-              <a-input-number
-                v-model:value="local.maxLines"
-                :min="2"
-                :step="1"
-                size="middle"
-                style="width: 100%"
-                @blur="commit"
-                @change="commit"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-      </template>
-    </div>
-
-    <!-- 规则底部提示：一行：模式类型在左，日志类型（普通/失败）在右 -->
-    <div class="rule-footer">
-      <div class="footer-left">
-        <span class="footer-type-tag">{{ getPatternTypeLabel(local.type) }}</span>
-        <span class="footer-hint">{{ getPatternTypeHint(local.type) }}</span>
-      </div>
-      <div class="footer-right">
-        <a-tag size="small" :color="local.logType === '失败' ? 'error' : 'processing'">
-          {{ local.logType || '普通' }}
-        </a-tag>
-        <span class="footer-hint">{{ getLogTypeHint(local.logType) }}</span>
-      </div>
-    </div>
-  </div>
+    </template>
+  </LogRuleCard>
 </template>
 
 <style scoped>
-.log-pattern-rule {
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  padding: 16px;
-  transition: opacity 0.2s;
-}
-
-.log-pattern-rule.rule-disabled {
-  opacity: 0.55;
-}
-
-.log-pattern-rule.rule-disabled:hover {
-  opacity: 0.85;
-}
-
-.rule-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.rule-header-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.drag-handle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  color: var(--ant-color-text-tertiary);
-  cursor: grab;
-  border-radius: 4px;
-}
-
-.drag-handle:hover {
-  color: var(--ant-color-text);
-  background: var(--ant-color-fill-quaternary);
-}
-
-.drag-handle:active {
-  cursor: grabbing;
-}
-
 .rule-type-select {
   width: 120px;
-}
-
-.rule-title-wrap {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  cursor: text;
-  padding: 0 8px;
-}
-
-.rule-title-icon {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-}
-
-.rule-title {
-  font-size: 14px;
-  color: var(--ant-color-text);
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 2px 6px;
-  border-bottom: 1px dashed transparent;
-  transition: border-color 0.2s;
-}
-
-.rule-title:hover {
-  border-bottom-color: var(--ant-color-text-quaternary);
-}
-
-.rule-title-input {
-  max-width: 280px;
-  text-align: center;
-}
-
-.rule-header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
 }
 
 .rule-log-type-group :deep(.ant-radio-button-wrapper) {
@@ -512,17 +367,6 @@ const logTypeOptions = [
 .rule-log-type-group :deep(.ant-radio-button-wrapper-checked.is-error) {
   color: var(--ant-color-error);
   background: var(--ant-color-error-bg);
-}
-
-.rule-op-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 8px;
-}
-
-.rule-body {
-  padding-top: 4px;
 }
 
 .compact-form-item {
@@ -549,14 +393,12 @@ const logTypeOptions = [
   white-space: nowrap;
 }
 
-.rule-footer {
+.rule-footer-content {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-top: 8px;
-  padding-top: 12px;
-  border-top: 1px dashed var(--ant-color-border-secondary);
 }
 
 .footer-left,

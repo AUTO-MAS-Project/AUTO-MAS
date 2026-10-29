@@ -16,7 +16,8 @@ import {
   StopOutlined,
 } from '@ant-design/icons-vue'
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
-import { EmulatorOperateIn, Service } from '@/api'
+import { EmulatorOperateIn, Service } from '@/composables/useEmulatorApi'
+import { importLegacyEmulator } from '@/views/Emulator/importLegacyEmulator'
 import DocLink from '@/components/DocLink.vue'
 import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
 import EmulatorDeviceEmpty from '@/views/Emulator/components/EmulatorDeviceEmpty.vue'
@@ -63,11 +64,11 @@ const isEmulator2 = (uid: string) => getEditingData(uid).type === 'emulator2'
 const needsEmulatorPath = (uid: string) => !isEmulator2(uid) && !emulatorData.value[uid]?.Info?.Path
 
 const emulatorTypeOptions = computed(() => [
-  { value: 'general', label: t('emulator.type.general') },
-  { value: 'mumu', label: t('emulator.type.mumu') },
-  { value: 'ldplayer', label: t('emulator.type.ldplayer') },
+  { value: 'general', label: t('core.emulator.type.general') },
+  { value: 'mumu', label: t('core.emulator.type.mumu') },
+  { value: 'ldplayer', label: t('core.emulator.type.ldplayer') },
   // Emulator 2.0: 一条配置纳管多条模拟器路径, 实例合并成一张设备表
-  { value: 'emulator2', label: t('emulator.type.emulator2') },
+  { value: 'emulator2', label: t('core.emulator.type.emulator2') },
   // { value: 'nox', label: '夜神模拟器' },
   // { value: 'memu', label: '逍遥模拟器' },
   // { value: 'blueStacks', label: 'BlueStacks' },
@@ -185,21 +186,21 @@ const DeviceStatus = {
 const getDeviceStatusInfo = (status: number) => {
   switch (status) {
     case DeviceStatus.ONLINE:
-      return { text: t('emulator.deviceStatus.online'), color: 'success' }
+      return { text: t('core.emulator.deviceStatus.online'), color: 'success' }
     case DeviceStatus.OFFLINE:
-      return { text: t('emulator.deviceStatus.offline'), color: 'default' }
+      return { text: t('core.emulator.deviceStatus.offline'), color: 'default' }
     case DeviceStatus.STARTING:
-      return { text: t('emulator.deviceStatus.starting'), color: 'processing' }
+      return { text: t('core.emulator.deviceStatus.starting'), color: 'processing' }
     case DeviceStatus.CLOSING:
-      return { text: t('emulator.deviceStatus.closing'), color: 'warning' }
+      return { text: t('core.emulator.deviceStatus.closing'), color: 'warning' }
     case DeviceStatus.ERROR:
-      return { text: t('emulator.deviceStatus.error'), color: 'error' }
+      return { text: t('core.emulator.deviceStatus.error'), color: 'error' }
     case DeviceStatus.NOT_FOUND:
-      return { text: t('emulator.deviceStatus.notFound'), color: 'error' }
+      return { text: t('core.emulator.deviceStatus.notFound'), color: 'error' }
     case DeviceStatus.UNKNOWN:
-      return { text: t('emulator.deviceStatus.unknown'), color: 'default' }
+      return { text: t('core.emulator.deviceStatus.unknown'), color: 'default' }
     default:
-      return { text: t('emulator.deviceStatus.unknown'), color: 'default' }
+      return { text: t('core.emulator.deviceStatus.unknown'), color: 'default' }
   }
 }
 
@@ -248,7 +249,7 @@ const toggleStableMode = async (uuid: string, checked: boolean) => {
     if (checked) {
       const count = await emulator2Panels.value[uuid]?.applyStableMode?.()
       if (typeof count === 'number') {
-        message.success(t('emulator2.toast.stableOk', { count }))
+        message.success(t('core.emulator2.toast.stableOk', { count }))
       }
     }
   } finally {
@@ -272,7 +273,7 @@ const toggleConfigGuard = async (uuid: string, checked: boolean) => {
     if (checked) {
       const count = await emulator2Panels.value[uuid]?.captureBaselines?.()
       if (count === null || count === undefined) return
-      message.success(t('emulator2.toast.guardOk', { count }))
+      message.success(t('core.emulator2.toast.guardOk', { count }))
     }
     getEditingData(uuid).config_guard = checked
     await handleSaveChange(uuid, 'config_guard', checked)
@@ -335,12 +336,12 @@ const loadEmulators = async () => {
         }
       })
     } else {
-      message.error(response.message || t('emulator.toast.loadFailed'))
+      message.error(response.message || t('core.emulator.toast.loadFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`加载模拟器配置失败: ${errorMsg}`)
-    message.error(t('emulator.toast.loadFailed'))
+    message.error(t('core.emulator.toast.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -358,12 +359,12 @@ const handleAdd = async () => {
       saveActiveKey(activeKey.value)
       await loadDevices(response.emulatorId)
     } else {
-      message.error(response.message || t('emulator.toast.addFailed'))
+      message.error(response.message || t('core.emulator.toast.addFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`添加模拟器失败: ${errorMsg}`)
-    message.error(t('emulator.toast.addEmulatorFailed'))
+    message.error(t('core.emulator.toast.addEmulatorFailed'))
   }
 }
 
@@ -379,7 +380,8 @@ const refreshEmulatorConfig = async (uuid: string): Promise<boolean> => {
   try {
     const response = await Service.getEmulatorApiEmulatorGetPost({ emulatorId: uuid })
     if (selectedPath !== getEditingData(uuid).path) return false
-    if (response.code !== 200) throw new Error(response.message || t('emulator.toast.loadFailed'))
+    if (response.code !== 200)
+      throw new Error(response.message || t('core.emulator.toast.loadFailed'))
     const configData = response.data?.[uuid]
     if (!response.index?.some(item => item.uid === uuid) || !configData?.Info) {
       throw new Error(`模拟器配置缺失: ${uuid}`)
@@ -398,7 +400,7 @@ const refreshEmulatorConfig = async (uuid: string): Promise<boolean> => {
     if (selectedPath !== getEditingData(uuid).path) return false
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`刷新模拟器配置失败: ${errorMsg}`)
-    if (pendingPathSyncAttempts.get(uuid) === 0) message.error(t('emulator.toast.loadFailed'))
+    if (pendingPathSyncAttempts.get(uuid) === 0) message.error(t('core.emulator.toast.loadFailed'))
     return false
   } finally {
     if (attempts !== undefined) syncingEmulatorConfigs.delete(uuid)
@@ -451,13 +453,13 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
       if (key === 'path' && synced) await loadDevices(uuid)
       return true
     } else {
-      message.error(response.message || t('emulator.toast.saveFailed'))
+      message.error(response.message || t('core.emulator.toast.saveFailed'))
       return false
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`保存模拟器配置失败: ${errorMsg}`)
-    message.error(t('emulator.toast.saveEmulatorFailed'))
+    message.error(t('core.emulator.toast.saveEmulatorFailed'))
     return false
   } finally {
     savingMap.value.set(uuid, false)
@@ -491,12 +493,12 @@ const handleDelete = async (uuid: string) => {
 
       await loadEmulators()
     } else {
-      message.error(response.message || t('emulator.toast.deleteFailed'))
+      message.error(response.message || t('core.emulator.toast.deleteFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`删除模拟器失败: ${errorMsg}`)
-    message.error(t('emulator.toast.deleteEmulatorFailed'))
+    message.error(t('core.emulator.toast.deleteEmulatorFailed'))
   }
 }
 
@@ -509,17 +511,17 @@ const handleSearch = async () => {
       searchResults.value = response.emulators || []
       if (searchResults.value.length > 0) {
         showSearchModal.value = true
-        message.success(t('emulator.toast.searchFound', { count: searchResults.value.length }))
+        message.success(t('core.emulator.toast.searchFound', { count: searchResults.value.length }))
       } else {
-        message.info(t('emulator.toast.searchNone'))
+        message.info(t('core.emulator.toast.searchNone'))
       }
     } else {
-      message.error(response.message || t('emulator.toast.searchFailed'))
+      message.error(response.message || t('core.emulator.toast.searchFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`搜索模拟器失败: ${errorMsg}`)
-    message.error(t('emulator.toast.searchEmulatorFailed'))
+    message.error(t('core.emulator.toast.searchEmulatorFailed'))
   } finally {
     searching.value = false
   }
@@ -529,38 +531,21 @@ const handleSearch = async () => {
 const handleImportFromSearch = async (result: EmulatorSearchResult) => {
   let added = false
   try {
-    const response = await Service.addEmulatorApiEmulatorAddPost()
-    if (response.code === 200) {
+    const response = await importLegacyEmulator(result, () => {
       added = true
-      // 更新新添加的模拟器配置，使用分组结构
-      const updateResponse = await Service.updateEmulatorApiEmulatorUpdatePost({
-        emulatorId: response.emulatorId,
-        data: {
-          Info: {
-            Name: result.name,
-            Type: result.type as 'general' | 'mumu' | 'ldplayer',
-            Path: result.path,
-            MaxWaitTime: 300,
-            BossKey: JSON.stringify([]),
-          },
-        },
-      })
-      if (updateResponse.code === 200) {
-        message.success(t('emulator.toast.importOk'))
-        await loadEmulators()
-        showSearchModal.value = false
-      } else {
-        message.error(updateResponse.message || t('emulator.toast.importFailed'))
-      }
+    })
+    if (response.code === 200) {
+      message.success(t('core.emulator.toast.importOk'))
+      await loadEmulators()
+      showSearchModal.value = false
     } else {
-      message.error(response.message || t('emulator.toast.importFailed'))
+      message.error(response.message || t('core.emulator.toast.importFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
-    logger.error(`导入模拟器失败: ${errorMsg}`)
-    message.error(t('emulator.toast.importEmulatorFailed'))
+    logger.error('导入模拟器失败: ' + errorMsg)
+    message.error(t('core.emulator.toast.importEmulatorFailed'))
   } finally {
-    // 添加已成功时，即使后续配置失败，列表也需要反映新建的模拟器。
     if (added) await invalidateEmulatorOptions()
   }
 }
@@ -592,13 +577,13 @@ const loadDevices = async (uuid: string) => {
       const currentDevices = allDevicesData[uuid] || {}
       devicesData.value[uuid] = currentDevices
     } else {
-      message.error(response.message || t('emulator.toast.deviceInfoFailed'))
+      message.error(response.message || t('core.emulator.toast.deviceInfoFailed'))
     }
   } catch (e) {
     if (path !== emulatorData.value[uuid]?.Info?.Path) return
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`获取设备信息失败: ${errorMsg}`)
-    message.error(t('emulator.toast.deviceInfoFailed'))
+    message.error(t('core.emulator.toast.deviceInfoFailed'))
   } finally {
     loadingDevices.value.delete(uuid)
     loadingDevices.value = new Set(loadingDevices.value)
@@ -621,16 +606,16 @@ const startEmulator = async (uuid: string, index: string) => {
     })
 
     if (response.code === 200) {
-      message.success(response.message || t('emulator.toast.startOk', { index }))
+      message.success(response.message || t('core.emulator.toast.startOk', { index }))
       // 刷新设备状态
       await loadDevices(uuid)
     } else {
-      message.error(response.message || t('emulator.toast.startFailed'))
+      message.error(response.message || t('core.emulator.toast.startFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`启动模拟器失败: ${errorMsg}`)
-    message.error(t('emulator.toast.startEmulatorFailed'))
+    message.error(t('core.emulator.toast.startEmulatorFailed'))
   } finally {
     startingDevices.value.delete(deviceKey)
     startingDevices.value = new Set(startingDevices.value)
@@ -651,16 +636,16 @@ const stopEmulator = async (uuid: string, index: string) => {
     })
 
     if (response.code === 200) {
-      message.success(response.message || t('emulator.toast.stopOk', { index }))
+      message.success(response.message || t('core.emulator.toast.stopOk', { index }))
       // 刷新设备状态
       await loadDevices(uuid)
     } else {
-      message.error(response.message || t('emulator.toast.stopFailed'))
+      message.error(response.message || t('core.emulator.toast.stopFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`关闭模拟器失败: ${errorMsg}`)
-    message.error(t('emulator.toast.stopEmulatorFailed'))
+    message.error(t('core.emulator.toast.stopEmulatorFailed'))
   } finally {
     stoppingDevices.value.delete(deviceKey)
     stoppingDevices.value = new Set(stoppingDevices.value)
@@ -681,14 +666,14 @@ const showEmulator = async (uuid: string, index: string) => {
     })
 
     if (response.code === 200) {
-      message.success(response.message || t('emulator.toast.showOk', { index }))
+      message.success(response.message || t('core.emulator.toast.showOk', { index }))
     } else {
-      message.error(response.message || t('emulator.toast.showFailed'))
+      message.error(response.message || t('core.emulator.toast.showFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`显示模拟器失败: ${errorMsg}`)
-    message.error(t('emulator.toast.showEmulatorFailed'))
+    message.error(t('core.emulator.toast.showEmulatorFailed'))
   } finally {
     showingDevices.value.delete(deviceKey)
     showingDevices.value = new Set(showingDevices.value)
@@ -699,7 +684,7 @@ const showEmulator = async (uuid: string, index: string) => {
 const selectEmulatorPath = async (uuid: string) => {
   try {
     if (!window.electronAPI) {
-      message.error(t('emulator.toast.filePickerUnavailable'))
+      message.error(t('core.emulator.toast.filePickerUnavailable'))
       return
     }
 
@@ -708,25 +693,25 @@ const selectEmulatorPath = async (uuid: string) => {
 
     // 选择任意文件
     const paths = await window.electronAPI.selectFile([
-      { name: t('emulator.allFiles'), extensions: ['*'] },
+      { name: t('core.emulator.allFiles'), extensions: ['*'] },
     ])
 
     if (paths && paths.length > 0) {
       editData.path = paths[0]
       // 立刻保存并从后端获取被纠正后的路径
       if (!(await handleSaveChange(uuid, 'path', paths[0]))) return
-      message.success(t('emulator.toast.pathPicked'))
+      message.success(t('core.emulator.toast.pathPicked'))
 
       // 检查路径是否被后端纠正
       const newPath = editingDataMap.value.get(uuid)?.path || ''
       if (paths[0] !== newPath && newPath) {
-        message.info(t('emulator.toast.pathAdjusted', { from: paths[0], to: newPath }))
+        message.info(t('core.emulator.toast.pathAdjusted', { from: paths[0], to: newPath }))
       }
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择模拟器路径失败: ${errorMsg}`)
-    message.error(t('emulator.toast.pickFileFailed'))
+    message.error(t('core.emulator.toast.pickFileFailed'))
   }
 }
 
@@ -735,7 +720,7 @@ const startRecordBossKey = (uuid: string) => {
   recordingBossKeyMap.value.set(uuid, true)
   recordedKeysMap.value.set(uuid, new Set())
   bossKeyInputMap.value[uuid] = ''
-  message.info(t('emulator.toast.pressKeys'))
+  message.info(t('core.emulator.toast.pressKeys'))
 }
 
 // 停止录制老板键
@@ -798,7 +783,7 @@ const handleKeyUp = async (event: KeyboardEvent) => {
       editData.boss_keys = [keyCombo]
       // 同时更新输入框显示
       bossKeyInputMap.value[recordingUuid] = keyCombo
-      message.success(t('emulator.toast.bossKeySet', { combo: keyCombo }))
+      message.success(t('core.emulator.toast.bossKeySet', { combo: keyCombo }))
       // 即时保存老板键
       await handleSaveChange(recordingUuid, 'boss_keys', [keyCombo])
     }
@@ -908,7 +893,7 @@ const handleSetBossKey = async (uuid: string) => {
     if (editData) {
       // 设置为唯一的老板键（替换而不是追加）
       editData.boss_keys = [bossKeyInput.trim()]
-      message.success(t('emulator.toast.bossKeySet', { combo: bossKeyInput.trim() }))
+      message.success(t('core.emulator.toast.bossKeySet', { combo: bossKeyInput.trim() }))
       // 即时保存老板键
       await handleSaveChange(uuid, 'boss_keys', [bossKeyInput.trim()])
       // 不清空输入框，保持显示
@@ -934,7 +919,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 <template>
   <div class="emulator-page">
     <div class="page-header">
-      <h1>{{ t('emulator.title') }}</h1>
+      <h1 class="page-title app-page-title">{{ t('core.emulator.title') }}</h1>
       <DocLink :url="MAS_DOC_URLS.emulator" />
     </div>
 
@@ -951,10 +936,10 @@ const handleBossKeyInputChange = (uuid: string) => {
               :loading="searching"
               @click="handleSearch"
             >
-              {{ t('emulator.autoSearch') }}
+              {{ t('core.emulator.autoSearch') }}
             </a-button>
             <a-button size="large" :icon="h(PlusOutlined)" @click="handleAdd">
-              {{ t('emulator.manualAdd') }}
+              {{ t('core.emulator.manualAdd') }}
             </a-button>
           </a-space>
         </div>
@@ -972,7 +957,7 @@ const handleBossKeyInputChange = (uuid: string) => {
           <a-tab-pane v-for="element in emulatorIndex" :key="element.uid" :closable="false">
             <template #tab>
               <span class="tab-title">
-                {{ emulatorData[element.uid]?.Info?.Name || t('emulator.unnamed') }}
+                {{ emulatorData[element.uid]?.Info?.Name || t('core.emulator.unnamed') }}
               </span>
             </template>
 
@@ -981,17 +966,17 @@ const handleBossKeyInputChange = (uuid: string) => {
               <!-- 配置区域 -->
               <div class="config-section">
                 <div class="section-header">
-                  <h3>{{ t('emulator.configTitle') }}</h3>
+                  <h3>{{ t('core.emulator.configTitle') }}</h3>
                   <div class="section-actions">
                     <a-spin v-if="savingMap.get(element.uid)" size="small" />
                     <a-popconfirm
-                      :title="t('emulator.deleteConfirm')"
-                      :ok-text="t('emulator.ok')"
-                      :cancel-text="t('emulator.cancel')"
+                      :title="t('core.emulator.deleteConfirm')"
+                      :ok-text="t('core.emulator.ok')"
+                      :cancel-text="t('core.emulator.cancel')"
                       @confirm="handleDelete(element.uid)"
                     >
                       <a-button type="link" danger size="small" :icon="h(DeleteOutlined)">
-                        {{ t('emulator.del') }}
+                        {{ t('core.emulator.del') }}
                       </a-button>
                     </a-popconfirm>
                   </div>
@@ -1000,10 +985,10 @@ const handleBossKeyInputChange = (uuid: string) => {
                 <!-- 直接可编辑的配置表单（无边框） -->
                 <div class="config-form">
                   <a-descriptions :column="2" bordered size="small">
-                    <a-descriptions-item :label="t('emulator.nameLabel')">
+                    <a-descriptions-item :label="t('core.emulator.nameLabel')">
                       <a-input
                         v-model:value="getEditingData(element.uid).name"
-                        :placeholder="t('emulator.namePlaceholder')"
+                        :placeholder="t('core.emulator.namePlaceholder')"
                         size="small"
                         :bordered="false"
                         @input="syncNameToDisplay(element.uid, getEditingData(element.uid).name)"
@@ -1014,14 +999,14 @@ const handleBossKeyInputChange = (uuid: string) => {
                     </a-descriptions-item>
                     <a-descriptions-item>
                       <template #label>
-                        <span>{{ t('emulator.typeLabel') }}</span>
-                        <a-tooltip :title="t('emulator.typeTip')">
+                        <span>{{ t('core.emulator.typeLabel') }}</span>
+                        <a-tooltip :title="t('core.emulator.typeTip')">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
                       <a-select
                         v-model:value="getEditingData(element.uid).type"
-                        :placeholder="t('emulator.typePlaceholder')"
+                        :placeholder="t('core.emulator.typePlaceholder')"
                         :options="emulatorTypeOptions"
                         size="small"
                         :bordered="false"
@@ -1031,12 +1016,12 @@ const handleBossKeyInputChange = (uuid: string) => {
                     </a-descriptions-item>
                     <a-descriptions-item
                       v-if="isEmulator2(element.uid)"
-                      :label="t('emulator.pathLabel')"
+                      :label="t('core.emulator.pathLabel')"
                       :span="2"
                     >
                       <div class="emulator2-path-entry">
                         <span class="emulator2-path-summary">
-                          {{ t('emulator2.pathsEntryHint') }}
+                          {{ t('core.emulator2.pathsEntryHint') }}
                         </span>
                         <a-button
                           size="small"
@@ -1044,18 +1029,18 @@ const handleBossKeyInputChange = (uuid: string) => {
                           :icon="h(FolderOpenOutlined)"
                           @click="openEmulator2Paths(element.uid)"
                         >
-                          {{ t('emulator2.managePaths') }}
+                          {{ t('core.emulator2.managePaths') }}
                         </a-button>
                       </div>
                     </a-descriptions-item>
                     <a-descriptions-item
                       v-if="!isEmulator2(element.uid)"
-                      :label="t('emulator.pathLabel')"
+                      :label="t('core.emulator.pathLabel')"
                       :span="2"
                     >
                       <a-input
                         v-model:value="getEditingData(element.uid).path"
-                        :placeholder="t('emulator.pathPlaceholder')"
+                        :placeholder="t('core.emulator.pathPlaceholder')"
                         size="small"
                         :bordered="false"
                         readonly
@@ -1070,21 +1055,21 @@ const handleBossKeyInputChange = (uuid: string) => {
                     </a-descriptions-item>
                     <a-descriptions-item>
                       <template #label>
-                        <span>{{ t('emulator.waitLabel') }}</span>
-                        <a-tooltip :title="t('emulator.waitTip')">
+                        <span>{{ t('core.emulator.waitLabel') }}</span>
+                        <a-tooltip :title="t('core.emulator.waitTip')">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
                       <a-input-number
                         v-model:value="getEditingData(element.uid).max_wait_time"
-                        :placeholder="t('emulator.waitPlaceholder')"
+                        :placeholder="t('core.emulator.waitPlaceholder')"
                         size="small"
                         :bordered="false"
                         style="width: 100%"
                         :min="10"
                         :max="9999"
                         :step="5"
-                        :suffix="t('emulator.seconds')"
+                        :suffix="t('core.emulator.seconds')"
                         @blur="
                           handleSaveChange(
                             element.uid,
@@ -1096,8 +1081,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                     </a-descriptions-item>
                     <a-descriptions-item v-if="isEmulator2(element.uid)">
                       <template #label>
-                        <span>{{ t('emulator2.stableMode') }}</span>
-                        <a-tooltip :title="t('emulator2.stableSwitchTip')">
+                        <span>{{ t('core.emulator2.stableMode') }}</span>
+                        <a-tooltip :title="t('core.emulator2.stableSwitchTip')">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
@@ -1110,8 +1095,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                     </a-descriptions-item>
                     <a-descriptions-item v-if="isEmulator2(element.uid)">
                       <template #label>
-                        <span>{{ t('emulator2.configGuard') }}</span>
-                        <a-tooltip :title="t('emulator2.guardTip')">
+                        <span>{{ t('core.emulator2.configGuard') }}</span>
+                        <a-tooltip :title="t('core.emulator2.guardTip')">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
@@ -1124,8 +1109,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                     </a-descriptions-item>
                     <a-descriptions-item v-if="!isEmulator2(element.uid)">
                       <template #label>
-                        <span>{{ t('emulator.bossKeyLabel') }}</span>
-                        <a-tooltip :title="t('emulator.bossKeyTip')">
+                        <span>{{ t('core.emulator.bossKeyLabel') }}</span>
+                        <a-tooltip :title="t('core.emulator.bossKeyTip')">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
@@ -1134,8 +1119,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                         v-model:value="bossKeyInputMap[element.uid]"
                         :placeholder="
                           recordingBossKeyMap.get(element.uid)
-                            ? t('emulator.bossKeyRecording')
-                            : t('emulator.bossKeyPlaceholder')
+                            ? t('core.emulator.bossKeyRecording')
+                            : t('core.emulator.bossKeyPlaceholder')
                         "
                         size="small"
                         :bordered="false"
@@ -1151,7 +1136,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                             size="small"
                             @click="startRecordBossKey(element.uid)"
                           >
-                            {{ t('emulator.record') }}
+                            {{ t('core.emulator.record') }}
                           </a-button>
                           <a-button
                             v-else
@@ -1160,39 +1145,39 @@ const handleBossKeyInputChange = (uuid: string) => {
                             size="small"
                             @click="stopRecordBossKey(element.uid)"
                           >
-                            {{ t('emulator.stopRecord') }}
+                            {{ t('core.emulator.stopRecord') }}
                           </a-button>
                         </template>
                       </a-input>
                       <span v-else style="color: var(--ant-color-text-tertiary); font-size: 12px">
-                        {{ t('emulator.bossKeyUnsupported') }}
+                        {{ t('core.emulator.bossKeyUnsupported') }}
                       </span>
                     </a-descriptions-item>
                     <a-descriptions-item v-if="getEditingData(element.uid).type === 'mumu'">
                       <template #label>
-                        <span>{{ t('emulator.forceCloseLabel') }}</span>
-                        <a-tooltip :title="t('emulator.forceCloseTip')">
+                        <span>{{ t('core.emulator.forceCloseLabel') }}</span>
+                        <a-tooltip :title="t('core.emulator.forceCloseTip')">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
                       <a-switch
                         v-model:checked="getEditingData(element.uid).force_kill_on_close"
-                        :checked-children="t('emulator.on')"
-                        :un-checked-children="t('emulator.off')"
+                        :checked-children="t('core.emulator.on')"
+                        :un-checked-children="t('core.emulator.off')"
                         @change="handleSaveChange(element.uid, 'force_kill_on_close', $event)"
                       />
                     </a-descriptions-item>
                     <a-descriptions-item v-if="getEditingData(element.uid).type === 'mumu'">
                       <template #label>
-                        <span>{{ t('emulator.forceCleanLaunchLabel') }}</span>
-                        <a-tooltip :title="t('emulator.forceCleanLaunchTip')">
+                        <span>{{ t('core.emulator.forceCleanLaunchLabel') }}</span>
+                        <a-tooltip :title="t('core.emulator.forceCleanLaunchTip')">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
                       <a-switch
                         v-model:checked="getEditingData(element.uid).force_kill_before_launch"
-                        :checked-children="t('emulator.on')"
-                        :un-checked-children="t('emulator.off')"
+                        :checked-children="t('core.emulator.on')"
+                        :un-checked-children="t('core.emulator.off')"
                         @change="handleSaveChange(element.uid, 'force_kill_before_launch', $event)"
                       />
                     </a-descriptions-item>
@@ -1212,7 +1197,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 
               <div v-else class="devices-panel">
                 <div class="panel-header">
-                  <h4 class="panel-title">{{ t('emulator.deviceList') }}</h4>
+                  <h4 class="panel-title">{{ t('core.emulator.deviceList') }}</h4>
                 </div>
 
                 <a-spin :spinning="loadingDevices.has(element.uid)">
@@ -1237,31 +1222,31 @@ const handleBossKeyInputChange = (uuid: string) => {
                       "
                       :columns="[
                         {
-                          title: t('emulator.colDevice'),
+                          title: t('core.emulator.colDevice'),
                           dataIndex: 'index',
                           key: 'index',
                           width: 60,
                           customRender: ({ text }: any) => `#${text}`,
                         },
                         {
-                          title: t('emulator.colStatus'),
+                          title: t('core.emulator.colStatus'),
                           dataIndex: 'status',
                           key: 'status',
                           width: 60,
                         },
                         {
-                          title: t('emulator.colName'),
+                          title: t('core.emulator.colName'),
                           dataIndex: 'title',
                           key: 'title',
                           ellipsis: true,
                         },
                         {
-                          title: t('emulator.colAdb'),
+                          title: t('core.emulator.colAdb'),
                           dataIndex: 'adb_address',
                           key: 'adb_address',
                           ellipsis: true,
                         },
-                        { title: t('emulator.colAction'), key: 'action', width: 160 },
+                        { title: t('core.emulator.colAction'), key: 'action', width: 160 },
                       ]"
                       :pagination="false"
                       size="small"
@@ -1281,7 +1266,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                               :loading="showingDevices.has(`${element.uid}-${record.index}`)"
                               @click="showEmulator(element.uid, String(record.index))"
                             >
-                              {{ t('emulator.show') }}
+                              {{ t('core.emulator.show') }}
                             </a-button>
                             <a-button
                               v-if="canStartDevice(record.status)"
@@ -1290,7 +1275,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                               :loading="startingDevices.has(`${element.uid}-${record.index}`)"
                               @click="startEmulator(element.uid, String(record.index))"
                             >
-                              {{ t('emulator.start') }}
+                              {{ t('core.emulator.start') }}
                             </a-button>
                             <a-button
                               v-else-if="canStopDevice(record.status)"
@@ -1299,7 +1284,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                               :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
                               @click="stopEmulator(element.uid, String(record.index))"
                             >
-                              {{ t('emulator.stop') }}
+                              {{ t('core.emulator.stop') }}
                             </a-button>
                             <a-button v-else disabled>
                               {{ getDeviceStatusInfo(record.status).text }}
@@ -1325,10 +1310,10 @@ const handleBossKeyInputChange = (uuid: string) => {
                   :loading="searching"
                   @click="handleSearch()"
                 >
-                  {{ t('emulator.autoSearch') }}
+                  {{ t('core.emulator.autoSearch') }}
                 </a-button>
                 <a-button type="primary" size="middle" :icon="h(PlusOutlined)" @click="handleAdd">
-                  {{ t('emulator.manualAddMulti') }}
+                  {{ t('core.emulator.manualAddMulti') }}
                 </a-button>
               </a-space>
             </div>
@@ -1340,13 +1325,13 @@ const handleBossKeyInputChange = (uuid: string) => {
     <!-- 搜索结果导入模态框 -->
     <a-modal
       v-model:visible="showSearchModal"
-      :title="t('emulator.searchModalTitle')"
+      :title="t('core.emulator.searchModalTitle')"
       width="600"
       :footer="null"
     >
       <a-spin :spinning="searching">
         <div v-if="searchResults.length === 0" class="empty-state">
-          <a-empty :description="t('emulator.searchEmpty')" />
+          <a-empty :description="t('core.emulator.searchEmpty')" />
         </div>
 
         <a-list v-else item-layout="horizontal" :data-source="searchResults">
@@ -1354,7 +1339,7 @@ const handleBossKeyInputChange = (uuid: string) => {
             <a-list-item>
               <template #actions>
                 <a-button type="primary" size="small" @click="handleSearchAndImport(item)">
-                  {{ t('emulator.import') }}
+                  {{ t('core.emulator.import') }}
                 </a-button>
               </template>
               <a-list-item-meta :title="item.name" :description="`${item.type} - ${item.path}`" />
@@ -1383,18 +1368,8 @@ const handleBossKeyInputChange = (uuid: string) => {
   padding: 0;
 }
 
-.page-header h1 {
+.page-title {
   margin: 0 0 8px 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: var(
-    --app-page-title-color,
-    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .page-content {
@@ -1490,21 +1465,13 @@ const handleBossKeyInputChange = (uuid: string) => {
 }
 
 .section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  border-bottom-width: 1px;
 }
 
 .section-header h3 {
-  margin: 0;
-  color: var(--ant-color-text);
   font-size: 16px;
   font-weight: 600;
-  display: flex;
-  align-items: center;
   gap: 8px;
 }
 

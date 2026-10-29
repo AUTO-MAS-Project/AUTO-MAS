@@ -54,7 +54,7 @@ export const formatBackendDateTime = (value: string): string => {
   const date = parseBackendDateTime(value)
   if (!date) return value
 
-  return t('misc.dateTime', {
+  return t('core.misc.dateTime', {
     y: date.getFullYear(),
     mo: pad2(date.getMonth() + 1),
     d: pad2(date.getDate()),
@@ -69,22 +69,29 @@ export const formatHistoryGroupLabel = (value: string): string => {
 
   if (ISO_DATE_RE.test(value)) {
     const [year, month, day] = value.split('-')
-    return t('misc.dateGroup', { y: year, mo: month, d: day })
+    return t('core.misc.dateGroup', { y: year, mo: month, d: day })
   }
 
   if (ISO_MONTH_RE.test(value)) {
     const [year, month] = value.split('-')
-    return t('misc.monthGroup', { y: year, mo: month })
+    return t('core.misc.monthGroup', { y: year, mo: month })
   }
 
   const weekMatch = value.match(ISO_WEEK_RE)
   if (weekMatch) {
     const [, year, week] = weekMatch
-    return t('misc.weekGroup', { y: year, w: week })
+    return t('core.misc.weekGroup', { y: year, w: week })
   }
 
   return value
 }
 
-/** 历史快照保留保存时的时钟及偏移，不经浏览器时区转换。 */
-export const formatStoredDateTime = (time: string): string => time.replace('T', ' ')
+/** 历史记录显示本地时间；游戏日分组仍沿用后端保存的日期。 */
+export const formatHistoryDateTime = (value: string): string => {
+  const date = parseBackendDateTime(value)
+  if (!date) return value
+
+  const day = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+  const time = `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`
+  return `${day} ${time}`
+}

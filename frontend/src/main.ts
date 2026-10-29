@@ -8,6 +8,7 @@ import { OpenAPI } from '@/api'
 import { configureLocalMonaco } from '@/utils/monaco'
 import { getConfig } from '@/utils/config'
 import { configureSentry, recordRendererStartup } from '@/utils/sentry'
+import { captureAnalyticsContext, recordRendererReady } from '@/utils/analytics'
 import { getDefaultHttpEndpoint } from '@/utils/backendEndpoint'
 import { i18n } from '@/i18n'
 import { useLocale } from '@/composables/useLocale'
@@ -18,6 +19,7 @@ import Antd, { message } from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
 import '@/styles/scrollbar.css'
 import '@/styles/formSection.css'
+import '@/styles/pageTitle.css'
 import '@/styles/appearanceCursor.css'
 import '@/styles/appearanceSurfaces.css'
 import '@/styles/appOverlays.css'
@@ -55,13 +57,10 @@ if (
 import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
 import { initializeAppLifecycle } from '@/composables/useAppLifecycle'
 
-// 应用级常驻订阅与生命周期协调器必须早于首个主 WebSocket 连接注册（幂等）
-bootstrapRealtimeResidents()
-initializeAppLifecycle()
-
 // 从 Electron 获取 API 端点并设置 OpenAPI.BASE
+let apiEndpointReady: Promise<void> = Promise.resolve()
 if (window.electronAPI?.getApiEndpoint) {
-  window.electronAPI
+  apiEndpointReady = window.electronAPI
     .getApiEndpoint('local')
     .then(endpoint => {
       OpenAPI.BASE = endpoint
@@ -88,8 +87,11 @@ const app = createApp(App)
 app.use(createPinia())
 app.use(VueQueryPlugin, { queryClient })
 app.use(Antd)
-app.use(router)
 app.use(i18n)
+
+// Pinia 先就绪，常驻订阅仍早于路由首次进入时建立的主 WebSocket 连接。
+bootstrapRealtimeResidents()
+initializeAppLifecycle()
 
 // 全局错误处理
 app.config.errorHandler = (err, instance, info) => {
@@ -98,6 +100,8 @@ app.config.errorHandler = (err, instance, info) => {
 }
 
 const bootstrap = async () => {
+  await apiEndpointReady
+  const analyticsContext = captureAnalyticsContext()
   const frontendConfig = await getConfig()
 
   // 外观必须在首次挂载前恢复，避免独立窗口和主窗口先显示默认主题后再跳变。
@@ -107,8 +111,12 @@ const bootstrap = async () => {
   await useLocale().initLocale(frontendConfig)
   configureSentry(app, router, frontendConfig.Function?.IfEnableTelemetry !== false)
 
+  // 首次路由进入前，端点与本地语言必须已确定，避免按默认语言提前请求业务词表。
+  app.use(router)
+
   // 挂载应用
   app.mount('#app')
+  recordRendererReady(analyticsContext, performance.now() - rendererStartedAt)
   recordRendererStartup(performance.now() - rendererStartedAt)
 
   logger.info('前端应用初始化完成')

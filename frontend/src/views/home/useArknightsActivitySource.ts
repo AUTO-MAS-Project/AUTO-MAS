@@ -142,6 +142,7 @@ export const useArknightsActivitySource = () => {
   const overview = ref<SraActivityOverview>(createEmptySraActivityOverview())
 
   const source = useHomeActivitySource<SraActivityOverview>({
+    isAvailable: () => overview.value.Available,
     label: () => '明日方舟',
     timeoutMs: FETCH_TIMEOUT_MS,
     loadingOnStart: true,
@@ -182,7 +183,7 @@ export const useArknightsActivitySource = () => {
       overview.value = {
         ...createEmptySraActivityOverview(),
         Available: false,
-        Message: t('home.arknights.unavailable'),
+        Message: t('core.home.arknights.unavailable'),
       }
     },
   })
@@ -190,6 +191,7 @@ export const useArknightsActivitySource = () => {
   return {
     overview,
     loading: source.loading,
+    whenLoaded: source.whenLoaded,
     start: source.start,
     stop: source.stop,
     refresh: source.refresh,

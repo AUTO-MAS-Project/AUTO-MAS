@@ -2,7 +2,7 @@
   <!-- 加载状态 -->
   <div>
     <div v-if="loading" class="loading-container">
-      <a-spin size="large" :tip="t('plan.loading')" />
+      <a-spin size="large" :tip="t('core.plan.loading')" />
     </div>
 
     <!-- 主要内容 -->
@@ -17,15 +17,12 @@
 
       <!-- 空状态 -->
       <div v-if="!planList.length || !currentPlanData" class="empty-state">
-        <div class="empty-content">
-          <div class="empty-image-container">
-            <img src="@/assets/NoData.png" :alt="t('plan.noData')" class="empty-image" />
-          </div>
-          <div class="empty-text-content">
-            <h3 class="empty-title">{{ t('plan.emptyTitle') }}</h3>
-            <p class="empty-description">{{ t('plan.emptyDesc') }}</p>
-          </div>
-        </div>
+        <a-empty :image="noDataImage" :image-style="{ height: '200px' }">
+          <template #description>
+            <div class="empty-title">{{ t('core.plan.emptyTitle') }}</div>
+            <div class="empty-description">{{ t('core.plan.emptyDesc') }}</div>
+          </template>
+        </a-empty>
       </div>
 
       <!-- 计划内容 -->
@@ -79,6 +76,8 @@
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.svg'
+import { usePlanFieldSave } from './usePlanFieldSave'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
@@ -231,7 +230,7 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
     // 如果生成的名称包含数字，说明有重名，提示用户
     if (uniqueName.match(/\s\d+$/)) {
       message.info(
-        t('plan.toast.createdHint', {
+        t('core.plan.toast.createdHint', {
           type: t(getPlanTypeLabelKey(planType)),
           name: uniqueName,
         }),
@@ -239,7 +238,7 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
       )
     } else {
       message.success(
-        t('plan.toast.created', {
+        t('core.plan.toast.created', {
           type: t(getPlanTypeLabelKey(planType)),
           name: uniqueName,
         })
@@ -284,26 +283,9 @@ const handleRemovePlan = async (planId: string) => {
 }
 
 // 使用即时保存 - 只发送修改的字段（遵循最小原则）
-const savePlanField = async (
-  planId: string,
-  changes: Record<string, any>,
-  onError?: PlanChangeOptions['onError']
-): Promise<boolean> => {
-  if (!planId) {
-    return false
-  }
-
-  try {
-    logger.debug(`保存字段 (${planId}): ${JSON.stringify(changes)}`)
-    await updatePlan(planId, changes)
-    return true
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存计划字段失败: ${errorMsg}`)
-    onError?.(errorMsg)
-    return false
-  }
-}
+const savePlanField = usePlanFieldSave(updatePlan, () =>
+  viewMode.value === 'simple' ? 'simple' : 'complex'
+)
 
 const fetchPlanData = async (planId: string): Promise<PlanConfigData | null> => {
   const response = await getPlans(planId)
@@ -338,7 +320,7 @@ const handlePlanChange = async (
     typeof reloadOrOptions === 'boolean'
       ? reloadOrOptions
       : (options?.refresh ?? currentPlanDescriptor.value?.reloadAfterSave ?? true)
-  const success = await savePlanField(planId, changes, options?.onError)
+  const success = await savePlanField(planId, changes, options)
 
   if (!success) {
     return false
@@ -433,7 +415,9 @@ const renamePlan = async (planId: string, newName: string): Promise<boolean> => 
   const validation = validatePlanName(newName, existingNames, plan.name)
 
   if (!validation.isValid) {
-    message.error(validation.messageKey ? t(validation.messageKey) : t('plan.toast.nameInvalid'))
+    message.error(
+      validation.messageKey ? t(validation.messageKey) : t('core.plan.toast.nameInvalid')
+    )
     return false
   }
 
@@ -544,7 +528,7 @@ const initPlans = async () => {
   try {
     const response = await getPlans()
     if (response.code !== 200) {
-      throw new Error(response.message || t('plan.toast.fetchFailed'))
+      throw new Error(response.message || t('core.plan.toast.fetchFailed'))
     }
 
     const nextPlanDataMap: Record<string, PlanConfigData> = {}
@@ -653,96 +637,18 @@ onMounted(() => {
   margin: 20px 0;
 }
 
-.empty-content {
-  text-align: center;
-  max-width: 480px;
-  animation: fadeInUp 0.8s ease-out;
-}
-
-.empty-image-container {
-  position: relative;
-  margin-bottom: 32px;
-  display: inline-block;
-}
-
-.empty-image-container::before {
-  content: '';
-  position: absolute;
-  top: -20px;
-  left: -20px;
-  right: -20px;
-  bottom: -20px;
-  background: radial-gradient(circle, var(--ant-color-primary-bg) 0%, transparent 70%);
-  border-radius: 50%;
-  animation: pulse 3s ease-in-out infinite;
-}
-
-.empty-image {
-  max-width: 200px;
-  height: auto;
-  opacity: 0.9;
-  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.1));
-  transition: all 0.3s ease;
-  position: relative;
-  z-index: 1;
-}
-
-.empty-image:hover {
-  transform: translateY(-4px);
-  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.15));
-}
-
-.empty-text-content {
-  margin-top: 16px;
-}
-
-.empty-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin: 0 0 12px 0;
-  background: linear-gradient(135deg, var(--ant-color-text), var(--ant-color-text-secondary));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.empty-description {
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
-  line-height: 1.6;
-  margin: 0;
-  opacity: 0.8;
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 0.6;
-    transform: scale(1);
-  }
-
-  50% {
-    opacity: 0.8;
-    transform: scale(1.05);
-  }
-}
-
 .plans-content {
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+.empty-title {
+  color: var(--ant-color-text);
+  font-size: 18px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.empty-description {
+  color: var(--ant-color-text-secondary);
 }
 </style>

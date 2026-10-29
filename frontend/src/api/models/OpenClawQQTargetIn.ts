@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 选择私聊、全部群聊或两者。
+ * 选择通知位置并可选更新群控制成员白名单。
  */
 export type OpenClawQQTargetIn = {
     /**
@@ -14,6 +14,10 @@ export type OpenClawQQTargetIn = {
      * 通知接收位置
      */
     targetType: OpenClawQQTargetIn.targetType;
+    /**
+     * 群控制成员 OpenID 白名单；省略保持现值，空列表允许所有成员
+     */
+    groupCommandWhitelist?: (Array<string> | null);
 };
 export namespace OpenClawQQTargetIn {
     /**

@@ -1,48 +1,28 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.basicInfo') }}</h3>
+      <h3>{{ t('core.edit.basicInfo') }}</h3>
     </div>
     <a-row :gutter="24">
       <a-col :span="12">
-        <a-form-item name="userName" required>
-          <template #label>
-            <a-tooltip :title="t('edit.nameUsedTellUsers')">
-              <span class="form-label">
-                {{ t('edit.username') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-input
-            v-model:value="formData.userName"
-            :placeholder="t('edit.enterUsername')"
-            :disabled="loading"
-            size="large"
-            class="modern-input"
-            @blur="emitSave('userName', formData.userName)"
-          />
-        </a-form-item>
+        <UserNameField
+          name="userName"
+          required
+          v-model="formData.userName"
+          :hint="t('core.edit.nameUsedTellUsers')"
+          :placeholder="t('core.edit.enterUsername')"
+          :disabled="loading"
+          enhanced
+          @save="emitSave('userName', formData.userName)"
+        />
       </a-col>
       <a-col :span="12">
-        <a-form-item name="status">
-          <template #label>
-            <a-tooltip :title="t('edit.whetherThisUserEnabled')">
-              <span class="form-label">
-                {{ t('edit.enabled') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-select
-            v-model:value="formData.Info.Status"
-            size="large"
-            @change="emitSave('Info.Status', formData.Info.Status)"
-          >
-            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-          </a-select>
-        </a-form-item>
+        <UserStatusField
+          name="status"
+          v-model="formData.Info.Status"
+          :hint="t('core.edit.whetherThisUserEnabled')"
+          @save="emitSave('Info.Status', formData.Info.Status)"
+        />
       </a-col>
     </a-row>
 
@@ -53,21 +33,21 @@
             <a-tooltip>
               <template #title>
                 <div style="max-width: 520px; line-height: 1.6; white-space: normal">
-                  {{ t('edit.srcAccountSwitchTipIntro') }}<br />
-                  {{ t('edit.cnServersEnter11') }}<br />
-                  {{ t('edit.bilibiliEnterPartUsername') }}
-                  {{ t('edit.accountEmailPhoneNumber2') }}
+                  {{ t('core.edit.srcAccountSwitchTipIntro') }}<br />
+                  {{ t('core.edit.cnServersEnter11') }}<br />
+                  {{ t('core.edit.bilibiliEnterPartUsername') }}
+                  {{ t('core.edit.accountEmailPhoneNumber2') }}
                 </div>
               </template>
               <span class="form-label">
-                {{ t('edit.accountId') }}
+                {{ t('core.edit.accountId') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <a-input
             v-model:value="formData.Info.Id"
-            :placeholder="t('edit.enterAccount')"
+            :placeholder="t('core.edit.enterAccount')"
             :disabled="loading"
             size="large"
             @blur="emitSave('Info.Id', formData.Info.Id)"
@@ -77,16 +57,15 @@
       <a-col :span="12">
         <a-form-item :name="['Info', 'Password']">
           <template #label>
-            <a-tooltip :title="t('edit.userSPasswordWhen')">
-              <span class="form-label">
-                {{ t('edit.password') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('core.edit.password')"
+              :hint="t('core.edit.userSPasswordWhen')"
+              variant="form"
+            />
           </template>
           <a-input-password
             v-model:value="formData.Info.Password"
-            :placeholder="t('edit.enterPassword')"
+            :placeholder="t('core.edit.enterPassword')"
             :disabled="loading"
             size="large"
             @blur="emitSave('Info.Password', formData.Info.Password)"
@@ -99,16 +78,15 @@
       <a-col :span="12">
         <a-form-item name="server">
           <template #label>
-            <a-tooltip :title="t('edit.pickGameServerThis')">
-              <span class="form-label">
-                {{ t('edit.server') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('core.edit.server')"
+              :hint="t('core.edit.pickGameServerThis')"
+              variant="form"
+            />
           </template>
           <a-select
             v-model:value="formData.Info.Server"
-            :placeholder="t('edit.pickServer')"
+            :placeholder="t('core.edit.pickServer')"
             :disabled="loading"
             :options="serverOptions"
             size="large"
@@ -117,26 +95,14 @@
         </a-form-item>
       </a-col>
       <a-col :span="12">
-        <a-form-item name="remainedDay">
-          <template #label>
-            <a-tooltip :title="t('edit.daysLeftAccount1')">
-              <span class="form-label">
-                {{ t('edit.daysLeft') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-input-number
-            v-model:value="formData.Info.RemainedDay"
-            :min="-1"
-            :max="9999"
-            placeholder="-1"
-            :disabled="loading"
-            size="large"
-            style="width: 100%"
-            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
-          />
-        </a-form-item>
+        <UserRemainedDayField
+          name="remainedDay"
+          v-model="formData.Info.RemainedDay"
+          :hint="t('core.edit.daysLeftAccount1')"
+          placeholder="-1"
+          :disabled="loading"
+          @save="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
+        />
       </a-col>
     </a-row>
 
@@ -149,35 +115,32 @@
           :saving="quickConfigDisabled"
           :quick-config="quickConfig"
           :quick-config-disabled="quickConfigDisabled"
-          :alert-message="t('edit.configSourceHintBase')"
+          :alert-message="t('core.edit.configSourceHintBase')"
           @change="emit('modeChange', $event)"
           @quick-config-change="emit('quickConfigChange', $event)"
         />
       </a-col>
     </a-row>
 
-    <a-form-item name="notes">
-      <template #label>
-        <a-tooltip :title="t('edit.addNoteAboutThis')">
-          <span class="form-label">
-            {{ t('edit.note') }}
-            <QuestionCircleOutlined class="help-icon" />
-          </span>
-        </a-tooltip>
-      </template>
-      <a-textarea
-        v-model:value="formData.Info.Notes"
-        :placeholder="t('edit.enterNote3')"
-        :rows="4"
-        :disabled="loading"
-        class="modern-input"
-        @blur="emitSave('Info.Notes', formData.Info.Notes)"
-      />
-    </a-form-item>
+    <UserNotesField
+      name="notes"
+      v-model="formData.Info.Notes"
+      :hint="t('core.edit.addNoteAboutThis')"
+      :placeholder="t('core.edit.enterNote3')"
+      :disabled="loading"
+      :rows="4"
+      enhanced
+      @save="emitSave('Info.Notes', formData.Info.Notes)"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
+import UserNotesField from '@/views/EditView/User/components/UserNotesField.vue'
+import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
+import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
@@ -205,24 +168,24 @@ const srcConfigModeOptions: Array<{
   icon: 'file' | 'database' | 'setting'
 }> = [
   {
-    label: t('edit.script'),
+    label: t('core.edit.script'),
     value: 'shared',
-    title: t('edit.script'),
-    description: t('edit.useSharedScriptLevel'),
+    title: t('core.edit.script'),
+    description: t('core.edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {
-    label: t('edit.user'),
+    label: t('core.edit.user'),
     value: 'independent',
-    title: t('edit.user'),
-    description: t('edit.useThisUserS'),
+    title: t('core.edit.user'),
+    description: t('core.edit.useThisUserS'),
     icon: 'database',
   },
   {
-    label: t('edit.directControl'),
+    label: t('core.edit.directControl'),
     value: 'native',
-    title: t('edit.directControl'),
-    description: t('edit.nativeConfigSourceDescription'),
+    title: t('core.edit.directControl'),
+    description: t('core.edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]
@@ -239,37 +202,6 @@ const emitSave = (key: string, value: any) => {
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 32px;
-}
-
-.section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
 .form-label {
   display: flex;
   align-items: center;
@@ -288,21 +220,5 @@ const emitSave = (key: string, value: any) => {
 
 .help-icon:hover {
   color: var(--ant-color-primary);
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-}
-
-.modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.modern-input:focus,
-.modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
 }
 </style>

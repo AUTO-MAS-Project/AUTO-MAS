@@ -4,7 +4,7 @@
       <a-input
         v-model:value="optionSearchQuery"
         allow-clear
-        :placeholder="t('edit.searchSettings')"
+        :placeholder="t('core.edit.searchSettings')"
         class="option-search"
       />
     </div>
@@ -13,7 +13,9 @@
       v-if="filteredOptions.length === 0"
       class="option-empty"
       :description="
-        optionSearchQuery ? t('edit.maafwNoMatchingSettings') : t('edit.maafwNoConfigurableOptions')
+        optionSearchQuery
+          ? t('core.edit.maafwNoMatchingSettings')
+          : t('core.edit.maafwNoConfigurableOptions')
       "
     />
 
@@ -32,9 +34,6 @@
             @load="showLoadedMaaFWIcon"
           />
           <span>{{ getOptionLabel(option) }}</span>
-          <a-tooltip v-if="option.description" :title="option.description">
-            <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-          </a-tooltip>
         </div>
 
         <a-radio-group
@@ -49,7 +48,7 @@
             :key="caseItem.name"
             :value="caseItem.name"
           >
-            {{ getCaseLabel(caseItem) }}
+            <MaaFWOptionCaseLabel :case-item="caseItem" :base-path="basePath" />
           </a-radio>
         </a-radio-group>
 
@@ -58,7 +57,7 @@
           :value="getStringValue(option)"
           :disabled="props.disabled"
           class="option-control"
-          :placeholder="t('edit.pleaseChoose')"
+          :placeholder="t('core.edit.pleaseChoose')"
           @change="handleSelectChange(option.name, $event)"
         >
           <a-select-option
@@ -66,7 +65,7 @@
             :key="caseItem.name"
             :value="caseItem.name"
           >
-            {{ getCaseLabel(caseItem) }}
+            <MaaFWOptionCaseLabel :case-item="caseItem" :base-path="basePath" />
           </a-select-option>
         </a-select>
 
@@ -83,7 +82,7 @@
             :value="caseItem.name"
             :disabled="isCheckboxCaseLocked(option, getStringListValue(option), caseItem.name)"
           >
-            {{ getCaseLabel(caseItem) }}
+            <MaaFWOptionCaseLabel :case-item="caseItem" :base-path="basePath" />
           </a-checkbox>
         </a-checkbox-group>
 
@@ -129,7 +128,7 @@
                 :disabled="props.disabled"
                 @click="clearPassword(option.name, inputItem)"
               >
-                {{ t('edit.maafwPasswordClear') }}
+                {{ t('core.edit.maafwPasswordClear') }}
               </a-button>
             </div>
             <!-- 数字与文本字段都先改草稿，失焦 / 回车时校验通过才提交（不是每敲一个字存一次）；
@@ -157,8 +156,8 @@
               v-else-if="isBooleanInput(inputItem)"
               :checked="getBooleanInputValue(option, inputItem)"
               :disabled="props.disabled"
-              :checked-children="t('edit.yes')"
-              :un-checked-children="t('edit.no')"
+              :checked-children="t('core.edit.yes')"
+              :un-checked-children="t('core.edit.no')"
               @change="handleInputBooleanChange(option.name, inputItem, $event)"
             />
             <a-input
@@ -185,24 +184,14 @@
           type="warning"
           show-icon
           :message="
-            t('edit.maafwUnsupportedOptionType', { type: option.type || t('edit.unknownType') })
+            t('core.edit.maafwUnsupportedOptionType', {
+              type: option.type || t('core.edit.unknownType'),
+            })
           "
         />
 
-        <div
-          v-if="getCheckboxCountHint(option)"
-          class="option-count-hint"
-          :class="{ 'option-count-hint--warning': getCheckboxCountHint(option)?.warning }"
-        >
-          {{ getCheckboxCountHint(option)?.text }}
-        </div>
-
-        <MaaFWDescriptionView
-          v-if="option.description"
-          :content="option.description"
-          :base-path="basePath"
-          class="option-description"
-        />
+        <!-- 勾选数要求、选中 case 的说明、选项说明 -->
+        <MaaFWOptionNotes :option="option" :value="getStoredValue(option)" :base-path="basePath" />
 
         <div
           v-for="nestedOptionNames in getActiveNestedOptionGroups(option)"
@@ -231,15 +220,11 @@
 import { useI18n } from 'vue-i18n'
 import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWDescriptionView from './MaaFWDescriptionView.vue'
-import {
-  getCheckboxCountState,
-  hasStoredSecret,
-  isCheckboxCaseLocked,
-  isPasswordInput,
-} from './maafwOptionConstraints'
+import MaaFWOptionCaseLabel from './MaaFWOptionCaseLabel.vue'
+import MaaFWOptionNotes from './MaaFWOptionNotes.vue'
+import { hasStoredSecret, isCheckboxCaseLocked, isPasswordInput } from './maafwOptionConstraints'
 import {
   activeMaaFWNestedOptionGroups,
   effectiveMaaFWInputFieldValue,
@@ -260,12 +245,7 @@ import {
   parseMaaFWOptionDraftKey,
   retainMaaFWDraftsForUnchangedFields,
 } from './maafwOptionDrafts'
-import type {
-  MaaFWOptionCaseInfo,
-  MaaFWOptionInfo,
-  MaaFWOptionInputInfo,
-  MaaFWTaskOptionValue,
-} from '@/types/script'
+import type { MaaFWOptionInfo, MaaFWOptionInputInfo, MaaFWTaskOptionValue } from '@/types/script'
 
 const { t } = useI18n()
 
@@ -365,8 +345,6 @@ watch(
 
 const getOptionLabel = (option: MaaFWOptionInfo) => option.label || option.name
 
-const getCaseLabel = (caseItem: MaaFWOptionCaseInfo) => caseItem.label || caseItem.name
-
 const getInputLabel = (inputItem: MaaFWOptionInputInfo) => inputItem.label || inputItem.name
 
 const resolveMaaFWAssetUrl = (rawPath?: string | null) => {
@@ -441,13 +419,15 @@ const validateInputValue = (inputItem: MaaFWOptionInputInfo, value: string) => {
   const problem = checkMaaFWInputValue(inputItem, value)
   if (problem === null) return true
   if (problem === 'wholeNumber') {
-    message.error(t('edit.enterWholeNumber'))
+    message.error(t('core.edit.enterWholeNumber'))
   } else if (problem === 'number') {
-    message.error(t('edit.enterNumber'))
+    message.error(t('core.edit.enterNumber'))
   } else if (problem === 'patternInvalid') {
-    message.error(t('edit.validationPatternInvalidP0', { p0: inputItem.name }))
+    message.error(t('core.edit.validationPatternInvalidP0', { p0: inputItem.name }))
   } else {
-    message.error(inputItem.verifyError || inputItem.patternMsg || t('edit.maafwInputVerifyFailed'))
+    message.error(
+      inputItem.verifyError || inputItem.patternMsg || t('core.edit.maafwInputVerifyFailed')
+    )
   }
   return false
 }
@@ -555,7 +535,7 @@ const dropPasswordDraft = (key: string) => {
 
 const getPasswordPlaceholder = (option: MaaFWOptionInfo, inputItem: MaaFWOptionInputInfo) =>
   hasStoredSecret(getStoredInputText(option, inputItem.name))
-    ? t('edit.maafwPasswordSaved')
+    ? t('core.edit.maafwPasswordSaved')
     : inputItem.description || inputItem.name
 
 // 只在失焦 / 回车时提交：留空表示不改（已保存的值只有密文，不能拿来回填）；
@@ -609,25 +589,6 @@ const unregisterDrafts = draftRegistry?.register({
 })
 onBeforeUnmount(() => unregisterDrafts?.())
 
-const getCheckboxCountHint = (option: MaaFWOptionInfo) => {
-  const state = getCheckboxCountState(option, getStringListValue(option))
-  if (!state) return null
-  let text: string
-  if (state.max === null) {
-    text = t('edit.maafwCheckboxCountMin', { min: state.min })
-  } else if (state.min === 0) {
-    text = t('edit.maafwCheckboxCountMax', { max: state.max })
-  } else if (state.min === state.max) {
-    text = t('edit.maafwCheckboxCountExact', { count: state.min })
-  } else {
-    text = t('edit.maafwCheckboxCountRange', { min: state.min, max: state.max })
-  }
-  if (state.violation) {
-    text += t('edit.maafwCheckboxCountCurrent', { count: state.count })
-  }
-  return { text, warning: state.violation !== null }
-}
-
 const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) =>
   activeMaaFWNestedOptionGroups(option, getStoredValue(option))
 </script>
@@ -677,18 +638,9 @@ const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) =>
   flex: 0 0 auto;
 }
 
-.option-description,
-.input-description {
-  color: var(--ant-color-text-secondary);
-}
-
 .input-description {
   margin-top: 8px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 13px;
+  color: var(--ant-color-text-secondary);
 }
 
 .option-control {
@@ -720,15 +672,6 @@ const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) =>
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.option-count-hint {
-  font-size: 12px;
-  color: var(--ant-color-text-secondary);
-}
-
-.option-count-hint--warning {
-  color: var(--ant-color-warning);
 }
 
 .input-label {

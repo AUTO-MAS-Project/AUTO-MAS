@@ -36,8 +36,7 @@ from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     read_config_base,
 )
-from app.utils import ProcessManager, get_logger
-from app.utils.constants import TASK_MODE_ZH
+from app.utils import TASK_MODE_ZH, ProcessManager, get_logger
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -70,6 +69,22 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
     "AutoProxy": AutoProxyTask,
     "ScriptConfig": ScriptConfigTask,
 }
+
+
+def build_src_manager(
+    script_info: ScriptItem,
+    *,
+    root_paths: tuple[Path, ...],
+    reserve_root: Callable[[Path], bool],
+) -> "SrcManager":
+    """接收宿主已预约的根目录及追加预约能力。"""
+    if not root_paths:
+        raise RuntimeError("SRC 路径占用未初始化")
+    return SrcManager(
+        script_info,
+        reserved_src_root_path=root_paths[0],
+        reserve_src_root=reserve_root,
+    )
 
 
 class SrcManager(ScriptManagerBase):

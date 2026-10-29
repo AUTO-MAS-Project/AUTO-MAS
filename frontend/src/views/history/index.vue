@@ -2,7 +2,7 @@
   <div class="history-page">
     <!-- 页面头部 -->
     <div class="page-header">
-      <h1 class="page-title">{{ t('history.title') }}</h1>
+      <h1 class="page-title app-page-title">{{ t('core.history.title') }}</h1>
     </div>
 
     <!-- 搜索筛选区域 -->
@@ -26,9 +26,12 @@
       <a-spin :spinning="searchLoading">
         <!-- 空状态 -->
         <div v-if="historyData.length === 0 && !searchLoading" class="empty-state">
-          <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
-          <span class="empty-text">{{ t('history.emptyHistory') }}</span>
-          <span class="empty-hint">{{ t('history.emptyHint') }}</span>
+          <a-empty :image="noDataImage" :image-style="{ height: '120px' }">
+            <template #description>
+              <div class="empty-title">{{ t('core.history.emptyHistory') }}</div>
+              <div class="empty-description">{{ t('core.history.emptyHint') }}</div>
+            </template>
+          </a-empty>
         </div>
 
         <!-- 数据展示 -->
@@ -87,6 +90,7 @@
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import type { HistoryIndexItem } from '@/api'
@@ -96,7 +100,7 @@ import HistoryLogModal from './components/HistoryLogModal.vue'
 import HistorySearchPanel from './components/HistorySearchPanel.vue'
 import { useHistoryLogic } from './useHistoryLogic'
 import { historyStatistics } from './historyData'
-import { formatStoredDateTime } from '@/utils/dateDisplay'
+import { formatHistoryDateTime } from '@/utils/dateDisplay'
 
 const { t } = useI18n()
 
@@ -150,7 +154,7 @@ const handleModeUpdate = (mode: string) => {
 
 // 选择记录时打开弹窗
 const handleSelectRecord = async (index: number, record: HistoryIndexItem) => {
-  currentRecordDate.value = formatStoredDateTime(record.time)
+  currentRecordDate.value = formatHistoryDateTime(record.time)
   currentRecordStatus.value = record.status
   currentErrorMessage.value = record.message
   logModalOpen.value = true
@@ -177,16 +181,6 @@ const handleSelectRecord = async (index: number, record: HistoryIndexItem) => {
 
 .page-title {
   margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: var(
-    --app-page-title-color,
-    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .main-content {
@@ -214,28 +208,20 @@ const handleSelectRecord = async (index: number, record: HistoryIndexItem) => {
   gap: 12px;
 }
 
-.empty-image {
-  width: 120px;
-  height: auto;
-  opacity: 0.7;
-}
-
-.empty-text {
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
-}
-
-.empty-hint {
-  font-size: 14px;
-  color: var(--ant-color-text-quaternary);
-}
-
 .content-layout {
   flex: 1;
   display: flex;
   gap: 16px;
   min-height: 0;
   overflow: hidden;
+}
+.empty-title {
+  color: var(--ant-color-text);
+  font-size: 18px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.empty-description {
+  color: var(--ant-color-text-secondary);
 }
 </style>

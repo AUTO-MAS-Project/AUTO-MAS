@@ -81,6 +81,8 @@ export interface MaaEndScriptConfig {
     RunTimesLimit: number
     AccountSwitchMethod: 'MAS' | 'MAAEND'
     TaskTransitionMethod: 'NoAction' | 'ExitGame'
+    IfSaveLogBundle: boolean
+    LogBundlePath: string | null
   }
   Game: {
     ControllerType: string | null
@@ -172,11 +174,6 @@ export interface MaaFWScriptConfig {
      * 留空跟随全局（设置 → 其他 → 网络代理），兜底在后端合并，前端不做预填。
      */
     ProxyAddress: string
-    /**
-     * @deprecated 后端已改用 AutoUpdateMode；旧配置可能只有这个字段，仅供读取时映射，
-     * 前端不再写入。见 useMaaFWProjectUpdate.resolveAutoUpdateMode。
-     */
-    IfAutoUpdate?: boolean
   }
   /**
    * 内嵌副本：运行、预览、更新都在 AUTO-MAS 自己投影出的瘦副本上。
@@ -248,6 +245,16 @@ export interface MaaFWTaskSnapshot {
   globalOptions?: Record<string, MaaFWTaskOptionValue>
   /** 用户给某一份实例起的显示名（只影响显示，不改任务 name）；没改过名的实例不在里面 */
   taskLabels?: Record<string, string>
+  /**
+   * 用户给某一份实例设的运行日：`weekdays` 是 ISO 星期（1=周一 … 7=周日），升序去重。
+   * 七天全选（不限制）的实例不在里面；一项都没有时不写这个键
+   */
+  taskSchedules?: Record<string, MaaFWTaskSchedule>
+}
+
+/** 一份实例的运行日 */
+export interface MaaFWTaskSchedule {
+  weekdays: number[]
 }
 
 /** 任务队列里的一项：同名任务可以有多份，靠 `id` 区分。 */

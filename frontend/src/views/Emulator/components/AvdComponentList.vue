@@ -11,13 +11,13 @@ const { t } = useI18n()
 
 const componentText = (item: Emulator2AvdComponentItem) => {
   const state = componentState(item)
-  if (state === 'ready') return t('emulator2.avd.componentReady')
+  if (state === 'ready') return t('core.emulator2.avd.componentReady')
   if (state === 'needsPackage') {
     return item.outdatedTestPackage
-      ? t('emulator2.avd.outdatedTestPackage')
-      : t('emulator2.avd.needsTestPackage')
+      ? t('core.emulator2.avd.outdatedTestPackage')
+      : t('core.emulator2.avd.needsTestPackage')
   }
-  return t('emulator2.avd.componentMissing')
+  return t('core.emulator2.avd.componentMissing')
 }
 
 const componentColor = (item: Emulator2AvdComponentItem) => {
@@ -28,14 +28,14 @@ const componentColor = (item: Emulator2AvdComponentItem) => {
 </script>
 
 <template>
-  <h4 class="block-title">{{ t('emulator2.avd.components') }}</h4>
+  <h4 class="block-title">{{ t('core.emulator2.avd.components') }}</h4>
   <div class="component-list">
     <div v-for="item in components" :key="item.id" class="component-row">
       <span class="component-name">{{ item.name }}</span>
       <span class="component-meta">
         <template v-if="componentDetail(item).build">
           {{
-            t('emulator2.avd.testPackageVersion', {
+            t('core.emulator2.avd.testPackageVersion', {
               build: componentDetail(item).build,
               version: componentDetail(item).version,
             })
@@ -44,27 +44,22 @@ const componentColor = (item: Emulator2AvdComponentItem) => {
         <template v-else>
           {{ componentDetail(item).version }}
           <template v-if="componentDetail(item).testPackage">
-            · {{ t('emulator2.avd.testPackage') }}</template
+            · {{ t('core.emulator2.avd.testPackage') }}</template
           >
           <template v-else-if="componentDetail(item).localSdk">
-            · {{ t('emulator2.avd.localSdk') }}</template
+            · {{ t('core.emulator2.avd.localSdk') }}</template
           >
         </template>
-        <template v-if="item.optional"> · {{ t('emulator2.avd.optional') }}</template>
+        <template v-if="item.optional"> · {{ t('core.emulator2.avd.optional') }}</template>
       </span>
       <a-tag :color="componentColor(item)">{{ componentText(item) }}</a-tag>
     </div>
   </div>
 </template>
 
-<style scoped>
-.block-title {
-  margin: 16px 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
+<style scoped src="./avdSection.css"></style>
 
+<style scoped>
 .component-list {
   display: flex;
   flex-direction: column;

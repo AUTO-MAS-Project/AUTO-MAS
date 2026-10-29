@@ -1,3 +1,4 @@
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
@@ -22,6 +23,13 @@ import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
 import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
 import { maafwScriptTypeByConfigType } from '@/composables/useMaaFWFlavor'
+import {
+  analyticsConfigSection,
+  analyticsCountBucket,
+  beginAnalyticsOperation,
+  getAnalyticsScriptType,
+  rememberAnalyticsScriptType,
+} from '@/utils/analytics'
 
 const logger = window.electronAPI.getLogger('脚本API')
 
@@ -83,10 +91,11 @@ export function useScriptApi() {
       const response = await Service.addScriptApiScriptsAddPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.scriptAddFailed')
+        const errorMsg = response.message || t('core.apiErrors.scriptAddFailed')
         throw new Error(errorMsg)
       }
 
+      rememberAnalyticsScriptType(response.scriptId, type)
       scriptListRequest = null
       // 播放添加脚本成功音频
       const { playSound } = useAudioPlayer()
@@ -94,11 +103,11 @@ export function useScriptApi() {
 
       return {
         scriptId: response.scriptId,
-        message: response.message || t('apiErrors.scriptAdded'),
+        message: response.message || t('core.apiErrors.scriptAdded'),
         data: response.data,
       }
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptAddFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.scriptAddFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return null
@@ -136,10 +145,15 @@ export function useScriptApi() {
       const response = await sharedRequest.promise
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.scriptListFailed')
+        const errorMsg = response.message || t('core.apiErrors.scriptListFailed')
         throw new Error(errorMsg)
       }
 
+      for (const item of response.index)
+        rememberAnalyticsScriptType(
+          item.uid,
+          item.type === 'GeneralConfig' ? 'General' : SCRIPT_TYPE_BY_CONFIG_TYPE[item.type]
+        )
       // 将API响应转换为ScriptDetail数组
       return response.index.map(indexItem => ({
         uid: indexItem.uid,
@@ -149,7 +163,7 @@ export function useScriptApi() {
         config: response.data[indexItem.uid],
       }))
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptListFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.scriptListFailed'))
       error.value = errorMsg
       // 共享同一在途请求的多个消费者只弹一次；显式重试仍有自己的提示。
       if ((options.showError ?? true) && !sharedRequest?.errorNotified) {
@@ -173,18 +187,22 @@ export function useScriptApi() {
       const response = await Service.getScriptApiScriptsGetPost({ scriptId })
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.scriptLoadFailed')
+        const errorMsg = response.message || t('core.apiErrors.scriptLoadFailed')
         throw new Error(errorMsg)
       }
 
       // 检查是否有数据返回
       if (response.index.length === 0) {
-        throw new Error(t('edit.scriptDoesNotExist'))
+        throw new Error(t('core.edit.scriptDoesNotExist'))
       }
 
       const item = response.index[0]
       const config = response.data[item.uid]
       const scriptType = resolveScriptType(item.type)
+      rememberAnalyticsScriptType(
+        item.uid,
+        item.type === 'GeneralConfig' ? 'General' : SCRIPT_TYPE_BY_CONFIG_TYPE[item.type]
+      )
 
       return {
         uid: item.uid,
@@ -194,7 +212,7 @@ export function useScriptApi() {
         config,
       }
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptLoadFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.scriptLoadFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return null
@@ -213,11 +231,11 @@ export function useScriptApi() {
         engine
       )
       if (payload?.code !== 200) {
-        throw new Error(payload?.message || t('apiErrors.invalidResponse'))
+        throw new Error(payload?.message || t('core.apiErrors.invalidResponse'))
       }
       return payload.data ?? null
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.hsrStagesFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.hsrStagesFailed'))
       error.value = errorMsg
       logger.error(`获取 HSR 体力副本选项失败: ${errorMsg}`)
       return null
@@ -232,9 +250,18 @@ export function useScriptApi() {
     error.value = null
     try {
       // 带 scriptId 时后端按脚本解析有效根（内嵌副本优先），path 只是兜底。
-      return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path, scriptId })
+      return await observeFeature(
+        'adapter_setup_finished',
+        {
+          script_type: scriptId ? getAnalyticsScriptType(scriptId) : 'MaaFW',
+          operation_kind: 'preview',
+          engine_kind: 'unknown',
+        },
+        () => MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path, scriptId }),
+        apiOutcome
+      )
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.maafwPreviewFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.maafwPreviewFailed'))
       error.value = errorMsg
       logger.error(`预览 MaaFW interface 失败: ${errorMsg}`)
       return null
@@ -248,13 +275,23 @@ export function useScriptApi() {
   ): Promise<MaaFWAgentEnvPrepareOut | null> => {
     error.value = null
     try {
-      return await MaaFwService.prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost({
-        path,
-        scriptId,
-        force,
-      })
+      return await observeFeature(
+        'adapter_setup_finished',
+        {
+          script_type: scriptId ? getAnalyticsScriptType(scriptId) : 'MaaFW',
+          operation_kind: 'environment',
+          engine_kind: 'unknown',
+        },
+        () =>
+          MaaFwService.prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost({
+            path,
+            scriptId,
+            force,
+          }),
+        result => (result.code === 200 && result.data?.cached ? 'current' : apiOutcome(result))
+      )
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.maafwEnvFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.maafwEnvFailed'))
       error.value = errorMsg
       logger.error(`准备 MaaFW 运行环境失败: ${errorMsg}`)
       return null
@@ -265,10 +302,10 @@ export function useScriptApi() {
     try {
       const response = await Service.getMaaendOptionsApiScriptsMaaendOptionsPost({ scriptId })
       if (response?.code !== 200)
-        throw new Error(response?.message || t('apiErrors.invalidResponse'))
+        throw new Error(response?.message || t('core.apiErrors.invalidResponse'))
       return response
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.maaEndOptionsFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.maaEndOptionsFailed'))
       error.value = errorMsg
       logger.error(`获取 MaaEnd 动态选项失败: ${errorMsg}`)
       message.error(errorMsg)
@@ -282,10 +319,15 @@ export function useScriptApi() {
     error.value = null
 
     try {
-      const response = await Service.deleteScriptApiScriptsDeletePost({ scriptId })
+      const response = await observeFeature(
+        'script_manage_finished',
+        { action: 'delete', script_type: getAnalyticsScriptType(scriptId), count_bucket: '1' },
+        () => Service.deleteScriptApiScriptsDeletePost({ scriptId }),
+        apiOutcome
+      )
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.scriptDeleteFailed')
+        const errorMsg = response.message || t('core.apiErrors.scriptDeleteFailed')
         throw new Error(errorMsg)
       }
 
@@ -296,7 +338,7 @@ export function useScriptApi() {
 
       return true
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptDeleteFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.scriptDeleteFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return false
@@ -310,8 +352,15 @@ export function useScriptApi() {
     scriptId: string,
     data: Record<string, unknown>
   ): Promise<boolean> => {
+    const operation = beginAnalyticsOperation('config_write_finished')
+    const dimensions = {
+      owner_kind: 'script' as const,
+      section_kind: analyticsConfigSection(data),
+      script_type: getAnalyticsScriptType(scriptId),
+    }
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
-      const errorMsg = t('edit.configLocked')
+      operation.finish({ ...dimensions, outcome: 'blocked' })
+      const errorMsg = t('core.edit.configLocked')
       error.value = errorMsg
       message.warning(errorMsg)
       return false
@@ -333,14 +382,16 @@ export function useScriptApi() {
       })
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.scriptSaveFailed')
+        const errorMsg = response.message || t('core.apiErrors.scriptSaveFailed')
         throw new Error(errorMsg)
       }
 
       scriptListRequest = null
+      operation.finish({ ...dimensions, outcome: 'success' })
       return true
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptSaveFailed'))
+      operation.finish({ ...dimensions, outcome: 'failure' })
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.scriptSaveFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return false
@@ -359,17 +410,26 @@ export function useScriptApi() {
         indexList: scriptIds,
       }
 
-      const response = await Service.reorderScriptApiScriptsOrderPost(requestData)
+      const response = await observeFeature(
+        'script_manage_finished',
+        {
+          action: 'reorder',
+          script_type: scriptIds.length > 1 ? 'multi' : getAnalyticsScriptType(scriptIds[0] ?? ''),
+          count_bucket: analyticsCountBucket(scriptIds.length),
+        },
+        () => Service.reorderScriptApiScriptsOrderPost(requestData),
+        apiOutcome
+      )
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.scriptOrderFailed')
+        const errorMsg = response.message || t('core.apiErrors.scriptOrderFailed')
         throw new Error(errorMsg)
       }
 
       scriptListRequest = null
       return true
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptOrderFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.scriptOrderFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return false
@@ -379,12 +439,19 @@ export function useScriptApi() {
   }
 
   const importScriptConfigFile = (scriptId: string, userId: string | null) =>
-    Service.importScriptConfigFileApiScriptsConfigImportPost({ scriptId, userId }).then(
-      response => {
-        if (response.code === 200) scriptListRequest = null
-        return response
-      }
-    )
+    observeFeature(
+      'adapter_setup_finished',
+      {
+        script_type: getAnalyticsScriptType(scriptId),
+        operation_kind: 'import',
+        engine_kind: 'unknown',
+      },
+      () => Service.importScriptConfigFileApiScriptsConfigImportPost({ scriptId, userId }),
+      apiOutcome
+    ).then(response => {
+      if (response.code === 200) scriptListRequest = null
+      return response
+    })
 
   return {
     loading,

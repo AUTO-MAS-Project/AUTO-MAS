@@ -46,25 +46,11 @@ ok-ww 特有的 owner 目录布局、覆盖层侧车、恢复语义（恢复前�
 import json
 from pathlib import Path
 
-from app.utils import get_logger
-from app.utils.config_archive import (
-    BASE_FILE_NAME,
-    META_FILE_NAMES,
-    OVERLAY_SIDECAR_NAME,
-    archive_files,
-    config_root_key,
-    dir_files,
-    file_set_hash,
-    get_backup_dir,
-    list_times,
-    mask_account,
-    read_backup_base,
-    read_overlay_sidecar,
-    restore_dir,
-    write_backup_base,
-)
-from app.utils.constants import BASE_NATIVE, BASE_SHARED, BASE_SOURCE_LABELS
-from app.utils.io import force_rmtree
+from app.utils import BASE_NATIVE, BASE_SHARED, BASE_SOURCE_LABELS, get_logger
+from app.utils import config_archive as _utils_config_archive
+from app.utils import io as _utils_io
+
+read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 
 logger = get_logger("OK-WW 配置备份")
 
@@ -106,7 +92,11 @@ def native_backup_root(config_path: str | Path) -> Path:
     配置无论被哪个脚本引用都归同一个池；跨脚本共享、不随脚本删除。
     """
 
-    return project_backup_root() / "native" / config_root_key(config_path)
+    return (
+        project_backup_root()
+        / "native"
+        / _utils_config_archive.config_root_key(config_path)
+    )
 
 
 def owner_for_mode(base: str, user_id: str) -> str | None:
@@ -204,9 +194,11 @@ def collect_mas_files(
     mas_dir = Path(mas_dir)
     files: dict[str, "Path | str"] = {}
     if mas_dir.is_dir():
-        files.update(dir_files(mas_dir))
+        files.update(_utils_config_archive.dir_files(mas_dir))
     if overlay:
-        files[OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
+        files[_utils_config_archive.OVERLAY_SIDECAR_NAME] = json.dumps(
+            overlay, ensure_ascii=False, indent=2
+        )
     return files
 
 
@@ -236,12 +228,14 @@ def archive_mas_backup(
     files = collect_mas_files(mas_dir, overlay)
     if not files:
         return None
-    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, mas_backup_root(script_id, user_id), force=force
+    )
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
     if base:
-        write_backup_base(dest, base)
+        _utils_config_archive.write_backup_base(dest, base)
     logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
@@ -265,36 +259,37 @@ def mas_rollback_point(
     if not files:
         return None
     store_root = mas_backup_root(script_id, user_id)
-    fingerprint = file_set_hash(files)
-    for ts in list_times(store_root):
+    fingerprint = _utils_config_archive.file_set_hash(files)
+    for ts in _utils_config_archive.list_times(store_root):
         entry = {
             rel: path
-            for rel, path in dir_files(store_root / ts).items()
-            if rel not in META_FILE_NAMES
+            for rel, path in _utils_config_archive.dir_files(store_root / ts).items()
+            if rel not in _utils_config_archive.META_FILE_NAMES
         }
         try:
-            if file_set_hash(entry) == fingerprint and (
-                base is None or read_backup_base(store_root / ts) == base
+            if _utils_config_archive.file_set_hash(entry) == fingerprint and (
+                base is None
+                or _utils_config_archive.read_backup_base(store_root / ts) == base
             ):
                 return ts
         except OSError:
             continue
     if base:
-        files[BASE_FILE_NAME] = base
-    dest = archive_files(files, store_root, force=True)
+        files[_utils_config_archive.BASE_FILE_NAME] = base
+    dest = _utils_config_archive.archive_files(files, store_root, force=True)
     return dest.name if dest is not None else None
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
     """用户池的全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(mas_backup_root(script_id, user_id))
+    return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
     """取用户池指定时间戳的归档目录；不存在返回 None。"""
 
-    return get_backup_dir(mas_backup_root(script_id, user_id), ts)
+    return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(
@@ -328,19 +323,25 @@ def restore_mas_backup(
     # 备份只有侧车时恢复空目录，避免把元数据写入配置目录。
     managed = [
         rel
-        for rel in dir_files(backup_dir)
-        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
+        for rel in _utils_config_archive.dir_files(backup_dir)
+        if rel
+        not in _utils_config_archive.META_FILE_NAMES
+        | {_utils_config_archive.OVERLAY_SIDECAR_NAME}
     ]
     if managed:
-        restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
+        _utils_config_archive.restore_dir(
+            mas_backup_root(script_id, user_id), ts, mas_dir
+        )
         restored_overlay = read_overlay_sidecar(mas_dir)
         if restored_overlay is not None:
-            (mas_dir / OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
+            (mas_dir / _utils_config_archive.OVERLAY_SIDECAR_NAME).unlink(
+                missing_ok=True
+            )
     else:
         restored_overlay = read_overlay_sidecar(backup_dir)
         # 只有侧车也代表一个空的 MAS 配置目录；先清掉旧文件，避免恢复后
         # 继续沿用导入失败留下的半目录。
-        force_rmtree(mas_dir)
+        _utils_io.force_rmtree(mas_dir)
         if mas_dir.exists():
             raise OSError(f"配置目录无法清空: {mas_dir}")
         mas_dir.mkdir(parents=True, exist_ok=True)
@@ -386,7 +387,7 @@ def collect_native_files(config_path: str | Path) -> dict[str, Path]:
     config_path = Path(config_path)
     if not config_path.is_dir() or not any(config_path.iterdir()):
         return {}
-    return dir_files(config_path)
+    return _utils_config_archive.dir_files(config_path)
 
 
 def archive_native_backup(config_path: Path, force: bool = False) -> Path | None:
@@ -399,7 +400,9 @@ def archive_native_backup(config_path: Path, force: bool = False) -> Path | None
     files = collect_native_files(config_path)
     if not files:
         return None
-    dest = archive_files(files, native_backup_root(config_path), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, native_backup_root(config_path), force=force
+    )
     if dest is None:
         logger.info("ok-ww 原生配置无变化，跳过归档")
         return None
@@ -410,13 +413,13 @@ def archive_native_backup(config_path: Path, force: bool = False) -> Path | None
 def list_native_backups(config_path: str | Path) -> list[str]:
     """ok-ww 原生配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(native_backup_root(config_path))
+    return _utils_config_archive.list_times(native_backup_root(config_path))
 
 
 def get_native_backup_dir(config_path: str | Path, ts: str) -> Path | None:
     """取指定时间戳的原生配置归档目录；不存在返回 None。"""
 
-    return get_backup_dir(native_backup_root(config_path), ts)
+    return _utils_config_archive.get_backup_dir(native_backup_root(config_path), ts)
 
 
 def restore_native_backup(config_path: Path, ts: str) -> None:
@@ -431,7 +434,7 @@ def restore_native_backup(config_path: Path, ts: str) -> None:
     config_path = Path(config_path)
     # 恢复前强制归档当前——「恢复前的配置」在列表里有明确的时间戳条目
     archive_native_backup(config_path, force=True)
-    restore_dir(native_backup_root(config_path), ts, config_path)
+    _utils_config_archive.restore_dir(native_backup_root(config_path), ts, config_path)
     logger.info(f"ok-ww 原生配置已恢复备份 {ts}")
 
 
@@ -563,7 +566,7 @@ def build_backup_file_summary(backup_dir: Path) -> list[dict]:
     """
 
     files: list[dict] = []
-    for rel in sorted(dir_files(backup_dir)):
+    for rel in sorted(_utils_config_archive.dir_files(backup_dir)):
         if "/" in rel or rel not in _PREVIEW_KEEP_FILES:
             continue
         try:
@@ -591,7 +594,9 @@ def _overlay_value(key: str, value) -> str:
     """覆盖层字段值转展示文本（账号脱敏、枚举词表翻译、布尔转是否、超长截断）。"""
 
     if key == "Id":
-        return mask_account(value)  # 账号脱敏展示；侧车原值仍完整保存（恢复需要）
+        return _utils_config_archive.mask_account(
+            value
+        )  # 账号脱敏展示；侧车原值仍完整保存（恢复需要）
     if isinstance(value, bool):
         return "是" if value else "否"
     enum = _OVERLAY_ENUM_VALUE_LABELS.get(key)

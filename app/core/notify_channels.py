@@ -31,6 +31,7 @@ from app.config import ConfigManager
 from app.models.notification_channel import (
     SCOPE_GLOBAL,
     CommandExecutor,
+    NotificationCommandExecutor,
     NotificationSourceConfig,
     NotifyChannel,
     NotifyChannelField,
@@ -47,35 +48,35 @@ _POLICY_FIELDS: Mapping[str, tuple[NotifyChannelField, ...]] = {
         NotifyChannelField(
             group="Notify",
             name="SendTaskResultTime",
-            label_key="setting.notify.resultTime",
+            label_key="core.setting.notify.resultTime",
             control="select",
             options=(
-                ("不推送", "setting.pushTime.never"),
-                ("任何时刻", "setting.pushTime.always"),
-                ("仅失败时", "setting.pushTime.failOnly"),
+                ("不推送", "core.setting.pushTime.never"),
+                ("任何时刻", "core.setting.pushTime.always"),
+                ("仅失败时", "core.setting.pushTime.failOnly"),
             ),
-            tip_key="setting.notify.resultTimeTip",
+            tip_key="core.setting.notify.resultTimeTip",
         ),
         NotifyChannelField(
             group="Notify",
             name="IfSendStatistic",
-            label_key="setting.notify.statistics",
+            label_key="core.setting.notify.statistics",
             control="bool",
-            tip_key="setting.notify.statisticsTip",
+            tip_key="core.setting.notify.statisticsTip",
         ),
         NotifyChannelField(
             group="Notify",
             name="IfSendSixStar",
-            label_key="setting.notify.recruit",
+            label_key="core.setting.notify.recruit",
             control="bool",
-            tip_key="setting.notify.recruitTip",
+            tip_key="core.setting.notify.recruitTip",
         ),
     )
 }
 
 _POLICY = NotifyChannel(
     key="policy",
-    name_key="setting.notify.contentSection",
+    name_key="core.setting.notify.contentSection",
     desc_key="",
     icon="",
     group="builtin",
@@ -210,6 +211,7 @@ def create_notification_service(
     transactions: ConfigManager,
     runtime: OwnedTaskRegistry,
     command_executor: CommandExecutor | None = None,
+    notification_command_executor: NotificationCommandExecutor | None = None,
 ) -> HostNotificationService:
     """配置就绪后创建独立通知服务；连接仍在后台初始化阶段启动。"""
     import smtplib
@@ -224,10 +226,9 @@ def create_notification_service(
     system_notify = None
     if "system" in registry.by_id:
         try:
-            from plyer import notification
+            from app.utils import notification
 
-            # 在事件循环线程解析 plyer 的惰性后端，再交给工作线程调用。
-            system_notify = notification.notify
+            system_notify = notification.prepare_sender()
         except Exception as exc:
             get_logger("通知服务").warning(f"系统通知依赖不可用: {type(exc).__name__}")
 
@@ -242,9 +243,9 @@ def create_notification_service(
         return connect(*args, **kwargs)
 
     def websocket_manager() -> Any:
-        from app.utils.websocket import WSClientManager
+        from app.utils import websocket as _utils_websocket
 
-        return WSClientManager()
+        return _utils_websocket.WSClientManager()
 
     runtime_config = RuntimeConfigView(
         config.setting,
@@ -262,6 +263,7 @@ def create_notification_service(
         system_icon=resource_path("icons", "AUTO-MAS.ico").as_posix(),
         logger=get_logger("通知服务"),
         command_executor=command_executor,
+        notification_command_executor=notification_command_executor,
     )
     transport = Notification(registry.bind(dependencies))
     return HostNotificationService(

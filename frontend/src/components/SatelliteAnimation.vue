@@ -9,7 +9,7 @@
     @pointercancel="cancelPress"
     @pointerleave="handlePointerLeave"
   >
-    <div v-if="loading" class="loading-spinner"></div>
+    <a-spin v-if="loading" size="large" class="loading-spinner" />
     <img v-if="staticImage" class="satellite-static" :src="staticImage" alt="" />
     <SatelliteHoverLabel
       ref="hoverLabel"
@@ -500,18 +500,6 @@ function spawnText(point: ScreenPoint, text: string, variant: FloatTextVariant):
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 32px;
-  height: 32px;
-  margin: -16px 0 0 -16px;
-  border: 2px solid var(--ant-color-border);
-  border-top-color: var(--ant-color-primary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  transform: translate(-50%, -50%);
 }
 </style>

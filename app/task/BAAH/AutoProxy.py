@@ -37,7 +37,6 @@ from typing import Any
 
 from app.config import ConfigCollection
 from app.core import Config
-from app.core.history import history_store
 from app.core.ws import Publisher, protocol
 from app.log_box import LogCollect, LogType, log_box
 from app.models.config import BAAHConfig, BAAHPlanConfig, BAAHUserConfig
@@ -50,9 +49,8 @@ from app.task.base import ScriptAutoProxyBase
 from app.task.notify_core import build_script_statistics_payload
 from app.task.proxy_helpers import append_push_log
 from app.tools.bluearchive_activity import BlueArchiveLineType, has_running_activity
-from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
-from app.utils.constants import UTC4
-from app.utils.update_files import directory_lock
+from app.utils import UTC4, LogMonitor, ProcessManager, compile_log_signs, get_logger
+from app.utils import update_files as _utils_update_files
 
 from .tools import (
     BAAH_PUSH_RULES,
@@ -589,7 +587,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         """
 
         # 不同 MAS 托管可指向同一安装；软件配置也共享，按真实安装目录串行。
-        async with directory_lock(self.root_path.resolve()):
+        async with _utils_update_files.directory_lock(self.root_path.resolve()):
             await self._run_once_locked()
 
     async def _run_once_locked(self) -> None:
@@ -974,38 +972,12 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             )
 
         if history_records:
-            try:
-                attachments = await self.task_info.collect_user_history_attachments(
-                    self.script_info, self.cur_user_item
-                )
-                history_records[-1].attachments.extend(attachments)
-            except Exception:
-                logger.opt(exception=True).warning(
-                    "收集用户历史附件失败，继续保存日志与执行结果"
-                )
-            try:
-                for record in history_records:
-                    try:
-                        await history_store.record(record)
-                    except Exception as error:
-                        logger.opt(exception=True).warning(f"保存历史失败：{error}")
-                        try:
-                            await Publisher.send(
-                                id=self.task_info.task_id,
-                                type=protocol.TASK_NOTICE,
-                                data=WSTaskNoticeData(
-                                    level="warning",
-                                    message=f"历史记录保存失败：{error}",
-                                ),
-                            )
-                        except Exception:
-                            logger.opt(exception=True).warning(
-                                "发送历史保存失败提示时出现异常"
-                            )
-            finally:
-                await self.task_info.discard_user_history_capture(
-                    self.script_info, self.cur_user_item
-                )
+            await self.task_info.save_user_history(
+                history_records,
+                script=self.script_info,
+                user=self.cur_user_item,
+                log_warning=logger.opt(exception=True).warning,
+            )
 
         await self._push_statistic()
 

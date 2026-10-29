@@ -1,14 +1,11 @@
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { AdapterSetupService as Service } from '@/composables/useAdapterSetupApi'
 import { computed, ref, h } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
-import {
-  PlusOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
-import { Service, type ZzzOdInstanceOut } from '@/api'
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
+import { type ZzzOdInstanceOut } from '@/api'
 const props = defineProps<{
   scriptId: string
   locked: boolean
@@ -45,7 +42,7 @@ const confirmAddInstance = async () => {
   if (configLocked.value) return
   const name = instanceName.value.trim()
   if (!name) {
-    message.error(t('edit.zzzodInstanceNameRequired'))
+    message.error(t('core.edit.zzzodInstanceNameRequired'))
     return
   }
   instanceOpLoading.value = true
@@ -57,7 +54,7 @@ const confirmAddInstance = async () => {
       })
     )
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodAddInstanceFailed'))
+      throw new Error(resp.message || t('core.edit.zzzodAddInstanceFailed'))
     }
     const updated = resp.data || []
     instances.value = updated
@@ -67,9 +64,9 @@ const confirmAddInstance = async () => {
     if (added) {
       await props.select(added.idx)
     }
-    message.success(t('edit.zzzodAddInstanceSuccess'))
+    message.success(t('core.edit.zzzodAddInstanceSuccess'))
   } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodAddInstanceFailed'))
+    message.error(e instanceof Error ? e.message : t('core.edit.zzzodAddInstanceFailed'))
   } finally {
     instanceOpLoading.value = false
   }
@@ -86,7 +83,7 @@ const confirmRenameInstance = async () => {
   const target = renameTarget.value
   const name = instanceName.value.trim()
   if (!target || !name) {
-    message.error(t('edit.zzzodInstanceNameRequired'))
+    message.error(t('core.edit.zzzodInstanceNameRequired'))
     return
   }
   instanceOpLoading.value = true
@@ -99,14 +96,14 @@ const confirmRenameInstance = async () => {
       })
     )
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodRenameInstanceFailed'))
+      throw new Error(resp.message || t('core.edit.zzzodRenameInstanceFailed'))
     }
     instances.value = resp.data || []
     renameInstanceOpen.value = false
     renameTarget.value = null
-    message.success(t('edit.zzzodRenameInstanceSuccess'))
+    message.success(t('core.edit.zzzodRenameInstanceSuccess'))
   } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodRenameInstanceFailed'))
+    message.error(e instanceof Error ? e.message : t('core.edit.zzzodRenameInstanceFailed'))
   } finally {
     instanceOpLoading.value = false
   }
@@ -114,15 +111,15 @@ const confirmRenameInstance = async () => {
 
 const openDeleteInstance = (inst: ZzzOdInstanceOut) => {
   Modal.confirm({
-    title: t('edit.zzzodDeleteInstance'),
+    title: t('core.edit.zzzodDeleteInstance'),
     content: h(
       'p',
       { style: { color: 'var(--ant-color-error)', margin: 0 } },
-      t('edit.zzzodDeleteInstanceConfirm', {
+      t('core.edit.zzzodDeleteInstanceConfirm', {
         inst: `${String(inst.idx).padStart(2, '0')} - ${inst.name}`,
       })
     ),
-    okText: t('edit.zzzodDeleteInstance'),
+    okText: t('core.edit.zzzodDeleteInstance'),
     okButtonProps: { danger: true },
     onOk: () => deleteInstance(inst),
   })
@@ -139,13 +136,13 @@ const deleteInstance = async (inst: ZzzOdInstanceOut) => {
       })
     )
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodDeleteInstanceFailed'))
+      throw new Error(resp.message || t('core.edit.zzzodDeleteInstanceFailed'))
     }
     instances.value = resp.data || []
     props.deleted(inst.idx)
-    message.success(t('edit.zzzodDeleteInstanceSuccess'))
+    message.success(t('core.edit.zzzodDeleteInstanceSuccess'))
   } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodDeleteInstanceFailed'))
+    message.error(e instanceof Error ? e.message : t('core.edit.zzzodDeleteInstanceFailed'))
   } finally {
     instanceOpLoading.value = false
   }
@@ -162,11 +159,11 @@ const toggleInstanceActiveInOd = async (inst: ZzzOdInstanceOut, value: boolean) 
       })
     )
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodInstanceFlagFailed'))
+      throw new Error(resp.message || t('core.edit.zzzodInstanceFlagFailed'))
     }
     instances.value = resp.data || []
   } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodInstanceFlagFailed'))
+    message.error(e instanceof Error ? e.message : t('core.edit.zzzodInstanceFlagFailed'))
   }
 }
 
@@ -182,11 +179,11 @@ const toggleInstanceForceLogin = async (inst: ZzzOdInstanceOut, value: boolean) 
       })
     )
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodInstanceForceLoginFailed'))
+      throw new Error(resp.message || t('core.edit.zzzodInstanceForceLoginFailed'))
     }
     instances.value = resp.data || []
   } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodInstanceForceLoginFailed'))
+    message.error(e instanceof Error ? e.message : t('core.edit.zzzodInstanceForceLoginFailed'))
   }
 }
 
@@ -202,12 +199,12 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
       })
     )
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodSetActiveInstanceFailed'))
+      throw new Error(resp.message || t('core.edit.zzzodSetActiveInstanceFailed'))
     }
     instances.value = resp.data || []
-    message.success(t('edit.zzzodSetInstanceActiveSuccess', { name: inst.name }))
+    message.success(t('core.edit.zzzodSetInstanceActiveSuccess', { name: inst.name }))
   } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodSetActiveInstanceFailed'))
+    message.error(e instanceof Error ? e.message : t('core.edit.zzzodSetActiveInstanceFailed'))
   } finally {
     instanceOpLoading.value = false
   }
@@ -216,15 +213,14 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
 <template>
   <div class="instance-manage">
     <div class="instance-manage-header">
-      <span class="form-label">
-        {{ t('edit.zzzodInstancesManage') }}
-        <a-tooltip :title="t('edit.zzzodInstancesManageHint')">
-          <QuestionCircleOutlined class="help-icon" />
-        </a-tooltip>
-      </span>
+      <FieldLabelWithHint
+        :text="t('core.edit.zzzodInstancesManage')"
+        :hint="t('core.edit.zzzodInstancesManageHint')"
+        variant="form"
+      />
       <a-button type="primary" size="small" :loading="instanceOpLoading" @click="openAddInstance">
         <template #icon><PlusOutlined /></template>
-        {{ t('edit.zzzodAddInstance') }}
+        {{ t('core.edit.zzzodAddInstance') }}
       </a-button>
     </div>
     <div v-if="instances.length" class="instance-manage-list">
@@ -241,25 +237,25 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
           >
             {{ String(inst.idx).padStart(2, '0') }} - {{ inst.name }}
           </span>
-          <a-tooltip v-if="inst.active" :title="t('edit.zzzodInstanceActiveTagHint')">
+          <a-tooltip v-if="inst.active" :title="t('core.edit.zzzodInstanceActiveTagHint')">
             <a-tag color="processing" class="instance-manage-tag">
-              {{ t('edit.zzzodInstanceActiveTag') }}
+              {{ t('core.edit.zzzodInstanceActiveTag') }}
             </a-tag>
           </a-tooltip>
-          <a-tooltip v-else :title="t('edit.zzzodSetInstanceActive')">
+          <a-tooltip v-else :title="t('core.edit.zzzodSetInstanceActive')">
             <a-tag
               class="instance-manage-tag instance-manage-tag-set"
               @click="setActiveInstance(inst)"
             >
-              {{ t('edit.zzzodInstanceSetActiveTag') }}
+              {{ t('core.edit.zzzodInstanceSetActiveTag') }}
             </a-tag>
           </a-tooltip>
         </div>
         <div class="instance-manage-ops">
           <span class="instance-manage-switch-label">
-            {{ t('edit.zzzodInstanceRunAllSwitch') }}
+            {{ t('core.edit.zzzodInstanceRunAllSwitch') }}
           </span>
-          <a-tooltip :title="t('edit.zzzodInstanceActiveInOd')">
+          <a-tooltip :title="t('core.edit.zzzodInstanceActiveInOd')">
             <a-switch
               size="small"
               :checked="inst.active_in_od"
@@ -267,9 +263,9 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
             />
           </a-tooltip>
           <span class="instance-manage-switch-label">
-            {{ t('edit.zzzodInstanceForceLoginSwitch') }}
+            {{ t('core.edit.zzzodInstanceForceLoginSwitch') }}
           </span>
-          <a-tooltip :title="t('edit.zzzodInstanceForceLoginHint')">
+          <a-tooltip :title="t('core.edit.zzzodInstanceForceLoginHint')">
             <a-switch
               size="small"
               :checked="inst.force_login_before_run"
@@ -277,22 +273,22 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
             />
           </a-tooltip>
           <a-divider type="vertical" class="instance-manage-divider" />
-          <a-tooltip :title="t('edit.zzzodRenameInstance')">
+          <a-tooltip :title="t('core.edit.zzzodRenameInstance')">
             <a-button
               size="small"
               type="text"
-              :aria-label="t('edit.zzzodRenameInstance')"
+              :aria-label="t('core.edit.zzzodRenameInstance')"
               @click="openRenameInstance(inst)"
             >
               <template #icon><EditOutlined /></template>
             </a-button>
           </a-tooltip>
-          <a-tooltip :title="t('edit.zzzodDeleteInstance')">
+          <a-tooltip :title="t('core.edit.zzzodDeleteInstance')">
             <a-button
               size="small"
               type="text"
               danger
-              :aria-label="t('edit.zzzodDeleteInstance')"
+              :aria-label="t('core.edit.zzzodDeleteInstance')"
               @click="openDeleteInstance(inst)"
             >
               <template #icon><DeleteOutlined /></template>
@@ -304,25 +300,24 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
   </div>
   <a-modal
     v-model:open="addInstanceOpen"
-    :title="t('edit.zzzodAddInstance')"
-    :ok-text="t('edit.zzzodAddInstance')"
-    :cancel-text="t('edit.cancel')"
+    :title="t('core.edit.zzzodAddInstance')"
+    :ok-text="t('core.edit.zzzodAddInstance')"
+    :cancel-text="t('core.edit.cancel')"
     :confirm-loading="instanceOpLoading"
     @ok="confirmAddInstance"
   >
     <a-form layout="vertical" class="config-form">
       <a-form-item>
         <template #label>
-          <span class="form-label">
-            {{ t('edit.zzzodInstanceName') }}
-            <a-tooltip :title="t('edit.zzzodInstanceNameHint')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </span>
+          <FieldLabelWithHint
+            :text="t('core.edit.zzzodInstanceName')"
+            :hint="t('core.edit.zzzodInstanceNameHint')"
+            variant="form"
+          />
         </template>
         <a-input
           v-model:value="instanceName"
-          :placeholder="t('edit.zzzodInstanceNamePlaceholder')"
+          :placeholder="t('core.edit.zzzodInstanceNamePlaceholder')"
           size="large"
           class="modern-input"
           @press-enter="confirmAddInstance"
@@ -332,25 +327,24 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
   </a-modal>
   <a-modal
     v-model:open="renameInstanceOpen"
-    :title="t('edit.zzzodRenameInstance')"
-    :ok-text="t('edit.zzzodRenameInstance')"
-    :cancel-text="t('edit.cancel')"
+    :title="t('core.edit.zzzodRenameInstance')"
+    :ok-text="t('core.edit.zzzodRenameInstance')"
+    :cancel-text="t('core.edit.cancel')"
     :confirm-loading="instanceOpLoading"
     @ok="confirmRenameInstance"
   >
     <a-form layout="vertical" class="config-form">
       <a-form-item>
         <template #label>
-          <span class="form-label">
-            {{ t('edit.zzzodInstanceName') }}
-            <a-tooltip :title="t('edit.zzzodInstanceNameHint')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </span>
+          <FieldLabelWithHint
+            :text="t('core.edit.zzzodInstanceName')"
+            :hint="t('core.edit.zzzodInstanceNameHint')"
+            variant="form"
+          />
         </template>
         <a-input
           v-model:value="instanceName"
-          :placeholder="t('edit.zzzodInstanceNamePlaceholder')"
+          :placeholder="t('core.edit.zzzodInstanceNamePlaceholder')"
           size="large"
           class="modern-input"
           @press-enter="confirmRenameInstance"

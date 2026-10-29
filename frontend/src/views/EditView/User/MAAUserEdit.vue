@@ -4,20 +4,20 @@
     <GuiSessionMask
       :open="showMaaConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.maaConfigurationProgress')"
-      :description="`${t('edit.maaConfigurationThisUser')}\n${t('edit.clickSaveSettingsWhen')}`"
+      :title="t('core.edit.maaConfigurationProgress')"
+      :description="`${t('core.edit.maaConfigurationThisUser')}\n${t('core.edit.clickSaveSettingsWhen')}`"
     >
       <template #actions>
         <a-button v-if="maaTaskId" type="primary" size="large" @click="handleSaveMAAConfig">
-          {{ t('edit.saveConfiguration') }}
+          {{ t('core.edit.saveConfiguration') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showMaaViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.maaViewingTitle')"
-      :description="`${t('edit.maaViewingDesc')}\n${t('edit.maaViewingDesc2')}`"
+      :title="t('core.edit.maaViewingTitle')"
+      :description="`${t('core.edit.maaViewingDesc')}\n${t('core.edit.maaViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -27,23 +27,50 @@
           :loading="stoppingMaaConfig"
           @click="handleCloseMaaView"
         >
-          {{ t('edit.maaViewClose') }}
+          {{ t('core.edit.maaViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
-    <!-- 头部组件 -->
-    <MAAUserEditHeader
+    <UserEditHeader
+      v-if="!cultivationPage"
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
-      :leaving="leavingPage"
-      :loading="loading"
-      :config-locked="configLocked || editorBusy"
+      script-edit-segment="maa"
       :user-id="userId"
-      @handle-cancel="handleCancel"
+      :cancel-loading="leavingPage"
+      @cancel="handleCancel"
     />
 
-    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
+    <!-- 干员养成独立页面：页面壳自带页头/总览/标签页 -->
+    <CultivationPage
+      v-if="cultivationPage && !isInitializing"
+      :script-id="scriptId"
+      :user-id="userId"
+      :script-name="scriptName"
+      :form-data="formData"
+      :loading="loading"
+      :leaving-page="leavingPage"
+      :editor-busy="editorBusy"
+      :operator-catalog="cultivateOperatorCatalog"
+      :operator-options-loading="cultivateOperatorOptionsLoading"
+      :operator-options-error="cultivateOperatorOptionsError"
+      :skland-role-options="sklandRoleOptions"
+      :skland-role-loading="sklandRoleLoading"
+      :skland-role-error="sklandRoleError"
+      :load-skland-role-options="loadSklandRoleOptions"
+      :item-options="depotItemOptions"
+      :cultivate-preview="cultivatePreview"
+      :cultivate-preview-loading="cultivatePreviewLoading"
+      :cultivate-preview-error="cultivatePreviewError"
+      :load-cultivate-preview="loadCultivatePreview"
+      :import-cultivate-targets="importCultivateTargets"
+      :prepare-copilot-analysis="prepareCopilotAnalysis"
+      @save="handleFieldSave"
+      @back="handleCancel"
+    />
+    <div v-else-if="cultivationPage" class="cultivation-page-loading"><a-spin /></div>
+    <ConfigLockPanel v-else :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :inert="editorBusy">
         <a-form
           ref="formRef"
@@ -62,7 +89,7 @@
 
           <!-- 配置文件来源：base 三态 ⊕ overlay 两态，与 MaaEnd / Okww 共用同一套面板 -->
           <a-flex class="section-header" align="center" wrap="wrap" gap="small">
-            <h3>{{ t('edit.configurationSource') }}</h3>
+            <h3>{{ t('core.edit.configurationSource') }}</h3>
           </a-flex>
           <GeneralConfigModeSelector
             :model-value="formData.Info.Base"
@@ -70,7 +97,7 @@
             :disabled="loading"
             :quick-config="formData.Info.IfQuickConfig"
             :quick-config-disabled="loading || isInitializing"
-            :alert-message="t('edit.configSourceHintBase')"
+            :alert-message="t('core.edit.configSourceHintBase')"
             :show-gui-hint="false"
             @change="handleConfigModeChange"
             @quick-config-change="handleQuickConfigChange"
@@ -94,11 +121,11 @@
             wrap="wrap"
             gap="small"
           >
-            <h3>{{ t('edit.taskConfiguration') }}</h3>
+            <h3>{{ t('core.edit.taskConfiguration') }}</h3>
             <a-space>
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
+                {{ t('core.edit.configRestoreTitle') }}
               </a-button>
             </a-space>
           </a-flex>
@@ -117,20 +144,8 @@
             :depot-stage-candidates-loading="depotStageCandidatesLoading"
             :depot-inventory="depotInventory"
             :depot-inventory-time="depotInventoryTime"
-            :skland-role-options="sklandRoleOptions"
-            :load-skland-role-options="loadSklandRoleOptions"
-            :skland-role-loading="sklandRoleLoading"
-            :skland-role-error="sklandRoleError"
             :depot-plan-editor="depotPlanEditor"
             :event-depot-plan-editor="eventDepotPlanEditor"
-            :cultivate-operator-catalog="cultivateOperatorCatalog"
-            :cultivate-operator-options-loading="cultivateOperatorOptionsLoading"
-            :cultivate-operator-options-error="cultivateOperatorOptionsError"
-            :cultivate-preview="cultivatePreview"
-            :cultivate-preview-loading="cultivatePreviewLoading"
-            :cultivate-preview-error="cultivatePreviewError"
-            :load-cultivate-preview="loadCultivatePreview"
-            :import-cultivate-targets="importCultivateTargets"
             :fight-summary="fightSummary"
             :is-edit="isEdit"
             :infrastructure-importing="infrastructureImporting"
@@ -204,14 +219,14 @@
       :script-name="MAA_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :script-desc="t('edit.maaConfigRestoreScriptDesc')"
+      :script-desc="t('core.edit.maaConfigRestoreScriptDesc')"
       :on-detail="handleRestoreView"
     >
       <!-- mas 备份为任务配置侧车、native 备份为 gui 文件摘要，共用文件集插槽 -->
       <template #preview="{ raw }">
         <a-empty
           v-if="!previewFiles(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="t('core.edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="f in previewFiles(raw)" :key="f.name">
@@ -230,6 +245,8 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import UserEditHeader from '@/components/UserEditHeader.vue'
+import CultivationPage from '@/views/MAAUserEdit/CultivationPage.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
@@ -241,9 +258,8 @@ import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useMaaGuiSession } from '@/composables/useMaaGuiSession'
-import { useMaaCultivateImportApi } from '@/composables/useMaaCultivateImportApi'
 import { useMaaDepotStageCandidates } from '@/composables/useMaaDepotStageCandidates'
-import { Service } from '@/api'
+import { AdapterSetupService as Service } from '@/composables/useAdapterSetupApi'
 import type { CultivatePreviewOut } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
@@ -252,7 +268,6 @@ import type { HomeOverviewResponse } from '@/types/home.ts'
 const logger = window.electronAPI.getLogger('MAA用户编辑')
 
 // 导入拆分的组件
-import MAAUserEditHeader from '@/views/MAAUserEdit/MAAUserEditHeader.vue'
 import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 import ConfigActionsSection from '@/views/EditView/User/ConfigActionsSection.vue'
@@ -265,14 +280,7 @@ import { useDepotMaintainPlanEditor } from '@/views/MAAUserEdit/useDepotMaintain
 import { useMAAFieldSave } from '@/views/MAAUserEdit/useMAAFieldSave'
 import { useMAAEditorLifecycle } from '@/views/MAAUserEdit/useMAAEditorLifecycle'
 import { getGameDayOffset } from '@/views/MAAUserEdit/periodMarkers'
-import {
-  mergeCultivateTargets,
-  normalizeCultivateCatalog,
-  parseCultivateTargets,
-  serializeCultivateTargets,
-  type CultivateImportResult,
-  type CultivateOperatorCatalogEntry,
-} from '@/views/MAAUserEdit/cultivateTargets'
+import { useMaaCultivation } from '@/views/MAAUserEdit/useMaaCultivation'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
@@ -281,7 +289,7 @@ import { buildRestoreConfirm } from '@/utils/configRestoreMode'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
-const { parseImport } = useMaaCultivateImportApi()
+const { cultivationPage = false } = defineProps<{ cultivationPage?: boolean }>()
 
 const router = useRouter()
 const route = useRoute()
@@ -340,26 +348,6 @@ const {
 const depotInventory = ref<Record<string, number>>({})
 const depotInventoryTime = ref('')
 
-// 干员养成选择器目录（一图流全量表，含技能/模组名称目录与可达档位，随快照缓存）
-const cultivateOperatorCatalog = ref<CultivateOperatorCatalogEntry[]>([])
-
-// 森空岛绑定下拉：合并所有已配置凭据账号组的角色（下拉展开时按需加载）
-const sklandRoleOptions = ref<Array<{ label: string; value: string }>>([])
-const sklandRoleLoading = ref(false)
-const sklandRoleError = ref('')
-const cultivateOperatorOptionsLoading = ref(false)
-const cultivateOperatorOptionsError = ref('')
-
-// 干员目录（一图流全量表，含技能/模组名称目录与可达档位，随快照缓存；
-// 序列号守卫防绑定变更连发两次加载时的乱序覆盖）
-let cultivateOperatorCatalogSeq = 0
-
-// 养成需求预览（纯计算不落库；序列号守卫防快速编辑时的乱序覆盖）
-const cultivatePreview = ref<CultivatePreviewOut | null>(null)
-const cultivatePreviewLoading = ref(false)
-const cultivatePreviewError = ref('')
-let cultivatePreviewSeq = 0
-
 // 服务器选项
 const serverOptions = [
   { label: '官服', value: 'Official' },
@@ -371,7 +359,7 @@ const serverOptions = [
 ]
 
 // 关卡选项
-const stageOptions = ref<any[]>([{ label: t('edit.none'), value: '' }])
+const stageOptions = ref<any[]>([{ label: t('core.edit.none'), value: '' }])
 const activityStageLoading = ref(false)
 const activityStageError = ref('')
 const stageOverviewByServer = ref<HomeOverviewResponse['StageByServer']>({})
@@ -393,7 +381,7 @@ const isCustomStage = (value: string) => {
 }
 
 // 关卡配置模式选项
-const stageModeOptions = ref<any[]>([{ label: t('edit.fixed'), value: 'Fixed' }])
+const stageModeOptions = ref<any[]>([{ label: t('core.edit.fixed'), value: 'Fixed' }])
 
 // 计划模式状态
 const isPlanMode = computed(() => {
@@ -682,8 +670,8 @@ const fightSummary = computed(() =>
 const rules = computed(() => {
   const baseRules: Record<string, Rule[]> = {
     userName: [
-      { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
-      { min: 1, max: 50, message: t('edit.usernameMustBe1'), trigger: 'blur' },
+      { required: true, message: t('core.edit.enterUsername'), trigger: 'blur' },
+      { min: 1, max: 50, message: t('core.edit.usernameMustBe1'), trigger: 'blur' },
     ],
   }
   return baseRules
@@ -746,7 +734,7 @@ const fieldSave = useMAAFieldSave({
     (key === 'Task.EventDepotMaintainPlans' && eventDepotPlanEditor.hasPendingEdits()),
   onFailure: () => {
     const errorMsg = userError.value
-    if (!errorMsg) message.error(t('edit.couldNotSaveUser'))
+    if (!errorMsg) message.error(t('core.edit.couldNotSaveUser'))
     logger.error(`保存失败: ${errorMsg || '用户 API 未返回成功'}`)
   },
   onError: error => {
@@ -777,6 +765,10 @@ const fieldSave = useMAAFieldSave({
 })
 const { isSaving, saveField: handleFieldSave } = fieldSave
 
+const prepareCopilotAnalysis = async () => {
+  if (!(await fieldSave.flush())) throw new Error(t('core.edit.couldNotSaveUser'))
+}
+
 // 快速配置开关：与配置来源独立，真实保存
 const handleQuickConfigChange = async (value: boolean) => {
   await handleFieldSave('Info.IfQuickConfig', value)
@@ -791,20 +783,20 @@ const maaConfigModeOptions: Array<{
 }> = [
   {
     value: 'shared',
-    title: t('edit.script'),
-    description: t('edit.useSharedScriptLevel'),
+    title: t('core.edit.script'),
+    description: t('core.edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {
     value: 'independent',
-    title: t('edit.user'),
-    description: t('edit.useThisUserS'),
+    title: t('core.edit.user'),
+    description: t('core.edit.useThisUserS'),
     icon: 'database',
   },
   {
     value: 'native',
-    title: t('edit.directControl'),
-    description: t('edit.nativeConfigSourceDescription'),
+    title: t('core.edit.directControl'),
+    description: t('core.edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]
@@ -833,13 +825,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript2'))
   }
 }
 
@@ -861,13 +853,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      if (!userError.value) message.error(t('edit.couldNotCreateUser'))
+      if (!userError.value) message.error(t('core.edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    if (!userError.value) message.error(t('edit.couldNotCreateUser'))
+    if (!userError.value) message.error(t('core.edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -876,10 +868,7 @@ const createUserImmediately = async () => {
 const loadUserData = async (): Promise<boolean> => {
   isInitializing.value = true
   // 恢复/重载配置后，旧目标或旧绑定的预览不能再回写。
-  cultivatePreviewSeq++
-  cultivatePreview.value = null
-  cultivatePreviewLoading.value = false
-  cultivatePreviewError.value = ''
+  resetCultivatePreview()
   try {
     const userResponse = await getUsers(scriptId, userId)
 
@@ -926,17 +915,17 @@ const loadUserData = async (): Promise<boolean> => {
         await Promise.all([loadCultivateOperatorOptions(), loadDepotInventory()])
         return true
       } else {
-        message.error(t('edit.userDoesNotExist'))
+        message.error(t('core.edit.userDoesNotExist'))
         handleCancel()
       }
     } else {
-      if (!userError.value) message.error(t('edit.couldNotFetchUser'))
+      if (!userError.value) message.error(t('core.edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    if (!userError.value) message.error(t('edit.couldNotLoadUser2'))
+    if (!userError.value) message.error(t('core.edit.couldNotLoadUser2'))
   }
   return false
 }
@@ -973,9 +962,9 @@ const applyServerStageOptions = () => {
   appendConfiguredCustomStages()
   activityStageError.value =
     stageOverview.ActivityStatus === 'stale'
-      ? t('eventDepotPreview.staleData')
+      ? t('core.eventDepotPreview.staleData')
       : stageOverview.ActivityStatus === 'unavailable'
-        ? t('eventDepotPreview.dataUnavailable')
+        ? t('core.eventDepotPreview.dataUnavailable')
         : ''
 }
 
@@ -985,7 +974,7 @@ const loadActivityStageOptions = async (refresh = false) => {
   try {
     const response = await Service.getOverviewApiInfoGetOverviewPost(refresh)
     if (response.code !== 200) {
-      activityStageError.value = response.message || t('eventDepotPreview.loadFailed')
+      activityStageError.value = response.message || t('core.eventDepotPreview.loadFailed')
       return
     }
 
@@ -994,7 +983,7 @@ const loadActivityStageOptions = async (refresh = false) => {
       // 不能直接赋值: 字段缺席会把 stageOverviewByServer 的 {} 默认值抹成 undefined,
       // 之后服务器切换的 watcher 一跑 applyServerStageOptions 就会整页崩
       logger.error('活动关卡数据缺少 StageByServer 字段，后端版本可能与前端不匹配')
-      activityStageError.value = t('eventDepotPreview.invalidData')
+      activityStageError.value = t('core.eventDepotPreview.invalidData')
       return
     }
 
@@ -1010,7 +999,7 @@ const loadActivityStageOptions = async (refresh = false) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载活动关卡失败: ${errorMsg}`)
-    activityStageError.value = t('eventDepotPreview.loadFailed')
+    activityStageError.value = t('core.eventDepotPreview.loadFailed')
   } finally {
     activityStageLoading.value = false
   }
@@ -1070,127 +1059,30 @@ const loadDepotInventory = async () => {
   }
 }
 
-const loadCultivateOperatorOptions = async () => {
-  // 绑定变更的两字段保存分属两个 await 周期，watch 会以半绑定/完整状态各
-  // 触发一次加载；seq 守卫丢弃乱序返回的过期响应（与预览加载同款）
-  const seq = ++cultivateOperatorCatalogSeq
-  cultivateOperatorOptionsLoading.value = true
-  cultivateOperatorOptionsError.value = ''
-  try {
-    const response = await Service.getMaaCultivateOperatorsApiScriptsMaaCultivateOperatorsPost({
-      script: { scriptId },
-      userId,
-    })
-    if (seq !== cultivateOperatorCatalogSeq) return
-    if (response.code !== 200) {
-      cultivateOperatorOptionsError.value = response.message || '加载干员目录失败'
-      return
-    }
-    cultivateOperatorCatalog.value = normalizeCultivateCatalog(response.data ?? [])
-  } catch (error) {
-    if (seq !== cultivateOperatorCatalogSeq) return
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载干员目录失败: ${errorMsg}`)
-    cultivateOperatorOptionsError.value = '加载干员目录失败'
-  } finally {
-    if (seq === cultivateOperatorCatalogSeq) cultivateOperatorOptionsLoading.value = false
-  }
-}
-
-const importCultivateTargets = (content: string): Promise<CultivateImportResult> =>
-  trackEdit(async () => {
-    if (!userId || configLocked.value) throw new Error(t('edit.maaCultivateImportUnavailable'))
-    const imported = await parseImport(scriptId, content)
-    const merged = mergeCultivateTargets(
-      parseCultivateTargets(formData.Task.CultivateTargets),
-      parseCultivateTargets(imported.targets)
-    )
-    const result = { ...merged.result, skipped: imported.skippedMessages }
-    if (!result.operatorIds.length) return result
-    const saved = await handleFieldSave(
-      'Task.CultivateTargets',
-      serializeCultivateTargets(merged.rows)
-    )
-    if (!saved) throw new Error(t('edit.couldNotSaveUser'))
-    // 导入可包含已满级、被选择器过滤的干员，补回其名称和技能目录。
-    const additions = normalizeCultivateCatalog(imported.data ?? [])
-    const importedIds = new Set(additions.map(item => item.value))
-    cultivateOperatorCatalog.value = [
-      ...cultivateOperatorCatalog.value.filter(item => !importedIds.has(item.value)),
-      ...additions,
-    ]
-    await loadCultivateOperatorOptions()
-    return result
-  })
-
-const loadSklandRoleOptions = async () => {
-  // 该端点要遍历所有已配置森空岛凭据的账号组做凭据刷新+角色拉取，代价高；
-  // 每次展开任务行都会重新挂载编辑器并触发回显请求，故已加载过就直接复用
-  // （要刷新列表：离开编辑页重进，或下拉为空时由展开下拉触发）
-  if (sklandRoleOptions.value.length) return
-  sklandRoleLoading.value = true
-  sklandRoleError.value = ''
-  try {
-    const response =
-      await Service.getMaaCultivateSklandBindingsApiScriptsMaaCultivateSklandBindingsPost()
-    if (response.code !== 200) {
-      sklandRoleError.value = response.message || '加载绑定角色失败'
-      sklandRoleOptions.value = []
-      return
-    }
-    sklandRoleOptions.value = response.data.map(option => ({
-      label: option.label,
-      value: option.value as string,
-    }))
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载森空岛绑定角色失败: ${errorMsg}`)
-    sklandRoleError.value = '加载绑定角色失败'
-    sklandRoleOptions.value = []
-  } finally {
-    sklandRoleLoading.value = false
-  }
-}
-
-// 绑定变化（绑定↔解绑、或换绑到另一角色）后：选择器目录需按森空岛快照
-// 重新过滤（精 2 干员绑定后恢复可见，解除绑定回到剔精 2 口径），预览也要
-// 按新练度重算——故比较账号|角色的复合值而不只是绑定与否
-watch(
-  () => `${formData.Task?.CultivateSklandAccount ?? ''}|${formData.Task?.CultivateSklandUid ?? ''}`,
-  (next, prev) => {
-    if (isInitializing.value || !userId || next === prev) return
-    loadCultivateOperatorOptions()
-    if (formData.Task?.CultivateTargets) {
-      loadCultivatePreview(formData.Task.CultivateTargets)
-    }
-  }
-)
-
-const loadCultivatePreview = async (targetsJson: string) => {
-  const seq = ++cultivatePreviewSeq
-  cultivatePreviewLoading.value = true
-  cultivatePreviewError.value = ''
-  try {
-    const response = await Service.getMaaCultivatePreviewApiScriptsMaaCultivatePreviewPost({
-      scriptId,
-      userId,
-      targets: targetsJson,
-    })
-    if (seq !== cultivatePreviewSeq) return
-    if (response.code !== 200) {
-      cultivatePreviewError.value = response.message || '需求计算失败'
-      return
-    }
-    cultivatePreview.value = response
-  } catch (error) {
-    if (seq !== cultivatePreviewSeq) return
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`养成需求计算失败: ${errorMsg}`)
-    cultivatePreviewError.value = '需求计算失败'
-  } finally {
-    if (seq === cultivatePreviewSeq) cultivatePreviewLoading.value = false
-  }
-}
+const {
+  cultivateOperatorCatalog,
+  cultivateOperatorOptionsLoading,
+  cultivateOperatorOptionsError,
+  sklandRoleOptions,
+  sklandRoleLoading,
+  sklandRoleError,
+  cultivatePreview,
+  cultivatePreviewLoading,
+  cultivatePreviewError,
+  loadCultivateOperatorOptions,
+  loadSklandRoleOptions,
+  loadCultivatePreview,
+  importCultivateTargets,
+  resetCultivatePreview,
+} = useMaaCultivation({
+  scriptId,
+  getUserId: () => userId,
+  task: () => formData.Task,
+  isInitializing: () => isInitializing.value,
+  isLocked: () => configLocked.value,
+  saveTargets: targets => handleFieldSave('Task.CultivateTargets', targets),
+  trackEdit: edit => trackEdit(edit),
+})
 
 const loadStageModeOptions = async () => {
   try {
@@ -1218,16 +1110,16 @@ const handleInfrastPlanSelectChange = (index: number, label: string) =>
         index: index,
       })
       if (!result || result.code !== 200) {
-        message.error(t('edit.maaCustomInfrastPlanSelectFailed'))
+        message.error(t('core.edit.maaCustomInfrastPlanSelectFailed'))
         return
       }
       // 后端会把「自动」归一成第一班, 以返回值为准, 免得刷新前后显示不一致
       infrastPlanSelect.value = result.index ?? index
-      message.success(t('edit.maaCustomInfrastPlanSelected', { name: label }))
+      message.success(t('core.edit.maaCustomInfrastPlanSelected', { name: label }))
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`设置基建班次失败: ${errorMsg}`)
-      message.error(t('edit.maaCustomInfrastPlanSelectFailed'))
+      message.error(t('core.edit.maaCustomInfrastPlanSelectFailed'))
     }
   })
 
@@ -1235,7 +1127,7 @@ const handleInfrastPlanSelectChange = (index: number, label: string) =>
 const selectAndImportInfrastructureConfig = () =>
   trackEdit(async () => {
     if (!isEdit.value) {
-      message.warning(t('edit.saveUserBeforeImporting'))
+      message.warning(t('core.edit.saveUserBeforeImporting'))
       return
     }
     if (configLocked.value) return
@@ -1243,13 +1135,13 @@ const selectAndImportInfrastructureConfig = () =>
     try {
       // 选择文件
       const path = await window.electronAPI?.selectFile([
-        { name: t('edit.jsonFiles'), extensions: ['json'] },
-        { name: t('edit.allFiles'), extensions: ['*'] },
+        { name: t('core.edit.jsonFiles'), extensions: ['json'] },
+        { name: t('core.edit.allFiles'), extensions: ['*'] },
       ])
 
       if (path && path.length > 0) {
         if (configLocked.value) {
-          message.error(t('edit.configLocked'))
+          message.error(t('core.edit.configLocked'))
           return
         }
         infrastructureImporting.value = true
@@ -1266,18 +1158,18 @@ const selectAndImportInfrastructureConfig = () =>
           const fileName = path[0].split('\\').pop()?.split('/').pop() || ''
           formData.Task.InfrastName = fileName.replace('.json', '')
 
-          message.success(t('edit.baseConfigurationImported'))
+          message.success(t('core.edit.baseConfigurationImported'))
 
           // 重新加载基建配置选项与当前班次
           await loadInfrastructureOptions()
         } else {
-          message.error(t('edit.couldNotImportBase'))
+          message.error(t('core.edit.couldNotImportBase'))
         }
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`基建配置导入失败: ${errorMsg}`)
-      message.error(t('edit.couldNotImportBase'))
+      message.error(t('core.edit.couldNotImportBase'))
     } finally {
       infrastructureImporting.value = false
     }
@@ -1381,14 +1273,14 @@ const {
   backup: () => ensureMaaBackup('mas'),
   onSaveError: error => {
     logger.error(`提交编辑失败: ${error instanceof Error ? error.message : String(error)}`)
-    if (!userError.value) message.error(t('edit.couldNotSaveUser'))
+    if (!userError.value) message.error(t('core.edit.couldNotSaveUser'))
   },
-  onStopFailure: () => message.error(t('edit.maaSessionStopFailed')),
-  onUnloadBlocked: () => message.warning(t('edit.maaEditorReloadBlocked')),
+  onStopFailure: () => message.error(t('core.edit.maaSessionStopFailed')),
+  onUnloadBlocked: () => message.warning(t('core.edit.maaEditorReloadBlocked')),
 })
 
 const handleMAAConfig = async () => {
-  await startConfiguration(userId)
+  await startConfiguration(userId, 'user')
 }
 
 // 编辑托管设置：MAA 编辑页自己管会话，离开本页的路由守卫会停会话。
@@ -1397,7 +1289,9 @@ const handleScriptConfig = () => {
 }
 
 const handleCancel = async () => {
-  await router.push('/scripts')
+  await router.push(
+    cultivationPage ? { name: 'MAAUserEdit', params: { scriptId, userId } } : '/scripts'
+  )
 }
 
 const handleSaveMAAConfig = () => {
@@ -1439,7 +1333,7 @@ const addStageToOptions = (stageName: string) => {
   // 检查是否已存在
   const exists = stageOptions.value.find((option: any) => option.value === trimmedName)
   if (exists) {
-    message.warning(t('edit.stageP0AlreadyExists', { p0: trimmedName }))
+    message.warning(t('core.edit.stageP0AlreadyExists', { p0: trimmedName }))
     return false
   }
 
@@ -1450,14 +1344,14 @@ const addStageToOptions = (stageName: string) => {
     isCustom: true,
   })
 
-  message.success(t('edit.customStageP0Added', { p0: trimmedName }))
+  message.success(t('core.edit.customStageP0Added', { p0: trimmedName }))
   return true
 }
 
 // 添加主关卡
 const addCustomStage = (stageName: string) => {
   if (!validateStageName(stageName)) {
-    message.error(t('edit.enterValidStageName'))
+    message.error(t('core.edit.enterValidStageName'))
     return
   }
 
@@ -1469,7 +1363,7 @@ const addCustomStage = (stageName: string) => {
 // 添加备选关卡-1
 const addCustomStage1 = (stageName: string) => {
   if (!validateStageName(stageName)) {
-    message.error(t('edit.enterValidStageName'))
+    message.error(t('core.edit.enterValidStageName'))
     return
   }
 
@@ -1481,7 +1375,7 @@ const addCustomStage1 = (stageName: string) => {
 // 添加备选关卡-2
 const addCustomStage2 = (stageName: string) => {
   if (!validateStageName(stageName)) {
-    message.error(t('edit.enterValidStageName'))
+    message.error(t('core.edit.enterValidStageName'))
     return
   }
 
@@ -1493,7 +1387,7 @@ const addCustomStage2 = (stageName: string) => {
 // 添加备选关卡-3
 const addCustomStage3 = (stageName: string) => {
   if (!validateStageName(stageName)) {
-    message.error(t('edit.enterValidStageName'))
+    message.error(t('core.edit.enterValidStageName'))
     return
   }
 
@@ -1575,12 +1469,12 @@ const restoreBackup = async (target: string, time: string, viewOnly = false, for
       if (target === 'mas' && !(await loadUserData())) return false
       return true
     },
-    viewOnly ? (target === 'mas' ? userId : scriptId) : undefined
+    viewOnly ? (target === 'mas' ? userId : scriptId) : undefined,
+    target === 'mas' ? 'user' : target === 'native' ? 'script' : 'unknown'
   )
-  if (restored && response) return response
   // 保留 409 给恢复基座执行损坏配置的二次确认；已恢复但重载/启动失败不能报成功。
-  if (response && response.code !== 200) return response
-  return { code: 400, message: t('edit.configRestoreFailed') }
+  if (response && (restored || response.code !== 200)) return response
+  return { code: 400, message: t('core.edit.configRestoreFailed') }
 }
 
 const openRestoreModal = () => {
@@ -1614,8 +1508,8 @@ const handleRestoreView = (
     const { title, paragraphs } = buildRestoreConfirm(
       t,
       {
-        title: t('edit.configRestoreDetailView'),
-        desc: t('edit.configRestoreDetailConfirm', { script: MAA_DISPLAY_NAME }),
+        title: t('core.edit.configRestoreDetailView'),
+        desc: t('core.edit.configRestoreDetailConfirm', { script: MAA_DISPLAY_NAME }),
       },
       item.base,
       currentMode
@@ -1629,11 +1523,11 @@ const handleRestoreView = (
         )
       ),
       okType: 'danger',
-      okText: t('edit.configRestoreConfirmOk'),
-      cancelText: t('edit.cancel'),
+      okText: t('core.edit.configRestoreConfirmOk'),
+      cancelText: t('core.edit.cancel'),
       onOk: async () => {
         if (configLocked.value) {
-          message.error(t('edit.configLocked'))
+          message.error(t('core.edit.configLocked'))
           resolve(false)
           return
         }
@@ -1641,11 +1535,11 @@ const handleRestoreView = (
         try {
           const resp = await restoreBackup(target, item.time, true)
           if (resp.code !== 200) {
-            throw new Error(resp.message || t('edit.configRestoreFailed'))
+            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
           }
           resolve(true)
         } catch (e) {
-          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
           resolve(false)
         }
       },
@@ -1662,7 +1556,7 @@ const ensureMaaBackup = ensureBackup
 // 初始化加载
 onMounted(async () => {
   if (!scriptId) {
-    message.error(t('edit.missingScriptIdParameter'))
+    message.error(t('core.edit.missingScriptIdParameter'))
     handleCancel()
     return
   }
@@ -1719,10 +1613,10 @@ onMounted(async () => {
             const planOption = stageModeOptions.value.find(option => option.value === newStageMode)
             const planName = planOption ? planOption.label : newStageMode
 
-            message.success(t('edit.switchedPlanModeP0', { p0: planName }))
+            message.success(t('core.edit.switchedPlanModeP0', { p0: planName }))
           } else {
             logger.warn(`计划配置响应不完整: ${JSON.stringify({ response, newStageMode })}`)
-            message.warning(t('edit.couldNotLoadPlan'))
+            message.warning(t('core.edit.couldNotLoadPlan'))
             planModeConfig.value = null
           }
         } catch (error) {
@@ -1734,7 +1628,7 @@ onMounted(async () => {
             name: error instanceof Error ? error.name : error?.constructor?.name,
           }
           logger.error(`加载计划配置失败: ${JSON.stringify(errorInfo)}`)
-          message.error(t('edit.somethingWentWrongLoading'))
+          message.error(t('core.edit.somethingWentWrongLoading'))
           planModeConfig.value = null
         }
       }
@@ -1745,6 +1639,11 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.cultivation-page-loading {
+  display: grid;
+  place-items: center;
+  min-height: 240px;
+}
 .user-edit-container {
   padding: 32px;
   min-height: 100vh;

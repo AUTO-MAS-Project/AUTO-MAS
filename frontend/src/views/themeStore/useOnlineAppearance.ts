@@ -1,3 +1,5 @@
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import { appearanceCategory } from '@/utils/preferenceAnalytics'
 import { computed, ref, shallowRef } from 'vue'
 import type { AppearanceCategory, AppearanceFilter } from '@/types/mascotPack'
 
@@ -18,7 +20,7 @@ export const ONLINE_APPEARANCE_COVER_CACHE_LIMIT = 48
 export const ONLINE_APPEARANCE_COVER_CONCURRENCY = 3
 
 /** 设置页的覆盖确认、失败提示和安装后预览都在 useAppearanceSettings 里，这里只关心结局。 */
-export type OnlineAppearanceInstallOutcome = 'installed' | 'cancelled' | 'failed'
+export type OnlineAppearanceInstallOutcome = 'installed' | 'partial' | 'cancelled' | 'failed'
 
 export type OnlineAppearanceStatus = 'none' | 'installed' | 'outdated'
 
@@ -32,13 +34,13 @@ export interface PreparedOnlineAppearance {
 }
 
 const ERROR_KEYS: Record<OnlineAppearanceErrorCode, string> = {
-  NETWORK: 'themeStore.error.network',
-  NOT_FOUND: 'themeStore.error.notFound',
-  BAD_RESPONSE: 'themeStore.error.badResponse',
-  TOO_LARGE: 'themeStore.error.tooLarge',
-  CHECKSUM_MISMATCH: 'themeStore.error.checksum',
-  EXPIRED: 'themeStore.error.expired',
-  UNSUPPORTED: 'themeStore.error.unsupported',
+  NETWORK: 'core.themeStore.error.network',
+  NOT_FOUND: 'core.themeStore.error.notFound',
+  BAD_RESPONSE: 'core.themeStore.error.badResponse',
+  TOO_LARGE: 'core.themeStore.error.tooLarge',
+  CHECKSUM_MISMATCH: 'core.themeStore.error.checksum',
+  EXPIRED: 'core.themeStore.error.expired',
+  UNSUPPORTED: 'core.themeStore.error.unsupported',
 }
 
 const UNSUPPORTED = { code: 'UNSUPPORTED' } as const
@@ -50,9 +52,9 @@ export function describeOnlineAppearanceError(
   category?: AppearanceCategory
 ): string {
   const code = result?.code
-  if (code === 'INVALID_ANIMATION') return t('setting.basic.appearanceAnimationInvalid')
+  if (code === 'INVALID_ANIMATION') return t('core.setting.basic.appearanceAnimationInvalid')
   if (code === 'INVALID_PACKAGE' && category === 'mascot')
-    return t('setting.basic.mascotImportFailed')
+    return t('core.setting.basic.mascotImportFailed')
   if (code && Object.prototype.hasOwnProperty.call(ERROR_KEYS, code)) {
     return t(ERROR_KEYS[code as OnlineAppearanceErrorCode])
   }
@@ -76,7 +78,7 @@ export function formatAppearanceFileSize(bytes: number): string {
 
 // 时间来自分享站，按本机时区展示
 export function formatOnlineAppearanceTime(value: string): string {
-  return value ? formatBackendDateTime(value) : t('themeStore.unknownTime')
+  return value ? formatBackendDateTime(value) : t('core.themeStore.unknownTime')
 }
 
 export function pickDefaultVersion(
@@ -244,7 +246,7 @@ export function useOnlineAppearance(options: {
         total.value = 0
         listError.value = describeOnlineAppearanceError(
           result ?? UNSUPPORTED,
-          'themeStore.listFailed'
+          'core.themeStore.listFailed'
         )
         logger.warn(`加载在线外观列表失败: ${result?.error ?? result?.code ?? '不支持'}`)
         return
@@ -257,7 +259,7 @@ export function useOnlineAppearance(options: {
       if (revision !== listRevision) return
       items.value = []
       total.value = 0
-      listError.value = t('themeStore.listFailed')
+      listError.value = t('core.themeStore.listFailed')
       logger.error(
         `加载在线外观列表失败: ${error instanceof Error ? error.message : String(error)}`
       )
@@ -303,7 +305,7 @@ export function useOnlineAppearance(options: {
         if (result?.token) discardToken(result.token, item.categoryKey)
         prepareError.value = describeOnlineAppearanceError(
           result ?? UNSUPPORTED,
-          'themeStore.prepareFailed',
+          'core.themeStore.prepareFailed',
           item.categoryKey ?? (options.categoryKey === 'mascot' ? 'mascot' : 'theme')
         )
         logger.warn(
@@ -322,7 +324,7 @@ export function useOnlineAppearance(options: {
       return prepared.value
     } catch (error) {
       if (revision !== prepareRevision) return null
-      prepareError.value = t('themeStore.prepareFailed')
+      prepareError.value = t('core.themeStore.prepareFailed')
       logger.error(
         `下载在线外观失败: ${item.fileKey} v${versionNo}，${error instanceof Error ? error.message : String(error)}`
       )
@@ -361,7 +363,7 @@ export function useOnlineAppearance(options: {
       if (!result?.success) {
         detailError.value = describeOnlineAppearanceError(
           result ?? UNSUPPORTED,
-          'themeStore.detailFailed'
+          'core.themeStore.detailFailed'
         )
         logger.warn(
           `加载在线外观详情失败: ${item.fileKey}，${result?.error ?? result?.code ?? '不支持'}`
@@ -380,7 +382,7 @@ export function useOnlineAppearance(options: {
       )
     } catch (error) {
       if (revision !== detailRevision) return
-      detailError.value = t('themeStore.detailFailed')
+      detailError.value = t('core.themeStore.detailFailed')
       logger.error(
         `加载在线外观详情失败: ${item.fileKey}，${error instanceof Error ? error.message : String(error)}`
       )
@@ -412,11 +414,17 @@ export function useOnlineAppearance(options: {
 
   const install = async (): Promise<OnlineAppearanceInstallOutcome> => {
     if (installing.value || preparing.value) return 'cancelled'
+    const telemetry = beginAnalyticsOperation('appearance_store_install_finished')
+    let category_kind = appearanceCategory(options.categoryKey ?? 'theme')
     installing.value = true
     let outcome: OnlineAppearanceInstallOutcome = 'failed'
     try {
       const ready = await prepareSelected()
       if (!ready) return outcome
+      category_kind = appearanceCategory(
+        ready.categoryKey ??
+          (options.categoryKey === 'all' ? undefined : (options.categoryKey ?? 'theme'))
+      )
       outcome = await (options.categoryKey === 'all'
         ? options.install(ready.token, ready.categoryKey)
         : options.install(ready.token))
@@ -424,6 +432,17 @@ export function useOnlineAppearance(options: {
       if (outcome !== 'cancelled' && prepared.value?.token === ready.token) discardPrepared()
       return outcome
     } finally {
+      telemetry.finish({
+        category_kind,
+        outcome:
+          outcome === 'installed'
+            ? 'success'
+            : outcome === 'partial'
+              ? 'partial'
+              : outcome === 'cancelled'
+                ? 'cancelled'
+                : 'failure',
+      })
       installing.value = false
       // 装好后回到列表并重新拉一次，「已安装 / 有新版本」标记才会跟上。
       if (outcome === 'installed') {

@@ -40,12 +40,17 @@ if __name__ == "__main__" and os.getenv("AUTO_MAS_SUPERVISED") != "1":
     os.chdir(current_dir)
 
 from app.utils import (  # noqa: E402
+    IS_WINDOWS,
     get_logger,
+    is_admin,
     is_supervised,
     resource_path,
     sanitize_log_message,
 )
-from app.utils.platform import IS_WINDOWS, is_admin  # noqa: E402
+from app.utils import environment as _utils_environment  # noqa: E402
+
+is_development_environment = _utils_environment.is_development_environment
+get_application_environment = _utils_environment.get_application_environment
 
 logger = get_logger("主程序")
 
@@ -144,20 +149,6 @@ def restart_as_admin():
             sys.exit(result)
 
 
-def is_development_environment() -> bool:
-    """识别开发环境：前端传入的环境变量，或仓库根目录的 .env 标记文件。
-
-    .env 不纳入版本库，模板见 .env.example；更新器也不会把它复制到
-    用户安装目录，因此用户直接启动后端时仍按生产环境上报。
-    """
-
-    raw = str(os.getenv("AUTO_MAS_ENV", "")).strip().lower()
-    if raw in {"dev", "development"}:
-        return True
-
-    return (current_dir / ".env").is_file()
-
-
 def is_hosted_launch() -> bool:
     """识别由前端拉起的后端进程，此时提权由前端负责，无需自行提权。"""
 
@@ -195,7 +186,7 @@ def resolve_http_port(development_environment: bool) -> int:
     受 AUTO-MAS-Runtime 监督时只认监督器注入的 AUTO_MAS_SUPERVISED_PORT：
     监督器按实例类型自行选定端口（managed 缺省 36163、development 缺省 36164）
     并据此做健康检查与关闭请求。后端若钉死 36163，受监督的开发版就会撞上同机
-    正在运行的正式版。该变量缺失或非法时回退 36163 并记 warning；.env、
+    正在运行的正式版。该变量缺失或非法时回退 36163 并记 warning；
     AUTO_MAS_HTTP_PORT 与开发环境判据在受监督时一律忽略，优先级低于注入值。
 
     Args:
@@ -249,9 +240,12 @@ def _resolve_supervised_port() -> int:
 
 @logger.catch
 def main():
-    development_environment = is_development_environment()
-    if development_environment:
-        os.environ["AUTO_MAS_ENV"] = "development"
+    raw_environment = os.getenv("AUTO_MAS_ENV", "").strip().lower()
+    if raw_environment not in {"", "dev", "development", "production"}:
+        logger.warning("AUTO_MAS_ENV 取值无效，按开发环境启动")
+    os.environ["AUTO_MAS_ENV"] = _utils_environment.get_application_environment()
+    development_environment = _utils_environment.is_development_environment()
+    logger.info(f"应用运行环境: {_utils_environment.get_application_environment()}")
 
     supervised = is_supervised()
     admin = is_admin()
@@ -268,14 +262,41 @@ def main():
         )
 
     from app.core import Config
-    from app.core.restore_bindings import resolve_restore_pools
+    from app.core.script_config_bindings import build_builtin_script_capabilities
     from app.services.telemetry import (
         init_sentry,
         is_telemetry_enabled,
         resolve_sentry_dist,
     )
+    from app.task.BAAH.api_service import BAAHConfigService
+    from app.task.MaaEnd.api_service import MaaEndConfigService
+    from app.task.MaaFW.tools.embedded.game_resolution import (
+        read_unity_display_type,
+        read_unity_resolution,
+    )
+    from app.task.ZzzOd.config_context import ZzzOdContext
+    from app.task.ZzzOd.recovery import ZzzOdRecovery
 
-    Config.set_restore_pool_resolver(resolve_restore_pools)
+    baah_config_service = BAAHConfigService(
+        get_script=lambda script_id: Config.ScriptConfig[script_id],
+    )
+    maaend_config_service = MaaEndConfigService(
+        scripts=Config.ScriptConfig,
+        read_resolution=read_unity_resolution,
+        read_display_type=read_unity_display_type,
+    )
+    script_capabilities = build_builtin_script_capabilities(
+        maaend=maaend_config_service,
+        zzzod=ZzzOdRecovery(
+            ZzzOdContext(
+                Config.ScriptConfig, flush=Config.flush, add_user=Config.add_user
+            )
+        ),
+    )
+
+    for entry_type, handler in script_capabilities.config_handlers:
+        Config.bind_script_config_handler(entry_type, handler)
+    Config.set_restore_pool_resolver(script_capabilities.resolve_restore_pools)
 
     # 开发环境不上报遥测数据
     init_sentry(
@@ -297,13 +318,17 @@ def main():
         # 预热共享 SSL 上下文：truststore 全量加载证书库较慢，放线程执行避免首个请求卡死
         import ssl
 
-        from app.core import Config, MainTimer, TaskManager
+        from app.core import Config, EmulatorManager, MainTimer, TaskManager
+        from app.services import System
+
+        TaskManager.bind_manager_factories(script_capabilities.manager_factories)
+        System.avd_instance_closer = EmulatorManager.close_running_avd_instances
 
         asyncio.create_task(asyncio.to_thread(ssl.create_default_context))
 
         await Config.init_config()
         from app.core.history import history_store
-        from app.utils.constants import UTC4
+        from app.utils import UTC4
 
         # 升级与历史存储是任务启动的前置条件，失败不进入后台可选初始化。
         await history_store.initialize(
@@ -318,17 +343,26 @@ def main():
 
         await ObsReplay.cleanup_temporary()
 
+        from functools import partial
+
         from app.api.ws_command import execute_ws_command
         from app.config import config_manager
         from app.core.game_calendar import GameCalendar
+        from app.core.notification_commands import execute_notification_command
         from app.core.notify_channels import create_notification_service
         from app.runtime_tasks import RuntimeTasks
 
+        RuntimeTasks.spawn(
+            maaend_config_service.preload_resources(), name="maaend-resource-preload"
+        )
         notifications = create_notification_service(
             config=Config,
             transactions=config_manager,
             runtime=RuntimeTasks,
             command_executor=execute_ws_command,
+            notification_command_executor=partial(
+                execute_notification_command, config=Config, task_manager=TaskManager
+            ),
         )
         app.state.notifications = notifications
         TaskManager.bind_notifications(notifications)
@@ -386,13 +420,13 @@ def main():
                 await DesktopGuard.start()
 
             async def init_avd_update() -> None:
-                from app.utils.emulator2.avd import updater as avd_updater
+                from app.core import avd_update
 
                 # 收拾上次没做完的魔改 AVD 换上（几次改名，很快）
-                await avd_updater.startup()
+                await avd_update.startup()
 
             async def init_stage_info() -> None:
-                from app.task.MAA.tools.stage_service import maa_stage_service
+                from app.core.maa_stage import maa_stage_service
 
                 # 启动不等待远端检查：缓存过期时后台拉取，页面打开时再等结果
                 await maa_stage_service.get_stage(wait_stale=False)
@@ -407,13 +441,13 @@ def main():
                     # 各项回收一起放到后台，不挡主定时器（队列定时按分钟精确匹配，挡住就
                     # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
                     try:
-                        await Config.migrate_maafw_embedded_copies_to_payloads()
-                        await Config.clean_maafw_agent_venvs()
-                        await Config.clean_maafw_embedded_copies()
-                        await Config.clean_maafw_runtime_blobs()
-                        await Config.clean_maafw_update_cache()
+                        await Config.maafw_maintenance.migrate_embedded_copies_to_payloads()
+                        await Config.maafw_maintenance.clean_agent_venvs()
+                        await Config.maafw_maintenance.clean_embedded_copies()
+                        await Config.maafw_maintenance.clean_runtime_blobs()
+                        await Config.maafw_maintenance.clean_update_cache()
                         # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
-                        await Config.clean_maafw_runtime_pool()
+                        await Config.maafw_maintenance.clean_runtime_pool()
                     except asyncio.CancelledError:
                         raise
                     except Exception:
@@ -479,9 +513,10 @@ def main():
         async def shutdown_services() -> None:
             """完整的非 WS teardown，供 /close 与 lifespan 收尾共用（幂等）。"""
 
+            from app.core import Updater
             from app.core.ws import Dispatcher, MainConnection
             from app.runtime_tasks import RuntimeTasks
-            from app.services import Matomo, System, Updater
+            from app.services import System
 
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
             if background_task is not None and not background_task.done():
@@ -520,7 +555,10 @@ def main():
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
                 await System.cancel_power_task()
-            await Updater.cancel_download(notify=False)
+            # 取消时若无法确认 FluxDown 任务已停止会抛 FluxdownCancelUnconfirmed，
+            # 关停流程不因此中断后续清理
+            with suppress(RuntimeError):
+                await Updater.cancel_download(notify=False)
             from app.services.obs_replay import ObsReplay
 
             await ObsReplay.stop()
@@ -530,7 +568,6 @@ def main():
             from app.config import config_manager
 
             await config_manager.flush()
-            await Matomo.close()
             logger.info("AUTO-MAS 后端服务清理完成")
 
         from app.core.lifecycle import ShutdownCoordinator
@@ -551,6 +588,7 @@ def main():
         emulator2_router,
         emulator_router,
         history_router,
+        i18n_router,
         info_router,
         ocr_router,
         openclaw_qq_router,
@@ -571,6 +609,8 @@ def main():
         version="1.0.0",
         lifespan=lifespan,
     )
+    app.state.baah_config_service = baah_config_service
+    app.state.maaend_config_service = maaend_config_service
 
     app.add_middleware(
         CORSMiddleware,
@@ -589,6 +629,7 @@ def main():
     app.include_router(queue_router)
     app.include_router(dispatch_router)
     app.include_router(history_router)
+    app.include_router(i18n_router)
     app.include_router(tools_router)
     app.include_router(setting_router)
     app.include_router(share_router)

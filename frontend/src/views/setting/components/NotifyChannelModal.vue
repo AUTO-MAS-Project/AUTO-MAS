@@ -40,8 +40,8 @@ const icon = computed(() => channelIcon(props.channel?.icon))
 const iconColor = computed(() => channelIconColor(props.channel?.icon))
 const groupTag = computed(() =>
   props.channel && normalizeGroup(props.channel.group) === 'custom'
-    ? t('setting.notify.customGroup')
-    : t('setting.notify.channelsGroup')
+    ? t('core.setting.notify.customGroup')
+    : t('core.setting.notify.channelsGroup')
 )
 const fields = computed(() => (props.channel ? scopeFields(props.channel, 'global') : []))
 const enableGroup = computed(() => props.channel?.enableField?.[0] ?? null)
@@ -54,7 +54,7 @@ const isClaw = computed(() => (props.channel?.customBlock ?? '').startsWith('cla
 const clawConnected = computed(() => !!props.clawBinding?.status?.connected)
 const switchChecked = computed(() => enabled.value && (!isClaw.value || clawConnected.value))
 const stateText = computed(() =>
-  t(switchChecked.value ? 'setting.notify.stateEnabled' : 'setting.notify.stateDisabled')
+  t(switchChecked.value ? 'core.setting.notify.stateEnabled' : 'core.setting.notify.stateDisabled')
 )
 // 未绑定时开关不可点（沿用 ClawBinding 原逻辑：未连接 / 查询中 / 解绑中都禁用）
 const switchDisabled = computed(() => {
@@ -119,12 +119,12 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
             class="doc-link"
             @click="handleExternalLink"
           >
-            {{ t('common.doc') }}
+            {{ t('core.common.doc') }}
           </a>
           <button
             type="button"
             class="close"
-            :aria-label="t('common.close')"
+            :aria-label="t('core.common.close')"
             @click="emit('close')"
           >
             ✕
@@ -145,9 +145,9 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
               @change="setEnabled"
             />
           </div>
-          <div class="state-hint">{{ t('setting.notify.instantHint') }}</div>
+          <div class="state-hint">{{ t('core.setting.notify.instantHint') }}</div>
         </div>
-        <div v-else class="body-hint">{{ t('setting.notify.instantHint') }}</div>
+        <div v-else class="body-hint">{{ t('core.setting.notify.instantHint') }}</div>
 
         <ClawBinding
           v-if="isClaw && clawBinding"
@@ -174,6 +174,8 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
     </div>
   </a-modal>
 </template>
+
+<style scoped src="./notifyChannel.css"></style>
 
 <style scoped>
 .modal-inner {
@@ -209,15 +211,6 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
   font-size: 16px;
   font-weight: 600;
   color: var(--ant-color-text);
-}
-
-.tag {
-  font-size: 12px;
-  line-height: 18px;
-  padding: 0 7px;
-  border-radius: 4px;
-  background: var(--ant-color-fill-tertiary);
-  color: var(--ant-color-text-secondary);
 }
 
 .doc-link {

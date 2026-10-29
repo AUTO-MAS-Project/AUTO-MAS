@@ -1,3 +1,5 @@
+import { analyticsCountBucket } from '@/utils/analytics'
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 import {
   type HistoryBucket,
   type HistoryDetail,
@@ -111,17 +113,33 @@ export function useHistoryLogic() {
   // 搜索历史记录
   const handleSearch = async () => {
     if (!searchForm.startDate || !searchForm.endDate) {
-      message.error(t('history.toast.needDateRange'))
+      message.error(t('core.history.toast.needDateRange'))
       return
     }
 
     try {
       searchLoading.value = true
-      const response = await Service.searchHistoryApiHistorySearchPost({
-        mode: searchForm.mode,
-        start_date: searchForm.startDate,
-        end_date: searchForm.endDate,
-      })
+      const response = await observeFeature(
+        'history_query_finished',
+        { filter_kind: currentPreset.value === 'week' ? 'default' : 'filtered', count_bucket: '0' },
+        () =>
+          Service.searchHistoryApiHistorySearchPost({
+            mode: searchForm.mode,
+            start_date: searchForm.startDate,
+            end_date: searchForm.endDate,
+          }),
+        result => ({
+          outcome: apiOutcome(result),
+          count_bucket: analyticsCountBucket(
+            Object.values(result.data ?? {}).reduce(
+              (sum, users) =>
+                sum +
+                Object.values(users).reduce((count, user) => count + (user.index?.length ?? 0), 0),
+              0
+            )
+          ),
+        })
+      )
 
       if (!isMounted) return
 
@@ -149,9 +167,9 @@ export function useHistoryLogic() {
         void playSound('history_query')
 
         if (!isMounted) return
-        message.success(t('history.toast.searchDone'))
+        message.success(t('core.history.toast.searchDone'))
       } else {
-        message.error(response.message || t('history.toast.searchFailed'))
+        message.error(response.message || t('core.history.toast.searchFailed'))
       }
     } catch (error) {
       if (!isMounted) return
@@ -162,7 +180,7 @@ export function useHistoryLogic() {
             ? error.message
             : String(error)
       logger.error(`搜索历史记录失败: ${errorMsg}`)
-      message.error(t('history.toast.searchHistoryFailed'))
+      message.error(t('core.history.toast.searchHistoryFailed'))
     } finally {
       if (isMounted) searchLoading.value = false
     }
@@ -225,7 +243,7 @@ export function useHistoryLogic() {
       if (response.code === 200) {
         currentDetail.value = response.data
       } else {
-        message.error(response.message || t('history.toast.fetchLogFailed'))
+        message.error(response.message || t('core.history.toast.fetchLogFailed'))
         currentDetail.value = null
       }
     } catch (error) {
@@ -237,7 +255,7 @@ export function useHistoryLogic() {
             ? error.message
             : String(error)
       logger.error(`获取历史记录详情失败: ${errorMsg}`)
-      message.error(t('history.toast.fetchDetailFailed'))
+      message.error(t('core.history.toast.fetchDetailFailed'))
       currentDetail.value = null
     } finally {
       if (isMounted && currentRecordId.value === recordId) detailLoading.value = false

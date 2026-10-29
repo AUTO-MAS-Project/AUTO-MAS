@@ -1,0 +1,1191 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 ClozyA
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+
+import os
+import re
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+UTC4 = timezone(timedelta(hours=4))
+"""东4区时区对象"""
+
+UTC8 = timezone(timedelta(hours=8))
+"""东8区时区对象"""
+
+TYPE_BOOK = {
+    "MaaConfig": "MAA",
+    "SrcConfig": "SRC",
+    "MaaEndConfig": "MaaEnd",
+    "GeneralConfig": "通用",
+    "OkwwConfig": "ok-ww",
+    "OkNteConfig": "OK-NTE",
+    "M9AConfig": "M9A",
+    "M9AUserConfig": "M9A",
+    "MaaFWConfig": "MFW",
+    "HSRConfig": "HSR",
+    "BetterGIConfig": "BetterGI",
+    "ZzzOdConfig": "ZZZ-OD",
+    "BAAHConfig": "BAAH",
+    "WhimboxConfig": "奇想盒",
+    "MSSConfig": "MSS",
+}
+"""配置类型映射表"""
+
+PLAN_CONSUMER_VALUES = ("maa", "maaend", "baah", "mss")
+"""计划表消费方列表；PLAN_BOOK 按下标引用此项，往中间插入会把已有类型指到别的
+消费方，所以新消费方只能追加到末尾（baah 早于 mss 加入，因此排在它前面）"""
+
+MSS_TRIBULATION_STAGES = (
+    "基础试炼",
+    "晋升试炼-怪诞舞者",
+    "晋升试炼-终宵萤辉",
+    "晋升试炼-热嘟噜噗男爵",
+    "技巧试炼-节奏游戏卡带",
+    "技巧试炼-射击游戏卡带",
+    "技巧试炼-格斗游戏卡带",
+    "纹章试炼-好市民点数",
+    "纹章试炼-协会贡献证",
+    "纹章试炼-恩赐消费券",
+)
+"""MSS 悬赏试炼关卡：与外壳 interface 的 `悬赏试炼关卡` 选项逐一对应（v1.4.4 共 10 项）
+
+**上游加关卡或改名时必须同步这里**，否则计划表里存的旧关卡会被折算回默认值。
+"""
+
+MSS_DEFAULT_TRIBULATION_STAGE = MSS_TRIBULATION_STAGES[0]
+"""MSS 悬赏试炼的默认关卡"""
+
+MAAEND_RUN_MOOD_BOOK = {
+    "Delivery": "送货",
+    "Routine": "日常",
+    "AutoCollect": "自动采集",
+}
+"""MaaEnd 自动代理运行模式映射表"""
+
+MAAEND_DELIVERY_TASK = "SeizeDeliveryJobs"
+"""MaaEnd v2 送货阶段使用的任务名称"""
+
+MAAEND_AUTO_COLLECT_TASK = "AutoCollect"
+"""MaaEnd 自动采集阶段使用的任务名称"""
+
+MAAEND_DELIVERY_COMMISSION_SOURCES = ("Unlimited", "WulingCity", "TestArea")
+"""MaaEnd 抢委托送货的委托接收点选项"""
+
+MAAEND_AUTO_COLLECT_MODES = ("Distributed", "Concentrated")
+"""MaaEnd 自动采集的三日周期模式"""
+
+MAA_STAGE_KEY = [
+    "MedicineNumb",
+    "SeriesNumb",
+    "Stage",
+    "Stage_1",
+    "Stage_2",
+    "Stage_3",
+]
+"""MAA关卡键表"""
+
+ARKNIGHTS_GAME_DAY_TZ = {
+    "Official": UTC4,
+    "Bilibili": UTC4,
+    "txwy": UTC4,
+    "YoStarEN": timezone(timedelta(hours=-11)),
+    "YoStarJP": timezone(timedelta(hours=5)),
+    "YoStarKR": timezone(timedelta(hours=5)),
+}
+"""明日方舟各区服的游戏日时区：服务器当地 04:00 换日，即服务器时区减 4 小时
+
+来源 MAA `src/MaaWpfGui/Extensions/DateTimeExtension.cs`：`_clientTypeTimezone`
+中 Official / Bilibili / txwy 为 UTC+8，YoStarEN 为 UTC-7（固定偏移，不随夏令时），
+YoStarJP / YoStarKR 为 UTC+9；`YjDayStartHour = 4`。
+前端 `frontend/src/views/MAAUserEdit/periodMarkers.ts` 的 ARKNIGHTS_GAME_DAY_OFFSET
+是同一张表，改动时两边同步。
+"""
+
+
+def get_game_day_tz(server: str | None) -> timezone:
+    """按明日方舟区服取游戏日时区，未知或空区服回落到东4区。"""
+
+    return ARKNIGHTS_GAME_DAY_TZ.get(server or "", UTC4)
+
+
+def game_now(server: str | None) -> datetime:
+    """按明日方舟区服的游戏日时区取当前时间，其日期即当前游戏日。"""
+
+    return datetime.now(tz=get_game_day_tz(server))
+
+
+MAAEND_SANITY_TASK_LABELS = {
+    "OperatorProgression": "干员养成",
+    "WeaponProgression": "武器养成",
+    "CrisisDrills": "危境预演",
+    "Essence": "基质刷取",
+}
+"""MaaEnd理智任务类型展示文案"""
+
+MAAEND_SANITY_TASK_DETAIL_LABELS = {
+    "OperatorEXP": "干员经验",
+    "Promotions": "干员进阶",
+    "T-Creds": "钱币收集",
+    "SkillUp": "技能提升",
+    "WeaponEXP": "武器经验",
+    "WeaponTune": "武器进阶",
+    "AdvancedProgression1": "高阶培养 I - D96钢样品四",
+    "AdvancedProgression2": "高阶培养 II - 超距辉映管",
+    "AdvancedProgression3": "高阶培养 III - 快子遴捡晶格",
+    "AdvancedProgression4": "高阶培养 IV - 象限拟合液",
+    "AdvancedProgression5": "高阶培养 V - 三相纳米片",
+}
+"""MaaEnd理智任务详细选项展示文案"""
+
+MAAEND_SANITY_TASK_TYPES = (
+    "OperatorProgression",
+    "WeaponProgression",
+    "CrisisDrills",
+    "Essence",
+)
+"""MaaEnd理智任务类型列表"""
+
+MAAEND_AUTO_ESSENCE_MENUS = ("Random", "Location", "Target")
+"""MaaEnd 基质刷取模式（随机、地点、目标）"""
+
+MAAEND_PROTOCOL_SPACE_TASK_OPTIONS = {
+    "OperatorProgression": ("OperatorEXP", "Promotions", "T-Creds", "SkillUp"),
+    "WeaponProgression": ("WeaponEXP", "WeaponTune"),
+    "CrisisDrills": (
+        "AdvancedProgression1",
+        "AdvancedProgression2",
+        "AdvancedProgression3",
+        "AdvancedProgression4",
+        "AdvancedProgression5",
+    ),
+}
+"""MaaEnd协议空间任务选项列表"""
+
+MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
+"""MAAEnd任务包含AB关的关卡列表"""
+
+MAAEND_TASK_GROUPS = {
+    "Sanity": {
+        "label": "理智作战",
+        "tasks": (
+            ("Sanity", "理智任务"),
+            ("AutoUseSpMedication", "应急理智加强剂"),
+        ),
+    },
+    "Infrastructure": {
+        "label": "基建任务",
+        "tasks": (
+            ("DijiangRewards", "基建任务"),
+            ("DeliveryJobs", "转交委托"),
+            ("SellProduct", "售卖产品"),
+            ("AutoStockpile", "自动囤货"),
+            ("AutoStockStaple", "购买稳定物资"),
+        ),
+    },
+    "Credit": {
+        "label": "信用收支",
+        "tasks": (
+            ("VisitFriends", "拜访好友"),
+            ("CreditShoppingN2", "信用点购物"),
+        ),
+    },
+    "Frontend": {
+        "label": "前台任务",
+        "tasks": (
+            ("AutoEcoFarm", "生态农场"),
+            ("AutoSell", "售卖弹性物资"),
+            ("EnvironmentMonitoring", "环境监测"),
+            ("TrialOfSwordmancy", "选剑演武"),
+        ),
+    },
+    "Rewards": {
+        "label": "奖励领取",
+        "tasks": (
+            ("DailyRewards", "日常奖励领取"),
+            ("ResourceRecycleStation", "资源回收站"),
+        ),
+    },
+    "Statistics": {
+        "label": "数据统计",
+        "tasks": (("PullCountCalculator", "抽数计算"),),
+    },
+}
+"""MaaEnd任务分组"""
+
+MAAEND_TASKS = tuple(
+    task_name
+    for group in MAAEND_TASK_GROUPS.values()
+    for task_name, _ in group["tasks"]
+)
+"""MaaEnd快速控制任务列表（不含独立送货和自动采集阶段）"""
+
+MAAEND_SANITY_TASK_DEFAULTS = {
+    "SanityTaskType": "OperatorProgression",
+    "OperatorProgression": "OperatorEXP",
+    "WeaponProgression": "WeaponEXP",
+    "CrisisDrills": "AdvancedProgression1",
+    "RewardsSetOption": "RewardsSetA",
+    "AutoEssenceSpecifiedLocation": "",
+    # Location 保持原有“指定地点”语义；Target 由用户显式切换。
+    "AutoEssenceMenu": "Location",
+    "AutoEssenceTargetWeapons": [],
+}
+"""MaaEnd理智任务字段默认值"""
+
+# 固定采用 MaaEnd 2.36.0-beta.1 的 SupplyPlanLimits 默认值。
+MAAEND_INVENTORY_TARGET_DEFAULTS = {
+    "SupplyPlanLimit_T_CREDS": "3580000",
+    "SupplyPlanLimit_PROTOHEDRON": "1100",
+    "SupplyPlanLimit_PROTOPRISM": "920",
+    "SupplyPlanLimit_COGNITIVE_CARRIER_EXP": "2100000",
+    "SupplyPlanLimit_COMBAT_RECORD_EXP": "1500000",
+    "SupplyPlanLimit_PROTOSET": "120",
+    "SupplyPlanLimit_PROTODISK": "65",
+    "SupplyPlanLimit_WEAPON_EXP": "5000000",
+    "SupplyPlanLimit_HEAVY_CAST_DIE": "100",
+    "SupplyPlanLimit_CAST_DIE": "45",
+    "SupplyPlanLimit_WARP_PLASMA_COATED_SLIDE": "260",
+    "SupplyPlanLimit_TRIPHASIC_NANOFLAKE": "260",
+    "SupplyPlanLimit_QUADRANT_FITTING_FLUID": "260",
+    "SupplyPlanLimit_TACHYON_SCREENING_LATTICE": "260",
+    "SupplyPlanLimit_D96_STEEL_SAMPLE_4": "260",
+    "SupplyPlanLimit_METADIASTIMA_PHOTOEMISSION_TUBE": "260",
+}
+
+MAAEND_SANITY_TASK_FIELDS = (
+    "SanityTaskType",
+    "OperatorProgression",
+    "WeaponProgression",
+    "CrisisDrills",
+    "RewardsSetOption",
+    "AutoEssenceSpecifiedLocation",
+    "AutoEssenceMenu",
+    "AutoEssenceTargetWeapons",
+)
+"""MaaEnd理智任务字段列表"""
+
+ENDFIELD_SERVER_PRESETS: dict[tuple[str, str, str], dict[str, str]] = {
+    ("6LL0KJuqHBVz33WK", "1", "1"): {
+        "label": "官服",
+        "api_url": "https://launcher.hypergryph.com/api/proxy/batch_proxy",
+        "appcode": "6LL0KJuqHBVz33WK",
+        "launcher_appcode": "abYeZZ16BPluCFyT",
+        "channel": "1",
+        "sub_channel": "1",
+        "seq": "5",
+    },
+    ("6LL0KJuqHBVz33WK", "2", "2"): {
+        "label": "B服",
+        "api_url": "https://launcher.hypergryph.com/api/proxy/batch_proxy",
+        "appcode": "6LL0KJuqHBVz33WK",
+        "launcher_appcode": "abYeZZ16BPluCFyT",
+        "channel": "2",
+        "sub_channel": "2",
+        "seq": "5",
+    },
+    ("YDUTE5gscDZ229CW", "6", "6"): {
+        "label": "国际服",
+        "api_url": "https://launcher.gryphline.com/api/proxy/batch_proxy",
+        "appcode": "YDUTE5gscDZ229CW",
+        "launcher_appcode": "YDUTE5gscDZ229CW",
+        "channel": "6",
+        "sub_channel": "6",
+        "seq": "3",
+    },
+    ("YDUTE5gscDZ229CW", "6", "802"): {
+        "label": "国际服（Google Play）",
+        "api_url": "https://launcher.gryphline.com/api/proxy/batch_proxy",
+        "appcode": "YDUTE5gscDZ229CW",
+        "launcher_appcode": "YDUTE5gscDZ229CW",
+        "channel": "6",
+        "sub_channel": "802",
+        "seq": "3",
+    },
+}
+"""终末地 PC 客户端的四套服务器参数，按渠道区分。
+
+键是客户端 `config.ini` 里登记的 `(appcode, channel, sub_channel)`, 用来选出官服、B服、国际服与国际服
+
+MAS 没有选服入口，只按登记值匹配这四套；匹配不到就不碰客户端，绝不拿官服参数去顶。
+
+`channel` / `sub_channel` / `seq` / `version` 在请求里必须是 JSON 字符串：给成数字会被判400，版本串带首尾空格会被判 500。
+"""
+
+EMULATOR_PATH_BOOK = {
+    "mumu": {
+        "name": "MuMu模拟器",
+        "executables": ["MuMuManager.exe", "MuMuPlayer.exe"],
+        # DisplayName 子串匹配；避免裸 "MuMu" 以防误匹配 MuMuPlugin 等。
+        "registry_display_keywords": [
+            "MuMu Player",
+            "MuMuPlayer",
+            "Netease MuMu",
+            "MuMu模拟器",
+            "YXArkNights",
+            "YXReverse1999",
+        ],
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ],
+    },
+    "ldplayer": {
+        "name": "雷电模拟器",
+        "executables": ["ldconsole.exe", "LDPlayer.exe", "dnplayer.exe"],
+        # 关键词用完整产品名/英文，避免单字「雷电」误匹配。
+        "registry_display_keywords": [
+            "LDPlayer",
+            "雷电模拟器",
+            "leidian",
+            "XuanZhi LDPlayer",
+        ],
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ],
+    },
+    "nox": {
+        "name": "夜神模拟器",
+        # executables[0] 为多开管理器；卸载项常见旁路为 Nox.exe（同 bin 目录）
+        "executables": ["MultiPlayerManager.exe", "Nox.exe", "NoxVMHandle.exe"],
+        "registry_display_keywords": [
+            "NoxPlayer",
+            "Nox APP Player",
+            "BigNox",
+        ],
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ],
+    },
+    "memu": {
+        "name": "逍遥模拟器",
+        "executables": ["MEmuConsole.exe", "MEmu.exe", "MemuManager.exe"],
+        "registry_display_keywords": [
+            "MEmu",
+            "Microvirt",
+            "逍遥",
+            "逍遥模拟器",
+        ],
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ],
+    },
+    "bluestacks": {
+        "name": "BlueStacks",
+        # executables[0] 为多开管理器；卸载项/快捷方式常见旁路为 HD-Player.exe
+        "executables": [
+            "HD-MultiInstanceManager.exe",
+            "HD-Player.exe",
+            "BlueStacks.exe",
+        ],
+        "registry_display_keywords": [
+            "BlueStacks",
+            "BlueStacks_nxt",
+            "BlueStacks X",
+        ],
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ],
+    },
+}
+"""模拟器文件常规路径信息"""
+
+RESOURCE_STAGE_INFO = [
+    {"value": "-", "text": "禁用", "days": [1, 2, 3, 4, 5, 6, 7]},
+    {"value": "*", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
+    {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
+    {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
+    {"value": "12-17-HARD", "text": "12-17-HARD", "days": [1, 2, 3, 4, 5, 6, 7]},
+    {"value": "LS-6", "text": "经验-6/5", "days": [1, 2, 3, 4, 5, 6, 7]},
+    {"value": "CE-6", "text": "龙门币-6/5", "days": [2, 4, 6, 7]},
+    {"value": "AP-5", "text": "红票-5", "days": [1, 4, 6, 7]},
+    {"value": "CA-5", "text": "技能-5", "days": [2, 3, 5, 7]},
+    {"value": "SK-5", "text": "碳-5", "days": [1, 3, 5, 6]},
+    {"value": "PR-A-1", "text": "奶/盾芯片", "days": [1, 4, 5, 7]},
+    {"value": "PR-A-2", "text": "奶/盾芯片组", "days": [1, 4, 5, 7]},
+    {"value": "PR-B-1", "text": "术/狙芯片", "days": [1, 2, 5, 6]},
+    {"value": "PR-B-2", "text": "术/狙芯片组", "days": [1, 2, 5, 6]},
+    {"value": "PR-C-1", "text": "先/辅芯片", "days": [3, 4, 6, 7]},
+    {"value": "PR-C-2", "text": "先/辅芯片组", "days": [3, 4, 6, 7]},
+    {"value": "PR-D-1", "text": "近/特芯片", "days": [2, 3, 6, 7]},
+    {"value": "PR-D-2", "text": "近/特芯片组", "days": [2, 3, 6, 7]},
+]
+"""常规资源关信息"""
+
+
+MATERIALS_MAP = {
+    "3141": "源石碎片",
+    "3003": "赤金",
+    "4006": "采购凭证",
+    "3301": "技巧概要·卷1",
+    "3302": "技巧概要·卷2",
+    "3303": "技巧概要·卷3",
+    "30051": "双酮",
+    "30052": "酮凝集",
+    "30053": "酮凝集组",
+    "30054": "酮阵列",
+    "30041": "异铁碎片",
+    "30042": "异铁",
+    "30043": "异铁组",
+    "30044": "异铁块",
+    "30021": "代糖",
+    "30022": "糖",
+    "30023": "糖组",
+    "30024": "糖聚块",
+    "30031": "酯原料",
+    "30032": "聚酸酯",
+    "30033": "聚酸酯组",
+    "30034": "聚酸酯块",
+    "30061": "破损装置",
+    "30062": "装置",
+    "30063": "全新装置",
+    "30064": "改量装置",
+    "30011": "源岩",
+    "30012": "固源岩",
+    "30013": "固源岩组",
+    "30014": "提纯源岩",
+    "30103": "RMA70-12",
+    "30104": "RMA70-24",
+    "30093": "研磨石",
+    "30094": "五水研磨石",
+    "30083": "轻锰矿",
+    "30084": "三水锰矿",
+    "30073": "扭转醇",
+    "30074": "白马醇",
+    "31013": "凝胶",
+    "31014": "聚合凝胶",
+    "31023": "炽合金",
+    "31024": "炽合金块",
+    "31033": "晶体元件",
+    "31034": "晶体电路",
+    "31043": "半自然溶剂",
+    "31044": "精炼溶剂",
+    "31053": "化合切削液",
+    "31054": "切削原液",
+    "31063": "转质盐组",
+    "31064": "转质盐聚块",
+    "31073": "褐素纤维",
+    "31074": "固化纤维板",
+    "31083": "环烃聚质",
+    "31084": "环烃预制体",
+    "31093": "类凝结核",
+    "31094": "手性屈光体",
+    "31103": "液化高能气体",
+    "31104": "液化醚吸聚体",
+    "31113": "电极单元",
+    "31114": "聚能动力单元",
+    "30115": "聚合剂",
+    "30125": "双极纳米片",
+    "30135": "D32钢",
+    "30145": "晶体电子单元",
+    "30155": "烧结核凝晶",
+    "30165": "重相位对映体",
+    "3105": "龙骨",
+    "3401": "家具零件",
+    "3131": "基础加固建材",
+    "3132": "进阶加固建材",
+    "3133": "高级加固建材",
+    "3112": "碳",
+    "3113": "碳素",
+    "3114": "碳素组",
+    "32001": "芯片助剂",
+    "3213": "先锋双芯片",
+    "3223": "近卫双芯片",
+    "3233": "重装双芯片",
+    "3243": "狙击双芯片",
+    "3253": "术师双芯片",
+    "3263": "医疗双芯片",
+    "3273": "辅助双芯片",
+    "3283": "特种双芯片",
+    "3212": "先锋芯片组",
+    "3222": "近卫芯片组",
+    "3232": "重装芯片组",
+    "3242": "狙击芯片组",
+    "3252": "术师芯片组",
+    "3262": "医疗芯片组",
+    "3272": "辅助芯片组",
+    "3282": "特种芯片组",
+    "3211": "先锋芯片",
+    "3221": "近卫芯片",
+    "3231": "重装芯片",
+    "3241": "狙击芯片",
+    "3251": "术师芯片",
+    "3261": "医疗芯片",
+    "3271": "辅助芯片",
+    "3281": "特种芯片",
+    "PR-A": "医疗/重装芯片",
+    "PR-B": "术师/狙击芯片",
+    "PR-C": "先锋/辅助芯片",
+    "PR-D": "近卫/特种芯片",
+}
+"""掉落物索引表"""
+
+STARRAIL_PACKAGE_NAME = {
+    "CN-Official": "com.miHoYo.hkrpg",
+    "CN-Bilibili": "com.miHoYo.hkrpg.bilibili",
+    "VN-Official": "com.HoYoverse.hkrpgvn",
+    "OVERSEA-America": "com.HoYoverse.hkrpgoversea",
+    "OVERSEA-Asia": "com.HoYoverse.hkrpgoversea",
+    "OVERSEA-Europe": "com.HoYoverse.hkrpgoversea",
+    "OVERSEA-TWHKMO": "com.HoYoverse.hkrpgoversea",
+}
+"""崩坏·星穹铁道包名映射表"""
+
+STARRAIL_CN_UPDATE_LINK_URL = (
+    "https://act-api-takumi.mihoyo.com/event/download_porter/link"
+    "/hkrpg_cn/official/android_default"
+)
+"""崩坏·星穹铁道国服官服安卓更新入口，302 跳转至 CDN 上的真实安装包地址"""
+
+STARRAIL_UPDATE_LINK_SERVER = {
+    "CN-Official": STARRAIL_CN_UPDATE_LINK_URL,
+}
+"""崩坏·星穹铁道各服务器的更新入口映射表
+
+入口的跳转地址同时提供版本号与安装包，因此版本号与将安装的包必然一致。
+目前只有国服官服放出了安卓安装包直链，其余服务器还没有公开可用的安卓入口。
+
+不在此表中的服务器会跳过客户端版本检查。
+"""
+
+STARRAIL_STAGE_BOOK = {
+    "-": "禁用",
+    "Calyx_Golden_Memories_Planarcadia": "材料：角色经验（回忆之蕾 二相乐园）",
+    "Calyx_Golden_Aether_Planarcadia": "材料：武器经验（以太之蕾 二相乐园）",
+    "Calyx_Golden_Treasures_Planarcadia": "材料：信用点（藏珍之蕾 二相乐园）",
+    "Calyx_Golden_Memories_Amphoreus": "材料：角色经验（回忆之蕾 翁法罗斯）",
+    "Calyx_Golden_Aether_Amphoreus": "材料：武器经验（以太之蕾 翁法罗斯）",
+    "Calyx_Golden_Treasures_Amphoreus": "材料：信用点（藏珍之蕾 翁法罗斯）",
+    "Calyx_Golden_Memories_Penacony": "材料：角色经验（回忆之蕾 匹诺康尼）",
+    "Calyx_Golden_Aether_Penacony": "材料：武器经验（以太之蕾 匹诺康尼）",
+    "Calyx_Golden_Treasures_Penacony": "材料：信用点（藏珍之蕾 匹诺康尼）",
+    "Calyx_Golden_Memories_The_Xianzhou_Luofu": "材料：角色经验（回忆之蕾 仙舟罗浮）",
+    "Calyx_Golden_Aether_The_Xianzhou_Luofu": "材料：武器经验（以太之蕾 仙舟罗浮）",
+    "Calyx_Golden_Treasures_The_Xianzhou_Luofu": "材料：信用点（藏珍之蕾 仙舟罗浮）",
+    "Calyx_Golden_Memories_Jarilo_VI": "材料：角色经验（回忆之蕾 雅利洛-Ⅵ）",
+    "Calyx_Golden_Aether_Jarilo_VI": "材料：武器经验（以太之蕾 雅利洛-Ⅵ）",
+    "Calyx_Golden_Treasures_Jarilo_VI": "材料：信用点（藏珍之蕾 雅利洛-Ⅵ）",
+    "Calyx_Crimson_Destruction_Amphoreus_InkfordHermitage": "行迹材料：毁灭（渡画泉隐）",
+    "Calyx_Crimson_Destruction_Herta_StorageZone": "行迹材料：毁灭（收容舱段）",
+    "Calyx_Crimson_Destruction_Luofu_ScalegorgeWaterscape": "行迹材料：毁灭（鳞渊境）",
+    "Calyx_Crimson_Preservation_Herta_SupplyZone": "行迹材料：存护（支援舱段）",
+    "Calyx_Crimson_Preservation_Penacony_ClockStudiosThemePark": "行迹材料：存护（克劳克影视乐园）",
+    "Calyx_Crimson_The_Hunt_Jarilo_OutlyingSnowPlains": "行迹材料：巡猎（城郊雪原）",
+    "Calyx_Crimson_The_Hunt_Penacony_SoulGladScorchsandAuditionVenue": "行迹材料：巡猎（苏乐达热砂海选会场）",
+    "Calyx_Crimson_The_Hunt_Amphoreus_MemortisShoreRuinsofTime": "行迹材料：巡猎（葬忆彼岸时光归墟）",
+    "Calyx_Crimson_Abundance_Jarilo_BackwaterPass": "行迹材料：丰饶（边缘通路）",
+    "Calyx_Crimson_Abundance_Luofu_FyxestrollGarden": "行迹材料：丰饶（绥园）",
+    "Calyx_Crimson_Erudition_Jarilo_RivetTown": "行迹材料：智识（铆钉镇）",
+    "Calyx_Crimson_Erudition_Penacony_PenaconyGrandTheater": "行迹材料：智识（匹诺康尼大剧院）",
+    "Calyx_Crimson_Harmony_Jarilo_RobotSettlement": "行迹材料：同谐（机械聚落）",
+    "Calyx_Crimson_Harmony_Penacony_TheReverieDreamscape": "行迹材料：同谐（白日梦酒店-梦境）",
+    "Calyx_Crimson_Nihility_Jarilo_GreatMine": "行迹材料：虚无（大矿区）",
+    "Calyx_Crimson_Nihility_Luofu_AlchemyCommission": "行迹材料：虚无（丹鼎司）",
+    "Calyx_Crimson_Nihility_Amphoreus_SacredTracewoodGroveofDivineInsight": "行迹材料：虚无（「辉痕圣林」神悟树庭）",
+    "Calyx_Crimson_Erudition_Amphoreus_SeafeldTVTower": "行迹材料：智识（海原电视塔）",
+    "Calyx_Crimson_Remembrance_Amphoreus_StrifeRuinsCastrumKremnos": "行迹材料：记忆（纷争荒墟悬锋城）",
+    "Calyx_Crimson_Elation_Planarcadia_WorldEndTavern": "行迹材料：欢愉（世界尽头酒馆）",
+    "Stagnant_Shadow_Quanta": "晋阶材料：量子（银狼 / 希儿 / 青雀）",
+    "Stagnant_Shadow_Gust": "晋阶材料：风（丹恒 / 布洛妮娅 / 桑博）",
+    "Stagnant_Shadow_Fulmination": "晋阶材料：雷（阿兰 / 希露瓦 / 停云 / 白露）",
+    "Stagnant_Shadow_Blaze": "晋阶材料：火（姬子 / 艾丝妲 / 虎克）",
+    "Stagnant_Shadow_Spike": "晋阶材料：物理（娜塔莎 / 克拉拉 / 卢卡 / 素裳）",
+    "Stagnant_Shadow_Rime": "晋阶材料：冰（三月七 / 黑塔 / 杰帕德 / 佩拉）",
+    "Stagnant_Shadow_Mirage": "晋阶材料：虚数（瓦尔特 / 罗刹 / 驭空）",
+    "Stagnant_Shadow_Icicle": "晋阶材料：冰（彦卿 / 镜流 / 阮•梅）",
+    "Stagnant_Shadow_Doom": "晋阶材料：雷（卡芙卡 / 景元 / 黄泉）",
+    "Stagnant_Shadow_Puppetry": "晋阶材料：虚数（丹恒•饮月 / 砂金 / 真理医生）",
+    "Stagnant_Shadow_Abomination": "晋阶材料：量子（玲可 / 符玄 / 雪衣）",
+    "Stagnant_Shadow_Scorch": "晋阶材料：火（托帕&账账 / 桂乃芬 / 忘归人）",
+    "Stagnant_Shadow_Celestial": "晋阶材料：风（刃 / 藿藿 / 黑天鹅）",
+    "Stagnant_Shadow_Perdition": "晋阶材料：物理（寒鸦 / 银枝）",
+    "Stagnant_Shadow_Nectar": "晋阶材料：冰（米沙 / 大黑塔）",
+    "Stagnant_Shadow_Roast": "晋阶材料：量子（花火 / 翡翠）",
+    "Stagnant_Shadow_Ire": "晋阶材料：火（椒丘 / 灵砂 / 加拉赫 / 流萤）",
+    "Stagnant_Shadow_Duty": "晋阶材料：物理（云璃 / 知更鸟 / 波提欧）",
+    "Stagnant_Shadow_Timbre": "晋阶材料：虚数（星期日 / 乱破）",
+    "Stagnant_Shadow_Mechwolf": "晋阶材料：雷（貊泽 / 阿格莱雅）",
+    "Stagnant_Shadow_Gloam": "晋阶材料：风（飞霄 / 那刻夏 / 风堇 / Saber）",
+    "Stagnant_Shadow_Sloggyre": "晋阶材料：虚数（万敌）",
+    "Stagnant_Shadow_Gelidmoon": "晋阶材料：量子（缇宝 / 赛飞儿 / 遐蝶 / Archer）",
+    "Stagnant_Shadow_Deepsheaf": "晋阶材料：物理（白厄 / 海瑟音 / 丹恒•腾荒 / 爻光）",
+    "Stagnant_Shadow_Cinders": "晋阶材料：风（刻律德菈）",
+    "Stagnant_Shadow_Sirens": "晋阶材料：冰（长夜月 / 昔涟）",
+    "Stagnant_Shadow_Ashes": "晋阶材料：火（大丽花 / 火花）",
+    "Stagnant_Shadow_Soundburst": "晋阶材料：雷（狂雷扫弦）",
+    "Stagnant_Shadow_Devour": "晋阶材料：量子（嗤笑丑面）",
+    "Cavern_of_Corrosion_Path_of_Insight": "遗器：领航员 & 名冶（观火之径）",
+    "Cavern_of_Corrosion_Path_of_Possession": "遗器：魔法少女 & 卜者（魔占之径）",
+    "Cavern_of_Corrosion_Path_of_Hidden_Salvation": "遗器：救世主 & 隐士（隐救之径）",
+    "Cavern_of_Corrosion_Path_of_Thundersurge": "遗器：烈阳 & 船长（雳涌之径）",
+    "Cavern_of_Corrosion_Path_of_Aria": "遗器：英豪 & 诗人（弦歌之径）",
+    "Cavern_of_Corrosion_Path_of_Uncertainty": "遗器：司铎 & 学者（迷识之径）",
+    "Cavern_of_Corrosion_Path_of_Cavalier": "遗器：铁骑 & 勇烈（勇骑之径）",
+    "Cavern_of_Corrosion_Path_of_Dreamdive": "遗器：死水 & 钟表匠（梦潜之径）",
+    "Cavern_of_Corrosion_Path_of_Darkness": "遗器：大公 & DoT套（幽冥之径）",
+    "Cavern_of_Corrosion_Path_of_Elixir_Seekers": "遗器：莳者 & 信使（药使之径）",
+    "Cavern_of_Corrosion_Path_of_Conflagration": "遗器：火套 & 虚数套（野焰之径）",
+    "Cavern_of_Corrosion_Path_of_Holy_Hymn": "遗器：防御套 & 雷套（圣颂之径）",
+    "Cavern_of_Corrosion_Path_of_Providence": "遗器：铁卫 & 量子套（睿治之径）",
+    "Cavern_of_Corrosion_Path_of_Drifting": "遗器：治疗套 & 快枪手（漂泊之径）",
+    "Cavern_of_Corrosion_Path_of_Jabbing_Punch": "遗器：物理套 & 怪盗（迅拳之径）",
+    "Cavern_of_Corrosion_Path_of_Gelid_Wind": "遗器：冰套 & 风套（霜风之径）",
+    "Echo_of_War_Rusted_Crypt_of_the_Iron_Carcass": "铁骸的锈冢（翁法罗斯）",
+    "Echo_of_War_Glance_of_Twilight": "晨昏的回眸（翁法罗斯）",
+    "Echo_of_War_Inner_Beast_Battlefield": "心兽的战场（仙舟「罗浮」）",
+    "Echo_of_War_Salutations_of_Ashen_Dreams": "尘梦的赞礼（匹诺康尼）",
+    "Echo_of_War_Borehole_Planet_Past_Nightmares": "蛀星的旧靥（空间站「黑塔」）",
+    "Echo_of_War_Divine_Seed": "不死的神实（仙舟「罗浮」）",
+    "Echo_of_War_End_of_the_Eternal_Freeze": "寒潮的落幕（雅利洛-Ⅵ）",
+    "Echo_of_War_Destruction_Beginning": "毁灭的开端（空间站「黑塔」）",
+    "Divergent_Universe_Gilded_Reminiscence": "饰品：朋克洛德 & 千星（鎏金追忆）",
+    "Divergent_Universe_Within_the_West_Wind": "饰品：翁法罗斯 & 天国（西风丛中）",
+    "Divergent_Universe_Moonlit_Blood": "饰品：妖精 & 沉醉（月下朱殷）",
+    "Divergent_Universe_Unceasing_Strife": "饰品：拾骨地 & 巨树（纷争不休）",
+    "Divergent_Universe_Famished_Worker": "饰品：海域 & 奇想（蠹役饥肠）",
+    "Divergent_Universe_Eternal_Comedy": "饰品：奔狼 & 火宫（永恒笑剧）",
+    "Divergent_Universe_To_Sweet_Dreams": "饰品：茨冈尼亚 & 出云（伴你入眠）",
+    "Divergent_Universe_Pouring_Blades": "饰品：苍穹 & 匹诺康尼（天剑如雨）",
+    "Divergent_Universe_Fruit_of_Evil": "饰品：繁星 & 龙骨（孽果盘生）",
+    "Divergent_Universe_Permafrost": "饰品：贝洛伯格 & 萨尔索图（百年冻土）",
+    "Divergent_Universe_Gentle_Words": "饰品：商业公司 & 差分机（温柔话语）",
+    "Divergent_Universe_Smelted_Heart": "饰品：盗贼 & 翁瓦克（浴火钢心）",
+    "Divergent_Universe_Untoppled_Walls": "饰品：太空 & 仙舟（坚城不倒）",
+    "Simulated_Universe_World_3": "第三世界",
+    "Simulated_Universe_World_4": "第四世界",
+    "Simulated_Universe_World_5": "第五世界",
+    "Simulated_Universe_World_6": "第六世界",
+    "Simulated_Universe_World_8": "第八世界",
+}
+"""星穹铁道关卡文本索引表"""
+
+
+TIME_FIELDS = {
+    "%Y": "year",
+    "%m": "month",
+    "%d": "day",
+    "%H": "hour",
+    "%M": "minute",
+    "%S": "second",
+    "%f": "microsecond",
+}
+"""时间字段映射表"""
+
+RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+}
+"""Windows保留名称列表"""
+
+ILLEGAL_CHARS = set('<>:"/\\|?*')
+"""文件名非法字符集合"""
+
+KEYBOARD_KEYS = frozenset(
+    [
+        "\t",
+        "\n",
+        "\r",
+        " ",
+        "!",
+        '"',
+        "#",
+        "$",
+        "%",
+        "&",
+        "'",
+        "(",
+        ")",
+        "*",
+        "+",
+        ",",
+        "-",
+        ".",
+        "/",
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        ":",
+        ";",
+        "<",
+        "=",
+        ">",
+        "?",
+        "@",
+        "[",
+        "\\",
+        "]",
+        "^",
+        "_",
+        "`",
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+        "g",
+        "h",
+        "i",
+        "j",
+        "k",
+        "l",
+        "m",
+        "n",
+        "o",
+        "p",
+        "q",
+        "r",
+        "s",
+        "t",
+        "u",
+        "v",
+        "w",
+        "x",
+        "y",
+        "z",
+        "{",
+        "|",
+        "}",
+        "~",
+        "accept",
+        "add",
+        "alt",
+        "altleft",
+        "altright",
+        "apps",
+        "backspace",
+        "browserback",
+        "browserfavorites",
+        "browserforward",
+        "browserhome",
+        "browserrefresh",
+        "browsersearch",
+        "browserstop",
+        "capslock",
+        "clear",
+        "convert",
+        "ctrl",
+        "ctrlleft",
+        "ctrlright",
+        "decimal",
+        "del",
+        "delete",
+        "divide",
+        "down",
+        "end",
+        "enter",
+        "esc",
+        "escape",
+        "execute",
+        "f1",
+        "f10",
+        "f11",
+        "f12",
+        "f13",
+        "f14",
+        "f15",
+        "f16",
+        "f17",
+        "f18",
+        "f19",
+        "f2",
+        "f20",
+        "f21",
+        "f22",
+        "f23",
+        "f24",
+        "f3",
+        "f4",
+        "f5",
+        "f6",
+        "f7",
+        "f8",
+        "f9",
+        "final",
+        "fn",
+        "hanguel",
+        "hangul",
+        "hanja",
+        "help",
+        "home",
+        "insert",
+        "junja",
+        "kana",
+        "kanji",
+        "launchapp1",
+        "launchapp2",
+        "launchmail",
+        "launchmediaselect",
+        "left",
+        "modechange",
+        "multiply",
+        "nexttrack",
+        "nonconvert",
+        "num0",
+        "num1",
+        "num2",
+        "num3",
+        "num4",
+        "num5",
+        "num6",
+        "num7",
+        "num8",
+        "num9",
+        "numlock",
+        "pagedown",
+        "pageup",
+        "pause",
+        "pgdn",
+        "pgup",
+        "playpause",
+        "prevtrack",
+        "print",
+        "printscreen",
+        "prntscrn",
+        "prtsc",
+        "prtscr",
+        "return",
+        "right",
+        "scrolllock",
+        "select",
+        "separator",
+        "shift",
+        "shiftleft",
+        "shiftright",
+        "sleep",
+        "space",
+        "stop",
+        "subtract",
+        "tab",
+        "up",
+        "volumedown",
+        "volumemute",
+        "volumeup",
+        "win",
+        "winleft",
+        "winright",
+        "yen",
+        "command",
+        "option",
+        "optionleft",
+        "optionright",
+    ]
+)
+"""键盘按键名称集合 (与 pyautogui.KEYBOARD_KEYS 一致, 内联以避免启动时导入 pyautogui)"""
+
+MIRROR_ERROR_INFO = {
+    1001: "获取版本信息的URL参数不正确",
+    7001: "填入的 CDK 已过期",
+    7002: "填入的 CDK 错误",
+    7003: "填入的 CDK 今日下载次数已达上限",
+    7004: "填入的 CDK 类型和待下载的资源不匹配",
+    7005: "填入的 CDK 已被封禁",
+    8001: "对应架构和系统下的资源不存在",
+    8002: "错误的系统参数",
+    8003: "错误的架构参数",
+    8004: "错误的更新通道参数",
+    1: "未知错误类型",
+}
+"""MirrorChyan错误代码映射表"""
+
+DEFAULT_DATETIME = datetime.strptime("2000-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+"""默认日期时间"""
+
+
+SKLAND_SM_CONFIG = {
+    "organization": "UWXspnCCJN4sfYlNfqps",
+    "appId": "default",
+    "publicKey": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCmxMNr7n8ZeT0tE1R9j/mPixoinPkeM+k4VGIn/s0k7N5rJAfnZ0eMER+QhwFvshzo0LNmeUkpR8uIlU/GEVr8mN28sKmwd2gpygqj0ePnBmOW4v0ZVwbSYK+izkhVFk2V/doLoMbWy6b+UnA8mkjvg0iYWRByfRsK2gdl7llqCwIDAQAB",
+    "protocol": "https",
+    "apiHost": "fp-it.portal101.cn",
+    "apiPath": "/deviceprofile/v4",
+}
+"""数美科技配置"""
+
+BROWSER_ENV = {
+    "plugins": "MicrosoftEdgePDFPluginPortableDocumentFormatinternal-pdf-viewer1,MicrosoftEdgePDFViewermhjfbmdgcfjbbpaeojofohoefgiehjai1",
+    "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+    "canvas": "259ffe69",  # 基于浏览器的canvas获得的值
+    "timezone": -480,  # 时区
+    "platform": "Win32",
+    "url": "https://www.skland.com/",  # 固定值
+    "referer": "",
+    "res": "1920_1080_24_1.25",  # 屏幕宽度_高度_色深_window.devicePixelRatio
+    "clientSize": "0_0_1080_1920_1920_1080_1920_1080",
+    "status": "0011",  # 不知道在干啥
+}
+"""浏览器环境模拟"""
+
+DES_RULE = {
+    "appId": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "uy7mzc4h",
+        "obfuscated_name": "xx",
+    },
+    "box": {
+        "is_encrypt": 0,
+        "obfuscated_name": "jf",
+    },
+    "canvas": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "snrn887t",
+        "obfuscated_name": "yk",
+    },
+    "clientSize": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "cpmjjgsu",
+        "obfuscated_name": "zx",
+    },
+    "organization": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "78moqjfc",
+        "obfuscated_name": "dp",
+    },
+    "os": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "je6vk6t4",
+        "obfuscated_name": "pj",
+    },
+    "platform": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "pakxhcd2",
+        "obfuscated_name": "gm",
+    },
+    "plugins": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "v51m3pzl",
+        "obfuscated_name": "kq",
+    },
+    "pmf": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "2mdeslu3",
+        "obfuscated_name": "vw",
+    },
+    "protocol": {
+        "is_encrypt": 0,
+        "obfuscated_name": "protocol",
+    },
+    "referer": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "y7bmrjlc",
+        "obfuscated_name": "ab",
+    },
+    "res": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "whxqm2a7",
+        "obfuscated_name": "hf",
+    },
+    "rtype": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "x8o2h2bl",
+        "obfuscated_name": "lo",
+    },
+    "sdkver": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "9q3dcxp2",
+        "obfuscated_name": "sc",
+    },
+    "status": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "2jbrxxw4",
+        "obfuscated_name": "an",
+    },
+    "subVersion": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "eo3i2puh",
+        "obfuscated_name": "ns",
+    },
+    "svm": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "fzj3kaeh",
+        "obfuscated_name": "qr",
+    },
+    "time": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "q2t3odsk",
+        "obfuscated_name": "nb",
+    },
+    "timezone": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "1uv05lj5",
+        "obfuscated_name": "as",
+    },
+    "tn": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "x9nzj1bp",
+        "obfuscated_name": "py",
+    },
+    "trees": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "acfs0xo4",
+        "obfuscated_name": "pi",
+    },
+    "ua": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "k92crp1t",
+        "obfuscated_name": "bj",
+    },
+    "url": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "y95hjkoo",
+        "obfuscated_name": "cf",
+    },
+    "version": {
+        "is_encrypt": 0,
+        "obfuscated_name": "version",
+    },
+    "vpw": {
+        "cipher": "DES",
+        "is_encrypt": 1,
+        "key": "r9924ab5",
+        "obfuscated_name": "ca",
+    },
+}
+"""DES加密规则"""
+
+
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+"""匹配ANSI控制字符的正则表达式"""
+
+TASK_MODE_ZH = {
+    "AutoProxy": "自动代理",
+    "ScriptConfig": "脚本配置",
+}
+"""任务模式中文映射表"""
+
+APPDATA_PATH = Path(os.getenv("APPDATA") or "")
+"""APPDATA路径"""
+
+FORBIDDEN_PATH_PREFIXES: tuple[Path, ...] = tuple(
+    Path(env_value).resolve()
+    for key in ("SystemRoot",)
+    for env_value in [os.environ.get(key, r"C:\Windows")]
+    if env_value and Path(env_value).is_dir()
+)
+"""禁止作为配置路径的前缀目录（自身、子目录或父目录均非法，如系统目录；校验时另含当前工作目录）"""
+
+FORBIDDEN_PATH_EXACT: tuple[Path, ...] = tuple(
+    Path(env_value).resolve()
+    for key in ("ProgramFiles", "ProgramFiles(x86)")
+    for env_value in [os.environ.get(key, "")]
+    if env_value and Path(env_value).is_dir()
+)
+"""禁止精确匹配的目录根（仅根目录非法，子目录如软件配置路径仍允许）"""
+
+EMULATOR_SPLASH_ADS_PATH_BOOK = {
+    "mumu": [
+        APPDATA_PATH / "Netease/MuMuPlayer-12.0/data/startupImage",
+        APPDATA_PATH / "Netease/MuMuPlayer/data/startupImage",
+    ],
+    "ldplayer": [APPDATA_PATH / "leidian9/cache"],
+}
+"""模拟器启动时广告路径"""
+
+CYCLE_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+"""循环队列时间字段的持久化格式"""
+
+CYCLE_EMPTY_TIME = "2000-01-01 00:00:00"
+"""循环队列时间字段的空值哨兵，表示「尚未推算」而非某个真实时刻"""
+
+BASE_SHARED = "shared"
+"""base 来源：脚本级共享配置（旧字面量「脚本」/「简洁」）"""
+
+BASE_INDEPENDENT = "independent"
+"""base 来源：用户独立配置（旧字面量「用户」/「详细」/「自定义」）"""
+
+BASE_NATIVE = "native"
+"""base 来源：脚本原生配置（旧字面量「直控」）"""
+
+LEGACY_BASE_SOURCES = {
+    "脚本": BASE_SHARED,
+    "用户": BASE_INDEPENDENT,
+    "直控": BASE_NATIVE,
+    "简洁": BASE_SHARED,
+    "详细": BASE_INDEPENDENT,
+    "自定义": BASE_INDEPENDENT,
+}
+"""旧配置来源字面量 → base 来源：只出现在存量数据与旧备份里，读取时归一"""
+
+
+def normalize_base_source(value: object) -> str:
+    """把配置来源值归一为 base 来源三态（shared / independent / native）。
+
+    无法识别的值原样返回，由调用方决定是否回落；空值返回空串。
+    """
+
+    text = str(value or "").strip()
+    return LEGACY_BASE_SOURCES.get(text, text)
+
+
+BASE_SOURCE_LABELS = {
+    BASE_SHARED: "共享",
+    BASE_INDEPENDENT: "独立",
+    BASE_NATIVE: "原生",
+}
+"""base 来源三态的展示词表（后端预览等无前端 i18n 处使用）"""
