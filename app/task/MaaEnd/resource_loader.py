@@ -349,26 +349,29 @@ class MaaEndResourceLoader:
         return result
 
     def _auto_collect_groups(self, locale: dict[str, str]) -> list[dict[str, Any]]:
-        """按上游稳定的地区—分类框架读取路线，不维护路线或地区清单。
+        """按上游地区分组透传旧版路线或新版采集物品选项。
 
-        MaaEnd 若改变 Routes 分类命名或地区开关结构，将无法识别分组，
-        快速配置会明确报错；旧版两组路线仍按原字段读取。
+        2.36 测试版将 RareRoutes/CommonRoutes 改为 RareItems/CommonItems，
+        选项值也由路线编号改为物品 ID，不在两者之间推断对应关系。
         """
         options = self._task_options.get("AutoCollect", {})
         groups = []
         for name, option in options.items():
             if not name.startswith("AutoCollect") or option.get("type") != "checkbox":
                 continue
-            if name == "AutoCollectRoutes" or name.endswith("RareRoutes"):
+            if name == "AutoCollectRoutes":
                 config_key = "AutoCollectRoutes"
-                region = (
-                    name.removesuffix("RareRoutes")
-                    if name.endswith("RareRoutes")
-                    else ""
-                )
-            elif name.endswith("CommonRoutes"):
+                region = ""
+            elif name.endswith(("RareRoutes", "RareItems")):
+                config_key = "AutoCollectRoutes"
+                suffix = "RareItems" if name.endswith("RareItems") else "RareRoutes"
+                region = name.removesuffix(suffix)
+            elif name.endswith(("CommonRoutes", "CommonItems")):
                 config_key = "AutoCollectCommonRoutes"
-                region = name.removesuffix("CommonRoutes")
+                suffix = (
+                    "CommonItems" if name.endswith("CommonItems") else "CommonRoutes"
+                )
+                region = name.removesuffix(suffix)
                 if region == "AutoCollect":
                     region = ""
             else:
@@ -414,8 +417,12 @@ class MaaEndResourceLoader:
         values = task.setdefault("optionValues", {})
         # 移除被新版替代的旧字段；真实字段与地区开关均来自同一份资源。
         names = {group["value"] for group in groups}
-        for name in ("AutoCollectRoutes", "AutoCollectCommonRoutes"):
-            if name not in names:
+        for name in list(values):
+            if (
+                name.startswith("AutoCollect")
+                and name.endswith(("Routes", "RareItems", "CommonItems"))
+                and name not in names
+            ):
                 values.pop(name, None)
         for group in groups:
             values[group["value"]] = {
