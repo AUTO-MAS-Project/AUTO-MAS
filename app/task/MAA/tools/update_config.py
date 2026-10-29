@@ -48,7 +48,7 @@ def restore_maa_update_config(
             root / "config/gui.new.json",
             identity={"script_id": script_id, "root": str(root.resolve())},
         )
-    except (ValueError, OSError) as error:
+    except ValueError as error:
         raise MaaUpdateUnsafeError(
             "MAA 安装配置恢复失败，已保留现场和恢复记录"
         ) from error
