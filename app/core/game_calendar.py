@@ -19,8 +19,9 @@ from app.models.config import CLASS_BOOK
 from app.models.notification import NotifyPayload
 from app.models.notification_channel import NotifyTarget
 from app.models.notification_report import NotificationDispatcher
+from app.task.BAAH.calendar_service import calendar_target as baah_calendar_target
+from app.tools.bluearchive_activity_source import BLUEARCHIVE_SERVERS
 from app.tools.game_calendar import (
-    BLUEARCHIVE_SERVERS,
     CALENDAR_GAMES,
     fetch_calendar_activities,
 )
@@ -50,7 +51,6 @@ SCRIPT_CALENDAR_GAMES = {
         "Whimbox": "infinitynikki",
     }.items()
 }
-BAAH_CALENDAR_SERVERS = {"CN": "cn", "JP": "jp", "Globle": "global"}
 
 
 @dataclass
@@ -286,9 +286,7 @@ class _GameCalendar:
                     continue
                 source, label = CALENDAR_GAMES[game]
                 if game == "bluearchive":
-                    server = BAAH_CALENDAR_SERVERS[user.Info.ActivityLineType]
-                    source, server_label = BLUEARCHIVE_SERVERS[server]
-                    label = f"碧蓝档案（{server_label}）"
+                    source, label = baah_calendar_target(user)
                 targets[(game, source)] = label
         return targets
 

@@ -31,11 +31,6 @@ CALENDAR_GAMES = {
 }
 ## 这个标识落到 fetch_calendar_activities 里走 WIKI，而不是 SRA
 AZURLANE_SOURCE = "azurlane"
-BLUEARCHIVE_SERVERS = {
-    "cn": ("ba-cn", "国服"),
-    "jp": ("ba-jp", "日服"),
-    "global": ("ba-global", "国际服"),
-}
 REVERSE1999_URL = "https://api.1999.fan/api/data/activity/cn.json"
 
 

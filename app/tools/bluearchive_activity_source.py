@@ -23,6 +23,7 @@
 import time
 from datetime import datetime
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 import httpx
 
@@ -46,7 +47,16 @@ GAMEKEE_HEADERS = {
 GAMEKEE_SERVER_IDS = {"JP": 15, "Globle": 17, "CN": 16}
 
 ## 兜底数据来自 SRA 时用它自己的游戏标识，与 GameKee 的服务器标识一一对应
-SRA_BLUEARCHIVE_IDS = {"JP": "ba-jp", "Globle": "ba-global", "CN": "ba-cn"}
+BLUEARCHIVE_SERVERS = {
+    "cn": ("ba-cn", "国服"),
+    "jp": ("ba-jp", "日服"),
+    "global": ("ba-global", "国际服"),
+}
+SRA_BLUEARCHIVE_IDS = {
+    "JP": BLUEARCHIVE_SERVERS["jp"][0],
+    "Globle": BLUEARCHIVE_SERVERS["global"][0],
+    "CN": BLUEARCHIVE_SERVERS["cn"][0],
+}
 
 ## 活动排期变化很慢，缓存十分钟，避免每个前端反复打这个第三方接口
 BLUEARCHIVE_CACHE_TTL = 600
@@ -163,3 +173,44 @@ async def fetch_bluearchive_activities(
     _prune_bluearchive_cache(time.time())
     _bluearchive_cache[cache_key] = (time.time(), data)
     return data
+
+
+## 图片域名白名单：中转只认数据源自己的图，免得这个接口变成谁都能用的开放代理。
+## 最后一个域是 SRA 的图床（兜底数据的封面），它公开可访问、不校验 Referer
+BLUEARCHIVE_IMAGE_HOSTS = ("cdnimg-v2.gamekee.com", "resource.starrailassistant.top")
+## 中转是原样转发（不缩放），给个上限免得被当成流量代理
+BLUEARCHIVE_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+
+
+class ImageSourceNotAllowed(ValueError):
+    """图片来源不在碧蓝档案白名单内。"""
+
+
+class ImageUnavailable(RuntimeError):
+    """活动图片下载或内容校验失败。"""
+
+
+async def fetch_bluearchive_image(url: str) -> tuple[bytes, str]:
+    """按活动源白名单和 Referer 取回图片，拒绝非图片及超限内容。"""
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.hostname not in BLUEARCHIVE_IMAGE_HOSTS:
+        raise ImageSourceNotAllowed("只允许中转碧蓝档案活动图片")
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.get(url, headers=GAMEKEE_HEADERS)
+        response.raise_for_status()
+        ## 这个接口带着自定义头去白名单域名取东西再原样吐给前端，所以要确认拿回来的确实是图片：
+        ## 上游报错时可能返回一坨 200 的 HTML，直接转发会让前端拿着垃圾当图；大小也设个上限
+        media_type = response.headers.get("content-type", "").split(";")[0].strip()
+        if not media_type.startswith("image/"):
+            raise ValueError(f"来源不是图片: {media_type or '未给类型'}")
+        if len(response.content) > BLUEARCHIVE_IMAGE_MAX_BYTES:
+            raise ValueError(f"图片过大: {len(response.content)} 字节")
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"获取碧蓝档案活动图片失败: {type(e).__name__}: {e}"
+        )
+        raise ImageUnavailable("图片获取失败") from e
+
+    return response.content, media_type

@@ -40,6 +40,7 @@ from typing import Any
 
 import httpx
 
+from app.tools.sra_activity import fetch_sra_activities
 from app.utils import get_logger
 
 logger = get_logger("星塔旅人活动")
@@ -389,3 +390,26 @@ async def permanent_activity_window(keyword: str) -> str | None:
             return str(item["startTime"])
 
     return None
+
+
+async def fetch_stella_activities() -> dict[str, Any] | None:
+    """首页展示优先官网，失败时用 SRA 并补齐活动分类。"""
+
+    try:
+        data = await fetch_official_activities()
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_stella_activity失败: {type(e).__name__}: {e}"
+        )
+        data = None
+
+    if data is None:
+        fallback = await fetch_sra_activities("xtlr")
+        if fallback is None:
+            return None
+        for item in fallback["activities"]:
+            item["kind"] = classify_activity_name(str(item["name"]))
+        logger.info("星塔旅人活动数据改用 SRA 兜底")
+        data = fallback
+
+    return data
