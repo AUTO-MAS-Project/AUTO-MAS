@@ -54,6 +54,7 @@
       :summary="cultivateSummary"
       :checked="formData.Task.IfCultivate"
       :disabled="loading"
+      :has-detail="false"
       :hint="t('core.maaStaminaPipeline.executionHint')"
       @change="emitSave('Task.IfCultivate', $event)"
     >
