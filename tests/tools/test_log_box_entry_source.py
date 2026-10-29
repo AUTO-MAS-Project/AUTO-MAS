@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.log_box import LogBinding, LogSpec, log_box
+from app.log_box import EntrySpec, LogBinding, LogSpec, log_box
 from app.log_box.results import LogEntry
 
 
@@ -137,7 +137,8 @@ def test_custom_entry_delivery_stays_on_host_and_does_not_duplicate_default():
     assert user.push_log == []
 
 
-def test_cancelled_close_waits_for_entry_delivery_before_propagating():
+@pytest.mark.parametrize("standalone", [False, True])
+def test_cancelled_close_waits_for_entry_delivery_before_propagating(standalone):
     started, release = threading.Event(), threading.Event()
     user = make_user()
 
@@ -146,11 +147,22 @@ def test_cancelled_close_waits_for_entry_delivery_before_propagating():
         assert release.wait(timeout=5)
         return [LogEntry("普通", "已确认节点", 1.0)]
 
-    session = log_box.get_user_session(
-        LogSpec(rules=(), source="entries", bind=lambda: LogBinding(read=read)),
-        user=user,
-        mode="汇总",
-    )
+    if standalone:
+
+        def deliver(entries):
+            user.push_log.extend(
+                (entry.log_type, entry.text, entry.timestamp) for entry in entries
+            )
+
+        session = log_box.get_entry_session(
+            EntrySpec(bind=lambda: LogBinding(read=read, deliver=deliver))
+        )
+    else:
+        session = log_box.get_user_session(
+            LogSpec(rules=(), source="entries", bind=lambda: LogBinding(read=read)),
+            user=user,
+            mode="汇总",
+        )
 
     async def scenario():
         closing = asyncio.create_task(session.close())
@@ -169,3 +181,71 @@ def test_cancelled_close_waits_for_entry_delivery_before_propagating():
         assert len(user.push_log) == 1
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_standalone_entry_session_needs_no_user_and_delivers_once(enabled):
+    received, calls = [], []
+    owner = threading.get_ident()
+    item = LogEntry("普通", "保留原有文本")
+
+    def bind():
+        assert threading.get_ident() == owner
+        calls.append("bind")
+
+        def read():
+            assert threading.get_ident() != owner
+            return [item]
+
+        def deliver(entries):
+            assert threading.get_ident() == owner
+            received.extend(entries)
+
+        return LogBinding(read=read, deliver=deliver)
+
+    session = log_box.get_entry_session(EntrySpec(bind=bind), enabled=enabled)
+
+    async def scenario():
+        await asyncio.gather(session.close(), session.close())
+        await session.close()
+
+    asyncio.run(scenario())
+    assert calls == (["bind"] if enabled else [])
+    assert received == ([item] if enabled else [])
+
+
+@pytest.mark.parametrize(
+    "failure", ["bind", "read", "deliver", "missing_target", "shape"]
+)
+def test_standalone_entry_errors_do_not_escape_or_retry(failure):
+    calls = []
+
+    def fail():
+        raise RuntimeError("测试故障")
+
+    def bind():
+        calls.append("bind")
+        if failure == "bind":
+            fail()
+
+        def read():
+            if failure == "read":
+                fail()
+            return ["无效结果"] if failure == "shape" else []
+
+        def deliver(entries):
+            if failure == "deliver":
+                fail()
+
+        return LogBinding(
+            read=read, deliver=None if failure == "missing_target" else deliver
+        )
+
+    session = log_box.get_entry_session(EntrySpec(bind=bind))
+
+    async def scenario():
+        await session.close()
+        await session.close()
+
+    asyncio.run(scenario())
+    assert calls == ["bind"]

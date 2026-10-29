@@ -35,7 +35,7 @@ BGI 日志已由 LogMonitor 按相/按轮捕获进 ``log_record``（执行层一
 from contextlib import suppress
 from datetime import datetime
 
-from app.log_box import LogBinding, LogSpec, LogType
+from app.log_box import EntrySpec, LogBinding, LogType
 from app.log_box.results import LogEntry
 
 # 步骤 start 只有 HH:MM(:SS) 形态的本地时刻（Serilog 头行时间戳，无日期），
@@ -102,16 +102,14 @@ def steps_to_push_log(steps: list[dict]) -> list[tuple[str, str, float]]:
     return entries
 
 
-def make_bettergi_log_spec(steps: list[dict]) -> LogSpec:
+def make_bettergi_log_spec(steps: list[dict]) -> EntrySpec:
     """固定已有分步表；box 在后台转换节点，不再读取日志或重新判定。"""
     snapshot = [dict(step) for step in steps]
 
     def read() -> list[LogEntry]:
         return [LogEntry.from_legacy(entry) for entry in steps_to_push_log(snapshot)]
 
-    return LogSpec(
-        rules=(),
-        source="entries",
+    return EntrySpec(
         bind=lambda: LogBinding(read=read),
         error_message="BetterGI 节点结果交付失败",
     )

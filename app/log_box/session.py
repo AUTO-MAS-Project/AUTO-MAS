@@ -73,7 +73,71 @@ class LogUser(Protocol):
     push_log: list[tuple[str, str, float]]
 
 
-class UserLogSession:
+class _ManagedSession:
+    """两种来源共用的幂等收尾与取消屏障。"""
+
+    def __init__(self, *, enabled: bool) -> None:
+        self._enabled = enabled
+        self._close_task: asyncio.Task[None] | None = None
+
+    async def close(self) -> None:
+        """共享一次收尾；并发或重复关闭不会重复采集与交付。"""
+        if not self._enabled:
+            return
+        if self._close_task is None:
+            self._close_task = asyncio.create_task(self._finish())
+        cancelled: asyncio.CancelledError | None = None
+        while not self._close_task.done():
+            try:
+                await asyncio.shield(self._close_task)
+            except asyncio.CancelledError as error:
+                cancelled = error
+        self._close_task.result()
+        if cancelled is not None:
+            raise cancelled
+
+    async def _finish(self) -> None:
+        raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class EntrySpec:
+    """结构化结果声明；bind 在宿主固定快照和交付目标。"""
+
+    bind: Callable[[], LogBinding]
+    error_message: str = "结构化节点交付失败"
+
+
+async def _read_entries(binding: LogBinding) -> list[LogEntry]:
+    if binding.read is None or binding.postprocessor is not None:
+        raise ValueError("结构化来源需要 read，且不能再做文本后处理")
+    entries = await asyncio.to_thread(binding.read)
+    if not isinstance(entries, list) or any(
+        not isinstance(entry, LogEntry) for entry in entries
+    ):
+        raise TypeError("结构化来源必须返回 LogEntry 列表")
+    return entries
+
+
+class EntrySession(_ManagedSession):
+    """无用户依赖的结构化会话；交付目标由宿主声明，不发送通知。"""
+
+    def __init__(self, spec: EntrySpec, *, enabled: bool = True) -> None:
+        super().__init__(enabled=enabled)
+        self.spec = spec
+
+    async def _finish(self) -> None:
+        try:
+            binding = self.spec.bind()
+            if binding.deliver is None:
+                raise ValueError("独立结构化会话需要声明交付目标")
+            entries = await _read_entries(binding)
+            binding.deliver(entries)
+        except Exception:
+            logger.opt(exception=True).warning(self.spec.error_message)
+
+
+class UserLogSession(_ManagedSession):
     """绑定用户或专项路由的单事件循环会话；关闭后报告可读最终节点。
 
     日志来源在创建时记录偏移，不能延后到脚本启动后。读取、规则匹配与后处理
@@ -99,8 +163,7 @@ class UserLogSession:
         self._collector: LogCollect | None = None
         self._translator: PoTranslator | None = None
         self._failed = False
-        self._close_task: asyncio.Task[None] | None = None
-        self._enabled = enabled if enabled is not None else mode != "关闭"
+        super().__init__(enabled=enabled if enabled is not None else mode != "关闭")
         if not self._enabled or spec.source == "entries":
             return
         try:
@@ -134,22 +197,6 @@ class UserLogSession:
         for entry in entries:
             self._append(entry.log_type, entry.text, entry.timestamp)
 
-    async def close(self) -> None:
-        """共享一次收尾；并发或重复关闭不会重复采集与交付。"""
-        if not self._enabled:
-            return
-        if self._close_task is None:
-            self._close_task = asyncio.create_task(self._finish())
-        cancelled: asyncio.CancelledError | None = None
-        while not self._close_task.done():
-            try:
-                await asyncio.shield(self._close_task)
-            except asyncio.CancelledError as error:
-                cancelled = error
-        self._close_task.result()
-        if cancelled is not None:
-            raise cancelled
-
     async def _finish(self) -> None:
         if not self._failed:
             try:
@@ -158,13 +205,7 @@ class UserLogSession:
                     self.spec.bind() if self.spec.bind is not None else LogBinding()
                 )
                 if self.spec.source == "entries":
-                    if binding.read is None or binding.postprocessor is not None:
-                        raise ValueError("结构化来源需要 read，且不能再做文本后处理")
-                    entries = await asyncio.to_thread(binding.read)
-                    if not isinstance(entries, list) or any(
-                        not isinstance(entry, LogEntry) for entry in entries
-                    ):
-                        raise TypeError("结构化来源必须返回 LogEntry 列表")
+                    entries = await _read_entries(binding)
                 else:
                     if binding.read is not None:
                         raise ValueError("日志来源不能声明结构化 read")

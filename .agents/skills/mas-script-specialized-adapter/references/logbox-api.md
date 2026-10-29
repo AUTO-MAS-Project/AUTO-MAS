@@ -149,6 +149,15 @@ col = log_box.get_collect(
 > 单次任务日志量大时，结果是一次性入内存的（`close()` 时整体采集）。专项若运行极长、
 > 日志极大，需自行评估该内存占用（当前 okww 单会话日志量在可接受范围）。
 
+## 独立结构化会话
+
+新接入用 `EntrySpec(bind=...)` 表达非日志来源；`get_entry_session(spec, enabled=True)`
+无需用户对象或文件路径。bind 在宿主固定快照，返回 `LogBinding(read=..., deliver=...)`，
+两项均必需。read 在线程返回 `list[LogEntry]`，deliver 在宿主写入已有报告目标。
+不发送通知，不改变订阅。绑定/读取/交付错误隔离，关闭幂等、取消先等待交付再传播。
+需要默认用户落点时用 `get_user_session(EntrySpec(...), user=..., mode=...)`，
+BGI 已使用此入口。旧 `LogSpec(source="entries")` 保留兼容。
+
 ## 结构化结果来源
 
 已有权威解析器的专项无需再构造一套逐行规则。`LogSpec(source="entries", rules=())`

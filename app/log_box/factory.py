@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional, Union
 
 from .collect import LogCollect
-from .session import LogSpec, LogUser, UserLogSession
+from .session import EntrySession, EntrySpec, LogSpec, LogUser, UserLogSession
 
 PathLike = Union[str, Path]
 
@@ -17,9 +17,15 @@ PathLike = Union[str, Path]
 class LogBox:
     """采集工厂：兼容原始会话，并提供按用户声明的托管会话。"""
 
+    def get_entry_session(
+        self, spec: EntrySpec, *, enabled: bool = True
+    ) -> EntrySession:
+        """绑定结构化来源与自定义目标，不要求用户对象或日志路径。"""
+        return EntrySession(spec, enabled=enabled)
+
     def get_user_session(
         self,
-        spec: LogSpec,
+        spec: LogSpec | EntrySpec,
         *,
         user: LogUser,
         mode: str,
@@ -29,6 +35,13 @@ class LogBox:
         enabled: bool | None = None,
     ) -> UserLogSession:
         """按声明绑定用户；采集开关缺省跟随展示模式，也可承接脚本级开关。"""
+        if isinstance(spec, EntrySpec):
+            spec = LogSpec(
+                rules=(),
+                source="entries",
+                bind=spec.bind,
+                error_message=spec.error_message,
+            )
         return UserLogSession(
             spec,
             user=user,
