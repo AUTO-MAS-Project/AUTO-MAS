@@ -39,7 +39,10 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 
 import httpx
-from loguru import logger
+
+from app.utils import get_logger
+
+logger = get_logger("SRA活动")
 
 SRA_ACTIVITY_BASE = "https://starrailassistant.top/api/v1/activity"
 

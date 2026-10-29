@@ -56,6 +56,8 @@ logger = get_logger("OK-WW 调度器")
 class OkwwManager(ScriptManagerBase):
     """OK-WW 控制器（ok-script 线）"""
 
+    maintenance_message = "鸣潮正在维护"
+
     def __init__(self, script_info: ScriptItem):
         super().__init__()
 

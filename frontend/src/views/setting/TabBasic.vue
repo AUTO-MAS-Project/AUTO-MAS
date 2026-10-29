@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   DeleteOutlined,
+  LoadingOutlined,
   QuestionCircleOutlined,
   ReloadOutlined,
   SkinOutlined,
@@ -16,12 +17,13 @@ import type { CursorEffect } from '@/types/cursorEffect'
 import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 import type { PressSoundPhase, PressSoundPreset } from '@/types/pressSound'
 import type { GlobalConfig } from '@/api'
+import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
-import TrayMenuEditor from './components/TrayMenuEditor.vue'
 import MascotSettings from './components/MascotSettings.vue'
 import CustomBackgroundSettings from './components/CustomBackgroundSettings.vue'
 import PressSoundSettings from './components/PressSoundSettings.vue'
+import StartupWindowSettings from './components/StartupWindowSettings.vue'
 
 interface TabBasicProps {
   settings: GlobalConfig
@@ -123,6 +125,8 @@ const handleLocaleChange = (value: unknown): void => {
 
 <template>
   <div class="tab-content">
+    <StartupWindowSettings :settings="settings" :handle-setting-change="handleSettingChange" />
+
     <div class="form-section">
       <div class="section-header">
         <h3>{{ t('core.setting.basic.appearance') }}</h3>
@@ -290,23 +294,22 @@ const handleLocaleChange = (value: unknown): void => {
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('core.setting.basic.lowPerf') }}</span>
+            <div class="boolean-setting-row" :aria-busy="lowPerformanceModeSaving">
+              <a-checkbox
+                :checked="lowPerformanceMode"
+                :disabled="lowPerformanceModeSaving"
+                @change="
+                  (event: CheckboxChangeEvent) =>
+                    handleLowPerformanceModeChange(event.target.checked)
+                "
+              >
+                {{ t('core.setting.basic.lowPerf') }}
+              </a-checkbox>
               <a-tooltip :title="t('core.setting.basic.lowPerfTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
+              <LoadingOutlined v-if="lowPerformanceModeSaving" class="setting-loading" />
             </div>
-            <a-select
-              :value="lowPerformanceMode"
-              :disabled="lowPerformanceModeSaving"
-              :loading="lowPerformanceModeSaving"
-              size="large"
-              style="width: 100%"
-              @change="(enabled: any) => handleLowPerformanceModeChange(enabled)"
-            >
-              <a-select-option :value="true">{{ t('core.common.on') }}</a-select-option>
-              <a-select-option :value="false">{{ t('core.common.off') }}</a-select-option>
-            </a-select>
           </div>
         </a-col>
         <a-col :span="12">
@@ -338,100 +341,27 @@ const handleLocaleChange = (value: unknown): void => {
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('core.setting.basic.pauseHomeEffects') }}</span>
+            <div class="boolean-setting-row" :aria-busy="pauseHomeEffectsWhenRunningSaving">
+              <a-checkbox
+                :checked="pauseHomeEffectsWhenRunning"
+                :disabled="pauseHomeEffectsWhenRunningSaving"
+                @change="
+                  (event: CheckboxChangeEvent) =>
+                    handlePauseHomeEffectsWhenRunningChange(event.target.checked)
+                "
+              >
+                {{ t('core.setting.basic.pauseHomeEffects') }}
+              </a-checkbox>
               <a-tooltip :title="t('core.setting.basic.pauseHomeEffectsTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
+              <LoadingOutlined v-if="pauseHomeEffectsWhenRunningSaving" class="setting-loading" />
             </div>
-            <a-select
-              :value="pauseHomeEffectsWhenRunning"
-              :disabled="pauseHomeEffectsWhenRunningSaving"
-              :loading="pauseHomeEffectsWhenRunningSaving"
-              size="large"
-              style="width: 100%"
-              @change="(enabled: any) => handlePauseHomeEffectsWhenRunningChange(enabled)"
-            >
-              <a-select-option :value="true">{{ t('core.common.on') }}</a-select-option>
-              <a-select-option :value="false">{{ t('core.common.off') }}</a-select-option>
-            </a-select>
           </div>
         </a-col>
       </a-row>
     </div>
 
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('core.setting.basic.traySection') }}</h3>
-      </div>
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('core.setting.basic.showTray') }}</span>
-              <a-tooltip :title="t('core.setting.basic.showTrayTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.UI?.IfShowTray"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('UI', 'IfShowTray', checked)"
-            >
-              <a-select-option :value="true">{{ t('core.common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('core.common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('core.setting.basic.minToTray') }}</span>
-              <a-tooltip :title="t('core.setting.basic.minToTrayTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.UI?.IfToTray"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('UI', 'IfToTray', checked)"
-            >
-              <a-select-option :value="true">{{ t('core.common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('core.common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-      </a-row>
-      <TrayMenuEditor />
-    </div>
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('core.setting.basic.windowSection') }}</h3>
-      </div>
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('core.setting.basic.hideClose') }}</span>
-              <a-tooltip :title="t('core.setting.basic.hideCloseTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.UI?.IfHideCloseButton"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('UI', 'IfHideCloseButton', checked)"
-            >
-              <a-select-option :value="true">{{ t('core.common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('core.common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-      </a-row>
-    </div>
     <div class="form-section">
       <div class="section-header">
         <h3>{{ t('core.setting.basic.logStyle') }}</h3>
@@ -448,6 +378,23 @@ const handleLocaleChange = (value: unknown): void => {
   align-items: center;
   gap: 8px;
   width: 100%;
+}
+
+.boolean-setting-row {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  gap: 8px;
+}
+
+.boolean-setting-row :deep(.ant-checkbox-wrapper) {
+  color: var(--ant-color-text);
+  font-size: 14px;
+}
+
+.setting-loading {
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
 }
 
 .appearance-select {

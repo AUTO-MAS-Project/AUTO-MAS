@@ -8,7 +8,6 @@ const entries = [
   ['Start', 'IfMinimizeDirectly', 'startup', 'start_minimized'],
   ['UI', 'IfShowTray', 'close', 'show_tray'],
   ['UI', 'IfToTray', 'close', 'close_to_tray'],
-  ['UI', 'IfHideCloseButton', 'close', 'hide_close'],
   ['Function', 'HistoryRetentionTime', 'other', 'history_retention'],
   ['Function', 'IfAllowSleep', 'scheduler', 'allow_sleep'],
   ['Function', 'IfBlockAd', 'emulator', 'block_ads'],

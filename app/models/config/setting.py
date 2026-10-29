@@ -21,10 +21,8 @@
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Literal
-from uuid import UUID
 
 from pydantic import BaseModel, Field, StringConstraints
 
@@ -115,15 +113,6 @@ class GlobalConfig(DomainEntry):
             )
         )
 
-        LastStatisticsUpload: Annotated[
-            datetime, tz(local_timezone), ui(format="hms")
-        ] = Field(
-            default_factory=lambda: datetime.fromisoformat(
-                "2000-01-01 00:00:00"
-            ).replace(tzinfo=local_timezone()),
-            description="上次统计上传时间",
-        )
-
         LastTelemetryActive: Annotated[
             datetime, tz(timezone.utc), ui(format="date")
         ] = Field(
@@ -159,10 +148,6 @@ class GlobalConfig(DomainEntry):
 
         StageETag: str = Field(
             default_factory=lambda: "", description="关卡数据的版本标识符"
-        )
-
-        UID: UUID = Field(
-            default_factory=lambda: uuid.uuid4(), description="唯一标识符"
         )
 
     Data: Annotated[DataFields, ui(visibility=UiVisibility.HIDE)] = Field(
@@ -405,7 +390,7 @@ class GlobalConfig(DomainEntry):
 
         FluxdownTakeoverAll: bool = Field(
             default_factory=lambda: False,
-            description="运行前使用 FluxDown 代理脚本更新下载（当前支持 MAA），校验和安装由脚本负责",
+            description="已接入脚本的 GitHub 更新使用 FluxDown 下载；关闭使用内置下载器，不控制专项更新接管",
         )
 
         GitHubMirror: Literal["Auto", "Off"] = Field(

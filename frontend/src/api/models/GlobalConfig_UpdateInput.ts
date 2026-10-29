@@ -25,7 +25,7 @@ export type GlobalConfig_UpdateInput = {
      */
     FluxdownServerMode?: (boolean | null);
     /**
-     * 运行前使用 FluxDown 代理脚本更新下载（当前支持 MAA），校验和安装由脚本负责
+     * 已接入脚本的 GitHub 更新使用 FluxDown 下载；关闭使用内置下载器，不控制专项更新接管
      */
     FluxdownTakeoverAll?: (boolean | null);
     /**

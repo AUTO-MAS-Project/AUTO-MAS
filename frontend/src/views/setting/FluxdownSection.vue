@@ -6,6 +6,7 @@ import { computed, ref } from 'vue'
 import { ApiError, GetService } from '@/api'
 import type { GlobalConfig, FluxdownRecord } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
+import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 
 const logger = window.electronAPI.getLogger('设置-FluxDown')
 
@@ -182,22 +183,19 @@ const showUpdateHistory = ref(false)
     <a-col :span="8">
       <div class="form-item-vertical">
         <div class="form-label-wrapper">
-          <span class="form-label">{{ t('core.setting.others.fluxdownTakeover') }}</span>
+          <a-checkbox
+            :checked="!!settings.Update?.FluxdownTakeoverAll"
+            @change="
+              (event: CheckboxChangeEvent) =>
+                handleSettingChange('Update', 'FluxdownTakeoverAll', event.target.checked)
+            "
+          >
+            {{ t('core.setting.others.fluxdownTakeover') }}
+          </a-checkbox>
           <a-tooltip :title="t('core.setting.others.fluxdownTakeoverTip')">
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
         </div>
-        <a-select
-          :value="!!settings.Update?.FluxdownTakeoverAll"
-          size="large"
-          style="width: 100%"
-          @change="
-            (val: boolean) => props.handleSettingChange('Update', 'FluxdownTakeoverAll', val)
-          "
-        >
-          <a-select-option :value="true">{{ t('core.common.yes') }}</a-select-option>
-          <a-select-option :value="false">{{ t('core.common.no') }}</a-select-option>
-        </a-select>
       </div>
     </a-col>
   </a-row>
@@ -233,21 +231,20 @@ const showUpdateHistory = ref(false)
     <a-col :span="8">
       <div class="form-item-vertical">
         <div class="form-label-wrapper">
-          <span class="form-label">{{ t('core.setting.others.fluxdownServerMode') }}</span>
+          <a-checkbox
+            :checked="settings.Update?.FluxdownServerMode ?? true"
+            :disabled="settings.Update?.Downloader !== 'fluxdown'"
+            @change="
+              (event: CheckboxChangeEvent) =>
+                handleSettingChange('Update', 'FluxdownServerMode', event.target.checked)
+            "
+          >
+            {{ t('core.setting.others.fluxdownServerMode') }}
+          </a-checkbox>
           <a-tooltip :title="t('core.setting.others.fluxdownServerModeTip')">
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
         </div>
-        <a-select
-          :value="settings.Update?.FluxdownServerMode ?? true"
-          size="large"
-          style="width: 100%"
-          :disabled="settings.Update?.Downloader !== 'fluxdown'"
-          @change="(checked: any) => handleSettingChange('Update', 'FluxdownServerMode', checked)"
-        >
-          <a-select-option :value="true">{{ t('core.common.yes') }}</a-select-option>
-          <a-select-option :value="false">{{ t('core.common.no') }}</a-select-option>
-        </a-select>
       </div>
     </a-col>
   </a-row>

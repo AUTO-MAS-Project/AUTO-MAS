@@ -13,128 +13,67 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
 
-"""宿主装配专项配置能力与用户类；沿用 ScriptConfigHandler 的唯一登记入口。"""
+"""宿主明确选择内置专项，构造当前宿主的三份能力索引。"""
 
-from collections.abc import Callable
+from __future__ import annotations
 
-from app.config import ConfigEntry
-from app.core.script_config import ScriptConfigHandler
-from app.models.config import (
-    BAAHConfig,
-    BAAHUserConfig,
-    BetterGIConfig,
-    BetterGIUserConfig,
-    GeneralConfig,
-    GeneralUserConfig,
-    HSRConfig,
-    HSRUserConfig,
-    MaaConfig,
-    MaaEndConfig,
-    MaaEndUserConfig,
-    MaaFWConfig,
-    MaaFWUserConfig,
-    MaaUserConfig,
-    OkNteConfig,
-    OkNteUserConfig,
-    OkwwConfig,
-    OkwwUserConfig,
-    SrcConfig,
-    SrcUserConfig,
-    WhimboxConfig,
-    WhimboxUserConfig,
-    ZzzOdConfig,
-    ZzzOdUserConfig,
-)
-from app.task.BAAH.resources import declare_task_resources as baah_task_resources
-from app.task.BetterGI.api_service import (
-    prepare_user_update as prepare_bettergi_user_update,
-)
-from app.task.general.resources import (
-    declare_task_resources as general_task_resources,
-)
-from app.task.MAA.resources import declare_task_resources as maa_task_resources
-from app.task.MAA.user_update import prepare_user_update as prepare_maa_user_update
-from app.task.MaaEnd.api_service import MaaEndConfigService
-from app.task.MaaEnd.resources import declare_task_resources as maaend_task_resources
-from app.task.MaaFW.tools.embedded.default_snapshot import (
-    initialize_user as initialize_maafw_user,
-)
-from app.task.MaaFW.tools.embedded.default_snapshot import (
-    prepare_user_read as prepare_maafw_user_read,
-)
-from app.task.MaaFW.tools.embedded.resources import (
-    declare_task_resources as maafw_task_resources,
-)
-from app.task.MaaFW.tools.embedded.user_update import (
-    prepare_user_update as prepare_maafw_user_update,
-)
-from app.task.Okww.tools.config_dir import (
-    import_config as import_okww_config,
-)
-from app.task.Okww.tools.config_dir import (
-    initialize_user as initialize_okww_user,
-)
-from app.task.SRC.resources import declare_task_resources as src_task_resources
-from app.task.SRC.user_update import prepare_user_update as prepare_src_user_update
-from app.task.ZzzOd.recovery import ZzzOdRecovery
-from app.task.ZzzOd.user_update import prepare_user_update as prepare_zzzod_user_update
+from dataclasses import replace
+from typing import TYPE_CHECKING
+
+from app.core.script_registration import ScriptCapabilities, build_script_capabilities
+from app.models.config import CLASS_BOOK
+
+if TYPE_CHECKING:
+    from app.task.MaaEnd.api_service import MaaEndConfigService
+    from app.task.ZzzOd.recovery import ZzzOdRecovery
 
 
-def bind_script_config_handlers(
-    bind: Callable[[type[ConfigEntry], ScriptConfigHandler], None],
-    *,
-    maaend: MaaEndConfigService,
-    zzzod: ZzzOdRecovery,
-) -> None:
-    """只注入专项所需能力，不把配置总管交给专项。"""
-    handlers = {
-        MaaEndConfig: ScriptConfigHandler(
-            user_config_class=MaaEndUserConfig,
-            initialize=maaend.initialize,
-            validate_update=maaend.validate_update,
-            import_config=maaend.import_config,
-            task_resources=maaend_task_resources,
+def build_builtin_script_capabilities(
+    *, maaend: MaaEndConfigService, zzzod: ZzzOdRecovery
+) -> ScriptCapabilities:
+    """绑定服务只属于本次装配；模块静态声明不保存 Config 或服务实例。"""
+    from app.task.BAAH.registration import REGISTRATION as baah
+    from app.task.BetterGI.registration import REGISTRATION as bettergi
+    from app.task.general.registration import REGISTRATION as general
+    from app.task.HSR.registration import REGISTRATION as hsr
+    from app.task.MAA.registration import REGISTRATION as maa
+    from app.task.MaaEnd.registration import registration as maaend_registration
+    from app.task.MaaFW.registration import REGISTRATION as maafw
+    from app.task.MaaFW.tools.embedded.script_lifecycle import cleanup_script_files
+    from app.task.OkNte.registration import REGISTRATION as oknte
+    from app.task.Okww.registration import REGISTRATION as okww
+    from app.task.SRC.registration import REGISTRATION as src
+    from app.task.Whimbox.registration import REGISTRATION as whimbox
+    from app.task.ZzzOd.registration import registration as zzzod_registration
+
+    capabilities = build_script_capabilities(
+        (
+            maaend_registration(maaend=maaend),
+            bettergi,
+            maa,
+            src,
+            zzzod_registration(zzzod=zzzod),
+            maafw,
+            okww,
+            general,
+            oknte,
+            hsr,
+            baah,
+            whimbox,
         ),
-        BetterGIConfig: ScriptConfigHandler(
-            user_config_class=BetterGIUserConfig,
-            prepare_user_update=prepare_bettergi_user_update,
+        expected_types=CLASS_BOOK.values(),
+    )
+    # 所有现有脚本 UUID 都清理可能残留的 MFW 视图；家族专属的
+    # 提交后对账仍只由 MaaFW handler 声明。目录和清理规则归 MFW。
+    return replace(
+        capabilities,
+        config_handlers=tuple(
+            (
+                entry_type,
+                replace(handler, cleanup_script_files=cleanup_script_files)
+                if handler is not None
+                else None,
+            )
+            for entry_type, handler in capabilities.config_handlers
         ),
-        MaaConfig: ScriptConfigHandler(
-            user_config_class=MaaUserConfig,
-            prepare_user_update=prepare_maa_user_update,
-            task_resources=maa_task_resources,
-        ),
-        SrcConfig: ScriptConfigHandler(
-            user_config_class=SrcUserConfig,
-            prepare_user_update=prepare_src_user_update,
-            task_resources=src_task_resources,
-        ),
-        ZzzOdConfig: ScriptConfigHandler(
-            user_config_class=ZzzOdUserConfig,
-            prepare_user_update=prepare_zzzod_user_update,
-            prepare_user_removal=zzzod.prepare_user_removal,
-        ),
-        MaaFWConfig: ScriptConfigHandler(
-            user_config_class=MaaFWUserConfig,
-            prepare_user_update=prepare_maafw_user_update,
-            prepare_user_read=prepare_maafw_user_read,
-            initialize_user=initialize_maafw_user,
-            task_resources=maafw_task_resources,
-        ),
-        OkwwConfig: ScriptConfigHandler(
-            user_config_class=OkwwUserConfig,
-            initialize_user=initialize_okww_user,
-            import_config=import_okww_config,
-        ),
-        GeneralConfig: ScriptConfigHandler(
-            user_config_class=GeneralUserConfig, task_resources=general_task_resources
-        ),
-        OkNteConfig: ScriptConfigHandler(user_config_class=OkNteUserConfig),
-        HSRConfig: ScriptConfigHandler(user_config_class=HSRUserConfig),
-        BAAHConfig: ScriptConfigHandler(
-            user_config_class=BAAHUserConfig, task_resources=baah_task_resources
-        ),
-        WhimboxConfig: ScriptConfigHandler(user_config_class=WhimboxUserConfig),
-    }
-    for entry_type, handler in handlers.items():
-        bind(entry_type, handler)
+    )

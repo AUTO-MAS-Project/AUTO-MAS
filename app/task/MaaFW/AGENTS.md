@@ -492,7 +492,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `_mark_task_outcome` 记结局，task_end 在下一个任务开始或本轮结束时才发——新增收尾分支要跟着记，漏记的
   按穿出的异常归类。宿主 `tools/embedded/run_record.py` 按尝试归并，存进该尝试 history 的
   `data["maafw_run_record"]`（snapshot，读用 `read_run_record`，旧历史没有这个键），驱动调度台进度
-  （`UserItem.progress`）与推送里单列的原地打转 / 单任务超时。记录是旁路，**不参与重试判断**。
+  （`UserItem.progress`）与推送（`tools/embedded/run_report.py`：最后一次尝试的逐任务时间线；最后没成功
+  时单列各次的原地打转 / 单任务超时）。推送里的失败原因只用 `userMessage`（宿主还没投递任务就抛的
+  异常用异常原文，同样过 `human_reason` 过滤）与失败类别的固定说法；`errorMessage`（节点链、框架失败
+  事件、原生栈）不进推送，仍照旧写进任务日志、history 状态与调度台完成面板。记录是旁路，
+  **不参与重试判断**。
 - Win32 下 `Game.LaunchMode` 只有两态：`DirectExe`（默认，MAS 启动、结束后一律关闭）与
   `AttachOnly`（其他方式启停，MAS 只接管窗口）。关不关只看 `opened_game`，没有开关；
   DirectExe 下发现游戏已在运行时也只接管、不关。`Game.UnityResolution`（Off / 1920x1080 /
@@ -718,6 +722,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   下载完成之后到登记之前取消 = 丢 staging（「正在中止更新（丢弃未完成的新版本），请稍候」，60 s
   宽限）；登记之后不再响应取消。手动 `/maafw/update` 运行中照旧拒绝（`api_service/update.py` 的 `UPDATE_SCRIPT_BUSY`），整段
   持本视图预约，切完在预约里确认一次运行环境再放手（前端那次 prepare 会被 `envReady` 短路）。
+  手动更新的「应用」在后台跑（`api_service/update_job.py`）：同一脚本进行中再点只接上那一份，HTTP
+  请求断开不影响更新；过程（推送过的进度事件）与结果按脚本登记在进程内，编辑页打开时经
+  `/maafw/update/job` 接回，保留到这个脚本下一次手动更新开始或后端重启。没有停止入口。
   `run_view_update` 的四个调用方（自动、手动、投影补齐、发行包核对）一律经
   `tools/embedded/update_session.UpdateSession` 组装参数（组与候选、预约、锁时限、停止令牌、
   代理 `UpdateProxy`、进度出口、预检）；更新编排里的运行环境确认（预检、切换后确认、传播后的

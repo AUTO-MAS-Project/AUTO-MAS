@@ -5,8 +5,13 @@
 from typing import cast
 
 from app.config import ConfigEntry
+from app.core.script_config import ScriptEmulatorBinding
 from app.models.config import GeneralConfig
 from app.models.task import ScriptTaskResources
+
+EMULATOR_BINDING = ScriptEmulatorBinding(
+    group="Game", id_field="EmulatorId", index_field="EmulatorIndex"
+)
 
 
 def declare_task_resources(script: ConfigEntry) -> ScriptTaskResources:
@@ -14,6 +19,4 @@ def declare_task_resources(script: ConfigEntry) -> ScriptTaskResources:
     script = cast(GeneralConfig, script)
     if not script.Game.Enabled or script.Game.Type != "Emulator":
         return ScriptTaskResources()
-    return ScriptTaskResources(
-        emulator=(script.Game.EmulatorId, script.Game.EmulatorIndex)
-    )
+    return ScriptTaskResources(emulator=EMULATOR_BINDING.read(script))

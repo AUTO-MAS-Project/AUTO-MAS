@@ -63,6 +63,10 @@ const browserDevElectronAPI = {
     return { success: true }
   },
   windowFocus: async () => window.focus(),
+  windowMinimize: async () => true,
+  windowHideToTray: async () => false,
+  notifyNativeCloseHandlerReady: () => undefined,
+  onNativeWindowCloseRequested: () => () => undefined,
   selectFolder: async () => null,
   selectFile: async () => [],
   saveConfig: async (config: Record<string, unknown>, defaults?: Record<string, unknown>) => {
