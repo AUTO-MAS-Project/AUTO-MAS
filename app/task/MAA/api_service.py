@@ -114,6 +114,7 @@ async def analyze_copilot_training(
     coverage: int,
     require_modules: bool,
     binding_key: str = "",
+    ignore_level_gaps: bool = False,
 ) -> dict[str, Any]:
     from app.services.maa_copilot import normalize_source
     from app.task.MAA.tools.cultivate import depot_cultivate_service
@@ -141,6 +142,7 @@ async def analyze_copilot_training(
         skland[0],
         coverage=coverage,
         require_modules=require_modules,
+        ignore_level_gaps=ignore_level_gaps,
     )
     if binding != _cultivate_skland_ref(script_config, user_id):
         raise ValueError("分析期间森空岛角色已变更，请重新分析")

@@ -146,6 +146,9 @@ class MaaCopilotAnalyzeIn(BaseModel):
         default=90, ge=1, le=100, description="期望覆盖有可解析要求的作业百分比"
     )
     requireModules: bool = True
+    ignoreLevelGaps: bool = Field(
+        default=False, description="忽略精英阶段已达标干员的等级差距"
+    )
 
 
 class MaaCopilotGoal(BaseModel):
@@ -719,6 +722,7 @@ async def analyze_maa_copilot_training(
             query=request.query,
             coverage=request.coverage,
             require_modules=request.requireModules,
+            ignore_level_gaps=request.ignoreLevelGaps,
         )
         return MaaCopilotAnalyzeOut(**result)
     except ValueError as exc:

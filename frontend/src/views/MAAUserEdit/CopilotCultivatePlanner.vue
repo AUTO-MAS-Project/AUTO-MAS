@@ -90,6 +90,9 @@
           <a-checkbox v-model:checked="requireModules" :disabled="busy || disabled">{{
             t('core.maaCopilot.modules')
           }}</a-checkbox>
+          <a-checkbox v-model:checked="ignoreLevelGaps" :disabled="busy || disabled">{{
+            t('core.maaCopilot.ignoreLevelGaps')
+          }}</a-checkbox>
         </a-space>
         <a-button
           :type="result ? 'default' : 'primary'"
@@ -163,6 +166,7 @@ const result = shallowRef<MaaCopilotAnalyzeOut | null>(null)
 const showAnalysisSettings = ref(false)
 const coverage = ref(90)
 const requireModules = ref(true)
+const ignoreLevelGaps = ref(false)
 const busy = ref(false)
 const importing = ref(false)
 const error = ref('')
@@ -198,7 +202,7 @@ watch(
     if (validSource.value) void syncSource(false)
   }
 )
-watch([coverage, requireModules], () => {
+watch([coverage, requireModules, ignoreLevelGaps], () => {
   result.value = null
 })
 // 范围或关键词变化后，旧搜索响应不再有权更新作者或作业查询。
@@ -301,6 +305,7 @@ const analyze = async () => {
       query: query.value,
       coverage: coverage.value,
       requireModules: requireModules.value,
+      ignoreLevelGaps: ignoreLevelGaps.value,
     })
     if (version !== generation) return
     if (response.bindingKey !== bindingKey || bindingKey !== props.bindingKey)
