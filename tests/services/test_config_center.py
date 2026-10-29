@@ -144,7 +144,7 @@ async def test_cancel_discards_inflight_poll_result(client, transport, restart):
     assert result["status"] == ("pending" if restart else "idle")
     assert client.get_status() == result
     with pytest.raises(ConfigCenterError) as error:
-        await client.upload_config("test", "test", {})
+        await client.upload_config(display_name="test", description="test", config={})
     assert error.value.status_code == 401
 
 
@@ -255,7 +255,7 @@ async def test_redirect_memory_and_token_survive_requests(client, transport):
     # 部署环境可覆盖地址；这里固定分享站域名以验证真实跳转钩子。
     client._api_base = "https://data.auto-mas.top/api/v1"
     await authorize(client)
-    await client.upload_config("test", "test", {})
+    await client.upload_config(display_name="test", description="test", config={})
     assert [request.url.host for request in seen] == [
         "data.auto-mas.top",
         "data2.auto-mas.top",
@@ -397,9 +397,11 @@ def test_service_import_and_injected_operations_never_resolve_host(tmp_path):
         import asyncio
         import importlib.abc
         import sys
+        attempts = []
         class DenyHost(importlib.abc.MetaPathFinder):
             def find_spec(self, fullname, path=None, target=None):
                 if fullname == "app.core" or fullname.startswith(("app.core.", "app.api", "app.task")):
+                    attempts.append(fullname)
                     raise AssertionError("service resolved host: " + fullname)
         sys.meta_path.insert(0, DenyHost())
         import app.services as exports
@@ -419,9 +421,12 @@ def test_service_import_and_injected_operations_never_resolve_host(tmp_path):
             assert await client.list_templates(page=1, page_size=1, keyword=None) == (
                 [], {"page": 1, "pageSize": 1, "total": 0, "hasNext": False}
             )
-            await client._save_appearance_upload("test", "test", {"fileId": 1})
+            await client._save_appearance_upload(
+                username="test", appearance_id="test", record={"fileId": 1}
+            )
             assert not hasattr(service, "ConfigCenter")
             assert not hasattr(exports, "ConfigCenter")
+            assert attempts == [], attempts
         asyncio.run(main())
         """
     )
