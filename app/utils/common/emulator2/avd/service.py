@@ -125,23 +125,25 @@ async def close_instances(
 
 
 async def close_running_instances(
-    *, timeout: float = POWER_CLOSE_TIMEOUT_SECONDS
+    configs: Iterable[EmulatorConfig], *, timeout: float = POWER_CLOSE_TIMEOUT_SECONDS
 ) -> dict[str, str]:
     """关机 / 重启 / 注销前，对正在跑的魔改 AVD 实例逐个走 ``close``（安卓正常关机，不成再 ``sync`` + 关）。
 
     电源路径之后会按进程名强杀模拟器，强杀不走客体关机流程，页缓存里没写回的数据会丢（10-03 星铁
     热更新清单变 0 字节）。这里整体限时，不让关机卡住；出任何错都只记日志。
     """
-    from app.core import Config
-
     from .components import manager_key_exe
-    from .manager import AvdManager
+    from .manager import _AvdCore
 
     targets: list[tuple[str, Callable[[], Awaitable[object]]]] = []
-    roots = await asyncio.to_thread(managed_roots, list(Config.EmulatorConfig.values()))
+    roots = await asyncio.to_thread(managed_roots, list(configs))
     for root in roots:
         try:
-            manager = AvdManager(manager_key_exe(root), 60, False)
+            manager = _AvdCore(
+                manager_exe=manager_key_exe(root),
+                max_wait_time=60,
+                force_kill_on_close=False,
+            )
             running = await asyncio.to_thread(manager._scan_processes)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"列出 {root} 的魔改 AVD 实例失败: {e}")

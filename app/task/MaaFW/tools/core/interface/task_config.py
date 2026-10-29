@@ -31,6 +31,7 @@ from .models import (
     MaaFWOption,
     MaaFWPreset,
     MaaFWPresetOptionValue,
+    MaaFWPresetPretask,
     MaaFWTask,
     MaaFWTaskOptionsByTask,
     MaaFWTaskOptionValue,
@@ -515,7 +516,17 @@ def build_interface_preset_snapshot(
     task_order: list[str] | None = None,
     task_option_maps: dict[str, dict[str, MaaFWOption]] | None = None,
     include_default_options: bool = True,
+    include_pretasks: bool = False,
 ) -> MaaFWTaskPresetSnapshot:
+    """项目预设展开成任务快照。
+
+    ``include_pretasks``：预设声明了 ``pretask``（PI v2.10.3）时，把 interface 的全部前置
+    任务按顶层顺序排在队列最前，列出的按 ``enabled`` 勾选、带预设给的选项值，未列出的不勾选；
+    预设没声明时不带前置任务。只有用户手动「应用预设」那条路（``/maafw/preview`` 给用户页的
+    预设快照）要它；空队列回落成的默认队列与外壳配置导入不带，前置任务（多是拉起游戏的启动器）
+    不在用户没点过的情况下替他勾上。
+    """
+
     task_order = task_order or _build_default_task_order(interface_model)
     task_checked = {task_name: False for task_name in task_order}
     task_option_maps = task_option_maps or _build_task_option_maps(interface_model)
@@ -603,6 +614,16 @@ def build_interface_preset_snapshot(
     normalized_order = ordered_preset_tasks + [
         task_name for task_name in task_order if task_name not in seen_task_names
     ]
+    if include_pretasks and preset.pretask is not None:
+        pretask_order = _apply_preset_pretasks(
+            interface_model,
+            preset,
+            task_option_maps,
+            task_checked,
+            task_options_by_task,
+            include_default_options=include_default_options,
+        )
+        normalized_order = [*pretask_order, *normalized_order]
     return MaaFWTaskPresetSnapshot(
         taskOrder=normalized_order,
         taskChecked=task_checked,
@@ -613,6 +634,48 @@ def build_interface_preset_snapshot(
             else global_options
         ),
     )
+
+
+def _apply_preset_pretasks(
+    interface_model: MaaFWInterface,
+    preset: MaaFWPreset,
+    task_option_maps: dict[str, dict[str, MaaFWOption]],
+    task_checked: dict[str, bool],
+    task_options_by_task: MaaFWTaskOptionsByTask,
+    *,
+    include_default_options: bool,
+) -> list[str]:
+    """预设的 ``pretask``（PI v2.10.3）写进快照，返回前置任务的队列顺序。
+
+    顺序是顶层 ``pretask`` 合并后的顺序（``preset.pretask`` 的顺序不影响执行顺序）；按
+    ``name`` 对上顶层 ``pretask[].name``，对不上的条目忽略（加载器已告警），同名条目以第一条
+    为准。前置任务没有全局层，选项只认它自己声明的（及其子选项）。
+    """
+
+    declared: dict[str, MaaFWPresetPretask] = {}
+    for item in preset.pretask or []:
+        declared.setdefault(item.name, item)
+    order: list[str] = []
+    for pretask in iter_pretasks(interface_model):
+        task_id = build_pretask_task_name(pretask)
+        if task_id in order:
+            continue
+        order.append(task_id)
+        option_map = task_option_maps.get(task_id, {})
+        if include_default_options:
+            defaults, _ = _build_option_defaults(option_map)
+            task_options_by_task[task_id] = defaults
+        entry = declared.get(pretask.name) if pretask.name else None
+        # 预设声明了 pretask 时，未列出的前置任务视为不勾选
+        task_checked[task_id] = entry is not None and entry.enabled is not False
+        if entry is None:
+            continue
+        target_options = task_options_by_task.setdefault(task_id, {})
+        for option_name, option_value in (entry.option or {}).items():
+            _apply_preset_option_value(
+                option_name, option_value, option_map, target_options
+            )
+    return order
 
 
 def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:

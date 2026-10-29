@@ -503,7 +503,11 @@ def _source_path_error(script_config: RuntimeMaaFWConfig, source: str) -> str | 
     try:
         validated = type(script_config.Info).model_validate({"Path": source})
         if validated.Path is None:
-            return "来源路径无效，请重新选择项目目录"
+            # 路径校验器不收的来源直接清空、不抛原因，这里按同一套规则补上为什么被拒。
+            return (
+                _describe_source_path_error(source, "")
+                or "来源路径无效，请重新选择项目目录"
+            )
     # 路径里的符号链接成环时，Python 3.12 的 Path.resolve 抛 RuntimeError
     except (ValueError, RuntimeError) as exc:
         return _describe_source_path_error(source, str(exc))
@@ -519,6 +523,9 @@ def _describe_source_path_error(source: str, raw: str) -> str:
         )
     try:
         resolved = Path(source).resolve()
+        # 盘根先判：AUTO-MAS 所在盘的盘根也是安装目录的上层，不先判会被说成「移出 AUTO-MAS 目录」
+        if resolved == Path(resolved.anchor):
+            return "不能直接选择驱动器根目录，请选择解压后直接包含 interface.json 的那一层目录"
         install = Path.cwd().resolve()
         if (
             resolved == install
@@ -527,7 +534,7 @@ def _describe_source_path_error(source: str, raw: str) -> str:
         ):
             return (
                 "项目目录不能放在 AUTO-MAS 的安装目录里，也不能是它的上层目录；"
-                "请把项目移到别处后再选择"
+                "请把项目移出 AUTO-MAS 目录后再选择"
             )
     except (OSError, ValueError, RuntimeError):
         pass

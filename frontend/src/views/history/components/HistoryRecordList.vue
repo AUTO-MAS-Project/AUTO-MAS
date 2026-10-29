@@ -54,7 +54,7 @@
               </a-tag>
             </div>
             <div class="record-file">
-              {{ record.script_name }} · #{{ record.id }}
+              {{ record.script_name }}
               <span v-if="record.storage_error_count">
                 ·
                 {{
@@ -82,7 +82,7 @@ import {
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
 import type { HistoryIndexItem } from '@/api'
-import { formatStoredDateTime } from '@/utils/dateDisplay'
+import { formatHistoryDateTime } from '@/utils/dateDisplay'
 import { statusClass, statusTagColor, statusLabelKey } from '../historyStatus'
 
 const { t } = useI18n()
@@ -98,7 +98,7 @@ defineEmits<{
   (e: 'select', index: number, record: HistoryIndexItem): void
 }>()
 
-const formatRecordTime = (date: string) => formatStoredDateTime(date)
+const formatRecordTime = (date: string) => formatHistoryDateTime(date)
 </script>
 
 <style scoped>

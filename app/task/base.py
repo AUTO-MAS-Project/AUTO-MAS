@@ -5,7 +5,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
 
-from app.core.ws import Publisher, protocol
+from app.core.custom_script import execute_script_task
 from app.models.config import (
     BAAHConfig,
     BetterGIConfig,
@@ -19,7 +19,6 @@ from app.models.config import (
     WhimboxConfig,
     ZzzOdConfig,
 )
-from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.task.failure_capture_core import FailureCapture
 from app.task.proxy_helpers import push_dispatch_log
@@ -104,9 +103,6 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
     async def run_user_scripts_before(self) -> None:
         """执行用户级任务前脚本；每用户一次，先于全部重试。"""
 
-        # 就地导入：专项包会反向导入本模块，模块级导入会成环。
-        from app.task.general.tools import execute_script_task
-
         self._user_scripts_started = True
         if getattr(self.cur_user_config.Info, "IfScriptBeforeTask", False):
             await execute_script_task(
@@ -116,8 +112,6 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
 
     async def run_user_scripts_after(self) -> None:
         """执行用户级任务后脚本；前置未执行过时跳过，保证成对且只一次。"""
-
-        from app.task.general.tools import execute_script_task
 
         if not self._user_scripts_started:
             return
@@ -192,11 +186,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
 
         try:
             await push_dispatch_log(self.script_info, reason)
-            await Publisher.send(
-                id=self.task_info.task_id,
-                type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="info", message=reason),
-            )
+            await self.task_info.send_notice(level="info", message=reason)
         except Exception:
             logger.opt(exception=True).warning("维护跳过通知推送失败（忽略）")
 

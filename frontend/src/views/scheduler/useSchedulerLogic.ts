@@ -1209,6 +1209,8 @@ export function useSchedulerLogic() {
           user_id: user.user_id || `user_${index}_${userIndex}`,
           name: user.name,
           status: user.status,
+          // setOverviewRef 每次 patch 都会回放这份快照，漏了进度面板就会被清回「无进度」
+          progress: user.progress ?? null,
         })),
       }))
       translateTab(tab)

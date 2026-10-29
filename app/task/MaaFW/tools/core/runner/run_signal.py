@@ -20,9 +20,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+# 信号取值也是宿主读结果时要比的，定义在 worker_protocol，这里与宿主共用一份
+from app.task.MaaFW.tools.core.worker_protocol import (
+    CLIENT_UPDATE_REQUIRED,
+    SERVER_MAINTENANCE,
+)
+
 MAS_SIGNAL_ATTACH_KEY = "auto_mas"
-SERVER_MAINTENANCE = "server_maintenance"
-CLIENT_UPDATE_REQUIRED = "client_update_required"
 MAS_SIGNALS: tuple[str, ...] = (SERVER_MAINTENANCE, CLIENT_UPDATE_REQUIRED)
 
 # 判定信号的框架通知：节点识别命中就算，不等动作（维护节点多是没有 next 的

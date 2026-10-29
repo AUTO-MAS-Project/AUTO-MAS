@@ -71,58 +71,23 @@
           </div>
         </div>
         <div class="task-list">
-          <!-- 队列为空：先列我的模板，再列项目预设，哪组没有就不显示那组 -->
-          <div
+          <MaaFWQueueContextBar
+            :preview-data="previewData"
+            :task-snapshot="taskSnapshot"
+            :task-by-name="taskByName"
+            :effective-controller-name="effectiveControllerName"
+            :effective-resource-name="effectiveResourceName"
+          />
+          <MaaFWQueueEmptyTemplates
             v-if="
               orderedTasks.length === 0 && (queueTemplates.length > 0 || presetTemplates.length > 0)
             "
-            class="preset-section"
-          >
-            <template v-if="queueTemplates.length > 0">
-              <div class="preset-group-title">{{ t('core.edit.queueTemplateMine') }}</div>
-              <MaaFWQueueCard
-                v-for="template in queueTemplates"
-                :key="template.name"
-                kind="template"
-                :title="template.name"
-                :task-count="template.chips.length"
-                :invalid-count="template.invalidCount"
-                :chips="template.chips"
-              >
-                <template #actions>
-                  <a-button
-                    type="primary"
-                    :disabled="template.entries.length === 0"
-                    @click="emit('applyQueueTemplate', template.name)"
-                  >
-                    {{ t('core.edit.queueTemplateApply') }}
-                  </a-button>
-                </template>
-              </MaaFWQueueCard>
-            </template>
-            <template v-if="presetTemplates.length > 0">
-              <div class="preset-group-title">{{ t('core.edit.queueTemplatePresets') }}</div>
-              <MaaFWQueueCard
-                v-for="template in presetTemplates"
-                :key="template.preset.name"
-                kind="preset"
-                :title="getDisplayName(template.preset)"
-                :description="template.preset.description"
-                :base-path="previewData.path"
-                :chips="presetChips(template)"
-              >
-                <template #actions>
-                  <a-button
-                    type="primary"
-                    :disabled="template.entries.length === 0"
-                    @click="emit('applyPresetTemplate', template.preset.name)"
-                  >
-                    {{ t('core.edit.applyPreset2') }}
-                  </a-button>
-                </template>
-              </MaaFWQueueCard>
-            </template>
-          </div>
+            :queue-templates="queueTemplates"
+            :preset-templates="presetTemplates"
+            :base-path="previewData.path"
+            @apply-queue-template="name => emit('applyQueueTemplate', name)"
+            @apply-preset-template="presetName => emit('applyPresetTemplate', presetName)"
+          />
           <a-empty
             v-else-if="orderedTasks.length === 0"
             :description="t('core.edit.addTaskAbove')"
@@ -364,9 +329,11 @@ import MaaFWTaskOptionEditor from '../MaaFWTaskOptionEditor.vue'
 import { hideBrokenMaaFWIcon, showLoadedMaaFWIcon } from '../maafwIconImage'
 import { findMaaFWCheckboxCountViolations } from '../maafwOptionValues'
 import MaaFWNewBadge from './MaaFWNewBadge.vue'
-import MaaFWQueueCard from './MaaFWQueueCard.vue'
+import MaaFWQueueContextBar from './MaaFWQueueContextBar.vue'
+import MaaFWQueueEmptyTemplates from './MaaFWQueueEmptyTemplates.vue'
 import MaaFWQueueTemplateModal from './MaaFWQueueTemplateModal.vue'
 import MaaFWTaskConfigPanel from './MaaFWTaskConfigPanel.vue'
+import { matchesMaaFWAddTaskKeyword } from './maafwAddTaskMenu'
 import { hasEditableMaaFWGlobalOptions } from './maafwGlobalOptions'
 import {
   MAAFW_TASK_LABEL_MAX_LENGTH,
@@ -378,18 +345,12 @@ import type { MaaFWQueueEntry, MaaFWTaskInfo } from '@/types/script'
 import type {
   MaaFWUserTaskQueueSectionEmits,
   MaaFWUserTaskQueueSectionProps,
-  PresetTemplate,
 } from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
 
 /** 「添加任务」下拉每一栏的最小宽度：分组名、任务名不至于被截成几个字 */
 const ADD_TASK_MENU_COLUMN_STYLE = { minWidth: '180px' }
-
-type DisplayItem = {
-  name: string
-  label?: string | null
-}
 
 type AddTaskCascaderPathOption = {
   label?: unknown
@@ -424,8 +385,6 @@ const showPresetModalModel = computed({
   get: () => props.showPresetModal,
   set: value => emit('update:showPresetModal', value),
 })
-
-const getDisplayName = (item: DisplayItem) => item.label || item.name
 
 const taskCheckedLabel = (taskId: string) =>
   t(
@@ -505,9 +464,6 @@ const confirmRename = () => {
   renameOpen.value = false
   emit('renameTask', renameTaskId.value, renameDraft.value)
 }
-
-const presetChips = (template: PresetTemplate) =>
-  template.entries.map(entry => ({ id: entry.id, label: getDisplayName(entry.task) }))
 
 const resolveMaaFWAssetUrl = (rawPath?: string | null) => {
   return buildMaaFWAssetUrl(props.previewData?.path, rawPath)
@@ -595,15 +551,8 @@ const checkboxIssueTaskIds = computed(() => {
   return ids
 })
 
-const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption[]) => {
-  const keyword = inputValue.trim().toLowerCase()
-  if (!keyword) return true
-  return path.some(option =>
-    String(option.searchText ?? option.label ?? '')
-      .toLowerCase()
-      .includes(keyword)
-  )
-}
+const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption[]) =>
+  matchesMaaFWAddTaskKeyword(inputValue, path)
 </script>
 
 <style scoped>
@@ -690,6 +639,8 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
 .task-list {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
   overflow-x: hidden;
@@ -697,27 +648,13 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   background: var(--ant-color-bg-container);
 }
 
-/* 右键菜单的触发区：撑满队列框，拖拽列表的 min-height: 100% 才有定高可依 */
+/* 右键菜单的触发区：撑满队列框余下的高度（基准 0 才是定高），拖拽列表的 min-height: 100% 才有定高可依 */
 .task-queue-menu-area {
-  height: 100%;
+  flex: 1 0 0;
 }
 
 .task-queue-list {
   min-height: 100%;
-}
-
-.preset-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px;
-}
-
-/* 队列为空时的分组小标题：我的模板 / 项目预设 */
-.preset-group-title {
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
-  font-weight: 600;
 }
 
 .task-row {

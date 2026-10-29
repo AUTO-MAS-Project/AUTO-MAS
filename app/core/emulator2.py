@@ -33,10 +33,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from app.config import ConfigEntry
 from app.utils import emulator2 as _utils_emulator2
 from app.utils import get_logger
 
 from .config import Config
+from .emulator_manager import EmulatorManager
 
 logger = get_logger("Emulator2 服务")
 
@@ -70,14 +72,6 @@ def readable_error(error: BaseException) -> str:
         # （「实例未关闭，无法删除」之类），不该再被套上类名前缀
         return str(error)
     return f"{type(error).__name__}: {error}"
-
-
-#: 脚本配置里两套模拟器绑定字段命名。
-#: ``Config.del_emulator()`` 只处理了其中一部分, 反查受影响脚本时不能照抄它。
-_BINDING_FIELDS = (
-    ("Emulator", "Id", "Index"),
-    ("Game", "EmulatorId", "EmulatorIndex"),
-)
 
 
 @dataclass
@@ -192,45 +186,40 @@ async def _record_baseline(emulator_id: str, slot: str, applied: dict) -> None:
 
 async def build_manager(emulator_id: str) -> _utils_emulator2.facade.Emulator2Manager:
     """按配置 id 构造门面。"""
-    return _utils_emulator2.facade.Emulator2Manager(_emulator_config(emulator_id))
+    return _utils_emulator2.facade.Emulator2Manager(
+        _emulator_config(emulator_id), runtime_policy=EmulatorManager.runtime_policy
+    )
 
 
 def find_affected_scripts(emulator_id: str, slots: list[str]) -> list[AffectedScript]:
     """反查哪些脚本绑在这些设备号上。
 
-    必须同时覆盖两套字段命名——``Emulator.Id/Index``（MAA、SRC、M9A、MaaFW）与
-    ``Game.EmulatorId/EmulatorIndex``（MaaEnd、通用脚本）。运行中判据用 ``is_locked``。
+    专项声明持久绑定，不能用运行期资源代替（General 禁用时仍保留引用）。
+    运行中判据继续用 ``is_locked``。
     """
     wanted = {str(slot) for slot in slots}
     affected: list[AffectedScript] = []
     for script_id, script in Config.ScriptConfig.items():
-        for group, id_field, index_field in _BINDING_FIELDS:
-            try:
-                bound_id = getattr(getattr(script, group), id_field)
-                bound_index = getattr(getattr(script, group), index_field)
-            except Exception:  # noqa: BLE001 - 脚本类型没有这组字段就跳过
-                continue
-            if str(bound_id) != str(emulator_id):
-                continue
-            if str(bound_index) not in wanted:
-                continue
-            affected.append(
-                AffectedScript(
-                    script_id=str(script_id),
-                    name=str(script.Info.Name),
-                    slot=str(bound_index),
-                    running=bool(getattr(script, "is_locked", False)),
-                )
+        binding = Config.get_script_emulator_binding(script)
+        if binding is None:
+            continue
+        bound_id, bound_index = binding
+        if str(bound_id) != str(emulator_id) or str(bound_index) not in wanted:
+            continue
+        affected.append(
+            AffectedScript(
+                script_id=str(script_id),
+                name=str(script.Info.Name),
+                slot=str(bound_index),
+                running=script.is_locked,
             )
-            break
+        )
     return affected
 
 
-def script_supports_mod_avd(script: Any) -> bool:
-    """脚本能不能用魔改 AVD：MAA 脚本，或者 MaaFW 脚本（通用项目与 M9A 等特调都是 ``MaaFWConfig``）。"""
-    from app.models.config import MaaConfig, MaaFWConfig
-
-    return isinstance(script, (MaaConfig, MaaFWConfig))
+def script_supports_mod_avd(script: ConfigEntry) -> bool:
+    """读取专项声明的魔改 AVD 支持能力。"""
+    return Config.script_supports_mod_avd(script)
 
 
 async def is_mod_avd_device(emulator_id: Any, index: Any) -> bool:
@@ -248,33 +237,21 @@ async def is_mod_avd_device(emulator_id: Any, index: Any) -> bool:
 async def mod_avd_binding_error(script_id: str, patch: dict) -> str | None:
     """脚本保存时：不支持魔改 AVD 的脚本（目前只有 MaaFW 和 MAA 支持）要绑到魔改 AVD 设备，返回拒绝原因；否则 ``None``。
 
-    两套绑定字段（``Emulator.Id/Index`` 与 ``Game.EmulatorId/EmulatorIndex``）都看，只在这次带了设备号
-    时检查；只改了设备号时，模拟器配置取脚本当前的值。只改模拟器配置（没带设备号）不检查。
+    按专项声明解析本次补丁，只在带了设备号时检查；只改设备号时合并当前模拟器配置。
+    只改模拟器配置（没带设备号）不检查，避免分步保存时用旧号误拦新配置。
     """
     try:
         script = Config.ScriptConfig[uuid.UUID(str(script_id))]
     except Exception:  # noqa: BLE001 - 找不到脚本交给后面的保存逻辑报
         return None
-    for group, id_field, index_field in _BINDING_FIELDS:
-        changes = patch.get(group) if isinstance(patch, dict) else None
-        # 只看这次带了设备号的保存：脚本页换模拟器配置时先单独存 Id、再存 Index，单存 Id 那次
-        # 拿旧设备号去新配置里查会误拦（旧号在新配置里可能正好是魔改 AVD）。没查的这次由运行时
-        # 门面 ``open`` 兜底拒绝。
-        if not isinstance(changes, dict) or index_field not in changes:
-            continue
-        try:
-            emulator_id = changes.get(
-                id_field, getattr(getattr(script, group), id_field)
-            )
-            index = changes.get(
-                index_field, getattr(getattr(script, group), index_field)
-            )
-        except Exception:  # noqa: BLE001 - 脚本类型没有这组字段
-            continue
-        if await is_mod_avd_device(emulator_id, index) and not script_supports_mod_avd(
-            script
-        ):
-            return _utils_emulator2.avd.constants.MOD_AVD_UNSUPPORTED_MESSAGE
+    binding = Config.get_script_emulator_binding(script, patch=patch)
+    if binding is None:
+        return None
+    emulator_id, index = binding
+    if await is_mod_avd_device(emulator_id, index) and not script_supports_mod_avd(
+        script
+    ):
+        return _utils_emulator2.avd.constants.MOD_AVD_UNSUPPORTED_MESSAGE
     return None
 
 

@@ -19,7 +19,7 @@
 """旧投影规则建的载荷按当前规则补齐一次：宿主侧编排（运行前检查与手动检查更新触发）。
 
 检查、取回、重建、登记都在核心包 ``project_update/projection_heal``；这里只是把它挂到
-``view_update.run_view_update`` 上：谱系锁 → 组同步 → 检查 / 补齐 / 登记 → 切触发脚本 →
+``view_update.run_view_update`` 上（经 ``update_session.UpdateSession``）：谱系锁 → 组同步 → 检查 / 补齐 / 登记 → 切触发脚本 →
 同组空闲脚本立即切并确认运行环境（运行中的跑完再切）。不用查的载荷（按当前规则建的、
 查过的）在拿锁之前读两个 JSON 就返回。
 
@@ -33,7 +33,6 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -54,7 +53,8 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     payloads_root,
     read_view_marker,
 )
-from app.task.MaaFW.tools.embedded.view_update import latest_entry, run_view_update
+from app.task.MaaFW.tools.embedded.update_session import UpdateProxy, UpdateSession
+from app.task.MaaFW.tools.embedded.view_update import latest_entry
 from app.utils import get_logger
 
 logger = get_logger("MFW 投影补齐")
@@ -76,37 +76,29 @@ def projection_heal_due(script_id: str, channel: str, base: Path | None = None) 
         return False
 
 
-def _precheck(
-    interface_model: Any, *, proxy_url: str | None, send_log: Callable[[str], None]
-) -> Callable[[Path], Any]:
+def _precheck(session: UpdateSession, interface_model: Any) -> Callable[[Path], Any]:
     """补齐后的载荷要预检时用的回调（只在取回的文件会影响运行环境时才被调）：与更新同一个
-    ``build_precheck_validator``，只是不写预检备忘——备忘按「目标版本」拦更新，这里没有
-    新版本。"""
+    预检（``UpdateSession.precheck``，代理与日志出口取自 session），只是不写预检备忘——
+    备忘按「目标版本」拦更新，这里没有新版本；运行池路由到真要预检时才解析。
+
+    在事件循环上调：导入与预检的组装函数在这里解析好，``validate`` 跑在工作线程里，不再导入。"""
+
+    from app.task.MaaFW.tools.core.runtime_pool import MaaFWRuntimePoolService
+    from app.task.MaaFW.tools.embedded.runtime_route import (
+        runtime_pool_route_from_service,
+    )
+
+    build_precheck = session.precheck_builder()
 
     def validate(staging: Path) -> Any:
-        from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
-        from app.task.MaaFW.tools.core.runtime_pool import MaaFWRuntimePoolService
-        from app.task.MaaFW.tools.embedded.precheck import (
-            build_precheck_validator,
-            precheck_agent_root,
-        )
-        from app.task.MaaFW.tools.embedded.runtime_route import (
-            runtime_pool_route_from_service,
-        )
-
         route = runtime_pool_route_from_service(MaaFWRuntimePoolService())
-        return build_precheck_validator(
-            prepare=functools.partial(
-                MaaFWEmbeddedManager._prepare_project_environment_sync,
-                proxy_url=proxy_url,
-            ),
-            cancel_event=threading.Event(),
-            send_log=send_log,
-            agent_env_root=precheck_agent_root(route.root),
+        return build_precheck(
+            pool_root=route.root,
             failure={},
             previous_version=getattr(interface_model, "version", None),
             project_name=getattr(interface_model, "name", None),
             memo_path_for=None,
+            cancel_event=threading.Event(),
         )(staging)
 
     return validate
@@ -139,6 +131,18 @@ async def heal_projection(
 
     if not await asyncio.to_thread(projection_heal_due, script_id, channel, base):
         return None
+    session = UpdateSession(
+        script_id,
+        channel=channel,
+        members=members,
+        send_log=send_log,
+        reservation_held=reservation_held,
+        script_name=script_name,
+        lock_timeout=lock_timeout,
+        cancel_event=cancel_event,
+        proxy=UpdateProxy(proxy_url, proxy),
+        base=base,
+    )
 
     async def core_call(view_path: Path, target: Any, after_register: Any) -> Any:
         try:
@@ -164,29 +168,16 @@ async def heal_projection(
             target,
             after_register,
             interface_model=interface_model,
-            proxy=proxy,
+            proxy=session.proxy.client,
             shell_hint=shell_hint,
-            post_validate=post_validate
-            or _precheck(interface_model, proxy_url=proxy_url, send_log=send_log),
+            post_validate=post_validate or _precheck(session, interface_model),
             send_log=send_log,
             cache_root=cache_root,
             fallback=fallback,
         )
 
     try:
-        outcome = await run_view_update(
-            script_id,
-            channel=channel,
-            members=members,
-            reservation_held=reservation_held,
-            send_log=send_log,
-            core_call=core_call,
-            script_name=script_name,
-            lock_timeout=lock_timeout,
-            base=base,
-            switch_label="补齐后的版本",
-            cancel_event=cancel_event,
-        )
+        outcome = await session.run(core_call, switch_label="补齐后的版本")
     except MaaFWProjectUpdateError as exc:
         if exc.project_lock_busy:
             logger.info(f"MFW 投影补齐：同项目正在更新，这次不查（{script_id[:8]}）")

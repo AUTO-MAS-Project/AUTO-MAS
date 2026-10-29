@@ -77,14 +77,10 @@
         :title="template.preset.label || template.preset.name"
         :description="template.preset.description"
         :base-path="basePath"
-        :chips="presetChips(template)"
+        :chips="presetTemplateChips(template)"
       >
         <template #actions>
-          <a-button
-            type="primary"
-            :disabled="template.entries.length === 0"
-            @click="emit('applyPresetTemplate', template.preset.name)"
-          >
+          <a-button type="primary" @click="emit('applyPresetTemplate', template.preset.name)">
             {{ t('core.edit.applyPreset2') }}
           </a-button>
         </template>
@@ -132,6 +128,7 @@ import { Modal } from 'ant-design-vue'
 import { EllipsisOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import type { MaaFWQueueSourceChip } from '../maafwQueueSource'
 import { checkMaaFWQueueTemplateName } from '../maafwQueueTemplates'
+import { presetTemplateChips } from '../maafwPresetQueue'
 import type { MaaFWQueueTemplateView, PresetTemplate } from '../../MaaFWFlavor/sectionContracts'
 import MaaFWQueueCard from './MaaFWQueueCard.vue'
 import MaaFWQueueChips from './MaaFWQueueChips.vue'
@@ -182,12 +179,6 @@ watch(
     if ((open && !previous?.[0]) || presetCount === 0) activeTab.value = 'mine'
   }
 )
-
-const presetChips = (template: PresetTemplate) =>
-  template.entries.map(entry => ({
-    id: entry.id,
-    label: entry.task.label || entry.task.name,
-  }))
 
 const nameDialogOpen = ref(false)
 const nameDialogMode = ref<'save' | 'rename'>('save')

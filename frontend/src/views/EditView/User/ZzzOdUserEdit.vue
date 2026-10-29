@@ -1392,11 +1392,11 @@ const restoreForDetailView = async (
   if (isMas) {
     // MAS 备份预览：只读会话打开一条龙，合成视图下看到的是 MAS 实例
     // （槽内容即恢复的备份，不注入基线、不回读字段）
-    await startSession(userId.value, true)
+    await startSession(userId.value, true, undefined, 'user')
   } else {
     // 一条龙备份预览：脚本级原生会话，看到的是一条龙自己的原生实例，
     // 与 MAS 侧完全无关
-    await startSession(scriptId, true)
+    await startSession(scriptId, true, undefined, 'script')
   }
   return true
 }
@@ -1504,11 +1504,11 @@ const handleZzzodConfig = async () => {
     // 原生来源：拉起脚本级原生会话——完整原生实例列表，不隔离、不注入，
     // 界面里的改动即真实落地一条龙原始配置（会话关闭后页面自动刷新）。
     // 传当前编辑实例：会话窗口临时切活跃到它（GUI 打开即所见实例，结束还原）
-    void startSession(scriptId, false, nativeInstanceIdx.value)
+    void startSession(scriptId, false, nativeInstanceIdx.value, 'script')
     return
   }
   if (!userId.value) return
-  void startSession(userId.value)
+  void startSession(userId.value, false, undefined, 'user')
 }
 
 const handleSaveZzzodConfig = () => {

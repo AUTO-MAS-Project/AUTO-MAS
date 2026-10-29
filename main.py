@@ -262,8 +262,7 @@ def main():
         )
 
     from app.core import Config
-    from app.core.restore_bindings import resolve_restore_pools
-    from app.models.config import MaaEndConfig
+    from app.core.script_config_bindings import build_builtin_script_capabilities
     from app.services.telemetry import (
         init_sentry,
         is_telemetry_enabled,
@@ -275,8 +274,9 @@ def main():
         read_unity_display_type,
         read_unity_resolution,
     )
+    from app.task.ZzzOd.config_context import ZzzOdContext
+    from app.task.ZzzOd.recovery import ZzzOdRecovery
 
-    Config.set_restore_pool_resolver(resolve_restore_pools)
     baah_config_service = BAAHConfigService(
         get_script=lambda script_id: Config.ScriptConfig[script_id],
     )
@@ -285,7 +285,18 @@ def main():
         read_resolution=read_unity_resolution,
         read_display_type=read_unity_display_type,
     )
-    Config.bind_script_config_handler(MaaEndConfig, maaend_config_service)
+    script_capabilities = build_builtin_script_capabilities(
+        maaend=maaend_config_service,
+        zzzod=ZzzOdRecovery(
+            ZzzOdContext(
+                Config.ScriptConfig, flush=Config.flush, add_user=Config.add_user
+            )
+        ),
+    )
+
+    for entry_type, handler in script_capabilities.config_handlers:
+        Config.bind_script_config_handler(entry_type, handler)
+    Config.set_restore_pool_resolver(script_capabilities.resolve_restore_pools)
 
     # 开发环境不上报遥测数据
     init_sentry(
@@ -307,7 +318,11 @@ def main():
         # 预热共享 SSL 上下文：truststore 全量加载证书库较慢，放线程执行避免首个请求卡死
         import ssl
 
-        from app.core import Config, MainTimer, TaskManager
+        from app.core import Config, EmulatorManager, MainTimer, TaskManager
+        from app.services import System
+
+        TaskManager.bind_manager_factories(script_capabilities.manager_factories)
+        System.avd_instance_closer = EmulatorManager.close_running_avd_instances
 
         asyncio.create_task(asyncio.to_thread(ssl.create_default_context))
 
@@ -426,13 +441,13 @@ def main():
                     # 各项回收一起放到后台，不挡主定时器（队列定时按分钟精确匹配，挡住就
                     # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
                     try:
-                        await Config.migrate_maafw_embedded_copies_to_payloads()
-                        await Config.clean_maafw_agent_venvs()
-                        await Config.clean_maafw_embedded_copies()
-                        await Config.clean_maafw_runtime_blobs()
-                        await Config.clean_maafw_update_cache()
+                        await Config.maafw_maintenance.migrate_embedded_copies_to_payloads()
+                        await Config.maafw_maintenance.clean_agent_venvs()
+                        await Config.maafw_maintenance.clean_embedded_copies()
+                        await Config.maafw_maintenance.clean_runtime_blobs()
+                        await Config.maafw_maintenance.clean_update_cache()
                         # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
-                        await Config.clean_maafw_runtime_pool()
+                        await Config.maafw_maintenance.clean_runtime_pool()
                     except asyncio.CancelledError:
                         raise
                     except Exception:
@@ -501,7 +516,7 @@ def main():
             from app.core import Updater
             from app.core.ws import Dispatcher, MainConnection
             from app.runtime_tasks import RuntimeTasks
-            from app.services import Matomo, System
+            from app.services import System
 
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
             if background_task is not None and not background_task.done():
@@ -553,7 +568,6 @@ def main():
             from app.config import config_manager
 
             await config_manager.flush()
-            await Matomo.close()
             logger.info("AUTO-MAS 后端服务清理完成")
 
         from app.core.lifecycle import ShutdownCoordinator

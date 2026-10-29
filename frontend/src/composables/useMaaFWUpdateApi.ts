@@ -2,9 +2,12 @@ import { adapterUpdateOutcome } from '@/utils/adapterAnalytics'
 import { observeFeature } from '@/utils/featureAnalytics'
 import { getAnalyticsScriptType } from '@/utils/analytics'
 import { ApiError, MaaFwService, MaaFWProjectUpdateIn, type MaaFWProjectUpdateOut } from '@/api'
+import type { WSMaaFWProjectUpdateProgressData } from '@/services/websocket/types'
 
 /** MaaFW 项目更新：复用生成客户端，统一页面结果与错误提示。 */
 export interface MaaFWUpdateResult {
+  /** 后台 apply 的唯一作业 ID；check 或旧后端时为空。 */
+  jobId: string | null
   checked: boolean
   updated: boolean
   updateAvailable: boolean
@@ -25,6 +28,21 @@ export interface MaaFWUpdateResult {
   cdkExpiredTime?: number | null
 }
 
+/**
+ * `/maafw/update/job`：该脚本当前或最近一次手动更新（只在后端进程内保留）。
+ * `events` 按顺序重放即可还原更新过程面板；结束后成功给 `result`，失败给 `error`（原因）。
+ */
+export interface MaaFWUpdateJobSnapshot {
+  state: 'idle' | 'running' | 'finished'
+  /** 这次手动更新的唯一作业 ID；idle 或旧后端时为空。 */
+  jobId: string
+  /** 这次手动更新的开始时刻（后端 ISO 字符串），用于展示与日志；idle 时为空 */
+  startedAt: string
+  events: WSMaaFWProjectUpdateProgressData[]
+  result: MaaFWUpdateResult | null
+  error: string
+}
+
 /** `/maafw/mirror-cdk` 的结果：`status` 见后端 MaaFWMirrorCdkData，`expiredTime` 是 unix 秒。 */
 export interface MaaFWMirrorCdkState {
   status: string
@@ -32,6 +50,7 @@ export interface MaaFWMirrorCdkState {
 }
 
 const EMPTY_DATA: Omit<MaaFWUpdateResult, 'message'> = {
+  jobId: null,
   checked: false,
   updated: false,
   updateAvailable: false,
@@ -82,9 +101,18 @@ export function useMaaFWUpdateApi() {
     }
 
     if (payload.code !== 200) {
-      throw new Error(payload.message || 'MFW 项目更新请求失败')
+      const error = new Error(payload.message || 'MFW 项目更新请求失败') as Error & {
+        jobId?: string | null
+      }
+      error.jobId = payload.jobId ?? null
+      throw error
     }
-    return { ...EMPTY_DATA, ...(payload.data ?? {}), message: payload.message ?? '' }
+    return {
+      ...EMPTY_DATA,
+      ...(payload.data ?? {}),
+      jobId: payload.jobId ?? null,
+      message: payload.message ?? '',
+    }
   }
 
   const checkMaaFWUpdate = (scriptId: string): Promise<MaaFWUpdateResult> =>
@@ -92,6 +120,72 @@ export function useMaaFWUpdateApi() {
 
   const applyMaaFWUpdate = (scriptId: string): Promise<MaaFWUpdateResult> =>
     request(scriptId, 'apply')
+
+  /**
+   * 取该脚本当前或最近一次手动更新的过程与结果。`wait` 为真且正在更新时，后端等更新结束再返回
+   * （可能几分钟）。请求失败抛错，消息取后端的 message。
+   */
+  const getMaaFWUpdateJob = async (
+    scriptId: string,
+    wait = false
+  ): Promise<MaaFWUpdateJobSnapshot> => {
+    let payload
+    try {
+      payload = await MaaFwService.getMaafwProjectUpdateJobApiScriptsMaafwUpdateJobPost({
+        scriptId,
+        wait,
+      })
+    } catch (error) {
+      if (error instanceof ApiError) {
+        const body: unknown = error.body
+        if (
+          body &&
+          typeof body === 'object' &&
+          'message' in body &&
+          typeof body.message === 'string' &&
+          body.message
+        ) {
+          throw new Error(body.message)
+        }
+      }
+      throw error instanceof Error ? error : new Error(String(error))
+    }
+    if (payload.code !== 200) {
+      throw new Error(payload.message || 'MFW 项目更新状态查询失败')
+    }
+    const data = payload.data
+    const events: WSMaaFWProjectUpdateProgressData[] = (data?.events ?? []).map(event => ({
+      ...event,
+      message: event.message ?? '',
+    }))
+    const rawState = String(data?.state ?? '')
+    const state = rawState === 'running' || rawState === 'finished' ? rawState : 'idle'
+    const jobId = String(data?.jobId ?? '')
+    const startedAt = String(data?.startedAt ?? '')
+    const job = data?.result
+    if (state !== 'finished' || !job) {
+      return { state, jobId, startedAt, events, result: null, error: '' }
+    }
+    const message = job.message ?? ''
+    if ((job.code ?? 200) !== 200) {
+      return {
+        state,
+        jobId,
+        startedAt,
+        events,
+        result: null,
+        error: message || 'MFW 项目更新失败',
+      }
+    }
+    return {
+      state,
+      jobId,
+      startedAt,
+      events,
+      result: { ...EMPTY_DATA, ...(job.data ?? {}), jobId, message },
+      error: '',
+    }
+  }
 
   /**
    * 查 Mirror 酱 CDK 的状态与到期时间（CDK 输入框下那行小字用）。CDK 只放请求体。
@@ -113,5 +207,5 @@ export function useMaaFWUpdateApi() {
     }
   }
 
-  return { checkMaaFWUpdate, applyMaaFWUpdate, queryMaaFWMirrorCdk }
+  return { checkMaaFWUpdate, applyMaaFWUpdate, getMaaFWUpdateJob, queryMaaFWMirrorCdk }
 }

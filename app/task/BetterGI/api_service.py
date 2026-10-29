@@ -18,8 +18,9 @@
 
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from app.config import ConfigEntry
 from app.core import Config
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import BetterGIUserConfig
@@ -499,7 +500,12 @@ def read_game_info(script_id: str, detect_path: str) -> dict[str, str | None]:
     return data
 
 
-def prepare_user_update(script_id: str, user_id: str, data: dict[str, Any]) -> None:
+def prepare_user_update(
+    script: ConfigEntry, user: ConfigEntry, *, data: dict[str, Any]
+) -> None:
+    script_id, user_id = str(script.uid), str(user.uid)
+    script_cfg = cast(RuntimeBetterGIConfig, script)
+    uc = cast(BetterGIUserConfig, user)
     # 队列是唯一真相源：落盘 OneDragon.Queue 时，清理 Plan 中不再被引用的战斗实例
     # （前端删除队列行只改 Queue，Plan 对应实例会残留成孤儿）。仅当 patch 含 Queue 时触发，
     # 避免其它字段保存误伤；被关闭（enabled=false）但仍在队列的行其实例保留。
@@ -508,8 +514,6 @@ def prepare_user_update(script_id: str, user_id: str, data: dict[str, Any]) -> N
         try:
             from app.task.BetterGI.tools import one_dragon_plan
 
-            script_cfg = Config.ScriptConfig[uuid.UUID(script_id)]
-            uc = script_cfg.UserData[uuid.UUID(user_id)]
             plan = uc.OneDragon.Plan or ""
             groups = uc.OneDragon.Groups or []
             new_plan = one_dragon_plan.prune_plan_to_queue(plan, od["Queue"], groups)

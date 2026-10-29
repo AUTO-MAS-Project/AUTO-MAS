@@ -100,7 +100,7 @@ import HistoryLogModal from './components/HistoryLogModal.vue'
 import HistorySearchPanel from './components/HistorySearchPanel.vue'
 import { useHistoryLogic } from './useHistoryLogic'
 import { historyStatistics } from './historyData'
-import { formatStoredDateTime } from '@/utils/dateDisplay'
+import { formatHistoryDateTime } from '@/utils/dateDisplay'
 
 const { t } = useI18n()
 
@@ -154,7 +154,7 @@ const handleModeUpdate = (mode: string) => {
 
 // 选择记录时打开弹窗
 const handleSelectRecord = async (index: number, record: HistoryIndexItem) => {
-  currentRecordDate.value = formatStoredDateTime(record.time)
+  currentRecordDate.value = formatHistoryDateTime(record.time)
   currentRecordStatus.value = record.status
   currentErrorMessage.value = record.message
   logModalOpen.value = true

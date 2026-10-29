@@ -5,14 +5,14 @@
 “已接入”描述代码边界，不表示已经完成真实游戏、扫码、升级或正式服务入库验收。
 
 运行环境隔离统一使用 Electron 打包状态和 preload 下发值；Runtime 启动模式不改变采集环境。
-此次复用既有事件族与结果所有者，业务覆盖范围不变，受控探针不作为正式服务入库证据。
+此次复用既有事件族与结果所有者；关闭应用二次确认开关复用 `settings_change_finished`，托盘菜单保存由主进程按真实写入结果补齐 `config_write_finished`（settings/ui/none），不发送菜单文本、任务标识或草稿操作。分区目录、打开编辑和取消不采集，托盘隐藏动作不单独采集；受控探针不作为正式服务入库证据。
 
 | 编号 | 场景 | 当前进度 |
 | --- | --- | --- |
 | T001 | app_started：版本与启动方式分布 | 已接入，持续复核 |
 | T002 | initialization_decided：多少启动需要初始化或直接进入 | 已接入，持续复核 |
-| T003 | initialization_finished：初始化走完、失败、跳过分别多少 | 已接入，持续复核 |
-| T004 | initialization_stage_finished：Python、依赖、仓库等阶段哪里卡住 | 已接入，持续复核 |
+| T003 | initialization_finished_v2：初始化走完、失败、跳过分别多少 | 已接入，持续复核 |
+| T004 | initialization_stage_finished_v2：Python、依赖、仓库等阶段哪里卡住 | 已接入，持续复核 |
 | T005 | initialization_recovery_selected：重试、重建、换镜像、跳过是否有效 | 已接入，持续复核 |
 | T006 | backend_start_finished：后端启动成功率和等待时间 | 已接入，持续复核 |
 | T007 | backend_restart_finished：主动更新和故障重启能否恢复 | 已接入，持续复核 |
@@ -20,8 +20,8 @@
 | T009 | backend_update_finished：后端热更新完成或停在什么阶段 | 已接入，持续复核 |
 | T010 | renderer_recovery_decided：白屏、崩溃后自动恢复或放弃的比例 | 已接入，持续复核 |
 | T011 | renderer_responsiveness_changed：卡死后能否恢复响应 | 已接入，持续复核 |
-| T012 | app_close_finished：正常收尾、用户取消、强制关闭占比 | 已接入，持续复核 |
-| T013 | tray_action_requested：托盘入口是否有实际使用 | 已接入，持续复核 |
+| T012 | app_close_finished：正常退出收尾、用户取消、强制退出占比（不含托盘隐藏） | 已接入，持续复核 |
+| T013 | tray_action_requested：显示、隐藏、启动任务、停止全部任务和退出等托盘入口是否有实际使用 | 已接入，持续复核 |
 | T014 | stop_all_requested：紧急停止入口的需求 | 已接入，持续复核 |
 | T015 | virtual_display_action_finished：虚拟屏检查、拆除、用户选择的效果 | 已接入，持续复核 |
 | T016 | virtual_display_prompt_answered：显示器恢复后用户怎样处理提示 | 已接入，持续复核 |
@@ -66,7 +66,7 @@
 | T055 | notification_channel_changed：各内置通知渠道的启用情况 | 已接入，持续复核 |
 | T056 | notification_binding_finished：二维码绑定、取消和解绑是否完成 | 已接入，持续复核 |
 | T057 | webhook_test_finished：自定义通知配置是否容易出错 | 已接入，持续复核 |
-| T058 | settings_change_finished：设置修改成功率及主要功能采用情况 | 已接入，持续复核 |
+| T058 | settings_change_finished：设置修改成功率及主要功能采用情况（含关闭确认开关） | 已接入，持续复核 |
 | T059 | appearance_preference_changed：主题、语言、低性能模式需求 | 已接入，持续复核 |
 | T060 | appearance_package_finished：本地外观导入、启用、删除是否顺利 | 已接入，持续复核 |
 | T061 | appearance_store_install_finished：主题商店发现到安装的转化 | 已接入，持续复核 |
@@ -96,6 +96,7 @@
 
 ## 当前批次边界
 
+- T031 与逐脚本运行：整任务 success 是执行器正常收尾，不代表所有账号成功；逐脚本 success 沿用调度口径，另以有限类别区分已知部分失败，旧后端缺字段时记 unknown。
 - 恢复：后端重启在共享执行位置记录，热更新首轮与重试分别记录真实返回；取消后重启旧后端仍归取消。唤醒以主连接状态为观察结果，不把启动受理算连接恢复。
 - 模拟器：显式业务 API 记录搜索、路径管理、实例管理、单台及批量设置、守卫与 AVD 根目录添加。操作受理和完成消息分开；应用常驻订阅只关联本窗口发起的操作。重复帧、未发起的帧、被拒绝请求不制造完成。同设备同动作并发在缺少操作 ID 时放弃归因；两分钟后的终态不作为耗时样本；未决键不按时间过期或被逐出。同键重叠或响应不明后，该键本窗口内持续放弃完成归因；128 个未决/歧义键耗尽预算后本窗口停止新关联。请求统计仍继续。
 - 退出：只记录观察到的协调结束、取消或强制清理失败，不等待遥测网络，也不保证退出末刻事件送达。

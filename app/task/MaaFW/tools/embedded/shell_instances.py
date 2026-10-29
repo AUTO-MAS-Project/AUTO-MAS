@@ -225,8 +225,11 @@ def read_instance_win32_input_methods(root: Path) -> dict[str, str]:
     ``config/instances/*.json`` 的 ``Win32ControlMouseType`` / ``Win32ControlKeyboardType``
     就是外壳设置页那两个下拉的值。内置运行不经过外壳，以前只认 interface 与脚本级配置，
     于是用户在外壳设置里调过的方式在 MAS 里等于没配，跑起来还是 interface 写的或默认的
-    ``Seize``。这里只读、不改任何文件：按 ``Instances.LastActive``、``default``、文件名
-    的顺序逐个实例取，取到一个键就继续找另一个键，缺的那项才回落到 interface。
+    ``Seize``。
+
+    只认**一份**实例：``Instances.LastActive`` 指向的那份，没有才退到 ``default``。不跨实例
+    拼凑——两个实例可能分属不同的人或不同的配置，凑出来的组合谁也没选过；缺的那项留给
+    interface 与默认值。这里只读，不改任何文件。
     """
 
     config_dir = root / "config"
@@ -238,26 +241,20 @@ def read_instance_win32_input_methods(root: Path) -> dict[str, str]:
     if last_active:
         candidates.append(instances_dir / f"{last_active}.json")
     candidates.append(instances_dir / "default.json")
-    seen = set(candidates)
-    candidates.extend(
-        path for path in sorted(instances_dir.glob("*.json")) if path not in seen
-    )
-    methods: dict[str, str] = {}
     for path in candidates:
         if not path.is_file():
             continue
         payload = _read_json_object(path)
         if payload is None:
             continue
+        methods: dict[str, str] = {}
         for field_name, key in _MFAA_WIN32_INPUT_KEYS.items():
-            if field_name in methods:
-                continue
             value = payload.get(key)
             if isinstance(value, str) and value.strip():
                 methods[field_name] = value.strip()
-        if len(methods) == len(_MFAA_WIN32_INPUT_KEYS):
-            break
-    return methods
+        if methods:
+            return methods
+    return {}
 
 
 def _scan_mfaa(root: Path, config_dir: Path) -> list[ShellInstance]:

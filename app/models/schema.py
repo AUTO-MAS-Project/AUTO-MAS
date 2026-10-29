@@ -107,10 +107,13 @@ HistoryAttachmentKind = Literal["log", "image", "video", "diagnostic"]
 
 
 class HistoryAttachmentInput(BaseModel):
+    """附件归档输入；copy 保留原件，move 接管可释放的文件。"""
+
     path: Path
     kind: HistoryAttachmentKind
     role: str
     display_name: str
+    archive_mode: Literal["move", "copy"] = "move"
 
 
 class HistoryWrite(BaseModel):
@@ -637,12 +640,23 @@ class WSAvdUpdateProgressData(BaseModel):
     )
 
 
+class WSTaskUserProgressData(BaseModel):
+    """用户正在跑的任务进度（目前只有 MFW 给）。"""
+
+    current: int = Field(..., description="当前是第几个任务, 从 1 起")
+    total: int = Field(..., description="本次共几个任务")
+    task: str = Field(..., description="当前任务名")
+
+
 class WSTaskUserInfoData(BaseModel):
     """任务快照中的用户状态。"""
 
     user_id: str = Field(..., description="用户 ID")
     name: str = Field(..., description="用户名称")
     status: str = Field(..., description="用户执行状态")
+    progress: Optional[WSTaskUserProgressData] = Field(
+        default=None, description="正在跑的任务进度; 没有任务在跑或该专项不提供时为空"
+    )
 
 
 class WSTaskScriptInfoData(BaseModel):
@@ -779,6 +793,7 @@ class WSTaskScriptFinishedData(WSTaskScriptStartedData):
     outcome: Literal[
         "success", "failed", "skipped", "no_user", "incomplete", "error", "cancelled"
     ]
+    partialFailure: Literal["yes", "no", "unknown"] = "unknown"
 
 
 class WSTaskCreatedData(BaseModel):
@@ -1506,6 +1521,44 @@ class MaaFWProjectUpdateData(BaseModel):
     )
 
 
+class MaaFWProjectUpdateJobResult(BaseModel):
+    code: int = Field(
+        default=200,
+        description="与 /maafw/update 响应的 code 同义：200 为成功，其余为失败",
+    )
+    message: str = Field(default="", description="结果摘要；失败时为原因")
+    data: Optional[MaaFWProjectUpdateData] = Field(
+        default=None, description="与 /maafw/update 响应的 data 相同；失败时可能为空"
+    )
+
+
+class MaaFWProjectUpdateJobData(BaseModel):
+    """该脚本当前或最近一次手动更新（apply）。只在后端进程内保留：下一次手动更新开始
+    或后端重启即被替换 / 清空。"""
+
+    state: Literal["idle", "running", "finished"] = Field(
+        default="idle",
+        description="idle 本次后端启动以来没有手动更新；running 正在更新；finished 已结束",
+    )
+    jobId: Optional[str] = Field(
+        default=None, description="这次手动更新的唯一作业 ID；idle 时为空"
+    )
+    startedAt: Optional[str] = Field(default=None, description="开始时间（ISO 8601）")
+    finishedAt: Optional[str] = Field(
+        default=None, description="结束时间（ISO 8601）；进行中为空"
+    )
+    events: list[WSMaaFWProjectUpdateProgressData] = Field(
+        default_factory=list,
+        description=(
+            "已推送过的进度事件（与 WS maafw.project-update.progress 同一结构），"
+            "按顺序重放即可还原更新过程面板；同阶段连续的进度只留最新一条，日志行只留最近的"
+        ),
+    )
+    result: Optional[MaaFWProjectUpdateJobResult] = Field(
+        default=None, description="结束后的结果；进行中为空"
+    )
+
+
 class MaaFWMirrorCdkData(BaseModel):
     status: str = Field(
         ...,
@@ -1711,6 +1764,7 @@ __all__ = [
     "WSSystemNoticeData",
     "WSAvdUpdateProgressData",
     "WSEmulatorOperationData",
+    "WSTaskUserProgressData",
     "WSTaskUserInfoData",
     "WSTaskScriptInfoData",
     "WSTaskCyclePreviewData",

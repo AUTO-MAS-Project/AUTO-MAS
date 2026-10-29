@@ -39,6 +39,7 @@ from app.models.schema import (
     MaaFWInterfacePreviewData,
     MaaFWMirrorCdkData,
     MaaFWProjectUpdateData,
+    MaaFWProjectUpdateJobData,
     MaaFWShellInstanceImportItem,
     MaaFWShellInstanceItem,
     OutBase,
@@ -48,6 +49,7 @@ from app.task.MaaFW.api_service import embedded as maafw_embedded_api
 from app.task.MaaFW.api_service import interface as maafw_interface_api
 from app.task.MaaFW.api_service import shell_instances as maafw_shell_instances_api
 from app.task.MaaFW.api_service import update as maafw_update_api
+from app.task.MaaFW.api_service import update_job as maafw_update_job_api
 from app.utils import get_logger
 
 
@@ -196,8 +198,26 @@ class MaaFWProjectUpdateIn(BaseModel):
 
 
 class MaaFWProjectUpdateOut(OutBase):
+    jobId: Optional[str] = Field(
+        default=None, description="apply 对应的后台手动更新作业 ID；check 时为空"
+    )
     data: Optional[MaaFWProjectUpdateData] = Field(
         default=None, description="MaaFW 项目更新结果"
+    )
+
+
+class MaaFWProjectUpdateJobIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MaaFW 脚本 ID")
+    wait: bool = Field(
+        default=False,
+        description="为真且正在更新时，等更新结束再返回；否则立即返回当前快照",
+    )
+
+
+class MaaFWProjectUpdateJobOut(OutBase):
+    data: MaaFWProjectUpdateJobData = Field(
+        default_factory=MaaFWProjectUpdateJobData,
+        description="当前或最近一次手动更新的过程与结果",
     )
 
 
@@ -451,10 +471,36 @@ async def update_maafw_project(
 
     ``action=check`` 只读取 interface 版本与更新源元数据，返回是否有新版本；
     ``action=apply`` 触发下载并原地应用更新包。失败时返回明确 ``message``。
+    ``apply`` 在后台执行：同一脚本进行中再发起只等同一份，请求断开不影响更新，
+    过程与结果可经 ``/maafw/update/job`` 取回。
     """
 
-    reply = await maafw_update_api.update_project(payload.scriptId, payload.action)
+    reply = await maafw_update_job_api.run_project_update(
+        payload.scriptId, payload.action
+    )
     return MaaFWProjectUpdateOut(**reply.out_fields())
+
+
+@router.post(
+    "/maafw/update/job",
+    tags=["MaaFW"],
+    summary="查询 MFW 项目手动更新的过程与结果",
+    response_model=MaaFWProjectUpdateJobOut,
+    status_code=200,
+)
+async def get_maafw_project_update_job(
+    payload: MaaFWProjectUpdateJobIn = Body(...),
+) -> MaaFWProjectUpdateJobOut:
+    """脚本当前或最近一次手动更新（``apply``）的状态、已推送的进度事件与结果。
+
+    页面刷新或重新打开后用它接回：先取快照重放进度，再带 ``wait=true`` 等结果。
+    只保留在后端进程内，下一次手动更新开始或后端重启后不再有上一次的记录。
+    """
+
+    reply = await maafw_update_job_api.project_update_job(
+        payload.scriptId, wait=payload.wait
+    )
+    return MaaFWProjectUpdateJobOut(**reply.out_fields())
 
 
 @router.post(
@@ -530,3 +576,29 @@ async def get_maafw_asset(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return FileResponse(file_path)
+
+
+@router.get(
+    "/maafw/icon",
+    tags=["MaaFW"],
+    summary="读取 MFW 脚本的项目图标",
+    response_class=FileResponse,
+)
+async def get_maafw_script_icon(
+    scriptId: str = Query(..., description="MFW 脚本 ID"),
+) -> FileResponse:
+    """脚本列表的头像：项目 interface 顶层 ``icon`` 指的图片。
+
+    取不到（项目还没导入、没写 icon、文件不在）一律 404，前端回退到类型图标；
+    具体原因只写日志，不放进响应。
+    项目更新可能原地换掉图标而地址不变，所以带 ``no-cache``，不让浏览器拿缓存的旧图；
+    FileResponse 不处理 If-None-Match，每次都完整返回。
+    """
+
+    try:
+        file_path = await maafw_interface_api.maafw_script_icon_file(scriptId)
+    except FileNotFoundError as exc:
+        # 原因里可能带本机副本路径，只进日志；响应只给固定文案（列表每次渲染都会来取，记 debug）
+        logger.debug(f"MFW 项目图标取不到: scriptId={scriptId}, 原因: {exc}")
+        raise HTTPException(status_code=404, detail="MFW 项目图标不存在") from exc
+    return FileResponse(file_path, headers={"Cache-Control": "no-cache"})

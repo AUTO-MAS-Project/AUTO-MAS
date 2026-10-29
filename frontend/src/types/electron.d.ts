@@ -41,6 +41,8 @@ export interface RelatedProcess {
 }
 
 export interface ElectronConfig {
+  confirmBeforeClose?: boolean
+  lastCloseAction?: 'quit' | 'tray'
   UI?: GlobalConfig_UI & {
     TrayItems?: unknown[]
     [key: string]: unknown
@@ -164,6 +166,8 @@ export interface RuntimeDoctorCheck {
  * 绝不解析 `error` 里的中文文案。
  */
 export interface RuntimeFailureFields {
+  /** Runtime 第 0 步失败的实际来源；界面仍沿用 failedStage。 */
+  failureOrigin?: 'runtime_binary'
   /** Runtime 结果码，如 `MIRROR_EXHAUSTED` / `INTERNAL_ERROR`。 */
   code?: string
   retryable?: boolean
@@ -247,15 +251,18 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   discoverWutheringWavesPath: () => Promise<PathDiscoveryResult>
 
   // 窗口控制
-  windowMinimize: () => Promise<void>
+  windowMinimize: () => Promise<boolean>
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
+  windowHideToTray: () => Promise<boolean>
+  notifyNativeCloseHandlerReady?: () => void
   appRestart: () => Promise<void>
   /** 只标记「这次退出后重新拉起」，退出本身仍走 appQuit；后端请求的重启用它 */
   appRestartOnQuit?: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
   onWindowMaximizedChange: (callback: (maximized: boolean) => void) => () => void
   windowFocus: () => Promise<void>
+  onNativeWindowCloseRequested?: (callback: () => void) => () => void
   /** 电源操作倒计时开始：把窗口拉到最前并临时置顶 */
   powerWarningStart?: () => Promise<void>
   /** 倒计时结束或取消：撤回置顶 */
@@ -314,11 +321,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   updateTraySettings: (uiSettings: unknown) => Promise<boolean>
   updateTrayConfig: (trayItems: unknown) => Promise<boolean>
   onTrayActionRequest: (
-    callback: (request: {
-      action: 'quit' | 'restart' | 'startTask'
-      taskId?: string
-      label?: string
-    }) => void
+    callback: (request: { action: 'quit' | 'startTask'; taskId?: string; label?: string }) => void
   ) => () => void
   syncBackendConfig: (backendSettings: unknown) => Promise<boolean>
 

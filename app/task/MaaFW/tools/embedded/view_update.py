@@ -21,7 +21,9 @@
 
 组 = 谱系 + ``Update.Channel``，同组永远挂同一个载荷。运行前 / 运行后自动更新
 （``embedded_manager``）与手动 ``/maafw/update`` 共用这里；两边只在「触发脚本的视图
-预约是谁拿着」「核心更新怎么调」上不同（``core_call`` 由调用方给）。
+预约是谁拿着」「核心更新怎么调」上不同（``core_call`` 由调用方给）。投影补齐与发行包核对
+也挂在这里。四个调用方都经 ``update_session.UpdateSession`` 组装参数再调
+:func:`run_view_update`。
 
 遍历 ``Config.ScriptConfig`` 只能在事件循环线程上做：同组候选（``GroupMember``）由
 调用方算好传进来，这里只收列表。
@@ -49,6 +51,7 @@ from app.task.MaaFW.tools.core.project_update.timing import format_duration
 from app.task.MaaFW.tools.core.project_update.updater import (
     MaaFWProjectUpdateError,
 )
+from app.task.MaaFW.tools.embedded import env_confirm
 from app.task.MaaFW.tools.embedded.embedded_project import (
     SKIP_UNADOPTED,
     STAGING_DIR_NAME,
@@ -329,7 +332,8 @@ def confirm_environments_in_background(
 ) -> None:
     """被传播切换的脚本各起一个后台线程确认一次运行环境（持各自的视图预约）。
 
-    切换只把文件摆好：``interfaceHash`` / ``requirementsHash`` 一变，isolated_venv 型
+    确认走 ``env_confirm.resolve_prepare_environment`` 取到的宿主实现（缺省严格）。切换只把文件摆好：
+    ``interfaceHash`` / ``requirementsHash`` 一变，isolated_venv 型
     项目的 venv 会整个重建（分钟级、要联网）。不在这里做就会落进它下次运行的 worker 里、
     游戏已经起来了。确认成功会在视图标记里记 ``envConfirmedFor``；失败或没做成，下次
     运行前检查按标记补。
@@ -356,9 +360,9 @@ def confirm_environments_in_background(
             if key is None:
                 return
             try:
-                from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
-
-                MaaFWEmbeddedManager._prepare_project_environment_sync(
+                # 每个脚本一条专用后台线程（不进线程池），宿主实现在这里取。
+                prepare = env_confirm.resolve_prepare_environment()
+                prepare(
                     view,
                     threading.Event(),
                     lambda line: logger.debug(f"[{member.script_id[:8]}] {line}"),
