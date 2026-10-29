@@ -179,6 +179,8 @@ def test_cancelled_close_waits_for_entry_delivery_before_propagating(standalone)
         assert user.push_log == [("普通", "已确认节点", 1.0)]
         await session.close()
         assert len(user.push_log) == 1
+        assert session.result.status == "succeeded"
+        assert session.result.entry_count == 1
 
     asyncio.run(scenario())
 

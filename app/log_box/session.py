@@ -73,12 +73,41 @@ class LogUser(Protocol):
     push_log: list[tuple[str, str, float]]
 
 
+FailureStage = Literal["initialize", "bind", "read", "deliver", "cleanup"]
+
+
+@dataclass(frozen=True)
+class SessionResult:
+    """宿主可查询的收尾状态；数量只表示交付成功的条目，不代表任务成败。
+
+    交付失败可能已写入部分外部状态，entry_count 保持零，不能据此自动重试。
+    不携带异常对象、原始日志或账号信息。
+    """
+
+    status: Literal["pending", "disabled", "succeeded", "failed"]
+    entry_count: int = 0
+    failure_stage: FailureStage | None = None
+
+
 class _ManagedSession:
     """两种来源共用的幂等收尾与取消屏障。"""
 
     def __init__(self, *, enabled: bool) -> None:
         self._enabled = enabled
+        self._result = SessionResult("pending" if enabled else "disabled")
         self._close_task: asyncio.Task[None] | None = None
+
+    @property
+    def result(self) -> SessionResult:
+        """不可变状态快照；close 完成或取消屏障结束后可读取最终结果。"""
+        return self._result
+
+    def _record_failure(self, stage: FailureStage, *, entry_count: int = 0) -> None:
+        # 保留第一次故障；清理失败不能掩盖前面的读取/交付故障。
+        if self._result.status != "failed":
+            self._result = SessionResult(
+                "failed", entry_count=entry_count, failure_stage=stage
+            )
 
     async def close(self) -> None:
         """共享一次收尾；并发或重复关闭不会重复采集与交付。"""
@@ -127,13 +156,19 @@ class EntrySession(_ManagedSession):
         self.spec = spec
 
     async def _finish(self) -> None:
+        stage: FailureStage = "bind"
         try:
             binding = self.spec.bind()
             if binding.deliver is None:
                 raise ValueError("独立结构化会话需要声明交付目标")
+            stage = "read"
             entries = await _read_entries(binding)
+            count = len(entries)
+            stage = "deliver"
             binding.deliver(entries)
+            self._result = SessionResult("succeeded", entry_count=count)
         except Exception:
+            self._record_failure(stage)
             logger.opt(exception=True).warning(self.spec.error_message)
 
 
@@ -187,6 +222,7 @@ class UserLogSession(_ManagedSession):
             self._collector = collector
         except Exception:
             self._failed = True
+            self._record_failure("initialize")
             logger.opt(exception=True).warning(spec.error_message)
 
     def _append(self, log_type: str, text: str, timestamp: float) -> None:
@@ -198,12 +234,15 @@ class UserLogSession(_ManagedSession):
             self._append(entry.log_type, entry.text, entry.timestamp)
 
     async def _finish(self) -> None:
+        count = 0
+        stage: FailureStage = "bind"
         if not self._failed:
             try:
                 # 动态账号等宿主数据先在事件循环固定，不能让工作线程读取可变任务状态。
                 binding = (
                     self.spec.bind() if self.spec.bind is not None else LogBinding()
                 )
+                stage = "read"
                 if self.spec.source == "entries":
                     entries = await _read_entries(binding)
                 else:
@@ -225,9 +264,12 @@ class UserLogSession(_ManagedSession):
                         if binding.deliver is not None
                         else self._deliver
                     )
+                    count = len(entries)
+                    stage = "deliver"
                     deliver(entries)
             except Exception:
                 self._failed = True
+                self._record_failure(stage)
                 logger.opt(exception=True).warning(self.spec.error_message)
         if self._translator is not None:
             try:
@@ -235,6 +277,7 @@ class UserLogSession(_ManagedSession):
                 self._translator.clear()
             except Exception:
                 self._failed = True
+                self._record_failure("cleanup", entry_count=count)
                 logger.opt(exception=True).warning(self.spec.error_message)
         if self._failed and self.spec.failure_text is not None:
             try:
@@ -242,3 +285,5 @@ class UserLogSession(_ManagedSession):
             except Exception:
                 # 连结果落点也不可用时只记诊断，不让采集故障变成脚本故障。
                 logger.opt(exception=True).warning(self.spec.error_message)
+        if not self._failed:
+            self._result = SessionResult("succeeded", entry_count=count)

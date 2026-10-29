@@ -86,12 +86,13 @@ BGI 前两次失败为后端旧类与延迟加载的新专项混用，重启后�
 完整回归：`python -m pytest tests -q -p no:cacheprovider --tb=no --basetemp=test-results/logbox-neutral-full`：
 667 passed、3 skipped、29 subtests passed，7 failed 均为既有 `test_script_pre_post_retry.py` 项。
 Ruff check 与格式化通过，git diff --check 通过。
-本轮接口变更尚未实跑 BGI，尚未提交；未执行 MFW 真实游戏流程。自动回归不代替真实脚本实测。
+独立非日志接口已获用户实跑确认：16:51 分步结果 6 行，统计通知发起，任务报告 Webhook 成功。
+该阶段已提交 924a93c8d。未执行 MFW 真实游戏流程；自动回归不代替真实脚本实测。
 
 
 ## 未接入来源盘点与基座预留评估
 
-2026-10-29 按当前代码只读盘点；这是设计评估，尚未实现新增结果状态契约。
+2026-10-29 按当前代码只读盘点；评估后已开始补充结果状态契约，见下节。
 
 | 对象 | 当前来源/展示 | 接入判断 |
 | --- | --- | --- |
@@ -115,3 +116,26 @@ MaaFW/tools/embedded/runner_task.py 的 _run_record_call/_build_task_details。
 暂不增加：通用 metadata 字典、引擎字段、任务树/事件总线、通知渠道/HTML/图片模型、
 async read、流式 feed。未发现当前未接入专项必须依赖这些新接口的证据。
 流式增量与异步 IO 若以后确有需求，应以实际接入案例单独设计，不放入本次基础重构。
+
+
+## 收尾结果契约补充
+
+前阶段提交：`924a93c8d`。本补充不包含 MFW 接入；用户实跑确认后提交。
+
+- 两种会话统一提供只读 `session.result`，值为不可变 `SessionResult` 快照。
+- status 为 pending / disabled / succeeded / failed；成功空结果用 succeeded + entry_count=0，
+  与禁用、失败区分。pending 不保证尚无外部写入，收尾完成前不得据此发报告或兜底。
+- failure_stage 为 initialize / bind / read / deliver / cleanup，不包含异常对象或账号内容。
+- entry_count 记录已整批交付成功的数量；deliver 失败时保持零，但外部可能已有部分写入。
+  cleanup 失败时保留已知完成交付的数量，优先保留第一个失败阶段。
+- close 仍返回 None；异常隔离、旧失败提示和通知行为不变。取消等待结束后可查询最终结果。
+- MFW 后续可按状态与失败阶段选择现有退路，不能看到 failed 就自动重跑交付，尤其 deliver/cleanup。
+- 最小回归：146 passed（session_result、entry_source、session、reports 及四组专项兼容测试）；
+  Ruff 检查和格式化通过。全量 683 passed、3 skipped、29 subtests passed，
+  仍仅 7 项既有前后置脚本测试失败。命令：python -m pytest tests -q -p no:cacheprovider
+  --tb=no --basetemp=test-results/logbox-result-full。
+
+
+收尾结果补充实测复核：2026-10-29 17:36 BGI 返回 Success，分步表 6 行，统计通知发起，
+任务报告 Webhook 成功；用户确认推送与结果正常。本轮未发现新的节点交付异常。
+提交前相关回归再次 146 passed，Ruff 与 git diff --check 通过。

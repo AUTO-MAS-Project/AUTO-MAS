@@ -27,6 +27,7 @@ from .session import (
     EntrySpec,
     LogBinding,
     LogSpec,
+    SessionResult,
     TranslationSpec,
     UserLogSession,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "LogSpec",
     "EntrySpec",
     "EntrySession",
+    "SessionResult",
     "LogBinding",
     "TranslationSpec",
     "UserLogSession",

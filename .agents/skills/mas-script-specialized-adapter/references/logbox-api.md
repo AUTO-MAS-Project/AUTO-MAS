@@ -493,3 +493,14 @@ col.close()  # 脚本正常退出时 atexit 也会自动收尾
    「改名旧文件后新建」式滚动生效；脚本若删除重建或原地截断日志，旧内容无从
    找回（有 inode 时声明模板也不猜名字，宁缺勿错）。仅无 inode 文件系统需要
    声明 `rotated_name`，接入前按「日志轮转补偿」确认滚动方式。
+
+
+## 可查询的收尾结果
+
+两种托管会话均提供只读 `session.result`（不可变 `SessionResult`）：
+`status` 为 pending / disabled / succeeded / failed，`entry_count` 为整批成功交付数量，
+`failure_stage` 为 initialize / bind / read / deliver / cleanup 或 None。
+成功空结果与禁用、失败分别表示。`close()` 保持返回 None，取消屏障结束后也可查询最终状态。
+旧快照不会被原地修改，不含异常对象、日志或用户信息。
+交付异常可能已部分写入，entry_count=0 不意味着零副作用；清理失败保留已知交付数量，
+不能无条件重试交付。第一个失败阶段优先保留；现有失败提示不计入来源条目数。
