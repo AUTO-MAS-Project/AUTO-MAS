@@ -170,15 +170,7 @@
         </a-col>
         <!-- 策略表：截图 / 输入两行，与同一行的表单项（标签 + 输入框）等高 -->
         <a-col v-bind="adbCol('strategy')" class="control-strategy-col">
-          <a-descriptions :column="1" size="small" bordered class="control-strategy-summary">
-            <a-descriptions-item
-              v-for="item in adbControlStrategyItems"
-              :key="item.label"
-              :label="item.label"
-            >
-              {{ item.value }}
-            </a-descriptions-item>
-          </a-descriptions>
+          <MaaFWControlStrategyTable :items="adbControlStrategyItems" />
         </a-col>
       </template>
     </a-row>
@@ -323,6 +315,7 @@ import type {
   MaaFWScriptControlSectionEmits,
   MaaFWScriptControlSectionProps,
 } from '../../MaaFWFlavor/sectionContracts'
+import MaaFWControlStrategyTable from './MaaFWControlStrategyTable.vue'
 import MaaFWFormSection from './MaaFWFormSection.vue'
 import MaaFWHotkeyField from './MaaFWHotkeyField.vue'
 import { collectHotkeyOptions } from './hotkeyOptions'
@@ -453,41 +446,10 @@ const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnity
   margin-top: 16px;
 }
 
-/* 行是 align=stretch，右列被拉到与同一行表单项等高（标签 + 输入框 + 底距）；列做成 flex，
-   表格撑满列高再减去与 a-form-item 相同的底距（本项目全局把它定成 20px），上下边就与旁边对齐；
-   两行均分高度。窄屏独占一行时按内容高度 */
+/* 行是 align=stretch，策略表所在列被拉到与同一行表单项等高（标签 + 输入框 + 底距）；列做成 flex，
+   表格组件在里面撑满列高。窄屏独占一行时按内容高度 */
 .control-strategy-col {
   display: flex;
-}
-
-.control-strategy-summary {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  margin-bottom: 20px;
-}
-
-/* view 也做成 flex 列，表格作为 flex 项被拉到满高（height:100% 在这里解析不出来，差 3px） */
-.control-strategy-summary :deep(.ant-descriptions-view) {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-}
-
-.control-strategy-summary :deep(.ant-descriptions-view table) {
-  flex: 1;
-}
-
-.control-strategy-summary :deep(.ant-descriptions-item-label),
-.control-strategy-summary :deep(.ant-descriptions-item-content) {
-  padding: 4px 12px !important;
-  font-size: 13px;
-}
-
-.control-strategy-summary :deep(.ant-descriptions-item-label) {
-  width: 28%;
-  color: var(--ant-color-text-secondary);
 }
 
 .control-fade-enter-active,
