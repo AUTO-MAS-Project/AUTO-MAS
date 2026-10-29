@@ -14,6 +14,7 @@ import pytest
 from packaging.version import Version
 
 from app.services import script_install
+from app.services.update_fluxdown import FluxdownResumableError
 from app.task.MaaEnd import manager
 from app.task.MaaEnd.tools import script_update as update
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
@@ -94,6 +95,7 @@ async def test_official_package_installs_before_runtime_overlay(installation):
     root, config = installation
     await update.update_before_run(root, config)
     assert update.read_install(root) == (Version("2.2.0"), "x86_64")
+    assert not list((root.parent / "data/maaend_update").glob("download-*"))
     assert (root / "data/AutoDelivery/catalog.json").is_file()
     assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
     assert update.download_file.await_args.kwargs["downloader"] == "fluxdown"
@@ -111,6 +113,7 @@ async def test_checksum_failure_leaves_installation_unchanged(installation):
     with pytest.raises(ValueError):
         await update.update_before_run(root, config)
     assert update.read_install(root)[0] == Version("2.1.0")
+    assert not list((root.parent / "data/maaend_update").glob("download-*"))
 
 
 @pytest.mark.asyncio
@@ -336,3 +339,89 @@ async def test_early_resource_rejection_restores_interface_and_releases_both_loc
     unlock.assert_awaited_once_with("ticket")
     with script_install.installation_access(root):
         pass
+
+
+@pytest.mark.asyncio
+async def test_install_failure_retries_do_not_accumulate_packages(
+    installation, monkeypatch
+):
+    root, config = installation
+    monkeypatch.setattr(
+        script_install, "verify_archive", Mock(side_effect=OSError("磁盘空间不足"))
+    )
+    cache = root.parent / "data/maaend_update"
+    for _ in range(2):
+        with pytest.raises(OSError, match="磁盘空间不足"):
+            await update.update_before_run(root, config)
+        assert not list(cache.glob("download-*"))
+        assert update.read_install(root)[0] == Version("2.1.0")
+
+
+@pytest.mark.asyncio
+async def test_identity_write_failure_cleans_download_but_keeps_installed_receipt(
+    installation, monkeypatch
+):
+    root, config = installation
+    original_write = update._utils_io.write_file
+
+    def fail_identity(path, value):
+        if path.name == "program-identity.json":
+            raise OSError("身份记录写入失败")
+        return original_write(path, value)
+
+    monkeypatch.setattr(update._utils_io, "write_file", fail_identity)
+    with pytest.raises(OSError, match="身份记录写入失败"):
+        await update.update_before_run(root, config)
+    assert update.read_install(root)[0] == Version("2.2.0")
+    assert (script_install.workspace(root) / "installed.json").exists()
+    assert not list((root.parent / "data/maaend_update").glob("download-*"))
+
+
+@pytest.mark.asyncio
+async def test_cancel_install_waits_for_worker_before_deleting_archive(
+    installation, monkeypatch
+):
+    root, config = installation
+    started = threading.Event()
+    finished = threading.Event()
+
+    def blocking_install(
+        _root, archive, _size, _digest, _protected, _validate, _idle, cancelled
+    ):
+        started.set()
+        assert cancelled.wait(3)
+        assert archive.is_file()
+        finished.set()
+
+    monkeypatch.setattr(script_install, "install_package", blocking_install)
+    task = asyncio.create_task(update.update_before_run(root, config))
+    assert await asyncio.to_thread(started.wait, 3)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=5)
+    assert finished.is_set()
+    assert not list((root.parent / "data/maaend_update").glob("download-*"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error_type", [FluxdownCancelUnconfirmed, FluxdownResumableError]
+)
+async def test_unconfirmed_downloader_keeps_its_private_destination(
+    installation, monkeypatch, error_type
+):
+    root, config = installation
+
+    async def interrupted_download(_url, destination, **_kwargs):
+        destination.write_bytes(b"partial download")
+        raise error_type("下载器未确认停止")
+
+    monkeypatch.setattr(
+        update, "download_file", AsyncMock(side_effect=interrupted_download)
+    )
+    with pytest.raises(error_type):
+        await update.update_before_run(root, config)
+    downloads = list((root.parent / "data/maaend_update").glob("download-*"))
+    assert len(downloads) == 1
+    assert next(downloads[0].iterdir()).read_bytes() == b"partial download"
+    assert update.read_install(root)[0] == Version("2.1.0")

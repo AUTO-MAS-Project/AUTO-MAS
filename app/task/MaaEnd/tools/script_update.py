@@ -205,25 +205,27 @@ async def update_before_run(
         if version != target or actual_arch != arch:
             raise ValueError("MaaEnd 更新包版本或架构与目标不一致")
 
-    await script_install.run_worker(
-        script_install.install_package,
-        root,
-        destination,
-        size,
-        digest,
-        PROTECTED,
-        validate,
-        lambda: assert_idle(root),
-    )
-    _utils_io.write_file(
-        script_install.workspace(root) / "program-identity.json", {"arch": arch}
-    )
-    # 只回收已确认停止下载并成功安装的缓存；取消未确认时保留其独立下载目标。
-    with suppress(OSError):
-        destination.unlink()
-        destination.parent.rmdir()
-    return f"MaaEnd 已更新至 {target}，完整性校验通过"
-
+    # 下载成功才回收本次包；下载取消或续传未确认时保留独立目标。
+    try:
+        await script_install.run_worker(
+            script_install.install_package,
+            root,
+            destination,
+            size,
+            digest,
+            PROTECTED,
+            validate,
+            lambda: assert_idle(root),
+        )
+        _utils_io.write_file(
+            script_install.workspace(root) / "program-identity.json", {"arch": arch}
+        )
+        return f"MaaEnd 已更新至 {target}，完整性校验通过"
+    finally:
+        # run_worker 在取消时等待安装线程结束，避免删掉仍在使用的压缩包。
+        with suppress(OSError):
+            destination.unlink(missing_ok=True)
+            destination.parent.rmdir()
 
 async def confirm_current_install(root: Path) -> None:
     if (script_install.workspace(root) / "transaction.json").exists():
