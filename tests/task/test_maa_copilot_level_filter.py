@@ -40,14 +40,25 @@ def assignment(**requirements):
 
 def test_level_only_gap_is_omitted_only_when_enabled(catalog):
     jobs = [assignment(elite=2, level=60, skill_level=7)]
-    progressions = {"operator": Progression(2, 30, {}, {}, 7)}
+    progressions = {
+        "operator": Progression(
+            elite=2, level=30, masteries={}, modules={}, skill_level=7
+        )
+    }
     original_jobs = deepcopy(jobs)
-    strict = analyze_copilots(jobs, catalog, progressions)
+    strict = analyze_copilots(
+        assignments=jobs, catalog=catalog, progressions=progressions
+    )
     assert strict["ready"] == 0
     assert strict["operators"][0]["manualLevel"]
     assert strict["operators"][0]["goals"] == []
 
-    filtered = analyze_copilots(jobs, catalog, progressions, ignore_level_gaps=True)
+    filtered = analyze_copilots(
+        assignments=jobs,
+        catalog=catalog,
+        progressions=progressions,
+        ignore_level_gaps=True,
+    )
     assert filtered["ready"] == filtered["projectedReady"] == 1
     assert filtered["trainable"] == 0
     assert filtered["operators"] == []
@@ -60,9 +71,15 @@ def test_level_only_gap_is_omitted_only_when_enabled(catalog):
 @pytest.mark.parametrize("require_modules", [True, False])
 def test_other_training_requirements_are_preserved(catalog, require_modules):
     result = analyze_copilots(
-        [assignment(elite=2, level=60, skill_level=10, module=1, module_level=3)],
-        catalog,
-        {"operator": Progression(2, 30, {}, {}, 6)},
+        assignments=[
+            assignment(elite=2, level=60, skill_level=10, module=1, module_level=3)
+        ],
+        catalog=catalog,
+        progressions={
+            "operator": Progression(
+                elite=2, level=30, masteries={}, modules={}, skill_level=6
+            )
+        },
         ignore_level_gaps=True,
         require_modules=require_modules,
     )
@@ -80,9 +97,13 @@ def test_other_training_requirements_are_preserved(catalog, require_modules):
 
 def test_unmet_elite_requirement_still_needs_training(catalog):
     result = analyze_copilots(
-        [assignment(elite=2, level=60)],
-        catalog,
-        {"operator": Progression(1, 80, {}, {}, 7)},
+        assignments=[assignment(elite=2, level=60)],
+        catalog=catalog,
+        progressions={
+            "operator": Progression(
+                elite=1, level=80, masteries={}, modules={}, skill_level=7
+            )
+        },
         ignore_level_gaps=True,
     )
     assert result["ready"] == 0
@@ -95,7 +116,10 @@ def test_unmet_elite_requirement_still_needs_training(catalog):
 
 def test_missing_operator_is_not_treated_as_ready(catalog):
     result = analyze_copilots(
-        [assignment(elite=2, level=60)], catalog, {}, ignore_level_gaps=True
+        assignments=[assignment(elite=2, level=60)],
+        catalog=catalog,
+        progressions={},
+        ignore_level_gaps=True,
     )
     assert result["ready"] == result["projectedReady"] == 0
     assert result["missing"] == 1
@@ -110,14 +134,18 @@ async def test_http_analysis_option_reaches_planner(
     from app.task.MAA import api, api_service
     from app.task.MAA.tools.cultivate import depot_cultivate_service
 
-    monkeypatch.setattr(api_service, "_maa_script_config", lambda _: object())
     monkeypatch.setattr(
-        api_service, "_cultivate_skland_ref", lambda *_: ("account", "role")
+        target=api_service, name="_maa_script_config", value=lambda _: object()
     )
     monkeypatch.setattr(
-        api_service,
-        "_get_copilot_repository",
-        lambda: SimpleNamespace(
+        target=api_service,
+        name="_cultivate_skland_ref",
+        value=lambda *_: ("account", "role"),
+    )
+    monkeypatch.setattr(
+        target=api_service,
+        name="_get_copilot_repository",
+        value=lambda: SimpleNamespace(
             cached=lambda *_: {
                 "assignments": [assignment(elite=2, level=60, skill_level=7)],
                 "updatedAt": 100,
@@ -125,12 +153,23 @@ async def test_http_analysis_option_reaches_planner(
         ),
     )
     monkeypatch.setattr(
-        api_service,
-        "get_cultivate_skland_progression",
-        AsyncMock(return_value=({"operator": Progression(2, 30, {}, {}, 7)}, 200)),
+        target=api_service,
+        name="get_cultivate_skland_progression",
+        value=AsyncMock(
+            return_value=(
+                {
+                    "operator": Progression(
+                        elite=2, level=30, masteries={}, modules={}, skill_level=7
+                    )
+                },
+                200,
+            )
+        ),
     )
     monkeypatch.setattr(
-        depot_cultivate_service, "operator_catalog", AsyncMock(return_value=catalog)
+        target=depot_cultivate_service,
+        name="operator_catalog",
+        value=AsyncMock(return_value=catalog),
     )
     app = FastAPI()
     app.include_router(api.router, prefix="/api/scripts")
