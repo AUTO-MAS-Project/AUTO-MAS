@@ -201,6 +201,12 @@ _MAA_TASK_FAILURE_MARKERS = (
     "任务已完成，但出现错误！",
     "任务已结束，以下任务出现错误",
 )
+
+
+def _has_maa_task_failure(log: str) -> bool:
+    return any(marker in log for marker in _MAA_TASK_FAILURE_MARKERS)
+
+
 # MAA 的停滞提示：只说明任务没有推进，本身不是推进信号。若让它参与 latest_time
 # 更新，MAA 每隔一个提醒间隔（默认 30 分钟）写一条就会把停滞计时重置一次，卡死的
 # 任务永远攒不满超时阈值，等不到 "MAA 进程超时"。这些片段仅从 latest_time 活跃度
@@ -228,6 +234,17 @@ _MAA_STALL_NOTICE_MARKERS = (
 # 「任务因内存不足停止时给出专门提示…」这一条，资源热更新会把整份说明写进被监控的
 # gui.log，只用前缀匹配会把更新中途的正常运行判成内存不足，代理随即中止并反复重试。
 _MAA_OUT_OF_MEMORY_MARKER = "任务因内存不足停止，请关闭部分程序或重启 MAA 后重试"
+
+
+def _should_retry_maa(mode: str, status: str, log: str) -> bool:
+    """仅对尚未形成 MAA 任务失败终态的运行异常重试。"""
+
+    if status == "Success!" or mode == "GreenTicketStore":
+        return False
+    return not (
+        status == "MAA 部分任务执行失败"
+        and _has_maa_task_failure(log)
+    )
 
 
 def _current_week_marker(now: datetime) -> str:
@@ -789,6 +806,20 @@ def _build_depot_maintain_task(
             "PlanList": plans,
         }
     )
+
+
+def _apply_depot_medicine_override(
+    task: dict | None, medicine_count: int | None
+) -> None:
+    """将 MAS 的库存用药设置覆盖到任务及其全部计划。"""
+
+    if task is None or medicine_count is None:
+        return
+    use_medicine = medicine_count > 0
+    task.update(UseMedicine=use_medicine, MedicineCount=medicine_count)
+    for plan in task.get("PlanList", []):
+        if isinstance(plan, dict):
+            plan.update(UseMedicine=use_medicine, MedicineCount=medicine_count)
 
 
 def _build_auto_cultivate_task(
@@ -1494,15 +1525,17 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     await self._finish_cultivate_round()
                 await self._sync_maa_config_updates()
 
-                if (
-                    self.mode == "Annihilation"
-                    and self.cur_user_log.status == "MAA 部分任务执行失败"
+                if maa_log is None:
+                    maa_log = "".join(self.cur_user_log.content)
+                if not _should_retry_maa(
+                    self.mode, self.cur_user_log.status, maa_log
                 ):
-                    if maa_log is None:
-                        maa_log = "".join(self.cur_user_log.content)
-                    if any(marker in maa_log for marker in _MAA_TASK_FAILURE_MARKERS):
-                        logger.warning("剿灭任务已失败，本次不再重试，继续执行日常任务")
-                        break
+                    if self.cur_user_log.status != "Success!":
+                        logger.warning(
+                            f"用户 {self.cur_user_item.name} 的"
+                            f"{MAA_RUN_MOOD_BOOK[self.mode]}已收到 MAA 任务失败终态，停止重试"
+                        )
+                    break
 
     def _cultivate_archive_dir(self) -> Path:
         """当前用户的识别数据档案目录（方案决策 31：归属以写入时的
@@ -2348,6 +2381,17 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     stock_task, cultivate_task, cultivate_plan
                 )
                 cultivate_task = None
+            if not stock_skipped and not self._stock_depot_completed:
+                _apply_depot_medicine_override(
+                    task_set["DepotMaintain"],
+                    self.cur_user_config.Task.DepotMaintainMedicineNumb,
+                )
+
+        if cultivate_task is not None and not self._stock_depot_completed:
+            _apply_depot_medicine_override(
+                cultivate_task,
+                self.cur_user_config.Task.DepotMaintainMedicineNumb,
+            )
 
         # 加载关卡号配置
         if self.cur_user_config.Stage.StageMode == "Fixed":
@@ -2494,6 +2538,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 self.cur_user_config.Task.EventDepotMaintainPlans,
                 activity_stages,
                 source_task=event_depot_source,
+            )
+            _apply_depot_medicine_override(
+                event_depot_task,
+                self.cur_user_config.Task.EventDepotMaintainMedicineNumb,
             )
             for notice_key, notice in activity_notices:
                 logger.warning(notice)
@@ -2861,9 +2909,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 只有全部成功才打「任务已全部完成！」；v6.19.0-beta.1（5e502a811）又把
         # 出错标题改为「任务已结束，以下任务出现错误:」并附失败任务清单，
         # 完成判定三个都要认。
-        elif "任务已全部完成！" in log or any(
-            marker in log for marker in _MAA_TASK_FAILURE_MARKERS
-        ):
+        elif "任务已全部完成！" in log or _has_maa_task_failure(log):
             # 常规任务的完成状态取自 MAA 本轮输出。
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
                 names = {zh_task}
@@ -2920,7 +2966,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             # 培养目标未完成不算整轮错误，不根据培养失败计数触发重试。
             # 最终失败结论以 MAA 收尾日志为准，已完成的仓库识别或刷关子链不能覆盖它。
             if (
-                any(marker in log for marker in _MAA_TASK_FAILURE_MARKERS)
+                _has_maa_task_failure(log)
                 or any(self.task_dict.values())
                 or any(
                     log.rfind(f"任务出错: {name}") > log.rfind(f"完成任务: {name}")

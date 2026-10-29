@@ -274,8 +274,7 @@ import ConfigActionsSection from '@/views/EditView/User/ConfigActionsSection.vue
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
-import { getDepotMaintainPreset } from '@/views/MAAUserEdit/depotMaintainPresets'
-import { getEventDepotPresets } from '@/views/MAAUserEdit/eventDepotMaintainPresets'
+import { getDefaultMAAUserData } from '@/views/MAAUserEdit/userDefaults'
 import { useDepotMaintainPlanEditor } from '@/views/MAAUserEdit/useDepotMaintainPlanEditor'
 import { useMAAFieldSave } from '@/views/MAAUserEdit/useMAAFieldSave'
 import { useMAAEditorLifecycle } from '@/views/MAAUserEdit/useMAAEditorLifecycle'
@@ -569,79 +568,6 @@ const getPlanCurrentConfig = (planData: any) => {
   logger.debug('计划模式未知，返回null')
   return null
 }
-
-// MAA脚本默认用户数据
-const getDefaultMAAUserData = () => ({
-  Info: {
-    Name: '',
-    Id: '',
-    Password: '',
-    Server: 'Official',
-    RemainedDay: -1,
-    IfScriptBeforeTask: false,
-    ScriptBeforeTask: '',
-    IfScriptAfterTask: false,
-    ScriptAfterTask: '',
-    Notes: '',
-    Status: true,
-    Base: 'shared',
-    IfQuickConfig: true,
-  },
-  Stage: {
-    StageMode: 'Fixed',
-    MedicineNumb: 0,
-    SeriesNumb: '0',
-    Stage: '1-7',
-    Stage_1: '',
-    Stage_2: '',
-    Stage_3: '',
-  },
-  Task: {
-    IfStartUp: true,
-    Annihilation: 'Annihilation',
-    AnnihilationStartWeekday: 'Monday',
-    InfrastMode: 'Normal',
-    InfrastName: '',
-    IfInfrast: true,
-    IfFight: true,
-    IfMall: true,
-    IfAward: true,
-    IfSwitchTheme: false,
-    IfRecruit: true,
-    IfDepotMaintain: true,
-    DepotMaintainPlans: JSON.stringify(getDepotMaintainPreset('all')),
-    IfEventDepotMaintain: true,
-    EventDepotMaintainPlans: JSON.stringify(getEventDepotPresets()),
-    IfCultivate: false,
-    IfGreenTicketStore: false,
-    IfActivityFirst: false,
-    ActivityStageIndex: 1,
-    CultivateTargets: '[]',
-    CultivateAutoRaise: false,
-    CultivateSkipDuringActivity: false,
-    CultivateSkipDuringResourceCollection: false,
-    CultivateSklandAccount: '',
-    CultivateSklandUid: '',
-  },
-  Notify: {
-    Enabled: false,
-    ToAddress: '',
-    IfSendMail: false,
-    IfSendSixStar: false,
-    IfSendStatistic: false,
-    IfServerChan: false,
-    ServerChanKey: '',
-    ServerChanChannel: '',
-    ServerChanTag: '',
-  },
-  Data: {
-    LastProxyDate: '2000-01-01T00:00:00+04:00',
-    ProxyTimes: 0,
-    CultivateNotice: '',
-    StaminaPipelineVersion: 1,
-    StaminaPipelineBackup: '{}',
-  },
-})
 
 // 创建扁平化的表单数据，用于表单验证
 const formData = reactive({

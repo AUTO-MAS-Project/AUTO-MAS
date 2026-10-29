@@ -40,6 +40,10 @@ export type MaaUserConfig_Task = {
      */
     CultivateSklandUid?: (string | null);
     /**
+     * 库存保持及干员养成每条计划使用理智药数量；留空沿用 MAA 配置
+     */
+    DepotMaintainMedicineNumb?: (number | null);
+    /**
      * 干员养成目标
      */
     CultivateTargets?: (string | null);
@@ -51,6 +55,10 @@ export type MaaUserConfig_Task = {
      * 活动库存保持计划，保存材料关序号及目标库存，运行时解析当前活动
      */
     EventDepotMaintainPlans?: (string | null);
+    /**
+     * 活动库存保持每条计划使用理智药数量；留空沿用 MAA 配置
+     */
+    EventDepotMaintainMedicineNumb?: (number | null);
     /**
      * 活动期间是否优先刷活动关
      */

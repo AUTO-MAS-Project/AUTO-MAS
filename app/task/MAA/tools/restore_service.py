@@ -219,6 +219,9 @@ async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> No
         # （Info/Task），页面配置随文件一起回到备份时点，否则旧表单值下次
         # 保存会静默覆盖回滚结果
         restored = group_overlay(restored_overlay)
+        if task := restored.get("Task"):
+            task.setdefault("DepotMaintainMedicineNumb", None)
+            task.setdefault("EventDepotMaintainMedicineNumb", None)
         if "StaminaPipelineVersion" not in restored.get("Data", {}):
             # 历史侧车没有新字段：只从该备份恢复旧意图，不能继承当前轮生成的计划。
             task = restored.setdefault("Task", {})
