@@ -435,11 +435,11 @@ onMounted(() => {
           :update-channel-options="updateChannelOptions"
           :handle-setting-change="handleSettingChange"
           :check-update="checkUpdate"
+          @fluxdown-installed="refreshSettings"
         />
       </template>
     </SettingsSectionLayout>
-    <!-- 不再在设置页面直接显示UpdateModal，使用全局的UpdateModal -->
-    <!-- UpdateModal现在由App.vue统一管理 -->
+    <!-- 更新弹窗由 App.vue 统一管理 -->
   </div>
 </template>
 

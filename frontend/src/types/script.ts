@@ -31,7 +31,9 @@ export interface MAAScriptConfig {
   Info: DraftGroup<NonNullable<MaaConfig['Info']>, 'Path'>
   Run: DraftGroup<NonNullable<MaaConfig['Run']>>
   Emulator: DraftGroup<NonNullable<MaaConfig['Emulator']>>
-  Update: DraftGroup<Pick<NonNullable<MaaConfig['Update']>, 'TakeoverEnabled' | 'MirrorChyanCDK'>>
+  Update: DraftGroup<
+    Pick<NonNullable<MaaConfig['Update']>, 'TakeoverEnabled' | 'MirrorChyanCDK' | 'Channel'>
+  >
 }
 
 export interface GeneralScriptConfig {

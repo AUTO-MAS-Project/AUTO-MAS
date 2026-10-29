@@ -21,6 +21,7 @@ const entries = [
   ['Voice', 'Type', 'notification', 'voice'],
   ['Voice', 'Enabled', 'notification', 'voice'],
   ['Update', 'IfAutoUpdate', 'update', 'auto_update'],
+  ['Update', 'FluxdownTakeoverAll', 'update', 'script_update_takeover'],
   ['Update', 'Channel', 'update', 'update_channel'],
   ['Update', 'Source', 'update', 'update_source'],
   ['Update', 'GitHubMirror', 'network', 'mirror'],

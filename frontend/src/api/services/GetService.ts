@@ -35,6 +35,9 @@ import type { EmulatorGetOut } from '../models/EmulatorGetOut';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { FluxdownDetectOut } from '../models/FluxdownDetectOut';
+import type { FluxdownInstallIn } from '../models/FluxdownInstallIn';
+import type { FluxdownInstallOut } from '../models/FluxdownInstallOut';
+import type { FluxdownReleaseOut } from '../models/FluxdownReleaseOut';
 import type { GameCalendarActivitiesOut } from '../models/GameCalendarActivitiesOut';
 import type { GetStageIn } from '../models/GetStageIn';
 import type { HistoryDetailGetIn } from '../models/HistoryDetailGetIn';
@@ -1497,6 +1500,38 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/update/fluxdown/detect',
+        });
+    }
+    /**
+     * 获取 FluxDown 最新 Release 直链
+     * 用于设置页展示 CLI / Server 两个包的 GitHub 下载链接。
+     * @returns FluxdownReleaseOut Successful Response
+     * @throws ApiError
+     */
+    public static getFluxdownReleaseApiUpdateFluxdownReleaseGet(): CancelablePromise<FluxdownReleaseOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/update/fluxdown/release',
+        });
+    }
+    /**
+     * 由 MAS 下载并安装 FluxDown CLI 与 Server
+     * 静默下载两个发布包，校验后解压到 MAS 数据目录并写入 FluxdownPath。
+     * @param requestBody
+     * @returns FluxdownInstallOut Successful Response
+     * @throws ApiError
+     */
+    public static installFluxdownApiUpdateFluxdownInstallPost(
+        requestBody: FluxdownInstallIn,
+    ): CancelablePromise<FluxdownInstallOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/fluxdown/install',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

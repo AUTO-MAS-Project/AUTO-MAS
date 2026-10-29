@@ -390,7 +390,7 @@ class GlobalConfig(DomainEntry):
 
         FluxdownTakeoverAll: bool = Field(
             default_factory=lambda: False,
-            description="FluxDown 接管所有自动化脚本更新（预留项，后端尚未实现，前端已禁用展示）",
+            description="已接入脚本的 GitHub 更新使用 FluxDown 下载；关闭使用内置下载器，不控制专项更新接管",
         )
 
         GitHubMirror: Literal["Auto", "Off"] = Field(
