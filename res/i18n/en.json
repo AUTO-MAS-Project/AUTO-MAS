@@ -2905,6 +2905,7 @@
   "core.eventDepotPreview.name": "Balanced event farming",
   "core.eventDepotPreview.noActivity": "No event stages are available. Targets can be saved for the next event.",
   "core.eventDepotPreview.orundumStage": "Orundum stage",
+  "core.eventDepotPreview.placeholderHint": "No activity is open. Preset targets using the previous activity’s stage layout; the next activity reuses them by stage position, and materials may change.",
   "core.eventDepotPreview.retry": "Retry",
   "core.eventDepotPreview.runtimeUnresolved": "Some event stages, materials or targets are unavailable and skipped this run. Saved settings are retained.",
   "core.eventDepotPreview.scopeHint": "MAA selects the execution order by target completion ratio; this does not guarantee switching stages after every battle. Material and Orundum stages follow the current event.",

@@ -2905,6 +2905,7 @@
   "core.eventDepotPreview.name": "活动关均衡理智",
   "core.eventDepotPreview.noActivity": "当前没有可用的活动关卡，可先保存目标等待下期活动",
   "core.eventDepotPreview.orundumStage": "搓玉关",
+  "core.eventDepotPreview.placeholderHint": "当前暂无活动，按上期关卡结构预设目标；下期活动按关卡序号沿用，材料可能变化。",
   "core.eventDepotPreview.retry": "重试",
   "core.eventDepotPreview.runtimeUnresolved": "部分活动选关、材料或目标暂不可用，本轮跳过；原配置已保留。",
   "core.eventDepotPreview.scopeHint": "按库存达成率排序执行，由 MAA 决定选关顺序，不保证每场切换关卡。活动变化后自动更新材料关与搓玉关。",

@@ -70,6 +70,8 @@ interface StageOverview {
   ActivityStatus?: 'ready' | 'empty' | 'stale' | 'unavailable'
   ActivityUpdatedAt?: string | number | null
   Activity: ActivityItem[]
+  /** 无活动时供目标编辑使用的上期关卡类别，不包含可执行关卡。 */
+  ActivityTemplate?: ('material' | 'orundum')[]
   Resource: ResourceItem[]
   Options: StageOption[]
 }

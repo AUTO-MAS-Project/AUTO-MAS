@@ -2905,6 +2905,7 @@
   "core.eventDepotPreview.name": "イベント均衡周回",
   "core.eventDepotPreview.noActivity": "現在利用可能なイベントステージはありません。次のイベント向けに目標を保存できます。",
   "core.eventDepotPreview.orundumStage": "合成玉用ステージ",
+  "core.eventDepotPreview.placeholderHint": "開催中のイベントはありません。前回のステージ構成で目標を設定できます。次回はステージ順に引き継がれ、素材が変わる場合があります。",
   "core.eventDepotPreview.retry": "再試行",
   "core.eventDepotPreview.runtimeUnresolved": "一部のイベントステージ・素材・目標が利用できないため今回はスキップします。保存済み設定は保持されます。",
   "core.eventDepotPreview.scopeHint": "MAA が在庫達成率に応じて実行順を決めます。毎戦ステージを切り替える動作ではありません。素材と合成玉用ステージは当期イベントに追従します。",

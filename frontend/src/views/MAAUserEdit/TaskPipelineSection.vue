@@ -113,6 +113,7 @@
         :loading="loading"
         :stage-options="stageOptions"
         :activity-stages="activityStages"
+        :activity-template="activityTemplate"
         :activity-stage-loading="activityStageLoading"
         :activity-stage-error="activityStageError"
         :depot-item-options="depotItemOptions"
@@ -270,6 +271,7 @@ const props = defineProps<{
   loading: boolean
   stageOptions: any[]
   activityStages: ActivityItem[]
+  activityTemplate?: ('material' | 'orundum')[]
   activityStageLoading: boolean
   activityStageError: string
   depotItemOptions: SelectOption[]
