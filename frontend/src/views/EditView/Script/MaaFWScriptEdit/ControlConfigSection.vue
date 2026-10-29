@@ -1,8 +1,11 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
   <MaaFWFormSection :title="t('core.edit.controlModeGameResource')">
-    <a-row :gutter="24" class="controller-resource-row">
-      <a-col :span="12">
+    <!-- 模拟器依次排：控制方式、模拟器、实例、游戏资源、包名、等待时间、特调插槽
+         besidePackageName、截图 / 输入策略表，格宽见脚本里的 adbCol。
+         其余控制器这一行只有控制方式 | 游戏资源两格，各占半行 -->
+    <a-row :gutter="24" align="stretch" class="controller-resource-row">
+      <a-col v-bind="isAdbController ? adbCol('controller') : HALF_COL">
         <a-form-item>
           <template #label>
             <span class="form-label">{{ t('core.edit.controlMode') }}</span>
@@ -29,7 +32,76 @@
           </a-select>
         </a-form-item>
       </a-col>
-      <a-col :span="12">
+      <template v-if="isAdbController">
+        <a-col v-bind="adbCol('emulator')">
+          <a-form-item>
+            <template #label>
+              <span class="form-label">{{ t('core.edit.emulator') }}</span>
+            </template>
+            <a-select
+              v-model:value="emulatorIdValue"
+              size="large"
+              :placeholder="t('core.edit.pickEmulator')"
+              :loading="emulatorLoading"
+              :disabled="!emulatorOptionsReady"
+              @change="(value: string | number) => emit('emulator-select-change', String(value))"
+            >
+              <a-select-option
+                v-for="item in emulatorOptions"
+                :key="item.value"
+                :value="item.value"
+              >
+                {{ item.label }}
+              </a-select-option>
+            </a-select>
+          </a-form-item>
+        </a-col>
+        <a-col v-bind="adbCol('instance')">
+          <a-form-item>
+            <template #label>
+              <span class="form-label">{{ t('core.edit.emulatorInstance') }}</span>
+            </template>
+            <a-input
+              v-if="
+                emulatorDeviceOptions.length === 0 &&
+                !emulatorDeviceLoading &&
+                maafwConfig.Emulator.Id &&
+                maafwConfig.Emulator.Id !== '-'
+              "
+              v-model:value="emulatorIndexValue"
+              size="large"
+              :placeholder="t('core.edit.enterEmulatorInstanceIndex')"
+              class="modern-input"
+              :disabled="!emulatorOptionsReady"
+              @blur="emit('change', 'Emulator', 'Index', maafwConfig.Emulator.Index)"
+            />
+            <a-select
+              v-else
+              v-model:value="emulatorIndexValue"
+              size="large"
+              :placeholder="t('core.edit.pickEmulatorFirst')"
+              :loading="emulatorDeviceLoading"
+              :disabled="
+                !emulatorOptionsReady ||
+                emulatorDeviceLoading ||
+                !maafwConfig.Emulator.Id ||
+                maafwConfig.Emulator.Id === '-'
+              "
+              @change="(value: string | number) => emit('change', 'Emulator', 'Index', value)"
+            >
+              <a-select-option
+                v-for="item in emulatorDeviceOptions"
+                :key="item.value"
+                :value="item.value"
+                :disabled="item.disabled"
+              >
+                {{ item.label }}
+              </a-select-option>
+            </a-select>
+          </a-form-item>
+        </a-col>
+      </template>
+      <a-col v-bind="isAdbController ? adbCol('resource') : HALF_COL">
         <a-form-item>
           <template #label>
             <a-tooltip :title="t('core.edit.pickMfwResourceLeave')">
@@ -53,146 +125,66 @@
           </a-select>
         </a-form-item>
       </a-col>
+      <template v-if="isAdbController">
+        <a-col v-bind="adbCol('packageName')">
+          <a-form-item>
+            <template #label>
+              <a-tooltip :title="t('core.edit.mfwGamePackageNamePassed')">
+                <span class="form-label">
+                  {{ t('core.edit.mfwGamePackageName') }}
+                  <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                </span>
+              </a-tooltip>
+            </template>
+            <a-input
+              v-model:value="maafwConfig.Game.PackageName"
+              :placeholder="t('core.edit.mfwGamePackageNamePlaceholder')"
+              size="large"
+              allow-clear
+              @blur="emit('change', 'Game', 'PackageName', maafwConfig.Game.PackageName)"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col v-bind="adbCol('waitTime')">
+          <a-form-item>
+            <template #label>
+              <a-tooltip :title="t('core.edit.mfwWaitTimeTip')">
+                <span class="form-label">
+                  {{ t('core.edit.waitTimeSeconds') }}
+                  <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                </span>
+              </a-tooltip>
+            </template>
+            <a-input-number
+              v-model:value="maafwConfig.Game.WaitTime"
+              :min="0"
+              :max="9999"
+              size="large"
+              style="width: 100%"
+              @blur="emit('change', 'Game', 'WaitTime', maafwConfig.Game.WaitTime)"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col v-if="$slots.besidePackageName" v-bind="adbCol('beside')">
+          <slot name="besidePackageName" />
+        </a-col>
+        <!-- 策略表：截图 / 输入两行，与同一行的表单项（标签 + 输入框）等高 -->
+        <a-col v-bind="adbCol('strategy')" class="control-strategy-col">
+          <a-descriptions :column="1" size="small" bordered class="control-strategy-summary">
+            <a-descriptions-item
+              v-for="item in adbControlStrategyItems"
+              :key="item.label"
+              :label="item.label"
+            >
+              {{ item.value }}
+            </a-descriptions-item>
+          </a-descriptions>
+        </a-col>
+      </template>
     </a-row>
 
     <Transition name="control-fade" mode="out-in">
-      <div v-if="isAdbController" key="adb">
-        <a-row :gutter="24" class="control-detail-row">
-          <a-col :span="12">
-            <a-form-item>
-              <template #label>
-                <span class="form-label">{{ t('core.edit.emulator') }}</span>
-              </template>
-              <a-select
-                v-model:value="emulatorIdValue"
-                size="large"
-                :placeholder="t('core.edit.pickEmulator')"
-                :loading="emulatorLoading"
-                :disabled="!emulatorOptionsReady"
-                @change="(value: string | number) => emit('emulator-select-change', String(value))"
-              >
-                <a-select-option
-                  v-for="item in emulatorOptions"
-                  :key="item.value"
-                  :value="item.value"
-                >
-                  {{ item.label }}
-                </a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item>
-              <template #label>
-                <span class="form-label">{{ t('core.edit.emulatorInstance') }}</span>
-              </template>
-              <a-input
-                v-if="
-                  emulatorDeviceOptions.length === 0 &&
-                  !emulatorDeviceLoading &&
-                  maafwConfig.Emulator.Id &&
-                  maafwConfig.Emulator.Id !== '-'
-                "
-                v-model:value="emulatorIndexValue"
-                size="large"
-                :placeholder="t('core.edit.enterEmulatorInstanceIndex')"
-                class="modern-input"
-                :disabled="!emulatorOptionsReady"
-                @blur="emit('change', 'Emulator', 'Index', maafwConfig.Emulator.Index)"
-              />
-              <a-select
-                v-else
-                v-model:value="emulatorIndexValue"
-                size="large"
-                :placeholder="t('core.edit.pickEmulatorFirst')"
-                :loading="emulatorDeviceLoading"
-                :disabled="
-                  !emulatorOptionsReady ||
-                  emulatorDeviceLoading ||
-                  !maafwConfig.Emulator.Id ||
-                  maafwConfig.Emulator.Id === '-'
-                "
-                @change="(value: string | number) => emit('change', 'Emulator', 'Index', value)"
-              >
-                <a-select-option
-                  v-for="item in emulatorDeviceOptions"
-                  :key="item.value"
-                  :value="item.value"
-                  :disabled="item.disabled"
-                >
-                  {{ item.label }}
-                </a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <!-- type=flex + stretch：右边的策略表跟左边「标签 + 输入框」等高，上下边对齐 -->
-        <a-row :gutter="24" type="flex" align="stretch" class="control-detail-row">
-          <a-col :span="12">
-            <!-- 包名、特调在包名旁登记的组件（插入点 besidePackageName）、等待时间依次两两并排，
-                 窄屏上下排 -->
-            <a-row :gutter="16">
-              <a-col :xs="24" :xl="12">
-                <a-form-item>
-                  <template #label>
-                    <a-tooltip :title="t('core.edit.mfwGamePackageNamePassed')">
-                      <span class="form-label">
-                        {{ t('core.edit.mfwGamePackageName') }}
-                        <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                      </span>
-                    </a-tooltip>
-                  </template>
-                  <a-input
-                    v-model:value="maafwConfig.Game.PackageName"
-                    :placeholder="t('core.edit.mfwGamePackageNamePlaceholder')"
-                    size="large"
-                    allow-clear
-                    @blur="emit('change', 'Game', 'PackageName', maafwConfig.Game.PackageName)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col v-if="$slots.besidePackageName" :xs="24" :xl="12">
-                <slot name="besidePackageName" />
-              </a-col>
-              <a-col :xs="24" :xl="12">
-                <a-form-item>
-                  <template #label>
-                    <a-tooltip :title="t('core.edit.mfwWaitTimeTip')">
-                      <span class="form-label">
-                        {{ t('core.edit.waitTimeSeconds') }}
-                        <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                      </span>
-                    </a-tooltip>
-                  </template>
-                  <a-input-number
-                    v-model:value="maafwConfig.Game.WaitTime"
-                    :min="0"
-                    :max="9999"
-                    size="large"
-                    style="width: 100%"
-                    @blur="emit('change', 'Game', 'WaitTime', maafwConfig.Game.WaitTime)"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </a-col>
-          <!-- 控制策略表放在包名右边：截图 / 输入两行，撑满整列高度 -->
-          <a-col :span="12" class="control-strategy-col">
-            <a-descriptions :column="1" size="small" bordered class="control-strategy-summary">
-              <a-descriptions-item
-                v-for="item in adbControlStrategyItems"
-                :key="item.label"
-                :label="item.label"
-              >
-                {{ item.value }}
-              </a-descriptions-item>
-            </a-descriptions>
-          </a-col>
-        </a-row>
-      </div>
-
-      <div v-else-if="isDesktopController" key="win32">
+      <div v-if="isDesktopController" key="win32">
         <!-- 两行摆完：启动方式 | 游戏 exe ；Unity 分辨率 | 启动参数 | 等待时间 | 键位映射 -->
         <a-row :gutter="24" class="control-detail-row">
           <a-col :span="12">
@@ -323,7 +315,7 @@
 <script setup lang="ts">
 import PathPickerField from '@/components/PathPickerField.vue'
 import { useI18n } from 'vue-i18n'
-import { computed } from 'vue'
+import { computed, useSlots } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { isDirectControllerType } from '@/composables/useMaaFWScriptConfig'
 import type { MaaFWLaunchMode, MaaFWUnityResolution } from '@/types/script'
@@ -343,6 +335,51 @@ const props = defineProps<MaaFWScriptControlSectionProps>()
 const emit = defineEmits<MaaFWScriptControlSectionEmits>()
 
 const launchMode = computed<MaaFWLaunchMode>(() => props.maafwConfig.Game.LaunchMode)
+
+const slots = useSlots()
+
+const HALF_COL = { span: 12 } as const
+
+// 宽屏每行最多三格，最后一行不留单格：余两格时最后一行两格（8 格 = 3 / 3 / 2），余一格时
+// 最后两行各两格（7 格 = 3 / 2 / 2）。返回每格的栅格宽度
+const wideRowSpans = (count: number): number[] => {
+  const rows: number[] = []
+  let rest = count
+  while (rest > 0) {
+    const size = rest === 4 ? 2 : Math.min(rest, 3)
+    rows.push(size)
+    rest -= size
+  }
+  return rows.flatMap(size => Array<number>(size).fill(24 / size))
+}
+
+type AdbField =
+  | 'controller'
+  | 'emulator'
+  | 'instance'
+  | 'resource'
+  | 'packageName'
+  | 'waitTime'
+  | 'beside'
+  | 'strategy'
+
+// 模拟器各格按模板顺序排；插槽不是响应式的，写成函数在渲染时取
+const adbFields = (): AdbField[] => [
+  'controller',
+  'emulator',
+  'instance',
+  'resource',
+  'packageName',
+  'waitTime',
+  ...(slots.besidePackageName ? (['beside'] as const) : []),
+  'strategy',
+]
+
+// 中等宽度两列、窄屏一列，宽屏按 wideRowSpans
+const adbCol = (field: AdbField) => {
+  const fields = adbFields()
+  return { xs: 24, md: 12, xl: wideRowSpans(fields.length)[fields.indexOf(field)] }
+}
 
 // 模拟器 / 实例下拉的「未选择」（值为 -）由后端列表自带，这里不再另加一项。列表还没到时
 // （加载中、加载失败、没选模拟器时实例列表为空）选项里没有它，框里会直接露出「-」，改显示占位文字；
@@ -416,8 +453,9 @@ const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnity
   margin-top: 16px;
 }
 
-/* 右列整体是 flex，表格撑满列高（列高 = 左边 a-form-item 的标签 + 输入框 + 底距），再减去
-   与 a-form-item 相同的底距（本项目全局把它定成 20px），上下边就与左边对齐；两行均分高度 */
+/* 行是 align=stretch，右列被拉到与同一行表单项等高（标签 + 输入框 + 底距）；列做成 flex，
+   表格撑满列高再减去与 a-form-item 相同的底距（本项目全局把它定成 20px），上下边就与旁边对齐；
+   两行均分高度。窄屏独占一行时按内容高度 */
 .control-strategy-col {
   display: flex;
 }
