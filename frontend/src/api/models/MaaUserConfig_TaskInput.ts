@@ -44,9 +44,17 @@ export type MaaUserConfig_TaskInput = {
      */
     DepotMaintainMedicineNumb?: (number | null);
     /**
+     * 普通库存保持每条计划使用源石数量；留空沿用 MAA 配置
+     */
+    DepotMaintainStoneNumb?: (number | null);
+    /**
      * 干员养成每条计划使用理智药数量；留空沿用 MAA 配置
      */
     CultivateMedicineNumb?: (number | null);
+    /**
+     * 干员养成每条计划使用源石数量；留空沿用 MAA 配置
+     */
+    CultivateStoneNumb?: (number | null);
     /**
      * 干员养成目标
      */
@@ -63,6 +71,10 @@ export type MaaUserConfig_TaskInput = {
      * 活动库存保持每条计划使用理智药数量；留空沿用 MAA 配置
      */
     EventDepotMaintainMedicineNumb?: (number | null);
+    /**
+     * 活动库存保持每条计划使用源石数量；留空沿用 MAA 配置
+     */
+    EventDepotMaintainStoneNumb?: (number | null);
     /**
      * 活动期间是否优先刷活动关
      */

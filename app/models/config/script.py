@@ -77,6 +77,9 @@ from .shared import (
     normalize_maaend_plan_key,
 )
 
+DepotQuotaNumb = Annotated[int | None, Field(ge=0, le=9999)]
+"""库存保持与干员养成每条计划的理智药/源石额度；留空即沿用 MAA 原设置。"""
+
 
 class MaaUserConfig(DomainEntry):
     "MAA用户配置"
@@ -349,14 +352,24 @@ class MaaUserConfig(DomainEntry):
             description="森空岛绑定：绑定角色的游戏 uid（非森空岛 userId）",
         )
 
-        DepotMaintainMedicineNumb: Annotated[int | None, Field(ge=0, le=9999)] = Field(
+        DepotMaintainMedicineNumb: DepotQuotaNumb = Field(
             default_factory=lambda: None,
             description="普通库存保持每条计划使用理智药数量；留空沿用 MAA 配置",
         )
 
-        CultivateMedicineNumb: Annotated[int | None, Field(ge=0, le=9999)] = Field(
+        DepotMaintainStoneNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="普通库存保持每条计划使用源石数量；留空沿用 MAA 配置",
+        )
+
+        CultivateMedicineNumb: DepotQuotaNumb = Field(
             default_factory=lambda: None,
             description="干员养成每条计划使用理智药数量；留空沿用 MAA 配置",
+        )
+
+        CultivateStoneNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="干员养成每条计划使用源石数量；留空沿用 MAA 配置",
         )
 
         CultivateTargets: JsonListString = Field(
@@ -377,11 +390,14 @@ class MaaUserConfig(DomainEntry):
             description="活动库存保持计划，保存材料关序号及目标库存，运行时解析当前活动",
         )
 
-        EventDepotMaintainMedicineNumb: Annotated[int | None, Field(ge=0, le=9999)] = (
-            Field(
-                default_factory=lambda: None,
-                description="活动库存保持每条计划使用理智药数量；留空沿用 MAA 配置",
-            )
+        EventDepotMaintainMedicineNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="活动库存保持每条计划使用理智药数量；留空沿用 MAA 配置",
+        )
+
+        EventDepotMaintainStoneNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="活动库存保持每条计划使用源石数量；留空沿用 MAA 配置",
         )
 
         IfActivityFirst: bool = Field(

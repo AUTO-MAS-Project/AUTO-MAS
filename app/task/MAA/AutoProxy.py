@@ -805,23 +805,41 @@ def _build_depot_maintain_task(
     )
 
 
-def _apply_depot_medicine_override(
-    task: dict | None, medicine_count: int | None
-) -> None:
-    """按 MAS 填写的数量覆盖该组每条计划的理智药额度。
+_MAA_DEPOT_QUOTA_KEYS = (
+    ("UseMedicine", "MedicineCount"),
+    ("UseStone", "StoneCount"),
+)
+"""MAA 库存保持任务成对的「整组总开关 + 计划额度」字段，理智药与源石在上游同构。"""
 
-    MAA 的任务级 UseMedicine 是整组总开关，关闭时序列化会把计划数量强制写成 0，
-    所以填正数时一并打开；填 0 只落到计划上，不影响共用任务的另一组。
+
+def _write_depot_plan_quota(task: dict, gate: str, count_key: str, count: int) -> None:
+    """把一段额度写到本组每条计划；MAA 的数量字段只存在于计划级。"""
+
+    for plan in task.get("PlanList") or []:
+        if isinstance(plan, dict):
+            plan.update({gate: count > 0, count_key: count})
+
+
+def _apply_depot_quota_override(
+    task: dict | None, *, medicine: int | None, stone: int | None
+) -> None:
+    """按 MAS 填写的数量覆盖该组每条计划的理智药与源石额度。
+
+    MAA 的任务级 UseMedicine/UseStone 是整组总开关，关闭时序列化会把计划数量强制
+    写成 0，所以填正数时一并打开；填 0 只落到计划上，不影响共用任务的另一组。
+    留空表示沿用 MAA 原设置，整段不动。
     """
 
-    if task is None or medicine_count is None:
+    if task is None:
         return
-    use_medicine = medicine_count > 0
-    if use_medicine:
-        task["UseMedicine"] = True
-    for plan in task.get("PlanList", []):
-        if isinstance(plan, dict):
-            plan.update(UseMedicine=use_medicine, MedicineCount=medicine_count)
+    for (gate, count_key), count in zip(
+        _MAA_DEPOT_QUOTA_KEYS, (medicine, stone), strict=True
+    ):
+        if count is None:
+            continue
+        if count > 0:
+            task[gate] = True
+        _write_depot_plan_quota(task, gate, count_key, count)
 
 
 def _build_auto_cultivate_task(
@@ -986,7 +1004,7 @@ def _build_cultivate_task(
     }
 
 
-def _materialize_depot_medicine_gate(task: dict) -> None:
+def _materialize_depot_quota_gates(task: dict) -> None:
     """把任务级药石总开关摊平到本组计划。
 
     MAA 的 DepotMaintain 用任务级 UseMedicine/UseStone 当整组开关，关闭时序列化
@@ -994,16 +1012,9 @@ def _materialize_depot_medicine_gate(task: dict) -> None:
     原本关闭的额度在另一组打开总开关时不复活。
     """
 
-    plans = task.get("PlanList", [])
-    for gate, count_key in (
-        ("UseMedicine", "MedicineCount"),
-        ("UseStone", "StoneCount"),
-    ):
-        if task.get(gate, True):
-            continue
-        for plan in plans:
-            if isinstance(plan, dict):
-                plan.update({gate: False, count_key: 0})
+    for gate, count_key in _MAA_DEPOT_QUOTA_KEYS:
+        if not task.get(gate, True):
+            _write_depot_plan_quota(task, gate, count_key, 0)
 
 
 def _build_stock_cultivate_task(
@@ -1017,7 +1028,7 @@ def _build_stock_cultivate_task(
     cultivate = deepcopy(cultivate_task) if cultivate_task is not None else None
     for group in (stock, cultivate):
         if group is not None:
-            _materialize_depot_medicine_gate(group)
+            _materialize_depot_quota_gates(group)
     reservations = {item.item_id: item.amount for item in plan.reservations}
     for item in stock["PlanList"]:
         item["DropCount"] += reservations.get(item["DropId"], 0)
@@ -1033,7 +1044,7 @@ def _build_stock_cultivate_task(
             **{
                 gate: stock.get(gate, True)
                 or (cultivate is not None and cultivate.get(gate, True))
-                for gate in ("UseMedicine", "UseStone")
+                for gate, _ in _MAA_DEPOT_QUOTA_KEYS
             },
         }
     )
@@ -2365,8 +2376,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 await self._warn_missing_task_source("理智任务", "、".join(affected))
 
         # 养成组本轮已花掉的额度不影响库存计划，反之亦然，两组各按自己的设置覆盖。
-        _apply_depot_medicine_override(
-            cultivate_task, self.cur_user_config.Task.CultivateMedicineNumb
+        _apply_depot_quota_override(
+            cultivate_task,
+            medicine=self.cur_user_config.Task.CultivateMedicineNumb,
+            stone=self.cur_user_config.Task.CultivateStoneNumb,
         )
         # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖
         # MAS 管理的三项（Stage/DropId/DropCount），其余原生字段（含用户在 MAA 里
@@ -2379,11 +2392,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             stock_task = task_set["DepotMaintain"]
             if self._stock_depot_completed:
                 # 重试保留库存目标，但不重新领取已执行阶段的药石额度。
-                stock_task.update(UseMedicine=False, UseStone=False)
+                stock_task.update({gate: False for gate, _ in _MAA_DEPOT_QUOTA_KEYS})
             else:
-                _apply_depot_medicine_override(
+                _apply_depot_quota_override(
                     stock_task,
-                    self.cur_user_config.Task.DepotMaintainMedicineNumb,
+                    medicine=self.cur_user_config.Task.DepotMaintainMedicineNumb,
+                    stone=self.cur_user_config.Task.DepotMaintainStoneNumb,
                 )
             stock_skipped = (
                 activity_open and stock_task.get("SkipDuringActivity", False)
@@ -2557,9 +2571,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 activity_stages,
                 source_task=event_depot_source,
             )
-            _apply_depot_medicine_override(
+            _apply_depot_quota_override(
                 event_depot_task,
-                self.cur_user_config.Task.EventDepotMaintainMedicineNumb,
+                medicine=self.cur_user_config.Task.EventDepotMaintainMedicineNumb,
+                stone=self.cur_user_config.Task.EventDepotMaintainStoneNumb,
             )
             for notice_key, notice in activity_notices:
                 logger.warning(notice)

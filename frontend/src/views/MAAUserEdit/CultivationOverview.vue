@@ -62,19 +62,19 @@
           </a-tooltip>
         </div>
       </div>
-      <div class="setting-row">
-        <span class="setting-label">{{ t('core.maaStaminaPipeline.cultivateMedicineCount') }}</span>
-        <span class="setting-desc">{{ t('core.maaStaminaPipeline.medicineCountHint') }}</span>
+      <div v-for="field in cultivateQuotas" :key="field.key" class="setting-row">
+        <span class="setting-label">{{ t(field.labelKey) }}</span>
+        <span class="setting-desc">{{ t('core.maaStaminaPipeline.quotaCountHint') }}</span>
         <a-input-number
-          class="setting-control medicine-control"
-          :value="formData?.Task?.CultivateMedicineNumb"
+          class="setting-control quota-control"
+          :value="formData?.Task?.[field.key]"
           :min="0"
           :max="9999"
           :precision="0"
           allow-clear
-          :placeholder="t('core.maaStaminaPipeline.medicineCountPlaceholder')"
+          :placeholder="t('core.maaStaminaPipeline.quotaCountPlaceholder')"
           :disabled="loading"
-          @change="emit('save', 'Task.CultivateMedicineNumb', $event)"
+          @change="emit('save', 'Task.' + field.key, $event)"
         />
       </div>
     </div>
@@ -111,6 +111,13 @@ import type { CultivatePreviewOut } from '@/api'
 import { listGoals, parseCultivateTargets } from './cultivateTargets'
 
 type SelectOption = { label: string; value: string }
+type QuotaField = { key: string; labelKey: string }
+
+/* 理智药与源石在 MAA 侧同构；留空沿用 MAA 原计划设置，填数字才覆盖 */
+const cultivateQuotas: QuotaField[] = [
+  { key: 'CultivateMedicineNumb', labelKey: 'core.maaStaminaPipeline.cultivateMedicineCount' },
+  { key: 'CultivateStoneNumb', labelKey: 'core.maaStaminaPipeline.cultivateStoneCount' },
+]
 
 const props = defineProps<{
   formData: any
@@ -243,7 +250,7 @@ const statSanity = computed(() => props.cultivatePreview?.totalExpectedSanity ??
   width: 220px;
 }
 
-.medicine-control {
+.quota-control {
   width: 160px;
 }
 

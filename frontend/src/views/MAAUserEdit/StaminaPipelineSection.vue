@@ -27,22 +27,22 @@
         :activity-error="activityStageError"
         @retry-activity="emit('retryActivity')"
       />
-      <a-form-item class="medicine-count-field">
+      <a-form-item v-for="field in eventDepotQuotas" :key="field.key" class="quota-count-field">
         <template #label>
           <FieldLabelWithHint
-            :text="t('core.maaStaminaPipeline.eventDepotMedicineCount')"
-            :hint="t('core.maaStaminaPipeline.medicineCountHint')"
+            :text="t(field.labelKey)"
+            :hint="t('core.maaStaminaPipeline.quotaCountHint')"
           />
         </template>
         <a-input-number
-          :value="formData.Task.EventDepotMaintainMedicineNumb"
+          :value="formData.Task[field.key]"
           :min="0"
           :max="9999"
           :precision="0"
           allow-clear
-          :placeholder="t('core.maaStaminaPipeline.medicineCountPlaceholder')"
+          :placeholder="t('core.maaStaminaPipeline.quotaCountPlaceholder')"
           :disabled="loading"
-          @change="emitSave('Task.EventDepotMaintainMedicineNumb', $event)"
+          @change="emitSave('Task.' + field.key, $event)"
         />
       </a-form-item>
     </PipelineRow>
@@ -104,22 +104,22 @@
         :inventory="depotInventory"
         :depot-inventory-time="depotInventoryTime"
       />
-      <a-form-item class="medicine-count-field">
+      <a-form-item v-for="field in depotQuotas" :key="field.key" class="quota-count-field">
         <template #label>
           <FieldLabelWithHint
-            :text="t('core.maaStaminaPipeline.depotMedicineCount')"
-            :hint="t('core.maaStaminaPipeline.medicineCountHint')"
+            :text="t(field.labelKey)"
+            :hint="t('core.maaStaminaPipeline.quotaCountHint')"
           />
         </template>
         <a-input-number
-          :value="formData.Task.DepotMaintainMedicineNumb"
+          :value="formData.Task[field.key]"
           :min="0"
           :max="9999"
           :precision="0"
           allow-clear
-          :placeholder="t('core.maaStaminaPipeline.medicineCountPlaceholder')"
+          :placeholder="t('core.maaStaminaPipeline.quotaCountPlaceholder')"
           :disabled="loading"
-          @change="emitSave('Task.DepotMaintainMedicineNumb', $event)"
+          @change="emitSave('Task.' + field.key, $event)"
         />
       </a-form-item>
       <template #footer>
@@ -162,6 +162,20 @@ import type { DepotMaintainPlanEditorState } from './useDepotMaintainPlanEditor'
 import type { ActivityItem } from '@/types/home'
 
 type SelectOption = { label: string; value: string }
+type QuotaField = { key: string; labelKey: string }
+
+/* 理智药与源石在 MAA 侧同构，两组各两行；新增额度字段只需在这里加一行 */
+const eventDepotQuotas: QuotaField[] = [
+  {
+    key: 'EventDepotMaintainMedicineNumb',
+    labelKey: 'core.maaStaminaPipeline.eventDepotMedicineCount',
+  },
+  { key: 'EventDepotMaintainStoneNumb', labelKey: 'core.maaStaminaPipeline.eventDepotStoneCount' },
+]
+const depotQuotas: QuotaField[] = [
+  { key: 'DepotMaintainMedicineNumb', labelKey: 'core.maaStaminaPipeline.depotMedicineCount' },
+  { key: 'DepotMaintainStoneNumb', labelKey: 'core.maaStaminaPipeline.depotStoneCount' },
+]
 
 const formData = defineModel<any>('formData', { required: true })
 const props = defineProps<{
@@ -242,7 +256,7 @@ const eventDepotSummary = computed(() => {
 :deep(.ant-input-number) {
   width: 100%;
 }
-.medicine-count-field {
+.quota-count-field {
   max-width: 380px;
 }
 </style>
