@@ -13,17 +13,24 @@ Design backend functions that are predictable, easy to trace, and easy to evolve
 2. Make data flow explicit through inputs and return values.
 3. Minimize hidden side effects and shared mutable state.
 4. Keep error semantics stable and actionable.
-5. Match function placement with module boundary ownership.
+5. Match function placement and dependency design with [mas-module-boundary](../mas-module-boundary/SKILL.md), the authority for DIP/IoC and low coupling/high cohesion.
 
 ## Responsibility
 1. Keep a function focused on one decision unit or one orchestration step.
 2. Split when a function mixes domain decision and integration IO.
 3. Split when one function serves unrelated call paths.
-4. Keep thin wrappers thin; move real logic only when it creates real reuse.
+4. Keep thin wrappers thin; extract logic when it creates real reuse or establishes a cohesive responsibility or dependency boundary. A second caller is not required for a real boundary.
 5. Do not extract a helper for logic that is easier to understand inline at the call site.
-6. For frequently edited task-configuration code, keep the mutation block in the owning orchestration function with a short purpose comment and blank lines around it.
+6. For frequently edited task-configuration code, keep the mutation block in the owning domain orchestration function with a short purpose comment and blank lines around it; do not inline adapter policy into a shared orchestrator.
 7. Do not split one linear task flow into `builder`/`loader` helpers unless the split removes real duplication or clarifies a true boundary.
 8. In AUTO-MAS task flows, keep config import/export, log monitoring, and end-state judgment as explicit orchestration steps; do not hide product-critical run criteria behind vague wrappers.
+
+## Explicit Dependencies And Cohesion
+
+1. Cross-boundary functions accept the values and operations they actually need through typed parameters/callables or focused contracts. Do not accept a whole `AppConfig`, task manager or publisher for one operation, or recover that dependency through a global lookup or lazy import.
+2. Keep decisions maintaining the same business invariant with their state and operations. Shared orchestration controls common order and lifecycle; adapter functions own adapter-specific decisions and return stable domain values/errors. Moving a branch into an injected callback does not permit defining its adapter policy in the shared caller.
+3. Separate a decision from file/network/process I/O when that creates a meaningful boundary. Keep side-effect order, cancellation and cleanup explicit in the owning orchestration; do not scatter one cohesive operation across trivial forwarding wrappers.
+4. The composition owner supplies dependencies with the required lifetime; functions invoke them instead of creating unrelated infrastructure internally. Preserve live config identity, same-Task transaction rules and cleanup contracts when introducing callbacks. Simple same-owner helpers need neither an interface nor a DI framework.
 
 ## Signatures And Returns
 1. Use explicit named parameters for business-critical options.
@@ -104,8 +111,9 @@ For functions reading or modifying config state, use [the configuration framewor
 5. Side effects are visible and isolated.
 6. Placement follows `mas-module-boundary`.
 7. Shared schema semantics align with `mas-schema-naming`.
-8. One-off helpers were not extracted unless they created real reuse.
+8. One-off helpers were extracted only for real reuse, a cohesive responsibility or a dependency boundary; avoiding extraction did not move adapter policy into shared code.
 9. Existing base-layer guarantees were reused instead of reimplemented in the function body.
 10. Optional values and temporary placeholders remain type-safe under basic static analysis.
 11. Multi-argument and boolean-heavy calls use keyword arguments for readability and fewer ordering mistakes.
 12. Task classes preserve the documented `main_task`/`final_task`/`on_crash` lifecycle and nested cancellation behavior.
+13. Cross-boundary dependencies are narrow and supplied explicitly; no global lookup or broad injected object preserves hidden coupling.
