@@ -8,8 +8,15 @@ test.describe('@maa-event-template activity target editing', () => {
     page,
   }) => {
     let active = false
+    let itemCatalogFails = false
     await page.route('**/api/scripts/maa/depot/items', route =>
-      route.fulfill({ json: { code: 200, data: [{ label: 'New material', value: '30013' }] } })
+      route.fulfill({
+        json: {
+          code: itemCatalogFails ? 500 : 200,
+          message: itemCatalogFails ? 'Item catalog unavailable' : '',
+          data: itemCatalogFails ? [] : [{ label: 'New material', value: '30013' }],
+        },
+      })
     )
     await page.route('**/api/scripts/maa/depot/inventory', route =>
       route.fulfill({ json: { code: 200, data: [{ label: '54321', value: '30013' }] } })
@@ -108,5 +115,10 @@ test.describe('@maa-event-template activity target editing', () => {
     await expect(editor.locator('.stock-value')).toHaveText('54321')
     await expect(editor.getByRole('spinbutton')).toHaveValue('250')
     await app.evidence('maa-activity-current')
+    itemCatalogFails = true
+    await page.reload()
+    await openEditor()
+    await expect(editor).toContainText('Item catalog unavailable')
+    await expect(editor.locator('.event-item-text')).toHaveText('New material')
   })
 })

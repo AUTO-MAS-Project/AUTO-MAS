@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.task.MAA.stage_service import MaaStageCache, MaaStageService
+from app.task.MAA.stage_service import MaaStageCache, MaaStageService, _parse_stage_data
 from app.task.MAA.tools.activity_inventory import resolve_activity_inventory_plans
 
 NOW = datetime(2026, 10, 29, tzinfo=timezone.utc)
@@ -23,6 +23,24 @@ def _event(start: str, end: str, drops: list[str]) -> dict:
             for i, drop in enumerate(drops, start=1)
         ],
     }
+
+
+def test_newest_expired_activity_without_usable_stages_keeps_empty_template():
+    content = json.dumps(
+        {
+            "Official": {
+                "sideStoryStage": {
+                    "older": _event(
+                        "2026/09/01 12:00:00", "2026/09/15 03:59:59", ["30013"]
+                    ),
+                    "latest": _event(
+                        "2026/10/09 12:00:00", "2026/10/23 03:59:59", ["unknown"]
+                    ),
+                }
+            }
+        }
+    )
+    assert _parse_stage_data(content, now=NOW)["Official"]["ActivityTemplate"] == []
 
 
 @pytest.mark.asyncio

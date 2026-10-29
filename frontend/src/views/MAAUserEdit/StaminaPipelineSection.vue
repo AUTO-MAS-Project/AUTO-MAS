@@ -16,6 +16,7 @@
         :stages="activityStages"
         :template="activityTemplate"
         :item-options="depotItemOptions"
+        :item-options-error="depotItemOptionsError"
         :inventory="depotInventory"
         :depot-inventory-time="depotInventoryTime"
         :activity-loading="activityStageLoading"

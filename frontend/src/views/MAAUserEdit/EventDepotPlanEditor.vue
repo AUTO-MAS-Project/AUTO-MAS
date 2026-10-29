@@ -1,5 +1,11 @@
 <template>
   <div class="event-plan-editor">
+    <a-alert
+      v-if="!placeholder && itemOptionsError"
+      :message="itemOptionsError"
+      type="warning"
+      show-icon
+    />
     <div v-if="activityLoading" class="activity-loading">
       <a-spin size="small" />
       <span>{{ t('core.eventDepotPreview.loading') }}</span>
@@ -109,6 +115,7 @@ const props = defineProps<{
   activityLoading: boolean
   activityError: string
   itemOptions: { label: string; value: string }[]
+  itemOptionsError: string
   inventory: Record<string, number>
   depotInventoryTime: string
 }>()

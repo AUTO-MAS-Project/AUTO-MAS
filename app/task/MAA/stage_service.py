@@ -108,9 +108,8 @@ def _parse_stage_data(content: str, *, now: datetime) -> dict[str, Any]:
                             or "玉" in stage["Drop"]
                         )
                     ]
-                    if template:
-                        activity_template = template
-                        last_expired_at = expires_at
+                    activity_template = template
+                    last_expired_at = expires_at
             stage_data = {
                 "Info": activity_stage_drop_info,
                 "ActivityTemplate": []
