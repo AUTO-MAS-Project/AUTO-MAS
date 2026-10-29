@@ -21,24 +21,26 @@
       <a-tooltip :title="t('core.taskboard.summaryHint')">
         <a-tag
           class="tb-chip"
+          :class="{ 'is-selected': filter === undefined }"
           role="button"
           tabindex="0"
-          :color="filter === undefined ? 'blue' : undefined"
           @click="emit('update:filter', undefined)"
           @keydown.enter.prevent="emit('update:filter', undefined)"
           @keydown.space.prevent="emit('update:filter', undefined)"
         >
           <AppstoreOutlined />
-          {{ t('core.taskboard.summary') }}
+          <span>{{ t('core.taskboard.summary') }}</span>
+          <span class="tb-chip-dot" aria-hidden="true"></span>
+          <span class="tb-chip-count">{{ counts.active }}</span>
         </a-tag>
       </a-tooltip>
       <a-tag
         v-for="option in options"
         :key="option.key"
         class="tb-chip"
+        :class="{ 'is-selected': filter === option.key }"
         role="button"
         tabindex="0"
-        :color="filter === option.key ? 'blue' : undefined"
         @click="emit('update:filter', filter === option.key ? undefined : option.key)"
         @keydown.enter.prevent="
           emit('update:filter', filter === option.key ? undefined : option.key)
@@ -47,32 +49,100 @@
           emit('update:filter', filter === option.key ? undefined : option.key)
         "
       >
-        {{ option.name }}
+        <span>{{ option.name }}</span>
+        <span class="tb-chip-dot" aria-hidden="true"></span>
+        <span class="tb-chip-count">{{ gameCounts[option.key] ?? 0 }}</span>
       </a-tag>
     </template>
     <span v-else class="tb-no-game">{{ t('core.taskboard.noGames') }}</span>
   </div>
 
-  <a-tabs :active-key="tab" type="card" class="tb-tabs" @change="changeTab">
-    <a-tab-pane key="active" :tab="`${t('core.taskboard.tabActive')} ${counts.active}`" />
-    <a-tab-pane key="done" :tab="`${t('core.taskboard.tabDone')} ${counts.done}`" />
-    <a-tab-pane key="archived" :tab="`${t('core.taskboard.tabArchived')} ${counts.archived}`" />
-  </a-tabs>
+  <div class="tb-tabs" role="tablist">
+    <button
+      type="button"
+      role="tab"
+      class="tb-tab"
+      :class="{ 'is-selected': tab === 'active' }"
+      :aria-selected="tab === 'active'"
+      @click="changeTab('active')"
+    >
+      <PlayCircleOutlined />
+      <span>{{ t('core.taskboard.tabActive') }}</span>
+      <span class="tb-tab-count">{{ counts.active }}</span>
+    </button>
+    <button
+      type="button"
+      role="tab"
+      class="tb-tab"
+      :class="{ 'is-selected': tab === 'done' }"
+      :aria-selected="tab === 'done'"
+      @click="changeTab('done')"
+    >
+      <TrophyOutlined />
+      <span>{{ t('core.taskboard.tabDone') }}</span>
+      <span class="tb-tab-count">{{ counts.done }}</span>
+    </button>
+    <button
+      type="button"
+      role="tab"
+      class="tb-tab"
+      :class="{ 'is-selected': tab === 'archived' }"
+      :aria-selected="tab === 'archived'"
+      @click="changeTab('archived')"
+    >
+      <InboxOutlined />
+      <span>{{ t('core.taskboard.tabArchived') }}</span>
+      <span class="tb-tab-count">{{ counts.archived }}</span>
+    </button>
+    <button
+      type="button"
+      role="tab"
+      class="tb-tab tb-tab-end"
+      :class="{ 'is-selected': tab === 'weekly' }"
+      :aria-selected="tab === 'weekly'"
+      @click="changeTab('weekly')"
+    >
+      <CalendarOutlined />
+      <span>{{ t('core.taskboard.tabWeekly') }}</span>
+      <span class="tb-tab-count">{{ counts.weekly }}</span>
+    </button>
+    <button
+      type="button"
+      role="tab"
+      class="tb-tab"
+      :class="{ 'is-selected': tab === 'version' }"
+      :aria-selected="tab === 'version'"
+      @click="changeTab('version')"
+    >
+      <BranchesOutlined />
+      <span>{{ t('core.taskboard.tabVersion') }}</span>
+      <span class="tb-tab-count">{{ counts.version }}</span>
+    </button>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { AppstoreOutlined, EditOutlined } from '@ant-design/icons-vue'
+import {
+  AppstoreOutlined,
+  BranchesOutlined,
+  CalendarOutlined,
+  EditOutlined,
+  InboxOutlined,
+  PlayCircleOutlined,
+  TrophyOutlined,
+} from '@ant-design/icons-vue'
 import type { TaskboardGameOption } from '@/types/taskboard'
 
-type TabKey = 'active' | 'done' | 'archived'
+type TabKey = 'active' | 'done' | 'archived' | 'weekly' | 'version'
 
 defineProps<{
   keyword: string
   total: number
   options: TaskboardGameOption[]
   filter: string | undefined
-  counts: { active: number; done: number; archived: number }
+  counts: { active: number; done: number; archived: number; weekly: number; version: number }
+  gameCounts: Record<string, number>
   tab: TabKey
 }>()
 
@@ -85,7 +155,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const changeTab = (value: string | number) => emit('update:tab', value as TabKey)
+const changeTab = (value: TabKey) => emit('update:tab', value)
 </script>
 
 <style scoped>
@@ -93,7 +163,7 @@ const changeTab = (value: string | number) => emit('update:tab', value as TabKey
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 4px 6px;
+  padding: 0 4px;
 }
 
 .tb-total {
@@ -105,53 +175,127 @@ const changeTab = (value: string | number) => emit('update:tab', value as TabKey
   margin-left: auto;
 }
 
-.tb-chips {
+.tb-chips,
+.tb-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 2px 4px 10px;
+  padding: 0 4px;
 }
 
-.tb-chip {
+.tb-chips {
+  margin-top: 20px;
+}
+
+.tb-tabs {
+  margin-top: 20px;
+  margin-bottom: 20px;
+}
+
+/* 筛选与页签各自是一块独立小卡，和卡片共用同一套表面与描边。 */
+.tb-chip,
+.tb-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
-  cursor: pointer;
-  user-select: none;
+  padding: 6px 18px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 999px;
+  background: var(--app-background-card-bg, var(--ant-color-bg-container));
+  color: var(--ant-color-text);
   font-size: 16px;
   line-height: 28px;
-  padding: 5px 15px;
-  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-color 0.18s ease-out,
+    background-color 0.18s ease-out,
+    color 0.18s ease-out;
 }
 
-.tb-chip:focus-visible {
+.tb-chip:hover,
+.tb-tab:hover {
+  transform: scale(1.03);
+}
+
+.tb-chip:active,
+.tb-tab:active {
+  transform: scale(0.96);
+}
+
+.tb-tab {
+  font-family: inherit;
+}
+
+.tb-chip:hover,
+.tb-tab:hover {
+  border-color: var(--ant-color-primary-border);
+  color: var(--ant-color-primary);
+}
+
+.tb-chip.is-selected,
+.tb-tab.is-selected {
+  border-color: var(--ant-color-primary);
+  background: var(--ant-color-primary);
+  color: #fff;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 10%);
+}
+
+.tb-chip:focus-visible,
+.tb-tab:focus-visible {
   outline: 2px solid var(--ant-color-primary);
   outline-offset: 2px;
 }
 
+.tb-chip-dot {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ant-color-primary);
+}
+
+.tb-chip.is-selected .tb-chip-dot {
+  background: rgb(255 255 255 / 80%);
+}
+
+.tb-tab-end {
+  margin-left: auto;
+}
+
+.tb-chip-count,
+.tb-tab-count {
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+
+.tb-chip.is-selected .tb-chip-count,
+.tb-tab.is-selected .tb-tab-count {
+  color: rgb(255 255 255 / 80%);
+}
+
 .tb-chip :deep(.anticon) {
-  margin-right: 5px;
   vertical-align: -1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tb-chip,
+  .tb-tab {
+    transition: none;
+  }
+
+  .tb-chip:hover,
+  .tb-tab:hover,
+  .tb-chip:active,
+  .tb-tab:active {
+    transform: none;
+  }
 }
 
 .tb-no-game {
   font-size: 14px;
   color: var(--ant-color-text-secondary);
-}
-
-.tb-tabs :deep(.ant-tabs-nav) {
-  margin: 0 0 14px;
-  padding: 0 4px;
-}
-
-.tb-tabs :deep(.ant-tabs-nav .ant-tabs-tab.ant-tabs-tab) {
-  font-size: 16px;
-  padding: 12px 26px;
-}
-
-.tb-tabs :deep(.ant-tabs-nav .ant-tabs-tab .ant-tabs-tab-btn) {
-  font-size: 16px;
-}
-
-.tb-tabs :deep(.ant-tabs-content-holder) {
-  display: none;
 }
 </style>

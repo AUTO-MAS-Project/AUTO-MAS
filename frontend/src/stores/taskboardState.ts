@@ -1,7 +1,12 @@
 import { reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { ApiError, GetService, SetService, type TaskboardArchivedActivity } from '@/api'
-import type { TaskboardActivity } from '@/types/taskboard'
+import type {
+  TaskboardActivity,
+  TaskboardVersionStoryRecord,
+  TaskboardVersionStoryUpdate,
+  TaskboardWeeklyRecord,
+} from '@/types/taskboard'
 
 export interface TaskboardDoneRecord {
   at: string
@@ -16,6 +21,12 @@ const errorText = (error: unknown): string => {
     }
   }
   return error instanceof Error ? error.message : String(error)
+}
+
+const nowText = () => {
+  const date = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 const toActivity = (row: TaskboardArchivedActivity): TaskboardActivity => ({
@@ -39,13 +50,22 @@ const toPayload = (row: TaskboardActivity): TaskboardArchivedActivity => ({
 })
 
 /**
- * 任务台持久化状态的唯一归属：已选游戏、归档缓存、完成日期都存后端配置目录，
- * 渲染进程不再保留业务数据的本地副本。
+ * 任务台持久化状态的唯一归属：任务台/每周任务的游戏勾选、归档缓存、完成日期、
+ * 版本主线与版本标记都存后端配置目录，
+ * 渲染进程不保留业务数据的本地副本。
  */
 export const useTaskboardStateStore = defineStore('taskboardState', () => {
   const selectedGames = ref<string[] | null>(null)
+  const weeklyGames = ref<string[] | null>(null)
   const archived = ref<TaskboardActivity[]>([])
   const doneAt = reactive<Record<string, TaskboardDoneRecord>>({})
+  const weekly = reactive<Record<string, TaskboardWeeklyRecord>>({})
+  const weeklyWeek = ref('')
+  const versionStory = reactive<Record<string, TaskboardVersionStoryRecord>>({})
+  const versionStoryDone = reactive<Record<string, TaskboardDoneRecord>>({})
+  const weeklySaving = ref<string[]>([])
+  const versionStorySaving = ref<string[]>([])
+  const versionStoryError = ref('')
   const loaded = ref(false)
   const loading = ref(false)
   const errorMessage = ref('')
@@ -59,9 +79,28 @@ export const useTaskboardStateStore = defineStore('taskboardState', () => {
       if (response.code !== 200) throw new Error(response.message)
       const data = response.data
       selectedGames.value = data?.selected_games ?? null
+      weeklyGames.value = data?.weekly_games ?? null
       archived.value = (data?.archived ?? []).map(toActivity)
       for (const key of Object.keys(doneAt)) delete doneAt[key]
       Object.assign(doneAt, data?.done_at ?? {})
+      for (const key of Object.keys(weekly)) delete weekly[key]
+      Object.assign(weekly, data?.weekly ?? {})
+      weeklyWeek.value = response.weekly_week ?? ''
+      for (const key of Object.keys(versionStory)) delete versionStory[key]
+      for (const [key, record] of Object.entries(data?.version_story ?? {})) {
+        versionStory[key] = {
+          game: record.game,
+          version: record.version,
+          version_name: record.version_name ?? '',
+          start: record.start ?? '',
+          end: record.end ?? '',
+          cover_url: record.cover_url ?? '',
+          first_seen: record.first_seen ?? '',
+          last_seen: record.last_seen ?? '',
+        }
+      }
+      for (const key of Object.keys(versionStoryDone)) delete versionStoryDone[key]
+      Object.assign(versionStoryDone, data?.version_story_done ?? {})
       loaded.value = true
       errorMessage.value = ''
     } catch (error) {
@@ -76,6 +115,18 @@ export const useTaskboardStateStore = defineStore('taskboardState', () => {
       const response = await SetService.setTaskboardSelectionApiInfoTaskboardSelectionPut({ games })
       if (response.code !== 200) throw new Error(response.message)
       selectedGames.value = [...games]
+      return null
+    } catch (error) {
+      return errorText(error)
+    }
+  }
+
+  const saveWeeklySelection = async (games: string[]): Promise<string | null> => {
+    try {
+      const response =
+        await SetService.setTaskboardWeeklySelectionApiInfoTaskboardWeeklySelectionPut({ games })
+      if (response.code !== 200) throw new Error(response.message)
+      weeklyGames.value = [...games]
       return null
     } catch (error) {
       return errorText(error)
@@ -122,10 +173,126 @@ export const useTaskboardStateStore = defineStore('taskboardState', () => {
 
   const doneAtOf = (key: string) => doneAt[key]?.at ?? ''
 
+  const isWeeklyDone = (key: string) => weekly[key]?.week === weeklyWeek.value
+
+  const saveWeekly = async (key: string, done: boolean): Promise<string | null> => {
+    if (weeklySaving.value.includes(key)) return null
+    const previous = weekly[key]
+    const previousWeek = weeklyWeek.value
+    weeklySaving.value = [...weeklySaving.value, key]
+    if (done) weekly[key] = { week: previousWeek, done_at: nowText() }
+    else delete weekly[key]
+    try {
+      const response = await SetService.setTaskboardWeeklyApiInfoTaskboardWeeklyPut({
+        key,
+        done,
+      })
+      if (response.code !== 200) throw new Error(response.message)
+      weeklyWeek.value = response.week ?? previousWeek
+      if (done) {
+        weekly[key] = {
+          week: weeklyWeek.value,
+          done_at: weekly[key]?.done_at ?? nowText(),
+        }
+      }
+      return null
+    } catch (error) {
+      if (previous) weekly[key] = previous
+      else delete weekly[key]
+      return errorText(error)
+    } finally {
+      weeklySaving.value = weeklySaving.value.filter(item => item !== key)
+    }
+  }
+
+  let lastVersionStoryJson = ''
+  let lastVersionStoryAttempt: TaskboardVersionStoryUpdate[] = []
+  let versionStoryRequestId = 0
+  const saveVersionStory = async (
+    records: TaskboardVersionStoryUpdate[]
+  ): Promise<string | null> => {
+    if (!records.length) return null
+    const json = JSON.stringify(records)
+    // 同一批版本记录不重复写；上次失败时即使内容没变也要重试。
+    if (json === lastVersionStoryJson && !versionStoryError.value) return null
+    lastVersionStoryAttempt = [...records]
+    const requestId = ++versionStoryRequestId
+    try {
+      const response = await SetService.setTaskboardVersionStoryApiInfoTaskboardVersionStoryPut({
+        records,
+      })
+      if (response.code !== 200) throw new Error(response.message)
+      if (requestId !== versionStoryRequestId) return null
+      const at = nowText()
+      for (const item of records) {
+        const key = `${item.game}|${item.version}`
+        const existing = versionStory[key]
+        versionStory[key] = {
+          game: item.game,
+          version: item.version,
+          version_name: item.version_name || item.version,
+          start: item.start,
+          end: item.end,
+          cover_url: item.cover_url,
+          first_seen: existing?.first_seen || at,
+          last_seen: at,
+        }
+      }
+      lastVersionStoryJson = json
+      versionStoryError.value = ''
+      return null
+    } catch (error) {
+      if (requestId === versionStoryRequestId) {
+        versionStoryError.value = errorText(error)
+      }
+      return errorText(error)
+    }
+  }
+
+  const retryVersionStory = () => saveVersionStory(lastVersionStoryAttempt)
+
+  const isVersionStoryDone = (key: string) => Boolean(versionStoryDone[key])
+  const versionStoryDoneAtOf = (key: string) => versionStoryDone[key]?.at ?? ''
+
+  const setVersionStoryDone = async (
+    key: string,
+    record: TaskboardDoneRecord | null
+  ): Promise<string | null> => {
+    if (versionStorySaving.value.includes(key)) return null
+    const previous = versionStoryDone[key]
+    versionStorySaving.value = [...versionStorySaving.value, key]
+    if (record) versionStoryDone[key] = record
+    else delete versionStoryDone[key]
+    try {
+      const response =
+        await SetService.setTaskboardVersionStoryDoneApiInfoTaskboardVersionStoryDonePut({
+          key,
+          record,
+        })
+      if (response.code !== 200) throw new Error(response.message)
+      return null
+    } catch (error) {
+      if (previous) versionStoryDone[key] = previous
+      else delete versionStoryDone[key]
+      return errorText(error)
+    } finally {
+      versionStorySaving.value = versionStorySaving.value.filter(item => item !== key)
+    }
+  }
+
   return {
     selectedGames,
+    weeklyGames,
+    saveWeeklySelection,
     archived,
     doneAt,
+    weekly,
+    weeklyWeek,
+    weeklySaving,
+    versionStory,
+    versionStoryDone,
+    versionStorySaving,
+    versionStoryError,
     loaded,
     loading,
     errorMessage,
@@ -135,5 +302,12 @@ export const useTaskboardStateStore = defineStore('taskboardState', () => {
     saveArchive,
     setDone,
     doneAtOf,
+    isWeeklyDone,
+    saveWeekly,
+    saveVersionStory,
+    retryVersionStory,
+    isVersionStoryDone,
+    versionStoryDoneAtOf,
+    setVersionStoryDone,
   }
 })

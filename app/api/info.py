@@ -52,9 +52,14 @@ from app.core import Config
 from app.core.game_calendar import GameCalendar
 from app.core.taskboard_state import (
     load_state,
+    merge_version_story,
     save_archive,
     save_selection,
+    save_weekly_selection,
     set_done_at,
+    set_version_story_done,
+    set_weekly_done,
+    weekly_key,
 )
 from app.models.schema import (
     BlueArchiveActivityIn,
@@ -68,6 +73,7 @@ from app.models.taskboard import (
     TaskboardArchivedActivity,
     TaskboardDoneRecord,
     TaskboardState,
+    TaskboardVersionStoryUpdate,
 )
 from app.tools.azurlane_activity import fetch_azurlane_activities
 from app.tools.bluearchive_activity_source import (
@@ -168,6 +174,7 @@ class PlanComboxIn(BaseModel):
 
 class TaskboardStateOut(OutBase):
     data: TaskboardState = Field(default_factory=TaskboardState)
+    weekly_week: str = Field(default="", description="当前每周任务周键")
 
 
 class TaskboardSelectionIn(BaseModel):
@@ -186,6 +193,21 @@ class TaskboardDoneAtIn(BaseModel):
     key: str = Field(..., min_length=1, max_length=400, description="完成日期记录键")
     record: TaskboardDoneRecord | None = Field(
         default=None, description="为空表示删除该记录"
+    )
+
+
+class TaskboardWeeklyIn(BaseModel):
+    key: str = Field(..., min_length=1, max_length=100, description="任务台游戏标识")
+    done: bool = Field(..., description="是否标记为已完成")
+
+
+class TaskboardWeeklyOut(OutBase):
+    week: str = Field(default="", description="当前周键")
+
+
+class TaskboardVersionStoryIn(BaseModel):
+    records: list[TaskboardVersionStoryUpdate] = Field(
+        default_factory=list, max_length=500, description="本次取到的版本记录"
     )
 
 
@@ -256,7 +278,7 @@ async def set_activity_completion(
 )
 async def get_taskboard_state() -> TaskboardStateOut:
     try:
-        return TaskboardStateOut(data=await load_state())
+        return TaskboardStateOut(data=await load_state(), weekly_week=weekly_key())
     except (OSError, TypeError, ValueError):
         logger.exception("读取任务台状态失败")
         return TaskboardStateOut(code=500, status="error", message="读取任务台状态失败")
@@ -275,6 +297,21 @@ async def set_taskboard_selection(payload: TaskboardSelectionIn) -> OutBase:
     except (OSError, TypeError, ValueError):
         logger.exception("保存任务台游戏选择失败")
         return OutBase(code=500, status="error", message="保存任务台游戏选择失败")
+
+
+@router.put(
+    "/taskboard/weekly-selection",
+    tags=["Set"],
+    summary="保存每周任务勾选的游戏",
+    response_model=OutBase,
+)
+async def set_taskboard_weekly_selection(payload: TaskboardSelectionIn) -> OutBase:
+    try:
+        await save_weekly_selection(payload.games)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存每周任务游戏选择失败")
+        return OutBase(code=500, status="error", message="保存每周任务游戏选择失败")
 
 
 @router.put(
@@ -305,6 +342,51 @@ async def set_taskboard_done_at(payload: TaskboardDoneAtIn) -> OutBase:
     except (OSError, TypeError, ValueError):
         logger.exception("保存任务台完成日期失败")
         return OutBase(code=500, status="error", message="保存任务台完成日期失败")
+
+
+@router.put(
+    "/taskboard/weekly",
+    tags=["Set"],
+    summary="记录或撤销任务台的每周任务",
+    response_model=TaskboardWeeklyOut,
+)
+async def set_taskboard_weekly(payload: TaskboardWeeklyIn) -> TaskboardWeeklyOut:
+    try:
+        week = await set_weekly_done(payload.key, payload.done)
+        return TaskboardWeeklyOut(week=week)
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台每周任务失败")
+        return TaskboardWeeklyOut(code=500, status="error", message="保存每周任务失败")
+
+
+@router.put(
+    "/taskboard/version-story",
+    tags=["Set"],
+    summary="合并任务台的版本主线记录",
+    response_model=OutBase,
+)
+async def set_taskboard_version_story(payload: TaskboardVersionStoryIn) -> OutBase:
+    try:
+        await merge_version_story(payload.records)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台版本主线失败")
+        return OutBase(code=500, status="error", message="保存版本主线失败")
+
+
+@router.put(
+    "/taskboard/version-story/done",
+    tags=["Set"],
+    summary="记录或撤销任务台的版本主线完成状态",
+    response_model=OutBase,
+)
+async def set_taskboard_version_story_done(payload: TaskboardDoneAtIn) -> OutBase:
+    try:
+        await set_version_story_done(payload.key, payload.record)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台版本主线完成状态失败")
+        return OutBase(code=500, status="error", message="保存版本主线完成状态失败")
 
 
 ## 图片域名白名单：中转只认数据源自己的图，免得这个接口变成谁都能用的开放代理。

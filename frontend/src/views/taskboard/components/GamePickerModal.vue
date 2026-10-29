@@ -1,14 +1,14 @@
 <template>
   <a-modal
     :open="open"
-    :title="t('core.taskboard.editGames')"
+    :title="title || t('core.taskboard.editGames')"
     :width="'min(1000px, 92vw)'"
     :ok-text="t('core.taskboard.save')"
     :cancel-text="t('core.taskboard.cancel')"
     @ok="onOk"
     @cancel="close"
   >
-    <p class="tb-edit-hint">{{ t('core.taskboard.editGamesHint') }}</p>
+    <p class="tb-edit-hint">{{ hint || t('core.taskboard.editGamesHint') }}</p>
     <div class="tb-edit-tools">
       <a-input-search
         v-model:value="keyword"
@@ -48,8 +48,8 @@
           />
         </div>
         <div class="tb-pick-name" :title="option.name">{{ option.name }}</div>
-        <div class="tb-pick-cnt">
-          {{ t('core.taskboard.activeCount', { p0: option.activeCount }) }}
+        <div v-if="showCounts !== false" class="tb-pick-cnt">
+          {{ t('core.taskboard.activeCount', { p0: option.activeCount ?? 0 }) }}
         </div>
       </div>
       <div v-if="!filteredOptions.length" class="tb-pick-empty">
@@ -65,10 +65,13 @@ import { useI18n } from 'vue-i18n'
 import type { TaskboardGameOption } from '@/types/taskboard'
 
 interface PickerOption extends TaskboardGameOption {
-  activeCount: number
+  activeCount?: number
 }
 
 const props = defineProps<{
+  title?: string
+  hint?: string
+  showCounts?: boolean
   open: boolean
   options: PickerOption[]
   selected: string[]
