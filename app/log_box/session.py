@@ -6,7 +6,7 @@ import asyncio
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 from app.utils import get_logger
 from app.utils.common.i18n import PoTranslator
@@ -36,6 +36,7 @@ class LogBinding:
 
     postprocessor: PostProcessor | None = None
     deliver: Callable[[list[LogEntry]], None] | None = None
+    read: Callable[[], list[LogEntry]] | None = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,18 @@ class LogSpec:
     failure_text: str | None = None
     translation: TranslationSpec | None = None
     bind: Callable[[], LogBinding] | None = None
+    source: Literal["log", "entries"] = "log"
+
+    def __post_init__(self) -> None:
+        if self.source not in ("log", "entries"):
+            raise ValueError("未知节点来源")
+        if self.source == "entries" and (
+            self.rules
+            or self.preprocessor is not None
+            or self.postprocessor is not None
+            or self.translation is not None
+        ):
+            raise ValueError("结构化来源只交付已确认节点，不执行文本规则或翻译")
 
 
 class LogUser(Protocol):
@@ -63,8 +76,9 @@ class LogUser(Protocol):
 class UserLogSession:
     """绑定用户或专项路由的单事件循环会话；关闭后报告可读最终节点。
 
-    来源在创建时记录偏移，不能延后到脚本启动后。读取、规则匹配与后处理
-    在线程收尾，用户数据只在事件循环写入。关闭被取消时先等待结果交付，
+    日志来源在创建时记录偏移，不能延后到脚本启动后。读取、规则匹配与后处理
+    在线程收尾；结构化来源直接读取已确认的节点。用户数据只在事件循环写入。
+    关闭被取消时先等待结果交付，
     再传播取消，避免报告先于节点完成或线程晚到污染下一位用户。
     """
 
@@ -86,7 +100,8 @@ class UserLogSession:
         self._translator: PoTranslator | None = None
         self._failed = False
         self._close_task: asyncio.Task[None] | None = None
-        if enabled is False or (enabled is None and mode == "关闭"):
+        self._enabled = enabled if enabled is not None else mode != "关闭"
+        if not self._enabled or spec.source == "entries":
             return
         try:
             collector = LogCollect(
@@ -114,9 +129,14 @@ class UserLogSession:
     def _append(self, log_type: str, text: str, timestamp: float) -> None:
         self.user.push_log.append((log_type, text, timestamp))
 
+    def _deliver(self, entries: list[LogEntry]) -> None:
+        """所有来源都回到宿主交付，不要求结构化结果伪装成文本日志。"""
+        for entry in entries:
+            self._append(entry.log_type, entry.text, entry.timestamp)
+
     async def close(self) -> None:
         """共享一次收尾；并发或重复关闭不会重复采集与交付。"""
-        if self._collector is None and not self._failed:
+        if not self._enabled:
             return
         if self._close_task is None:
             self._close_task = asyncio.create_task(self._finish())
@@ -131,26 +151,38 @@ class UserLogSession:
             raise cancelled
 
     async def _finish(self) -> None:
-        if self._collector is not None:
+        if not self._failed:
             try:
                 # 动态账号等宿主数据先在事件循环固定，不能让工作线程读取可变任务状态。
                 binding = (
                     self.spec.bind() if self.spec.bind is not None else LogBinding()
                 )
-                postprocessor = (
-                    binding.postprocessor
-                    if binding.postprocessor is not None
-                    else self.spec.postprocessor
-                )
-                entries = await asyncio.to_thread(
-                    self._collector._finish, postprocessor
-                )
+                if self.spec.source == "entries":
+                    if binding.read is None or binding.postprocessor is not None:
+                        raise ValueError("结构化来源需要 read，且不能再做文本后处理")
+                    entries = await asyncio.to_thread(binding.read)
+                    if not isinstance(entries, list) or any(
+                        not isinstance(entry, LogEntry) for entry in entries
+                    ):
+                        raise TypeError("结构化来源必须返回 LogEntry 列表")
+                else:
+                    if binding.read is not None:
+                        raise ValueError("日志来源不能声明结构化 read")
+                    assert self._collector is not None
+                    postprocessor = (
+                        binding.postprocessor
+                        if binding.postprocessor is not None
+                        else self.spec.postprocessor
+                    )
+                    entries = await asyncio.to_thread(
+                        self._collector._finish, postprocessor
+                    )
                 if entries is not None:
                     # 不在线程内调用 sink：用户状态和报告组装归宿主线程。
                     deliver = (
                         binding.deliver
                         if binding.deliver is not None
-                        else self._collector._deliver
+                        else self._deliver
                     )
                     deliver(entries)
             except Exception:

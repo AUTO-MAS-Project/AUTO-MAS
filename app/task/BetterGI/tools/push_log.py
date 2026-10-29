@@ -18,15 +18,14 @@
 #
 #   Contact: DLmaster_361@163.com
 
-"""BetterGI 推送日志（节点详情）注入
+"""BetterGI 分步结果来源与节点转换。
 
-与其他专项经由 log_box 采集会话喂规则不同，BetterGI 不新建采集会话：
 BGI 日志已由 LogMonitor 按相/按轮捕获进 ``log_record``（执行层一条记录、
 原生一条龙每轮重试各一条），``one_dragon_report`` 是权威解析器（含 Serilog
 头行配对、致命信号判失败、任务名对齐与重试取轮），AutoProxy.final_task
-本就会解析出合并分步表。本模块只做「报告注入」半环：把分步表转成
-push_log 三元组，由 manager.final_task 经 ``build_user_result_text`` 聚合
-进报告正文——呈现语义（三态开关、逐条/汇总）与 ok 系/ZzzOd 一致。
+本就会解析出合并分步表。本模块声明 log_box 的结构化结果来源，复用原有
+转换，由 box 托管异步执行、异常隔离和用户交付。manager 与统计通知仍共用
+原有文本，不重建一份节点判定。
 
 在这里重建一套 log_box 逐行规则只会复刻解析器的上下文判定（开始/结束
 配对、头行时间戳、重试收束），与判态侧形成两份并行语义（MaaEnd 已注明
@@ -36,7 +35,8 @@ push_log 三元组，由 manager.final_task 经 ``build_user_result_text`` 聚�
 from contextlib import suppress
 from datetime import datetime
 
-from app.log_box import LogType
+from app.log_box import LogBinding, LogSpec, LogType
+from app.log_box.results import LogEntry
 
 # 步骤 start 只有 HH:MM(:SS) 形态的本地时刻（Serilog 头行时间戳，无日期），
 # 转成当天时刻的时间戳供逐条式推送显示 HH:MM 前缀；解析失败回退当前时刻。
@@ -100,3 +100,18 @@ def steps_to_push_log(steps: list[dict]) -> list[tuple[str, str, float]]:
                 )
             )
     return entries
+
+
+def make_bettergi_log_spec(steps: list[dict]) -> LogSpec:
+    """固定已有分步表；box 在后台转换节点，不再读取日志或重新判定。"""
+    snapshot = [dict(step) for step in steps]
+
+    def read() -> list[LogEntry]:
+        return [LogEntry.from_legacy(entry) for entry in steps_to_push_log(snapshot)]
+
+    return LogSpec(
+        rules=(),
+        source="entries",
+        bind=lambda: LogBinding(read=read),
+        error_message="BetterGI 节点结果交付失败",
+    )

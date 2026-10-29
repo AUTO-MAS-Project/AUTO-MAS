@@ -149,6 +149,34 @@ col = log_box.get_collect(
 > 单次任务日志量大时，结果是一次性入内存的（`close()` 时整体采集）。专项若运行极长、
 > 日志极大，需自行评估该内存占用（当前 okww 单会话日志量在可接受范围）。
 
+## 结构化结果来源
+
+已有权威解析器的专项无需再构造一套逐行规则。`LogSpec(source="entries", rules=())`
+通过 `bind` 返回 `LogBinding(read=...)`，`read` 返回 `list[LogEntry]`：
+
+```python
+from app.log_box import LogBinding, LogSpec
+from app.log_box.results import LogEntry
+
+spec = LogSpec(
+    rules=(),
+    source="entries",
+    bind=lambda: LogBinding(read=lambda: [LogEntry("普通", "✅ 成功: 邮件", 1.0)]),
+)
+session = log_box.get_user_session(spec, user=user, mode=user.push_log_mode)
+await session.close()
+```
+
+`bind` 在收尾的宿主线程固定快照；`read` 在工作线程执行，只读取快照，
+不能写用户或任务状态。默认交付与日志来源一样写入用户 `push_log`，也可复用
+`LogBinding.deliver` 自适配账号路由。结构化来源不创建文件采集器，不读取环境变量
+指定的日志，不支持文本规则、翻译或后处理；解析与交付异常由会话隔离。
+重复关闭和取消等待沿用日志会话契约，三态展示和通知订阅范围不变。
+
+BetterGI 复用 `one_dragon_report` 已产出的分步表及 `steps_to_push_log` 转换，
+只把节点转换与交付交给会话；原解析器、重试取轮、统计通知全文仍由专项维护。
+这不要求其他特殊专项放弃自己的解析或路由。
+
 ## 日志轮转补偿（跨零点必读）
 
 脚本日志在任务运行期间被脚本自身滚动（最典型：跨零点按天滚动，如
