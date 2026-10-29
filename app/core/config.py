@@ -2343,10 +2343,11 @@ class AppConfig:
             return None
 
         try:
-            logger.info(f"使用代理: {proxy_addr}")
-            return httpx.Proxy(proxy_addr)
-        except Exception as e:
-            logger.warning(f"代理配置无效: {proxy_addr}, 错误: {e}")
+            proxy = httpx.Proxy(proxy_addr)
+            logger.info(f"使用代理: {proxy.url}")
+            return proxy
+        except Exception:
+            logger.warning("代理配置无效，请检查代理地址")
             return None
 
     @property
