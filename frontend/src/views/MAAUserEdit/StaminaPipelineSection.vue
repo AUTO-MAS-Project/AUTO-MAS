@@ -27,6 +27,24 @@
         :activity-error="activityStageError"
         @retry-activity="emit('retryActivity')"
       />
+      <a-form-item v-for="field in eventDepotQuotas" :key="field.key" class="quota-count-field">
+        <template #label>
+          <FieldLabelWithHint
+            :text="t(field.labelKey)"
+            :hint="t('core.maaStaminaPipeline.quotaCountHint')"
+          />
+        </template>
+        <a-input-number
+          :value="formData.Task[field.key]"
+          :min="0"
+          :max="9999"
+          :precision="0"
+          allow-clear
+          :placeholder="t('core.maaStaminaPipeline.quotaCountPlaceholder')"
+          :disabled="loading"
+          @change="emitSave('Task.' + field.key, $event)"
+        />
+      </a-form-item>
     </PipelineRow>
     <!-- 库存保持与养成界面按独立任务并列展示；两者共同启用时后端合成一份
          联合计划执行（先备养成材料，再补足库存，最后培养），口径见行尾 ? -->
@@ -86,6 +104,24 @@
         :inventory="depotInventory"
         :depot-inventory-time="depotInventoryTime"
       />
+      <a-form-item v-for="field in depotQuotas" :key="field.key" class="quota-count-field">
+        <template #label>
+          <FieldLabelWithHint
+            :text="t(field.labelKey)"
+            :hint="t('core.maaStaminaPipeline.quotaCountHint')"
+          />
+        </template>
+        <a-input-number
+          :value="formData.Task[field.key]"
+          :min="0"
+          :max="9999"
+          :precision="0"
+          allow-clear
+          :placeholder="t('core.maaStaminaPipeline.quotaCountPlaceholder')"
+          :disabled="loading"
+          @change="emitSave('Task.' + field.key, $event)"
+        />
+      </a-form-item>
       <template #footer>
         <a-button :disabled="loading" @click="depotSettingsOpen = false">
           {{ t('core.common.close') }}
@@ -113,6 +149,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PipelineRow from './PipelineRow.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   eventDepotPlanIdentity,
@@ -125,6 +162,20 @@ import type { DepotMaintainPlanEditorState } from './useDepotMaintainPlanEditor'
 import type { ActivityItem } from '@/types/home'
 
 type SelectOption = { label: string; value: string }
+type QuotaField = { key: string; labelKey: string }
+
+/* 理智药与源石在 MAA 侧同构，两组各两行；新增额度字段只需在这里加一行 */
+const eventDepotQuotas: QuotaField[] = [
+  {
+    key: 'EventDepotMaintainMedicineNumb',
+    labelKey: 'core.maaStaminaPipeline.eventDepotMedicineCount',
+  },
+  { key: 'EventDepotMaintainStoneNumb', labelKey: 'core.maaStaminaPipeline.eventDepotStoneCount' },
+]
+const depotQuotas: QuotaField[] = [
+  { key: 'DepotMaintainMedicineNumb', labelKey: 'core.maaStaminaPipeline.depotMedicineCount' },
+  { key: 'DepotMaintainStoneNumb', labelKey: 'core.maaStaminaPipeline.depotStoneCount' },
+]
 
 const formData = defineModel<any>('formData', { required: true })
 const props = defineProps<{
@@ -204,5 +255,8 @@ const eventDepotSummary = computed(() => {
 :deep(.ant-select),
 :deep(.ant-input-number) {
   width: 100%;
+}
+.quota-count-field {
+  max-width: 380px;
 }
 </style>
