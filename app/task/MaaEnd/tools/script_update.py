@@ -191,16 +191,30 @@ async def update_before_run(
     cache.mkdir(parents=True, exist_ok=True)
     destination = Path(tempfile.mkdtemp(dir=cache, prefix="download-")) / name
     downloader = "fluxdown" if Config.setting.Update.FluxdownTakeoverAll else "builtin"
+    proxy = Config.proxy
+    builtin_transport = (
+        downloader == "builtin"
+        or source == "MirrorChyan"
+        or (proxy is not None and proxy.auth is not None)
+    )
     try:
         await download_file(
             url,
             destination,
             timeout=30 * 60,
-            proxy=Config.proxy,
+            proxy=proxy,
             downloader=downloader,
             source=source,
             progress=progress,
         )
+    except asyncio.CancelledError:
+        # 内置 httpx 取消后已退出网络与文件上下文，可以回收部分下载。
+        # FluxDown 可能仍有后台写入者；无法确认停止时必须保留其目标。
+        if builtin_transport:
+            with suppress(OSError):
+                destination.unlink(missing_ok=True)
+                destination.parent.rmdir()
+        raise
     except (
         _fluxdown_cli.FluxdownCancelUnconfirmed,
         FluxdownResumableError,
@@ -210,12 +224,7 @@ async def update_before_run(
     except Exception as error:
         # 内置 httpx 的异常返回时流和文件已经关闭，可回收本轮部分包。
         # 其余 FluxDown 异常不保证写入者退出，仍保留独立下载目标。
-        if (
-            downloader == "builtin"
-            or source == "MirrorChyan"
-            or (Config.proxy is not None and Config.proxy.auth is not None)
-            or isinstance(error, httpx.HTTPError)
-        ):
+        if builtin_transport or isinstance(error, httpx.HTTPError):
             with suppress(OSError):
                 destination.unlink(missing_ok=True)
                 destination.parent.rmdir()

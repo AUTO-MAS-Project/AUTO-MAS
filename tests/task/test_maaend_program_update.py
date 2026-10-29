@@ -499,3 +499,79 @@ async def test_mirror_unconfirmed_fluxdown_writer_keeps_download_target(
     downloads = list((root.parent / "data/maaend_update").glob("download-*"))
     assert len(downloads) == 1
     assert next(downloads[0].iterdir()).read_bytes() == b"pending download"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["GitHub", "MirrorChyan"])
+async def test_cancel_builtin_download_cleans_partial_zip(
+    installation, monkeypatch, source
+):
+    root, config = installation
+    if source == "MirrorChyan":
+        config.Update.MirrorChyanCDK = "test-cdk"
+        monkeypatch.setattr(
+            update,
+            "request_mirror_resource",
+            AsyncMock(
+                return_value={
+                    "data": {
+                        "update_type": "full",
+                        "version_name": "v2.2.0",
+                        "url": "https://mirror.example/official.zip",
+                    }
+                }
+            ),
+        )
+    else:
+        update.Config.setting.Update.FluxdownTakeoverAll = False
+
+    started, stopped = asyncio.Event(), asyncio.Event()
+
+    async def partial_download(_url, destination, **_kwargs):
+        destination.write_bytes(b"partial ZIP")
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+
+    monkeypatch.setattr(
+        update, "download_file", AsyncMock(side_effect=partial_download)
+    )
+    cache = root.parent / "data/maaend_update"
+    for _ in range(2):
+        started, stopped = asyncio.Event(), asyncio.Event()
+        pending = asyncio.create_task(update.update_before_run(root, config))
+        await asyncio.wait_for(started.wait(), timeout=5)
+        pending.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(pending, timeout=5)
+        assert stopped.is_set()
+        assert not list(cache.glob("download-*"))
+        assert update.read_install(root)[0] == Version("2.1.0")
+
+
+@pytest.mark.asyncio
+async def test_cancel_fluxdown_download_preserves_unconfirmed_partial_zip(
+    installation, monkeypatch
+):
+    root, config = installation
+    started = asyncio.Event()
+
+    async def partial_fluxdown_download(_url, destination, **_kwargs):
+        destination.write_bytes(b"unconfirmed FluxDown part")
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        update, "download_file", AsyncMock(side_effect=partial_fluxdown_download)
+    )
+    pending = asyncio.create_task(update.update_before_run(root, config))
+    await asyncio.wait_for(started.wait(), timeout=5)
+    pending.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(pending, timeout=5)
+    downloads = list((root.parent / "data/maaend_update").glob("download-*"))
+    assert len(downloads) == 1
+    assert next(downloads[0].iterdir()).read_bytes() == b"unconfirmed FluxDown part"
+    assert update.read_install(root)[0] == Version("2.1.0")
