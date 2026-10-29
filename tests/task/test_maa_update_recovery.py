@@ -212,3 +212,36 @@ async def test_unknown_updater_process_state_does_not_restore_config(
         io_utils.read_file(root / "config/gui.new.json")["Update"]["UpdateSource"]
         == "GitHub"
     )
+
+
+def test_switch_install_root_archives_previous_recovery_journal(installation, tmp_path):
+    """同脚本从安装 A 切到 B：不污染 B，保留 A 的完整恢复证据。"""
+    root_a, snapshot, original_a, scheduler = installation
+    injected = deepcopy(original_a)
+    injected["Update"]["UpdateSource"] = "GitHub"
+    installer.write_maa_update_config(
+        root_a, injected, snapshot_path=snapshot, script_id="test-script"
+    )
+    journal = snapshot.with_name("Temp.maa-update.json")
+    saved = journal.read_bytes()
+    assert io_utils.read_file(root_a / "config/gui.new.json") == injected
+
+    root_b = tmp_path / "maa-other"
+    config_b = root_b / "config"
+    config_b.mkdir(parents=True)
+    original_b = deepcopy(original_a)
+    original_b["Update"]["UpdateSource"] = "UserSelected"
+    io_utils.write_file(config_b / "gui.new.json", original_b)
+    scheduler.maa_set_path = config_b
+
+    # 使用生产 manager 恢复入口，而不是直接调用通用 helper。
+    scheduler._recover_previous_run()
+    assert io_utils.read_file(config_b / "gui.new.json") == original_b
+    assert io_utils.read_file(root_a / "config/gui.new.json") == injected
+    assert not journal.exists()
+    archived = journal.with_name(f"{journal.name}.other-install")
+    assert archived.read_bytes() == saved
+    # 再次运行应幂等，不能让 A 的日志阻塞 B。
+    scheduler._recover_previous_run()
+    assert io_utils.read_file(config_b / "gui.new.json") == original_b
+    assert archived.read_bytes() == saved
