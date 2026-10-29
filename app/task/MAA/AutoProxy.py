@@ -31,7 +31,7 @@ from app.core import Config
 from app.core.history import aggregate_data
 from app.core.maa_stage import maa_stage_service
 from app.core.ws import Publisher, protocol
-from app.domain import maa as _maa_domain
+from app.domain.MAA import constants as _maa_domain
 from app.models.config import (
     MaaConfig,
     MaaUserConfig,

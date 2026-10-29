@@ -30,12 +30,15 @@ from pydantic import BeforeValidator, TypeAdapter
 
 if TYPE_CHECKING:
     from .script import UserConfigType
-from app.domain.maaend import (
+from app.domain.MaaEnd.constants import (
     MAAEND_AUTO_ESSENCE_MENUS,
     MAAEND_SANITY_TASK_DEFAULTS,
     MAAEND_SANITY_TASK_TYPES,
 )
-from app.domain.mss import MSS_DEFAULT_TRIBULATION_STAGE, MSS_TRIBULATION_STAGES
+from app.domain.MSS.constants import (
+    MSS_DEFAULT_TRIBULATION_STAGE,
+    MSS_TRIBULATION_STAGES,
+)
 from app.utils import UTC4, get_logger
 
 from .. import schema as schema_model

@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Literal, Mapping
 
 from app.core import Config
-from app.domain import maa as _maa_domain
+from app.domain.MAA import constants as _maa_domain
 from app.models.config import MaaConfig
 from app.services.maa_copilot import CopilotRepository, CopilotScope
 from app.services.update_transport import MirrorCdkStatus

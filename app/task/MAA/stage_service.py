@@ -15,7 +15,7 @@ from typing import Any, Literal, Protocol
 import httpx
 
 import app.task.MAA.constants as _maa_constants
-from app.domain import maa as _maa_domain
+from app.domain.MAA import constants as _maa_domain
 from app.utils import get_logger
 
 from .constants import RESOURCE_STAGE_DATE_TEXT, RESOURCE_STAGE_DROP_INFO

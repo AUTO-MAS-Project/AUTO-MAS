@@ -55,9 +55,9 @@ from app.config.types import (
     WindowsNameString,
     path_policy,
 )
-from app.domain import maa as _maa_domain
-from app.domain import maaend as _maaend_domain
-from app.domain import starrail as _starrail_domain
+from app.domain.MAA import constants as _maa_domain
+from app.domain.MaaEnd import constants as _maaend_domain
+from app.domain.SRC import constants as _starrail_domain
 from app.utils import constants as _utils_constants
 
 from .base import DomainEntry

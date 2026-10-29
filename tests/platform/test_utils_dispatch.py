@@ -46,7 +46,10 @@ sys.addaudithook(no_side_effect)
 original_thread_start = threading.Thread.start
 threading.Thread.start = no_thread
 
-from app.domain import maa, maaend, mss, starrail
+from app.domain.MAA import constants as maa
+from app.domain.MaaEnd import constants as maaend
+from app.domain.MSS import constants as mss
+from app.domain.SRC import constants as starrail
 check_side_effects = False
 from app.models import schema
 from app.models.config import MaaUserConfig, MaaEndUserConfig, SrcUserConfig, HSRUserConfig, MSSUserConfig

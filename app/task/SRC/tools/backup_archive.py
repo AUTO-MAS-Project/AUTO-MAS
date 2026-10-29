@@ -56,7 +56,7 @@ SRC 特有的目录布局、侧车、恢复语义（恢复前强制归档当前�
 import json
 from pathlib import Path
 
-from app.domain.starrail import STARRAIL_STAGE_BOOK
+from app.domain.SRC.constants import STARRAIL_STAGE_BOOK
 from app.task.SRC.tools.config import is_src_config_available
 from app.utils import BASE_SOURCE_LABELS, get_logger
 from app.utils import config_archive as _utils_config_archive

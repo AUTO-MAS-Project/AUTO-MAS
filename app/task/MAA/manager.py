@@ -23,7 +23,7 @@ from app.core import Config, EmulatorManager
 from app.core.maa_capture import capture_adb
 from app.core.maa_stage import maa_stage_service
 from app.core.ws import Publisher, protocol
-from app.domain import maa as _maa_domain
+from app.domain.MAA import constants as _maa_domain
 from app.models.config import MaaConfig, MaaUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
 from app.models.notification import NotificationImage

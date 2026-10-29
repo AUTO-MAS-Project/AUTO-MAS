@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from app.domain import maa
-from app.domain.mss import MSS_TRIBULATION_STAGES
+from app.domain.MAA import constants as maa
+from app.domain.MSS.constants import MSS_TRIBULATION_STAGES
 from app.models.config import MaaEndUserConfig, MaaPlanConfig, MaaUserConfig
 from app.models.config.shared import normalize_maaend_plan_key, normalize_mss_plan_key
 from app.models.schema import MSSPlanKey

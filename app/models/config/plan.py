@@ -30,7 +30,7 @@ from pydantic import Field
 from app.config import (
     ConfigGroup,
 )
-from app.domain import maa as _maa_domain
+from app.domain.MAA import constants as _maa_domain
 from app.utils import constants as _utils_constants
 
 from .base import DomainEntry
