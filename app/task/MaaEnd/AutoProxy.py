@@ -278,6 +278,11 @@ def _select_auto_collect_routes(
             selected = [
                 value for group in category_groups for value in group["defaultCases"]
             ]
+        elif set(selected) - available:
+            logger.warning(
+                "MaaEnd 自动采集的部分已选项不再受当前版本支持，已忽略；"
+                "请在自动采集配置中重新确认选择，旧路线不会自动转换为新物品"
+            )
         selected_by_key[key] = {
             route
             for index, route in enumerate(ordered)
