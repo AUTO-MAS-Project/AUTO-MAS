@@ -22,7 +22,7 @@ import type { ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
 import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
-import { maafwScriptTypeByConfigType } from '@/composables/useMaaFWFlavor'
+import { findScriptDescriptorByConfigType, resolveScriptType } from '@/scriptDescriptors'
 import {
   analyticsConfigSection,
   analyticsCountBucket,
@@ -41,25 +41,6 @@ interface ScriptListRequest {
 let scriptListRequest: ScriptListRequest | null = null
 
 type HSRStageEngine = 'M7A' | 'SRA'
-const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
-  MaaConfig: 'MAA',
-  SrcConfig: 'SRC',
-  OkwwConfig: 'Okww',
-  OkNteConfig: 'OkNte',
-  MaaEndConfig: 'MaaEnd',
-  HSRConfig: 'HSR',
-  BetterGIConfig: 'BetterGI',
-  ZzzOdConfig: 'ZzzOd',
-  BAAHConfig: 'BAAH',
-  WhimboxConfig: 'Whimbox',
-  // MaaFW 与各特调（M9A / MSS ……）的配置类名由特调注册表提供
-  ...maafwScriptTypeByConfigType(),
-}
-
-const resolveScriptType = (configType: string): ScriptType => {
-  return SCRIPT_TYPE_BY_CONFIG_TYPE[configType] ?? 'General'
-}
-
 export function useScriptApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -150,10 +131,7 @@ export function useScriptApi() {
       }
 
       for (const item of response.index)
-        rememberAnalyticsScriptType(
-          item.uid,
-          item.type === 'GeneralConfig' ? 'General' : SCRIPT_TYPE_BY_CONFIG_TYPE[item.type]
-        )
+        rememberAnalyticsScriptType(item.uid, findScriptDescriptorByConfigType(item.type)?.type)
       // 将API响应转换为ScriptDetail数组
       return response.index.map(indexItem => ({
         uid: indexItem.uid,
@@ -199,10 +177,7 @@ export function useScriptApi() {
       const item = response.index[0]
       const config = response.data[item.uid]
       const scriptType = resolveScriptType(item.type)
-      rememberAnalyticsScriptType(
-        item.uid,
-        item.type === 'GeneralConfig' ? 'General' : SCRIPT_TYPE_BY_CONFIG_TYPE[item.type]
-      )
+      rememberAnalyticsScriptType(item.uid, findScriptDescriptorByConfigType(item.type)?.type)
 
       return {
         uid: item.uid,

@@ -2,7 +2,7 @@
 // 独有区块（脚本页控制方式提示、计划表下拉 + 空队列提示、活动优先开关）都在本目录，按需加载。
 import { defineMaaFWLazyComponent } from '@/composables/maafwFlavorTypes'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
-import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
+import { mssIcon } from '@/utils/scriptIconResources'
 import { defineMaaFWFlavor } from '../defineFlavor'
 
 export const MSS_FLAVOR = defineMaaFWFlavor({
@@ -12,7 +12,7 @@ export const MSS_FLAVOR = defineMaaFWFlavor({
   defaultScriptName: '新 MSS 脚本',
   typeTagLabel: 'MSS',
   typeTagColor: 'orange',
-  logo: SCRIPT_LOGOS.MSS,
+  logo: mssIcon,
   docUrl: MAS_DOC_URLS.scripts,
   routes: { suffix: 'mss' },
   create: {

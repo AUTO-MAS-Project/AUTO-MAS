@@ -3,10 +3,12 @@ import type {
   RouteLocationNormalizedLoaded,
   RouteParamsRaw,
   RouteRecordRaw,
+  RouteRecordSingleView,
 } from 'vue-router'
 import type { MaaFWFlavor, MaaFWPageKind } from '@/composables/maafwFlavorTypes'
 import { isMaaFWFamily, resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import type { ScriptType } from '@/types/script'
+import { SCRIPT_PAGE_ROUTES } from '@/scriptDescriptors/contracts'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -17,25 +19,15 @@ declare module 'vue-router' {
   }
 }
 
+type MaaFWRoute = RouteRecordSingleView & { name: string }
+
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
 /**
  * MaaFW 家族四种页面的路由名后缀与路径。路由名 = 类型 + 名字后缀（MaaFWScriptEdit、
  * M9ASetupWizard……），路径后缀取描述对象的 routes.suffix。生成路由与拼跳转目标共用这一张表。
  */
-const MAAFW_PAGE_ROUTES: Record<MaaFWPageKind, { name: string; path: (suffix: string) => string }> =
-  {
-    script: { name: 'ScriptEdit', path: suffix => `/scripts/:id/edit/${suffix}` },
-    // 新建脚本后的分步引导：与编辑页同一个页面，按页面种类切换形态
-    setup: { name: 'SetupWizard', path: suffix => `/scripts/:id/setup/${suffix}` },
-    userAdd: { name: 'UserAdd', path: suffix => `/scripts/:scriptId/users/add/${suffix}` },
-    userEdit: {
-      name: 'UserEdit',
-      path: suffix => `/scripts/:scriptId/users/:userId/edit/${suffix}`,
-    },
-  }
-
-export const MAAFW_PAGE_KINDS = Object.keys(MAAFW_PAGE_ROUTES) as MaaFWPageKind[]
+export const MAAFW_PAGE_KINDS = Object.keys(SCRIPT_PAGE_ROUTES) as MaaFWPageKind[]
 
 /** 各页面种类的路由参数 */
 export type MaaFWPageParams = {
@@ -45,7 +37,7 @@ export type MaaFWPageParams = {
   userEdit: { scriptId: string; userId: string }
 }
 
-const routeNameOf = (type: string, kind: MaaFWPageKind) => `${type}${MAAFW_PAGE_ROUTES[kind].name}`
+const routeNameOf = (type: string, kind: MaaFWPageKind) => `${type}${SCRIPT_PAGE_ROUTES[kind].name}`
 
 /** 某个类型某种页面的路由名；未知 / 非 MaaFW 家族类型按通用 MaaFW */
 export const maafwRouteName = (
@@ -94,15 +86,15 @@ export const resolveMaaFWCanonicalLocation = (
 export const buildMaaFWRoutes = (
   flavors: readonly MaaFWFlavor[],
   page: LazyPage
-): Record<MaaFWPageKind, RouteRecordRaw[]> =>
+): Record<MaaFWPageKind, MaaFWRoute[]> =>
   Object.fromEntries(
     MAAFW_PAGE_KINDS.map(kind => [
       kind,
-      flavors.map((flavor): RouteRecordRaw => ({
-        path: MAAFW_PAGE_ROUTES[kind].path(flavor.routes.suffix),
+      flavors.map((flavor): MaaFWRoute => ({
+        path: SCRIPT_PAGE_ROUTES[kind].path(flavor.routes.suffix),
         name: routeNameOf(flavor.type, kind),
         component: page,
         meta: { title: flavor.routes.titles[kind], scriptType: flavor.type, maafwPage: kind },
       })),
     ])
-  ) as Record<MaaFWPageKind, RouteRecordRaw[]>
+  ) as Record<MaaFWPageKind, MaaFWRoute[]>

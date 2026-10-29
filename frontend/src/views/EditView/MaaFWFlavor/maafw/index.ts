@@ -2,7 +2,7 @@
 // 未知 / 空类型也落到这里。它是默认值本身，所以写全每个字段，不经过 defineMaaFWFlavor。
 import type { MaaFWFlavor } from '@/composables/maafwFlavorTypes'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
-import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
+import { maafwIcon } from '@/utils/scriptIconResources'
 
 export const MAAFW_FLAVOR: MaaFWFlavor = {
   type: 'MaaFW',
@@ -11,7 +11,7 @@ export const MAAFW_FLAVOR: MaaFWFlavor = {
   defaultScriptName: '新 MFW 脚本',
   typeTagLabel: 'MFW',
   typeTagColor: 'geekblue',
-  logo: SCRIPT_LOGOS.MaaFW,
+  logo: maafwIcon,
   docUrl: MAS_DOC_URLS.scripts,
   routes: {
     suffix: 'maafw',

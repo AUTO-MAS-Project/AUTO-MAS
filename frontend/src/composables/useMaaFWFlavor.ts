@@ -36,11 +36,11 @@
 //    然后起开发后端重新生成 OpenAPI（frontend/src/api 不手改）。
 // 2. 全应用的脚本类型登记（与任何新脚本类型相同，漏了 typecheck 会逐处报错）：
 //    ScriptType 由生成 API 的创建类型派生，不另抄一份类型联合；
-//    utils/scriptLogos.ts 的图标与展示名、
 //    词表 zh-CN.ts 的 scripts.type.X / scripts.create.typeDesc.X 与该特调自己的文案。
 // 3. maafwFlavorTypes.ts 的 MaaFWFlavorType 加上 'X'。
 // 4. 新建目录 views/EditView/MaaFWFlavor/x/：index.ts 用 defineMaaFWFlavor 导出描述对象
-//    X_FLAVOR，按上面三种方式写差异；独有组件都放在本目录。
+//    X_FLAVOR，按上面三种方式写差异；身份、图标与卡片会投影到 scriptDescriptors，
+//    独有组件都放在本目录。
 // 5. 在下面的 FLAVOR_REGISTRY 里登记 X_FLAVOR（漏登记 typecheck 会报错）。
 // 公共页面（MaaFW 脚本页 / 用户页、脚本列表、新建流程）与路由不用改：路由、类型卡片、
 // 路由后缀、用户类型白名单、默认脚本名都从这里生成。

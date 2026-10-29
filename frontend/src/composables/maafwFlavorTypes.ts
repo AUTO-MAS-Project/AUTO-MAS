@@ -3,6 +3,7 @@
 // 而注册表又要 import 那些描述对象，放在同一个文件里会成环。
 
 import { defineAsyncComponent, type Component } from 'vue'
+import type { ScriptIndexItem, UserIndexItem } from '@/api'
 import type {
   MaaFWInterfacePreviewData,
   MaaFWScriptConfig,
@@ -328,9 +329,9 @@ export interface MaaFWFlavor {
   // ---- 身份 ----
   type: MaaFWFlavorType
   /** 后端脚本配置类名（脚本索引里的 type） */
-  scriptConfigType: string
+  scriptConfigType: `${ScriptIndexItem['type']}`
   /** 后端用户配置类名（用户索引里的 type） */
-  userConfigType: string
+  userConfigType: `${UserIndexItem['type']}`
   /** 后端新建脚本时给的默认名（配置类的 DEFAULT_SCRIPT_NAME）：还是这个名字时导入后自动改成项目名 */
   defaultScriptName: string
   /** 脚本页卡片右上角、脚本列表的类型标签文字与颜色 */

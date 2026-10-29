@@ -172,14 +172,9 @@ import {
 import ScriptTable from '@/views/scripts/components/ScriptTable.vue'
 import { getApiErrorMessage } from '@/utils/apiError'
 import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
-import type { ScriptType } from '@/types/script'
 import type { ScriptListItem, ScriptListUser } from '@/views/scripts/scriptListModel'
-import {
-  getScriptEditSegment,
-  isMfwFamily,
-  type TemplateRequest,
-} from '@/views/scripts/components/scriptCreateFlow'
-import { maafwRouteLocation } from '@/router/maafwFlavorRoutes'
+import type { TemplateRequest } from '@/views/scripts/components/scriptCreateFlow'
+import { scriptRouteLocation } from '@/scriptDescriptors'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptList } from '@/views/scripts/useScriptList'
 import { useUserApi } from '@/composables/useUserApi'
@@ -323,9 +318,6 @@ const handleSaveConfigMask = () => {
       break
   }
 }
-
-// 与新建流程同一张表（MaaFW 与各特调的后缀取自特调注册表）
-const getScriptEditPath = (type: ScriptType) => getScriptEditSegment(type)
 
 // 配置会话超时：30 分钟没保存就自动断开
 const CONFIG_SESSION_TIMEOUT_MS = 30 * 60 * 1000
@@ -476,11 +468,7 @@ const loadTemplates = async (query: TemplateRequest = { page: 1, keyword: '' }) 
 }
 
 const handleEditScript = (script: ScriptListItem) => {
-  router.push(
-    isMfwFamily(script.type)
-      ? maafwRouteLocation(script.type, 'script', { id: script.id })
-      : `/scripts/${script.id}/edit/${getScriptEditPath(script.type)}`
-  )
+  router.push(scriptRouteLocation(script.type, 'script', { id: script.id }))
 }
 
 const handleDeleteScript = async (script: ScriptListItem) => {
@@ -492,68 +480,16 @@ const handleDeleteScript = async (script: ScriptListItem) => {
 }
 
 const handleAddUser = (script: ScriptListItem) => {
-  // 根据脚本类型跳转到对应的用户添加页面
-  if (isMfwFamily(script.type)) {
-    // MaaFW 与各特调共用一个用户页，路由按特调注册表生成
-    router.push(maafwRouteLocation(script.type, 'userAdd', { scriptId: script.id }))
-  } else if (script.type === 'MAA') {
-    router.push(`/scripts/${script.id}/users/add/maa`)
-  } else if (script.type === 'SRC') {
-    router.push(`/scripts/${script.id}/users/add/src`)
-  } else if (script.type === 'MaaEnd') {
-    router.push(`/scripts/${script.id}/users/add/maaend`)
-  } else if (script.type === 'Okww') {
-    router.push(`/scripts/${script.id}/users/add/okww`)
-  } else if (script.type === 'OkNte') {
-    router.push(`/scripts/${script.id}/users/add/oknte`)
-  } else if (script.type === 'HSR') {
-    router.push(`/scripts/${script.id}/users/add/hsr`)
-  } else if (script.type === 'BetterGI') {
-    router.push(`/scripts/${script.id}/users/add/bettergi`)
-  } else if (script.type === 'ZzzOd') {
-    router.push(`/scripts/${script.id}/users/add/zzzod`)
-  } else if (script.type === 'BAAH') {
-    router.push(`/scripts/${script.id}/users/add/baah`)
-  } else if (script.type === 'Whimbox') {
-    router.push(`/scripts/${script.id}/users/add/whimbox`)
-  } else {
-    router.push(`/scripts/${script.id}/users/add/general`)
-  }
+  router.push(scriptRouteLocation(script.type, 'userAdd', { scriptId: script.id }))
 }
 
 const handleEditUser = (user: ScriptListUser) => {
   // 从用户数据中找到对应的脚本
   const script = scripts.value.find(s => s.id === user.scriptId)
   if (script) {
-    // 根据脚本类型跳转到对应的用户编辑页面
-    if (isMfwFamily(script.type)) {
-      // MaaFW 与各特调共用一个用户页，路由按特调注册表生成
-      router.push(
-        maafwRouteLocation(script.type, 'userEdit', { scriptId: script.id, userId: user.id })
-      )
-    } else if (script.type === 'MAA') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/maa`)
-    } else if (script.type === 'SRC') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/src`)
-    } else if (script.type === 'MaaEnd') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/maaend`)
-    } else if (script.type === 'Okww') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/okww`)
-    } else if (script.type === 'OkNte') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/oknte`)
-    } else if (script.type === 'HSR') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/hsr`)
-    } else if (script.type === 'BetterGI') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/bettergi`)
-    } else if (script.type === 'ZzzOd') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/zzzod`)
-    } else if (script.type === 'BAAH') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/baah`)
-    } else if (script.type === 'Whimbox') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/whimbox`)
-    } else {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
-    }
+    router.push(
+      scriptRouteLocation(script.type, 'userEdit', { scriptId: script.id, userId: user.id })
+    )
   } else {
     message.error(t('core.scripts.toast.scriptNotFound'))
   }

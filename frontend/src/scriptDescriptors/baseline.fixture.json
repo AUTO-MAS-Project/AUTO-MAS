@@ -1,0 +1,361 @@
+{
+  "base": "6f4e89abc3ceb1b1df9ba1fdbeaab8f244d70b6f",
+  "cards": [
+    {
+      "value": "General",
+      "titleKey": "core.scripts.type.General",
+      "descriptionKey": "core.scripts.create.typeDesc.General",
+      "keywords": ["general", "通用", "自定义"],
+      "group": "general"
+    },
+    {
+      "value": "MaaFW",
+      "titleKey": "core.scripts.type.MaaFW",
+      "descriptionKey": "core.scripts.create.typeDesc.MaaFW",
+      "keywords": ["maafw", "maaframework", "framework", "mfw", "interface.json", "通用"],
+      "group": "general"
+    },
+    {
+      "value": "MAA",
+      "titleKey": "core.scripts.type.MAA",
+      "descriptionKey": "core.scripts.create.typeDesc.MAA",
+      "keywords": ["maa", "明日方舟"],
+      "group": "specialized"
+    },
+    {
+      "value": "SRC",
+      "titleKey": "core.scripts.type.SRC",
+      "descriptionKey": "core.scripts.create.typeDesc.SRC",
+      "keywords": ["src", "星穹铁道"],
+      "group": "specialized"
+    },
+    {
+      "value": "MaaEnd",
+      "titleKey": "core.scripts.type.MaaEnd",
+      "descriptionKey": "core.scripts.create.typeDesc.MaaEnd",
+      "keywords": ["maaend", "maaframework", "终末地", "endfield"],
+      "group": "specialized"
+    },
+    {
+      "value": "M9A",
+      "titleKey": "core.scripts.type.M9A",
+      "descriptionKey": "core.scripts.create.typeDesc.M9A",
+      "keywords": ["m9a", "1999", "重返未来"],
+      "group": "specialized"
+    },
+    {
+      "value": "Okww",
+      "titleKey": "core.scripts.type.Okww",
+      "descriptionKey": "core.scripts.create.typeDesc.Okww",
+      "keywords": ["okww", "ok-ww", "ok-script"],
+      "group": "specialized"
+    },
+    {
+      "value": "OkNte",
+      "titleKey": "core.scripts.type.OkNte",
+      "descriptionKey": "core.scripts.create.typeDesc.OkNte",
+      "keywords": ["oknte", "ok-nte", "异环", "ok-script"],
+      "group": "specialized"
+    },
+    {
+      "value": "HSR",
+      "titleKey": "core.scripts.type.HSR",
+      "descriptionKey": "core.scripts.create.typeDesc.HSR",
+      "keywords": ["hsr", "三月七", "sra"],
+      "group": "specialized"
+    },
+    {
+      "value": "BetterGI",
+      "titleKey": "core.scripts.type.BetterGI",
+      "descriptionKey": "core.scripts.create.typeDesc.BetterGI",
+      "keywords": ["bettergi", "better-gi", "原神", "genshin"],
+      "group": "specialized"
+    },
+    {
+      "value": "ZzzOd",
+      "titleKey": "core.scripts.type.ZzzOd",
+      "descriptionKey": "core.scripts.create.typeDesc.ZzzOd",
+      "keywords": ["zzz-od", "zzz", "绝区零", "zenless", "一条龙"],
+      "group": "specialized"
+    },
+    {
+      "value": "BAAH",
+      "titleKey": "core.scripts.type.BAAH",
+      "descriptionKey": "core.scripts.create.typeDesc.BAAH",
+      "keywords": ["baah", "碧蓝档案", "蔚蓝档案", "bluearchive", "爱丽丝助手"],
+      "group": "specialized"
+    },
+    {
+      "value": "Whimbox",
+      "titleKey": "core.scripts.type.Whimbox",
+      "descriptionKey": "core.scripts.create.typeDesc.Whimbox",
+      "keywords": ["whimbox", "奇想盒", "无限暖暖", "nikki"],
+      "group": "specialized"
+    },
+    {
+      "value": "MSS",
+      "titleKey": "core.scripts.type.MSS",
+      "descriptionKey": "core.scripts.create.typeDesc.MSS",
+      "keywords": ["mss", "maastellasora", "星塔旅人", "stella", "maaframework"],
+      "group": "specialized"
+    }
+  ],
+  "routes": {
+    "MAAScriptEdit": {
+      "path": "/scripts/:id/edit/maa",
+      "title": "编辑MAA脚本",
+      "props": false
+    },
+    "SRCScriptEdit": {
+      "path": "/scripts/:id/edit/src",
+      "title": "编辑SRC脚本",
+      "props": false
+    },
+    "MaaEndScriptEdit": {
+      "path": "/scripts/:id/edit/maaend",
+      "title": "编辑MaaEnd脚本",
+      "props": false
+    },
+    "HSRScriptEdit": {
+      "path": "/scripts/:id/edit/hsr",
+      "title": "编辑HSR脚本",
+      "props": false
+    },
+    "GeneralScriptEdit": {
+      "path": "/scripts/:id/edit/general",
+      "title": "编辑通用脚本",
+      "props": false
+    },
+    "BAAHScriptEdit": {
+      "path": "/scripts/:id/edit/baah",
+      "title": "编辑BAAH脚本",
+      "props": false
+    },
+    "OkwwScriptEdit": {
+      "path": "/scripts/:id/edit/okww",
+      "title": "编辑ok-ww脚本",
+      "props": false
+    },
+    "OkNteScriptEdit": {
+      "path": "/scripts/:id/edit/oknte",
+      "title": "编辑ok-nte脚本",
+      "props": false
+    },
+    "BetterGIScriptEdit": {
+      "path": "/scripts/:id/edit/bettergi",
+      "title": "编辑BetterGI脚本",
+      "props": false
+    },
+    "ZzzOdScriptEdit": {
+      "path": "/scripts/:id/edit/zzzod",
+      "title": "编辑ZZZ-OD脚本",
+      "props": false
+    },
+    "WhimboxScriptEdit": {
+      "path": "/scripts/:id/edit/whimbox",
+      "title": "编辑奇想盒脚本",
+      "props": false
+    },
+    "ZzzOdUserAdd": {
+      "path": "/scripts/:scriptId/users/add/zzzod",
+      "title": "添加ZZZ-OD用户",
+      "props": false
+    },
+    "ZzzOdUserEdit": {
+      "path": "/scripts/:scriptId/users/:userId/edit/zzzod",
+      "title": "编辑ZZZ-OD用户",
+      "props": false
+    },
+    "MAAUserAdd": {
+      "path": "/scripts/:scriptId/users/add/maa",
+      "title": "添加MAA用户",
+      "props": false
+    },
+    "MAACultivate": {
+      "path": "/scripts/:scriptId/users/:userId/cultivate/maa",
+      "title": "MAA 干员养成",
+      "props": {
+        "cultivationPage": true
+      }
+    },
+    "MAAUserEdit": {
+      "path": "/scripts/:scriptId/users/:userId/edit/maa",
+      "title": "编辑MAA用户",
+      "props": false
+    },
+    "SRCUserAdd": {
+      "path": "/scripts/:scriptId/users/add/src",
+      "title": "添加SRC用户",
+      "props": false
+    },
+    "MaaEndUserAdd": {
+      "path": "/scripts/:scriptId/users/add/maaend",
+      "title": "添加MaaEnd用户",
+      "props": false
+    },
+    "HSRUserAdd": {
+      "path": "/scripts/:scriptId/users/add/hsr",
+      "title": "添加HSR用户",
+      "props": false
+    },
+    "SRCUserEdit": {
+      "path": "/scripts/:scriptId/users/:userId/edit/src",
+      "title": "编辑SRC用户",
+      "props": false
+    },
+    "MaaEndUserEdit": {
+      "path": "/scripts/:scriptId/users/:userId/edit/maaend",
+      "title": "编辑MaaEnd用户",
+      "props": false
+    },
+    "HSRUserEdit": {
+      "path": "/scripts/:scriptId/users/:userId/edit/hsr",
+      "title": "编辑HSR用户",
+      "props": false
+    },
+    "GeneralUserAdd": {
+      "path": "/scripts/:scriptId/users/add/general",
+      "title": "添加通用用户",
+      "props": false
+    },
+    "GeneralUserEdit": {
+      "path": "/scripts/:scriptId/users/:userId/edit/general",
+      "title": "编辑通用用户",
+      "props": false
+    },
+    "BAAHUserAdd": {
+      "path": "/scripts/:scriptId/users/add/baah",
+      "title": "添加BAAH用户",
+      "props": false
+    },
+    "BAAHUserEdit": {
+      "path": "/scripts/:scriptId/users/:userId/edit/baah",
+      "title": "编辑BAAH用户",
+      "props": false
+    },
+    "OkwwUserAdd": {
+      "path": "/scripts/:scriptId/users/add/okww",
+      "title": "添加ok-ww用户",
+      "props": false
+    },
+    "OkwwUserEdit": {
+      "path": "/scripts/:scriptId/users/:userId/edit/okww",
+      "title": "编辑ok-ww用户",
+      "props": false
+    },
+    "OkNteUserAdd": {
+      "path": "/scripts/:scriptId/users/add/oknte",
+      "title": "添加ok-nte用户",
+      "props": false
+    },
+    "OkNteUserEdit": {
+      "path": "/scripts/:scriptId/users/:userId/edit/oknte",
+      "title": "编辑ok-nte用户",
+      "props": false
+    },
+    "BetterGIUserAdd": {
+      "path": "/scripts/:scriptId/users/add/bettergi",
+      "title": "添加BetterGI用户",
+      "props": false
+    },
+    "BetterGIUserEdit": {
+      "path": "/scripts/:scriptId/users/:userId/edit/bettergi",
+      "title": "编辑BetterGI用户",
+      "props": false
+    },
+    "WhimboxUserAdd": {
+      "path": "/scripts/:scriptId/users/add/whimbox",
+      "title": "添加奇想盒用户",
+      "props": false
+    },
+    "WhimboxUserEdit": {
+      "path": "/scripts/:scriptId/users/:userId/edit/whimbox",
+      "title": "编辑奇想盒用户",
+      "props": false
+    },
+    "MaaFWScriptEdit": {
+      "path": "/scripts/:id/edit/maafw",
+      "title": "编辑MFW脚本",
+      "props": false,
+      "scriptType": "MaaFW",
+      "maafwPage": "script"
+    },
+    "MaaFWSetupWizard": {
+      "path": "/scripts/:id/setup/maafw",
+      "title": "MaaFramework项目引导",
+      "props": false,
+      "scriptType": "MaaFW",
+      "maafwPage": "setup"
+    },
+    "MaaFWUserAdd": {
+      "path": "/scripts/:scriptId/users/add/maafw",
+      "title": "添加 MFW 用户",
+      "props": false,
+      "scriptType": "MaaFW",
+      "maafwPage": "userAdd"
+    },
+    "MaaFWUserEdit": {
+      "path": "/scripts/:scriptId/users/:userId/edit/maafw",
+      "title": "编辑 MFW 用户",
+      "props": false,
+      "scriptType": "MaaFW",
+      "maafwPage": "userEdit"
+    },
+    "M9AScriptEdit": {
+      "path": "/scripts/:id/edit/m9a",
+      "title": "编辑M9A脚本",
+      "props": false,
+      "scriptType": "M9A",
+      "maafwPage": "script"
+    },
+    "M9ASetupWizard": {
+      "path": "/scripts/:id/setup/m9a",
+      "title": "M9A项目引导",
+      "props": false,
+      "scriptType": "M9A",
+      "maafwPage": "setup"
+    },
+    "M9AUserAdd": {
+      "path": "/scripts/:scriptId/users/add/m9a",
+      "title": "添加M9A用户",
+      "props": false,
+      "scriptType": "M9A",
+      "maafwPage": "userAdd"
+    },
+    "M9AUserEdit": {
+      "path": "/scripts/:scriptId/users/:userId/edit/m9a",
+      "title": "编辑M9A用户",
+      "props": false,
+      "scriptType": "M9A",
+      "maafwPage": "userEdit"
+    },
+    "MSSScriptEdit": {
+      "path": "/scripts/:id/edit/mss",
+      "title": "编辑MSS脚本",
+      "props": false,
+      "scriptType": "MSS",
+      "maafwPage": "script"
+    },
+    "MSSSetupWizard": {
+      "path": "/scripts/:id/setup/mss",
+      "title": "MSS项目引导",
+      "props": false,
+      "scriptType": "MSS",
+      "maafwPage": "setup"
+    },
+    "MSSUserAdd": {
+      "path": "/scripts/:scriptId/users/add/mss",
+      "title": "添加MSS用户",
+      "props": false,
+      "scriptType": "MSS",
+      "maafwPage": "userAdd"
+    },
+    "MSSUserEdit": {
+      "path": "/scripts/:scriptId/users/:userId/edit/mss",
+      "title": "编辑MSS用户",
+      "props": false,
+      "scriptType": "MSS",
+      "maafwPage": "userEdit"
+    }
+  }
+}
