@@ -2308,7 +2308,7 @@
   "core.edit.updateTakeoverCdkPlaceholder": "Empty falls back to global key",
   "core.edit.updateTakeoverCdkTip": "Leave empty to use the global CDK, or use GitHub if no CDK is configured. To manage updates using an encrypted CDK in MAA, enter that CDK here.",
   "core.edit.updateTakeoverSwitch": "Take over updates",
-  "core.edit.updateTakeoverTip": "Update MAA and its resources before running, then check both versions again before starting tasks. Without a CDK, download from GitHub using the global FluxDown takeover preference; with a CDK, prefer MirrorChyan. Stop startup if preparation fails.",
+  "core.edit.updateTakeoverTip": "Update MAA and resources before tasks. If checks or downloads fail, warn and continue with a verified usable installation while keeping MAA's native auto-update disabled during managed runs. Stop if installation or resource writes are uncertain, the updater is running, or the task is cancelled. Without a CDK use GitHub and the global FluxDown downloader preference; with a CDK prefer MirrorChyan.",
   "core.edit.uploadFailedCheckYour": "Upload failed — check your connection and try again",
   "core.edit.uploadThisScriptConfiguration": "Upload this script configuration to the cloud",
   "core.edit.url": "URL",
