@@ -2308,7 +2308,7 @@
   "core.edit.updateTakeoverCdkPlaceholder": "空欄ならグローバル Key にフォールバック",
   "core.edit.updateTakeoverCdkTip": "空欄の場合はグローバル CDK を使用し、CDK がなければ GitHub を使用します。MAA に保存された暗号化 CDK を使う場合は、ここに入力してください。",
   "core.edit.updateTakeoverSwitch": "更新を引き受ける",
-  "core.edit.updateTakeoverTip": "実行前に MAA 本体とリソースを更新し、両方が最新版であることを再確認してからタスクを開始します。CDK がなければ GitHub から取得し、ダウンローダーはグローバルの FluxDown 設定に従います。CDK があれば MirrorChyan を優先します。更新失敗時は起動を停止します。",
+  "core.edit.updateTakeoverTip": "タスク前に MAA 本体とリソースの更新を試みます。確認・ダウンロードなどの通常の失敗時は警告し、安全を確認できる既存環境で続行します。管理実行中は MAA 自身の自動更新を停止します。インストールやリソース書き込みの状態が不明、更新器が実行中、またはユーザーがキャンセルした場合は停止します。CDK がなければ GitHub とグローバル FluxDown 設定を使用し、CDK があれば MirrorChyan を優先します。",
   "core.edit.uploadFailedCheckYour": "アップロードに失敗しました。接続を確認して、しばらくしてからお試しください",
   "core.edit.uploadThisScriptConfiguration": "このスクリプト設定をクラウドにアップロード",
   "core.edit.url": "URL",
