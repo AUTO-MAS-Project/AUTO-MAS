@@ -4701,6 +4701,14 @@ class WhimboxConfig(DomainEntry):
         )
 
     Run: RunFields = Field(default_factory=RunFields)
+
+    class UpdateFields(ConfigGroup):
+        TakeoverEnabled: bool = Field(
+            default_factory=lambda: False,
+            description="运行前检查并安装奇想盒官方后端正式版，更新完成后启动任务；不更新 app",
+        )
+
+    Update: UpdateFields = Field(default_factory=UpdateFields)
     UserData: ConfigCollection[WhimboxUserConfig] = collection(WhimboxUserConfig)
 
 

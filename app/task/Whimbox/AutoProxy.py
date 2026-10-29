@@ -67,6 +67,7 @@ from .tools.feed import LoguruFileFeed, build_log_path_resolver
 from .tools.launcher import EmbeddedPythonLauncher, find_upstream_pids
 from .tools.marker import WhimboxMarkerParser, is_benign_marker
 from .tools.notify import build_statistics_payload
+from .tools.update import pending_marker
 from .tools.upstream import WheelAssetsConfigSurface, parse_override_map
 
 logger = get_logger("奇想盒 自动代理")
@@ -195,6 +196,8 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
         self._exit_watchdog_task: asyncio.Task | None = None
 
     async def check(self) -> str:
+        if pending_marker(self.root_path).exists():
+            return "奇想盒后端安装未完成，请开启运行前更新重试，或在 app 内修复后端"
         # 安装哨兵三件（分场景报错，覆盖首启未完成/弱网下载失败场景）
         install_error = self.config_surface.check_install()
         if install_error:

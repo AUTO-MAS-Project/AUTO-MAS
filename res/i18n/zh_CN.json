@@ -2388,6 +2388,8 @@
   "core.edit.whimboxStepsEmpty": "未读取到步骤开关",
   "core.edit.whimboxTaskSection": "任务配置",
   "core.edit.whimboxTextPlaceholder": "请输入",
+  "core.edit.whimboxUpdateBeforeRun": "运行前更新后端",
+  "core.edit.whimboxUpdateBeforeRunHint": "每批任务启动前检查并安装奇想盒官方后端正式版，完成后再启动。检查或下载失败时，确认当前安装可用后告警并继续；安装未完成则停止。仅更新后端，不更新 app。",
   "core.edit.whimboxUseAdmin": "以管理员运行",
   "core.edit.whimboxUseAdminHint": "奇想盒后端强制管理员权限，保持开启即可；本软件已以管理员运行时不会重复弹 UAC",
   "core.edit.whimboxUserTag": "账号标签",

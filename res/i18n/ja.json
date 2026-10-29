@@ -2388,6 +2388,8 @@
   "core.edit.whimboxStepsEmpty": "ステップスイッチを読み込めませんでした",
   "core.edit.whimboxTaskSection": "タスク設定",
   "core.edit.whimboxTextPlaceholder": "入力してください",
+  "core.edit.whimboxUpdateBeforeRun": "実行前にバックエンドを更新",
+  "core.edit.whimboxUpdateBeforeRunHint": "各タスク群の開始前に公式バックエンドの安定版を確認・インストールします。確認やダウンロードに失敗した場合、現在の環境が利用可能なら警告して続行します。インストールが未完了の場合は停止します。app 本体は更新しません。",
   "core.edit.whimboxUseAdmin": "管理者権限で実行",
   "core.edit.whimboxUseAdminHint": "奇想盒バックエンドは管理者権限が必須のため、オンのままにしてください。本ソフトが既に管理者権限で実行されている場合、UAC は再度表示されません",
   "core.edit.whimboxUserTag": "アカウントタグ",
