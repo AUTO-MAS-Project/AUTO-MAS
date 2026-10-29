@@ -183,6 +183,7 @@ async def test_maa_resource_update_keeps_takeover_credentials(
     instance = maa.MaaManager(script)
     instance.script_config = config
     instance.maa_set_path = tmp_path / "config"
+    instance.temp_path = tmp_path / "Temp"
     monkeypatch.setattr(maa, "use_maa_github_update", lambda *args, **kwargs: False)
     monkeypatch.setattr(maa, "read_pending_update", lambda root: ("", ""))
     monkeypatch.setattr(maa, "read_installed_release", lambda root: ("v6.1.0", "x64"))
