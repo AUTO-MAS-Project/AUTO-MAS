@@ -116,7 +116,10 @@ def real_update(tmp_path, monkeypatch, pip_runtime):
             return_value={
                 "tag_name": "3.1.1",
                 "assets": [
-                    {"name": main, "digest": "sha256:" + hashlib.sha256(wheel).hexdigest()}
+                    {
+                        "name": main,
+                        "digest": "sha256:" + hashlib.sha256(wheel).hexdigest(),
+                    }
                 ],
             }
         ),
@@ -144,7 +147,11 @@ def real_update(tmp_path, monkeypatch, pip_runtime):
         if "--index-url" in command:
             position = command.index("--index-url")
             assert command[position + 1] == "https://pypi.org/simple/"
-            command[position : position + 2] = ["--no-index", "--find-links", str(index)]
+            command[position : position + 2] = [
+                "--no-index",
+                "--find-links",
+                str(index),
+            ]
         if phase == "install":
             command += ["--target", str(target)]
         result = await ProcessRunner.run_process(
