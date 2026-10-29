@@ -36,8 +36,9 @@ from pydantic import (
     model_validator,
 )
 
+from app.core.config_center import config_center_client
 from app.models.schema import OutBase
-from app.services import ConfigCenter, ConfigCenterError
+from app.services import ConfigCenterError
 
 
 class ShareTemplateListIn(BaseModel):
@@ -241,7 +242,7 @@ async def list_share_templates(
 ) -> ShareTemplateListOut:
 
     try:
-        items, pagination = await ConfigCenter.list_templates(
+        items, pagination = await config_center_client.list_templates(
             query.page, query.pageSize, query.keyword
         )
     except ConfigCenterError as e:
@@ -269,7 +270,7 @@ async def list_share_templates(
 )
 async def get_share_auth_status() -> ShareAuthStatusOut:
 
-    return _build_auth_status(ConfigCenter.get_status())
+    return _build_auth_status(config_center_client.get_status())
 
 
 @router.post(
@@ -282,7 +283,7 @@ async def get_share_auth_status() -> ShareAuthStatusOut:
 async def start_share_auth() -> ShareAuthStatusOut:
 
     try:
-        data = await ConfigCenter.start_authorization()
+        data = await config_center_client.start_authorization()
     except ConfigCenterError as e:
         return ShareAuthStatusOut(
             code=500, status="error", message=str(e), authStatus="idle"
@@ -308,7 +309,7 @@ async def start_share_auth() -> ShareAuthStatusOut:
 async def poll_share_auth() -> ShareAuthStatusOut:
 
     try:
-        status = await ConfigCenter.poll_authorization()
+        status = await config_center_client.poll_authorization()
     except ConfigCenterError as e:
         return ShareAuthStatusOut(
             code=500, status="error", message=str(e), authStatus="idle"
@@ -333,8 +334,8 @@ async def poll_share_auth() -> ShareAuthStatusOut:
 )
 async def cancel_share_auth() -> ShareAuthStatusOut:
 
-    await ConfigCenter.cancel_authorization()
-    return _build_auth_status(ConfigCenter.get_status())
+    await config_center_client.cancel_authorization()
+    return _build_auth_status(config_center_client.get_status())
 
 
 @router.post(
@@ -349,7 +350,7 @@ async def upload_share_appearance(
 ) -> ShareAppearanceUploadOut:
 
     try:
-        result = await ConfigCenter.upload_appearance(
+        result = await config_center_client.upload_appearance(
             zip_path=upload.zipPath,
             display_name=upload.displayName,
             description=upload.description,
@@ -385,7 +386,7 @@ async def list_share_appearance_uploads(
     return ShareAppearanceUploadsOut(
         data=[
             ShareAppearanceUploadItem(**_)
-            for _ in ConfigCenter.list_appearance_uploads(
+            for _ in config_center_client.list_appearance_uploads(
                 category_key=query.categoryKey
             )
         ]
@@ -404,7 +405,9 @@ async def list_my_share_appearances(
 ) -> ShareAppearanceMineOut:
 
     try:
-        items = await ConfigCenter.list_my_appearances(category_key=query.categoryKey)
+        items = await config_center_client.list_my_appearances(
+            category_key=query.categoryKey
+        )
     except ConfigCenterError as e:
         return ShareAppearanceMineOut(
             code=e.status_code, status="error", message=str(e)
@@ -429,7 +432,7 @@ async def get_my_share_appearance_cover(
 ) -> ShareAppearanceCoverOut:
 
     try:
-        cover = await ConfigCenter.get_my_appearance_cover(
+        cover = await config_center_client.get_my_appearance_cover(
             query.fileId, query.versionNo, inheritable=query.inheritable
         )
     except ConfigCenterError as e:
@@ -456,7 +459,7 @@ async def update_my_share_appearance_description(
 ) -> ShareAppearanceDescriptionOut:
 
     try:
-        item = await ConfigCenter.update_my_appearance_description(
+        item = await config_center_client.update_my_appearance_description(
             update.fileId, update.description
         )
     except ConfigCenterError as e:

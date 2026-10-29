@@ -8,8 +8,8 @@ from uuid import UUID
 
 from app.config import ConfigEntry
 from app.core import Config
+from app.core.config_center import config_center_client
 from app.models.config import GeneralConfig
-from app.services import ConfigCenter
 from app.task.general.share_service import GeneralShareService
 
 
@@ -23,5 +23,5 @@ class _HostScripts:
 
 
 general_share_service = GeneralShareService(
-    scripts=_HostScripts(), config_center=ConfigCenter
+    scripts=_HostScripts(), config_center=config_center_client
 )

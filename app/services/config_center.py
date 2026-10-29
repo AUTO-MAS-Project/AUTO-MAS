@@ -27,21 +27,18 @@ import json
 import os
 import re
 import zipfile
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Protocol, Tuple
 
 import httpx
 from PIL import Image, ImageOps
 
 from app.services.config_center_errors import ConfigCenterError as ConfigCenterError
-from app.utils import LazyProxy, get_logger
+from app.utils import get_logger
 
 logger = get_logger("配置中心")
-
-# 延迟加载 Config，避免 app.services 初始化期间触发 app.core 循环导入
-Config = LazyProxy("app.core", "Config")
-
 
 # ==================== 部署参数 ====================
 # 新配置中心的后端地址、以及「通用脚本」对应的 project/category，在三个仓库里都没有写死的
@@ -103,6 +100,14 @@ MY_FILES_PAGE_SIZE = 100
 MY_FILES_MAX_PAGES = 50
 
 
+class AppearanceUploadStore(Protocol):
+    """宿主提供的外观上传记录读写，写入完成表示配置提交完成。"""
+
+    def read(self) -> str: ...
+
+    async def write(self, content: str) -> None: ...
+
+
 class ConfigCenterClient:
     """新版 AUTO-MAS 配置中心的客户端，兼管桌面端授权状态。
 
@@ -110,7 +115,14 @@ class ConfigCenterClient:
     进程退出即失效。
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        get_proxy: Callable[[], httpx.Proxy | None],
+        appearance_uploads: AppearanceUploadStore,
+    ) -> None:
+        self._get_proxy = get_proxy
+        self._appearance_uploads = appearance_uploads
 
         ## 设备授权会话（等待用户在浏览器里确认时才有值）
         self._device_code: Optional[str] = None
@@ -1002,7 +1014,7 @@ class ConfigCenterClient:
         """读取本机外观上传记录, 损坏时按空处理。"""
 
         try:
-            data = json.loads(Config.setting.Data.ShareAppearanceUploads)
+            data = json.loads(self._appearance_uploads.read())
         except Exception as e:
             logger.warning(f"读取外观上传记录失败, 按空记录处理: {e}")
             return {}
@@ -1028,18 +1040,7 @@ class ConfigCenterClient:
         data = self._load_appearance_uploads()
         data.setdefault(username, {})[appearance_id] = record
         try:
-            await Config.setting.update(
-                type(Config.setting).model_validate(
-                    {
-                        "Data": {
-                            "ShareAppearanceUploads": json.dumps(
-                                data, ensure_ascii=False
-                            )
-                        }
-                    }
-                ),
-                check_visibility=False,
-            )
+            await self._appearance_uploads.write(json.dumps(data, ensure_ascii=False))
         except Exception as e:
             logger.warning(f"保存外观上传记录失败: {appearance_id}, {e}")
 
@@ -1058,18 +1059,7 @@ class ConfigCenterClient:
         for appearance_id in stale:
             del records[appearance_id]
         try:
-            await Config.setting.update(
-                type(Config.setting).model_validate(
-                    {
-                        "Data": {
-                            "ShareAppearanceUploads": json.dumps(
-                                data, ensure_ascii=False
-                            )
-                        }
-                    }
-                ),
-                check_visibility=False,
-            )
+            await self._appearance_uploads.write(json.dumps(data, ensure_ascii=False))
             logger.info(f"分享站上已没有文件 {file_id}, 删除本机上传记录: {stale}")
         except Exception as e:
             logger.warning(f"删除外观上传记录失败: 文件 {file_id}, {e}")
@@ -1183,8 +1173,7 @@ class ConfigCenterClient:
         )
         return result if isinstance(result, dict) else {}
 
-    @staticmethod
-    def _client(timeout: float, token: Optional[str]) -> httpx.AsyncClient:
+    def _client(self, timeout: float, token: Optional[str]) -> httpx.AsyncClient:
         """建立请求配置中心的客户端; 带令牌时, 跟随分享站自己的跨主机跳转仍带上令牌。
 
         首跳的令牌由调用方放进请求头; 这里只补 httpx 跨域跳转时删掉的那份。
@@ -1214,7 +1203,7 @@ class ConfigCenterClient:
             event_hooks = {"request": [keep_token]}
 
         return httpx.AsyncClient(
-            proxy=Config.proxy,
+            proxy=self._get_proxy(),
             follow_redirects=True,
             timeout=timeout,
             event_hooks=event_hooks,
@@ -1404,6 +1393,3 @@ class ConfigCenterClient:
             return message or "操作过于频繁, 请稍后再试"
 
         return f"{fallback}: {message or response.status_code}"
-
-
-ConfigCenter = ConfigCenterClient()
