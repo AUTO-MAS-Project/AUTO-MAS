@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Literal, Mapping
 
 from app.core import Config
+from app.domain import maa as _maa_domain
 from app.models.config import MaaConfig
 from app.services.maa_copilot import CopilotRepository, CopilotScope
 from app.services.update_transport import MirrorCdkStatus
@@ -46,7 +47,6 @@ from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     read_config_base,
 )
-from app.utils import constants as _utils_constants
 from app.utils import get_logger
 from app.utils import io as _utils_io
 
@@ -790,7 +790,7 @@ async def get_cultivate_preview(
         maa_data_dir=archive_dir,
         config_path=Config.config_path,
         proxy=Config.proxy,
-        today=_utils_constants.game_now(
+        today=_maa_domain.game_now(
             script_config.UserData[uuid.UUID(user_id)].Info.Server
         ).date(),
         skland=skland,

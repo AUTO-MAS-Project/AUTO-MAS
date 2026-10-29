@@ -29,7 +29,7 @@ from pydantic import (
     field_validator,
 )
 
-from app.utils import MSS_DEFAULT_TRIBULATION_STAGE, MSS_TRIBULATION_STAGES
+from app.domain.mss import MSS_DEFAULT_TRIBULATION_STAGE, MSS_TRIBULATION_STAGES
 
 type HistoryCounterValue = int | float | dict[str, HistoryCounterValue]
 

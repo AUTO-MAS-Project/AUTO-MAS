@@ -23,6 +23,7 @@ from app.core import Config, EmulatorManager
 from app.core.maa_capture import capture_adb
 from app.core.maa_stage import maa_stage_service
 from app.core.ws import Publisher, protocol
+from app.domain import maa as _maa_domain
 from app.models.config import MaaConfig, MaaUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
 from app.models.notification import NotificationImage
@@ -516,11 +517,11 @@ class MaaManager(ScriptManagerBase):
                 ):
                     continue
                 # 单独运行是用户主动指定的一次性运行；上限为 0 时不限次数。
-                curdate = _utils_constants.game_now(
-                    current_config.Info.Server
-                ).strftime("%Y-%m-%d")
+                curdate = _maa_domain.game_now(current_config.Info.Server).strftime(
+                    "%Y-%m-%d"
+                )
                 if current_config.Data.LastProxyDate.strftime("%Y-%m-%d") != curdate:
-                    current_config.Data.LastProxyDate = _utils_constants.game_now(
+                    current_config.Data.LastProxyDate = _maa_domain.game_now(
                         current_config.Info.Server
                     )
                     await current_config.commit()

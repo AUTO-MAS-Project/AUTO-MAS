@@ -30,6 +30,7 @@ from pydantic import Field
 from app.config import (
     ConfigGroup,
 )
+from app.domain import maa as _maa_domain
 from app.utils import constants as _utils_constants
 
 from .base import DomainEntry
@@ -81,7 +82,7 @@ class WeeklyKeyPlan(PlanDaysConfig):
 
 class MaaPlanConfig(PlanDaysConfig):
     def get_current_info(self, name: str, server: str | None = None):
-        group = self.current_group(_utils_constants.game_now(server))
+        group = self.current_group(_maa_domain.game_now(server))
         return getattr(getattr(self, group), name)
 
     "MAA计划表配置"

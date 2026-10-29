@@ -42,9 +42,10 @@ from urllib.parse import urljoin
 
 import httpx
 
-from app.utils import STARRAIL_UPDATE_LINK_SERVER, get_logger
+from app.task.SRC.constants import STARRAIL_UPDATE_LINK_SERVER
 from app.utils import game_apk as _utils_game_apk
 from app.utils import game_update as _utils_game_update
+from app.utils import get_logger
 
 get_installed_client_version = _utils_game_apk.get_installed_client_version
 GameUpdateResult = _utils_game_update.GameUpdateResult

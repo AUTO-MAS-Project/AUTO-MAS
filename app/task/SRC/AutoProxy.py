@@ -39,14 +39,8 @@ from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     resolve_config_base,
 )
-from app.utils import (
-    STARRAIL_PACKAGE_NAME,
-    UTC4,
-    LogMonitor,
-    ProcessManager,
-    get_logger,
-    strptime,
-)
+from app.task.SRC.constants import STARRAIL_PACKAGE_NAME
+from app.utils import UTC4, LogMonitor, ProcessManager, get_logger, strptime
 from app.utils import io as _utils_io
 
 from .tools import (

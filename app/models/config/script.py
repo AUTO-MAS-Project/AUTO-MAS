@@ -55,6 +55,9 @@ from app.config.types import (
     WindowsNameString,
     path_policy,
 )
+from app.domain import maa as _maa_domain
+from app.domain import maaend as _maaend_domain
+from app.domain import starrail as _starrail_domain
 from app.utils import constants as _utils_constants
 
 from .base import DomainEntry
@@ -86,7 +89,7 @@ class MaaUserConfig(DomainEntry):
     class DataFields(ConfigGroup):
         def _game_day_timezone(self):
             """按当前用户服务器读取游戏日时间，不改变保存的 UTC 时刻。"""
-            return _utils_constants.get_game_day_tz(self.__dict__["_entry"].Info.Server)
+            return _maa_domain.get_game_day_tz(self.__dict__["_entry"].Info.Server)
 
         AnnihilationCompletedWeek: Annotated[str, none_as("")] = Field(
             default_factory=lambda: "2000-W01",
@@ -441,9 +444,7 @@ class MaaUserConfig(DomainEntry):
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
-        tags.append(
-            _tag_proxy(self, tz=_utils_constants.get_game_day_tz(self.Info.Server))
-        )
+        tags.append(_tag_proxy(self, tz=_maa_domain.get_game_day_tz(self.Info.Server)))
         tags.append(_tag_remained_days(self))
         if not self.Info.IfQuickConfig:
             tags.append(_tag_notes(self))
@@ -464,7 +465,7 @@ class MaaUserConfig(DomainEntry):
             tags.append({"text": "基建：关闭", "color": "red"})
         plan_data = {
             stage_key: self.get_stage_zh(getattr(self.Stage, stage_key))
-            for stage_key in _utils_constants.MAA_STAGE_KEY[2:]
+            for stage_key in _maa_domain.MAA_STAGE_KEY[2:]
         }
         tag_color = "blue"
         if self.Stage.StageMode != "Fixed":
@@ -474,7 +475,7 @@ class MaaUserConfig(DomainEntry):
                     stage_key: self.get_stage_zh(
                         plan.get_current_info(stage_key, server=self.Info.Server)
                     )
-                    for stage_key in _utils_constants.MAA_STAGE_KEY[2:]
+                    for stage_key in _maa_domain.MAA_STAGE_KEY[2:]
                 }
                 tag_color = "green"
         tags.append({"text": f"主关卡：{plan_data['Stage']}", "color": tag_color})
@@ -492,7 +493,7 @@ class MaaUserConfig(DomainEntry):
 
     @staticmethod
     def get_stage_zh(stage: str) -> str:
-        for stage_info in _utils_constants.RESOURCE_STAGE_INFO:
+        for stage_info in _maa_domain.RESOURCE_STAGE_INFO:
             if stage_info.get("value") == stage:
                 return (
                     stage_info.get("text", stage)
@@ -772,7 +773,7 @@ class MaaEndUserConfig(DomainEntry):
     class TaskFields(ConfigGroup):
         SupplyPlanLimits: JsonDictString = Field(
             default_factory=lambda: json.dumps(
-                _utils_constants.MAAEND_INVENTORY_TARGET_DEFAULTS
+                _maaend_domain.MAAEND_INVENTORY_TARGET_DEFAULTS
             ),
             description="上游库存目标输入值，原字段名与字符串值透传",
         )
@@ -945,7 +946,7 @@ class MaaEndUserConfig(DomainEntry):
                 normalize_maaend_plan_key(
                     {
                         field: getattr(self.Task, field)
-                        for field in _utils_constants.MAAEND_SANITY_TASK_FIELDS
+                        for field in _maaend_domain.MAAEND_SANITY_TASK_FIELDS
                     }
                 ),
                 "Fixed",
@@ -983,7 +984,7 @@ class MaaEndUserConfig(DomainEntry):
             sanity_task_type = task_key["SanityTaskType"]
             tags.append(
                 {
-                    "text": f"理智任务：{_utils_constants.MAAEND_SANITY_TASK_LABELS[sanity_task_type]}",
+                    "text": f"理智任务：{_maaend_domain.MAAEND_SANITY_TASK_LABELS[sanity_task_type]}",
                     "color": "blue",
                 }
             )
@@ -1009,12 +1010,12 @@ class MaaEndUserConfig(DomainEntry):
                 else:
                     detail_label = self._maaend_crisis_drills_labels.get(
                         detail_key,
-                        _utils_constants.MAAEND_SANITY_TASK_DETAIL_LABELS.get(
+                        _maaend_domain.MAAEND_SANITY_TASK_DETAIL_LABELS.get(
                             detail_key, detail_key
                         ),
                     )
             tags.append({"text": f"详细任务：{detail_label}", "color": "blue"})
-            if detail_key in _utils_constants.MAAEND_STAGE_WITH_AB:
+            if detail_key in _maaend_domain.MAAEND_STAGE_WITH_AB:
                 tags.append(
                     {
                         "text": "奖励组：奖励组 A"
@@ -1475,19 +1476,19 @@ class SrcUserConfig(DomainEntry):
 
         tags.append(
             {
-                "text": f"关卡：{_utils_constants.STARRAIL_STAGE_BOOK.get(getattr(self.Stage, self.Stage.Channel), '未知关卡')}",
+                "text": f"关卡：{_starrail_domain.STARRAIL_STAGE_BOOK.get(getattr(self.Stage, self.Stage.Channel), '未知关卡')}",
                 "color": "blue",
             }
         )
         tags.append(
             {
-                "text": f"周本：{_utils_constants.STARRAIL_STAGE_BOOK.get(self.Stage.EchoOfWar, '未知关卡')}",
+                "text": f"周本：{_starrail_domain.STARRAIL_STAGE_BOOK.get(self.Stage.EchoOfWar, '未知关卡')}",
                 "color": "blue",
             }
         )
         tags.append(
             {
-                "text": f"模拟宇宙：{_utils_constants.STARRAIL_STAGE_BOOK.get(self.Stage.SimulatedUniverseWorld, '未知关卡')}",
+                "text": f"模拟宇宙：{_starrail_domain.STARRAIL_STAGE_BOOK.get(self.Stage.SimulatedUniverseWorld, '未知关卡')}",
                 "color": "blue",
             }
         )

@@ -14,7 +14,8 @@ from typing import Any, Literal, Protocol
 
 import httpx
 
-from app.utils import constants as _utils_constants
+import app.task.MAA.constants as _maa_constants
+from app.domain import maa as _maa_domain
 from app.utils import get_logger
 
 from .constants import RESOURCE_STAGE_DATE_TEXT, RESOURCE_STAGE_DROP_INFO
@@ -78,7 +79,7 @@ def _parse_stage_data(content: str, *, now: datetime) -> dict[str, Any]:
                             {"label": stage["Display"], "value": stage["Value"]}
                         )
                         if "SSReopen" not in stage["Display"]:
-                            if stage["Drop"] in _utils_constants.MATERIALS_MAP:
+                            if stage["Drop"] in _maa_constants.MATERIALS_MAP:
                                 drop_id = stage["Drop"]
                             elif "玉" in stage["Drop"]:
                                 drop_id = "30012"
@@ -89,7 +90,7 @@ def _parse_stage_data(content: str, *, now: datetime) -> dict[str, Any]:
                                     "Display": stage["Display"],
                                     "Value": stage["Value"],
                                     "Drop": drop_id,
-                                    "DropName": _utils_constants.MATERIALS_MAP.get(
+                                    "DropName": _maa_constants.MATERIALS_MAP.get(
                                         stage["Drop"], stage["Drop"]
                                     ),
                                     "Activity": activity,
@@ -98,7 +99,7 @@ def _parse_stage_data(content: str, *, now: datetime) -> dict[str, Any]:
             stage_data = {"Info": activity_stage_drop_info}
             for day in range(0, 8):
                 res_stage = []
-                for stage in _utils_constants.RESOURCE_STAGE_INFO:
+                for stage in _maa_domain.RESOURCE_STAGE_INFO:
                     if day in stage["days"] or day == 0:
                         res_stage.append(
                             {"label": stage["text"], "value": stage["value"]}
@@ -154,14 +155,14 @@ class MaaStageService:
 
         stage_by_server = await self.get_stage(refresh=refresh)
         # 开放日按区服的游戏日判断
-        game_today = self._now().astimezone(_utils_constants.get_game_day_tz(server))
+        game_today = self._now().astimezone(_maa_domain.get_game_day_tz(server))
         server = "Official" if server == "Bilibili" else server
         stage_data = stage_by_server.get(server, {})
 
         if type == "Info":
             today = game_today.isoweekday()
             res_stage_info = []
-            for stage in _utils_constants.RESOURCE_STAGE_INFO:
+            for stage in _maa_domain.RESOURCE_STAGE_INFO:
                 if (
                     today in stage["days"]
                     and stage["value"] in RESOURCE_STAGE_DROP_INFO

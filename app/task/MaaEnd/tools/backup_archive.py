@@ -45,14 +45,13 @@ import json
 from pathlib import Path
 
 from app.config import ConfigEntry
-from app.utils import (
-    BASE_SOURCE_LABELS,
+from app.task.MaaEnd.constants import (
     MAAEND_AUTO_COLLECT_TASK,
     MAAEND_DELIVERY_TASK,
     MAAEND_TASK_GROUPS,
     MAAEND_TASKS,
-    get_logger,
 )
+from app.utils import BASE_SOURCE_LABELS, get_logger
 from app.utils import config_archive as _utils_config_archive
 
 read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar

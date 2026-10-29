@@ -31,6 +31,7 @@ from app.core import Config
 from app.core.history import aggregate_data
 from app.core.maa_stage import maa_stage_service
 from app.core.ws import Publisher, protocol
+from app.domain import maa as _maa_domain
 from app.models.config import (
     MaaConfig,
     MaaUserConfig,
@@ -1261,7 +1262,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 )
 
         if not self.run_book["Annihilation"]:
-            now = _utils_constants.game_now(self.cur_user_config.Info.Server)
+            now = _maa_domain.game_now(self.cur_user_config.Info.Server)
             start_weekday = self.cur_user_config.Task.AnnihilationStartWeekday
 
             if not _should_run_annihilation(
@@ -1889,9 +1890,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 maa_data_dir=self._cultivate_archive_dir(),
                 config_path=Config.config_path,
                 proxy=Config.proxy,
-                today=_utils_constants.game_now(
-                    self.cur_user_config.Info.Server
-                ).date(),
+                today=_maa_domain.game_now(self.cur_user_config.Info.Server).date(),
                 context=context,
                 require_observations=True,
                 auto_raise=self.cur_user_config.Task.CultivateAutoRaise,
@@ -2333,7 +2332,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         if self.cur_user_config.Stage.StageMode == "Fixed":
             plan_data = {
                 stage_key: getattr(self.cur_user_config.Stage, stage_key)
-                for stage_key in _utils_constants.MAA_STAGE_KEY
+                for stage_key in _maa_domain.MAA_STAGE_KEY
             }
         else:
             plan = Config.PlanConfig[self.cur_user_config.Stage.StageMode]
@@ -2341,7 +2340,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 stage_key: plan.get_current_info(
                     stage_key, server=self.cur_user_config.Info.Server
                 )
-                for stage_key in _utils_constants.MAA_STAGE_KEY
+                for stage_key in _maa_domain.MAA_STAGE_KEY
             }
 
         fight_source = deepcopy(task_set["Fight"])
@@ -2777,7 +2776,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 if not self._annihilation_weekly_completion_recorded:
                     self.cur_user_config.Data.AnnihilationCompletedWeek = (
                         _current_week_marker(
-                            _utils_constants.game_now(self.cur_user_config.Info.Server)
+                            _maa_domain.game_now(self.cur_user_config.Info.Server)
                         )
                     )
                     await self.cur_user_config.commit()

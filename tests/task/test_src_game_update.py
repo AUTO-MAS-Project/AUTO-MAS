@@ -4,9 +4,10 @@ from pathlib import Path
 
 import pytest
 
+from app.task.SRC.constants import STARRAIL_CN_UPDATE_LINK_URL
 from app.task.SRC.tools import game_update
 from app.task.SRC.tools.game_update import UpdateSource, ensure_game_updated
-from app.utils import STARRAIL_CN_UPDATE_LINK_URL, game_apk
+from app.utils import game_apk
 
 _CN_APK_LOCATION = (
     "https://autopatchcn.bhsr.com/client/4.5.0/20260813_Ae542B66B5C7"

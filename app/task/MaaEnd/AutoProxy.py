@@ -46,6 +46,12 @@ from app.task.emulator_core import (
     resolve_host_adb,
 )
 from app.task.failure_capture_core import FailureCapture
+from app.task.MaaEnd.constants import (
+    MAAEND_AUTO_COLLECT_TASK,
+    MAAEND_DELIVERY_TASK,
+    MAAEND_RUN_MOOD_BOOK,
+    MAAEND_TASKS,
+)
 from app.task.MaaFW.tools.core.interface.loader import load_interface_model
 from app.task.MaaFW.tools.core.interface.task_config import (
     build_task_option_maps,
@@ -63,10 +69,6 @@ from app.task.proxy_helpers import (
     push_dispatch_log,
 )
 from app.utils import (
-    MAAEND_AUTO_COLLECT_TASK,
-    MAAEND_DELIVERY_TASK,
-    MAAEND_RUN_MOOD_BOOK,
-    MAAEND_TASKS,
     UTC4,
     LogMonitor,
     ProcessManager,
