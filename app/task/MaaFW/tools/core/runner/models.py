@@ -9,7 +9,9 @@ from app.task.MaaFW.tools.core.agent_env.models import (
 )
 
 MaaFWControllerType = Literal["Adb", "Win32"]
-# 项目节点 attach.auto_mas 声明的联动信号（见 run_signal.py）
+# 项目节点 attach.auto_mas 声明的联动信号（见 run_signal.py）。取值就是
+# worker_protocol.SERVER_MAINTENANCE / CLIENT_UPDATE_REQUIRED：Literal 里只能写字面量（类型检查器
+# 不认变量），改那边时这里一起改。
 MaaFWRunSignal = Literal["server_maintenance", "client_update_required"]
 
 
@@ -183,3 +185,6 @@ class MaaFWRunnerJobPayload(BaseModel):
     # 原地打转检测（实验性）：任务在短周期里反复执行同一串节点、识别结果又不变时停掉它，
     # 收尾与单任务超时同一口径。宿主按 Run.LoopGuard 下发，默认关。
     loopGuard: bool = False
+    # 宿主的事件通道（worker_protocol.WorkerEventServer.spec：命名管道名 / 一次性令牌）。
+    # 宿主写 job 时填（worker_protocol.encode_job）；None 时 worker 把事件写 stdout（旧格式）。
+    eventChannel: dict[str, Any] | None = None

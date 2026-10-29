@@ -4,6 +4,7 @@ import type { MaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import { resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
 import { isManagedMaaFWTask } from '../maafwManagedTasks'
 import { isUnselectableMaaFWTask } from '../maafwUnselectableTasks'
+import { isMaaFWTaskActiveFor } from './maafwHiddenTasks'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig, MaaFWTaskInfo } from '@/types/script'
 
 type MaaFWDisplayItem = {
@@ -96,20 +97,8 @@ export function useMaaFWUserTaskContext({
     return resolveResourceName(scriptResource)
   })
   const interfaceDependentDisabled = computed(() => interfaceLoading.value || !previewData.value)
-  const isTaskActiveForCurrentContext = (task: MaaFWTaskInfo) => {
-    const controllerName = effectiveControllerName.value
-    const resourceName = effectiveResourceName.value
-    if (!controllerName || !resourceName) {
-      return false
-    }
-    if (task.controller.length > 0 && !task.controller.includes(controllerName)) {
-      return false
-    }
-    if (task.resource.length > 0 && !task.resource.includes(resourceName)) {
-      return false
-    }
-    return true
-  }
+  const isTaskActiveForCurrentContext = (task: MaaFWTaskInfo) =>
+    isMaaFWTaskActiveFor(task, effectiveControllerName.value, effectiveResourceName.value)
 
   // 特调受管的任务（M9A 的启动 / 切号 / 关闭）由后端控制，不进「添加任务」与预设模板
   const managedTaskEntries = computed<ReadonlySet<string>>(

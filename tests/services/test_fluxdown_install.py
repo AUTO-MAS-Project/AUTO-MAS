@@ -302,6 +302,7 @@ async def test_cancel_keeps_lock_until_worker_finishes(monkeypatch):
         ("127.0.0.1", "localhost", "http://[invalid", False),
         ("127.0.0.1", "localhost", "ftp://localhost", False),
         ("127.0.0.1", "localhost", "https://attacker.test", False),
+        ("127.0.0.1", "127.0.0.1:36164", None, True),
         ("127.0.0.1", "127.0.0.1:36164", "http://localhost:5173", True),
         ("::1", "[::1]:36164", "null", True),
     ],
@@ -309,9 +310,10 @@ async def test_cancel_keeps_lock_until_worker_finishes(monkeypatch):
 async def test_local_install_route(client, host, origin, allowed, monkeypatch):
     app = FastAPI()
     app.include_router(api.router)
+    monkeypatch.setenv("AUTO_MAS_INSTALL_TOKEN", "test-install-session-token")
     installer = AsyncMock(return_value={"version": "0.6.3", "path": "installed"})
     monkeypatch.setattr(api._fluxdown_install, "install_fluxdown", installer)
-    headers = {"host": host}
+    headers = {"host": host, "authorization": "Bearer test-install-session-token"}
     if origin is not None:
         headers["origin"] = origin
     async with httpx.AsyncClient(
@@ -374,3 +376,52 @@ async def test_full_install_and_config(
     assert not (tmp_path / "data/fluxdown_install_tmp").exists()
     if change_path:
         assert str(config.Update.FluxdownPath) == "user-choice"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("origin", [None, "null", "http://localhost:5173"])
+@pytest.mark.parametrize(
+    "provided", [None, "Bearer stale-session", "Bearer ", "Bearer 非法"]
+)
+async def test_install_requires_session_authorization(origin, provided, monkeypatch):
+    app = FastAPI()
+    app.include_router(api.router)
+    monkeypatch.setenv("AUTO_MAS_INSTALL_TOKEN", "test-install-session-token")
+    installer = AsyncMock()
+    monkeypatch.setattr(api._fluxdown_install, "install_fluxdown", installer)
+    headers = {"host": "localhost"}
+    if origin is not None:
+        headers["origin"] = origin
+    if provided is not None:
+        headers["authorization"] = provided
+    # httpx 编码头部不接受非 ASCII；原始字节覆盖恶意编码不会导致服务端异常。
+    raw_headers = [(k.encode(), v.encode()) for k, v in headers.items()]
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, client=("127.0.0.1", 123)),
+        base_url="http://localhost",
+    ) as session:
+        response = await session.post(
+            "/api/update/fluxdown/install", json={"mirror": "auto"}, headers=raw_headers
+        )
+    assert response.status_code == 403
+    installer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_install_fails_closed_when_not_started_by_desktop(monkeypatch):
+    app = FastAPI()
+    app.include_router(api.router)
+    monkeypatch.delenv("AUTO_MAS_INSTALL_TOKEN", raising=False)
+    installer = AsyncMock()
+    monkeypatch.setattr(api._fluxdown_install, "install_fluxdown", installer)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, client=("127.0.0.1", 123)),
+        base_url="http://localhost",
+    ) as session:
+        response = await session.post(
+            "/api/update/fluxdown/install",
+            json={"mirror": "auto"},
+            headers={"authorization": "Bearer guessed"},
+        )
+    assert response.status_code == 403
+    installer.assert_not_awaited()

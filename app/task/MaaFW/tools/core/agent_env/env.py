@@ -8,7 +8,6 @@ import re
 import shutil
 import subprocess
 import sys
-import threading
 import time
 import uuid
 from pathlib import Path
@@ -38,8 +37,20 @@ from ..runtime_pool.requirements_file import (
     RequirementsFileError,
     read_requirements_file,
 )
+from ..worker_protocol import DETAIL_LOG_PREFIX
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
 from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
+from .venv_share import (
+    VENV_TRASH_MARKER,
+    VenvLockTimeout,
+    is_shared_venv_name,
+    isolated_venv_guard,
+    legacy_isolated_venv_name,
+    resolve_agent_venv_root,
+    shared_venv_key_inputs,
+    shared_venv_name,
+    write_venv_ref,
+)
 
 logger = logging.getLogger("automas.maafw.agent_env.env")
 
@@ -52,9 +63,8 @@ PIP_INSTALL_TIMEOUT = 120
 # pip install 本身单独给足余量：与运行池的 RUNTIME_INSTALL_TIMEOUT_SECONDS 对齐，
 # 且每个镜像候选各享一次完整超时。venv 创建与 ensurepip 仍用上面那个。
 PIP_INSTALL_PER_INDEX_TIMEOUT = 300
-# 与 runner.DETAIL_LOG_PREFIX 同一个前缀（runner.py 会 import maa，这里不能引它）：
-# worker 里宿主据此只写进 .worker.log，宿主侧的更新日志据此只写后端日志，都不上界面。
-DETAIL_LOG_PREFIX = "[MaaFW 详情] "
+# DETAIL_LOG_PREFIX（定义在 worker_protocol，runner 与这里共用一份）：worker 里据此只写进
+# .worker.log，宿主侧的更新日志据此只写后端日志，都不上界面。宿主的几处出口从这里引它。
 # 完整输出进详情日志时的上限（按结尾截），挡住异常情况下的超长输出。
 DETAIL_OUTPUT_LIMIT = 20000
 #: Agent 程序文件不见了时给用户的处理建议。准备运行环境（声明的程序不存在）与 runner 起
@@ -67,9 +77,6 @@ AGENT_PROGRAM_MISSING_HINT = (
 VENV_PROBE_TIMEOUT = 30
 # uv 兜底可能需要下载 managed Python,给足余量
 UV_VENV_TIMEOUT = 300
-
-_ISOLATED_VENV_LOCKS_GUARD = threading.Lock()
-_ISOLATED_VENV_LOCKS: dict[str, threading.RLock] = {}
 
 
 def prepare_agent_envs(
@@ -135,6 +142,17 @@ def prepare_agent_envs(
         if is_uv_launcher(plan.childExec):
             # 导入时已经拒绝；这里兜住导入早于这条规则的老副本，别等到连接超时。
             raise MaaFWAgentEnvError(describe_uv_agent(f"Agent {plan.childExec}"))
+        plan_venv_name: str | None = None
+        if (plan.runtimeKind or "external") == "isolated_venv":
+            # 计划里的目录是建计划时按当时能拿到的信息算的；这里按 runner 这次的确切 maafw
+            # 版本定下来，并改写计划（worker 随后按它起 agent，结果里的计划也是它）。
+            venv_target, plan_venv_name = _resolve_isolated_venv_target(
+                plan,
+                resolved_project_path,
+                log,
+                runner_maafw_version=runner_maafw_version,
+            )
+            _retarget_isolated_plan(plan, venv_target, log)
         _report_agent_progress(
             progress,
             status="running",
@@ -162,15 +180,25 @@ def prepare_agent_envs(
                 )
             )
         if runtime_kind == "isolated_venv":
-            with _isolated_venv_lock(Path(plan.isolatedVenvPath or python_exe)):
-                prepared_path = _prepare_isolated_venv_env(
-                    plan,
-                    resolved_project_path,
-                    log,
-                    bootstrap_python=bootstrap_python,
-                    install_dependencies=install_dependencies,
-                    runner_maafw_version=runner_maafw_version,
-                )
+            # 共用的 venv 可能正由另一个视图准备（本进程的另一线程，或宿主 / worker 另一个
+            # 进程）：线程锁 + 锁文件串行化，等的一方看到的只会是建好的或没建的。
+            try:
+                with isolated_venv_guard(
+                    Path(plan.isolatedVenvPath or python_exe), log=log
+                ):
+                    prepared_path = _prepare_isolated_venv_env(
+                        plan,
+                        resolved_project_path,
+                        log,
+                        bootstrap_python=bootstrap_python,
+                        install_dependencies=install_dependencies,
+                        runner_maafw_version=runner_maafw_version,
+                    )
+                    _record_isolated_venv_ref(
+                        prepared_path, resolved_project_path, plan_venv_name, log
+                    )
+            except VenvLockTimeout as exc:
+                raise MaaFWAgentEnvError(str(exc)) from exc
             prepared_venvs.append(str(prepared_path))
             checked_python.add(resolved_python)
             report_plan_complete(index, plan)
@@ -240,17 +268,34 @@ def prepare_agent_envs(
 def build_agent_env_manifest(
     project_path: str | Path, *, runner_maafw_version: str | None = None
 ) -> dict[str, object]:
+    """隔离 venv 的 ``.auto_mas_agent_env.json``。
+
+    ``venvKey`` 是共用目录名（依赖清单 + maafw requirement + 宿主身份，见 ``venv_share``），
+    共用的 venv 只按它与 ``requirementsHash`` 判定是否还能用；``projectPath`` /
+    ``interfaceHash`` 在共用的 venv 里只记录建它的那个视图，不参与判定——否则同一项目的
+    另一个视图、或依赖没变的新版本会把别人正在用的 venv 删了重建。升级前按项目路径建的
+    老目录、以及清单含本地依赖而退回按视图隔离的目录（此时多记 ``isolatedProject``，与键里
+    那一项相同）仍按这两项加 ``requirementsHash`` 判定（``_isolated_venv_mismatch``）。
+    """
+
     resolved_project_path = Path(project_path).resolve()
+    inputs = shared_venv_key_inputs(
+        resolved_project_path, runner_maafw_version=runner_maafw_version
+    )
+    requirements = list(inputs["requirements"])
+    extra: dict[str, object] = {}
+    if inputs.get("isolatedProject"):
+        extra["isolatedProject"] = inputs["isolatedProject"]
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "projectPath": str(resolved_project_path),
         "interfaceHash": _project_interface_hash(resolved_project_path),
-        "requirementsHash": _project_agent_requirements_hash(
-            resolved_project_path, runner_maafw_version=runner_maafw_version
-        ),
-        "requirements": _load_project_agent_requirements(
-            resolved_project_path, runner_maafw_version=runner_maafw_version
-        ),
+        "requirementsHash": _requirements_hash(requirements),
+        "requirements": requirements,
+        "venvKey": shared_venv_name(inputs),
+        "maafwRequirement": inputs["maafw"],
+        "host": inputs["host"],
+        **extra,
     }
 
 
@@ -657,10 +702,111 @@ def _restore_stashed_dist_infos(
             log(f"[Python环境] 放回旧的 maafw 安装记录 {original.name} 失败: {exc}")
 
 
-def _isolated_venv_lock(path: Path) -> threading.RLock:
-    key = os.path.normcase(str(path.resolve())).casefold()
-    with _ISOLATED_VENV_LOCKS_GUARD:
-        return _ISOLATED_VENV_LOCKS.setdefault(key, threading.RLock())
+def _resolve_isolated_venv_target(
+    plan: MaaFWAgentCommandPlan,
+    project_path: Path,
+    log: Callable[[str], None],
+    *,
+    runner_maafw_version: str | None,
+) -> tuple[Path, str | None]:
+    """这次准备用哪个目录，以及建计划时（不知道 runner 版本）会算出的键名。
+
+    共用目录（依赖清单 + maafw 版本 + 宿主身份）已经建好就用它——同样依赖的视图共用的
+    就是这一份。还没建、而本视图升级前按项目路径建的老目录老规则下还能接着用（项目路径、
+    interface、依赖清单都没变）时沿用老目录：升级后第一跑不重建、不联网；之后项目一更新
+    或别的视图建好了共用目录就换过去，老目录没人引用了由启动期回收。其余都建共用目录。
+    读不了依赖清单照原样抛 ``MaaFWAgentEnvError``（以前在准备里同样抛）。
+    """
+
+    planned = Path(plan.isolatedVenvPath) if plan.isolatedVenvPath else None
+    root = (
+        planned.parent.resolve()
+        if planned is not None
+        else resolve_agent_venv_root(None)
+    )
+    shared = root / shared_venv_name(
+        shared_venv_key_inputs(project_path, runner_maafw_version=runner_maafw_version)
+    )
+    if not runner_maafw_version:
+        plan_name: str | None = shared.name
+    else:
+        try:
+            plan_name = shared_venv_name(shared_venv_key_inputs(project_path))
+        except Exception:  # noqa: BLE001 - 只用于建计划时的对照，算不出来不记
+            plan_name = None
+    if _is_valid_venv_path(shared):
+        return shared, plan_name
+    legacy = root / legacy_isolated_venv_name(project_path)
+    if _legacy_isolated_venv_reusable(
+        legacy, project_path, runner_maafw_version=runner_maafw_version
+    ):
+        log(
+            "[Python环境] 沿用升级前为该项目建的隔离 venv（依赖未变，不重建）；"
+            f"项目依赖变化或同样依赖的共用 venv 建好后改用共用的: {legacy}"
+        )
+        return legacy, plan_name
+    return shared, plan_name
+
+
+def _legacy_isolated_venv_reusable(
+    venv_path: Path, project_path: Path, *, runner_maafw_version: str | None
+) -> bool:
+    """老规则下这份按路径建的 venv 会被直接复用吗（与升级前的判据完全相同）。"""
+
+    if not _is_valid_venv_path(venv_path):
+        return False
+    try:
+        manifest = json.loads(
+            (venv_path / AGENT_ENV_MANIFEST_NAME).read_text(encoding="utf-8")
+        )
+    except Exception:  # noqa: BLE001 - 读不出来老规则下也是重建
+        return False
+    if not isinstance(manifest, dict):
+        return False
+    expected = build_agent_env_manifest(
+        project_path, runner_maafw_version=runner_maafw_version
+    )
+    return _isolated_venv_mismatch(venv_path, manifest, expected) is None
+
+
+def _retarget_isolated_plan(
+    plan: MaaFWAgentCommandPlan, venv_path: Path, log: Callable[[str], None]
+) -> None:
+    previous = plan.isolatedVenvPath or ""
+    target = str(venv_path)
+    if previous and os.path.normcase(previous) == os.path.normcase(target):
+        return
+    python = str(venv_python_exe(venv_path))
+    plan.isolatedVenvPath = target
+    plan.executable = python
+    plan.executableExists = Path(python).exists()
+    if plan.command:
+        plan.command[0] = python
+    if previous and plan.fallbackReason:
+        plan.fallbackReason = plan.fallbackReason.replace(previous, target)
+    log(
+        f"[Python环境] Agent {plan.childExec} 的隔离 venv 按准备时的依赖与 maafw 版本改用: "
+        f"{target}（建计划时是 {previous or '未指定'}）"
+    )
+
+
+def _record_isolated_venv_ref(
+    venv_path: Path,
+    project_path: Path,
+    plan_name: str | None,
+    log: Callable[[str], None],
+) -> None:
+    """记下本视图这次用的目录：回收按它算存活，建计划时按它找准备时实际用的那份。"""
+
+    try:
+        write_venv_ref(
+            venv_path.parent,
+            project_path,
+            venv_name=venv_path.name,
+            plan_name=plan_name,
+        )
+    except Exception as exc:  # noqa: BLE001 - 记不下只影响回收与下次建计划，不拦运行
+        log(f"[Python环境] 记录隔离 venv 的使用者失败（不影响本次运行）: {exc}")
 
 
 def _report_agent_progress(
@@ -709,6 +855,17 @@ def _prepare_isolated_venv_env(
     )
 
     log(f"[Python环境] 准备隔离 venv: {venv_path}")
+    if is_shared_venv_name(venv_path.name):
+        expected_key = build_agent_env_manifest(
+            project_path, runner_maafw_version=runner_maafw_version
+        )["venvKey"]
+        if venv_path.name != expected_key:
+            # 共用目录名就是键：对不上说明这份是别的依赖组合的，按本项目的判据重建会把
+            # 别人正在用的删掉。正常路径上 prepare_agent_envs 已经改写过计划，走不到这里。
+            raise MaaFWAgentEnvError(
+                f"隔离 venv 与本项目的依赖不符（应为 {expected_key}），"
+                f"不改动其他项目共用的 venv: {venv_path}"
+            )
     had_valid_venv = _is_valid_venv_path(venv_path)
     if _should_rebuild_isolated_venv(
         venv_path, project_path, log, runner_maafw_version=runner_maafw_version
@@ -886,16 +1043,45 @@ def _should_rebuild_isolated_venv(
     expected = build_agent_env_manifest(
         project_path, runner_maafw_version=runner_maafw_version
     )
-    if manifest.get("projectPath") != expected["projectPath"]:
-        log("[Python环境] 隔离 venv 项目路径已变化，将重建")
-        return True
-    if manifest.get("interfaceHash") != expected["interfaceHash"]:
-        log("[Python环境] MaaFW 项目 interface 已变化，将重建隔离 venv")
-        return True
-    if manifest.get("requirementsHash") != expected["requirementsHash"]:
-        log("[Python环境] MaaFW 项目 requirements 已变化，将重建隔离 venv")
+    reason = _isolated_venv_mismatch(venv_path, manifest, expected)
+    if reason is not None:
+        log(reason)
         return True
     return False
+
+
+def _isolated_venv_mismatch(
+    venv_path: Path, manifest: object, expected: dict[str, object]
+) -> str | None:
+    """这份 venv 还能不能给本项目用；不能时返回要写进日志的那一行。
+
+    共用目录（``maafw_venv_<16hex>``）只看键与依赖清单：项目路径、interface 是建它的那个
+    视图的，别的视图、依赖没变的新版本照样能用，按它们重建会删掉别人正在用的 venv。
+    本地依赖退回按视图隔离的目录（键含 ``isolatedProject``，名字同样是 16 位）比完键之后
+    再按老规则判。其余（升级前按项目路径建的老目录、调用方直接指定的目录）与它一样，
+    按项目路径 + interface + 依赖清单判定，与改动前相同。
+    """
+
+    if not isinstance(manifest, dict):
+        return "[Python环境] 隔离 venv 依赖清单异常，将重建"
+    if is_shared_venv_name(venv_path.name):
+        if manifest.get("venvKey") != expected["venvKey"]:
+            return "[Python环境] 隔离 venv 的共用键与依赖清单不符，将重建"
+        if not (expected.get("isolatedProject") or manifest.get("isolatedProject")):
+            if manifest.get("requirementsHash") != expected["requirementsHash"]:
+                return "[Python环境] MaaFW 项目 requirements 已变化，将重建隔离 venv"
+            return None
+        # 本地依赖退回按视图隔离的目录：键里有视图路径，只有本视图用，照老规则往下比。
+        # 视图路径换版本也不变，requirements 文本不变时本地包内容可能已经变了，只比键
+        # 会跳过安装、跑上一版的包。键相同已说明是本视图的，旧 manifest（0a48f960b 写的、
+        # 没有 isolatedProject 字段）靠 expected 那一侧认出来，照样按老规则判。
+    if manifest.get("projectPath") != expected["projectPath"]:
+        return "[Python环境] 隔离 venv 项目路径已变化，将重建"
+    if manifest.get("interfaceHash") != expected["interfaceHash"]:
+        return "[Python环境] MaaFW 项目 interface 已变化，将重建隔离 venv"
+    if manifest.get("requirementsHash") != expected["requirementsHash"]:
+        return "[Python环境] MaaFW 项目 requirements 已变化，将重建隔离 venv"
+    return None
 
 
 def _reset_isolated_venv(venv_path: Path, log: Callable[[str], None]) -> None:
@@ -903,7 +1089,25 @@ def _reset_isolated_venv(venv_path: Path, log: Callable[[str], None]) -> None:
         "maafw_venv_"
     ):
         raise MaaFWAgentEnvError(f"拒绝重建非托管隔离 venv: {venv_path}")
-    shutil.rmtree(venv_path, ignore_errors=True)
+    # 先改名再删：改名是原子的，原名下要么是整份旧 venv、要么什么都没有，不会像以前
+    # rmtree(ignore_errors) 那样删掉一半、留个谁都用不了的残骸；改名成功后删不干净的残留
+    # 同前缀，启动期按孤儿回收。改名只在有人以不带共享删除的方式开着里面的文件时失败，
+    # 这时报错、不动它。它挡不住正在运行的 agent（Windows 上运行中的 python.exe、已加载的
+    # .pyd / .dll 都不挡改名）：共用 venv 不被删靠的是「键相同就不重建」，见 venv_share。
+    trash = venv_path.with_name(
+        f"{venv_path.name}{VENV_TRASH_MARKER}{uuid.uuid4().hex[:8]}"
+    )
+    try:
+        os.rename(venv_path, trash)
+    except FileNotFoundError:
+        trash = None
+    except OSError as exc:
+        raise MaaFWAgentEnvError(
+            f"隔离 venv 需要重建，但它正被占用（可能有使用同样依赖的脚本正在运行），"
+            f"等那边运行结束后再试: {venv_path} - {exc}"
+        ) from exc
+    if trash is not None:
+        shutil.rmtree(trash, ignore_errors=True)
     log(f"[Python环境] 已清理旧隔离 venv: {venv_path}")
 
 
@@ -918,11 +1122,7 @@ def _is_isolated_venv_manifest_current(
     expected = build_agent_env_manifest(
         project_path, runner_maafw_version=runner_maafw_version
     )
-    return (
-        manifest.get("projectPath") == expected["projectPath"]
-        and manifest.get("interfaceHash") == expected["interfaceHash"]
-        and manifest.get("requirementsHash") == expected["requirementsHash"]
-    )
+    return _isolated_venv_mismatch(venv_path, manifest, expected) is None
 
 
 def _write_isolated_venv_manifest(
@@ -987,13 +1187,15 @@ def _load_project_agent_requirements(
 def _project_agent_requirements_hash(
     project_path: Path, *, runner_maafw_version: str | None = None
 ) -> str:
-    payload = json.dumps(
+    return _requirements_hash(
         _load_project_agent_requirements(
             project_path, runner_maafw_version=runner_maafw_version
-        ),
-        ensure_ascii=False,
-        separators=(",", ":"),
+        )
     )
+
+
+def _requirements_hash(requirements: list[str]) -> str:
+    payload = json.dumps(requirements, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

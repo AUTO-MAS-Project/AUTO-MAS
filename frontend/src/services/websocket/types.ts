@@ -97,10 +97,20 @@ export interface WSTaskConfigDiscardedData {
   reason: 'structure' | 'unreadable' | 'not_written'
 }
 
+/** 用户正在跑的任务进度（目前只有 MFW 给） */
+export interface WSTaskUserProgressData {
+  /** 第几个任务，从 1 起 */
+  current: number
+  total: number
+  task: string
+}
+
 export interface WSTaskUserInfoData {
   user_id: string
   name: string
   status: string
+  /** 没有任务在跑或该专项不提供时为空 */
+  progress?: WSTaskUserProgressData | null
 }
 
 export interface WSTaskScriptInfoData {

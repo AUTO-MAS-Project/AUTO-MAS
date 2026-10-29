@@ -399,6 +399,7 @@ async def _github_asset(
     from .updater import (
         MaaFWProjectUpdateError,
         _check_github_release_update,
+        _exception_detail,
         _normalize_github_repo,
     )
 
@@ -416,7 +417,8 @@ async def _github_asset(
             timeout=API_TIMEOUT_SECONDS,
         )
     except (MaaFWProjectUpdateError, httpx.HTTPError) as exc:
-        raise HealSkip(f"查询 GitHub Release 失败：{exc}") from exc
+        # 超时类 httpx 异常 str 为空，不补类名就只剩「查询 GitHub Release 失败：」
+        raise HealSkip(f"查询 GitHub Release 失败：{_exception_detail(exc)}") from exc
     candidate = discovery.candidate if discovery is not None else None
     if candidate is None or not candidate.download_url:
         raise HealSkip(f"GitHub 上没有 {version} 的发行包", permanent=True)

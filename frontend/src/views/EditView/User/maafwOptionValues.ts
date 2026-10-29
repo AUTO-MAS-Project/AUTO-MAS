@@ -3,7 +3,12 @@
 // _normalize_checkbox_values / _coerce_input_value / _string_input_fallback 一致——界面显示的就是运行时下发的，改一边要
 // 同步另一边。编辑器（MaaFWTaskOptionEditor）与队列行上的勾选数检查共用这一份。
 
-import type { MaaFWOptionInfo, MaaFWOptionInputInfo, MaaFWTaskOptionValue } from '@/types/script'
+import type {
+  MaaFWOptionCaseInfo,
+  MaaFWOptionInfo,
+  MaaFWOptionInputInfo,
+  MaaFWTaskOptionValue,
+} from '@/types/script'
 import { getCheckboxCountState } from './maafwOptionConstraints'
 
 const CHOICE_TYPES = new Set(['select', 'scan_select', 'switch'])
@@ -45,6 +50,23 @@ export const resolveMaaFWCheckboxValue = (
 ): string[] => {
   if (stored === undefined || stored === null) return defaultMaaFWCheckboxValue(option)
   return Array.isArray(stored) ? stored.filter(item => typeof item === 'string') : []
+}
+
+/**
+ * 当前选中、且写了说明的 case（单选类是生效的那一个，多选按勾选、按 cases 声明顺序），
+ * 编辑器在控件下方显示它们的说明。选中口径同上面两个 resolve。
+ */
+export const selectedMaaFWCasesWithDescription = (
+  option: MaaFWOptionInfo,
+  stored: MaaFWTaskOptionValue | undefined
+): MaaFWOptionCaseInfo[] => {
+  let selected: string[] = []
+  if (option.type === 'checkbox') selected = resolveMaaFWCheckboxValue(option, stored)
+  else if (isMaaFWChoiceOption(option)) selected = [resolveMaaFWChoiceValue(option, stored)]
+  const selectedNames = new Set(selected)
+  return option.cases.filter(
+    item => selectedNames.has(item.name) && Boolean(item.description?.trim())
+  )
 }
 
 const pipelineTypeOf = (inputItem: MaaFWOptionInputInfo) =>

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { useFluxdownInstallApi } from './useFluxdownInstallApi'
 
 const api = vi.hoisted(() => ({ install: vi.fn(), release: vi.fn() }))
@@ -9,16 +9,28 @@ vi.mock('@/api', () => ({
 }))
 vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
 
-beforeEach(() => vi.resetAllMocks())
+beforeEach(() => {
+  vi.resetAllMocks()
+  vi.stubGlobal('window', { electronAPI: { installFluxdown: api.install } })
+})
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('FluxDown installation result', () => {
+  it('requires the desktop IPC bridge and never falls back to unauthenticated HTTP', async () => {
+    vi.stubGlobal('window', {})
+    await expect(useFluxdownInstallApi().installFluxdown('auto')).rejects.toThrow(
+      'core.setting.others.fluxdownInstallDesktopRequired'
+    )
+    expect(api.install).not.toHaveBeenCalled()
+  })
   it('waits for the backend and returns the persisted installation result', async () => {
     let finish!: (result: object) => void
     api.install.mockImplementation(() => new Promise(resolve => (finish = resolve)))
     const state = useFluxdownInstallApi()
     const pending = state.installFluxdown('ghfast')
     expect(state.loading.value).toBe(true)
-    expect(api.install).toHaveBeenCalledWith({ mirror: 'ghfast' })
+    expect(api.install).toHaveBeenCalledWith('ghfast')
     finish({ code: 200, path: 'installed', version: '0.6.3' })
     await expect(pending).resolves.toMatchObject({ path: 'installed' })
     expect(state.loading.value).toBe(false)

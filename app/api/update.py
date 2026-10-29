@@ -22,6 +22,8 @@
 
 
 import asyncio
+import os
+import secrets
 from ipaddress import ip_address
 from typing import (
     Dict,
@@ -324,7 +326,17 @@ async def get_fluxdown_release() -> FluxdownReleaseOut:
 
 
 def _require_local_install(request: Request) -> None:
-    """限制本机安装及具名网页来源；兼容 Electron 文件页面的 null Origin。"""
+    """验证主进程持有的安装凭据；回环和 Origin 检查仅作额外限制。"""
+
+    token = os.environ.get("AUTO_MAS_INSTALL_TOKEN", "")
+    authorization = request.headers.get("authorization", "")
+    if not token or not secrets.compare_digest(
+        authorization.encode(), f"Bearer {token}".encode()
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="安装请求未授权，请在 MAS 桌面客户端启动或重启后端后安装",
+        )
 
     def is_local(host: str | None) -> bool:
         if host == "localhost":

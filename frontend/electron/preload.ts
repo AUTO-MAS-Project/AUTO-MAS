@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.send('analytics:event', context, event),
   },
   isMacOS: process.platform === 'darwin',
+  installFluxdown: (mirror: string) => ipcRenderer.invoke('fluxdown:install', mirror),
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: unknown[]) => ipcRenderer.invoke('select-file', filters),

@@ -1,4 +1,4 @@
-import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type { FluxdownInstallOut, GlobalConfig_UI, GlobalConfig_Update } from '@/api'
 import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
 import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
 import type {
@@ -230,6 +230,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     trackEvent: (context: number, event: RendererAnalyticsEvent) => void
   }
   isMacOS: boolean
+  installFluxdown: (mirror: string) => Promise<FluxdownInstallOut>
   listMascots?: () => Promise<MascotSummary[]>
   importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
   removeMascot?: (id: string) => Promise<{ success: boolean; error?: string }>

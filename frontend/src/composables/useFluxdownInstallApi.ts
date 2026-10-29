@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { translate as t } from '@/i18n'
-import { GetService, Service } from '@/api'
+import { GetService } from '@/api'
 import { getApiErrorMessage } from '@/utils/apiError'
 
 // 安装结果以后端完成文件替换和配置落盘为准；页面只刷新设置，不二次覆盖路径。
@@ -12,7 +12,10 @@ export function useFluxdownInstallApi() {
     loading.value = true
     error.value = null
     try {
-      const result = await Service.installFluxdownApiUpdateFluxdownInstallPost({ mirror })
+      if (!window.electronAPI?.installFluxdown) {
+        throw new Error(t('core.setting.others.fluxdownInstallDesktopRequired'))
+      }
+      const result = await window.electronAPI.installFluxdown(mirror)
       if (result.code !== 200 || result.status === 'error') {
         throw new Error(result.message)
       }

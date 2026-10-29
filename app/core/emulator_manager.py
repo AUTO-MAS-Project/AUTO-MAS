@@ -25,7 +25,7 @@ import shutil
 import uuid
 from typing import Dict, Literal
 
-from app.models.emulator import DeviceBase
+from app.models.emulator import DeviceBase, EmulatorRuntimePolicy
 from app.models.schema import DeviceInfo as SchemaDeviceInfo
 from app.models.schema import WSEmulatorOperationData, WSTaskNoticeData
 from app.utils import EMULATOR_SPLASH_ADS_PATH_BOOK, EMULATOR_TYPE_BOOK, get_logger
@@ -39,6 +39,18 @@ logger = get_logger("模拟器管理")
 
 class _EmulatorManager:
     """模拟器实例管理器"""
+
+    def __init__(self) -> None:
+        self.runtime_policy = EmulatorRuntimePolicy(
+            silence_enabled=lambda: Config.setting.Function.IfSilence,
+            block_ads_enabled=lambda: Config.setting.Function.IfBlockAd,
+        )
+
+    async def close_running_avd_instances(self) -> dict[str, str]:
+        """电源操作时按当前纳管配置正常关闭 AVD。"""
+        return await _utils_emulator2.avd.service.close_running_instances(
+            list(Config.EmulatorConfig.values())
+        )
 
     async def get_emulator_instance(self, emulator_id: uuid.UUID | str) -> DeviceBase:
 
@@ -62,7 +74,9 @@ class _EmulatorManager:
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"设置模拟器去广告失败: {type(e).__name__}: {e}")
 
-            return EMULATOR_TYPE_BOOK[config.Info.Type](config)
+            return EMULATOR_TYPE_BOOK[config.Info.Type](
+                config, runtime_policy=self.runtime_policy
+            )
         else:
             raise ValueError(f"不支持的模拟器类型: {config.Info.Type}")
 
