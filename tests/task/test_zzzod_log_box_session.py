@@ -95,6 +95,7 @@ def test_routed_report_matches_legacy_with_late_account_mapping(
         assert build_user_result_text(current, has_uncompleted) == (
             build_user_result_text(previous, has_uncompleted)
         )
+    assert session.result.entry_count == sum(len(user.push_log) for user in current)
     if enabled:
         assert any("原生账号" in entry[1] for entry in current[0].push_log)
     if not native and mode_b != "关闭":

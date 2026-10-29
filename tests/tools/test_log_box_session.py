@@ -115,8 +115,11 @@ def test_processor_failure_keeps_original_marker_and_no_partial_nodes(tmp_path):
 
 
 def test_delivery_failure_does_not_escape_session(tmp_path):
+    attempts = []
+
     class UnwritableEntries(list):
         def append(self, entry):
+            attempts.append(entry)
             raise RuntimeError("结果落点不可写")
 
     path = tmp_path / "run.log"
@@ -132,6 +135,10 @@ def test_delivery_failure_does_not_escape_session(tmp_path):
     )
     asyncio.run(session.close())
     assert user.status == "完成"
+    assert session.result.status == "failed"
+    assert session.result.failure_stage == "deliver"
+    assert session.result.entry_count == 0
+    assert len(attempts) == 2  # 原节点与已有失败提示均尝试写入。
 
 
 @pytest.mark.parametrize("cancel", [False, True])

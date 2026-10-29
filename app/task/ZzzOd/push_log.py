@@ -257,7 +257,8 @@ def make_zzzod_log_spec(snapshot: Callable[[], ZzzLogSnapshot]) -> LogSpec:
         users = dict(current.users)
         fallback = current.fallback_user
 
-        def deliver(entries: list[LogEntry]) -> None:
+        def deliver(entries: list[LogEntry]) -> int:
+            delivered = 0
             for entry in entries:
                 match = ACCOUNT_PREFIX_RE.match(entry.text)
                 if match is not None and match.group(1) in users:
@@ -266,11 +267,14 @@ def make_zzzod_log_spec(snapshot: Callable[[], ZzzLogSnapshot]) -> LogSpec:
                         target.push_log.append(
                             (entry.log_type, match.group(2), entry.timestamp)
                         )
+                        delivered += 1
                 else:
                     # 原生账号或无归属行保留前缀落到触发用户，由公共报告区分账号。
                     fallback.push_log.append(
                         (entry.log_type, entry.text, entry.timestamp)
                     )
+                    delivered += 1
+            return delivered
 
         return LogBinding(
             postprocessor=make_zzzod_resolve(app_names, idx_names),

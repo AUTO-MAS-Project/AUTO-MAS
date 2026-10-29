@@ -35,7 +35,7 @@ class LogBinding:
     """宿主收尾时固定的扩展：解析使用快照，交付回调只在宿主线程执行。"""
 
     postprocessor: PostProcessor | None = None
-    deliver: Callable[[list[LogEntry]], None] | None = None
+    deliver: Callable[[list[LogEntry]], int | None] | None = None
     read: Callable[[], list[LogEntry]] | None = None
 
 
@@ -59,6 +59,8 @@ class LogSpec:
     def __post_init__(self) -> None:
         if self.source not in ("log", "entries"):
             raise ValueError("未知节点来源")
+        if self.source == "entries" and self.bind is None:
+            raise ValueError("结构化来源必须声明 bind")
         if self.source == "entries" and (
             self.rules
             or self.preprocessor is not None
@@ -148,6 +150,23 @@ async def _read_entries(binding: LogBinding) -> list[LogEntry]:
     return entries
 
 
+def _deliver_entries(
+    deliver: Callable[[list[LogEntry]], int | None], entries: list[LogEntry]
+) -> int:
+    """旧回调返回 None 表示接受整批；过滤型回调返回实际交付数量。"""
+    count = len(entries)
+    delivered = deliver(entries)
+    if delivered is None:
+        return count
+    if (
+        isinstance(delivered, bool)
+        or not isinstance(delivered, int)
+        or not 0 <= delivered <= count
+    ):
+        raise ValueError("交付数量必须是零到输入条目数之间的整数")
+    return delivered
+
+
 class EntrySession(_ManagedSession):
     """无用户依赖的结构化会话；交付目标由宿主声明，不发送通知。"""
 
@@ -163,9 +182,8 @@ class EntrySession(_ManagedSession):
                 raise ValueError("独立结构化会话需要声明交付目标")
             stage = "read"
             entries = await _read_entries(binding)
-            count = len(entries)
             stage = "deliver"
-            binding.deliver(entries)
+            count = _deliver_entries(binding.deliver, entries)
             self._result = SessionResult("succeeded", entry_count=count)
         except Exception:
             self._record_failure(stage)
@@ -264,9 +282,8 @@ class UserLogSession(_ManagedSession):
                         if binding.deliver is not None
                         else self._deliver
                     )
-                    count = len(entries)
                     stage = "deliver"
-                    deliver(entries)
+                    count = _deliver_entries(deliver, entries)
             except Exception:
                 self._failed = True
                 self._record_failure(stage)

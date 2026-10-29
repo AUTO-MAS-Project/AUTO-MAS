@@ -154,3 +154,19 @@ dev 至 c846c0d6c 双方独立审核后发现一项 P3：LogEntry 允许无时�
 bind 在宿主返回 LogBinding，read 在工作线程把快照转为 LogEntry 列表。
 普通用户节点用 get_user_session；特殊报告落点用 get_entry_session 并提供 deliver。
 调用方必须 await close 后再组装报告，可从 result 区分成功空结果与失败。
+
+
+## PR #1744 审核与 dev 同步
+
+已合入 upstream/dev（2ac826c8c），保留新专项注册入口与 log_box 报告入口；
+唯一文本冲突在 task_manager.py import，MaaEnd 上游采集选项修正自动合并保留。
+审核三点处理：entries LogSpec 缺 bind 在声明时拒绝；自定义 deliver 可返回实际
+接受的条目数（0 到输入数量），返回 None 继续兼容接受整批的旧回调；ZZZ 明确返回
+过滤后数量。两类会话共用计数逻辑，失败不自动重试。失败路径测试新增阶段和交付尝试断言。
+相关回归 201 passed，包含新注册机制和 MaaFW 核心边界。
+
+同步后完整回归：900 passed、3 skipped、29 subtests passed、8 failed。
+7 项为原有前后置脚本问题；新增 test_existing_channel_is_migrated_once[beta] 在未修改的
+upstream/dev 隔离导出副本中同样失败（stable != beta），未扩大本 PR 修复范围。
+完整命令：python -m pytest tests -q -p no:cacheprovider --tb=no
+--basetemp=test-results/logbox-dev-review-full。

@@ -220,7 +220,7 @@ def test_standalone_entry_session_needs_no_user_and_delivers_once(enabled):
     "failure", ["bind", "read", "deliver", "missing_target", "shape"]
 )
 def test_standalone_entry_errors_do_not_escape_or_retry(failure):
-    calls = []
+    calls, deliveries = [], []
 
     def fail():
         raise RuntimeError("测试故障")
@@ -236,6 +236,7 @@ def test_standalone_entry_errors_do_not_escape_or_retry(failure):
             return ["无效结果"] if failure == "shape" else []
 
         def deliver(entries):
+            deliveries.append(entries)
             if failure == "deliver":
                 fail()
 
@@ -251,3 +252,14 @@ def test_standalone_entry_errors_do_not_escape_or_retry(failure):
 
     asyncio.run(scenario())
     assert calls == ["bind"]
+
+    assert session.result.status == "failed"
+    expected_stage = {
+        "bind": "bind",
+        "missing_target": "bind",
+        "read": "read",
+        "shape": "read",
+        "deliver": "deliver",
+    }[failure]
+    assert session.result.failure_stage == expected_stage
+    assert len(deliveries) == (1 if failure == "deliver" else 0)

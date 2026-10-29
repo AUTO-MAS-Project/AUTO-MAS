@@ -188,3 +188,41 @@ def test_user_delivery_preserves_missing_timestamp_and_legacy_pair():
     assert session.result == SessionResult("succeeded", entry_count=1)
     text = build_user_result_text([target], False)
     assert text.endswith("旧二元组\n✅ 成功: 邮件")
+
+
+@pytest.mark.parametrize("standalone", [False, True])
+@pytest.mark.parametrize("accepted", [0, 1, 2])
+def test_filtered_delivery_counts_only_accepted_entries(standalone, accepted):
+    received = []
+    entries = [LogEntry("普通", "节点", 1.0)] * 2
+
+    def deliver(items):
+        received.extend(items[:accepted])
+        return accepted
+
+    spec = EntrySpec(bind=lambda: LogBinding(read=lambda: entries, deliver=deliver))
+    session = (
+        log_box.get_entry_session(spec)
+        if standalone
+        else log_box.get_user_session(spec, user=user(), mode="汇总")
+    )
+    asyncio.run(session.close())
+    assert len(received) == accepted
+    assert session.result == SessionResult("succeeded", entry_count=accepted)
+
+
+def test_entries_log_spec_requires_binding_at_declaration():
+    with pytest.raises(ValueError):
+        LogSpec(rules=(), source="entries")
+
+
+@pytest.mark.parametrize("count", [-1, 3, True, "1"])
+def test_invalid_delivery_count_is_a_delivery_failure(count):
+    spec = EntrySpec(
+        bind=lambda: LogBinding(
+            read=lambda: [LogEntry("普通", "节点")], deliver=lambda entries: count
+        )
+    )
+    session = log_box.get_entry_session(spec)
+    asyncio.run(session.close())
+    assert session.result == SessionResult("failed", failure_stage="deliver")
