@@ -52,7 +52,7 @@ log_box 是**进程无关**的组件，结果落点由**宿主**决定：
 - **宿主 = MAS 进程**（专项适配器内实例化）：构造时注入 `sink(log_type, text, ts)`
   直接写 `cur_user_item.push_log`，对适配器完全透明。**这是当前唯一已接通的宿主路径**。
   节点详情上调度台有两条通用通道，都不在 sink 里做：① 运行期——manager 报告聚合后调
-  `app/tools/push_log.py` 的 `mirror_report_to_dispatch(script_info, report_text)`
+  `app/log_box/report.py` 的 `mirror_report_to_dispatch(script_info, report_text)`
   把报告正文整块镜像进调度台日志；② 完成后——任务完成事件的结果文本由 task_manager
   用 `build_task_result_text` 组装（前端完成时会用这段文本整体替换日志面板，
   **这是任务结束后的最终展示面**）。两者与推送报告同一份 `build_user_result_text`
@@ -162,7 +162,7 @@ MAS 有两套日志推送配置面，**保持两套并存、分工明确**，不
 | 通用 log_box | 专项 / 由 MAS 驱动的可编辑 `.py` 脚本 | 代码内建（专项 `push_log.py` / `collect`） | 适配器开发者 / 脚本作者 |
 
 判据：**通用脚本走 web UI 配置，专项才用 log_box 内建**。两者命中后都汇入
-`cur_user_item.push_log`，由 `app/tools/push_log.py` 统一聚合推送。通用侧不要迁去
+`cur_user_item.push_log`，由 `app/log_box/report.py` 统一聚合推送。通用侧不要迁去
 log_box（会失去可视化 UI），log_box 也不要反向暴露 web 配置（会破坏内建纯度）。
 
 ## 日志类型与推送时机语义
@@ -326,8 +326,15 @@ def resolve(results):
 
 ## 推送落地：聚合（通用工具）
 
+公共实现归 `app/log_box/report.py` 所有，`app/tools/push_log.py` 只保留兼容导出，
+不要在两处分别实现。`results.py` 定义不可变的 `LogEntry` 与节点状态 `Node`；
+存量二元组/三元组在报告边界转换，原始文本、日志类型与时间戳保留。
+`pipeline.py` 只执行文本规则与前后处理，`collect.py` 管理文件来源、会话与 sink。
+本次内部拆分不改变同步 `open/close`、异常传播、宿主兜底或通知订阅范围；
+不要据此宣称异步采集、内部故障隔离或脚本宿主通道已经完成。
+
 push_log 落进 `cur_user_item.push_log`（`list[tuple]`，元素为 `(log_type, text)`
-或 `(log_type, text, ts)`）后，聚合统一走 `app/tools/push_log.py` 的
+或 `(log_type, text, ts)`）后，聚合统一走 `app/log_box/report.py` 的
 `build_user_result_text`，专项**不要**自行拼接实现：
 
 - `build_user_result_text(users, has_uncompleted)`：按用户交错组装「用户结果行 +

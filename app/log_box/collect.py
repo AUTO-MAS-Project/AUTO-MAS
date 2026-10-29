@@ -1,4 +1,4 @@
-"""采集器 LogCollect：聚合多个 LogSource，执行前置/后置处理、规则匹配并推送
+"""采集会话：管理日志来源与宿主交付，文本处理交给独立管线。
 
 log_box 只对日志本身负责：接收「日志源 + 规则 + 处理器」，在内部完成
 采集日志 → 前置处理（open）→ 规则匹配/提取 → 后置处理（postprocess/close）
@@ -9,38 +9,19 @@ log_box 只对日志本身负责：接收「日志源 + 规则 + 处理器」，
 from __future__ import annotations
 
 import atexit
-import time
 from pathlib import Path
 from typing import Callable, Iterable, Optional, Union
 
-from app.utils import (
-    LOG_TYPE_NORMAL,
-    MultiLineAggregator,
-    RegexMatcher,
-    apply_patterns,
-    compile_regex,
-)
-from app.utils import expression as _utils_expression
+from app.utils import LOG_TYPE_NORMAL
 
 from .logtype import LogType
 from .markers import emit, render_flush, render_push
+from .pipeline import LogPipeline, PostProcessor, PreProcessor
+from .results import LogEntry
 from .sources import LogSource, resolve_sources
-
-# 多行聚合默认最大跨行数（与 LogPatternExtractor 保持一致）
-_MULTILINE_DEFAULT_MAX_LINES = 50
 
 PathLike = Union[str, Path]
 
-# 前置处理器：逐行 map（返回新文本）/ filter（返回 None 丢弃该行）
-_PreProcessor = Callable[[str], Optional[str]]
-
-# 结果元组 (日志类型, 格式化文本, 采集时间戳)，时间戳为规则命中时的
-# ``time.time()``，供逐条式推送为每条结果加时间前缀。
-_ResultItem = tuple[str, str, float]
-
-# 后置处理器：作用于捕捉完的最终 (日志类型, 文本, 时间戳) 结果集（去重/规整），
-# 直接返回处理后的结果集，时间戳随元组一并保留，避免文本改写后丢失采集时间。
-_PostProcessor = Callable[[list[_ResultItem]], list[_ResultItem]]
 # sink：MAS 进程宿主注入的 push_log 写入回调（接收日志类型、文本与采集时间戳）
 _Sink = Callable[[str, str, float], None]
 
@@ -67,11 +48,8 @@ class LogCollect:
         ]
         # sink：MAS 进程宿主注入；缺省时走 @@LOGBOX@@ 标记回传（脚本宿主）
         self.sink = sink
-        self._preprocessors: list[_PreProcessor] = []
-        self._postprocessors: list[_PostProcessor] = []
-        self._line_rules: list[RegexMatcher] = []
-        self._scope_rules: list[MultiLineAggregator] = []
-        self._results: list[_ResultItem] = []
+        # 每个会话独占规则与处理器状态，重试或不同账号之间不共享缓冲。
+        self._pipeline = LogPipeline()
         self._opened = False
         self._closed = False
         # 脚本子进程宿主：脚本正常退出时自动冲刷残留并完成推送（幂等兜底）
@@ -81,8 +59,8 @@ class LogCollect:
     # ---------- 生命周期 ----------
 
     def open(
-        self, processor: Optional[_PreProcessor] = None
-    ) -> Union["LogCollect", Callable[[_PreProcessor], _PreProcessor]]:
+        self, processor: Optional[PreProcessor] = None
+    ) -> Union["LogCollect", Callable[[PreProcessor], PreProcessor]]:
         """启动采集（幂等）；processor 非 None 时直接登记前置处理器并返回 self。
 
         也可作为装饰器使用：``@col.open()`` 会把被装饰函数登记为前置处理器，
@@ -92,12 +70,12 @@ class LogCollect:
         self._open_sources()
         if processor is None:
 
-            def _register(fn: _PreProcessor) -> _PreProcessor:
-                self._preprocessors.append(fn)
+            def _register(fn: PreProcessor) -> PreProcessor:
+                self._pipeline.preprocessors.append(fn)
                 return fn
 
             return _register  # type: ignore[return-value]
-        self._preprocessors.append(processor)
+        self._pipeline.preprocessors.append(processor)
         return self
 
     def _open_sources(self) -> None:
@@ -107,14 +85,14 @@ class LogCollect:
                 source.open()
             self._opened = True
 
-    def close(self, processor: Optional[_PostProcessor] = None) -> "LogCollect":
+    def close(self, processor: Optional[PostProcessor] = None) -> "LogCollect":
         """结束采集会话并完成推送（幂等）
 
         - ``col.close()``：立即结束——冲刷多行残留、应用后置处理器并推送最终结果集。
         - ``col.close(processor)``：登记后置处理器并立即结束。
         """
         if processor is not None:
-            self._postprocessors.append(processor)
+            self._pipeline.postprocessors.append(processor)
         self._finalize()
         return self
 
@@ -124,27 +102,7 @@ class LogCollect:
             return
         self._closed = True
         self._capture()
-        # 冲刷多行聚合残留窗口
-        for agg in self._scope_rules:
-            flushed = agg.flush()
-            if flushed is not None:
-                self._results.append((agg.log_type, flushed, time.time()))
-        # 后置处理：作用于最终结果集的文本（去重/规整等）
-        self._results = self._apply_postprocessors(self._results)
-        # 完成推送
-        self._deliver(self._results)
-
-    def _apply_postprocessors(self, results: list[_ResultItem]) -> list[_ResultItem]:
-        """对最终结果集应用后置处理器，时间戳随 (类型, 文本, 时间戳) 元组一并保留
-
-        后置处理器直接接收并返回 ``list[(log_type, text, ts)]``，文本改写（如
-        okww_resolve 状态解析）不会丢失日志类型与采集时间，也无需按文本回映射。
-        """
-        if not self._postprocessors:
-            return results
-        for post in self._postprocessors:
-            results = post(results)
-        return results
+        self._deliver(self._pipeline.finish())
 
     # ---------- 规则注册 ----------
 
@@ -166,15 +124,7 @@ class LogCollect:
         匹配正则为空 → 该规则不生效（跳过）；非空但正则非法、或表达式非法
         时 fail-fast（与表达式编译语义一致，开发期尽早暴露配置错误）。
         """
-        if not match_regex.strip():
-            return
-        match_re = compile_regex(match_regex)
-        if match_re is None:
-            raise ValueError(f"匹配正则无效: {match_regex}")
-        extract = _utils_expression.compile_expression(expr) if expr else None
-        self._line_rules.append(
-            RegexMatcher(match=match_re, extract=extract, log_type=log_type)
-        )
+        self._pipeline.add_rule(match_regex, expr, log_type)
 
     # ---------- 调试与推送 ----------
 
@@ -187,40 +137,14 @@ class LogCollect:
         self._open_sources()
         for source in self.sources:
             for line in source.read_new():
-                self._process_line(line)
+                self._pipeline.feed(line)
 
-    def _process_line(self, line: str) -> None:
-        """逐行处理：前置处理（翻译/过滤）→ 规则匹配与提取（均在处理后行）
-
-        前置处理器（open 挂载）逐行翻译/过滤，返回 None 丢弃该行；此后匹配
-        与提取均作用于处理后（已翻译）的行，前置翻译对下游整体生效。
-        """
-        processed = line.strip()
-        if not processed:
-            return
-        for pre in self._preprocessors:
-            processed = pre(processed)
-            if processed is None:
-                return  # 前置过滤：丢弃该行
-        if not processed:
-            return
-        # 行内规则：首个命中即产出（与推送日志配置语义一致）
-        if self._line_rules:
-            matched = apply_patterns(processed, matchers=self._line_rules)
-            if matched is not None:
-                self._results.append((*matched, time.time()))
-        # 多行聚合规则：窗口匹配与提取均用处理后行
-        for agg in self._scope_rules:
-            result = agg.apply(processed)
-            if result is not None:
-                self._results.append((agg.log_type, result, time.time()))
-
-    def _deliver(self, results: list[_ResultItem]) -> None:
+    def _deliver(self, results: list[LogEntry]) -> None:
         """把结果写入 sink（MAS 进程宿主）或渲染为 @@LOGBOX@@ 标记（脚本宿主）"""
         if self.sink is not None:
-            for log_type, text, ts in results:
-                self.sink(log_type, text, ts)
+            for entry in results:
+                self.sink(entry.log_type, entry.text, entry.timestamp)
             return
-        for log_type, text, _ in results:
-            emit(render_push(text, log_type))
+        for entry in results:
+            emit(render_push(entry.text, entry.log_type))
         emit(render_flush())

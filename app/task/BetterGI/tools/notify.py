@@ -18,9 +18,9 @@
 
 from datetime import datetime
 
+from app.log_box.report import render_aggregate_push_log
 from app.models.notification import NotificationSummary, NotifyPayload
 from app.task.notify_core import user_statistics_text
-from app.tools.push_log import render_aggregate_push_log
 from app.utils import notification_template as _utils_notification_template
 
 from .drop_statistics import format_drop_statistics

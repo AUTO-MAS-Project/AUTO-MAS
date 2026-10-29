@@ -22,6 +22,7 @@ from pathlib import Path
 from app.config import config_manager
 from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
+from app.log_box.report import build_user_result_text
 from app.models.config import GeneralConfig
 from app.models.emulator import DeviceProvider
 from app.models.notification_report import TaskResultReport
@@ -29,7 +30,6 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
-from app.tools.push_log import build_user_result_text
 from app.utils import TASK_MODE_ZH, ProcessManager, get_logger
 from app.utils import io as _utils_io
 
