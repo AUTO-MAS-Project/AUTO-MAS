@@ -2388,6 +2388,8 @@
   "core.edit.whimboxStepsEmpty": "No step toggles found",
   "core.edit.whimboxTaskSection": "Task configuration",
   "core.edit.whimboxTextPlaceholder": "Enter a value",
+  "core.edit.whimboxUpdateBeforeRun": "Update backend before running",
+  "core.edit.whimboxUpdateBeforeRunHint": "Check and install the official stable Whimbox backend before each batch, then start tasks. If checking or downloading fails, warn and continue after verifying the current installation. Stop if installation is incomplete. Only the backend is updated, not the app.",
   "core.edit.whimboxUseAdmin": "Run as administrator",
   "core.edit.whimboxUseAdminHint": "The Whimbox backend requires administrator privileges; keep this on. No extra UAC prompt when this app already runs elevated",
   "core.edit.whimboxUserTag": "Account tags",

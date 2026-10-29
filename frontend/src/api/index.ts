@@ -1084,6 +1084,8 @@ export type { WhimboxConfig_Info } from './models/WhimboxConfig_Info';
 export type { WhimboxConfig_InfoInput } from './models/WhimboxConfig_InfoInput';
 export type { WhimboxConfig_Run } from './models/WhimboxConfig_Run';
 export type { WhimboxConfig_RunInput } from './models/WhimboxConfig_RunInput';
+export type { WhimboxConfig_Update } from './models/WhimboxConfig_Update';
+export type { WhimboxConfig_UpdateInput } from './models/WhimboxConfig_UpdateInput';
 export type { WhimboxConfigInput } from './models/WhimboxConfigInput';
 export type { WhimboxOptionCatalogItem } from './models/WhimboxOptionCatalogItem';
 export type { WhimboxTaskCatalogData } from './models/WhimboxTaskCatalogData';
