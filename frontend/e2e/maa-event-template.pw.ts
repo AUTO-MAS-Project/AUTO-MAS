@@ -3,7 +3,7 @@ import { expect, test } from './fixtures'
 const backend = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? 36174}`
 
 test.describe('@maa-event-template activity target editing', () => {
-  test('preserves placeholder edits and restores material columns when an activity opens', async ({
+  test('preserves placeholder edits and restores current material and stock when an activity opens', async ({
     app,
     page,
   }) => {
@@ -81,8 +81,8 @@ test.describe('@maa-event-template activity target editing', () => {
     await app.goto(`/scripts/${scriptId}/users/${user.userId}/edit/maa`)
     const editor = await openEditor()
     await expect(editor.locator('.plan-row')).toHaveCount(3)
-    await expect(editor.locator('.event-item-text')).toHaveCount(0)
-    await expect(editor.locator('.stock-value')).toHaveCount(0)
+    await expect(editor.locator('.event-item-text')).toHaveText(['—', '—', '—'])
+    await expect(editor.locator('.stock-value')).toHaveText(['—', '—', '—'])
     await expect(editor).not.toContainText('New material')
     await expect(editor).not.toContainText('54321')
     await expect(editor.locator('.stage-name').first()).not.toHaveText('NEW-1')
@@ -101,6 +101,7 @@ test.describe('@maa-event-template activity target editing', () => {
     )
     await editor.getByRole('checkbox').nth(1).uncheck()
     expect((await (await skipped).json()).code).toBe(200)
+    await expect(editor.getByRole('spinbutton').first()).toBeEnabled()
     await app.evidence('maa-activity-placeholder')
     await page.reload()
     await openEditor()

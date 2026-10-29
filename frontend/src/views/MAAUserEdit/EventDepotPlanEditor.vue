@@ -29,12 +29,12 @@
       show-icon
     />
     <div v-if="rows.length" class="plan-scroll">
-      <div class="plan-grid-header" :class="{ 'is-placeholder': placeholder }">
+      <div class="plan-grid-header">
         <span />
         <span>{{ t('core.eventDepotPreview.stageColumn') }}</span>
-        <span v-if="!placeholder">{{ t('core.edit.item') }}</span>
+        <span>{{ t('core.edit.item') }}</span>
         <span>{{ t('core.edit.targetStock') }}</span>
-        <span v-if="!placeholder">
+        <span>
           <a-tooltip :title="stockColumnTitle"
             ><span>{{ t('core.edit.stock') }}</span></a-tooltip
           >
@@ -44,7 +44,7 @@
         v-for="row in rows"
         :key="row.identity"
         class="plan-row"
-        :class="{ 'is-placeholder': placeholder, 'is-skipped': !row.farmed }"
+        :class="{ 'is-skipped': !row.farmed }"
       >
         <a-checkbox
           :checked="row.farmed"
@@ -56,8 +56,8 @@
           <span class="stage-name">{{ row.stage?.Display ?? stageKindOf(row) }}</span>
           <span v-if="row.stage" class="stage-kind">{{ stageKindOf(row) }}</span>
         </span>
-        <span v-if="row.stage" class="event-item-text" :title="itemTextOf(row.stage)">{{
-          itemTextOf(row.stage)
+        <span class="event-item-text" :title="row.stage ? itemTextOf(row.stage) : undefined">{{
+          row.stage ? itemTextOf(row.stage) : '—'
         }}</span>
         <a-input-number
           :value="row.target"
@@ -67,8 +67,8 @@
           :aria-label="t('core.edit.targetStock')"
           @change="setStageTarget(row, $event)"
         />
-        <span v-if="row.stage" class="stock-value">{{
-          inventory[eventDepotItemId(row.stage)] ?? '—'
+        <span class="stock-value">{{
+          row.stage ? (inventory[eventDepotItemId(row.stage)] ?? '—') : '—'
         }}</span>
       </div>
     </div>
@@ -236,10 +236,6 @@ const setStageTarget = (row: EventRow, value: number | string | null) => {
   min-width: 560px;
   gap: 8px;
   align-items: center;
-}
-.is-placeholder {
-  grid-template-columns: 32px minmax(0, 1fr) 116px;
-  min-width: 300px;
 }
 .plan-grid-header {
   padding: 4px 0 8px;
