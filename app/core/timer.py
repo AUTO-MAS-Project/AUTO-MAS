@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING, Any
 
 from app.models.notification_community import community_notification_results
 from app.models.notification_ports import CommunityNotifier
-from app.services import Matomo
 from app.services.telemetry import record_daily_active
 from app.utils import UTC4, UTC8, get_logger
 
@@ -174,21 +173,6 @@ class _MainTimer:
 
         logger.info("每小时定期任务启动")
 
-        async def upload_statistics() -> None:
-            if Config.setting.Data.LastStatisticsUpload.date() != datetime.now().date():
-                await Matomo.send_event(
-                    "App",
-                    "Version",
-                    Config.VERSION,
-                    1 if "beta" in Config.VERSION else 0,
-                )
-                await Config.setting.update(
-                    type(Config.setting).model_validate(
-                        {"Data": {"LastStatisticsUpload": datetime.now().astimezone()}}
-                    ),
-                    check_visibility=False,
-                )
-
         async def record_telemetry_active() -> None:
             # 按 UTC 日期去重：Sentry 按 UTC 自然日聚合，跨日最多晚一小时记上
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -204,7 +188,7 @@ class _MainTimer:
 
         async def clean_expired_data() -> None:
             # 每天一轮：把过期的历史记录、诊断文件与 MFW 原生日志备份清掉。
-            # 清理本身幂等（只删超期的），守卫用内存日期即可，不必像统计上报那样
+            # 清理本身幂等（只删超期的），守卫用内存日期即可，不必像遥测日活那样
             # 为跨重启去重而落持久化配置；重启后首轮重跑一次无害。
             today = datetime.now().strftime("%Y-%m-%d")
             if self._last_cleanup_date == today:
@@ -230,7 +214,6 @@ class _MainTimer:
             )
 
         while True:
-            await self._run_loop_step("统计上报", upload_statistics)
             await self._run_loop_step("遥测日活", record_telemetry_active)
             await self._run_loop_step("日志清理", clean_expired_data)
             await asyncio.sleep(3600)
