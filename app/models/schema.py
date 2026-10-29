@@ -107,6 +107,8 @@ HistoryAttachmentKind = Literal["log", "image", "video", "diagnostic"]
 
 
 class HistoryAttachmentInput(BaseModel):
+    """附件归档输入；copy 保留原件，move 接管可释放的文件。"""
+
     path: Path
     kind: HistoryAttachmentKind
     role: str
