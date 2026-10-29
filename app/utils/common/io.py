@@ -764,7 +764,9 @@ def restore_injected_dict_values(current: dict, original: dict, injected: dict) 
             and isinstance(after, dict)
             and (before is missing or isinstance(before, dict))
         ):
-            restore_injected_dict_values(actual, {} if before is missing else before, after)
+            restore_injected_dict_values(
+                actual, {} if before is missing else before, after
+            )
             if before is missing and not actual:
                 current.pop(key, None)
         elif actual == after:
@@ -774,7 +776,9 @@ def restore_injected_dict_values(current: dict, original: dict, injected: dict) 
                 current[key] = deepcopy(before)
 
 
-def restore_config_injection_journal(journal: Path, path: Path, *, identity: dict) -> str:
+def restore_config_injection_journal(
+    journal: Path, path: Path, *, identity: dict
+) -> str:
     """恢复带归属的配置注入日志；异安装日志归档，不覆盖新安装。"""
     from copy import deepcopy
 
@@ -792,7 +796,9 @@ def restore_config_injection_journal(journal: Path, path: Path, *, identity: dic
                 journal.rename(archive)
                 return "archived"
             index += 1
-    if not isinstance(state.get("original"), dict) or not isinstance(state.get("injected"), dict):
+    if not isinstance(state.get("original"), dict) or not isinstance(
+        state.get("injected"), dict
+    ):
         raise ValueError("配置恢复日志内容无效")
     current = read_dict_file(path)
     restored = deepcopy(current)
