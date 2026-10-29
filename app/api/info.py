@@ -37,7 +37,7 @@ from pydantic import (
 )
 
 from app.core import Config
-from app.core.game_calendar import GameCalendar
+from app.core.game_calendar_host import GameCalendar
 from app.core.taskboard_state import (
     load_state,
     save_archive,

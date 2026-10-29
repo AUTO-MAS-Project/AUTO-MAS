@@ -37,7 +37,8 @@ from .community_scheduler import (
     should_run_community_for_source,
 )
 from .config import Config
-from .game_calendar import CALENDAR_REFRESH_INTERVAL_SECONDS, GameCalendar
+from .game_calendar import CALENDAR_REFRESH_INTERVAL_SECONDS
+from .game_calendar_host import GameCalendar
 from .task_manager import TaskManager
 
 if TYPE_CHECKING:

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core import game_calendar as calendar
+from app.core import game_calendar_host as calendar_host
 from app.models.config import BAAHConfig
 from app.models.notification_channel import ChannelTarget, DispatchResult, NotifyTarget
 from app.utils import UTC8
@@ -42,12 +43,12 @@ def script(*lines):
 def host(monkeypatch, tmp_path):
     Clock.current = datetime(2030, 10, 1, 12, tzinfo=UTC8)
     monkeypatch.setattr(calendar, "datetime", Clock)
-    monkeypatch.setattr(calendar.Config, "config_path", tmp_path)
+    monkeypatch.setattr(calendar_host.Config, "config_path", tmp_path)
     scripts = {
         "first": script(("CN", True), ("CN", True), ("JP", True)),
         "second": script(("CN", True), ("Globle", True), ("JP", False)),
     }
-    monkeypatch.setattr(calendar.Config, "ScriptConfig", scripts)
+    monkeypatch.setattr(calendar_host.Config, "ScriptConfig", scripts)
 
     async def fetch(source):
         activity = {
@@ -58,11 +59,10 @@ def host(monkeypatch, tmp_path):
         return [activity, dict(activity)]
 
     fetcher = AsyncMock(side_effect=fetch)
-    monkeypatch.setattr(calendar, "fetch_calendar_activities", fetcher)
-    return fetcher
+    return SimpleNamespace(fetch=fetcher, path=tmp_path)
 
 
-def service(*channel_ids, dispatcher=None):
+def service(host, *channel_ids, dispatcher=None):
     target = NotifyTarget(
         channels=tuple(
             (SimpleNamespace(), ChannelTarget(id=id, label=id)) for id in channel_ids
@@ -71,21 +71,26 @@ def service(*channel_ids, dispatcher=None):
     dispatcher = dispatcher or AsyncMock(
         return_value=DispatchResult(succeeded_ids=channel_ids)
     )
-    return calendar._GameCalendar(
-        dispatcher=dispatcher, prepare_target=lambda: target
+    return calendar.GameCalendarService(
+        read_targets=calendar_host.notification_targets,
+        fetch_activities=host.fetch,
+        resolve_source=calendar_host.activity_source,
+        schedule_path=lambda: host.path / "GameCalendarSchedule.json",
+        dispatcher=dispatcher,
+        prepare_target=lambda: target,
     ), dispatcher
 
 
 @pytest.mark.asyncio
 async def test_servers_accounts_refresh_delivery_and_restart_are_deduplicated(host):
-    instance, send = service("channel")
+    instance, send = service(host, "channel")
     assert instance._notification_games() == {
         ("bluearchive", "ba-cn"): "碧蓝档案（国服）",
         ("bluearchive", "ba-jp"): "碧蓝档案（日服）",
         ("bluearchive", "ba-global"): "碧蓝档案（国际服）",
     }
     await instance.refresh_schedule()
-    assert [call.args[0] for call in host.await_args_list] == [
+    assert [call.args[0] for call in host.fetch.await_args_list] == [
         "ba-cn",
         "ba-jp",
         "ba-global",
@@ -100,7 +105,7 @@ async def test_servers_accounts_refresh_delivery_and_restart_are_deduplicated(ho
     await instance.refresh_schedule()
     await instance.send_due_reminders()
     assert send.await_count == 1
-    restored, after_restart = service("channel")
+    restored, after_restart = service(host, "channel")
     assert not restored.has_due_reminders()
     await restored.send_due_reminders()
     after_restart.assert_not_awaited()
@@ -108,7 +113,7 @@ async def test_servers_accounts_refresh_delivery_and_restart_are_deduplicated(ho
 
 @pytest.mark.asyncio
 async def test_completion_is_persisted_scoped_and_suppresses_only_its_server(host):
-    instance, _ = service("channel")
+    instance, _ = service(host, "channel")
     await instance.refresh_schedule()
     await instance.set_activity_completed(
         game="bluearchive",
@@ -118,7 +123,7 @@ async def test_completion_is_persisted_scoped_and_suppresses_only_its_server(hos
         end=datetime(2030, 10, 8, 23, tzinfo=UTC8),
         completed=True,
     )
-    restored, send = service("channel")
+    restored, send = service(host, "channel")
     assert (
         len(await restored.completed_activities(game="bluearchive", server="jp")) == 1
     )
@@ -145,10 +150,10 @@ async def test_partial_delivery_retries_only_failed_channel_after_restart(host):
     send = AsyncMock(
         return_value=DispatchResult(succeeded_ids=("one",), failed=("two",))
     )
-    instance, _ = service("one", "two", dispatcher=send)
+    instance, _ = service(host, "one", "two", dispatcher=send)
     await instance.refresh_schedule()
     await instance.send_due_reminders()
-    restored, retry = service("one", "two")
+    restored, retry = service(host, "one", "two")
     await restored.send_due_reminders()
     retry.assert_not_awaited()
     Clock.current += timedelta(seconds=calendar.CALENDAR_RETRY_INTERVAL_SECONDS)
@@ -160,13 +165,13 @@ async def test_partial_delivery_retries_only_failed_channel_after_restart(host):
 
 @pytest.mark.asyncio
 async def test_refresh_failure_retains_schedule_and_cancellation_propagates(host):
-    instance, send = service("channel")
+    instance, send = service(host, "channel")
     await instance.refresh_schedule()
-    host.side_effect = OSError("offline")
+    host.fetch.side_effect = OSError("offline")
     await instance.refresh_schedule()
     await instance.send_due_reminders()
     send.assert_awaited_once()
-    host.side_effect = asyncio.CancelledError
+    host.fetch.side_effect = asyncio.CancelledError
     with pytest.raises(asyncio.CancelledError):
         await instance.refresh_schedule()
 
@@ -174,10 +179,24 @@ async def test_refresh_failure_retains_schedule_and_cancellation_propagates(host
 @pytest.mark.asyncio
 async def test_cancelled_delivery_can_be_retried_without_consuming_reminders(host):
     send = AsyncMock(side_effect=asyncio.CancelledError)
-    instance, _ = service("channel", dispatcher=send)
+    instance, _ = service(host, "channel", dispatcher=send)
     await instance.refresh_schedule()
     with pytest.raises(asyncio.CancelledError):
         await instance.send_due_reminders()
-    restored, retry = service("channel")
+    restored, retry = service(host, "channel")
     await restored.send_due_reminders()
     retry.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_host_reads_current_enabled_accounts_on_each_refresh(host, monkeypatch):
+    instance, _ = service(host, "channel")
+    await instance.refresh_schedule()
+    host.fetch.reset_mock()
+    monkeypatch.setattr(
+        calendar_host.Config,
+        "ScriptConfig",
+        {"new": script(("JP", False), ("Globle", True), ("Globle", True))},
+    )
+    await instance.refresh_schedule()
+    host.fetch.assert_awaited_once_with("ba-global")

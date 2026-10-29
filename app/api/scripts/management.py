@@ -37,7 +37,7 @@ from pydantic import (
 import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
-from app.core.game_calendar import SCRIPT_CALENDAR_GAMES
+from app.core.game_calendar_host import SCRIPT_CALENDAR_GAMES
 from app.core.script_settings import ScriptSettings
 from app.models.schema import (
     OutBase,

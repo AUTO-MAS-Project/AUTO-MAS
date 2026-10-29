@@ -347,7 +347,7 @@ def main():
 
         from app.api.ws_command import execute_ws_command
         from app.config import config_manager
-        from app.core.game_calendar import GameCalendar
+        from app.core.game_calendar_host import GameCalendar
         from app.core.notification_commands import execute_notification_command
         from app.core.notify_channels import create_notification_service
         from app.runtime_tasks import RuntimeTasks
@@ -367,7 +367,12 @@ def main():
         app.state.notifications = notifications
         TaskManager.bind_notifications(notifications)
         MainTimer.bind_notifications(notifications)
-        GameCalendar.bind_notifications(notifications)
+        GameCalendar.bind_notifications(
+            dispatcher=notifications.dispatch,
+            prepare_target=lambda: notifications.global_target(
+                include_system=True, empty_policy="skip"
+            ),
+        )
 
         background_task: asyncio.Task | None = None
 

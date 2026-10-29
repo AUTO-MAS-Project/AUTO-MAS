@@ -2,55 +2,36 @@
 #   Copyright © 2025-2026 AUTO-MAS Team
 #   SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""按已启用托管账号推送游戏活动提醒。"""
+"""统一管理游戏活动日程、完成状态和通知；目标与取数能力由宿主注入。"""
 
 import asyncio
 import hashlib
 import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from pydantic import AwareDatetime, TypeAdapter
 
-from app.core.config import Config
-from app.models.config import CLASS_BOOK
 from app.models.notification import NotifyPayload
 from app.models.notification_channel import NotifyTarget
 from app.models.notification_report import NotificationDispatcher
-from app.task.BAAH.calendar_service import calendar_target as baah_calendar_target
-from app.tools.bluearchive_activity_source import BLUEARCHIVE_SERVERS
-from app.tools.game_calendar import (
-    CALENDAR_GAMES,
-    fetch_calendar_activities,
-)
 from app.utils import UTC8, get_logger
 from app.utils import io as _utils_io
-
-if TYPE_CHECKING:
-    from app.core.notify import HostNotificationService
 
 logger = get_logger("游戏日历")
 CALENDAR_REFRESH_INTERVAL_SECONDS = 60 * 60
 CALENDAR_RETRY_INTERVAL_SECONDS = 10 * 60
-SCRIPT_CALENDAR_GAMES = {
-    CLASS_BOOK[script]: game
-    for script, game in {
-        "MAA": "arknights",
-        "MaaEnd": "endfield",
-        "SRC": "starrail",
-        "HSR": "starrail",
-        "BetterGI": "genshin",
-        "ZzzOd": "zenless",
-        "Okww": "wutheringwaves",
-        "OkNte": "nte",
-        "M9A": "reverse1999",
-        "BAAH": "bluearchive",
-        "MSS": "stellasora",
-        "Whimbox": "infinitynikki",
-    }.items()
-}
+
+
+@dataclass(frozen=True)
+class CalendarTarget:
+    """宿主已解释的游戏、活动来源及显示名称。"""
+
+    game: str
+    source: str
+    label: str
 
 
 @dataclass
@@ -155,13 +136,23 @@ def calendar_reminders(
     return list(reminders.values())
 
 
-class _GameCalendar:
+class GameCalendarService:
     def __init__(
         self,
         *,
+        read_targets: Callable[[], Iterable[CalendarTarget]],
+        fetch_activities: Callable[
+            [str], Awaitable[Sequence[Mapping[str, object]] | None]
+        ],
+        resolve_source: Callable[[str, str], str],
+        schedule_path: Callable[[], Path],
         dispatcher: NotificationDispatcher | None = None,
         prepare_target: Callable[[], NotifyTarget] | None = None,
     ) -> None:
+        self._read_targets = read_targets
+        self._fetch_activities = fetch_activities
+        self._resolve_source = resolve_source
+        self._schedule_path = schedule_path
         self._dispatcher = dispatcher
         self._prepare_target = prepare_target
         self._lock = asyncio.Lock()
@@ -171,18 +162,21 @@ class _GameCalendar:
         self._dirty = False
         self._save_retry_at: datetime | None = None
 
-    def bind_notifications(self, notifications: "HostNotificationService") -> None:
-        self._dispatcher = notifications.dispatch
-        self._prepare_target = lambda: notifications.global_target(
-            include_system=True, empty_policy="skip"
-        )
+    def bind_notifications(
+        self,
+        *,
+        dispatcher: NotificationDispatcher,
+        prepare_target: Callable[[], NotifyTarget],
+    ) -> None:
+        self._dispatcher = dispatcher
+        self._prepare_target = prepare_target
 
     def _load_schedule(self) -> None:
         """恢复已生成的日程，启动后的推送不等待活动接口。"""
 
         if self._loaded:
             return
-        path = Config.config_path / "GameCalendarSchedule.json"
+        path = self._schedule_path()
         if path.exists():
             data = json.loads(path.read_text(encoding="utf-8"))
             reminders = _SCHEDULE_ADAPTER.validate_python(data["reminders"])
@@ -204,7 +198,7 @@ class _GameCalendar:
     ) -> list[CalendarActivityCompletion]:
         """读取用户完成记录；通知渠道的送达记录不代表活动已完成。"""
         self._load_schedule()
-        source = self._activity_source(game=game, server=server)
+        source = self._resolve_source(game, server)
         async with self._lock:
             now = datetime.now(tz=UTC8)
             return [
@@ -225,7 +219,7 @@ class _GameCalendar:
     ) -> None:
         """保存用户手动标记，与通知派发共用日程锁。"""
         self._load_schedule()
-        source = self._activity_source(game=game, server=server)
+        source = self._resolve_source(game, server)
         key = _activity_key(source=source, name=name, start=start)
         async with self._lock:
             previous = self._completions.get(key)
@@ -251,12 +245,6 @@ class _GameCalendar:
                     self._completions[key] = previous
                 raise
 
-    @staticmethod
-    def _activity_source(*, game: str, server: str) -> str:
-        if game == "bluearchive":
-            return BLUEARCHIVE_SERVERS[server][0]
-        return CALENDAR_GAMES[game][0] or game
-
     def _activity_completed(self, reminder: CalendarReminder) -> bool:
         if reminder.activity_key:
             item = self._completions.get(reminder.activity_key)
@@ -273,22 +261,12 @@ class _GameCalendar:
             for item in self._completions.values()
         )
 
-    @staticmethod
-    def _notification_games() -> dict[tuple[str, str], str]:
+    def _notification_games(self) -> dict[tuple[str, str], str]:
         # 同一游戏的不同服分别登记，多个托管账号命中同一服时只提醒一次。
-        targets: dict[tuple[str, str], str] = {}
-        for script in Config.ScriptConfig.values():
-            game = SCRIPT_CALENDAR_GAMES.get(type(script))
-            if game is None:
-                continue
-            for user in script.UserData.values():
-                if not user.Info.Status:
-                    continue
-                source, label = CALENDAR_GAMES[game]
-                if game == "bluearchive":
-                    source, label = baah_calendar_target(user)
-                targets[(game, source)] = label
-        return targets
+        return {
+            (target.game, target.source): target.label
+            for target in self._read_targets()
+        }
 
     async def refresh_schedule(self) -> None:
         """定期获取活动并登记新日程，已登记日程保持不变。"""
@@ -298,7 +276,7 @@ class _GameCalendar:
         for (game, source), label in games.items():
             try:
                 # 取数在日程锁外，到点的已登记日程不受慢请求或断网影响。
-                activities = await fetch_calendar_activities(source)
+                activities = await self._fetch_activities(source)
                 if activities is None:
                     continue
                 now = datetime.now(tz=UTC8)
@@ -445,7 +423,7 @@ class _GameCalendar:
         }
         try:
             _utils_io.write_file(
-                Config.config_path / "GameCalendarSchedule.json",
+                self._schedule_path(),
                 {
                     "reminders": _SCHEDULE_ADAPTER.dump_python(
                         list(self._reminders.values()), mode="json"
@@ -460,6 +438,3 @@ class _GameCalendar:
             raise
         self._dirty = False
         self._save_retry_at = None
-
-
-GameCalendar = _GameCalendar()
