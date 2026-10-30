@@ -48,10 +48,13 @@ MUMU_CLOSE_SETTLE_SECONDS = 2
 MUMU_STORE_PACKAGE = "com.mumu.store"
 MUMU_STORE_OVERLAY_APP_OP = "SYSTEM_ALERT_WINDOW"
 # MuMu 6.8.8 的 control launch 会自己等满 15 秒再回 -503：实例其实已经在启动，
-# 只是 mainnx 一直没接管 IPC。这种 errcode 重发一次通常就能连上
+# 只是 mainnx 一直没接管 IPC。开机冷态下 mainnx 要几分钟才就绪，实测单次重发仍回 -503，
+# 所以按退避节奏多次重发，把判决权交给下面 open() 的等待预算
 LAUNCH_RETRY_ERRCODES = frozenset({-503})
-# 重发 launch 前的让位时间（秒），第一次已经阻塞十几秒，这步只给 mainnx 收尾
-LAUNCH_RETRY_DELAY_SECONDS = 1.0
+# 重发 launch 的退避间隔（秒）；长度即最多重试次数，用完后不再重发
+LAUNCH_RETRY_DELAYS = (1.0, 3.0, 10.0, 30.0, 60.0)
+# 一次 launch 自己就要阻塞十几秒，剩余等待预算低于这个值就不再重发
+LAUNCH_RETRY_MIN_BUDGET_SECONDS = 20.0
 
 
 def _launch_errcode(result: ProcessResult) -> int | None:
@@ -417,7 +420,12 @@ class MumuManager(DeviceBase):
 
         logger.info(f"执行 MuMu 启动命令: {idx} - {package_name}")
         launch_started_at = time.monotonic()
-        result = await self._launch_with_retry(idx, package_name)
+        # launch 阶段单独给一份等待预算：-503 时实例其实在启动，重发要额外占用时间
+        result = await self._launch_with_retry(
+            idx,
+            package_name,
+            deadline=launch_started_at + self.config.Info.MaxWaitTime,
+        )
         # 参考命令 MuMuManager.exe control -v 2 launch
 
         if result.returncode != 0:
@@ -496,25 +504,57 @@ class MumuManager(DeviceBase):
             breakaway=True,
         )
 
-    async def _launch_with_retry(self, idx: str, package_name: str) -> ProcessResult:
-        """执行 control launch；-503 表示 mainnx 还没接管 IPC，隔一会儿重发一次。"""
+    async def _launch_with_retry(
+        self,
+        idx: str,
+        package_name: str,
+        *,
+        deadline: float | None = None,
+    ) -> ProcessResult:
+        """执行 control launch；-503 表示 mainnx 还没接管 IPC，按退避节奏重发。
+
+        ``deadline`` 是 ``time.monotonic()`` 口径的等待预算上限，为 None 时只受
+        ``LAUNCH_RETRY_DELAYS`` 的长度约束。
+        """
 
         launch_started_at = time.monotonic()
         result = await self._launch(idx, package_name)
-        if result.returncode == 0:
-            return result
+        attempt = 0
+        while True:
+            if result.returncode == 0:
+                return result
 
-        errcode = _launch_errcode(result)
-        if errcode not in LAUNCH_RETRY_ERRCODES:
-            return result
+            errcode = _launch_errcode(result)
+            if errcode not in LAUNCH_RETRY_ERRCODES:
+                return result
 
-        # 第一次已经把 mainnx 起了个头，重发一次一般就能拿到应答
-        logger.warning(
-            f"MuMu 启动命令返回 {errcode}，实例可能仍在启动，重试一次: "
-            f"{idx} - 用时: {time.monotonic() - launch_started_at:.3f}秒"
-        )
-        await asyncio.sleep(LAUNCH_RETRY_DELAY_SECONDS)
-        return await self._launch(idx, package_name)
+            elapsed = time.monotonic() - launch_started_at
+            if attempt >= len(LAUNCH_RETRY_DELAYS):
+                logger.warning(
+                    f"MuMu 启动命令返回 {errcode}，已重试 {attempt} 次仍失败，不再重试: "
+                    f"{idx} - 用时: {elapsed:.3f}秒"
+                )
+                return result
+
+            delay = LAUNCH_RETRY_DELAYS[attempt]
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                usable = remaining - LAUNCH_RETRY_MIN_BUDGET_SECONDS
+                if usable <= 0:
+                    logger.warning(
+                        f"MuMu 启动命令返回 {errcode}，剩余等待预算只剩 {remaining:.0f} 秒，"
+                        f"不再重试: {idx} - 已重试 {attempt} 次 - 用时: {elapsed:.3f}秒"
+                    )
+                    return result
+                delay = min(delay, usable)
+
+            attempt += 1
+            logger.warning(
+                f"MuMu 启动命令返回 {errcode}，实例可能仍在启动，{delay:.1f} 秒后第 {attempt} 次重试: "
+                f"{idx} - 用时: {elapsed:.3f}秒"
+            )
+            await asyncio.sleep(delay)
+            result = await self._launch(idx, package_name)
 
     async def _describe_launch_failure(self, idx: str) -> str:
         """启动失败 / 超时报错的附加说明。旧配置不加，Emulator 2.0 的后端覆盖它。"""

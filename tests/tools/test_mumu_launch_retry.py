@@ -1,5 +1,6 @@
 """MuMu control launch 返回 -503 时的重试编排。"""
 
+import time
 from unittest.mock import Mock
 
 import pytest
@@ -10,6 +11,7 @@ from app.utils.common.process_runner import ProcessResult
 
 CONNECT_FAILED = '{"errcode": -503, "errmsg": "mainnx connect failed"}'
 LAUNCH_OK = '{"errcode": 0, "errmsg": ""}'
+OTHER_ERROR = '{"errcode": -500, "errmsg": "nemu-api init failed"}'
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +34,12 @@ def _fake_launch(monkeypatch, *results: ProcessResult) -> list[str]:
         return results[index]
 
     monkeypatch.setattr(MumuManager, "_launch", fake)
-    monkeypatch.setattr(mumu_module, "LAUNCH_RETRY_DELAY_SECONDS", 0)
+    # 退避间隔置 0：次数不变，但测试不真的睡
+    monkeypatch.setattr(
+        mumu_module,
+        "LAUNCH_RETRY_DELAYS",
+        tuple(0.0 for _ in mumu_module.LAUNCH_RETRY_DELAYS),
+    )
     return calls
 
 
@@ -53,7 +60,7 @@ def test_launch_errcode_returns_none_for_unparsable_output():
 
 
 @pytest.mark.asyncio
-async def test_launch_retries_once_after_mainnx_connect_failed(monkeypatch):
+async def test_launch_retries_until_mainnx_answers(monkeypatch):
     manager = _manager()
     calls = _fake_launch(
         monkeypatch,
@@ -72,7 +79,7 @@ async def test_launch_does_not_retry_unlisted_errcode(monkeypatch):
     manager = _manager()
     calls = _fake_launch(
         monkeypatch,
-        ProcessResult(stdout='{"errcode": -500, "errmsg": "nemu-api init failed"}', stderr="", returncode=1),
+        ProcessResult(stdout=OTHER_ERROR, stderr="", returncode=1),
     )
 
     result = await manager._launch_with_retry("0", "")
@@ -82,15 +89,28 @@ async def test_launch_does_not_retry_unlisted_errcode(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_launch_gives_up_when_retry_fails_again(monkeypatch):
+async def test_launch_gives_up_after_retry_schedule_exhausted(monkeypatch):
     manager = _manager()
-    calls = _fake_launch(
-        monkeypatch,
-        ProcessResult(stdout=CONNECT_FAILED, stderr="", returncode=1),
-        ProcessResult(stdout=CONNECT_FAILED, stderr="", returncode=1),
-    )
+    failure = ProcessResult(stdout=CONNECT_FAILED, stderr="", returncode=1)
+    calls = _fake_launch(monkeypatch, *([failure] * 10))
 
     result = await manager._launch_with_retry("1", "")
 
-    assert calls == ["1", "1"]
+    # 首启 1 次 + 退避表长度决定的若干次
+    assert len(calls) == 1 + len(mumu_module.LAUNCH_RETRY_DELAYS)
+    assert result.returncode == 1
+
+
+@pytest.mark.asyncio
+async def test_launch_stops_when_budget_is_too_small(monkeypatch):
+    manager = _manager()
+    failure = ProcessResult(stdout=CONNECT_FAILED, stderr="", returncode=1)
+    calls = _fake_launch(monkeypatch, *([failure] * 10))
+
+    result = await manager._launch_with_retry(
+        "0", "", deadline=time.monotonic() + 5
+    )
+
+    # 预算不足以再走完一次 launch，直接放弃
+    assert calls == ["0"]
     assert result.returncode == 1
