@@ -33,10 +33,9 @@ from collections.abc import Mapping
 import httpx
 
 from app.core import Config
-from app.services.community_http import create_community_client
+from app.tools.common.community_contract import CommunitySignResult
+from app.tools.common.community_http import create_community_client
 from app.utils import format_exception_reason, get_logger
-
-from .community_contract import CommunitySignResult
 
 logger = get_logger("云原神签到")
 

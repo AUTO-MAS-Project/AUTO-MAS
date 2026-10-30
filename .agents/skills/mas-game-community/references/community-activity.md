@@ -1,6 +1,6 @@
 # 游戏社区日常便笺链路
 
-日常便笺是**只读**的角色活跃度查询：按账号组凭据发现角色，再按角色拉取便笺快照。它不写回凭据、不调用签到入口、不占用签到锁。整条链路位于 `app/tools/community_activity*.py`，消费层是 `app/tools/community_activity.py`。
+日常便笺是**只读**的角色活跃度查询：按账号组凭据发现角色，再按角色拉取便笺快照。它不写回凭据、不调用签到入口、不占用签到锁。整条链路位于 `app/tools/common/community_activity*.py`，消费层是 `app/tools/common/community_activity.py`。
 
 ## 入口与开关
 
@@ -8,7 +8,7 @@
 | --- | --- |
 | `POST /api/tools/community/activity/query` | `app/api/tools.py::query_community_activity`，请求体 `CommunityActivityQueryIn(accountIds?)` |
 | `GameSign.ActivityEnabled` | 总开关，关闭时 API 直接返回空列表，消费层也直接返回 `()` |
-| `community_activity_flow()` | `community_scheduler.py` 的串行锁：后到者等锁，等完复用缓存 |
+| `community_activity_flow()` | `app/tools/common/community_scheduler.py` 的串行锁：后到者等锁，等完复用缓存 |
 | 前端 | `views/gamesign/CommunityActivityView.vue`、`components/CommunityActivityCard.vue`、`communityActivityPresentation.ts`、`stores/communityActivity.ts` |
 
 查询失败**不**影响签到，签到失败也**不**阻塞便笺；两条链路只共享账号组凭据与 `community_http` 客户端。

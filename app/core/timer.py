@@ -28,14 +28,14 @@ from typing import TYPE_CHECKING, Any
 from app.models.notification_community import community_notification_results
 from app.models.notification_ports import CommunityNotifier
 from app.services.telemetry import record_daily_active
-from app.utils import UTC4, UTC8, get_logger
-
-from .community_scheduler import (
+from app.tools.common.community_scheduler import (
     TASK_COMMUNITY_SOURCES,
     CommunityTriggerSource,
     all_community_accounts_signed,
     should_run_community_for_source,
 )
+from app.utils import UTC4, UTC8, get_logger
+
 from .config import Config
 from .game_calendar import CALENDAR_REFRESH_INTERVAL_SECONDS, GameCalendar
 from .task_manager import TaskManager
@@ -479,12 +479,12 @@ class _MainTimer:
         self, *, source: CommunityTriggerSource = "scheduled"
     ) -> list[dict[str, object]]:
         """执行游戏社区签到并按触发来源决定通知方式。"""
-        from app.core.community_sign import (
+        from app.tools.common.community import format_community_sign_results
+        from app.tools.common.sign.community_sign import (
             CommunitySignInProgressError,
             community_sign_flow,
             run_community_sign_in,
         )
-        from app.tools.community import format_community_sign_results
 
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 

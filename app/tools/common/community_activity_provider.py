@@ -51,25 +51,24 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.services.community_http import create_community_client
-from app.utils import get_logger
-
-from .community_activity_roles import (
+from app.tools.common.community_activity_roles import (
     CommunityActivityCapability,
     CommunityActivityRoleDiscovery,
     normalize_miyoushe_roles,
     normalize_skland_roles,
 )
-from .community_activity_transport import (
+from app.tools.common.community_activity_transport import (
     CommunityActivityRequest,
     CommunityActivityTarget,
     CommunityActivityTransportError,
 )
+from app.tools.common.community_http import create_community_client
+from app.utils import get_logger
 
 logger = get_logger("社区活动")
 
 if TYPE_CHECKING:
-    from .miyoushe import MiyousheSessionCapabilities
+    from app.tools.miyoushe import MiyousheSessionCapabilities
 
 __all__ = [
     "CommunityActivityProvider",
@@ -188,7 +187,7 @@ def _miyoushe_ds(
 ) -> str:
     timestamp = str(int(time.time()))
     if data:
-        from .miyoushe import SALT_DATA
+        from app.tools.miyoushe import SALT_DATA
 
         # 星铁 Widget 的参考实现调用 generate_ds(data={})，
         # 因而使用数据签名盐和空 body/query，而不是 iOS 无参盐。
@@ -213,7 +212,7 @@ def _miyoushe_ds(
 
 
 def _device_ds(body: str, *, game: str = "") -> str:
-    from .miyoushe import SALT_DATA
+    from app.tools.miyoushe import SALT_DATA
 
     timestamp = str(int(time.time()))
     if game == "绝区零":
@@ -455,7 +454,7 @@ class CommunityActivityProvider:
         account_uid: str,
         account_name: str,
     ) -> CommunityActivityRoleDiscovery:
-        from .skland import (
+        from app.tools.skland import (
             SKLAND_BINDING_URL,
         )
 
@@ -511,7 +510,7 @@ class CommunityActivityProvider:
         account_uid: str,
         account_name: str,
     ) -> CommunityActivityRoleDiscovery:
-        from .miyoushe import (
+        from app.tools.miyoushe import (
             BASE_HEADERS,
             ROLES_URL,
         )
@@ -631,7 +630,7 @@ class CommunityActivityProvider:
         target: CommunityActivityTarget | None,
         client: httpx.AsyncClient,
     ) -> tuple[dict[str, str], str]:
-        from .skland import (
+        from app.tools.skland import (
             SklandAuthenticationError,
             get_cached_device_id,
             prepare_skland_session_credential,
@@ -699,7 +698,7 @@ class CommunityActivityProvider:
         credential: Mapping[str, str],
         device_id: str,
     ) -> dict[str, str]:
-        from .skland import build_skland_signed_headers
+        from app.tools.skland import build_skland_signed_headers
 
         profile = request.signature_profile
         platform = "3" if profile == "skland_endfield_web" else "1"
@@ -786,7 +785,7 @@ class CommunityActivityProvider:
         *,
         require_activity: bool = True,
     ) -> tuple[dict[str, str], str, str]:
-        from .miyoushe import (
+        from app.tools.miyoushe import (
             prepare_miyoushe_session,
             validate_miyoushe_cookie,
         )

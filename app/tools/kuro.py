@@ -43,11 +43,10 @@ from datetime import datetime
 import httpx
 
 from app.core import Config
-from app.services.community_http import create_community_client
+from app.tools.common.community_contract import CommunitySignDetail
+from app.tools.common.community_http import create_community_client
+from app.tools.common.sign.community_sign_result import merge_community_sign_result
 from app.utils import UTC8, format_exception_reason, get_logger
-
-from .community_contract import CommunitySignDetail
-from .game_sign_result import merge_community_sign_result
 
 logger = get_logger("库街区社区")
 

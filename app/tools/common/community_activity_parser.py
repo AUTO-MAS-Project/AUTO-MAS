@@ -30,9 +30,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.tools.common.community_contract import ActivityState, CommunityActivitySnapshot
 from app.utils import UTC8
-
-from .community_contract import ActivityState, CommunityActivitySnapshot
 
 __all__ = ["ACTIVITY_GAME_DEFINITIONS", "parse_activity_snapshot"]
 

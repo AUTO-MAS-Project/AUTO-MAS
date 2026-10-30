@@ -24,6 +24,7 @@
 
 import re
 from collections.abc import Iterable
+from uuid import UUID
 
 _DEFAULT_ACCOUNT_NAME_PATTERN = re.compile(r"^用户\s*(\d+)$")
 
@@ -45,3 +46,19 @@ def next_community_account_name(existing_names: Iterable[object]) -> str:
     while index in occupied:
         index += 1
     return f"用户 {index}"
+
+
+def is_known_community_account(
+    account_uids: Iterable[object], account_uid: str
+) -> bool:
+    """判断前端回传的账号组标识是否存在于当前配置。
+
+    账号组标识是 UUID，客户端回传的大小写或括号写法可能与配置中的标准形态
+    不同，直接做字符串比较会把合法账号组误判成不存在。
+    """
+
+    try:
+        requested = str(UUID(str(account_uid).strip()))
+    except ValueError:
+        return False
+    return any(str(uid) == requested for uid in account_uids)

@@ -62,7 +62,7 @@ from Crypto.Cipher import AES, DES, PKCS1_v1_5
 from Crypto.PublicKey import RSA
 from Crypto.Util.Padding import pad
 
-from app.services.community_http import create_community_client
+from app.tools.common.community_http import create_community_client
 from app.utils import (
     BROWSER_ENV,
     DES_RULE,

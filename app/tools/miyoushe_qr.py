@@ -55,7 +55,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 
 from app.core import Config
-from app.services.community_http import create_community_client
+from app.tools.common.community_http import create_community_client
 from app.utils import format_exception_reason, get_logger
 
 logger = get_logger("米游社扫码登录")

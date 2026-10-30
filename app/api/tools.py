@@ -46,13 +46,13 @@ from app.config.wire import (
     config_group_contract,
 )
 from app.core import Config
-from app.core.community_sign import (
+from app.models.notification_ports import CommunityNotifier
+from app.models.schema import OutBase
+from app.tools.common.sign.community_sign import (
     CommunitySignInProgressError,
     community_sign_flow,
     run_community_sign_in,
 )
-from app.models.notification_ports import CommunityNotifier
-from app.models.schema import OutBase
 from app.utils import UTC8, format_exception_reason, get_logger
 
 ToolsConfig = ConfigPayload[_config_models.ToolsConfig]
@@ -312,7 +312,7 @@ async def manual_game_sign(
 
     try:
         from app.models.notification_community import community_notification_results
-        from app.tools.community import (
+        from app.tools.common.community import (
             format_community_sign_results,
             has_community_credentials,
         )
@@ -399,7 +399,7 @@ async def query_community_activity(
 
     snapshots = ()
     try:
-        from app.core.community_activity import (
+        from app.tools.common.community_activity import (
             build_configured_community_activity_failures,
             query_configured_community_activity,
         )

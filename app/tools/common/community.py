@@ -26,20 +26,20 @@
 ``app/core`` 只负责触发时机与结果落盘，``app/api`` 只做请求与响应整形。
 """
 
-from .community_activity_parser import parse_activity_snapshot
-from .community_activity_provider import (
+from app.tools.common.community_activity_parser import parse_activity_snapshot
+from app.tools.common.community_activity_provider import (
     CommunityActivityProvider,
     build_community_activity_requester,
 )
-from .community_activity_transport import (
+from app.tools.common.community_activity_transport import (
     CommunityActivityRequest,
     CommunityActivityTarget,
     CommunityActivityTransportError,
     build_community_activity_requests,
     collect_community_activity,
 )
-from .community_contract import CommunitySignInProgressError
-from .community_plugins import (
+from app.tools.common.community_contract import CommunitySignInProgressError
+from app.tools.common.community_plugins import (
     COMMUNITY_PLUGIN_REFERENCES,
     CommunityCapability,
     CommunityPluginReference,
@@ -47,8 +47,11 @@ from .community_plugins import (
     get_confirmed_community_capabilities,
     supports_community_capability,
 )
-from .community_sign import community_sign_flow, run_community_sign_in
-from .community_sign_provider import (
+from app.tools.common.sign.community_sign import (
+    community_sign_flow,
+    run_community_sign_in,
+)
+from app.tools.common.sign.community_sign_provider import (
     format_community_sign_results,
     has_community_credentials,
 )

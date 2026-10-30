@@ -37,7 +37,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
-from .community_activity_transport import CommunityActivityTarget
+from app.tools.common.community_activity_transport import CommunityActivityTarget
 
 __all__ = [
     "ACTIVITY_COMMUNITY_DEFINITIONS",

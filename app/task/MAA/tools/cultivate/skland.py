@@ -38,7 +38,7 @@ from typing import Awaitable, Callable, Mapping
 
 import httpx
 
-from app.tools.community_activity_roles import (
+from app.tools.common.community_activity_roles import (
     CommunityActivityRole,
     normalize_skland_roles,
 )
