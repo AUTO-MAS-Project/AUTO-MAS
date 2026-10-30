@@ -10,6 +10,7 @@ import { formatConfigDate, serializeConfigTime } from '@/utils/configDateTime'
 import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 
 const { t } = useI18n()
+const emit = defineEmits<{ fluxdownInstalled: [] }>()
 
 const { settings, updateSourceOptions, updateChannelOptions, handleSettingChange, checkUpdate } =
   defineProps<{
@@ -190,7 +191,11 @@ const handlePauseUntilChange = (value: string | null) => {
     </a-row>
 
     <!-- FluxDown 下载器配置：抽出独立子组件以控制本组件尺寸 -->
-    <FluxdownSection :settings="settings" :handle-setting-change="handleSettingChange" />
+    <FluxdownSection
+      :settings="settings"
+      :handle-setting-change="handleSettingChange"
+      @installed="emit('fluxdownInstalled')"
+    />
   </div>
 </template>
 

@@ -36,10 +36,20 @@ from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
+from app.task.proxy_helpers import push_dispatch_log
 from app.utils import TASK_MODE_ZH, get_logger
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
+from .tools.update import (
+    RECOVERY_HINT,
+    WhimboxUpdateUnsafeError,
+    confirm_usable_installation,
+    ensure_backend_updated,
+    installation_access,
+    pending_marker,
+)
 from .tools.upstream import APP_EXE_NAME
 
 logger = get_logger("奇想盒 调度器")
@@ -141,7 +151,16 @@ class WhimboxManager(ScriptManagerBase):
             return
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.check_result = "奇想盒运行准备未完成"
         await self.prepare()
+        root = self.script_config.Info.RootPath
+        if root is None:
+            raise RuntimeError("请先设置奇想盒安装目录")
+        with installation_access(root):
+            self.check_result = "Pass"
+            await self._run_prepared(root)
+
+    async def _run_prepared(self, root: Path) -> None:
         assert self.user_config is not None
 
         if self.task_info.mode == "ScriptConfig":
@@ -153,6 +172,31 @@ class WhimboxManager(ScriptManagerBase):
                 )
             )
             return
+
+        if self.script_config.Update.TakeoverEnabled:
+            self.check_result = "奇想盒后端更新未完成"
+            await push_dispatch_log(self.script_info, "正在检查奇想盒后端更新…")
+            try:
+                result = await ensure_backend_updated(root)
+            except (WhimboxUpdateUnsafeError, FluxdownCancelUnconfirmed):
+                raise
+            except Exception as error:
+                await confirm_usable_installation(root)
+                result = f"奇想盒更新未完成，沿用当前后端继续任务。原因：{error}"
+                self.script_info.log = result
+                logger.warning(result)
+                with suppress(Exception):
+                    await Publisher.send(
+                        id=self.task_info.task_id,
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(level="warning", message=result),
+                    )
+            else:
+                await push_dispatch_log(self.script_info, result)
+            self.check_result = "Pass"
+        elif pending_marker(root).exists():
+            self.check_result = RECOVERY_HINT
+            raise RuntimeError(self.check_result)
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             current_user = self.script_info.user_list[self.script_info.current_index]

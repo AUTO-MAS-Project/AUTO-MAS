@@ -8,13 +8,11 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import MirrorCdkStatusHint from '@/components/MirrorCdkStatusHint.vue'
 
 const props = defineProps<{
-  update: MAAScriptConfig['Update']
   ready: boolean
 }>()
+const update = defineModel<MAAScriptConfig['Update']>('update', { required: true })
 const emit = defineEmits<{
   change: [key: string, value: boolean | string]
-  'update:cdk': [value: string]
-  'update:enabled': [value: boolean]
 }>()
 const { t } = useI18n()
 const { queryMirrorCdk } = useScriptApi()
@@ -28,11 +26,11 @@ const invalidate = () => {
   state.value = null
 }
 const refresh = async () => {
-  if (!props.ready || !props.update.TakeoverEnabled || checking.value) return
+  if (!props.ready || !update.value.TakeoverEnabled || checking.value) return
   const sequence = ++querySequence
   checking.value = true
   try {
-    const result = await queryMirrorCdk(props.update.MirrorChyanCDK ?? '')
+    const result = await queryMirrorCdk(update.value.MirrorChyanCDK ?? '')
     if (sequence === querySequence) state.value = result
   } finally {
     if (sequence === querySequence) checking.value = false
@@ -40,9 +38,9 @@ const refresh = async () => {
 }
 
 // 输入时清除旧结论；打开页面、切换接管开关和失焦时才查询。
-watch(() => props.update.MirrorChyanCDK, invalidate)
+watch(() => update.value.MirrorChyanCDK, invalidate)
 watch(
-  () => [props.ready, props.update.TakeoverEnabled],
+  () => [props.ready, update.value.TakeoverEnabled],
   () => {
     invalidate()
     void refresh()
@@ -52,12 +50,16 @@ watch(
 onScopeDispose(invalidate)
 
 const handleBlur = () => {
-  emit('change', 'MirrorChyanCDK', props.update.MirrorChyanCDK ?? '')
+  emit('change', 'MirrorChyanCDK', update.value.MirrorChyanCDK ?? '')
   void refresh()
 }
 const handleEnabled = (enabled: boolean) => {
-  emit('update:enabled', enabled)
+  update.value = { ...update.value, TakeoverEnabled: enabled }
   emit('change', 'TakeoverEnabled', enabled)
+}
+const handleChannel = (channel: 'stable' | 'beta') => {
+  update.value = { ...update.value, Channel: channel }
+  emit('change', 'Channel', channel)
 }
 </script>
 
@@ -67,6 +69,20 @@ const handleEnabled = (enabled: boolean) => {
       <h3>{{ t('core.edit.updateTakeover') }}</h3>
     </div>
     <a-row :gutter="24">
+      <a-col :span="8">
+        <a-form-item :label="t('core.edit.updateChannel')">
+          <a-select
+            :value="update.Channel"
+            :disabled="!ready"
+            size="large"
+            :options="[
+              { label: t('core.setting.channel.stable'), value: 'stable' },
+              { label: t('core.setting.channel.beta'), value: 'beta' },
+            ]"
+            @change="handleChannel"
+          />
+        </a-form-item>
+      </a-col>
       <a-col :span="8">
         <a-form-item>
           <template #label>
@@ -84,7 +100,7 @@ const handleEnabled = (enabled: boolean) => {
           />
         </a-form-item>
       </a-col>
-      <a-col :span="16">
+      <a-col :span="8">
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
@@ -100,7 +116,7 @@ const handleEnabled = (enabled: boolean) => {
             class="modern-input"
             autocomplete="off"
             :disabled="!ready || !update.TakeoverEnabled"
-            @update:value="emit('update:cdk', $event)"
+            @update:value="update = { ...update, MirrorChyanCDK: $event }"
             @blur="handleBlur"
           />
           <MirrorCdkStatusHint :state="state" :checking="checking" @retry="refresh" />

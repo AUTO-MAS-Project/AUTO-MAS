@@ -746,3 +746,64 @@ def migrate_legacy_dir(old_path: Path, new_path: Path) -> bool:
         return False
     logger.info(f"旧目录已迁移：{old_path} -> {new_path}")
     return True
+
+
+def restore_injected_dict_values(current: dict, original: dict, injected: dict) -> None:
+    """撤销仍等于注入值的字段，保留外部修改；原地更新 current。"""
+    from copy import deepcopy
+
+    missing = object()
+    for key in original.keys() | injected.keys():
+        before = original.get(key, missing)
+        after = injected.get(key, missing)
+        if before == after:
+            continue
+        actual = current.get(key, missing)
+        if (
+            isinstance(actual, dict)
+            and isinstance(after, dict)
+            and (before is missing or isinstance(before, dict))
+        ):
+            restore_injected_dict_values(
+                actual, {} if before is missing else before, after
+            )
+            if before is missing and not actual:
+                current.pop(key, None)
+        elif actual == after:
+            if before is missing:
+                current.pop(key, None)
+            else:
+                current[key] = deepcopy(before)
+
+
+def restore_config_injection_journal(
+    journal: Path, path: Path, *, identity: dict
+) -> str:
+    """恢复带归属的配置注入日志；异安装日志归档，不覆盖新安装。"""
+    from copy import deepcopy
+
+    if not journal.exists():
+        return "absent"
+    state = read_dict_file(journal)
+    if state.get("script_id") != identity["script_id"]:
+        raise ValueError("配置恢复日志脚本身份不匹配")
+    if state.get("root") != identity["root"]:
+        index = 0
+        while True:
+            suffix = "" if index == 0 else f".{index}"
+            archive = journal.with_name(f"{journal.name}.other-install{suffix}")
+            if not archive.exists():
+                journal.rename(archive)
+                return "archived"
+            index += 1
+    if not isinstance(state.get("original"), dict) or not isinstance(
+        state.get("injected"), dict
+    ):
+        raise ValueError("配置恢复日志内容无效")
+    current = read_dict_file(path)
+    restored = deepcopy(current)
+    restore_injected_dict_values(restored, state["original"], state["injected"])
+    if restored != current:
+        write_file(path, restored)
+    journal.unlink()
+    return "restored"

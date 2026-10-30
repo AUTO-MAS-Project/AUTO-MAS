@@ -135,6 +135,7 @@
             :loading="loading"
             :stage-options="stageOptions"
             :activity-stages="activityStages"
+            :activity-template="activityTemplate"
             :activity-stage-loading="activityStageLoading"
             :activity-stage-error="activityStageError"
             :depot-item-options="depotItemOptions"
@@ -263,7 +264,7 @@ import { AdapterSetupService as Service } from '@/composables/useAdapterSetupApi
 import type { CultivatePreviewOut } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
-import type { HomeOverviewResponse } from '@/types/home.ts'
+import { useMaaStageOptions } from '@/views/MAAUserEdit/useMaaStageOptions'
 
 const logger = window.electronAPI.getLogger('MAA用户编辑')
 
@@ -274,8 +275,7 @@ import ConfigActionsSection from '@/views/EditView/User/ConfigActionsSection.vue
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
-import { getDepotMaintainPreset } from '@/views/MAAUserEdit/depotMaintainPresets'
-import { getEventDepotPresets } from '@/views/MAAUserEdit/eventDepotMaintainPresets'
+import { getDefaultMAAUserData } from '@/views/MAAUserEdit/userDefaults'
 import { useDepotMaintainPlanEditor } from '@/views/MAAUserEdit/useDepotMaintainPlanEditor'
 import { useMAAFieldSave } from '@/views/MAAUserEdit/useMAAFieldSave'
 import { useMAAEditorLifecycle } from '@/views/MAAUserEdit/useMAAEditorLifecycle'
@@ -358,27 +358,16 @@ const serverOptions = [
   { label: '繁中服（txwy）', value: 'txwy' },
 ]
 
-// 关卡选项
-const stageOptions = ref<any[]>([{ label: t('core.edit.none'), value: '' }])
-const activityStageLoading = ref(false)
-const activityStageError = ref('')
-const stageOverviewByServer = ref<HomeOverviewResponse['StageByServer']>({})
-const activityStages = computed(() => {
-  const server = formData.Info.Server === 'Bilibili' ? 'Official' : formData.Info.Server
-  return stageOverviewByServer.value[server]?.Activity ?? []
-})
-
-// 判断值是否为自定义关卡
-const isCustomStage = (value: string) => {
-  if (!value || value === '' || value === '-') return false
-
-  // 检查是否在从API加载的关卡列表中
-  const predefinedStage = stageOptions.value.find(
-    option => option.value === value && !option.isCustom
-  )
-
-  return !predefinedStage
-}
+const {
+  stageOptions,
+  activityStages,
+  activityTemplate,
+  activityStageLoading,
+  activityStageError,
+  appendConfiguredCustomStages,
+  applyServerStageOptions,
+  loadActivityStageOptions,
+} = useMaaStageOptions(() => formData)
 
 // 关卡配置模式选项
 const stageModeOptions = ref<any[]>([{ label: t('core.edit.fixed'), value: 'Fixed' }])
@@ -569,79 +558,6 @@ const getPlanCurrentConfig = (planData: any) => {
   logger.debug('计划模式未知，返回null')
   return null
 }
-
-// MAA脚本默认用户数据
-const getDefaultMAAUserData = () => ({
-  Info: {
-    Name: '',
-    Id: '',
-    Password: '',
-    Server: 'Official',
-    RemainedDay: -1,
-    IfScriptBeforeTask: false,
-    ScriptBeforeTask: '',
-    IfScriptAfterTask: false,
-    ScriptAfterTask: '',
-    Notes: '',
-    Status: true,
-    Base: 'shared',
-    IfQuickConfig: true,
-  },
-  Stage: {
-    StageMode: 'Fixed',
-    MedicineNumb: 0,
-    SeriesNumb: '0',
-    Stage: '1-7',
-    Stage_1: '',
-    Stage_2: '',
-    Stage_3: '',
-  },
-  Task: {
-    IfStartUp: true,
-    Annihilation: 'Annihilation',
-    AnnihilationStartWeekday: 'Monday',
-    InfrastMode: 'Normal',
-    InfrastName: '',
-    IfInfrast: true,
-    IfFight: true,
-    IfMall: true,
-    IfAward: true,
-    IfSwitchTheme: false,
-    IfRecruit: true,
-    IfDepotMaintain: true,
-    DepotMaintainPlans: JSON.stringify(getDepotMaintainPreset('all')),
-    IfEventDepotMaintain: true,
-    EventDepotMaintainPlans: JSON.stringify(getEventDepotPresets()),
-    IfCultivate: false,
-    IfGreenTicketStore: false,
-    IfActivityFirst: false,
-    ActivityStageIndex: 1,
-    CultivateTargets: '[]',
-    CultivateAutoRaise: false,
-    CultivateSkipDuringActivity: false,
-    CultivateSkipDuringResourceCollection: false,
-    CultivateSklandAccount: '',
-    CultivateSklandUid: '',
-  },
-  Notify: {
-    Enabled: false,
-    ToAddress: '',
-    IfSendMail: false,
-    IfSendSixStar: false,
-    IfSendStatistic: false,
-    IfServerChan: false,
-    ServerChanKey: '',
-    ServerChanChannel: '',
-    ServerChanTag: '',
-  },
-  Data: {
-    LastProxyDate: '2000-01-01T00:00:00+04:00',
-    ProxyTimes: 0,
-    CultivateNotice: '',
-    StaminaPipelineVersion: 1,
-    StaminaPipelineBackup: '{}',
-  },
-})
 
 // 创建扁平化的表单数据，用于表单验证
 const formData = reactive({
@@ -928,81 +844,6 @@ const loadUserData = async (): Promise<boolean> => {
     if (!userError.value) message.error(t('core.edit.couldNotLoadUser2'))
   }
   return false
-}
-
-const appendConfiguredCustomStages = () => {
-  const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
-  stageFields.forEach(field => {
-    const stageValue = (formData.Stage as any)[field]
-    if (stageValue && isCustomStage(stageValue)) {
-      const exists = stageOptions.value.find((option: any) => option.value === stageValue)
-      if (!exists) {
-        stageOptions.value.push({
-          label: stageValue,
-          value: stageValue,
-          isCustom: true,
-        })
-      }
-    }
-  })
-}
-
-const applyServerStageOptions = () => {
-  const server = formData.Info.Server === 'Bilibili' ? 'Official' : formData.Info.Server
-  const stageOverview = stageOverviewByServer.value[server]
-  if (!stageOverview) {
-    stageOptions.value = []
-    return
-  }
-
-  stageOptions.value = stageOverview.Options.map(option => ({
-    ...option,
-    isCustom: false,
-  }))
-  appendConfiguredCustomStages()
-  activityStageError.value =
-    stageOverview.ActivityStatus === 'stale'
-      ? t('core.eventDepotPreview.staleData')
-      : stageOverview.ActivityStatus === 'unavailable'
-        ? t('core.eventDepotPreview.dataUnavailable')
-        : ''
-}
-
-const loadActivityStageOptions = async (refresh = false) => {
-  activityStageLoading.value = true
-  activityStageError.value = ''
-  try {
-    const response = await Service.getOverviewApiInfoGetOverviewPost(refresh)
-    if (response.code !== 200) {
-      activityStageError.value = response.message || t('core.eventDepotPreview.loadFailed')
-      return
-    }
-
-    const overview = response.data as Partial<HomeOverviewResponse> | undefined
-    if (!overview?.StageByServer) {
-      // 不能直接赋值: 字段缺席会把 stageOverviewByServer 的 {} 默认值抹成 undefined,
-      // 之后服务器切换的 watcher 一跑 applyServerStageOptions 就会整页崩
-      logger.error('活动关卡数据缺少 StageByServer 字段，后端版本可能与前端不匹配')
-      activityStageError.value = t('core.eventDepotPreview.invalidData')
-      return
-    }
-
-    for (const [server, stages] of Object.entries(overview.StageByServer)) {
-      const previous = stageOverviewByServer.value[server]
-      // 同区服暂不可用时保留上次成功的选项，避免目标显示被清空。
-      stageOverviewByServer.value[server] =
-        stages.ActivityStatus === 'unavailable' && previous
-          ? { ...previous, ActivityStatus: 'unavailable' }
-          : stages
-    }
-    applyServerStageOptions()
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载活动关卡失败: ${errorMsg}`)
-    activityStageError.value = t('core.eventDepotPreview.loadFailed')
-  } finally {
-    activityStageLoading.value = false
-  }
 }
 
 const loadDepotItemOptions = async () => {

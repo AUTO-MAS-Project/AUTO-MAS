@@ -24,9 +24,9 @@
 上游 MAA 自带完整的检查-下载-安装链，但无人值守的托管会话里由 MAA 自行
 下载会与任务窗口、资源更新互相争抢。本模块按黑箱边界的「驱动」模式接入
 （见 mas-script-specialized-adapter/references/blackbox-boundary.md）：
-脚本开启「更新接管」后，自动代理开始时预检查并按通道下载完整包进 MAS
+脚本开启「更新接管」后，在账号启动前按脚本所选通道下载完整包进 MAS
 共享缓存（下载编排属 MAS 领域，CDK 脚本优先、空则回退 MAS 全局配置，一个
-通道架构只留一份，多个安装目录复用），在原有 update_maa() 调用点前把包
+通道架构只留一份，多个安装目录复用），在启动前 update_maa() 调用点前把包
 复制进安装目录并登记 Update.Name/Update.UpdatePackage——与上游自家下载器
 和拖拽导入写的是同一组字段——安装完全由 MAA 官方更新器执行（Bootstrapper
 启动应用 → MaaUpdater 换血，上游 PendingUpdateApplier.cs / main.cpp），
@@ -40,11 +40,9 @@
 不会误判成功。上游未来若提供程序化更新入口（CLI 参数或配置字段），应改用
 该入口并删除本模块的字段写入路径。
 
-更新通道：MAA 配置的偏好优先（gui.new.json 的 Update.VersionType / 旧
-gui.json 的 Global.VersionUpdate.VersionType），配置未表达时按实际安装
-版本通道兜底。Mirror 酱高通道会回落低通道版本（beta/alpha 通道返回正式
-版），若跟随实际安装通道，beta 用户会在第一次「正式版超过最新 beta」的
-更新后永久漂移进正式版轨道，因此配置表达了偏好就必须跟随；响应版本与
+更新通道：以 MAS 脚本配置 Update.Channel（stable / beta）为准，不随
+账号的原生存档变化。Mirror 酱高通道会回落低通道版本（beta 返回正式
+版），因此不跟随实际安装版本推断通道；响应版本与
 请求通道不一致不拦截（回落是预期行为），「不降级」由版本比较守卫。
 
 合规边界：不读取/解密 MAA 配置内的 MirrorChyanCdk；版本信号只用 MAA.dll 的
@@ -52,7 +50,8 @@ gui.json 的 Global.VersionUpdate.VersionType），配置未表达时按实际�
 语义不过手）；登记只写上游配置字段；安装成败取上游结果面
 （pending-update-*.txt 标志文件、安装目录实际版本），不自建判定。
 
-失败语义：检查、下载或登记失败只写日志，不影响用户任务；主动取消正常
+失败语义：旧缓存预检查失败只写日志；启动前入口会复核登记并在失败时停止
+用户任务。主动取消正常
 传播。每日下载记账、查询地板与失败退避对齐 resource_update（Mirror 酱按
 CDK 计下载次数，alpha 通道每天出新版，不设限额会稳定消耗额度）。
 
@@ -81,6 +80,11 @@ from app.core import Config
 from app.core.update import download_file
 from app.models.config import MaaConfig
 from app.services.update_transport import request_mirror_resource
+from app.task.proxy_helpers import (
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    read_config_base,
+)
 from app.utils import get_logger
 from app.utils import io as _utils_io
 
@@ -91,6 +95,7 @@ from .resource_update import _path_key, _run_write_thread, _sp_id
 from .software_package import (
     cache_zip_matches,
     load_cache_manifest,
+    read_pending_update,
     register_pending_update,
     software_cache_dir,
     store_cache,
@@ -343,6 +348,48 @@ def resolve_update_channel(
     return detect_channel(version_text)
 
 
+async def migrate_maa_update_channel(config: MaaConfig) -> None:
+    """旧脚本首次升级沿用原配置通道；持久化后只服从用户的新选择。"""
+    if config.Update.ChannelMigrationVersion:
+        return
+    install = config.Info.Path
+    root = Path.cwd() / "data" / str(config.uid)
+    directories = []
+    for user_id, user in config.UserData.items():
+        if not user.Info.Status or user.Info.RemainedDay == 0:
+            continue
+        base = read_config_base(user, CONFIG_BASE_SHARED)
+        if base == CONFIG_BASE_NATIVE:
+            if install is not None:
+                directories.append(install / "config")
+        elif base == CONFIG_BASE_SHARED:
+            directories.append(root / "Default" / "ConfigFile")
+        else:
+            directories.append(root / str(user_id) / "ConfigFile")
+    directories.append(root / "Default" / "ConfigFile")
+    if install is not None:
+        directories.append(install / "config")
+    channel = next(
+        (
+            value
+            for directory in directories
+            if (value := read_config_channel(directory))
+        ),
+        None,
+    )
+    if channel is None and install is not None:
+        release = read_installed_release(install)
+        channel = detect_channel(release[0]) if release else None
+    # 界面只开放正式版与公测版；旧 nightly 归入公测选项，安装仍受不降级守卫保护。
+    channel = "beta" if channel in ("beta", "alpha") else "stable"
+    await config.update(
+        type(config).model_validate(
+            {"Update": {"Channel": channel, "ChannelMigrationVersion": 1}}
+        ),
+        check_visibility=False,
+    )
+
+
 # --------------------------------------------------------------------------
 # 状态（每日下载记账 + 退避；损坏按无状态处理，靠重查重下自愈）。
 # 记账原语（load_state/parse_iso/backoff_active/attempted_today）在
@@ -547,7 +594,9 @@ async def _precheck_flow(maa_root: Path, channel: str, arch: str, cdk: str) -> N
             logger.exception("MAA 本体更新: 预检查异常（已忽略，不影响本轮任务）")
 
 
-async def _precheck_inner(maa_root: Path, channel: str, arch: str, cdk: str) -> None:
+async def _precheck_inner(
+    maa_root: Path, channel: str, arch: str, cdk: str, *, force: bool = False
+) -> None:
     query_key = _query_key(arch, channel, cdk)
     latest = _latest_queries.get(query_key)
     async with _state_lock:
@@ -560,7 +609,7 @@ async def _precheck_inner(maa_root: Path, channel: str, arch: str, cdk: str) -> 
         within_floor = last_query is not None and now - last_query < timedelta(
             seconds=_QUERY_FLOOR
         )
-    if within_floor:
+    if within_floor and not force:
         if latest is None:
             logger.info("MAA 本体更新: 距该通道上次查询不足 10 分钟，本轮复用已有包")
             return
@@ -617,9 +666,7 @@ def start_maa_software_update_precheck(
         if release is None:
             return
         version_text, arch = release
-        channel = resolve_update_channel(
-            version_text, [config_dir, maa_root / "config"]
-        )
+        channel = config.Update.Channel
         if channel is None:
             logger.info(
                 f"MAA 本体更新: 无法识别更新通道（版本={version_text!r}，配置未表达），跳过"
@@ -663,9 +710,7 @@ async def prepare_maa_software_update(
         if release is None:
             return
         version_text, arch = release
-        channel = resolve_update_channel(
-            version_text, [config_dir, maa_root / "config"]
-        )
+        channel = config.Update.Channel
         if channel is None:
             return
         key = (_path_key(maa_root), _cache_key(arch, channel))
@@ -747,7 +792,7 @@ async def has_cached_maa_software_update(
     if release is None:
         return False
     version, arch = release
-    channel = resolve_update_channel(version, [config_dir, maa_root / "config"])
+    channel = config.Update.Channel
     if channel is None:
         return False
     lock = _cache_locks.setdefault(_cache_key(arch, channel), asyncio.Lock())
@@ -765,6 +810,45 @@ async def has_cached_maa_software_update(
             and compare_versions(target, current) > 0
             and await asyncio.to_thread(cache_zip_matches, cache_dir, manifest)
         )
+
+
+async def prepare_maa_software_before_run(
+    maa_root: Path, *, config_dir: Path, config: MaaConfig
+) -> str | None:
+    """等待 CDK 完整包准备并登记，失败阻止启动；安装仍由官方更新器完成。"""
+    enabled, cdk = resolve_takeover_credentials(config)
+    if not enabled or cdk is None:
+        return None
+    release = read_installed_release(maa_root)
+    if release is None:
+        raise RuntimeError("无法确认 MAA 安装版本，请先在 MAA 内完成修复")
+    current, arch = release
+    channel = config.Update.Channel
+    if channel is None:
+        raise RuntimeError("无法确认 MAA 更新通道，请检查 MAA 更新设置")
+    # 免费查询先确认是否需要更新，避免每次运行都申请带 CDK 的临时地址。
+    from .fluxdown_update import query_latest_maa_version
+
+    latest_version = await query_latest_maa_version(arch, channel)
+    difference = compare_versions(parse_version(latest_version), parse_version(current))
+    if difference < 0:
+        raise RuntimeError(
+            "当前 MAA 高于所选通道的最新版本，请切换通道或先手动安装该通道版本"
+        )
+    if difference == 0:
+        return current
+    async with _cache_locks.setdefault(_cache_key(arch, channel), asyncio.Lock()):
+        await _precheck_inner(maa_root, channel, arch, cdk, force=True)
+        latest = _latest_queries.get(_query_key(arch, channel, cdk))
+        if latest is None:
+            raise RuntimeError("MAA 更新版本尚未确认，请检查网络后重试")
+        if compare_versions(parse_version(latest.version), parse_version(current)) <= 0:
+            return current
+    await prepare_maa_software_update(maa_root, config_dir=config_dir, config=config)
+    version, package = read_pending_update(maa_root)
+    if version != latest.version or not package or not (maa_root / package).is_file():
+        raise RuntimeError("MAA 更新包未准备完成，请检查 CDK、额度或网络后重试")
+    return latest.version
 
 
 async def cancel_maa_software_update_precheck(maa_root: Path) -> None:

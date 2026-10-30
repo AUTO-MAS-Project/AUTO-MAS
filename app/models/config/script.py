@@ -77,6 +77,9 @@ from .shared import (
     normalize_maaend_plan_key,
 )
 
+DepotQuotaNumb = Annotated[int | None, Field(ge=0, le=9999)]
+"""库存保持与干员养成每条计划的理智药/源石额度；留空即沿用 MAA 原设置。"""
+
 
 class MaaUserConfig(DomainEntry):
     "MAA用户配置"
@@ -349,6 +352,26 @@ class MaaUserConfig(DomainEntry):
             description="森空岛绑定：绑定角色的游戏 uid（非森空岛 userId）",
         )
 
+        DepotMaintainMedicineNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="普通库存保持每条计划使用理智药数量；留空沿用 MAA 配置",
+        )
+
+        DepotMaintainStoneNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="普通库存保持每条计划使用源石数量；留空沿用 MAA 配置",
+        )
+
+        CultivateMedicineNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="干员养成每条计划使用理智药数量；留空沿用 MAA 配置",
+        )
+
+        CultivateStoneNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="干员养成每条计划使用源石数量；留空沿用 MAA 配置",
+        )
+
         CultivateTargets: JsonListString = Field(
             default_factory=lambda: "[]", description="干员养成目标"
         )
@@ -365,6 +388,16 @@ class MaaUserConfig(DomainEntry):
                 '[{"StageType":"all","DropCount":999,"OrundumDropCount":9999}]'
             ),
             description="活动库存保持计划，保存材料关序号及目标库存，运行时解析当前活动",
+        )
+
+        EventDepotMaintainMedicineNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="活动库存保持每条计划使用理智药数量；留空沿用 MAA 配置",
+        )
+
+        EventDepotMaintainStoneNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="活动库存保持每条计划使用源石数量；留空沿用 MAA 配置",
         )
 
         IfActivityFirst: bool = Field(
@@ -611,6 +644,12 @@ class MaaConfig(DomainEntry):
             default_factory=lambda: False,
             description="是否接管 MAA 本体与资源更新（关=完全由 MAA 自行处理）",
         )
+        Channel: Literal["stable", "beta"] = Field(
+            default_factory=lambda: "stable", description="MAA 更新通道：正式版或公测版"
+        )
+        ChannelMigrationVersion: Annotated[int, Field(ge=0, le=1)] = Field(
+            default=1, description="更新通道一次性迁移版本"
+        )
 
     Update: UpdateFields = Field(default_factory=UpdateFields)
     UserData: ConfigCollection[MaaUserConfig] = collection(MaaUserConfig)
@@ -620,6 +659,8 @@ class MaaConfig(DomainEntry):
         data = super().normalize_payload(data)
         if data and "TakeoverMigrationVersion" not in data.get("Update", {}):
             data.setdefault("Update", {})["TakeoverMigrationVersion"] = 0
+        if data and "Channel" not in data.get("Update", {}):
+            data.setdefault("Update", {})["ChannelMigrationVersion"] = 0
         return data
 
     async def migrate_update_takeover(self, *, global_cdk: str) -> bool:
@@ -4693,6 +4734,14 @@ class WhimboxConfig(DomainEntry):
         )
 
     Run: RunFields = Field(default_factory=RunFields)
+
+    class UpdateFields(ConfigGroup):
+        TakeoverEnabled: bool = Field(
+            default_factory=lambda: False,
+            description="运行前检查并安装奇想盒官方后端正式版，更新完成后启动任务；不更新 app",
+        )
+
+    Update: UpdateFields = Field(default_factory=UpdateFields)
     UserData: ConfigCollection[WhimboxUserConfig] = collection(WhimboxUserConfig)
 
 

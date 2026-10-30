@@ -31,6 +31,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol
 
+import httpx
 from packaging import version
 
 from app.core.ws import Publisher, protocol
@@ -62,6 +63,7 @@ class UpdateDownloader(Protocol):
         destination: Path,
         *,
         timeout: float,
+        proxy: httpx.Proxy | None = None,
         progress: DownloadProgress | None = None,
         downloader: str | None = None,
         source: str | None = None,
@@ -603,6 +605,7 @@ class UpdateHandler:
                     download_url,
                     Path.cwd() / "download.temp",
                     timeout=30,
+                    proxy=Config.proxy,
                     progress=report_progress,
                     downloader=download_job.downloader,
                     source=download_job.source,
