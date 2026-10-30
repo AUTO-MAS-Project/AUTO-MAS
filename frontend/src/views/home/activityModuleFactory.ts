@@ -6,6 +6,7 @@ import { createArknightsActivityModule } from './activityModules/arknights'
 import { createBlueArchiveActivityModule } from './activityModules/bluearchive'
 import { createReverse1999ActivityModule } from './activityModules/reverse1999'
 import { createStellaActivityModule } from './activityModules/stellasora'
+import { createAzurlaneActivityModule } from './activityModules/azurlane'
 import { sraActivityModuleBuilder } from './activityModules/sra'
 import type {
   ActivityModuleBuilder,
@@ -38,6 +39,7 @@ export const HOME_ACTIVITY_MODULE_BUILDERS: Record<
   bluearchive: createBlueArchiveActivityModule,
   reverse1999: createReverse1999ActivityModule,
   stellasora: createStellaActivityModule,
+  azurlane: createAzurlaneActivityModule,
 }
 
 export const createHomeActivityModules = (context: ActivityModuleContext) =>

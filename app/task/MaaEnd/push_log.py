@@ -26,7 +26,7 @@ MaaEnd 专项作为 log_box 的一个实例：本模块只提供参数（规则�
 与其他专项 tail 脚本自身的日志文件不同，MaaEnd 的任务级进度行
 （任务开始/任务完成/任务失败）只打印在 MaaEnd.exe 的 stdout，上游不落盘；
 MAS 在 AutoProxy.final_task 已把 stdout 全文按阶段落盘为历史日志
-（``Config.save_maaend_log``），本专项以这些历史日志为采集源
+（用户收尾时写入任务临时目录），本专项以这些临时日志为采集源
 （``start_from_end=False`` 全文采集），不新增任何管道。
 
 规则说明（对应 MaaEnd.exe stdout 实际输出，行首带 ``[时间戳] `` 前缀）：
@@ -74,7 +74,7 @@ import re
 from contextlib import suppress
 from datetime import datetime
 
-from app.log_box.logtype import LogType
+from app.log_box import LogSpec, LogType
 
 # 推送规则：(匹配正则, 提取表达式)；均为普通类型，节点级失败由文本「❌ 失败:」
 # 体现（始终展示），推送时机由全局 SendTaskResultTime 控制。
@@ -259,3 +259,10 @@ def maaend_resolve(
         )
         for node in order
     ]
+
+
+MAAEND_LOG_SPEC = LogSpec(
+    rules=tuple(MAAEND_PUSH_RULES),
+    postprocessor=maaend_resolve,
+    error_message="MaaEnd 节点采集推送失败",
+)

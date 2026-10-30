@@ -2,7 +2,7 @@
 
 进这个目录之前先读 `app/task/MaaFW/AGENTS.md`：MSS（MaaStellaSora / 星塔旅人）的运行、更新、内嵌副本、
 通知、失败截图、周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录只有两个
-文件：`flavor.py`（`FLAVOR` 对象，满足 `app/task/MaaFW/tools/embedded/flavor.py` 的 `MaaFWFlavor`
+业务文件：`flavor.py`（`FLAVOR` 对象，满足 `app/task/MaaFW/tools/embedded/flavor.py` 的 `MaaFWFlavor`
 协议）与 `api_service.py`（用户页要的那点只读信息）。`flavor.py` 做的事穷举如下，多一件都没有：
 
 1. `matches_project(interface)`：`mirrorchyan_rid == SSAH` / `github` 仓库名命中 /
@@ -22,8 +22,12 @@
      「灾变防线」算当期，队列里没有就往爬塔之前插一条 entry `灾变防线_入口`，结果记进该用户的
      `Data.PersonalMssDefense`（`armed` / `done` / 失败日）。同一期打过了就不再插；记账**只在确认跑过
      一轮之后**才结算，失败按天累计、攒够就放弃本期，口径见 `_arrange_defense` 的 docstring。
-   按 entry 找不到就写一行用户日志跳过。**不**碰重试 / 周期 / 超时 / 更新 / 游戏启停。
+   按 entry 找不到就写一行用户日志跳过。**不重写**重试 / 周期 / 超时 / 更新 / 游戏启停。
+3. `skip_on_retry_entries`：按公开 task entry 声明已确认的日常与挑战任务，复用 MaaFW 的
+   「前面的尝试已完成」过滤。本次运行成功过的任务不再补跑，失败、超时和未执行的任务保留；
+   登录不在声明内，每次尝试仍执行。同名重复任务沿用引擎的保守重跑策略，不额外推断完成的是哪份。
 
+`api.py` 承载 MSS 自己的端点模型和只读路由，由公共 API 入口组装，不放入 MaaFW 引擎。
 `api_service.py` 只有一个只读函数 `defense_status()`：把 `Data.PersonalMssDefense` 摊开给用户页看。
 「这一期」与 `flavor.py` 里那份**同一处**（`permanent_activity_window("灾变防线")`），前端不复刻一套；
 个人版总开关也跟着它一起返回，免得用户页为一个布尔去读整份全局配置。
@@ -32,7 +36,7 @@
 `USER_CONFIG_CLASS`、`FLAVOR`；`MSSUserConfig(MaaFWUserConfig)` 多一项 `Info.PlanMode`（计划表消费方
 `mss`，`PLAN_BOOK` 的 `MSSPlanConfig`）与一项 `Data.PersonalMssDefense`（上面那份记账）。全局的
 `Function.IfPersonalMss` 是个人版总开关——设置页那个「并非神秘入口」与用户页那一块共用它。
-`_MANAGER_BOOK` 里 `MSSConfig` 单独登记到 `MaaFWEmbeddedManager`。
+`app/task/MaaFW/registration.py` 的家族声明显式把 `MSSConfig` 登记到 `MaaFWEmbeddedManager`，宿主生成的运行索引按类型精确匹配。
 
 前端没有 MSS 专用脚本页 / 用户页：用 MaaFW 的两个页面，按脚本实际类型取特调注册表里 MSS 的描述对象
 （`frontend/src/views/EditView/MaaFWFlavor/mss/index.ts`，写法见 `frontend/src/composables/useMaaFWFlavor.ts`

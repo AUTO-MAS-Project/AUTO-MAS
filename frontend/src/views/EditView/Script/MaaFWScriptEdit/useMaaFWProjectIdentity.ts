@@ -77,9 +77,9 @@ export function useMaaFWProjectIdentity({
   // 标题——特调那句是「编辑…」，放在引导里与所处步骤不符
   const pageTitle = computed(() => {
     const name = projectDisplayName.value
-    if (isWizard.value) return t('edit.maafwPageTitleSetup', { name })
+    if (isWizard.value) return t('core.edit.maafwPageTitleSetup', { name })
     const titleKey = flavor.value.scriptPage.text.titleKey
-    return titleKey ? t(titleKey) : t('edit.maafwPageTitleConfig', { name })
+    return titleKey ? t(titleKey) : t('core.edit.maafwPageTitleConfig', { name })
   })
 
   return { previewProjectTitle, typeTagLabel, pageTitle, syncProjectName }

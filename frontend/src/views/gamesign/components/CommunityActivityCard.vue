@@ -6,6 +6,7 @@ import {
   ApiOutlined,
   AppstoreOutlined,
   CompassOutlined,
+  HolderOutlined,
   RocketOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons-vue'
@@ -15,7 +16,6 @@ import genshinNoteImage from '@/assets/community-notes/genshin.jpg'
 import starRailNoteImage from '@/assets/community-notes/star-rail.jpg'
 import zenlessNoteImage from '@/assets/community-notes/zenless.jpg'
 import type { ActivitySnapshot } from '../useCommunityActivityApi'
-import { isCommunityGame, type CommunityGame } from '../communityGames'
 import { presentActivity } from '../communityActivityPresentation'
 import CommunityActivityMetric from './CommunityActivityMetric.vue'
 
@@ -38,14 +38,13 @@ const backgroundAttempt = ref(0)
 const NOTE_BACKGROUND_BASE = 'https://doc.auto-mas.top/community-notes'
 
 // 这些中文值是后端稳定游戏枚举，只用于映射，不参与界面翻译。
-// 类型绑定在 communityGames 的清单上：新增游戏漏了视觉会直接是类型错误。
-const GAME_VISUALS: Record<CommunityGame, GameVisual> = {
+const GAME_VISUALS: Record<string, GameVisual> = {
   明日方舟: {
     accent: 'var(--ant-color-primary)',
     backgroundImage: `${NOTE_BACKGROUND_BASE}/arknights-background.webp?v=6a23195b201d`,
     icon: AimOutlined,
     image: arknightsNoteImage,
-    labelKey: 'gamesign.activity.game.arknights',
+    labelKey: 'core.gamesign.activity.game.arknights',
     uiClass: 'activity-card--arknights',
   },
   终末地: {
@@ -53,7 +52,7 @@ const GAME_VISUALS: Record<CommunityGame, GameVisual> = {
     backgroundImage: `${NOTE_BACKGROUND_BASE}/endfield-background.webp?v=9d3a6fee469e`,
     icon: ApiOutlined,
     image: endfieldNoteImage,
-    labelKey: 'gamesign.activity.game.endfield',
+    labelKey: 'core.gamesign.activity.game.endfield',
     uiClass: 'activity-card--endfield',
   },
   原神: {
@@ -61,7 +60,7 @@ const GAME_VISUALS: Record<CommunityGame, GameVisual> = {
     backgroundImage: `${NOTE_BACKGROUND_BASE}/genshin-background.webp?v=f06788a6cb81`,
     icon: CompassOutlined,
     image: genshinNoteImage,
-    labelKey: 'gamesign.activity.game.genshin',
+    labelKey: 'core.gamesign.activity.game.genshin',
     uiClass: 'activity-card--genshin',
   },
   星穹铁道: {
@@ -69,7 +68,7 @@ const GAME_VISUALS: Record<CommunityGame, GameVisual> = {
     backgroundImage: `${NOTE_BACKGROUND_BASE}/star-rail-background.webp?v=1048d29ea88f`,
     icon: RocketOutlined,
     image: starRailNoteImage,
-    labelKey: 'gamesign.activity.game.starrail',
+    labelKey: 'core.gamesign.activity.game.starrail',
     uiClass: 'activity-card--star-rail',
   },
   绝区零: {
@@ -77,14 +76,12 @@ const GAME_VISUALS: Record<CommunityGame, GameVisual> = {
     backgroundImage: `${NOTE_BACKGROUND_BASE}/zenless-background.webp?v=e4f8798de02c`,
     icon: ThunderboltOutlined,
     image: zenlessNoteImage,
-    labelKey: 'gamesign.activity.game.zenless',
+    labelKey: 'core.gamesign.activity.game.zenless',
     uiClass: 'activity-card--zenless',
   },
 }
 
-const visual = computed(() =>
-  isCommunityGame(props.snapshot.game) ? GAME_VISUALS[props.snapshot.game] : undefined
-)
+const visual = computed(() => GAME_VISUALS[props.snapshot.game])
 const presentation = computed(() => presentActivity(props.snapshot))
 const cardStyle = computed(
   () =>
@@ -102,7 +99,7 @@ const statusMeta = computed(() => {
     failed: 'error',
   }
   return {
-    label: t(`gamesign.activity.status.${props.snapshot.status}`),
+    label: t(`core.gamesign.activity.status.${props.snapshot.status}`),
     color: colors[props.snapshot.status],
   }
 })
@@ -112,8 +109,8 @@ const alertType = computed(() => {
   return 'info'
 })
 const platform = computed(() => {
-  if (props.snapshot.platform === '森空岛') return t('gamesign.activity.platform.skland')
-  if (props.snapshot.platform === '米游社') return t('gamesign.activity.platform.miyoushe')
+  if (props.snapshot.platform === '森空岛') return t('core.gamesign.activity.platform.skland')
+  if (props.snapshot.platform === '米游社') return t('core.gamesign.activity.platform.miyoushe')
   return props.snapshot.platform
 })
 const updatedAt = computed(() => {
@@ -151,6 +148,12 @@ watch(
       @error="backgroundAttempt++"
     />
     <header class="activity-card-header">
+      <span
+        class="activity-drag-handle"
+        :title="t('core.gamesign.activity.drag')"
+        :aria-label="t('core.gamesign.activity.drag')"
+        ><HolderOutlined
+      /></span>
       <span class="activity-game-mark">
         <img v-if="visual?.image" class="activity-game-image" :src="visual.image" alt="" />
         <component v-else :is="visual?.icon ?? AppstoreOutlined" aria-hidden="true" />
@@ -211,9 +214,9 @@ watch(
     />
     <footer class="activity-card-footer">
       <span v-if="snapshot.roleUid">{{
-        t('gamesign.activity.roleUid', { uid: snapshot.roleUid })
+        t('core.gamesign.activity.roleUid', { uid: snapshot.roleUid })
       }}</span>
-      <span v-else>{{ t('gamesign.activity.noRole') }}</span>
+      <span v-else>{{ t('core.gamesign.activity.noRole') }}</span>
       <span v-if="updatedAt">{{ updatedAt }}</span>
     </footer>
   </a-card>
@@ -284,6 +287,20 @@ watch(
   justify-content: center;
   margin-inline-end: 0;
   text-align: center;
+}
+
+.activity-drag-handle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--ant-color-text-tertiary);
+  cursor: grab;
+}
+
+.activity-drag-handle:active {
+  cursor: grabbing;
 }
 
 .activity-game-mark {

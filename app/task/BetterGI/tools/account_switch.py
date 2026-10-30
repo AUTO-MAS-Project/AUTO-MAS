@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any
 
 from app.utils import get_logger, resource_path
-from app.utils.io import read_file, write_file
+from app.utils import io as _utils_io
 
 from .one_dragon import GLOBAL_CONFIG_LOCK
 
@@ -178,11 +178,11 @@ def _ensure_script_subscription(root_path: Path) -> Path:
     保留用户已订阅的其他脚本；由 BetterGI ScriptRepoUpdater 据此拉取/更新。
     """
     sub_path = root_path / _SUBSCRIPTION_REL_DIR / f"{_REPO_FOLDER_NAME}.json"
-    data = read_file(sub_path)
+    data = _utils_io.read_file(sub_path)
     subscribed = [str(x) for x in data] if isinstance(data, list) else []
     if _SCRIPT_REPO_PATH not in subscribed:
         subscribed.append(_SCRIPT_REPO_PATH)
-    write_file(sub_path, subscribed)
+    _utils_io.write_file(sub_path, subscribed)
     logger.info(f"已订阅切换账号脚本: {_SCRIPT_REPO_PATH} -> {sub_path}")
     return sub_path
 
@@ -203,7 +203,7 @@ def _ensure_auto_update_on_cli(root_path: Path, sync_update: bool = False) -> Pa
     """
     config_path = root_path / _BGI_CONFIG_REL_PATH
     with GLOBAL_CONFIG_LOCK:
-        config = read_file(config_path)
+        config = _utils_io.read_file(config_path)
         if not isinstance(config, dict):
             config = {}
         # 统一写到 camelCase 键（BetterGI JsonOptions 以 CamelCase 读写，PascalCase 键读取时会被忽略）
@@ -216,7 +216,7 @@ def _ensure_auto_update_on_cli(root_path: Path, sync_update: bool = False) -> Pa
         script_cfg["selectedChannelName"] = "CNB"
         config.pop("ScriptConfig", None)
         config["scriptConfig"] = script_cfg
-        write_file(config_path, config)
+        _utils_io.write_file(config_path, config)
     logger.info(
         "已配置 BetterGI 脚本仓库自动更新(运行时预更新=已冻结)，渠道 CNB: "
         f"{config_path}"
@@ -320,7 +320,7 @@ def write_switch_group(
         写入的配置组 JSON 文件路径。
     """
     template_path = _RES_TEMPLATE_DIR / f"{GROUP_NAME}.json"
-    template = read_file(template_path)
+    template = _utils_io.read_file(template_path)
     if not isinstance(template, dict) or not isinstance(template.get("projects"), list):
         raise RuntimeError(f"切换账号配置组模板无效: {template_path}")
 
@@ -333,7 +333,7 @@ def write_switch_group(
     )
 
     out_path = root_path / _SCRIPT_GROUP_REL_DIR / f"{GROUP_NAME}.json"
-    write_file(out_path, template)
+    _utils_io.write_file(out_path, template)
     logger.info(f"已生成切换账号配置组: {out_path} (账号 {mask_account(account)})")
     return out_path
 
@@ -346,7 +346,7 @@ def scrub_switch_group(root_path: Path) -> None:
     ``username`` 还原为打码（下拉列表模式本已是打码，OCR 模式的完整账号被抹掉）。
     """
     out_path = root_path / _SCRIPT_GROUP_REL_DIR / f"{GROUP_NAME}.json"
-    data = read_file(out_path)
+    data = _utils_io.read_file(out_path)
     if not isinstance(data, dict):
         return
     for proj in data.get("projects") or []:
@@ -357,5 +357,5 @@ def scrub_switch_group(root_path: Path) -> None:
             continue
         settings["password"] = ""
         settings["username"] = mask_account(str(settings.get("username") or ""))
-    write_file(out_path, data)
+    _utils_io.write_file(out_path, data)
     logger.info(f"已脱敏切换账号配置组: {out_path}")

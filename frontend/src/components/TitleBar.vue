@@ -11,7 +11,7 @@
           {{ version }}
           <span v-if="isBootstrapping" class="startup-status">
             <LoadingOutlined />
-            {{ t('comp.backendStarting') }}
+            {{ t('bootstrap.comp.backendStarting') }}
           </span>
           <span v-if="downloadHint" class="update-hint clickable" @click="openDownloadModal">
             {{ downloadHint }}
@@ -21,14 +21,14 @@
             class="update-hint clickable"
             @click="handleAppUpdateClick"
           >
-            检测到更新 {{ updateInfo.latest_version }} 请尽快更新
+            {{ t('bootstrap.comp.updateAvailableHint', { version: updateInfo.latest_version }) }}
           </span>
           <span
             v-if="backendUpdateInfo?.if_need_update && isRuntimeDevelopment"
             class="update-hint disabled"
-            :title="t('comp.backendUpdateDevUnsupported')"
+            :title="t('bootstrap.comp.backendUpdateDevUnsupported')"
           >
-            {{ t('comp.backendUpdateDevUnsupported') }}
+            {{ t('bootstrap.comp.backendUpdateDevUnsupported') }}
           </span>
           <span
             v-else-if="
@@ -41,8 +41,8 @@
             {{
               t(
                 runtimeBackendUpdateAvailable
-                  ? 'comp.backendUpdateReady'
-                  : 'comp.backendUpdateAvailableClick'
+                  ? 'bootstrap.comp.backendUpdateReady'
+                  : 'bootstrap.comp.backendUpdateAvailableClick'
               )
             }}
           </span>
@@ -53,39 +53,12 @@
     <!-- 中间：可拖拽区域 -->
     <div class="title-bar-center drag-region"></div>
 
-    <!-- 右侧：窗口控制按钮 -->
-    <div v-if="!isMacOS" class="title-bar-right">
-      <div class="window-controls">
-        <button
-          class="control-button minimize-button"
-          :title="t('comp.minimize')"
-          @click="minimizeWindow"
-        >
-          <MinusOutlined />
-        </button>
-        <button
-          class="control-button maximize-button"
-          :title="isMaximized ? t('comp.restoreWindow') : t('comp.maximizeWindow')"
-          @click="toggleMaximize"
-        >
-          <SwitcherOutlined v-if="isMaximized" />
-          <BorderOutlined v-else />
-        </button>
-        <button
-          v-if="!hideCloseButton"
-          class="control-button close-button"
-          :title="t('comp.close')"
-          @click="closeWindow"
-        >
-          <CloseOutlined />
-        </button>
-      </div>
-    </div>
+    <WindowControls :show-controls="!isMacOS" />
 
     <!-- Runtime 链路的后端更新进度与失败处置 -->
     <a-modal
       v-model:open="updateModalVisible"
-      :title="t('comp.backendUpdateTitle', { version: updateTargetVersion })"
+      :title="t('bootstrap.comp.backendUpdateTitle', { version: updateTargetVersion })"
       :width="620"
       :footer="null"
       :mask-closable="false"
@@ -103,7 +76,7 @@
           </p>
           <div class="backend-update-actions">
             <a-button danger :loading="updateCancelling" @click="cancelUpdate">
-              {{ t('comp.backendUpdateCancelAction') }}
+              {{ t('bootstrap.comp.backendUpdateCancelAction') }}
             </a-button>
           </div>
         </template>
@@ -116,14 +89,14 @@
             show-icon
           />
           <p v-if="updateOutcome.code" class="backend-update-meta">
-            {{ t('comp.backendUpdateErrorCode') }}: {{ updateOutcome.code }}
+            {{ t('bootstrap.comp.backendUpdateErrorCode') }}: {{ updateOutcome.code }}
           </p>
           <p v-if="updateOutcome.logPath" class="backend-update-meta">
-            {{ t('comp.backendUpdateLogPath') }}: {{ updateOutcome.logPath }}
+            {{ t('bootstrap.comp.backendUpdateLogPath') }}: {{ updateOutcome.logPath }}
           </p>
           <pre v-if="updateOutcome.logs" class="backend-update-logs">{{ updateOutcome.logs }}</pre>
           <p v-if="updateActions.showContactSupport" class="backend-update-meta">
-            {{ t('comp.backendUpdateContactSupport') }}
+            {{ t('bootstrap.comp.backendUpdateContactSupport') }}
           </p>
 
           <div class="backend-update-actions">
@@ -141,9 +114,9 @@
               :loading="updateRestartingBackend"
               @click="restartBackendAfterUpdate"
             >
-              {{ t('comp.backendUpdateRestartBackend') }}
+              {{ t('bootstrap.comp.backendUpdateRestartBackend') }}
             </a-button>
-            <a-button @click="closeUpdateModal">{{ t('comp.close') }}</a-button>
+            <a-button @click="closeUpdateModal">{{ t('bootstrap.comp.close') }}</a-button>
           </div>
         </template>
       </div>
@@ -168,22 +141,16 @@ import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import { useBackendRuntimeUpdate } from '@/composables/useBackendRuntimeUpdate'
-import { useUiPreferences } from '@/composables/useUiPreferences'
 import {
   confirmCloseIfRunningTasks,
   hasRunningTasks,
 } from '@/composables/useQueueCloseConfirmation'
 import { resolveBackendUpdateActions } from '@/utils/backendUpdateActions'
-import {
-  BorderOutlined,
-  CloseOutlined,
-  LoadingOutlined,
-  MinusOutlined,
-  SwitcherOutlined,
-} from '@ant-design/icons-vue'
+import { LoadingOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
-import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import WindowControls from '@/components/WindowControls.vue'
 
 import type { RuntimeUpdateRetryAction } from '@/types/electron'
 
@@ -194,9 +161,7 @@ const isMacOS = window.electronAPI.isMacOS
 const router = useRouter()
 const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
-const { hideCloseButton, syncUiPreferences } = useUiPreferences()
 let removeTrayActionListener: (() => void) | undefined
-let removeWindowMaximizedListener: (() => void) | undefined
 
 const {
   status: downloadStatus,
@@ -235,13 +200,13 @@ const updateAlertType = computed(() => {
 const updateAlertMessage = computed(() => {
   const result = updateOutcome.value
   if (!result) return ''
-  if (result.success) return t('comp.backendUpdateSucceeded')
-  if (result.cancelled) return t('comp.backendUpdateCancelled')
-  if (result.unsupported) return t('comp.backendUpdateUnsupportedMode')
+  if (result.success) return t('bootstrap.comp.backendUpdateSucceeded')
+  if (result.cancelled) return t('bootstrap.comp.backendUpdateCancelled')
+  if (result.unsupported) return t('bootstrap.comp.backendUpdateUnsupportedMode')
 
-  if (result.phase === 'shutdown') return t('comp.backendUpdateFailedShutdown')
-  if (result.phase === 'restart') return t('comp.backendUpdateFailedRestart')
-  return t('comp.backendUpdateFailedBootstrap')
+  if (result.phase === 'shutdown') return t('bootstrap.comp.backendUpdateFailedShutdown')
+  if (result.phase === 'restart') return t('bootstrap.comp.backendUpdateFailedRestart')
+  return t('bootstrap.comp.backendUpdateFailedBootstrap')
 })
 
 // 不可重试（retryable=false / INTERNAL_ERROR / contact-support）时一个重试按钮都不给。
@@ -249,11 +214,11 @@ const updateActions = computed(() => resolveBackendUpdateActions(updateOutcome.v
 
 // 常量数组要放进 computed，否则切换语言后按钮文案不跟着变。
 const retryActionLabels = computed<Record<RuntimeUpdateRetryAction, string>>(() => ({
-  bootstrap: t('comp.backendUpdateRetryBootstrap'),
-  'workspace-sync': t('comp.backendUpdateRetryWorkspaceSync'),
-  'dependencies-sync': t('comp.backendUpdateRetryDependenciesSync'),
-  'dependencies-rebuild': t('comp.backendUpdateRetryDependenciesRebuild'),
-  repair: t('comp.backendUpdateRetryRepair'),
+  bootstrap: t('bootstrap.comp.backendUpdateRetryBootstrap'),
+  'workspace-sync': t('bootstrap.comp.backendUpdateRetryWorkspaceSync'),
+  'dependencies-sync': t('bootstrap.comp.backendUpdateRetryDependenciesSync'),
+  'dependencies-rebuild': t('bootstrap.comp.backendUpdateRetryDependenciesRebuild'),
+  repair: t('bootstrap.comp.backendUpdateRetryRepair'),
 }))
 
 const retryActionLabel = (action: RuntimeUpdateRetryAction): string =>
@@ -272,7 +237,6 @@ const downloadHint = computed(() => {
 })
 
 const { isDark } = useTheme()
-const isMaximized = ref(false)
 
 // 使用 import.meta.env 或直接定义版本号，确保打包后可用
 const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
@@ -295,12 +259,12 @@ const resolveRuntimeUpdateVersion = (): string => updateInfo.value?.latest_versi
 // 处理后端更新点击
 const handleBackendUpdateClick = () => {
   Modal.confirm({
-    title: t('comp.restartBackendUpdate'),
+    title: t('bootstrap.comp.restartBackendUpdate'),
     content:
       runtimeBackendUpdateAvailable.value && runtimeBackendUpdateCommitMessage.value
         ? h('div', [
-            h('p', t('comp.backendUpdateReadyConfirm')),
-            h('strong', t('comp.backendUpdateLatestCommit')),
+            h('p', t('bootstrap.comp.backendUpdateReadyConfirm')),
+            h('strong', t('bootstrap.comp.backendUpdateLatestCommit')),
             h(
               'div',
               {
@@ -316,11 +280,11 @@ const handleBackendUpdateClick = () => {
           ])
         : t(
             runtimeBackendUpdateAvailable.value
-              ? 'comp.backendUpdateReadyConfirm'
-              : 'comp.backendAboutUpdateWhich'
+              ? 'bootstrap.comp.backendUpdateReadyConfirm'
+              : 'bootstrap.comp.backendAboutUpdateWhich'
           ),
-    okText: t('comp.confirm'),
-    cancelText: t('comp.cancel'),
+    okText: t('bootstrap.comp.confirm'),
+    cancelText: t('bootstrap.comp.cancel'),
     centered: true,
     onOk: async () => {
       // 同一 release 分支有新 Commit 时，重启应用让启动 bootstrap 在停机窗口完成同步。
@@ -376,24 +340,6 @@ const handleBackendUpdateClick = () => {
   })
 }
 
-const minimizeWindow = async () => {
-  try {
-    await window.electronAPI?.windowMinimize()
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`最小化窗口失败: ${errorMsg}`)
-  }
-}
-
-const toggleMaximize = async () => {
-  try {
-    await window.electronAPI?.windowMaximize()
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`切换最大化状态失败: ${errorMsg}`)
-  }
-}
-
 // 先由主进程隐藏窗口，再让生命周期协调器在后台执行关闭流程
 const doCloseWindow = async () => {
   try {
@@ -405,11 +351,7 @@ const doCloseWindow = async () => {
   }
 }
 
-const closeWindow = async () => {
-  if (await confirmCloseIfRunningTasks()) await doCloseWindow()
-}
-
-// 托盘触发退出：与窗口关闭按钮走同一套确认流程
+// 托盘触发退出：按任务运行状态确认。
 const handleTrayQuit = () => {
   if (hasRunningTasks()) {
     // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
@@ -420,69 +362,28 @@ const handleTrayQuit = () => {
   })
 }
 
-// 托盘触发重启：统一确认窗风格（与关闭确认一致）
-const handleTrayRestart = () => {
-  // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
-  window.electronAPI?.windowFocus?.()
-  Modal.confirm({
-    title: t('comp.confirmRestart'),
-    content: t('comp.restartingAutoMasStops'),
-    okText: t('comp.confirmRestart'),
-    cancelText: t('comp.cancel'),
-    okType: 'danger',
-    centered: true,
-    onOk: async () => {
-      await window.electronAPI?.appRestart()
-    },
-  })
-}
-
-// 退出和重启需要标题栏的确认流程；任务启动由应用作用域接收。
+// 退出需要标题栏的确认流程；任务启动由应用作用域接收。
 const handleTrayActionRequest = (request: {
-  action: 'quit' | 'restart' | 'startTask'
+  action: 'quit' | 'startTask'
   taskId?: string
   label?: string
 }) => {
-  if (request.action === 'restart') {
-    handleTrayRestart()
-  } else if (request.action === 'quit') {
+  if (request.action === 'quit') {
     handleTrayQuit()
   }
 }
 
 onMounted(async () => {
-  // 监听托盘退出和重启请求
+  // 监听托盘退出请求
   removeTrayActionListener = window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
-
-  // 双击标题栏或系统快捷键也会改变窗口状态。
-  removeWindowMaximizedListener = window.electronAPI?.onWindowMaximizedChange(maximized => {
-    isMaximized.value = maximized
-  })
-
-  try {
-    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`获取窗口状态失败: ${errorMsg}`)
-  }
 
   // 后端更新入口按启动链路分流，模式一个生命周期只查一次
   await ensureLaunchMode()
-
-  try {
-    const config = await window.electronAPI?.loadConfig()
-    syncUiPreferences(config?.UI)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.warn(`获取界面设置失败: ${errorMsg}`)
-  }
 })
 
 onBeforeUnmount(() => {
   removeTrayActionListener?.()
   removeTrayActionListener = undefined
-  removeWindowMaximizedListener?.()
-  removeWindowMaximizedListener = undefined
 })
 </script>
 
@@ -599,59 +500,6 @@ onBeforeUnmount(() => {
 
 .drag-region {
   -webkit-app-region: drag;
-}
-
-.title-bar-right {
-  display: flex;
-  align-items: center;
-  height: 100%;
-}
-
-.window-controls {
-  display: flex;
-  height: 100%;
-}
-
-.control-button {
-  width: 46px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
-  -webkit-app-region: no-drag;
-}
-
-.title-bar-dark .control-button {
-  color: var(--ant-color-text-secondary);
-}
-
-.control-button:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.title-bar-dark .control-button:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.close-button:hover {
-  background: #e81123 !important;
-  color: #fff !important;
-}
-
-.minimize-button:hover,
-.maximize-button:hover {
-  background: rgba(0, 0, 0, 0.08);
-}
-
-.title-bar-dark .minimize-button:hover,
-.title-bar-dark .maximize-button:hover {
-  background: rgba(255, 255, 255, 0.15);
 }
 
 .update-hint {

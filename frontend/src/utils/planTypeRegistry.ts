@@ -17,6 +17,8 @@ export const PLAN_CONFIG_TYPES = {
 } as const
 
 export interface PlanChangeOptions {
+  /** 批量编辑由外层汇总一次，内部逐日写入不重复计数。 */
+  analyticsBatch?: boolean
   refresh?: boolean
   forceCustomStages?: boolean
   /** 弹出编辑保留草稿时，展示服务端提供的保存失败原因。 */
@@ -48,7 +50,7 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
   [PLAN_CONFIG_TYPES.MAA]: {
     configType: PLAN_CONFIG_TYPES.MAA,
     createType: PlanCreateIn.type.MAA_PLAN,
-    displayNameKey: 'plan.type.maa',
+    displayNameKey: 'core.plan.type.maa',
     // defaultName 会被写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
     defaultName: '新 MAA 计划表',
     selectorTag: 'MAA',
@@ -59,7 +61,7 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
   [PLAN_CONFIG_TYPES.MAA_END]: {
     configType: PLAN_CONFIG_TYPES.MAA_END,
     createType: PlanCreateIn.type.MAA_END_PLAN,
-    displayNameKey: 'plan.type.maaEnd',
+    displayNameKey: 'core.plan.type.maaEnd',
     defaultName: '新 MaaEnd 计划表',
     selectorTag: 'MaaEnd',
     reloadAfterSave: false,
@@ -69,7 +71,7 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
   [PLAN_CONFIG_TYPES.BAAH]: {
     configType: PLAN_CONFIG_TYPES.BAAH,
     createType: PlanCreateIn.type.BAAHPLAN,
-    displayNameKey: 'plan.type.baah',
+    displayNameKey: 'core.plan.type.baah',
     // defaultName 会被写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
     defaultName: '新 BAAH 计划表',
     selectorTag: 'BAAH',
@@ -81,7 +83,7 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
   [PLAN_CONFIG_TYPES.MSS]: {
     configType: PLAN_CONFIG_TYPES.MSS,
     createType: PlanCreateIn.type.MSSPLAN,
-    displayNameKey: 'plan.type.mss',
+    displayNameKey: 'core.plan.type.mss',
     // 同上：defaultName 会写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
     defaultName: '新 MSS 计划表',
     selectorTag: 'MSS',

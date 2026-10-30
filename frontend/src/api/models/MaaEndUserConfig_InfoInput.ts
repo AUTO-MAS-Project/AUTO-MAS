@@ -44,6 +44,10 @@ export type MaaEndUserConfig_InfoInput = {
      */
     Resource?: (string | null);
     /**
+     * 理智任务策略：指定任务、原生策略或库存目标
+     */
+    SanityStrategy?: ('MAS' | 'Native' | 'Inventory' | null);
+    /**
      * 理智任务配置模式
      */
     SanityMode?: (string | null);

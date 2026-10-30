@@ -41,8 +41,7 @@ import psutil
 
 from app.services import System
 from app.task.Whimbox.tools.upstream import APP_EXE_NAME, REL_PYTHON_EXE
-from app.utils import ProcessInfo, ProcessManager, get_logger
-from app.utils.platform import IS_ELEVATED
+from app.utils import IS_ELEVATED, ProcessInfo, ProcessManager, get_logger
 
 logger = get_logger("奇想盒 进程启动")
 

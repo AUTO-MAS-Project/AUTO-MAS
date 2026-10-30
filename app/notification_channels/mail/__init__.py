@@ -29,6 +29,7 @@ from app.models.notification_channel import (
     SCOPE_USER,
     ChannelConfig,
     ChannelTarget,
+    MailDependencies,
     NotifyChannel,
     NotifyChannelField,
 )
@@ -39,10 +40,10 @@ from .transport import Sender
 _MAIL_FIELD_TO = NotifyChannelField(
     group="Notify",
     name="ToAddress",
-    label_key="setting.notify.to",
+    label_key="core.setting.notify.to",
     control="text",
-    placeholder_key="setting.notify.toPlaceholder",
-    tip_key="setting.notify.toTip",
+    placeholder_key="core.setting.notify.toPlaceholder",
+    tip_key="core.setting.notify.toTip",
 )
 
 _MAIL_FIELDS: Mapping[str, tuple[NotifyChannelField, ...]] = {
@@ -50,26 +51,26 @@ _MAIL_FIELDS: Mapping[str, tuple[NotifyChannelField, ...]] = {
         NotifyChannelField(
             group="Notify",
             name="SMTPServerAddress",
-            label_key="setting.notify.smtp",
+            label_key="core.setting.notify.smtp",
             control="text",
-            placeholder_key="setting.notify.smtpPlaceholder",
-            tip_key="setting.notify.smtpTip",
+            placeholder_key="core.setting.notify.smtpPlaceholder",
+            tip_key="core.setting.notify.smtpTip",
         ),
         NotifyChannelField(
             group="Notify",
             name="FromAddress",
-            label_key="setting.notify.from",
+            label_key="core.setting.notify.from",
             control="text",
-            placeholder_key="setting.notify.fromPlaceholder",
-            tip_key="setting.notify.fromTip",
+            placeholder_key="core.setting.notify.fromPlaceholder",
+            tip_key="core.setting.notify.fromTip",
         ),
         NotifyChannelField(
             group="Notify",
             name="AuthorizationCode",
-            label_key="setting.notify.authCode",
+            label_key="core.setting.notify.authCode",
             control="password",
-            placeholder_key="setting.notify.authCodePlaceholder",
-            tip_key="setting.notify.authCodeTip",
+            placeholder_key="core.setting.notify.authCodePlaceholder",
+            tip_key="core.setting.notify.authCodeTip",
         ),
         _MAIL_FIELD_TO,
     ),
@@ -113,8 +114,8 @@ async def _mail_send(
 def register() -> NotifyChannel:
     return NotifyChannel(
         key="mail",
-        name_key="setting.notify.mailSection",
-        desc_key="setting.notify.mailEnableTip",
+        name_key="core.setting.notify.mailSection",
+        desc_key="core.setting.notify.mailEnableTip",
         icon="mail",
         group="builtin",
         order=20,
@@ -123,10 +124,17 @@ def register() -> NotifyChannel:
         kind="fields",
         custom_block=None,
         enable_field=("Notify", "IfSendMail"),
-        summary_key="setting.notify.summary.mail",
+        summary_key="core.setting.notify.summary.mail",
         summary_fields=("SMTPServerAddress", "ToAddress"),
         fields=_MAIL_FIELDS,
         target_builder=_mail_targets,
         send_adapter=_mail_send,
-        sender_factory=Sender,
+        sender_factory=lambda deps: Sender(
+            MailDependencies(
+                config=deps.transport or deps.config,
+                smtp_factory=deps.smtp_factory,
+                logger=deps.logger,
+            )
+        ),
+        transport_fields=("SMTPServerAddress", "FromAddress", "AuthorizationCode"),
     )

@@ -33,7 +33,7 @@ from shutil import copy2
 from typing import Any
 
 from app.utils import get_logger, resource_path
-from app.utils.io import read_file, write_file
+from app.utils import io as _utils_io
 
 from .one_dragon import _mas_user_short_id, resolve_custom_group
 from .one_dragon_plan import resolve_base_name
@@ -88,7 +88,7 @@ _EXEC_SEGMENT_PREFIX = "MAS-{short}-执行层段"
 def _load_group_template() -> dict[str, Any]:
     """读取执行层配置组模板（提供组级 ``config`` 与 MASOneDragon 项目骨架）。"""
     template_path = _RES_TEMPLATE_DIR / f"{GROUP_NAME}.json"
-    template = read_file(template_path)
+    template = _utils_io.read_file(template_path)
     if not isinstance(template, dict) or not isinstance(template.get("projects"), list):
         raise RuntimeError(f"一条龙执行层配置组模板无效: {template_path}")
     if not isinstance(template["projects"][0], dict):
@@ -96,15 +96,27 @@ def _load_group_template() -> dict[str, Any]:
     return template
 
 
-def build_combat_project(plan_steps: list[dict[str, Any]]) -> dict[str, Any]:
-    """构造承载战斗 4 项的 MASOneDragon JS 项目（注入 Plan）。"""
+def build_combat_project(
+    plan_steps: list[dict[str, Any]], default_strategy_path: str = ""
+) -> dict[str, Any]:
+    """构造承载战斗 4 项的 MASOneDragon JS 项目（注入 Plan）。
+
+    ``default_strategy_path`` 是顶部「通用战斗策略」解析出的**绝对路径**，随 Plan 一起
+    注入：秘境/幽境/首领步骤级没配策略时由 main.js 兜底直传。不能只依赖 BGI 全局叶子
+    回退——BGI 的 ``SetCombatStrategyPath`` 会把策略名硬拼成 ``.txt``，JSON 行为策略会
+    因此失效。地脉花不用它：那条链路只吃「相对 ``User/AutoFight`` 的无扩展名名称」，
+    由 BGI 自己按 ``.json`` → ``.txt`` 解析，绝对路径会被再拼一次后缀。
+    """
     project = dict(_load_group_template()["projects"][0])
     project["folderName"] = SCRIPT_FOLDER_NAME
     # plan 必须以 JSON 字符串注入：BGI 的 settings 注入是 .NET 对象包装（实测
     # MAS_SETTINGS_KEYS 打出 GetType/ToString 等），JS 侧对嵌套值（steps/weeklyLeyLine）
     # 做属性访问会拿到 undefined，序列化成字符串后由 main.js safeParsePlan 解析。
+    payload: dict[str, Any] = {"version": 1, "steps": plan_steps}
+    if default_strategy_path:
+        payload["defaultStrategyPath"] = default_strategy_path
     project["jsScriptSettingsObject"] = {
-        "plan": json.dumps({"version": 1, "steps": plan_steps}, ensure_ascii=False)
+        "plan": json.dumps(payload, ensure_ascii=False)
     }
     return project
 
@@ -137,6 +149,7 @@ def build_execution_segments(
     queue: list[dict[str, Any]],
     plan_steps: list[dict[str, Any]],
     custom_kinds: frozenset[str],
+    default_strategy_path: str = "",
 ) -> list[dict[str, Any]]:
     """按左栏队列顺序把执行层切成「段」，每段对应一个配置组文件。
 
@@ -192,7 +205,13 @@ def build_execution_segments(
         if base in BUILTIN_COMBAT_STEPS:
             # 战斗 4 项整体一项，只在第一个被接管的战斗项处插入一次
             if plan_steps and not combat_placed:
-                _append_synthetic([build_combat_project(plan_steps)])
+                _append_synthetic(
+                    [
+                        build_combat_project(
+                            plan_steps, default_strategy_path=default_strategy_path
+                        )
+                    ]
+                )
                 combat_placed = True
             continue
         kind = str(entry.get("kind") or "")
@@ -213,7 +232,15 @@ def build_execution_segments(
     # 仍要跑战斗段——与旧行为（战斗先跑）一致，插到最前面。
     if plan_steps and not combat_placed:
         segments.insert(
-            0, {"config": None, "projects": [build_combat_project(plan_steps)]}
+            0,
+            {
+                "config": None,
+                "projects": [
+                    build_combat_project(
+                        plan_steps, default_strategy_path=default_strategy_path
+                    )
+                ],
+            },
         )
     return segments
 
@@ -246,7 +273,7 @@ def write_execution_groups(
             group["config"] = seg["config"]
         group["projects"] = list(seg.get("projects") or [])
         out_path = out_dir / f"{name}.json"
-        write_file(out_path, group)
+        _utils_io.write_file(out_path, group)
         created.append(out_path)
     logger.info(
         f"已生成一条龙执行层配置组 {len(created)} 段: {[p.stem for p in created]}"

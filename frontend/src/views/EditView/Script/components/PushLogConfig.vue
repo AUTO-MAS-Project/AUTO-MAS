@@ -54,12 +54,16 @@ const onEnabledChange = (value: boolean) => {
 }
 
 const addMenuItems = [
-  { key: 'split', label: t('edit.stringSplitting'), title: t('edit.filterLinesByKeyword') },
-  { key: 'regex', label: t('edit.expression'), title: t('edit.matchLineRegexThen') },
+  {
+    key: 'split',
+    label: t('core.edit.stringSplitting'),
+    title: t('core.edit.filterLinesByKeyword'),
+  },
+  { key: 'regex', label: t('core.edit.expression'), title: t('core.edit.matchLineRegexThen') },
   {
     key: 'multiline',
-    label: t('edit.multiLineAggregation'),
-    title: t('edit.extractFieldsFromWindow'),
+    label: t('core.edit.multiLineAggregation'),
+    title: t('core.edit.extractFieldsFromWindow'),
   },
 ]
 
@@ -109,21 +113,23 @@ const toggleCollapsed = () => {
 </script>
 
 <template>
-  <div class="push-log-config" :class="{ collapsed }">
-    <div class="push-config-header">
+  <div class="log-rule-config" :class="{ collapsed }">
+    <div class="log-rule-config-header push-config-header">
       <h3>
-        <a-tooltip :title="collapsed ? t('edit.expandRulesArea') : t('edit.collapseRulesArea')">
-          <span class="push-config-title-text" @click="toggleCollapsed">
-            {{ t('edit.pushSettings') }}
-            <DownOutlined class="push-config-title-arrow" :class="{ collapsed }" />
+        <a-tooltip
+          :title="collapsed ? t('core.edit.expandRulesArea') : t('core.edit.collapseRulesArea')"
+        >
+          <span class="log-rule-config-title" @click="toggleCollapsed">
+            {{ t('core.edit.pushSettings') }}
+            <DownOutlined class="log-rule-config-title-arrow" :class="{ collapsed }" />
           </span>
         </a-tooltip>
-        <a-tooltip :title="t('edit.whenTaskProgressCollected')">
+        <a-tooltip :title="t('core.edit.whenTaskProgressCollected')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
       </h3>
-      <div class="push-config-actions">
-        <a-tooltip :title="t('edit.progressCollectedOnlyWhen')">
+      <div class="log-rule-config-actions">
+        <a-tooltip :title="t('core.edit.progressCollectedOnlyWhen')">
           <a-switch
             :checked="enabled"
             :checked-children="'启用'"
@@ -131,18 +137,18 @@ const toggleCollapsed = () => {
             @change="onEnabledChange"
           />
         </a-tooltip>
-        <a-tooltip :title="t('edit.readExtractionPatternReference')">
+        <a-tooltip :title="t('core.edit.readExtractionPatternReference')">
           <a-button size="small" class="docs-btn" @click="openDocs('regex')">
             <BookOutlined />
-            {{ t('edit.documentation') }}
+            {{ t('core.edit.documentation') }}
           </a-button>
         </a-tooltip>
       </div>
     </div>
 
-    <div v-show="!collapsed" class="push-config-body">
-      <div v-if="!enabled" class="push-config-disabled-tip">
-        {{ t('edit.pushCollectionOffRules') }}
+    <div v-show="!collapsed" class="log-rule-config-body">
+      <div v-if="!enabled" class="log-rule-config-disabled-tip">
+        {{ t('core.edit.pushCollectionOffRules') }}
       </div>
 
       <draggable
@@ -150,14 +156,14 @@ const toggleCollapsed = () => {
         item-key="_uid"
         handle=".drag-handle"
         :animation="200"
-        ghost-class="pattern-ghost"
-        chosen-class="pattern-chosen"
-        drag-class="pattern-drag"
-        class="patterns-list"
+        ghost-class="log-rule-ghost"
+        chosen-class="log-rule-chosen"
+        drag-class="log-rule-drag"
+        class="log-rule-list"
         @end="onDragEnd"
       >
         <template #item="{ element, index }">
-          <div class="pattern-item">
+          <div class="log-rule-item">
             <LogPatternRule
               :model-value="element"
               :index="index"
@@ -171,11 +177,11 @@ const toggleCollapsed = () => {
         </template>
       </draggable>
 
-      <div class="patterns-footer">
+      <div class="log-rule-footer">
         <a-dropdown :trigger="['click']">
-          <a-button type="dashed" class="add-pattern-btn">
+          <a-button type="dashed" class="add-log-rule-btn">
             <PlusOutlined />
-            {{ t('edit.addRule') }}
+            {{ t('core.edit.addRule') }}
             <DownOutlined />
           </a-button>
           <template #overlay>
@@ -187,8 +193,8 @@ const toggleCollapsed = () => {
           </template>
         </a-dropdown>
 
-        <span class="patterns-count">
-          共 {{ patterns.length }} 条规则，{{ activePatternCount }} 条生效
+        <span class="log-rule-count">
+          {{ t('core.edit.ruleCountSummary', { n: patterns.length, m: activePatternCount }) }}
         </span>
       </div>
     </div>
@@ -203,11 +209,9 @@ const toggleCollapsed = () => {
   </div>
 </template>
 
-<style scoped>
-.push-log-config {
-  width: 100%;
-}
+<style scoped src="./logRuleConfig.css"></style>
 
+<style scoped>
 .push-config-header {
   display: flex;
   align-items: center;
@@ -236,38 +240,6 @@ const toggleCollapsed = () => {
   border-radius: 2px;
 }
 
-.push-config-title-text {
-  cursor: pointer;
-  color: inherit;
-  transition: color 0.2s ease;
-}
-
-.push-config-title-text:hover {
-  color: var(--ant-color-primary);
-}
-
-.push-config-title-arrow {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-  vertical-align: middle;
-  transition: transform 0.2s ease;
-}
-
-.push-config-title-arrow.collapsed {
-  transform: rotate(-90deg);
-}
-
-/* 折叠时正文隐藏、底部 24px 留白随之消失，这里补回，避免与下一配置区贴太近 */
-.push-log-config.collapsed .push-config-header {
-  margin-bottom: 24px;
-}
-
-.push-config-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .docs-btn {
   display: inline-flex;
   align-items: center;
@@ -277,64 +249,5 @@ const toggleCollapsed = () => {
 .help-icon {
   color: var(--ant-color-text-tertiary);
   font-size: 14px;
-}
-
-.push-config-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding-bottom: 24px;
-}
-
-.push-config-disabled-tip {
-  padding: 10px 14px;
-  background: var(--ant-color-fill-quaternary);
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 6px;
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
-}
-
-.patterns-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.pattern-item {
-  position: relative;
-}
-
-.pattern-ghost {
-  opacity: 0.5;
-  background: var(--ant-color-primary-bg);
-  border: 1px dashed var(--ant-color-primary);
-  border-radius: 8px;
-}
-
-.pattern-chosen {
-  cursor: grabbing;
-}
-
-.pattern-drag {
-  opacity: 0.8;
-}
-
-.patterns-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.add-pattern-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.patterns-count {
-  font-size: 12px;
-  color: var(--ant-color-text-secondary);
 }
 </style>

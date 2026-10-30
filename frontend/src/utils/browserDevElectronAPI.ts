@@ -1,3 +1,4 @@
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import type { DesktopMascotTaskHostAPI } from '@/types/desktopMascot'
 import type { ElectronAPI } from '@/types/electron'
 import { getDefaultHttpEndpoint, getDefaultWebSocketEndpoint } from '@/utils/backendEndpoint'
@@ -62,6 +63,10 @@ const browserDevElectronAPI = {
     return { success: true }
   },
   windowFocus: async () => window.focus(),
+  windowMinimize: async () => true,
+  windowHideToTray: async () => false,
+  notifyNativeCloseHandlerReady: () => undefined,
+  onNativeWindowCloseRequested: () => () => undefined,
   selectFolder: async () => null,
   selectFile: async () => [],
   saveConfig: async (config: Record<string, unknown>, defaults?: Record<string, unknown>) => {
@@ -109,7 +114,7 @@ const browserDevElectronAPI = {
   backendStatus: async () => ({ isRunning: true, runtimeSupervised: false }),
 } as unknown as ElectronAPI
 
-if (import.meta.env.DEV && !window.electronAPI) {
+if (isDev && !window.electronAPI) {
   ;(window as BrowserDevWindow).__AUTO_MAS_BROWSER_DEV_MODE__ = true
   window.electronAPI = browserDevElectronAPI
 }

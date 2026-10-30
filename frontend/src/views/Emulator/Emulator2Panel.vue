@@ -22,9 +22,10 @@ import {
   SettingOutlined,
 } from '@ant-design/icons-vue'
 
-import { Emulator20Service, EmulatorOperateIn, Service } from '@/api'
+import { Emulator20Service, EmulatorOperateIn, Service } from '@/composables/useEmulatorApi'
 import { usePerformanceStore } from '@/stores/performance'
 import { invalidateEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
+import { getApiErrorMessage } from '@/utils/apiError'
 import { useAvdApi } from '@/composables/useAvdApi'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
@@ -119,7 +120,7 @@ const addableResults = computed(() => searchResults.value.filter(item => item.su
 /** 模拟器类型 → 用户看得懂的名字。界面上不该出现 ldplayer / mumu 这种内部名。 */
 const typeLabel = (type: string | undefined) => {
   if (!type) return ''
-  const key = `emulator.type.${type}`
+  const key = `core.emulator.type.${type}`
   const text = t(key)
   return text === key ? type : text
 }
@@ -134,7 +135,7 @@ const typeColor = (type: string | undefined) => typeColors[type ?? ''] ?? 'defau
 
 /** 判定原因枚举 → 用户文案。后端只给枚举，措辞在这里定。 */
 const reasonLabel = (reason: string) => {
-  const key = `emulator2.reason.${reason}`
+  const key = `core.emulator2.reason.${reason}`
   const text = t(key)
   return text === key ? reason : text
 }
@@ -199,7 +200,7 @@ const loadDevices = async ({
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`加载设备列表失败: ${detail}`)
-    if (!silent) message.error(t('emulator2.toast.loadFailed'))
+    if (!silent) message.error(t('core.emulator2.toast.loadFailed'))
     return false
   } finally {
     if (showLoading) loading.value = false
@@ -239,7 +240,7 @@ const openSearch = async () => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`搜索模拟器失败: ${detail}`)
-    message.error(t('emulator2.toast.searchFailed'))
+    message.error(t('core.emulator2.toast.searchFailed'))
   } finally {
     searching.value = false
   }
@@ -267,13 +268,17 @@ const confirmAdd = async () => {
         )
       }
     }
+  } catch (error) {
+    const detail = getApiErrorMessage(error, t('core.emulator.toast.addFailed'))
+    logger.error(`添加模拟器路径失败: ${detail}`)
+    message.error(detail)
   } finally {
     adding.value = false
   }
   if (added > 0) {
-    message.success(t('emulator2.toast.addOk', { count: added }))
+    message.success(t('core.emulator2.toast.addOk', { count: added }))
     searchOpen.value = false
-    invalidateEmulatorDeviceOptions()
+    await invalidateEmulatorDeviceOptions()
     await loadDevices({ silent: true })
   }
 }
@@ -310,14 +315,14 @@ const confirmRemove = async () => {
       message.error(response.message)
       return
     }
-    message.success(t('emulator2.toast.removeOk'))
+    message.success(t('core.emulator2.toast.removeOk'))
     removeOpen.value = false
-    invalidateEmulatorDeviceOptions()
+    await invalidateEmulatorDeviceOptions()
     await loadDevices({ silent: true })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`移除模拟器路径失败: ${detail}`)
-    message.error(t('emulator2.toast.removeFailed'))
+    message.error(t('core.emulator2.toast.removeFailed'))
   } finally {
     removing.value = false
   }
@@ -340,7 +345,7 @@ const avdRoots = computed(() =>
 )
 
 const onAvdAdded = async () => {
-  invalidateEmulatorDeviceOptions()
+  await invalidateEmulatorDeviceOptions()
   await loadDevices({ silent: true })
 }
 
@@ -408,13 +413,13 @@ const confirmCreate = async () => {
       message.error(response.message)
       return
     }
-    message.success(t('emulator2.toast.createOk', { slot: response.slot }))
-    invalidateEmulatorDeviceOptions()
+    message.success(t('core.emulator2.toast.createOk', { slot: response.slot }))
+    await invalidateEmulatorDeviceOptions()
     await loadDevices({ silent: true })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error('新建实例失败: ' + detail)
-    message.error(t('emulator2.toast.createFailed'))
+    message.error(t('core.emulator2.toast.createFailed'))
   } finally {
     // 真实那一行这时已经在 devices 里了，占位行退场
     pendingRows.value = pendingRows.value.filter(row => row.pendingKey !== pendingKey)
@@ -460,14 +465,14 @@ const confirmDelete = async () => {
       message.error(response.message)
       return
     }
-    message.success(t('emulator2.toast.deleteOk'))
-    invalidateEmulatorDeviceOptions()
+    message.success(t('core.emulator2.toast.deleteOk'))
+    await invalidateEmulatorDeviceOptions()
     // 确认没了才从列表里去掉；后端已经给该设备号写了墓碑，重新拉也不会再出现
     devices.value = devices.value.filter(item => item.slot !== slot)
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error('删除实例失败: ' + detail)
-    message.error(t('emulator2.toast.deleteFailed'))
+    message.error(t('core.emulator2.toast.deleteFailed'))
   } finally {
     clearPending(slot)
   }
@@ -484,7 +489,7 @@ const fieldValue = (device: Emulator2DeviceItem, name: FieldName) =>
 
 /** 字段名 → 用户文案。后端只给字段名，措辞在这里定。 */
 const fieldLabel = (name: string) => {
-  const key = `emulator2.field.${name}`
+  const key = `core.emulator2.field.${name}`
   const text = t(key)
   return text === key ? name : text
 }
@@ -576,20 +581,20 @@ const confirmSettings = async () => {
       const conflicts = response.conflicts || []
       message.error(
         conflicts.length
-          ? t('emulator2.toast.settingsConflict', {
+          ? t('core.emulator2.toast.settingsConflict', {
               fields: conflicts.map(fieldLabel).join(' / '),
             })
           : response.message
       )
       return
     }
-    message.success(t('emulator2.toast.settingsOk'))
+    message.success(t('core.emulator2.toast.settingsOk'))
     settingsOpen.value = false
     await loadDevices({ silent: true })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`保存设置失败: ${detail}`)
-    message.error(t('emulator2.toast.settingsFailed'))
+    message.error(t('core.emulator2.toast.settingsFailed'))
   } finally {
     savingSettings.value = false
   }
@@ -633,21 +638,21 @@ const confirmBatch = async () => {
       // 只报「N 台失败」用户没法行动：弹窗不关，就地列出每台的原因
       batchFailures.value = (response.results || []).filter(item => !item.ok)
       message.warning(
-        t('emulator2.toast.batchPartial', {
+        t('core.emulator2.toast.batchPartial', {
           ok: response.okCount ?? 0,
           fail: failed,
         })
       )
     } else {
       batchFailures.value = []
-      message.success(t('emulator2.toast.batchOk', { count: response.okCount ?? 0 }))
+      message.success(t('core.emulator2.toast.batchOk', { count: response.okCount ?? 0 }))
       batchOpen.value = false
     }
     await loadDevices({ silent: true })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`批量设置失败: ${detail}`)
-    message.error(t('emulator2.toast.batchFailed'))
+    message.error(t('core.emulator2.toast.batchFailed'))
   } finally {
     batchSaving.value = false
   }
@@ -700,12 +705,12 @@ const tableRows = computed<DeviceRow[]>(() => [...devices.value, ...pendingRows.
 
 /** 占位行和删除 / 打开游戏中心这类没有目标状态的操作，在状态列直接写明在干什么 */
 const rowLabel = (row: DeviceRow) => {
-  if (row.pendingKey) return t('emulator2.busy.creating')
+  if (row.pendingKey) return t('core.emulator2.busy.creating')
   const item = pending.value.get(row.slot)
   if (!item || item.to !== null) return ''
-  if (item.op === 'deleting') return t('emulator2.busy.deleting')
-  if (item.op === 'store') return t('emulator2.busy.openingStore')
-  return t('emulator2.busy.operating')
+  if (item.op === 'deleting') return t('core.emulator2.busy.deleting')
+  if (item.op === 'store') return t('core.emulator2.busy.openingStore')
+  return t('core.emulator2.busy.operating')
 }
 
 const statusOf = (row: DeviceRow) => effectiveStatus(row, pending.value.get(row.slot), now.value)
@@ -749,7 +754,7 @@ const operate = async (device: Emulator2DeviceItem, action: EmulatorOperateIn.op
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`操作设备 #${device.slot} 失败: ${detail}`)
-    message.error(t('emulator2.toast.operateFailed'))
+    message.error(t('core.emulator2.toast.operateFailed'))
     clearPending(device.slot)
   }
 }
@@ -771,11 +776,11 @@ const openStore = async (device: Emulator2DeviceItem) => {
       message.warning(response.message)
       return
     }
-    message.success(t('emulator2.toast.storeOpened'))
+    message.success(t('core.emulator2.toast.storeOpened'))
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`打开设备 #${device.slot} 的游戏中心失败: ${detail}`)
-    message.error(t('emulator2.toast.storeOpenFailed'))
+    message.error(t('core.emulator2.toast.storeOpenFailed'))
   } finally {
     clearPending(device.slot)
   }
@@ -820,7 +825,7 @@ const captureBaselines = async (): Promise<number | null> => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`记录配置基准失败: ${detail}`)
-    message.error(t('emulator2.toast.guardFailed'))
+    message.error(t('core.emulator2.toast.guardFailed'))
     return null
   }
 }
@@ -840,7 +845,7 @@ const applyStableMode = async (): Promise<number | null> => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`应用稳定模式失败: ${detail}`)
-    message.error(t('emulator2.toast.stableFailed'))
+    message.error(t('core.emulator2.toast.stableFailed'))
     return null
   }
 }
@@ -852,15 +857,15 @@ const applyStableMode = async (): Promise<number | null> => {
  * 却被告知「它还在运行」，等于给了一句错的诊断。这里按实际原因分开说。
  */
 const blockedReason = (device: DeviceRow) => {
-  if (device.availability === 'unavailable') return t('emulator2.blocked.unavailable')
-  if (device.availability !== 'ok') return t('emulator2.blocked.missing')
+  if (device.availability === 'unavailable') return t('core.emulator2.blocked.unavailable')
+  if (device.availability !== 'ok') return t('core.emulator2.blocked.missing')
   const status = statusOf(device)
-  if (status === DeviceStatus.ERROR) return t('emulator2.blocked.error')
+  if (status === DeviceStatus.ERROR) return t('core.emulator2.blocked.error')
   if (isTransitional(status) || pending.value.has(device.slot)) {
-    return t('emulator2.blocked.busy')
+    return t('core.emulator2.blocked.busy')
   }
   if (status !== DeviceStatus.OFFLINE && status !== DeviceStatus.NOT_FOUND) {
-    return t('emulator2.deleteNeedsOffline')
+    return t('core.emulator2.deleteNeedsOffline')
   }
   return ''
 }
@@ -868,23 +873,26 @@ const blockedReason = (device: DeviceRow) => {
 /** 设备状态 → Tag。availability 优先：这次没枚举到就不该显示成离线。 */
 const deviceStatus = (device: DeviceRow) => {
   if (device.availability === 'unavailable') {
-    return { color: 'default', text: t('emulator2.status.unavailable') }
+    return { color: 'default', text: t('core.emulator2.status.unavailable') }
   }
   if (device.availability === 'missing') {
-    return { color: 'warning', text: t('emulator2.status.missing') }
+    return { color: 'warning', text: t('core.emulator2.status.missing') }
   }
   const map: Record<number, { color: string; text: string }> = {
-    [DeviceStatus.ONLINE]: { color: 'success', text: t('emulator.deviceStatus.online') },
-    [DeviceStatus.OFFLINE]: { color: 'default', text: t('emulator.deviceStatus.offline') },
-    [DeviceStatus.STARTING]: { color: 'processing', text: t('emulator.deviceStatus.starting') },
-    [DeviceStatus.CLOSING]: { color: 'processing', text: t('emulator.deviceStatus.closing') },
-    [DeviceStatus.ERROR]: { color: 'error', text: t('emulator.deviceStatus.error') },
-    [DeviceStatus.NOT_FOUND]: { color: 'default', text: t('emulator.deviceStatus.notFound') },
+    [DeviceStatus.ONLINE]: { color: 'success', text: t('core.emulator.deviceStatus.online') },
+    [DeviceStatus.OFFLINE]: { color: 'default', text: t('core.emulator.deviceStatus.offline') },
+    [DeviceStatus.STARTING]: {
+      color: 'processing',
+      text: t('core.emulator.deviceStatus.starting'),
+    },
+    [DeviceStatus.CLOSING]: { color: 'processing', text: t('core.emulator.deviceStatus.closing') },
+    [DeviceStatus.ERROR]: { color: 'error', text: t('core.emulator.deviceStatus.error') },
+    [DeviceStatus.NOT_FOUND]: { color: 'default', text: t('core.emulator.deviceStatus.notFound') },
   }
   return (
     map[statusOf(device)] ?? {
       color: 'default',
-      text: t('emulator.deviceStatus.unknown'),
+      text: t('core.emulator.deviceStatus.unknown'),
     }
   )
 }
@@ -915,27 +923,27 @@ const tableScroll = computed(() => ({
 }))
 
 const deviceColumns = computed(() => [
-  { title: t('emulator2.colSource'), key: 'source', width: 140 },
-  { title: t('emulator2.colSlot'), dataIndex: 'slot', key: 'slot', width: 80 },
-  { title: t('emulator.colStatus'), key: 'status', width: 96 },
+  { title: t('core.emulator2.colSource'), key: 'source', width: 140 },
+  { title: t('core.emulator2.colSlot'), dataIndex: 'slot', key: 'slot', width: 80 },
+  { title: t('core.emulator.colStatus'), key: 'status', width: 96 },
   {
-    title: t('emulator.colName'),
+    title: t('core.emulator.colName'),
     dataIndex: 'title',
     key: 'title',
     ellipsis: true,
   },
   {
-    title: t('emulator.colAdb'),
+    title: t('core.emulator.colAdb'),
     dataIndex: 'adbAddress',
     key: 'adb',
     ellipsis: true,
   },
-  { title: t('emulator2.colResolution'), key: 'resolution', width: 110 },
-  { title: t('emulator2.colDpi'), key: 'dpi', width: 72 },
-  { title: t('emulator2.colCpu'), key: 'cpu', width: 64 },
-  { title: t('emulator2.colMemory'), key: 'memory', width: 96 },
-  { title: t('emulator2.colFps'), key: 'fps', width: 72 },
-  { title: t('emulator.colAction'), key: 'action', width: 248 },
+  { title: t('core.emulator2.colResolution'), key: 'resolution', width: 110 },
+  { title: t('core.emulator2.colDpi'), key: 'dpi', width: 72 },
+  { title: t('core.emulator2.colCpu'), key: 'cpu', width: 64 },
+  { title: t('core.emulator2.colMemory'), key: 'memory', width: 96 },
+  { title: t('core.emulator2.colFps'), key: 'fps', width: 72 },
+  { title: t('core.emulator.colAction'), key: 'action', width: 248 },
 ])
 
 watch(
@@ -1043,29 +1051,29 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
     <!-- 模拟器路径管理：整块搬进二级弹窗，主页面只留设备表 -->
     <a-modal
       v-model:open="pathsOpen"
-      :title="t('emulator2.pathsTitle')"
+      :title="t('core.emulator2.pathsTitle')"
       width="760px"
       :footer="null"
     >
       <div class="section-header" style="margin-top: 0">
-        <span class="section-hint">{{ t('emulator2.pathsHint') }}</span>
+        <span class="section-hint">{{ t('core.emulator2.pathsHint') }}</span>
         <a-space :size="8">
           <a-button size="small" :icon="h(PlusOutlined)" @click="openAvdRoot()">
-            {{ t('emulator2.avd.add') }}
+            {{ t('core.emulator2.avd.add') }}
           </a-button>
           <a-button size="small" type="primary" ghost :icon="h(SearchOutlined)" @click="openSearch">
-            {{ t('emulator2.searchAndAdd') }}
+            {{ t('core.emulator2.searchAndAdd') }}
           </a-button>
         </a-space>
       </div>
 
-      <a-empty v-if="!paths.length" :description="t('emulator2.noPath')">
+      <a-empty v-if="!paths.length" :description="t('core.emulator2.noPath')">
         <a-space :size="8">
           <a-button :icon="h(PlusOutlined)" @click="openAvdRoot()">
-            {{ t('emulator2.avd.add') }}
+            {{ t('core.emulator2.avd.add') }}
           </a-button>
           <a-button type="primary" :icon="h(SearchOutlined)" @click="openSearch">
-            {{ t('emulator2.searchAndAdd') }}
+            {{ t('core.emulator2.searchAndAdd') }}
           </a-button>
         </a-space>
       </a-empty>
@@ -1086,16 +1094,16 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
               size="small"
               @click="openAvdRoot(path.installPath)"
             >
-              {{ t('emulator2.avd.manage') }}
+              {{ t('core.emulator2.avd.manage') }}
             </a-button>
             <a-button type="text" size="small" danger @click="openRemove(path)">
-              {{ t('emulator2.removePath') }}
+              {{ t('core.emulator2.removePath') }}
             </a-button>
           </template>
           <div class="path-line">{{ path.installPath }}</div>
           <div class="path-sub">
             {{
-              t('emulator2.slotRange', {
+              t('core.emulator2.slotRange', {
                 slots: (path.slots ?? []).map(s => `#${s}`).join(' ') || '—',
               })
             }}
@@ -1106,8 +1114,8 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
 
     <div class="section-header">
       <h3>
-        {{ t('emulator.deviceList') }}
-        <span class="section-hint">{{ t('emulator2.deviceHint') }}</span>
+        {{ t('core.emulator.deviceList') }}
+        <span class="section-hint">{{ t('core.emulator2.deviceHint') }}</span>
         <LoadingOutlined v-if="refreshing" class="section-refreshing" />
       </h3>
       <a-space :size="8">
@@ -1119,7 +1127,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
           :disabled="!paths.length"
           @click="openCreate"
         >
-          {{ t('emulator2.createInstance') }}
+          {{ t('core.emulator2.createInstance') }}
         </a-button>
         <a-button
           size="small"
@@ -1127,7 +1135,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
           :disabled="!devices.length"
           @click="openBatch"
         >
-          {{ t('emulator2.batchSettings') }}
+          {{ t('core.emulator2.batchSettings') }}
         </a-button>
       </a-space>
     </div>
@@ -1136,7 +1144,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
       <a-spin :spinning="loading" wrapper-class-name="table-spin">
         <a-empty
           v-if="!tableRows.length"
-          :description="loading ? '' : t('emulator.noDevice')"
+          :description="loading ? '' : t('core.emulator.noDevice')"
           class="table-empty"
         />
         <a-table
@@ -1155,7 +1163,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
                 <a-tag :color="typeColor(record.realType)">{{ typeLabel(record.realType) }}</a-tag>
                 <span class="source-sub">
                   {{ record.alias }} ·
-                  {{ t('emulator2.nativeIndex', { index: record.nativeIndex }) }}
+                  {{ t('core.emulator2.nativeIndex', { index: record.nativeIndex }) }}
                 </span>
               </div>
             </template>
@@ -1200,7 +1208,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
             </template>
             <template v-else-if="column.key === 'action'">
               <a-space :size="4">
-                <a-tooltip :title="t('emulator2.start')">
+                <a-tooltip :title="t('core.emulator2.start')">
                   <a-button
                     size="small"
                     type="text"
@@ -1210,7 +1218,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
                     @click="operate(record, EmulatorOperateIn.operate.OPEN)"
                   />
                 </a-tooltip>
-                <a-tooltip :title="t('emulator2.stop')">
+                <a-tooltip :title="t('core.emulator2.stop')">
                   <a-button
                     size="small"
                     type="text"
@@ -1220,7 +1228,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
                     @click="operate(record, EmulatorOperateIn.operate.CLOSE)"
                   />
                 </a-tooltip>
-                <a-tooltip :title="t('emulator2.show')">
+                <a-tooltip :title="t('core.emulator2.show')">
                   <a-button
                     size="small"
                     type="text"
@@ -1230,7 +1238,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
                     @click="operate(record, EmulatorOperateIn.operate.SHOW)"
                   />
                 </a-tooltip>
-                <a-tooltip :title="t('emulator2.hide')">
+                <a-tooltip :title="t('core.emulator2.hide')">
                   <a-button
                     size="small"
                     type="text"
@@ -1240,7 +1248,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
                     @click="operate(record, EmulatorOperateIn.operate.HIDE)"
                   />
                 </a-tooltip>
-                <a-tooltip :title="t('emulator2.openStore')">
+                <a-tooltip :title="t('core.emulator2.openStore')">
                   <a-button
                     size="small"
                     type="text"
@@ -1252,7 +1260,9 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
                 </a-tooltip>
                 <a-tooltip
                   :title="
-                    actionsOf(record).settings ? t('emulator2.settings') : blockedReason(record)
+                    actionsOf(record).settings
+                      ? t('core.emulator2.settings')
+                      : blockedReason(record)
                   "
                 >
                   <a-button
@@ -1265,7 +1275,9 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
                 </a-tooltip>
                 <a-tooltip
                   :title="
-                    actionsOf(record).delete ? t('emulator2.deleteInstance') : blockedReason(record)
+                    actionsOf(record).delete
+                      ? t('core.emulator2.deleteInstance')
+                      : blockedReason(record)
                   "
                 >
                   <a-button
@@ -1285,21 +1297,21 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
       </a-spin>
     </div>
 
-    <a-alert type="info" show-icon :message="t('emulator2.footerHint')" class="footer-hint" />
+    <a-alert type="info" show-icon :message="t('core.emulator2.footerHint')" class="footer-hint" />
 
     <!-- 单台设置 -->
     <a-modal
       v-model:open="settingsOpen"
-      :title="t('emulator2.settingsTitle')"
+      :title="t('core.emulator2.settingsTitle')"
       width="560px"
       :confirm-loading="savingSettings"
-      :ok-text="t('emulator2.save')"
+      :ok-text="t('core.emulator2.save')"
       @ok="confirmSettings"
     >
       <p v-if="settingsTarget">
         <strong>#{{ settingsTarget.slot }}</strong>
         — {{ settingsTarget.alias }} ·
-        {{ t('emulator2.nativeIndex', { index: settingsTarget.nativeIndex }) }}
+        {{ t('core.emulator2.nativeIndex', { index: settingsTarget.nativeIndex }) }}
       </p>
       <a-form layout="vertical">
         <SettingsTierFields
@@ -1313,38 +1325,38 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
         v-if="settingsSoftwareRenderer"
         type="warning"
         show-icon
-        :message="t('emulator2.avd.softwareRenderer')"
+        :message="t('core.emulator2.avd.softwareRenderer')"
         style="margin-bottom: 12px"
       />
-      <a-alert type="info" show-icon :message="t('emulator2.settingsHint')" />
+      <a-alert type="info" show-icon :message="t('core.emulator2.settingsHint')" />
     </a-modal>
 
     <!-- 批量设置 -->
     <a-modal
       v-model:open="batchOpen"
-      :title="t('emulator2.batchTitle')"
+      :title="t('core.emulator2.batchTitle')"
       width="560px"
       :confirm-loading="batchSaving"
-      :ok-text="t('emulator2.batchApply')"
+      :ok-text="t('core.emulator2.batchApply')"
       :ok-button-props="{ disabled: !Object.keys(batchChanges).length }"
       @ok="confirmBatch"
     >
       <a-alert
         type="warning"
         show-icon
-        :message="t('emulator2.batchWarning', { count: devices.length })"
+        :message="t('core.emulator2.batchWarning', { count: devices.length })"
         style="margin-bottom: 12px"
       />
       <a-form layout="vertical">
         <SettingsTierFields v-model="batchForm" :kind="batchKind" clearable />
       </a-form>
-      <a-alert type="info" show-icon :message="t('emulator2.settingsHint')" />
+      <a-alert type="info" show-icon :message="t('core.emulator2.settingsHint')" />
       <a-list
         v-if="batchFailures.length"
         size="small"
         bordered
         :data-source="batchFailures"
-        :header="t('emulator2.batchFailures')"
+        :header="t('core.emulator2.batchFailures')"
         style="margin-top: 12px"
       >
         <template #renderItem="{ item }">
@@ -1361,44 +1373,47 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
     <!-- 新建实例 -->
     <a-modal
       v-model:open="createOpen"
-      :title="t('emulator2.createTitle')"
+      :title="t('core.emulator2.createTitle')"
       :confirm-loading="creating"
-      :ok-text="t('emulator2.create')"
+      :ok-text="t('core.emulator2.create')"
       :ok-button-props="{ disabled: !createPathId }"
       @ok="confirmCreate"
     >
       <a-form layout="vertical">
-        <a-form-item :label="t('emulator2.createOnPath')">
+        <a-form-item :label="t('core.emulator2.createOnPath')">
           <a-select v-model:value="createPathId" :options="pathSelectOptions" />
         </a-form-item>
-        <a-form-item :label="t('emulator2.createName')">
-          <a-input v-model:value="createName" :placeholder="t('emulator2.createNamePlaceholder')" />
+        <a-form-item :label="t('core.emulator2.createName')">
+          <a-input
+            v-model:value="createName"
+            :placeholder="t('core.emulator2.createNamePlaceholder')"
+          />
         </a-form-item>
         <AvdOptionsFields v-if="createOnAvd" v-model="createAvd" />
       </a-form>
-      <a-alert type="info" show-icon :message="t('emulator2.createHint')" />
+      <a-alert type="info" show-icon :message="t('core.emulator2.createHint')" />
     </a-modal>
 
     <!-- 删除实例 -->
     <a-modal
       v-model:open="deleteOpen"
-      :title="t('emulator2.deleteTitle')"
+      :title="t('core.emulator2.deleteTitle')"
       width="600px"
       :confirm-loading="deleting"
-      :ok-text="t('emulator2.deleteInstance')"
+      :ok-text="t('core.emulator2.deleteInstance')"
       :ok-button-props="{ danger: true }"
       @ok="confirmDelete"
     >
       <p v-if="deleteTarget">
         <strong>#{{ deleteTarget.slot }}</strong>
         — {{ deleteTarget.alias }} ·
-        {{ t('emulator2.nativeIndex', { index: deleteTarget.nativeIndex }) }}
+        {{ t('core.emulator2.nativeIndex', { index: deleteTarget.nativeIndex }) }}
       </p>
       <a-alert
         type="warning"
         show-icon
         :message="
-          t('emulator2.deleteWarning', {
+          t('core.emulator2.deleteWarning', {
             slot: deleteTarget ? '#' + deleteTarget.slot : '',
             count: deleteAffected.length,
           })
@@ -1410,13 +1425,15 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
         size="small"
         bordered
         :data-source="deleteAffected"
-        :header="t('emulator2.affectedScripts')"
+        :header="t('core.emulator2.affectedScripts')"
       >
         <template #renderItem="{ item }">
           <a-list-item>
             <span>{{ item.name }}</span>
             <template #actions>
-              <a-tag v-if="item.running" color="processing">{{ t('emulator2.running') }}</a-tag>
+              <a-tag v-if="item.running" color="processing">{{
+                t('core.emulator2.running')
+              }}</a-tag>
             </template>
           </a-list-item>
         </template>
@@ -1426,21 +1443,21 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
     <!-- 添加模拟器 -->
     <a-modal
       v-model:open="searchOpen"
-      :title="t('emulator2.addTitle')"
+      :title="t('core.emulator2.addTitle')"
       width="760px"
       :confirm-loading="adding"
-      :ok-text="t('emulator2.add')"
+      :ok-text="t('core.emulator2.add')"
       :ok-button-props="{ disabled: !selectedPaths.length }"
       @ok="confirmAdd"
     >
       <a-alert
         type="info"
         show-icon
-        :message="t('emulator2.addHint')"
+        :message="t('core.emulator2.addHint')"
         style="margin-bottom: 12px"
       />
       <a-spin :spinning="searching">
-        <a-empty v-if="!searchResults.length" :description="t('emulator.searchEmpty')" />
+        <a-empty v-if="!searchResults.length" :description="t('core.emulator.searchEmpty')" />
         <a-checkbox-group v-else v-model:value="selectedPaths" style="width: 100%">
           <div v-for="item in searchResults" :key="item.installPath" class="search-row">
             <a-checkbox :value="item.installPath" :disabled="!item.supported" />
@@ -1472,10 +1489,10 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
     <!-- 移除路径 -->
     <a-modal
       v-model:open="removeOpen"
-      :title="t('emulator2.removeTitle')"
+      :title="t('core.emulator2.removeTitle')"
       width="640px"
       :confirm-loading="removing"
-      :ok-text="t('emulator2.removePath')"
+      :ok-text="t('core.emulator2.removePath')"
       :ok-button-props="{ danger: true }"
       @ok="confirmRemove"
     >
@@ -1487,7 +1504,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
         type="warning"
         show-icon
         :message="
-          t('emulator2.removeWarning', {
+          t('core.emulator2.removeWarning', {
             slots: removeSlots.map(s => `#${s}`).join(' ') || '—',
             count: removeAffected.length,
           })
@@ -1499,14 +1516,16 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
         size="small"
         bordered
         :data-source="removeAffected"
-        :header="t('emulator2.affectedScripts')"
+        :header="t('core.emulator2.affectedScripts')"
       >
         <template #renderItem="{ item }">
           <a-list-item>
             <span>{{ item.name }}</span>
             <template #actions>
               <span>#{{ item.slot }}</span>
-              <a-tag v-if="item.running" color="processing">{{ t('emulator2.running') }}</a-tag>
+              <a-tag v-if="item.running" color="processing">{{
+                t('core.emulator2.running')
+              }}</a-tag>
             </template>
           </a-list-item>
         </template>
@@ -1515,7 +1534,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
         v-if="runningAffected.length"
         type="warning"
         show-icon
-        :message="t('emulator2.removeRunningHint', { count: runningAffected.length })"
+        :message="t('core.emulator2.removeRunningHint', { count: runningAffected.length })"
         style="margin-top: 12px"
       />
     </a-modal>
@@ -1535,12 +1554,8 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
 }
 
 .section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  border-bottom-width: 1px;
   flex-shrink: 0;
 }
 
@@ -1580,10 +1595,8 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
 }
 
 .section-header h3 {
-  margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: var(--ant-color-text);
 }
 
 .section-hint {

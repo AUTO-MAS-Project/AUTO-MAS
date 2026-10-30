@@ -1,24 +1,25 @@
-import { HistoryIndexItem } from '@/api'
+export type HistoryStatusClass = 'success' | 'skip' | 'cancelled' | 'error'
 
-export type HistoryStatusClass = 'success' | 'skip' | 'error'
-
-/** 历史记录状态归类：停服维护这类跳过（SKIP）单独一类，显示灰色、不算失败 */
+/** 历史记录状态归类：跳过与取消显示灰色，不算失败 */
 export const statusClass = (status: string): HistoryStatusClass => {
-  if (status === HistoryIndexItem.status.DONE) return 'success'
-  if (status === HistoryIndexItem.status.SKIP) return 'skip'
+  if (status === 'success') return 'success'
+  if (status === 'skipped') return 'skip'
+  if (status === 'cancelled') return 'cancelled'
   return 'error'
 }
 
 const TAG_COLORS: Record<HistoryStatusClass, string> = {
   success: 'success',
   skip: 'default',
+  cancelled: 'default',
   error: 'error',
 }
 
 const LABEL_KEYS: Record<HistoryStatusClass, string> = {
-  success: 'history.done',
-  skip: 'history.skipped',
-  error: 'history.failed',
+  success: 'core.history.done',
+  skip: 'core.history.skipped',
+  cancelled: 'core.history.cancelled',
+  error: 'core.history.failed',
 }
 
 export const statusTagColor = (status: string) => TAG_COLORS[statusClass(status)]

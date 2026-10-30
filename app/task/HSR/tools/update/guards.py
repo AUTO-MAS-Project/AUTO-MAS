@@ -14,7 +14,7 @@ from pathlib import Path
 
 import psutil
 
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("HSR 更新守卫")
 

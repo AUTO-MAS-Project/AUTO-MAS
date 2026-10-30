@@ -3,12 +3,11 @@
     <a-col :xs="24" :md="12">
       <a-form-item :help="launchHint">
         <template #label>
-          <span class="form-label">
-            {{ t('edit.launchType') }}
-            <a-tooltip :title="t('edit.maaEndLaunchTypeHint')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </span>
+          <FieldLabelWithHint
+            :text="t('core.edit.launchType')"
+            :hint="t('core.edit.maaEndLaunchTypeHint')"
+            variant="form"
+          />
         </template>
         <a-select
           :value="launchMode"
@@ -22,47 +21,71 @@
     </a-col>
     <a-col :xs="24" :md="12">
       <a-form-item
-        :validate-status="usesMasLauncher && error ? 'error' : undefined"
-        :help="usesMasLauncher ? error || undefined : t('edit.maaEndNativeLauncherHint')"
+        :validate-status="canConfigureLauncher && error ? 'error' : undefined"
+        :help="
+          canConfigureLauncher && error ? error : !usesMasLauncher ? nativeLauncherHelp : undefined
+        "
       >
         <template #label>
-          <span class="form-label">{{ t('edit.maaEndLauncherPath') }}</span>
+          <span class="form-label">{{ t('core.edit.maaEndLauncherPath') }}</span>
         </template>
-        <a-space-compact block size="large">
+        <a-space-compact v-if="usesMasLauncher || source === 'manual'" block size="large">
           <a-input
             :value="path"
             :title="path"
-            :placeholder="t('edit.maaEndPickClientBeforeLauncher')"
-            :aria-label="t('edit.maaEndLauncherPath')"
+            :placeholder="
+              t(
+                usesMasLauncher
+                  ? 'core.edit.maaEndPickClientBeforeLauncher'
+                  : 'core.edit.maaEndLauncherSourceNative'
+              )
+            "
+            :aria-label="t('core.edit.maaEndLauncherPath')"
             size="large"
             readonly
-            :disabled="!usesMasLauncher"
+            :disabled="disabled || !canConfigureLauncher"
             class="launcher-path-input"
           />
           <a-button
             :loading="detecting || saving"
-            :disabled="disabled || !usesMasLauncher || (source === 'auto' && !canDetect)"
+            :disabled="
+              disabled ||
+              !canConfigureLauncher ||
+              (usesMasLauncher && source === 'auto' && !canDetect)
+            "
             size="large"
-            @click="source === 'auto' ? emit('refresh') : emit('selectFile')"
+            @click="usesMasLauncher && source === 'auto' ? emit('refresh') : emit('selectFile')"
           >
             <template #icon>
-              <ReloadOutlined v-if="source === 'auto'" />
+              <ReloadOutlined v-if="usesMasLauncher && source === 'auto'" />
               <FolderOpenOutlined v-else />
             </template>
-            {{ t(source === 'auto' ? 'edit.maaEndRefreshLauncher' : 'edit.maaEndChangeLauncher') }}
+            {{
+              t(
+                usesMasLauncher && source === 'auto'
+                  ? 'core.edit.maaEndRefreshLauncher'
+                  : 'core.edit.maaEndChangeLauncher'
+              )
+            }}
           </a-button>
         </a-space-compact>
         <div class="launcher-source">
           <a-radio-group
             :value="source"
             :options="sourceOptions"
-            :aria-label="t('edit.maaEndLauncherPathSource')"
-            :disabled="disabled || detecting || !usesMasLauncher"
+            :aria-label="t('core.edit.maaEndLauncherPathSource')"
+            :disabled="disabled || detecting || !canConfigureLauncher"
             @change="emit('changeSource', $event.target.value)"
           />
           <a-tooltip
             :title="
-              t(source === 'auto' ? 'edit.maaEndLauncherAutoHint' : 'edit.maaEndLauncherManualHint')
+              !usesMasLauncher
+                ? nativeLauncherHint
+                : t(
+                    source === 'auto'
+                      ? 'core.edit.maaEndLauncherAutoHint'
+                      : 'core.edit.maaEndLauncherManualHint'
+                  )
             "
           >
             <QuestionCircleOutlined class="help-icon" />
@@ -74,6 +97,7 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FolderOpenOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'
@@ -100,33 +124,72 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 const usesMasLauncher = computed(() => props.launchMode !== 'MaaEnd')
-const launchModeOptions = computed(() => [
-  { value: 'Launcher', label: t('edit.launchViaLauncher') },
-  { value: 'MAS', label: t('edit.maaEndLaunchViaMas') },
-  {
-    value: 'MaaEnd',
-    label: t('edit.maaEndLaunchViaMaaEnd'),
-    disabled: !props.capabilitiesReady || !props.maaEndLaunchSupported,
-  },
-])
+const nativeLauncherHint = computed(() =>
+  t(
+    !props.capabilitiesReady
+      ? 'core.edit.maaEndLaunchCapabilitiesUnknown'
+      : props.maaEndLaunchSupported
+        ? 'core.edit.maaEndNativeManualLauncherHint'
+        : 'core.edit.maaEndNativeLauncherHint'
+  )
+)
+const nativeLauncherHelp = computed(() =>
+  !props.capabilitiesReady || !props.maaEndLaunchSupported
+    ? nativeLauncherHint.value
+    : t(
+        props.source === 'manual'
+          ? 'core.edit.maaEndManualLauncherHelp'
+          : 'core.edit.maaEndNativeLauncherHelp'
+      )
+)
+const canConfigureLauncher = computed(
+  () => props.capabilitiesReady && (usesMasLauncher.value || props.maaEndLaunchSupported)
+)
+const recommendedLabel = (name: string, native: boolean) =>
+  props.capabilitiesReady && props.maaEndLaunchSupported === native
+    ? t('core.edit.maaEndRecommendedLaunch', { name })
+    : name
+const launchModeOptions = computed(() => {
+  const options = [
+    { value: 'Launcher', label: t('core.edit.launchViaLauncher') },
+    { value: 'MAS', label: recommendedLabel(t('core.edit.maaEndLaunchViaMas'), false) },
+    {
+      value: 'MaaEnd',
+      label: recommendedLabel(t('core.edit.maaEndLaunchViaMaaEnd'), true),
+      disabled: !props.capabilitiesReady || !props.maaEndLaunchSupported,
+    },
+  ]
+  if (!props.capabilitiesReady) return options
+  const recommended = props.maaEndLaunchSupported ? 'MaaEnd' : 'MAS'
+  return options.sort(
+    (left, right) => Number(right.value === recommended) - Number(left.value === recommended)
+  )
+})
 const launchHint = computed(() => {
   const description = t(
     props.launchMode === 'MaaEnd'
-      ? 'edit.maaEndNativeModeHint'
+      ? 'core.edit.maaEndNativeModeHint'
       : props.launchMode === 'MAS'
-        ? 'edit.maaEndMasModeHint'
-        : 'edit.maaEndLauncherModeHint'
+        ? 'core.edit.maaEndMasModeHint'
+        : 'core.edit.maaEndLauncherModeHint'
   )
   const limitation = !props.capabilitiesReady
-    ? t('edit.maaEndLaunchCapabilitiesUnknown')
+    ? t('core.edit.maaEndLaunchCapabilitiesUnknown')
     : !props.maaEndLaunchSupported
-      ? t('edit.maaEndNativeLaunchUnsupported')
+      ? t('core.edit.maaEndNativeLaunchUnsupported')
       : ''
   return [description, limitation].filter(Boolean).join(' ')
 })
 const sourceOptions = computed(() => [
-  { value: 'auto', label: t('edit.maaEndLauncherSourceAuto') },
-  { value: 'manual', label: t('edit.maaEndLauncherSourceManual') },
+  {
+    value: 'auto',
+    label: t(
+      usesMasLauncher.value
+        ? 'core.edit.maaEndLauncherSourceAuto'
+        : 'core.edit.maaEndLauncherSourceNative'
+    ),
+  },
+  { value: 'manual', label: t('core.edit.maaEndLauncherSourceManual') },
 ])
 </script>
 

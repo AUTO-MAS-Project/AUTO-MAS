@@ -1,32 +1,12 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="@/assets/ok-ww.ico" alt="ok-ww" class="breadcrumb-logo" />
-            {{ t('edit.editScript') }}
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <DocLink :url="MAS_DOC_URLS.scriptTypes.Okww" />
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditHeader script-type="Okww" :title="t('core.edit.editScript')" @cancel="handleCancel" />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card :title="t('edit.okWwScriptConfiguration')" :loading="pageLoading" class="config-card">
+    <a-card
+      :title="t('core.edit.okWwScriptConfiguration')"
+      :loading="pageLoading"
+      class="config-card"
+    >
       <template #extra>
         <a-tag color="blue" class="type-tag">ok-ww</a-tag>
       </template>
@@ -34,22 +14,21 @@
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ t('core.edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.tellsOkWwScript')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.scriptName')"
+                    :hint="t('core.edit.tellsOkWwScript')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="t('core.edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -59,46 +38,36 @@
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.okWwPath') }}
-                    <a-tooltip :title="t('edit.pickDirectoryHoldingOk4')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    :placeholder="t('edit.pickDirectoryHoldingOk2')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('core.edit.okWwPath')"
+                    :hint="t('core.edit.pickDirectoryHoldingOk4')"
+                    variant="form"
                   />
-                  <a-button
-                    type="primary"
-                    size="large"
-                    class="auto-import-button"
-                    :loading="isDiscoveringOkww"
-                    :disabled="isSaving"
-                    @click="discoverRootPath"
-                  >
-                    <template #icon>
-                      <ImportOutlined />
-                    </template>
-                    {{ t('edit.import') }}
-                  </a-button>
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="isDiscoveringOkww || isSaving"
-                    @click="selectRootPath"
-                  >
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="formData.path"
+                  mode="folder"
+                  :placeholder="t('core.edit.pickDirectoryHoldingOk2')"
+                  :pick-label="t('core.edit.pickDirectory')"
+                  :pick-disabled="isDiscoveringOkww || isSaving"
+                  @pick="selectRootPath"
+                >
+                  <template #before-pick>
+                    <a-button
+                      type="primary"
+                      size="large"
+                      class="auto-import-button"
+                      :loading="isDiscoveringOkww"
+                      :disabled="isSaving"
+                      @click="discoverRootPath"
+                    >
+                      <template #icon>
+                        <ImportOutlined />
+                      </template>
+                      {{ t('core.edit.import') }}
+                    </a-button>
+                  </template>
+                </PathPickerField>
               </a-form-item>
             </a-col>
           </a-row>
@@ -106,18 +75,17 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.gameConfiguration') }}</h3>
+            <h3>{{ t('core.edit.gameConfiguration') }}</h3>
           </div>
           <a-row :gutter="24" class="game-control-row">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.masTakesOverStarting')">
-                    <span class="form-label">
-                      {{ t('edit.enableGameConfiguration') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.enableGameConfiguration')"
+                    :hint="t('core.edit.masTakesOverStarting')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="okwwConfig.Game.Enabled"
@@ -125,20 +93,19 @@
                   class="modern-input"
                   @change="handleChange('Game', 'Enabled', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.okwwAccountSwitchHint')">
-                    <span class="form-label">
-                      运行前强制切换账号
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.forceSwitchAccountBeforeRun')"
+                    :hint="t('core.edit.okwwAccountSwitchHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="okwwConfig.Game.AccountSwitch"
@@ -147,11 +114,11 @@
                   :disabled="!okwwConfig.Game.Enabled"
                   @change="handleChange('Game', 'AccountSwitch', $event)"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
                 <span class="control-hint">
-                  {{ t('edit.accountSwitch16x9ArgHint', { p0: '-Res=1920x1080' }) }}
+                  {{ t('core.edit.accountSwitch16x9ArgHint', { p0: '-Res=1920x1080' }) }}
                 </span>
               </a-form-item>
             </a-col>
@@ -161,12 +128,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.beforeLaunchingGameRun')">
-                    <span class="form-label">
-                      {{ t('edit.updateAutomaticallyBeforeLaunching') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.updateAutomaticallyBeforeLaunching')"
+                    :hint="t('core.edit.beforeLaunchingGameRun')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="okwwConfig.Game.IfAutoUpdate"
@@ -175,8 +141,8 @@
                   :disabled="!okwwConfig.Game.Enabled"
                   @change="handleChange('Game', 'IfAutoUpdate', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
                 <span
                   v-if="
@@ -185,19 +151,18 @@
                   "
                   class="control-hint"
                 >
-                  {{ t('edit.autoUpdateNeedsLauncher') }}
+                  {{ t('core.edit.autoUpdateNeedsLauncher') }}
                 </span>
               </a-form-item>
             </a-col>
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.largeVersionGapNeeds')">
-                    <span class="form-label">
-                      {{ t('edit.wholeFileSyncLimit') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.wholeFileSyncLimit')"
+                    :hint="t('core.edit.largeVersionGapNeeds')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="okwwConfig.Game.UpdateFullSyncLimit"
@@ -226,12 +191,12 @@
                 <template #icon>
                   <ThunderboltOutlined />
                 </template>
-                {{ t('edit.checkUpdates') }}
+                {{ t('core.edit.checkUpdates') }}
               </a-button>
             </a-col>
             <a-col :span="12">
               <span class="label-hint">
-                {{ t('edit.masChecksOfficialVersion') }}
+                {{ t('core.edit.masChecksOfficialVersion') }}
               </span>
             </a-col>
           </a-row>
@@ -241,12 +206,11 @@
               <a-form-item>
                 <template #label>
                   <div class="launch-type-label">
-                    <span class="form-label">
-                      {{ t('edit.launchType') }}
-                      <a-tooltip :title="t('edit.launchTypeHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.launchType')"
+                      :hint="t('core.edit.launchTypeHint')"
+                      variant="form"
+                    />
                     <a-radio-group
                       :value="okwwConfig.Game.Type"
                       class="launch-type-toggle"
@@ -256,48 +220,39 @@
                       :disabled="!okwwConfig.Game.Enabled"
                     >
                       <a-radio-button value="Client">
-                        {{ t('edit.launchDirectly') }}
+                        {{ t('core.edit.launchDirectly') }}
                       </a-radio-button>
                       <a-radio-button value="Launcher">
-                        {{ t('edit.launchViaLauncher') }}
+                        {{ t('core.edit.launchViaLauncher') }}
                       </a-radio-button>
                     </a-radio-group>
                   </div>
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="okwwConfig.Game.Path"
-                    :placeholder="t('edit.pickLauncherDirectory')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                    :disabled="!okwwConfig.Game.Enabled"
-                  />
-                  <a-button
-                    type="primary"
-                    size="large"
-                    class="auto-import-button"
-                    :loading="isDiscoveringGame"
-                    :disabled="!okwwConfig.Game.Enabled || isSaving"
-                    @click="discoverGamePath"
-                  >
-                    <template #icon>
-                      <ImportOutlined />
-                    </template>
-                    {{ t('edit.import') }}
-                  </a-button>
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="!okwwConfig.Game.Enabled || isDiscoveringGame || isSaving"
-                    @click="selectGameRootPath"
-                  >
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="okwwConfig.Game.Path"
+                  mode="folder"
+                  :placeholder="t('core.edit.pickLauncherDirectory')"
+                  :pick-label="t('core.edit.pickDirectory')"
+                  :disabled="!okwwConfig.Game.Enabled"
+                  :pick-disabled="!okwwConfig.Game.Enabled || isDiscoveringGame || isSaving"
+                  @pick="selectGameRootPath"
+                >
+                  <template #before-pick>
+                    <a-button
+                      type="primary"
+                      size="large"
+                      class="auto-import-button"
+                      :loading="isDiscoveringGame"
+                      :disabled="!okwwConfig.Game.Enabled || isSaving"
+                      @click="discoverGamePath"
+                    >
+                      <template #icon>
+                        <ImportOutlined />
+                      </template>
+                      {{ t('core.edit.import') }}
+                    </a-button>
+                  </template>
+                </PathPickerField>
                 <a-alert
                   v-if="gamePathValidation.status !== 'unknown'"
                   :type="gamePathValidation.status === 'valid' ? 'success' : 'error'"
@@ -307,60 +262,50 @@
                 />
                 <div class="derived-client-row">
                   <span class="label-hint">
-                    {{ t('edit.gameClientPathLabel') }}
+                    {{ t('core.edit.gameClientPathLabel') }}
                     <a-tooltip
                       v-if="okwwConfig.Game.Type === 'Launcher'"
-                      :title="t('edit.clientPathOptionalHint')"
+                      :title="t('core.edit.clientPathOptionalHint')"
                     >
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
-                  <a-input-group compact class="path-input-group">
-                    <a-input
-                      :value="okwwConfig.Game.ClientPath || derivedClientPath"
-                      :placeholder="t('edit.clientPathPending')"
-                      size="large"
-                      class="path-input"
-                      readonly
-                      :disabled="!okwwConfig.Game.Enabled"
-                    />
-                    <a-button
-                      size="large"
-                      class="path-button"
-                      :disabled="!okwwConfig.Game.Enabled || isSaving"
-                      @click="selectClientPath"
-                    >
-                      <template #icon>
-                        <FolderOpenOutlined />
-                      </template>
-                      {{ t('edit.selectFile') }}
-                    </a-button>
-                    <a-button
-                      v-if="okwwConfig.Game.ClientPath"
-                      size="large"
-                      class="path-button"
-                      :disabled="!okwwConfig.Game.Enabled || isSaving"
-                      @click="resetClientPath"
-                    >
-                      {{ t('edit.resetAutoLocate') }}
-                    </a-button>
-                  </a-input-group>
+                  <PathPickerField
+                    :model-value="okwwConfig.Game.ClientPath || derivedClientPath"
+                    mode="file"
+                    :placeholder="t('core.edit.clientPathPending')"
+                    :pick-label="t('core.edit.selectFile')"
+                    :disabled="!okwwConfig.Game.Enabled"
+                    :pick-disabled="!okwwConfig.Game.Enabled || isSaving"
+                    @pick="selectClientPath"
+                  >
+                    <template #after-pick>
+                      <a-button
+                        v-if="okwwConfig.Game.ClientPath"
+                        size="large"
+                        class="path-button"
+                        :disabled="!okwwConfig.Game.Enabled || isSaving"
+                        @click="resetClientPath"
+                      >
+                        {{ t('core.edit.resetAutoLocate') }}
+                      </a-button>
+                    </template>
+                  </PathPickerField>
                 </div>
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.launchArguments') }}
-                    <a-tooltip :title="t('edit.gameLaunchArgumentsNot2')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.launchArguments')"
+                    :hint="t('core.edit.gameLaunchArgumentsNot2')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="okwwConfig.Game.Arguments"
-                  :placeholder="t('edit.enterGameLaunchArguments')"
+                  :placeholder="t('core.edit.enterGameLaunchArguments')"
                   size="large"
                   class="modern-input"
                   :disabled="!okwwConfig.Game.Enabled"
@@ -371,12 +316,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.startupWait') }}
-                    <a-tooltip :title="t('edit.howLongWaitAfter')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.startupWait')"
+                    :hint="t('core.edit.howLongWaitAfter')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="okwwConfig.Game.WaitTime"
@@ -394,7 +338,7 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ t('core.edit.runConfiguration') }}</h3>
           </div>
           <ScriptHardTimeoutField
             v-model:value="okwwConfig.Run.HardTimeLimit"
@@ -402,64 +346,31 @@
           />
           <a-row :gutter="24">
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runsPerDay') }}
-                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="okwwConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', okwwConfig.Run.ProxyTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="okwwConfig.Run.ProxyTimesLimit"
+                kind="daily"
+                :label="t('core.edit.runsPerDay')"
+                :hint="t('core.edit.k0MeansNoLimit')"
+                @save="handleChange('Run', 'ProxyTimesLimit', okwwConfig.Run.ProxyTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.giveUpAfterThis')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="okwwConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', okwwConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="okwwConfig.Run.RunTimesLimit"
+                kind="retry"
+                :label="t('core.edit.retryLimit2')"
+                :hint="t('core.edit.giveUpAfterThis')"
+                @save="handleChange('Run', 'RunTimesLimit', okwwConfig.Run.RunTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.logThatStaysUnchanged')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="okwwConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', okwwConfig.Run.RunTimeLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="okwwConfig.Run.RunTimeLimit"
+                kind="timeout"
+                :label="t('core.edit.runTimeoutMinutes')"
+                :hint="t('core.edit.logThatStaysUnchanged')"
+                @save="handleChange('Run', 'RunTimeLimit', okwwConfig.Run.RunTimeLimit)"
+              />
             </a-col>
           </a-row>
         </div>
@@ -469,7 +380,9 @@
 
   <a-modal
     v-model:open="updateModal.open"
-    :title="updateModal.running ? t('edit.okwwUpdateProgress') : t('edit.okwwCheckUpdateTitle')"
+    :title="
+      updateModal.running ? t('core.edit.okwwUpdateProgress') : t('core.edit.okwwCheckUpdateTitle')
+    "
     :confirm-loading="updateModal.starting"
     :mask-closable="!updateModal.running"
     :footer="updateModal.running ? null : undefined"
@@ -478,32 +391,34 @@
   >
     <template v-if="!updateModal.running">
       <a-form layout="vertical">
-        <a-form-item :label="t('edit.pickUserWhoseServer')">
+        <a-form-item :label="t('core.edit.pickUserWhoseServer')">
           <a-select v-model:value="updateModal.selectedUserId" style="width: 100%">
             <a-select-option v-for="user in updateModal.users" :key="user.uid" :value="user.uid">
               {{ user.name }}（{{ user.resource }}）
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-alert type="info" show-icon :message="t('edit.wutheringWavesWillBe')" />
+        <a-alert type="info" show-icon :message="t('core.edit.wutheringWavesWillBe')" />
       </a-form>
     </template>
     <template v-else>
       <div class="update-log-area">
-        <pre class="update-log-content">{{ updateModal.log || '正在连接更新任务...' }}</pre>
+        <pre class="update-log-content">
+          {{ updateModal.log || t('core.edit.wutheringWavesUpdateConnecting') }}
+        </pre>
       </div>
     </template>
   </a-modal>
 
   <a-modal
     v-model:open="candidateModal.open"
-    :title="t('edit.pickImportPath')"
+    :title="t('core.edit.pickImportPath')"
     :confirm-loading="candidateModal.loading"
     @ok="confirmCandidateSelection"
     @cancel="closeCandidateModal"
   >
     <a-form layout="vertical">
-      <a-form-item :label="t('edit.severalUsablePathsWere')">
+      <a-form-item :label="t('core.edit.severalUsablePathsWere')">
         <a-select v-model:value="candidateModal.selectedPath" style="width: 100%">
           <a-select-option
             v-for="candidate in candidateModal.candidates"
@@ -519,22 +434,19 @@
 </template>
 
 <script setup lang="ts">
+import PathPickerField from '@/components/PathPickerField.vue'
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { requestUserUpdateStart } from '@/composables/useTaskApi'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import DocLink from '@/components/DocLink.vue'
-import { MAS_DOC_URLS } from '@/utils/openExternal'
+import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  FolderOpenOutlined,
-  ImportOutlined,
-  QuestionCircleOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons-vue'
-import { Service, TaskCreateIn } from '@/api'
+import { ImportOutlined, QuestionCircleOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
+import { Service } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useUserApi } from '@/composables/useUserApi'
@@ -554,8 +466,8 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript } = useScriptApi()
-const { getUsers } = useUserApi()
+const { getScript, updateScript, error: scriptApiError } = useScriptApi()
+const { getUsers, error: userApiError } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const scriptId = route.params.id as string
@@ -631,8 +543,8 @@ const okwwConfig = reactive<OkwwScriptConfigForm>({
 })
 
 const rules = {
-  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
-  path: [{ required: true, message: t('edit.pickOkWwPath'), trigger: 'blur' }],
+  name: [{ required: true, message: t('core.edit.enterScriptName'), trigger: 'blur' }],
+  path: [{ required: true, message: t('core.edit.pickOkWwPath'), trigger: 'blur' }],
 }
 
 const WUWA_LAUNCHER_EXECUTABLE = 'launcher.exe'
@@ -725,6 +637,7 @@ const handleCheckUpdate = async () => {
   if (updateModal.running) return
   try {
     const resp = await getUsers(scriptId)
+    if (!resp) return
     const data = (resp?.data || {}) as Record<string, any>
     const users: UpdateUserOption[] = Object.entries(data)
       .filter(([, user]) => user?.Info?.Status !== false)
@@ -734,7 +647,7 @@ const handleCheckUpdate = async () => {
         resource: user?.Info?.Resource || '官服',
       }))
     if (!users.length) {
-      message.warning(t('edit.addEnableUserBefore'))
+      message.warning(t('core.edit.addEnableUserBefore'))
       return
     }
     updateModal.users = users
@@ -744,7 +657,7 @@ const handleCheckUpdate = async () => {
     updateModal.open = true
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error(t('edit.couldNotLoadUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser'))
   }
 }
 
@@ -790,10 +703,7 @@ const startUpdate = async () => {
   if (!updateModal.selectedUserId) return
   updateModal.starting = true
   try {
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: updateModal.selectedUserId,
-      mode: TaskCreateIn.mode.UPDATE,
-    })
+    const response = await requestUserUpdateStart(updateModal.selectedUserId, 'Okww')
     if (response.code !== 200 || !response.taskId) {
       throw new Error(response.message || '启动鸣潮更新失败')
     }
@@ -808,14 +718,14 @@ const startUpdate = async () => {
       subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
         const data = wsMessage.data as unknown as WSTaskNoticeData
         if (data.level === 'error') {
-          message.error(t('edit.wutheringWavesUpdateFailed', { p0: data.message }))
+          message.error(t('core.edit.wutheringWavesUpdateFailed', { p0: data.message }))
           updateModal.running = false
           updateModal.open = false
           void stopUpdateSession()
         }
       }),
       subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
-        message.success(t('edit.wutheringWavesUpdateTask'))
+        message.success(t('core.edit.wutheringWavesUpdateTask'))
         updateModal.running = false
         updateModal.open = false
         void stopUpdateSession()
@@ -823,7 +733,7 @@ const startUpdate = async () => {
     ]
     updateSession.timeout = window.setTimeout(
       () => {
-        message.error(t('edit.wutheringWavesUpdateTimed'))
+        message.error(t('core.edit.wutheringWavesUpdateTimed'))
         void stopUpdateSession()
       },
       30 * 60 * 1000
@@ -845,7 +755,7 @@ const handleUpdateModalCancel = () => {
 }
 
 const showPathRejectModal = (title: string, content: string) => {
-  Modal.error({ title, content, okText: t('edit.gotIt') })
+  Modal.error({ title, content, okText: t('core.edit.gotIt') })
 }
 
 const closeCandidateModal = () => {
@@ -916,7 +826,7 @@ const saveField = (
 
 const applyRootPathDefaults = async (rootPath: string, successMessage = 'ok-ww 根目录已保存') => {
   if (!rootPath || rootPath === '.') {
-    message.warning(t('edit.pickScriptRootDirectory'))
+    message.warning(t('core.edit.pickScriptRootDirectory'))
     return false
   }
   const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
@@ -959,12 +869,12 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
     if (detail.type !== 'Okww') {
-      message.error(t('edit.scriptTypeNotOk2'))
+      message.error(t('core.edit.scriptTypeNotOk2'))
       handleCancel()
       return
     }
@@ -983,7 +893,7 @@ const loadScript = async () => {
     persistedGamePath = okwwConfig.Game.Path
     persistedClientPath = okwwConfig.Game.ClientPath
   } catch {
-    message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false
@@ -1129,12 +1039,12 @@ const refreshDerivedClientPath = async () => {
       derivedClientPath.value = result.client_path
     } else {
       derivedClientPath.value = ''
-      message.warning(t('edit.clientPathLocateFailed', { message: result.message }))
+      message.warning(t('core.edit.clientPathLocateFailed', { message: result.message }))
     }
   } catch (error) {
     logger.error(`解码鸣潮客户端路径失败: ${error instanceof Error ? error.message : error}`)
     derivedClientPath.value = ''
-    message.warning(t('edit.clientPathLocateFailedHint'))
+    message.warning(t('core.edit.clientPathLocateFailedHint'))
   }
 }
 
@@ -1162,7 +1072,7 @@ const handleLaunchTypeChange = async (value: 'Launcher' | 'Client') => {
     }
   }).catch(() => false)
   if (!success) {
-    message.error(t('edit.launchTypeSaveFailed'))
+    message.error(t('core.edit.launchTypeSaveFailed'))
     return
   }
   await refreshDerivedClientPath()
@@ -1177,7 +1087,7 @@ const saveClientPath = async (clientPath: string) => {
     () => {
       okwwConfig.Game.ClientPath = persistedClientPath
     },
-    t(clientPath ? 'edit.clientPathSaved' : 'edit.clientPathReset')
+    t(clientPath ? 'core.edit.clientPathSaved' : 'core.edit.clientPathReset')
   )
   if (success) {
     persistedClientPath = clientPath
@@ -1201,7 +1111,10 @@ const selectClientPath = async () => {
   // 与后端 check() 同口径：按进程名精确匹配（大小写不同会被后端拒绝）
   const executable = normalized.split('/').pop()
   if (executable !== WUWA_CLIENT_EXECUTABLE) {
-    showPathRejectModal(t('edit.invalidClientFileTitle'), t('edit.invalidClientFileContent'))
+    showPathRejectModal(
+      t('core.edit.invalidClientFileTitle'),
+      t('core.edit.invalidClientFileContent')
+    )
     return
   }
   await saveClientPath(normalized)
@@ -1218,102 +1131,14 @@ onUnmounted(() => {
 })
 </script>
 
+<style scoped src="@/styles/scriptEditForm.css"></style>
+
 <style scoped>
-.script-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-}
-
-.breadcrumb-current {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-
-.script-edit-content {
-  flex: 1;
-}
-
-.config-card {
-  overflow: hidden;
-}
-
-.config-card :deep(.ant-card-head) {
-  background: var(--ant-color-bg-container);
-  padding: 24px 32px;
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
-.type-tag {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 8px;
-}
-
-.form-section {
-  margin-bottom: 12px;
-}
-
 .section-header {
-  margin-bottom: 6px;
-  padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-}
-
 .label-hint {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
-}
-
-.control-hint {
-  display: block;
-  margin-top: 4px;
   font-size: 12px;
   font-weight: 400;
   color: var(--ant-color-text-tertiary);
@@ -1324,24 +1149,6 @@ onUnmounted(() => {
   color: var(--ant-color-text-secondary);
 }
 
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  cursor: help;
-}
-
-.path-input-group {
-  display: flex;
-  overflow: hidden;
-  border: 1px solid var(--ant-color-border);
-}
-
-.path-input {
-  flex: 1;
-  min-width: 0;
-  border: none !important;
-  border-radius: 0 !important;
-}
-
 .auto-import-button {
   flex-shrink: 0;
   border-radius: 0;
@@ -1350,13 +1157,6 @@ onUnmounted(() => {
 
 .path-button {
   flex-shrink: 0;
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  border-left: 1px solid var(--ant-color-border-secondary);
 }
 
 .path-validation-alert {
@@ -1396,27 +1196,11 @@ onUnmounted(() => {
   color: var(--ant-color-text);
 }
 
-.config-form :deep(.ant-form-item) {
-  margin-bottom: 24px;
-}
-
 .game-control-row {
   margin-bottom: 8px;
 }
 
 .game-control-row :deep(.ant-form-item) {
   margin-bottom: 0;
-}
-
-@media (max-width: 768px) {
-  .script-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
-  }
 }
 </style>

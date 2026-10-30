@@ -50,6 +50,17 @@ from pydantic import (
 
 from app.core import Config
 from app.core.game_calendar import GameCalendar
+from app.core.taskboard_state import (
+    load_state,
+    merge_version_story,
+    save_archive,
+    save_selection,
+    save_weekly_selection,
+    set_done_at,
+    set_version_story_done,
+    set_weekly_done,
+    weekly_key,
+)
 from app.models.schema import (
     BlueArchiveActivityIn,
     ComboBoxItem,
@@ -57,6 +68,17 @@ from app.models.schema import (
     EmulatorDeleteIn,
     OutBase,
     PlanComboxConsumer,
+)
+from app.models.taskboard import (
+    TaskboardArchivedActivity,
+    TaskboardDoneRecord,
+    TaskboardState,
+    TaskboardVersionStoryUpdate,
+)
+from app.tools.azurlane_activity import fetch_azurlane_activities
+from app.tools.bluearchive_activity_source import (
+    GAMEKEE_HEADERS,
+    fetch_bluearchive_activities,
 )
 from app.tools.sra_activity import fetch_sra_activities
 from app.tools.stella_official import classify_activity_name, fetch_official_activities
@@ -92,6 +114,7 @@ class GameCalendarActivityScopeIn(BaseModel):
         "arknights",
         "stellasora",
         "infinitynikki",
+        "azurlane",
     ] = Field(..., description="首页游戏标识")
     server: Literal["cn", "jp", "global"] = Field(
         default="cn", description="碧蓝档案服务器，其它游戏忽略此字段"
@@ -147,6 +170,54 @@ class GetStageIn(BaseModel):
 
 class PlanComboxIn(BaseModel):
     consumer: PlanComboxConsumer = Field(..., description="计划表消费方")
+
+
+class TaskboardStateOut(OutBase):
+    data: TaskboardState = Field(default_factory=TaskboardState)
+    weekly_week: str = Field(default="", description="当前每周任务周键")
+
+
+class TaskboardSelectionIn(BaseModel):
+    games: list[str] = Field(
+        default_factory=list, max_length=100, description="勾选的游戏"
+    )
+
+
+class TaskboardArchiveIn(BaseModel):
+    archived: list[TaskboardArchivedActivity] = Field(
+        default_factory=list, max_length=2000, description="已归档活动的展示缓存"
+    )
+
+
+class TaskboardDoneAtIn(BaseModel):
+    key: str = Field(..., min_length=1, max_length=400, description="完成日期记录键")
+    record: TaskboardDoneRecord | None = Field(
+        default=None, description="为空表示删除该记录"
+    )
+
+
+class TaskboardWeeklyIn(BaseModel):
+    key: str = Field(..., min_length=1, max_length=100, description="任务台游戏标识")
+    done: bool = Field(..., description="是否标记为已完成")
+    week: str = Field(
+        default="",
+        max_length=20,
+        description="客户端看到的周键；为空时不校验客户端周键",
+    )
+
+
+class TaskboardWeeklyOut(OutBase):
+    week: str = Field(default="", description="当前周键")
+    applied: bool = Field(default=True, description="本次操作是否按客户端周键生效")
+
+
+class TaskboardVersionStoryIn(BaseModel):
+    records: list[TaskboardVersionStoryUpdate] = Field(
+        default_factory=list, max_length=500, description="本次取到的版本记录"
+    )
+    observed_at: int = Field(
+        default=0, ge=0, description="客户端观察时间，Unix 毫秒；用于丢弃旧批次"
+    )
 
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
@@ -207,22 +278,125 @@ async def set_activity_completion(
         return OutBase(code=500, status="error", message="保存活动完成状态失败")
 
 
-## 碧蓝档案活动数据取自 GameKee 的活动表。那个接口靠自定义头识别是哪个游戏，
-## 少了会返回 {"code": 403, "msg": "缺少游戏信息"}；它同时给三个服，
-## 每条带封面图与中文分类（活动 / 总力大决 / 爬塔 / 多倍活动 …）。
-## 前端直连会被跨域挡住（响应里没有 access-control-allow-origin），所以由后端中转。
-GAMEKEE_ACTIVITY_URL = "https://www.gamekee.com/v1/activity/page-list"
-GAMEKEE_HEADERS = {
-    "game-alias": "ba",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Referer": "https://www.gamekee.com/ba/huodong/16",
-}
+## 任务台状态：文件读写与裁剪放在 app.core.taskboard_state，这里只做参数与错误转换。
+@router.get(
+    "/taskboard/state",
+    tags=["Get"],
+    summary="获取任务台状态",
+    response_model=TaskboardStateOut,
+)
+async def get_taskboard_state() -> TaskboardStateOut:
+    try:
+        return TaskboardStateOut(data=await load_state(), weekly_week=weekly_key())
+    except (OSError, TypeError, ValueError):
+        logger.exception("读取任务台状态失败")
+        return TaskboardStateOut(code=500, status="error", message="读取任务台状态失败")
 
-## 对外仍沿用 Kivo 时代的服务器标识，内部换成 GameKee 的 serverId
-GAMEKEE_SERVER_IDS = {"JP": 15, "Globle": 17, "CN": 16}
 
-## 兜底数据来自 SRA 时用它自己的游戏标识，与 GameKee 的服务器标识一一对应
-SRA_BLUEARCHIVE_IDS = {"JP": "ba-jp", "Globle": "ba-global", "CN": "ba-cn"}
+@router.put(
+    "/taskboard/selection",
+    tags=["Set"],
+    summary="保存任务台勾选的游戏",
+    response_model=OutBase,
+)
+async def set_taskboard_selection(payload: TaskboardSelectionIn) -> OutBase:
+    try:
+        await save_selection(payload.games)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台游戏选择失败")
+        return OutBase(code=500, status="error", message="保存任务台游戏选择失败")
+
+
+@router.put(
+    "/taskboard/weekly-selection",
+    tags=["Set"],
+    summary="保存每周任务勾选的游戏",
+    response_model=OutBase,
+)
+async def set_taskboard_weekly_selection(payload: TaskboardSelectionIn) -> OutBase:
+    try:
+        await save_weekly_selection(payload.games)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存每周任务游戏选择失败")
+        return OutBase(code=500, status="error", message="保存每周任务游戏选择失败")
+
+
+@router.put(
+    "/taskboard/archive",
+    tags=["Set"],
+    summary="保存任务台归档缓存",
+    response_model=OutBase,
+)
+async def set_taskboard_archive(payload: TaskboardArchiveIn) -> OutBase:
+    try:
+        await save_archive(payload.archived)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台归档失败")
+        return OutBase(code=500, status="error", message="保存任务台归档失败")
+
+
+@router.put(
+    "/taskboard/done-at",
+    tags=["Set"],
+    summary="记录或删除任务台的完成日期",
+    response_model=OutBase,
+)
+async def set_taskboard_done_at(payload: TaskboardDoneAtIn) -> OutBase:
+    try:
+        await set_done_at(payload.key, payload.record)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台完成日期失败")
+        return OutBase(code=500, status="error", message="保存任务台完成日期失败")
+
+
+@router.put(
+    "/taskboard/weekly",
+    tags=["Set"],
+    summary="记录或撤销任务台的每周任务",
+    response_model=TaskboardWeeklyOut,
+)
+async def set_taskboard_weekly(payload: TaskboardWeeklyIn) -> TaskboardWeeklyOut:
+    try:
+        week, applied = await set_weekly_done(payload.key, payload.done, payload.week)
+        return TaskboardWeeklyOut(week=week, applied=applied)
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台每周任务失败")
+        return TaskboardWeeklyOut(code=500, status="error", message="保存每周任务失败")
+
+
+@router.put(
+    "/taskboard/version-story",
+    tags=["Set"],
+    summary="合并任务台的版本主线记录",
+    response_model=OutBase,
+)
+async def set_taskboard_version_story(payload: TaskboardVersionStoryIn) -> OutBase:
+    try:
+        await merge_version_story(payload.records, payload.observed_at)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台版本主线失败")
+        return OutBase(code=500, status="error", message="保存版本主线失败")
+
+
+@router.put(
+    "/taskboard/version-story/done",
+    tags=["Set"],
+    summary="记录或撤销任务台的版本主线完成状态",
+    response_model=OutBase,
+)
+async def set_taskboard_version_story_done(payload: TaskboardDoneAtIn) -> OutBase:
+    try:
+        await set_version_story_done(payload.key, payload.record)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台版本主线完成状态失败")
+        return OutBase(code=500, status="error", message="保存版本主线完成状态失败")
+
 
 ## 图片域名白名单：中转只认数据源自己的图，免得这个接口变成谁都能用的开放代理。
 ## 最后一个域是 SRA 的图床（兜底数据的封面），它公开可访问、不校验 Referer
@@ -240,27 +414,6 @@ PRTS_HEADERS = {"User-Agent": "AUTO-MAS"}
 ARKNIGHTS_CACHE_TTL = 600
 ARKNIGHTS_RECENT_WINDOW_DAYS = 14
 _arknights_cache: tuple[float, dict] | None = None
-
-## 活动排期变化很慢，缓存十分钟，避免每个前端反复打这个第三方接口
-BLUEARCHIVE_CACHE_TTL = 600
-
-## 缓存条数上限：参数组合本来就有限（3 个服 × 页数 × 每页条数），
-## 但接口对调用方是开放的，给个上限免得异常调用把进程内存撑大
-BLUEARCHIVE_CACHE_MAX_ENTRIES = 32
-_bluearchive_cache: dict[str, tuple[float, dict]] = {}
-
-
-def _prune_bluearchive_cache(now: float) -> None:
-    """先清掉过期项，仍超出上限时按写入时间淘汰最旧的。"""
-
-    for key in [
-        k for k, v in _bluearchive_cache.items() if now - v[0] >= BLUEARCHIVE_CACHE_TTL
-    ]:
-        _bluearchive_cache.pop(key, None)
-
-    while len(_bluearchive_cache) >= BLUEARCHIVE_CACHE_MAX_ENTRIES:
-        oldest = min(_bluearchive_cache, key=lambda key: _bluearchive_cache[key][0])
-        _bluearchive_cache.pop(oldest, None)
 
 
 @router.post(
@@ -304,7 +457,7 @@ async def get_stage_combox(
     stage: GetStageIn = Body(..., description="关卡号类型"),
 ) -> ComboBoxOut:
 
-    from app.task.MAA.tools.stage_service import maa_stage_service
+    from app.core.maa_stage import maa_stage_service
 
     try:
         raw_data = await maa_stage_service.get_stage_info(stage.type)
@@ -507,7 +660,7 @@ async def confirm_notice() -> OutBase:
 async def get_overview(
     refresh: bool = False,
 ) -> InfoOut:
-    from app.task.MAA.tools.stage_service import maa_stage_service
+    from app.core.maa_stage import maa_stage_service
 
     try:
         if refresh:
@@ -544,42 +697,6 @@ async def get_overview(
     )
 
 
-def _epoch_seconds(value: str) -> int:
-    """ISO 时间串 → Unix 秒；解析不出来返回 0。"""
-
-    try:
-        return int(datetime.fromisoformat(value).timestamp())
-    except ValueError:
-        return 0
-
-
-def _to_gamekee_rows(activities: list[dict[str, object]]) -> list[dict[str, object]]:
-    """把 SRA 的活动条目换成 GameKee 表的字段形状。
-
-    前端只认 GameKee 那一套（title / activity_kind_name / begin_at…），照着拼一份
-    省得让前端认识第二套数据源；SRA 已经滤掉非活动条目，分类固定写「活动」。
-    """
-
-    rows: list[dict[str, object]] = []
-    for item in activities:
-        name = str(item.get("name") or "").strip()
-        begin = _epoch_seconds(str(item.get("startTime") or ""))
-        end = _epoch_seconds(str(item.get("endTime") or ""))
-        if not name or not begin or not end:
-            continue
-        rows.append(
-            {
-                "title": name,
-                "picture": str(item.get("cover") or ""),
-                "description": str(item.get("description") or ""),
-                "activity_kind_name": "活动",
-                "begin_at": begin,
-                "end_at": end,
-            }
-        )
-    return rows
-
-
 @router.post(
     "/bluearchive/activity",
     tags=["Get"],
@@ -592,57 +709,21 @@ async def get_bluearchive_activity(
 ) -> InfoOut:
     """按服务器取回碧蓝档案的活动。
 
-    这里只做转发：把 GameKee 的响应原样交给前端，分类筛选与格式转换都由前端完成。
-    之所以要绕一道后端，一是那个接口认自定义头、二是响应没给跨域头，浏览器直连取不到。
-
-    GameKee 取不到时改用 SRA 托管的那份：那一份已经筛掉非活动条目，这里换成 GameKee
-    的字段形状再交给前端，省得让前端认识第二套数据源。
+    共享取数模块负责 GameKee 请求与 SRA 兜底，这里只包装响应。
+    前端继续接收 GameKee 字段，活动筛选与展示格式保持不变。
     """
 
-    cache_key = f"{payload.line_type}:{payload.page}:{payload.page_size}"
-    cached = _bluearchive_cache.get(cache_key)
-    if cached is not None and time.time() - cached[0] < BLUEARCHIVE_CACHE_TTL:
-        return InfoOut(data=cached[1])
-
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.get(
-                GAMEKEE_ACTIVITY_URL,
-                params={
-                    "serverId": GAMEKEE_SERVER_IDS[payload.line_type],
-                    "page_no": payload.page,
-                    "limit": payload.page_size,
-                    "status": 0,
-                    "importance": 0,
-                    "sort": -1,
-                    "keyword": "",
-                },
-                headers=GAMEKEE_HEADERS,
-            )
-        response.raise_for_status()
-        data = response.json()
-        if data.get("code") != 0:
-            raise ValueError(f"GameKee 返回 {data.get('code')}: {data.get('msg')}")
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"获取碧蓝档案活动数据失败({payload.line_type}): {type(e).__name__}: {e}"
+        data = await fetch_bluearchive_activities(
+            line_type=payload.line_type, page=payload.page, page_size=payload.page_size
         )
-        ## SRA 一次给全，翻页请求不再重复给同一批活动
-        if payload.page > 1:
-            return InfoOut(data={"code": 0, "data": []})
-        fallback = await fetch_sra_activities(SRA_BLUEARCHIVE_IDS[payload.line_type])
-        if fallback is None:
-            return InfoOut(
-                code=500,
-                status="error",
-                message=f"{type(e).__name__}: {str(e)}",
-                data={},
-            )
-        logger.info(f"碧蓝档案活动数据改用 SRA 兜底({payload.line_type})")
-        data = {"code": 0, "data": _to_gamekee_rows(fallback["activities"])}
-
-    _prune_bluearchive_cache(time.time())
-    _bluearchive_cache[cache_key] = (time.time(), data)
+    except Exception as e:
+        return InfoOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data={},
+        )
     return InfoOut(data=data)
 
 
@@ -1105,5 +1186,42 @@ async def get_stella_activity() -> InfoOut:
             item["kind"] = classify_activity_name(str(item["name"]))
         logger.info("星塔旅人活动数据改用 SRA 兜底")
         data = fallback
+
+    return InfoOut(data=data)
+
+
+@router.post(
+    "/azurlane/activity",
+    tags=["Get"],
+    summary="获取碧蓝航线活动数据（BWIKI 中转）",
+    response_model=InfoOut,
+    status_code=200,
+)
+async def get_azurlane_activity() -> InfoOut:
+    """取回碧蓝航线的活动一览。
+
+    数据来自碧蓝海事局 WIKI 的活动日历页：官方站与日服站都是纯前端渲染，HTML 里
+    没有活动内容，GameKee 也没开放这条线，能稳定拿到的只有这份维基文本。日历只写
+    月日，时刻由取数模块按当天 10:00 开始、23:59 结束落到北京时间。
+
+    Returns:
+        InfoOut: ``{"activities": [...]}``；取不到时返回 ``code=500`` 的错误信封。
+    """
+
+    try:
+        data = await fetch_azurlane_activities()
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_azurlane_activity失败: {type(e).__name__}: {e}"
+        )
+        data = None
+
+    if data is None:
+        return InfoOut(
+            code=500,
+            status="error",
+            message="碧蓝航线活动数据暂不可用",
+            data={},
+        )
 
     return InfoOut(data=data)

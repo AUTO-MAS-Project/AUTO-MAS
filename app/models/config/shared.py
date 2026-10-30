@@ -30,19 +30,28 @@ from pydantic import BeforeValidator, TypeAdapter
 
 if TYPE_CHECKING:
     from .script import UserConfigType
-from app.utils import get_logger
-from app.utils.constants import (
+from app.utils import (
     MAAEND_AUTO_ESSENCE_MENUS,
     MAAEND_SANITY_TASK_DEFAULTS,
     MAAEND_SANITY_TASK_TYPES,
     MSS_DEFAULT_TRIBULATION_STAGE,
     MSS_TRIBULATION_STAGES,
     UTC4,
+    get_logger,
 )
 
 from .. import schema as schema_model
 
 logger = get_logger("配置模型")
+
+
+def none_as(value: str | int | float) -> BeforeValidator:
+    """将显式空值还原为配置项原有的清空值，不改变省略或非空值的校验。"""
+
+    def normalize(input_value: object) -> object:
+        return value if input_value is None else input_value
+
+    return BeforeValidator(normalize)
 
 
 def local_timezone(_model: object = None) -> timezone:

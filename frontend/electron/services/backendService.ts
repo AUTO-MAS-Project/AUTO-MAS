@@ -1,3 +1,5 @@
+import { beginMainFeature } from './featureAnalytics'
+import { getFluxdownInstallEnvironment } from './fluxdownInstallService'
 /**
  * 后端服务管理
  * 重构版本 - 只负责后端进程的启动、停止和管理
@@ -10,7 +12,7 @@ import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 
 import { killAllRelatedProcesses } from '../utils/processManager'
 import { MirrorService } from './mirrorService'
-import { isDevelopmentEnvironment } from './environmentService'
+import { getApplicationEnvironment, isDevelopmentEnvironment } from './instanceConfig'
 import { resolveHttpPort } from './instanceConfig'
 import {
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
@@ -18,6 +20,7 @@ import {
   RuntimeRemediation,
   RuntimeRunResult,
   RuntimeRunControl,
+  RuntimeLogEvent,
   RuntimeSuperviseHandle,
   RuntimeSupervisedLaunchConfig,
   createRuntimeClient,
@@ -31,6 +34,9 @@ import { resolveRuntimeTargetVersion, toRuntimeVersion } from './runtimeInitiali
 
 import { getLogger } from './logger'
 import { observeMainOperation, recordMainCount, recordMainDuration } from './sentry'
+import { analyticsService, refreshAnalyticsPreference } from './analyticsService'
+import { analyticsDuration } from './analyticsPolicy'
+import type { AnalyticsRuntimeMode } from '../../src/types/analytics'
 const logger = getLogger('后端服务')
 const BACKEND_UNAVAILABLE_CONFIRMATIONS = 3
 
@@ -42,12 +48,20 @@ const RUNTIME_SHUTDOWN_TIMEOUT_MS = 30000
 // 启动阶段每路输出只保留最近这么多行：后端每行 DEBUG 日志都会以 log 事件到达，
 // 失败界面也只需要尾部；无上限累积会在长驻监督期间把内存吃光。
 const RUNTIME_STARTUP_LOG_LINE_LIMIT = 200
+const RUNTIME_STARTUP_LOG_CHAR_LIMIT = 64 * 1024
 
-/** 尾部保留固定行数的追加：超出上限时丢弃最旧的一行。 */
+/** 按行数与字符数保留日志尾部，单条超限时复制截断后的内容。 */
 function pushBoundedLine(lines: string[], message: string, limit: number): void {
-  lines.push(message)
-  if (lines.length > limit) {
-    lines.splice(0, lines.length - limit)
+  const bounded =
+    message.length > RUNTIME_STARTUP_LOG_CHAR_LIMIT
+      ? Buffer.from(message.slice(-RUNTIME_STARTUP_LOG_CHAR_LIMIT), 'utf8').toString('utf8')
+      : message
+  for (const line of bounded.split(/\r?\n/).slice(-limit)) {
+    lines.push(line)
+    let size = lines.reduce((total, item) => total + item.length + 1, -1)
+    while (lines.length > limit || (size > RUNTIME_STARTUP_LOG_CHAR_LIMIT && lines.length > 1)) {
+      size -= lines.shift()!.length + 1
+    }
   }
 }
 
@@ -130,7 +144,7 @@ export class BackendService {
   private restartFlight: Promise<BackendStartResult> | null = null
   private forceStopFlight: Promise<BackendStopResult> | null = null
   private forceStopRequested = false
-  private lastKnownBackendDevMode: boolean | null = null
+  private lastKnownPreserveBackend: boolean | null = null
   // Runtime 监督链路的句柄与就绪地址；旧链路下始终为 null。
   private runtimeHandle: RuntimeSuperviseHandle | null = null
   private runtimeBaseUrl: string | null = null
@@ -141,6 +155,7 @@ export class BackendService {
   private readonly runtimeRuns = new Set<Promise<RuntimeRunResult>>()
 
   private readonly startupHealthPath = '/api/core/health'
+  private analyticsRuntimeMode: AnalyticsRuntimeMode = 'unknown'
 
   constructor(appRoot: string, mirrorService: MirrorService) {
     this.appRoot = appRoot
@@ -178,13 +193,34 @@ export class BackendService {
 
   private async startBackendInternal(options?: BackendStartOptions): Promise<BackendStartResult> {
     const startedAt = performance.now()
+    refreshAnalyticsPreference()
+    const context = analyticsService.getContext()
+    this.analyticsRuntimeMode = 'unknown'
+    const record = (success: boolean) => {
+      refreshAnalyticsPreference()
+      analyticsService.recordMainEvent(context, {
+        name: 'backend_start_finished',
+        props: {
+          outcome: success ? 'success' : 'failure',
+          runtime_mode: this.analyticsRuntimeMode,
+          duration_bucket: analyticsDuration(performance.now() - startedAt),
+        },
+      })
+    }
 
     return observeMainOperation(
       'AUTO-MAS backend startup',
       'auto_mas.backend.start',
       { component: 'electron-main' },
       async () => {
-        const result = await this.startBackendProcess(options)
+        let result: BackendStartResult
+        try {
+          result = await this.startBackendProcess(options)
+        } catch (error) {
+          record(false)
+          throw error
+        }
+        record(result.success)
         const attributes = {
           component: 'electron-main',
           outcome: result.success ? 'success' : 'failure',
@@ -205,6 +241,7 @@ export class BackendService {
     // 灰度开关打开后整条生命周期都走 Runtime 监督链路，绝不与旧链路混用：两条链路的端口、
     // 关闭语义与进程归属都不同，中途回退只会留下无人负责的后端进程。
     const launchConfig = resolveRuntimeLaunchConfig(this.appRoot)
+    this.analyticsRuntimeMode = launchConfig.mode
     if (launchConfig.mode !== 'off') {
       return this.startBackendViaRuntime(launchConfig, options)
     }
@@ -232,15 +269,21 @@ export class BackendService {
         throw new Error('强制停止已请求，取消启动后端')
       }
 
-      const pythonExe =
+      let pythonExe =
         options?.pythonPath || path.join(this.appRoot, 'environment', 'python', 'python.exe')
       const mainPy = options?.mainPyPath || path.join(this.appRoot, 'main.py')
       const cwd = options?.cwd || this.appRoot
       const timeout = options?.timeout || 60000
 
-      // 检查文件是否存在
+      // 检查文件是否存在。开发环境（源码仓库）没有内嵌 Python，
+      // 回退系统解释器直跑 main.py，否则「重启后端」在开发态永远失败。
       if (!fs.existsSync(pythonExe)) {
-        throw new Error(`Python 可执行文件不存在: ${pythonExe}`)
+        if (isDevelopmentEnvironment()) {
+          pythonExe = process.platform === 'win32' ? 'python' : 'python3'
+          logger.warn(`内嵌 Python 不存在,开发环境回退系统解释器: ${pythonExe}`)
+        } else {
+          throw new Error(`Python 可执行文件不存在: ${pythonExe}`)
+        }
       }
       if (!fs.existsSync(mainPy)) {
         throw new Error(`后端主文件不存在: ${mainPy}`)
@@ -314,9 +357,9 @@ export class BackendService {
    *
    * 与旧链路的三点区别：
    * 1. 不注入 `AUTO_MAS_DEV` / `AUTO_MAS_HTTP_PORT`：受监督后端的端口与身份由 Runtime 注入的
-   *    `AUTO_MAS_SUPERVISED` 一组变量决定，这里再注入只会互相打架。`AUTO_MAS_ENV=development`
-   *    与遥测开关一样由 `createRuntimeClient` 按启动模式统一注入（见 runtimeEnv.ts），只影响
-   *    后端的遥测判定；
+   *    `AUTO_MAS_SUPERVISED` 一组变量决定，这里再注入只会互相打架。`AUTO_MAS_ENV`
+   *    与遥测开关由 `createRuntimeClient` 按应用环境统一注入（见 runtimeEnv.ts），
+   *    不改变监督器的端口与退出契约；
    * 2. 就绪以 `state:running` 事件为准，而不是解析 stdout 里的 `Uvicorn running`；
    * 3. 后端地址取事件里的 `details.baseUrl`，不按 `resolveHttpPort()` 自行拼装。
    *
@@ -357,40 +400,56 @@ export class BackendService {
         `Runtime 根目录: ${config.appRoot}${config.repo ? `, 源码目录: ${config.repo}` : ''}`
     )
 
-    // 遥测开关（AUTO_MAS_TELEMETRY）与开发标记（AUTO_MAS_ENV）由 createRuntimeClient 统一注入，
+    // 遥测开关（AUTO_MAS_TELEMETRY）与应用环境（AUTO_MAS_ENV）由 createRuntimeClient 统一注入，
     // 见 runtimeEnv.ts；配置从用户数据根 dataRoot 读，development 模式下它不是 --app-root。
     const client = createRuntimeClient({
       runtimePath,
       appRoot: config.appRoot,
       dataRoot: config.dataRoot,
-      launchMode: config.mode,
+      env: getFluxdownInstallEnvironment(),
     })
 
     if (config.mode === 'development') {
       const failure = await this.ensureDevelopmentRuntimeEnvironment(client, config)
       if (failure) return failure
     } else {
+      const stdoutLines: string[] = []
+      const stderrLines: string[] = []
+      const otherLines: string[] = []
+      const captureLog = (event: RuntimeLogEvent) => {
+        const lines =
+          event.stream === 'stdout'
+            ? stdoutLines
+            : event.stream === 'stderr'
+              ? stderrLines
+              : otherLines
+        pushBoundedLine(lines, event.message, RUNTIME_STARTUP_LOG_LINE_LIMIT)
+      }
       try {
-        const current = await this.runRuntimePreparation(client, ['workspace', 'check'])
-        if (!current.success) return this.buildRuntimeStartFailure(current, [], [])
+        const current = await this.runRuntimePreparation(client, ['workspace', 'check'], captureLog)
+        if (!current.success)
+          return this.buildRuntimeStartFailure(current, stdoutLines, stderrLines, otherLines)
+        stdoutLines.length = 0
+        stderrLines.length = 0
+        otherLines.length = 0
         const details = current.result.details
         const version =
           details.healthy === true && typeof details.version === 'string'
             ? details.version
             : resolveRuntimeTargetVersion()
-        const prepared = await this.runRuntimePreparation(client, [
-          'bootstrap',
-          '--version',
-          version,
-          '--if-needed',
-        ])
-        if (!prepared.success) return this.buildRuntimeStartFailure(prepared, [], [])
+        const prepared = await this.runRuntimePreparation(
+          client,
+          ['bootstrap', '--version', version, '--if-needed'],
+          captureLog
+        )
+        if (!prepared.success)
+          return this.buildRuntimeStartFailure(prepared, stdoutLines, stderrLines, otherLines)
         this.runtimeUpdateReady = null
         // 日常启动不检查、不更新 Runtime：版本对齐只发生在完整初始化链路（第 0 步）里，
         // 这条路只把现有 exe 拿来监督后端。exe 被杀软还原、上次替换半途而废等情形由定位
         // exe 的 `resolveRuntimeExecutable()` / `recoverRuntimeBackup()` 在本函数开头处理。
       } catch (error) {
-        return this.buildRuntimeStartFailure(error, [], [])
+        return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines, otherLines)
       }
     }
     if (this.runtimeStopping) {
@@ -573,10 +632,16 @@ export class BackendService {
   private buildRuntimeStartFailure(
     reason: RuntimeRunResult | unknown,
     stdoutLines: string[],
-    stderrLines: string[]
+    stderrLines: string[],
+    otherLines: string[] = []
   ): BackendStartResult {
     if (isRuntimeClientError(reason)) {
-      const logs = this.formatRuntimeStartupLogs(stdoutLines, stderrLines, reason.details.stderr)
+      const logs = this.formatRuntimeStartupLogs(
+        stdoutLines,
+        stderrLines,
+        reason.details.stderr,
+        otherLines
+      )
       logger.error(`Runtime 调用失败: ${reason.code} ${reason.message}`)
       // details 里带着每次尝试的来源与失败种类（git 克隆会先试 cnb 再试 github）。
       // 只打 code + message 的话，日志里看不出是哪个源为什么挂——例如 cnb 秒答但缺
@@ -605,7 +670,12 @@ export class BackendService {
     }
 
     if (this.isRuntimeRunResult(reason)) {
-      const logs = this.formatRuntimeStartupLogs(stdoutLines, stderrLines, reason.stderr)
+      const logs = this.formatRuntimeStartupLogs(
+        stdoutLines,
+        stderrLines,
+        reason.stderr,
+        otherLines
+      )
       const message = reason.result.message || `后端在就绪前结束（${reason.code}）`
       logger.error(`后端服务启动失败: ${reason.code} ${message}`)
       return {
@@ -623,7 +693,7 @@ export class BackendService {
     return {
       success: false,
       error: message,
-      logs: this.formatRuntimeStartupLogs(stdoutLines, stderrLines),
+      logs: this.formatRuntimeStartupLogs(stdoutLines, stderrLines, undefined, otherLines),
     }
   }
 
@@ -635,11 +705,26 @@ export class BackendService {
   private formatRuntimeStartupLogs(
     stdoutLines: string[],
     stderrLines: string[],
-    runtimeStderr?: string
+    runtimeStderr?: string,
+    otherLines: string[] = []
   ): string | undefined {
-    const diagnostics = runtimeStderr?.trimEnd()
-    const merged = diagnostics ? [...stderrLines, ...diagnostics.split(/\r?\n/)] : stderrLines
-    return formatStartupLogs(stdoutLines, merged)
+    const boundedStdout: string[] = []
+    const boundedStderr: string[] = []
+    for (const line of stdoutLines)
+      pushBoundedLine(boundedStdout, line, RUNTIME_STARTUP_LOG_LINE_LIMIT)
+    for (const line of stderrLines)
+      pushBoundedLine(boundedStderr, line, RUNTIME_STARTUP_LOG_LINE_LIMIT)
+    const diagnostics = runtimeStderr?.slice(-RUNTIME_STARTUP_LOG_CHAR_LIMIT).trimEnd()
+    if (diagnostics) {
+      for (const line of diagnostics.split(/\r?\n/)) {
+        pushBoundedLine(boundedStderr, line, RUNTIME_STARTUP_LOG_LINE_LIMIT)
+      }
+    }
+    const formatted = formatStartupLogs(boundedStdout, boundedStderr)
+    const other = otherLines.join('\n').trimEnd()
+    return (
+      [formatted, other ? `[other]\n${other}` : undefined].filter(Boolean).join('\n\n') || undefined
+    )
   }
 
   /**
@@ -737,7 +822,7 @@ export class BackendService {
 
       const meta = (await metaResponse.json()) as { devMode?: boolean }
       if (typeof meta.devMode === 'boolean') {
-        this.lastKnownBackendDevMode = meta.devMode
+        this.lastKnownPreserveBackend = meta.devMode
       }
       if (meta.devMode) {
         reuseDevBackend = true
@@ -780,25 +865,25 @@ export class BackendService {
   }
 
   /**
-   * 读取后端权威开发模式；暂时不可达时回退最近一次成功结果。
+   * 读取后端退出保留策略；暂时不可达时回退最近一次成功结果。
    */
-  async getBackendDevMode(): Promise<boolean | null> {
+  async shouldPreserveBackend(): Promise<boolean | null> {
     const apiEndpoint = this.resolveLocalApiEndpoint()
     const metaUrl = `${apiEndpoint}/api/core/ws_meta`
 
     try {
       const response = await this.fetchWithTimeout(metaUrl, { method: 'GET' }, 1000)
-      if (!response.ok) return this.lastKnownBackendDevMode
+      if (!response.ok) return this.lastKnownPreserveBackend
 
       const meta = (await response.json()) as { devMode?: boolean }
-      if (typeof meta.devMode !== 'boolean') return this.lastKnownBackendDevMode
+      if (typeof meta.devMode !== 'boolean') return this.lastKnownPreserveBackend
 
-      this.lastKnownBackendDevMode = meta.devMode
+      this.lastKnownPreserveBackend = meta.devMode
       return meta.devMode
     } catch (error) {
       const errorMsg = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
-      logger.debug(`读取后端开发模式失败，使用最近结果: ${errorMsg}`)
-      return this.lastKnownBackendDevMode
+      logger.debug(`读取后端退出策略失败，使用最近结果: ${errorMsg}`)
+      return this.lastKnownPreserveBackend
     }
   }
 
@@ -996,8 +1081,12 @@ export class BackendService {
   /**
    * 重启后端服务
    */
-  restartBackend(options?: BackendStartOptions): Promise<BackendStartResult> {
+  restartBackend(
+    options?: BackendStartOptions,
+    reason: 'manual' | 'recovery' = 'manual'
+  ): Promise<BackendStartResult> {
     if (this.restartFlight) return this.restartFlight
+    const telemetry = beginMainFeature('backend_restart_finished')
     const operation = this.enqueueOperation(async () => {
       if (this.forceStopRequested) {
         return { success: false, error: '强制停止已请求，取消后端重启' }
@@ -1015,6 +1104,11 @@ export class BackendService {
       return this.startBackendInternal(options)
     })
     this.restartFlight = operation
+    void operation.then(
+      result =>
+        telemetry.finish({ reason_kind: reason, outcome: result.success ? 'success' : 'failure' }),
+      () => telemetry.finish({ reason_kind: reason, outcome: 'unknown' })
+    )
     void operation.then(
       () => {
         if (this.restartFlight === operation) this.restartFlight = null
@@ -1192,7 +1286,6 @@ export class BackendService {
         runtimePath: config.runtimePath,
         appRoot: config.appRoot,
         dataRoot: config.dataRoot,
-        launchMode: config.mode,
       })
       const outcome = await this.runRuntimePreparation(client, ['workspace', 'check', '--remote'])
       if (!outcome.success) {
@@ -1259,11 +1352,13 @@ export class BackendService {
   /** 跟踪一次性准备命令，使退出时的取消覆盖握手和下载两个阶段。 */
   private async runRuntimePreparation(
     client: RuntimeClient,
-    args: string[]
+    args: string[],
+    onLog?: (event: RuntimeLogEvent) => void
   ): Promise<RuntimeRunResult> {
     if (this.runtimeStopping) throw new Error('应用正在关闭，取消后端准备')
     let control: RuntimeRunControl | undefined
     const operation = client.run(args, {
+      onLog,
       onStarted: started => {
         control = started
         this.runtimeCommands.add(started)
@@ -1412,12 +1507,9 @@ export class BackendService {
     env.AUTO_MAS_DEV = '1'
     // 与前端使用的端点对齐，避免后端按自身环境判定另选端口
     env.AUTO_MAS_HTTP_PORT = String(resolveHttpPort())
-    // 仅开发环境标记运行环境，打包版必须清除继承值以正常上报遥测
-    if (isDevelopmentEnvironment()) {
-      env.AUTO_MAS_ENV = 'development'
-    } else {
-      delete env.AUTO_MAS_ENV
-    }
+    // 所有启动链路明确传入应用环境，覆盖宿主继承值。
+    env.AUTO_MAS_ENV = getApplicationEnvironment()
+    Object.assign(env, getFluxdownInstallEnvironment())
     return env
   }
 

@@ -250,15 +250,21 @@ export type AddTaskCascaderOption = {
   value: string
   /** 带 NEW 标记时是 VNode；搜索按 searchText 匹配 */
   label: string | VNode
+  /** 任务项含显示名、任务名与入口名（换行分隔），分组项是显示文字 */
   searchText: string
   children?: AddTaskCascaderOption[]
 }
 
-/** 预设模板：预设本身 + 其中当前可用的各项 */
+/**
+ * 预设模板：预设本身 + 其中当前可用的各项。列出来的都能应用；`entries` 可以为空
+ * （只有前置任务设置的预设）
+ */
 export type PresetTemplate = {
   preset: MaaFWPresetInfo
   /** 预设里当前可用的各项，重复任务是各自的实例 id */
   entries: MaaFWPresetQueueEntry[]
+  /** 预设启用的前置任务里当前可用的项（预设声明了 `pretask` 才有） */
+  pretaskEntries?: MaaFWPresetQueueEntry[]
 }
 
 /** 自定义模板（脚本级，同一脚本的用户共用）：名称 + 它在当前项目下的样子 */
@@ -291,6 +297,8 @@ export interface MaaFWUserTaskQueueSectionProps {
   taskSnapshot: MaaFWTaskSnapshot
   effectiveControllerName: string
   effectiveResourceName: string
+  /** 特调的受管任务（按 entry）：右栏不给它们显示「运行日」，运行时也不受运行日影响 */
+  managedTaskEntries?: ReadonlySet<string>
 }
 
 export interface MaaFWUserTaskQueueSectionEmits {
@@ -318,6 +326,8 @@ export interface MaaFWUserTaskQueueSectionEmits {
   duplicateTask: [taskId: string]
   /** 队列行右键「重命名」：改这一份实例的显示名（清空或改回原名即恢复默认） */
   renameTask: [taskId: string, name: string]
+  /** 右栏「运行日」改完后的勾选（ISO 星期，1=周一）：空 = 红灯，否则绿灯且只在这几天运行 */
+  taskWeekdaysUpdate: [taskId: string, weekdays: number[]]
 }
 
 /** 用户页分节键 → props 契约 */

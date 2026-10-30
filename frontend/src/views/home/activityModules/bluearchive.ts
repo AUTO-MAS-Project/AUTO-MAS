@@ -17,10 +17,10 @@ export const buildBlueArchiveActivityPresentation = (
   const { overview, now, t } = context
   const presentation = buildSraActivityPresentation(context)
   presentation.activities.source = {
-    label: t('home.bluearchive.source'),
+    label: t('core.home.bluearchive.source'),
     url: 'https://www.gamekee.com/ba/huodong/16',
   }
-  presentation.activities.emptyText = t('home.bluearchive.noActivity')
+  presentation.activities.emptyText = t('core.home.bluearchive.noActivity')
   const upcoming = overview.activities
     .filter(item => activityTimestamp(item.startTime) > now)
     .sort((a, b) => activityTimestamp(a.startTime) - activityTimestamp(b.startTime))
@@ -59,14 +59,14 @@ export const createBlueArchiveActivityModule: ActivityModuleBuilder = ({ t }) =>
         t,
       })
       presentation.activities.choices = {
-        label: t('home.bluearchive.serverLabel'),
+        label: t('core.home.bluearchive.serverLabel'),
         selected,
         options: source.servers.value.map(item => ({ value: item.key, label: item.label })),
       }
       // 横幅只报限时活动，缺活动时不拿战斗玩法填充版本。
       return {
         key: 'bluearchive',
-        title: t('home.game.bluearchive'),
+        title: t('core.home.game.bluearchive'),
         accent: '#3ba9ee',
         ...presentation,
         ...(!overview.versionName ? { subtitle: '', startTime: '', endTime: '' } : {}),

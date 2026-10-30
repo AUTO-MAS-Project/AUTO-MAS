@@ -1,4 +1,5 @@
-import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type { FluxdownInstallOut, GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
 import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
 import type {
   DesktopMascotHostAPI,
@@ -40,6 +41,8 @@ export interface RelatedProcess {
 }
 
 export interface ElectronConfig {
+  confirmBeforeClose?: boolean
+  lastCloseAction?: 'quit' | 'tray'
   UI?: GlobalConfig_UI & {
     TrayItems?: unknown[]
     [key: string]: unknown
@@ -163,6 +166,8 @@ export interface RuntimeDoctorCheck {
  * 绝不解析 `error` 里的中文文案。
  */
 export interface RuntimeFailureFields {
+  /** Runtime 第 0 步失败的实际来源；界面仍沿用 failedStage。 */
+  failureOrigin?: 'runtime_binary'
   /** Runtime 结果码，如 `MIRROR_EXHAUSTED` / `INTERNAL_ERROR`。 */
   code?: string
   retryable?: boolean
@@ -222,7 +227,12 @@ export interface VirtualDisplayPromptPayload {
 }
 
 export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHostAPI {
+  analytics?: {
+    getContext: () => Promise<AnalyticsContext>
+    trackEvent: (context: number, event: RendererAnalyticsEvent) => void
+  }
   isMacOS: boolean
+  installFluxdown: (mirror: string) => Promise<FluxdownInstallOut>
   listMascots?: () => Promise<MascotSummary[]>
   importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
   removeMascot?: (id: string) => Promise<{ success: boolean; error?: string }>
@@ -231,25 +241,35 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: unknown[]) => Promise<string[]>
+  saveTextFile: (
+    defaultName: string,
+    content: string,
+    filters?: unknown[],
+    dialogOptions?: { dialogTitle?: string; buttonLabel?: string }
+  ) => Promise<{ success: boolean; filePath?: string; error?: string }>
   openUrl: (url: string) => Promise<{ success: boolean; error?: string }>
   discoverOkwwPath: () => Promise<PathDiscoveryResult>
   discoverWutheringWavesPath: () => Promise<PathDiscoveryResult>
 
   // 窗口控制
-  windowMinimize: () => Promise<void>
+  windowMinimize: () => Promise<boolean>
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
+  windowHideToTray: () => Promise<boolean>
+  notifyNativeCloseHandlerReady?: () => void
   appRestart: () => Promise<void>
   /** 只标记「这次退出后重新拉起」，退出本身仍走 appQuit；后端请求的重启用它 */
   appRestartOnQuit?: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
   onWindowMaximizedChange: (callback: (maximized: boolean) => void) => () => void
   windowFocus: () => Promise<void>
+  onNativeWindowCloseRequested?: (callback: () => void) => () => void
   /** 电源操作倒计时开始：把窗口拉到最前并临时置顶 */
   powerWarningStart?: () => Promise<void>
   /** 倒计时结束或取消：撤回置顶 */
   powerWarningEnd?: () => Promise<void>
   appQuit: () => Promise<void>
+  appObserveBackendClose?: () => void
   /** 等待用户确认期间暂停退出兜底，保留关闭请求锁。 */
   appWaitForQuitConfirmation?: () => Promise<boolean>
   /** 保存前领取退出凭证；准备超时不会强制关闭后端。 */
@@ -302,11 +322,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   updateTraySettings: (uiSettings: unknown) => Promise<boolean>
   updateTrayConfig: (trayItems: unknown) => Promise<boolean>
   onTrayActionRequest: (
-    callback: (request: {
-      action: 'quit' | 'restart' | 'startTask'
-      taskId?: string
-      label?: string
-    }) => void
+    callback: (request: { action: 'quit' | 'startTask'; taskId?: string; label?: string }) => void
   ) => () => void
   syncBackendConfig: (backendSettings: unknown) => Promise<boolean>
 
@@ -331,7 +347,8 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   exportMaaEndIssueReport: () => Promise<{
     success: boolean
     message?: string
-    zipPath?: string
+    directoryPaths?: string[]
+    incompleteCount?: number
     error?: string
   }>
   exportOkwwIssueReport: () => Promise<{
@@ -412,6 +429,8 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   showVirtualDisplayPrompt?: (
     payload: VirtualDisplayPromptPayload
   ) => Promise<{ success: boolean; error?: string }>
+  observeVirtualDisplayPrompt?: () => void
+  detachVirtualDisplayFromPrompt: () => Promise<import('@/api').VirtualDisplayDetachOut | null>
   closeVirtualDisplayPrompt?: () => Promise<void>
   /** 弹窗页面挂载后自己来取当前那一份数据；没有待处理的提示时为 null */
   getVirtualDisplayPrompt?: () => Promise<VirtualDisplayPromptPayload | null>
@@ -523,7 +542,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
 
   // 后端服务管理
   backendStart: () => Promise<InstallStageResult>
-  backendRestart: () => Promise<InstallStageResult>
+  backendRestart: (reason?: 'manual' | 'recovery') => Promise<InstallStageResult>
   backendStatus: () => Promise<BackendStatus>
   checkRuntimeBackendUpdate: () => Promise<{
     updateAvailable: boolean

@@ -30,7 +30,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
-from app.utils.constants import UTC8
+from app.utils import UTC8
 
 from .community_contract import ActivityState, CommunityActivitySnapshot
 

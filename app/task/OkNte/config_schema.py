@@ -37,7 +37,7 @@ from typing import Any
 from xml.etree import ElementTree
 
 from app.utils import get_logger
-from app.utils.i18n import parse_mo, parse_po
+from app.utils import i18n as _utils_i18n
 
 logger = get_logger("OK-NTE 配置 Schema")
 
@@ -49,7 +49,7 @@ _OKNTE_CONFIG_WRITE_LOCK = Lock()
 def _parse_po_file(po_path: Path) -> dict[str, str]:
     """解析 .po 翻译文件，返回 {msgid: msgstr} 映射。"""
     try:
-        return parse_po(po_path)
+        return _utils_i18n.parse_po(po_path)
     except Exception as e:
         logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {po_path} ({e})")
         return {}
@@ -57,7 +57,7 @@ def _parse_po_file(po_path: Path) -> dict[str, str]:
 
 def _parse_mo_file(mo_path: Path) -> dict[str, str]:
     """解析 .mo 编译翻译文件，返回 {msgid: msgstr} 映射。"""
-    labels = parse_mo(mo_path)
+    labels = _utils_i18n.parse_mo(mo_path)
     if not labels:
         logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {mo_path}")
     return labels
@@ -88,24 +88,15 @@ def _translation_candidates(root: Path) -> tuple[list[Path], list[Path]]:
     """按优先级返回 gettext 与 ok-script 框架 .ts 翻译文件候选路径。"""
     app_root = root / "data" / "apps" / "ok-nte"
     gettext_candidates: list[Path] = []
-    for i18n_dir in (
-        root / "i18n",
-        root / "_internal" / "i18n",
-        app_root / "repo" / "i18n",
-        app_root / "working" / "i18n",
-    ):
-        lc_messages = i18n_dir / "zh_CN" / "LC_MESSAGES"
-        gettext_candidates.append(lc_messages / "ok.mo")
-        gettext_candidates.append(lc_messages / "ok.po")
-
-    ts_candidates = [
-        root / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        root / "_internal" / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        app_root / "repo" / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        app_root / "repo" / "ok" / "ui" / "qt" / "i18n" / "zh_CN.ts",
-        app_root / "working" / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        app_root / "working" / "ok" / "ui" / "qt" / "i18n" / "zh_CN.ts",
-    ]
+    ts_candidates: list[Path] = []
+    # 冻结包资源在本体旁和 _internal 中；源码安装保留 repo / working 两处。
+    for base in (root, app_root / "working", app_root / "repo"):
+        for resource_root in (base, base / "_internal"):
+            lc_messages = resource_root / "i18n" / "zh_CN" / "LC_MESSAGES"
+            gettext_candidates.append(lc_messages / "ok.mo")
+            gettext_candidates.append(lc_messages / "ok.po")
+            for framework_dir in ("ok/gui/i18n", "ok/ui/qt/i18n"):
+                ts_candidates.append(resource_root / framework_dir / "zh_CN.ts")
     return gettext_candidates, ts_candidates
 
 
@@ -349,7 +340,7 @@ def _read_json_object(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
 
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
     if not isinstance(data, dict):
         raise ValueError(f"OK-NTE 配置文件必须是 JSON 对象: {path}")
     return data

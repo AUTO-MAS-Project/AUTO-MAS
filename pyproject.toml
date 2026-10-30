@@ -1,6 +1,6 @@
 [project]
 name = "auto-mas"
-version = "5.7.0"
+version = "5.8.0b2"
 description = "AUTO-MAS 多脚本、多配置管理与自动化软件"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -8,7 +8,8 @@ license = { file = "LICENSE" }
 authors = [{ name = "AUTO-MAS Team" }]
 dependencies = [
     "loguru==0.7.3",
-    "fastapi==0.116.1",
+    "fastapi==0.133.1",
+    "starlette==1.9.0",
     "pydantic==2.11.7",
     "uvicorn==0.35.0",
     "websockets==15.0.1",
@@ -16,6 +17,7 @@ dependencies = [
     "httpx[socks]==0.28.1",
     "gitpython==3.1.45",
     "plyer==2.1.0",
+    "windows-toasts==1.3.1; sys_platform == 'win32'",
     "psutil==7.0.0",
     "jinja2==3.1.6",
     "pywin32==310; sys_platform == 'win32'",
@@ -32,6 +34,7 @@ dependencies = [
     "maafw>=5.12,<6.0",
     "mss==9.0.2",
     "fastapi-mcp==0.4.0",
+    "mcp==1.30.0",
     "json5==0.14.0",
     "protobuf==7.36.1",
     "pyyaml==6.0.3",

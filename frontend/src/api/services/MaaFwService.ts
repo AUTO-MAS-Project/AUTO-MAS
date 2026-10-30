@@ -17,6 +17,8 @@ import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOu
 import type { MaaFWMirrorCdkIn } from '../models/MaaFWMirrorCdkIn';
 import type { MaaFWMirrorCdkOut } from '../models/MaaFWMirrorCdkOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
+import type { MaaFWProjectUpdateJobIn } from '../models/MaaFWProjectUpdateJobIn';
+import type { MaaFWProjectUpdateJobOut } from '../models/MaaFWProjectUpdateJobOut';
 import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
 import type { MaaFWShellInstanceApplyIn } from '../models/MaaFWShellInstanceApplyIn';
 import type { MaaFWShellInstanceApplyOut } from '../models/MaaFWShellInstanceApplyOut';
@@ -162,28 +164,6 @@ export class MaaFwService {
         });
     }
     /**
-     * 个人版「灾变防线」这一期的状态
-     * MSS 用户页显示「本期灾变防线打了没」。只读，不改任何配置。
-     *
-     * 「这一期」由后端按官网那一篇公告的开始时刻算，前端不复刻同一套口径。
-     * @param requestBody
-     * @returns MssDefenseStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static getMssDefenseStatusApiScriptsMaafwMssDefenseStatusPost(
-        requestBody: MssDefenseStatusIn,
-    ): CancelablePromise<MssDefenseStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/mss/defense-status',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 把选中的外壳配置实例导入成用户
      * 每个实例建一个用户：用户名取实例名，任务队列与任务选项一起导入。
      *
@@ -277,6 +257,8 @@ export class MaaFwService {
      *
      * ``action=check`` 只读取 interface 版本与更新源元数据，返回是否有新版本；
      * ``action=apply`` 触发下载并原地应用更新包。失败时返回明确 ``message``。
+     * ``apply`` 在后台执行：同一脚本进行中再发起只等同一份，请求断开不影响更新，
+     * 过程与结果可经 ``/maafw/update/job`` 取回。
      * @param requestBody
      * @returns MaaFWProjectUpdateOut Successful Response
      * @throws ApiError
@@ -287,6 +269,29 @@ export class MaaFwService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maafw/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询 MFW 项目手动更新的过程与结果
+     * 脚本当前或最近一次手动更新（``apply``）的状态、已推送的进度事件与结果。
+     *
+     * 页面刷新或重新打开后用它接回：先取快照重放进度，再带 ``wait=true`` 等结果。
+     * 只保留在后端进程内，下一次手动更新开始或后端重启后不再有上一次的记录。
+     * @param requestBody
+     * @returns MaaFWProjectUpdateJobOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaafwProjectUpdateJobApiScriptsMaafwUpdateJobPost(
+        requestBody: MaaFWProjectUpdateJobIn,
+    ): CancelablePromise<MaaFWProjectUpdateJobOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/update/job',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -370,6 +375,54 @@ export class MaaFwService {
                 'root': root,
                 'path': path,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 读取 MFW 脚本的项目图标
+     * 脚本列表的头像：项目 interface 顶层 ``icon`` 指的图片。
+     *
+     * 取不到（项目还没导入、没写 icon、文件不在）一律 404，前端回退到类型图标；
+     * 具体原因只写日志，不放进响应。
+     * 项目更新可能原地换掉图标而地址不变，所以带 ``no-cache``，不让浏览器拿缓存的旧图；
+     * FileResponse 不处理 If-None-Match，每次都完整返回。
+     * @param scriptId MFW 脚本 ID
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getMaafwScriptIconApiScriptsMaafwIconGet(
+        scriptId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/maafw/icon',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 个人版「灾变防线」这一期的状态
+     * MSS 用户页显示「本期灾变防线打了没」。只读，不改任何配置。
+     *
+     * 「这一期」由后端按官网那一篇公告的开始时刻算，前端不复刻同一套口径。
+     * @param requestBody
+     * @returns MssDefenseStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getMssDefenseStatusApiScriptsMaafwMssDefenseStatusPost(
+        requestBody: MssDefenseStatusIn,
+    ): CancelablePromise<MssDefenseStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/mss/defense-status',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

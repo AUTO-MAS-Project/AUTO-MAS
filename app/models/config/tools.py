@@ -36,7 +36,7 @@ from app.config import (
     ui,
     virtual_field,
 )
-from app.utils.constants import UTC8
+from app.utils import UTC8
 
 from ..schema import TagItem
 from .base import DomainEntry

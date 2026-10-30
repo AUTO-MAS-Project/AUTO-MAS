@@ -45,23 +45,9 @@ from pathlib import Path
 
 import yaml
 
+from app.utils import config_archive as _utils_config_archive
 from app.utils import get_logger
-from app.utils.config_archive import (
-    archive_dir,
-    archive_files,
-    config_root_key,
-    dir_files,
-    get_backup_dir,
-    list_times,
-    restore_dir,
-    timestamp_sort_key,
-)
-from app.utils.io import (
-    ConfigCorruptedError,
-    force_rmtree,
-    read_dict_file,
-    swap_in_dir,
-)
+from app.utils import io as _utils_io
 
 from .zzz_od_config import (
     _one_dragon_file,
@@ -154,7 +140,11 @@ def onedragon_backup_root(root: str | Path) -> Path:
     ``.dev/migrate_backup_layout.py``（不入库）按指纹手动搬家。
     """
 
-    return project_backup_root() / "onedragon" / config_root_key(root)
+    return (
+        project_backup_root()
+        / "onedragon"
+        / _utils_config_archive.config_root_key(root)
+    )
 
 
 def mas_backup_root(script_id: str, slot_idx: int) -> Path:
@@ -205,7 +195,7 @@ def read_native_registry(root: Path) -> dict:
         return {}
     # 上游 non-atomic 写残留 NUL 属正常可读回，走 sanitized 容错解析；
     # 其余坏档（截断/非映射）由 read_dict_file 显式报损坏（带路径）
-    data = read_dict_file(od_file, format=".sanitized.yaml")
+    data = _utils_io.read_dict_file(od_file, format=".sanitized.yaml")
     if "instance_list" not in data:
         # 缺键：上游 getter 对缺键默认空读，等价空注册表
         return data
@@ -220,7 +210,7 @@ def read_native_registry(root: Path) -> dict:
         # 非映射 / idx 缺失或非整数：调用方遍历会炸无关
         # TypeError/ValueError，或静默得出错误的占用判定与文件集，
         # 一律按损坏上报
-        raise ConfigCorruptedError(od_file)
+        raise _utils_io.ConfigCorruptedError(od_file)
     return data
 
 
@@ -236,8 +226,8 @@ def inspect_onedragon_backup(backup_dir: Path) -> tuple[dict, list[str]]:
     if not registry.is_file():
         return {}, [f"原生备份缺少注册表：{registry}"]
     try:
-        data = read_dict_file(registry, format=".sanitized.yaml")
-    except ConfigCorruptedError as exc:
+        data = _utils_io.read_dict_file(registry, format=".sanitized.yaml")
+    except _utils_io.ConfigCorruptedError as exc:
         return {}, [f"原生备份注册表损坏，无法恢复：{exc}"]
 
     if "instance_list" not in data:
@@ -270,7 +260,7 @@ def inspect_onedragon_backup(backup_dir: Path) -> tuple[dict, list[str]]:
             warnings.append(
                 f"原生备份包含 MAS- 槽「{item.get('name')}」，不能恢复（{registry}）"
             )
-    for rel_path in dir_files(backup_dir):
+    for rel_path in _utils_config_archive.dir_files(backup_dir):
         if "/" not in rel_path:
             continue
         idx_name = rel_path.split("/", 1)[0]
@@ -294,7 +284,11 @@ def validate_onedragon_backup(backup_dir: Path) -> dict:
     # 换入，坏实例文件一旦落回现场，一条龙读到的就是损坏配置。已知四类
     # 之外的文件属上游私有内容，只透传不校验。
     idx_names = sorted(
-        {rel.split("/", 1)[0] for rel in dir_files(backup_dir) if "/" in rel}
+        {
+            rel.split("/", 1)[0]
+            for rel in _utils_config_archive.dir_files(backup_dir)
+            if "/" in rel
+        }
     )
     for idx_name in idx_names:
         if not idx_name.isascii() or not idx_name.isdigit():
@@ -303,7 +297,7 @@ def validate_onedragon_backup(backup_dir: Path) -> dict:
         for reader in (read_game_account, read_game, read_app_group, read_team_list):
             try:
                 reader(idx_dir)
-            except ConfigCorruptedError as exc:
+            except _utils_io.ConfigCorruptedError as exc:
                 warnings.append(
                     f"原生备份实例 {int(idx_name):02d} 配置损坏，无法恢复：{exc}"
                 )
@@ -355,7 +349,9 @@ def archive_onedragon_backup(root: Path, force: bool = False) -> Path | None:
     if not files:
         raise ValueError(f"一条龙原生配置不存在: {root}")
 
-    dest = archive_files(files, onedragon_backup_root(root), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, onedragon_backup_root(root), force=force
+    )
     if dest is None:
         logger.info("一条龙原生配置无变化，跳过归档")
         return None
@@ -367,13 +363,13 @@ def archive_onedragon_backup(root: Path, force: bool = False) -> Path | None:
 def list_onedragon_backups(root: str | Path) -> list[str]:
     """一条龙原生配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(onedragon_backup_root(root))
+    return _utils_config_archive.list_times(onedragon_backup_root(root))
 
 
 def get_onedragon_backup_dir(root: str | Path, ts: str) -> Path | None:
     """取指定时间戳的一条龙归档目录；不存在返回 None。"""
 
-    return get_backup_dir(onedragon_backup_root(root), ts)
+    return _utils_config_archive.get_backup_dir(onedragon_backup_root(root), ts)
 
 
 def restore_onedragon_backup(
@@ -398,7 +394,7 @@ def restore_onedragon_backup(
     backup_dir = get_onedragon_backup_dir(root, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
-    backup_files = dir_files(backup_dir)
+    backup_files = _utils_config_archive.dir_files(backup_dir)
     if not backup_files:
         raise ValueError(f"备份内容为空: {ts}")
 
@@ -428,7 +424,7 @@ def restore_onedragon_backup(
         idx = int(idx_dir_name)
         # 整目录换入走公共原语：先把旧目录改名留底再换入，失败时实例目录
         # 保持原样，不会停在「删了一半、备份没拷回」的状态。
-        swap_in_dir(backup_dir / idx_dir_name, instance_dir(root, idx))
+        _utils_io.swap_in_dir(backup_dir / idx_dir_name, instance_dir(root, idx))
 
     logger.info(f"一条龙原生配置已恢复备份 {ts} (实例目录 {len(idx_dirs)} 个)")
 
@@ -453,7 +449,7 @@ def collect_mas_files(
     slot_dir = Path(slot_dir)
     files: dict[str, "Path | str"] = {}
     if slot_dir.is_dir():
-        files.update(dir_files(slot_dir))
+        files.update(_utils_config_archive.dir_files(slot_dir))
     if meta and files:
         files[MAS_USER_INFO_FILE] = mas_user_info_content(meta)
     return files
@@ -481,7 +477,9 @@ def archive_mas_backup(
     files = collect_mas_files(slot_dir, meta)
     if not files:
         return None
-    dest = archive_files(files, mas_backup_root(script_id, slot_idx), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, mas_backup_root(script_id, slot_idx), force=force
+    )
     if dest is None:
         logger.info(f"槽 {slot_idx:02d} MAS 配置无变化，跳过归档")
         return None
@@ -493,13 +491,15 @@ def archive_mas_backup(
 def list_mas_backups(script_id: str, slot_idx: int) -> list[str]:
     """MAS 用户槽全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(mas_backup_root(script_id, slot_idx))
+    return _utils_config_archive.list_times(mas_backup_root(script_id, slot_idx))
 
 
 def get_mas_backup_dir(script_id: str, slot_idx: int, ts: str) -> Path | None:
     """取指定时间戳的 MAS 归档目录；不存在返回 None。"""
 
-    return get_backup_dir(mas_backup_root(script_id, slot_idx), ts)
+    return _utils_config_archive.get_backup_dir(
+        mas_backup_root(script_id, slot_idx), ts
+    )
 
 
 def restore_mas_backup(
@@ -519,7 +519,9 @@ def restore_mas_backup(
     if slot_dir.is_dir():
         # 恢复前强制归档当前内容——「恢复前的配置」在列表里有明确的时间戳条目
         archive_mas_backup(script_id, slot_idx, slot_dir, force=True, meta=meta)
-    restore_dir(mas_backup_root(script_id, slot_idx), ts, slot_dir)
+    _utils_config_archive.restore_dir(
+        mas_backup_root(script_id, slot_idx), ts, slot_dir
+    )
 
 
 def materialize_user_applist(slot_dir: Path, applist_json: str | None) -> bool:
@@ -604,7 +606,7 @@ def recycle_backup_root(root: str | Path, slot_idx: int) -> Path:
     return (
         project_backup_root()
         / "recycle"
-        / config_root_key(root)
+        / _utils_config_archive.config_root_key(root)
         / f"{int(slot_idx):02d}"
     )
 
@@ -616,7 +618,9 @@ def recycle_pool_root(root: str | Path) -> Path:
     mas 配置恢复池在别的子树，不受影响）。
     """
 
-    return project_backup_root() / "recycle" / config_root_key(root)
+    return (
+        project_backup_root() / "recycle" / _utils_config_archive.config_root_key(root)
+    )
 
 
 def _has_native_registry(root: Path) -> bool:
@@ -714,13 +718,13 @@ def recycle_slot(root: Path, slot_idx: int, *, reason: str) -> bool:
         logger.warning(f"一条龙注册表不存在，跳过槽 {slot_idx:02d} 回收（{reason}）")
         return False
     try:
-        archive_dir(slot_dir, recycle_backup_root(root, slot_idx))
+        _utils_config_archive.archive_dir(slot_dir, recycle_backup_root(root, slot_idx))
     except Exception as e:
         logger.opt(exception=True).warning(
             f"槽 {slot_idx:02d} 归档失败，保留目录不回收（{reason}）: {e}"
         )
         return False
-    force_rmtree(slot_dir)
+    _utils_io.force_rmtree(slot_dir)
     logger.info(f"槽 {slot_idx:02d} 已回收（{reason}）")
     return True
 
@@ -743,7 +747,9 @@ def archive_taken_slot(root: Path, slot_idx: int, *, reason: str) -> bool:
     if not slot_dir.is_dir():
         return False
     try:
-        archived = archive_dir(slot_dir, recycle_backup_root(root, slot_idx))
+        archived = _utils_config_archive.archive_dir(
+            slot_dir, recycle_backup_root(root, slot_idx)
+        )
     except Exception as e:
         logger.opt(exception=True).warning(
             f"槽 {slot_idx:02d} 的残留内容归档失败（{reason}）: {e}"
@@ -781,7 +787,7 @@ def recycle_orphan_slots(
         return []
     try:
         orphans = list_orphan_slots(root, bound_idxs, allocated_idxs=allocated_idxs)
-    except ConfigCorruptedError as e:
+    except _utils_io.ConfigCorruptedError as e:
         if not swallow:
             raise
         logger.warning(f"一条龙注册表不可读，跳过孤儿槽回收: {e}")
@@ -815,13 +821,13 @@ def recycle_mas_backups(
         return False
     dest_root = recycle_backup_root(root, slot_idx) / "mas-backups"
     try:
-        archive_dir(pool, dest_root)
+        _utils_config_archive.archive_dir(pool, dest_root)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"槽 {slot_idx:02d} 的 MAS 备份池归档失败，保留原池不回收（{reason}）: {e}"
         )
         return False
-    force_rmtree(pool)
+    _utils_io.force_rmtree(pool)
     logger.info(f"槽 {slot_idx:02d} 的 MAS 备份池已归档到回收池（{reason}）")
     return True
 
@@ -888,7 +894,7 @@ def _recycle_entry(slot_idx: int, kind: str, directory: Path) -> dict:
         "slot": slot_idx,
         "kind": kind,
         "ts": directory.name,
-        "files": len(dir_files(directory)),
+        "files": len(_utils_config_archive.dir_files(directory)),
         "size": _dir_size(directory),
         "path": str(directory),
     }
@@ -902,7 +908,9 @@ def list_recycle_entries(root: Path) -> list[dict]:
     不符合本模块布局的一律跳过。
     """
 
-    pool_root = project_backup_root() / "recycle" / config_root_key(root)
+    pool_root = (
+        project_backup_root() / "recycle" / _utils_config_archive.config_root_key(root)
+    )
     if not pool_root.is_dir():
         return []
     entries: list[dict] = []
@@ -913,16 +921,19 @@ def list_recycle_entries(root: Path) -> list[dict]:
         # 只认本模块生成的时间戳目录名：同级的 mas-backups 不是槽快照
         entries.extend(
             _recycle_entry(slot, "slot", slot_dir / ts)
-            for ts in list_times(slot_dir)
-            if get_backup_dir(slot_dir, ts) is not None
+            for ts in _utils_config_archive.list_times(slot_dir)
+            if _utils_config_archive.get_backup_dir(slot_dir, ts) is not None
         )
         entries.extend(
             _recycle_entry(slot, "mas", slot_dir / "mas-backups" / ts)
-            for ts in list_times(slot_dir / "mas-backups")
+            for ts in _utils_config_archive.list_times(slot_dir / "mas-backups")
         )
     return sorted(
         entries,
-        key=lambda item: (timestamp_sort_key(item["ts"]), item["slot"]),
+        key=lambda item: (
+            _utils_config_archive.timestamp_sort_key(item["ts"]),
+            item["slot"],
+        ),
         reverse=True,
     )
 
@@ -934,7 +945,7 @@ def restore_recycle_slot(
 
     ``target_slot`` 留空表示恢复回原槽号；给出其他槽号即落到指定槽（现唯一
     调用方传的是目标用户的绑定槽——只物化内容不建立绑定的恢复没有出口，
-    见 ``AppConfig.restore_zzzod_recycle``）。恢复是覆盖性操作，目标槽的选定
+    见 ``ZzzOdRecovery.restore_recycle``）。恢复是覆盖性操作，目标槽的选定
     与归属由调用方经 ``ensure_user_slot`` 解析；目标槽当前内容先按同一套归档
     进回收池——误恢复可找回。
 
@@ -949,8 +960,9 @@ def restore_recycle_slot(
     # 会让 ``../``、绝对路径（Windows 下绝对路径会顶掉前缀）去探到池外目录，
     # 误判成备份池快照而把真实原因（条目不存在）盖掉
     if (
-        get_backup_dir(source_store, ts) is None
-        and get_backup_dir(source_store / "mas-backups", ts) is not None
+        _utils_config_archive.get_backup_dir(source_store, ts) is None
+        and _utils_config_archive.get_backup_dir(source_store / "mas-backups", ts)
+        is not None
     ):
         # 同桶里还挂着该槽的 MAS 备份池快照（{slot}/mas-backups/{ts}）：它只
         # 能查看不能恢复，直接说清楚，别让用户对着「备份不存在」猜
@@ -962,10 +974,12 @@ def restore_recycle_slot(
         try:
             # force=True：存底不裁剪现存条目——否则恢复最旧一份时，本次存底
             # 会把保留池挤满、恰好裁掉正要恢复的那条，restore_dir 报不存在
-            archive_dir(slot_dir, recycle_backup_root(root, dest_idx), force=True)
+            _utils_config_archive.archive_dir(
+                slot_dir, recycle_backup_root(root, dest_idx), force=True
+            )
         except Exception as e:
             raise ValueError(f"恢复前存底失败，已中止: {e}") from e
-    restore_dir(source_store, ts, slot_dir)
+    _utils_config_archive.restore_dir(source_store, ts, slot_dir)
 
 
 def clear_recycle_pool(root: Path) -> int:
@@ -979,6 +993,6 @@ def clear_recycle_pool(root: Path) -> int:
     if not pool_root.is_dir():
         return 0
     count = len(list_recycle_entries(root))
-    force_rmtree(pool_root)
+    _utils_io.force_rmtree(pool_root)
     logger.info(f"已清空实例槽回收池（{count} 条）")
     return count

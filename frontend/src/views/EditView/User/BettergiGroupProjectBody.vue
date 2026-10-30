@@ -15,38 +15,38 @@
           @click="emit('add-script')"
         >
           <template #icon><PlusOutlined /></template>
-          {{ t('edit.bettergiProjectAddScript') }}
+          {{ t('core.edit.bettergiProjectAddScript') }}
         </a-button>
         <a-popconfirm
-          :title="t('edit.bettergiProjectRemoveConfirm')"
-          :ok-text="t('edit.ok')"
-          :cancel-text="t('edit.cancel')"
+          :title="t('core.edit.bettergiProjectRemoveConfirm')"
+          :ok-text="t('core.edit.ok')"
+          :cancel-text="t('core.edit.cancel')"
           :disabled="!selectedDeleteUids.size"
           @confirm="removeSelectedProjects"
         >
           <a-button size="small" danger :disabled="!selectedDeleteUids.size">
             <template #icon><DeleteOutlined /></template>
-            {{ t('edit.bettergiProjectRemoveScript') }}
+            {{ t('core.edit.bettergiProjectRemoveScript') }}
           </a-button>
         </a-popconfirm>
         <a-popconfirm
-          :title="t('edit.bettergiProjectClearConfirm')"
-          :ok-text="t('edit.ok')"
-          :cancel-text="t('edit.cancel')"
+          :title="t('core.edit.bettergiProjectClearConfirm')"
+          :ok-text="t('core.edit.ok')"
+          :cancel-text="t('core.edit.cancel')"
           :disabled="!projects.length || isStandaloneSingle"
           @confirm="clearProjects"
         >
           <a-button size="small" danger :disabled="!projects.length || isStandaloneSingle">
             <template #icon><ClearOutlined /></template>
-            {{ t('edit.bettergiProjectClearScript') }}
+            {{ t('core.edit.bettergiProjectClearScript') }}
           </a-button>
         </a-popconfirm>
       </a-space>
       <span class="bgi-project-toolbar-tip">
         {{
           isStandaloneSingle
-            ? t('edit.bettergiProjectStandaloneTip')
-            : t('edit.bettergiProjectToolbarTip')
+            ? t('core.edit.bettergiProjectStandaloneTip')
+            : t('core.edit.bettergiProjectToolbarTip')
         }}
       </span>
     </div>
@@ -54,11 +54,11 @@
     <!-- 多选操作提示条（Ctrl 逐个 / Shift 区间，选中超过 1 行时显示） -->
     <div v-if="hasMultiSelection" class="bgi-project-multi-hint">
       <a-tag color="processing" size="small">
-        {{ t('edit.bettergiMultiSelected', { count: selectedDeleteUids.size }) }}
+        {{ t('core.edit.bettergiMultiSelected', { count: selectedDeleteUids.size }) }}
       </a-tag>
-      <span>{{ t('edit.bettergiProjectMultiHint') }}</span>
+      <span>{{ t('core.edit.bettergiProjectMultiHint') }}</span>
       <a-button size="small" type="link" @click="clearSelection">
-        {{ t('edit.bettergiProjectClearSelection') }}
+        {{ t('core.edit.bettergiProjectClearSelection') }}
       </a-button>
     </div>
 
@@ -85,7 +85,7 @@
                   'bgi-project-row-disabled': !editable,
                   'bgi-project-row-selected': isRowSelected(element),
                 }"
-                :title="t('edit.bettergiProjectRowTip')"
+                :title="t('core.edit.bettergiProjectRowTip')"
                 @click="handleRowClick(element, index, $event)"
                 @dblclick.stop="openProjectSettings(element, index)"
               >
@@ -112,8 +112,8 @@
                     v-if="isRowSelected(element)"
                     type="button"
                     class="bgi-project-row-unselect"
-                    :title="t('edit.bettergiProjectUnselect')"
-                    :aria-label="t('edit.bettergiProjectUnselect')"
+                    :title="t('core.edit.bettergiProjectUnselect')"
+                    :aria-label="t('core.edit.bettergiProjectUnselect')"
                     @click.stop="unselectRow(element)"
                     @dblclick.stop
                   >
@@ -125,13 +125,13 @@
           </draggable>
         </div>
         <div v-else class="bgi-project-empty">
-          <a-empty :description="t('edit.bettergiProjectEmpty')" />
+          <a-empty :description="t('core.edit.bettergiProjectEmpty')" />
         </div>
       </template>
     </a-spin>
 
     <p v-if="projects.length && !(isScriptGroup && editable)" class="bgi-project-tip">
-      {{ t('edit.bettergiProjectListTip') }}
+      {{ t('core.edit.bettergiProjectListTip') }}
     </p>
 
     <!-- 双击项目：设置弹窗（脚本配置 / 脚本说明 标签页）。
@@ -139,8 +139,8 @@
     <a-modal
       v-model:open="settingsModal.open"
       :title="settingsModal.title"
-      :ok-text="t('edit.bettergiProjectSettingsSave')"
-      :cancel-text="t('edit.cancel')"
+      :ok-text="t('core.edit.bettergiProjectSettingsSave')"
+      :cancel-text="t('core.edit.cancel')"
       :confirm-loading="settingsModal.saving"
       width="720px"
       :z-index="1100"
@@ -151,7 +151,7 @@
     >
       <a-tabs v-model:activeKey="settingsTab" size="small" class="bgi-project-settings-tabs">
         <!-- Tab1：脚本配置 -->
-        <a-tab-pane key="config" :tab="t('edit.bettergiProjectConfigTab')">
+        <a-tab-pane key="config" :tab="t('core.edit.bettergiProjectConfigTab')">
           <a-spin :spinning="settingsModal.loading" size="small">
             <template v-if="settingsModal.items.length">
               <div class="bgi-project-settings-fields">
@@ -181,7 +181,7 @@
                     <a-select
                       :value="String(fieldValue(item.name) ?? '')"
                       :options="optionList(item)"
-                      :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                      :placeholder="t('core.edit.bettergiGroupSettingsPlaceholder')"
                       :get-popup-container="
                         (triggerNode: HTMLElement) => triggerNode.parentElement!
                       "
@@ -199,7 +199,7 @@
                       mode="multiple"
                       :value="fieldListValue(item.name)"
                       :options="optionList(item)"
-                      :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                      :placeholder="t('core.edit.bettergiGroupSettingsPlaceholder')"
                       :get-popup-container="
                         (triggerNode: HTMLElement) => triggerNode.parentElement!
                       "
@@ -220,18 +220,18 @@
               </div>
             </template>
             <div v-else class="bgi-project-settings-empty">
-              <a-empty :description="t('edit.bettergiProjectNoSettingsFile')" />
+              <a-empty :description="t('core.edit.bettergiProjectNoSettingsFile')" />
             </div>
           </a-spin>
         </a-tab-pane>
 
         <!-- Tab2：脚本说明（README） -->
-        <a-tab-pane key="readme" :tab="t('edit.bettergiProjectReadmeTab')">
+        <a-tab-pane key="readme" :tab="t('core.edit.bettergiProjectReadmeTab')">
           <div v-if="settingsModal.readme" class="bgi-project-readme">
             <pre>{{ settingsModal.readme }}</pre>
           </div>
           <div v-else class="bgi-project-settings-empty">
-            <a-empty :description="t('edit.bettergiProjectReadmeEmpty')" />
+            <a-empty :description="t('core.edit.bettergiProjectReadmeEmpty')" />
           </div>
         </a-tab-pane>
       </a-tabs>
@@ -251,7 +251,7 @@ import {
   PlusOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
-import { BetterGiService } from '@/api'
+import { BetterGISetupService as BetterGiService } from '@/composables/useAdapterSetupApi'
 import type { BetterGIScriptGroupSaveIn, BetterGIScriptGroupDetailOut } from '@/api'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
@@ -485,7 +485,7 @@ const reload = async () => {
         groupJson.value = {}
         return
       }
-      message.warning(resp.message || t('edit.bettergiProjectLoadFailed'))
+      message.warning(resp.message || t('core.edit.bettergiProjectLoadFailed'))
       projects.value = []
       groupJson.value = {}
       return
@@ -498,7 +498,7 @@ const reload = async () => {
     clearSelection()
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error(e instanceof Error ? e.message : t('edit.bettergiProjectLoadFailed'))
+    message.error(e instanceof Error ? e.message : t('core.edit.bettergiProjectLoadFailed'))
     projects.value = []
     groupJson.value = {}
   } finally {
@@ -536,7 +536,7 @@ const writeProjects = async (snapshot: PersistSnapshot): Promise<boolean> => {
     const resp =
       await BetterGiService.saveBettergiScriptGroupApiApiScriptsBettergiScriptGroupSavePost(body)
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.bettergiProjectSaveFailed'))
+      throw new Error(resp.message || t('core.edit.bettergiProjectSaveFailed'))
     }
     // 落盘期间没切组才回填本地状态（切走了就不是当前组的 json）
     if (props.groupName === snapshot.name) {
@@ -544,11 +544,11 @@ const writeProjects = async (snapshot: PersistSnapshot): Promise<boolean> => {
       // 落盘后即存在 per-user 副本：JS/路径 由「独立单脚本」转为真正的配置组，解除清空/移除限制
       if (props.kind === 'js' || props.kind === 'pathing') hasPerUserReplica.value = true
     }
-    message.success(t('edit.bettergiProjectSaved'))
+    message.success(t('core.edit.bettergiProjectSaved'))
     return true
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error(e instanceof Error ? e.message : t('edit.bettergiProjectSaveFailed'))
+    message.error(e instanceof Error ? e.message : t('core.edit.bettergiProjectSaveFailed'))
     return false
   }
 }
@@ -561,7 +561,7 @@ let persistChain: Promise<boolean> = Promise.resolve(true)
 const persistProjects = (): Promise<boolean> => {
   if (!isScriptGroup.value) return persistChain
   if (configLocked.value) {
-    message.error(t('edit.configLocked'))
+    message.error(t('core.edit.configLocked'))
     return Promise.resolve(false)
   }
   const snapshot: PersistSnapshot = {
@@ -798,7 +798,7 @@ const setField = (name: string, value: unknown) => {
 // 保存按钮对四类一律开放（此前只对 scriptgroup 开放，双击脚本后保存被禁用）
 const saveProjectSettings = async () => {
   if (!isScriptGroup.value) {
-    message.info(t('edit.bettergiProjectIndependentSaveLater'))
+    message.info(t('core.edit.bettergiProjectIndependentSaveLater'))
     return
   }
   const idx = settingsModal.projectIndex
@@ -807,7 +807,7 @@ const saveProjectSettings = async () => {
     return
   }
   if (configLocked.value) {
-    message.error(t('edit.configLocked'))
+    message.error(t('core.edit.configLocked'))
     return
   }
   const previous = projects.value

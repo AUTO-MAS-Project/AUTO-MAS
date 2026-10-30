@@ -3,56 +3,73 @@
      副本克隆，运行时与模型共用、不另占空间，来源目录删了也能建）；只列与入口同类型的项目。
      第一行永远是「新建一个别的项目」。选中状态归对话框所有，这里只显示并交回选择。 -->
 <template>
-  <a-radio-group
-    :value="value"
-    class="choice-list"
-    @update:value="(next: string) => emit('update:value', next)"
+  <SelectableOptionList
+    :model-value="value"
+    @update:model-value="(next: string | null) => emit('update:value', next ?? 'new')"
   >
-    <label :class="['choice-row', { selected: value === 'new' }]">
-      <a-radio value="new" />
-      <span class="choice-icon"><FolderOpenOutlined /></span>
-      <span class="choice-copy">
-        <span class="choice-title">{{ t('scripts.create.mfwNewProject') }}</span>
-        <span class="choice-description">{{ t('scripts.create.mfwNewProjectDesc') }}</span>
-      </span>
-    </label>
+    <SelectableOptionCard
+      value="new"
+      :title="t('core.scripts.create.mfwNewProject')"
+      :description="t('core.scripts.create.mfwNewProjectDesc')"
+      :selected="value === 'new'"
+    >
+      <template #icon>
+        <span class="selectable-option-icon"><FolderOpenOutlined /></span>
+      </template>
+    </SelectableOptionCard>
     <div class="choice-group-heading">
-      <span class="choice-group-title">{{ t('scripts.create.mfwReuse') }}</span>
-      <span class="choice-group-description">{{ t('scripts.create.mfwReuseDesc') }}</span>
+      <span class="choice-group-title">{{ t('core.scripts.create.mfwReuse') }}</span>
+      <span class="choice-group-description">{{ t('core.scripts.create.mfwReuseDesc') }}</span>
     </div>
     <a-alert v-if="error" type="error" show-icon :message="error" class="template-alert">
       <template #action>
-        <a-button size="small" @click="emit('retry')">{{ t('scripts.create.retry') }}</a-button>
+        <a-button size="small" @click="emit('retry')">{{
+          t('core.scripts.create.retry')
+        }}</a-button>
       </template>
     </a-alert>
     <div v-if="loading" class="choice-placeholder">
       <a-spin size="small" />
-      <span>{{ t('scripts.create.mfwReuseLoading') }}</span>
+      <span>{{ t('core.scripts.create.mfwReuseLoading') }}</span>
     </div>
     <template v-else-if="choices.length">
-      <label
+      <SelectableOptionCard
         v-for="choice in choices"
         :key="choice.scriptId"
-        :class="['choice-row', { selected: value === choice.scriptId, disabled: choice.busy }]"
+        :value="choice.scriptId"
+        :title="reuseTitle(choice)"
+        :description="reuseMeta(choice)"
+        :selected="value === choice.scriptId"
+        :disabled="choice.busy"
       >
-        <a-radio :value="choice.scriptId" :disabled="choice.busy" />
-        <span class="choice-icon"><CopyOutlined /></span>
-        <span class="choice-copy">
-          <span class="choice-title">{{ reuseTitle(choice) }}</span>
-          <span class="choice-description">{{ reuseMeta(choice) }}</span>
-        </span>
-      </label>
+        <template #icon>
+          <span class="selectable-option-icon">
+            <img
+              v-if="showProjectIcon(choice)"
+              :src="buildMaaFWScriptIconUrl(choice.scriptId)"
+              alt=""
+              class="choice-project-icon"
+              @error="failedIcons.add(choice.scriptId)"
+            />
+            <CopyOutlined v-else />
+          </span>
+        </template>
+      </SelectableOptionCard>
     </template>
     <div v-else-if="!error" class="choice-placeholder">
-      {{ t('scripts.create.mfwReuseEmpty', { type: resolveMaaFWFlavor(type).typeTagLabel }) }}
+      {{ t('core.scripts.create.mfwReuseEmpty', { type: resolveMaaFWFlavor(type).typeTagLabel }) }}
     </div>
-  </a-radio-group>
+  </SelectableOptionList>
 </template>
 
 <script setup lang="ts">
+import { reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CopyOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
-import { resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { resolveMaaFWFlavor, usesMaaFWProjectIcon } from '@/composables/useMaaFWFlavor'
+import { buildMaaFWScriptIconUrl } from '@/utils/maafwProjectIcon'
+import SelectableOptionCard from '@/components/SelectableOptionCard.vue'
+import SelectableOptionList from '@/components/SelectableOptionList.vue'
 import type {
   MaaFWCreateSourceSectionEmits,
   MaaFWCreateSourceSectionProps,
@@ -62,7 +79,13 @@ import type { MfwReuseChoice } from './scriptCreateFlow'
 const { t } = useI18n()
 
 // props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
-defineProps<MaaFWCreateSourceSectionProps>()
+const props = defineProps<MaaFWCreateSourceSectionProps>()
+
+// 通用 MaaFW 的每一行是不同的项目，用项目自己的图标认；没有图标（后端 404）就换回复制图标。
+// 特调的行都是同一个项目类型，图标一样认不出来，保持复制图标
+const failedIcons = reactive(new Set<string>())
+const showProjectIcon = (choice: MfwReuseChoice) =>
+  usesMaaFWProjectIcon(resolveMaaFWFlavor(props.type)) && !failedIcons.has(choice.scriptId)
 
 const emit = defineEmits<MaaFWCreateSourceSectionEmits>()
 
@@ -74,57 +97,15 @@ const reuseMeta = (choice: MfwReuseChoice) => {
   const name = choice.scriptName || choice.scriptId.slice(0, 8)
   const from =
     choice.scriptCount > 1
-      ? t('scripts.create.mfwReuseFromMany', { name, count: choice.scriptCount })
-      : t('scripts.create.mfwReuseFrom', { name })
+      ? t('core.scripts.create.mfwReuseFromMany', { name, count: choice.scriptCount })
+      : t('core.scripts.create.mfwReuseFrom', { name })
   const parts = [from, choice.version]
-  if (choice.busy) parts.push(t('scripts.create.mfwReuseBusy'))
+  if (choice.busy) parts.push(t('core.scripts.create.mfwReuseBusy'))
   return parts.filter(Boolean).join(' · ')
 }
 </script>
 
-<!-- 与新建对话框里同名的样式一字不差（对话框的 scoped 样式管不到子组件里面） -->
 <style scoped>
-.choice-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-}
-
-.choice-list {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.choice-row {
-  display: flex;
-  min-width: 0;
-  gap: 12px;
-  align-items: center;
-  padding: 14px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  color: var(--ant-color-text);
-  background: var(--ant-color-bg-container);
-  cursor: pointer;
-}
-
-.choice-row:hover,
-.choice-row.selected {
-  border-color: var(--ant-color-primary);
-}
-
-.choice-row.selected {
-  background: var(--ant-color-primary-bg);
-}
-
-.choice-row.disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
 .choice-group-heading {
   display: flex;
   flex-direction: column;
@@ -155,32 +136,13 @@ const reuseMeta = (choice: MfwReuseChoice) => {
   font-size: 13px;
 }
 
-.choice-icon {
-  display: inline-flex;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-  font-size: 19px;
-}
-
-.choice-title {
-  color: var(--ant-color-text);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.choice-description {
-  margin-top: 3px;
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
-}
-
 .template-alert {
   margin-bottom: 12px;
+}
+
+.choice-project-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
 }
 </style>

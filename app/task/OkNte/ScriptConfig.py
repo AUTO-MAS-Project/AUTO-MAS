@@ -34,13 +34,14 @@ from app.task.proxy_helpers import (
     user_uses_quick_config,
 )
 from app.utils import ProcessManager, get_logger
-from app.utils.io import mark_native_config_injected, swap_in_dir
+from app.utils import io as _utils_io
 
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     ensure_quick_config_dir,
     mas_config_dir,
 )
+from .tools.runtime import OkNteProcessManager
 
 logger = get_logger("OK-NTE 脚本设置")
 
@@ -75,7 +76,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # 查看会话：只读预览（如「查看历史备份」），结束不回写 MAS 配置
         self.view_only = view_only
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
-        self.oknte_process_manager: ProcessManager = ProcessManager()
+        self.oknte_process_manager = OkNteProcessManager(self.script_config)
         self.wait_event: asyncio.Event = asyncio.Event()
         script_root_path = self.script_config.Info.RootPath
         if script_root_path is None:
@@ -111,7 +112,7 @@ class ScriptConfigTask(TaskExecuteBase):
         return "Pass"
 
     async def prepare(self) -> None:
-        self.oknte_process_manager = ProcessManager()
+        self.oknte_process_manager = OkNteProcessManager(self.script_config)
         self.wait_event = asyncio.Event()
 
     async def main_task(self) -> None:
@@ -121,7 +122,10 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.info(f"启动 OK-NTE GUI 配置进程: {self.script_exe_path}")
         self.cur_user_item.status = "运行"
         self.wait_event.clear()
-        await self.oknte_process_manager.open_process(self.script_exe_path)
+        # 配置 GUI 无参启动，不套用自动任务的 -t/-e 等自定义追踪条件。
+        await self.oknte_process_manager.open_oknte(
+            self.script_exe_path, use_custom_target=False
+        )
         await self.wait_event.wait()
 
     async def set_oknte(self) -> None:
@@ -156,8 +160,8 @@ class ScriptConfigTask(TaskExecuteBase):
             return
 
         if self.script_config.Script.ConfigPathMode == "Folder":
-            swap_in_dir(self.mas_config_dir, self.script_config_path)
-            mark_native_config_injected(
+            _utils_io.swap_in_dir(self.mas_config_dir, self.script_config_path)
+            _utils_io.mark_native_config_injected(
                 Path.cwd() / f"data/{self.script_info.script_id}/Temp",
                 self.script_config_path,
                 script_id=self.script_info.script_id,
@@ -196,7 +200,7 @@ class ScriptConfigTask(TaskExecuteBase):
                     "未找到 OK-NTE 配置目录，请在 GUI 中保存后再点击保存配置"
                 )
 
-            swap_in_dir(self.script_config_path, self.mas_config_dir)
+            _utils_io.swap_in_dir(self.script_config_path, self.mas_config_dir)
             logger.success(f"OK-NTE 配置已保存到: {self.mas_config_dir}")
         elif self.script_config.Script.ConfigPathMode == "File":
             if not self.script_config_path.exists():
@@ -235,18 +239,8 @@ class ScriptConfigTask(TaskExecuteBase):
                 f"通过进程管理器中止 OK-NTE GUI 进程失败: {e}"
             )
 
-        try:
-            await System.kill_process(self.script_exe_path)
-        except Exception as e:
-            logger.opt(exception=True).warning(f"中止 OK-NTE 主进程失败: {e}")
-
-        track_exe = str(self.script_config.Script.TrackProcessExe or "").strip()
-        if not track_exe:
-            track_exe = str(
-                self.script_root_path / "data/apps/ok-nte/python/pythonw.exe"
-            )
-        if track_exe:
+        for exe in self.oknte_process_manager.cleanup_executables():
             try:
-                await System.kill_process(Path(track_exe))
+                await System.kill_process(exe)
             except Exception as e:
-                logger.opt(exception=True).warning(f"中止 OK-NTE 追踪进程失败: {e}")
+                logger.opt(exception=True).warning(f"中止 OK-NTE 进程失败: {exe} ({e})")

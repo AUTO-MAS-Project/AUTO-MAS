@@ -1,61 +1,61 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <span class="section-note">{{ t('edit.annihilationDailyRunStart') }}</span>
+      <span class="section-note">{{ t('core.edit.annihilationDailyRunStart') }}</span>
     </div>
 
     <a-alert
-      :message="t('edit.annihilationDailyTasksEach')"
-      :description="t('edit.annihilationMaaStartsOnce')"
+      :message="t('core.edit.annihilationDailyTasksEach')"
+      :description="t('core.edit.annihilationMaaStartsOnce')"
       type="info"
       show-icon
       class="task-alert"
     />
 
     <div class="task-list">
-      <div class="pipeline-phase">{{ t('edit.firstMaaSessionAnnihilation') }}</div>
+      <div class="pipeline-phase">{{ t('core.edit.firstMaaSessionAnnihilation') }}</div>
       <!-- 绿票商店：任务链只认主界面、跑完也停在商店页，所以自己占一次启动，排在剿灭之前 -->
       <PipelineRow
-        :name="t('edit.maaGreenTicketStore')"
+        :name="t('core.edit.maaGreenTicketStore')"
         :summary="greenTicketStoreSummary"
         :checked="formData.Task.IfGreenTicketStore"
         :disabled="loading"
-        :hint="t('edit.maaGreenTicketStoreHint')"
+        :hint="t('core.edit.maaGreenTicketStoreHint')"
         @change="emitSave('Task.IfGreenTicketStore', $event)"
       >
         <div class="detail-inline">
           <a-tag :color="greenTicketStoreDoneThisMonth ? 'success' : 'warning'">
-            {{ t('edit.maaMonthStatus') }}
-            {{ greenTicketStoreDoneThisMonth ? t('edit.maaDone') : t('edit.maaNotDone') }}
+            {{ t('core.edit.maaMonthStatus') }}
+            {{ greenTicketStoreDoneThisMonth ? t('core.edit.maaDone') : t('core.edit.maaNotDone') }}
           </a-tag>
           <a-button
             size="small"
             :disabled="loading"
             @click="emitSave('Data.GreenTicketStoreMonth', null)"
           >
-            {{ t('edit.resetState') }}
+            {{ t('core.edit.resetState') }}
           </a-button>
           <a-button
             size="small"
             :disabled="loading"
             @click="emitSave('Data.GreenTicketStoreMonth', new Date().toISOString())"
           >
-            {{ t('edit.markAsDone2') }}
+            {{ t('core.edit.markAsDone2') }}
           </a-button>
         </div>
       </PipelineRow>
 
       <PipelineRow
-        :name="t('edit.maaAnnihilation')"
+        :name="t('core.edit.maaAnnihilation')"
         :summary="annihilationSummary"
         :checked="annihilationEnabled"
         :disabled="loading"
-        :hint="t('edit.maaAnnihilationHint')"
+        :hint="t('core.edit.maaAnnihilationHint')"
         @change="handleAnnihilationToggle"
       >
         <a-row :gutter="16">
           <a-col :xs="24" :md="12">
-            <a-form-item :label="t('edit.annihilationStage')" class="detail-item">
+            <a-form-item :label="t('core.edit.annihilationStage')" class="detail-item">
               <a-select
                 :value="formData.Task.Annihilation"
                 :options="annihilationStageOptions"
@@ -67,9 +67,9 @@
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
-                <LabelWithHint
-                  :text="t('edit.maaAnnihilationStartDay')"
-                  :hint="t('edit.maaAnnihilationStartDayHint')"
+                <FieldLabelWithHint
+                  :text="t('core.edit.maaAnnihilationStartDay')"
+                  :hint="t('core.edit.maaAnnihilationStartDayHint')"
                 />
               </template>
               <a-select
@@ -83,34 +83,37 @@
           <a-col :span="24">
             <div class="detail-inline">
               <a-tag :color="annihilationCompletedThisWeek ? 'success' : 'warning'">
-                {{ t('edit.maaWeekStatus') }}
-                {{ annihilationCompletedThisWeek ? t('edit.maaDone') : t('edit.maaNotDone') }}
+                {{ t('core.edit.maaWeekStatus') }}
+                {{
+                  annihilationCompletedThisWeek ? t('core.edit.maaDone') : t('core.edit.maaNotDone')
+                }}
               </a-tag>
               <a-button
                 size="small"
                 :disabled="loading"
                 @click="emitSave('Data.AnnihilationCompletedWeek', null)"
               >
-                {{ t('edit.resetState') }}
+                {{ t('core.edit.resetState') }}
               </a-button>
               <a-button
                 size="small"
                 :disabled="loading"
                 @click="emitSave('Data.AnnihilationCompletedWeek', serverWeekMarker())"
               >
-                {{ t('edit.markAsDone2') }}
+                {{ t('core.edit.markAsDone2') }}
               </a-button>
             </div>
           </a-col>
         </a-row>
       </PipelineRow>
 
-      <div class="pipeline-phase">{{ t('edit.secondMaaSessionDaily') }}</div>
+      <div class="pipeline-phase">{{ t('core.edit.secondMaaSessionDaily') }}</div>
       <StaminaPipelineSection
         v-model:form-data="formData"
         :loading="loading"
         :stage-options="stageOptions"
         :activity-stages="activityStages"
+        :activity-template="activityTemplate"
         :activity-stage-loading="activityStageLoading"
         :activity-stage-error="activityStageError"
         :depot-item-options="depotItemOptions"
@@ -122,18 +125,6 @@
         :depot-inventory-time="depotInventoryTime"
         :depot-plan-editor="depotPlanEditor"
         :event-depot-plan-editor="eventDepotPlanEditor"
-        :cultivate-operator-catalog="cultivateOperatorCatalog"
-        :cultivate-operator-options-loading="cultivateOperatorOptionsLoading"
-        :cultivate-operator-options-error="cultivateOperatorOptionsError"
-        :skland-role-options="sklandRoleOptions"
-        :skland-role-loading="sklandRoleLoading"
-        :skland-role-error="sklandRoleError"
-        :load-skland-role-options="loadSklandRoleOptions"
-        :cultivate-preview="cultivatePreview"
-        :cultivate-preview-loading="cultivatePreviewLoading"
-        :cultivate-preview-error="cultivatePreviewError"
-        :load-cultivate-preview="loadCultivatePreview"
-        :import-cultivate-targets="importCultivateTargets"
         :fight-summary="fightSummary"
         @save="emitSave"
         @retry-activity="emit('retryActivity')"
@@ -143,7 +134,7 @@
 
       <!-- 基建换班：模式与自定义排班是它的附属配置，跟着它走 -->
       <PipelineRow
-        :name="t('edit.maaInfrast')"
+        :name="t('core.edit.maaInfrast')"
         :summary="infrastSummary"
         :checked="formData.Task.IfInfrast"
         :disabled="loading"
@@ -153,9 +144,9 @@
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
-                <LabelWithHint
-                  :text="t('edit.maaInfrastMode')"
-                  :hint="t('edit.maaInfrastModeHint')"
+                <FieldLabelWithHint
+                  :text="t('core.edit.maaInfrastMode')"
+                  :hint="t('core.edit.maaInfrastModeHint')"
                 />
               </template>
               <a-select
@@ -171,15 +162,15 @@
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
-                <LabelWithHint
-                  :text="t('edit.maaCustomInfrastFile')"
-                  :hint="t('edit.maaCustomInfrastFileHint')"
+                <FieldLabelWithHint
+                  :text="t('core.edit.maaCustomInfrastFile')"
+                  :hint="t('core.edit.maaCustomInfrastFileHint')"
                 />
               </template>
               <div class="detail-inline">
                 <a-input
                   :value="formData.Task.InfrastName"
-                  :placeholder="t('edit.noConfigurationImportedYet')"
+                  :placeholder="t('core.edit.noConfigurationImportedYet')"
                   readonly
                   class="infrast-name"
                 />
@@ -189,7 +180,7 @@
                   :loading="infrastructureImporting"
                   @click="emit('selectAndImportInfrastructureConfig')"
                 >
-                  {{ t('edit.pickImport') }}
+                  {{ t('core.edit.pickImport') }}
                 </a-button>
               </div>
             </a-form-item>
@@ -197,14 +188,17 @@
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
-                <LabelWithHint :text="t('edit.maaCustomInfrastPlan')" :hint="infrastHint" />
+                <FieldLabelWithHint
+                  :text="t('core.edit.maaCustomInfrastPlan')"
+                  :hint="infrastHint"
+                />
               </template>
               <a-select
                 :value="String(infrastPlanSelect)"
                 :options="infrastSelectOptions"
                 :loading="infrastructureOptionsLoading"
                 :disabled="loading"
-                :placeholder="t('edit.pickCustomBaseLayout')"
+                :placeholder="t('core.edit.pickCustomBaseLayout')"
                 @change="handleInfrastPlanChange"
               />
             </a-form-item>
@@ -214,7 +208,7 @@
 
       <!-- 无配置的一键任务：低频改动，压成一行 -->
       <PipelineRow
-        :name="t('edit.maaDaily')"
+        :name="t('core.edit.maaDaily')"
         :checked="dailyTasks.some(task => formData.Task[task.key])"
         :toggleable="false"
         :has-detail="false"
@@ -236,8 +230,8 @@
 
       <!-- 更换主题：主题名称在 MAA 中配置，MAS 仅提供调度开关并透传；排在任务队列最后 -->
       <PipelineRow
-        :name="t('edit.maaSwitchTheme')"
-        :summary="formData.Task.IfSwitchTheme ? t('edit.maaSwitchThemeHint') : ''"
+        :name="t('core.edit.maaSwitchTheme')"
+        :summary="formData.Task.IfSwitchTheme ? t('core.edit.maaSwitchThemeHint') : ''"
         :checked="formData.Task.IfSwitchTheme"
         :disabled="loading"
         :has-detail="false"
@@ -250,16 +244,11 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import PipelineRow from './PipelineRow.vue'
-import LabelWithHint from './LabelWithHint.vue'
 import StaminaPipelineSection from './StaminaPipelineSection.vue'
 import type { DepotMaintainPlanEditorState } from './useDepotMaintainPlanEditor'
 
-import type {
-  CultivateOperatorCatalogEntry as OperatorCatalogEntry,
-  CultivateImportResult,
-} from './cultivateTargets'
-import type { CultivatePreviewOut } from '@/api'
 import type { ActivityItem } from '@/types/home'
 import { currentMonthMarker, currentWeekMarker, getGameDayOffset } from './periodMarkers'
 import {
@@ -282,6 +271,7 @@ const props = defineProps<{
   loading: boolean
   stageOptions: any[]
   activityStages: ActivityItem[]
+  activityTemplate?: ('material' | 'orundum')[]
   activityStageLoading: boolean
   activityStageError: string
   depotItemOptions: SelectOption[]
@@ -297,23 +287,6 @@ const props = defineProps<{
   depotInventory: Record<string, number>
   /** 库存档案的最近识别时间（本地格式；空串=未识别） */
   depotInventoryTime: string
-  /** 干员目录（一图流全量表，含技能/模组名称目录；[] 表示已加载但为空） */
-  cultivateOperatorCatalog: OperatorCatalogEntry[]
-  /** 森空岛绑定下拉：合并所有已配置凭据账号组的角色 */
-  sklandRoleOptions: SelectOption[]
-  sklandRoleLoading: boolean
-  sklandRoleError: string
-  /** 按需加载角色列表（下拉展开时触发，父级负责请求） */
-  loadSklandRoleOptions: () => Promise<void>
-  cultivateOperatorOptionsLoading: boolean
-  cultivateOperatorOptionsError: string
-  /** 养成需求预览（后端纯计算结果） */
-  cultivatePreview: CultivatePreviewOut | null
-  cultivatePreviewLoading: boolean
-  cultivatePreviewError: string
-  /** 目标行变化时由子组件触发（父级负责请求与竞态守卫） */
-  loadCultivatePreview: (targetsJson: string) => Promise<void>
-  importCultivateTargets: (content: string) => Promise<CultivateImportResult>
   fightSummary: string
   isEdit: boolean
   infrastructureImporting: boolean
@@ -334,9 +307,9 @@ const emit = defineEmits<{
 const emitSave = (key: string, value: any) => emit('save', key, value)
 
 const dailyTasks = [
-  { key: 'IfRecruit', label: t('edit.maaRecruit') },
-  { key: 'IfMall', label: t('edit.maaMall') },
-  { key: 'IfAward', label: t('edit.claimRewards') },
+  { key: 'IfRecruit', label: t('core.edit.maaRecruit') },
+  { key: 'IfMall', label: t('core.edit.maaMall') },
+  { key: 'IfAward', label: t('core.edit.claimRewards') },
 ] as const
 
 const annihilationEnabled = computed(() => formData.value.Task.Annihilation !== 'Close')
@@ -370,15 +343,15 @@ const annihilationSummary = computed(() =>
 
 // 自动换班随表型带上语义（时段表=按钟点选班；无时段表=从第一班起轮换）
 const infrastAutoLabel = computed(() => {
-  if (props.infrastPlanState === 'period') return t('edit.maaCustomInfrastPlanAutoPeriod')
-  if (props.infrastPlanState === 'rotate') return t('edit.maaCustomInfrastPlanAutoRotate')
-  return t('edit.maaCustomInfrastPlanAuto')
+  if (props.infrastPlanState === 'period') return t('core.edit.maaCustomInfrastPlanAutoPeriod')
+  if (props.infrastPlanState === 'rotate') return t('core.edit.maaCustomInfrastPlanAutoRotate')
+  return t('core.edit.maaCustomInfrastPlanAuto')
 })
 
 // 班次标签补时段，让"哪班对应哪段时间"在控件里可见（时段随选项由后端下发）
 const infrastLabelWithPeriod = (option: InfrastPlanOption) =>
   option.period
-    ? t('edit.maaCustomInfrastPlanWithPeriod', { name: option.label, period: option.period })
+    ? t('core.edit.maaCustomInfrastPlanWithPeriod', { name: option.label, period: option.period })
     : option.label
 
 // 时段表由 MAA 按钟点选班，班次只展示不可选；无时段表可手选起始班
@@ -411,15 +384,15 @@ const handleInfrastPlanChange = (value: string | number) => {
 const infrastHint = computed(() => {
   if (props.infrastPlanSelect !== -1) {
     return infrastSelectLabel.value
-      ? t('edit.maaCustomInfrastPlanManualHint', { name: infrastSelectLabel.value })
-      : t('edit.maaCustomInfrastPlanManualHintIndex', {
+      ? t('core.edit.maaCustomInfrastPlanManualHint', { name: infrastSelectLabel.value })
+      : t('core.edit.maaCustomInfrastPlanManualHintIndex', {
           index: props.infrastPlanSelect + 1,
         })
   }
-  if (props.infrastPlanState === 'period') return t('edit.maaCustomInfrastPlanHintPeriod')
-  if (props.infrastPlanState === 'rotate') return t('edit.maaCustomInfrastPlanHintRotate')
-  if (props.infrastPlanState === 'mixed') return t('edit.maaCustomInfrastPlanHintMixed')
-  return t('edit.maaCustomInfrastPlanHint')
+  if (props.infrastPlanState === 'period') return t('core.edit.maaCustomInfrastPlanHintPeriod')
+  if (props.infrastPlanState === 'rotate') return t('core.edit.maaCustomInfrastPlanHintRotate')
+  if (props.infrastPlanState === 'mixed') return t('core.edit.maaCustomInfrastPlanHintMixed')
+  return t('core.edit.maaCustomInfrastPlanHint')
 })
 
 const infrastSummary = computed(() => {
@@ -443,42 +416,17 @@ const greenTicketStoreDoneThisMonth = computed(() => {
 
 const greenTicketStoreSummary = computed(() => {
   if (!formData.value.Task.IfGreenTicketStore) return ''
-  const status = greenTicketStoreDoneThisMonth.value ? t('edit.maaDone') : t('edit.maaNotDone')
-  return `${t('edit.maaMonthStatus')} ${status}`
+  const status = greenTicketStoreDoneThisMonth.value
+    ? t('core.edit.maaDone')
+    : t('core.edit.maaNotDone')
+  return `${t('core.edit.maaMonthStatus')} ${status}`
 })
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 32px;
-}
-
 .section-header {
   margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   gap: 12px;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
 }
 
 .section-note {

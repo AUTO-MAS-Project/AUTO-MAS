@@ -1,3 +1,5 @@
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
+import { appearanceCategory } from '@/utils/preferenceAnalytics'
 import { ref } from 'vue'
 import {
   ApiError,
@@ -149,6 +151,18 @@ const toAuthState = (response: ShareAuthStatusOut): ShareAuthState => ({
   message: RESULT_STATUSES.includes(response.authStatus) ? (response.message ?? '') : '',
 })
 
+// 分享弹窗和主题商店共用后台设备会话；先完成旧撤销，再申请新设备码。
+let shareAuthTail: Promise<unknown> = Promise.resolve()
+
+const queueShareAuthAction = <T>(action: () => Promise<T>): Promise<T> => {
+  const run = shareAuthTail.then(action, action)
+  shareAuthTail = run.then(
+    () => undefined,
+    () => undefined
+  )
+  return run
+}
+
 export function useShareApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -170,21 +184,27 @@ export function useShareApi() {
     }
   }
 
-  const getShareAuthStatus = () =>
-    runAuthCall(() => Service.getShareAuthStatusApiShareAuthStatusPost())
+  const getShareAuthStatus = async () => {
+    await shareAuthTail
+    return runAuthCall(() => Service.getShareAuthStatusApiShareAuthStatusPost())
+  }
 
   const startShareAuth = async () => {
     loading.value = true
     try {
-      return await runAuthCall(() => Service.startShareAuthApiShareAuthStartPost())
+      return await queueShareAuthAction(() =>
+        runAuthCall(() => Service.startShareAuthApiShareAuthStartPost())
+      )
     } finally {
       loading.value = false
     }
   }
 
+  // 轮询不占用变更队列，慢轮询期间仍可取消；后端会丢弃过期设备会话的结果。
   const pollShareAuth = () => runAuthCall(() => Service.pollShareAuthApiShareAuthPollPost())
 
-  const cancelShareAuth = () => runAuthCall(() => Service.cancelShareAuthApiShareAuthCancelPost())
+  const cancelShareAuth = () =>
+    queueShareAuthAction(() => runAuthCall(() => Service.cancelShareAuthApiShareAuthCancelPost()))
 
   // 分享前检查：返回自动脱敏后仍然可疑的配置项，由用户确认
   const inspectShare = async (
@@ -243,25 +263,31 @@ export function useShareApi() {
     loading.value = true
     error.value = null
     try {
-      const response = await Service.uploadShareAppearanceApiShareAppearanceUploadPost({
-        ...(payload.categoryKey
-          ? {
-              categoryKey:
-                payload.categoryKey === 'mascot'
-                  ? ShareAppearanceUploadIn.categoryKey.MASCOT
-                  : ShareAppearanceUploadIn.categoryKey.THEME,
-            }
-          : {}),
-        zipPath: payload.zipPath,
-        displayName: payload.displayName,
-        description: payload.description,
-        changeNote: payload.changeNote,
-        fileId: payload.fileId ?? null,
-        coverMode: payload.coverMode,
-        coverPath: payload.coverMode === 'custom' ? (payload.coverPath ?? null) : null,
-      })
+      const response = await observeFeature(
+        'appearance_share_finished',
+        { category_kind: appearanceCategory(payload.categoryKey ?? 'theme') },
+        () =>
+          Service.uploadShareAppearanceApiShareAppearanceUploadPost({
+            ...(payload.categoryKey
+              ? {
+                  categoryKey:
+                    payload.categoryKey === 'mascot'
+                      ? ShareAppearanceUploadIn.categoryKey.MASCOT
+                      : ShareAppearanceUploadIn.categoryKey.THEME,
+                }
+              : {}),
+            zipPath: payload.zipPath,
+            displayName: payload.displayName,
+            description: payload.description,
+            changeNote: payload.changeNote,
+            fileId: payload.fileId ?? null,
+            coverMode: payload.coverMode,
+            coverPath: payload.coverMode === 'custom' ? (payload.coverPath ?? null) : null,
+          }),
+        apiOutcome
+      )
       if (response.code !== 200) {
-        const message = response.message || t('themeStore.upload.failed')
+        const message = response.message || t('core.themeStore.upload.failed')
         error.value = message
         return {
           ok: false,
@@ -285,7 +311,7 @@ export function useShareApi() {
         },
       }
     } catch (err) {
-      const failure = apiErrorMessage(err, t('themeStore.upload.failed'))
+      const failure = apiErrorMessage(err, t('core.themeStore.upload.failed'))
       error.value = failure.message
       return { ok: false, ...failure }
     } finally {
@@ -335,12 +361,12 @@ export function useShareApi() {
         return {
           ok: false,
           code: response.code ?? 500,
-          message: response.message || t('themeStore.mine.loadFailed'),
+          message: response.message || t('core.themeStore.mine.loadFailed'),
         }
       }
       return { ok: true, data: (response.data ?? []).map(toMyAppearance) }
     } catch (err) {
-      return { ok: false, ...apiErrorMessage(err, t('themeStore.mine.loadFailed')) }
+      return { ok: false, ...apiErrorMessage(err, t('core.themeStore.mine.loadFailed')) }
     }
   }
 
@@ -401,12 +427,12 @@ export function useShareApi() {
         return {
           ok: false,
           code: response.code ?? 500,
-          message: response.message || t('themeStore.mine.descriptionFailed'),
+          message: response.message || t('core.themeStore.mine.descriptionFailed'),
         }
       }
       return { ok: true, data: toMyAppearance(response.data) }
     } catch (err) {
-      return { ok: false, ...apiErrorMessage(err, t('themeStore.mine.descriptionFailed')) }
+      return { ok: false, ...apiErrorMessage(err, t('core.themeStore.mine.descriptionFailed')) }
     }
   }
 

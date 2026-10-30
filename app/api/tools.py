@@ -21,17 +21,17 @@
 #   Contact: DLmaster_361@163.com
 
 
-import asyncio
 import traceback
 from datetime import datetime
 from inspect import isawaitable
 from typing import (
+    Annotated,
     Dict,
     Literal,
 )
 from uuid import UUID
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends
 from pydantic import (
     BaseModel,
     Field,
@@ -39,22 +39,21 @@ from pydantic import (
 )
 
 import app.models.config as _config_models
+from app.api.notification_dependencies import get_community_notifier
 from app.config.wire import (
     ConfigInput,
     ConfigPayload,
     config_group_contract,
 )
 from app.core import Config
-from app.models.schema import OutBase
-from app.tools.community_contract import is_community_sign_completed
-from app.tools.community_sign import (
+from app.core.community_sign import (
     CommunitySignInProgressError,
     community_sign_flow,
     run_community_sign_in,
 )
-from app.utils.constants import UTC8
-from app.utils.logger import get_logger
-from app.utils.security import format_exception_reason
+from app.models.notification_ports import CommunityNotifier
+from app.models.schema import OutBase
+from app.utils import UTC8, format_exception_reason, get_logger
 
 ToolsConfig = ConfigPayload[_config_models.ToolsConfig]
 ToolsConfigInput = ConfigInput[_config_models.ToolsConfig]
@@ -215,7 +214,6 @@ class ToolsUpdateIn(BaseModel):
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
 logger = get_logger("游戏社区 API")
-_PENDING_COMMUNITY_NOTIFICATIONS: set[asyncio.Task[list[str] | None]] = set()
 _MIYOUSHE_DEVICE_FIELDS = ("MiyousheDeviceId", "MiyousheDeviceFp")
 
 
@@ -241,53 +239,7 @@ def _normalize_miyoushe_device_fields(data: dict[str, object]) -> None:
         if field not in data:
             continue
         value = data.get(field)
-        if isinstance(value, str):
-            data[field] = value.strip()
-            continue
-        # 非字符串（含 null）视为「未提供」，不能当成清空已保存的设备值。
-        data.pop(field, None)
-
-
-def _track_community_notification(
-    task: asyncio.Task[list[str] | None],
-) -> None:
-    """保留后台通知任务引用，并消费完成后的异常。"""
-
-    _PENDING_COMMUNITY_NOTIFICATIONS.discard(task)
-    if task.cancelled():
-        return
-    try:
-        failed_channels = task.result()
-    except Exception as exc:
-        _log_community_api_error("后台游戏社区通知发送失败", exc)
-        return
-    if failed_channels:
-        logger.warning(f"后台游戏社区通知部分失败: {'、'.join(failed_channels)}")
-
-
-async def _dispatch_community_notification(
-    results: list[dict[str, object]],
-) -> list[str] | None:
-    """发送签到通知；慢渠道转后台，避免阻塞签到完成响应。"""
-
-    from app.tools.community_notify import (
-        NOTIFICATION_FAST_PATH_WAIT_SECONDS,
-        push_community_notification,
-    )
-
-    task = asyncio.create_task(push_community_notification(results))
-    _PENDING_COMMUNITY_NOTIFICATIONS.add(task)
-    task.add_done_callback(_track_community_notification)
-    try:
-        return await asyncio.wait_for(
-            asyncio.shield(task), timeout=NOTIFICATION_FAST_PATH_WAIT_SECONDS
-        )
-    except asyncio.TimeoutError:
-        logger.info("等待窗口内未返回，通知渠道仍在后台发送")
-        return None
-    except Exception as exc:
-        _log_community_api_error("游戏社区通知服务异常", exc)
-        return ["通知服务"]
+        data[field] = value.strip() if isinstance(value, str) else ""
 
 
 def _get_community_account_field(account: object, field: str, default=None):
@@ -353,10 +305,13 @@ async def update_tools(script: ToolsUpdateIn = Body(...)) -> OutBase:
     response_model=OutBase,
     status_code=200,
 )
-async def manual_game_sign() -> OutBase:
+async def manual_game_sign(
+    *, notifier: Annotated[CommunityNotifier, Depends(get_community_notifier)]
+) -> OutBase:
     """手动触发游戏社区签到"""
 
     try:
+        from app.models.notification_community import community_notification_results
         from app.tools.community import (
             format_community_sign_results,
             has_community_credentials,
@@ -376,11 +331,7 @@ async def manual_game_sign() -> OutBase:
             # 标记今天已签到（仅当所有启用的用户都已签到时标记全局）
             today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
             all_signed = True
-            # 用快照遍历：签到期间删除账号组时不能因为取不到条目而中断判定。
-            for uid in list(Config.ToolsConfig.GameSign_Accounts.keys()):
-                account = Config.ToolsConfig.GameSign_Accounts.get(uid)
-                if account is None:
-                    continue
+            for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
                 has_credentials = has_community_credentials(account)
                 if _get_community_account_field(account, "Enabled") and has_credentials:
                     if (
@@ -397,10 +348,16 @@ async def manual_game_sign() -> OutBase:
                     check_visibility=False,
                 )
         warning_messages = []
-        if any(not is_community_sign_completed(result) for result in results):
+        if any(
+            result.get("status") not in ("成功", "已签到")
+            and not result.get("_completed")
+            for result in results
+        ):
             warning_messages.append("签到未全部完成，请查看签到结果")
-        if results and Config.ToolsConfig.GameSign.NotifyEnabled:
-            failed_channels = await _dispatch_community_notification(results)
+        if results:
+            failed_channels = await notifier.submit(
+                community_notification_results(results)
+            )
             if failed_channels:
                 warning_messages.append(
                     f"部分通知发送失败：{'、'.join(failed_channels)}"
@@ -442,7 +399,7 @@ async def query_community_activity(
 
     snapshots = ()
     try:
-        from app.tools.community_activity import (
+        from app.core.community_activity import (
             build_configured_community_activity_failures,
             query_configured_community_activity,
         )
@@ -682,21 +639,7 @@ async def login_taygedo(
             serialize_taygedo_credential,
         )
 
-        try:
-            account_uid = UUID(credential.accountId)
-        except ValueError:
-            return OutBase(
-                code=400,
-                status="error",
-                message="账号组标识无效，请刷新页面后重试",
-            )
-        account = Config.ToolsConfig.GameSign_Accounts.get(account_uid)
-        if account is None:
-            return OutBase(
-                code=400,
-                status="error",
-                message="账号组不存在，请刷新页面后重试",
-            )
+        account = Config.ToolsConfig.GameSign_Accounts[UUID(credential.accountId)]
         existing_token = str(account.GameSignAccount.TaygedoToken or "").strip()
         refreshed = await login_taygedo_with_password(
             credential.phone.strip(),

@@ -1,3 +1,5 @@
+import { observePreference } from '@/utils/preferenceAnalytics'
+import { observeFeature } from '@/utils/featureAnalytics'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { theme } from 'ant-design-vue'
 import { getConfig, saveConfig, type FrontendConfig } from '@/utils/config'
@@ -239,6 +241,7 @@ const updateCSSVariables = () => {
   root.style.setProperty('--ant-color-text-description', antTokens.colorTextDescription)
   root.style.setProperty('--ant-color-text-placeholder', antTokens.colorTextPlaceholder)
   root.style.setProperty('--ant-color-text-disabled', antTokens.colorTextDisabled)
+  root.style.setProperty('--ant-color-text-light-solid', antTokens.colorTextLightSolid)
 
   root.style.setProperty('--ant-color-bg-container', antTokens.colorBgContainer)
   root.style.setProperty('--ant-color-bg-layout', antTokens.colorBgLayout)
@@ -577,71 +580,79 @@ const loadCustomBackgroundIfNeeded = async (): Promise<void> => {
 
 export function useTheme() {
   const resetTheme = (): Promise<void> =>
-    queueThemeChange(async () => {
-      const revision = ++themeRevision
-      const savedConfigRevision = configRevision
-      const defaults: ThemeSnapshot = {
-        themeMode: 'system',
-        themeColor: 'blue',
-        appearanceId: null,
-      }
-      themeMode.value = defaults.themeMode
-      themeColor.value = defaults.themeColor
-      appearanceId.value = null
-      activeAppearance.value = null
-      updateTheme()
-      try {
-        await saveConfig(defaults)
-        if (configRevision === savedConfigRevision) setPersistedThemeSnapshot(defaults)
-      } catch (error) {
-        if (revision === themeRevision) restorePersistedThemeSnapshot()
-        logger.error(`重置主题失败: ${error instanceof Error ? error.message : String(error)}`)
-        throw error
-      }
-    })
+    observePreference('theme', 'auto', () =>
+      queueThemeChange(async () => {
+        const revision = ++themeRevision
+        const savedConfigRevision = configRevision
+        const defaults: ThemeSnapshot = {
+          themeMode: 'system',
+          themeColor: 'blue',
+          appearanceId: null,
+        }
+        themeMode.value = defaults.themeMode
+        themeColor.value = defaults.themeColor
+        appearanceId.value = null
+        activeAppearance.value = null
+        updateTheme()
+        try {
+          await saveConfig(defaults)
+          if (configRevision === savedConfigRevision) setPersistedThemeSnapshot(defaults)
+        } catch (error) {
+          if (revision === themeRevision) restorePersistedThemeSnapshot()
+          logger.error(`重置主题失败: ${error instanceof Error ? error.message : String(error)}`)
+          throw error
+        }
+      })
+    )
 
   const setThemeMode = (mode: ThemeMode): Promise<void> =>
-    queueThemeChange(async () => {
-      const revision = ++themeRevision
-      const savedConfigRevision = configRevision
-      themeMode.value = mode
-      activeAppearance.value = null
-      appearanceId.value = null
-      updateTheme()
-      await loadCustomBackgroundIfNeeded()
-      try {
-        await saveConfig({ themeMode: mode, appearanceId: null })
-        if (configRevision === savedConfigRevision) {
-          setPersistedThemeSnapshot({
-            ...persistedThemeSnapshot,
-            themeMode: mode,
-            appearanceId: null,
-          })
+    observePreference('theme', mode === 'system' ? 'auto' : mode, () =>
+      queueThemeChange(async () => {
+        const revision = ++themeRevision
+        const savedConfigRevision = configRevision
+        themeMode.value = mode
+        activeAppearance.value = null
+        appearanceId.value = null
+        updateTheme()
+        await loadCustomBackgroundIfNeeded()
+        try {
+          await saveConfig({ themeMode: mode, appearanceId: null })
+          if (configRevision === savedConfigRevision) {
+            setPersistedThemeSnapshot({
+              ...persistedThemeSnapshot,
+              themeMode: mode,
+              appearanceId: null,
+            })
+          }
+        } catch (error) {
+          if (revision === themeRevision) restorePersistedThemeSnapshot()
+          logger.error(
+            `保存主题模式失败: ${error instanceof Error ? error.message : String(error)}`
+          )
+          throw error
         }
-      } catch (error) {
-        if (revision === themeRevision) restorePersistedThemeSnapshot()
-        logger.error(`保存主题模式失败: ${error instanceof Error ? error.message : String(error)}`)
-        throw error
-      }
-    })
+      })
+    )
 
   const setThemeColor = (color: ThemeColor): Promise<void> =>
-    queueThemeChange(async () => {
-      const revision = ++themeRevision
-      const savedConfigRevision = configRevision
-      themeColor.value = color
-      updateTheme()
-      try {
-        await saveConfig({ themeColor: color })
-        if (configRevision === savedConfigRevision) {
-          setPersistedThemeSnapshot({ ...persistedThemeSnapshot, themeColor: color })
+    observePreference('theme', 'custom', () =>
+      queueThemeChange(async () => {
+        const revision = ++themeRevision
+        const savedConfigRevision = configRevision
+        themeColor.value = color
+        updateTheme()
+        try {
+          await saveConfig({ themeColor: color })
+          if (configRevision === savedConfigRevision) {
+            setPersistedThemeSnapshot({ ...persistedThemeSnapshot, themeColor: color })
+          }
+        } catch (error) {
+          if (revision === themeRevision) restorePersistedThemeSnapshot()
+          logger.error(`保存主题色失败: ${error instanceof Error ? error.message : String(error)}`)
+          throw error
         }
-      } catch (error) {
-        if (revision === themeRevision) restorePersistedThemeSnapshot()
-        logger.error(`保存主题色失败: ${error instanceof Error ? error.message : String(error)}`)
-        throw error
-      }
-    })
+      })
+    )
 
   const loadAppearances = async (): Promise<void> => {
     const loadRevision = ++appearanceLoadRevision
@@ -710,51 +721,61 @@ export function useTheme() {
     await loadCustomBackgroundIfNeeded()
   }
 
-  const setAppearance = (id: string | null): Promise<void> =>
-    queueThemeChange(async () => {
-      const revision = ++themeRevision
-      const savedConfigRevision = configRevision
-      if (!id) {
-        activeAppearance.value = null
-        appearanceId.value = null
-        updateTheme()
-        await loadCustomBackgroundIfNeeded()
-        try {
-          await saveConfig({ appearanceId: null })
-          if (configRevision === savedConfigRevision) {
-            setPersistedThemeSnapshot({ ...persistedThemeSnapshot, appearanceId: null })
+  const setAppearance = (id: string | null): Promise<void> => {
+    let applied = false
+    return observeFeature(
+      'appearance_package_finished',
+      { package_kind: 'theme', action: 'enable' },
+      () =>
+        queueThemeChange(async () => {
+          const revision = ++themeRevision
+          const savedConfigRevision = configRevision
+          if (!id) {
+            activeAppearance.value = null
+            appearanceId.value = null
+            updateTheme()
+            await loadCustomBackgroundIfNeeded()
+            try {
+              await saveConfig({ appearanceId: null })
+              applied = true
+              if (configRevision === savedConfigRevision) {
+                setPersistedThemeSnapshot({ ...persistedThemeSnapshot, appearanceId: null })
+              }
+            } catch (error) {
+              if (revision === themeRevision) restorePersistedThemeSnapshot()
+              logger.error(
+                `保存默认外观失败: ${error instanceof Error ? error.message : String(error)}`
+              )
+              throw error
+            }
+            return
           }
-        } catch (error) {
-          if (revision === themeRevision) restorePersistedThemeSnapshot()
-          logger.error(
-            `保存默认外观失败: ${error instanceof Error ? error.message : String(error)}`
-          )
-          throw error
-        }
-        return
-      }
-      const appearance =
-        appearances.value.find(item => item.id === id) ??
-        (await window.electronAPI.getAppearance?.(id))
-      if (!appearance) throw new Error('外观不存在或已损坏')
-      if (revision !== themeRevision) return
-      activeAppearance.value = appearance
-      appearanceId.value = appearance.id
-      updateTheme()
-      await loadCustomBackgroundIfNeeded()
-      try {
-        await saveConfig({ appearanceId: appearance.id })
-        if (configRevision === savedConfigRevision) {
-          setPersistedThemeSnapshot({ ...persistedThemeSnapshot, appearanceId: appearance.id })
-        }
-      } catch (error) {
-        if (revision === themeRevision) restorePersistedThemeSnapshot()
-        logger.error(
-          `保存自定义外观失败: ${error instanceof Error ? error.message : String(error)}`
-        )
-        throw error
-      }
-    })
+          const appearance =
+            appearances.value.find(item => item.id === id) ??
+            (await window.electronAPI.getAppearance?.(id))
+          if (!appearance) throw new Error('外观不存在或已损坏')
+          if (revision !== themeRevision) return
+          activeAppearance.value = appearance
+          appearanceId.value = appearance.id
+          updateTheme()
+          await loadCustomBackgroundIfNeeded()
+          try {
+            await saveConfig({ appearanceId: appearance.id })
+            applied = true
+            if (configRevision === savedConfigRevision) {
+              setPersistedThemeSnapshot({ ...persistedThemeSnapshot, appearanceId: appearance.id })
+            }
+          } catch (error) {
+            if (revision === themeRevision) restorePersistedThemeSnapshot()
+            logger.error(
+              `保存自定义外观失败: ${error instanceof Error ? error.message : String(error)}`
+            )
+            throw error
+          }
+        }),
+      () => (applied ? 'success' : 'skipped')
+    )
+  }
 
   const setCustomBackground = (path: string, base64?: string): Promise<void> =>
     queueThemeChange(async () => {

@@ -38,8 +38,8 @@ import json
 import uuid
 from pathlib import Path
 
+from app.utils import config_restore as _utils_config_restore
 from app.utils import get_logger
-from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
 from .backup_archive import (
     OVERLAY_SIDECAR_NAME,
@@ -62,21 +62,21 @@ from .sra_runtime import get_sra_app_data_dir
 logger = get_logger("HSR 配置恢复")
 
 
-def _user_guard(ctx: RestoreContext) -> None:
+def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
     """恢复守卫：目标用户必须存在，避免把字段回填进孤儿配置。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
         raise ValueError("HSR 用户不存在，请刷新后重试")
 
 
-def _m7a_root(ctx: RestoreContext) -> Path | None:
+def _m7a_root(ctx: _utils_config_restore.RestoreContext) -> Path | None:
     """M7A 安装根；未配置返回 ``None``。"""
 
     raw = resolve_script_path(ctx.script_config, "M7A")
     return Path(raw) if raw else None
 
 
-def _sra_app_data(ctx: RestoreContext) -> Path:
+def _sra_app_data(ctx: _utils_config_restore.RestoreContext) -> Path:
     """SRA appdata 共享目录（恒存在）。"""
 
     return get_sra_app_data_dir()
@@ -85,7 +85,9 @@ def _sra_app_data(ctx: RestoreContext) -> Path:
 # ══════════════════ mas 池（声明式 + 定制预览/恢复） ══════════════════
 
 
-async def _mas_files(ctx: RestoreContext) -> dict[str, str] | None:
+async def _mas_files(
+    ctx: _utils_config_restore.RestoreContext,
+) -> dict[str, str] | None:
     """归档内容 = 页面核心字段侧车（内存 JSON，免临时文件）。"""
 
     _user_guard(ctx)
@@ -96,11 +98,11 @@ async def _mas_files(ctx: RestoreContext) -> dict[str, str] | None:
     return {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)}
 
 
-async def _mas_root(ctx: RestoreContext) -> Path:
+async def _mas_root(ctx: _utils_config_restore.RestoreContext) -> Path:
     return mas_backup_root(ctx.script_id, ctx.user_id)
 
 
-async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
+async def _preview_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> dict:
     backup_dir = get_mas_backup_dir(ctx.script_id, ctx.user_id, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
@@ -114,7 +116,7 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     return build_overlay_preview(overlay, current_owner=current_owner)
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
+async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     overlay = read_mas_overlay(user, ctx.script_config)
@@ -128,26 +130,28 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
 # ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════
 
 
-async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
+async def _native_files(
+    ctx: _utils_config_restore.RestoreContext,
+) -> dict[str, Path] | None:
     """归档内容 = 两引擎原生配置文件集（缺失项跳过，全缺失返回 None）。"""
 
     return collect_native_files(_m7a_root(ctx), _sra_app_data(ctx)) or None
 
 
-async def _native_root(ctx: RestoreContext) -> Path:
+async def _native_root(ctx: _utils_config_restore.RestoreContext) -> Path:
     return native_backup_root(_sra_app_data(ctx), _m7a_root(ctx))
 
 
-async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
+async def _preview_native(ctx: _utils_config_restore.RestoreContext, ts: str) -> dict:
     return build_native_preview(_sra_app_data(ctx), ts, _m7a_root(ctx))
 
 
-async def _restore_native(ctx: RestoreContext, ts: str) -> None:
+async def _restore_native(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
     restore_native_backup(_m7a_root(ctx), _sra_app_data(ctx), ts)
 
 
 RESTORE_POOLS = [
-    ConfigRestorePool(
+    _utils_config_restore.ConfigRestorePool(
         key="mas",
         kind="user",
         mas_base="sidecar_only",
@@ -156,7 +160,7 @@ RESTORE_POOLS = [
         preview=_preview_mas,
         restore=_restore_mas,
     ),
-    ConfigRestorePool(
+    _utils_config_restore.ConfigRestorePool(
         key="native",
         kind="script",
         files=_native_files,

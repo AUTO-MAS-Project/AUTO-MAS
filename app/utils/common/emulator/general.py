@@ -1,0 +1,248 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025 MoeSnowyFox
+#   Copyright © 2025-2026 AUTO-MAS Team
+#   This file is part of AUTO-MAS.
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+#   Contact: DLmaster_361@163.com
+import asyncio
+import re
+import shlex
+import time
+from typing import Dict
+
+import psutil
+
+from app.models.config import EmulatorConfig
+from app.models.emulator import (
+    DeviceBase,
+    DeviceInfo,
+    DeviceStatus,
+    EmulatorRuntimePolicy,
+)
+from app.utils import IS_WINDOWS, get_logger
+from app.utils import emulator as _utils_emulator
+from app.utils import process as _utils_process
+
+logger = get_logger("通用模拟器管理")
+
+
+class GeneralDeviceManager(DeviceBase):
+    """
+    用于管理一般应用程序进程
+    """
+
+    def __init__(
+        self, config: EmulatorConfig, *, runtime_policy: EmulatorRuntimePolicy
+    ) -> None:
+
+        emulator_path = config.Info.Path
+        if emulator_path is None or not emulator_path.exists():
+            raise FileNotFoundError(f"模拟器文件不存在: {emulator_path}")
+
+        if config.Info.Type != "general":
+            raise ValueError("配置的模拟器类型不是通用类型")
+
+        self.config = config
+        self.runtime_policy = runtime_policy
+        self.emulator_path = emulator_path
+        self.process_managers: Dict[str, _utils_process.ProcessManager] = {}
+        # {实例索引: 静音记录}，启动时跟随静音、关闭前还原
+        self._audio_mute_states: dict[str, _utils_emulator.tools.AudioMuteRecord] = {}
+
+    async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
+
+        # 检查是否已经在运行
+        current_status = await self.getStatus(idx)
+        if current_status == DeviceStatus.ONLINE:
+            logger.warning(f"设备{idx}已经在运行，状态: {current_status}")
+            return (await self.getInfo(idx))[idx]
+
+        # 创建进程管理器
+        if idx not in self.process_managers:
+            self.process_managers[idx] = _utils_process.ProcessManager()
+
+        args, _ = self.parse_index(idx)
+
+        # 启动进程
+        await self.process_managers[idx].open_process(
+            self.emulator_path, *args, breakaway=True
+        )
+
+        # 等待进程启动
+        await asyncio.sleep(self.config.Info.MaxWaitTime)
+
+        await _utils_emulator.tools.apply_launch_audio_mute(
+            states_store=self._audio_mute_states,
+            idx=idx,
+            resolve_pids=lambda: asyncio.to_thread(self._resolve_audio_pids, idx),
+            silence_enabled=self.runtime_policy.silence_enabled,
+        )
+
+        return (await self.getInfo(idx))[idx]
+
+    def _resolve_audio_pids(self, idx: str) -> list[int]:
+        """实例主进程及其后代进程：模拟器主程序往往再拉起子进程渲染声音。"""
+        manager = self.process_managers.get(idx)
+        pid = manager.main_pid if manager else None
+        if pid is None:
+            return []
+        try:
+            children = psutil.Process(pid).children(recursive=True)
+        except psutil.NoSuchProcess:
+            return []
+        return [pid, *(child.pid for child in children)]
+
+    async def close(self, idx: str) -> DeviceStatus:
+        await _utils_emulator.tools.restore_audio_before_close(
+            self._audio_mute_states, idx
+        )
+
+        status = await self.getStatus(idx)
+        if status == DeviceStatus.OFFLINE:
+            logger.warning(f"设备{idx}未在线，当前状态: {status}")
+            return status
+
+        # 终止进程
+        await self.process_managers[idx].kill()
+
+        # 等待进程完全停止
+        deadline = time.monotonic() + self.config.Info.MaxWaitTime
+        while time.monotonic() < deadline:
+            if not await self.process_managers[idx].is_running():
+                return DeviceStatus.OFFLINE
+
+            await asyncio.sleep(0.1)
+        else:
+            raise RuntimeError(f"关闭设备{idx}超时")
+
+    async def getStatus(self, idx: str) -> DeviceStatus:
+
+        if idx not in self.process_managers:
+            return DeviceStatus.OFFLINE
+
+        if await self.process_managers[idx].is_running():
+            return DeviceStatus.ONLINE
+        else:
+            return DeviceStatus.OFFLINE
+
+    async def list_devices(self) -> dict[str, str]:
+        return {}
+
+    async def getInfo(self, idx: str | None) -> Dict[str, DeviceInfo]:
+
+        data = {}
+        for index in self.process_managers:
+            if idx is not None and index != idx:
+                continue
+            data[index] = DeviceInfo(
+                title=f"{self.config.Info.Name}_{index}",
+                status=await self.getStatus(index),
+                adb_address=self.parse_index(index)[1],
+            )
+        return data
+
+    async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
+
+        if not IS_WINDOWS:
+            raise RuntimeError("切换模拟器窗口可见性仅支持 Windows 平台")
+
+        status = await self.getStatus(idx)
+        if status != DeviceStatus.ONLINE:
+            logger.warning(f"设备{idx}未在线，当前状态码: {status}")
+            return status
+
+        # 先解析出该实例自己的窗口句柄：老板键不带实例信息，多开时会把别的实例
+        # 一起翻过去（#948），而把 PID 当句柄传给 IsWindowVisible 的判据恒为假。
+        hwnd = await _utils_emulator.tools.resolve_main_window(
+            idx, lambda: asyncio.to_thread(self._resolve_target_hwnd, idx)
+        )
+        await _utils_emulator.tools.apply_window_visibility(
+            hwnd, idx, is_visible, self.config.Info.MaxWaitTime
+        )
+        return status
+
+    def _resolve_target_hwnd(self, idx: str) -> int | None:
+        """取该实例主窗口句柄: 主进程优先, 主窗口在子进程时再遍历后代进程。
+
+        口径与 _resolve_audio_pids 一致(主进程 + 后代)。进程已退出或本身没有
+        顶层窗口时返回 None, 由调用方决定如何处理。
+        """
+        manager = self.process_managers.get(idx)
+        pid = manager.main_pid if manager else None
+        if pid is None:
+            return None
+
+        hwnd = manager.main_hwnd
+        if hwnd:
+            return hwnd
+
+        try:
+            children = psutil.Process(pid).children(recursive=True)
+        except psutil.NoSuchProcess:
+            return None
+
+        for child in children:
+            hwnd = _utils_process.get_main_window_handle(child.pid)
+            if hwnd:
+                return hwnd
+        return None
+
+    def parse_index(self, idx: str):
+
+        if "|" not in idx:
+            raise ValueError("缺少 '|' 分隔符")
+
+        cmd_part, addr_part = idx.rsplit("|", 1)
+        args = shlex.split(cmd_part.strip())
+
+        addr = addr_part.replace("：", ":").replace("。", ".")
+        addr = re.sub(r"\s+", "", addr)
+
+        if addr in {"usb", "local", "shell"} or addr.startswith("emulator-"):
+            return args, addr
+
+        if ":" not in addr:
+            raise ValueError(f"ADB 地址缺少端口: {addr}")
+
+        i = addr.rfind(":")
+        host, port_str = addr[:i], addr[i + 1 :]
+
+        if not port_str.isdigit() or not (1 <= int(port_str) <= 65535):
+            raise ValueError(f"无效端口: {port_str}")
+        if not host:
+            raise ValueError("主机名为空")
+
+        return args, f"{host}:{port_str}"
+
+    async def cleanup(self) -> None:
+        """
+        清理所有资源
+        """
+        logger.info("开始清理设备管理器资源")
+
+        # 先停跟随任务并还原音频，此时进程还在，还原才有意义；
+        # 记录不留给后续流程（管理器就此销毁）
+        for idx in list(self._audio_mute_states):
+            await _utils_emulator.tools.restore_audio_before_close(
+                self._audio_mute_states, idx
+            )
+
+        for idx, pm in self.process_managers.items():
+            try:
+                if await pm.is_running():
+                    await pm.kill()
+            except Exception as e:
+                logger.error(f"清理设备{idx}资源失败: {str(e)}")
+
+        self.process_managers.clear()
+
+        logger.info("设备管理器资源清理完成")

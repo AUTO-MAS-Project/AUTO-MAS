@@ -974,21 +974,6 @@ class MaaFWRuntimePool:
             self._initialize()
             return clean_uv_cache(self.root)
 
-    def _usable_runtime_payload(self, runtime_id: str) -> dict[str, Any] | None:
-        """与 ``get`` 同一套判定（manifest 合法、环境齐全、解释器 ABI 对得上），
-        但不统计目录大小；只想知道「能不能用」时用它。持锁调用。"""
-
-        runtime_dir = self._runtime_dir(runtime_id)
-        if not runtime_dir.exists() and not runtime_dir.is_symlink():
-            return None
-        try:
-            manifest = self._read_manifest(runtime_id)
-            return self._augment_manifest(
-                manifest, verify_python=True, include_size=False
-            )
-        except MaaFWRuntimePoolError:
-            return None
-
     def _reclaim_runtime_dir(self, runtime_id: str) -> tuple[str, str]:
         """rename-first 删除一个 runtime。
 
@@ -1864,24 +1849,6 @@ def _tag_version(tag: str) -> str | None:
         return str(Version(text[1:]))
     except InvalidVersion:
         return None
-
-
-def _maafw_requirement_key(value: Any) -> str:
-    """把 maafw requirement 归成与 manifest ``maafwRequirement`` 相同的规范形式。
-
-    manifest 里存的是 ``canonicalize_requirements`` 的产物；宿主传来的是
-    ``_normalize_maafw_requirement`` 的产物（``str(Requirement)``，如
-    ``maafw==5.13.0``）。两边都再过一次同一个规范化器才能比。不是 maafw 的、
-    解析不了的给空串。
-    """
-
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    try:
-        return find_maafw_requirement([text]) or ""
-    except Exception:  # noqa: BLE001 - 坏 requirement 只影响它自己那条
-        return ""
 
 
 def _normalize_maafw_version(value: Any) -> str:

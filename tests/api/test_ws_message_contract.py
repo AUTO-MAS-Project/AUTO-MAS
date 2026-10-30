@@ -18,7 +18,8 @@ CONTRACT: dict[str, frozenset[str]] = {
     "WSEmulatorOperationData": frozenset(
         {"emulatorId", "index", "operate", "ok", "message"}
     ),
-    "WSTaskUserInfoData": frozenset({"user_id", "name", "status"}),
+    "WSTaskUserProgressData": frozenset({"current", "total", "task"}),
+    "WSTaskUserInfoData": frozenset({"user_id", "name", "status", "progress"}),
     "WSTaskScriptInfoData": frozenset({"script_id", "name", "status", "userList"}),
     "WSTaskCyclePreviewData": frozenset(
         {"queueItemId", "scriptId", "scriptName", "nextRunAt", "isDue", "isRunning"}
@@ -26,6 +27,10 @@ CONTRACT: dict[str, frozenset[str]] = {
     "WSTaskInfoUpdatedData": frozenset({"task_info", "cycleNextList"}),
     "WSTaskLogUpdatedData": frozenset({"log", "seq", "append", "firstLine"}),
     "WSTaskScriptIdentityData": frozenset({"scriptId", "scriptType"}),
+    "WSTaskScriptStartedData": frozenset({"taskId", "runId", "scriptType", "mode"}),
+    "WSTaskScriptFinishedData": frozenset(
+        {"taskId", "runId", "scriptType", "mode", "outcome", "partialFailure"}
+    ),
     "WSTaskCompletedData": frozenset({"result", "outcome", "error", "task_info"}),
     "WSTaskCreatedData": frozenset(
         {"taskId", "mode", "scripts", "queueId", "taskName", "taskType"}
@@ -59,6 +64,18 @@ CONTRACT: dict[str, frozenset[str]] = {
             "extractTotalFiles",
             "extractedBytes",
             "extractTotalBytes",
+        }
+    ),
+    "WSAvdUpdateProgressData": frozenset(
+        {
+            "root",
+            "stage",
+            "status",
+            "message",
+            "percent",
+            "downloadedBytes",
+            "totalBytes",
+            "speedBytesPerSec",
         }
     ),
     "WSUpdateCompletedData": frozenset({"file"}),

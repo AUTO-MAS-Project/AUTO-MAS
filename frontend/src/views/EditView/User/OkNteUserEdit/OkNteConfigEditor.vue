@@ -1,6 +1,6 @@
 <template>
   <div class="oknte-config-editor">
-    <a-spin :spinning="loading" :tip="t('edit.loadingConfiguration')">
+    <a-spin :spinning="loading" :tip="t('core.edit.loadingConfiguration')">
       <a-row :gutter="24" class="editor-layout">
         <!-- 左侧：配置文件列表 -->
         <a-col :span="8" class="left-panel">
@@ -52,7 +52,7 @@
                   <div class="object-field">
                     <a-empty
                       v-if="!field.children || field.children.length === 0"
-                      :description="t('edit.thisSubtaskHasNo')"
+                      :description="t('core.edit.thisSubtaskHasNo')"
                     />
                     <a-form-item
                       v-for="child in field.children || []"
@@ -92,7 +92,7 @@
                         :value="getNestedFieldValue(selectedConfigFilename, field.name, child)"
                         mode="multiple"
                         style="width: 100%"
-                        :placeholder="t('edit.pleaseChoose')"
+                        :placeholder="t('core.edit.pleaseChoose')"
                         @change="
                           (val: string[]) =>
                             setNestedFieldValue(selectedConfigFilename, field.name, child, val)
@@ -180,7 +180,7 @@
                         <a-button
                           size="small"
                           :disabled="index === 0"
-                          :aria-label="t('edit.moveDailySubtaskUp')"
+                          :aria-label="t('core.edit.moveDailySubtaskUp')"
                           @click="moveRoutineItem(selectedConfigFilename, field, index, -1)"
                         >
                           <template #icon>
@@ -192,7 +192,7 @@
                           :disabled="
                             index === getRoutineItemValues(selectedConfigFilename, field).length - 1
                           "
-                          :aria-label="t('edit.moveDailySubtaskDown')"
+                          :aria-label="t('core.edit.moveDailySubtaskDown')"
                           @click="moveRoutineItem(selectedConfigFilename, field, index, 1)"
                         >
                           <template #icon>
@@ -229,7 +229,7 @@
                   :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
                   mode="multiple"
                   style="width: 100%"
-                  :placeholder="t('edit.pleaseChoose')"
+                  :placeholder="t('core.edit.pleaseChoose')"
                   @change="
                     (val: string[]) => setFieldValue(selectedConfigFilename, field.name, val)
                   "
@@ -300,13 +300,13 @@
               </a-form-item>
 
               <div v-if="selectedConfig.fields.length === 0" class="empty-fields">
-                <a-empty :description="t('edit.thisConfigurationFileHas')" />
+                <a-empty :description="t('core.edit.thisConfigurationFileHas')" />
               </div>
             </a-form>
           </div>
 
           <div v-else class="no-selection">
-            <a-empty :description="t('edit.pickConfigurationFileLeft')" />
+            <a-empty :description="t('core.edit.pickConfigurationFileLeft')" />
           </div>
         </a-col>
       </a-row>
@@ -320,7 +320,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons-vue'
-import { OknteService } from '@/api/services/OknteService'
+import { OkNteSetupService as OknteService } from '@/composables/useAdapterSetupApi'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
 const { t } = useI18n()
@@ -604,7 +604,7 @@ const loadConfigs = async () => {
     }
   } catch (e) {
     logger.error(`加载配置失败: ${e instanceof Error ? e.message : String(e)}`)
-    message.error(t('edit.couldNotLoadOk'))
+    message.error(t('core.edit.couldNotLoadOk'))
   } finally {
     loading.value = false
   }
@@ -614,7 +614,7 @@ const loadConfigs = async () => {
 const persistChanges = async (silent: boolean): Promise<boolean> => {
   if (configLocked.value) {
     if (!hasChanges.value) return true
-    message.error(t('edit.configLocked'))
+    message.error(t('core.edit.configLocked'))
     return false
   }
   if (!hasChanges.value) return true
@@ -631,7 +631,7 @@ const persistChanges = async (silent: boolean): Promise<boolean> => {
       if (!(await loadConfigs())) return false
       emit('saved')
       if (!silent) {
-        message.success(t('edit.configurationSaved'))
+        message.success(t('core.edit.configurationSaved'))
       }
       return true
     } else {
@@ -639,7 +639,7 @@ const persistChanges = async (silent: boolean): Promise<boolean> => {
     }
   } catch (e) {
     logger.error(`保存配置失败: ${e instanceof Error ? e.message : String(e)}`)
-    message.error(t('edit.couldNotSaveConfiguration'))
+    message.error(t('core.edit.couldNotSaveConfiguration'))
   } finally {
     saving.value = false
     emit('savingChange', false)

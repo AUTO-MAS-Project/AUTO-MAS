@@ -35,9 +35,8 @@
 // 1. 后端：配置类 XConfig(MaaFWConfig) / XUserConfig、app/task/X 的特调钩子、schema，
 //    然后起开发后端重新生成 OpenAPI（frontend/src/api 不手改）。
 // 2. 全应用的脚本类型登记（与任何新脚本类型相同，漏了 typecheck 会逐处报错）：
-//    types/script.ts 的 ScriptType 与 ScriptIndexItem.type（配置类名，这处不受 typecheck 约束）、
+//    ScriptType 由生成 API 的创建类型派生，不另抄一份类型联合；
 //    utils/scriptLogos.ts 的图标与展示名、
-//    composables/useScriptApi.ts 的 SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE、
 //    词表 zh-CN.ts 的 scripts.type.X / scripts.create.typeDesc.X 与该特调自己的文案。
 // 3. maafwFlavorTypes.ts 的 MaaFWFlavorType 加上 'X'。
 // 4. 新建目录 views/EditView/MaaFWFlavor/x/：index.ts 用 defineMaaFWFlavor 导出描述对象
@@ -105,6 +104,12 @@ export const isMaaFWFamily = (
 /** 按脚本类型取 flavor 表；未知 / 空类型按通用 MaaFW 处理。 */
 export const resolveMaaFWFlavor = (type: ScriptType | string | null | undefined): MaaFWFlavor =>
   (type && FLAVOR_BY_TYPE.get(type)) || MAAFW_FLAVOR
+
+/**
+ * 头像用不用项目自己的图标（interface 顶层 icon）：特调优先用自己声明的 logo；通用 MaaFW
+ * 跑的项目各不相同，用项目图标，取不到时回退到 MaaFW 图标。
+ */
+export const usesMaaFWProjectIcon = (flavor: MaaFWFlavor): boolean => flavor === MAAFW_FLAVOR
 
 /** 路由后缀（/edit/<suffix>、/users/add/<suffix>），未知类型按 maafw */
 export const maafwRouteSuffix = (type: ScriptType | string | null | undefined): string =>

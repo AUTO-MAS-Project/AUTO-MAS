@@ -12,6 +12,10 @@ export type MaaEndUserConfig_NotifyInput = {
      */
     IfSendMail?: (boolean | null);
     /**
+     * 是否推送本轮养成材料状态
+     */
+    IfSendInventory?: (boolean | null);
+    /**
      * 是否发送统计信息
      */
     IfSendStatistic?: (boolean | null);

@@ -4,9 +4,9 @@
       <div class="control-row">
         <a-space size="middle">
           <a-select
-            v-if="status !== '运行'"
+            v-if="!isRunning"
             v-model:value="localSelectedTaskId"
-            :placeholder="t('scheduler.control.taskPlaceholder')"
+            :placeholder="t('core.scheduler.control.taskPlaceholder')"
             style="width: 200px"
             :loading="taskOptionsLoading"
             :options="taskOptions"
@@ -15,14 +15,14 @@
             @change="onTaskChange"
             @dropdown-visible-change="onDropdownVisibleChange"
           />
-          <div v-if="status === '运行'" class="running-info">
+          <div v-if="isRunning" class="running-info">
             <span class="info-item">
-              <span class="label">{{ t('scheduler.control.taskLabel') }}</span>
+              <span class="label">{{ t('core.scheduler.control.taskLabel') }}</span>
               <span class="value">{{ runningTaskLabel }}</span>
             </span>
             <span class="divider">|</span>
             <span class="info-item">
-              <span class="label">{{ t('scheduler.control.modeLabel') }}</span>
+              <span class="label">{{ t('core.scheduler.control.modeLabel') }}</span>
               <span class="value">{{ runningModeLabel }}</span>
             </span>
           </div>
@@ -36,14 +36,16 @@
             <template #content>
               <div class="queue-scope">
                 <div class="queue-scope-head">
-                  <span class="queue-scope-title">{{ t('scheduler.control.runScopeTitle') }}</span>
-                  <a-tooltip :title="t('scheduler.control.runScopeTip')">
+                  <span class="queue-scope-title">{{
+                    t('core.scheduler.control.runScopeTitle')
+                  }}</span>
+                  <a-tooltip :title="t('core.scheduler.control.runScopeTip')">
                     <QuestionCircleOutlined class="queue-scope-help" />
                   </a-tooltip>
                   <template v-if="!scopeLoading && !scopeFailed">
                     <span class="queue-scope-summary">
                       {{
-                        t('scheduler.control.runScopeSelected', {
+                        t('core.scheduler.control.runScopeSelected', {
                           selected: scopeSelectedCount,
                           total: scopeUserCount,
                         })
@@ -55,7 +57,7 @@
                       :disabled="scopeSelectedCount >= scopeUserCount"
                       @click="selectAllScopeUsers"
                     >
-                      {{ t('scheduler.control.selectAllUsers') }}
+                      {{ t('core.scheduler.control.selectAllUsers') }}
                     </a-button>
                     <a-button
                       type="link"
@@ -63,21 +65,21 @@
                       :disabled="scopeSelectedCount === 0"
                       @click="clearAllScopeUsers"
                     >
-                      {{ t('scheduler.control.clearAllUsers') }}
+                      {{ t('core.scheduler.control.clearAllUsers') }}
                     </a-button>
                   </template>
                 </div>
                 <div v-if="scopeLoading" class="queue-scope-tip">
-                  {{ t('scheduler.control.runScopeLoading') }}
+                  {{ t('core.scheduler.control.runScopeLoading') }}
                 </div>
                 <div v-else-if="scopeFailed" class="queue-scope-error">
-                  {{ t('scheduler.control.runScopeLoadFailed') }}
+                  {{ t('core.scheduler.control.runScopeLoadFailed') }}
                   <a-button type="link" size="small" @click="retryScope">
-                    {{ t('scheduler.control.runScopeRetry') }}
+                    {{ t('core.scheduler.control.runScopeRetry') }}
                   </a-button>
                 </div>
                 <div v-else-if="!scopeRows.length" class="queue-scope-tip">
-                  {{ t('scheduler.control.runScopeNoUsers') }}
+                  {{ t('core.scheduler.control.runScopeNoUsers') }}
                 </div>
                 <div v-else class="queue-scope-groups">
                   <div v-for="row in scopeRows" :key="row.group.scriptId" class="queue-scope-group">
@@ -85,7 +87,7 @@
                       {{ row.group.scriptName }}
                     </span>
                     <span v-if="!row.group.users.length" class="queue-scope-group-empty">
-                      {{ t('scheduler.control.runScopeNoUsers') }}
+                      {{ t('core.scheduler.control.runScopeNoUsers') }}
                     </span>
                     <a-checkbox
                       v-for="user in row.group.users"
@@ -107,8 +109,8 @@
                         {{
                           t(
                             user.reason === 'expired'
-                              ? 'scheduler.control.runScopeUserExpired'
-                              : 'scheduler.control.runScopeUserDisabled'
+                              ? 'core.scheduler.control.runScopeUserExpired'
+                              : 'core.scheduler.control.runScopeUserDisabled'
                           )
                         }}
                       </span>
@@ -121,7 +123,7 @@
               <template #icon>
                 <TeamOutlined />
               </template>
-              {{ t('scheduler.control.runScopeTitle') }}
+              {{ t('core.scheduler.control.runScopeTitle') }}
               <span
                 v-if="!scopeLoading && !scopeFailed"
                 class="queue-scope-count"
@@ -135,9 +137,9 @@
         <div class="control-spacer"></div>
         <a-space size="middle">
           <a-select
-            v-if="status !== '运行' && showResumeScriptSelect"
+            v-if="!isRunning && showResumeScriptSelect"
             v-model:value="localResumeFromScriptId"
-            :placeholder="t('scheduler.control.resumePlaceholder')"
+            :placeholder="t('core.scheduler.control.resumePlaceholder')"
             style="width: 260px"
             :loading="resumeScriptLoading"
             :options="resumeScriptOptions || []"
@@ -148,23 +150,23 @@
             @dropdown-visible-change="onResumeDropdownVisibleChange"
           />
           <a-button
-            :type="status === '运行' ? 'default' : 'primary'"
-            :danger="status === '运行'"
+            :type="isRunning ? 'default' : 'primary'"
+            :danger="isRunning"
             :disabled="startDisabled"
             size="large"
             @click="onAction"
           >
             <template #icon>
-              <StopOutlined v-if="status === '运行'" />
+              <StopOutlined v-if="isRunning" />
               <PlayCircleOutlined v-else />
             </template>
-            {{ status === '运行' ? t('scheduler.control.stop') : t('scheduler.control.start') }}
+            {{ isRunning ? t('core.scheduler.control.stop') : t('core.scheduler.control.start') }}
           </a-button>
         </a-space>
       </div>
       <!-- 循环运行的下轮预览 -->
       <div v-if="cyclePreview.length" class="cycle-preview">
-        <span class="cycle-preview-label">{{ t('scheduler.cycle.nextTitle') }}</span>
+        <span class="cycle-preview-label">{{ t('core.scheduler.cycle.nextTitle') }}</span>
         <a-space size="small" wrap>
           <a-tag
             v-for="item in cyclePreview"
@@ -175,9 +177,9 @@
             <span class="cycle-preview-time">
               {{
                 item.isRunning
-                  ? t('scheduler.cycle.running')
+                  ? t('core.scheduler.cycle.running')
                   : item.isDue
-                    ? t('scheduler.cycle.due')
+                    ? t('core.scheduler.cycle.due')
                     : item.nextRunAt
               }}
             </span>
@@ -287,7 +289,9 @@ const emit = defineEmits<Emits>()
 const localSelectedTaskId = ref(props.selectedTaskId)
 const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 
-const cyclePreview = computed(() => (props.status === '运行' ? (props.cycleNextList ?? []) : []))
+// 运行态判断收进脚本：模板不再直接比中文字面量（i18n 审计只扫模板），行为不变
+const isRunning = computed(() => props.status === '运行')
+const cyclePreview = computed(() => (isRunning.value ? (props.cycleNextList ?? []) : []))
 
 // 仅普通队列支持指定续跑起点，循环队列按既有排期运行。
 // 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
@@ -378,7 +382,7 @@ const showRunScope = computed(
 // 启动按钮的禁用条件集中在这里维护，模板里的表达式不再继续膨胀
 const startDisabled = computed(() => {
   if (props.status === '运行') return false
-  if (!localSelectedTaskId.value || props.disabled) return true
+  if (!localSelectedTaskId.value || props.disabled || props.taskOptionsLoading) return true
   if (!props.taskOptions.some(option => option.value === localSelectedTaskId.value)) return true
   // 脚本任务：账号还在加载、或显式取消到一个人都不剩时不让启动（与启动守卫同口径）
   if (showScriptRunScope.value) {

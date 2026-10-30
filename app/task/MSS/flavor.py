@@ -16,9 +16,9 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""MSS（MaaStellaSora / 星塔旅人）特调：运行前的「活动 → 日常 → 周常」队列装饰。
+"""MSS（MaaStellaSora / 星塔旅人）特调：队列装饰与重试任务声明。
 
-运行前在用户勾选的任务实例列表上做三件事，其余与通用 MaaFW 没有任何运行期差别：
+以下差异均通过 MaaFW 的既有钩子声明，执行与重试流程仍由通用引擎负责：
 
 1. 活动：队列里有「活动快速战斗」（entry ``活动快速战斗_入口``）时查一次活动排期
    （``app/tools/stella_official.py``，只认会开活动关的「版本活动」）。有进行中的活动
@@ -32,6 +32,8 @@
 4. 个人版的「灾变防线」（entry ``灾变防线_入口``，只在个人版项目里有）：一期只打得到一次，
    打没打过由 MAS 自己按「这一期开没开过」记账，见 ``_arrange_defense``。这一段只在设置页把
    个人版开关打开、且项目确实是个人版时生效，普通版 MSS 一行都不走。
+5. 已确认的日常与挑战任务在本次运行中成功过后，重试不再补跑；登录仍每次执行。
+   仅使用引擎收集的 ``completedTasks``，不额外解析上游日志或判断游戏状态。
 
 按 entry 找任务、按 interface 里真实的选项名与 case 名写值（取自 MaaStellaSora v1.4.4 的
 ``resource/tasks/{activity,fight,climb_tower}.json``）；找不到就写一行用户日志跳过那一项。
@@ -50,6 +52,7 @@ from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
     resolve_task_instance_name,
 )
+from app.task.MaaFW.tools.embedded.flavor import off_day_task_ids
 
 TYPE_KEY = "MSS"
 ACTIVITY_ENTRY = "活动快速战斗_入口"
@@ -205,6 +208,27 @@ class MSSFlavor:
     """满足 ``MaaFWFlavor`` 协议的 MSS 特调对象。"""
 
     type_key = TYPE_KEY
+    # 本次运行已成功的日常、挑战不再补跑。登录不列：重试重新启动游戏后仍要登录。
+    # 逐项声明已确认的公开 entry；上游新增任务默认保留重跑行为。
+    skip_on_retry_entries = frozenset(
+        {
+            ACTIVITY_ENTRY,
+            TRIBULATION_ENTRY,
+            CLIMB_ENTRY,
+            DEFENSE_ENTRY,
+            "活动挑战_入口",
+            "好友_入口",
+            "基金_入口",
+            "邀约_入口",
+            "邮箱_入口",
+            "猎影合围_入口",
+            "真格挑战_入口",
+            "委托_入口",
+            "采购_入口",
+            "心链_入口",
+            "任务_入口",
+        }
+    )
 
     def __init__(
         self,
@@ -261,6 +285,9 @@ class MSSFlavor:
                     for task_id in order
                     if isinstance(task_id, str) and checked.get(task_id) is False
                 }
+        ## 今天不在运行日的实例同理：引擎已把它们从 ids 里拿掉，这里不能再自动补回来、
+        ## 也不能给没跑的防线记账（用引擎判出的那一份，不自己再判星期）
+        skipped_ids |= off_day_task_ids()
 
         activity = task_name_for_entry(interface_model, ACTIVITY_ENTRY)
         tribulation = task_name_for_entry(interface_model, TRIBULATION_ENTRY)

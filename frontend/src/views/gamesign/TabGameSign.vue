@@ -44,8 +44,8 @@ const {
 const logger = window.electronAPI.getLogger('游戏社区')
 const signLoading = ref(false)
 const notifySaving = ref(false)
-const credentialToolDescription = computed(() => t('gamesign.section.toolDesc'))
-const credentialPrivacyNotice = computed(() => t('gamesign.section.privacyNotice'))
+const credentialToolDescription = computed(() => t('core.gamesign.section.toolDesc'))
+const credentialPrivacyNotice = computed(() => t('core.gamesign.section.privacyNotice'))
 
 // ==================== 账号管理 ====================
 
@@ -83,16 +83,11 @@ const { listAccounts, reorderAccounts, manualSign } = useGameSignApi()
 const accounts = ref<AccountInstance[]>([])
 const addLoading = ref(false)
 const isDragging = ref(false)
-const accountsLoading = ref(false)
-const accountsFailed = ref(false)
 
 const loadAccounts = async () => {
-  accountsLoading.value = true
   try {
     const response = await listAccounts()
-    if (response.code !== 200) {
-      throw new Error(response.message || t('gamesign.list.loadFailed'))
-    }
+    if (response.code !== 200) return
     const data = response.data as unknown as AccountListData | undefined
     const instances: AccountInstance[] = []
     const instanceList = Array.isArray(data?.order) ? data.order : []
@@ -103,7 +98,7 @@ const loadAccounts = async () => {
       instances.push({
         uid,
         type: asString(inst.type) || 'GameSignAccountGroup',
-        Name: asString(accountData.Name) || t('gamesign.defaultUserName'),
+        Name: asString(accountData.Name) || t('core.gamesign.defaultUserName'),
         Enabled: typeof accountData.Enabled === 'boolean' ? accountData.Enabled : true,
         MiyousheToken: asString(accountData.MiyousheToken),
         MiyousheDeviceId: asString(accountData.MiyousheDeviceId),
@@ -115,58 +110,30 @@ const loadAccounts = async () => {
       })
     }
     accounts.value = instances
-    accountsFailed.value = false
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户列表失败: ${errorMsg}`)
-    // 不能把接口失败伪装成「暂无账号」，否则会引导用户重复添加账号。
-    accountsFailed.value = true
-  } finally {
-    accountsLoading.value = false
   }
 }
 
-type AccountFieldKey = keyof GameSignAccountGroupConfig
-
-const ACCOUNT_FIELDS: readonly AccountFieldKey[] = [
-  'Name',
-  'Enabled',
-  'MiyousheToken',
-  'MiyousheDeviceId',
-  'MiyousheDeviceFp',
-  'CloudGenshinToken',
-  'KuroToken',
-  'SklandToken',
-  'TaygedoToken',
-]
-
-/**
- * 生成只包含改动字段的补丁。
- *
- * 列表里的凭据是加载时的快照，签到与扫码登录都会在后台轮换并回写，
- * 全量回写会把新凭据覆盖成旧值（塔吉多 refreshToken 一次性的，覆盖后
- * 账号直接失效且没有任何提示）。
- */
-const buildAccountPatch = (
-  account: AccountInstance,
-  current?: AccountInstance
-): GameSignAccountGroupConfig => {
-  const patch: Record<string, string | boolean | null> = {}
-  for (const key of ACCOUNT_FIELDS) {
-    const value = account[key as keyof AccountInstance]
-    if (!current || value !== current[key as keyof AccountInstance]) {
-      patch[key] = value
-    }
-  }
-  return patch as GameSignAccountGroupConfig
-}
+const getAccountAllData = (account: AccountInstance): GameSignAccountGroupConfig => ({
+  Name: account.Name,
+  Enabled: account.Enabled,
+  MiyousheToken: account.MiyousheToken,
+  MiyousheDeviceId: account.MiyousheDeviceId,
+  MiyousheDeviceFp: account.MiyousheDeviceFp,
+  CloudGenshinToken: account.CloudGenshinToken,
+  KuroToken: account.KuroToken,
+  SklandToken: account.SklandToken,
+  TaygedoToken: account.TaygedoToken,
+})
 
 const handleAddAccount = async () => {
   addLoading.value = true
   try {
     const result = await addAccount()
     if (result) {
-      const defaultName = t('gamesign.newUserName', { n: accounts.value.length + 1 })
+      const defaultName = t('core.gamesign.newUserName', { n: accounts.value.length + 1 })
       const data = result.data || {}
       const newAccount: AccountInstance = {
         uid: result.accountId,
@@ -182,7 +149,7 @@ const handleAddAccount = async () => {
         TaygedoToken: data.TaygedoToken || '',
       }
       accounts.value.push(newAccount)
-      message.success(t('gamesign.toast.userAdded'))
+      message.success(t('core.gamesign.toast.userAdded'))
       openEditModal(newAccount)
     }
   } finally {
@@ -192,24 +159,14 @@ const handleAddAccount = async () => {
 
 const handleDeleteAccount = (account: AccountInstance) => {
   Modal.confirm({
-    title: t('gamesign.toast.deleteTitle'),
-    content: t('gamesign.toast.deleteContent', { name: account.Name }),
-    okText: t('gamesign.list.del'),
+    title: t('core.gamesign.toast.deleteTitle'),
+    content: t('core.gamesign.toast.deleteContent', { name: account.Name }),
+    okText: t('core.gamesign.list.del'),
     okType: 'danger',
-    cancelText: t('common.cancel'),
+    cancelText: t('core.common.cancel'),
     onOk: async () => {
-      try {
-        await deleteAccount(account.uid)
-      } catch {
-        // deleteAccount 已经提示失败原因，这里只需保持列表不变。
-        return
-      }
+      await deleteAccount(account.uid)
       accounts.value = accounts.value.filter(a => a.uid !== account.uid)
-      if (editingAccount.value?.uid === account.uid) {
-        editModalVisible.value = false
-        editingAccount.value = null
-      }
-      await loadAccounts()
     },
   })
 }
@@ -221,7 +178,7 @@ const handleAccountEnabledChange = async (account: AccountInstance, enabled: boo
     await updateAccount(account.uid, { Enabled: enabled })
   } catch {
     account.Enabled = previousEnabled
-    message.error(t('gamesign.toast.saveFailed'))
+    message.error(t('core.gamesign.toast.saveFailed'))
   }
 }
 
@@ -239,13 +196,13 @@ const onDragEnd = async (evt: DragEndEvent) => {
     const order = accounts.value.map(a => a.uid)
     const response = await reorderAccounts(order)
     if (response.code !== 200) {
-      throw new Error(response.message || t('gamesign.toast.reorderFailed'))
+      throw new Error(response.message || t('core.gamesign.toast.reorderFailed'))
     }
     logger.info('用户排序已保存')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`排序保存失败: ${errorMsg}`)
-    message.error(t('gamesign.toast.reorderError', { error: errorMsg }))
+    message.error(t('core.gamesign.toast.reorderError', { error: errorMsg }))
     await loadAccounts()
   } finally {
     isDragging.value = false
@@ -255,7 +212,6 @@ const onDragEnd = async (evt: DragEndEvent) => {
 // ==================== 编辑 Token 模态框 ====================
 
 const editModalVisible = ref(false)
-const editSaving = ref(false)
 const editingAccount = ref<AccountInstance | null>(null)
 const openEditModal = (account: AccountInstance) => {
   editingAccount.value = { ...account }
@@ -268,33 +224,22 @@ const handleEditModalCancel = () => {
 }
 
 const handleEditModalOk = async () => {
-  if (!editingAccount.value || editSaving.value) return
-  const uid = editingAccount.value.uid
-  const idx = accounts.value.findIndex(a => a.uid === uid)
-  const patch = buildAccountPatch(editingAccount.value, idx >= 0 ? accounts.value[idx] : undefined)
-  if (Object.keys(patch).length === 0) {
-    editModalVisible.value = false
-    editingAccount.value = null
-    return
-  }
-  editSaving.value = true
+  if (!editingAccount.value) return
   try {
-    await updateAccount(uid, patch)
+    const uid = editingAccount.value.uid
+    const idx = accounts.value.findIndex(a => a.uid === uid)
+    const accountData = getAccountAllData(editingAccount.value)
+    await updateAccount(uid, accountData)
     if (idx >= 0) {
       accounts.value[idx] = { ...editingAccount.value }
     }
-    message.success(t('gamesign.toast.tokenSaved'))
+    message.success(t('core.gamesign.toast.tokenSaved'))
     editModalVisible.value = false
     editingAccount.value = null
-    // 凭据变化会让后端重置签到日期并清空旧结果，两处都要刷新。
-    if (onRefreshConfig) await onRefreshConfig()
-    await loadAccounts()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 Token 失败: ${errorMsg}`)
-    message.error(t('gamesign.toast.saveFailed'))
-  } finally {
-    editSaving.value = false
+    message.error(t('core.gamesign.toast.saveFailed'))
   }
 }
 
@@ -379,7 +324,7 @@ const handleHomeActivityNotesChange = async (value: boolean) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存首页便笺开关失败: ${errorMsg}`)
-    message.error(t('gamesign.toast.homeActivityEnableSaveFailed'))
+    message.error(t('core.gamesign.toast.homeActivityEnableSaveFailed'))
   } finally {
     homeActivityNotesSaving.value = false
   }
@@ -392,19 +337,19 @@ const handleManualSign = async () => {
   try {
     const response = await manualSign()
     if (response.code === 409) {
-      const warning = response.message || t('gamesign.toast.autoSignRunning')
+      const warning = response.message || t('core.gamesign.toast.autoSignRunning')
       logger.warn(`手动签到被拒绝: ${warning}`)
       message.warning(warning)
       return
     }
     if (response.code !== 200 && response.code !== 0) {
-      throw new Error(response.message || t('gamesign.toast.signFailed'))
+      throw new Error(response.message || t('core.gamesign.toast.signFailed'))
     }
     logger.info('游戏社区签到完成')
     if (response.status === 'warning') {
-      message.warning(response.message || t('gamesign.toast.signPartialNotify'))
+      message.warning(response.message || t('core.gamesign.toast.signPartialNotify'))
     } else {
-      message.success(response.message || t('gamesign.toast.signDone'))
+      message.success(response.message || t('core.gamesign.toast.signDone'))
     }
     // 立即刷新签到结果（不等父组件轮询）
     if (onRefreshConfig) await onRefreshConfig()
@@ -412,7 +357,7 @@ const handleManualSign = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`签到失败: ${errorMsg}`)
-    message.error(t('gamesign.toast.signError', { error: errorMsg }))
+    message.error(t('core.gamesign.toast.signError', { error: errorMsg }))
   } finally {
     signLoading.value = false
   }
@@ -431,7 +376,7 @@ onMounted(() => {
     <!-- 全局设置区 -->
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('gamesign.section.settings') }}</h3>
+        <h3>{{ t('core.gamesign.section.settings') }}</h3>
         <div class="section-header-actions">
           <DocLink :url="MAS_DOC_URLS.gameSign" />
           <a-button
@@ -443,12 +388,12 @@ onMounted(() => {
             @click="handleManualSign"
           >
             <template #icon><SwapOutlined /></template>
-            {{ t('gamesign.section.signAll') }}
+            {{ t('core.gamesign.section.signAll') }}
           </a-button>
         </div>
       </div>
       <a-alert class="game-sign-notice" type="info" show-icon>
-        <template #message>{{ t('gamesign.section.noticeTitle') }}</template>
+        <template #message>{{ t('core.gamesign.section.noticeTitle') }}</template>
         <template #description>
           <div>{{ credentialToolDescription }}</div>
           <div>{{ credentialPrivacyNotice }}</div>
@@ -457,8 +402,8 @@ onMounted(() => {
       <div class="settings-list">
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">{{ t('gamesign.section.enable') }}</span>
-            <span class="setting-desc">{{ t('gamesign.section.enableDesc') }}</span>
+            <span class="setting-title">{{ t('core.gamesign.section.enable') }}</span>
+            <span class="setting-desc">{{ t('core.gamesign.section.enableDesc') }}</span>
           </div>
           <a-switch
             :checked="config.Enabled"
@@ -468,8 +413,8 @@ onMounted(() => {
         </div>
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">{{ t('gamesign.section.activityEnable') }}</span>
-            <span class="setting-desc">{{ t('gamesign.section.activityEnableDesc') }}</span>
+            <span class="setting-title">{{ t('core.gamesign.section.activityEnable') }}</span>
+            <span class="setting-desc">{{ t('core.gamesign.section.activityEnableDesc') }}</span>
           </div>
           <a-switch
             :checked="config.ActivityEnabled !== false"
@@ -479,8 +424,10 @@ onMounted(() => {
         </div>
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">{{ t('gamesign.section.homeActivityEnable') }}</span>
-            <span class="setting-desc">{{ t('gamesign.section.homeActivityEnableDesc') }}</span>
+            <span class="setting-title">{{ t('core.gamesign.section.homeActivityEnable') }}</span>
+            <span class="setting-desc">{{
+              t('core.gamesign.section.homeActivityEnableDesc')
+            }}</span>
           </div>
           <a-switch
             :checked="homeActivityNotesVisible"
@@ -491,8 +438,8 @@ onMounted(() => {
         </div>
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">{{ t('gamesign.section.notify') }}</span>
-            <span class="setting-desc">{{ t('gamesign.section.notifyDesc') }}</span>
+            <span class="setting-title">{{ t('core.gamesign.section.notify') }}</span>
+            <span class="setting-desc">{{ t('core.gamesign.section.notifyDesc') }}</span>
           </div>
           <a-switch
             :checked="config.NotifyEnabled"
@@ -503,8 +450,8 @@ onMounted(() => {
         </div>
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">{{ t('gamesign.section.runOnStartup') }}</span>
-            <span class="setting-desc">{{ t('gamesign.section.runOnStartupDesc') }}</span>
+            <span class="setting-title">{{ t('core.gamesign.section.runOnStartup') }}</span>
+            <span class="setting-desc">{{ t('core.gamesign.section.runOnStartupDesc') }}</span>
           </div>
           <a-switch
             :checked="config.RunOnStartup"
@@ -514,13 +461,13 @@ onMounted(() => {
         </div>
         <div class="setting-row setting-row-static">
           <div class="setting-info">
-            <span class="setting-title">{{ t('gamesign.section.lastSign') }}</span>
-            <span class="setting-desc">{{ t('gamesign.section.lastSignDesc') }}</span>
+            <span class="setting-title">{{ t('core.gamesign.section.lastSign') }}</span>
+            <span class="setting-desc">{{ t('core.gamesign.section.lastSignDesc') }}</span>
           </div>
           <span class="setting-value">{{
             config.LastSignDate && formatConfigDate(config.LastSignDate, 8 * 60) !== '2000-01-01'
               ? formatConfigDate(config.LastSignDate, 8 * 60)
-              : t('gamesign.section.neverSigned')
+              : t('core.gamesign.section.neverSigned')
           }}</span>
         </div>
       </div>
@@ -529,7 +476,7 @@ onMounted(() => {
     <!-- 用户列表 -->
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('gamesign.list.title') }}</h3>
+        <h3>{{ t('core.gamesign.list.title') }}</h3>
         <a-button
           type="primary"
           ghost
@@ -539,7 +486,7 @@ onMounted(() => {
           @click="handleAddAccount"
         >
           <template #icon><PlusOutlined /></template>
-          {{ t('gamesign.list.add') }}
+          {{ t('core.gamesign.list.add') }}
         </a-button>
       </div>
 
@@ -547,10 +494,10 @@ onMounted(() => {
         <!-- 表头 -->
         <div class="user-table-header">
           <div class="header-cell drag-cell"></div>
-          <div class="header-cell name-cell">{{ t('gamesign.list.colName') }}</div>
-          <div class="header-cell status-cell">{{ t('gamesign.list.colEnabled') }}</div>
-          <div class="header-cell tags-cell">{{ t('gamesign.list.colTags') }}</div>
-          <div class="header-cell actions-cell">{{ t('gamesign.list.colActions') }}</div>
+          <div class="header-cell name-cell">{{ t('core.gamesign.list.colName') }}</div>
+          <div class="header-cell status-cell">{{ t('core.gamesign.list.colEnabled') }}</div>
+          <div class="header-cell tags-cell">{{ t('core.gamesign.list.colTags') }}</div>
+          <div class="header-cell actions-cell">{{ t('core.gamesign.list.colActions') }}</div>
         </div>
 
         <!-- 拖拽内容 -->
@@ -570,7 +517,7 @@ onMounted(() => {
             <div class="user-row">
               <!-- 拖拽手柄 -->
               <div class="row-cell drag-cell">
-                <span class="drag-handle" :title="t('gamesign.list.drag')">
+                <span class="drag-handle" :title="t('core.gamesign.list.drag')">
                   <span class="drag-dots"></span>
                 </span>
               </div>
@@ -597,7 +544,7 @@ onMounted(() => {
                     <template #title>
                       <div class="sign-tooltip">
                         <div class="sign-tooltip-title">
-                          {{ t('gamesign.list.tooltipTitle', { platform: tag.platform }) }}
+                          {{ t('core.gamesign.list.tooltipTitle', { platform: tag.platform }) }}
                         </div>
                         <template
                           v-for="(group, gIdx) in getAccountGroupsForPlatformReactive(
@@ -611,14 +558,14 @@ onMounted(() => {
                             :key="`${game.account || group.account_alias}-${game.game}-${game.kind}`"
                           >
                             <div class="sign-tooltip-alias">
-                              {{ getSignDetailAlias(group, game, t('gamesign.unknownUser')) }}
+                              {{ getSignDetailAlias(group, game, t('core.gamesign.unknownUser')) }}
                             </div>
                             <div class="sign-tooltip-row">
                               <span>{{
                                 game.kind === 'community'
-                                  ? t('gamesign.list.kuroCoinSign')
+                                  ? t('core.gamesign.list.kuroCoinSign')
                                   : game.kind === 'game'
-                                    ? t('gamesign.list.gameSignTask', { game: game.game })
+                                    ? t('core.gamesign.list.gameSignTask', { game: game.game })
                                     : game.game
                               }}</span>
                               <span :class="getSignDetailClass(game.status)">
@@ -630,14 +577,14 @@ onMounted(() => {
                           </template>
                         </template>
                         <div v-if="tag.games.length === 0" class="sign-tooltip-empty">
-                          {{ t('gamesign.list.noSignData') }}
+                          {{ t('core.gamesign.list.noSignData') }}
                         </div>
                       </div>
                     </template>
                     <span :class="['platform-tag', getTagClass(tag.status)]">
                       {{ getTagText(tag) }}
                       <template v-if="tag.status === 'partial' && tag.failedCount > 0">
-                        · {{ t('gamesign.signStatus.partialFailure') }}
+                        · {{ t('core.gamesign.signStatus.partialFailure') }}
                       </template>
                     </span>
                   </a-tooltip>
@@ -652,7 +599,7 @@ onMounted(() => {
                     @click="openEditModal(account)"
                   >
                     <template #icon><EditOutlined /></template>
-                    {{ t('gamesign.list.edit') }}
+                    {{ t('core.gamesign.list.edit') }}
                   </a-button>
                   <a-button
                     size="middle"
@@ -660,7 +607,7 @@ onMounted(() => {
                     @click="handleDeleteAccount(account)"
                   >
                     <template #icon><DeleteOutlined /></template>
-                    {{ t('gamesign.list.del') }}
+                    {{ t('core.gamesign.list.del') }}
                   </a-button>
                 </a-space>
               </div>
@@ -668,28 +615,22 @@ onMounted(() => {
           </template>
         </draggable>
 
-        <!-- 加载失败：不能显示成「暂无账号」 -->
-        <div v-if="accountsFailed && accounts.length === 0" class="empty-state">
-          <div class="empty-hint">{{ t('gamesign.list.loadFailed') }}</div>
-          <a-button size="middle" :loading="accountsLoading" @click="loadAccounts">
-            {{ t('gamesign.list.retry') }}
-          </a-button>
-        </div>
         <!-- 空状态 -->
-        <div v-else-if="!accountsLoading && accounts.length === 0" class="empty-state">
-          <div class="empty-hint">{{ t('gamesign.list.empty') }}</div>
-          <div class="empty-guide">{{ t('gamesign.list.emptyGuide') }}</div>
-        </div>
+        <a-empty v-if="accounts.length === 0" class="empty-state" :image="false">
+          <template #description>
+            <div>{{ t('core.gamesign.list.empty') }}</div>
+            <div>{{ t('core.gamesign.list.emptyGuide') }}</div>
+          </template>
+        </a-empty>
       </div>
     </div>
 
     <!-- 编辑 Token 模态框 -->
     <a-modal
       v-model:open="editModalVisible"
-      :title="t('gamesign.edit.title', { name: editingAccount?.Name || '' })"
-      :ok-text="t('gamesign.edit.save')"
-      :cancel-text="t('common.cancel')"
-      :confirm-loading="editSaving"
+      :title="t('core.gamesign.edit.title', { name: editingAccount?.Name || '' })"
+      :ok-text="t('core.gamesign.edit.save')"
+      :cancel-text="t('core.common.cancel')"
       :width="560"
       :body-style="{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }"
       centered
@@ -698,50 +639,50 @@ onMounted(() => {
     >
       <div v-if="editingAccount" class="modal-form">
         <div class="form-item-vertical">
-          <span class="form-label">{{ t('gamesign.edit.userName') }}</span>
+          <span class="form-label">{{ t('core.gamesign.edit.userName') }}</span>
           <a-input v-model:value="editingAccount.Name" size="large" />
         </div>
         <a-divider orientation="left" class="community-divider">{{
-          t('gamesign.edit.miyoushe')
+          t('core.gamesign.edit.miyoushe')
         }}</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.MiyousheToken"
             size="large"
-            :placeholder="t('gamesign.edit.miyoushePlaceholder')"
+            :placeholder="t('core.gamesign.edit.miyoushePlaceholder')"
             allow-clear
           />
         </div>
         <a-divider orientation="left" class="community-divider">{{
-          t('gamesign.edit.kuro')
+          t('core.gamesign.edit.kuro')
         }}</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.KuroToken"
             size="large"
-            :placeholder="t('gamesign.edit.kuroPlaceholder')"
+            :placeholder="t('core.gamesign.edit.kuroPlaceholder')"
             allow-clear
           />
         </div>
         <a-divider orientation="left" class="community-divider">{{
-          t('gamesign.edit.skland')
+          t('core.gamesign.edit.skland')
         }}</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.SklandToken"
             size="large"
-            :placeholder="t('gamesign.edit.sklandPlaceholder')"
+            :placeholder="t('core.gamesign.edit.sklandPlaceholder')"
             allow-clear
           />
         </div>
         <a-divider orientation="left" class="community-divider">{{
-          t('gamesign.edit.taygedo')
+          t('core.gamesign.edit.taygedo')
         }}</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.TaygedoToken"
             size="large"
-            :placeholder="t('gamesign.edit.taygedoPlaceholder')"
+            :placeholder="t('core.gamesign.edit.taygedoPlaceholder')"
             allow-clear
           />
         </div>
@@ -754,10 +695,7 @@ onMounted(() => {
 /* 布尔设置统一使用 Ant Design 开关，避免同类值出现不同交互。 */
 
 .section-header-actions {
-  display: flex;
-  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -1167,15 +1105,6 @@ onMounted(() => {
 .empty-state {
   text-align: center;
   padding: 48px 0;
-}
-.empty-hint {
-  color: var(--ant-color-text-tertiary);
-  font-size: 15px;
-  margin-bottom: 6px;
-}
-.empty-guide {
-  color: var(--ant-color-text-tertiary);
-  font-size: 13px;
 }
 
 /* ==================== 模态框 ==================== */

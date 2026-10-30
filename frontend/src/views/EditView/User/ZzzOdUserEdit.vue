@@ -4,7 +4,7 @@
       <div class="header-nav">
         <a-breadcrumb class="breadcrumb">
           <a-breadcrumb-item>
-            <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
+            <router-link to="/scripts">{{ t('core.edit.scripts') }}</router-link>
           </a-breadcrumb-item>
           <a-breadcrumb-item>
             <router-link :to="`/scripts/${scriptId}/edit/zzzod`" class="breadcrumb-link">
@@ -12,7 +12,7 @@
             </router-link>
           </a-breadcrumb-item>
           <a-breadcrumb-item>
-            {{ isEdit ? t('comp.editUser') : t('comp.addUser2') }}
+            {{ isEdit ? t('core.comp.editUser') : t('core.comp.addUser2') }}
           </a-breadcrumb-item>
         </a-breadcrumb>
       </div>
@@ -22,22 +22,22 @@
           <template #icon>
             <FolderOpenOutlined />
           </template>
-          {{ t('comp.openConfigFolder') }}
+          {{ t('core.comp.openConfigFolder') }}
         </a-button>
-        <a-tooltip :title="t('edit.zzzodOpenNativeConfigHint')">
+        <a-tooltip :title="t('core.edit.zzzodOpenNativeConfigHint')">
           <a-button
             v-if="!showZzzodConfigMask && !showZzzodViewMask"
             type="primary"
             ghost
             size="large"
             :loading="zzzodConfigLoading"
-            :disabled="pageLoading || !userId || configLocked"
+            :disabled="pageLoading || nativeLoading || !userId || configLocked"
             @click="handleZzzodConfig"
           >
             <template #icon>
               <SettingOutlined />
             </template>
-            {{ t('edit.zzzodOpenNativeConfig') }}
+            {{ t('core.edit.zzzodOpenNativeConfig') }}
           </a-button>
         </a-tooltip>
         <a-button
@@ -50,13 +50,13 @@
           <template #icon>
             <SettingOutlined />
           </template>
-          {{ t('edit.configuring') }}
+          {{ t('core.edit.configuring') }}
         </a-button>
         <a-button size="large" class="cancel-button" @click="handleCancel">
           <template #icon>
             <ArrowLeftOutlined />
           </template>
-          {{ t('edit.back') }}
+          {{ t('core.edit.back') }}
         </a-button>
       </a-space>
     </div>
@@ -64,8 +64,8 @@
     <GuiSessionMask
       :open="showZzzodConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.zzzodConfiguringTitle')"
-      :description="`${t('edit.zzzodConfiguringDesc')}\n${t('edit.zzzodConfiguringDesc2')}`"
+      :title="t('core.edit.zzzodConfiguringTitle')"
+      :description="`${t('core.edit.zzzodConfiguringDesc')}\n${t('core.edit.zzzodConfiguringDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -74,15 +74,15 @@
           size="large"
           @click="handleSaveZzzodConfig"
         >
-          {{ t('edit.saveSettings') }}
+          {{ t('core.edit.saveSettings') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showZzzodViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.zzzodViewingTitle')"
-      :description="`${t('edit.zzzodViewingDesc')}\n${t('edit.zzzodViewingDesc2')}`"
+      :title="t('core.edit.zzzodViewingTitle')"
+      :description="`${t('core.edit.zzzodViewingDesc')}\n${t('core.edit.zzzodViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -92,449 +92,351 @@
           :loading="stoppingZzzodConfig"
           @click="handleCloseZzzodView"
         >
-          {{ t('edit.zzzodViewClose') }}
+          {{ t('core.edit.zzzodViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <a-card class="config-card" :loading="pageLoading">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>{{ t('edit.basicInfo') }}</h3>
-            </div>
-
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.username') }}
-                      <a-tooltip :title="t('edit.zzzodUserNameHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input
-                    v-model:value="formData.userName"
-                    :placeholder="t('edit.enterUsername')"
-                    size="large"
-                    class="modern-input"
-                    @blur="handleNameBlur"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.enabled') }}
-                      <a-tooltip :title="t('edit.whetherThisUserEnabled')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Info.Status"
-                    size="large"
-                    class="modern-select"
-                    @change="saveField('Info.Status', formData.Info.Status)"
-                  >
-                    <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                    <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24">
-              <a-col :span="24">
-                <GeneralConfigModeSelector
-                  :model-value="formData.Info.Base"
-                  :options="configModeOptions"
-                  :disabled="pageLoading"
-                  :alert-message="configModeAlert"
-                  @change="handleConfigModeChange"
-                />
-              </a-col>
-            </a-row>
-
-            <!-- 一条龙启动器（原生来源/独立来源两种模式通用；未安装的启动器选项禁用变灰，悬停选项查看说明）固定在右侧；
-                 左侧按模式切换：原生来源为「运行实例」，独立来源为「快速导入配置」（母版下拉选择来源实例 + 导入按钮，
-                 外观与周围下拉框一致；确认后覆盖本用户配置（账号+任务编排）） -->
-            <a-row :gutter="24">
-              <a-col v-if="formData.Info.Base === 'native'" :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.zzzodDirectInstanceRun') }}
-                      <a-tooltip :title="t('edit.zzzodDirectInstanceRunHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="nativeInstanceRun"
-                    :options="instanceRunOptions"
-                    :loading="runModeSaving"
-                    size="large"
-                    class="modern-select"
-                    @change="handleNativeInstanceRunChange"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col v-else :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.zzzodQuickImport') }}
-                      <a-tooltip :title="t('edit.zzzodImportConfigHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <div class="import-group">
-                    <a-select
-                      v-model:value="importSourceIdx"
-                      :options="importInstanceOptions"
-                      :placeholder="t('edit.zzzodImportPlaceholder')"
-                      :loading="instancesLoading"
-                      size="large"
-                      class="modern-select import-source-select"
-                    />
-                    <a-button
-                      size="large"
-                      class="import-select-button"
-                      :loading="importLoading"
-                      :disabled="importSourceIdx === null"
-                      @click="confirmImport"
-                    >
-                      {{ t('edit.zzzodImport') }}
-                    </a-button>
-                  </div>
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.zzzodLauncherMode') }}
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Info.LauncherMode"
-                    size="large"
-                    class="modern-select"
-                    :loading="launchersLoading"
-                    @change="saveField('Info.LauncherMode', formData.Info.LauncherMode)"
-                  >
-                    <a-select-option
-                      value="自动"
-                      :disabled="!launchersReady || !launchersUsable.smart"
-                    >
-                      <a-tooltip :title="t('edit.zzzodLauncherAutoHint')">
-                        <span>{{ t('edit.zzzodLauncherAuto') }}</span>
-                      </a-tooltip>
-                    </a-select-option>
-                    <a-select-option
-                      value="原始"
-                      :disabled="!launchersReady || !launchersUsable.original"
-                    >
-                      <a-tooltip :title="t('edit.zzzodLauncherOriginalHint')">
-                        <span>{{ t('edit.zzzodLauncherOriginal') }}</span>
-                      </a-tooltip>
-                    </a-select-option>
-                    <a-select-option
-                      value="集成"
-                      :disabled="!launchersReady || !launchersUsable.integrated"
-                    >
-                      <a-tooltip :title="t('edit.zzzodLauncherIntegratedHint')">
-                        <span>{{ t('edit.zzzodLauncherIntegrated') }}</span>
-                      </a-tooltip>
-                    </a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <!-- 原生来源：实例管理（参与「全部实例」运行 / 添加 / 重命名 / 删除，实时写回 one_dragon.yml） -->
-            <template v-if="formData.Info.Base === 'native'">
-              <div class="instance-manage">
-                <div class="instance-manage-header">
-                  <span class="form-label">
-                    {{ t('edit.zzzodInstancesManage') }}
-                    <a-tooltip :title="t('edit.zzzodInstancesManageHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                  <a-button
-                    type="primary"
-                    size="small"
-                    :loading="instanceOpLoading"
-                    @click="openAddInstance"
-                  >
-                    <template #icon><PlusOutlined /></template>
-                    {{ t('edit.zzzodAddInstance') }}
-                  </a-button>
-                </div>
-                <div v-if="instances.length" class="instance-manage-list">
-                  <div
-                    v-for="inst in instances"
-                    :key="inst.idx"
-                    class="instance-manage-row"
-                    :class="{ selected: inst.idx === nativeInstanceIdx }"
-                  >
-                    <div class="instance-manage-info">
-                      <span
-                        class="instance-manage-name"
-                        :title="`${String(inst.idx).padStart(2, '0')} - ${inst.name}`"
-                      >
-                        {{ String(inst.idx).padStart(2, '0') }} - {{ inst.name }}
-                      </span>
-                      <a-tooltip v-if="inst.active" :title="t('edit.zzzodInstanceActiveTagHint')">
-                        <a-tag color="processing" class="instance-manage-tag">
-                          {{ t('edit.zzzodInstanceActiveTag') }}
-                        </a-tag>
-                      </a-tooltip>
-                      <a-tooltip v-else :title="t('edit.zzzodSetInstanceActive')">
-                        <a-tag
-                          class="instance-manage-tag instance-manage-tag-set"
-                          @click="setActiveInstance(inst)"
-                        >
-                          {{ t('edit.zzzodInstanceSetActiveTag') }}
-                        </a-tag>
-                      </a-tooltip>
-                    </div>
-                    <div class="instance-manage-ops">
-                      <span class="instance-manage-switch-label">
-                        {{ t('edit.zzzodInstanceRunAllSwitch') }}
-                      </span>
-                      <a-tooltip :title="t('edit.zzzodInstanceActiveInOd')">
-                        <a-switch
-                          size="small"
-                          :checked="inst.active_in_od"
-                          @change="(checked: boolean) => toggleInstanceActiveInOd(inst, checked)"
-                        />
-                      </a-tooltip>
-                      <span class="instance-manage-switch-label">
-                        {{ t('edit.zzzodInstanceForceLoginSwitch') }}
-                      </span>
-                      <a-tooltip :title="t('edit.zzzodInstanceForceLoginHint')">
-                        <a-switch
-                          size="small"
-                          :checked="inst.force_login_before_run"
-                          @change="(checked: boolean) => toggleInstanceForceLogin(inst, checked)"
-                        />
-                      </a-tooltip>
-                      <a-divider type="vertical" class="instance-manage-divider" />
-                      <a-tooltip :title="t('edit.zzzodRenameInstance')">
-                        <a-button
-                          size="small"
-                          type="text"
-                          :aria-label="t('edit.zzzodRenameInstance')"
-                          @click="openRenameInstance(inst)"
-                        >
-                          <template #icon><EditOutlined /></template>
-                        </a-button>
-                      </a-tooltip>
-                      <a-tooltip :title="t('edit.zzzodDeleteInstance')">
-                        <a-button
-                          size="small"
-                          type="text"
-                          danger
-                          :aria-label="t('edit.zzzodDeleteInstance')"
-                          @click="openDeleteInstance(inst)"
-                        >
-                          <template #icon><DeleteOutlined /></template>
-                        </a-button>
-                      </a-tooltip>
-                    </div>
-                  </div>
-                </div>
+      <a-config-provider :component-disabled="configLocked || nativeLoading">
+        <a-card class="config-card" :loading="pageLoading">
+          <a-form :model="formData" layout="vertical" class="config-form">
+            <div class="form-section">
+              <div class="section-header">
+                <h3>{{ t('core.edit.basicInfo') }}</h3>
               </div>
 
-              <!-- 原生来源：选择配置实例（选完即编辑下方账号字段与任务配置） -->
               <a-row :gutter="24">
                 <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <span class="form-label">
-                        {{ t('edit.zzzodDirectInstance') }}
-                        <a-tooltip :title="t('edit.zzzodDirectInstanceHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
-                    </template>
-                    <a-select
-                      v-model:value="nativeInstanceIdx"
-                      :options="instanceOptions"
-                      :placeholder="t('edit.zzzodDirectPickInstance')"
-                      :loading="instancesLoading"
-                      size="large"
-                      class="modern-select"
-                      @change="handleNativeInstanceChange"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-
-              <a-alert
-                type="info"
-                show-icon
-                class="native-bind-alert"
-                :message="t('edit.zzzodDirectBindAlert')"
-              />
-
-              <!-- 原生来源：所选实例的原生账号字段（保存即写回一条龙 game_account.yml） -->
-              <a-spin :spinning="nativeLoading">
-                <template v-if="nativeInstanceIdx !== null">
-                  <a-row :gutter="24">
-                    <a-col v-for="f in nativeAccountFields" :key="f.key" :span="12">
-                      <a-form-item>
-                        <template #label>
-                          <span class="form-label">
-                            <span
-                              v-if="isRequiredAccountKey(f.key)"
-                              class="required-mark"
-                              aria-hidden="true"
-                              >*</span
-                            >
-                            {{ f.title }}
-                            <a-tooltip
-                              v-if="isRequiredAccountKey(f.key)"
-                              :title="t('edit.zzzodAccountRequiredTip')"
-                            >
-                              <QuestionCircleOutlined class="help-icon" />
-                            </a-tooltip>
-                          </span>
-                        </template>
-                        <a-input-group
-                          v-if="f.key === 'game_path'"
-                          compact
-                          class="path-input-group"
-                        >
-                          <a-input
-                            v-model:value="nativeAccountValues[f.key]"
-                            :placeholder="t('edit.zzzodGamePathPlaceholder')"
-                            size="large"
-                            class="path-input"
-                            readonly
-                          />
-                          <a-button size="large" class="path-button" @click="selectDirectGamePath">
-                            <template #icon>
-                              <FolderOpenOutlined />
-                            </template>
-                            {{ t('edit.pickFile') }}
-                          </a-button>
-                        </a-input-group>
-                        <a-input-password
-                          v-else-if="f.key === 'password'"
-                          v-model:value="nativeAccountValues[f.key]"
-                          :placeholder="t('edit.zzzodDirectPasswordPlaceholder')"
-                          size="large"
-                          class="modern-input"
-                        />
-                        <a-select
-                          v-else-if="(f.options?.length ?? 0) > 0"
-                          v-model:value="nativeAccountValues[f.key]"
-                          :options="f.options"
-                          size="large"
-                          class="modern-select"
-                        />
-                        <a-input
-                          v-else
-                          v-model:value="nativeAccountValues[f.key]"
-                          size="large"
-                          class="modern-input"
-                        />
-                      </a-form-item>
-                    </a-col>
-                  </a-row>
-                  <div class="native-save-row">
-                    <a-button
-                      type="primary"
-                      size="large"
-                      :loading="nativeSaving"
-                      @click="saveNativeAccount"
-                    >
-                      {{ t('edit.saveSettings') }}
-                    </a-button>
-                  </div>
-                </template>
-                <a-empty v-else :description="t('edit.zzzodDirectPickInstanceFirst')" />
-              </a-spin>
-            </template>
-
-            <!-- 账号配置（独立来源：MAS 字段化配置） -->
-            <template v-else>
-              <a-row :gutter="24">
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <span class="form-label">
-                        {{ t('edit.zzzodGameRegion') }}
-                        <a-tooltip :title="t('edit.zzzodGameRegionHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
-                    </template>
-                    <a-select
-                      v-model:value="formData.Game.GameRegion"
-                      :options="gameRegionOptions"
-                      size="large"
-                      class="modern-select"
-                      @change="saveField('Game.GameRegion', formData.Game.GameRegion)"
-                    />
-                  </a-form-item>
+                  <UserNameField
+                    v-model="formData.userName"
+                    :hint="t('core.edit.zzzodUserNameHint')"
+                    :placeholder="t('core.edit.enterUsername')"
+                    enhanced
+                    @save="handleNameBlur"
+                  />
                 </a-col>
                 <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <span class="form-label">
-                        {{ t('edit.zzzodGameLanguage') }}
-                        <a-tooltip :title="t('edit.zzzodGameLanguageHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
-                    </template>
-                    <a-select
-                      v-model:value="formData.Game.GameLanguage"
-                      :options="gameLanguageOptions"
-                      size="large"
-                      class="modern-select"
-                      @change="saveField('Game.GameLanguage', formData.Game.GameLanguage)"
-                    />
-                  </a-form-item>
+                  <UserStatusField
+                    v-model="formData.Info.Status"
+                    :hint="t('core.edit.whetherThisUserEnabled')"
+                    @save="saveField('Info.Status', formData.Info.Status)"
+                  />
                 </a-col>
               </a-row>
 
               <a-row :gutter="24">
                 <a-col :span="24">
+                  <GeneralConfigModeSelector
+                    :model-value="formData.Info.Base"
+                    :options="configModeOptions"
+                    :disabled="pageLoading"
+                    :alert-message="configModeAlert"
+                    @change="handleConfigModeChange"
+                  />
+                </a-col>
+              </a-row>
+
+              <!-- 一条龙启动器（原生来源/独立来源两种模式通用；未安装的启动器选项禁用变灰，悬停选项查看说明）固定在右侧；
+                 左侧按模式切换：原生来源为「运行实例」，独立来源为「快速导入配置」（母版下拉选择来源实例 + 导入按钮，
+                 外观与周围下拉框一致；确认后覆盖本用户配置（账号+任务编排）） -->
+              <a-row :gutter="24">
+                <a-col v-if="formData.Info.Base === 'native'" :span="12">
+                  <a-form-item>
+                    <template #label>
+                      <FieldLabelWithHint
+                        :text="t('core.edit.zzzodDirectInstanceRun')"
+                        :hint="t('core.edit.zzzodDirectInstanceRunHint')"
+                        variant="form"
+                      />
+                    </template>
+                    <a-select
+                      v-model:value="nativeInstanceRun"
+                      :options="instanceRunOptions"
+                      :loading="runModeSaving"
+                      size="large"
+                      class="modern-select"
+                      @change="handleNativeInstanceRunChange"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col v-else :span="12">
+                  <a-form-item>
+                    <template #label>
+                      <FieldLabelWithHint
+                        :text="t('core.edit.zzzodQuickImport')"
+                        :hint="t('core.edit.zzzodImportConfigHint')"
+                        variant="form"
+                      />
+                    </template>
+                    <div class="import-group">
+                      <a-select
+                        v-model:value="importSourceIdx"
+                        :options="importInstanceOptions"
+                        :placeholder="t('core.edit.zzzodImportPlaceholder')"
+                        :loading="instancesLoading"
+                        size="large"
+                        class="modern-select import-source-select"
+                      />
+                      <a-button
+                        size="large"
+                        class="import-select-button"
+                        :loading="importLoading"
+                        :disabled="importSourceIdx === null"
+                        @click="confirmImport"
+                      >
+                        {{ t('core.edit.zzzodImport') }}
+                      </a-button>
+                    </div>
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
                   <a-form-item>
                     <template #label>
                       <span class="form-label">
-                        {{ t('edit.zzzodGamePath') }}
-                        <a-tooltip :title="t('edit.zzzodGamePathHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
+                        {{ t('core.edit.zzzodLauncherMode') }}
                       </span>
                     </template>
-                    <a-input-group compact class="path-input-group">
-                      <a-input
-                        v-model:value="formData.Game.GamePath"
-                        :placeholder="t('edit.zzzodGamePathPlaceholder')"
+                    <a-select
+                      v-model:value="formData.Info.LauncherMode"
+                      size="large"
+                      class="modern-select"
+                      :loading="launchersLoading"
+                      @change="saveField('Info.LauncherMode', formData.Info.LauncherMode)"
+                    >
+                      <a-select-option
+                        value="自动"
+                        :disabled="!launchersReady || !launchersUsable.smart"
+                      >
+                        <a-tooltip :title="t('core.edit.zzzodLauncherAutoHint')">
+                          <span>{{ t('core.edit.zzzodLauncherAuto') }}</span>
+                        </a-tooltip>
+                      </a-select-option>
+                      <a-select-option
+                        value="原始"
+                        :disabled="!launchersReady || !launchersUsable.original"
+                      >
+                        <a-tooltip :title="t('core.edit.zzzodLauncherOriginalHint')">
+                          <span>{{ t('core.edit.zzzodLauncherOriginal') }}</span>
+                        </a-tooltip>
+                      </a-select-option>
+                      <a-select-option
+                        value="集成"
+                        :disabled="!launchersReady || !launchersUsable.integrated"
+                      >
+                        <a-tooltip :title="t('core.edit.zzzodLauncherIntegratedHint')">
+                          <span>{{ t('core.edit.zzzodLauncherIntegrated') }}</span>
+                        </a-tooltip>
+                      </a-select-option>
+                    </a-select>
+                  </a-form-item>
+                </a-col>
+              </a-row>
+
+              <!-- 原生来源：实例管理（参与「全部实例」运行 / 添加 / 重命名 / 删除，实时写回 one_dragon.yml） -->
+              <template v-if="formData.Info.Base === 'native'">
+                <ZzzodInstancesManager
+                  :instances="instances"
+                  :update-instances="updateInstances"
+                  :script-id="scriptId"
+                  :locked="configLocked"
+                  :selected="nativeInstanceIdx"
+                  :select="selectManagedInstance"
+                  :deleted="clearDeletedInstance"
+                  :track-write="trackInstanceWrite"
+                />
+
+                <!-- 原生来源：选择配置实例（选完即编辑下方账号字段与任务配置） -->
+                <a-row :gutter="24">
+                  <a-col :span="12">
+                    <a-form-item>
+                      <template #label>
+                        <FieldLabelWithHint
+                          :text="t('core.edit.zzzodDirectInstance')"
+                          :hint="t('core.edit.zzzodDirectInstanceHint')"
+                          variant="form"
+                        />
+                      </template>
+                      <a-select
+                        :value="nativeInstanceIdx"
+                        :options="instanceOptions"
+                        :placeholder="t('core.edit.zzzodDirectPickInstance')"
+                        :loading="instancesLoading"
                         size="large"
-                        class="path-input"
-                        readonly
+                        class="modern-select"
+                        @change="selectManagedInstance"
                       />
-                      <a-button size="large" class="path-button" @click="selectGamePath">
-                        <template #icon>
-                          <FolderOpenOutlined />
-                        </template>
-                        {{ t('edit.pickFile') }}
-                      </a-button>
-                    </a-input-group>
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+
+                <a-alert
+                  type="info"
+                  show-icon
+                  class="native-bind-alert"
+                  :message="t('core.edit.zzzodDirectBindAlert')"
+                />
+
+                <!-- 原生来源：所选实例的原生账号字段（保存即写回一条龙 game_account.yml） -->
+                <ZzzodNativeAccountSection
+                  :fields="nativeAccountFields"
+                  :values="nativeAccountValues"
+                  :loading="nativeLoading"
+                  :saving="nativeSaving"
+                  :selected="nativeInstanceIdx"
+                  :save="saveNativeAccount"
+                />
+              </template>
+
+              <!-- 账号配置（独立来源：MAS 字段化配置） -->
+              <template v-else>
+                <a-row :gutter="24">
+                  <a-col :span="12">
+                    <a-form-item>
+                      <template #label>
+                        <FieldLabelWithHint
+                          :text="t('core.edit.zzzodGameRegion')"
+                          :hint="t('core.edit.zzzodGameRegionHint')"
+                          variant="form"
+                        />
+                      </template>
+                      <a-select
+                        v-model:value="formData.Game.GameRegion"
+                        :options="gameRegionOptions"
+                        size="large"
+                        class="modern-select"
+                        @change="saveField('Game.GameRegion', formData.Game.GameRegion)"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="12">
+                    <a-form-item>
+                      <template #label>
+                        <FieldLabelWithHint
+                          :text="t('core.edit.zzzodGameLanguage')"
+                          :hint="t('core.edit.zzzodGameLanguageHint')"
+                          variant="form"
+                        />
+                      </template>
+                      <a-select
+                        v-model:value="formData.Game.GameLanguage"
+                        :options="gameLanguageOptions"
+                        size="large"
+                        class="modern-select"
+                        @change="saveField('Game.GameLanguage', formData.Game.GameLanguage)"
+                      />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+
+                <a-row :gutter="24">
+                  <a-col :span="24">
+                    <a-form-item>
+                      <template #label>
+                        <FieldLabelWithHint
+                          :text="t('core.edit.zzzodGamePath')"
+                          :hint="t('core.edit.zzzodGamePathHint')"
+                          variant="form"
+                        />
+                      </template>
+                      <PathPickerField
+                        v-model="formData.Game.GamePath"
+                        mode="file"
+                        :placeholder="t('core.edit.zzzodGamePathPlaceholder')"
+                        :pick-label="t('core.edit.pickFile')"
+                        @pick="selectGamePath"
+                      />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+
+                <a-row :gutter="24">
+                  <a-col :span="12">
+                    <a-form-item>
+                      <template #label>
+                        <FieldLabelWithHint
+                          :text="t('core.edit.zzzodAccount')"
+                          :hint="t('core.edit.zzzodAccountHint')"
+                          variant="form"
+                        />
+                      </template>
+                      <a-input
+                        v-model:value="formData.Game.Account"
+                        :placeholder="t('core.edit.zzzodEnterAccount')"
+                        size="large"
+                        class="modern-input"
+                        @blur="saveField('Game.Account', formData.Game.Account)"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="12">
+                    <a-form-item>
+                      <template #label>
+                        <FieldLabelWithHint
+                          :text="t('core.edit.password')"
+                          :hint="t('core.edit.zzzodPasswordHint')"
+                          variant="form"
+                        />
+                      </template>
+                      <a-input-password
+                        v-model:value="formData.Game.Password"
+                        :placeholder="t('core.edit.zzzodEnterPasswordPlaceholder')"
+                        size="large"
+                        class="modern-input"
+                        @blur="saveField('Game.Password', formData.Game.Password)"
+                      />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+
+                <a-row v-if="formData.Game.GameRegion === 'cn_b'" :gutter="24">
+                  <a-col :span="12">
+                    <a-form-item>
+                      <template #label>
+                        <FieldLabelWithHint
+                          :text="t('core.edit.zzzodBilibiliAccount')"
+                          :hint="t('core.edit.zzzodBilibiliAccountHint')"
+                          variant="form"
+                        />
+                      </template>
+                      <a-input
+                        v-model:value="formData.Game.BilibiliAccountName"
+                        :placeholder="t('core.edit.zzzodEnterBilibiliAccount')"
+                        size="large"
+                        class="modern-input"
+                        @blur="
+                          saveField('Game.BilibiliAccountName', formData.Game.BilibiliAccountName)
+                        "
+                      />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+              </template>
+
+              <a-row :gutter="24">
+                <a-col :span="12">
+                  <UserRemainedDayField
+                    v-model="formData.Info.RemainedDay"
+                    :hint="t('core.edit.daysLeftAccount1')"
+                    @save="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
+                  />
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item>
+                    <template #label>
+                      <FieldLabelWithHint
+                        :text="t('core.edit.note')"
+                        :hint="t('core.edit.addNoteAboutThis')"
+                        variant="form"
+                      />
+                    </template>
+                    <a-input
+                      v-model:value="formData.Info.Notes"
+                      :placeholder="t('core.edit.enterNote')"
+                      size="large"
+                      class="modern-input"
+                      @blur="saveField('Info.Notes', formData.Info.Notes)"
+                    />
                   </a-form-item>
                 </a-col>
               </a-row>
@@ -544,643 +446,166 @@
                   <a-form-item>
                     <template #label>
                       <span class="form-label">
-                        {{ t('edit.zzzodAccount') }}
-                        <a-tooltip :title="t('edit.zzzodAccountHint')">
+                        {{ t('core.edit.collectNodeDetails') }}
+                        <a-tooltip
+                          mouse-enter-delay="0.5"
+                          :title="t('core.edit.collectsKeyMomentsFrom')"
+                        >
                           <QuestionCircleOutlined class="help-icon" />
                         </a-tooltip>
                       </span>
                     </template>
-                    <a-input
-                      v-model:value="formData.Game.Account"
-                      :placeholder="t('edit.zzzodEnterAccount')"
+                    <a-select
+                      v-model:value="formData.Notify.PushLogMode"
+                      :options="pushLogModeOptions"
                       size="large"
-                      class="modern-input"
-                      @blur="saveField('Game.Account', formData.Game.Account)"
+                      class="modern-select"
+                      @change="saveField('Notify.PushLogMode', formData.Notify.PushLogMode)"
                     />
                   </a-form-item>
                 </a-col>
                 <a-col :span="12">
                   <a-form-item>
                     <template #label>
-                      <span class="form-label">
-                        {{ t('edit.password') }}
-                        <a-tooltip :title="t('edit.zzzodPasswordHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
+                      <FieldLabelWithHint
+                        :text="t('core.edit.zzzodAfterDone')"
+                        :hint="t('core.edit.zzzodAfterDoneHint')"
+                        variant="form"
+                      />
                     </template>
-                    <a-input-password
-                      v-model:value="formData.Game.Password"
-                      :placeholder="t('edit.zzzodEnterPasswordPlaceholder')"
+                    <a-select
+                      v-model:value="afterDoneValue"
+                      :options="afterDoneOptions"
+                      :loading="afterDoneSaving"
                       size="large"
-                      class="modern-input"
-                      @blur="saveField('Game.Password', formData.Game.Password)"
+                      class="modern-select"
+                      @change="handleAfterDoneChange"
                     />
                   </a-form-item>
                 </a-col>
               </a-row>
-
-              <a-row v-if="formData.Game.GameRegion === 'cn_b'" :gutter="24">
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <span class="form-label">
-                        {{ t('edit.zzzodBilibiliAccount') }}
-                        <a-tooltip :title="t('edit.zzzodBilibiliAccountHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
-                    </template>
-                    <a-input
-                      v-model:value="formData.Game.BilibiliAccountName"
-                      :placeholder="t('edit.zzzodEnterBilibiliAccount')"
-                      size="large"
-                      class="modern-input"
-                      @blur="
-                        saveField('Game.BilibiliAccountName', formData.Game.BilibiliAccountName)
-                      "
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </template>
-
-            <!-- 原生来源：添加 / 重命名实例弹窗（放在模式分支之后，避免打断 v-if/v-else 配对） -->
-            <a-modal
-              v-model:open="addInstanceOpen"
-              :title="t('edit.zzzodAddInstance')"
-              :ok-text="t('edit.zzzodAddInstance')"
-              :cancel-text="t('edit.cancel')"
-              :confirm-loading="instanceOpLoading"
-              @ok="confirmAddInstance"
-            >
-              <a-form layout="vertical" class="config-form">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.zzzodInstanceName') }}
-                      <a-tooltip :title="t('edit.zzzodInstanceNameHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input
-                    v-model:value="instanceName"
-                    :placeholder="t('edit.zzzodInstanceNamePlaceholder')"
-                    size="large"
-                    class="modern-input"
-                    @press-enter="confirmAddInstance"
-                  />
-                </a-form-item>
-              </a-form>
-            </a-modal>
-            <a-modal
-              v-model:open="renameInstanceOpen"
-              :title="t('edit.zzzodRenameInstance')"
-              :ok-text="t('edit.zzzodRenameInstance')"
-              :cancel-text="t('edit.cancel')"
-              :confirm-loading="instanceOpLoading"
-              @ok="confirmRenameInstance"
-            >
-              <a-form layout="vertical" class="config-form">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.zzzodInstanceName') }}
-                      <a-tooltip :title="t('edit.zzzodInstanceNameHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input
-                    v-model:value="instanceName"
-                    :placeholder="t('edit.zzzodInstanceNamePlaceholder')"
-                    size="large"
-                    class="modern-input"
-                    @press-enter="confirmRenameInstance"
-                  />
-                </a-form-item>
-              </a-form>
-            </a-modal>
-
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.daysLeft') }}
-                      <a-tooltip :title="t('edit.daysLeftAccount1')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input-number
-                    v-model:value="formData.Info.RemainedDay"
-                    :min="-1"
-                    :max="9999"
-                    size="large"
-                    style="width: 100%"
-                    @blur="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.note') }}
-                      <a-tooltip :title="t('edit.addNoteAboutThis')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-input
-                    v-model:value="formData.Info.Notes"
-                    :placeholder="t('edit.enterNote')"
-                    size="large"
-                    class="modern-input"
-                    @blur="saveField('Info.Notes', formData.Info.Notes)"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.collectNodeDetails') }}
-                      <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Notify.PushLogMode"
-                    :options="pushLogModeOptions"
-                    size="large"
-                    class="modern-select"
-                    @change="saveField('Notify.PushLogMode', formData.Notify.PushLogMode)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.zzzodAfterDone') }}
-                      <a-tooltip :title="t('edit.zzzodAfterDoneHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="afterDoneValue"
-                    :options="afterDoneOptions"
-                    :loading="afterDoneSaving"
-                    size="large"
-                    class="modern-select"
-                    @change="handleAfterDoneChange"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </div>
-        </a-form>
-      </a-card>
-
-      <!-- ══ 启动参数（一条龙游戏启动参数；总开关在标题行，关闭时下方参数置灰不可改）══ -->
-      <a-card class="config-card" style="margin-top: 24px">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>
-                {{ t('edit.zzzodLaunchArgsTitle') }}
-                <a-tooltip :title="t('edit.zzzodLaunchArgsSwitchHint')">
-                  <QuestionCircleOutlined class="help-icon" />
-                </a-tooltip>
-              </h3>
-              <div class="section-header-actions">
-                <a-switch
-                  v-if="formData.Info.Base === 'native'"
-                  v-model:checked="nativeLaunchArgs.launch_argument"
-                  size="large"
-                  @change="(v: any) => saveNativeLaunchArgsField('launch_argument', v === true)"
-                />
-                <a-switch
-                  v-else
-                  v-model:checked="formData.Game.LaunchArgument"
-                  size="large"
-                  @change="(v: any) => saveField('Game.LaunchArgument', v === true)"
-                />
-              </div>
             </div>
-            <p class="section-desc">
-              {{ t('edit.zzzodLaunchArgsDesc') }}
-            </p>
-            <a-collapse
-              v-model:activeKey="launchArgsOpen"
-              class="optional-section"
-              :bordered="false"
-            >
-              <a-collapse-panel key="launch-args" :header="t('edit.zzzodLaunchArgsDetail')">
-                <!-- 原生来源：所选实例的原生启动参数（改动即时写回一条龙 game.yml） -->
-                <template v-if="formData.Info.Base === 'native'">
-                  <a-spin :spinning="nativeLoading">
-                    <template v-if="nativeInstanceIdx !== null">
-                      <a-row :gutter="24">
-                        <a-col :span="12">
-                          <a-form-item>
-                            <template #label>
-                              <span class="form-label">{{ t('edit.zzzodScreenSize') }}</span>
-                            </template>
-                            <a-select
-                              v-model:value="nativeLaunchArgs.screen_size"
-                              :options="screenSizeOptions"
-                              size="large"
-                              class="modern-select"
-                              :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="
-                                saveNativeLaunchArgsField(
-                                  'screen_size',
-                                  nativeLaunchArgs.screen_size
-                                )
-                              "
-                            />
-                          </a-form-item>
-                        </a-col>
-                        <a-col :span="12">
-                          <a-form-item>
-                            <template #label>
-                              <span class="form-label">{{ t('edit.zzzodFullScreen') }}</span>
-                            </template>
-                            <a-select
-                              v-model:value="nativeLaunchArgs.full_screen"
-                              :options="fullScreenOptions"
-                              size="large"
-                              class="modern-select"
-                              :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="
-                                saveNativeLaunchArgsField(
-                                  'full_screen',
-                                  nativeLaunchArgs.full_screen
-                                )
-                              "
-                            />
-                          </a-form-item>
-                        </a-col>
-                      </a-row>
-                      <a-row :gutter="24">
-                        <a-col :span="12">
-                          <a-form-item>
-                            <template #label>
-                              <span class="form-label">{{ t('edit.zzzodPopupWindow') }}</span>
-                            </template>
-                            <a-switch
-                              v-model:checked="nativeLaunchArgs.popup_window"
-                              size="large"
-                              :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="
-                                (v: any) => saveNativeLaunchArgsField('popup_window', v === true)
-                              "
-                            />
-                          </a-form-item>
-                        </a-col>
-                        <a-col :span="12">
-                          <a-form-item>
-                            <template #label>
-                              <span class="form-label">
-                                {{ t('edit.zzzodDx12') }}
-                                <a-tooltip :title="t('edit.zzzodDx12Hint')">
-                                  <QuestionCircleOutlined class="help-icon" />
-                                </a-tooltip>
-                              </span>
-                            </template>
-                            <a-switch
-                              v-model:checked="nativeLaunchArgs.dx12"
-                              size="large"
-                              :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="(v: any) => saveNativeLaunchArgsField('dx12', v === true)"
-                            />
-                          </a-form-item>
-                        </a-col>
-                      </a-row>
-                      <a-row :gutter="24">
-                        <a-col :span="12">
-                          <a-form-item>
-                            <template #label>
-                              <span class="form-label">{{ t('edit.zzzodMonitor') }}</span>
-                            </template>
-                            <a-select
-                              v-model:value="nativeLaunchArgs.monitor"
-                              :options="monitorOptions"
-                              size="large"
-                              class="modern-select"
-                              :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="
-                                saveNativeLaunchArgsField('monitor', nativeLaunchArgs.monitor)
-                              "
-                            />
-                          </a-form-item>
-                        </a-col>
-                      </a-row>
-                      <a-row :gutter="24">
-                        <a-col :span="24">
-                          <a-form-item>
-                            <template #label>
-                              <span class="form-label">{{ t('edit.zzzodAdvanceArgs') }}</span>
-                            </template>
-                            <a-input
-                              v-model:value="nativeLaunchArgs.launch_argument_advance"
-                              :placeholder="t('edit.zzzodAdvanceArgsPlaceholder')"
-                              size="large"
-                              class="modern-input"
-                              :disabled="!nativeLaunchArgs.launch_argument"
-                              @blur="
-                                saveNativeLaunchArgsField(
-                                  'launch_argument_advance',
-                                  nativeLaunchArgs.launch_argument_advance
-                                )
-                              "
-                            />
-                          </a-form-item>
-                        </a-col>
-                      </a-row>
-                    </template>
-                    <a-empty v-else :description="t('edit.zzzodDirectPickInstanceFirst')" />
-                  </a-spin>
-                </template>
-                <!-- 用户：MAS 字段化启动参数（改动即时保存，运行时注入绑定槽） -->
-                <template v-else>
-                  <a-row :gutter="24">
-                    <a-col :span="12">
-                      <a-form-item>
-                        <template #label>
-                          <span class="form-label">{{ t('edit.zzzodScreenSize') }}</span>
-                        </template>
-                        <a-select
-                          v-model:value="formData.Game.ScreenSize"
-                          :options="screenSizeOptions"
-                          size="large"
-                          class="modern-select"
-                          :disabled="!formData.Game.LaunchArgument"
-                          @change="saveField('Game.ScreenSize', formData.Game.ScreenSize)"
-                        />
-                      </a-form-item>
-                    </a-col>
-                    <a-col :span="12">
-                      <a-form-item>
-                        <template #label>
-                          <span class="form-label">{{ t('edit.zzzodFullScreen') }}</span>
-                        </template>
-                        <a-select
-                          v-model:value="formData.Game.FullScreen"
-                          :options="fullScreenOptions"
-                          size="large"
-                          class="modern-select"
-                          :disabled="!formData.Game.LaunchArgument"
-                          @change="saveField('Game.FullScreen', formData.Game.FullScreen)"
-                        />
-                      </a-form-item>
-                    </a-col>
-                  </a-row>
-                  <a-row :gutter="24">
-                    <a-col :span="12">
-                      <a-form-item>
-                        <template #label>
-                          <span class="form-label">{{ t('edit.zzzodPopupWindow') }}</span>
-                        </template>
-                        <a-switch
-                          v-model:checked="formData.Game.PopupWindow"
-                          size="large"
-                          :disabled="!formData.Game.LaunchArgument"
-                          @change="(v: any) => saveField('Game.PopupWindow', v === true)"
-                        />
-                      </a-form-item>
-                    </a-col>
-                    <a-col :span="12">
-                      <a-form-item>
-                        <template #label>
-                          <span class="form-label">
-                            {{ t('edit.zzzodDx12') }}
-                            <a-tooltip :title="t('edit.zzzodDx12Hint')">
-                              <QuestionCircleOutlined class="help-icon" />
-                            </a-tooltip>
-                          </span>
-                        </template>
-                        <a-switch
-                          v-model:checked="formData.Game.Dx12"
-                          size="large"
-                          :disabled="!formData.Game.LaunchArgument"
-                          @change="(v: any) => saveField('Game.Dx12', v === true)"
-                        />
-                      </a-form-item>
-                    </a-col>
-                  </a-row>
-                  <a-row :gutter="24">
-                    <a-col :span="12">
-                      <a-form-item>
-                        <template #label>
-                          <span class="form-label">{{ t('edit.zzzodMonitor') }}</span>
-                        </template>
-                        <a-select
-                          v-model:value="formData.Game.Monitor"
-                          :options="monitorOptions"
-                          size="large"
-                          class="modern-select"
-                          :disabled="!formData.Game.LaunchArgument"
-                          @change="saveField('Game.Monitor', formData.Game.Monitor)"
-                        />
-                      </a-form-item>
-                    </a-col>
-                  </a-row>
-                  <a-row :gutter="24">
-                    <a-col :span="24">
-                      <a-form-item>
-                        <template #label>
-                          <span class="form-label">{{ t('edit.zzzodAdvanceArgs') }}</span>
-                        </template>
-                        <a-input
-                          v-model:value="formData.Game.LaunchArgumentAdvance"
-                          :placeholder="t('edit.zzzodAdvanceArgsPlaceholder')"
-                          size="large"
-                          class="modern-input"
-                          :disabled="!formData.Game.LaunchArgument"
-                          @blur="
-                            saveField(
-                              'Game.LaunchArgumentAdvance',
-                              formData.Game.LaunchArgumentAdvance
-                            )
+          </a-form>
+        </a-card>
+
+        <!-- ══ 启动参数（一条龙游戏启动参数；总开关在标题行，关闭时下方参数置灰不可改）══ -->
+        <a-card class="config-card" style="margin-top: 24px">
+          <a-form :model="formData" layout="vertical" class="config-form">
+            <div class="form-section">
+              <div class="section-header">
+                <h3>
+                  {{ t('core.edit.zzzodLaunchArgsTitle') }}
+                  <a-tooltip :title="t('core.edit.zzzodLaunchArgsSwitchHint')">
+                    <QuestionCircleOutlined class="help-icon" />
+                  </a-tooltip>
+                </h3>
+                <div class="section-header-actions">
+                  <a-switch
+                    v-if="formData.Info.Base === 'native'"
+                    v-model:checked="nativeLaunchArgs.launch_argument"
+                    size="large"
+                    @change="(v: any) => saveNativeLaunchArgsField('launch_argument', v === true)"
+                  />
+                  <a-switch
+                    v-else
+                    v-model:checked="formData.Game.LaunchArgument"
+                    size="large"
+                    @change="(v: any) => saveField('Game.LaunchArgument', v === true)"
+                  />
+                </div>
+              </div>
+              <p class="section-desc">
+                {{ t('core.edit.zzzodLaunchArgsDesc') }}
+              </p>
+              <a-collapse
+                v-model:activeKey="launchArgsOpen"
+                class="optional-section"
+                :bordered="false"
+              >
+                <a-collapse-panel key="launch-args" :header="t('core.edit.zzzodLaunchArgsDetail')">
+                  <!-- 原生来源：所选实例的原生启动参数（改动即时写回一条龙 game.yml） -->
+                  <template v-if="formData.Info.Base === 'native'">
+                    <a-spin :spinning="nativeLoading">
+                      <template v-if="nativeInstanceIdx !== null">
+                        <ZzzodLaunchArgumentFields
+                          v-model:screen-size="nativeLaunchArgs.screen_size"
+                          v-model:full-screen="nativeLaunchArgs.full_screen"
+                          v-model:popup-window="nativeLaunchArgs.popup_window"
+                          v-model:dx12="nativeLaunchArgs.dx12"
+                          v-model:monitor="nativeLaunchArgs.monitor"
+                          v-model:advanced-arguments="nativeLaunchArgs.launch_argument_advance"
+                          :disabled="!nativeLaunchArgs.launch_argument"
+                          @save-screen-size="saveNativeLaunchArgsField('screen_size', $event)"
+                          @save-full-screen="saveNativeLaunchArgsField('full_screen', $event)"
+                          @save-popup-window="saveNativeLaunchArgsField('popup_window', $event)"
+                          @save-dx12="saveNativeLaunchArgsField('dx12', $event)"
+                          @save-monitor="saveNativeLaunchArgsField('monitor', $event)"
+                          @save-advanced-arguments="
+                            saveNativeLaunchArgsField('launch_argument_advance', $event)
                           "
                         />
-                      </a-form-item>
-                    </a-col>
-                  </a-row>
-                </template>
-              </a-collapse-panel>
-            </a-collapse>
-          </div>
-        </a-form>
-      </a-card>
-
-      <!-- ══ 任务配置（一条龙编排，紧跟基本信息）══ -->
-      <a-card class="config-card" style="margin-top: 24px">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>
-                {{ t('edit.zzzodOneDragonConfig') }}
-                <a-tooltip :title="t('edit.zzzodOneDragonConfigHint')">
-                  <QuestionCircleOutlined class="help-icon" />
-                </a-tooltip>
-              </h3>
-              <div class="section-header-actions">
-                <a-tooltip :title="t('edit.zzzodSortTasksHint')">
-                  <a-button size="small" class="restore-entry" @click="handleSortTasks">
-                    <template #icon><SortAscendingOutlined /></template>
-                    {{ t('edit.zzzodSortTasks') }}
-                  </a-button>
-                </a-tooltip>
-                <a-button size="small" class="restore-entry" @click="openRestoreModal">
-                  <template #icon><HistoryOutlined /></template>
-                  {{ t('edit.configRestoreTitle') }}
-                </a-button>
-              </div>
+                      </template>
+                      <a-empty v-else :description="t('core.edit.zzzodDirectPickInstanceFirst')" />
+                    </a-spin>
+                  </template>
+                  <!-- 用户：MAS 字段化启动参数（改动即时保存，运行时注入绑定槽） -->
+                  <template v-else>
+                    <ZzzodLaunchArgumentFields
+                      v-model:screen-size="formData.Game.ScreenSize"
+                      v-model:full-screen="formData.Game.FullScreen"
+                      v-model:popup-window="formData.Game.PopupWindow"
+                      v-model:dx12="formData.Game.Dx12"
+                      v-model:monitor="formData.Game.Monitor"
+                      v-model:advanced-arguments="formData.Game.LaunchArgumentAdvance"
+                      :disabled="!formData.Game.LaunchArgument"
+                      @save-screen-size="saveField('Game.ScreenSize', $event)"
+                      @save-full-screen="saveField('Game.FullScreen', $event)"
+                      @save-popup-window="saveField('Game.PopupWindow', $event)"
+                      @save-dx12="saveField('Game.Dx12', $event)"
+                      @save-monitor="saveField('Game.Monitor', $event)"
+                      @save-advanced-arguments="saveField('Game.LaunchArgumentAdvance', $event)"
+                    />
+                  </template>
+                </a-collapse-panel>
+              </a-collapse>
             </div>
+          </a-form>
+        </a-card>
 
-            <p class="section-desc">
-              {{
-                formData.Info.Base === 'native'
-                  ? t('edit.zzzodDirectTasksDesc')
-                  : t('edit.zzzodOneDragonDesc')
-              }}
-            </p>
+        <!-- ══ 任务配置（一条龙编排，紧跟基本信息）══ -->
+        <a-card class="config-card" style="margin-top: 24px">
+          <a-form :model="formData" layout="vertical" class="config-form">
+            <div class="form-section">
+              <ZzzodTaskBoard
+                :cards="formData.Info.Base === 'native' ? nativeTasks : taskCards"
+                :editable="!isInitializing && !pageLoading && !nativeLoading"
+                :saving="nativeSaving"
+                :editor="taskEditor"
+                :commit="commitTaskBoard"
+                :configure="handleZzzodConfig"
+                :restore="openRestoreModal"
+              >
+                <p class="section-desc">
+                  {{
+                    formData.Info.Base === 'native'
+                      ? t('core.edit.zzzodDirectTasksDesc')
+                      : t('core.edit.zzzodOneDragonDesc')
+                  }}
+                </p>
+              </ZzzodTaskBoard>
 
-            <draggable
-              v-model="taskDragCards"
-              item-key="app_id"
-              :animation="200"
-              ghost-class="task-card-ghost"
-              chosen-class="task-card-chosen"
-              drag-class="task-card-drag"
-              handle=".drag-handle"
-              :disabled="pageLoading || isInitializing || nativeSaving"
-              class="task-grid"
-              @end="handleTaskDragEnd"
-            >
-              <template #item="{ element: card }">
-                <div class="task-card" :class="{ inactive: !card.enabled }">
-                  <div class="task-card-main">
-                    <span
-                      class="drag-handle"
-                      :title="t('edit.zzzodDragSortHint')"
-                      :aria-label="t('edit.zzzodDragSortHint')"
-                    >
-                      <span class="drag-dots" aria-hidden="true"></span>
-                    </span>
-                    <span class="task-name" :title="card.app_name">{{ card.app_name }}</span>
-                    <div v-if="card.enabled" class="task-card-actions">
-                      <a-popover
-                        v-if="card.configurable"
-                        :open="taskPopoverOpen[card.app_id] === true"
-                        trigger="click"
-                        placement="top"
-                        @open-change="(o: boolean) => handleTaskPopoverChange(card, o)"
-                      >
-                        <template #content>
-                          <div
-                            v-for="f in taskConfigData[card.app_id] ?? []"
-                            :key="f.field"
-                            class="task-config-field"
-                          >
-                            <span class="task-config-field-title">{{ f.title }}</span>
-                            <a-select
-                              v-if="f.type === 'select' || f.type === 'team'"
-                              :value="f.value ?? undefined"
-                              size="small"
-                              style="min-width: 150px"
-                              @change="(v: any) => saveTaskConfigField(card, f, v)"
-                            >
-                              <a-select-option
-                                v-for="o in f.options"
-                                :key="o.value"
-                                :value="o.value"
-                              >
-                                {{ o.label }}
-                              </a-select-option>
-                            </a-select>
-                            <a-switch
-                              v-else-if="f.type === 'bool'"
-                              :checked="f.value === true"
-                              size="small"
-                              @change="(v: any) => saveTaskConfigField(card, f, v)"
-                            />
-                            <a-input-number
-                              v-else
-                              :value="f.value"
-                              size="small"
-                              style="min-width: 100px"
-                              @change="(v: any) => scheduleTaskConfigSave(card, f, v)"
-                              @blur="() => flushTaskConfigSave(card, f)"
-                            />
-                          </div>
-                        </template>
-                        <a-tooltip
-                          :title="t('edit.zzzodTaskConfigHint')"
-                          :open="taskTipVisible[card.app_id] === true"
-                          @open-change="(o: boolean) => (taskTipVisible[card.app_id] = o)"
-                        >
-                          <a-button
-                            size="small"
-                            type="text"
-                            class="task-config-gear"
-                            :loading="taskConfigLoading[card.app_id] === true"
-                            @click="taskTipVisible[card.app_id] = false"
-                          >
-                            <template #icon><SettingOutlined /></template>
-                          </a-button>
-                        </a-tooltip>
-                      </a-popover>
-                      <a-tooltip
-                        v-if="card.jump"
-                        :title="t('edit.zzzodTaskJumpHint')"
-                        :open="jumpTipVisible[card.app_id] === true"
-                        @open-change="(o: boolean) => (jumpTipVisible[card.app_id] = o)"
-                      >
-                        <a-button
-                          size="small"
-                          type="text"
-                          class="task-config-gear"
-                          @click="jumpFromTaskCard(card.app_id)"
-                        >
-                          <template #icon><ExportOutlined /></template>
-                        </a-button>
-                      </a-tooltip>
-                    </div>
-                    <div
-                      class="config-group-item-capsule"
-                      :class="{ active: card.enabled }"
-                      @click="toggleTask(card)"
-                    >
-                      <span class="config-group-item-dot"></span>
-                    </div>
-                  </div>
-                </div>
-              </template>
-            </draggable>
-
-            <!-- ══ 预备编队（独立组件：team.yml 固定 20 个编队，与一条龙编队页一致）══ -->
-            <ZzzOdPredefinedTeams
-              v-if="formData.Info.Base !== 'native' || nativeInstanceIdx !== null"
-              ref="teamsRef"
-              :script-id="scriptId"
-              :user-id="userId"
-              :instance-idx="formData.Info.Base === 'native' ? nativeInstanceIdx : null"
-            />
-          </div>
-        </a-form>
-      </a-card>
+              <!-- ══ 预备编队（独立组件：team.yml 固定 20 个编队，与一条龙编队页一致）══ -->
+              <ZzzOdPredefinedTeams
+                v-if="formData.Info.Base !== 'native' || nativeInstanceIdx !== null"
+                ref="teamsRef"
+                :script-id="scriptId"
+                :user-id="userId"
+                :instance-idx="formData.Info.Base === 'native' ? nativeInstanceIdx : null"
+              />
+            </div>
+          </a-form>
+        </a-card>
+      </a-config-provider>
 
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
@@ -1203,7 +628,7 @@
       <!-- ══ 配置恢复（通用组件：列表 / 预览 / 查看详细 / 一键恢复）══ -->
       <ConfigRestoreSection
         v-model:open="restoreOpen"
-        :disabled="configLocked"
+        :disabled="configLocked || nativeLoading"
         :script-name="ZZZOD_DISPLAY_NAME"
         :targets="restoreTargets"
         :api="restoreApi"
@@ -1214,86 +639,46 @@
       />
 
       <!-- ══ 任务计划编辑弹窗（体力刷本/恶名狩猎：计划列表 + 主配置）══ -->
-      <a-modal
-        v-model:open="planModal.open"
-        :title="planModal.title"
-        :width="760"
-        :confirm-loading="planModal.saving"
-        :mask-closable="false"
-        :body-style="{ maxHeight: '70vh', overflowY: 'auto' }"
-        @ok="savePlanModal"
-      >
-        <a-spin :spinning="planModal.loading">
-          <div class="plan-modal-body">
-            <ZzzOdPlanListEditor
-              v-if="planModalField"
-              v-model="planModal.draft"
-              :columns="planModalField.columns ?? []"
-              :new-item="planModalField.newItem ?? {}"
-              :train-categories="planModal.trainCategories"
-            />
-            <div v-for="f in planModalOtherFields" :key="f.field" class="plan-modal-field">
-              <span class="plan-modal-field-title">{{ f.title }}</span>
-              <a-switch
-                v-if="f.type === 'bool'"
-                :checked="f.value === true"
-                @change="(v: any) => (f.value = v)"
-              />
-              <a-input-number
-                v-else-if="f.type === 'number'"
-                :value="f.value"
-                style="min-width: 120px"
-                @change="(v: any) => (f.value = v)"
-              />
-              <a-select
-                v-else
-                :value="f.value ?? undefined"
-                :options="f.options"
-                style="min-width: 220px"
-                @change="(v: any) => (f.value = v)"
-              />
-            </div>
-          </div>
-        </a-spin>
-      </a-modal>
     </ConfigLockPanel>
   </div>
 </template>
 
 <script setup lang="ts">
+import ZzzodLaunchArgumentFields from './ZzzOdUserEdit/ZzzodLaunchArgumentFields.vue'
+import PathPickerField from '@/components/PathPickerField.vue'
+import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
+import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
+import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { useZzzodTaskConfig } from './ZzzOdUserEdit/useZzzodTaskConfig'
+import ZzzodTaskBoard from './ZzzOdUserEdit/ZzzodTaskBoard.vue'
+
+import { useZzzodNativeConfig } from './ZzzOdUserEdit/useZzzodNativeConfig'
+import ZzzodNativeAccountSection from './ZzzOdUserEdit/ZzzodNativeAccountSection.vue'
+import { pickZzzGameExe } from './ZzzOdUserEdit/pickZzzGameExe'
+import type { TaskCard, AfterDoneValue } from './ZzzOdUserEdit/zzzodTypes'
+
+import ZzzodInstancesManager from './ZzzOdUserEdit/ZzzodInstancesManager.vue'
+import { useZzzodInstances } from './ZzzOdUserEdit/useZzzodInstances'
+
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import {
   ArrowLeftOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  ExportOutlined,
   EyeOutlined,
   FolderOpenOutlined,
-  HistoryOutlined,
-  PlusOutlined,
   QuestionCircleOutlined,
   SettingOutlined,
-  SortAscendingOutlined,
 } from '@ant-design/icons-vue'
-import draggable from 'vuedraggable'
-import { useZzzOdTaskBoard, type ZzzOdTaskCard } from '@/composables/useZzzOdTaskBoard'
-import {
-  Service,
-  type ZzzOdInstanceOut,
-  type ZzzOdNativeAccountField,
-  type ZzzOdNativeConfigOut,
-  type ZzzOdUserConfig,
-  ZzzOdNativeLaunchArgs,
-} from '@/api'
+import { Service, type ZzzOdInstanceOut, type ZzzOdUserConfig } from '@/api'
+import { importZzzodInstance } from '@/composables/useAdapterSetupApi'
 import { buildCorruptedForceConfirm, corruptedForceConfirmContent } from '@/utils/configRestoreMode'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
-import ZzzOdPlanListEditor from '@/components/ZzzOdPlanListEditor.vue'
 import ZzzOdPredefinedTeams from '@/components/ZzzOdPredefinedTeams.vue'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -1315,7 +700,7 @@ const {
   openUserConfigFolder,
   loading: folderLoading,
 } = useUserApi()
-const { getScript } = useScriptApi()
+const { getScript, error: scriptApiError } = useScriptApi()
 
 const scriptId = route.params.scriptId as string
 
@@ -1326,7 +711,7 @@ const handleOpenFolder = async () => {
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
 const { configLocked } = useScriptConfigLock(() => scriptId)
-const scriptName = ref(t('edit.zzzodScriptFallbackName'))
+const scriptName = ref(t('core.edit.zzzodScriptFallbackName'))
 
 const pageLoading = ref(true)
 const isInitializing = ref(true)
@@ -1398,22 +783,18 @@ const formData = reactive<ZzzOdUserFormData>({
 
 // 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
 const pushLogModeOptions = [
-  { label: t('edit.pushLogModeOff'), value: '关闭' },
-  { label: t('edit.pushLogModeList'), value: '逐条' },
-  { label: t('edit.pushLogModeSummary'), value: '汇总' },
+  { label: t('core.edit.pushLogModeOff'), value: '关闭' },
+  { label: t('core.edit.pushLogModeList'), value: '逐条' },
+  { label: t('core.edit.pushLogModeSummary'), value: '汇总' },
 ]
 
 // 游戏结束后操作（value 为后端 OneDragon.AfterDone 取值，与一条龙原生「结束后」
 // 同词表；独立来源/共享来源模式经配置会话双向联动，原生来源直读写原生 after_done）
 const afterDoneOptions = [
-  { label: t('edit.zzzodAfterDoneNone'), value: '无' },
-  { label: t('edit.zzzodAfterDoneCloseGame'), value: '关闭游戏' },
-  { label: t('edit.zzzodAfterDoneShutdown'), value: '关机' },
+  { label: t('core.edit.zzzodAfterDoneNone'), value: '无' },
+  { label: t('core.edit.zzzodAfterDoneCloseGame'), value: '关闭游戏' },
+  { label: t('core.edit.zzzodAfterDoneShutdown'), value: '关机' },
 ]
-
-/** 「游戏结束后操作」按模式分流：原生来源写原生 after_done（与原生 GUI 同源），
- * 用户/脚本写 MAS 用户字段（该模式无原生实例概念） */
-type AfterDoneValue = NonNullable<NonNullable<ZzzOdUserConfig['OneDragon']>['AfterDone']>
 const afterDoneValue = computed<AfterDoneValue>({
   get: () =>
     formData.Info.Base === 'native'
@@ -1456,26 +837,26 @@ const configModeOptions: Array<{
   disabledReason?: string
 }> = [
   {
-    label: t('edit.script'),
+    label: t('core.edit.script'),
     value: 'shared',
-    title: t('edit.script'),
-    description: t('edit.useScriptS'),
+    title: t('core.edit.script'),
+    description: t('core.edit.useScriptS'),
     icon: 'database',
     disabled: true,
-    disabledReason: t('edit.scriptModeDisabled'),
+    disabledReason: t('core.edit.scriptModeDisabled'),
   },
   {
-    label: t('edit.zzzodModeUser'),
+    label: t('core.edit.zzzodModeUser'),
     value: 'independent',
-    title: t('edit.zzzodModeUser'),
-    description: t('edit.zzzodModeUserDesc'),
+    title: t('core.edit.zzzodModeUser'),
+    description: t('core.edit.zzzodModeUserDesc'),
     icon: 'database',
   },
   {
-    label: t('edit.directControl'),
+    label: t('core.edit.directControl'),
     value: 'native',
-    title: t('edit.directControl'),
-    description: t('edit.zzzodModeDirectDesc'),
+    title: t('core.edit.directControl'),
+    description: t('core.edit.zzzodModeDirectDesc'),
     icon: 'setting',
   },
 ]
@@ -1483,22 +864,22 @@ const configModeOptions: Array<{
 // 蓝色说明框随所选模式动态切换（只显示当前模式的行为，减少固定长文案）
 const configModeAlert = computed(() =>
   formData.Info.Base === 'native'
-    ? t('edit.zzzodConfigSourceDirectAlert')
-    : t('edit.zzzodConfigSourceUserAlert')
+    ? t('core.edit.zzzodConfigSourceDirectAlert')
+    : t('core.edit.zzzodConfigSourceUserAlert')
 )
 
 // ══ 区服 / 语言选项（value 为 zzz-od YAML 原生取值，驱动逻辑需保持原样）══
 const gameRegionOptions = [
-  { label: t('edit.zzzodRegionCn'), value: 'cn' },
-  { label: t('edit.zzzodRegionCnB'), value: 'cn_b' },
-  { label: t('edit.zzzodRegionUs'), value: 'us' },
-  { label: t('edit.zzzodRegionEu'), value: 'eu' },
-  { label: t('edit.zzzodRegionAsia'), value: 'asia' },
-  { label: t('edit.zzzodRegionTwHkMo'), value: 'twhkmo' },
+  { label: t('core.edit.zzzodRegionCn'), value: 'cn' },
+  { label: t('core.edit.zzzodRegionCnB'), value: 'cn_b' },
+  { label: t('core.edit.zzzodRegionUs'), value: 'us' },
+  { label: t('core.edit.zzzodRegionEu'), value: 'eu' },
+  { label: t('core.edit.zzzodRegionAsia'), value: 'asia' },
+  { label: t('core.edit.zzzodRegionTwHkMo'), value: 'twhkmo' },
 ]
 const gameLanguageOptions = [
-  { label: t('edit.zzzodLanguageCn'), value: 'cn' },
-  { label: t('edit.zzzodLanguageEn'), value: 'en' },
+  { label: t('core.edit.zzzodLanguageCn'), value: 'cn' },
+  { label: t('core.edit.zzzodLanguageEn'), value: 'en' },
 ]
 // options 表派生 value→label 映射（备份预览反显共用，避免枚举双份维护）
 const gameRegionLabels: Record<string, string> = Object.fromEntries(
@@ -1509,21 +890,6 @@ const gameLanguageLabels: Record<string, string> = Object.fromEntries(
 )
 
 // ══ 一条龙启动参数（value 为 zzz-od game.yml 原生取值；全屏/显示器落盘为字符串）══
-const screenSizeOptions = [
-  { label: '1920x1080', value: '1920x1080' },
-  { label: '2560x1440', value: '2560x1440' },
-  { label: '3840x2160', value: '3840x2160' },
-]
-const fullScreenOptions = [
-  { label: t('edit.zzzodFullScreenWindowed'), value: '0' },
-  { label: t('edit.zzzodFullScreenFullscreen'), value: '1' },
-]
-const monitorOptions = [
-  { label: '1', value: '1' },
-  { label: '2', value: '2' },
-  { label: '3', value: '3' },
-  { label: '4', value: '4' },
-]
 
 // DX12 是独立开关字段（Game.Dx12 / nativeLaunchArgs.dx12）：与分辨率等参数同级，
 // 注入/写回时由后端把 -use-d3d12 合并进一条龙的高级参数，不在前端操作文本框
@@ -1542,7 +908,7 @@ const handleNameBlur = async () => {
         String((user as { Info?: { Name?: string } })?.Info?.Name ?? '').trim() === name
     )
     if (duplicate) {
-      message.error(t('edit.zzzodDuplicateUserName'))
+      message.error(t('core.edit.zzzodDuplicateUserName'))
       return
     }
   } catch (e) {
@@ -1557,7 +923,7 @@ const createUserImmediately = async (): Promise<boolean> => {
 
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
-    message.error(userApiError.value || t('edit.couldNotCreateUser'))
+    message.error(userApiError.value || t('core.edit.couldNotCreateUser'))
     handleCancel()
     return false
   }
@@ -1610,6 +976,7 @@ const saveField = (key: string, value: unknown): Promise<boolean> => {
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['independent', 'native'].includes(value)) return
   const prev = formData.Info.Base
+  await flushPendingSaves()
   if (value === 'native' && prev !== 'native') {
     // 每脚本仅允许一个原生来源用户：原生来源是脚本级全局视图（实例/活跃/运行实例
     // 都是一份 one_dragon.yml），多原生来源用户共享状态互相干扰
@@ -1622,15 +989,15 @@ const handleConfigModeChange = async (value: boolean | string) => {
       )
       if (hasOtherDirect) {
         formData.Info.Base = prev
-        message.error(t('edit.zzzodDirectModeLimit'))
+        message.error(t('core.edit.zzzodDirectModeLimit'))
         return
       }
     } catch (e) {
       logger.warn(e instanceof Error ? e.message : String(e))
     }
   }
+  if (!(await saveField('Info.Base', value))) return
   formData.Info.Base = value as 'shared' | 'independent' | 'native'
-  await saveField('Info.Base', formData.Info.Base)
   if (value === 'native') {
     // 进入原生来源：公共初始化（备份 + 默认实例 + 加载原生配置）
     await enterDirectMode()
@@ -1656,13 +1023,13 @@ const ensurePoolBackup = async (target: string): Promise<void> => {
   if (!userId.value) return
   try {
     const resp = await ensureConfigBackup(target)
-    if (resp.code !== 200) throw new Error(resp.message || t('edit.zzzodBackupFailed'))
+    if (resp.code !== 200) throw new Error(resp.message || t('core.edit.zzzodBackupFailed'))
   } catch (e) {
     // 备份失败不阻断使用，但向用户提示（防止误以为有恢复点）；
     // 后端诊断（配置损坏时含损坏位置）附加展示，便于用户自愈
     const detail = e instanceof Error ? e.message : String(e)
     logger.warn(detail)
-    message.warning(`${t('edit.zzzodBackupFailed')}（${detail}）`)
+    message.warning(`${t('core.edit.zzzodBackupFailed')}（${detail}）`)
   }
 }
 
@@ -1685,222 +1052,15 @@ const enterDirectMode = async () => {
   }
 }
 
-// ══ 实例列表（原生来源「选择实例」来源）══
-const instances = ref<ZzzOdInstanceOut[]>([])
-const instancesLoading = ref(false)
-
-const instanceOptions = computed(() =>
-  instances.value.map(item => ({
-    label: `${String(item.idx).padStart(2, '0')} - ${item.name}`,
-    value: item.idx,
-  }))
-)
+const { instances, instancesLoading, instanceOptions, loadInstances } = useZzzodInstances(scriptId)
+const updateInstances = (items: ZzzOdInstanceOut[]) => {
+  instances.value = items
+}
 
 // 导入母版与原生来源实例选择独立；后端另按原生注册表校验来源。
 const importInstanceOptions = computed(() =>
   instanceOptions.value.filter(item => item.value !== formData.Info.SlotIdx)
 )
-
-const loadInstances = async () => {
-  instancesLoading.value = true
-  try {
-    const resp = await Service.getZzzodInstancesApiApiScriptsZzzodInstancesGet(scriptId)
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodLoadInstancesFailed'))
-    }
-    instances.value = resp.data || []
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-  } finally {
-    instancesLoading.value = false
-  }
-}
-
-// ══ 实例管理（原生来源：添加 / 重命名 / 删除 / 参与「全部实例」开关，实时写回 one_dragon.yml）══
-const instanceName = ref('')
-const addInstanceOpen = ref(false)
-const renameInstanceOpen = ref(false)
-const renameTarget = ref<ZzzOdInstanceOut | null>(null)
-const instanceOpLoading = ref(false)
-
-const openAddInstance = () => {
-  instanceName.value = ''
-  addInstanceOpen.value = true
-}
-
-const confirmAddInstance = async () => {
-  if (configLocked.value) return
-  const name = instanceName.value.trim()
-  if (!name) {
-    message.error(t('edit.zzzodInstanceNameRequired'))
-    return
-  }
-  instanceOpLoading.value = true
-  try {
-    const resp = await Service.addZzzodInstanceApiApiScriptsZzzodInstancesAddPost({
-      scriptId,
-      name,
-    })
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodAddInstanceFailed'))
-    }
-    instances.value = resp.data || []
-    addInstanceOpen.value = false
-    // 选中新实例并加载其原生配置（账号/任务区跟随切换）
-    const added = [...instances.value].reverse().find(item => item.name === name)
-    if (added) {
-      nativeInstanceIdx.value = added.idx
-      await loadNativeConfig(added.idx)
-    }
-    message.success(t('edit.zzzodAddInstanceSuccess'))
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodAddInstanceFailed'))
-  } finally {
-    instanceOpLoading.value = false
-  }
-}
-
-const openRenameInstance = (inst: ZzzOdInstanceOut) => {
-  renameTarget.value = inst
-  instanceName.value = inst.name
-  renameInstanceOpen.value = true
-}
-
-const confirmRenameInstance = async () => {
-  if (configLocked.value) return
-  const target = renameTarget.value
-  const name = instanceName.value.trim()
-  if (!target || !name) {
-    message.error(t('edit.zzzodInstanceNameRequired'))
-    return
-  }
-  instanceOpLoading.value = true
-  try {
-    const resp = await Service.renameZzzodInstanceApiApiScriptsZzzodInstancesRenamePost({
-      scriptId,
-      instanceIdx: target.idx,
-      name,
-    })
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodRenameInstanceFailed'))
-    }
-    instances.value = resp.data || []
-    renameInstanceOpen.value = false
-    renameTarget.value = null
-    message.success(t('edit.zzzodRenameInstanceSuccess'))
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodRenameInstanceFailed'))
-  } finally {
-    instanceOpLoading.value = false
-  }
-}
-
-const openDeleteInstance = (inst: ZzzOdInstanceOut) => {
-  Modal.confirm({
-    title: t('edit.zzzodDeleteInstance'),
-    content: h(
-      'p',
-      { style: { color: 'var(--ant-color-error)', margin: 0 } },
-      t('edit.zzzodDeleteInstanceConfirm', {
-        inst: `${String(inst.idx).padStart(2, '0')} - ${inst.name}`,
-      })
-    ),
-    okText: t('edit.zzzodDeleteInstance'),
-    okButtonProps: { danger: true },
-    onOk: () => deleteInstance(inst),
-  })
-}
-
-const deleteInstance = async (inst: ZzzOdInstanceOut) => {
-  if (configLocked.value) return
-  instanceOpLoading.value = true
-  try {
-    const resp = await Service.deleteZzzodInstanceApiApiScriptsZzzodInstancesDeletePost({
-      scriptId,
-      instanceIdx: inst.idx,
-    })
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodDeleteInstanceFailed'))
-    }
-    instances.value = resp.data || []
-    if (nativeInstanceIdx.value === inst.idx) {
-      // 所选实例被删：清空原生配置编辑区（运行实例是全局设置，不重置）
-      nativeInstanceIdx.value = null
-      nativeAccountFields.value = []
-      Object.keys(nativeAccountValues).forEach(k => delete nativeAccountValues[k])
-      nativeTasks.value = []
-    }
-    message.success(t('edit.zzzodDeleteInstanceSuccess'))
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodDeleteInstanceFailed'))
-  } finally {
-    instanceOpLoading.value = false
-  }
-}
-
-const toggleInstanceActiveInOd = async (inst: ZzzOdInstanceOut, value: boolean) => {
-  if (configLocked.value) return
-  try {
-    const resp = await Service.setZzzodInstanceActiveInOdApiApiScriptsZzzodInstancesActiveInOdPost({
-      scriptId,
-      instanceIdx: inst.idx,
-      activeInOd: value,
-    })
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodInstanceFlagFailed'))
-    }
-    instances.value = resp.data || []
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodInstanceFlagFailed'))
-  }
-}
-
-/** 切换实例「运行前切换账号」：一条龙原生能力（force_login_before_run），MAS 不干涉 */
-const toggleInstanceForceLogin = async (inst: ZzzOdInstanceOut, value: boolean) => {
-  if (configLocked.value) return
-  try {
-    const resp = await Service.setZzzodInstanceForceLoginApiApiScriptsZzzodInstancesForceLoginPost({
-      scriptId,
-      instanceIdx: inst.idx,
-      forceLogin: value,
-    })
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodInstanceForceLoginFailed'))
-    }
-    instances.value = resp.data || []
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodInstanceForceLoginFailed'))
-  }
-}
-
-/** 运行前切换账号/多账号切换需要完整登录信息；B服实例用 B服账号名，其余用账号+密码 */
-const isRequiredAccountKey = (key: string) => {
-  if (nativeAccountValues.game_region === 'cn_b') {
-    return key === 'bilibili_account_name'
-  }
-  return key === 'account' || key === 'password'
-}
-
-/** 显式设为当前活跃：「仅运行当前」运行时跑的就是它；原生来源页编辑不自动改活跃 */
-const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
-  if (configLocked.value) return
-  instanceOpLoading.value = true
-  try {
-    const resp = await Service.setZzzodActiveInstanceApiApiScriptsZzzodInstancesSetActivePost({
-      scriptId,
-      instanceIdx: inst.idx,
-    })
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodSetActiveInstanceFailed'))
-    }
-    instances.value = resp.data || []
-    message.success(t('edit.zzzodSetInstanceActiveSuccess', { name: inst.name }))
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodSetActiveInstanceFailed'))
-  } finally {
-    instanceOpLoading.value = false
-  }
-}
 
 // ══ 快速导入配置：左侧母版下拉 + 右侧导入按钮共同构成导入功能 ══
 // 当前选中的母版（来源）实例；导入成功后复位
@@ -1926,9 +1086,9 @@ const teamsRef = ref<InstanceType<typeof ZzzOdPredefinedTeams> | null>(null)
 const confirmImport = () => {
   if (importSourceIdx.value === null || configLocked.value) return
   Modal.confirm({
-    title: t('edit.zzzodImportConfirmTitle'),
-    content: t('edit.zzzodImportConfirmDesc'),
-    okText: t('edit.zzzodImport'),
+    title: t('core.edit.zzzodImportConfirmTitle'),
+    content: t('core.edit.zzzodImportConfirmDesc'),
+    okText: t('core.edit.zzzodImport'),
     onOk: () => importFromInstance(),
   })
 }
@@ -1939,22 +1099,20 @@ const importFromInstance = async () => {
   if (sourceIdx === null || !userId.value) return
   importLoading.value = true
   try {
-    const resp = await Service.importZzzodConfigApiApiScriptsZzzodImportPost({
+    await flushPendingSaves()
+    await importZzzodInstance({
       scriptId,
       userId: userId.value,
       instanceIdx: sourceIdx,
     })
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodImportFailed'))
-    }
     importSourceIdx.value = null
     // 后端已写入账号字段、任务编排与实例级配置（含预备编队），
     // 重新拉取让表单与后端一致，预备编队组件一并强制刷新
     await loadUserData()
     teamsRef.value?.reload()
-    message.success(t('edit.zzzodImportSuccess'))
+    message.success(t('core.edit.zzzodImportSuccess'))
   } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodImportFailed'))
+    message.error(e instanceof Error ? e.message : t('core.edit.zzzodImportFailed'))
   } finally {
     importLoading.value = false
   }
@@ -1977,7 +1135,7 @@ const loadLaunchers = async () => {
   try {
     const resp = await Service.getZzzodLaunchersApiApiScriptsZzzodLaunchersGet(scriptId)
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodLauncherLoadFailed'))
+      throw new Error(resp.message || t('core.edit.zzzodLauncherLoadFailed'))
     }
     launcherOriginal.value = resp.original_available
     launcherIntegrated.value = resp.integrated_available
@@ -1989,35 +1147,27 @@ const loadLaunchers = async () => {
   }
 }
 
-// ══ 原生来源：所选实例的原生配置（强绑定一条龙原始 YAML，页面即改原生）══
-const nativeInstanceIdx = ref<number | null>(null)
-// 运行实例（value 为一条龙原生中文取值，label 走词表；初始值对齐上游
-// InstanceRun.ALL 默认，加载后由后端返回值覆盖）
-const nativeInstanceRun = ref('全部实例')
-// 原生来源下「游戏结束后操作」读写的是一条龙原生 after_done（UI 与原生 GUI
-// 同源，改哪边另一边都同步）；独立来源/共享来源模式走 MAS 用户字段（会话双向联动）
-const nativeAfterDone = ref<AfterDoneValue>('无')
-const instanceRunOptions = [
-  { label: t('edit.zzzodInstanceRunCurrent'), value: '仅运行当前' },
-  { label: t('edit.zzzodInstanceRunAll'), value: '全部实例' },
-]
-const nativeLoading = ref(false)
-const nativeSaving = ref(false)
-const nativeAccountFields = ref<ZzzOdNativeAccountField[]>([])
-const nativeAccountValues = reactive<Record<string, string>>({})
-const nativeTasks = ref<TaskCard[]>([])
-
-// 原生来源启动参数（game.yml 字段 + dx12 开关；改动即时整组提交，与其他区块解耦）
-const getDefaultLaunchArgs = (): ZzzOdNativeLaunchArgs => ({
-  launch_argument: false,
-  screen_size: ZzzOdNativeLaunchArgs.screen_size._1920X1080,
-  full_screen: ZzzOdNativeLaunchArgs.full_screen._0,
-  popup_window: false,
-  dx12: false,
-  monitor: ZzzOdNativeLaunchArgs.monitor._1,
-  launch_argument_advance: '',
-})
-const nativeLaunchArgs = reactive<ZzzOdNativeLaunchArgs>(getDefaultLaunchArgs())
+const {
+  nativeInstanceIdx,
+  nativeInstanceRun,
+  nativeAfterDone,
+  instanceRunOptions,
+  nativeLoading,
+  nativeSaving,
+  nativeAccountFields,
+  nativeAccountValues,
+  nativeTasks,
+  nativeLaunchArgs,
+  loadNativeConfig,
+  runModeSaving,
+  handleNativeInstanceRunChange,
+  toNativeTaskIn,
+  saveNativeConfig,
+  saveNativeLaunchArgsField,
+  saveNativeAccount,
+  flushNativeSaves,
+  hasPendingNativeSaves,
+} = useZzzodNativeConfig(scriptId, configLocked, () => formData.Info.Base === 'native')
 
 // 启动参数折叠区：总开关开 → 自动展开，关 → 自动收起；手动展开/收起保持到
 // 开关下次变化（watch 只在来源值变化时触发，手动的 activeKey 不会被覆盖）
@@ -2030,189 +1180,6 @@ watch(
   },
   { immediate: true }
 )
-
-const applyNativeConfig = (data: ZzzOdNativeConfigOut) => {
-  nativeAccountFields.value = data.account ?? []
-  const values: Record<string, string> = {}
-  for (const f of data.account ?? []) {
-    if (f.value != null) values[f.key] = String(f.value)
-  }
-  Object.keys(nativeAccountValues).forEach(k => delete nativeAccountValues[k])
-  Object.assign(nativeAccountValues, values)
-  Object.assign(nativeLaunchArgs, getDefaultLaunchArgs(), data.launchArgs ?? {})
-  nativeInstanceRun.value = data.instanceRun || '全部实例'
-  nativeAfterDone.value = (data.afterDone as AfterDoneValue) || '无'
-  nativeTasks.value = toTaskCards(data.tasks ?? [])
-}
-
-const loadNativeConfig = async (instanceIdx: number) => {
-  nativeLoading.value = true
-  try {
-    const resp = await Service.getZzzodNativeConfigApiApiScriptsZzzodNativeConfigGet(
-      scriptId,
-      instanceIdx
-    )
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodNativeLoadFailed'))
-    }
-    applyNativeConfig(resp)
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodNativeLoadFailed'))
-    nativeAccountFields.value = []
-    nativeTasks.value = []
-    nativeAfterDone.value = '无'
-  } finally {
-    nativeLoading.value = false
-  }
-}
-
-const handleNativeInstanceChange = async (instanceIdx: number) => {
-  if (instanceIdx == null) {
-    nativeAccountFields.value = []
-    nativeTasks.value = []
-    return
-  }
-  await loadNativeConfig(instanceIdx)
-}
-
-/** 运行实例（仅运行当前/全部启用实例）是 one_dragon.yml 全局设置，
- * 与原生来源页当前编辑哪个实例无关，独立保存 */
-const runModeSaving = ref(false)
-const handleNativeInstanceRunChange = async () => {
-  if (configLocked.value) return
-  runModeSaving.value = true
-  try {
-    const resp = await Service.setZzzodInstanceRunModeApiApiScriptsZzzodInstancesRunModePost({
-      scriptId,
-      instanceRun: nativeInstanceRun.value,
-    })
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodNativeSaveFailed'))
-    }
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodNativeSaveFailed'))
-  } finally {
-    runModeSaving.value = false
-  }
-}
-
-/** 原生来源按需保存：只提交指定区块并只回读该区块。
- *
- *  - 账号字段（「保存设置」按钮）：全量提交 account + tasks + instanceRun；
- *  - 任务开关/排序、运行实例：即时增量提交对应字段——不把未保存的账号
- *    草稿一并落盘或覆盖。
- */
-type NativeSaveSection = 'all' | 'tasks' | 'launchArgs' | 'afterDone'
-/** 提交给后端的任务条目（后端只认 app_id/enabled） */
-const toNativeTaskIn = (list: TaskCard[]): { app_id: string; enabled: boolean }[] =>
-  list.map(t => ({ app_id: t.app_id, enabled: !!t.enabled }))
-
-/** 后端任务条目 → 卡片（加载与保存回读共用） */
-const toTaskCards = (tasks: NonNullable<ZzzOdNativeConfigOut['tasks']>) =>
-  tasks.map(
-    t =>
-      ({
-        app_id: t.app_id,
-        app_name: t.app_name,
-        enabled: !!t.enabled,
-        configurable: t.configurable,
-        jump: t.jump,
-      }) as TaskCard
-  )
-const saveNativeConfig = async (
-  payload: {
-    account?: Record<string, string>
-    tasks?: { app_id: string; enabled: boolean }[]
-    instanceRun?: string
-    afterDone?: string
-    launchArgs?: ZzzOdNativeLaunchArgs
-  },
-  section: NativeSaveSection = 'all',
-  silent = false
-): Promise<boolean> => {
-  if (configLocked.value) {
-    message.error(t('edit.configLocked'))
-    return false
-  }
-  if (nativeInstanceIdx.value === null) return false
-  nativeSaving.value = true
-  try {
-    const resp = await Service.saveZzzodNativeConfigApiApiScriptsZzzodNativeConfigSavePost({
-      scriptId,
-      instanceIdx: nativeInstanceIdx.value,
-      ...payload,
-    })
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodNativeSaveFailed'))
-    }
-    if (section === 'tasks') {
-      nativeTasks.value = toTaskCards(resp.tasks ?? [])
-    } else if (section === 'launchArgs') {
-      Object.assign(nativeLaunchArgs, getDefaultLaunchArgs(), resp.launchArgs ?? {})
-    } else if (section === 'afterDone') {
-      nativeAfterDone.value = (resp.afterDone as AfterDoneValue) || '无'
-    } else {
-      applyNativeConfig(resp)
-    }
-    if (!silent) message.success(t('edit.zzzodNativeSaved'))
-    return true
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodNativeSaveFailed'))
-    return false
-  } finally {
-    nativeSaving.value = false
-  }
-}
-
-/** 原生来源启动参数：单字段即时提交（只发变更字段，读-改-写由后端持锁完成）。
- *
- * 不发全量：并发点不同开关时，全量会携带其他字段的旧值，串行写盘后后者
- * 覆盖前者已落盘的字段（丢更新）；单字段提交 + 后端「值未变跳过」语义
- * 才能让并发保存各落各的字段。
- */
-const saveNativeLaunchArgsField = (key: keyof ZzzOdNativeLaunchArgs, value: unknown) => {
-  ;(nativeLaunchArgs as Record<string, unknown>)[key] = value
-  return saveNativeConfig(
-    { launchArgs: { [key]: value } as ZzzOdNativeLaunchArgs },
-    'launchArgs',
-    true
-  )
-}
-
-/** 「保存设置」：账号字段全量写回（连同当前任务编排与运行实例，保持表单一致） */
-const saveNativeAccount = () =>
-  saveNativeConfig(
-    {
-      account: { ...nativeAccountValues },
-      tasks: toNativeTaskIn(nativeTasks.value),
-      instanceRun: nativeInstanceRun.value,
-      afterDone: nativeAfterDone.value,
-    },
-    'all'
-  )
-
-/** 弹出文件选择并校验为 ZenlessZoneZero.exe，取消/选错返回 null（两处共用） */
-const pickZzzGameExe = async (): Promise<string | null> => {
-  const paths = await window.electronAPI?.selectFile([
-    {
-      name: 'ZenlessZoneZero.exe',
-      extensions: ['exe'],
-    },
-  ])
-  const path = paths?.[0]
-  if (!path) return null
-  const fileName = path.split(/[\\/]/).pop()
-  if (fileName?.toLowerCase() !== 'zenlesszonezero.exe') {
-    message.error(t('edit.zzzodPickGameExe'))
-    return null
-  }
-  return path
-}
-
-const selectDirectGamePath = async () => {
-  const path = await pickZzzGameExe()
-  if (path) nativeAccountValues.game_path = path
-}
 
 // ══ 任务目录（中文名渲染；一条龙系列 = zzz-od 默认编组应用）══
 interface ZzzOdCatalogItem {
@@ -2230,7 +1197,7 @@ const loadCatalog = async () => {
   try {
     const resp = await Service.getZzzodCatalogApiApiScriptsZzzodCatalogGet(scriptId)
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodLoadOneDragonFailed'))
+      throw new Error(resp.message || t('core.edit.zzzodLoadOneDragonFailed'))
     }
     catalog.value = resp.data || []
   } catch (e) {
@@ -2238,224 +1205,42 @@ const loadCatalog = async () => {
   }
 }
 
-// ══ 任务卡片 ⚙：可配置任务弹出选项编辑（数据驱动元数据表）══
-// 字段类型决定渲染：select/team 下拉 / bool 开关 / number 数字；
-// plan_list（体力刷本/恶名狩猎）不走弹层，⚙ 打开计划编辑弹窗
-interface TaskConfigField {
-  field: string
-  title: string
-  type: 'select' | 'bool' | 'number' | 'team' | 'plan_list'
-  value: any
-  options: { label: string; value: string }[]
-  columns?: any[]
-  newItem?: Record<string, any>
-}
-
-const taskConfigData = ref<Record<string, TaskConfigField[]>>({})
-const taskConfigLoading = ref<Record<string, boolean>>({})
-const taskPopoverOpen = ref<Record<string, boolean>>({})
-// 提示框受控：点击按钮后隐藏，避免盖住弹出的选项框（再次悬停恢复）
-const taskTipVisible = ref<Record<string, boolean>>({})
-const jumpTipVisible = ref<Record<string, boolean>>({})
-
-const setTaskLoading = (appId: string, loading: boolean) => {
-  taskConfigLoading.value = { ...taskConfigLoading.value, [appId]: loading }
-}
-
-const setPopoverOpen = (appId: string, open: boolean) => {
-  taskPopoverOpen.value = { ...taskPopoverOpen.value, [appId]: open }
-}
-
-/** 拉取任务配置字段（原生来源读所选实例原生 yml；独立来源读绑定槽） */
-const loadTaskConfig = async (card: TaskCard): Promise<TaskConfigField[]> => {
-  const instanceIdx = formData.Info.Base === 'native' ? nativeInstanceIdx.value : null
-  const resp = await Service.getZzzodAppConfigApiApiScriptsZzzodAppConfigGet(
-    scriptId,
-    userId.value,
-    card.app_id,
-    instanceIdx
-  )
-  if (resp.code !== 200) {
-    throw new Error(resp.message || t('edit.zzzodTaskConfigLoadFailed'))
-  }
-  const fields = (resp.fields ?? []) as TaskConfigField[]
-  taskConfigData.value = { ...taskConfigData.value, [card.app_id]: fields }
-  return fields
-}
-
-/** ⚙ 点击（popover 受控模式）：plan_list 或字段较多（大设置）打开编辑弹窗，否则弹出层 */
-const handleTaskPopoverChange = async (card: TaskCard, open: boolean) => {
-  if (!open) {
-    setPopoverOpen(card.app_id, false)
-    return
-  }
-  // 隐藏悬停提示，避免盖住弹出的选项框
-  taskTipVisible.value = { ...taskTipVisible.value, [card.app_id]: false }
-  setTaskLoading(card.app_id, true)
-  try {
-    const fields = await loadTaskConfig(card)
-    const useModal = fields.some(f => f.type === 'plan_list') || fields.length > 6
-    if (useModal) {
-      void openPlanModal(card, fields)
-    } else {
-      setPopoverOpen(card.app_id, true)
-    }
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodTaskConfigLoadFailed'))
-  } finally {
-    setTaskLoading(card.app_id, false)
-  }
-}
-
-/** 数值框保存策略：@change 防抖合并（stepper 连点/长按自动步进/键入各合并
- * 为一次请求），失焦立即落盘待保存值；清空/纯空白/值未变由
- * saveTaskConfigField 守卫拦下 */
-const TASK_CONFIG_SAVE_DELAY = 600
-interface PendingTaskConfigSave {
-  timer: ReturnType<typeof setTimeout>
-  card: TaskCard
-  field: TaskConfigField
-  value: any
-}
-const taskConfigPending = new Map<string, PendingTaskConfigSave>()
-
-const taskConfigKey = (card: TaskCard, field: TaskConfigField) => `${card.app_id}::${field.field}`
-
-const scheduleTaskConfigSave = (card: TaskCard, field: TaskConfigField, value: any) => {
-  const key = taskConfigKey(card, field)
-  const existing = taskConfigPending.get(key)
-  if (existing) clearTimeout(existing.timer)
-  const timer = setTimeout(() => {
-    taskConfigPending.delete(key)
-    void saveTaskConfigField(card, field, value)
-  }, TASK_CONFIG_SAVE_DELAY)
-  taskConfigPending.set(key, { timer, card, field, value })
-}
-
-const flushTaskConfigSave = (card: TaskCard, field: TaskConfigField) => {
-  const pending = taskConfigPending.get(taskConfigKey(card, field))
-  if (!pending) return
-  clearTimeout(pending.timer)
-  taskConfigPending.delete(taskConfigKey(card, field))
-  void saveTaskConfigField(pending.card, pending.field, pending.value)
-}
-
-const flushAllTaskConfigSaves = () => {
-  for (const pending of [...taskConfigPending.values()]) {
-    clearTimeout(pending.timer)
-    void saveTaskConfigField(pending.card, pending.field, pending.value)
-  }
-  taskConfigPending.clear()
-}
-
-const saveTaskConfigField = async (
-  card: TaskCard,
-  field: TaskConfigField,
-  value: any
-): Promise<boolean> => {
-  if (configLocked.value) {
-    message.error(t('edit.configLocked'))
-    return false
-  }
-  // 数值框清空（change 拿到 null/空串/纯空白）与 NaN 一律不发请求（后端
-  // int(null/'' ) 报 400）；值未变跳过——Tab 经过或步进回原值时不发多余请求
-  if (value === null || value === undefined || Number.isNaN(value)) return false
-  if (typeof value === 'string' && value.trim() === '') return false
-  if (Number(value) === Number(field.value)) return false
-  try {
-    const resp = await Service.saveZzzodAppConfigApiApiScriptsZzzodAppConfigSavePost({
-      scriptId,
-      userId: userId.value,
-      appId: card.app_id,
-      values: { [field.field]: value },
-      instanceIdx: formData.Info.Base === 'native' ? nativeInstanceIdx.value : undefined,
-    })
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodTaskConfigSaveFailed'))
-    }
-    field.value = value
-    message.success(t('edit.zzzodTaskConfigSaved'))
-    return true
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodTaskConfigSaveFailed'))
-    return false
-  }
-}
-
-// ══ 任务计划编辑弹窗（plan_list 大设置）══
-const planModal = reactive({
-  open: false,
-  loading: false,
-  saving: false,
-  appId: '',
-  title: '',
-  fields: [] as TaskConfigField[],
-  draft: [] as Record<string, any>[],
-  trainCategories: [] as any[],
+const taskEditor = useZzzodTaskConfig({
+  scriptId,
+  userId,
+  nativeMode: () => formData.Info.Base === 'native',
+  instanceIdx: nativeInstanceIdx,
+  locked: configLocked,
 })
-
-const planModalField = computed(() => planModal.fields.find(f => f.type === 'plan_list') ?? null)
-const planModalOtherFields = computed(() => planModal.fields.filter(f => f.type !== 'plan_list'))
-
-const openPlanModal = async (card: TaskCard, fields?: TaskConfigField[]) => {
-  planModal.appId = card.app_id
-  planModal.title = card.app_name
-  planModal.open = true
-  planModal.loading = true
-  try {
-    const loaded = fields ?? (await loadTaskConfig(card))
-    planModal.fields = loaded
-    const planField = loaded.find(f => f.type === 'plan_list')
-    planModal.draft = ((planField?.value as any[]) ?? []).map(p => ({ ...p }))
-    if (planField) {
-      const resp = await Service.getZzzodTaskOptionsApiApiScriptsZzzodOptionsGet(
-        scriptId,
-        card.app_id
+const instanceWrites = new Set<Promise<unknown>>()
+const trackInstanceWrite = <T>(operation: () => Promise<T>): Promise<T> => {
+  const run = operation()
+  instanceWrites.add(run)
+  const done = () => {
+    instanceWrites.delete(run)
+  }
+  void run.then(done, done)
+  return run
+}
+const flushPendingSaves = async () => {
+  let tail: Promise<boolean>
+  do {
+    tail = saveChain
+    await Promise.all(
+      [tail, flushNativeSaves(), taskEditor.flushAllTaskConfigSaves(), ...instanceWrites].map(run =>
+        run.catch(() => undefined)
       )
-      if (resp.code !== 200) {
-        throw new Error(resp.message || t('edit.zzzodTaskConfigLoadFailed'))
-      }
-      planModal.trainCategories = resp.trainCategories ?? []
-    }
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodTaskConfigLoadFailed'))
-    planModal.open = false
-  } finally {
-    planModal.loading = false
-  }
+    )
+  } while (
+    tail !== saveChain ||
+    hasPendingNativeSaves() ||
+    taskEditor.hasPendingSaves() ||
+    instanceWrites.size
+  )
 }
-
-/** 弹窗保存：plan_list 提交整表（后端按 plan_id 保留已运行进度），其余字段提交当前值 */
-const savePlanModal = async () => {
-  if (configLocked.value) return
-  planModal.saving = true
-  try {
-    const values: Record<string, any> = {}
-    for (const f of planModal.fields) {
-      if (f.type === 'plan_list') {
-        values[f.field] = planModal.draft.map(({ __key, ...rest }) => rest)
-      } else {
-        values[f.field] = f.value
-      }
-    }
-    const resp = await Service.saveZzzodAppConfigApiApiScriptsZzzodAppConfigSavePost({
-      scriptId,
-      userId: userId.value,
-      appId: planModal.appId,
-      values,
-      instanceIdx: formData.Info.Base === 'native' ? nativeInstanceIdx.value : undefined,
-    })
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodTaskConfigSaveFailed'))
-    }
-    planModal.open = false
-    message.success(t('edit.zzzodTaskConfigSaved'))
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodTaskConfigSaveFailed'))
-  } finally {
-    planModal.saving = false
-  }
-}
+onBeforeRouteLeave(async () => {
+  await flushPendingSaves()
+})
 
 // ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
 // 专项统一名（文案参数化用）：zzz-od 统一叫「一条龙」，其他适配器各自传自己的名字
@@ -2470,14 +1255,14 @@ const restoreTargets: Array<{ key: 'mas' | 'onedragon'; kind: 'user' | 'script' 
 
 // 预览字段标签（组件展示账号明细用）
 const previewFieldLabels: Record<string, string> = {
-  game_region: t('edit.zzzodGameRegion'),
-  game_path: t('edit.zzzodGamePath'),
-  game_language: t('edit.zzzodGameLanguage'),
-  account: t('edit.zzzodAccount'),
-  password: t('edit.password'),
-  bilibili_account_name: t('edit.zzzodBilibiliAccount'),
-  use_custom_win_title: t('edit.zzzodUseCustomWinTitle'),
-  custom_win_title: t('edit.zzzodCustomWinTitle'),
+  game_region: t('core.edit.zzzodGameRegion'),
+  game_path: t('core.edit.zzzodGamePath'),
+  game_language: t('core.edit.zzzodGameLanguage'),
+  account: t('core.edit.zzzodAccount'),
+  password: t('core.edit.password'),
+  bilibili_account_name: t('core.edit.zzzodBilibiliAccount'),
+  use_custom_win_title: t('core.edit.zzzodUseCustomWinTitle'),
+  custom_win_title: t('core.edit.zzzodCustomWinTitle'),
 }
 
 // 枚举值为后端/一条龙原生取值（驱动文案映射需保持原样），展示走词表
@@ -2485,30 +1270,30 @@ const formatPreviewValue = (key: string, raw: string): string => {
   switch (key) {
     case 'status':
       // 后端传 str(bool)（"True"/"False"），大小写与 YAML 表示不定，统一小写比较
-      return raw.toLowerCase() === 'true' ? t('edit.yes') : t('edit.no')
+      return raw.toLowerCase() === 'true' ? t('core.edit.yes') : t('core.edit.no')
     case 'base':
       return raw === 'independent'
-        ? t('edit.zzzodModeUser')
+        ? t('core.edit.zzzodModeUser')
         : raw === 'native'
-          ? t('edit.directControl')
+          ? t('core.edit.directControl')
           : raw
     case 'launcher_mode':
       return raw === '自动'
-        ? t('edit.zzzodLauncherAuto')
+        ? t('core.edit.zzzodLauncherAuto')
         : raw === '原始'
-          ? t('edit.zzzodLauncherOriginal')
+          ? t('core.edit.zzzodLauncherOriginal')
           : raw === '集成'
-            ? t('edit.zzzodLauncherIntegrated')
+            ? t('core.edit.zzzodLauncherIntegrated')
             : raw
     case 'remained_day':
-      return raw === '-1' ? t('edit.zzzodPreviewUnlimited') : raw
+      return raw === '-1' ? t('core.edit.zzzodPreviewUnlimited') : raw
     case 'push_log_mode':
       return raw === '关闭'
-        ? t('edit.pushLogModeOff')
+        ? t('core.edit.pushLogModeOff')
         : raw === '逐条'
-          ? t('edit.pushLogModeList')
+          ? t('core.edit.pushLogModeList')
           : raw === '汇总'
-            ? t('edit.pushLogModeSummary')
+            ? t('core.edit.pushLogModeSummary')
             : raw
     case 'game_region':
       return gameRegionLabels[raw] ?? raw
@@ -2520,9 +1305,14 @@ const formatPreviewValue = (key: string, raw: string): string => {
 }
 
 // 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
-const restoreApi = { ...backupApi, restore: restoreConfigBackup }
+const restoreAfterSaves: typeof restoreConfigBackup = async (...args) => {
+  await flushPendingSaves()
+  return restoreConfigBackup(...args)
+}
+const restoreApi = { ...backupApi, restore: restoreAfterSaves }
 
-const openRestoreModal = () => {
+const openRestoreModal = async () => {
+  await flushPendingSaves()
   restoreOpen.value = true
 }
 
@@ -2548,18 +1338,18 @@ const handleRestoreView = (target: string, item: { time: string }) => {
     // 误以为只读，实际会真覆盖当前配置并拉起查看会话；查看会话结束前
     // 切任务开关会写回旧 AppList，导致恢复被静默撤销。
     Modal.confirm({
-      title: t('edit.configRestoreDetailView'),
+      title: t('core.edit.configRestoreDetailView'),
       content: h(
         'p',
         { style: { color: 'var(--ant-color-error)', margin: 0 } },
-        t('edit.configRestoreDetailConfirm', { script: ZZZOD_DISPLAY_NAME })
+        t('core.edit.configRestoreDetailConfirm', { script: ZZZOD_DISPLAY_NAME })
       ),
-      okText: t('edit.configRestoreConfirmOk'),
+      okText: t('core.edit.configRestoreConfirmOk'),
       okType: 'danger',
-      cancelText: t('edit.cancel'),
+      cancelText: t('core.edit.cancel'),
       onOk: async () => {
         if (configLocked.value) {
-          message.error(t('edit.configLocked'))
+          message.error(t('core.edit.configLocked'))
           resolve(false)
           return
         }
@@ -2568,7 +1358,7 @@ const handleRestoreView = (target: string, item: { time: string }) => {
           // 提前放行、查看会话对着没被恢复的配置打开
           resolve(await restoreForDetailView(target, item, target === 'mas'))
         } catch (e) {
-          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
           resolve(false)
         }
       },
@@ -2584,29 +1374,29 @@ const restoreForDetailView = async (
   isMas: boolean,
   force = false
 ): Promise<boolean> => {
-  const resp = await restoreConfigBackup(target, item.time, force)
+  const resp = await restoreAfterSaves(target, item.time, force)
   // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：槽绑定守卫等
   // 抛错若被吞掉，会照常关弹窗并打开查看会话，显示的是没被恢复的当前配置
   if (resp.code === 409) {
     if (force) {
       // force 仍被拦：不再重复弹确认，直接把原因报给用户
-      throw new Error(resp.message || t('edit.configRestoreFailed'))
+      throw new Error(resp.message || t('core.edit.configRestoreFailed'))
     }
     // 源配置损坏：与「一键恢复」同一套二次确认，确认后带 force 重试本入口流程
     return confirmForceRestoreDetail(target, item, isMas, resp.message || '')
   }
   if (resp.code !== 200) {
-    throw new Error(resp.message || t('edit.configRestoreFailed'))
+    throw new Error(resp.message || t('core.edit.configRestoreFailed'))
   }
   restoreOpen.value = false
   if (isMas) {
     // MAS 备份预览：只读会话打开一条龙，合成视图下看到的是 MAS 实例
     // （槽内容即恢复的备份，不注入基线、不回读字段）
-    await startSession(userId.value, true)
+    await startSession(userId.value, true, undefined, 'user')
   } else {
     // 一条龙备份预览：脚本级原生会话，看到的是一条龙自己的原生实例，
     // 与 MAS 侧完全无关
-    await startSession(scriptId, true)
+    await startSession(scriptId, true, undefined, 'script')
   }
   return true
 }
@@ -2625,22 +1415,18 @@ const confirmForceRestoreDetail = (
       content: corruptedForceConfirmContent(copy.detail, copy.desc),
       okText: copy.okText,
       okType: 'danger',
-      cancelText: t('edit.cancel'),
+      cancelText: t('core.edit.cancel'),
       onOk: async () => {
         try {
           forceResolve(await restoreForDetailView(target, item, isMas, true))
         } catch (e) {
-          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
           forceResolve(false)
         }
       },
       onCancel: () => forceResolve(false),
     })
   })
-
-// ══ 一条龙任务（OneDragon.AppList JSON 字段，打开页面即可开关）══
-// 卡片结构与操作封装见 useZzzOdTaskBoard（独立来源与原生来源共用）
-type TaskCard = ZzzOdTaskCard
 
 const savedApps = computed<{ app_id: string; enabled: boolean }[]>(() => {
   try {
@@ -2684,22 +1470,6 @@ const taskCards = computed<TaskCard[]>(() => {
   return cards
 })
 
-/** 当前模式展示的任务卡片：独立来源=MAS 字段编排；原生来源=所选实例的原生编排 */
-const activeTaskCards = computed<TaskCard[]>(() =>
-  formData.Info.Base === 'native' ? nativeTasks.value : taskCards.value
-)
-
-/** 拖拽排序的渲染数据源：跟随当前模式任务列表，拖拽过程由 vuedraggable 就地更新 */
-const taskDragCards = ref<TaskCard[]>([])
-
-watch(
-  activeTaskCards,
-  cards => {
-    taskDragCards.value = cards
-  },
-  { immediate: true }
-)
-
 const persistAppList = (list: { app_id: string; enabled: boolean }[]) => {
   formData.OneDragon.AppList = JSON.stringify(list)
   void saveField('OneDragon.AppList', formData.OneDragon.AppList)
@@ -2715,16 +1485,6 @@ const commitTaskBoard = (list: TaskCard[]) => {
   persistAppList(list.map(card => ({ app_id: card.app_id, enabled: !!card.enabled })))
 }
 
-// 任务看板共用操作（开关/拖拽/一键整理），两种模式仅落盘方式不同
-const {
-  toggle: toggleTask,
-  commitDragOrder: handleTaskDragEnd,
-  sortEnabledFirst: handleSortTasks,
-} = useZzzOdTaskBoard(taskDragCards, {
-  editable: () => !isInitializing.value && !pageLoading.value,
-  commit: commitTaskBoard,
-})
-
 // ══ 原生 GUI 设置会话（原生来源专用；viewOnly 为只读查看会话）══
 const {
   zzzodConfigLoading,
@@ -2737,23 +1497,18 @@ const {
   stopSession,
 } = useZzzodGuiSession()
 
-const handleZzzodConfig = () => {
+const handleZzzodConfig = async () => {
   if (configLocked.value) return
+  await flushPendingSaves()
   if (formData.Info.Base === 'native') {
     // 原生来源：拉起脚本级原生会话——完整原生实例列表，不隔离、不注入，
     // 界面里的改动即真实落地一条龙原始配置（会话关闭后页面自动刷新）。
     // 传当前编辑实例：会话窗口临时切活跃到它（GUI 打开即所见实例，结束还原）
-    void startSession(scriptId, false, nativeInstanceIdx.value)
+    void startSession(scriptId, false, nativeInstanceIdx.value, 'script')
     return
   }
   if (!userId.value) return
-  void startSession(userId.value)
-}
-
-// 任务卡跳转：先关跳转提示再进入配置会话
-const jumpFromTaskCard = (appId: string) => {
-  jumpTipVisible.value[appId] = false
-  handleZzzodConfig()
+  void startSession(userId.value, false, undefined, 'user')
 }
 
 const handleSaveZzzodConfig = () => {
@@ -2765,6 +1520,7 @@ const handleCloseZzzodView = () => {
 }
 
 const handleCancel = async () => {
+  await flushPendingSaves()
   await stopSession()
   await router.push('/scripts')
 }
@@ -2779,7 +1535,7 @@ const selectGamePath = async () => {
 const loadScriptInfo = async (): Promise<boolean> => {
   const detail = await getScript(scriptId)
   if (!detail || detail.type !== 'ZzzOd') {
-    message.error(t('edit.zzzodScriptNotFound'))
+    if (!scriptApiError.value) message.error(t('core.edit.zzzodScriptNotFound'))
     handleCancel()
     return false
   }
@@ -2819,7 +1575,7 @@ const loadUser = async () => {
     await loadUserData()
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error(t('edit.couldNotLoadUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser'))
     handleCancel()
   } finally {
     isInitializing.value = false
@@ -2874,12 +1630,12 @@ const refreshAfterSession = () => {
 
 onUnmounted(() => {
   // 卸载前把防抖中的数值变更立即落盘，避免「改完步进直接离开」丢改动
-  flushAllTaskConfigSaves()
   // 编辑会话退出时机：原生来源归档一条龙终态（进入时的 ensureDirectBackup 与之
   // 配对）；独立来源归档绑定槽 MAS 终态 + 一条龙终态（与进入时的
   // ensureDirectBackup 配对）。指纹去重，内容无变化不产生新条目。
   // 先停会话再归档——并行会与回写撞车，归档到半程状态
   void (async () => {
+    await flushPendingSaves()
     await stopSession()
     if (formData.Info.Base === 'native') {
       await ensureDirectBackup()
@@ -2888,9 +1644,28 @@ onUnmounted(() => {
     }
   })()
 })
+
+const selectManagedInstance = async (idx: number) => {
+  await flushPendingSaves()
+  nativeInstanceIdx.value = idx
+  await loadNativeConfig(idx)
+}
+const clearDeletedInstance = (idx: number) => {
+  if (nativeInstanceIdx.value !== idx) return
+  nativeInstanceIdx.value = null
+  nativeAccountFields.value = []
+  Object.keys(nativeAccountValues).forEach(k => delete nativeAccountValues[k])
+  nativeTasks.value = []
+}
 </script>
 
 <style scoped>
+@import './ZzzOdUserEdit/zzzodSectionHeader.css';
+
+@import './ZzzOdUserEdit/zzzodTaskCapsule.css';
+
+@import './ZzzOdUserEdit/zzzodFormControls.css';
+
 .user-edit-container {
   display: flex;
   flex-direction: column;
@@ -2947,48 +1722,10 @@ onUnmounted(() => {
   margin-bottom: 12px;
 }
 
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .section-desc {
   color: var(--ant-color-text-tertiary);
   margin: 8px 0 16px;
   font-size: 14px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  cursor: help;
 }
 
 /* 启动参数折叠区：与可选区块同款边框卡片（总开关在所属卡片标题行） */
@@ -3033,317 +1770,26 @@ onUnmounted(() => {
 }
 
 /* 原生来源账号字段「保存设置」：左对齐，与下方下一区块拉开间距 */
-.native-save-row {
-  display: flex;
-  justify-content: flex-start;
-  margin-top: 4px;
-  margin-bottom: 24px;
-}
 
 /* 原生来源账号字段必填标记（账号切换需要完整登录信息） */
-.required-mark {
-  color: var(--ant-color-error);
-  margin-right: 2px;
-}
 
 /* 原生来源：实例管理（与任务卡片同一视觉语言：同边框/底色/圆角/悬停） */
-.instance-manage {
-  margin-bottom: 16px;
-}
-
-.instance-manage-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.instance-manage-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.instance-manage-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 16px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
-  transition:
-    border-color 0.2s,
-    background 0.2s;
-}
-
-.instance-manage-row:hover {
-  background: var(--ant-color-fill-tertiary);
-}
-
-.instance-manage-row.selected {
-  border-color: var(--ant-color-primary);
-}
-
-.instance-manage-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-}
-
-.instance-manage-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.instance-manage-tag {
-  flex-shrink: 0;
-  margin-inline-end: 0;
-}
 
 /* 非活跃实例的「设为活跃」：与「当前活跃」同为 tag 形态，灰色可点击 */
-.instance-manage-tag-set {
-  cursor: pointer;
-  color: var(--ant-color-text-tertiary);
-  background: var(--ant-color-fill-tertiary);
-  border-color: transparent;
-  transition:
-    color 0.2s,
-    background 0.2s;
-}
-
-.instance-manage-tag-set:hover {
-  color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-}
-
-.instance-manage-ops {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.instance-manage-switch-label {
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-  white-space: nowrap;
-  margin-right: 4px;
-}
-
-.instance-manage-divider {
-  margin: 0 4px;
-  border-color: var(--ant-color-border-secondary);
-}
-
-.path-input-group {
-  display: flex;
-  overflow: hidden;
-  border: 1px solid var(--ant-color-border);
-}
-
-.path-input {
-  flex: 1;
-  min-width: 0;
-  border: none !important;
-  border-radius: 0 !important;
-}
-
-.path-button {
-  flex-shrink: 0;
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  border-left: 1px solid var(--ant-color-border-secondary);
-}
 
 .config-form :deep(.ant-form-item) {
   margin-bottom: 24px;
 }
 
 /* 一条龙任务卡片网格（对齐任务配置区的卡片 + 开关交互语言） */
-.task-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
-}
-
-.task-card {
-  display: flex;
-  align-items: center;
-  padding: 10px 14px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
-  transition:
-    background 0.2s,
-    border-color 0.2s;
-}
-
-.task-card:hover {
-  background: var(--ant-color-fill-tertiary);
-}
-
-.task-card.inactive {
-  opacity: 0.6;
-}
-
-.task-card-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 24px;
-}
-
-.task-name {
-  flex: 1;
-  min-width: 0;
-  font-weight: 600;
-  font-size: 14px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 /* 单行卡片：名称 | ⚙ / 跳转 | 开关，动作紧邻开关对齐 */
-.task-card-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-/* 拖拽排序：手柄（所有卡片常显，含未启用的灰色卡片）与拖拽进行状态 */
-.drag-handle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ant-color-text-tertiary);
-  cursor: grab;
-  user-select: none;
-  touch-action: none;
-}
-
-.drag-handle:active {
-  cursor: grabbing;
-}
-
-.drag-dots {
-  width: 12px;
-  height: 14px;
-  display: block;
-  background-image: radial-gradient(currentColor 1.2px, transparent 1.2px);
-  background-size: 5px 5px;
-  opacity: 0.65;
-}
-
-.drag-handle:hover .drag-dots {
-  opacity: 0.85;
-}
-
-.task-card-ghost {
-  opacity: 0.4;
-}
-
-.task-card-chosen {
-  cursor: grabbing !important;
-}
-
-.task-card-drag {
-  transform: rotate(3deg);
-  opacity: 1 !important;
-}
 
 /* 任务卡片 ⚙：可配置任务高亮 */
-.task-config-gear {
-  color: var(--ant-color-primary);
-}
-
-.task-config-field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 260px;
-  padding: 4px 0;
-}
-
-.task-config-field-title {
-  color: var(--ant-color-text);
-  font-size: 13px;
-}
 
 /* 计划编辑弹窗 */
-.plan-modal-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding-top: 4px;
-}
-
-.plan-modal-field {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 2px 0;
-}
-
-.plan-modal-field-title {
-  color: var(--ant-color-text);
-  font-size: 13px;
-  min-width: 120px;
-}
-
-.restore-entry {
-  flex-shrink: 0;
-}
 
 /* 开关胶囊 */
-.config-group-item-capsule {
-  width: 40px;
-  height: 22px;
-  border-radius: 11px;
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  position: relative;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.config-group-item-capsule .config-group-item-dot {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--ant-color-text-quaternary);
-  transition: all 0.2s ease;
-}
-
-.config-group-item-capsule.active {
-  border-color: var(--ant-color-primary);
-  background: var(--ant-color-primary);
-}
-
-.config-group-item-capsule.active .config-group-item-dot {
-  left: 20px;
-  background: #fff;
-}
 
 /* 遮罩样式已抽至通用组件 GuiSessionMask */
 

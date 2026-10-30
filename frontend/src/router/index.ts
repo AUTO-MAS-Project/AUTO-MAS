@@ -1,9 +1,11 @@
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { createRouter, createWebHashHistory, type LocationQueryRaw } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
 import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
 import { buildMaaFWRoutes } from './maafwFlavorRoutes'
+import { registerRouterAnalytics } from './analytics'
 const logger = window.electronAPI.getLogger('路由管理')
 
 // MaaFW 与各特调的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按特调注册表生成；
@@ -20,28 +22,29 @@ let needInitLanding = true
 
 // 调试页仅在开发环境注册。import.meta.env.DEV 是编译期常量，
 // 生产构建时整个数组会被判定为死代码，这几个页面不会进入产物。
-const devRoutes = import.meta.env.DEV
-  ? [
-      {
-        path: '/TestRouter',
-        name: 'TestRouter',
-        component: () => import('../views/TestRouter.vue'),
-        meta: { title: '测试路由' },
-      },
-      {
-        path: '/OCRdev',
-        name: 'OCRdev',
-        component: () => import('../views/OCRdev.vue'),
-        meta: { title: 'OCR测试' },
-      },
-      {
-        path: '/OverlayMaskDev',
-        name: 'OverlayMaskDev',
-        component: () => import('../views/OverlayMaskDev.vue'),
-        meta: { title: '遮罩彩蛋测试' },
-      },
-    ]
-  : []
+const devRoutes =
+  import.meta.env.DEV && isDev
+    ? [
+        {
+          path: '/TestRouter',
+          name: 'TestRouter',
+          component: () => import('../views/TestRouter.vue'),
+          meta: { title: '测试路由' },
+        },
+        {
+          path: '/OCRdev',
+          name: 'OCRdev',
+          component: () => import('../views/OCRdev.vue'),
+          meta: { title: 'OCR测试' },
+        },
+        {
+          path: '/OverlayMaskDev',
+          name: 'OverlayMaskDev',
+          component: () => import('../views/OverlayMaskDev.vue'),
+          meta: { title: '遮罩彩蛋测试' },
+        },
+      ]
+    : []
 
 const routes = [
   {
@@ -152,6 +155,13 @@ const routes = [
     name: 'MAAUserAdd',
     component: () => import('../views/EditView/User/MAAUserEdit.vue'),
     meta: { title: '添加MAA用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/cultivate/maa',
+    name: 'MAACultivate',
+    component: () => import('../views/EditView/User/MAAUserEdit.vue'),
+    props: { cultivationPage: true },
+    meta: { title: 'MAA 干员养成' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/maa',
@@ -304,6 +314,12 @@ const routes = [
     meta: { title: '历史记录' },
   },
   {
+    path: '/taskboard',
+    name: 'Taskboard',
+    component: () => import('@/views/taskboard/index.vue'),
+    meta: { title: '任务台' },
+  },
+  {
     path: '/gamesign',
     name: 'GameSign',
     component: () => import('../views/gamesign/index.vue'),
@@ -331,7 +347,7 @@ const routes = [
         path: 'tokens',
         name: 'MysteryTokens',
         component: () => import('../views/mystery/tokens/index.vue'),
-        meta: { title: 'Token 获取', mysteryTitleKey: 'mystery.tokens.title' },
+        meta: { title: 'Token 获取', mysteryTitleKey: 'core.mystery.tokens.title' },
       },
     ],
   },
@@ -384,7 +400,6 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
-  const isDev = import.meta.env.DEV
   if (isDev) {
     // 开发模式免初始化门禁，但直达内页（如刷新后落在 /scripts）时仍需
     // 建立主 WebSocket 连接并标记初始化，否则 isAppReady 恒为 false 导致整窗空白。
@@ -400,8 +415,9 @@ router.beforeEach(async (to, from, next) => {
           const errorMsg = error instanceof Error ? error.message : String(error)
           logger.error(`开发模式直达内页启动失败: ${errorMsg}`)
         } finally {
-          // 开发模式容错：连接失败也进入应用，由生命周期协调器继续重连
-          markAsInitialized()
+          // 开发模式仍须准备界面词表；失败时由本地资源恢复界面承接。
+          const { useBackendI18nStore } = await import('@/stores/backendI18n')
+          if (await useBackendI18nStore().ensure()) markAsInitialized()
           finishBootstrap()
         }
       })()
@@ -445,5 +461,7 @@ export function navigateTo(
   if (replace) return router.replace({ path, query })
   return router.push({ path, query })
 }
+
+registerRouterAnalytics(router)
 
 export default router

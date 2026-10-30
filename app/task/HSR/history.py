@@ -1,0 +1,47 @@
+"""HSR 托管和原生用户的单轮历史结论。"""
+
+from app.models.schema import HistoryWrite
+from app.utils import UTC4, get_logger
+
+logger = get_logger("HSR 历史记录")
+
+
+async def save_hsr_user_history(
+    *, task_info, script_info, user_item, cancelled: bool
+) -> None:
+    records = []
+    for started_at, log_item in user_item.iter_history_logs():
+        if log_item.status in {
+            "HSR 正常运行中",
+            "HSR 脚本原生来源运行中",
+            "未开始监看日志",
+        }:
+            log_item.status = "任务被用户手动中止" if cancelled else "HSR 用户未完成"
+        status = (
+            "success"
+            if log_item.status
+            in {"HSR 用户任务完成", "HSR 失败任务补跑完成", "HSR 脚本原生来源完成"}
+            else "skipped"
+            if log_item.status == "HSR 本轮无需执行，已跳过"
+            else "cancelled"
+            if log_item.status == "任务被用户手动中止"
+            else "error"
+        )
+        records.append(
+            HistoryWrite(
+                time=started_at.astimezone(UTC4),
+                username=user_item.name,
+                script_name=script_info.name,
+                status=status,
+                message=log_item.status,
+                logs="".join(log_item.content),
+            )
+        )
+    if not records:
+        return
+    await task_info.save_user_history(
+        records,
+        script=script_info,
+        user=user_item,
+        log_warning=logger.opt(exception=True).warning,
+    )

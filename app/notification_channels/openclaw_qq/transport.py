@@ -20,7 +20,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""QQ 官方机器人扫码绑定、Token 管理和 C2C 出站消息服务。
+"""QQ 官方机器人扫码绑定、Token 管理和私聊、群聊出站消息服务。
 
 用户只需要扫描 QQ 官方机器人提供的二维码。App ID、客户端密钥和目标用户
 OpenID 都由官方扫码流程返回，并由本模块负责保存和换取短期访问令牌；这些
@@ -35,21 +35,27 @@ import json
 import re
 import secrets
 import uuid
+from collections import OrderedDict
 from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from time import monotonic
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Literal
 from urllib.parse import quote, urlparse
 
 if TYPE_CHECKING:
     from websockets.asyncio.client import ClientConnection
 
 from app.models.notification import NotificationImage
-from app.models.notification_channel import ChannelDependencies
+from app.models.notification_channel import (
+    NotificationCommandAction,
+    NotificationDeliveryError,
+    QQSessionDependencies,
+)
 from app.notification_channels.common import RemoteHTTPError, split_text
 from app.utils import get_logger
-from app.utils.platform import secret as platform_secret
+from app.utils import secret as platform_secret
 
 logger = get_logger("QQ官方机器人")
 
@@ -65,9 +71,15 @@ MAX_IMAGE_UPLOAD_BYTES = 30 * 1024 * 1024
 TEXT_CHUNK_LIMIT = 3800
 MESSAGE_SEQUENCE_MAX = 0xFFFFFFFF
 USER_AGENT = "AUTO-MAS QQ Official Bot"
+_COMMAND_ACTIONS: dict[str, NotificationCommandAction] = {
+    "重试": "retry_script",
+    "启动队列": "start_queue",
+}
 GATEWAY_READY_TIMEOUT_SECONDS = 30
 GATEWAY_RECONNECT_DELAYS = (2, 5, 10, 30)
 GATEWAY_INTENTS = 1 << 25  # C2C_GROUP_AT_MESSAGES
+GROUP_MESSAGE_INTERVAL_SECONDS = 3.1
+GROUP_RATE_LIMIT_COOLDOWN_SECONDS = 60
 # Identify 连续被拒达到该次数后，降级为最小事件订阅保住网关连接
 GATEWAY_IDENTIFY_FALLBACK_AFTER = 3
 # 平台审查拒绝正文含链接时，把链接替换为该占位文本后补发
@@ -124,6 +136,33 @@ class QQStatus:
     connected: bool
     state: str
     message: str
+
+
+@dataclass(frozen=True)
+class QQTarget:
+    """排队时固定的机器人及接收位置，避免切换绑定或目标后误投。"""
+
+    app_id: str
+    target_type: Literal["c2c", "group"]
+    openid: str | None
+
+
+@dataclass(frozen=True)
+class QQGroup:
+    """自动记录的群；重启后发现时间为空。"""
+
+    openid: str
+    last_seen: datetime | None
+
+
+@dataclass(frozen=True)
+class QQGroups:
+    """不含机器人凭据的通知模式及自动记录的群。"""
+
+    binding_id: str
+    target_type: Literal["c2c", "group", "all"]
+    groups: tuple[QQGroup, ...]
+    group_command_whitelist: tuple[str, ...] = ()
 
 
 def _as_int(value: Any) -> int | None:
@@ -221,7 +260,7 @@ def _decrypt_client_secret(encrypted: str, key: bytes) -> str:
 class Sender:
     """单账号 QQ 官方机器人通知管理器。"""
 
-    def __init__(self, dependencies: ChannelDependencies) -> None:
+    def __init__(self, dependencies: QQSessionDependencies) -> None:
         self.dependencies = dependencies
         self._sessions: dict[str, _QrSession] = {}
         self._session_lock = asyncio.Lock()
@@ -235,11 +274,206 @@ class Sender:
         self._secret_storage_available: bool | None = None
         self._access_token = ""
         self._access_token_expires_at = 0.0
+        self._command_ids: OrderedDict[str, None] = OrderedDict()
         self._msg_seq = 0
         self._gateway_task: asyncio.Task[None] | None = None
         self._gateway_ready = asyncio.Event()
         self._gateway_online = False
         self._gateway_seen_ready = False
+        self._binding_id = uuid.uuid4().hex
+        self._groups: dict[str, datetime] = {}
+        self._removed_groups: set[str] = set()
+        self._group_next_send_at = 0.0
+
+    def groups(self) -> QQGroups:
+        """读取自动记录的全部群，不保存群聊天内容。"""
+
+        removed = self._removed_groups | set(
+            self._config_value("OpenClawQQRejectedGroupOpenIds")
+        )
+        groups = tuple(
+            QQGroup(openid, self._groups.get(openid))
+            for openid in self._config_value("OpenClawQQGroupOpenIds")
+            if openid not in removed
+        )
+        return QQGroups(
+            binding_id=self._binding_id,
+            target_type=self._config_value("OpenClawQQTargetType"),
+            groups=groups,
+            group_command_whitelist=tuple(
+                self._config_value("OpenClawQQGroupCommandWhitelist", [])
+            ),
+        )
+
+    async def set_target(
+        self,
+        *,
+        binding_id: str,
+        target_type: Literal["c2c", "group", "all"],
+        group_command_whitelist: list[str] | None = None,
+    ) -> QQGroups:
+        """保存通知位置与可选的群控制白名单，拒绝旧绑定页面。"""
+
+        async with self._send_lock, self._credential_lock, self._config_lock:
+            if binding_id != self._binding_id:
+                raise ValueError("binding_changed")
+            if not all(self._credentials()):
+                raise ValueError("not_bound")
+            values: dict[str, Any] = {"OpenClawQQTargetType": target_type}
+            if group_command_whitelist is not None:
+                values["OpenClawQQGroupCommandWhitelist"] = list(
+                    dict.fromkeys(group_command_whitelist)
+                )
+            await self.dependencies.config.update(values)
+            return self.groups()
+
+    async def _handle_command(
+        self, data: dict[str, Any], *, group: bool = False
+    ) -> None:
+        """按私聊绑定身份或群成员白名单处理命令，不重复调度消息重投。"""
+
+        author = data.get("author")
+        content = data.get("content")
+        message_id = data.get("id")
+        if (
+            not isinstance(author, dict)
+            or not isinstance(content, str)
+            or not isinstance(message_id, str)
+            or not message_id
+        ):
+            return
+        if group:
+            # GROUP_AT_MESSAGE_CREATE 已由平台确认 @机器人；兼容正文保留的提及段。
+            content = re.sub(r"^\s*<@!?[^>]+>\s*", "", content)
+        parts = content.strip().removeprefix("/").split(maxsplit=1)
+        identity_query = group and parts == ["我的ID"]
+        if not parts or (parts[0] not in _COMMAND_ACTIONS and not identity_query):
+            return
+        action = _COMMAND_ACTIONS.get(parts[0])
+        name = parts[1].strip() if len(parts) == 2 else ""
+        # 过期事件不可在重连或重启后再次触发任务。
+        try:
+            timestamp = datetime.fromisoformat(str(data.get("timestamp", "")))
+            age = (datetime.now(UTC) - timestamp).total_seconds()
+        except (ValueError, TypeError):
+            return
+        if not -30 <= age <= 300:
+            return
+        async with self._send_lock:
+            app_id, client_secret, user_openid = self._credentials()
+            if (
+                not self.dependencies.config.get("IfOpenClawQQ")
+                or not all((app_id, client_secret, user_openid))
+                or message_id in self._command_ids
+            ):
+                return
+            group_target = None
+            member_openid = ""
+            if group:
+                group_openid = data.get("group_openid")
+                member_openid = author.get("member_openid")
+                if (
+                    not isinstance(group_openid, str)
+                    or not group_openid
+                    or not isinstance(member_openid, str)
+                    or not member_openid
+                ):
+                    return
+                group_target = QQTarget(
+                    app_id=app_id, target_type="group", openid=group_openid
+                )
+                try:
+                    user_openid = self._validate_target(group_target)
+                except (ValueError, RuntimeError):
+                    return
+                whitelist = self._config_value("OpenClawQQGroupCommandWhitelist", [])
+                if not identity_query and whitelist and member_openid not in whitelist:
+                    return
+            elif author.get("user_openid") != user_openid:
+                return
+            # 等待发送锁期间可能经过长时间通知投递，执行前再次检查时效。
+            if not -30 <= (datetime.now(UTC) - timestamp).total_seconds() <= 300:
+                return
+            self._command_ids[message_id] = None
+            if len(self._command_ids) > 1024:
+                self._command_ids.popitem(last=False)
+            reply = (
+                "请发送：重试 脚本名称，或：启动队列 队列名称。"
+                "名称须与 MAS 中一致，循环队列将按循环配置运行。"
+            )
+            if identity_query:
+                reply = f"你的群控制 ID：{member_openid}\n请将此 ID 填入 MAS 的群控制成员白名单。"
+            elif name and action is not None:
+                if self.dependencies.notification_command_executor is None:
+                    reply = "当前无法执行指令，请检查 MAS 是否已完成启动。"
+                else:
+                    try:
+                        reply = await self.dependencies.notification_command_executor(
+                            action, name
+                        )
+                    except Exception as exc:
+                        logger.warning(f"QQ 指令执行失败：{type(exc).__name__}")
+                        reply = "指令处理异常，请在 MAS 中检查任务状态。"
+            try:
+                await self._send_message_with_token(
+                    app_id=app_id,
+                    client_secret=client_secret,
+                    user_openid=user_openid,
+                    group_target=group_target,
+                    body={
+                        "msg_type": 0,
+                        "msg_id": message_id,
+                        "msg_seq": 1,
+                        "content": reply,
+                    },
+                )
+            except Exception as exc:
+                logger.warning(f"QQ 指令回复失败：{type(exc).__name__}")
+
+    async def _handle_group_event(self, event: str, data: dict[str, Any]) -> None:
+        """自动记录群；退群或拒收事件立即停止向该群推送。"""
+
+        openid = data.get("group_openid")
+        if not isinstance(openid, str) or not openid:
+            return
+        removed = event in {"GROUP_DEL_ROBOT", "GROUP_MSG_REJECT"}
+        if not removed and event not in {
+            "GROUP_ADD_ROBOT",
+            "GROUP_AT_MESSAGE_CREATE",
+            "GROUP_MSG_RECEIVE",
+        }:
+            return
+        if removed:
+            # 配置回写即使被信号拒绝，本次进程也不能继续投递到已知退出的群。
+            self._groups.pop(openid, None)
+            self._removed_groups.add(openid)
+        async with self._config_lock:
+            groups = list(self._config_value("OpenClawQQGroupOpenIds"))
+            rejected = list(self._config_value("OpenClawQQRejectedGroupOpenIds"))
+            values = {}
+            if removed:
+                if openid in groups:
+                    values["OpenClawQQGroupOpenIds"] = [
+                        item for item in groups if item != openid
+                    ]
+                if event == "GROUP_MSG_REJECT" and openid not in rejected:
+                    values["OpenClawQQRejectedGroupOpenIds"] = [*rejected, openid]
+            else:
+                if event == "GROUP_AT_MESSAGE_CREATE" and (
+                    openid in self._removed_groups or openid in rejected
+                ):
+                    return
+                if openid not in groups:
+                    values["OpenClawQQGroupOpenIds"] = [*groups, openid]
+                if openid in rejected:
+                    values["OpenClawQQRejectedGroupOpenIds"] = [
+                        item for item in rejected if item != openid
+                    ]
+            if values:
+                await self.dependencies.config.update(values)
+            if not removed:
+                self._removed_groups.discard(openid)
+                self._groups[openid] = datetime.now(UTC)
 
     def bind_config_hooks(self) -> None:
         """绑定通知开关变化，关闭时立即丢弃本地访问令牌。"""
@@ -530,13 +764,14 @@ class Sender:
                             message="二维码登录会话已关闭，请重新生成",
                         )
                     # 会话锁覆盖保存与启动；解绑或重新扫码只能在本次绑定完成后失效会话。
-                    await self._save_credentials_locked(
-                        app_id=app_id,
-                        client_secret=client_secret,
-                        user_openid=user_openid,
-                    )
-                    session.bound_at = monotonic()
-                    await self._start_gateway(app_id, client_secret)
+                    if session.bound_at is None:
+                        await self._save_credentials_locked(
+                            app_id=app_id,
+                            client_secret=client_secret,
+                            user_openid=user_openid,
+                        )
+                        session.bound_at = monotonic()
+                        await self._start_gateway(app_id, client_secret)
         except (ValueError, RuntimeError) as exc:
             async with self._session_lock:
                 if (
@@ -578,11 +813,18 @@ class Sender:
                 "IfOpenClawQQ": False,
                 "OpenClawQQAppId": "",
                 "OpenClawQQTargetOpenId": "",
+                "OpenClawQQTargetType": "c2c",
+                "OpenClawQQGroupOpenIds": [],
+                "OpenClawQQGroupCommandWhitelist": [],
+                "OpenClawQQRejectedGroupOpenIds": [],
             }
             if self._can_persist_secrets():
                 values["OpenClawQQClientSecret"] = ""
             async with self._config_lock:
                 await self.dependencies.config.update(values)
+            self._groups.clear()
+            self._removed_groups.clear()
+            self._binding_id = uuid.uuid4().hex
 
     async def _start_gateway(self, app_id: str, client_secret: str) -> None:
         """使用当前凭据启动唯一的 QQ 网关连接任务。"""
@@ -667,8 +909,8 @@ class Sender:
                                 if not interval or interval < 1000:
                                     raise RuntimeError("QQ 网关心跳间隔无效")
                                 interval_ms = interval
-                                # 机器人缺少事件权限时 Identify 会被拒；本服务只通过
-                                # HTTP 主动发通知，降级为最小订阅以保持网关在线。
+                                # 机器人缺少事件权限时 Identify 会被拒；降级后
+                                # 保留 HTTP 通知，但无法接收私聊控制指令。
                                 intents = (
                                     GATEWAY_INTENTS
                                     if identify_fail_count
@@ -703,6 +945,14 @@ class Sender:
                                 self._gateway_seen_ready = True
                                 self._gateway_ready.set()
                                 logger.info("QQ 官方机器人消息网关已连接")
+                            elif op == 0 and isinstance(payload.get("d"), dict):
+                                if payload.get("t") == "C2C_MESSAGE_CREATE":
+                                    await self._handle_command(payload["d"])
+                                await self._handle_group_event(
+                                    str(payload.get("t") or ""), payload["d"]
+                                )
+                                if payload.get("t") == "GROUP_AT_MESSAGE_CREATE":
+                                    await self._handle_command(payload["d"], group=True)
                             elif op == 9:
                                 identify_fail_count += 1
                                 rejected = True
@@ -711,7 +961,7 @@ class Sender:
                                     == GATEWAY_IDENTIFY_FALLBACK_AFTER
                                 ):
                                     logger.warning(
-                                        "QQ 消息网关鉴权连续被拒，已降级为最小事件订阅"
+                                        "QQ 消息网关鉴权连续被拒，已降级为最小事件订阅，无法接收控制指令"
                                     )
                                 self._invalidate_access_token()
                                 break
@@ -734,6 +984,8 @@ class Sender:
             finally:
                 self._gateway_online = False
                 self._gateway_ready.clear()
+                # 清空临时发现时间，持久化目标仍保留；平台退群拒绝会移除失效目标。
+                self._groups.clear()
             retry = 0 if ready else min(retry + 1, len(GATEWAY_RECONNECT_DELAYS) - 1)
             if not rejected:
                 # 本轮未收到 op 9 时清零，计数只反映连续的鉴权拒绝。
@@ -758,13 +1010,19 @@ class Sender:
         content: str,
         *,
         images: Sequence[NotificationImage] = (),
+        target: QQTarget | None = None,
     ) -> None:
-        """通过官方 C2C 接口发送正文和图片；长文本自动拆分，链接被拒时去除后补发。"""
+        """向固定的私聊或群聊发送正文和图片，保留分段及链接降级行为。"""
 
         async with self._send_lock:
             app_id, client_secret, user_openid = self._credentials()
             if not app_id or not client_secret or not user_openid:
                 raise ValueError("请先在通知设置中扫码绑定 QQ 官方机器人")
+            target = target or QQTarget(
+                app_id=app_id, target_type="c2c", openid=user_openid
+            )
+            user_openid = self._validate_target(target)
+            group_target = target if target.target_type == "group" else None
 
             chunks = split_text(content, max(1, TEXT_CHUNK_LIMIT - 16))
             for index, chunk in enumerate(chunks, start=1):
@@ -780,6 +1038,7 @@ class Sender:
                         app_id=app_id,
                         client_secret=client_secret,
                         user_openid=user_openid,
+                        group_target=group_target,
                         body=body,
                     )
                 except RuntimeError as exc:
@@ -793,6 +1052,7 @@ class Sender:
                         app_id=app_id,
                         client_secret=client_secret,
                         user_openid=user_openid,
+                        group_target=group_target,
                         body=body,
                     )
             for image in images:
@@ -801,6 +1061,7 @@ class Sender:
                         app_id=app_id,
                         client_secret=client_secret,
                         user_openid=user_openid,
+                        group_target=group_target,
                         image=image,
                     )
                 except Exception as exc:
@@ -814,6 +1075,31 @@ class Sender:
         self._msg_seq = (self._msg_seq % MESSAGE_SEQUENCE_MAX) + 1
         return self._msg_seq
 
+    def _validate_target(self, target: QQTarget) -> str:
+        app_id, _, user_openid = self._credentials()
+        recipients = (
+            self._config_value("OpenClawQQGroupOpenIds")
+            if target.target_type == "group"
+            else [user_openid]
+        )
+        if (
+            target.app_id != app_id
+            or self._config_value("OpenClawQQTargetType")
+            not in {target.target_type, "all"}
+            or not target.openid
+            or target.openid not in recipients
+            or (
+                target.target_type == "group"
+                and (
+                    target.openid in self._removed_groups
+                    or target.openid
+                    in self._config_value("OpenClawQQRejectedGroupOpenIds")
+                )
+            )
+        ):
+            raise ValueError("QQ 通知目标不可用，请确认机器人已入群并允许主动发言")
+        return target.openid
+
     async def _send_message_with_token(
         self,
         *,
@@ -821,17 +1107,42 @@ class Sender:
         client_secret: str,
         user_openid: str,
         body: dict[str, Any],
+        group_target: QQTarget | None = None,
     ) -> None:
         """发送单段消息，并在访问令牌过期时无感重试一次。"""
 
-        endpoint = f"{API_BASE_URL}/v2/users/{quote(user_openid, safe='')}/messages"
-        await self._request_with_token(
-            app_id=app_id,
-            client_secret=client_secret,
-            endpoint=endpoint,
-            body=body,
-            operation="QQ 通知发送",
+        resource = "groups" if group_target is not None else "users"
+        endpoint = (
+            f"{API_BASE_URL}/v2/{resource}/{quote(user_openid, safe='')}/messages"
         )
+        if group_target is not None:
+            await asyncio.sleep(max(0, self._group_next_send_at - monotonic()))
+            self._validate_target(group_target)
+            self._group_next_send_at = monotonic() + GROUP_MESSAGE_INTERVAL_SECONDS
+        try:
+            await self._request_with_token(
+                app_id=app_id,
+                client_secret=client_secret,
+                endpoint=endpoint,
+                body=body,
+                operation="QQ 通知发送",
+            )
+        except RuntimeError as exc:
+            logger.warning(f"QQ 官方机器人消息发送失败：{exc}")
+            if group_target is not None and any(
+                code in str(exc) for code in ("40034101", "40054003")
+            ):
+                try:
+                    await self._handle_group_event(
+                        "GROUP_DEL_ROBOT", {"group_openid": group_target.openid}
+                    )
+                except Exception:
+                    logger.opt(exception=True).warning("移除已退群的 QQ 通知目标失败")
+            if group_target is not None and "40034100" in str(exc):
+                self._group_next_send_at = (
+                    monotonic() + GROUP_RATE_LIMIT_COOLDOWN_SECONDS
+                )
+            raise
 
     async def _send_image_with_token(
         self,
@@ -840,6 +1151,7 @@ class Sender:
         client_secret: str,
         user_openid: str,
         image: NotificationImage,
+        group_target: QQTarget | None = None,
     ) -> None:
         """上传一张 QQ C2C 图片并发送对应的富媒体消息。"""
 
@@ -855,7 +1167,12 @@ class Sender:
         else:
             raise ValueError("图片没有可上传的数据或 URL")
 
-        upload_endpoint = f"{API_BASE_URL}/v2/users/{quote(user_openid, safe='')}/files"
+        resource = "groups" if group_target is not None else "users"
+        if group_target is not None:
+            self._validate_target(group_target)
+        upload_endpoint = (
+            f"{API_BASE_URL}/v2/{resource}/{quote(user_openid, safe='')}/files"
+        )
         upload = await self._request_with_token(
             app_id=app_id,
             client_secret=client_secret,
@@ -872,6 +1189,7 @@ class Sender:
             app_id=app_id,
             client_secret=client_secret,
             user_openid=user_openid,
+            group_target=group_target,
             body={
                 "msg_type": 7,
                 "msg_seq": self._next_msg_seq(),
@@ -914,11 +1232,34 @@ class Sender:
                 if attempt == 0 and code in (401, 401001, 11200, 11201):
                     self._invalidate_access_token()
                     continue
-                raise RuntimeError(
-                    f"{operation}失败（错误码 {code}）：{_business_message(response)}"
+                raise NotificationDeliveryError(
+                    f"{operation}失败（错误码 {code}）：{_business_message(response)}",
+                    kind="configuration"
+                    if code in (401, 401001, 11200, 11201)
+                    else "rate_limited"
+                    if code in (429, 40034100)
+                    else "transport"
+                    if code in (500, 502, 503, 504)
+                    else "rejected",
+                    # 只将已知需重新绑定或调整正文的拒绝判为永久；未知业务码沿用重试。
+                    retryable=code
+                    not in (
+                        401,
+                        401001,
+                        11200,
+                        11201,
+                        304003,
+                        40034028,
+                        40054010,
+                        40054004,
+                    ),
                 )
             return response
-        raise RuntimeError(f"{operation}失败：访问令牌重试后仍无效")
+        raise NotificationDeliveryError(
+            f"{operation}失败：访问令牌重试后仍无效",
+            kind="configuration",
+            retryable=False,
+        )
 
     async def _ensure_access_token(self, app_id: str, client_secret: str) -> str:
         """按需换取并缓存官方 access_token。"""
@@ -936,12 +1277,18 @@ class Sender:
         )
         code = _business_code(response)
         if code not in (None, 0):
-            raise RuntimeError(
-                f"QQ access_token 获取失败：{_business_message(response)}"
+            raise NotificationDeliveryError(
+                f"QQ access_token 获取失败：{_business_message(response)}",
+                kind="configuration"
+                if code in (401, 401001, 11200, 11201)
+                else "rejected",
+                retryable=code not in (401, 401001, 11200, 11201),
             )
         access_token = str(response.get("access_token") or "").strip()
         if not access_token:
-            raise RuntimeError("QQ access_token 响应缺少访问令牌")
+            raise NotificationDeliveryError(
+                "QQ access_token 响应缺少访问令牌", kind="transport", retryable=True
+            )
         expires_in = _as_int(response.get("expires_in")) or 7200
         self._access_token = access_token
         self._access_token_expires_at = monotonic() + max(60, expires_in)
@@ -950,18 +1297,6 @@ class Sender:
     def _invalidate_access_token(self) -> None:
         self._access_token = ""
         self._access_token_expires_at = 0.0
-
-    async def _save_credentials(
-        self, *, app_id: str, client_secret: str, user_openid: str
-    ) -> None:
-        """保存扫码返回的凭据，非 Windows 只保留本次运行所需数据。"""
-
-        async with self._send_lock, self._credential_lock:
-            await self._save_credentials_locked(
-                app_id=app_id,
-                client_secret=client_secret,
-                user_openid=user_openid,
-            )
 
     async def _save_credentials_locked(
         self, *, app_id: str, client_secret: str, user_openid: str
@@ -973,10 +1308,18 @@ class Sender:
             client_secret=client_secret.strip(),
             user_openid=user_openid.strip(),
         )
+        changed_bot = normalized.app_id != self._credentials()[0]
         values = {
             "OpenClawQQAppId": normalized.app_id,
             "OpenClawQQTargetOpenId": normalized.user_openid,
         }
+        if changed_bot:
+            values.update(
+                OpenClawQQTargetType="c2c",
+                OpenClawQQGroupOpenIds=[],
+                OpenClawQQGroupCommandWhitelist=[],
+                OpenClawQQRejectedGroupOpenIds=[],
+            )
         async with self._config_lock:
             if self._can_persist_secrets():
                 try:
@@ -999,7 +1342,13 @@ class Sender:
             self._runtime_credentials = (
                 None if self._can_persist_secrets() else normalized
             )
+            await self._stop_gateway()
             self._invalidate_access_token()
+            self._binding_id = uuid.uuid4().hex
+            if changed_bot:
+                self._groups.clear()
+                self._removed_groups.clear()
+                self._group_next_send_at = 0.0
 
     async def _request_json(
         self,
@@ -1027,6 +1376,7 @@ class Sender:
                 payload = response.json()
         except httpx.HTTPStatusError as exc:
             details: list[str] = []
+            code = None
             try:
                 error_payload = exc.response.json()
             except ValueError:
@@ -1041,26 +1391,43 @@ class Sender:
                 if code == 40054004:
                     details.append("请先在扫码所用 QQ 中添加该机器人为好友，再重试通知")
             suffix = f"，{'，'.join(details)}" if details else ""
+            message = f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}{suffix}）"
+            if code == 40034100:
+                # 群限流沿用已有冷却，不能被 HTTP 4xx 的默认永久拒绝覆盖。
+                raise NotificationDeliveryError(
+                    message, kind="rate_limited", retryable=True
+                ) from exc
             raise RemoteHTTPError(
                 exc.response.status_code,
-                f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}{suffix}）",
+                message,
             ) from exc
         except httpx.HTTPError as exc:
-            raise RuntimeError("QQ 官方机器人网络请求失败") from exc
+            raise NotificationDeliveryError(
+                "QQ 官方机器人网络请求失败", kind="transport", retryable=True
+            ) from exc
         except ValueError as exc:
-            raise RuntimeError("QQ 官方机器人响应不是合法 JSON") from exc
+            raise NotificationDeliveryError(
+                "QQ 官方机器人响应不是合法 JSON", kind="transport", retryable=True
+            ) from exc
         if not isinstance(payload, dict):
-            raise RuntimeError("QQ 官方机器人响应格式无效")
+            raise NotificationDeliveryError(
+                "QQ 官方机器人响应格式无效", kind="transport", retryable=True
+            )
         return payload
 
 
 def _is_url_reject_error(error: str) -> bool:
     """判断发送失败是否因平台审查拒绝了正文里的链接。"""
 
-    return "304003" in error or "40034028" in error or "不允许包含url" in error
+    return (
+        any(code in error for code in ("304003", "40034028", "40054010"))
+        or "不允许包含url" in error
+    )
 
 
 def _is_token_error(error: RuntimeError) -> bool:
     """判断 HTTP 错误是否可能表示访问令牌失效。"""
 
+    if isinstance(error, NotificationDeliveryError) and error.kind == "rate_limited":
+        return False
     return "状态码 401" in str(error) or "状态码 403" in str(error)

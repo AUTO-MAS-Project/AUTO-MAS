@@ -85,6 +85,9 @@ from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path,
     try_reserve_project_path,
 )
+from app.task.MaaFW.tools.embedded.update_credentials import (
+    resolve_update_proxy_url,
+)
 
 EMBEDDED_SCRIPT_BUSY = "脚本正在运行，请等运行结束后再导入项目"
 EMBEDDED_COPY_BUSY = "该 MFW 项目正在更新或准备环境，请稍后重试"
@@ -136,9 +139,12 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
         # 目录时它还是上一次的结果）
         follow = follow_source_switch_on(script_config)
         channel = import_channel(script_id, script_config)
+        # 导入时与官方发行包核对资源文件走脚本的更新代理（与项目更新同一份解析）
+        proxy_url = resolve_update_proxy_url(script_config)
     except (KeyError, ValueError, TypeError):
         follow = False
         channel = "stable"
+        proxy_url = None
     try:
         script_name = str(maafw_script_config(script_id).Info.Name or script_id[:8])
     except (KeyError, ValueError, TypeError):
@@ -170,6 +176,7 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
             progress=_embedded_import_progress(publish),
             channel=channel,
             follow_source=follow,
+            proxy_url=proxy_url,
         )
         publish("imported", "success", "导入完成", 100.0)
     except EmbeddedProjectError as exc:
@@ -496,7 +503,11 @@ def _source_path_error(script_config: RuntimeMaaFWConfig, source: str) -> str | 
     try:
         validated = type(script_config.Info).model_validate({"Path": source})
         if validated.Path is None:
-            return "来源路径无效，请重新选择项目目录"
+            # 路径校验器不收的来源直接清空、不抛原因，这里按同一套规则补上为什么被拒。
+            return (
+                _describe_source_path_error(source, "")
+                or "来源路径无效，请重新选择项目目录"
+            )
     # 路径里的符号链接成环时，Python 3.12 的 Path.resolve 抛 RuntimeError
     except (ValueError, RuntimeError) as exc:
         return _describe_source_path_error(source, str(exc))
@@ -512,6 +523,9 @@ def _describe_source_path_error(source: str, raw: str) -> str:
         )
     try:
         resolved = Path(source).resolve()
+        # 盘根先判：AUTO-MAS 所在盘的盘根也是安装目录的上层，不先判会被说成「移出 AUTO-MAS 目录」
+        if resolved == Path(resolved.anchor):
+            return "不能直接选择驱动器根目录，请选择解压后直接包含 interface.json 的那一层目录"
         install = Path.cwd().resolve()
         if (
             resolved == install
@@ -520,7 +534,7 @@ def _describe_source_path_error(source: str, raw: str) -> str:
         ):
             return (
                 "项目目录不能放在 AUTO-MAS 的安装目录里，也不能是它的上层目录；"
-                "请把项目移到别处后再选择"
+                "请把项目移出 AUTO-MAS 目录后再选择"
             )
     except (OSError, ValueError, RuntimeError):
         pass
@@ -808,6 +822,8 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
                     else source_channel
                 ),
                 follow_source=follow_source_switch_on(script_config),
+                # 导入时与官方发行包核对资源文件走脚本的更新代理（同 _embed_from_source）
+                proxy_url=resolve_update_proxy_url(script_config),
             )
             cloned = True
     except EmbeddedProjectError as exc:

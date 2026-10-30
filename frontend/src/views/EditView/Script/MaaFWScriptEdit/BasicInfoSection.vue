@@ -1,18 +1,15 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.basicInfo') }}</h3>
-    </div>
+  <MaaFWFormSection :title="t('core.edit.basicInfo')">
     <a-row :gutter="24">
       <a-col :span="8">
         <a-form-item name="name">
           <template #label>
-            <span class="form-label">{{ t('edit.scriptName') }}</span>
+            <span class="form-label">{{ t('core.edit.scriptName') }}</span>
           </template>
           <a-input
             v-model:value="formData.name"
-            :placeholder="t('edit.enterScriptName')"
+            :placeholder="t('core.edit.enterScriptName')"
             size="large"
             class="modern-input"
             @blur="emit('change', 'Info', 'Name', formData.name)"
@@ -24,7 +21,7 @@
           <template #label>
             <a-tooltip :title="directoryHint">
               <span class="form-label">
-                {{ sourceDirectoryLabel || t('edit.localProjectDirectory') }}
+                {{ sourceDirectoryLabel || t('core.edit.localProjectDirectory') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -34,13 +31,13 @@
           <a-input-group compact class="path-input-group">
             <a-input
               :value="displayedPath"
-              :placeholder="sourcePlaceholder || t('edit.pickActualMfwProject')"
+              :placeholder="sourcePlaceholder || t('core.edit.pickActualMfwProject')"
               size="large"
               class="path-input"
               readonly
               aria-readonly="true"
             />
-            <a-tooltip :title="directoryLocked ? t('edit.maafwDirectoryLockedHint') : ''">
+            <a-tooltip :title="directoryLocked ? t('core.edit.maafwDirectoryLockedHint') : ''">
               <a-button
                 size="large"
                 class="path-button"
@@ -50,7 +47,7 @@
                 <template #icon>
                   <FolderOpenOutlined />
                 </template>
-                {{ t('edit.pickProjectDirectory') }}
+                {{ t('core.edit.pickProjectDirectory') }}
               </a-button>
             </a-tooltip>
           </a-input-group>
@@ -63,7 +60,7 @@
               size="small"
             />
             <span class="import-progress-text">{{
-              importMessage || t('edit.maafwImportingCopy')
+              importMessage || t('core.edit.maafwImportingCopy')
             }}</span>
           </div>
           <div v-else-if="importError && !guideOwnsImport" class="import-error">
@@ -86,21 +83,23 @@
         />
         <!-- 说明只在问号里（源码形态换成源码形态那句），开关下面不留说明行 -->
         <a-tooltip
-          :title="sourceForm ? t('edit.maafwSourceFormHint') : t('edit.maafwFollowSourceHint')"
+          :title="
+            sourceForm ? t('core.edit.maafwSourceFormHint') : t('core.edit.maafwFollowSourceHint')
+          "
         >
           <span class="form-label">
-            {{ t('edit.maafwFollowSource') }}
+            {{ t('core.edit.maafwFollowSource') }}
             <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
           </span>
         </a-tooltip>
         <a-tag v-if="sourceForm" color="processing" class="follow-source-tag">
-          {{ t('edit.maafwSourceFormTag') }}
+          {{ t('core.edit.maafwSourceFormTag') }}
         </a-tag>
       </div>
       <div v-if="followSource" class="follow-source-status">
         <span>{{ followSourceStatus }}</span>
         <span v-if="!embeddedStatus.sourceExists" class="follow-source-missing">
-          {{ t('edit.maafwFollowSourceMissing') }}
+          {{ t('core.edit.maafwFollowSourceMissing') }}
         </span>
         <a-button
           size="small"
@@ -109,7 +108,7 @@
           :disabled="interfaceLoading || updateApplying || embeddedBusy"
           @click="emit('sync-source')"
         >
-          {{ t('edit.maafwFollowSourceSyncNow') }}
+          {{ t('core.edit.maafwFollowSourceSyncNow') }}
         </a-button>
       </div>
     </div>
@@ -133,7 +132,7 @@
       </a-descriptions>
       <div class="env-panel">
         <div class="env-panel-header">
-          <span class="env-panel-title">{{ t('edit.envPanelTitle') }}</span>
+          <span class="env-panel-title">{{ t('core.edit.envPanelTitle') }}</span>
           <!-- interface 是选完目录自动读的、项目不更新就不会变，手动入口只留「准备运行环境」：
                重读 interface 并重新准备（不沿用指纹缓存）；失败时它就是「重试」 -->
           <a-button
@@ -145,30 +144,33 @@
             <template #icon>
               <ToolOutlined />
             </template>
-            {{ envTone === 'failed' ? t('edit.envRetry') : t('edit.prepareRuntimeEnv') }}
+            {{ envTone === 'failed' ? t('core.edit.envRetry') : t('core.edit.prepareRuntimeEnv') }}
           </a-button>
         </div>
         <!-- 日志框绝对定位撑满外层：外层 flex:1 跟着 grid 行高走，行高由左边表格决定，
              日志再多也不会把面板撑高，底边永远和表格齐 -->
         <div class="env-log-wrap">
-          <div ref="envLogBoxRef" class="env-log-box">
-            <div v-if="envTone === 'idle'" class="env-log-line env-log-line--empty">
-              {{ t('edit.envPanelPlaceholder') }}
+          <div ref="envLogBoxRef" class="env-log-box maafw-log-box">
+            <div
+              v-if="envTone === 'idle'"
+              class="env-log-line maafw-log-line maafw-log-line--empty"
+            >
+              {{ t('core.edit.envPanelPlaceholder') }}
             </div>
-            <div v-for="(line, index) in envLogs" :key="index" class="env-log-line">
+            <div v-for="(line, index) in envLogs" :key="index" class="env-log-line maafw-log-line">
               {{ line }}
             </div>
             <div
               v-if="envTone !== 'idle'"
-              class="env-log-status"
-              :class="`env-log-status--${envTone}`"
+              class="env-log-status maafw-log-status"
+              :class="`maafw-log-status--${envTone}`"
             >
               <LoadingOutlined v-if="envTone === 'running'" spin class="env-log-status-icon" />
               <CheckCircleOutlined v-else-if="envTone === 'success'" class="env-log-status-icon" />
               <CloseCircleOutlined v-else class="env-log-status-icon" />
               <span>{{ envStatusText }}</span>
               <div v-if="envTone === 'failed'" class="env-log-status-hint">
-                {{ t('edit.envFailedHint') }}
+                {{ t('core.edit.envFailedHint') }}
               </div>
             </div>
           </div>
@@ -176,12 +178,12 @@
       </div>
     </div>
     <div v-else-if="interfaceLoading" class="interface-loading">
-      <a-spin :tip="t('edit.readingInterfaceJson')">
+      <a-spin :tip="t('core.edit.readingInterfaceJson')">
         <a-alert
           type="info"
           show-icon
-          :message="t('edit.loadingMfwInterface')"
-          :description="t('edit.readingControllersResourcesTasks')"
+          :message="t('core.edit.loadingMfwInterface')"
+          :description="t('core.edit.readingControllersResourcesTasks')"
         />
       </a-spin>
     </div>
@@ -192,7 +194,7 @@
         class="interface-guide-icon interface-guide-icon--warning"
         aria-hidden="true"
       />
-      <h3>{{ t('edit.maafwPreviewFailed') }}</h3>
+      <h3>{{ t('core.edit.maafwPreviewFailed') }}</h3>
       <p v-if="previewError" class="interface-guide-error">{{ previewError }}</p>
       <a-button
         type="primary"
@@ -203,13 +205,13 @@
         <template #icon>
           <ReloadOutlined />
         </template>
-        {{ t('edit.envRetry') }}
+        {{ t('core.edit.envRetry') }}
       </a-button>
     </div>
     <div v-else class="interface-guide-card">
       <InboxOutlined class="interface-guide-icon" aria-hidden="true" />
-      <h3>{{ t('edit.pickMfwProject') }}</h3>
-      <p>{{ t('edit.pickProjectDirectoryContaining') }}</p>
+      <h3>{{ t('core.edit.pickMfwProject') }}</h3>
+      <p>{{ t('core.edit.pickProjectDirectoryContaining') }}</p>
       <a-button
         v-if="!embeddedBusy"
         type="primary"
@@ -220,7 +222,7 @@
         <template #icon>
           <FolderOpenOutlined />
         </template>
-        {{ t('edit.pickProjectDirectory') }}
+        {{ t('core.edit.pickProjectDirectory') }}
       </a-button>
       <div v-else class="import-progress import-progress--guide">
         <a-progress
@@ -229,14 +231,14 @@
           size="small"
         />
         <span class="import-progress-text">{{
-          importMessage || t('edit.maafwImportingCopy')
+          importMessage || t('core.edit.maafwImportingCopy')
         }}</span>
       </div>
       <p v-if="!embeddedBusy && (importError || previewError)" class="interface-guide-error">
         {{ importError || previewError }}
       </p>
     </div>
-  </div>
+  </MaaFWFormSection>
 </template>
 
 <script setup lang="ts">
@@ -257,6 +259,7 @@ import type {
   MaaFWScriptBasicInfoSectionEmits,
   MaaFWScriptBasicInfoSectionProps,
 } from '../../MaaFWFlavor/sectionContracts'
+import MaaFWFormSection from './MaaFWFormSection.vue'
 
 const { t } = useI18n()
 
@@ -277,8 +280,8 @@ const guideOwnsImport = computed(
 )
 const directoryHint = computed(() =>
   directoryLocked.value
-    ? t('edit.maafwDirectoryLockedHint')
-    : props.sourceHint || t('edit.pickMfwProjectDirectory')
+    ? t('core.edit.maafwDirectoryLockedHint')
+    : props.sourceHint || t('core.edit.pickMfwProjectDirectory')
 )
 
 // 跟随来源目录（开发者模式）：开关只落盘配置，同步在下一次运行前由后端做（或点「立即同步」）。
@@ -290,8 +293,8 @@ const followSource = computed(
 const followSourceStatus = computed(() => {
   const path = props.embeddedStatus.sourcePath || props.maafwConfig.Info.Path
   const syncedAt = props.embeddedStatus.followSourceSyncedAt
-  if (!syncedAt) return t('edit.maafwFollowSourceNotSynced', { path })
-  return t('edit.maafwFollowSourceStatus', {
+  if (!syncedAt) return t('core.edit.maafwFollowSourceNotSynced', { path })
+  return t('core.edit.maafwFollowSourceStatus', {
     path,
     time: syncedAt.slice(0, 16).replace('T', ' '),
   })
@@ -313,15 +316,15 @@ const envTone = computed<'idle' | 'running' | 'success' | 'failed'>(() => {
 const envPhaseLabel = computed(() => {
   switch (envTone.value) {
     case 'running': {
-      const label = t('edit.envStatusPreparing')
+      const label = t('core.edit.envStatusPreparing')
       return props.envPercent === null ? label : `${label} ${Math.round(props.envPercent)}%`
     }
     case 'failed':
-      return t('edit.envStatusFailed')
+      return t('core.edit.envStatusFailed')
     case 'success':
-      if (props.envOutcome === 'cached') return t('edit.envStatusCached')
-      if (props.envOutcome === 'updated') return t('edit.envStatusUpdated')
-      return t('edit.envStatusPrepared')
+      if (props.envOutcome === 'cached') return t('core.edit.envStatusCached')
+      if (props.envOutcome === 'updated') return t('core.edit.envStatusUpdated')
+      return t('core.edit.envStatusPrepared')
     default:
       return ''
   }
@@ -338,14 +341,14 @@ const projectSubtitle = computed(() => {
 
 // Agent 运行时类型（后端的内部枚举）→ 给人看的叫法；不认识的值原样显示
 const RUNTIME_KIND_LABEL_KEYS: Record<string, string> = {
-  isolated_venv: 'edit.envRuntimeIsolatedVenv',
-  project_python: 'edit.envRuntimeProjectPython',
-  project_binary: 'edit.envRuntimeProjectBinary',
-  shared_runtime: 'edit.envRuntimeSharedRuntime',
-  external: 'edit.envRuntimeExternal',
+  isolated_venv: 'core.edit.envRuntimeIsolatedVenv',
+  project_python: 'core.edit.envRuntimeProjectPython',
+  project_binary: 'core.edit.envRuntimeProjectBinary',
+  shared_runtime: 'core.edit.envRuntimeSharedRuntime',
+  external: 'core.edit.envRuntimeExternal',
 }
 const runtimeKindLabel = (kind: string | null | undefined) => {
-  if (!kind) return t('common.unknown')
+  if (!kind) return t('core.common.unknown')
   const key = RUNTIME_KIND_LABEL_KEYS[kind]
   return key ? t(key) : kind
 }
@@ -357,9 +360,9 @@ const envStatusText = computed(() => {
   if (props.envMessage) parts.push(props.envMessage)
   if (envTone.value === 'success' && props.envAgents.length) {
     const agents = [...new Set(props.envAgents.map(a => runtimeKindLabel(a.runtimeKind)))].join(
-      t('edit.maafwListSeparator')
+      t('core.edit.maafwListSeparator')
     )
-    parts.push(`${t('edit.envReadyAgents')}: ${agents}`)
+    parts.push(`${t('core.edit.envReadyAgents')}: ${agents}`)
   }
   return parts.filter(Boolean).join('  ·  ')
 })
@@ -378,11 +381,9 @@ watch(
 )
 </script>
 
-<style scoped>
-.form-section {
-  margin-bottom: 40px;
-}
+<style scoped src="./maafwSection.css"></style>
 
+<style scoped>
 .import-progress {
   display: flex;
   align-items: center;
@@ -451,77 +452,16 @@ watch(
   color: var(--ant-color-warning);
 }
 
-.section-header {
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: var(--ant-color-text-quaternary);
-  border-radius: 2px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-}
-
-.modern-input {
-  border-radius: 8px;
-}
-
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid var(--ant-color-border);
-}
-
 .path-input {
-  flex: 1;
   /* flex 子项默认 min-width:auto，窄屏下会被内容撑住不肯让位，
      把两个按钮挤出圆角容器；显式归零才能正常收缩。 */
   min-width: 0;
-  border: none !important;
-  border-radius: 0 !important;
-}
-
-.path-input:focus {
-  box-shadow: none !important;
 }
 
 .path-button {
   /* 两个按钮共用一套样式：各自带左分隔线，与输入框拼成一条完整控件。 */
   flex: 0 0 auto;
   white-space: nowrap;
-  border: none;
-  border-left: 1px solid var(--ant-color-border-secondary);
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
 }
 
 /* 自定义底色盖掉了 antd 的禁用态：导入后目录锁死时按钮要看得出点不了 */
@@ -625,46 +565,6 @@ watch(
 .env-log-box {
   position: absolute;
   inset: 0;
-  overflow-y: auto;
-  padding: 8px 10px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 6px;
-  font-family: var(--ant-font-family-code, monospace);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.env-log-line {
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--ant-color-text-secondary);
-}
-
-.env-log-line--empty {
-  color: var(--ant-color-text-tertiary);
-}
-
-/* 结论就是日志的最后一行，整行一个强调色：成功绿、失败红、进行中主色 */
-.env-log-status {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.env-log-status--running {
-  color: var(--ant-color-primary);
-}
-
-.env-log-status--success {
-  color: var(--ant-color-success);
-}
-
-.env-log-status--failed {
-  color: var(--ant-color-error);
 }
 
 .env-log-status-hint {

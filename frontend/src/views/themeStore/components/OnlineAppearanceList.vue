@@ -39,7 +39,7 @@ const handleKeywordInput = (value: string): void => {
     <a-input
       :value="keyword"
       allow-clear
-      :placeholder="t('themeStore.search')"
+      :placeholder="t('core.themeStore.search')"
       @update:value="handleKeywordInput"
       @press-enter="loadList(1)"
     >
@@ -47,25 +47,27 @@ const handleKeywordInput = (value: string): void => {
     </a-input>
     <slot name="filters" />
     <a-button :loading="listLoading" @click="loadList(page)">
-      {{ t('themeStore.refresh') }}
+      {{ t('core.themeStore.refresh') }}
     </a-button>
   </div>
   <div v-if="listLoading" class="online-state">
-    <a-spin size="large" :tip="t('themeStore.loading')" />
+    <a-spin size="large" :tip="t('core.themeStore.loading')" />
   </div>
   <div v-else-if="listError" class="online-state">
-    <a-result status="warning" :title="t('themeStore.listFailed')" :sub-title="listError">
+    <a-result status="warning" :title="t('core.themeStore.listFailed')" :sub-title="listError">
       <template #extra>
         <a-button type="primary" @click="loadList(page)">
-          {{ t('themeStore.retry') }}
+          {{ t('core.themeStore.retry') }}
         </a-button>
       </template>
     </a-result>
   </div>
   <div v-else-if="items.length === 0" class="online-state">
-    <a-empty :description="keyword.trim() ? t('themeStore.noMatch') : t('themeStore.empty')">
+    <a-empty
+      :description="keyword.trim() ? t('core.themeStore.noMatch') : t('core.themeStore.empty')"
+    >
       <a-button v-if="keyword.trim()" @click="clearKeyword">
-        {{ t('themeStore.clearSearch') }}
+        {{ t('core.themeStore.clearSearch') }}
       </a-button>
     </a-empty>
   </div>
@@ -90,31 +92,31 @@ const handleKeywordInput = (value: string): void => {
           color="success"
           class="online-cover-tag"
         >
-          {{ t('themeStore.installed') }}
+          {{ t('core.themeStore.installed') }}
         </a-tag>
         <a-tag
           v-else-if="getOnlineAppearanceStatus(item) === 'outdated'"
           color="warning"
           class="online-cover-tag"
         >
-          {{ t('themeStore.installedOlder', { version: item.installed?.versionNo }) }}
+          {{ t('core.themeStore.installedOlder', { version: item.installed?.versionNo }) }}
         </a-tag>
       </span>
       <span class="online-card-body">
         <span class="online-name">{{ item.displayName || item.fileKey }}</span>
         <span v-if="item.categoryKey" class="online-meta">{{
-          t(`themeStore.categories.${item.categoryKey}`)
+          t(`core.themeStore.categories.${item.categoryKey}`)
         }}</span>
         <span class="online-meta">
           <span v-if="item.publishedVersionNo !== null">v{{ item.publishedVersionNo }}</span>
           <span class="online-owner">
             <UserOutlined />
-            {{ item.ownerUsername || t('themeStore.unknownAuthor') }}
+            {{ item.ownerUsername || t('core.themeStore.unknownAuthor') }}
           </span>
           <span>{{ formatOnlineAppearanceTime(item.publishedAt || item.updatedAt) }}</span>
         </span>
         <span class="online-description">
-          {{ item.description || t('themeStore.noDescription') }}
+          {{ item.description || t('core.themeStore.noDescription') }}
         </span>
       </span>
     </button>

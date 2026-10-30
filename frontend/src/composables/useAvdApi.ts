@@ -1,33 +1,14 @@
 import { ref } from 'vue'
+import { observeFeature } from '@/utils/featureAnalytics'
 
-import { ApiError, Emulator20Service } from '@/api'
+import { Emulator20Service } from '@/api'
+import { getApiErrorMessage } from '@/utils/apiError'
 import type {
   Emulator2AvdInstanceOptionsOut,
   Emulator2AvdStatusOut,
   Emulator2PathAddOut,
 } from '@/api'
 import { t } from '@/i18n'
-
-/**
- * 生成客户端在非 2xx 时抛 ``ApiError``，后端的说明在 ``error.body.message``；取不到就用兜底文案。
- * 其余异常（网络断开等）用它自己的消息。
- */
-const errorMessage = (error: unknown, fallback: string): string => {
-  if (error instanceof ApiError) {
-    const body: unknown = error.body
-    if (
-      body &&
-      typeof body === 'object' &&
-      'message' in body &&
-      typeof body.message === 'string' &&
-      body.message
-    ) {
-      return body.message
-    }
-  }
-  if (error instanceof Error && error.message) return error.message
-  return fallback
-}
 
 /**
  * 魔改 AVD 客户端：根目录的组件状态与开机前检查、添加根目录、读实例选项。
@@ -54,7 +35,7 @@ export function useAvdApi() {
       if (response.code !== 200) throw new Error(response.message || t(fallbackKey))
       return response
     } catch (caught) {
-      const detail = errorMessage(caught, t(fallbackKey))
+      const detail = getApiErrorMessage(caught, t(fallbackKey))
       error.value = detail
       throw new Error(detail)
     } finally {
@@ -67,19 +48,28 @@ export function useAvdApi() {
   const getStatus = (root: string, refresh = false): Promise<Emulator2AvdStatusOut> =>
     call(
       () => Emulator20Service.avdStatusApiEmulator2AvdStatusPost({ root, refresh }),
-      'emulator2.avd.toast.statusFailed'
+      'core.emulator2.avd.toast.statusFailed'
     )
 
   /** 把组件已齐的根目录加进配置。``ok=false`` 带 ``reason``（如 ``already_added``）原样返回。 */
   const addRoot = (emulatorId: string, root: string): Promise<Emulator2PathAddOut> =>
     call(
       () =>
-        Emulator20Service.addPathApiEmulator2PathsAddPost({
-          emulatorId,
-          installPath: root,
-          alias: null,
-        }),
-      'emulator2.avd.toast.addFailed'
+        observeFeature(
+          'avd_root_added',
+          { reason_kind: 'unknown' },
+          () =>
+            Emulator20Service.addPathApiEmulator2PathsAddPost({
+              emulatorId,
+              installPath: root,
+              alias: null,
+            }),
+          result => ({
+            outcome: result.code === 200 && result.ok ? ('success' as const) : ('failure' as const),
+            reason_kind: result.ok ? ('validated' as const) : ('invalid' as const),
+          })
+        ),
+      'core.emulator2.avd.toast.addFailed'
     )
 
   const getInstanceOptions = (
@@ -92,7 +82,7 @@ export function useAvdApi() {
           emulatorId,
           slot,
         }),
-      'emulator2.avd.toast.optionsLoadFailed'
+      'core.emulator2.avd.toast.optionsLoadFailed'
     )
 
   return {

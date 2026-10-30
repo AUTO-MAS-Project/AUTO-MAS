@@ -47,15 +47,11 @@ from app.task.Whimbox.contracts import (
     WhimboxOptionDecl,
     WhimboxTaskDecl,
 )
+from app.utils import config_archive as _utils_config_archive
 from app.utils import get_logger
-from app.utils.config_archive import (
-    archive_files,
-    config_root_key,
-    dir_files,
-    get_backup_dir,
-    list_times,
-)
-from app.utils.io import atomic_write, read_dict_file
+from app.utils import io as _utils_io
+
+atomic_write = _utils_io.atomic_write
 
 logger = get_logger("奇想盒 上游配置面")
 
@@ -221,13 +217,19 @@ class WheelAssetsConfigSurface:
 
         try:
             template = json.loads(
-                (self.assets_dir / TEMPLATE_FILE).read_text(encoding="utf-8")
+                (self.assets_dir / TEMPLATE_FILE)
+                .read_text(encoding="utf-8")
+                .removeprefix("\ufeff")
             )
             setting_options = json.loads(
-                (self.assets_dir / SETTING_OPTIONS_FILE).read_text(encoding="utf-8")
+                (self.assets_dir / SETTING_OPTIONS_FILE)
+                .read_text(encoding="utf-8")
+                .removeprefix("\ufeff")
             )
             material = json.loads(
-                (self.assets_dir / MATERIAL_FILE).read_text(encoding="utf-8")
+                (self.assets_dir / MATERIAL_FILE)
+                .read_text(encoding="utf-8")
+                .removeprefix("\ufeff")
             )
         except (OSError, json.JSONDecodeError) as e:
             logger.warning(f"读取奇想盒配置三件套失败: {e}")
@@ -340,7 +342,7 @@ class WheelAssetsConfigSurface:
         两者在此同口径处理（空配置本就等价于全默认值）。
         """
 
-        current = read_dict_file(self.config_path)
+        current = _utils_io.read_dict_file(self.config_path)
         if current:
             return current
         return json.loads(json.dumps(template))
@@ -350,7 +352,9 @@ class WheelAssetsConfigSurface:
 
         try:
             data = json.loads(
-                (self.assets_dir / TEMPLATE_FILE).read_text(encoding="utf-8")
+                (self.assets_dir / TEMPLATE_FILE)
+                .read_text(encoding="utf-8")
+                .removeprefix("\ufeff")
             )
         except (OSError, json.JSONDecodeError) as e:
             logger.warning(f"读取奇想盒配置模板失败: {e}")
@@ -456,7 +460,7 @@ class WheelAssetsConfigSurface:
             / "data"
             / "WhimboxBackups"
             / "native"
-            / config_root_key(self.config_path)
+            / _utils_config_archive.config_root_key(self.config_path)
         )
 
     def snapshot_pre_run(self) -> str | None:
@@ -472,7 +476,7 @@ class WheelAssetsConfigSurface:
         created = self.archive_config()
         if created is not None:
             return created
-        times = list_times(self.backup_root())
+        times = _utils_config_archive.list_times(self.backup_root())
         return times[0] if times else None
 
     def archive_config(self, force: bool = False) -> str | None:
@@ -480,7 +484,7 @@ class WheelAssetsConfigSurface:
 
         if not self.config_file_exists():
             return None
-        dest = archive_files(
+        dest = _utils_config_archive.archive_files(
             {self.config_path.name: self.config_path}, self.backup_root(), force=force
         )
         return dest.name if dest is not None else None
@@ -498,7 +502,7 @@ class WheelAssetsConfigSurface:
             logger.info("奇想盒 config.json 为会话期新建，已按运行前状态删除")
             return
 
-        backup_dir = get_backup_dir(self.backup_root(), ts)
+        backup_dir = _utils_config_archive.get_backup_dir(self.backup_root(), ts)
         if backup_dir is None:
             raise ValueError(f"奇想盒配置备份不存在: {ts}")
         src = backup_dir / self.config_path.name
@@ -512,10 +516,10 @@ class WheelAssetsConfigSurface:
     def backup_dir_files(self, ts: str) -> dict[str, Path]:
         """归档条目内的文件集（预览用；目录式布局同 dir_files）。"""
 
-        backup_dir = get_backup_dir(self.backup_root(), ts)
+        backup_dir = _utils_config_archive.get_backup_dir(self.backup_root(), ts)
         if backup_dir is None:
             raise ValueError(f"奇想盒配置备份不存在: {ts}")
-        return dir_files(backup_dir)
+        return _utils_config_archive.dir_files(backup_dir)
 
     def snapshot_entry(self, force: bool = False) -> str | None:
         """归档当前 config.json（恢复池 snapshot 用；force=True 恢复前存底）。"""

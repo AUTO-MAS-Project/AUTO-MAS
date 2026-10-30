@@ -1,10 +1,13 @@
 <template>
   <div class="direct-control-section">
-    <div class="section-header">
-      <h3>{{ t('edit.directControl') }}</h3>
+    <div class="section-header section-header--compact">
+      <h3>{{ t('core.edit.directControl') }}</h3>
     </div>
     <!-- 直控跑什么、MAS 管什么由上方「直控」来源卡片说明，这里不再重复 -->
-    <a-empty v-if="availableEngines.length === 0" :description="t('edit.noSraMarch7thAssistant')" />
+    <a-empty
+      v-if="availableEngines.length === 0"
+      :description="t('core.edit.noSraMarch7thAssistant')"
+    />
     <div v-else class="engine-grid">
       <div v-for="engine in availableEngines" :key="engine" class="engine-card">
         <div class="engine-card-header">
@@ -12,14 +15,16 @@
             <div class="engine-name">{{ engineLabel(engine) }}</div>
             <!-- 云平台下 SRA 卡只在仍勾着时出现：说明它为何不能用，让用户关掉 -->
             <div class="engine-description">
-              {{ cloud && engine === 'SRA' ? t('edit.hsrCloudNoSra') : engineDescription(engine) }}
+              {{
+                cloud && engine === 'SRA' ? t('core.edit.hsrCloudNoSra') : engineDescription(engine)
+              }}
             </div>
           </div>
           <a-switch
             :checked="Boolean(control[engine])"
             :disabled="saving"
-            :checked-children="t('edit.run')"
-            :un-checked-children="t('edit.skip2')"
+            :checked-children="t('core.edit.run')"
+            :un-checked-children="t('core.edit.skip2')"
             @change="emit('toggle', engine, Boolean($event))"
           />
         </div>
@@ -48,29 +53,14 @@ const emit = defineEmits<{
 }>()
 
 const engineLabel = (engine: HSREngine) =>
-  engine === 'M7A' ? t('edit.directEngineM7a') : t('edit.directEngineSra')
+  engine === 'M7A' ? t('core.edit.directEngineM7a') : t('core.edit.directEngineSra')
 const engineDescription = (engine: HSREngine) =>
-  engine === 'M7A' ? t('edit.directEngineDescM7a') : t('edit.directEngineDescSra')
+  engine === 'M7A' ? t('core.edit.directEngineDescM7a') : t('core.edit.directEngineDescSra')
 </script>
 
 <style scoped>
 .direct-control-section {
   margin-bottom: 24px;
-}
-
-.section-header {
-  margin-bottom: 12px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  gap: 10px;
-  font-size: 18px;
-}
-
-.section-header h3::before {
-  height: 20px;
-  background: var(--ant-color-primary);
 }
 
 .engine-grid {

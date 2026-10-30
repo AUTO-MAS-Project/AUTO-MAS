@@ -36,8 +36,8 @@ from typing import TYPE_CHECKING
 import cv2
 import numpy as np
 
-from app.utils.platform import IS_WINDOWS
-from app.utils.platform.display import per_monitor_dpi as _per_monitor_dpi
+from app.utils import IS_WINDOWS
+from app.utils import display as _utils_display
 
 if TYPE_CHECKING:
     import pyautogui
@@ -163,20 +163,22 @@ def _activate_window(hwnd: int) -> None:
     time.sleep(0.1)
 
 
-def _client_size(hwnd: int) -> tuple[int, int]:
+def _client_size(hwnd: int, *, check_ratio: bool = True) -> tuple[int, int]:
     _, _, width, height = win32gui.GetClientRect(hwnd)
     if width <= 0 or height <= 0:
         raise RuntimeError("终末地主窗口尺寸异常")
-    if abs(width / height - 16 / 9) > 0.02:
+    if check_ratio and abs(width / height - 16 / 9) > 0.02:
         raise RuntimeError("终末地登录仅支持 16:9 游戏分辨率")
     return width, height
 
 
-def _capture_window_image(hwnd: int, *, activate: bool = True) -> Image.Image:
-    with _per_monitor_dpi():
+def _capture_window_image(
+    hwnd: int, *, activate: bool = True, check_ratio: bool = True
+) -> Image.Image:
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
-        width, height = _client_size(hwnd)
+        width, height = _client_size(hwnd, check_ratio=check_ratio)
         left, top = win32gui.ClientToScreen(hwnd, (0, 0))
         virtual_left = win32api.GetSystemMetrics(win32con.SM_XVIRTUALSCREEN)
         virtual_top = win32api.GetSystemMetrics(win32con.SM_YVIRTUALSCREEN)
@@ -204,8 +206,11 @@ def _save_error_screenshot(
     """保存登录失败时未标注的游戏窗口截图，由共享工具压缩落盘。"""
 
     try:
+        if not win32gui.IsWindow(hwnd) or win32gui.IsIconic(hwnd):
+            raise RuntimeError("终末地主窗口无效或已最小化，无法保存错误截图")
+        # 诊断图保留实际客户区，不受登录识别的画面比例限制。
         screenshot_path = save_error_screenshot(
-            _capture_window_image(hwnd, activate=False),
+            _capture_window_image(hwnd, activate=False, check_ratio=False),
             "maaend-login",
             "login-error",
         )
@@ -255,7 +260,7 @@ def _read_text(frame: np.ndarray, roi: Box) -> list[OCRItem]:
 
 
 def _click_box(hwnd: int, box: Box, *, activate: bool = True) -> None:
-    with _per_monitor_dpi():
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)

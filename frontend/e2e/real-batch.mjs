@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process'
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { listRealCandidates } from './run.mjs'
+import { listRealCandidates, readRealScripts } from './run.mjs'
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = path.resolve(frontendRoot, '..')
@@ -82,12 +82,7 @@ async function main() {
   if (!forwarded.includes('--grep')) forwarded.push('--grep', '@real')
 
   const sourceRoot = path.resolve(process.env.AUTO_MAS_E2E_TEMPLATE_ROOT?.trim() || repositoryRoot)
-  const scriptConfig = JSON.parse(
-    (await readFile(path.join(sourceRoot, 'config', 'ScriptConfig.json'), 'utf8')).replace(
-      /^\uFEFF/,
-      ''
-    )
-  )
+  const scriptConfig = await readRealScripts(sourceRoot)
   const candidates = listRealCandidates(scriptConfig)
   if (candidates.length === 0) {
     throw new Error(

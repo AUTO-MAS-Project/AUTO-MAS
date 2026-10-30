@@ -24,13 +24,14 @@ from datetime import datetime
 from pathlib import Path
 
 from app.config import ConfigCollection
-from app.core import Config
+from app.core.history import aggregate_data
 from app.core.ws import Publisher, protocol
-from app.log_box import LogCollect, LogType, log_box
+from app.log_box import UserLogSession, log_box
 from app.models.config import OkwwConfig, OkwwUserConfig
-from app.models.schema import WSTaskNoticeData
+from app.models.notification_ports import LocalNotice
+from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import Notify, System
+from app.services import System
 from app.services.wuthering_waves import (
     check_wuthering_waves_update,
     discover_wuthering_waves_fallback,
@@ -39,31 +40,25 @@ from app.services.wuthering_waves import (
 )
 from app.services.wuthering_waves_updater import update_wuthering_waves
 from app.task.base import ScriptAutoProxyBase
+from app.task.notify_core import build_user_statistics_payload
 from app.task.proxy_helpers import (
-    append_push_log,
     kill_pids,
     push_dispatch_log,
     split_args,
 )
 from app.utils import (
+    LogMonitor,
     ProcessInfo,
     ProcessManager,
     get_logger,
     is_process_alive,
     is_process_running,
 )
-from app.utils.constants import BASE_NATIVE, BASE_SHARED, UTC4, normalize_base_source
-from app.utils.i18n import PoTranslator
-from app.utils.io import mark_native_config_injected, swap_in_dir, write_file
-from app.utils.LogMonitor import LogMonitor
+from app.utils import constants as _utils_constants
+from app.utils import io as _utils_io
 
-from .push_log import (
-    OKWW_PUSH_RULES,
-    OKWW_REL_I18N_PO,
-    _okww_supplement_po,
-    okww_resolve,
-)
-from .tools import async_switch_account, push_notification
+from .push_log import make_okww_log_spec
+from .tools import async_switch_account
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     mas_config_dir,
@@ -133,7 +128,7 @@ _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
 def _okww_config_base(raw: object) -> str:
     """读取 OK-WW 配置来源（base 三态），并兼容旧版字面量。"""
 
-    return normalize_base_source(raw) or BASE_SHARED
+    return _utils_constants.normalize_base_source(raw) or _utils_constants.BASE_SHARED
 
 
 def _okww_mas_config_dir(script_id: str, user_id: str, base: str) -> Path:
@@ -147,11 +142,11 @@ def _okww_mas_config_dir(script_id: str, user_id: str, base: str) -> Path:
 def _update_json(path: Path, values: dict[str, object]) -> None:
     data: object = {}
     if path.is_file():
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
     if not isinstance(data, dict):
         raise ValueError(f"OK-WW 配置文件格式错误: {path.name}")
     data.update(values)
-    write_file(path, data)
+    _utils_io.write_file(path, data)
 
 
 def _configure_okww_launcher(script_root_path: Path) -> None:
@@ -165,7 +160,9 @@ def _configure_okww_launcher(script_root_path: Path) -> None:
     if not app_json_path.is_file():
         return
 
-    app_config = json.loads(app_json_path.read_text(encoding="utf-8"))
+    app_config = json.loads(
+        app_json_path.read_text(encoding="utf-8").removeprefix("\ufeff")
+    )
     if not isinstance(app_config, dict):
         raise ValueError("OK-WW app.json 格式错误")
 
@@ -179,7 +176,7 @@ def _configure_okww_launcher(script_root_path: Path) -> None:
     if not changed:
         return
 
-    write_file(app_json_path, app_config)
+    _utils_io.write_file(app_json_path, app_config)
     logger.info("已补齐 OK-WW 启动器默认设置")
 
 
@@ -222,8 +219,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
         # log_box：用户级「是否采集节点详情」关闭时不创建（prepare 按配置启停）
-        self.log_collect: LogCollect | None = None
-        self.log_translator: PoTranslator | None = None
+        self.log_collect: UserLogSession | None = None
         self.script_config_path: Path | None = None
 
     async def check(self) -> str:
@@ -234,14 +230,18 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             return "请设置ok-ww脚本路径"
         if not (root / _OKWW_REL_APP_JSON).is_file():
             return "请设置ok-ww脚本路径"
+        # 启动检查早于每日重置，旧日期的次数不参与今日上限判断。
+        curdate = datetime.now(tz=_utils_constants.UTC4).strftime("%Y-%m-%d")
+        proxy_times = (
+            self.cur_user_config.Data.ProxyTimes
+            if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") == curdate
+            else 0
+        )
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
             self.task_info.is_queue_task
             and self.script_config.Run.ProxyTimesLimit != 0
-            and (
-                self.cur_user_config.Data.ProxyTimes
-                >= self.script_config.Run.ProxyTimesLimit
-            )
+            and proxy_times >= self.script_config.Run.ProxyTimesLimit
         ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
@@ -335,7 +335,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     )
 
         config_base = _okww_config_base(self.cur_user_config.Info.Base)
-        if config_base == BASE_NATIVE:
+        if config_base == _utils_constants.BASE_NATIVE:
             config_dir = root / _OKWW_REL_CONFIG_DIR
             if not config_dir.is_dir() or not any(
                 item.is_file() for item in config_dir.rglob("*")
@@ -346,7 +346,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 from .tools.config_dir import ensure_user_config_dir
 
                 await ensure_user_config_dir(
-                    script_id=self.script_info.script_id,
+                    script_config=self.script_config,
                     user_id=str(self.cur_user_uid),
                     base=config_base,
                 )
@@ -363,7 +363,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self.wait_event = asyncio.Event()
 
         self.user_start_time = datetime.now()
-        self.log_start_time = datetime.now()
+        self.log_start_time = datetime.now().astimezone()
 
         # ── 所有 Script 路径从 RootPath 实时派生，不依赖 ConfigItem 存储值 ──
         script_root_path = self.script_config.Info.RootPath
@@ -392,27 +392,17 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         # 受用户级「节点详情推送模式」开关控制：关闭时不创建（不读日志、不翻译、
         # 不匹配、不处理），既省采集开销也符合「不记录」语义；该用户 push_log 保持
         # 为空，报告聚合时自然不含其节点详情。
-        self.cur_user_item.push_log_mode = self.cur_user_config.Notify.PushLogMode
-        if self.cur_user_config.Notify.PushLogMode != "关闭":
-            self.log_collect = log_box.get_collect(
-                paths=[self.script_log_path],
-                sink=self._append_push_log,
-                start_from_end=True,
-                # ok-script 框架跨零点把 ok-script.log 滚动为
-                # ok-script.YYYY-MM-DD.log（日期在中段），声明模板让轮转补偿命中旧文件
-                rotated_name=(
-                    f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}"
-                ),
-            )
-            # 前置翻译：ok-ww 自带 ok.po + AutoMAS 项目自带的补充 .po（补充优先）
-            self.log_translator = (
-                PoTranslator()
-                .load([OKWW_REL_I18N_PO], base=self.script_root_path)
-                .load_supplement([_okww_supplement_po()])
-            )
-            self.log_collect.open(self.log_translator.translate)
-            for rule in OKWW_PUSH_RULES:
-                self.log_collect.collect(*rule)
+        self.log_collect = log_box.get_user_session(
+            make_okww_log_spec(self.script_root_path),
+            user=self.cur_user_item,
+            mode=self.cur_user_config.Notify.PushLogMode,
+            paths=[self.script_log_path],
+            start_from_end=True,
+            # 保留无 inode 文件系统的跨零点轮转补偿；翻译文件由声明提供。
+            rotated_name=(
+                f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}"
+            ),
+        )
 
         self.task_index = _OKWW_TASK_INDEX
         self.okww_args = ["-t", str(self.task_index), "-e"]
@@ -463,7 +453,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         _configure_okww_launcher(self.script_root_path)
 
         config_base = _okww_config_base(self.cur_user_config.Info.Base)
-        if config_base != BASE_NATIVE:
+        if config_base != _utils_constants.BASE_NATIVE:
             # 下发前归档 MAS 配置到用户池（下发源，运行回写与快速配置覆盖会
             # 改它；指纹去重，失败不阻断运行）。目标路径按三态 owner（shared 来源
             # 共享 Default 目录）。native 池由 manager prepare 在任务级一次
@@ -485,13 +475,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 str(self.cur_user_uid),
                 config_base,
             )
-            swap_in_dir(mas_config_dir, self.script_config_path)
+            _utils_io.swap_in_dir(mas_config_dir, self.script_config_path)
         else:
             source = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
             if source.is_dir():
-                swap_in_dir(source, self.script_config_path)
+                _utils_io.swap_in_dir(source, self.script_config_path)
         self._apply_mas_overrides()
-        mark_native_config_injected(
+        _utils_io.mark_native_config_injected(
             Path.cwd() / f"data/{self.script_info.script_id}/Temp",
             self.script_config_path,
             script_id=self.script_info.script_id,
@@ -503,15 +493,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
         await push_dispatch_log(self.script_info, line)
 
-    def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
-        """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
-
-        append_push_log(self.cur_user_item, log_type, text, ts)
-
     async def handle_pre_okww_error(
         self, error_message: str, e: Exception | None = None
-    ) -> None:
-        """游戏启动 / 账号切换等前置步骤失败的统一处理（对齐 MaaEnd）。"""
+    ) -> bool:
+        """处理前置步骤失败，返回是否已确认旧 OK-WW 进程退出。"""
 
         if e is None:
             logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
@@ -529,20 +514,26 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
             )
-        self.cur_user_log.content = [f"{error_message}, 无日志记录"]
-        self.cur_user_log.status = error_message
+        error_detail = f"{error_message}: {e}" if e is not None else error_message
+        self.cur_user_log.content = [f"{error_detail}, 无日志记录"]
+        self.cur_user_log.status = error_detail
 
-        await self.kill_managed_process(kill_game=self._game_management_enabled())
+        okww_stopped = await self.kill_managed_process(
+            kill_game=self._game_management_enabled()
+        )
 
         try:
-            await Notify.push_plyer(
-                "OK-WW 自动代理出现异常！",
-                f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
-                f"{self.cur_user_item.name}的自动代理出现异常",
-                3,
+            await self.task_info.local_notifier.send_notice(
+                LocalNotice(
+                    title="OK-WW 自动代理出现异常！",
+                    message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                    ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                    duration_seconds=3,
+                )
             )
         except Exception:
             pass
+        return okww_stopped
 
     def _game_launch_type(self) -> str:
         """游戏启动方式（缺省回落直启态）：Client=直启客户端，Launcher=经官方启动器。"""
@@ -752,9 +743,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
     async def main_task(self):
         await self.prepare()
-        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        self.curdate = datetime.now(tz=_utils_constants.UTC4).strftime("%Y-%m-%d")
         if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != self.curdate:
-            self.cur_user_config.Data.LastProxyDate = datetime.now(tz=UTC4)
+            self.cur_user_config.Data.LastProxyDate = datetime.now(
+                tz=_utils_constants.UTC4
+            )
             await self.cur_user_config.commit()
             self.cur_user_config.Data.ProxyTimes = 0
             await self.cur_user_config.commit()
@@ -773,8 +766,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 f"用户 {self.cur_user_item.name} - 尝试次数: {attempt}/{run_limit}"
             )
             self.cur_user_item.status = "运行"
-            self.log_start_time = datetime.now()
-            self.cur_user_item.log_record[self.log_start_time] = LogRecord()
+            self.log_start_time = datetime.now().astimezone()
+            self.cur_user_item.add_log_record(self.log_start_time, LogRecord())
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
             self.script_info.log = ""
 
@@ -797,11 +790,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                         kill_game=self._game_management_enabled()
                     )
                     try:
-                        await Notify.push_plyer(
-                            "OK-WW 自动代理出现异常！",
-                            f"用户 {self.cur_user_item.name} 游戏启动失败",
-                            f"{self.cur_user_item.name}的自动代理出现异常",
-                            3,
+                        await self.task_info.local_notifier.send_notice(
+                            LocalNotice(
+                                title="OK-WW 自动代理出现异常！",
+                                message=f"用户 {self.cur_user_item.name} 游戏启动失败",
+                                ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                                duration_seconds=3,
+                            )
                         )
                     except Exception:
                         pass
@@ -865,11 +860,32 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 f"启动 OK-WW 进程: {self.script_exe_path} {' '.join(self.okww_args)}"
             )
 
-            await self.okww_process_manager.open_process(
-                self.script_exe_path,
-                *self.okww_args,
-                target_process=self.script_target_process_info,
-            )
+            try:
+                await self.okww_process_manager.open_process(
+                    self.script_exe_path,
+                    *self.okww_args,
+                    target_process=self.script_target_process_info,
+                )
+            except (OSError, RuntimeError) as e:
+                # 启动器可能已拉起进程；清理后再重试，避免下一轮重复启动。
+                if not await self.handle_pre_okww_error("OK-WW 启动失败", e=e):
+                    message = (
+                        "无法确认旧 OK-WW 进程已退出，停止重试，"
+                        "请检查残留进程及结束进程的权限"
+                    )
+                    self.cur_user_log.status += f"\n{message}"
+                    self.cur_user_log.content.append(message)
+                    self.cur_user_item.status = "异常"
+                    await self._push_dispatch_log(message)
+                    break
+                if attempt < run_limit:
+                    await self._push_dispatch_log(
+                        f"OK-WW 启动失败，将在稍后重试 ({attempt}/{run_limit})"
+                    )
+                    await asyncio.sleep(10)
+                else:
+                    self.cur_user_item.status = "异常"
+                continue
 
             # 启动日志监控（文件日志）
             await asyncio.sleep(1)
@@ -926,11 +942,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
             await self.kill_managed_process(kill_game=self._game_management_enabled())
             try:
-                await Notify.push_plyer(
-                    "OK-WW 自动代理出现异常！",
-                    f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                    f"{self.cur_user_item.name}的自动代理出现异常",
-                    3,
+                await self.task_info.local_notifier.send_notice(
+                    LocalNotice(
+                        title="OK-WW 自动代理出现异常！",
+                        message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                        duration_seconds=3,
+                    )
                 )
             except Exception:
                 pass
@@ -996,51 +1014,85 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             self.wait_event.set()
 
     async def final_task(self):
+        self.task_info.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not self.run_book
+            and not self.cur_user_item.maintenance_skipped
+            and not self.stopped_manually,
+        )
+
         # 结束时先清理进程与监控；任务结束后始终关闭游戏（由 Game.Enabled 总开关控制）
         if self.log_monitor is not None:
             with suppress(Exception):
                 await self.log_monitor.stop()
         await self.kill_managed_process(kill_game=self._game_management_enabled())
 
-        # log_box 收尾：冲刷残留、后置状态解析并完成推送（sink → cur_user_item.push_log）
-        # 采集失败时记一笔日志，避免报告里节点信息缺失却无从排查；
-        # 开关关闭（未创建）或 prepare 未执行完时 log_collect 为 None，一并在此兜底
-        try:
-            if self.log_collect is not None:
-                self.log_collect.close(okww_resolve)
-            if self.log_translator is not None:
-                self.log_translator.clear()
-        except Exception:
-            logger.opt(exception=True).warning(
-                "OK-WW log_box 收尾推送失败（okww_resolve/翻译清理）"
-            )
-            # 采集失败状态显式写入报告，避免节点详情缺失却仍呈现为正常结果
-            self.cur_user_item.push_log.append(
-                (LogType.NORMAL, "⚠️ 节点采集失败", time.time())
-            )
+        # box 归并并交付节点后释放翻译资源，报告仍使用原有文本与兜底提示。
+        if self.log_collect is not None:
+            await self.log_collect.close()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
-        statistic_paths: list[Path] = []
-        for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.astimezone(UTC4)
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=dt,
-            )
+        await self._persist_user_run_result()
+        await self._wait_game_exit_before_next_user()
 
+        await self.run_user_scripts_after()
+
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
             if log_item.status in {"未开始监看日志", "OK-WW 正常运行中"}:
                 log_item.status = "任务被用户手动中止"
 
+            was_cancelled = (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "任务被用户手动中止"
+            )
             if not log_item.content:
                 log_item.content = [log_item.status]
 
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
-            statistic_paths.append(log_path.with_suffix(".json"))
+            history_records.append(
+                HistoryWrite(
+                    time=t.astimezone(_utils_constants.UTC4),
+                    username=self.cur_user_item.name,
+                    script_name=self.script_info.name,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "skipped"
+                        if (
+                            log_item is self.cur_user_log
+                            and self.cur_user_item.maintenance_skipped
+                        )
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                    message=log_item.status,
+                    logs="".join(log_item.content),
+                )
+            )
 
-        if statistic_paths:
+        if history_records:
+            await self.task_info.save_user_history(
+                history_records,
+                script=self.script_info,
+                user=self.cur_user_item,
+                log_warning=logger.opt(exception=True).warning,
+            )
+
+        if history_records:
             try:
-                statistics = await Config.merge_statistic_info(statistic_paths)
+                statistics = {
+                    key: value.value
+                    for key, value in aggregate_data(
+                        [
+                            HistoryAggregationItem(time=record.time, data=record.data)
+                            for record in history_records
+                        ]
+                    ).data.items()
+                }
                 statistics["user_info"] = self.cur_user_item.name
                 start_time = getattr(self, "user_start_time", datetime.now())
                 statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -1056,22 +1108,18 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     if self.cur_user_item.maintenance_skipped
                     else "X"
                 )
-                await push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
-                    f"{self.cur_user_item.name} 的 OK-WW 自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
+                await self.task_info.notifications.push_statistics_report(
+                    payload=build_user_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 OK-WW 自动代理统计报告",
+                        message=statistics,
+                    ),
+                    user_config=self.cur_user_config,
+                    task_info=self.task_info,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(
                     f"推送 OK-WW 用户统计通知时出现异常: {e}"
                 )
-
-        await self._persist_user_run_result()
-
-        # 多用户切换：等上一用户游戏完全退出（见 _wait_game_exit_before_next_user）
-        await self._wait_game_exit_before_next_user()
 
     async def _persist_user_run_result(self) -> None:
         if self.cur_user_config is None:
@@ -1136,11 +1184,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 and self.cur_user_log.status
                 and self.cur_user_log.status != "Success!"
             ):
-                await Notify.push_plyer(
-                    "OK-WW 运行异常",
-                    f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
-                    "异常",
-                    3,
+                await self.task_info.local_notifier.send_notice(
+                    LocalNotice(
+                        title="OK-WW 运行异常",
+                        message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
+                        ticker="异常",
+                        duration_seconds=3,
+                    )
                 )
         except Exception:
             pass
@@ -1156,7 +1206,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         logger.warning(f"OK-WW 未在 {timeout}s 内自行退出，兜底强杀")
         await self._kill_okww_process()
 
-    async def _kill_okww_process(self) -> None:
+    async def _kill_okww_process(self) -> bool:
         if self.okww_process_manager is not None:
             try:
                 await self.okww_process_manager.kill()
@@ -1166,15 +1216,34 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 )
         if self.script_exe_path is not None:
             try:
-                await System.kill_process(self.script_exe_path)
+                if not await System.kill_process(self.script_exe_path):
+                    logger.warning("未能完整清理 OK-WW 主进程，将复核退出状态")
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-WW 主进程失败: {e}")
         if self.script_root_path is not None:
             track_exe = self.script_root_path / _OKWW_REL_PYTHONW
             try:
-                await System.kill_process(track_exe)
+                if not await System.kill_process(track_exe):
+                    logger.warning("未能完整清理 OK-WW 追踪进程，将复核退出状态")
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-WW 追踪进程失败: {e}")
+
+        # 清理返回成功也可能仍有残留；管理器丢失句柄时仍须按路径复核。
+        paths = []
+        if self.script_exe_path is not None:
+            paths.append(self.script_exe_path)
+        if self.script_root_path is not None:
+            paths.append(self.script_root_path / _OKWW_REL_PYTHONW)
+        stopped = True
+        for path in paths:
+            try:
+                if not await System.is_process_stopped(path):
+                    stopped = False
+                    logger.warning(f"无法确认进程已退出: {path}")
+            except Exception as e:
+                stopped = False
+                logger.opt(exception=True).warning(f"复核进程退出状态失败: {path}: {e}")
+        return stopped
 
     async def _kill_game_process(self) -> None:
         """结束游戏与官方启动器：任务结束/失败/异常时始终触发（由 Game.Enabled 总开关控制）"""
@@ -1213,16 +1282,19 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             # 路径本身失效时无从限定，只保留上面的按已知路径结束，不冒险按名扫。
             # 有没杀掉的（多为提权进程）要提示用户，不能静默。
             # 注意 kill_process_by_pid 失败时返回 False 而非抛异常，必须看返回值
-            failed = await kill_pids(
-                await asyncio.to_thread(find_game_pids, self.launcher_path)
-            )
-            if failed:
-                message = (
-                    f"有 {failed} 个鸣潮客户端进程未能结束（可能是提权进程，"
-                    "MAS 无权结束），请人工确认关闭"
+            try:
+                failed = await kill_pids(
+                    await asyncio.to_thread(find_game_pids, self.launcher_path)
                 )
-                logger.warning(message)
-                await self._push_dispatch_log(message)
+                if failed:
+                    message = (
+                        f"有 {failed} 个鸣潮客户端进程未能结束（可能是提权进程，"
+                        "MAS 无权结束），请人工确认关闭"
+                    )
+                    logger.warning(message)
+                    await self._push_dispatch_log(message)
+            except Exception as e:
+                logger.opt(exception=True).warning(f"清理鸣潮客户端进程失败: {e}")
         if self.launcher_path is not None and self._game_launch_type() == "Launcher":
             try:
                 # 启动器是进程家族：顶层 launcher.exe 引导器 + 版本目录下的
@@ -1248,11 +1320,15 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             except Exception as e:
                 logger.opt(exception=True).warning(f"关闭鸣潮官方启动器失败: {e}")
 
-    async def kill_managed_process(self, *, kill_game: bool = True) -> None:
-        """中止 ok-ww；kill_game 为真时结束游戏"""
-        await self._kill_okww_process()
+    async def kill_managed_process(self, *, kill_game: bool = True) -> bool:
+        """中止相关程序，返回是否已确认 OK-WW 退出；游戏清理失败单独记录。"""
+        okww_stopped = await self._kill_okww_process()
         if kill_game:
-            await self._kill_game_process()
+            try:
+                await self._kill_game_process()
+            except Exception as e:
+                logger.opt(exception=True).warning(f"清理鸣潮进程失败: {e}")
+        return okww_stopped
 
     async def _wait_game_exit_before_next_user(self) -> None:
         """多用户切换：等上一用户的游戏完全退出后再进下个用户。

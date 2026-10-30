@@ -15,8 +15,7 @@ from dataclasses import dataclass
 import httpx
 from packaging.version import InvalidVersion, Version
 
-from app.utils.constants import MIRROR_ERROR_INFO
-from app.utils.logger import get_logger
+from app.utils import MIRROR_ERROR_INFO, get_logger
 
 from ...task_mapping import engine_label
 from .engines import EngineSpec, SourceId, select_asset_name

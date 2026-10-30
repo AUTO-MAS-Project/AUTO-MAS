@@ -7,25 +7,37 @@
     @focusout="onFocusOut"
   >
     <a-card v-if="!items.length" class="carousel-empty">
-      <a-empty :description="t('home.carousel.allHidden')" />
+      <a-empty :description="t('core.home.carousel.allHidden')" />
     </a-card>
 
     <template v-else>
       <div class="activity-header">
-        <!-- 没做 tablist 的方向键漫游焦点，就别用 tab 语义许下做不到的承诺 -->
-        <div v-if="items.length > 1" class="banner-switcher">
-          <button
-            v-for="(item, index) in items"
-            :key="item.key"
-            type="button"
-            class="switcher-chip"
-            :class="{ 'is-active': index === activeIndex }"
-            :style="index === activeIndex ? activeChipStyle(item) : undefined"
-            :aria-current="index === activeIndex ? 'true' : undefined"
-            @click="select(index)"
+        <div class="activity-header-top">
+          <!-- 没做 tablist 的方向键漫游焦点，就别用 tab 语义许下做不到的承诺 -->
+          <div v-if="items.length > 1" class="banner-switcher">
+            <button
+              v-for="(item, index) in items"
+              :key="item.key"
+              type="button"
+              class="switcher-chip"
+              :class="{ 'is-active': index === activeIndex }"
+              :style="index === activeIndex ? activeChipStyle(item) : undefined"
+              :aria-current="index === activeIndex ? 'true' : undefined"
+              @click="select(index)"
+            >
+              {{ item.title }}
+            </button>
+          </div>
+
+          <a-button
+            type="link"
+            size="small"
+            class="activity-all-link"
+            @click="navigateTo('/taskboard')"
           >
-            {{ item.title }}
-          </button>
+            {{ t('core.taskboard.viewAll') }}
+            <ArrowRightOutlined />
+          </a-button>
         </div>
 
         <slot v-if="activeKey" name="community" :module-key="activeKey" />
@@ -43,7 +55,7 @@
             v-if="items.length > 1"
             type="button"
             class="banner-arrow is-prev"
-            :aria-label="t('home.carousel.prev')"
+            :aria-label="t('core.home.carousel.prev')"
             @click="select(activeIndex - 1)"
           >
             <LeftOutlined />
@@ -52,7 +64,7 @@
             v-if="items.length > 1"
             type="button"
             class="banner-arrow is-next"
-            :aria-label="t('home.carousel.next')"
+            :aria-label="t('core.home.carousel.next')"
             @click="select(activeIndex + 1)"
           >
             <RightOutlined />
@@ -91,7 +103,8 @@
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
-import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
+import { ArrowRightOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
+import { navigateTo } from '@/router'
 import type { HomeActivityPanel, HomeModuleKey } from '@/types/home'
 import HomeActivityBanner from './HomeActivityBanner.vue'
 import HomeActivitySection from './HomeActivitySection.vue'
@@ -259,6 +272,70 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
+/* 整条切换栏：外框画在这一行上，游戏标签和「查看全部活动」都在同一条里 */
+.activity-header-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 12px;
+  background: var(--ant-color-bg-container);
+}
+
+.activity-header-top .banner-switcher {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* 与任务台的筛选/页签小卡同一套药丸样式，跟随主题 token。 */
+.activity-all-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0 14px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 999px;
+  background: var(--app-background-card-bg, var(--ant-color-bg-container));
+  color: var(--ant-color-primary);
+  flex-shrink: 0;
+  transition:
+    transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-color 0.18s ease-out;
+}
+
+.activity-all-link:hover {
+  transform: scale(1.03);
+  border-color: var(--ant-color-primary-border);
+}
+
+/* AntD 的 link 按钮用 colorLinkHover（默认蓝）接管悬浮色，这里用同等权重压回主题色。 */
+.activity-all-link:not(:disabled):hover,
+.activity-all-link:not(:disabled):focus,
+.activity-all-link:not(:disabled):active {
+  color: var(--ant-color-primary);
+}
+
+/* 点击后不改变外观：只保留焦点环，避免看起来像被选中。 */
+.activity-all-link:focus,
+.activity-all-link:active {
+  border-color: var(--ant-color-border-secondary);
+  background: var(--app-background-card-bg, var(--ant-color-bg-container));
+  color: var(--ant-color-primary);
+  transform: scale(0.96);
+}
+
+.activity-all-link:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+}
+
 .banner-viewport {
   position: relative;
   overflow: hidden;
@@ -360,8 +437,14 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .banner-arrow,
-  .switcher-chip {
+  .switcher-chip,
+  .activity-all-link {
     transition: none;
+  }
+
+  .activity-all-link:hover,
+  .activity-all-link:active {
+    transform: none;
   }
 }
 

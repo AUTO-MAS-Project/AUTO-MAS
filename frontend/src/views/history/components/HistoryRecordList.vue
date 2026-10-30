@@ -3,13 +3,15 @@
     <div class="panel-header">
       <div class="header-left">
         <UnorderedListOutlined />
-        <span>{{ t('history.recordList') }}</span>
+        <span>{{ t('core.history.recordList') }}</span>
       </div>
       <div class="header-right">
-        <span class="record-count">{{ t('history.recordCount', { count: records.length }) }}</span>
+        <span class="record-count">{{
+          t('core.history.recordCount', { count: records.length })
+        }}</span>
         <a-popover placement="bottomRight">
           <template #content>
-            <p style="margin: 0">{{ t('history.timeRule') }}</p>
+            <p style="margin: 0">{{ t('core.history.timeRule') }}</p>
           </template>
           <HistoryOutlined class="info-icon" />
         </a-popover>
@@ -18,43 +20,48 @@
 
     <div class="records-container">
       <div v-if="records.length === 0" class="empty-records">
-        <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
-        <span class="empty-text">{{ t('history.emptyRecords') }}</span>
+        <a-empty
+          :image="noDataImage"
+          :image-style="{ height: '80px' }"
+          :description="t('core.history.emptyRecords')"
+        />
       </div>
 
       <div v-else class="records-scroll">
         <div
           v-for="(record, index) in records"
-          :key="record.jsonFile"
+          :key="record.id"
           class="record-item"
           :class="{
             active: selectedIndex === index,
-            success: record.status === 'DONE',
-            skip: record.status === 'SKIP',
-            error: record.status === 'ERROR',
+            success: record.status === 'success',
+            skip: record.status === 'skipped' || record.status === 'cancelled',
+            error: record.status === 'error',
           }"
           @click="$emit('select', index, record)"
         >
           <div class="record-status-bar" :class="statusClass(record.status)" />
           <div class="record-content">
             <div class="record-main">
-              <span class="record-time">{{ formatRecordTime(record.date) }}</span>
+              <span class="record-time">{{ formatRecordTime(record.time) }}</span>
               <a-tag :color="statusTagColor(record.status)" size="small" class="status-tag">
-                <CheckCircleOutlined v-if="record.status === 'DONE'" />
-                <MinusCircleOutlined v-else-if="record.status === 'SKIP'" />
+                <CheckCircleOutlined v-if="record.status === 'success'" />
+                <MinusCircleOutlined
+                  v-else-if="record.status === 'skipped' || record.status === 'cancelled'"
+                />
                 <CloseCircleOutlined v-else />
-                {{
-                  record.status === 'DONE'
-                    ? record.result || t('history.done')
-                    : record.status === 'SKIP'
-                      ? record.result || t('history.skipped')
-                      : record.status === 'ERROR' && errorInfo && errorInfo[record.date]
-                        ? t('history.failedWith', { error: errorInfo[record.date] })
-                        : t('history.failed')
-                }}
+                {{ record.message || t(statusLabelKey(record.status)) }}
               </a-tag>
             </div>
-            <div class="record-file">{{ record.jsonFile }}</div>
+            <div class="record-file">
+              {{ record.script_name }}
+              <span v-if="record.storage_error_count">
+                ·
+                {{
+                  t('core.history.storageWarningCount', { count: record.storage_error_count })
+                }}</span
+              >
+            </div>
           </div>
           <RightOutlined v-if="selectedIndex === index" class="record-arrow" />
         </div>
@@ -64,6 +71,7 @@
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import {
   CheckCircleOutlined,
@@ -73,31 +81,24 @@ import {
   RightOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
-import { formatBackendDateTime } from '@/utils/dateDisplay'
-import { statusClass, statusTagColor } from '../historyStatus'
+import type { HistoryIndexItem } from '@/api'
+import { formatHistoryDateTime } from '@/utils/dateDisplay'
+import { statusClass, statusTagColor, statusLabelKey } from '../historyStatus'
 
 const { t } = useI18n()
 
-interface RecordItem {
-  date: string
-  jsonFile: string
-  status: string
-  result?: string | null
-}
-
 interface Props {
-  records: RecordItem[]
+  records: HistoryIndexItem[]
   selectedIndex: number
-  errorInfo?: Record<string, string> | null
 }
 
 defineProps<Props>()
 
 defineEmits<{
-  (e: 'select', index: number, record: RecordItem): void
+  (e: 'select', index: number, record: HistoryIndexItem): void
 }>()
 
-const formatRecordTime = (date: string) => formatBackendDateTime(date)
+const formatRecordTime = (date: string) => formatHistoryDateTime(date)
 </script>
 
 <style scoped>
@@ -165,24 +166,6 @@ const formatRecordTime = (date: string) => formatBackendDateTime(date)
   padding: 8px;
 }
 
-/* 滚动条样式 - 浅色 */
-.records-scroll::-webkit-scrollbar {
-  width: 8px;
-}
-
-.records-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.records-scroll::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
-}
-
-.records-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
-}
-
 .empty-records {
   display: flex;
   flex-direction: column;
@@ -190,17 +173,6 @@ const formatRecordTime = (date: string) => formatBackendDateTime(date)
   justify-content: center;
   padding: 40px 20px;
   gap: 12px;
-}
-
-.empty-image {
-  width: 60px;
-  height: auto;
-  opacity: 0.6;
-}
-
-.empty-text {
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
 }
 
 .record-item {
@@ -244,7 +216,8 @@ const formatRecordTime = (date: string) => formatBackendDateTime(date)
   background: var(--ant-color-success);
 }
 
-.record-status-bar.skip {
+.record-status-bar.skip,
+.record-status-bar.cancelled {
   background: var(--ant-color-text-quaternary);
 }
 
@@ -293,16 +266,5 @@ const formatRecordTime = (date: string) => formatBackendDateTime(date)
   color: var(--ant-color-primary);
   font-size: 12px;
   flex-shrink: 0;
-}
-</style>
-
-<style>
-/* 深色模式滚动条 - 需要全局样式 */
-.dark .records-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15) !important;
-}
-
-.dark .records-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25) !important;
 }
 </style>

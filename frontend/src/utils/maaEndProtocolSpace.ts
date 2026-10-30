@@ -1,7 +1,7 @@
 import type { ComboBoxItem } from '@/api'
 
 // Frontend mirror of app/utils/constants.py. Keep fixed protocol-space values in sync
-// with the backend; AutoEssence locations come from MaaEnd's dynamic resource API.
+// with the backend; crisis drills and AutoEssence come from MaaEnd's dynamic resource API.
 export const MAAEND_DELIVERY_COMMISSION_SOURCE_OPTIONS = [
   { label: '不限', value: 'Unlimited' },
   { label: '武陵城', value: 'WulingCity' },
@@ -13,11 +13,11 @@ export type MaaEndDeliveryCommissionSource =
 
 export const MAAEND_AUTO_COLLECT_MODE_OPTIONS = [
   {
-    labelKey: 'edit.maaEndAutoCollectModeDistributed',
+    labelKey: 'core.edit.maaEndAutoCollectModeDistributed',
     value: 'Distributed',
   },
   {
-    labelKey: 'edit.maaEndAutoCollectModeConcentrated',
+    labelKey: 'core.edit.maaEndAutoCollectModeConcentrated',
     value: 'Concentrated',
   },
 ] as const
@@ -101,19 +101,13 @@ export const PROTOCOL_SPACE_TASK_OPTIONS_MAP = {
     { label: '武器经验', value: 'WeaponEXP' },
     { label: '武器进阶', value: 'WeaponTune', rewards: true },
   ],
-  CrisisDrills: [
-    { label: '高阶培养 I - D96钢样品四', value: 'AdvancedProgression1' },
-    { label: '高阶培养 II - 超距辉映管', value: 'AdvancedProgression2' },
-    { label: '高阶培养 III - 快子遴捡晶格', value: 'AdvancedProgression3' },
-    { label: '高阶培养 IV - 象限拟合液', value: 'AdvancedProgression4' },
-    { label: '高阶培养 V - 三相纳米片', value: 'AdvancedProgression5' },
-  ],
+  CrisisDrills: [],
 } as const
 
-export type ProtocolSpaceTaskValue =
-  (typeof PROTOCOL_SPACE_TASK_OPTIONS_MAP)[ProtocolSpaceTab][number]['value']
+export type ProtocolSpaceTaskValue = string
 export type CurrentTaskValue = ProtocolSpaceTaskValue | AutoEssenceLocation | string[]
 
+// 分组只用于界面展示；任务名保持与后端快速配置字段一致。
 export const MAAEND_TASK_GROUPS = [
   {
     key: 'Sanity',
@@ -122,45 +116,29 @@ export const MAAEND_TASK_GROUPS = [
   },
   {
     key: 'Infrastructure',
-    label: '🏗️ 基建任务',
+    label: '🏗️ 基建与交易',
     tasks: [
       { name: 'DijiangRewards', label: '🎁 基建任务' },
       { name: 'DeliveryJobs', label: '🚚 转交委托' },
-      { name: 'SellProduct', label: '🛒 售卖产品' },
+      { name: 'SellProduct', label: '🛒 据点交易' },
       { name: 'AutoStockpile', label: '📦 自动囤货' },
       { name: 'AutoStockStaple', label: '🏪 购买稳定物资' },
-    ],
-  },
-  {
-    key: 'Credit',
-    label: '💳 信用收支',
-    tasks: [
+      { name: 'AutoSell', label: '💰 售卖弹性物资' },
       { name: 'VisitFriends', label: '🤝 拜访好友' },
       { name: 'CreditShoppingN2', label: '🛍️ 信用点购物' },
     ],
   },
   {
-    key: 'Frontend',
-    label: '🌾 前台任务',
+    key: 'Daily',
+    label: '🌾 日常与统计',
     tasks: [
       { name: 'AutoEcoFarm', label: '🌾 生态农场' },
-      { name: 'AutoSell', label: '💰 售卖弹性物资' },
       { name: 'EnvironmentMonitoring', label: '🌿 环境监测' },
       { name: 'TrialOfSwordmancy', label: '🗡️ 选剑演武' },
-    ],
-  },
-  {
-    key: 'Rewards',
-    label: '🎖️ 奖励领取',
-    tasks: [
       { name: 'DailyRewards', label: '📅 日常奖励领取' },
       { name: 'ResourceRecycleStation', label: '🦉 资源回收站' },
+      { name: 'PullCountCalculator', label: '🧮 抽数计算' },
     ],
-  },
-  {
-    key: 'Statistics',
-    label: '📊 数据统计',
-    tasks: [{ name: 'PullCountCalculator', label: '🧮 抽数计算' }],
   },
 ] as const
 
@@ -291,7 +269,8 @@ export const isProtocolSpaceRewardEnabled = (config: MaaEndSanityConfig): boolea
 
 export const getSanityTaskDisplayValue = (
   rawConfig?: Partial<MaaEndSanityConfig> | null,
-  essenceLocationOptions: readonly ComboBoxItem[] = []
+  essenceLocationOptions: readonly ComboBoxItem[] = [],
+  crisisDrillsOptions: readonly ComboBoxItem[] = []
 ) => {
   const config = normalizeMaaEndSanityConfig(rawConfig)
   if (config.SanityTaskType === 'Essence') {
@@ -305,7 +284,10 @@ export const getSanityTaskDisplayValue = (
         ?.label || config.AutoEssenceSpecifiedLocation
     )
   }
-  return PROTOCOL_SPACE_TASK_LABEL_MAP[getCurrentProtocolTaskValue(config)]
+  const value = getCurrentProtocolTaskValue(config)
+  return config.SanityTaskType === 'CrisisDrills'
+    ? (crisisDrillsOptions.find(option => option.value === value)?.label ?? value)
+    : PROTOCOL_SPACE_TASK_LABEL_MAP[value]
 }
 
 export const normalizeMaaEndSanityConfig = (
@@ -348,7 +330,7 @@ export const normalizeMaaEndSanityConfig = (
       )
     : []
 
-  if (config.SanityTaskType !== 'Essence') {
+  if (config.SanityTaskType !== 'Essence' && config.SanityTaskType !== 'CrisisDrills') {
     const currentField = getProtocolSpaceTaskField(config.SanityTaskType)
     const validTaskOptions = getProtocolSpaceTaskOptions(config.SanityTaskType)
     if (!validTaskOptions.some(option => option.value === config[currentField])) {
@@ -408,4 +390,23 @@ export const normalizeMaaEndPlanKey = (rawSlot?: unknown): MaaEndPlanKey => {
     CrisisDrills: config.CrisisDrills,
     RewardsSetOption: config.RewardsSetOption,
   }
+}
+
+export const getEssenceTargetWeaponOptions = (
+  groups: MaaEndEssenceTargetGroup[],
+  selected: string[]
+): ComboBoxItem[] => {
+  const options = groups.flatMap(group =>
+    group.options.map(option => ({
+      label: `${group.label} · ${option.label}`,
+      value: option.value,
+    }))
+  )
+  const values = new Set(options.map(option => option.value))
+  for (const value of selected) {
+    if (typeof value === 'string' && value && !values.has(value)) {
+      options.unshift({ label: value, value })
+    }
+  }
+  return options
 }

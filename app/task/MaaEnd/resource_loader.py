@@ -19,6 +19,7 @@
 
 import hashlib
 import json
+import re
 from copy import deepcopy
 from pathlib import Path
 from threading import RLock
@@ -26,8 +27,8 @@ from typing import Any
 
 import json5
 
-from app.utils import get_logger
-from app.utils.io import atomic_write
+from app.utils import MAAEND_INVENTORY_TARGET_DEFAULTS, get_logger
+from app.utils import io as _utils_io
 
 logger = get_logger("MaaEnd 资源加载器")
 
@@ -46,7 +47,7 @@ def _normalize_language(language: str) -> str:
 class MaaEndResourceLoader:
     """按 MaaEnd 根目录缓存解析后的动态资源。"""
 
-    _disk_cache_version = 4
+    _disk_cache_version = 6
     _loader_cache: dict[Path, "MaaEndResourceLoader"] = {}
     _cache_lock = RLock()
 
@@ -178,7 +179,7 @@ class MaaEndResourceLoader:
                     for path, (signature, data) in self._file_cache.items()
                 },
             }
-            atomic_write(
+            _utils_io.atomic_write(
                 cache_path,
                 json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             )
@@ -349,26 +350,29 @@ class MaaEndResourceLoader:
         return result
 
     def _auto_collect_groups(self, locale: dict[str, str]) -> list[dict[str, Any]]:
-        """按上游稳定的地区—分类框架读取路线，不维护路线或地区清单。
+        """按上游地区分组透传旧版路线或新版采集物品选项。
 
-        MaaEnd 若改变 Routes 分类命名或地区开关结构，将无法识别分组，
-        快速配置会明确报错；旧版两组路线仍按原字段读取。
+        2.36 测试版将 RareRoutes/CommonRoutes 改为 RareItems/CommonItems，
+        选项值也由路线编号改为物品 ID，不在两者之间推断对应关系。
         """
         options = self._task_options.get("AutoCollect", {})
         groups = []
         for name, option in options.items():
             if not name.startswith("AutoCollect") or option.get("type") != "checkbox":
                 continue
-            if name == "AutoCollectRoutes" or name.endswith("RareRoutes"):
+            if name == "AutoCollectRoutes":
                 config_key = "AutoCollectRoutes"
-                region = (
-                    name.removesuffix("RareRoutes")
-                    if name.endswith("RareRoutes")
-                    else ""
-                )
-            elif name.endswith("CommonRoutes"):
+                region = ""
+            elif name.endswith(("RareRoutes", "RareItems")):
+                config_key = "AutoCollectRoutes"
+                suffix = "RareItems" if name.endswith("RareItems") else "RareRoutes"
+                region = name.removesuffix(suffix)
+            elif name.endswith(("CommonRoutes", "CommonItems")):
                 config_key = "AutoCollectCommonRoutes"
-                region = name.removesuffix("CommonRoutes")
+                suffix = (
+                    "CommonItems" if name.endswith("CommonItems") else "CommonRoutes"
+                )
+                region = name.removesuffix(suffix)
                 if region == "AutoCollect":
                     region = ""
             else:
@@ -414,8 +418,12 @@ class MaaEndResourceLoader:
         values = task.setdefault("optionValues", {})
         # 移除被新版替代的旧字段；真实字段与地区开关均来自同一份资源。
         names = {group["value"] for group in groups}
-        for name in ("AutoCollectRoutes", "AutoCollectCommonRoutes"):
-            if name not in names:
+        for name in list(values):
+            if (
+                name.startswith("AutoCollect")
+                and name.endswith(("Routes", "RareItems", "CommonItems"))
+                and name not in names
+            ):
                 values.pop(name, None)
         for group in groups:
             values[group["value"]] = {
@@ -489,6 +497,13 @@ class MaaEndResourceLoader:
             )
 
         return {
+            "crisisDrills": self._localize_options(
+                self._task_options.get("ProtocolSpace", {})
+                .get("CrisisDrills", {})
+                .get("cases", []),
+                locale,
+            ),
+            "inventory": self._inventory_options(locale),
             "autoCollectGroups": self._auto_collect_groups(locale),
             "controllers": self._localize_options(controller_cases, locale),
             "controllerTypes": {
@@ -499,6 +514,95 @@ class MaaEndResourceLoader:
             "essenceMenus": essence_menus,
             "essenceTargetWeaponGroups": target_groups,
         }
+
+    def validate_crisis_drills(self, value: str) -> None:
+        """按当前安装版本校验危境预演任务，不维护高阶培养清单。"""
+        if value not in {item["value"] for item in self._options["crisisDrills"]}:
+            raise ValueError(
+                "当前 MaaEnd 不支持所选高阶培养任务，请更新 MaaEnd 或重新选择"
+            )
+
+    def _inventory_options(self, locale: dict[str, str]) -> dict[str, Any] | None:
+        """枚举上游库存输入声明，不维护材料与关卡的映射。"""
+
+        options = self._task_options.get("ProtocolSpace", {})
+        mode = options.get("ProtocolSpaceMode", {})
+        if not any(
+            case.get("name") == "TargetInventory" for case in mode.get("cases", [])
+        ):
+            return None
+        limits = options.get("SupplyPlanLimits", {})
+        inputs = limits.get("inputs", [])
+        claim = options.get("ProtocolSpaceObtainModeClaim", {})
+        if limits.get("type") != "input" or not inputs or not claim.get("cases"):
+            raise ValueError("MaaEnd 库存目标声明不完整，请更新或重新安装 MaaEnd")
+        description = limits.get("description", "")
+        if description.startswith("$"):
+            description = locale[description[1:]]
+        localized = self._localize_options(inputs, locale)
+        for item in localized:
+            # 上游标签含 Markdown 图标，库存表格保留原生材料名称。
+            item["label"] = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", item["label"]).strip()
+        return {
+            "description": description,
+            "inputs": localized,
+            "claimModes": self._localize_options(claim["cases"], locale),
+        }
+
+    def write_inventory_options(
+        self,
+        task: dict[str, Any],
+        limits: str,
+        claim_mode: str,
+        *,
+        use_medication: bool,
+    ) -> None:
+        """校验并透传库存覆写值；未指定的输入使用 MAS 固定默认值。"""
+
+        inventory = self._options["inventory"]
+        if inventory is None:
+            raise ValueError("当前 MaaEnd 不支持 IMS 库存计划，请更新 MaaEnd")
+        supplied = json.loads(limits)
+        inputs = self._task_options["ProtocolSpace"]["SupplyPlanLimits"]["inputs"]
+        names = {item["name"] for item in inputs}
+        if not isinstance(supplied, dict) or set(supplied) - names:
+            raise ValueError("IMS 库存目标包含当前 MaaEnd 不支持的材料，请重新配置")
+        values = {}
+        for item in inputs:
+            value = supplied.get(
+                item["name"], MAAEND_INVENTORY_TARGET_DEFAULTS.get(item["name"], "0")
+            )
+            if not isinstance(value, str) or not re.fullmatch(item["verify"], value):
+                raise ValueError(
+                    "IMS 库存目标的格式或范围不符合当前 MaaEnd 的要求，请重新配置"
+                )
+            values[item["name"]] = value
+        if not any(int(value) > 0 for value in values.values()):
+            raise ValueError("IMS 库存计划尚未设置目标，请至少填写一项大于 0 的目标")
+        if claim_mode not in {item["value"] for item in inventory["claimModes"]}:
+            raise ValueError("IMS 领取方式已不受当前 MaaEnd 支持，请重新选择")
+        medication = "UseMedication" if use_medication else "EndTask"
+        medication_option = self._task_options["ProtocolSpace"].get(
+            "ProtocolSpaceUseSpMedication", {}
+        )
+        if medication not in {
+            case["name"] for case in medication_option.get("cases", [])
+        }:
+            raise ValueError("MaaEnd 库存任务理智药选项不完整，请更新 MaaEnd")
+        task.setdefault("optionValues", {}).update(
+            {
+                "ProtocolSpaceMode": {"type": "select", "caseName": "TargetInventory"},
+                "SupplyPlanLimits": {"type": "input", "values": values},
+                "ProtocolSpaceObtainModeClaim": {
+                    "type": "select",
+                    "caseName": claim_mode,
+                },
+                "ProtocolSpaceUseSpMedication": {
+                    "type": "select",
+                    "caseName": medication,
+                },
+            }
+        )
 
     def get_options(self) -> dict[str, Any]:
         self._load_task_resources()

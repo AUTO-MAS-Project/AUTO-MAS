@@ -22,18 +22,12 @@
 
 import mimetypes
 from collections.abc import Sequence
+from html import escape
 from pathlib import Path
 
-from app.core.notify import (
-    DispatchResult,
-    dispatch,
-    statistic_targets,
-)
-from app.models.config import MaaEndUserConfig
 from app.models.notification import NotificationImage, NotifyPayload
-from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
-from app.utils.notification_template import get_notification_template
+from app.utils import notification_template as _utils_notification_template
 
 logger = get_logger("MaaEnd 通知工具")
 _ERROR_IMAGE_LIMIT = 3
@@ -132,43 +126,41 @@ def _statistic_sections(message: dict) -> list[str]:
     ]
 
 
-async def push_notification(
-    mode: str,
-    title: str,
-    message: dict,
-    user_config: MaaEndUserConfig | None,
-    task_info: object | None = None,
-    images: Sequence[NotificationImage] = (),
-) -> DispatchResult:
-    """通过所有渠道推送通知；结果报告可附带图片。"""
+def build_statistics_payload(
+    *, title: str, message: dict, images: Sequence[NotificationImage] = ()
+) -> NotifyPayload:
+    """构造专项统计正文，投递由注入的通知服务负责。"""
 
-    logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
+    message_text = (
+        f"开始时间: {message['start_time']}\n"
+        f"结束时间: {message['end_time']}\n"
+        f"MaaEnd执行结果: {message['user_result']}"
+    )
+    sections = _statistic_sections(message)
+    if sections:
+        message_text += "\n\n" + "\n\n".join(sections)
 
-    if mode == "代理结果":
-        return await push_proxy_result(
-            title=title, message=message, task_info=task_info, images=images
-        )
+    return NotifyPayload(
+        title=title,
+        text=message_text,
+        html=_utils_notification_template.deferred_notification_template(
+            "MaaEnd_statistics.html", message
+        ),
+        images=tuple(images),
+    )
 
-    if mode == "统计信息":
-        message_text = (
-            f"开始时间: {message['start_time']}\n"
-            f"结束时间: {message['end_time']}\n"
-            f"MaaEnd执行结果: {message['user_result']}"
-        )
-        sections = _statistic_sections(message)
-        if sections:
-            message_text += "\n\n" + "\n\n".join(sections)
 
-        template = get_notification_template("MaaEnd_statistics.html")
-
-        return await dispatch(
-            NotifyPayload(
-                title=title,
-                text=message_text,
-                html=template.render(message),
-                images=tuple(images),
-            ),
-            statistic_targets(user_config),
-        )
-
-    return DispatchResult()
+def build_inventory_payload(*, title: str, message: dict) -> NotifyPayload:
+    """展示本轮材料获得记录和上游状态，不附带全量库存。"""
+    lines = message["inventory_report"] or [
+        "本轮未收到养成材料获得记录；不代表实际获得数量为 0。"
+    ]
+    text = "\n".join(
+        [
+            f"账号：{message['user_info']}",
+            f"开始时间：{message['start_time']}",
+            f"结束时间：{message['end_time']}",
+            *lines,
+        ]
+    )
+    return NotifyPayload(title=title, text=text, html=f"<pre>{escape(text)}</pre>")

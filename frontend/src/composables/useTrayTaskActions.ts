@@ -24,7 +24,7 @@ export function useTrayTaskActions(options: TrayTaskActionsOptions): void {
       logger.warn('托盘启动任务缺少任务 ID，忽略')
       return
     }
-    void startTask({ taskId, mode: TaskCreateIn.mode.AUTO_PROXY })
+    void startTask({ taskId, mode: TaskCreateIn.mode.AUTO_PROXY }, { source: 'tray' })
       .then(response => {
         if (disposed) return
         options.onStarted({
@@ -32,7 +32,7 @@ export function useTrayTaskActions(options: TrayTaskActionsOptions): void {
           selectedTaskId: taskId,
           taskLabel: label || taskId,
         })
-        message.success(t('scheduler.toast.taskBegun'))
+        message.success(t('core.scheduler.toast.taskBegun'))
         void playSound('task_started').catch(error => {
           logger.warn('播放任务启动音频失败:', error)
         })
@@ -41,7 +41,7 @@ export function useTrayTaskActions(options: TrayTaskActionsOptions): void {
         if (disposed) return
         const errorMsg =
           (error instanceof Error ? error.message : String(error)) ||
-          t('scheduler.toast.startTaskFailed')
+          t('core.scheduler.toast.startTaskFailed')
         logger.error('托盘启动任务失败:', errorMsg)
         message.error(errorMsg)
       })

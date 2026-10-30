@@ -4,14 +4,10 @@ import type {
   HSRConfig_TaskMapping,
   MaaConfig,
   GeneralConfig,
-  OkwwConfig,
-  OkNteConfig,
   SrcConfig,
-  MaaEndConfig,
-  BetterGIConfig,
-  ZzzOdConfig,
-  BAAHConfig,
-  WhimboxConfig,
+  ScriptCreateIn,
+  ScriptGetOut,
+  ScriptIndexItem as ApiScriptIndexItem,
 } from '@/api'
 import type {
   AutoEssenceLocation,
@@ -24,120 +20,33 @@ import type {
   SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
 
-export type ScriptType =
-  | 'MAA'
-  | 'General'
-  | 'Okww'
-  | 'OkNte'
-  | 'SRC'
-  | 'MaaEnd'
-  | 'M9A'
-  | 'MaaFW'
-  | 'HSR'
-  | 'BetterGI'
-  | 'ZzzOd'
-  | 'BAAH'
-  | 'Whimbox'
-  | 'MSS'
+export type ScriptType = `${ScriptCreateIn['type']}`
 
-// MAA脚本配置
+// 草稿由显式默认值初始化；路径保留 null，其余可编辑字段要求有值。
+type DraftGroup<T, Nullable extends keyof T = never> = {
+  [K in keyof T]-?: K extends Nullable ? Exclude<T[K], undefined> : NonNullable<T[K]>
+}
+
 export interface MAAScriptConfig {
-  Info: {
-    Name: string
-    Path: string | null
-  }
-  Run: {
-    HardTimeLimit: number
-    TaskTransitionMethod: string
-    ProxyTimesLimit: number
-    ADBSearchRange: number
-    RunTimesLimit: number
-    AnnihilationTimeLimit: number
-    RoutineTimeLimit: number
-    IfCheckGameUpdate: boolean
-    IfAutoInstallGameApk: boolean
-    GameUpdateTimeLimit: number
-  }
-  Emulator: {
-    Id: string
-    Index: string
-  }
-  Update: {
-    TakeoverEnabled: boolean
-    MirrorChyanCDK: string
-  }
+  Info: DraftGroup<NonNullable<MaaConfig['Info']>, 'Path'>
+  Run: DraftGroup<NonNullable<MaaConfig['Run']>>
+  Emulator: DraftGroup<NonNullable<MaaConfig['Emulator']>>
+  Update: DraftGroup<
+    Pick<NonNullable<MaaConfig['Update']>, 'TakeoverEnabled' | 'MirrorChyanCDK' | 'Channel'>
+  >
 }
 
-// 通用脚本配置
 export interface GeneralScriptConfig {
-  Game: {
-    Arguments: string
-    Enabled: boolean
-    IfForceClose: boolean
-    Path: string | null
-    Type: string
-    WaitTime: number
-    EmulatorId: string
-    EmulatorIndex: string
-    URL: string
-    ProcessName: string
-  }
-  Info: {
-    Name: string
-    RootPath: string | null
-  }
-  Run: {
-    HardTimeLimit: number
-    ProxyTimesLimit: number
-    RunTimeLimit: number
-    RunTimesLimit: number
-  }
-  Script: {
-    Arguments: string
-    ConfigPath: string | null
-    ConfigPathMode: string
-    ErrorLog: string
-    IfTrackProcess: boolean
-    TrackProcessName: string
-    TrackProcessExe: string
-    TrackProcessCmdline: string
-    LogPath: string | null
-    LogPathFormat: string
-    LogTimeEnd: number
-    LogTimeStart: number
-    LogTimeFormat: string
-    LogHookEnabled: boolean
-    LogHookRules: string
-    PushLogEnabled: boolean
-    PushLogPatterns: string
-    ScriptPath: string | null
-    SuccessLog: string
-    SuccessLogMode: string
-    ErrorLogMode: string
-    UpdateConfigMode: string
-  }
+  Game: DraftGroup<NonNullable<GeneralConfig['Game']>, 'Path'>
+  Info: DraftGroup<NonNullable<GeneralConfig['Info']>, 'RootPath'>
+  Run: DraftGroup<NonNullable<GeneralConfig['Run']>>
+  Script: DraftGroup<NonNullable<GeneralConfig['Script']>, 'ConfigPath' | 'LogPath' | 'ScriptPath'>
 }
 
-// SRC脚本配置
 export interface SRCScriptConfig {
-  Info: {
-    Name: string
-    Path: string | null
-  }
-  Run: {
-    HardTimeLimit: number
-    TaskTransitionMethod: string
-    ProxyTimesLimit: number
-    RunTimesLimit: number
-    RunTimeLimit: number
-    IfCheckGameUpdate: boolean
-    IfAutoInstallGameApk: boolean
-    GameUpdateTimeLimit: number
-  }
-  Emulator: {
-    Id: string
-    Index: string
-  }
+  Info: DraftGroup<NonNullable<SrcConfig['Info']>, 'Path'>
+  Run: DraftGroup<NonNullable<SrcConfig['Run']>>
+  Emulator: DraftGroup<NonNullable<SrcConfig['Emulator']>>
 }
 
 type MaaEndTaskSwitchConfig = Record<`If${MaaEndTaskSwitch}`, boolean> & {
@@ -174,6 +83,8 @@ export interface MaaEndScriptConfig {
     RunTimesLimit: number
     AccountSwitchMethod: 'MAS' | 'MAAEND'
     TaskTransitionMethod: 'NoAction' | 'ExitGame'
+    IfSaveLogBundle: boolean
+    LogBundlePath: string | null
   }
   Game: {
     ControllerType: string | null
@@ -194,14 +105,6 @@ export interface MaaEndScriptConfig {
     UpdateTimeLimit: number
   }
 }
-
-// M9A 是 MaaFW 引擎的特调类型：配置模型与 MaaFW 同形（后端 M9AConfig 是 MaaFWConfig 的同形子类），
-// 页面与类型都直接复用 MaaFW 的；这里只留一个别名，方便按名字找到它。
-export type M9AScriptConfig = MaaFWScriptConfig
-
-// MSS（MaaStellaSora / 星塔旅人）同样是 MaaFW 的特调类型，脚本配置与 MaaFW 同形；
-// 用户配置只多一项 Info.PlanMode（见 MaaFWUserConfig）。
-export type MSSScriptConfig = MaaFWScriptConfig
 
 // HSR 脚本配置（后端已通过 HSRConfig OpenAPI 暴露类型）
 export type HSRScriptConfig = HSRConfig
@@ -273,11 +176,6 @@ export interface MaaFWScriptConfig {
      * 留空跟随全局（设置 → 其他 → 网络代理），兜底在后端合并，前端不做预填。
      */
     ProxyAddress: string
-    /**
-     * @deprecated 后端已改用 AutoUpdateMode；旧配置可能只有这个字段，仅供读取时映射，
-     * 前端不再写入。见 useMaaFWProjectUpdate.resolveAutoUpdateMode。
-     */
-    IfAutoUpdate?: boolean
   }
   /**
    * 内嵌副本：运行、预览、更新都在 AUTO-MAS 自己投影出的瘦副本上。
@@ -349,6 +247,16 @@ export interface MaaFWTaskSnapshot {
   globalOptions?: Record<string, MaaFWTaskOptionValue>
   /** 用户给某一份实例起的显示名（只影响显示，不改任务 name）；没改过名的实例不在里面 */
   taskLabels?: Record<string, string>
+  /**
+   * 用户给某一份实例设的运行日：`weekdays` 是 ISO 星期（1=周一 … 7=周日），升序去重。
+   * 七天全选（不限制）的实例不在里面；一项都没有时不写这个键
+   */
+  taskSchedules?: Record<string, MaaFWTaskSchedule>
+}
+
+/** 一份实例的运行日 */
+export interface MaaFWTaskSchedule {
+  weekdays: number[]
 }
 
 /** 任务队列里的一项：同名任务可以有多份，靠 `id` 区分。 */
@@ -603,154 +511,9 @@ export function resolveTaskMappingValue(
   return undefined
 }
 
-// 脚本基础信息
-export interface Script {
-  id: string
+// API 读取用于展示，不充当已初始化草稿或更新 Payload。
+export interface ScriptDetail extends Pick<ApiScriptIndexItem, 'uid' | 'activityGame'> {
   type: ScriptType
   name: string
-  config:
-    | MaaConfig
-    | GeneralConfig
-    | OkwwConfig
-    | OkNteConfig
-    | SrcConfig
-    | MaaEndConfig
-    | MaaFWScriptConfig
-    | HSRConfig
-    | BetterGIConfig
-    | BAAHConfig
-    | WhimboxConfig
-  users: User[]
-}
-
-// 用户配置
-export interface User {
-  id: string
-  name: string
-  Data: {
-    LastProxyDate: string
-    GreenTicketStoreMonth?: string
-    ProxyTimes: number
-    StaminaPipelineVersion?: number
-    StaminaPipelineBackup?: string
-  }
-  Info: {
-    Id: string
-    Base: string
-    IfQuickConfig?: boolean
-    Name: string
-    SanityMode?: string
-    Notes: string
-    Password: string
-    Resource?: string
-    RemainedDay: number
-    IfUseMasConfig?: boolean
-    Server: string
-    Status: boolean
-    Tag?: string | null // 用户标签列表（JSON字符串，TagItem的dict列表）
-  }
-  /** 关卡区：MAA（关卡/理智药/连战）、SRC（关卡通道与材料）等专项按需携带 */
-  Stage?: {
-    StageMode?: string
-    MedicineNumb?: number
-    SeriesNumb?: string
-    Stage?: string
-    Stage_1?: string
-    Stage_2?: string
-    Stage_3?: string
-    [key: string]: unknown
-  }
-  Notify: {
-    Enabled: boolean
-    IfSendMail: boolean
-    IfSendSixStar: boolean
-    IfSendStatistic: boolean
-    IfServerChan: boolean
-    ServerChanChannel: string
-    ServerChanKey: string
-    ServerChanTag: string
-    ToAddress: string
-  }
-  /** 仅 ZzzOd 用户携带：游戏账号区（标签展示消费 GameRegion/Account/BilibiliAccountName） */
-  Game?: {
-    GameRegion?: 'cn' | 'cn_b' | 'us' | 'eu' | 'asia' | 'twhkmo' | null
-    Account?: string | null
-    BilibiliAccountName?: string | null
-  }
-  Task: {
-    IfInfrast: boolean
-    IfFight: boolean
-    IfMall: boolean
-    IfAward: boolean
-    IfSwitchTheme: boolean
-    IfRecruit: boolean
-    IfStartUp: boolean
-    Queue?: unknown
-    IfActivityFirst?: boolean
-    ActivityStageIndex?: number
-    ActivityMedicineNumb?: number
-    IfDepotMaintain?: boolean
-    DepotMaintainPlans?: string
-    IfEventDepotMaintain?: boolean
-    EventDepotMaintainPlans?: string
-    IfGreenTicketStore?: boolean
-    Annihilation?: string
-    InfrastMode?: string
-    InfrastName?: string
-    SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
-    OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
-    WeaponProgression?: MaaEndTaskConfig['WeaponProgression']
-    CrisisDrills?: MaaEndTaskConfig['CrisisDrills']
-    RewardsSetOption?: MaaEndTaskConfig['RewardsSetOption']
-    AutoEssenceSpecifiedLocation?: MaaEndTaskConfig['AutoEssenceSpecifiedLocation']
-    AutoEssenceMenu?: MaaEndTaskConfig['AutoEssenceMenu']
-    AutoEssenceTargetWeapons?: MaaEndTaskConfig['AutoEssenceTargetWeapons']
-  }
-  QFluentWidgets: {
-    ThemeColor: string
-    ThemeMode: string
-  }
-}
-
-// 脚本索引项
-export interface ScriptIndexItem {
-  uid: string
-  type:
-    | 'MaaConfig'
-    | 'GeneralConfig'
-    | 'OkwwConfig'
-    | 'OkNteConfig'
-    | 'SrcConfig'
-    | 'MaaEndConfig'
-    | 'M9AConfig'
-    | 'MaaFWConfig'
-    | 'HSRConfig'
-    | 'BetterGIConfig'
-    | 'ZzzOdConfig'
-    | 'BAAHConfig'
-    | 'WhimboxConfig'
-    | 'MSSConfig'
-}
-
-// 脚本详情（用于前端展示）
-export interface ScriptDetail {
-  uid: string
-  type: ScriptType
-  activityGame?: string | null
-  name: string
-  config:
-    | MaaConfig
-    | GeneralConfig
-    | OkwwConfig
-    | OkNteConfig
-    | SrcConfig
-    | MaaEndConfig
-    | MaaFWScriptConfig
-    | HSRConfig
-    | BetterGIConfig
-    | ZzzOdConfig
-    | BAAHConfig
-    | WhimboxConfig
-  users?: User[]
-  createTime?: string
+  config: ScriptGetOut['data'][string]
 }

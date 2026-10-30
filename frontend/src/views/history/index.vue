@@ -2,11 +2,7 @@
   <div class="history-page">
     <!-- 页面头部 -->
     <div class="page-header">
-      <h1 class="page-title">{{ t('history.title') }}</h1>
-      <a-button class="replay-entry-button" @click="replayModalOpen = true">
-        <template #icon><PlayCircleOutlined /></template>
-        {{ t('history.replays.openList') }}
-      </a-button>
+      <h1 class="page-title app-page-title">{{ t('core.history.title') }}</h1>
     </div>
 
     <!-- 搜索筛选区域 -->
@@ -30,9 +26,12 @@
       <a-spin :spinning="searchLoading">
         <!-- 空状态 -->
         <div v-if="historyData.length === 0 && !searchLoading" class="empty-state">
-          <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
-          <span class="empty-text">{{ t('history.emptyHistory') }}</span>
-          <span class="empty-hint">{{ t('history.emptyHint') }}</span>
+          <a-empty :image="noDataImage" :image-style="{ height: '120px' }">
+            <template #description>
+              <div class="empty-title">{{ t('core.history.emptyHistory') }}</div>
+              <div class="empty-description">{{ t('core.history.emptyHint') }}</div>
+            </template>
+          </a-empty>
         </div>
 
         <!-- 数据展示 -->
@@ -49,13 +48,13 @@
           <!-- 右侧详情区域 -->
           <HistoryDetailPanel
             :has-user-selected="!!selectedUserData"
+            :aggregate-errors="selectedUserData?.aggregate_errors ?? []"
             :records="selectedUserData?.index || []"
             :selected-record-index="selectedRecordIndex"
-            :error-info="selectedUserData?.error_info || null"
-            :recruit-statistics="selectedUserData?.recruit_statistics || null"
-            :drop-statistics="selectedUserData?.drop_statistics || null"
-            :matrix-statistics="getMatrixStatistics(selectedUserData)"
-            :pull-count-statistics="getPullCountStatistics(selectedUserData)"
+            :recruit-statistics="selectedStatistics.recruit"
+            :drop-statistics="selectedStatistics.drops"
+            :matrix-statistics="selectedStatistics.matrix"
+            :pull-count-statistics="selectedStatistics.pulls"
             @select-record="handleSelectRecord"
           />
         </div>
@@ -67,15 +66,17 @@
       :open="logModalOpen"
       :log-content="currentDetail?.log_content || null"
       :loading="detailLoading"
-      :has-file="!!currentJsonFile"
+      :has-file="currentDetail?.log_available ?? false"
       :record-date="currentRecordDate"
       :record-status="currentRecordStatus"
       :error-message="currentErrorMessage"
-      :recruit-statistics="currentDetail?.recruit_statistics || null"
-      :drop-statistics="currentDetail?.drop_statistics || null"
-      :matrix-statistics="getMatrixStatistics(currentDetail)"
-      :pull-count-statistics="getPullCountStatistics(currentDetail)"
-      :replays="getReplays(currentDetail)"
+      :recruit-statistics="detailStatistics.recruit"
+      :drop-statistics="detailStatistics.drops"
+      :matrix-statistics="detailStatistics.matrix"
+      :pull-count-statistics="detailStatistics.pulls"
+      :attachments="currentDetail?.attachments ?? []"
+      :storage-errors="currentDetail?.storage_errors ?? []"
+      :log-unavailable-reason="currentDetail?.log_unavailable_reason ?? null"
       :font-size="editorConfig.fontSize"
       :font-size-options="fontSizeOptions"
       :editor-theme="editorTheme"
@@ -83,28 +84,23 @@
       :register-log-language="registerLogLanguage"
       @close="logModalOpen = false"
       @open-file="handleOpenLogFile"
-      @open-directory="handleOpenLogDirectory"
       @update:font-size="setEditorConfig({ fontSize: $event })"
     />
-
-    <ReplayListModal :open="replayModalOpen" @close="replayModalOpen = false" />
   </div>
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
-import { ref } from 'vue'
-import { PlayCircleOutlined } from '@ant-design/icons-vue'
-import type { HistoryData } from '@/api'
+import { computed, ref } from 'vue'
+import type { HistoryIndexItem } from '@/api'
 import HistoryDateSidebar from './components/HistoryDateSidebar.vue'
 import HistoryDetailPanel from './components/HistoryDetailPanel.vue'
 import HistoryLogModal from './components/HistoryLogModal.vue'
 import HistorySearchPanel from './components/HistorySearchPanel.vue'
-import ReplayListModal from './components/ReplayListModal.vue'
 import { useHistoryLogic } from './useHistoryLogic'
-import { formatBackendDateTime } from '@/utils/dateDisplay'
-import type { PullCountStatistics } from '@/types/history'
-import type { ReplayRecord } from '@/types/replay'
+import { historyStatistics } from './historyData'
+import { formatHistoryDateTime } from '@/utils/dateDisplay'
 
 const { t } = useI18n()
 
@@ -122,7 +118,6 @@ const {
   selectedUserData,
   selectedRecordIndex,
   currentDetail,
-  currentJsonFile,
   searchForm,
   historyData,
 
@@ -140,47 +135,28 @@ const {
   handleSelectUser,
   handleSelectRecord: selectRecord,
   handleOpenLogFile,
-  handleOpenLogDirectory,
   registerLogLanguage,
   setEditorConfig,
 } = useHistoryLogic()
 
 // 弹窗状态
 const logModalOpen = ref(false)
-const replayModalOpen = ref(false)
 const currentRecordDate = ref('')
 const currentRecordStatus = ref('')
 const currentErrorMessage = ref('')
 
-type HistoryDataWithMatrix = HistoryData & {
-  matrix_statistics?: Record<string, string> | null
-  pull_count_statistics?: PullCountStatistics | null
-  replays?: ReplayRecord[] | null
-}
-
-const getMatrixStatistics = (data: HistoryData | null): Record<string, string> | null => {
-  return (data as HistoryDataWithMatrix | null)?.matrix_statistics ?? null
-}
-
-const getPullCountStatistics = (data: HistoryData | null): PullCountStatistics | null => {
-  return (data as HistoryDataWithMatrix | null)?.pull_count_statistics ?? null
-}
-
-const getReplays = (data: HistoryData | null): ReplayRecord[] => {
-  return data?.replays ?? []
-}
+const selectedStatistics = computed(() => historyStatistics(selectedUserData.value?.data))
+const detailStatistics = computed(() => historyStatistics(currentDetail.value?.data))
 
 const handleModeUpdate = (mode: string) => {
   searchForm.mode = mode as typeof searchForm.mode
 }
 
 // 选择记录时打开弹窗
-const handleSelectRecord = async (index: number, record: any) => {
-  currentRecordDate.value = formatBackendDateTime(record.date)
+const handleSelectRecord = async (index: number, record: HistoryIndexItem) => {
+  currentRecordDate.value = formatHistoryDateTime(record.time)
   currentRecordStatus.value = record.status
-  // 获取错误信息
-  const errorInfo = selectedUserData.value?.error_info
-  currentErrorMessage.value = errorInfo?.[record.date] || ''
+  currentErrorMessage.value = record.message
   logModalOpen.value = true
   await selectRecord(index, record)
 }
@@ -203,22 +179,8 @@ const handleSelectRecord = async (index: number, record: any) => {
   padding: 0 4px;
 }
 
-.replay-entry-button {
-  flex-shrink: 0;
-}
-
 .page-title {
   margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: var(
-    --app-page-title-color,
-    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .main-content {
@@ -246,28 +208,20 @@ const handleSelectRecord = async (index: number, record: any) => {
   gap: 12px;
 }
 
-.empty-image {
-  width: 120px;
-  height: auto;
-  opacity: 0.7;
-}
-
-.empty-text {
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
-}
-
-.empty-hint {
-  font-size: 14px;
-  color: var(--ant-color-text-quaternary);
-}
-
 .content-layout {
   flex: 1;
   display: flex;
   gap: 16px;
   min-height: 0;
   overflow: hidden;
+}
+.empty-title {
+  color: var(--ant-color-text);
+  font-size: 18px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.empty-description {
+  color: var(--ant-color-text-secondary);
 }
 </style>

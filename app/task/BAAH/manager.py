@@ -30,18 +30,17 @@ from app.config import config_manager
 from app.core import Config
 from app.core.emulator_manager import EmulatorManager
 from app.core.ws import Publisher, protocol
+from app.log_box.report import build_user_result_text, mirror_report_to_dispatch
 from app.models.config import BAAHConfig
 from app.models.emulator import DeviceBase, DeviceProvider
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
-from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
-from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH
+from app.utils import TASK_MODE_ZH, get_logger
 
 from .AutoProxy import AutoProxyTask
-from .tools import push_notification
 
 logger = get_logger("BAAH 调度器")
 
@@ -182,11 +181,9 @@ class BAAHManager(ScriptManagerBase):
                 result = self.build_proxy_report(result_text=user_result_text)
 
                 try:
-                    await push_notification(
-                        mode="代理结果",
+                    await self.task_info.notifications.push_proxy_result(
                         title=title,
-                        message=result,
-                        user_config=None,
+                        report=TaskResultReport.from_message(result),
                         task_info=self.task_info,
                     )
                 except Exception as e:

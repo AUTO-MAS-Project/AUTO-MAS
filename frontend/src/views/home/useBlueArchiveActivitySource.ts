@@ -10,7 +10,7 @@ import type {
   BlueArchiveServerOverview,
 } from '@/types/home'
 import type { Ref } from 'vue'
-import { useHomeActivitySource } from './useHomeActivitySource'
+import { combineActivityLoads, useHomeActivitySource } from './useHomeActivitySource'
 import type { HomeActivitySource } from './useHomeActivitySource'
 
 /** 请求超时；重试节奏与快照调度交给公共骨架 */
@@ -243,9 +243,9 @@ const fetchTimeline = async (
 export const useBlueArchiveActivitySource = () => {
   const { t } = useI18n()
 
-  const serverLabel = (server: BlueArchiveServerKey) => t(`home.bluearchive.server.${server}`)
+  const serverLabel = (server: BlueArchiveServerKey) => t(`core.home.bluearchive.server.${server}`)
   const serverVersionName = (server: BlueArchiveServerKey) =>
-    t('home.bluearchive.versionName', { server: serverLabel(server) })
+    t('core.home.bluearchive.versionName', { server: serverLabel(server) })
 
   const overviewByServer: Record<BlueArchiveServerKey, Ref<BlueArchiveActivityOverview>> = {
     jp: ref(createEmptySraActivityOverview()),
@@ -267,7 +267,7 @@ export const useBlueArchiveActivitySource = () => {
       return true
     } catch (error) {
       logger.warn(`保存碧蓝档案服务器选择失败: ${String(error)}`)
-      if (reportError) message.error(t('edit.couldNotSaveConfiguration'))
+      if (reportError) message.error(t('core.edit.couldNotSaveConfiguration'))
       return false
     }
   }
@@ -297,6 +297,7 @@ export const useBlueArchiveActivitySource = () => {
     // 这个服是否已有请求在飞：交给骨架的 isBusy 钩子，同一份数据不会被并发拉两次
     let busy = false
     const source = useHomeActivitySource<GameKeeActivity[]>({
+      isAvailable: () => overviewByServer[key].value.Available,
       // 日志与失败文案里用这个服自己的名字
       label: () => serverLabel(key),
       timeoutMs: FETCH_TIMEOUT_MS,
@@ -310,7 +311,7 @@ export const useBlueArchiveActivitySource = () => {
             ...createEmptySraActivityOverview(),
             ...cached,
             Stale: true,
-            Message: t('home.bluearchive.staleMessage'),
+            Message: t('core.home.bluearchive.staleMessage'),
             // 服名随界面语言变化，按当前语言重算，避免切换语言后残留旧语言的版本名
             versionName: serverVersionName(key),
           }
@@ -342,13 +343,13 @@ export const useBlueArchiveActivitySource = () => {
         overviewByServer[key].value = {
           ...overviewByServer[key].value,
           Stale: true,
-          Message: t('home.bluearchive.staleMessage'),
+          Message: t('core.home.bluearchive.staleMessage'),
         }
       },
       markUnavailable: label => {
         overviewByServer[key].value = {
           ...createEmptySraActivityOverview(),
-          Message: t('home.bluearchive.unavailable', { server: label }),
+          Message: t('core.home.bluearchive.unavailable', { server: label }),
         }
       },
     })
@@ -412,6 +413,7 @@ export const useBlueArchiveActivitySource = () => {
   })
 
   return {
+    whenLoaded: combineActivityLoads(SERVER_KEYS.map(key => sources[key])),
     servers: computed<BlueArchiveServerOverview[]>(() =>
       SERVER_KEYS.map(key => ({
         key,

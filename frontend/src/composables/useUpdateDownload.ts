@@ -16,6 +16,9 @@ import { createLowSpeedDetector } from '@/composables/updateDownloadSpeed'
 import { formatBytes, formatSpeed } from '@/utils/byteFormat'
 import { updateDownloadApi, type UpdateDownloadSnapshot } from '@/services/updateDownloadApi'
 import type { ChangelogData } from '@/utils/changelog'
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import { analyticsUpdateSource, beginDownloadAnalytics } from '@/utils/updateAnalytics'
+import type { AnalyticsEventProps } from '@/types/analytics'
 
 const logger = window.electronAPI.getLogger('更新下载状态')
 
@@ -47,6 +50,15 @@ let snapshotGeneration = 0
 let mutationGeneration = 0
 let downloadTimeout: ReturnType<typeof setTimeout> | null = null
 const lowSpeedDetector = createLowSpeedDetector()
+let downloadAnalytics: ReturnType<typeof beginDownloadAnalytics> | null = null
+
+const finishDownloadAnalytics = (
+  outcome: AnalyticsEventProps['update_download_finished']['outcome']
+) => {
+  const operation = downloadAnalytics
+  downloadAnalytics = null
+  operation?.finish(source.value, outcome)
+}
 
 const progressPercent = computed(() => {
   if (fileSize.value <= 0) return 0
@@ -115,6 +127,7 @@ const startRuntimeMonitoring = () => {
       status.value === 'switchingSource'
     ) {
       logger.warn('更新下载等待超时')
+      finishDownloadAnalytics('observation_unknown')
       status.value = 'failed'
       failureReason.value = '下载超时，请检查网络连接；后台任务可能仍在运行'
       speed.value = 0
@@ -131,6 +144,7 @@ const clearSubscription = () => {
 }
 
 const resetState = () => {
+  downloadAnalytics = null
   stopRuntimeMonitoring()
   status.value = 'idle'
   source.value = ''
@@ -171,22 +185,24 @@ const receiveProgress = (data: UpdateDownloadProgress) => {
   fileSize.value = data.file_size || 0
   speed.value = data.speed || 0
   source.value = data.source || ''
+  downloadAnalytics?.started(source.value)
 
   if (lowSpeedDetector.update(data.source, data.speed)) {
     Modal.confirm({
       title: `${sourceLabel.value || '当前来源'}下载速度较慢`,
-      content: t('misc.downloadHasBeenUnder'),
-      okText: t('misc.switchCnbSource'),
-      cancelText: t('misc.continueDownload'),
+      content: t('bootstrap.misc.downloadHasBeenUnder'),
+      okText: t('bootstrap.misc.switchCnbSource'),
+      cancelText: t('bootstrap.misc.continueDownload'),
       zIndex: 10001,
       centered: true,
-      onOk: switchToCnb,
+      onOk: () => switchDownloadSource('low_speed'),
       onCancel: () => lowSpeedDetector.suppress(),
     })
   }
 }
 
 const receiveCancelled = () => {
+  finishDownloadAnalytics('cancelled')
   invalidateSnapshot()
   logger.info('下载已取消')
   resetState()
@@ -194,6 +210,7 @@ const receiveCancelled = () => {
 }
 
 const receiveCompleted = () => {
+  finishDownloadAnalytics('completed')
   invalidateSnapshot()
   logger.info('下载完成')
   stopRuntimeMonitoring()
@@ -201,16 +218,26 @@ const receiveCompleted = () => {
   speed.value = 0
 }
 
-const receiveFailed = (reason: string) => {
+const receiveFailed = (reason: string, outcome: 'failed' | 'observation_unknown' = 'failed') => {
+  finishDownloadAnalytics(outcome)
   invalidateSnapshot()
   logger.error(`下载失败: ${reason}`)
   stopRuntimeMonitoring()
+  // 后台下载（窗口已收起）中断时没有入口展示原因，立即重新打开下载窗口
+  const reopenModal =
+    !modalVisible.value &&
+    (status.value === 'downloading' ||
+      status.value === 'cancelling' ||
+      status.value === 'switchingSource')
   status.value = 'failed'
   failureReason.value = reason
   speed.value = 0
+  if (reopenModal) modalVisible.value = true
 }
 
 const applyDownloadSnapshot = (snapshot: UpdateDownloadSnapshot): void => {
+  // 快照用于对账，终态快照也不伪造成新收到的完成事件。
+  if (!['downloading', 'switchingSource'].includes(snapshot.status)) downloadAnalytics = null
   source.value = snapshot.source ?? ''
   downloadedSize.value = snapshot.downloaded_size ?? 0
   fileSize.value = snapshot.file_size ?? 0
@@ -274,6 +301,7 @@ export function bootstrapUpdateDownloadSubscriptions(): void {
 
 /** 应用最终退出时释放更新下载常驻资源；幂等。 */
 export function disposeUpdateDownloadSubscriptions(): void {
+  downloadAnalytics = null
   invalidateSnapshot()
   disposeConnectedListener?.()
   disposeConnectedListener = null
@@ -281,10 +309,12 @@ export function disposeUpdateDownloadSubscriptions(): void {
   stopRuntimeMonitoring()
 }
 
-const start = async (version: string, data: ChangelogData) => {
-  logger.info(`开始下载: ${version}`)
+const start = async (version: string, data: ChangelogData, downloader?: 'builtin' | 'fluxdown') => {
+  logger.info(`开始下载: ${version}${downloader ? ` (指定下载器: ${downloader})` : ''}`)
   const operationGeneration = invalidateSnapshot()
   resetState()
+  const attempt = beginDownloadAnalytics(version)
+  downloadAnalytics = attempt
   latestVersion.value = version
   updateData.value = data
 
@@ -294,7 +324,11 @@ const start = async (version: string, data: ChangelogData) => {
   startRuntimeMonitoring()
 
   try {
-    const response = await Service.downloadUpdateApiUpdateDownloadPost(version || undefined)
+    const response = await Service.downloadUpdateApiUpdateDownloadPost(
+      version || undefined,
+      downloader
+    )
+    if (downloadAnalytics === attempt) attempt.started(source.value)
     if (!isCurrentOperation(operationGeneration)) return
     if (response.code !== 200) {
       receiveFailed(response.message || '下载请求失败')
@@ -302,12 +336,21 @@ const start = async (version: string, data: ChangelogData) => {
     }
     invalidateSnapshot()
   } catch (error) {
+    if (downloadAnalytics === attempt) attempt.started(source.value)
     if (!isCurrentOperation(operationGeneration)) return
     const errorMessage = getActionErrorMessage(error, '网络请求失败，请检查网络连接')
     logger.error(`启动下载失败: ${errorMessage}`)
-    receiveFailed(errorMessage)
+    receiveFailed(errorMessage, 'observation_unknown')
   }
 }
+// 取消失败时后端不一定还在下载（可能已广播失败/完成，或压根没有活动任务），
+// 不再臆测回「下载中」，而是以 HTTP 快照为准；快照也读不到时才退回下载中。
+const settleCancelFailure = async (): Promise<void> => {
+  invalidateSnapshot()
+  await refreshUpdateDownloadSnapshot()
+  if (status.value === 'cancelling') status.value = 'downloading'
+}
+
 const cancel = async () => {
   if (status.value !== 'downloading') return
 
@@ -317,20 +360,18 @@ const cancel = async () => {
     const response = await updateDownloadApi.cancel()
     if (!isCurrentOperation(operationGeneration)) return
     if (response.code === 200) {
-      message.success(t('misc.downloadCancelled'))
+      message.success(t('bootstrap.misc.downloadCancelled'))
       receiveCancelled()
     } else {
       message.error(response.message || '取消下载失败')
-      invalidateSnapshot()
-      status.value = 'downloading'
+      await settleCancelFailure()
     }
   } catch (error) {
     if (!isCurrentOperation(operationGeneration)) return
     const errorMessage = getActionErrorMessage(error, '取消下载失败')
     logger.error(`取消下载失败: ${errorMessage}`)
     message.error(errorMessage)
-    invalidateSnapshot()
-    status.value = 'downloading'
+    await settleCancelFailure()
   }
 }
 
@@ -344,13 +385,22 @@ const open = () => {
   }
 }
 
-const switchToCnb = async () => {
+const switchToCnb = () => switchDownloadSource('manual')
+
+const switchDownloadSource = async (trigger_kind: 'manual' | 'low_speed') => {
   if (status.value !== 'downloading') return
+  const operation = beginAnalyticsOperation('update_source_changed')
+  const dimensions = {
+    from_kind: analyticsUpdateSource(source.value),
+    to_kind: 'cnb' as const,
+    trigger_kind,
+  }
 
   const operationGeneration = invalidateSnapshot()
   status.value = 'switchingSource'
   try {
     const response = await updateDownloadApi.switchToCnb()
+    operation.finish({ ...dimensions, outcome: response.code === 200 ? 'success' : 'failure' })
     if (!isCurrentOperation(operationGeneration)) return
     if (response.code === 200) {
       invalidateSnapshot()
@@ -361,14 +411,15 @@ const switchToCnb = async () => {
     } else {
       const failureMessage = response.message || '切换下载源失败'
       message.error(failureMessage)
-      receiveFailed(failureMessage)
+      receiveFailed(failureMessage, 'observation_unknown')
     }
   } catch (error) {
+    operation.finish({ ...dimensions, outcome: 'unknown' })
     if (!isCurrentOperation(operationGeneration)) return
     const errorMessage = getActionErrorMessage(error, '切换下载源失败')
     logger.error(`切换下载源失败: ${errorMessage}`)
     message.error(errorMessage)
-    receiveFailed(errorMessage)
+    receiveFailed(errorMessage, 'observation_unknown')
   }
 }
 
@@ -376,24 +427,39 @@ const retry = async () => {
   await start(latestVersion.value, updateData.value)
 }
 
+/** 多次失败后在失败弹窗里给用户的显式选择：改用内置 httpx 重新下载 */
+const retryWithBuiltin = async () => {
+  await start(latestVersion.value, updateData.value, 'builtin')
+}
+
 const install = async () => {
+  const operation = beginAnalyticsOperation('update_install_requested')
   try {
     const response = await Service.installUpdateApiUpdateInstallPost()
+    operation.finish({
+      choice: 'install_now',
+      request_outcome: response.code === 200 ? 'accepted' : 'rejected',
+    })
     if (response.code === 200) {
-      message.success(t('misc.installerStarted'))
+      message.success(t('bootstrap.misc.installerStarted'))
       resetState()
       modalVisible.value = false
     } else {
       message.error(response.message || '启动安装失败')
     }
   } catch (error) {
+    operation.finish({ choice: 'install_now', request_outcome: 'unknown' })
     const errorMessage = error instanceof Error ? error.message : String(error)
     logger.error(`安装失败: ${errorMessage}`)
-    message.error(t('misc.couldNotStartInstaller'))
+    message.error(t('bootstrap.misc.couldNotStartInstaller'))
   }
 }
 
 const installLater = () => {
+  beginAnalyticsOperation('update_install_requested').finish({
+    choice: 'later',
+    request_outcome: 'not_requested',
+  })
   modalVisible.value = false
 }
 
@@ -425,6 +491,7 @@ export function useUpdateDownload() {
     open,
     switchToCnb,
     retry,
+    retryWithBuiltin,
     install,
     installLater,
     reset,

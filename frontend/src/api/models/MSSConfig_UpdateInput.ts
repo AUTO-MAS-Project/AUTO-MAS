@@ -12,22 +12,6 @@ export type MSSConfig_UpdateInput = {
      */
     Channel?: ('stable' | 'beta' | null);
     /**
-     * [已废弃] GitHub release asset 文件名匹配模式
-     */
-    GitHubAssetPattern?: (string | null);
-    /**
-     * [已废弃] GitHub 仓库/tag/asset 覆盖：仓库与资产名改为从 interface.json 和目录名自动推导，运行流程不再读取；保留一个版本兼容旧配置文件后删除。
-     */
-    GitHubRepo?: (string | null);
-    /**
-     * [已废弃] GitHub release tag 覆盖
-     */
-    GitHubTag?: (string | null);
-    /**
-     * [已废弃] 旧布尔开关，只在 load() 里迁移为 AutoUpdateMode（False → Off）， 运行流程不再读取；保留一个版本兼容旧配置文件后删除。
-     */
-    IfAutoUpdate?: (boolean | null);
-    /**
      * Mirror 酱 CDK，由用户自己填。**不做全局兜底**：全局那个服务的是 AUTO-MAS 自身的更新，和脚本本体不是一回事，串在一起只会让人猜 自己在用哪个。选 Mirror 酱作为下载源时这一项必填。 （合并逻辑见 tools/embedded/update_credentials.py）
      */
     MirrorChyanCDK?: (string | null);

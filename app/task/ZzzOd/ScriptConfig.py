@@ -31,6 +31,7 @@ import uuid
 from contextlib import suppress
 
 from app.config import ConfigCollection
+from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.models.schema import WSTaskNoticeData
@@ -39,13 +40,11 @@ from app.services import System
 from app.utils import ProcessInfo, ProcessManager, get_logger
 
 from .AutoProxy import (
-    collect_used_slot_idxs,
-    ensure_user_slot,
-    find_launcher_exe,
     inject_user_fields,
     parse_user_apps,
-    recycle_unbound_slots,
 )
+from .launchers import find_launcher_exe
+from .slots import collect_used_slot_idxs, ensure_user_slot, recycle_unbound_slots
 from .tools import (
     archive_mas_config_backup,
     archive_onedragon_backup,
@@ -139,10 +138,13 @@ class ScriptConfigTask(TaskExecuteBase):
                 await asyncio.to_thread(
                     recycle_unbound_slots,
                     self.root_path,
+                    scripts=Config.ScriptConfig,
                     exclude_script_id=self.script_info.script_id,
                 )
             used = collect_used_slot_idxs(
-                self.root_path, exclude_uids={self._target_uid}
+                self.root_path,
+                scripts=Config.ScriptConfig,
+                exclude_uids={self._target_uid},
             )
             slot = await ensure_user_slot(
                 self.root_path,

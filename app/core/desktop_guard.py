@@ -54,8 +54,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from app.core import Config
-from app.utils import get_logger
-from app.utils.platform import IS_WINDOWS
+from app.utils import IS_WINDOWS, get_logger
 
 logger = get_logger("桌面保障")
 
@@ -151,9 +150,9 @@ def cleanup_orphan_display() -> None:
         # 还活着说明不是孤儿——可能是同一台机器上另一个 MAS 实例正在用。
         return
 
-    from app.utils.platform.vdd import remove_display_index
+    from app.utils import vdd as _utils_vdd
 
-    if remove_display_index(index):
+    if _utils_vdd.remove_display_index(index):
         logger.info(f"已清理上次遗留的虚拟显示器（index={index}, pid={pid}）")
     _clear_state()
 
@@ -161,10 +160,10 @@ def cleanup_orphan_display() -> None:
 def _has_real_output() -> bool:
     """桌面上有没有真实输出。查不到信息时按「有」处理，宁可不插屏也不乱动拓扑。"""
 
-    from app.utils.platform.display import has_real_display
+    from app.utils import display as _utils_display
 
     try:
-        return has_real_display()
+        return _utils_display.has_real_display()
     except Exception as exc:
         _warn_once(f"查询显示输出失败，按有真实输出处理: {exc}")
         return True
@@ -177,10 +176,10 @@ def _real_devices() -> set[str] | None:
     好好的屏拆掉再重挂一遍。查不到就什么都别做。
     """
 
-    from app.utils.platform.display import real_display_devices
+    from app.utils import display as _utils_display
 
     try:
-        return real_display_devices()
+        return _utils_display.real_display_devices()
     except Exception as exc:
         _warn_once(f"枚举显示设备失败: {exc}")
         return None
@@ -216,10 +215,10 @@ def _monitor_work_rect(devices: set[str]):
     """
 
     from app.models.schema import WSDisplayMonitorRectData
-    from app.utils.platform.display import list_monitors
+    from app.utils import display as _utils_display
 
     try:
-        for monitor in list_monitors():
+        for monitor in _utils_display.list_monitors():
             if monitor.device in devices:
                 left, top, right, bottom = monitor.work
                 return WSDisplayMonitorRectData(
@@ -233,20 +232,20 @@ def _monitor_work_rect(devices: set[str]):
 def _desktop_has_room() -> bool:
     """插屏之后用：新挂的屏放不放得下目标窗口。"""
 
-    from app.utils.platform.display import find_host_monitor
+    from app.utils import display as _utils_display
 
     try:
-        return find_host_monitor(*DESKTOP_MIN_CLIENT) is not None
+        return _utils_display.find_host_monitor(*DESKTOP_MIN_CLIENT) is not None
     except Exception as exc:
         logger.warning(f"查询显示器失败，按可用处理: {exc}")
         return True
 
 
 def _describe() -> str:
-    from app.utils.platform.display import describe_monitors
+    from app.utils import display as _utils_display
 
     try:
-        return describe_monitors()
+        return _utils_display.describe_monitors()
     except Exception as exc:
         return f"（读取失败: {exc}）"
 
@@ -257,7 +256,7 @@ def parse_mode(text: str) -> tuple[int, int, int]:
     解析失败时回落到默认模式而不是抛错：这一层不该因为一个配置字符串把任务打掉。
     """
 
-    from app.utils.platform.vdd import DEFAULT_VDD_MODE
+    from app.utils import vdd as _utils_vdd
 
     try:
         size, _, refresh = text.partition("@")
@@ -265,7 +264,7 @@ def parse_mode(text: str) -> tuple[int, int, int]:
         return int(width), int(height), int(refresh)
     except (AttributeError, ValueError):
         logger.warning(f"虚拟显示器模式配置无法解析，按默认处理: {text!r}")
-        return DEFAULT_VDD_MODE
+        return _utils_vdd.DEFAULT_VDD_MODE
 
 
 def decide(
@@ -555,10 +554,10 @@ class _DesktopGuard:
         if time.monotonic() < self._quiet_until:
             return
 
-        from app.utils.platform.vdd import VddStatus, probe
+        from app.utils import vdd as _utils_vdd
 
-        result = await asyncio.to_thread(probe)
-        if result.status is not VddStatus.OK:
+        result = await asyncio.to_thread(_utils_vdd.probe)
+        if result.status is not _utils_vdd.VddStatus.OK:
             self._fail(
                 f"无法挂载虚拟显示器（{_probe_hint(result)}）。"
                 "没有真实显示输出时 Windows 只保留一块占位的幻影屏，游戏渲染与截图都可能不可靠；"
@@ -584,10 +583,10 @@ class _DesktopGuard:
         await asyncio.shield(self._attaching)
 
     async def _insert(self, *, display_mode: tuple[int, int, int]) -> None:
-        from app.utils.platform.vdd import VirtualDisplay
+        from app.utils import vdd as _utils_vdd
 
         mode = display_mode
-        display = VirtualDisplay(mode=mode)
+        display = _utils_vdd.VirtualDisplay(mode=mode)
         try:
             await asyncio.to_thread(display.__enter__)
         except Exception as exc:
@@ -679,11 +678,11 @@ async def ensure_desktop_available() -> None:
 
 
 def _probe_hint(result) -> str:
-    from app.utils.platform.vdd import VddStatus
+    from app.utils import vdd as _utils_vdd
 
-    if result.status is VddStatus.NOT_INSTALLED:
+    if result.status is _utils_vdd.VddStatus.NOT_INSTALLED:
         return "未安装 Parsec 虚拟显示驱动"
-    if result.status is VddStatus.ACCESS_DENIED:
+    if result.status is _utils_vdd.VddStatus.ACCESS_DENIED:
         # 与「未安装」是两种完全不同的故障，提示必须分开。
         return "驱动已安装但当前权限打不开设备"
     return f"驱动异常: {result.detail}"
@@ -713,15 +712,15 @@ async def probe_virtual_display_driver():
             results=[item("installed", False, "当前系统不支持")],
         )
 
-    from app.utils.platform.vdd import VddStatus, probe
+    from app.utils import vdd as _utils_vdd
 
-    result = await asyncio.to_thread(probe)
-    if result.status is VddStatus.NOT_INSTALLED:
+    result = await asyncio.to_thread(_utils_vdd.probe)
+    if result.status is _utils_vdd.VddStatus.NOT_INSTALLED:
         return VirtualDisplayCheckOut(
             message="未安装 Parsec 虚拟显示驱动",
             results=[item("installed", False, "未找到驱动，请先安装")],
         )
-    if result.status is not VddStatus.OK:
+    if result.status is not _utils_vdd.VddStatus.OK:
         return VirtualDisplayCheckOut(
             message=_probe_hint(result),
             results=[
@@ -768,19 +767,19 @@ async def check_virtual_display_driver():
             results=[item("installed", False, "当前系统不支持")],
         )
 
-    from app.utils.platform.vdd import VddStatus, VirtualDisplay, probe
+    from app.utils import vdd as _utils_vdd
 
     async with DesktopGuard.lock:
-        result = await asyncio.to_thread(probe)
+        result = await asyncio.to_thread(_utils_vdd.probe)
         monitors = await asyncio.to_thread(_describe)
 
-        if result.status is VddStatus.NOT_INSTALLED:
+        if result.status is _utils_vdd.VddStatus.NOT_INSTALLED:
             return VirtualDisplayCheckOut(
                 message="未安装 Parsec 虚拟显示驱动",
                 monitors=monitors,
                 results=[item("installed", False, "未找到驱动，请先安装后再检测")],
             )
-        if result.status is not VddStatus.OK:
+        if result.status is not _utils_vdd.VddStatus.OK:
             return VirtualDisplayCheckOut(
                 message=_probe_hint(result),
                 monitors=monitors,
@@ -808,7 +807,7 @@ async def check_virtual_display_driver():
             )
 
         mode = parse_mode(Config.setting.Display.VirtualDisplayMode)
-        display = VirtualDisplay(mode=mode)
+        display = _utils_vdd.VirtualDisplay(mode=mode)
         try:
             await asyncio.to_thread(display.__enter__)
         except Exception as exc:

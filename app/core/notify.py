@@ -19,333 +19,508 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""统一通知编排。
+"""宿主通知服务；目标选择、投递和任务报告消费同一组显式依赖。"""
 
-脚本和业务模块负责生成正文，本模块负责读取通知配置、选择目标渠道、失败隔离与重试；
-``app.services.notification`` 持有已装配发送器，具体传输由各渠道实现。
-"""
+from __future__ import annotations
 
-import asyncio
-from collections.abc import Awaitable, Callable, Iterable
-from dataclasses import dataclass, replace
-from typing import Any, Literal, Protocol
+from collections.abc import Iterable, Sequence
+from contextlib import AbstractContextManager
+from dataclasses import replace
+from functools import partial
+from typing import TYPE_CHECKING, Any
 
-from app.core.config import Config
-from app.core.notify_channels import (
-    ChannelTarget,
-    NotifyChannel,
-    TargetConfigView,
-    get_notify_channel_failures,
-    get_notify_channels,
+from app.config import ConfigManager
+from app.core.community_notification import (
+    CommunityNotificationCoordinator,
+    CommunityNotificationDependencies,
 )
+from app.core.notification_report import (
+    NOTIFICATION_FAST_PATH_WAIT_SECONDS,
+    TaskReportCoordinator,
+)
+from app.core.notification_tasks import NotificationTasks
+from app.core.notify_channels import RuntimeConfigView, TargetConfigView
 from app.models.notification import (
+    NotificationImage,
+    NotificationSummary,
     NotifyPayload,
-    RenderedNotification,
+    WebhookTargetSnapshot,
 )
-from app.services.notification import Notify
+from app.models.notification_channel import (
+    ChannelTarget,
+    DeliveryChannel,
+    DispatchResult,
+    EmptyPolicy,
+    NotificationSourceConfig,
+    NotificationTransportSnapshot,
+    NotifyChannel,
+    NotifyTarget,
+    RecruitmentNotificationConfig,
+    UserNotificationConfig,
+)
+from app.models.notification_ports import LocalNotice
+from app.models.notification_report import TaskReportPolicy, TaskResultReport
+from app.runtime_tasks import OwnedTaskRegistry
+from app.services.community_notification import build_community_notification_payload
+from app.services.notification import Notification
+from app.services.notification_dispatch import dispatch as dispatch_notification
+from app.services.notification_rendering import AsyncNotificationRenderer
 from app.utils import get_logger
-from app.utils.notification_render import render_for_target
+from app.utils import notification_template as _utils_notification_template
+
+if TYPE_CHECKING:
+    from app.core.config import AppConfig
+    from app.core.task_report import PreparedTaskReport
+    from app.models.task import TaskItem
 
 logger = get_logger("通知编排")
 
-EmptyPolicy = Literal["send", "warn", "skip"]
 
+class HostNotificationService:
+    """应用持有实例；业务和插件只能消费注入的通知能力。"""
 
-@dataclass(frozen=True)
-class NotifyTarget:
-    """一组通知渠道及其配置来源。
-
-    ``channels`` 是「渠道 + 已解析目标」的配对：发送方法是渠道的、空值策略在
-    目标上，两个都要带得出来。构造时现读一次配置并固定为快照，分发全程不再
-    读配置。
-    """
-
-    channels: tuple[tuple[NotifyChannel, ChannelTarget], ...] = ()
-    empty_policy: EmptyPolicy = "send"
-    # 声明损坏时无法确定目标；只记目录未确认，不计作一次实际投递。
-    catalog_failures: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class DispatchResult:
-    """一次通知分发的明确结果。
-
-    ``attempted`` 是本次实际尝试投递的渠道数（被跳过的渠道不计入）；
-    ``succeeded`` / ``failed`` 分别是成功与失败的渠道名。零目标或全跳过时
-    ``attempted`` 为 0，切勿把该状态当作「已送达」。
-    ``failed`` 也保留无法确认的渠道目录；这类错误不增加 ``attempted``。
-    """
-
-    attempted: int = 0
-    succeeded: tuple[str, ...] = ()
-    failed: tuple[str, ...] = ()
-    # 内部投递记录使用 ID，用户可见的 succeeded/failed 继续保留渠道名称。
-    succeeded_ids: tuple[str, ...] = ()
-
-
-def global_target(
-    *,
-    include_system: bool = False,
-    empty_policy: EmptyPolicy = "send",
-    system_timeout_seconds: int | None = None,
-) -> NotifyTarget:
-    """按全局配置构造通知目标。"""
-
-    # 构造时现读一次配置并固定为快照；扫码解绑等运行期写入只对之后构造的目标可见。
-    pairs: list[tuple[NotifyChannel, ChannelTarget]] = []
-    for channel in get_notify_channels():
-        for target in channel.targets(TargetConfigView(Config.setting), scope="global"):
-            if target.is_local and not include_system:
-                continue
-            if target.is_local and system_timeout_seconds is not None:
-                target = replace(target, timeout_seconds=system_timeout_seconds)
-            pairs.append((channel, target))
-    return NotifyTarget(
-        channels=tuple(pairs),
-        empty_policy=empty_policy,
-        catalog_failures=get_notify_channel_failures(),
-    )
-
-
-def user_target(user_config: Any) -> NotifyTarget:
-    """按用户配置构造独立通知目标。"""
-
-    pairs: list[tuple[NotifyChannel, ChannelTarget]] = []
-    for channel in get_notify_channels():
-        pairs.extend(
-            (channel, target)
-            for target in channel.targets(TargetConfigView(user_config), scope="user")
-        )
-    return NotifyTarget(
-        channels=tuple(pairs),
-        empty_policy="warn",
-        catalog_failures=get_notify_channel_failures(),
-    )
-
-
-def user_statistic_targets(user_config: Any | None) -> list[NotifyTarget]:
-    """返回已启用统计通知的用户目标。"""
-
-    if (
-        user_config is None
-        or not user_config.Notify.Enabled
-        or (not user_config.Notify.IfSendStatistic)
-    ):
-        return []
-    return [user_target(user_config)]
-
-
-def statistic_targets(
-    user_config: Any | None,
-    *,
-    global_empty_policy: EmptyPolicy = "send",
-    compact_summary: bool = False,
-) -> list[NotifyTarget]:
-    """返回全局与用户级统计通知目标。"""
-
-    targets = []
-    if Config.setting.Notify.IfSendStatistic:
-        targets.append(global_target(empty_policy=global_empty_policy))
-    targets.extend(user_statistic_targets(user_config))
-    if compact_summary:
-        targets = [_prefer_compact_summaries(target) for target in targets]
-    return targets
-
-
-def _prefer_compact_summaries(target: NotifyTarget) -> NotifyTarget:
-    """按渠道目标声明应用业务提供的紧凑摘要偏好。"""
-
-    channels = []
-    for channel, channel_target in target.channels:
-        if channel_target.compact_summary_policy is not None:
-            channel_target = replace(
-                channel_target, summary_policy=channel_target.compact_summary_policy
-            )
-        channels.append((channel, channel_target))
-    return replace(
-        target,
-        channels=tuple(channels),
-    )
-
-
-async def _send(
-    channel: str,
-    send: Callable[[], Awaitable[Any]],
-    *,
-    attempts: int,
-    retry_delay: float,
-) -> bool:
-    """发送单个渠道，并把异常和显式 False 都视作失败。"""
-
-    for attempt in range(1, attempts + 1):
-        try:
-            result = await send()
-            if result is False:
-                raise RuntimeError("通知渠道返回失败状态")
-            return True
-        except Exception as exc:
-            if attempt == attempts:
-                logger.warning(f"{channel}通知发送失败: {type(exc).__name__}")
-                break
-            logger.warning(f"{channel}通知发送失败，将重试: {type(exc).__name__}")
-            if retry_delay > 0:
-                await asyncio.sleep(retry_delay)
-    return False
-
-
-def _recipient_action(
-    value: str,
-    policy: EmptyPolicy,
-    *,
-    channel: str,
-    hint: str,
-) -> tuple[bool, bool]:
-    """返回是否发送，以及跳过是否应记为失败。"""
-
-    if value or policy == "send":
-        return True, False
-    if policy == "warn":
-        logger.warning(f"{hint}为空，无法发送{channel}通知")
-        return False, True
-    return False, False
-
-
-class Notifier(Protocol):
-    """统一投递面；渠道内部的传输方法不进入公共协议。"""
-
-    async def send_channel(
+    def __init__(
         self,
-        channel: NotifyChannel,
-        target: ChannelTarget,
-        rendered: RenderedNotification,
-    ) -> bool | None: ...
-
-
-async def dispatch(
-    payload: NotifyPayload,
-    targets: Iterable[NotifyTarget],
-    *,
-    attempts: int = 1,
-    retry_delay: float = 0,
-    skip_channels: Iterable[str] = (),
-    skip_channel_ids: Iterable[str] = (),
-    notifier: Notifier | None = None,
-) -> DispatchResult:
-    """向所有目标分发通知，返回实际尝试/成功/失败渠道。
-
-    ``skip_channels`` 中的渠道不会被发送（也不计入尝试次数），用于只向
-    尚未送达的渠道重试，避免已成功渠道收到重复内容。
-    ``skip_channel_ids`` 按稳定 ID 跳过，不受 Webhook 同名或改名影响。
-    ``notifier`` 缺省用全局 Notify 单例，注入面供测试与渠道扩展替换。
-    """
-
-    if attempts < 1:
-        raise ValueError("通知发送次数必须大于 0")
-
-    sender = Notify if notifier is None else notifier
-
-    skip = set(skip_channels)
-    skip_ids = set(skip_channel_ids)
-    succeeded: list[str] = []
-    succeeded_ids: list[str] = []
-    failed: list[str] = []
-    attempted = 0
-    catalog_failures: list[str] = []
-
-    async def attempt(
-        channel: str,
-        channel_impl: NotifyChannel,
-        channel_target: ChannelTarget,
         *,
-        channel_id: str | None = None,
+        config: AppConfig,
+        transactions: ConfigManager,
+        channels: tuple[NotifyChannel, ...],
+        catalog_failures: tuple[str, ...],
+        transport: Notification,
+        renderer: AsyncNotificationRenderer,
+        runtime: OwnedTaskRegistry,
+        runtime_config: RuntimeConfigView,
     ) -> None:
-        nonlocal attempted
-        delivery_id = channel_id or channel
-        if channel in skip or delivery_id in skip_ids:
+        self.config = config
+        self.transactions = transactions
+        self._channels = channels
+        self._catalog_failures = catalog_failures
+        self._transport = transport
+        self._renderer = renderer
+        self._runtime_config = runtime_config
+        self._closed = False
+        self.tasks = NotificationTasks(
+            runtime=runtime, push_system_notice=config.push_system_notice
+        )
+        self.community = CommunityNotificationCoordinator(
+            CommunityNotificationDependencies(
+                dispatch=self.dispatch,
+                prepare_targets=lambda: (self.global_target(include_system=True),),
+                render=build_community_notification_payload,
+                enabled=lambda: self.config.ToolsConfig.GameSign.NotifyEnabled,
+                report_failure=self.report_community_failure,
+                spawn=partial(runtime.spawn, name="community-notification"),
+                fast_path_seconds=NOTIFICATION_FAST_PATH_WAIT_SECONDS,
+            )
+        )
+
+    async def start(self) -> None:
+        await self._transport.start()
+
+    async def close(self) -> None:
+        """宿主先回收运行时任务，再释放渲染、渠道和配置订阅。"""
+        if self._closed:
             return
-        attempted += 1
+        self._closed = True
+        self._renderer.close()
         try:
-            rendered = render_for_target(
-                payload,
-                channel_target.capabilities,
-                summary_policy=channel_target.summary_policy,
-                use_summary_title=channel_target.use_summary_title,
-            )
-        except Exception as exc:
-            logger.warning(f"{channel}通知内容准备失败: {exc}")
-            failed.append(channel)
-            return
-        for diagnostic in rendered.diagnostics:
-            logger.warning(f"{channel}通知内容降级: {diagnostic}")
+            await self._transport.stop()
+        finally:
+            self._runtime_config.close()
 
-        async def send() -> Any:
-            return await sender.send_channel(channel_impl, channel_target, rendered)
+    def channel_sender(self, key: str) -> Any:
+        return self._transport.channel_sender(key)
 
-        if await _send(channel, send, attempts=attempts, retry_delay=retry_delay):
-            succeeded.append(channel)
-            succeeded_ids.append(delivery_id)
-        else:
-            failed.append(channel)
+    async def send_notice(self, notice: LocalNotice) -> None:
+        await self._transport.send_notice(notice)
 
-    def miss(channel: str) -> None:
-        nonlocal attempted
-        if channel in skip or channel in skip_ids:
-            return
-        attempted += 1
-        failed.append(channel)
+    async def test_webhook(
+        self, payload: NotifyPayload, webhook: WebhookTargetSnapshot
+    ) -> None:
+        await self._transport.test_webhook(payload, webhook)
 
-    for target in targets:
-        # 跳过已送达 ID 不能消除目录不完整；不伪造目标、发送或递增尝试数。
-        for failure in target.catalog_failures:
-            if failure not in catalog_failures:
-                catalog_failures.append(failure)
-        for channel, ct in target.channels:
-            should_send = True
-            # None 表示该渠道不做空值判定（系统通知 / Koishi / QQ / Webhook），
-            # 不能进 _recipient_action：None 与空串同判真值会把它们在 warn 下误记失败。
-            if ct.empty_recipient is not None:
-                should_send, missing = _recipient_action(
-                    ct.empty_recipient,
-                    target.empty_policy,
-                    channel=ct.label,
-                    hint=ct.empty_hint,
+    async def report_community_failure(
+        self, result: DispatchResult, *, results_saved: bool
+    ) -> None:
+        await self.config.push_system_notice(
+            level="warning",
+            title="游戏社区通知发送不完整",
+            lines=[
+                f"发送失败的渠道：{'、'.join(result.failed)}",
+                "签到结果已保存，请检查这些渠道的通知配置后重试。"
+                if results_saved
+                else "请检查这些渠道的通知配置后重试。",
+            ],
+        )
+
+    def read_task_report_policy(self) -> TaskReportPolicy:
+        """报告入口固定一次策略，迟到补发作为下一次通知重新读取。"""
+        return TaskReportPolicy(
+            result_time=self.config.setting.Notify.SendTaskResultTime,
+            community_enabled=self.config.ToolsConfig.GameSign.NotifyEnabled,
+            wait_seconds=NOTIFICATION_FAST_PATH_WAIT_SECONDS,
+        )
+
+    def prepare_task_report(
+        self, task_info: TaskItem | None = None
+    ) -> PreparedTaskReport:
+        from app.core.task_report import prepare_task_report
+
+        return prepare_task_report(task_info, notifications=self)
+
+    def create_task_report_coordinator(
+        self, task_info: TaskItem
+    ) -> TaskReportCoordinator:
+        from app.core.task_report import create_task_report_coordinator
+
+        return create_task_report_coordinator(task_info, notifications=self)
+
+    async def push_statistics_report(
+        self,
+        *,
+        payload: NotifyPayload,
+        user_config: UserNotificationConfig | None,
+        task_info: TaskItem,
+        compact_summary: bool = False,
+    ) -> DispatchResult:
+        """按任务原有托管与失败反馈规则投递统计正文。"""
+
+        logger.info(f"开始推送通知, 模式: 统计信息, 标题: {payload.title}")
+        return await self.dispatch_task_notification(
+            payload,
+            self.statistic_targets(user_config, compact_summary=compact_summary),
+            task_info=task_info,
+        )
+
+    async def dispatch_task_notification(
+        self,
+        payload: NotifyPayload,
+        targets: list[NotifyTarget],
+        *,
+        task_info: TaskItem | None = None,
+    ) -> DispatchResult:
+        from app.core.task_report import dispatch_task_notification
+
+        return await dispatch_task_notification(
+            payload,
+            targets,
+            notifications=self,
+            task_info=task_info,
+        )
+
+    def task_notification_batch(
+        self, *, task_id: str | None
+    ) -> AbstractContextManager[None]:
+        return self.tasks.task_notification_batch(task_id=task_id)
+
+    async def send_global(
+        self,
+        payload: NotifyPayload,
+        *,
+        include_system: bool = False,
+        empty_policy: EmptyPolicy = "send",
+        system_timeout_seconds: int | None = None,
+        attempts: int = 1,
+        retry_delay: float = 0,
+    ) -> DispatchResult:
+        return await self.dispatch(
+            payload,
+            [
+                self.global_target(
+                    include_system=include_system,
+                    empty_policy=empty_policy,
+                    system_timeout_seconds=system_timeout_seconds,
                 )
-                if missing:
-                    miss(ct.label)
-            if should_send:
-                await attempt(
-                    ct.label,
-                    channel,
-                    ct,
-                    channel_id=ct.id,
+            ],
+            attempts=attempts,
+            retry_delay=retry_delay,
+        )
+
+    async def send_user(
+        self,
+        payload: NotifyPayload,
+        user_config: NotificationSourceConfig,
+        *,
+        attempts: int = 1,
+        retry_delay: float = 0,
+    ) -> DispatchResult:
+        return await self.dispatch(
+            payload,
+            [self.user_target(user_config)],
+            attempts=attempts,
+            retry_delay=retry_delay,
+        )
+
+    async def send_statistics(
+        self,
+        payload: NotifyPayload,
+        user_config: UserNotificationConfig | None,
+        *,
+        global_empty_policy: EmptyPolicy = "send",
+        compact_summary: bool = False,
+        attempts: int = 1,
+        retry_delay: float = 0,
+    ) -> DispatchResult:
+        return await self.dispatch(
+            payload,
+            self.statistic_targets(
+                user_config,
+                global_empty_policy=global_empty_policy,
+                compact_summary=compact_summary,
+            ),
+            attempts=attempts,
+            retry_delay=retry_delay,
+        )
+
+    def global_target(
+        self,
+        *,
+        include_system: bool = False,
+        empty_policy: EmptyPolicy = "send",
+        system_timeout_seconds: int | None = None,
+    ) -> NotifyTarget:
+        """按全局配置构造通知目标。"""
+
+        return self._resolve_target(
+            config=self.config.setting,
+            scope="global",
+            include_system=include_system,
+            empty_policy=empty_policy,
+            system_timeout_seconds=system_timeout_seconds,
+        )
+
+    def user_target(self, user_config: NotificationSourceConfig) -> NotifyTarget:
+        """按用户配置构造独立通知目标。"""
+        return self._resolve_target(
+            config=user_config, scope="user", empty_policy="warn"
+        )
+
+    def _resolve_target(
+        self,
+        *,
+        config: NotificationSourceConfig,
+        scope: str,
+        empty_policy: EmptyPolicy,
+        include_system: bool = False,
+        system_timeout_seconds: int | None = None,
+    ) -> NotifyTarget:
+        """逐渠道解析快照；一个渠道失败时保留其不确定性并继续其他渠道。"""
+        pairs: list[tuple[DeliveryChannel, ChannelTarget]] = []
+        failures: list[str] = []
+        for channel in self._channels:
+            try:
+                channel_targets = channel.targets(TargetConfigView(config), scope=scope)
+                resolved = []
+                for target in channel_targets:
+                    if target.is_local and not include_system:
+                        continue
+                    if target.is_local and system_timeout_seconds is not None:
+                        target = replace(target, timeout_seconds=system_timeout_seconds)
+                    resolved.append((channel.delivery(), target))
+                if resolved and channel.transport_fields is not None:
+                    transport = NotificationTransportSnapshot(
+                        values=tuple(
+                            (name, getattr(self.config.setting.Notify, name))
+                            for name in channel.transport_fields
+                        ),
+                        proxy=self._runtime_config.read_proxy(),
+                    )
+                    resolved = [
+                        (delivery, replace(target, transport=transport))
+                        for delivery, target in resolved
+                    ]
+                pairs.extend(resolved)
+            except Exception as exc:
+                prefix = "全局" if scope == "global" else "用户"
+                failure = f"{prefix}通知渠道 {channel.key} 目标准备失败"
+                failures.append(failure)
+                logger.warning(f"{failure}: {type(exc).__name__}")
+        return NotifyTarget(
+            channels=tuple(pairs),
+            empty_policy=empty_policy,
+            catalog_failures=self._catalog_failures,
+            preparation_failures=tuple(failures),
+        )
+
+    def user_statistic_targets(
+        self,
+        user_config: UserNotificationConfig | None,
+    ) -> list[NotifyTarget]:
+        """返回已启用统计通知的用户目标。"""
+
+        if (
+            user_config is None
+            or not user_config.Notify.Enabled
+            or not user_config.Notify.IfSendStatistic
+        ):
+            return []
+        return [self.user_target(user_config)]
+
+    def recruitment_targets(
+        self,
+        user_config: RecruitmentNotificationConfig | None,
+    ) -> list[NotifyTarget]:
+        """按全局和个人订阅准备喜报目标，不识别具体传输渠道。"""
+
+        targets = []
+        if self.config.setting.Notify.IfSendSixStar:
+            targets.append(self.global_target())
+        if (
+            user_config is not None
+            and user_config.Notify.Enabled
+            and user_config.Notify.IfSendSixStar
+        ):
+            targets.append(self.user_target(user_config))
+        return targets
+
+    def failure_targets(
+        self,
+    ) -> list[NotifyTarget]:
+        """任务失败信号沿用任务结果开关，包含受自身开关约束的本地提示。"""
+
+        if self.config.setting.Notify.SendTaskResultTime == "不推送":
+            return []
+        return [self.global_target(include_system=True, system_timeout_seconds=10)]
+
+    def statistic_targets(
+        self,
+        user_config: UserNotificationConfig | None,
+        *,
+        global_empty_policy: EmptyPolicy = "send",
+        compact_summary: bool = False,
+    ) -> list[NotifyTarget]:
+        """返回全局与用户级统计通知目标。"""
+
+        targets = []
+        if self.config.setting.Notify.IfSendStatistic:
+            targets.append(self.global_target(empty_policy=global_empty_policy))
+        targets.extend(self.user_statistic_targets(user_config))
+        if compact_summary:
+            targets = [self._prefer_compact_summaries(target) for target in targets]
+        return targets
+
+    def _prefer_compact_summaries(self, target: NotifyTarget) -> NotifyTarget:
+        """按渠道目标声明应用业务提供的紧凑摘要偏好。"""
+
+        channels = []
+        for channel, channel_target in target.channels:
+            if channel_target.compact_summary_policy is not None:
+                channel_target = replace(
+                    channel_target, summary_policy=channel_target.compact_summary_policy
                 )
+            channels.append((channel, channel_target))
+        return replace(
+            target,
+            channels=tuple(channels),
+        )
 
-    return DispatchResult(
-        attempted=attempted,
-        succeeded=tuple(succeeded),
-        failed=tuple((*failed, *catalog_failures)),
-        succeeded_ids=tuple(succeeded_ids),
-    )
+    async def dispatch(
+        self,
+        payload: NotifyPayload,
+        targets: Iterable[NotifyTarget],
+        *,
+        attempts: int = 1,
+        retry_delay: float = 0,
+        skip_channel_ids: Iterable[str] = (),
+    ) -> DispatchResult:
+        """使用本实例的发送器与渲染器，底层投递只接受显式依赖。"""
+        return await dispatch_notification(
+            payload=payload,
+            targets=targets,
+            attempts=attempts,
+            retry_delay=retry_delay,
+            skip_channel_ids=skip_channel_ids,
+            notifier=self._transport,
+            renderer=self._renderer,
+            concurrent=not self.transactions.in_transaction,
+        )
 
+    async def send_test_notification(
+        self,
+    ) -> DispatchResult:
+        """向全部已启用的全局渠道发送测试通知。"""
 
-async def send_test_notification() -> DispatchResult:
-    """向全部已启用的全局渠道发送测试通知。"""
+        text = (
+            "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容，说明 AUTO-MAS "
+            "的通知功能已经正确配置且可以正常工作！"
+        )
+        return await self.dispatch(
+            NotifyPayload(
+                title="AUTO-MAS测试通知",
+                text=text,
+                append_signature=False,
+            ),
+            [
+                self.global_target(
+                    include_system=True,
+                    empty_policy="warn",
+                    system_timeout_seconds=3,
+                )
+            ],
+        )
 
-    text = (
-        "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容，说明 AUTO-MAS "
-        "的通知功能已经正确配置且可以正常工作！"
-    )
-    return await dispatch(
-        NotifyPayload(
-            title="AUTO-MAS测试通知",
-            text=text,
-            append_signature=False,
-        ),
-        [
-            global_target(
-                include_system=True,
-                empty_policy="warn",
-                system_timeout_seconds=3,
-            )
-        ],
-    )
+    async def push_proxy_result(
+        self,
+        *,
+        title: str,
+        report: TaskResultReport,
+        task_info: TaskItem | None = None,
+        result_template: str = "general_result.html",
+        signature_sep: str = "\n\n",
+        images: Sequence[NotificationImage] = (),
+        include_system: bool = True,
+    ) -> DispatchResult:
+        """推送全局「代理结果」报告；签到合并和补发由报告协调器承担。
+
+        Args:
+            title: 通知标题。
+            report: 已在专项边界固定公共字段的任务报告。
+            task_info: 任务信息，用于签到汇总的渠道级重试。
+            result_template: 结果 HTML 模板名，MAA 用 MAA_result.html。
+            signature_sep: 签名分隔符，默认与 NotifyPayload 缺省一致；MAA 只空一行。
+            images: 随报告提供的图片资源。HTML 模板通过稳定资源 ID 引用需要展示的图片。
+            include_system: 是否弹系统通知。本轮已由专门的通知弹过（如 MaaFW 的停服维护 /
+                需要更新）时传 False，免得同一件事弹两次。
+        """
+
+        logger.info(f"开始推送通知, 模式: 代理结果, 标题: {title}")
+        prepared = self.prepare_task_report(task_info)
+        if not prepared.should_send(
+            uncompleted_count=report.uncompleted_count,
+        ):
+            return DispatchResult()
+
+        message_text = (
+            f"任务开始时间: {report.start_time}, 结束时间: {report.end_time}\n"
+            f"已完成数: {report.completed_count}, 未完成数: {report.uncompleted_count}\n\n"
+            f"{report.result}"
+        )
+        counts = (
+            f"已完成用户数: {report.completed_count}, "
+            f"未完成用户数: {report.uncompleted_count}"
+        )
+        # 有未完成的用户时摘要标题不能再说「已完成！」；调用方显式给的摘要标题优先
+        summary_title = report.summary_title or title.replace(
+            "报告", "存在异常" if report.uncompleted_count > 0 else "已完成！"
+        )
+        return await prepared.dispatch(
+            NotifyPayload(
+                title=title,
+                text=message_text,
+                html=_utils_notification_template.deferred_notification_template(
+                    result_template, report.template_context()
+                ),
+                signature_sep=signature_sep,
+                summary=NotificationSummary(
+                    text=counts,
+                    title=summary_title,
+                    overflow_text=message_text,
+                ),
+                images=tuple(images),
+            ),
+            [
+                self.global_target(
+                    include_system=include_system, system_timeout_seconds=10
+                )
+            ],
+        )

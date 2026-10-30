@@ -53,8 +53,10 @@ export const summarizeCultivate = (
   if (!options.enabled) return ''
   const count = parseCultivateTargets(options.targetsJson).length
   return [
-    count ? t('edit.maaCultivateOperatorCount', { count }) : t('edit.maaCultivateEmpty'),
-    t(options.autoRaise ? 'edit.maaCultivateAutoRaiseOn' : 'edit.maaCultivateAutoRaiseOff'),
+    count ? t('core.edit.maaCultivateOperatorCount', { count }) : t('core.edit.maaCultivateEmpty'),
+    t(
+      options.autoRaise ? 'core.edit.maaCultivateAutoRaiseOn' : 'core.edit.maaCultivateAutoRaiseOff'
+    ),
   ].join(' · ')
 }
 
@@ -71,7 +73,7 @@ export const summarizeDepot = (
   } catch {
     count = 0
   }
-  return count ? t('edit.maaDepotPlanCount', { count }) : t('edit.maaDepotEmpty')
+  return count ? t('core.edit.maaDepotPlanCount', { count }) : t('core.edit.maaDepotEmpty')
 }
 
 export const INFRAST_MODE_OPTIONS = [

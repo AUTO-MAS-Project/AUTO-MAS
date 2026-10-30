@@ -15,11 +15,9 @@ import {
 
 const logger = getLogger('OK-NTE问题包')
 
-// 与 app/task/OkNte/AutoProxy.py 的 script_log_path 默认值保持同步
-const OKNTE_REL_LOG_FILE = 'data/apps/ok-nte/working/logs/ok-script.log'
-
 interface OkNteIssueReportResult {
   success: boolean
+  incompleteCount?: number
   message?: string
   zipPath?: string
   error?: string
@@ -51,7 +49,20 @@ export function createOkNteIssueReport(appRoot: string, zipPath: string): OkNteI
     addDirectory(state, runtimeDebugDir, 'logs/frontend-runtime')
   }
 
-  addPerInstallationFile(state, installations, OKNTE_REL_LOG_FILE, 'oknte')
+  for (const installation of installations) {
+    const root = installation.rootPath
+    const isBody =
+      fs.existsSync(path.join(root, 'ok-nte.exe')) && fs.existsSync(path.join(root, '_internal'))
+    const runtimeRoot = isBody ? root : path.join(root, 'data/apps/ok-nte/working')
+    addPerInstallationFile(
+      state,
+      [{ ...installation, rootPath: runtimeRoot }],
+      'logs/ok-script.log',
+      'oknte'
+    )
+  }
+  // 启动器记录随问题包透传，便于区分 Git 与冻结包的更新渠道。
+  addPerInstallationFile(state, installations, 'data/apps/ok-nte/app.json', 'oknte')
 
   try {
     fs.mkdirSync(path.dirname(zipPath), { recursive: true })
@@ -59,6 +70,7 @@ export function createOkNteIssueReport(appRoot: string, zipPath: string): OkNteI
     logger.info(`OK-NTE 问题包已导出: ${zipPath}`)
     return {
       success: true,
+      incompleteCount: state.entries.filter(entry => entry.status !== 'included').length,
       message: `OK-NTE 问题包导出成功，已收集 ${state.entries.filter(entry => entry.status !== 'skipped').length} 个文件`,
       zipPath,
     }

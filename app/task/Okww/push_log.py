@@ -26,9 +26,10 @@ OK-WW 专项作为 log_box 的一个实例：本模块只提供参数（i18n 翻
 """
 
 import re
+from dataclasses import replace
 from pathlib import Path
 
-from app.log_box.logtype import LogType
+from app.log_box import LogSpec, LogType, TranslationSpec
 from app.utils import resource_path
 
 # ok-ww 自带翻译文件相对路径（从 RootPath 派生，不硬编码绝对路径）
@@ -226,3 +227,23 @@ def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
             (LogType.NORMAL, f"⚡ 剩余体力: {last_stamina}", last_stamina_ts)
         )
     return status_lines
+
+
+OKWW_LOG_SPEC = LogSpec(
+    rules=tuple(OKWW_PUSH_RULES),
+    postprocessor=okww_resolve,
+    error_message="OK-WW log_box 收尾推送失败（okww_resolve/翻译清理）",
+    failure_text="⚠️ 节点采集失败",
+)
+
+
+def make_okww_log_spec(root: Path) -> LogSpec:
+    """声明原生与补充词表的位置，加载、逐行翻译和清理由 box 负责。"""
+    return replace(
+        OKWW_LOG_SPEC,
+        translation=TranslationSpec(
+            paths=(OKWW_REL_I18N_PO,),
+            supplements=(_okww_supplement_po(),),
+            base=root,
+        ),
+    )

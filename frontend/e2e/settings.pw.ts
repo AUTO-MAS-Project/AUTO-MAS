@@ -1,15 +1,27 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 
-// 被驱动的设置项：设置页「Interface」标签的「隐藏关闭按钮」下拉框。
-// 控件见 frontend/src/views/setting/TabBasic.vue:333-341（字段 UI.IfHideCloseButton），
-// 保存路径为 POST /api/setting/update（frontend/src/composables/useSettingsApi.ts:38-65），
-// 后端落盘见 app/api/setting.py:177-198 与 app/core/config.py:3689-3704。
-const closeButtonField = (page: Page) =>
-  page.locator('.form-item-vertical').filter({ hasText: 'Hide the close button' })
+// 设置页「Interface」标签的「隐藏关闭按钮」复选框对应 UI.IfHideCloseButton，
+// 保存路径为 POST /api/setting/update。
+const closeButtonCheckbox = (page: Page) =>
+  page.getByRole('checkbox', { name: 'Hide the close button', exact: true })
 
-const closeButtonValue = (page: Page) =>
-  closeButtonField(page).locator('.ant-select-selection-item')
+const waitForSettingsLoad = async (page: Page) => {
+  const response = await page.waitForResponse(
+    response =>
+      response.url().endsWith('/api/setting/get') &&
+      response.request().method() === 'POST' &&
+      response.ok(),
+    { timeout: 10000 }
+  )
+  const payload = (await response.json()) as {
+    data: { UI?: { IfHideCloseButton?: boolean } }
+  }
+  // 复选框会先以未勾选状态渲染，等配置载入后再读取初始值。
+  await expect(closeButtonCheckbox(page)).toBeChecked({
+    checked: payload.data.UI?.IfHideCloseButton === true,
+  })
+}
 
 const waitForSave = (page: Page, ok: boolean) =>
   page.waitForResponse(
@@ -20,52 +32,48 @@ const waitForSave = (page: Page, ok: boolean) =>
     { timeout: 10000 }
   )
 
-const pickCloseButtonValue = async (page: Page, label: string) => {
-  await closeButtonField(page).locator('.ant-select-selector').click()
-  await page
-    .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
-    .filter({ hasText: label })
-    .click()
-}
-
 test.describe('@settings persistence', () => {
   test('saves settings and persists after page reload', async ({ app, page }) => {
+    const loaded = waitForSettingsLoad(page)
     await app.goto('/settings')
     await expect(page.getByText('Settings', { exact: true }).first()).toBeVisible()
+    await loaded
 
-    // 修改设置：隐藏关闭按钮（下拉框渲染出当前值即表示设置已加载）
-    await expect(closeButtonValue(page)).toBeVisible()
-    const initialState = (await closeButtonValue(page).innerText()).trim()
-    const nextState = initialState === 'Yes' ? 'No' : 'Yes'
+    // 修改设置：隐藏关闭按钮。
+    const initialState = await closeButtonCheckbox(page).isChecked()
+    const nextState = !initialState
 
     const saved = waitForSave(page, true)
-    await pickCloseButtonValue(page, nextState)
+    // 受控复选框会在保存成功后更新，单击后用重试断言等待状态提交。
+    await closeButtonCheckbox(page).click()
     await saved
 
     // 验证状态已改变
-    await expect(closeButtonValue(page)).toHaveText(nextState)
+    await expect(closeButtonCheckbox(page)).toBeChecked({ checked: nextState })
 
     await app.evidence('settings-modified')
 
     // 刷新页面，验证持久化
+    const reloaded = waitForSettingsLoad(page)
     await page.reload()
     await expect(page.getByText('Settings', { exact: true }).first()).toBeVisible()
-    await expect(closeButtonValue(page)).toHaveText(nextState)
+    await reloaded
+    await expect(closeButtonCheckbox(page)).toBeChecked({ checked: nextState })
 
     await app.evidence('settings-persisted')
 
     // 恢复原状态，避免影响后续用例
     const restored = waitForSave(page, true)
-    await pickCloseButtonValue(page, initialState)
+    await closeButtonCheckbox(page).click()
     await restored
-    await expect(closeButtonValue(page)).toHaveText(initialState)
+    await expect(closeButtonCheckbox(page)).toBeChecked({ checked: initialState })
   })
 
   test('handles save failure gracefully', async ({ app, page }) => {
+    const loaded = waitForSettingsLoad(page)
     await app.goto('/settings')
-    await expect(closeButtonValue(page)).toBeVisible()
-    const initialState = (await closeButtonValue(page).innerText()).trim()
-    const nextState = initialState === 'Yes' ? 'No' : 'Yes'
+    await loaded
+    const initialState = await closeButtonCheckbox(page).isChecked()
 
     // 拦截保存请求，模拟后端 500
     // 跨域 POST 会先走 OPTIONS 预检：预检放行，500 响应保留 CORS 头，
@@ -86,23 +94,24 @@ test.describe('@settings persistence', () => {
     })
 
     const failed = waitForSave(page, false)
-    await pickCloseButtonValue(page, nextState)
+    await closeButtonCheckbox(page).click()
     await failed
 
     // 等待用户可见的错误提示
-    await expect(
-      page.locator('.ant-message-error').filter({ hasText: 'Could not save the setting' })
-    ).toBeVisible()
+    await expect(page.locator('.ant-message-error')).toHaveCount(1)
+    await expect(page.locator('.ant-message-error')).toContainText('Internal server error')
 
     // 界面不假装成功：控件保持原值
-    await expect(closeButtonValue(page)).toHaveText(initialState)
+    await expect(closeButtonCheckbox(page)).toBeChecked({ checked: initialState })
 
     await app.evidence('settings-save-failed')
 
     // 移除拦截后刷新，确认失败的值没有被持久化
     await page.unroute('**/api/setting/update')
+    const reloaded = waitForSettingsLoad(page)
     await page.reload()
     await expect(page.getByText('Settings', { exact: true }).first()).toBeVisible()
-    await expect(closeButtonValue(page)).toHaveText(initialState)
+    await reloaded
+    await expect(closeButtonCheckbox(page)).toBeChecked({ checked: initialState })
   })
 })

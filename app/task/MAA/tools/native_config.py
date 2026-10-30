@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from app.utils import get_logger
-from app.utils.io import read_file
+from app.utils import io as _utils_io
 
 logger = get_logger("配置模型")
 
@@ -134,27 +134,21 @@ def read_maa_config(path: Path) -> dict | None:
     """读取 MAA gui.new.json 配置; 缺失或损坏返回 None(损坏另记警告)。"""
 
     try:
-        data = read_file(path)
+        data = _utils_io.read_file(path)
     except (OSError, json.JSONDecodeError):
         logger.opt(exception=True).warning(f"读取 MAA 配置失败: {path}")
         return None
     return data if isinstance(data, dict) and data else None
 
 
-def maa_scheme_name(config_dir: Path, data: dict) -> str:
-    """MAA 生效方案名, 与 AutoProxy.set_maa 的方案归一判定对称。
+def maa_scheme_name(data: dict) -> str:
+    """MAA 配置的生效方案名。
 
-    多方案配置下 set_maa 把 gui.json 的 Current 方案复制进 gui.new.json 的
-    Default 再注入, 故运行时读到的队列就是 Current 方案(该方案不在
-    gui.new.json 里时才是 Default)。读取与回写都要落在同一方案, 否则写进去的
-    班次会被方案归一覆盖。``data`` 为已读取的 gui.new.json 内容。
+    ``data`` 为已读取的 gui.new.json 内容; ``Current`` 指向的方案存在时用它,
+    否则回落到 ``Default``。
     """
 
-    try:
-        gui = read_file(config_dir / "gui.json")
-    except (OSError, json.JSONDecodeError):
-        return "Default"
-    current = gui.get("Current") if isinstance(gui, dict) else None
+    current = data.get("Current")
     configurations = data.get("Configurations")
     if (
         isinstance(current, str)

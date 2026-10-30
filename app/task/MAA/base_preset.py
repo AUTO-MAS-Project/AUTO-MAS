@@ -4,7 +4,7 @@ import json
 from copy import deepcopy
 from pathlib import Path
 
-from app.utils.io import write_file
+from app.utils import io as _utils_io
 
 MAA_STAMINA_LEGACY_FILENAME = "_mas_stamina_legacy.json"
 """历史活动优先侧车文件；保留时不复制到 MAA 运行目录。"""
@@ -16,40 +16,24 @@ _MAA_STAMINA_TASK_ALIASES = {
     ("Fight", "理智作战"): ("Fight", "理智任务"),
 }
 
-_MAA_BASE_PRESET = {
-    "gui.json": {
-        "Current": "Default",
-        "Global": {
-            "GUI.Localization": "zh-cn",
-            "GUI.UseTray": "False",
-            "GUI.MinimizeToTray": "False",
-            "Start.MinimizeDirectly": "False",
-            **{f"Timer.Timer{index}": "False" for index in range(1, 9)},
-        },
-        "Configurations": {"Default": {}},
-    },
-    "gui.new.json": {
-        **json.loads(
-            Path(__file__).with_name("base_preset.json").read_text(encoding="utf-8")
-        ),
-    },
-}
+_MAA_BASE_PRESET = json.loads(
+    Path(__file__).with_name("base_preset.json").read_text(encoding="utf-8")
+)
 
 
-def get_maa_base_preset(name: str) -> dict:
-    """Return an independent copy of one MAA base configuration preset."""
+def get_maa_base_preset() -> dict:
+    """Return an independent copy of the MAA base configuration preset."""
 
-    return deepcopy(_MAA_BASE_PRESET[name])
+    return deepcopy(_MAA_BASE_PRESET)
 
 
 def seed_maa_base_config(config_dir: Path) -> None:
-    """Create missing managed MAA base files without replacing existing settings."""
+    """Create the managed MAA configuration without replacing existing settings."""
 
     config_dir.mkdir(parents=True, exist_ok=True)
-    for name, preset in _MAA_BASE_PRESET.items():
-        path = config_dir / name
-        if not path.exists():
-            write_file(path, deepcopy(preset))
+    path = config_dir / "gui.new.json"
+    if not path.exists():
+        _utils_io.write_file(path, deepcopy(_MAA_BASE_PRESET))
 
 
 def _fill_missing(target: dict, defaults: dict) -> None:
@@ -67,54 +51,75 @@ def _fill_missing(target: dict, defaults: dict) -> None:
 _MAA_ROOT_KEYS_NOT_FILLED = frozenset({"Configurations", "Current", "ConfigVersion"})
 
 
-def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
-    """Fold the current configuration into ``Default`` and guarantee both sides.
+def _ensure_mapping(parent: dict, key: str) -> dict:
+    value = parent.get(key)
+    if not isinstance(value, dict):
+        value = parent[key] = {}
+    return value
 
-    MAA's native files are not guaranteed to ship ``Default``: direct control and
-    "source directory missing, keep the configuration in the install directory"
-    both copy the user's own gui.json / gui.new.json in as-is, and ``Current`` may
-    already be ``Default``. Folding and the fallback must therefore run
-    unconditionally, or the later hard indexing of ``Global`` /
-    ``Configurations["Default"]`` raises ``KeyError``.
 
-    根级 ``Gui` / ``Timers`` 也按随包预设补齐缺键：存档是用户自己那份 MAA 配置的
-    副本，MAA 后来新增的字段（尤其 ``Gui.GuideStep``）在里面根本不存在，下发后
-    MAA 每次都按首次运行处理，直接把新手引导弹出来。只补缺失键，不覆盖用户值。
+def _normalize_root_gui(doc: dict) -> None:
+    """把旧版根级 ``GUI`` 合并进 ``Gui``，之后只写 ``Gui``。
+
+    旧版 MAA 的根级 ``GUI`` 只应出现一次。MAS 自己完成这次重命名，
+    不再依赖 MAA 的迁移器，也不在废弃字段上写运行期配置。
     """
 
-    if not isinstance(gui_set.get("Global"), dict):
-        gui_set["Global"] = {}
+    legacy = doc.pop("GUI", None)
+    gui = _ensure_mapping(doc, "Gui")
+    if isinstance(legacy, dict):
+        # 已有 Gui 优先，旧 GUI 只补缺键，避免反过来覆盖新配置。
+        _fill_missing(gui, legacy)
 
-    gui_configurations = gui_set.get("Configurations")
-    if not isinstance(gui_configurations, dict):
-        gui_configurations = gui_set["Configurations"] = {}
-    configurations = gui_new_set.get("Configurations")
-    if not isinstance(configurations, dict):
-        configurations = gui_new_set["Configurations"] = {}
-    gui_configurations.setdefault("Default", {})
+    guide_step = gui.get("GuideStep")
+    if (
+        isinstance(guide_step, bool)
+        or not isinstance(guide_step, int)
+        or guide_step <= 0
+    ):
+        gui["GuideStep"] = 7
+
+
+def ensure_maa_default_configuration(gui_new_set: dict) -> None:
+    """Fold the active configuration into ``Default`` and guarantee its containers.
+
+    MAA's native file is not guaranteed to ship ``Default``: direct control and
+    "source directory missing, keep the configuration in the install directory"
+    both copy the user's own gui.new.json in as-is, and ``Current`` may already be
+    ``Default``. Folding and the fallback must therefore run unconditionally, or
+    the later hard indexing of ``Configurations["Default"]`` raises ``KeyError``.
+
+    根级 ``Gui`` / ``Timers`` 也按随包预设补齐缺键：存档是用户自己那份 MAA 配置的
+    副本，MAA 后来新增的字段（尤其 ``Gui.GuideStep``）在里面根本不存在，下发后
+    MAA 每次都按首次运行处理，直接把新手引导弹出来。只补缺失键，不覆盖用户值；
+    旧版根级 ``GUI`` 先合并进 ``Gui`` 并删除，后续只认 ``Gui``；折叠方案后
+    再补 ``Default.Gui`` 的运行期容器，直接索引不会落空。
+    """
+
+    _normalize_root_gui(gui_new_set)
+
+    configurations = _ensure_mapping(gui_new_set, "Configurations")
     configurations.setdefault("Default", {})
-    gui_set.setdefault("Current", "Default")
 
-    if gui_set["Current"] != "Default":
-        # The current configuration itself may be missing (hand-edited third-party
-        # files): fold it only when present, as the older verified AutoProxy /
-        # ScriptConfig code did, and otherwise keep each side's own Default.
-        current = gui_set["Current"]
-        if current in gui_configurations:
-            gui_configurations["Default"] = gui_configurations[current]
-        if current in configurations:
-            configurations["Default"] = configurations[current]
-        gui_set["Current"] = "Default"
+    current = gui_new_set.get("Current")
+    if isinstance(current, str) and current not in ("", "Default"):
+        # 当前方案可能不存在（手改过的第三方文件）：只在存在时折叠，
+        # 否则保留文件自己的 Default。
+        source = configurations.get(current)
+        if isinstance(source, dict):
+            configurations["Default"] = source
+    gui_new_set["Current"] = "Default"
 
-    for name, doc in (("gui.json", gui_set), ("gui.new.json", gui_new_set)):
-        preset = get_maa_base_preset(name)
-        for key, value in preset.items():
-            if key in _MAA_ROOT_KEYS_NOT_FILLED:
-                continue
-            # 旧版 GUI 由 MAA 迁移，提前补入 Gui 会遮蔽用户设置。
-            if key == "Gui" and "Gui" not in doc and "GUI" in doc:
-                continue
-            _fill_missing(doc, {key: value})
+    # 折叠当前方案后再补 Default.Gui 的容器，避免刚补好的 Default 被覆盖。
+    default_gui = _ensure_mapping(_ensure_mapping(configurations, "Default"), "Gui")
+    for key in ("ConnectSettings", "RuntimeSettings", "StartUpSettings"):
+        _ensure_mapping(default_gui, key)
+
+    preset = get_maa_base_preset()
+    for key, value in preset.items():
+        if key in _MAA_ROOT_KEYS_NOT_FILLED:
+            continue
+        _fill_missing(gui_new_set, {key: value})
 
 
 def maa_task_identity(task: object) -> tuple[str, str] | None:

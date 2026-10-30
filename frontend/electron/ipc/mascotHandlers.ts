@@ -1,3 +1,4 @@
+import { observePackageRemoval } from '../services/appearanceAnalytics'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import type { DesktopMascotRuntime } from '../services/desktopMascotTypes'
 import type {
@@ -59,25 +60,27 @@ export function registerMascotHandlers(onChanged: () => void): void {
     }
     return result
   })
-  ipcMain.handle('mascot:remove', (_event, id: unknown) => {
-    if (typeof id !== 'string') return { success: false, error: '桌宠 ID 无效' }
-    const result = removeMascot(app.getPath('userData'), id)
-    if (result.success) {
-      logger.info(`桌宠已移除: ${id}`)
-      forgetSource(id)
-      try {
-        const configPath = path.join(getAppRoot(), 'config', 'frontend_config.json')
-        const config = fs.existsSync(configPath)
-          ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
-          : {}
-        if (config.desktopMascotId === id) patchConfigFile(configPath, { desktopMascotId: null })
-      } catch (error) {
-        logger.warn('清理已移除桌宠的选择失败:', error)
+  ipcMain.handle('mascot:remove', (_event, id: unknown) =>
+    observePackageRemoval('mascot', () => {
+      if (typeof id !== 'string') return { success: false, error: '桌宠 ID 无效' }
+      const result = removeMascot(app.getPath('userData'), id)
+      if (result.success) {
+        logger.info(`桌宠已移除: ${id}`)
+        forgetSource(id)
+        try {
+          const configPath = path.join(getAppRoot(), 'config', 'frontend_config.json')
+          const config = fs.existsSync(configPath)
+            ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
+            : {}
+          if (config.desktopMascotId === id) patchConfigFile(configPath, { desktopMascotId: null })
+        } catch (error) {
+          logger.warn('清理已移除桌宠的选择失败:', error)
+        }
+        notify()
       }
-      notify()
-    }
-    return result
-  })
+      return result
+    })
+  )
 }
 
 /** 运行时 IPC 与资源包 IPC 分开释放，应用共享的安装器不随主窗口重建。 */
@@ -91,6 +94,7 @@ export function registerDesktopMascotHandlers(
     | 'setDecodedImage'
     | 'setActivity'
     | 'showNotice'
+    | 'finishReaction'
   > & {
     setReady(ready: boolean, labels?: DesktopMascotMenuLabels, colors?: DesktopMascotColors): void
   },
@@ -209,6 +213,9 @@ export function registerDesktopMascotHandlers(
   const onPointer = (event: Electron.IpcMainEvent, action: unknown, session: unknown): void =>
     service.handlePointer(event.sender, action, session)
   ipcMain.on('desktop-mascot:pointer', onPointer)
+  const onReactionEnded = (event: Electron.IpcMainEvent, id: unknown): void =>
+    service.finishReaction(event.sender, id)
+  ipcMain.on('desktop-mascot:reaction-ended', onReactionEnded)
   const onImageDecoded = (
     event: Electron.IpcMainEvent,
     imageUrl: unknown,
@@ -232,15 +239,19 @@ export function registerDesktopMascotHandlers(
       return
     service.setActivity(working, animate)
   })
-  ipcMain.handle('desktop-mascot:notice', (event, text: unknown, reaction: unknown) => {
-    if (event.sender !== getMainWindow()?.webContents || typeof text !== 'string') return
-    service.showNotice(
-      text,
-      reaction === 'success' || reaction === 'failure' || reaction === 'stopped'
-        ? reaction
-        : undefined
-    )
-  })
+  ipcMain.handle(
+    'desktop-mascot:notice',
+    (event, text: unknown, reaction: unknown, key: unknown) => {
+      if (event.sender !== getMainWindow()?.webContents || typeof text !== 'string') return
+      service.showNotice(
+        text,
+        reaction === 'success' || reaction === 'failure' || reaction === 'stopped'
+          ? reaction
+          : undefined,
+        typeof key === 'string' ? key.slice(0, 120) : undefined
+      )
+    }
+  )
 
   return () => {
     for (const channel of [
@@ -255,6 +266,7 @@ export function registerDesktopMascotHandlers(
     ])
       ipcMain.removeHandler(channel)
     ipcMain.removeListener('desktop-mascot:pointer', onPointer)
+    ipcMain.removeListener('desktop-mascot:reaction-ended', onReactionEnded)
     ipcMain.removeListener('desktop-mascot:image-decoded', onImageDecoded)
   }
 }

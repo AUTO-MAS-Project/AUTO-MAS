@@ -4,11 +4,11 @@
     <!-- 页面头部 -->
     <div class="scheduler-header">
       <div class="header-left">
-        <h1 class="page-title">{{ t('scheduler.title') }}</h1>
+        <h1 class="page-title app-page-title">{{ t('core.scheduler.title') }}</h1>
       </div>
       <div class="header-actions">
         <a-space size="middle">
-          <span class="power-label">{{ t('scheduler.powerLabel') }}</span>
+          <span class="power-label">{{ t('core.scheduler.powerLabel') }}</span>
           <a-select
             v-model:value="powerAction"
             class="power-select"
@@ -38,14 +38,14 @@
       >
         <template #tabBarExtraContent>
           <div class="tab-actions">
-            <a-tooltip :title="t('scheduler.addTab')" placement="top">
+            <a-tooltip :title="t('core.scheduler.addTab')" placement="top">
               <a-button class="tab-action-btn tab-add-btn" size="middle" @click="addSchedulerTab">
                 <template #icon>
                   <PlusOutlined />
                 </template>
               </a-button>
             </a-tooltip>
-            <a-tooltip :title="t('scheduler.removeIdleTabs')" placement="top">
+            <a-tooltip :title="t('core.scheduler.removeIdleTabs')" placement="top">
               <a-button
                 class="tab-action-btn tab-remove-btn"
                 size="middle"
@@ -127,7 +127,7 @@
         <!-- 空状态 -->
         <template #empty>
           <div class="empty-tab-content">
-            <a-empty :description="t('scheduler.emptyTabs')" />
+            <a-empty :description="t('core.scheduler.emptyTabs')" />
           </div>
         </template>
       </a-tabs>
@@ -144,6 +144,7 @@
 </template>
 
 <script setup lang="ts">
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { useI18n } from 'vue-i18n'
 import { onMounted, onUnmounted, onActivated, onDeactivated, computed, ref, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
@@ -172,7 +173,7 @@ const { isDark, themeMode, appearanceId, activeAppearance } = useTheme()
 const logThemeMode = useLocalStorage('auto-mas.scheduler.log-theme', 'theme', {
   onError: error => {
     logger.error(`保存日志主题失败: ${String(error)}`)
-    message.error(t('scheduler.log.saveThemeFailed'))
+    message.error(t('core.scheduler.log.saveThemeFailed'))
   },
 })
 
@@ -286,8 +287,7 @@ onMounted(() => {
   logger.info('调度中心组件首次挂载')
   void initialize() // 初始化TaskManager订阅（内部会先加载任务选项）
 
-  // 开发环境下导入调试工具
-  if (process.env.NODE_ENV === 'development') {
+  if (import.meta.env.DEV && isDev) {
     import('@/utils/scheduler-debug').then(() => {
       logger.info('调度中心调试工具已加载，使用 debugScheduler() 进行调试')
     })
@@ -337,16 +337,6 @@ onDeactivated(() => {
 
 .page-title {
   margin: 0 0 8px 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: var(
-    --app-page-title-color,
-    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .header-actions {

@@ -31,18 +31,19 @@ from typing import Literal
 from app.config import ConfigCollection
 from app.core.ws import Publisher, protocol
 from app.models.config import HSRConfig, HSRUserConfig
+from app.models.notification import NotifyPayload
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services.system import System
-from app.utils import ProcessManager, get_logger, is_process_running
-from app.utils.constants import UTC4
+from app.task.notify_core import build_script_statistics_payload
+from app.utils import UTC4, ProcessManager, get_logger, is_process_running
 
+from .history import save_hsr_user_history
 from .task_mapping import (
     HSR_TASK_MODULES,
     engine_label,
     resolve_script_assignment,
 )
-from .tools import push_notification
 from .tools.account_switch import (
     HSR_GAME_PROCESS_NAME,
     HSR_GAME_READY_DELAY_SECONDS,
@@ -163,6 +164,8 @@ def _has_enabled_phase_module(plan, phase: HSRPhase) -> bool:
 class HSRAutoProxyTask(TaskExecuteBase):
     """HSR 单用户自动代理任务。"""
 
+    wait_for_finalizer_on_cancel = True
+
     def __init__(
         self,
         script_info: ScriptItem,
@@ -270,9 +273,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
         """为当前 HSR 用户创建运行日志记录。"""
 
         self._current_user_item = user_item
-        self._current_log_start_time = datetime.now()
+        self._current_log_start_time = datetime.now().astimezone()
         self._current_user_log = LogRecord(status="HSR 正常运行中")
-        user_item.log_record[self._current_log_start_time] = self._current_user_log
+        user_item.add_log_record(self._current_log_start_time, self._current_user_log)
         user_item.status = "运行"
         if attempt <= 1:
             self._append_log(f"开始处理用户「{user_name}」")
@@ -553,14 +556,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
         success_symbol = "√" if self.cur_user_item.status == "完成" else "X"
 
         try:
-            await push_notification(
-                "统计信息",
-                (
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
-                    f"{self.cur_user_item.name} 的 HSR 自动代理统计报告"
+            await self.task_info.notifications.push_statistics_report(
+                payload=build_script_statistics_payload(
+                    title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 HSR 自动代理统计报告",
+                    message=statistics,
+                    result_label="HSR执行结果",
                 ),
-                statistics,
-                self.cur_user_config,
+                user_config=self.cur_user_config,
+                task_info=self.task_info,
             )
         except Exception as e:
             logger.opt(exception=True).warning(f"推送 HSR 用户统计通知时出现异常: {e}")
@@ -644,11 +647,19 @@ class HSRAutoProxyTask(TaskExecuteBase):
             self._append_log(message)
             await self._send_task_notice("warning", message)
             try:
-                await push_notification(
-                    "云登录提醒",
-                    f"{user_name} 需要登录云·星穹铁道",
-                    {"message": message},
-                    self.cur_user_config,
+                # 需人工介入的提醒立即托管，让离开电脑的用户及时知道要登录。
+                logger.info(
+                    f"开始推送通知, 模式: 云登录提醒, 标题: {user_name} 需要登录云·星穹铁道"
+                )
+                await self.task_info.notifications.dispatch_task_notification(
+                    NotifyPayload(
+                        title=f"{user_name} 需要登录云·星穹铁道",
+                        text=message,
+                    ),
+                    self.task_info.notifications.statistic_targets(
+                        self.cur_user_config
+                    ),
+                    task_info=self.task_info,
                 )
             except Exception as e:  # noqa: BLE001
                 logger.opt(exception=True).warning(f"推送云登录提醒失败：{e}")
@@ -2028,17 +2039,39 @@ class HSRAutoProxyTask(TaskExecuteBase):
     async def final_task(self):
         """用户任务结束后清理临时配置；异常时停止外部脚本。"""
 
+        self.task_info.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=(self.crashed or self.cur_user_item.status == "异常")
+            and not self.stopped_manually,
+        )
         try:
             if self.crashed:
                 await self._stop_external_processes()
-            await self._push_user_statistics_notification()
             for tp in self.temp_files:
                 cleanup_sra_temp_config(tp)
         finally:
-            # 任务后脚本每用户只收尾一次；前置被中止或清理异常时也尝试执行。
-            if self._extra_scripts_started:
-                self._extra_scripts_started = False
-                await run_script_after_task(self.cur_user_config)
+            try:
+                # 每用户只配对一次；清理、取消与任务后脚本故障都不丢失历史。
+                if self._extra_scripts_started:
+                    self._extra_scripts_started = False
+                    try:
+                        await run_script_after_task(self.cur_user_config)
+                    except Exception as error:
+                        diagnostic = f"HSR 任务后脚本失败: {error}"
+                        logger.warning(diagnostic)
+                        logs = self.cur_user_item.iter_history_logs()
+                        if logs:
+                            logs[-1][1].content.append(f"\n{diagnostic}\n")
+                        raise
+            finally:
+                await save_hsr_user_history(
+                    task_info=self.task_info,
+                    script_info=self.script_info,
+                    user_item=self.cur_user_item,
+                    cancelled=self.stopped_manually,
+                )
+        await self._push_user_statistics_notification()
 
     async def on_crash(self, e: Exception):
         self.crashed = True

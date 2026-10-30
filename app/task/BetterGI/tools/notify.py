@@ -18,20 +18,13 @@
 
 from datetime import datetime
 
-from app.core.notify import (
-    DispatchResult,
-    dispatch,
-    statistic_targets,
-)
-from app.models.config import BetterGIUserConfig
+from app.log_box.report import render_aggregate_push_log
 from app.models.notification import NotificationSummary, NotifyPayload
-from app.task.notify_core import push_proxy_result
-from app.utils import get_logger
-from app.utils.notification_template import get_notification_template
+from app.task.notify_core import user_statistics_text
+from app.utils import notification_template as _utils_notification_template
 
 from .drop_statistics import format_drop_statistics
-
-logger = get_logger("BetterGI 通知工具")
+from .push_log import steps_to_push_log
 
 _STEP_TIME_FMT = "%H:%M:%S"
 
@@ -62,7 +55,12 @@ def _render_one_dragon_steps(steps: list[dict]) -> str:
     for s in steps:
         tag = f"{s['index']}/{s['total']}"
         span = f"{s['start']} → {s['end']}（{_step_duration(s)}）"
-        if s["ok"] and not s["issue_count"]:
+        if s["ok"] and s.get("skipped"):
+            reason = f" · {s['skip_text']}" if s.get("skip_text") else ""
+            lines.append(f"⏭ {tag} {s['task']} 已跳过{reason} {span}")
+        elif s["ok"] and s.get("warning_text"):
+            lines.append(f"⚠ {tag} {s['task']} 需关注 · {s['warning_text']} {span}")
+        elif s["ok"] and not s["issue_count"]:
             lines.append(f"✓ {tag} {s['task']} 成功 {span}")
         elif s["ok"]:
             lines.append(
@@ -76,55 +74,44 @@ def _render_one_dragon_steps(steps: list[dict]) -> str:
     return "\n".join(lines)
 
 
-async def push_notification(
-    mode: str,
-    title: str,
-    message: dict,
-    user_config: BetterGIUserConfig | None = None,
-    task_info: object | None = None,
-) -> DispatchResult:
-    """通过全局或用户配置的渠道推送 BetterGI 任务报告。"""
+def _render_one_dragon_notices(steps: list[dict]) -> str:
+    """与 ZZZ-OD 共用按状态归并的汇总渲染，任务名与具体原因一起合并。"""
+    notices = [
+        step
+        for step in steps
+        if not step["ok"] or step.get("warning_text") or step.get("skipped")
+    ]
+    return "\n".join(render_aggregate_push_log(steps_to_push_log(notices)))
 
-    logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
-    if mode == "统计信息":
-        # 简略版（聊天机器人类渠道的兜底）：仅 4 字段汇总，旧版格式
-        message_text = (
-            f"用户: {message['user_info']}\n"
-            f"开始时间: {message['start_time']}\n"
-            f"结束时间: {message['end_time']}\n"
-            f"执行结果: {message['user_result']}"
-        )
-        steps_text = (
-            "\n\n" + _render_one_dragon_steps(steps)
-            if (steps := message.get("one_dragon_steps"))
-            else ""
-        )
-        # 掉落统计（BGI 奖励识别）：物品 + 数量两列，排在「一条龙分步执行」之后
-        drops_text = (
-            f"\n\n{drops}"
-            if (drops := format_drop_statistics(message.get("drop_statistics")))
-            else ""
-        )
-        # 完整版：4 字段 + 「一条龙分步执行」+ 掉落统计
-        message_text_full = f"{message_text}{steps_text}{drops_text}"
-        message_html = get_notification_template("general_statistics.html").render(
-            message
-        )
+def build_statistics_payload(*, title: str, message: dict) -> NotifyPayload:
+    """构造专项统计正文，投递由注入的通知服务负责。"""
 
-        return await dispatch(
-            NotifyPayload(
-                title=title,
-                text=message_text_full,
-                html=message_html,
-                summary=NotificationSummary(text=message_text),
-            ),
-            statistic_targets(user_config, compact_summary=True),
-        )
+    notices = _render_one_dragon_notices(message.get("one_dragon_steps") or [])
+    if notices:
+        message = {**message, "user_result": f"{message['user_result']}\n{notices}"}
+    # 简略渠道也必须带具体问题，不能只剩失败/警告数量。
+    message_text = user_statistics_text(message)
+    steps_text = (
+        "\n\n" + _render_one_dragon_steps(steps)
+        if (steps := message.get("one_dragon_steps"))
+        else ""
+    )
+    # 掉落统计（BGI 奖励识别）：物品 + 数量两列，排在「一条龙分步执行」之后
+    drops_text = (
+        f"\n\n{drops}"
+        if (drops := format_drop_statistics(message.get("drop_statistics")))
+        else ""
+    )
+    # 完整版：4 字段 + 「一条龙分步执行」+ 掉落统计
+    message_text_full = f"{message_text}{steps_text}{drops_text}"
+    message_html = _utils_notification_template.deferred_notification_template(
+        "general_statistics.html", message
+    )
 
-    if mode != "代理结果":
-        return DispatchResult()
-
-    # 与其余专项一致：正文模板差异保留在本模块（default general_result.html），
-    # 推送时机、社区签到摘要注入、渠道级重试与已送达渠道去重交共用核心。
-    return await push_proxy_result(title=title, message=message, task_info=task_info)
+    return NotifyPayload(
+        title=title,
+        text=message_text_full,
+        html=message_html,
+        summary=NotificationSummary(text=message_text),
+    )

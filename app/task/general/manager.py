@@ -22,25 +22,19 @@ from pathlib import Path
 from app.config import config_manager
 from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
+from app.log_box.report import build_user_result_text
 from app.models.config import GeneralConfig
 from app.models.emulator import DeviceProvider
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
-from app.tools.push_log import build_user_result_text
-from app.utils import ProcessManager, get_logger
-from app.utils.constants import TASK_MODE_ZH
-from app.utils.io import (
-    clear_native_config_snapshot,
-    commit_native_config_snapshot,
-    recover_native_config,
-    swap_in_dir,
-)
+from app.utils import TASK_MODE_ZH, ProcessManager, get_logger
+from app.utils import io as _utils_io
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-from .tools import push_notification
 
 logger = get_logger("通用调度器")
 
@@ -169,7 +163,7 @@ class GeneralManager(ScriptManagerBase):
     def _recover_previous_run(self) -> None:
         """处置上次崩溃残留的原始配置快照。"""
 
-        result = recover_native_config(
+        result = _utils_io.recover_native_config(
             self.temp_path,
             self.script_config_path,
             expected_script_id=self.script_info.script_id,
@@ -191,7 +185,7 @@ class GeneralManager(ScriptManagerBase):
 
         if self.external_config_exists:
             if self.script_config.Script.ConfigPathMode == "Folder":
-                commit_native_config_snapshot(
+                _utils_io.commit_native_config_snapshot(
                     self.temp_path,
                     self.script_config_path,
                     script_id=self.script_info.script_id,
@@ -217,7 +211,7 @@ class GeneralManager(ScriptManagerBase):
 
         if self.script_config.Script.ConfigPathMode == "Folder":
             # 原子换入: 原生目录要么原样要么完整就位, 不出现半删中间态
-            swap_in_dir(self.temp_path, self.script_config_path)
+            _utils_io.swap_in_dir(self.temp_path, self.script_config_path)
         elif self.script_config.Script.ConfigPathMode == "File":
             # 配置路径被脚本进程占用时只能清掉一部分, 此时仍要把快照覆盖回去,
             # 否则用户目录会停在半删状态
@@ -231,7 +225,7 @@ class GeneralManager(ScriptManagerBase):
     def _cleanup_external_config_snapshot(self) -> None:
         if not self.external_config_snapshot_ready:
             return
-        clear_native_config_snapshot(self.temp_path)
+        _utils_io.clear_native_config_snapshot(self.temp_path)
         self.external_config_snapshot_ready = False
 
     def _user_uses_mas_config(self) -> bool:
@@ -395,11 +389,9 @@ class GeneralManager(ScriptManagerBase):
                 result = self.build_proxy_report(result_text=user_result_text)
 
                 try:
-                    await push_notification(
-                        mode="代理结果",
+                    await self.task_info.notifications.push_proxy_result(
                         title=title,
-                        message=result,
-                        user_config=None,
+                        report=TaskResultReport.from_message(result),
                         task_info=self.task_info,
                     )
                 except Exception as e:

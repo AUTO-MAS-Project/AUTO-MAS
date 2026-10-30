@@ -42,20 +42,19 @@ from datetime import datetime
 from pathlib import Path
 
 from app.config import ConfigCollection
-from app.core import Config
+from app.core.history import aggregate_data
 from app.core.ws import Publisher, protocol
 from app.models.config import WhimboxConfig, WhimboxUserConfig
-from app.models.schema import WSTaskNoticeData
+from app.models.notification_ports import LocalNotice
+from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import Notify
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     push_dispatch_log,
     read_config_base,
 )
-from app.utils import get_logger
-from app.utils.constants import UTC4
+from app.utils import UTC4, get_logger
 
 from .contracts import (
     IProcessLauncher,
@@ -67,7 +66,8 @@ from .contracts import (
 from .tools.feed import LoguruFileFeed, build_log_path_resolver
 from .tools.launcher import EmbeddedPythonLauncher, find_upstream_pids
 from .tools.marker import WhimboxMarkerParser, is_benign_marker
-from .tools.notify import push_notification
+from .tools.notify import build_statistics_payload
+from .tools.update import RECOVERY_HINT, pending_marker
 from .tools.upstream import WheelAssetsConfigSurface, parse_override_map
 
 logger = get_logger("奇想盒 自动代理")
@@ -196,6 +196,8 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
         self._exit_watchdog_task: asyncio.Task | None = None
 
     async def check(self) -> str:
+        if pending_marker(self.root_path).exists():
+            return RECOVERY_HINT
         # 安装哨兵三件（分场景报错，覆盖首启未完成/弱网下载失败场景）
         install_error = self.config_surface.check_install()
         if install_error:
@@ -208,10 +210,16 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
         if running_pids:
             return "奇想盒正在运行，请先关闭奇想盒 app 再执行任务"
 
+        # 启动检查早于每日重置，旧日期的次数不参与今日上限判断。
+        curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        proxy_times = (
+            self.cur_user_config.Data.ProxyTimes
+            if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") == curdate
+            else 0
+        )
         if (
             self.script_config.Run.ProxyTimesLimit != 0
-            and self.cur_user_config.Data.ProxyTimes
-            >= self.script_config.Run.ProxyTimesLimit
+            and proxy_times >= self.script_config.Run.ProxyTimesLimit
         ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
@@ -281,8 +289,8 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
             )
             self.cur_user_item.status = "运行"
             self.last_verdict_status = None
-            log_start_time = datetime.now()
-            self.cur_user_item.log_record[log_start_time] = LogRecord()
+            log_start_time = datetime.now().astimezone()
+            self.cur_user_item.add_log_record(log_start_time, LogRecord())
             self.cur_user_log = self.cur_user_item.log_record[log_start_time]
             self.script_info.log = ""
             self._dispatch_pushed_lines = 0
@@ -322,11 +330,13 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
             self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
             await self.launcher.terminate()
             try:
-                await Notify.push_plyer(
-                    "奇想盒自动代理出现异常！",
-                    f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                    f"{self.cur_user_item.name}的自动代理出现异常",
-                    3,
+                await self.task_info.local_notifier.send_notice(
+                    LocalNotice(
+                        title="奇想盒自动代理出现异常！",
+                        message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                        duration_seconds=3,
+                    )
                 )
             except Exception:
                 pass
@@ -555,33 +565,79 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
                 await self.feed.stop()
 
     async def final_task(self):
+        self.task_info.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not self.run_book
+            and not self.stopped_manually,
+        )
+
         # 结束时先清理监控、看门狗与进程
         await self._stop_monitoring()
         await self.launcher.terminate()
 
         # 写入历史记录（对齐 General/BetterGI 行为）
-        statistic_paths: list[Path] = []
-        for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.astimezone(UTC4)
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=dt,
-            )
+        await self._persist_user_run_result()
+        self._restore_config()
 
-            if log_item.status == "奇想盒正常运行中":
+        await self.run_user_scripts_after()
+
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
+            if log_item.status == "奇想盒正常运行中" or (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "未开始监看日志"
+            ):
                 log_item.status = "任务被用户手动中止"
 
+            was_cancelled = (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "任务被用户手动中止"
+            )
             if len(log_item.content) == 0:
                 log_item.content = ["未捕获到任何日志内容"]
-                log_item.status = "未捕获到日志"
+                if not was_cancelled:
+                    log_item.status = "未捕获到日志"
 
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
-            statistic_paths.append(log_path.with_suffix(".json"))
+            history_records.append(
+                HistoryWrite(
+                    time=t.astimezone(UTC4),
+                    username=self.cur_user_item.name,
+                    script_name=self.script_info.name,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                    message=log_item.status,
+                    logs="".join(log_item.content),
+                )
+            )
 
-        if statistic_paths:
+        if history_records:
+            await self.task_info.save_user_history(
+                history_records,
+                script=self.script_info,
+                user=self.cur_user_item,
+                log_warning=logger.opt(exception=True).warning,
+            )
+
+        if history_records:
             try:
-                statistics = await Config.merge_statistic_info(statistic_paths)
+                statistics = {
+                    key: value.value
+                    for key, value in aggregate_data(
+                        [
+                            HistoryAggregationItem(time=record.time, data=record.data)
+                            for record in history_records
+                        ]
+                    ).data.items()
+                }
                 if self.result_block:
                     # 上游「任务结果如下」块原样透传（多账号天然按「账号N：」分组）
                     statistics["result_block"] = self.result_block
@@ -596,12 +652,14 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
                     "一条龙任务已完成" if self.run_book else self.cur_user_item.result
                 )
                 success_symbol = "√" if self.run_book else "X"
-                await push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
-                    f"{self.cur_user_item.name} 的奇想盒自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
+                await self.task_info.notifications.push_statistics_report(
+                    payload=build_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的奇想盒自动代理统计报告",
+                        message=statistics,
+                    ),
+                    user_config=self.cur_user_config,
+                    task_info=self.task_info,
+                    compact_summary=True,
                 )
             except Exception as e:
                 # 失败不再静默：既记 ERROR 日志，也推到调度台实时日志
@@ -609,11 +667,6 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
                 logger.opt(exception=True).error(
                     f"推送奇想盒用户统计通知时出现异常: {e}"
                 )
-
-        await self._persist_user_run_result()
-
-        # 还原运行前配置（异常路径同样覆盖，见 on_crash）
-        self._restore_config()
 
     async def _persist_user_run_result(self) -> None:
         if self.cur_user_config is None:
@@ -677,11 +730,13 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
                 and self.cur_user_log.status
                 and self.cur_user_log.status != "Success!"
             ):
-                await Notify.push_plyer(
-                    "奇想盒运行异常",
-                    f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
-                    "异常",
-                    3,
+                await self.task_info.local_notifier.send_notice(
+                    LocalNotice(
+                        title="奇想盒运行异常",
+                        message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
+                        ticker="异常",
+                        duration_seconds=3,
+                    )
                 )
         except Exception:
             pass

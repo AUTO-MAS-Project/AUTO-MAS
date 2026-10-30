@@ -4,7 +4,7 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
-from app.utils.platform.common.process_runner import ProcessRunner
+from app.utils import process_runner as _utils_process_runner
 
 
 class WindowsStartupManager:
@@ -16,7 +16,7 @@ class WindowsStartupManager:
         if enabled:
             await self._create_task()
         elif await self.is_enabled():
-            result = await ProcessRunner.run_process(
+            result = await _utils_process_runner.ProcessRunner.run_process(
                 "schtasks", "/delete", "/tn", self._task_name, "/f"
             )
             if result.returncode != 0:
@@ -79,7 +79,7 @@ class WindowsStartupManager:
             xml_file = f.name
 
         try:
-            result = await ProcessRunner.run_process(
+            result = await _utils_process_runner.ProcessRunner.run_process(
                 "schtasks",
                 "/create",
                 "/tn",
@@ -95,7 +95,7 @@ class WindowsStartupManager:
                 Path(xml_file).unlink()
 
     async def is_enabled(self) -> bool:
-        result = await ProcessRunner.run_process(
+        result = await _utils_process_runner.ProcessRunner.run_process(
             "schtasks", "/query", "/tn", self._task_name
         )
         return result.returncode == 0

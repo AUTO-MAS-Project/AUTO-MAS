@@ -1,12 +1,12 @@
 <template>
   <div class="webhook-manager" :class="{ compact }">
     <div v-if="!compact" class="webhook-header">
-      <h3>{{ t('comp.customWebhooks') }}</h3>
+      <h3>{{ t('core.comp.customWebhooks') }}</h3>
       <a-button type="primary" size="middle" @click="showAddModal">
         <template #icon>
           <PlusOutlined />
         </template>
-        {{ t('comp.addWebhook') }}
+        {{ t('core.comp.addWebhook') }}
       </a-button>
     </div>
 
@@ -22,7 +22,7 @@
           <div class="webhook-name">
             <span class="name-text">{{ webhook.name }}</span>
             <a-tag v-if="!compact" :color="webhook.enabled ? 'green' : 'red'" size="small">
-              {{ webhook.enabled ? '启用' : '禁用' }}
+              {{ webhook.enabled ? t('core.comp.enabled') : t('core.comp.disabled') }}
             </a-tag>
           </div>
           <div class="webhook-url" :title="webhook.url">{{ webhook.url }}</div>
@@ -31,8 +31,8 @@
           <a-switch
             v-model:checked="webhook.enabled"
             size="small"
-            :checked-children="compact ? undefined : '启用'"
-            :un-checked-children="compact ? undefined : '禁用'"
+            :checked-children="compact ? undefined : t('core.comp.enabled')"
+            :un-checked-children="compact ? undefined : t('core.comp.disabled')"
             class="webhook-switch"
             @change="toggleWebhookEnabled(webhook)"
           />
@@ -43,13 +43,13 @@
               :loading="testingWebhooks[webhook.uid]"
               @click="testWebhook(webhook)"
             >
-              {{ t('comp.test') }}
+              {{ t('core.comp.test') }}
             </a-button>
             <a-button type="text" size="small" @click="editWebhook(webhook)">
-              {{ t('comp.edit') }}
+              {{ t('core.comp.edit') }}
             </a-button>
             <a-button type="text" size="small" danger @click="deleteWebhook(webhook)">
-              {{ t('comp.delete') }}
+              {{ t('core.comp.delete') }}
             </a-button>
           </template>
           <template v-else>
@@ -62,19 +62,19 @@
               <template #icon>
                 <PlayCircleOutlined />
               </template>
-              {{ t('comp.test') }}
+              {{ t('core.comp.test') }}
             </a-button>
             <a-button type="text" size="small" @click="editWebhook(webhook)">
               <template #icon>
                 <EditOutlined />
               </template>
-              {{ t('comp.edit') }}
+              {{ t('core.comp.edit') }}
             </a-button>
             <a-button type="text" size="small" danger @click="deleteWebhook(webhook)">
               <template #icon>
                 <DeleteOutlined />
               </template>
-              {{ t('comp.delete') }}
+              {{ t('core.comp.delete') }}
             </a-button>
           </template>
         </div>
@@ -82,13 +82,13 @@
     </div>
 
     <div v-else class="empty-state">
-      <div class="empty-icon">
-        <ApiOutlined />
-      </div>
-      <div class="empty-text">{{ t('comp.noCustomWebhooks') }}</div>
-      <div v-if="!compact" class="empty-description">
-        {{ t('comp.useButtonAboveAdd') }}
-      </div>
+      <a-empty :image-style="{ height: '48px' }">
+        <template #image><ApiOutlined class="empty-icon" /></template>
+        <template #description>
+          <div>{{ t('core.comp.noCustomWebhooks') }}</div>
+          <div v-if="!compact">{{ t('core.comp.useButtonAboveAdd') }}</div>
+        </template>
+      </a-empty>
     </div>
 
     <!-- 紧凑模式（通知配置弹窗里）添加按钮挪到底部虚线按钮 -->
@@ -96,13 +96,13 @@
       <template #icon>
         <PlusOutlined />
       </template>
-      {{ t('comp.addWebhook') }}
+      {{ t('core.comp.addWebhook') }}
     </a-button>
 
     <!-- 添加/编辑 Webhook 弹窗 -->
     <a-modal
       v-model:open="modalVisible"
-      :title="isEditing ? t('comp.editWebhook') : t('comp.addWebhook')"
+      :title="isEditing ? t('core.comp.editWebhook') : t('core.comp.addWebhook')"
       :width="compact ? '560px' : '800px'"
       :get-container="getPopupContainer"
       :z-index="compact ? 1050 : undefined"
@@ -115,10 +115,10 @@
     >
       <a-form ref="formRef" :model="formData" layout="vertical">
         <!-- 模板选择放在最上面 -->
-        <a-form-item :label="t('comp.pickTemplate')">
+        <a-form-item :label="t('core.comp.pickTemplate')">
           <a-select
             v-model:value="selectedTemplate"
-            :placeholder="t('comp.pickPresetTemplateWrite')"
+            :placeholder="t('core.comp.pickPresetTemplateWrite')"
             :get-popup-container="getPopupContainer"
             allow-clear
             @change="applyTemplate"
@@ -133,25 +133,28 @@
           </a-select>
         </a-form-item>
 
-        <a-row :gutter="16">
-          <a-col :span="12">
+        <a-flex :gap="16">
+          <div style="flex: 1; min-width: 0">
             <a-form-item
-              :label="t('comp.webhookName')"
+              :label="t('core.comp.webhookName')"
               name="name"
               :rules="[{ required: true, message: '请输入 Webhook 名称' }]"
             >
-              <a-input v-model:value="formData.name" :placeholder="t('comp.enterWebhookName')" />
+              <a-input
+                v-model:value="formData.name"
+                :placeholder="t('core.comp.enterWebhookName')"
+              />
             </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('comp.method')" name="method">
+          </div>
+          <div style="flex: 1; min-width: 0">
+            <a-form-item :label="t('core.comp.method')" name="method">
               <a-select v-model:value="formData.method">
                 <a-select-option value="POST">POST</a-select-option>
                 <a-select-option value="GET">GET</a-select-option>
               </a-select>
             </a-form-item>
-          </a-col>
-        </a-row>
+          </div>
+        </a-flex>
 
         <a-form-item
           label="Webhook URL"
@@ -164,15 +167,15 @@
           />
         </a-form-item>
 
-        <a-form-item :label="t('comp.messageTemplate')">
+        <a-form-item :label="t('core.comp.messageTemplate')">
           <a-textarea
             v-model:value="formData.template"
             :rows="6"
-            :placeholder="t('comp.enterMessageTemplateVariables')"
+            :placeholder="t('core.comp.enterMessageTemplateVariables')"
           />
           <div class="template-help">
             <a-typography-text type="secondary" style="font-size: 12px">
-              {{ t('comp.supportedVariables') }}
+              {{ t('core.comp.supportedVariables') }}
               <a-tag v-for="variable in TEMPLATE_VARIABLES" :key="variable.name" size="small">
                 {{ variable.name }}
               </a-tag>
@@ -180,17 +183,17 @@
           </div>
         </a-form-item>
 
-        <a-form-item :label="t('comp.customHeadersOptional')">
+        <a-form-item :label="t('core.comp.customHeadersOptional')">
           <div class="headers-input">
             <div v-for="(header, index) in formData.headersList" :key="index" class="header-row">
               <a-input
                 v-model:value="header.key"
-                :placeholder="t('comp.headerName')"
+                :placeholder="t('core.comp.headerName')"
                 style="width: 40%; margin-right: 8px"
               />
               <a-input
                 v-model:value="header.value"
-                :placeholder="t('comp.headerValue')"
+                :placeholder="t('core.comp.headerValue')"
                 style="width: 40%; margin-right: 8px"
               />
               <a-button type="text" danger size="small" @click="removeHeader(index)">
@@ -208,14 +211,14 @@
               <template #icon>
                 <PlusOutlined />
               </template>
-              {{ t('comp.addHeader') }}
+              {{ t('core.comp.addHeader') }}
             </a-button>
           </div>
         </a-form-item>
 
         <a-form-item>
           <a-checkbox v-model:checked="formData.enabled">{{
-            t('comp.enableThisWebhook')
+            t('core.comp.enableThisWebhook')
           }}</a-checkbox>
         </a-form-item>
       </a-form>
@@ -236,6 +239,7 @@ import {
 } from '@ant-design/icons-vue'
 import { TEMPLATE_VARIABLES, WEBHOOK_TEMPLATES } from '@/utils/webhookTemplates'
 import { Service } from '@/api/services/Service'
+import { useWebhookTest } from '@/composables/useWebhookTest'
 
 const { t } = useI18n()
 
@@ -310,7 +314,21 @@ const modalVisible = ref(false)
 const isEditing = ref(false)
 const submitting = ref(false)
 const selectedTemplate = ref<string>()
-const testingWebhooks = ref<Record<string, boolean>>({})
+const { testingWebhooks, testWebhook } = useWebhookTest(
+  (webhook: WebhookItem) => ({
+    scriptId: props.mode === 'global' ? null : props.scriptId || null,
+    userId: props.mode === 'global' ? null : props.userId || null,
+    data: toWebhookPayload(
+      webhook.name,
+      webhook.url,
+      webhook.template,
+      webhook.method,
+      webhook.enabled,
+      webhook.headers ? JSON.stringify(webhook.headers) : null
+    ),
+  }),
+  () => (props.mode === 'global' ? 'global' : 'script')
+)
 const formRef = ref()
 const loading = ref(false)
 const apiWebhooks = ref<WebhookItem[]>([])
@@ -394,7 +412,7 @@ const loadWebhooks = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载Webhook失败: ${errorMsg}`)
-    message.error(t('comp.couldNotLoadWebhook'))
+    message.error(t('core.comp.couldNotLoadWebhook'))
   } finally {
     loading.value = false
   }
@@ -469,11 +487,13 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
 
       // 重新加载最新数据
       await loadWebhooks()
-      message.success(t('comp.webhookP0P1', { p0: webhook.name, p1: newEnabled ? '启用' : '禁用' }))
+      message.success(
+        t('core.comp.webhookP0P1', { p0: webhook.name, p1: newEnabled ? '启用' : '禁用' })
+      )
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新Webhook状态失败: ${errorMsg}`)
-      message.error(t('comp.couldNotUpdateWebhook'))
+      message.error(t('core.comp.couldNotUpdateWebhook'))
       // 恢复原状态
       webhook.enabled = !newEnabled
     }
@@ -484,7 +504,9 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
     )
     webhooks.value = newWebhooks
     emit('change')
-    message.success(t('comp.webhookP0P1', { p0: webhook.name, p1: newEnabled ? '启用' : '禁用' }))
+    message.success(
+      t('core.comp.webhookP0P1', { p0: webhook.name, p1: newEnabled ? '启用' : '禁用' })
+    )
   }
 }
 
@@ -492,11 +514,11 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
 const deleteWebhook = (webhook: WebhookItem) => {
   // 添加二次确认
   Modal.confirm({
-    title: t('comp.confirmDeletion'),
+    title: t('core.comp.confirmDeletion'),
     content: `确定要删除 Webhook "${webhook.name}" 吗？此操作不可撤销。`,
-    okText: t('comp.confirmDeletion'),
+    okText: t('core.comp.confirmDeletion'),
     okType: 'danger',
-    cancelText: t('comp.cancel'),
+    cancelText: t('core.comp.cancel'),
     // 确认框挂 body（z 950：在渠道配置弹窗 900 之上、标题栏 1000 之下）——
     // 挂进弹窗 wrap 会按普通流布局排到 wrap 顶部，被标题栏盖住不可见
     zIndex: props.compact ? 950 : undefined,
@@ -523,56 +545,21 @@ const deleteWebhook = (webhook: WebhookItem) => {
 
           // 重新加载最新数据
           await loadWebhooks()
-          message.success(t('comp.webhookDeleted'))
+          message.success(t('core.comp.webhookDeleted'))
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error)
           logger.error(`删除Webhook失败: ${errorMsg}`)
-          message.error(t('comp.couldNotDeleteWebhook'))
+          message.error(t('core.comp.couldNotDeleteWebhook'))
         }
       } else {
         // 本地模式：更新本地数据
         const newWebhooks = webhooks.value.filter(w => w.id !== webhook.uid)
         webhooks.value = newWebhooks
         emit('change')
-        message.success(t('comp.webhookDeleted'))
+        message.success(t('core.comp.webhookDeleted'))
       }
     },
   })
-}
-
-// 测试 Webhook
-const testWebhook = async (webhook: WebhookItem) => {
-  testingWebhooks.value[webhook.uid] = true
-
-  try {
-    const headersJson = webhook.headers ? JSON.stringify(webhook.headers) : null
-
-    const response = await Service.testWebhookApiSettingWebhookTestPost({
-      scriptId: props.mode === 'global' ? null : props.scriptId || null,
-      userId: props.mode === 'global' ? null : props.userId || null,
-      data: toWebhookPayload(
-        webhook.name,
-        webhook.url,
-        webhook.template,
-        webhook.method,
-        webhook.enabled,
-        headersJson
-      ),
-    })
-
-    if (response.code === 200) {
-      message.success(t('comp.webhookP0TestedSuccessfully', { p0: webhook.name }))
-    } else {
-      message.error(t('comp.webhookTestFailedP0', { p0: response.message || '未知错误' }))
-    }
-  } catch (error: any) {
-    const errorMsg =
-      error.response?.data?.message || (error instanceof Error ? error.message : '网络错误')
-    logger.error(`Webhook测试错误: ${errorMsg}`)
-    message.error(t('comp.webhookTestFailedP0', { p0: errorMsg }))
-  } finally {
-    testingWebhooks.value[webhook.uid] = false
-  }
 }
 
 // 应用模板
@@ -692,9 +679,9 @@ const handleSubmit = async () => {
         await loadWebhooks()
 
         if (isEditing.value) {
-          message.success(t('comp.webhookUpdated'))
+          message.success(t('core.comp.webhookUpdated'))
         } else {
-          message.success(t('comp.webhookAdded'))
+          message.success(t('core.comp.webhookAdded'))
         }
 
         modalVisible.value = false
@@ -705,7 +692,7 @@ const handleSubmit = async () => {
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`保存Webhook失败: ${errorMsg}`)
-        message.error(t('comp.couldNotSaveWebhook'))
+        message.error(t('core.comp.couldNotSaveWebhook'))
       }
     } else {
       // 本地模式：更新本地数据
@@ -724,11 +711,11 @@ const handleSubmit = async () => {
       if (isEditing.value) {
         // 更新现有 Webhook
         newWebhooks = webhooks.value.map(w => (w.id === webhookData.id ? webhookData : w))
-        message.success(t('comp.webhookUpdated'))
+        message.success(t('core.comp.webhookUpdated'))
       } else {
         // 添加新 Webhook
         newWebhooks = [...webhooks.value, webhookData]
-        message.success(t('comp.webhookAdded'))
+        message.success(t('core.comp.webhookAdded'))
       }
 
       webhooks.value = newWebhooks
@@ -857,15 +844,6 @@ watch([() => props.scriptId, () => props.userId, () => props.mode], () => {
   font-size: 48px;
   margin-bottom: 16px;
   opacity: 0.5;
-}
-
-.empty-text {
-  font-size: 16px;
-  margin-bottom: 8px;
-}
-
-.empty-description {
-  font-size: 14px;
 }
 
 .template-help {

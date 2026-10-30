@@ -25,12 +25,11 @@ import shutil
 import uuid
 from typing import Dict, Literal
 
-from app.models.emulator import DeviceBase
+from app.models.emulator import DeviceBase, EmulatorRuntimePolicy
 from app.models.schema import DeviceInfo as SchemaDeviceInfo
 from app.models.schema import WSEmulatorOperationData, WSTaskNoticeData
-from app.utils import EMULATOR_TYPE_BOOK, get_logger
-from app.utils.constants import EMULATOR_SPLASH_ADS_PATH_BOOK
-from app.utils.emulator2.facade import Emulator2Manager
+from app.utils import EMULATOR_SPLASH_ADS_PATH_BOOK, EMULATOR_TYPE_BOOK, get_logger
+from app.utils import emulator2 as _utils_emulator2
 
 from .config import Config
 from .ws import Publisher, protocol
@@ -40,6 +39,18 @@ logger = get_logger("模拟器管理")
 
 class _EmulatorManager:
     """模拟器实例管理器"""
+
+    def __init__(self) -> None:
+        self.runtime_policy = EmulatorRuntimePolicy(
+            silence_enabled=lambda: Config.setting.Function.IfSilence,
+            block_ads_enabled=lambda: Config.setting.Function.IfBlockAd,
+        )
+
+    async def close_running_avd_instances(self) -> dict[str, str]:
+        """电源操作时按当前纳管配置正常关闭 AVD。"""
+        return await _utils_emulator2.avd.service.close_running_instances(
+            list(Config.EmulatorConfig.values())
+        )
 
     async def get_emulator_instance(self, emulator_id: uuid.UUID | str) -> DeviceBase:
 
@@ -63,7 +74,9 @@ class _EmulatorManager:
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"设置模拟器去广告失败: {type(e).__name__}: {e}")
 
-            return EMULATOR_TYPE_BOOK[config.Info.Type](config)
+            return EMULATOR_TYPE_BOOK[config.Info.Type](
+                config, runtime_policy=self.runtime_policy
+            )
         else:
             raise ValueError(f"不支持的模拟器类型: {config.Info.Type}")
 
@@ -95,7 +108,7 @@ class _EmulatorManager:
                 raise KeyError(f"未找到UUID为 {emulator_id} 的模拟器配置")
 
             if operate == "open":
-                if isinstance(temp_emulator, Emulator2Manager):
+                if isinstance(temp_emulator, _utils_emulator2.facade.Emulator2Manager):
                     # 模拟器页手动点的启动：魔改 AVD 据此带窗口开机（任务拉起跟静默模式走）
                     await temp_emulator.open(index, manual=True)
                 else:

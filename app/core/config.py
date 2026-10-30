@@ -15,9 +15,9 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
 import asyncio
+import inspect
 import json
 import os
-import re
 import shutil
 import sqlite3
 import sys
@@ -25,7 +25,7 @@ import time
 import uuid
 from collections.abc import Callable
 from contextlib import closing
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -45,15 +45,20 @@ if TYPE_CHECKING:
     import uvicorn
 
     from app.config import ConfigEntry
-    from app.utils.config_restore import ConfigRestorePool, ConfigRestoreService
+    from app.models.task import ScriptTaskResources
+    from app.utils import config_restore as _utils_config_restore
 
 from app.config import ConfigCollection, ConfigEntry, NodeState, config_manager
 from app.core.config_upgrade import (
     CONFIG_FILES,
+    LegacyEntryMigrations,
+    contains_legacy_type,
     convert_legacy,
+    is_blank_file,
     preserve_pre_upgrade,
     upgrade_json_configs,
 )
+from app.core.script_config import ScriptConfigHandler
 from app.models.config import (
     CLASS_BOOK,
     PLAN_BOOK,
@@ -103,22 +108,12 @@ from app.task.M9A.migration import (
     normalize_m9a_managed_entries,
     repair_m9a_migration_losses,
 )
+from app.utils import community as _utils_community
+from app.utils import constants as _utils_constants
 from app.utils import get_logger, is_supervised
-from app.utils.constants import (
-    BASE_INDEPENDENT,
-    BASE_NATIVE,
-    BASE_SHARED,
-    TYPE_BOOK,
-    UTC4,
-    UTC8,
-    normalize_base_source,
-)
-from app.utils.io import ConfigCorruptedError, force_rmtree, write_file
-from app.utils.paths import SOURCE_ROOT
-from app.utils.platform import IS_WINDOWS
+from app.utils import io as _utils_io
+from app.utils import paths as _utils_paths
 
-# 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
-MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
 # 各专项失败诊断目录里参与保留期清理的文件后缀（诊断日志与截图）；
 # 不在集合内的文件（如未来的标记/锁文件）不被自动清理触碰
 DIAGNOSTIC_FILE_SUFFIXES = frozenset({".log", ".png", ".jpg"})
@@ -164,13 +159,13 @@ def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str
 def _save_game_sign_result_snapshot(
     path: Path | None, result: dict[str, Any], *, result_date: str
 ) -> None:
-    """原子保存游戏社区结果快照（走 ``app.utils.io.write_file``）。"""
+    """原子保存游戏社区结果快照（走 ``app.utils.common.io.write_file``）。"""
 
     if path is None:
         return
 
     try:
-        write_file(path, {"date": result_date, "result": result})
+        _utils_io.write_file(path, {"date": result_date, "result": result})
     except (OSError, TypeError, ValueError) as e:
         logger.warning(f"保存游戏社区结果快照失败: {e}")
 
@@ -194,13 +189,41 @@ def normalize_proxy_address(raw: str | None) -> str | None:
     return text
 
 
+def _clear_legacy_history() -> None:
+    """清理旧版历史存储的目录、升级标记和整数主键数据库。"""
+
+    for path in (Path.cwd() / "history", Path.cwd() / "data/replays"):
+        if path.exists():
+            shutil.rmtree(path)
+    (Path.cwd() / "data/history-storage.json").unlink(missing_ok=True)
+    for name in (
+        "data/history.db",
+        "data/history.db-journal",
+        "data/history.db-shm",
+        "data/history.db-wal",
+    ):
+        (Path.cwd() / name).unlink(missing_ok=True)
+
+
+class QueueNotFoundError(LookupError):
+    """查询的调度队列已不存在。"""
+
+
+class QueueItemNotFoundError(LookupError):
+    """查询的队列项已不存在。"""
+
+
 class AppConfig:
-    VERSION = "v5.7.0"
+    VERSION = "v5.8.0-beta.2"
 
     def __init__(self) -> None:
 
+        self._script_config_handlers: dict[
+            type[ConfigEntry], ScriptConfigHandler | None
+        ] = {}
         self._restore_pool_resolver: (
-            Callable[["ConfigEntry"], list["ConfigRestorePool"]] | None
+            Callable[["ConfigEntry"], list["_utils_config_restore.ConfigRestorePool"]]
+            | None
         ) = None
 
         logger.info("")
@@ -213,12 +236,10 @@ class AppConfig:
         self.log_path = Path.cwd() / "debug/app.log"
         self.database_path = Path.cwd() / "data/data.db"
         self.config_path = Path.cwd() / "config"
-        self.history_path = Path.cwd() / "history"
         # 检查目录
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.config_path.mkdir(parents=True, exist_ok=True)
-        self.history_path.mkdir(parents=True, exist_ok=True)
 
         # 所有集合先登记，随后按引用依赖激活；迁移完成前不登记持久化根。
         self.setting = GlobalConfig.build()
@@ -248,6 +269,18 @@ class AppConfig:
         self._m9a_migration = None
         self._m9a_repair = None
         self._m9a_managed = None
+        # ACTIVE 也可能是部分激活的结果；只有加载成功返回后才允许按引用回收。
+        self._script_configs_loaded = False
+        from app.task.MaaFW.tools.embedded.maintenance import MaaFWMaintenanceService
+
+        self.maafw_maintenance = MaaFWMaintenanceService(
+            script_configs=lambda: tuple(
+                (str(uid), config) for uid, config in self.ScriptConfig.data.items()
+            ),
+            scripts_loaded_intact=self.script_config_loaded_intact,
+            retention_days=lambda: self.setting.Function.HistoryRetentionTime,
+            process_started_at=_PROCESS_STARTED_AT,
+        )
         for model in (
             *CLASS_BOOK.values(),
             MaaUserConfig,
@@ -350,7 +383,7 @@ class AppConfig:
 
                 # .git 随源码走：受 AUTO-MAS-Runtime 监督时源码在 <app-root>/repo/，
                 # 工作目录（app-root）下没有仓库，不能再按 Path.cwd() 打开
-                self._repo = Repo(SOURCE_ROOT)
+                self._repo = Repo(_utils_paths.SOURCE_ROOT)
             except Exception as e:
                 logger.warning(f"Git仓库初始化失败: {e}")
                 self._repo = None
@@ -366,6 +399,15 @@ class AppConfig:
                 global_cdk=str(self.setting.Update.MirrorChyanCDK or "")
             ):
                 logger.info("MAA 更新接管迁移：已为配置 CDK 的旧脚本开启接管")
+            if (
+                isinstance(script, MaaConfig)
+                and not script.Update.ChannelMigrationVersion
+            ):
+                from app.task.MAA.tools.software_update import (
+                    migrate_maa_update_channel,
+                )
+
+                await migrate_maa_update_channel(script)
         if self._m9a_migration is not None:
             if self._m9a_migration.changed or self._m9a_migration.failure:
                 await self._settle_m9a_migration(self._m9a_migration)
@@ -374,7 +416,7 @@ class AppConfig:
                 self.startup_notices.append(result.notice())
 
         # 游戏社区：恢复当天的结果快照，跨日结果不继续展示
-        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+        today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
         self.ToolsConfig._game_sign_result_data = _load_game_sign_result_snapshot(
             self.config_path / GAME_SIGN_RESULT_FILENAME,
             result_date=today,
@@ -393,8 +435,25 @@ class AppConfig:
         def on_telemetry(sender, event):
             set_telemetry_enabled(event.value)
 
+        async def on_video_limit(sender, event):
+            from app.core.history import history_store
+
+            try:
+                report = await history_store.set_video_limit(
+                    limit_bytes=event.value * 1024 * 1024
+                )
+                for issue in report.errors:
+                    logger.warning(f"历史视频容量维护失败：{issue.message}")
+            except Exception as error:
+                logger.opt(exception=True).warning(f"历史视频容量维护失败：{error}")
+
         # connect 默认弱引用，配置管理器持有回调直至应用退出。
-        self._config_receivers = (on_self_start, on_allow_sleep, on_telemetry)
+        self._config_receivers = (
+            on_self_start,
+            on_allow_sleep,
+            on_telemetry,
+            on_video_limit,
+        )
         self.setting.connect(
             on_self_start, phase="runtime", group="Start", field="IfSelfStart"
         )
@@ -404,7 +463,13 @@ class AppConfig:
         self.setting.connect(
             on_telemetry, phase="runtime", group="Function", field="IfEnableTelemetry"
         )
-        from app.tools.community_activity import connect_community_activity_cache
+        self.setting.connect(
+            on_video_limit,
+            phase="runtime",
+            group="Replay",
+            field="VideoStorageLimitMiB",
+        )
+        from app.core.community_activity import connect_community_activity_cache
 
         connect_community_activity_cache(self.ToolsConfig, setting=self.setting)
         # 注册自启动会读写注册表, 不阻塞初始化; 持有引用避免被 GC 且异常不被静默吞掉
@@ -437,23 +502,35 @@ class AppConfig:
                 version = database.execute("SELECT v FROM version").fetchone()[0]
         else:
             version = "v1.11"
-        if version not in {"v1.7", "v1.8", "v1.9", "v1.10", "v1.11", "v2.0"}:
+        if version not in {
+            "v1.7",
+            "v1.8",
+            "v1.9",
+            "v1.10",
+            "v1.11",
+            "v2.0",
+            "v2.1",
+        }:
             raise ValueError(f"不支持的数据版本：{version}，配置文件未迁移")
-        if version != "v2.0":
+        if version not in {"v2.0", "v2.1"}:
             await asyncio.to_thread(preserve_pre_upgrade, self.config_path)
             await self._upgrade_legacy_data()
             if self.setting.activation_state == NodeState.INACTIVE:
                 source = self.config_path / "Config.json"
-                if source.exists():
-                    from app.utils.io import read_dict_file
+                if source.exists() and not is_blank_file(source):
+                    # 空白主配置没有可迁数据，跳过转换；随后统一升级会按默认
+                    # 配置生成 setting.yaml 并照常归档，激活走下方统一分支。
 
                     self.setting = GlobalConfig.build(
-                        payload=convert_legacy(read_dict_file(source), self.setting)
+                        payload=convert_legacy(
+                            _utils_io.read_dict_file(source), self.setting
+                        )
                     )
                     self._config_nodes["setting"] = self.setting
                     self.startup_notices = self.setting.startup_notices
-                    await self.setting.activate()
+                    await self.setting.activate(fast_init=True)
 
+            entry_migrations: LegacyEntryMigrations = {}
             script_path = self.config_path / "ScriptConfig.json"
             if script_path.exists():
                 self._m9a_migration = await asyncio.to_thread(
@@ -469,7 +546,18 @@ class AppConfig:
                 self._m9a_managed = await asyncio.to_thread(
                     normalize_m9a_managed_entries, script_path
                 )
-                await self._archive_legacy_hsr_direct_snapshots(script_path)
+                if await asyncio.to_thread(
+                    contains_legacy_type, script_path, HSRConfig.__name__
+                ):
+                    from app.task.HSR.migration import (
+                        archive_legacy_direct_for_upgrade,
+                        migrate_legacy_user_payload,
+                    )
+
+                    entry_migrations = {HSRUserConfig: migrate_legacy_user_payload}
+                    notice = await archive_legacy_direct_for_upgrade(script_path)
+                    if notice is not None:
+                        self.startup_notices.append(notice)
             prepared = {
                 key: await node.to_dict()
                 for key, node in self._config_nodes.items()
@@ -480,6 +568,7 @@ class AppConfig:
                 self.config_path,
                 self._config_nodes,
                 prepared_documents=prepared,
+                entry_migrations=entry_migrations,
             )
         if self._m9a_managed is None:
             self._m9a_managed = await asyncio.to_thread(
@@ -492,19 +581,22 @@ class AppConfig:
         for _old, _new, key in CONFIG_FILES:
             node = self._config_nodes[key]
             if node.activation_state == NodeState.INACTIVE:
-                await node.activate()
+                await node.activate(fast_init=True)
+                if key == "ScriptConfig":
+                    self._script_configs_loaded = True
         for script in self.ScriptConfig.values():
-            if (
-                isinstance(script, MaaEndConfig)
-                and script.Info.Path
-                and script._preload_task is None
-            ):
-                script._preload_task = asyncio.create_task(script.preload_resource())
+            await self._initialize_script_config(script)
         await config_manager.flush()
-        if version != "v2.0":
+        if version not in {"v2.0", "v2.1"}:
             # 本次迁移、全部配置激活及最终保存均成功后，才标记 v2.0。
             with closing(sqlite3.connect(self.database_path)) as database:
                 database.execute("UPDATE version SET v = ?", ("v2.0",))
+                database.commit()
+            version = "v2.0"
+        if version == "v2.0":
+            await asyncio.to_thread(_clear_legacy_history)
+            with closing(sqlite3.connect(self.database_path)) as database:
+                database.execute("UPDATE version SET v = ?", ("v2.1",))
                 database.commit()
 
     async def _upgrade_legacy_data(self) -> None:
@@ -727,13 +819,6 @@ class AppConfig:
                                 "Name": general_config["Script"]["Name"],
                                 "RootPath": general_config["Script"]["RootPath"],
                             }
-
-                            general_config["Script"]["ConfigPathMode"] = (
-                                "File"
-                                if "所有文件"
-                                in general_config["Script"]["ConfigPathMode"]
-                                else "Folder"
-                            )
 
                             uid = legacy_uid(GeneralConfig)
                             sc = await legacy_scripts.put(
@@ -978,9 +1063,11 @@ class AppConfig:
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
 
         if script_id is None:
-            _config_uid = self.ScriptConfig.add(CLASS_BOOK[script], payload=payload)
-            await self.ScriptConfig.commit()
-            _config_entry = self.ScriptConfig[_config_uid]
+            async with config_manager.transaction():
+                _config_uid = self.ScriptConfig.add(CLASS_BOOK[script], payload=payload)
+                await self.ScriptConfig.commit()
+                _config_entry = self.ScriptConfig[_config_uid]
+                await self._initialize_script_config(_config_entry)
             return _config_uid, _config_entry
         else:
             script_uid = uuid.UUID(script_id)
@@ -991,11 +1078,13 @@ class AppConfig:
             document = self.ScriptConfig[script_uid].model_dump(
                 context={"audience": "persist"}
             )
-            new_uid = self.ScriptConfig.add(
-                CLASS_BOOK[script], payload=document, regenerate_uuids=True
-            )
-            await self.ScriptConfig.commit()
-            new_config = self.ScriptConfig[new_uid]
+            async with config_manager.transaction():
+                new_uid = self.ScriptConfig.add(
+                    CLASS_BOOK[script], payload=document, regenerate_uuids=True
+                )
+                await self.ScriptConfig.commit()
+                new_config = self.ScriptConfig[new_uid]
+                await self._initialize_script_config(new_config)
             user_ids = {
                 item["uid"]: uid
                 for item, uid in zip(
@@ -1003,21 +1092,10 @@ class AppConfig:
                 )
             }
 
-            # 复制内嵌副本：来源目录允许被删，只复制配置的话新脚本可能无处可跑。
-            if isinstance(new_config, MaaFWConfig):
-                # 开发者模式（跟随来源目录）不随复制带过去：复制出来的是普通脚本，挂源脚本原
-                # 渠道组的版本（见 _clone_embedded_copy_for_script）。
-                await new_config.update(
-                    type(new_config).model_validate(
-                        {"Embedded": {"FollowSource": False}}
-                    ),
-                    check_visibility=False,
-                )
-                await self._clone_embedded_copy_for_script(
-                    str(script_id),
-                    str(new_uid),
-                    source_config=self.ScriptConfig[script_uid],
-                )
+            # 专项副本在配置事务成功后、通用用户数据复制前准备。
+            handler = self._get_script_config_handler(new_config)
+            if handler is not None and handler.clone_script is not None:
+                await handler.clone_script(self.ScriptConfig[script_uid], new_config)
 
             # 复制用户数据
             if (Path.cwd() / f"data/{script_id}").exists():
@@ -1033,52 +1111,6 @@ class AppConfig:
                         )
 
             return new_uid, new_config
-
-    async def _clone_embedded_copy_for_script(
-        self, source_script_id: str, target_script_id: str, *, source_config: Any
-    ) -> None:
-        """复制脚本时连视图一起建：从源脚本挂着的载荷物化（载荷不可变，不需要源空闲、
-        不带源的运行期状态）。失败不让复制脚本本身失败，下次运行前按来源 / 载荷重建。
-
-        源开着开发者模式时取它原渠道（源的 ``Update.Channel``）组的 latest；组里还没有载荷
-        （或源是源码形态）就先不建视图，复制出来的脚本第一次运行前按来源目录导入（来源也不在时
-        按同来源兄弟 / 已登记的版本重建，与视图丢了是同一条路）。
-        """
-
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            FollowSourceCloneUnavailable,
-            clone_embedded_copy,
-            embedded_project_dir,
-            is_source_form,
-        )
-        from app.task.MaaFW.tools.embedded.project_path import (
-            release_project_path,
-            try_reserve_project_path,
-        )
-
-        group_channel = str(source_config.Update.Channel or "stable")
-        source_form = is_source_form(source_config)
-
-        target_key = await try_reserve_project_path(
-            embedded_project_dir(target_script_id)
-        )
-        if target_key is None:
-            return
-        try:
-            await asyncio.to_thread(
-                lambda: clone_embedded_copy(
-                    source_script_id,
-                    target_script_id,
-                    group_channel=group_channel,
-                    source_form=source_form,
-                )
-            )
-        except FollowSourceCloneUnavailable as exc:
-            logger.info(f"复制脚本时先不建视图，第一次运行前按来源目录导入: {exc}")
-        except Exception as exc:  # noqa: BLE001 - 失败下次运行会按来源 / 载荷重建
-            logger.warning(f"复制脚本时建视图失败，将按需重建: {exc}")
-        finally:
-            await release_project_path(target_key)
 
     async def get_script(self, script_id: str | None) -> tuple[list, dict]:
         """获取脚本配置"""
@@ -1099,49 +1131,6 @@ class AppConfig:
         index = data["order"]
         return list(index), data["data"]
 
-    async def get_maaend_options(self, script_id: str) -> dict[str, Any]:
-        """读取指定 MaaEnd 安装目录中的动态选项。"""
-
-        script_config = self.ScriptConfig[uuid.UUID(script_id)]
-        if not isinstance(script_config, MaaEndConfig):
-            raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
-        root_path = str(script_config.Info.Path or "").strip()
-        if not root_path:
-            raise ValueError("MaaEnd 路径未配置")
-
-        options = script_config.get_loaded_resource()
-        game_path = str(script_config.Game.Path or "").strip()
-        if game_path:
-            from app.task.MaaFW.tools.embedded.game_resolution import (
-                read_unity_display_type,
-                read_unity_resolution,
-            )
-
-            exe_path = Path(game_path)
-            original = await asyncio.to_thread(read_unity_resolution, exe_path)
-            if original is not None:
-                options["originalResolution"] = f"{original[0]}x{original[1]}"
-            options["originalDisplayType"] = await asyncio.to_thread(
-                read_unity_display_type,
-                exe_path,
-                preferred_value_name="video_full_screen_h1998742411",
-            )
-        return options
-
-    def get_baah_config_names(self, script_id: str) -> list[str]:
-        """读取指定 BAAH 安装目录下已有的配置文件名（不含 .json 后缀）。"""
-
-        script_config = self.ScriptConfig[uuid.UUID(script_id)]
-        if not isinstance(script_config, BAAHConfig):
-            raise TypeError("脚本配置类型错误, 不是 BAAH 类型")
-
-        from app.task.BAAH.tools import CONFIG_DIR_NAME, list_config_names
-
-        baah_path = script_config.Script.BAAHPath
-        if baah_path is None:
-            return []
-        return list_config_names(baah_path.parent / CONFIG_DIR_NAME)
-
     async def update_script(
         self, script_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
@@ -1154,14 +1143,9 @@ class AppConfig:
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
-        if isinstance(self.ScriptConfig[uid], MaaEndConfig):
-            from app.services.endfield_launcher import is_launcher_exe
-
-            launcher_path = (data.get("Game") or {}).get("LauncherPath")
-            if launcher_path and not is_launcher_exe(Path(launcher_path)):
-                raise ValueError(
-                    "终末地启动器路径无效，请选择鹰角官方启动器 Launcher.exe 或 Games.exe"
-                )
+        handler = self._get_script_config_handler(self.ScriptConfig[uid])
+        if handler is not None and handler.validate_update is not None:
+            handler.validate_update(data)
 
         await self.ScriptConfig[uid].update(
             type(self.ScriptConfig[uid]).model_validate(data)
@@ -1190,47 +1174,24 @@ class AppConfig:
                     queue.QueueItem.remove(key)
                     await queue.QueueItem.commit()
 
-        # ZzzOd：删除脚本前回收该脚本全部用户的绑定槽（归档后删目录）——槽目录
-        # 挂在一条龙安装目录里，不回收就永久残留；mas 备份池随 data/{script_id}
-        # 一起删除，回收池挂在项目级、按安装根分桶，才是删脚本后的存底
         script_config = self.ScriptConfig[uid]
-        was_maafw = isinstance(script_config, MaaFWConfig)
-        if isinstance(script_config, ZzzOdConfig):
-            for user_uid in list(script_config.UserData.keys()):
-                await self._zzzod_recycle_user_slot(
-                    script_id,
-                    script_config,
-                    user_uid,
-                    action="删除脚本",
-                    # 整个脚本都在移除：同脚本用户间的相互占用不挡回收
-                    # （否则共享同一槽的用户双双跳过，mas 备份池随 data/{script_id}
-                    # 整删且未经归档，恢复历史丢失）
-                    exclude_same_script=True,
-                )
+        handler = self._get_script_config_handler(script_config)
+        if handler is not None and handler.prepare_script_removal is not None:
+            await handler.prepare_script_removal(script_config)
 
         self.ScriptConfig.remove(uid)
         await self.ScriptConfig.commit()
-        if was_maafw:
-            # 它的共享 runtime 可能就此无人引用；后台对账一轮，不拖慢删除响应。
-            from app.task.MaaFW.tools.embedded.pool_reconcile import (
-                reconcile_in_background,
-            )
-
-            reconcile_in_background("script-deleted")
+        if handler is not None and handler.after_script_removal is not None:
+            handler.after_script_removal()
         # 数据目录里可能有只读文件（如脚本配置目录快照带进来的 .git 对象）：裸
         # rmtree 删到它们会抛 PermissionError，而此时配置已经移除，目录残留在磁盘上、
         # 再点这个脚本还会报「配置项不存在」。目录删除是阻塞 IO（force_rmtree 内部
         # 还有 sleep 重试），放线程里跑，别让事件循环跟着等。
         script_data_dir = Path.cwd() / f"data/{uid}"
         if script_data_dir.exists():
-            await asyncio.to_thread(force_rmtree, script_data_dir)
-        # MFW 内嵌副本跟着脚本 ID 走，不放在 data/<uid>/ 下（那里会被配置备份整目录
-        # 快照），所以这里单独删。
-        from app.task.MaaFW.tools.embedded.embedded_project import embedded_project_dir
-
-        embedded_copy = embedded_project_dir(str(uid))
-        if embedded_copy.exists():
-            await asyncio.to_thread(force_rmtree, embedded_copy)
+            await asyncio.to_thread(_utils_io.force_rmtree, script_data_dir)
+        if handler is not None and handler.cleanup_script_files is not None:
+            await handler.cleanup_script_files(str(uid))
 
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序脚本"""
@@ -1239,204 +1200,6 @@ class AppConfig:
 
         self.ScriptConfig.set_order([uuid.UUID(_) for _ in index_list])
         await self.ScriptConfig.commit()
-
-    async def import_script_from_share(
-        self, script_id: str, config_key: str, version_no: Optional[int]
-    ) -> None:
-        """从「AUTO-MAS 配置中心」导入通用脚本配置。
-
-        Args:
-            script_id: 目标通用脚本ID。
-            config_key: 配置中心的配置标识。
-            version_no: 版本号, 为空表示已发布的最新版本。
-
-        Raises:
-            KeyError: 脚本不存在。
-            TypeError: 脚本不是通用脚本配置。
-            ConfigCenterError: 下载失败或内容不是通用脚本配置。
-        """
-
-        from app.services import ConfigCenter
-
-        logger.info(f"从配置中心加载脚本配置: {script_id} - {config_key}")
-        uid = uuid.UUID(script_id)
-
-        if uid not in self.ScriptConfig:
-            logger.error(f"{script_id} 不存在")
-            raise KeyError(f"脚本 {script_id} 不存在")
-        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
-            logger.error(f"{script_id} 不是通用脚本配置")
-            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
-
-        data = await ConfigCenter.download_template(config_key, version_no)
-        await self.ScriptConfig[uid].update(
-            GeneralConfig.model_validate(GeneralConfig.normalize_payload(data)),
-            check_visibility=False,
-        )
-
-        logger.success(f"{script_id} 配置加载成功")
-
-    async def build_share_config(
-        self, script_id: str, config_name: str
-    ) -> tuple[dict, List[Dict[str, str]]]:
-        """整理待分享的通用脚本配置。
-
-        用户数据（SubConfigsInfo）整体丢弃, 路径类配置项做占位替换, 剩下仍然可疑的内容
-        以风险项返回, 由用户确认后才允许上传。
-
-        Args:
-            script_id: 目标通用脚本ID。
-            config_name: 分享时使用的配置名称。
-
-        Returns:
-            脱敏后的配置字典, 以及仍需用户确认的风险项列表。
-
-        Raises:
-            KeyError: 脚本不存在。
-            TypeError: 脚本不是通用脚本配置。
-        """
-
-        uid = uuid.UUID(script_id)
-
-        if uid not in self.ScriptConfig:
-            logger.error(f"{script_id} 不存在")
-            raise KeyError(f"脚本 {script_id} 不存在")
-        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
-            logger.error(f"{script_id} 不是通用脚本配置")
-            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
-
-        temp = self.ScriptConfig[uid].model_dump(context={"audience": "persist"})
-        temp.pop("UserData", None)
-        temp.pop("Notify_CustomWebhooks", None)
-        temp.pop("ui", None)
-        temp = await self.remove_privacy_info(temp, config_name)
-
-        return temp, self.scan_privacy_risks(temp)
-
-    async def upload_script_to_share(
-        self, script_id: str, config_name: str, description: str, acknowledged: bool
-    ) -> None:
-        """以当前授权用户的身份把配置提交到「AUTO-MAS 配置中心」等待审核。
-
-        Args:
-            script_id: 目标通用脚本ID。
-            config_name: 配置名称。
-            description: 配置描述。
-            acknowledged: 用户是否已确认分享前检查出的风险项。
-
-        Raises:
-            ConfigCenterError: 未授权、存在未确认的风险项或上传被拒绝。
-        """
-
-        from app.services import ConfigCenter, ConfigCenterError
-
-        logger.info(f"上传配置到配置中心: {script_id} - {config_name}")
-
-        config, risks = await self.build_share_config(script_id, config_name)
-        if risks and not acknowledged:
-            logger.warning(f"分享前检查到 {len(risks)} 项待确认内容, 已阻止上传")
-            raise ConfigCenterError("配置中仍有可能泄露隐私的内容, 请确认后再分享")
-
-        await ConfigCenter.upload_config(config_name, description, config)
-
-    async def remove_privacy_info(self, config: dict, name: str) -> dict:
-        """移除配置中可能存在的隐私信息"""
-
-        config["Info"]["Name"] = name
-        root_value = config["Info"]["RootPath"]
-        root_path = Path(root_value) if root_value else None
-        for path in ["ScriptPath", "ConfigPath", "LogPath", "TrackProcessExe"]:
-            path_value = config["Script"][path]
-            if not path_value:
-                continue
-            script_path = Path(path_value)
-            if root_path is not None and script_path.is_relative_to(root_path):
-                config["Script"][path] = str(
-                    Path(r"C:/脚本根目录") / script_path.relative_to(root_path)
-                )
-            elif IS_WINDOWS and script_path.is_relative_to(Path(os.environ["APPDATA"])):
-                config["Script"][path] = (
-                    f"%APPDATA%/{script_path.relative_to(Path(os.environ['APPDATA']))}"
-                )
-        if root_path is not None:
-            config["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
-
-        # 上面只覆盖脚本自身的路径项；游戏路径、命令行等自由文本同样会带出本机用户名，统一打码
-        for items in config.values():
-            if not isinstance(items, dict):
-                continue
-            for key, value in items.items():
-                if isinstance(value, str) and value:
-                    items[key] = self._mask_home_path(value)
-
-        return config
-
-    @staticmethod
-    def _mask_home_path(value: str) -> str:
-        """把值里出现的本机用户目录替换成占位符"""
-
-        home = str(Path.home())
-        if not home:
-            return value
-
-        masked = value
-        for candidate in {home, home.replace("\\", "/")}:
-            # 要求用户目录后面是分隔符或行尾, 否则 C:\Users\qiyin 会切掉 C:\Users\qiyinxi 的一截
-            masked = re.sub(
-                rf"{re.escape(candidate)}(?=[\\/]|$)",
-                "%USERPROFILE%",
-                masked,
-                flags=re.IGNORECASE,
-            )
-        return masked
-
-    def scan_privacy_risks(self, config: dict) -> List[Dict[str, str]]:
-        """检查脱敏后的配置里是否还残留不该分享的内容。
-
-        自动脱敏只能处理已知的路径项, 命令行参数、日志规则这类自由文本仍可能带出账号、
-        密码、令牌或本机绝对路径, 这里把它们挑出来交给用户确认。
-
-        Args:
-            config: 已经过 remove_privacy_info 处理的配置字典。
-
-        Returns:
-            风险项列表, 每项包含配置项名称与风险说明。
-        """
-
-        placeholders = ("C:\\脚本根目录", "C:/脚本根目录", "%APPDATA%", "%USERPROFILE%")
-        user_name = Path.home().name
-        risks: List[Dict[str, str]] = []
-
-        for group, items in config.items():
-            if not isinstance(items, dict):
-                continue
-            for key, value in items.items():
-                if not isinstance(value, str) or not value.strip():
-                    continue
-
-                field = f"{group}.{key}"
-                if re.search(
-                    r"(?i)(password|passwd|pwd|token|secret|api[_-]?key|cookie|session"
-                    r"|密码|密钥|口令)\s*[=:\s]\s*\S",
-                    value,
-                ):
-                    risks.append({"field": field, "reason": "疑似包含账号、密码或令牌"})
-                    continue
-                if re.search(r"://[^/\s:@]+:[^/\s@]+@", value):
-                    risks.append({"field": field, "reason": "链接中带有账号密码"})
-                    continue
-                if len(user_name) > 2 and user_name.lower() in value.lower():
-                    risks.append({"field": field, "reason": "包含本机用户名"})
-                    continue
-
-                probe = value
-                for placeholder in placeholders:
-                    probe = probe.replace(placeholder, "")
-                # 盘符前不能再跟字母, 否则 https:// 这类协议头会被当成 C:\ 一样的盘符路径
-                if re.search(r"(?<![A-Za-z])[A-Za-z]:[\\/]", probe) or "\\\\" in probe:
-                    risks.append({"field": field, "reason": "包含本机绝对路径"})
-
-        return risks
 
     async def get_user(
         self, script_id: str, user_id: Optional[str]
@@ -1448,17 +1211,11 @@ class AppConfig:
         uid = uuid.UUID(script_id)
 
         script_config = self.ScriptConfig[uid]
-        if isinstance(script_config, MaaFWConfig):
-            # 新用户的空任务队列按项目默认写成实打实的队列（含特调 M9A / MSS）：用户页
-            # 看到的就是运行时会跑的。建用户时项目可能还没导入，所以读的时候再补一次
-            from app.task.MaaFW.tools.embedded.default_snapshot import (
-                fill_default_task_snapshots,
-            )
-
-            await fill_default_task_snapshots(
-                script_id,
+        handler = self._get_script_config_handler(script_config)
+        if handler is not None and handler.prepare_user_read is not None:
+            await handler.prepare_user_read(
                 script_config,
-                None if user_id is None else [str(uuid.UUID(user_id))],
+                user_ids=None if user_id is None else [str(uuid.UUID(user_id))],
             )
 
         if user_id is None:
@@ -1502,1706 +1259,39 @@ class AppConfig:
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
 
-        # 根据脚本类型选择添加对应用户配置
-        if isinstance(script_config, MaaConfig):
-            uid = script_config.UserData.add(MaaUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, SrcConfig):
-            uid = script_config.UserData.add(SrcUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, GeneralConfig):
-            uid = script_config.UserData.add(GeneralUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, OkwwConfig):
-            uid = script_config.UserData.add(OkwwUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-            try:
-                from app.task.Okww.tools.config_dir import ensure_user_config_dir
+        handler = self._get_script_config_handler(script_config)
+        # 特调脚本自行声明的用户类优先，不能被 MaaFW 父类型处理器覆盖。
+        user_class = getattr(script_config, "USER_CONFIG_CLASS", None)
+        if user_class is None and handler is not None:
+            user_class = handler.user_config_class
+        if user_class is None:
+            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
-                await ensure_user_config_dir(
-                    script_id=script_id,
-                    user_id=str(uid),
-                    base=str(config.Info.Base or BASE_SHARED),
-                )
-            except Exception:
-                # 配置初始化失败时回滚用户，避免留下无法运行的半成品用户。
+        uid = script_config.UserData.add(user_class, payload=payload)
+        await script_config.UserData.commit()
+        config = script_config.UserData[uid]
+        if handler is not None and handler.initialize_user is not None:
+
+            async def rollback() -> None:
+                # 只撤回本次集合成员，不递归走完整删除生命周期或碰共享目录。
                 script_config.UserData.remove(uid)
                 await script_config.UserData.commit()
-                raise
-        elif isinstance(script_config, OkNteConfig):
-            uid = script_config.UserData.add(OkNteUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, MaaEndConfig):
-            uid = script_config.UserData.add(MaaEndUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, MaaFWConfig):
-            # 含特调子类（M9A / MSS）：用户类由脚本类的 USER_CONFIG_CLASS 决定。
-            uid = script_config.UserData.add(
-                script_config.USER_CONFIG_CLASS, payload=payload
-            )
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-            # 空任务队列按项目默认写成实打实的队列；项目还没导入时留到读用户、运行前再补
-            from app.task.MaaFW.tools.embedded.default_snapshot import (
-                fill_default_task_snapshots,
-            )
 
-            await fill_default_task_snapshots(script_id, script_config, [str(uid)])
-        elif isinstance(script_config, HSRConfig):
-            uid = script_config.UserData.add(HSRUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, BetterGIConfig):
-            uid = script_config.UserData.add(BetterGIUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, ZzzOdConfig):
-            uid = script_config.UserData.add(ZzzOdUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, BAAHConfig):
-            uid = script_config.UserData.add(BAAHUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, WhimboxConfig):
-            uid = script_config.UserData.add(WhimboxUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        else:
-            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
+            await handler.initialize_user(script_config, config, rollback=rollback)
 
         return uid, config
 
-    def _zzzod_script_config(self, script_id: str) -> ZzzOdConfig:
-        """解析 ZZZ-OD 脚本配置并拒绝跨类型 ID 访问。"""
-
-        script_config = self.ScriptConfig[uuid.UUID(script_id)]
-        if not isinstance(script_config, ZzzOdConfig):
-            raise TypeError("脚本配置类型错误, 不是 ZZZ-OD 类型")
-        return script_config
-
-    def _zzzod_root(self, script_config: ZzzOdConfig) -> Path:
-        """返回 zzz-od 安装根目录并按哨兵文件校验有效。
-
-        三层防线（与路径字段声明、自动发现/check() 同一组哨兵）：
-        1. 拒绝未配置路径——``Path("").is_dir()``
-           在 cwd 下为真，independent 来源保存会把 ``config/01/`` 建进 MAS 工作目录；
-        2. 拒绝非绝对路径 / 不存在的目录 / ``Path.cwd()``；
-        3. ``validate_install`` 安装哨兵（``src`` 目录）——任意随机目录
-           （如 D:\\）只要 is_dir 就放行会在其下建出 config/01。不要求
-           ``config/one_dragon.yml``：它由一条龙首次运行生成，全新安装
-           尚未初始化时不应卡住启动器下拉/实例列表/任务目录等发现能力
-           （读写路径自身会按需初始化；完整初始化校验用 validate_root）。
-        """
-
-        raw = str(script_config.Info.RootPath or "").strip()
-        if not raw:
-            raise ValueError("请先在脚本设置中配置绝区零一条龙安装目录")
-        root = Path(raw).expanduser()
-        if not root.is_absolute() or not root.is_dir():
-            raise ValueError("请先在脚本设置中配置绝区零一条龙安装目录")
-        resolved = root.resolve()
-        if resolved == Path.cwd().resolve():
-            raise ValueError("绝区零一条龙安装目录不能为 MAS 工作目录")
-
-        from app.task.ZzzOd.tools import validate_install
-
-        validate_install(resolved)
-        return resolved
-
-    def get_zzzod_root(self, script_id: str) -> Path:
-        """zzz-od 安装根目录（哨兵校验后返回；供 API 层统一复用）。"""
-
-        return self._zzzod_root(self._zzzod_script_config(script_id))
-
-    def get_zzzod_instances(self, script_id: str) -> list[dict]:
-        """列出 zzz-od 实例（供用户配置「快速导入」选择来源实例）。"""
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-        from app.task.ZzzOd.tools import list_instances
-
-        return [
-            {
-                "idx": int(item.get("idx", 0)),
-                "name": str(item.get("name", "")),
-                "active": bool(item.get("active")),
-                "active_in_od": bool(item.get("active_in_od")),
-                "force_login_before_run": bool(item.get("force_login_before_run")),
-            }
-            for item in list_instances(root)
-        ]
-
-    def add_zzzod_instance(self, script_id: str, name: str) -> list[dict]:
-        """直控：新建一条龙实例（最小空闲槽避开原生与本安装的 MAS 绑定槽）。
-
-        变更注册表与实例目录前先归档原生配置（指纹去重），保证可恢复。
-        """
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-
-        from app.task.ZzzOd.AutoProxy import collect_used_slot_idxs
-        from app.task.ZzzOd.tools import add_instance
-
-        self.ensure_zzzod_direct_backup(script_id)
-        idx = add_instance(root, name, collect_used_slot_idxs(root))
-        logger.info(f"ZZZ-OD 原生来源新建实例: 槽 {idx:02d} (名称 {name})")
-        return self.get_zzzod_instances(script_id)
-
-    def rename_zzzod_instance(
-        self, script_id: str, instance_idx: int, name: str
-    ) -> list[dict]:
-        """直控：重命名实例（只改注册表 name，实例目录不变）。"""
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-
-        from app.task.ZzzOd.tools import rename_instance
-
-        self.ensure_zzzod_direct_backup(script_id)
-        rename_instance(root, instance_idx, name)
-        logger.info(f"ZZZ-OD 原生来源重命名实例: {instance_idx:02d} → {name}")
-        return self.get_zzzod_instances(script_id)
-
-    def set_zzzod_instance_active_in_od(
-        self, script_id: str, instance_idx: int, value: bool
-    ) -> list[dict]:
-        """直控：切换实例是否参与「全部实例」运行模式（active_in_od）。"""
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-
-        from app.task.ZzzOd.tools import set_instance_active_in_od
-
-        self.ensure_zzzod_direct_backup(script_id)
-        set_instance_active_in_od(root, instance_idx, value)
-        logger.info(f"ZZZ-OD 直控实例 {instance_idx:02d} 参与全部实例 → {bool(value)}")
-        return self.get_zzzod_instances(script_id)
-
-    def set_zzzod_instance_active(
-        self, script_id: str, instance_idx: int
-    ) -> list[dict]:
-        """直控：把所选实例设为当前活跃（「仅运行当前」运行的就是它）。"""
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-
-        from app.task.ZzzOd.tools import set_active_instance
-
-        self.ensure_zzzod_direct_backup(script_id)
-        set_active_instance(root, instance_idx)
-        logger.info(f"ZZZ-OD 直控实例 {instance_idx:02d} 已设为当前活跃")
-        return self.get_zzzod_instances(script_id)
-
-    def set_zzzod_instance_run_mode(self, script_id: str, instance_run: str) -> None:
-        """直控：设置运行实例（one_dragon.yml 全局 instance_run，白名单校验）。
-
-        运行实例是脚本级全局设置，与直控页当前编辑哪个实例无关。
-        """
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-
-        from app.task.ZzzOd.tools import save_native_instance_run
-
-        self.ensure_zzzod_direct_backup(script_id)
-        save_native_instance_run(root, instance_run)
-        logger.info(f"ZZZ-OD 原生来源运行实例 → {instance_run}")
-
-    def set_zzzod_instance_force_login(
-        self, script_id: str, instance_idx: int, value: bool
-    ) -> list[dict]:
-        """直控：切换实例「运行前切换账号」（映射一条龙原生能力，MAS 不干涉）。"""
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-
-        from app.task.ZzzOd.tools import set_instance_force_login
-
-        self.ensure_zzzod_direct_backup(script_id)
-        set_instance_force_login(root, instance_idx, value)
-        logger.info(
-            f"ZZZ-OD 直控实例 {instance_idx:02d} 运行前切换账号 → {bool(value)}"
-        )
-        return self.get_zzzod_instances(script_id)
-
-    def delete_zzzod_instance(self, script_id: str, instance_idx: int) -> list[dict]:
-        """直控：删除实例（注册表 + 实例目录；MAS 绑定槽与最后实例受保护）。"""
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-
-        from app.task.ZzzOd.AutoProxy import collect_used_slot_idxs
-        from app.task.ZzzOd.tools import remove_instance
-
-        self.ensure_zzzod_direct_backup(script_id)
-        remove_instance(root, instance_idx, protected_idxs=collect_used_slot_idxs(root))
-        logger.info(f"ZZZ-OD 直控删除实例: {instance_idx:02d}")
-        return self.get_zzzod_instances(script_id)
-
-    async def get_zzzod_slots(self, script_id: str) -> list[dict]:
-        """实例槽总览：原生实例 / MAS 绑定槽 / 无主残留（含未落盘的绑定）。
-
-        槽目录是 MAS 分配在一条龙安装目录里的，注册表里没有它、GUI 看不见，
-        「槽目录数为什么和用户数对不上」只能靠这份对照表看清：``kind`` 与
-        ``has_dir`` 一起看——绑定但没跑过的用户是「mas 且无目录」。
-
-        Raises:
-            ConfigCorruptedError: 一条龙注册表不可读（原生名单缺失，不能把
-                原生实例误标成无主残留）。
-        """
-
-        from app.task.ZzzOd.AutoProxy import collect_slot_owners
-        from app.task.ZzzOd.tools import list_slot_overview
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-        owners = collect_slot_owners(root)
-        # 槽总览要 rglob 统计各槽目录占用，是阻塞 IO，放线程里跑
-        return await asyncio.to_thread(list_slot_overview, root, owners)
-
-    def _ensure_zzzod_install_unlocked(self, root: Path) -> None:
-        """任一指向同一安装的 ZzzOd 脚本正在运行时拒绝槽级写操作。
-
-        槽目录跨脚本共享同一份安装目录：另一脚本运行中时，其用户的绑定号
-        可能尚未持久化（首次分配的 SlotIdx 还在等待异步落盘），
-        持久配置里的占用判定读不到——此时清理/恢复会误动在跑用户的槽。
-
-        Raises:
-            RuntimeError: 有同安装的 ZzzOd 脚本处于运行中。
-        """
-
-        from app.utils.config_archive import config_root_key
-
-        key = config_root_key(root)
-        for script_config in self.ScriptConfig.values():
-            if (
-                not isinstance(script_config, ZzzOdConfig)
-                or not script_config.is_locked
-            ):
-                continue
-            script_root = str(script_config.Info.RootPath or "").strip()
-            if script_root and config_root_key(script_root) == key:
-                raise RuntimeError("有正在运行的绝区零一条龙脚本, 请结束后再试")
-
-    async def clean_zzzod_slots(self, script_id: str) -> list[int]:
-        """手动清理该安装下无人绑定的实例槽，返回实际回收的槽号。
-
-        与运行/会话前的自动回收同源（先归档进回收池再删目录；原生实例与
-        被任一 ZzzOd 用户绑定的槽不动），但范围更宽、且失败会抛出：手动清理
-        不受「只收归属用户已不存在的号」的台账限制（来路不明的残留正是用户要清的
-        对象），注册表缺失/损坏也直接报错，界面才能说明「为什么没清」。
-        原生来源用户显式发起即可，不受「原生来源零写入」约束——那条约束管的是 MAS
-        在运行期间自行写安装目录。
-
-        Raises:
-            RuntimeError: 有同安装的 ZzzOd 脚本正在运行（在跑用户的绑定号
-                可能未持久化，清理会误收其槽）。
-            ValueError: 一条龙注册表不存在或不可读（无从判定无主槽）。
-        """
-
-        from app.task.ZzzOd.AutoProxy import recycle_unbound_slots
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-        self._ensure_zzzod_install_unlocked(root)
-        # 归档 + 删目录是阻塞 IO，放线程里跑
-        return await asyncio.to_thread(
-            recycle_unbound_slots, root, only_allocated=False, swallow=False
-        )
-
-    async def get_zzzod_recycle(self, script_id: str) -> list[dict]:
-        """回收池条目（被删用户/脚本留下的槽内容与该槽 MAS 备份池快照）。"""
-
-        from app.task.ZzzOd.tools import list_recycle_entries
-
-        script_config = self._zzzod_script_config(script_id)
-        return await asyncio.to_thread(
-            list_recycle_entries, self._zzzod_root(script_config)
-        )
-
-    async def clear_zzzod_recycle(self, script_id: str) -> int:
-        """清空本安装的回收池，返回删除的条目数。
-
-        只删 recycle 池（被删用户/脚本留下的存底）；``onedragon`` 原生池与
-        mas 配置恢复池在别的子树，不受影响。
-
-        Raises:
-            RuntimeError: 有同安装的 ZzzOd 脚本正在运行——运行路径会向回收池
-                归档存底（注入前回收、撞号存底），并发清空会互相踩。
-        """
-
-        from app.task.ZzzOd.tools import clear_recycle_pool
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-        self._ensure_zzzod_install_unlocked(root)
-        # 删池是阻塞 IO，放线程里跑
-        return await asyncio.to_thread(clear_recycle_pool, root)
-
-    async def restore_zzzod_recycle(
-        self,
-        script_id: str,
-        slot_idx: int,
-        ts: str,
-        *,
-        target_user: str | None = None,
-        new_user_name: str | None = None,
-    ) -> tuple[int, str]:
-        """把回收池里的一条槽快照恢复给某个 MAS 用户（现有用户或新建用户）。
-
-        恢复的落点是**用户的绑定槽**，而不是某个裸槽号：只把内容物化到
-        ``config/NN`` 而不建立绑定的恢复没有出口——MAS 下次运行不会认领它，
-        用户拿不到内容（想取出文件用回收池的「查看」直接复制）。
-
-        ``target_user`` 指定现有用户 uid；``new_user_name`` 新建一个用户并把
-        内容恢复到它的槽（名字即该值）。二者必须且只能给一个。目标用户尚无
-        绑定槽时按常规分配（含认领它上次没跑完的槽）；已有绑定槽时覆盖其内容
-        ——恢复前自动存底，误恢复可从回收池找回。
-
-        Returns:
-            ``(目标槽号, 用户名)``。
-
-        Raises:
-            RuntimeError: 有同安装的 ZzzOd 脚本正在运行，或本脚本配置已锁定
-                （恢复会写 ``config/NN`` 与用户绑定号，可能与在跑任务竞态）。
-            ValueError: 恢复目标非法（两个都给/都不给、新用户名为空、指定用户
-                不属于该脚本），或回收条目不存在/内容为空。条目问题先于建用户
-                判定，恢复中失败也会把刚建的用户撤掉，不留半成品。
-        """
-
-        from app.task.ZzzOd.AutoProxy import collect_used_slot_idxs, ensure_user_slot
-        from app.task.ZzzOd.tools import restore_recycle_slot
-        from app.task.ZzzOd.tools.backup_archive import recycle_backup_root
-        from app.utils.config_archive import get_backup_dir
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-        self._ensure_zzzod_install_unlocked(root)
-        if script_config.is_locked:
-            raise RuntimeError("脚本正在运行, 请结束后再试")
-        if bool(target_user) == bool(new_user_name):
-            raise ValueError("恢复目标必须且只能选一个：现有用户或新建用户")
-        # 先验明快照在场再动手：建用户、写绑定都是持久化的，等写完才发现
-        # 条目不对就留下一个没内容的半成品用户
-        if get_backup_dir(recycle_backup_root(root, slot_idx), ts) is None:
-            raise ValueError(f"备份不存在: {ts}")
-
-        created_uid: uuid.UUID | None = None
-        try:
-            if new_user_name is not None:
-                name = str(new_user_name).strip()
-                if not name:
-                    raise ValueError("新用户名称不能为空")
-                # 与「添加用户」同一入口（含持久化）；锁定时它自己会拒绝
-                uid, user_cfg = await self.add_user(script_id)
-                created_uid = uid
-                if not isinstance(user_cfg, ZzzOdUserConfig):
-                    raise TypeError("用户配置类型错误")
-                await user_cfg.update(
-                    type(user_cfg).model_validate({"Info": {"Name": name}}),
-                    check_visibility=False,
-                )
-            else:
-                _, _, user_cfg, uid = self._zzzod_user(script_id, str(target_user))
-                name = str(user_cfg.Info.Name or "")
-
-            used = collect_used_slot_idxs(root, exclude_uids={uid})
-            dest = await ensure_user_slot(
-                root, user_cfg, used, script_id=script_id, owner_uid=str(uid)
-            )
-            # 存底 + 整目录替换是阻塞 IO（拷贝槽目录），放线程里跑
-            await asyncio.to_thread(
-                restore_recycle_slot, root, slot_idx, ts, target_slot=dest
-            )
-        except Exception:
-            # 恢复中失败把刚建的用户撤掉：留着它会是个没内容的半成品用户；
-            # 它的槽随后因归属消失被自动回收（内容已在回收池存底，可再恢复）
-            if created_uid is not None:
-                try:
-                    script_config.UserData.remove(created_uid)
-                    await script_config.UserData.commit()
-                except Exception as e:
-                    logger.opt(exception=True).warning(
-                        f"恢复失败后撤回新建用户失败（请手动删除）: {e}"
-                    )
-            raise
-        logger.info(
-            f"ZZZ-OD 槽 {slot_idx:02d} 已从回收池恢复到用户「{name}」的槽 "
-            f"{dest:02d} 快照 {ts}"
-        )
-        return dest, name
-
-    def _zzzod_user(
-        self, script_id: str, user_id: str
-    ) -> tuple[ZzzOdConfig, Path, ZzzOdUserConfig, uuid.UUID]:
-        """解析 ZZZ-OD 脚本/安装目录/用户配置对象，拒绝无效 ID。"""
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-        uid = uuid.UUID(user_id)
-        if uid not in script_config.UserData:
-            raise ValueError("用户不存在")
-        return script_config, root, script_config.UserData[uid], uid
-
-    async def get_zzzod_app_config(
-        self,
-        script_id: str,
-        user_id: str,
-        app_id: str,
-        instance_idx: int | None = None,
-    ) -> dict:
-        """任务级配置（字段元数据 + 当前值）。
-
-        instance_idx 给定时（原生来源模式）读取该原生实例的 per-app YAML；
-        否则读取用户绑定槽（未分配槽时取元数据默认值）。
-        """
-
-        from app.task.ZzzOd.tools import (
-            get_task_app_fields,
-            instance_dir,
-            read_app_config,
-            resolve_field_options,
-        )
-
-        fields_meta = get_task_app_fields(app_id)
-        if fields_meta is None:
-            raise ValueError(f"任务 {app_id} 不支持在 MAS 侧配置")
-
-        if instance_idx is not None:
-            root, _ = self._zzzod_native_instance(script_id, instance_idx)
-            slot = int(instance_idx)
-        else:
-            _, root, user_cfg, _ = self._zzzod_user(script_id, user_id)
-            slot = int(user_cfg.Info.SlotIdx or -1)
-        current = read_app_config(root, slot, app_id) if slot > 0 else {}
-        # 预备编队等选项随槽而异（team.yml 在实例目录），无槽时无动态选项
-        config_dir = instance_dir(root, slot) if slot > 0 else None
-
-        def _show_when_out(sw: dict | list | None) -> dict:
-            """show_when 透传：单条件 dict 或条件列表（{field, value, not?}）。"""
-
-            if not sw:
-                return {}
-            conds = sw if isinstance(sw, list) else [sw]
-            return {
-                "showWhen": [
-                    {
-                        "field": str(c["field"]),
-                        "value": str(c["value"]),
-                        **({"not": True} if c.get("not") else {}),
-                    }
-                    for c in conds
-                ]
-            }
-
-        fields = []
-        for meta in fields_meta:
-            ftype = str(meta.get("type") or "select")
-            field_out: dict = {
-                "field": str(meta["field"]),
-                "title": str(meta["title"]),
-                "type": ftype,
-            }
-            if ftype == "plan_list":
-                # 计划列表：当前值整表返回；列元数据内联（动态列选项服务端解析），
-                # 级联列选项由前端从任务选项端点的训练副本树取
-                value = current.get(meta["field"])
-                field_out["value"] = value if isinstance(value, list) else []
-                field_out["options"] = []
-                field_out["columns"] = [
-                    {
-                        "field": str(c["field"]),
-                        "title": str(c["title"]),
-                        "type": str(c.get("type") or "select"),
-                        "options": [
-                            {"label": str(o["label"]), "value": str(o["value"])}
-                            for o in resolve_field_options(root, c, config_dir)
-                        ],
-                        **_show_when_out(c.get("show_when")),
-                    }
-                    for c in meta.get("columns") or []
-                ]
-                field_out["newItem"] = dict(meta.get("new_item") or {})
-            else:
-                options = resolve_field_options(root, meta, config_dir)
-                default = meta.get("default")
-                if default is None and options:
-                    default = str(options[0]["value"])
-                value = current.get(meta["field"], default)
-                if ftype == "bool":
-                    value = bool(value)
-                elif ftype == "number":
-                    try:
-                        value = int(value)
-                    except (TypeError, ValueError):
-                        value = int(default or 0)
-                else:
-                    # select / team：展示为字符串（team 与选项 value 同型，保存转 int）
-                    value = None if value is None else str(value)
-                field_out["value"] = value
-                field_out["options"] = [
-                    {"label": str(o["label"]), "value": str(o["value"])}
-                    for o in options
-                ]
-            fields.append(field_out)
-        return {"appId": app_id, "fields": fields}
-
-    async def save_zzzod_app_config(
-        self,
-        script_id: str,
-        user_id: str,
-        app_id: str,
-        values: dict,
-        instance_idx: int | None = None,
-    ) -> dict:
-        """保存任务级配置到目标位置（字段白名单校验后写入）。
-
-        instance_idx 给定时（原生来源模式）直接写该原生实例的 per-app YAML；
-        否则写用户绑定槽（首次编辑会自动分配绑定槽）。值按字段类型转换
-        （select→str / bool→bool / number→int），plan_list 整表合并写入并
-        按 plan_id 保留既有 run_times。
-        """
-
-        from app.task.ZzzOd.tools import (
-            get_task_app_fields,
-            merge_plan_list,
-            read_app_config,
-            write_app_config,
-        )
-
-        fields_meta = get_task_app_fields(app_id)
-        if fields_meta is None:
-            raise ValueError(f"任务 {app_id} 不支持在 MAS 侧配置")
-        meta_by_field = {str(m["field"]): m for m in fields_meta}
-        unknown = {str(k) for k in values} - set(meta_by_field)
-        if unknown:
-            raise ValueError(f"不支持的配置字段: {', '.join(sorted(unknown))}")
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-
-        if instance_idx is not None:
-            self._zzzod_native_instance(script_id, instance_idx)
-            slot = int(instance_idx)
-        else:
-            from app.task.ZzzOd.AutoProxy import (
-                collect_used_slot_idxs,
-                ensure_user_slot,
-            )
-
-            _, _, user_cfg, uid = self._zzzod_user(script_id, user_id)
-            used = collect_used_slot_idxs(root, exclude_uids={uid})
-            slot = await ensure_user_slot(
-                root, user_cfg, used, script_id=script_id, owner_uid=str(uid)
-            )
-
-        current = read_app_config(root, slot, app_id) if slot > 0 else {}
-        patch: dict = {}
-        for key, raw in values.items():
-            meta = meta_by_field[str(key)]
-            ftype = str(meta.get("type") or "select")
-            if ftype == "plan_list":
-                columns = meta.get("columns") or []
-                patch[str(key)] = merge_plan_list(
-                    columns,
-                    dict(meta.get("new_item") or {}),
-                    (
-                        current.get(str(key))
-                        if isinstance(current.get(str(key)), list)
-                        else []
-                    ),
-                    raw if isinstance(raw, list) else [],
-                )
-            elif ftype == "bool":
-                patch[str(key)] = bool(raw)
-            elif ftype == "number":
-                patch[str(key)] = int(raw)
-            elif ftype == "team":
-                # 预备编队下标：上游按 int 消费（-1=游戏内配队），下拉提交字符串
-                try:
-                    patch[str(key)] = int(raw)
-                except (TypeError, ValueError):
-                    patch[str(key)] = -1
-            else:
-                # select：按声明选项的原始类型还原——GET 侧选项 value 已被
-                # str() 抹平，前端回传字符串；选项声明为 int 的字段（周挑战
-                # 起始日）落盘必须是 int，否则上游 `>=` 比较抛 TypeError
-                raw_str = str(raw)
-                matched = next(
-                    (
-                        o.get("value")
-                        for o in meta.get("options") or []
-                        if str(o.get("value")) == raw_str
-                    ),
-                    None,
-                )
-                if isinstance(matched, int) and not isinstance(matched, bool):
-                    patch[str(key)] = matched
-                else:
-                    patch[str(key)] = raw_str
-
-        config = write_app_config(root, slot, app_id, patch)
-        if instance_idx is not None:
-            logger.info(
-                f"ZZZ-OD 实例 {slot:02d} 任务 {app_id} 配置已由直控页面保存: {values}"
-            )
-        else:
-            logger.info(
-                f"ZZZ-OD 用户 {uid} 任务 {app_id} 配置已保存到槽 {slot:02d}: {values}"
-            )
-        return config
-
-    async def get_zzzod_task_options(self, script_id: str, app_id: str) -> dict:
-        """任务计划的动态选项（副本级联树 / 配队方案 / 挑战配置等）。
-
-        全部从安装目录静态读取（compendium_data.yml + 配置目录扫描），
-        与一条龙原生 GUI 选项同源，上游升级后无需改 MAS。
-        """
-
-        from app.task.ZzzOd.tools import (
-            auto_battle_options,
-            get_task_app_fields,
-            lost_void_challenge_options,
-            lost_void_missions,
-            train_categories,
-        )
-
-        if get_task_app_fields(app_id) is None:
-            raise ValueError(f"任务 {app_id} 不支持在 MAS 侧配置")
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-        return {
-            "appId": app_id,
-            "trainCategories": train_categories(root),
-            "lostVoidMissions": lost_void_missions(root),
-            "autoBattle": auto_battle_options(root),
-            "challenge": lost_void_challenge_options(root),
-        }
-
-    async def get_zzzod_teams(
-        self, script_id: str, user_id: str, instance_idx: int | None = None
-    ) -> dict:
-        """预备编队完整列表（固定 20 个，与一条龙原生编队页一致）。
-
-        team.yml：名称 + 绑定配队方案 + 成员（agent_id → 代理人下拉可选）。
-        缺失项按上游规则补「编队N」默认编队。
-        instance_idx 给定时（原生来源模式）读该原生实例；否则读用户绑定槽。
-        附带配队方案与代理人选项（静态数据，不含识别能力）供前端渲染。
-        """
-
-        from app.task.ZzzOd.tools import (
-            agent_id_options,
-            auto_battle_options,
-            expand_team_list,
-            instance_dir,
-        )
-
-        if instance_idx is not None:
-            root, _ = self._zzzod_native_instance(script_id, instance_idx)
-            slot = int(instance_idx)
-        else:
-            _, root, user_cfg, _ = self._zzzod_user(script_id, user_id)
-            slot = int(user_cfg.Info.SlotIdx or -1)
-
-        teams = []
-        if slot > 0:
-            for item in expand_team_list(instance_dir(root, slot)):
-                teams.append(
-                    {
-                        "idx": int(item["idx"]),
-                        "name": str(item["name"]),
-                        "autoBattle": str(item["auto_battle"]),
-                        "agents": [str(a) for a in item["agent_id_list"]],
-                    }
-                )
-        return {
-            "teams": teams,
-            "autoBattle": auto_battle_options(self._zzzod_script_root(script_id)),
-            "agentOptions": agent_id_options(self._zzzod_script_root(script_id)),
-        }
-
-    async def save_zzzod_teams(
-        self,
-        script_id: str,
-        user_id: str,
-        teams: list,
-        instance_idx: int | None = None,
-    ) -> list:
-        """整表保存预备编队（名称 + 绑定配队方案，成员按行保留）。"""
-
-        from app.task.ZzzOd.tools import instance_dir, write_team_list
-
-        if instance_idx is not None:
-            self._zzzod_native_instance(script_id, instance_idx)
-            slot = int(instance_idx)
-        else:
-            from app.task.ZzzOd.AutoProxy import (
-                collect_used_slot_idxs,
-                ensure_user_slot,
-            )
-
-            _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
-            used = collect_used_slot_idxs(root, exclude_uids={uid})
-            slot = await ensure_user_slot(
-                root, user_cfg, used, script_id=script_id, owner_uid=str(uid)
-            )
-
-        saved = write_team_list(
-            instance_dir(self._zzzod_script_root(script_id), slot), teams
-        )
-        logger.info(f"ZZZ-OD 预备编队已保存到槽 {slot:02d}: {len(saved)} 个编队")
-        return saved
-
-    def _zzzod_script_root(self, script_id: str) -> Path:
-        """脚本安装根目录（供 teams 等实例级配置读写复用）。"""
-
-        return self._zzzod_root(self._zzzod_script_config(script_id))
-
-    async def restore_zzzod_backup(
-        self, script_id: str, user_id: str, ts: str, target: str, *, force: bool = False
-    ) -> int:
-        """把指定备份恢复到目标位置，返回关联槽 idx（-1 表示不涉及槽）。
-
-        - target="onedragon"：把一条龙原生配置备份（one_dragon.yml + 原生
-          实例目录）恢复到一条龙本身——只写回备份中的文件，MAS 槽目录永不
-          触碰；恢复前自动归档当前原生配置，误恢复可找回；
-        - target="mas"：把 MAS 用户槽备份恢复到绑定槽，并从恢复后的槽内容
-          把账号字段与任务编排全量回填到 MAS 本页字段（表单随即刷新）——
-          配队等 MAS 不管的内容随槽内容回到该时点。
-
-        ``force=True``：源注册表损坏且用户已在二次确认中选择强制恢复——
-        onedragon 跳过「恢复前存底」（该步要读损坏的注册表），mas 跳过
-        占用守卫（可能覆盖原生实例槽，覆盖前仍会对槽做强制存底）。
-        """
-
-        from app.task.ZzzOd.tools import (
-            MAS_USER_INFO_FILE,
-            collect_mas_user_info,
-            get_mas_backup_dir,
-            get_onedragon_backup_dir,
-            instance_dir,
-            materialize_user_fields,
-            normalize_app_group_entries,
-            read_app_group,
-            read_game,
-            read_game_account,
-            read_team_list,
-            restore_mas_backup,
-            restore_onedragon_backup,
-        )
-        from app.utils.config_archive import dir_files
-        from app.utils.io import read_dict_file
-
-        _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
-
-        if target == "onedragon":
-            # 恢复守卫：备份内的原生实例 idx 若已被任一 MAS 用户绑定为配置槽
-            # （任何脚本、含本用户——恢复会整目录替换槽目录），中止并点名，
-            # 避免把绑定槽内容覆盖成原生实例；原生注册表不在此列，恢复本就
-            # 是把原生世界拉回该时点（恢复前已强制存底）
-            backup_dir = get_onedragon_backup_dir(root, ts)
-            if backup_dir is None:
-                raise ValueError(f"备份不存在: {ts}")
-            backup_idxs = {
-                int(rel.split("/", 1)[0])
-                for rel in dir_files(backup_dir)
-                if "/" in rel
-                and rel.split("/", 1)[0].isascii()
-                and rel.split("/", 1)[0].isdigit()
-            }
-            for bound_script in self.ScriptConfig.values():
-                if not isinstance(bound_script, ZzzOdConfig):
-                    continue
-                for bound_uid, bound_cfg in bound_script.UserData.items():
-                    bound_slot = int(bound_cfg.Info.SlotIdx or -1)
-                    if bound_slot not in backup_idxs:
-                        continue
-                    if bound_uid == uid:
-                        who = "本用户"
-                    else:
-                        who = f"脚本「{str(bound_script.Info.Name or '未知脚本')}」的用户「{str(bound_cfg.Info.Name or '未知用户')}」"
-                    raise ValueError(
-                        f"备份含原生实例 {bound_slot:02d}，已被{who}绑定为配置槽，"
-                        "恢复会覆盖其内容，已中止"
-                    )
-            restore_onedragon_backup(root, ts, snapshot_current=not force)
-            logger.info(f"ZZZ-OD 用户 {uid} 已把备份 {ts} 恢复到一条龙原生配置")
-            return -1
-
-        slot = int(user_cfg.Info.SlotIdx or -1)
-        if slot <= 0:
-            raise ValueError("该用户还没有生成过配置备份")
-        backup_dir = get_mas_backup_dir(script_id, slot, ts)
-        if backup_dir is None:
-            raise ValueError(f"备份不存在: {ts}")
-        # 写入现场或归档前先读完备份源文件；坏备份不能通过 force 放行。
-        # 缺文件沿用读取器默认值，兼容旧备份。
-        try:
-            backup_account = read_game_account(backup_dir)
-            read_game(backup_dir)
-            backup_apps = normalize_app_group_entries(read_app_group(backup_dir))
-            read_team_list(backup_dir)
-            backup_info = read_dict_file(
-                backup_dir / MAS_USER_INFO_FILE, allow_empty=True
-            )
-            # 旧归档的信息快照键是 Info.Mode（现 Info.Base），读入时归一
-            if "Mode" in backup_info and "Base" not in backup_info:
-                backup_info["Base"] = normalize_base_source(backup_info.pop("Mode"))
-        except ConfigCorruptedError as exc:
-            raise ValueError(f"备份内容已损坏，无法恢复：{exc}") from exc
-        # 恢复守卫：目标槽必须仍归本用户或空闲，被其他实体占用则拦截并点名，
-        # 避免把别人的槽内容覆盖掉（覆盖前也不归档他人内容）。注册表损坏时
-        # 守卫读不了原生占用，未 force 抛给上层转 409；force 视为空闲放行
-        # （用户已确认，覆盖前 restore_mas_backup 内部仍会强制存底）
-        try:
-            occupant = self._zzzod_slot_occupant(root, script_id, uid, slot)
-        except ConfigCorruptedError:
-            if not force:
-                raise
-            occupant = None
-        if occupant is not None:
-            raise ValueError(
-                f"目标槽 {slot:02d} 当前已被「{occupant}」占用，"
-                "为避免覆盖他人配置已中止恢复，请先处理占用后再试"
-            )
-        slot_dir = instance_dir(root, slot)
-        # 先读当前槽内会被读-改-写/整表覆盖的 YAML（game_account、game、
-        # _group——materialize 的 write_app_group 会整表覆盖 _group.yml）。
-        # 普通恢复遇到现场坏档要在任何物化/归档前保留 409；force 已获确认
-        # 时跳过物化，随后由 restore_mas_backup 原样归档坏现场，再换入已
-        # 预校验的好备份。
-        materialize_current = True
-        try:
-            read_game_account(slot_dir)
-            read_game(slot_dir)
-            read_app_group(slot_dir)
-        except ConfigCorruptedError:
-            if not force:
-                raise
-            materialize_current = False
-        # 恢复前先物化本页账号+编排进槽，再走 restore_mas_backup 内部「强制
-        # 归档当前」——这份「恢复前存底」才能回到本页配置状态（否则缺账号，
-        # 误恢复想找回时会把本页账号清空）。force 跳过坏现场物化以保留原始
-        # 字节，归档仍由 restore_mas_backup 完成。
-        if materialize_current:
-            materialize_user_fields(slot_dir, user_cfg)
-        restore_mas_backup(
-            script_id,
-            slot,
-            ts,
-            slot_dir,
-            meta=collect_mas_user_info(user_cfg),
-        )
-
-        # 恢复后的槽内容 = 该时点的 MAS 配置；把 MAS 管理的字段全量回填本页
-        account = backup_account
-        # 任务编排整表回填（含未启用项原位保留顺序，运行侧只消费启用项）
-        all_apps = backup_apps
-        await user_cfg.update(
-            type(user_cfg).model_validate(
-                {"Game": {"GameRegion": str(account.get("game_region") or "cn")}}
-            ),
-            check_visibility=False,
-        )
-        await user_cfg.update(
-            type(user_cfg).model_validate(
-                {"Game": {"GamePath": str(account.get("game_path") or "")}}
-            ),
-            check_visibility=False,
-        )
-        await user_cfg.update(
-            type(user_cfg).model_validate(
-                {"Game": {"GameLanguage": str(account.get("game_language") or "cn")}}
-            ),
-            check_visibility=False,
-        )
-        await user_cfg.update(
-            type(user_cfg).model_validate(
-                {
-                    "Game": {
-                        "BilibiliAccountName": str(
-                            account.get("bilibili_account_name") or ""
-                        )
-                    }
-                }
-            ),
-            check_visibility=False,
-        )
-        await user_cfg.update(
-            type(user_cfg).model_validate(
-                {"Game": {"Account": str(account.get("account") or "")}}
-            ),
-            check_visibility=False,
-        )
-        await user_cfg.update(
-            type(user_cfg).model_validate(
-                {"Game": {"Password": str(account.get("password") or "")}}
-            ),
-            check_visibility=False,
-        )
-        await user_cfg.update(
-            type(user_cfg).model_validate(
-                {"OneDragon": {"AppList": json.dumps(all_apps, ensure_ascii=False)}}
-            ),
-            check_visibility=False,
-        )
-        # 信息字段回填（用户名/启用/base 来源/启动器/剩余天数/备注/节点详情推送）：
-        # 旧备份可能没有该快照，缺失字段跳过，保持向前兼容
-        for field in (
-            "Name",
-            "Status",
-            "Base",
-            "LauncherMode",
-            "RemainedDay",
-            "Notes",
-        ):
-            if field in backup_info:
-                await user_cfg.update(
-                    type(user_cfg).model_validate(
-                        {"Info": {field: backup_info[field]}}
-                    ),
-                    check_visibility=False,
-                )
-        if "PushLogMode" in backup_info:
-            await user_cfg.update(
-                type(user_cfg).model_validate(
-                    {"Notify": {"PushLogMode": backup_info["PushLogMode"]}}
-                ),
-                check_visibility=False,
-            )
+    async def flush(self) -> None:
+        """等待已提交配置落盘，供注入的专项服务使用。"""
         await config_manager.flush()
-        logger.info(
-            f"ZZZ-OD 用户 {uid} 已把备份 {ts} 恢复到 MAS 配置 "
-            f"(槽 {slot:02d} + 字段回填, 任务 {len(all_apps)} 项)"
-        )
-        return slot
-
-    async def import_zzzod_config(
-        self, script_id: str, user_id: str, instance_idx: int
-    ) -> dict:
-        """基于一条龙已有实例快速生成当前用户配置（账号信息 + 已启用任务编排 + 实例级配置）。
-
-        覆盖前强制归档当前 MAS 槽配置（与「配置恢复」一致：即使内容与最近
-        备份一致也生成新时间戳条目）——导入前的状态可在配置恢复中按 MAS
-        配置找回。账号字段只回填来源实例的非空值（密码留空=沿用登录态），
-        任务编排只取来源实例当前启用的应用（对齐 _group.yml 缺席=不加入）。
-        实例级配置随导入对齐来源实例写入绑定槽：notify.yml（应用通知，
-        zzz-od 默认开启，不搬会让「来源关着」变开着）、team.yml（预备编队）、
-        game.yml（按键配置：键盘/手柄按键、后台模式、输入方式、HDR、启动
-        参数、分辨率等，MAS 不托管、注入不触碰，只能靠导入对齐）、
-        one_dragon/ 全部 per-app 配置（体力计划/咖啡店/随便观等任务级 yml）。
-        """
-
-        from app.task.ZzzOd.AutoProxy import (
-            collect_used_slot_idxs,
-            ensure_user_slot,
-        )
-        from app.task.ZzzOd.tools import (
-            archive_mas_config_backup,
-            collect_mas_user_info,
-            instance_dir,
-            normalize_app_group_entries,
-            read_app_group,
-            read_game_account,
-            read_native_registry,
-        )
-
-        _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
-        slot = int(user_cfg.Info.SlotIdx or -1)
-        # 来源校验必须先于存底物化：自身槽不能既作母版又被页面字段覆盖。
-        if slot > 0 and int(instance_idx) == slot:
-            raise ValueError("不能从当前用户绑定的 MAS 槽导入配置")
-        instance = next(
-            (
-                item
-                for item in read_native_registry(root).get("instance_list", [])
-                if int(item["idx"]) == int(instance_idx)
-            ),
-            None,
-        )
-        if instance is None:
-            raise ValueError(
-                f"原生实例 {int(instance_idx):02d} 不存在，请重新选择导入来源"
-            )
-        source_dir = instance_dir(root, int(instance_idx))
-        if slot > 0:
-            slot_dir = root / "config" / f"{slot:02d}"
-            if slot_dir.is_dir():
-                # 覆盖前存底走统一入口（先物化再快照）：不物化的「导入前」
-                # 备份缺账号，恢复它会把本页账号清空。导入是覆盖性操作，
-                # 存底失败必须中止导入，否则覆盖前现场彻底丢失
-                archive_mas_config_backup(
-                    script_id,
-                    slot,
-                    slot_dir,
-                    user_cfg,
-                    force=True,
-                    meta=collect_mas_user_info(user_cfg),
-                    fail_on_snapshot_error=True,
-                )
-
-        game_account = read_game_account(source_dir)
-        # 任务编排整表导入（含未启用项原位保留顺序，运行侧只消费启用项）
-        all_apps = normalize_app_group_entries(read_app_group(source_dir))
-
-        field_map = {
-            "GameRegion": "game_region",
-            "GamePath": "game_path",
-            "GameLanguage": "game_language",
-            "Account": "account",
-            "Password": "password",
-            "BilibiliAccountName": "bilibili_account_name",
-            "Platform": "platform",
-            "CustomWinTitle": "custom_win_title",
-        }
-        imported_accounts = 0
-        for user_key, native_key in field_map.items():
-            value = str(game_account.get(native_key) or "").strip()
-            if not value:
-                continue
-            await user_cfg.update(
-                type(user_cfg).model_validate({"Game": {user_key: value}}),
-                check_visibility=False,
-            )
-            imported_accounts += 1
-        if "use_custom_win_title" in game_account:
-            await user_cfg.update(
-                type(user_cfg).model_validate(
-                    {
-                        "Game": {
-                            "UseCustomWinTitle": bool(
-                                game_account.get("use_custom_win_title")
-                            )
-                        }
-                    }
-                ),
-                check_visibility=False,
-            )
-            imported_accounts += 1
-
-        await user_cfg.update(
-            type(user_cfg).model_validate(
-                {"OneDragon": {"AppList": json.dumps(all_apps, ensure_ascii=False)}}
-            ),
-            check_visibility=False,
-        )
-
-        # 实例级持久配置对齐来源实例：
-        # - notify.yml（应用通知）在实例根
-        # - team.yml（预备编队：名称 + 绑定配队方案 + 成员）在实例根
-        # - game.yml（GameConfig 按键配置：键盘/手柄按键、后台模式、输入方式、
-        #   HDR、启动参数、分辨率）在实例根——MAS 不托管该文件，注入运行也
-        #   不触碰，导入不对齐会导致按键配置永远停留在 zzz-od 默认值
-        # - one_dragon/ 全部 per-app 配置（charge_plan.yml 体力计划、coffee.yml
-        #   咖啡店、suibian_temple.yml 随便观等）随导入整目录对齐
-        # _group.yml 例外：任务编排走上面的 AppList 整表语义（含未启用项），不整搬。
-        # 均不经 MAS 用户字段承载，直接对齐到绑定槽（注入运行的实例目录）；
-        # 用户尚无绑定槽时按全局查重分配（语义与运行注入的 ensure_user_slot
-        # 一致）。来源缺失的文件对齐为删除 = 沿用 zzz-od 默认
-        slot = int(user_cfg.Info.SlotIdx or -1)
-        if slot <= 0:
-            slot = await ensure_user_slot(
-                root,
-                user_cfg,
-                collect_used_slot_idxs(root, exclude_uids={uid}),
-                script_id=script_id,
-                owner_uid=str(uid),
-            )
-        target_dir = instance_dir(root, slot)
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        # 底层防御：路径别名也可能指向同一目录，整段同步均应跳过自复制。
-        same_dir = source_dir.resolve() == target_dir.resolve()
-        if not same_dir:
-
-            def _align_yml(rel_parts: list[str]) -> None:
-                source_yml = source_dir.joinpath(*rel_parts)
-                target_yml = target_dir.joinpath(*rel_parts)
-                target_yml.parent.mkdir(parents=True, exist_ok=True)
-                if source_yml.is_file():
-                    shutil.copyfile(source_yml, target_yml)
-                else:
-                    target_yml.unlink(missing_ok=True)
-
-            _align_yml(("notify.yml",))
-            _align_yml(("team.yml",))
-            _align_yml(("game.yml",))
-
-            source_one_dragon = source_dir / "one_dragon"
-            target_one_dragon = target_dir / "one_dragon"
-            if target_one_dragon.is_dir():
-                for target_yml in target_one_dragon.glob("*.yml"):
-                    if (
-                        target_yml.name != "_group.yml"
-                        and not (source_one_dragon / target_yml.name).is_file()
-                    ):
-                        target_yml.unlink(missing_ok=True)
-            if source_one_dragon.is_dir():
-                target_one_dragon.mkdir(parents=True, exist_ok=True)
-                for source_yml in source_one_dragon.glob("*.yml"):
-                    if source_yml.name == "_group.yml":
-                        continue
-                    shutil.copyfile(source_yml, target_one_dragon / source_yml.name)
-
-        await config_manager.flush()
-        align_note = (
-            f"来源与槽 {slot:02d} 为同一目录，已跳过实例级对齐"
-            if same_dir
-            else f"应用通知/按键配置/体力计划已对齐槽 {slot:02d}"
-        )
-        logger.info(
-            f"ZZZ-OD 用户 {uid} 已从实例 {int(instance_idx):02d} 导入配置"
-            f"(账号字段 {imported_accounts} 项, 任务 {len(all_apps)} 项, "
-            f"{align_note})"
-        )
-        return {
-            "instanceIdx": int(instance_idx),
-            "instanceName": str(instance.get("name", "")),
-            "importedAccountCount": imported_accounts,
-            "importedTaskCount": len(all_apps),
-            "slot": slot,
-        }
-
-    def _zzzod_slot_occupant(
-        self,
-        root: Path,
-        script_id: str,
-        user_uid: uuid.UUID | None,
-        slot: int,
-        *,
-        exclude_same_script: bool = False,
-    ) -> str | None:
-        """判定目标实例槽当前被谁占用（返回可读描述；空闲/仅本用户时 None）。
-
-        占用者可能是：指向同一份安装的其他 ZzzOd 脚本/同脚本其他用户（按
-        ``Info.SlotIdx`` 绑定）或一条龙原生实例（按原生注册表）。绑定只算
-        指向本安装的脚本——槽目录按安装目录隔离，别的安装的同号槽互不相干。
-        注册表源走原生原件（合成视图在盘时读 sidecar），与备份口径一致。
-        仅本用户绑定或槽目录虽在但无人认领（孤儿槽）视为空闲——孤儿槽可被
-        恢复重新认领。``user_uid=None`` 表示不排除任何用户（回收池恢复这类
-        没有用户上下文的场景：任何绑定都算占用）。
-
-        ``exclude_same_script=True``：忽略本脚本内用户的绑定占用（仅剩其他
-        脚本与原生实例算占用）——删脚本时整个脚本都在移除，同脚本用户间的
-        相互占用不该挡住回收（否则共享同一槽的两个用户会互相把对方当占用、
-        双双跳过，槽与备份池残留）。
-        """
-
-        from app.task.ZzzOd.tools import read_native_registry
-        from app.utils.config_archive import config_root_key
-
-        # 1) 其他 ZzzOd 用户（含其他脚本）按 SlotIdx 绑定占用
-        key = config_root_key(root)
-        for script_uid, script_config in self.ScriptConfig.items():
-            if not isinstance(script_config, ZzzOdConfig):
-                continue
-            if exclude_same_script and str(script_uid) == script_id:
-                continue
-            script_root = str(script_config.Info.RootPath or "").strip()
-            if not script_root or config_root_key(script_root) != key:
-                continue
-            script_name = str(script_config.Info.Name or "未知脚本")
-            for other_uid, cfg in script_config.UserData.items():
-                if other_uid == user_uid:
-                    continue
-                if int(cfg.Info.SlotIdx or -1) == slot:
-                    user_name = str(cfg.Info.Name or "未知用户")
-                    return f"脚本「{script_name}」的用户「{user_name}」"
-
-        # 2) 一条龙原生实例（按原生注册表）
-        data = read_native_registry(root)
-        for item in data.get("instance_list") or []:
-            if not isinstance(item, dict):
-                continue
-            if int(item.get("idx", -1)) == slot:
-                return str(item.get("name") or f"原生实例 {slot:02d}")
-        return None
-
-    async def _zzzod_recycle_user_slot(
-        self,
-        script_id: str,
-        script_config: ZzzOdConfig,
-        user_uid: uuid.UUID,
-        *,
-        action: str,
-        exclude_same_script: bool = False,
-    ) -> None:
-        """回收用户的绑定槽（del_script 循环用；del_user 走 _zzzod_recycle_bound_slot）。"""
-
-        if user_uid not in script_config.UserData:
-            return
-        user_cfg = script_config.UserData[user_uid]
-        slot = int(user_cfg.Info.SlotIdx or -1)
-        if slot <= 0:
-            return
-        name = str(user_cfg.Info.Name or "")
-        await self._zzzod_recycle_bound_slot(
-            script_id,
-            script_config,
-            user_uid,
-            slot,
-            name,
-            action=action,
-            exclude_same_script=exclude_same_script,
-        )
-
-    async def _zzzod_recycle_bound_slot(
-        self,
-        script_id: str,
-        script_config: ZzzOdConfig,
-        user_uid: uuid.UUID | None,
-        slot: int,
-        name: str,
-        *,
-        action: str,
-        exclude_same_script: bool = False,
-    ) -> None:
-        """回收一个已知的绑定槽：归档进项目级回收池后删除槽目录（幂等）。
-
-        槽目录是 MAS 分配在一条龙安装目录里的，注册表里没有它、GUI 看不见，
-        直控删实例还受绑定保护，用户/脚本删除后没有任何出口能清掉——只能在
-        删除动作里一并回收，否则永久残留并占着 idx。仍被原生实例或其他
-        ZzzOd 用户占用时跳过（那是别人的槽）；安装目录失效、注册表不可读时
-        也跳过。删除动作不因回收失败中断（每一步的失败都只告警）。
-
-        槽的 MAS 备份池一并回收：mas 池按（脚本, 槽）分桶、没有用户维度，
-        槽号分给新用户后留在原位会串到别人名下（见
-        :func:`app.task.ZzzOd.tools.recycle_mas_backups`）。槽目录收走后该号
-        同时移出分配台账（台账只记 MAS 手上还在用的号）。
-
-        ``exclude_same_script``：删脚本时传 True——整个脚本都在移除，同脚本
-        用户间的相互占用不挡回收（否则共享同一槽的两个用户会双双跳过，
-        mas 池随后被 data/{script_id} 整删且未经归档，恢复历史丢失）。
-        """
-
-        from app.task.ZzzOd.AutoProxy import forget_allocated_slot
-        from app.task.ZzzOd.tools import recycle_mas_backups, recycle_slot
-
-        try:
-            root = self._zzzod_root(script_config)
-        except Exception:
-            return  # 安装目录没配好或已失效，无从回收
-        try:
-            occupant = self._zzzod_slot_occupant(
-                root, script_id, user_uid, slot, exclude_same_script=exclude_same_script
-            )
-        except Exception as e:
-            logger.opt(exception=True).warning(
-                f"槽 {slot:02d} 占用判定失败，跳过回收: {e}"
-            )
-            return
-        if occupant is not None:
-            logger.warning(f"槽 {slot:02d} 仍被「{occupant}」占用，跳过回收")
-            return
-        reason = f"{action} {name}".strip()
-        # 归档 + 删目录是阻塞 IO（拷贝槽目录），放线程里跑
-        try:
-            if await asyncio.to_thread(recycle_slot, root, slot, reason=reason):
-                # 目录已收走，该号移出台账（与恢复路径同口径：台账只记「当前由
-                # MAS 持有」的号；留着它，将来同号目录再出现会被自动回收当残留
-                # 收走）。回收失败时目录还在，台账保留，仍受自动回收管辖
-                forget_allocated_slot(root, slot)
-            await asyncio.to_thread(
-                recycle_mas_backups, root, script_id, slot, reason=reason
-            )
-        except Exception as e:
-            logger.opt(exception=True).warning(
-                f"槽 {slot:02d} 回收失败，已跳过（不阻断删除）: {e}"
-            )
-
-    @staticmethod
-    def _preview_account_fields(account: dict) -> list[dict]:
-        """备份预览用的账号字段列表；密码一律掩码、不返回明文。
-
-        预览是纯展示（恢复直接回写备份文件内容，不经此值），密码明文没有
-        理由出现在响应里；其余字段缺失时合并默认值（无值前端兜底 ``—``）。
-        自定义窗口标题两字段一并展示（``use_custom_win_title`` 转是否——
-        ``custom_win_title`` 是启用时的标题，两行都显示，简单化）。
-        mas 与 onedragon 两个预览分支共用。
-        """
-
-        from app.task.ZzzOd.tools.zzz_od_config import DEFAULT_GAME_ACCOUNT
-
-        def _value(key: str) -> str:
-            if key == "password" and account.get(key):
-                return "••••••••"
-            if key == "use_custom_win_title":
-                return "是" if account.get(key) else "否"
-            return str(
-                account[key]
-                if account.get(key) is not None
-                else DEFAULT_GAME_ACCOUNT.get(key, "")
-            )
-
-        return [
-            {"key": key, "value": _value(key)}
-            for key in (
-                "game_region",
-                "game_path",
-                "game_language",
-                "account",
-                "password",
-                "bilibili_account_name",
-                "use_custom_win_title",
-                "custom_win_title",
-            )
-        ]
-
-    def get_zzzod_backup_preview(
-        self, script_id: str, user_id: str, ts: str, target: str
-    ) -> dict:
-        """读取指定备份的配置摘要（纯读不恢复），供「预览配置」快速展示。
-
-        - target="mas"：基本信息卡信息字段（用户名/启用/base 来源/启动器/剩余天数/
-          备注/节点详情推送，来自备份内信息快照）+ 账号字段（缺失合并默认值，
-          密码掩码）+ 任务编排（应用目录并入中文名）；
-        - target="onedragon"：备份内 one_dragon.yml 注册表的实例列表。
-        """
-
-        from app.task.ZzzOd.tools import (
-            MAS_USER_INFO_FILE,
-            get_mas_backup_dir,
-            get_onedragon_backup_dir,
-            inspect_onedragon_backup,
-            list_app_catalog,
-            read_app_group,
-            read_game,
-            read_game_account,
-            read_team_list,
-        )
-        from app.utils.io import read_dict_file
-
-        # 脚本安装根目录（onedragon/mas 两条分支都要用：实例名书、槽目录）
-        root = self._zzzod_root(self._zzzod_script_config(script_id))
-
-        if target == "onedragon":
-            backup = get_onedragon_backup_dir(root, ts)
-            if backup is None:
-                raise ValueError(f"备份不存在: {ts}")
-            data, warnings = inspect_onedragon_backup(backup)
-            warnings = list(warnings)
-            name_book = {
-                str(item.get("app_id")): str(item.get("app_name") or "")
-                for item in list_app_catalog(root)
-            }
-            instances = []
-            entries = data.get("instance_list")
-            if not isinstance(entries, list):
-                entries = []
-            for item in entries:
-                if not isinstance(item, dict):
-                    continue
-                raw_idx = item.get("idx")
-                if not isinstance(raw_idx, int) or isinstance(raw_idx, bool):
-                    continue
-                idx = int(raw_idx)
-                # 实例明细来自备份目录内的 {idx}/（备份按原生注册表逐 idx 归档，
-                # 目录名不带零填充，与一条龙原生实例目录同构）
-                backup_idx_dir = backup / str(idx)
-                try:
-                    account = read_game_account(backup_idx_dir)
-                except ConfigCorruptedError as exc:
-                    warnings.append(
-                        f"原生备份实例 {idx:02d} 账号配置损坏，无法预览：{exc}"
-                    )
-                    account = {}
-                account_fields = self._preview_account_fields(account)
-                task_fields = []
-                try:
-                    app_group = read_app_group(backup_idx_dir)
-                except ConfigCorruptedError as exc:
-                    warnings.append(
-                        f"原生备份实例 {idx:02d} 任务编排损坏，无法预览：{exc}"
-                    )
-                    app_group = []
-                for task in app_group:
-                    app_id = str(task.get("app_id") or "").strip()
-                    if not app_id:
-                        continue
-                    task_fields.append(
-                        {
-                            "app_id": app_id,
-                            "app_name": name_book.get(app_id) or app_id,
-                            "enabled": bool(task.get("enabled")),
-                        }
-                    )
-                instances.append(
-                    {
-                        "idx": idx,
-                        "name": str(item.get("name", "")),
-                        "active": bool(item.get("active")),
-                        "active_in_od": bool(item.get("active_in_od")),
-                        "account": account_fields,
-                        "tasks": task_fields,
-                    }
-                )
-            return {
-                "time": ts,
-                "target": target,
-                "info": [],
-                "account": [],
-                "tasks": [],
-                "instances": instances,
-                "warnings": warnings,
-                "restoreAllowed": not warnings,
-            }
-
-        _, root, user_cfg, _ = self._zzzod_user(script_id, user_id)
-        slot = int(user_cfg.Info.SlotIdx or -1)
-        if slot <= 0:
-            raise ValueError("该用户还没有生成过配置备份")
-        backup = get_mas_backup_dir(script_id, slot, ts)
-        if backup is None:
-            raise ValueError(f"备份不存在: {ts}")
-
-        # 预览把损坏文件降级为警示（与 onedragon 分支一致）：摘要照常返回，
-        # restoreAllowed=False 锁住恢复；坏备份仍由恢复前预读统一拦截。
-        warnings: list[str] = []
-        info: dict = {}
-        try:
-            info = read_dict_file(backup / MAS_USER_INFO_FILE, allow_empty=True)
-            # 旧归档的信息快照键是 Info.Mode（现 Info.Base），读入时归一
-            if "Mode" in info and "Base" not in info:
-                info["Base"] = normalize_base_source(info.pop("Mode"))
-        except ConfigCorruptedError as exc:
-            warnings.append(f"备份信息快照损坏，无法恢复：{exc}")
-        account: dict = {}
-        try:
-            account = read_game_account(backup)
-        except ConfigCorruptedError as exc:
-            warnings.append(f"备份账号配置损坏，无法恢复：{exc}")
-        try:
-            read_game(backup)
-        except ConfigCorruptedError as exc:
-            warnings.append(f"备份启动参数损坏，无法恢复：{exc}")
-        try:
-            read_team_list(backup)
-        except ConfigCorruptedError as exc:
-            warnings.append(f"备份编队配置损坏，无法恢复：{exc}")
-
-        info_fields = []
-        for key, field in (
-            ("name", "Name"),
-            ("status", "Status"),
-            ("base", "Base"),
-            ("launcher_mode", "LauncherMode"),
-            ("remained_day", "RemainedDay"),
-            ("notes", "Notes"),
-            ("push_log_mode", "PushLogMode"),
-        ):
-            if field not in info:
-                continue
-            info_fields.append({"key": key, "value": str(info[field])})
-
-        account_fields = self._preview_account_fields(account)
-
-        name_book = {
-            str(item.get("app_id")): str(item.get("app_name") or "")
-            for item in list_app_catalog(root)
-        }
-        app_group: list = []
-        try:
-            app_group = read_app_group(backup)
-        except ConfigCorruptedError as exc:
-            warnings.append(f"备份任务编排损坏，无法恢复：{exc}")
-        tasks = []
-        for item in app_group:
-            app_id = str(item.get("app_id") or "").strip()
-            if not app_id:
-                continue
-            tasks.append(
-                {
-                    "app_id": app_id,
-                    "app_name": name_book.get(app_id) or app_id,
-                    "enabled": bool(item.get("enabled")),
-                }
-            )
-        return {
-            "time": ts,
-            "target": target,
-            "info": info_fields,
-            "account": account_fields,
-            "tasks": tasks,
-            "instances": [],
-            "warnings": warnings,
-            "restoreAllowed": not warnings,
-        }
-
-    def _zzzod_native_instance(
-        self, script_id: str, instance_idx: int
-    ) -> tuple[Path, dict]:
-        """解析 zzz-od 安装根目录与原生实例，校验实例存在（直控编辑目标）。"""
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-
-        from app.task.ZzzOd.tools import list_instances
-
-        instance = next(
-            (
-                item
-                for item in list_instances(root)
-                if int(item.get("idx", -1)) == int(instance_idx)
-            ),
-            None,
-        )
-        if instance is None:
-            raise ValueError(f"实例 {int(instance_idx):02d} 不存在")
-        return root, instance
-
-    async def get_zzzod_native_config(self, script_id: str, instance_idx: int) -> dict:
-        """读取实例原生配置（账号字段 + 启动参数 + 任务编排 + 运行实例），供直控页面表单渲染。
-
-        account 条目含默认值合并与可选项；launchArgs 为 game.yml 启动参数
-        （缺失合并上游默认值，-use-d3d12 拆出为 dx12 开关）；tasks 为原生
-        app_list 与应用目录合并后的任务卡片数据（enabled 保持原生状态）；
-        instanceRun 为 one_dragon.yml 的 instance_run 原值（仅运行当前/全部实例）。
-        """
-
-        root, instance = self._zzzod_native_instance(script_id, instance_idx)
-        slot = int(instance_idx)
-
-        from app.task.ZzzOd.tools import (
-            get_task_app_fields,
-            get_task_app_jump,
-            list_app_catalog,
-            read_native_account_fields,
-            read_native_after_done,
-            read_native_instance_run,
-            read_native_launch_args,
-            read_native_tasks,
-        )
-
-        catalog = [
-            {
-                **item,
-                "configurable": get_task_app_fields(str(item["app_id"])) is not None,
-                "jump": get_task_app_jump(str(item["app_id"])),
-            }
-            for item in list_app_catalog(root)
-        ]
-        return {
-            "instanceIdx": slot,
-            "instanceName": str(instance.get("name", "")),
-            "account": read_native_account_fields(root, slot),
-            "tasks": read_native_tasks(root, slot, catalog),
-            "instanceRun": read_native_instance_run(root),
-            "afterDone": read_native_after_done(root),
-            "launchArgs": read_native_launch_args(root, slot),
-        }
-
-    async def save_zzzod_native_config(
-        self,
-        script_id: str,
-        instance_idx: int,
-        account: dict | None = None,
-        tasks: list[dict] | None = None,
-        instance_run: str | None = None,
-        launch_args: dict | None = None,
-        after_done: str | None = None,
-    ) -> dict:
-        """把直控页面改动直接写回所选实例原生配置（可选增量，缺省字段不写回）。
-
-        账号字段白名单过滤 + 只写非默认值；任务编排保留完整顺序（含未启用项）；
-        instance_run / after_done 白名单校验；launchArgs 整组提交（六字段 +
-        dx12 开关合并进高级参数，值未变跳过）。由调用方按需传参：任务开关/
-        运行实例等即时写入只传对应字段，避免把未确认的账号草稿一并落盘。
-        """
-
-        root, instance = self._zzzod_native_instance(script_id, instance_idx)
-        slot = int(instance_idx)
-
-        from app.task.ZzzOd.tools import (
-            read_native_after_done,
-            read_native_instance_run,
-            save_native_account_fields,
-            save_native_after_done,
-            save_native_instance_run,
-            save_native_launch_args,
-            save_native_tasks,
-        )
-
-        if account is not None:
-            save_native_account_fields(root, slot, account)
-        if tasks is not None:
-            save_native_tasks(root, slot, tasks)
-        if launch_args is not None:
-            save_native_launch_args(root, slot, launch_args)
-        if instance_run is not None:
-            # 等于原生文件当前值时跳过写：避免直控页保存账号/任务时把
-            # 用户没改过的运行实例值写死（review 提的：从没动过下拉的多
-            # 实例用户会被「仅运行当前」覆盖 → 一条龙从跑全部变成只跑当前）
-            current = read_native_instance_run(root)
-            if instance_run != current:
-                save_native_instance_run(root, instance_run)
-        if after_done is not None:
-            current_after_done = read_native_after_done(root)
-            if after_done != current_after_done:
-                save_native_after_done(root, after_done)
-        logger.info(f"ZZZ-OD 实例 {slot:02d} 原生配置已由直控页面保存")
-        return {
-            "instanceIdx": slot,
-            "instanceName": str(instance.get("name", "")),
-            "savedAccountCount": len(account) if account is not None else 0,
-        }
-
-    def ensure_zzzod_direct_backup(self, script_id: str) -> dict:
-        """直控前置保护：确保一条龙原生配置已有最新备份（指纹去重）。
-
-        对当前一条龙原生配置（one_dragon.yml + 原生实例目录，排除 MAS 槽）
-        与最近一份备份做指纹对比：无任何备份或内容已变化则立即归档——让
-        用户在直控页误操作改坏原生配置前，始终存在一个「切换时点」的恢复点。
-
-        Returns:
-            {"created": 是否本次新建, "time": 最新备份时间戳}。
-        """
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-
-        from app.task.ZzzOd.tools import (
-            archive_onedragon_backup,
-            list_onedragon_backups,
-        )
-
-        dest = archive_onedragon_backup(root)
-        times = list_onedragon_backups(root)
-        return {
-            "created": dest is not None,
-            "time": times[0] if times else "",
-        }
-
-    def get_zzzod_launchers(self, script_id: str) -> dict:
-        """返回 zzz-od 两种启动器的安装情况（启动器下拉/禁用未安装项用）。
-
-        Returns:
-            {"original_available": bool, "integrated_available": bool}
-        """
-
-        script_config = self._zzzod_script_config(script_id)
-        root = self._zzzod_root(script_config)
-
-        from app.task.ZzzOd.AutoProxy import find_launchers
-
-        available = find_launchers(root)
-        return {
-            "original_available": "原始" in available,
-            "integrated_available": "集成" in available,
-        }
 
     # ════════════ 配置恢复（宿主注入池解析，门面绑定上下文） ════════════
 
     def set_restore_pool_resolver(
-        self, resolver: Callable[["ConfigEntry"], list["ConfigRestorePool"]]
+        self,
+        resolver: Callable[
+            ["ConfigEntry"], list["_utils_config_restore.ConfigRestorePool"]
+        ],
     ) -> None:
         """由宿主装配恢复池解析函数，绑定仅作用于当前配置实例。"""
 
@@ -3209,7 +1299,7 @@ class AppConfig:
 
     def restore_service(
         self, script_id: str, user_id: str, *, force: bool = False
-    ) -> "ConfigRestoreService":
+    ) -> "_utils_config_restore.ConfigRestoreService":
         """通过注入的解析函数取得恢复池，绑定上下文构建运行时服务。
 
         专项只声明池表（普通函数，显式收 :class:`RestoreContext`），由宿主
@@ -3217,14 +1307,14 @@ class AppConfig:
         （当前仅 ZzzOd 消费）。
         """
 
-        from app.utils.config_restore import RestoreContext, build_restore_service
+        from app.utils import config_restore as _utils_config_restore
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
         if self._restore_pool_resolver is None:
             raise RuntimeError("配置恢复未初始化：请先由宿主装配恢复池解析函数")
         pools = self._restore_pool_resolver(script_config)
-        return build_restore_service(
-            RestoreContext(
+        return _utils_config_restore.build_restore_service(
+            _utils_config_restore.RestoreContext(
                 config=self,
                 script_config=script_config,
                 script_id=script_id,
@@ -3326,77 +1416,13 @@ class AppConfig:
         script_config = self.ScriptConfig[script_uid]
         user_config = script_config.UserData[user_uid]
 
-        # 原生来源守卫：每脚本仅允许一个原生来源用户——原生来源共享脚本级原生
-        # 配置（MAA/SRC 的 Default、ZzzOd 的实例视图都在一份脚本级配置里），多
-        # 个原生来源用户共享同一份状态互相干扰。
-        # ZzzOd 切到原生来源时同步清空任务编排残留：原生来源不消费 AppList，残留
-        # 会让注入名单误把原生来源用户卷入多账号运行（原生来源=MAS 零注入零干涉）。
-        if isinstance(script_config, (ZzzOdConfig, MaaConfig, SrcConfig)):
-            new_base = normalize_base_source(data.get("Info", {}).get("Base", ""))
-            # 仅 ZzzOd 需要清空任务编排残留: 原生来源不消费 AppList, 残留会让
-            # 注入名单误把原生来源用户卷入多账号运行（原生来源=MAS 零注入零干涉）
-            if new_base == BASE_NATIVE and isinstance(script_config, ZzzOdConfig):
-                data.setdefault("OneDragon", {})["AppList"] = "[]"
-                # 快速配置已封锁（覆盖写槽与原生来源零写入相悖，维护者决策）：
-                # 切到原生来源时同步归关，免得界面隐藏的开关残留旧值
-                data.setdefault("Info", {})["IfQuickConfig"] = False
-            if (
-                new_base == BASE_NATIVE
-                and normalize_base_source(user_config.Info.Base or BASE_INDEPENDENT)
-                != BASE_NATIVE
-                and any(
-                    (
-                        normalize_base_source(cfg.Info.Base or BASE_INDEPENDENT)
-                        == BASE_NATIVE
-                        for uid, cfg in script_config.UserData.items()
-                        if uid != user_uid
-                    )
-                )
-            ):
-                raise ValueError(
-                    "每个脚本仅允许一个原生来源用户, 多账号请在该用户的实例管理中配置"
-                )
-
-        # MFW 任务选项里的密码字段（PI v2.10.0）必须加密落盘：前端提交的是新填的明文，
-        # 已保存的是密文，按项目 interface 只加密前者。加密前把只属于全局的选项双写到各任务上
-        # （降级兼容，见 task_config.mirror_global_options_to_tasks）。
-        task_data = data.get("Task")
-        if (
-            isinstance(script_config, MaaFWConfig)
-            and isinstance(task_data, dict)
-            and "TaskSnapshot" in task_data
-        ):
-            from app.task.MaaFW.tools.embedded.flavor import sanitize_user_task_update
-            from app.task.MaaFW.tools.embedded.option_secrets import (
-                prepare_user_task_snapshot,
+        handler = self._get_script_config_handler(script_config)
+        if handler is not None and handler.prepare_user_update is not None:
+            prepared = handler.prepare_user_update(
+                script_config, user_config, data=data
             )
-
-            # 特调收归自己管的任务（如 M9A 的启动 / 切号 / 关闭）不进用户队列，写入前按特调整理
-            await asyncio.to_thread(
-                sanitize_user_task_update, script_id, script_config, user_config, data
-            )
-
-            task_data["TaskSnapshot"] = await asyncio.to_thread(
-                prepare_user_task_snapshot,
-                script_id,
-                script_config,
-                task_data["TaskSnapshot"],
-            )
-
-        # 养成接管提示只在运行注入准备时重写（AutoProxy._prepare_cultivate_injection）。
-        # 养成被关到不可能接管的状态后，上一轮写入的提示会残留到下次运行，前端把
-        # 它展示得像当前状态。判定口径归专项（与注入早退分支同源），这里只在
-        # 用户配置写入漏斗里应用其结论
-        if isinstance(script_config, MaaConfig) and isinstance(data.get("Task"), dict):
-            from app.task.MAA.tools.cultivate.service import takeover_notice_patch_value
-
-            task_patch = data["Task"]
-            notice = takeover_notice_patch_value(
-                task_patch.get("IfCultivate", user_config.Task.IfCultivate),
-                task_patch.get("CultivateTargets", user_config.Task.CultivateTargets),
-            )
-            if notice is not None:
-                data.setdefault("Data", {})["CultivateNotice"] = notice
+            if inspect.isawaitable(prepared):
+                await prepared
 
         if precondition is not None and not precondition():
             return False
@@ -3415,33 +1441,63 @@ class AppConfig:
         if script_config.is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行，无法导入配置文件")
 
-        # OK-WW 的配置目录布局与导入语义由专项维护
-        # （app/task/Okww/tools/config_dir.py），core 只做分派。
-        if isinstance(script_config, OkwwConfig):
-            from app.task.Okww.tools.config_dir import import_script_config_dir
-
-            await import_script_config_dir(script_id, user_id)
-            return
-
-        if not isinstance(script_config, MaaEndConfig):
+        handler = self._get_script_config_handler(script_config)
+        if handler is None or handler.import_config is None:
             raise TypeError("当前脚本类型暂不支持导入配置文件")
-
-        script_root = script_config.Info.Path
-        if script_root is None:
-            raise ValueError("Path未配置，请检查路径设置")
-        source_config_dir = script_root / "config"
-        if not (source_config_dir / "mxu-MaaEnd.json").exists():
-            raise FileNotFoundError(
-                "MaaEnd 配置文件不存在, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成"
-            )
 
         config_owner = user_id or "Default"
         target_config_dir = Path.cwd() / f"data/{script_id}/{config_owner}/ConfigFile"
-        # 目录里可能有只读文件（如脚本自带的 .git 对象），rmtree(ignore_errors)
-        # 静默残留会让随后的覆盖写入抛 PermissionError。
-        force_rmtree(target_config_dir)
-        target_config_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source_config_dir, target_config_dir, dirs_exist_ok=True)
+        imported = handler.import_config(
+            script_config, target_config_dir, user_id=user_id
+        )
+        if inspect.isawaitable(imported):
+            await imported
+
+    def bind_script_config_handler(
+        self, entry_type: type[ConfigEntry], handler: ScriptConfigHandler | None
+    ) -> None:
+        """由宿主将专项操作绑定到当前配置实例。"""
+        if entry_type in self._script_config_handlers:
+            raise ValueError(f"重复的配置处理器登记: {entry_type.__name__}")
+        self._script_config_handlers[entry_type] = handler
+
+    def _get_script_config_handler(
+        self, script: ConfigEntry
+    ) -> ScriptConfigHandler | None:
+        for entry_type, handler in self._script_config_handlers.items():
+            if isinstance(script, entry_type):
+                return handler
+        raise RuntimeError(f"专项配置处理器未登记: {type(script).__name__}")
+
+    def get_script_task_resources(self, script: ConfigEntry) -> "ScriptTaskResources":
+        """读取专项资源声明，不提交配置或访问脚本资源文件。"""
+        from app.models.task import ScriptTaskResources
+
+        handler = self._get_script_config_handler(script)
+        if handler is None or handler.task_resources is None:
+            return ScriptTaskResources()
+        return handler.task_resources(script)
+
+    def get_script_emulator_binding(
+        self, script: ConfigEntry, *, patch: dict[str, Any] | None = None
+    ) -> tuple[Any, Any] | None:
+        """读取持久绑定；传入补丁时只返回本次提交设备号所形成的候选。"""
+        handler = self._get_script_config_handler(script)
+        if handler is None or handler.emulator_binding is None:
+            return None
+        if patch is not None:
+            return handler.emulator_binding.read_patch(script, patch)
+        return handler.emulator_binding.read(script)
+
+    def script_supports_mod_avd(self, script: ConfigEntry) -> bool:
+        """读取专项声明的设备能力；MaaFW 特调沿用基类处理器。"""
+        handler = self._get_script_config_handler(script)
+        return handler is not None and handler.supports_mod_avd
+
+    async def _initialize_script_config(self, script: ConfigEntry) -> None:
+        handler = self._get_script_config_handler(script)
+        if handler is not None and handler.initialize is not None:
+            await handler.initialize(script)
 
     async def del_user(self, script_id: str, user_id: str) -> None:
         """删除用户配置"""
@@ -3452,31 +1508,20 @@ class AppConfig:
         user_uid = uuid.UUID(user_id)
         script_config = self.ScriptConfig[script_uid]
 
-        # ZzzOd：用户绑定槽挂在一条龙安装目录里，删除用户必须连带回收（归档后
-        # 删目录）——否则槽目录永久残留，还占着 idx 让新用户只能往后排。
-        # 先捕获槽信息再移除：UserData.remove 在脚本锁定时抛错，回收若排在
-        # 它前面会「槽已物理删除、删除却被拒绝」，留下用户仍在的中间态
-        recycle_ctx: tuple[int, str] | None = None
-        if (
-            isinstance(script_config, ZzzOdConfig)
-            and user_uid in script_config.UserData
-        ):
-            user_cfg = script_config.UserData[user_uid]
-            slot = int(user_cfg.Info.SlotIdx or -1)
-            if slot > 0:
-                recycle_ctx = (slot, str(user_cfg.Info.Name or ""))
+        handler = self._get_script_config_handler(script_config)
+        cleanup = None
+        if handler is not None and handler.prepare_user_removal is not None:
+            cleanup = handler.prepare_user_removal(script_config, user_uid)
 
         script_config.UserData.remove(user_uid)
         await script_config.UserData.commit()
+        if cleanup is not None:
+            await cleanup()
 
-        if recycle_ctx is not None:
-            await self._zzzod_recycle_bound_slot(
-                script_id, script_config, user_uid, *recycle_ctx, action="删除用户"
-            )
         # 与 del_script 同理：用户数据目录里可能有只读文件，裸 rmtree 删不干净还抛异常。
         user_data_dir = Path.cwd() / f"data/{script_id}/{user_id}"
         if user_data_dir.exists():
-            await asyncio.to_thread(force_rmtree, user_data_dir)
+            await asyncio.to_thread(_utils_io.force_rmtree, user_data_dir)
 
     async def get_user_config_dir(self, script_id: str, user_id: str) -> Path:
         """获取用户配置目录, 不存在时创建"""
@@ -3659,41 +1704,19 @@ class AppConfig:
 
         logger.info(f"删除全局模拟器配置: {emulator_id}")
 
-        script_list = []
-
-        for script in self.ScriptConfig.values():
-            if isinstance(script, MaaConfig):
-                if script.Emulator.Id == emulator_uid:
+        async with config_manager.transaction():
+            for script in self.ScriptConfig.values():
+                binding = self.get_script_emulator_binding(script)
+                # 持久引用与运行占用不同：General 禁用游戏时也不能绕过被锁定的引用。
+                if binding is not None and str(binding[0]) == str(emulator_uid):
                     if script.is_locked:
                         raise RuntimeError(
                             f"脚本 {script.Info.Name} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
-                    script_list.append(script)
-            elif isinstance(script, GeneralConfig):
-                if (
-                    script.Game.Type == "Emulator"
-                    and script.Game.EmulatorId == emulator_uid
-                ):
-                    if script.is_locked:
-                        raise RuntimeError(
-                            f"脚本 {script.Info.Name} 正在使用此模拟器且被锁定, 无法完成删除"
-                        )
-                    script_list.append(script)
 
-        for script in script_list:
-            if isinstance(script, MaaConfig):
-                await script.update(
-                    type(script).model_validate({"Emulator": {"Id": "-"}}),
-                    check_visibility=False,
-                )
-            elif isinstance(script, GeneralConfig):
-                await script.update(
-                    type(script).model_validate({"Game": {"EmulatorId": "-"}}),
-                    check_visibility=False,
-                )
-
-        self.EmulatorConfig.remove(emulator_uid)
-        await self.EmulatorConfig.commit()
+            # 关联绑定由删除信号统一清理，任一运行锁拒绝时随删除一起回退。
+            self.EmulatorConfig.remove(emulator_uid)
+            await self.EmulatorConfig.commit()
 
     async def add_queue(
         self, *, payload: dict[str, Any] | None = None
@@ -3715,7 +1738,9 @@ class AppConfig:
         if queue_id is None:
             data = self.QueueConfig.model_dump(context={"audience": "api"})
         else:
-            entry = self.QueueConfig[uuid.UUID(queue_id)]
+            entry = self.QueueConfig.get(uuid.UUID(queue_id))
+            if entry is None:
+                raise QueueNotFoundError("队列不存在或已删除，请重新选择")
             return (
                 [{"uid": str(entry.uid), "type": type(entry).__name__}],
                 {str(entry.uid): entry.model_dump(context={"audience": "api"})},
@@ -3838,13 +1863,16 @@ class AppConfig:
         logger.info(f"获取队列的队列项配置: {queue_id} - {queue_item_id}")
 
         queue_uid = uuid.UUID(queue_id)
+        queue = self.QueueConfig.get(queue_uid)
+        if queue is None:
+            raise QueueNotFoundError("队列不存在或已删除，请重新选择")
 
         if queue_item_id is None:
-            data = self.QueueConfig[queue_uid].QueueItem.model_dump(
-                context={"audience": "api"}
-            )
+            data = queue.QueueItem.model_dump(context={"audience": "api"})
         else:
-            entry = self.QueueConfig[queue_uid].QueueItem[uuid.UUID(queue_item_id)]
+            entry = queue.QueueItem.get(uuid.UUID(queue_item_id))
+            if entry is None:
+                raise QueueItemNotFoundError("队列项不存在或已删除，请刷新列表")
             return (
                 [{"uid": str(entry.uid), "type": type(entry).__name__}],
                 {str(entry.uid): entry.model_dump(context={"audience": "api"})},
@@ -3941,7 +1969,7 @@ class AppConfig:
 
         logger.debug("获取工具设置")
 
-        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+        today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
         if self._game_sign_result_date != today:
             self.ToolsConfig._game_sign_result_data = {}
             self._game_sign_result_date = today
@@ -3960,7 +1988,7 @@ class AppConfig:
 
         from app.tools.community_sign_provider import merge_community_sign_results
 
-        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+        today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
         existing = (
             self.ToolsConfig._game_sign_result_data
             if self._game_sign_result_date == today
@@ -4016,9 +2044,6 @@ class AppConfig:
 
         logger.info("添加游戏社区账号组")
 
-        # 账号命名属于工具包侧逻辑，延迟导入避免配置模块与工具包互相导入。
-        from app.tools.community_accounts import next_community_account_name
-
         async with self._community_account_add_lock:
             existing_names = []
             for account in self.ToolsConfig.GameSign_Accounts.values():
@@ -4026,7 +2051,7 @@ class AppConfig:
                     existing_names.append(account.GameSignAccount.Name)
                 except (AttributeError, KeyError):
                     continue
-            account_name = next_community_account_name(existing_names)
+            account_name = _utils_community.next_community_account_name(existing_names)
             uid = self.ToolsConfig.GameSign_Accounts.add(GameSignAccountGroup)
             await self.ToolsConfig.GameSign_Accounts.commit()
             config = self.ToolsConfig.GameSign_Accounts[uid]
@@ -4041,7 +2066,7 @@ class AppConfig:
     def _clear_game_sign_account_results(self, account_id: str) -> None:
         """清除指定游戏社区账号的结果。"""
 
-        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+        today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
         result = self.ToolsConfig._game_sign_result_data
         if getattr(self, "_game_sign_result_date", today) != today:
             result.clear()
@@ -4075,13 +2100,8 @@ class AppConfig:
 
         logger.info(f"更新游戏社区账号组: {account_id}")
 
-        try:
-            account_uid = uuid.UUID(account_id)
-        except ValueError as error:
-            raise ValueError("账号组标识无效") from error
-        account = self.ToolsConfig.GameSign_Accounts.get(account_uid)
-        if account is None:
-            raise ValueError("账号组不存在")
+        account_uid = uuid.UUID(account_id)
+        account = self.ToolsConfig.GameSign_Accounts[account_uid]
         from app.tools.community_sign_provider import COMMUNITY_TOKEN_FIELDS
 
         credential_fields = set(COMMUNITY_TOKEN_FIELDS)
@@ -4089,10 +2109,6 @@ class AppConfig:
 
         for group, items in data.items():
             for name, value in items.items():
-                if group == "GameSignAccount" and name == "LastSignDate":
-                    # 签到日期由签到流程自己维护；允许从接口写入会直接抑制当天签到。
-                    logger.warning("忽略对账号组签到日期的写请求")
-                    continue
                 if (
                     group == "GameSignAccount"
                     and name in credential_fields
@@ -4109,7 +2125,9 @@ class AppConfig:
                 type(account).model_validate(
                     {
                         "GameSignAccount": {
-                            "LastSignDate": datetime(2000, 1, 1, tzinfo=UTC8)
+                            "LastSignDate": datetime(
+                                2000, 1, 1, tzinfo=_utils_constants.UTC8
+                            )
                         }
                     }
                 ),
@@ -4142,7 +2160,6 @@ class AppConfig:
         return ObsReplayOptions(
             port=self.setting.Replay.Port,
             password=self.setting.Replay.Password,
-            max_replay_count=self.setting.Replay.MaxReplayCount,
         )
 
     async def get_setting(self) -> Dict[str, Any]:
@@ -4335,10 +2352,11 @@ class AppConfig:
             return None
 
         try:
-            logger.info(f"使用代理: {proxy_addr}")
-            return httpx.Proxy(proxy_addr)
-        except Exception as e:
-            logger.warning(f"代理配置无效: {proxy_addr}, 错误: {e}")
+            proxy = httpx.Proxy(proxy_addr)
+            logger.info(f"使用代理: {proxy.url}")
+            return proxy
+        except Exception:
+            logger.warning("代理配置无效，请检查代理地址")
             return None
 
     @property
@@ -4357,37 +2375,26 @@ class AppConfig:
 
         logger.info("获取代理情况概览信息")
 
-        history_index = await self.search_history(
-            "DAILY", datetime.now(tz=UTC4).date(), datetime.now(tz=UTC4).date()
+        from app.core.history import history_store
+
+        users = await history_store.get_overview(
+            day=datetime.now(tz=_utils_constants.UTC4).date()
         )
-        if datetime.now(tz=UTC4).strftime("%Y-%m-%d") not in history_index:
-            return {}
-        history_data = {
-            k: await self.merge_statistic_info(v)
-            for k, v in history_index[
-                datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-            ].items()
-        }
-        overview = {}
-        for user, data in history_data.items():
-            index_data = data.get("index", [])
-            if index_data:
-                last_proxy_date = max(
-                    datetime.strptime(_["date"], "%Y-%m-%d %H:%M:%S")
-                    for _ in index_data
-                ).strftime("%Y-%m-%d %H:%M:%S")
-            else:
-                last_proxy_date = "暂无代理数据"
-            proxy_times = len(data.get("index", []))
-            error_info = data.get("error_info", {})
-            error_times = len(error_info)
-            overview[user] = {
-                "LastProxyDate": last_proxy_date,
-                "ProxyTimes": proxy_times,
-                "ErrorTimes": error_times,
-                "ErrorInfo": error_info,
+        return {
+            username: {
+                "LastProxyDate": (
+                    entry.latest_time.isoformat()
+                    if entry.latest_time
+                    else "暂无代理数据"
+                ),
+                "ProxyTimes": entry.execute_count,
+                "ErrorTimes": entry.error_count,
+                "ErrorInfo": {
+                    str(key): value for key, value in entry.error_info.items()
+                },
             }
-        return overview
+            for username, entry in users.items()
+        }
 
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
@@ -4397,7 +2404,7 @@ class AppConfig:
         for uid, script in self.ScriptConfig.items():
             data.append(
                 {
-                    "label": f"{TYPE_BOOK[type(script).__name__]} - {script.Info.Name}",
+                    "label": f"{_utils_constants.TYPE_BOOK[type(script).__name__]} - {script.Info.Name}",
                     "value": str(uid),
                 }
             )
@@ -4416,7 +2423,7 @@ class AppConfig:
             if not script.is_locked:
                 data.append(
                     {
-                        "label": f"脚本 - {TYPE_BOOK[type(script).__name__]} - {script.Info.Name}",
+                        "label": f"脚本 - {_utils_constants.TYPE_BOOK[type(script).__name__]} - {script.Info.Name}",
                         "value": str(uid),
                     }
                 )
@@ -4556,554 +2563,6 @@ class AppConfig:
             json.loads(self.setting.Data.Notice).get("notice_dict", {}),
         )
 
-    def build_history_log_path(
-        self, *, script_name: str, user_name: str, log_time: datetime
-    ) -> Path:
-        """构建带脚本名称前缀的历史日志路径。
-
-        Args:
-            script_name: 脚本名称。
-            user_name: 用户名称。
-            log_time: 日志开始时间。
-
-        Returns:
-            历史日志文件路径。
-        """
-
-        safe_script_name = re.sub(r'[<>:"/\\|?*]', "_", str(script_name or "").strip())
-        safe_script_name = safe_script_name.rstrip(" .") or "空白"
-        time_suffix = f"-{log_time.strftime('%H-%M-%S')}.log"
-        safe_script_name = safe_script_name[: 255 - len(time_suffix)]
-
-        return (
-            self.history_path
-            / log_time.strftime("%Y-%m-%d")
-            / user_name
-            / f"{safe_script_name}{time_suffix}"
-        )
-
-    def parse_maaend_failed_tasks(self, logs: list[str]) -> List[str]:
-        """
-        解析MaaEnd失败任务名称
-
-        Args:
-            logs (list[str]): 日志列表
-
-        Returns:
-            List[str]: 失败任务名称列表
-        """
-
-        failed_tasks: List[str] = []
-        ignored_tasks = {"停止任务", "⛔ 结束进程", "__MXU_KILLPROC__", "StopTask"}
-
-        for log_line in logs:
-            match = re.search(r"任务失败:\s*(.+)", log_line)
-            if match is None:
-                continue
-
-            task_name = match.group(1).strip()
-            if (
-                task_name
-                and task_name not in ignored_tasks
-                and task_name not in failed_tasks
-            ):
-                failed_tasks.append(task_name)
-
-        return failed_tasks
-
-    def parse_maaend_matrix_statistics(
-        self, logs: list[str]
-    ) -> tuple[Optional[Dict[str, str]], bool]:
-        """
-        解析MaaEnd基质刷取统计
-
-        Args:
-            logs (list[str]): 日志列表
-
-        Returns:
-            tuple[Optional[Dict[str, str]], bool]: 基质统计数据与是否识别到基质流程
-        """
-
-        matrix_statistics: Dict[str, str] = {}
-        pending_statistics: Dict[str, str] = {}
-        current_matrix_skill = ""
-        has_matrix_flow = False
-        locked_count = 0
-
-        for log_line in logs:
-            skill_match = re.search(r"OCR到技能：(.+)", log_line)
-            if skill_match:
-                current_matrix_skill = skill_match.group(1).strip()
-                continue
-
-            weapon_match = re.search(r"匹配到武器：(.+)", log_line)
-            if weapon_match and current_matrix_skill:
-                pending_statistics[current_matrix_skill] = weapon_match.group(1).strip()
-                current_matrix_skill = ""
-                continue
-
-            completed_match = re.search(
-                r"筛选完成！共历遍物品：\d+[，,]\s*确认锁定物品：(\d+)",
-                log_line,
-            )
-            if completed_match is None:
-                continue
-
-            has_matrix_flow = True
-            current_locked_count = int(completed_match.group(1))
-            locked_count += current_locked_count
-            if current_locked_count > 0:
-                matched_items = list(pending_statistics.items())[-current_locked_count:]
-                matrix_statistics.update(matched_items)
-
-            pending_statistics = {}
-            current_matrix_skill = ""
-
-        if not has_matrix_flow:
-            return None, False
-
-        if locked_count == 0:
-            return {}, True
-
-        return (matrix_statistics or None), True
-
-    def parse_maaend_pull_count_statistics(
-        self, logs: list[str]
-    ) -> Optional[Dict[str, int]]:
-        """解析 MaaEnd 抽数计算任务输出的统计结果。"""
-
-        content = "".join(logs)
-        field_patterns = {
-            "resource_pulls": (
-                r'"ResourcePulls"\s*:\s*(\d+)',
-                r"资源折算[：:]\s*(\d+)\s*抽",
-            ),
-            "carry_over_pulls": (
-                r'"CarryToNextPulls"\s*:\s*(\d+)',
-                r"可留到下版本的券[：:]\s*(\d+)\s*抽",
-            ),
-            "next_pool_shop_pulls": (
-                r'"NextPoolShopPulls"\s*:\s*(\d+)',
-                r"下版本商店[：:]\s*(\d+)\s*抽",
-            ),
-            "next_pool_signin_pulls": (
-                r'"NextPoolSigninPulls"\s*:\s*(\d+)',
-                r"下版本签到[：:]\s*(\d+)\s*抽",
-            ),
-            "current_pool_total": (
-                r'"CurrentPoolTotal"\s*:\s*(\d+)',
-                r"当前池可用[：:]\s*(\d+)\s*抽",
-            ),
-            "next_pool_total": (
-                r'"NextPoolTotal"\s*:\s*(\d+)',
-                r"下版本池子总计[：:]\s*(\d+)\s*抽",
-            ),
-        }
-
-        statistics: Dict[str, int] = {}
-        for field, patterns in field_patterns.items():
-            matches = [
-                match for pattern in patterns for match in re.finditer(pattern, content)
-            ]
-            if matches:
-                statistics[field] = int(matches[-1].group(1))
-
-        return statistics if len(statistics) == len(field_patterns) else None
-
-    async def save_maaend_log(
-        self, log_path: Path, logs: list[str], maaend_result: str, phase_label: str = ""
-    ) -> None:
-        """
-        Save MaaEnd logs and generate basic statistics data.
-
-        Args:
-            log_path (Path): Target log file path.
-            logs (list[str]): Log lines.
-            maaend_result (str): Result label for this run.
-            phase_label (str): 运行阶段标签（送货/日常/自动采集），作为历史结果前缀。
-        """
-
-        logger.info(
-            f"开始处理MaaEnd日志, 日志长度: {len(logs)}, 日志标记: {maaend_result}"
-        )
-
-        failed_tasks = self.parse_maaend_failed_tasks(logs)
-        matrix_statistics, has_matrix_flow = self.parse_maaend_matrix_statistics(logs)
-        pull_count_statistics = self.parse_maaend_pull_count_statistics(logs)
-
-        if maaend_result == "MaaEnd 部分任务执行失败" and failed_tasks:
-            maaend_result = f"{maaend_result}: {'、'.join(failed_tasks)}"
-
-        if phase_label:
-            maaend_result = f"[{phase_label}] {maaend_result}"
-
-        data: Dict[str, Any] = {"maaend_result": maaend_result}
-        if has_matrix_flow and matrix_statistics is not None:
-            data["matrix_statistics"] = matrix_statistics
-        if pull_count_statistics is not None:
-            data["pull_count_statistics"] = pull_count_statistics
-
-        # 保存日志
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
-        log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(f"MaaEnd日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
-
-    async def save_src_log(self, log_path: Path, logs: list, src_result: str) -> None:
-        """
-        保存SRC日志并生成对应统计数据
-
-        Args:
-            log_path (Path): 日志文件保存路径
-            logs (list): 日志内容列表
-            src_result (str): 待保存的日志结果信息
-        """
-
-        logger.info(f"开始处理SRC日志, 日志长度: {len(logs)}, 日志标记: {src_result}")
-
-        data: Dict[str, str] = {"src_result": src_result}
-
-        # 保存日志
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
-        log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(f"SRC日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
-
-    async def save_general_log(
-        self, log_path: Path, logs: list, general_result: str
-    ) -> None:
-        """
-        保存通用日志并生成对应统计数据
-
-        :param log_path: 日志文件保存路径
-        :param logs: 日志内容列表
-        :param general_result: 待保存的日志结果信息
-        """
-
-        logger.info(
-            f"开始处理通用日志, 日志长度: {len(logs)}, 日志标记: {general_result}"
-        )
-
-        data: Dict[str, str] = {"general_result": general_result}
-
-        # 保存日志
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
-        log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(f"通用日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
-
-    async def save_hsr_log(self, log_path: Path, logs: list, hsr_result: str) -> None:
-        """
-        保存 HSR 专项日志并生成对应统计数据
-
-        :param log_path: 日志文件保存路径
-        :param logs: 日志内容列表
-        :param hsr_result: 待保存的日志结果信息
-        """
-
-        logger.info(
-            f"开始处理 HSR 专项日志, 日志长度: {len(logs)}, 日志标记: {hsr_result}"
-        )
-
-        data: Dict[str, str] = {"hsr_result": hsr_result}
-
-        # 保存日志
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
-        log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(
-            f"HSR 专项日志统计完成, 日志路径: {log_path.with_suffix('.log')}"
-        )
-
-    async def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
-        """
-        合并指定数据统计信息文件
-
-        Args:
-            statistic_path_list (List[Path]): 数据统计信息文件列表
-
-        Returns:
-            dict: 合并后的数据统计信息
-        """
-
-        data: Dict[str, Any] = {"index": {}}
-        hsr_success_results = {
-            "HSR 任务结束",
-            "HSR 用户任务完成",
-            "HSR 失败任务补跑完成",
-            "HSR 本轮无需执行，已跳过",
-            "HSR 脚本原生来源完成",
-            # 「HSR 脚本直控完成」= 来源术语迁移前的历史存量文案, 运行时已改写为
-            # 「HSR 脚本原生来源完成」, 此处仅为兼容旧历史数据保留成功判定
-            "HSR 脚本直控完成",
-        }
-        # MaaFW 停服维护跳过的两句, 与 app/task/MaaFW/tools/embedded/signal_notice.py
-        # 的 SIGNAL_USER_MESSAGES / MAINTENANCE_SKIP_MESSAGE 一致: 维护是跳过,
-        # 既不算失败, 也不能显示成完成
-        maafw_skip_results = {
-            "游戏停服维护中，本次跳过",
-            "游戏停服维护中，本次跳过（同一资源已确认在维护）",
-        }
-
-        def is_success_result(result_key: str, result_value: Any) -> bool:
-            # 结果文本可能带运行阶段前缀（如 "[送货] Success!"），比对前先剥离
-            if not isinstance(result_value, str):
-                return False
-            value = re.sub(r"^\[[^\]]+\]\s*", "", result_value)
-            if value in ("Success!", "今日任务均已完成"):
-                # 「今日任务均已完成」= zzz-od 原生来源/按记录跳过场景的历史存量文案,
-                # 运行时已向 Success! 归一, 此处仅为兼容旧历史数据保留成功判定
-                return True
-            if result_key == "hsr_result" and result_value in hsr_success_results:
-                return True
-            return False
-
-        def is_skip_result(result_key: str, result_value: Any) -> bool:
-            # 先确认是字符串: 列表、字典等不可哈希的值做集合成员判断会抛 TypeError
-            return (
-                result_key == "general_result"
-                and isinstance(result_value, str)
-                and result_value in maafw_skip_results
-            )
-
-        for json_file in statistic_path_list:
-            try:
-                single_data = json.loads(json_file.read_text(encoding="utf-8"))
-            except Exception as e:
-                logger.warning(
-                    f"无法解析文件 {json_file}, 错误信息: {type(e).__name__}: {str(e)}"
-                )
-                continue
-
-            for key in single_data.keys():
-                if key not in data:
-                    data[key] = {}
-
-                # 合并公招统计
-                if key == "recruit_statistics":
-                    for star_level, count in single_data[key].items():
-                        if star_level not in data[key]:
-                            data[key][star_level] = 0
-                        data[key][star_level] += count
-
-                # 合并掉落统计
-                elif key == "drop_statistics":
-                    for stage, drops in single_data[key].items():
-                        if stage not in data[key]:
-                            data[key][stage] = {}  # 初始化关卡
-
-                        for item, count in drops.items():
-                            if item not in data[key][stage]:
-                                data[key][stage][item] = 0
-                            data[key][stage][item] += count
-
-                # 合并基质统计
-                elif key == "matrix_statistics":
-                    for skill, weapon in single_data[key].items():
-                        data[key][skill] = weapon
-
-                # 抽数是当前资源快照，合并时使用最新一条记录
-                elif key == "pull_count_statistics":
-                    data[key] = single_data[key]
-
-                # 处理理智相关字段 - 使用最后一个文件的值
-                elif key in ["sanity", "sanity_full_at"]:
-                    data[key] = single_data[key]
-
-                # 录入运行结果
-                elif key in [
-                    "maa_result",
-                    "maaend_result",
-                    "src_result",
-                    "general_result",
-                    "hsr_result",
-                ]:
-                    history_time = "-".join(json_file.stem.rsplit("-", 3)[-3:])
-                    actual_date = (
-                        datetime.strptime(
-                            f"{json_file.parent.parent.name} {history_time}",
-                            "%Y-%m-%d %H-%M-%S",
-                        )
-                        .replace(tzinfo=UTC4)
-                        .astimezone()
-                    )
-
-                    if is_success_result(key, single_data[key]):
-                        status = "DONE"
-                    elif is_skip_result(key, single_data[key]):
-                        status = "SKIP"
-                    else:
-                        status = "ERROR"
-
-                    if status == "ERROR":
-                        if "error_info" not in data:
-                            data["error_info"] = {}
-                        data["error_info"][
-                            actual_date.strftime("%Y-%m-%d %H:%M:%S")
-                        ] = single_data[key]
-
-                    data["index"][actual_date] = {
-                        "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
-                        "status": status,
-                        "jsonFile": str(json_file),
-                        "result": single_data[key],
-                    }
-
-        data["index"] = [data["index"][_] for _ in sorted(data["index"])]
-
-        # 确保返回的字典始终包含 index 字段，即使为空
-        result = {
-            k: v
-            for k, v in data.items()
-            if v or (k == "matrix_statistics" and isinstance(v, dict))
-        }
-        if "index" not in result:
-            result["index"] = []
-
-        return result
-
-    async def search_history(
-        self,
-        mode: Literal["DAILY", "WEEKLY", "MONTHLY"],
-        start_date: date,
-        end_date: date,
-    ) -> dict:
-        """
-        搜索指定时间范围内的历史记录
-
-        Args:
-            mode (Literal["DAILY", "WEEKLY", "MONTHLY"]): 合并模式
-            start_date (date): 开始日期
-            end_date (date): 结束日期
-        """
-
-        logger.info(
-            f"开始搜索历史记录, 合并模式: {mode}, 日期范围: {start_date} 至 {end_date}"
-        )
-
-        history_dict = {}
-
-        for date_folder in self.history_path.iterdir():
-            if not date_folder.is_dir():
-                continue  # 只处理日期文件夹
-
-            try:
-                date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
-
-                if not (start_date <= date <= end_date):
-                    continue  # 只统计在范围内的日期
-
-                if mode == "DAILY":
-                    date_name = date.strftime("%Y-%m-%d")
-                elif mode == "WEEKLY":
-                    date_name = date.strftime("%G-W%V")
-                elif mode == "MONTHLY":
-                    date_name = date.strftime("%Y-%m")
-                else:
-                    raise ValueError("无效的合并模式")
-
-                if date_name not in history_dict:
-                    history_dict[date_name] = {}
-
-                for user_folder in date_folder.iterdir():
-                    if not user_folder.is_dir():
-                        continue  # 只处理用户文件夹
-
-                    # 键必须用完整目录名: 用户名本身可含点, stem/with_suffix 会把最后一个点当扩展名截断
-                    if user_folder.name not in history_dict[date_name]:
-                        history_dict[date_name][user_folder.name] = list(
-                            user_folder.glob("*.json")
-                        )
-                    else:
-                        history_dict[date_name][user_folder.name] += list(
-                            user_folder.glob("*.json")
-                        )
-
-            except ValueError:
-                logger.exception(f"非日期格式的目录: {date_folder}")
-
-        logger.success(f"历史记录搜索完成, 共计 {len(history_dict)} 条记录")
-
-        return {
-            k: v
-            for k, v in sorted(history_dict.items(), key=lambda x: x[0], reverse=True)
-        }
-
-    async def clean_maafw_agent_venvs(self) -> None:
-        """清掉已无脚本引用的 MFW agent 隔离 venv。
-
-        这些 venv 每个几十到上百 MB，此前没有任何回收——只有「同一项目依赖变了
-        就重建」那一条。用户删脚本、改项目路径、或项目升级换了目录，旧 venv 都会
-        永远留着。
-
-        放在启动清理里而不是运行前：判定依赖「当前全部脚本配置」这个全局状态，
-        只有真实启动时它才可信。挂在 check() 上曾把测试替身当成真配置，
-        把开发者磁盘上的真 venv 删掉了。
-
-        判定不读目录内的清单：目录名就是项目路径的哈希，凡不属于任何存活脚本的
-        即孤儿；再加一道保护——刚动过的一律不碰，避免与正在准备环境的运行抢。
-        """
-
-        from app.models.config import MaaFWConfig
-        from app.task.MaaFW.tools.core.agent_env.planner import (
-            collect_orphan_agent_venvs,
-        )
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            resolve_maafw_project_root,
-        )
-
-        root = Path.cwd() / "config" / "maafw_agent_venvs"
-        if not root.is_dir():
-            return
-
-        # 按有效根算存活集合：内嵌脚本的 venv 是按副本路径哈希的，拿来源目录去算
-        # 会把副本的 venv 当孤儿删掉。
-        live_paths = [
-            path
-            for uid, config in self.ScriptConfig.items()
-            if isinstance(config, MaaFWConfig)
-            and (path := str(resolve_maafw_project_root(str(uid), config)).strip())
-        ]
-
-        # 有效根都是本机 data/ 下的副本：不存在只说明这个脚本还没导入过（新建未选目录、
-        # 升级后没打开过），它名下不可能有 venv，从存活集合里去掉即可；不能像路径模式
-        # 那样「一个不可达就整轮弃权」，否则任何一个空脚本都会永久关掉回收。
-        missing = [path for path in live_paths if not Path(path).exists()]
-        if missing:
-            logger.debug(
-                f"MFW 隔离 venv 清理：{len(missing)} 个脚本还没有副本，不计入存活"
-            )
-            live_paths = [path for path in live_paths if Path(path).exists()]
-
-        try:
-            orphans = collect_orphan_agent_venvs(root, live_paths)
-        except Exception as exc:
-            logger.warning(f"MFW 隔离 venv 孤儿扫描失败: {exc}")
-            return
-
-        cutoff = time.time() - MAAFW_AGENT_VENV_GRACE_SECONDS
-        for venv_path in orphans:
-            try:
-                if venv_path.stat().st_mtime > cutoff:
-                    continue  # 刚动过，可能有运行正在用它
-                shutil.rmtree(venv_path)
-            except OSError as exc:
-                logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
-                continue
-            logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
-
     async def _settle_m9a_migration(self, report: Any) -> None:
         """旧 M9A 配置迁完之后的两件收尾：原先有归档的脚本用 MaaFW 池归档一次；结果攒成系统通知。
 
@@ -5158,44 +2617,18 @@ class AppConfig:
         self.startup_notices.append(
             {
                 "level": "warning" if report.needs_attention else "info",
-                "title": "M9A 脚本迁移失败"
-                if report.failure
-                else "M9A 脚本已并入 MFW 引擎"
-                if report.migrated_scripts
-                else "已按项目识别出 M9A 脚本",
+                "title": (
+                    "M9A 脚本迁移失败"
+                    if report.failure
+                    else (
+                        "M9A 脚本已并入 MFW 引擎"
+                        if report.migrated_scripts
+                        else "已按项目识别出 M9A 脚本"
+                    )
+                ),
                 "lines": lines,
             }
         )
-
-    async def _archive_legacy_hsr_direct_snapshots(
-        self, script_config_path: Path
-    ) -> None:
-        """HSR 旧直控快照停用前的留档，结果攒成启动通知；见 ``app.task.HSR.tools.legacy_direct``。
-
-        没有 HSR 脚本时不导入 HSR 专项（导入要近 1 秒），先按字节找一次类型标签。
-        """
-
-        def _has_hsr_script() -> bool:
-            try:
-                return b'"HSRConfig"' in script_config_path.read_bytes()
-            except OSError:
-                return False
-
-        try:
-            if not await asyncio.to_thread(_has_hsr_script):
-                return
-            from app.task.HSR.tools.legacy_direct import (
-                archive_legacy_direct_snapshots,
-            )
-
-            report = await asyncio.to_thread(
-                archive_legacy_direct_snapshots, script_config_path
-            )
-        except Exception as exc:  # noqa: BLE001 - 留档失败不该挡住启动
-            logger.opt(exception=True).warning(f"HSR 旧直控快照留档失败：{exc}")
-            return
-        if report.needs_notice:
-            self.startup_notices.append(report.notice())
 
     async def push_system_notice(
         self, *, level: str, title: str, lines: list[str]
@@ -5247,501 +2680,21 @@ class AppConfig:
             # 发送期间 push_system_notice 可能又攒进来新的，放在它们前面保持顺序
             self.startup_notices[:0] = pending
 
-    async def clean_maafw_embedded_copies(self) -> None:
-        """清掉内嵌副本目录下的两类垃圾：staging 半成品、脚本已不存在的副本。
+    def script_config_loaded_intact(self) -> bool:
+        """确认脚本集合加载成功；空表再核对持久文件，避免把损坏配置当成无引用。"""
 
-        导入在 ``.staging/`` 里投影完再换入，进程中途退出会留下半成品；删脚本时
-        副本删除失败（只读、被占用）也会留下孤儿。两者都是 MAS 自己铺的，不含用户
-        内容，启动期没有任务在跑，直接清。目录名必须是副本目录名的形状才会被当作副本。
-        """
-
-        from app.models.config import MaaFWConfig
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            STAGING_DIR_NAME,
-            embedded_copy_dir_name,
-            embedded_projects_root,
-            is_embedded_copy_dir_name,
-            recover_switches,
-            remove_tree,
-            switch_root,
-        )
-        from app.task.MaaFW.tools.embedded.project_path import (
-            release_project_path,
-            try_reserve_project_path,
-        )
-
-        root = embedded_projects_root()
-        if not root.is_dir():
-            return
-        # 先按 journal 收尾被打断的视图切换：切换的 old / staging 都在 .staging 里，
-        # 不先恢复的话下面的半成品清理会把「rename 了一半」时暂存的原视图当垃圾删掉。
-        try:
-            # 本进程起来之后才写的 journal、拿不到视图预约的（正在切换 / 运行）不碰：
-            # 后台初始化时 API 已经在服务，可能正有一次切换在建 staging。
-            await asyncio.to_thread(
-                lambda: recover_switches(started_at=_PROCESS_STARTED_AT, reserve=True)
-            )
-        except Exception as exc:  # noqa: BLE001 - 恢复失败不该影响启动，journal 留着下次再试
-            logger.warning(f"MFW 视图切换恢复失败: {exc}")
-        staging = root / STAGING_DIR_NAME
-        if staging.is_dir():
-            for leftover in staging.iterdir():
-                # 后台初始化时 API 已在服务，preview / reimport 可能正往 .staging 里写：
-                # 本进程起来之后才出现的、或该脚本的副本路径正被预约的，都不是半成品。
-                try:
-                    if leftover.stat().st_mtime >= _PROCESS_STARTED_AT:
-                        continue
-                except OSError:
-                    continue
-                # 半成品叫 <副本目录名>-<8 位随机>、<副本目录名>-old-/-sw-<8 位随机>
-                # 或 payload-<谱系>-<8 位随机>
-                prefix = leftover.name.split("-", 1)[0]
-                if (switch_root() / f"{prefix}.json").exists():
-                    # 恢复没收尾的切换：它的 old 目录可能就是原视图，留着待查
-                    continue
-                reservation = await try_reserve_project_path(root / prefix)
-                if reservation is None:
-                    continue
-                await release_project_path(reservation)
-                try:
-                    remove_tree(leftover)
-                except OSError as exc:
-                    logger.warning(
-                        f"MFW 内嵌 staging 半成品清理失败: {leftover} - {exc}"
-                    )
-                    continue
-                logger.info(f"已清理 MFW 内嵌导入半成品: {leftover}")
-        # 存活的副本：脚本还在。删脚本时删副本可能因文件被占用而失败（与别的副本
-        # 共用的库正被映射着），那份留下的副本也在这里收掉。
-        # 但脚本表本身没加载起来（ScriptConfig.json 损坏时 _load_json_file 留下
-        # .corrupt 副本后按空表继续）就不能扫：那会把所有副本当孤儿删光，来源目录
-        # 已被用户清掉的项目从此没得修。
-        if not self._script_config_loaded_intact():
-            logger.warning(
-                "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 内嵌副本孤儿清理"
-            )
-            return
-        live = {
-            embedded_copy_dir_name(str(uid))
-            for uid, config in self.ScriptConfig.items()
-            if isinstance(config, MaaFWConfig)
-        }
-        for child in root.iterdir():
-            if child.name == STAGING_DIR_NAME or not child.is_dir():
-                continue
-            if not is_embedded_copy_dir_name(child.name) or child.name in live:
-                continue
-            try:
-                remove_tree(child)
-            except OSError as exc:
-                logger.warning(f"MFW 内嵌副本孤儿清理失败: {child} - {exc}")
-                continue
-            logger.info(f"已清理无脚本引用的 MFW 内嵌副本: {child}")
-        # 视图没了的脚本（下次运行前要按载荷重建）：它的导入来源在事件循环线程上抄出来，
-        # 回收据此保住对应的谱系。
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            embedded_project_dir,
-            follow_source_enabled,
-            imported_source_path,
-            read_view_marker,
-        )
-
-        live_sources = [
-            imported_source_path(config) or str(config.Info.Path or "")
-            for uid, config in self.ScriptConfig.items()
-            if isinstance(config, MaaFWConfig)
-            and read_view_marker(embedded_project_dir(str(uid))) is None
-        ]
-        # 开着开发者模式的脚本：它们私有渠道的 latest 保住，其余私有渠道（关了开关、删了
-        # 脚本）摘掉，留下的开发者载荷随后按普通规则回收。
-        follow_views = [
-            embedded_copy_dir_name(str(uid))
-            for uid, config in self.ScriptConfig.items()
-            if isinstance(config, MaaFWConfig) and follow_source_enabled(config)
-        ]
-        await asyncio.to_thread(
-            self._collect_unreferenced_payloads, live_sources, follow_views
-        )
-
-    @staticmethod
-    def _collect_unreferenced_payloads(
-        live_sources: list[str], follow_views: list[str]
-    ) -> None:
-        """删掉没人引用的载荷；谱系里一个视图都不剩（最后一个脚本已删）时整个谱系一起删
-        （§3.1 第 10 步，``embedded_project.collect_payload_garbage``）。
-
-        引用集 = 所有视图标记的 ``payload`` ∪ 未完成 journal 的 ``to``；``latest[*]`` 只在
-        谱系还有视图时算引用（开发者模式的私有渠道只在脚本还开着开关时算）。本进程起来
-        之后才建的不收。载荷删掉之后，它独有的 blob 只剩库里一个链接，紧接着的
-        ``clean_maafw_runtime_blobs`` 收走。
-        """
-
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            collect_payload_garbage,
-        )
-
-        try:
-            report = collect_payload_garbage(
-                started_at=_PROCESS_STARTED_AT,
-                live_sources=live_sources,
-                follow_source_views=follow_views,
-            )
-        except Exception as exc:  # noqa: BLE001 - 回收失败不影响启动
-            logger.warning(f"MFW 载荷回收失败: {exc}")
-            return
-        if not (report.payloads or report.lineages):
-            return
-        parts = []
-        if report.payloads:
-            parts.append(f"{report.payloads} 个无人引用的项目版本（载荷）")
-        if report.lineages:
-            parts.append(
-                f"{len(report.lineages)} 个不再有脚本使用的项目（整个谱系: "
-                + ", ".join(report.lineages)
-                + "）"
-            )
-        # 与共用库共享的大文件由紧接着的共用库回收释放（那一行另报 MB）。
-        logger.info(
-            f"已回收 MFW {'、'.join(parts)}，释放 {report.freed_bytes / 2**20:.1f} MB"
-        )
-
-    async def migrate_maafw_embedded_copies_to_payloads(self) -> None:
-        """启动期一次性迁移：把没有标记的老副本采纳成「载荷 + 视图」（附录 B）。
-
-        逐副本持视图预约、各自失败隔离（不写标记、日志点名、下次启动再试）。**全部采纳完
-        再统一决定同版本的 latest**（``settle_adopted_latest``：有更新器清单的、文件集合是
-        超集的、文件多的优先，与脚本顺序无关），然后每个谱系每个渠道统一到 latest（附录 B
-        第 8 条），切过的视图连同预约交给后台确认运行环境。之后收掉老的原地更新留下的清单、
-        预检备忘与作废的更新流水（还有没采纳的副本时留着它们要用的那部分）。配置一个字段
-        都不写；脚本表没加载起来（疑似损坏）整轮弃权。
-
-        迁移在后台跑、不挡主定时器：期间拿不到视图预约的运行在运行前检查里按「正在切换
-        版本」跳过一次（``embedded_project.migration_active``）。
-        """
-
-        from app.task.MaaFW.tools.embedded.embedded_project import set_migration_active
-
-        set_migration_active(True)
-        try:
-            await self._migrate_maafw_embedded_copies()
-        finally:
-            set_migration_active(False)
-
-    async def _migrate_maafw_embedded_copies(self) -> None:
-        from app.models.config import MaaFWConfig
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            GroupMember,
-            adopt_view,
-            copy_is_healthy,
-            effective_channel,
-            embedded_project_dir,
-            imported_source_path,
-            read_view_marker,
-            settle_adopted_latest,
-        )
-        from app.task.MaaFW.tools.embedded.project_path import (
-            release_project_path,
-            try_reserve_project_path,
-        )
-        from app.task.MaaFW.tools.embedded.update_credentials import (
-            resolve_update_proxy_url,
-        )
-
-        if not self._script_config_loaded_intact():
-            logger.warning(
-                "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 副本迁移"
-            )
-            return
-        entries: list[tuple[str, str, str, str, str | None]] = []
-        for uid, config in self.ScriptConfig.items():
-            if not isinstance(config, MaaFWConfig):
-                continue
-            entries.append(
-                (
-                    str(uid),
-                    effective_channel(str(uid), config),
-                    imported_source_path(config) or str(config.Info.Path or ""),
-                    str(config.Info.Name or str(uid)[:8]),
-                    resolve_update_proxy_url(config) or None,
-                )
-            )
-        pending = [
-            entry
-            for entry in entries
-            if copy_is_healthy(embedded_project_dir(entry[0]))
-            and read_view_marker(embedded_project_dir(entry[0])) is None
-        ]
-        if not pending:
-            # 没有待采纳的副本：老的原地更新留下的清单与更新记录都没用了（每次启动都收，
-            # 不只在「刚迁移完且全部成功」那一次）。
-            await asyncio.to_thread(
-                self._discard_legacy_update_state, keep_adoption_baseline=False
-            )
-            return
-        started = time.monotonic()
-        adopted: list[str] = []
-        failed: list[str] = []
-        for script_id, channel, source, name, _proxy in pending:
-            view = embedded_project_dir(script_id)
-            key = await try_reserve_project_path(view)
-            if key is None:
-                failed.append(name)
-                logger.warning(
-                    f"MFW 副本迁移：脚本「{name}」的副本正被占用，下次启动再试"
-                )
-                continue
-            began = time.monotonic()
-            try:
-                if await asyncio.to_thread(read_view_marker, view) is not None:
-                    # 迁移在后台跑：它自己开跑时的运行前检查已经就地采纳过了。
-                    continue
-                result = await asyncio.to_thread(
-                    lambda sid=script_id, ch=channel, src=source: adopt_view(
-                        sid, channel=ch, source=src
-                    )
-                )
-                adopted.append(script_id)
-                logger.info(
-                    f"MFW 副本迁移：脚本「{name}」已登记为 {result.version}（{result.payload_id}），"
-                    f"私有文件 {result.carried} 个，采纳用时 {time.monotonic() - began:.1f} s"
-                )
-            except Exception as exc:  # noqa: BLE001 - 逐副本隔离，下次启动再试
-                failed.append(name)
-                logger.opt(exception=True).warning(
-                    f"MFW 副本迁移：脚本「{name}」采纳失败，下次启动再试：{exc}"
-                )
-            finally:
-                await release_project_path(key)
-        # 全部登记完才定同版本的 latest（登记本身是「同版本保留先来的」），再统一切换。
-        await asyncio.to_thread(settle_adopted_latest)
-        switched, held = await self._unify_maafw_views_to_group(entries)
-        logger.info(
-            f"MFW 副本迁移完成：采纳 {len(adopted)} 个、失败 {len(failed)} 个、"
-            f"统一到组版本 {len(switched)} 个，用时 {time.monotonic() - started:.1f} s"
-        )
-        from app.task.MaaFW.tools.embedded.view_update import (
-            confirm_environments_in_background,
-        )
-
-        # 切换时拿的预约直接交给确认线程（两步之间不留空档）；没切的不确认。
-        confirm_environments_in_background(
-            [
-                GroupMember(sid, channel, name=name, proxy_url=proxy)
-                for sid, channel, _src, name, proxy in entries
-                if sid in set(switched)
-            ],
-            held=held,
-        )
-        # 采纳失败的副本下次启动还要靠老的更新清单（committed 记录 + 状态目录里的包内
-        # 清单）认出哪些文件没改过，那部分留着；其余作废记录照收。
-        await asyncio.to_thread(
-            self._discard_legacy_update_state, keep_adoption_baseline=bool(failed)
-        )
-
-    async def _unify_maafw_views_to_group(
-        self, entries: list[tuple[str, str, str, str, str | None]]
-    ) -> tuple[list[str], dict[str, str]]:
-        """附录 B 第 8 条：每个视图切到它所在组（谱系 + 渠道）的 latest。
-
-        返回（切过的脚本, 它们还没放的预约）：预约交给环境确认线程放。
-        """
-
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            MIGRATION_SWITCHED_BY,
-            embedded_project_dir,
-        )
-        from app.task.MaaFW.tools.embedded.project_path import (
-            release_project_path,
-            try_reserve_project_path,
-        )
-        from app.task.MaaFW.tools.embedded.view_update import sync_view_to_group
-
-        switched: list[str] = []
-        held: dict[str, str] = {}
-        for script_id, channel, _source, name, _proxy in entries:
-            # 迁移在后台跑、主定时器已经起来：运行中的脚本在「运行前检查结束 → 第一个用户」
-            # 与用户之间不持视图预约，只看预约会在空档里把它切走（同一轮前后用户跑不同版本、
-            # 下一个用户被「同一路径正在运行」跳过）。与其它传播路径同一口径：脚本配置锁着
-            # （is_locked）就跳过，留给它的收尾同步或下次运行前检查。在事件循环上查。
-            try:
-                config = self.ScriptConfig[uuid.UUID(script_id)]
-            except (KeyError, ValueError):
-                continue
-            if getattr(config, "is_locked", False):
-                logger.info(
-                    f"MFW 副本迁移：脚本「{name}」正在运行，统一到组版本留给它跑完后再做"
-                )
-                continue
-            key = await try_reserve_project_path(embedded_project_dir(script_id))
-            if key is None:
-                continue
-            if getattr(config, "is_locked", False):
-                # 等预约的那一下它开跑了（锁在预约之后才上，这里再看一眼）。
-                await release_project_path(key)
-                continue
-            result = None
-            try:
-                result = await sync_view_to_group(
-                    script_id,
-                    channel,
-                    reservation_held=True,
-                    # 记下是迁移切的：确认期间它开跑会在运行前检查里得到「正在切换版本」，
-                    # 下次运行打一行「启动期迁移时统一到 vX」。
-                    switched_by=MIGRATION_SWITCHED_BY,
-                )
-            except Exception as exc:  # noqa: BLE001 - 留在原版本，下次运行前再同步
-                logger.warning(f"MFW 副本迁移：脚本「{name}」统一到组版本失败：{exc}")
-            finally:
-                if result is None:
-                    await release_project_path(key)
-            if result is not None:
-                switched.append(script_id)
-                held[script_id] = key
-                logger.info(
-                    f"MFW 副本迁移：脚本「{name}」{result.from_payload} → {result.payload_id}"
-                )
-        return switched, held
-
-    @staticmethod
-    def _discard_legacy_update_state(*, keep_adoption_baseline: bool) -> None:
-        """收掉更新留下的作废记录。
-
-        - ``data/maafw_update_operations``：本进程起来之前写的记录。新流程里它只是一次
-          下载 + 登记的流水（登记后标 ``registered``，失败 / 取消各有终态），没有谁再读，
-          一律删；老的原地更新留下的 ``committed`` 除外——还有没采纳的老副本时
-          （``keep_adoption_baseline``），采纳要靠它找包内清单。
-        - ``data/maafw_project_state`` 各视图状态目录里除 ``local-modified`` 之外的文件
-          （老的包内清单、预检备忘）：同样只在不再需要采纳基线时删。
-        """
-
-        operations = Path.cwd() / "data" / "maafw_update_operations"
-        if operations.is_dir():
-            for record in operations.iterdir():
-                state_file = record / "state.json"
-                try:
-                    if state_file.stat().st_mtime >= _PROCESS_STARTED_AT:
-                        continue
-                    status = json.loads(state_file.read_text(encoding="utf-8")).get(
-                        "status"
-                    )
-                except (OSError, ValueError, AttributeError):
-                    continue
-                if status == "committed" and keep_adoption_baseline:
-                    continue
-                try:
-                    shutil.rmtree(record)
-                except OSError as exc:
-                    logger.warning(f"清理作废的更新记录失败: {record} - {exc}")
-        if keep_adoption_baseline:
-            return
-        state_root = Path.cwd() / "data" / "maafw_project_state"
-        if state_root.is_dir():
-            for state_dir in state_root.iterdir():
-                if not state_dir.is_dir():
-                    continue
-                for child in state_dir.iterdir():
-                    if child.name == "local-modified":
-                        continue
-                    try:
-                        if child.is_dir():
-                            shutil.rmtree(child)
-                        else:
-                            child.unlink()
-                    except OSError as exc:
-                        logger.warning(f"清理老的更新状态失败: {child} - {exc}")
-
-    def _script_config_loaded_intact(self) -> bool:
-        """脚本表是空的时候，看配置文件本身是不是真的空：解析失败或文件里明明有
-        脚本却一个都没加载出来，都算没加载起来。"""
-
+        if not self._script_configs_loaded:
+            return False
         if len(self.ScriptConfig) > 0:
             return True
         path = self.ScriptConfig.persist_path
         if path is None or not path.is_file():
             return True
         try:
-            from app.utils.io import read_dict_file
-
-            data = read_dict_file(path, allow_empty=True)
+            data = _utils_io.read_dict_file(path, allow_empty=True)
         except (OSError, ValueError):
             return False
         return not bool(data.get("order"))
-
-    async def clean_maafw_runtime_blobs(self) -> None:
-        """回收没有任何内嵌副本引用的共用运行时文件（只剩库里这一个硬链接的）。
-
-        放在副本清理之后：副本删掉，它引用的 blob 才会变成孤儿。
-        """
-
-        from app.task.MaaFW.tools.core.project_update.blob_store import (
-            RuntimeBlobStore,
-        )
-
-        try:
-            report = RuntimeBlobStore.default().collect_garbage()
-        except Exception as exc:  # noqa: BLE001 - 回收失败不该影响启动
-            logger.warning(f"MFW 共用运行时库回收失败: {exc}")
-            return
-        if report.removed_blobs or report.removed_temps:
-            logger.info(
-                f"已回收 MFW 共用运行时库: {report.removed_blobs} 个文件、"
-                f"{report.removed_bytes / 2**20:.1f} MB，半成品 {report.removed_temps} 个"
-            )
-
-    async def clean_maafw_update_cache(self) -> None:
-        """回收 7 天没人碰过的 MFW 项目更新包缓存。
-
-        下载好的包留在 ``data/maafw_update_cache`` 里给同一项目的其它副本命中，
-        一份 200 MB 的全量包只下一次；但此前从不回收，每个下过的版本都永久留着。
-        正在下载 / 落地的条目持有文件锁，会被跳过。
-        """
-
-        from app.task.MaaFW.tools.core.project_update.transport import (
-            prune_update_cache,
-        )
-
-        try:
-            report = await asyncio.to_thread(prune_update_cache)
-        except Exception as exc:  # noqa: BLE001 - 回收失败不该影响启动
-            logger.warning(f"MFW 更新包缓存回收失败: {exc}")
-            return
-        if report.removed_artifacts:
-            logger.info(
-                f"已回收 MFW 更新包缓存: {report.removed_artifacts} 个、"
-                f"{report.removed_bytes / 2**20:.1f} MB"
-            )
-
-    async def clean_maafw_runtime_pool(self) -> None:
-        """按引用对账回收 MFW 运行池里无人引用的共享 runtime。
-
-        与 ``clean_maafw_agent_venvs`` 同一个道理放在启动清理里：判定依赖「当前
-        全部脚本配置」这个全局状态，只有真实启动时它才可信。规则与保守条件见
-        ``tools/embedded/pool_reconcile.py``；这里只负责把权威集合（全部 MaaFW 类
-        脚本的项目目录）交过去，并在脚本表疑似没加载起来时弃权。
-        """
-
-        from app.task.MaaFW.tools.embedded.pool_reconcile import (
-            collect_live_project_paths,
-            reconcile_runtime_pool,
-            runtime_pool_root,
-            script_config_loaded_intact,
-        )
-
-        if not (runtime_pool_root() / "runtimes").is_dir():
-            return
-        if not script_config_loaded_intact():
-            logger.warning(
-                "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 运行池回收"
-            )
-            return
-        try:
-            await asyncio.to_thread(
-                reconcile_runtime_pool,
-                collect_live_project_paths(),
-                reason="startup",
-            )
-        except Exception as exc:  # noqa: BLE001 - 回收失败不该影响启动
-            logger.warning(f"MFW 运行池回收失败: {exc}")
 
     def clean_debug_diagnostics(self) -> None:
         """清理 debug 目录下过期的失败诊断文件。
@@ -5811,96 +2764,6 @@ class AppConfig:
             logger.success(f"清理完成: {deleted_count} 个过期诊断文件")
         if screenshot_deleted_count:
             logger.success(f"清理完成: {screenshot_deleted_count} 个超限失败截图")
-
-    def clean_maafw_native_debug_logs(self) -> None:
-        """清掉 MFW 项目里过期的 MaaFramework 原生日志备份。
-
-        MaaFramework 把 ``debug/maafw.log`` 写到一定大小就整体挪成
-        ``debug/maafw.bak.<时间戳>.log`` 再开新的，但从不回收旧的——一个每天跑
-        的项目几天就能堆出几百 MB。每次运行的完整内容已经另存进历史记录的
-        ``*.maafw.log``，所以这里只删备份，正在写的 ``maafw.log`` 不动。
-        保留时长沿用历史记录的保留天数设置。
-
-        纯同步文件 IO，调用方在事件循环里请经 ``asyncio.to_thread`` 执行。
-        """
-
-        # 只读一次 + 集合快照：每日任务在工作线程跑本函数，主循环可能并发改
-        # 设置（guard 与 cutoff 之间翻到 0 会让 cutoff 变成 now、删光全部备份）
-        # 和增删脚本。items() 是 zip(order 列表, data 逐项查找) 的惰性结构，
-        # list() 消费它并非原子拷贝、并发增删仍可 KeyError 中止本轮；直接对
-        # data 的 dict 视图做 list() 才是单条 C 级拷贝的真原子快照
-        retention_days = self.setting.Function.HistoryRetentionTime
-        if retention_days == 0:
-            logger.info("原生日志永久保留, 跳过 MFW 原生日志备份清理")
-            return
-
-        from app.models.config import MaaFWConfig
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            resolve_maafw_project_root,
-        )
-
-        cutoff = time.time() - retention_days * 86400
-        deleted_count = 0
-        for uid, script_config in list(self.ScriptConfig.data.items()):
-            if not isinstance(script_config, MaaFWConfig):
-                continue
-            # runner 把原生日志写在有效根下：内嵌脚本是副本，不是来源目录。
-            project_path = str(
-                resolve_maafw_project_root(str(uid), script_config)
-            ).strip()
-            if not project_path:
-                continue
-            debug_folder = Path(project_path) / "debug"
-            if not debug_folder.is_dir():
-                continue
-            # 备份文件名由 MaaFramework 决定，与 runner_task 里
-            # _iter_rotated_native_debug_logs 认的是同一套。
-            for file in debug_folder.glob("maafw.bak.*.log"):
-                try:
-                    if file.stat().st_mtime >= cutoff:
-                        continue
-                    file.unlink()
-                except OSError as exc:
-                    logger.warning(f"MFW 原生日志备份清理失败: {file} - {exc}")
-                    continue
-                deleted_count += 1
-        if deleted_count:
-            logger.success(f"清理完成: {deleted_count} 个过期 MFW 原生日志备份")
-
-    def clean_old_history(self):
-        """删除超过用户设定天数的历史记录文件（基于目录日期）。
-
-        纯同步文件 IO，调用方在事件循环里请经 ``asyncio.to_thread`` 执行。
-        """
-
-        # 只读一次：定时器在工作线程跑本函数，循环内逐目录重读会看到扫描
-        # 中途的设置变更（改成 0 时剩余目录会按 0 天 cutoff 全部删除）
-        retention_days = self.setting.Function.HistoryRetentionTime
-        if retention_days == 0:
-            logger.info("历史记录永久保留, 跳过历史记录清理")
-            return
-
-        logger.info("开始清理超过设定天数的历史记录")
-
-        deleted_count = 0
-
-        for date_folder in self.history_path.iterdir():
-            if not date_folder.is_dir():
-                continue  # 只处理日期文件夹
-
-            try:
-                # 只检查 `YYYY-MM-DD` 格式的文件夹
-                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
-                if datetime.now(tz=UTC4).date() - folder_date > timedelta(
-                    days=retention_days
-                ):
-                    shutil.rmtree(date_folder, ignore_errors=True)
-                    deleted_count += 1
-                    logger.debug(f"已删除超期日志目录: {date_folder}")
-            except ValueError:
-                logger.warning(f"非日期格式的目录: {date_folder}")
-
-        logger.success(f"清理完成: {deleted_count} 个日期目录")
 
 
 Config = AppConfig()

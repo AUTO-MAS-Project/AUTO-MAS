@@ -70,6 +70,53 @@ def flattened_entry_path(raw_arg: str) -> str | None:
     return "/".join(parts)
 
 
+#: 项目自带 Python 的固定位置写法，与 ``agent_env.planner._is_bundled_python_pattern`` 同一判据。
+_BUNDLED_PYTHON_SUFFIX = "python/python.exe"
+
+
+def bundled_python_escape_path(raw_exec: str) -> str | None:
+    """pretask 的 ``exec`` 经开头的 ``..`` 越出项目目录、指向项目自带的 Python 时，它在项目里的位置。
+
+    MFABD2 发行包的 pretask 写 ``"exec": "../../python/python.exe"``：它按 MFAA 实测的工作目录
+    ``resource/base`` 上跳两级，指的就是包根的 ``python/python.exe``（agent 用的同一个解释器），
+    按协议的 interface 所在目录解析却越出了项目根。与 agent 入口同一条平铺规则
+    （:func:`flattened_entry_path`）映射回项目里；只认 ``python/python.exe`` 结尾的相对写法
+    （与 agent 判定「项目自带 Python」同一判据），绝对路径、其它程序一律返回 None——
+    越界的任意可执行文件不放行，由调用方跳过这条 pretask。
+    """
+
+    if not is_relative_entry_path(raw_exec):
+        return None
+    text = str(raw_exec).strip().strip('"').strip("'").replace("\\", "/")
+    text = text.replace("${PROJECT_DIR}", "{PROJECT_DIR}")
+    if text.startswith("{PROJECT_DIR}"):
+        text = text[len("{PROJECT_DIR}") :].lstrip("/")
+    parts = [part for part in text.split("/") if part not in ("", ".")]
+    if not parts or parts[0] != "..":
+        return None
+    if not text.casefold().endswith(_BUNDLED_PYTHON_SUFFIX):
+        return None
+    return flattened_entry_path(raw_exec)
+
+
+def describe_pretask_python_fallback(raw_exec: str, used: str) -> str:
+    """pretask 的解释器越界、改用项目自带 Python 时给人看的说明（投影与运行计划共用）。"""
+
+    return (
+        f"运行前设置的解释器 {raw_exec} 越出了项目目录（按发行包布局它就是项目自带的 Python），"
+        f"已改用项目里的 {used}"
+    )
+
+
+def describe_pretask_exec_outside(raw_exec: str) -> str:
+    """pretask 的可执行文件在项目目录之外、不运行它时给人看的说明（投影与运行计划共用）。"""
+
+    return (
+        f"运行前设置的可执行文件 {raw_exec} 在项目目录之外，AUTO-MAS 不运行项目目录外的程序，"
+        "运行时跳过这一项运行前设置"
+    )
+
+
 #: 源码仓里 agent 的开发者写法 ``uv run agent/main.py``：AUTO-MAS 不支持（见 :func:`describe_uv_agent`）。
 UV_LAUNCHER_NAMES = frozenset({"uv", "uv.exe", "uvx", "uvx.exe"})
 

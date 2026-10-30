@@ -65,21 +65,14 @@ from pathlib import Path
 import yaml
 
 from app.config import ConfigEntry
-from app.utils import get_logger
-from app.utils.config_archive import (
-    OVERLAY_SIDECAR_NAME,
-    archive_files,
-    config_root_key,
-    dir_files,
-    get_backup_dir,
-    list_times,
-    read_overlay_sidecar,
-    restore_files,
-)
-from app.utils.constants import BASE_SOURCE_LABELS
+from app.utils import BASE_SOURCE_LABELS, get_logger
+from app.utils import config_archive as _utils_config_archive
 
 from .managed_config import SRA_REWARD_LABELS
 from .sra_runtime import build_sra_tasklist_description
+
+OVERLAY_SIDECAR_NAME = _utils_config_archive.OVERLAY_SIDECAR_NAME
+read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 
 logger = get_logger("HSR 配置备份")
 
@@ -306,23 +299,14 @@ def _migrate_legacy_stage_values(stage: dict | None) -> None:
     """把旧版侧车里误存的 SRA 副本编号就地迁成真实关卡编号。
 
     升级前归档的侧车仍是旧载荷（label 为字典 repr、level 为数组位置）。回填走
-    ``update`` 不经 ``HSRUserConfig.load`` 的迁移，脚本共享计划更是从不迁移；
+    ``update`` 不经 启动期旧配置转换的迁移，脚本共享计划更是从不迁移；
     不在这里改，恢复一次旧备份就会让历战余响 / 饰品提取重新刷错关卡。
     """
 
-    if not stage:
-        return
-    from .stage_runtime import migrate_sra_legacy_stage_labels
+    from ..migration import migrate_legacy_stage_values
 
-    for field in ("ScriptStage", "ScriptEchoOfWar"):
-        if field not in stage:
-            continue
-        migrated, count, _unresolved = migrate_sra_legacy_stage_labels(stage[field])
-        if migrated is not None:
-            stage[field] = migrated
-            logger.info(
-                f"恢复的 Stage.{field} 已迁移 {count} 条 SRA 副本到真实关卡编号"
-            )
+    for field, count in migrate_legacy_stage_values(stage).items():
+        logger.info(f"恢复的 Stage.{field} 已迁移 {count} 条 SRA 副本到真实关卡编号")
 
 
 async def restore_mas_overlay(user_config, script_config, overlay: dict) -> None:
@@ -361,7 +345,7 @@ def archive_mas_backup(
 
     if not overlay:
         return None
-    dest = archive_files(
+    dest = _utils_config_archive.archive_files(
         {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
         mas_backup_root(script_id, user_id),
         force=force,
@@ -376,13 +360,13 @@ def archive_mas_backup(
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
     """用户池的全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(mas_backup_root(script_id, user_id))
+    return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
     """取用户池指定时间戳的归档目录；不存在返回 None。"""
 
-    return get_backup_dir(mas_backup_root(script_id, user_id), ts)
+    return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(script_id: str, user_id: str, ts: str) -> dict | None:
@@ -433,9 +417,9 @@ def native_backup_root(
     时仅按 SRA 分桶（该池内只有 SRA 内容）。
     """
 
-    key = config_root_key(sra_app_data)
+    key = _utils_config_archive.config_root_key(sra_app_data)
     if m7a_root:
-        key = f"{key}-{config_root_key(m7a_root)}"
+        key = f"{key}-{_utils_config_archive.config_root_key(m7a_root)}"
     return Path.cwd() / "data" / "HSRBackups" / "native" / key
 
 
@@ -460,7 +444,7 @@ def collect_native_files(m7a_root: Path | None, sra_app_data: Path) -> dict[str,
         files[_SRA_CACHE_FILE] = sra_cache
     sra_configs = sra_app_data / "configs"
     if sra_configs.is_dir():
-        for rel, path in dir_files(sra_configs).items():
+        for rel, path in _utils_config_archive.dir_files(sra_configs).items():
             files[f"{_SRA_CONFIGS_DIR}/{rel}"] = path
     return files
 
@@ -473,7 +457,9 @@ def archive_native_backup(
     files = collect_native_files(m7a_root, sra_app_data)
     if not files:
         return None
-    dest = archive_files(files, native_backup_root(sra_app_data, m7a_root), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, native_backup_root(sra_app_data, m7a_root), force=force
+    )
     if dest is None:
         logger.info("HSR 原生配置无变化，跳过归档")
         return None
@@ -486,7 +472,7 @@ def list_native_backups(
 ) -> list[str]:
     """HSR 原生配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(native_backup_root(sra_app_data, m7a_root))
+    return _utils_config_archive.list_times(native_backup_root(sra_app_data, m7a_root))
 
 
 def get_native_backup_dir(
@@ -494,7 +480,9 @@ def get_native_backup_dir(
 ) -> Path | None:
     """取指定时间戳的原生配置归档目录；不存在返回 None。"""
 
-    return get_backup_dir(native_backup_root(sra_app_data, m7a_root), ts)
+    return _utils_config_archive.get_backup_dir(
+        native_backup_root(sra_app_data, m7a_root), ts
+    )
 
 
 def restore_native_backup(m7a_root: Path | None, sra_app_data: Path, ts: str) -> None:
@@ -516,9 +504,15 @@ def restore_native_backup(m7a_root: Path | None, sra_app_data: Path, ts: str) ->
     rel_keys = (
         None
         if m7a_root is not None
-        else [rel for rel in dir_files(backup_dir) if not rel.startswith("M7A/")]
+        else [
+            rel
+            for rel in _utils_config_archive.dir_files(backup_dir)
+            if not rel.startswith("M7A/")
+        ]
     )
-    restore_files(backup_dir, sra_app_data, rel_keys=rel_keys, dir_map=dir_map)
+    _utils_config_archive.restore_files(
+        backup_dir, sra_app_data, rel_keys=rel_keys, dir_map=dir_map
+    )
     logger.info(f"HSR 原生配置已恢复备份 {ts}")
 
 
@@ -763,7 +757,7 @@ def build_native_preview(
     backup_dir = get_native_backup_dir(sra_app_data, ts, m7a_root)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
-    files = dir_files(backup_dir)
+    files = _utils_config_archive.dir_files(backup_dir)
     if not files:
         raise ValueError(f"备份内容为空: {ts}")
 

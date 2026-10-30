@@ -235,7 +235,7 @@ const columnKeys = computed(() =>
 )
 
 const columnTitle = (key: string) =>
-  key === 'ALL' ? t('plan.week.ALL') : t(planDayLabel(key).key, planDayLabel(key).params)
+  key === 'ALL' ? t('core.plan.week.ALL') : t(planDayLabel(key).key, planDayLabel(key).params)
 
 /** 当前模式只认一列：ALL 模式看「全局」，Weekly 模式看具体星期 */
 const isColumnDisabled = (key: string) => {
@@ -318,7 +318,7 @@ const days = (pick: (key: string) => unknown) =>
 
 const configColumns = computed(() => [
   {
-    title: t('plan.table.field'),
+    title: t('core.plan.table.field'),
     dataIndex: 'fieldName',
     key: 'fieldName',
     width: 120,
@@ -338,34 +338,34 @@ const configColumns = computed(() => [
 const configRows = computed(() => [
   {
     rowKey: 'TribulationStage',
-    fieldName: t('plan.table.tribulationStage'),
+    fieldName: t('core.plan.table.tribulationStage'),
     ...days(key => keyOf(key).TribulationStage),
   },
   {
     rowKey: 'SkipDifficulty',
-    fieldName: t('plan.table.skipDifficulty'),
+    fieldName: t('core.plan.table.skipDifficulty'),
     ...days(key => keyOf(key).SkipDifficulty),
   },
   {
     rowKey: 'Difficulty',
-    fieldName: t('plan.table.difficulty'),
+    fieldName: t('core.plan.table.difficulty'),
     ...days(key => keyOf(key).Difficulty),
   },
   {
     rowKey: 'ConsumeAllEnergy',
-    fieldName: t('plan.table.consumeAllEnergy'),
+    fieldName: t('core.plan.table.consumeAllEnergy'),
     ...days(key => keyOf(key).ConsumeAllEnergy),
   },
   {
     rowKey: 'FightTimes',
-    fieldName: t('plan.table.fightTimes'),
+    fieldName: t('core.plan.table.fightTimes'),
     ...days(key => keyOf(key).FightTimes),
   },
 ])
 
 const simpleColumns = computed(() => [
   {
-    title: t('plan.table.time'),
+    title: t('core.plan.table.time'),
     dataIndex: 'timeLabel',
     key: 'timeLabel',
     width: 120,
@@ -373,35 +373,35 @@ const simpleColumns = computed(() => [
     align: 'center',
   },
   {
-    title: t('plan.table.tribulationStage'),
+    title: t('core.plan.table.tribulationStage'),
     dataIndex: 'TribulationStage',
     key: 'TribulationStage',
     width: 180,
     align: 'center',
   },
   {
-    title: t('plan.table.skipDifficulty'),
+    title: t('core.plan.table.skipDifficulty'),
     dataIndex: 'SkipDifficulty',
     key: 'SkipDifficulty',
     width: 130,
     align: 'center',
   },
   {
-    title: t('plan.table.difficulty'),
+    title: t('core.plan.table.difficulty'),
     dataIndex: 'Difficulty',
     key: 'Difficulty',
     width: 110,
     align: 'center',
   },
   {
-    title: t('plan.table.consumeAllEnergy'),
+    title: t('core.plan.table.consumeAllEnergy'),
     dataIndex: 'ConsumeAllEnergy',
     key: 'ConsumeAllEnergy',
     width: 140,
     align: 'center',
   },
   {
-    title: t('plan.table.fightTimes'),
+    title: t('core.plan.table.fightTimes'),
     dataIndex: 'FightTimes',
     key: 'FightTimes',
     width: 110,

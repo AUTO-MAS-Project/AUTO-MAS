@@ -55,7 +55,6 @@ MAS 用户与 zzz-od 实例槽**固定绑定**：每个用户绑定一个槽（�
 import asyncio
 import json
 import re
-import shutil
 import uuid
 from contextlib import suppress
 from datetime import datetime
@@ -63,13 +62,16 @@ from pathlib import Path
 
 from app.config import ConfigCollection
 from app.core import Config
+from app.core.history import aggregate_data
 from app.core.ws import Publisher, protocol
-from app.log_box import LogCollect, log_box
+from app.log_box import UserLogSession, log_box
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
-from app.models.schema import WSTaskNoticeData
+from app.models.notification_ports import LocalNotice
+from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import Notify, System
+from app.services import System
 from app.task.base import ScriptAutoProxyBase
+from app.task.notify_core import build_user_statistics_payload
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
@@ -80,17 +82,27 @@ from app.task.proxy_helpers import (
     split_args,
     user_uses_native_base,
 )
-from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
-from app.utils.config_archive import config_root_key
-from app.utils.constants import BASE_SOURCE_LABELS, UTC4
-from app.utils.LogMonitor import LogMonitor
+from app.utils import (
+    BASE_SOURCE_LABELS,
+    UTC4,
+    LogMonitor,
+    ProcessInfo,
+    ProcessManager,
+    get_logger,
+    is_process_running,
+)
 
-from .push_log import ACCOUNT_PREFIX_RE, ZZZOD_PUSH_RULES, make_zzzod_resolve
+from .launchers import (
+    _ZZZOD_LAUNCHER_BOOK,
+    _other_launcher_label,
+    find_launcher_exe,
+    resolve_launcher,
+)
+from .push_log import ZzzLogSnapshot, make_zzzod_log_spec
+from .slots import collect_used_slot_idxs, ensure_user_slot, recycle_unbound_slots
 from .tools import (
     INSTANCE_RUN_ALL,
     INSTANCE_RUN_CURRENT,
-    MAS_SLOT_BASE,
-    MAS_SLOT_MAX,
     PERSISTENT_RUN_RECORD_APPS,
     RUN_STATUS_FAILED,
     RUN_STATUS_NOT_RUN,
@@ -98,23 +110,18 @@ from .tools import (
     RUN_STATUS_SUCCESS,
     archive_mas_config_backup,
     archive_onedragon_backup,
-    archive_taken_slot,
     backup_instance,
     clear_run_records,
     collect_mas_user_info,
     diff_run_records,
     find_active_instance,
-    find_free_instance_idx,
     instance_dir,
     instance_run_is_all,
     launch_args_patch,
     list_app_catalog,
     list_instances,
-    mas_backup_root,
-    push_notification,
     read_game_account,
     read_native_after_done,
-    recycle_orphan_slots,
     restore_instance,
     restore_instance_view,
     restore_plan_run_times,
@@ -130,15 +137,6 @@ from .tools import (
 )
 
 logger = get_logger("ZZZ-OD 自动代理")
-
-# 启动器标签 → exe 文件名（集成=WithRuntime 打包的 RuntimeLauncher；原始=旧安装器
-# Launcher；.bak 为启动器自更新残留，不参与发现）。元组顺序即默认发现顺序（集成优先）
-_ZZZOD_LAUNCHER_BOOK = {
-    "集成": "OneDragon-RuntimeLauncher.exe",
-    "原始": "OneDragon-Launcher.exe",
-}
-
-_ZZZOD_LAUNCHERS = tuple(_ZZZOD_LAUNCHER_BOOK.values())
 
 # 游戏本体进程名：MAS 侧关闭游戏按进程名结束（游戏由启动器拉起，可能不在
 # 启动器进程树内，进程管理器跟踪不到）
@@ -175,7 +173,8 @@ _ZZZOD_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
 )
 
 # 应用最终失败触发有界重跑，内部操作的失败不直接判负；重试保留运行记录，
-# 已完成任务的跳过与周期进度均交给 zzz-od 自己维护。
+# 已完成任务的跳过与周期进度均交给 zzz-od 自己维护。白名单应用
+# （_RETRY_FUTILE_APPS）的失败不触发重试，详见其注释。
 
 # 一条龙应用终态成功标志（每次运行恰好出现一次）：出现即代表全部实例执行
 # 完毕（对齐 ok-ww 的成功标志行行为）。出现后立即结束日志等待，不等启动器
@@ -187,6 +186,14 @@ _ZZZOD_ONE_DRAGON_SUCCESS = "指令[ 一条龙 ] 执行成功"
 # 汇总信号应用：上游「通知」应用在本轮存在失败任务时会把自己标失败
 # （通知消息本身已发出，fire-and-forget），从失败名单剔除避免误导
 _SUMMARY_APP_IDS = frozenset({"notify"})
+
+# 「重试无意义」应用白名单（2026-10 维护者决策，条目为应用中文名，prepare
+# 时经应用目录解析为 app_id、失配在启动时告警）：这些应用的最终失败重试也不
+# 会改变结果（如限时活动关闭后入口消失，上游 app 内部已重试多次），失败不再
+# 因它们消耗重试轮次，也不拦其余应用的重试——仅当本轮失败的应用全部在白名单
+# 内（没有可恢复对象）时才跳过剩余重试。上游尚无「活动已结束」等专门状态前
+# 的调度域临时补位，上游补齐后移除。
+_RETRY_FUTILE_APPS: frozenset[str] = frozenset({"丽都城募", "情报板"})
 
 
 def _match_fatal(log: str) -> str | None:
@@ -246,493 +253,18 @@ def _failed_apps(
     return sorted(failed)
 
 
-def find_launcher_exe(root: Path) -> Path:
-    """在安装根目录下发现 OneDragon 启动器。
+def _failures_all_futile(
+    failed_app_ids: list[str], futile_app_ids: frozenset[str]
+) -> bool:
+    """失败的应用是否全部命中「重试无意义」白名单（没有可恢复对象）。
 
-    Raises:
-        ValueError: 未找到任何启动器。
+    白名单应用的失败不触发重试，也不拦其余应用的重试；空失败名单（致命
+    错误 / 超时等运行级失败，未做应用级判定）按可重试处理。
     """
 
-    for name in _ZZZOD_LAUNCHERS:
-        path = root / name
-        if path.is_file():
-            return path
-    raise ValueError(f"{root} 下未找到 OneDragon 启动器, 请确认绝区零一条龙安装目录")
-
-
-def find_launchers(root: Path) -> dict[str, Path]:
-    """返回安装根目录下实际安装的启动器（标签 → exe 路径，未安装的不在结果中）。"""
-
-    return {
-        label: root / name
-        for label, name in _ZZZOD_LAUNCHER_BOOK.items()
-        if (root / name).is_file()
-    }
-
-
-def resolve_launcher(root: Path, mode: str, last_good: str = "") -> tuple[Path, str]:
-    """按用户选择返回 (启动器 exe, 标签)。
-
-    - 自动：优先「上次成功」的启动器（``last_good``），否则按默认顺序（集成优先）；
-    - 原始/集成：固定用对应 exe，所选项未安装时回退默认顺序可用项并告警。
-
-    Raises:
-        ValueError: 安装根目录下没有任何启动器。
-    """
-
-    available = find_launchers(root)
-    if available.get(mode):
-        return available[mode], mode
-    if mode == "自动" and last_good in available:
-        return available[last_good], last_good
-    # 固定模式所选未安装或无记忆：按默认顺序取首个可用（集成优先）
-    for name in _ZZZOD_LAUNCHERS:
-        path = root / name
-        if path.is_file():
-            label = next(
-                (tag for tag, exe in _ZZZOD_LAUNCHER_BOOK.items() if exe == name),
-                name,
-            )
-            if mode in ("原始", "集成"):
-                logger.warning(f"所选{mode}启动器未安装，已回退使用{label}启动器")
-            return path, label
-    raise ValueError(f"{root} 下未找到 OneDragon 启动器, 请确认绝区零一条龙安装目录")
-
-
-def _other_launcher_label(root: Path, label: str) -> str | None:
-    """返回另一启动器的标签；未安装返回 None。"""
-
-    other = "原始" if label == "集成" else "集成"
-    return other if (root / _ZZZOD_LAUNCHER_BOOK[other]).is_file() else None
-
-
-_ALLOCATED_SLOT_LEDGER_DIR = "ZzzOdSlots"
-"""槽分配台账的 MAS 数据目录：``data/ZzzOdSlots``（按安装根指纹分桶）"""
-
-
-def _allocated_ledger_path(root: Path) -> Path:
-    """安装根对应的槽分配台账文件：``data/ZzzOdSlots/{安装根指纹}.json``。"""
-
-    return (
-        Path.cwd()
-        / "data"
-        / _ALLOCATED_SLOT_LEDGER_DIR
-        / f"{config_root_key(root)}.json"
+    return bool(failed_app_ids) and all(
+        app_id in futile_app_ids for app_id in failed_app_ids
     )
-
-
-def _allocated_slots(root: Path) -> dict[int, str | None]:
-    """MAS 在本安装分配/绑定过的实例槽 → 归属用户 uid（台账）。
-
-    台账是「这个号是 MAS 分的、归谁」的凭据，自动回收只收台账内 owner 已
-    不存在的号：一条龙原生流程是「先建目录后写注册表」，用户在原生 GUI 新建
-    实例的瞬间盘上已有目录、注册表尚未落盘，只看盘上目录会把它当残留删掉。
-    台账缺失或损坏时返回空字典——自动回收退化为不收（残留由手动清理兜底），
-    不会反向误删原生目录。
-
-    owner 为 ``None`` 表示归属未知（旧格式台账，或调用方没给用户 uid）；
-    这类号同样按「保留」处理，理由见 :func:`_recyclable_allocated_idxs`。
-    """
-
-    path = _allocated_ledger_path(root)
-    if not path.is_file():
-        return {}
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as e:
-        logger.warning(f"槽分配台账不可读，本次按未分配处理: {e}")
-        return {}
-    slots = raw.get("slots") if isinstance(raw, dict) else None
-    if isinstance(slots, list):
-        # 旧格式（只有号、没有归属）：读成 owner 未知，下次写盘时升级
-        return {
-            int(i): None
-            for i in slots
-            if isinstance(i, int)
-            and not isinstance(i, bool)
-            and 0 < int(i) <= MAS_SLOT_MAX
-        }
-    if not isinstance(slots, dict):
-        return {}
-    ledger: dict[int, str | None] = {}
-    for key, value in slots.items():
-        try:
-            slot = int(key)
-        except (TypeError, ValueError):
-            continue
-        # 超出 MAS_SLOT_MAX 的号不是 MAS 槽（脏值）：写进 Info.SlotIdx 会被
-        # RangeValidator 静默夹到上限，槽目录名与绑定号错位，一律当没有
-        if slot <= 0 or slot > MAS_SLOT_MAX:
-            continue
-        # 归属必须是字符串：混进 bool/数字按未知处理，不让脏值决定保留与否
-        ledger[slot] = value if isinstance(value, str) and value else None
-    return ledger
-
-
-def _save_allocated_slots(root: Path, slots: dict[int, str | None]) -> None:
-    """落盘槽分配台账（写失败只告警：只影响后续自动回收范围，不该让运行失败）。"""
-
-    path = _allocated_ledger_path(root)
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(
-                {"slots": {str(k): v for k, v in sorted(slots.items())}},
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-    except OSError as e:
-        logger.warning(f"槽分配台账写入失败（不影响本次运行）: {e}")
-
-
-def _record_allocated_slot(root: Path, slot_idx: int, owner: str | None = None) -> None:
-    """把 MAS 分配/绑定的槽号与归属用户记进台账（幂等；无变化不写盘）。
-
-    归属用于区分「用户还在、只是绑定号没回写」与「用户已删」两种无主形态，
-    见 :func:`_recyclable_allocated_idxs`。
-    """
-
-    slot = int(slot_idx)
-    if slot <= 0 or slot > MAS_SLOT_MAX:
-        return
-    owner = str(owner) if owner else None
-    slots = _allocated_slots(root)
-    if slot in slots and slots[slot] == owner:
-        return
-    slots[slot] = owner
-    _save_allocated_slots(root, slots)
-
-
-def forget_allocated_slot(root: Path, slot_idx: int) -> None:
-    """把槽号移出台账（该号不再参与自动回收；幂等）。
-
-    删除用户/脚本回收掉槽目录后调用：台账只记「MAS 手上还在用」的号，目录都
-    没了就不该再占着。恢复快照走的是另一条路——它把内容恢复给某个用户并记上
-    归属（见 :func:`app.core.config.AppConfig.restore_zzzod_recycle`），不用
-    本函数。手动清理不受台账限制。
-    """
-
-    slot = int(slot_idx)
-    if slot <= 0:
-        return
-    slots = _allocated_slots(root)
-    if slot not in slots:
-        return
-    del slots[slot]
-    _save_allocated_slots(root, slots)
-
-
-def _owner_alive(root: Path, owner: str) -> bool:
-    """归属用户是否仍存在于指向同一份安装的任一 ZzzOd 脚本（按 uid 比对）。"""
-
-    key = config_root_key(root)
-    for script_config in Config.ScriptConfig.values():
-        if not isinstance(script_config, ZzzOdConfig):
-            continue
-        script_root = str(script_config.Info.RootPath or "").strip()
-        if not script_root or config_root_key(script_root) != key:
-            continue
-        if any(str(uid) == owner for uid in script_config.UserData.keys()):
-            return True
-    return False
-
-
-def _recyclable_allocated_idxs(root: Path) -> set[int]:
-    """自动回收可收的台账号：归属用户已不存在的号。
-
-    归属仍存在的号一律保留。运行/会话期用的是独立用户配置副本、绑定号要到
-    ``final_task`` 才回写，崩溃或强杀会让槽呈「有目录、有台账、持久绑定查不到」
-    的形态——只按持久绑定判定会把它当残留收走，而槽里还有用户在原生 GUI 里
-    维护的配队。归属未知（``None``）同样保留：无法证明它无主时宁可不收。
-    """
-
-    return {
-        slot
-        for slot, owner in _allocated_slots(root).items()
-        if owner is not None and not _owner_alive(root, owner)
-    }
-
-
-def _follow_mas_backups(script_id: str, old_slot: int, new_slot: int) -> None:
-    """改绑后把该槽的 MAS 备份池挪到新槽号（用户的「配置恢复」历史跟着人走）。
-
-    池按 ``(脚本, 槽)`` 分桶；留在旧号会让用户在新槽的「配置恢复」里看不到
-    自己的历史，而旧号 MAS 已不再使用、池也不会再被清理。目标已存在时不动
-    ——那是别人的历史，不能混在一起。
-    """
-
-    old_pool = mas_backup_root(script_id, old_slot)
-    if not old_pool.is_dir():
-        return
-    new_pool = mas_backup_root(script_id, new_slot)
-    if new_pool.exists():
-        logger.warning(
-            f"槽 {new_slot:02d} 已有 MAS 备份池，槽 {old_slot:02d} 的历史原地保留"
-        )
-        return
-    try:
-        shutil.move(str(old_pool), str(new_pool))
-    except OSError as e:
-        logger.opt(exception=True).warning(
-            f"槽 {old_slot:02d} 的 MAS 备份池迁移到槽 {new_slot:02d} 失败: {e}"
-        )
-
-
-def _reclaim_own_slot(
-    root: Path,
-    owner_uid: str | None,
-    native_idxs: set[int],
-    used_idxs: set[int],
-) -> int | None:
-    """绑定号缺失时，认领回台账里属于本用户的高位段槽（中断现场恢复）。
-
-    上次运行/会话被崩溃、断电或强杀打断时，绑定号只写在运行期副本里、没回写
-    持久配置，用户下次运行会被当成「未分配」另拿一个新号——上一个槽里他在原生
-    GUI 维护的配队就再也回不来了。这里优先认领台账里归本用户、且当前没被原生
-    实例或其他用户占用的号（盘上有目录的优先，那里才有上次的配队），让配队
-    跟着人走。没有任何候选时返回 ``None``，由调用方按常规分配新号。
-    """
-
-    if not owner_uid:
-        return None
-    owner = str(owner_uid)
-    candidates = [
-        slot
-        for slot, slot_owner in _allocated_slots(root).items()
-        if slot_owner == owner and slot not in native_idxs and slot not in used_idxs
-    ]
-    if not candidates:
-        return None
-    # 盘上有目录的优先（上次的配队在那里）；同为有目录时取号更大的那个——
-    # 改绑只会往更大的号走，最大的最接近用户最后一次实际使用的槽
-    with_dir = [slot for slot in candidates if instance_dir(root, slot).is_dir()]
-    return max(with_dir or candidates)
-
-
-async def ensure_user_slot(
-    root: Path,
-    user_config: ZzzOdUserConfig,
-    used_idxs: set[int],
-    *,
-    script_id: str | None = None,
-    owner_uid: str | None = None,
-) -> int:
-    """解析/分配用户的绑定实例槽（纯分配，不触碰注册表——注册表由合成视图提供）。
-
-    绑定下标存于用户配置 ``Info.SlotIdx``：有效 = 不与原生实例、其他 MAS
-    用户已绑定槽冲突；无效则优先认领台账里属于本用户的高位段槽（见
-    :func:`_reclaim_own_slot`，用于上次没跑完的中断现场），没有则分配最小
-    空闲 idx（全局查重）并把绑定落回用户配置。槽目录持久保留（配队等复杂
-    配置），注册表只在运行/会话窗口内以合成视图出现。分配结果连同归属用户
-    记进槽分配台账（含沿用旧绑定——一次运行即可把存量用户的绑定补进台账），
-    供自动回收判定「这个号是 MAS 分的、还归不归活着的用户」。
-
-    新槽从 :data:`MAS_SLOT_BASE` 起分配——一条龙的「新增实例」只按自己的
-    注册表找最小空号、看不见 MAS 槽，低号段随时可能被抢，退到高位段让它
-    够不到。绑定号已经被原生实例抢走时，先把残留内容存底进回收池、再把该
-    槽的 MAS 备份池挪到新号（配队与「配置恢复」历史都跟着用户走）；此时
-    槽目录已归原生实例，只存底不删。
-
-    Args:
-        root: 一条龙安装目录。
-        user_config: 用户配置对象（绑定号读写在 ``Info.SlotIdx``）。
-        used_idxs: 本次批量已分配的槽号集合，就地更新。
-        script_id: 所属脚本 ID，仅用于搬迁该脚本的 MAS 备份池；缺省跳过。
-        owner_uid: 用户 uid，写进台账作为该槽的归属；缺省则归属未知。
-    """
-
-    bound = int(user_config.Info.SlotIdx or -1)
-    native_idxs = {
-        int(item.get("idx", -1))
-        for item in list_instances(root)
-        if isinstance(item, dict)
-    }
-    if bound > 0 and bound not in native_idxs and bound not in used_idxs:
-        slot = bound
-    else:
-        taken = bound > 0 and bound in native_idxs
-        # 绑定号缺失（首跑，或上次崩溃没回写）时先认领自己名下的旧槽；
-        # 被原生实例抢走是「绑定号还在」的另一回事，走下面的撞号兜底
-        reclaimed = (
-            None
-            if taken
-            else _reclaim_own_slot(root, owner_uid, native_idxs, used_idxs)
-        )
-        slot = (
-            reclaimed
-            if reclaimed is not None
-            else find_free_instance_idx(
-                root, used_idxs, base=MAS_SLOT_BASE, limit=MAS_SLOT_MAX
-            )
-        )
-        if taken:
-            user_name = str(user_config.Info.Name or "未知用户")
-            archive_taken_slot(
-                root,
-                bound,
-                reason=f"槽号已被原生实例占用，用户「{user_name}」改绑高位段",
-            )
-            if script_id:
-                _follow_mas_backups(script_id, bound, slot)
-    used_idxs.add(slot)
-    if slot != bound:
-        user_config.Info.SlotIdx = slot
-        await user_config.commit()
-    _record_allocated_slot(root, slot, owner_uid)
-    return slot
-
-
-def collect_used_slot_idxs(
-    root: Path,
-    exclude_uids: set[uuid.UUID] | None = None,
-) -> set[int]:
-    """收集指向同一份安装的 ZzzOd 脚本用户已绑定的实例槽 idx（分配查重用）。
-
-    槽目录挂在某一份安装的 ``config/`` 下，占用判定必须按安装分桶：指向别的
-    安装的脚本用户不该挤占本安装的号（旧口径跨全部 ZzzOd 脚本一起去重，
-    多脚本各指一份安装时会把号白白占掉，新用户只能被挤到更大的 idx）。
-    ``root`` 用 :func:`config_root_key` 归一比对。本次要注入/会话的用户经
-    ``exclude_uids`` 排除——它们通过自身 SlotIdx 重认领绑定。
-    """
-
-    key = config_root_key(root)
-    used: set[int] = set()
-    excluded = exclude_uids or set()
-    for script_config in Config.ScriptConfig.values():
-        if not isinstance(script_config, ZzzOdConfig):
-            continue
-        script_root = str(script_config.Info.RootPath or "").strip()
-        if not script_root or config_root_key(script_root) != key:
-            continue
-        for uid, cfg in script_config.UserData.items():
-            if uid in excluded:
-                continue
-            bound = int(cfg.Info.SlotIdx or -1)
-            if bound > 0:
-                used.add(bound)
-    return used
-
-
-def collect_slot_owners(root: Path) -> dict[int, list[dict]]:
-    """按安装根分桶收集槽的 MAS 归属（idx → 归属列表）。
-
-    与 :func:`collect_used_slot_idxs` 同口径（只算指向同一份安装的脚本），
-    但带出脚本/用户名与配置来源，供实例槽总览展示「这个号被谁占着」。
-    **绑定但盘上无目录的槽也要能列出来**——那正是「槽目录数与用户数对不上」
-    时最需要看到的一行（没跑过的用户只有绑定号、没有目录）。
-    """
-
-    key = config_root_key(root)
-    owners: dict[int, list[dict]] = {}
-    for script_uid, script_config in Config.ScriptConfig.items():
-        if not isinstance(script_config, ZzzOdConfig):
-            continue
-        script_root = str(script_config.Info.RootPath or "").strip()
-        if not script_root or config_root_key(script_root) != key:
-            continue
-        script_name = str(script_config.Info.Name or "")
-        for uid, cfg in script_config.UserData.items():
-            bound = int(cfg.Info.SlotIdx or -1)
-            if bound <= 0:
-                continue
-            owners.setdefault(bound, []).append(
-                {
-                    "scriptId": str(script_uid),
-                    "userId": str(uid),
-                    "scriptName": script_name,
-                    "userName": str(cfg.Info.Name or ""),
-                    "base": str(cfg.Info.Base or CONFIG_BASE_INDEPENDENT),
-                }
-            )
-    return owners
-
-
-def running_zzzod_scripts(
-    root: Path, exclude_script_id: str | None = None
-) -> list[str]:
-    """指向同一份安装、且正在运行/开会话的 ZzzOd 脚本名（``exclude_script_id`` 排除自己）。
-
-    槽目录跨脚本共享同一份安装，而运行/会话期用的是**独立用户配置副本**
-    （manager ``prepare`` 提取、``final_task`` 才回写），在跑脚本的在用槽在
-    持久配置里查不到绑定——别的脚本此时回收孤儿槽会把它们当残留收走，拆掉
-    正在跑的现场。自动回收据此跳过本轮（见 :func:`recycle_unbound_slots`）。
-    """
-
-    key = config_root_key(root)
-    running: list[str] = []
-    for script_uid, script_config in Config.ScriptConfig.items():
-        if not isinstance(script_config, ZzzOdConfig) or not script_config.is_locked:
-            continue
-        if exclude_script_id and str(script_uid) == str(exclude_script_id):
-            continue
-        script_root = str(script_config.Info.RootPath or "").strip()
-        if script_root and config_root_key(script_root) == key:
-            running.append(str(script_config.Info.Name or script_uid))
-    return running
-
-
-def recycle_unbound_slots(
-    root: Path,
-    *,
-    only_allocated: bool = True,
-    swallow: bool = True,
-    exclude_script_id: str | None = None,
-) -> list[int]:
-    """回收盘上无人绑定的实例槽（运行/会话前自动回收与手动清理共用）。
-
-    绑定集合取全部 ZzzOd 用户（**不排除**本次要注入/会话的用户）：排除会把
-    它们正在用的槽当孤儿回收，槽里的配队等随即丢失。在 ``ensure_user_slot``
-    之前调用时，腾出的号本轮即可复用。原生态不自动调用——原生态是纯原生裸跑，
-    MAS 不往安装目录里删东西；手动清理是用户显式发起的动作，不受此限。
-    同安装另有 ZzzOd 脚本在跑时整体跳过：它在用槽的绑定号尚未回写，收了会
-    拆掉它的现场（残留交手动清理兜底）。
-
-    Args:
-        root: 一条龙安装目录。
-        only_allocated: 自动路径默认只收台账里归属用户已不存在的号（见
-            :func:`_recyclable_allocated_idxs`）；手动清理传 ``False`` 连来路
-            不明的残留一起收。
-        swallow: 默认失败只告警，不阻断运行/会话；手动清理传 ``False``，
-            让注册表缺失/损坏等原因抛到界面。
-        exclude_script_id: 调用方自己的脚本 ID——自动路径的调用方本身处于
-            锁定态，判定同安装在跑脚本时必须排除自己。
-
-    Returns:
-        实际回收的槽下标。
-
-    Raises:
-        ValueError: 注册表缺失且 ``swallow=False``。
-        ConfigCorruptedError: 注册表不可读且 ``swallow=False``。
-        RuntimeError: 同安装有别的 ZzzOd 脚本在跑且 ``swallow=False``。
-    """
-
-    running = running_zzzod_scripts(root, exclude_script_id)
-    if running:
-        message = (
-            f"同安装的「{'、'.join(running)}」正在运行，本轮跳过无主槽回收"
-            "（其在用槽的绑定号尚未回写，收了会拆掉在跑的现场）"
-        )
-        if not swallow:
-            raise RuntimeError(message)
-        logger.warning(message)
-        return []
-    allocated = _recyclable_allocated_idxs(root) if only_allocated else None
-    try:
-        removed = recycle_orphan_slots(
-            root,
-            collect_used_slot_idxs(root),
-            allocated_idxs=allocated,
-            swallow=swallow,
-        )
-    except Exception as e:
-        if not swallow:
-            raise
-        logger.opt(exception=True).warning(f"孤儿实例槽回收失败: {e}")
-        return []
-    if removed:
-        logger.info(f"已回收 {len(removed)} 个未绑定的实例槽: {removed}")
-    return removed
 
 
 def parse_user_apps(user_config: ZzzOdUserConfig) -> list[dict]:
@@ -893,7 +425,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
         # log_box 采集会话（用户级「节点详情推送模式」关闭时不创建，prepare 按配置启停）
-        self.log_collect: LogCollect | None = None
+        self.log_collect: UserLogSession | None = None
         # 实例 idx → 账号名映射（原生来源=原生注册表快照；注入=绑定槽用户名），供后置
         # 处理器把「开始加载实例配置 N」段边界映射为账号归属
         self._idx_names: dict[int, str] = {}
@@ -912,10 +444,16 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self._multi_uids: set[str] = set()
         self._multi_succeeded: set[int] = set()
         self._multi_ran = False
+        self._multi_run_status = ""
+        self._history_users: dict[str, UserItem] = {}
         self._shutdown_after_success: bool = False
         self.run_book = False
         # app_id → 中文名（用于结果与推送日志展示）
         self._app_name_book: dict[str, str] = {}
+        # 本轮应用级失败名单（_judge_final 写入；重试前判「重试无意义」用）
+        self._failed_app_ids: list[str] = []
+        # 白名单解析结果（app_id 集，prepare 经应用目录解析）
+        self._futile_app_ids: frozenset[str] = frozenset()
 
     def _enabled_app_list(self) -> list[dict]:
         """当前用户的一条龙任务编排 enabled 项列表。"""
@@ -998,22 +536,6 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 if self.user_config[uuid.UUID(item.user_id)].Info.Status
             )
         )
-
-    def _route_push_log(self, log_type: str, text: str, ts: float) -> None:
-        """sink：把 log_box 采集结果按账号路由进各用户的推送日志。
-
-        多实例切换的节点行带「【用户名】」前缀：剥掉前缀路由到对应 MAS 用户
-        （其结果行已带用户名）；原生来源等无用户归属的场景统一落入当前用户
-        （多账号时前缀保留，由报告渲染区分账号归属）。
-        """
-
-        m = ACCOUNT_PREFIX_RE.match(text)
-        if m is not None and m.group(1) in self._push_user_book:
-            target = self._push_user_book[m.group(1)]
-            if target.push_log_mode != "关闭":
-                target.push_log.append((log_type, m.group(2), ts))
-        else:
-            self.cur_user_item.push_log.append((log_type, text, ts))
 
     def _collect_inject_users(
         self,
@@ -1118,10 +640,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         await asyncio.to_thread(
             recycle_unbound_slots,
             self.script_root_path,
+            scripts=Config.ScriptConfig,
             exclude_script_id=self.script_info.script_id,
         )
         used_idxs = collect_used_slot_idxs(
             self.script_root_path,
+            scripts=Config.ScriptConfig,
             exclude_uids={uuid.UUID(u.user_id) for u, _, _ in users},
         )
 
@@ -1314,25 +838,43 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         if not self._app_name_book:
             raise ValueError("未能加载一条龙任务目录，请检查安装文件是否完整")
 
+        # 白名单条目按应用目录解析为 app_id：上游更名后条目失配在启动时告警，
+        # 而不是在重试判定里静默失配（失配条目按可重试处理）
+        self._futile_app_ids = frozenset(
+            app_id
+            for app_id, name in self._app_name_book.items()
+            if name in _RETRY_FUTILE_APPS
+        )
+        missing = _RETRY_FUTILE_APPS - set(self._app_name_book.values())
+        if missing:
+            logger.warning(
+                f"「重试无意义」白名单条目 {'、'.join(sorted(missing))} "
+                f"不在应用目录中, 可能已更名, 失配条目按可重试处理"
+            )
+
         # 用户级节点详情推送模式（build_user_result_text 按此渲染）
         self.cur_user_item.push_log_mode = str(
             self.cur_user_config.Notify.PushLogMode or "汇总"
         )
-        # ── log_box：节点详情采集（MAS 进程宿主，sink 按账号路由）──
-        # 触发用户关闭且（多实例切换时）全部启用用户也关闭时不创建：不读日志、
-        # 不匹配、不处理，省采集开销；关闭用户的 push_log 保持为空
-        if self._push_log_enabled():
-            self.log_collect = log_box.get_collect(
-                paths=[self.script_log_path],
-                sink=self._route_push_log,
-                start_from_end=True,
-                # zzz-od 跨零点把 log.txt 滚动为 log.txt.YYYY-MM-DD（内容日期
-                # 式命名）：声明模板让轮转补偿在 inode 不可用的文件系统上也命中
-                rotated_name=f"{self.script_log_path.name}.%Y-%m-%d",
-            )
-            self.log_collect.open()
-            for rule in ZZZOD_PUSH_RULES:
-                self.log_collect.collect(*rule)
+        # 目录和账号映射会在运行期变化：收尾时再固定快照，不能在 prepare 提前捕获。
+        # 触发用户关闭但其他启用用户需要详情时仍采集，保留原有多账号开关语义。
+        self.log_collect = log_box.get_user_session(
+            make_zzzod_log_spec(
+                lambda: ZzzLogSnapshot(
+                    app_names=frozenset(self._app_name_book.values()),
+                    idx_names=self._idx_names,
+                    users=self._push_user_book,
+                    fallback_user=self.cur_user_item,
+                )
+            ),
+            user=self.cur_user_item,
+            mode=self.cur_user_item.push_log_mode,
+            enabled=self._push_log_enabled(),
+            paths=[self.script_log_path],
+            start_from_end=True,
+            # zzz-od 跨零点滚动为 log.txt.YYYY-MM-DD，无 inode 时按原模板补偿。
+            rotated_name=f"{self.script_log_path.name}.%Y-%m-%d",
+        )
         self.run_book = False
 
     def _resolve_log_file_path(self) -> Path:
@@ -1441,9 +983,10 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     or self.cur_user_item.user_id in self._multi_uids
                 ):
                     self.cur_user_item.status = "运行"
-                self.log_start_time = datetime.now()
-                self.cur_user_item.log_record[self.log_start_time] = LogRecord()
+                self.log_start_time = datetime.now().astimezone()
+                self.cur_user_item.add_log_record(self.log_start_time, LogRecord())
                 self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
+                self._failed_app_ids = []
                 self.script_info.log = ""
 
                 # 启用游戏配置 + 任务前启动游戏：由 MAS 拉起游戏本体后再跑一条龙
@@ -1463,11 +1006,13 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                             kill_game=self._mas_should_close_game()
                         )
                         try:
-                            await Notify.push_plyer(
-                                "ZZZ-OD 自动代理出现异常！",
-                                f"用户 {self.cur_user_item.name} 游戏启动失败",
-                                f"{self.cur_user_item.name}的自动代理出现异常",
-                                3,
+                            await self.task_info.local_notifier.send_notice(
+                                LocalNotice(
+                                    title="ZZZ-OD 自动代理出现异常！",
+                                    message=f"用户 {self.cur_user_item.name} 游戏启动失败",
+                                    ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                                    duration_seconds=3,
+                                )
                             )
                         except Exception:
                             pass
@@ -1563,22 +1108,43 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     await self.kill_managed_process(exe_path=stale_launcher_path)
                     continue
 
+                failure_reason = (
+                    self._multi_run_status
+                    if self._multi_ran
+                    else self.cur_user_log.status
+                )
                 logger.warning(
                     f"用户 {self.cur_user_item.name} - ZZZ-OD 代理异常: "
-                    f"{self.cur_user_log.status}"
+                    f"{failure_reason}"
                 )
-                self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
+                self.script_info.log = f"{failure_reason}\n正在中止相关程序"
                 await self.kill_managed_process(kill_game=self._mas_should_close_game())
                 try:
-                    await Notify.push_plyer(
-                        "ZZZ-OD 自动代理出现异常！",
-                        f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                        f"{self.cur_user_item.name}的自动代理出现异常",
-                        3,
+                    await self.task_info.local_notifier.send_notice(
+                        LocalNotice(
+                            title="ZZZ-OD 自动代理出现异常！",
+                            message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                            ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                            duration_seconds=3,
+                        )
                     )
                 except Exception:
                     pass
                 if i + 1 < run_limit:
+                    if self._all_failures_futile(log):
+                        futile_names = "、".join(
+                            self._app_display_name(app_id)
+                            for app_id in self._failed_app_ids
+                        )
+                        self.script_info.log += f"\n失败的应用均无重试价值（{futile_names}），已跳过剩余重试"
+                        logger.info(
+                            f"用户 {self.cur_user_item.name} - "
+                            f"失败应用均无重试价值({futile_names}), 跳过剩余重试"
+                        )
+                        await self._push_dispatch_log(
+                            f"失败的应用均无重试价值（{futile_names}），跳过剩余重试"
+                        )
+                        break
                     self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                     await asyncio.sleep(10)
         finally:
@@ -1619,6 +1185,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         else:
             diffs = diff_run_records(records_before, records_after)
             failed_apps = _failed_apps(diffs, log, self._app_name_book)
+            self._failed_app_ids = failed_apps
             if failed_apps:
                 failed_names = [
                     self._app_display_name(app_id) for app_id in failed_apps
@@ -1657,6 +1224,23 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self.run_book = user_status == "完成"
         if user_status is not None:
             self.cur_user_item.status = user_status
+
+    def _all_failures_futile(self, log: str) -> bool:
+        """本轮失败是否已无重试价值：整轮正常走完且失败应用全部命中白名单。
+
+        白名单应用的失败不触发重试，也不拦其余应用的重试；仅注入模式单实例
+        会话启用——独立基座的多实例切换与原生裸跑一轮覆盖多个用户或实例
+        （共享基座本就走既有单槽路径），个别应用的确定性失败不应剥夺其余
+        目标的补跑机会。以「指令[ 一条龙 ] 执行成功」确认整轮走完：启动器
+        提前退出时未跑到的应用不在失败名单里，缺这条证据按可重试处理，
+        守住未尝试应用的补跑机会。
+        """
+
+        if self._is_multi_account() or self._is_bare_run():
+            return False
+        if _ZZZOD_ONE_DRAGON_SUCCESS not in log:
+            return False
+        return _failures_all_futile(self._failed_app_ids, self._futile_app_ids)
 
     def _launch_evidence(self, log: str, records_changed: bool) -> bool:
         """启动器是否已成功启动：出现应用层运行上下文日志或运行记录有变化即视为已启动。
@@ -1712,9 +1296,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
         check_log 已标记的运行级终态（超时等）优先于运行记录 diff——收尾
         阶段卡死超时即使各槽已写出成功记录也不能判成功。致命日志次之：
-        整轮异常时未完成的用户一律标记异常。全部用户完成时
-        cur_user_log.status 置 ``Success!`` 以复用主流程的成功分支；任一用户
-        未完成则进入重试（zzz-od 按运行记录跳过已完成任务）。
+        整轮异常时未完成的用户一律标记异常。整轮结果独立控制重试，
+        用户日志保留各自结论；任一用户未完成则进入
+        重试（zzz-od 按运行记录跳过已完成任务）。
         """
 
         # check_log 已把超时/异常态写入 cur_user_log.status：本轮按运行失败
@@ -1729,6 +1313,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         all_ok = True
 
         for slot, (user_item, cfg) in self._slot_users.items():
+            self._history_users[user_item.user_id] = user_item
             before = self._slot_records_before.get(slot, {})
             after = _judge_after(
                 self.script_root_path, slot, self._slot_record_files.get(slot, {})
@@ -1752,10 +1337,11 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             # 每个参与用户写一行终态 log_record：result 行不再显示「未开始
             # 运行」而节点有内容的矛盾。get-or-create：cur_user 的条目由
             # main_task 创建且 check_log 正在向其写 content，不能替换对象
-            record = user_item.log_record.get(self.log_start_time)
-            if record is None:
-                record = LogRecord()
-                user_item.log_record[self.log_start_time] = record
+            record = (
+                self.cur_user_log if user_item is self.cur_user_item else LogRecord()
+            )
+            if record is not self.cur_user_log:
+                user_item.add_log_record(self.log_start_time, record)
             if ok:
                 record_status = "Success!"
             elif runtime_failed:
@@ -1770,6 +1356,8 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     f": {failed_names}" if failed_names else ""
                 )
             record.status = record_status
+            if record is not self.cur_user_log:
+                record.content = list(self.cur_user_log.content)
             # 节点详情由 log_box 统一采集（final_task 收尾时按账号路由）；
             # 每轮同步最终状态，成功计数在整个补跑期间每个用户只增加一次。
             await self._persist_multi_user_result(
@@ -1779,15 +1367,15 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 self._multi_succeeded.add(slot)
 
         if runtime_failed:
-            self.cur_user_log.status = runtime_status
+            self._multi_run_status = runtime_status
             if self.cur_user_item.user_id in self._multi_uids:
                 self.cur_user_item.status = "异常"
         elif fatal is not None:
-            self.cur_user_log.status = fatal
+            self._multi_run_status = fatal
             if self.cur_user_item.user_id in self._multi_uids:
                 self.cur_user_item.status = "异常"
         elif all_ok:
-            self.cur_user_log.status = "Success!"
+            self._multi_run_status = "Success!"
             self.script_info.log = "检测到 ZZZ-OD 已完成任务"
         else:
             failed_users = "、".join(
@@ -1795,7 +1383,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 for user_item, _ in self._slot_users.values()
                 if user_item.status != "完成"
             )
-            self.cur_user_log.status = f"ZZZ-OD 部分用户执行失败: {failed_users}"
+            self._multi_run_status = f"ZZZ-OD 部分用户执行失败: {failed_users}"
+            self.script_info.log = self._multi_run_status
+
+        if self.cur_user_item.user_id not in self._multi_uids:
+            # 非参与用户只承担本次启动与进度展示，其日志不作为用户历史保存。
+            self.cur_user_log.status = self._multi_run_status
 
         self.run_book = all_ok
         self._multi_ran = True
@@ -1943,6 +1536,22 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             self.wait_event.set()
 
     async def final_task(self):
+        if self._multi_ran:
+            for user in self._history_users.values():
+                self.task_info.begin_user_history_capture(
+                    self.script_info,
+                    user,
+                    failed=user.status == "异常" and not self.stopped_manually,
+                )
+        else:
+            self.task_info.begin_user_history_capture(
+                self.script_info,
+                self.cur_user_item,
+                failed=bool(self.cur_user_item.log_record)
+                and not self.run_book
+                and not self.stopped_manually,
+            )
+
         # 结束时先清理进程与监控（正常结束/失败/超时/手动中止都走这里——
         # wait_for_finalizer_on_cancel 保证手动停止也会完整收尾）
         if self.log_monitor is not None:
@@ -1951,30 +1560,30 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         await self.kill_managed_process(kill_game=self._mas_should_close_game())
         await self._restore_injection()
 
-        # log_box 收尾：冲刷残留并完成后置聚合（账号归属 → sink 路由进各用户
-        # push_log）。manager.final_task 的报告聚合在子任务收尾之后执行，
-        # 此处先 close 保证节点详情已就位
+        # box 在宿主固定动态映射，后台归并后回到宿主按账号交付；
+        # 返回前节点已就位，manager 与调度台继续使用同一份用户结果。
         if self.log_collect is not None:
-            with suppress(Exception):
-                self.log_collect.close(
-                    make_zzzod_resolve(
-                        set(self._app_name_book.values()), self._idx_names
-                    )
-                )
+            await self.log_collect.close()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd/Okww/BetterGI 行为）
-        statistic_paths: list[Path] = []
-        for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.astimezone(UTC4)
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=dt,
-            )
+        await self._persist_user_run_result()
 
-            if log_item.status == "ZZZ-OD 正常运行中":
+        await self.run_user_scripts_after()
+
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
+            if log_item.status == "ZZZ-OD 正常运行中" or (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "未开始监看日志"
+            ):
                 log_item.status = "任务被用户手动中止"
 
+            was_cancelled = (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "任务被用户手动中止"
+            )
             if len(log_item.content) == 0:
                 log_item.content = ["未捕获到任何日志内容"]
                 # 未判定（进程异常退出/被中止）才标未捕获；已有终态判定时
@@ -1982,12 +1591,65 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 if log_item.status in ("未开始监看日志", "ZZZ-OD 正常运行中"):
                     log_item.status = "未捕获到日志"
 
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
-            statistic_paths.append(log_path.with_suffix(".json"))
+            history_records.append(
+                HistoryWrite(
+                    time=t.astimezone(UTC4),
+                    username=self.cur_user_item.name,
+                    script_name=self.script_info.name,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                    message=log_item.status,
+                    logs="".join(log_item.content),
+                )
+            )
 
-        if statistic_paths:
+        if not self._multi_ran or self.cur_user_item.user_id in self._history_users:
+            if history_records:
+                await self.task_info.save_user_history(
+                    history_records,
+                    script=self.script_info,
+                    user=self.cur_user_item,
+                    log_warning=logger.opt(exception=True).warning,
+                )
+        # 一次上游运行可同时执行多个实例，各用户沿用自己已确认的每轮结论。
+        for user in self._history_users.values():
+            if user is self.cur_user_item:
+                continue
+            records = [
+                HistoryWrite(
+                    time=started_at.astimezone(UTC4),
+                    username=user.name,
+                    script_name=self.script_info.name,
+                    status="success" if item.status == "Success!" else "error",
+                    message=item.status,
+                    logs="".join(item.content),
+                )
+                for started_at, item in user.iter_history_logs()
+            ]
+            if records:
+                await self.task_info.save_user_history(
+                    records,
+                    script=self.script_info,
+                    user=user,
+                    log_warning=logger.opt(exception=True).warning,
+                )
+
+        if history_records:
             try:
-                statistics = await Config.merge_statistic_info(statistic_paths)
+                statistics = {
+                    key: value.value
+                    for key, value in aggregate_data(
+                        [
+                            HistoryAggregationItem(time=record.time, data=record.data)
+                            for record in history_records
+                        ]
+                    ).data.items()
+                }
                 statistics["user_info"] = self.cur_user_item.name
                 start_time = getattr(self, "user_start_time", datetime.now())
                 statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -1998,12 +1660,13 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     user_result = "代理任务全部完成"
                 statistics["user_result"] = user_result
                 success_symbol = "√" if self.run_book else "X"
-                await push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
-                    f"{self.cur_user_item.name} 的 ZZZ-OD 自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
+                await self.task_info.notifications.push_statistics_report(
+                    payload=build_user_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 ZZZ-OD 自动代理统计报告",
+                        message=statistics,
+                    ),
+                    user_config=self.cur_user_config,
+                    task_info=self.task_info,
                 )
             except Exception as e:
                 # 失败不再静默：既记 ERROR 日志，也推到调度台实时日志
@@ -2012,7 +1675,6 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     f"推送 ZZZ-OD 用户统计通知时出现异常: {e}"
                 )
 
-        await self._persist_user_run_result()
         # 多实例触发者可能被正常跳过，整轮是否成功以实际参与用户的结果为准。
         if self._shutdown_after_success and self.run_book:
             shutdown_error = ""
@@ -2074,11 +1736,13 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 and self.cur_user_log.status
                 and self.cur_user_log.status != "Success!"
             ):
-                await Notify.push_plyer(
-                    "ZZZ-OD 运行异常",
-                    f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
-                    "异常",
-                    3,
+                await self.task_info.local_notifier.send_notice(
+                    LocalNotice(
+                        title="ZZZ-OD 运行异常",
+                        message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
+                        ticker="异常",
+                        duration_seconds=3,
+                    )
                 )
         except Exception:
             pass

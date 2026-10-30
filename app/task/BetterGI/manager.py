@@ -22,17 +22,17 @@ from datetime import datetime
 from app.config import ConfigCollection, config_manager
 from app.core import Config
 from app.core.ws import Publisher, protocol
+from app.log_box.report import build_user_result_text, mirror_report_to_dispatch
 from app.models.config import BetterGIConfig, BetterGIUserConfig
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
-from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
-from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH
+from app.utils import TASK_MODE_ZH, get_logger
 
 from .AutoProxy import _BGI_REL_EXE, AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-from .tools import archive_native_backup, push_notification
+from .tools import archive_native_backup
 from .Update import BetterGIUpdateTask
 
 logger = get_logger("BetterGI 调度器")
@@ -41,7 +41,7 @@ logger = get_logger("BetterGI 调度器")
 class BetterGIManager(ScriptManagerBase):
     """BetterGI 控制器（better-genshin-impact 线）"""
 
-    # 执行层已判为「部分失败」但允许继续的用户，保持原有已完成报告口径。
+    # 子任务失败不覆盖上游整条流程的完成结果，详情与警告在节点中展示。
     completed_user_statuses = frozenset({"完成", "部分失败"})
 
     def __init__(self, script_info: ScriptItem):
@@ -263,8 +263,10 @@ class BetterGIManager(ScriptManagerBase):
                 result = self.build_proxy_report(result_text=user_result_text)
 
                 try:
-                    await push_notification(
-                        "代理结果", title, result, task_info=self.task_info
+                    await self.task_info.notifications.push_proxy_result(
+                        title=title,
+                        report=TaskResultReport.from_message(result),
+                        task_info=self.task_info,
                     )
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")

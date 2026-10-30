@@ -20,12 +20,12 @@
         v-if="powerCountdownDisconnected"
         type="warning"
         show-icon
-        :message="t('comp.powerCountdownConnectionLost')"
+        :message="t('core.comp.powerCountdownConnectionLost')"
         class="countdown-disconnected"
       />
       <div class="countdown-timer">
         <span class="countdown-number">{{ remaining }}</span>
-        <span class="countdown-unit">{{ t('comp.seconds') }}</span>
+        <span class="countdown-unit">{{ t('core.comp.seconds') }}</span>
       </div>
       <a-progress
         :percent="Math.max(0, Math.min(100, ((60 - remaining) / 60) * 100))"
@@ -36,7 +36,7 @@
       />
       <div class="countdown-actions">
         <a-button type="primary" size="large" class="cancel-button" @click="handleCancel">
-          {{ t('comp.cancel2') }}
+          {{ t('core.comp.cancel2') }}
         </a-button>
       </div>
     </div>
@@ -127,7 +127,9 @@ const handleCancel = async () => {
 }
 
 .countdown-content .warning-icon {
+  width: fit-content;
   font-size: 64px;
+  margin-inline: auto;
   margin-bottom: 24px;
   display: block;
   animation: pulse 2s infinite;
@@ -175,6 +177,7 @@ const handleCancel = async () => {
 }
 
 .countdown-progress {
+  margin-inline-end: 0;
   margin-bottom: 32px;
 }
 

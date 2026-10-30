@@ -5,7 +5,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
 
-from app.core.ws import Publisher, protocol
+from app.core.custom_script import execute_script_task
 from app.models.config import (
     BAAHConfig,
     BetterGIConfig,
@@ -19,10 +19,10 @@ from app.models.config import (
     WhimboxConfig,
     ZzzOdConfig,
 )
-from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.task.failure_capture_core import FailureCapture
 from app.task.proxy_helpers import push_dispatch_log
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("脚本运行")
 
@@ -68,6 +68,13 @@ type ProxyScriptConfigType = (
 
 
 class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecuteBase):
+    _failure_capture: FailureCapture | None = None
+
+    def _on_finalize_cancel_requested(self) -> None:
+        if self._failure_capture is not None:
+            self.stopped_manually = True
+            self._failure_capture.cancel()
+
     # 总时限涵盖等待和全部重试，不随日志推进重置；收尾必须完成后再切换账号。
     wait_for_finalizer_on_cancel = True
 
@@ -96,9 +103,6 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
     async def run_user_scripts_before(self) -> None:
         """执行用户级任务前脚本；每用户一次，先于全部重试。"""
 
-        # 就地导入：专项包会反向导入本模块，模块级导入会成环。
-        from app.task.general.tools import execute_script_task
-
         self._user_scripts_started = True
         if getattr(self.cur_user_config.Info, "IfScriptBeforeTask", False):
             await execute_script_task(
@@ -109,16 +113,21 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
     async def run_user_scripts_after(self) -> None:
         """执行用户级任务后脚本；前置未执行过时跳过，保证成对且只一次。"""
 
-        from app.task.general.tools import execute_script_task
-
         if not self._user_scripts_started:
             return
         self._user_scripts_started = False
         if getattr(self.cur_user_config.Info, "IfScriptAfterTask", False):
-            await execute_script_task(
-                getattr(self.cur_user_config.Info, "ScriptAfterTask", None),
-                "脚本后任务",
-            )
+            try:
+                await execute_script_task(
+                    getattr(self.cur_user_config.Info, "ScriptAfterTask", None),
+                    "脚本后任务",
+                )
+            except Exception as error:
+                message = f"用户任务后脚本执行失败：{error}"
+                logger.opt(exception=True).warning(message)
+                logs = self.cur_user_item.iter_history_logs()
+                if logs:
+                    logs[-1][1].content.append(message + "\n")
 
     async def skip_on_game_maintenance(self, detect: Callable[[], str | None]) -> bool:
         """游戏画面维护检测：命中维护弹窗文本则把当前用户记为维护跳过。
@@ -177,11 +186,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
 
         try:
             await push_dispatch_log(self.script_info, reason)
-            await Publisher.send(
-                id=self.task_info.task_id,
-                type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="info", message=reason),
-            )
+            await self.task_info.send_notice(level="info", message=reason)
         except Exception:
             logger.opt(exception=True).warning("维护跳过通知推送失败（忽略）")
 
@@ -265,7 +270,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
                 record = user.log_record[max(user.log_record)]
             else:
                 record = LogRecord()
-                user.log_record[datetime.now()] = record
+                user.add_log_record(datetime.now().astimezone(), record)
             record.status = message
             record.content.append(message)
             self.script_info.log = f"{message}\n正在中止相关程序"

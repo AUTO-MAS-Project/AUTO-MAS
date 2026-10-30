@@ -37,7 +37,7 @@ from app.config.types import (
     normalize_path_input,
     path_policy,
 )
-from app.utils.constants import EMULATOR_PATH_BOOK
+from app.utils import EMULATOR_PATH_BOOK
 
 from .base import DomainEntry
 
@@ -50,9 +50,9 @@ def normalize_emulator_manager(value: object, info: ValidationInfo) -> object:
     kind = info.data.get("Type", "general")
     if kind not in EMULATOR_PATH_BOOK:
         return value
-    from app.utils.emulator.tools import find_emulator_manager_path
+    from app.utils import emulator as _utils_emulator
 
-    return find_emulator_manager_path(str(value), kind)
+    return _utils_emulator.tools.find_emulator_manager_path(str(value), kind)
 
 
 EmulatorManagerPath = Annotated[
@@ -66,9 +66,10 @@ class EmulatorConfig(DomainEntry):
     "模拟器配置"
 
     class InfoFields(ConfigGroup):
-        Type: Literal["general", "mumu", "ldplayer", "emulator2"] = Field(
-            default_factory=lambda: "general", description="模拟器类型"
-        )
+        Type: Annotated[
+            Literal["general", "mumu", "ldplayer", "emulator2"],
+            legacy(group="Data", name="Type"),
+        ] = Field(default_factory=lambda: "general", description="模拟器类型")
 
         Baselines: JsonDictString = Field(
             default_factory=lambda: "{}",

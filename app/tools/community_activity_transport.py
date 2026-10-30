@@ -37,7 +37,7 @@ from datetime import datetime
 from typing import Literal
 from urllib.parse import urlencode
 
-from app.utils.constants import UTC8
+from app.utils import UTC8
 
 from .community_activity_parser import parse_activity_snapshot
 from .community_contract import ActivityState, CommunityActivitySnapshot

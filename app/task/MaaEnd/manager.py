@@ -20,36 +20,33 @@ from time import time_ns
 
 from app.config import ConfigCollection, config_manager
 from app.core import Config, EmulatorManager
+from app.core.maa_capture import capture_adb, capture_win32
 from app.core.ws import Publisher, protocol
-from app.models.config import MaaEndConfig, MaaEndUserConfig
+from app.log_box.report import build_user_result_text, mirror_report_to_dispatch
+from app.models.config import MaaEndConfig, MaaEndUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.services.endfield_launcher import resolve_launcher_exe
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
+from app.task.notify_core import screenshot_entries
 from app.task.proxy_helpers import push_dispatch_log
-from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
-from app.utils import get_logger
-from app.utils.constants import (
+from app.utils import (
     BASE_NATIVE,
     BASE_SHARED,
     BASE_SOURCE_LABELS,
     TASK_MODE_ZH,
+    get_logger,
 )
-from app.utils.io import (
-    clear_native_config_snapshot,
-    commit_native_config_snapshot,
-    force_rmtree,
-    recover_native_config,
-    swap_in_dir,
-)
+from app.utils import io as _utils_io
 
 from .AutoProxy import AutoProxyTask
 from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_base
 from .tools.backup_archive import archive_native_backup
-from .tools.notify import collect_recent_error_images, push_notification
+from .tools.notify import collect_recent_error_images
 from .tools.update import ensure_game_updated
 from .Update import EndfieldUpdateTask
 
@@ -63,6 +60,16 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 
 class MaaEndManager(ScriptManagerBase):
     """MaaEnd 控制器"""
+
+    maintenance_message = "终末地正在维护"
+
+    def maintenance_game(self, user_config: UserConfigType) -> str | None:
+        if (
+            isinstance(user_config, MaaEndUserConfig)
+            and user_config.Info.Resource == "官服"
+        ):
+            return "endfield"
+        return None
 
     wait_for_finalizer_on_cancel = True
 
@@ -149,6 +156,14 @@ class MaaEndManager(ScriptManagerBase):
             if launch_mode == "MaaEnd":
                 if controller_name not in loader.pretask_controllers("LaunchGamePC"):
                     return "当前 MaaEnd 或控制器不支持「MaaEnd 启动」，请选择启动器启动或 MAS 启动"
+                if script_config.Game.LauncherPath:
+                    try:
+                        resolve_launcher_exe(
+                            Path(str(script_config.Game.Path)),
+                            str(script_config.Game.LauncherPath),
+                        )
+                    except ValueError as error:
+                        return str(error)
             else:
                 # MAS 两种启动方式需要有效启动器；原生模式由 MaaEnd 自行定位。
                 client_exe = Path(str(script_config.Game.Path or "").strip())
@@ -219,7 +234,7 @@ class MaaEndManager(ScriptManagerBase):
         # 先处置上次崩溃残留的快照, 再备份原始配置。无条件清空会把崩溃后唯一
         # 一份原始配置副本删掉, 让注入污染的状态固化成「原始配置」。
         self._recover_previous_run()
-        if commit_native_config_snapshot(
+        if _utils_io.commit_native_config_snapshot(
             self.temp_path,
             self.maaend_config_dir,
             script_id=self.script_info.script_id,
@@ -261,16 +276,16 @@ class MaaEndManager(ScriptManagerBase):
         ):
             return
         if not self.had_original_script_config:
-            force_rmtree(self.maaend_config_dir)
+            _utils_io.force_rmtree(self.maaend_config_dir)
             return
 
         logger.info(f"复原 MaaEnd 脚本配置文件: {self.temp_path}")
-        swap_in_dir(self.temp_path, self.maaend_config_dir)
+        _utils_io.swap_in_dir(self.temp_path, self.maaend_config_dir)
 
     def _recover_previous_run(self) -> None:
         """处置上次崩溃残留的原始配置快照。"""
 
-        result = recover_native_config(
+        result = _utils_io.recover_native_config(
             self.temp_path,
             self.maaend_config_dir,
             expected_script_id=self.script_info.script_id,
@@ -288,7 +303,7 @@ class MaaEndManager(ScriptManagerBase):
 
     def _cleanup_script_config_temp(self) -> None:
         if self.temp_path:
-            clear_native_config_snapshot(self.temp_path)
+            _utils_io.clear_native_config_snapshot(self.temp_path)
 
     def _keep_script_config_changes(self) -> bool:
         """原生来源配置会话成功时保留 MaaEnd GUI 的写回。"""
@@ -441,6 +456,8 @@ class MaaEndManager(ScriptManagerBase):
                 # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
                 kwargs["view_only"] = self.task_info.view_only
             elif self.task_info.mode == "AutoProxy":
+                kwargs["capture_adb"] = capture_adb
+                kwargs["capture_win32"] = capture_win32
                 kwargs["on_error_screenshot"] = self.error_screenshot_paths.append
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             try:
@@ -500,16 +517,18 @@ class MaaEndManager(ScriptManagerBase):
                     else ()
                 )
                 result = self.build_proxy_report(result_text=user_result_text)
+                if error_images:
+                    result["screenshots"] = screenshot_entries(
+                        [(image.alt, image) for image in error_images]
+                    )
 
                 try:
                     if self.all_users_maintenance_skipped:
                         await self.notify_maintenance()
                     else:
-                        await push_notification(
-                            mode="代理结果",
+                        await self.task_info.notifications.push_proxy_result(
                             title=title,
-                            message=result,
-                            user_config=None,
+                            report=TaskResultReport.from_message(result),
                             task_info=self.task_info,
                             images=error_images,
                         )

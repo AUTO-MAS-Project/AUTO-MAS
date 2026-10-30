@@ -3,9 +3,8 @@
 
 """OBS replay-buffer integration used by failed task recordings.
 
-The service deliberately owns only a small, private directory below ``data``.
-OBS is treated as an optional local service: a missing OBS instance or a
-failed copy must never change the result of the task that requested a replay.
+Only temporary task copies are managed below ``data``. Manual capture leaves
+files in OBS output. Missing OBS or failed copying never changes task results.
 """
 
 from __future__ import annotations
@@ -22,14 +21,13 @@ import uuid
 from collections import deque
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
 
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
-from app.models.schema import ObsReplayCheckOut, ReplayRecord
+from app.models.schema import ObsReplayCheckOut
 from app.utils import get_logger
 
 logger = get_logger("OBS回放")
@@ -50,14 +48,13 @@ _DRAIN_TIMEOUT = 30.0
 # internal/cli/backend.go 的 backendShutdownTimeoutDefault、
 # internal/backend/control.go 的 closeCtx），超时即强制回收进程树。这 5 秒要
 # 覆盖 main.py shutdown_services() 的全部步骤（停任务、DesktopGuard、本服务、
-# RuntimeTasks、Matomo）和 uvicorn 退出，所以本服务只占 2 秒：前 1 秒等在途
+# RuntimeTasks 等）和 uvicorn 退出，所以本服务只占 2 秒：前 1 秒等在途
 # 保存完成，余下留给取消生效与关闭 OBS 连接。被放弃的线程是守护线程：能跑完就
-# 各自收尾，进程先退出留下的半成品由下次启动时的 _sweep_leftovers 清理。
+# 各自收尾，进程先退出留下的半成品由下次启动时的 cleanup_temporary 清理。
 _STOP_TIMEOUT = 2.0
 _STOP_CANCEL_RESERVE = 1.0
 _COPY_CANCEL_TIMEOUT = 2.0
 _COPY_CHUNK_SIZE = 1024 * 1024
-_METADATA_PREFIX = "mas-replay-"
 
 
 class ObsReplayError(RuntimeError):
@@ -70,19 +67,12 @@ class ObsReplayOptions:
 
     port: int = 4455
     password: str = field(default="", repr=False)
-    max_replay_count: int = 3
 
     def __post_init__(self) -> None:
         if isinstance(self.port, bool) or not isinstance(self.port, int):
             raise ValueError("OBS端口必须是整数")
         if not 1 <= self.port <= 65535:
             raise ValueError("OBS端口范围无效")
-        if isinstance(self.max_replay_count, bool) or not isinstance(
-            self.max_replay_count, int
-        ):
-            raise ValueError("回放保留数量必须是整数")
-        if not 1 <= self.max_replay_count <= 20:
-            raise ValueError("回放保留数量必须在1到20之间")
 
 
 @dataclass(eq=False)
@@ -97,11 +87,6 @@ class _CopyCancelled(Exception):
     pass
 
 
-def _safe_name(value: str, *, limit: int = 64) -> str:
-    value = re.sub(r"[^0-9A-Za-z_\-\u4e00-\u9fff]+", "-", value).strip("-._")
-    return (value or "replay")[:limit]
-
-
 def _normal_path(path: str | Path) -> str:
     """Return a case-insensitive path key without following missing targets."""
 
@@ -111,17 +96,6 @@ def _normal_path(path: str | Path) -> str:
     except (OSError, ValueError):
         normalized = raw
     return normalized.replace("\\", "/").casefold()
-
-
-def _is_direct_file(path: Path, directory: Path) -> bool:
-    """Check that a managed path is a regular direct child of our directory."""
-
-    if path.is_symlink() or not path.is_file():
-        return False
-    try:
-        return path.resolve(strict=True).parent == directory.resolve(strict=True)
-    except (FileNotFoundError, OSError, RuntimeError):
-        return False
 
 
 def _copy_file_chunked(
@@ -145,123 +119,6 @@ def _copy_file_chunked(
     except BaseException:
         destination.unlink(missing_ok=True)
         raise
-
-
-def _write_json_atomic(
-    path: Path, payload: dict[str, Any], *, mtime_ns: int | None = None
-) -> None:
-    """Write metadata in the same directory and publish it with os.replace."""
-
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.part")
-    try:
-        data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-        with temporary.open("x", encoding="utf-8", newline="\n") as file:
-            file.write(data)
-            file.flush()
-            os.fsync(file.fileno())
-        if mtime_ns is not None:
-            os.utime(temporary, ns=(mtime_ns, mtime_ns))
-        os.replace(temporary, path)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
-
-
-def _publish_files(
-    temporary: Path,
-    target: Path,
-    metadata: Path,
-    payload: dict[str, Any],
-    cancel_event: threading.Event,
-) -> None:
-    """Move the copy into place and commit it by writing its metadata.
-
-    Runs in a daemon thread that may outlive an abandoned wait, so it cleans up
-    on its own: once it finishes, either both files are published or neither
-    remains.  If the process exits first, :func:`_sweep_leftovers` removes the
-    half-published copy on the next start.
-    """
-
-    try:
-        if cancel_event.is_set():
-            raise _CopyCancelled
-        os.replace(temporary, target)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
-    try:
-        if cancel_event.is_set():
-            raise _CopyCancelled
-        # 元数据原子写入即提交点；写入前失败或取消则撤回已挪入的副本。
-        _write_json_atomic(metadata, payload)
-    except BaseException:
-        target.unlink(missing_ok=True)
-        raise
-
-
-def _rewrite_metadata(
-    metadata: Path, update: dict[str, Any], cancel_event: threading.Event
-) -> None:
-    """Merge fields into published metadata, keeping its publication time."""
-
-    published_at = metadata.stat().st_mtime_ns
-    payload = json.loads(metadata.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        return
-    payload.update(update)
-    ReplayRecord.model_validate(payload)
-    if cancel_event.is_set():
-        raise _CopyCancelled
-    # 保留时间按元数据 mtime 排序，补齐信息不能让旧副本变成「最新」。
-    _write_json_atomic(metadata, payload, mtime_ns=published_at)
-
-
-def _delete_managed_file(path: Path, directory: Path) -> bool:
-    if not _is_direct_file(path, directory):
-        return False
-    try:
-        path.unlink()
-        return True
-    except FileNotFoundError:
-        return True
-    except OSError:
-        return False
-
-
-_LEFTOVER_PART = re.compile(r"\..+\.[0-9a-f]{32}\.part")
-_REPLAY_STEM = re.compile(r".+-\d{8}T\d{12}Z-(?P<token>[0-9a-f]{32})")
-
-
-def _sweep_leftovers(directory: Path) -> int:
-    """Remove files left by daemon threads that the previous process abandoned.
-
-    Only this service's own names are touched: ``.part`` temporaries, and
-    copies whose same-token metadata is missing.  Copies pair with metadata by
-    token rather than by the stored absolute path, so moving the whole install
-    directory does not orphan anything.  Must run before this process starts
-    any copy or publish.
-    """
-
-    resolved = directory.resolve(strict=False)
-    removed = 0
-    for path in directory.iterdir():
-        if path.is_symlink() or not path.is_file():
-            continue
-        if _LEFTOVER_PART.fullmatch(path.name):
-            orphan = True
-        elif path.name.startswith((".", _METADATA_PREFIX)):
-            continue
-        else:
-            match = _REPLAY_STEM.fullmatch(path.stem)
-            orphan = (
-                match is not None
-                and not (
-                    directory / f"{_METADATA_PREFIX}{match['token']}.json"
-                ).exists()
-            )
-        if orphan and _delete_managed_file(path, resolved):
-            removed += 1
-    return removed
 
 
 def _auth_response(password: str, salt: str, challenge: str) -> str:
@@ -467,20 +324,41 @@ class _ObsClient:
 
 
 class ObsReplayService:
-    """Save OBS replay-buffer files and maintain a bounded local archive."""
+    """采集 OBS 原件或本轮临时副本；长期归档由历史模块负责。"""
 
     def __init__(self, root: Path | None = None):
         self.root = Path.cwd() if root is None else Path(root)
-        self.directory = self.root / "data" / "replays"
+        self.directory = self.root / "data" / "history-capture"
         self._obs_lock = asyncio.Lock()
-        self._storage_lock = asyncio.Lock()
         self._save_tasks: set[asyncio.Task[Any]] = set()
         self._copy_operations: set[_CopyOperation] = set()
         self._connections: set[_ObsClient] = set()
-        # 保存在途的回放 replayId -> 暂存的补齐字段，发布时合并，失败时丢弃。
-        self._staged_updates: dict[str, dict[str, Any]] = {}
         self._closing = False
-        self._swept = False
+
+    async def cleanup_temporary(self) -> None:
+        """启动时仅清理本服务遗留的临时副本，OBS输出完全不参与。"""
+
+        def clean() -> None:
+            if self.directory.is_symlink() or self.directory.is_junction():
+                raise ObsReplayError("回放临时目录不能是链接")
+            if not self.directory.is_dir():
+                return
+            for path in self.directory.iterdir():
+                if path.is_symlink() or not path.is_file():
+                    continue
+                if (
+                    re.fullmatch(
+                        r"[0-9a-f]{32}(?:\.[^/\\]+)?|\.[0-9a-f]{32}\.part", path.name
+                    )
+                    is None
+                ):
+                    continue
+                try:
+                    path.unlink()
+                except OSError as error:
+                    logger.warning(f"回放临时副本清理失败：{path}: {error}")
+
+        await asyncio.to_thread(clean)
 
     @asynccontextmanager
     async def _client(self, options: ObsReplayOptions) -> AsyncIterator[_ObsClient]:
@@ -494,137 +372,76 @@ class ObsReplayService:
             await client.close()
 
     async def check(self, options: ObsReplayOptions) -> ObsReplayCheckOut:
-        """Check the local OBS connection and replay-buffer state."""
-
+        """仅检查连接及回放缓冲，不创建本地归档。"""
         try:
             async with self._client(options) as client:
                 version = await client.version()
                 active, _ = await client.replay_status()
+                previous = await client.last_replay_path()
                 return ObsReplayCheckOut(
                     connected=True,
                     replayActive=active,
                     version=version,
-                    directory=str(self.directory),
+                    directory=str(Path(previous).parent) if previous else "",
                 )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.debug(f"OBS检查失败：{type(exc).__name__}")
-            return ObsReplayCheckOut(
-                code=500,
-                status="error",
-                message=str(exc),
-                connected=False,
-                replayActive=False,
-                version="",
-                directory=str(self.directory),
-            )
+            return ObsReplayCheckOut(code=500, status="error", message=str(exc))
 
-    async def save(
-        self, options: ObsReplayOptions, record: ReplayRecord
-    ) -> ReplayRecord:
-        """Save one replay and publish its metadata after a complete copy."""
-
-        current_task = asyncio.current_task()
+    async def capture(
+        self, options: ObsReplayOptions, *, temporary_copy: bool = True
+    ) -> Path:
+        """及时保存缓冲；手动测试直接返回 OBS 原件，任务得到可移动副本。"""
         if self._closing:
             raise ObsReplayError("回放服务正在停止")
-        if current_task is not None:
-            self._save_tasks.add(current_task)
-        self._staged_updates[record.replayId] = {}
+        current = asyncio.current_task()
+        if current is not None:
+            self._save_tasks.add(current)
         try:
-            return await self._save_impl(options, record)
+            async with self._queued_lock(self._obs_lock, _QUEUE_TIMEOUT):
+                async with self._client(options) as client:
+                    active, _ = await client.replay_status()
+                    if not active:
+                        raise ObsReplayError("OBS回放缓冲未开启")
+                    old_path = await client.last_replay_path()
+                    old_key = (
+                        _normal_path(Path(old_path).resolve(strict=False))
+                        if old_path
+                        else None
+                    )
+                    source = await self._resolve_saved_source(
+                        client,
+                        await client.save_replay(),
+                        old_key=old_key,
+                    )
+            if not temporary_copy:
+                return source
+            await asyncio.to_thread(self.directory.mkdir, parents=True, exist_ok=True)
+            token = uuid.uuid4().hex
+            target = self.directory / f"{token}{source.suffix}"
+            temporary = self.directory / f".{token}.part"
+            try:
+                await self._copy_to(source, temporary)
+                if self._closing:
+                    raise ObsReplayError("回放服务正在停止")
+                # 复制线程只写 .part，发布由仍在途的协程执行，取消后不能迟到发布。
+                temporary.rename(target)
+                return target
+            finally:
+                with suppress(OSError):
+                    temporary.unlink(missing_ok=True)
         except asyncio.CancelledError:
             raise
         except ObsReplayError:
             raise
         except Exception as exc:
-            logger.opt(exception=True).warning(f"OBS回放保存失败：{type(exc).__name__}")
-            raise ObsReplayError(f"OBS回放保存失败：{type(exc).__name__}") from exc
+            logger.opt(exception=True).warning(f"OBS回放采集失败：{type(exc).__name__}")
+            raise ObsReplayError(f"OBS回放采集失败：{type(exc).__name__}") from exc
         finally:
-            # 发布时已取走；仍在这里说明保存失败或被取消，暂存的补齐随之丢弃。
-            self._staged_updates.pop(record.replayId, None)
-            if current_task is not None:
-                self._save_tasks.discard(current_task)
-
-    async def update_record(
-        self,
-        replay_id: str,
-        *,
-        reason: str | None = None,
-        history_paths: list[str] | None = None,
-    ) -> None:
-        """Fill in the reason and history links once the failure log is final.
-
-        A save still in flight keeps the update and merges it on publication;
-        a published record has its metadata rewritten atomically.  This is a
-        side channel: failures are only logged and never reach the scheduler.
-        """
-
-        update: dict[str, Any] = {}
-        if reason is not None:
-            update["reason"] = reason
-        if history_paths is not None:
-            update["historyPaths"] = list(history_paths)
-        if not update:
-            return
-        current_task = asyncio.current_task()
-        if current_task is not None:
-            # 补齐也是回放收尾的一部分，电源操作前的 drain 与 stop 一并等待或取消。
-            self._save_tasks.add(current_task)
-        try:
-            async with self._storage_lock:
-                staged = self._staged_updates.get(replay_id)
-                if staged is not None:
-                    staged.update(update)
-                    return
-                if self._closing:
-                    return
-                metadata = next(
-                    (
-                        path
-                        for path, record in await self._read_records()
-                        if record.replayId == replay_id
-                    ),
-                    None,
-                )
-                if metadata is None:
-                    # 保存失败、被取消，或已被保留策略清掉。
-                    return
-                await self._run_file_work(
-                    _rewrite_metadata, metadata, update, name="obs-replay-update"
-                )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.warning(f"失败回放信息补齐失败：{type(exc).__name__}")
-        finally:
-            if current_task is not None:
-                self._save_tasks.discard(current_task)
-
-    async def _save_impl(
-        self, options: ObsReplayOptions, record: ReplayRecord
-    ) -> ReplayRecord:
-        self._ensure_directory()
-        async with self._queued_lock(self._obs_lock, _QUEUE_TIMEOUT):
-            async with self._client(options) as client:
-                version = await client.version()
-                active, _ = await client.replay_status()
-                if not active:
-                    raise ObsReplayError("OBS回放缓冲未开启")
-                old_path = await client.last_replay_path()
-                old_key = (
-                    _normal_path(Path(old_path).resolve(strict=False))
-                    if old_path
-                    else None
-                )
-                event_data = await client.save_replay()
-                source = await self._resolve_saved_source(
-                    client,
-                    event_data,
-                    old_key=old_key,
-                )
-        # 文件复制独立于 OBS 请求，下一账号失败时仍能及时保存缓冲。
-        return await self._archive_copy(options, record, source, version)
+            if current is not None:
+                self._save_tasks.discard(current)
 
     @staticmethod
     @asynccontextmanager
@@ -677,66 +494,6 @@ class ObsReplayService:
     def _event_path(event_data: dict[str, Any]) -> str | None:
         value = event_data.get("savedReplayPath")
         return value if isinstance(value, str) and value else None
-
-    async def _archive_copy(
-        self,
-        options: ObsReplayOptions,
-        record: ReplayRecord,
-        source: Path,
-        version: str,
-    ) -> ReplayRecord:
-        source = source.resolve(strict=False)
-        if source.is_symlink() or not source.is_file():
-            raise ObsReplayError("OBS回放源文件无效")
-        token = uuid.uuid4().hex
-        name = _safe_name(str(record.replayId))
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        target = self.directory / f"{name}-{timestamp}-{token}{source.suffix}"
-        temporary = self.directory / f".{target.name}.{token}.part"
-        metadata = self.directory / f"{_METADATA_PREFIX}{token}.json"
-        publishing = False
-        try:
-            await self._copy_to(source, temporary)
-            async with self._storage_lock:
-                # 取走暂存的补齐字段；此后到达的补齐直接改写已发布的元数据。
-                staged = self._staged_updates.pop(record.replayId, {})
-                published = record.model_copy(
-                    update={**staged, "filePath": str(target)}
-                )
-                payload = published.model_dump(mode="json")
-                payload["sourcePath"] = str(source)
-                payload["obsVersion"] = version
-                publishing = True
-                await self._run_file_work(
-                    _publish_files,
-                    temporary,
-                    target,
-                    metadata,
-                    payload,
-                    name="obs-replay-publish",
-                )
-                try:
-                    await self._retain(options.max_replay_count)
-                except Exception as exc:
-                    # 副本已完整发布，清理旧副本失败不算这次保存失败。
-                    logger.warning(f"回放保留清理失败：{type(exc).__name__}")
-            return published
-        except asyncio.CancelledError:
-            # 发布线程自己负责副本与元数据的一致性，这里只清理还没交给它的临时文件；
-            # 复制线程仍持有临时文件时删除会失败，它停止后自行清理。
-            if not publishing:
-                with suppress(OSError):
-                    temporary.unlink(missing_ok=True)
-            raise
-        except _CopyCancelled as exc:
-            raise ObsReplayError("回放文件发布已取消") from exc
-        except ObsReplayError:
-            temporary.unlink(missing_ok=True)
-            raise
-        except Exception as exc:
-            temporary.unlink(missing_ok=True)
-            stage = "发布" if publishing else "复制"
-            raise ObsReplayError(f"回放文件{stage}失败：{type(exc).__name__}") from exc
 
     async def _copy_to(self, source: Path, temporary: Path) -> None:
         # OBS 输出可能在慢盘上；取消后复制线程只负责停止复制和删除临时文件，
@@ -793,78 +550,6 @@ class ObsReplayService:
             raise
         finally:
             self._copy_operations.discard(operation)
-
-    async def _read_records(self) -> list[tuple[Path, ReplayRecord]]:
-        records: list[tuple[Path, ReplayRecord]] = []
-        published_times: dict[Path, int] = {}
-        if self.directory.is_symlink() or not self.directory.is_dir():
-            return records
-        directory = self.directory.resolve(strict=False)
-        for metadata in self.directory.glob(f"{_METADATA_PREFIX}*.json"):
-            if metadata.is_symlink() or not metadata.is_file():
-                continue
-            try:
-                payload = json.loads(metadata.read_text(encoding="utf-8"))
-                if not isinstance(payload, dict):
-                    continue
-                record = ReplayRecord.model_validate(payload)
-                file_path = Path(record.filePath)
-                token = metadata.stem.removeprefix(_METADATA_PREFIX)
-                if not re.fullmatch(
-                    r"[0-9a-f]{32}", token
-                ) or not file_path.stem.endswith(f"-{token}"):
-                    continue
-                if not file_path.is_absolute():
-                    file_path = (Path.cwd() / file_path).resolve(strict=False)
-                if not _is_direct_file(file_path, directory):
-                    continue
-                record = record.model_copy(update={"filePath": str(file_path)})
-                published_times[metadata] = metadata.stat().st_mtime_ns
-            except (OSError, ValueError, TypeError, json.JSONDecodeError):
-                continue
-            records.append((metadata, record))
-        # 按副本发布顺序保留，慢复制不能在发布时立即被较早完成的副本挤掉。
-        records.sort(key=lambda pair: published_times[pair[0]], reverse=True)
-        return records
-
-    def _ensure_directory(self) -> None:
-        if self.directory.is_symlink():
-            raise ObsReplayError("回放目录无效")
-        self.directory.mkdir(parents=True, exist_ok=True)
-        if not self._swept:
-            # 本进程第一次用到目录时还没有任何复制或发布在进行，可以放心清理。
-            self._swept = True
-            try:
-                removed = _sweep_leftovers(self.directory)
-            except OSError as exc:
-                logger.warning(f"回放目录残留清理失败：{type(exc).__name__}")
-            else:
-                if removed:
-                    logger.info(f"已清理上次退出时残留的回放半成品 {removed} 个")
-
-    async def list_replays(self, history_path: str | None = None) -> list[ReplayRecord]:
-        """Return published records, newest first, optionally by history path."""
-
-        async with self._storage_lock:
-            self._ensure_directory()
-            records = await self._read_records()
-        if history_path is None:
-            return [record for _, record in records]
-        wanted = _normal_path(history_path)
-        return [
-            record
-            for _, record in records
-            if any(_normal_path(path) == wanted for path in record.historyPaths)
-        ]
-
-    async def _retain(self, max_replay_count: int) -> None:
-        records = await self._read_records()
-        for metadata, record in records[max_replay_count:]:
-            file_path = Path(record.filePath)
-            if not _is_direct_file(file_path, self.directory.resolve(strict=False)):
-                continue
-            if _delete_managed_file(file_path, self.directory.resolve(strict=False)):
-                _delete_managed_file(metadata, self.directory.resolve(strict=False))
 
     async def drain(self, timeout: float = _DRAIN_TIMEOUT) -> bool:
         """Wait for currently registered saves, returning false on timeout."""

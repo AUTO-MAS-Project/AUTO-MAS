@@ -59,7 +59,10 @@ export function useDesktopMascotTaskAdapter(): {
             enabled: !task.stopping,
           })),
       start: async taskId => {
-        const response = await taskApi.startTask({ taskId, mode: TaskCreateIn.mode.AUTO_PROXY })
+        const response = await taskApi.startTask(
+          { taskId, mode: TaskCreateIn.mode.AUTO_PROXY },
+          { source: 'mascot' }
+        )
         return { taskId: response.taskId }
       },
       stop: taskApi.stopTask,

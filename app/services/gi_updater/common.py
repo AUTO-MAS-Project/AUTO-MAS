@@ -49,7 +49,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
-from app.utils.update_files import resolve_within
+from app.utils import update_files as _utils_update_files
 
 __all__ = [
     "IniFormatError",
@@ -206,7 +206,9 @@ def safe_join(root: str, rel_path: str) -> str:
     parts = split_rel_path(rel_path)
     joined = os.path.join(root, *parts)
     try:
-        resolve_within(root, os.path.join(*parts), resolve_links=False)
+        _utils_update_files.resolve_within(
+            root, os.path.join(*parts), resolve_links=False
+        )
     except ValueError as error:
         raise UnsafePathError(str(error)) from error
     return joined
@@ -451,11 +453,11 @@ class IniFile:
 
         from pathlib import Path as _Path
 
-        from app.utils.io import atomic_write as _atomic_write
+        from app.utils import io as _utils_io
 
         existing = self._read_existing(path)
         payload = self.dumps() if existing is None else self._splice(existing)
-        _atomic_write(_Path(path), payload.encode(self.encoding))
+        _utils_io.atomic_write(_Path(path), payload.encode(self.encoding))
 
     def _read_existing(self, path: str) -> Optional[str]:
         """按加载时的编码读出磁盘上的现有内容。

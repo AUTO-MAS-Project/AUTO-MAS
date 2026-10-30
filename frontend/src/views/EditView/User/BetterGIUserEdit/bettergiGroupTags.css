@@ -1,0 +1,35 @@
+.gi-kind-tag-default {
+  background: #f0f0f0;
+  border-color: #d9d9d9;
+  color: #404040;
+}
+
+.gi-kind-tag-stamina {
+  background: #f9f0ff;
+  border-color: #d3adf7;
+  color: #531dab;
+}
+
+.gi-kind-tag-custom {
+  background: #e6f4ff;
+  border-color: #91caff;
+  color: #0958d9;
+}
+
+.gi-kind-tag-pathing {
+  background: #f6ffed;
+  border-color: #b7eb8f;
+  color: #389e0d;
+}
+
+.gi-kind-tag-scriptgroup {
+  background: #fff7e6;
+  border-color: #ffd591;
+  color: #d46b08;
+}
+
+.gi-kind-tag-keymouse {
+  background: #fff1f0;
+  border-color: #ffa39e;
+  color: #dc143c;
+}

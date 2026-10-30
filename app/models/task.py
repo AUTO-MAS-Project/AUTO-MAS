@@ -25,12 +25,22 @@ import asyncio
 import time
 import weakref
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Literal, Optional
+from pathlib import Path
+from typing import TYPE_CHECKING, List, Literal, Optional
+from uuid import UUID
 
+from app.models.game_maintenance import MaintenanceWindow
+from app.models.notification_ports import LocalNotifier, TaskNotifications
+from app.models.notification_report import TaskNotificationState
 from app.runtime_tasks import RuntimeTasks
-from app.utils.logger import get_logger
+from app.utils import get_logger
+
+if TYPE_CHECKING:
+    from app.models.config import UserConfigType
+    from app.models.schema import HistoryWrite
 
 logger = get_logger("任务执行")
 
@@ -41,12 +51,32 @@ TaskTriggerSource = Literal[
 ]
 
 
+@dataclass(frozen=True, kw_only=True)
+class ScriptTaskResources:
+    """专项声明原始资源，规范化与占用管理由公共调度器负责。"""
+
+    root_paths: tuple[Path, ...] = ()
+    emulator: tuple[str | UUID, str] | None = None
+
+
 @dataclass
 class LogRecord:
     content: list[str] = field(default_factory=list)
     status: str = "未开始监看日志"
     # 所属运行阶段（如 MaaEnd 的送货/日常/自动采集），用于历史记录结果前缀
     phase: str = ""
+
+
+@dataclass(frozen=True)
+class UserTaskProgress:
+    """调度台用户行上的任务进度：第几个任务（从 1 数）、共几个、当前任务名。
+
+    目前只有 MFW 给（worker 推的任务开始事件），其余专项一直是 None。
+    """
+
+    current: int
+    total: int
+    task: str
 
 
 @dataclass
@@ -57,26 +87,44 @@ class UserItem:
     log_record: dict[datetime, LogRecord] = field(
         default_factory=dict
     )  # 用户本次代理的全部日志记录
-    push_log: list[tuple[str, str, float]] = field(
+    push_log: list[tuple[str, str] | tuple[str, str, float | None]] = field(
         default_factory=list
-    )  # 用户本次代理采集的推送日志，元素为 (日志类型, 格式化文本, 采集时间戳)
+    )  # 用户本次代理采集的推送日志；兼容二元组及时间戳为空的三元组
     push_log_mode: str = field(
         default="汇总"
     )  # 节点详情推送模式（关闭/逐条/汇总），由 AutoProxy 从用户配置注入
     # 本次由 MAS 维护检查跳过，供通知与循环排期使用；不落盘、不进入 API。
     maintenance_skipped: bool = field(default=False, repr=False)
+    # 正在跑的任务进度（见 UserTaskProgress），随任务快照推给调度台；不落盘。
+    progress: Optional[UserTaskProgress] = None
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
         previous = getattr(self, name, None)
         super().__setattr__(name, value)
         # 监听所有字段变化
-        if name in ("user_id", "name", "status") and self._task_item_ref is not None:
+        if (
+            name in ("user_id", "name", "status", "progress")
+            and self._task_item_ref is not None
+        ):
             ti = self._task_item_ref()
             if ti is not None:
                 if name == "status" and previous != value:
                     ti.on_status_changed(self, previous, value)
                 ti.schedule_on_change()
+
+    _history_log_records: list[tuple[datetime, LogRecord]] = field(
+        default_factory=list, repr=False
+    )
+
+    def add_log_record(self, started_at: datetime, record: LogRecord) -> None:
+        """每次尝试保留实际开始时刻，同一时刻也不能覆盖此前一轮。"""
+        self._history_log_records.append((started_at, record))
+        self.log_record[started_at] = record
+
+    def iter_history_logs(self) -> list[tuple[datetime, LogRecord]]:
+        """返回本轮各次尝试；未使用追加入口的现有日志仍可正常读取。"""
+        return list(self._history_log_records or self.log_record.items())
 
     @property
     def result(self) -> str:
@@ -86,7 +134,7 @@ class UserItem:
         return " | ".join(
             [
                 f"{t.strftime('%H:%M')} - {log.status}"
-                for t, log in self.log_record.items()
+                for t, log in self.iter_history_logs()
             ]
         )
 
@@ -161,8 +209,12 @@ class TaskItem(ABC):
         default_factory=list, repr=False
     )  # 循环运行的待运行条目预览
     trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
-    game_sign_results: list[dict[str, object]] = field(default_factory=list, repr=False)
-    game_sign_summary_consumed: bool = field(default=False, repr=False)
+    notification_state: TaskNotificationState = field(
+        default_factory=TaskNotificationState, init=False, repr=False
+    )
+    _notifications: TaskNotifications | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
     _change_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False, compare=False
     )
@@ -174,25 +226,46 @@ class TaskItem(ABC):
     )
     _log_seq: int = field(default=0, init=False, repr=False, compare=False)
 
-    @property
-    def community_results(self) -> list[dict[str, object]]:
-        """读取社区签到结果，底层继续使用历史任务字段。"""
-
-        return self.game_sign_results
-
-    @community_results.setter
-    def community_results(self, value: list[dict[str, object]]) -> None:
-        self.game_sign_results = value
+    def bind_notifications(self, notifications: TaskNotifications) -> None:
+        """由任务创建者绑定能力，不读取全局通知实例。"""
+        self._notifications = notifications
 
     @property
-    def community_summary_consumed(self) -> bool:
-        """读取社区汇总消费状态，保持旧任务协议字段不变。"""
+    def notifications(self) -> TaskNotifications:
+        if self._notifications is None:
+            raise RuntimeError("任务的通知依赖尚未装配")
+        return self._notifications
 
-        return self.game_sign_summary_consumed
+    @property
+    def local_notifier(self) -> LocalNotifier:
+        return self.notifications
 
-    @community_summary_consumed.setter
-    def community_summary_consumed(self, value: bool) -> None:
-        self.game_sign_summary_consumed = value
+    def get_script_user_configs(
+        self, script_id: str
+    ) -> Iterable[tuple[UUID, UserConfigType]]:
+        """在预检尚未加载配置时查询当前账号，具体来源由宿主提供。"""
+        raise NotImplementedError
+
+    async def get_active_maintenance(self, game: str) -> MaintenanceWindow | None:
+        """查询专项声明的维护对象，代理与公告客户端由宿主装配。"""
+        raise NotImplementedError
+
+    async def send_notice(
+        self, *, level: Literal["info", "warning", "error"], message: str
+    ) -> None:
+        """发送任务提示，具体传输由宿主提供。"""
+        raise NotImplementedError
+
+    async def save_user_history(
+        self,
+        records: Sequence[HistoryWrite],
+        *,
+        script: ScriptItem,
+        user: UserItem,
+        log_warning: Callable[[str], None] | None = None,
+    ) -> None:
+        """保存专项已判定的用户历史；具体能力由宿主实现。"""
+        raise NotImplementedError
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
@@ -219,12 +292,6 @@ class TaskItem(ABC):
         self, item: UserItem | ScriptItem, previous: str | None, status: str
     ) -> None:
         """同步报告状态变化；副作用由宿主调度层实现。"""
-
-    def on_user_execution_started(self, script: ScriptItem) -> None:
-        """账号执行开始，区分重试中的状态与最终结果。"""
-
-    def on_user_execution_finished(self, script: ScriptItem) -> None:
-        """账号执行及收尾完成。"""
 
     def schedule_on_change(self) -> None:
         """合并高频字段变化，并由应用任务注册表持有异步通知。"""
@@ -314,6 +381,15 @@ class TaskItem(ABC):
                         "user_id": user_item.user_id,
                         "name": user_item.name,
                         "status": user_item.status,
+                        "progress": (
+                            {
+                                "current": user_item.progress.current,
+                                "total": user_item.progress.total,
+                                "task": user_item.progress.task,
+                            }
+                            if user_item.progress is not None
+                            else None
+                        ),
                     }
                     for user_item in script_item.user_list
                 ],
@@ -459,22 +535,7 @@ class TaskExecuteBase(ABC):
     def spawn(self, child: TaskExecuteBase) -> asyncio.Task:
         if self._task_group is None:
             raise RuntimeError("子任务必须在主任务中启动")
-        # 脚本管理器的子任务是账号执行；根调度器的子任务是脚本管理器。
-        # 在真正收尾后报告终态，避免把重试期间临时的「异常」当作最终失败。
-        script = getattr(self, "script_info", None)
-        owner = script.task_info if isinstance(script, ScriptItem) else None
-        if owner is not None:
-            owner.on_user_execution_started(script)
-        task_group = self._task_group
-
-        async def run_child() -> None:
-            try:
-                await child._execute_task(task_group)
-            finally:
-                if owner is not None:
-                    owner.on_user_execution_finished(script)
-
-        return task_group.create_task(run_child())
+        return self._task_group.create_task(child._execute_task(self._task_group))
 
     def execute(self):
         if self.task is not None and not self.task.done():

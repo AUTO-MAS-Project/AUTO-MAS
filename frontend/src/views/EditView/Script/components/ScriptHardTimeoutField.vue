@@ -1,11 +1,11 @@
 <template>
-  <a-row :gutter="24">
-    <a-col :span="8">
+  <a-row :gutter="fullWidth ? 0 : 24">
+    <a-col :span="fullWidth ? 24 : 8">
       <a-form-item>
         <template #label>
           <a-space size="small">
-            {{ t('edit.hardTimeoutMinutes') }}
-            <a-tooltip :title="t('edit.hardTimeoutHint')">
+            {{ t('core.edit.hardTimeoutMinutes') }}
+            <a-tooltip :title="t('core.edit.hardTimeoutHint')">
               <QuestionCircleOutlined />
             </a-tooltip>
           </a-space>
@@ -29,6 +29,7 @@ import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 const value = defineModel<number>('value', { required: true })
+defineProps<{ fullWidth?: boolean }>()
 const emit = defineEmits<{ save: [] }>()
 const { t } = useI18n()
 

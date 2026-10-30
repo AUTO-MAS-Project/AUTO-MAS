@@ -43,13 +43,11 @@ from datetime import datetime
 import httpx
 
 from app.core import Config
-from app.utils.constants import UTC8
-from app.utils.logger import get_logger
-from app.utils.security import format_exception_reason
+from app.services.community_http import create_community_client
+from app.utils import UTC8, format_exception_reason, get_logger
 
 from .community_contract import CommunitySignDetail
-from .community_http import create_community_client
-from .community_sign_result import merge_community_sign_result
+from .game_sign_result import merge_community_sign_result
 
 logger = get_logger("库街区社区")
 
@@ -438,9 +436,7 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict[str, o
 
         # 获取游戏角色列表
         try:
-            roles, role_records = await _get_role_list(
-                token, dev_code, distinct_id, user_id, client
-            )
+            roles = await _get_role_list(token, dev_code, distinct_id, user_id, client)
         except Exception as e:
             reason = _log_kuro_exception("获取库街区游戏角色失败", e)
             return _kuro_game_failure_results(
@@ -474,30 +470,12 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict[str, o
             if not role.get("_queryError")
             and str(role.get("gameId", "")) in GAME_CONFIG
         ]
-        if not signable_roles and not results:
-            logger.warning(f"未找到库街区绑定的游戏角色（角色记录 {role_records} 条）")
-            if role_records:
-                # 上游确实返回了角色记录，却归一化不出可签到的角色：多半是新游戏
-                # 未支持或角色列表结构变化。静默跳过会让用户只看到「未签」。
-                results.append(
-                    {
-                        "account": f"{nick_name}/库街区",
-                        "game": "库街区",
-                        "platform": "库街区",
-                        "status": "失败",
-                        "reward": "",
-                        "reason": (
-                            f"角色列表返回 {role_records} 条记录，但未能解析出可签到的角色，"
-                            "请查看日志确认是否为上游结构变化"
-                        ),
-                    }
-                )
+        if not signable_roles:
+            logger.warning("未找到库街区绑定的游戏角色")
             return results
 
         # 逐游戏执行签到；账号级库洛币打卡在收尾合并，不新增重复结果。
-        # 没有可签角色但存在查询失败行时同样要打卡：库洛币属于账号，
-        # 不能因为某款游戏查询失败就整段跳过。
-        game_results_start = len(results) - len(query_failures)
+        game_results_start = len(results)
         community_result: dict[str, object] | None = None
         for index, role in enumerate(signable_roles):
             game_id = str(role.get("gameId", ""))
@@ -699,18 +677,11 @@ async def _get_role_list(
     distinct_id: str,
     user_id: str,
     client: httpx.AsyncClient,
-) -> tuple[list[dict[str, object]], int]:
-    """获取游戏角色列表
-
-    Returns:
-        归一化后的角色，以及上游实际返回的角色记录总数。总量大于 0 却归一化
-        不出角色，说明凭据可用、只是没有我们支持的游戏或结构变了，调用方需要
-        让用户看到这一点。
-    """
+) -> list[dict[str, object]]:
+    """获取游戏角色列表"""
     headers = _kuro_request_headers(BBS_HEADERS, token, dev_code, distinct_id)
 
-    all_roles: list[dict[str, object]] = []
-    role_records = 0
+    all_roles = []
 
     for game_id in GAME_CONFIG:
         game_name = GAME_CONFIG[game_id]["name"]
@@ -726,7 +697,6 @@ async def _get_role_list(
             _raise_kuro_response_error(response, rsp, f"获取{game_name}角色")
 
             raw_roles = _extract_kuro_role_records(rsp.get("data", []))
-            role_records += len(raw_roles)
             for raw_role in raw_roles:
                 role = _normalise_kuro_role(raw_role, game_id)
                 if role is not None:
@@ -736,8 +706,6 @@ async def _get_role_list(
         except Exception as e:
             reason = _log_kuro_exception(f"获取{game_name}角色失败", e)
             all_roles.append({"gameId": game_id, "_queryError": reason})
-
-    return all_roles, role_records
 
     return all_roles
 

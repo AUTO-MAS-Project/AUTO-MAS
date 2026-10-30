@@ -43,8 +43,8 @@ export function presentActivity(snapshot: ActivitySnapshot) {
   const overview = snapshot.game === '明日方舟' || snapshot.game === '绝区零'
   const groups = overview
     ? [
-        { labelKey: 'gamesign.activity.noteTasks', metrics: remainingTasks },
-        { labelKey: 'gamesign.activity.resources', metrics: remainingResources },
+        { labelKey: 'core.gamesign.activity.noteTasks', metrics: remainingTasks },
+        { labelKey: 'core.gamesign.activity.resources', metrics: remainingResources },
       ]
     : [{ labelKey: '', metrics: [...remainingTasks, ...remainingResources] }]
   if (snapshot.game === '明日方舟') groups.reverse()

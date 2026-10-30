@@ -1,18 +1,27 @@
 import { spawn } from 'child_process'
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import { BackendService } from './backendService'
+import { getFluxdownInstallEnvironment } from './fluxdownInstallService'
+import { analyticsService } from './analyticsService'
 import { RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'
 
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
-// resolveRuntimeLaunchMode 的构建默认值这一级要读 app.isPackaged；本文件全部用例都显式
-// 设置 RUNTIME_MODE_ENV 走环境变量这一级，isPackaged 固定 false 即可，不需要逐用例切换。
-vi.mock('electron', () => ({ app: { isPackaged: false, getVersion: () => '5.5.0-beta.3' } }))
+// 同时验证开发 Electron 与打包 Electron 的环境会显式传到 Runtime，且覆盖继承值。
+const appState = vi.hoisted(() => ({ isPackaged: false }))
+vi.mock('electron', () => ({
+  app: {
+    get isPackaged() {
+      return appState.isPackaged
+    },
+    getVersion: () => '5.5.0-beta.3',
+  },
+}))
 vi.mock('../utils/processManager', () => ({
   killAllRelatedProcesses: vi.fn(async () => undefined),
 }))
@@ -38,7 +47,10 @@ vi.mock('./sentry', () => ({
   recordMainDuration: vi.fn(),
 }))
 vi.mock('./environmentService', () => ({ isDevelopmentEnvironment: () => true }))
-vi.mock('./instanceConfig', () => ({ resolveHttpPort: vi.fn(() => 36164) }))
+vi.mock('./instanceConfig', async importOriginal => ({
+  ...(await importOriginal<typeof import('./instanceConfig')>()),
+  resolveHttpPort: vi.fn(() => 36164),
+}))
 
 const { killAllRelatedProcesses } = await import('../utils/processManager')
 const { resolveHttpPort } = await import('./instanceConfig')
@@ -215,13 +227,14 @@ async function passManagedPreparation(): Promise<FakeChild> {
 const fetchMock = vi.fn()
 
 beforeEach(() => {
+  appState.isPackaged = false
   appRoot = mkdtempSync(join(tmpdir(), 'auto-mas-backend-'))
   runtimeRoot = join(dirname(appRoot), `${basename(appRoot)}-runtime`)
   spawnMock.mockReset()
   killAllMock.mockClear()
   resolveHttpPortMock.mockClear()
   fetchMock.mockReset()
-  // 宿主环境若带着这个变量，会经 process.env 原样继承，干扰对「不设」的断言。
+  // 各用例显式构造宿主环境，验证应用环境不会被继承值覆盖。
   delete process.env.AUTO_MAS_ENV
   // 旧链路启动前会探测是否已有后端：默认不可达。
   // health 默认带 version 且与前端 mock 版本（5.5.0-beta.3 归一化后）一致。
@@ -308,6 +321,9 @@ describe('development 模式', () => {
       expect(spawnedEnv(index).AUTO_MAS_HTTP_PORT).toBeUndefined()
       expect(spawnedEnv(index).AUTO_MAS_DEV).toBeUndefined()
       expect(spawnedEnv(index).AUTO_MAS_ENV).toBe('development')
+      expect(spawnedEnv(index).AUTO_MAS_INSTALL_TOKEN).toBe(
+        getFluxdownInstallEnvironment().AUTO_MAS_INSTALL_TOKEN
+      )
     }
 
     child.stdout.feed(stoppedResultLine)
@@ -484,7 +500,323 @@ describe('development 模式', () => {
 })
 
 describe('managed 模式', () => {
+  it('准备失败时合并的 stderr 保留最近 200 行', async () => {
+    appState.isPackaged = true
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    const service = createService()
+    mockSpawn()
+
+    const pending = service.startBackend()
+    const child = await waitForSpawn(0)
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        runtimeVersion: 'dev',
+        command: 'workspace check',
+        capabilities: [],
+      })
+    )
+    for (let i = 0; i < 200; i++) {
+      child.stdout.feed(
+        line({
+          ...base,
+          type: 'log',
+          sequence: i + 2,
+          source: 'runtime',
+          stream: 'stderr',
+          message: `协议-${i}`,
+        })
+      )
+    }
+    child.stderr.feed(Array.from({ length: 205 }, (_, i) => `原始-${i}`).join('\n'))
+    child.close(50)
+
+    const result = await pending
+    expect(result.success).toBe(false)
+    expect(result.logs?.split('\n')).toHaveLength(201)
+    expect(result.logs).toContain('原始-5')
+    expect(result.logs).not.toContain('原始-4\n')
+  })
+
+  it('准备失败时长日志只保留有界尾部', async () => {
+    appState.isPackaged = true
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    const service = createService()
+    mockSpawn()
+    const record = vi.spyOn(analyticsService, 'recordMainEvent')
+
+    const pending = service.startBackend()
+    const child = await waitForSpawn(0)
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        runtimeVersion: 'dev',
+        command: 'workspace check',
+        capabilities: [],
+      })
+    )
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'log',
+        sequence: 2,
+        source: 'runtime',
+        stream: 'stdout',
+        message: 'a'.repeat(100_000) + '尾部',
+      })
+    )
+    child.stderr.feed('b'.repeat(100_000) + 'stderr尾部')
+    child.close(50)
+
+    const result = await pending
+    expect(result.success).toBe(false)
+    expect(result.logs?.length).toBeLessThanOrEqual(2 * 65_536 + 30)
+    expect(result.logs).toContain('尾部')
+    expect(result.logs).toContain('stderr尾部')
+    expect(JSON.stringify(record.mock.calls)).not.toContain('stderr尾部')
+    record.mockRestore()
+  })
+
+  it('准备失败时多条消息与内嵌换行均受行数和字符上限约束', async () => {
+    appState.isPackaged = true
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    const service = createService()
+    mockSpawn()
+    const pending = service.startBackend()
+    const child = await waitForSpawn(0)
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        runtimeVersion: 'dev',
+        command: 'workspace check',
+        capabilities: [],
+      })
+    )
+    for (let i = 0; i < 100; i++) {
+      child.stdout.feed(
+        line({
+          ...base,
+          type: 'log',
+          sequence: i + 2,
+          source: 'runtime',
+          stream: 'stdout',
+          message: 'x'.repeat(1_024),
+        })
+      )
+    }
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'log',
+        sequence: 102,
+        source: 'runtime',
+        stream: 'stderr',
+        message: '行\n'.repeat(250) + '最后一行',
+      })
+    )
+    child.close(50)
+
+    const result = await pending
+    const [stdout, stderr] = result.logs!.split('\n\n')
+    expect(stdout.length - '[stdout]\n'.length).toBeLessThanOrEqual(65_536)
+    expect(stderr.split('\n')).toHaveLength(201)
+    expect(stderr).toContain('最后一行')
+  })
+
+  it('准备失败时未知日志流不标记为 stdout', async () => {
+    appState.isPackaged = true
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    const service = createService()
+    mockSpawn()
+
+    const pending = service.startBackend()
+    const child = await waitForSpawn(0)
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        runtimeVersion: 'dev',
+        command: 'workspace check',
+        capabilities: [],
+      })
+    )
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'log',
+        sequence: 2,
+        source: 'runtime',
+        stream: 'other',
+        message: '未知流日志',
+      })
+    )
+    child.close(50)
+
+    const result = await pending
+    expect(result.success).toBe(false)
+    expect(result.logs).toBe('[other]\n未知流日志')
+  })
+
+  it.each(['workspace check', 'bootstrap'] as const)(
+    '%s 准备失败时保留 Runtime 协议日志',
+    async command => {
+      appState.isPackaged = true
+      process.env[RUNTIME_MODE_ENV] = 'managed'
+      process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+      const service = createService()
+      mockSpawn()
+      const record = vi.spyOn(analyticsService, 'recordMainEvent')
+
+      const pending = service.startBackend()
+      let preparation = await waitForSpawn(0)
+      if (command === 'bootstrap') {
+        preparation.stdout.feed(
+          line({
+            ...base,
+            type: 'hello',
+            sequence: 1,
+            runtimeVersion: 'dev',
+            command: 'workspace check',
+            capabilities: [],
+          }) +
+            line({
+              ...base,
+              type: 'log',
+              sequence: 2,
+              source: 'runtime',
+              stream: 'stdout',
+              message: '上一次检查成功日志',
+            }) +
+            line({
+              ...base,
+              type: 'result',
+              sequence: 3,
+              success: true,
+              code: 'OK',
+              stage: 'workspace.check',
+              status: 'succeeded',
+              message: '检查完成',
+              retryable: false,
+              remediation: [],
+              details: { healthy: true, version: 'v5.5.0-beta.3' },
+            })
+        )
+        preparation.close(0)
+        preparation = await waitForSpawn(1)
+      }
+      preparation.stdout.feed(
+        line({
+          ...base,
+          type: 'hello',
+          sequence: 1,
+          runtimeVersion: 'dev',
+          command,
+          capabilities: [],
+        }) +
+          line({
+            ...base,
+            type: 'log',
+            sequence: 2,
+            source: 'runtime',
+            stream: 'stdout',
+            message: '准备步骤日志',
+          }) +
+          line({
+            ...base,
+            type: 'log',
+            sequence: 3,
+            source: 'runtime',
+            stream: 'stderr',
+            message: '依赖失败详情',
+          }) +
+          line({
+            ...base,
+            type: 'result',
+            sequence: 4,
+            success: false,
+            code: 'DEPENDENCY_SYNC_FAILED',
+            stage: 'dependency.sync',
+            status: 'failed',
+            message: '准备失败',
+            retryable: true,
+            remediation: ['retry-sync'],
+            details: {},
+          })
+      )
+      preparation.close(50)
+
+      const result = await pending
+      expect(result.success).toBe(false)
+      expect(result.code).toBe('DEPENDENCY_SYNC_FAILED')
+      expect(result.logs).toBe('[stdout]\n准备步骤日志\n\n[stderr]\n依赖失败详情')
+      expect(record).toHaveBeenCalled()
+      expect(JSON.stringify(record.mock.calls)).not.toContain('准备步骤日志')
+      expect(JSON.stringify(record.mock.calls)).not.toContain('依赖失败详情')
+      record.mockRestore()
+      expect(spawnMock).toHaveBeenCalledTimes(command === 'bootstrap' ? 2 : 1)
+    }
+  )
+
+  it('准备命令异常退出时仍保留有界日志，不把日志送入遥测', async () => {
+    appState.isPackaged = true
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    const service = createService()
+    mockSpawn()
+    const record = vi.spyOn(analyticsService, 'recordMainEvent')
+
+    const pending = service.startBackend()
+    const child = await waitForSpawn(0)
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        runtimeVersion: 'dev',
+        command: 'workspace check',
+        capabilities: [],
+      })
+    )
+    for (let i = 0; i < 205; i++) {
+      child.stdout.feed(
+        line({
+          ...base,
+          type: 'log',
+          sequence: i + 2,
+          source: 'runtime',
+          stream: 'stderr',
+          message: `本地诊断-${i}`,
+        })
+      )
+    }
+    child.close(50)
+
+    const result = await pending
+    expect(result.success).toBe(false)
+    expect(result.logs).toContain('本地诊断-5')
+    expect(result.logs).not.toContain('本地诊断-4\n')
+    expect(result.logs).toContain('本地诊断-204')
+    expect(result.logs?.split('\n')).toHaveLength(201)
+    expect(record).toHaveBeenCalled()
+    expect(JSON.stringify(record.mock.calls)).not.toContain('本地诊断-')
+    record.mockRestore()
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+  })
+
   it('不传 --repo、不先跑 environment ensure，--app-root 就是用户数据根', async () => {
+    appState.isPackaged = true
+    process.env.AUTO_MAS_ENV = 'development'
     process.env[RUNTIME_MODE_ENV] = 'managed'
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
     const service = createService()
@@ -503,10 +835,35 @@ describe('managed 模式', () => {
     expect(spawnedArgs(2).slice(0, 2)).toEqual(['--app-root', appRoot])
     expect(spawnedArgs(2).slice(-4)).toEqual(['backend', 'supervise', '--mode', 'managed'])
     expect(spawnedArgs(2)).not.toContain('--repo')
-    expect(spawnedEnv(2).AUTO_MAS_ENV).toBeUndefined()
+    expect(spawnedEnv(2).AUTO_MAS_ENV).toBe('production')
+    expect(spawnedEnv(2).AUTO_MAS_INSTALL_TOKEN).toBe(
+      getFluxdownInstallEnvironment().AUTO_MAS_INSTALL_TOKEN
+    )
     expect(existsSync(runtimeRoot)).toBe(false)
 
     child.stdout.feed(stoppedResultLine)
+    child.close(0)
+  })
+})
+
+describe('legacy backend installation authority', () => {
+  it('passes the same main-process session credential through the direct Python launch', async () => {
+    process.env[RUNTIME_MODE_ENV] = 'off'
+    const mainPy = join(appRoot, 'main.py')
+    writeFileSync(mainPy, '')
+    const service = createService()
+    mockSpawn()
+    const pending = service.startBackend({
+      pythonPath: EXISTING_EXE,
+      mainPyPath: mainPy,
+      cwd: appRoot,
+    })
+    const child = await waitForSpawn(0)
+    expect(await pending).toEqual({ success: true })
+    expect(spawnedEnv(0).AUTO_MAS_INSTALL_TOKEN).toBe(
+      getFluxdownInstallEnvironment().AUTO_MAS_INSTALL_TOKEN
+    )
+    expect(spawnedArgs(0)).toEqual([mainPy])
     child.close(0)
   })
 })

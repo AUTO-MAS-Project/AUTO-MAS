@@ -21,14 +21,10 @@
 
 from __future__ import annotations
 
-import calendar
-import json
-import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Annotated, Literal
-from uuid import UUID
 
-from pydantic import Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from app.config import (
     ConfigCollection,
@@ -46,14 +42,40 @@ from app.config.types import (
     JsonDictString,
     UrlString,
 )
-from app.utils.constants import MATERIALS_MAP, RESOURCE_STAGE_INFO
 
 from .base import DomainEntry
 from .queue import Webhook
-from .shared import (
-    local_timezone,
-    logger,
-)
+from .shared import local_timezone
+
+QQGroupCommandWhitelist = Annotated[
+    list[
+        Annotated[
+            str,
+            StringConstraints(
+                strip_whitespace=True, min_length=1, max_length=128, pattern=r"^\S+$"
+            ),
+        ]
+    ],
+    Field(max_length=100),
+]
+
+
+class FluxdownRecord(BaseModel):
+    """FluxDown 下载历史中的一条记录。"""
+
+    url: str | None = Field(default=None, description="下载地址")
+    destination: str | None = Field(default=None, description="落盘路径")
+    size: int | None = Field(default=None, description="文件字节数")
+    duration_ms: int | None = Field(default=None, description="下载耗时（毫秒）")
+    segments: int | None = Field(default=None, description="分段数")
+    proxy: str | None = Field(default=None, description="使用的代理")
+    checksum: str | None = Field(default=None, description="校验信息")
+    status: str | None = Field(
+        default=None,
+        description="状态：success、failed、checksum_fail、fluxdown_fallback",
+    )
+    error: str | None = Field(default=None, description="失败原因")
+    timestamp: str | None = Field(default=None, description="发生时间")
 
 
 class GlobalConfig(DomainEntry):
@@ -91,15 +113,6 @@ class GlobalConfig(DomainEntry):
             )
         )
 
-        LastStatisticsUpload: Annotated[
-            datetime, tz(local_timezone), ui(format="hms")
-        ] = Field(
-            default_factory=lambda: datetime.fromisoformat(
-                "2000-01-01 00:00:00"
-            ).replace(tzinfo=local_timezone()),
-            description="上次统计上传时间",
-        )
-
         LastTelemetryActive: Annotated[
             datetime, tz(timezone.utc), ui(format="date")
         ] = Field(
@@ -129,19 +142,12 @@ class GlobalConfig(DomainEntry):
             description="分享站外观上传记录：{用户名: {外观 ID: {fileId, fileKey, displayName, updatedAt}}}",
         )
 
-        Stage: Virtual[str] = Field(
-            default_factory=lambda: None, description="关卡信息"
-        )
         StageData: Annotated[JsonDictString, legacy(group="Data", name="Stage")] = (
             Field(default_factory=lambda: "{ }", description="关卡信息数据")
         )
 
         StageETag: str = Field(
             default_factory=lambda: "", description="关卡数据的版本标识符"
-        )
-
-        UID: UUID = Field(
-            default_factory=lambda: uuid.uuid4(), description="唯一标识符"
         )
 
     Data: Annotated[DataFields, ui(visibility=UiVisibility.HIDE)] = Field(
@@ -264,6 +270,30 @@ class GlobalConfig(DomainEntry):
             default_factory=lambda: "", description="SMTP 服务器地址"
         )
 
+        OpenClawQQTargetType: Annotated[
+            Literal["c2c", "group", "all"], ui(visibility=UiVisibility.HIDE)
+        ] = Field(default="c2c", description="QQ 官方机器人通知接收位置")
+        OpenClawQQGroupOpenIds: Annotated[
+            list[str],
+            ui(visibility=UiVisibility.HIDE),
+            legacy(
+                group="Notify",
+                name="OpenClawQQGroupOpenId",
+                convert=lambda value: [value] if value else [],
+            ),
+        ] = Field(default_factory=list, description="QQ 官方机器人自动发现的群 OpenID")
+        OpenClawQQGroupCommandWhitelist: Annotated[
+            QQGroupCommandWhitelist, ui(visibility=UiVisibility.HIDE)
+        ] = Field(
+            default_factory=list,
+            description="QQ 群控制成员 OpenID 白名单，留空允许所有群成员",
+        )
+        OpenClawQQRejectedGroupOpenIds: Annotated[
+            list[str], ui(visibility=UiVisibility.HIDE)
+        ] = Field(
+            default_factory=list, description="QQ 官方机器人已明确拒收的群 OpenID"
+        )
+
         SendTaskResultTime: Literal["不推送", "任何时刻", "仅失败时"] = Field(
             default_factory=lambda: "不推送", description="任务结果推送时间"
         )
@@ -282,9 +312,9 @@ class GlobalConfig(DomainEntry):
             description="连接已运行的 OBS，在自动代理最终失败时保存回放。",
         )
 
-        MaxReplayCount: Annotated[int, Field(ge=1, le=20)] = Field(
-            default_factory=lambda: 3,
-            description="MAS 副本的保留数量，不清理 OBS 原文件。",
+        VideoStorageLimitMiB: Annotated[int, Field(ge=1, le=1048576)] = Field(
+            default_factory=lambda: 1024,
+            description="历史视频容量上限（MiB），仅回收历史视频，不清理 OBS 原文件。",
         )
 
         Password: Annotated[str, encrypted(), ui(visibility=UiVisibility.MASKED)] = (
@@ -339,6 +369,30 @@ class GlobalConfig(DomainEntry):
             default_factory=lambda: "stable", description="更新频道"
         )
 
+        Downloader: Literal["builtin", "fluxdown"] = Field(
+            default_factory=lambda: "builtin",
+            description="下载器: builtin 用内置 httpx, fluxdown 调 FluxDown CLI 多线程",
+        )
+
+        FluxdownPath: str = Field(
+            default_factory=lambda: "",
+            description="FluxDown CLI 所在目录（包含 portable 标记文件）；空则自动查找",
+        )
+
+        FluxdownSegments: Annotated[int, Field(ge=1, le=32)] = Field(
+            default_factory=lambda: 8, description="FluxDown 多线程分段数 (1-32)"
+        )
+
+        FluxdownServerMode: bool = Field(
+            default_factory=lambda: True,
+            description="FluxDown 断点续传服务（server 模式）：常驻 agent+daemon，跨进程续传",
+        )
+
+        FluxdownTakeoverAll: bool = Field(
+            default_factory=lambda: False,
+            description="已接入脚本的 GitHub 更新使用 FluxDown 下载；关闭使用内置下载器，不控制专项更新接管",
+        )
+
         GitHubMirror: Literal["Auto", "Off"] = Field(
             default_factory=lambda: "Auto",
             description="GitHub 加速镜像 **只影响 MFW 项目包从 GitHub Release 下载这一条路**（脚本的 `Update.Source` 选 GitHub 时）：国内直连 GitHub 常年 100 多 KB/s， 359MB 的全量包要四十分钟。`Auto` 依次试镜像、全部失败再回直连； `Off` 只直连。MAS 自身的更新与初始化 clone 走前端 mirrorService， 不读这一项；Mirror 酱是另一个源，也不受它影响。",
@@ -346,6 +400,10 @@ class GlobalConfig(DomainEntry):
 
         IfAutoUpdate: bool = Field(
             default_factory=lambda: False, description="是否自动更新"
+        )
+
+        LastUpdateHistory: list[FluxdownRecord] = Field(
+            default_factory=list, description="最近的下载历史记录（最多保留 50 条）"
         )
 
         MirrorChyanCDK: Annotated[str, encrypted()] = Field(
@@ -376,84 +434,6 @@ class GlobalConfig(DomainEntry):
     Voice: VoiceFields = Field(default_factory=VoiceFields)
     Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
     startup_notices: list = Field(default_factory=list, exclude=True)
-
-    def getStage(self) -> str:
-        """获取关卡信息"""
-        try:
-            raw_stage_data = json.loads(self.Data.StageData)
-            if "Official" in raw_stage_data:
-                stage_data_by_server = {
-                    server: data.get("sideStoryStage", {})
-                    for server, data in raw_stage_data.items()
-                    if isinstance(data, dict)
-                }
-            else:
-                stage_data_by_server = {"Official": raw_stage_data}
-            all_stage_data = {}
-            for server, server_stage_data in stage_data_by_server.items():
-                activity_stage_drop_info = []
-                activity_stage_combox = []
-                for side_story in server_stage_data.values():
-                    activity = side_story["Activity"]
-                    activity_timezone = timezone(
-                        timedelta(hours=activity.get("TimeZone", 8))
-                    )
-                    if (
-                        datetime.strptime(
-                            activity["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
-                        ).replace(tzinfo=activity_timezone)
-                        < datetime.now(tz=activity_timezone)
-                        < datetime.strptime(
-                            activity["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
-                        ).replace(tzinfo=activity_timezone)
-                    ):
-                        for stage in side_story["Stages"]:
-                            activity_stage_combox.append(
-                                {"label": stage["Display"], "value": stage["Value"]}
-                            )
-                            if "SSReopen" not in stage["Display"]:
-                                if stage["Drop"] in MATERIALS_MAP:
-                                    drop_id = stage["Drop"]
-                                elif "玉" in stage["Drop"]:
-                                    drop_id = "30012"
-                                else:
-                                    drop_id = "NotFound"
-                                activity_stage_drop_info.append(
-                                    {
-                                        "Display": stage["Display"],
-                                        "Value": stage["Value"],
-                                        "Drop": drop_id,
-                                        "DropName": MATERIALS_MAP.get(
-                                            stage["Drop"], stage["Drop"]
-                                        ),
-                                        "Activity": activity,
-                                    }
-                                )
-                stage_data = {"Info": activity_stage_drop_info}
-                for day in range(0, 8):
-                    res_stage = []
-                    for stage in RESOURCE_STAGE_INFO:
-                        if day in stage["days"] or day == 0:
-                            res_stage.append(
-                                {"label": stage["text"], "value": stage["value"]}
-                            )
-                    stage_data[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
-                        res_stage[0:1] + activity_stage_combox + res_stage[1:]
-                    )
-                all_stage_data[server] = stage_data
-        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
-            logger.warning(
-                f"解析活动关卡信息失败, 按空关卡处理: {type(e).__name__}: {e}"
-            )
-            return "{ }"
-        return json.dumps(all_stage_data, ensure_ascii=False)
-
-    @virtual_field("Data.Stage")
-    def compute_Data_Stage(self):
-        try:
-            return self.getStage()
-        except Exception as exc:
-            return str(exc)
 
 
 __all__ = ["GlobalConfig"]

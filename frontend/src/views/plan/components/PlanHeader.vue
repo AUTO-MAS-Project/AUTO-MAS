@@ -1,7 +1,7 @@
 <template>
   <div class="plans-header">
     <div class="header-left">
-      <h1 class="page-title">{{ t('plan.title') }}</h1>
+      <h1 class="page-title app-page-title">{{ t('core.plan.title') }}</h1>
     </div>
     <div class="header-actions">
       <a-space size="middle">
@@ -10,28 +10,28 @@
           <template #overlay>
             <a-menu @click="onAddPlanMenu">
               <a-menu-item v-for="planType in PLAN_TYPE_DESCRIPTORS" :key="planType.configType">
-                {{ t('plan.createTyped', { name: t(planType.displayNameKey) }) }}
+                {{ t('core.plan.createTyped', { name: t(planType.displayNameKey) }) }}
               </a-menu-item>
             </a-menu>
           </template>
           <a-button type="primary" size="large">
-            {{ t('plan.create') }}
+            {{ t('core.plan.create') }}
             <DownOutlined />
           </a-button>
         </a-dropdown>
 
         <a-popconfirm
           v-if="planList.length > 0"
-          :title="t('plan.deleteConfirm')"
-          :ok-text="t('common.confirm')"
-          :cancel-text="t('common.cancel')"
+          :title="t('core.plan.deleteConfirm')"
+          :ok-text="t('core.common.confirm')"
+          :cancel-text="t('core.common.cancel')"
           @confirm="$emit('remove-plan', activePlanId)"
         >
           <a-button danger size="large" :disabled="!activePlanId">
             <template #icon>
               <DeleteOutlined />
             </template>
-            {{ t('plan.deleteCurrent') }}
+            {{ t('core.plan.deleteCurrent') }}
           </a-button>
         </a-popconfirm>
       </a-space>
@@ -86,16 +86,6 @@ const onAddPlanMenu = ({ key }: { key: string }) => {
 
 .page-title {
   margin: 0 0 8px 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: var(
-    --app-page-title-color,
-    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
   white-space: nowrap; /* 防止标题换行 */
   overflow: hidden;
   text-overflow: ellipsis; /* 长标题时显示省略号 */

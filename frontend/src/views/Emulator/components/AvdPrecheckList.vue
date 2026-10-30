@@ -18,7 +18,7 @@ const LEVEL_COLOR: Record<PrecheckLevel, string> = {
   unknown: 'default',
 }
 
-const levelText = (level: PrecheckLevel) => t(`emulator2.avd.precheck.${level}`)
+const levelText = (level: PrecheckLevel) => t(`core.emulator2.avd.precheck.${level}`)
 
 const failing = (item: Emulator2AvdPrecheckItem) => {
   const level = precheckLevel(item)
@@ -27,7 +27,7 @@ const failing = (item: Emulator2AvdPrecheckItem) => {
 </script>
 
 <template>
-  <h4 class="block-title">{{ t('emulator2.avd.prechecks') }}</h4>
+  <h4 class="block-title">{{ t('core.emulator2.avd.prechecks') }}</h4>
   <div class="precheck-list">
     <template v-for="item in items" :key="item.id">
       <a-alert
@@ -48,14 +48,9 @@ const failing = (item: Emulator2AvdPrecheckItem) => {
   </div>
 </template>
 
-<style scoped>
-.block-title {
-  margin: 16px 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
+<style scoped src="./avdSection.css"></style>
 
+<style scoped>
 .precheck-list {
   display: flex;
   flex-direction: column;

@@ -5,15 +5,15 @@
         <div class="mask-icon">
           <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
         </div>
-        <h2 class="mask-title">{{ t('edit.maaendConfigurationProgress') }}</h2>
+        <h2 class="mask-title">{{ t('core.edit.maaendConfigurationProgress') }}</h2>
         <p class="mask-description">
-          {{ t('edit.scriptLevelMaaendConfiguration2') }}
+          {{ t('core.edit.scriptLevelMaaendConfiguration2') }}
           <br />
-          {{ t('edit.clickSaveConfigurationWhen') }}
+          {{ t('core.edit.clickSaveConfigurationWhen') }}
         </p>
         <div class="mask-actions">
           <a-button v-if="maaEndTaskId" type="primary" size="large" @click="handleSaveMaaEndConfig">
-            {{ t('edit.saveConfiguration') }}
+            {{ t('core.edit.saveConfiguration') }}
           </a-button>
         </div>
       </div>
@@ -32,36 +32,40 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ showMaaEndConfigMask ? '正在配置' : '配置 MaaEnd' }}
+        {{ showMaaEndConfigMask ? t('core.comp.configuring') : t('core.comp.configureMaaend') }}
       </a-button>
     </template>
   </ScriptEditHeader>
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card :title="t('edit.maaendScriptConfiguration')" :loading="pageLoading" class="config-card">
+    <a-card
+      :title="t('core.edit.maaendScriptConfiguration')"
+      :loading="pageLoading"
+      class="config-card"
+    >
       <template #extra>
         <a-tag class="type-tag">MaaEnd</a-tag>
       </template>
 
-      <a-alert :message="t('edit.important')" type="warning" show-icon class="notice-alert">
+      <a-alert :message="t('core.edit.important')" type="warning" show-icon class="notice-alert">
         <template #description>
           <div class="notice-content">
-            <p>{{ t('edit.k60SecondsRecommendedDefault') }}</p>
+            <p>{{ t('core.edit.k60SecondsRecommendedDefault') }}</p>
             <p>
-              {{ t('edit.maaendAdapterStillUnder') }}
+              {{ t('core.edit.maaendAdapterStillUnder') }}
               <a
                 :href="MAS_QQ_GROUP_URL"
                 target="_blank"
                 rel="noopener noreferrer"
                 @click="handleExternalLink"
-                >QQ群</a
+                >{{ t('core.edit.qqGroup') }}</a
               >
-              {{ t('edit.reportIssueGo') }}
+              {{ t('core.edit.reportIssueGo') }}
               <a
                 href="https://github.com/AUTO-MAS-Project/AUTO-MAS/issues/149"
                 @click="handleExternalLink"
-                >BUG收集页</a
-              >留言
+                >{{ t('core.edit.bugReportPage') }}</a
+              >{{ t('core.edit.leaveMessage') }}
             </p>
           </div>
         </template>
@@ -70,22 +74,21 @@
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ t('core.edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.tellsMaaendScriptInstances')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.scriptName')"
+                    :hint="t('core.edit.tellsMaaendScriptInstances')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="t('core.edit.enterScriptName')"
                   size="large"
                   @blur="handleChange('Info', 'Name', formData.name)"
                 />
@@ -94,28 +97,19 @@
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.maaendPath') }}
-                    <a-tooltip :title="t('edit.pickDirectoryHoldingMaaend2')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    :placeholder="t('edit.pickDirectoryHoldingMaaend')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('core.edit.maaendPath')"
+                    :hint="t('core.edit.pickDirectoryHoldingMaaend2')"
+                    variant="form"
                   />
-                  <a-button size="large" class="path-button" @click="selectMaaEndPath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="formData.path"
+                  mode="folder"
+                  :placeholder="t('core.edit.pickDirectoryHoldingMaaend')"
+                  :pick-label="t('core.edit.pickDirectory')"
+                  @pick="selectMaaEndPath"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -123,19 +117,18 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.gameConfiguration') }}</h3>
+            <h3>{{ t('core.edit.gameConfiguration') }}</h3>
           </div>
 
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.controller') }}
-                    <a-tooltip :title="t('edit.pickHowGameControlled')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.controller')"
+                    :hint="t('core.edit.pickHowGameControlled')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="maaEndConfig.Game.ControllerType"
@@ -150,12 +143,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.closeGameAfterTask2') }}
-                    <a-tooltip :title="t('edit.whetherGameClosesAfter')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.closeGameAfterTask2')"
+                    :hint="t('core.edit.whetherGameClosesAfter')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="maaEndConfig.Game.CloseOnFinish"
@@ -190,41 +182,32 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.gamePath') }}
-                    <a-tooltip :title="t('edit.pickEndfieldExePath')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="maaEndConfig.Game.Path"
-                    :placeholder="t('edit.pickGameExecutable')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('core.edit.gamePath')"
+                    :hint="t('core.edit.pickEndfieldExePath')"
+                    variant="form"
                   />
-                  <a-button size="large" class="path-button" @click="selectGamePath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="maaEndConfig.Game.Path"
+                  mode="file"
+                  :placeholder="t('core.edit.pickGameExecutable')"
+                  :pick-label="t('core.edit.pickFile')"
+                  @pick="selectGamePath"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.launchArguments') }}
+                    {{ t('core.edit.launchArguments') }}
                     <a-tooltip
                       :title="
                         t(
                           !isMasLaunchMode
-                            ? 'edit.maaEndArgumentsUnsupported'
-                            : 'edit.commandLineArgumentsUsed'
+                            ? 'core.edit.maaEndArgumentsUnsupported'
+                            : 'core.edit.commandLineArgumentsUsed'
                         )
                       "
                     >
@@ -235,24 +218,23 @@
                 <a-input
                   v-model:value="maaEndConfig.Game.Arguments"
                   :disabled="isSaving || !isMasLaunchMode"
-                  :placeholder="t('edit.enterLaunchArguments')"
+                  :placeholder="t('core.edit.enterLaunchArguments')"
                   size="large"
                   @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)"
                 />
                 <div v-if="!isMasLaunchMode" class="control-hint">
-                  {{ t('edit.maaEndArgumentsUnsupported') }}
+                  {{ t('core.edit.maaEndArgumentsUnsupported') }}
                 </div>
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.waitTime') }}
-                    <a-tooltip :title="t('edit.pcControllersOnlySeconds')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.waitTime')"
+                    :hint="t('core.edit.pcControllersOnlySeconds')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="maaEndConfig.Game.WaitTime"
@@ -269,8 +251,16 @@
           <a-row v-if="isWinController" :gutter="24">
             <a-col :span="maaEndConfig.Game.CloseOnFinish ? (showRestoreResolution ? 8 : 12) : 24">
               <a-form-item
-                :label="t('edit.maaEndSetResolution')"
-                :help="!canSetResolution ? t('edit.maaEndResolutionUnsupported') : undefined"
+                :label="t('core.edit.maaEndSetResolution')"
+                :help="
+                  !canSetResolution
+                    ? t(
+                        maaEndLaunchSupported
+                          ? 'core.edit.maaEndResolutionRequiresNative'
+                          : 'core.edit.maaEndResolutionUnsupported'
+                      )
+                    : undefined
+                "
               >
                 <a-select
                   :value="canSetResolution && maaEndConfig.Game.SetResolution"
@@ -282,7 +272,7 @@
               </a-form-item>
             </a-col>
             <a-col v-if="maaEndConfig.Game.CloseOnFinish" :span="showRestoreResolution ? 8 : 12">
-              <a-form-item :label="t('edit.maaEndRestoreDisplayType')">
+              <a-form-item :label="t('core.edit.maaEndRestoreDisplayType')">
                 <a-select
                   :value="restoreDisplaySelection"
                   size="large"
@@ -293,7 +283,7 @@
               </a-form-item>
             </a-col>
             <a-col v-if="showRestoreResolution" :span="8">
-              <a-form-item :label="t('edit.maaEndRestoreResolution')">
+              <a-form-item :label="t('core.edit.maaEndRestoreResolution')">
                 <a-select
                   v-model:value="maaEndConfig.Game.RestoreResolution"
                   size="large"
@@ -315,7 +305,7 @@
             :gutter="24"
           >
             <a-col :span="12">
-              <a-form-item :label="t('edit.maaEndResolutionWidth')">
+              <a-form-item :label="t('core.edit.maaEndResolutionWidth')">
                 <a-input-number
                   v-model:value="maaEndConfig.Game.RestoreResolutionWidth"
                   :min="1"
@@ -329,7 +319,7 @@
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item :label="t('edit.maaEndResolutionHeight')">
+              <a-form-item :label="t('core.edit.maaEndResolutionHeight')">
                 <a-input-number
                   v-model:value="maaEndConfig.Game.RestoreResolutionHeight"
                   :min="1"
@@ -348,17 +338,16 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.emulator') }}
-                    <a-tooltip :title="t('edit.pickEmulatorUse')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.emulator')"
+                    :hint="t('core.edit.pickEmulatorUse')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="maaEndConfig.Game.EmulatorId"
                   size="large"
-                  :placeholder="t('edit.pickEmulator')"
+                  :placeholder="t('core.edit.pickEmulator')"
                   :loading="emulatorLoading"
                   @change="handleEmulatorSelectChange"
                 >
@@ -376,12 +365,12 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.emulatorInstance') }}
+                    {{ t('core.edit.emulatorInstance') }}
                     <a-tooltip
                       :title="
                         emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
-                          ? t('edit.thisEmulatorCannotBe')
-                          : t('edit.pickEmulatorInstance')
+                          ? t('core.edit.thisEmulatorCannotBe')
+                          : t('core.edit.pickEmulatorInstance')
                       "
                     >
                       <QuestionCircleOutlined class="help-icon" />
@@ -392,14 +381,14 @@
                   v-if="showManualEmulatorIndexInput"
                   v-model:value="maaEndConfig.Game.EmulatorIndex"
                   size="large"
-                  :placeholder="t('edit.enterInstanceInfoAs')"
+                  :placeholder="t('core.edit.enterInstanceInfoAs')"
                   @blur="handleChange('Game', 'EmulatorIndex', maaEndConfig.Game.EmulatorIndex)"
                 />
                 <a-select
                   v-else
                   v-model:value="maaEndConfig.Game.EmulatorIndex"
                   size="large"
-                  :placeholder="t('edit.pickInstance')"
+                  :placeholder="t('core.edit.pickInstance')"
                   :loading="emulatorDeviceLoading"
                   :disabled="!maaEndConfig.Game.EmulatorId"
                   @change="handleChange('Game', 'EmulatorIndex', $event)"
@@ -422,12 +411,12 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.endfieldAutoUpdate') }}
+                    {{ t('core.edit.endfieldAutoUpdate') }}
                     <a-tooltip
                       :title="
                         isLauncherMode
-                          ? t('edit.maaEndAutoUpdateLauncherHint')
-                          : t('edit.endfieldAutoUpdateHint')
+                          ? t('core.edit.maaEndAutoUpdateLauncherHint')
+                          : t('core.edit.endfieldAutoUpdateHint')
                       "
                     >
                       <QuestionCircleOutlined class="help-icon" />
@@ -446,12 +435,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.gameUpdateTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.endfieldUpdateTimeoutHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.gameUpdateTimeoutMinutes')"
+                    :hint="t('core.edit.endfieldUpdateTimeoutHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="maaEndConfig.Game.UpdateTimeLimit"
@@ -465,8 +453,10 @@
               </a-form-item>
             </a-col>
             <a-col :span="8">
-              <a-form-item :label="t('edit.endfieldManualUpdate')">
-                <a-tooltip :title="maaEndConfig.Game.Path ? '' : t('edit.pickEndfieldExePath')">
+              <a-form-item :label="t('core.edit.endfieldManualUpdate')">
+                <a-tooltip
+                  :title="maaEndConfig.Game.Path ? '' : t('core.edit.pickEndfieldExePath')"
+                >
                   <span class="endfield-update-check">
                     <a-button
                       size="large"
@@ -483,7 +473,7 @@
                       <template #icon>
                         <ThunderboltOutlined />
                       </template>
-                      {{ t('edit.checkUpdates') }}
+                      {{ t('core.edit.checkUpdates') }}
                     </a-button>
                   </span>
                 </a-tooltip>
@@ -492,116 +482,11 @@
           </a-row>
         </div>
 
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
-          </div>
-          <ScriptHardTimeoutField
-            v-model:value="maaEndConfig.Run.HardTimeLimit"
-            @save="handleChange('Run', 'HardTimeLimit', maaEndConfig.Run.HardTimeLimit)"
-          />
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.accountSwitchingMethod') }}
-                    <a-tooltip :title="t('edit.chooseWhetherMasSwitches')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-select
-                  v-model:value="maaEndConfig.Run.AccountSwitchMethod"
-                  size="large"
-                  :options="accountSwitchMethodOptions"
-                  @change="handleAccountSwitchMethodChange"
-                />
-                <span class="control-hint">{{ t('edit.accountSwitch16x9Only') }}</span>
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="24">
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runsPerDay') }}
-                    <a-tooltip :title="t('edit.skipRunOnceThis')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="maaEndConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', maaEndConfig.Run.ProxyTimesLimit)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.ifRunStillUnfinished')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="maaEndConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', maaEndConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.treatRunAsTimed')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="maaEndConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', maaEndConfig.Run.RunTimeLimit)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.taskTransitionMethod') }}
-                    <a-tooltip :title="t('edit.taskTransitionHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-select
-                  v-model:value="maaEndConfig.Run.TaskTransitionMethod"
-                  size="large"
-                  :options="taskTransitionMethodOptions"
-                  @change="handleChange('Run', 'TaskTransitionMethod', $event)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
+        <MaaEndRunConfigSection
+          v-model:run="maaEndConfig.Run"
+          @save="(key, value) => handleChange('Run', key, value)"
+          @account-switch="handleAccountSwitchMethodChange"
+        />
       </a-form>
     </a-card>
   </ConfigLockPanel>
@@ -613,8 +498,8 @@
     :open="updateModal.open"
     :title="
       updateModal.running
-        ? t('edit.endfieldUpdateProgressTitle')
-        : t('edit.endfieldCheckUpdateTitle')
+        ? t('core.edit.endfieldUpdateProgressTitle')
+        : t('core.edit.endfieldCheckUpdateTitle')
     "
     :confirm-loading="updateModal.starting"
     :mask-closable="!updateModal.running"
@@ -625,19 +510,23 @@
     <template v-if="updateModal.running || updateModal.done">
       <div class="update-log-area">
         <pre class="update-log-content">{{
-          updateModal.log || t('edit.endfieldUpdateConnecting')
+          updateModal.log || t('core.edit.endfieldUpdateConnecting')
         }}</pre>
       </div>
     </template>
     <template v-else>
-      <a-alert type="info" show-icon :message="t('edit.endfieldWillBeUpdated')" />
+      <a-alert type="info" show-icon :message="t('core.edit.endfieldWillBeUpdated')" />
     </template>
   </a-modal>
 </template>
 
 <script setup lang="ts">
-import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
+import { createMaaEndScriptDraft } from './maaEndScriptDraft'
+import MaaEndRunConfigSection from './components/MaaEndRunConfigSection.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import PathPickerField from '@/components/PathPickerField.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -648,7 +537,7 @@ import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 import { useWebSocket } from '@/composables/useWebSocket'
 import {
@@ -658,12 +547,7 @@ import {
 } from '@/services/websocket/types'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
-import {
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons-vue'
+import { QuestionCircleOutlined, SettingOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useMaaEndUpdate } from './useMaaEndUpdate'
 import { useMaaEndLauncher } from './useMaaEndLauncher'
@@ -671,10 +555,11 @@ import MaaEndLauncherSection from './components/MaaEndLauncherSection.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
 const { t } = useI18n()
+const logger = window.electronAPI.getLogger('MaaEnd脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, getMaaEndOptions, updateScript } = useScriptApi()
+const { getScript, getMaaEndOptions, updateScript, error: scriptApiError } = useScriptApi()
 const {
   emulatorDeviceLoading,
   emulatorDeviceOptions,
@@ -688,7 +573,20 @@ const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { isSaving, enqueue } = useSaveQueue()
+const {
+  isSaving,
+  enqueue,
+  saveField: handleChange,
+} = useScriptSaveMutation({
+  scriptId,
+  isInitializing,
+  logger,
+  afterFieldSave: async (category, key) => {
+    if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+      await refreshScript()
+    }
+  },
+})
 // 该脚本的配置是否正被任务锁着：锁着时点「检查更新」只会换来后端一句「已在运行」
 const { configLocked } = useScriptConfigLock(() => scriptId)
 const { updateModal, handleCheckUpdate, startUpdate, handleUpdateModalCancel } = useMaaEndUpdate(
@@ -712,38 +610,7 @@ const formData = reactive({
   },
 })
 
-const maaEndConfig = reactive<MaaEndScriptConfig>({
-  Info: {
-    Name: '',
-    Path: '',
-  },
-  Run: {
-    HardTimeLimit: 120,
-    RunTimeLimit: 30,
-    ProxyTimesLimit: 0,
-    RunTimesLimit: 3,
-    AccountSwitchMethod: 'MAAEND',
-    TaskTransitionMethod: 'NoAction',
-  },
-  Game: {
-    ControllerType: '',
-    LaunchMode: 'Launcher',
-    Path: '',
-    LauncherPath: '',
-    Arguments: '',
-    WaitTime: 60,
-    EmulatorId: '',
-    EmulatorIndex: '',
-    SetResolution: false,
-    CloseOnFinish: true,
-    RestoreResolution: 'Off',
-    RestoreDisplayType: 'Window',
-    RestoreResolutionWidth: 1920,
-    RestoreResolutionHeight: 1080,
-    IfAutoUpdate: false,
-    UpdateTimeLimit: 240,
-  },
-})
+const maaEndConfig = reactive<MaaEndScriptConfig>(createMaaEndScriptDraft())
 
 const originalResolution = ref<string | null>(null)
 const originalDisplayType = ref<'Window' | 'Fullscreen' | null>(null)
@@ -764,34 +631,34 @@ const showRestoreResolution = computed(
 )
 
 const displayTypeOptions = computed(() => [
-  { value: 'Off', label: t('edit.maaEndResolutionUnchanged') },
+  { value: 'Off', label: t('core.edit.maaEndResolutionUnchanged') },
   {
     value: 'Original',
     label:
       originalResolution.value && originalDisplayType.value
-        ? t('edit.maaEndResolutionOriginal', {
+        ? t('core.edit.maaEndResolutionOriginal', {
             displayType:
               originalDisplayType.value === 'Fullscreen'
-                ? t('edit.maaEndResolutionFullscreen')
-                : t('edit.maaEndResolutionWindow'),
+                ? t('core.edit.maaEndResolutionFullscreen')
+                : t('core.edit.maaEndResolutionWindow'),
             resolution: originalResolution.value,
           })
-        : t('edit.maaEndResolutionRestoreOriginal'),
+        : t('core.edit.maaEndResolutionRestoreOriginal'),
   },
-  { value: 'Window', label: t('edit.maaEndResolutionWindow') },
-  { value: 'Fullscreen', label: t('edit.maaEndResolutionFullscreen') },
+  { value: 'Window', label: t('core.edit.maaEndResolutionWindow') },
+  { value: 'Fullscreen', label: t('core.edit.maaEndResolutionFullscreen') },
 ])
 
 const restoreResolutionOptions = computed(() => [
   { value: '1920x1080', label: '1920 × 1080' },
   { value: '2560x1440', label: '2560 × 1440' },
   { value: '3840x2160', label: '3840 × 2160' },
-  { value: 'Custom', label: t('edit.maaEndResolutionCustom') },
+  { value: 'Custom', label: t('core.edit.maaEndResolutionCustom') },
 ])
 
 const rules = {
-  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
-  path: [{ required: true, message: t('edit.pickMaaendPath'), trigger: 'blur' }],
+  name: [{ required: true, message: t('core.edit.enterScriptName'), trigger: 'blur' }],
+  path: [{ required: true, message: t('core.edit.pickMaaendPath'), trigger: 'blur' }],
 }
 
 const controllerOptions = ref<ComboBoxItem[]>([])
@@ -802,18 +669,8 @@ const launchCapabilitiesReady = ref(false)
 const defaultMaaEndController = 'Win32-Front'
 
 const booleanOptions = [
-  { label: t('edit.yes'), value: true },
-  { label: t('edit.no'), value: false },
-]
-
-const taskTransitionMethodOptions = [
-  { label: t('edit.restartMaaendOnly'), value: 'NoAction' },
-  { label: t('edit.restartEndfield'), value: 'ExitGame' },
-]
-
-const accountSwitchMethodOptions = [
-  { label: t('edit.accountSwitchMethodMas'), value: 'MAS' },
-  { label: t('edit.accountSwitchMethodMaaend'), value: 'MAAEND' },
+  { label: t('core.edit.yes'), value: true },
+  { label: t('core.edit.no'), value: false },
 ]
 
 const { emulatorLoading, emulatorOptions, loadEmulatorOptions } = useEmulatorOptions()
@@ -853,7 +710,11 @@ const {
   game: maaEndConfig.Game,
   getScriptId: () => scriptId,
   enabled: () =>
-    !isInitializing.value && isWinController.value && effectiveLaunchMode.value !== 'MaaEnd',
+    !isInitializing.value &&
+    launchCapabilitiesReady.value &&
+    isWinController.value &&
+    (effectiveLaunchMode.value !== 'MaaEnd' || maaEndLaunchSupported.value),
+  autoDetect: () => effectiveLaunchMode.value !== 'MaaEnd',
   save: patch => enqueue(() => updateScript(scriptId, { Game: patch }), 'Game.Launcher'),
 })
 const isAdbController = computed(() => controllerProtocol.value === 'Adb')
@@ -867,20 +728,6 @@ const showManualEmulatorIndexInput = computed(
 // 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
 // 保存后回读一次界面才与落盘值一致；其余字段保存即生效不再整份回读
 const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>(['Info.Path', 'Game.Path'])
-
-const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value) return
-
-  await enqueue(async () => {
-    const success = await updateScript(scriptId, {
-      [category]: { [key]: value },
-    })
-    if (success && FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
-      await refreshScript()
-    }
-    return success
-  }, `${category}.${key}`)
-}
 
 const handleSetResolutionChange = async (value: unknown) => {
   if (typeof value !== 'boolean' || !canSetResolution.value || isInitializing.value) return
@@ -898,9 +745,9 @@ const showMasAccountSwitchWarning = () => {
 
   masAccountSwitchWarningShown.value = true
   Modal.warning({
-    title: t('edit.maaendMasAccountSwitchWarningTitle'),
-    content: t('edit.maaendMasAccountSwitchWarning'),
-    okText: t('edit.gotIt'),
+    title: t('core.edit.maaendMasAccountSwitchWarningTitle'),
+    content: t('core.edit.maaendMasAccountSwitchWarning'),
+    okText: t('core.edit.gotIt'),
   })
 }
 
@@ -975,7 +822,10 @@ const refreshScript = async () => {
   formData.name = scriptDetail.name
 }
 
+let maaEndOptionsGeneration = 0
 const loadMaaEndOptions = async () => {
+  const generation = ++maaEndOptionsGeneration
+  const requestedPath = maaEndConfig.Info.Path
   launchCapabilitiesReady.value = false
   launchGameControllers.value = []
   gameSettingControllers.value = []
@@ -983,10 +833,14 @@ const loadMaaEndOptions = async () => {
   originalDisplayType.value = null
   controllerOptions.value = []
   controllerProtocols.value = {}
-  if (!maaEndConfig.Info.Path?.trim()) return
+  if (!requestedPath?.trim()) {
+    maaEndOptionsLoading.value = false
+    return
+  }
   maaEndOptionsLoading.value = true
   try {
     const response = await getMaaEndOptions(scriptId)
+    if (generation !== maaEndOptionsGeneration || requestedPath !== maaEndConfig.Info.Path) return
     if (response?.code !== 200) return
 
     launchGameControllers.value = response.launchGameControllers ?? []
@@ -1008,7 +862,9 @@ const loadMaaEndOptions = async () => {
       }
     }
   } finally {
-    maaEndOptionsLoading.value = false
+    if (generation === maaEndOptionsGeneration && requestedPath === maaEndConfig.Info.Path) {
+      maaEndOptionsLoading.value = false
+    }
   }
 }
 
@@ -1024,7 +880,7 @@ const loadScript = async () => {
 
     const scriptDetail = await getScript(scriptId)
     if (!scriptDetail) {
-      message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist'))
       router.push('/scripts')
       return
     }
@@ -1129,7 +985,7 @@ const selectGamePath = async () => {
   if (!path) return
   const fileName = path.split(/[\\/]/).pop()
   if (fileName?.toLowerCase() !== 'endfield.exe') {
-    message.error(t('edit.pickEndfieldExe'))
+    message.error(t('core.edit.pickEndfieldExe'))
     return
   }
   const success = await enqueue(() => updateScript(scriptId, { Game: { Path: path } }), 'Game.Path')
@@ -1158,10 +1014,7 @@ const handleMaaEndConfig = async () => {
     maaEndConfigLoading.value = true
     cleanupConfigSession()
 
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: scriptId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-    })
+    const response = await requestScriptConfigStart(scriptId, undefined, 'script')
 
     if (!response?.taskId) {
       throw new Error(response?.message || '启动 MaaEnd 配置失败')
@@ -1171,7 +1024,7 @@ const handleMaaEndConfig = async () => {
       subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
         const data = wsMessage.data as unknown as WSTaskNoticeData
         if (data.level === 'error') {
-          message.error(t('edit.maaendConfigurationErrorP0', { p0: data.message }))
+          message.error(t('core.edit.maaendConfigurationErrorP0', { p0: data.message }))
         }
       }),
       subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
@@ -1182,12 +1035,12 @@ const handleMaaEndConfig = async () => {
     maaEndSubscriptionIds.value = subscriptionIds
     maaEndTaskId.value = response.taskId
     showMaaEndConfigMask.value = true
-    message.success(t('edit.scriptLevelMaaendConfiguration'))
+    message.success(t('core.edit.scriptLevelMaaendConfiguration'))
 
     maaEndConfigTimeout = window.setTimeout(
       () => {
         cleanupConfigSession()
-        message.info(t('edit.maaendConfigurationSessionTimed'))
+        message.info(t('core.edit.maaendConfigurationSessionTimed'))
       },
       30 * 60 * 1000
     )
@@ -1204,13 +1057,13 @@ const handleSaveMaaEndConfig = async () => {
       throw new Error('未找到活动配置会话')
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndTaskId.value })
+    const response = await stopNativeConfig(maaEndTaskId.value, 'save')
     if (response.code !== 200) {
       throw new Error(response.message || '保存配置失败')
     }
 
     cleanupConfigSession()
-    message.success(t('edit.maaendConfigurationSaved'))
+    message.success(t('core.edit.maaendConfigurationSaved'))
   } catch (error) {
     message.error(error instanceof Error ? error.message : '保存配置失败')
   }
@@ -1230,39 +1083,27 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  maaEndOptionsGeneration += 1
   cleanupConfigSession()
 })
 </script>
 
-<style scoped>
-.script-edit-content {
-  flex: 1;
-}
+<style scoped src="@/styles/scriptEditForm.css"></style>
 
+<style scoped>
 .config-card {
   border-radius: 16px;
   box-shadow:
     0 4px 20px rgba(0, 0, 0, 0.08),
     0 1px 3px rgba(0, 0, 0, 0.1);
   border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
 }
 
 .config-card :deep(.ant-card-head) {
-  background: var(--ant-color-bg-container);
   border-bottom: 2px solid var(--ant-color-border-secondary);
-  padding: 24px 32px;
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
 }
 
 .type-tag {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 8px;
   border: 1px solid var(--ant-color-primary-border);
   color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
@@ -1280,32 +1121,7 @@ onBeforeUnmount(() => {
 }
 
 .form-section {
-  margin-bottom: 12px;
   animation: fadeInUp 0.6s ease-out;
-}
-
-.section-header {
-  margin-bottom: 6px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.control-hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  cursor: help;
 }
 
 /* tooltip 包着 disabled 按钮时需要一层可挂事件的容器 */
@@ -1329,33 +1145,6 @@ onBeforeUnmount(() => {
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--ant-color-text);
-}
-
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 2px solid var(--ant-color-border);
-}
-
-.path-input {
-  flex: 1;
-  border: none !important;
-  border-radius: 0 !important;
-}
-
-.path-button {
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  border-left: 1px solid var(--ant-color-border-secondary);
-}
-
-.config-form :deep(.ant-form-item) {
-  margin-bottom: 24px;
 }
 
 .maaend-config-mask {
@@ -1398,12 +1187,6 @@ onBeforeUnmount(() => {
 .mask-actions {
   display: flex;
   justify-content: center;
-}
-
-@media (max-width: 768px) {
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
-  }
 }
 
 @keyframes fadeInUp {

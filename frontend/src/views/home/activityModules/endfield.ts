@@ -13,7 +13,7 @@ export const createEndfieldActivityModule: ActivityModuleBuilder = ({ t }) => {
     source,
     buildPanel: now => ({
       key: 'endfield',
-      title: t('home.game.endfield'),
+      title: t('core.home.game.endfield'),
       accent: '#ffb45a',
       ...endfieldActivityBanner(source.overview.value),
       loading: source.loading.value,

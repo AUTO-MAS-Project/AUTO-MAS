@@ -48,9 +48,8 @@ from app.services.wuthering_waves import (
     write_wuthering_waves_local_version,
 )
 from app.utils import get_logger
-from app.utils.hpatchz import ensure_hpatchz
-from app.utils.update_files import file_matches, file_size
-from app.utils.update_files import resolve_within as resolve_update_path
+from app.utils import hpatchz as _utils_hpatchz
+from app.utils import update_files as _utils_update_files
 
 logger = get_logger("鸣潮更新")
 
@@ -155,7 +154,7 @@ def safe_relative_path(dest: str) -> Path:
 
 def resolve_within(root: Path, dest: str) -> Path:
     """按鸣潮清单规则解析相对路径，并核对实际路径没有越出根目录。"""
-    return resolve_update_path(root, safe_relative_path(dest))
+    return _utils_update_files.resolve_within(root, safe_relative_path(dest))
 
 
 def _file_md5(path: Path) -> str:
@@ -458,7 +457,9 @@ async def _download_entry(
     """下载单个条目到暂存区，md5 校验通过才算成功。"""
 
     target = resolve_within(staging, entry.dest)
-    if target.is_file() and await file_matches(target, size=entry.size, md5=entry.md5):
+    if target.is_file() and await _utils_update_files.file_matches(
+        target, size=entry.size, md5=entry.md5
+    ):
         return target
 
     last_error: Exception | None = None
@@ -467,11 +468,13 @@ async def _download_entry(
         for attempt in range(attempts):
             try:
                 await _stream_to_file(client, url, target, entry.size, on_bytes)
-                if await file_matches(target, size=entry.size, md5=entry.md5):
+                if await _utils_update_files.file_matches(
+                    target, size=entry.size, md5=entry.md5
+                ):
                     return target
                 # 实收的两个值只进日志：判断「同一 CDN 上拿到的文件总是不对」靠的就是它们。
                 # 大小已经不符时不再整份读一遍算 MD5。
-                actual_size = file_size(target)
+                actual_size = _utils_update_files.file_size(target)
                 actual_md5 = (
                     "跳过（大小已不符）"
                     if actual_size != entry.size
@@ -834,7 +837,7 @@ async def _apply_groups(
         downloaded_bytes: 本次已下载字节数，只用于出错提示。
     """
 
-    exe = await ensure_hpatchz(on_progress=on_progress)
+    exe = await _utils_hpatchz.ensure_hpatchz(on_progress=on_progress)
     patched_root = staging / "_patched"
     total = len(plan.groups)
     fallback_bytes = 0

@@ -64,10 +64,10 @@ export function useMaaFWSetupWizard({
   const currentStep = host?.wizardStep ?? ref(0)
   // computed：页面打开后切换界面语言，步骤条标题跟着变
   const stepItems = computed(() => [
-    { title: t('edit.basicInfo') },
-    { title: t('edit.controlConfiguration') },
-    { title: t('edit.projectUpdate') },
-    { title: t('edit.runConfiguration') },
+    { title: t('core.edit.basicInfo') },
+    { title: t('core.edit.controlConfiguration') },
+    { title: t('core.edit.projectUpdate') },
+    { title: t('core.edit.runConfiguration') },
   ])
   // 第一步没读到 interface 就往下走，后面几步全是空的，先拦住。
   // 运行环境同理：没装完就往下配，配完了也跑不起来——首次要下载 MaaFramework，
@@ -119,9 +119,9 @@ export function useMaaFWSetupWizard({
   )
 
   const finishButtonLabel = computed(() => {
-    if (shellImporting.value) return t('edit.shellImporting')
+    if (shellImporting.value) return t('core.edit.shellImporting')
     const count = selectedShellInstanceIds.value.length
-    return count > 0 ? t('edit.shellImportButton', { count }) : t('edit.createFirstUser')
+    return count > 0 ? t('core.edit.shellImportButton', { count }) : t('core.edit.createFirstUser')
   })
 
   // 导入要一会儿，结束时用户可能已经离开了这一页（面包屑等）：那时只弹提示、不跳转，
@@ -181,7 +181,7 @@ export function useMaaFWSetupWizard({
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error)
         logger.error(`导入外壳配置失败: ${reason}`)
-        message.error(t('edit.shellImportAllFailedWithReason', { reason }))
+        message.error(t('core.edit.shellImportAllFailedWithReason', { reason }))
         leaveWizardTo(addUserLocation())
         return
       }
@@ -196,7 +196,7 @@ export function useMaaFWSetupWizard({
         message.error({
           content: h(
             'div',
-            [t('edit.shellImportAllFailed'), ...lines].map(line => h('div', line))
+            [t('core.edit.shellImportAllFailed'), ...lines].map(line => h('div', line))
           ),
           duration: 8,
         })

@@ -74,13 +74,8 @@ from app.task.M9A.managed import (
     split_message,
 )
 from app.task.MaaFW.tools.core.interface.models import resolve_task_instance_name
+from app.utils import constants as _utils_constants
 from app.utils import get_logger
-from app.utils.constants import (
-    BASE_INDEPENDENT,
-    BASE_NATIVE,
-    BASE_SHARED,
-    normalize_base_source,
-)
 
 logger = get_logger("M9A 迁移")
 
@@ -214,7 +209,7 @@ def migrate_legacy_m9a_scripts(
     if not path.is_file():
         return report
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8").removeprefix("\ufeff")
         data = json.loads(text) if text.strip() else {}
     except (OSError, ValueError) as exc:
         logger.warning(f"M9A 迁移跳过：ScriptConfig.json 读取失败：{exc}")
@@ -988,15 +983,16 @@ def _instance_file_items(
 
     info = user.get("Info") if isinstance(user.get("Info"), dict) else {}
     base = (
-        normalize_base_source(info.get("Base") or info.get("Mode")) or BASE_INDEPENDENT
+        _utils_constants.normalize_base_source(info.get("Base") or info.get("Mode"))
+        or _utils_constants.BASE_INDEPENDENT
     )
     source_path = str((script_payload.get("Info") or {}).get("Path") or "").strip()
     candidates: list[Path] = []
-    if base == BASE_SHARED and script_uid:
+    if base == _utils_constants.BASE_SHARED and script_uid:
         candidates.append(
             Path.cwd() / "data" / script_uid / "Default" / "ConfigFile" / "default.json"
         )
-    elif base == BASE_NATIVE and source_path:
+    elif base == _utils_constants.BASE_NATIVE and source_path:
         instances_dir = Path(source_path) / "config" / "instances"
         candidates.append(instances_dir / "default.json")
         if instances_dir.is_dir():
@@ -1011,7 +1007,9 @@ def _instance_file_items(
         if not candidate.is_file():
             continue
         try:
-            content = json.loads(candidate.read_text(encoding="utf-8"))
+            content = json.loads(
+                candidate.read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except (OSError, ValueError):
             continue
         task_items = content.get("TaskItems") if isinstance(content, dict) else None
@@ -1154,7 +1152,9 @@ def _seed_update_source(source_path: str, global_mirror_cdk: str) -> tuple[str, 
     if source_path:
         config_path = Path(source_path) / "config" / "config.json"
         try:
-            content = json.loads(config_path.read_text(encoding="utf-8"))
+            content = json.loads(
+                config_path.read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except (OSError, ValueError):
             content = None
         if isinstance(content, dict):
@@ -1341,7 +1341,7 @@ def repair_m9a_migration_losses(
 
     tmp = path.with_name(f"{path.name}.m9a-repairing")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
         legacy_scripts = {
             uid: payload
             for uid, payload in _collect_legacy_scripts(backups).items()
@@ -1390,7 +1390,9 @@ def _collect_legacy_scripts(backups: list[Path]) -> dict[str, dict[str, Any]]:
     legacy: dict[str, dict[str, Any]] = {}
     for backup in backups:
         try:
-            content = json.loads(backup.read_text(encoding="utf-8"))
+            content = json.loads(
+                backup.read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except (OSError, ValueError):
             continue
         if not isinstance(content, dict):
@@ -1695,9 +1697,9 @@ def normalize_m9a_managed_entries(
         raw = path.read_bytes()
         if b"M9AConfig" not in raw:
             return report  # 没有 M9A 脚本就不读 interface
-        from app.utils.io import read_dict_file, write_file
+        from app.utils import io as _utils_io
 
-        data = read_dict_file(path)
+        data = _utils_io.read_dict_file(path)
         if not isinstance(data, dict) or not normalize_script_config_payload(
             data, report
         ):
@@ -1707,7 +1709,7 @@ def normalize_m9a_managed_entries(
         shutil.copyfile(path, backup)
         report.backup_path = backup
         _prune_managed_backups(path)
-        write_file(tmp, data, format=path.suffix)
+        _utils_io.write_file(tmp, data, format=path.suffix)
         os.replace(tmp, path)
     except Exception as exc:  # noqa: BLE001 - 整理失败不该挡住启动，运行期照样按规则跑
         logger.opt(exception=True).warning(f"M9A 受管任务整理失败，下次启动再试：{exc}")

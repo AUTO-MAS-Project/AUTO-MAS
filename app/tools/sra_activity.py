@@ -33,16 +33,53 @@ StarRailAssistant（https://starrailassistant.top）托管的活动 JSON——�
 
 from __future__ import annotations
 
+import asyncio
+import time
+from copy import deepcopy
+from dataclasses import dataclass, field
+
 import httpx
-from loguru import logger
+
+from app.utils import get_logger
+
+logger = get_logger("SRA活动")
 
 SRA_ACTIVITY_BASE = "https://starrailassistant.top/api/v1/activity"
 
-## 对方是静态站，正常几百毫秒就回来了；超时给宽一点，别让浏览器那头干等
+## 全部尝试共用总时限，避免弱网重试让首页或日历长时间等候。
 SRA_TIMEOUT_SECONDS = 15
+SRA_REQUEST_TIMEOUT_SECONDS = 5
+SRA_MAX_ATTEMPTS = 3
+SRA_RETRY_DELAY_SECONDS = 0.5
+SRA_CACHE_SECONDS = 5 * 60
+SRA_STALE_SECONDS = 24 * 60 * 60
+SRA_FAILURE_RETRY_SECONDS = 60
+SRA_WARNING_INTERVAL_SECONDS = 60 * 60
 
 ## SRA 的时间是不带时区标记的北京时间，前端按本地时区解析会整体偏移，所以补上偏移量
 BEIJING_OFFSET = "+08:00"
+
+
+@dataclass
+class _ActivityState:
+    data: dict[str, object] | None = None
+    updated_at: float = 0
+    refresh_at: float = 0
+    warned_at: float | None = None
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+
+_states: dict[str, _ActivityState] = {}
+
+
+def _is_retryable_error(error: Exception) -> bool:
+    return isinstance(error, (httpx.TransportError, TimeoutError)) or (
+        isinstance(error, httpx.HTTPStatusError)
+        and (
+            error.response.status_code in (408, 429)
+            or error.response.status_code >= 500
+        )
+    )
 
 
 def _beijing_time(value: object) -> str:
@@ -68,38 +105,76 @@ async def fetch_sra_activities(game: str) -> dict[str, object] | None:
         game: SRA 的游戏标识（``ak`` 明日方舟、``end`` 终末地、``xtlr`` 星塔旅人）。
 
     Returns:
-        ``{"activities": [...]}``，与各游戏的接口形状一致；取不到返回 ``None``，
-        由调用方决定是回落错误信封还是继续走别的兜底。
+        ``{"activities": [...]}``，与各游戏的接口形状一致。取数失败时最多沿用
+        24 小时内的成功结果；没有可用缓存返回 ``None``，由调用方继续兜底。
     """
 
-    url = f"{SRA_ACTIVITY_BASE}/{game}.json"
-    try:
-        async with httpx.AsyncClient(timeout=SRA_TIMEOUT_SECONDS) as client:
-            response = await client.get(url, headers={"Accept": "application/json"})
-        response.raise_for_status()
-        payload = response.json()
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"取 SRA 活动数据失败({game}): {type(e).__name__}: {e}"
-        )
-        return None
+    state = _states.setdefault(game, _ActivityState())
+    # 首页兜底和后台日历可能同时取同一游戏，共享刷新与失败冷却。
+    async with state.lock:
+        if time.monotonic() >= state.refresh_at:
+            url = f"{SRA_ACTIVITY_BASE}/{game}.json"
+            try:
+                async with asyncio.timeout(SRA_TIMEOUT_SECONDS):
+                    async with httpx.AsyncClient(
+                        timeout=SRA_REQUEST_TIMEOUT_SECONDS
+                    ) as client:
+                        for attempt in range(SRA_MAX_ATTEMPTS):
+                            try:
+                                response = await client.get(
+                                    url, headers={"Accept": "application/json"}
+                                )
+                                response.raise_for_status()
+                                break
+                            except httpx.HTTPError as error:
+                                if (
+                                    not _is_retryable_error(error)
+                                    or attempt == SRA_MAX_ATTEMPTS - 1
+                                ):
+                                    raise
+                                await asyncio.sleep(
+                                    SRA_RETRY_DELAY_SECONDS * 2**attempt
+                                )
+                    payload = response.json()
 
-    items = payload.get("activities") if isinstance(payload, dict) else None
-    if not isinstance(items, list):
-        logger.warning(f"SRA 活动数据格式不对({game}): {type(payload).__name__}")
-        return None
+                items = payload.get("activities") if isinstance(payload, dict) else None
+                if not isinstance(items, list):
+                    raise ValueError("SRA 活动数据缺少 activities 列表")
 
-    activities = [
-        {
-            "name": str(item.get("name") or "").strip(),
-            ## 分类留空：SRA 不给活动种类，前端据此不显示标签
-            "kind": "",
-            "description": str(item.get("description") or "").strip(),
-            "startTime": _beijing_time(item.get("startTime")),
-            "endTime": _beijing_time(item.get("endTime")),
-            "cover": str(item.get("cover") or ""),
-        }
-        for item in items
-        if isinstance(item, dict) and str(item.get("name") or "").strip()
-    ]
-    return {"activities": activities}
+                activities = [
+                    {
+                        "name": str(item.get("name") or "").strip(),
+                        ## 分类留空：SRA 不给活动种类，前端据此不显示标签
+                        "kind": "",
+                        "description": str(item.get("description") or "").strip(),
+                        "startTime": _beijing_time(item.get("startTime")),
+                        "endTime": _beijing_time(item.get("endTime")),
+                        "cover": str(item.get("cover") or ""),
+                    }
+                    for item in items
+                    if isinstance(item, dict) and str(item.get("name") or "").strip()
+                ]
+            except Exception as error:
+                now = time.monotonic()
+                state.refresh_at = now + SRA_FAILURE_RETRY_SECONDS
+                if not _is_retryable_error(error) or (
+                    state.warned_at is None
+                    or now - state.warned_at >= SRA_WARNING_INTERVAL_SECONDS
+                ):
+                    if _is_retryable_error(error):
+                        state.warned_at = now
+                    logger.opt(exception=error).warning(
+                        f"取 SRA 活动数据失败({game}, {url}): "
+                        f"{type(error).__name__}: {error!r}"
+                    )
+            else:
+                state.data = {"activities": activities}
+                state.updated_at = time.monotonic()
+                state.refresh_at = state.updated_at + SRA_CACHE_SECONDS
+
+        # 回退不延长成功数据的寿命，空活动列表同样是有效结果。
+        if state.data is not None:
+            if time.monotonic() - state.updated_at <= SRA_STALE_SECONDS:
+                return deepcopy(state.data)
+            state.data = None
+        return None

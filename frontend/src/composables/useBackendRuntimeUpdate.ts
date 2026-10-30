@@ -23,6 +23,7 @@ import {
   endIntentionalBackendRestart,
 } from '@/composables/useAppLifecycle'
 import { getBackendVersion } from './useVersionService'
+import { beginAnalyticsOperation } from '@/utils/analytics'
 
 const logger = window.electronAPI.getLogger('后端更新')
 
@@ -54,6 +55,9 @@ const currentStage = ref<RuntimeUpdateStage | null>(null)
 const completedStages = ref<RuntimeUpdateStage[]>([])
 const outcome = ref<RuntimeUpdateOutcome | null>(null)
 const restartingBackend = ref(false)
+let restartObservation: ReturnType<
+  typeof beginAnalyticsOperation<'backend_update_finished'>
+> | null = null
 
 /** 供应用作用域与桌宠宿主判断「正在更新后端」，避免在重启期间抢先启动任务。 */
 export const isBackendRuntimeUpdating = (): boolean => running.value
@@ -193,9 +197,15 @@ export function useBackendRuntimeUpdate() {
 
   /** `restart` 结局下的兜底：源码与依赖都已就位，只是后端没起来，再拉一次。 */
   async function restartBackend(): Promise<void> {
+    const telemetry = (restartObservation ??= beginAnalyticsOperation('backend_update_finished'))
     restartingBackend.value = true
     try {
       const result = await window.electronAPI.backendStart()
+      telemetry.finish({
+        trigger_kind: 'restart',
+        phase: result.success ? 'complete' : 'restart',
+        outcome: result.success ? 'success' : 'failure',
+      })
       if (result.success) {
         outcome.value = { success: true }
         await refreshAfterUpdate()
@@ -208,9 +218,11 @@ export function useBackendRuntimeUpdate() {
         logs: result.logs,
       }
     } catch (error) {
+      telemetry.finish({ trigger_kind: 'restart', phase: 'restart', outcome: 'unknown' })
       const errorMsg = error instanceof Error ? error.message : String(error)
       outcome.value = { success: false, phase: 'restart', error: errorMsg }
     } finally {
+      if (restartObservation === telemetry) restartObservation = null
       restartingBackend.value = false
     }
   }

@@ -29,6 +29,7 @@ from app.models.notification_channel import (
     ChannelConfig,
     ChannelTarget,
     NotifyChannel,
+    SystemNoticeDependencies,
 )
 from app.models.notification_channel import target_prefix as _prefix
 
@@ -69,8 +70,8 @@ async def _system_send(
 def register() -> NotifyChannel:
     return NotifyChannel(
         key="system",
-        name_key="setting.notify.systemSection",
-        desc_key="setting.notify.systemTip",
+        name_key="core.setting.notify.systemSection",
+        desc_key="core.setting.notify.systemTip",
         icon="bell",
         group="builtin",
         order=10,
@@ -79,10 +80,18 @@ def register() -> NotifyChannel:
         kind="fields",
         custom_block=None,
         enable_field=("Notify", "IfPushPlyer"),
-        summary_key="setting.notify.summary.system",
+        summary_key="core.setting.notify.summary.system",
         summary_fields=(),
         fields={},
         target_builder=_system_targets,
         send_adapter=_system_send,
-        sender_factory=Sender,
+        sender_factory=lambda deps: Sender(
+            SystemNoticeDependencies(
+                config=deps.transport or deps.config,
+                system_notify=deps.system_notify,
+                system_icon=deps.system_icon,
+                logger=deps.logger,
+            )
+        ),
+        transport_fields=("IfPushPlyer",),
     )

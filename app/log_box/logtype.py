@@ -4,7 +4,7 @@
 LOG_TYPE_NORMAL / LOG_TYPE_ERROR），保证 log_box 结果可直接进推送报告。
 """
 
-from app.utils.LogPatternExtractor import LOG_TYPE_ERROR, LOG_TYPE_NORMAL
+from app.utils import LOG_TYPE_ERROR, LOG_TYPE_NORMAL
 
 
 class LogType:

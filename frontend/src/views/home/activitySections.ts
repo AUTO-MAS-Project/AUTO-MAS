@@ -57,11 +57,11 @@ export const sraActivitySections = ({
 }): { activities: HomeActivitySection; extraSections: HomeActivitySection[] } => ({
   activities: {
     id: 'activities',
-    title: t('home.activity.schedule'),
+    title: t('core.home.activity.schedule'),
     completable: true,
     accent,
     source: source ?? {
-      label: t('home.sra.poweredBy', { name: 'SRA' }),
+      label: t('core.home.sra.poweredBy', { name: 'SRA' }),
       url: 'https://starrailassistant.top',
     },
     loading,

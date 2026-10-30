@@ -1,25 +1,29 @@
 <template>
-  <div class="log-panel">
+  <div class="scheduler-panel log-panel">
     <div class="scheduler-panel-header">
-      <h3>{{ t('scheduler.log.title') }}</h3>
+      <h3>{{ t('core.scheduler.log.title') }}</h3>
       <div class="log-controls">
         <a-space size="small">
           <a-select
             v-model:value="logThemeMode"
             size="small"
             class="log-theme-select"
-            :aria-label="t('scheduler.log.theme')"
+            :aria-label="t('core.scheduler.log.theme')"
           >
-            <a-select-option value="theme">{{ t('scheduler.log.followTheme') }}</a-select-option>
-            <a-select-option value="dark">{{ t('comp.darkTheme') }}</a-select-option>
-            <a-select-option value="light">{{ t('comp.lightTheme') }}</a-select-option>
+            <a-select-option value="theme">{{
+              t('core.scheduler.log.followTheme')
+            }}</a-select-option>
+            <a-select-option value="dark">{{ t('core.comp.darkTheme') }}</a-select-option>
+            <a-select-option value="light">{{ t('core.comp.lightTheme') }}</a-select-option>
           </a-select>
           <a-button
             size="small"
             :type="logMode === 'follow' ? 'primary' : 'default'"
             @click="toggleLogMode"
           >
-            {{ logMode === 'follow' ? t('scheduler.log.follow') : t('scheduler.log.browse') }}
+            {{
+              logMode === 'follow' ? t('core.scheduler.log.follow') : t('core.scheduler.log.browse')
+            }}
           </a-button>
         </a-space>
       </div>
@@ -31,11 +35,7 @@
       :style="{ backgroundColor: logBackground, color: logForeground }"
     >
       <div v-if="!logContent" class="empty-state">
-        <div class="empty-content">
-          <div class="empty-image-container">
-            <img src="@/assets/NoData.png" :alt="t('scheduler.log.empty')" class="empty-image" />
-          </div>
-        </div>
+        <a-empty :image="noDataImage" :image-style="{ height: '80px' }" :description="false" />
       </div>
       <div v-else class="monaco-container">
         <vue-monaco-editor
@@ -52,6 +52,7 @@
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { useTheme } from '@/composables/useTheme'
@@ -90,7 +91,7 @@ const logThemeMode = useLocalStorage<LogThemeMode>('auto-mas.scheduler.log-theme
   },
   onError: error => {
     logger.error(`保存日志主题失败: ${String(error)}`)
-    message.error(t('scheduler.log.saveThemeFailed'))
+    message.error(t('core.scheduler.log.saveThemeFailed'))
   },
 })
 const logIsDark = computed(() =>
@@ -229,28 +230,12 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
-.log-panel {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
-}
+<style scoped src="./schedulerPanel.css"></style>
 
+<style scoped>
 .scheduler-panel-header {
-  display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  flex-shrink: 0;
 }
 
 .scheduler-panel-header h3 {
@@ -333,34 +318,5 @@ onUnmounted(() => {
   height: 100%;
   min-height: 200px;
   text-align: center;
-}
-
-.empty-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.empty-image-container {
-  margin-bottom: 16px;
-}
-
-.empty-image {
-  width: 80px;
-  height: auto;
-  opacity: 0.6;
-}
-
-.empty-title {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 0 0 4px 0;
-  color: var(--ant-color-text);
-}
-
-.empty-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0;
 }
 </style>

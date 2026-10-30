@@ -1,4 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
+
+import type { RendererAnalyticsEvent } from '../src/types/analytics'
 import type { AppearanceCategory } from '../src/types/mascotPack'
 import type {
   DesktopMascotColors,
@@ -10,16 +12,34 @@ import type {
   DesktopMascotTaskMenu,
 } from '../src/types/desktopMascot'
 
+// 环境在页面执行前可用；沙箱 preload 只读取主进程传入的启动参数。
+contextBridge.exposeInMainWorld(
+  'appEnvironment',
+  process.argv.includes('--auto-mas-environment=production') ? 'production' : 'development'
+)
+
 window.addEventListener('DOMContentLoaded', () => {
   // 预加载脚本已加载
 })
 
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
+  analytics: {
+    getContext: () => ipcRenderer.invoke('analytics:context'),
+    trackEvent: (context: number, event: RendererAnalyticsEvent) =>
+      ipcRenderer.send('analytics:event', context, event),
+  },
   isMacOS: process.platform === 'darwin',
+  installFluxdown: (mirror: string) => ipcRenderer.invoke('fluxdown:install', mirror),
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: unknown[]) => ipcRenderer.invoke('select-file', filters),
+  saveTextFile: (
+    defaultName: string,
+    content: string,
+    filters?: unknown[],
+    dialogOptions?: { dialogTitle?: string; buttonLabel?: string }
+  ) => ipcRenderer.invoke('save-text-file', defaultName, content, filters, dialogOptions),
   openUrl: (url: string) => ipcRenderer.invoke('open-url', url),
   discoverOkwwPath: () => ipcRenderer.invoke('okww-path-discovery:discover-okww'),
   discoverWutheringWavesPath: () =>
@@ -29,6 +49,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
   windowClose: () => ipcRenderer.invoke('window-close'),
+  windowHideToTray: () => ipcRenderer.invoke('window-hide-to-tray'),
+  notifyNativeCloseHandlerReady: () => ipcRenderer.send('native-window-close-handler-ready'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
   onWindowMaximizedChange: (callback: (maximized: boolean) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, maximized: boolean) => callback(maximized)
@@ -36,6 +58,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('window-maximized-changed', listener)
   },
   windowFocus: () => ipcRenderer.invoke('window-focus'),
+  onNativeWindowCloseRequested: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('native-window-close-requested', listener)
+    return () => ipcRenderer.removeListener('native-window-close-requested', listener)
+  },
   setDesktopMascotReady: (
     ready: boolean,
     labels?: DesktopMascotMenuLabels,
@@ -45,8 +72,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('desktop-mascot:activity', working, animate),
   setDesktopMascotIdleMessage: (message: DesktopMascotIdleMessage) =>
     ipcRenderer.invoke('desktop-mascot:idle-message', message),
-  showDesktopMascotNotice: (text: string, reaction?: 'success' | 'failure' | 'stopped') =>
-    ipcRenderer.invoke('desktop-mascot:notice', text, reaction),
+  showDesktopMascotNotice: (
+    text: string,
+    reaction?: 'success' | 'failure' | 'stopped',
+    key?: string
+  ) => ipcRenderer.invoke('desktop-mascot:notice', text, reaction, key),
   onDesktopMascotError: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('desktop-mascot:error', listener)
@@ -86,6 +116,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   powerWarningStart: () => ipcRenderer.invoke('power-warning:start'),
   powerWarningEnd: () => ipcRenderer.invoke('power-warning:end'),
   appQuit: () => ipcRenderer.invoke('app-quit'),
+  appObserveBackendClose: () => ipcRenderer.send('app-backend-close-observed'),
   appWaitForQuitConfirmation: () => ipcRenderer.invoke('app-wait-for-quit-confirmation'),
   appPrepareQuit: () => ipcRenderer.invoke('app-prepare-quit'),
   appConfirmQuit: (token: number) => ipcRenderer.invoke('app-confirm-quit', token),
@@ -152,18 +183,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 托盘自定义菜单项
   updateTrayConfig: (trayItems: unknown) => ipcRenderer.invoke('update-tray-config', trayItems),
 
-  // 托盘动作请求（由渲染进程统一处理：启动任务 / 退出 / 重启）
+  // 托盘动作请求（由渲染进程统一处理：启动任务 / 退出）
   onTrayActionRequest: (
-    callback: (request: {
-      action: 'quit' | 'restart' | 'startTask'
-      taskId?: string
-      label?: string
-    }) => void
+    callback: (request: { action: 'quit' | 'startTask'; taskId?: string; label?: string }) => void
   ) => {
     const listener = (
       _event: Electron.IpcRendererEvent,
       request: {
-        action: 'quit' | 'restart' | 'startTask'
+        action: 'quit' | 'startTask'
         taskId?: string
         label?: string
       }
@@ -204,6 +231,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 虚拟显示器询问弹窗：主窗口把后端消息转给主进程开窗；弹窗页面自己取数据、自己关
   showVirtualDisplayPrompt: (payload: unknown) => ipcRenderer.invoke('vdd-prompt:show', payload),
+  observeVirtualDisplayPrompt: () => ipcRenderer.send('vdd-prompt:observe', 'keep'),
+  detachVirtualDisplayFromPrompt: () => ipcRenderer.invoke('vdd-prompt:detach'),
   closeVirtualDisplayPrompt: () => ipcRenderer.invoke('vdd-prompt:close'),
   getVirtualDisplayPrompt: () => ipcRenderer.invoke('vdd-prompt:get'),
   onVirtualDisplayPromptData: (callback: (payload: unknown) => void) => {
@@ -321,7 +350,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 后端服务管理（startBackend/stopBackend 与 backendStart 两套命名都有渲染进程在用，先都保留）
   backendStart: () => ipcRenderer.invoke('backend-start'),
-  backendRestart: () => ipcRenderer.invoke('backend-restart'),
+  backendRestart: (reason?: 'manual' | 'recovery') => ipcRenderer.invoke('backend-restart', reason),
   backendStatus: () => ipcRenderer.invoke('backend-status'),
   checkRuntimeBackendUpdate: () => ipcRenderer.invoke('check-runtime-backend-update'),
 

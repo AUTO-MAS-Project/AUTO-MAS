@@ -1,31 +1,12 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="@/assets/baah.png" alt="BAAH" class="breadcrumb-logo" />
-            {{ t('edit.editScript') }}
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditHeader script-type="BAAH" :title="t('core.edit.editScript')" @cancel="handleCancel" />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card :title="t('edit.baahScriptConfiguration')" :loading="pageLoading" class="config-card">
+    <a-card
+      :title="t('core.edit.baahScriptConfiguration')"
+      :loading="pageLoading"
+      class="config-card"
+    >
       <template #extra>
         <a-tag color="magenta" class="type-tag">BAAH</a-tag>
       </template>
@@ -34,22 +15,21 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ t('core.edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="24">
               <a-form-item name="name">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.baahScriptNameHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.scriptName')"
+                    :hint="t('core.edit.baahScriptNameHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="t('core.edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -62,50 +42,36 @@
         <!-- 脚本配置 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.scriptConfiguration') }}</h3>
+            <h3>{{ t('core.edit.scriptConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.mainProgramPath') }}
-                    <a-tooltip :title="t('edit.baahScriptPathHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.baahPath"
-                    :placeholder="t('edit.pickScriptSMain')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('core.edit.mainProgramPath')"
+                    :hint="t('core.edit.baahScriptPathHint')"
+                    variant="form"
                   />
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="isSaving"
-                    @click="selectBaahPath"
-                  >
-                    <template #icon>
-                      <FileOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="formData.baahPath"
+                  mode="file"
+                  :placeholder="t('core.edit.pickScriptSMain')"
+                  :pick-label="t('core.edit.pickFile')"
+                  :disabled="isSaving"
+                  @pick="selectBaahPath"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.baahManageConfig') }}
-                    <a-tooltip :title="t('edit.baahManageConfigHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.baahManageConfig')"
+                    :hint="t('core.edit.baahManageConfigHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="baahConfig.Script.IfManageConfig"
@@ -113,20 +79,19 @@
                   style="width: 100%"
                   @change="handleChange('Script', 'IfManageConfig', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.baahPushLogEnabled') }}
-                    <a-tooltip :title="t('edit.baahPushLogEnabledHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.baahPushLogEnabled')"
+                    :hint="t('core.edit.baahPushLogEnabledHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="baahConfig.Script.PushLogEnabled"
@@ -134,8 +99,8 @@
                   style="width: 100%"
                   @change="handleChange('Script', 'PushLogEnabled', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -145,7 +110,7 @@
           <a-alert
             type="warning"
             show-icon
-            :message="t('edit.baahAutoStartNotice')"
+            :message="t('core.edit.baahAutoStartNotice')"
             style="margin-top: 16px"
           />
         </div>
@@ -153,23 +118,22 @@
         <!-- 模拟器管理 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.emulators') }}</h3>
+            <h3>{{ t('core.edit.emulators') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.emulator') }}
-                    <a-tooltip :title="t('edit.baahEmulatorHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.emulator')"
+                    :hint="t('core.edit.baahEmulatorHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="baahConfig.Emulator.Id"
                   size="large"
-                  :placeholder="t('edit.pickEmulator')"
+                  :placeholder="t('core.edit.pickEmulator')"
                   :loading="emulatorLoading"
                   @change="handleEmulatorSelectChange"
                 >
@@ -186,12 +150,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.emulatorInstance') }}
-                    <a-tooltip :title="t('edit.pickEmulatorInstance')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.emulatorInstance')"
+                    :hint="t('core.edit.pickEmulatorInstance')"
+                    variant="form"
+                  />
                 </template>
                 <!-- 当API返回空列表时显示输入框 -->
                 <a-input
@@ -202,7 +165,7 @@
                   "
                   v-model:value="baahConfig.Emulator.Index"
                   size="large"
-                  :placeholder="t('edit.enterInstanceInfoAs')"
+                  :placeholder="t('core.edit.enterInstanceInfoAs')"
                   class="modern-input"
                   @blur="handleChange('Emulator', 'Index', baahConfig.Emulator.Index)"
                 />
@@ -211,7 +174,7 @@
                   v-else
                   v-model:value="baahConfig.Emulator.Index"
                   size="large"
-                  :placeholder="t('edit.pickEmulatorFirst')"
+                  :placeholder="t('core.edit.pickEmulatorFirst')"
                   :loading="emulatorDeviceLoading"
                   :disabled="!baahConfig.Emulator.Id"
                   @change="handleChange('Emulator', 'Index', $event)"
@@ -233,7 +196,7 @@
         <!-- 运行配置 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ t('core.edit.runConfiguration') }}</h3>
           </div>
           <ScriptHardTimeoutField
             v-model:value="baahConfig.Run.HardTimeLimit"
@@ -241,44 +204,22 @@
           />
           <a-row :gutter="24">
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.baahRunTimesLimitHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="baahConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', baahConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="baahConfig.Run.RunTimesLimit"
+                kind="retry"
+                :label="t('core.edit.retryLimit2')"
+                :hint="t('core.edit.baahRunTimesLimitHint')"
+                @save="handleChange('Run', 'RunTimesLimit', baahConfig.Run.RunTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.baahRunTimeLimitHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="baahConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', baahConfig.Run.RunTimeLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="baahConfig.Run.RunTimeLimit"
+                kind="timeout"
+                :label="t('core.edit.runTimeoutMinutes')"
+                :hint="t('core.edit.baahRunTimeLimitHint')"
+                @save="handleChange('Run', 'RunTimeLimit', baahConfig.Run.RunTimeLimit)"
+              />
             </a-col>
           </a-row>
         </div>
@@ -288,18 +229,16 @@
 </template>
 
 <script setup lang="ts">
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import PathPickerField from '@/components/PathPickerField.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  FileOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
@@ -309,7 +248,7 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BAAH脚本编辑')
 const route = useRoute()
 const router = useRouter()
-const { getScript } = useScriptApi()
+const { getScript, error: scriptApiError } = useScriptApi()
 const {
   emulatorDeviceLoading,
   emulatorDeviceOptions,
@@ -392,7 +331,7 @@ const formData = reactive({
 })
 
 const rules = computed(() => ({
-  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
+  name: [{ required: true, message: t('core.edit.enterScriptName'), trigger: 'blur' }],
 }))
 
 // 统一使用正斜杠落盘，与后端 FolderValidator/FileValidator 的取值保持一致
@@ -404,12 +343,12 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
     if (detail.type !== 'BAAH') {
-      message.error(t('edit.baahNotBaahScript'))
+      message.error(t('core.edit.baahNotBaahScript'))
       handleCancel()
       return
     }
@@ -425,7 +364,7 @@ const loadScript = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false
@@ -437,7 +376,7 @@ const handleCancel = () => router.push('/scripts')
 const selectBaahPath = async () => {
   const paths = await window.electronAPI?.selectFile([
     { name: 'BAAH.exe', extensions: ['exe'] },
-    { name: t('edit.allFiles'), extensions: ['*'] },
+    { name: t('core.edit.allFiles'), extensions: ['*'] },
   ])
   const path = paths?.[0]
   if (!path) return
@@ -466,151 +405,18 @@ onMounted(() => {
 })
 </script>
 
+<style scoped src="@/styles/scriptEditForm.css"></style>
+
 <style scoped>
-.script-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-}
-
-.breadcrumb-current {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-
-.script-edit-content {
-  flex: 1;
-}
-
-.config-card {
-  overflow: hidden;
-}
-
-.config-card :deep(.ant-card-head) {
-  background: var(--ant-color-bg-container);
-  padding: 24px 32px;
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
-.type-tag {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 8px;
-}
-
-.form-section {
-  margin-bottom: 12px;
-}
-
 .section-header {
-  margin-bottom: 6px;
-  padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
   gap: 8px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  cursor: help;
 }
 
 .modern-input {
   border-radius: 8px;
-}
-
-.path-input-group {
-  display: flex;
-  overflow: hidden;
-  border: 1px solid var(--ant-color-border);
-}
-
-.path-input {
-  flex: 1;
-  min-width: 0;
-  border: none !important;
-  border-radius: 0 !important;
-}
-
-.path-button {
-  flex-shrink: 0;
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  border-left: 1px solid var(--ant-color-border-secondary);
-}
-
-.cancel-button {
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-}
-
-.cancel-button:hover {
-  border-color: var(--ant-color-primary);
-  color: var(--ant-color-primary);
-}
-
-.config-form :deep(.ant-form-item) {
-  margin-bottom: 24px;
-}
-
-@media (max-width: 768px) {
-  .script-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
-  }
 }
 </style>

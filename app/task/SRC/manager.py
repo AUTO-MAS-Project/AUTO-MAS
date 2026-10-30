@@ -26,6 +26,7 @@ from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import SrcConfig
 from app.models.emulator import DeviceProvider
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.emulator_core import close_emulator
@@ -35,8 +36,7 @@ from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     read_config_base,
 )
-from app.utils import ProcessManager, get_logger
-from app.utils.constants import TASK_MODE_ZH
+from app.utils import TASK_MODE_ZH, ProcessManager, get_logger
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -47,7 +47,6 @@ from .tools import (
     has_committed_src_user_config_transaction,
     is_src_config_available,
     kill_src_processes,
-    push_notification,
     read_src_config_snapshot_state,
     read_src_installation_id,
     read_src_process_state,
@@ -70,6 +69,22 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
     "AutoProxy": AutoProxyTask,
     "ScriptConfig": ScriptConfigTask,
 }
+
+
+def build_src_manager(
+    script_info: ScriptItem,
+    *,
+    root_paths: tuple[Path, ...],
+    reserve_root: Callable[[Path], bool],
+) -> "SrcManager":
+    """接收宿主已预约的根目录及追加预约能力。"""
+    if not root_paths:
+        raise RuntimeError("SRC 路径占用未初始化")
+    return SrcManager(
+        script_info,
+        reserved_src_root_path=root_paths[0],
+        reserve_src_root=reserve_root,
+    )
 
 
 class SrcManager(ScriptManagerBase):
@@ -899,11 +914,9 @@ class SrcManager(ScriptManagerBase):
         result = {**result, "summary_title": completion_title}
         try:
             await asyncio.wait_for(
-                push_notification(
-                    mode="代理结果",
+                self.task_info.notifications.push_proxy_result(
                     title=title,
-                    message=result,
-                    user_config=None,
+                    report=TaskResultReport.from_message(result),
                     task_info=self.task_info,
                 ),
                 timeout=_NOTIFICATION_TIMEOUT_SECONDS,

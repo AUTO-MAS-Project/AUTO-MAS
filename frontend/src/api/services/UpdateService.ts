@@ -9,6 +9,7 @@ import type { PlanUpdateIn } from '../models/PlanUpdateIn';
 import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
+import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptReorderIn } from '../models/ScriptReorderIn';
 import type { ScriptTemplateImportIn } from '../models/ScriptTemplateImportIn';
 import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
@@ -65,25 +66,6 @@ export class UpdateService {
         });
     }
     /**
-     * 从配置中心导入脚本配置
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static importScriptFromWebApiScriptsImportWebPost(
-        requestBody: ScriptTemplateImportIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/import/web',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 更新用户配置信息
      * @param requestBody
      * @returns OutBase Successful Response
@@ -114,6 +96,44 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新webhook项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateWebhookApiScriptsWebhookUpdatePost(
+        requestBody: WebhookUpdateIn_WebhookInput_,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/webhook/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从配置中心导入脚本配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static importScriptFromWebApiScriptsImportWebPost(
+        requestBody: ScriptTemplateImportIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/import/web',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -160,17 +180,17 @@ export class UpdateService {
         });
     }
     /**
-     * 更新webhook项
+     * 手动刷新 MAA 养成材料数据与干员目录
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static updateWebhookApiScriptsWebhookUpdatePost(
-        requestBody: WebhookUpdateIn_WebhookInput_,
+    public static refreshMaaCultivateDataApiScriptsMaaCultivateRefreshPost(
+        requestBody: ScriptDeleteIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/scripts/webhook/update',
+            url: '/api/scripts/maa/cultivate/refresh',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

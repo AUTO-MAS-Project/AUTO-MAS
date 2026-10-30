@@ -53,9 +53,8 @@ from PIL import Image
 
 from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
-from app.utils import get_logger, is_process_alive
-from app.utils.platform import IS_WINDOWS
-from app.utils.platform.display import per_monitor_dpi as _per_monitor_dpi
+from app.utils import IS_WINDOWS, get_logger, is_process_alive
+from app.utils import display as _utils_display
 
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
@@ -146,9 +145,9 @@ _LOGIN_PAGE_TEXTS = ("其他登录方式",)
 # 已登录主菜单判定文本（登录界面但无输入框：退出/公告/工具/账号/设置 + 登录状态）
 _LOGGED_IN_MENU_TEXTS = ("登录状态", "点击连接")
 
-# 掩码账号形如 123****5678
-_MASKED_ACCOUNT = re.compile(r"\d{3}\*+\d{4}")
-_MASKED_SUFFIX = re.compile(r"\d+\*+(\d{4})")
+# 掩码账号形如 123****5678，OCR 可能识别为半角、全角或混合星号。
+_MASKED_ACCOUNT = re.compile(r"\d{3}[*＊]+\d{4}")
+_MASKED_SUFFIX = re.compile(r"\d+[*＊]+(\d{4})")
 
 
 # ── 窗口定位 ────────────────────────────────────────────────────────────
@@ -290,7 +289,7 @@ def _client_size(hwnd: int) -> tuple[int, int]:
 
 
 def _capture_window_image(hwnd: int, *, activate: bool = True) -> Image.Image:
-    with _per_monitor_dpi():
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)
@@ -340,7 +339,7 @@ def _click_box(
     hwnd: int, box: Box, *, activate: bool = False, after_sleep: float = 0.3
 ) -> None:
     """点击 1080p 坐标空间中的一个文字框中心。"""
-    with _per_monitor_dpi():
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)
@@ -799,7 +798,7 @@ def _wait_login_success(hwnd: int, *, timeout: int = 180) -> None:
 
 
 def _select_and_login(hwnd: int, suffix: str, on_log: Callable[[str], None]) -> None:
-    pattern = re.compile(rf"\d+\*+{re.escape(suffix)}")
+    pattern = re.compile(rf"\d+[*＊]+{re.escape(suffix)}")
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         _activate_window(hwnd)

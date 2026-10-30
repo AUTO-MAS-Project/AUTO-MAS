@@ -14,6 +14,7 @@ interface IssueReportResult {
   success: boolean
   message?: string
   zipPath?: string
+  directoryPaths?: string[]
   error?: string
   incompleteCount?: number
 }
@@ -40,17 +41,20 @@ export function useIssueReport<Args extends unknown[] = []>(
       const result = await options.exportFn(...args)
 
       if (!result) {
-        message.error(t('misc.exportDidNotRespond'))
+        message.error(t('core.misc.exportDidNotRespond'))
         logger.error(`导出 ${options.label} 问题包失败: 未收到响应`)
         return
       }
 
       if (result.success) {
         const successMessage =
-          result.message || t('misc.issueReportSuccess', { label: options.label })
+          result.message || t('core.misc.issueReportSuccess', { label: options.label })
         if (result.incompleteCount) message.warning(successMessage)
         else message.success(successMessage)
-        logger.info(`导出 ${options.label} 问题包成功: ${result.zipPath || '路径未知'}`)
+        logger.info(
+          `导出 ${options.label} 问题包成功: ${result.zipPath || result.directoryPaths?.join('、') || '路径未知'}`
+        )
+        if (result.directoryPaths) return
         if (result.zipPath) {
           await window.electronAPI?.showItemInFolder?.(result.zipPath)
         }
@@ -63,13 +67,13 @@ export function useIssueReport<Args extends unknown[] = []>(
         return
       }
 
-      const errorMsg = result.error || t('misc.issueReportFailed', { label: options.label })
+      const errorMsg = result.error || t('core.misc.issueReportFailed', { label: options.label })
       logger.error(`导出 ${options.label} 问题包失败: ${errorMsg}`)
       message.error(errorMsg)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`导出 ${options.label} 问题包失败: ${errorMsg}`)
-      message.error(t('misc.couldNotExportIssue', { p0: errorMsg }))
+      message.error(t('core.misc.couldNotExportIssue', { p0: errorMsg }))
     } finally {
       exporting.value = false
     }

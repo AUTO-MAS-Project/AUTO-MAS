@@ -30,11 +30,12 @@ from pydantic import Field
 from app.config import (
     ConfigGroup,
 )
-from app.utils.constants import UTC4, game_now
+from app.utils import constants as _utils_constants
 
 from .base import DomainEntry
 from .shared import (
     default_baah_plan_key,
+    none_as,
     normalize_baah_plan_key,
     normalize_maaend_plan_key,
     normalize_mss_plan_key,
@@ -72,19 +73,21 @@ class PlanDaysConfig(DomainEntry):
 
 class WeeklyKeyPlan(PlanDaysConfig):
     def get_current_key(self):
-        key = getattr(self, self.current_group(datetime.now(tz=UTC4))).Key
-        return key.model_dump(exclude_none=True, exclude={"Event"})
+        key = getattr(
+            self, self.current_group(datetime.now(tz=_utils_constants.UTC4))
+        ).Key
+        return key.model_dump(exclude_none=True)
 
 
 class MaaPlanConfig(PlanDaysConfig):
     def get_current_info(self, name: str, server: str | None = None):
-        group = self.current_group(game_now(server))
+        group = self.current_group(_utils_constants.game_now(server))
         return getattr(getattr(self, group), name)
 
     "MAA计划表配置"
 
     class ALLFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -103,7 +106,7 @@ class MaaPlanConfig(PlanDaysConfig):
     ALL: ALLFields = Field(default_factory=ALLFields)
 
     class FridayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -168,7 +171,7 @@ class MaaPlanConfig(PlanDaysConfig):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class MondayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -187,7 +190,7 @@ class MaaPlanConfig(PlanDaysConfig):
     Monday: MondayFields = Field(default_factory=MondayFields)
 
     class SaturdayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -206,7 +209,7 @@ class MaaPlanConfig(PlanDaysConfig):
     Saturday: SaturdayFields = Field(default_factory=SaturdayFields)
 
     class SundayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -225,7 +228,7 @@ class MaaPlanConfig(PlanDaysConfig):
     Sunday: SundayFields = Field(default_factory=SundayFields)
 
     class ThursdayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -244,7 +247,7 @@ class MaaPlanConfig(PlanDaysConfig):
     Thursday: ThursdayFields = Field(default_factory=ThursdayFields)
 
     class TuesdayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -263,7 +266,7 @@ class MaaPlanConfig(PlanDaysConfig):
     Tuesday: TuesdayFields = Field(default_factory=TuesdayFields)
 
     class WednesdayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -407,6 +410,12 @@ class MaaEndPlanConfig(WeeklyKeyPlan):
 
 class BAAHPlanConfig(WeeklyKeyPlan):
     "BAAH 计划表配置。"
+
+    def get_current_key(self) -> dict[str, list[int]]:
+        """活动关卡由 BAAH 自身配置维护，不从计划表下发。"""
+        key = super().get_current_key()
+        key.pop("Event", None)
+        return key
 
     class ALLFields(ConfigGroup):
         Key: schema_model.BAAHPlanKey = Field(

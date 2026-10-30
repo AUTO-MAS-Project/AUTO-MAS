@@ -45,15 +45,8 @@ General 特有的 File/Folder 两态语义与恢复前强制归档。
 import shutil
 from pathlib import Path
 
+from app.utils import config_archive as _utils_config_archive
 from app.utils import get_logger
-from app.utils.config_archive import (
-    archive_files,
-    config_root_key,
-    dir_files,
-    get_backup_dir,
-    list_times,
-    restore_dir,
-)
 
 logger = get_logger("通用脚本配置备份")
 
@@ -94,7 +87,7 @@ def native_backup_root(script_id: str, config_path: str | Path) -> Path:
         / script_id
         / "GeneralBackups"
         / "native"
-        / config_root_key(config_path)
+        / _utils_config_archive.config_root_key(config_path)
     )
 
 
@@ -111,7 +104,7 @@ def collect_mas_files(mas_dir: Path) -> dict[str, Path]:
     mas_dir = Path(mas_dir)
     if not mas_dir.is_dir() or not any(mas_dir.iterdir()):
         return {}
-    return dir_files(mas_dir)
+    return _utils_config_archive.dir_files(mas_dir)
 
 
 def archive_mas_backup(
@@ -128,7 +121,9 @@ def archive_mas_backup(
     files = collect_mas_files(mas_dir)
     if not files:
         return None
-    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, mas_backup_root(script_id, user_id), force=force
+    )
     if dest is None:
         logger.info("用户 {} 的 MAS 配置无变化，跳过归档", user_id)
         return None
@@ -139,13 +134,13 @@ def archive_mas_backup(
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
     """用户池的全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(mas_backup_root(script_id, user_id))
+    return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
     """取用户池指定时间戳的归档目录；不存在返回 None。"""
 
-    return get_backup_dir(mas_backup_root(script_id, user_id), ts)
+    return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(script_id: str, user_id: str, ts: str, mas_dir: Path) -> None:
@@ -157,7 +152,7 @@ def restore_mas_backup(script_id: str, user_id: str, ts: str, mas_dir: Path) -> 
     mas_dir = Path(mas_dir)
     # 恢复前存底不设目录条件：目标缺失/为空时无可存底内容由 archive 自判
     archive_mas_backup(script_id, user_id, mas_dir, force=True)
-    restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
+    _utils_config_archive.restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
     logger.info("用户 {} 的 MAS 配置已恢复备份 {}", user_id, ts)
 
 
@@ -189,7 +184,7 @@ def collect_native_files(config_path: str | Path, config_mode: str) -> dict[str,
     if config_mode == "Folder":
         if not config_path.is_dir() or not any(config_path.iterdir()):
             return {}
-        return dir_files(config_path)
+        return _utils_config_archive.dir_files(config_path)
     if config_mode == "File":
         if not config_path.is_file():
             return {}
@@ -212,7 +207,9 @@ def archive_native_backup(
     files = collect_native_files(config_path, config_mode)
     if not files:
         return None
-    dest = archive_files(files, native_backup_root(script_id, config_path), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, native_backup_root(script_id, config_path), force=force
+    )
     if dest is None:
         logger.info("通用脚本原生配置无变化，跳过归档")
         return None
@@ -223,7 +220,7 @@ def archive_native_backup(
 def list_native_backups(script_id: str, config_path: str | Path) -> list[str]:
     """脚本原生配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(native_backup_root(script_id, config_path))
+    return _utils_config_archive.list_times(native_backup_root(script_id, config_path))
 
 
 def get_native_backup_dir(
@@ -231,7 +228,9 @@ def get_native_backup_dir(
 ) -> Path | None:
     """取指定时间戳的原生配置归档目录；不存在返回 None。"""
 
-    return get_backup_dir(native_backup_root(script_id, config_path), ts)
+    return _utils_config_archive.get_backup_dir(
+        native_backup_root(script_id, config_path), ts
+    )
 
 
 def restore_native_backup(
@@ -250,9 +249,11 @@ def restore_native_backup(
     # 恢复前强制归档当前——「恢复前的配置」在列表里有明确的时间戳条目
     archive_native_backup(script_id, config_path, config_mode, force=True)
     if config_mode == "Folder":
-        restore_dir(native_backup_root(script_id, config_path), ts, config_path)
+        _utils_config_archive.restore_dir(
+            native_backup_root(script_id, config_path), ts, config_path
+        )
     elif config_mode == "File":
-        files = dir_files(backup_dir)
+        files = _utils_config_archive.dir_files(backup_dir)
         if not files:
             raise ValueError(f"备份内容为空: {ts}")
         # File 池每份归档只含 ConfigPath.name 一个文件；同名键缺失（如模式

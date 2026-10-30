@@ -36,8 +36,8 @@ export const planDayKeys = (mode: string | undefined, rotateDays: unknown): stri
 /** 天键的词表 key 与插值参数：星期名走 plan.week.*，轮换天走 plan.rotateDay（带 {n}） */
 export const planDayLabel = (day: string): { key: string; params: Record<string, unknown> } =>
   isWeekdayKey(day)
-    ? { key: `plan.week.${day}`, params: {} }
-    : { key: 'plan.rotateDay', params: { n: day } }
+    ? { key: `core.plan.week.${day}`, params: {} }
+    : { key: 'core.plan.rotateDay', params: { n: day } }
 
 /**
  * 列的键：全局模式与周计划是 ALL 加当天的天键；多天轮换是一次接一次的循环，

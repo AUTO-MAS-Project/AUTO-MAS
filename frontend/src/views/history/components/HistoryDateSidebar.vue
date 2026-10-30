@@ -2,7 +2,7 @@
   <div class="date-sidebar">
     <div class="sidebar-header">
       <CalendarOutlined />
-      <span>{{ t('history.dateList') }}</span>
+      <span>{{ t('core.history.dateList') }}</span>
     </div>
     <div class="date-list">
       <a-collapse
@@ -37,8 +37,8 @@
                     class="result-count success-count"
                     :class="{ 'is-zero': !row.successCount }"
                     role="img"
-                    :aria-label="t('history.successCount', { count: row.successCount })"
-                    :title="t('history.successCount', { count: row.successCount })"
+                    :aria-label="t('core.history.successCount', { count: row.successCount })"
+                    :title="t('core.history.successCount', { count: row.successCount })"
                   >
                     <CheckOutlined aria-hidden="true" />
                     <span class="count-value" aria-hidden="true">{{ row.successCount }}</span>
@@ -47,8 +47,8 @@
                     class="result-count failure-count"
                     :class="{ 'is-zero': !row.failureCount }"
                     role="img"
-                    :aria-label="t('history.failureCount', { count: row.failureCount })"
-                    :title="t('history.failureCount', { count: row.failureCount })"
+                    :aria-label="t('core.history.failureCount', { count: row.failureCount })"
+                    :title="t('core.history.failureCount', { count: row.failureCount })"
                   >
                     <CloseOutlined aria-hidden="true" />
                     <span class="count-value" aria-hidden="true">{{ row.failureCount }}</span>
@@ -62,16 +62,20 @@
       </a-collapse>
 
       <div v-if="historyData.length === 0" class="empty-sidebar">
-        <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
-        <span class="empty-text">{{ t('history.empty') }}</span>
+        <a-empty
+          :image="noDataImage"
+          :image-style="{ height: '80px' }"
+          :description="t('core.history.empty')"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
-import { type HistoryData, HistoryIndexItem } from '@/api'
+import type { HistoryBucket } from '@/api'
 import {
   CalendarOutlined,
   CheckOutlined,
@@ -91,79 +95,33 @@ interface Props {
   selectedUser: string
 }
 
-interface HistoryRow {
-  key: string
-  username: string
-  userData: HistoryData
-  successCount: number
-  failureCount: number
-}
-
-interface HistoryScriptGroup {
-  script: string
-  label: string
-  rows: HistoryRow[]
-}
-
 const props = defineProps<Props>()
 
 const emit = defineEmits<{
   (e: 'update:activeKeys', value: string[]): void
-  (e: 'select-user', key: string, userData: HistoryData): void
+  (e: 'select-user', key: string, userData: HistoryBucket): void
 }>()
 
 const localActiveKeys = ref(props.activeKeys)
 
-// 历史文件名是 `<托管名>-<时>-<分>-<秒>.json`；不足 4 段的（MaaFW 补前缀之前的
-// 旧记录）文件名里没有托管名，返回空串
-const scriptNameFromJsonFile = (jsonFile: string): string => {
-  const stem = (jsonFile.split(/[\\/]/).pop() ?? '').replace(/\.json$/i, '')
-  const parts = stem.split('-')
-  return parts.length > 3 ? parts.slice(0, -3).join('-') : ''
-}
-
-// 历史目录按账号名分文件夹，不同托管下的同名账号会落进同一个文件夹；
-// 再按文件名前缀里的托管名分一组，否则同名账号的计数会混在一起
+// 日期和用户名沿用后端分组；托管名称在记录元数据中展示。
 const dateGroups = computed(() =>
-  props.historyData.map(dateGroup => {
-    const byScript = new Map<string, HistoryScriptGroup>()
-    for (const [username, userData] of Object.entries(dateGroup.users)) {
-      const buckets = new Map<string, HistoryIndexItem[]>()
-      for (const record of userData.index ?? []) {
-        const script = scriptNameFromJsonFile(record.jsonFile)
-        const bucket = buckets.get(script)
-        if (bucket) bucket.push(record)
-        else buckets.set(script, [record])
-      }
-      if (buckets.size === 0) buckets.set('', [])
-
-      for (const [script, records] of buckets) {
-        let successCount = 0
-        let failureCount = 0
-        for (const record of records) {
-          // 跳过（SKIP，如停服维护）既不算成功也不算失败
-          if (record.status === HistoryIndexItem.status.DONE) successCount++
-          else if (record.status === HistoryIndexItem.status.ERROR) failureCount++
-        }
-        const row: HistoryRow = {
-          key: `${dateGroup.date}-${script}-${username}`,
+  props.historyData.map(dateGroup => ({
+    date: dateGroup.date,
+    groups: [
+      {
+        script: '',
+        label: '',
+        rows: Object.entries(dateGroup.users).map(([username, userData]) => ({
+          key: JSON.stringify([dateGroup.date, username]),
           username,
-          userData: { ...userData, index: records },
-          successCount,
-          failureCount,
-        }
-        const group = byScript.get(script)
-        if (group) group.rows.push(row)
-        else
-          byScript.set(script, {
-            script,
-            label: script || t('history.scriptUnknown'),
-            rows: [row],
-          })
-      }
-    }
-    return { date: dateGroup.date, groups: [...byScript.values()] }
-  })
+          userData,
+          successCount: (userData.index ?? []).filter(record => record.status === 'success').length,
+          failureCount: (userData.index ?? []).filter(record => record.status === 'error').length,
+        })),
+      },
+    ],
+  }))
 )
 
 watch(
@@ -210,24 +168,6 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   flex: 1;
   overflow-y: auto;
   padding: 8px;
-}
-
-/* 滚动条样式 - 浅色 */
-.date-list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.date-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.date-list::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
-}
-
-.date-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
 }
 
 .date-panel {
@@ -385,27 +325,5 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   justify-content: center;
   padding: 40px 20px;
   gap: 12px;
-}
-
-.empty-image {
-  width: 80px;
-  height: auto;
-  opacity: 0.6;
-}
-
-.empty-text {
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
-}
-</style>
-
-<style>
-/* 深色模式滚动条 */
-.dark .date-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15) !important;
-}
-
-.dark .date-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25) !important;
 }
 </style>

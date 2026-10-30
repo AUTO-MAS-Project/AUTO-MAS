@@ -67,13 +67,13 @@ export function useDesktopMascot(
         return
       }
       const { task } = event
-      const name = task.name || t('setting.basic.mascotTask')
+      const name = task.name || t('core.setting.basic.mascotTask')
       let text: string
       let reaction: 'success' | 'failure' | 'stopped' | undefined
       if (event.type === 'started') {
         if (announcedMascotTasks.has(task.taskId)) return
         announcedMascotTasks.add(task.taskId)
-        text = t('setting.basic.mascotTaskStarted', { name })
+        text = t('core.setting.basic.mascotTaskStarted', { name })
       } else {
         announcedMascotTasks.delete(task.taskId)
         const key = {
@@ -82,7 +82,7 @@ export function useDesktopMascot(
           stopped: 'mascotTaskStopped',
           partialFailure: 'mascotTaskPartialFailure',
         }[event.result]
-        text = t(`setting.basic.${key}`, { name })
+        text = t(`core.setting.basic.${key}`, { name })
         reaction =
           event.result === 'success'
             ? 'success'
@@ -90,7 +90,7 @@ export function useDesktopMascot(
               ? 'stopped'
               : 'failure'
       }
-      void api.showDesktopMascotNotice?.(text, reaction).catch(error => {
+      void api.showDesktopMascotNotice?.(text, reaction, task.taskId).catch(error => {
         reportError('显示桌宠提醒失败:', error)
       })
     }

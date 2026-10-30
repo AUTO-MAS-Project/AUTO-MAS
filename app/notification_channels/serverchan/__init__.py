@@ -29,6 +29,7 @@ from app.models.notification_channel import (
     SCOPE_USER,
     ChannelConfig,
     ChannelTarget,
+    HttpDependencies,
     NotifyChannel,
     NotifyChannelField,
 )
@@ -39,10 +40,10 @@ from .transport import Sender
 _SERVERCHAN_FIELD = NotifyChannelField(
     group="Notify",
     name="ServerChanKey",
-    label_key="setting.notify.serverChanKey",
+    label_key="core.setting.notify.serverChanKey",
     control="password",
-    placeholder_key="setting.notify.serverChanPlaceholder",
-    tip_key="setting.notify.serverChanKeyTip",
+    placeholder_key="core.setting.notify.serverChanPlaceholder",
+    tip_key="core.setting.notify.serverChanKeyTip",
 )
 
 
@@ -84,8 +85,8 @@ async def _serverchan_send(
 def register() -> NotifyChannel:
     return NotifyChannel(
         key="serverchan",
-        name_key="setting.notify.serverChanSection",
-        desc_key="setting.notify.serverChanTip",
+        name_key="core.setting.notify.serverChanSection",
+        desc_key="core.setting.notify.serverChanTip",
         icon="plane",
         group="builtin",
         order=30,
@@ -94,10 +95,17 @@ def register() -> NotifyChannel:
         kind="fields",
         custom_block=None,
         enable_field=("Notify", "IfServerChan"),
-        summary_key="setting.notify.summary.serverchan",
+        summary_key="core.setting.notify.summary.serverchan",
         summary_fields=("ServerChanKey",),
         fields={SCOPE_GLOBAL: (_SERVERCHAN_FIELD,), SCOPE_USER: (_SERVERCHAN_FIELD,)},
         target_builder=_serverchan_targets,
         send_adapter=_serverchan_send,
-        sender_factory=Sender,
+        sender_factory=lambda deps: Sender(
+            HttpDependencies(
+                read_proxy=deps.read_proxy,
+                http_factory=deps.http_factory,
+                logger=deps.logger,
+            )
+        ),
+        transport_fields=(),
     )

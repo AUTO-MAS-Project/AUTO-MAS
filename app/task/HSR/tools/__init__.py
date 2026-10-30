@@ -17,8 +17,3 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
-
-
-from .notify import push_notification
-
-__all__ = ["push_notification"]

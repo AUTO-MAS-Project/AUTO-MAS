@@ -4,9 +4,9 @@
       <a-col :xs="24" :md="12">
         <a-form-item name="mode">
           <template #label>
-            <LabelWithHint
-              text="关卡配置模式"
-              hint="「固定」直接在此配置关卡；「计划表」按计划自动切换"
+            <FieldLabelWithHint
+              :text="t('core.edit.stageConfigMode')"
+              :hint="t('core.edit.stageConfigModeHint')"
             />
           </template>
           <a-select
@@ -22,7 +22,7 @@
           <template #icon>
             <CalendarOutlined />
           </template>
-          {{ t('edit.goPlan') }}
+          {{ t('core.edit.goPlan') }}
         </a-button>
       </a-col>
     </a-row>
@@ -30,7 +30,7 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="medicineNumb">
           <template #label>
-            <LabelWithHint text="吃理智药数量" />
+            <FieldLabelWithHint :text="t('core.edit.medicineNumb')" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -40,7 +40,7 @@
                 <!-- eslint-disable vue/no-v-html -- formatTooltip escapes all HTML before converting newlines to br tags. -->
                 <div class="plan-tooltip" v-html="formatTooltip(medicineNumbTooltip)"></div>
               </template>
-              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
+              <div class="plan-source">{{ t('core.edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示输入框 -->
@@ -59,9 +59,9 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <LabelWithHint
-              text="连战次数"
-              hint="AUTO：自动识别关卡最大代理倍率，保持最大代理倍率且使用理智药后理智不溢出；数值（1~6）：按设定倍率执行代理；不切换：不调整游戏内代理倍率设定"
+            <FieldLabelWithHint
+              :text="t('core.edit.seriesNumb')"
+              :hint="t('core.edit.seriesNumbHint')"
             />
           </template>
           <!-- 计划模式：显示只读文本 -->
@@ -71,7 +71,7 @@
                 displaySeriesNumb === '0'
                   ? 'AUTO'
                   : displaySeriesNumb === '-1'
-                    ? t('edit.doNotSwitch')
+                    ? t('core.edit.doNotSwitch')
                     : displaySeriesNumb
               }}
             </div>
@@ -79,7 +79,7 @@
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(seriesNumbTooltip)"></div>
               </template>
-              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
+              <div class="plan-source">{{ t('core.edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -94,7 +94,7 @@
               { label: '4', value: '4' },
               { label: '5', value: '5' },
               { label: '6', value: '6' },
-              { label: t('edit.doNotSwitch'), value: '-1' },
+              { label: t('core.edit.doNotSwitch'), value: '-1' },
             ]"
             :disabled="loading"
             @update:value="$emit('update-series-numb', $event)"
@@ -105,18 +105,22 @@
       <a-col :xs="24" :xl="12">
         <a-form-item name="mode">
           <template #label>
-            <LabelWithHint text="关卡选择" />
+            <FieldLabelWithHint :text="t('core.edit.stageSelection')" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
             <div class="plan-value">
-              {{ displayStage === '-' ? '当前/上次' : displayStage || '不选择' }}
+              {{
+                displayStage === '-'
+                  ? t('core.edit.currentOrLast')
+                  : displayStage || t('core.edit.none')
+              }}
             </div>
             <a-tooltip>
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(stageTooltip)"></div>
               </template>
-              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
+              <div class="plan-source">{{ t('core.edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -125,7 +129,7 @@
             :value="displayStage"
             :options="stageOptions"
             :loading="loading"
-            :placeholder="t('edit.pickTypeCustomStage')"
+            :placeholder="t('core.edit.pickTypeCustomStage')"
             @update:value="$emit('update-stage', $event)"
             @add-custom-stage="handleAddCustomStage"
           />
@@ -136,21 +140,25 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <LabelWithHint
-              text="备选关卡-1"
-              hint="所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+            <FieldLabelWithHint
+              :text="t('core.edit.alternateStage', { n: 1 })"
+              :hint="t('core.edit.alternateStageHint')"
             />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
             <div class="plan-value">
-              {{ displayStage1 === '-' ? '当前/上次' : displayStage1 || '不选择' }}
+              {{
+                displayStage1 === '-'
+                  ? t('core.edit.currentOrLast')
+                  : displayStage1 || t('core.edit.none')
+              }}
             </div>
             <a-tooltip>
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(stage1Tooltip)"></div>
               </template>
-              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
+              <div class="plan-source">{{ t('core.edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -159,7 +167,7 @@
             :value="displayStage1"
             :options="stageOptions"
             :loading="loading"
-            :placeholder="t('edit.pickTypeCustomStage')"
+            :placeholder="t('core.edit.pickTypeCustomStage')"
             @update:value="$emit('update-stage1', $event)"
             @add-custom-stage="handleAddCustomStage1"
           />
@@ -168,21 +176,25 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <LabelWithHint
-              text="备选关卡-2"
-              hint="所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+            <FieldLabelWithHint
+              :text="t('core.edit.alternateStage', { n: 2 })"
+              :hint="t('core.edit.alternateStageHint')"
             />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
             <div class="plan-value">
-              {{ displayStage2 === '-' ? '当前/上次' : displayStage2 || '不选择' }}
+              {{
+                displayStage2 === '-'
+                  ? t('core.edit.currentOrLast')
+                  : displayStage2 || t('core.edit.none')
+              }}
             </div>
             <a-tooltip>
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(stage2Tooltip)"></div>
               </template>
-              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
+              <div class="plan-source">{{ t('core.edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -191,7 +203,7 @@
             :value="displayStage2"
             :options="stageOptions"
             :loading="loading"
-            :placeholder="t('edit.pickTypeCustomStage')"
+            :placeholder="t('core.edit.pickTypeCustomStage')"
             @update:value="$emit('update-stage2', $event)"
             @add-custom-stage="handleAddCustomStage2"
           />
@@ -200,21 +212,25 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <LabelWithHint
-              text="备选关卡-3"
-              hint="所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+            <FieldLabelWithHint
+              :text="t('core.edit.alternateStage', { n: 3 })"
+              :hint="t('core.edit.alternateStageHint')"
             />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
             <div class="plan-value">
-              {{ displayStage3 === '-' ? '当前/上次' : displayStage3 || '不选择' }}
+              {{
+                displayStage3 === '-'
+                  ? t('core.edit.currentOrLast')
+                  : displayStage3 || t('core.edit.none')
+              }}
             </div>
             <a-tooltip>
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(stage3Tooltip)"></div>
               </template>
-              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
+              <div class="plan-source">{{ t('core.edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -223,7 +239,7 @@
             :value="displayStage3"
             :options="stageOptions"
             :loading="loading"
-            :placeholder="t('edit.pickTypeCustomStage')"
+            :placeholder="t('core.edit.pickTypeCustomStage')"
             @update:value="$emit('update-stage3', $event)"
             @add-custom-stage="handleAddCustomStage3"
           />
@@ -236,7 +252,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { CalendarOutlined } from '@ant-design/icons-vue'
-import LabelWithHint from './LabelWithHint.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import StageSelector from './StageSelector.vue'
 import { navigateTo } from '@/router'
 

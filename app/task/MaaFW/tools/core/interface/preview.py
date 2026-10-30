@@ -17,6 +17,7 @@ from .models import (
     MaaFWInterface,
     build_pretask_task_name,
     hotkey_modifier_count,
+    is_pretask_task_name,
     iter_pretasks,
     simplified_chinese_language_file,
     task_repeat_count,
@@ -146,8 +147,15 @@ def build_interface_preview_data(
             task_order=task_order,
             task_option_maps=task_option_maps,
             include_default_options=False,
+            # 预设声明的前置任务（PI v2.10.3）随快照给用户页：队列里的 pretask 伪任务 id 打头，
+            # 声明了就带上全部前置任务（未列出的不勾选），没声明就一个不带
+            include_pretasks=True,
         )
-        checked_count = sum(1 for checked in snapshot.taskChecked.values() if checked)
+        checked_count = sum(
+            1
+            for task_id, checked in snapshot.taskChecked.items()
+            if checked and not is_pretask_task_name(task_id)
+        )
         presets.append(
             {
                 "name": preset.name,
@@ -155,11 +163,12 @@ def build_interface_preview_data(
                 "description": tr_description(preset.description),
                 "taskCount": len(preset.task or []),
                 "checkedCount": checked_count,
-                # 实例显示名只属于用户自己的队列，项目预设没有；宿主 schema 也不声明它
+                # 实例显示名与运行日只属于用户自己的队列，项目预设没有；宿主 schema 也不声明它们
                 # 项目预设没有用户队列的跳过标记；不要把内部默认 false
                 # 暴露成预设快照的可选键。
                 "snapshot": snapshot.model_dump(
-                    mode="json", exclude={"taskLabels", "keepUnchecked"}
+                    mode="json",
+                    exclude={"taskLabels", "taskSchedules", "keepUnchecked"},
                 ),
             }
         )
@@ -286,8 +295,9 @@ def build_interface_preview_data(
                         "default": input_item.default,
                         "pipelineType": input_item.pipeline_type,
                         "verify": input_item.verify,
-                        "verifyError": input_item.verify_error,
-                        "patternMsg": input_item.pattern_msg,
+                        # 校验失败提示与 label 同一口径翻 `$键`（MaaEnd 的 pattern_msg 全是键）
+                        "verifyError": tr_text(input_item.verify_error),
+                        "patternMsg": tr_text(input_item.pattern_msg),
                         "password": input_item.password,
                     }
                     for input_item in option.inputs or []
@@ -448,62 +458,6 @@ def _load_i18n_mapping(root_path: Path, interface: MaaFWInterface) -> dict[str, 
                 exc,
             )
         return {}
-
-
-def build_task_alias_index(
-    root_path: str | Path,
-    interface: MaaFWInterface,
-) -> dict[str, tuple[str, ...]]:
-    """任务名 → 它可能在外壳日志里出现的**全部写法**。
-
-    外壳按自己的界面语言打任务名：中文界面是「任务开始: 信用点购物」，英文界面
-    是「Task started: 🛍️ Credit Shopping」，而 interface 里存的是 name
-    （``CreditShoppingN2``）与 entry（``CreditShoppingMain``）—— 三者互不相同。
-    只认其中一种，换个语言就会把跑成功的运行误判成「选中任务未出现」。
-
-    这里把 name、entry、以及 ``interface.languages`` 里**每一种**语言下解析出的
-    label 全都收进来，判断时任一命中即算露面。MAS 手上就有全部语言文件，不必去
-    猜外壳当前用的是哪一种。
-
-    Returns:
-        ``{任务名: (可能的写法, ...)}``，写法已去重且剔除空串。
-    """
-
-    root = Path(root_path).resolve()
-    mappings: list[dict[str, Any]] = []
-    for relative in (interface.languages or {}).values():
-        if not isinstance(relative, str) or not relative.strip():
-            continue
-        language_path = _resolve_project_path(root, relative)
-        if language_path is None or not language_path.is_file():
-            continue
-        try:
-            data = parse_json_text(language_path.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001 —— 语言文件坏了不该影响判定，少一种写法而已
-            continue
-        if isinstance(data, dict):
-            mappings.append(data)
-
-    index: dict[str, tuple[str, ...]] = {}
-    for task in interface.task:
-        aliases: list[str] = []
-        for candidate in (task.name, task.entry):
-            if isinstance(candidate, str) and candidate.strip():
-                aliases.append(candidate.strip())
-        raw_label = task.label
-        if isinstance(raw_label, str) and raw_label.strip():
-            if not raw_label.startswith("$"):
-                aliases.append(raw_label.strip())
-            for mapping in mappings:
-                translated = _lookup_i18n_text(raw_label, mapping)
-                if isinstance(translated, str) and translated.strip():
-                    aliases.append(translated.strip())
-        deduped: list[str] = []
-        for alias in aliases:
-            if alias not in deduped:
-                deduped.append(alias)
-        index[task.name] = tuple(deduped)
-    return index
 
 
 def _resolve_i18n_value(value: Any, mapping: dict[str, Any]) -> Any:

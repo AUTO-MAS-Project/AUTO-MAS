@@ -1,3 +1,4 @@
+import { getDevelopmentServerUrl, getRendererEnvironmentArguments } from './instanceConfig'
 import { app, BrowserWindow, nativeImage, screen } from 'electron'
 import type { NativeImage, Point, Size, WebContents } from 'electron'
 import * as path from 'path'
@@ -12,6 +13,19 @@ import { getMascotLayout, getMascotSize, isMascotVisible } from './desktopMascot
 import type { DesktopMascotOptions, DesktopMascotRuntime } from './desktopMascotTypes'
 
 const MASCOT_MARGIN = 16
+const NOTICE_DURATION = 8000
+const NOTICE_MAX_AGE = 16000
+const NOTICE_QUEUE_LIMIT = 5
+
+interface MascotNotice {
+  text: string
+  reaction?: DesktopMascotData['reaction']
+  key: string
+  createdAt: number
+}
+
+const noticePriority = (notice: MascotNotice): number =>
+  notice.reaction === 'failure' ? 3 : notice.reaction === 'stopped' ? 2 : notice.reaction ? 1 : 0
 
 // 只做鼠标命中判断，不裁剪原生透明窗口；动画取所有帧的并集，避免边缘随播放闪动。
 export function createMascotHitMask(images: NativeImage[]): Uint8Array {
@@ -66,6 +80,9 @@ export class DesktopMascotService implements DesktopMascotRuntime {
   private dragOffset: Point | null = null
   private mouseIgnored: boolean | null = null
   private noticeTimer: ReturnType<typeof setTimeout> | null = null
+  private currentNotice: MascotNotice | null = null
+  private pendingNotices: MascotNotice[] = []
+  private reactionSequence = 0
   private trackingTimer: ReturnType<typeof setInterval> | null = null
   private lastCursor: Point | null = null
   private cursorMovedAt = 0
@@ -151,16 +168,75 @@ export class DesktopMascotService implements DesktopMascotRuntime {
     if (this.animationPaused) this.updateLook(null)
   }
 
-  showNotice(text: string, reaction?: 'success' | 'failure' | 'stopped'): void {
+  showNotice(text: string, reaction?: 'success' | 'failure' | 'stopped', key?: string): void {
     if (!this.data || !text.trim()) return
+    const notice: MascotNotice = {
+      text: text.trim().slice(0, 240),
+      reaction,
+      key: key || text,
+      createdAt: Date.now(),
+    }
+    const current = this.currentNotice
+    this.pendingNotices = this.pendingNotices.filter(
+      item => Date.now() - item.createdAt < NOTICE_MAX_AGE
+    )
+    const queued = this.pendingNotices.find(item => item.key === notice.key)
+    if (queued && noticePriority(notice) < noticePriority(queued)) return
+    if (current?.key === notice.key) {
+      if (
+        (current.text === notice.text && current.reaction === reaction) ||
+        noticePriority(notice) < noticePriority(current)
+      )
+        return
+    }
+    this.pendingNotices = this.pendingNotices.filter(item => item.key !== notice.key)
+    if (
+      !current ||
+      current.key === notice.key ||
+      noticePriority(notice) > noticePriority(current)
+    ) {
+      this.displayNotice(notice)
+      return
+    }
+    // 未关联运行任务的临时进度只即时显示，避免排队后落在任务结果之后。
+    if (!key && !reaction) return
+    this.pendingNotices.push(notice)
+    this.pendingNotices.sort(
+      (left, right) =>
+        noticePriority(right) - noticePriority(left) || left.createdAt - right.createdAt
+    )
+    this.pendingNotices.length = Math.min(this.pendingNotices.length, NOTICE_QUEUE_LIMIT)
+  }
+
+  finishReaction(sender: WebContents, id: unknown): void {
+    if (
+      sender !== this.window?.webContents ||
+      !Number.isSafeInteger(id) ||
+      id !== this.data?.reactionId
+    )
+      return
+    this.updateData({ reaction: undefined })
+  }
+
+  private displayNotice(notice: MascotNotice): void {
     if (this.noticeTimer) clearTimeout(this.noticeTimer)
-    this.updateData({ notice: text.trim().slice(0, 240), reaction })
-    if (reaction) this.updateLook(null)
+    this.currentNotice = notice
+    this.updateData({
+      notice: notice.text,
+      reaction: notice.reaction,
+      reactionId: ++this.reactionSequence,
+    })
+    if (notice.reaction) this.updateLook(null)
     this.noticeTimer = setTimeout(() => {
       this.noticeTimer = null
-      if (!this.data) return
-      this.updateData({ notice: undefined, reaction: undefined })
-    }, 8000)
+      this.currentNotice = null
+      this.pendingNotices = this.pendingNotices.filter(
+        item => Date.now() - item.createdAt < NOTICE_MAX_AGE
+      )
+      const next = this.pendingNotices.shift()
+      if (next) this.displayNotice(next)
+      else this.updateData({ notice: undefined })
+    }, NOTICE_DURATION)
   }
 
   startDrag(sender: WebContents, offset: unknown): boolean {
@@ -374,6 +450,7 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       notice: this.data?.notice,
       idleMessage: this.idleMessagePaused ? undefined : this.idleMessage,
       reaction: this.data?.reaction,
+      reactionId: this.data?.reactionId,
       lookFrame: null,
       ...(hasAnimation && animation
         ? {
@@ -408,6 +485,7 @@ export class DesktopMascotService implements DesktopMascotRuntime {
         skipTaskbar: true,
         show: false,
         webPreferences: {
+          additionalArguments: getRendererEnvironmentArguments(),
           nodeIntegration: false,
           contextIsolation: true,
           preload: path.join(__dirname, '..', 'desktopMascotPreload.js'),
@@ -422,7 +500,7 @@ export class DesktopMascotService implements DesktopMascotRuntime {
         if (this.window !== createdWindow) return
         this.layoutRevision++
         this.finishDrag(true)
-        this.updateData({ revision: this.layoutRevision })
+        this.updateData({ revision: this.layoutRevision, reaction: undefined })
       }
       win.webContents.on('render-process-gone', cancelRendererDrag)
       win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
@@ -438,7 +516,7 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       screen.on('display-removed', this.handleDisplayChanged)
       screen.on('display-added', this.handleDisplayChanged)
       screen.on('display-metrics-changed', this.handleDisplayChanged)
-      const devServer = process.env.VITE_DEV_SERVER_URL
+      const devServer = getDevelopmentServerUrl()
       const loading = devServer
         ? win.loadURL(`${devServer.replace(/\/$/, '')}/mascot.html`)
         : win.loadFile(path.join(app.getAppPath(), 'dist', 'mascot.html'))
@@ -479,6 +557,8 @@ export class DesktopMascotService implements DesktopMascotRuntime {
     this.mouseIgnored = null
     if (this.noticeTimer) clearTimeout(this.noticeTimer)
     this.noticeTimer = null
+    this.currentNotice = null
+    this.pendingNotices = []
     if (this.trackingTimer) clearInterval(this.trackingTimer)
     this.trackingTimer = null
     this.lastCursor = null

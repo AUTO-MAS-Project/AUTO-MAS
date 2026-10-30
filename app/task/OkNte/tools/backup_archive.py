@@ -41,16 +41,9 @@ import shutil
 from contextlib import suppress
 from pathlib import Path
 
+from app.utils import config_archive as _utils_config_archive
 from app.utils import get_logger
-from app.utils.config_archive import (
-    archive_files,
-    config_root_key,
-    dir_files,
-    get_backup_dir,
-    list_times,
-    restore_dir,
-)
-from app.utils.io import atomic_write, swap_in_dir
+from app.utils import io as _utils_io
 
 from ..config_schema import (
     _FALLBACK_LABELS,
@@ -99,7 +92,11 @@ def native_backup_root(config_path: str | Path) -> Path:
     无论被哪个脚本引用都归同一个池；跨脚本共享、不随脚本删除。
     """
 
-    return project_backup_root() / "native" / config_root_key(config_path)
+    return (
+        project_backup_root()
+        / "native"
+        / _utils_config_archive.config_root_key(config_path)
+    )
 
 
 def mas_config_dir(script_id: str, user_id: str) -> Path:
@@ -126,9 +123,9 @@ def ensure_quick_config_dir(script_id: str, user_id: str, script_config) -> Path
                 raise ValueError("请先设置 OK-NTE 配置路径")
             source = Path(raw_path)
         if source.is_file():
-            atomic_write(target / source.name, source.read_bytes())
+            _utils_io.atomic_write(target / source.name, source.read_bytes())
         elif source.is_dir():
-            swap_in_dir(source, target)
+            _utils_io.swap_in_dir(source, target)
         else:
             raise FileNotFoundError("请先在 OK-NTE 中保存设置")
     if script_config.Script.ConfigPathMode == "Folder":
@@ -152,7 +149,7 @@ def collect_config_files(config_path: Path, mode: str) -> dict[str, Path] | None
         return {config_path.name: config_path}
     if not config_path.is_dir() or not any(config_path.iterdir()):
         return None
-    return dir_files(config_path)
+    return _utils_config_archive.dir_files(config_path)
 
 
 # ══════════════════ MAS 用户配置 ══════════════════
@@ -167,11 +164,14 @@ def collect_mas_files(mas_dir: str | Path) -> dict[str, Path]:
     """
 
     mas_dir = Path(mas_dir)
-    files = dir_files(mas_dir) if mas_dir.is_dir() else {}
+    files = _utils_config_archive.dir_files(mas_dir) if mas_dir.is_dir() else {}
     quick_dir = mas_dir.with_name("QuickConfig")
     if quick_dir.is_dir():
         files.update(
-            {f"QuickConfig/{name}": path for name, path in dir_files(quick_dir).items()}
+            {
+                f"QuickConfig/{name}": path
+                for name, path in _utils_config_archive.dir_files(quick_dir).items()
+            }
         )
     return files
 
@@ -192,7 +192,9 @@ def archive_mas_backup(
     files = collect_mas_files(mas_dir)
     if not files:
         return None
-    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, mas_backup_root(script_id, user_id), force=force
+    )
     if dest is None:
         logger.info("用户 MAS 配置无变化，跳过归档")
         return None
@@ -203,13 +205,13 @@ def archive_mas_backup(
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
     """MAS 用户配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(mas_backup_root(script_id, user_id))
+    return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
     """取指定时间戳的 MAS 用户归档目录；不存在返回 None。"""
 
-    return get_backup_dir(mas_backup_root(script_id, user_id), ts)
+    return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(script_id: str, user_id: str, ts: str, mas_dir: Path) -> None:
@@ -217,15 +219,15 @@ def restore_mas_backup(script_id: str, user_id: str, ts: str, mas_dir: Path) -> 
 
     mas_dir = Path(mas_dir)
     archive_mas_backup(script_id, user_id, mas_dir, force=True)
-    restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
+    _utils_config_archive.restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
     restored_quick = mas_dir / "QuickConfig"
     quick_dir = quick_config_dir(script_id, user_id)
     if restored_quick.is_dir():
-        swap_in_dir(restored_quick, quick_dir)
+        _utils_io.swap_in_dir(restored_quick, quick_dir)
         shutil.rmtree(restored_quick)
     else:
         # 旧备份没有分开的面板目录，以旧配置恢复面板，避免残留较新的覆盖值。
-        swap_in_dir(mas_dir, quick_dir)
+        _utils_io.swap_in_dir(mas_dir, quick_dir)
     logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
 
 
@@ -245,7 +247,9 @@ def archive_native_backup(
     files = collect_config_files(config_path, mode)
     if not files:
         return None
-    dest = archive_files(files, native_backup_root(config_path), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, native_backup_root(config_path), force=force
+    )
     if dest is None:
         logger.info("ok-nte 原生配置无变化，跳过归档")
         return None
@@ -256,13 +260,13 @@ def archive_native_backup(
 def list_native_backups(config_path: str | Path) -> list[str]:
     """ok-nte 原生配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(native_backup_root(config_path))
+    return _utils_config_archive.list_times(native_backup_root(config_path))
 
 
 def get_native_backup_dir(config_path: str | Path, ts: str) -> Path | None:
     """取指定时间戳的原生配置归档目录；不存在返回 None。"""
 
-    return get_backup_dir(native_backup_root(config_path), ts)
+    return _utils_config_archive.get_backup_dir(native_backup_root(config_path), ts)
 
 
 def restore_native_backup(config_path: Path, ts: str, mode: str) -> None:
@@ -278,7 +282,7 @@ def restore_native_backup(config_path: Path, ts: str, mode: str) -> None:
     # 恢复前强制归档当前——「恢复前的配置」在列表里有明确的时间戳条目
     archive_native_backup(config_path, mode, force=True)
     if mode == "File":
-        files = dir_files(backup_dir)
+        files = _utils_config_archive.dir_files(backup_dir)
         if not files:
             raise ValueError(f"备份内容为空: {ts}")
         src = files.get(config_path.name) or next(iter(files.values()))
@@ -286,7 +290,7 @@ def restore_native_backup(config_path: Path, ts: str, mode: str) -> None:
         shutil.copyfile(src, config_path)
         logger.info(f"ok-nte 原生配置文件已恢复备份 {ts}")
         return
-    restore_dir(native_backup_root(config_path), ts, config_path)
+    _utils_config_archive.restore_dir(native_backup_root(config_path), ts, config_path)
     logger.info(f"ok-nte 原生配置已恢复备份 {ts}")
 
 
@@ -391,11 +395,13 @@ def build_backup_file_summary(
     if (backup_dir / "QuickConfig").is_dir():
         backup_dir = backup_dir / "QuickConfig"
     files: list[dict] = []
-    for rel in sorted(dir_files(backup_dir)):
+    for rel in sorted(_utils_config_archive.dir_files(backup_dir)):
         if "/" in rel or not rel.lower().endswith(".json"):
             continue
         try:
-            data = json.loads((backup_dir / rel).read_text(encoding="utf-8"))
+            data = json.loads(
+                (backup_dir / rel).read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except Exception:
             continue
         if not isinstance(data, dict):

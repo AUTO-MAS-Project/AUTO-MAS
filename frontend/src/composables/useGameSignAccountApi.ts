@@ -1,3 +1,5 @@
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
+import { communityAccountAction } from '@/utils/communityAnalytics'
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -16,7 +18,12 @@ export function useGameSignAccountApi() {
   } | null> => {
     loading.value = true
     try {
-      const response = await Service.addGameSignAccountApiToolsSignAccountAddPost()
+      const response = await observeFeature(
+        'community_account_manage_finished',
+        { action: 'create' },
+        () => Service.addGameSignAccountApiToolsSignAccountAddPost(),
+        result => (result.code === 200 && result.accountId && result.data ? 'success' : 'failure')
+      )
       if (response.code !== 200) {
         throw new Error(response.message || '添加账号组失败')
       }
@@ -28,7 +35,7 @@ export function useGameSignAccountApi() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`添加账号组失败: ${errorMsg}`)
-      message.error(t('misc.couldNotAddAccount'))
+      message.error(t('core.misc.couldNotAddAccount'))
       return null
     } finally {
       loading.value = false
@@ -45,10 +52,18 @@ export function useGameSignAccountApi() {
     // 只提交改动字段：账号组里的凭据是页面加载时的快照，全量回写会把
     // 后台在这期间轮换出的新凭据覆盖回旧值（一次性 refreshToken 尤其致命）。
     try {
-      const response = await Service.updateGameSignAccountApiToolsSignAccountUpdatePost({
-        accountId,
-        data,
-      })
+      const response = await observeFeature(
+        'community_account_manage_finished',
+        {
+          action: communityAccountAction(data),
+        },
+        () =>
+          Service.updateGameSignAccountApiToolsSignAccountUpdatePost({
+            accountId,
+            data,
+          }),
+        apiOutcome
+      )
       if (response.code !== 200) {
         throw new Error(response.message || '更新账号组失败')
       }
@@ -66,18 +81,24 @@ export function useGameSignAccountApi() {
   const deleteAccount = async (accountId: string): Promise<void> => {
     loading.value = true
     try {
-      const response = await Service.deleteGameSignAccountApiToolsSignAccountDeletePost({
-        accountId,
-      })
+      const response = await observeFeature(
+        'community_account_manage_finished',
+        { action: 'delete' },
+        () =>
+          Service.deleteGameSignAccountApiToolsSignAccountDeletePost({
+            accountId,
+          }),
+        apiOutcome
+      )
       if (response.code !== 200) {
         throw new Error(response.message || '删除账号组失败')
       }
       logger.info('账号组删除成功')
-      message.success(t('misc.accountGroupDeleted'))
+      message.success(t('core.misc.accountGroupDeleted'))
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`删除账号组失败: ${errorMsg}`)
-      message.error(t('misc.couldNotDeleteAccount'))
+      message.error(t('core.misc.couldNotDeleteAccount'))
       throw error
     } finally {
       loading.value = false

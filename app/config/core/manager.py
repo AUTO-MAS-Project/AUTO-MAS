@@ -8,7 +8,7 @@ import threading
 import weakref
 from collections import deque
 from collections.abc import Iterator
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 from contextvars import ContextVar, copy_context
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,8 +16,8 @@ from time import monotonic
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator, Literal
 from uuid import UUID, uuid4
 
-from app.utils.io import write_file
-from app.utils.logger import get_logger
+from app.utils import get_logger
+from app.utils import io as _utils_io
 
 from ..errors import ConfigAggregateError, ConfigPersistenceError
 
@@ -62,12 +62,12 @@ def execution_owner() -> ExecutionOwner:
 
 @dataclass
 class TransactionContext:
-    """事务工作区与暂存作用域；关闭后即使被子任务继承也不再有效。"""
+    """一个事务提交与回退边界；普通嵌套调用直接复用当前上下文。"""
 
+    parent: TransactionContext | None = None
     registered: list[WorkspaceUnit] = field(default_factory=list)
     owner: ExecutionOwner = field(default_factory=execution_owner)
     scope_id: UUID = field(default_factory=uuid4)
-    transaction_id: UUID | None = None
     active: bool = True
     staged_nodes: dict[int, weakref.ReferenceType[ConfigNode]] = field(
         default_factory=dict
@@ -76,6 +76,13 @@ class TransactionContext:
     @property
     def is_current(self) -> bool:
         return self.active and self.owner is execution_owner()
+
+    @property
+    def root(self) -> TransactionContext:
+        ctx = self
+        while ctx.parent is not None:
+            ctx = ctx.parent
+        return ctx
 
 
 @dataclass(eq=False)
@@ -129,10 +136,6 @@ class ConfigManager:
         self._txn: ContextVar[TransactionContext | None] = ContextVar(
             "config_framework_v2_txn", default=None
         )
-        # Init 事务栈：嵌套时压入独立 ctx（与普通事务「嵌套空开」不同）
-        self._init_txn: ContextVar[tuple[TransactionContext, ...] | None] = ContextVar(
-            "config_framework_v2_init_txn", default=None
-        )
         # 提交帧校验实际所有者和生命周期，子 Task 不能继承原任务的重入资格。
         self._committing_nodes: ContextVar[tuple[_NodeCommit, ...]] = ContextVar(
             "config_framework_v2_committing", default=()
@@ -156,11 +159,15 @@ class ConfigManager:
     # ──────────────── ref 池（仅 Collection）────────────────
 
     def register_collection(self, name: str, col: ConfigCollection[Any]) -> None:
-        if name in self._collections:
-            raise ValueError(f"Collection 名称已登记: {name}")
-        if self.is_registered_collection(col):
-            raise ValueError("该 Collection 实例已登记")
-        self._collections[name] = col
+        self._require_registration(col)
+        with self._execution_gate_sync():
+            if col.deleted:
+                raise ValueError("不能登记已删除的集合")
+            if name in self._collections:
+                raise ValueError(f"Collection 名称已登记: {name}")
+            if self.is_registered_collection(col):
+                raise ValueError("该 Collection 实例已登记")
+            self._collections[name] = col
 
     def get_collection(self, name: str) -> ConfigCollection[Any]:
         if name not in self._collections:
@@ -177,12 +184,23 @@ class ConfigManager:
     # ──────────────── 持久化根（file=）────────────────
 
     def register_root(self, node: ConfigNode, path: Path) -> None:
-        path = Path(path)
-        if path.suffix.lower() not in {".yaml", ".yml"}:
-            raise ValueError(f"持久化文件必须是 .yaml / .yml: {path}")
-        with self._execution_condition:
-            self._save_failures.pop(node.uid, None)
-            self._roots[node.uid] = RootRecord(node=node, path=path)
+        self._require_registration(node)
+        with self._execution_gate_sync():
+            if node.deleted:
+                raise ValueError("不能登记已删除的节点")
+            if not node.is_root:
+                raise ValueError("仅根节点可登记持久化文件")
+            path = Path(path)
+            if path.suffix.lower() not in {".yaml", ".yml"}:
+                raise ValueError(f"持久化文件必须是 .yaml / .yml: {path}")
+            with self._execution_condition:
+                self._save_failures.pop(node.uid, None)
+                self._roots[node.uid] = RootRecord(node=node, path=path)
+
+    def _require_registration(self, node: ConfigNode) -> None:
+        if node._is_workspace:
+            raise ValueError("登记必须使用 live 节点")
+        node._require_lifecycle_access()
 
     def unregister_root(self, node: ConfigNode) -> None:
         """解除 ``file=`` 持久化根登记（幂等）。
@@ -191,11 +209,13 @@ class ConfigManager:
         供插件配置等临时根在禁用后离开 ``flush`` / 防抖扫描集。
         调用方须先 ``commit`` 并完成对该根的落盘，再 unregister。
         """
-        with self._execution_condition:
-            rec = self._roots.get(node.uid)
-            if rec is not None and rec.node is node:
-                del self._roots[node.uid]
-                self._save_failures.pop(node.uid, None)
+        self._require_registration(node)
+        with self._execution_gate_sync():
+            with self._execution_condition:
+                rec = self._roots.get(node.uid)
+                if rec is not None and rec.node is node:
+                    del self._roots[node.uid]
+                    self._save_failures.pop(node.uid, None)
 
     def get_file(self, root: ConfigNode) -> Path | None:
         rec = self._roots.get(root.uid)
@@ -213,7 +233,7 @@ class ConfigManager:
         """将已激活持久化根的已提交内存状态，以明文 YAML 导出到目标目录。
 
         不调用 flush，不修改运行文件或保存请求；忽略 UI 显隐，不含响应式字段。
-        与提交共用执行入口，事务 / Init 内禁止导出，避免混入未提交工作区。
+        与提交共用执行入口，事务内禁止导出，避免混入未提交工作区。
 
         Args:
             target: 导出目录，保留注册文件相对公共父目录的路径结构。
@@ -248,7 +268,7 @@ class ConfigManager:
                 for record in records
             ]
             for destination, payload in zip(destinations, payloads, strict=True):
-                write_file(destination, payload)
+                _utils_io.write_file(destination, payload)
 
     # ──────────────── 全局执行入口 ────────────────
 
@@ -363,11 +383,11 @@ class ConfigManager:
 
     @property
     def staging_scope(self) -> UUID | None:
-        ctx = self._current_init_ctx() or self.current
+        ctx = self.current
         return ctx.scope_id if ctx is not None else None
 
     def _register_staged(self, node: ConfigNode) -> None:
-        ctx = self._current_init_ctx() or self.current
+        ctx = self.current
         if ctx is not None:
             ctx.staged_nodes[id(node)] = weakref.ref(node)
 
@@ -386,18 +406,22 @@ class ConfigManager:
             if (node := ref()) is not None:
                 node._discard_stage_scope(ctx.scope_id)
         ctx.staged_nodes.clear()
+        ctx.registered.clear()
 
     @asynccontextmanager
-    async def transaction(self) -> AsyncGenerator[None, None]:
-        """每 op 独立事务；同 Task 嵌套复用当前上下文，不扩大回滚边界。"""
-        if self.in_transaction:
+    async def transaction(
+        self, *, new_boundary: bool = False
+    ) -> AsyncGenerator[None, None]:
+        """默认加入当前事务；新边界成功向父层合并，只有根事务发布 live。"""
+        parent = self.current
+        if parent is not None and not new_boundary:
             yield
             return
         need_save = False
         ctx: TransactionContext | None = None
         try:
-            async with self.execution_gate():
-                ctx = TransactionContext()
+            async with self.execution_gate() if parent is None else nullcontext():
+                ctx = TransactionContext(parent=parent)
                 token = self._txn.set(ctx)
                 try:
                     yield
@@ -409,20 +433,23 @@ class ConfigManager:
                     self._close_context(ctx)
                     self._txn.reset(token)
         finally:
-            if ctx is not None:
+            if ctx is not None and parent is None:
                 self._transaction_settled(need_save=need_save)
 
     @contextmanager
-    def transaction_sync(self) -> Generator[None, None, None]:
+    def transaction_sync(
+        self, *, new_boundary: bool = False
+    ) -> Generator[None, None, None]:
         """同步等价入口；事件循环内竞争时拒绝阻塞，工作线程可以排队。"""
-        if self.in_transaction:
+        parent = self.current
+        if parent is not None and not new_boundary:
             yield
             return
         need_save = False
         ctx: TransactionContext | None = None
         try:
-            with self._execution_gate_sync():
-                ctx = TransactionContext()
+            with self._execution_gate_sync() if parent is None else nullcontext():
+                ctx = TransactionContext(parent=parent)
                 token = self._txn.set(ctx)
                 try:
                     yield
@@ -434,95 +461,40 @@ class ConfigManager:
                     self._close_context(ctx)
                     self._txn.reset(token)
         finally:
-            if ctx is not None:
+            if ctx is not None and parent is None:
                 self._transaction_settled(need_save=need_save)
 
     def _register_workspace(self, unit: WorkspaceUnit) -> None:
         ctx = self.current
-        if ctx is not None and not any(u is unit for u in ctx.registered):
+        if ctx is not None and not any(item is unit for item in ctx.registered):
             ctx.registered.append(unit)
 
     def COMMIT(self, ctx: TransactionContext) -> bool:
         self._check_staged(ctx)
         roots: dict[UUID, RootRecord] = {}
         for unit in ctx.registered:
-            if not isinstance(unit, type) and self.is_persist_root(unit.root):
-                roots[unit.root.uid] = self._roots[unit.root.uid]
-        for unit in ctx.registered:
             if isinstance(unit, type):
-                unit._COMMIT_signal()
+                unit._COMMIT_signal(ctx)
             else:
-                unit._COMMIT()
+                if ctx.parent is None:
+                    record = self._roots.get(unit.root.uid)
+                    if record is not None and record.node is unit.root:
+                        roots[unit.root.uid] = record
+                unit._COMMIT(ctx)
+            if ctx.parent is not None and not any(
+                item is unit for item in ctx.parent.registered
+            ):
+                ctx.parent.registered.append(unit)
         for record in roots.values():
             record.revision += 1
-        ctx.registered.clear()
         return bool(roots)
 
     def ROLLBACK(self, ctx: TransactionContext) -> None:
         for unit in ctx.registered:
             if isinstance(unit, type):
-                unit._ROLLBACK_signal()
+                unit._ROLLBACK_signal(ctx)
             else:
-                unit._ROLLBACK()
-        ctx.registered.clear()
-
-    # ──────────────── Init 事务（须嵌在普通事务内）────────────────
-
-    @property
-    def in_init_transaction(self) -> bool:
-        return self._current_init_ctx() is not None
-
-    def _current_init_ctx(self) -> TransactionContext | None:
-        transaction = self.current
-        stack = self._init_txn.get()
-        if transaction is None or not stack:
-            return None
-        ctx = stack[-1]
-        return (
-            ctx
-            if ctx.is_current and ctx.transaction_id == transaction.scope_id
-            else None
-        )
-
-    @asynccontextmanager
-    async def init_transaction(self) -> AsyncGenerator[None, None]:
-        """须已在普通事务中。每次进入压入独立 ctx；结束只提交/回滚本层（可嵌套）。"""
-        if not self.in_transaction:
-            raise RuntimeError("init_transaction 须在 transaction 内")
-        transaction = self.current
-        assert transaction is not None
-        parent = self._init_txn.get() if self.in_init_transaction else None
-        ctx = TransactionContext(transaction_id=transaction.scope_id)
-        token = self._init_txn.set((*(parent or ()), ctx))
-        try:
-            yield
-            self.COMMIT_init(ctx)
-        except BaseException:
-            self.ROLLBACK_init(ctx)
-            raise
-        finally:
-            self._close_context(ctx)
-            self._init_txn.reset(token)
-
-    def _register_init_workspace(self, node: "ConfigNode") -> None:
-        ctx = self._current_init_ctx()
-        if ctx is None:
-            return
-        if not any(u is node for u in ctx.registered):
-            ctx.registered.append(node)
-
-    def COMMIT_init(self, ctx: TransactionContext) -> None:
-        self._check_staged(ctx)
-        for unit in ctx.registered:
-            if not isinstance(unit, type):
-                unit._COMMIT_init()
-        ctx.registered.clear()
-
-    def ROLLBACK_init(self, ctx: TransactionContext) -> None:
-        for unit in ctx.registered:
-            if not isinstance(unit, type):
-                unit._ROLLBACK_init()
-        ctx.registered.clear()
+                unit._ROLLBACK(ctx)
 
     # ──────────────── 节点 commit 串行 ────────────────
 
@@ -611,7 +583,6 @@ class ConfigManager:
             # 只移除配置执行上下文；保留日志追踪等其它 ContextVar。
             context = copy_context()
             context.run(self._txn.set, None)
-            context.run(self._init_txn.set, None)
             context.run(self._committing_nodes.set, ())
             self._save_handle = loop.create_task(self._save_worker(), context=context)
             self._save_handle.add_done_callback(self._save_worker_done)
@@ -742,7 +713,7 @@ class ConfigManager:
                 if self._roots.get(root.uid) is not record:
                     continue
                 phase = "write"
-                write_file(record.path, payload)
+                _utils_io.write_file(record.path, payload)
             except Exception as exc:
                 if self._roots.get(root.uid) is not record:
                     continue

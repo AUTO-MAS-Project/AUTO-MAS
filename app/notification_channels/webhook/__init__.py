@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -38,6 +39,7 @@ from app.models.notification_channel import (
     SCOPE_USER,
     ChannelConfig,
     ChannelTarget,
+    HttpDependencies,
     NotifyChannel,
 )
 from app.models.notification_channel import target_prefix as _prefix
@@ -101,12 +103,21 @@ def _webhook_targets(config: ChannelConfig, *, scope: str) -> tuple[ChannelTarge
         )
         if not snapshot.enabled:
             continue
+        capabilities = _webhook_capabilities(snapshot)
         targets.append(
             ChannelTarget(
                 id=f"{prefix} Webhook {uid}",
                 label=f"{prefix} Webhook {snapshot.name}",
                 value=snapshot,
-                capabilities=_webhook_capabilities(snapshot),
+                capabilities=capabilities,
+                announcement_capabilities=replace(
+                    capabilities,
+                    formats=("text",),
+                    double_text_newlines=(
+                        "markdown" in capabilities.formats
+                        or capabilities.double_text_newlines
+                    ),
+                ),
                 compact_summary_policy="preferred",
             )
         )
@@ -127,8 +138,8 @@ async def _webhook_send(
 def register() -> NotifyChannel:
     return NotifyChannel(
         key="webhook",
-        name_key="setting.notify.webhookName",
-        desc_key="setting.notify.webhookDesc",
+        name_key="core.setting.notify.webhookName",
+        desc_key="core.setting.notify.webhookDesc",
         icon="webhook",
         group="custom",
         order=50,
@@ -137,10 +148,17 @@ def register() -> NotifyChannel:
         kind="custom",
         custom_block="webhook_list",
         enable_field=None,
-        summary_key="setting.notify.summary.webhook",
+        summary_key="core.setting.notify.summary.webhook",
         summary_fields=(),
         fields={},
         target_builder=_webhook_targets,
         send_adapter=_webhook_send,
-        sender_factory=Sender,
+        sender_factory=lambda deps: Sender(
+            HttpDependencies(
+                read_proxy=deps.read_proxy,
+                http_factory=deps.http_factory,
+                logger=deps.logger,
+            )
+        ),
+        transport_fields=(),
     )

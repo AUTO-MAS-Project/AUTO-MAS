@@ -1,0 +1,85 @@
+/* 脚本编辑页共有的卡片、分区和路径控件；由各页以 scoped 样式引入。 */
+.script-edit-content {
+  flex: 1;
+}
+
+.config-card {
+  overflow: hidden;
+}
+
+.config-card :deep(.ant-card-head) {
+  background: var(--ant-color-bg-container);
+  padding: 24px 32px;
+}
+
+.config-card :deep(.ant-card-body) {
+  padding: 32px;
+}
+
+.type-tag {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 8px;
+}
+
+.form-section {
+  margin-bottom: 12px;
+}
+
+/* 紧凑脚本表单沿用 6px 标题间距，其余标题规则来自 formSection.css。 */
+.section-header {
+  margin-bottom: 6px;
+}
+
+.form-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.help-icon {
+  color: var(--ant-color-text-tertiary);
+  cursor: help;
+}
+
+.control-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ant-color-text-tertiary);
+}
+
+.path-input-group {
+  display: flex;
+  overflow: hidden;
+}
+
+/* compact 拼接输入的边框和圆角由路径组提供，覆盖 Ant 更高特异性的默认边框。 */
+.path-input {
+  flex: 1;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.path-button {
+  border: none;
+  border-radius: 0;
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-primary);
+  font-weight: 600;
+  padding: 0 20px;
+  border-left: 1px solid var(--ant-color-border-secondary);
+}
+
+.config-form :deep(.ant-form-item) {
+  margin-bottom: 24px;
+}
+
+@media (max-width: 768px) {
+  .config-card :deep(.ant-card-body) {
+    padding: 20px;
+  }
+}

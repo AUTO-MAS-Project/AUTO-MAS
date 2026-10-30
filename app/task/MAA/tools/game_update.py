@@ -40,17 +40,13 @@ from pathlib import Path
 
 import httpx
 
+from app.utils import game_apk as _utils_game_apk
+from app.utils import game_update as _utils_game_update
 from app.utils import get_logger
-from app.utils.game_apk import (
-    cleanup_apk_leftovers,
-    download_apk,
-    get_apk_update_lock,
-    get_installed_client_version,
-    install_apk,
-)
-from app.utils.game_update import GameUpdateResult, is_client_outdated
 
 from ..constants import ARKNIGHTS_OFFICIAL_APK_URL, ARKNIGHTS_VERSION_API_SERVER
+
+GameUpdateResult = _utils_game_update.GameUpdateResult
 
 logger = get_logger("MAA 游戏更新")
 
@@ -146,7 +142,9 @@ async def ensure_game_updated(
     if remote is None:
         return GameUpdateResult("Skipped", f"服务器 {server} 无可用版本接口，跳过检查")
 
-    installed = await get_installed_client_version(adb_path, adb_address, package_name)
+    installed = await _utils_game_apk.get_installed_client_version(
+        adb_path, adb_address, package_name
+    )
     if installed is None:
         # 读不到已安装版本可能是游戏未安装，也可能是 adb 临时异常，
         # 一律不阻断本次代理，交回 MAA 原有流程判定
@@ -156,7 +154,7 @@ async def ensure_game_updated(
             remote.resource,
         )
 
-    if not is_client_outdated(installed, remote.client):
+    if not _utils_game_update.is_client_outdated(installed, remote.client):
         return GameUpdateResult(
             "UpToDate", f"游戏客户端已是最新版本 {installed}", remote.resource
         )
@@ -179,13 +177,13 @@ async def ensure_game_updated(
         )
 
     apk_path = apk_dir / f"arknights-official-{remote.client}.apk"
-    async with get_apk_update_lock(package_name):
-        cleanup_apk_leftovers(apk_dir, "arknights-official-")
+    async with _utils_game_apk.get_apk_update_lock(package_name):
+        _utils_game_apk.cleanup_apk_leftovers(apk_dir, "arknights-official-")
         # 并行任务可能刚装完同一个安装包：锁内复读版本，已是最新就直接复用结果
-        installed_now = await get_installed_client_version(
+        installed_now = await _utils_game_apk.get_installed_client_version(
             adb_path, adb_address, package_name
         )
-        if installed_now is not None and not is_client_outdated(
+        if installed_now is not None and not _utils_game_update.is_client_outdated(
             installed_now, remote.client
         ):
             return GameUpdateResult(
@@ -194,13 +192,15 @@ async def ensure_game_updated(
         try:
             if progress is not None:
                 await progress(f"{outdated_text}\n正在下载游戏安装包")
-            await download_apk(
+            await _utils_game_apk.download_apk(
                 ARKNIGHTS_OFFICIAL_APK_URL, apk_path, progress, timeout=time_limit * 60
             )
 
             if progress is not None:
                 await progress(f"{outdated_text}\n正在安装游戏安装包")
-            await install_apk(adb_path, adb_address, apk_path, timeout=time_limit * 60)
+            await _utils_game_apk.install_apk(
+                adb_path, adb_address, apk_path, timeout=time_limit * 60
+            )
         except Exception as e:
             logger.opt(exception=True).warning(f"接管游戏更新失败: {e}")
             return GameUpdateResult(
@@ -214,8 +214,10 @@ async def ensure_game_updated(
             with suppress(OSError):
                 apk_path.unlink(missing_ok=True)
 
-    current = await get_installed_client_version(adb_path, adb_address, package_name)
-    if current is None or is_client_outdated(current, remote.client):
+    current = await _utils_game_apk.get_installed_client_version(
+        adb_path, adb_address, package_name
+    )
+    if current is None or _utils_game_update.is_client_outdated(current, remote.client):
         return GameUpdateResult(
             "NeedManualUpdate",
             f"安装后版本仍未达到 {remote.client}（当前 {current or '未知'}），"

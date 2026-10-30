@@ -23,13 +23,13 @@
 
 from importlib import import_module
 
-from .config import Config
-
 _LAZY_EXPORTS = {
+    "Config": (".config", "Config"),
     "EmulatorManager": (".emulator_manager", "EmulatorManager"),
     "TaskManager": (".task_manager", "TaskManager"),
     "MaaFWManager": (".maa_manager", "MaaFWManager"),
     "MainTimer": (".timer", "MainTimer"),
+    "Updater": (".update", "Updater"),
 }
 
 
@@ -48,4 +48,5 @@ __all__ = [
     "TaskManager",
     "EmulatorManager",
     "MaaFWManager",
+    "Updater",
 ]

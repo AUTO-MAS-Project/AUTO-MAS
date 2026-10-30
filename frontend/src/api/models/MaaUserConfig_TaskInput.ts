@@ -32,6 +32,10 @@ export type MaaUserConfig_TaskInput = {
      */
     CultivateSkipDuringResourceCollection?: (boolean | null);
     /**
+     * 预计材料时间是否计入月卡每日额外 80 理智，仅用于估算
+     */
+    CultivateMonthlyCard?: (boolean | null);
+    /**
      * 森空岛绑定：签到账号组 UUID（凭据引用，凭据本体只存签到域）
      */
     CultivateSklandAccount?: (string | null);
@@ -39,6 +43,22 @@ export type MaaUserConfig_TaskInput = {
      * 森空岛绑定：绑定角色的游戏 uid（非森空岛 userId）
      */
     CultivateSklandUid?: (string | null);
+    /**
+     * 普通库存保持每条计划使用理智药数量；留空沿用 MAA 配置
+     */
+    DepotMaintainMedicineNumb?: (number | null);
+    /**
+     * 普通库存保持每条计划使用源石数量；留空沿用 MAA 配置
+     */
+    DepotMaintainStoneNumb?: (number | null);
+    /**
+     * 干员养成每条计划使用理智药数量；留空沿用 MAA 配置
+     */
+    CultivateMedicineNumb?: (number | null);
+    /**
+     * 干员养成每条计划使用源石数量；留空沿用 MAA 配置
+     */
+    CultivateStoneNumb?: (number | null);
     /**
      * 干员养成目标
      */
@@ -51,6 +71,14 @@ export type MaaUserConfig_TaskInput = {
      * 活动库存保持计划，保存材料关序号及目标库存，运行时解析当前活动
      */
     EventDepotMaintainPlans?: (string | null);
+    /**
+     * 活动库存保持每条计划使用理智药数量；留空沿用 MAA 配置
+     */
+    EventDepotMaintainMedicineNumb?: (number | null);
+    /**
+     * 活动库存保持每条计划使用源石数量；留空沿用 MAA 配置
+     */
+    EventDepotMaintainStoneNumb?: (number | null);
     /**
      * 活动期间是否优先刷活动关
      */

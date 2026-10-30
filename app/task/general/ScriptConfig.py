@@ -32,7 +32,7 @@ from app.task.proxy_helpers import (
     read_config_base,
 )
 from app.utils import ProcessManager, get_logger
-from app.utils.io import mark_native_config_injected, swap_in_dir
+from app.utils import io as _utils_io
 
 logger = get_logger("通用脚本设置")
 
@@ -161,12 +161,12 @@ class ScriptConfigTask(TaskExecuteBase):
                 / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
             ).exists()
         ):
-            swap_in_dir(
+            _utils_io.swap_in_dir(
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
                 self.script_config_path,
             )
-            mark_native_config_injected(
+            _utils_io.mark_native_config_injected(
                 Path.cwd() / f"data/{self.script_info.script_id}/Temp",
                 self.script_config_path,
                 script_id=self.script_info.script_id,

@@ -30,11 +30,7 @@ from pathlib import Path
 import httpx
 
 from app.services.update_transport import download_resumable
-from app.utils.update_files import (
-    file_matches,
-    file_size,
-    replace_file,
-)
+from app.utils import update_files as _utils_update_files
 
 from . import package_index
 from .common import (
@@ -185,12 +181,17 @@ async def _download_release(
         for index, planned in enumerate(release.parts, start=1):
             target = staging / names[index - 1]
             claimed = reusable[index - 1] if reusable is not None else None
-            if claimed is not None and file_size(claimed) == planned.size:
+            if (
+                claimed is not None
+                and _utils_update_files.file_size(claimed) == planned.size
+            ):
                 logger.info(f"复用上轮已下好的分卷: {target.name}")
                 await reporter.add(planned.size, index)
                 files.append(claimed)
                 continue
-            if await file_matches(target, size=planned.size, md5=planned.md5 or None):
+            if await _utils_update_files.file_matches(
+                target, size=planned.size, md5=planned.md5 or None
+            ):
                 logger.info(f"复用已下载的分卷: {target.name}")
                 await reporter.add(planned.size, index)
                 files.append(target)
@@ -224,13 +225,13 @@ async def _download_release(
                     current = await _refresh_plan(identity, current)
                     part = current.parts[index - 1]
                     continue
-                if await file_matches(
+                if await _utils_update_files.file_matches(
                     temp, size=planned.size, md5=planned.md5 or None, actual_md5=digest
                 ):
-                    replace_file(temp, target, clear_readonly=True)
+                    _utils_update_files.replace_file(temp, target, clear_readonly=True)
                     files.append(target)
                     break
-                actual_size = file_size(temp)
+                actual_size = _utils_update_files.file_size(temp)
                 logger.warning(
                     f"{target.name} 校验未通过：体积 {actual_size}/{planned.size}，"
                     f"MD5 {digest}/{planned.md5 or '未提供'}，重试"

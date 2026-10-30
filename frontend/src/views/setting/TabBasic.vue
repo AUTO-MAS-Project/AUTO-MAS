@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   DeleteOutlined,
+  LoadingOutlined,
   QuestionCircleOutlined,
   ReloadOutlined,
   SkinOutlined,
@@ -16,12 +17,13 @@ import type { CursorEffect } from '@/types/cursorEffect'
 import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 import type { PressSoundPhase, PressSoundPreset } from '@/types/pressSound'
 import type { GlobalConfig } from '@/api'
+import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
-import TrayMenuEditor from './components/TrayMenuEditor.vue'
 import MascotSettings from './components/MascotSettings.vue'
 import CustomBackgroundSettings from './components/CustomBackgroundSettings.vue'
 import PressSoundSettings from './components/PressSoundSettings.vue'
+import StartupWindowSettings from './components/StartupWindowSettings.vue'
 
 interface TabBasicProps {
   settings: GlobalConfig
@@ -65,7 +67,7 @@ interface TabBasicProps {
   handleCursorEffectChange(value: SelectValue): Promise<void>
   handleLowPerformanceModeChange(_enabled: boolean): Promise<void>
   handlePauseHomeEffectsWhenRunningChange(_enabled: boolean): Promise<void>
-  handleSettingChange(category: keyof GlobalConfig, key: string, value: any): Promise<void>
+  handleSettingChange(category: keyof GlobalConfig, key: string, value: any): Promise<boolean>
 }
 
 const {
@@ -123,20 +125,22 @@ const handleLocaleChange = (value: unknown): void => {
 
 <template>
   <div class="tab-content">
+    <StartupWindowSettings :settings="settings" :handle-setting-change="handleSettingChange" />
+
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.basic.appearance') }}</h3>
+        <h3>{{ t('core.setting.basic.appearance') }}</h3>
         <a-button :loading="themeResetting" :disabled="appearanceBusy" @click="handleThemeReset">
           <template #icon><ReloadOutlined /></template>
-          {{ t('setting.basic.resetTheme') }}
+          {{ t('core.setting.basic.resetTheme') }}
         </a-button>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.themeMode') }}</span>
-              <a-tooltip :title="t('setting.basic.themeModeTip')">
+              <span class="form-label">{{ t('core.setting.basic.themeMode') }}</span>
+              <a-tooltip :title="t('core.setting.basic.themeModeTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -157,28 +161,28 @@ const handleLocaleChange = (value: unknown): void => {
                 </a-select-option>
               </a-select>
               <a-button
-                :aria-label="t('setting.basic.importAppearance')"
+                :aria-label="t('core.setting.basic.importAppearance')"
                 :loading="appearanceBusy"
                 :disabled="appearanceBusy"
                 @click="handleAppearanceImport"
               >
                 <template #icon><UploadOutlined /></template>
-                {{ t('setting.basic.importAppearance') }}
+                {{ t('core.setting.basic.importAppearance') }}
               </a-button>
               <a-button :disabled="appearanceBusy" @click="navigateTo('/theme-store')">
                 <template #icon><SkinOutlined /></template>
-                {{ t('setting.basic.themeStore') }}
+                {{ t('core.setting.basic.themeStore') }}
               </a-button>
               <a-button
                 v-if="appearanceValue.startsWith('appearance:')"
                 danger
                 :loading="appearanceBusy"
                 :disabled="appearanceBusy"
-                :aria-label="t('setting.basic.removeAppearance')"
+                :aria-label="t('core.setting.basic.removeAppearance')"
                 @click="handleAppearanceRemove"
               >
                 <template #icon><DeleteOutlined /></template>
-                {{ t('setting.basic.removeAppearance') }}
+                {{ t('core.setting.basic.removeAppearance') }}
               </a-button>
             </div>
           </div>
@@ -186,8 +190,8 @@ const handleLocaleChange = (value: unknown): void => {
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.themeColor') }}</span>
-              <a-tooltip :title="t('setting.basic.themeColorTip')">
+              <span class="form-label">{{ t('core.setting.basic.themeColor') }}</span>
+              <a-tooltip :title="t('core.setting.basic.themeColorTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -223,14 +227,14 @@ const handleLocaleChange = (value: unknown): void => {
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('common.language') }}</span>
-              <a-tooltip :title="t('common.languageTip')">
+              <span class="form-label">{{ t('core.common.language') }}</span>
+              <a-tooltip :title="t('core.common.languageTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
             <a-select :value="locale" size="large" style="width: 100%" @change="handleLocaleChange">
               <a-select-option v-for="item in SUPPORTED_LOCALES" :key="item" :value="item">
-                {{ t(`locale.${item}`) }}
+                {{ t(`bootstrap.locale.${item}`) }}
               </a-select-option>
             </a-select>
           </div>
@@ -260,14 +264,14 @@ const handleLocaleChange = (value: unknown): void => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.basic.cursorSection') }}</h3>
+        <h3>{{ t('core.setting.basic.cursorSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.cursorAnim') }}</span>
-              <a-tooltip :title="t('setting.basic.cursorTip')">
+              <span class="form-label">{{ t('core.setting.basic.cursorAnim') }}</span>
+              <a-tooltip :title="t('core.setting.basic.cursorTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -285,35 +289,34 @@ const handleLocaleChange = (value: unknown): void => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.basic.perfSection') }}</h3>
+        <h3>{{ t('core.setting.basic.perfSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.lowPerf') }}</span>
-              <a-tooltip :title="t('setting.basic.lowPerfTip')">
+            <div class="boolean-setting-row" :aria-busy="lowPerformanceModeSaving">
+              <a-checkbox
+                :checked="lowPerformanceMode"
+                :disabled="lowPerformanceModeSaving"
+                @change="
+                  (event: CheckboxChangeEvent) =>
+                    handleLowPerformanceModeChange(event.target.checked)
+                "
+              >
+                {{ t('core.setting.basic.lowPerf') }}
+              </a-checkbox>
+              <a-tooltip :title="t('core.setting.basic.lowPerfTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
+              <LoadingOutlined v-if="lowPerformanceModeSaving" class="setting-loading" />
             </div>
-            <a-select
-              :value="lowPerformanceMode"
-              :disabled="lowPerformanceModeSaving"
-              :loading="lowPerformanceModeSaving"
-              size="large"
-              style="width: 100%"
-              @change="(enabled: any) => handleLowPerformanceModeChange(enabled)"
-            >
-              <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
-            </a-select>
           </div>
         </a-col>
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.homeSatellite') }}</span>
-              <a-tooltip :title="t('setting.basic.homeSatelliteTip')">
+              <span class="form-label">{{ t('core.setting.basic.homeSatellite') }}</span>
+              <a-tooltip :title="t('core.setting.basic.homeSatelliteTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -326,10 +329,10 @@ const handleLocaleChange = (value: unknown): void => {
               @change="(style: any) => handleHomeSatelliteStyleChange(style)"
             >
               <a-select-option value="classic">
-                {{ t('setting.basic.homeSatelliteClassic') }}
+                {{ t('core.setting.basic.homeSatelliteClassic') }}
               </a-select-option>
               <a-select-option value="galaxy">
-                {{ t('setting.basic.homeSatelliteGalaxy') }}
+                {{ t('core.setting.basic.homeSatelliteGalaxy') }}
               </a-select-option>
             </a-select>
           </div>
@@ -338,23 +341,22 @@ const handleLocaleChange = (value: unknown): void => {
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.pauseHomeEffects') }}</span>
-              <a-tooltip :title="t('setting.basic.pauseHomeEffectsTip')">
+            <div class="boolean-setting-row" :aria-busy="pauseHomeEffectsWhenRunningSaving">
+              <a-checkbox
+                :checked="pauseHomeEffectsWhenRunning"
+                :disabled="pauseHomeEffectsWhenRunningSaving"
+                @change="
+                  (event: CheckboxChangeEvent) =>
+                    handlePauseHomeEffectsWhenRunningChange(event.target.checked)
+                "
+              >
+                {{ t('core.setting.basic.pauseHomeEffects') }}
+              </a-checkbox>
+              <a-tooltip :title="t('core.setting.basic.pauseHomeEffectsTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
+              <LoadingOutlined v-if="pauseHomeEffectsWhenRunningSaving" class="setting-loading" />
             </div>
-            <a-select
-              :value="pauseHomeEffectsWhenRunning"
-              :disabled="pauseHomeEffectsWhenRunningSaving"
-              :loading="pauseHomeEffectsWhenRunningSaving"
-              size="large"
-              style="width: 100%"
-              @change="(enabled: any) => handlePauseHomeEffectsWhenRunningChange(enabled)"
-            >
-              <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
-            </a-select>
           </div>
         </a-col>
       </a-row>
@@ -362,79 +364,7 @@ const handleLocaleChange = (value: unknown): void => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.basic.traySection') }}</h3>
-      </div>
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.showTray') }}</span>
-              <a-tooltip :title="t('setting.basic.showTrayTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.UI?.IfShowTray"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('UI', 'IfShowTray', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.minToTray') }}</span>
-              <a-tooltip :title="t('setting.basic.minToTrayTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.UI?.IfToTray"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('UI', 'IfToTray', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-      </a-row>
-      <TrayMenuEditor />
-    </div>
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('setting.basic.windowSection') }}</h3>
-      </div>
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.hideClose') }}</span>
-              <a-tooltip :title="t('setting.basic.hideCloseTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.UI?.IfHideCloseButton"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('UI', 'IfHideCloseButton', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-      </a-row>
-    </div>
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('setting.basic.logStyle') }}</h3>
+        <h3>{{ t('core.setting.basic.logStyle') }}</h3>
       </div>
       <LogHighlightSettings />
     </div>
@@ -448,6 +378,23 @@ const handleLocaleChange = (value: unknown): void => {
   align-items: center;
   gap: 8px;
   width: 100%;
+}
+
+.boolean-setting-row {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  gap: 8px;
+}
+
+.boolean-setting-row :deep(.ant-checkbox-wrapper) {
+  color: var(--ant-color-text);
+  font-size: 14px;
+}
+
+.setting-loading {
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
 }
 
 .appearance-select {

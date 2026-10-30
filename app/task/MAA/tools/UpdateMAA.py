@@ -25,10 +25,12 @@ from pathlib import Path
 
 from app.services import System
 from app.utils import ProcessRunner, get_logger
-from app.utils.io import read_file, write_file
+from app.utils import io as _utils_io
 
 from ..base_preset import ensure_maa_default_configuration
+from .native_config import maa_scheme_name
 from .resource_update import _wait_for_cleanup
+from .update_config import restore_maa_update_config, write_maa_update_config
 
 logger = get_logger("MAA 更新工具")
 _UPDATER_TIMEOUT = 120  # 秒，超时保留原生备份，待官方更新结束后由用户恢复
@@ -38,19 +40,19 @@ class MaaUpdaterRunningError(RuntimeError):
     """更新相关进程未能退出，不能恢复配置或启动新的托管任务。"""
 
 
-async def update_maa(maa_path: Path):
+async def update_maa(maa_path: Path, *, snapshot_path: Path, script_id: str):
     """更新 MAA 主程序"""
 
     # NEW: Update.UpdatePackage 优先生效
     try:
-        new_set = read_file(maa_path / "config/gui.new.json")
+        new_set = _utils_io.read_file(maa_path / "config/gui.new.json")
         maa_update_package = new_set.get("Update", {}).get("UpdatePackage", "")
     except json.JSONDecodeError:
         maa_update_package = ""
     # OLD: Global.VersionUpdate.package
     if not maa_update_package:
         try:
-            old_set = read_file(maa_path / "config/gui.json")
+            old_set = _utils_io.read_file(maa_path / "config/gui.json")
             maa_update_package = old_set.get("Global", {}).get(
                 "VersionUpdate.package", ""
             )
@@ -65,21 +67,19 @@ async def update_maa(maa_path: Path):
             "无法关闭 MAA 窗口，暂不安装更新；请退出 MAA 后重试"
         )
 
-    maa_set = read_file(maa_path / "config/gui.json")
-    maa_new_set = read_file(maa_path / "config/gui.new.json")
+    maa_new_set = _utils_io.read_file(maa_path / "config/gui.new.json")
+    active_scheme = maa_scheme_name(maa_new_set)
+    original_default = None
+    if active_scheme != "Default":
+        configurations = maa_new_set.get("Configurations")
+        if isinstance(configurations, dict):
+            original_default = configurations.get("Default")
 
-    # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）；
-    # Default 本身也可能缺失——沿用安装目录配置时该文件不由 MAS 生成，兜底必须无条件执行。
-    ensure_maa_default_configuration(maa_set, maa_new_set)
-
-    # 各配置部分的引用
-    global_set = maa_set["Global"]
-    default_set = maa_set["Configurations"]["Default"]
+    # 把生效方案归一为 Default；Default 本身也可能缺失——沿用安装目录配置时
+    # 该文件不由 MAS 生成，兜底必须无条件执行。
+    ensure_maa_default_configuration(maa_new_set)
 
     # 关闭所有定时
-    for i in range(1, 9):
-        global_set[f"Timer.Timer{i}"] = "False"  # OLD: 即将移除
-    # NEW: Timers.List[*].IsEnabled = false
     if "Timers" not in maa_new_set:
         maa_new_set["Timers"] = {}
     if "List" not in maa_new_set["Timers"]:
@@ -88,54 +88,46 @@ async def update_maa(maa_path: Path):
         if isinstance(timer, dict):
             timer["IsEnabled"] = False
 
-    # 不直接运行任务
-    default_set["MainFunction.PostActions"] = "0"  # OLD: 即将移除
-    # NEW: PostActions [Flags] 枚举 None=0
-    maa_new_set.setdefault("Configurations", {}).setdefault("Default", {}).setdefault(
-        "Gui", {}
-    )["PostActions"] = 0
-    default_set["Start.RunDirectly"] = "False"  # OLD: 即将移除
-    default_set["Start.OpenEmulatorAfterLaunch"] = "False"  # OLD: 即将移除
-    # NEW:
-    maa_new_set.setdefault("Configurations", {}).setdefault("Default", {}).setdefault(
-        "Gui", {}
-    ).setdefault("StartUpSettings", {})["RunDirectly"] = False
-    maa_new_set.setdefault("Configurations", {}).setdefault("Default", {}).setdefault(
-        "Gui", {}
-    ).setdefault("StartUpSettings", {})["StartEmulator"] = False
+    # 不直接运行任务；PostActions [Flags] 枚举 None=0
+    default_gui = maa_new_set["Configurations"]["Default"]["Gui"]
+    default_gui["PostActions"] = 0
+    default_gui["StartUpSettings"].update(
+        {"RunDirectly": False, "StartEmulator": False}
+    )
 
     # 静默模式相关配置
-    global_set["GUI.UseTray"] = "True"  # OLD: 即将移除
-    global_set["GUI.MinimizeToTray"] = "True"  # OLD: 即将移除
-    global_set["Start.MinimizeDirectly"] = "True"  # OLD: 即将移除
-    # NEW:
-    maa_new_set.setdefault("Gui", {})["UseTray"] = True
-    maa_new_set.setdefault("Gui", {})["MinimizeToTray"] = True
-    maa_new_set.setdefault("Gui", {})["MinimizeOnStartup"] = True
+    root_gui = maa_new_set.setdefault("Gui", {})
+    root_gui["UseTray"] = True
+    root_gui["MinimizeToTray"] = True
+    root_gui["MinimizeOnStartup"] = True
 
     # 更新配置
-    global_set["VersionUpdate.package"] = maa_update_package  # OLD: 即将移除
-    global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"  # OLD: 即将移除
-    global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"  # OLD: 即将移除
-    global_set["VersionUpdate.AutoInstallUpdatePackage"] = "True"  # OLD: 即将移除
-    # NEW:
-    maa_new_set.setdefault("Update", {})["UpdatePackage"] = maa_update_package
-    maa_new_set.setdefault("Update", {})["CheckOnSchedule"] = False
-    maa_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
-    maa_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = True
+    update_set = maa_new_set.setdefault("Update", {})
+    update_set["UpdatePackage"] = maa_update_package
+    update_set["CheckOnStartup"] = False
+    update_set["CheckOnSchedule"] = False
+    update_set["UpdateSource"] = "GitHub"
+    update_set["AutoDownloadUpdatePackage"] = False
+    update_set["AutoInstallUpdatePackage"] = True
 
     # 无人值守拉起装更新，公告与更新后首启的版本说明弹窗一并关闭
-    global_set["Announcement.DoNotShowAnnouncement"] = "True"  # OLD: 即将移除
-    global_set["VersionUpdate.doNotShowUpdate"] = "True"  # OLD: 即将移除
-    # NEW:
     maa_new_set.setdefault("AnnouncementInfo", {})["DoNotShow"] = True
-    maa_new_set.setdefault("Update", {})["DoNotShowUpdate"] = True
+    update_set["DoNotShowUpdate"] = True
 
-    (maa_path / "config/gui.json").write_text(  # OLD: 即将移除
-        json.dumps(maa_set, ensure_ascii=False, indent=4),
-        encoding="utf-8",  # OLD: 即将移除
-    )  # OLD: 即将移除
-    write_file(maa_path / "config/gui.new.json", maa_new_set)
+    # ensure 会把活动方案折叠成 Default；更新安装目录配置时只改活动方案，
+    # 再把原来的 Default 和 Current 放回去，别动用户其它方案的设置。
+    if active_scheme != "Default":
+        configurations = maa_new_set["Configurations"]
+        configurations[active_scheme] = configurations["Default"]
+        if original_default is None:
+            configurations.pop("Default", None)
+        else:
+            configurations["Default"] = original_default
+        maa_new_set["Current"] = active_scheme
+
+    write_maa_update_config(
+        maa_path, maa_new_set, snapshot_path=snapshot_path, script_id=script_id
+    )
 
     try:
         await ProcessRunner.run_process(maa_path / "MAA.exe", timeout=60)
@@ -151,6 +143,15 @@ async def update_maa(maa_path: Path):
             await _wait_for_cleanup(cleanup)
             cleanup.result()
             raise
+        finally:
+            if (
+                cleanup.done()
+                and not cleanup.cancelled()
+                and cleanup.exception() is None
+            ):
+                restore_maa_update_config(
+                    maa_path, snapshot_path=snapshot_path, script_id=script_id
+                )
 
 
 async def _wait_for_updater(maa_path: Path) -> None:
@@ -158,11 +159,18 @@ async def _wait_for_updater(maa_path: Path) -> None:
         async with asyncio.timeout(_UPDATER_TIMEOUT):
             while await System.is_process_running(maa_path / "MAA.Updater.exe"):
                 await asyncio.sleep(0.2)
+        if not await System.kill_process(maa_path / "MAA.exe"):
+            raise MaaUpdaterRunningError(
+                "无法关闭更新后的 MAA 窗口，请退出 MAA 后从原生配置备份恢复"
+            )
     except TimeoutError as error:
         raise MaaUpdaterRunningError(
             "MAA 官方更新器等待超时，请等待更新结束并退出 MAA 后，从原生配置备份恢复"
         ) from error
-    if not await System.kill_process(maa_path / "MAA.exe"):
+    except MaaUpdaterRunningError:
+        raise
+    except Exception as error:
+        # 进程状态无法确认也不能恢复配置，留待下轮确认退出后再恢复。
         raise MaaUpdaterRunningError(
-            "无法关闭更新后的 MAA 窗口，请退出 MAA 后从原生配置备份恢复"
-        )
+            "无法确认 MAA 更新相关进程已退出，请稍后重试"
+        ) from error

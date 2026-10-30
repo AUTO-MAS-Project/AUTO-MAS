@@ -42,7 +42,7 @@ from typing import Awaitable, Callable, Collection, Mapping, Sequence
 
 import httpx
 
-from app.utils.constants import UTC4
+from app.utils import UTC4
 
 from .engine import (
     apply_achievements,
@@ -318,7 +318,7 @@ class DepotCultivateService:
     """MAA 库存保持编辑器的数据编排服务（组合根 + 用例）。
 
     依赖以端口形式注入，默认实现为生产装配：
-    - `dataset_loader`：取养成数据集（默认一图流缓存加载，带磁盘/进程缓存）；
+    - `dataset_loader`：取养成数据集（默认下载站快照，回退一图流，带磁盘/进程缓存）；
     - `progressions` / `inventory_chain`：练度与库存来源链。
 
     测试或未来接入第二个数据源时替换构造参数即可，本类之外零改动。
@@ -347,22 +347,42 @@ class DepotCultivateService:
         与产出性质（见 yituliu._FIXED_SOURCE_STAGES）。
         """
 
+        candidates = await self.stage_candidates_batch(
+            config_path=config_path, item_ids=[item_id], proxy=proxy, now_ms=now_ms
+        )
+        return candidates[item_id]
+
+    async def stage_candidates_batch(
+        self,
+        *,
+        config_path: Path,
+        item_ids: list[str],
+        proxy: httpx.Proxy | str | None = None,
+        now_ms: int | None = None,
+    ) -> dict[str, list[dict[str, str]]]:
+        """加载并计算一次候选，供编辑页批量预取和旧单材料接口共用。"""
+
+        if not item_ids:
+            return {}
         dataset = await self._load_dataset(config_path, proxy)
-        options = stage_candidates(
+        candidates = stage_candidates(
             dataset,
             now_ms=now_ms if now_ms is not None else int(time.time() * 1000),
-        ).get(item_id, [])
-        return [
-            {
-                "label": (
-                    f"{option['stage']}（固定产出）"
-                    if option.get("fixed")
-                    else f"{option['stage']}（{option['sanityPerItem']} 理智/件）"
-                ),
-                "value": option["stage"],
-            }
-            for option in options
-        ]
+        )
+        return {
+            item_id: [
+                {
+                    "label": (
+                        f"{option['stage']}（固定产出）"
+                        if option.get("fixed")
+                        else f"{option['stage']}（{option['sanityPerItem']} 理智/件）"
+                    ),
+                    "value": option["stage"],
+                }
+                for option in candidates.get(item_id, [])
+            ]
+            for item_id in dict.fromkeys(item_ids)
+        }
 
     async def inventory(
         self, *, maa_data_dir: Path
@@ -400,7 +420,7 @@ class DepotCultivateService:
             ``[{value: char_id, label: 名称, rarity, profession, maxElite,
             dataMissing, skills, modules}]``（skills/modules 为目标编辑行展示
             用名称目录，各自带可达档位上限 maxLevel，决策 40），稀有度降序、
-            名称升序；一图流不可用且无缓存时抛 YituliuDataError。
+            名称升序；远端均不可用且无缓存时抛 YituliuDataError。
         """
 
         catalog = await load_operator_catalog(config_path, proxy)

@@ -2,15 +2,25 @@
   <div class="detail-panel">
     <!-- 未选择用户时的空状态 -->
     <div v-if="!hasUserSelected" class="empty-state">
-      <div class="empty-content">
-        <UserSwitchOutlined class="empty-icon" />
-        <span class="empty-title">{{ t('history.selectUser') }}</span>
-        <span class="empty-desc">{{ t('history.selectUserDesc') }}</span>
-      </div>
+      <a-empty :image-style="{ height: '56px' }">
+        <template #image><UserSwitchOutlined class="empty-icon" /></template>
+        <template #description>
+          <div>{{ t('core.history.selectUser') }}</div>
+          <div>{{ t('core.history.selectUserDesc') }}</div>
+        </template>
+      </a-empty>
     </div>
 
     <!-- 已选择用户时显示详情 -->
     <div v-else class="detail-content">
+      <a-alert
+        v-if="aggregateErrors.length"
+        type="warning"
+        show-icon
+        class="aggregate-warning"
+        :message="t('core.history.aggregateWarning')"
+        :description="aggregateErrors.map(error => `${error.key}: ${error.message}`).join('; ')"
+      />
       <!-- 统计信息卡片 -->
       <UserStatisticsCard
         :recruit-statistics="recruitStatistics"
@@ -23,7 +33,6 @@
       <HistoryRecordList
         :records="records"
         :selected-index="selectedRecordIndex"
-        :error-info="errorInfo"
         @select="(index, record) => $emit('select-record', index, record)"
       />
     </div>
@@ -36,21 +45,15 @@ import { UserSwitchOutlined } from '@ant-design/icons-vue'
 import HistoryRecordList from './HistoryRecordList.vue'
 import UserStatisticsCard from './UserStatisticsCard.vue'
 import type { PullCountStatistics } from '@/types/history'
+import type { HistoryIndexItem, HistoryAggregateError } from '@/api'
 
 const { t } = useI18n()
 
-interface RecordItem {
-  date: string
-  jsonFile: string
-  status: string
-  result?: string | null
-}
-
 interface Props {
   hasUserSelected: boolean
-  records: RecordItem[]
+  aggregateErrors: HistoryAggregateError[]
+  records: HistoryIndexItem[]
   selectedRecordIndex: number
-  errorInfo: Record<string, string> | null
   recruitStatistics: Record<string, number> | null
   dropStatistics: Record<string, Record<string, number>> | null
   matrixStatistics: Record<string, string> | null
@@ -60,11 +63,16 @@ interface Props {
 defineProps<Props>()
 
 defineEmits<{
-  'select-record': [number, RecordItem]
+  'select-record': [number, HistoryIndexItem]
 }>()
 </script>
 
 <style scoped>
+.aggregate-warning {
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
 .detail-panel {
   flex: 1;
   display: flex;
@@ -85,27 +93,8 @@ defineEmits<{
   min-height: 300px;
 }
 
-.empty-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  text-align: center;
-}
-
 .empty-icon {
   font-size: 56px;
-}
-
-.empty-title {
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
-}
-
-.empty-desc {
-  font-size: 14px;
-  max-width: 280px;
 }
 
 .detail-content {

@@ -21,11 +21,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from copy import deepcopy
 from datetime import datetime
-from pathlib import Path
 from pathlib import Path as NativePath
 from typing import Annotated, Any, ClassVar, Literal
 from uuid import UUID
@@ -57,18 +55,7 @@ from app.config.types import (
     WindowsNameString,
     path_policy,
 )
-from app.utils.constants import (
-    MAA_STAGE_KEY,
-    MAAEND_SANITY_TASK_DETAIL_LABELS,
-    MAAEND_SANITY_TASK_FIELDS,
-    MAAEND_SANITY_TASK_LABELS,
-    MAAEND_STAGE_WITH_AB,
-    RESOURCE_STAGE_INFO,
-    STARRAIL_STAGE_BOOK,
-    UTC4,
-    get_game_day_tz,
-    normalize_base_source,
-)
+from app.utils import constants as _utils_constants
 
 from .base import DomainEntry
 from .plan import BAAHPlanConfig, MaaEndPlanConfig, MaaPlanConfig, MSSPlanConfig
@@ -86,8 +73,12 @@ from .shared import (
     _tag_remained_days,
     local_timezone,
     migrate_maa_stamina_pipeline,
+    none_as,
     normalize_maaend_plan_key,
 )
+
+DepotQuotaNumb = Annotated[int | None, Field(ge=0, le=9999)]
+"""库存保持与干员养成每条计划的理智药/源石额度；留空即沿用 MAA 原设置。"""
 
 
 class MaaUserConfig(DomainEntry):
@@ -98,9 +89,9 @@ class MaaUserConfig(DomainEntry):
     class DataFields(ConfigGroup):
         def _game_day_timezone(self):
             """按当前用户服务器读取游戏日时间，不改变保存的 UTC 时刻。"""
-            return get_game_day_tz(self.__dict__["_entry"].Info.Server)
+            return _utils_constants.get_game_day_tz(self.__dict__["_entry"].Info.Server)
 
-        AnnihilationCompletedWeek: str = Field(
+        AnnihilationCompletedWeek: Annotated[str, none_as("")] = Field(
             default_factory=lambda: "2000-W01",
             description='剿灭达到周上限时的 ISO 周（形如 "2026-W34"）',
         )
@@ -115,7 +106,9 @@ class MaaUserConfig(DomainEntry):
         )
 
         GreenTicketStoreMonth: Annotated[
-            datetime | None, tz(UTC4), ui(widget="datetime", format="hms")
+            datetime | None,
+            tz(_utils_constants.UTC4),
+            ui(widget="datetime", format="hms"),
         ] = Field(
             default=None,
             description="上次完成绿票商店购买的完整时间，按 UTC+4 判断月份；空值表示尚未完成",
@@ -136,7 +129,7 @@ class MaaUserConfig(DomainEntry):
             ui(format="date"),
             ui(visibility=UiVisibility.HIDE),
         ] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="上次代理日期",
         )
 
@@ -165,7 +158,11 @@ class MaaUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "shared",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -195,7 +192,7 @@ class MaaUserConfig(DomainEntry):
         Password: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "", description="密码"
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             default_factory=lambda: -1, description="剩余天数"
         )
 
@@ -252,11 +249,13 @@ class MaaUserConfig(DomainEntry):
             int,
             Field(ge=0, le=9999),
             legacy(group="Info", name="MedicineNumb"),
+            none_as(0),
         ] = Field(default_factory=lambda: 0, description="理智药数量")
 
-        SeriesNumb: Literal["0", "6", "5", "4", "3", "2", "1", "-1"] = Field(
-            default_factory=lambda: "0", description="连战次数"
-        )
+        SeriesNumb: Annotated[
+            Literal["0", "6", "5", "4", "3", "2", "1", "-1"],
+            legacy(group="Info", name="SeriesNumb"),
+        ] = Field(default_factory=lambda: "0", description="连战次数")
 
         Stage: Annotated[str, legacy(group="Info", name="Stage")] = Field(
             default_factory=lambda: "-", description="主关卡"
@@ -296,32 +295,39 @@ class MaaUserConfig(DomainEntry):
             int,
             Field(ge=0, le=9999),
             legacy(group="Info", name="MedicineNumb"),
+            none_as(0),
         ] = Field(
             default_factory=lambda: 0,
             description="活动关优先任务吃理智药数量",
         )
 
-        ActivityStageIndex: Annotated[int, Field(ge=1, le=9999)] = Field(
+        ActivityStageIndex: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 1,
             description="优先刷取的活动关卡序号",
         )
 
-        Annihilation: Literal[
-            "Close",
-            "Annihilation",
-            "Chernobog@Annihilation",
-            "LungmenOutskirts@Annihilation",
-            "LungmenDowntown@Annihilation",
+        Annihilation: Annotated[
+            Literal[
+                "Close",
+                "Annihilation",
+                "Chernobog@Annihilation",
+                "LungmenOutskirts@Annihilation",
+                "LungmenDowntown@Annihilation",
+            ],
+            legacy(group="Info", name="Annihilation"),
         ] = Field(default_factory=lambda: "Annihilation", description="剿灭模式")
 
-        AnnihilationStartWeekday: Literal[
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
+        AnnihilationStartWeekday: Annotated[
+            Literal[
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ],
+            legacy(group="Info", name="AnnihilationStartWeekday"),
         ] = Field(default_factory=lambda: "Monday", description="剿灭开始星期")
 
         CultivateAutoRaise: bool = Field(
@@ -336,6 +342,11 @@ class MaaUserConfig(DomainEntry):
             default_factory=lambda: False, description="资源收集期是否跳过养成计划"
         )
 
+        CultivateMonthlyCard: bool = Field(
+            default_factory=lambda: False,
+            description="预计材料时间是否计入月卡每日额外 80 理智，仅用于估算",
+        )
+
         CultivateSklandAccount: str = Field(
             default_factory=lambda: "",
             description="森空岛绑定：签到账号组 UUID（凭据引用，凭据本体只存签到域）",
@@ -344,6 +355,26 @@ class MaaUserConfig(DomainEntry):
         CultivateSklandUid: str = Field(
             default_factory=lambda: "",
             description="森空岛绑定：绑定角色的游戏 uid（非森空岛 userId）",
+        )
+
+        DepotMaintainMedicineNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="普通库存保持每条计划使用理智药数量；留空沿用 MAA 配置",
+        )
+
+        DepotMaintainStoneNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="普通库存保持每条计划使用源石数量；留空沿用 MAA 配置",
+        )
+
+        CultivateMedicineNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="干员养成每条计划使用理智药数量；留空沿用 MAA 配置",
+        )
+
+        CultivateStoneNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="干员养成每条计划使用源石数量；留空沿用 MAA 配置",
         )
 
         CultivateTargets: JsonListString = Field(
@@ -362,6 +393,16 @@ class MaaUserConfig(DomainEntry):
                 '[{"StageType":"all","DropCount":999,"OrundumDropCount":9999}]'
             ),
             description="活动库存保持计划，保存材料关序号及目标库存，运行时解析当前活动",
+        )
+
+        EventDepotMaintainMedicineNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="活动库存保持每条计划使用理智药数量；留空沿用 MAA 配置",
+        )
+
+        EventDepotMaintainStoneNumb: DepotQuotaNumb = Field(
+            default_factory=lambda: None,
+            description="活动库存保持每条计划使用源石数量；留空沿用 MAA 配置",
         )
 
         IfActivityFirst: bool = Field(
@@ -407,9 +448,10 @@ class MaaUserConfig(DomainEntry):
             description="是否更换主题（主题名称在 MAA 侧配置，MAS 仅透传）",
         )
 
-        InfrastMode: Literal["Normal", "Rotation", "Custom"] = Field(
-            default_factory=lambda: "Normal", description="基建模式"
-        )
+        InfrastMode: Annotated[
+            Literal["Normal", "Rotation", "Custom"],
+            legacy(group="Info", name="InfrastMode"),
+        ] = Field(default_factory=lambda: "Normal", description="基建模式")
 
         InfrastName: Annotated[
             Virtual[str], legacy(group="Info", name="InfrastName")
@@ -437,8 +479,14 @@ class MaaUserConfig(DomainEntry):
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
-        tags.append(_tag_proxy(self, tz=get_game_day_tz(self.Info.Server)))
+        tags.append(
+            _tag_proxy(self, tz=_utils_constants.get_game_day_tz(self.Info.Server))
+        )
         tags.append(_tag_remained_days(self))
+        if not self.Info.IfQuickConfig:
+            tags.append(_tag_notes(self))
+            return json.dumps(tags, ensure_ascii=False)
+
         infrast_mode = self.Task.InfrastMode
         if self.Task.IfInfrast:
             if infrast_mode == "Normal":
@@ -454,7 +502,7 @@ class MaaUserConfig(DomainEntry):
             tags.append({"text": "基建：关闭", "color": "red"})
         plan_data = {
             stage_key: self.get_stage_zh(getattr(self.Stage, stage_key))
-            for stage_key in MAA_STAGE_KEY[2:]
+            for stage_key in _utils_constants.MAA_STAGE_KEY[2:]
         }
         tag_color = "blue"
         if self.Stage.StageMode != "Fixed":
@@ -464,7 +512,7 @@ class MaaUserConfig(DomainEntry):
                     stage_key: self.get_stage_zh(
                         plan.get_current_info(stage_key, server=self.Info.Server)
                     )
-                    for stage_key in MAA_STAGE_KEY[2:]
+                    for stage_key in _utils_constants.MAA_STAGE_KEY[2:]
                 }
                 tag_color = "green"
         tags.append({"text": f"主关卡：{plan_data['Stage']}", "color": tag_color})
@@ -482,7 +530,7 @@ class MaaUserConfig(DomainEntry):
 
     @staticmethod
     def get_stage_zh(stage: str) -> str:
-        for stage_info in RESOURCE_STAGE_INFO:
+        for stage_info in _utils_constants.RESOURCE_STAGE_INFO:
             if stage_info.get("value") == stage:
                 return (
                     stage_info.get("text", stage)
@@ -545,17 +593,17 @@ class MaaConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        AnnihilationTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        AnnihilationTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 40,
             description="剿灭时间限制（分钟）",
         )
 
-        GameUpdateTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        GameUpdateTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 60,
             description="游戏更新时间限制（分钟）",
         )
 
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
@@ -569,16 +617,16 @@ class MaaConfig(DomainEntry):
             default_factory=lambda: False, description="是否在启动 MAA 前检查游戏更新"
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="代理次数限制"
         )
 
-        RoutineTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RoutineTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 10,
             description="日常时间限制（分钟）",
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3, description="运行次数限制"
         )
 
@@ -601,6 +649,12 @@ class MaaConfig(DomainEntry):
             default_factory=lambda: False,
             description="是否接管 MAA 本体与资源更新（关=完全由 MAA 自行处理）",
         )
+        Channel: Literal["stable", "beta"] = Field(
+            default_factory=lambda: "stable", description="MAA 更新通道：正式版或公测版"
+        )
+        ChannelMigrationVersion: Annotated[int, Field(ge=0, le=1)] = Field(
+            default=1, description="更新通道一次性迁移版本"
+        )
 
     Update: UpdateFields = Field(default_factory=UpdateFields)
     UserData: ConfigCollection[MaaUserConfig] = collection(MaaUserConfig)
@@ -610,6 +664,8 @@ class MaaConfig(DomainEntry):
         data = super().normalize_payload(data)
         if data and "TakeoverMigrationVersion" not in data.get("Update", {}):
             data.setdefault("Update", {})["TakeoverMigrationVersion"] = 0
+        if data and "Channel" not in data.get("Update", {}):
+            data.setdefault("Update", {})["ChannelMigrationVersion"] = 0
         return data
 
     async def migrate_update_takeover(self, *, global_cdk: str) -> bool:
@@ -630,8 +686,10 @@ class MaaEndUserConfig(DomainEntry):
     related_config: ClassVar = {}
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="上次代理日期",
         )
 
@@ -653,7 +711,11 @@ class MaaEndUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "shared",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -682,12 +744,16 @@ class MaaEndUserConfig(DomainEntry):
         Password: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "", description="密码"
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             default_factory=lambda: -1, description="剩余天数"
         )
 
         Resource: Literal["官服"] = Field(
             default_factory=lambda: "官服", description="资源名称"
+        )
+
+        SanityStrategy: Literal["MAS", "Native", "Inventory"] = Field(
+            default="MAS", description="理智任务策略：指定任务、原生策略或库存目标"
         )
 
         SanityMode: Annotated[
@@ -724,6 +790,10 @@ class MaaEndUserConfig(DomainEntry):
             default_factory=lambda: False, description="是否发送邮件"
         )
 
+        IfSendInventory: bool = Field(
+            default=False, description="是否推送本轮养成材料状态"
+        )
+
         IfSendStatistic: bool = Field(
             default_factory=lambda: False, description="是否发送统计信息"
         )
@@ -746,6 +816,16 @@ class MaaEndUserConfig(DomainEntry):
     Notify: NotifyFields = Field(default_factory=NotifyFields)
 
     class TaskFields(ConfigGroup):
+        SupplyPlanLimits: JsonDictString = Field(
+            default_factory=lambda: json.dumps(
+                _utils_constants.MAAEND_INVENTORY_TARGET_DEFAULTS
+            ),
+            description="上游库存目标输入值，原字段名与字符串值透传",
+        )
+        ProtocolSpaceObtainModeClaim: str = Field(
+            default="ObtainScaling2", description="库存任务领取方式，由 MaaEnd 声明"
+        )
+
         AutoCollectCommonRoutes: Any = Field(
             description="自动采集通用资源路线", default_factory=lambda: None
         )
@@ -771,14 +851,10 @@ class MaaEndUserConfig(DomainEntry):
             description="基质目标武器 ID 列表", default_factory=lambda: []
         )
 
-        CrisisDrills: Literal[
-            "AdvancedProgression1",
-            "AdvancedProgression2",
-            "AdvancedProgression3",
-            "AdvancedProgression4",
-            "AdvancedProgression5",
-        ] = Field(
-            description="危境预演任务", default_factory=lambda: "AdvancedProgression1"
+        CrisisDrills: str = Field(
+            description="危境预演任务，由 MaaEnd 声明",
+            default="AdvancedProgression1",
+            min_length=1,
         )
 
         DailyOnceTasks: JsonListString = Field(
@@ -888,6 +964,7 @@ class MaaEndUserConfig(DomainEntry):
     Task: TaskFields = Field(default_factory=TaskFields)
     Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
     _maaend_essence_location_labels: dict = PrivateAttr(default_factory=dict)
+    _maaend_crisis_drills_labels: dict[str, str] = PrivateAttr(default_factory=dict)
 
     def cache_maaend_resource(self, resource: dict[str, Any]) -> None:
         """缓存 MaaEnd 动态资源的展示文本。"""
@@ -895,6 +972,10 @@ class MaaEndUserConfig(DomainEntry):
             str(item["value"]): str(item["label"])
             for item in resource.get("essenceLocations", [])
             if isinstance(item, dict) and item.get("value") is not None
+        }
+        self._maaend_crisis_drills_labels = {
+            str(item["value"]): str(item["label"])
+            for item in resource.get("crisisDrills", [])
         }
 
     def _get_maaend_location_label(self, value: str) -> str:
@@ -910,7 +991,7 @@ class MaaEndUserConfig(DomainEntry):
                 normalize_maaend_plan_key(
                     {
                         field: getattr(self.Task, field)
-                        for field in MAAEND_SANITY_TASK_FIELDS
+                        for field in _utils_constants.MAAEND_SANITY_TASK_FIELDS
                     }
                 ),
                 "Fixed",
@@ -932,12 +1013,23 @@ class MaaEndUserConfig(DomainEntry):
         )
         tags.append(_tag_proxy(self))
         tags.append(_tag_remained_days(self))
-        if self.Task.IfSanity:
+        if not self.Info.IfQuickConfig:
+            tags.append(_tag_notes(self))
+            return json.dumps(tags, ensure_ascii=False)
+
+        if self.Task.IfSanity and self.Info.SanityStrategy in ("Native", "Inventory"):
+            label = (
+                "库存目标"
+                if self.Info.SanityStrategy == "Inventory"
+                else "MaaEnd 原生策略"
+            )
+            tags.append({"text": f"理智任务：{label}", "color": "blue"})
+        elif self.Task.IfSanity:
             task_key, _ = self.get_effective_sanity_task_key()
             sanity_task_type = task_key["SanityTaskType"]
             tags.append(
                 {
-                    "text": f"理智任务：{MAAEND_SANITY_TASK_LABELS[sanity_task_type]}",
+                    "text": f"理智任务：{_utils_constants.MAAEND_SANITY_TASK_LABELS[sanity_task_type]}",
                     "color": "blue",
                 }
             )
@@ -958,13 +1050,17 @@ class MaaEndUserConfig(DomainEntry):
                     if sanity_task_type == "Essence"
                     else task_key[sanity_task_type]
                 )
-                detail_label = (
-                    self._get_maaend_location_label(detail_key)
-                    if sanity_task_type == "Essence"
-                    else MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]
-                )
+                if sanity_task_type == "Essence":
+                    detail_label = self._get_maaend_location_label(detail_key)
+                else:
+                    detail_label = self._maaend_crisis_drills_labels.get(
+                        detail_key,
+                        _utils_constants.MAAEND_SANITY_TASK_DETAIL_LABELS.get(
+                            detail_key, detail_key
+                        ),
+                    )
             tags.append({"text": f"详细任务：{detail_label}", "color": "blue"})
-            if detail_key in MAAEND_STAGE_WITH_AB:
+            if detail_key in _utils_constants.MAAEND_STAGE_WITH_AB:
                 tags.append(
                     {
                         "text": "奖励组：奖励组 A"
@@ -1087,7 +1183,7 @@ class MaaEndConfig(DomainEntry):
             description="游戏客户端更新时长限制（分钟）",
         )
 
-        WaitTime: Annotated[int, Field(ge=60, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=60, le=9999), none_as(60)] = Field(
             default_factory=lambda: 60, description="等待时间（秒）"
         )
 
@@ -1110,20 +1206,30 @@ class MaaEndConfig(DomainEntry):
             description="账号切换方式（默认使用 MAAEND，MAS 为兼容入口）",
         )
 
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        IfSaveLogBundle: bool = Field(
+            default_factory=lambda: False,
+            description="任务失败时是否按 MaaEnd 的导出规则打包运行日志",
+        )
+
+        LogBundlePath: FolderPath = Field(
+            default_factory=lambda: None,
+            description="任务失败时保存日志包的目录，留空使用 MAS 目录下的 debug/maaend",
+        )
+
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="每日代理次数限制"
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 10, description="运行超时阈值"
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3, description="运行次数限制"
         )
 
@@ -1133,56 +1239,6 @@ class MaaEndConfig(DomainEntry):
 
     Run: RunFields = Field(default_factory=RunFields)
     UserData: ConfigCollection[MaaEndUserConfig] = collection(MaaEndUserConfig)
-    _loaded_resource: dict = PrivateAttr(default_factory=dict)
-    _preload_task: Any = PrivateAttr(default=None)
-
-    async def _activate_from_payload(
-        self, payload: dict[str, Any], *, regenerate_uuids: bool = False
-    ) -> None:
-        """按当前资源入口迁移历史 Client 启动方式，再激活配置。"""
-        from app.task.MaaEnd.resource_loader import try_load_maaend_options
-
-        payload = type(self).normalize_payload(payload)
-        game = payload.get("Game", {})
-        if isinstance(game, dict) and game.get("LaunchMode") == "Client":
-            root_path = payload.get("Info", {}).get("Path")
-            root = Path(root_path) if root_path else None
-            if root is not None and (root / "interface.json").is_file():
-                options = await asyncio.to_thread(try_load_maaend_options, root)
-                if options is not None:
-                    game["LaunchMode"] = (
-                        "MaaEnd"
-                        if game.get("ControllerType")
-                        in options["launchGameControllers"]
-                        else "MAS"
-                    )
-        await super()._activate_from_payload(payload, regenerate_uuids=regenerate_uuids)
-
-    async def preload_resource(self) -> None:
-        """尝试预加载 MaaEnd 动态资源，失败时保留现有配置。"""
-        root_path = str(self.Info.Path or "").strip()
-        if not root_path:
-            return
-
-        def _try_load_in_thread():
-            from app.task.MaaEnd.resource_loader import try_load_maaend_options
-
-            return try_load_maaend_options(Path(root_path))
-
-        resource = await asyncio.to_thread(_try_load_in_thread)
-        if resource is None:
-            return
-        for user_config in self.UserData.values():
-            user_config.cache_maaend_resource(resource)
-
-    def get_loaded_resource(self) -> dict[str, Any]:
-        """读取已经载入内存的 MaaEnd 动态资源。"""
-        root_path = str(self.Info.Path or "").strip()
-        if not root_path:
-            raise ValueError("MaaEnd 路径未配置")
-        from app.task.MaaEnd.resource_loader import get_loaded_maaend_options
-
-        return get_loaded_maaend_options(Path(root_path))
 
     @classmethod
     def normalize_payload(cls, data):
@@ -1205,8 +1261,10 @@ class SrcUserConfig(DomainEntry):
     related_config: ClassVar = {}
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="上次代理日期",
         )
 
@@ -1219,7 +1277,11 @@ class SrcUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "shared",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -1249,7 +1311,7 @@ class SrcUserConfig(DomainEntry):
         Password: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "", description="密码"
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             default_factory=lambda: -1, description="剩余天数"
         )
 
@@ -1324,7 +1386,7 @@ class SrcUserConfig(DomainEntry):
             default_factory=lambda: False, description="使用储备开拓力"
         )
 
-        FuelReserve: Annotated[int, Field(ge=0, le=9999)] = Field(
+        FuelReserve: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 5, description="保留的燃料数量"
         )
 
@@ -1453,21 +1515,25 @@ class SrcUserConfig(DomainEntry):
         tags = []
         tags.append(_tag_proxy(self))
         tags.append(_tag_remained_days(self))
+        if not self.Info.IfQuickConfig:
+            tags.append(_tag_notes(self))
+            return json.dumps(tags, ensure_ascii=False)
+
         tags.append(
             {
-                "text": f"关卡：{STARRAIL_STAGE_BOOK.get(getattr(self.Stage, self.Stage.Channel), '未知关卡')}",
+                "text": f"关卡：{_utils_constants.STARRAIL_STAGE_BOOK.get(getattr(self.Stage, self.Stage.Channel), '未知关卡')}",
                 "color": "blue",
             }
         )
         tags.append(
             {
-                "text": f"周本：{STARRAIL_STAGE_BOOK.get(self.Stage.EchoOfWar, '未知关卡')}",
+                "text": f"周本：{_utils_constants.STARRAIL_STAGE_BOOK.get(self.Stage.EchoOfWar, '未知关卡')}",
                 "color": "blue",
             }
         )
         tags.append(
             {
-                "text": f"模拟宇宙：{STARRAIL_STAGE_BOOK.get(self.Stage.SimulatedUniverseWorld, '未知关卡')}",
+                "text": f"模拟宇宙：{_utils_constants.STARRAIL_STAGE_BOOK.get(self.Stage.SimulatedUniverseWorld, '未知关卡')}",
                 "color": "blue",
             }
         )
@@ -1511,12 +1577,12 @@ class SrcConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        GameUpdateTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        GameUpdateTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 60,
             description="游戏更新时间限制（分钟）",
         )
 
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
@@ -1530,16 +1596,16 @@ class SrcConfig(DomainEntry):
             default_factory=lambda: False, description="是否在登录游戏前检查游戏更新"
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="代理次数限制"
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 10,
             description="运行时间限制（分钟）",
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3, description="运行次数限制"
         )
 
@@ -1574,9 +1640,9 @@ class HSRUserConfig(DomainEntry):
         )
 
         EchoOfWarLastCompletionDate: Annotated[
-            datetime, tz(UTC4), ui(format="date")
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
         ] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="历战余响最近一次完成日期",
         )
 
@@ -1585,8 +1651,10 @@ class HSRUserConfig(DomainEntry):
             description='历战余响上次重置 ISO 周（形如 "2025-W23"）',
         )
 
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="上次代理日期",
         )
 
@@ -1608,11 +1676,11 @@ class HSRUserConfig(DomainEntry):
             description="本周是否已完成周常（仅依据 Data 字段判断）",
         )
 
-        WeeklyLastCompletionDate: Annotated[datetime, tz(UTC4), ui(format="date")] = (
-            Field(
-                default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
-                description="周常（差分宇宙/货币战争）最近一次完成日期",
-            )
+        WeeklyLastCompletionDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
+            description="周常（差分宇宙/货币战争）最近一次完成日期",
         )
 
         WeeklyLastResetWeek: str = Field(
@@ -1625,7 +1693,11 @@ class HSRUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "shared",
             description="base 来源（shared/independent/native）：shared = 共用脚本级计划； independent = 本用户自己的计划；native = 原样运行 SRA / 三月七 当前的原生配置",
@@ -1656,7 +1728,7 @@ class HSRUserConfig(DomainEntry):
         Password: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "", description="密码"
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             default_factory=lambda: -1, description="剩余天数"
         )
 
@@ -1793,7 +1865,7 @@ class HSRUserConfig(DomainEntry):
         tags.append({"text": f"服务器：{server_label}", "color": "blue"})
         tags.append(_tag_proxy(self))
         tags.append(_tag_remained_days(self))
-        now = datetime.now(tz=UTC4)
+        now = datetime.now(tz=_utils_constants.UTC4)
         iso_year, iso_week, _ = now.isocalendar()
         current_week = f"{iso_year:04d}-W{iso_week:02d}"
         eow_done = (
@@ -1888,7 +1960,13 @@ class HSRConfig(DomainEntry):
             description="启动游戏时临时覆盖 1920×1080 注册表分辨率",
         )
 
-        Path: FilePath = Field(default_factory=lambda: None, description="游戏路径")
+        # 页面选择游戏目录，同时兼容已保存的 StarRail.exe 路径。
+        Path: Annotated[
+            NativePath | None,
+            path_policy(
+                kind="any", must_exist=True, blocked_dirs=STANDARD_BLOCKED_DIRS
+            ),
+        ] = Field(default_factory=lambda: None, description="游戏路径")
 
         Platform: Literal["Client", "Cloud"] = Field(
             default_factory=lambda: "Client",
@@ -1899,7 +1977,7 @@ class HSRConfig(DomainEntry):
             default_factory=lambda: True, description="仅在原生兑换码内容变化时执行兑换"
         )
 
-        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 60, description="等待时间（秒）"
         )
 
@@ -1937,7 +2015,7 @@ class HSRConfig(DomainEntry):
     Managed: ManagedFields = Field(default_factory=ManagedFields)
 
     class RunFields(ConfigGroup):
-        DailyTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        DailyTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 20,
             description="日常任务超时限制（分钟）",
         )
@@ -1947,15 +2025,15 @@ class HSRConfig(DomainEntry):
             description="低性能兼容模式（仅三月七差分宇宙使用，映射到 weekly_divergent_stable_mode）",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="代理次数限制"
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3, description="失败任务最大尝试次数"
         )
 
-        WeeklyTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        WeeklyTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 60,
             description="周常任务超时限制（分钟）",
         )
@@ -2066,8 +2144,10 @@ class MaaFWUserConfig(DomainEntry):
             default_factory=lambda: True, description="是否通过检查"
         )
 
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="上次代理日期",
         )
 
@@ -2115,7 +2195,11 @@ class MaaFWUserConfig(DomainEntry):
 
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "independent",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -2149,7 +2233,7 @@ class MaaFWUserConfig(DomainEntry):
             default_factory=lambda: "",
             description="密码信息，仅用于 AUTO-MAS 记录，不自动传入 MaaFW 任务",
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             default_factory=lambda: -1, description="剩余天数"
         )
 
@@ -2206,7 +2290,7 @@ class MaaFWUserConfig(DomainEntry):
         # 新队列的 keepUnchecked 标记随 JSON 原样保存；无标记的旧 false 实例仍隐藏。
         TaskSnapshot: JsonDictString = Field(
             default_factory=lambda: "{ }",
-            description="当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions/globalOptions， 可选 taskLabels（用户给某一份实例起的显示名，只影响界面显示）； 除 globalOptions 外各键都是任务实例 id，同一个任务可以重复入队（见 MaaFWTaskSnapshot）； globalOptions 是全局选项的值，每个用户一份、所有任务共用。 默认的空快照在建用户、读用户与运行前按项目默认（预设或默认勾选）补成实打实的队列， 见 app/task/MaaFW/tools/embedded/default_snapshot.py",
+            description="当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions/globalOptions， 可选 taskLabels（用户给某一份实例起的显示名，只影响界面显示）， 可选 taskSchedules（``{实例 id: {weekdays: [1..7]}}``，ISO 星期 1=周一，升序去重；只在本机今天的星期在其中时运行这一份，开跑建计划时判一次；七天全选即不限制、不写这一项，空表或非法值按不限制处理）； 除 globalOptions 外各键都是任务实例 id，同一个任务可以重复入队（见 MaaFWTaskSnapshot）； globalOptions 是全局选项的值，每个用户一份、所有任务共用。 默认的空快照在建用户、读用户与运行前按项目默认（预设或默认勾选）补成实打实的队列， 见 app/task/MaaFW/tools/embedded/default_snapshot.py",
         )
 
     Task: TaskFields = Field(default_factory=TaskFields)
@@ -2373,7 +2457,7 @@ class MaaFWConfig(DomainEntry):
             description="DirectExe 模式下，启动游戏前按 exe 路径反查 Unity 注册表，临时把分辨率改成所选 尺寸的窗口模式，游戏关闭后恢复原值（tools/embedded/game_resolution.py）。 只对 Unity 引擎的游戏有效；游戏已在运行时不改。Off 表示不碰。",
         )
 
-        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 120,
             description="游戏启动等待时间（秒）：既是等窗口出现的上限，也是窗口出现后等画面稳定的上限。 Unity 游戏窗口出现时还在黑屏加载，登录界面往往要二三十秒后才渲染出来； MaaEnd 的 SceneManager 见连续画面不变十几秒就判「环境识别异常」直接失败。 等画面时 worker 每秒截一帧，有内容且连续几秒不变就提前下发，等不到才等满； MaaFW 初始化（加载资源、连 controller、起 agent）与之重叠而不是干等。 只对本轮由 MAS 拉起的游戏生效，AttachOnly 与「游戏已在运行」不等画面。",
         )
@@ -2432,22 +2516,22 @@ class MaaFWConfig(DomainEntry):
             description="每月正常完成一次后，本月剩余时间跳过的 MaaFW 任务名列表",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0,
             description="运行引擎，决定「谁来跑」： 代理次数限制",
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单次运行时间限制（分钟），套在单个用户的整次运行上。截止时刻随 job 文件交给 worker：到点它自己停掉当前任务、截一张超时图、带回已完成的任务；宿主只在 worker 没能及时停下时才强杀（那时既没有截图也没有进度）。MaaFW 项目一轮日常 动辄几十分钟，30 分钟默认值实测常被误伤，放宽到 120。",
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3,
             description="运行次数限制。重试不关游戏、不再等启动，从当前画面接着跑； 脚本自己的加载超时（MaaEnd 回大世界 20s）一次抖动就把整轮判失败， 只给一次机会时用户看到的就是「从来没成功过」，默认与其他专项一样 3 次。",
         )
 
-        TaskTimeLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        TaskTimeLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 45,
             description="单个任务的时限（分钟），0 表示不限。某个任务卡住时到点只停它、截一张超时图， 记一条任务失败后接着跑后面的任务（计划里第一个任务超时则结束本轮）；不再让 一个卡住的任务吃掉整轮 RunTimeLimit 的时间。 默认 45 而不是 30：M9A 智能均衡刷材料正常 1–22 分钟，自动深眠在新内容日 实测 33.7 分钟，30 会误伤正常运行。",
         )
@@ -2483,7 +2567,7 @@ class MaaFWConfig(DomainEntry):
     class TaskFields(ConfigGroup):
         Templates: JsonListString = Field(
             default_factory=lambda: "[ ]",
-            description='用户页任务队列的自定义模板，同一脚本的用户共用。JSON 列表，每项 ``{"name": 模板名, "snapshot": {taskOrder, taskChecked, taskOptions, taskLabels?}}``， 快照形状同用户的 Task.TaskSnapshot（键是任务实例 id），但不含受管任务、密码字段 与全局选项（globalOptions 归各用户自己）； 名称在脚本内唯一。运行流程不读它，只由用户页套用到某个用户的队列。',
+            description='用户页任务队列的自定义模板，同一脚本的用户共用。JSON 列表，每项 ``{"name": 模板名, "snapshot": {taskOrder, taskChecked, taskOptions, taskLabels?, taskSchedules?}}``， 快照形状同用户的 Task.TaskSnapshot（键是任务实例 id），但不含受管任务、密码字段 与全局选项（globalOptions 归各用户自己）； 名称在脚本内唯一。运行流程不读它，只由用户页套用到某个用户的队列。',
         )
 
     Task: TaskFields = Field(default_factory=TaskFields)
@@ -2504,25 +2588,6 @@ class MaaFWConfig(DomainEntry):
         Channel: Literal["stable", "beta"] = Field(
             default_factory=lambda: "stable",
             description="更新渠道只有稳定版与测试版，默认稳定版，要测试版由用户手动切。 不给「跟随全局」：全局那个 Update.Channel 是 MAS 自身的发布通道， 和脚本本体的版本档位是两回事，串在一起只会让人猜。 Mirror 酱还支持 channel=alpha，**故意不开放**——那是项目方的内部 验证档，稳定性无保证，而这里更新的是用户日常在跑的脚本本体。 这两个值必须与前端 updateChannelOptions 和 schema 的 Literal 一致： 三处任一多给一档，用户选了就会 422 或被静默纠回默认值。 旧配置里的空串现在是非法值，会被 correct() 回退成 options[0]， 即 stable——这里的顺序同样不能随意调换。",
-        )
-
-        GitHubAssetPattern: str = Field(
-            description="[已废弃] GitHub release asset 文件名匹配模式",
-            default_factory=lambda: "",
-        )
-
-        GitHubRepo: str = Field(
-            default_factory=lambda: "",
-            description="[已废弃] GitHub 仓库/tag/asset 覆盖：仓库与资产名改为从 interface.json 和目录名自动推导，运行流程不再读取；保留一个版本兼容旧配置文件后删除。",
-        )
-
-        GitHubTag: str = Field(
-            description="[已废弃] GitHub release tag 覆盖", default_factory=lambda: ""
-        )
-
-        IfAutoUpdate: bool = Field(
-            default_factory=lambda: True,
-            description="[已废弃] 旧布尔开关，只在 load() 里迁移为 AutoUpdateMode（False → Off）， 运行流程不再读取；保留一个版本兼容旧配置文件后删除。",
         )
 
         MirrorChyanCDK: Annotated[str, encrypted()] = Field(
@@ -2593,7 +2658,7 @@ class M9AConfig(MaaFWConfig):
     )
 
     class GameFields(MaaFWConfig.GameFields):
-        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default=15, description="启动等待时间(秒)"
         )
 
@@ -2679,8 +2744,10 @@ class GeneralUserConfig(DomainEntry):
     "通用脚本用户配置"
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="上次代理日期",
         )
 
@@ -2693,7 +2760,11 @@ class GeneralUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "independent",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -2717,7 +2788,7 @@ class GeneralUserConfig(DomainEntry):
 
         Notes: str = Field(default_factory=lambda: "无", description="备注")
 
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             default_factory=lambda: -1, description="剩余天数"
         )
 
@@ -2783,9 +2854,11 @@ class OkwwUserConfig(DomainEntry):
     OKWW_TASK_BOOK: ClassVar = {1: "日常"}
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
             description="上次代理日期",
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
         )
 
         LastProxyStatus: Literal["未知", "成功", "失败", "维护中"] = Field(
@@ -2806,7 +2879,11 @@ class OkwwUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             description="base 来源（shared=共享、independent=独立、native=脚本原生配置）",
             default_factory=lambda: "shared",
@@ -2833,7 +2910,7 @@ class OkwwUserConfig(DomainEntry):
 
         Notes: str = Field(description="备注", default_factory=lambda: "无")
 
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             description="剩余天数", default_factory=lambda: -1
         )
 
@@ -2916,12 +2993,12 @@ class OkwwUserConfig(DomainEntry):
             Field(default_factory=lambda: "Shell Credit", description="模拟领域材料")
         )
 
-        WhichForgeryChallengeToFarm: Annotated[int, Field(ge=1, le=99)] = Field(
-            default_factory=lambda: 1, description="凝素领域序号"
+        WhichForgeryChallengeToFarm: Annotated[int, Field(ge=1, le=99), none_as(1)] = (
+            Field(default_factory=lambda: 1, description="凝素领域序号")
         )
 
-        WhichTacetSuppressionToFarm: Annotated[int, Field(ge=1, le=99)] = Field(
-            default_factory=lambda: 1, description="无音区序号"
+        WhichTacetSuppressionToFarm: Annotated[int, Field(ge=1, le=99), none_as(1)] = (
+            Field(default_factory=lambda: 1, description="无音区序号")
         )
 
         WhichToFarm: Literal[
@@ -2981,9 +3058,11 @@ class OkNteUserConfig(DomainEntry):
     }
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
             description="上次代理日期",
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
         )
 
         LastProxyStatus: Literal["未知", "成功", "失败", "维护中"] = Field(
@@ -3004,7 +3083,11 @@ class OkNteUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             description="base 来源（shared=共享、independent=独立、native=脚本原生配置）",
             default_factory=lambda: "shared",
@@ -3034,7 +3117,7 @@ class OkNteUserConfig(DomainEntry):
         Password: Annotated[str, encrypted()] = Field(
             description="密码", default_factory=lambda: ""
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             description="剩余天数", default_factory=lambda: -1
         )
 
@@ -3099,7 +3182,7 @@ class OkNteUserConfig(DomainEntry):
             description="任务结束后退出（-e）", default_factory=lambda: True
         )
 
-        TaskIndex: Annotated[int, Field(ge=1, le=19)] = Field(
+        TaskIndex: Annotated[int, Field(ge=1, le=19), none_as(1)] = Field(
             default_factory=lambda: 2,
             description="ok-nte.exe -t N -e；新版上游 DailyRoutineTask 是 -t 2",
         )
@@ -3132,9 +3215,11 @@ class BetterGIUserConfig(DomainEntry):
     "BetterGI 用户配置（更好的原神）"
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
             description="上次代理日期",
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
         )
 
         LastProxyStatus: Literal["未知", "成功", "失败", "维护中"] = Field(
@@ -3150,7 +3235,11 @@ class BetterGIUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "independent",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -3184,7 +3273,7 @@ class BetterGIUserConfig(DomainEntry):
         Password: Annotated[str, encrypted()] = Field(
             description="密码", default_factory=lambda: ""
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             description="剩余天数", default_factory=lambda: -1
         )
 
@@ -3421,7 +3510,7 @@ class GeneralConfig(DomainEntry):
 
         URL: str = Field(default_factory=lambda: "", description="自定义协议URL")
 
-        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="等待时间（秒）"
         )
 
@@ -3437,21 +3526,21 @@ class GeneralConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="代理次数限制"
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 10,
             description="运行时间限制（分钟）",
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3, description="运行次数限制"
         )
 
@@ -3501,7 +3590,7 @@ class GeneralConfig(DomainEntry):
             default_factory=lambda: "%Y-%m-%d", description="日志路径格式"
         )
 
-        LogTimeEnd: Annotated[int, Field(ge=1, le=9999)] = Field(
+        LogTimeEnd: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 1, description="日志时间戳结束位置"
         )
 
@@ -3509,7 +3598,7 @@ class GeneralConfig(DomainEntry):
             default_factory=lambda: "%Y-%m-%d %H:%M:%S", description="日志时间格式"
         )
 
-        LogTimeStart: Annotated[int, Field(ge=1, le=9999)] = Field(
+        LogTimeStart: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 1, description="日志时间戳开始位置"
         )
 
@@ -3556,6 +3645,19 @@ class GeneralConfig(DomainEntry):
     Script: ScriptFields = Field(default_factory=ScriptFields)
     UserData: ConfigCollection[GeneralUserConfig] = collection(GeneralUserConfig)
 
+    @classmethod
+    def normalize_payload(cls, data: dict[str, Any]) -> dict[str, Any]:
+        data = super().normalize_payload(data)
+        script = data.get("Script")
+        if isinstance(script, dict):
+            # 保留旧文件选择器文案的变体兼容，无关未知值仍交给字段校验拒绝。
+            mode = script.get("ConfigPathMode")
+            if isinstance(mode, str) and "所有文件" in mode:
+                script["ConfigPathMode"] = "File"
+            elif mode == "文件夹":
+                script["ConfigPathMode"] = "Folder"
+        return data
+
 
 class OkwwConfig(DomainEntry):
     "OK-WW 配置（ok-script 线）"
@@ -3595,12 +3697,12 @@ class OkwwConfig(DomainEntry):
             description="游戏启动方式：Client=直启客户端（内置 -krqlv=hd），Launcher=经官方启动器 默认值必须排首位：值非法时 correct() 回落到 options[0]",
         )
 
-        UpdateFullSyncLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        UpdateFullSyncLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 30,
             description="整文件同步体积上限（GB），超过则中止并提示手动处理",
         )
 
-        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 60, description="等待游戏启动时间"
         )
 
@@ -3618,20 +3720,20 @@ class OkwwConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="每日代理次数上限"
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 60, description="单次运行超时时间"
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3, description="单次任务重试次数"
         )
 
@@ -3686,7 +3788,7 @@ class OkNteConfig(DomainEntry):
 
         URL: str = Field(description="自定义协议URL", default_factory=lambda: "")
 
-        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="游戏等待启动时间", default_factory=lambda: 60
         )
 
@@ -3704,20 +3806,20 @@ class OkNteConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="每日代理次数限制", default_factory=lambda: 0
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             description="日志超时限制", default_factory=lambda: 120
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             description="重试次数限制", default_factory=lambda: 1
         )
 
@@ -3764,7 +3866,7 @@ class OkNteConfig(DomainEntry):
             description="日志文件名格式", default_factory=lambda: ""
         )
 
-        LogTimeEnd: Annotated[int, Field(ge=1, le=9999)] = Field(
+        LogTimeEnd: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             description="日志时间戳结束位置", default_factory=lambda: 23
         )
 
@@ -3772,7 +3874,7 @@ class OkNteConfig(DomainEntry):
             description="日志时间戳格式", default_factory=lambda: "%Y-%m-%d %H:%M:%S,%f"
         )
 
-        LogTimeStart: Annotated[int, Field(ge=1, le=9999)] = Field(
+        LogTimeStart: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             description="日志时间戳开始位置", default_factory=lambda: 1
         )
 
@@ -3854,20 +3956,20 @@ class BetterGIConfig(DomainEntry):
             description="账号切换方式（脚本级，参考 MaaEnd Run.AccountSwitchMethod）： BGI = BetterGI「切换账号多模式」脚本执行（国际服请改用此方式）；MAS = MAS 侧 前台 OCR 直接操控游戏切号（官服/B服，游戏由 MAS 托管启动），官服/B服推荐。 默认值双轨：新建脚本取类默认 MAS；存量脚本（配置无该键）由 load 迁移固化 旧默认 BGI（见 _migrate_bgi_account_switch_default），保持升级前行为。",
         )
 
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="每日代理次数限制", default_factory=lambda: 0
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             description="日志超时限制", default_factory=lambda: 10
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             description="重试次数限制", default_factory=lambda: 3
         )
 
@@ -3897,9 +3999,11 @@ class ZzzOdUserConfig(DomainEntry):
     """
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
             description="上次代理日期",
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
         )
 
         LastProxyStatus: Literal["未知", "成功", "失败"] = Field(
@@ -4000,7 +4104,11 @@ class ZzzOdUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "independent",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -4030,7 +4138,7 @@ class ZzzOdUserConfig(DomainEntry):
 
         Notes: str = Field(description="备注", default_factory=lambda: "无")
 
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             description="剩余天数", default_factory=lambda: -1
         )
 
@@ -4211,7 +4319,7 @@ class ZzzOdConfig(DomainEntry):
             description="游戏路径（游戏本体 ZenlessZoneZero.exe）",
         )
 
-        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 60,
             description="启动游戏后的等待时间（秒）",
         )
@@ -4231,21 +4339,21 @@ class ZzzOdConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="每日代理次数上限"
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 40,
             description="单次运行超时时间（分钟）；这是日志停滞超时（latest_time 距今），不是 总时长上限——一条龙持续写日志就不会触发；启动器层故障（不写应用层 日志）也靠它兜底超时后切换启动器",
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3, description="单次任务重试次数"
         )
 
@@ -4259,8 +4367,10 @@ class BAAHUserConfig(DomainEntry):
     related_config: ClassVar = {}
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
             description="上次代理日期",
         )
 
@@ -4278,7 +4388,11 @@ class BAAHUserConfig(DomainEntry):
 
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "independent",
             description="base 来源（shared=共享/independent=独立/native=原生）",
@@ -4305,7 +4419,7 @@ class BAAHUserConfig(DomainEntry):
 
         Notes: str = Field(default_factory=lambda: "无", description="备注")
 
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             default_factory=lambda: -1, description="剩余天数"
         )
 
@@ -4404,17 +4518,17 @@ class BAAHConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 60,
             description="运行时间限制（分钟）",
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 2, description="运行次数限制"
         )
 
@@ -4450,9 +4564,11 @@ class WhimboxUserConfig(DomainEntry):
     """
 
     class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
+        LastProxyDate: Annotated[
+            datetime, tz(_utils_constants.UTC4), ui(format="date")
+        ] = Field(
             description="上次代理日期",
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
         )
 
         LastProxyStatus: Literal["未知", "成功", "失败"] = Field(
@@ -4468,7 +4584,11 @@ class WhimboxUserConfig(DomainEntry):
     class InfoFields(ConfigGroup):
         Base: Annotated[
             Literal["shared", "independent", "native"],
-            legacy(group="Info", name="Mode", convert=normalize_base_source),
+            legacy(
+                group="Info",
+                name="Mode",
+                convert=_utils_constants.normalize_base_source,
+            ),
         ] = Field(
             default_factory=lambda: "shared",
             description="base 来源三态（shared=共享/independent=独立/native=原生）：共享/独立= 用 MAS 面板配置（当前运行行为一致，为后续特殊功能预留），原生=直接用奇想盒 自带配置（MAS 零写入）",
@@ -4493,7 +4613,7 @@ class WhimboxUserConfig(DomainEntry):
 
         Notes: str = Field(description="备注", default_factory=lambda: "无")
 
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             description="剩余天数", default_factory=lambda: -1
         )
 
@@ -4593,22 +4713,22 @@ class WhimboxConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="每日代理次数上限（0=不限）",
             default_factory=lambda: 0,
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 30,
             description="运行超时（分钟）：日志静默超过该时长判定卡死",
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3,
             description="失败重试次数：只用于「没有上游结论」的异常（进程提前退出/卡死）； 上游自己判负时，仅当失败原因与上一轮不同才继续重试（同一结论连着出现即收口）",
         )
@@ -4619,6 +4739,14 @@ class WhimboxConfig(DomainEntry):
         )
 
     Run: RunFields = Field(default_factory=RunFields)
+
+    class UpdateFields(ConfigGroup):
+        TakeoverEnabled: bool = Field(
+            default_factory=lambda: False,
+            description="运行前检查并安装奇想盒官方后端正式版，更新完成后启动任务；不更新 app",
+        )
+
+    Update: UpdateFields = Field(default_factory=UpdateFields)
     UserData: ConfigCollection[WhimboxUserConfig] = collection(WhimboxUserConfig)
 
 

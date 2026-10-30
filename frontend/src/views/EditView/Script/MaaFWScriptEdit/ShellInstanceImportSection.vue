@@ -1,10 +1,7 @@
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.shellImportTitle') }}</h3>
-    </div>
+  <MaaFWFormSection :title="t('core.edit.shellImportTitle')" compact>
     <p class="shell-import-hint">
-      {{ t('edit.shellImportHint', { count: instances.length, source: sourceLabel }) }}
+      {{ t('core.edit.shellImportHint', { count: instances.length, source: sourceLabel }) }}
     </p>
 
     <div class="shell-import-list">
@@ -15,11 +12,11 @@
           :disabled="disabled"
           @change="toggleAll"
         >
-          {{ t('edit.shellImportSelectAll') }}
+          {{ t('core.edit.shellImportSelectAll') }}
         </a-checkbox>
         <span class="shell-import-count">
           {{
-            t('edit.shellImportSelectedCount', {
+            t('core.edit.shellImportSelectedCount', {
               selected: selectedSet.size,
               total: instances.length,
             })
@@ -45,13 +42,13 @@
             <span class="shell-import-name">{{ item.name }}</span>
             <a-tag class="shell-import-tag">{{ item.source }}</a-tag>
             <a-tag v-if="item.active" color="green" class="shell-import-tag">
-              {{ t('edit.shellImportActive') }}
+              {{ t('core.edit.shellImportActive') }}
             </a-tag>
           </div>
           <div class="shell-import-meta">{{ describeMeta(item) }}</div>
         </div>
         <div class="shell-import-user">
-          {{ t('edit.shellImportUserName', { name: item.userName }) }}
+          {{ t('core.edit.shellImportUserName', { name: item.userName }) }}
         </div>
       </div>
     </div>
@@ -64,9 +61,9 @@
       :disabled="disabled"
       @change="emit('update:importHotkeys', !importHotkeys)"
     >
-      {{ t('edit.mfwHotkeyImportToScript') }}
+      {{ t('core.edit.mfwHotkeyImportToScript') }}
     </a-checkbox>
-  </div>
+  </MaaFWFormSection>
 </template>
 
 <script setup lang="ts">
@@ -75,6 +72,7 @@ import { useI18n } from 'vue-i18n'
 import type { MaaFWShellInstanceItem } from '@/api'
 import { describeShellSources } from './shellInstanceImport'
 import { hasShellInstanceHotkeys } from './hotkeyImport'
+import MaaFWFormSection from './MaaFWFormSection.vue'
 import type {
   MaaFWScriptShellImportSectionEmits,
   MaaFWScriptShellImportSectionProps,
@@ -120,40 +118,16 @@ const toggle = (id: string) => {
 
 // 「N 个任务 · 控制方式 · 资源」，取不到的项不写
 const describeMeta = (item: MaaFWShellInstanceItem) =>
-  [t('edit.shellImportTaskCount', { count: item.taskCount ?? 0 }), item.controller, item.resource]
+  [
+    t('core.edit.shellImportTaskCount', { count: item.taskCount ?? 0 }),
+    item.controller,
+    item.resource,
+  ]
     .filter(Boolean)
     .join(' · ')
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 24px;
-}
-
-.section-header {
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: var(--ant-color-text-quaternary);
-  border-radius: 2px;
-}
-
 .shell-import-hint {
   margin: 0 0 12px;
   color: var(--ant-color-text-secondary);
