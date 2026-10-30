@@ -264,6 +264,7 @@ export const featureAnalyticsSchemas = {
       'instance_add',
       'instance_delete',
       'preview',
+      'data_refresh',
     ] as const,
     engine_kind: ['M7A', 'SRA', 'embedded', 'shell', 'hotkey', 'unknown'] as const,
   }),

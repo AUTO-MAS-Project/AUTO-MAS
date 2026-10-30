@@ -96,6 +96,8 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `help_link_requested` | 哪些功能需要文档帮助 | `link_kind`、`entry_source` |
 | `adapter_setup_finished` | 专项配置引导与独有操作 | `script_type`、`operation_kind`、`engine_kind` |
 
+养成页手动刷新复用 `adapter_setup_finished`，`operation_kind=data_refresh`，仅在后端完整更新材料与目录后记录成功；自动缓存读取不重复采集。
+
 历史附件视频的 `play` 意图由 `playing` 确认成功，缓冲恢复不会重复计数；请求播放前后的关联仅在内存中保存，不上报附件标识或地址。手动保存录屏仅用 `capture_path` 是否存在判断 success/skipped，不上传其内容。
 
 耗时区间为 `<1s`、`1-5s`、`5-30s`、`30-120s`、`>120s`。
