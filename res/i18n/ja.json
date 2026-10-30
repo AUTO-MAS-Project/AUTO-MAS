@@ -2304,7 +2304,7 @@
   "core.edit.updateSource": "更新ソース",
   "core.edit.updateSourceTip": "MirrorChyan：CDK が必要で、ダウンロードが速く sha256 で検証します。GitHub：プロジェクトの GitHub Release からダウンロードし、CDK は不要です。MirrorChyan に対応していないプロジェクトでも、GitHub を選べば更新を確認できます（プロジェクトに GitHub リポジトリの記載が必要です）",
   "core.edit.maaEndProgramUpdate": "MaaEnd プログラム更新",
-  "core.edit.maaEndProgramUpdateHint": "実行前に MaaEnd を検証・更新します。準備に失敗しても既存環境が利用可能なら警告して続行します。インストールが未確認の場合は停止します。托管実行中は MXU の更新を一時停止し、終了後に復元します。",
+  "core.edit.maaEndProgramUpdateHint": "実行前に MaaEnd の公式安定版／ベータ版を確認・更新します。準備失敗時も既存のインストールが検証済みなら続行します。特定できる古い MXU 更新 ZIP のみを削除し、WebView2 データと interface.json は維持します。MXU は通常どおり更新を確認します。",
   "core.edit.maaEndUpdateCdkHint": "空欄ならグローバル CDK、両方未設定なら GitHub を使用します。MXU に保存された暗号化 CDK は読み取りません。",
   "core.edit.updateTakeover": "更新の引き受け",
   "core.edit.updateTakeoverCdk": "MirrorChyan CDK",

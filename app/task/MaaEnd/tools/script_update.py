@@ -12,7 +12,7 @@ import asyncio
 import base64
 import json
 import os
-import tempfile
+import zipfile
 from contextlib import suppress
 from pathlib import Path
 from urllib.parse import quote, urlsplit
@@ -279,8 +279,58 @@ async def confirm_current_install(root: Path) -> None:
         )
 
 
+
+def discard_obsolete_mxu_packages(root: Path) -> tuple[str, ...]:
+    """仅清理 MXU 缓存根目录内可确认身份且不高于当前版本的完整发行 ZIP。
+
+    MXU 启动后会在找不到 downloadSavePath 时自行清除旧 pending。
+    不访问 WebView2 存储，不遍历缓存子目录，也不碰无法识别的增量/自定义包。
+    调用方必须持安装锁，且只能在安装校验后、MXU 启动前调用。
+    """
+    assert_idle(root)
+    installed_version, _ = read_install(root)
+    cache = root / "cache"
+    if not cache.is_dir() or cache.is_symlink():
+        return ()
+
+    removed: list[str] = []
+    for archive_path in cache.iterdir():
+        if (
+            archive_path.is_symlink()
+            or not archive_path.is_file()
+            or archive_path.suffix.casefold() != ".zip"
+            or not archive_path.name.casefold().startswith("maaend-win-")
+        ):
+            continue
+        try:
+            with zipfile.ZipFile(archive_path) as archive:
+                if "MaaEnd.exe" not in archive.namelist():
+                    continue
+                interface_info = archive.getinfo("interface.json")
+                if interface_info.file_size > 1024 * 1024:
+                    continue
+                interface = json.loads(archive.read(interface_info))
+            if not isinstance(interface, dict) or interface.get("name") != "MaaEnd":
+                continue
+            package_version = Version(str(interface.get("version", "")))
+        except (OSError, ValueError, UnicodeError, KeyError, zipfile.BadZipFile):
+            # 没有可信身份的包可能属于用户，不能根据扩展名猜测并删除。
+            continue
+        if package_version > installed_version:
+            continue
+
+        try:
+            archive_path.unlink()
+        except OSError as error:
+            raise script_install.InstallUnsafeError(
+                "无法移除已识别的 MXU 旧更新包，停止启动以避免历史更新覆盖现有安装"
+            ) from error
+        removed.append(archive_path.name)
+    return tuple(removed)
+
+
 def recover_runtime_interface(root: Path) -> None:
-    """只恢复仍等于注入值的公开接口文件，不覆盖外部修改。"""
+    """仅恢复旧版 MAS 可能遗留的 PI 修改日志，不再创建新的覆盖。"""
     directory = script_install.workspace(root)
     journal = directory / "runtime-interface.json"
     if not journal.exists():
@@ -306,32 +356,6 @@ def recover_runtime_interface(root: Path) -> None:
         ) from error
 
 
-def suspend_native_updates(root: Path) -> None:
-    """PI V2 公开更新来源的可恢复覆盖，不伪造版本或读取 WebView 私有存储。"""
-    recover_runtime_interface(root)
-    path = root / "interface.json"
-    original = path.read_bytes()
-    interface = _utils_io.read_dict_file(path, format=".json5")
-    interface.pop("mirrorchyan_rid", None)
-    injected = json.dumps(interface, ensure_ascii=False, indent=4).encode("utf-8")
-    directory = script_install.workspace(root)
-    directory.mkdir(exist_ok=True)
-    journal = directory / "runtime-interface.json"
-    temporary = directory / "runtime-interface.tmp"
-    with temporary.open("w", encoding="utf-8") as handle:
-        json.dump(
-            {
-                "original": base64.b64encode(original).decode(),
-                "injected": base64.b64encode(injected).decode(),
-            },
-            handle,
-        )
-        handle.flush()
-        os.fsync(handle.fileno())
-    temporary.replace(journal)
-    _write_interface(path, injected)
-
-
 def _write_interface(path: Path, content: bytes) -> None:
     temporary = path.with_name(".mas-interface.tmp")
     with temporary.open("wb") as handle:
@@ -341,9 +365,3 @@ def _write_interface(path: Path, content: bytes) -> None:
     temporary.replace(path)
 
 
-def managed_launch_environment() -> dict[str, str]:
-    """WebView2 官方环境变量隔离旧的待安装记录；不读写原生浏览器数据。"""
-    directory = Path.cwd() / "data" / "maaend_webview"
-    directory.mkdir(parents=True, exist_ok=True)
-    profile = tempfile.mkdtemp(prefix="run-", dir=directory)
-    return {**os.environ, "WEBVIEW2_USER_DATA_FOLDER": profile}

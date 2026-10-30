@@ -7,6 +7,10 @@ defineProps<{ ready: boolean }>()
 const update = defineModel<MaaEndConfig_Update>('update', { required: true })
 const emit = defineEmits<{ save: [key: string, value: boolean | string] }>()
 const { t } = useI18n()
+const handleChannel = (channel: 'stable' | 'beta') => {
+  update.value = { ...update.value, Channel: channel }
+  emit('save', 'Channel', channel)
+}
 </script>
 
 <template>
@@ -15,6 +19,20 @@ const { t } = useI18n()
       <h3>{{ t('core.edit.maaEndProgramUpdate') }}</h3>
     </div>
     <a-row :gutter="24">
+      <a-col :span="8">
+        <a-form-item :label="t('core.edit.updateChannel')">
+          <a-select
+            :value="update.Channel"
+            :disabled="!ready"
+            size="large"
+            :options="[
+              { label: t('core.setting.channel.stable'), value: 'stable' },
+              { label: t('core.setting.channel.beta'), value: 'beta' },
+            ]"
+            @change="handleChannel"
+          />
+        </a-form-item>
+      </a-col>
       <a-col :span="8">
         <a-form-item>
           <template #label>
@@ -28,20 +46,6 @@ const { t } = useI18n()
             v-model:checked="update.TakeoverEnabled"
             :disabled="!ready"
             @change="(value: boolean) => emit('save', 'TakeoverEnabled', value)"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :span="8">
-        <a-form-item :label="t('core.edit.updateChannel')">
-          <a-select
-            v-model:value="update.Channel"
-            :disabled="!ready"
-            size="large"
-            :options="[
-              { label: t('core.setting.channel.stable'), value: 'stable' },
-              { label: t('core.setting.channel.beta'), value: 'beta' },
-            ]"
-            @change="(value: string) => emit('save', 'Channel', value)"
           />
         </a-form-item>
       </a-col>

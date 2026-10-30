@@ -2304,7 +2304,7 @@
   "core.edit.updateSource": "更新源",
   "core.edit.updateSourceTip": "Mirror 酱：需要填写 CDK，下载快且校验 sha256；GitHub：从项目的 GitHub Release 下载，不需要 CDK。项目没接入 Mirror 酱时，选 GitHub 也能检查更新（项目要写明 GitHub 仓库）",
   "core.edit.maaEndProgramUpdate": "MaaEnd 程序更新",
-  "core.edit.maaEndProgramUpdateHint": "运行前校验并更新 MaaEnd 程序。准备失败且当前安装可用时告警继续；安装状态不明时停止。托管运行暂停 MXU 自身更新，结束后恢复。",
+  "core.edit.maaEndProgramUpdateHint": "运行前检查并安装 MaaEnd 官方版本（稳定版／公测版）。准备失败但原安装通过校验时继续。仅移除可确认的过期 MXU 更新 ZIP；保留 WebView2 数据和 interface.json，MXU 仍会正常检查新版本。",
   "core.edit.maaEndUpdateCdkHint": "留空使用全局 CDK；均未填写时使用 GitHub。不会读取 MXU 保存的加密 CDK。",
   "core.edit.updateTakeover": "更新接管",
   "core.edit.updateTakeoverCdk": "Mirror 酱 CDK",

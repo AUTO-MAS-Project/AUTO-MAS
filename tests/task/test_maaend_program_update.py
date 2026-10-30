@@ -1,6 +1,7 @@
 """MaaEnd 官方完整包、准备回退、原生更新隔离和配置恢复。"""
 
 import asyncio
+import base64
 import hashlib
 
 import httpx
@@ -9,6 +10,7 @@ import shutil
 import threading
 import uuid
 import zipfile
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -93,7 +95,7 @@ def installation(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_official_package_installs_before_runtime_overlay(installation):
+async def test_official_package_installs_and_preserves_native_interface(installation):
     root, config = installation
     await update.update_before_run(root, config)
     assert update.read_install(root) == (Version("2.2.0"), "x86_64")
@@ -101,11 +103,7 @@ async def test_official_package_installs_before_runtime_overlay(installation):
     assert (root / "data/AutoDelivery/catalog.json").is_file()
     assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
     assert update.download_file.await_args.kwargs["downloader"] == "fluxdown"
-    original = (root / "interface.json").read_bytes()
-    update.suspend_native_updates(root)
-    assert "mirrorchyan_rid" not in json.loads((root / "interface.json").read_bytes())
-    update.recover_runtime_interface(root)
-    assert (root / "interface.json").read_bytes() == original
+    assert json.loads((root / "interface.json").read_bytes())["mirrorchyan_rid"] == "MaaEnd"
 
 
 @pytest.mark.asyncio
@@ -155,9 +153,35 @@ async def test_mirror_download_still_requires_official_sha256(
     )
 
 
+
+def _create_old_interface_journal(root: Path) -> bytes:
+    original = (root / "interface.json").read_bytes()
+    injected = b'{"name":"MaaEnd","version":"v2.1.0"}'
+    journal = script_install.workspace(root) / "runtime-interface.json"
+    journal.parent.mkdir(parents=True, exist_ok=True)
+    journal.write_text(
+        json.dumps(
+            {
+                "original": base64.b64encode(original).decode(),
+                "injected": base64.b64encode(injected).decode(),
+            }
+        )
+    )
+    (root / "interface.json").write_bytes(injected)
+    return original
+
+
+def test_legacy_interface_journal_is_restored(installation):
+    root, _ = installation
+    original = _create_old_interface_journal(root)
+    update.recover_runtime_interface(root)
+    assert (root / "interface.json").read_bytes() == original
+    assert not (script_install.workspace(root) / "runtime-interface.json").exists()
+
+
 def test_interface_recovery_preserves_external_changes(installation):
     root, _ = installation
-    update.suspend_native_updates(root)
+    _create_old_interface_journal(root)
     changed = b'{"name":"MaaEnd","version":"v9.0.0"}'
     (root / "interface.json").write_bytes(changed)
     with pytest.raises(script_install.InstallUnsafeError):
@@ -165,18 +189,50 @@ def test_interface_recovery_preserves_external_changes(installation):
     assert (root / "interface.json").read_bytes() == changed
 
 
-def test_launch_environment_is_new_and_does_not_mutate_global_environment(
-    installation, monkeypatch
-):
-    monkeypatch.setenv("WEBVIEW2_USER_DATA_FOLDER", "original-profile")
-    first, second = (
-        update.managed_launch_environment(),
-        update.managed_launch_environment(),
-    )
-    assert first["WEBVIEW2_USER_DATA_FOLDER"] != second["WEBVIEW2_USER_DATA_FOLDER"]
-    import os
+def _cached_mxu_zip(root: Path, filename: str, version: str, project: str = "MaaEnd") -> Path:
+    cache = root / "cache"
+    cache.mkdir(exist_ok=True)
+    path = cache / filename
+    with zipfile.ZipFile(path, "w") as package:
+        package.writestr("MaaEnd.exe", pe())
+        package.writestr(
+            "interface.json", json.dumps({"name": project, "version": version})
+        )
+    return path
 
-    assert os.environ["WEBVIEW2_USER_DATA_FOLDER"] == "original-profile"
+
+def test_discard_old_mxu_package_preserves_cache_and_newer_archives(installation):
+    root, _ = installation
+    webview = root / "cache" / "webview_data"
+    webview.mkdir(parents=True)
+    (webview / "Preferences").write_text("persistent")
+    old = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.0.0.zip", "v2.0.0")
+    same = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.1.0.zip", "v2.1.0")
+    future = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.2.0.zip", "v2.2.0")
+    different = _cached_mxu_zip(root, "MaaEnd-win-x86_64-test.zip", "v2.0.0", "Other")
+    unknown = _cached_mxu_zip(root, "user-backup.zip", "v2.0.0")
+    removed = update.discard_obsolete_mxu_packages(root)
+    assert set(removed) == {old.name, same.name}
+    assert not old.exists() and not same.exists()
+    assert future.is_file() and different.is_file() and unknown.is_file()
+    assert (webview / "Preferences").read_text() == "persistent"
+    assert json.loads((root / "interface.json").read_text())["mirrorchyan_rid"] == "MaaEnd"
+
+
+def test_discard_rejects_unremovable_recognized_archive(installation, monkeypatch):
+    root, _ = installation
+    candidate = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.0.0.zip", "v2.0.0")
+    original_unlink = Path.unlink
+
+    def deny_delete(path, *args, **kwargs):
+        if path == candidate:
+            raise PermissionError("locked")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", deny_delete)
+    with pytest.raises(script_install.InstallUnsafeError, match="无法移除"):
+        update.discard_obsolete_mxu_packages(root)
+    assert candidate.is_file()
 
 
 @pytest.fixture
@@ -186,9 +242,7 @@ def scheduler(installation, monkeypatch):
     instance.script_config = config
     instance.script_info = SimpleNamespace(log="")
     instance.task_info = SimpleNamespace(mode="AutoProxy", task_id="test")
-    instance._runtime_interface = False
     instance._program_update_prepared = False
-    instance._launch_env = None
     monkeypatch.setattr(manager.MaaEndResourceLoader, "get_cached", Mock())
     monkeypatch.setattr(
         manager, "load_maaend_controller_protocol", lambda *args: "Win32"
@@ -199,7 +253,7 @@ def scheduler(installation, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_preparation_failure_warns_and_still_suspends_native_updates(
+async def test_preparation_failure_preserves_native_update_configuration(
     scheduler, installation, monkeypatch
 ):
     root, _ = installation
@@ -208,9 +262,9 @@ async def test_preparation_failure_warns_and_still_suspends_native_updates(
     )
     await scheduler._prepare_program_update(root)
     manager.Publisher.send.assert_awaited_once()
-    assert scheduler._runtime_interface
-    assert "mirrorchyan_rid" not in json.loads((root / "interface.json").read_bytes())
-    update.recover_runtime_interface(root)
+    assert scheduler._program_update_prepared
+    assert json.loads((root / "interface.json").read_bytes())["mirrorchyan_rid"] == "MaaEnd"
+    assert not (script_install.workspace(root) / "runtime-interface.json").exists()
 
 
 @pytest.mark.asyncio
@@ -229,7 +283,7 @@ async def test_unsafe_and_cancel_never_fall_back(
     monkeypatch.setattr(update, "update_before_run", AsyncMock(side_effect=error))
     with pytest.raises(type(error)):
         await scheduler._prepare_program_update(root)
-    assert not scheduler._runtime_interface
+    assert not scheduler._program_update_prepared
     manager.Publisher.send.assert_not_awaited()
 
 
@@ -291,7 +345,6 @@ async def test_scheduler_prepares_only_once_for_all_users(
     await scheduler._prepare_program_update(root)
     await scheduler._prepare_program_update(root)
     updater.assert_awaited_once()
-    update.recover_runtime_interface(root)
 
 
 @pytest.mark.asyncio
@@ -335,7 +388,8 @@ async def test_early_resource_rejection_restores_interface_and_releases_both_loc
     original = (root / "interface.json").read_bytes()
     await instance.main_task()
     lock.assert_awaited_once()
-    assert instance._runtime_interface
+    assert not (script_install.workspace(root) / "runtime-interface.json").exists()
+    assert json.loads((root / "interface.json").read_bytes())["mirrorchyan_rid"] == "MaaEnd"
     await instance.final_task()
     assert (root / "interface.json").read_bytes() == original
     unlock.assert_awaited_once_with("ticket")

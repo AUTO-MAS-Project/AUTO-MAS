@@ -13,7 +13,6 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
 import asyncio
-import shutil
 import uuid
 from contextlib import ExitStack, suppress
 from datetime import datetime
@@ -103,8 +102,6 @@ class MaaEndManager(ScriptManagerBase):
         self.error_image_start_ns: int | None = None
         self.error_screenshot_paths: list[Path] = []
         self._install_access = ExitStack()
-        self._launch_env: dict[str, str] | None = None
-        self._runtime_interface = False
         self._program_update_prepared = False
 
     async def check(self) -> str:
@@ -315,9 +312,14 @@ class MaaEndManager(ScriptManagerBase):
         self.controller_protocol = load_maaend_controller_protocol(
             root, str(self.script_config.Game.ControllerType)
         )
-        self._launch_env = script_update.managed_launch_environment()
-        self._runtime_interface = True
-        script_update.suspend_native_updates(root)
+        removed = await asyncio.to_thread(
+            script_update.discard_obsolete_mxu_packages, root
+        )
+        if removed:
+            await push_dispatch_log(
+                self.script_info,
+                f"已移除 {len(removed)} 个过期 MXU 更新包；MXU 启动时将清除对应的待安装记录",
+            )
         self._program_update_prepared = True
 
     async def _restore_script_config_from_temp(self) -> None:
@@ -536,7 +538,6 @@ class MaaEndManager(ScriptManagerBase):
                 kwargs["capture_adb"] = capture_adb
                 kwargs["capture_win32"] = capture_win32
                 kwargs["on_error_screenshot"] = self.error_screenshot_paths.append
-                kwargs["launch_env"] = self._launch_env
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             try:
                 await self.run_user_task(current_user, task)
@@ -632,27 +633,13 @@ class MaaEndManager(ScriptManagerBase):
                 self.script_info.status = "完成"
         finally:
             try:
-                if self._runtime_interface:
-                    await asyncio.to_thread(
-                        script_update.assert_idle, self.script_config.Info.Path
-                    )
-                    script_update.recover_runtime_interface(
-                        self.script_config.Info.Path
-                    )
-                if self._launch_env:
-                    with suppress(OSError):
-                        await asyncio.to_thread(
-                            shutil.rmtree, self._launch_env["WEBVIEW2_USER_DATA_FOLDER"]
-                        )
+                script_config = getattr(self, "script_config", None)
+                if script_config is not None:
+                    ticket = self.config_locks.pop(script_config.uid, None)
+                    if ticket is not None:
+                        await script_config.unlock(ticket)
             finally:
-                try:
-                    script_config = getattr(self, "script_config", None)
-                    if script_config is not None:
-                        ticket = self.config_locks.pop(script_config.uid, None)
-                        if ticket is not None:
-                            await script_config.unlock(ticket)
-                finally:
-                    self._install_access.close()
+                self._install_access.close()
 
     async def on_crash(self, e: Exception):
         self.update_gate_failure = str(e)
