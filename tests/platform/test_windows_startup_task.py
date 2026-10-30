@@ -103,6 +103,7 @@ async def _create_task_xml(monkeypatch: pytest.MonkeyPatch) -> str:
     return captured[0]
 
 
+@pytest.mark.asyncio
 async def test_task_xml_ships_encoded_powershell_and_keeps_task_unprivileged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
