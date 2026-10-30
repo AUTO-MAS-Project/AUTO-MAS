@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 const mocks = vi.hoisted(() => ({
   getState: vi.fn(),
   setWeekly: vi.fn(),
+  setWeeklySelection: vi.fn(),
   setVersionStory: vi.fn(),
 }))
 
@@ -16,6 +17,7 @@ vi.mock('@/api', () => ({
   },
   SetService: {
     setTaskboardWeeklyApiInfoTaskboardWeeklyPut: mocks.setWeekly,
+    setTaskboardWeeklySelectionApiInfoTaskboardWeeklySelectionPut: mocks.setWeeklySelection,
     setTaskboardVersionStoryApiInfoTaskboardVersionStoryPut: mocks.setVersionStory,
   },
 }))
@@ -43,6 +45,7 @@ describe('taskboardState 周常与版本目录', () => {
     setActivePinia(createPinia())
     mocks.getState.mockReset()
     mocks.setWeekly.mockReset()
+    mocks.setWeeklySelection.mockReset()
     mocks.setVersionStory.mockReset()
   })
 
@@ -76,6 +79,37 @@ describe('taskboardState 周常与版本目录', () => {
       done: true,
       week: '2026-10-26',
     })
+    expect(store.isWeeklyDone('genshin')).toBe(true)
+  })
+
+  it('does not save weekly selection before the initial state is loaded', async () => {
+    let resolveLoad: (value: unknown) => void = () => {}
+    mocks.getState.mockReturnValue(
+      new Promise(resolve => {
+        resolveLoad = resolve
+      })
+    )
+    mocks.setWeeklySelection.mockResolvedValue({ code: 200 })
+
+    const store = useTaskboardStateStore()
+    const loading = store.load()
+    await Promise.resolve()
+
+    expect(await store.saveWeeklySelection(['genshin'])).toBeNull()
+    expect(mocks.setWeeklySelection).not.toHaveBeenCalled()
+
+    resolveLoad({
+      ...emptyState(),
+      data: {
+        ...emptyState().data,
+        weekly_games: ['starrail'],
+        weekly: { genshin: { week: '2026-10-19', done_at: '2026-10-20 10:00' } },
+      },
+      weekly_week: '2026-10-19',
+    })
+    await loading
+
+    expect(store.weeklyGames).toEqual(['starrail'])
     expect(store.isWeeklyDone('genshin')).toBe(true)
   })
 

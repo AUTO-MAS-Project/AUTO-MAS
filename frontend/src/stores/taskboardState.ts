@@ -156,7 +156,7 @@ export const useTaskboardStateStore = defineStore('taskboardState', () => {
   }
 
   const saveWeeklySelection = async (games: string[]): Promise<string | null> => {
-    weeklyGeneration += 1
+    if (loading.value || !loaded.value) return null
     try {
       const response = await observeFeature(
         'taskboard_marking_finished',

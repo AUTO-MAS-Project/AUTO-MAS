@@ -2,7 +2,10 @@
   <div class="tb-weekly">
     <div class="tb-weekly-head">
       <div class="tb-weekly-tools">
-        <a-button @click="editOpen = true">
+        <a-button
+          :disabled="taskboardState.loading || !taskboardState.loaded"
+          @click="editOpen = true"
+        >
           <template #icon><EditOutlined /></template>
           {{ t('core.taskboard.weeklyEdit') }}
         </a-button>
