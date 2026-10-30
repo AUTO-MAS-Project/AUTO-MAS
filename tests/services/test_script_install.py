@@ -203,6 +203,44 @@ def test_external_change_during_copy_is_preserved(package, monkeypatch):
     assert (root / "app.exe").read_bytes() == b"old"
 
 
+def test_external_edit_after_final_precheck_rolls_back(package):
+    root, _ = package
+    calls = 0
+
+    def idle():
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            (root / "config/user.json").write_bytes(b"modified after last check")
+
+    with pytest.raises(install.InstallUnsafeError):
+        apply(package, idle=idle)
+    assert (root / "app.exe").read_bytes() == b"old"
+    assert (root / "config/user.json").read_bytes() == b"modified after last check"
+    assert not (install.workspace(root) / "previous").exists()
+
+
+def test_modified_previous_survives_recovery(package):
+    root, _ = package
+    calls = 0
+
+    def idle():
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            (install.workspace(root) / "previous/config/user.json").write_bytes(
+                b"changed during commit"
+            )
+
+    with pytest.raises(install.InstallUnsafeError):
+        apply(package, idle=idle)
+    backup = install.workspace(root) / "previous/config/user.json"
+    assert backup.read_bytes() == b"changed during commit"
+    with pytest.raises(install.InstallUnsafeError):
+        install.recover_install(root, lambda: None, threading.Event())
+    assert backup.read_bytes() == b"changed during commit"
+
+
 def test_same_installation_access_is_exclusive(package):
     root, _ = package
     with install.installation_access(root):

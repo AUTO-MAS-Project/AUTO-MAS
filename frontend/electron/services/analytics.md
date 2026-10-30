@@ -50,7 +50,6 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `update_install_requested` | 立即或稍后安装的选择 | `choice`、`request_outcome`、耗时桶 | 稍后不发安装请求；受理不代表安装器已启动 |
 | `connection_incident_finished` | 非计划断线的一次恢复事故 | `outcome`、`recovery_kind`、`reason_kind`、耗时桶 | 多轮重连归并为一次 |
 
-完整 84 项入口、共享事件、结果边界及验证限制见 [场景覆盖台账](./analyticsCoverage.md)。
 托盘菜单的显式保存复用 `config_write_finished`，由主进程确认配置写入结果；菜单文本、任务标识、草稿编辑及取消均不采集。
 新增事件的字段固定枚举共用 [analyticsFeaturePolicy.ts](./analyticsFeaturePolicy.ts)，调用类型和主进程验证均从该声明派生。
 

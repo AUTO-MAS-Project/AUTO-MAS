@@ -1249,7 +1249,7 @@ class MaaEndConfig(DomainEntry):
     class UpdateFields(ConfigGroup):
         TakeoverEnabled: bool = Field(
             default_factory=lambda: False,
-            description="运行前由 MAS 下载、校验并安装 MaaEnd 更新，托管期间暂停 MXU 更新",
+            description="运行前由 MAS 下载、校验并安装 MaaEnd 官方完整包；不暂停 MXU 自身的更新检查",
         )
         Channel: Literal["stable", "beta"] = Field(
             default_factory=lambda: "stable", description="MaaEnd 更新通道"

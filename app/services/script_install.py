@@ -66,10 +66,10 @@ def installation_access(root: Path) -> Iterator[None]:
                 fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-async def run_worker(function: Callable, *args):
+async def run_worker(function: Callable, *args, **kwargs):
     """取消后等待文件操作确实停止，线程不能在任务退出后继续写入。"""
     cancelled = threading.Event()
-    work = asyncio.create_task(asyncio.to_thread(function, *args, cancelled))
+    work = asyncio.create_task(asyncio.to_thread(function, *args, cancelled, **kwargs))
     try:
         return await asyncio.shield(work)
     except asyncio.CancelledError:
@@ -271,7 +271,15 @@ def recover_install(
             if not root.exists():
                 previous.replace(root)
             elif not ready.exists() and tree_hashes(root, cancelled) == state["files"]:
-                # 整目录已成功切换，校验匹配可完成提交，无需依赖版本号猜测。
+                # 原安装中的外部修改可能仅留在 previous，不能直接删掉。
+                original_files = state.get("original_files")
+                if (
+                    not isinstance(original_files, dict)
+                    or tree_hashes(previous, cancelled) != original_files
+                ):
+                    raise InstallUnsafeError(
+                        "原安装备份发生外部修改，已保留现场，不能自动删除备份"
+                    )
                 _write_state(
                     directory, {"files": state["package_files"]}, "installed.json"
                 )
@@ -363,12 +371,17 @@ def install_package(
         {
             "root": str(root.resolve()),
             "files": expected,
+            "original_files": before,
             "package_files": package_files,
         },
     )
     try:
         root.replace(previous)
         try:
+            if tree_hashes(previous, threading.Event()) != before:
+                raise InstallUnsafeError(
+                    "原安装在切换前被外部修改，已回滚以保留用户数据"
+                )
             ready.replace(root)
         except BaseException:
             previous.replace(root)
@@ -379,6 +392,10 @@ def install_package(
         if tree_hashes(root, threading.Event()) != expected:
             raise InstallUnsafeError("更新后完整性复核失败，已保留原安装备份")
         validate(root)
+        if tree_hashes(previous, threading.Event()) != before:
+            raise InstallUnsafeError(
+                "切换期间原安装备份被外部修改，已保留备份，请手动处理"
+            )
         _write_state(directory, {"files": package_files}, "installed.json")
         shutil.rmtree(previous)
         (directory / "transaction.json").unlink()

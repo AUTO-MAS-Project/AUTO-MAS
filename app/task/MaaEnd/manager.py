@@ -312,7 +312,7 @@ class MaaEndManager(ScriptManagerBase):
         self.controller_protocol = load_maaend_controller_protocol(
             root, str(self.script_config.Game.ControllerType)
         )
-        removed = await asyncio.to_thread(
+        removed = await script_install.run_worker(
             script_update.discard_obsolete_mxu_packages, root
         )
         if removed:
@@ -468,7 +468,11 @@ class MaaEndManager(ScriptManagerBase):
                 # 修复在原有资源预检之前，损坏的旧资源不能堵死恢复入口。
                 await self._prepare_program_update(root)
             elif (script_install.workspace(root) / "installed.json").exists():
-                await script_update.confirm_current_install(root)
+                # 非接管模式沿用 MXU 自行更新的安装。恢复事务仍须完成，
+                # 但旧 MAS 回执不应阻断后续配置或运行，也不重算哈希冒充可信。
+                await script_update.confirm_current_install(
+                    root, verify_receipt=False
+                )
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.warning(f"未通过配置检查: {self.check_result}")

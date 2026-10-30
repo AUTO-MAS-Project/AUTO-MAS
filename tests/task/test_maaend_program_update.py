@@ -215,7 +215,7 @@ def test_discard_old_mxu_package_preserves_cache_and_newer_archives(installation
     future = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.2.0.zip", "v2.2.0")
     different = _cached_mxu_zip(root, "MaaEnd-win-x86_64-test.zip", "v2.0.0", "Other")
     unknown = _cached_mxu_zip(root, "user-backup.zip", "v2.0.0")
-    removed = update.discard_obsolete_mxu_packages(root)
+    removed = update.discard_obsolete_mxu_packages(root, threading.Event())
     assert set(removed) == {old.name, same.name}
     assert not old.exists() and not same.exists()
     assert future.is_file() and different.is_file() and unknown.is_file()
@@ -223,6 +223,52 @@ def test_discard_old_mxu_package_preserves_cache_and_newer_archives(installation
     assert (
         json.loads((root / "interface.json").read_text())["mirrorchyan_rid"] == "MaaEnd"
     )
+
+
+def test_reparse_cache_is_rejected(installation, monkeypatch):
+    root, _ = installation
+    target = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.0.0.zip", "v2.0.0")
+    cache = root / "cache"
+    original_lstat = Path.lstat
+
+    def fake_junction(path, *args, **kwargs):
+        info = original_lstat(path, *args, **kwargs)
+        if path == cache:
+            return SimpleNamespace(st_mode=info.st_mode, st_reparse_tag=1)
+        return info
+
+    monkeypatch.setattr(Path, "lstat", fake_junction)
+    with pytest.raises(script_install.InstallUnsafeError, match="重解析点"):
+        update.discard_obsolete_mxu_packages(root, threading.Event())
+    assert target.is_file()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_cleanup_waits_for_worker(installation, monkeypatch):
+    root, _ = installation
+    target = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.0.0.zip", "v2.0.0")
+    started, resume = threading.Event(), threading.Event()
+    original_is_file = Path.is_file
+
+    def blocked_is_file(path):
+        if path == target:
+            started.set()
+            resume.wait(3)
+        return original_is_file(path)
+
+    monkeypatch.setattr(Path, "is_file", blocked_is_file)
+    task = asyncio.create_task(
+        script_install.run_worker(update.discard_obsolete_mxu_packages, root)
+    )
+    try:
+        assert await asyncio.to_thread(started.wait, 3)
+        task.cancel()
+        assert not task.done()
+    finally:
+        resume.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, 5)
+    assert target.is_file()
 
 
 def test_discard_rejects_unremovable_recognized_archive(installation, monkeypatch):
@@ -237,7 +283,7 @@ def test_discard_rejects_unremovable_recognized_archive(installation, monkeypatc
 
     monkeypatch.setattr(Path, "unlink", deny_delete)
     with pytest.raises(script_install.InstallUnsafeError, match="无法移除"):
-        update.discard_obsolete_mxu_packages(root)
+        update.discard_obsolete_mxu_packages(root, threading.Event())
     assert candidate.is_file()
 
 
@@ -304,6 +350,18 @@ async def test_pending_install_cannot_be_accepted_as_safe_fallback(installation)
     (directory / "transaction.json").write_text("invalid")
     with pytest.raises(script_install.InstallUnsafeError):
         await update.confirm_current_install(root)
+
+
+@pytest.mark.asyncio
+async def test_native_update_does_not_block_non_takeover_configuration(installation):
+    root, config = installation
+    await update.update_before_run(root, config)
+    (root / "interface.json").write_text(
+        json.dumps({"name": "MaaEnd", "version": "v2.3.0", "mirrorchyan_rid": "MaaEnd"})
+    )
+    with pytest.raises(script_install.InstallUnsafeError, match="校验记录"):
+        await update.confirm_current_install(root)
+    await update.confirm_current_install(root, verify_receipt=False)
 
 
 def test_config_defaults_and_partial_update_contract():

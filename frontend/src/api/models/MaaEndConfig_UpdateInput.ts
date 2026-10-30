@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type MaaEndConfig_UpdateInput = {
     /**
-     * 运行前由 MAS 下载、校验并安装 MaaEnd 更新，托管期间暂停 MXU 更新
+     * 运行前由 MAS 下载、校验并安装 MaaEnd 官方完整包；不暂停 MXU 自身的更新检查
      */
     TakeoverEnabled?: (boolean | null);
     /**

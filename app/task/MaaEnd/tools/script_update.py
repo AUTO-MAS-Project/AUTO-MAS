@@ -12,6 +12,7 @@ import asyncio
 import base64
 import json
 import os
+import threading
 import zipfile
 from contextlib import suppress
 from pathlib import Path
@@ -258,7 +259,9 @@ async def update_before_run(
             destination.parent.rmdir()
 
 
-async def confirm_current_install(root: Path) -> None:
+async def confirm_current_install(
+    root: Path, *, verify_receipt: bool = True
+) -> None:
     if (script_install.workspace(root) / "transaction.json").exists():
         raise script_install.InstallUnsafeError(
             "MaaEnd 安装状态尚未确认，不能沿用旧版运行"
@@ -271,7 +274,7 @@ async def confirm_current_install(root: Path) -> None:
             "MaaEnd 当前安装不可识别，请开启更新接管修复"
         ) from error
     receipt = script_install.workspace(root) / "installed.json"
-    if receipt.exists() and not await script_install.run_worker(
+    if verify_receipt and receipt.exists() and not await script_install.run_worker(
         script_install.verify_installed_files, root
     ):
         raise script_install.InstallUnsafeError(
@@ -279,7 +282,9 @@ async def confirm_current_install(root: Path) -> None:
         )
 
 
-def discard_obsolete_mxu_packages(root: Path) -> tuple[str, ...]:
+def discard_obsolete_mxu_packages(
+    root: Path, cancelled: threading.Event
+) -> tuple[str, ...]:
     """仅清理 MXU 缓存根目录内可确认身份且不高于当前版本的完整发行 ZIP。
 
     MXU 启动后会在找不到 downloadSavePath 时自行清除旧 pending。
@@ -287,13 +292,25 @@ def discard_obsolete_mxu_packages(root: Path) -> tuple[str, ...]:
     调用方必须持安装锁，且只能在安装校验后、MXU 启动前调用。
     """
     assert_idle(root)
+    script_install._check_cancel(cancelled)
     installed_version, _ = read_install(root)
     cache = root / "cache"
-    if not cache.is_dir() or cache.is_symlink():
+    if not cache.exists() and not cache.is_symlink():
+        return ()
+    # is_symlink 不覆盖 Windows junction；拒绝所有重解析点。
+    script_install._reject_link(root)
+    script_install._reject_link(cache)
+    if not cache.is_dir():
         return ()
 
     removed: list[str] = []
     for archive_path in cache.iterdir():
+        script_install._check_cancel(cancelled)
+        script_install._reject_link(archive_path)
+        if not archive_path.resolve().is_relative_to(root.resolve()):
+            raise script_install.InstallUnsafeError(
+                "MXU 缓存文件指向安装目录之外，不能自动清理"
+            )
         if (
             archive_path.is_symlink()
             or not archive_path.is_file()
@@ -318,6 +335,7 @@ def discard_obsolete_mxu_packages(root: Path) -> tuple[str, ...]:
         if package_version > installed_version:
             continue
 
+        script_install._check_cancel(cancelled)
         try:
             archive_path.unlink()
         except OSError as error:
