@@ -19,5 +19,9 @@ export type TaskboardWeeklyOut = {
      * 当前周键
      */
     week?: string;
+    /**
+     * 本次操作是否按客户端周键生效
+     */
+    applied?: boolean;
 };
 

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { TaskboardActivity, TaskboardSection } from '@/types/taskboard'
 import { parseActivityTime } from '@/utils/activityTime'
+import { matchesKeyword } from '@/utils/searchMatch'
 import { useTaskboardStateStore } from '@/stores/taskboardState'
 import { useTaskboardData } from './useTaskboardData'
 import GamePickerModal from './components/GamePickerModal.vue'
@@ -43,13 +44,9 @@ const {
 
 const taskboardState = useTaskboardStateStore()
 
-const ACTIVE_PREVIEW_COUNT = 4
-
 const tab = ref<'active' | 'done' | 'archived' | 'weekly' | 'version'>('active')
 const keyword = ref('')
 const gameFilter = ref<string | undefined>(undefined)
-const expanded = ref<Record<string, boolean>>({})
-const activeExpanded = ref(false)
 const editOpen = ref(false)
 
 const enabledOptions = computed(() => {
@@ -70,12 +67,20 @@ const gameCounts = computed(() => {
 
 /** 周常与版本主线也吃顶部搜索和游戏筛选，只把筛后的游戏交给面板。 */
 const panelOptions = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
+  const kw = keyword.value.trim()
   return enabledOptions.value.filter(option => {
     if (gameFilter.value && option.key !== gameFilter.value) return false
     if (!kw) return true
-    return option.name.toLowerCase().includes(kw)
+    return matchesKeyword(option.name, kw)
   })
+})
+
+/* 每周任务是主游戏选择下的子集：未单独勾选时跟随主选择，勾选后只显示被选中的游戏。 */
+const weeklyVisibleOptions = computed(() => {
+  const selected = taskboardState.weeklyGames
+  if (!selected) return panelOptions.value
+  const allowed = new Set(selected)
+  return panelOptions.value.filter(option => allowed.has(option.key))
 })
 
 const pickerOptions = computed(() =>
@@ -83,7 +88,7 @@ const pickerOptions = computed(() =>
 )
 
 const filtered = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
+  const kw = keyword.value.trim()
   return allEvents.value.filter(e => {
     if (!enabledKeySet.value.has(e.gameKey)) return false
     if (stateOf(e) !== tab.value) return false
@@ -91,9 +96,9 @@ const filtered = computed(() => {
     if (!kw) return true
     const doneText = tab.value === 'done' ? doneAtOf(e).toLowerCase() : ''
     return (
-      e.title.toLowerCase().includes(kw) ||
-      gameName(e.gameKey).toLowerCase().includes(kw) ||
-      doneText.includes(kw)
+      matchesKeyword(e.title, kw) ||
+      matchesKeyword(gameName(e.gameKey), kw) ||
+      doneText.includes(kw.toLowerCase())
     )
   })
 })
@@ -125,18 +130,6 @@ const sections = computed<TaskboardSection[]>(() => {
   return items.length ? [{ id: '', name: '', showHead: false, items }] : []
 })
 
-const visibleItems = (sec: TaskboardSection) => {
-  if (!sec.showHead || expanded.value[sec.id]) return sec.items
-  return sec.items.slice(0, 4)
-}
-
-const displayedItems = (sec: TaskboardSection) => {
-  if (tab.value === 'active' && !activeExpanded.value) {
-    return sec.items.slice(0, ACTIVE_PREVIEW_COUNT)
-  }
-  return visibleItems(sec)
-}
-
 const counts = computed(() => {
   const result = { active: 0, done: 0, archived: 0, weekly: 0, version: 0 }
   allEvents.value.forEach(e => {
@@ -147,7 +140,7 @@ const counts = computed(() => {
     result[state] += 1
   })
   const panelKeys = new Set(panelOptions.value.map(option => option.key))
-  result.weekly = panelOptions.value.length
+  result.weekly = weeklyVisibleOptions.value.length
   result.version = Object.values(taskboardState.versionStory).filter(record =>
     panelKeys.has(record.game)
   ).length
@@ -173,7 +166,7 @@ const hintText = computed(() => {
 const total = computed(() => counts.value.active + counts.value.done + counts.value.archived)
 
 const toolbarTotal = computed(() => {
-  if (tab.value === 'weekly') return panelOptions.value.length
+  if (tab.value === 'weekly') return weeklyVisibleOptions.value.length
   if (tab.value === 'version') return counts.value.version
   return total.value
 })
@@ -196,10 +189,6 @@ const saveGames = async (keys: string[]) => {
     gameFilter.value = undefined
   }
   editOpen.value = false
-}
-
-const toggleExpand = (id: string) => {
-  expanded.value[id] = !expanded.value[id]
 }
 </script>
 
@@ -269,7 +258,7 @@ const toggleExpand = (id: string) => {
             </div>
             <div class="tb-grid">
               <TaskboardCard
-                v-for="e in visibleItems(sec)"
+                v-for="e in sec.items"
                 :key="e.id"
                 :event="e"
                 :cover="coverOf(e)"
@@ -288,18 +277,6 @@ const toggleExpand = (id: string) => {
                 @undo="setStatus(e, 'active')"
               />
             </div>
-            <a-button
-              v-if="sec.showHead && sec.items.length > 4"
-              type="link"
-              size="small"
-              @click="toggleExpand(sec.id)"
-            >
-              {{
-                expanded[sec.id]
-                  ? t('core.taskboard.collapse')
-                  : t('core.taskboard.more', { p0: sec.items.length - 4 })
-              }}
-            </a-button>
           </div>
           <a-empty v-if="!sections.length && !loading" :description="emptyText" />
         </a-spin>
@@ -307,7 +284,7 @@ const toggleExpand = (id: string) => {
 
       <WeeklyTasksPanel
         v-else-if="tab === 'weekly'"
-        :options="panelOptions"
+        :options="weeklyVisibleOptions"
         :all-options="enabledOptions"
       />
       <VersionStoryPanel v-else-if="tab === 'version'" :options="panelOptions" />
@@ -331,6 +308,11 @@ const toggleExpand = (id: string) => {
   --tb-grid: repeat(4, minmax(0, 1fr));
   --tb-card-radius: 10px;
   --tb-card-border: var(--ant-color-border-secondary);
+  /* 游戏名/状态标签：保留 60% 表面，背景图能透出约 40%，同时保证小字可读 */
+  --tb-tag-bg: color-mix(in srgb, var(--ant-color-bg-container) 60%, transparent);
+  --tb-card-shadow-hover: 0 4px 14px rgb(0 0 0 / 6%);
+  --tb-card-shadow-active: 0 2px 6px rgb(0 0 0 / 5%);
+  --tb-chip-shadow: 0 2px 6px rgb(0 0 0 / 10%);
   width: 100%;
   max-width: 1600px;
   margin: 0 auto;
@@ -376,7 +358,7 @@ const toggleExpand = (id: string) => {
   align-items: center;
   gap: 8px;
   align-self: flex-start;
-  margin: 0 4px 12px;
+  margin: 0 0 12px;
   padding: 5px 14px;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 999px;

@@ -11,5 +11,9 @@ export type TaskboardWeeklyIn = {
      * 是否标记为已完成
      */
     done: boolean;
+    /**
+     * 客户端看到的周键；为空表示旧客户端
+     */
+    week?: string;
 };
 

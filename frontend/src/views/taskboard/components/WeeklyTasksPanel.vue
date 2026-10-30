@@ -10,10 +10,10 @@
       </div>
     </div>
 
-    <template v-if="weeklyOptions.length">
+    <template v-if="options.length">
       <div class="tb-weekly-grid">
         <a-card
-          v-for="option in weeklyOptions"
+          v-for="option in options"
           :key="option.key"
           class="tb-weekly-card"
           :class="{ done: isDone(option.key) }"
@@ -81,13 +81,6 @@ const taskboardState = useTaskboardStateStore()
 const editOpen = ref(false)
 
 /* 未单独勾选时跟随任务台游戏选择。 */
-const weeklyOptions = computed(() => {
-  const selected = taskboardState.weeklyGames
-  if (!selected) return props.options
-  const allowed = new Set(selected)
-  return props.options.filter(option => allowed.has(option.key))
-})
-
 const weeklySelection = computed(
   () => taskboardState.weeklyGames ?? props.allOptions.map(option => option.key)
 )
@@ -106,8 +99,9 @@ const isSaving = (key: string) => taskboardState.weeklySaving.includes(key)
 
 const toggle = async (key: string) => {
   if (isSaving(key)) return
-  const error = await taskboardState.saveWeekly(key, !isDone(key))
-  if (error) message.error(t('core.taskboard.weeklySaveFailed', { p0: error }))
+  const result = await taskboardState.saveWeekly(key, !isDone(key))
+  if (result.error) message.error(t('core.taskboard.weeklySaveFailed', { p0: result.error }))
+  else if (!result.applied) message.warning(t('core.taskboard.weeklyWeekExpired'))
 }
 
 const hideCover = (event: Event) => {
@@ -142,15 +136,6 @@ const hideCover = (event: Event) => {
   gap: 12px;
 }
 
-.tb-weekly-hint {
-  padding: 5px 14px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 999px;
-  background: var(--app-background-card-bg, var(--ant-color-bg-container));
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
-}
-
 .tb-weekly-grid {
   display: grid;
   grid-template-columns: var(--tb-grid, repeat(4, minmax(0, 1fr)));
@@ -175,7 +160,7 @@ const hideCover = (event: Event) => {
 
 .tb-weekly-card:hover {
   border-color: var(--ant-color-primary-border);
-  box-shadow: 0 4px 14px rgb(0 0 0 / 6%);
+  box-shadow: var(--tb-card-shadow-hover, 0 4px 14px rgb(0 0 0 / 6%));
   transform: translateY(-2px);
 }
 

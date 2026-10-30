@@ -14,6 +14,7 @@ import type {
   TaskboardVersionStoryUpdate,
 } from '@/types/taskboard'
 import { parseActivityTime } from '@/utils/activityTime'
+import { safeCoverUrl } from '@/utils/safeUrl'
 import { useTaskboardStateStore } from '@/stores/taskboardState'
 
 const ARCHIVE_KEEP_DAYS = 45
@@ -168,16 +169,18 @@ export const useTaskboardData = (t: Composer['t']) => {
         version_name: panel.subtitle || panel.version,
         start: panel.startTime,
         end: panel.endTime,
-        cover_url: panel.cover || '',
+        cover_url: safeCoverUrl(panel.cover || ''),
       })
     }
     return out
   })
 
+  /* 与归档一致：先等后端状态读回，避免旧快照在保存之后覆盖新目录。 */
   watch(
-    versionStoryRecords,
-    records => {
-      if (records.length) void taskboardState.saveVersionStory(records)
+    [versionStoryRecords, () => taskboardState.loaded] as const,
+    ([records, ready]) => {
+      if (!ready || !records.length) return
+      void taskboardState.saveVersionStory(records)
     },
     { immediate: true }
   )

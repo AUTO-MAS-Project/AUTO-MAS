@@ -230,6 +230,11 @@ export const featureAnalyticsSchemas = {
     action: ['preset', 'visibility', 'reorder', 'quick_task', 'reset', 'save'] as const,
     layout_preset: ['default', 'custom', 'unknown'] as const,
   }),
+  taskboard_marking_finished: finished({
+    target_kind: ['weekly_task', 'version'] as const,
+    action: ['select', 'mark', 'unmark'] as const,
+    count_bucket: count,
+  }),
   history_query_finished: finished({
     filter_kind: ['default', 'filtered'] as const,
     count_bucket: count,

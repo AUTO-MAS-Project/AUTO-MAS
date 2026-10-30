@@ -88,6 +88,7 @@ import type {
   TaskboardVersionStoryRecord,
 } from '@/types/taskboard'
 import { parseActivityTime } from '@/utils/activityTime'
+import { safeCoverUrl } from '@/utils/safeUrl'
 import VersionStoryTimeline from './VersionStoryTimeline.vue'
 
 interface Props {
@@ -261,7 +262,7 @@ const hideCover = (event: Event) => {
 
 .tb-version-current:hover {
   border-color: var(--ant-color-primary-border);
-  box-shadow: 0 4px 14px rgb(0 0 0 / 6%);
+  box-shadow: var(--tb-card-shadow-hover, 0 4px 14px rgb(0 0 0 / 6%));
   transform: translateY(-2px);
 }
 

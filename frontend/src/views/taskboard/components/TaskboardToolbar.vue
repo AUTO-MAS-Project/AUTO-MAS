@@ -8,12 +8,6 @@
       @update:value="emit('update:keyword', $event)"
     />
     <span class="tb-total">{{ t('core.taskboard.total', { p0: total }) }}</span>
-    <a-tooltip :title="t('core.taskboard.editGamesTip')">
-      <a-button class="tb-edit-btn" @click="emit('edit')">
-        <template #icon><EditOutlined /></template>
-        {{ t('core.taskboard.editGames') }}
-      </a-button>
-    </a-tooltip>
   </div>
 
   <div class="tb-chips">
@@ -55,6 +49,12 @@
       </a-tag>
     </template>
     <span v-else class="tb-no-game">{{ t('core.taskboard.noGames') }}</span>
+    <a-tooltip :title="t('core.taskboard.editGamesTip')">
+      <a-button class="tb-edit-btn" size="large" @click="emit('edit')">
+        <template #icon><PlusOutlined /></template>
+        {{ t('core.taskboard.editGames') }}
+      </a-button>
+    </a-tooltip>
   </div>
 
   <div class="tb-tabs" role="tablist">
@@ -127,9 +127,9 @@ import {
   AppstoreOutlined,
   BranchesOutlined,
   CalendarOutlined,
-  EditOutlined,
   InboxOutlined,
   PlayCircleOutlined,
+  PlusOutlined,
   TrophyOutlined,
 } from '@ant-design/icons-vue'
 import type { TaskboardGameOption } from '@/types/taskboard'
@@ -172,13 +172,21 @@ const changeTab = (value: TabKey) => emit('update:tab', value)
 }
 
 .tb-edit-btn {
-  margin-left: auto;
+  height: 42px;
+  padding: 0 18px;
+  border: 1px dashed var(--ant-color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ant-color-text-secondary);
+  font-size: 16px;
+  box-shadow: none;
 }
 
 .tb-chips,
 .tb-tabs {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   padding: 0 4px;
 }
@@ -239,8 +247,8 @@ const changeTab = (value: TabKey) => emit('update:tab', value)
 .tb-tab.is-selected {
   border-color: var(--ant-color-primary);
   background: var(--ant-color-primary);
-  color: #fff;
-  box-shadow: 0 2px 6px rgb(0 0 0 / 10%);
+  color: var(--ant-color-text-light-solid);
+  box-shadow: var(--tb-chip-shadow, 0 2px 6px rgb(0 0 0 / 10%));
 }
 
 .tb-chip:focus-visible,
@@ -258,7 +266,7 @@ const changeTab = (value: TabKey) => emit('update:tab', value)
 }
 
 .tb-chip.is-selected .tb-chip-dot {
-  background: rgb(255 255 255 / 80%);
+  background: color-mix(in srgb, var(--ant-color-text-light-solid) 80%, transparent);
 }
 
 .tb-tab-end {
@@ -273,7 +281,7 @@ const changeTab = (value: TabKey) => emit('update:tab', value)
 
 .tb-chip.is-selected .tb-chip-count,
 .tb-tab.is-selected .tb-tab-count {
-  color: rgb(255 255 255 / 80%);
+  color: color-mix(in srgb, var(--ant-color-text-light-solid) 80%, transparent);
 }
 
 .tb-chip :deep(.anticon) {

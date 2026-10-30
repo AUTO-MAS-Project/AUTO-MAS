@@ -199,15 +199,22 @@ class TaskboardDoneAtIn(BaseModel):
 class TaskboardWeeklyIn(BaseModel):
     key: str = Field(..., min_length=1, max_length=100, description="任务台游戏标识")
     done: bool = Field(..., description="是否标记为已完成")
+    week: str = Field(
+        default="", max_length=20, description="客户端看到的周键；为空表示旧客户端"
+    )
 
 
 class TaskboardWeeklyOut(OutBase):
     week: str = Field(default="", description="当前周键")
+    applied: bool = Field(default=True, description="本次操作是否按客户端周键生效")
 
 
 class TaskboardVersionStoryIn(BaseModel):
     records: list[TaskboardVersionStoryUpdate] = Field(
         default_factory=list, max_length=500, description="本次取到的版本记录"
+    )
+    observed_at: int = Field(
+        default=0, ge=0, description="客户端观察时间，Unix 毫秒；用于丢弃旧批次"
     )
 
 
@@ -352,8 +359,8 @@ async def set_taskboard_done_at(payload: TaskboardDoneAtIn) -> OutBase:
 )
 async def set_taskboard_weekly(payload: TaskboardWeeklyIn) -> TaskboardWeeklyOut:
     try:
-        week = await set_weekly_done(payload.key, payload.done)
-        return TaskboardWeeklyOut(week=week)
+        week, applied = await set_weekly_done(payload.key, payload.done, payload.week)
+        return TaskboardWeeklyOut(week=week, applied=applied)
     except (OSError, TypeError, ValueError):
         logger.exception("保存任务台每周任务失败")
         return TaskboardWeeklyOut(code=500, status="error", message="保存每周任务失败")
@@ -367,7 +374,7 @@ async def set_taskboard_weekly(payload: TaskboardWeeklyIn) -> TaskboardWeeklyOut
 )
 async def set_taskboard_version_story(payload: TaskboardVersionStoryIn) -> OutBase:
     try:
-        await merge_version_story(payload.records)
+        await merge_version_story(payload.records, payload.observed_at)
         return OutBase()
     except (OSError, TypeError, ValueError):
         logger.exception("保存任务台版本主线失败")

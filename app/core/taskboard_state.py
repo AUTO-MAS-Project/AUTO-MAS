@@ -26,8 +26,15 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from pydantic import ConfigDict, Field
+
 from app.core.config import Config
 from app.models.taskboard import (
+    TASKBOARD_ARCHIVED_MAX_ENTRIES,
+    TASKBOARD_GAMES_MAX_ENTRIES,
+    TASKBOARD_VERSION_STORY_MAX_ENTRIES,
+    TASKBOARD_WEEKLY_MAX_ENTRIES,
+    TaskboardArchivedActivity,
     TaskboardDoneRecord,
     TaskboardState,
     TaskboardVersionStoryRecord,
@@ -44,6 +51,36 @@ TASKBOARD_KEEP_DAYS = 45
 VERSION_STORY_KEEP_PER_GAME = 24
 WEEKLY_RESET_HOUR = 4
 _LOCK = asyncio.Lock()
+
+
+class _StoredArchivedActivity(TaskboardArchivedActivity):
+    model_config = ConfigDict(extra="allow")
+
+
+class _StoredDoneRecord(TaskboardDoneRecord):
+    model_config = ConfigDict(extra="allow")
+
+
+class _StoredWeeklyRecord(TaskboardWeeklyRecord):
+    model_config = ConfigDict(extra="allow")
+
+
+class _StoredVersionStoryRecord(TaskboardVersionStoryRecord):
+    model_config = ConfigDict(extra="allow")
+
+
+class _StoredTaskboardState(TaskboardState):
+    """落盘专用模型：放宽集合上限，读写时保留未来版本写入的未知字段。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    selected_games: list[str] | None = Field(default=None)
+    weekly_games: list[str] | None = Field(default=None)
+    archived: list[_StoredArchivedActivity] = Field(default_factory=list)
+    done_at: dict[str, _StoredDoneRecord] = Field(default_factory=dict)
+    weekly: dict[str, _StoredWeeklyRecord] = Field(default_factory=dict)
+    version_story: dict[str, _StoredVersionStoryRecord] = Field(default_factory=dict)
+    version_story_done: dict[str, _StoredDoneRecord] = Field(default_factory=dict)
 
 
 def _timestamp(value: str) -> float:
@@ -80,8 +117,13 @@ def _now_text() -> str:
     return datetime.now(tz=UTC8).strftime("%Y-%m-%d %H:%M")
 
 
-def _prune(state: TaskboardState) -> TaskboardState:
+def _prune(state: TaskboardState, week: str | None = None) -> TaskboardState:
     """按活动结束时间清理归档、旧周任务和超出保留数量的版本记录。"""
+
+    if state.selected_games is not None:
+        state.selected_games = state.selected_games[:TASKBOARD_GAMES_MAX_ENTRIES]
+    if state.weekly_games is not None:
+        state.weekly_games = state.weekly_games[:TASKBOARD_GAMES_MAX_ENTRIES]
 
     now = datetime.now(tz=UTC8).timestamp()
     cutoff = (datetime.now(tz=UTC8) - timedelta(days=TASKBOARD_KEEP_DAYS)).timestamp()
@@ -92,6 +134,12 @@ def _prune(state: TaskboardState) -> TaskboardState:
         or _timestamp(item.end_time) == 0
         or _timestamp(item.end_time) >= cutoff
     ]
+    if len(state.archived) > TASKBOARD_ARCHIVED_MAX_ENTRIES:
+        # 没有结束时间或无法解析的记录优先保留，其余按结束时间保留最近的。
+        state.archived.sort(
+            key=lambda item: _timestamp(item.end_time) or float("inf"), reverse=True
+        )
+        state.archived = state.archived[:TASKBOARD_ARCHIVED_MAX_ENTRIES]
     state.done_at = {
         key: record
         for key, record in state.done_at.items()
@@ -100,10 +148,14 @@ def _prune(state: TaskboardState) -> TaskboardState:
         or _timestamp(record.end) >= cutoff
     }
 
-    week = weekly_key()
-    state.weekly = {
-        key: record for key, record in state.weekly.items() if record.week == week
-    }
+    current_week = week or weekly_key()
+    weekly_items = [
+        (key, record)
+        for key, record in state.weekly.items()
+        if record.week == current_week
+    ]
+    weekly_items.sort(key=lambda item: item[1].done_at, reverse=True)
+    state.weekly = dict(weekly_items[:TASKBOARD_WEEKLY_MAX_ENTRIES])
 
     grouped: dict[str, list[tuple[str, TaskboardVersionStoryRecord]]] = {}
     for key, record in state.version_story.items():
@@ -114,6 +166,24 @@ def _prune(state: TaskboardState) -> TaskboardState:
         keep_keys.update(key for key, _ in records[:VERSION_STORY_KEEP_PER_GAME])
         # 当前版本即使起始时间较早也不能被数量上限裁掉。
         keep_keys.update(key for key, record in records if _timestamp(record.end) > now)
+
+    # 每个游戏的上限之和仍可能超过总上限，先保当前版本，再按开始时间补足。
+    active_keys = {
+        key for key in keep_keys if _timestamp(state.version_story[key].end) > now
+    }
+    ordered = sorted(
+        keep_keys,
+        key=lambda key: _timestamp(state.version_story[key].start),
+        reverse=True,
+    )
+    keep_keys = set(
+        [key for key in ordered if key in active_keys][
+            :TASKBOARD_VERSION_STORY_MAX_ENTRIES
+        ]
+    )
+    remaining = TASKBOARD_VERSION_STORY_MAX_ENTRIES - len(keep_keys)
+    if remaining > 0:
+        keep_keys.update([key for key in ordered if key not in active_keys][:remaining])
     state.version_story = {
         key: record for key, record in state.version_story.items() if key in keep_keys
     }
@@ -136,19 +206,26 @@ def _read() -> TaskboardState:
 
     path = state_path()
     if not path.exists():
-        return TaskboardState()
+        return _StoredTaskboardState()
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        return _prune(TaskboardState.model_validate(payload))
+        return _prune(_StoredTaskboardState.model_validate(payload))
     except (OSError, ValueError, TypeError):
         logger.warning("任务台状态文件损坏，按空状态处理")
-        return TaskboardState()
+        return _StoredTaskboardState()
 
 
-def _write(state: TaskboardState) -> None:
-    """裁剪后原子写回任务台状态文件。"""
+def _write(state: TaskboardState, week: str | None = None) -> None:
+    """裁剪并校验后原子写回任务台状态文件。"""
 
-    _utils_io.write_file(state_path(), _prune(state).model_dump())
+    pruned = _prune(state, week)
+    try:
+        # 严格模型只用于确认裁剪后的数量仍在上限内；写盘保留 _Stored 模型的未知字段。
+        TaskboardState.model_validate(pruned.model_dump())
+    except ValueError:
+        logger.error("任务台状态超出模型限制，本次写入已拒绝")
+        raise
+    _utils_io.write_file(state_path(), pruned.model_dump())
 
 
 async def load_state() -> TaskboardState:
@@ -197,22 +274,28 @@ async def set_done_at(key: str, record: TaskboardDoneRecord | None) -> None:
         _write(state)
 
 
-async def set_weekly_done(key: str, done: bool) -> str:
-    """记录或删除本周任务完成状态，返回当前周键。"""
+async def set_weekly_done(
+    key: str, done: bool, expected_week: str = ""
+) -> tuple[str, bool]:
+    """记录或删除本周任务完成状态；客户端周键过期时不落盘。"""
 
     async with _LOCK:
         state = _read()
         week = weekly_key()
+        if expected_week and expected_week != week:
+            return week, False
         if done:
             state.weekly[key] = TaskboardWeeklyRecord(week=week, done_at=_now_text())
         else:
             state.weekly.pop(key, None)
-        _write(state)
-        return week
+        _write(state, week)
+        return week, True
 
 
-async def merge_version_story(records: list[TaskboardVersionStoryUpdate]) -> None:
-    """把前端本次取到的版本记录合并进本地目录。"""
+async def merge_version_story(
+    records: list[TaskboardVersionStoryUpdate], observed_at: int = 0
+) -> None:
+    """把前端本次取到的版本记录合并进本地目录，旧批次不覆盖新字段。"""
 
     if not records:
         return
@@ -230,13 +313,20 @@ async def merge_version_story(records: list[TaskboardVersionStoryUpdate]) -> Non
                     **item.model_dump(),
                     first_seen=now_text,
                     last_seen=now_text,
+                    observed_at=observed_at,
                 )
+                continue
+            if existing.observed_at and (
+                not observed_at or observed_at < existing.observed_at
+            ):
                 continue
             existing.version_name = item.version_name or existing.version_name
             existing.start = item.start or existing.start
             existing.end = item.end or existing.end
             existing.cover_url = item.cover_url or existing.cover_url
             existing.last_seen = now_text
+            if observed_at > existing.observed_at:
+                existing.observed_at = observed_at
         _write(state)
 
 

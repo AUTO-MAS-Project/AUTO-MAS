@@ -24,7 +24,7 @@ export type TaskboardVersionStoryRecord = {
      */
     end?: string;
     /**
-     * 版本封面地址
+     * 版本封面地址；仅接受公网 https，非法值置空
      */
     cover_url?: string;
     /**
@@ -35,5 +35,9 @@ export type TaskboardVersionStoryRecord = {
      * 最近一次记录时间
      */
     last_seen?: string;
+    /**
+     * 最近一次字段更新的观察时间，Unix 毫秒
+     */
+    observed_at?: number;
 };
 

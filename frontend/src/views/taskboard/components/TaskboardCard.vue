@@ -20,7 +20,7 @@
     </template>
     <div class="tb-card-body">
       <div v-if="showGame || state === 'archived'" class="tb-card-top">
-        <span class="tb-card-game">{{ gameName }}</span>
+        <a-tag class="tb-card-game">{{ gameName }}</a-tag>
         <a-tag v-if="state === 'archived'" class="tb-status">{{ statusText }}</a-tag>
       </div>
 
@@ -32,11 +32,17 @@
         placement="topLeft"
         :overlay-style="{ maxWidth: '420px' }"
       >
-        <p class="tb-card-desc">{{ event.description }}</p>
+        <div class="tb-card-desc-wrap">
+          <p class="tb-card-desc">{{ event.description }}</p>
+        </div>
       </a-tooltip>
-      <p v-else class="tb-card-desc is-placeholder">
-        {{ state === 'archived' ? t('core.taskboard.stateEnded') : t('core.taskboard.openingNow') }}
-      </p>
+      <div v-else class="tb-card-desc-wrap">
+        <p class="tb-card-desc is-placeholder">
+          {{
+            state === 'archived' ? t('core.taskboard.stateEnded') : t('core.taskboard.openingNow')
+          }}
+        </p>
+      </div>
 
       <div class="tb-card-times">
         <span class="tb-card-time">{{ startText }} – {{ endText }}</span>
@@ -71,8 +77,12 @@
       </div>
 
       <div v-if="state === 'active'" class="tb-card-actions">
+        <a-tag class="tb-status is-bottom">
+          <span class="tb-status-dot" aria-hidden="true"></span>
+          {{ statusText }}
+        </a-tag>
         <a-button
-          size="small"
+          size="middle"
           type="primary"
           :loading="saving"
           :disabled="!ready"
@@ -80,7 +90,6 @@
         >
           {{ t('core.taskboard.complete') }}
         </a-button>
-        <a-tag class="tb-status is-active">{{ statusText }}</a-tag>
       </div>
     </div>
   </a-card>
@@ -143,12 +152,12 @@ const hideCover = (ev: Event) => {
 
 .tb-card:hover {
   border-color: var(--ant-color-primary-border);
-  box-shadow: 0 4px 14px rgb(0 0 0 / 6%);
+  box-shadow: var(--tb-card-shadow-hover, 0 4px 14px rgb(0 0 0 / 6%));
   transform: translateY(-2px);
 }
 
 .tb-card:active {
-  box-shadow: 0 2px 6px rgb(0 0 0 / 5%);
+  box-shadow: var(--tb-card-shadow-active, 0 2px 6px rgb(0 0 0 / 5%));
   transform: translateY(0);
 }
 
@@ -184,10 +193,19 @@ const hideCover = (ev: Event) => {
 }
 
 .tb-card-game {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  margin: 0;
+  padding: 0 12px;
   overflow: hidden;
-  color: var(--ant-color-text-secondary);
+  border-color: var(--ant-color-border-secondary);
+  border-radius: 6px;
+  background: var(--tb-tag-bg, var(--ant-color-bg-container));
+  color: var(--ant-color-text);
   font-size: 12px;
-  line-height: 18px;
+  font-weight: 500;
+  line-height: 30px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -208,20 +226,28 @@ const hideCover = (ev: Event) => {
   color: var(--ant-color-text-secondary);
 }
 
+.tb-card-desc-wrap {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+}
+
 .tb-card-desc {
   display: -webkit-box;
+  width: 100%;
   margin: 0;
   overflow: hidden;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
   line-height: 1.6;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .tb-card-desc.is-placeholder {
   color: var(--ant-color-text-tertiary);
+  text-align: left;
 }
 
 .tb-card-times {
@@ -311,26 +337,36 @@ const hideCover = (ev: Event) => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 24px;
+  min-height: 32px;
   margin-top: auto;
 }
 
 .tb-status {
+  display: inline-flex;
   flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
   margin: 0 0 0 auto;
-  padding: 0 7px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 4px;
-  background: var(--ant-color-fill-quaternary);
-  color: var(--ant-color-text-secondary);
+  padding: 0 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 6px;
+  background: var(--tb-tag-bg, var(--ant-color-bg-container));
+  color: var(--ant-color-text);
   font-size: 12px;
-  line-height: 18px;
+  line-height: 30px;
 }
 
-.tb-status.is-active {
-  border-color: var(--ant-color-primary-border);
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
+.tb-status-dot {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ant-color-primary);
+}
+
+.tb-status.is-bottom {
+  margin: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

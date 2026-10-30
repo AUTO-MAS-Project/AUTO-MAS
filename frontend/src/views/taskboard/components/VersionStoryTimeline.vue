@@ -25,8 +25,8 @@
           <span class="tb-version-dot" />
           <span class="tb-version-cover">
             <img
-              v-if="node.record.cover_url"
-              :src="node.record.cover_url"
+              v-if="safeCoverUrl(node.record.cover_url)"
+              :src="safeCoverUrl(node.record.cover_url)"
               :alt="node.record.version_name"
               loading="lazy"
               referrerpolicy="no-referrer"
@@ -65,6 +65,7 @@ import type {
   TaskboardVersionStoryRecord,
 } from '@/types/taskboard'
 import { parseActivityTime } from '@/utils/activityTime'
+import { safeCoverUrl } from '@/utils/safeUrl'
 
 interface Props {
   groups: TaskboardVersionStoryGroup[]
@@ -164,7 +165,6 @@ const hideCover = (ev: Event) => {
   display: flex;
   flex: 0 0 280px;
   flex-direction: column;
-  overflow: hidden;
   padding: 0;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: var(--tb-card-radius, 10px);
@@ -181,7 +181,7 @@ const hideCover = (ev: Event) => {
 
 .tb-version-card:hover {
   border-color: var(--ant-color-primary-border);
-  box-shadow: 0 4px 14px rgb(0 0 0 / 6%);
+  box-shadow: var(--tb-card-shadow-hover, 0 4px 14px rgb(0 0 0 / 6%));
   transform: translateY(-2px);
 }
 
@@ -226,6 +226,8 @@ const hideCover = (ev: Event) => {
 .tb-version-cover {
   display: block;
   aspect-ratio: 2.2;
+  overflow: hidden;
+  border-radius: calc(var(--tb-card-radius, 10px) - 1px) calc(var(--tb-card-radius, 10px) - 1px) 0 0;
   background: var(--ant-color-fill-secondary);
 }
 
