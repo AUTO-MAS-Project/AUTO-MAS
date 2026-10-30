@@ -200,7 +200,9 @@ class TaskboardWeeklyIn(BaseModel):
     key: str = Field(..., min_length=1, max_length=100, description="任务台游戏标识")
     done: bool = Field(..., description="是否标记为已完成")
     week: str = Field(
-        default="", max_length=20, description="客户端看到的周键；为空表示旧客户端"
+        default="",
+        max_length=20,
+        description="客户端看到的周键；为空时不校验客户端周键",
     )
 
 

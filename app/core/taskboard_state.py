@@ -245,7 +245,7 @@ async def save_selection(games: list[str]) -> None:
 
 
 async def save_weekly_selection(games: list[str]) -> None:
-    """保存每周任务单独勾选的游戏。空列表表示一个都不选；None 表示跟随任务台的勾选。"""
+    """保存每周任务单独勾选的游戏。空列表表示一个都不选；状态为 None 时表示跟随任务台勾选。"""
 
     async with _LOCK:
         state = _read()

@@ -62,6 +62,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { matchesKeyword } from '@/utils/searchMatch'
 import type { TaskboardGameOption } from '@/types/taskboard'
 
 interface PickerOption extends TaskboardGameOption {
@@ -97,9 +98,9 @@ watch(
 )
 
 const filteredOptions = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
+  const kw = keyword.value.trim()
   if (!kw) return props.options
-  return props.options.filter(option => option.name.toLowerCase().includes(kw))
+  return props.options.filter(option => matchesKeyword(option.name, kw))
 })
 
 const toggle = (key: string) => {

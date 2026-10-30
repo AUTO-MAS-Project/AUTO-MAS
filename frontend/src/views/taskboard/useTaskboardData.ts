@@ -13,7 +13,7 @@ import type {
   TaskboardGameOption,
   TaskboardVersionStoryUpdate,
 } from '@/types/taskboard'
-import { parseActivityTime } from '@/utils/activityTime'
+import { formatBeijingDate, parseActivityTime } from '@/utils/activityTime'
 import { safeCoverUrl } from '@/utils/safeUrl'
 import { useTaskboardStateStore } from '@/stores/taskboardState'
 
@@ -298,13 +298,8 @@ export const useTaskboardData = (t: Composer['t']) => {
     stateOf(e) === 'active' && remaining(e) < URGENT_LEFT
 
   /* 一律按北京时间显示：1999 源给的是 UTC（带 Z），直接切字符串会差 8 小时 */
-  const fmtDate = (value?: string) => {
-    const ts = parseActivityTime(value)
-    if (!ts) return t('core.taskboard.undetermined')
-    const date = new Date(ts + 8 * 3600 * 1000)
-    const pad = (n: number) => String(n).padStart(2, '0')
-    return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`
-  }
+  const fmtDate = (value?: string) =>
+    formatBeijingDate(value, true) || t('core.taskboard.undetermined')
 
   const sourceIssues = computed(() => {
     const issues: string[] = []

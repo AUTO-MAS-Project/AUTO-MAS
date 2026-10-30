@@ -19,7 +19,7 @@
       </div>
     </template>
     <div class="tb-card-body">
-      <div v-if="showGame || state === 'archived'" class="tb-card-top">
+      <div class="tb-card-top">
         <a-tag class="tb-card-game">{{ gameName }}</a-tag>
         <a-tag v-if="state === 'archived'" class="tb-status">{{ statusText }}</a-tag>
       </div>
@@ -39,7 +39,11 @@
       <div v-else class="tb-card-desc-wrap">
         <p class="tb-card-desc is-placeholder">
           {{
-            state === 'archived' ? t('core.taskboard.stateEnded') : t('core.taskboard.openingNow')
+            state === 'archived'
+              ? t('core.taskboard.stateEnded')
+              : state === 'done'
+                ? t('core.taskboard.stateDone')
+                : t('core.taskboard.openingNow')
           }}
         </p>
       </div>
@@ -107,7 +111,6 @@ interface Props {
   cover: string
   state: 'active' | 'done' | 'archived' | 'upcoming'
   gameName: string
-  showGame: boolean
   archivedNote: string
   endingSoon: boolean
   startText: string
@@ -129,7 +132,6 @@ const statusText = computed(() => {
   return props.endingSoon ? t('core.taskboard.stateEndingSoon') : t('core.taskboard.stateActive')
 })
 
-/* 标签颜色走主题 token，不用 AntD 预设色，否则换主题色后标签不跟着变。 */
 const hideCover = (ev: Event) => {
   const img = ev.target as HTMLImageElement
   img.style.display = 'none'

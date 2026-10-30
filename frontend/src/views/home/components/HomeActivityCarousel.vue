@@ -437,8 +437,14 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .banner-arrow,
-  .switcher-chip {
+  .switcher-chip,
+  .activity-all-link {
     transition: none;
+  }
+
+  .activity-all-link:hover,
+  .activity-all-link:active {
+    transform: none;
   }
 }
 

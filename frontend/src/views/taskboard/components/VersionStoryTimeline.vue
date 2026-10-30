@@ -17,7 +17,6 @@
             done: node.done,
             current: node.current,
             future: node.future,
-            ended: node.ended,
           }"
           :disabled="isSaving(node.record)"
           @click="emit('toggle', node.record)"
@@ -64,7 +63,7 @@ import type {
   TaskboardVersionStoryNode,
   TaskboardVersionStoryRecord,
 } from '@/types/taskboard'
-import { parseActivityTime } from '@/utils/activityTime'
+import { formatBeijingDate, parseActivityTime } from '@/utils/activityTime'
 import { safeCoverUrl } from '@/utils/safeUrl'
 
 interface Props {
@@ -82,12 +81,7 @@ const isSaving = (record: TaskboardVersionStoryRecord) =>
 
 const DAY = 86_400_000
 
-const formatDate = (value: string) => {
-  const timestamp = parseActivityTime(value)
-  if (!timestamp) return ''
-  const date = new Date(timestamp)
-  return `${date.getMonth() + 1}/${date.getDate()}`
-}
+const formatDate = (value: string) => formatBeijingDate(value)
 
 /** 当前版本显示「截止 X · 还有 N 天」，其余显示起止日期。 */
 const footText = (node: TaskboardVersionStoryNode) => {
@@ -316,6 +310,17 @@ const hideCover = (ev: Event) => {
     gap: 8px;
     border-right: none;
     padding-right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tb-version-card {
+    transition: none;
+  }
+
+  .tb-version-card:hover,
+  .tb-version-card:active {
+    transform: none;
   }
 }
 </style>

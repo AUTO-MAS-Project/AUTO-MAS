@@ -12,7 +12,7 @@ export type TaskboardWeeklyIn = {
      */
     done: boolean;
     /**
-     * 客户端看到的周键；为空表示旧客户端
+     * 客户端看到的周键；为空时不校验客户端周键
      */
     week?: string;
 };

@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import type { TaskboardActivity, TaskboardSection } from '@/types/taskboard'
+import type { TaskboardActivity } from '@/types/taskboard'
 import { parseActivityTime } from '@/utils/activityTime'
 import { matchesKeyword } from '@/utils/searchMatch'
 import { useTaskboardStateStore } from '@/stores/taskboardState'
@@ -87,14 +87,13 @@ const pickerOptions = computed(() =>
   gameMetas.value.map(option => ({ ...option, activeCount: countByOption(option) }))
 )
 
-const filtered = computed(() => {
+const searchMatchedEvents = computed(() => {
   const kw = keyword.value.trim()
   return allEvents.value.filter(e => {
     if (!enabledKeySet.value.has(e.gameKey)) return false
-    if (stateOf(e) !== tab.value) return false
     if (gameFilter.value && e.gameKey !== gameFilter.value) return false
     if (!kw) return true
-    const doneText = tab.value === 'done' ? doneAtOf(e).toLowerCase() : ''
+    const doneText = doneAtOf(e).toLowerCase()
     return (
       matchesKeyword(e.title, kw) ||
       matchesKeyword(gameName(e.gameKey), kw) ||
@@ -102,6 +101,8 @@ const filtered = computed(() => {
     )
   })
 })
+
+const filtered = computed(() => searchMatchedEvents.value.filter(e => stateOf(e) === tab.value))
 
 const doneTime = (event: TaskboardActivity) => {
   const text = doneAtOf(event)
@@ -118,23 +119,19 @@ const doneEvents = computed(() =>
 const byEndAsc = (a: TaskboardActivity, b: TaskboardActivity) =>
   parseActivityTime(a.end_time) - parseActivityTime(b.end_time)
 
-const sections = computed<TaskboardSection[]>(() => {
+const items = computed<TaskboardActivity[]>(() => {
   /* 已达成按完成时间从近到远；进行中与已归档按结束时间从近到远。 */
   if (tab.value === 'archived') {
-    const items = [...filtered.value].sort(
+    return [...filtered.value].sort(
       (a, b) => parseActivityTime(b.end_time) - parseActivityTime(a.end_time)
     )
-    return items.length ? [{ id: '', name: '', showHead: false, items }] : []
   }
-  const items = tab.value === 'done' ? [...doneEvents.value] : [...filtered.value].sort(byEndAsc)
-  return items.length ? [{ id: '', name: '', showHead: false, items }] : []
+  return tab.value === 'done' ? [...doneEvents.value] : [...filtered.value].sort(byEndAsc)
 })
 
 const counts = computed(() => {
   const result = { active: 0, done: 0, archived: 0, weekly: 0, version: 0 }
-  allEvents.value.forEach(e => {
-    if (!enabledKeySet.value.has(e.gameKey)) return
-    if (gameFilter.value && e.gameKey !== gameFilter.value) return
+  searchMatchedEvents.value.forEach(e => {
     const state = stateOf(e)
     if (state === 'upcoming') return
     result[state] += 1
@@ -155,7 +152,7 @@ const emptyText = computed(() =>
   tab.value === 'done' ? t('core.taskboard.doneEmpty') : t('core.taskboard.empty')
 )
 
-/* 五个页签共用同一行说明，位置固定，避免各面板自己排版导致对不齐。 */
+/* 进行中、已达成、已归档共用一行说明；每周任务与版本主线不显示。 */
 const hintText = computed(() => {
   if (tab.value === 'active') return t('core.taskboard.activeHint')
   if (tab.value === 'done') return t('core.taskboard.doneHint')
@@ -251,20 +248,15 @@ const saveGames = async (keys: string[]) => {
 
       <template v-if="isActivityTab">
         <a-spin :spinning="loading && !allEvents.length" class="tb-spin">
-          <div v-for="sec in sections" :key="sec.id" class="tb-group">
-            <div v-if="sec.showHead" class="tb-group-head">
-              <span class="tb-game-name">{{ sec.name }}</span>
-              <span class="tb-game-count">{{ sec.items.length }}</span>
-            </div>
+          <div class="tb-group">
             <div class="tb-grid">
               <TaskboardCard
-                v-for="e in sec.items"
+                v-for="e in items"
                 :key="e.id"
                 :event="e"
                 :cover="coverOf(e)"
                 :state="stateOf(e)"
                 :game-name="gameName(e.gameKey)"
-                :show-game="!sec.showHead"
                 :archived-note="archivedNoteOf(e)"
                 :ending-soon="endingSoonOf(e)"
                 :start-text="fmtDate(e.start_time)"
@@ -278,7 +270,7 @@ const saveGames = async (keys: string[]) => {
               />
             </div>
           </div>
-          <a-empty v-if="!sections.length && !loading" :description="emptyText" />
+          <a-empty v-if="!items.length && !loading" :description="emptyText" />
         </a-spin>
       </template>
 
@@ -302,17 +294,6 @@ const saveGames = async (keys: string[]) => {
 
 <style scoped>
 .taskboard-container {
-  --tb-gap: 16px;
-  --tb-cover-ratio: 2.2;
-  /* 卡片网格列模板：所有面板共用，保证每行最多 4 张且永不横向溢出 */
-  --tb-grid: repeat(4, minmax(0, 1fr));
-  --tb-card-radius: 10px;
-  --tb-card-border: var(--ant-color-border-secondary);
-  /* 游戏名/状态标签：保留 60% 表面，背景图能透出约 40%，同时保证小字可读 */
-  --tb-tag-bg: color-mix(in srgb, var(--ant-color-bg-container) 60%, transparent);
-  --tb-card-shadow-hover: 0 4px 14px rgb(0 0 0 / 6%);
-  --tb-card-shadow-active: 0 2px 6px rgb(0 0 0 / 5%);
-  --tb-chip-shadow: 0 2px 6px rgb(0 0 0 / 10%);
   width: 100%;
   max-width: 1600px;
   margin: 0 auto;
@@ -378,24 +359,6 @@ const saveGames = async (keys: string[]) => {
 
 .tb-group {
   margin-bottom: 24px;
-}
-
-.tb-group-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 4px 10px;
-}
-
-.tb-game-name {
-  font-weight: 700;
-  font-size: 16px;
-  color: var(--ant-color-text);
-}
-
-.tb-game-count {
-  font-size: 12px;
-  color: var(--ant-color-text-secondary);
 }
 
 .tb-grid {

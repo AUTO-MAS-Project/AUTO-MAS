@@ -16,14 +16,6 @@ export interface TaskboardGameOption {
   cover: string
 }
 
-/** 列表分区：进行中/已达成是一个扁平分区，已归档按游戏分组 */
-export interface TaskboardSection {
-  id: string
-  name: string
-  showHead: boolean
-  items: TaskboardActivity[]
-}
-
 /** 每周任务的本地状态：key 为任务台游戏标识 */
 export interface TaskboardWeeklyRecord {
   week: string
@@ -62,6 +54,4 @@ export interface TaskboardVersionStoryGroup {
   option: TaskboardGameOption
   records: TaskboardVersionStoryNode[]
   current: TaskboardVersionStoryNode
-  doneCount: number
-  total: number
 }

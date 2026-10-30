@@ -10,43 +10,45 @@
       </div>
     </div>
 
-    <template v-if="options.length">
-      <div class="tb-weekly-grid">
-        <a-card
-          v-for="option in options"
-          :key="option.key"
-          class="tb-weekly-card"
-          :class="{ done: isDone(option.key) }"
-          :body-style="{ padding: '10px 12px' }"
-          @click="toggle(option.key)"
-        >
-          <template #cover>
-            <div class="tb-weekly-cover">
-              <img
-                v-if="option.cover"
-                :src="option.cover"
-                :alt="option.name"
-                loading="lazy"
-                referrerpolicy="no-referrer"
-                @error="hideCover"
-              />
-              <a-checkbox
-                class="tb-weekly-check"
-                :checked="isDone(option.key)"
-                :disabled="isSaving(option.key)"
-                @click.stop
-                @change="toggle(option.key)"
-              />
+    <a-spin :spinning="taskboardState.loading" class="tb-weekly-spin">
+      <template v-if="options.length">
+        <div class="tb-weekly-grid">
+          <a-card
+            v-for="option in options"
+            :key="option.key"
+            class="tb-weekly-card"
+            :class="{ done: isDone(option.key) }"
+            :body-style="{ padding: '10px 12px' }"
+            @click="toggle(option.key)"
+          >
+            <template #cover>
+              <div class="tb-weekly-cover">
+                <img
+                  v-if="option.cover"
+                  :src="option.cover"
+                  :alt="option.name"
+                  loading="lazy"
+                  referrerpolicy="no-referrer"
+                  @error="hideCover"
+                />
+                <a-checkbox
+                  class="tb-weekly-check"
+                  :checked="isDone(option.key)"
+                  :disabled="isSaving(option.key)"
+                  @click.stop
+                  @change="toggle(option.key)"
+                />
+              </div>
+            </template>
+            <div class="tb-weekly-body">
+              <div class="tb-weekly-name" :title="option.name">{{ option.name }}</div>
+              <div class="tb-weekly-hint">{{ t('core.taskboard.weeklyCycle') }}</div>
             </div>
-          </template>
-          <div class="tb-weekly-body">
-            <div class="tb-weekly-name" :title="option.name">{{ option.name }}</div>
-            <div class="tb-weekly-hint">{{ t('core.taskboard.weeklyCycle') }}</div>
-          </div>
-        </a-card>
-      </div>
-    </template>
-    <a-empty v-else :description="t('core.taskboard.weeklyEmpty')" />
+          </a-card>
+        </div>
+      </template>
+      <a-empty v-else-if="!taskboardState.loading" :description="t('core.taskboard.weeklyEmpty')" />
+    </a-spin>
 
     <GamePickerModal
       :open="editOpen"
@@ -111,6 +113,11 @@ const hideCover = (event: Event) => {
 </script>
 
 <style scoped>
+.tb-weekly-spin {
+  display: block;
+  min-height: 120px;
+}
+
 .tb-weekly-head {
   display: flex;
   align-items: center;
@@ -212,3 +219,6 @@ const hideCover = (event: Event) => {
   color: var(--ant-color-text-secondary);
 }
 </style>
+
+@media (prefers-reduced-motion: reduce) { .tb-weekly-card, .tb-weekly-cover img { transition: none;
+} .tb-weekly-card:hover, .tb-weekly-card:active { transform: none; } }

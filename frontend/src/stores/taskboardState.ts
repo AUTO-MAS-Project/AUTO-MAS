@@ -2,6 +2,7 @@ import { reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { ApiError, GetService, SetService, type TaskboardArchivedActivity } from '@/api'
 import { analyticsCountBucket } from '@/utils/analytics'
+import { beijingNowText } from '@/utils/activityTime'
 import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 import { nextWeekResetAt, weekKeyOf } from '@/utils/taskboardWeek'
 import type {
@@ -26,11 +27,7 @@ const errorText = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error)
 }
 
-const nowText = () => {
-  const date = new Date()
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
+const nowText = () => beijingNowText()
 
 const toActivity = (row: TaskboardArchivedActivity): TaskboardActivity => ({
   id: row.id,
@@ -159,6 +156,7 @@ export const useTaskboardStateStore = defineStore('taskboardState', () => {
   }
 
   const saveWeeklySelection = async (games: string[]): Promise<string | null> => {
+    weeklyGeneration += 1
     try {
       const response = await observeFeature(
         'taskboard_marking_finished',

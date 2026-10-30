@@ -13,65 +13,69 @@
       </template>
     </a-alert>
 
-    <template v-if="groups.length">
-      <section class="tb-version-block">
-        <div class="tb-version-block-head">
-          <span class="tb-version-section-title">{{ t('core.taskboard.versionCurrent') }}</span>
-          <span class="tb-version-section-hint">{{ t('core.taskboard.versionClickToMark') }}</span>
-        </div>
-        <div class="tb-version-current-row">
-          <button
-            v-for="card in currentCards"
-            :key="card.option.key"
-            type="button"
-            class="tb-version-current"
-            :class="{ done: card.node.done }"
-            :disabled="isSaving(card.node.record)"
-            @click="toggle(card.node.record)"
-          >
-            <span class="tb-version-current-cover">
-              <img
-                v-if="card.node.record.cover_url"
-                :src="card.node.record.cover_url"
-                :alt="card.option.name"
-                loading="lazy"
-                referrerpolicy="no-referrer"
-                @error="hideCover"
-              />
-            </span>
-            <span class="tb-version-current-main">
-              <span class="tb-version-current-name">{{ card.option.name }}</span>
-              <span class="tb-version-current-version">{{ card.node.record.version }}</span>
-              <span v-if="daysLeftOf(card.node.record) !== null" class="tb-version-current-days">
-                {{ t('core.taskboard.versionDaysLeft', { p0: daysLeftOf(card.node.record) }) }}
+    <a-spin :spinning="taskboardState.loading" class="tb-version-spin">
+      <template v-if="groups.length">
+        <section class="tb-version-block">
+          <div class="tb-version-block-head">
+            <span class="tb-version-section-title">{{ t('core.taskboard.versionCurrent') }}</span>
+            <span class="tb-version-section-hint">{{
+              t('core.taskboard.versionClickToMark')
+            }}</span>
+          </div>
+          <div class="tb-version-current-row">
+            <button
+              v-for="card in currentCards"
+              :key="card.option.key"
+              type="button"
+              class="tb-version-current"
+              :class="{ done: card.node.done }"
+              :disabled="isSaving(card.node.record)"
+              @click="toggle(card.node.record)"
+            >
+              <span class="tb-version-current-cover">
+                <img
+                  v-if="card.node.record.cover_url"
+                  :src="card.node.record.cover_url"
+                  :alt="card.option.name"
+                  loading="lazy"
+                  referrerpolicy="no-referrer"
+                  @error="hideCover"
+                />
               </span>
-            </span>
-            <span class="tb-version-mark" :class="{ on: card.node.done }">
-              <CheckSquareFilled v-if="card.node.done" />
-              {{
-                card.node.done ? t('core.taskboard.versionDone') : t('core.taskboard.versionMark')
-              }}
-            </span>
-          </button>
-        </div>
-      </section>
+              <span class="tb-version-current-main">
+                <span class="tb-version-current-name">{{ card.option.name }}</span>
+                <span class="tb-version-current-version">{{ card.node.record.version }}</span>
+                <span v-if="daysLeftOf(card.node.record) !== null" class="tb-version-current-days">
+                  {{ t('core.taskboard.versionDaysLeft', { p0: daysLeftOf(card.node.record) }) }}
+                </span>
+              </span>
+              <span class="tb-version-mark" :class="{ on: card.node.done }">
+                <CheckSquareFilled v-if="card.node.done" />
+                {{
+                  card.node.done ? t('core.taskboard.versionDone') : t('core.taskboard.versionMark')
+                }}
+              </span>
+            </button>
+          </div>
+        </section>
 
-      <section class="tb-version-block">
-        <div class="tb-version-block-head">
-          <span class="tb-version-section-title">{{ t('core.taskboard.versionTimeline') }}</span>
-          <span class="tb-version-section-hint">
-            {{ t('core.taskboard.versionTimelineNote') }} ·
-            {{ t('core.taskboard.versionLocalNote') }}
-          </span>
-        </div>
-        <VersionStoryTimeline :groups="groups" @toggle="toggle" />
-      </section>
-    </template>
+        <section class="tb-version-block">
+          <div class="tb-version-block-head">
+            <span class="tb-version-section-title">{{ t('core.taskboard.versionTimeline') }}</span>
+            <span class="tb-version-section-hint">
+              {{ t('core.taskboard.versionTimelineNote') }} ·
+              {{ t('core.taskboard.versionLocalNote') }}
+            </span>
+          </div>
+          <VersionStoryTimeline :groups="groups" @toggle="toggle" />
+        </section>
+      </template>
 
-    <div v-else class="tb-version-empty">
-      <a-empty :description="t('core.taskboard.versionEmpty')" />
-      <div class="tb-version-empty-hint">{{ t('core.taskboard.versionLocalOnly') }}</div>
-    </div>
+      <div v-else-if="!taskboardState.loading" class="tb-version-empty">
+        <a-empty :description="t('core.taskboard.versionEmpty')" />
+        <div class="tb-version-empty-hint">{{ t('core.taskboard.versionLocalOnly') }}</div>
+      </div>
+    </a-spin>
   </div>
 </template>
 
@@ -87,7 +91,7 @@ import type {
   TaskboardVersionStoryNode,
   TaskboardVersionStoryRecord,
 } from '@/types/taskboard'
-import { parseActivityTime } from '@/utils/activityTime'
+import { beijingNowText, parseActivityTime } from '@/utils/activityTime'
 import { safeCoverUrl } from '@/utils/safeUrl'
 import VersionStoryTimeline from './VersionStoryTimeline.vue'
 
@@ -104,11 +108,7 @@ const props = defineProps<Props>()
 const { t } = useI18n()
 const taskboardState = useTaskboardStateStore()
 
-const nowText = () => {
-  const date = new Date()
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
+const nowText = () => beijingNowText()
 
 const isDone = (record: TaskboardVersionStoryRecord) =>
   taskboardState.isVersionStoryDone(`${record.game}|${record.version}`)
@@ -150,8 +150,6 @@ const groups = computed<TaskboardVersionStoryGroup[]>(() => {
         option,
         records: nodes,
         current: nodes[0],
-        doneCount: nodes.filter(node => node.done).length,
-        total: nodes.length,
       },
     ]
   })
@@ -195,6 +193,11 @@ const hideCover = (event: Event) => {
 </script>
 
 <style scoped>
+.tb-version-spin {
+  display: block;
+  min-height: 120px;
+}
+
 .tb-version {
   display: flex;
   flex-direction: column;
@@ -361,5 +364,16 @@ const hideCover = (event: Event) => {
 .tb-version-empty-hint {
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tb-version-current {
+    transition: none;
+  }
+
+  .tb-version-current:hover,
+  .tb-version-current:active {
+    transform: none;
+  }
 }
 </style>
