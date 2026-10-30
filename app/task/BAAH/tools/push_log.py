@@ -43,7 +43,7 @@ BAAH 没有单任务失败日志：任务内抛出异常会直接终止整个运
 
 import re
 
-from app.log_box.logtype import LogType
+from app.log_box import LogSpec, LogType
 
 ## BAAH 的任务目录名由字母、数字与下划线组成，用它把任务名从整行里切出来。
 ## 只截取任务名本身，整行中排在它后面的其它文本不会被带进节点名
@@ -147,3 +147,11 @@ def baah_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
     return [
         (LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node]) for node in order
     ]
+
+
+BAAH_LOG_SPEC = LogSpec(
+    rules=tuple(BAAH_PUSH_RULES),
+    postprocessor=baah_resolve,
+    error_message="BAAH log_box 收尾推送失败（baah_resolve）",
+    failure_text="⚠️ 节点采集失败",
+)

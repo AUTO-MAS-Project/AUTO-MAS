@@ -52,7 +52,7 @@ log_box 是**进程无关**的组件，结果落点由**宿主**决定：
 - **宿主 = MAS 进程**（专项适配器内实例化）：构造时注入 `sink(log_type, text, ts)`
   直接写 `cur_user_item.push_log`，对适配器完全透明。**这是当前唯一已接通的宿主路径**。
   节点详情上调度台有两条通用通道，都不在 sink 里做：① 运行期——manager 报告聚合后调
-  `app/tools/push_log.py` 的 `mirror_report_to_dispatch(script_info, report_text)`
+  `app/log_box/report.py` 的 `mirror_report_to_dispatch(script_info, report_text)`
   把报告正文整块镜像进调度台日志；② 完成后——任务完成事件的结果文本由 task_manager
   用 `build_task_result_text` 组装（前端完成时会用这段文本整体替换日志面板，
   **这是任务结束后的最终展示面**）。两者与推送报告同一份 `build_user_result_text`
@@ -70,6 +70,55 @@ log_box 是**进程无关**的组件，结果落点由**宿主**决定：
 > 作为可交付使用**；有真实脚本宿主需求时再落地该改造。
 
 两者共用同一套采集/前置/匹配/后置逻辑，仅「结果如何落进 push_log」这一跳因宿主而异。
+
+## 声明式用户会话
+
+`push_log.py` 用 `LogSpec` 集中声明规则、前后处理和已有失败提示：
+
+```python
+from app.log_box import LogSpec
+
+LOG_SPEC = LogSpec(
+    rules=tuple(PUSH_RULES),
+    postprocessor=resolve,
+    error_message="专项节点采集失败",
+    failure_text="⚠️ 节点采集失败",  # 沿用该专项原有文案；原来无提示时不填
+)
+```
+
+任务准备时绑定用户和日志位置，收尾时等待交付：
+
+```python
+self.log_collect = log_box.get_user_session(
+    LOG_SPEC,
+    user=self.cur_user_item,
+    mode=self.cur_user_config.Notify.PushLogMode,
+    paths=[self.script_log_path],
+    rotated_name="ok-script.%Y-%m-%d.log",
+)
+# 日志来源声明后再启动脚本，避免把本轮开头的日志当作历史跳过。
+# final_task：返回前已交付最终节点，后续报告继续使用原有公共渲染。
+await self.log_collect.close()
+```
+
+- box 设置用户的展示模式、注册规则、写入 `push_log`，专项不再自写 sink。
+- 关闭模式不创建底层采集器、不编译规则、不读取文件。
+- 来源在绑定时记录偏移；读取、匹配和前后处理在收尾线程执行，交付回到宿主事件循环。
+- 处理器必须是已加载的纯转换函数，不访问宿主配置、任务状态或在函数内冷导入模块。
+- 初始化、处理和交付异常由会话隔离；失败提示只输出一次，不改变脚本结果。
+- 并发和重复收尾共享同一次处理；取消等待时先交付已开始的收尾结果，再传播取消。
+- 这是线程卸载，不提供正则硬超时或强制终止线程；保持等待交付以避免报告漏节点。
+- NTE、OK-WW、BAAH、MaaEnd 和 ZZZ-OD 的任务节点主链路已迁入托管会话。
+- OK-WW 通过 `TranslationSpec(paths=..., supplements=..., base=...)` 声明词表，box 负责加载、前置翻译与收尾释放；补充词表路径沿用相对当前工作目录或绝对路径的语义。
+- 采集开关缺省跟随用户展示模式；`enabled=` 可承接 BAAH 原有脚本级采集开关，不改其配置语义。
+- MaaEnd 仅迁移任务节点，独立的材料统计与通知仍保留原链路；阶段临时日志必须等会话交付后才清理。
+- 专项仍可声明自己的前后处理器，负责上游特有的过滤、归并和原因整理；box 不判断脚本成败，也不增加专项类型分支。
+- 动态账号使用 `LogSpec.bind`：box 在收尾开始时、宿主事件循环上调用一次，返回 `LogBinding(postprocessor=..., deliver=...)`。
+- bind 应复制本轮目录、实例名等解析输入；postprocessor 只消费这些快照和采集项，不能在线程内读取可变任务状态或冷导入模块。
+- deliver 在解析完成后回到宿主线程执行，只做用户归属和内存交付，不发送通知、不改脚本判定；未提供时沿用默认用户 sink。
+- 专项可以自定义 bind、postprocessor、deliver，但不自行管理线程、重复收尾或异常兜底；并发或重复关闭仍只绑定与交付一次。
+- ZZZ-OD 的目录、实例名和用户映射在运行期才确定，由 `ZzzLogSnapshot` 在收尾提供；保留已知账号去前缀、关闭目标丢弃、未知或无归属行回退触发用户的现有语义。
+- `enabled=` 保留多账号采集开关：触发用户关闭但任一参与用户需要详情时仍采集，全员关闭时连 bind 也不调用。
 
 ## get_collect 工厂
 
@@ -99,6 +148,43 @@ col = log_box.get_collect(
 
 > 单次任务日志量大时，结果是一次性入内存的（`close()` 时整体采集）。专项若运行极长、
 > 日志极大，需自行评估该内存占用（当前 okww 单会话日志量在可接受范围）。
+
+## 独立结构化会话
+
+新接入用 `EntrySpec(bind=...)` 表达非日志来源；`get_entry_session(spec, enabled=True)`
+无需用户对象或文件路径。bind 在宿主固定快照，返回 `LogBinding(read=..., deliver=...)`，
+两项均必需。read 在线程返回 `list[LogEntry]`，deliver 在宿主写入已有报告目标。
+不发送通知，不改变订阅。绑定/读取/交付错误隔离，关闭幂等、取消先等待交付再传播。
+需要默认用户落点时用 `get_user_session(EntrySpec(...), user=..., mode=...)`，
+BGI 已使用此入口。旧 `LogSpec(source="entries")` 保留兼容。
+
+## 结构化结果来源
+
+已有权威解析器的专项无需再构造一套逐行规则。`LogSpec(source="entries", rules=())`
+通过 `bind` 返回 `LogBinding(read=...)`，`read` 返回 `list[LogEntry]`：
+
+```python
+from app.log_box import LogBinding, LogSpec
+from app.log_box.results import LogEntry
+
+spec = LogSpec(
+    rules=(),
+    source="entries",
+    bind=lambda: LogBinding(read=lambda: [LogEntry("普通", "✅ 成功: 邮件", 1.0)]),
+)
+session = log_box.get_user_session(spec, user=user, mode=user.push_log_mode)
+await session.close()
+```
+
+`bind` 在收尾的宿主线程固定快照；`read` 在工作线程执行，只读取快照，
+不能写用户或任务状态。默认交付与日志来源一样写入用户 `push_log`，也可复用
+`LogBinding.deliver` 自适配账号路由。结构化来源不创建文件采集器，不读取环境变量
+指定的日志，不支持文本规则、翻译或后处理；解析与交付异常由会话隔离。
+重复关闭和取消等待沿用日志会话契约，三态展示和通知订阅范围不变。
+
+BetterGI 复用 `one_dragon_report` 已产出的分步表及 `steps_to_push_log` 转换，
+只把节点转换与交付交给会话；原解析器、重试取轮、统计通知全文仍由专项维护。
+这不要求其他特殊专项放弃自己的解析或路由。
 
 ## 日志轮转补偿（跨零点必读）
 
@@ -162,7 +248,7 @@ MAS 有两套日志推送配置面，**保持两套并存、分工明确**，不
 | 通用 log_box | 专项 / 由 MAS 驱动的可编辑 `.py` 脚本 | 代码内建（专项 `push_log.py` / `collect`） | 适配器开发者 / 脚本作者 |
 
 判据：**通用脚本走 web UI 配置，专项才用 log_box 内建**。两者命中后都汇入
-`cur_user_item.push_log`，由 `app/tools/push_log.py` 统一聚合推送。通用侧不要迁去
+`cur_user_item.push_log`，由 `app/log_box/report.py` 统一聚合推送。通用侧不要迁去
 log_box（会失去可视化 UI），log_box 也不要反向暴露 web 配置（会破坏内建纯度）。
 
 ## 日志类型与推送时机语义
@@ -326,8 +412,16 @@ def resolve(results):
 
 ## 推送落地：聚合（通用工具）
 
+公共实现归 `app/log_box/report.py` 所有，`app/tools/push_log.py` 只保留兼容导出，
+不要在两处分别实现。`results.py` 定义不可变的 `LogEntry` 与节点状态 `Node`；
+存量二元组/三元组在报告边界转换，原始文本、日志类型与时间戳保留。
+`pipeline.py` 只执行文本规则与前后处理，`collect.py` 管理文件来源、会话与 sink。
+存量 `get_collect` 的同步 `open/close`、异常传播和宿主兜底仍然保留；
+声明式用户会话单独托管异步收尾与异常隔离，不改变任何通知订阅范围。
+脚本宿主通道仍未端到端接通。
+
 push_log 落进 `cur_user_item.push_log`（`list[tuple]`，元素为 `(log_type, text)`
-或 `(log_type, text, ts)`）后，聚合统一走 `app/tools/push_log.py` 的
+或 `(log_type, text, ts)`）后，聚合统一走 `app/log_box/report.py` 的
 `build_user_result_text`，专项**不要**自行拼接实现：
 
 - `build_user_result_text(users, has_uncompleted)`：按用户交错组装「用户结果行 +
@@ -399,3 +493,19 @@ col.close()  # 脚本正常退出时 atexit 也会自动收尾
    「改名旧文件后新建」式滚动生效；脚本若删除重建或原地截断日志，旧内容无从
    找回（有 inode 时声明模板也不猜名字，宁缺勿错）。仅无 inode 文件系统需要
    声明 `rotated_name`，接入前按「日志轮转补偿」确认滚动方式。
+
+
+## 可查询的收尾结果
+
+两种托管会话均提供只读 `session.result`（不可变 `SessionResult`）：
+`status` 为 pending / disabled / succeeded / failed，`entry_count` 为整批成功交付数量，
+`failure_stage` 为 initialize / bind / read / deliver / cleanup 或 None。
+成功空结果与禁用、失败分别表示。`close()` 保持返回 None，取消屏障结束后也可查询最终状态。
+旧快照不会被原地修改，不含异常对象、日志或用户信息。
+交付异常可能已部分写入，entry_count=0 不意味着零副作用；清理失败保留已知交付数量，
+不能无条件重试交付。第一个失败阶段优先保留；现有失败提示不计入来源条目数。
+
+
+过滤型 deliver 回调应返回实际接受的条目数量（0 到输入数量），例如 ZZZ 排除关闭用户后
+只计实际写入项。返回 None 的存量回调按接受整批处理；若回调过滤了条目，必须返回计数。
+异常仍记为 deliver 失败，不自动重试。兼容声明 LogSpec(source="entries") 也必须提供 bind。

@@ -64,7 +64,7 @@ from app.config import ConfigCollection
 from app.core import Config
 from app.core.history import aggregate_data
 from app.core.ws import Publisher, protocol
-from app.log_box import LogCollect, log_box
+from app.log_box import UserLogSession, log_box
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.models.notification_ports import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
@@ -98,7 +98,7 @@ from .launchers import (
     find_launcher_exe,
     resolve_launcher,
 )
-from .push_log import ACCOUNT_PREFIX_RE, ZZZOD_PUSH_RULES, make_zzzod_resolve
+from .push_log import ZzzLogSnapshot, make_zzzod_log_spec
 from .slots import collect_used_slot_idxs, ensure_user_slot, recycle_unbound_slots
 from .tools import (
     INSTANCE_RUN_ALL,
@@ -425,7 +425,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
         # log_box 采集会话（用户级「节点详情推送模式」关闭时不创建，prepare 按配置启停）
-        self.log_collect: LogCollect | None = None
+        self.log_collect: UserLogSession | None = None
         # 实例 idx → 账号名映射（原生来源=原生注册表快照；注入=绑定槽用户名），供后置
         # 处理器把「开始加载实例配置 N」段边界映射为账号归属
         self._idx_names: dict[int, str] = {}
@@ -536,22 +536,6 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 if self.user_config[uuid.UUID(item.user_id)].Info.Status
             )
         )
-
-    def _route_push_log(self, log_type: str, text: str, ts: float) -> None:
-        """sink：把 log_box 采集结果按账号路由进各用户的推送日志。
-
-        多实例切换的节点行带「【用户名】」前缀：剥掉前缀路由到对应 MAS 用户
-        （其结果行已带用户名）；原生来源等无用户归属的场景统一落入当前用户
-        （多账号时前缀保留，由报告渲染区分账号归属）。
-        """
-
-        m = ACCOUNT_PREFIX_RE.match(text)
-        if m is not None and m.group(1) in self._push_user_book:
-            target = self._push_user_book[m.group(1)]
-            if target.push_log_mode != "关闭":
-                target.push_log.append((log_type, m.group(2), ts))
-        else:
-            self.cur_user_item.push_log.append((log_type, text, ts))
 
     def _collect_inject_users(
         self,
@@ -872,21 +856,25 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self.cur_user_item.push_log_mode = str(
             self.cur_user_config.Notify.PushLogMode or "汇总"
         )
-        # ── log_box：节点详情采集（MAS 进程宿主，sink 按账号路由）──
-        # 触发用户关闭且（多实例切换时）全部启用用户也关闭时不创建：不读日志、
-        # 不匹配、不处理，省采集开销；关闭用户的 push_log 保持为空
-        if self._push_log_enabled():
-            self.log_collect = log_box.get_collect(
-                paths=[self.script_log_path],
-                sink=self._route_push_log,
-                start_from_end=True,
-                # zzz-od 跨零点把 log.txt 滚动为 log.txt.YYYY-MM-DD（内容日期
-                # 式命名）：声明模板让轮转补偿在 inode 不可用的文件系统上也命中
-                rotated_name=f"{self.script_log_path.name}.%Y-%m-%d",
-            )
-            self.log_collect.open()
-            for rule in ZZZOD_PUSH_RULES:
-                self.log_collect.collect(*rule)
+        # 目录和账号映射会在运行期变化：收尾时再固定快照，不能在 prepare 提前捕获。
+        # 触发用户关闭但其他启用用户需要详情时仍采集，保留原有多账号开关语义。
+        self.log_collect = log_box.get_user_session(
+            make_zzzod_log_spec(
+                lambda: ZzzLogSnapshot(
+                    app_names=frozenset(self._app_name_book.values()),
+                    idx_names=self._idx_names,
+                    users=self._push_user_book,
+                    fallback_user=self.cur_user_item,
+                )
+            ),
+            user=self.cur_user_item,
+            mode=self.cur_user_item.push_log_mode,
+            enabled=self._push_log_enabled(),
+            paths=[self.script_log_path],
+            start_from_end=True,
+            # zzz-od 跨零点滚动为 log.txt.YYYY-MM-DD，无 inode 时按原模板补偿。
+            rotated_name=f"{self.script_log_path.name}.%Y-%m-%d",
+        )
         self.run_book = False
 
     def _resolve_log_file_path(self) -> Path:
@@ -1572,16 +1560,10 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         await self.kill_managed_process(kill_game=self._mas_should_close_game())
         await self._restore_injection()
 
-        # log_box 收尾：冲刷残留并完成后置聚合（账号归属 → sink 路由进各用户
-        # push_log）。manager.final_task 的报告聚合在子任务收尾之后执行，
-        # 此处先 close 保证节点详情已就位
+        # box 在宿主固定动态映射，后台归并后回到宿主按账号交付；
+        # 返回前节点已就位，manager 与调度台继续使用同一份用户结果。
         if self.log_collect is not None:
-            with suppress(Exception):
-                self.log_collect.close(
-                    make_zzzod_resolve(
-                        set(self._app_name_book.values()), self._idx_names
-                    )
-                )
+            await self.log_collect.close()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd/Okww/BetterGI 行为）
         await self._persist_user_run_result()

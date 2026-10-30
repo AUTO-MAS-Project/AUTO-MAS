@@ -26,7 +26,7 @@ from pathlib import Path
 from app.config import ConfigCollection
 from app.core.history import aggregate_data
 from app.core.ws import Publisher, protocol
-from app.log_box import LogCollect, LogType, log_box
+from app.log_box import UserLogSession, log_box
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.notification_ports import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
@@ -42,7 +42,6 @@ from app.services.wuthering_waves_updater import update_wuthering_waves
 from app.task.base import ScriptAutoProxyBase
 from app.task.notify_core import build_user_statistics_payload
 from app.task.proxy_helpers import (
-    append_push_log,
     kill_pids,
     push_dispatch_log,
     split_args,
@@ -56,15 +55,9 @@ from app.utils import (
     is_process_running,
 )
 from app.utils import constants as _utils_constants
-from app.utils import i18n as _utils_i18n
 from app.utils import io as _utils_io
 
-from .push_log import (
-    OKWW_PUSH_RULES,
-    OKWW_REL_I18N_PO,
-    _okww_supplement_po,
-    okww_resolve,
-)
+from .push_log import make_okww_log_spec
 from .tools import async_switch_account
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
@@ -226,8 +219,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
         # log_box：用户级「是否采集节点详情」关闭时不创建（prepare 按配置启停）
-        self.log_collect: LogCollect | None = None
-        self.log_translator: _utils_i18n.PoTranslator | None = None
+        self.log_collect: UserLogSession | None = None
         self.script_config_path: Path | None = None
 
     async def check(self) -> str:
@@ -400,27 +392,17 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         # 受用户级「节点详情推送模式」开关控制：关闭时不创建（不读日志、不翻译、
         # 不匹配、不处理），既省采集开销也符合「不记录」语义；该用户 push_log 保持
         # 为空，报告聚合时自然不含其节点详情。
-        self.cur_user_item.push_log_mode = self.cur_user_config.Notify.PushLogMode
-        if self.cur_user_config.Notify.PushLogMode != "关闭":
-            self.log_collect = log_box.get_collect(
-                paths=[self.script_log_path],
-                sink=self._append_push_log,
-                start_from_end=True,
-                # ok-script 框架跨零点把 ok-script.log 滚动为
-                # ok-script.YYYY-MM-DD.log（日期在中段），声明模板让轮转补偿命中旧文件
-                rotated_name=(
-                    f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}"
-                ),
-            )
-            # 前置翻译：ok-ww 自带 ok.po + AutoMAS 项目自带的补充 .po（补充优先）
-            self.log_translator = (
-                _utils_i18n.PoTranslator()
-                .load([OKWW_REL_I18N_PO], base=self.script_root_path)
-                .load_supplement([_okww_supplement_po()])
-            )
-            self.log_collect.open(self.log_translator.translate)
-            for rule in OKWW_PUSH_RULES:
-                self.log_collect.collect(*rule)
+        self.log_collect = log_box.get_user_session(
+            make_okww_log_spec(self.script_root_path),
+            user=self.cur_user_item,
+            mode=self.cur_user_config.Notify.PushLogMode,
+            paths=[self.script_log_path],
+            start_from_end=True,
+            # 保留无 inode 文件系统的跨零点轮转补偿；翻译文件由声明提供。
+            rotated_name=(
+                f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}"
+            ),
+        )
 
         self.task_index = _OKWW_TASK_INDEX
         self.okww_args = ["-t", str(self.task_index), "-e"]
@@ -510,11 +492,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
 
         await push_dispatch_log(self.script_info, line)
-
-    def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
-        """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
-
-        append_push_log(self.cur_user_item, log_type, text, ts)
 
     async def handle_pre_okww_error(
         self, error_message: str, e: Exception | None = None
@@ -1052,22 +1029,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 await self.log_monitor.stop()
         await self.kill_managed_process(kill_game=self._game_management_enabled())
 
-        # log_box 收尾：冲刷残留、后置状态解析并完成推送（sink → cur_user_item.push_log）
-        # 采集失败时记一笔日志，避免报告里节点信息缺失却无从排查；
-        # 开关关闭（未创建）或 prepare 未执行完时 log_collect 为 None，一并在此兜底
-        try:
-            if self.log_collect is not None:
-                self.log_collect.close(okww_resolve)
-            if self.log_translator is not None:
-                self.log_translator.clear()
-        except Exception:
-            logger.opt(exception=True).warning(
-                "OK-WW log_box 收尾推送失败（okww_resolve/翻译清理）"
-            )
-            # 采集失败状态显式写入报告，避免节点详情缺失却仍呈现为正常结果
-            self.cur_user_item.push_log.append(
-                (LogType.NORMAL, "⚠️ 节点采集失败", time.time())
-            )
+        # box 归并并交付节点后释放翻译资源，报告仍使用原有文本与兜底提示。
+        if self.log_collect is not None:
+            await self.log_collect.close()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
         await self._persist_user_run_result()

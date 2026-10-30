@@ -24,13 +24,13 @@ from pathlib import Path
 from app.config import ConfigCollection, config_manager
 from app.core import Config
 from app.core.ws import Publisher, protocol
+from app.log_box.report import build_user_result_text, mirror_report_to_dispatch
 from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import user_uses_native_base, user_uses_quick_config
-from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import TASK_MODE_ZH, ProcessManager, get_logger
 from app.utils import io as _utils_io
 

@@ -29,7 +29,7 @@ from pathlib import Path
 from app.config import ConfigCollection
 from app.core.history import aggregate_data
 from app.core.ws import Publisher, protocol
-from app.log_box import LogType, log_box
+from app.log_box import UserLogSession, log_box
 from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.notification_ports import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
@@ -39,7 +39,6 @@ from app.task.base import ScriptAutoProxyBase
 from app.task.notify_core import build_script_statistics_payload
 from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
-    append_push_log,
     find_pids_by_name,
     kill_pids_by_name,
     push_dispatch_log,
@@ -67,7 +66,7 @@ from .config_schema import (
     LEGACY_DAILY_TASK_FILE,
     get_all_config_info,
 )
-from .push_log import OKNTE_PUSH_RULES, oknte_resolve
+from .push_log import OKNTE_LOG_SPEC
 from .tools.account_switch import async_switch_account
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
@@ -304,8 +303,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         self.curdate = ""
         self.user_run_result_persisted = False
         self.daily_activity_required = True
-        # log_box：用户级「是否采集节点详情」关闭时不创建（prepare 按配置启停）
-        self.log_collect = None
+        # log_box：prepare 绑定用户会话，关闭模式不创建底层采集器。
+        self.log_collect: UserLogSession | None = None
 
     async def _reset_daily_proxy_count(self) -> None:
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -427,26 +426,22 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 "OK-NTE ErrorLog 去掉过宽容词后为空，已回退为内置默认失败关键词"
             )
 
-        # ── log_box：节点日志采集推送（MAS 进程宿主，注入 sink 到 push_log）──
-        # 受用户级「节点详情推送模式」开关控制：关闭时不创建（不读日志、不匹配、
+        # ── log_box：按声明绑定用户节点采集会话 ──
+        # 受用户级「节点详情推送模式」开关控制：关闭时不创建采集器（不读日志、不匹配、
         # 不处理），该用户 push_log 保持为空，报告聚合时自然不含其节点详情。
         # ok-nte 日志文本已是中文，无需前置翻译；open() 记录起始偏移，只采会话内新增。
-        self.cur_user_item.push_log_mode = self.cur_user_config.Notify.PushLogMode
-        if self.cur_user_config.Notify.PushLogMode != "关闭":
-            self.log_collect = log_box.get_collect(
-                paths=[self._resolve_log_file_path()],
-                sink=self._append_push_log,
-                start_from_end=True,
-                # ok-script 框架跨零点把日志滚动为 stem.YYYY-MM-DD.suffix
-                # （日期在中段），声明模板让轮转补偿命中旧文件；从原始
-                # LogPath 派生，不随 LogPathFormat 解析结果漂移
-                rotated_name=(
-                    f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}"
-                ),
-            )
-            self.log_collect.open()
-            for rule in OKNTE_PUSH_RULES:
-                self.log_collect.collect(*rule)
+        self.log_collect = log_box.get_user_session(
+            OKNTE_LOG_SPEC,
+            user=self.cur_user_item,
+            mode=self.cur_user_config.Notify.PushLogMode,
+            paths=[self._resolve_log_file_path()],
+            start_from_end=True,
+            # ok-script 跨零点按 stem.YYYY-MM-DD.suffix 滚动；保留原来的
+            # 无 inode 文件系统补偿声明，从原始 LogPath 派生。
+            rotated_name=(
+                f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}"
+            ),
+        )
 
         # 当前用户配置
 
@@ -645,11 +640,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
 
         await push_dispatch_log(self.script_info, line)
-
-    def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
-        """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
-
-        append_push_log(self.cur_user_item, log_type, text, ts)
 
     async def _log_game_config_summary(self) -> None:
         """在调度台开头输出当前脚本的游戏相关配置，便于用户确认与问题排查。"""
@@ -1181,20 +1171,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             )
             await self.kill_managed_process(kill_game=kill_game)
 
-        # log_box 收尾：冲刷残留、后置状态解析并完成推送（sink → cur_user_item.push_log）
-        # 采集失败时记一笔日志，避免报告里节点信息缺失却无从排查；
-        # 开关关闭（未创建）时 log_collect 为 None，一并在此兜底
-        try:
-            if self.log_collect is not None:
-                self.log_collect.close(oknte_resolve)
-        except Exception:
-            logger.opt(exception=True).warning(
-                "OK-NTE log_box 收尾推送失败（oknte_resolve）"
-            )
-            # 采集失败状态显式写入报告，避免节点详情缺失却仍呈现为正常结果
-            self.cur_user_item.push_log.append(
-                (LogType.NORMAL, "⚠️ 节点采集失败", time.time())
-            )
+        # box 在后台线程读取与归并，返回前已在宿主写入最终节点；
+        # 采集异常使用声明中的原有提示，既不阻断脚本收尾，也不改变任务判定。
+        if self.log_collect is not None:
+            await self.log_collect.close()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
         await self._persist_user_run_result()

@@ -31,6 +31,11 @@ def resolve_sources(paths: Optional[Union[PathLike, Iterable[PathLike]]]) -> lis
     return [Path(item) for item in paths]
 
 
+def _file_identity(stat: os.stat_result) -> tuple[int, int]:
+    """追加不改变身份；POSIX ctime 是元数据变更时间，不能用于判定轮转。"""
+    return (stat.st_ino, stat.st_ctime_ns if os.name == "nt" else stat.st_dev)
+
+
 class LogSource:
     """单个被采集文件的日志源
 
@@ -59,8 +64,8 @@ class LogSource:
         # 兜底），未声明则回退 .bak 通用约定
         self.rotated_name = rotated_name
         self._offset = 0
-        # 文件身份：轮转/替换检测用。Windows 下 st_ino 不可靠，追加 st_ctime_ns
-        # （Windows 为创建时间，文件被替换时变化），两者任一变化即视为轮转。
+        # 文件身份：Windows 沿用 inode + 创建时间；POSIX 使用 inode + 设备号，
+        # 不能使用会随追加更新的 ctime，否则会把普通写入误判为轮转。
         self._file_id: Optional[tuple[int, int]] = None
         self._opened = False
 
@@ -72,7 +77,7 @@ class LogSource:
             stat = self.path.stat()
             if self.start_from_end:
                 self._offset = stat.st_size
-            self._file_id = (stat.st_ino, stat.st_ctime_ns)
+            self._file_id = _file_identity(stat)
         self._opened = True
 
     def read_new(self) -> list[str]:
@@ -87,7 +92,7 @@ class LogSource:
             stat = self.path.stat()
         except OSError:
             return []
-        current_id = (stat.st_ino, stat.st_ctime_ns)
+        current_id = _file_identity(stat)
         if self._file_id is not None and current_id != self._file_id:
             # 轮转（文件身份变化）：先读被轮换的旧日志，再从头读新文件
             lines = self._read_rotated()
