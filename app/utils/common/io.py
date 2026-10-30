@@ -31,7 +31,7 @@ import tomllib
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from time import sleep
+from time import monotonic, sleep
 from typing import Any
 
 import json5
@@ -121,8 +121,11 @@ _ALIASES: dict[str, str] = {
     ".yml": ".yaml",
 }
 
-# 进程内串行锁, 避免并发竞争写
+# 进程内串行锁, 配置快照读取与原子写入共用，压缩快照时不占锁。
 _WRITE_LOCK = threading.Lock()
+
+# 同步保存持有配置执行入口，额外等待最多 170ms，不能按秒阻塞事件循环。
+_REPLACE_RETRY_DELAYS = (0.02, 0.05, 0.1)
 
 # 删除重试: 任务收尾复原紧跟脚本进程结束, 等被占用的句柄释放
 _RMTREE_RETRIES = 5
@@ -546,6 +549,68 @@ def recover_native_config(
     return result
 
 
+def copy_file_snapshot(source: Path, destination: Path) -> None:
+    """与原子写入互斥地复制文件，调用方在锁外压缩副本。"""
+    with _WRITE_LOCK:
+        shutil.copy2(source, destination)
+
+
+def _describe_path(path: Path) -> str:
+    """尽力读取文件属性用于诊断，不打开内容或改变权限。"""
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return "exists=False"
+    except OSError as error:
+        return (
+            f"stat_errno={error.errno},stat_winerror={getattr(error, 'winerror', None)}"
+        )
+    attributes = getattr(info, "st_file_attributes", None)
+    readonly = (
+        bool(attributes & stat.FILE_ATTRIBUTE_READONLY)
+        if attributes is not None
+        else None
+    )
+    return (
+        f"exists=True,is_dir={stat.S_ISDIR(info.st_mode)},"
+        f"is_link={stat.S_ISLNK(info.st_mode)},"
+        f"mode={stat.S_IMODE(info.st_mode):04o},"
+        f"attributes={attributes},readonly={readonly}"
+    )
+
+
+def _replace_file(source: Path, target: Path) -> None:
+    """仅对 Windows 拒绝访问和共享占用短重试，失败保留原异常。"""
+    started = monotonic()
+    for attempt in range(len(_REPLACE_RETRY_DELAYS) + 1):
+        try:
+            source.replace(target)
+        except OSError as error:
+            if getattr(error, "winerror", None) in (5, 32, 33) and attempt < len(
+                _REPLACE_RETRY_DELAYS
+            ):
+                sleep(_REPLACE_RETRY_DELAYS[attempt])
+                continue
+            diagnostic = (
+                f"原子替换失败: path={target}, attempts={attempt + 1}, "
+                f"elapsed_ms={int((monotonic() - started) * 1000)}, "
+                f"errno={error.errno},winerror={getattr(error, 'winerror', None)}, "
+                f"source=[{_describe_path(source)}], "
+                f"target=[{_describe_path(target)}], "
+                f"parent=[{_describe_path(target.parent)}]"
+            )
+            error.add_note(diagnostic)
+            # 原调用方负责异常上报，诊断用 INFO 避免额外生成一条 Sentry Issue。
+            logger.info(diagnostic)
+            raise
+        if attempt:
+            logger.info(
+                f"文件替换重试后成功: path={target}, attempts={attempt + 1}, "
+                f"elapsed_ms={int((monotonic() - started) * 1000)}"
+            )
+        return
+
+
 def atomic_write(path: Path, data: bytes) -> None:
     """
     原子写, 写同目录固定名临时文件, fsync 后 replace 覆盖
@@ -564,15 +629,24 @@ def atomic_write(path: Path, data: bytes) -> None:
                 fh.flush()
                 os.fsync(fh.fileno())
             # 原子替换
-            tmp_path.replace(path)
+            _replace_file(tmp_path, path)
             # 目录项落盘, 仅在 Linux 下有效
             with suppress(OSError):
                 with path.parent.open("rb") as dfh:
                     dfh.flush()
                     os.fsync(dfh.fileno())
-        except BaseException:
-            # 失败清理残留临时文件
-            tmp_path.unlink(missing_ok=True)
+        except BaseException as error:
+            # 清理失败不能覆盖最初的保存错误，保留两处信息供后续定位。
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                diagnostic = (
+                    f"临时文件清理失败: operation=cleanup, path={tmp_path}, "
+                    f"errno={cleanup_error.errno},"
+                    f"winerror={getattr(cleanup_error, 'winerror', None)}"
+                )
+                error.add_note(diagnostic)
+                logger.info(diagnostic)
             raise
 
 

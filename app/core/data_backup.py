@@ -31,6 +31,7 @@ from pathlib import Path
 from app.config import config_manager
 from app.core.history import history_store
 from app.models.schema import HistoryBackupSnapshot
+from app.utils import io as _utils_io
 
 # 不进备份包: MaaFW 运行环境池、内嵌副本与共用库 (都可由来源 / 更新重建, 生产可达 GB 级;
 # 副本里的共用库是硬链接, 按路径逐个读会把同一份字节打进去两遍)、更新包下载缓存 (每个
@@ -139,6 +140,7 @@ def _create_data_backup(
                         if directory_name == "config" and (
                             path.relative_to(source_directory).as_posix()
                             in exported_files
+                            or path.name.endswith(".tmp")
                         ):
                             continue
                         if path.is_symlink() or archive_name in _DATABASE_FILES:
@@ -152,6 +154,12 @@ def _create_data_backup(
                         if path.is_dir():
                             archive.writestr(f"{archive_name}/", b"")
                         elif path.is_file():
+                            if directory_name == "config":
+                                # 只在复制时与原子写互斥；慢压缩不持有实时配置句柄。
+                                copied = Path(temp_dir) / archive_name
+                                copied.parent.mkdir(parents=True, exist_ok=True)
+                                _utils_io.copy_file_snapshot(path, copied)
+                                path = copied
                             archive.write(path, archive_name)
 
                 # 原配置尚未写盘或已从磁盘移除，也必须包含已登记的内存配置。
