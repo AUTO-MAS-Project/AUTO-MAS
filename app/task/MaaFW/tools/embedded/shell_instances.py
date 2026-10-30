@@ -227,9 +227,10 @@ def read_instance_win32_input_methods(root: Path) -> dict[str, str]:
     于是用户在外壳设置里调过的方式在 MAS 里等于没配，跑起来还是 interface 写的或默认的
     ``Seize``。
 
-    只认**一份**实例：``Instances.LastActive`` 指向的那份，没有才退到 ``default``。不跨实例
-    拼凑——两个实例可能分属不同的人或不同的配置，凑出来的组合谁也没选过；缺的那项留给
-    interface 与默认值。这里只读，不改任何文件。
+    只认**一份**实例：``Instances.LastActive`` 指向的那份，没有才退到 ``default``。选中
+    之后**无论它写没写这两个键都算定了**——活动实例一项都没配就是「用户没选」，不能再去
+    ``default`` 里捡一个别的配置的值。也不跨实例拼凑：两个实例可能分属不同的人，凑出来的
+    组合谁也没选过。缺的项留给 interface 与默认值。这里只读，不改任何文件。
     """
 
     config_dir = root / "config"
@@ -246,14 +247,14 @@ def read_instance_win32_input_methods(root: Path) -> dict[str, str]:
             continue
         payload = _read_json_object(path)
         if payload is None:
+            # 文件在但读不出来：这份实例不可用，才轮到下一份
             continue
         methods: dict[str, str] = {}
         for field_name, key in _MFAA_WIN32_INPUT_KEYS.items():
             value = payload.get(key)
             if isinstance(value, str) and value.strip():
                 methods[field_name] = value.strip()
-        if methods:
-            return methods
+        return methods
     return {}
 
 
