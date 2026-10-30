@@ -51,6 +51,8 @@
         :skland-role-error="sklandRoleError"
         :load-skland-role-options="loadSklandRoleOptions"
         :cultivate-preview="cultivatePreview"
+        :cultivate-preview-loading="cultivatePreviewLoading"
+        :cultivate-preview-error="cultivatePreviewError"
         @save="(key, value) => emit('save', key, value)"
       />
 

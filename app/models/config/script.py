@@ -342,6 +342,11 @@ class MaaUserConfig(DomainEntry):
             default_factory=lambda: False, description="资源收集期是否跳过养成计划"
         )
 
+        CultivateMonthlyCard: bool = Field(
+            default_factory=lambda: False,
+            description="预计材料时间是否计入月卡每日额外 80 理智，仅用于估算",
+        )
+
         CultivateSklandAccount: str = Field(
             default_factory=lambda: "",
             description="森空岛绑定：签到账号组 UUID（凭据引用，凭据本体只存签到域）",
