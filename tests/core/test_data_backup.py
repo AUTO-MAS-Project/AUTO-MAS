@@ -69,13 +69,18 @@ def test_config_can_be_saved_while_backup_compresses_it(
             archive_path.unlink(missing_ok=True)
 
 
-def test_backup_omits_pending_atomic_files(tmp_path: Path) -> None:
-    """正在写入的临时文件不进入可恢复备份，已导出的配置仍优先。"""
+def test_backup_preserves_persistent_tmp_files_and_export_priority(
+    tmp_path: Path,
+) -> None:
+    """持久化的 .tmp 文件仍进入备份，已导出的配置仍优先。"""
     root = tmp_path / "live"
     config = root / "config"
     config.mkdir(parents=True)
     (config / "schedule.json").write_bytes(b"complete")
-    (config / "schedule.json.tmp").write_bytes(b"partial")
+    (config / "schedule.json.tmp").write_bytes(b"persistent content")
+    runtime = config / "maafw_agent_venvs" / "environment"
+    runtime.mkdir(parents=True)
+    (runtime / "python.exe").write_bytes(b"rebuildable environment")
     (config / "settings.yaml").write_bytes(b"disk version")
     exported = tmp_path / "exported"
     exported.mkdir()
@@ -93,8 +98,51 @@ def test_backup_omits_pending_atomic_files(tmp_path: Path) -> None:
     )
     try:
         with zipfile.ZipFile(archive_path) as archive:
-            assert "config/schedule.json.tmp" not in archive.namelist()
+            assert archive.read("config/schedule.json.tmp") == b"persistent content"
             assert archive.read("config/schedule.json") == b"complete"
             assert archive.read("config/settings.yaml") == b"memory version"
+            assert not any("maafw_agent_venvs" in name for name in archive.namelist())
+    finally:
+        archive_path.unlink(missing_ok=True)
+
+
+def test_backup_releases_previous_snapshot_before_copying_next_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """配置逐个复制压缩，已入包副本不再占用临时磁盘。"""
+    root = tmp_path / "live"
+    config = root / "config"
+    config.mkdir(parents=True)
+    for name in ("first.json", "second.json"):
+        (config / name).write_bytes(name.encode())
+    exported = tmp_path / "exported"
+    exported.mkdir()
+    history = tmp_path / "history"
+    history.mkdir()
+    database = tmp_path / "history.db"
+    database.write_bytes(b"isolated history snapshot")
+    copy_snapshot = _utils_io.copy_file_snapshot
+    previous: list[Path] = []
+
+    def check_snapshot_space(source: Path, destination: Path) -> bool:
+        assert all(not item.exists() for item in previous)
+        copied = copy_snapshot(source, destination)
+        previous.append(destination)
+        return copied
+
+    monkeypatch.setattr(_utils_io, "copy_file_snapshot", value=check_snapshot_space)
+    archive_path = data_backup._create_data_backup(
+        root=root,
+        config_export=exported,
+        history_snapshot=HistoryBackupSnapshot(
+            destination=tmp_path, database=database, history=history
+        ),
+    )
+    try:
+        assert len(previous) == 2
+        assert all(not item.exists() for item in previous)
+        with zipfile.ZipFile(archive_path) as archive:
+            for name in ("first.json", "second.json"):
+                assert archive.read(f"config/{name}") == name.encode()
     finally:
         archive_path.unlink(missing_ok=True)

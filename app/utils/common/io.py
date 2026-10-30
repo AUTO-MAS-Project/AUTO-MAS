@@ -549,10 +549,14 @@ def recover_native_config(
     return result
 
 
-def copy_file_snapshot(source: Path, destination: Path) -> None:
-    """与原子写入互斥地复制文件，调用方在锁外压缩副本。"""
+def copy_file_snapshot(source: Path, destination: Path) -> bool:
+    """与原子写互斥地复制文件；等待锁期间已消失的文件返回 False。"""
     with _WRITE_LOCK:
+        # 枚举时看到的原子写临时文件可能已转正，不按后缀误删持久文件。
+        if not source.exists():
+            return False
         shutil.copy2(source, destination)
+        return True
 
 
 def _describe_path(path: Path) -> str:
@@ -592,7 +596,7 @@ def _replace_file(source: Path, target: Path) -> None:
                 sleep(_REPLACE_RETRY_DELAYS[attempt])
                 continue
             diagnostic = (
-                f"原子替换失败: path={target}, attempts={attempt + 1}, "
+                f"原子替换失败: file={target.name}, attempts={attempt + 1}, "
                 f"elapsed_ms={int((monotonic() - started) * 1000)}, "
                 f"errno={error.errno},winerror={getattr(error, 'winerror', None)}, "
                 f"source=[{_describe_path(source)}], "
@@ -605,7 +609,7 @@ def _replace_file(source: Path, target: Path) -> None:
             raise
         if attempt:
             logger.info(
-                f"文件替换重试后成功: path={target}, attempts={attempt + 1}, "
+                f"文件替换重试后成功: file={target.name}, attempts={attempt + 1}, "
                 f"elapsed_ms={int((monotonic() - started) * 1000)}"
             )
         return
@@ -641,7 +645,7 @@ def atomic_write(path: Path, data: bytes) -> None:
                 tmp_path.unlink(missing_ok=True)
             except OSError as cleanup_error:
                 diagnostic = (
-                    f"临时文件清理失败: operation=cleanup, path={tmp_path}, "
+                    f"临时文件清理失败: operation=cleanup, file={tmp_path.name}, "
                     f"errno={cleanup_error.errno},"
                     f"winerror={getattr(cleanup_error, 'winerror', None)}"
                 )

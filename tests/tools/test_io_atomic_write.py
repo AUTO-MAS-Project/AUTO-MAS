@@ -2,6 +2,8 @@
 
 import errno
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -48,7 +50,9 @@ def test_retry_recovers_from_transient_replace_failure(
 def test_exhausted_retry_preserves_original_and_reports_file_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    path = tmp_path / "config.json"
+    folder = tmp_path / "SyntheticProfileName"
+    folder.mkdir()
+    path = folder / "config.json"
     path.write_bytes(b"private original payload")
     failure = _windows_error(5)
     replace = Mock(side_effect=failure)
@@ -75,6 +79,9 @@ def test_exhausted_retry_preserves_original_and_reports_file_state(
     assert logger.info.called
     assert not logger.warning.called
     assert not logger.error.called
+    assert str(tmp_path) not in diagnostics
+    assert "SyntheticProfileName" not in diagnostics
+    assert all(str(tmp_path) not in str(call) for call in logger.info.call_args_list)
 
 
 def test_other_replace_errors_are_not_retried(
@@ -134,3 +141,40 @@ def test_cleanup_failure_does_not_replace_original_error(
         assert any("cleanup" in note for note in failure.__notes__)
     finally:
         unlink(temporary, missing_ok=True)
+
+
+def test_snapshot_skips_staging_file_replaced_while_waiting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """等待写锁时已转正的暂存文件不导致快照失败。"""
+    target = tmp_path / "state.json"
+    temporary = tmp_path / "state.json.tmp"
+    snapshot = tmp_path / "snapshot"
+    replacing = threading.Event()
+    copying = threading.Event()
+    release = threading.Event()
+    replace = Path.replace
+
+    def pause_replace(source: Path, destination: Path) -> Path:
+        replacing.set()
+        if not release.wait(5):
+            raise TimeoutError("atomic replacement was not released")
+        return replace(source, destination)
+
+    def copy_snapshot() -> bool:
+        copying.set()
+        return _utils_io.copy_file_snapshot(temporary, snapshot)
+
+    monkeypatch.setattr(Path, "replace", value=pause_replace)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        writer = executor.submit(_utils_io.atomic_write, path=target, data=b"complete")
+        try:
+            assert replacing.wait(5)
+            reader = executor.submit(copy_snapshot)
+            assert copying.wait(5)
+        finally:
+            release.set()
+        writer.result(timeout=5)
+        assert reader.result(timeout=5) is False
+    assert target.read_bytes() == b"complete"
+    assert not snapshot.exists()

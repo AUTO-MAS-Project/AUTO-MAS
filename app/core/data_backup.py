@@ -40,6 +40,7 @@ _EXCLUDED_DIRS = {
     "data/replays",
     "data/history-capture",
     "config/maafw_runtime_pool",
+    "config/maafw_agent_venvs",
     "data/mfw",
     "data/maafw_blobs",
     "data/maafw_update_cache",
@@ -140,7 +141,6 @@ def _create_data_backup(
                         if directory_name == "config" and (
                             path.relative_to(source_directory).as_posix()
                             in exported_files
-                            or path.name.endswith(".tmp")
                         ):
                             continue
                         if path.is_symlink() or archive_name in _DATABASE_FILES:
@@ -156,11 +156,16 @@ def _create_data_backup(
                         elif path.is_file():
                             if directory_name == "config":
                                 # 只在复制时与原子写互斥；慢压缩不持有实时配置句柄。
-                                copied = Path(temp_dir) / archive_name
-                                copied.parent.mkdir(parents=True, exist_ok=True)
-                                _utils_io.copy_file_snapshot(path, copied)
-                                path = copied
-                            archive.write(path, archive_name)
+                                # 每个文件压缩后立即释放副本，额外空间不累计到整棵配置树。
+                                with tempfile.TemporaryDirectory(
+                                    dir=temp_dir
+                                ) as copied_dir:
+                                    copied = Path(copied_dir) / path.name
+                                    if not _utils_io.copy_file_snapshot(path, copied):
+                                        continue
+                                    archive.write(copied, archive_name)
+                            else:
+                                archive.write(path, archive_name)
 
                 # 原配置尚未写盘或已从磁盘移除，也必须包含已登记的内存配置。
                 for name, path in exported_files.items():
