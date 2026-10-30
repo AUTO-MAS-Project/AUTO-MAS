@@ -2779,6 +2779,8 @@ export default {
       del: '削除',
       empty: 'アカウントがありません',
       emptyGuide: '右上の「アカウントを追加」から作成してください',
+      loadFailed: 'コミュニティアカウントの読み込みに失敗しました。再試行してください',
+      retry: '再試行',
     },
     edit: {
       title: '編集 — {name}',

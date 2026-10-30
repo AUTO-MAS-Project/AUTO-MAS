@@ -36,6 +36,8 @@ from app.models.notification import NotificationImage, NotifyPayload
 from app.utils.logger import get_logger
 from app.utils.notification_template import get_notification_template
 
+from .community_contract import is_community_sign_completed
+
 logger = get_logger("游戏社区通知")
 
 NOTIFICATION_SEND_ATTEMPTS = 2
@@ -49,7 +51,6 @@ COMMUNITY_SIGN_RESULT_UNAVAILABLE_TEXT = (
     "社区签到流程异常结束，无法确认最终结果，请查看日志。"
 )
 COMMUNITY_SIGN_EMPTY_RESULT_TEXT = "本次社区签到已结束，没有新的签到结果。"
-_SUCCESS_STATUSES = {"成功", "已签到"}
 _PLATFORM_ORDER = ("森空岛", "米游社", "库街区", "塔吉多", "云异环")
 NotificationBodyFormat = Literal["text", "markdown"]
 
@@ -66,6 +67,12 @@ def _result_status_text(item: dict[str, object]) -> str:
         return "签到失败-风控"
 
     reason = str(item.get("reason", "") or "").strip()
+    if is_community_sign_completed(item):
+        # 流程已跑完但服务端没给出成功状态（如云异环没能确认新增时长）：
+        # 再渲染成「签到失败」会与 ✅ 标记和 (x/y) 计数自相矛盾。
+        if not reason:
+            return "已完成-未能确认奖励"
+        return f"已完成-{reason}"
     if not reason or reason in {"失败", "签到失败"}:
         return "签到失败"
     if reason.startswith("签到失败-"):
@@ -148,7 +155,7 @@ def _result_detail(item: dict[str, object]) -> str:
 def _format_notification_item(item: dict[str, object]) -> str:
     """生成各通知渠道共用的紧凑单行结果。"""
 
-    marker = "✅" if item.get("status") in _SUCCESS_STATUSES else "❌"
+    marker = "✅" if is_community_sign_completed(item) else "❌"
     game = str(item.get("game") or item.get("platform") or "未知")
     identity = _result_nickname(item)
     detail = _result_detail(item)
@@ -268,9 +275,7 @@ def _community_notification_rows(
     for platform in _ordered_platforms(grouped):
         items = grouped[platform]
         total = len(items)
-        success_count = sum(
-            1 for item in items if item.get("status") in _SUCCESS_STATUSES
-        )
+        success_count = sum(1 for item in items if is_community_sign_completed(item))
         platform = " ".join(platform.splitlines())
         rows.append(("heading", f"• {platform}({success_count}/{total})："))
         for item in items:

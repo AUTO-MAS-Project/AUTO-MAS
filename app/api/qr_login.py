@@ -167,6 +167,13 @@ async def qr_save(body: QrSaveIn = Body(...)) -> OutBase:
         # 全量 Cookie 可能包含服务端兼容字段，保存路径不得重建或裁剪。
         cookie = body.cookie
         validate_miyoushe_cookie(cookie)
+        accounts = Config.ToolsConfig.GameSign_Accounts
+        if not any(str(uid) == body.account_uid.strip() for uid in accounts.keys()):
+            return OutBase(
+                code=400,
+                status="error",
+                message="账号组不存在，请刷新页面后重试",
+            )
         data = {"GameSignAccount": {"MiyousheToken": cookie}}
         await Config.update_game_sign_account(body.account_uid, data)
     except ValueError as e:

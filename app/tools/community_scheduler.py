@@ -28,7 +28,6 @@ from contextlib import asynccontextmanager
 from typing import Literal, Protocol
 
 CommunityTriggerSource = Literal[
-    "scheduled",
     "startup",
     "task_scheduled",
     "task_manual",
@@ -43,7 +42,7 @@ class CommunityAccounts(Protocol):
 
 
 def _default_credential_checker(account: object) -> bool:
-    from app.tools.community import has_community_credentials
+    from .community_sign_provider import has_community_credentials
 
     return has_community_credentials(account)
 

@@ -43,16 +43,18 @@ import string
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 
 import httpx
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
-from app.services.community_http import create_community_client
+from app.utils.constants import UTC8
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
 
-from .game_sign_result import merge_community_sign_result
+from .community_http import create_community_client
+from .community_sign_result import merge_community_sign_result
 
 logger = get_logger("塔吉多社区")
 
@@ -217,6 +219,7 @@ def parse_taygedo_credential(raw: str) -> dict[str, object]:
         "cloudUserId",
         "cloudDeviceId",
         "cloudRemainingDuration",
+        "cloudRemainingDurationDate",
         "roleName",
     ):
         if credential.get(key) is not None:
@@ -275,6 +278,7 @@ def serialize_taygedo_credential(credential: Mapping[str, object]) -> str:
         "cloudUserId",
         "cloudDeviceId",
         "cloudRemainingDuration",
+        "cloudRemainingDurationDate",
     ):
         value = credential.get(key)
         if value not in (None, ""):
@@ -743,7 +747,14 @@ async def _run_taygedo(
     cloud_token = str(credential.get("cloudToken") or "").strip()
     cloud_user_id = str(credential.get("cloudUserId") or "").strip()
     cloud_account = account if account != "未知用户" else cloud_user_id
-    cloud_before = _to_optional_int(credential.get("cloudRemainingDuration"))
+    # 快照必须同日才有比较意义：用户中途上号会消耗剩余时长，跨天差值会把
+    # 正常赠送误判成「未确认」甚至「失败」。
+    cloud_snapshot_date = str(credential.get("cloudRemainingDurationDate") or "")
+    cloud_before = (
+        _to_optional_int(credential.get("cloudRemainingDuration"))
+        if cloud_snapshot_date == _today_utc8()
+        else None
+    )
 
     async def cancel_cloud_task() -> None:
         if cloud_task is not None and not cloud_task.done():
@@ -995,6 +1006,7 @@ async def _run_taygedo(
             )
             if duration.get("remained") is not None:
                 credential["cloudRemainingDuration"] = str(duration["remained"])
+                credential["cloudRemainingDurationDate"] = _today_utc8()
             results.append(
                 {
                     "account": cloud_account,
@@ -1962,6 +1974,12 @@ def _to_optional_int(value: object) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _today_utc8() -> str:
+    """返回北京时间日期，用于给云异环剩余时长快照打日期。"""
+
+    return datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
 
 def _stable_device_id(seed: str) -> str:

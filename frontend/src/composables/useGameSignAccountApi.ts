@@ -40,8 +40,10 @@ export function useGameSignAccountApi() {
    */
   const updateAccount = async (
     accountId: string,
-    data: GameSignAccountGroupConfig
+    data: Partial<GameSignAccountGroupConfig>
   ): Promise<void> => {
+    // 只提交改动字段：账号组里的凭据是页面加载时的快照，全量回写会把
+    // 后台在这期间轮换出的新凭据覆盖回旧值（一次性 refreshToken 尤其致命）。
     try {
       const response = await Service.updateGameSignAccountApiToolsSignAccountUpdatePost({
         accountId,

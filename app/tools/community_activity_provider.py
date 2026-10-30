@@ -51,7 +51,6 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.services.community_http import create_community_client
 from app.utils.logger import get_logger
 
 from .community_activity_roles import (
@@ -65,6 +64,7 @@ from .community_activity_transport import (
     CommunityActivityTarget,
     CommunityActivityTransportError,
 )
+from .community_http import create_community_client
 
 logger = get_logger("社区活动")
 

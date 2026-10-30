@@ -83,11 +83,16 @@ const { listAccounts, reorderAccounts, manualSign } = useGameSignApi()
 const accounts = ref<AccountInstance[]>([])
 const addLoading = ref(false)
 const isDragging = ref(false)
+const accountsLoading = ref(false)
+const accountsFailed = ref(false)
 
 const loadAccounts = async () => {
+  accountsLoading.value = true
   try {
     const response = await listAccounts()
-    if (response.code !== 200) return
+    if (response.code !== 200) {
+      throw new Error(response.message || t('gamesign.list.loadFailed'))
+    }
     const data = response.data as unknown as AccountListData | undefined
     const instances: AccountInstance[] = []
     const instanceList = Array.isArray(data?.order) ? data.order : []
@@ -110,23 +115,51 @@ const loadAccounts = async () => {
       })
     }
     accounts.value = instances
+    accountsFailed.value = false
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户列表失败: ${errorMsg}`)
+    // 不能把接口失败伪装成「暂无账号」，否则会引导用户重复添加账号。
+    accountsFailed.value = true
+  } finally {
+    accountsLoading.value = false
   }
 }
 
-const getAccountAllData = (account: AccountInstance): GameSignAccountGroupConfig => ({
-  Name: account.Name,
-  Enabled: account.Enabled,
-  MiyousheToken: account.MiyousheToken,
-  MiyousheDeviceId: account.MiyousheDeviceId,
-  MiyousheDeviceFp: account.MiyousheDeviceFp,
-  CloudGenshinToken: account.CloudGenshinToken,
-  KuroToken: account.KuroToken,
-  SklandToken: account.SklandToken,
-  TaygedoToken: account.TaygedoToken,
-})
+type AccountFieldKey = keyof GameSignAccountGroupConfig
+
+const ACCOUNT_FIELDS: readonly AccountFieldKey[] = [
+  'Name',
+  'Enabled',
+  'MiyousheToken',
+  'MiyousheDeviceId',
+  'MiyousheDeviceFp',
+  'CloudGenshinToken',
+  'KuroToken',
+  'SklandToken',
+  'TaygedoToken',
+]
+
+/**
+ * 生成只包含改动字段的补丁。
+ *
+ * 列表里的凭据是加载时的快照，签到与扫码登录都会在后台轮换并回写，
+ * 全量回写会把新凭据覆盖成旧值（塔吉多 refreshToken 一次性的，覆盖后
+ * 账号直接失效且没有任何提示）。
+ */
+const buildAccountPatch = (
+  account: AccountInstance,
+  current?: AccountInstance
+): GameSignAccountGroupConfig => {
+  const patch: Record<string, string | boolean | null> = {}
+  for (const key of ACCOUNT_FIELDS) {
+    const value = account[key as keyof AccountInstance]
+    if (!current || value !== current[key as keyof AccountInstance]) {
+      patch[key] = value
+    }
+  }
+  return patch as GameSignAccountGroupConfig
+}
 
 const handleAddAccount = async () => {
   addLoading.value = true
@@ -165,8 +198,18 @@ const handleDeleteAccount = (account: AccountInstance) => {
     okType: 'danger',
     cancelText: t('common.cancel'),
     onOk: async () => {
-      await deleteAccount(account.uid)
+      try {
+        await deleteAccount(account.uid)
+      } catch {
+        // deleteAccount 已经提示失败原因，这里只需保持列表不变。
+        return
+      }
       accounts.value = accounts.value.filter(a => a.uid !== account.uid)
+      if (editingAccount.value?.uid === account.uid) {
+        editModalVisible.value = false
+        editingAccount.value = null
+      }
+      await loadAccounts()
     },
   })
 }
@@ -212,6 +255,7 @@ const onDragEnd = async (evt: DragEndEvent) => {
 // ==================== 编辑 Token 模态框 ====================
 
 const editModalVisible = ref(false)
+const editSaving = ref(false)
 const editingAccount = ref<AccountInstance | null>(null)
 const openEditModal = (account: AccountInstance) => {
   editingAccount.value = { ...account }
@@ -224,22 +268,33 @@ const handleEditModalCancel = () => {
 }
 
 const handleEditModalOk = async () => {
-  if (!editingAccount.value) return
+  if (!editingAccount.value || editSaving.value) return
+  const uid = editingAccount.value.uid
+  const idx = accounts.value.findIndex(a => a.uid === uid)
+  const patch = buildAccountPatch(editingAccount.value, idx >= 0 ? accounts.value[idx] : undefined)
+  if (Object.keys(patch).length === 0) {
+    editModalVisible.value = false
+    editingAccount.value = null
+    return
+  }
+  editSaving.value = true
   try {
-    const uid = editingAccount.value.uid
-    const idx = accounts.value.findIndex(a => a.uid === uid)
-    const accountData = getAccountAllData(editingAccount.value)
-    await updateAccount(uid, accountData)
+    await updateAccount(uid, patch)
     if (idx >= 0) {
       accounts.value[idx] = { ...editingAccount.value }
     }
     message.success(t('gamesign.toast.tokenSaved'))
     editModalVisible.value = false
     editingAccount.value = null
+    // 凭据变化会让后端重置签到日期并清空旧结果，两处都要刷新。
+    if (onRefreshConfig) await onRefreshConfig()
+    await loadAccounts()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 Token 失败: ${errorMsg}`)
     message.error(t('gamesign.toast.saveFailed'))
+  } finally {
+    editSaving.value = false
   }
 }
 
@@ -613,8 +668,15 @@ onMounted(() => {
           </template>
         </draggable>
 
+        <!-- 加载失败：不能显示成「暂无账号」 -->
+        <div v-if="accountsFailed && accounts.length === 0" class="empty-state">
+          <div class="empty-hint">{{ t('gamesign.list.loadFailed') }}</div>
+          <a-button size="middle" :loading="accountsLoading" @click="loadAccounts">
+            {{ t('gamesign.list.retry') }}
+          </a-button>
+        </div>
         <!-- 空状态 -->
-        <div v-if="accounts.length === 0" class="empty-state">
+        <div v-else-if="!accountsLoading && accounts.length === 0" class="empty-state">
           <div class="empty-hint">{{ t('gamesign.list.empty') }}</div>
           <div class="empty-guide">{{ t('gamesign.list.emptyGuide') }}</div>
         </div>
@@ -627,6 +689,7 @@ onMounted(() => {
       :title="t('gamesign.edit.title', { name: editingAccount?.Name || '' })"
       :ok-text="t('gamesign.edit.save')"
       :cancel-text="t('common.cancel')"
+      :confirm-loading="editSaving"
       :width="560"
       :body-style="{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }"
       centered

@@ -3414,6 +3414,8 @@ export default {
       del: 'Delete',
       empty: 'No accounts yet',
       emptyGuide: 'Use "Add an account" in the top right',
+      loadFailed: 'Failed to load community accounts, please retry',
+      retry: 'Retry',
     },
     edit: {
       title: 'Edit — {name}',

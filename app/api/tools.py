@@ -45,12 +45,13 @@ from app.config.wire import (
     config_group_contract,
 )
 from app.core import Config
-from app.core.community_sign import (
+from app.models.schema import OutBase
+from app.tools.community_contract import is_community_sign_completed
+from app.tools.community_sign import (
     CommunitySignInProgressError,
     community_sign_flow,
     run_community_sign_in,
 )
-from app.models.schema import OutBase
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
@@ -240,7 +241,11 @@ def _normalize_miyoushe_device_fields(data: dict[str, object]) -> None:
         if field not in data:
             continue
         value = data.get(field)
-        data[field] = value.strip() if isinstance(value, str) else ""
+        if isinstance(value, str):
+            data[field] = value.strip()
+            continue
+        # 非字符串（含 null）视为「未提供」，不能当成清空已保存的设备值。
+        data.pop(field, None)
 
 
 def _track_community_notification(
@@ -371,7 +376,11 @@ async def manual_game_sign() -> OutBase:
             # 标记今天已签到（仅当所有启用的用户都已签到时标记全局）
             today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
             all_signed = True
-            for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+            # 用快照遍历：签到期间删除账号组时不能因为取不到条目而中断判定。
+            for uid in list(Config.ToolsConfig.GameSign_Accounts.keys()):
+                account = Config.ToolsConfig.GameSign_Accounts.get(uid)
+                if account is None:
+                    continue
                 has_credentials = has_community_credentials(account)
                 if _get_community_account_field(account, "Enabled") and has_credentials:
                     if (
@@ -388,11 +397,7 @@ async def manual_game_sign() -> OutBase:
                     check_visibility=False,
                 )
         warning_messages = []
-        if any(
-            result.get("status") not in ("成功", "已签到")
-            and not result.get("_completed")
-            for result in results
-        ):
+        if any(not is_community_sign_completed(result) for result in results):
             warning_messages.append("签到未全部完成，请查看签到结果")
         if results and Config.ToolsConfig.GameSign.NotifyEnabled:
             failed_channels = await _dispatch_community_notification(results)
@@ -437,7 +442,7 @@ async def query_community_activity(
 
     snapshots = ()
     try:
-        from app.core.community_activity import (
+        from app.tools.community_activity import (
             build_configured_community_activity_failures,
             query_configured_community_activity,
         )
@@ -677,7 +682,21 @@ async def login_taygedo(
             serialize_taygedo_credential,
         )
 
-        account = Config.ToolsConfig.GameSign_Accounts[UUID(credential.accountId)]
+        try:
+            account_uid = UUID(credential.accountId)
+        except ValueError:
+            return OutBase(
+                code=400,
+                status="error",
+                message="账号组标识无效，请刷新页面后重试",
+            )
+        account = Config.ToolsConfig.GameSign_Accounts.get(account_uid)
+        if account is None:
+            return OutBase(
+                code=400,
+                status="error",
+                message="账号组不存在，请刷新页面后重试",
+            )
         existing_token = str(account.GameSignAccount.TaygedoToken or "").strip()
         refreshed = await login_taygedo_with_password(
             credential.phone.strip(),

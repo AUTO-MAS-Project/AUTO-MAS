@@ -33,11 +33,11 @@ from collections.abc import Mapping
 import httpx
 
 from app.core import Config
-from app.services.community_http import create_community_client
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
 
 from .community_contract import CommunitySignResult
+from .community_http import create_community_client
 
 logger = get_logger("云原神签到")
 
@@ -395,7 +395,7 @@ async def cloud_genshin_sign_in(
         async with create_community_client(proxy=resolved_proxy) as client:
             (
                 credential,
-                from_miyoushe_cookie,
+                _from_miyoushe_cookie,
                 _device_id,
             ) = await _prepare_cloud_genshin_credential(
                 client,
@@ -403,26 +403,22 @@ async def cloud_genshin_sign_in(
                 proxy=resolved_proxy,
             )
             headers = _headers(credential)
-            try:
-                before = await _query_free_time(client, headers)
-                notification_ids = await _list_notification_ids(client, headers)
-                for index, notification_id in enumerate(notification_ids):
-                    await _ack_notification(
-                        client,
-                        headers,
-                        notification_id,
-                    )
-                    if index + 1 < len(notification_ids):
-                        await asyncio.sleep(1.0)
-                if notification_ids:
+            # 未开通/不可用已在上面的登录步骤判定为 Unavailable；这里出现的
+            # 业务失败是真实的上游故障（维护、参数变更），必须作为失败上报，
+            # 不能再降级成「跳过」后被通知与前端一起过滤掉。
+            before = await _query_free_time(client, headers)
+            notification_ids = await _list_notification_ids(client, headers)
+            for index, notification_id in enumerate(notification_ids):
+                await _ack_notification(
+                    client,
+                    headers,
+                    notification_id,
+                )
+                if index + 1 < len(notification_ids):
                     await asyncio.sleep(1.0)
-                after = await _query_free_time(client, headers)
-            except CloudGenshinBusinessError as error:
-                if from_miyoushe_cookie:
-                    raise CloudGenshinUnavailableError(
-                        "当前米游社账号无法使用云原神，已跳过"
-                    ) from error
-                raise
+            if notification_ids:
+                await asyncio.sleep(1.0)
+            after = await _query_free_time(client, headers)
 
         gained = calculate_cloud_genshin_gain(before, after)
         return [

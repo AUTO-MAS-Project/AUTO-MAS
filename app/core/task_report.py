@@ -168,9 +168,6 @@ async def shutdown_community_notifications() -> None:
 def should_send_result(message: dict, *, task_info: object | None = None) -> bool:
     """判断代理结果是否满足全局推送时机。"""
 
-    if message.get("game_sign_summary", False):
-        return True
-
     if task_info is not None:
         from app.tools.community_notify import append_task_community_summary
 

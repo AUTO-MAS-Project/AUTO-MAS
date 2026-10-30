@@ -47,7 +47,6 @@ from app.models.notification import (
     NotifyPayload,
     image_reference,
 )
-from app.tools.community_notify import get_task_community_summary
 from app.utils import get_logger
 from app.utils.notification_template import get_notification_template
 
@@ -136,11 +135,8 @@ async def push_proxy_result(
         f"已完成用户数: {message['completed_count']}, "
         f"未完成用户数: {message['uncompleted_count']}"
     )
-    summary_text = (
-        get_task_community_summary(task_info)
-        if task_info is not None and message.get("game_sign_summary")
-        else ""
-    )
+    # 社区签到摘要统一由 dispatch_task_report 按 NotifyEnabled 附加，
+    # 这里不再另取一份，避免绕过开关或重复附加。
     # 有未完成的用户时摘要标题不能再说「已完成！」；调用方显式给的摘要标题优先
     summary_title = message.get("summary_title") or title.replace(
         "报告", "存在异常" if message["uncompleted_count"] > 0 else "已完成！"
@@ -160,7 +156,6 @@ async def push_proxy_result(
         ),
         [global_target(include_system=include_system, system_timeout_seconds=10)],
         task_info,
-        summary_text=summary_text,
     )
 
 

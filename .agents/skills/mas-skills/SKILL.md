@@ -45,7 +45,7 @@ Use these skills as needed:
 9. `mas-script-specialized-adapter`: specialized script integration by script frontend architecture line; requires intake before implementation.
 10. `mas-plan-schedule`: plan schedule type registration, backend/frontend plan dispatch, plan combobox consumers, and per-type table integration.
 11. `mas-e2e`: author-local real script/game/account runs, isolated browser flows, PR-specific selection, sanitized evidence, the command matrix, and the post-PR hand-off that offers those commands to the developer.
-12. `mas-game-sign`: game community sign-in providers, credential encryption and login routes, sign-in locks and trigger paths, and result/notification contracts.
+12. `mas-game-community`: game community sign-in and daily activity (便笺) flows in `app/tools/community*`, the provider registry, credential encryption and one-time login routes, community HTTP transport, sign-in locks and trigger paths, and result/notification contracts.
 13. `mas-ci-checks`: every gate that runs on a PR to `dev` (format, lint, typecheck, changelog fragment, `uv.lock`, revert hints, CNB mirror, unsigned Windows build) and the exact local command for each.
 
 ## Global Constraints
@@ -87,8 +87,8 @@ Use `mas-e2e`; combine `mas-script-specialized-adapter` when the flow depends on
 Use `mas-code-standards` for code-style decisions; use the docs site for contribution-process wording.
 12. Task mentions plan schedules, schedule types, `PlanConfig`, `PLAN_BOOK`, plan comboboxes, or adding a new plan table:
 Use `mas-plan-schedule`.
-13. Task mentions game community sign-in, `app/tools/game_sign*`, a sign-in platform such as Skland/Miyoushe/Kuro/Taygedo, sign-in credentials or QR login, or sign-in result and notification behavior:
-Use `mas-game-sign`.
+13. Task mentions game community sign-in or daily activity, `app/tools/community*`, a community such as Skland/Miyoushe/Kuro/Taygedo/CloudGenshin, community credentials or QR login, or community result and notification behavior:
+Use `mas-game-community`.
 14. Task mentions cherry-picking a fix to a `release/{version}` branch, backporting to a released version, or hot-updating released backend code:
 Apply the cherry-pick rule in **Project Rule Areas** before touching git; confirm the commit is small and pure backend by inspecting the files it actually touches.
 14. Task mentions a red PR, a CI failure, GitHub Actions, format / lint / typecheck gates, the `skip-changelog` or `changelog-maintenance` labels, or editing `.github/workflows`, `.github/actions`, `scripts/changelog.py`, `scripts/check_reverts.py`:
@@ -108,10 +108,10 @@ When multiple concerns appear, apply this order:
 9. `mas-e2e`, when the task requires an E2E flow or evidence.
 10. `mas-script-specialized-adapter` after architecture intake, when the task is a specialized adapter.
 11. `mas-plan-schedule`
-12. `mas-game-sign`
+12. `mas-game-community`
 13. `mas-ci-checks`, when the work ends by making a PR pass CI.
 
-Reason: frontend tasks need their engineering and UI constraints loaded before implementation decisions; then establish local conventions, place code correctly, stabilize model structure, then naming, function behavior, and transport contract. Specialized adapters add a mandatory architecture-intake step, plan schedule rules apply when the task touches scheduler registration, and game sign rules apply last among the implementation skills because they constrain credential handling and external request behavior inside an already-placed module. CI checks come after everything else because they only push finished work through the PR gates.
+Reason: frontend tasks need their engineering and UI constraints loaded before implementation decisions; then establish local conventions, place code correctly, stabilize model structure, then naming, function behavior, and transport contract. Specialized adapters add a mandatory architecture-intake step, plan schedule rules apply when the task touches scheduler registration, and game community rules apply last among the implementation skills because they constrain credential handling and external request behavior inside an already-placed module. CI checks come after everything else because they only push finished work through the PR gates.
 
 ## Output Requirements
 When using this hub:

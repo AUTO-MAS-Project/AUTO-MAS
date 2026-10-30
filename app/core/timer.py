@@ -27,15 +27,15 @@ from typing import Any
 
 from app.services import Matomo
 from app.services.telemetry import record_daily_active
-from app.utils import get_logger
-from app.utils.constants import UTC8
-
-from .community_scheduler import (
+from app.tools.community_scheduler import (
     TASK_COMMUNITY_SOURCES,
     CommunityTriggerSource,
     all_community_accounts_signed,
     should_run_community_for_source,
 )
+from app.utils import get_logger
+from app.utils.constants import UTC8
+
 from .config import Config
 from .game_calendar import CALENDAR_REFRESH_INTERVAL_SECONDS, GameCalendar
 from .task_manager import TaskManager
@@ -462,17 +462,15 @@ class _MainTimer:
                 return True
 
     async def _execute_community_sign(
-        self, *, source: CommunityTriggerSource = "scheduled"
+        self, *, source: CommunityTriggerSource
     ) -> list[dict[str, object]]:
         """执行游戏社区签到并按触发来源决定通知方式。"""
-        from app.core.community_sign import (
+        from app.tools.community import (
             CommunitySignInProgressError,
             community_sign_flow,
+            format_community_sign_results,
             run_community_sign_in,
         )
-        from app.tools.community import format_community_sign_results
-
-        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
         try:
             # 流程锁覆盖签到和结果落盘，通知在锁外发送。
@@ -484,7 +482,9 @@ class _MainTimer:
                 if not results:
                     logger.info("所有用户今日已签到，跳过")
                     if all_community_accounts_signed(
-                        Config.ToolsConfig.GameSign_Accounts, today
+                        Config.ToolsConfig.GameSign_Accounts,
+                        # 签到可能跨越 0 点，判定必须用落盘时刻的日期而不是开始时间。
+                        datetime.now(tz=UTC8).strftime("%Y-%m-%d"),
                     ):
                         await Config.ToolsConfig.update(
                             type(Config.ToolsConfig).model_validate(
@@ -500,7 +500,9 @@ class _MainTimer:
 
                 # 检查是否所有用户都已签到，更新全局 LastSignDate
                 if all_community_accounts_signed(
-                    Config.ToolsConfig.GameSign_Accounts, today
+                    Config.ToolsConfig.GameSign_Accounts,
+                    # 签到可能跨越 0 点，判定必须用落盘时刻的日期而不是开始时间。
+                    datetime.now(tz=UTC8).strftime("%Y-%m-%d"),
                 ):
                     await Config.ToolsConfig.update(
                         type(Config.ToolsConfig).model_validate(

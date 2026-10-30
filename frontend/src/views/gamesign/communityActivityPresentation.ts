@@ -1,4 +1,5 @@
 import type { ActivitySnapshot } from './useCommunityActivityApi'
+import { isCommunityGame, type CommunityGame } from './communityGames'
 
 export interface NoteMetric {
   name: string
@@ -9,7 +10,8 @@ export interface NoteMetric {
 }
 
 // 中文名称来自后端便笺合同；历练点、通行证等级及任务积分不属于经验。
-const FEATURED_RESOURCES: Record<string, string[]> = {
+// 类型绑定在 communityGames 的清单上：新增游戏漏了置顶资源会直接是类型错误。
+const FEATURED_RESOURCES: Record<CommunityGame, string[]> = {
   明日方舟: ['理智', '无人机', '训练室'],
   终末地: ['理智'],
   原神: ['原粹树脂', '洞天宝钱'],
@@ -30,9 +32,9 @@ export function presentActivity(snapshot: ActivitySnapshot) {
     status: task.status,
     period: task.period,
   }))
-  const featured = (FEATURED_RESOURCES[snapshot.game] ?? []).flatMap(name =>
-    resources.filter(resource => resource.name === name)
-  )
+  const featured = (
+    isCommunityGame(snapshot.game) ? FEATURED_RESOURCES[snapshot.game] : []
+  ).flatMap(name => resources.filter(resource => resource.name === name))
   if (snapshot.game === '绝区零') {
     featured.push(...tasks.filter(task => task.name === '今日活跃度'))
   }

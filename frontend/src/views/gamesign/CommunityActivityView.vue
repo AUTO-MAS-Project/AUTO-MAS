@@ -6,6 +6,7 @@ import { EditOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import type { CSSProperties } from 'vue'
 import { usePerformanceStore } from '@/stores/performance'
 import type { ActivitySnapshot } from './useCommunityActivityApi'
+import { COMMUNITY_GAMES } from './communityGames'
 import { useCommunityActivityStore } from '@/stores/communityActivity'
 import CommunityActivityCard from './components/CommunityActivityCard.vue'
 
@@ -24,7 +25,6 @@ const lastUpdated = computed(
 
 // 分区展示：只列出「有数据的游戏」，无数据的游戏自动不出现；可关闭不需要的游戏（存本地）。
 // 中文名是后端便笺合同的稳定枚举，只用于匹配与过滤，不参与界面翻译。
-const NOTE_GAMES = ['明日方舟', '终末地', '原神', '星穹铁道', '绝区零']
 const ACTIVITY_HIDDEN_GAMES_KEY = 'auto-mas.gamesign.activity-hidden-games'
 
 const readHiddenGames = (): string[] => {
@@ -51,7 +51,7 @@ const toggleGame = (game: string) => {
 /** 有便笺数据的游戏，按固定顺序排（其余游戏按出现顺序追加） */
 const availableGames = computed(() => {
   const present = new Set(snapshots.value.map(snapshot => snapshot.game))
-  const ordered = NOTE_GAMES.filter(game => present.has(game))
+  const ordered: string[] = COMMUNITY_GAMES.filter(game => present.has(game))
   for (const snapshot of snapshots.value) {
     if (!ordered.includes(snapshot.game)) ordered.push(snapshot.game)
   }

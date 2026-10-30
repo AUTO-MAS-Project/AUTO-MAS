@@ -9,6 +9,11 @@ import time
 
 import httpx
 
+# 社区请求的默认超时。httpx 自带默认只有 5 秒，而下面的加密 DNS 回退在连接
+# 失败后要先做一次 DoH 解析再重连，5 秒很容易在弱网/代理环境里正好耗尽，
+# 表现为无谓的「签到失败」。单个请求仍然可以用 timeout= 覆盖。
+DEFAULT_REQUEST_TIMEOUT = 30.0
+
 
 class CommunityHTTPTransport(httpx.AsyncBaseTransport):
     """直连建立连接失败时，通过 HTTPS DNS 重试；显式代理仍交给代理解析。"""
@@ -112,4 +117,5 @@ def create_community_client(
         transport=CommunityHTTPTransport(proxy),
         trust_env=False,
         cookies=cookies,
+        timeout=DEFAULT_REQUEST_TIMEOUT,
     )

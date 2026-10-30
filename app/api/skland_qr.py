@@ -156,6 +156,13 @@ async def qr_save(body: SklandQrSaveIn = Body(...)) -> OutBase:
             proxy=Config.proxy,
         )
         parsed = validate_skland_credential(serialized)
+        accounts = Config.ToolsConfig.GameSign_Accounts
+        if not any(str(uid) == body.account_uid.strip() for uid in accounts.keys()):
+            return OutBase(
+                code=400,
+                status="error",
+                message="账号组不存在，请刷新页面后重试",
+            )
         if any(
             not str(parsed.get(field) or "").strip()
             for field in ("oauthToken", "token", "cred")

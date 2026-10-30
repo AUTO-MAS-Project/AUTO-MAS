@@ -104,7 +104,6 @@ from app.task.M9A.migration import (
     repair_m9a_migration_losses,
 )
 from app.utils import get_logger, is_supervised
-from app.utils.community import next_community_account_name
 from app.utils.constants import (
     BASE_INDEPENDENT,
     BASE_NATIVE,
@@ -405,7 +404,7 @@ class AppConfig:
         self.setting.connect(
             on_telemetry, phase="runtime", group="Function", field="IfEnableTelemetry"
         )
-        from app.core.community_activity import connect_community_activity_cache
+        from app.tools.community_activity import connect_community_activity_cache
 
         connect_community_activity_cache(self.ToolsConfig, setting=self.setting)
         # 注册自启动会读写注册表, 不阻塞初始化; 持有引用避免被 GC 且异常不被静默吞掉
@@ -4017,6 +4016,9 @@ class AppConfig:
 
         logger.info("添加游戏社区账号组")
 
+        # 账号命名属于工具包侧逻辑，延迟导入避免配置模块与工具包互相导入。
+        from app.tools.community_accounts import next_community_account_name
+
         async with self._community_account_add_lock:
             existing_names = []
             for account in self.ToolsConfig.GameSign_Accounts.values():
@@ -4073,8 +4075,13 @@ class AppConfig:
 
         logger.info(f"更新游戏社区账号组: {account_id}")
 
-        account_uid = uuid.UUID(account_id)
-        account = self.ToolsConfig.GameSign_Accounts[account_uid]
+        try:
+            account_uid = uuid.UUID(account_id)
+        except ValueError as error:
+            raise ValueError("账号组标识无效") from error
+        account = self.ToolsConfig.GameSign_Accounts.get(account_uid)
+        if account is None:
+            raise ValueError("账号组不存在")
         from app.tools.community_sign_provider import COMMUNITY_TOKEN_FIELDS
 
         credential_fields = set(COMMUNITY_TOKEN_FIELDS)
@@ -4082,6 +4089,10 @@ class AppConfig:
 
         for group, items in data.items():
             for name, value in items.items():
+                if group == "GameSignAccount" and name == "LastSignDate":
+                    # 签到日期由签到流程自己维护；允许从接口写入会直接抑制当天签到。
+                    logger.warning("忽略对账号组签到日期的写请求")
+                    continue
                 if (
                     group == "GameSignAccount"
                     and name in credential_fields

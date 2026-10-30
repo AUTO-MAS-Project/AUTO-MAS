@@ -20,7 +20,7 @@
 #   Contact: DLmaster_361@163.com
 
 
-"""游戏社区账号组到活动快照的核心消费层。"""
+"""游戏社区账号组到活动快照的消费层。"""
 
 from __future__ import annotations
 
@@ -33,22 +33,23 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from app.core.community_scheduler import community_activity_flow
-from app.tools.community_activity_provider import CommunityActivityProvider
-from app.tools.community_activity_roles import (
+from app.utils.constants import UTC8
+from app.utils.logger import get_logger
+from app.utils.security import format_exception_reason
+
+from .community_activity_provider import CommunityActivityProvider
+from .community_activity_roles import (
     ACTIVITY_COMMUNITY_DEFINITIONS,
     CommunityActivityProviderDefinition,
     CommunityActivityRole,
 )
-from app.tools.community_activity_transport import (
+from .community_activity_transport import (
     CommunityActivityTarget,
     CommunityActivityTransportError,
     collect_community_activity,
 )
-from app.tools.community_contract import ActivityState, CommunityActivitySnapshot
-from app.utils.constants import UTC8
-from app.utils.logger import get_logger
-from app.utils.security import format_exception_reason
+from .community_contract import ActivityState, CommunityActivitySnapshot
+from .community_scheduler import community_activity_flow
 
 if TYPE_CHECKING:
     from app.models.config import GlobalConfig, ToolsConfig

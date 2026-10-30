@@ -6,7 +6,6 @@ import {
   ApiOutlined,
   AppstoreOutlined,
   CompassOutlined,
-  HolderOutlined,
   RocketOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons-vue'
@@ -16,6 +15,7 @@ import genshinNoteImage from '@/assets/community-notes/genshin.jpg'
 import starRailNoteImage from '@/assets/community-notes/star-rail.jpg'
 import zenlessNoteImage from '@/assets/community-notes/zenless.jpg'
 import type { ActivitySnapshot } from '../useCommunityActivityApi'
+import { isCommunityGame, type CommunityGame } from '../communityGames'
 import { presentActivity } from '../communityActivityPresentation'
 import CommunityActivityMetric from './CommunityActivityMetric.vue'
 
@@ -38,7 +38,8 @@ const backgroundAttempt = ref(0)
 const NOTE_BACKGROUND_BASE = 'https://doc.auto-mas.top/community-notes'
 
 // 这些中文值是后端稳定游戏枚举，只用于映射，不参与界面翻译。
-const GAME_VISUALS: Record<string, GameVisual> = {
+// 类型绑定在 communityGames 的清单上：新增游戏漏了视觉会直接是类型错误。
+const GAME_VISUALS: Record<CommunityGame, GameVisual> = {
   明日方舟: {
     accent: 'var(--ant-color-primary)',
     backgroundImage: `${NOTE_BACKGROUND_BASE}/arknights-background.webp?v=6a23195b201d`,
@@ -81,7 +82,9 @@ const GAME_VISUALS: Record<string, GameVisual> = {
   },
 }
 
-const visual = computed(() => GAME_VISUALS[props.snapshot.game])
+const visual = computed(() =>
+  isCommunityGame(props.snapshot.game) ? GAME_VISUALS[props.snapshot.game] : undefined
+)
 const presentation = computed(() => presentActivity(props.snapshot))
 const cardStyle = computed(
   () =>
@@ -148,12 +151,6 @@ watch(
       @error="backgroundAttempt++"
     />
     <header class="activity-card-header">
-      <span
-        class="activity-drag-handle"
-        :title="t('gamesign.activity.drag')"
-        :aria-label="t('gamesign.activity.drag')"
-        ><HolderOutlined
-      /></span>
       <span class="activity-game-mark">
         <img v-if="visual?.image" class="activity-game-image" :src="visual.image" alt="" />
         <component v-else :is="visual?.icon ?? AppstoreOutlined" aria-hidden="true" />
@@ -287,20 +284,6 @@ watch(
   justify-content: center;
   margin-inline-end: 0;
   text-align: center;
-}
-
-.activity-drag-handle {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  color: var(--ant-color-text-tertiary);
-  cursor: grab;
-}
-
-.activity-drag-handle:active {
-  cursor: grabbing;
 }
 
 .activity-game-mark {

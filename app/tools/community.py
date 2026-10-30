@@ -20,9 +20,11 @@
 #   Contact: DLmaster_361@163.com
 
 
-"""游戏社区工具统一入口，旧签到标识仅在兼容层保留。"""
+"""游戏社区工具统一入口，旧签到标识仅在兼容层保留。
 
-from contextlib import asynccontextmanager
+签到编排、日常便笺、通知与凭据处理全部位于 ``app/tools`` 一侧；
+``app/core`` 只负责触发时机与结果落盘，``app/api`` 只做请求与响应整形。
+"""
 
 from .community_activity_parser import parse_activity_snapshot
 from .community_activity_provider import (
@@ -45,6 +47,7 @@ from .community_plugins import (
     get_confirmed_community_capabilities,
     supports_community_capability,
 )
+from .community_sign import community_sign_flow, run_community_sign_in
 from .community_sign_provider import (
     format_community_sign_results,
     has_community_credentials,
@@ -79,23 +82,3 @@ __all__ = [
 CommunityToolInProgressError = CommunitySignInProgressError
 GameSignInProgressError = CommunitySignInProgressError
 parse_community_activity_snapshot = parse_activity_snapshot
-
-
-@asynccontextmanager
-async def community_sign_flow():
-    """延迟进入核心社区签到流程，避免工具包初始化形成循环导入。"""
-
-    from app.core.community_sign import community_sign_flow as core_flow
-
-    async with core_flow():
-        yield
-
-
-async def run_community_sign_in(
-    force: bool = False,
-) -> list[dict[str, object]]:
-    """延迟调用核心社区签到编排。"""
-
-    from app.core.community_sign import run_community_sign_in as core_run
-
-    return await core_run(force=force)

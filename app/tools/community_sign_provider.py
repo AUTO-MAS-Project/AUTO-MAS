@@ -30,17 +30,20 @@ from typing import Awaitable, Callable, Protocol
 import httpx
 
 from app.core import Config
-from app.services.community_http import create_community_client
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
 
-from .community_contract import CommunitySignResult
+from .community_contract import (
+    COMMUNITY_SIGN_SUCCESS_STATUSES,
+    CommunitySignResult,
+)
 from .community_credentials import (
     is_community_credential_configured,
     parse_community_credential,
     validate_community_credential,
 )
-from .game_sign_result import build_skland_sign_results
+from .community_http import create_community_client
+from .community_sign_result import build_skland_sign_results
 
 logger = get_logger("游戏社区签到")
 
@@ -632,7 +635,14 @@ def merge_community_sign_results(
 
 
 def _is_taygedo_community_detail_result(item: dict[str, object]) -> bool:
-    """判断是否为不应进入塔吉多游戏详情的社区级签到结果。"""
+    """判断是否为不应进入塔吉多游戏详情的社区级签到结果。
+
+    只过滤已完成的社区级结果：平台整体失败时 `error_game` 也用社区名占位，
+    若一并过滤，前端将完全看不到塔吉多的失败，只能看到「未签」。
+    """
+
+    if str(item.get("status") or "").strip() not in COMMUNITY_SIGN_SUCCESS_STATUSES:
+        return False
 
     return (
         str(item.get("platform") or "").strip() == "塔吉多"

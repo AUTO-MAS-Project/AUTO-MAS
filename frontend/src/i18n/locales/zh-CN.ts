@@ -3281,6 +3281,8 @@ export default {
       del: '删除',
       empty: '暂无账号',
       emptyGuide: '点击右上角「添加账号」创建',
+      loadFailed: '加载社区账号组失败，请重试',
+      retry: '重试',
     },
     edit: {
       title: '编辑 — {name}',

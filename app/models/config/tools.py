@@ -102,10 +102,6 @@ class ToolsConfig(DomainEntry):
             default_factory=lambda: True, description="GameSign - 启用日常便笺"
         )
 
-        AutoStart: bool = Field(
-            default_factory=lambda: False, description="GameSign - 是否立即开始"
-        )
-
         Enabled: bool = Field(
             default_factory=lambda: False, description="GameSign - 启用签到"
         )

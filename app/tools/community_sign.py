@@ -20,29 +20,31 @@
 #   Contact: DLmaster_361@163.com
 
 
-"""游戏社区签到核心编排，平台请求仍由唯一 provider 注册表承载。"""
+"""游戏社区签到编排，平台请求仍由唯一 provider 注册表承载。"""
 
 import asyncio
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime
 
-from app.tools.community_contract import (
+from app.core.config import Config
+from app.utils.constants import UTC8
+from app.utils.logger import get_logger
+
+from .community_contract import (
+    COMMUNITY_SIGN_SUCCESS_STATUSES,
     CommunitySignInProgressError,
     CommunitySignResult,
+    is_community_sign_completed,
 )
-from app.tools.community_credentials import is_community_credential_configured
-from app.tools.community_sign_provider import (
+from .community_credentials import is_community_credential_configured
+from .community_sign_provider import (
     check_community_system_time,
     get_community_sign_providers,
     last_system_time_offset,
     read_community_token,
     run_community_provider,
 )
-from app.utils.constants import UTC8
-from app.utils.logger import get_logger
-
-from .config import Config
 
 __all__ = [
     "CommunitySignInProgressError",
@@ -62,7 +64,7 @@ _community_sign_lock_owner: ContextVar[asyncio.Task | None] = ContextVar(
 
 # 系统时钟偏差超过该阈值时，在签到失败原因里补一句校准提示。
 _SYSTEM_TIME_HINT_SECONDS = 300.0
-_SIGNED_STATUSES = ("成功", "已签到")
+_SIGNED_STATUSES = COMMUNITY_SIGN_SUCCESS_STATUSES
 
 
 @asynccontextmanager
@@ -120,9 +122,7 @@ def all_enabled_community_platforms_signed(
             and result.get("platform") == platform
         ]
         if not platform_results or any(
-            result.get("status") not in ("成功", "已签到")
-            and not result.get("_completed")
-            for result in platform_results
+            not is_community_sign_completed(result) for result in platform_results
         ):
             return False
 
@@ -176,13 +176,21 @@ async def _run_configured_community_sign_in(
     """
 
     results: list[dict[str, object]] = []
-    today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
     providers = get_community_sign_providers()
-    for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+    accounts = Config.ToolsConfig.GameSign_Accounts
+    # 先快照 UID 再逐个取：签到期间删除账号组会让 items() 生成器在取
+    # 已删除条目时抛 KeyError，整轮签到连同其它账号的结果一起失败。
+    for uid in list(accounts.keys()):
+        account = accounts.get(uid)
+        if account is None:
+            logger.info(f"账号组 {uid} 已在签到期间删除，跳过")
+            continue
         account_name = account.GameSignAccount.Name or "默认账号"
         account_enabled = account.GameSignAccount.Enabled
         account_uid = str(uid)
+        # 跨 0 点后要按新日期判定，因此在使用点重取而不是沿用本轮开始时的日期。
+        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
         # 跳过已禁用的用户。
         if not account_enabled:
@@ -266,6 +274,14 @@ async def _run_configured_community_sign_in(
             if not str(value or "").strip():
                 return
             async with credential_update_lock:
+                # 即时写穿同样要重读存量：签到期间用户可能重新登录并已保存
+                # 新凭据，此时把本轮轮换出的旧值写回会直接覆盖掉新凭据。
+                if read_community_token(account, field) != tokens.get(field, ""):
+                    logger.warning(
+                        f"[{account_name}] {field}已在签到期间被其他链路更新，"
+                        "跳过即时回写"
+                    )
+                    return
                 saved = await save_credential_update(field, value, retry=False)
                 if not saved:
                     # 让内置 provider 保留其既有收尾兜底，同时由本层记录失败状态。

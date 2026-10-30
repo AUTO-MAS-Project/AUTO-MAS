@@ -49,9 +49,10 @@ from typing import Dict
 import httpx
 
 from app.core import Config
-from app.services.community_http import create_community_client
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
+
+from .community_http import create_community_client
 
 logger = get_logger("米游社签到任务")
 
@@ -290,8 +291,10 @@ def _safe_json_parse(response: httpx.Response) -> dict[str, object]:
     try:
         data = response.json()
     except ValueError as exc:
+        # 只保留判定结论与状态码：上游正文可能是 HTML 维护页，
+        # 进入原因后会被写进日志、前端与通知。
         raise _RiskControlError(
-            f"API 返回非 JSON 内容，疑似被风控: {text[:100]}"
+            f"API 返回非 JSON 内容，疑似被风控（HTTP {response.status_code}）"
         ) from exc
     if not isinstance(data, dict):
         raise _RiskControlError("API 返回异常 JSON 格式，疑似被风控")
@@ -649,7 +652,7 @@ async def miyoushe_sign_in(
 
     # 获取游戏角色列表
     try:
-        roles = await _get_game_roles(
+        roles, role_records = await _get_game_roles(
             effective_cookie,
             proxy=proxy,
             device_id=device_id,
@@ -684,11 +687,34 @@ async def miyoushe_sign_in(
         return results
 
     if not roles:
-        logger.warning("未找到米游社绑定的游戏角色")
+        logger.warning(f"未找到米游社绑定的游戏角色（角色列表 {role_records} 条）")
         await report_credential_update()
+        if role_records:
+            # 上游确实返回了角色，却没有任何一款可签到的游戏：常见于新游戏尚未
+            # 支持或接口结构变化。静默跳过会让用户只看到「未签」，无从排查。
+            results.append(
+                {
+                    "account": f"{stuid}/米游社",
+                    "game": "米游社",
+                    "platform": "米游社",
+                    "status": "失败",
+                    "reward": "",
+                    "reason": (
+                        f"角色列表返回 {role_records} 条，但未匹配到可签到的游戏，"
+                        "请查看日志确认是否为上游结构变化"
+                    ),
+                }
+            )
         return results
 
     # 逐游戏执行社区签到
+    async def _pace_role(index: int) -> None:
+        """多角色之间的防风控间隔，提前结束的分支也必须等。"""
+
+        if index < len(roles) - 1:
+            # 对齐 MihoyoBBSTools：随机 2-8 秒
+            await asyncio.sleep(random.uniform(2.0, 8.0))
+
     for index, role in enumerate(roles):
         game_biz = role.get("game_biz", "")
         region = role.get("region", "")
@@ -741,6 +767,7 @@ async def miyoushe_sign_in(
                     }
                 )
                 logger.info(f"{account} {game_cfg['name']} 今日已签到")
+                await _pace_role(index)
                 continue
         except _RiskControlError:
             results.append(
@@ -754,6 +781,7 @@ async def miyoushe_sign_in(
                 }
             )
             logger.warning(f"{account} {game_cfg['name']} 账号被风控")
+            await _pace_role(index)
             continue
         except Exception as e:
             _log_miyoushe_exception("检查米游社签到状态失败", e)
@@ -828,9 +856,7 @@ async def miyoushe_sign_in(
                 }
             )
 
-        # 间隔防风控（对齐 MihoyoBBSTools：随机 2-8 秒）
-        if index < len(roles) - 1:
-            await asyncio.sleep(random.uniform(2.0, 8.0))
+        await _pace_role(index)
 
     await report_credential_update()
 
@@ -842,12 +868,16 @@ async def _get_game_roles(
     *,
     proxy: str | None = None,
     device_id: str = "",
-) -> list[dict[str, object]]:
+) -> tuple[list[dict[str, object]], int]:
     """获取游戏角色列表
 
     兼容两种 API 返回结构：
     - 扁平结构: data.list 直接是角色数组
     - 嵌套结构: data.list[].list[] 是角色数组（按游戏分组）
+
+    Returns:
+        可签到的角色，以及上游实际返回的角色记录总数；总量大于 0 而可签角色为
+        0 说明凭据本身可用，只是没有我们支持的游戏，调用方需要让用户看到这一点。
     """
     headers = BASE_HEADERS.copy()
     headers["DS"] = _generate_ds()
@@ -867,25 +897,24 @@ async def _get_game_roles(
         raise ValueError(f"获取角色列表失败: {rsp.get('message')}")
 
     data_list = rsp.get("data", {}).get("list", [])
-    roles = []
+    roles: list[dict[str, object]] = []
+    role_records = 0
 
-    if not data_list:
-        return roles
-
-    # 判断数据结构：有 "list" 子键 = 嵌套，否则 = 扁平
-    if "list" in data_list[0]:
-        # 嵌套结构: data.list[].list[]
-        for item in data_list:
-            for role in item.get("list", []):
-                if role.get("game_biz") in GAME_CONFIG:
-                    roles.append(role)
-    else:
-        # 扁平结构: data.list[]
-        for role in data_list:
+    # 兼容扁平（data.list[]）与嵌套（data.list[].list[]）两种结构。
+    # 逐条判断而不是只看首个元素，避免上游返回混合结构时整批丢角色。
+    for item in data_list:
+        if not isinstance(item, dict):
+            continue
+        nested = item.get("list")
+        candidates = nested if isinstance(nested, list) else [item]
+        for role in candidates:
+            if not isinstance(role, dict):
+                continue
+            role_records += 1
             if role.get("game_biz") in GAME_CONFIG:
                 roles.append(role)
 
-    return roles
+    return roles, role_records
 
 
 def _parse_miyoushe_sign_day(value: object) -> int:
@@ -1072,7 +1101,7 @@ async def _do_sign(
             )
 
         # ---- 已签到 ----
-        if retcode == -5003 or "请勿重复签到" in rsp.get("message", ""):
+        if retcode == -5003 or "请勿重复签到" in str(rsp.get("message") or ""):
             return _SignOutcome(
                 {
                     "account": account,

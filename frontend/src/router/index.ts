@@ -310,21 +310,6 @@ const routes = [
     meta: { title: '游戏社区' },
   },
   {
-    path: '/gamesign/sign',
-    name: 'CommunityToolSign',
-    redirect: '/gamesign',
-    meta: { title: '游戏社区' },
-  },
-  {
-    path: '/gamesign/activity',
-    name: 'CommunityToolActivity',
-    redirect: {
-      path: '/gamesign',
-      query: { tab: 'activity' },
-    },
-    meta: { title: '游戏社区' },
-  },
-  {
     path: '/theme-store',
     name: 'ThemeStore',
     component: () => import('../views/themeStore/index.vue'),
