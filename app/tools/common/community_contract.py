@@ -37,6 +37,24 @@ ActivityState = Literal[
     "failed",
 ]
 
+# 签到成功判据的唯一来源：编排层、结果格式化、通知与 API 都从这里取，
+# 避免三处各写一份 ("成功", "已签到") 后逐渐漂移。
+COMMUNITY_SIGN_SUCCESS_STATUSES: tuple[str, ...] = ("成功", "已签到")
+
+
+def is_community_sign_completed(item: Mapping[str, object]) -> bool:
+    """判断一条签到结果是否计入「已完成」，是成功判据的唯一实现。
+
+    多数结果用 ``status`` 表达成功；「流程已跑完但无法确认奖励」这一类
+    （如云异环剩余时长未增长）会同时是 ``status="失败"`` 与
+    ``_completed=True``。把它们算作未完成，会出现「通知说签到失败、
+    程序却说今天已完成、当天不再重试」的矛盾。
+    """
+
+    if str(item.get("status") or "").strip() in COMMUNITY_SIGN_SUCCESS_STATUSES:
+        return True
+    return bool(item.get("_completed"))
+
 
 class CommunitySignInProgressError(RuntimeError):
     """游戏社区签到已在执行。"""

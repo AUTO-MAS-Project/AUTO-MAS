@@ -39,6 +39,7 @@ from pydantic import (
 
 from app.core import Config
 from app.models.schema import OutBase
+from app.tools.common.community_accounts import is_known_community_account
 from app.utils import format_exception_reason, get_logger
 
 router = APIRouter(prefix="/api/tools/sign/miyoushe/qr", tags=["扫码登录"])
@@ -166,6 +167,13 @@ async def qr_save(body: QrSaveIn = Body(...)) -> OutBase:
         # 全量 Cookie 可能包含服务端兼容字段，保存路径不得重建或裁剪。
         cookie = body.cookie
         validate_miyoushe_cookie(cookie)
+        accounts = Config.ToolsConfig.GameSign_Accounts
+        if not is_known_community_account(accounts.keys(), body.account_uid):
+            return OutBase(
+                code=400,
+                status="error",
+                message="账号组不存在，请刷新页面后重试",
+            )
         data = {"GameSignAccount": {"MiyousheToken": cookie}}
         await Config.update_game_sign_account(body.account_uid, data)
     except ValueError as e:

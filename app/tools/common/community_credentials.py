@@ -31,7 +31,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from .community_contract import CredentialStatus
+from app.tools.common.community_contract import CredentialStatus
 
 CredentialFormat = Literal["empty", "opaque", "cookie", "json"]
 
@@ -107,31 +107,31 @@ CredentialValidator = Callable[[str], object]
 
 
 def _validate_skland(raw_token: str) -> object:
-    from .skland import validate_skland_credential
+    from app.tools.skland import validate_skland_credential
 
     return validate_skland_credential(raw_token)
 
 
 def _validate_miyoushe(raw_token: str) -> object:
-    from .miyoushe import validate_miyoushe_cookie
+    from app.tools.miyoushe import validate_miyoushe_cookie
 
     return validate_miyoushe_cookie(raw_token)
 
 
 def _validate_cloud_genshin(raw_token: str) -> object:
-    from .cloud_genshin import validate_cloud_genshin_token
+    from app.tools.cloud_genshin import validate_cloud_genshin_token
 
     return validate_cloud_genshin_token(raw_token)
 
 
 def _validate_kuro(raw_token: str) -> object:
-    from .kuro import validate_kuro_credential
+    from app.tools.kuro import validate_kuro_credential
 
     return validate_kuro_credential(raw_token)
 
 
 def _validate_taygedo(raw_token: str) -> object:
-    from .taygedo import validate_taygedo_credential
+    from app.tools.taygedo import validate_taygedo_credential
 
     return validate_taygedo_credential(raw_token)
 

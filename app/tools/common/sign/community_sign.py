@@ -27,12 +27,13 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime
 
-from app.tools.community_contract import (
+from app.core.config import Config
+from app.tools.common.community_contract import (
     CommunitySignInProgressError,
     CommunitySignResult,
 )
-from app.tools.community_credentials import is_community_credential_configured
-from app.tools.community_sign_provider import (
+from app.tools.common.community_credentials import is_community_credential_configured
+from app.tools.common.sign.community_sign_provider import (
     check_community_system_time,
     get_community_sign_providers,
     last_system_time_offset,
@@ -40,8 +41,6 @@ from app.tools.community_sign_provider import (
     run_community_provider,
 )
 from app.utils import UTC8, get_logger
-
-from .config import Config
 
 __all__ = [
     "CommunitySignInProgressError",

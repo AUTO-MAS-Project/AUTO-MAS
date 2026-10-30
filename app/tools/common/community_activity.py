@@ -33,19 +33,19 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from app.core.community_scheduler import community_activity_flow
-from app.tools.community_activity_provider import CommunityActivityProvider
-from app.tools.community_activity_roles import (
+from app.tools.common.community_activity_provider import CommunityActivityProvider
+from app.tools.common.community_activity_roles import (
     ACTIVITY_COMMUNITY_DEFINITIONS,
     CommunityActivityProviderDefinition,
     CommunityActivityRole,
 )
-from app.tools.community_activity_transport import (
+from app.tools.common.community_activity_transport import (
     CommunityActivityTarget,
     CommunityActivityTransportError,
     collect_community_activity,
 )
-from app.tools.community_contract import ActivityState, CommunityActivitySnapshot
+from app.tools.common.community_contract import ActivityState, CommunityActivitySnapshot
+from app.tools.common.community_scheduler import community_activity_flow
 from app.utils import UTC8, format_exception_reason, get_logger
 
 if TYPE_CHECKING:
@@ -305,7 +305,7 @@ def build_configured_community_activity_failures(
 ) -> tuple[CommunityActivitySnapshot, ...]:
     """为已配置社区构造分游戏失败结果，不执行任何上游请求。"""
 
-    from app.tools.community_sign_provider import (
+    from app.tools.common.sign.community_sign_provider import (
         get_community_token_field,
         read_community_token,
     )
@@ -346,7 +346,7 @@ async def collect_configured_community_activity(
     """读取已配置账号组并查询已登记社区的日常活动。"""
 
     from app.core import Config
-    from app.tools.community_sign_provider import (
+    from app.tools.common.sign.community_sign_provider import (
         get_community_token_field,
         read_community_token,
     )

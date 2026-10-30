@@ -1,12 +1,14 @@
 import type { HomeModuleKey } from '@/types/home'
 import type { ActivitySnapshot } from '@/views/gamesign/useCommunityActivityApi'
+import type { CommunityGame } from '@/views/gamesign/communityGames'
 
 /**
  * 轮播游戏键 → 社区数据里的游戏中文名。
  * 中文名是后端便笺/签到合同的稳定枚举（与 gamesign 页展示同源），只用于匹配，不参与界面翻译。
  * 首页社区信息只展示已接入日常便笺的五款游戏；其余游戏不展示此区域。
+ * 值类型绑定 communityGames 的清单，游戏改名或新增时会在这里报类型错误。
  */
-export const ACTIVITY_NOTE_GAME_NAMES: Partial<Record<HomeModuleKey, string>> = {
+export const ACTIVITY_NOTE_GAME_NAMES: Partial<Record<HomeModuleKey, CommunityGame>> = {
   arknights: '明日方舟',
   endfield: '终末地',
   genshin: '原神',

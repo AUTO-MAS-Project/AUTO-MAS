@@ -43,7 +43,7 @@ class CommunityAccounts(Protocol):
 
 
 def _default_credential_checker(account: object) -> bool:
-    from app.tools.community import has_community_credentials
+    from app.tools.common.community import has_community_credentials
 
     return has_community_credentials(account)
 

@@ -37,10 +37,9 @@ from datetime import datetime
 from typing import Literal
 from urllib.parse import urlencode
 
+from app.tools.common.community_activity_parser import parse_activity_snapshot
+from app.tools.common.community_contract import ActivityState, CommunityActivitySnapshot
 from app.utils import UTC8
-
-from .community_activity_parser import parse_activity_snapshot
-from .community_contract import ActivityState, CommunityActivitySnapshot
 
 __all__ = [
     "CommunityActivityRequest",

@@ -30,16 +30,15 @@ from typing import Awaitable, Callable, Protocol
 import httpx
 
 from app.core import Config
-from app.services.community_http import create_community_client
-from app.utils import format_exception_reason, get_logger
-
-from .community_contract import CommunitySignResult
-from .community_credentials import (
+from app.tools.common.community_contract import CommunitySignResult
+from app.tools.common.community_credentials import (
     is_community_credential_configured,
     parse_community_credential,
     validate_community_credential,
 )
-from .game_sign_result import build_skland_sign_results
+from app.tools.common.community_http import create_community_client
+from app.tools.common.sign.community_sign_result import build_skland_sign_results
+from app.utils import format_exception_reason, get_logger
 
 logger = get_logger("游戏社区签到")
 
@@ -204,7 +203,7 @@ async def _run_skland_provider(
     account_uid: str,
     on_credential_update: CredentialUpdateCallback | None = None,
 ) -> _CommunityProviderRun:
-    from .skland import skland_sign_in
+    from app.tools.skland import skland_sign_in
 
     updated_token = ""
 
@@ -244,7 +243,7 @@ async def _run_miyoushe_provider(
     account_uid: str,
     on_credential_update: CredentialUpdateCallback | None = None,
 ) -> _CommunityProviderRun:
-    from .miyoushe import merge_miyoushe_cookie_update, miyoushe_sign_in
+    from app.tools.miyoushe import merge_miyoushe_cookie_update, miyoushe_sign_in
 
     updated_token = ""
 
@@ -280,7 +279,7 @@ async def _run_kuro_provider(
     _account_uid: str,
     _on_credential_update: CredentialUpdateCallback | None = None,
 ) -> _CommunityProviderRun:
-    from .kuro import kuro_sign_in
+    from app.tools.kuro import kuro_sign_in
 
     return _CommunityProviderRun(
         results=await kuro_sign_in(token),
@@ -294,7 +293,7 @@ async def _run_cloud_genshin_provider(
     account_uid: str,
     _on_credential_update: CredentialUpdateCallback | None = None,
 ) -> _CommunityProviderRun:
-    from .cloud_genshin import cloud_genshin_sign_in
+    from app.tools.cloud_genshin import cloud_genshin_sign_in
 
     return _CommunityProviderRun(
         results=await cloud_genshin_sign_in(
@@ -312,7 +311,7 @@ async def _run_taygedo_provider(
     _account_uid: str,
     on_credential_update: CredentialUpdateCallback | None = None,
 ) -> _CommunityProviderRun:
-    from .taygedo import (
+    from app.tools.taygedo import (
         parse_taygedo_credential,
         serialize_taygedo_credential,
         sign_taygedo,

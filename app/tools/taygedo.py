@@ -48,10 +48,9 @@ import httpx
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
-from app.services.community_http import create_community_client
+from app.tools.common.community_http import create_community_client
+from app.tools.common.sign.community_sign_result import merge_community_sign_result
 from app.utils import format_exception_reason, get_logger
-
-from .game_sign_result import merge_community_sign_result
 
 logger = get_logger("塔吉多社区")
 

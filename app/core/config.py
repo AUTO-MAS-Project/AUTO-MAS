@@ -108,7 +108,6 @@ from app.task.M9A.migration import (
     normalize_m9a_managed_entries,
     repair_m9a_migration_losses,
 )
-from app.utils import community as _utils_community
 from app.utils import constants as _utils_constants
 from app.utils import get_logger, is_supervised
 from app.utils import io as _utils_io
@@ -469,7 +468,7 @@ class AppConfig:
             group="Replay",
             field="VideoStorageLimitMiB",
         )
-        from app.core.community_activity import connect_community_activity_cache
+        from app.tools.common.community_activity import connect_community_activity_cache
 
         connect_community_activity_cache(self.ToolsConfig, setting=self.setting)
         # 注册自启动会读写注册表, 不阻塞初始化; 持有引用避免被 GC 且异常不被静默吞掉
@@ -1986,7 +1985,9 @@ class AppConfig:
             replace: 是否按账号 UID 替换已有结果。
         """
 
-        from app.tools.community_sign_provider import merge_community_sign_results
+        from app.tools.common.sign.community_sign_provider import (
+            merge_community_sign_results,
+        )
 
         today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
         existing = (
@@ -2045,13 +2046,17 @@ class AppConfig:
         logger.info("添加游戏社区账号组")
 
         async with self._community_account_add_lock:
+            # 延迟导入：app.tools 包的 __init__ 会拉起社区 facade，
+            # 而社区签到模块又需要 Config，顶层导入会形成启动期循环依赖。
+            from app.tools.common.community_accounts import next_community_account_name
+
             existing_names = []
             for account in self.ToolsConfig.GameSign_Accounts.values():
                 try:
                     existing_names.append(account.GameSignAccount.Name)
                 except (AttributeError, KeyError):
                     continue
-            account_name = _utils_community.next_community_account_name(existing_names)
+            account_name = next_community_account_name(existing_names)
             uid = self.ToolsConfig.GameSign_Accounts.add(GameSignAccountGroup)
             await self.ToolsConfig.GameSign_Accounts.commit()
             config = self.ToolsConfig.GameSign_Accounts[uid]
@@ -2102,7 +2107,7 @@ class AppConfig:
 
         account_uid = uuid.UUID(account_id)
         account = self.ToolsConfig.GameSign_Accounts[account_uid]
-        from app.tools.community_sign_provider import COMMUNITY_TOKEN_FIELDS
+        from app.tools.common.sign.community_sign_provider import COMMUNITY_TOKEN_FIELDS
 
         credential_fields = set(COMMUNITY_TOKEN_FIELDS)
         credential_changed = False

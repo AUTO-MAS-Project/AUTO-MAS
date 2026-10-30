@@ -19,11 +19,12 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .community import (
+from app.tools.common.community import (
     format_community_sign_results,
     has_community_credentials,
     run_community_sign_in,
 )
+
 from .skland import skland_sign_in
 
 __all__ = [
