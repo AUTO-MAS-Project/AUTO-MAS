@@ -2688,6 +2688,8 @@
   "core.emulator.on": "开",
   "core.emulator.pathLabel": "模拟器路径",
   "core.emulator.pathPlaceholder": "请点击文件夹图标选择模拟器路径",
+  "core.emulator.pathRequired": "请选择模拟器路径以加载设备",
+  "core.emulator.selectPath": "选择模拟器路径",
   "core.emulator.record": "录制",
   "core.emulator.searchEmpty": "未找到任何模拟器",
   "core.emulator.searchModalTitle": "搜索到的模拟器",

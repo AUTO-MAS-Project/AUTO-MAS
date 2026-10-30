@@ -2688,6 +2688,8 @@
   "core.emulator.on": "オン",
   "core.emulator.pathLabel": "エミュレーターのパス",
   "core.emulator.pathPlaceholder": "フォルダーアイコンからエミュレーターのパスを選択してください",
+  "core.emulator.pathRequired": "デバイスを読み込むにはエミュレーターのパスを選択してください",
+  "core.emulator.selectPath": "エミュレーターのパスを選択",
   "core.emulator.record": "記録",
   "core.emulator.searchEmpty": "エミュレーターが見つかりませんでした",
   "core.emulator.searchModalTitle": "見つかったエミュレーター",

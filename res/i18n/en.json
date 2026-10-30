@@ -2688,6 +2688,8 @@
   "core.emulator.on": "On",
   "core.emulator.pathLabel": "Path",
   "core.emulator.pathPlaceholder": "Click the folder icon to pick the emulator path",
+  "core.emulator.pathRequired": "Select an emulator path to load devices",
+  "core.emulator.selectPath": "Select emulator path",
   "core.emulator.record": "Record",
   "core.emulator.searchEmpty": "No emulators found",
   "core.emulator.searchModalTitle": "Emulators found",

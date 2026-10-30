@@ -20,6 +20,7 @@ import { EmulatorOperateIn, Service } from '@/composables/useEmulatorApi'
 import { importLegacyEmulator } from '@/views/Emulator/importLegacyEmulator'
 import DocLink from '@/components/DocLink.vue'
 import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
+import EmulatorDeviceEmpty from '@/views/Emulator/components/EmulatorDeviceEmpty.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { usePerformanceStore } from '@/stores/performance'
 import { invalidateEmulatorOptions } from '@/composables/useEmulatorOptions'
@@ -59,6 +60,8 @@ const safeJsonParse = (jsonString: string | null | undefined, fallback: any = []
 // 模拟器类型映射
 // label 随语言变，所以必须是 computed；常量数组在切换语言后不会更新
 const isEmulator2 = (uid: string) => getEditingData(uid).type === 'emulator2'
+// 以已保存的路径为准，避免选中文件但保存失败时仍发起设备查询。
+const needsEmulatorPath = (uid: string) => !isEmulator2(uid) && !emulatorData.value[uid]?.Info?.Path
 
 const emulatorTypeOptions = computed(() => [
   { value: 'general', label: t('core.emulator.type.general') },
@@ -100,6 +103,9 @@ const showingDevices = ref<Set<string>>(new Set())
 // 轮询相关状态
 const pollingTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const POLLING_INTERVAL = 10000 // 10 秒轮询一次
+const PATH_SYNC_ATTEMPTS = 3
+const pendingPathSyncAttempts = new Map<string, number>()
+const syncingEmulatorConfigs = new Set<string>()
 
 // 路由监听
 const route = useRoute()
@@ -110,15 +116,23 @@ const pollDevicesStatus = async () => {
   if (!uid || !emulatorIndex.value.some(e => e.uid === uid) || isEmulator2(uid)) {
     return
   }
+  if (pendingPathSyncAttempts.has(uid)) {
+    if (savingMap.value.get(uid) || pendingPathSyncAttempts.get(uid) === 0) return
+    if (!(await refreshEmulatorConfig(uid))) return
+  }
+  if (needsEmulatorPath(uid)) return
 
   // 静默获取设备状态，不显示loading
+  const path = emulatorData.value[uid]?.Info?.Path
   try {
     const response = await Service.getStatusApiEmulatorStatusPost({ emulatorId: uid })
+    if (path !== emulatorData.value[uid]?.Info?.Path) return
     if (response.code === 200) {
       const allDevicesData = response.data || {}
       devicesData.value[uid] = allDevicesData[uid] || {}
     }
   } catch (e) {
+    if (path !== emulatorData.value[uid]?.Info?.Path) return
     // 轮询时的错误静默处理，避免频繁弹错误提示
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.warn(`轮询设备状态时出错: ${errorMsg}`)
@@ -313,6 +327,7 @@ const loadEmulators = async () => {
       // 初始化所有模拟器的编辑数据
       emulatorIndex.value.forEach(item => {
         const configData = emulatorData.value[item.uid]
+        if (configData?.Info) pendingPathSyncAttempts.delete(item.uid)
         const editData = buildEditingData(configData)
         editingDataMap.value.set(item.uid, editData)
         // 同步 boss_keys 到输入框显示
@@ -354,56 +369,41 @@ const handleAdd = async () => {
 }
 
 // 刷新模拟器配置 - 保存成功后调用
-const refreshEmulatorConfig = async (uuid?: string) => {
+const refreshEmulatorConfig = async (uuid: string): Promise<boolean> => {
+  const selectedPath = getEditingData(uuid).path
+  const attempts = pendingPathSyncAttempts.get(uuid)
+  if (attempts !== undefined) {
+    if (syncingEmulatorConfigs.has(uuid)) return false
+    syncingEmulatorConfigs.add(uuid)
+    pendingPathSyncAttempts.set(uuid, Math.max((attempts || PATH_SYNC_ATTEMPTS) - 1, 0))
+  }
   try {
-    const response = await Service.getEmulatorApiEmulatorGetPost({ emulatorId: uuid || null })
-    if (response.code === 200 && 'index' in response && 'data' in response) {
-      // 如果指定了 uuid，只更新特定模拟器的数据，而不是替换整个列表
-      if (uuid) {
-        // 更新特定模拟器的数据
-        const updatedIndex = response.index as EmulatorConfigIndexItem[]
-        const updatedData = response.data as Record<string, any>
-
-        if (updatedIndex.length > 0 && updatedData[uuid]) {
-          // 找到并更新 index 中的对应项
-          const indexItem = emulatorIndex.value.find(item => item.uid === uuid)
-          if (indexItem) {
-            // 更新 type
-            indexItem.type = updatedIndex[0].type
-          }
-
-          // 更新或添加 data
-          emulatorData.value[uuid] = updatedData[uuid]
-
-          // 更新编辑数据
-          const configData = updatedData[uuid]
-          const editData = buildEditingData(configData)
-          editingDataMap.value.set(uuid, editData)
-          // 同步 boss_keys 到输入框显示
-          if (editData.boss_keys.length > 0) {
-            bossKeyInputMap.value[uuid] = editData.boss_keys[0]
-          }
-        }
-      } else {
-        // 没有指定 uuid，刷新所有模拟器
-        emulatorIndex.value = (response.index as EmulatorConfigIndexItem[]) || []
-        emulatorData.value = (response.data as Record<string, any>) || {}
-
-        // 更新编辑数据
-        emulatorIndex.value.forEach(item => {
-          const configData = emulatorData.value[item.uid]
-          const editData = buildEditingData(configData)
-          editingDataMap.value.set(item.uid, editData)
-          // 同步 boss_keys 到输入框显示
-          if (editData.boss_keys.length > 0) {
-            bossKeyInputMap.value[item.uid] = editData.boss_keys[0]
-          }
-        })
-      }
+    const response = await Service.getEmulatorApiEmulatorGetPost({ emulatorId: uuid })
+    if (selectedPath !== getEditingData(uuid).path) return false
+    if (response.code !== 200)
+      throw new Error(response.message || t('core.emulator.toast.loadFailed'))
+    const configData = response.data?.[uuid]
+    if (!response.index?.some(item => item.uid === uuid) || !configData?.Info) {
+      throw new Error(`模拟器配置缺失: ${uuid}`)
     }
+    // 只同步本次保存的模拟器，以后端规范化后的配置为准。
+    emulatorData.value[uuid] = configData
+    const editData = buildEditingData(configData)
+    editingDataMap.value.set(uuid, editData)
+    // 同步 boss_keys 到输入框显示
+    if (editData.boss_keys.length > 0) {
+      bossKeyInputMap.value[uuid] = editData.boss_keys[0]
+    }
+    pendingPathSyncAttempts.delete(uuid)
+    return true
   } catch (e) {
+    if (selectedPath !== getEditingData(uuid).path) return false
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`刷新模拟器配置失败: ${errorMsg}`)
+    if (pendingPathSyncAttempts.get(uuid) === 0) message.error(t('core.emulator.toast.loadFailed'))
+    return false
+  } finally {
+    if (attempts !== undefined) syncingEmulatorConfigs.delete(uuid)
   }
 }
 
@@ -444,17 +444,23 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
 
     if (response.code === 200) {
       logger.info(`配置已保存: ${key}`)
+      // 首次回读加两次现有轮询重试；耗尽后由切换页签或重新保存重试。
+      if (key === 'path') pendingPathSyncAttempts.set(uuid, PATH_SYNC_ATTEMPTS)
       if (key === 'name' || key === 'type') await invalidateEmulatorOptions()
       if (key === 'path' || key === 'type') await invalidateEmulatorDeviceOptions(uuid)
       // 保存成功后重新获取最新配置
-      await refreshEmulatorConfig(uuid)
+      const synced = await refreshEmulatorConfig(uuid)
+      if (key === 'path' && synced) await loadDevices(uuid)
+      return true
     } else {
       message.error(response.message || t('core.emulator.toast.saveFailed'))
+      return false
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`保存模拟器配置失败: ${errorMsg}`)
     message.error(t('core.emulator.toast.saveEmulatorFailed'))
+    return false
   } finally {
     savingMap.value.set(uuid, false)
   }
@@ -467,6 +473,7 @@ const handleDelete = async (uuid: string) => {
       emulatorId: uuid,
     })
     if (response.code === 200) {
+      pendingPathSyncAttempts.delete(uuid)
       await invalidateEmulatorOptions()
       await invalidateEmulatorDeviceOptions(uuid)
       // 如果删除的是当前激活的 Tab，需要跳转到其他 Tab
@@ -543,20 +550,25 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
   }
 }
 
-// 展开/折叠设备信息（已废弃，Tab模式下不需要）
-// const toggleDevices = async (uuid: string) => {
-//   await loadDevices(uuid)
-// }
-
 // 加载设备信息 - 简化版，不使用缓存
 const loadDevices = async (uuid: string) => {
+  if (pendingPathSyncAttempts.has(uuid)) {
+    if (savingMap.value.get(uuid) || !(await refreshEmulatorConfig(uuid))) return
+  }
+  if (needsEmulatorPath(uuid)) {
+    devicesData.value[uuid] = {}
+    return
+  }
+
   loadingDevices.value.add(uuid)
   loadingDevices.value = new Set(loadingDevices.value)
 
+  const path = emulatorData.value[uuid]?.Info?.Path
   try {
     const response = await Service.getStatusApiEmulatorStatusPost({
       emulatorId: uuid,
     })
+    if (path !== emulatorData.value[uuid]?.Info?.Path) return
 
     if (response.code === 200) {
       // 后端返回的data是 { "模拟器UUID": { "设备索引": {...} } }
@@ -568,6 +580,7 @@ const loadDevices = async (uuid: string) => {
       message.error(response.message || t('core.emulator.toast.deviceInfoFailed'))
     }
   } catch (e) {
+    if (path !== emulatorData.value[uuid]?.Info?.Path) return
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`获取设备信息失败: ${errorMsg}`)
     message.error(t('core.emulator.toast.deviceInfoFailed'))
@@ -685,9 +698,9 @@ const selectEmulatorPath = async (uuid: string) => {
 
     if (paths && paths.length > 0) {
       editData.path = paths[0]
-      message.success(t('core.emulator.toast.pathPicked'))
       // 立刻保存并从后端获取被纠正后的路径
-      await handleSaveChange(uuid, 'path', paths[0])
+      if (!(await handleSaveChange(uuid, 'path', paths[0]))) return
+      message.success(t('core.emulator.toast.pathPicked'))
 
       // 检查路径是否被后端纠正
       const newPath = editingDataMap.value.get(uuid)?.path || ''
@@ -1188,26 +1201,15 @@ const handleBossKeyInputChange = (uuid: string) => {
                 </div>
 
                 <a-spin :spinning="loadingDevices.has(element.uid)">
-                  <div
+                  <EmulatorDeviceEmpty
                     v-if="
                       !devicesData[element.uid] ||
                       Object.keys(devicesData[element.uid]).length === 0
                     "
-                    class="empty-devices"
-                  >
-                    <a-empty :description="t('core.emulator.noDevice')">
-                      <template #extra>
-                        <a-button
-                          type="primary"
-                          size="small"
-                          :icon="h(PlayCircleOutlined)"
-                          @click="startEmulator(element.uid, '0')"
-                        >
-                          {{ t('core.emulator.startEmulator') }}
-                        </a-button>
-                      </template>
-                    </a-empty>
-                  </div>
+                    :needs-path="needsEmulatorPath(element.uid)"
+                    @select-path="selectEmulatorPath(element.uid)"
+                    @start="startEmulator(element.uid, '0')"
+                  />
 
                   <div v-else class="devices-grid">
                     <a-table
@@ -1544,15 +1546,6 @@ const handleBossKeyInputChange = (uuid: string) => {
   font-size: 16px;
   font-weight: 600;
   color: var(--ant-color-text);
-}
-
-.empty-devices {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 0;
-  text-align: center;
 }
 
 .devices-grid {
