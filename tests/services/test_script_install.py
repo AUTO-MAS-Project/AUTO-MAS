@@ -274,7 +274,6 @@ def test_new_release_removes_only_previously_managed_obsolete_files(package):
     assert (root / "user-notes.txt").read_bytes() == b"keep"
 
 
-
 def test_merged_pipeline_first_adoption_quarantines_obsolete_json(package):
     root, archive = package
     old_pipeline = root / "resource/pipeline"

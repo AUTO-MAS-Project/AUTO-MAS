@@ -301,7 +301,6 @@ def recover_install(
         raise InstallUnsafeError("无法确认脚本更新恢复状态，已停止启动") from error
 
 
-
 def _refresh_merged_pipelines(
     ready: Path,
     package: Path,
