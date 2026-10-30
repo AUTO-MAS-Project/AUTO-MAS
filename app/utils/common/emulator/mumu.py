@@ -28,7 +28,7 @@ from app.models.emulator import (
     DeviceStatus,
     EmulatorRuntimePolicy,
 )
-from app.utils import IS_WINDOWS, ProcessRunner, get_logger
+from app.utils import IS_WINDOWS, ProcessResult, ProcessRunner, get_logger
 from app.utils import emulator as _utils_emulator
 from app.utils import window as platform_window
 
@@ -47,6 +47,27 @@ MUMU_FORCE_KILL_WAIT_SECONDS = 10
 MUMU_CLOSE_SETTLE_SECONDS = 2
 MUMU_STORE_PACKAGE = "com.mumu.store"
 MUMU_STORE_OVERLAY_APP_OP = "SYSTEM_ALERT_WINDOW"
+# MuMu 6.8.8 的 control launch 会自己等满 15 秒再回 -503：实例其实已经在启动，
+# 只是 mainnx 一直没接管 IPC。这种 errcode 重发一次通常就能连上
+LAUNCH_RETRY_ERRCODES = frozenset({-503})
+# 重发 launch 前的让位时间（秒），第一次已经阻塞十几秒，这步只给 mainnx 收尾
+LAUNCH_RETRY_DELAY_SECONDS = 1.0
+
+
+def _launch_errcode(result: ProcessResult) -> int | None:
+    """取 MuMuManager control launch 自己返回的 errcode，非 JSON 输出返回 None。"""
+
+    payload = result.stdout.strip()
+    if not payload:
+        return None
+    try:
+        data = json.loads(payload)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    errcode = data.get("errcode")
+    return errcode if isinstance(errcode, int) else None
 
 
 class MumuManager(DeviceBase):
@@ -396,17 +417,7 @@ class MumuManager(DeviceBase):
 
         logger.info(f"执行 MuMu 启动命令: {idx} - {package_name}")
         launch_started_at = time.monotonic()
-        result = await ProcessRunner.run_process(
-            self.emulator_path,
-            "control",
-            "-v",
-            idx,
-            "launch",
-            *(["-pkg", package_name] if package_name else []),
-            timeout=self.config.Info.MaxWaitTime,
-            if_merge_std=True,
-            breakaway=True,
-        )
+        result = await self._launch_with_retry(idx, package_name)
         # 参考命令 MuMuManager.exe control -v 2 launch
 
         if result.returncode != 0:
@@ -469,6 +480,41 @@ class MumuManager(DeviceBase):
             raise RuntimeError(
                 f"模拟器 {idx} 启动超时, 当前状态码: {status}{diagnosis}"
             )
+
+    async def _launch(self, idx: str, package_name: str) -> ProcessResult:
+        """执行一次 control launch，首次启动与 -503 重试共用同一条命令。"""
+
+        return await ProcessRunner.run_process(
+            self.emulator_path,
+            "control",
+            "-v",
+            idx,
+            "launch",
+            *(["-pkg", package_name] if package_name else []),
+            timeout=self.config.Info.MaxWaitTime,
+            if_merge_std=True,
+            breakaway=True,
+        )
+
+    async def _launch_with_retry(self, idx: str, package_name: str) -> ProcessResult:
+        """执行 control launch；-503 表示 mainnx 还没接管 IPC，隔一会儿重发一次。"""
+
+        launch_started_at = time.monotonic()
+        result = await self._launch(idx, package_name)
+        if result.returncode == 0:
+            return result
+
+        errcode = _launch_errcode(result)
+        if errcode not in LAUNCH_RETRY_ERRCODES:
+            return result
+
+        # 第一次已经把 mainnx 起了个头，重发一次一般就能拿到应答
+        logger.warning(
+            f"MuMu 启动命令返回 {errcode}，实例可能仍在启动，重试一次: "
+            f"{idx} - 用时: {time.monotonic() - launch_started_at:.3f}秒"
+        )
+        await asyncio.sleep(LAUNCH_RETRY_DELAY_SECONDS)
+        return await self._launch(idx, package_name)
 
     async def _describe_launch_failure(self, idx: str) -> str:
         """启动失败 / 超时报错的附加说明。旧配置不加，Emulator 2.0 的后端覆盖它。"""
