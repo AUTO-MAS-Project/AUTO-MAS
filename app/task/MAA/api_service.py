@@ -568,6 +568,15 @@ async def get_depot_inventory(
     return items, recognized_iso
 
 
+async def refresh_cultivate_data(script_id: str) -> None:
+    """校验脚本入口后强制刷新共享养成数据，不修改用户目标或库存。"""
+
+    from app.task.MAA.tools.cultivate.yituliu import refresh_data
+
+    _maa_script_config(script_id)
+    await refresh_data(Config.config_path, Config.proxy)
+
+
 async def get_cultivate_operators(
     script_id: str, user_id: str
 ) -> list[dict[str, object]]:

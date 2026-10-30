@@ -9,6 +9,7 @@ import type { PlanUpdateIn } from '../models/PlanUpdateIn';
 import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
+import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptReorderIn } from '../models/ScriptReorderIn';
 import type { ScriptTemplateImportIn } from '../models/ScriptTemplateImportIn';
 import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
@@ -171,6 +172,25 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/infrastructure/plan-select',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 手动刷新 MAA 养成材料数据与干员目录
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static refreshMaaCultivateDataApiScriptsMaaCultivateRefreshPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/refresh',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

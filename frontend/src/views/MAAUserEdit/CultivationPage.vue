@@ -17,10 +17,15 @@
         <h1 class="page-title">{{ t('core.maaCopilot.pageTitle') }}</h1>
         <p class="cultivation-desc">{{ t('core.maaCopilot.saveHint') }}</p>
       </div>
-      <a-button class="cultivation-back" size="large" :loading="leavingPage" @click="emit('back')">
-        <template #icon><ArrowLeftOutlined aria-hidden="true" /></template>
-        {{ t('core.edit.back') }}
-      </a-button>
+      <a-space class="cultivation-actions" wrap>
+        <CultivateDataRefresh
+          :disabled="loading || editorBusy || clipboardImporting || copilotImporting"
+        />
+        <a-button size="large" :loading="leavingPage" @click="emit('back')">
+          <template #icon><ArrowLeftOutlined aria-hidden="true" /></template>
+          {{ t('core.edit.back') }}
+        </a-button>
+      </a-space>
     </header>
 
     <ConfigLockPanel :script-id="scriptId" content-class="cultivation-body">
@@ -99,6 +104,7 @@ import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import type { CultivatePreviewOut } from '@/api'
 import CultivationOverview from './CultivationOverview.vue'
+import CultivateDataRefresh from './CultivateDataRefresh.vue'
 import CultivateTargetEditor from './CultivateTargetEditor.vue'
 import CopilotCultivatePlanner from './CopilotCultivatePlanner.vue'
 import type { CultivateImportResult, CultivateOperatorCatalogEntry } from './cultivateTargets'
@@ -216,7 +222,7 @@ const sklandBoundComposite = computed(() => {
   color: var(--ant-color-text-secondary);
 }
 
-.cultivation-back {
+.cultivation-actions {
   flex-shrink: 0;
 }
 

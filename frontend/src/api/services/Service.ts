@@ -1320,6 +1320,25 @@ export class Service {
         });
     }
     /**
+     * 手动刷新 MAA 养成材料数据与干员目录
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static refreshMaaCultivateDataApiScriptsMaaCultivateRefreshPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/refresh',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 校验并转换 MAA 剪贴板养成目标（不落库）
      * @param requestBody
      * @returns MaaCultivateImportOut Successful Response
