@@ -103,7 +103,10 @@ async def test_official_package_installs_and_preserves_native_interface(installa
     assert (root / "data/AutoDelivery/catalog.json").is_file()
     assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
     assert update.download_file.await_args.kwargs["downloader"] == "fluxdown"
-    assert json.loads((root / "interface.json").read_bytes())["mirrorchyan_rid"] == "MaaEnd"
+    assert (
+        json.loads((root / "interface.json").read_bytes())["mirrorchyan_rid"]
+        == "MaaEnd"
+    )
 
 
 @pytest.mark.asyncio
@@ -153,7 +156,6 @@ async def test_mirror_download_still_requires_official_sha256(
     )
 
 
-
 def _create_old_interface_journal(root: Path) -> bytes:
     original = (root / "interface.json").read_bytes()
     injected = b'{"name":"MaaEnd","version":"v2.1.0"}'
@@ -189,7 +191,9 @@ def test_interface_recovery_preserves_external_changes(installation):
     assert (root / "interface.json").read_bytes() == changed
 
 
-def _cached_mxu_zip(root: Path, filename: str, version: str, project: str = "MaaEnd") -> Path:
+def _cached_mxu_zip(
+    root: Path, filename: str, version: str, project: str = "MaaEnd"
+) -> Path:
     cache = root / "cache"
     cache.mkdir(exist_ok=True)
     path = cache / filename
@@ -216,7 +220,10 @@ def test_discard_old_mxu_package_preserves_cache_and_newer_archives(installation
     assert not old.exists() and not same.exists()
     assert future.is_file() and different.is_file() and unknown.is_file()
     assert (webview / "Preferences").read_text() == "persistent"
-    assert json.loads((root / "interface.json").read_text())["mirrorchyan_rid"] == "MaaEnd"
+    assert (
+        json.loads((root / "interface.json").read_text())["mirrorchyan_rid"]
+        == "MaaEnd"
+    )
 
 
 def test_discard_rejects_unremovable_recognized_archive(installation, monkeypatch):
@@ -263,7 +270,10 @@ async def test_preparation_failure_preserves_native_update_configuration(
     await scheduler._prepare_program_update(root)
     manager.Publisher.send.assert_awaited_once()
     assert scheduler._program_update_prepared
-    assert json.loads((root / "interface.json").read_bytes())["mirrorchyan_rid"] == "MaaEnd"
+    assert (
+        json.loads((root / "interface.json").read_bytes())["mirrorchyan_rid"]
+        == "MaaEnd"
+    )
     assert not (script_install.workspace(root) / "runtime-interface.json").exists()
 
 
@@ -389,7 +399,10 @@ async def test_early_resource_rejection_restores_interface_and_releases_both_loc
     await instance.main_task()
     lock.assert_awaited_once()
     assert not (script_install.workspace(root) / "runtime-interface.json").exists()
-    assert json.loads((root / "interface.json").read_bytes())["mirrorchyan_rid"] == "MaaEnd"
+    assert (
+        json.loads((root / "interface.json").read_bytes())["mirrorchyan_rid"]
+        == "MaaEnd"
+    )
     await instance.final_task()
     assert (root / "interface.json").read_bytes() == original
     unlock.assert_awaited_once_with("ticket")

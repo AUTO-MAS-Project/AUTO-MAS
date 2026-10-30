@@ -1668,9 +1668,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 snapshot_mxu_logs, self.maaend_root_path
             )
             update_log_offsets = (
-                stage_log_offsets
-                if self.mode == self.first_run_mode
-                else None
+                stage_log_offsets if self.mode == self.first_run_mode else None
             )
             self.wait_event.clear()
             await self.maaend_process_manager.open_process(

@@ -279,7 +279,6 @@ async def confirm_current_install(root: Path) -> None:
         )
 
 
-
 def discard_obsolete_mxu_packages(root: Path) -> tuple[str, ...]:
     """仅清理 MXU 缓存根目录内可确认身份且不高于当前版本的完整发行 ZIP。
 
@@ -363,5 +362,3 @@ def _write_interface(path: Path, content: bytes) -> None:
         handle.flush()
         os.fsync(handle.fileno())
     temporary.replace(path)
-
-
