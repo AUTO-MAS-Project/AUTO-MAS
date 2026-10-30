@@ -274,6 +274,77 @@ def test_new_release_removes_only_previously_managed_obsolete_files(package):
     assert (root / "user-notes.txt").read_bytes() == b"keep"
 
 
+
+def test_merged_pipeline_first_adoption_quarantines_obsolete_json(package):
+    root, archive = package
+    old_pipeline = root / "resource/pipeline"
+    old_pipeline.mkdir(parents=True)
+    old_split = b'{"AutoCollectSchedule": {"action": "Custom"}}'
+    (old_pipeline / "AutoCollect.json").write_bytes(old_split)
+    (old_pipeline / "Custom.json").write_text('{"UserNode": {}}')
+    (root / "resource_extra/pipeline").mkdir(parents=True)
+    (root / "resource_extra/pipeline/Old.json").write_text('{"Other": {}}')
+    with zipfile.ZipFile(archive, "w") as payload:
+        payload.writestr("app.exe", b"new")
+        payload.writestr("resource/pipeline/nodes.json", old_split)
+        payload.writestr("resource_extra/pipeline/nodes.json", '{"Other": {}}')
+    install.install_package(
+        root,
+        archive,
+        archive.stat().st_size,
+        hashlib.sha256(archive.read_bytes()).hexdigest(),
+        frozenset({"config"}),
+        lambda _: None,
+        lambda: None,
+        threading.Event(),
+        refresh_merged_pipelines=True,
+    )
+    assert (root / "resource/pipeline/nodes.json").read_bytes() == old_split
+    assert not (root / "resource/pipeline/AutoCollect.json").exists()
+    assert not (root / "resource/pipeline/Custom.json").exists()
+    assert not (root / "resource_extra/pipeline/Old.json").exists()
+    backup_root = install.workspace(root) / "retired-pipelines"
+    backups = list(backup_root.glob("pipeline-*/resource/pipeline/AutoCollect.json"))
+    assert len(backups) == 1
+    assert backups[0].read_bytes() == old_split
+    assert list(backup_root.glob("pipeline-*/resource/pipeline/Custom.json"))
+    assert list(backup_root.glob("pipeline-*/resource_extra/pipeline/Old.json"))
+    assert install.verify_installed_files(root, threading.Event())
+    assert not (install.workspace(root) / "previous").exists()
+
+
+def test_merged_pipeline_quarantine_failure_preserves_old_install(package, monkeypatch):
+    root, archive = package
+    pipeline = root / "resource/pipeline"
+    pipeline.mkdir(parents=True)
+    (pipeline / "Old.json").write_text('{"Original": {}}')
+    with zipfile.ZipFile(archive, "w") as payload:
+        payload.writestr("app.exe", b"new")
+        payload.writestr("resource/pipeline/nodes.json", '{"New": {}}')
+    original_copytree = install.shutil.copytree
+
+    def fail_when_saving_pipeline(source, target, *args, **kwargs):
+        if source.name == "pipeline" and source.parent != root:
+            raise OSError("quarantine unavailable")
+        return original_copytree(source, target, *args, **kwargs)
+
+    monkeypatch.setattr(install.shutil, "copytree", fail_when_saving_pipeline)
+    with pytest.raises(OSError, match="quarantine unavailable"):
+        install.install_package(
+            root,
+            archive,
+            archive.stat().st_size,
+            hashlib.sha256(archive.read_bytes()).hexdigest(),
+            frozenset({"config"}),
+            lambda _: None,
+            lambda: None,
+            threading.Event(),
+            refresh_merged_pipelines=True,
+        )
+    assert (root / "app.exe").read_bytes() == b"old"
+    assert (pipeline / "Old.json").is_file()
+
+
 def test_low_disk_space_stops_before_original_is_changed(package, monkeypatch):
     root, _ = package
     monkeypatch.setattr(

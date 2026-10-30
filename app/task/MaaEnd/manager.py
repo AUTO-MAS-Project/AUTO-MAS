@@ -470,9 +470,7 @@ class MaaEndManager(ScriptManagerBase):
             elif (script_install.workspace(root) / "installed.json").exists():
                 # 非接管模式沿用 MXU 自行更新的安装。恢复事务仍须完成，
                 # 但旧 MAS 回执不应阻断后续配置或运行，也不重算哈希冒充可信。
-                await script_update.confirm_current_install(
-                    root, verify_receipt=False
-                )
+                await script_update.confirm_current_install(root, verify_receipt=False)
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.warning(f"未通过配置检查: {self.check_result}")

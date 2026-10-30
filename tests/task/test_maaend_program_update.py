@@ -3,8 +3,6 @@
 import asyncio
 import base64
 import hashlib
-
-import httpx
 import json
 import shutil
 import threading
@@ -14,6 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
 from packaging.version import Version
 

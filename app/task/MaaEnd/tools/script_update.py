@@ -247,6 +247,7 @@ async def update_before_run(
             PROTECTED,
             validate,
             lambda: assert_idle(root),
+            refresh_merged_pipelines=True,
         )
         _utils_io.write_file(
             script_install.workspace(root) / "program-identity.json", {"arch": arch}
@@ -259,9 +260,7 @@ async def update_before_run(
             destination.parent.rmdir()
 
 
-async def confirm_current_install(
-    root: Path, *, verify_receipt: bool = True
-) -> None:
+async def confirm_current_install(root: Path, *, verify_receipt: bool = True) -> None:
     if (script_install.workspace(root) / "transaction.json").exists():
         raise script_install.InstallUnsafeError(
             "MaaEnd 安装状态尚未确认，不能沿用旧版运行"
@@ -274,8 +273,12 @@ async def confirm_current_install(
             "MaaEnd 当前安装不可识别，请开启更新接管修复"
         ) from error
     receipt = script_install.workspace(root) / "installed.json"
-    if verify_receipt and receipt.exists() and not await script_install.run_worker(
-        script_install.verify_installed_files, root
+    if (
+        verify_receipt
+        and receipt.exists()
+        and not await script_install.run_worker(
+            script_install.verify_installed_files, root
+        )
     ):
         raise script_install.InstallUnsafeError(
             "MaaEnd 已安装文件与上次校验记录不符，请开启更新接管修复"
