@@ -4588,7 +4588,6 @@
   "core.taskboard.stateEnded": "終了",
   "core.taskboard.stateEndingSoon": "終了間近",
   "core.taskboard.stateFailed": "タスクボードの状態を読み込めません",
-  "core.taskboard.stateUpcoming": "未開始",
   "core.taskboard.summary": "まとめ",
   "core.taskboard.summaryHint": "選択中のすべてのゲームのイベントを表示",
   "core.taskboard.tabActive": "開催中",

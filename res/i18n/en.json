@@ -4588,7 +4588,6 @@
   "core.taskboard.stateEnded": "Ended",
   "core.taskboard.stateEndingSoon": "Ending soon",
   "core.taskboard.stateFailed": "Failed to load taskboard state",
-  "core.taskboard.stateUpcoming": "Not started",
   "core.taskboard.summary": "Summary",
   "core.taskboard.summaryHint": "Show activities from all selected games",
   "core.taskboard.tabActive": "Active",

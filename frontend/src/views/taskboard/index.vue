@@ -42,6 +42,11 @@ const {
   updatedAt,
 } = useTaskboardData(t)
 
+const cardStateOf = (e: TaskboardActivity): 'active' | 'done' | 'archived' => {
+  const state = stateOf(e)
+  return state === 'upcoming' ? 'active' : state
+}
+
 const taskboardState = useTaskboardStateStore()
 
 const tab = ref<'active' | 'done' | 'archived' | 'weekly' | 'version'>('active')
@@ -255,7 +260,7 @@ const saveGames = async (keys: string[]) => {
                 :key="e.id"
                 :event="e"
                 :cover="coverOf(e)"
-                :state="stateOf(e)"
+                :state="cardStateOf(e)"
                 :game-name="gameName(e.gameKey)"
                 :archived-note="archivedNoteOf(e)"
                 :ending-soon="endingSoonOf(e)"

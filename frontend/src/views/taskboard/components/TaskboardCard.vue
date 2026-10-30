@@ -109,7 +109,7 @@ import type { TaskboardActivity } from '@/types/taskboard'
 interface Props {
   event: TaskboardActivity
   cover: string
-  state: 'active' | 'done' | 'archived' | 'upcoming'
+  state: 'active' | 'done' | 'archived'
   gameName: string
   archivedNote: string
   endingSoon: boolean
@@ -128,7 +128,6 @@ const { t } = useI18n()
 const statusText = computed(() => {
   if (props.state === 'done') return t('core.taskboard.stateDone')
   if (props.state === 'archived') return t('core.taskboard.stateEnded')
-  if (props.state === 'upcoming') return t('core.taskboard.stateUpcoming')
   return props.endingSoon ? t('core.taskboard.stateEndingSoon') : t('core.taskboard.stateActive')
 })
 

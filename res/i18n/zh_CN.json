@@ -4588,7 +4588,6 @@
   "core.taskboard.stateEnded": "已结束",
   "core.taskboard.stateEndingSoon": "即将结束",
   "core.taskboard.stateFailed": "任务台状态读取失败",
-  "core.taskboard.stateUpcoming": "未开始",
   "core.taskboard.summary": "汇总",
   "core.taskboard.summaryHint": "显示所有已选游戏的活动",
   "core.taskboard.tabActive": "进行中",
