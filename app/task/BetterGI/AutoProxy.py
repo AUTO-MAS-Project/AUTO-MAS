@@ -29,6 +29,7 @@ from typing import Any
 from app.config import ConfigCollection
 from app.core.history import aggregate_data
 from app.core.ws import Publisher, protocol
+from app.log_box import log_box
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.notification_ports import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
@@ -37,7 +38,6 @@ from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
-    append_push_log,
     find_pids_by_name,
     push_dispatch_log,
     read_config_base,
@@ -76,7 +76,7 @@ from .tools.one_dragon_report import (
     parse_execution_layer_report,
     parse_one_dragon_report,
 )
-from .tools.push_log import steps_to_push_log
+from .tools.push_log import make_bettergi_log_spec
 
 logger = get_logger("BetterGI 自动代理")
 
@@ -2061,12 +2061,16 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
 
         # ── 节点详情注入（推送报告用）──
         # 分步表即节点：日志已由 LogMonitor 按相/按轮捕获进 log_record，这里只把
-        # 合并分步表转成 push_log 三元组，manager.final_task 经 build_user_result_text
+        # 合并分步表交给 log_box 转换并交付，manager.final_task 经 build_user_result_text
         # 聚合进报告正文。开关关闭时不注入，push_log 保持为空；on_crash 后 final_task
         # 仍会执行，崩溃前能解析出的步骤同样进报告。
         if self.cur_user_item.push_log_mode != "关闭" and one_dragon_report:
-            for entry in steps_to_push_log(one_dragon_report):
-                append_push_log(self.cur_user_item, *entry)
+            session = log_box.get_user_session(
+                make_bettergi_log_spec(one_dragon_report),
+                user=self.cur_user_item,
+                mode=self.cur_user_item.push_log_mode,
+            )
+            await session.close()
 
         # 掉落统计：解析各轮日志里的「本轮奖励识别结果」（BGI 奖励识别打印的行），
         # 按物品跨轮跨来源累加。与分步报告不同——掉落是逐轮产出，必须合并全部轮次，

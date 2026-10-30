@@ -1,20 +1,13 @@
 <template>
   <div class="cultivate-preview" :aria-busy="loading">
-    <!-- 面板头：理智合计是侧栏的关键数字（tooltip 说明估算口径） -->
+    <!-- 理智合计与材料时间统一展示在页面总览。 -->
     <div class="preview-head">
       <span class="preview-title">{{ t('core.edit.maaCultivatePreviewTitle') }}</span>
-      <span
-        class="preview-total"
-        :title="t('core.edit.maaCultivatePreviewSanityTotal')"
-        role="status"
-        :aria-label="loading ? t('core.edit.maaCultivatePreviewComputing') : undefined"
-      >
-        <template v-if="preview?.totalExpectedSanity != null">
-          ≈ {{ preview.totalExpectedSanity }} {{ t('core.edit.maaCultivateSanityUnit') }}
-        </template>
-        <template v-else>—</template>
-      </span>
-      <a-spin v-if="loading" size="small" />
+      <a-spin
+        v-if="loading"
+        size="small"
+        :aria-label="t('core.edit.maaCultivatePreviewComputing')"
+      />
     </div>
     <a-tabs default-active-key="stages" size="small">
       <a-tab-pane
@@ -145,22 +138,9 @@ const availabilityNotice = computed(() => {
   color: var(--ant-color-text);
 }
 
-.preview-total {
-  flex: 1;
-  min-width: 0;
-  text-align: right;
-  font-size: 18px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--ant-color-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: help;
-}
-
 .preview-head .ant-spin {
   align-self: center;
+  margin-left: auto;
 }
 
 .preview-line {

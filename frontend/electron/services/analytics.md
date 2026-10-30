@@ -89,12 +89,16 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `mascot_preference_changed` | 桌宠采用率和性能档位选择 | `action`、`fps_preset` |
 | `home_activity_load_finished` | 首页活动信息在哪类来源不可用 | `trigger_kind`、`source_kind`、`cache_kind` |
 | `home_layout_changed` | 首页布局与快速任务入口的使用 | `action`、`layout_preset` |
+| `taskboard_marking_finished` | 每周任务选择与打卡、版本标记能否保存 | `target_kind`、`action`、`count_bucket` |
 | `history_query_finished` | 历史检索能否帮助定位运行结果 | `filter_kind`、`count_bucket` |
 | `diagnostic_export_finished` | 问题包和普通日志能否导出；MaaEnd 已有自动归档时能否打开保存目录 | `bundle_kind`、`script_type`、`incomplete` |
 | `data_backup_export_finished` | 用户能否成功备份 MAS 数据 | 无 |
 | `replay_tool_finished` | 失败录屏连接、手动保存、回放的使用 | `action` |
 | `help_link_requested` | 哪些功能需要文档帮助 | `link_kind`、`entry_source` |
 | `adapter_setup_finished` | 专项配置引导与独有操作 | `script_type`、`operation_kind`、`engine_kind` |
+
+养成页手动刷新复用 `adapter_setup_finished`，`operation_kind=data_refresh`，仅在后端完整更新材料与目录后记录成功；自动缓存读取不重复采集。
+养成月卡选项保存复用 `useUserApi.updateUser` 的 `config_write_finished`，不发送月卡状态；材料时间为本地派生展示，不新增重算事件。
 
 历史附件视频的 `play` 意图由 `playing` 确认成功，缓冲恢复不会重复计数；请求播放前后的关联仅在内存中保存，不上报附件标识或地址。手动保存录屏仅用 `capture_path` 是否存在判断 success/skipped，不上传其内容。
 
@@ -281,3 +285,5 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
 官方安装器没有独立、可靠的统计完成契约，不把下载完成或本地包登记当成安装完成，也不上传版本、路径或下载地址。
 
 - MaaEnd 程序更新接管：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；检查、准备回退及安装拦截由现有 `script_run_finished` 观察任务终态。下载进度、哈希和路径不单独采集。
+
+- 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。

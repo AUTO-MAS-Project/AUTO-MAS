@@ -125,6 +125,11 @@
             </a-col>
           </a-row>
         </div>
+        <WhimboxUpdateSettings
+          v-model:update="whimboxConfig.Update"
+          :ready="!pageLoading && !isInitializing"
+          @change="handleChange('Update', 'TakeoverEnabled', $event)"
+        />
       </a-form>
     </a-card>
   </ConfigLockPanel>
@@ -132,6 +137,8 @@
 
 <script setup lang="ts">
 import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import WhimboxUpdateSettings from './components/WhimboxUpdateSettings.vue'
+import type { WhimboxConfig_Update } from '@/api'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
@@ -184,6 +191,7 @@ interface WhimboxRunForm {
 interface WhimboxScriptConfigForm {
   Info: WhimboxInfoForm
   Run: WhimboxRunForm
+  Update: WhimboxConfig_Update
 }
 
 const formData = reactive({
@@ -198,6 +206,7 @@ const formData = reactive({
 
 const whimboxConfig = reactive<WhimboxScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
+  Update: { TakeoverEnabled: false },
   Run: {
     HardTimeLimit: 120,
     ProxyTimesLimit: 0,
@@ -270,6 +279,7 @@ const loadScript = async () => {
     const config = detail.config as Partial<WhimboxScriptConfigForm>
     Object.assign(whimboxConfig.Info, config.Info || {})
     Object.assign(whimboxConfig.Run, config.Run || {})
+    Object.assign(whimboxConfig.Update, config.Update || {})
     // 目录已配置时顺带拉一次目录接口，展示上游版本（refreshUpstreamVersion 自带空目录守卫）
     void refreshUpstreamVersion()
   } catch {

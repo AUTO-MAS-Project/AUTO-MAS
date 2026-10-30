@@ -56,6 +56,7 @@ export const getDefaultMAAUserData = () => ({
     CultivateAutoRaise: false,
     CultivateSkipDuringActivity: false,
     CultivateSkipDuringResourceCollection: false,
+    CultivateMonthlyCard: false,
     CultivateSklandAccount: '',
     CultivateSklandUid: '',
   },

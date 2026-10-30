@@ -33,7 +33,7 @@ working/logs/ok-script.log 实际输出吻合，无需前置翻译——日志�
 import ast
 import re
 
-from app.log_box.logtype import LogType
+from app.log_box import LogSpec, LogType
 
 # 异象界域单把消耗体力（上游 AnomalyTask.TASK_COST）；异象追猎消耗直接用日志
 # 的「共计消耗体力」，无需本常量
@@ -173,3 +173,12 @@ def oknte_resolve(
         remaining = max(cur_stamina - consumed_after_cur, 0)
         result.append((LogType.NORMAL, f"⚡ 剩余体力: {remaining}", stamina_ts))
     return result
+
+
+# 规则、归并和原有失败提示集中声明；会话与异步收尾由 log_box 托管。
+OKNTE_LOG_SPEC = LogSpec(
+    rules=tuple(OKNTE_PUSH_RULES),
+    postprocessor=oknte_resolve,
+    error_message="OK-NTE log_box 收尾推送失败（oknte_resolve）",
+    failure_text="⚠️ 节点采集失败",
+)

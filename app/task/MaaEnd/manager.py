@@ -23,6 +23,7 @@ from app.config import ConfigCollection, config_manager
 from app.core import Config, EmulatorManager
 from app.core.maa_capture import capture_adb, capture_win32
 from app.core.ws import Publisher, protocol
+from app.log_box.report import build_user_result_text, mirror_report_to_dispatch
 from app.models.config import MaaEndConfig, MaaEndUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
 from app.models.notification_report import TaskResultReport
@@ -34,7 +35,6 @@ from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
 from app.task.notify_core import screenshot_entries
 from app.task.proxy_helpers import push_dispatch_log
-from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import (
     BASE_NATIVE,
     BASE_SHARED,

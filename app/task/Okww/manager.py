@@ -23,12 +23,12 @@ from pathlib import Path
 from app.config import ConfigCollection, config_manager
 from app.core import Config
 from app.core.ws import Publisher, protocol
+from app.log_box.report import build_user_result_text, mirror_report_to_dispatch
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
-from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import (
     BASE_NATIVE,
     BASE_SHARED,

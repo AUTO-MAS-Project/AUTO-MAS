@@ -77,7 +77,7 @@ from app.utils import (
 from app.utils import io as _utils_io
 
 from .inventory_report import INVENTORY_REPORT_RULE, InventoryReport, inventory_resolve
-from .push_log import MAAEND_PUSH_RULES, maaend_resolve
+from .push_log import MAAEND_LOG_SPEC
 from .resource_loader import (
     MaaEndResourceLoader,
     get_loaded_maaend_options,
@@ -3202,19 +3202,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         # 采集，部分日志中的开始标记聚为失败节点；仅 check 未通过的提前返回
         # 场景无节点。
         if self.push_log_enabled and stage_log_paths:
-            try:
-                log_collect = log_box.get_collect(
-                    paths=stage_log_paths,
-                    sink=lambda log_type, text, ts: append_push_log(
-                        self.cur_user_item, log_type, text, ts
-                    ),
-                    start_from_end=False,
-                )
-                for rule in MAAEND_PUSH_RULES:
-                    log_collect.collect(*rule)
-                log_collect.close(maaend_resolve)
-            except Exception as e:
-                logger.opt(exception=True).warning(f"MaaEnd 节点采集推送失败: {e}")
+            log_collect = log_box.get_user_session(
+                MAAEND_LOG_SPEC,
+                user=self.cur_user_item,
+                mode=self.cur_user_item.push_log_mode,
+                paths=stage_log_paths,
+                start_from_end=False,
+            )
+            # 等待阶段日志回扫与节点交付后，才能读取报告或清理临时目录。
+            await log_collect.close()
 
         inventory_lines: list[str] = []
         if inventory_notify and stage_log_paths:

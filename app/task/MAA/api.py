@@ -586,6 +586,33 @@ async def get_maa_cultivate_operators(
 
 
 @router.post(
+    "/maa/cultivate/refresh",
+    tags=["Update"],
+    summary="手动刷新 MAA 养成材料数据与干员目录",
+    response_model=OutBase,
+    status_code=200,
+)
+async def refresh_maa_cultivate_data(request: ScriptDeleteIn) -> OutBase:
+    from app.task.MAA.tools.cultivate.yituliu import YituliuDataError
+
+    try:
+        from app.task.MAA import api_service as maa_api
+
+        await maa_api.refresh_cultivate_data(request.scriptId)
+        return OutBase()
+    except YituliuDataError as e:
+        logger.warning(f"养成数据源刷新失败: {e}")
+        return OutBase(code=503, status="error", message="养成数据源不可用")
+    except OSError as e:
+        logger.warning(f"养成数据缓存写入失败: {e}")
+        return OutBase(code=507, status="error", message="养成数据缓存写入失败")
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+
+
+@router.post(
     "/maa/cultivate/import",
     tags=["Get"],
     summary="校验并转换 MAA 剪贴板养成目标（不落库）",

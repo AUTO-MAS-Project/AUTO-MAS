@@ -1,7 +1,9 @@
-import { onScopeDispose, ref, watch } from 'vue'
+import { onScopeDispose, provide, readonly, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Service, type CultivatePreviewOut } from '@/api'
 import { useMaaCultivateImportApi } from '@/composables/useMaaCultivateImportApi'
+import { useMaaCultivateDataApi } from '@/composables/useMaaCultivateDataApi'
+import { cultivateDataRefreshKey } from './cultivateDataRefresh'
 import {
   mergeCultivateTargets,
   normalizeCultivateCatalog,
@@ -30,6 +32,7 @@ export function useMaaCultivation(options: CultivationOptions) {
   const { scriptId } = options
   const { t } = useI18n()
   const { parseImport } = useMaaCultivateImportApi()
+  const dataApi = useMaaCultivateDataApi()
   const logger = window.electronAPI.getLogger('MAA 干员养成')
   // 干员养成选择器目录（一图流全量表，含技能/模组名称目录与可达档位，随快照缓存）
   const cultivateOperatorCatalog = ref<CultivateOperatorCatalogEntry[]>([])
@@ -50,6 +53,8 @@ export function useMaaCultivation(options: CultivationOptions) {
   const cultivatePreviewLoading = ref(false)
   const cultivatePreviewError = ref('')
   let cultivatePreviewSeq = 0
+  const refreshing = ref(false)
+  let disposed = false
 
   const resetCultivatePreview = () => {
     cultivatePreviewSeq++
@@ -58,6 +63,7 @@ export function useMaaCultivation(options: CultivationOptions) {
     cultivatePreviewError.value = ''
   }
   onScopeDispose(() => {
+    disposed = true
     cultivateOperatorCatalogSeq++
     cultivatePreviewSeq++
   })
@@ -195,6 +201,34 @@ export function useMaaCultivation(options: CultivationOptions) {
       if (seq === cultivatePreviewSeq) cultivatePreviewLoading.value = false
     }
   }
+
+  provide(cultivateDataRefreshKey, {
+    refreshing: readonly(refreshing),
+    refresh: async () => {
+      const userId = options.getUserId()
+      if (refreshing.value || !userId || disposed) return 'cancelled'
+      refreshing.value = true
+      // 作废刷新前的响应；失败仍保留已经显示的目录和预览。
+      cultivateOperatorCatalogSeq++
+      cultivatePreviewSeq++
+      cultivateOperatorOptionsLoading.value = false
+      cultivatePreviewLoading.value = false
+      try {
+        await dataApi.refresh(scriptId)
+        if (disposed || userId !== options.getUserId()) return 'cancelled'
+        await Promise.all([
+          loadCultivateOperatorOptions(),
+          loadCultivatePreview(options.task().CultivateTargets),
+        ])
+        if (disposed || userId !== options.getUserId()) return 'cancelled'
+        return cultivateOperatorOptionsError.value || cultivatePreviewError.value
+          ? 'partial'
+          : 'success'
+      } finally {
+        refreshing.value = false
+      }
+    },
+  })
 
   return {
     cultivateOperatorCatalog,

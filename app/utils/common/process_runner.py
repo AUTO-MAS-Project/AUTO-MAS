@@ -1,6 +1,7 @@
 import asyncio
 import locale
 import time
+from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -132,6 +133,7 @@ class ProcessRunner:
         if_merge_std: bool = False,
         breakaway: bool = False,
         kill_tree_on_cancel: bool = False,
+        env: Mapping[str, str] | None = None,
     ) -> ProcessResult:
         """运行子进程并等待其结束，返回解码后的输出。
 
@@ -147,6 +149,7 @@ class ProcessRunner:
             *args,
             breakaway=breakaway,
             cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
+            env=env,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=(
