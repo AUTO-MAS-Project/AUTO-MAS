@@ -108,7 +108,6 @@ from app.task.M9A.migration import (
     normalize_m9a_managed_entries,
     repair_m9a_migration_losses,
 )
-from app.tools.common import community_accounts as _utils_community
 from app.utils import constants as _utils_constants
 from app.utils import get_logger, is_supervised
 from app.utils import io as _utils_io
@@ -2047,13 +2046,17 @@ class AppConfig:
         logger.info("添加游戏社区账号组")
 
         async with self._community_account_add_lock:
+            # 延迟导入：app.tools 包的 __init__ 会拉起社区 facade，
+            # 而社区签到模块又需要 Config，顶层导入会形成启动期循环依赖。
+            from app.tools.common.community_accounts import next_community_account_name
+
             existing_names = []
             for account in self.ToolsConfig.GameSign_Accounts.values():
                 try:
                     existing_names.append(account.GameSignAccount.Name)
                 except (AttributeError, KeyError):
                     continue
-            account_name = _utils_community.next_community_account_name(existing_names)
+            account_name = next_community_account_name(existing_names)
             uid = self.ToolsConfig.GameSign_Accounts.add(GameSignAccountGroup)
             await self.ToolsConfig.GameSign_Accounts.commit()
             config = self.ToolsConfig.GameSign_Accounts[uid]
