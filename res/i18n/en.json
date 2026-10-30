@@ -4623,6 +4623,7 @@
   "core.taskboard.weeklyReset": "Resets Monday 04:00 · click to mark",
   "core.taskboard.weeklySaveFailed": "Save failed: {p0}",
   "core.taskboard.weeklyWeekExpired": "The week has changed; refreshed to the current week",
+  "core.taskboard.weeklySelectionWeekChanged": "The week has changed; refreshing data. Please save again once the refresh finishes.",
   "core.themeStore.account.authorized": "Signed in to the share site as {name}",
   "core.themeStore.account.cancel": "Cancel",
   "core.themeStore.account.login": "Sign in to the share site",

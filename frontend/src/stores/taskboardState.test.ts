@@ -82,6 +82,20 @@ describe('taskboardState 周常与版本目录', () => {
     expect(store.isWeeklyDone('genshin')).toBe(true)
   })
 
+  it('reports applied=true after a weekly selection save succeeds', async () => {
+    mocks.getState.mockResolvedValue(emptyState())
+    mocks.setWeeklySelection.mockResolvedValue({ code: 200 })
+
+    const store = useTaskboardStateStore()
+    await store.load()
+
+    expect(await store.saveWeeklySelection(['genshin'])).toEqual({
+      error: null,
+      applied: true,
+    })
+    expect(store.weeklyGames).toEqual(['genshin'])
+  })
+
   it('does not save weekly selection before the initial state is loaded', async () => {
     let resolveLoad: (value: unknown) => void = () => {}
     mocks.getState.mockReturnValue(
@@ -95,7 +109,10 @@ describe('taskboardState 周常与版本目录', () => {
     const loading = store.load()
     await Promise.resolve()
 
-    expect(await store.saveWeeklySelection(['genshin'])).toBeNull()
+    expect(await store.saveWeeklySelection(['genshin'])).toEqual({
+      error: null,
+      applied: false,
+    })
     expect(mocks.setWeeklySelection).not.toHaveBeenCalled()
 
     resolveLoad({

@@ -4623,6 +4623,7 @@
   "core.taskboard.weeklyReset": "毎週月曜 04:00 リセット · クリックで記録",
   "core.taskboard.weeklySaveFailed": "保存に失敗しました：{p0}",
   "core.taskboard.weeklyWeekExpired": "週が切り替わったため、今週の状態に更新しました",
+  "core.taskboard.weeklySelectionWeekChanged": "週が切り替わりました。データを更新中です。更新完了後にもう一度保存してください。",
   "core.themeStore.account.authorized": "共有サイトにログインしました：{name}",
   "core.themeStore.account.cancel": "キャンセル",
   "core.themeStore.account.login": "共有サイトにログイン",

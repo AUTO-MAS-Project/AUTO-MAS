@@ -155,8 +155,10 @@ export const useTaskboardStateStore = defineStore('taskboardState', () => {
     }
   }
 
-  const saveWeeklySelection = async (games: string[]): Promise<string | null> => {
-    if (loading.value || !loaded.value) return null
+  const saveWeeklySelection = async (
+    games: string[]
+  ): Promise<{ error: string | null; applied: boolean }> => {
+    if (loading.value || !loaded.value) return { error: null, applied: false }
     try {
       const response = await observeFeature(
         'taskboard_marking_finished',
@@ -170,9 +172,9 @@ export const useTaskboardStateStore = defineStore('taskboardState', () => {
       )
       if (response.code !== 200) throw new Error(response.message)
       weeklyGames.value = [...games]
-      return null
+      return { error: null, applied: true }
     } catch (error) {
-      return errorText(error)
+      return { error: errorText(error), applied: false }
     }
   }
 

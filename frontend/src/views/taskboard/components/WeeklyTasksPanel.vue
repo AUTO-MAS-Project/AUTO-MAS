@@ -91,9 +91,13 @@ const weeklySelection = computed(
 )
 
 const saveWeekly = async (keys: string[]) => {
-  const error = await taskboardState.saveWeeklySelection(keys)
-  if (error) {
-    message.error(t('core.taskboard.weeklySaveFailed', { p0: error }))
+  const result = await taskboardState.saveWeeklySelection(keys)
+  if (result.error) {
+    message.error(t('core.taskboard.weeklySaveFailed', { p0: result.error }))
+    return
+  }
+  if (!result.applied) {
+    message.warning(t('core.taskboard.weeklySelectionWeekChanged'))
     return
   }
   editOpen.value = false

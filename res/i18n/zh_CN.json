@@ -4623,6 +4623,7 @@
   "core.taskboard.weeklyReset": "每周一 04:00 重置 · 点一下标记",
   "core.taskboard.weeklySaveFailed": "保存失败：{p0}",
   "core.taskboard.weeklyWeekExpired": "已跨周，已按本周状态刷新",
+  "core.taskboard.weeklySelectionWeekChanged": "周次已切换，正在刷新数据；刷新完成后请重新保存。",
   "core.themeStore.account.authorized": "已登录分享站：{name}",
   "core.themeStore.account.cancel": "取消",
   "core.themeStore.account.login": "登录分享站",
