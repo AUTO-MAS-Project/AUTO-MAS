@@ -1,3 +1,4 @@
+import base64
 import getpass
 import tempfile
 from contextlib import suppress
@@ -5,6 +6,31 @@ from datetime import datetime
 from pathlib import Path
 
 from app.utils import process_runner as _utils_process_runner
+
+
+def build_launch_arguments(exe_path: Path) -> str:
+    """拼出引导 powershell 的参数：走 UAC 提权拉起 AUTO-MAS，并等它退出。
+
+    exe_path 不能直接写进 -Command。PowerShell 单引号字符串里的 ' 必须写成 ''，
+    命令行和 schtasks 的 XML 又各有一层引号语义，像 C:/Users/O'Brien/AUTO-MAS
+    这样的合法安装路径会被其中一层吃掉：设置自启时 schtasks /create 不校验这段
+    脚本，注册成功，直到下次登录才失败。改走 -EncodedCommand——脚本按 PowerShell
+    自身规则转义后编码成 base64（UTF-16LE），命令行里只剩 [A-Za-z0-9+/=]，
+    路径内容既破坏不了解析，也注入不了命令，顺带避开 XML 的 & / < / > 转义。
+
+    -PassThru + WaitForExit 让计划任务的动作与 AUTO-MAS 同生命周期。
+    Start-Process 默认在目标进程起来后立刻返回，动作进程（powershell）随即退出，
+    MultipleInstancesPolicy=IgnoreNew 就挡不住下一次触发，会再拉起一个实例抢
+    同一个监听端口。
+    """
+
+    quoted = str(exe_path).replace("'", "''")
+    script = (
+        f"$p = Start-Process -FilePath '{quoted}' -ArgumentList '--auto-start' "
+        "-Verb RunAs -PassThru; if ($null -ne $p) { $p.WaitForExit() }"
+    )
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    return f"-NoProfile -WindowStyle Hidden -EncodedCommand {encoded}"
 
 
 class WindowsStartupManager:
@@ -70,7 +96,7 @@ class WindowsStartupManager:
                 <Actions Context="Author">
                     <Exec>
                         <Command>powershell.exe</Command>
-                        <Arguments>-NoProfile -WindowStyle Hidden -Command "Start-Process -FilePath '{exe_path}' -ArgumentList '--auto-start' -Verb RunAs"</Arguments>
+                        <Arguments>{build_launch_arguments(exe_path)}</Arguments>
                     </Exec>
                 </Actions>
             </Task>"""

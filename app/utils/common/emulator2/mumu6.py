@@ -73,24 +73,26 @@ logger = get_logger("Emulator2 MuMu管理")
 
 #: ``MuMuManager info`` 里值得带给用户的启动诊断字段，按这个顺序展示。
 _LAUNCH_DIAGNOSIS_FIELDS = (
-    ("launch_err_code", "启动错误码"),
-    ("launch_err_msg", "启动错误"),
-    ("error_code", "实例错误码"),
-    ("player_state", "实例状态"),
+    "launch_err_code",
+    "launch_err_msg",
+    "error_code",
+    "player_state",
 )
 
 
 def format_launch_diagnosis(entry: dict[str, object]) -> str:
-    """从一条 ``info`` 记录里挑出 MuMu 自己给的启动诊断，格式化成可直接拼进报错的后缀。
+    """把 MuMu 自己给的启动诊断原样拼成可直接接在报错后面的后缀。
 
-    只挑非空、非 0 的字段；一个都没有就返回空串，报错文案与以前完全一样。
+    键名与值都按 ``info`` 给的原样写，不翻译、不改写成我们自己的状态词：MuMu 的
+    私有字段只透传，读出的含义由用户和上游自己解释。只挑非空、非 0 的字段；
+    一个都没有就返回空串，报错文案与以前完全一样。
     """
     parts = []
-    for key, label in _LAUNCH_DIAGNOSIS_FIELDS:
+    for key in _LAUNCH_DIAGNOSIS_FIELDS:
         value = entry.get(key)
         if value in (None, "", 0, False):
             continue
-        parts.append(f"{label}={value}")
+        parts.append(f"{key}={value}")
     if not parts:
         return ""
     return "；MuMu 诊断: " + ", ".join(parts)
