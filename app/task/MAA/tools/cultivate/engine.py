@@ -186,6 +186,14 @@ def select_auto_cultivate_targets(
         )
         if not goals:
             continue
+        if any(goal.kind == "mastery" for goal in goals):
+            # 执行名单只补未满足的普通技能前置，不改用户保存的目标。
+            snapshot = snapshots.get(target.operator_id)
+            if snapshot is None or snapshot.data.skill_level is None:
+                continue
+            goals = tuple(goal for goal in goals if goal.kind != "skill")
+            if snapshot.data.skill_level < 7:
+                goals += (Goal(kind="skill", target_id="", to_level=7),)
         candidate = replace(target, goals=goals)
         requirements = build_requirements(
             targets=(candidate,), snapshots=snapshots, demands=data.demands
