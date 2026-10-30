@@ -43,8 +43,8 @@ Use these skills as needed:
 2. `mas-frontend-ui`: Ant Design Vue UI, desktop business layout, visual tokens, forms, tables, dialogs, feedback, drag interactions, dark mode, and UX constraints.
 3. `mas-code-standards`: project code standards derived from representative `dev` commits and existing AUTO-MAS modules.
 4. `mas-schema-naming`: canonical naming for shared schema semantics in future domain work.
-5. `mas-module-boundary`: module ownership and dependency direction across backend layers.
-6. `mas-function-design`: function-level design for responsibility, signatures, side effects, and errors.
+5. `mas-module-boundary`: module ownership, DIP/IoC, low coupling/high cohesion, and preventing script-specific business from flowing back into shared backend layers.
+6. `mas-function-design`: function-level responsibility, explicit dependencies, signatures, side effects, and errors.
 7. `mas-api-contract`: endpoint contract standards for HTTP/WS request-response behavior.
 8. `mas-data-model`: modeling standards for schema/config/task layers and compatibility evolution.
 9. `mas-script-specialized-adapter`: specialized script integration by script frontend architecture line; requires intake before implementation.
@@ -69,6 +69,8 @@ Apply these constraints before selecting or combining sub-skills.
 
 9. Treat telemetry coverage as part of feature completion: load `mas-telemetry` for observable workflow changes and state whether the change reuses, extends or intentionally omits collection. Existing wrappers must not be double-instrumented. An event declaration or coverage-table entry is not proof that its real caller is observed.
 
+10. Follow [mas-module-boundary](../mas-module-boundary/SKILL.md) for DIP/IoC, low coupling/high cohesion and the prohibition on script-specific business flowing back into `AppConfig`, the public `TaskManager` or general-purpose base services. Keep concrete registration/composition separate from business policy; avoiding over-abstraction does not justify crossing an ownership boundary.
+
 ## Routing Rules
 
 For every new or changed user-visible operation, page, lifecycle path or script-adapter flow, load `mas-telemetry` in addition to the domain skills below. Do not wait for an explicit telemetry request. Pure prose/style/generated-only edits and read-only tasks do not authorize new collection or implementation.
@@ -82,9 +84,9 @@ Use `mas-frontend-standards`.
 Use `mas-frontend-ui` with `mas-frontend-standards`.
 4. Task implements, fixes, refactors, or reviews repository code:
 Use `mas-code-standards` as the baseline, then add the minimum domain-specific `mas-*` skills. Skip it for read-only work unless code conventions or commit wording are requested.
-5. Task mentions layer ownership, imports, coupling, or where code should live:
+5. Task mentions layer ownership, imports, DIP, IoC, dependency injection, low coupling, high cohesion, shared-layer business leakage, or where code should live:
 Use `mas-module-boundary`.
-6. Task mentions function splitting, signature quality, return/error behavior:
+6. Task mentions function responsibility/splitting, hidden dependencies, signature quality, side effects, or return/error behavior:
 Use `mas-function-design`.
 7. Task mentions endpoint payloads, response model, error contract, websocket payloads:
 Use `mas-api-contract`.
@@ -143,7 +145,7 @@ When using this hub:
 
 1. Selected sub-skills match the user request scope.
 2. Frontend tasks loaded the correct frontend skill pair; added or modified Vue components have measured baseline/final line counts and satisfy the linked component size policy.
-3. No layer-boundary violations are introduced.
+3. No layer-boundary violations or script-specific business leakage into shared modules are introduced; dependencies remain narrow and explicit under `mas-module-boundary`.
 4. Shared schema semantics remain canonical.
 5. Function behavior and API contract stay consistent after changes.
 6. Relevant project rules were considered for API, config, script task, frontend task, and contribution-style changes.

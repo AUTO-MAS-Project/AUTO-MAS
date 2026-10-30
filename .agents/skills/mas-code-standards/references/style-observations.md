@@ -26,6 +26,8 @@ The initialization refactor introduced in commit `30eb8504` is still a useful se
 
 Paths and APIs in these commit snapshots describe historical style examples. Current config declarations and caller behavior follow [the configuration framework reference](../../mas-data-model/references/config-framework.md); endpoint/shared contract placement follows the API skill. Historical samples are not a reason to restore old config APIs or duplicate configuration schemas.
 
+Current dependency design follows [mas-module-boundary](../../mas-module-boundary/SKILL.md): DIP/IoC, low coupling/high cohesion and the prohibition on script-specific business flowing back into shared modules take precedence over the historical construction and branch-extension patterns below. Concrete type registration and application composition remain valid integration work.
+
 ## Commit Lenses
 
 ### `e541fa5f` - Small Refactor Lens
@@ -90,7 +92,7 @@ Signal examples:
 
 ## Service Layer Style
 1. Services are explicit classes with named responsibilities such as `BackendService`, `DependencyService`, `RepositoryService`.
-2. Constructors wire concrete dependencies directly; dependency injection stays simple.
+2. Historical samples wire concrete dependencies directly in constructors and keep dependency injection simple. For new or changed cross-boundary dependencies, concrete selection and wiring belong to the application composition entry point; shared consumers receive narrow capabilities. Direct construction within the same ownership boundary remains valid, and no DI container is required.
 3. Long flows are written as ordered steps with comments like "第一步", "第二步".
 4. Helper methods usually stay private and narrowly scoped.
 5. The main method remains readable without chasing too many indirections.
@@ -131,7 +133,7 @@ Signal examples:
 2. Duplication is acceptable when it keeps one flow understandable.
 3. File-local consistency beats forcing a global formatting preference.
 4. Recent Electron and initialization code is the strongest reference. Do not assume every older Python file matches it exactly.
-5. For this skill, the three named commits override more generic style assumptions when they conflict.
+5. The three named commits guide local style; current module ownership, dependency and configuration rules take precedence over those historical examples. A real responsibility or dependency boundary justifies extraction even with one caller.
 6. Config manager/container layers own type safety for stored instances; downstream validators should not repeat those checks unless an unsupported input path can bypass the container.
 7. Avoid duplicating user-facing config choices. Merge mutually exclusive modes into one selector, or keep the existing selector and apply behavior to the relevant first matching task.
 8. Product architecture is config-swap plus log-monitor driven: AUTO-MAS imports a script's config before task start, restores it after completion, and judges run state through log text, log timestamp, and process-exit signals. Refactors should preserve that explicit operating model.
