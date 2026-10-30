@@ -1424,7 +1424,6 @@
   "core.edit.maaCultivatePreviewDemandHeading": "素材需要",
   "core.edit.maaCultivatePreviewDemandNone": "必要な素材はありません",
   "core.edit.maaCultivatePreviewNone": "周回対象はありません（素材が揃っているか、現在開放中のステージがありません）",
-  "core.edit.maaCultivatePreviewSanityTotal": "予想理性合計（固定産出ステージを除く）",
   "core.edit.maaCultivatePreviewStageHeading": "周回計画",
   "core.edit.maaCultivatePreviewTitle": "必要素材の予定",
   "core.edit.maaCultivatePreviewUnobtainable": "以下の素材は周回では入手できず、ゲーム内で別途入手する必要があります",

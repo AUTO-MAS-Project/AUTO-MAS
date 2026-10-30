@@ -1424,7 +1424,6 @@
   "core.edit.maaCultivatePreviewDemandHeading": "Material demands",
   "core.edit.maaCultivatePreviewDemandNone": "No materials needed",
   "core.edit.maaCultivatePreviewNone": "Nothing to farm (materials are complete, or no stages are open)",
-  "core.edit.maaCultivatePreviewSanityTotal": "Estimated sanity total (fixed-output stages excluded)",
   "core.edit.maaCultivatePreviewStageHeading": "Farming plan",
   "core.edit.maaCultivatePreviewTitle": "Estimated materials",
   "core.edit.maaCultivatePreviewUnobtainable": "The following materials cannot be obtained by farming and must be acquired in game",

@@ -1424,7 +1424,6 @@
   "core.edit.maaCultivatePreviewDemandHeading": "材料需求",
   "core.edit.maaCultivatePreviewDemandNone": "暂无材料需求",
   "core.edit.maaCultivatePreviewNone": "暂无待刷取条目（材料已齐或当前无开放关卡）",
-  "core.edit.maaCultivatePreviewSanityTotal": "预计理智合计（不含固定产出关）",
   "core.edit.maaCultivatePreviewStageHeading": "刷取计划",
   "core.edit.maaCultivatePreviewTitle": "预计需要材料",
   "core.edit.maaCultivatePreviewUnobtainable": "以下材料无法通过刷取获得，需在游戏内另行获取",
