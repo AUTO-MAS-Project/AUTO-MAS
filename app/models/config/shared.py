@@ -216,7 +216,10 @@ def _tag_last_status(status: object) -> str:
 
 def _tag_proxy(config: UserConfigType, label: str = "日常", tz: tzinfo = UTC4) -> dict:
     """上次代理标签（默认使用东4区时间，tz 为游戏日时区），label 区分日常/任务文案。"""
-    if config.Data.LastProxyDate.astimezone(tz).date() == datetime.now(tz=tz).date():
+    if (
+        config.Data.LastProxyDate.astimezone(tz).date() == datetime.now(tz=tz).date()
+        and config.Data.ProxyTimes > 0
+    ):
         return {"text": f"{label}：已代理{config.Data.ProxyTimes}次", "color": "green"}
     return {"text": f"{label}：未代理", "color": "orange"}
 
