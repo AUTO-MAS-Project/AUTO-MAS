@@ -879,9 +879,6 @@ def _build_auto_cultivate_task(
                 if index not in (1, 2, 3):
                     raise ValueError(f"干员 {operator['label']} 的专精技能序号缺失")
                 mastery_levels[index - 1] = goal.to_level
-        # 历史目标可能只有专精；培养时补齐普通技能等级前置，不改用户保存的目标。
-        if any(mastery_levels):
-            skill_level = 7
         plans.append(
             {
                 "Role": operator["profession"].title() or "Unknown",
@@ -1206,6 +1203,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
     # 每轮重新判断来源参与条件；数据不可用或触发跳过时同时暂停自动培养。
     _cultivate_round_paused: bool = True
     _cultivate_execution_targets: tuple[OperatorTarget, ...] = ()
+    _cultivate_progress_synced: bool = False
     # 完成活动阶段后，其他任务重试不能重新领取该阶段药石额度。
     _event_depot_completed: bool = False
     # 普通库存重试时仍下发目标，已执行过的阶段不再领取药石额度。
@@ -1304,6 +1302,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self._cultivate_collected_oper_box = False
         self._cultivate_auto_raise_injected = False
         self._cultivate_round_paused = True
+        self._cultivate_progress_synced = False
         self._cultivate_achievement_summary: list[str] = []
         # 已提示过的「找不到原生任务」：重试轮每次都重新合成队列，同一条只提示一次
         self._missing_task_source_warned: set[str] = set()
@@ -1739,6 +1738,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             or auto_raise_injected
         ):
             return
+        self._cultivate_progress_synced = False
         try:
             raw_targets = json.loads(self.cur_user_config.Task.CultivateTargets)
             targets = parse_cultivate_targets(raw_targets)
@@ -1765,6 +1765,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 self._cultivate_collected_depot = False
                 self._cultivate_collected_oper_box = False
                 self._cultivate_auto_raise_injected = False
+                return
+            # 库存识别不代表练度已更新；缺少本轮干员识别时保留原计划。
+            if not (skland and skland[0]) and not self._cultivate_collected_oper_box:
                 return
             context = ProviderContext(
                 maa_data_dir=self._cultivate_archive_dir(),
@@ -1830,6 +1833,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 for line in removed:
                     if line not in self._cultivate_achievement_summary:
                         self._cultivate_achievement_summary.append(line)
+            self._cultivate_progress_synced = not deferred
         except Exception as e:
             logger.opt(exception=True).warning(
                 f"用户 {self.cur_user_item.name} 养成达成刷新失败: {e}"
@@ -1864,6 +1868,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 开关关闭或无有效目标时，不让保存的旧目标参与本轮备料与培养。
         self._cultivate_round_paused = True
         self._cultivate_execution_targets = ()
+        self._cultivate_progress_synced = False
         raw_targets: object
         try:
             raw_targets = json.loads(self.cur_user_config.Task.CultivateTargets)
@@ -1930,6 +1935,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             }
             targets, deferred = filter_observed_cultivate_targets(
                 original_targets, snapshots
+            )
+            self._cultivate_progress_synced = (
+                bool(skland and skland[0]) and not deferred
             )
             if deferred:
                 logger.warning(
@@ -2587,8 +2595,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 if auto_cultivate_task is not None:
                     task_queue.append(auto_cultivate_task)
                     self._cultivate_auto_raise_injected = True
+                    self._cultivate_progress_synced = False
                 if update_task is not None:
                     task_queue.append(update_task)
+                    if not skland_bound:
+                        self._cultivate_progress_synced = False
             task_queue.append(task_set[task_type])
 
             if task_type == "StartUp" and event_depot_task is not None:
@@ -3184,8 +3195,28 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             for _, log_item in self.cur_user_item.iter_history_logs()
             for line in log_item.content
         )
-        if cultivate_progress:
-            statistics["cultivate_progress"] = "；".join(cultivate_progress)
+        progress_lines = list(cultivate_progress)
+        if (
+            self.cur_user_config.Info.IfQuickConfig
+            and self.cur_user_config.Task.IfCultivate
+        ):
+            try:
+                raw_targets = json.loads(self.cur_user_config.Task.CultivateTargets)
+            except (TypeError, ValueError):
+                raw_targets = None
+            if isinstance(raw_targets, list):
+                targets = parse_cultivate_targets(raw_targets)
+                remaining = sum(len(target.goals) for target in targets)
+                suffix = (
+                    "（练度未同步）"
+                    if targets and not self._cultivate_progress_synced
+                    else ""
+                )
+                progress_lines.append(
+                    f"剩余：{len(targets)} 名干员，{remaining} 个目标{suffix}"
+                )
+        if progress_lines:
+            statistics["cultivate_progress"] = "；".join(progress_lines)
         # 本轮有干员达成养成目标时随统计报告告知用户（目标消失可查）
         if self._cultivate_achievement_summary:
             statistics["cultivate_achievement"] = "、".join(
