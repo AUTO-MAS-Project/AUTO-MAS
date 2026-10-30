@@ -1,0 +1,12 @@
+:root {
+  --tb-gap: 16px;
+  --tb-cover-ratio: 2.2;
+  --tb-grid: repeat(4, minmax(0, 1fr));
+  --tb-card-radius: 10px;
+  --tb-card-border: var(--ant-color-border-secondary);
+  /* 游戏名/状态标签：保留 60% 表面，背景图能透出约 40% */
+  --tb-tag-bg: color-mix(in srgb, var(--ant-color-bg-container) 60%, transparent);
+  --tb-card-shadow-hover: 0 4px 14px rgb(0 0 0 / 6%);
+  --tb-card-shadow-active: 0 2px 6px rgb(0 0 0 / 5%);
+  --tb-chip-shadow: 0 2px 6px rgb(0 0 0 / 10%);
+}

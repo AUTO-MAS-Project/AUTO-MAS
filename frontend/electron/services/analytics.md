@@ -89,6 +89,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `mascot_preference_changed` | 桌宠采用率和性能档位选择 | `action`、`fps_preset` |
 | `home_activity_load_finished` | 首页活动信息在哪类来源不可用 | `trigger_kind`、`source_kind`、`cache_kind` |
 | `home_layout_changed` | 首页布局与快速任务入口的使用 | `action`、`layout_preset` |
+| `taskboard_marking_finished` | 每周任务选择与打卡、版本标记能否保存 | `target_kind`、`action`、`count_bucket` |
 | `history_query_finished` | 历史检索能否帮助定位运行结果 | `filter_kind`、`count_bucket` |
 | `diagnostic_export_finished` | 问题包和普通日志能否导出；MaaEnd 已有自动归档时能否打开保存目录 | `bundle_kind`、`script_type`、`incomplete` |
 | `data_backup_export_finished` | 用户能否成功备份 MAS 数据 | 无 |

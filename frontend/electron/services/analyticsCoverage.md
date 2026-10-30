@@ -156,3 +156,7 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
 群成员白名单编辑与“我的ID”查询不单独采集；成员标识属于访问控制信息，不进入遥测。
 
 - 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。
+
+## 任务台批次补充
+
+- 新增 `taskboard_marking_finished`，不在 Issue #1605 的 84 项场景内：每周任务的全选/清空保存、单条打卡与撤销，以及版本主线的标记/取消标记，按真实接口结果各记一次。`target_kind` 只区分 `weekly_task` / `version`，`action` 只区分 `select` / `mark` / `unmark`，`count_bucket` 描述本次影响对象数量。不发送游戏 key、任务标题、版本号、版本名、时间或封面地址；本地已判定重复的保存不重复记录，接口返回非 200 记为 failure，请求异常记为 unknown，客户端周键过期被后端拒绝时记为 blocked。

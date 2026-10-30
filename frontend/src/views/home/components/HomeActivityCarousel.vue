@@ -292,9 +292,48 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 
+/* 与任务台的筛选/页签小卡同一套药丸样式，跟随主题 token。 */
 .activity-all-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
   margin-left: auto;
+  padding: 0 14px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 999px;
+  background: var(--app-background-card-bg, var(--ant-color-bg-container));
+  color: var(--ant-color-primary);
   flex-shrink: 0;
+  transition:
+    transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-color 0.18s ease-out;
+}
+
+.activity-all-link:hover {
+  transform: scale(1.03);
+  border-color: var(--ant-color-primary-border);
+}
+
+/* AntD 的 link 按钮用 colorLinkHover（默认蓝）接管悬浮色，这里用同等权重压回主题色。 */
+.activity-all-link:not(:disabled):hover,
+.activity-all-link:not(:disabled):focus,
+.activity-all-link:not(:disabled):active {
+  color: var(--ant-color-primary);
+}
+
+/* 点击后不改变外观：只保留焦点环，避免看起来像被选中。 */
+.activity-all-link:focus,
+.activity-all-link:active {
+  border-color: var(--ant-color-border-secondary);
+  background: var(--app-background-card-bg, var(--ant-color-bg-container));
+  color: var(--ant-color-primary);
+  transform: scale(0.96);
+}
+
+.activity-all-link:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
 }
 
 .banner-viewport {
@@ -398,8 +437,14 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .banner-arrow,
-  .switcher-chip {
+  .switcher-chip,
+  .activity-all-link {
     transition: none;
+  }
+
+  .activity-all-link:hover,
+  .activity-all-link:active {
+    transform: none;
   }
 }
 

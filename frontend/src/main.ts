@@ -23,6 +23,7 @@ import '@/styles/pageTitle.css'
 import '@/styles/appearanceCursor.css'
 import '@/styles/appearanceSurfaces.css'
 import '@/styles/appOverlays.css'
+import '@/styles/taskboardTokens.css'
 
 const TITLE_BAR_HEIGHT = 32
 const MESSAGE_TOP_GAP = 8
