@@ -16,6 +16,8 @@ html.appearance-background-custom
     .settings-content,
     .tb-content,
     .gamesign-content,
+    .cultivation-overview,
+    .cultivation-content,
     .theme-store-content,
     .logs-content,
     .script-card,
@@ -50,6 +52,7 @@ html.appearance-background-custom
     .settings-content,
     .tb-content,
     .gamesign-content,
+    .cultivation-content,
     .theme-store-content,
     .logs-content,
     .script-card,
@@ -76,6 +79,8 @@ html.appearance-background-custom
     .user-edit-content .task-option-panel,
     .user-edit-content .module-panel,
     .user-edit-content .bettergi-groups-pane,
+    .cultivation-content .cultivate-preview,
+    .cultivation-content .operator-card,
     .link-card,
     .tool-intro,
     .chan-card,
@@ -139,8 +144,16 @@ html.appearance-background-custom
   > th:not(:where(.ant-modal *, .ant-drawer *)),
 html.appearance-background-custom
   .content-area
-  :is(.settings-tabs, .community-tabs)
+  :is(.settings-tabs, .community-tabs, .cultivation-tabs)
   .ant-tabs-nav
   .ant-tabs-tab-active {
   background-color: var(--ant-color-fill-secondary);
+}
+
+html.appearance-background-custom
+  .content-area
+  .cultivation-tabs
+  > .ant-tabs-nav
+  .ant-tabs-tab-active {
+  border-bottom-color: transparent;
 }

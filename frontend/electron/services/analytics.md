@@ -98,6 +98,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `adapter_setup_finished` | 专项配置引导与独有操作 | `script_type`、`operation_kind`、`engine_kind` |
 
 养成页手动刷新复用 `adapter_setup_finished`，`operation_kind=data_refresh`，仅在后端完整更新材料与目录后记录成功；自动缓存读取不重复采集。
+养成月卡选项保存复用 `useUserApi.updateUser` 的 `config_write_finished`，不发送月卡状态；材料时间为本地派生展示，不新增重算事件。
 
 历史附件视频的 `play` 意图由 `playing` 确认成功，缓冲恢复不会重复计数；请求播放前后的关联仅在内存中保存，不上报附件标识或地址。手动保存录屏仅用 `capture_path` 是否存在判断 success/skipped，不上传其内容。
 

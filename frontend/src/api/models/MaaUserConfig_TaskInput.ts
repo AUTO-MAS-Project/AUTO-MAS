@@ -32,6 +32,10 @@ export type MaaUserConfig_TaskInput = {
      */
     CultivateSkipDuringResourceCollection?: (boolean | null);
     /**
+     * 预计材料时间是否计入月卡每日额外 80 理智，仅用于估算
+     */
+    CultivateMonthlyCard?: (boolean | null);
+    /**
      * 森空岛绑定：签到账号组 UUID（凭据引用，凭据本体只存签到域）
      */
     CultivateSklandAccount?: (string | null);

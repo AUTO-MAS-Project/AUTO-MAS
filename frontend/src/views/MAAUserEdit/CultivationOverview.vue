@@ -35,6 +35,23 @@
       <div class="setting-row">
         <span class="setting-label">{{ t('core.maaCopilot.executionSettings') }}</span>
         <div class="setting-control execution-checks">
+          <span class="monthly-card-setting">
+            <a-checkbox
+              :checked="formData?.Task?.CultivateMonthlyCard ?? false"
+              :disabled="loading"
+              @change="emit('save', 'Task.CultivateMonthlyCard', $event.target.checked)"
+              >{{ t('core.maaCopilot.monthlyCard') }}</a-checkbox
+            >
+            <a-tooltip :title="t('core.maaCopilot.monthlyCardHint')" :trigger="['hover', 'focus']">
+              <button
+                type="button"
+                class="setting-help"
+                :aria-label="t('core.maaCopilot.monthlyCardHint')"
+              >
+                <QuestionCircleOutlined aria-hidden="true" />
+              </button>
+            </a-tooltip>
+          </span>
           <a-checkbox
             :checked="formData?.Task?.CultivateAutoRaise ?? false"
             :disabled="loading"
@@ -99,6 +116,22 @@
         :value="statSanity"
         :suffix="statSanity === '—' ? undefined : t('core.edit.maaCultivateSanityUnit')"
       />
+      <a-statistic class="material-time-stat" :value="statMaterialTime" aria-live="polite">
+        <template #title>
+          <span class="stat-title">
+            {{ t('core.maaCopilot.statMaterialTime') }}
+            <a-tooltip :title="t('core.maaCopilot.materialTimeHint')" :trigger="['hover', 'focus']">
+              <button
+                type="button"
+                class="setting-help stat-help"
+                :aria-label="t('core.maaCopilot.materialTimeHint')"
+              >
+                <QuestionCircleOutlined aria-hidden="true" />
+              </button>
+            </a-tooltip>
+          </span>
+        </template>
+      </a-statistic>
     </div>
   </section>
 </template>
@@ -112,6 +145,10 @@ import { listGoals, parseCultivateTargets } from './cultivateTargets'
 
 type SelectOption = { label: string; value: string }
 type QuotaField = { key: string; labelKey: string }
+
+const DAILY_SANITY = 288
+const WEEKLY_SANITY = 240
+const MONTHLY_CARD_SANITY = 80
 
 /* 理智药与源石在 MAA 侧同构；留空沿用 MAA 原计划设置，填数字才覆盖 */
 const cultivateQuotas: QuotaField[] = [
@@ -135,6 +172,8 @@ const props = defineProps<{
   loadSklandRoleOptions: () => Promise<void>
   /** 养成需求预览（后端纯计算结果） */
   cultivatePreview: CultivatePreviewOut | null
+  cultivatePreviewLoading: boolean
+  cultivatePreviewError: string
 }>()
 
 const emit = defineEmits<{ save: [key: string, value: unknown] }>()
@@ -197,7 +236,23 @@ const statGoals = computed(() =>
   )
 )
 const statMaterials = computed(() => props.cultivatePreview?.demands.length ?? 0)
-const statSanity = computed(() => props.cultivatePreview?.totalExpectedSanity ?? '—')
+const statSanity = computed(() =>
+  props.cultivatePreviewLoading || props.cultivatePreviewError
+    ? '—'
+    : (props.cultivatePreview?.totalExpectedSanity ?? '—')
+)
+const statMaterialTime = computed(() => {
+  if (props.cultivatePreviewLoading) return t('core.edit.maaCultivatePreviewComputing')
+  const sanity = props.cultivatePreview?.totalExpectedSanity
+  if (props.cultivatePreviewError || sanity == null || !statGoals.value) return '—'
+  if (sanity === 0) return t('core.maaCopilot.materialTimeNoSanity')
+  // 周补给均摊至每日；月卡按整个估算期间持续持有计算。
+  const dailySanity =
+    DAILY_SANITY +
+    WEEKLY_SANITY / 7 +
+    (props.formData?.Task?.CultivateMonthlyCard ? MONTHLY_CARD_SANITY : 0)
+  return t('core.maaCopilot.materialTimeDays', { days: Math.ceil(sanity / dailySanity) })
+})
 </script>
 
 <style scoped>
@@ -262,13 +317,22 @@ const statSanity = computed(() => props.cultivatePreview?.totalExpectedSanity ??
 
 .execution-checks {
   display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 4px 24px;
 }
 
 .execution-checks .ant-checkbox-wrapper {
   margin-inline-start: 0;
+}
+
+.monthly-card-setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* 行尾 ? 说明按钮（可聚焦，对齐 PipelineRow 的 row-help 口径） */
@@ -307,6 +371,17 @@ const statSanity = computed(() => props.cultivatePreview?.totalExpectedSanity ??
 
 .overview-stats-paused {
   opacity: 0.55;
+}
+
+.stat-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-help {
+  width: 20px;
+  height: 20px;
 }
 
 .overview-stats :deep(.ant-statistic-title) {
