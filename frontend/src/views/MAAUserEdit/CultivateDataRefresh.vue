@@ -17,6 +17,7 @@ import { inject, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { ReloadOutlined } from '@ant-design/icons-vue'
+import { CultivateDataRefreshError } from '@/composables/useMaaCultivateDataApi'
 import { cultivateDataRefreshKey } from './cultivateDataRefresh'
 
 defineProps<{ disabled: boolean }>()
@@ -36,7 +37,15 @@ const refresh = async () => {
     else if (result === 'partial') message.warning(t('core.maaCopilot.refreshDataDisplayFailed'))
   } catch (error) {
     logger.error(`刷新养成数据失败: ${error instanceof Error ? error.message : String(error)}`)
-    if (active) message.error(t('core.maaCopilot.refreshDataFailed'))
+    if (active) {
+      const key =
+        error instanceof CultivateDataRefreshError && error.reason === 'cache'
+          ? 'core.maaCopilot.refreshDataCacheFailed'
+          : error instanceof CultivateDataRefreshError && error.reason === 'source'
+            ? 'core.maaCopilot.refreshDataSourceFailed'
+            : 'core.maaCopilot.refreshDataFailed'
+      message.error(t(key))
+    }
   }
 }
 </script>

@@ -30,6 +30,16 @@ describe('MAA 养成数据手动刷新', () => {
     expect(finish).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ outcome: 'failure' }))
   })
 
+  it.each([
+    [503, 'source'],
+    [507, 'cache'],
+    [500, 'service'],
+  ] as const)('应用错误 %s 保留可本地化的失败原因', async (code, reason) => {
+    refresh.mockResolvedValue({ code, message: 'Internal diagnostic detail' })
+    await expect(useMaaCultivateDataApi().refresh('script')).rejects.toMatchObject({ reason })
+    expect(finish).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ outcome: 'failure' }))
+  })
+
   it('网络失败保留异常且只观察一次结果', async () => {
     const error = new Error('Synthetic network outage')
     refresh.mockRejectedValue(error)

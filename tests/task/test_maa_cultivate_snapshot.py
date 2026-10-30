@@ -125,7 +125,19 @@ async def test_gzip_populates_both_caches_once(tmp_path, snapshot, network, firs
 @pytest.mark.parametrize("loader", ["load_dataset", "load_operator_catalog"])
 @pytest.mark.parametrize(
     "failure",
-    ["http", "gzip", "truncated", "json", "schema", "empty", "catalog", "stale"],
+    [
+        "http",
+        "gzip",
+        "truncated",
+        "json",
+        "schema",
+        "empty",
+        "catalog",
+        "catalog_type",
+        "invalid_stages",
+        "padded_recipes",
+        "stale",
+    ],
 )
 async def test_bad_snapshot_falls_back_to_source(
     tmp_path, snapshot, network, loader, failure
@@ -136,6 +148,22 @@ async def test_bad_snapshot_falls_back_to_source(
         snapshot["dataset"]["stages"] = []
     elif failure == "catalog":
         snapshot["operators"].append(None)
+    elif failure == "catalog_type":
+        snapshot["operators"][0]["maxElite"] = None
+    elif failure == "invalid_stages":
+        for stage in snapshot["dataset"]["stages"]:
+            stage["stage_code"] = ""
+            stage["ap_cost"] = 0
+    elif failure == "padded_recipes":
+        local_ids = {
+            recipe.result_item_id
+            for recipe in yituliu._CHIP_RECIPES + yituliu._VOUCHER_RECIPES
+        }
+        snapshot["dataset"]["recipes"] = [
+            recipe
+            for recipe in snapshot["dataset"]["recipes"]
+            if recipe["result"] in local_ids
+        ]
     elif failure == "stale":
         snapshot["saved_at"] = snapshot["operators_saved_at"] = time.time() - 4 * 86400
     content = compressed(snapshot)
@@ -308,8 +336,36 @@ async def test_failed_manual_refresh_preserves_disk_and_memory(
         error = OSError
     else:
         network(status=503, upstream_status=503)
-        error = httpx.HTTPError
+        error = yituliu.YituliuDataError
     with pytest.raises(error):
+        await yituliu.refresh_data(tmp_path)
+    assert path.read_bytes() == original
+    assert await yituliu.get_dataset_cached(tmp_path) is previous
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure", ["empty_stages", "invalid_stages", "empty_recipes", "invalid_recipes"]
+)
+async def test_incomplete_source_refresh_cannot_be_masked_by_local_supplements(
+    tmp_path, snapshot, sources, network, failure
+):
+    network(compressed(snapshot))
+    previous = await yituliu.get_dataset_cached(tmp_path)
+    path = yituliu.snapshot_path(tmp_path)
+    original = path.read_bytes()
+    if failure == "empty_stages":
+        sources[yituliu._STAGE_INFO_URL] = {"data": []}
+    elif failure == "invalid_stages":
+        sources[yituliu._STAGE_INFO_URL] = {
+            "data": [{"stageId": "stage", "stageCode": "", "apCost": 0}]
+        }
+    elif failure == "empty_recipes":
+        sources[yituliu._RECIPE_URL] = []
+    else:
+        sources[yituliu._RECIPE_URL] = [{}]
+    network(status=503)
+    with pytest.raises(yituliu.YituliuDataError):
         await yituliu.refresh_data(tmp_path)
     assert path.read_bytes() == original
     assert await yituliu.get_dataset_cached(tmp_path) is previous
@@ -351,17 +407,23 @@ async def test_manual_refresh_waits_for_old_catalog_and_shares_new_result(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failed", [False, True])
-async def test_refresh_http_contract_calls_domain(monkeypatch, failed):
+@pytest.mark.parametrize(
+    "failure, expected_code",
+    [
+        (None, 200),
+        (yituliu.YituliuDataError("source unavailable"), 503),
+        (OSError("read-only cache"), 507),
+        (RuntimeError("unknown error"), 500),
+    ],
+)
+async def test_refresh_http_contract_calls_domain(monkeypatch, failure, expected_code):
     from unittest.mock import AsyncMock
 
     from fastapi import FastAPI
 
     from app.task.MAA import api, api_service
 
-    refresh = AsyncMock(
-        side_effect=RuntimeError("source unavailable") if failed else None
-    )
+    refresh = AsyncMock(side_effect=failure)
     monkeypatch.setattr(api_service, "refresh_cultivate_data", refresh)
     app = FastAPI()
     app.include_router(api.router, prefix="/api/scripts")
@@ -372,5 +434,5 @@ async def test_refresh_http_contract_calls_domain(monkeypatch, failed):
             "/api/scripts/maa/cultivate/refresh", json={"scriptId": "script"}
         )
     assert response.status_code == 200
-    assert response.json()["code"] == (500 if failed else 200)
+    assert response.json()["code"] == expected_code
     refresh.assert_awaited_once_with("script")

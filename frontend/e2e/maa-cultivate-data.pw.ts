@@ -8,7 +8,7 @@ test.describe('@maa-cultivate-data manual refresh', () => {
     page,
   }) => {
     let version = 0
-    let fail = false
+    let failureCode = 0
     let failCatalog = false
     let refreshRequests = 0
     let catalogRequests = 0
@@ -20,8 +20,11 @@ test.describe('@maa-cultivate-data manual refresh', () => {
         await new Promise<void>(resolve => {
           complete = resolve
         })
-      if (!fail) version++
-      await route.fulfill({ json: { code: fail ? 500 : 200, status: fail ? 'error' : 'success' } })
+      if (failureCode === -1) return route.abort('failed')
+      if (!failureCode) version++
+      await route.fulfill({
+        json: { code: failureCode || 200, status: failureCode ? 'error' : 'success' },
+      })
     })
     await page.route('**/api/scripts/maa/cultivate/operators', route => {
       catalogRequests++
@@ -109,18 +112,40 @@ test.describe('@maa-cultivate-data manual refresh', () => {
     await app.evidence('cultivation-data-refresh-light')
 
     const catalogAfterSuccess = catalogRequests
-    fail = true
+    failureCode = 503
     await refresh.click()
     await expect(
-      page.getByText('Refresh failed. Existing data is retained. Please try again later.', {
-        exact: true,
-      })
+      page.getByText(
+        'Could not load data from the download site or Yituliu. Check the network and try again. Existing data is retained.',
+        {
+          exact: true,
+        }
+      )
     ).toBeVisible()
     await expect(refresh).toBeEnabled()
     expect(catalogRequests).toBe(catalogAfterSuccess)
     await expect(root.getByText('Updated operator', { exact: true }).first()).toBeVisible()
 
-    fail = false
+    failureCode = 507
+    await refresh.click()
+    await expect(
+      page.getByText(
+        'Could not save the data cache. Check disk space and folder permissions. Existing data is retained.',
+        { exact: true }
+      )
+    ).toBeVisible()
+    await expect(refresh).toBeEnabled()
+    expect(catalogRequests).toBe(catalogAfterSuccess)
+    failureCode = -1
+    await refresh.click()
+    await expect(
+      page.getByText(
+        'Refresh service is unavailable. Check the backend and try again. Existing data is retained.',
+        { exact: true }
+      )
+    ).toBeVisible()
+    await expect(refresh).toBeEnabled()
+    failureCode = 0
     failCatalog = true
     await refresh.click()
     await expect(

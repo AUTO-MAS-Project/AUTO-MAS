@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import gzip
 import json
+import math
 import time
 from datetime import datetime, timezone
 from io import BytesIO
@@ -276,7 +277,9 @@ def parse_drop_matrix(raw: Mapping[str, Any] | list) -> tuple[DropEntry, ...]:
     return tuple(drops)
 
 
-def parse_stage_info(raw: Mapping[str, Any] | list) -> dict[str, StageMeta]:
+def parse_stage_info(
+    raw: Mapping[str, Any] | list, *, include_local: bool = True
+) -> dict[str, StageMeta]:
     """解析关卡信息并合并 13 关常量表（资源本/芯片本在源数据中整类缺席）。"""
 
     entries: Any = (
@@ -295,8 +298,9 @@ def parse_stage_info(raw: Mapping[str, Any] | list) -> dict[str, StageMeta]:
             if isinstance(entry, dict) and entry.get("stageId")
         )
     }
-    for meta in _PERMANENT_STAGES:
-        stages.setdefault(meta.stage_id, meta)
+    if include_local:
+        for meta in _PERMANENT_STAGES:
+            stages.setdefault(meta.stage_id, meta)
     return stages
 
 
@@ -746,6 +750,11 @@ async def _download_source_snapshot(
             fetch_json(client, _RECIPE_URL),
             fetch_json(client, _ITEM_INFO_URL),
         )
+    # 必须在本地资源关/配方补齐前检查源数据，不能把空表包装成完整更新。
+    if not _has_usable_material_stages(
+        parse_stage_info(stage_raw, include_local=False)
+    ) or not parse_recipes(recipe_raw):
+        raise YituliuDataError("一图流未返回有效关卡或合成配方")
     dataset = normalize_dataset(
         demand_raw,
         matrix_raw,
@@ -883,17 +892,46 @@ def _is_catalog_compatible(operators: Any) -> bool:
         and all(
             isinstance(operator, dict)
             and all(
-                key in operator
-                for key in ("value", "label", "maxElite", "maxSkillLevel")
+                isinstance(operator.get(key), str) and operator[key]
+                for key in ("value", "label")
             )
+            and all(
+                type(operator.get(key)) is int and operator[key] >= 0
+                for key in ("maxElite", "maxSkillLevel", "rarity")
+            )
+            and isinstance(operator.get("profession"), str)
             and isinstance(operator.get("skills"), list)
             and isinstance(operator.get("modules"), list)
             and all(
-                isinstance(skill, dict) and "skillIndex" in skill
+                isinstance(option, dict)
+                and isinstance(option.get("value"), str)
+                and option["value"]
+                and isinstance(option.get("label"), str)
+                and type(option.get("maxLevel")) is int
+                and option["maxLevel"] > 0
+                for option in operator["skills"] + operator["modules"]
+            )
+            and all(
+                type(skill.get("skillIndex")) is int and skill["skillIndex"] > 0
                 for skill in operator["skills"]
             )
             for operator in operators
         )
+    )
+
+
+def _has_usable_material_stages(stages: Mapping[str, StageMeta]) -> bool:
+    """至少包含一个有效的非本地补齐材料关，拒绝空表和失效元数据。"""
+
+    local_ids = {stage.stage_id for stage in _PERMANENT_STAGES}
+    return any(
+        stage_id not in local_ids
+        and isinstance(stage.stage_code, str)
+        and bool(stage.stage_code.strip())
+        and isinstance(stage.ap_cost, (int, float))
+        and math.isfinite(stage.ap_cost)
+        and stage.ap_cost > 0
+        for stage_id, stage in stages.items()
     )
 
 
@@ -944,7 +982,18 @@ async def _load_published_snapshot(
     ):
         raise YituliuDataError("下载站养成快照已过期")
     dataset = dataset_from_json(raw)
-    if not dataset.demands or not dataset.drops:
+    local_recipe_ids = {
+        recipe.result_item_id for recipe in _CHIP_RECIPES + _VOUCHER_RECIPES
+    }
+    if (
+        not dataset.demands
+        or not dataset.drops
+        or not _has_usable_material_stages(dataset.stages)
+        or not any(
+            recipe.result_item_id not in local_recipe_ids and recipe.ingredients
+            for recipe in dataset.recipes
+        )
+    ):
         raise YituliuDataError("下载站养成快照缺少有效材料数据")
 
     if cache_result:
@@ -1227,7 +1276,12 @@ async def _refresh_data(cache_dir: Path, proxy: httpx.Proxy | str | None) -> Non
             )
         except Exception as e:
             logger.warning(f"下载站养成快照不可用，手动刷新回退一图流: {e}")
-            dataset, catalog = await _download_source_snapshot(proxy)
+            try:
+                dataset, catalog = await _download_source_snapshot(proxy)
+            except Exception as source_error:
+                raise YituliuDataError(
+                    "无法从下载站或一图流获取完整养成数据"
+                ) from source_error
             if (
                 not dataset.demands
                 or not dataset.drops
