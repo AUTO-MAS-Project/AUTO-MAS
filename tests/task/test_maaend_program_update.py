@@ -221,8 +221,7 @@ def test_discard_old_mxu_package_preserves_cache_and_newer_archives(installation
     assert future.is_file() and different.is_file() and unknown.is_file()
     assert (webview / "Preferences").read_text() == "persistent"
     assert (
-        json.loads((root / "interface.json").read_text())["mirrorchyan_rid"]
-        == "MaaEnd"
+        json.loads((root / "interface.json").read_text())["mirrorchyan_rid"] == "MaaEnd"
     )
 
 
