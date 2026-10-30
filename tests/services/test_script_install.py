@@ -323,7 +323,11 @@ def test_merged_pipeline_quarantine_failure_preserves_old_install(package, monke
     original_copytree = install.shutil.copytree
 
     def fail_when_saving_pipeline(source, target, *args, **kwargs):
-        if source.name == "pipeline" and source.parent != root:
+        # shutil.copytree 递归时会传入 os.DirEntry，而非 Path。
+        # 仅模拟工作区备份失败，不干扰前面的正常安装目录复制。
+        if Path(source).name == "pipeline" and Path(target).is_relative_to(
+            install.workspace(root) / "retired-pipelines"
+        ):
             raise OSError("quarantine unavailable")
         return original_copytree(source, target, *args, **kwargs)
 

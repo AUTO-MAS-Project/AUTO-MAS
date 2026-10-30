@@ -511,8 +511,18 @@ async def test_cancel_install_waits_for_worker_before_deleting_archive(
     finished = threading.Event()
 
     def blocking_install(
-        _root, archive, _size, _digest, _protected, _validate, _idle, cancelled
+        _root,
+        archive,
+        _size,
+        _digest,
+        _protected,
+        _validate,
+        _idle,
+        cancelled,
+        *,
+        refresh_merged_pipelines=False,
     ):
+        assert refresh_merged_pipelines
         started.set()
         assert cancelled.wait(3)
         assert archive.is_file()
