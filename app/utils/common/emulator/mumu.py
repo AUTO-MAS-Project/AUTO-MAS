@@ -410,7 +410,9 @@ class MumuManager(DeviceBase):
         # 参考命令 MuMuManager.exe control -v 2 launch
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
+            # -503 这类失败 MuMu 自己会在 info 里给出状态，交给子类拼进报错
+            diagnosis = await self._describe_launch_failure(idx)
+            raise RuntimeError(f"命令执行失败: {result.failure_detail()}{diagnosis}")
 
         logger.info(
             f"MuMu 启动命令已完成，等待实例在线: {idx} - 用时: "
