@@ -25,6 +25,9 @@ class WindowsStartupManager:
     async def _create_task(self) -> None:
         current_user = getpass.getuser()
         current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        # 计划任务本身不提权（否则令牌会带 TokenMandatoryPolicy=3，MuMu 6.8.8 会因此自降
+        # 权限、拉不起 MuMuNxMain），改由引导脚本走 UAC 提权，拿到正常的管理员令牌
+        exe_path = Path.cwd() / "AUTO-MAS.exe"
         xml_content = f"""<?xml version="1.0" encoding="UTF-16"?>
             <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
                 <RegistrationInfo>
@@ -42,7 +45,7 @@ class WindowsStartupManager:
                 <Principals>
                     <Principal id="Author">
                         <LogonType>InteractiveToken</LogonType>
-                        <RunLevel>HighestAvailable</RunLevel>
+                        <RunLevel>LeastPrivilege</RunLevel>
                     </Principal>
                 </Principals>
                 <Settings>
@@ -66,8 +69,8 @@ class WindowsStartupManager:
                 </Settings>
                 <Actions Context="Author">
                     <Exec>
-                        <Command>{Path.cwd() / "AUTO-MAS.exe"}</Command>
-                        <Arguments>--auto-start</Arguments>
+                        <Command>powershell.exe</Command>
+                        <Arguments>-NoProfile -WindowStyle Hidden -Command "Start-Process -FilePath '{exe_path}' -ArgumentList '--auto-start' -Verb RunAs"</Arguments>
                     </Exec>
                 </Actions>
             </Task>"""
