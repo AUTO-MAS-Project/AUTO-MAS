@@ -1,5 +1,7 @@
 import { expect, test } from './fixtures'
-import type { Page, WebSocket } from '@playwright/test'
+import type { Page, WebSocket, WebSocketRoute } from '@playwright/test'
+import type { WSTaskCompletedData } from '../src/services/websocket/types'
+import { observeMainConnection } from './socket-recovery'
 
 // 后端端口由环境变量注入，保持与 init.pw.ts / real-integration.pw.ts 一致
 const backendUrl = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? '36174'}`
@@ -21,41 +23,79 @@ function lastMainSocketOpen(sockets: WebSocket[], after: number): boolean {
   return sockets.length > after && !sockets[sockets.length - 1].isClosed()
 }
 
-// 曾有三条用例（页面导航保状态、空闲刷新重连、断线重连）都在做「刷新后等新连接」，
-// 断言完全相同且刷新走的是全新 bootstrap，并没有驱动 scheduleReconnect 的退避重连逻辑
-// （那条路径由 frontend/src/services/websocket/connection.test.ts 覆盖），故合并为一条。
 test.describe('@recovery websocket resilience', () => {
-  test('reloads the page and re-establishes the main WebSocket', async ({ app, page }) => {
-    const sockets = trackMainWebSockets(page)
-
-    await app.goto('/scheduler')
-
-    // 记录任务控制台的初始状态：侧栏文字先于懒加载的调度台渲染，
-    // 必须先等页面内容（有标签页渲染卡片，无标签页渲染空态）再取样，否则会把空列表当基线
-    await expect(page.locator('.task-unified-card, .empty-tab-content').first()).toBeVisible()
-    const taskControls = page.locator('.task-control')
-    const initialCount = await taskControls.count()
-
-    // 基线必须在刷新前采样：刷新后新建的连接才算「重连」
-    await expect.poll(() => lastMainSocketOpen(sockets, 0), { timeout: 5000 }).toBe(true)
-    const initialSocketCount = sockets.length
-
-    await page.reload()
-    await expect(page.getByText('Scheduler', { exact: true }).first()).toBeVisible()
-
-    await expect
-      .poll(() => lastMainSocketOpen(sockets, initialSocketCount), { timeout: 5000 })
-      .toBe(true)
-
-    // 刷新后要等页面内容重新渲染，用自动重试断言避免采样到加载中的空列表；
-    // 数量不变说明没有留下上一次会话的任务卡片
-    await expect(page.locator('.task-unified-card, .empty-tab-content').first()).toBeVisible()
-    await expect(taskControls).toHaveCount(initialCount)
-
-    await app.evidence('recovery-reload-reconnected')
+  test('reconnects without reload and receives a real unconfigured-task result', async ({
+    app,
+    page,
+  }) => {
+    const completedTasks = new Map<string, { data: WSTaskCompletedData; route: WebSocketRoute }>()
+    const connection = await observeMainConnection(page, (frame, route) => {
+      const message = JSON.parse(frame.toString()) as {
+        id: string
+        type: string
+        data: WSTaskCompletedData
+      }
+      if (message.type === 'task.completed')
+        completedTasks.set(message.id, { data: message.data, route })
+    })
+    const post = async (path: string, data: unknown) => {
+      const response = await page.request.post(`${backendUrl}${path}`, { data })
+      expect(response.ok()).toBe(true)
+      const body = await response.json()
+      expect(body.code).toBe(200)
+      return body
+    }
+    const { scriptId } = await post('/api/scripts/add', { type: 'MAA' })
+    let userId: string | undefined
+    try {
+      await post('/api/scripts/update', { scriptId, data: { Info: { Name: 'Recovery probe' } } })
+      userId = (await post('/api/scripts/user/add', { scriptId })).userId
+      await post('/api/scripts/user/update', {
+        scriptId,
+        userId,
+        data: { Info: { Name: 'Recovery account', Status: true, RemainedDay: -1 } },
+      })
+      await app.goto('/scheduler')
+      const control = page.locator('.task-control')
+      await expect(control).toHaveCount(1)
+      const recovered = await connection.reconnect()
+      await control.locator('.ant-select-selector').first().click()
+      await page
+        .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
+        .filter({ hasText: 'Recovery probe' })
+        .click()
+      const started = page.waitForResponse(
+        response =>
+          response.url().endsWith('/api/dispatch/start') && response.request().method() === 'POST'
+      )
+      await control.getByRole('button', { name: /Run$/ }).click()
+      const response = await started
+      expect(response.ok()).toBe(true)
+      const accepted = await response.json()
+      expect(accepted.code).toBe(200)
+      // 没有安装路径和模拟器的隔离任务应失败；真实消息只用于证明恢复后的双向链路。
+      await expect
+        .poll(
+          () =>
+            completedTasks
+              .get(accepted.taskId)
+              ?.data.task_info.find(script => script.script_id === scriptId)?.status,
+          { timeout: 30_000 }
+        )
+        .toBe('异常')
+      expect(completedTasks.get(accepted.taskId)?.route).toBe(recovered.route)
+      expect(recovered.received).toBeGreaterThan(0)
+      await expect(page.locator('.tab-status.ant-tag-error')).toBeVisible()
+      await expect(control.getByRole('button', { name: /Run$/ })).toBeEnabled()
+      await expect(control).toHaveCount(1)
+      await app.evidence('recovery-without-reload')
+    } finally {
+      if (userId) await post('/api/scripts/user/delete', { scriptId, userId })
+      await post('/api/scripts/delete', { scriptId })
+    }
   })
 
-  test('handles backend restart gracefully', async ({ app, page }) => {
+  test('recovers after health requests fail during page reload', async ({ app, page }) => {
     const sockets = trackMainWebSockets(page)
 
     await app.goto('/home')
@@ -78,7 +118,7 @@ test.describe('@recovery websocket resilience', () => {
     // 轮询确认应用确实发起了健康检查并被拦下
     await expect.poll(() => abortedChecks, { timeout: 10000 }).toBeGreaterThan(0)
 
-    await app.evidence('recovery-backend-restart')
+    await app.evidence('recovery-health-request-failure')
 
     // 后端恢复：解除拦截后应用应重新连上 WebSocket 并成功拿到健康状态
     await page.unroute('**/api/core/health')
