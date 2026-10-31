@@ -410,10 +410,19 @@ class MumuManager(DeviceBase):
         # 参考命令 MuMuManager.exe control -v 2 launch
 
         if result.returncode != 0:
+            # 界面入口（emulator_manager 的 except）以前只发 WS 气泡不写日志，
+            # 只靠下面这条 raise，失败原因在 app.log 里是空白的。
+            # 这里不拼 _describe_launch_failure：6.8.8 的 info 在实例离线时不产出
+            # launch_err_* / player_state，拼出来恒为空串。
+            logger.error(
+                f"MuMu 启动命令失败: {idx} - {package_name} - {result.failure_detail()}"
+            )
             raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
 
+        # 只说明命令返回 0，不代表实例会起来：真正的结论在下面的等待循环，
+        # 措辞不要写成「已完成」，否则日志会把静默空等读成成功。
         logger.info(
-            f"MuMu 启动命令已完成，等待实例在线: {idx} - 用时: "
+            f"MuMu 启动命令已返回，等待实例在线: {idx} - 用时: "
             f"{time.monotonic() - launch_started_at:.3f}秒"
         )
         online_started_at = time.monotonic()
@@ -458,7 +467,9 @@ class MumuManager(DeviceBase):
             logger.warning(
                 f"模拟器启动等待超时: {idx} - {package_name} - "
                 f"当前状态: {status} - 用时: "
-                f"{time.monotonic() - started_at:.3f}秒"
+                f"{time.monotonic() - started_at:.3f}秒（含启动命令本身） - "
+                f"启动命令返回 0 后已等待 "
+                f"{time.monotonic() - online_started_at:.3f}秒仍未上线"
             )
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(
