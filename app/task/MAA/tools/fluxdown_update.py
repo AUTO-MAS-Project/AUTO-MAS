@@ -16,7 +16,7 @@ from pathlib import Path
 import httpx
 
 from app.core import Config
-from app.core.update import download_file
+from app.core.script_update import download_script_package as download_file
 from app.models.config import MaaConfig
 from app.services.update_fluxdown import FluxdownResumableError
 from app.services.update_transport import DownloadProgress, request_mirror_resource
@@ -161,11 +161,6 @@ async def prepare_maa_fluxdown_update(
                     timeout=30 * 60,
                     proxy=Config.proxy,
                     progress=progress,
-                    downloader=(
-                        "fluxdown"
-                        if Config.setting.Update.FluxdownTakeoverAll
-                        else "builtin"
-                    ),
                     source="GitHub",
                 )
                 break

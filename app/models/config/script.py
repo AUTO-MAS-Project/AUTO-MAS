@@ -2108,9 +2108,9 @@ class HSRConfig(DomainEntry):
     TaskSwitch: TaskSwitchFields = Field(default_factory=TaskSwitchFields)
 
     class UpdateFields(ConfigGroup):
-        AutoUpdateMode: Literal["Off", "AfterRun"] = Field(
-            default_factory=lambda: "Off",
-            description="外部脚本（M7A / SRA）的自动更新。默认关闭：这两个是用户自己安装、 自带更新器的第三方工具，未经开启就改写它们的目录属于越界；停留在 某个旧版也是真实需求。 只有 AfterRun 一档，没有 BeforeRun：更新的收益本来就落在下一次运行 上，没有理由让当前这轮先等一个 170–750MB 的下载。想立刻更新走配置 页的手动按钮。留成枚举而非布尔，是为了日后要加档时不必做 bool→enum 迁移（MaaFW 正为此背着一个废弃字段）。 选项顺序有意义：OptionsValidator.correct() 回退的是 **options[0]**， 不是这里的默认值，Off 必须排在最前。",
+        AutoUpdateMode: Literal["Off", "BeforeRun", "AfterRun"] = Field(
+            default_factory=lambda: "BeforeRun",
+            description="SRA、三月七的自动更新：Off 关闭，BeforeRun 在任务开始前由 MAS 检查、下载、校验并安装。默认运行前更新；旧配置 AfterRun 兼容为运行前执行，显式关闭保持关闭。",
         )
 
         Channel: Literal["stable", "beta"] = Field(

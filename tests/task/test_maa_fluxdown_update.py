@@ -90,9 +90,8 @@ async def test_script_channel_and_global_downloader_are_independent(
     )
     assert all(c.args == (channel,) for c in release.call_args_list)
     assert downloader.call_args.args[0].endswith("/v6.1.0/" + name)
-    assert downloader.call_args.kwargs["downloader"] == (
-        "fluxdown" if fluxdown else "builtin"
-    )
+    assert downloader.call_args.kwargs["source"] == "GitHub"
+    assert downloader.call_args.kwargs["proxy"] is update.Config.proxy
     assert update.read_pending_update(root) == ("v6.1.0", str((root / name).resolve()))
     progress.assert_awaited_once()
 
@@ -298,7 +297,7 @@ def resource_install(installation, monkeypatch):
         return path.stat().st_size
 
     downloader = AsyncMock(side_effect=download)
-    monkeypatch.setattr(resource, "download_file", downloader)
+    monkeypatch.setattr(resource, "download_script_package", downloader)
     return install, target, downloader
 
 
@@ -311,9 +310,7 @@ async def test_github_resources_are_installed_before_return(resource_install, fl
     assert not resource._STAGE_ZIP.exists()
     assert resource.read_resource_clock(install) == target
     assert (install / "resource/tasks/test.json").read_text() == '{"opaque":"upstream"}'
-    assert downloader.call_args.kwargs["downloader"] == (
-        "fluxdown" if fluxdown else "builtin"
-    )
+    assert downloader.call_args.kwargs["source"] == "GitHub"
     # A software reinstall can reset resources: the verified shared cache repairs them without another download.
     (install / "resource/version.json").write_text(
         '{"last_updated":"2026-10-01 00:00:00.000"}'

@@ -29,6 +29,7 @@ from typing import Any
 
 from app.config import ConfigCollection
 from app.core import Config
+from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.core.ws import Publisher, protocol
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.notification_report import TaskResultData, TaskResultReport
@@ -307,21 +308,19 @@ class HSRManager(NotificationTaskBase):
                 continue
             try:
                 await rollback_pending(Path(root), send_log=self._append_log)
-            except Exception as e:  # noqa: BLE001 - 回滚失败不该挡住任务启动
+            except Exception as e:  # noqa: BLE001 - 未完成安装必须阻止任务启动
                 name = engine_label(engine, left=False)
                 logger.opt(exception=True).warning(
                     f"HSR 更新：回滚{engine_label(engine)}残留失败"
                 )
-                self._append_log(f"{name}未完成更新的回滚失败，将按现状继续：{e}")
+                self._append_log(f"{name}未完成更新的回滚失败，已停止任务：{e}")
+                raise RuntimeError(f"{name}更新状态无法恢复，不能开始任务") from e
 
     def _update_aborted(self) -> bool:
         """用户是否已经要求停止——下载途中每收一块问一次。
 
-        收尾期的更新跑在 ``asyncio.shield`` 里（``models/task.py`` 的
-        ``_execute_task``），取消传不进来：``stopped_manually`` 只覆盖「停止落在
-        主任务里」，而停止落在更新途中时唯一的痕迹是根任务已经被取消。两个都
-        看，才不至于让用户按了停止还要等一个几百 MB 的下载走完、期间外部目录锁
-        一直被占着。
+        同时覆盖基类的停止标记与根任务取消状态，确保取消下载后不进入安装或
+        后续用户任务。安装已开始时由安装入口等待写入结束后再交还取消。
         """
 
         if self.stopped_manually:
@@ -331,7 +330,7 @@ class HSRManager(NotificationTaskBase):
         return bool(root_task is not None and root_task.cancelled())
 
     async def _update_external_scripts(self) -> str | None:
-        """本轮正常跑完后更新外部脚本。返回非空字符串表示应判为异常。
+        """在备份配置、启动任务前更新两个外部脚本。非空返回值阻止任务启动。
 
         更新失败本身不算任务失败——按现有版本继续跑就是了。只有目录真的被改
         坏（回滚也失败）才必须让脚本进异常态，否则下一轮会在半坏的目录上反复
@@ -341,12 +340,9 @@ class HSRManager(NotificationTaskBase):
         script_config = self.script_config
         if script_config is None:
             return None
-        if str(script_config.Update.AutoUpdateMode or "Off") != "AfterRun":
+        if str(script_config.Update.AutoUpdateMode or "BeforeRun") == "Off":
             return None
-        # 取消或已经出错的这一轮不动目录：收尾期最不该起一个几百 MB 的下载。
-        # `stopped_manually` 是基类在任何 CancelledError 上置的（models/task.py），
-        # 且置于 final_task 之前，比只看 `crashed` 气密——HSR 只在用户循环里置
-        # `crashed`，取消若落在 check() 通过之后、用户循环开始之前就会漏掉。
+        # 旧配置 AfterRun 也在此执行；任务结束后不再下载或改写安装目录。
         if self.stopped_manually or self.crashed or self.check_result != "Pass":
             return None
 
@@ -357,16 +353,17 @@ class HSRManager(NotificationTaskBase):
         # 与 MaaFW 更新缓存同一口径：下载包落 MAS 数据目录，不落安装卷。
         download_dir = Path.cwd() / "data" / "hsr_update"
 
-        blocking: list[str] = []
         for engine in ("M7A", "SRA"):
             if self._update_aborted():
-                break
+                raise asyncio.CancelledError
             root = resolve_script_path(script_config, engine)
             if not root:
                 continue
             source = str(getattr(script_config.Update, f"{engine}Source") or "")
             try:
-                outcome = await update_engine_if_needed(
+                outcome = await run_script_update(
+                    ScriptUpdateRequest(str(self.script_info.script_id), "HSR", engine),
+                    update_engine_if_needed,
                     engine,
                     Path(root),
                     source=source,
@@ -377,15 +374,17 @@ class HSRManager(NotificationTaskBase):
                     send_log=self._append_log,
                     should_abort=self._update_aborted,
                 )
-            except Exception as e:  # noqa: BLE001 - 更新绝不能拖垮任务收尾
+            except Exception as e:  # noqa: BLE001 - 未知安装状态不能沿用旧版运行
                 name = engine_label(engine, left=False)
                 logger.opt(exception=True).warning(f"HSR 更新：{name}更新时出错")
-                self._append_log(f"{name}更新异常，按现有版本继续：{e}")
-                continue
+                self._append_log(f"{name}更新状态无法确认，已停止任务：{e}")
+                raise RuntimeError(f"{name}更新状态无法确认，不能开始任务") from e
             if outcome.blocking:
-                blocking.append(outcome.message)
+                return outcome.message or f"{engine_label(engine)}更新未完成"
+            if self._update_aborted():
+                raise asyncio.CancelledError
 
-        return "；".join(blocking) if blocking else None
+        return None
 
     def _append_log(self, message: str, *, max_lines: int = 500) -> None:
         """向调度台日志追加一行 HSR 运行信息。"""
@@ -924,6 +923,10 @@ class HSRManager(NotificationTaskBase):
             self._append_log("HSR 外部脚本目录运行锁已获取")
 
             await self._rollback_pending_updates()
+            update_error = await self._update_external_scripts()
+            if update_error:
+                self.check_result = update_error
+                raise RuntimeError(update_error)
             self._backup_external_configs()
             self._append_log("HSR 外部脚本配置已备份")
             # 运行前归档两引擎原生配置到持久池（运行会写托管字段、结束按运行期
@@ -1530,13 +1533,6 @@ class HSRManager(NotificationTaskBase):
 
             try:
                 restore_error = await self._restore_external_configs()
-                # 外部脚本更新是这一段关键区里的最后一件事：往前必须晚于配置恢复
-                # （恢复写的是打补丁前的用户配置，反过来会把旧配置盖到新版本上），
-                # 往后必须早于释放路径锁，否则更新期间目录不再独占。
-                if not final_errors and not restore_error:
-                    update_error = await self._update_external_scripts()
-                    if update_error:
-                        final_errors.append(update_error)
             finally:
                 # 备份/运行/恢复是同一关键区；配置解锁与通知在锁释放后进行。
                 self._release_external_path_lock()
