@@ -172,11 +172,14 @@ class MSSFlavor:
     type_key = TYPE_KEY
     # 本次运行已成功的日常、挑战不再补跑。登录不列：重试重新启动游戏后仍要登录。
     # 逐项声明已确认的公开 entry；上游新增任务默认保留重跑行为。
+    # 灾变防线保留在这里：它是「一期只能打一次」的常驻活动，成功后再派一遍会重新走
+    # 导航和走位，而这条声明只依赖引擎给的 completedTasks，与谁负责编排无关。
     skip_on_retry_entries = frozenset(
         {
             ACTIVITY_ENTRY,
             TRIBULATION_ENTRY,
             CLIMB_ENTRY,
+            "灾变防线_入口",
             "活动挑战_入口",
             "好友_入口",
             "基金_入口",

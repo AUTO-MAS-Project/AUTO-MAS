@@ -1,2 +1,2 @@
 project: mss
-个人版 MaaStellaSora 的灾变防线由上游自己处理，MAS 不再单独编排
+个人版 MaaStellaSora 的灾变防线改由项目自己安排，MAS 不再额外补一条
