@@ -406,86 +406,28 @@
             </a-col>
           </a-row>
 
-          <a-row v-if="isWinController" :gutter="24">
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('core.edit.endfieldAutoUpdate') }}
-                    <a-tooltip
-                      :title="
-                        isLauncherMode
-                          ? t('core.edit.maaEndAutoUpdateLauncherHint')
-                          : t('core.edit.endfieldAutoUpdateHint')
-                      "
-                    >
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-select
-                  v-model:value="maaEndConfig.Game.IfAutoUpdate"
-                  size="large"
-                  :options="booleanOptions"
-                  :disabled="isLauncherMode"
-                  @change="handleChange('Game', 'IfAutoUpdate', $event)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.gameUpdateTimeoutMinutes')"
-                    :hint="t('core.edit.endfieldUpdateTimeoutHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="maaEndConfig.Game.UpdateTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  :precision="0"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleUpdateTimeoutBlur"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item :label="t('core.edit.endfieldManualUpdate')">
-                <a-tooltip
-                  :title="maaEndConfig.Game.Path ? '' : t('core.edit.pickEndfieldExePath')"
-                >
-                  <span class="endfield-update-check">
-                    <a-button
-                      size="large"
-                      :disabled="
-                        !maaEndConfig.Game.Path ||
-                        isSaving ||
-                        pageLoading ||
-                        configLocked ||
-                        updateModal.running ||
-                        updateModal.starting
-                      "
-                      @click="handleCheckUpdate"
-                    >
-                      <template #icon>
-                        <ThunderboltOutlined />
-                      </template>
-                      {{ t('core.edit.checkUpdates') }}
-                    </a-button>
-                  </span>
-                </a-tooltip>
-              </a-form-item>
-            </a-col>
-          </a-row>
+          <MaaEndGameUpdateSection
+            v-if="isWinController"
+            v-model:game="maaEndConfig.Game"
+            :launcher-mode="isLauncherMode"
+            :disabled="
+              isSaving || pageLoading || configLocked || updateModal.running || updateModal.starting
+            "
+            @save="(key, value) => handleChange('Game', key, value)"
+            @timeout-blur="handleUpdateTimeoutBlur"
+            @check="handleCheckUpdate"
+          />
         </div>
 
         <MaaEndRunConfigSection
           v-model:run="maaEndConfig.Run"
           @save="(key, value) => handleChange('Run', key, value)"
           @account-switch="handleAccountSwitchMethodChange"
+        />
+        <MaaEndProgramUpdateSettings
+          v-model:update="maaEndConfig.Update"
+          :ready="!pageLoading && !isInitializing"
+          @save="(key, value) => handleChange('Update', key, value)"
         />
       </a-form>
     </a-card>
@@ -522,6 +464,8 @@
 
 <script setup lang="ts">
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import MaaEndGameUpdateSection from './components/MaaEndGameUpdateSection.vue'
+import MaaEndProgramUpdateSettings from './components/MaaEndProgramUpdateSettings.vue'
 import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import { createMaaEndScriptDraft } from './maaEndScriptDraft'
 import MaaEndRunConfigSection from './components/MaaEndRunConfigSection.vue'
@@ -547,7 +491,7 @@ import {
 } from '@/services/websocket/types'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
-import { QuestionCircleOutlined, SettingOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useMaaEndUpdate } from './useMaaEndUpdate'
 import { useMaaEndLauncher } from './useMaaEndLauncher'
@@ -797,6 +741,7 @@ const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
   Object.assign(maaEndConfig.Info, config.Info ?? {})
   Object.assign(maaEndConfig.Run, config.Run ?? {})
   Object.assign(maaEndConfig.Game, config.Game ?? {})
+  Object.assign(maaEndConfig.Update, config.Update ?? {})
   if (config.Run?.AccountSwitchMethod == null) {
     maaEndConfig.Run.AccountSwitchMethod = 'MAAEND'
   }
@@ -1125,10 +1070,6 @@ onBeforeUnmount(() => {
 }
 
 /* tooltip 包着 disabled 按钮时需要一层可挂事件的容器 */
-.endfield-update-check {
-  display: inline-block;
-}
-
 .update-log-area {
   max-height: 320px;
   overflow-y: auto;

@@ -2,6 +2,7 @@ import type { MaaEndScriptConfig } from '@/types/script'
 
 /** MaaEnd 脚本编辑页的初始配置：与 generalScriptDraft 同一形态，字段默认值只在这里维护。 */
 export const createMaaEndScriptDraft = (): MaaEndScriptConfig => ({
+  Update: { TakeoverEnabled: false, Channel: 'stable', MirrorChyanCDK: '' },
   Info: {
     Name: '',
     Path: '',
