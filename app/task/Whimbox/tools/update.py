@@ -18,12 +18,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import quote
 
-import httpx
 from packaging.utils import canonicalize_name, parse_wheel_filename
 from packaging.version import Version
 
 from app.core import Config
-from app.core.update import download_file
+from app.core.script_update import download_script_package as download_file
+from app.services.script_release import request_github_release
 from app.utils import ProcessRunner
 from app.utils.common.proxy_env import proxy_environment
 
@@ -100,21 +100,7 @@ def installation_access(root: Path):
 
 
 async def request_release() -> dict:
-    async with httpx.AsyncClient(
-        proxy=Config.proxy, timeout=15, follow_redirects=True
-    ) as client:
-        response = await client.get(
-            f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
-        )
-        response.raise_for_status()
-        release = response.json()
-    if (
-        not isinstance(release, dict)
-        or release.get("draft")
-        or release.get("prerelease")
-    ):
-        raise ValueError("奇想盒未返回正式发行版")
-    return release
+    return await request_github_release(REPOSITORY, proxy=Config.proxy)
 
 
 def select_wheel(release: dict) -> tuple[Version, str, str, str]:
@@ -202,9 +188,6 @@ async def ensure_backend_updated(root: Path) -> str:
         wheel,
         timeout=30 * 60,
         proxy=Config.proxy,
-        downloader="fluxdown"
-        if Config.setting.Update.FluxdownTakeoverAll
-        else "builtin",
         source="GitHub",
     )
     await asyncio.to_thread(verify_digest, wheel, digest)
