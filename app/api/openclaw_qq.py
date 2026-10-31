@@ -23,16 +23,15 @@
 """QQ 官方机器人扫码绑定 API。"""
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Literal
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
-from app.api.notification_dependencies import get_notification_service
-from app.core.notify import HostNotificationService
+from app.core import Notify
+from app.core.notify.channels.openclaw_qq.transport import Sender as Sender
 from app.models.config.setting import QQGroupCommandWhitelist
 from app.models.schema import OutBase
-from app.notification_channels.openclaw_qq.transport import Sender
 from app.utils import get_logger
 
 
@@ -129,16 +128,11 @@ def _groups_out(sender: Sender) -> OpenClawQQGroupsOut:
     summary="查询 QQ 通知接收位置及自动记录的群",
     response_model=OpenClawQQGroupsOut,
 )
-async def get_groups(
-    *,
-    notifications: Annotated[
-        HostNotificationService, Depends(get_notification_service)
-    ],
-) -> OpenClawQQGroupsOut:
+async def get_groups() -> OpenClawQQGroupsOut:
     """只返回自动记录的群和已保存的模式，不枚举 QQ 联系人。"""
 
     try:
-        return _groups_out(notifications.channel_sender("openclaw_qq"))
+        return _groups_out(Notify.channel_sender("openclaw_qq"))
     except Exception:
         logger.opt(exception=True).warning("查询 QQ 群状态失败")
         return OpenClawQQGroupsOut(
@@ -152,17 +146,11 @@ async def get_groups(
 @router.post(
     "/target", summary="选择 QQ 通知接收位置", response_model=OpenClawQQGroupsOut
 )
-async def set_target(
-    body: OpenClawQQTargetIn = Body(...),
-    *,
-    notifications: Annotated[
-        HostNotificationService, Depends(get_notification_service)
-    ],
-) -> OpenClawQQGroupsOut:
+async def set_target(body: OpenClawQQTargetIn = Body(...)) -> OpenClawQQGroupsOut:
     """验证绑定版本后保存通知模式与可选的群控制白名单。"""
 
     try:
-        sender = notifications.channel_sender("openclaw_qq")
+        sender = Notify.channel_sender("openclaw_qq")
         await sender.set_target(
             binding_id=body.bindingId,
             target_type=body.targetType,
@@ -196,19 +184,14 @@ async def set_target(
     summary="查询 QQ 官方机器人绑定状态",
     response_model=OpenClawQQStatusOut,
 )
-async def get_status(
-    *,
-    notifications: Annotated[
-        HostNotificationService, Depends(get_notification_service)
-    ],
-) -> OpenClawQQStatusOut:
+async def get_status() -> OpenClawQQStatusOut:
     """返回 QQ 绑定及网关状态，不返回协议凭据。
 
     connected 表示凭据已绑定；state 表示网关是连接中、已连接还是重连中。
     """
 
     try:
-        state = notifications.channel_sender("openclaw_qq").status()
+        state = Notify.channel_sender("openclaw_qq").status()
     except Exception as exc:
         logger.opt(exception=True).warning(
             f"get_status失败: {type(exc).__name__}: {exc}"
@@ -231,16 +214,11 @@ async def get_status(
     summary="创建 QQ 官方机器人登录二维码",
     response_model=OpenClawQQQrStartOut,
 )
-async def start_login(
-    *,
-    notifications: Annotated[
-        HostNotificationService, Depends(get_notification_service)
-    ],
-) -> OpenClawQQQrStartOut:
+async def start_login() -> OpenClawQQQrStartOut:
     """创建二维码；App ID 和客户端密钥只在后台登录确认后保存。"""
 
     try:
-        result = await notifications.channel_sender("openclaw_qq").start_login()
+        result = await Notify.channel_sender("openclaw_qq").start_login()
     except ValueError as exc:
         return OpenClawQQQrStartOut(code=400, status="error", message=str(exc))
     except Exception as exc:
@@ -264,13 +242,7 @@ async def start_login(
     summary="查询 QQ 官方机器人登录状态",
     response_model=OpenClawQQQrCheckOut,
 )
-async def check_login(
-    body: OpenClawQQQrCheckIn = Body(...),
-    *,
-    notifications: Annotated[
-        HostNotificationService, Depends(get_notification_service)
-    ],
-) -> OpenClawQQQrCheckOut:
+async def check_login(body: OpenClawQQQrCheckIn = Body(...)) -> OpenClawQQQrCheckOut:
     """轮询二维码与消息网关状态。
 
     扫码确认后先保存凭据，此时可能返回 state=connecting、connected=false；
@@ -279,7 +251,7 @@ async def check_login(
     """
 
     try:
-        result = await notifications.channel_sender("openclaw_qq").check_login(
+        result = await Notify.channel_sender("openclaw_qq").check_login(
             session_id=body.sessionId
         )
     except Exception as exc:
@@ -306,16 +278,11 @@ async def check_login(
     summary="解除 QQ 官方机器人绑定",
     response_model=OutBase,
 )
-async def unbind(
-    *,
-    notifications: Annotated[
-        HostNotificationService, Depends(get_notification_service)
-    ],
-) -> OutBase:
+async def unbind() -> OutBase:
     """解除绑定并清理本地保存的 QQ 协议状态。"""
 
     try:
-        await notifications.channel_sender("openclaw_qq").unbind()
+        await Notify.channel_sender("openclaw_qq").unbind()
     except Exception as exc:
         logger.opt(exception=True).warning(f"unbind失败: {type(exc).__name__}: {exc}")
         return OutBase(

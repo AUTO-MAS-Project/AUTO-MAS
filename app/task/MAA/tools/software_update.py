@@ -79,7 +79,7 @@ import psutil
 from app.core import Config
 from app.core.update import download_file
 from app.models.config import MaaConfig
-from app.services.update_transport import request_mirror_resource
+from app.services.common.update import transport as _service_update_transport
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
@@ -416,7 +416,7 @@ async def _fetch_latest(channel: str, arch: str, cdk: str) -> _Latest:
     只回完整包（上游修复路径同款语义）。"""
     try:
         async with asyncio.timeout(_QUERY_TIMEOUT):
-            payload = await request_mirror_resource(
+            payload = await _service_update_transport.request_mirror_resource(
                 _MIRROR_RESOURCE_ID,
                 params={
                     "cdk": cdk,

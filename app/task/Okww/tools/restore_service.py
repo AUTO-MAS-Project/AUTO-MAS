@@ -20,7 +20,7 @@
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底预览全部由基座
-（``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
+（``app.utils.common.config.restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
 mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 + 侧车
@@ -36,7 +36,7 @@ Default 池会互相污染）；owner（shared=Default 共享目录、independen
 import uuid
 from pathlib import Path
 
-from app.utils import config_restore as _utils_config_restore
+from app.utils.common.config import restore as _utils_config_restore
 
 from ..AutoProxy import _OKWW_REL_CONFIG_DIR, _okww_config_base
 from .backup_archive import (

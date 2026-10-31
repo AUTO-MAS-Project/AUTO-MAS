@@ -1,5 +1,8 @@
 # log_box 重构需求与实施记录
 
+> 本文保留重构前的历史需求与验证记录，不作为当前接口规范；当前用法见
+> [日志处理规范](../.agents/skills/mas-script-specialized-adapter/references/logbox-api.md)。
+
 更新：2026-10-29。分支：`refactor/log-box-pipeline`。本文件作为后续阶段的需求基线。
 
 ## 需求来源与优先级

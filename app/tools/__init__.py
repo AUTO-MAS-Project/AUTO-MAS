@@ -1,35 +1,37 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2025-2026 AUTO-MAS Team
+"""独立功能统一入口：按功能选择平台实现，并缓存模块。"""
 
-#   This file is part of AUTO-MAS.
+import sys
+from importlib import import_module
+from typing import TYPE_CHECKING
 
-#   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of
-#   the License, or (at your option) any later version.
+if TYPE_CHECKING:
+    from .common import community as community
+    from .common import error_screenshot as error_screenshot
+    from .common import game_calendar as game_calendar
+    from .common import ocr as ocr
 
-#   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty
-#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU Affero General Public License for more details.
-
-#   You should have received a copy of the GNU Affero General Public License
-#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
-#   Contact: DLmaster_361@163.com
+_COMMON_MODULES = {
+    "community": ".common.community",
+    "error_screenshot": ".common.error_screenshot",
+    "game_calendar": ".common.game_calendar",
+    "ocr": ".common.ocr",
+}
+_PLATFORM_MODULES: dict[str, dict[str, str]] = {"win32": {}, "darwin": {}, "linux": {}}
 
 
-from app.tools.common.community import (
-    format_community_sign_results,
-    has_community_credentials,
-    run_community_sign_in,
-)
+def __getattr__(name: str):
+    module_name = _PLATFORM_MODULES.get(sys.platform, {}).get(
+        name
+    ) or _COMMON_MODULES.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = import_module(module_name, __name__)
+    globals()[name] = value
+    return value
 
-from .skland import skland_sign_in
 
-__all__ = [
-    "format_community_sign_results",
-    "has_community_credentials",
-    "run_community_sign_in",
-    "skland_sign_in",
-]
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))
+
+
+__all__ = ["community", "error_screenshot", "game_calendar", "ocr"]

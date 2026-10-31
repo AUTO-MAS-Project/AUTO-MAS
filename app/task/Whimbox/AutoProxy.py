@@ -41,11 +41,13 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+import app.core.notify.formats.whimbox as _format_whimbox
 from app.config import ConfigCollection
+from app.core import Notify, Publisher
 from app.core.history import aggregate_data
-from app.core.ws import Publisher, protocol
+from app.core.ws import protocol
 from app.models.config import WhimboxConfig, WhimboxUserConfig
-from app.models.notification_ports import LocalNotice
+from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
@@ -66,7 +68,6 @@ from .contracts import (
 from .tools.feed import LoguruFileFeed, build_log_path_resolver
 from .tools.launcher import EmbeddedPythonLauncher, find_upstream_pids
 from .tools.marker import WhimboxMarkerParser, is_benign_marker
-from .tools.notify import build_statistics_payload
 from .tools.update import RECOVERY_HINT, pending_marker
 from .tools.upstream import WheelAssetsConfigSurface, parse_override_map
 
@@ -330,7 +331,7 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
             self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
             await self.launcher.terminate()
             try:
-                await self.task_info.local_notifier.send_notice(
+                await Notify.send_notice(
                     LocalNotice(
                         title="奇想盒自动代理出现异常！",
                         message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
@@ -652,8 +653,8 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
                     "一条龙任务已完成" if self.run_book else self.cur_user_item.result
                 )
                 success_symbol = "√" if self.run_book else "X"
-                await self.task_info.notifications.push_statistics_report(
-                    payload=build_statistics_payload(
+                await Notify.push_statistics_report(
+                    payload=_format_whimbox.build_statistics_payload(
                         title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的奇想盒自动代理统计报告",
                         message=statistics,
                     ),
@@ -730,7 +731,7 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
                 and self.cur_user_log.status
                 and self.cur_user_log.status != "Success!"
             ):
-                await self.task_info.local_notifier.send_notice(
+                await Notify.send_notice(
                     LocalNotice(
                         title="奇想盒运行异常",
                         message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",

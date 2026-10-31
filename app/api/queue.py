@@ -38,7 +38,7 @@ import app.models.config as _config_models
 from app.api.ws_command import ws_command
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config
-from app.core.config import QueueItemNotFoundError, QueueNotFoundError
+from app.core.config.manager import QueueItemNotFoundError, QueueNotFoundError
 from app.models.schema import OutBase
 from app.utils import get_logger
 

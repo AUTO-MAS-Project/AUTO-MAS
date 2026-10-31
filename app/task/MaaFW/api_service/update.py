@@ -39,7 +39,7 @@ from app.models.schema import (
     MaaFWProjectUpdateData,
     WSMaaFWProjectUpdateProgressData,
 )
-from app.services.update_transport import query_mirror_cdk_status
+from app.services.common.update import transport as _service_update_transport
 from app.task.MaaFW.api_service.common import (
     MaaFWApiReply,
     logger,
@@ -311,8 +311,8 @@ class _UpdatePanel:
     """
 
     def __init__(self, script_id: str) -> None:
+        from app.core import Publisher
         from app.core.ws import protocol as ws_protocol
-        from app.core.ws.publisher import Publisher
 
         self._publisher = Publisher
         self._message_type = ws_protocol.MAAFW_PROJECT_UPDATE_PROGRESS
@@ -904,7 +904,7 @@ async def query_mirror_cdk(script_id: str, cdk: str) -> MaaFWApiReply:
 
             try:
                 target = supported_architecture_target()
-                result = await query_mirror_cdk_status(
+                result = await _service_update_transport.query_mirror_cdk_status(
                     rid,
                     cdk=cdk,
                     channel=resolve_update_credentials(script_config).channel,

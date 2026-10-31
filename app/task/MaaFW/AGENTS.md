@@ -807,7 +807,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   过某版本失败，组里谁也不再为它下包；只有运行前 / 运行后自动更新读它，手动更新等于强制重试。
 - "检查更新"走 `version_only`，不换下载地址——带 CDK 换地址会扣 Mirror 酱当日额度。
 - 所以更新检查从不验证 CDK。编辑页 CDK 输入框下的小字（剩余天数 / CDK 有问题）走单独的
-  `/maafw/mirror-cdk` → 宿主调用公共服务 `app.services.update_transport.query_mirror_cdk_status`：
+  `/maafw/mirror-cdk` → 宿主通过 `from app.services import update_transport` 调用 `update_transport.query_mirror_cdk_status`：
   先不带 CDK 拿最新版本，再带 CDK、
   `current_version` 写成这个最新版本查一次——已是最新时服务端不签发下载地址、不扣额度，但照样校验
   CDK（2026-10-11 实测错 CDK 一律 HTTP 403 + 7002）。别把第二次的 `current_version` 改回项目版本。

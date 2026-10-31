@@ -58,7 +58,6 @@ from app.models.emulator import (
     EmulatorRuntimePolicy,
 )
 from app.utils import emulator_native, get_logger
-from app.utils import paths as _utils_paths
 
 from ..applaunch import (
     AppLaunchMixin,
@@ -146,8 +145,6 @@ from .vulkanfix import (
 
 logger = get_logger("魔改 AVD 管理")
 
-#: 仓库里推到客体跑的脚本。
-GUEST_SCRIPTS_DIR = _utils_paths.SOURCE_ROOT / "res" / "avd" / "guest"
 #: ``{根目录键: 锁}``：同一条安装同时只生成一次客体驱动补丁库（几台实例一起开机时）。
 _VULKAN_PATCH_LOCKS: dict[str, asyncio.Lock] = {}
 
@@ -285,11 +282,6 @@ def build_launch_args(
         "virtio-balloon-pci,free-page-reporting=on",
     ]
     return args
-
-
-def guest_script(name: str) -> Path:
-    """仓库里的客体脚本（``res/avd/guest/``）。"""
-    return GUEST_SCRIPTS_DIR / name
 
 
 # ---- 冻结看门狗 -----------------------------------------------------------
@@ -544,10 +536,17 @@ class _AvdCore(DeviceBase):
     """只负责开关机与状态，不带应用拉起（由 :class:`AvdManager` 叠上）。"""
 
     def __init__(
-        self, manager_exe: str | Path, max_wait_time: int, force_kill_on_close: bool
+        self,
+        manager_exe: str | Path,
+        max_wait_time: int,
+        force_kill_on_close: bool,
+        *,
+        resource_path: Path | None = None,
     ) -> None:
         self.emulator_path = Path(manager_exe)
         self.root = root_from_manager_exe(manager_exe)
+        # 关闭与状态查询不需要内置资源；启动资源由宿主明确提供。
+        self.resource_path = resource_path
         self.config = SimpleNamespace(
             Info=SimpleNamespace(
                 MaxWaitTime=int(max_wait_time),
@@ -558,6 +557,11 @@ class _AvdCore(DeviceBase):
         )
 
     # ---- 查询 -----------------------------------------------------------
+
+    def _guest_script(self, name: str) -> Path:
+        if self.resource_path is None:
+            raise ValueError("启动魔改 AVD 时必须提供内置资源目录")
+        return self.resource_path / "avd" / "guest" / name
 
     def _instances(self) -> dict[str, AvdInstance]:
         return list_instances(self.root)
@@ -974,7 +978,9 @@ class _AvdCore(DeviceBase):
 
         # 6) ARM 转译层的 cpuinfo：每个 vCPU 一条，Unity 才不按单核选最低画质
         if await self._push(
-            idx, guest_script("cpuinfo-bind.sh"), f"{GUEST_TMP_DIR}/cpuinfo-bind.sh"
+            idx,
+            self._guest_script("cpuinfo-bind.sh"),
+            f"{GUEST_TMP_DIR}/cpuinfo-bind.sh",
         ):
             _, cores = await self._shell(
                 idx, f"su 0 sh {GUEST_TMP_DIR}/cpuinfo-bind.sh"
@@ -1061,7 +1067,7 @@ class _AvdCore(DeviceBase):
                 )
             return False
 
-        if not await self._push(idx, guest_script("vulkanfix.sh"), remote):
+        if not await self._push(idx, self._guest_script("vulkanfix.sh"), remote):
             logger.warning(f"实例 {idx} 客体 Vulkan 驱动补丁没挂: 推送客体脚本失败")
             return False
 
@@ -1311,7 +1317,9 @@ class _AvdCore(DeviceBase):
     async def _setup_network(self, idx: str) -> None:
         await self._shell(idx, "su 0 svc wifi enable")
         remote = f"{GUEST_TMP_DIR}/mas-wifi-fastpath.sh"
-        if not await self._push(idx, guest_script("mas-wifi-fastpath.sh"), remote):
+        if not await self._push(
+            idx, self._guest_script("mas-wifi-fastpath.sh"), remote
+        ):
             return
         await self._shell(idx, f"su 0 sh {remote} on; su 0 sh {remote} daemon")
         _, status = await self._shell(idx, f"su 0 sh {remote} status")
@@ -1332,7 +1340,7 @@ class _AvdCore(DeviceBase):
 
     async def _setup_idlepoll(self, idx: str) -> None:
         remote = f"{GUEST_TMP_DIR}/mas-idlepoll.sh"
-        if not await self._push(idx, guest_script("mas-idlepoll.sh"), remote):
+        if not await self._push(idx, self._guest_script("mas-idlepoll.sh"), remote):
             return
         _, started = await self._shell(idx, f"su 0 sh {remote} daemon")
         _, status = await self._shell(idx, f"su 0 sh {remote} status")
@@ -1939,6 +1947,7 @@ class AvdManager(AppLaunchMixin, _AvdCore):
             manager_exe=manager_exe,
             max_wait_time=max_wait_time,
             force_kill_on_close=force_kill_on_close,
+            resource_path=runtime_policy.resource_path,
         )
         self.runtime_policy = runtime_policy
 
@@ -1952,7 +1961,7 @@ class AvdManager(AppLaunchMixin, _AvdCore):
     ) -> DeviceInfo:
         """开机（已在线就直接用，不重开）。有没有窗口只在开机那一刻定，开着以后切换不了：
 
-        - ``manual=True``：用户在模拟器页手动点启动（:meth:`~app.core.emulator_manager._EmulatorManager.operate_emulator_task`），带窗口；
+        - ``manual=True``：用户在模拟器页手动点启动（:meth:`~app.core.emulator_manager.manager._EmulatorManager.operate_emulator_task`），带窗口；
         - 任务拉起（``manual`` 不传）：跟「静默模式」走，``Function.IfSilence`` 开着无头，关着带窗口。
         """
         self._open_window = manual or not _silence_enabled(self.runtime_policy)

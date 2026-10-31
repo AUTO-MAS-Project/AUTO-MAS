@@ -35,10 +35,8 @@ from .backup_archive import (
     restore_mas_backup,
     restore_native_backup,
 )
-from .notify import build_statistics_payload
 
 __all__ = [
-    "build_statistics_payload",
     "archive_mas_backup",
     "archive_mas_runtime_backup",
     "archive_native_backup",

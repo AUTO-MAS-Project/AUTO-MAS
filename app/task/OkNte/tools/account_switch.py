@@ -46,8 +46,8 @@ import numpy as np
 import psutil
 from PIL import Image
 
-from app.tools.error_screenshot import save_error_screenshot
-from app.tools.ocr import Box, OCRItem, ocr_image
+from app.tools import error_screenshot as _tool_error_screenshot
+from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger, is_process_alive
 from app.utils import display as _utils_display
 
@@ -292,7 +292,7 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
 
 
-def _dump_ocr_items(items: list[OCRItem]) -> None:
+def _dump_ocr_items(items: list[_tool_ocr.OCRItem]) -> None:
     """诊断旁路：把一次 OCR 的全部识别文本写入诊断文件（标注调用函数）。"""
     if _DIAGNOSTIC_PATH is None:
         return
@@ -306,15 +306,15 @@ def _dump_ocr_items(items: list[OCRItem]) -> None:
         _write_diagnostic(f"  ({x:4},{y:4} {w:3}x{h:3}) {text}\n")
 
 
-def _read_texts(hwnd: int, roi: Box | None = None) -> list[OCRItem]:
+def _read_texts(hwnd: int, roi: _tool_ocr.Box | None = None) -> list[_tool_ocr.OCRItem]:
     frame = _capture_window(hwnd, activate=False)
-    items = ocr_image(frame, roi)
+    items = _tool_ocr.ocr_image(frame, roi)
     _dump_ocr_items(items)
     return items
 
 
 def _click_box(
-    hwnd: int, box: Box, *, activate: bool = False, after_sleep: float = 0.3
+    hwnd: int, box: _tool_ocr.Box, *, activate: bool = False, after_sleep: float = 0.3
 ) -> None:
     """点击 1080p 坐标空间中的一个文字框中心。"""
     with _utils_display.per_monitor_dpi():
@@ -343,7 +343,9 @@ def _click_point(hwnd: int, px: int, py: int, *, after_sleep: float = 0.3) -> No
 # ── OCR 文本判定辅助 ─────────────────────────────────────────────────────
 
 
-def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
+def _find_text(
+    items: list[_tool_ocr.OCRItem], keywords: tuple[str, ...]
+) -> _tool_ocr.Box | None:
     for text, box in items:
         if any(keyword in text for keyword in keywords):
             return box
@@ -354,9 +356,9 @@ def _wait_ocr_text(
     hwnd: int,
     keywords: tuple[str, ...],
     *,
-    roi: Box | None = None,
+    roi: _tool_ocr.Box | None = None,
     timeout: int,
-) -> Box | None:
+) -> _tool_ocr.Box | None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         box = _find_text(_read_texts(hwnd, roi), keywords)
@@ -405,7 +407,7 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
     deadline = time.monotonic() + _IN_GAME_UPDATE_TIMEOUT
     last_progress = time.monotonic()
     last_sig: int | None = None
-    items: list[OCRItem] = []
+    items: list[_tool_ocr.OCRItem] = []
     iter_count = 0
     while time.monotonic() < deadline:
         try:
@@ -413,7 +415,7 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
             sig = _frame_signature(frame)
             if sig != last_sig:
                 # 画面有变化才跑全帧 OCR；帧哈希未变时沿用上次识别结果
-                items = ocr_image(frame)
+                items = _tool_ocr.ocr_image(frame)
                 last_sig = sig
                 last_progress = time.monotonic()
         except RuntimeError:
@@ -442,7 +444,7 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
     )
 
 
-def _find_confirm_box(items: list[OCRItem]) -> Box | None:
+def _find_confirm_box(items: list[_tool_ocr.OCRItem]) -> _tool_ocr.Box | None:
     """在 OCR 条目中定位退出确认弹窗的「确认」按钮。
 
     弹窗说明文本「是否确认退出当前账号?」含「确认」子串，必须排除；
@@ -471,7 +473,7 @@ def _find_confirm_box(items: list[OCRItem]) -> Box | None:
     return None
 
 
-def _find_login_button(items: list[OCRItem]) -> Box | None:
+def _find_login_button(items: list[_tool_ocr.OCRItem]) -> _tool_ocr.Box | None:
     """在 OCR 条目中定位登录面板的「登 录」按钮。
 
     OCR 文本已去空白，按钮文本归一化后恰为「登录」；面板下方还有
@@ -503,7 +505,7 @@ def _open_account_panel(hwnd: int, on_log: Callable[[str], None]) -> None:
     _click_point(hwnd, *_LOGOUT_ICON_POINT, after_sleep=1.5)
 
     # 已登录：等待退出确认弹窗；未登录：登录面板直接打开
-    confirm: Box | None = None
+    confirm: _tool_ocr.Box | None = None
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         items = _read_texts(hwnd)
@@ -643,7 +645,7 @@ def _select_and_login(hwnd: int, suffix: str, on_log: Callable[[str], None]) -> 
 def _save_error_screenshot(hwnd: int) -> None:
     """保存切换失败时的窗口截图，便于排查 OCR 文本漂移。"""
     try:
-        save_error_screenshot(
+        _tool_error_screenshot.save_error_screenshot(
             _capture_window_image(hwnd, activate=False),
             "oknte-account-switch",
             "switch-error",

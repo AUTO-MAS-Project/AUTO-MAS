@@ -2,7 +2,7 @@
 
 HSR 与其他专项的根本差别：**一个 `ScriptType` 编排两个互相独立的上游程序**（M7A 与 SRA），按任务模块逐个决定由哪个引擎执行。不要按「一个 ScriptType 对应一个外部程序」的心智读 HSR 代码。
 
-任务模式只有 `AutoProxy` 与 `ManualReview`，**没有 `ScriptConfig.py`**。字段、路由、文件清单现场读 `app/task/HSR/` 与 `app/api/scripts.py` 确认。
+任务模式只有 `AutoProxy` 与 `ManualReview`，**没有 `ScriptConfig.py`**。字段、路由、文件清单现场读 `app/task/HSR/` 与 `app/api/scripts/` 确认。
 
 ## 单点声明不变量（最容易漂移的一处）
 

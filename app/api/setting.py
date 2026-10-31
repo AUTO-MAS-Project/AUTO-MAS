@@ -24,7 +24,6 @@
 import asyncio
 from datetime import datetime
 from typing import (
-    Annotated,
     Dict,
     List,
     Literal,
@@ -32,7 +31,7 @@ from typing import (
     Union,
 )
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import (
     BaseModel,
@@ -40,18 +39,12 @@ from pydantic import (
 )
 from starlette.background import BackgroundTask
 
+import app.core.notify.bootstrap as notify_channels
 import app.models.config as _config_models
-from app.api.notification_dependencies import (
-    get_notification_service,
-    get_webhook_tester,
-)
 from app.config.wire import ConfigInput, ConfigPayload
-from app.core import Config, notify_channels
-from app.core.data_backup import create_data_backup
-from app.core.notify import HostNotificationService
+from app.core import Config, Notify
 from app.models.config import Webhook as WebhookConfig
 from app.models.notification import NotifyPayload, WebhookTargetSnapshot
-from app.models.notification_ports import WebhookTester
 from app.models.schema import (
     ObsReplayCheckOut,
     OutBase,
@@ -71,7 +64,7 @@ from app.models.schema import (
 from app.models.schema import (
     WebhookUpdateIn as SharedWebhookUpdateIn,
 )
-from app.services.update_transport import query_mirror_cdk_status
+from app.services.common.update import transport as _service_update_transport
 from app.utils import debug_pattern, get_logger
 
 GlobalConfig = ConfigPayload[_config_models.GlobalConfig]
@@ -249,7 +242,7 @@ backup_lock = asyncio.Lock()
 )
 async def query_setting_mirror_cdk(request: SettingMirrorCdkIn) -> SettingMirrorCdkOut:
     try:
-        result = await query_mirror_cdk_status(
+        result = await _service_update_transport.query_mirror_cdk_status(
             "AUTO_MAS",
             cdk=request.cdk,
             channel=Config.setting.Update.Channel,
@@ -272,16 +265,16 @@ async def query_setting_mirror_cdk(request: SettingMirrorCdkIn) -> SettingMirror
     summary="检查 OBS 回放缓冲",
 )
 async def check_obs_replay() -> ObsReplayCheckOut:
-    from app.services.obs_replay import ObsReplay
+    from app.services import obs_replay as _service_obs_replay
 
     try:
-        return await ObsReplay.check(Config.obs_replay_options())
+        return await _service_obs_replay.ObsReplay.check(Config.obs_replay_options())
     except Exception as error:
         return ObsReplayCheckOut(
             code=500,
             status="error",
             message=str(error),
-            directory=str(ObsReplay.directory),
+            directory=str(_service_obs_replay.ObsReplay.directory),
         )
 
 
@@ -293,10 +286,10 @@ async def check_obs_replay() -> ObsReplayCheckOut:
     summary="试存 OBS 回放",
 )
 async def save_obs_replay() -> ObsReplaySaveOut:
-    from app.services.obs_replay import ObsReplay
+    from app.services import obs_replay as _service_obs_replay
 
     try:
-        path = await ObsReplay.capture(
+        path = await _service_obs_replay.ObsReplay.capture(
             Config.obs_replay_options(), temporary_copy=False
         )
         return ObsReplaySaveOut(capture_path=str(path))
@@ -322,7 +315,7 @@ async def backup_data() -> FileResponse | JSONResponse:
 
     async with backup_lock:
         try:
-            backup_path = await create_data_backup()
+            backup_path = await Config.create_data_backup()
         except Exception as error:
             logger.exception(f"生成数据备份失败: {error}")
             return JSONResponse(
@@ -397,16 +390,11 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
     response_model=OutBase,
     status_code=200,
 )
-async def test_notify(
-    *,
-    notifications: Annotated[
-        HostNotificationService, Depends(get_notification_service)
-    ],
-) -> OutBase:
+async def test_notify() -> OutBase:
     """测试通知"""
 
     try:
-        result = await notifications.send_test_notification()
+        result = await Notify.send_test_notification()
     except Exception as e:
         logger.opt(exception=True).warning(f"test_notify失败: {type(e).__name__}: {e}")
         return OutBase(
@@ -634,11 +622,7 @@ def _webhook_test_snapshot(webhook: WebhookConfig) -> WebhookTargetSnapshot:
     response_model=OutBase,
     status_code=200,
 )
-async def test_webhook(
-    webhook: WebhookTestIn = Body(...),
-    *,
-    tester: Annotated[WebhookTester, Depends(get_webhook_tester)],
-) -> OutBase:
+async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
     """测试自定义Webhook"""
 
     try:
@@ -646,7 +630,7 @@ async def test_webhook(
             payload=webhook.data.model_dump(exclude_unset=True)
         )
         await webhook_config.activate()
-        await tester.test_webhook(
+        await Notify.test_webhook(
             NotifyPayload(
                 title="AUTO-MAS Webhook测试",
                 text="这是一条测试消息，如果您收到此消息，说明Webhook配置正确！",
@@ -709,7 +693,7 @@ async def detach_virtual_display() -> VirtualDisplayDetachOut:
     的话下一轮会重新挂上——要彻底停用得关开关。
     """
 
-    from app.core.desktop_guard import DesktopGuard
+    from app.core import DesktopGuard
 
     try:
         detached = await DesktopGuard.detach_now("用户手动拆除")

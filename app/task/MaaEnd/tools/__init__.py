@@ -22,7 +22,6 @@
 from importlib import import_module
 
 from .account_switch import replace_account_switch_task
-from .notify import build_statistics_payload
 
 _LAZY_EXPORTS = {"login": (".login", "login")}
 
@@ -40,4 +39,4 @@ def __dir__() -> list[str]:
     return sorted(set(globals()) | set(_LAZY_EXPORTS))
 
 
-__all__ = ["login", "build_statistics_payload", "replace_account_switch_task"]
+__all__ = ["login", "replace_account_switch_task"]

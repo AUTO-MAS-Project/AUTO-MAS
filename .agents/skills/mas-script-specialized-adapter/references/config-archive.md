@@ -7,7 +7,7 @@
 > 「读」的那一半（恢复语义、前端弹窗一致性、可自定义点、调用方法）见
 > [config-restore.md](config-restore.md)。
 >
-> 原语在 `app/utils/config_archive.py`，只做文件级快照/回写，不认识任何脚本结构；
+> 原语在 `app/utils/common/config/archive.py`，只做文件级快照/回写，不认识任何脚本结构；
 > 「什么算配置、何时存、恢复后干嘛」由专项负责。
 >
 > 参考实现（按优先级）：
@@ -191,7 +191,7 @@ def archive_mas_runtime_backup(script_id, user_id) -> None:
 
 ## 5. 原语与可自定义接口清单
 
-### 5.1 固定接口（`app/utils/config_archive.py`，**签名不可改**）
+### 5.1 固定接口（`app/utils/common/config/archive.py`，**签名不可改**）
 
 | 函数 | 职责 |
 | --- | --- |

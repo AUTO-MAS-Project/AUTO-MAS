@@ -51,7 +51,6 @@ import json
 import os
 import time
 from contextlib import suppress
-from pathlib import Path
 
 from app.core import Config
 from app.utils import IS_WINDOWS, get_logger
@@ -61,7 +60,7 @@ logger = get_logger("桌面保障")
 # 目标客户区。取脚本侧常见的最低要求：够放下一个 1280x720 的窗口就算够用。
 DESKTOP_MIN_CLIENT = (1280, 720)
 # 记账文件。落在受保护的 data/ 下，和 MaaFW job 文件同级。
-STATE_FILE = Path("data") / "virtual_display.json"
+STATE_FILE = Config.data_path / "virtual_display.json"
 
 # 轮询间隔（秒）。
 POLL_INTERVAL = 5.0
@@ -481,7 +480,8 @@ class _DesktopGuard:
         为止——这个弹窗是用户此刻唯一看得见的东西，漏掉等于回到静默推迟的老样子。
         """
 
-        from app.core.ws import Publisher, protocol
+        from app.core import Publisher
+        from app.core.ws import protocol
         from app.models.schema import WSDisplayDetachPromptData
 
         key = frozenset(returned)
@@ -514,7 +514,8 @@ class _DesktopGuard:
         self._prompt_idle_ticks = 0
         if not delivered:
             return
-        from app.core.ws import Publisher, protocol
+        from app.core import Publisher
+        from app.core.ws import protocol
 
         await Publisher.send(
             id=protocol.ID_MAIN, type=protocol.DISPLAY_DETACH_PROMPT_CLOSED
@@ -632,7 +633,7 @@ class _DesktopGuard:
         亮屏 5 秒即过）。挂着虚拟屏说明没有真实显示器亮着，保持开启不会点亮任何东西。
         """
 
-        from app.services.platform.power import power
+        from app.services import power
 
         hold = self._display_hold
         if self._display is not None:
@@ -668,11 +669,9 @@ class _DesktopGuard:
             logger.warning(message)
 
 
-DesktopGuard = _DesktopGuard()
-
-
 async def ensure_desktop_available() -> None:
     """任务开跑前强制巡检一次。守卫没启动时也能安全调用。"""
+    from app.core import DesktopGuard
 
     await DesktopGuard.ensure_now()
 
@@ -695,7 +694,7 @@ async def probe_virtual_display_driver():
     不持久化**：存下来的状态只会变陈旧（驱动可能被卸载、被显卡驱动更新搞坏、或者配置
     被同步到另一台机器），而实时问一次永远是对的。
     """
-
+    from app.core import DesktopGuard
     from app.models.schema import (
         VirtualDisplayCheckOut,
         VirtualDisplayCheckResultItem,
@@ -750,7 +749,7 @@ async def check_virtual_display_driver():
     守卫此刻正挂着屏时不再插第二块：那既是多余的拓扑变更，又会让「除自己以外还有没有
     真实输出」的判据在检测期间成立，守卫紧接着就把自己那块拆了。直接拿现挂的那块报结果。
     """
-
+    from app.core import DesktopGuard
     from app.models.schema import (
         VirtualDisplayCheckOut,
         VirtualDisplayCheckResultItem,
@@ -852,3 +851,8 @@ async def check_virtual_display_driver():
         monitors=monitors,
         results=results,
     )
+
+
+DesktopGuard = _DesktopGuard()
+
+__all__ = ["DesktopGuard"]

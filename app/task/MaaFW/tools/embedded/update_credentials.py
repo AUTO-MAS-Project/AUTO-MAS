@@ -112,9 +112,9 @@ def resolve_auto_update_mode(script_config: Any) -> AutoUpdateMode:
 def _script_proxy_url(script_config: Any) -> str | None:
     """脚本自己填的代理地址，归一成带协议的字符串；没填回 None。"""
 
-    # ``app.core.config`` 会拉起整份全局配置，接缝层按需导入即可，
+    # ``app.core.config.manager`` 会拉起整份全局配置，接缝层按需导入即可，
     # 也避免和 ``app.models.config`` 的加载顺序纠缠。
-    from app.core.config import normalize_proxy_address
+    from app.core.config.manager import normalize_proxy_address
 
     return normalize_proxy_address(_read_text(script_config, "Update", "ProxyAddress"))
 
@@ -130,7 +130,7 @@ def resolve_update_proxy_url(script_config: Any) -> str | None:
     「使用代理: <地址>」，地址里可能有账号密码。
     """
 
-    from app.core.config import Config
+    from app.core import Config
 
     return _script_proxy_url(script_config) or Config.proxy_url
 
@@ -138,7 +138,7 @@ def resolve_update_proxy_url(script_config: Any) -> str | None:
 def describe_proxy(script_config: Any) -> str:
     """给日志用的代理描述：只说来自哪一层，地址一个字符都不露。"""
 
-    from app.core.config import Config
+    from app.core import Config
 
     if _script_proxy_url(script_config):
         return "脚本级"

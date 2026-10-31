@@ -4,7 +4,7 @@ import httpx
 import pytest
 from loguru import logger
 
-from app.tools import sra_activity
+from app.tools.common.game_calendar import sra as sra_activity
 
 
 @pytest.mark.asyncio

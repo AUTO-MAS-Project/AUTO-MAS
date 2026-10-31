@@ -23,17 +23,19 @@ from pathlib import Path
 
 from app import core
 from app.config import ConfigCollection
-from app.core import Config
+from app.core import Config, Notify, Publisher
 from app.core.history import aggregate_data
-from app.core.ws import Publisher, protocol
+from app.core.notify.task_content import (
+    build_script_statistics_payload as build_script_statistics_payload,
+)
+from app.core.ws import protocol
 from app.models.config import SrcConfig, SrcUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
-from app.models.notification_ports import LocalNotice
+from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
-from app.task.notify_core import build_script_statistics_payload
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_SHARED,
@@ -354,7 +356,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                     await self._handle_process_cleanup_failure()
 
                 try:
-                    await self.task_info.local_notifier.send_notice(
+                    await Notify.send_notice(
                         LocalNotice(
                             title="用户自动代理出现异常！",
                             message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
@@ -416,7 +418,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
             await self._handle_process_cleanup_failure()
 
         try:
-            await self.task_info.local_notifier.send_notice(
+            await Notify.send_notice(
                 LocalNotice(
                     title="用户自动代理出现异常！",
                     message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
@@ -472,7 +474,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         )
         await close_emulator(self)
 
-        await self.task_info.local_notifier.send_notice(
+        await Notify.send_notice(
             LocalNotice(
                 title="游戏需要手动更新！",
                 message=result.message,
@@ -811,7 +813,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         if self.run_book:
             try:
                 await asyncio.wait_for(
-                    self.task_info.local_notifier.send_notice(
+                    Notify.send_notice(
                         LocalNotice(
                             title="成功完成一个自动代理任务！",
                             message=f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
@@ -845,7 +847,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
 
         try:
             await asyncio.wait_for(
-                self.task_info.notifications.push_statistics_report(
+                Notify.push_statistics_report(
                     payload=build_script_statistics_payload(
                         title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
                         message=statistics,

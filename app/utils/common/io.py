@@ -39,7 +39,8 @@ import tomli_w
 import yaml
 from yaml import CSafeDumper, CSafeLoader
 
-from .logger import get_logger
+from app.utils.common.log.logger import get_logger
+
 from .tools import decode_bytes
 
 # 原生配置快照指纹算法版本。指纹口径变更时递增: 旧版本写下的快照无法与当前

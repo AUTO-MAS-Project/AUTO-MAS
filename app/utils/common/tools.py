@@ -22,7 +22,7 @@
 
 import time
 
-from app.utils import process_runner as _utils_process_runner
+from app.utils.common.process import runner as _utils_process_runner
 
 decode_bytes = _utils_process_runner.decode_bytes
 

@@ -15,10 +15,11 @@ from app.task.history_core import UserHistoryDependencies, save_user_history
 
 @pytest.mark.asyncio
 async def test_maa_finalizer_archives_original_without_system_temp(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, isolated_app_paths
 ):
     monkeypatch.chdir(tmp_path)
     module = importlib.import_module("app.task.MAA.AutoProxy")
+    monkeypatch.setattr(module.Notify, "push_statistics_report", AsyncMock())
     monkeypatch.setattr(module.System, "kill_process", AsyncMock())
     monkeypatch.setattr(module, "agree_bilibili", AsyncMock())
     monkeypatch.setattr(
@@ -68,7 +69,6 @@ async def test_maa_finalizer_archives_original_without_system_temp(
         task_info=SimpleNamespace(
             begin_user_history_capture=Mock(),
             save_user_history=save,
-            notifications=SimpleNamespace(push_statistics_report=AsyncMock()),
         ),
         script_info=SimpleNamespace(name="MAA", current_index=0),
         cur_user_item=user,
@@ -102,6 +102,6 @@ async def test_maa_finalizer_archives_original_without_system_temp(
         assert not saved[0].storage_errors
         failures.assert_not_awaited()
         discarded.assert_awaited_once()
-        task.task_info.notifications.push_statistics_report.assert_awaited_once()
+        module.Notify.push_statistics_report.assert_awaited_once()
     finally:
         await storage.close()

@@ -1,0 +1,6 @@
+{
+  "interface_version": 1,
+  "id": "system",
+  "entrypoint": "app.core.notify.channels.system:register",
+  "requires": []
+}

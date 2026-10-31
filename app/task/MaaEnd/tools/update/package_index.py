@@ -37,7 +37,7 @@ from typing import Any, NamedTuple
 import httpx
 import pyzipper
 
-from app.services.update_transport import read_range
+from app.services.common.update import transport as _service_update_transport
 from app.utils import get_logger
 
 logger = get_logger("终末地包内索引")
@@ -139,7 +139,7 @@ async def _read_span(
     for index, local, take in volume_spans(sizes, offset, length):
         volume = volumes[index]
         pieces.append(
-            await read_range(
+            await _service_update_transport.read_range(
                 client,
                 volume.url,
                 offset=local,

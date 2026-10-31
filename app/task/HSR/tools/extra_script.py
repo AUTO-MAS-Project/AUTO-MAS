@@ -19,8 +19,8 @@
 #   Contact: DLmaster_361@163.com
 
 
-from app.core.custom_script import execute_script_task
 from app.models.config import HSRUserConfig
+from app.services import execute_script_task
 
 
 async def run_script_before_task(user_config: HSRUserConfig) -> None:

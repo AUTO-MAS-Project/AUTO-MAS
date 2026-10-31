@@ -32,7 +32,8 @@ from pathlib import Path
 from shutil import copy2
 from typing import Any
 
-from app.utils import get_logger, resource_path
+from app.core import Config
+from app.utils import get_logger
 from app.utils import io as _utils_io
 
 from .one_dragon import _mas_user_short_id, resolve_custom_group
@@ -45,7 +46,7 @@ SCRIPT_FOLDER_NAME = "MASOneDragon"
 
 _GROUP_REL_DIR = Path("User") / "ScriptGroup"
 _JS_SCRIPT_REL_DIR = Path("User") / "JsScript"
-_RES_TEMPLATE_DIR = resource_path("templates", "BetterGI")
+_RES_TEMPLATE_DIR = Config.resource_path / "templates" / "BetterGI"
 _SCRIPT_ASSET_DIR = _RES_TEMPLATE_DIR / "MASOneDragon"
 
 # 执行层「段」配置组在 BGI 列表里的 index 基准（固定高位，避免与用户配置组插队）。

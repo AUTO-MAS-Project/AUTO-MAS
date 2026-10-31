@@ -50,7 +50,7 @@ Use these skills as needed:
 9. `mas-script-specialized-adapter`: specialized script integration by script frontend architecture line; requires intake before implementation.
 10. `mas-plan-schedule`: plan schedule type registration, backend/frontend plan dispatch, plan combobox consumers, and per-type table integration.
 11. `mas-e2e`: author-local real script/game/account runs, isolated browser flows, PR-specific selection, sanitized evidence, the command matrix, and the post-PR hand-off that offers those commands to the developer.
-12. `mas-game-sign`: game community sign-in providers, credential encryption and login routes, sign-in locks and trigger paths, and result/notification contracts.
+12. `mas-game-community`: game community sign-in providers, credential encryption and login routes, sign-in locks and trigger paths, and result/notification contracts.
 13. `mas-ci-checks`: every gate that runs on a PR to `dev` (format, lint, typecheck, full pytest suite, changelog fragment, `uv.lock`, revert hints, CNB mirror, unsigned Windows build) and the exact local command for each.
 14. `mas-telemetry`: proactive anonymous telemetry for new or changed business workflows, safe field contracts, result ownership, operation deduplication and isolated validation.
 
@@ -83,7 +83,7 @@ Use `mas-frontend-ui` with `mas-frontend-standards`.
 4. Task implements, fixes, refactors, or reviews repository code:
 Use `mas-code-standards` as the baseline, then add the minimum domain-specific `mas-*` skills. Skip it for read-only work unless code conventions or commit wording are requested.
 5. Task mentions layer ownership, imports, coupling, or where code should live:
-Use `mas-module-boundary`.
+Use `mas-module-boundary` and its **后端源码组织规范**.
 6. Task mentions function splitting, signature quality, return/error behavior:
 Use `mas-function-design`.
 7. Task mentions endpoint payloads, response model, error contract, websocket payloads:
@@ -99,7 +99,7 @@ Use `mas-code-standards` for code-style decisions; use the docs site for contrib
 12. Task mentions plan schedules, schedule types, `PlanConfig`, `PLAN_BOOK`, plan comboboxes, or adding a new plan table:
 Use `mas-plan-schedule`.
 13. Task mentions game community sign-in, `app/tools/game_sign*`, a sign-in platform such as Skland/Miyoushe/Kuro/Taygedo, sign-in credentials or QR login, or sign-in result and notification behavior:
-Use `mas-game-sign`.
+Use `mas-game-community`.
 14. Task mentions cherry-picking a fix to a `release/{version}` branch, backporting to a released version, or hot-updating released backend code:
 Apply the cherry-pick rule in **Project Rule Areas** before touching git; confirm the commit is small and pure backend by inspecting the files it actually touches.
 15. Task mentions a red PR, a CI failure, GitHub Actions, format / lint / typecheck gates, the `skip-changelog` or `changelog-maintenance` labels, or editing `.github/workflows`, `.github/actions`, `scripts/changelog.py`, `scripts/check_reverts.py`:
@@ -119,7 +119,7 @@ When multiple concerns appear, apply this order:
 8. `mas-api-contract`
 9. `mas-script-specialized-adapter` after architecture intake, when the task is a specialized adapter.
 10. `mas-plan-schedule`
-11. `mas-game-sign`
+11. `mas-game-community`
 12. `mas-telemetry`, for new or changed observable workflows; establish the real result owner before observing it.
 13. `mas-e2e`, when the task requires an E2E flow or evidence.
 14. `mas-ci-checks`, when the work ends by making a PR pass CI.

@@ -3,7 +3,7 @@ import unittest
 
 from fastapi import WebSocketDisconnect
 
-from app.core.ws import manager as manager_module
+from app.core import MainConnection
 from app.core.ws.manager import _MainConnectionManager
 
 
@@ -156,9 +156,9 @@ class MainConnectionManagerTest(unittest.IsolatedAsyncioTestCase):
 
 class PublisherTest(unittest.IsolatedAsyncioTestCase):
     async def test_publisher_sends_envelope_via_main_connection(self):
-        from app.core.ws.publisher import Publisher
+        from app.core import Publisher
 
-        manager = manager_module.MainConnection
+        manager = MainConnection
         websocket = FakeWebSocket()
         serve_task = asyncio.create_task(manager.serve(websocket))
         for _ in range(100):
@@ -178,7 +178,7 @@ class PublisherTest(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(serve_task, timeout=1)
 
     async def test_publisher_drops_message_when_disconnected(self):
-        from app.core.ws.publisher import Publisher
+        from app.core import Publisher
 
         self.assertFalse(await Publisher.send(id="Main", type="power.sign.updated"))
 

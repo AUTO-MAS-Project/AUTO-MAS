@@ -7,7 +7,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.utils.common import process_runner
+from app.utils.common.process import runner as process_runner
 
 
 @pytest.mark.asyncio

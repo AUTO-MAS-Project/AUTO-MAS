@@ -19,7 +19,6 @@
 
 import uuid
 from typing import (
-    Annotated,
     Dict,
     List,
     Literal,
@@ -27,7 +26,7 @@ from typing import (
     Union,
 )
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body
 from pydantic import (
     BaseModel,
     Field,
@@ -37,15 +36,12 @@ from pydantic import (
 import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
-from app.core.script_settings import ScriptSettings
 from app.models.schema import (
     OutBase,
     UserDeleteIn,
     UserInBase,
 )
 from app.utils import get_logger
-
-from .dependencies import get_script_settings
 
 BAAHUserConfig = ConfigPayload[_config_models.BAAHUserConfig]
 
@@ -346,13 +342,12 @@ async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
     status_code=200,
 )
 async def update_user(
-    settings: Annotated[ScriptSettings, Depends(get_script_settings)],
     user: UserUpdateIn = Body(...),
 ) -> OutBase:
     data = user.data.model_dump(exclude_unset=True)
 
     try:
-        await settings.update_user(user.scriptId, user.userId, data=data)
+        await Config.update_user(user.scriptId, user.userId, data=data)
     except Exception as e:
         logger.opt(exception=True).warning(f"update_user失败: {type(e).__name__}: {e}")
         return OutBase(

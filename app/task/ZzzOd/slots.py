@@ -25,9 +25,9 @@ from pathlib import Path
 
 from app.config import ConfigCollection, ConfigEntry
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
-from app.utils import config_archive as _utils_config_archive
 from app.utils import constants as _utils_constants
-from app.utils import logger as _utils_logger
+from app.utils.common.config import archive as _utils_config_archive
+from app.utils.common.log import logger as _utils_logger
 
 from .tools import (
     MAS_SLOT_BASE,

@@ -8,6 +8,7 @@ FLUXDOWN_AGENT_NAME = "fluxdown-agent.exe"
 FLUXDOWN_DAEMON_NAME = "fluxdownd.exe"
 HPATCHZ_MEMBER = "windows64/hpatchz.exe"
 HPATCHZ_FILENAME = "hpatchz.exe"
+supports_fluxdown_install = True
 
 
 def candidate_drives() -> list[str]:

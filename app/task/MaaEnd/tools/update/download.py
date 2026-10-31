@@ -29,7 +29,7 @@ from pathlib import Path
 
 import httpx
 
-from app.services.update_transport import download_resumable
+from app.services.common.update import transport as _service_update_transport
 from app.utils import update_files as _utils_update_files
 
 from . import package_index
@@ -136,7 +136,7 @@ async def _download_part(
         else:
             await reporter.add(size, part)
 
-    await download_resumable(
+    await _service_update_transport.download_resumable(
         client, url, temp, expected_size=size, on_bytes=report, digest=digest
     )
     return digest.hexdigest()

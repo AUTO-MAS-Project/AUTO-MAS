@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import cast
 
 from app.config import ConfigEntry
-from app.core.script_config import ScriptEmulatorBinding
 from app.models.config import MaaConfig
+from app.models.script_contracts import ScriptEmulatorBinding
 from app.models.task import ScriptTaskResources
 
 EMULATOR_BINDING = ScriptEmulatorBinding(

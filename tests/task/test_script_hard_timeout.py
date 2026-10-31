@@ -1,11 +1,13 @@
-from tests.config_support import activate_config, group_view
-import asyncio
 import ast
+import asyncio
 from datetime import datetime
 from pathlib import Path
+
 import pytest
+
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.task.base import ScriptAutoProxyBase
+from tests.config_support import activate_config
 
 
 class Proxy(ScriptAutoProxyBase):
@@ -186,8 +188,8 @@ def test_repeated_cancel_waits_for_finalizer():
     ],
 )
 def test_hard_timeout_config_persistence_and_runtime(name, tmp_path):
-    from app.models import config as configs
     from app.config.wire import config_contract
+    from app.models import config as configs
 
     async def scenario():
         cls = getattr(configs, f"{name}Config")
@@ -220,8 +222,8 @@ def test_hard_timeout_config_persistence_and_runtime(name, tmp_path):
 
 
 def test_exempt_configs_do_not_expose_hard_timeout():
-    from app.models import config as configs
     from app.config.wire import config_contract
+    from app.models import config as configs
 
     for name in ("MaaFW", "M9A", "MSS", "HSR"):
         config = getattr(configs, f"{name}Config")()

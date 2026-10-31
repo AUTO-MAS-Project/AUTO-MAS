@@ -12,7 +12,7 @@ from uuid import UUID
 
 from app.config import ConfigEntry
 from app.models.config import GeneralConfig
-from app.services.config_center_errors import ConfigCenterError
+from app.services import ConfigCenterError
 from app.utils import IS_WINDOWS, get_logger
 
 logger = get_logger("通用脚本分享")

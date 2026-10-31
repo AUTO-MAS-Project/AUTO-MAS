@@ -19,36 +19,36 @@ from contextlib import ExitStack, suppress
 from datetime import datetime
 from pathlib import Path
 
+import app.core.notify.formats.maa as _format_maa
 from app.config import config_manager
-from app.core import Config, EmulatorManager
-from app.core.maa_capture import capture_adb
-from app.core.maa_stage import maa_stage_service
-from app.core.ws import Publisher, protocol
+from app.core import Config, EmulatorManager, Notify, Publisher
+from app.core.notify.task_content import (
+    NOTIFY_SCREENSHOT_LIMIT as NOTIFY_SCREENSHOT_LIMIT,
+)
+from app.core.notify.task_content import screenshot_entries as screenshot_entries
+from app.core.ws import protocol
 from app.models.config import MaaConfig, MaaUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
 from app.models.notification import NotificationImage
-from app.models.notification_report import TaskResultReport
+from app.models.notification.report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
-from app.services import System
+from app.services import System, capture_adb
 from app.task.emulator_core import close_emulator
 from app.task.game_update import EmulatorGameUpdateTask
+from app.task.MAA.stage import maa_stage_service
 from app.task.manager_base import ScriptManagerBase
-from app.task.notify_core import (
-    NOTIFY_SCREENSHOT_LIMIT,
-    screenshot_entries,
-)
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
     read_config_base,
 )
-from app.utils import config_archive as _utils_config_archive
 from app.utils import constants as _utils_constants
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
 from app.utils import game_update as _utils_game_update
 from app.utils import get_logger
 from app.utils import io as _utils_io
+from app.utils.common.config import archive as _utils_config_archive
 
 from .AutoProxy import (
     AutoProxyTask,
@@ -65,7 +65,6 @@ from .tools.backup_archive import (
 )
 from .tools.fluxdown_update import prepare_maa_fluxdown_update, query_latest_maa_version
 from .tools.game_update import ensure_game_updated
-from .tools.notify import SIGNATURE_SEP
 from .tools.resource_update import (
     _run_write_thread,
     acquire_resource_access_lock,
@@ -795,12 +794,12 @@ class MaaManager(ScriptManagerBase):
                     if self.all_users_maintenance_skipped:
                         await self.notify_maintenance()
                     else:
-                        await self.task_info.notifications.push_proxy_result(
+                        await Notify.push_proxy_result(
                             title=title,
                             report=TaskResultReport.from_message(result),
                             task_info=self.task_info,
                             result_template="MAA_result.html",
-                            signature_sep=SIGNATURE_SEP,
+                            signature_sep=_format_maa.SIGNATURE_SEP,
                             images=[image for _, image in rollup_pairs],
                         )
                 except Exception as e:

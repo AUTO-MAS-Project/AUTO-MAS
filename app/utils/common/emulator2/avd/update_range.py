@@ -22,7 +22,7 @@
 
 做法同 MaaFW 项目更新的区间增量（``app/task/MaaFW/tools/core/project_update/range_delta.py``），但那是
 MaaFW 引擎自己的核心包、和它的载荷模型绑在一起（``app.utils`` 也不该依赖 ``app.task``），这里只用公共的
-:func:`~app.services.update_transport.read_range`，按同样的思路、同样的阈值写一份最小的：
+:func:`~app.services.common.update.transport.read_range`，按同样的思路、同样的阈值写一份最小的：
 
 1. 用 HTTP Range 读包尾，找到中央目录，再读整个中央目录（几十 KB）；
 2. 包里每个条目和根目录里同一路径的文件比 CRC32 + 大小：一样的从本地复制，不一样的才取回。包里的
@@ -53,7 +53,7 @@ from pathlib import Path
 
 import httpx
 
-from app.services.update_transport import read_range
+from app.services.common.update import transport as _service_update_transport
 from app.utils import get_logger
 from app.utils import update_files as _utils_update_files
 
@@ -182,7 +182,7 @@ async def plan_range(
     remote = _SparseFile(size)
     tail_start = max(0, size - _TAIL_BYTES)
     try:
-        tail = await read_range(
+        tail = await _service_update_transport.read_range(
             client,
             asset.url,
             offset=tail_start,
@@ -199,7 +199,7 @@ async def plan_range(
             raise RangeUnavailable("包是 Zip64 格式，不按区间取")
         remote.segments[tail_start] = tail
         if cd_offset < tail_start:
-            remote.segments[cd_offset] = await read_range(
+            remote.segments[cd_offset] = await _service_update_transport.read_range(
                 client,
                 asset.url,
                 offset=cd_offset,
@@ -282,7 +282,7 @@ async def fetch_changed(
     for start, length, members in _groups(plan.fetch):
         length = min(length, plan.asset.size - start)
         try:
-            data = await read_range(
+            data = await _service_update_transport.read_range(
                 client,
                 plan.asset.url,
                 offset=start,

@@ -20,7 +20,7 @@
 
 from pathlib import Path
 
-from app.utils import logger as _utils_logger
+from app.utils.common.log import logger as _utils_logger
 
 logger = _utils_logger.get_logger("ZZZ-OD 自动代理")
 

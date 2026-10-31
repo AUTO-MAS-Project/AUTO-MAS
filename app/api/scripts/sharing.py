@@ -28,11 +28,11 @@ from pydantic import (
     Field,
 )
 
-from app.core.general_share import general_share_service
 from app.models.schema import (
     OutBase,
 )
 from app.services import ConfigCenterError
+from app.task.general.sharing import general_share_service
 from app.utils import get_logger
 
 

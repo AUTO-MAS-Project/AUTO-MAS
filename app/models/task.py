@@ -32,10 +32,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, List, Literal, Optional
 from uuid import UUID
 
+from app.core import RuntimeTasks
 from app.models.game_maintenance import MaintenanceWindow
-from app.models.notification_ports import LocalNotifier, TaskNotifications
-from app.models.notification_report import TaskNotificationState
-from app.runtime_tasks import RuntimeTasks
+from app.models.notification.report import TaskNotificationState
 from app.utils import get_logger
 
 if TYPE_CHECKING:
@@ -212,9 +211,6 @@ class TaskItem(ABC):
     notification_state: TaskNotificationState = field(
         default_factory=TaskNotificationState, init=False, repr=False
     )
-    _notifications: TaskNotifications | None = field(
-        default=None, init=False, repr=False, compare=False
-    )
     _change_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False, compare=False
     )
@@ -225,20 +221,6 @@ class TaskItem(ABC):
         default=1, init=False, repr=False, compare=False
     )
     _log_seq: int = field(default=0, init=False, repr=False, compare=False)
-
-    def bind_notifications(self, notifications: TaskNotifications) -> None:
-        """由任务创建者绑定能力，不读取全局通知实例。"""
-        self._notifications = notifications
-
-    @property
-    def notifications(self) -> TaskNotifications:
-        if self._notifications is None:
-            raise RuntimeError("任务的通知依赖尚未装配")
-        return self._notifications
-
-    @property
-    def local_notifier(self) -> LocalNotifier:
-        return self.notifications
 
     def get_script_user_configs(
         self, script_id: str

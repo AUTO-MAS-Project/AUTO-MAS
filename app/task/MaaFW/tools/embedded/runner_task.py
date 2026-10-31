@@ -22,11 +22,18 @@ from typing import Any, AsyncIterator, Callable, Mapping
 
 import psutil
 
-from app.core import Config
-from app.core.custom_script import execute_script_task
-from app.core.ws import Publisher, protocol
+import app.core.notify.formats.maafw as _format_maafw
+from app.core import Config, Notify, Publisher
+from app.core.notify.task_content import (
+    NOTIFY_SCREENSHOT_LIMIT as NOTIFY_SCREENSHOT_LIMIT,
+)
+from app.core.notify.task_content import (
+    prepare_screenshot_images as prepare_screenshot_images,
+)
+from app.core.notify.task_content import screenshot_entries as screenshot_entries
+from app.core.ws import protocol
 from app.models.emulator import DeviceBase, DeviceInfo
-from app.models.notification_ports import LocalNotice
+from app.models.notification import LocalNotice
 from app.models.schema import (
     HistoryAttachmentInput,
     HistorySnapshotStatistic,
@@ -35,7 +42,7 @@ from app.models.schema import (
     WSTaskNoticeData,
 )
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
-from app.services.platform.power import power
+from app.services import execute_script_task, power
 from app.task.emulator_core import close_emulator, resolve_host_adb
 from app.task.MaaFW.tools.core.controller_win32.service import (
     MaaFWWin32ControllerService,
@@ -112,16 +119,9 @@ from app.task.MaaFW.tools.core.worker_protocol import (
     forwards_to_ui,
     strip_ansi,
 )
-from app.task.MaaFW.tools.notify import build_statistics_payload
-from app.task.notify_core import (
-    NOTIFY_SCREENSHOT_LIMIT,
-    prepare_screenshot_images,
-    screenshot_entries,
-)
 from app.utils import UTC4, ProcessInfo, ProcessManager, get_logger
 from app.utils import game_apk as _utils_game_apk
 from app.utils import io as _utils_io
-from app.utils import paths as _utils_paths
 
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
@@ -892,7 +892,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     data=WSTaskNoticeData(level="error", message=message),
                 )
                 with suppress(Exception):
-                    await self.task_info.local_notifier.send_notice(
+                    await Notify.send_notice(
                         LocalNotice(
                             title="游戏需要手动更新！",
                             message=message,
@@ -2085,7 +2085,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     lease_ttl_seconds=max(
                         600, int(self.script_config.Run.RunTimeLimit or 120) * 60 + 600
                     ),
-                    import_paths=[_utils_paths.SOURCE_ROOT],
+                    import_paths=[Config.source_path],
                     send_log=send_runner_log,
                     cancel_event=prepare_cancel_event,
                 )
@@ -3973,8 +3973,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 mark = MAINTENANCE_LAST_STATUS
             else:
                 mark = "X"
-            await self.task_info.notifications.push_statistics_report(
-                payload=build_statistics_payload(
+            await Notify.push_statistics_report(
+                payload=_format_maafw.build_statistics_payload(
                     title=f"{datetime.now().strftime('%m-%d')} |{mark}|  {self.cur_user_item.name} 的自动代理统计报告",
                     message=statistics,
                     images=[image for _, image in images],
@@ -3998,7 +3998,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         try:
             if self.missing_task_names:
                 names = "、".join(self.missing_task_names)
-                await self.task_info.local_notifier.send_notice(
+                await Notify.send_notice(
                     LocalNotice(
                         title="MaaFW 自动代理任务完成，但有失效任务",
                         message=f"用户 {self.cur_user_item.name} 的队列里有 interface 内已没有的任务，"
@@ -4008,7 +4008,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     )
                 )
                 return
-            await self.task_info.local_notifier.send_notice(
+            await Notify.send_notice(
                 LocalNotice(
                     title="MaaFW 自动代理任务完成",
                     message=f"已完成用户 {self.cur_user_item.name} 的 MaaFW 自动代理任务",
