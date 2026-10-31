@@ -1116,7 +1116,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
     async def _post_run_view_maintenance(self) -> None:
         """收尾：组同步（跑完回落，§3.1 第 9 步）、写穿巡检、原生日志备份清理。
 
-        放在 ``_commit_user_data`` 之后：用户配置已保存并解锁；AfterRun 更新之前。任何一步
+        放在 ``_commit_user_data`` 之后：用户配置已保存并解锁。任何一步
         失败只记日志。
 
         组同步只在用户全部正常跑完时做：被停止 / 崩溃时收尾是受保护的，切了版本就得接着
@@ -1129,12 +1129,10 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         if self._users_completed and not self._stop_seen():
             switched = await self._sync_view_to_group("运行后", reservation_held=False)
             # 切了版本要确认一次运行环境（isolated_venv 可能整个重建，分钟级），放到代理
-            # 结果推送之后由 final_task 做，别让它耽误报告；AfterRun 模式下紧随运行后更新
-            # 的那次确认已经有了，不重复。没做成的，标记里 envConfirmedFor 仍欠着，下次
+            # 结果推送之后由 final_task 做，别让它耽误报告。没做成的，标记里
+            # envConfirmedFor 仍欠着，下次
             # 运行前检查会补。
-            self._post_run_env_confirm = (
-                switched and self._auto_update_mode != "AfterRun"
-            )
+            self._post_run_env_confirm = switched
         try:
             from app.task.MaaFW.tools.embedded.view_audit import audit_view
 
@@ -1866,20 +1864,11 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 waiting_users=waiting_users,
             )
 
-        # 运行后更新：所有用户都跑完（main_task 正常走到底）之后一次。放在
-        # 代理结果推送之后，别让下载耽误报告；取消/崩溃路径不跑。收尾受保护、外层
-        # 取消到不了这里：推送期间或更新途中用户点了停止，靠 _stop_requested 停下。
+        # 收尾组同步可能切到兄弟脚本已经更新的版本，报告发出后补充确认环境。
+        # 不在收尾启动新一轮下载；更新统一在下一次用户任务开始前执行。
         if not self._users_completed or self._stop_seen():
             return
-        if self._auto_update_mode == "AfterRun":
-            await self._run_project_update("AfterRun")
-            if not self._stop_seen():
-                # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
-                await self._ensure_project_environment("AfterRun")
-            # 中途停止也照样落盘：「正在中止更新」那几行同样要查得到
-            for line in self._take_project_update_logs():
-                logger.info(line.rstrip())
-        elif self._post_run_env_confirm:
+        if self._post_run_env_confirm:
             # 收尾组同步切了版本（兄弟脚本在本轮期间更新了）：报告已经发出，再确认环境。
             await self._ensure_project_environment("AfterRun")
 

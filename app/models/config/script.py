@@ -2582,7 +2582,7 @@ class MaaFWConfig(DomainEntry):
             ),
         ] = Field(
             default_factory=lambda: "BeforeRun",
-            description="项目自动更新时机：Off 不更新 / BeforeRun 运行前 / AfterRun 全部用户跑完后。 由 embedded_manager 在用户任务之外执行，耗时不计入 Run.RunTimeLimit。",
+            description="项目自动更新时机：Off 不更新，BeforeRun 在用户任务开始前更新。旧配置 AfterRun 兼容为运行前更新。更新和环境准备耗时不计入用户任务时限。",
         )
 
         Channel: Literal["stable", "beta"] = Field(
