@@ -120,13 +120,23 @@ def _append_step_warning(step: dict, text: str) -> None:
         step["warning_text"] = f"{previous}；{text}"
 
 
-def _note_step_issue(step: dict, line: str, *, fatal: bool = False) -> None:
+def _note_step_issue(
+    step: dict, line: str, *, fatal: bool = False, logger_name: str = ""
+) -> None:
     """把一条异常行记入步内问题；命中「致命」信号时额外把该步标记为失败。
 
     TaskRunner 捕获任务级异常后仍打印结束；局部重试的 ERR 则只记录问题。
     任务失败出口和已知的不可恢复信号见上方日志规则。
     """
-    fatal = fatal or bool(_BGI_TASK_FAILURE_RE.match(line))
+    # 新版 Dispatcher 将失败结果写入日志后正常返回，执行层的 DONE 不能覆盖该终态。
+    fatal = (
+        fatal
+        or bool(_BGI_TASK_FAILURE_RE.match(line))
+        or (
+            logger_name.endswith(".Dispatcher")
+            and line.startswith(("独立任务失败：", "独立任务失败:"))
+        )
+    )
     warning = any(h in line for h in _BGI_STEP_WARNING_HINTS) or (
         line.endswith("，跳过")
         and ("战斗策略" in line or line.startswith("一条龙配置内"))
@@ -298,7 +308,9 @@ def parse_one_dragon_report(
             # 该消息属于上一条 [ERR] 头行：记入问题，不参与任务名解析
             pending_err = False
             if cur is not None:
-                _note_step_issue(cur, line, fatal=pending_fatal)
+                _note_step_issue(
+                    cur, line, fatal=pending_fatal, logger_name=logger_name
+                )
             continue
 
         pm = _BGI_STEP_PROGRESS_RE.match(line)
@@ -523,7 +535,9 @@ def parse_execution_layer_report(log: str) -> list[dict] | None:
             if project is not None:
                 project["issue"].append(line)
             if cur is not None:
-                _note_step_issue(cur, line, fatal=pending_fatal)
+                _note_step_issue(
+                    cur, line, fatal=pending_fatal, logger_name=logger_name
+                )
             continue
 
         target = cur if cur is not None else project
