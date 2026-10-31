@@ -761,7 +761,7 @@
     >
       <!-- mas 备份为字段侧车分区 + 副本文件摘要、native 备份为文件粒度 -->
       <template #preview="{ raw }">
-        <a-empty
+        <NoData
           v-if="!previewSections(raw).length"
           :description="t('core.edit.configRestorePreviewEmpty')"
         />

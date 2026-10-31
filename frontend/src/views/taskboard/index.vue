@@ -275,7 +275,7 @@ const saveGames = async (keys: string[]) => {
               />
             </div>
           </div>
-          <a-empty v-if="!items.length && !loading" :description="emptyText" />
+          <NoData v-if="!items.length && !loading" :description="emptyText" />
         </a-spin>
       </template>
 

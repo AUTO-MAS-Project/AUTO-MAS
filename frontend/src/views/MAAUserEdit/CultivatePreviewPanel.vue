@@ -55,9 +55,11 @@
               <span class="preview-sanity" />
             </template>
           </div>
-          <div v-if="!preview.stages.length" class="preview-empty">
-            {{ t('core.edit.maaCultivatePreviewNone') }}
-          </div>
+          <NoData
+            v-if="!preview.stages.length"
+            class="preview-empty"
+            :description="t('core.edit.maaCultivatePreviewNone')"
+          />
         </template>
         <template v-else-if="preview">
           <div v-for="item in preview.demands" :key="`d-${item.itemId}`" class="preview-line">
@@ -66,9 +68,11 @@
             </span>
             <span class="preview-count">× {{ item.count }}</span>
           </div>
-          <div v-if="!preview.demands.length" class="preview-empty">
-            {{ t('core.edit.maaCultivatePreviewDemandNone') }}
-          </div>
+          <NoData
+            v-if="!preview.demands.length"
+            class="preview-empty"
+            :description="t('core.edit.maaCultivatePreviewDemandNone')"
+          />
         </template>
       </a-tab-pane>
     </a-tabs>

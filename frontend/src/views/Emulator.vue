@@ -914,7 +914,7 @@ const handleBossKeyInputChange = (uuid: string) => {
       <a-spin :spinning="loading">
         <!-- 空状态：无模拟器时居中显示大按钮 -->
         <div v-if="emulatorIndex.length === 0" class="empty-state-large">
-          <a-empty />
+          <NoData />
           <a-space direction="horizontal" :size="16">
             <a-button
               type="primary"
@@ -1195,7 +1195,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                     "
                     class="empty-devices"
                   >
-                    <a-empty :description="t('core.emulator.noDevice')">
+                    <NoData :description="t('core.emulator.noDevice')">
                       <template #extra>
                         <a-button
                           type="primary"
@@ -1206,7 +1206,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                           {{ t('core.emulator.startEmulator') }}
                         </a-button>
                       </template>
-                    </a-empty>
+                    </NoData>
                   </div>
 
                   <div v-else class="devices-grid">
@@ -1329,7 +1329,7 @@ const handleBossKeyInputChange = (uuid: string) => {
     >
       <a-spin :spinning="searching">
         <div v-if="searchResults.length === 0" class="empty-state">
-          <a-empty :description="t('core.emulator.searchEmpty')" />
+          <NoData :description="t('core.emulator.searchEmpty')" />
         </div>
 
         <a-list v-else item-layout="horizontal" :data-source="searchResults">

@@ -271,7 +271,7 @@
   >
     <!-- mas 备份为字段侧车分区、native 备份为关键字段反读分区 -->
     <template #preview="{ raw }">
-      <a-empty
+      <NoData
         v-if="!previewSections(raw).length"
         :description="t('core.edit.configRestorePreviewEmpty')"
       />

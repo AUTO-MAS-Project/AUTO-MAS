@@ -72,7 +72,7 @@
                 <span class="task-name" :title="step.display">{{ step.display }}</span>
               </div>
             </div>
-            <a-empty
+            <NoData
               v-else
               :description="t('core.edit.whimboxStepsEmpty')"
               class="config-pane-empty"
@@ -181,7 +181,7 @@
                 </a-form-item>
               </div>
             </div>
-            <a-empty
+            <NoData
               v-else
               :description="t('core.edit.whimboxOptionsEmpty')"
               class="config-pane-empty"

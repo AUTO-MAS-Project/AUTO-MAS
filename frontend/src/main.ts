@@ -3,6 +3,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { VueQueryPlugin } from '@tanstack/vue-query'
 import App from './App.vue'
+import NoData from '@/components/NoData.vue'
 import router from './router/index.ts'
 import { OpenAPI } from '@/api'
 import { configureLocalMonaco } from '@/utils/monaco'
@@ -88,6 +89,7 @@ const app = createApp(App)
 app.use(createPinia())
 app.use(VueQueryPlugin, { queryClient })
 app.use(Antd)
+app.component('NoData', NoData)
 app.use(i18n)
 
 // Pinia 先就绪，常驻订阅仍早于路由首次进入时建立的主 WebSocket 连接。

@@ -89,7 +89,7 @@ const selectDirectGamePath = async () => {
         </a-button>
       </div>
     </template>
-    <a-empty v-else :description="t('core.edit.zzzodDirectPickInstanceFirst')" />
+    <NoData v-else :description="t('core.edit.zzzodDirectPickInstanceFirst')" />
   </a-spin>
 </template>
 <style scoped>

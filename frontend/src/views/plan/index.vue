@@ -17,12 +17,12 @@
 
       <!-- 空状态 -->
       <div v-if="!planList.length || !currentPlanData" class="empty-state">
-        <a-empty :image="noDataImage" :image-style="{ height: '200px' }">
+        <NoData :image-style="{ height: '200px' }">
           <template #description>
             <div class="empty-title">{{ t('core.plan.emptyTitle') }}</div>
             <div class="empty-description">{{ t('core.plan.emptyDesc') }}</div>
           </template>
-        </a-empty>
+        </NoData>
       </div>
 
       <!-- 计划内容 -->
@@ -76,7 +76,6 @@
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.svg'
 import { usePlanFieldSave } from './usePlanFieldSave'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'

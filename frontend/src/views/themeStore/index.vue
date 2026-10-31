@@ -193,9 +193,9 @@ onBeforeUnmount(() => {
         />
       </template>
       <div v-else-if="!authorized" class="theme-store-login">
-        <a-empty :description="t('core.themeStore.mine.loginRequired')">
+        <NoData :description="t('core.themeStore.mine.loginRequired')">
           <ThemeStoreAccount :account="account" class="theme-store-login-account" />
-        </a-empty>
+        </NoData>
       </div>
       <MyAppearanceList
         v-else

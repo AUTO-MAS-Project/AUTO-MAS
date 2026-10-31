@@ -142,20 +142,19 @@
               </a-popover>
             </div>
           </div>
-          <div v-else class="matrix-empty">{{ t('core.history.stats.noMatrix') }}</div>
+          <NoData v-else class="matrix-empty" :description="t('core.history.stats.noMatrix')" />
         </div>
       </template>
 
       <!-- 空状态 -->
       <div v-else class="empty-stats">
-        <a-empty :image="noDataImage" :image-style="{ height: '80px' }" :description="false" />
+        <NoData :image-style="{ height: '80px' }" :description="false" />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import { BarChartOutlined, GiftOutlined, InboxOutlined, TeamOutlined } from '@ant-design/icons-vue'
 import { computed, ref, watch } from 'vue'

@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
+import { renderEmpty } from '@/components/renderEmpty'
 import { t } from './i18n'
 import { useTheme } from './composables/useTheme.ts'
 import { useUpdateModal } from './composables/useUpdateChecker.ts'
@@ -150,7 +151,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <ConfigProvider :theme="antdTheme" :locale="antdLocale">
+  <ConfigProvider :theme="antdTheme" :locale="antdLocale" :render-empty="renderEmpty">
     <ThemeTokenBridge />
     <AppearanceDecoration />
     <!-- 初始化页面使用带标题栏的全屏布局 -->

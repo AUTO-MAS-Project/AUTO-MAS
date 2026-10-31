@@ -50,7 +50,7 @@
           </a-card>
         </div>
       </template>
-      <a-empty v-else-if="!taskboardState.loading" :description="t('core.taskboard.weeklyEmpty')" />
+      <NoData v-else-if="!taskboardState.loading" :description="t('core.taskboard.weeklyEmpty')" />
     </a-spin>
 
     <GamePickerModal

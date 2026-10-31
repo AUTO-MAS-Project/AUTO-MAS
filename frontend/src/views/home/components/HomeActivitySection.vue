@@ -88,7 +88,7 @@
         />
       </li>
     </ul>
-    <a-empty v-else-if="section.available && section.emptyText" :description="section.emptyText" />
+    <NoData v-else-if="section.available && section.emptyText" :description="section.emptyText" />
   </a-card>
 </template>
 

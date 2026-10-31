@@ -155,7 +155,7 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
       :disabled="props.groupMode"
     >
       <div v-if="!props.groupCandidates.length" class="add-dragon-candidates-empty">
-        <a-empty :description="t('core.edit.bettergiScriptGroupEmptyDir')" />
+        <NoData :description="t('core.edit.bettergiScriptGroupEmptyDir')" />
       </div>
       <div v-else class="add-dragon-candidates">
         <div
@@ -193,7 +193,7 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
     <!-- Tab2：JS脚本（JS 脚本 / 自定义组候选） -->
     <a-tab-pane key="js" :tab="t('core.edit.bettergiTabJsScript')">
       <div v-if="!props.candidates.length" class="add-dragon-candidates-empty">
-        <a-empty :description="t('core.edit.bettergiTabJsEmpty')" />
+        <NoData :description="t('core.edit.bettergiTabJsEmpty')" />
       </div>
       <div v-else class="add-dragon-candidates">
         <div
@@ -231,7 +231,7 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
     <!-- Tab4：录制（KeyMouseScript 键鼠脚本） -->
     <a-tab-pane key="keymouse" :tab="t('core.edit.bettergiTabKeyMouse')">
       <div v-if="!props.keyMouseCandidates.length" class="add-dragon-candidates-empty">
-        <a-empty :description="t('core.edit.bettergiKeyMouseEmptyDir')" />
+        <NoData :description="t('core.edit.bettergiKeyMouseEmptyDir')" />
       </div>
       <div v-else class="add-dragon-candidates">
         <div
@@ -272,7 +272,7 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
           @select="handlePathingSelect"
         />
         <div v-else class="add-dragon-pathing-empty">
-          <a-empty :description="t('core.edit.bettergiPathingEmptyTree')" />
+          <NoData :description="t('core.edit.bettergiPathingEmptyTree')" />
         </div>
         <div class="add-dragon-pathing-files">
           <template v-if="selectedPathingFiles.length">
@@ -289,7 +289,7 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
             </div>
           </template>
           <div v-else class="add-dragon-pathing-empty">
-            <a-empty :description="t('core.edit.bettergiPathingEmptyDir')" />
+            <NoData :description="t('core.edit.bettergiPathingEmptyDir')" />
           </div>
         </div>
       </div>

@@ -182,12 +182,11 @@
             />
           </div>
           <div v-else class="empty-log">
-            <a-empty v-if="!loading" :description="t('core.history.log.emptyLog')">
-              <template #image><FileExclamationOutlined class="empty-icon" /></template>
+            <NoData v-if="!loading" :description="t('core.history.log.emptyLog')">
               <span v-if="logUnavailableReason || errorMessage" class="error-message">{{
                 logUnavailableReason ? t('core.history.log.unavailable') : errorMessage
               }}</span>
-            </a-empty>
+            </NoData>
           </div>
         </a-spin>
       </div>
@@ -198,7 +197,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import {
-  FileExclamationOutlined,
   FileOutlined,
   FileTextOutlined,
   GiftOutlined,
@@ -486,11 +484,6 @@ const displayLogContent = computed(() => {
   justify-content: center;
   gap: 12px;
   color: var(--ant-color-text-secondary);
-}
-
-.empty-icon {
-  font-size: 48px;
-  color: var(--ant-color-text-quaternary);
 }
 
 .error-message {

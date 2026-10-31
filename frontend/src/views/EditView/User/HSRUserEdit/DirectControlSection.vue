@@ -4,7 +4,7 @@
       <h3>{{ t('core.edit.directControl') }}</h3>
     </div>
     <!-- 直控跑什么、MAS 管什么由上方「直控」来源卡片说明，这里不再重复 -->
-    <a-empty
+    <NoData
       v-if="availableEngines.length === 0"
       :description="t('core.edit.noSraMarch7thAssistant')"
     />

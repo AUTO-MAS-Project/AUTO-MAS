@@ -82,13 +82,12 @@
     </div>
 
     <div v-else class="empty-state">
-      <a-empty :image-style="{ height: '48px' }">
-        <template #image><ApiOutlined class="empty-icon" /></template>
+      <NoData :image-style="{ height: '48px' }">
         <template #description>
           <div>{{ t('core.comp.noCustomWebhooks') }}</div>
           <div v-if="!compact">{{ t('core.comp.useButtonAboveAdd') }}</div>
         </template>
-      </a-empty>
+      </NoData>
     </div>
 
     <!-- 紧凑模式（通知配置弹窗里）添加按钮挪到底部虚线按钮 -->
@@ -231,7 +230,6 @@ import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
-  ApiOutlined,
   DeleteOutlined,
   EditOutlined,
   PlayCircleOutlined,
@@ -838,12 +836,6 @@ watch([() => props.scriptId, () => props.userId, () => props.mode], () => {
   text-align: center;
   padding: 48px 24px;
   color: var(--ant-color-text-secondary);
-}
-
-.empty-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
-  opacity: 0.5;
 }
 
 .template-help {
