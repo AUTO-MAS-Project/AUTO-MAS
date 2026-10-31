@@ -145,7 +145,8 @@ def apply_package(
             f"HSR 更新：应用{engine_label(engine)}更新失败，开始回滚"
         )
         try:
-            rollback(install_root)
+            if not rollback(install_root):
+                raise HSRUpdateError("安装回滚未完成")
         except Exception as rollback_exc:  # noqa: BLE001
             logger.opt(exception=True).error(f"HSR 更新：回滚同样失败：{rollback_exc}")
             raise HSRUpdateApplyError(

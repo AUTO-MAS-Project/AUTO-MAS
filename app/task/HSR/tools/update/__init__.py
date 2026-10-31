@@ -1,20 +1,22 @@
 """HSR 外部脚本（M7A / SRA）的更新能力。
 
 对外只暴露两个入口：:func:`check_engine_update` 只查不装，
-:func:`update_engine_if_needed` 查完就装。两者都不会抛异常给调用方——
-更新失败**不应该**让任务跑不起来，除非目录真的被改坏了（见
-``UpdateOutcome.blocking``）。
+:func:`update_engine_if_needed` 查完就装。可预期失败收敛为结果；无法确认
+安装安全的异常向上传播。目录无法恢复时见 ``UpdateOutcome.blocking``。
 
-调用时机见 ``manager.py``：更新只在任务正常跑完后触发一次（AfterRun），
-``prepare()` 只做一件事——把上一轮崩在中途的 journal 回滚掉。
+调用时机见 ``manager.py``：持有安装目录锁后，在备份配置、启动用户任务前
+先恢复上次中断的安装，再检查和安装更新。手动更新复用相同入口。
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
+from typing import TypeVar
 
 import httpx
 
@@ -45,6 +47,24 @@ from .guards import (
 logger = get_logger("HSR 更新")
 
 LogFn = Callable[[str], None]
+T = TypeVar("T")
+
+
+async def _run_install_worker(operation: Callable[[], T]) -> T:
+    """安装和回滚一旦开始，取消也要等写入结束，才能释放目录锁。"""
+    worker = asyncio.create_task(asyncio.to_thread(operation))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except (asyncio.CancelledError, Exception):
+                if worker.done():
+                    break
+        if not worker.cancelled():
+            worker.exception()
+        raise
 
 
 @dataclass(frozen=True)
@@ -104,8 +124,8 @@ async def update_engine_if_needed(
 ) -> UpdateOutcome:
     """查、下、装。任何可预期失败都收敛成 ``UpdateOutcome``，不向上抛。
 
-    ``should_abort`` 供调用方在下载途中喊停（收尾期的更新跑在 shield 里，
-    取消传不进来）。装包阶段不再询问——那一段是事务，中途停下比跑完更危险。
+    ``should_abort`` 供调用方在下载途中喊停。安装和回滚一旦开始会等待写入
+    完成，再交还取消，避免目录锁先释放而后台仍在改文件。
     """
 
     log = send_log or _noop
@@ -207,16 +227,20 @@ async def update_engine_if_needed(
                 log(f"{label}跳过更新：{failure.reason}")
                 return UpdateOutcome(**base, updated=False, message=failure.reason)
 
-    log(f"{label}下载完成，开始应用更新")
+    if should_abort and should_abort():
+        raise asyncio.CancelledError
+    log(f"{label}下载完成，开始校验安装更新")
     try:
-        applied = await asyncio.to_thread(
-            apply_package,
-            package,
-            install_root,
-            engine=engine,
-            from_version=candidate.current_version,
-            to_version=candidate.latest_version,
-            seven_zip=find_seven_zip(install_root),
+        applied = await _run_install_worker(
+            partial(
+                apply_package,
+                package,
+                install_root,
+                engine=engine,
+                from_version=candidate.current_version,
+                to_version=candidate.latest_version,
+                seven_zip=find_seven_zip(install_root),
+            )
         )
     except HSRUpdateApplyError as exc:
         log(f"{label}更新失败：{exc}")
@@ -250,14 +274,18 @@ async def rollback_pending(
     log = send_log or _noop
     if not install_root.is_dir() or not has_pending_journal(install_root):
         return False
+    failure = await asyncio.to_thread(check_no_process_running, install_root)
+    if failure:
+        raise HSRUpdateError(f"存在未完成更新，当前无法回滚：{failure.reason}")
     try:
-        done = await asyncio.to_thread(rollback, install_root)
+        done = await _run_install_worker(partial(rollback, install_root))
     except Exception as exc:  # noqa: BLE001
         logger.opt(exception=True).error(f"HSR 更新：回滚 {install_root} 失败")
         log(f"发现未完成的更新但回滚失败：{exc}")
-        return False
-    if done:
-        log(f"已回滚上一次未完成的更新：{install_root}")
+        raise HSRUpdateError("未完成更新无法回滚，已阻止任务启动") from exc
+    if not done:
+        raise HSRUpdateError("未完成更新记录无法恢复，已阻止任务启动")
+    log(f"已回滚上一次未完成的更新：{install_root}")
     return done
 
 
@@ -287,8 +315,20 @@ async def _download_with_space_check(
                 log(f"跳过更新：{failure.reason}")
                 return None
 
+    last_report = 0.0
+
+    def progress(downloaded: int, total: int) -> None:
+        nonlocal last_report
+        now = time.monotonic()
+        if now - last_report >= 1 or (total > 0 and downloaded >= total):
+            amount = f"{downloaded / 1024**2:.1f} MB"
+            if total > 0:
+                amount = f"{downloaded * 100 / total:.1f}%（{amount} / {total / 1024**2:.1f} MB）"
+            log(f"{engine_label(candidate.engine, left=False)}更新下载：{amount}")
+            last_report = now
+
     return await download_package(
-        candidate, package, proxy=proxy, should_abort=should_abort
+        candidate, package, proxy=proxy, progress=progress, should_abort=should_abort
     )
 
 

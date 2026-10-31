@@ -1,9 +1,4 @@
-"""下载更新包：Range 续传 + sha256 校验。
-
-自建站与 GitHub 都实测支持 Range（HTTP 206），断点续传对 170–750MB 的包很
-划算。源不提供哈希时退化为压缩包完整性测试——那不算校验失败，只是少一层
-保障。
-"""
+"""复用 MAS 下载入口，并在发布安装包之前校验完整性。"""
 
 from __future__ import annotations
 
@@ -15,7 +10,10 @@ from pathlib import Path
 
 import httpx
 
+from app.core.script_update import download_script_package
+from app.services.update_transport import DownloadProgress
 from app.utils import get_logger
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from ...task_mapping import engine_label
 from .discover import HSRUpdateError, UpdateCandidate
@@ -26,7 +24,6 @@ _USER_AGENT = "AutoMasGui"
 _CHUNK = 256 * 1024
 _RETRIES = 3
 _RETRY_DELAY = 1.0
-_TIMEOUT = httpx.Timeout(30.0, read=300.0)
 
 ProgressFn = Callable[[int, int], None]
 AbortFn = Callable[[], bool]
@@ -46,9 +43,8 @@ async def download_package(
 ) -> Path:
     """下载到 ``destination``，返回该路径。失败时不留下半个文件。
 
-    ``should_abort`` 每收一块就问一次。收尾期的更新跑在 ``asyncio.shield``
-    里，取消传不进来，只能这样协作式地停——否则用户按了停止还要等一个
-    几百 MB 的下载走完，期间外部目录锁一直被占着。
+    ``should_abort`` 在每次重试和下载进度回调中检查；取消后由公共下载器
+    确认后台写入停止，半包保留供续传，只有校验成功的包才发布给安装器。
     """
 
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -57,14 +53,20 @@ async def download_package(
     last_error: Exception | None = None
     for attempt in range(1, _RETRIES + 1):
         try:
+            if should_abort and should_abort():
+                raise asyncio.CancelledError
             await _fetch(
                 candidate.download_url,
                 partial,
+                source=candidate.source,
                 proxy=proxy,
                 progress=progress,
                 should_abort=should_abort,
             )
             break
+        except FluxdownCancelUnconfirmed:
+            # 后台可能仍在写入，不能重试、删包或放行用户任务。
+            raise
         except HSRUpdateAborted:
             # 半截文件留着：下次 Range 续传能接上，用户不必从头下。
             raise
@@ -97,55 +99,77 @@ async def _fetch(
     url: str,
     partial: Path,
     *,
+    source: str,
     proxy: httpx.Proxy | None,
     progress: ProgressFn | None,
     should_abort: AbortFn | None = None,
 ) -> None:
-    resume_from = partial.stat().st_size if partial.exists() else 0
+    async def report(downloaded: int, total: int, speed: float) -> None:
+        if should_abort and should_abort():
+            raise asyncio.CancelledError
+        if progress:
+            progress(downloaded, total)
+
+    # 下载分发层统一处理代理、FluxDown 续传和旧后台写入权的安全回收。
+    await download_script_package(
+        url,
+        partial,
+        source=source,
+        timeout=300,
+        proxy=proxy,
+        progress=report,
+        http_download=_httpx_fetch,
+    )
+
+
+async def _httpx_fetch(
+    url: str,
+    destination: Path,
+    *,
+    timeout: float,
+    proxy: httpx.Proxy | None = None,
+    progress: DownloadProgress | None = None,
+) -> int:
+    """保留 HSR 的 HTTP 续传，但不绕过公共分发层的后台写入权保护。"""
+    resume_from = destination.stat().st_size if destination.exists() else 0
     headers = {"User-Agent": _USER_AGENT}
     if resume_from:
         headers["Range"] = f"bytes={resume_from}-"
-
     async with httpx.AsyncClient(
-        proxy=proxy, follow_redirects=True, timeout=_TIMEOUT
+        proxy=proxy, follow_redirects=True, timeout=httpx.Timeout(30.0, read=timeout)
     ) as client:
         async with client.stream("GET", url, headers=headers) as response:
-            if resume_from and response.status_code == 200:
-                # 服务端忽略了 Range，从头开始。
-                resume_from = 0
-            elif resume_from and response.status_code != 206:
-                response.raise_for_status()
+            response.raise_for_status()
+            if response.status_code == 206:
+                content_range = response.headers.get("Content-Range", "")
+                if not content_range.startswith(f"bytes {resume_from}-"):
+                    raise HSRUpdateError("下载续传范围与已有文件不符")
+            elif response.status_code == 200:
                 resume_from = 0
             else:
-                response.raise_for_status()
-
+                raise HSRUpdateError("下载响应不支持整包或续传")
             total = _total_size(response, resume_from)
-            mode = "ab" if resume_from else "wb"
             written = resume_from
-            with open(partial, mode) as handle:
+            if progress:
+                await progress(written, total, 0.0)
+            with destination.open("ab" if resume_from else "wb") as handle:
                 async for chunk in response.aiter_bytes(_CHUNK):
-                    if should_abort and should_abort():
-                        raise HSRUpdateAborted("用户已请求停止，本轮不再更新")
                     handle.write(chunk)
                     written += len(chunk)
                     if progress:
-                        progress(written, total)
+                        await progress(written, total, 0.0)
+            return written
 
 
 def _total_size(response: httpx.Response, resume_from: int) -> int:
-    content_range = response.headers.get("Content-Range")
-    if content_range and "/" in content_range:
-        try:
+    content_range = response.headers.get("Content-Range", "")
+    try:
+        if "/" in content_range:
             return int(content_range.rsplit("/", 1)[1])
-        except ValueError:
-            pass
-    length = response.headers.get("Content-Length")
-    if length:
-        try:
-            return int(length) + resume_from
-        except ValueError:
-            pass
-    return 0
+        length = response.headers.get("Content-Length")
+        return int(length) + resume_from if length else 0
+    except ValueError:
+        return 0
 
 
 def _verify(package: Path, candidate: UpdateCandidate) -> None:
