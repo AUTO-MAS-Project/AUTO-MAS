@@ -67,7 +67,8 @@ def test_public_classes_keep_identity_after_deep_import(first):
 from importlib import import_module
 import_module("app.utils.common." + {first!r})
 from app.utils import ProcessManager, ProcessRunner, LogMonitor, RegexMatcher
-from app.utils.common.process import ProcessManager as Manager, ProcessRunner as Runner
+from app.utils.common.process.manager import ProcessManager as Manager
+from app.utils.common.process.runner import ProcessRunner as Runner
 from app.utils.common.log.monitor import LogMonitor as Monitor
 from app.utils.common.log.patterns import RegexMatcher as Matcher
 assert ProcessManager is Manager
@@ -123,5 +124,19 @@ except utils.UnsupportedPlatformError as error:
     assert error.capability == "native_only"
 else:
     raise AssertionError("dummy did not fail")
+"""
+    )
+
+
+def test_process_runner_does_not_load_window_or_manager_dependencies():
+    run_isolated(
+        """
+import sys
+from app.utils.common.process import runner
+from app.utils import ProcessRunner
+assert ProcessRunner is runner.ProcessRunner
+assert "app.utils.common.process.manager" not in sys.modules
+assert "app.utils.windows.window" not in sys.modules
+assert "app.utils.unsupported.window" not in sys.modules
 """
     )

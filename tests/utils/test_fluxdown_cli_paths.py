@@ -1,6 +1,14 @@
 """工具只使用调用方提供的程序目录，并保留 portable 安全要求。"""
 
+import pytest
+
 from app.utils import fluxdown_cli as cli
+
+
+@pytest.fixture(autouse=True)
+def windows_cli_names(monkeypatch):
+    """仅模拟 Windows 文件布局；路径发现不运行真实二进制。"""
+    monkeypatch.setattr(cli, "_FLUXDOWN_EXE_NAMES", ("fluxdown-cli.exe",))
 
 
 def test_bundled_cli_requires_explicit_directory_and_portable(tmp_path, monkeypatch):

@@ -64,7 +64,6 @@ if TYPE_CHECKING:
     from .common import log as log
     from .common import log_box as log_box
     from .common import mirrorchyan as mirrorchyan
-    from .common import process as process
     from .common import security as security
     from .common import supervision as supervision
     from .common import tools as tools
@@ -154,12 +153,13 @@ if TYPE_CHECKING:
     from .common.mirrorchyan import (
         compare_mirrorchyan_versions as compare_mirrorchyan_versions,
     )
-    from .common.process import ProcessInfo as ProcessInfo
-    from .common.process import ProcessManager as ProcessManager
-    from .common.process import ProcessResult as ProcessResult
-    from .common.process import ProcessRunner as ProcessRunner
-    from .common.process import is_process_alive as is_process_alive
-    from .common.process import is_process_running as is_process_running
+    from .common.process import manager as process
+    from .common.process.manager import ProcessInfo as ProcessInfo
+    from .common.process.manager import ProcessManager as ProcessManager
+    from .common.process.manager import is_process_alive as is_process_alive
+    from .common.process.manager import is_process_running as is_process_running
+    from .common.process.runner import ProcessResult as ProcessResult
+    from .common.process.runner import ProcessRunner as ProcessRunner
     from .common.security import dpapi_decrypt as dpapi_decrypt
     from .common.security import dpapi_encrypt as dpapi_encrypt
     from .common.security import format_exception_reason as format_exception_reason
@@ -210,12 +210,12 @@ _LAZY_EXPORTS = {
     "UnsupportedPlatformError": (".common.errors", "UnsupportedPlatformError"),
     "LogMonitor": (".common.log.monitor", "LogMonitor"),
     "strptime": (".common.log.monitor", "strptime"),
-    "ProcessManager": (".common.process", "ProcessManager"),
-    "ProcessRunner": (".common.process", "ProcessRunner"),
-    "ProcessInfo": (".common.process", "ProcessInfo"),
-    "ProcessResult": (".common.process", "ProcessResult"),
-    "is_process_running": (".common.process", "is_process_running"),
-    "is_process_alive": (".common.process", "is_process_alive"),
+    "ProcessManager": (".common.process.manager", "ProcessManager"),
+    "ProcessRunner": (".common.process.runner", "ProcessRunner"),
+    "ProcessInfo": (".common.process.manager", "ProcessInfo"),
+    "ProcessResult": (".common.process.runner", "ProcessResult"),
+    "is_process_running": (".common.process.manager", "is_process_running"),
+    "is_process_alive": (".common.process.manager", "is_process_alive"),
     "RegexMatcher": (".common.log.patterns", "RegexMatcher"),
     "MultiLineAggregator": (".common.log.patterns", "MultiLineAggregator"),
     "compile_regex": (".common.log.patterns", "compile_regex"),
@@ -346,7 +346,7 @@ _COMMON_MODULES = {
     "secret": ".unsupported.secret",
     "LogMonitor": ".common.log.monitor",
     "environment": ".common.environment",
-    "process": ".common.process",
+    "process": ".common.process.manager",
     "errors": ".common.errors",
     "process_platform": ".common.process.platform",
     "game_update": ".common.game_update",
