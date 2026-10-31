@@ -54,8 +54,8 @@ import numpy as np
 import psutil
 from PIL import Image
 
-from app.tools.error_screenshot import save_error_screenshot
-from app.tools.ocr import Box, OCRItem, ocr_image
+from app.tools import error_screenshot as _tool_error_screenshot
+from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import display as _utils_display
 
@@ -264,12 +264,12 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
 
 
-def _read_texts(hwnd: int) -> list[OCRItem]:
-    return ocr_image(_capture_window(hwnd, activate=False))
+def _read_texts(hwnd: int) -> list[_tool_ocr.OCRItem]:
+    return _tool_ocr.ocr_image(_capture_window(hwnd, activate=False))
 
 
 def _click_box(
-    hwnd: int, box: Box, *, activate: bool = False, after_sleep: float = 0.3
+    hwnd: int, box: _tool_ocr.Box, *, activate: bool = False, after_sleep: float = 0.3
 ) -> None:
     """点击 1080p 坐标空间中的一个文字框中心。"""
     with _utils_display.per_monitor_dpi():
@@ -294,7 +294,9 @@ def _click_box(
 # ── OCR 文本判定辅助 ─────────────────────────────────────────────────────
 
 
-def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
+def _find_text(
+    items: list[_tool_ocr.OCRItem], keywords: tuple[str, ...]
+) -> _tool_ocr.Box | None:
     for text, box in items:
         if any(keyword in text for keyword in keywords):
             return box
@@ -386,13 +388,13 @@ def detect_game_maintenance_text() -> str | None:
     frame = _capture_game_window_frame(hwnd)
     if frame is None:
         return None
-    for text, _ in ocr_image(frame):
+    for text, _ in _tool_ocr.ocr_image(frame):
         if any(needle in text for needle in _GAME_MAINTENANCE_TEXTS):
             return text
     return None
 
 
-def _download_progress_texts(items: list[OCRItem]) -> tuple[str, ...]:
+def _download_progress_texts(items: list[_tool_ocr.OCRItem]) -> tuple[str, ...]:
     """取百分比/体积/速度文本并剥离计时，供下载进度签名使用。
 
     启动器常把剩余时间倒计时和百分比放在同一行；只包含「剩余时间」及
@@ -446,7 +448,7 @@ def _save_error_screenshot(launcher_hwnd: int | None) -> None:
         target = launcher_hwnd if launcher_hwnd is not None else _find_game_hwnd()
         if target is None:
             return
-        save_error_screenshot(
+        _tool_error_screenshot.save_error_screenshot(
             _capture_window_image(target, activate=False),
             "oknte-launcher-start",
             "launcher-error",

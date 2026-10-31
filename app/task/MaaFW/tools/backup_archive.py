@@ -39,7 +39,7 @@ MaaFW 与 M9A 同属 MaaFramework 线：没有 per-user ConfigFile 目录，MAS
 备份里还带着它，恢复时跳过、预览时只作参考。
 
 时间戳快照、指纹去重、保留清理与目录恢复由公共模块
-``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
+``app.utils.common.config.archive`` 提供（默认每池保留 10 份），本模块只保留
 MaaFW 特有的侧车、恢复语义（恢复前强制归档当前）与预览摘要。
 """
 
@@ -53,7 +53,7 @@ from app.task.MaaFW.tools.core.interface.models import (
     PRETASK_TASK_PREFIX,
 )
 from app.utils import BASE_SOURCE_LABELS, get_logger
-from app.utils import config_archive as _utils_config_archive
+from app.utils.common.config import archive as _utils_config_archive
 
 OVERLAY_SIDECAR_NAME = _utils_config_archive.OVERLAY_SIDECAR_NAME
 read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar

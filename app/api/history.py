@@ -30,7 +30,8 @@ from fastapi import APIRouter, Body
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, model_validator
 
-from app.core.history import HistoryNotFoundError, HistoryStorageError, history_store
+from app.core import History
+from app.core.history import HistoryNotFoundError, HistoryStorageError
 from app.models.schema import HistoryBucket, HistoryDetail, OutBase
 from app.utils import get_logger
 
@@ -83,7 +84,7 @@ def _storage_error(error: HistoryStorageError) -> JSONResponse:
 )
 async def search_history(history: HistorySearchIn) -> HistorySearchOut | JSONResponse:
     try:
-        data = await history_store.search(
+        data = await History.search(
             start_date=history.start_date, end_date=history.end_date, mode=history.mode
         )
         return HistorySearchOut(data=data)
@@ -103,7 +104,7 @@ async def get_history_detail(
 ) -> HistoryDetailGetOut | JSONResponse:
     try:
         return HistoryDetailGetOut(
-            data=await history_store.get_detail(record_id=history.recordId)
+            data=await History.get_detail(record_id=history.recordId)
         )
     except HistoryStorageError as error:
         return _storage_error(error)
@@ -120,7 +121,7 @@ async def get_history_attachment(
     attachment_id: UUID, download: bool = False
 ) -> FileResponse | JSONResponse:
     try:
-        attachment = await history_store.get_attachment(attachment_id=attachment_id)
+        attachment = await History.get_attachment(attachment_id=attachment_id)
         filename = attachment.display_name
         suffix = attachment.path.suffix
         if suffix and not filename.lower().endswith(suffix.lower()):

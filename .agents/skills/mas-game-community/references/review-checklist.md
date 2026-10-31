@@ -2,9 +2,9 @@
 
 ## 代码归属
 
-- [ ] 新增社区模块落在 `app/tools/common/`；签到专属落在 `app/tools/common/sign/`
-- [ ] 单平台逻辑仍在 `app/tools/<platform>.py`，没有把协议细节搬进 `common/`
-- [ ] 社区业务逻辑没有新落在 `app/core`、`app/services`、`app/utils`
+- [ ] 协议与内部契约位于 `app/tools/common/community/`，宿主配置、锁与调度由 `core.Community` 持有，通知统一使用 `core.Notify`
+- [ ] 单平台协议位于 `app/tools/common/community/providers/`，未泄漏进核心编排与 API
+- [ ] 配置编排与进程级状态归 core，平台协议和工具内部契约留在本功能，utils 不承载社区业务策略
 - [ ] 跨子包导入用绝对路径 `app.tools.common.*`；延迟导入的既有写法未被改成包顶层导出
 - [ ] 移动/重命名后已同步 `app/`、`tests/`、`.agents/skills/mas-game-community/references/` 里的路径，并跑过 `ruff check --fix` 与 `python -m compileall -q app tests`
 

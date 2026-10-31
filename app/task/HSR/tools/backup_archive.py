@@ -55,7 +55,7 @@ Notify.CustomWebhooks（子表结构）。Info.Base 仅预览不回填（回填�
 写错安装；M7A 未配置时仅按 SRA 分桶）。
 
 时间戳快照、指纹去重、保留清理与文件/目录恢复由公共模块
-``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
+``app.utils.common.config.archive`` 提供（默认每池保留 10 份），本模块只保留
 HSR 特有的两引擎目标解析、侧车、恢复语义（恢复前强制归档当前）与预览。
 """
 
@@ -66,7 +66,7 @@ import yaml
 
 from app.config import ConfigEntry
 from app.utils import BASE_SOURCE_LABELS, get_logger
-from app.utils import config_archive as _utils_config_archive
+from app.utils.common.config import archive as _utils_config_archive
 
 from .managed_config import SRA_REWARD_LABELS
 from .sra_runtime import build_sra_tasklist_description

@@ -1,15 +1,15 @@
-# 共享 OCR 工具集：app/tools/ocr.py 用法
+# 共享 OCR 工具集：app/tools/common/ocr/__init__.py 用法
 
 > 适用：专项需要游戏内 / 客户端画面**文本识别**（登录判据、按钮定位、掩码账号
 > 识别等）时。本文件只记读代码推不出来的约定与陷阱；具体签名现场读
-> `app/tools/ocr.py` 确认。
+> `app/tools/common/ocr/__init__.py` 确认。
 
 一句话链路：专项自持截图/激活/点击（交互层）→ 把截帧交给 `ocr_image()` →
 按返回的 `(text, box)` 做文本判定与定位点击。
 
 ## 分层职责（关键，别混）
 
-`app/tools/ocr.py` 只做**纯视觉识别**，不依赖任何游戏或专项；窗口捕获、前台激活、
+`app/tools/common/ocr/__init__.py` 只做**纯视觉识别**，不依赖任何游戏或专项；窗口捕获、前台激活、
 DPI 适配、坐标点击全部是**交互层**，由各专项自行实现（参考 ok-ww 强制切号
 `app/task/Okww/tools/account_switch.py` 的 `_capture_window` / `_click_box`）：
 

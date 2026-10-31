@@ -1,6 +1,9 @@
 """模拟器的 Windows 宿主能力。"""
 
 import ctypes
+from pathlib import Path
+
+from ..contracts.emulator_native import WindowVisibility
 
 _EMULATOR_WINDOW_PREFIX = "Android Emulator - "
 _EMULATOR_TOOLBAR_TITLE = "Emulator"
@@ -22,7 +25,7 @@ def shm_exists(port: int) -> bool:
     return True
 
 
-def prepare_window_visibility():
+def prepare_window_visibility() -> WindowVisibility:
     """在事件循环线程解析桌面依赖，返回同步窗口操作。"""
     from ctypes import wintypes
 
@@ -85,7 +88,7 @@ def cpu_cache_topology() -> bytes:
     return buffer.raw[: length.value]
 
 
-def vulkan_probe_path():
+def vulkan_probe_path() -> Path | None:
     from pathlib import Path
 
     return Path(__file__).with_name("vulkan_probe.py")

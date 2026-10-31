@@ -18,8 +18,8 @@ import httpx
 from app.core import Config
 from app.core.update import download_file
 from app.models.config import MaaConfig
-from app.services.update_fluxdown import FluxdownResumableError
-from app.services.update_transport import DownloadProgress, request_mirror_resource
+from app.services.common.update import fluxdown as _service_update_fluxdown
+from app.services.common.update import transport as _service_update_transport
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
 from app.utils import get_logger
 
@@ -66,7 +66,7 @@ async def query_latest_maa_version(
     key = (arch, channel)
     logger.info(f"正在通过 Mirror 酱检查 MAA 更新（{channel}/{arch}）")
     query_started = time.monotonic()
-    payload = await request_mirror_resource(
+    payload = await _service_update_transport.request_mirror_resource(
         "MAA",
         params={"os": "win", "arch": arch, "channel": channel},
         proxy=Config.proxy,
@@ -109,7 +109,7 @@ async def prepare_maa_fluxdown_update(
     *,
     config: MaaConfig,
     config_dir: Path,
-    progress: DownloadProgress | None = None,
+    progress: _service_update_transport.DownloadProgress | None = None,
 ) -> str | None:
     """下载并登记官方包；无更新返回当前版本，不接管返回 None，失败阻止启动。
 
@@ -169,7 +169,7 @@ async def prepare_maa_fluxdown_update(
                     source="GitHub",
                 )
                 break
-            except FluxdownResumableError:
+            except _service_update_fluxdown.FluxdownResumableError:
                 if attempt == 2:
                     raise
                 logger.warning("MAA 更新下载中断，正在重试续传")

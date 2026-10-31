@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from app.core import Notify
 from app.task.MAA.AutoProxy import AutoProxyTask, _build_auto_cultivate_task
 from app.task.MAA.tools.cultivate.engine import select_auto_cultivate_targets
 from app.task.MAA.tools.cultivate.types import (
@@ -64,6 +65,8 @@ def finalizer(monkeypatch, tmp_path):
     monkeypatch.setattr(module.System, "kill_process", AsyncMock())
     monkeypatch.setattr(module, "agree_bilibili", AsyncMock())
     now = datetime.now(timezone.utc)
+    monkeypatch.setattr(module.Notify, "push_statistics_report", AsyncMock())
+    monkeypatch.setattr(module.Notify, "send_notice", AsyncMock())
     return SimpleNamespace(
         check_result="Pass",
         user_start_time=now,
@@ -81,8 +84,6 @@ def finalizer(monkeypatch, tmp_path):
         task_info=SimpleNamespace(
             begin_user_history_capture=Mock(),
             save_user_history=AsyncMock(),
-            notifications=SimpleNamespace(push_statistics_report=AsyncMock()),
-            local_notifier=SimpleNamespace(send_notice=AsyncMock()),
         ),
         script_info=SimpleNamespace(name="MAA", current_index=0),
         run_book={"Annihilation": True, "Routine": True},
@@ -133,7 +134,7 @@ async def test_report_counts_saved_targets_after_final_refresh(finalizer, synced
 
     finalizer._finish_cultivate_round = refresh
     await AutoProxyTask.final_task(finalizer)
-    sender = finalizer.task_info.notifications.push_statistics_report
+    sender = Notify.push_statistics_report
     sender.assert_awaited_once()
     payload = sender.await_args.kwargs["payload"]
     assert "培养进展: 剩余：2 名干员，3 个目标" in payload.text
@@ -145,18 +146,14 @@ async def test_report_counts_saved_targets_after_final_refresh(finalizer, synced
 async def test_count_alone_does_not_trigger_report(finalizer):
     finalizer.run_book = {"Annihilation": False, "Routine": False}
     await AutoProxyTask.final_task(finalizer)
-    finalizer.task_info.notifications.push_statistics_report.assert_not_awaited()
+    Notify.push_statistics_report.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_disabled_cultivation_does_not_add_counts(finalizer):
     finalizer.cur_user_config.Task.IfCultivate = False
     await AutoProxyTask.final_task(finalizer)
-    payload = (
-        finalizer.task_info.notifications.push_statistics_report.await_args.kwargs[
-            "payload"
-        ]
-    )
+    payload = Notify.push_statistics_report.await_args.kwargs["payload"]
     assert "剩余：" not in payload.text
 
 
@@ -164,11 +161,7 @@ async def test_disabled_cultivation_does_not_add_counts(finalizer):
 async def test_completed_plan_reports_zero(finalizer):
     finalizer._cultivate_progress_synced = False
     await AutoProxyTask.final_task(finalizer)
-    payload = (
-        finalizer.task_info.notifications.push_statistics_report.await_args.kwargs[
-            "payload"
-        ]
-    )
+    payload = Notify.push_statistics_report.await_args.kwargs["payload"]
     assert "剩余：0 名干员，0 个目标" in payload.text
     assert "练度未同步" not in payload.text
 

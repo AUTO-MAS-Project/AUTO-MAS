@@ -1,16 +1,18 @@
-import pytest_asyncio
-from types import SimpleNamespace
-from tests.config_support import activate_config, group_view
-
 """#1297 本地验证：维护数据、缓存与失败放行。"""
+
 import asyncio
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import Mock
+
 import httpx
 import pytest
+import pytest_asyncio
+
 from app.core import game_maintenance as host
 from app.models.config import GlobalConfig
 from app.services import game_maintenance as service
+from tests.config_support import activate_config
 
 
 @pytest_asyncio.fixture(autouse=True)

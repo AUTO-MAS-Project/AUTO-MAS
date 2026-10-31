@@ -40,7 +40,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from app.core.maa_capture import AdbCapture
+from app.services.common.maa_capture import AdbCapture
 from app.utils import get_logger
 
 logger = get_logger("MAA 失败截图")

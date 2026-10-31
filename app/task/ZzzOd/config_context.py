@@ -99,7 +99,7 @@ class ZzzOdContext:
             RuntimeError: 有同安装的 ZzzOd 脚本处于运行中。
         """
 
-        from app.utils import config_archive as _utils_config_archive
+        from app.utils.common.config import archive as _utils_config_archive
 
         key = _utils_config_archive.config_root_key(root)
         for script_config in self.scripts.values():
@@ -153,7 +153,7 @@ class ZzzOdContext:
         """
 
         from app.task.ZzzOd.tools import read_native_registry
-        from app.utils import config_archive as _utils_config_archive
+        from app.utils.common.config import archive as _utils_config_archive
 
         # 1) 其他 ZzzOd 用户（含其他脚本）按 SlotIdx 绑定占用
         key = _utils_config_archive.config_root_key(root)

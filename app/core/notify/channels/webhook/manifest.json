@@ -1,0 +1,8 @@
+{
+  "interface_version": 1,
+  "id": "webhook",
+  "entrypoint": "app.core.notify.channels.webhook:register",
+  "requires": [
+    "httpx"
+  ]
+}

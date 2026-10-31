@@ -21,7 +21,7 @@
 """MaaEnd 推送日志采集参数（log_box 实例的喂参方）
 
 MaaEnd 专项作为 log_box 的一个实例：本模块只提供参数（规则、后置处理器），
-日志获取、规则匹配、后置处理与推送全部由 log_box 完成。
+文本内核只匹配规则和执行处理器；读取、账号归属和交付由专项负责。
 
 与其他专项 tail 脚本自身的日志文件不同，MaaEnd 的任务级进度行
 （任务开始/任务完成/任务失败）只打印在 MaaEnd.exe 的 stdout，上游不落盘；
@@ -74,7 +74,7 @@ import re
 from contextlib import suppress
 from datetime import datetime
 
-from app.log_box import LogSpec, LogType
+from app.utils import LOG_TYPE_NORMAL
 
 # 推送规则：(匹配正则, 提取表达式)；均为普通类型，节点级失败由文本「❌ 失败:」
 # 体现（始终展示），推送时机由全局 SendTaskResultTime 控制。
@@ -154,7 +154,7 @@ def _strip_emoji(name: str) -> str:
     return _EMOJI_STRIP_RE.sub("", name).strip()
 
 
-def _parse_line_ts(value: str, fallback: float) -> float:
+def _parse_line_ts(value: str, fallback: float | None) -> float | None:
     """把行内时间戳解析为节点发生时刻（本机本地时间）；失败回退采集时刻。"""
 
     with suppress(ValueError):
@@ -170,8 +170,8 @@ _FAIL_RANK = 2
 
 
 def maaend_resolve(
-    results: list[tuple[str, str, float]],
-) -> list[tuple[str, str, float]]:
+    results: list[tuple[str, str, float | None]],
+) -> list[tuple[str, str, float | None]]:
     """后处理：按任务聚合最终状态，保持最后一次出现顺序
 
     输入/输出均为 ``(log_type, text, ts)`` 元组（与 log_box `_PostProcessor`
@@ -192,7 +192,7 @@ def maaend_resolve(
     """
 
     order: list[str] = []
-    states: dict[str, tuple[int, str, float]] = {}
+    states: dict[str, tuple[int, str, float | None]] = {}
     # 明细/跳过归因：当前开始标记的任务节点。标记行只在任务「开始」与
     # 「终态」之间生效：同名任务新一轮开始时重置（跨重试/跨阶段以最后一轮
     # 为准），终态时消费并清空、活动指针复位（终态后的标记为无主行）
@@ -253,16 +253,9 @@ def maaend_resolve(
         states[node] = (rank, display, node_ts)
     return [
         (
-            LogType.NORMAL,
+            LOG_TYPE_NORMAL,
             states[node][1] if states[node][0] != _START_RANK else f"❌ 失败: {node}",
             states[node][2],
         )
         for node in order
     ]
-
-
-MAAEND_LOG_SPEC = LogSpec(
-    rules=tuple(MAAEND_PUSH_RULES),
-    postprocessor=maaend_resolve,
-    error_message="MaaEnd 节点采集推送失败",
-)

@@ -8,7 +8,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from app.models.ConfigBase import BoolValidator, ConfigBase, ConfigItem, MultipleConfig
+from app.models.legacy_config.base import (
+    BoolValidator,
+    ConfigBase,
+    ConfigItem,
+    MultipleConfig,
+)
 
 
 class SampleConfig(ConfigBase):
@@ -86,7 +91,9 @@ class SerializedSaveTest(unittest.IsolatedAsyncioTestCase):
                 time.sleep(next(delays, 0.0))
                 written.append(payload["Info"]["Enabled"])
 
-            with patch("app.models.ConfigBase.write_file", side_effect=slow_write):
+            with patch(
+                "app.models.legacy_config.base.write_file", side_effect=slow_write
+            ):
                 config.Info_Enabled.setValue(True)
                 first = asyncio.create_task(config.save())
                 await asyncio.sleep(0)

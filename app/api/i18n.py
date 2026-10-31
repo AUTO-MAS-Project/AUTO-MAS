@@ -3,7 +3,8 @@
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field, JsonValue
 
-from app.core.i18n import AppLocale, i18n
+from app.core import I18n
+from app.core.i18n import AppLocale
 from app.models.schema import OutBase
 from app.utils import get_logger
 
@@ -34,7 +35,7 @@ class I18nMessagesOut(OutBase):
 async def get_locales() -> I18nLocalesOut:
     """列出可用语言及当前资源版本。"""
     try:
-        available, revision = await i18n.get_locales()
+        available, revision = await I18n.get_locales()
         return I18nLocalesOut(
             data=I18nLocalesData(available=available, revision=revision)
         )
@@ -52,7 +53,7 @@ async def get_locales() -> I18nLocalesOut:
 async def get_messages(locale: AppLocale = Query(...)) -> I18nMessagesOut:
     """读取指定语言的原始词表；回退和字符串插值由前端处理。"""
     try:
-        messages, revision = await i18n.get_messages(locale)
+        messages, revision = await I18n.get_messages(locale)
         return I18nMessagesOut(
             data=I18nMessagesData(locale=locale, revision=revision, messages=messages)
         )

@@ -76,8 +76,8 @@ class InventoryReport:
 
 
 def inventory_resolve(
-    results: list[tuple[str, str, float]],
-) -> list[tuple[str, str, float]]:
+    results: list[tuple[str, str, float | None]],
+) -> list[tuple[str, str, float | None]]:
     """还原本轮报告时间，不合并掉落数量或自行判断达标。"""
 
     resolved = []

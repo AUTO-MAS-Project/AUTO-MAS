@@ -46,7 +46,7 @@ mas 池当前只有元字段（配置来源/快速配置/配置文件名）—�
 顶层（账号在任务子配置里，不归本池），无需脱敏。
 
 时间戳快照、指纹去重、保留清理与整目录恢复由公共模块
-``app.utils.config_archive`` 提供，本模块只保留 BAAH 特有的动态目标
+``app.utils.common.config.archive`` 提供，本模块只保留 BAAH 特有的动态目标
 解析、恢复语义（恢复前强制归档当前）与预览摘要。
 """
 
@@ -58,7 +58,7 @@ from app.task.BAAH.tools.config_manager import (
     resolve_config_name,
 )
 from app.utils import BASE_SOURCE_LABELS, get_logger
-from app.utils import config_archive as _utils_config_archive
+from app.utils.common.config import archive as _utils_config_archive
 
 OVERLAY_SIDECAR_NAME = _utils_config_archive.OVERLAY_SIDECAR_NAME
 read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar

@@ -5,9 +5,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.log_box import LogCollect, log_box
-from app.log_box.report import build_user_result_text
-from app.task.OkNte.push_log import OKNTE_LOG_SPEC, OKNTE_PUSH_RULES, oknte_resolve
+from app.task.general.manager import GeneralManager
+from app.task.OkNte.AutoProxy import AutoProxyTask
+from app.task.OkNte.push_log import OKNTE_PUSH_RULES, oknte_resolve
+from app.utils import log_box
+
+
+def build_user_result_text(users, has_uncompleted):
+    manager = SimpleNamespace(script_info=SimpleNamespace(user_list=users))
+    return GeneralManager._render_user_results(manager, has_uncompleted=has_uncompleted)
 
 
 @pytest.mark.parametrize("mode", ["关闭", "逐条", "汇总"])
@@ -36,21 +42,31 @@ def test_nte_reports_match_existing_collect(tmp_path, monkeypatch, mode, lines):
         )
         for _ in range(2)
     ]
-    legacy = None
-    if mode != "关闭":
-        legacy = LogCollect(path, sink=lambda *entry: previous.push_log.append(entry))
-        legacy.open()
-        for rule in OKNTE_PUSH_RULES:
-            legacy.collect(*rule)
-    managed = log_box.get_user_session(
-        OKNTE_LOG_SPEC, user=current, mode=mode, paths=path
+    proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.cur_user_item = current
+    proxy._prepare_log_details(
+        path, mode=mode, enabled=mode != "关闭", rotated_name=None
     )
-    with path.open("a", encoding="utf-8") as stream:
-        stream.write("\n".join(lines) + "\n")
-    monkeypatch.setattr("app.log_box.pipeline.time.time", lambda: 1793228520.0)
-    if legacy is not None:
-        legacy.close(oknte_resolve)
-    asyncio.run(managed.close())
+    path.write_text(
+        "任务完成: 运行前旧日志\n" + "\n".join(lines) + "\n", encoding="utf-8"
+    )
+    monkeypatch.setattr("app.task.OkNte.AutoProxy.time.time", lambda: 1793228520.0)
+    if mode != "关闭":
+        pipeline = log_box.LogPipeline()
+        for rule in OKNTE_PUSH_RULES:
+            pipeline.add_rule(*rule)
+        pipeline.postprocessors.append(oknte_resolve)
+        for line in lines:
+            pipeline.feed(line, timestamp=1793228520.0)
+        previous.push_log.extend(
+            (e.log_type, e.text, e.timestamp) for e in pipeline.finish()
+        )
+
+    async def scenario():
+        await asyncio.gather(proxy._close_log_details(), proxy._close_log_details())
+        await proxy._close_log_details()
+
+    asyncio.run(scenario())
     assert current.push_log == previous.push_log
     for has_uncompleted in (False, True):
         assert build_user_result_text([current], has_uncompleted) == (

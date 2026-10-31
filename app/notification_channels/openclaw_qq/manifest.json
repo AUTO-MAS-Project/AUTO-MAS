@@ -1,9 +1,0 @@
-{
-  "interface_version": 1,
-  "id": "openclaw_qq",
-  "entrypoint": "app.notification_channels.openclaw_qq:register",
-  "requires": [
-    "httpx",
-    "websockets"
-  ]
-}

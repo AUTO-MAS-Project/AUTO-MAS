@@ -8,7 +8,7 @@ import pytest
 from maa import resource as maa_resource
 from maa.toolkit import Toolkit
 
-from app.core.config import Config
+from app.core import Config
 from app.models.emulator import DeviceInfo, DeviceStatus
 
 

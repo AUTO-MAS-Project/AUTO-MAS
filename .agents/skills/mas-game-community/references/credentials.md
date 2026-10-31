@@ -1,6 +1,6 @@
 # 游戏社区凭据、日志与错误消息边界
 
-社区是本仓少数直接持有**用户账号密码**的路径，规则从严。凭据相关模块：`app/tools/common/community_credentials.py`（外形解析与本地校验分派）、`sign/community_sign_provider.py`（`read_community_token`）、各平台适配器（真实上游认证与刷新）。
+社区是本仓少数直接持有**用户账号密码**的路径，规则从严。凭据相关模块：`app/tools/common/community/credentials.py`（外形解析与本地校验分派）、`app/tools/common/community/sign.py`（`read_community_token`）、各平台适配器（真实上游认证与刷新）。
 
 ## 凭据规则
 
@@ -18,5 +18,5 @@
 1. 日志只允许出现凭据**字段名**与状态，不允许出现凭据值、Cookie 或上游原始响应；异常栈同理。
 2. 上游异常原文可能带 Cookie：便笺侧只允许 `format_exception_reason(..., include_message=False)` 加上「调用位置」这类定位信息（见 `query_configured_community_activity` 的 `traceback.extract_tb` 用法）。
 3. 扫码 `/check` 回传的单行状态文案是**唯一**允许的上游文本透传（仅限短状态文案），详见 [sign-in.md](sign-in.md) 的「已知不一致 6」。
-4. 渠道级失败必须走系统提示（`Config.push_system_notice`），不能只写日志：用户看不到日志就等于没有通知。
+4. 渠道级失败必须走系统提示（`Notify.push_system_notice`），不能只写日志：用户看不到日志就等于没有通知。
 5. `results_saved=False` 时文案不得声称结果已保存；「结果无法确认」与「空结果」是两种终态，不要合并成「签到失败」。

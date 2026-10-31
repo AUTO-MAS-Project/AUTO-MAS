@@ -166,12 +166,12 @@ def activity_running() -> bool | None:
     万一在事件循环线程里被调，拿不到结果，按「说不准」处理。
     """
 
-    from app.tools.stella_official import has_running_official_activity
+    from app.tools.common.game_calendar import stella as _tool_stella_official
 
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(has_running_official_activity())
+        return asyncio.run(_tool_stella_official.has_running_official_activity())
     return None
 
 
@@ -183,19 +183,21 @@ def defense_period() -> str | None:
     一样：建计划在工作线程里跑，自己起一个事件循环收结果。
     """
 
-    from app.tools.stella_official import permanent_activity_window
+    from app.tools.common.game_calendar import stella as _tool_stella_official
 
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(permanent_activity_window(DEFENSE_ACTIVITY_NAME))
+        return asyncio.run(
+            _tool_stella_official.permanent_activity_window(DEFENSE_ACTIVITY_NAME)
+        )
     return None
 
 
 def personal_mss_enabled() -> bool:
     """神秘入口里那个个人版开关（``Function.IfPersonalMss``）有没有打开。"""
 
-    from app.core.config import Config
+    from app.core import Config
 
     try:
         return bool(Config.setting.Function.IfPersonalMss)

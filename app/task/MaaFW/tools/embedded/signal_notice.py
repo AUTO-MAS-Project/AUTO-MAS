@@ -18,9 +18,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.core import Notify
+from app.core.notify.task_content import (
+    prepare_screenshot_images as prepare_screenshot_images,
+)
 from app.models.notification import NotificationImage, NotifyPayload, image_reference
-from app.models.notification_channel import DispatchResult, NotifyTarget
-from app.models.notification_ports import TaskNotifications
+from app.models.notification.channel import DispatchResult, NotifyTarget
 
 # 信号取值与 worker 共用 worker_protocol 那一份；不经 core.runner 包导入（它的 __init__
 # 会拉起 runner 子树）。
@@ -28,7 +31,6 @@ from app.task.MaaFW.tools.core.worker_protocol import (
     CLIENT_UPDATE_REQUIRED,
     SERVER_MAINTENANCE,
 )
-from app.task.notify_core import prepare_screenshot_images
 from app.utils import get_logger
 
 logger = get_logger("MaaFW 信号通知")
@@ -139,7 +141,7 @@ class MaaFWSignalTracker:
         }
 
 
-def signal_global_targets(notifications: TaskNotifications) -> list[NotifyTarget]:
+def signal_global_targets() -> list[NotifyTarget]:
     """信号通知的全局目标：与任务报告同一套开关，不绕过。
 
     全局渠道看「发送任务结果时机」：不推送就不发（维护 / 需更新都属于本次没跑成，
@@ -149,7 +151,7 @@ def signal_global_targets(notifications: TaskNotifications) -> list[NotifyTarget
     ``push_signal_notices``。
     """
 
-    return notifications.failure_targets()
+    return Notify.failure_targets()
 
 
 def build_signal_payload(
@@ -195,7 +197,6 @@ def build_signal_payload(
 async def push_signal_notices(
     tracker: MaaFWSignalTracker,
     *,
-    notifications: TaskNotifications,
     script_name: str,
     user_config_for: Callable[[str], Any | None],
 ) -> list[DispatchResult]:
@@ -211,9 +212,9 @@ async def push_signal_notices(
             (user_id, user_name, targets)
             for user_id, user_name in record.users
             if (config := user_config_for(user_id)) is not None
-            and (targets := notifications.user_statistic_targets(config))
+            and (targets := Notify.user_statistic_targets(config))
         ]
-        global_targets = signal_global_targets(notifications)
+        global_targets = signal_global_targets()
         if not global_targets and not user_targets:
             logger.info(
                 f"信号通知的全局与用户渠道都未开启，不发送：{record.signal} "
@@ -230,7 +231,7 @@ async def push_signal_notices(
             )
             logger.info(f"推送 MaaFW 信号通知：{payload.title}")
             results.append(
-                await notifications.dispatch_task_notification(payload, global_targets)
+                await Notify.dispatch_task_notification(payload, global_targets)
             )
         for user_id, user_name, targets in user_targets:
             own_shot = record.user_screenshots.get(user_id)
@@ -249,9 +250,7 @@ async def push_signal_notices(
                 users=[(user_id, user_name)],
             )
             logger.info(f"推送 MaaFW 信号通知（用户 {user_name}）：{payload.title}")
-            results.append(
-                await notifications.dispatch_task_notification(payload, targets)
-            )
+            results.append(await Notify.dispatch_task_notification(payload, targets))
     return results
 
 

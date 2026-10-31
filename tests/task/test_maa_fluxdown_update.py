@@ -12,6 +12,8 @@ import pytest
 from pydantic import ValidationError
 
 from app.models.config import MaaConfig
+from app.services.common.update import fluxdown as update_fluxdown
+from app.services.common.update import transport as update_transport
 from app.task.MAA import AutoProxy as auto_proxy
 from app.task.MAA import manager
 from app.task.MAA.AutoProxy import AutoProxyTask, _without_maa_update_changes
@@ -49,7 +51,7 @@ def installation(tmp_path, monkeypatch):
     release = AsyncMock(return_value={"version": "v6.1.0", "details": {"assets": []}})
     monkeypatch.setattr(update, "request_maa_release", release)
     mirror_query = AsyncMock(return_value={"data": {"version_name": "v6.1.0"}})
-    monkeypatch.setattr(update, "request_mirror_resource", mirror_query)
+    monkeypatch.setattr(update_transport, "request_mirror_resource", mirror_query)
     update._latest_versions.clear()
 
     async def download(url, path, **kwargs):
@@ -213,7 +215,7 @@ async def test_resumable_retry_reuses_same_file(installation, monkeypatch):
         count += 1
         if count < 3:
             path.write_bytes(b"partial")
-            raise update.FluxdownResumableError("offline")
+            raise update_fluxdown.FluxdownResumableError("offline")
         assert path.read_bytes() == b"partial"
         return await original(url, path, **kwargs)
 

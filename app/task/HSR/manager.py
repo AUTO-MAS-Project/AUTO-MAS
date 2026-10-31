@@ -28,13 +28,13 @@ from pathlib import Path
 from typing import Any
 
 from app.config import ConfigCollection
-from app.core import Config
-from app.core.ws import Publisher, protocol
+from app.core import Config, Notify, Publisher
+from app.core.notify.lifecycle import NotificationTaskBase as NotificationTaskBase
+from app.core.ws import protocol
 from app.models.config import HSRConfig, HSRUserConfig
-from app.models.notification_report import TaskResultData, TaskResultReport
+from app.models.notification.report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
-from app.task.notification_lifecycle import NotificationTaskBase
 from app.utils import TASK_MODE_ZH, get_logger, is_admin
 from app.utils import io as _utils_io
 
@@ -1466,7 +1466,7 @@ class HSRManager(NotificationTaskBase):
         }
 
         try:
-            await self.task_info.notifications.push_proxy_result(
+            await Notify.push_proxy_result(
                 title=title,
                 report=TaskResultReport.from_message(result),
                 task_info=self.task_info,

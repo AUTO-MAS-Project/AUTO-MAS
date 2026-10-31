@@ -47,9 +47,9 @@ from app.task.Whimbox.contracts import (
     WhimboxOptionDecl,
     WhimboxTaskDecl,
 )
-from app.utils import config_archive as _utils_config_archive
 from app.utils import get_logger
 from app.utils import io as _utils_io
+from app.utils.common.config import archive as _utils_config_archive
 
 atomic_write = _utils_io.atomic_write
 

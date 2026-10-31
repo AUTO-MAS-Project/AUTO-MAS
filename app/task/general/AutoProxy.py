@@ -25,18 +25,19 @@ from pathlib import Path
 from typing import Optional
 
 from app.config import ConfigCollection
+from app.core import Notify, Publisher
 from app.core.history import aggregate_data
-from app.core.ws import Publisher, protocol
-from app.log_box.hooks import make_line_hook
-from app.log_box.markers import parse_marker
+from app.core.notify.task_content import (
+    build_script_statistics_payload as build_script_statistics_payload,
+)
+from app.core.ws import protocol
 from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.emulator import DeviceBase
-from app.models.notification_ports import LocalNotice
+from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import System
 from app.task.base import ScriptAutoProxyBase
-from app.task.notify_core import build_script_statistics_payload
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import (
     LOG_TYPE_NORMAL,
@@ -53,6 +54,9 @@ from app.utils import (
     strptime,
 )
 from app.utils import io as _utils_io
+from app.utils.common.log_box.hooks import make_line_hook
+
+from .log_protocol import parse_marker
 
 logger = get_logger("通用脚本自动代理")
 
@@ -516,7 +520,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
 
                 await self.kill_managed_process()
 
-                await self.task_info.local_notifier.send_notice(
+                await Notify.send_notice(
                     LocalNotice(
                         title="用户自动代理出现异常！",
                         message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
@@ -557,7 +561,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
 
         await self.kill_managed_process()
 
-        await self.task_info.local_notifier.send_notice(
+        await Notify.send_notice(
             LocalNotice(
                 title="用户自动代理出现异常！",
                 message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
@@ -931,7 +935,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             )
 
         if self.run_book:
-            await self.task_info.local_notifier.send_notice(
+            await Notify.send_notice(
                 LocalNotice(
                     title="成功完成一个自动代理任务！",
                     message=f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
@@ -958,7 +962,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         success_symbol = "√" if self.run_book else "X"
 
         try:
-            await self.task_info.notifications.push_statistics_report(
+            await Notify.push_statistics_report(
                 payload=build_script_statistics_payload(
                     title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
                     message=statistics,

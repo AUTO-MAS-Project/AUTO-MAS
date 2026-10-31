@@ -1,14 +1,14 @@
 # 游戏社区日常便笺链路
 
-日常便笺是**只读**的角色活跃度查询：按账号组凭据发现角色，再按角色拉取便笺快照。它不写回凭据、不调用签到入口、不占用签到锁。整条链路位于 `app/tools/common/community_activity*.py`，消费层是 `app/tools/common/community_activity.py`。
+日常便笺是**只读**的角色活跃度查询：按账号组凭据发现角色，再按角色拉取便笺快照。它不写回凭据、不调用签到入口、不占用签到锁。整条链路位于 `app/tools/common/community/activity/`，消费层是 `app/core/community/activity.py`。
 
 ## 入口与开关
 
 | 位置 | 说明 |
 | --- | --- |
-| `POST /api/tools/community/activity/query` | `app/api/tools.py::query_community_activity`，请求体 `CommunityActivityQueryIn(accountIds?)` |
+| `POST /api/tools/community/activity/query` | `app/api/community/accounts.py::query_community_activity`，请求体 `CommunityActivityQueryIn(accountIds?)` |
 | `GameSign.ActivityEnabled` | 总开关，关闭时 API 直接返回空列表，消费层也直接返回 `()` |
-| `community_activity_flow()` | `app/tools/common/community_scheduler.py` 的串行锁：后到者等锁，等完复用缓存 |
+| `community_activity_flow()` | `app/core/community/scheduling.py` 的串行锁：后到者等锁，等完复用缓存 |
 | 前端 | `views/gamesign/CommunityActivityView.vue`、`components/CommunityActivityCard.vue`、`communityActivityPresentation.ts`、`stores/communityActivity.ts` |
 
 查询失败**不**影响签到，签到失败也**不**阻塞便笺；两条链路只共享账号组凭据与 `community_http` 客户端。
@@ -17,11 +17,11 @@
 
 | 模块 | 职责 | 关键符号 |
 | --- | --- | --- |
-| `community_activity_roles.py` | 角色发现响应归一化，不联网 | `ACTIVITY_COMMUNITY_DEFINITIONS`、`CommunityActivityRole`、`CommunityActivityRoleDiscovery`、`CommunityActivityCapability`、`normalize_skland_roles`、`normalize_miyoushe_roles` |
-| `community_activity_provider.py` | 认证注入、角色发现请求、米游社设备指纹与节流 | `CommunityActivityProvider.discover_roles()` / `.request()`、`build_community_activity_requester()` |
-| `community_activity_transport.py` | 请求规格构建与并发采集 | `CommunityActivityTarget`、`CommunityActivityRequest`、`build_community_activity_requests()`、`collect_community_activity()`、`CommunityActivityTransportError` |
-| `community_activity_parser.py` | 上游响应 → 快照 | `parse_activity_snapshot()`、`ACTIVITY_GAME_DEFINITIONS`、`ActivityResponseLimitedError`、`ActivityResponseUnavailableError` |
-| `community_activity.py` | 账号组 → 快照、缓存、失败兜底 | `query_configured_community_activity()`、`collect_configured_community_activity()`、`build_configured_community_activity_failures()`、`connect_community_activity_cache()` |
+| `activity/roles.py` | 角色发现响应归一化，不联网 | `ACTIVITY_COMMUNITY_DEFINITIONS`、`CommunityActivityRole`、`CommunityActivityRoleDiscovery`、`CommunityActivityCapability`、`normalize_skland_roles`、`normalize_miyoushe_roles` |
+| `activity/provider.py` | 认证注入、角色发现请求、米游社设备指纹与节流 | `CommunityActivityProvider.discover_roles()` / `.request()`、`build_community_activity_requester()` |
+| `activity/transport.py` | 请求规格构建与并发采集 | `CommunityActivityTarget`、`CommunityActivityRequest`、`build_community_activity_requests()`、`collect_community_activity()`、`CommunityActivityTransportError` |
+| `activity/parser.py` | 上游响应 → 快照 | `parse_activity_snapshot()`、`ACTIVITY_GAME_DEFINITIONS`、`ActivityResponseLimitedError`、`ActivityResponseUnavailableError` |
+| `app/core/community/activity.py` | 账号组 → 快照、缓存、失败兜底 | `query_configured_community_activity()`、`collect_configured_community_activity()`、`build_configured_community_activity_failures()`、`connect_community_activity_cache()` |
 
 ## 已登记的游戏范围
 

@@ -29,12 +29,25 @@ from typing import TYPE_CHECKING
 
 # 静态检查显式声明导出；运行时仍由下方入口按需加载。
 if TYPE_CHECKING:
+    from app.utils.common.log.logger import get_logger as get_logger
+    from app.utils.common.log.monitor import LogMonitor as LogMonitor
+    from app.utils.common.log.monitor import strptime as strptime
+    from app.utils.common.log.patterns import LOG_TYPE_ERROR as LOG_TYPE_ERROR
+    from app.utils.common.log.patterns import LOG_TYPE_NORMAL as LOG_TYPE_NORMAL
+    from app.utils.common.log.patterns import SIGN_MODE_REGEX as SIGN_MODE_REGEX
+    from app.utils.common.log.patterns import SIGN_MODE_SPLIT as SIGN_MODE_SPLIT
+    from app.utils.common.log.patterns import LogSignMatcher as LogSignMatcher
+    from app.utils.common.log.patterns import MultiLineAggregator as MultiLineAggregator
+    from app.utils.common.log.patterns import RegexMatcher as RegexMatcher
+    from app.utils.common.log.patterns import apply_patterns as apply_patterns
+    from app.utils.common.log.patterns import compile_log_signs as compile_log_signs
+    from app.utils.common.log.patterns import compile_regex as compile_regex
+    from app.utils.common.log.patterns import debug_pattern as debug_pattern
+    from app.utils.common.log.patterns import flush_patterns as flush_patterns
+    from app.utils.common.log.patterns import load_patterns as load_patterns
+
     from .common import OCR as OCR
-    from .common import LogPatternExtractor as LogPatternExtractor
-    from .common import community as community
-    from .common import config_archive as config_archive
-    from .common import config_document as config_document
-    from .common import config_restore as config_restore
+    from .common import config as config
     from .common import constants as constants
     from .common import emulator as emulator
     from .common import emulator2 as emulator2
@@ -48,13 +61,9 @@ if TYPE_CHECKING:
     from .common import hpatchz as hpatchz
     from .common import i18n as i18n
     from .common import io as io
-    from .common import logger as logger
+    from .common import log as log
+    from .common import log_box as log_box
     from .common import mirrorchyan as mirrorchyan
-    from .common import notification_render as notification_render
-    from .common import notification_template as notification_template
-    from .common import paths as paths
-    from .common import process as process
-    from .common import process_runner as process_runner
     from .common import security as security
     from .common import supervision as supervision
     from .common import tools as tools
@@ -140,33 +149,17 @@ if TYPE_CHECKING:
     from .common.emulator import MumuManager as MumuManager
     from .common.emulator import search_all_emulators as search_all_emulators
     from .common.errors import UnsupportedPlatformError as UnsupportedPlatformError
-    from .common.logger import get_logger as get_logger
-    from .common.LogMonitor import LogMonitor as LogMonitor
-    from .common.LogMonitor import strptime as strptime
-    from .common.LogPatternExtractor import LOG_TYPE_ERROR as LOG_TYPE_ERROR
-    from .common.LogPatternExtractor import LOG_TYPE_NORMAL as LOG_TYPE_NORMAL
-    from .common.LogPatternExtractor import SIGN_MODE_REGEX as SIGN_MODE_REGEX
-    from .common.LogPatternExtractor import SIGN_MODE_SPLIT as SIGN_MODE_SPLIT
-    from .common.LogPatternExtractor import LogSignMatcher as LogSignMatcher
-    from .common.LogPatternExtractor import MultiLineAggregator as MultiLineAggregator
-    from .common.LogPatternExtractor import RegexMatcher as RegexMatcher
-    from .common.LogPatternExtractor import apply_patterns as apply_patterns
-    from .common.LogPatternExtractor import compile_log_signs as compile_log_signs
-    from .common.LogPatternExtractor import compile_regex as compile_regex
-    from .common.LogPatternExtractor import debug_pattern as debug_pattern
-    from .common.LogPatternExtractor import flush_patterns as flush_patterns
-    from .common.LogPatternExtractor import load_patterns as load_patterns
     from .common.mirrorchyan import MirrorChyanError as MirrorChyanError
     from .common.mirrorchyan import (
         compare_mirrorchyan_versions as compare_mirrorchyan_versions,
     )
-    from .common.paths import resource_path as resource_path
-    from .common.process import ProcessInfo as ProcessInfo
-    from .common.process import ProcessManager as ProcessManager
-    from .common.process import ProcessResult as ProcessResult
-    from .common.process import ProcessRunner as ProcessRunner
-    from .common.process import is_process_alive as is_process_alive
-    from .common.process import is_process_running as is_process_running
+    from .common.process import manager as process
+    from .common.process.manager import ProcessInfo as ProcessInfo
+    from .common.process.manager import ProcessManager as ProcessManager
+    from .common.process.manager import is_process_alive as is_process_alive
+    from .common.process.manager import is_process_running as is_process_running
+    from .common.process.runner import ProcessResult as ProcessResult
+    from .common.process.runner import ProcessRunner as ProcessRunner
     from .common.security import dpapi_decrypt as dpapi_decrypt
     from .common.security import dpapi_encrypt as dpapi_encrypt
     from .common.security import format_exception_reason as format_exception_reason
@@ -177,66 +170,61 @@ if TYPE_CHECKING:
     from .common.tools import busy_wait as busy_wait
     from .common.tools import decode_bytes as decode_bytes
     from .common.websocket import WebSocketClient as WebSocketClient
+    from .contracts.audio import AudioAPI
+    from .contracts.display import DisplayAPI
+    from .contracts.emulator_native import EmulatorNativeAPI
+    from .contracts.file_lock import FileLockAPI
+    from .contracts.host import HostAPI, HostPredicate
+    from .contracts.process import ProcessAPI
+    from .contracts.registry import RegistryAPI
+    from .contracts.secret import SecretAPI
+    from .contracts.update_native import UpdateNativeAPI
+    from .contracts.vdd import VddAPI
+    from .contracts.window import WindowAPI
 
-    if sys.platform == "win32":
-        from .windows import audio as audio
-        from .windows import display as display
-        from .windows import emulator_native as emulator_native
-        from .windows import host as host
-        from .windows import notification as notification
-        from .windows import process as process_platform
-        from .windows import registry as registry
-        from .windows import secret as secret
-        from .windows import update_native as update_native
-        from .windows import vdd as vdd
-        from .windows import window as window
-        from .windows.host import IS_ELEVATED as IS_ELEVATED
-        from .windows.host import IS_WINDOWS as IS_WINDOWS
-        from .windows.host import is_admin as is_admin
-        from .windows.host import is_long_path_supported as is_long_path_supported
-    else:
-        from .common import audio as audio
-        from .common import display as display
-        from .common import emulator_native as emulator_native
-        from .common import host as host
-        from .common import notification as notification
-        from .common import process_platform as process_platform
-        from .common import registry as registry
-        from .common import secret as secret
-        from .common import update_native as update_native
-        from .common import vdd as vdd
-        from .common import window as window
-        from .common.host import IS_ELEVATED as IS_ELEVATED
-        from .common.host import IS_WINDOWS as IS_WINDOWS
-        from .common.host import is_admin as is_admin
-        from .common.host import is_long_path_supported as is_long_path_supported
+    audio: AudioAPI
+    display: DisplayAPI
+    emulator_native: EmulatorNativeAPI
+    file_lock: FileLockAPI
+    host: HostAPI
+    process_platform: ProcessAPI
+    registry: RegistryAPI
+    secret: SecretAPI
+    update_native: UpdateNativeAPI
+    vdd: VddAPI
+    window: WindowAPI
+
+    IS_ELEVATED: bool
+    IS_WINDOWS: bool
+    is_admin: HostPredicate
+    is_long_path_supported: HostPredicate
 
 _LAZY_EXPORTS = {
-    "SIGN_MODE_REGEX": (".common.LogPatternExtractor", "SIGN_MODE_REGEX"),
-    "SIGN_MODE_SPLIT": (".common.LogPatternExtractor", "SIGN_MODE_SPLIT"),
+    "SIGN_MODE_REGEX": (".common.log.patterns", "SIGN_MODE_REGEX"),
+    "SIGN_MODE_SPLIT": (".common.log.patterns", "SIGN_MODE_SPLIT"),
     "get_game_day_tz": (".common.constants", "get_game_day_tz"),
     "game_now": (".common.constants", "game_now"),
     "normalize_base_source": (".common.constants", "normalize_base_source"),
-    "LOG_TYPE_ERROR": (".common.LogPatternExtractor", "LOG_TYPE_ERROR"),
-    "LOG_TYPE_NORMAL": (".common.LogPatternExtractor", "LOG_TYPE_NORMAL"),
+    "LOG_TYPE_ERROR": (".common.log.patterns", "LOG_TYPE_ERROR"),
+    "LOG_TYPE_NORMAL": (".common.log.patterns", "LOG_TYPE_NORMAL"),
     "UnsupportedPlatformError": (".common.errors", "UnsupportedPlatformError"),
-    "LogMonitor": (".common.LogMonitor", "LogMonitor"),
-    "strptime": (".common.LogMonitor", "strptime"),
-    "ProcessManager": (".common.process", "ProcessManager"),
-    "ProcessRunner": (".common.process", "ProcessRunner"),
-    "ProcessInfo": (".common.process", "ProcessInfo"),
-    "ProcessResult": (".common.process", "ProcessResult"),
-    "is_process_running": (".common.process", "is_process_running"),
-    "is_process_alive": (".common.process", "is_process_alive"),
-    "RegexMatcher": (".common.LogPatternExtractor", "RegexMatcher"),
-    "MultiLineAggregator": (".common.LogPatternExtractor", "MultiLineAggregator"),
-    "compile_regex": (".common.LogPatternExtractor", "compile_regex"),
-    "load_patterns": (".common.LogPatternExtractor", "load_patterns"),
-    "apply_patterns": (".common.LogPatternExtractor", "apply_patterns"),
-    "flush_patterns": (".common.LogPatternExtractor", "flush_patterns"),
-    "debug_pattern": (".common.LogPatternExtractor", "debug_pattern"),
-    "LogSignMatcher": (".common.LogPatternExtractor", "LogSignMatcher"),
-    "compile_log_signs": (".common.LogPatternExtractor", "compile_log_signs"),
+    "LogMonitor": (".common.log.monitor", "LogMonitor"),
+    "strptime": (".common.log.monitor", "strptime"),
+    "ProcessManager": (".common.process.manager", "ProcessManager"),
+    "ProcessRunner": (".common.process.runner", "ProcessRunner"),
+    "ProcessInfo": (".common.process.manager", "ProcessInfo"),
+    "ProcessResult": (".common.process.runner", "ProcessResult"),
+    "is_process_running": (".common.process.manager", "is_process_running"),
+    "is_process_alive": (".common.process.manager", "is_process_alive"),
+    "RegexMatcher": (".common.log.patterns", "RegexMatcher"),
+    "MultiLineAggregator": (".common.log.patterns", "MultiLineAggregator"),
+    "compile_regex": (".common.log.patterns", "compile_regex"),
+    "load_patterns": (".common.log.patterns", "load_patterns"),
+    "apply_patterns": (".common.log.patterns", "apply_patterns"),
+    "flush_patterns": (".common.log.patterns", "flush_patterns"),
+    "debug_pattern": (".common.log.patterns", "debug_pattern"),
+    "LogSignMatcher": (".common.log.patterns", "LogSignMatcher"),
+    "compile_log_signs": (".common.log.patterns", "compile_log_signs"),
     "MumuManager": (".common.emulator", "MumuManager"),
     "LDManager": (".common.emulator", "LDManager"),
     "search_all_emulators": (".common.emulator", "search_all_emulators"),
@@ -253,8 +241,7 @@ _LAZY_EXPORTS = {
     "IS_ELEVATED": ("host", "IS_ELEVATED"),
     "is_admin": ("host", "is_admin"),
     "is_long_path_supported": ("host", "is_long_path_supported"),
-    "get_logger": (".common.logger", "get_logger"),
-    "resource_path": (".common.paths", "resource_path"),
+    "get_logger": (".common.log.logger", "get_logger"),
     "is_supervised": (".common.supervision", "is_supervised"),
     "should_preserve_backend": (".common.supervision", "should_preserve_backend"),
     "dpapi_encrypt": (".common.security", "dpapi_encrypt"),
@@ -336,15 +323,15 @@ _LAZY_EXPORTS = {
     "BASE_SOURCE_LABELS": (".common.constants", "BASE_SOURCE_LABELS"),
 }
 _COMMON_MODULES = {
+    "log_box": ".common.log_box",
+    "file_lock": ".unsupported.file_lock",
     "update_native": ".common.update_native",
     "emulator_native": ".common.emulator_native",
-    "registry": ".common.registry",
-    "audio": ".common.audio",
+    "registry": ".unsupported.registry",
+    "audio": ".unsupported.audio",
     "update_files": ".common.update_files",
     "exception": ".common.exception",
-    "config_restore": ".common.config_restore",
-    "window": ".common.window",
-    "paths": ".common.paths",
+    "window": ".unsupported.window",
     "mirrorchyan": ".common.mirrorchyan",
     "host": ".common.host",
     "hpatchz": ".common.hpatchz",
@@ -353,35 +340,29 @@ _COMMON_MODULES = {
     "constants": ".common.constants",
     "io": ".common.io",
     "game_apk": ".common.game_apk",
-    "notification_render": ".common.notification_render",
-    "process_runner": ".common.process_runner",
-    "config_archive": ".common.config_archive",
-    "logger": ".common.logger",
-    "display": ".common.display",
+    "display": ".unsupported.display",
     "fluxdown_cli": ".common.fluxdown_cli",
     "supervision": ".common.supervision",
-    "community": ".common.community",
-    "secret": ".common.secret",
-    "config_document": ".common.config_document",
-    "LogMonitor": ".common.LogMonitor",
+    "secret": ".unsupported.secret",
+    "LogMonitor": ".common.log.monitor",
     "environment": ".common.environment",
-    "notification_template": ".common.notification_template",
-    "process": ".common.process",
+    "process": ".common.process.manager",
     "errors": ".common.errors",
-    "process_platform": ".common.process_platform",
-    "LogPatternExtractor": ".common.LogPatternExtractor",
+    "process_platform": ".common.process.platform",
     "game_update": ".common.game_update",
-    "vdd": ".common.vdd",
+    "vdd": ".unsupported.vdd",
     "websocket": ".common.websocket",
     "emulator": ".common.emulator",
     "emulator2": ".common.emulator2",
     "OCR": ".common.OCR",
     "i18n": ".common.i18n",
     "expression": ".common.expression",
-    "notification": ".common.notification",
+    "config": ".common.config",
+    "log": ".common.log",
 }
 _PLATFORM_MODULES = {
     "win32": {
+        "file_lock": ".windows.file_lock",
         "update_native": ".windows.update_native",
         "emulator_native": ".windows.emulator_native",
         "registry": ".windows.registry",
@@ -392,10 +373,9 @@ _PLATFORM_MODULES = {
         "audio": ".windows.audio",
         "vdd": ".windows.vdd",
         "process_platform": ".windows.process",
-        "notification": ".windows.notification",
     },
-    "darwin": {},
-    "linux": {},
+    "darwin": {"file_lock": ".posix.file_lock"},
+    "linux": {"file_lock": ".posix.file_lock"},
 }
 
 
@@ -456,6 +436,8 @@ class LazyProxy:
 
 
 __all__ = [
+    "log_box",
+    "file_lock",
     "SIGN_MODE_REGEX",
     "SIGN_MODE_SPLIT",
     "get_game_day_tz",
@@ -495,7 +477,6 @@ __all__ = [
     "is_admin",
     "is_long_path_supported",
     "get_logger",
-    "resource_path",
     "is_supervised",
     "should_preserve_backend",
     "dpapi_encrypt",
@@ -563,9 +544,7 @@ __all__ = [
     "audio",
     "update_files",
     "exception",
-    "config_restore",
     "window",
-    "paths",
     "mirrorchyan",
     "host",
     "hpatchz",
@@ -574,22 +553,14 @@ __all__ = [
     "constants",
     "io",
     "game_apk",
-    "notification_render",
-    "process_runner",
-    "config_archive",
-    "logger",
     "display",
     "fluxdown_cli",
     "supervision",
-    "community",
     "secret",
-    "config_document",
     "environment",
-    "notification_template",
     "process",
     "errors",
     "process_platform",
-    "LogPatternExtractor",
     "game_update",
     "vdd",
     "websocket",
@@ -598,6 +569,7 @@ __all__ = [
     "OCR",
     "i18n",
     "expression",
-    "notification",
     "LazyProxy",
+    "config",
+    "log",
 ]

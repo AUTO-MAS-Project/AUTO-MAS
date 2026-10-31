@@ -76,7 +76,7 @@ import psutil
 from app.core import Config
 from app.core.update import download_file
 from app.models.config import MaaConfig
-from app.services.update_transport import request_mirror_resource
+from app.services.common.update import transport as _service_update_transport
 from app.utils import get_logger
 from app.utils import io as _utils_io
 
@@ -327,7 +327,7 @@ async def _fetch_latest_version(current: str) -> datetime:
     try:
         # HTTPX 只限制单次网络操作；持续回字节也必须在总时限内结束。
         async with asyncio.timeout(_QUERY_TIMEOUT):
-            payload = await request_mirror_resource(
+            payload = await _service_update_transport.request_mirror_resource(
                 "MaaResource",
                 params={"current_version": current, "sp_id": _sp_id()},
                 proxy=Config.proxy,
@@ -352,7 +352,7 @@ async def _mirror_download_url(cdk: str) -> str:
     """不指定增量基线，申请全量包；地址一次性，现查现下。"""
     try:
         async with asyncio.timeout(_QUERY_TIMEOUT):
-            payload = await request_mirror_resource(
+            payload = await _service_update_transport.request_mirror_resource(
                 "MaaResource",
                 params={"cdk": cdk, "sp_id": _sp_id()},
                 proxy=Config.proxy,

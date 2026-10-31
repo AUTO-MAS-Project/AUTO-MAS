@@ -20,7 +20,6 @@
 
 
 import json
-from pathlib import Path
 from typing import Any
 
 from maa.context import Context
@@ -38,10 +37,9 @@ from maa.resource import Resource
 from maa.tasker import Tasker
 from maa.toolkit import AdbDevice, Toolkit
 
+from app.core import Config
 from app.models.emulator import DeviceInfo
-from app.utils import get_logger, resource_path
-
-from .config import Config
+from app.utils import get_logger
 
 logger = get_logger("MaaFW管理")
 
@@ -65,8 +63,8 @@ class _MaaFWManager:
             ),
             encoding="utf-8",
         )
-        Toolkit.init_option(Path.cwd())
-        self.resource.post_bundle(resource_path("MaaFW")).wait()
+        Toolkit.init_option(Config.work_path)
+        self.resource.post_bundle(Config.resource_path / "MaaFW").wait()
 
     @staticmethod
     async def do_job(job: Job | JobWithResult) -> Any:
@@ -215,3 +213,6 @@ class EnableLog(CustomAction):
         # Tasker.set_log_dir("./debug")
         # Tasker.set_stdout_level(LoggingLevelEnum.Error)
         return True
+
+
+__all__ = ["MaaFWManager"]

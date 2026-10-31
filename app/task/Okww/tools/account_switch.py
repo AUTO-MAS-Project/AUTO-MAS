@@ -51,8 +51,8 @@ import numpy as np
 import psutil
 from PIL import Image
 
-from app.tools.error_screenshot import save_error_screenshot
-from app.tools.ocr import Box, OCRItem, ocr_image
+from app.tools import error_screenshot as _tool_error_screenshot
+from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger, is_process_alive
 from app.utils import display as _utils_display
 
@@ -139,7 +139,7 @@ _FRAME_WIDTH = 1920
 _FRAME_HEIGHT = 1080
 
 # 登录表单判定区域（相对 1080p 帧，对齐 ok-ww box_of_screen(0.3, 0.3, 0.7, 0.8)）
-_LOGIN_ROI: Box = (576, 324, 1344, 864)
+_LOGIN_ROI: _tool_ocr.Box = (576, 324, 1344, 864)
 # 仅在登录页出现的文本，用于判定「已处于登录界面 / 登录成功」
 _LOGIN_PAGE_TEXTS = ("其他登录方式",)
 # 已登录主菜单判定文本（登录界面但无输入框：退出/公告/工具/账号/设置 + 登录状态）
@@ -314,7 +314,7 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
 
 
-def _dump_ocr_items(items: list[OCRItem]) -> None:
+def _dump_ocr_items(items: list[_tool_ocr.OCRItem]) -> None:
     """诊断旁路：把一次 OCR 的全部识别文本写入诊断文件（标注调用函数）。"""
     if _DIAGNOSTIC_PATH is None:
         return
@@ -328,15 +328,15 @@ def _dump_ocr_items(items: list[OCRItem]) -> None:
         _write_diagnostic(f"  ({x:4},{y:4} {w:3}x{h:3}) {text}\n")
 
 
-def _read_texts(hwnd: int, roi: Box | None = None) -> list[OCRItem]:
+def _read_texts(hwnd: int, roi: _tool_ocr.Box | None = None) -> list[_tool_ocr.OCRItem]:
     frame = _capture_window(hwnd, activate=False)
-    items = ocr_image(frame, roi)
+    items = _tool_ocr.ocr_image(frame, roi)
     _dump_ocr_items(items)
     return items
 
 
 def _click_box(
-    hwnd: int, box: Box, *, activate: bool = False, after_sleep: float = 0.3
+    hwnd: int, box: _tool_ocr.Box, *, activate: bool = False, after_sleep: float = 0.3
 ) -> None:
     """点击 1080p 坐标空间中的一个文字框中心。"""
     with _utils_display.per_monitor_dpi():
@@ -371,7 +371,9 @@ def _press_escape(hwnd: int, *, after_sleep: float = 1.5) -> None:
 # ── OCR 文本判定辅助 ─────────────────────────────────────────────────────
 
 
-def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
+def _find_text(
+    items: list[_tool_ocr.OCRItem], keywords: tuple[str, ...]
+) -> _tool_ocr.Box | None:
     for text, box in items:
         if any(keyword in text for keyword in keywords):
             return box
@@ -382,9 +384,9 @@ def _wait_ocr_text(
     hwnd: int,
     keywords: tuple[str, ...],
     *,
-    roi: Box | None = None,
+    roi: _tool_ocr.Box | None = None,
     timeout: int,
-) -> Box | None:
+) -> _tool_ocr.Box | None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         box = _find_text(_read_texts(hwnd, roi), keywords)
@@ -403,7 +405,7 @@ def _on_logged_in_menu(hwnd: int) -> bool:
     return _find_text(_read_texts(hwnd), _LOGGED_IN_MENU_TEXTS) is not None
 
 
-def _find_confirm_logout_box(items: list[OCRItem]) -> Box | None:
+def _find_confirm_logout_box(items: list[_tool_ocr.OCRItem]) -> _tool_ocr.Box | None:
     """在 OCR 条目中定位弹窗中的「确认登出」按钮。
 
     只认「登出」，不认裸「退出」——主菜单右侧有「退出」（退出游戏）按钮，
@@ -471,7 +473,7 @@ def _frame_signature(frame: np.ndarray) -> int:
     return hash(small.tobytes())
 
 
-def _find_busy_keyword(items: list[OCRItem]) -> str | None:
+def _find_busy_keyword(items: list[_tool_ocr.OCRItem]) -> str | None:
     """识别游戏内忙碌态（内部下载/编译着色器）的关键词；未识别返回 None。"""
     for text, _ in items:
         for keyword in _IN_GAME_BUSY_TEXTS:
@@ -480,7 +482,7 @@ def _find_busy_keyword(items: list[OCRItem]) -> str | None:
     return None
 
 
-def _find_title_enter_box(items: list[OCRItem]) -> Box | None:
+def _find_title_enter_box(items: list[_tool_ocr.OCRItem]) -> _tool_ocr.Box | None:
     """定位标题界面的「进入游戏」入口（重启后游戏会停在标题界面）。
 
     登录态标题顶部栏为「账号掩码 + 进入游戏」（OCR 可能合并成一条，如
@@ -492,7 +494,7 @@ def _find_title_enter_box(items: list[OCRItem]) -> Box | None:
     return _find_text(items, ("进入游戏",))
 
 
-def _has_restart_prompt(items: list[OCRItem]) -> bool:
+def _has_restart_prompt(items: list[_tool_ocr.OCRItem]) -> bool:
     """重启提示判定：只认高区分度短语「游戏即将重启」，避免误报与漏报。"""
     return _find_text(items, _RESTART_PROMPT_TEXTS) is not None
 
@@ -555,7 +557,7 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
     deadline = time.monotonic() + _IN_GAME_UPDATE_TIMEOUT
     last_progress = time.monotonic()
     last_sig: int | None = None
-    items_full: list[OCRItem] = []
+    items_full: list[_tool_ocr.OCRItem] = []
     on_login_page = False
     busy_seen: tuple[str, float] | None = None
     busy_switches = 0
@@ -568,9 +570,10 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
         sig = _frame_signature(frame)
         if sig != last_sig:
             # 画面有变化才跑 OCR；帧哈希未变时沿用上次识别结果
-            items_full = ocr_image(frame)
+            items_full = _tool_ocr.ocr_image(frame)
             on_login_page = (
-                _find_text(ocr_image(frame, _LOGIN_ROI), _LOGIN_PAGE_TEXTS) is not None
+                _find_text(_tool_ocr.ocr_image(frame, _LOGIN_ROI), _LOGIN_PAGE_TEXTS)
+                is not None
             )
             last_sig = sig
             last_progress = time.monotonic()
@@ -839,7 +842,7 @@ def _select_and_login(hwnd: int, suffix: str, on_log: Callable[[str], None]) -> 
 def _save_error_screenshot(hwnd: int) -> None:
     """保存切换失败时的窗口截图，便于排查 OCR 文本漂移。"""
     try:
-        save_error_screenshot(
+        _tool_error_screenshot.save_error_screenshot(
             _capture_window_image(hwnd, activate=False),
             "okww-account-switch",
             "switch-error",

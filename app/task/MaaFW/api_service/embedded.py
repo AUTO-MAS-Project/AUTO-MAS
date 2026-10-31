@@ -32,7 +32,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from app.core import Config
+from app.core import Config, Notify
 from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.models.schema import (
     MaaFWEmbeddedProjection,
@@ -253,8 +253,8 @@ def _embedded_import_publisher(script_id: str) -> _EmbeddedImportPublish:
     """导入进度走运行环境准备那条 WS 通道（同一个脚本 id）：页面早就订着它，
     两件事不会同时发生，用 ``stage=importing / imported`` 区分。"""
 
+    from app.core import Publisher
     from app.core.ws import protocol as ws_protocol
-    from app.core.ws.publisher import Publisher
 
     loop = asyncio.get_running_loop()
 
@@ -352,7 +352,7 @@ async def _apply_project_flavor(script_id: str) -> None:
         if target_flavor is not None
         else ""
     ) or "通用 MFW 脚本"
-    await Config.push_system_notice(
+    await Notify.push_system_notice(
         level="warning" if lines else "info",
         title=f"脚本「{script_name}」已按项目识别为 {type_name}",
         lines=lines,

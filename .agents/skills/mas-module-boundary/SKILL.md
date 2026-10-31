@@ -5,85 +5,82 @@ description: Define and enforce backend module boundaries for Python services. U
 
 # MAS Module Boundary
 
-## Objective
-Keep backend code maintainable by enforcing clear ownership, dependency direction, and placement rules across modules.
+## 后端源码组织规范
 
-## Layer Model
-1. `models/schema.py`: cross-module external contracts and shared typed payloads; `models/config/`: domain config declarations; `config/`: framework behavior and contract derivation.
-2. `api`: request parsing, response shaping, transport concerns.
-3. `core`: orchestration, lifecycle, task scheduling, state coordination.
-4. `task`: script-domain execution flow.
-5. `services`: system/network/integration capabilities.
-6. `utils`: reusable low-level helpers with no business policy.
+本节是本项目后端的目录归属规则。先按用途确定所属层，再按实际复杂度决定单文件或文件夹；不能因为合并成单文件就移到 `app` 顶层。现存源码排布不构成规范例外，修改归属时同步迁移调用点，不保留兼容层。
 
-## Current Dev Map
-1. API routes: `app/api/*.py`
-2. Runtime orchestration: `app/core/*.py`
-3. Shared/config/runtime models: `app/models/schema.py`, `app/models/config/`, `app/models/task.py`; config framework: `app/config/`
-4. Script domains: `app/task/MAA`, `app/task/general`, `app/task/SRC`
+### app/api：接口层
 
-## Dependency Direction
-1. `api -> core/services/models/config.wire`; endpoint-local models are declared in the owning API module.
-2. `core -> services/task/models/utils`
-3. `task -> core/services/models/utils`
-4. `services -> utils/models`
-5. `models -> none of api/core/services/task`
-6. `models.config -> config/utils/shared models`; `config -> utils` for low-level capabilities. Config framework, models and business code do not import routers; shared contracts are extracted to `schema.py`, not another API module.
+- 负责拆解和校验输入、调用对应方法、组装返回结果及传输层错误。
+- 不承载业务流程、重试引擎、配置文件操作或专项脚本实现。
+- 端点专用输入输出模型放在所属 API 文件顶部；跨模块 HTTP/WebSocket 契约放在 `app/models/schema.py`。配置字段从 `app/models/config/` 经 `app/config/wire.py` 派生，后端契约变化通过生成器更新前端 API。
 
-Disallowed examples:
-1. `models/schema` importing `core` or `services`
-2. `utils` importing `core` or `api`
-3. `services` importing concrete `api` routers
-4. `api` embedding long-running workflow loops directly
+### app/core：核心组件
 
-## Ownership Rules
-1. `app/models/schema.py`: shared transport contracts and payloads only. Endpoint-specific models belong at the top of their owning API module; config fields are declared once in `app/models/config/` and projected through `app/config/wire.py`.
-2. `app/api/*`: accept `*In`, return `*Out`/`OutBase`, validate input, call `core/services`, shape response.
-3. `app/core/*`: own global coordination, lifecycle, config composition, task scheduling, and broadcast.
-4. `app/task/*`: own per-script execution lifecycle (`check/prepare/run/final`) and domain task decisions.
-5. `app/services/*`: wrap external integrations and provide stable capabilities to `core/task`.
-6. `app/utils/*`: generic helpers and low-level adapters only. No domain policy and no orchestrator imports.
-7. Script-config import/restore policy belongs to `core/task` orchestration, not `api` or `schema`: AUTO-MAS manages other scripts by swapping their config files/folders before and after task execution.
-8. Script success/failure heuristics based on log text, log timestamp, and process exit belong to orchestrators and log-monitor helpers, not to schema models or transport handlers.
+- 核心组件以全局单例组织，其余代码通过 `from app.core import Config, Notify, MainTimer` 等入口获取实例并执行操作。实例由所属 core 模块创建并持有，不要求调用方工厂创建、手动绑定或经请求状态转接。
+- 简单组件的实现、私有辅助逻辑和单例声明全部放在 `core` 内的同一个文件，例如 `app/core/timer.py`。不得拆成 `app/<组件>.py` 加 core 单例壳。
+- 复杂组件使用 `app/core/<组件>/`，应用逻辑按职责分文件，`__init__.py` 创建并导出单例，例如 `app/core/ws/`；所需基础模型允许放在 `app/models/`。复杂度只决定组件内部是否拆文件，不自动产生 app 顶层基础包。
+- 是否分层取决于组件的应用扩展逻辑是否复杂到需要独立管理基础能力：有这样的扩展职责，才把真正的基础实现放到 `app/<基础能力>/` 文件夹；core 始终保留真实的应用封装与编排，不能只剩导入类和实例化。没有过多应用扩展的组件，整体留在 core 文件或包内。
+- Config 是基础层与应用层的具体例子：`app/config/` 负责节点、字段、事务、锁和序列化等框架机制；`app/core/config/` 负责配置启动、业务 CRUD、专项处理、应用升级和备份，并在包入口创建 Config。不得把应用封装放进基础层的 application 子包，也不得为了满足“core 有逻辑”添加无意义的继承壳或转发方法。包入口可只负责实例创建，但实际组件逻辑必须在所属 core 包内。
+- 应用主要路径统一由 Config 的 Path 属性提供：工作目录、源码、资源、配置、数据、日志、历史、脚本及插件目录。直接用 `Config.resource_path / "子目录"` 等表达式拼接，不建立 resource_path() 一类转发封装或另一套公共路径模块。资源相对源码定位，用户文件相对运行工作目录定位；utils 等独立能力通过参数接收路径，不反向导入 Config。
+- `app/core/__init__.py` 保留按需加载及缓存和显式静态类型导入，根入口不提前初始化所有组件。全局锁、缓存和生命周期归相应实例；每次任务独立创建的对象保持任务归属，不强改单例。
+- 不为普通无状态函数建立假单例；迁移时同步删除旧路径、旧实例变量、别名及转发函数，并修改源码、动态导入字符串、测试补丁和文档。
 
-## Placement Decision Tree
-1. Endpoint-specific request/response contract -> owning `api` module; cross-module or business-shared contract -> single-file `models/schema.py`; config field/default/constraint -> `models/config/`
-2. Endpoint parsing and response mapping -> `api`
-3. Cross-task orchestration or global runtime state -> `core`
-4. Script-domain run logic -> `task/<domain>`
-5. OS/network/third-party integration -> `services`
-6. Reusable, context-agnostic helper -> `utils`
+### app/models：基础模型
 
-## Cross-Cutting Rules
-1. Avoid circular imports; if seen, extract interface/helper to a lower layer.
-2. Avoid direct config file IO in `api`; use a `core` facade.
-3. Keep business constants close to the owning domain layer.
-4. Shared schema semantics should align with `mas-schema-naming`.
-5. New config modes or raw-config capabilities must be end-to-end complete: model field, edit entry, persistence path, and runtime consumer must all exist before the feature is considered real.
-6. Do not leave placeholder config fields, fake detailed-mode branches, or dead save paths in one layer when no owning runtime path exists.
-7. Do not create standalone `builder`, `loader`, or helper-service modules for a feature that has no second call site and no real ownership boundary.
-8. If a domain can be expressed as one task class plus nearby local helpers, prefer that over creating a mini-subsystem inside the domain folder.
-9. When adding support for a new external script, preserve the product's config-copy plus log-monitor architecture instead of embedding script-specific state machines into shared layers.
-10. Script-specific adaptation is cross-layer by design: add script/user declarations in `app/models/config/script.py`, update the owning registry/public exports in `app/models/config/__init__.py`, derive endpoint config payloads, extend startup orchestration and task dispatch. API modules own endpoint contracts and thin handlers: parse, call the owning `app/task/<Xxx>/` function, shape the response. Directory handling, import, update and group propagation belong in the script domain. The MaaFW engine's `tools/core/` packages stay host-agnostic and its worker subprocess does not import host modules — see `app/task/MaaFW/AGENTS.md`.
-11. For a new script domain, start from the closest existing task folder shape, commonly `app/task/general`, then rename and adapt domain-specific config, run, manual-review, and manager code in place.
-12. Config field declarations, framework lifecycle and business configuration ownership are separate responsibilities. Use [the configuration framework reference](../mas-data-model/references/config-framework.md) for framework contracts; external script file snapshots remain owned by task/restore orchestration.
+- 按用途分文件，某用途源码过长、确有多个实现单元时再改为文件夹。
+- 保存共享数据结构、类型契约、字段约束，不承载业务执行和核心编排，不依赖 API、core、services 或任务实现。
+- 配置领域声明放在 `models/config/`，复用 `app/config/` 的配置框架；框架行为、配置模型和应用级配置操作分别归属，遵循[配置框架参考](../mas-data-model/references/config-framework.md)。
+- 独立 tools 功能的专用模型必须留在该工具内部，不能借共享 models 绕过工具边界。
 
-## Anti-Patterns
-1. Business rules inside schema definitions.
-2. Route handlers containing workflow loops or retry engines.
-3. Utility modules importing orchestrators for convenience.
-4. Duplicated policy checks spread across `api/core/task` without an owner.
-5. A new domain folder that introduces multiple thin modules without actual reuse or boundary pressure.
-6. Route handlers or module-private helpers in `app/api/` that carry script-specific business (directory layout, import/update flows, config migration) instead of calling the owning `app/task/<Xxx>/` module.
+### app/mystery：高级功能占位
 
-## PR Boundary Checklist
-1. Each changed file belongs to the right layer by responsibility.
-2. New imports follow allowed dependency direction.
-3. No new circular dependency is introduced.
-4. Schema changes do not add business execution logic.
-5. API changes keep the thin-controller pattern.
-6. Core/task/services boundaries remain explicit and testable.
-7. New configuration concepts are complete across model, UI, and runtime, or they are not introduced yet.
-8. New helper modules justify their existence with reuse or a real dependency boundary, not just naming neatness.
-9. New script support is complete across config templates, schema, API, task manager dispatch, task folder, and frontend entry points before it is treated as implemented.
-10. Searches for the source template domain, such as `GeneralConfig`/`GeneralUserConfig`, were used to find all required registry and branch updates.
+仅保留高级功能占位用途，不能当作其他代码的收纳目录。
+
+### app/services：服务组件
+
+- 使用跨平台结构。按服务功能分文件，某服务源码过长、确需多文件时再建立对应文件夹。
+- 允许从 core 等其他位置导入并调用已有公开能力；服务不等于只能依赖低层库，不能恢复旧的 `services -> utils/models` 单向限制。
+- 服务自身的业务实现必须集中在该服务的功能文件或文件夹内，内部实现所需的基础模型来自 `app/models/`；不能把服务的业务逻辑散在 core、utils、tools 或 app 顶层后再导回。
+- 调用外部组件的公开能力与拆散本服务内部实现是两回事。路由只调用服务入口，不把 API 处理器当作服务依赖。
+
+### app/utils：工具组件
+
+- 使用跨平台结构。按工具功能分文件，某功能源码过长、确需多文件时再建立对应文件夹。
+- 项目内源码依赖仅允许指向 utils 内部；不得导入 core、models、services、tools、task、api、config 或其他 app 源码，包括类型检查分支和函数内延迟导入。标准库和第三方库不属于此处的项目源码限制。
+- 工具通过参数确认处理对象，通过返回值提供结果，所有层均可直接导入使用；不隐式获取业务单例、读取业务配置或执行调用方的策略。
+- 需要外部模型或业务上下文时，由调用方拆解为基础数据传入，或将该实现归到相应业务层，不能以消除循环导入为名继续保留反向依赖。
+
+### app/tools：独立工具功能
+
+- 使用跨平台结构。这里的“工具”按业务独立性定义，例如社区签到，而非低层工具函数。
+- 每项功能必须有独立文件夹，即使最初只有一个实现文件；这是通用单文件规则的明确例外。
+- 除了被外部调用外，该工具只允许导入本功能文件夹和 `app/utils/` 内的方法。不能依赖其他工具功能、core、services、共享 models、config、api 或任务源码；标准库和第三方库可使用。
+- 专用模型、契约、平台实现与业务逻辑都留在本功能文件夹内。调用方负责读取全局配置、传入所需数据和处理返回结果，包括配置回写、调度及通知；工具不反向调用宿主组件。
+
+### app/tasks：任务逻辑
+
+任务逻辑将在插件化后移除，当前暂不增加额外组织限定。仓库现有目录名为 `app/task/`；这里不附带全目录更名或任务迁移要求。现有任务生命周期、专项黑箱边界和对应 AGENTS.md 继续适用。
+
+### app 下的其他位置
+
+除 Python 包入口等必要文件外，其他位置只用于 core 需要的庞大复杂核心逻辑的基础实现，必须以文件夹组织；不放普通单文件组件、零散业务逻辑或尚未判定归属的帮助模块。
+
+## 跨平台入口与契约
+
+- utils、services、tools 均保持统一公开接口，平台差异由所属功能内部的公共实现、契约和平台实现承担。不得以跨平台为由打破上述用途边界。
+- 沿用现有 utils 的入口选择、按需加载及缓存方式。平台差异能力的静态类型提示直接引用契约；没有平台差异的能力直接引用 common 实现。不能按开发机平台导入具体实现来充当静态契约。
+- 公共能力可直接导入，不要求为其增加懒加载。不要只为简单的路径选择新增无实际复用价值的 platform.py。
+- 工具功能内的契约和模型保留内部；共享 models 并非 tools 的契约存放处。
+- 平台环境目录内仍按功能归组：同一组件的多文件实现进入所属功能包，不再为内部文件维护根包扁平别名。平台差异能力继续走统一入口。
+- `tests/platform/typing_contracts.py` 用实际实现校验契约；使用 `mypy-platform.ini` 分别检查 win32、linux、darwin。分发和类型检查不代表对应平台已完成原生能力移植。
+
+## 归属与迁移检查
+
+1. 先判断接口、核心组件、基础模型、服务、通用工具或独立工具，再决定文件/文件夹形式；“文件很长”不自动意味着基础框架。
+2. 按实际方法检查每个核心组件：core 留下哪些应用封装和编排，基础层提供哪些独立机制；只有这种分工确实成立且扩展复杂时才分层，不能机械地把所有实现搬到 app 再留下单例壳。
+3. 检查普通导入、TYPE_CHECKING、函数内导入和动态模块路径；延迟导入不能绕过边界限制。
+4. 保持配置事务、锁、任务取消、资源收尾和通知去重语义，不添加新的初始化绑定层。
+5. API 保持薄入口，配置字段和外部契约保持唯一来源；新配置能力必须有完整的声明、编辑、持久化和运行时消费路径。
+6. 专项适配保持配置切换与日志观察架构；目录、导入、更新等专项业务归对应 task 域，不散在 API。MaaFW worker 的宿主隔离见 `app/task/MaaFW/AGENTS.md`。
+7. 历史排布与本规范冲突时，以本规范判断归属；按实际授权范围迁移，不将历史状态写成永久例外，也不借写规范自动发起无关全仓重构。

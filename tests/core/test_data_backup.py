@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core import data_backup
+from app.core.config import backup as data_backup
 from app.models.schema import HistoryBackupSnapshot
 from app.utils import io as _utils_io
 

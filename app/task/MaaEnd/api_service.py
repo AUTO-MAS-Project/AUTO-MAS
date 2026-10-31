@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from app.config import ConfigCollection, ConfigEntry
 from app.models.config import MaaEndConfig as RuntimeMaaEndConfig
-from app.services.endfield_launcher import discover_launcher_exe, is_launcher_exe
+from app.services import endfield_launcher as _service_endfield_launcher
 from app.utils import BASE_INDEPENDENT, BASE_SHARED, get_logger, normalize_base_source
 from app.utils import io as _utils_io
 
@@ -121,7 +121,9 @@ class MaaEndConfigService:
     @staticmethod
     def validate_update(data: dict[str, Any]) -> None:
         launcher_path = (data.get("Game") or {}).get("LauncherPath")
-        if launcher_path and not is_launcher_exe(Path(launcher_path)):
+        if launcher_path and not _service_endfield_launcher.is_launcher_exe(
+            Path(launcher_path)
+        ):
             raise ValueError(
                 "终末地启动器路径无效，请选择鹰角官方启动器 Launcher.exe 或 Games.exe"
             )
@@ -179,7 +181,7 @@ class MaaEndConfigService:
         client_exe = Path(str(script.Game.Path or "").strip())
         if not client_exe.is_file():
             raise ValueError("请先选择终末地客户端 Endfield.exe，再自动识别启动器")
-        launcher_path = discover_launcher_exe(client_exe)
+        launcher_path = _service_endfield_launcher.discover_launcher_exe(client_exe)
         if launcher_path is None:
             raise ValueError(
                 "未能从游戏客户端路径识别到终末地官方启动器, "

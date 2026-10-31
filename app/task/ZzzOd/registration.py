@@ -20,13 +20,13 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING
 
-from app.core.script_config import ScriptConfigHandler
-from app.core.script_registration import ManagerBuildContext, ScriptRegistration
 from app.models.config import ZzzOdConfig
+from app.models.script_contracts import ScriptConfigHandler
+from app.task.registration import ManagerBuildContext, ScriptRegistration
 
 if TYPE_CHECKING:
     from app.models.task import ScriptItem, TaskExecuteBase
-    from app.utils.common.config_restore import ConfigRestorePool
+    from app.utils.common.config.restore import ConfigRestorePool
 
     from .recovery import ZzzOdRecovery
 

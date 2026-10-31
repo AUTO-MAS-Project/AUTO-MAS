@@ -12,7 +12,8 @@ from typing import Literal
 
 from pydantic import JsonValue
 
-from app.utils import get_logger, resource_path
+from app.core import Config
+from app.utils import get_logger
 
 logger = get_logger("国际化资源")
 
@@ -64,7 +65,8 @@ class I18nManager:
         # TODO(插件迁移)：安装、启停、升级、卸载也须使快照失效；
         # 完成一致快照后复用此通知，不能只等待主程序资源文件变化。
         if changed:
-            from app.core.ws import Publisher, protocol
+            from app.core import Publisher
+            from app.core.ws import protocol
 
             try:
                 await Publisher.send(
@@ -140,6 +142,6 @@ class I18nManager:
         return messages
 
 
-i18n = I18nManager(resource_path("i18n"))
+I18n = I18nManager(Config.resource_path / "i18n")
 
-__all__ = ["AppLocale", "I18nManager", "i18n"]
+__all__ = ["I18n"]

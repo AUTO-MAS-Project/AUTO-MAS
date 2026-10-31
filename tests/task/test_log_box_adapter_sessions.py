@@ -1,110 +1,75 @@
-"""日志专项迁移对照：保留原有解析、归并和报告的可观察结果。"""
+"""调用方迁移后保留原有日志节点、开关与重试归属。"""
 
 import asyncio
+import importlib
 from types import SimpleNamespace
 
 import pytest
 
-from app.log_box import LogCollect, log_box
-from app.log_box.report import build_user_result_text
-from app.task.BAAH.tools.push_log import BAAH_LOG_SPEC, BAAH_PUSH_RULES, baah_resolve
-from app.task.MaaEnd.push_log import MAAEND_LOG_SPEC, MAAEND_PUSH_RULES, maaend_resolve
-from app.task.Okww.push_log import OKWW_PUSH_RULES, make_okww_log_spec, okww_resolve
-from app.utils.common.i18n import PoTranslator
-
 
 @pytest.mark.parametrize("mode", ["逐条", "汇总", "关闭"])
-@pytest.mark.parametrize("adapter", ["okww", "baah", "maaend"])
-def test_adapter_report_matches_legacy(tmp_path, monkeypatch, mode, adapter):
-    translator = None
-    if adapter == "okww":
-        import app.task.Okww.push_log as okww
-
-        native = tmp_path / okww.OKWW_REL_I18N_PO
+@pytest.mark.parametrize("adapter", ["Okww", "BAAH", "MaaEnd"])
+def test_adapter_keeps_frozen_node_outputs(tmp_path, monkeypatch, mode, adapter):
+    module = importlib.import_module(f"app.task.{adapter}.AutoProxy")
+    proxy = module.AutoProxyTask.__new__(module.AutoProxyTask)
+    user = SimpleNamespace(push_log=[], push_log_mode=mode)
+    proxy.cur_user_item = user
+    if adapter == "Okww":
+        proxy.script_root_path = tmp_path
+        native = tmp_path / module._push_log.OKWW_REL_I18N_PO
         native.parent.mkdir(parents=True)
         native.write_text('msgid "Mail"\nmsgstr "领取邮件"\n', encoding="utf-8")
         supplement = tmp_path / "extra.po"
-        supplement.write_text('msgid "Mail"\nmsgstr "领取邮件"\n', encoding="utf-8")
-        monkeypatch.setattr(okww, "_okww_supplement_po", lambda: supplement)
-        translator = PoTranslator().load([native]).load_supplement([supplement])
-        spec, rules, resolve = (
-            make_okww_log_spec(tmp_path),
-            OKWW_PUSH_RULES,
-            okww_resolve,
-        )
-        stages = ["Mail\n先约电台\n切换账号失败\n乐园任务完成\n"]
-    elif adapter == "baah":
-        spec, rules, resolve = BAAH_LOG_SPEC, BAAH_PUSH_RULES, baah_resolve
-        stages = [
-            "执行任务InCafe\n任务InCafe执行结束\n"
-            "任务Daily执行前条件不成立或超时\n执行任务Mail\n运行出错: Mail超时\n"
+        supplement.write_text("", encoding="utf-8")
+        monkeypatch.setattr(module._push_log, "_okww_supplement_po", lambda: supplement)
+        text = "Mail\n先约电台\n切换账号失败\n乐园任务完成\n"
+        expected = [
+            "✅ 成功: 邮件",
+            "✅ 成功: 先约电台",
+            "❌ 失败: 切换账号",
+            "✅ 成功: 每周乐园",
         ]
+    elif adapter == "BAAH":
+        text = "执行任务InCafe\n任务InCafe执行结束\n任务Daily执行前条件不成立或超时\n执行任务Mail\n运行出错: Mail超时\n"
+        expected = ["✅ 成功: InCafe", "⏭ 跳过: Daily", "❌ 失败: Mail"]
     else:
-        spec, rules, resolve = MAAEND_LOG_SPEC, MAAEND_PUSH_RULES, maaend_resolve
-        stages = [
-            "[2026-10-29 07:02:00] 任务开始: 邮件\n"
-            "[2026-10-29 07:03:00] 任务完成: 邮件\n",
-            "[2026-10-29 07:04:00] 任务开始: 每日任务\n",
-        ]
-    paths = []
-    for index, text in enumerate(stages):
-        path = tmp_path / f"stage-{index}.log"
+        text = "[2026-10-29 07:02:00] 任务开始: 邮件\n[2026-10-29 07:03:00] 任务完成: 邮件\n[2026-10-29 07:04:00] 任务开始: 每日任务\n"
+        expected = ["✅ 成功: 邮件", "❌ 失败: 每日任务"]
+    path = tmp_path / "run.log"
+    if adapter == "MaaEnd":
+        proxy.push_log_enabled = mode != "关闭"
         path.write_text(text, encoding="utf-8")
-        paths.append(path)
-    previous, current = [
-        SimpleNamespace(
-            name="用户",
-            result="代理完成",
-            push_log=[],
-            push_log_mode=mode,
-            status="完成",
+        asyncio.run(proxy._append_stage_log_details([path]))
+    else:
+        path.write_text("历史内容\n", encoding="utf-8")
+        proxy._prepare_log_details(
+            path, mode=mode, enabled=mode != "关闭", rotated_name=None
         )
-        for _ in range(2)
-    ]
-    enabled = mode != "关闭"
-    legacy = None
-    if enabled:
-        legacy = LogCollect(
-            paths,
-            sink=lambda *entry: previous.push_log.append(entry),
-            start_from_end=False,
-        )
-        legacy.open(translator.translate if translator is not None else None)
-        for rule in rules:
-            legacy.collect(*rule)
-    session = log_box.get_user_session(
-        spec, user=current, mode=mode, paths=paths, start_from_end=False
-    )
-    monkeypatch.setattr("app.log_box.pipeline.time.time", lambda: 1793228520.0)
-    if legacy is not None:
-        legacy.close(resolve)
-    asyncio.run(session.close())
-    assert current.push_log == previous.push_log
-    if enabled:
-        assert current.push_log
-    assert build_user_result_text([current], True) == build_user_result_text(
-        [previous], True
-    )
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(text)
+        asyncio.run(proxy._close_log_details())
+    assert [entry[1] for entry in user.push_log] == (expected if mode != "关闭" else [])
 
 
 def test_baah_retry_keeps_only_latest_run_and_closes_once(tmp_path):
     from app.task.BAAH.AutoProxy import AutoProxyTask
 
-    user = SimpleNamespace(name="用户", push_log=[], push_log_mode="汇总")
-    proxy = SimpleNamespace(cur_user_item=user, push_log_enabled=True, log_collect=None)
+    proxy = AutoProxyTask.__new__(AutoProxyTask)
+    user = SimpleNamespace(push_log=[], push_log_mode="汇总")
+    proxy.cur_user_item = user
+    proxy.push_log_enabled = True
 
-    async def scenario():
+    async def run():
         for task in ("InCafe", "Daily"):
             path = tmp_path / f"{task}.log"
             path.write_text("启动信息\n", encoding="utf-8")
             proxy.script_log_path = path
-            AutoProxyTask._start_log_collect(proxy)
+            proxy._start_log_collect()
             with path.open("a", encoding="utf-8") as stream:
                 stream.write(f"执行任务{task}\n任务{task}执行结束\n")
-            await AutoProxyTask._close_log_collect(proxy)
-            await AutoProxyTask._close_log_collect(proxy)
-        return user.push_log
+            await proxy._close_log_collect()
+            await proxy._close_log_collect()
 
-    entries = asyncio.run(scenario())
-    assert len(entries) == 1
-    assert entries[0][1] == "✅ 成功: Daily"
+    asyncio.run(run())
+    assert len(user.push_log) == 1
+    assert user.push_log[0][1] == "✅ 成功: Daily"

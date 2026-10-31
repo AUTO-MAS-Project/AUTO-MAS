@@ -10,7 +10,9 @@
 - `tests/services/`：服务层行为
 - `tests/platform/`：平台识别、能力声明与不支持能力错误
 - `tests/task/`：任务调度和专项适配的最小回归测试
-- `tests/tools/`：通用工具和外部平台交互
+- `tests/utils/`：无应用上下文的通用工具、文件处理、日志文本内核及结果值
+- `tests/tools/`：独立业务工具和外部平台交互
+- `tests/scripts/`：仓库维护脚本，例如版本与更新日志生成
 - `tests/` 根目录：跨模块、启动环境或无法归入单一边界的兼容测试
 - `scripts/`：需要手动运行的独立诊断/冒烟脚本，不作为 pytest 入口
 
@@ -41,6 +43,12 @@ M9A 等 MFW 特调和直接导入的各个 `interface.json` 项目都跑在这�
 - 只有在被测行为已移除、测试已被更强覆盖替代、测试重复，或无法以合理成本维持可靠性时才删除；PR 必须说明原因和替代覆盖。Flaky 测试需关联问题、负责人和复查日期，临时隔离后应修复、替换或删除，不得靠自动重试掩盖失败或无限期隔离。
 - pytest 位于 `pyproject.toml` 的 `dev` 依赖组；本地缺失时执行 `uv sync --locked --group dev`。
 - 使用锁定环境运行测试：`uv run --no-sync python -m pytest <路径> -q`。修改专项适配时先运行对应的最小测试文件；完整回归命令为 `uv run --no-sync python -m pytest tests -q`，PR CI 在 Windows 与 Ubuntu 执行完整套件。
+
+## 测试隔离
+
+- 业务调用 core 的全局实例；单元测试可直接导入所属模块的实现类。补丁指向当前调用方查找的符号，不使用已删除的扁平路径。
+- `tests/config_support.py` 的 `activate_config` 激活真实配置节点；自动夹具 `isolated_config_roots` 隔离配置持久化根。
+- 依赖应用目录的测试显式使用 `isolated_app_paths`，将 Config 的工作、配置、数据等路径指向 tmp_path，源码与资源目录保留原位置；仅 chdir 不会改变已创建的 Config 路径。
 
 示例：
 

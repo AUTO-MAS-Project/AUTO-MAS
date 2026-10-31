@@ -139,7 +139,7 @@ test.describe('@my-feature', () => {
 
 要断言某个设置或脚本配置项时，用例不能依赖开发者检出里的现状：默认隔离下的数据根是空的。按下面的顺序做。
 
-1. **找到配置键。** 用 `--in-place` 跑一条只做界面操作的临时用例，改完控件后 `git diff config/`；或从组件字段反查后端字段（例如 [`StartupWindowSettings.vue`](../../frontend/src/views/setting/components/StartupWindowSettings.vue) 的 `UI.IfShowTray` 落到 `app/models/schema.py` 与 [`config.py`](../../app/core/config.py)）；运行根里的 `debug/app.log` 也会记下读取到的配置。
+1. **找到配置键。** 用 `--in-place` 跑一条只做界面操作的临时用例，改完控件后 `git diff config/`；或从组件字段反查后端字段（例如 [`StartupWindowSettings.vue`](../../frontend/src/views/setting/components/StartupWindowSettings.vue) 的 `UI.IfShowTray` 落到 `app/models/schema.py` 与 [`manager.py`](../../app/core/config/manager.py)）；运行根里的 `debug/app.log` 也会记下读取到的配置。
 2. **选种子方式。** 优先级从高到低：用例里用 UI 或 API 自己造出来（默认隔离时这是唯一可靠的办法）；在 `run.mjs` 启动后端**之前**写配置文件；提交一份最小 profile 给用例复用。真实模式另有 `AUTO_MAS_E2E_TEMPLATE_ROOT` 指向的配置种子源。
 3. **确认测试真的写进去了。** `AUTO_MAS_E2E_KEEP_ROOT=1` 跑一遍，把运行根与种子状态对比，把观察到的变化写进断言和清理步骤，不要凭记忆。
 
@@ -243,8 +243,8 @@ Playwright 资料：[标签和注解](https://playwright.dev/docs/test-annotatio
 
 - 页面入口：[`frontend/src/router/index.ts`](../../frontend/src/router/index.ts) 的 `/plans`、`/queue`、`/scheduler`、`/history`、`/settings`、`/emulators`、`/gamesign`；首页快捷启动在 [`useHomeQuickStart.ts`](../../frontend/src/views/home/useHomeQuickStart.ts)。
 - 队列配置：[`queue/index.vue`](../../frontend/src/views/queue/index.vue)、[`QueueItemManager.vue`](../../frontend/src/views/queue/components/QueueItemManager.vue)、[`TimeSetManager.vue`](../../frontend/src/views/queue/components/TimeSetManager.vue)；后端 CRUD 在 [`app/api/queue.py`](../../app/api/queue.py)。
-- 调度和运行态：[`useSchedulerLogic.ts`](../../frontend/src/views/scheduler/useSchedulerLogic.ts)、[`useTaskRuntimeState.ts`](../../frontend/src/composables/useTaskRuntimeState.ts)、[`app/api/dispatch.py`](../../app/api/dispatch.py)；循环执行、预览和重试在 [`app/core/task_manager.py`](../../app/core/task_manager.py)。
-- 模拟器与账号：[`app/api/emulator.py`](../../app/api/emulator.py)、[`Emulator.vue`](../../frontend/src/views/Emulator.vue)、[`app/api/scripts.py`](../../app/api/scripts.py)、[`TabGameSign.vue`](../../frontend/src/views/gamesign/TabGameSign.vue)。
+- 调度和运行态：[`useSchedulerLogic.ts`](../../frontend/src/views/scheduler/useSchedulerLogic.ts)、[`useTaskRuntimeState.ts`](../../frontend/src/composables/useTaskRuntimeState.ts)、[`app/api/dispatch.py`](../../app/api/dispatch.py)；循环执行、预览和重试在 [`app/core/task_manager/manager.py`](../../app/core/task_manager/manager.py)。
+- 模拟器与账号：[`app/api/emulator/config.py`](../../app/api/emulator/config.py)、[`Emulator.vue`](../../frontend/src/views/Emulator.vue)、[`app/api/scripts/`](../../app/api/scripts/)、[`TabGameSign.vue`](../../frontend/src/views/gamesign/TabGameSign.vue)。
 - 历史与设置：[`useHistoryLogic.ts`](../../frontend/src/views/history/useHistoryLogic.ts)、[`app/api/history.py`](../../app/api/history.py)、[`setting/index.vue`](../../frontend/src/views/setting/index.vue)、[`app/api/setting.py`](../../app/api/setting.py)。
 - 代表性延迟：日志合并 200 ms、停止完成宽限 1.5 s、快照失败重试 3 s；循环预览每 5 s 刷新，执行空闲等待与重试分别为 60 s / 30 s。相关模块见调度和运行态链路。
 

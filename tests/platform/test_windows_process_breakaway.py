@@ -173,7 +173,7 @@ def test_open_process_does_not_retry_on_unrelated_os_error(
 
 
 def test_run_process_default_stays_in_job(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.utils import process_runner as _utils_process_runner
+    from app.utils.common.process import runner as _utils_process_runner
     from app.utils.windows.process import WindowsProcessPlatform
 
     calls = _install_fake_spawn(monkeypatch)
@@ -189,7 +189,7 @@ def test_run_process_default_stays_in_job(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_run_process_breakaway_adds_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.utils import process_runner as _utils_process_runner
+    from app.utils.common.process import runner as _utils_process_runner
     from app.utils.windows.process import WindowsProcessPlatform
 
     calls = _install_fake_spawn(monkeypatch)
@@ -209,7 +209,7 @@ def test_run_process_breakaway_adds_flag(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_run_process_retries_without_breakaway_on_access_denied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.utils import process_runner as _utils_process_runner
+    from app.utils.common.process import runner as _utils_process_runner
 
     breakaway = subprocess.CREATE_BREAKAWAY_FROM_JOB
     calls = _install_fake_spawn(monkeypatch, deny_first=True)

@@ -36,7 +36,7 @@ mxu-MaaEnd.json 的任务开关与选项，不在 ConfigFile 中——侧车让�
 表单（对齐 ok-ww 覆盖层模式）。MAS 配置目录 owner 由用户当前的
 ``Info.Base`` 决定（shared=Default 共享、independent=独立目录、native=无 MAS 配置），
 解析逻辑见 ``restore_service``。时间戳快照、指纹去重、保留清理与整目录
-恢复的通用逻辑由公共模块 ``app.utils.config_archive`` 提供（默认每池保留
+恢复的通用逻辑由公共模块 ``app.utils.common.config.archive`` 提供（默认每池保留
 10 份），本模块只保留 MaaEnd 特有的 owner 目录布局、覆盖层侧车、恢复
 语义（恢复前强制归档当前）与归档目录布局。
 """
@@ -53,7 +53,7 @@ from app.utils import (
     MAAEND_TASKS,
     get_logger,
 )
-from app.utils import config_archive as _utils_config_archive
+from app.utils.common.config import archive as _utils_config_archive
 
 read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 

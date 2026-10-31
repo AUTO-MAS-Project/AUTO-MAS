@@ -53,13 +53,13 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from app.core import Config
 from app.utils import emulator2 as _utils_emulator2
 from app.utils import get_logger
-from app.utils import paths as _utils_paths
 
 logger = get_logger("魔改 AVD MAA 截图")
 
-SHIM_SOURCE = _utils_paths.SOURCE_ROOT / "res" / "avdshim" / "external_renderer_ipc.dll"
+SHIM_SOURCE = Config.resource_path / "avdshim" / "external_renderer_ipc.dll"
 
 #: MAA 截图用的假 MuMu 目录（``<根>\mumu-shim\shell\sdk\external_renderer_ipc.dll``）。
 MUMU_SHIM_DIR = "mumu-shim"

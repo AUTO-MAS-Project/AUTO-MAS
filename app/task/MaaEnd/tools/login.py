@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING
 import cv2
 import numpy as np
 
+from app.core import Config
 from app.utils import IS_WINDOWS
 from app.utils import display as _utils_display
 
@@ -56,13 +57,13 @@ from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
 
 from app.models.emulator import DeviceInfo
-from app.tools.error_screenshot import save_error_screenshot
-from app.tools.ocr import ocr_image
-from app.utils import get_logger, resource_path
+from app.tools import error_screenshot as _tool_error_screenshot
+from app.tools import ocr as _tool_ocr
+from app.utils import get_logger
 
 logger = get_logger("终末地登录")
 
-_IMAGE_ROOT = resource_path("MaaFW", "image", "EndFieldPC")
+_IMAGE_ROOT = Config.resource_path / "MaaFW" / "image" / "EndFieldPC"
 _TEMPLATES = {
     "logout": (
         _IMAGE_ROOT / "登出-1080p.png",
@@ -209,7 +210,7 @@ def _save_error_screenshot(
         if not win32gui.IsWindow(hwnd) or win32gui.IsIconic(hwnd):
             raise RuntimeError("终末地主窗口无效或已最小化，无法保存错误截图")
         # 诊断图保留实际客户区，不受登录识别的画面比例限制。
-        screenshot_path = save_error_screenshot(
+        screenshot_path = _tool_error_screenshot.save_error_screenshot(
             _capture_window_image(hwnd, activate=False, check_ratio=False),
             "maaend-login",
             "login-error",
@@ -427,7 +428,7 @@ async def _open_login_form(
             if not win32gui.IsWindow(hwnd):
                 continue
             raise
-        items = await asyncio.to_thread(ocr_image, frame)
+        items = await asyncio.to_thread(_tool_ocr.ocr_image, frame)
         state, progress, confirm = _startup_state(items)
         progress_changed = bool(progress and progress != last_progress)
         if state or progress:
