@@ -165,7 +165,7 @@ export class RepositoryService {
     if (!fs.existsSync(gitDir)) {
       logger.info('repo 文件夹存在但不是 Git 仓库')
       // 清理无效的 repo 文件夹
-      fs.rmSync(this.repoPath, { recursive: true, force: true })
+      await this.removeDirectory(this.repoPath)
       return { exists: false, isGitRepo: false, isHealthy: false }
     }
 
@@ -180,14 +180,14 @@ export class RepositoryService {
       } else {
         logger.warn('本地仓库存在问题，需要清理')
         // 清理有问题的仓库
-        fs.rmSync(this.repoPath, { recursive: true, force: true })
+        await this.removeDirectory(this.repoPath)
         return { exists: false, isGitRepo: false, isHealthy: false }
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`检查仓库健康状态失败: ${errorMsg}`)
       // 清理有问题的仓库
-      fs.rmSync(this.repoPath, { recursive: true, force: true })
+      await this.removeDirectory(this.repoPath)
       return { exists: false, isGitRepo: false, isHealthy: false }
     }
   }
@@ -530,13 +530,13 @@ export class RepositoryService {
   /**
    * 克隆仓库
    */
-  private cloneRepository(repoUrl: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      // 确保 repo 目录不存在
-      if (fs.existsSync(this.repoPath)) {
-        fs.rmSync(this.repoPath, { recursive: true, force: true })
-      }
+  private async cloneRepository(repoUrl: string): Promise<void> {
+    // 确保 repo 目录不存在
+    if (fs.existsSync(this.repoPath)) {
+      await this.removeDirectory(this.repoPath)
+    }
 
+    return new Promise((resolve, reject) => {
       const proc = spawn(
         this.gitExe,
         [
@@ -668,7 +668,7 @@ export class RepositoryService {
         // 删除目标文件/目录
         if (fs.existsSync(dstPath)) {
           if (fs.statSync(dstPath).isDirectory()) {
-            fs.rmSync(dstPath, { recursive: true, force: true })
+            await this.removeDirectory(dstPath)
           } else {
             fs.unlinkSync(dstPath)
           }
@@ -688,6 +688,17 @@ export class RepositoryService {
         throw error
       }
     }
+  }
+
+  /** 删除旧仓库目录，兼容 Windows 上的只读 Git 对象。 */
+  private removeDirectory(directory: string): Promise<void> {
+    // Electron 的同步删除在 Windows 上可能因只读属性报 EPERM；异步实现会处理该属性。
+    return fs.promises.rm(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 100,
+    })
   }
 
   /**
