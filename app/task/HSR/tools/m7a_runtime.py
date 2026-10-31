@@ -588,7 +588,20 @@ class M7ARunner:
         """执行一条 M7A 命令。"""
 
         async with self._command_lock:
-            return await self._run_task(task_name, timeout)
+            started_at = datetime.now(timezone.utc)
+            try:
+                return await self._run_task(task_name, timeout)
+            except Exception as error:
+                # 最终清理也可能失败；仍返回失败结果，取消继续原样传播。
+                logger.opt(exception=True).warning(f"三月七清理失败：{error}")
+                return M7ACommandResult(
+                    task_name=task_name,
+                    exe_path=str(self._m7a_exe),
+                    success=False,
+                    error=str(error),
+                    started_at=started_at,
+                    finished_at=datetime.now(timezone.utc),
+                )
 
     async def _run_task(self, task_name: str, timeout: int) -> M7ACommandResult:
         started_at = datetime.now(timezone.utc)

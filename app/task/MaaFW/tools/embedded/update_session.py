@@ -18,7 +18,7 @@
 
 """一次「对触发脚本所在组做一次更新类操作」的公共参数与入口（宿主侧）。
 
-``view_update.run_view_update`` 有四个调用方：运行前 / 运行后自动更新（``embedded_manager``）、
+``view_update.run_view_update`` 有四个调用方：运行前自动更新（``embedded_manager``）、
 手动 ``/maafw/update``（``api_service/update.py``）、旧投影规则载荷的补齐（``view_heal``）、
 运行时发行包核对（``view_release_check``）。它们各自要组装的东西——触发脚本、组（渠道）与
 同组候选、谁持视图预约、等谱系锁的上限、日志出口、停止令牌、代理、进度出口、预检——都收在
@@ -40,6 +40,7 @@ from typing import Any
 
 import httpx
 
+from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.task.MaaFW.tools.core.project_update.progress import UpdateProgressEvent
 from app.task.MaaFW.tools.embedded import env_confirm, view_update
 from app.task.MaaFW.tools.embedded.embedded_project import GroupMember
@@ -197,7 +198,9 @@ class UpdateSession:
         锁超时 / 停止是带 ``project_lock_busy`` / ``cancelled`` 的 ``MaaFWProjectUpdateError``。
         """
 
-        return await view_update.run_view_update(
+        return await run_script_update(
+            ScriptUpdateRequest(self.script_id, "MaaFW"),
+            view_update.run_view_update,
             self.script_id,
             channel=self.channel,
             members=self.members,

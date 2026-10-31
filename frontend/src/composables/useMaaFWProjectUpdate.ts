@@ -20,7 +20,7 @@ const isMaaFWAutoUpdateMode = (value: unknown): value is MaaFWAutoUpdateMode =>
 /**
  * 从后端返回的 Update 段解析自动更新时机。
  *
- * `AutoUpdateMode` 合法时直接采用，否则回到运行前（与后端默认一致）。旧版的
+ * 旧版运行后选项映射为运行前，否则保留合法值（与后端一致）。旧版的
  * `IfAutoUpdate` 开关由后端加载配置时迁成 `AutoUpdateMode`，前端读不到它。
  *
  * 只做读取映射，不回写。
@@ -28,6 +28,7 @@ const isMaaFWAutoUpdateMode = (value: unknown): value is MaaFWAutoUpdateMode =>
 export const resolveAutoUpdateMode = (
   update: { AutoUpdateMode?: unknown } | null | undefined
 ): MaaFWAutoUpdateMode => {
+  if (update?.AutoUpdateMode === 'AfterRun') return 'BeforeRun'
   if (isMaaFWAutoUpdateMode(update?.AutoUpdateMode)) return update.AutoUpdateMode
   return 'BeforeRun'
 }
