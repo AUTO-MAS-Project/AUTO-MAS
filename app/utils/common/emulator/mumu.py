@@ -429,8 +429,14 @@ class MumuManager(DeviceBase):
         # 参考命令 MuMuManager.exe control -v 2 launch
 
         if result.returncode != 0:
-            # -503 这类失败 MuMu 自己会在 info 里给出状态，交给子类拼进报错
+            # -503 这类失败 MuMu 自己会在 info 里给出状态，交给子类拼进报错；
+            # 同时显式落一条 error：界面入口（emulator_manager 的 except）以前只发
+            # WS 气泡不写日志，只靠 raise 时失败在 app.log 里是空白的。
             diagnosis = await self._describe_launch_failure(idx)
+            logger.error(
+                f"MuMu 启动命令失败: {idx} - {package_name} - "
+                f"{result.failure_detail()}{diagnosis}"
+            )
             raise RuntimeError(f"命令执行失败: {result.failure_detail()}{diagnosis}")
 
         logger.info(
