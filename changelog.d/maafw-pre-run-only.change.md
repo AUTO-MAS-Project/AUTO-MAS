@@ -1,3 +1,3 @@
 project: mfw
-breaking: true
-项目更新统一改在任务前执行，不再等本轮跑完
+beta-only: true
+项目更新统一在任务前执行，旧的运行后选项按运行前执行
