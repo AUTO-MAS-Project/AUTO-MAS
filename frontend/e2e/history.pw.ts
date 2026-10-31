@@ -1,41 +1,110 @@
+import dayjs from 'dayjs'
 import { expect, test } from './fixtures'
 
 test.describe('@history search and view', () => {
-  test('navigates to history page and shows empty state', async ({ app, page }) => {
+  test.skip(
+    process.env.AUTO_MAS_E2E_IN_PLACE === '1' || process.env.AUTO_MAS_E2E_REAL === '1',
+    '已知历史种子仅供普通隔离模式'
+  )
+  test('finds known runs by date and shows the selected status and log', async ({ app, page }) => {
+    const responseFor = (action: 'search' | 'detail') =>
+      page.waitForResponse(
+        response =>
+          response.url().endsWith(`/api/history/${action}`) &&
+          response.request().method() === 'POST'
+      )
+    const preset = async (name: string) => {
+      const searched = responseFor('search')
+      await page.locator('.time-buttons').getByRole('button', { name, exact: true }).click()
+      expect((await (await searched).json()).code).toBe(200)
+    }
+    const panels = page.locator('.date-panel')
+    const selectAccount = async (index: number, name: string) => {
+      const panel = panels.nth(index)
+      const account = panel.locator('.user-item').filter({ hasText: name })
+      if (!(await account.isVisible())) await panel.locator('.ant-collapse-header').click()
+      await account.click()
+    }
+    const log = page.locator('.log-modal-content')
+    const openLog = async (marker: string, status: string) => {
+      const detail = responseFor('detail')
+      await page.locator('.record-item').filter({ hasText: marker }).click()
+      expect((await (await detail).json()).code).toBe(200)
+      await expect(log.locator('.header-info .ant-tag')).toHaveText(status)
+      await expect(log.locator('.view-lines')).toContainText(marker)
+      for (const other of ['E2E_TODAY_SUCCESS', 'E2E_YESTERDAY_FAILURE', 'E2E_OLDER_SUCCESS']) {
+        if (other !== marker) await expect(log.locator('.view-lines')).not.toContainText(other)
+      }
+    }
+    const closeLog = async () => {
+      await page.locator('.ant-modal:visible .ant-modal-close').click()
+      await expect(log).toBeHidden()
+    }
+
+    const loaded = responseFor('search')
     await app.goto('/history')
-    // 等待懒加载路由真正渲染出页面根节点，再断言内容（frontend/src/views/history/index.vue:2）
-    await expect(page.locator('.history-page')).toBeVisible()
+    expect((await (await loaded).json()).code).toBe(200)
+    await preset('Today')
+    await expect(panels).toHaveCount(1)
+    await selectAccount(0, 'History account A')
+    await expect(page.locator('.record-item')).toHaveCount(1)
+    await expect(page.locator('.record-item')).toContainText('E2E_TODAY_SUCCESS')
+    await openLog('E2E_TODAY_SUCCESS', 'Done')
+    await closeLog()
 
-    // 页面空态或记录列表必须真实渲染（index.vue:32、HistoryRecordList.vue:2）
-    await expect(page.locator('.empty-state, .record-list-panel').first()).toBeVisible()
+    await preset('Last week')
+    await expect(panels).toHaveCount(2)
+    await selectAccount(0, 'History account A')
+    await expect(page.locator('.record-item')).toHaveCount(1)
+    await expect(page.locator('.record-item')).toContainText('E2E_TODAY_SUCCESS')
+    await selectAccount(1, 'History account A')
+    await expect(page.locator('.record-item')).toHaveCount(1)
+    await expect(page.locator('.record-item')).toContainText('E2E_YESTERDAY_FAILURE')
+    await openLog('E2E_YESTERDAY_FAILURE', 'Failed')
+    await app.evidence('history-failure-log')
+    await closeLog()
 
-    await app.evidence('history-initial')
+    const dates = page.locator('.filter-section .ant-picker input')
+    const setDate = async (index: number, date: string) => {
+      const months = dayjs(await dates.nth(index).inputValue())
+        .startOf('month')
+        .diff(dayjs(date).startOf('month'), 'month')
+      await dates.nth(index).click()
+      const calendar = page.locator('.ant-picker-dropdown:visible')
+      for (let month = 0; month < Math.abs(months); month++) {
+        await calendar
+          .locator(months > 0 ? '.ant-picker-header-prev-btn' : '.ant-picker-header-next-btn')
+          .click()
+      }
+      await calendar.locator(`td[title="${date}"]`).click()
+      await expect(dates.nth(index)).toHaveValue(date)
+      await expect(calendar).toBeHidden()
+    }
+    await setDate(0, dayjs().subtract(9, 'day').format('YYYY-MM-DD'))
+    let searched = responseFor('search')
+    await page
+      .locator('.filter-actions')
+      .getByRole('button', { name: /Search$/ })
+      .click()
+    expect((await (await searched).json()).code).toBe(200)
+    await expect(panels).toHaveCount(3)
+    await selectAccount(2, 'History account B')
+    await openLog('E2E_OLDER_SUCCESS', 'Done')
+    await closeLog()
+
+    await setDate(0, dayjs().subtract(30, 'day').format('YYYY-MM-DD'))
+    await setDate(1, dayjs().subtract(20, 'day').format('YYYY-MM-DD'))
+    searched = responseFor('search')
+    await page
+      .locator('.filter-actions')
+      .getByRole('button', { name: /Search$/ })
+      .click()
+    expect((await (await searched).json()).code).toBe(200)
+    await expect(page.locator('.history-page .empty-state')).toBeVisible()
+    await expect(panels).toHaveCount(0)
+    await preset('Today')
+    await selectAccount(0, 'History account A')
+    await openLog('E2E_TODAY_SUCCESS', 'Done')
+    await closeLog()
   })
-
-  test('filters history by date range', async ({ app, page }) => {
-    await app.goto('/history')
-    await expect(page.locator('.history-page')).toBeVisible()
-
-    // 页面挂载时自动检索一次（useHistoryLogic.ts:290-292），先等它结束再触发筛选
-    await expect(page.locator('.empty-state, .record-list-panel').first()).toBeVisible()
-
-    // 快捷时间按钮就是按日期区间筛选的入口：点击后写入起止日期并立即检索
-    //（HistorySearchPanel.vue:7-15 → useHistoryLogic.ts:163-169）
-    const searchResponse = page.waitForResponse(
-      response =>
-        response.url().includes('/api/history/search') && response.request().method() === 'POST'
-    )
-    await page.locator('.time-buttons button').first().click()
-    expect((await searchResponse).ok()).toBeTruthy()
-
-    await expect(page.locator('.empty-state, .record-list-panel').first()).toBeVisible()
-
-    await app.evidence('history-filtered-by-date')
-  })
-
-  // 原「展开日志」用例已删除：默认隔离的数据根没有历史记录，而历史只能由真实任务运行写入，
-  // 没有可 seed 的入口，这条用例在默认模式下永远 skip。等出现能写入历史的 API 或 run.mjs 种子再加回。
-  // 历史页既没有文本搜索框，也没有独立的刷新按钮（HistorySearchPanel.vue 只有快捷时间、合并方式、
-  // 起止日期与搜索/重置按钮），原「空搜索结果」「刷新列表」两个用例没有可断言的用户路径，故删除；
-  // 重新检索的路径由上面的快捷时间用例覆盖。
 })

@@ -19,8 +19,8 @@ test.describe('@scheduler safeguards', () => {
     const runButtons = page.locator('.task-control .ant-btn')
     await expect(runButtons).toHaveCount(1)
     await expect(runButtons.first()).toBeDisabled()
-    await expect(page.locator('.overview-panel .empty-image')).toBeVisible()
-    await expect(page.locator('.log-panel .empty-image')).toBeVisible()
+    await expect(page.locator('.overview-panel .ant-empty')).toBeVisible()
+    await expect(page.locator('.log-panel .ant-empty')).toBeVisible()
 
     await page.locator('.tab-add-btn').click()
     await expect(page.locator('.ant-tabs-tab')).toHaveCount(2)

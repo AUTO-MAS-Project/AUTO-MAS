@@ -53,8 +53,14 @@ const desktopMascotTaskBridge = {
   setDesktopMascotTaskActionResult: async () => undefined,
 } satisfies DesktopMascotTaskHostAPI
 
+const windowStateBridge = {
+  windowIsMaximized: async () => false,
+  onWindowMaximizedChange: () => () => undefined,
+} satisfies Pick<ElectronAPI, 'windowIsMaximized' | 'onWindowMaximizedChange'>
+
 const browserDevElectronAPI = {
   ...desktopMascotTaskBridge,
+  ...windowStateBridge,
   getLogger,
   getApiEndpoint: async (key: string) =>
     key === 'websocket' ? BACKEND_WS_ENDPOINT : BACKEND_HTTP_ENDPOINT,
