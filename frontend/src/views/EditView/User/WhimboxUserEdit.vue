@@ -53,7 +53,7 @@
   >
     <!-- 两池同构：预览载荷为分区行（文件清单由基座在预览区最下方统一渲染） -->
     <template #preview="{ raw }">
-      <a-empty
+      <NoData
         v-if="!previewSections(raw).length"
         :description="t('core.edit.configRestorePreviewEmpty')"
       />

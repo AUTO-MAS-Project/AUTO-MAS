@@ -1067,7 +1067,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
         </a-space>
       </div>
 
-      <a-empty v-if="!paths.length" :description="t('core.emulator2.noPath')">
+      <NoData v-if="!paths.length" :description="t('core.emulator2.noPath')">
         <a-space :size="8">
           <a-button :icon="h(PlusOutlined)" @click="openAvdRoot()">
             {{ t('core.emulator2.avd.add') }}
@@ -1076,7 +1076,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
             {{ t('core.emulator2.searchAndAdd') }}
           </a-button>
         </a-space>
-      </a-empty>
+      </NoData>
 
       <div v-else class="path-grid">
         <a-card v-for="path in paths" :key="path.pathId" size="small" class="path-card">
@@ -1142,7 +1142,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
 
     <div ref="tableArea" class="table-area">
       <a-spin :spinning="loading" wrapper-class-name="table-spin">
-        <a-empty
+        <NoData
           v-if="!tableRows.length"
           :description="loading ? '' : t('core.emulator.noDevice')"
           class="table-empty"
@@ -1457,7 +1457,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
         style="margin-bottom: 12px"
       />
       <a-spin :spinning="searching">
-        <a-empty v-if="!searchResults.length" :description="t('core.emulator.searchEmpty')" />
+        <NoData v-if="!searchResults.length" :description="t('core.emulator.searchEmpty')" />
         <a-checkbox-group v-else v-model:value="selectedPaths" style="width: 100%">
           <div v-for="item in searchResults" :key="item.installPath" class="search-row">
             <a-checkbox :value="item.installPath" :disabled="!item.supported" />

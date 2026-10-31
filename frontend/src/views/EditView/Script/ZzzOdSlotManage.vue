@@ -38,8 +38,10 @@
               :data-source="slots"
               :loading="slotsLoading"
               :pagination="false"
-              :locale="{ emptyText: t('core.edit.zzzodSlotEmpty') }"
             >
+              <template #emptyText
+                ><NoData :description="t('core.edit.zzzodSlotEmpty')"
+              /></template>
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'idx'">
                   {{ String(record.idx).padStart(2, '0') }}
@@ -94,8 +96,10 @@
               :data-source="recycleRows"
               :loading="recycleLoading"
               :pagination="false"
-              :locale="{ emptyText: t('core.edit.zzzodRecycleEmpty') }"
             >
+              <template #emptyText
+                ><NoData :description="t('core.edit.zzzodRecycleEmpty')"
+              /></template>
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'slot'">
                   {{ String(record.slot).padStart(2, '0') }}

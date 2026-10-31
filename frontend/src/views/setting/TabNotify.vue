@@ -228,7 +228,7 @@ const modalPopupContainer = () =>
             @open="openChannel"
           />
         </div>
-        <a-empty
+        <NoData
           v-else
           :description="t('core.setting.notify.activeEmpty')"
           :image-style="{ height: '48px' }"
@@ -256,7 +256,7 @@ const modalPopupContainer = () =>
             @open="openChannel"
           />
         </div>
-        <a-empty
+        <NoData
           v-else
           :description="t('core.setting.notify.idleEmpty')"
           :image-style="{ height: '48px' }"
@@ -280,7 +280,7 @@ const modalPopupContainer = () =>
             @open="openChannel"
           />
         </div>
-        <a-empty
+        <NoData
           v-else
           :description="t('core.setting.notify.customEmpty')"
           :image-style="{ height: '48px' }"

@@ -181,7 +181,7 @@ const handleVersionChange = (value: SelectValue): void => {
           </div>
         </template>
         <div v-else-if="versions.length === 0" class="online-preview-state">
-          <a-empty :description="t('core.themeStore.noVersions')" />
+          <NoData :description="t('core.themeStore.noVersions')" />
         </div>
         <div v-else class="online-preview-state">
           <a-button @click="prepareSelected">

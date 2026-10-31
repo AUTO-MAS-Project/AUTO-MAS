@@ -125,7 +125,7 @@
           </draggable>
         </div>
         <div v-else class="bgi-project-empty">
-          <a-empty :description="t('core.edit.bettergiProjectEmpty')" />
+          <NoData :description="t('core.edit.bettergiProjectEmpty')" />
         </div>
       </template>
     </a-spin>
@@ -220,7 +220,7 @@
               </div>
             </template>
             <div v-else class="bgi-project-settings-empty">
-              <a-empty :description="t('core.edit.bettergiProjectNoSettingsFile')" />
+              <NoData :description="t('core.edit.bettergiProjectNoSettingsFile')" />
             </div>
           </a-spin>
         </a-tab-pane>
@@ -231,7 +231,7 @@
             <pre>{{ settingsModal.readme }}</pre>
           </div>
           <div v-else class="bgi-project-settings-empty">
-            <a-empty :description="t('core.edit.bettergiProjectReadmeEmpty')" />
+            <NoData :description="t('core.edit.bettergiProjectReadmeEmpty')" />
           </div>
         </a-tab-pane>
       </a-tabs>

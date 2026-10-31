@@ -109,7 +109,7 @@
               class="screenshot-image"
             />
           </div>
-          <a-empty v-else description="未获取到截图数据" />
+          <NoData v-else description="未获取到截图数据" />
         </a-card>
       </a-tab-pane>
 
@@ -212,7 +212,7 @@
               class="screenshot-image"
             />
           </div>
-          <a-empty v-else description="未获取到截图数据" />
+          <NoData v-else description="未获取到截图数据" />
         </a-card>
       </a-tab-pane>
 

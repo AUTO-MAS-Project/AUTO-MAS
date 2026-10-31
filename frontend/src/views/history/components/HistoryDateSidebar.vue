@@ -62,18 +62,13 @@
       </a-collapse>
 
       <div v-if="historyData.length === 0" class="empty-sidebar">
-        <a-empty
-          :image="noDataImage"
-          :image-style="{ height: '80px' }"
-          :description="t('core.history.empty')"
-        />
+        <NoData :image-style="{ height: '80px' }" :description="t('core.history.empty')" />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import type { HistoryBucket } from '@/api'
 import {

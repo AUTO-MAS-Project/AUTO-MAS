@@ -40,12 +40,12 @@
 
     <!-- 空状态 -->
     <div v-if="!queueList.length || !currentQueueData" class="empty-state">
-      <a-empty :image="noDataImage" :image-style="{ height: '200px' }">
+      <NoData :image-style="{ height: '200px' }">
         <template #description>
           <div class="empty-title">{{ t('core.queue.emptyTitle') }}</div>
           <div class="empty-description">{{ t('core.queue.emptyDesc') }}</div>
         </template>
-      </a-empty>
+      </NoData>
     </div>
 
     <!-- 队列内容 -->
@@ -262,7 +262,6 @@
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import { Service, type QueueConfig_Info } from '@/api'
 import { queueApi } from '@/composables/useQueueApi'

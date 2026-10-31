@@ -83,9 +83,11 @@
           </div>
         </template>
       </template>
-      <div v-if="!view.groups.length" class="goal-empty">
-        {{ t('core.maaCopilot.noPendingGoals') }}
-      </div>
+      <NoData
+        v-if="!view.groups.length"
+        class="goal-empty"
+        :description="t('core.maaCopilot.noPendingGoals')"
+      />
     </div>
   </div>
 </template>

@@ -413,7 +413,7 @@ const handleMasInstall = async () => {
           </div>
         </a-timeline-item>
       </a-timeline>
-      <a-empty v-else :description="t('core.setting.others.noHistory')" />
+      <NoData v-else :description="t('core.setting.others.noHistory')" />
     </a-spin>
   </a-modal>
 </template>

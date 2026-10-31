@@ -9,7 +9,7 @@
       />
     </div>
 
-    <a-empty
+    <NoData
       v-if="filteredOptions.length === 0"
       class="option-empty"
       :description="

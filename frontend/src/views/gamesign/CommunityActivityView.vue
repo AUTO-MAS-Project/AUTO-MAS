@@ -175,7 +175,7 @@ onMounted(() => {
       <a-spin size="large" />
     </div>
 
-    <a-empty
+    <NoData
       v-else-if="showEmpty"
       :description="t('core.gamesign.activity.empty')"
       class="activity-state"
@@ -202,7 +202,7 @@ onMounted(() => {
         </button>
       </div>
 
-      <a-empty
+      <NoData
         v-if="showAllHidden"
         :description="t('core.gamesign.activity.allHidden')"
         class="activity-state"

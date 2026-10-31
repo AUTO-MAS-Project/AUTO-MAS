@@ -170,12 +170,18 @@ const configPreview = computed(() => {
               <span v-else-if="item.error" class="debug-result-error">{{ item.error }}</span>
             </div>
           </div>
-          <div v-if="debug.filteredResults.length === 0" class="debug-results-empty">
-            {{ t('core.edit.noMatchingLines') }}
-          </div>
+          <NoData
+            v-if="debug.filteredResults.length === 0"
+            class="debug-results-empty"
+            :description="t('core.edit.noMatchingLines')"
+          />
         </div>
 
-        <div v-else class="debug-results-empty">{{ t('core.edit.clickDebugSeeMatches') }}</div>
+        <NoData
+          v-else
+          class="debug-results-empty"
+          :description="t('core.edit.clickDebugSeeMatches')"
+        />
       </div>
     </div>
   </a-modal>
