@@ -12,7 +12,6 @@ const entries = [
   ['Function', 'IfAllowSleep', 'scheduler', 'allow_sleep'],
   ['Function', 'IfBlockAd', 'emulator', 'block_ads'],
   ['Function', 'IfSilence', 'notification', 'silent'],
-  ['Function', 'IfPersonalMss', 'scheduler', 'mss_personal'],
   ['Display', 'IfEnableVirtualDisplay', 'emulator', 'virtual_display'],
   ['Display', 'VirtualDisplayMode', 'emulator', 'virtual_display_mode'],
   ['Replay', 'Enabled', 'replay', 'replay_enabled'],

@@ -2676,19 +2676,6 @@ class MSSUserConfig(MaaFWUserConfig):
 
     related_config: ClassVar = {}
 
-    class DataFields(MaaFWUserConfig.DataFields):
-        PersonalMssDefense: Annotated[
-            JsonDictString, ui(visibility=UiVisibility.HIDE)
-        ] = Field(
-            default_factory=lambda: "{ }",
-            description='个人版「灾变防线」的编排记录，形如 {"armed": 期, "done": 期}。 armed 是上次把它编进队列的那一期，done 是已经确认打完的那一期： 用「上次运行是否成功」把 armed 升成 done，所以跑失败的那期下次还会重试。 期取活动公告的开始时刻（见 app/tools/stella_official.py），跨月也认得出是同一期。',
-        )
-
-    # 独立配置类型有意扩展分组，保留专项字段及其校验声明。
-    Data: DataFields = Field(  # pyright: ignore[reportIncompatibleVariableOverride]
-        default_factory=DataFields
-    )
-
     class InfoFields(MaaFWUserConfig.InfoFields):
         IfActivityFirst: bool = Field(
             default_factory=lambda: True,

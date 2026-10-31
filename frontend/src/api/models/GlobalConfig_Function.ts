@@ -24,10 +24,6 @@ export type GlobalConfig_Function = {
      */
     IfEnableTelemetry?: (boolean | null);
     /**
-     * 个人版 MSS 的专属编排（灾变防线），只对个人版项目生效， 普通版 MSS 与其它脚本都会忽略它。
-     */
-    IfPersonalMss?: (boolean | null);
-    /**
      * 是否启用静默模式
      */
     IfSilence?: (boolean | null);
