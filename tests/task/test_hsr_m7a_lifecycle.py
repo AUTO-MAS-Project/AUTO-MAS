@@ -23,6 +23,8 @@ def simulator(tmp_path, monkeypatch):
     (tmp_path / "March7th Assistant.exe").touch()
 
     async def open_python(manager, program, *args, **kwargs):
+        # 模拟脚本固定输出 UTF-8，不依赖 Windows runner 的 ANSI 代码页。
+        kwargs["env"] = {**(kwargs.get("env") or {}), "PYTHONIOENCODING": "utf-8"}
         await original_open(
             manager,
             sys.executable,
@@ -553,7 +555,12 @@ def test_cloud_policy_terminates_the_owned_subtree(simulator, cancel):
             assert runner._process_manager.main_process is None
             with suppress(psutil.NoSuchProcess):
                 child = psutil.Process(int((root / "child.pid").read_text()))
-                assert not child.is_running() or child.status() == psutil.STATUS_ZOMBIE
+                # Windows 的退出句柄可能先于 PID 查询收敛；仍须确认后代确实退出。
+                await wait_until(
+                    lambda: (
+                        not child.is_running() or child.status() == psutil.STATUS_ZOMBIE
+                    )
+                )
             await asyncio.sleep(0)
             assert not (set(asyncio.all_tasks()) - before)
         finally:
