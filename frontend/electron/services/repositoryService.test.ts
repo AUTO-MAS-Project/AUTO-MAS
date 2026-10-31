@@ -7,7 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { MirrorService } from './mirrorService'
 import { RepositoryService } from './repositoryService'
 
-const faults = vi.hoisted(() => ({ deniedPath: '' }))
+const faults = vi.hoisted(() => ({
+  deniedPath: '',
+  trackBranch: false,
+  beforeRemove: null as ((target: string) => Promise<void>) | null,
+}))
 const spawnMock = vi.hoisted(() => vi.fn())
 
 vi.mock('electron', () => ({ app: { isPackaged: false } }))
@@ -38,9 +42,10 @@ vi.mock('fs', async importOriginal => {
     },
     promises: {
       ...actual.promises,
-      rm: (target: fs.PathLike, options?: fs.RmOptions) => {
+      rm: async (target: fs.PathLike, options?: fs.RmOptions) => {
+        await faults.beforeRemove?.(String(target))
         if (String(target) === faults.deniedPath) {
-          return Promise.reject(Object.assign(new Error('repository is locked'), { code: 'EBUSY' }))
+          throw Object.assign(new Error('repository is locked'), { code: 'EBUSY' })
         }
         return actual.promises.rm(target, options)
       },
@@ -66,6 +71,8 @@ function prepareSource() {
 
 beforeEach(() => {
   faults.deniedPath = ''
+  faults.trackBranch = false
+  faults.beforeRemove = null
   workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'mas-repository-'))
   service = new RepositoryService(workspace, new MirrorService(workspace))
   spawnMock.mockImplementation((_exe: string, args: string[]) => {
@@ -77,6 +84,10 @@ beforeEach(() => {
       if (args[0] === 'clone') prepareSource()
       if (args[0] === 'ls-remote') proc.stdout.emit('data', `hash\trefs/heads/${args[3]}`)
       if (args[0] === 'branch') proc.stdout.emit('data', 'dev\n')
+      if (args[0] === 'checkout' && faults.trackBranch) {
+        writeFile('repo/.git/HEAD', args[2])
+        writeFile('repo/app/marker.txt', args[2])
+      }
       proc.emit('close', 0)
     })
     return proc
@@ -85,11 +96,115 @@ beforeEach(() => {
 
 afterEach(async () => {
   faults.deniedPath = ''
+  faults.beforeRemove = null
   await fs.promises.rm(workspace, { recursive: true, force: true })
   vi.clearAllMocks()
 })
 
 describe('legacy repository initialization', () => {
+  it('serializes pulls across service instances sharing the same installation', async () => {
+    prepareSource()
+    writeFile('.git/HEAD', 'old-head')
+    faults.trackBranch = true
+    let release: () => void = () => {}
+    let entered: () => void = () => {}
+    const blocked = new Promise<void>(resolve => {
+      release = resolve
+    })
+    const deleting = new Promise<void>(resolve => {
+      entered = resolve
+    })
+    faults.beforeRemove = async target => {
+      if (target === path.join(workspace, '.git')) {
+        faults.beforeRemove = null
+        entered()
+        await blocked
+      }
+    }
+    let firstInstalled = ''
+    const first = service.pullRepository(progress => {
+      if (progress.stage === 'deploy' && progress.progress === 100) {
+        firstInstalled = fs.readFileSync(path.join(workspace, 'app/marker.txt'), 'utf8')
+      }
+    })
+    await deleting
+    const secondProgress = vi.fn()
+    const other = new RepositoryService(
+      `${workspace}${path.sep}.`,
+      new MirrorService(workspace),
+      'other'
+    )
+    const second = other.pullRepository(secondProgress)
+    let results
+    try {
+      expect(secondProgress).not.toHaveBeenCalled()
+    } finally {
+      release()
+      results = await Promise.all([first, second])
+    }
+
+    expect(results).toEqual([{ success: true }, { success: true }])
+    expect(firstInstalled).toBe('dev')
+    expect(fs.readFileSync(path.join(workspace, '.git/HEAD'), 'utf8')).toBe('other')
+    expect(fs.readFileSync(path.join(workspace, 'app/marker.txt'), 'utf8')).toBe('other')
+  })
+
+  it('releases a failed pull so the next instance can retry', async () => {
+    prepareSource()
+    writeFile('.git/HEAD', 'old-head')
+    faults.deniedPath = path.join(workspace, '.git')
+    const first = service.pullRepository()
+    const retry = new RepositoryService(workspace, new MirrorService(workspace)).pullRepository(
+      progress => {
+        if (progress.stage === 'check' && progress.progress === 0) faults.deniedPath = ''
+      }
+    )
+
+    expect(await first).toEqual({ success: false, error: 'repository is locked' })
+    expect(await retry).toEqual({ success: true })
+    expect(fs.readFileSync(path.join(workspace, 'app/marker.txt'), 'utf8')).toBe('new-code')
+  })
+
+  it('allows a different installation to proceed while a pull is blocked', async () => {
+    prepareSource()
+    writeFile('.git/HEAD', 'old-head')
+    writeFile('independent/repo/.git/HEAD', 'independent-head')
+    writeFile('independent/repo/app/marker.txt', 'independent-code')
+    let release: () => void = () => {}
+    let entered: () => void = () => {}
+    const blocked = new Promise<void>(resolve => {
+      release = resolve
+    })
+    const deleting = new Promise<void>(resolve => {
+      entered = resolve
+    })
+    faults.beforeRemove = async target => {
+      if (target === path.join(workspace, '.git')) {
+        faults.beforeRemove = null
+        entered()
+        await blocked
+      }
+    }
+    const first = service.pullRepository()
+    await deleting
+    const independentRoot = path.join(workspace, 'independent')
+    const progress = vi.fn()
+    const independent = new RepositoryService(
+      independentRoot,
+      new MirrorService(independentRoot)
+    ).pullRepository(progress)
+    try {
+      await vi.waitFor(() => expect(progress).toHaveBeenCalled())
+      expect(await independent).toEqual({ success: true })
+      expect(fs.readFileSync(path.join(independentRoot, 'app/marker.txt'), 'utf8')).toBe(
+        'independent-code'
+      )
+    } finally {
+      release()
+      await Promise.all([first, independent])
+    }
+  })
+
   it('deploys new code over installed read-only Git objects', async () => {
     prepareSource()
     writeFile('.git/objects/old-object', 'old-object', true)

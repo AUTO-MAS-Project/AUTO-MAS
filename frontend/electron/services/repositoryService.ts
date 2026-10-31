@@ -43,6 +43,8 @@ export type RepositoryProgressCallback = (progress: RepositoryProgress) => void
 // ==================== 仓库服务类 ====================
 
 export class RepositoryService {
+  // IPC 会创建多个实例；同一安装目录的源码检查、拉取与部署必须共用队列。
+  private static readonly pendingPulls = new Map<string, Promise<void>>()
   private appRoot: string
   private repoPath: string
   private gitExe: string
@@ -63,6 +65,30 @@ export class RepositoryService {
    * 源码拉取方法
    */
   async pullRepository(
+    onProgress?: RepositoryProgressCallback,
+    selectedMirror?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const resolvedRoot = path.resolve(this.appRoot)
+    const key = process.platform === 'win32' ? resolvedRoot.toLowerCase() : resolvedRoot
+    const previous = RepositoryService.pendingPulls.get(key)
+    let release: () => void = () => {}
+    const pending = new Promise<void>(resolve => {
+      release = resolve
+    })
+    RepositoryService.pendingPulls.set(key, pending)
+
+    try {
+      await previous
+      return await this.runPullRepository(onProgress, selectedMirror)
+    } finally {
+      release()
+      if (RepositoryService.pendingPulls.get(key) === pending) {
+        RepositoryService.pendingPulls.delete(key)
+      }
+    }
+  }
+
+  private async runPullRepository(
     onProgress?: RepositoryProgressCallback,
     selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }> {
