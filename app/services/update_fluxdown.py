@@ -36,7 +36,7 @@ from pathlib import Path
 
 import httpx
 
-from app.services.update_transport import DownloadProgress
+from app.services.update_transport import BuiltinDownload, DownloadProgress
 from app.services.update_transport import download_file as _httpx_download
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
 from app.utils import get_logger
@@ -72,6 +72,7 @@ async def download_file(
     progress: DownloadProgress | None = None,
     downloader: str | None = None,
     source: str | None = None,
+    http_download: BuiltinDownload | None = None,
 ) -> int:
     """同一输出文件的下载、回退和清映射共用跨进程锁。"""
     async with _utils_fluxdown_cli.fluxdown_destination_lock(
@@ -87,6 +88,7 @@ async def download_file(
             progress=progress,
             downloader=downloader,
             source=source,
+            http_download=http_download,
         )
 
 
@@ -101,6 +103,7 @@ async def _download_file(
     progress: DownloadProgress | None = None,
     downloader: str | None = None,
     source: str | None = None,
+    http_download: BuiltinDownload | None = None,
 ) -> int:
     """根据宿主选项分发下载：FluxDown 或内置 httpx。
 
@@ -120,6 +123,7 @@ async def _download_file(
     CDN 多，FluxDown 的 Range 续传可能和短期 token 冲突。
     """
     explicit_builtin = downloader == "builtin"
+    builtin_download = http_download or _httpx_download
     downloader = downloader or options.downloader
     frozen_source = source if source is not None else options.source
     segments = options.segments
@@ -149,7 +153,7 @@ async def _download_file(
                 action="改用内置 httpx 下载",
                 write_history=write_history,
             )
-        size = await _httpx_download(
+        size = await builtin_download(
             url, destination, timeout=timeout, proxy=proxy, progress=progress
         )
         if explicit_builtin:
@@ -167,7 +171,7 @@ async def _download_file(
     if cli_path is None:
         # CLI 不存在 → 回退 httpx
         logger.warning("未找到 FluxDown CLI,回退内置 httpx 下载")
-        return await _httpx_download(
+        return await builtin_download(
             url, destination, timeout=timeout, proxy=proxy, progress=progress
         )
 
@@ -217,7 +221,7 @@ async def _download_file(
             ),
             write_history=write_history,
         )
-        return await _httpx_download(
+        return await builtin_download(
             url, destination, timeout=timeout, proxy=proxy, progress=progress
         )
 
