@@ -28,7 +28,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import aclosing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import aiofiles
 import httpx
@@ -37,6 +37,21 @@ from app.utils import MIRROR_ERROR_INFO
 from app.utils import update_files as _utils_update_files
 
 DownloadProgress = Callable[[int, int, float], Awaitable[None]]
+
+
+class BuiltinDownload(Protocol):
+    """下载分发层可注入的内置 HTTP 实现，仍受统一写入权保护。"""
+
+    async def __call__(
+        self,
+        url: str,
+        destination: Path,
+        *,
+        timeout: float,
+        proxy: httpx.Proxy | None = None,
+        progress: DownloadProgress | None = None,
+    ) -> int: ...
+
 
 MIRROR_RESOURCE_API = "https://mirrorchyan.com/api/resources"
 

@@ -74,6 +74,7 @@ import httpx
 import psutil
 
 from app.core import Config
+from app.core.script_update import download_script_package
 from app.core.update import download_file
 from app.models.config import MaaConfig
 from app.services.update_transport import request_mirror_resource
@@ -1015,18 +1016,13 @@ async def prepare_install_resources(
                 if github:
                     _WORK_DIR.mkdir(parents=True, exist_ok=True)
                     await _report(progress, "启动前下载 GitHub 全量资源包…")
-                    await download_file(
+                    await download_script_package(
                         "https://github.com/MaaAssistantArknights/MaaResource/"
                         "archive/refs/heads/main.zip",
                         _STAGE_ZIP,
                         proxy=Config.proxy,
                         timeout=_DOWNLOAD_TIMEOUT,
                         source="GitHub",
-                        downloader=(
-                            "fluxdown"
-                            if Config.setting.Update.FluxdownTakeoverAll
-                            else "builtin"
-                        ),
                     )
                     try:
                         await _run_write_thread(

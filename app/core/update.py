@@ -14,7 +14,7 @@ from app.models.config.setting import FluxdownRecord
 from app.services.update import UpdateHandler
 from app.services.update_fluxdown import FluxdownOptions
 from app.services.update_fluxdown import download_file as _download_file
-from app.services.update_transport import DownloadProgress
+from app.services.update_transport import BuiltinDownload, DownloadProgress
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
 
 
@@ -49,6 +49,7 @@ async def download_file(
     progress: DownloadProgress | None = None,
     downloader: str | None = None,
     source: str | None = None,
+    http_download: BuiltinDownload | None = None,
 ) -> int:
     """每次尝试读取默认选项，保留任务冻结的来源与显式下载器覆盖。"""
     update = Config.setting.Update
@@ -60,6 +61,7 @@ async def download_file(
         progress=progress,
         downloader=downloader,
         source=source,
+        http_download=http_download,
         options=FluxdownOptions(
             downloader=update.Downloader,
             source=str(update.Source or ""),
