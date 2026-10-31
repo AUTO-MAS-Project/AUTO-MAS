@@ -117,7 +117,7 @@ reason        失败原因
 
 ## 已知不一致（改动时留意，不要照抄）
 
-1. `app/api/community/miyoushe.py`、`app/api/community/skland.py` 把 `QrCreateOut` / `QrCheckIn` / `QrCheckOut` / `QrSaveIn` 一类 schema **定义在路由文件内**。新增社区 schema 优先放所属 `api` 模块顶部或 `app/models/schema.py`，不要照搬。
+1. 端点专用输入输出模型放在所属 API 文件顶部；跨模块共享契约才放入 `app/models/schema.py`。配置字段由配置类派生，不重复声明凭据字段。
 2. 路由 tag 不统一：账号组路由用 `tags=["GameSign"]`，手动签到用 `tags=["Action"]`，便笺查询用 `tags=["Community"]`，扫码用中文 `tags=["扫码登录"]`。沿用所在文件的既有 tag，不要顺手改动已生成客户端的方法名。
 3. `miyoushe.py` 的 `QrSaveIn` 用 snake_case（`account_uid`），`accounts.py` 的账号组请求用 camelCase（`accountId`）。这是既有契约，改名会破坏生成客户端。账号组标识是 UUID，比较时走 `accounts.is_known_community_account()`，不要直接比字符串。
 4. `ToolsConfig.GameSign.AutoStart` 只有字段声明、没有运行时消费者、也没有页面入口。它当前仍留在模型里（dev 现状）：删除它必须同时重新生成前端客户端，否则生成模型与后端不一致。
