@@ -439,8 +439,10 @@ class MumuManager(DeviceBase):
             )
             raise RuntimeError(f"命令执行失败: {result.failure_detail()}{diagnosis}")
 
+        # 只说明命令返回 0，不代表实例会起来：真正的结论在下面的等待循环，
+        # 措辞不要写成「已完成」，否则日志会把静默空等读成成功。
         logger.info(
-            f"MuMu 启动命令已完成，等待实例在线: {idx} - 用时: "
+            f"MuMu 启动命令已返回，等待实例在线: {idx} - 用时: "
             f"{time.monotonic() - launch_started_at:.3f}秒"
         )
         online_started_at = time.monotonic()
@@ -485,7 +487,10 @@ class MumuManager(DeviceBase):
             logger.warning(
                 f"模拟器启动等待超时: {idx} - {package_name} - "
                 f"当前状态: {status} - 用时: "
-                f"{time.monotonic() - started_at:.3f}秒"
+                f"{time.monotonic() - started_at:.3f}秒 - "
+                f"启动命令返回 0, 但等待 "
+                f"{time.monotonic() - online_started_at:.3f}秒实例仍未上线"
+                f"{diagnosis}"
             )
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(
