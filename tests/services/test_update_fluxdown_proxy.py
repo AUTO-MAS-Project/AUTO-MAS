@@ -11,6 +11,37 @@ from app.services import update_fluxdown as transport
 from app.utils.common import fluxdown_cli as cli
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blocked", [False, True])
+async def test_custom_http_resume_keeps_old_writer_safety_gate(
+    tmp_path, monkeypatch, blocked
+):
+    proxy = httpx.Proxy("http://127.0.0.1:7890")
+    resume = AsyncMock(return_value=42)
+    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda path: Path("fluxdown.exe"))
+    gate = AsyncMock(
+        side_effect=cli.FluxdownCancelUnconfirmed("still writing") if blocked else None
+    )
+    monkeypatch.setattr(transport, "_ensure_can_downgrade", gate)
+    monkeypatch.setattr(cli, "fluxdown_server_forget", lambda *args: None)
+    operation = transport.download_file(
+        "https://example.invalid/package",
+        tmp_path / "package",
+        timeout=30,
+        proxy=proxy,
+        options=transport.FluxdownOptions("builtin", "GitHub", "", 8, True),
+        http_download=resume,
+    )
+    if blocked:
+        with pytest.raises(cli.FluxdownCancelUnconfirmed):
+            await operation
+        resume.assert_not_awaited()
+    else:
+        assert await operation == 42
+        assert resume.call_args.kwargs["proxy"] is proxy
+    gate.assert_awaited_once()
+
+
 @pytest.mark.parametrize(
     "url",
     [

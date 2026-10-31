@@ -23,6 +23,7 @@ from app.config import config_manager
 from app.core import Config, EmulatorManager
 from app.core.maa_capture import capture_adb
 from app.core.maa_stage import maa_stage_service
+from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaConfig, MaaUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
@@ -564,7 +565,11 @@ class MaaManager(ScriptManagerBase):
                 self._active_proxy_task = task
                 # 启动前尽力更新；失败沿用当前安装时，运行期间仍暂停原生更新。
                 self._update_config_dir = task.update_config_dir
-                await self._prepare_software_update(task)
+                await run_script_update(
+                    ScriptUpdateRequest(str(self.script_info.script_id), "MAA"),
+                    self._prepare_software_update,
+                    task,
+                )
             await self.run_user_task(
                 self.script_info.user_list[self.script_info.current_index], task
             )
