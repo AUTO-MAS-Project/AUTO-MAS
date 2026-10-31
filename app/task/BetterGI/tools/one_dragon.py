@@ -2054,7 +2054,9 @@ def snapshot_global_battle_config(
         if not isinstance(config, dict):
             config = {}
         snap: dict[tuple[str, ...], tuple[bool, Any]] = {}
-        for leaf in _ALL_RUNTIME_GLOBAL_LEAVES:
+        for leaf in _ALL_RUNTIME_GLOBAL_LEAVES + tuple(
+            (segment, "resinUsage") for segment in _GLOBAL_RESIN_SEGMENTS
+        ):
             cur: Any = config
             present = True
             for key in leaf:
@@ -2084,8 +2086,17 @@ def restore_global_battle_config(
             existed, value = snapshot.get(leaf, (False, None))
             if _restore_leaf(config, leaf, existed, value):
                 changed = True
+        # BGI 可在运行中把旧字段迁移为完整对象；原先缺失/null/空对象须整体恢复。
+        for segment in _GLOBAL_RESIN_SEGMENTS:
+            leaf = (segment, "resinUsage")
+            if leaf in snapshot:
+                existed, value = snapshot[leaf]
+                if not isinstance(value, dict) or not value:
+                    changed |= _restore_leaf(config, leaf, existed, value)
         if changed:
             for leaf in _ALL_RUNTIME_GLOBAL_LEAVES:
+                if len(leaf) > 2 and snapshot.get(leaf[:2]) == (True, {}):
+                    continue  # 原本就存在的空树脂对象不能被祖先清理删除。
                 _prune_empty_ancestors(config, leaf)
             write_file(_global_config_path(root), config)
 
@@ -2165,8 +2176,23 @@ _GLOBAL_STYGIAN_EXTRA_LEAVES: tuple[tuple[str, str], ...] = tuple(
     if key not in ("fightTeamName", "strategyName")
 )
 # 运行时临时补写并需快照/还原的 config.json 叶子全集 = 队伍/策略 + 秘境刷取 + 幽境
+_GLOBAL_RESIN_SEGMENTS = (_GLOBAL_DOMAIN_CONFIG_SEGMENT, _GLOBAL_STYGIAN_SEGMENT)
 _ALL_RUNTIME_GLOBAL_LEAVES = (
-    _ALL_GLOBAL_LEAVES + _GLOBAL_DOMAIN_LEAVES + _GLOBAL_STYGIAN_EXTRA_LEAVES
+    _ALL_GLOBAL_LEAVES
+    + _GLOBAL_DOMAIN_LEAVES
+    + _GLOBAL_STYGIAN_EXTRA_LEAVES
+    # 只还原面板会改写的新树脂叶子，保留档位、可用树脂及其他原生设置。
+    + tuple(
+        (segment, "resinUsage", *leaf)
+        for segment in _GLOBAL_RESIN_SEGMENTS
+        for leaf in (
+            ("mode",),
+            *(
+                ("counts", key.removesuffix("ResinUseCount"))
+                for key in _GLOBAL_DOMAIN_RESIN_COUNT_KEYS
+            ),
+        )
+    )
 )
 
 
@@ -2189,6 +2215,55 @@ def _coerce_domain_leaf(segment: str, key: str, value: Any) -> Any:
         except (TypeError, ValueError):
             return 0
     return value
+
+
+def _read_native_resin_settings(segment: dict[str, Any]) -> dict[str, Any]:
+    """把新版原生树脂设置投影到现有面板；旧配置继续由原有叶子读取。"""
+    usage = segment.get("resinUsage")
+    if not isinstance(usage, dict):
+        return {}
+    counts = usage.get("counts")
+    if not isinstance(counts, dict):
+        counts = {}
+    mode = usage.get("mode", "Exhaust")
+    return {
+        "specifyResinUse": mode == 2 or str(mode).casefold() == "pertype",
+        **{
+            key: _coerce_domain_leaf(
+                _GLOBAL_DOMAIN_CONFIG_SEGMENT,
+                key,
+                counts.get(key.removesuffix("ResinUseCount"), 0),
+            )
+            for key in _GLOBAL_DOMAIN_RESIN_COUNT_KEYS
+        },
+    }
+
+
+def _update_native_resin_settings(
+    segment: dict[str, Any], settings: dict[str, Any]
+) -> bool:
+    """同步面板实际改动的新版树脂叶子，透传其余原生设置。"""
+    current = segment.get("resinUsage")
+    if not isinstance(current, dict):
+        return False  # 旧版仍读取扁平字段，不向其配置注入新版结构。
+    previous = _read_native_resin_settings(segment)
+    usage = dict(current)
+    if (
+        "specifyResinUse" in settings
+        and settings["specifyResinUse"] != previous["specifyResinUse"]
+    ):
+        usage["mode"] = "PerType" if settings["specifyResinUse"] else "Exhaust"
+    # 表单整段保存时，未改动的 false 不能把原生 RunCount 模式改成 Exhaust。
+    counts = dict(current.get("counts") or {})
+    for key in _GLOBAL_DOMAIN_RESIN_COUNT_KEYS:
+        if key in settings and settings[key] != previous[key]:
+            counts[key.removesuffix("ResinUseCount")] = settings[key]
+    if counts != current.get("counts", {}):
+        usage["counts"] = counts
+    if usage == current:
+        return False
+    segment["resinUsage"] = usage
+    return True
 
 
 def read_global_domain_settings(root: Path) -> dict[str, Any]:
@@ -2217,6 +2292,9 @@ def read_global_domain_settings(root: Path) -> dict[str, Any]:
         seg_data = config.get(segment)
         if isinstance(seg_data, dict) and key in seg_data:
             out[key] = _coerce_domain_leaf(segment, key, seg_data[key])
+    segment = config.get(_GLOBAL_DOMAIN_CONFIG_SEGMENT)
+    if isinstance(segment, dict):
+        out.update(_read_native_resin_settings(segment))
     return out
 
 
@@ -2233,6 +2311,7 @@ def write_global_domain_settings(root: Path, settings: dict[str, Any]) -> None:
         if not isinstance(config, dict):
             config = {}
         changed = False
+        normalized: dict[str, Any] = {}
         for key, value in settings.items():
             segment = _GLOBAL_DOMAIN_LEAF_SEGMENT.get(key)
             if segment is None:
@@ -2253,10 +2332,14 @@ def write_global_domain_settings(root: Path, settings: dict[str, Any]) -> None:
                     norm = 0
             else:
                 norm = bool(value)
+            normalized[key] = norm
             if seg_data.get(key) == norm:
                 continue
             seg_data[key] = norm
             changed = True
+        segment = config.get(_GLOBAL_DOMAIN_CONFIG_SEGMENT)
+        if isinstance(segment, dict):
+            changed |= _update_native_resin_settings(segment, normalized)
         if changed:
             write_file(_global_config_path(root), config)
 
@@ -2380,6 +2463,7 @@ def read_global_stygian_settings(root: Path) -> dict[str, Any]:
         for key in defaults:
             if key in seg_data:
                 out[key] = _coerce_stygian_leaf(key, seg_data[key])
+        out.update(_read_native_resin_settings(seg_data))
     return out
 
 
@@ -2401,6 +2485,7 @@ def write_global_stygian_settings(root: Path, settings: dict[str, Any]) -> None:
             seg_data = {}
             config[_GLOBAL_STYGIAN_SEGMENT] = seg_data
         changed = False
+        normalized: dict[str, Any] = {}
         for key, value in settings.items():
             if key not in _GLOBAL_STYGIAN_SETTING_KEYS:
                 continue  # 非白名单键直接忽略，避免污染 config.json
@@ -2421,10 +2506,12 @@ def write_global_stygian_settings(root: Path, settings: dict[str, Any]) -> None:
                     norm = 0
             else:
                 norm = bool(value)
+            normalized[key] = norm
             if seg_data.get(key) == norm:
                 continue
             seg_data[key] = norm
             changed = True
+        changed |= _update_native_resin_settings(seg_data, normalized)
         if changed:
             write_file(_global_config_path(root), config)
 
