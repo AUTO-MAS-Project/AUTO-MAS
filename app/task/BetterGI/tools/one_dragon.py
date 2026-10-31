@@ -2054,7 +2054,9 @@ def snapshot_global_battle_config(
         if not isinstance(config, dict):
             config = {}
         snap: dict[tuple[str, ...], tuple[bool, Any]] = {}
-        for leaf in _ALL_RUNTIME_GLOBAL_LEAVES:
+        for leaf in _ALL_RUNTIME_GLOBAL_LEAVES + tuple(
+            (segment, "resinUsage") for segment in _GLOBAL_RESIN_SEGMENTS
+        ):
             cur: Any = config
             present = True
             for key in leaf:
@@ -2084,8 +2086,17 @@ def restore_global_battle_config(
             existed, value = snapshot.get(leaf, (False, None))
             if _restore_leaf(config, leaf, existed, value):
                 changed = True
+        # BGI 可在运行中把旧字段迁移为完整对象；原先缺失/null/空对象须整体恢复。
+        for segment in _GLOBAL_RESIN_SEGMENTS:
+            leaf = (segment, "resinUsage")
+            if leaf in snapshot:
+                existed, value = snapshot[leaf]
+                if not isinstance(value, dict) or not value:
+                    changed |= _restore_leaf(config, leaf, existed, value)
         if changed:
             for leaf in _ALL_RUNTIME_GLOBAL_LEAVES:
+                if len(leaf) > 2 and snapshot.get(leaf[:2]) == (True, {}):
+                    continue  # 原本就存在的空树脂对象不能被祖先清理删除。
                 _prune_empty_ancestors(config, leaf)
             write_file(_global_config_path(root), config)
 
@@ -2165,6 +2176,7 @@ _GLOBAL_STYGIAN_EXTRA_LEAVES: tuple[tuple[str, str], ...] = tuple(
     if key not in ("fightTeamName", "strategyName")
 )
 # 运行时临时补写并需快照/还原的 config.json 叶子全集 = 队伍/策略 + 秘境刷取 + 幽境
+_GLOBAL_RESIN_SEGMENTS = (_GLOBAL_DOMAIN_CONFIG_SEGMENT, _GLOBAL_STYGIAN_SEGMENT)
 _ALL_RUNTIME_GLOBAL_LEAVES = (
     _ALL_GLOBAL_LEAVES
     + _GLOBAL_DOMAIN_LEAVES
@@ -2172,7 +2184,7 @@ _ALL_RUNTIME_GLOBAL_LEAVES = (
     # 只还原面板会改写的新树脂叶子，保留档位、可用树脂及其他原生设置。
     + tuple(
         (segment, "resinUsage", *leaf)
-        for segment in (_GLOBAL_DOMAIN_CONFIG_SEGMENT, _GLOBAL_STYGIAN_SEGMENT)
+        for segment in _GLOBAL_RESIN_SEGMENTS
         for leaf in (
             ("mode",),
             *(

@@ -147,6 +147,27 @@ def test_restore_preserves_unrelated_native_resin_changes(settings_io):
     assert restored == expected
 
 
+@pytest.mark.parametrize("initial_usage", [None, {}, "missing"])
+def test_restore_removes_usage_created_by_bgi_runtime_migration(
+    settings_io, initial_usage
+):
+    root, segment, path, read, write = settings_io
+    original = seed(settings_io, initial_usage)
+    if initial_usage == "missing":
+        del original[segment]["resinUsage"]
+        one_dragon.write_file(path, original)
+    snapshot = one_dragon.snapshot_global_battle_config(root)
+    write(root, {"specifyResinUse": True, "condensedResinUseCount": 3})
+    migrated = one_dragon.read_file(path)
+    migrated[segment]["resinUsage"] = usage()
+    migrated[segment]["resinUsage"]["counts"]["condensed"] = 3
+    one_dragon.write_file(path, migrated)
+
+    one_dragon.restore_global_battle_config(root, snapshot)
+
+    assert one_dragon.read_file(path) == original
+
+
 def test_legacy_config_keeps_working_without_adding_new_fields(settings_io):
     root, segment, path, read, write = settings_io
     original = seed(settings_io, None)
