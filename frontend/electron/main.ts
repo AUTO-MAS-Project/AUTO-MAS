@@ -985,7 +985,6 @@ function createWindow() {
 
   // 页面加载完成后再显示窗口，避免白屏闪烁
   win.webContents.on('did-finish-load', () => {
-    if (mainRendererRecovery?.isSessionEnding()) return
     // 崩溃前窗口就在托盘里，恢复后保持隐藏，不要打断用户。
     if (keepHiddenAfterRecovery) {
       keepHiddenAfterRecovery = false
