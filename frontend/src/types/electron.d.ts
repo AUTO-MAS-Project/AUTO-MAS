@@ -256,6 +256,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
   windowHideToTray: () => Promise<boolean>
+  notifyRendererReady?: () => void
   notifyNativeCloseHandlerReady?: () => void
   appRestart: () => Promise<void>
   /** 只标记「这次退出后重新拉起」，退出本身仍走 appQuit；后端请求的重启用它 */

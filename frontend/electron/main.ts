@@ -1,6 +1,6 @@
 import { detachPromptVirtualDisplay } from './services/virtualDisplayPromptActions'
 import { observeDiagnosticExport, observeDataBackup } from './services/diagnosticAnalytics'
-import { beginMainFeature, mainCountBucket } from './services/featureAnalytics'
+import { beginMainFeature } from './services/featureAnalytics'
 import { analyticsDuration } from './services/analyticsPolicy'
 import { readBackendDocument } from './services/backendConfig'
 import {
@@ -62,7 +62,7 @@ import {
   canRequestRendererClose,
   markForceQuitFailed,
 } from './quitCoordinationState'
-import { decideRendererRecovery } from './rendererCrashRecovery'
+import { attachRendererRecovery } from './services/rendererRecoveryService'
 import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
@@ -83,7 +83,6 @@ import { createOkNteIssueReport } from './services/okNteIssueReportService'
 import { createZzzOdIssueReport } from './services/zzzOdIssueReportService'
 import { createWhimboxIssueReport } from './services/whimboxIssueReportService'
 import {
-  captureMainRendererCrash,
   configureMainSentry,
   recordMainCount,
   recordMainStartup,
@@ -268,7 +267,7 @@ let activeQuitPreparation: number | null = null
 let quitPreparationExpired = false
 const RENDERER_QUIT_FALLBACK_MS = 25000
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
-let rendererCrashes: number[] = []
+let mainRendererRecovery: ReturnType<typeof attachRendererRecovery> | null = null
 let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
@@ -932,57 +931,18 @@ function createWindow() {
     if (quitConfirmationPending) cancelQuitRequest()
   })
 
-  // 渲染进程崩溃恢复。Electron 不会自动重建崩掉的渲染进程：BrowserWindow 还在，
-  // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
-  // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
-  win.webContents.on('render-process-gone', (_event, details) => {
-    nativeCloseHandlerReady = false
-    // 等待确认或保存期间 renderer 消失就取消退出，按通常崩溃流程恢复。
-    if (quitConfirmationPending) cancelQuitRequest()
-    else if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
-    const decision = decideRendererRecovery({
-      reason: details.reason,
-      exitCode: details.exitCode,
-      isQuitting: coordinatedQuit || forceQuitInProgress || quitRequestInFlight,
-      isWindowDestroyed: win.isDestroyed(),
-      now: Date.now(),
-      previousCrashes: rendererCrashes,
-    })
-    rendererCrashes = decision.crashes
-
-    if (decision.action === 'ignore') {
-      logger.info(decision.detail)
-      return
-    }
-
-    logger.error(decision.detail)
-    captureMainRendererCrash({
-      reason: details.reason,
-      exitCode: details.exitCode,
-      crashCount: decision.crashCount,
-      action: decision.action,
-      detail: decision.detail,
-    })
-
-    beginMainFeature('renderer_recovery_decided').finish({
-      reason_kind:
-        details.reason === 'crashed'
-          ? 'crashed'
-          : details.reason === 'oom'
-            ? 'oom'
-            : details.reason === 'killed'
-              ? 'killed'
-              : details.reason === 'launch-failed'
-                ? 'launch_failed'
-                : 'other',
-      recovery_action: decision.action === 'give-up' ? 'give_up' : 'reload',
-      count_bucket: mainCountBucket(decision.crashCount),
-      outcome: 'accepted',
-    })
-    if (decision.action === 'give-up') return
-
-    keepHiddenAfterRecovery = !win.isVisible()
-    win.webContents.reload()
+  mainRendererRecovery = attachRendererRecovery(win, {
+    isQuitting: () => coordinatedQuit || forceQuitInProgress || quitRequestInFlight,
+    onRendererGone: () => {
+      nativeCloseHandlerReady = false
+      // 等待确认或保存期间 renderer 消失就取消退出，按通常崩溃流程恢复。
+      if (quitConfirmationPending) cancelQuitRequest()
+      else if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
+    },
+    onReload: () => {
+      // 崩溃前窗口就在托盘里，重载后继续保持隐藏。
+      keepHiddenAfterRecovery = !win.isVisible()
+    },
   })
 
   let responseIncident: ReturnType<
@@ -1025,11 +985,12 @@ function createWindow() {
 
   // 页面加载完成后再显示窗口，避免白屏闪烁
   win.webContents.on('did-finish-load', () => {
+    if (mainRendererRecovery?.isSessionEnding()) return
     // 崩溃前窗口就在托盘里，恢复后保持隐藏，不要打断用户。
     if (keepHiddenAfterRecovery) {
       keepHiddenAfterRecovery = false
       notifyWindowActivity('background')
-      logger.info('渲染进程已恢复，窗口保持托盘隐藏状态')
+      logger.info('重载页面已加载，窗口保持托盘隐藏状态')
       return
     }
 
@@ -1131,6 +1092,7 @@ function createWindow() {
 
   // 窗口事件处理
   win.on('close', (event: Electron.Event) => {
+    if (mainRendererRecovery?.isSessionEnding()) return
     const quitState = { coordinatedQuit, forceQuitInProgress, quitRequestInFlight }
 
     if (!canElectronExitImmediately(quitState)) {
@@ -1175,6 +1137,7 @@ function createWindow() {
 
   win.on('closed', () => {
     logger.info('主窗口已关闭')
+    mainRendererRecovery = null
     nativeCloseHandlerReady = false
     closeVirtualDisplayPrompt()
     // 清理监听（可选）
@@ -1911,6 +1874,12 @@ ipcMain.handle('window-close', () => {
   requestRendererClose('renderer 请求关闭窗口')
 })
 
+// 页面加载事件不能证明 Vue 已挂载；只接受当前主窗口主 frame 的就绪信号。
+ipcMain.on('renderer-ready', event => {
+  if (!isApplicationWindowSender(event, mainWindow, { allowDevelopment: true })) return
+  mainRendererRecovery?.rendererReady()
+})
+
 ipcMain.on('native-window-close-handler-ready', event => {
   if (mainWindow && event.sender === mainWindow.webContents) {
     nativeCloseHandlerReady = true
@@ -2514,6 +2483,7 @@ app.on('will-quit', () => {
 })
 
 app.on('before-quit', event => {
+  if (mainRendererRecovery?.isSessionEnding()) return
   if (canElectronExitImmediately({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight })) {
     return
   }

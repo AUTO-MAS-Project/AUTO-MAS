@@ -21,7 +21,29 @@ export interface RendererCrashInput {
   previousCrashes: readonly number[]
 }
 
-type RendererRecoveryAction = 'ignore' | 'reload' | 'give-up'
+export type RendererRecoveryAction = 'ignore' | 'reload' | 'give-up'
+
+export interface RendererCrashDetails {
+  reason: string
+  exitCode: number
+  crashCount: number
+  action: RendererRecoveryAction
+}
+
+export interface RendererReloadResult {
+  outcome: 'success' | 'failure' | 'unknown' | 'cancelled'
+  resultKind:
+    | 'ready'
+    | 'load_failed'
+    | 'renderer_gone'
+    | 'reload_threw'
+    | 'timeout'
+    | 'window_closed'
+    | 'app_quitting'
+    | 'session_end'
+  durationMs: number
+  loadErrorCode?: number
+}
 
 interface RendererCrashDecision {
   action: RendererRecoveryAction
