@@ -12,7 +12,7 @@ import pytest
 
 from app.models.emulator import DeviceInfo, DeviceStatus, EmulatorRuntimePolicy
 from app.utils import emulator as _utils_emulator
-from app.utils.common import process_runner
+from app.utils.common.process import runner as process_runner
 
 mumu = _utils_emulator.mumu
 PACKAGE = "com.example.game"
