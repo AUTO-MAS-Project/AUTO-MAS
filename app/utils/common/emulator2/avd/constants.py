@@ -235,7 +235,7 @@ CPU_CHOICES = (2, 4, 6)
 DEFAULT_MEMORY_MB = 6144
 DEFAULT_CPU = 6
 #: 游戏的推荐内存（MB），只用来提示：界面上的推荐值，以及开机时实例内存低于推荐值记一条日志。
-#: 只列实测过内存的 1999（数据见 aemu-lab ``自研模拟器-动态内存.md`` 第 7.6 节）。
+#: 只列实测过内存的 1999（数据来自 ModAVD 实测）。
 RECOMMENDED_MEMORY_MB: dict[str, int] = {
     "com.shenlan.m.reverse1999": 4096,
 }
@@ -248,7 +248,7 @@ DATA_PARTITION_RANGE_GB = (16, 512)
 SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_DENSITY = 1280, 720, 240
 #: 刷新率（``config.ini`` 的 ``hw.lcd.vsync``，下次开机生效），按实例设。默认 60（用户 10-16 定：
 #: 帧率影响脚本操作）；30 是低消耗档：终末地大世界 30 Hz 下稳定 30 fps、qemu 约 1.6 核，60 Hz 下
-#: 54–61 fps、qemu 4 核以上（aemu-lab 修复队列「终末地帧率与稳定性」）。
+#: 54–61 fps、qemu 4 核以上（ModAVD 实测）。
 FPS_CHOICES = (30, 60)
 DEFAULT_FPS = 60
 
@@ -256,7 +256,7 @@ DEFAULT_FPS = 60
 #: 与 Hyper-V / WSL2 一致；驱动绑定时内核会把它重置成 pageblock_order 10）。
 BALLOON_PAGE_REPORTING_ORDER = 9
 #: 客体脏页回写（``/proc/sys/vm/dirty_expire_centisecs`` / ``dirty_writeback_centisecs``，单位 1/100 秒），
-#: 每次开机都设（不持久）。依据 10-04 硬杀实测（aemu-lab ``AGENTS.md``「关机」，32 次冷启动）：「先删旧文件
+#: 每次开机都设（不持久）。依据 10-04 硬杀实测（32 次冷启动）：「先删旧文件
 #: 再把临时文件改名过去」这种写法，在默认 3000/500 下写完 2–34 秒内被硬杀会变成 0 字节；200/100 把窗口缩到
 #: 约 5 秒，代价是普通负载多写约 14%。AOSP 自己在低内存设备上也用 200。控制台 kill / 强杀前仍要先
 #: ``sync``；安卓正常关机由客体自己写回。
@@ -314,8 +314,8 @@ DEBLOAT_PACKAGES: tuple[str, ...] = (
     "com.google.android.markup",
 )
 
-#: 后台游戏清理时永远不动的第三方包（桌面本身）。输入法按当前默认输入法另外排除。
-KEEP_PACKAGES = frozenset({LIGHT_LAUNCHER.package})
+#: 后台游戏清理时永远不动的第三方包（桌面本身、宿主输入法由 modavd 管理）。
+KEEP_PACKAGES = frozenset({LIGHT_LAUNCHER.package, "org.modavd.ime"})
 
 #: 冻结看门狗：探活间隔、单次 adb 探活超时、连续几次「adb 不通且 qemu CPU 不动」判冻结。
 WATCHDOG_INTERVAL_SECONDS = 30.0
