@@ -695,13 +695,13 @@ def start_maa_software_update_precheck(
 
 async def prepare_maa_software_update(
     maa_root: Path, *, config_dir: Path | None = None, config: MaaConfig | None = None
-) -> None:
+) -> str | None:
     """整批用户结束、update_maa() 之前调用。
 
     等待本轮预下载收尾（下载自身有总超时，主动取消交管理器回收），再复核
     当前安装是否仍需更新，把共享缓存完整包复制进安装目录并登记；安装由既有的
     update_maa() → MAA 官方更新链完成。任何失败只写日志，不改变 update_maa()
-    对既有合法待更新包的处理；主动取消正常传播。
+    对既有合法待更新包的处理；主动取消正常传播。登记成功返回实际版本，否则返回 None。
 
     Args:
         maa_root: MAA 安装目录。
@@ -784,12 +784,14 @@ async def prepare_maa_software_update(
                 logger.info(
                     f"MAA 本体更新: 已登记 {manifest['version']}，交由 MAA 官方更新器安装"
                 )
+                return manifest["version"]
         finally:
             cache_lock.release()
     except asyncio.CancelledError:
         raise
     except Exception:
         logger.exception("MAA 本体更新: 准备异常（已忽略，不影响本轮任务）")
+    return None
 
 
 async def has_cached_maa_software_update(
@@ -852,11 +854,23 @@ async def prepare_maa_software_before_run(
         )
         if prepared_version is None:
             raise RuntimeError("MAA 更新版本尚未确认，请检查网络后重试")
-    await prepare_maa_software_update(maa_root, config_dir=config_dir, config=config)
+    registered_version = await prepare_maa_software_update(
+        maa_root, config_dir=config_dir, config=config
+    )
     version, package = read_pending_update(maa_root)
-    if version != prepared_version or not package or not (maa_root / package).is_file():
+    registered = parse_version(registered_version or "")
+    prepared = parse_version(prepared_version)
+    if (
+        registered_version is None
+        or registered is None
+        or prepared is None
+        or compare_versions(registered, prepared) < 0
+        or version != registered_version
+        or not package
+        or not (maa_root / package).is_file()
+    ):
         raise RuntimeError("MAA 更新包未准备完成，请检查 CDK、额度或网络后重试")
-    return prepared_version
+    return registered_version
 
 
 async def cancel_maa_software_update_precheck(maa_root: Path) -> None:

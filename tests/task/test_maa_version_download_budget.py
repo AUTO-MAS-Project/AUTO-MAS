@@ -14,6 +14,7 @@ import pytest
 from app.task.MAA.tools import fluxdown_update as github
 from app.task.MAA.tools import resource_update as resource
 from app.task.MAA.tools import software_update as software
+from app.task.MAA.tools.software_package import write_pending_update
 
 NOW = datetime(2026, 11, 1, 4, tzinfo=timezone.utc)
 
@@ -178,6 +179,55 @@ async def test_software_new_release_is_downloaded_once_for_other_installs(
 
 
 @pytest.mark.asyncio
+async def test_software_newer_cache_between_confirmation_and_registration(
+    software_install,
+):
+    install = software_install
+    first_download = asyncio.Event()
+    second_query = asyncio.Event()
+    download = install.downloader.side_effect
+    requests = [
+        {
+            "data": {
+                "version_name": version,
+                "url": "https://example.invalid/maa.zip",
+                "update_type": "full",
+            }
+        }
+        for version in ("v6.1.0", "v6.2.0")
+    ]
+    install.request.side_effect = requests
+
+    async def query(arch, channel):
+        if asyncio.current_task().get_name() == "second-update":
+            second_query.set()
+            return "v6.2.0"
+        return "v6.1.0"
+
+    async def interleaved_download(url, path, **kwargs):
+        if install.downloader.await_count == 1:
+            first_download.set()
+            await second_query.wait()
+        await download(url, path, **kwargs)
+
+    install.query.side_effect = query
+    install.downloader.side_effect = interleaved_download
+    second_root = install.installation("maa-second")
+    async with asyncio.timeout(5):
+        first = asyncio.create_task(prepare_software(install), name="first-update")
+        await first_download.wait()
+        second = asyncio.create_task(
+            prepare_software(install, second_root), name="second-update"
+        )
+        results = await asyncio.gather(first, second, return_exceptions=True)
+    assert results == ["v6.2.0", "v6.2.0"]
+    assert all(
+        software.read_pending_update(root)[0] == "v6.2.0"
+        for root in (install.root, second_root)
+    )
+
+
+@pytest.mark.asyncio
 async def test_software_corrupt_cache_cannot_bypass_version_budget(software_install):
     install = software_install
     assert await prepare_software(install) == "v6.1.0"
@@ -187,6 +237,19 @@ async def test_software_corrupt_cache_cannot_bypass_version_budget(software_inst
         await prepare_software(install, root)
     assert software.read_pending_update(root) == ("", "")
     install.request.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_software_existing_unknown_newer_package_is_not_a_success(
+    software_install,
+):
+    install = software_install
+    package = install.root / "other.zip"
+    package.write_bytes(b"not the verified shared package")
+    write_pending_update(install.root, version="v9.0.0", package=str(package))
+    with pytest.raises(RuntimeError):
+        await prepare_software(install)
+    assert software.read_pending_update(install.root) == ("v9.0.0", str(package))
 
 
 @pytest.mark.asyncio
