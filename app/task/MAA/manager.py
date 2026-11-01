@@ -590,13 +590,9 @@ class MaaManager(ScriptManagerBase):
             root / "MAA.Updater.exe"
         ):
             self._updater_running = True
-            raise MaaUpdaterRunningError(
-                "MAA 官方更新器仍在运行，不能启动后续账号任务"
-            )
+            raise MaaUpdaterRunningError("MAA 官方更新器仍在运行，不能启动后续账号任务")
         if has_incomplete_resource_update(root):
-            raise MaaUpdateUnsafeError(
-                "MAA 资源更新未完成，不能安全启动后续账号任务"
-            )
+            raise MaaUpdateUnsafeError("MAA 资源更新未完成，不能安全启动后续账号任务")
         if has_delegated_update_failure(root):
             raise MaaUpdateUnsafeError(
                 "MAA 官方更新器报告安装失败，不能安全启动后续账号任务"
