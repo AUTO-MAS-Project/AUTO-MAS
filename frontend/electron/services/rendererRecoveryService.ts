@@ -1,4 +1,4 @@
-import type { BrowserWindow, RenderProcessGoneDetails } from 'electron'
+import type { BrowserWindow, RenderProcessGoneDetails, WebFrameMain } from 'electron'
 import { decideRendererRecovery, type RendererReloadResult } from '../rendererCrashRecovery'
 import { beginMainFeature, mainCountBucket } from './featureAnalytics'
 import { getLogger } from './logger'
@@ -9,6 +9,7 @@ const WM_ENDSESSION = 0x0016
 const logger = getLogger('渲染进程恢复')
 
 interface RendererRecoveryOptions {
+  crashHistory: number[]
   isQuitting(): boolean
   onRendererGone(): void
   onReload(): void
@@ -16,12 +17,11 @@ interface RendererRecoveryOptions {
 
 /** 一次重载只结算一次；窗口与系统退出均由主进程确认。 */
 export function attachRendererRecovery(win: BrowserWindow, options: RendererRecoveryOptions) {
-  let crashes: number[] = []
   let sessionEnding = false
   let sessionRendererExit: RenderProcessGoneDetails | null = null
   let pending: {
     loaded: boolean
-    ready: boolean
+    readyFrame: Pick<WebFrameMain, 'processId' | 'routingId'> | null
     timer: ReturnType<typeof setTimeout>
     finish(result: Omit<RendererReloadResult, 'durationMs'>): void
   } | null = null
@@ -39,7 +39,11 @@ export function attachRendererRecovery(win: BrowserWindow, options: RendererReco
         outcome: 'cancelled',
         resultKind: sessionEnding ? 'session_end' : 'app_quitting',
       })
-    } else if (pending?.loaded && pending.ready) {
+    } else if (
+      pending?.loaded &&
+      pending.readyFrame?.processId === win.webContents.mainFrame.processId &&
+      pending.readyFrame.routingId === win.webContents.mainFrame.routingId
+    ) {
       finishPending({ outcome: 'success', resultKind: 'ready' })
     }
   }
@@ -59,12 +63,15 @@ export function attachRendererRecovery(win: BrowserWindow, options: RendererReco
         // 关机期间 renderer 可能已先退出；取消关机后不能留下无 frame 的黑窗。
         const details = sessionRendererExit
         sessionRendererExit = null
-        if (details && !win.isDestroyed()) handleRendererGone(details)
+        if (details && !win.isDestroyed()) handleRendererGone(details, 'cancelled_session')
       }
     })
   }
 
-  function handleRendererGone(details: RenderProcessGoneDetails) {
+  function handleRendererGone(
+    details: RenderProcessGoneDetails,
+    trigger: 'exit' | 'cancelled_session' = 'exit'
+  ) {
     if (sessionEnding) {
       sessionRendererExit = details
       logger.info('Windows 会话结束期间忽略渲染进程退出')
@@ -80,10 +87,11 @@ export function attachRendererRecovery(win: BrowserWindow, options: RendererReco
       exitCode: details.exitCode,
       isQuitting: options.isQuitting(),
       isWindowDestroyed: win.isDestroyed(),
+      recoverCleanExit: trigger === 'cancelled_session',
       now: Date.now(),
-      previousCrashes: crashes,
+      previousCrashes: options.crashHistory,
     })
-    crashes = decision.crashes
+    options.crashHistory.splice(0, options.crashHistory.length, ...decision.crashes)
     if (decision.action === 'ignore') {
       logger.info(decision.detail)
       return
@@ -91,7 +99,8 @@ export function attachRendererRecovery(win: BrowserWindow, options: RendererReco
 
     logger.error(decision.detail)
     const crash = { ...details, crashCount: decision.crashCount, action: decision.action }
-    captureMainRendererCrash(crash)
+    // 系统关闭时的正常拆卸不伪装成崩溃；取消关机仍需观察页面重建结果。
+    if (details.reason !== 'clean-exit') captureMainRendererCrash(crash)
     const reasonKind =
       details.reason === 'crashed' || details.reason === 'oom' || details.reason === 'killed'
         ? details.reason
@@ -111,7 +120,7 @@ export function attachRendererRecovery(win: BrowserWindow, options: RendererReco
     const report = beginMainRendererReload(crash)
     const attempt = {
       loaded: false,
-      ready: false,
+      readyFrame: null as Pick<WebFrameMain, 'processId' | 'routingId'> | null,
       timer: setTimeout(() => {
         if (pending !== attempt) return
         finishPending({
@@ -145,7 +154,7 @@ export function attachRendererRecovery(win: BrowserWindow, options: RendererReco
   win.webContents.on('did-start-loading', () => {
     if (pending) {
       pending.loaded = false
-      pending.ready = false
+      pending.readyFrame = null
     }
   })
   win.webContents.on('did-finish-load', () => {
@@ -170,8 +179,8 @@ export function attachRendererRecovery(win: BrowserWindow, options: RendererReco
   })
   return {
     isSessionEnding: () => sessionEnding,
-    rendererReady() {
-      if (pending) pending.ready = true
+    rendererReady(frame: Pick<WebFrameMain, 'processId' | 'routingId'>) {
+      if (pending) pending.readyFrame = { processId: frame.processId, routingId: frame.routingId }
       finishIfReady()
     },
   }

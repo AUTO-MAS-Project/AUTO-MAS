@@ -50,6 +50,7 @@ class TestWindow extends EventEmitter {
 let win: TestWindow
 let recovery: ReturnType<typeof attachRendererRecovery>
 let quitting: boolean
+let crashHistory: number[]
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!
 const crash = () =>
   win.webContents.emit('render-process-gone', {}, { reason: 'killed', exitCode: 1073807364 })
@@ -67,7 +68,7 @@ const failedLoad = (code = -6, isMainFrame = true, processId = 10) => {
 }
 const ready = () => {
   win.webContents.emit('did-finish-load')
-  recovery.rendererReady()
+  recovery.rendererReady(win.webContents.mainFrame)
 }
 const flushTelemetry = async () => {
   for (let i = 0; i < 8; i++) await Promise.resolve()
@@ -81,7 +82,9 @@ beforeEach(() => {
   analyticsService.setEnabled(true)
   win = new TestWindow()
   quitting = false
+  crashHistory = []
   recovery = attachRendererRecovery(win as unknown as BrowserWindow, {
+    crashHistory,
     isQuitting: () => quitting,
     onRendererGone: vi.fn(),
     onReload: vi.fn(),
@@ -101,7 +104,7 @@ describe('渲染进程恢复结果', () => {
     crash()
     win.webContents.emit('did-finish-load')
     expect(reports.reload).not.toHaveBeenCalled()
-    recovery.rendererReady()
+    recovery.rendererReady(win.webContents.mainFrame)
     ready()
     expect(reports.reload).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ outcome: 'success', resultKind: 'ready' })
@@ -127,7 +130,7 @@ describe('渲染进程恢复结果', () => {
 
   it('挂载 IPC 早于加载完成时也只结算一次', () => {
     crash()
-    recovery.rendererReady()
+    recovery.rendererReady(win.webContents.mainFrame)
     expect(reports.reload).not.toHaveBeenCalled()
     win.webContents.emit('did-finish-load')
     expect(reports.reload).toHaveBeenCalledTimes(1)
@@ -205,6 +208,49 @@ describe('渲染进程恢复结果', () => {
     expect(reports.crash).toHaveBeenCalledTimes(1)
     await flushTelemetry()
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('取消关机后重建正常退出的 renderer，但不伪造崩溃', () => {
+    win.emit('query-session-end')
+    win.webContents.emit('render-process-gone', {}, { reason: 'clean-exit', exitCode: 0 })
+    win.hooks.get(0x0016)!(Buffer.alloc(8))
+    expect(win.webContents.reload).toHaveBeenCalledTimes(1)
+    expect(reports.crash).not.toHaveBeenCalled()
+    ready()
+    expect(reports.reload).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: 'success' })
+    )
+  })
+
+  it('旧 renderer 的就绪信号不能确认替代 frame 恢复成功', () => {
+    crash()
+    recovery.rendererReady(win.webContents.mainFrame)
+    win.webContents.mainFrame = { processId: 11, routingId: 21 }
+    win.webContents.emit('did-finish-load')
+    expect(reports.reload).not.toHaveBeenCalled()
+    recovery.rendererReady(win.webContents.mainFrame)
+    expect(reports.reload).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: 'success' })
+    )
+  })
+
+  it('重建主窗口仍共享同一进程的重载预算', () => {
+    crash()
+    crash()
+    win.emit('closed')
+    win = new TestWindow()
+    recovery = attachRendererRecovery(win as unknown as BrowserWindow, {
+      crashHistory,
+      isQuitting: () => false,
+      onRendererGone: vi.fn(),
+      onReload: vi.fn(),
+    })
+    crash()
+    crash()
+    expect(win.webContents.reload).toHaveBeenCalledTimes(1)
+    expect(reports.crash).toHaveBeenLastCalledWith(
+      expect.objectContaining({ action: 'give-up', crashCount: 4 })
+    )
   })
 
   it('窗口销毁取消未决观察并清理超时', () => {

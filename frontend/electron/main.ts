@@ -268,6 +268,7 @@ let quitPreparationExpired = false
 const RENDERER_QUIT_FALLBACK_MS = 25000
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
 let mainRendererRecovery: ReturnType<typeof attachRendererRecovery> | null = null
+const rendererCrashes: number[] = []
 let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
@@ -925,6 +926,10 @@ function createWindow() {
 
   // 崩溃时窗口若在托盘里，恢复后保持隐藏，不要自己弹出来打断用户。
   let keepHiddenAfterRecovery = false
+  let hasShownMainWindow = false
+  win.once('show', () => {
+    hasShownMainWindow = true
+  })
 
   // 主框架重载或导航后旧确认窗已销毁，撤销等待；同文档路由切换不触发此事件。
   win.webContents.on('did-navigate', () => {
@@ -932,6 +937,7 @@ function createWindow() {
   })
 
   mainRendererRecovery = attachRendererRecovery(win, {
+    crashHistory: rendererCrashes,
     isQuitting: () => coordinatedQuit || forceQuitInProgress || quitRequestInFlight,
     onRendererGone: () => {
       nativeCloseHandlerReady = false
@@ -941,7 +947,7 @@ function createWindow() {
     },
     onReload: () => {
       // 崩溃前窗口就在托盘里，重载后继续保持隐藏。
-      keepHiddenAfterRecovery = !win.isVisible()
+      keepHiddenAfterRecovery = hasShownMainWindow && !win.isVisible()
     },
   })
 
@@ -1091,10 +1097,9 @@ function createWindow() {
 
   // 窗口事件处理
   win.on('close', (event: Electron.Event) => {
-    if (mainRendererRecovery?.isSessionEnding()) return
     const quitState = { coordinatedQuit, forceQuitInProgress, quitRequestInFlight }
 
-    if (!canElectronExitImmediately(quitState)) {
+    if (!mainRendererRecovery?.isSessionEnding() && !canElectronExitImmediately(quitState)) {
       event.preventDefault()
       if (forceQuitInProgress) {
         logger.warn('强制清理仍在进行，暂不允许窗口提前关闭')
@@ -1110,7 +1115,7 @@ function createWindow() {
         win.webContents.send('native-window-close-requested')
       }
     } else {
-      // 仅在 renderer 已完成协调退出后允许真实关闭窗口，并立即保存窗口状态
+      // 协调退出和系统会话结束均直接关闭，并立即保存窗口状态。
       if (!win.isDestroyed()) {
         try {
           const config = loadConfig()
@@ -1876,7 +1881,7 @@ ipcMain.handle('window-close', () => {
 // 页面加载事件不能证明 Vue 已挂载；只接受当前主窗口主 frame 的就绪信号。
 ipcMain.on('renderer-ready', event => {
   if (!isApplicationWindowSender(event, mainWindow, { allowDevelopment: true })) return
-  mainRendererRecovery?.rendererReady()
+  if (event.senderFrame) mainRendererRecovery?.rendererReady(event.senderFrame)
 })
 
 ipcMain.on('native-window-close-handler-ready', event => {
