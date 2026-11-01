@@ -349,8 +349,8 @@ async def _fetch_latest_version(current: str) -> datetime:
         raise _QueryError(f"version_name 无法解析: {name}") from e
 
 
-async def _mirror_download_url(cdk: str) -> str:
-    """不指定增量基线，申请全量包；地址一次性，现查现下。"""
+async def _request_resource_package(cdk: str) -> tuple[str, datetime | None]:
+    """申请全量包，返回一次性地址与响应版本；版本损坏由调用方记账后报错。"""
     try:
         async with asyncio.timeout(_QUERY_TIMEOUT):
             payload = await _service_update_transport.request_mirror_resource(
@@ -370,7 +370,11 @@ async def _mirror_download_url(cdk: str) -> str:
         raise _DownloadError("镜像酱未返回下载地址")
     if payload["data"].get("update_type") != "full":
         raise _DownloadError("镜像酱未返回全量资源包，跳过以避免多实例重复取包")
-    return str(url)
+    try:
+        version = _parse_clock(str(payload["data"].get("version_name") or ""))
+    except ValueError:
+        version = None
+    return str(url), version
 
 
 def _download_line(downloaded: int, total: int, speed: float) -> str:
@@ -758,11 +762,13 @@ async def _refresh_resource_stage(
     await _report(progress, f"发现新版本 {_format_clock(target)}，下载资源包…")
     try:
         # 凭据被拒、尚未取得下载地址时不消耗当天取包次数；不同 CDK 独立退避。
-        url = await _mirror_download_url(cdk)
+        url, actual = await _request_resource_package(cdk)
         state[attempt_field] = datetime.now(timezone.utc).isoformat()
-        state[version_field] = target.isoformat()
+        state[version_field] = max(target, actual or target).isoformat()
         _utils_io.write_file(_STATE_FILE, state)
-        await _refresh_stage(target=target, url=url, progress=progress)
+        if actual is None or actual < target:
+            raise _DownloadError("镜像酱资源包未达到已确认的目标版本，请稍后重试")
+        await _refresh_stage(target=actual, url=url, progress=progress)
         return _load_manifest()
     except _DownloadError as e:
         state[failure_field] = (

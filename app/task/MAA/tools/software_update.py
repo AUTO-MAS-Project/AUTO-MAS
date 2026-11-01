@@ -604,7 +604,7 @@ async def _precheck_inner(
     if (
         manifest is not None
         and cached is not None
-        and compare_versions(cached, target) == 0
+        and compare_versions(cached, target) >= 0
         and await asyncio.to_thread(cache_zip_matches, cache_dir, manifest)
     ):
         return manifest["version"]
@@ -655,7 +655,7 @@ def start_maa_software_update_precheck(
     """自动代理开始时启动本体更新预检查：检查版本并把完整包预下载进共享
     缓存，供收尾 prepare_maa_software_update 消费。
 
-    同一安装的任务进程内去重，同通道架构复用查询结果和完整包；脚本未开启
+    同一安装的任务进程内去重，同通道架构复用已校验的完整包；脚本未开启
     更新接管、无生效 CDK 或安装信息无法识别时不创建任务。本函数不等待
     网络，任何失败只写日志。
 

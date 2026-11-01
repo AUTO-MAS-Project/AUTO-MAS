@@ -24,7 +24,7 @@ class FixedDatetime(datetime):
         return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
 
 
-def save_state(path, key, version, *, yesterday=False, backoff=False):
+def save_state(path, *, key, version, yesterday=False, backoff=False):
     state = {
         f"last_download_attempt_at/{key}": (
             NOW - timedelta(days=1) if yesterday else NOW
@@ -112,7 +112,7 @@ async def test_software_new_version_and_legacy_state_allow_same_day_download(
     software_install, previous
 ):
     install = software_install
-    save_state(install.state, "win/x64/beta", previous)
+    save_state(install.state, key="win/x64/beta", version=previous)
     assert await prepare_software(install) == "v6.1.0"
     install.request.assert_awaited_once()
     install.downloader.assert_awaited_once()
@@ -125,7 +125,7 @@ async def test_software_same_or_older_version_never_requests_another_url(
     software_install, previous
 ):
     install = software_install
-    save_state(install.state, "win/x64/beta", previous)
+    save_state(install.state, key="win/x64/beta", version=previous)
     with pytest.raises(RuntimeError):
         await prepare_software(install)
     install.request.assert_not_awaited()
@@ -144,6 +144,20 @@ async def test_software_cache_is_registered_for_other_install_and_cdk_after_rest
         assert await prepare_software(install, root) == "v6.1.0"
         version, package = software.read_pending_update(root)
         assert version == "v6.1.0" and Path(package).is_file()
+    install.request.assert_awaited_once()
+    install.downloader.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_software_verified_newer_cache_survives_lagging_free_query(
+    software_install,
+):
+    install = software_install
+    install.request.return_value["data"]["version_name"] = "v6.2.0"
+    assert await prepare_software(install) == "v6.2.0"
+    root = install.installation("maa-second")
+    assert await prepare_software(install, root) == "v6.2.0"
+    assert software.read_pending_update(root)[0] == "v6.2.0"
     install.request.assert_awaited_once()
     install.downloader.assert_awaited_once()
 
@@ -215,11 +229,17 @@ async def test_software_previous_day_allows_retry_but_backoff_still_applies(
     software_install,
 ):
     install = software_install
-    save_state(install.state, "win/x64/beta", "v6.1.0", yesterday=True, backoff=True)
+    save_state(
+        install.state,
+        key="win/x64/beta",
+        version="v6.1.0",
+        yesterday=True,
+        backoff=True,
+    )
     with pytest.raises(RuntimeError):
         await prepare_software(install)
     install.request.assert_not_awaited()
-    save_state(install.state, "win/x64/beta", "v6.1.0", yesterday=True)
+    save_state(install.state, key="win/x64/beta", version="v6.1.0", yesterday=True)
     assert await prepare_software(install) == "v6.1.0"
 
 
@@ -240,15 +260,25 @@ def resource_install(tmp_path, monkeypatch, isolated_app_paths):
     target = NOW - timedelta(hours=1)
     query = AsyncMock(return_value=target)
     monkeypatch.setattr(resource, "latest_resource_clock", query)
-    request = AsyncMock(return_value="https://example.invalid/resource.zip")
-    monkeypatch.setattr(resource, "_mirror_download_url", request)
+    request = AsyncMock(
+        return_value={
+            "data": {
+                "url": "https://example.invalid/resource.zip",
+                "version_name": resource._format_clock(target),
+                "update_type": "full",
+            }
+        }
+    )
+    monkeypatch.setattr(
+        resource._service_update_transport, "request_mirror_resource", request
+    )
 
     async def download(url, path, **kwargs):
         with zipfile.ZipFile(path, "w") as archive:
             archive.writestr(
                 "resource/version.json",
                 json.dumps(
-                    {"last_updated": resource._format_clock(query.return_value)}
+                    {"last_updated": request.return_value["data"]["version_name"]}
                 ),
             )
             archive.writestr("resource/tasks.json", "opaque resource")
@@ -291,7 +321,12 @@ async def test_resource_new_version_legacy_and_previous_day_allow_download(
             else install.target
         ).isoformat()
     )
-    save_state(install.state, install.key, version, yesterday=previous == "yesterday")
+    save_state(
+        install.state,
+        key=install.key,
+        version=version,
+        yesterday=previous == "yesterday",
+    )
     await resource.prepare_install_resources(install.root, cdk="test-cdk", github=False)
     assert resource.read_resource_clock(install.root) == install.target
     install.request.assert_awaited_once()
@@ -304,7 +339,9 @@ async def test_resource_same_version_or_backoff_never_requests_url(
 ):
     install = resource_install
     version = install.target - timedelta(hours=1) if backoff else install.target
-    save_state(install.state, install.key, version.isoformat(), backoff=backoff)
+    save_state(
+        install.state, key=install.key, version=version.isoformat(), backoff=backoff
+    )
     with pytest.raises(RuntimeError):
         await resource.prepare_install_resources(
             install.root, cdk="test-cdk", github=False
@@ -319,6 +356,9 @@ async def test_resource_new_release_updates_shared_cache_once_for_all_installs(
     install = resource_install
     await resource.prepare_install_resources(install.root, cdk="test-cdk", github=False)
     install.query.return_value += timedelta(minutes=9)
+    install.request.return_value["data"]["version_name"] = resource._format_clock(
+        install.query.return_value
+    )
     roots = [
         install.root,
         install.installation("maa-second"),
@@ -360,3 +400,58 @@ async def test_resource_failed_download_keeps_version_budget(resource_install, f
             install.root, cdk="test-cdk", github=False
         )
     install.request.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["error", "cancel"])
+async def test_resource_response_newer_than_query_keeps_its_budget(
+    resource_install, failure
+):
+    install = resource_install
+    actual = install.target + timedelta(minutes=9)
+    install.request.return_value["data"]["version_name"] = resource._format_clock(
+        actual
+    )
+    install.downloader.side_effect = (
+        OSError("offline") if failure == "error" else asyncio.CancelledError()
+    )
+    with pytest.raises(RuntimeError if failure == "error" else asyncio.CancelledError):
+        await resource.prepare_install_resources(
+            install.root, cdk="test-cdk", github=False
+        )
+    saved = json.loads(install.state.read_text())
+    assert saved[f"last_download_attempt_version/{install.key}"] == actual.isoformat()
+    saved.pop(f"download_fail_until/{install.key}", None)
+    install.state.write_text(json.dumps(saved))
+    install.query.return_value = actual
+    with pytest.raises(RuntimeError):
+        await resource.prepare_install_resources(
+            install.root, cdk="test-cdk", github=False
+        )
+    install.request.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response_version", [None, "2026-10-31 00:00:00.000"])
+async def test_resource_invalid_or_older_response_is_accounted_before_rejection(
+    resource_install, response_version
+):
+    install = resource_install
+    install.request.return_value["data"]["version_name"] = response_version
+    with pytest.raises(RuntimeError):
+        await resource.prepare_install_resources(
+            install.root, cdk="test-cdk", github=False
+        )
+    saved = json.loads(install.state.read_text())
+    assert (
+        saved[f"last_download_attempt_version/{install.key}"]
+        == install.target.isoformat()
+    )
+    saved.pop(f"download_fail_until/{install.key}", None)
+    install.state.write_text(json.dumps(saved))
+    with pytest.raises(RuntimeError):
+        await resource.prepare_install_resources(
+            install.root, cdk="test-cdk", github=False
+        )
+    install.request.assert_awaited_once()
+    install.downloader.assert_not_awaited()
