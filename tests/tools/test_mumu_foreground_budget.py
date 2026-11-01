@@ -37,7 +37,9 @@ class Harness:
         )
         self.manager.emulator_path = Path("MuMuManager-test-only")
         self.manager.runtime_policy = EmulatorRuntimePolicy(
-            silence_enabled=lambda: False, block_ads_enabled=lambda: False
+            silence_enabled=lambda: False,
+            block_ads_enabled=lambda: False,
+            resource_path=Path("MuMuManager-test-only"),
         )
         self.manager._audio_mute_states = {}
         monkeypatch.setattr(mumu, "time", SimpleNamespace(monotonic=lambda: self.now))
