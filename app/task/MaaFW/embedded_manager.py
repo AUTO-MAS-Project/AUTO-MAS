@@ -44,11 +44,19 @@ from typing import TYPE_CHECKING, Any, Literal
 import httpx
 
 from app.config import ConfigCollection, config_manager
-from app.core import Config
-from app.core.ws import Publisher, protocol
+from app.core import Config, Notify, Publisher
+from app.core.notify.lifecycle import NotificationTaskBase as NotificationTaskBase
+from app.core.notify.task_content import (
+    NOTIFY_SCREENSHOT_LIMIT as NOTIFY_SCREENSHOT_LIMIT,
+)
+from app.core.notify.task_content import (
+    prepare_screenshot_images as prepare_screenshot_images,
+)
+from app.core.notify.task_content import screenshot_entries as screenshot_entries
+from app.core.ws import protocol
 from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.models.emulator import DeviceBase, DeviceProvider
-from app.models.notification_report import TaskResultData, TaskResultReport
+from app.models.notification.report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.MaaFW.tools.backup_archive import (
@@ -95,14 +103,7 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_proxy_url,
 )
 from app.task.MaaFW.tools.embedded.view_heal import heal_projection
-from app.task.notification_lifecycle import NotificationTaskBase
-from app.task.notify_core import (
-    NOTIFY_SCREENSHOT_LIMIT,
-    prepare_screenshot_images,
-    screenshot_entries,
-)
 from app.utils import TASK_MODE_ZH, get_logger, sanitize_log_message
-from app.utils import paths as _utils_paths
 
 if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查，运行期不导入 maa
     from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
@@ -1475,7 +1476,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 agent_env_root=agent_env_root,
                 # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
                 # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
-                import_paths=[_utils_paths.SOURCE_ROOT],
+                import_paths=[Config.source_path],
                 send_log=send_log,
                 cancel_event=cancel_event,
                 lenient_health_check=lenient_health_check,
@@ -1715,7 +1716,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
     async def _record_project_run(self) -> None:
         """记一次项目运行；只认白名单里的公开项目，其余记 ``other``。遥测失败不影响任务。"""
 
-        from app.services.telemetry import record_count
+        from app.services import telemetry as _service_telemetry
         from app.task.MaaFW.tools.embedded.telemetry_project import (
             OTHER_PROJECT,
             telemetry_project_name,
@@ -1732,7 +1733,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             project = telemetry_project_name(getattr(interface, "github", None))
         except Exception:  # noqa: BLE001 - 遥测失败不影响任务
             project = OTHER_PROJECT
-        record_count(
+        _service_telemetry.record_count(
             "auto_mas.maafw.project.runs",
             attributes={
                 "project": project,
@@ -1948,7 +1949,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 image_id_prefix="maafw",
             )
             result["screenshots"] = screenshot_entries(images)
-            await self.task_info.notifications.push_proxy_result(
+            await Notify.push_proxy_result(
                 title=title,
                 report=TaskResultReport.from_message(result),
                 task_info=self.task_info,
@@ -2020,7 +2021,6 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 self.signal_tracker,
                 script_name=self.script_info.name or "空白",
                 user_config_for=user_config_for,
-                notifications=self.task_info.notifications,
             )
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"推送 MFW 信号通知时出现异常: {exc}")

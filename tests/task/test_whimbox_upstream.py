@@ -1,14 +1,15 @@
-from types import SimpleNamespace
-from tests.config_support import activate_config, group_view
-
 """奇想盒上游配置面回归测试（CI 全 mock：临时目录 + 内存数据，不依赖真机）。
 
 覆盖：安装哨兵分场景报错、目录机械转换（真实三件套结构）、覆盖集过滤→物化→
 存活链路、快照/还原（含会话期新建删除语义）与恢复池函数。
 """
+
 import json
 from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
+
 from app.task.Whimbox.tools.restore_service import RESTORE_POOLS
 from app.task.Whimbox.tools.upstream import (
     APP_EXE_NAME,
@@ -16,6 +17,7 @@ from app.task.Whimbox.tools.upstream import (
     REL_SITE_PACKAGES,
     WheelAssetsConfigSurface,
 )
+from tests.config_support import group_view
 
 TEMPLATE = {
     "General": {"debug": {"value": "false", "description": "调试模式"}},
@@ -305,6 +307,7 @@ class TestRestorePools:
     def test_mas_overlay_read_and_group(self):
         """mas 侧车读页面字段；回填分组排除来源段（回填旧来源会静默翻转是否写入）。"""
         import uuid
+
         from app.task.Whimbox.tools import restore_service as rs
 
         uid = uuid.uuid4()

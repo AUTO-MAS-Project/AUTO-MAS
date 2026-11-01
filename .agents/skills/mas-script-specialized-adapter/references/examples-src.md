@@ -25,7 +25,7 @@
 | `tasks/` `module/` `route/` 任务调度 | `AutoProxy` 主循环、任务模式、`METHOD_BOOK` |
 | `webapp/` 或 GUI 配置 | **不复刻**；由编辑页写回 config |
 | `config/` 与运行数据目录 | 与配置任务、用户目录读写路径对齐，遵守 `data/{scriptId}/...` 约定 |
-| 模拟器 + 包名/进程 | 模拟器字段 + `manager.check()`；业务常量集中在 `app/utils/constants.py` |
+| 模拟器 + 包名/进程 | 模拟器字段 + `manager.check()`；业务常量集中在 `app/utils/common/constants.py` |
 
 ## 必守不变量
 

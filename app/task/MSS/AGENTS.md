@@ -15,10 +15,10 @@
    - 用户 `Info.PlanMode` 引用了 MSS 计划表时，按当天槽位改写 entry `战斗_入口`（悬赏试炼快速战斗）的
      `悬赏试炼关卡` / `悬赏试炼跳过难度选择` / `选择悬赏试炼难度` / `悬赏试炼消耗所有干劲` / `自定义快速作战次数`；
      队列里没有这个任务就补上。关卡名不在 interface 的 case 里就整条跳过。`Fixed` 时不动。
-   - 队列里有 entry `活动快速战斗_入口` 时查一次 `app/tools/stella_official.py`（只认会开活动关的「版本活动」）：
+   - 队列里有 entry `活动快速战斗_入口` 时查一次 `app/tools/common/game_calendar/stella.py`（只认会开活动关的「版本活动」）：
      有活动就挪到悬赏试炼前，确实没有就摘掉，取不到数据就原样跑。
    - entry `星塔_入口_agent`（新版爬塔）挪到队尾。每周一次靠 MaaFW 通用的 `Run.WeeklyOnceTasks`，这里不记周。
-   - **个人版专属**（`Function.IfPersonalMss` 打开时才做）：按 `app/tools/stella_official.py` 的常驻活动
+   - **个人版专属**（`Function.IfPersonalMss` 打开时才做）：按 `app/tools/common/game_calendar/stella.py` 的常驻活动
      「灾变防线」算当期，队列里没有就往爬塔之前插一条 entry `灾变防线_入口`，结果记进该用户的
      `Data.PersonalMssDefense`（`armed` / `done` / 失败日）。同一期打过了就不再插；记账**只在确认跑过
      一轮之后**才结算，失败按天累计、攒够就放弃本期，口径见 `_arrange_defense` 的 docstring。

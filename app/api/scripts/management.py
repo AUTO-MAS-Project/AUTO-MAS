@@ -19,7 +19,6 @@
 
 import uuid
 from typing import (
-    Annotated,
     Dict,
     List,
     Literal,
@@ -27,7 +26,7 @@ from typing import (
     Union,
 )
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body
 from pydantic import (
     BaseModel,
     Field,
@@ -38,15 +37,12 @@ import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
 from app.core.game_calendar import SCRIPT_CALENDAR_GAMES
-from app.core.script_settings import ScriptSettings
 from app.models.schema import (
     OutBase,
     ScriptDeleteIn,
     UserInBase,
 )
 from app.utils import get_logger
-
-from .dependencies import get_script_settings
 
 BAAHConfig = ConfigPayload[_config_models.BAAHConfig]
 
@@ -347,14 +343,13 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
     status_code=200,
 )
 async def update_script(
-    settings: Annotated[ScriptSettings, Depends(get_script_settings)],
     script: ScriptUpdateIn = Body(...),
 ) -> OutBase:
 
     try:
         data = script.data.model_dump(exclude_unset=True)
         # 设备绑定不受支持时拦截保存，避免先提交配置。
-        refusal = await settings.update_script(script.scriptId, data)
+        refusal = await Config.update_script_settings(script.scriptId, data)
         if refusal:
             return OutBase(code=500, status="error", message=refusal)
 

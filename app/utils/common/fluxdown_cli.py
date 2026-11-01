@@ -62,7 +62,12 @@ try:
 except ImportError:
     aiofiles = None
 
-from app.utils import get_logger, process_platform, resource_path, update_native
+from app.utils import (
+    file_lock,
+    get_logger,
+    process_platform,
+    update_native,
+)
 
 logger = get_logger("FluxDown")
 _LOCAL_CLI_LOCK = threading.Lock()
@@ -154,22 +159,20 @@ class FluxdownDownloadRecord:
 # ---------------------------------------------------------------------------
 
 
-def fluxdown_find_cli(configured_path: str | None = None) -> Path | None:
+def fluxdown_find_cli(
+    configured_path: str | None = None, *, search_dirs: tuple[Path, ...] = ()
+) -> Path | None:
     """定位 FluxDown CLI 二进制，返回路径或 None。
 
     查找顺序：
         1. 用户显式配置的 Update.FluxdownPath（尊重用户选择，可为全量版）
-        2. MAS 可执行文件所在目录下的 res/fluxdown-cli/（随打包一起带）
-        3. MAS 源码仓库 res/fluxdown-cli/（开发态运行时找得到）
-        4. 系统 PATH 里的 fluxdown.exe（兜底，用户自己装的）
+        2. 调用方提供的内置程序目录 search_dirs
+        3. 系统 PATH 里的 fluxdown.exe（兜底，用户自己装的）
 
-    自动定位的目录（2/3）必须带 ``portable`` 标记，避免误命中用户桌面版；
+    内置程序目录必须带 ``portable`` 标记，避免误命中用户桌面版；
     用户显式配置的目录（1）不做此限制——检测 UI 已就全量版给出污染风险警告。
     """
-    import os as _os
-    import sys as _sys
-
-    candidates: list[Path] = []
+    candidates: list[tuple[Path, bool]] = []
 
     # 1. 用户配置路径（兼容目录或 exe 文件路径，文件则取其所在目录）
     if configured_path:
@@ -177,21 +180,14 @@ def fluxdown_find_cli(configured_path: str | None = None) -> Path | None:
         if p.is_file():
             p = p.parent
         if p.is_dir():
-            candidates.append(p)
+            candidates.append((p, False))
 
-    # 2. MAS 安装目录（打包后可执行文件旁边）下的 res/fluxdown-cli/
-    if getattr(_sys, "frozen", False):
-        base = Path(_sys.executable).parent
-    else:
-        base = Path(_os.getcwd())
-    candidates.append(base / "res" / "fluxdown-cli")
-    # Runtime 的用户工作目录与源码目录不同，内置工具必须随源码资源定位。
-    candidates.append(resource_path("fluxdown-cli"))
+    candidates.extend((directory, True) for directory in search_dirs)
 
-    for idx, dir_path in enumerate(candidates):
+    for dir_path, require_portable in candidates:
         if not dir_path.is_dir():
             continue
-        if idx > 0 and not (dir_path / "portable").is_file():
+        if require_portable and not (dir_path / "portable").is_file():
             continue
         for name in _FLUXDOWN_EXE_NAMES:
             exe = dir_path / name
@@ -1296,7 +1292,7 @@ class FluxdownCancelUnconfirmed(RuntimeError):
     daemon 可能仍在写目标文件，上层不能把它当成"取消成功"静默收场，
     而应按显式失败上报并提示用户检查 FluxDown 状态。
 
-    定义在 cli 这一侧而非 ``app.services.update_fluxdown``，因为后者已经
+    定义在 cli 这一侧而非 ``app.services.common.update.fluxdown``，因为后者已经
     import 本模块，反向 import 会循环。
     """
 
@@ -1329,14 +1325,7 @@ async def fluxdown_destination_lock(cli_exe: Path, destination: Path):
         while True:
             handle.seek(0)
             try:
-                if os.name == "nt":
-                    import msvcrt
-
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                else:
-                    import fcntl
-
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                file_lock.acquire(handle)
                 break
             except OSError as error:
                 if error.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
@@ -1347,11 +1336,7 @@ async def fluxdown_destination_lock(cli_exe: Path, destination: Path):
             yield
         finally:
             _DESTINATION_OWNERS.reset(token)
-            handle.seek(0)
-            if os.name == "nt":
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            file_lock.release(handle)
 
 
 @_using_fluxdown

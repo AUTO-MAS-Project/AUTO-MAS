@@ -93,9 +93,7 @@
               </template>
             </template>
             <template #emptyText
-              ><a-empty
-                :image="Empty.PRESENTED_IMAGE_SIMPLE"
-                :description="t('core.edit.maaEndImsNoMatches')"
+              ><NoData :description="t('core.edit.maaEndImsNoMatches')"
             /></template>
           </a-table>
         </a-tab-pane>
@@ -133,7 +131,7 @@
 import { computed, ref, watch } from 'vue'
 import { SearchOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { Empty, Modal } from 'ant-design-vue'
+import { Modal } from 'ant-design-vue'
 import type { MaaEndInventoryOptions } from '@/api'
 import {
   INVENTORY_TARGET_MAX,

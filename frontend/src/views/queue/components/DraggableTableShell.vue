@@ -25,13 +25,12 @@
     </draggable>
 
     <div v-if="modelValue.length === 0" class="empty-state">
-      <a-empty :image="noDataImage" :image-style="{ height: '200px' }" :description="false" />
+      <NoData :image-style="{ height: '200px' }" :description="false" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts" generic="T extends object">
-import noDataImage from '@/assets/NoData.svg'
 import { computed } from 'vue'
 import draggable from 'vuedraggable'
 

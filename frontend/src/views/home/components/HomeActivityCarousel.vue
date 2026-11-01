@@ -7,7 +7,7 @@
     @focusout="onFocusOut"
   >
     <a-card v-if="!items.length" class="carousel-empty">
-      <a-empty :description="t('core.home.carousel.allHidden')" />
+      <NoData :description="t('core.home.carousel.allHidden')" />
     </a-card>
 
     <template v-else>

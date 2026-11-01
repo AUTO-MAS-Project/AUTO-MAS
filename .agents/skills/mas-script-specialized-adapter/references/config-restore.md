@@ -16,7 +16,7 @@
 >
 > 已解耦为三层，**通用层零专项分支**：
 >
-> - **服务层**：`app/utils/config_restore.py` —— `RestoreContext` /
+> - **服务层**：`app/utils/common/config/restore.py` —— `RestoreContext` /
 >   `ConfigRestorePool` / `build_restore_service`。专项只声明池表（普通函数，
 >   显式收 `RestoreContext`，可直接单测），门面 `Config.restore_service()` 按
 >   脚本类型分发，一次性绑定上下文。HTTP 层只有一组通用端点。
@@ -239,8 +239,8 @@ ScriptConfig.json 的 Info / Task.SelectedPreset / TaskSnapshot / Device 段）�
 
 ```python
 # app/task/HSR/tools/restore_service.py（节选，行为与实装一致）
-from app.utils.config_restore import ConfigRestorePool
-from app.utils.config_archive import OVERLAY_SIDECAR_NAME
+from app.utils.common.config.restore import ConfigRestorePool
+from app.utils.common.config.archive import OVERLAY_SIDECAR_NAME
 
 async def _mas_files(ctx) -> dict[str, str] | None:
     """归档什么：相对键 → Path 或内存内容（str 按 UTF-8 / bytes 原样）。"""
@@ -619,6 +619,6 @@ showOknteViewMask.value = viewOnly
       脚本查看页面（viewOnly）+ GuiSessionMask；流程不做自创变体
 - [ ] 预览：内置渲染 or `#preview`（按 `raw` 消费）；弹窗 body 限高滚动，不额外加滚动容器；操作按钮在 footer 常驻
 - [ ] 词条 zh+en；死词条已清理；`{script}` 用专项统一名
-- [ ] `tests/tools/test_config_restore.py`（基座绑定）与 `tests/task/test_<script>_backup.py`
+- [ ] `tests/utils/test_config_restore.py`（基座绑定）与 `tests/task/test_<script>_backup.py`
       全绿；typecheck / ruff 通过
 - [ ] **未经审核不 commit、不 push**

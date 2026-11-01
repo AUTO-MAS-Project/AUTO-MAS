@@ -1,0 +1,26 @@
+"""电源操作与显示保活的共同契约。"""
+
+from typing import Protocol
+
+
+class DisplayHold(Protocol):
+    @property
+    def active(self) -> bool: ...
+
+    def release(self) -> None: ...
+
+
+class PowerController(Protocol):
+    @property
+    def supported(self) -> bool: ...
+
+    @property
+    def supported_actions(self) -> frozenset[str]: ...
+
+    async def execute(self, action: str) -> None: ...
+
+    async def set_sleep_prevention(self, enabled: bool) -> None: ...
+
+    def hold_display(self, owner: str) -> DisplayHold: ...
+
+    def release_display_holds(self) -> None: ...

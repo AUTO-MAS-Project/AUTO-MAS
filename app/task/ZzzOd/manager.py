@@ -20,16 +20,16 @@ import uuid
 from contextlib import suppress
 from datetime import datetime
 
+import app.core.notify.report as _node_report
 from app.config import ConfigCollection, config_manager
-from app.core import Config
-from app.core.ws import Publisher, protocol
-from app.log_box.report import build_user_result_text, mirror_report_to_dispatch
+from app.core import Config, Notify, Publisher
+from app.core.ws import protocol
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
-from app.models.notification_report import TaskResultReport
+from app.models.notification.report import TaskResultReport, UserReportText
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
-from app.utils import BASE_NATIVE, TASK_MODE_ZH, get_logger
+from app.utils import BASE_NATIVE, LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box
 
 from .AutoProxy import AutoProxyTask, find_launcher_exe
 from .ScriptConfig import ScriptConfigTask
@@ -308,18 +308,22 @@ class ZzzOdManager(ScriptManagerBase):
                 )
                 # 按用户交错组装「用户结果行 + 任务节点详情」进报告正文
                 # （ScriptItem.result 是只读计算属性，报告正文用局部变量承载）
-                user_result_text = build_user_result_text(
-                    self.script_info.user_list,
-                    has_uncompleted=summary.uncompleted_count > 0,
+                user_result_text = self._render_user_results(
+                    has_uncompleted=summary.uncompleted_count > 0
                 )
                 # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
-                mirror_report_to_dispatch(self.script_info, user_result_text)
+                if user_result_text:
+                    self.script_info.log = (
+                        f"{self.script_info.log}\n{user_result_text}"
+                        if self.script_info.log
+                        else user_result_text
+                    )
                 result = self.build_proxy_report(result_text=user_result_text)
 
                 # 系统通知由宿主代理结果服务的全局目标统一发送。
                 # （include_system=True），此处不再直接 push_plyer 以免重复
                 try:
-                    await self.task_info.notifications.push_proxy_result(
+                    await Notify.push_proxy_result(
                         title=title,
                         report=TaskResultReport.from_message(result),
                         task_info=self.task_info,
@@ -366,3 +370,32 @@ class ZzzOdManager(ScriptManagerBase):
                     level="error", message=f"ZZZ-OD 任务出现异常: {e}"
                 ),
             )
+
+    def _render_user_results(self, *, has_uncompleted: bool) -> str:
+        """本专项选择报告条目和展示模式，公共服务只负责排版。"""
+        _report_rows = []
+        for _report_user in self.script_info.user_list:
+            _entries = [
+                item
+                if isinstance(item, log_box.LogEntry)
+                else log_box.LogEntry.from_legacy(item)
+                for item in _report_user.push_log
+                if (item.log_type if isinstance(item, log_box.LogEntry) else item[0])
+                != LOG_TYPE_ERROR
+                or has_uncompleted
+            ]
+            _mode = getattr(_report_user, "push_log_mode", "逐条")
+            if _mode == "关闭":
+                _details = []
+            elif _mode == "汇总":
+                _details = _node_report.render_aggregate_push_log(_entries)
+            else:
+                _details = _node_report.render_scatter_push_log(_entries)
+            _report_rows.append(
+                UserReportText(
+                    name=_report_user.name,
+                    result=_report_user.result,
+                    detail_lines=tuple(_details),
+                )
+            )
+        return _node_report.render_user_result_text(_report_rows)

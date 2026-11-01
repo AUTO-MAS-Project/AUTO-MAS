@@ -1,9 +1,8 @@
 <template>
   <div class="changelog-view">
-    <a-empty
+    <NoData
       v-if="sections.length === 0"
       class="changelog-empty"
-      :image="false"
       :description="emptyText || t('core.comp.changelog.empty')"
     />
 

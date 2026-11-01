@@ -35,10 +35,9 @@ from pydantic import (
 )
 
 import app.models.config as _config_models
-from app.api.ws_command import ws_command
 from app.config.wire import ConfigInput, ConfigPayload
-from app.core import Config
-from app.core.config import QueueItemNotFoundError, QueueNotFoundError
+from app.core import Commands, Config
+from app.core.config.manager import QueueItemNotFoundError, QueueNotFoundError
 from app.models.schema import OutBase
 from app.utils import get_logger
 
@@ -162,7 +161,7 @@ router = APIRouter(prefix="/api/queue", tags=["调度队列管理"])
 logger = get_logger("调度队列 API")
 
 
-@ws_command("queue.add")
+@Commands.register("queue.add")
 @router.post(
     "/add",
     tags=["Add"],
@@ -187,7 +186,7 @@ async def add_queue() -> QueueCreateOut:
     return QueueCreateOut(queueId=str(uid), data=data)
 
 
-@ws_command("queue.get", params=QueueGetIn)
+@Commands.register("queue.get", params=QueueGetIn)
 @router.post(
     "/get",
     tags=["Get"],

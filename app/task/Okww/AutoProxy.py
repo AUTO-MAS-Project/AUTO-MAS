@@ -24,40 +24,43 @@ from datetime import datetime
 from pathlib import Path
 
 from app.config import ConfigCollection
+from app.core import Notify, Publisher
 from app.core.history import aggregate_data
-from app.core.ws import Publisher, protocol
-from app.log_box import UserLogSession, log_box
+from app.core.notify.task_content import (
+    build_user_statistics_payload as build_user_statistics_payload,
+)
+from app.core.ws import protocol
 from app.models.config import OkwwConfig, OkwwUserConfig
-from app.models.notification_ports import LocalNotice
+from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import System
-from app.services.wuthering_waves import (
-    check_wuthering_waves_update,
-    discover_wuthering_waves_fallback,
-    is_wuthering_waves_record_usable,
-    resolve_wuthering_waves_process_path,
+from app.services import wuthering_waves as _service_wuthering_waves
+from app.services.common.wuthering_waves import (
+    updater as _service_wuthering_waves_updater,
 )
-from app.services.wuthering_waves_updater import update_wuthering_waves
 from app.task.base import ScriptAutoProxyBase
-from app.task.notify_core import build_user_statistics_payload
 from app.task.proxy_helpers import (
     kill_pids,
     push_dispatch_log,
     split_args,
 )
 from app.utils import (
+    LOG_TYPE_NORMAL,
     LogMonitor,
     ProcessInfo,
     ProcessManager,
     get_logger,
     is_process_alive,
     is_process_running,
+    log_box,
 )
 from app.utils import constants as _utils_constants
+from app.utils import i18n as _utils_i18n
 from app.utils import io as _utils_io
+from app.utils.common.log import sources as log_source
 
-from .push_log import make_okww_log_spec
+from . import push_log as _push_log
 from .tools import async_switch_account
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
@@ -219,7 +222,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
         # log_box：用户级「是否采集节点详情」关闭时不创建（prepare 按配置启停）
-        self.log_collect: UserLogSession | None = None
+        self._log_source: log_source.LogSource | None = None
+        self._log_pipeline: log_box.LogPipeline | None = None
+        self._log_user: UserItem | None = None
+        self._log_translator: _utils_i18n.PoTranslator | None = None
+        self._log_failed = False
+        self._log_close_task: asyncio.Task[None] | None = None
         self.script_config_path: Path | None = None
 
     async def check(self) -> str:
@@ -279,7 +287,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             ):
                 # 命中结果必须告诉用户：静默换到另一份安装会让人不知情
                 fallback = await asyncio.to_thread(
-                    discover_wuthering_waves_fallback,
+                    _service_wuthering_waves.discover_wuthering_waves_fallback,
                     str(self.cur_user_config.Info.Resource),
                 )
                 if fallback.launcher_path is not None:
@@ -317,8 +325,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             if self.game_process_path is None:
                 # 客户端 exe 由启动器路径解码（两种启动方式都走这里）
                 try:
-                    self.game_process_path = resolve_wuthering_waves_process_path(
-                        launcher_path
+                    self.game_process_path = (
+                        _service_wuthering_waves.resolve_wuthering_waves_process_path(
+                            launcher_path
+                        )
                     )
                 except (FileNotFoundError, ValueError) as e:
                     if self._game_launch_type() == "Client":
@@ -392,16 +402,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         # 受用户级「节点详情推送模式」开关控制：关闭时不创建（不读日志、不翻译、
         # 不匹配、不处理），既省采集开销也符合「不记录」语义；该用户 push_log 保持
         # 为空，报告聚合时自然不含其节点详情。
-        self.log_collect = log_box.get_user_session(
-            make_okww_log_spec(self.script_root_path),
-            user=self.cur_user_item,
+        self._prepare_log_details(
+            self.script_log_path,
             mode=self.cur_user_config.Notify.PushLogMode,
-            paths=[self.script_log_path],
-            start_from_end=True,
-            # 保留无 inode 文件系统的跨零点轮转补偿；翻译文件由声明提供。
-            rotated_name=(
-                f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}"
-            ),
+            enabled=self.cur_user_config.Notify.PushLogMode != "关闭",
+            rotated_name=f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}",
         )
 
         self.task_index = _OKWW_TASK_INDEX
@@ -523,7 +528,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         )
 
         try:
-            await self.task_info.local_notifier.send_notice(
+            await Notify.send_notice(
                 LocalNotice(
                     title="OK-WW 自动代理出现异常！",
                     message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
@@ -564,7 +569,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             return
         resource = str(self.cur_user_config.Info.Resource)
         try:
-            update_info = await check_wuthering_waves_update(
+            update_info = await _service_wuthering_waves.check_wuthering_waves_update(
                 self.launcher_path,
                 resource,
             )
@@ -573,7 +578,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             # 本地记录（启动器记录或版本记录）读不出来时客户端靠目录搜索还能
             # 拉起来，更新却无从下手：不说一声用户会一直停在旧版。接口/网络
             # 问题属「无法判断」，按既有决策静默放行
-            if not is_wuthering_waves_record_usable(self.launcher_path):
+            if not _service_wuthering_waves.is_wuthering_waves_record_usable(
+                self.launcher_path
+            ):
                 await self._push_dispatch_log(
                     "鸣潮本地更新记录不可用，已跳过启动前自动更新，"
                     "请用官方启动器检查游戏更新"
@@ -609,7 +616,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             f" -> {update_info.release_version}"
         )
         limit_gb = int(self.script_config.Game.UpdateFullSyncLimit or 0)
-        await update_wuthering_waves(
+        await _service_wuthering_waves_updater.update_wuthering_waves(
             update_info.install_dir,
             resource,
             update_info.current_version,
@@ -790,7 +797,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                         kill_game=self._game_management_enabled()
                     )
                     try:
-                        await self.task_info.local_notifier.send_notice(
+                        await Notify.send_notice(
                             LocalNotice(
                                 title="OK-WW 自动代理出现异常！",
                                 message=f"用户 {self.cur_user_item.name} 游戏启动失败",
@@ -942,7 +949,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
             await self.kill_managed_process(kill_game=self._game_management_enabled())
             try:
-                await self.task_info.local_notifier.send_notice(
+                await Notify.send_notice(
                     LocalNotice(
                         title="OK-WW 自动代理出现异常！",
                         message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
@@ -1030,8 +1037,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         await self.kill_managed_process(kill_game=self._game_management_enabled())
 
         # box 归并并交付节点后释放翻译资源，报告仍使用原有文本与兜底提示。
-        if self.log_collect is not None:
-            await self.log_collect.close()
+        await self._close_log_details()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
         await self._persist_user_run_result()
@@ -1108,7 +1114,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     if self.cur_user_item.maintenance_skipped
                     else "X"
                 )
-                await self.task_info.notifications.push_statistics_report(
+                await Notify.push_statistics_report(
                     payload=build_user_statistics_payload(
                         title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 OK-WW 自动代理统计报告",
                         message=statistics,
@@ -1184,7 +1190,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 and self.cur_user_log.status
                 and self.cur_user_log.status != "Success!"
             ):
-                await self.task_info.local_notifier.send_notice(
+                await Notify.send_notice(
                     LocalNotice(
                         title="OK-WW 运行异常",
                         message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
@@ -1351,3 +1357,88 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         logger.warning(
             f"等待鸣潮客户端进程退出超时（{_GAME_EXIT_WAIT_SECONDS}s），继续下一用户"
         )
+
+    def _prepare_log_details(
+        self, path: Path, *, mode: str, enabled: bool, rotated_name: str | None
+    ) -> None:
+        """本专项固定来源与用户；读取和交付时机由自身生命周期控制。"""
+        self._log_user = self.cur_user_item
+        self._log_user.push_log_mode = mode
+        self._log_source = None
+        self._log_pipeline = None
+        self._log_close_task = None
+        self._log_translator = None
+        self._log_failed = False
+        if not enabled:
+            return
+        try:
+            pipeline = log_box.LogPipeline()
+            self._log_translator = _utils_i18n.PoTranslator()
+            self._log_translator.load(
+                (_push_log.OKWW_REL_I18N_PO,), base=self.script_root_path
+            )
+            self._log_translator.load_supplement((_push_log._okww_supplement_po(),))
+            pipeline.preprocessors.append(self._log_translator.translate)
+            for rule in _push_log.OKWW_PUSH_RULES:
+                pipeline.add_rule(*rule)
+            pipeline.postprocessors.append(_push_log.okww_resolve)
+            source = log_source.LogSource(
+                path, start_from_end=True, rotated_name=rotated_name
+            )
+            source.open()
+            self._log_source = source
+            self._log_pipeline = pipeline
+        except Exception:
+            self._log_failed = True
+            logger.opt(exception=True).warning("Okww 节点采集初始化失败")
+
+    async def _close_log_details(self) -> None:
+        """本专项只交付一次；取消先等待交付完成再继续传播。"""
+        if self._log_user is None:
+            return
+        if self._log_close_task is None:
+            self._log_close_task = asyncio.create_task(self._collect_log_details())
+        cancelled = None
+        while not self._log_close_task.done():
+            try:
+                await asyncio.shield(self._log_close_task)
+            except asyncio.CancelledError as error:
+                cancelled = error
+        self._log_close_task.result()
+        if cancelled is not None:
+            raise cancelled
+
+    async def _collect_log_details(self) -> None:
+        user = self._log_user
+        source = self._log_source
+        pipeline = self._log_pipeline
+        if user is None or (source is None and not self._log_failed):
+            return
+        if not self._log_failed:
+            try:
+                assert source is not None and pipeline is not None
+
+                def read():
+                    for line in source.read_new():
+                        pipeline.feed(line, timestamp=time.time())
+                    return pipeline.finish()
+
+                entries = await asyncio.to_thread(read)
+                for entry in entries:
+                    user.push_log.append((entry.log_type, entry.text, entry.timestamp))
+            except Exception:
+                self._log_failed = True
+                logger.opt(exception=True).warning("节点采集或交付失败")
+
+        if self._log_translator is not None:
+            try:
+                self._log_translator.clear()
+            except Exception:
+                self._log_failed = True
+                logger.opt(exception=True).warning("OK-WW 翻译资源清理失败")
+
+        if self._log_failed:
+            try:
+                user.push_log.append((LOG_TYPE_NORMAL, "⚠️ 节点采集失败", time.time()))
+            except Exception:
+                logger.opt(exception=True).warning("节点采集失败提示无法交付")

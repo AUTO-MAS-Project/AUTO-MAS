@@ -2,7 +2,7 @@ import sys
 
 import pytest
 
-from app.services.platform.power import power
+from app.services import power
 from app.utils import (
     IS_WINDOWS,
     UnsupportedPlatformError,

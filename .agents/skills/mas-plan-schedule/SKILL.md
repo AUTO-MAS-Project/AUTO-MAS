@@ -15,7 +15,7 @@ Backend has one shared multi-config collection and one lightweight registration 
    Holds shared plan-key payloads and `PlanComboxConsumer`, consumed across API/business modules.
 2. `app/models/config/plan.py` and `app/models/config/__init__.py`
    Define concrete `DomainEntry`/`ConfigEntry` schedule classes and their `ConfigGroup` fields; the package initializer owns `PLAN_BOOK` and public exports.
-3. `app/core/config.py`
+3. `app/core/config/manager.py`
    Uses `PLAN_BOOK` to create plans, delete referenced plans, filter combobox options by consumer, and wire `GlobalConfig.PlanConfig`.
 4. `app/api/plan.py`
    Owns plan endpoint models and `PlanConfigType/PlanCreateType/PlanConfigData/PlanConfigDataInput`. Payloads derive from config classes using `ConfigPayload` and `StrictConfigInput`, plus `PLAN_BOOK` for dispatch.
@@ -51,7 +51,7 @@ Follow this order.
 2. Derive backend contracts
    Add the config class's `ConfigPayload` and `StrictConfigInput` projections in `app/api/plan.py`; extend `PlanConfigType`, `PlanCreateType`, `PlanConfigData` and `PlanConfigDataInput` there. Strict unknown-field rejection belongs to the input contract, not a global config model policy. Shared plan keys/consumer aliases stay in `schema.py`; configuration fields are not copied into it.
 3. Add the consumer constant
-   Append the new consumer string to `PLAN_CONSUMER_VALUES` in `app/utils/constants.py`.
+   Append the new consumer string to `PLAN_CONSUMER_VALUES` in `app/utils/common/constants.py`.
    `PLAN_BOOK` does not hold consumer literals directly; it indexes this tuple (`PLAN_CONSUMER_VALUES[0]`, `[1]`, ...), so a new type has nothing to reference until the tuple grows.
    This tuple and the `PlanComboxConsumer` literal in `app/models/schema.py` are two independent hardcoded lists of the same values with no generated link. Update both, and keep them in the same order — existing `PLAN_BOOK` entries reference the tuple positionally, so inserting rather than appending silently repoints existing plan types at the wrong consumer.
 4. Register in `PLAN_BOOK`
@@ -79,7 +79,7 @@ Use this checklist for plan schedule PRs.
 
 1. `PLAN_BOOK` is the only backend registration source for supported plan config classes.
 2. Endpoint-local type/create/input/output aliases and shared `PlanComboxConsumer` agree with registered types; config fields have one declaration source.
-3. `PLAN_CONSUMER_VALUES` in `app/utils/constants.py` and the `PlanComboxConsumer` literal agree in both content and order, and existing `PLAN_BOOK` positional indexes still point at their original consumers.
+3. `PLAN_CONSUMER_VALUES` in `app/utils/common/constants.py` and the `PlanComboxConsumer` literal agree in both content and order, and existing `PLAN_BOOK` positional indexes still point at their original consumers.
 4. Plan CRUD does not default unknown types to `MaaPlan`.
 5. Consumer comboboxes only return plans of the matching config class.
 6. Deleting a plan only clears the matching user reference field.
