@@ -272,6 +272,11 @@ class _ReplayRequest:
 
 @dataclass
 class TaskInfo(TaskItem):
+    _change_task: asyncio.Task[None] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+    _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
+
     community_sign_notification: "TaskReportCoordinator | None" = field(
         default=None, init=False, repr=False
     )
@@ -287,6 +292,28 @@ class TaskInfo(TaskItem):
     _history_capture_files: dict[tuple[str, str], Path] = field(
         default_factory=dict, init=False, repr=False
     )
+
+    def schedule_on_change(self) -> None:
+        """合并高频字段变化，并由应用任务注册表持有异步通知。"""
+
+        self._change_dirty = True
+        if self._change_task is not None and not self._change_task.done():
+            return
+
+        async def _flush_changes() -> None:
+            try:
+                while self._change_dirty:
+                    self._change_dirty = False
+                    await self.on_change()
+            finally:
+                self._change_task = None
+
+        self._change_task = RuntimeTasks.spawn(
+            _flush_changes(), name=f"task-state-change:{self.task_id}"
+        )
+        if self._change_task is None:
+            # teardown 已开始时不再发布状态；RuntimeTasks 已关闭协程对象。
+            self._change_dirty = False
 
     def get_script_user_configs(
         self, script_id: str

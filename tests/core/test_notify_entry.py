@@ -35,6 +35,28 @@ assert "plyer" not in sys.modules
 """)
 
 
+def test_notification_transport_can_initialize_without_api_routes():
+    isolated("""
+import importlib.abc
+import sys
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+class RejectAPI(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "app.api" or fullname.startswith("app.api."):
+            raise AssertionError(f"notification transport imported {fullname}")
+
+sys.meta_path.insert(0, RejectAPI())
+from app.core.notify import manager
+registry = SimpleNamespace(by_id={}, bind=Mock(return_value=object()))
+manager._get_registry = lambda: registry
+notify = manager.NotificationManager()
+assert notify._transport is notify._transport
+registry.bind.assert_called_once()
+""")
+
+
 def test_api_consumers_share_singleton_and_manifests_keep_canonical_paths():
     isolated("""
 from app.core import Notify

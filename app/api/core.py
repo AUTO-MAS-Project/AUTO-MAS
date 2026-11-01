@@ -34,8 +34,8 @@ from pydantic import (
     Field,
 )
 
-from app.api.ws_command import ws_command
 from app.core import (
+    Commands,
     Config,
     MainConnection,
     Notify,
@@ -186,7 +186,7 @@ async def _shutdown_backend() -> None:
         Config.server.should_exit = True
 
 
-@ws_command("core.close")
+@Commands.register("core.close")
 @router.post(
     "/close",
     summary="关闭后端程序",

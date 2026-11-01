@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from .taskboard import Taskboard as Taskboard
     from .timer import MainTimer as MainTimer
     from .update import Updater as Updater
+    from .ws import Commands as Commands
     from .ws import Dispatcher as Dispatcher
     from .ws import MainConnection as MainConnection
     from .ws import Publisher as Publisher
@@ -63,6 +64,7 @@ _LAZY_EXPORTS = {
     "Community": (".community", "Community"),
     "Taskboard": (".taskboard", "Taskboard"),
     "MainConnection": (".ws", "MainConnection"),
+    "Commands": (".ws", "Commands"),
     "Dispatcher": (".ws", "Dispatcher"),
     "Publisher": (".ws", "Publisher"),
 }
@@ -95,6 +97,7 @@ __all__ = [
     "Community",
     "Taskboard",
     "MainConnection",
+    "Commands",
     "Dispatcher",
     "Publisher",
 ]

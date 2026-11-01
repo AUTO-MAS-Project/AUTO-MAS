@@ -570,6 +570,9 @@ class _Task(TaskItem):
             user_id=None,
         )
 
+    def schedule_on_change(self) -> None:
+        pass
+
     async def on_change(self) -> None:
         pass
 

@@ -32,7 +32,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, List, Literal, Optional
 from uuid import UUID
 
-from app.core import RuntimeTasks
 from app.models.game_maintenance import MaintenanceWindow
 from app.models.notification.report import TaskNotificationState
 from app.utils import get_logger
@@ -211,10 +210,6 @@ class TaskItem(ABC):
     notification_state: TaskNotificationState = field(
         default_factory=TaskNotificationState, init=False, repr=False
     )
-    _change_task: asyncio.Task[None] | None = field(
-        default=None, init=False, repr=False, compare=False
-    )
-    _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
     # 日志增量推送状态：上次推送的完整日志（不截断）、首行基准与推送序号
     _last_pushed_log: str = field(default="", init=False, repr=False, compare=False)
     _last_pushed_log_first_line: int = field(
@@ -275,27 +270,10 @@ class TaskItem(ABC):
     ) -> None:
         """同步报告状态变化；副作用由宿主调度层实现。"""
 
+    @abstractmethod
     def schedule_on_change(self) -> None:
-        """合并高频字段变化，并由应用任务注册表持有异步通知。"""
-
-        self._change_dirty = True
-        if self._change_task is not None and not self._change_task.done():
-            return
-
-        async def _flush_changes() -> None:
-            try:
-                while self._change_dirty:
-                    self._change_dirty = False
-                    await self.on_change()
-            finally:
-                self._change_task = None
-
-        self._change_task = RuntimeTasks.spawn(
-            _flush_changes(), name=f"task-state-change:{self.task_id}"
-        )
-        if self._change_task is None:
-            # teardown 已开始时不再发布状态；RuntimeTasks 已关闭协程对象。
-            self._change_dirty = False
+        """报告状态变化；合并、发布和任务生命周期由宿主实现。"""
+        raise NotImplementedError("子类必须实现 schedule_on_change")
 
     @property
     def is_queue_task(self) -> bool:

@@ -120,7 +120,7 @@ class NotificationManager:
         import httpx
         from websockets.asyncio.client import connect
 
-        from app.api.ws_command import execute_ws_command
+        from app.core import Commands
         from app.core.notify.commands import execute_notification_command
         from app.core.notify.native import prepare_sender
         from app.models.notification.channel import ChannelDependencies
@@ -143,7 +143,7 @@ class NotificationManager:
             system_notify=system_notify,
             system_icon=(Config.resource_path / "icons" / "AUTO-MAS.ico").as_posix(),
             logger=logger,
-            command_executor=execute_ws_command,
+            command_executor=Commands.execute,
             notification_command_executor=execute_notification_command,
         )
         return _notification.Notification(registry.bind(dependencies))
