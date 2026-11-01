@@ -50,9 +50,6 @@ if __name__ == "__main__" and os.getenv("AUTO_MAS_SUPERVISED") != "1":
     # app.utils.common.log.logger 会在导入时以 Path.cwd() 建 debug/ 目录，导入必须留在 chdir 之后）
     os.chdir(current_dir)
 
-if __name__ == "__main__":
-    configure_temporary_directory(Path.cwd())
-
 from app.utils import (  # noqa: E402
     IS_WINDOWS,
     get_logger,
@@ -273,6 +270,9 @@ def main():
         logger.warning(
             "受监督模式下不自行提权，当前非管理员，依赖模拟器/窗口操作的功能可能受限"
         )
+
+    # 先完成提权判断，避免创建临时目录的权限错误阻断重启。
+    configure_temporary_directory(Path.cwd())
 
     from app.core import Config, EmulatorManager, Notify
     from app.services import telemetry as _service_telemetry

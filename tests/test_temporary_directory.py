@@ -21,6 +21,15 @@ def configured_temp(tmp_path, monkeypatch):
     return tmp_path / "temp"
 
 
+@pytest.fixture
+def startup_entry(tmp_path):
+    source_root = tmp_path / "repo"
+    source_root.mkdir()
+    entry = source_root / "main.py"
+    entry.write_bytes(Path(main.__file__).read_bytes())
+    return entry
+
+
 def test_default_temporary_files_use_app_root_and_keep_cleanup(configured_temp):
     assert Path(tempfile.gettempdir()) == configured_temp
     with tempfile.TemporaryDirectory() as directory:
@@ -76,12 +85,8 @@ assert {name: os.environ.get(name) for name in before_environment} == before_env
 
 
 @pytest.mark.parametrize("supervised", [False, True])
-def test_startup_sets_temp_before_business_imports(tmp_path, supervised):
-    source_root = tmp_path / "repo"
-    source_root.mkdir()
-    entry = source_root / "main.py"
-    entry.write_bytes(Path(main.__file__).read_bytes())
-    expected_root = tmp_path if supervised else source_root
+def test_startup_sets_temp_before_business_imports(tmp_path, startup_entry, supervised):
+    expected_root = tmp_path if supervised else startup_entry.parent
     code = """
 import builtins
 import os
@@ -89,10 +94,11 @@ import runpy
 import sys
 import tempfile
 from pathlib import Path
-entry, expected = sys.argv[1:]
+entry, expected, source = sys.argv[1:]
+sys.path.insert(0, source)
 original_import = builtins.__import__
 def stop_at_business_import(name, *args, **kwargs):
-    if name == "app.utils":
+    if name == "app.core":
         root = Path(expected)
         assert Path.cwd() == root
         assert Path(tempfile.gettempdir()) == root / "temp"
@@ -106,9 +112,71 @@ runpy.run_path(entry, run_name="__main__")
 raise AssertionError("startup did not reach the business import")
 """
     subprocess.run(
-        [sys.executable, "-c", code, str(entry), str(expected_root)],
+        [
+            sys.executable,
+            "-c",
+            code,
+            str(startup_entry),
+            str(expected_root),
+            str(Path(main.__file__).parent),
+        ],
         cwd=tmp_path,
         check=True,
         timeout=15,
-        env={**os.environ, "AUTO_MAS_SUPERVISED": "1" if supervised else "0"},
+        env={
+            **os.environ,
+            "AUTO_MAS_SUPERVISED": "1" if supervised else "0",
+            "AUTO_MAS_ENV": "development",
+        },
+    )
+
+
+def test_startup_requests_elevation_before_creating_temp(tmp_path, startup_entry):
+    code = """
+import ctypes
+import runpy
+import sys
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
+entry, source = sys.argv[1:]
+sys.path.insert(0, source)
+import app.utils
+app.utils.IS_WINDOWS = True
+app.utils.is_admin = lambda: False
+temp_root = Path(entry).parent / "temp"
+previous_temp = tempfile.gettempdir()
+original_mkdir = Path.mkdir
+def deny_temp_creation(path, *args, **kwargs):
+    if path == temp_root:
+        raise PermissionError("temporary directory requires elevation")
+    return original_mkdir(path, *args, **kwargs)
+Path.mkdir = deny_temp_creation
+def request_elevation(*args):
+    assert not temp_root.exists()
+    assert tempfile.gettempdir() == previous_temp
+    raise SystemExit(0)
+if not hasattr(ctypes, "windll"):
+    ctypes.windll = SimpleNamespace(shell32=SimpleNamespace())
+ctypes.windll.shell32.ShellExecuteW = request_elevation
+runpy.run_path(entry, run_name="__main__")
+raise AssertionError("startup did not request elevation")
+"""
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            code,
+            str(startup_entry),
+            str(Path(main.__file__).parent),
+        ],
+        cwd=tmp_path,
+        check=True,
+        timeout=15,
+        env={
+            **os.environ,
+            "AUTO_MAS_ENV": "production",
+            "AUTO_MAS_SUPERVISED": "0",
+            "AUTO_MAS_DEV": "0",
+        },
     )
