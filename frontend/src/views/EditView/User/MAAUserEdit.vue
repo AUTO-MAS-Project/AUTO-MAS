@@ -266,6 +266,7 @@ import type { CultivatePreviewOut } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
 import { useMaaStageOptions } from '@/views/MAAUserEdit/useMaaStageOptions'
 import { useMaaPlanData } from '@/views/MAAUserEdit/useMaaPlanData'
+import { useMaaGameDay } from '@/views/MAAUserEdit/useMaaGameDay'
 
 const logger = window.electronAPI.getLogger('MAA用户编辑')
 
@@ -532,12 +533,17 @@ const formData = reactive({
 
 const { data: fullPlanData, status: planStatus } = useMaaPlanData(
   () => formData.Stage.StageMode,
-  getPlans,
+  id => getPlans(id, { silent: true }),
   error =>
     logger.error(`加载计划配置失败: ${error instanceof Error ? error.message : String(error)}`)
 )
+const gameDayNow = useMaaGameDay(() => formData.Info.Server)
 const planModeConfig = computed(() =>
-  getCurrentMaaPlan(fullPlanData.value as MaaPlanConfig | null, formData.Info.Server)
+  getCurrentMaaPlan(
+    fullPlanData.value as MaaPlanConfig | null,
+    formData.Info.Server,
+    gameDayNow.value
+  )
 )
 
 // 折叠态摘要：不展开也能确认当前生效的关卡配置
