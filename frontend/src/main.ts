@@ -119,6 +119,7 @@ const bootstrap = async () => {
 
   // 挂载应用
   app.mount('#app')
+  window.electronAPI?.notifyRendererReady?.()
   recordRendererReady(analyticsContext, performance.now() - rendererStartedAt)
   recordRendererStartup(performance.now() - rendererStartedAt)
 
