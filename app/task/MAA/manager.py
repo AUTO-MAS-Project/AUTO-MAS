@@ -147,6 +147,8 @@ class MaaManager(ScriptManagerBase):
         self._pending_update: tuple[str, str] | None = None
         self._active_proxy_task: AutoProxyTask | None = None
         self._updater_running: bool = False
+        # 每批任务最多尝试一次更新；新 MaaManager 实例会重新检查。
+        self._maa_update_checked = False
 
     async def _finalize_task(self) -> None:
         try:
@@ -561,9 +563,15 @@ class MaaManager(ScriptManagerBase):
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             if isinstance(task, AutoProxyTask):
                 self._active_proxy_task = task
-                # 启动前尽力更新；失败沿用当前安装时，运行期间仍暂停原生更新。
+                # 第一位实际执行的账号决定本轮更新来源；后续账号只做
+                # 本地安全检查，不重复联网获取版本或下载。
                 self._update_config_dir = task.update_config_dir
-                await self._prepare_software_update(task)
+                if not self._maa_update_checked:
+                    await self._prepare_software_update(task)
+                    # 普通更新失败并安全回退也只尝试一次；不吞掉不安全异常。
+                    self._maa_update_checked = True
+                else:
+                    await self._check_software_update_safety()
             await self.run_user_task(
                 self.script_info.user_list[self.script_info.current_index], task
             )
@@ -572,6 +580,33 @@ class MaaManager(ScriptManagerBase):
             # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有
             if getattr(task, "report_image_pairs", None):
                 self._rollup_image_pairs.extend(task.report_image_pairs)
+
+    async def _check_software_update_safety(self) -> None:
+        """后续账号只检查本地安装是否安全，避免重复更新请求。"""
+        root = self.maa_set_path.parent
+        if self._updater_running or await System.is_process_running(
+            root / "MAA.Updater.exe"
+        ):
+            self._updater_running = True
+            raise MaaUpdaterRunningError(
+                "MAA 官方更新器仍在运行，不能启动后续账号任务"
+            )
+        if has_incomplete_resource_update(root):
+            raise MaaUpdateUnsafeError(
+                "MAA 资源更新未完成，不能安全启动后续账号任务"
+            )
+        if has_delegated_update_failure(root):
+            raise MaaUpdateUnsafeError(
+                "MAA 官方更新器报告安装失败，不能安全启动后续账号任务"
+            )
+        if self.script_config.Update.TakeoverEnabled and (
+            not (root / "MAA.exe").is_file()
+            or read_installed_release(root) is None
+            or read_resource_clock(root) is None
+        ):
+            raise MaaUpdateUnsafeError(
+                "MAA 当前安装或资源状态无法确认，不能安全启动后续账号任务"
+            )
 
     async def _prepare_software_update(self, task: AutoProxyTask) -> bool:
         """启动前尽力更新；普通准备失败时沿用当前安装继续任务。"""
