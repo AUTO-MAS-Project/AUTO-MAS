@@ -39,7 +39,7 @@ assert Config.work_path == root
 assert Config.resource_path == Config.source_path / "res"
 assert (Config.resource_path / "version.json").is_file()
 for name, directory in {
-    "config_path": "config", "data_path": "data", "debug_path": "debug",
+    "config_path": "config", "data_path": "data", "debug_path": "debug", "temp_path": "temp",
     "history_path": "history", "script_path": "script", "plugins_path": "plugins",
 }.items():
     assert getattr(Config, name) == root / directory, name
@@ -48,6 +48,7 @@ assert Config.database_path == Config.data_path / "data.db"
 os.chdir(Config.source_path)
 assert Config.config_path == root / "config"
 assert Config.data_path == root / "data"
+assert Config.temp_path == root / "temp"
 assert Config.resource_path != root / "res"
 """
     result = subprocess.run(

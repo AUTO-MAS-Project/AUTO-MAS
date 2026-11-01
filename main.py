@@ -25,10 +25,21 @@ import ctypes
 import logging
 import os
 import sys
+import tempfile
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+
+def configure_temporary_directory(work_path: Path) -> None:
+    """将当前进程及子进程的默认临时目录统一到应用工作目录。"""
+    temp_path = (work_path / "temp").resolve()
+    temp_path.mkdir(parents=True, exist_ok=True)
+    tempfile.tempdir = str(temp_path)
+    for name in ("TEMP", "TMP", "TMPDIR"):
+        os.environ[name] = str(temp_path)
+
 
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
@@ -38,6 +49,9 @@ if __name__ == "__main__" and os.getenv("AUTO_MAS_SUPERVISED") != "1":
     # 判据与 app.utils.is_supervised() 相同，此处不能先导入 app.utils（见下方
     # app.utils.common.log.logger 会在导入时以 Path.cwd() 建 debug/ 目录，导入必须留在 chdir 之后）
     os.chdir(current_dir)
+
+if __name__ == "__main__":
+    configure_temporary_directory(Path.cwd())
 
 from app.utils import (  # noqa: E402
     IS_WINDOWS,

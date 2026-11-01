@@ -27,6 +27,7 @@ def isolated_app_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(Config, "install_path", tmp_path)
     for attribute, directory in {
         "config_path": "config",
+        "temp_path": "temp",
         "data_path": "data",
         "debug_path": "debug",
         "history_path": "history",
