@@ -18,6 +18,7 @@ interface RendererRecoveryOptions {
 export function attachRendererRecovery(win: BrowserWindow, options: RendererRecoveryOptions) {
   let crashes: number[] = []
   let sessionEnding = false
+  let sessionRendererExit: RenderProcessGoneDetails | null = null
   let pending: {
     loaded: boolean
     ready: boolean
@@ -55,12 +56,17 @@ export function attachRendererRecovery(win: BrowserWindow, options: RendererReco
       if (wParam.readUInt32LE(0) === 0) {
         sessionEnding = false
         logger.info('Windows 会话结束已取消，重新允许渲染进程恢复')
+        // 关机期间 renderer 可能已先退出；取消关机后不能留下无 frame 的黑窗。
+        const details = sessionRendererExit
+        sessionRendererExit = null
+        if (details && !win.isDestroyed()) handleRendererGone(details)
       }
     })
   }
 
-  win.webContents.on('render-process-gone', (_event, details: RenderProcessGoneDetails) => {
+  function handleRendererGone(details: RenderProcessGoneDetails) {
     if (sessionEnding) {
+      sessionRendererExit = details
       logger.info('Windows 会话结束期间忽略渲染进程退出')
       return
     }
@@ -133,7 +139,8 @@ export function attachRendererRecovery(win: BrowserWindow, options: RendererReco
     } catch {
       finishPending({ outcome: 'failure', resultKind: 'reload_threw' })
     }
-  })
+  }
+  win.webContents.on('render-process-gone', (_event, details) => handleRendererGone(details))
 
   win.webContents.on('did-start-loading', () => {
     if (pending) {
@@ -149,7 +156,7 @@ export function attachRendererRecovery(win: BrowserWindow, options: RendererReco
     'did-fail-load',
     (_event, errorCode, _description, _url, isMainFrame, frameProcessId, frameRoutingId) => {
       // 子 frame 或被新导航替换的旧加载，不代表当前主页面恢复失败。
-      if (!isMainFrame || errorCode === -3) return
+      if (!pending || !isMainFrame || errorCode === -3) return
       const frame = win.webContents.mainFrame
       if (frameProcessId !== frame.processId || frameRoutingId !== frame.routingId) return
       finishPending({ outcome: 'failure', resultKind: 'load_failed', loadErrorCode: errorCode })

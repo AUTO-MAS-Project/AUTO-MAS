@@ -195,7 +195,7 @@ describe('渲染进程恢复结果', () => {
     expect(win.webContents.reload).not.toHaveBeenCalled()
     win.hooks.get(0x0016)!(Buffer.alloc(8))
     expect(recovery.isSessionEnding()).toBe(false)
-    crash()
+    expect(win.webContents.reload).toHaveBeenCalledTimes(1)
     win.emit('session-end')
     crash()
     ready()
