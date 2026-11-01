@@ -563,15 +563,7 @@ class MaaManager(ScriptManagerBase):
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             if isinstance(task, AutoProxyTask):
                 self._active_proxy_task = task
-                # 第一位实际执行的账号决定本轮更新来源；后续账号只做
-                # 本地安全检查，不重复联网获取版本或下载。
-                self._update_config_dir = task.update_config_dir
-                if not self._maa_update_checked:
-                    await self._prepare_software_update(task)
-                    # 普通更新失败并安全回退也只尝试一次；不吞掉不安全异常。
-                    self._maa_update_checked = True
-                else:
-                    await self._check_software_update_safety()
+                await self._prepare_software_update_once(task)
             await self.run_user_task(
                 self.script_info.user_list[self.script_info.current_index], task
             )
@@ -580,6 +572,16 @@ class MaaManager(ScriptManagerBase):
             # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有
             if getattr(task, "report_image_pairs", None):
                 self._rollup_image_pairs.extend(task.report_image_pairs)
+
+    async def _prepare_software_update_once(self, task: AutoProxyTask) -> None:
+        """首位实际运行账号做更新准备；同批后续账号仅执行本地安全检查。"""
+        self._update_config_dir = task.update_config_dir
+        if not self._maa_update_checked:
+            await self._prepare_software_update(task)
+            # 普通更新失败且安全回退后也只尝试一次；异常不标记为完成。
+            self._maa_update_checked = True
+        else:
+            await self._check_software_update_safety()
 
     async def _check_software_update_safety(self) -> None:
         """后续账号只检查本地安装是否安全，避免重复更新请求。"""
@@ -601,7 +603,10 @@ class MaaManager(ScriptManagerBase):
             )
         if self.script_config.Update.TakeoverEnabled and (
             not (root / "MAA.exe").is_file()
-            or read_installed_release(root) is None
+            or (
+                (release := read_installed_release(root)) is None
+                or parse_version(release[0]) is None
+            )
             or read_resource_clock(root) is None
         ):
             raise MaaUpdateUnsafeError(
