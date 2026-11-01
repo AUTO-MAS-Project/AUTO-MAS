@@ -163,7 +163,7 @@
               <StageConfigSection
                 v-model:form-data="formData"
                 :loading="loading"
-                :stage-mode-options="stageModeOptions"
+                :stage-mode-options="displayStageModeOptions"
                 :stage-options="stageOptions"
                 :is-plan-mode="isPlanMode"
                 :plan-status="planStatus === 'ready' && !planModeConfig ? 'error' : planStatus"
@@ -537,6 +537,23 @@ const { data: fullPlanData, status: planStatus } = useMaaPlanData(
   error =>
     logger.error(`加载计划配置失败: ${error instanceof Error ? error.message : String(error)}`)
 )
+const displayStageModeOptions = computed(() => {
+  const mode = formData.Stage.StageMode
+  if (!mode || mode === 'Fixed' || stageModeOptions.value.some(option => option.value === mode)) {
+    return stageModeOptions.value
+  }
+  const planName = fullPlanData.value?.Info?.Name
+  const label =
+    planName ||
+    t(
+      planStatus.value === 'error'
+        ? 'core.edit.couldNotLoadPlan'
+        : planStatus.value === 'ready'
+          ? 'core.edit.fromPlan'
+          : 'core.edit.loadingConfiguration'
+    )
+  return [...stageModeOptions.value, { label, value: mode, disabled: true }]
+})
 const gameDayNow = useMaaGameDay(() => formData.Info.Server)
 const planModeConfig = computed(() =>
   getCurrentMaaPlan(
@@ -553,8 +570,8 @@ const fightSummary = computed(() =>
     : summarizeFight({
         enabled: formData.Task.IfFight,
         planLabel: isPlanMode.value
-          ? stageModeOptions.value.find(option => option.value === formData.Stage.StageMode)
-              ?.label || formData.Stage.StageMode
+          ? displayStageModeOptions.value.find(option => option.value === formData.Stage.StageMode)
+              ?.label || ''
           : '',
         stage: displayStage.value,
         series: displaySeriesNumb.value,
