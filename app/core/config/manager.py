@@ -218,6 +218,7 @@ class AppConfig:
 
         # Runtime 的用户目录与源码目录分离：资源随源码更新，用户文件留在工作目录。
         self.work_path = Path.cwd()
+        self.temp_path = self.work_path / "temp"
         self.source_path = Path(__file__).resolve().parents[3]
         self.resource_path = self.source_path / "res"
         self.config_path = self.work_path / "config"
