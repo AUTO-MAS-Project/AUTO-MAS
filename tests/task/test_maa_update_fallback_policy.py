@@ -280,3 +280,90 @@ async def test_failed_update_injects_runtime_config_and_restores_pending_package
     restored = json.loads((root / "config/gui.new.json").read_text(encoding="utf-8"))
     assert restored == original
     assert read_pending_update(root) == ("v6.1.0", str(package))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("result", [True, False])
+async def test_batch_update_preparation_runs_once_even_after_safe_fallback(
+    managed_run, result
+):
+    task_a = SimpleNamespace(update_config_dir=managed_run.maa_set_path / "a")
+    task_b = SimpleNamespace(update_config_dir=managed_run.maa_set_path / "b")
+    managed_run._maa_update_checked = False
+    managed_run._prepare_software_update = AsyncMock(return_value=result)
+    managed_run._check_software_update_safety = AsyncMock()
+
+    await managed_run._prepare_software_update_once(task_a)
+    await managed_run._prepare_software_update_once(task_b)
+
+    managed_run._prepare_software_update.assert_awaited_once_with(task_a)
+    managed_run._check_software_update_safety.assert_awaited_once_with()
+    assert managed_run._maa_update_checked is True
+
+
+@pytest.mark.asyncio
+async def test_batch_update_unsafe_failure_does_not_mark_preparation_complete(
+    managed_run,
+):
+    task = SimpleNamespace(update_config_dir=managed_run.maa_set_path)
+    managed_run._maa_update_checked = False
+    managed_run._prepare_software_update = AsyncMock(
+        side_effect=MaaUpdateUnsafeError("partial resource update")
+    )
+    managed_run._check_software_update_safety = AsyncMock()
+
+    with pytest.raises(MaaUpdateUnsafeError):
+        await managed_run._prepare_software_update_once(task)
+
+    assert managed_run._maa_update_checked is False
+    managed_run._check_software_update_safety.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_batch_following_account_blocks_active_updater(managed_run):
+    managed_run._maa_update_checked = True
+    manager.System.is_process_running.return_value = True
+    task = SimpleNamespace(update_config_dir=managed_run.maa_set_path)
+
+    with pytest.raises(manager.MaaUpdaterRunningError):
+        await managed_run._prepare_software_update_once(task)
+
+    assert managed_run._updater_running is True
+    managed_run._prepare_software_update_strict.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unsafe", ["resource", "installation"])
+async def test_batch_following_account_blocks_unsafe_installation(
+    managed_run, monkeypatch, unsafe
+):
+    managed_run._maa_update_checked = True
+    monkeypatch.setattr(
+        manager,
+        "has_incomplete_resource_update",
+        lambda root: unsafe == "resource",
+    )
+    monkeypatch.setattr(
+        manager,
+        "has_delegated_update_failure",
+        lambda root: unsafe == "installation",
+    )
+    task = SimpleNamespace(update_config_dir=managed_run.maa_set_path)
+
+    with pytest.raises(MaaUpdateUnsafeError):
+        await managed_run._prepare_software_update_once(task)
+
+    managed_run._prepare_software_update_strict.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_batch_following_account_does_not_query_remote_when_takeover_off(
+    managed_run,
+):
+    managed_run._maa_update_checked = True
+    managed_run.script_config.Update.TakeoverEnabled = False
+    task = SimpleNamespace(update_config_dir=managed_run.maa_set_path)
+
+    await managed_run._prepare_software_update_once(task)
+
+    managed_run._prepare_software_update_strict.assert_not_awaited()
