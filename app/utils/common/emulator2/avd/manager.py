@@ -884,7 +884,10 @@ class _AvdCore(DeviceBase):
             try:
                 await self._cli.window(str(idx), visible=is_visible)
             except modavd_cli.CLIError as error:
-                self._raise_cli_error(error)
+                logger.warning(
+                    f"实例 {idx} 显示窗口失败，忽略本轮设置: {error.message}"
+                )
+                return DeviceStatus.UNKNOWN
             return await self.getStatus(idx)
         process = await asyncio.to_thread(
             host.find_qemu_process, avd_name(idx), console_port(idx)

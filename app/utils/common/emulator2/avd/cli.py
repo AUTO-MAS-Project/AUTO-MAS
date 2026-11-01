@@ -48,7 +48,7 @@ CLI_EXE_RELATIVE_PATH = Path("tools") / "modavd.exe"
 DEFAULT_START_TIMEOUT_SECONDS = 300
 CREATE_TIMEOUT_SECONDS = 1200
 CREATE_PROCESS_MARGIN_SECONDS = 180
-STOP_PROCESS_TIMEOUT_SECONDS = 30
+STOP_PROCESS_TIMEOUT_SECONDS = 90
 INSTALL_PROCESS_TIMEOUT_SECONDS = 900
 COMMAND_TIMEOUT_SECONDS = 60
 BRIDGE_ROUND_BOOT_SECONDS = 300
@@ -165,7 +165,7 @@ def _parse_envelope(output: ProcessOutput, *, allow_nonzero_ok: bool = False) ->
 
     stderr_tail = output.stderr.strip()[-500:]
     try:
-        envelope = json.loads(output.stdout.strip())
+        envelope = json.loads(output.stdout.lstrip("\ufeff").strip())
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
         detail = f"；stderr: {stderr_tail}" if stderr_tail else ""
         raise CLIError(
@@ -233,7 +233,15 @@ async def resolve_cli(root: str | Path) -> "ModAvdCli | None":
         raise ModAvdUnavailable("modavd 不可用：version --json 没有返回对象")
     protocol = version.get("protocol")
     if protocol != SUPPORTED_PROTOCOL:
-        message = f"modavd 协议 {protocol}，MAS 只认 {SUPPORTED_PROTOCOL}，请更新 MAS"
+        direction = (
+            "更旧"
+            if isinstance(protocol, int) and protocol < SUPPORTED_PROTOCOL
+            else "更新"
+        )
+        message = (
+            f"modavd 协议 {protocol}（比 MAS 认识的 {SUPPORTED_PROTOCOL} {direction}），"
+            "请更新 ModAVD 或 MAS"
+        )
         _VERSION_CACHE[key] = (size, mtime_ns, message)
         raise ModAvdUnavailable(message)
     _VERSION_CACHE[key] = (size, mtime_ns, None)

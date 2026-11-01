@@ -117,7 +117,7 @@ async def test_start_stop_restart_flags_and_timeouts(tmp_path: Path) -> None:
 
     await cli.stop(3)
     assert fake.calls[-1][0][4:] == ["stop", "3"]
-    assert fake.calls[-1][1] == 30
+    assert fake.calls[-1][1] == 90
 
     await cli.restart(3, force=True, timeout=20)
     assert fake.calls[-1][0][4:] == [
@@ -263,6 +263,14 @@ async def test_error_envelope_preserves_code_message_and_advice(tmp_path: Path) 
         "改正",
         2,
     )
+
+
+def test_parse_envelope_accepts_utf8_bom() -> None:
+    from app.utils.common.emulator2.avd.cli import _parse_envelope
+
+    assert _parse_envelope(
+        ProcessOutput(0, '\ufeff{"ok":true,"data":{"ready":true}}', "")
+    ) == {"ready": True}
 
 
 @pytest.mark.asyncio
@@ -486,6 +494,20 @@ async def test_manager_cli_settings_maps_memory_cpu_fps(tmp_path: Path) -> None:
     )
     assert cli.set_call == ("2", {"memory": 5120, "cpu": 6, "fps": 60})
     assert result == {"memoryMb": 5120, "cpu": 6, "fps": 60}
+
+
+@pytest.mark.asyncio
+async def test_manager_set_visible_ignores_cli_error(tmp_path: Path) -> None:
+    class WindowErrorCli:
+        async def window(self, index: str, *, visible: bool) -> None:
+            del index, visible
+            raise CLIError("internal", "窗口暂不可用")
+
+    manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
+    manager = _AvdCore(  # type: ignore[arg-type]
+        manager_exe, 60, False, cli=WindowErrorCli()
+    )
+    assert await manager.setVisible("2", True) == DeviceStatus.UNKNOWN
 
 
 def test_service_cli_status_result_maps_components_and_prechecks(
