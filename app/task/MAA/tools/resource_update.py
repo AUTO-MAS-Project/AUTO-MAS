@@ -31,7 +31,8 @@ CheckAndDownloadResourceUpdate 只在 UpdateSource==MirrorChyan 且 CDK 非空�
 配置；未开接管时完全不创建更新任务，检查与分发也只覆盖开了接管的安装。
 启动前入口 prepare_install_resources 也支持 GitHub 全量资源包，无 CDK 时由
 脚本更新开关启用；下载器独立跟随全局 FluxDown 接管开关。
-Mirror 酱路径按本地日期每天最多尝试申请一次资源包，失败和取消也保留当天记账；
+Mirror 酱路径按本地日期对同一资源版本每天最多尝试一次，新版本可再次取包；
+失败和取消也保留当天记账；
 免费版本查询与有效缓存分发不受每日限额影响。
 
 移除条件（任一落地即改为复用上游并删除本模块，见 .agents/skills/
@@ -729,7 +730,7 @@ async def _refresh_resource_stage(
     progress: _Progress | None,
     cdk: str,
 ) -> dict[str, object] | None:
-    """按每日限额与失败退避刷新缓存；state 由编排器持有并在此记账。"""
+    """按版本每日限额与失败退避刷新缓存；state 由编排器持有并在此记账。"""
     if (
         target is None
         or not any(clock < target for clock in clocks.values())
@@ -739,17 +740,27 @@ async def _refresh_resource_stage(
     now = datetime.now(timezone.utc)
     credential_key = hashlib.sha256(cdk.encode("utf-8")).hexdigest()[:16]
     attempt_field = f"last_download_attempt_at/{credential_key}"
+    version_field = f"last_download_attempt_version/{credential_key}"
     failure_field = f"download_fail_until/{credential_key}"
     if backoff_active(state, failure_field, now):
         return stage
-    if attempted_today(state, attempt_field, now):
-        await _report(progress, "今日已尝试获取资源包，明日再试；已有缓存照常分发")
+    previous = parse_iso(state.get(version_field))
+    # 旧状态没有版本记录时允许一次，随后与尝试时间一起补记。
+    if (
+        attempted_today(state, attempt_field, now)
+        and previous is not None
+        and target <= previous
+    ):
+        await _report(
+            progress, "今日已尝试获取此版本资源包，出现新版或明日再试；已有缓存照常分发"
+        )
         return stage
     await _report(progress, f"发现新版本 {_format_clock(target)}，下载资源包…")
     try:
         # 凭据被拒、尚未取得下载地址时不消耗当天取包次数；不同 CDK 独立退避。
         url = await _mirror_download_url(cdk)
         state[attempt_field] = datetime.now(timezone.utc).isoformat()
+        state[version_field] = target.isoformat()
         _utils_io.write_file(_STATE_FILE, state)
         await _refresh_stage(target=target, url=url, progress=progress)
         return _load_manifest()
