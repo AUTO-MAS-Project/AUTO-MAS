@@ -3905,7 +3905,6 @@
   "core.scripts.create.typeHeading": "スクリプト種別を選択",
   "core.scripts.create.typeHeadingDesc": "名前・ゲーム・自動化フレームワークから検索できます。",
   "core.scripts.create.typeSearch": "スクリプト種別を検索",
-  "core.scripts.empty.alt": "データがありません",
   "core.scripts.empty.desc": "マネージドスクリプトはまだ作成されていません",
   "core.scripts.empty.noMatch": "該当するスクリプトやアカウントが見つかりません",
   "core.scripts.empty.title": "マネージドスクリプトがありません",

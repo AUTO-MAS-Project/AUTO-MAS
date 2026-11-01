@@ -3905,7 +3905,6 @@
   "core.scripts.create.typeHeading": "选择脚本类型",
   "core.scripts.create.typeHeadingDesc": "按名称、游戏或脚本框架快速查找。",
   "core.scripts.create.typeSearch": "搜索脚本类型",
-  "core.scripts.empty.alt": "暂无数据",
   "core.scripts.empty.desc": "你还没有创建任何托管",
   "core.scripts.empty.noMatch": "未找到匹配的托管或账号",
   "core.scripts.empty.title": "暂无托管",

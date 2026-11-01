@@ -3905,7 +3905,6 @@
   "core.scripts.create.typeHeading": "Pick a script type",
   "core.scripts.create.typeHeadingDesc": "Search by name, game, or automation framework.",
   "core.scripts.create.typeSearch": "Search script types",
-  "core.scripts.empty.alt": "No data",
   "core.scripts.empty.desc": "You have not created any managed scripts",
   "core.scripts.empty.noMatch": "No matching script or account",
   "core.scripts.empty.title": "No managed scripts yet",
