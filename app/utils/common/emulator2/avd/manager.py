@@ -669,6 +669,7 @@ class _AvdCore(DeviceBase):
         if not isinstance(pid, int) or pid <= 0:
             pid = None
         started_at: float | None = None
+        headless: bool | None = None
         if pid is not None:
             try:
                 process = psutil.Process(pid)
@@ -678,6 +679,7 @@ class _AvdCore(DeviceBase):
                     pid = None
                 else:
                     started_at = process.create_time()
+                    headless = _qemu_headless(process)
             except (OSError, psutil.Error):
                 pid = None
         return DeviceInfo(
@@ -686,6 +688,7 @@ class _AvdCore(DeviceBase):
             address,
             process_id=pid,
             process_started_at=started_at,
+            headless=headless,
         )
 
     def _scan_processes(self) -> dict[str, psutil.Process]:
@@ -752,6 +755,7 @@ class _AvdCore(DeviceBase):
             f"127.0.0.1:{adb_port(idx)}",
             process_id=process.pid if process is not None else None,
             process_started_at=started_at,
+            headless=_qemu_headless(process) if process is not None else None,
         )
 
     async def getStatus(self, idx: str) -> DeviceStatus:
@@ -841,10 +845,12 @@ class _AvdCore(DeviceBase):
         processes = await asyncio.to_thread(self._scan_processes)
         result: dict[str, DeviceInfo] = {}
         for native_index, instance in instances.items():
-            status = await self._status_of(native_index, processes.get(native_index))
-            result[native_index] = self._device_info(
-                native_index, instance.title, status
-            )
+            process = processes.get(native_index)
+            status = await self._status_of(native_index, process)
+            info = self._device_info(native_index, instance.title, status)
+            if process is not None:
+                info.headless = _qemu_headless(process)
+            result[native_index] = info
         return result
 
     async def list_devices(self) -> dict[str, str]:
@@ -908,26 +914,15 @@ class _AvdCore(DeviceBase):
             "pid": process.pid,
         }
 
-    async def setVisible(
-        self, idx: str, is_visible: bool, *, manual: bool = False
-    ) -> DeviceStatus:
+    async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
         """显示 / 隐藏带窗口开机的实例（主窗口和侧边工具栏），照雷电用 ``SW_HIDE`` / ``SW_SHOW``。
 
         隐藏不影响渲染和截图：10-04 在 mas_6 带窗口开机、``SW_HIDE`` 30 秒，期间截图共享内存
         的帧号照常前进（约 51 帧/秒，显示时约 48 帧/秒），画面随客体操作照常变化。
-        无头开机的实例没有窗口，开机后也补不出窗口，只记一笔。
-        不抛异常：脚本在静默模式下每轮都会调这个，抛了会把整次运行判失败。只有 ``manual``（模拟器页
-        手动点「显示」）对着无头开机的实例时抛，告诉用户运行中换不了，要窗口先关机。
+        无头开机的实例没有窗口，开机后也补不出窗口，只记一笔；模拟器页的显示 / 隐藏按钮对它置灰
+        （:attr:`DeviceInfo.headless`）。运行中不切换有头无头，不靠重启补窗口。
+        不抛异常：脚本在静默模式下每轮都会调这个，抛了会把整次运行判失败。
         """
-        if manual and is_visible:
-            process = await asyncio.to_thread(
-                host.find_qemu_process, avd_name(idx), console_port(idx)
-            )
-            if process is not None and _qemu_headless(process):
-                raise RuntimeError(
-                    f"魔改 AVD 实例 {idx} 是无头开机的，没有窗口可显示；运行中不能切换，"
-                    "要窗口请先关机，再在模拟器页点启动"
-                )
         if self._cli is not None and updater.update_in_progress(self.root):
             return await self.getStatus(idx)
         if self._cli is not None:
@@ -1007,7 +1002,7 @@ class _AvdCore(DeviceBase):
                     f"魔改 AVD 实例 {idx} 正在新建（后台开机做初始化），等新建完成再开机"
                 )
             self._check_components()
-            self._check_window_mode(
+            self._log_window_mode(
                 idx,
                 await asyncio.to_thread(
                     host.find_qemu_process, avd_name(idx), console_port(idx)
@@ -1076,7 +1071,7 @@ class _AvdCore(DeviceBase):
                 host.BOOTING.add(serial)
                 await self._launch(idx, instance)
             else:
-                self._check_window_mode(idx, process)
+                self._log_window_mode(idx, process)
                 logger.info(f"魔改 AVD 实例 {idx} 已在运行（pid {process.pid}）")
             process = await self._wait_boot(idx, instance, launched, max_wait)
         finally:
@@ -1127,13 +1122,10 @@ class _AvdCore(DeviceBase):
     _open_package: str = ""
     #: 这次开机要不要窗口（:class:`AvdManager` 在开机前按启动入口设）；没人设时按无头。
     _open_window: bool = False
-    #: 这次开机是不是用户在模拟器页手动点的（:class:`AvdManager` 在开机前设）。
-    _open_manual: bool = False
 
-    def _check_window_mode(self, idx: str, process: psutil.Process | None) -> None:
-        """有没有窗口只在开机那一刻定，开着以后切换不了。实例已在运行、方式和这次要的不一样时：
-        模拟器页手动启动直接拒绝，让用户先关机再换；任务拉起照常接着用（静默模式下带窗口的会被隐藏），
-        只记一笔。"""
+    def _log_window_mode(self, idx: str, process: psutil.Process | None) -> None:
+        """有没有窗口只在开机那一刻定，运行中不切换（不重启、不补窗口）。实例已在运行、方式和这次要的
+        不一样时照常接着用，只记一笔：静默模式的任务碰上带窗口的，随后会把窗口隐藏。"""
         if process is None:
             return
         headless = _qemu_headless(process)
@@ -1141,14 +1133,9 @@ class _AvdCore(DeviceBase):
             return
         running = "无头" if headless else "带窗口"
         wanted = "带窗口" if self._open_window else "无头"
-        if self._open_manual:
-            raise RuntimeError(
-                f"魔改 AVD 实例 {idx} 正在{running}运行，运行中不能换成{wanted}；"
-                f"要{wanted}请先关机再启动"
-            )
         logger.info(
-            f"魔改 AVD 实例 {idx} 已在{running}运行，这次按{wanted}开机：运行中不能切换，"
-            f"接着用{running}的；要{wanted}请先关机"
+            f"魔改 AVD 实例 {idx} 已在{running}运行，这次按{wanted}开机：运行中不切换，"
+            f"接着用{running}的"
         )
 
     async def _cli_creating(self, idx: str) -> bool:
@@ -2487,46 +2474,27 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         - 任务拉起（``manual`` 不传）：跟「静默模式」走，``Function.IfSilence`` 开着无头，关着带窗口。
         """
         self._open_window = manual or not _silence_enabled(self.runtime_policy)
-        self._open_manual = manual
         # AppLaunchMixin 有意不把包名传给开机那一步；开机时要对照推荐内存记日志，所以在这里记下
         self._open_package = package_name or ""
         return await super().open(idx, package_name)
 
     async def restart(self, idx: str, *, manual: bool = False) -> DeviceInfo:
-        """用同一条后端路径重启实例；0.36.0 CLI 路径直接调用 ``modavd restart``。"""
-        if self._cli is None:
-            await self.close(str(idx))
-            return await self.open(str(idx), manual=manual)
-        key = _instance_key(self.root, str(idx))
-        _stop_watchdog(self.root, str(idx))
-        _FROZEN.pop(key, None)
-        if updater.update_in_progress(self.root):
-            raise RuntimeError("魔改 AVD 正在更新，更新完再重启")
-        # modavd restart 先关机，同样会打断新建的初始化
-        if await self._cli_creating(str(idx)):
-            raise RuntimeError(
-                f"魔改 AVD 实例 {idx} 正在新建（后台开机做初始化），等新建完成再重启"
-            )
-        self._check_components()
-        memory_mb = memory_for(instance_meta(self.root, str(idx)))
-        self._open_window = manual or not _silence_enabled(self.runtime_policy)
-        self._open_package = ""
-        async with _cli_start_lock(key):
-            try:
-                data = await self._cli.restart(
-                    str(idx),
-                    window=self._open_window,
-                    timeout=float(self.config.Info.MaxWaitTime),
-                    force=bool(self.config.Info.ForceKillOnClose),
+        """重启 = 先关机再开机，两条路径一样（modavd 0.3.0 起没有 ``restart`` 命令）。
+
+        开机照 :meth:`open` 按这次的入口定有没有窗口；关机和开机之间不算运行中切换。看门狗、开机错开、
+        开机超时和取消的收尾都由 :meth:`close` / :meth:`open` 各自做。命令行路径先把更新中、新建中、
+        组件不全这几种开不了机的情况拦在关机之前，免得关掉了再开不起来。"""
+        idx = str(idx)
+        if self._cli is not None:
+            if updater.update_in_progress(self.root):
+                raise RuntimeError("魔改 AVD 正在更新，更新完再重启")
+            if await self._cli_creating(idx):
+                raise RuntimeError(
+                    f"魔改 AVD 实例 {idx} 正在新建（后台开机做初始化），等新建完成再重启"
                 )
-            except modavd_cli.CLIError as error:
-                await self._raise_cli_precheck(error, memory_mb)
-        if not isinstance(data, dict):
-            raise RuntimeError("modavd restart 返回的数据不是对象")
-        info = self._device_info_from_cli(data.get("instance", data))
-        if info.process_id is not None:
-            _start_watchdog(self.root, str(idx), info.process_id)
-        return info
+            self._check_components()
+        await self.close(idx)
+        return await self.open(idx, manual=manual)
 
     async def launch_app(
         self,

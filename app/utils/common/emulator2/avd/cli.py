@@ -58,12 +58,12 @@ COMMAND_TIMEOUT_SECONDS = 60
 BRIDGE_ROUND_BOOT_SECONDS = 300
 BRIDGE_ROUND_STOP_SECONDS = 28
 BRIDGE_ROUND_RESTART_SECONDS = 30
-#: 本进程里所有根目录的 start / restart / create 至少错开这么多秒。0.36.0（modavd v0.1.0）开机后先把
+#: 本进程里所有根目录的 start / create 至少错开这么多秒（重启是先 stop 再 start，跟着 start 错开）。0.36.0（modavd v0.1.0）开机后先把
 #: 客体脚本写进用户级的 ``%TEMP%\\modavd-guest``，各根目录共用；几个 modavd 同时第一次写会撞上
 #: 「文件被占用」，那次开机少推一个脚本、只在 ``warnings`` 里留一句。错开开机，开机后的设置也就错开；
 #: 仍然撞上的由管理器在拉游戏前补跑一次 start。
 START_STAGGER_SECONDS = 2.0
-#: start / restart 报这些错时实例可能被开了一半（modavd 自己的开机超时不关机），要补一次 stop；
+#: start 报这些错时实例可能被开了一半（modavd 自己的开机超时不关机），要补一次 stop；
 #: ``busy``（别的 modavd 正在开）、``precheck_failed``、``port_conflict`` 这类没开机的不能动。
 _STOP_AFTER_START_ERRORS = frozenset(
     {"timeout", "launch_failed", "canceled", "internal"}
@@ -361,7 +361,7 @@ class ModAvdCli:
     async def _stop_after_cancel(
         self, index: str | int, process: asyncio.subprocess.Process, label: str
     ) -> None:
-        """取消 start/restart 时等待装桥这一轮完成，再优雅 stop；超时才杀 CLI。"""
+        """取消 start 时等待装桥这一轮完成，再优雅 stop；超时才杀 CLI。"""
         index = str(index)
         deadline = asyncio.get_running_loop().time() + STOP_PROCESS_TIMEOUT_SECONDS
         while (
@@ -665,45 +665,6 @@ class ModAvdCli:
         if force:
             args.append("--force")
         return await self._call("stop", *args, timeout=STOP_PROCESS_TIMEOUT_SECONDS)
-
-    async def restart(
-        self,
-        index: str | int,
-        *,
-        window: bool = False,
-        timeout: int | float | None = None,
-        force: bool = False,
-    ) -> Any:
-        boot_timeout = int(timeout or DEFAULT_START_TIMEOUT_SECONDS)
-        args = [str(index)]
-        if window:
-            args.append("--window")
-        args.extend(("--timeout", str(boot_timeout)))
-        if force:
-            args.append("--force")
-        process_timeout = start_process_timeout(boot_timeout)
-
-        async def stop_restarted_cli(process: asyncio.subprocess.Process) -> None:
-            logger.warning(
-                f"modavd restart 超时，先请求 stop，再等待 CLI 进程退出: {index}"
-            )
-            await self._stop_after_cancel(index, process, "restart")
-
-        await _wait_start_turn()
-        try:
-            return await self._call(
-                "restart",
-                *args,
-                timeout=process_timeout,
-                timeout_handler=stop_restarted_cli,
-            )
-        except CLIError as error:
-            if error.code in _STOP_AFTER_START_ERRORS:
-                await self._stop_if_running(index, "restart")
-            raise
-        except asyncio.CancelledError:
-            await self._stop_if_running(index, "restart")
-            raise
 
     async def stop_all(self, *, force: bool = False) -> Any:
         args = ["--all"]

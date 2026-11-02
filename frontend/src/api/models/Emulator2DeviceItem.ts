@@ -41,6 +41,10 @@ export type Emulator2DeviceItem = {
      */
     adbAddress?: string;
     /**
+     * 正在运行的实例是不是无头开机的(没有窗口, 显示 / 隐藏用不了); 只有魔改 AVD 给, 其余为空
+     */
+    headless?: (boolean | null);
+    /**
      * 已保存设置, 下次启动使用; 不是运行中实例的当前配置
      */
     settings?: Record<string, Emulator2SettingField>;

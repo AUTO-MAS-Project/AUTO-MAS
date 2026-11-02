@@ -118,14 +118,10 @@ class _EmulatorManager(EmulatorOperations, AvdUpdateOperations):
                     await temp_emulator.open(index)
             elif operate == "close":
                 await temp_emulator.close(index)
-            elif operate in ("show", "hide"):
-                if isinstance(temp_emulator, _utils_emulator2.facade.Emulator2Manager):
-                    # 手动点的显示：魔改 AVD 对着无头开机的实例会说明换不了，不再默默没反应
-                    await temp_emulator.setVisible(
-                        index, operate == "show", manual=True
-                    )
-                else:
-                    await temp_emulator.setVisible(index, operate == "show")
+            elif operate == "show":
+                await temp_emulator.setVisible(index, True)
+            elif operate == "hide":
+                await temp_emulator.setVisible(index, False)
         except Exception as e:
             error = str(e)
             # 界面点启动/关闭失败以前只发一条 WS 气泡就完了，app.log 里一行都没有，

@@ -665,6 +665,8 @@ class EmulatorOperations:
             "title": getattr(info, "title", ""),
             "status": int(getattr(info, "status", 5)),
             "adbAddress": getattr(info, "adb_address", ""),
+            # 魔改 AVD 无头运行的实例没有窗口，界面据此把显示 / 隐藏置灰
+            "headless": getattr(info, "headless", None),
             # 这里给的是「已保存设置，下次启动使用」，不是运行中实例的当前配置——
             # 运行中保存后这里立刻变，但那台实例还在用旧值。
             "settings": settings or {},

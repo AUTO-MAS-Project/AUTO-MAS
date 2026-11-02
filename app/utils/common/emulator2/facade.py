@@ -361,14 +361,8 @@ class Emulator2Manager(DeviceBase):
             return DeviceStatus.NOT_FOUND
         return await manager.getStatus(native_index)
 
-    async def setVisible(
-        self, idx: str, is_visible: bool, *, manual: bool = False
-    ) -> DeviceStatus:
-        """``manual``：模拟器页手动点的显示 / 隐藏。只有魔改 AVD 用得上（对着无头开机的实例点显示时
-        报错说明，脚本路径照旧不抛）；雷电 / MuMu 不收这个参数。"""
+    async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
         manager, native_index = await self._dispatch(idx)
-        if isinstance(manager, AvdManager):
-            return await manager.setVisible(native_index, is_visible, manual=manual)
         return await manager.setVisible(native_index, is_visible)
 
     def get_adb_path(self) -> Path | None:

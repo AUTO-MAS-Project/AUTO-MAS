@@ -95,14 +95,15 @@ interface ActionAvailability {
  * - 启动：离线 / 出错 / 未知才能点；启动中和关闭中都不能——那正是用户抱怨的地方，
  *   启动中还亮着「启动」等于邀请他再点一次。
  * - 关闭：在线和**启动中**都能点。启动卡住时用户需要的正是这个按钮。
- * - 显示 / 隐藏 / 游戏中心：只有在线才有意义。
+ * - 显示 / 隐藏 / 游戏中心：只有在线才有意义。魔改 AVD 无头开机的实例没有窗口，显示 / 隐藏置灰；
+ *   运行中不切换有头无头，也不靠重启补窗口。
  * - 设置：启动 / 关闭 / 删除进行中不能改——雷电的写入和启动共用同一把实例锁，这时点保存会
  *   一直等到启动结束才返回，看起来像卡死；显示 / 隐藏 / 游戏中心进行中照常可改。
  * - 删除：必须离线，且这行没有别的事在进行。
  * - 新建中：全部不能点。魔改 AVD 新建后在后台开机做初始化，这时关机会把初始化打断。
  */
 export const actionAvailability = (
-  device: Pick<Emulator2DeviceItem, 'availability' | 'status'>,
+  device: Pick<Emulator2DeviceItem, 'availability' | 'status' | 'headless'>,
   pending: Pending | undefined,
   now: number
 ): ActionAvailability => {
@@ -120,11 +121,12 @@ export const actionAvailability = (
     status === DeviceStatus.NOT_FOUND ||
     status === DeviceStatus.UNKNOWN
   const canStop = online || status === DeviceStatus.STARTING
+  const hasWindow = device.headless !== true
   return {
     start: reachable && !busy && canStart,
     stop: reachable && canStop && !(heavy && pending.op !== 'open'),
-    show: reachable && online && !busy,
-    hide: reachable && online && !busy,
+    show: reachable && online && !busy && hasWindow,
+    hide: reachable && online && !busy && hasWindow,
     store: reachable && online && !busy,
     settings: reachable && !heavy,
     delete:
@@ -161,6 +163,7 @@ export const mergeSettings = (
       adbAddress: old.adbAddress,
       availability: old.availability,
       title: old.title,
+      headless: old.headless,
     }
   })
 }

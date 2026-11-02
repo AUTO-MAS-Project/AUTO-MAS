@@ -7,10 +7,12 @@ import json
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Sequence
 
 import pytest
 
+from app.core.emulator_manager.operations import EmulatorOperations
 from app.models.emulator import DeviceStatus, EmulatorRuntimePolicy
 from app.utils.common.emulator2.avd import cli as cli_module
 from app.utils.common.emulator2.avd import manager as manager_module
@@ -117,7 +119,7 @@ async def test_stderr_is_not_mixed_into_json_and_arguments_are_mapped(
 
 
 @pytest.mark.asyncio
-async def test_start_stop_restart_flags_and_timeouts(tmp_path: Path) -> None:
+async def test_start_stop_window_install_flags_and_timeouts(tmp_path: Path) -> None:
     fake = _FakeRunner(ProcessOutput(0, '{"ok":true,"data":{}}', ""))
     cli = _cli(tmp_path, fake)
 
@@ -130,14 +132,8 @@ async def test_start_stop_restart_flags_and_timeouts(tmp_path: Path) -> None:
     assert fake.calls[-1][0][4:] == ["stop", "3"]
     assert fake.calls[-1][1] == 90
 
-    await cli.restart(3, force=True, timeout=20)
-    assert fake.calls[-1][0][4:] == [
-        "restart",
-        "3",
-        "--timeout",
-        "20",
-        "--force",
-    ]
+    await cli.stop(3, force=True)
+    assert fake.calls[-1][0][4:] == ["stop", "3", "--force"]
 
     await cli.window(3, visible=False)
     assert fake.calls[-1][0][4:] == ["window", "3", "hide"]
@@ -502,6 +498,12 @@ async def test_manager_cli_list_maps_busy_and_only_queries_once(
         def create_time(self) -> float:
             return 1234.5
 
+        def name(self) -> str:
+            return "qemu.exe"
+
+        def cmdline(self) -> list[str]:
+            return ["qemu.exe"]
+
     monkeypatch.setattr(manager_module.psutil, "Process", lambda pid: _FakeProcess())
 
     info = await manager.getInfo(None)
@@ -829,13 +831,13 @@ async def test_starts_of_all_roots_take_turns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = _FakeModavd(tmp_path, monkeypatch)
-    fake.plan(start={"data": {}}, restart={"data": {}})
+    fake.plan(start={"data": {}}, create={"data": {"index": 8}})
     monkeypatch.setattr(cli_module, "START_STAGGER_SECONDS", 0.6)
     monkeypatch.setattr(cli_module, "_next_start_at", 0.0)
 
     await asyncio.gather(
         ModAvdCli(tmp_path / "a").start(7, timeout=60),
-        ModAvdCli(tmp_path / "b").restart(8, timeout=60),
+        ModAvdCli(tmp_path / "b").create(index=8),
     )
 
     times = sorted(at for at, args in fake.launched)
@@ -1118,40 +1120,107 @@ class _Qemu:
 
 
 @pytest.mark.asyncio
-async def test_running_instance_keeps_its_window_mode(
+async def test_list_marks_headless_instances_so_show_and_hide_are_greyed_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    root = _root_with_exe(tmp_path)
+    qemu_dir = root / "sdk" / "emulator" / "qemu" / "windows-x86_64"
+    processes = {
+        4242: _Qemu("qemu-system-x86_64-headless.exe", "-no-window"),
+        4343: _Qemu("qemu-system-x86_64.exe"),
+    }
+
+    class _Process:
+        def __init__(self, pid: int) -> None:
+            self._qemu = processes[pid]
+
+        def exe(self) -> str:
+            return str(qemu_dir / self._qemu.name())
+
+        def create_time(self) -> float:
+            return 1.0
+
+        def name(self) -> str:
+            return self._qemu.name()
+
+        def cmdline(self) -> list[str]:
+            return self._qemu.cmdline()
+
+    monkeypatch.setattr(manager_module.psutil, "Process", _Process)
+    fake.plan(
+        version={"data": {"version": "0.2.0", "protocol": SUPPORTED_PROTOCOL}},
+        list={
+            "data": {
+                "instances": [
+                    {"index": 7, "status": "online", "pid": 4242},
+                    {"index": 8, "status": "online", "pid": 4343},
+                    {"index": 9, "status": "offline"},
+                ]
+            }
+        },
+    )
+    manager = await manager_module.build_manager(
+        str(root / "sdk" / "emulator" / "emulator.exe"), 60, runtime_policy=_policy()
+    )
+
+    info = await manager.getInfo(None)
+
+    assert {key: item.headless for key, item in info.items()} == {
+        "7": True,
+        "8": False,
+        "9": None,
+    }
+    path = SimpleNamespace(path_id="p", alias="AVD", type="avd")
+    row = EmulatorOperations._device_row(None, path, "1", "7", info["7"], "ok")  # type: ignore[arg-type]
+    assert row["headless"] is True
+
+
+@pytest.mark.asyncio
+async def test_restart_is_stop_then_start_and_running_mode_is_never_switched(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = _FakeModavd(tmp_path, monkeypatch)
     root = _root_with_exe(tmp_path)
     fake.plan(
-        version={"data": {"version": "0.2.0", "protocol": SUPPORTED_PROTOCOL}},
+        version={"data": {"version": "0.3.0", "protocol": SUPPORTED_PROTOCOL}},
+        stop={"data": {}},
         start={"data": {"instance": {"index": 7, "status": "online"}}},
         window={"data": {"index": 7, "windows": 0}},
         status={"data": {"index": 7, "status": "online"}},
     )
     monkeypatch.setattr(_AvdCore, "_check_components", lambda self: None)
-    running = {"qemu": _Qemu("qemu-system-x86_64-headless.exe", "-no-window")}
+    running: dict[str, object] = {"qemu": None}
     monkeypatch.setattr(
         manager_module.host, "find_qemu_process", lambda avd, port: running["qemu"]
     )
-    # 静默模式开着：任务拉起要无头，模拟器页手动启动要窗口
+    # 静默模式开着：任务拉起无头，模拟器页手动启动带窗口
     manager = await manager_module.build_manager(
         str(root / "sdk" / "emulator" / "emulator.exe"), 60, runtime_policy=_policy()
     )
 
-    # 正无头运行时手动要窗口：明确拒绝，不能当成已在运行接管
-    with pytest.raises(RuntimeError, match="先关机再启动"):
-        await manager.open("7", manual=True)
-    with pytest.raises(RuntimeError, match="要窗口请先关机"):
-        await manager.setVisible("7", True, manual=True)
-    assert not {"start", "window"} & set(fake.commands())
-    # 脚本每轮调的显示照旧不抛
-    await manager.setVisible("7", True)
+    # 0.3.0 没有 modavd restart：重启是先关机再开机，开机按这次的入口定有没有窗口
+    await manager.restart("7")
+    await manager.restart("7", manual=True)
+    calls = [(item["command"], item["args"]) for item in fake.calls()]
+    assert [command for command, _ in calls] == [
+        "version",
+        "stop",
+        "start",
+        "stop",
+        "start",
+    ]
+    starts = [args for command, args in calls if command == "start"]
+    assert "--window" not in starts[0]
+    assert "--window" in starts[1]
 
-    # 任务拉起和运行方式一致，照常接着用
-    assert (await manager.open("7")).status == DeviceStatus.ONLINE
-    # 任务要无头、实例带窗口：照常接着用，静默模式随后会把窗口隐藏
-    running["qemu"] = _Qemu("qemu-system-x86_64.exe")
-    await manager.open("7")
-    await manager.open("7", manual=True)
-    assert fake.commands().count("start") == 3
+    # 实例正无头运行：再要窗口也只是接着用，不重启、不切换；脚本每轮调的显示照旧不抛
+    running["qemu"] = _Qemu("qemu-system-x86_64-headless.exe", "-no-window")
+    before = len(fake.calls())
+    assert (await manager.open("7", manual=True)).status == DeviceStatus.ONLINE
+    await manager.setVisible("7", True)
+    assert [item["command"] for item in fake.calls()[before:]] == [
+        "start",
+        "window",
+        "status",
+    ]
