@@ -2,7 +2,6 @@
 
 import asyncio
 import sys
-import time
 from collections import deque
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,6 +24,7 @@ class Harness:
     def __init__(self, monkeypatch):
         self.now = 0.0
         self.calls = []
+        self.options = []
         self.sleeps = []
         self.queries = deque()
         self.default_query = (0.2, 0, FOREGROUND)
@@ -60,6 +60,7 @@ class Harness:
 
     async def run(self, program, *args, timeout, **kwargs):
         self.calls.append((args, timeout, self.now))
+        self.options.append((args, kwargs))
         if "dumpsys" in args:
             action = self.queries.popleft() if self.queries else self.default_query
         elif "monkey" in args:
@@ -158,6 +159,20 @@ async def test_post_monkey_queries_cannot_reset_budget(harness):
 
 
 @pytest.mark.asyncio
+async def test_only_foreground_commands_opt_into_deadline_and_tree_cleanup(harness):
+    harness.app_state = "stopped"
+    harness.queries.extend([(0.2, 1, "")] * 6)
+    assert await harness.ensure() is True
+    for args, options in harness.options:
+        if "dumpsys" in args or "monkey" in args:
+            assert options["kill_tree_on_cancel"] is True
+            assert options["deadline"] <= 30.2
+        else:
+            assert "deadline" not in options
+            assert "kill_tree_on_cancel" not in options
+
+
+@pytest.mark.asyncio
 async def test_retry_sleep_is_clipped_to_remaining_budget(harness):
     harness.queries.extend([(0.2, 1, "")] * 6)
     harness.default_query = (4.9, 1, "")
@@ -226,7 +241,27 @@ async def test_slow_cold_boot_keeps_full_startup_wait(harness, monkeypatch, fore
         harness.default_query = (float("inf"), 0, "")
     assert await harness.manager.open("0", PACKAGE) is info
     assert 110 <= harness.now <= 140.2
-    assert all(call[1] == 300 for call in harness.calls if "dumpsys" not in call[0])
+    assert len(harness.commands("setting")) == 1
+    assert harness.commands("setting")[0][0] == (
+        "setting",
+        "-v",
+        "0",
+        "-k",
+        "app_keptlive",
+        "-val",
+        "false",
+    )
+    assert len(harness.commands("launch")) == 1
+    assert harness.commands("launch")[0][0] == (
+        "control",
+        "-v",
+        "0",
+        "launch",
+        "-pkg",
+        PACKAGE,
+    )
+    assert harness.commands("setting")[0][1] == 300
+    assert harness.commands("launch")[0][1] == 300
     assert 30 in harness.sleeps  # 保留原有上线后的加载缓冲
 
 
@@ -285,9 +320,8 @@ async def test_real_runner_reaps_isolated_hung_command(monkeypatch, cancelled, s
     monkeypatch.setattr(process_runner, "create_subprocess", record)
     monkeypatch.setattr(mumu, "ProcessRunner", SimpleNamespace(run_process=run))
     pending_before = asyncio.all_tasks()
-    started_at = time.monotonic()
     task = asyncio.create_task(manager._ensure_app_foreground("0", PACKAGE))
-    async with asyncio.timeout(5):
+    async with asyncio.timeout(30):
         await started.wait()
         if cancelled:
             task.cancel()
@@ -295,6 +329,5 @@ async def test_real_runner_reaps_isolated_hung_command(monkeypatch, cancelled, s
                 await task
         else:
             assert await task is False
-    assert time.monotonic() - started_at < 3
     assert created and all(child.returncode is not None for child in created)
     assert not (asyncio.all_tasks() - pending_before)

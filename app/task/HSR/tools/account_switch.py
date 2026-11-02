@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-from app.services.system import System
+from app.services import System
 from app.utils import ProcessInfo, get_logger, is_process_running
 
 from ..task_mapping import engine_label

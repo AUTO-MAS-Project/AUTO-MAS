@@ -19,36 +19,37 @@ from contextlib import ExitStack, suppress
 from datetime import datetime
 from pathlib import Path
 
+import app.core.notify.formats.maa as _format_maa
 from app.config import config_manager
-from app.core import Config, EmulatorManager
-from app.core.maa_capture import capture_adb
-from app.core.maa_stage import maa_stage_service
-from app.core.ws import Publisher, protocol
+from app.core import Config, EmulatorManager, Notify, Publisher
+from app.core.notify.task_content import (
+    NOTIFY_SCREENSHOT_LIMIT as NOTIFY_SCREENSHOT_LIMIT,
+)
+from app.core.notify.task_content import screenshot_entries as screenshot_entries
+from app.core.script_update import ScriptUpdateRequest, run_script_update
+from app.core.ws import protocol
 from app.models.config import MaaConfig, MaaUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
 from app.models.notification import NotificationImage
-from app.models.notification_report import TaskResultReport
+from app.models.notification.report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
-from app.services import System
+from app.services import System, capture_adb
 from app.task.emulator_core import close_emulator
 from app.task.game_update import EmulatorGameUpdateTask
+from app.task.MAA.stage import maa_stage_service
 from app.task.manager_base import ScriptManagerBase
-from app.task.notify_core import (
-    NOTIFY_SCREENSHOT_LIMIT,
-    screenshot_entries,
-)
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
     read_config_base,
 )
-from app.utils import config_archive as _utils_config_archive
 from app.utils import constants as _utils_constants
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
 from app.utils import game_update as _utils_game_update
 from app.utils import get_logger
 from app.utils import io as _utils_io
+from app.utils.common.config import archive as _utils_config_archive
 
 from .AutoProxy import (
     AutoProxyTask,
@@ -65,7 +66,6 @@ from .tools.backup_archive import (
 )
 from .tools.fluxdown_update import prepare_maa_fluxdown_update, query_latest_maa_version
 from .tools.game_update import ensure_game_updated
-from .tools.notify import SIGNATURE_SEP
 from .tools.resource_update import (
     _run_write_thread,
     acquire_resource_access_lock,
@@ -148,6 +148,8 @@ class MaaManager(ScriptManagerBase):
         self._pending_update: tuple[str, str] | None = None
         self._active_proxy_task: AutoProxyTask | None = None
         self._updater_running: bool = False
+        # 每批任务最多尝试一次更新；新 MaaManager 实例会重新检查。
+        self._maa_update_checked = False
 
     async def _finalize_task(self) -> None:
         try:
@@ -562,9 +564,7 @@ class MaaManager(ScriptManagerBase):
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             if isinstance(task, AutoProxyTask):
                 self._active_proxy_task = task
-                # 启动前尽力更新；失败沿用当前安装时，运行期间仍暂停原生更新。
-                self._update_config_dir = task.update_config_dir
-                await self._prepare_software_update(task)
+                await self._prepare_software_update_once(task)
             await self.run_user_task(
                 self.script_info.user_list[self.script_info.current_index], task
             )
@@ -573,6 +573,46 @@ class MaaManager(ScriptManagerBase):
             # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有
             if getattr(task, "report_image_pairs", None):
                 self._rollup_image_pairs.extend(task.report_image_pairs)
+
+    async def _prepare_software_update_once(self, task: AutoProxyTask) -> None:
+        """首位实际运行账号做更新准备；同批后续账号仅执行本地安全检查。"""
+        self._update_config_dir = task.update_config_dir
+        if not self._maa_update_checked:
+            await run_script_update(
+                ScriptUpdateRequest(str(self.script_info.script_id), "MAA"),
+                self._prepare_software_update,
+                task,
+            )
+            # 普通更新失败且安全回退后也只尝试一次；异常不标记为完成。
+            self._maa_update_checked = True
+        else:
+            await self._check_software_update_safety()
+
+    async def _check_software_update_safety(self) -> None:
+        """后续账号只检查本地安装是否安全，避免重复更新请求。"""
+        root = self.maa_set_path.parent
+        if self._updater_running or await System.is_process_running(
+            root / "MAA.Updater.exe"
+        ):
+            self._updater_running = True
+            raise MaaUpdaterRunningError("MAA 官方更新器仍在运行，不能启动后续账号任务")
+        if has_incomplete_resource_update(root):
+            raise MaaUpdateUnsafeError("MAA 资源更新未完成，不能安全启动后续账号任务")
+        if has_delegated_update_failure(root):
+            raise MaaUpdateUnsafeError(
+                "MAA 官方更新器报告安装失败，不能安全启动后续账号任务"
+            )
+        if self.script_config.Update.TakeoverEnabled and (
+            not (root / "MAA.exe").is_file()
+            or (
+                (release := read_installed_release(root)) is None
+                or parse_version(release[0]) is None
+            )
+            or read_resource_clock(root) is None
+        ):
+            raise MaaUpdateUnsafeError(
+                "MAA 当前安装或资源状态无法确认，不能安全启动后续账号任务"
+            )
 
     async def _prepare_software_update(self, task: AutoProxyTask) -> bool:
         """启动前尽力更新；普通准备失败时沿用当前安装继续任务。"""
@@ -795,12 +835,12 @@ class MaaManager(ScriptManagerBase):
                     if self.all_users_maintenance_skipped:
                         await self.notify_maintenance()
                     else:
-                        await self.task_info.notifications.push_proxy_result(
+                        await Notify.push_proxy_result(
                             title=title,
                             report=TaskResultReport.from_message(result),
                             task_info=self.task_info,
                             result_template="MAA_result.html",
-                            signature_sep=SIGNATURE_SEP,
+                            signature_sep=_format_maa.SIGNATURE_SEP,
                             images=[image for _, image in rollup_pairs],
                         )
                 except Exception as e:

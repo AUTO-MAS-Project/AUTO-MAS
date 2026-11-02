@@ -1,7 +1,7 @@
 """OK-NTE 节点日志采集参数（log_box 实例的喂参方）
 
 OK-NTE 专项作为 log_box 的一个实例：本模块只提供参数（日志路径、规则、后置
-处理器），日志获取、规则匹配、后置处理与推送全部由 log_box 完成。
+处理器），文本内核只匹配规则和执行处理器；读取、账号归属和交付由专项负责。
 
 规则说明（从 ok-nte 源码 `src/tasks/daily/DailyRoutineTask.py` 推导，与
 working/logs/ok-script.log 实际输出吻合，无需前置翻译——日志文本已是中文）：
@@ -33,7 +33,7 @@ working/logs/ok-script.log 实际输出吻合，无需前置翻译——日志�
 import ast
 import re
 
-from app.log_box import LogSpec, LogType
+from app.utils import LOG_TYPE_NORMAL
 
 # 异象界域单把消耗体力（上游 AnomalyTask.TASK_COST）；异象追猎消耗直接用日志
 # 的「共计消耗体力」，无需本常量
@@ -82,8 +82,8 @@ def _oknte_parse_skip_list(payload: str) -> list[str]:
 
 
 def oknte_resolve(
-    results: list[tuple[str, str, float]],
-) -> list[tuple[str, str, float]]:
+    results: list[tuple[str, str, float | None]],
+) -> list[tuple[str, str, float | None]]:
     """后处理：按节点解析最终状态（失败 > 跳过 > 成功），保持最后一次出现顺序
 
     输入/输出均为 ``(log_type, text, ts)`` 元组（与 log_box `_PostProcessor`
@@ -96,13 +96,13 @@ def oknte_resolve(
     """
     order: list[str] = []
     states: dict[str, tuple[int, str]] = {}
-    ts_of: dict[str, float] = {}
+    ts_of: dict[str, float | None] = {}
     cur_stamina: int | None = None
     consumed_after_cur: int = 0
-    stamina_ts: float = 0.0
+    stamina_ts: float | None = 0.0
     daily_claim_no_reward = False
 
-    def _mark(status: str, node: str, ts: float) -> None:
+    def _mark(status: str, node: str, ts: float | None) -> None:
         rank = _OKNTE_STATUS_RANK[status]
         if node in states:
             order.remove(node)  # 移至末尾：保留最后一次出现顺序
@@ -162,23 +162,17 @@ def oknte_resolve(
             and status == "❌ 失败"
         ):
             result.append(
-                (LogType.NORMAL, f"⏭ 跳过: {node}（当日已领取）", ts_of[node])
+                (LOG_TYPE_NORMAL, f"⏭ 跳过: {node}（当日已领取）", ts_of[node])
             )
         else:
-            result.append((LogType.NORMAL, f"{status}: {node}", ts_of[node]))
+            result.append((LOG_TYPE_NORMAL, f"{status}: {node}", ts_of[node]))
     # 规则均产出普通类型，节点级失败由文本「❌ 失败:」体现，不依赖逐条类型过滤。
     # 剩余体力 = 最后读到的当前体力 − 其后刷本消耗；无消耗（体力不足直接退出）时
     # 即最后一次当前体力。
     if cur_stamina is not None:
         remaining = max(cur_stamina - consumed_after_cur, 0)
-        result.append((LogType.NORMAL, f"⚡ 剩余体力: {remaining}", stamina_ts))
+        result.append((LOG_TYPE_NORMAL, f"⚡ 剩余体力: {remaining}", stamina_ts))
     return result
 
 
-# 规则、归并和原有失败提示集中声明；会话与异步收尾由 log_box 托管。
-OKNTE_LOG_SPEC = LogSpec(
-    rules=tuple(OKNTE_PUSH_RULES),
-    postprocessor=oknte_resolve,
-    error_message="OK-NTE log_box 收尾推送失败（oknte_resolve）",
-    failure_text="⚠️ 节点采集失败",
-)
+# 规则与归并仅处理文本；来源、失败提示和异步收尾由专项 AutoProxy 负责。

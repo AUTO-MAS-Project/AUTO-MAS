@@ -1,6 +1,0 @@
-{
-  "interface_version": 1,
-  "id": "mail",
-  "entrypoint": "app.notification_channels.mail:register",
-  "requires": []
-}

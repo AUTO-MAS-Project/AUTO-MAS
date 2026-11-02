@@ -23,22 +23,22 @@ import uuid
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from time import time_ns
+from time import time, time_ns
 from typing import Any
 
+import app.core.notify.formats.maaend as _format_maaend
 from app.config import ConfigCollection
-from app.core import Config
+from app.core import Config, Notify, Publisher
 from app.core.history import aggregate_data
-from app.core.maa_capture import AdbCapture, Win32Capture
-from app.core.ws import Publisher, protocol
-from app.log_box import log_box
+from app.core.ws import protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo
-from app.models.notification_ports import LocalNotice
+from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import System
-from app.services.endfield_launcher import discover_launcher_exe, resolve_launcher_exe
+from app.services import endfield_launcher as _service_endfield_launcher
+from app.services.common.maa_capture import AdbCapture, Win32Capture
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import (
     close_emulator,
@@ -73,11 +73,13 @@ from app.utils import (
     ProcessRunner,
     get_logger,
     is_process_running,
+    log_box,
 )
 from app.utils import io as _utils_io
+from app.utils.common.log import sources as log_source
 
 from .inventory_report import INVENTORY_REPORT_RULE, InventoryReport, inventory_resolve
-from .push_log import MAAEND_LOG_SPEC
+from .push_log import MAAEND_PUSH_RULES, maaend_plain_text, maaend_resolve
 from .resource_loader import (
     MaaEndResourceLoader,
     get_loaded_maaend_options,
@@ -87,7 +89,7 @@ from .resource_loader import (
     maaend_task_supported,
 )
 from .ScriptConfig import maaend_config_base, maaend_mas_config_dir
-from .tools import build_statistics_payload, replace_account_switch_task
+from .tools import replace_account_switch_task
 from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 from .tools.game_launcher import verify_launcher_signature
 from .tools.launcher_start import (
@@ -96,7 +98,6 @@ from .tools.launcher_start import (
 )
 from .tools.log_bundle import export_failure_logs
 from .tools.log_statistics import parse_maaend_failed_tasks, parse_maaend_statistics
-from .tools.notify import build_inventory_payload, collect_recent_error_images
 from .update_takeover import (
     read_new_mxu_logs,
     snapshot_mxu_logs,
@@ -542,7 +543,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     launcher_path = self._launcher_path()
                 else:
                     launcher_path = await asyncio.to_thread(
-                        discover_launcher_exe,
+                        _service_endfield_launcher.discover_launcher_exe,
                         Path(str(self.script_config.Game.Path)),
                     )
                 if launcher_path is not None:
@@ -573,7 +574,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
     def _launcher_path(self) -> Path | None:
         """自动与手动路径共用服务层校验；失效的手动路径明确报错。"""
-        return resolve_launcher_exe(
+        return _service_endfield_launcher.resolve_launcher_exe(
             Path(str(self.script_config.Game.Path or "")),
             str(self.script_config.Game.LauncherPath or ""),
         )
@@ -664,7 +665,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if (
             not preserve_running_game
             and self.mode == self.first_run_mode
-            and self.script_config.Game.SetResolution
+            and (
+                self.script_config.Game.SetResolution
+                or self._launch_mode() == "MaaEnd"
+                and self.script_config.Game.AutoHDR != "Unchanged"
+            )
         ):
             self._read_original_game_settings()
             # 路径、签名与预任务参数全部就绪后再关闭游戏，校验失败不打断现有游戏。
@@ -721,7 +726,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         needs_wait = not is_process_running(_MAAEND_CLIENT_PROCESS) or (
             not preserve_running_game
             and self.mode == self.first_run_mode
-            and bool(self.script_config.Game.SetResolution)
+            and (
+                self.script_config.Game.SetResolution
+                or self.script_config.Game.AutoHDR != "Unchanged"
+            )
         )
         await self._apply_launcher_game_settings(
             preserve_running_game=preserve_running_game
@@ -1730,7 +1738,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 )
 
                 try:
-                    await self.task_info.local_notifier.send_notice(
+                    await Notify.send_notice(
                         LocalNotice(
                             title="用户自动代理出现异常！",
                             message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
@@ -1772,7 +1780,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         await self.kill_managed_process(kill_game=kill_game)
 
         try:
-            await self.task_info.local_notifier.send_notice(
+            await Notify.send_notice(
                 LocalNotice(
                     title="用户自动代理出现异常！",
                     message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
@@ -2068,11 +2076,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
     def _configure_resolution_restore(
         self, tasks: list[dict[str, Any]]
     ) -> dict[str, Any] | None:
-        """仅在最后一个实际阶段，通过 MaaEnd 关闭游戏任务恢复分辨率。"""
+        """仅在最后一个实际阶段，通过 MaaEnd 关闭游戏任务恢复显示与自动 HDR 设置。"""
         resolution = self.script_config.Game.RestoreResolution
+        restore_hdr = self.script_config.Game.RestoreAutoHDR
+        restore_resolution = bool(resolution and resolution != "Off")
         if (
-            not resolution
-            or resolution == "Off"
+            (not restore_resolution and restore_hdr == "Unchanged")
             or (not self.script_config.Game.CloseOnFinish)
             or (self.emulator_manager is not None)
         ):
@@ -2095,23 +2104,32 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             return None
         if resolution == "Original" and original is None:
             logger.warning("无法读取启动前的终末地注册表显示设置，本轮跳过关闭时恢复")
-            for task in close_tasks:
-                task.setdefault("optionValues", {})["CloseGamePCApplyGameSetting"] = {
-                    "type": "switch",
-                    "value": False,
-                }
-            return None
-        required_options = (
-            "CloseGamePCApplyGameSetting",
-            "CloseGamePCGameSettingDisplayType",
-            "CloseGamePCGameSettingResolution",
-        )
+            restore_resolution = False
+            if restore_hdr == "Unchanged":
+                for task in close_tasks:
+                    task.setdefault("optionValues", {})[
+                        "CloseGamePCApplyGameSetting"
+                    ] = {
+                        "type": "switch",
+                        "value": False,
+                    }
+                return None
+        required_options = ["CloseGamePCApplyGameSetting"]
+        if restore_hdr != "Unchanged":
+            required_options.append("CloseGamePCAutoHDR")
+        if restore_resolution:
+            required_options.extend(
+                (
+                    "CloseGamePCGameSettingDisplayType",
+                    "CloseGamePCGameSettingResolution",
+                )
+            )
         if self._maaend_task_supported("CloseGamePC") is not True or not all(
             self._maaend_task_option_supported("CloseGamePC", name)
             for name in required_options
         ):
             raise ValueError(
-                "当前 MaaEnd 不支持关闭游戏时恢复分辨率，请更新 MaaEnd 或关闭此设置"
+                "当前 MaaEnd 不支持关闭游戏时恢复所选设置，请更新 MaaEnd 或关闭此设置"
             )
         close_task = (
             close_tasks[0]
@@ -2131,34 +2149,37 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             str(self.script_config.Game.ControllerType)
         ] = True
         tasks.append(close_task)
-        display_type = (
-            original[2]
-            if original is not None
-            else str(self.script_config.Game.RestoreDisplayType or "Window")
-        )
-        if display_type not in {"Window", "Fullscreen"}:
-            display_type = "Window"
-        if resolution == "Original":
-            assert original is not None
-            width, height = str(original[0]), str(original[1])
-        elif resolution == "Custom":
-            width = str(self.script_config.Game.RestoreResolutionWidth)
-            height = str(self.script_config.Game.RestoreResolutionHeight)
-        else:
-            width, height = resolution.split("x")
         values = close_task.setdefault("optionValues", {})
         values["CloseGamePCApplyGameSetting"] = {"type": "switch", "value": True}
-        values["CloseGamePCGameSettingDisplayType"] = {
-            "type": "select",
-            "caseName": display_type,
-        }
-        values["CloseGamePCGameSettingResolution"] = {
-            "type": "input",
-            "values": {
-                "CloseGamePCGameSettingResolutionWidth": width,
-                "CloseGamePCGameSettingResolutionHeight": height,
-            },
-        }
+        if restore_hdr != "Unchanged":
+            values["CloseGamePCAutoHDR"] = {"type": "select", "caseName": restore_hdr}
+        if restore_resolution:
+            display_type = (
+                original[2]
+                if original is not None
+                else str(self.script_config.Game.RestoreDisplayType or "Window")
+            )
+            if display_type not in {"Window", "Fullscreen"}:
+                display_type = "Window"
+            if resolution == "Original":
+                assert original is not None
+                width, height = str(original[0]), str(original[1])
+            elif resolution == "Custom":
+                width = str(self.script_config.Game.RestoreResolutionWidth)
+                height = str(self.script_config.Game.RestoreResolutionHeight)
+            else:
+                width, height = resolution.split("x")
+            values["CloseGamePCGameSettingDisplayType"] = {
+                "type": "select",
+                "caseName": display_type,
+            }
+            values["CloseGamePCGameSettingResolution"] = {
+                "type": "input",
+                "values": {
+                    "CloseGamePCGameSettingResolutionWidth": width,
+                    "CloseGamePCGameSettingResolutionHeight": height,
+                },
+            }
         return close_task
 
     def _read_original_game_settings(self) -> tuple[int, int, str] | None:
@@ -2322,8 +2343,22 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             controller_type = str(self.script_config.Game.ControllerType)
             setting_pretask = self._game_setting_pretask()
             if setting_pretask is not None:
-                apply_settings = self.mode == self.first_run_mode and bool(
-                    self.script_config.Game.SetResolution
+                auto_hdr = self.script_config.Game.AutoHDR
+                apply_hdr = (
+                    setting_pretask == _MAAEND_LAUNCH_GAME_PRETASK
+                    and auto_hdr != "Unchanged"
+                )
+                if apply_hdr:
+                    interface = load_interface_model(self.maaend_root_path)
+                    if (
+                        "LaunchGamePCAutoHDR"
+                        not in build_task_option_maps(interface)[setting_pretask]
+                    ):
+                        raise ValueError(
+                            "当前 MaaEnd 不支持自动 HDR 设置，请更新 MaaEnd"
+                        )
+                apply_settings = self.mode == self.first_run_mode and (
+                    self.script_config.Game.SetResolution or apply_hdr
                 )
                 # 保存的配置可能早于当前资源；先补齐入口，再覆写本轮托管开关。
                 _place_managed_task(
@@ -2344,6 +2379,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                             "type": "switch",
                             "value": apply_settings,
                         }
+                        if apply_hdr:
+                            task["optionValues"]["LaunchGamePCAutoHDR"] = {
+                                "type": "select",
+                                "value": auto_hdr,
+                            }
                     if task["taskName"] == setting_pretask:
                         self.launcher_game_setting_options = task["optionValues"]
             # 上游预任务在 MXU 外按所选方式执行；保存的其他版本入口也必须禁用。
@@ -2943,7 +2983,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if self._attempt_start_ns is None:
             return None
         existing = await asyncio.to_thread(
-            collect_recent_error_images,
+            _format_maaend.collect_recent_error_images,
             self.maaend_root_path,
             started_at_ns=self._attempt_start_ns,
             ended_at_ns=time_ns(),
@@ -3200,15 +3240,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         # 采集，部分日志中的开始标记聚为失败节点；仅 check 未通过的提前返回
         # 场景无节点。
         if self.push_log_enabled and stage_log_paths:
-            log_collect = log_box.get_user_session(
-                MAAEND_LOG_SPEC,
-                user=self.cur_user_item,
-                mode=self.cur_user_item.push_log_mode,
-                paths=stage_log_paths,
-                start_from_end=False,
-            )
-            # 等待阶段日志回扫与节点交付后，才能读取报告或清理临时目录。
-            await log_collect.close()
+            await self._append_stage_log_details(stage_log_paths)
 
         inventory_lines: list[str] = []
         if inventory_notify and stage_log_paths:
@@ -3229,12 +3261,19 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     if self.push_log_enabled:
                         append_push_log(self.cur_user_item, log_type, text, ts)
 
-                collect = log_box.get_collect(
-                    paths=stage_log_paths, sink=append_inventory, start_from_end=False
-                )
-                collect.open(report.select)
-                collect.collect(*INVENTORY_REPORT_RULE)
-                collect.close(inventory_resolve)
+                pipeline = log_box.LogPipeline()
+                pipeline.preprocessors.append(report.select)
+                pipeline.add_rule(*INVENTORY_REPORT_RULE)
+                pipeline.postprocessors.append(inventory_resolve)
+                for path in stage_log_paths:
+                    source = log_source.LogSource(path, start_from_end=False)
+                    source.open()
+                    for line in source.read_new():
+                        pipeline.feed(line, timestamp=time())
+                for entry in pipeline.finish():
+                    if entry.timestamp is None:
+                        raise ValueError("材料状态报告缺少时间戳")
+                    append_inventory(entry.log_type, entry.text, entry.timestamp)
             except Exception as e:
                 logger.opt(exception=True).warning(f"MaaEnd 材料状态采集失败: {e}")
 
@@ -3264,8 +3303,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         if inventory_notify and history_records:
             try:
-                await self.task_info.notifications.send_user(
-                    payload=build_inventory_payload(
+                await Notify.send_user(
+                    payload=_format_maaend.build_inventory_payload(
                         title=f"{datetime.now():%m-%d} | {self.cur_user_item.name} 的本轮材料收获",
                         message=statistics,
                     ),
@@ -3276,8 +3315,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         if history_records:
             try:
-                await self.task_info.notifications.push_statistics_report(
-                    payload=build_statistics_payload(
+                await Notify.push_statistics_report(
+                    payload=_format_maaend.build_statistics_payload(
                         title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
                         message=statistics,
                     ),
@@ -3325,7 +3364,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             )
 
         if completed:
-            await self.task_info.local_notifier.send_notice(
+            await Notify.send_notice(
                 LocalNotice(
                     title="成功完成一个自动代理任务！",
                     message=f"已完成用户 {self.cur_user_item.name} 的 MaaEnd 自动代理任务",
@@ -3342,3 +3381,42 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             type=protocol.TASK_NOTICE,
             data=WSTaskNoticeData(level="error", message=f"自动代理任务出现异常: {e}"),
         )
+
+    async def _append_stage_log_details(self, paths: list[Path]) -> None:
+        """阶段日志的读取、后台处理和用户交付归 MaaEnd 收尾流程。"""
+        if not self.push_log_enabled or self.cur_user_item.push_log_mode == "关闭":
+            return
+        user = self.cur_user_item
+        paths = list(paths)
+
+        def read() -> list[log_box.LogEntry]:
+            pipeline = log_box.LogPipeline()
+            pipeline.preprocessors.append(maaend_plain_text)
+            for rule in MAAEND_PUSH_RULES:
+                pipeline.add_rule(*rule)
+            pipeline.postprocessors.append(maaend_resolve)
+            for path in paths:
+                source = log_source.LogSource(path, start_from_end=False)
+                source.open()
+                for line in source.read_new():
+                    pipeline.feed(line, timestamp=time())
+            return pipeline.finish()
+
+        async def deliver() -> None:
+            try:
+                entries = await asyncio.to_thread(read)
+                for entry in entries:
+                    user.push_log.append((entry.log_type, entry.text, entry.timestamp))
+            except Exception:
+                logger.opt(exception=True).warning("MaaEnd 节点采集推送失败")
+
+        task = asyncio.create_task(deliver())
+        cancelled = None
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError as error:
+                cancelled = error
+        task.result()
+        if cancelled is not None:
+            raise cancelled

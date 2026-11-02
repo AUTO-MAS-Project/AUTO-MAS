@@ -21,7 +21,7 @@
 """MaaEnd 推送日志采集参数（log_box 实例的喂参方）
 
 MaaEnd 专项作为 log_box 的一个实例：本模块只提供参数（规则、后置处理器），
-日志获取、规则匹配、后置处理与推送全部由 log_box 完成。
+文本内核只匹配规则和执行处理器；读取、账号归属和交付由专项负责。
 
 与其他专项 tail 脚本自身的日志文件不同，MaaEnd 的任务级进度行
 （任务开始/任务完成/任务失败）只打印在 MaaEnd.exe 的 stdout，上游不落盘；
@@ -37,8 +37,8 @@ MAS 在 AutoProxy.final_task 已把 stdout 全文按阶段落盘为历史日志
 - ``[时间戳] 任务完成: <任务名>``：明确成功。
 - ``[时间戳] 任务失败: <任务名>``：明确失败（含账号切换失败等）。
 - 失败明细行（出现在任务「开始」与「终态」之间，产出 ``DETAIL:`` 中间标记）：
-  - ``[时间戳] 线路/路线N：<采集物>采集失败``：采集任务的路线失败明细
-    （前缀有「线路/路线」两种，实测混用）；
+  - ``[时间戳] <采集物>采集失败``：新版采集失败明细；兼容旧版
+    ``线路/路线N：`` 前缀，匹配前清理上游富文本标签；
   - ``[时间戳] 🚨发生严重错误，已停止任务（原因）``：自动囤货致命中断
     （原因枚举见上游 ``locales/go-service/zh_cn.json`` 的 abort 表）；
   - ``[时间戳] ⚠️ 寻路或寻找干员失败``：送礼任务寻路失败（上游固定文案）。
@@ -73,8 +73,9 @@ push_log 层无法感知 id，以结果行为准）。标记与任务级开始/�
 import re
 from contextlib import suppress
 from datetime import datetime
+from html import unescape
 
-from app.log_box import LogSpec, LogType
+from app.utils import LOG_TYPE_NORMAL
 
 # 推送规则：(匹配正则, 提取表达式)；均为普通类型，节点级失败由文本「❌ 失败:」
 # 体现（始终展示），推送时机由全局 SendTaskResultTime 控制。
@@ -99,10 +100,10 @@ MAAEND_PUSH_RULES: list[tuple[str, str]] = [
     ),
     # ── 失败明细行（DETAIL 标记）：归因到当前开始标记的任务，仅任务最终
     # 失败时折叠进失败行；行内时间戳随终态行即可，不单独提取 ──
-    # 采集路线失败（前缀「线路/路线」实测混用）：仅采集物名
+    # 新版只输出采集物名，旧版还带「线路/路线」编号前缀。
     (
-        r"^\[([^\]]+)\]\s*(?:线路|路线)\s*\d+\s*：\s*.+?采集失败",
-        r'"DETAIL:" + $((?:^\[)(?:[^\]]+)(?:\]\s*(?:线路|路线)\s*\d+\s*：\s*)(.+?)(?:采集失败))',
+        r"^\[([^\]]+)\]\s*(?:(?:线路|路线)\s*\d+\s*[:：]\s*)?.+?采集失败\s*$",
+        r'"DETAIL:" + $((?:^\[)(?:[^\]]+)(?:\]\s*)(?:(?:线路|路线)\s*\d+\s*[:：]\s*)?(.+?)(?:采集失败\s*$))',
     ),
     # 自动囤货致命中断：仅中断原因（🚨 行后必跟「任务失败」）
     (
@@ -134,6 +135,11 @@ _SKIP_MARK = "SKIP:"
 _LINE_TS_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
 
+def maaend_plain_text(line: str) -> str:
+    """将上游用户可见富文本还原为纯文本，保留时间戳。"""
+    return re.sub(r"<[^>]*>", "", unescape(line))
+
+
 # ── 节点名 emoji 清理 ────────────────────────────────────────────────────────
 # MaaEnd 任务名自带图标（🤝拜访好友、🎱基质刷取、❌关闭游戏（PC） 等），与推送
 # 报告的状态标记（✅ 成功/❌ 失败）混排时视觉杂乱，且「❌关闭游戏」这类名字
@@ -154,7 +160,7 @@ def _strip_emoji(name: str) -> str:
     return _EMOJI_STRIP_RE.sub("", name).strip()
 
 
-def _parse_line_ts(value: str, fallback: float) -> float:
+def _parse_line_ts(value: str, fallback: float | None) -> float | None:
     """把行内时间戳解析为节点发生时刻（本机本地时间）；失败回退采集时刻。"""
 
     with suppress(ValueError):
@@ -170,8 +176,8 @@ _FAIL_RANK = 2
 
 
 def maaend_resolve(
-    results: list[tuple[str, str, float]],
-) -> list[tuple[str, str, float]]:
+    results: list[tuple[str, str, float | None]],
+) -> list[tuple[str, str, float | None]]:
     """后处理：按任务聚合最终状态，保持最后一次出现顺序
 
     输入/输出均为 ``(log_type, text, ts)`` 元组（与 log_box `_PostProcessor`
@@ -192,7 +198,7 @@ def maaend_resolve(
     """
 
     order: list[str] = []
-    states: dict[str, tuple[int, str, float]] = {}
+    states: dict[str, tuple[int, str, float | None]] = {}
     # 明细/跳过归因：当前开始标记的任务节点。标记行只在任务「开始」与
     # 「终态」之间生效：同名任务新一轮开始时重置（跨重试/跨阶段以最后一轮
     # 为准），终态时消费并清空、活动指针复位（终态后的标记为无主行）
@@ -253,16 +259,9 @@ def maaend_resolve(
         states[node] = (rank, display, node_ts)
     return [
         (
-            LogType.NORMAL,
+            LOG_TYPE_NORMAL,
             states[node][1] if states[node][0] != _START_RANK else f"❌ 失败: {node}",
             states[node][2],
         )
         for node in order
     ]
-
-
-MAAEND_LOG_SPEC = LogSpec(
-    rules=tuple(MAAEND_PUSH_RULES),
-    postprocessor=maaend_resolve,
-    error_message="MaaEnd 节点采集推送失败",
-)

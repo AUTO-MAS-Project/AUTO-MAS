@@ -163,9 +163,10 @@
               <StageConfigSection
                 v-model:form-data="formData"
                 :loading="loading"
-                :stage-mode-options="stageModeOptions"
+                :stage-mode-options="displayStageModeOptions"
                 :stage-options="stageOptions"
                 :is-plan-mode="isPlanMode"
+                :plan-status="planStatus === 'ready' && !planModeConfig ? 'error' : planStatus"
                 :display-medicine-numb="displayMedicineNumb"
                 :display-series-numb="displaySeriesNumb"
                 :display-stage="displayStage"
@@ -225,7 +226,7 @@
     >
       <!-- mas 备份为任务配置侧车、native 备份为 gui 文件摘要，共用文件集插槽 -->
       <template #preview="{ raw }">
-        <a-empty
+        <NoData
           v-if="!previewFiles(raw).length"
           :description="t('core.edit.configRestorePreviewEmpty')"
         />
@@ -263,8 +264,9 @@ import { useMaaDepotStageCandidates } from '@/composables/useMaaDepotStageCandid
 import { AdapterSetupService as Service } from '@/composables/useAdapterSetupApi'
 import type { CultivatePreviewOut } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
-import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
 import { useMaaStageOptions } from '@/views/MAAUserEdit/useMaaStageOptions'
+import { useMaaPlanData } from '@/views/MAAUserEdit/useMaaPlanData'
+import { useMaaGameDay } from '@/views/MAAUserEdit/useMaaGameDay'
 
 const logger = window.electronAPI.getLogger('MAA用户编辑')
 
@@ -279,7 +281,8 @@ import { getDefaultMAAUserData } from '@/views/MAAUserEdit/userDefaults'
 import { useDepotMaintainPlanEditor } from '@/views/MAAUserEdit/useDepotMaintainPlanEditor'
 import { useMAAFieldSave } from '@/views/MAAUserEdit/useMAAFieldSave'
 import { useMAAEditorLifecycle } from '@/views/MAAUserEdit/useMAAEditorLifecycle'
-import { getGameDayOffset } from '@/views/MAAUserEdit/periodMarkers'
+import { getCurrentMaaPlan } from '@/views/MAAUserEdit/maaPlanCurrent'
+import type { MaaPlanConfig } from '@/api'
 import { useMaaCultivation } from '@/views/MAAUserEdit/useMaaCultivation'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
@@ -376,15 +379,12 @@ const stageModeOptions = ref<any[]>([{ label: t('core.edit.fixed'), value: 'Fixe
 const isPlanMode = computed(() => {
   return formData.Stage.StageMode !== 'Fixed'
 })
-const planModeConfig = ref<any>(null)
-// 新增：存储完整的计划数据用于悬浮提示
-const fullPlanData = ref<any>(null)
 
 // 新增：生成计划表悬浮提示内容的函数
 const getPlanTooltip = (fieldName: string) => {
   if (!fullPlanData.value || !isPlanMode.value) return ''
 
-  const planData = fullPlanData.value
+  const planData: any = fullPlanData.value
   const mode = planData.Info?.Mode || 'ALL'
 
   if (mode === 'ALL') {
@@ -522,43 +522,6 @@ const displayStage3 = computed({
   },
 })
 
-// 获取计划当前配置
-const getPlanCurrentConfig = (planData: any) => {
-  if (!planData) return null
-
-  const mode = planData.Info?.Mode || 'ALL'
-
-  if (mode === 'ALL') {
-    return planData.ALL || null
-  } else if (mode === 'Weekly') {
-    // 按用户区服的游戏日时区取今天是星期几（已经是数字0-6），与后端计划表取值一致
-    const todayWeekday = getWeekdayInTimezone(getGameDayOffset(formData.Info.Server))
-
-    const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    const today = weekdays[todayWeekday]
-
-    logger.debug(`计划表周模式调试: 
-      游戏日星期几: ${todayWeekday},
-      星期: ${today},
-      计划数据: ${JSON.stringify(planData)}`)
-
-    // 优先使用今天的配置，如果没有或为空则使用ALL配置
-    const todayConfig = planData[today]
-
-    if (todayConfig && typeof todayConfig === 'object' && Object.keys(todayConfig).length > 0) {
-      logger.debug(`使用今日配置: ${JSON.stringify(todayConfig)}`)
-      return todayConfig
-    }
-
-    const allConfig = planData.ALL || null
-    logger.debug(`使用ALL配置: ${JSON.stringify(allConfig)}`)
-    return allConfig
-  }
-
-  logger.debug('计划模式未知，返回null')
-  return null
-}
-
 // 创建扁平化的表单数据，用于表单验证
 const formData = reactive({
   // 扁平化的验证字段
@@ -568,18 +531,52 @@ const formData = reactive({
   ...getDefaultMAAUserData(),
 })
 
+const { data: fullPlanData, status: planStatus } = useMaaPlanData(
+  () => formData.Stage.StageMode,
+  id => getPlans(id, { silent: true }),
+  error =>
+    logger.error(`加载计划配置失败: ${error instanceof Error ? error.message : String(error)}`)
+)
+const displayStageModeOptions = computed(() => {
+  const mode = formData.Stage.StageMode
+  if (!mode || mode === 'Fixed' || stageModeOptions.value.some(option => option.value === mode)) {
+    return stageModeOptions.value
+  }
+  const planName = fullPlanData.value?.Info?.Name
+  const label =
+    planName ||
+    t(
+      planStatus.value === 'error'
+        ? 'core.edit.couldNotLoadPlan'
+        : planStatus.value === 'ready'
+          ? 'core.edit.fromPlan'
+          : 'core.edit.loadingConfiguration'
+    )
+  return [...stageModeOptions.value, { label, value: mode, disabled: true }]
+})
+const gameDayNow = useMaaGameDay(() => formData.Info.Server)
+const planModeConfig = computed(() =>
+  getCurrentMaaPlan(
+    fullPlanData.value as MaaPlanConfig | null,
+    formData.Info.Server,
+    gameDayNow.value
+  )
+)
+
 // 折叠态摘要：不展开也能确认当前生效的关卡配置
 const fightSummary = computed(() =>
-  summarizeFight({
-    enabled: formData.Task.IfFight,
-    planLabel: isPlanMode.value
-      ? stageModeOptions.value.find(option => option.value === formData.Stage.StageMode)?.label ||
-        formData.Stage.StageMode
-      : '',
-    stage: displayStage.value,
-    series: displaySeriesNumb.value,
-    medicine: displayMedicineNumb.value ?? 0,
-  })
+  isPlanMode.value && (!planModeConfig.value || planStatus.value !== 'ready')
+    ? ''
+    : summarizeFight({
+        enabled: formData.Task.IfFight,
+        planLabel: isPlanMode.value
+          ? displayStageModeOptions.value.find(option => option.value === formData.Stage.StageMode)
+              ?.label || ''
+          : '',
+        stage: displayStage.value,
+        series: displaySeriesNumb.value,
+        medicine: displayMedicineNumb.value ?? 0,
+      })
 )
 
 // 表单验证规则
@@ -1418,64 +1415,6 @@ onMounted(async () => {
   } else {
     // 新建模式暂时不加载，等保存后再加载
   }
-
-  // 设置StageMode变化监听器
-  watch(
-    () => formData.Stage.StageMode,
-    async newStageMode => {
-      if (newStageMode === 'Fixed') {
-        // 切换到固定模式，清除计划配置
-        logger.debug('切换到固定模式')
-        planModeConfig.value = null
-      } else if (newStageMode && newStageMode !== '') {
-        // 切换到计划模式，加载计划配置
-        logger.debug(`开始加载计划配置: ${newStageMode}`)
-        try {
-          const response = await getPlans(newStageMode)
-
-          if (response && response.code === 200 && response.data[newStageMode]) {
-            const planData = response.data[newStageMode]
-
-            const currentConfig = getPlanCurrentConfig(planData)
-
-            planModeConfig.value = currentConfig
-            logger.debug('planModeConfig.value已更新')
-
-            // 新增：保存完整的计划数据用于悬浮提示
-            fullPlanData.value = planData
-            logger.debug('fullPlanData.value已更新')
-
-            // 只记 planId 与字段数，整份计划序列化进日志既慢又没人看
-            logger.info(
-              `计划配置加载成功: ${newStageMode}, 字段数=${Object.keys(currentConfig ?? {}).length}`
-            )
-
-            // 从stageModeOptions中查找对应的计划名称
-            const planOption = stageModeOptions.value.find(option => option.value === newStageMode)
-            const planName = planOption ? planOption.label : newStageMode
-
-            message.success(t('core.edit.switchedPlanModeP0', { p0: planName }))
-          } else {
-            logger.warn(`计划配置响应不完整: ${JSON.stringify({ response, newStageMode })}`)
-            message.warning(t('core.edit.couldNotLoadPlan'))
-            planModeConfig.value = null
-          }
-        } catch (error) {
-          // 只记录可序列化的错误信息，避免 "An object could not be cloned" 错误
-          const errorInfo = {
-            message: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            type: typeof error,
-            name: error instanceof Error ? error.name : error?.constructor?.name,
-          }
-          logger.error(`加载计划配置失败: ${JSON.stringify(errorInfo)}`)
-          message.error(t('core.edit.somethingWentWrongLoading'))
-          planModeConfig.value = null
-        }
-      }
-    },
-    { immediate: false }
-  )
 })
 </script>
 

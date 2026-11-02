@@ -1,8 +1,8 @@
 """OK-WW 推送日志采集参数（log_box 实例的喂参方）
 
 OK-WW 专项作为 log_box 的一个实例：本模块只提供参数（i18n 翻译文件、补充
-翻译 .po、规则、后置处理器），日志获取、前置处理、规则匹配、后置处理与推送
-全部由 log_box 完成。
+翻译 .po、规则、后置处理器），文本内核只执行前置处理、规则匹配与后置处理；
+文件读取、词表资源、用户归属和交付由 AutoProxy 负责。
 
 规则说明：
 - 翻译器在 open() 前置处理器逐行执行；此后匹配与提取均作用于翻译后的行。
@@ -26,11 +26,10 @@ OK-WW 专项作为 log_box 的一个实例：本模块只提供参数（i18n 翻
 """
 
 import re
-from dataclasses import replace
 from pathlib import Path
 
-from app.log_box import LogSpec, LogType, TranslationSpec
-from app.utils import resource_path
+from app.core import Config
+from app.utils import LOG_TYPE_NORMAL
 
 # ok-ww 自带翻译文件相对路径（从 RootPath 派生，不硬编码绝对路径）
 OKWW_REL_I18N_PO = "data/apps/ok-ww/repo/i18n/zh_CN/LC_MESSAGES/ok.po"
@@ -40,7 +39,7 @@ def _okww_supplement_po() -> Path:
     """AutoMAS 项目自带的补充翻译 .po（res/ 内置资源，按源码位置解析，不随
     工作目录变化；.po 为可读源码，可直接维护）。
     """
-    return resource_path("i18n", "okww.po")
+    return Config.resource_path / "i18n" / "okww.po"
 
 
 # 推送规则：(匹配正则, 提取表达式)；匹配与提取均在翻译后行。
@@ -146,7 +145,9 @@ _REASON_MARKS: dict[str, tuple[str, str, str]] = {
 }
 
 
-def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, float]]:
+def okww_resolve(
+    results: list[tuple[str, str, float | None]],
+) -> list[tuple[str, str, float | None]]:
     """后处理：按节点解析最终状态（失败 > 跳过 > 成功），保持最后一次出现顺序
 
     输入/输出均为 ``(log_type, text, ts)`` 元组（与 log_box `_PostProcessor`
@@ -164,12 +165,12 @@ def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
     """
     order: list[str] = []
     states: dict[str, tuple[int, str]] = {}
-    ts_of: dict[str, float] = {}
+    ts_of: dict[str, float | None] = {}
     last_stamina: int | None = None
-    last_stamina_ts: float = 0.0
+    last_stamina_ts: float | None = 0.0
     active_marks: set[str] = set()
 
-    def _mark(status: str, node: str, ts: float) -> None:
+    def _mark(status: str, node: str, ts: float | None) -> None:
         rank = _STATUS_RANK[status]
         if node in states:
             order.remove(node)  # 移至末尾：保留最后一次出现顺序
@@ -204,46 +205,26 @@ def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
                 _mark("✅ 成功", marker, ts)
             else:
                 _mark(m.group(1), m.group(2), ts)
-    # 规则均为二元组，经 LogCollect.collect 后 log_type 恒为 LogType.NORMAL；
+    # 规则均为二元组，经文本管线 add_rule 后 log_type 恒为 LOG_TYPE_NORMAL；
     # 节点级失败由文本「❌ 失败:」体现，不依赖逐条类型过滤，故直接输出普通
     forced: dict[str, tuple[str, str]] = {
         node_name: (status, reason)
         for key, (node_name, status, reason) in _REASON_MARKS.items()
         if key in active_marks
     }
-    status_lines: list[tuple[str, str, float]] = []
+    status_lines: list[tuple[str, str, float | None]] = []
     for node in order:
         if node in forced:
             status, reason = forced[node]
             status_lines.append(
-                (LogType.NORMAL, f"{status}: {node}（{reason}）", ts_of[node])
+                (LOG_TYPE_NORMAL, f"{status}: {node}（{reason}）", ts_of[node])
             )
         else:
             status_lines.append(
-                (LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node])
+                (LOG_TYPE_NORMAL, f"{states[node][1]}: {node}", ts_of[node])
             )
     if last_stamina is not None:
         status_lines.append(
-            (LogType.NORMAL, f"⚡ 剩余体力: {last_stamina}", last_stamina_ts)
+            (LOG_TYPE_NORMAL, f"⚡ 剩余体力: {last_stamina}", last_stamina_ts)
         )
     return status_lines
-
-
-OKWW_LOG_SPEC = LogSpec(
-    rules=tuple(OKWW_PUSH_RULES),
-    postprocessor=okww_resolve,
-    error_message="OK-WW log_box 收尾推送失败（okww_resolve/翻译清理）",
-    failure_text="⚠️ 节点采集失败",
-)
-
-
-def make_okww_log_spec(root: Path) -> LogSpec:
-    """声明原生与补充词表的位置，加载、逐行翻译和清理由 box 负责。"""
-    return replace(
-        OKWW_LOG_SPEC,
-        translation=TranslationSpec(
-            paths=(OKWW_REL_I18N_PO,),
-            supplements=(_okww_supplement_po(),),
-            base=root,
-        ),
-    )

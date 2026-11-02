@@ -20,7 +20,7 @@
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底全部由基座
-（``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
+（``app.utils.common.config.restore``）从 ``files`` + ``backup_root`` 声明派生。
 
 - ``mas`` 池（账号级，#879 语义）：奇想盒没有 per-account ConfigFile 目录，
   MAS 面板的一条龙覆盖集与流程开关都是**账号配置字段**（运行时才物化进上游
@@ -48,8 +48,8 @@ import uuid
 from pathlib import Path
 
 from app.utils import BASE_SOURCE_LABELS, get_logger
-from app.utils import config_archive as _utils_config_archive
-from app.utils import config_restore as _utils_config_restore
+from app.utils.common.config import archive as _utils_config_archive
+from app.utils.common.config import restore as _utils_config_restore
 
 from .upstream import WheelAssetsConfigSurface, parse_override_map
 

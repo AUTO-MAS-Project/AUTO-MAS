@@ -26,19 +26,18 @@
 import uuid
 from datetime import datetime
 
+import app.core.notify.report as _node_report
 from app.config import config_manager
-from app.core import Config
-from app.core.emulator_manager import EmulatorManager
-from app.core.ws import Publisher, protocol
-from app.log_box.report import build_user_result_text, mirror_report_to_dispatch
+from app.core import Config, EmulatorManager, Notify, Publisher
+from app.core.ws import protocol
 from app.models.config import BAAHConfig
 from app.models.emulator import DeviceBase, DeviceProvider
-from app.models.notification_report import TaskResultReport
+from app.models.notification.report import TaskResultReport, UserReportText
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
-from app.utils import TASK_MODE_ZH, get_logger
+from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box
 
 from .AutoProxy import AutoProxyTask
 
@@ -173,15 +172,20 @@ class BAAHManager(ScriptManagerBase):
                 ## 按用户交错组装「用户结果行 + 该用户节点详情」，
                 ## 失败类型条目仅在本次任务存在未完成用户时纳入报告
                 has_uncompleted = summary.uncompleted_count > 0
-                user_result_text = build_user_result_text(
-                    self.script_info.user_list, has_uncompleted
+                user_result_text = self._render_user_results(
+                    has_uncompleted=has_uncompleted
                 )
                 # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
-                mirror_report_to_dispatch(self.script_info, user_result_text)
+                if user_result_text:
+                    self.script_info.log = (
+                        f"{self.script_info.log}\n{user_result_text}"
+                        if self.script_info.log
+                        else user_result_text
+                    )
                 result = self.build_proxy_report(result_text=user_result_text)
 
                 try:
-                    await self.task_info.notifications.push_proxy_result(
+                    await Notify.push_proxy_result(
                         title=title,
                         report=TaskResultReport.from_message(result),
                         task_info=self.task_info,
@@ -213,3 +217,32 @@ class BAAHManager(ScriptManagerBase):
             type=protocol.TASK_NOTICE,
             data=WSTaskNoticeData(level="error", message=f"BAAH 任务出现异常: {e}"),
         )
+
+    def _render_user_results(self, *, has_uncompleted: bool) -> str:
+        """本专项选择报告条目和展示模式，公共服务只负责排版。"""
+        _report_rows = []
+        for _report_user in self.script_info.user_list:
+            _entries = [
+                item
+                if isinstance(item, log_box.LogEntry)
+                else log_box.LogEntry.from_legacy(item)
+                for item in _report_user.push_log
+                if (item.log_type if isinstance(item, log_box.LogEntry) else item[0])
+                != LOG_TYPE_ERROR
+                or has_uncompleted
+            ]
+            _mode = getattr(_report_user, "push_log_mode", "逐条")
+            if _mode == "关闭":
+                _details = []
+            elif _mode == "汇总":
+                _details = _node_report.render_aggregate_push_log(_entries)
+            else:
+                _details = _node_report.render_scatter_push_log(_entries)
+            _report_rows.append(
+                UserReportText(
+                    name=_report_user.name,
+                    result=_report_user.result,
+                    detail_lines=tuple(_details),
+                )
+            )
+        return _node_report.render_user_result_text(_report_rows)

@@ -57,8 +57,8 @@ import numpy as np
 import psutil
 from PIL import Image
 
-from app.tools.error_screenshot import save_error_screenshot
-from app.tools.ocr import Box, OCRItem, ocr_image
+from app.tools import error_screenshot as _tool_error_screenshot
+from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import display as _utils_display
 
@@ -90,7 +90,7 @@ def _write_diagnostic(text: str) -> None:
             pass
 
 
-def _dump_ocr_items(items: list[OCRItem]) -> None:
+def _dump_ocr_items(items: list[_tool_ocr.OCRItem]) -> None:
     """诊断旁路：把一次 OCR 的全部识别文本写入诊断文件。"""
     if _DIAGNOSTIC_PATH is None:
         return
@@ -127,7 +127,7 @@ _FRAME_HEIGHT = 1080
 
 # 右下角动作区（相对 1080p 帧）：启动器按钮与下载进度都在此区域，左侧用户
 # 信息卡/活动公告/新闻列表含大量富文本，不参与判定与点击，避免干扰误触
-_ACTION_ROI: Box = (1240, 820, 1920, 1080)
+_ACTION_ROI: _tool_ocr.Box = (1240, 820, 1920, 1080)
 
 # 首次找到按钮的等待；点击「进入游戏」后等游戏起窗；点「更新」后等下载完成
 _FIND_BUTTON_TIMEOUT = 120
@@ -450,12 +450,12 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
 
 
-def _read_texts(hwnd: int) -> list[OCRItem]:
-    return ocr_image(_capture_window(hwnd, activate=False))
+def _read_texts(hwnd: int) -> list[_tool_ocr.OCRItem]:
+    return _tool_ocr.ocr_image(_capture_window(hwnd, activate=False))
 
 
 def _click_box(
-    hwnd: int, box: Box, *, activate: bool = False, after_sleep: float = 0.3
+    hwnd: int, box: _tool_ocr.Box, *, activate: bool = False, after_sleep: float = 0.3
 ) -> None:
     """点击 1080p 坐标空间中的一个文字框中心。"""
     with _utils_display.per_monitor_dpi():
@@ -480,7 +480,9 @@ def _click_box(
 # ── OCR 文本判定辅助 ─────────────────────────────────────────────────────
 
 
-def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
+def _find_text(
+    items: list[_tool_ocr.OCRItem], keywords: tuple[str, ...]
+) -> _tool_ocr.Box | None:
     for text, box in items:
         if any(keyword in text for keyword in keywords):
             return box
@@ -577,16 +579,16 @@ def detect_game_maintenance_text(pids: set[int] | None = None) -> str | None:
     frame = _capture_game_window_frame(hwnd)
     if frame is None:
         return None
-    for text, _ in ocr_image(frame):
+    for text, _ in _tool_ocr.ocr_image(frame):
         if any(needle in text for needle in _GAME_MAINTENANCE_TEXTS):
             return text
     return None
 
 
-def _items_in_action_roi(items: list[OCRItem]) -> list[OCRItem]:
+def _items_in_action_roi(items: list[_tool_ocr.OCRItem]) -> list[_tool_ocr.OCRItem]:
     """按文字框中心过滤出右下角动作区内的条目（排除左侧卡片等富文本干扰）。"""
     left, top, right, bottom = _ACTION_ROI
-    selected: list[OCRItem] = []
+    selected: list[_tool_ocr.OCRItem] = []
     for text, (x, y, width, height) in items:
         center_x = x + width / 2
         center_y = y + height / 2
@@ -595,7 +597,7 @@ def _items_in_action_roi(items: list[OCRItem]) -> list[OCRItem]:
     return selected
 
 
-def _download_progress_texts(items: list[OCRItem]) -> tuple[str, ...]:
+def _download_progress_texts(items: list[_tool_ocr.OCRItem]) -> tuple[str, ...]:
     """取百分比/体积/速度相关文本并剥离计时（见常量说明），供进度签名使用。"""
     texts = []
     for text, _ in items:
@@ -604,7 +606,7 @@ def _download_progress_texts(items: list[OCRItem]) -> tuple[str, ...]:
     return tuple(texts)
 
 
-def _find_busy_box(items: list[OCRItem]) -> Box | None:
+def _find_busy_box(items: list[_tool_ocr.OCRItem]) -> _tool_ocr.Box | None:
     """识别启动器忙碌态按钮（下载中/校验解压）；「预下载」不算忙碌。
 
     预下载开放且游戏可玩是官方预期状态，此时按钮区可能并存「进入游戏」与
@@ -659,7 +661,7 @@ def _save_error_screenshot(launcher_hwnd: int | None) -> None:
         target = launcher_hwnd if launcher_hwnd is not None else _find_game_hwnd()
         if target is None:
             return
-        save_error_screenshot(
+        _tool_error_screenshot.save_error_screenshot(
             _capture_window_image(target, activate=False),
             "okww-launcher-start",
             "launcher-error",

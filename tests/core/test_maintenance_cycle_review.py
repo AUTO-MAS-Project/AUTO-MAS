@@ -1,17 +1,19 @@
-from tests.config_support import activate_config, group_view
-
 """#1297 本地验证：维护消费排期但不留执行记录、不立即重试。"""
+
 import uuid
 from contextlib import nullcontext
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+
 import pytest
+
+import app.core.task_manager.manager as scheduler
 from app.core import Config
-from app.core import task_manager as scheduler
-from app.core.queue_cycle import CycleEntry, format_cycle_time
+from app.core.task_manager.cycle import CycleEntry
 from app.models.config import MaaConfig, QueueItem
 from app.models.task import ScriptItem, UserItem
+from tests.config_support import activate_config
 
 
 class FixedDatetime(datetime):

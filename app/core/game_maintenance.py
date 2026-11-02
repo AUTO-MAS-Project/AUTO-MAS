@@ -8,12 +8,12 @@ from datetime import datetime
 
 from app.config import ConfigError, config_manager
 from app.core import Config
-from app.services.game_maintenance import GameMaintenanceClient, MaintenanceCache
+from app.services import game_maintenance as _service_game_maintenance
 
 
-def _read_cache() -> MaintenanceCache:
+def _read_cache() -> _service_game_maintenance.MaintenanceCache:
     data = Config.setting.Data
-    return MaintenanceCache(
+    return _service_game_maintenance.MaintenanceCache(
         content=data.Maintenance,
         etag=data.MaintenanceETag,
         checked_at=data.LastMaintenanceUpdated,
@@ -43,6 +43,9 @@ async def _write_cache(
         raise OSError(f"维护信息缓存更新失败: {exc}") from exc
 
 
-GameMaintenance = GameMaintenanceClient(
+GameMaintenance = _service_game_maintenance.GameMaintenanceClient(
     read_cache=_read_cache, write_cache=_write_cache
 )
+
+
+__all__ = ["GameMaintenance"]

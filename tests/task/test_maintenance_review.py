@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core import Config
-from app.core.task_manager import TaskInfo
+from app.core.task_manager.manager import TaskInfo
 from app.models.config import (
     BetterGIConfig,
     GeneralUserConfig,
@@ -224,7 +224,7 @@ async def test_bettergi_report_keeps_nodes_and_summary(monkeypatch):
     script.user_list[0].push_log = [("info", "node-A", 0.0)]
     script.user_list[1].push_log = [("info", "node-B", 0.0)]
     push = AsyncMock()
-    info.bind_notifications(SimpleNamespace(push_proxy_result=push))
+    monkeypatch.setattr(bgi.Notify, "push_proxy_result", push)
     await instance.final_task()
     report = push.await_args.kwargs["report"]
     assert report.completed_count == 1

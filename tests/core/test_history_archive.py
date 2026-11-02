@@ -9,14 +9,13 @@ from unittest.mock import AsyncMock
 import pytest
 import pytest_asyncio
 
-from app.core import history as history_module
+import app.core.history as history_module
 from app.models.schema import HistoryAttachmentInput, HistoryWrite
 from app.task.history_core import UserHistoryDependencies, save_user_history
 
 
 @pytest_asyncio.fixture
-async def store(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+async def store(isolated_app_paths):
     storage = history_module.HistoryStore()
     await storage.initialize(video_limit_bytes=1024 * 1024)
     try:

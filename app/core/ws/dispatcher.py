@@ -153,6 +153,3 @@ class _WSDispatcher:
                 )
 
         task.add_done_callback(_on_done)
-
-
-Dispatcher = _WSDispatcher()

@@ -31,7 +31,7 @@
   原始态）、退出时归档 ``mas``（编辑会话包络的 MAS 侧终态）。
 
 时间戳快照、指纹去重、保留清理与整目录恢复的通用逻辑由公共模块
-``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
+``app.utils.common.config.archive`` 提供（默认每池保留 10 份），本模块只保留
 ok-nte 特有的文件集收集（Folder/File 双模式）、恢复语义（恢复前强制
 归档当前）与归档目录布局。
 """
@@ -41,9 +41,9 @@ import shutil
 from contextlib import suppress
 from pathlib import Path
 
-from app.utils import config_archive as _utils_config_archive
 from app.utils import get_logger
 from app.utils import io as _utils_io
+from app.utils.common.config import archive as _utils_config_archive
 
 from ..config_schema import (
     _FALLBACK_LABELS,

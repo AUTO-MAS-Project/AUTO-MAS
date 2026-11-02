@@ -29,10 +29,11 @@ from datetime import datetime
 from pathlib import Path
 
 from app.config import ConfigCollection, config_manager
-from app.core import Config
-from app.core.ws import Publisher, protocol
+from app.core import Config, Notify, Publisher
+from app.core.script_update import ScriptUpdateRequest, run_script_update
+from app.core.ws import protocol
 from app.models.config import WhimboxConfig, WhimboxUserConfig
-from app.models.notification_report import TaskResultReport
+from app.models.notification.report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
@@ -177,7 +178,11 @@ class WhimboxManager(ScriptManagerBase):
             self.check_result = "奇想盒后端更新未完成"
             await push_dispatch_log(self.script_info, "正在检查奇想盒后端更新…")
             try:
-                result = await ensure_backend_updated(root)
+                result = await run_script_update(
+                    ScriptUpdateRequest(str(self.script_info.script_id), "Whimbox"),
+                    ensure_backend_updated,
+                    root,
+                )
             except (WhimboxUpdateUnsafeError, FluxdownCancelUnconfirmed):
                 raise
             except Exception as error:
@@ -249,7 +254,7 @@ class WhimboxManager(ScriptManagerBase):
                 result = self.build_proxy_report()
 
                 try:
-                    await self.task_info.notifications.push_proxy_result(
+                    await Notify.push_proxy_result(
                         title=title,
                         report=TaskResultReport.from_message(result),
                         task_info=self.task_info,
