@@ -37,8 +37,10 @@ def read_task_catalog(root: Path) -> list[dict[str, Any]]:
     return [
         {
             **item,
-            "configurable": get_task_app_fields(str(item["app_id"])) is not None,
-            "jump": get_task_app_jump(str(item["app_id"])),
+            "configurable": not item.get("is_plugin", False)
+            and get_task_app_fields(str(item["app_id"])) is not None,
+            "jump": bool(item.get("is_plugin"))
+            or get_task_app_jump(str(item["app_id"])),
         }
         for item in list_app_catalog(root)
     ]
