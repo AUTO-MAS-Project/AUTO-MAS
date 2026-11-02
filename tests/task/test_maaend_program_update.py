@@ -708,3 +708,184 @@ async def test_cancel_fluxdown_download_preserves_unconfirmed_partial_zip(
     assert len(downloads) == 1
     assert next(downloads[0].iterdir()).read_bytes() == b"unconfirmed FluxDown part"
     assert update.read_install(root)[0] == Version("2.1.0")
+
+
+def _official_release_for_test(tmp_path: Path, tag: str) -> tuple[Path, dict]:
+    archive = tmp_path / "official-native.zip"
+    with zipfile.ZipFile(archive, "w") as package:
+        package.writestr("MaaEnd.exe", pe())
+        package.writestr(
+            "interface.json",
+            json.dumps(
+                {"name": "MaaEnd", "version": tag, "mirrorchyan_rid": "MaaEnd"}
+            ),
+        )
+        package.writestr("resource/data.json", '{"native": true}')
+        package.writestr("agent/service.exe", b"native agent")
+    release = {
+        "tag_name": tag,
+        "assets": [
+            {
+                "name": f"MaaEnd-win-x86_64-{tag}.zip",
+                "size": archive.stat().st_size,
+                "digest": "sha256:" + hashlib.sha256(archive.read_bytes()).hexdigest(),
+            }
+        ],
+    }
+    return archive, release
+
+
+@pytest.mark.asyncio
+async def test_native_beta_newer_than_stable_uses_exact_official_package(
+    installation, tmp_path, monkeypatch
+):
+    root, config = installation
+    await update.update_before_run(root, config)
+    assert script_install.verify_installed_files(root, threading.Event())
+
+    # MXU 在 MAS 两次运行之间独立升级，版本高于 MAS 当前选用的 stable。
+    native_tag = "v2.3.0-beta.1"
+    (root / "interface.json").write_text(
+        json.dumps(
+            {"name": "MaaEnd", "version": native_tag, "mirrorchyan_rid": "MaaEnd"}
+        )
+    )
+    assert not script_install.verify_installed_files(root, threading.Event())
+    archive, official = _official_release_for_test(tmp_path, native_tag)
+    exact = AsyncMock(return_value=official)
+    monkeypatch.setattr(update, "request_release_for_version", exact)
+
+    async def download_native(_url, destination, **_kwargs):
+        shutil.copyfile(archive, destination)
+
+    downloader = AsyncMock(side_effect=download_native)
+    monkeypatch.setattr(update, "download_file", downloader)
+    mirror = AsyncMock()
+    monkeypatch.setattr(update, "request_mirror_resource", mirror)
+    config.Update.MirrorChyanCDK = "test-cdk"
+
+    result = await update.update_before_run(root, config)
+    assert "已更新" in result
+    assert update.read_install(root) == (Version(native_tag), "x86_64")
+    assert script_install.verify_installed_files(root, threading.Event())
+    exact.assert_awaited_once_with(Version(native_tag), native_tag)
+    assert downloader.await_args.kwargs["source"] == "GitHub"
+    assert downloader.await_args.args[0].endswith(
+        f"/releases/download/{native_tag}/MaaEnd-win-x86_64-{native_tag}.zip"
+    )
+    mirror.assert_not_awaited()
+    identity = json.loads(
+        (script_install.workspace(root) / "program-identity.json").read_text()
+    )
+    assert identity == {"arch": "x86_64", "version": str(Version(native_tag))}
+    assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
+
+    # 回执已经重新建立；再运行时不得重复下载安装，也不得回退 stable。
+    assert "高于所选通道" in await update.update_before_run(root, config)
+    assert downloader.await_count == 1
+    exact.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "lookup_error",
+    [ValueError("unknown official tag"), httpx.ConnectError("offline")],
+)
+async def test_native_upgrade_cannot_be_blindly_trusted_or_downgraded(
+    scheduler, installation, monkeypatch, lookup_error
+):
+    root, config = installation
+    await update.update_before_run(root, config)
+    receipt = script_install.workspace(root) / "installed.json"
+    original_receipt = receipt.read_bytes()
+    (root / "interface.json").write_text(
+        json.dumps({"name": "MaaEnd", "version": "v2.3.0"})
+    )
+    monkeypatch.setattr(
+        update,
+        "request_release_for_version",
+        AsyncMock(side_effect=lookup_error),
+    )
+    update.download_file.reset_mock()
+
+    # 下载/校验不可用时，不把旧版本收据当成新安装可信，也不回退旧版。
+    with pytest.raises(script_install.InstallUnsafeError, match="不会自动降级"):
+        await scheduler._prepare_program_update(root)
+    assert not scheduler._program_update_prepared
+    assert receipt.read_bytes() == original_receipt
+    assert update.read_install(root)[0] == Version("2.3.0")
+    update.download_file.assert_not_awaited()
+    manager.Publisher.send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_release_mismatch_cannot_repair_stale_native_receipt(
+    installation, monkeypatch, tmp_path
+):
+    root, config = installation
+    await update.update_before_run(root, config)
+    (root / "interface.json").write_text(
+        json.dumps({"name": "MaaEnd", "version": "v2.3.0"})
+    )
+    _, wrong = _official_release_for_test(tmp_path, "v2.4.0")
+    monkeypatch.setattr(
+        update, "request_release_for_version", AsyncMock(return_value=wrong)
+    )
+    update.download_file.reset_mock()
+    with pytest.raises(script_install.InstallUnsafeError, match="官方完整包"):
+        await update.update_before_run(root, config)
+    assert update.read_install(root)[0] == Version("2.3.0")
+    update.download_file.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_exact_release_lookup_checks_official_tag_and_draft(
+    installation, monkeypatch
+):
+    original_client = httpx.AsyncClient
+    observed = []
+    release = {"tag_name": "v2.3.0-beta.1", "draft": False, "assets": []}
+
+    def serve(request):
+        observed.append(request.url.path)
+        return httpx.Response(200, json=release)
+
+    transport = httpx.MockTransport(serve)
+    monkeypatch.setattr(
+        update.httpx,
+        "AsyncClient",
+        lambda **_kwargs: original_client(transport=transport),
+    )
+    got = await update.request_release_for_version(
+        Version("2.3.0b1"), "v2.3.0-beta.1"
+    )
+    assert got == release
+    assert observed == [
+        "/repos/MaaEnd/MaaEnd/releases/tags/v2.3.0-beta.1"
+    ]
+
+    release["tag_name"] = "v2.4.0"
+    with pytest.raises(ValueError, match="不一致"):
+        await update.request_release_for_version(
+            Version("2.3.0b1"), "v2.3.0-beta.1"
+        )
+    release["tag_name"] = "v2.3.0-beta.1"
+    release["draft"] = True
+    with pytest.raises(ValueError, match="公开发行"):
+        await update.request_release_for_version(
+            Version("2.3.0b1"), "v2.3.0-beta.1"
+        )
+
+
+@pytest.mark.asyncio
+async def test_same_version_corruption_keeps_official_repair_path(
+    installation, monkeypatch
+):
+    root, config = installation
+    await update.update_before_run(root, config)
+    (root / "MaaEnd.exe").write_bytes(b"modified")
+    exact = AsyncMock(side_effect=AssertionError("must not search other versions"))
+    monkeypatch.setattr(update, "request_release_for_version", exact)
+    await update.update_before_run(root, config)
+    assert script_install.verify_installed_files(root, threading.Event())
+    exact.assert_not_awaited()
