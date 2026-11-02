@@ -1,11 +1,28 @@
 import hashlib
-from datetime import datetime, timedelta, timezone
+from datetime import datetime as RealDatetime
+from datetime import timedelta, timezone
 from unittest.mock import AsyncMock
 
 import pytest
 
 from app.task.MAA.tools import resource_update as resource
 from app.task.MAA.tools import software_update as software
+
+
+class FrozenDatetime(RealDatetime):
+    @classmethod
+    def now(cls, tz=None):
+        instant = cls(2026, 11, 1, 12, tzinfo=timezone.utc)
+        return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
+
+
+datetime = FrozenDatetime
+
+
+@pytest.fixture(autouse=True)
+def freeze_clock(monkeypatch):
+    monkeypatch.setattr(resource, "datetime", FrozenDatetime)
+    monkeypatch.setattr(software, "datetime", FrozenDatetime)
 
 
 @pytest.mark.asyncio
@@ -294,3 +311,154 @@ async def test_resource_legacy_state_cancel_keeps_budget(tmp_path, monkeypatch):
         cdk="key",
     )
     assert request.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "version,package_type", [("", "full"), ("v6.1.0", "incremental")]
+)
+async def test_software_malformed_package_response_consumes_attempt(
+    software_case, monkeypatch, version, package_type
+):
+    c = software_case
+
+    async def request(_resource, *, params, **kwargs):
+        c.requests.append(params)
+        if "cdk" in params:
+            return {
+                "data": {
+                    "version_name": version,
+                    "url": "https://example.invalid",
+                    "update_type": package_type,
+                }
+            }
+        return {"data": {"version_name": "v6.1.0"}}
+
+    monkeypatch.setattr(software, "request_mirror_resource", request)
+    with pytest.raises(software._UpdateError):
+        await software._precheck_inner(c.root, "stable", "x64", "key")
+    await software._precheck_inner(c.root, "stable", "x64", "key")
+    assert c.load()["last_download_attempt_version/win/x64/stable"] == "v6.1.0"
+    assert sum("cdk" in params for params in c.requests) == 1
+    c.download.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_resource_non_full_package_consumes_attempt(tmp_path, monkeypatch):
+    now = datetime.now(timezone.utc)
+    old = now - timedelta(hours=2)
+    target = now - timedelta(hours=1)
+    key = hashlib.sha256(b"key").hexdigest()[:16]
+    state = {}
+    request = AsyncMock(
+        return_value={
+            "data": {
+                "url": "https://example.invalid",
+                "update_type": "incremental",
+                "version_name": resource._format_clock(target),
+            }
+        }
+    )
+    refresh = AsyncMock()
+    monkeypatch.setattr(resource, "request_mirror_resource", request)
+    monkeypatch.setattr(resource, "_refresh_stage", refresh)
+    monkeypatch.setattr(resource, "_load_manifest", lambda: None)
+    monkeypatch.setattr(resource, "_STATE_FILE", tmp_path / "state.json")
+    await resource._refresh_resource_stage(
+        clocks={tmp_path: old},
+        stage=None,
+        target=target,
+        state=state,
+        progress=None,
+        cdk="key",
+    )
+    assert state[f"last_download_attempt_version/{key}"] == target.isoformat()
+    state.pop(f"download_fail_until/{key}")
+    await resource._refresh_resource_stage(
+        clocks={tmp_path: old},
+        stage=None,
+        target=target,
+        state=state,
+        progress=None,
+        cdk="key",
+    )
+    assert request.await_count == 1
+    refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_two_installations_share_and_register_verified_cache(
+    tmp_path, monkeypatch
+):
+    import zipfile
+
+    from app.task.MAA.tools.software_package import read_pending_update
+
+    monkeypatch.setattr(software, "_STATE_FILE", tmp_path / "state.json")
+    monkeypatch.setattr(software, "_cache_locks", {})
+    monkeypatch.setattr(software, "_precheck_tasks", {})
+    monkeypatch.setattr(
+        software, "software_cache_dir", lambda *args: tmp_path / "shared"
+    )
+    monkeypatch.setattr(software, "read_installed_release", lambda _: ("v6.0.0", "x64"))
+    monkeypatch.setattr(software, "resolve_update_channel", lambda *args: "stable")
+    monkeypatch.setattr(
+        software, "resolve_takeover_credentials", lambda config: (True, config)
+    )
+    monkeypatch.setattr(software, "_running_updater_paths", lambda: set())
+    calls = []
+
+    async def request(_resource, *, params, **kwargs):
+        calls.append(params)
+        if "cdk" in params:
+            return {
+                "data": {
+                    "version_name": "v6.1.0",
+                    "url": "https://example.invalid",
+                    "update_type": "full",
+                }
+            }
+        return {"data": {"version_name": "v6.1.0"}}
+
+    async def download(_url, path, **kwargs):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("MAA.exe", b"exe")
+            archive.writestr("MAA.dll", b"dll")
+
+    monkeypatch.setattr(software, "request_mirror_resource", request)
+    monkeypatch.setattr(software, "download_file", download)
+    installs = [tmp_path / "one", tmp_path / "two"]
+    for install in installs:
+        (install / "config").mkdir(parents=True)
+        (install / "config" / "gui.new.json").write_text(
+            '{"Update": {}}', encoding="utf-8"
+        )
+    import asyncio
+
+    await asyncio.gather(
+        software._precheck_flow(installs[0], "stable", "x64", "first-key"),
+        software._precheck_flow(installs[1], "stable", "x64", "second-key"),
+    )
+    assert sum("cdk" in params for params in calls) == 1
+    for install, key in zip(installs, ("first-key", "second-key")):
+        await software.prepare_maa_software_update(install, config=key)
+        version, package = read_pending_update(install)
+        assert version == "v6.1.0"
+        assert (install / package).is_file()
+
+
+@pytest.mark.asyncio
+async def test_software_same_version_can_retry_next_day(software_case, monkeypatch):
+    c = software_case
+    await software._precheck_inner(c.root, "stable", "x64", "key")
+
+    class Tomorrow(FrozenDatetime):
+        @classmethod
+        def now(cls, tz=None):
+            return super().now(tz) + timedelta(days=1)
+
+    monkeypatch.setattr(software, "datetime", Tomorrow)
+    await software._precheck_inner(c.root, "stable", "x64", "key")
+    assert c.download.await_count == 2
+    assert sum("cdk" in params for params in c.requests) == 2

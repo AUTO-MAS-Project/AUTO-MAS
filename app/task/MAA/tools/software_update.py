@@ -361,6 +361,7 @@ _state_lock = asyncio.Lock()
 class _Latest(NamedTuple):
     version: str
     url: str
+    is_full: bool
 
 
 async def _fetch_latest(channel: str, arch: str, cdk: str) -> _Latest:
@@ -388,13 +389,9 @@ async def _fetch_latest(channel: str, arch: str, cdk: str) -> _Latest:
     data = data if isinstance(data, dict) else {}
     version = str(data.get("version_name") or "")
     url = str(data.get("url") or "")
-    if not version or not url:
-        raise _UpdateError("镜像酱响应缺少版本或下载地址")
-    if str(data.get("update_type") or "") != "full":
-        raise _UpdateError(
-            f"镜像酱未返回完整包（update_type={data.get('update_type')!r}），只支持完整包"
-        )
-    return _Latest(version=version, url=url)
+    if not url:
+        raise _UpdateError("镜像酱响应缺少下载地址")
+    return _Latest(version=version, url=url, is_full=data.get("update_type") == "full")
 
 
 def _store_verified_cache(
@@ -528,6 +525,7 @@ async def _precheck_inner(maa_root: Path, channel: str, arch: str, cdk: str) -> 
         if backoff_active(
             state, f"query_fail_until/{query_key}", datetime.now(timezone.utc)
         ):
+            logger.info("MAA 本体更新: 查询退避期内，本轮跳过检查")
             return
     try:
         async with asyncio.timeout(_QUERY_TIMEOUT):
@@ -557,6 +555,7 @@ async def _precheck_inner(maa_root: Path, channel: str, arch: str, cdk: str) -> 
         and compare_versions(cached, target) >= 0
         and await asyncio.to_thread(cache_zip_matches, cache_dir, manifest)
     ):
+        logger.info(f"MAA 本体更新: 复用已校验的缓存 {manifest['version']}")
         return
 
     key = _cache_key(arch, channel)
@@ -566,6 +565,7 @@ async def _precheck_inner(maa_root: Path, channel: str, arch: str, cdk: str) -> 
         state = load_state(_STATE_FILE)
         now = datetime.now(timezone.utc)
         if backoff_active(state, f"download_fail_until/{key}", now):
+            logger.info("MAA 本体更新: 取包退避期内，本轮跳过下载")
             return
         previous = parse_version(str(state.get(version_field) or ""))
         if (
@@ -573,6 +573,7 @@ async def _precheck_inner(maa_root: Path, channel: str, arch: str, cdk: str) -> 
             and previous is not None
             and compare_versions(target, previous) <= 0
         ):
+            logger.info("MAA 本体更新: 今日已尝试获取此版本，出现新版或明日再试")
             return
     latest = await _fetch_latest(channel, arch, cdk)
     actual = parse_version(latest.version)
@@ -585,6 +586,8 @@ async def _precheck_inner(maa_root: Path, channel: str, arch: str, cdk: str) -> 
             else target_text
         )
         _utils_io.write_file(_STATE_FILE, state)
+    if not latest.is_full:
+        raise _UpdateError("镜像酱未返回完整本体包")
     if actual is None or compare_versions(actual, target) < 0:
         raise _UpdateError("镜像酱本体包未达到已确认的目标版本")
     await _ensure_cache(latest, channel, arch)
