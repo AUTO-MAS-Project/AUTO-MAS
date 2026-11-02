@@ -1773,9 +1773,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         await self.cur_user_config.commit()
 
     async def _prepare_cultivate_injection(
-        self, source_queue: list[dict], *, skip_this_round: bool = False
+        self,
+        source_queue: list[dict],
+        *,
+        skip_this_round: bool = False,
+        skip_farming: bool = False,
     ) -> tuple[dict | None, bool, CultivatePlan | None]:
-        """准备当轮养成计划，同时保留完整消耗供库存预留。
+        """准备当轮养成计划；刷取未跳过时保留完整消耗供库存预留。
 
         仅在开关开启且目标非空时生效（Routine 门控由调用方负责）；数据集、
         练度、库存不可用时暂停本轮养成，保留普通库存及后续理智任务。
@@ -1933,6 +1937,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             return None, True, None
         self._cultivate_round_paused = False
         self._cultivate_execution_targets = auto_targets
+
+        if skip_farming:
+            # 不把预留量合并进普通库存目标，避免间接刷取养成材料。
+            logger.info(f"用户 {self.cur_user_item.name} 活动期间跳过养成材料刷取")
+            return None, True, None
 
         cultivate_task = None
         if plan.entries:
@@ -2217,9 +2226,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 cultivate_plan,
             ) = await self._prepare_cultivate_injection(
                 source_queue,
-                skip_this_round=activity_open
-                and self.cur_user_config.Task.CultivateSkipDuringActivity
-                or (
+                skip_farming=activity_open
+                and self.cur_user_config.Task.CultivateSkipDuringActivity,
+                skip_this_round=(
                     resource_collection_open
                     and self.cur_user_config.Task.CultivateSkipDuringResourceCollection
                 ),
