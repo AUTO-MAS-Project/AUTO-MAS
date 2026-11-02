@@ -54,6 +54,7 @@ export const getDefaultMAAUserData = () => ({
     ActivityStageIndex: 1,
     CultivateTargets: '[]',
     CultivateAutoRaise: false,
+    CultivateAllOwned: false,
     CultivateSkipDuringActivity: false,
     CultivateSkipDuringResourceCollection: false,
     CultivateMonthlyCard: false,

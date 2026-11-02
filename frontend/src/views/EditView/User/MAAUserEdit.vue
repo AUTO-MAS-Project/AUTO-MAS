@@ -918,7 +918,7 @@ const {
   task: () => formData.Task,
   isInitializing: () => isInitializing.value,
   isLocked: () => configLocked.value,
-  saveTargets: targets => handleFieldSave('Task.CultivateTargets', targets),
+  saveField: handleFieldSave,
   trackEdit: edit => trackEdit(edit),
 })
 

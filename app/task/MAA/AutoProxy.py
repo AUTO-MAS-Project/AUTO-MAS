@@ -103,6 +103,7 @@ from .tools.cultivate import (
     OperatorTarget,
     ProviderContext,
     YituliuDataError,
+    append_owned_cultivate_targets,
     apply_achievements,
     depot_cultivate_service,
     dump_cultivate_targets,
@@ -1858,7 +1859,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
     ) -> tuple[dict | None, bool, CultivatePlan | None]:
         """准备当轮养成计划；刷取未跳过时保留完整消耗供库存预留。
 
-        仅在开关开启且目标非空时生效（Routine 门控由调用方负责）；数据集、
+        仅在开关开启且目标非空或托管全部干员时生效（Routine 门控由调用方负责）；数据集、
         练度、库存不可用时暂停本轮养成，保留普通库存及后续理智任务。
         绑定森空岛后拉取失败时暂停自动培养，
         不使用缺少本轮识别保障的旧练度档案。
@@ -1879,14 +1880,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         notice = takeover_notice_patch_value(
             self.cur_user_config.Task.IfCultivate, raw_targets
         )
-        if notice is not None:
+        manage_owned = self.cur_user_config.Task.CultivateAllOwned
+        if notice is not None and not (
+            self.cur_user_config.Task.IfCultivate and manage_owned
+        ):
             await self._set_cultivate_notice(notice)
             return None, False, None
         if skip_this_round:
             await self._set_cultivate_notice("")
             return None, True, None
-        original_targets = parse_cultivate_targets(raw_targets)
-
         skland_bound = bool(
             self.cur_user_config.Task.CultivateSklandAccount.strip()
             and self.cur_user_config.Task.CultivateSklandUid.strip()
@@ -1901,7 +1903,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 f"用户 {self.cur_user_item.name} 森空岛练度查询失败: {e}"
             )
             skland = None
-        if skland_bound and not (skland and skland[0]):
+        if (skland_bound or manage_owned) and not (skland and skland[0]):
             await self._set_cultivate_notice("")
             message = (
                 "森空岛练度同步失败，本轮养成已暂停；请检查网络或重新绑定森空岛，"
@@ -1922,6 +1924,20 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             return None, True, None
 
         try:
+            if manage_owned and skland:
+                catalog = await depot_cultivate_service.operator_catalog(
+                    config_path=Config.config_path, proxy=Config.proxy
+                )
+                merged_targets = append_owned_cultivate_targets(
+                    raw_targets, catalog=catalog, progressions=skland[0]
+                )
+                if merged_targets != raw_targets:
+                    raw_targets = merged_targets
+                    self.cur_user_config.Task.CultivateTargets = json.dumps(
+                        raw_targets, ensure_ascii=False
+                    )
+                    await self.cur_user_config.commit()
+            original_targets = parse_cultivate_targets(raw_targets)
             context = ProviderContext(
                 maa_data_dir=self._cultivate_archive_dir(),
                 skland_progressions=skland[0] if skland else {},

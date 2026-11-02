@@ -24,6 +24,10 @@ export type MaaUserConfig_TaskInput = {
      */
     CultivateAutoRaise?: (boolean | null);
     /**
+     * 是否托管全部已有干员，按森空岛练度补充精二与技能七级目标
+     */
+    CultivateAllOwned?: (boolean | null);
+    /**
      * 活动期间是否跳过养成计划
      */
     CultivateSkipDuringActivity?: (boolean | null);

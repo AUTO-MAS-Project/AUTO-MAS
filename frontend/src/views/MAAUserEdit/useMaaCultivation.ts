@@ -1,9 +1,10 @@
-import { onScopeDispose, provide, readonly, ref, watch } from 'vue'
+import { computed, onScopeDispose, provide, readonly, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Service, type CultivatePreviewOut } from '@/api'
+import { Service, type CultivatePreviewOut, type MaaUserConfig } from '@/api'
 import { useMaaCultivateImportApi } from '@/composables/useMaaCultivateImportApi'
 import { useMaaCultivateDataApi } from '@/composables/useMaaCultivateDataApi'
 import { cultivateDataRefreshKey } from './cultivateDataRefresh'
+import { cultivateManagementKey } from './cultivateManagement'
 import {
   mergeCultivateTargets,
   normalizeCultivateCatalog,
@@ -20,10 +21,11 @@ interface CultivationOptions {
     CultivateTargets: string
     CultivateSklandAccount: string
     CultivateSklandUid: string
+    CultivateAllOwned: boolean
   }
   isInitializing: () => boolean
   isLocked: () => boolean
-  saveTargets: (targets: string) => Promise<boolean>
+  saveField: (key: string, value: unknown) => Promise<boolean>
   trackEdit: <T>(edit: () => Promise<T>) => Promise<T>
 }
 
@@ -114,7 +116,10 @@ export function useMaaCultivation(options: CultivationOptions) {
       )
       const result = { ...merged.result, skipped: imported.skippedMessages }
       if (!result.operatorIds.length) return result
-      const saved = await options.saveTargets(serializeCultivateTargets(merged.rows))
+      const saved = await options.saveField(
+        'Task.CultivateTargets',
+        serializeCultivateTargets(merged.rows)
+      )
       if (!saved) throw new Error(t('core.edit.couldNotSaveUser'))
       // 导入可包含已满级、被选择器过滤的干员，补回其名称和技能目录。
       const additions = normalizeCultivateCatalog(imported.data ?? [])
@@ -201,6 +206,33 @@ export function useMaaCultivation(options: CultivationOptions) {
       if (seq === cultivatePreviewSeq) cultivatePreviewLoading.value = false
     }
   }
+
+  const managing = ref(false)
+  provide(cultivateManagementKey, {
+    managed: computed(() => options.task().CultivateAllOwned ?? false),
+    managing: readonly(managing),
+    setManaged: async enabled => {
+      if (managing.value || disposed || options.isLocked() || !options.getUserId()) return
+      managing.value = true
+      try {
+        await options.trackEdit(async () => {
+          const userId = options.getUserId()
+          const saved = await options.saveField('Task.CultivateAllOwned', enabled)
+          if (!saved || !enabled) return
+          // 开启托管会由后端同步补入目标；只回读目标，不覆盖其他表单草稿。
+          const response = await Service.getUserApiScriptsUserGetPost({ scriptId, userId })
+          if (disposed || userId !== options.getUserId()) return
+          const task = (response.data[userId] as MaaUserConfig | undefined)?.Task
+          if (response.code !== 200 || !task?.CultivateTargets)
+            throw new Error('Could not reload cultivation targets')
+          options.task().CultivateTargets = task.CultivateTargets
+          await loadCultivateOperatorOptions()
+        })
+      } finally {
+        managing.value = false
+      }
+    },
+  })
 
   provide(cultivateDataRefreshKey, {
     refreshing: readonly(refreshing),

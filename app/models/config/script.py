@@ -339,6 +339,11 @@ class MaaUserConfig(DomainEntry):
             default_factory=lambda: False, description="是否注入 MAA 原生干员培养任务"
         )
 
+        CultivateAllOwned: bool = Field(
+            default_factory=lambda: False,
+            description="是否托管全部已有干员，按森空岛练度补充精二与技能七级目标",
+        )
+
         CultivateSkipDuringActivity: bool = Field(
             default_factory=lambda: False, description="活动期间是否跳过养成计划"
         )
