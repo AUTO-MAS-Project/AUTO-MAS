@@ -79,7 +79,7 @@ from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
 
 from .inventory_report import INVENTORY_REPORT_RULE, InventoryReport, inventory_resolve
-from .push_log import MAAEND_PUSH_RULES, maaend_resolve
+from .push_log import MAAEND_PUSH_RULES, maaend_plain_text, maaend_resolve
 from .resource_loader import (
     MaaEndResourceLoader,
     get_loaded_maaend_options,
@@ -3352,6 +3352,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         def read() -> list[log_box.LogEntry]:
             pipeline = log_box.LogPipeline()
+            pipeline.preprocessors.append(maaend_plain_text)
             for rule in MAAEND_PUSH_RULES:
                 pipeline.add_rule(*rule)
             pipeline.postprocessors.append(maaend_resolve)
