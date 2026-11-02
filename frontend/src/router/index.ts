@@ -48,6 +48,12 @@ const devRoutes =
 
 const routes = [
   {
+    path: '/tools',
+    name: 'Tools',
+    component: () => import('@/views/tools/index.vue'),
+    meta: { title: '工具' },
+  },
+  {
     path: '/',
     redirect: () => '/initialization',
   },

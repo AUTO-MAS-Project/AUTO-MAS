@@ -732,6 +732,9 @@ export type { MaaUserConfig_StageInput } from './models/MaaUserConfig_StageInput
 export type { MaaUserConfig_Task } from './models/MaaUserConfig_Task';
 export type { MaaUserConfig_TaskInput } from './models/MaaUserConfig_TaskInput';
 export type { MaaUserConfigInput } from './models/MaaUserConfigInput';
+export type { McpRetryOut } from './models/McpRetryOut';
+export { McpStatusData } from './models/McpStatusData';
+export type { McpStatusOut } from './models/McpStatusOut';
 export type { MSSConfig } from './models/MSSConfig';
 export type { MSSConfig_Device } from './models/MSSConfig_Device';
 export type { MSSConfig_DeviceInput } from './models/MSSConfig_DeviceInput';

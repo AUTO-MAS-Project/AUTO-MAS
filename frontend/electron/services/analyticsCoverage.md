@@ -1,5 +1,10 @@
 # 匿名统计场景覆盖台账
 
+- MCP 工具页沿用 `screen_view` 的有限页面/来源分类 `tools`；手动重新加载由
+  `useMcpApi` 唯一记录 `mcp_retry_requested` 的 accepted/rejected/unknown 与耗时桶。
+  accepted 只表示后端受理，不计作加载完成；快照恢复、WS 阶段更新和自动加载不逐次采集，
+  不上传进程/运行标识、连接地址、错误或工具清单。
+
 本表对应 [Issue #1605 的 84 项场景](https://github.com/AUTO-MAS-Project/AUTO-MAS/issues/1605#issuecomment-6354559213)。
 场景可以共享事件族，事件契约存在不表示业务入口已经接入。每次提交前重新同步上游，并复核所有已接入项。
 “已接入”描述代码边界，不表示已经完成真实游戏、扫码、升级或正式服务入库验收。

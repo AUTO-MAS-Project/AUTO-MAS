@@ -110,6 +110,8 @@ import type { MaaFWShellInstanceImportIn } from '../models/MaaFWShellInstanceImp
 import type { MaaFWShellInstanceImportOut } from '../models/MaaFWShellInstanceImportOut';
 import type { MaaFWShellInstancesIn } from '../models/MaaFWShellInstancesIn';
 import type { MaaFWShellInstancesOut } from '../models/MaaFWShellInstancesOut';
+import type { McpRetryOut } from '../models/McpRetryOut';
+import type { McpStatusOut } from '../models/McpStatusOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { ObsReplayCheckOut } from '../models/ObsReplayCheckOut';
@@ -4858,6 +4860,28 @@ export class Service {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 获取 MCP 服务状态
+     * @returns McpStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getMcpStatusApiCoreMcpStatusGet(): CancelablePromise<McpStatusOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/core/mcp/status',
+        });
+    }
+    /**
+     * 重新加载失败的 MCP 服务
+     * @returns McpRetryOut Successful Response
+     * @throws ApiError
+     */
+    public static retryMcpApiCoreMcpRetryPost(): CancelablePromise<McpRetryOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/core/mcp/retry',
         });
     }
 }

@@ -1,4 +1,5 @@
 // WebSocket 统一消息协议类型
+import type { McpStatusData } from '@/api'
 // 与后端 app/core/ws/protocol.py、app/models/schema.py 保持一致
 
 // ==================== 信封 ====================
@@ -21,6 +22,8 @@ export interface WSEnvelope<T = WSJsonObject> {
 // ==================== 固定路由 ID ====================
 
 export const WS_ID_MAIN = 'Main'
+export const WS_ID_MCP = 'MCP'
+export const WS_MCP_STATUS_UPDATED = 'mcp.status.updated'
 export const WS_ID_I18N = 'I18n'
 export const WS_I18N_UPDATED = 'i18n.updated'
 export const WS_ID_TASK_MANAGER = 'TaskManager'
@@ -328,6 +331,7 @@ type WSEmptyData = Record<string, never>
 
 /** 已知关键消息的 type → data 映射。未知消息回退到 WSJsonObject。 */
 interface WSMessageDataMap {
+  [WS_MCP_STATUS_UPDATED]: McpStatusData
   [WS_I18N_UPDATED]: { revision: string }
   [WS_TASK_INFO_UPDATED]: WSTaskInfoUpdatedData
   [WS_TASK_LOG_UPDATED]: WSTaskLogUpdatedData

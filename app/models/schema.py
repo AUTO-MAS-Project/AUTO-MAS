@@ -34,6 +34,31 @@ from app.utils import MSS_DEFAULT_TRIBULATION_STAGE, MSS_TRIBULATION_STAGES
 type HistoryCounterValue = int | float | dict[str, HistoryCounterValue]
 
 
+class McpStatusData(BaseModel):
+    """MCP 的 HTTP 快照与 WS 进度共用契约；revision 在同一进程内单调递增。"""
+
+    enabled: bool
+    state: Literal["skipped", "pending", "running", "ready", "failed", "cancelled"]
+    stage: Literal["importing", "building", "validating", "mounting"] | None
+    startedAt: AwareDatetime | None
+    finishedAt: AwareDatetime | None
+    elapsedMs: int = Field(ge=0)
+    toolCount: int = Field(ge=0)
+    error: (
+        Literal[
+            "import_failed",
+            "build_failed",
+            "validation_failed",
+            "mount_failed",
+            "cleanup_failed",
+        ]
+        | None
+    )
+    instanceId: str = Field(description="后端进程标识；重启后 revision 重新开始")
+    runId: str = Field(description="加载尝试标识，显式重试时更换")
+    revision: int = Field(ge=0)
+
+
 class HistoryCounterStatistic(BaseModel):
     kind: Literal["counter"] = "counter"
     # 现有客户端生成器不能编译递归 Record 别名；仅展开传输首层，Python仍完整校验数值树。

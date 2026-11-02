@@ -46,6 +46,8 @@ ID_TASK_MANAGER = "TaskManager"
 ID_UPDATE = "Update"
 ID_GAME_SIGN = "GameSign"
 ID_EMULATOR_MANAGER = "EmulatorManager"
+ID_MCP = "MCP"
+MCP_STATUS_UPDATED = "mcp.status.updated"
 
 
 # ==================== 消息类别（后端 → 前端） ====================

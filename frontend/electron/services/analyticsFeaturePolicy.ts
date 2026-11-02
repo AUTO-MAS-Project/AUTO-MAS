@@ -51,6 +51,7 @@ const finished = <T extends Record<string, readonly string[]>>(fields: T) => ({
 })
 
 export const featureAnalyticsSchemas = {
+  mcp_retry_requested: finished({}),
   backend_restart_finished: finished({ reason_kind: ['manual', 'recovery', 'update'] as const }),
   runtime_alignment_finished: finished({
     operation: ['align', 'manual_update'] as const,
