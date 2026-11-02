@@ -1564,16 +1564,24 @@ class AppConfig:
             await asyncio.to_thread(_utils_io.force_rmtree, user_data_dir)
 
     async def get_user_config_dir(self, script_id: str, user_id: str) -> Path:
-        """获取用户配置目录, 不存在时创建"""
+        """获取专项声明的生效配置目录，未声明时沿用用户数据目录。"""
 
         logger.info(f"{script_id} 获取用户配置目录: {user_id}")
 
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
-        if user_uid not in self.ScriptConfig[script_uid].UserData:
+        script_config = self.ScriptConfig[script_uid]
+        if user_uid not in script_config.UserData:
             raise ValueError("用户不存在")
 
         user_config_dir = self.data_path / f"{script_id}/{user_id}"
+        handler = self._get_script_config_handler(script_config)
+        if handler is not None and handler.user_config_directory is not None:
+            user_config_dir = handler.user_config_directory(
+                script_config,
+                script_config.UserData[user_uid],
+                data_path=self.data_path,
+            )
         user_config_dir.mkdir(parents=True, exist_ok=True)
 
         return user_config_dir

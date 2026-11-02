@@ -13,14 +13,20 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
 
-"""MAA 用户配置更新策略。"""
+"""MAA 用户配置来源与更新策略。"""
 
 import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, cast
 
 from app.config import ConfigEntry
 from app.models.config import MaaConfig, MaaUserConfig
+from app.task.proxy_helpers import (
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    read_config_base,
+)
 from app.utils import constants as _utils_constants
 
 from .tools.cultivate import (
@@ -28,6 +34,20 @@ from .tools.cultivate import (
     depot_cultivate_service,
     takeover_notice_patch_value,
 )
+
+
+def resolve_user_config_dir(
+    script: ConfigEntry, user: ConfigEntry, *, data_path: Path
+) -> Path:
+    """按当前来源定位 base；打开目录不导入或改写配置。"""
+    script_config = cast(MaaConfig, script)
+    base = read_config_base(user, CONFIG_BASE_SHARED)
+    if base == CONFIG_BASE_NATIVE:
+        if script_config.Info.Path is None:
+            raise ValueError("MAA 路径未配置，请先设置脚本路径")
+        return script_config.Info.Path / "config"
+    owner = "Default" if base == CONFIG_BASE_SHARED else str(user.uid)
+    return data_path / str(script.uid) / owner / "ConfigFile"
 
 
 async def prepare_user_update(

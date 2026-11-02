@@ -38,7 +38,12 @@ EXPECTED = [
         "Maa",
         "MAA",
         "MaaManager",
-        {"prepare_user_update", "task_resources", "emulator_binding"},
+        {
+            "prepare_user_update",
+            "user_config_directory",
+            "task_resources",
+            "emulator_binding",
+        },
     ),
     (
         "Src",

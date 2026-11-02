@@ -41,6 +41,16 @@ class UserReadPreparer(Protocol):
     ) -> Awaitable[None]: ...
 
 
+class UserConfigDirectoryResolver(Protocol):
+    def __call__(
+        self,
+        script: ConfigEntry,
+        user: ConfigEntry,
+        *,
+        data_path: Path,
+    ) -> Path: ...
+
+
 class UserInitializer(Protocol):
     def __call__(
         self,
@@ -110,6 +120,7 @@ class ScriptConfigHandler:
     import_config: ScriptConfigImporter | None = None
     prepare_user_update: UserUpdatePreparer | None = None
     user_config_class: type[ConfigEntry] | None = None
+    user_config_directory: UserConfigDirectoryResolver | None = None
     prepare_user_read: UserReadPreparer | None = None
     initialize_user: UserInitializer | None = None
     prepare_user_removal: UserRemovalPreparer | None = None
