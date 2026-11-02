@@ -21,7 +21,7 @@
 """魔改 AVD 更新器：查更新，「更新」一键下载、拼新版、核对、换上，启动恢复。
 
 本模块是更新引擎，调用 ``status`` / ``update`` / ``startup`` 须显式传入 ``UpdateHost``；
-MAS 应用入口统一使用 :mod:`app.core.avd_update`，由宿主装配配置、实例查询和进度发布。
+MAS 应用入口统一使用 :mod:`app.core.emulator_manager.update`，由宿主装配配置、实例查询和进度发布。
 
 流程（每个根目录各走各的）：
 
@@ -79,7 +79,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from app.services.update_transport import download_resumable
+from app.services.common.update import transport as _service_update_transport
 from app.utils import get_logger
 from app.utils import update_files as _utils_update_files
 
@@ -584,7 +584,7 @@ async def _download(
     """下载 ``release`` 的包，按发布记录 / Mirror 酱给的 SHA-256 核对。
 
     - GitHub：断了续传（``.part`` 留着，下次点「更新」接着下）。请求带了 Range 而服务器回 200 时，
-      :func:`~app.services.update_transport.download_resumable` 从 0 重写，不追加。
+      :func:`~app.services.common.update.transport.download_resumable` 从 0 重写，不追加。
     - Mirror 酱不支持续传：不发 Range，之前留下的半截直接丢掉从头下；中途断了（含 401/403/404/410）在
       同一个链接上从头重试，一共最多 :data:`_DOWNLOAD_ATTEMPTS` 次，仍不行这次就结束，不另要链接（下次
       点「更新」时链接还在 25 分钟内就复用）。两个来源的包名不同（Mirror 酱的带 ``-mirrorchyan``），半截
@@ -664,7 +664,7 @@ async def _download(
                 received = 0
             digest = hashlib.sha256() if asset.sha256 else None
             try:
-                size = await download_resumable(
+                size = await _service_update_transport.download_resumable(
                     client,
                     url,
                     part,

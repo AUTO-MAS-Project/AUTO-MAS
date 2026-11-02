@@ -616,12 +616,12 @@ onMounted(() => {
         </draggable>
 
         <!-- 空状态 -->
-        <a-empty v-if="accounts.length === 0" class="empty-state" :image="false">
+        <NoData v-if="accounts.length === 0" class="empty-state">
           <template #description>
             <div>{{ t('core.gamesign.list.empty') }}</div>
             <div>{{ t('core.gamesign.list.emptyGuide') }}</div>
           </template>
-        </a-empty>
+        </NoData>
       </div>
     </div>
 

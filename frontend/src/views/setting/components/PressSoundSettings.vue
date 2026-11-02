@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { PlayCircleOutlined, QuestionCircleOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import type { PressSoundPhase, PressSoundPreset } from '@/types/pressSound'
 import type { RadioChangeEvent } from 'ant-design-vue'
+import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 
 const props = defineProps<{
   enabled: boolean
@@ -67,21 +68,18 @@ const ready = computed(() => !isCustom.value || fileRows.value.every(file => Boo
       <a-col :xs="24" :md="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('core.setting.basic.pressSoundEnabled') }}</span>
+            <a-checkbox
+              :checked="enabled"
+              :disabled="saving"
+              :aria-busy="saving"
+              @change="(event: CheckboxChangeEvent) => emit('enabledChange', event.target.checked)"
+            >
+              {{ t('core.setting.basic.pressSoundEnabled') }}
+            </a-checkbox>
             <a-tooltip :title="t('core.setting.basic.pressSoundEnabledTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
-          <a-select
-            :value="enabled"
-            :disabled="saving"
-            size="large"
-            style="width: 100%"
-            @change="(value: unknown) => emit('enabledChange', value === true)"
-          >
-            <a-select-option :value="true">{{ t('core.common.on') }}</a-select-option>
-            <a-select-option :value="false">{{ t('core.common.off') }}</a-select-option>
-          </a-select>
         </div>
       </a-col>
       <a-col :xs="24" :md="12">

@@ -20,7 +20,8 @@ import uuid
 from contextlib import suppress
 
 from app.config import ConfigCollection
-from app.core.ws import Publisher, protocol
+from app.core import Publisher
+from app.core.ws import protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase

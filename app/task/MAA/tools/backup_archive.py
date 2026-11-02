@@ -37,7 +37,7 @@
   池恒按用户分桶（``mas/{user_id}``），多用户共享同一份 Default 目录时各自
   持有快照、互不混淆（教训见 config-restore.md §1.1.1）。时间戳快照、指纹
   去重、保留清理与整目录恢复的通用逻辑由公共模块
-  ``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
+  ``app.utils.common.config.archive`` 提供（默认每池保留 10 份），本模块只保留
   MAA 特有的目录布局、侧车、恢复语义（恢复前强制归档当前）与归档目录布局。
 """
 
@@ -46,7 +46,7 @@ from pathlib import Path
 
 from app.config import ConfigEntry
 from app.utils import BASE_SOURCE_LABELS, get_logger
-from app.utils import config_archive as _utils_config_archive
+from app.utils.common.config import archive as _utils_config_archive
 
 from ..constants import MAA_TASKS, MAA_TASKS_ZH
 
@@ -137,14 +137,20 @@ _OVERLAY_TASK_KEYS = (
     "IfSwitchTheme",
     "IfDepotMaintain",
     "DepotMaintainPlans",
+    "DepotMaintainMedicineNumb",
+    "DepotMaintainStoneNumb",
     "IfEventDepotMaintain",
     "EventDepotMaintainPlans",
+    "EventDepotMaintainMedicineNumb",
+    "EventDepotMaintainStoneNumb",
     "IfGreenTicketStore",
     "IfActivityFirst",
     "ActivityStageIndex",
     "ActivityMedicineNumb",
     "IfCultivate",
     "CultivateTargets",
+    "CultivateMedicineNumb",
+    "CultivateStoneNumb",
     "CultivateAutoRaise",
     "CultivateSkipDuringActivity",
     "CultivateSkipDuringResourceCollection",
@@ -197,15 +203,21 @@ _OVERLAY_MAS_ONLY_ORDER = (
     "AnnihilationStartWeekday",
     "IfEventDepotMaintain",
     "EventDepotMaintainPlans",
+    "EventDepotMaintainMedicineNumb",
+    "EventDepotMaintainStoneNumb",
     "IfActivityFirst",
     "ActivityStageIndex",
     "ActivityMedicineNumb",
     "IfCultivate",
     "CultivateTargets",
+    "CultivateMedicineNumb",
+    "CultivateStoneNumb",
     "CultivateAutoRaise",
     "CultivateSkipDuringActivity",
     "CultivateSkipDuringResourceCollection",
     "DepotMaintainPlans",
+    "DepotMaintainMedicineNumb",
+    "DepotMaintainStoneNumb",
     "IfGreenTicketStore",
 )
 
@@ -223,8 +235,14 @@ _OVERLAY_FIELD_LABELS = {
     "IfSwitchTheme": "更换主题",
     "IfDepotMaintain": "库存保持",
     "DepotMaintainPlans": "库存保持计划",
+    "DepotMaintainMedicineNumb": "普通库存保持理智药数量",
+    "DepotMaintainStoneNumb": "普通库存保持源石数量",
+    "CultivateMedicineNumb": "干员养成理智药数量",
+    "CultivateStoneNumb": "干员养成源石数量",
     "IfEventDepotMaintain": "活动关均衡理智",
     "EventDepotMaintainPlans": "活动库存目标",
+    "EventDepotMaintainMedicineNumb": "活动库存保持理智药数量",
+    "EventDepotMaintainStoneNumb": "活动库存保持源石数量",
     "IfGreenTicketStore": "绿票商店",
     "IfActivityFirst": "活动关优先",
     "ActivityStageIndex": "活动关卡序号",

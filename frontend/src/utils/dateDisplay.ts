@@ -86,5 +86,12 @@ export const formatHistoryGroupLabel = (value: string): string => {
   return value
 }
 
-/** 历史快照保留保存时的时钟及偏移，不经浏览器时区转换。 */
-export const formatStoredDateTime = (time: string): string => time.replace('T', ' ')
+/** 历史记录显示本地时间；游戏日分组仍沿用后端保存的日期。 */
+export const formatHistoryDateTime = (value: string): string => {
+  const date = parseBackendDateTime(value)
+  if (!date) return value
+
+  const day = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+  const time = `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`
+  return `${day} ${time}`
+}

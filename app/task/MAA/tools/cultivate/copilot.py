@@ -27,7 +27,7 @@ import json
 import math
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping, Sequence
 
 from .types import Progression
@@ -270,6 +270,7 @@ def analyze_copilots(
     *,
     coverage: int = 90,
     require_modules: bool = True,
+    ignore_level_gaps: bool = False,
 ) -> dict[str, Any]:
     """按整份作业的联合缺口规划；缺人及要求不明确者不伪装为可培养完成。"""
     by_id = {op["value"]: op for op in catalog}
@@ -287,13 +288,23 @@ def analyze_copilots(
             [slot, protocol_version, module_orders], sort_keys=True, ensure_ascii=False
         )
         if key not in requirement_cache:
-            requirement_cache[key] = _requirement(
+            req = _requirement(
                 slot,
                 by_name,
                 modules=require_modules,
                 protocol_version=protocol_version,
                 module_orders=module_orders,
             )
+            if ignore_level_gaps and req is not None:
+                current = progressions.get(req.operator_id)
+                # 只放宽已达精英阶段的等级要求，精英化与其它培养要求仍保留。
+                if (
+                    current is not None
+                    and current.elite == req.elite
+                    and current.level < req.level
+                ):
+                    req = replace(req, level=current.level)
+            requirement_cache[key] = req
         return requirement_cache[key]
 
     parsed: list[tuple[dict[str, Any], list[list[Requirement]]]] = []

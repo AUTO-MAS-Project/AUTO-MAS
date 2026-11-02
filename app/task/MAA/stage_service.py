@@ -59,20 +59,20 @@ def _parse_stage_data(content: str, *, now: datetime) -> dict[str, Any]:
         for server, server_stage_data in stage_data_by_server.items():
             activity_stage_drop_info = []
             activity_stage_combox = []
+            activity_template = []
+            last_expired_at = None
             for side_story in server_stage_data.values():
                 activity = side_story["Activity"]
                 activity_timezone = timezone(
                     timedelta(hours=activity.get("TimeZone", 8))
                 )
-                if (
-                    datetime.strptime(
-                        activity["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
-                    ).replace(tzinfo=activity_timezone)
-                    < now
-                    < datetime.strptime(
-                        activity["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
-                    ).replace(tzinfo=activity_timezone)
-                ):
+                starts_at = datetime.strptime(
+                    activity["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                ).replace(tzinfo=activity_timezone)
+                expires_at = datetime.strptime(
+                    activity["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+                ).replace(tzinfo=activity_timezone)
+                if starts_at < now < expires_at:
                     for stage in side_story["Stages"]:
                         activity_stage_combox.append(
                             {"label": stage["Display"], "value": stage["Value"]}
@@ -95,7 +95,27 @@ def _parse_stage_data(content: str, *, now: datetime) -> dict[str, Any]:
                                     "Activity": activity,
                                 }
                             )
-            stage_data = {"Info": activity_stage_drop_info}
+                elif expires_at <= now and (
+                    last_expired_at is None or expires_at > last_expired_at
+                ):
+                    # 占位仅暴露上期关卡类别，不携带可刷关码、材料或库存。
+                    template = [
+                        "orundum" if "玉" in stage["Drop"] else "material"
+                        for stage in side_story["Stages"]
+                        if "SSReopen" not in stage["Display"]
+                        and (
+                            stage["Drop"] in _utils_constants.MATERIALS_MAP
+                            or "玉" in stage["Drop"]
+                        )
+                    ]
+                    activity_template = template
+                    last_expired_at = expires_at
+            stage_data = {
+                "Info": activity_stage_drop_info,
+                "ActivityTemplate": []
+                if activity_stage_drop_info
+                else activity_template,
+            }
             for day in range(0, 8):
                 res_stage = []
                 for stage in _utils_constants.RESOURCE_STAGE_INFO:
@@ -185,6 +205,7 @@ class MaaStageService:
                 activity_status = "stale"
             return {
                 "Activity": activity_stages,
+                "ActivityTemplate": stage_data.get("ActivityTemplate", []),
                 "ActivityStatus": activity_status,
                 "ActivityUpdatedAt": cache.checked_at.isoformat(),
                 "Resource": res_stage_info,

@@ -1,12 +1,13 @@
 import { spawn } from 'child_process'
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import { BackendService } from './backendService'
+import { getFluxdownInstallEnvironment } from './fluxdownInstallService'
 import { analyticsService } from './analyticsService'
 import { RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'
 
@@ -320,6 +321,9 @@ describe('development 模式', () => {
       expect(spawnedEnv(index).AUTO_MAS_HTTP_PORT).toBeUndefined()
       expect(spawnedEnv(index).AUTO_MAS_DEV).toBeUndefined()
       expect(spawnedEnv(index).AUTO_MAS_ENV).toBe('development')
+      expect(spawnedEnv(index).AUTO_MAS_INSTALL_TOKEN).toBe(
+        getFluxdownInstallEnvironment().AUTO_MAS_INSTALL_TOKEN
+      )
     }
 
     child.stdout.feed(stoppedResultLine)
@@ -832,9 +836,34 @@ describe('managed 模式', () => {
     expect(spawnedArgs(2).slice(-4)).toEqual(['backend', 'supervise', '--mode', 'managed'])
     expect(spawnedArgs(2)).not.toContain('--repo')
     expect(spawnedEnv(2).AUTO_MAS_ENV).toBe('production')
+    expect(spawnedEnv(2).AUTO_MAS_INSTALL_TOKEN).toBe(
+      getFluxdownInstallEnvironment().AUTO_MAS_INSTALL_TOKEN
+    )
     expect(existsSync(runtimeRoot)).toBe(false)
 
     child.stdout.feed(stoppedResultLine)
+    child.close(0)
+  })
+})
+
+describe('legacy backend installation authority', () => {
+  it('passes the same main-process session credential through the direct Python launch', async () => {
+    process.env[RUNTIME_MODE_ENV] = 'off'
+    const mainPy = join(appRoot, 'main.py')
+    writeFileSync(mainPy, '')
+    const service = createService()
+    mockSpawn()
+    const pending = service.startBackend({
+      pythonPath: EXISTING_EXE,
+      mainPyPath: mainPy,
+      cwd: appRoot,
+    })
+    const child = await waitForSpawn(0)
+    expect(await pending).toEqual({ success: true })
+    expect(spawnedEnv(0).AUTO_MAS_INSTALL_TOKEN).toBe(
+      getFluxdownInstallEnvironment().AUTO_MAS_INSTALL_TOKEN
+    )
+    expect(spawnedArgs(0)).toEqual([mainPy])
     child.close(0)
   })
 })

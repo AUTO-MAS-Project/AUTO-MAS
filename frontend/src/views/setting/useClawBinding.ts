@@ -17,10 +17,11 @@ const POLL_INTERVAL = 2000
 const CHANNELS = {
   qq: {
     prefix: 'openclawQq',
-    status: QqService.getStatusApiSettingOpenclawQqStatusPost,
-    start: QqService.startLoginApiSettingOpenclawQqLoginStartPost,
-    check: QqService.checkLoginApiSettingOpenclawQqLoginCheckPost,
-    unbind: QqService.unbindApiSettingOpenclawQqUnbindPost,
+    status: () => window.electronAPI.getQqStatus(),
+    start: () => window.electronAPI.startQqLogin(),
+    check: (body: Parameters<typeof QqService.checkLoginApiSettingOpenclawQqLoginCheckPost>[0]) =>
+      window.electronAPI.checkQqLogin(body),
+    unbind: () => window.electronAPI.unbindQq(),
   },
 }
 
@@ -87,13 +88,19 @@ export function useClawBinding(
     return label('TargetError')
   }
 
-  const loadGroups = async () => {
-    if (groupsLoading.value || targetSaving.value || unbinding.value) return
+  const loadGroupsInner = async (afterManualSave = false) => {
+    if (
+      groupsLoading.value ||
+      targetSaving.value ||
+      unbinding.value ||
+      (manualSaving.value && !afterManualSave)
+    )
+      return
     const id = ++groupsRunId
     groupsLoading.value = true
     groupsError.value = ''
     try {
-      const result = await QqService.getGroupsApiSettingOpenclawQqGroupsPost()
+      const result = await window.electronAPI.getQqGroups()
       if (disposed || id !== groupsRunId) return
       if (result.code !== 200) throw new Error(label('GroupsError'))
       groups.value = result
@@ -104,6 +111,7 @@ export function useClawBinding(
       if (id === groupsRunId) groupsLoading.value = false
     }
   }
+  const loadGroups = () => loadGroupsInner()
 
   const selectTarget = async (value: string, groupCommandWhitelist?: string[]) => {
     if (!groups.value?.bindingId || targetSaving.value) return false
@@ -114,7 +122,7 @@ export function useClawBinding(
     groupsLoading.value = false
     groupsError.value = ''
     try {
-      const result = await QqService.setTargetApiSettingOpenclawQqTargetPost({
+      const result = await window.electronAPI.setQqTarget({
         bindingId: groups.value.bindingId,
         targetType,
         groupCommandWhitelist,
@@ -136,7 +144,8 @@ export function useClawBinding(
     }
   }
 
-  const loadStatus = async () => {
+  const loadStatusInner = async (afterManualSave = false) => {
+    if (statusLoading.value || (manualSaving.value && !afterManualSave)) return
     clearTimeout(statusTimer)
     statusLoading.value = true
     statusError.value = ''
@@ -168,6 +177,7 @@ export function useClawBinding(
       }
     }
   }
+  const loadStatus = () => loadStatusInner()
 
   const closeAttempt = (outcome: 'cancelled' | 'replaced' | 'unmounted') => {
     finishBinding(outcome)
@@ -281,16 +291,27 @@ export function useClawBinding(
   const saveCredentials = async (
     body: Parameters<typeof QqService.setCredentialsApiSettingOpenclawQqCredentialsSetPost>[0]
   ) => {
-    if (manualSaving.value || targetSaving.value || unbinding.value || open.value) return false
+    if (
+      manualSaving.value ||
+      targetSaving.value ||
+      unbinding.value ||
+      open.value ||
+      statusLoading.value
+    )
+      return false
     manualSaving.value = true
+    groupsRunId++
+    groupsLoading.value = false
+    clearTimeout(statusTimer)
     const operation = beginAnalyticsOperation('notification_binding_finished')
     try {
-      checkResponse(await QqService.setCredentialsApiSettingOpenclawQqCredentialsSetPost(body))
+      if (!window.electronAPI?.setQqCredentials) throw new Error('QQ 凭据管理需要桌面客户端')
+      checkResponse(await window.electronAPI.setQqCredentials(body))
       operation.finish({ channel_kind: 'openclaw_qq', action: 'manual_bind', outcome: 'saved' })
       isBound = true
       qqBindingObserved = true
-      await loadStatus()
-      await loadGroups()
+      await loadStatusInner(true)
+      await loadGroupsInner(true)
       return true
     } catch (error) {
       operation.finish({ channel_kind: 'openclaw_qq', action: 'manual_bind', outcome: 'failure' })

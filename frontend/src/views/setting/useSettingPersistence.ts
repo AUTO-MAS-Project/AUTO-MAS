@@ -7,7 +7,6 @@ import type { GlobalConfig } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
 import { setTelemetryEnabled } from '@/utils/sentry'
-import { useUiPreferences } from '@/composables/useUiPreferences'
 import { updateInfo } from '@/composables/useVersionService'
 
 const logger = window.electronAPI.getLogger('设置')
@@ -33,7 +32,6 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
   const { t } = useI18n()
   // loading 随保存链路一起暴露给页面，tabs 的加载态才能反映真实请求
   const { loading, getSettings, updateSettings } = useSettingsApi()
-  const { syncUiPreferences } = useUiPreferences()
 
   const syncConfigToElectron = async (data: GlobalConfig) => {
     try {
@@ -59,7 +57,6 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
     const data = await getSettings()
     if (data) {
       Object.assign(settings, data)
-      syncUiPreferences(data.UI)
       await syncConfigToElectron(data)
     }
   }
@@ -90,7 +87,6 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
       return
     }
     section[key] = value
-    if (category === 'UI') syncUiPreferences(settings.UI)
     if (ELECTRON_SYNCED_CATEGORIES.has(category)) await syncConfigToElectron(settings)
   }
 

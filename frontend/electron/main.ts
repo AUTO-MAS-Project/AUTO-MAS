@@ -1,6 +1,7 @@
 import { detachPromptVirtualDisplay } from './services/virtualDisplayPromptActions'
 import { observeDiagnosticExport, observeDataBackup } from './services/diagnosticAnalytics'
-import { beginMainFeature, mainCountBucket } from './services/featureAnalytics'
+import { beginMainFeature } from './services/featureAnalytics'
+import { analyticsDuration } from './services/analyticsPolicy'
 import { readBackendDocument } from './services/backendConfig'
 import {
   app,
@@ -31,6 +32,9 @@ import {
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import { registerFluxdownInstallHandlers } from './ipc/fluxdownInstallHandlers'
+import { registerQqCredentialHandlers } from './ipc/qqCredentialHandlers'
+import { fetchProtectedLocal } from './services/protectedBackend'
 import {
   isAnalyticsSender,
   isApplicationWindowSender,
@@ -60,7 +64,7 @@ import {
   canRequestRendererClose,
   markForceQuitFailed,
 } from './quitCoordinationState'
-import { decideRendererRecovery } from './rendererCrashRecovery'
+import { attachRendererRecovery } from './services/rendererRecoveryService'
 import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
@@ -81,7 +85,6 @@ import { createOkNteIssueReport } from './services/okNteIssueReportService'
 import { createZzzOdIssueReport } from './services/zzzOdIssueReportService'
 import { createWhimboxIssueReport } from './services/whimboxIssueReportService'
 import {
-  captureMainRendererCrash,
   configureMainSentry,
   recordMainCount,
   recordMainStartup,
@@ -117,7 +120,8 @@ interface ApiResult {
 }
 
 // 托盘菜单项类型
-type TrayAction = 'show' | 'hide' | 'startTask' | 'stopAll' | 'restartApp' | 'quit'
+const TRAY_ACTIONS = ['show', 'hide', 'startTask', 'stopAll', 'quit'] as const
+type TrayAction = (typeof TRAY_ACTIONS)[number]
 
 interface TrayItem {
   id: string
@@ -133,6 +137,12 @@ const DEFAULT_TRAY_ITEMS: TrayItem[] = [
   { id: 'hide', label: '隐藏窗口', action: 'hide' },
   { id: 'quit', label: '退出', action: 'quit' },
 ]
+
+// 旧配置中已移除的动作不再显示；全部失效时恢复默认菜单。
+function normalizeTrayItems(items: TrayItem[]): TrayItem[] {
+  const supportedItems = items.filter(item => TRAY_ACTIONS.includes(item.action))
+  return supportedItems.length ? supportedItems : DEFAULT_TRAY_ITEMS
+}
 
 function showShortcutNotification(title: string, body: string): void {
   if (Notification.isSupported()) {
@@ -244,6 +254,8 @@ function isRunningAsAdmin(): boolean {
 }
 
 let tray: Tray | null = null
+let forceTrayVisibleUntilWindowShown = false
+let nativeCloseHandlerReady = false
 let coordinatedQuit = false
 let forceQuitInProgress = false
 let closeTelemetry: ReturnType<typeof beginMainFeature<'app_close_finished'>> | null = null
@@ -257,12 +269,15 @@ let activeQuitPreparation: number | null = null
 let quitPreparationExpired = false
 const RENDERER_QUIT_FALLBACK_MS = 25000
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
-let rendererCrashes: number[] = []
+let mainRendererRecovery: ReturnType<typeof attachRendererRecovery> | null = null
+const rendererCrashes: number[] = []
 let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
 // 配置接口
 interface AppConfig extends DesktopMascotHostPreferences {
+  confirmBeforeClose: boolean
+  lastCloseAction: 'quit' | 'tray'
   UI: {
     IfShowTray: boolean
     IfToTray: boolean
@@ -292,6 +307,8 @@ interface AppConfig extends DesktopMascotHostPreferences {
 
 // 默认配置
 const defaultConfig: AppConfig = {
+  confirmBeforeClose: true,
+  lastCloseAction: 'quit',
   UI: {
     IfShowTray: false,
     IfToTray: false,
@@ -329,6 +346,10 @@ function loadConfig(): AppConfig {
       config = { ...config, ...JSON.parse(configData) }
     }
 
+    if (Array.isArray(config.UI?.TrayItems)) {
+      config.UI.TrayItems = normalizeTrayItems(config.UI.TrayItems)
+    }
+
     {
       const backendConfig = readBackendDocument(appRoot, 'setting.yaml', 'Config.json') as
         | { Function?: { IfEnableTelemetry?: boolean } }
@@ -346,7 +367,7 @@ function loadConfig(): AppConfig {
 }
 
 // 保存配置
-function saveConfig(config: AppConfig) {
+function saveConfig(config: AppConfig): boolean {
   try {
     const appRoot = getAppRoot()
     const configDir = path.join(appRoot, 'config')
@@ -357,16 +378,18 @@ function saveConfig(config: AppConfig) {
     }
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+    return true
   } catch {
     logger.error('保存配置失败')
+    return false
   }
 }
 
 configureMainSentry(loadConfig().Function?.IfEnableTelemetry !== false)
 
 // 创建托盘
-function createTray() {
-  if (tray) return
+function createTray(): boolean {
+  if (tray) return !tray.isDestroyed()
 
   // 尝试多个可能的图标路径
   const iconPaths = [
@@ -390,17 +413,23 @@ function createTray() {
       }
     }
 
-    // 如果所有路径都失败，创建一个默认图标
+    // 不创建空图标托盘，避免窗口隐藏后用户找不到恢复入口。
     if (!trayIcon || trayIcon.isEmpty()) {
-      logger.warn('无法加载托盘图标，使用默认图标')
-      trayIcon = nativeImage.createEmpty()
+      logger.error('无法加载托盘图标')
+      return false
     }
   } catch {
     logger.error('加载托盘图标失败')
-    trayIcon = nativeImage.createEmpty()
+    return false
   }
 
-  tray = new Tray(trayIcon)
+  try {
+    tray = new Tray(trayIcon)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`创建托盘失败: ${errorMsg}`)
+    return false
+  }
   tray.setToolTip('AUTO-MAS')
 
   // 从配置读取托盘菜单项，未配置时回落到默认菜单
@@ -418,17 +447,21 @@ function createTray() {
       showMainWindow()
     }
   })
+
+  return true
 }
 
 // 显示主窗口
 function showMainWindow(): void {
   if (!mainWindow) return
+  forceTrayVisibleUntilWindowShown = false
   if (mainWindow.isMinimized()) {
     mainWindow.restore()
   }
   mainWindow.setSkipTaskbar(false) // 恢复任务栏图标
   mainWindow.show()
   mainWindow.focus()
+  updateTrayVisibility(loadConfig())
 }
 
 // 隐藏主窗口
@@ -441,12 +474,36 @@ function hideMainWindow(): void {
   mainWindow.hide()
 }
 
+function hideMainWindowToTray(): boolean {
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+
+  try {
+    forceTrayVisibleUntilWindowShown = true
+    if (!createTray()) {
+      forceTrayVisibleUntilWindowShown = false
+      return false
+    }
+
+    mainWindow.setSkipTaskbar(true)
+    mainWindow.hide()
+    updateTrayVisibility(loadConfig())
+    return true
+  } catch (error) {
+    forceTrayVisibleUntilWindowShown = false
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`最小化到托盘失败: ${errorMsg}`)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      showMainWindow()
+    }
+    return false
+  }
+}
+
 // 重建托盘右键菜单
 function rebuildTrayMenu(items: TrayItem[]): void {
   if (!tray) return
 
-  // 空列表时回落到默认菜单，避免托盘右键菜单为空
-  const effectiveItems = items.length ? items : DEFAULT_TRAY_ITEMS
+  const effectiveItems = normalizeTrayItems(items)
 
   const menuItems: MenuItemConstructorOptions[] = []
   effectiveItems.forEach((item, index) => {
@@ -487,30 +544,22 @@ function handleTrayAction(item: TrayItem): void {
         logger.warn('托盘启动任务缺少 taskId，忽略')
       }
       break
-    case 'restartApp':
     case 'quit':
-      // 退出/重启转发给渲染进程，与窗口关闭按钮走同一套确认流程
-      requestTrayAction(item.action === 'restartApp' ? 'restart' : 'quit')
+      // 退出转发给渲染进程，按任务运行状态确认。
+      requestTrayAction('quit')
       break
   }
 }
 
-// 请求渲染进程处理托盘动作：启动需读取任务 ID 新建调度台，退出/重启由渲染进程按运行状态弹统一确认窗
-function requestTrayAction(
-  action: 'quit' | 'restart' | 'startTask',
-  taskId?: string,
-  label?: string
-): void {
+// 请求渲染进程处理托盘动作：启动任务或按运行状态确认退出。
+function requestTrayAction(action: 'quit' | 'startTask', taskId?: string, label?: string): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('tray-action-request', { action, taskId, label })
   } else {
-    // 无主窗口时无法弹确认窗/新建调度台，仅退出与重启可直接执行；
+    // 无主窗口时无法弹确认窗/新建调度台，仅退出可直接执行；
     // renderer 不可用时 requestRendererClose 自动落入最终强杀兜底
-    logger.warn('无主窗口，无法处理托盘动作，仅可执行退出/重启')
-    if (action === 'restart') {
-      relaunchAfterQuit = true
-      requestRendererClose('托盘重启（无主窗口）')
-    } else if (action === 'quit') {
+    logger.warn('无主窗口，无法处理托盘动作，仅可执行退出')
+    if (action === 'quit') {
       requestRendererClose('托盘退出（无主窗口）')
     }
     // startTask 依赖渲染进程新建调度台，无窗口时忽略
@@ -668,6 +717,8 @@ function updateTrayVisibility(config: AppConfig) {
     shouldShowTray = false
   }
 
+  if (forceTrayVisibleUntilWindowShown) shouldShowTray = true
+
   // 特殊情况：如果没有窗口显示且没有托盘，强制显示托盘避免程序成为幽灵
   if (!shouldShowTray && (!mainWindow || !mainWindow.isVisible()) && !tray) {
     shouldShowTray = true
@@ -675,8 +726,7 @@ function updateTrayVisibility(config: AppConfig) {
   }
 
   if (shouldShowTray && !tray) {
-    createTray()
-    logger.info('托盘图标已创建')
+    if (createTray()) logger.info('托盘图标已创建')
   } else if (!shouldShowTray && tray) {
     destroyTray()
     logger.info('托盘图标已销毁')
@@ -868,67 +918,39 @@ function createWindow() {
 
   // 把局部的 win 赋值给模块级（供其他模块/函数用）
   mainWindow = win
+  nativeCloseHandlerReady = false
   desktopMascot.attachMainWindow(win)
   lastWindowActivity = null
 
+  win.webContents.on('did-start-loading', () => {
+    nativeCloseHandlerReady = false
+  })
+
   // 崩溃时窗口若在托盘里，恢复后保持隐藏，不要自己弹出来打断用户。
   let keepHiddenAfterRecovery = false
+  let hasShownMainWindow = false
+  win.once('show', () => {
+    hasShownMainWindow = true
+  })
 
   // 主框架重载或导航后旧确认窗已销毁，撤销等待；同文档路由切换不触发此事件。
   win.webContents.on('did-navigate', () => {
     if (quitConfirmationPending) cancelQuitRequest()
   })
 
-  // 渲染进程崩溃恢复。Electron 不会自动重建崩掉的渲染进程：BrowserWindow 还在，
-  // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
-  // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
-  win.webContents.on('render-process-gone', (_event, details) => {
-    // 等待确认或保存期间 renderer 消失就取消退出，按通常崩溃流程恢复。
-    if (quitConfirmationPending) cancelQuitRequest()
-    else if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
-    const decision = decideRendererRecovery({
-      reason: details.reason,
-      exitCode: details.exitCode,
-      isQuitting: coordinatedQuit || forceQuitInProgress || quitRequestInFlight,
-      isWindowDestroyed: win.isDestroyed(),
-      now: Date.now(),
-      previousCrashes: rendererCrashes,
-    })
-    rendererCrashes = decision.crashes
-
-    if (decision.action === 'ignore') {
-      logger.info(decision.detail)
-      return
-    }
-
-    logger.error(decision.detail)
-    captureMainRendererCrash({
-      reason: details.reason,
-      exitCode: details.exitCode,
-      crashCount: decision.crashCount,
-      action: decision.action,
-      detail: decision.detail,
-    })
-
-    beginMainFeature('renderer_recovery_decided').finish({
-      reason_kind:
-        details.reason === 'crashed'
-          ? 'crashed'
-          : details.reason === 'oom'
-            ? 'oom'
-            : details.reason === 'killed'
-              ? 'killed'
-              : details.reason === 'launch-failed'
-                ? 'launch_failed'
-                : 'other',
-      recovery_action: decision.action === 'give-up' ? 'give_up' : 'reload',
-      count_bucket: mainCountBucket(decision.crashCount),
-      outcome: 'accepted',
-    })
-    if (decision.action === 'give-up') return
-
-    keepHiddenAfterRecovery = !win.isVisible()
-    win.webContents.reload()
+  mainRendererRecovery = attachRendererRecovery(win, {
+    crashHistory: rendererCrashes,
+    isQuitting: () => coordinatedQuit || forceQuitInProgress || quitRequestInFlight,
+    onRendererGone: () => {
+      nativeCloseHandlerReady = false
+      // 等待确认或保存期间 renderer 消失就取消退出，按通常崩溃流程恢复。
+      if (quitConfirmationPending) cancelQuitRequest()
+      else if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
+    },
+    onReload: () => {
+      // 崩溃前窗口就在托盘里，重载后继续保持隐藏。
+      keepHiddenAfterRecovery = hasShownMainWindow && !win.isVisible()
+    },
   })
 
   let responseIncident: ReturnType<
@@ -975,7 +997,7 @@ function createWindow() {
     if (keepHiddenAfterRecovery) {
       keepHiddenAfterRecovery = false
       notifyWindowActivity('background')
-      logger.info('渲染进程已恢复，窗口保持托盘隐藏状态')
+      logger.info('重载页面已加载，窗口保持托盘隐藏状态')
       return
     }
 
@@ -1077,25 +1099,25 @@ function createWindow() {
 
   // 窗口事件处理
   win.on('close', (event: Electron.Event) => {
-    const currentConfig = loadConfig()
     const quitState = { coordinatedQuit, forceQuitInProgress, quitRequestInFlight }
 
-    if (!canElectronExitImmediately(quitState)) {
+    if (!mainRendererRecovery?.isSessionEnding() && !canElectronExitImmediately(quitState)) {
       event.preventDefault()
       if (forceQuitInProgress) {
         logger.warn('强制清理仍在进行，暂不允许窗口提前关闭')
         return
       }
-      if (currentConfig.UI.IfToTray && !quitRequestInFlight) {
-        win.hide()
-        win.setSkipTaskbar(true)
-        updateTrayVisibility(currentConfig)
-        logger.info('窗口已最小化到托盘，任务栏图标已隐藏')
+      if (
+        win.webContents.isDestroyed() ||
+        win.webContents.isCrashed() ||
+        !nativeCloseHandlerReady
+      ) {
+        requestRendererClose('窗口关闭（renderer 不可用或尚未就绪）', true)
       } else {
-        requestRendererClose('窗口关闭', process.platform === 'darwin')
+        win.webContents.send('native-window-close-requested')
       }
     } else {
-      // 仅在 renderer 已完成协调退出后允许真实关闭窗口，并立即保存窗口状态
+      // 协调退出和系统会话结束均直接关闭，并立即保存窗口状态。
       if (!win.isDestroyed()) {
         try {
           const config = loadConfig()
@@ -1121,6 +1143,8 @@ function createWindow() {
 
   win.on('closed', () => {
     logger.info('主窗口已关闭')
+    mainRendererRecovery = null
+    nativeCloseHandlerReady = false
     closeVirtualDisplayPrompt()
     // 清理监听（可选）
     screen.removeListener('display-metrics-changed', handleDisplayConfigurationChanged)
@@ -1729,7 +1753,10 @@ ipcMain.handle('maafw:listIssueReportScripts', (_event, configTypes?: unknown) =
   return listMaaFWIssueReportScripts(getAppRoot(), types)
 })
 
-ipcMain.handle('data:backup', async () => {
+ipcMain.handle('data:backup', async event => {
+  if (!isApplicationWindowSender(event, mainWindow, { allowDevelopment: true })) {
+    throw new Error('不允许此页面导出数据备份')
+  }
   return observeDataBackup(async () => {
     let partialPath: string | undefined
 
@@ -1750,11 +1777,10 @@ ipcMain.handle('data:backup', async () => {
 
       const zipPath = result.filePath
       partialPath = `${zipPath}.part-${process.pid}-${Date.now()}`
-      const response = await fetch(`${getLocalApiEndpoint()}/api/setting/backup`, {
-        method: 'GET',
-      })
+      const response = await fetchProtectedLocal(getLocalApiEndpoint(), '/api/setting/backup')
 
       if (!response.ok) {
+        if (response.status === 403) throw new Error('备份未授权，请使用桌面客户端重启后端')
         throw new Error(
           `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`
         )
@@ -1833,9 +1859,13 @@ ipcMain.handle('open-dev-tools', () => {
 
 // 窗口控制
 ipcMain.handle('window-minimize', () => {
-  if (mainWindow) {
-    mainWindow.minimize()
-  }
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+
+  const config = loadConfig()
+  if (config.UI.IfToTray) return hideMainWindowToTray()
+
+  mainWindow.minimize()
+  return true
 })
 
 ipcMain.handle('window-maximize', () => {
@@ -1852,6 +1882,22 @@ ipcMain.handle('window-close', () => {
   requestRendererClose('renderer 请求关闭窗口')
 })
 
+// 页面加载事件不能证明 Vue 已挂载；只接受当前主窗口主 frame 的就绪信号。
+ipcMain.on('renderer-ready', event => {
+  if (!isApplicationWindowSender(event, mainWindow, { allowDevelopment: true })) return
+  if (event.senderFrame) mainRendererRecovery?.rendererReady(event.senderFrame)
+})
+
+ipcMain.on('native-window-close-handler-ready', event => {
+  if (mainWindow && event.sender === mainWindow.webContents) {
+    nativeCloseHandlerReady = true
+  }
+})
+
+ipcMain.handle('window-hide-to-tray', () => {
+  return hideMainWindowToTray()
+})
+
 ipcMain.handle('get-window-activity', () => {
   if (lastWindowActivity) {
     return lastWindowActivity
@@ -1866,18 +1912,7 @@ ipcMain.handle('get-window-activity', () => {
 
 // 窗口聚焦（从托盘/最小化状态恢复并激活到前台）
 ipcMain.handle('window-focus', () => {
-  if (mainWindow) {
-    // 如果窗口最小化，先恢复
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore()
-    }
-    // 恢复任务栏图标
-    mainWindow.setSkipTaskbar(false)
-    // 显示窗口
-    mainWindow.show()
-    // 聚焦窗口
-    mainWindow.focus()
-  }
+  showMainWindow()
 })
 
 // 电源操作倒计时警示：把窗口从托盘/最小化拉到最前并临时置顶。
@@ -2253,10 +2288,14 @@ ipcMain.handle('update-tray-settings', async (_event, uiSettings) => {
 
 // 更新托盘自定义菜单项
 ipcMain.handle('update-tray-config', async (_event, trayItems: TrayItem[]) => {
+  const telemetryContext = analyticsService.getContext()
+  const startedAt = performance.now()
+  let saved = false
   try {
     const currentConfig = loadConfig()
-    currentConfig.UI = { ...currentConfig.UI, TrayItems: trayItems }
-    saveConfig(currentConfig)
+    currentConfig.UI = { ...currentConfig.UI, TrayItems: normalizeTrayItems(trayItems) }
+    saved = saveConfig(currentConfig)
+    if (!saved) return false
 
     // 销毁并重建托盘，强制右键菜单即时刷新为新配置；刷新失败不应导致配置保存失败
     try {
@@ -2271,6 +2310,17 @@ ipcMain.handle('update-tray-config', async (_event, trayItems: TrayItem[]) => {
   } catch (error) {
     logger.error('更新托盘菜单项失败')
     throw error
+  } finally {
+    analyticsService.recordMainEvent(telemetryContext, {
+      name: 'config_write_finished',
+      props: {
+        owner_kind: 'settings',
+        section_kind: 'ui',
+        script_type: 'none',
+        outcome: saved ? 'success' : 'failure',
+        duration_bucket: analyticsDuration(performance.now() - startedAt),
+      },
+    })
   }
 })
 
@@ -2422,13 +2472,7 @@ app.commandLine.appendSwitch('no-sandbox')
 
 app.on('second-instance', () => {
   if (mainWindow) {
-    // 如果窗口最小化，先恢复
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore()
-    }
-    mainWindow.setSkipTaskbar(false)
-    mainWindow.show()
-    mainWindow.focus()
+    showMainWindow()
   }
 })
 
@@ -2447,6 +2491,7 @@ app.on('will-quit', () => {
 })
 
 app.on('before-quit', event => {
+  if (mainRendererRecovery?.isSessionEnding()) return
   if (canElectronExitImmediately({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight })) {
     return
   }
@@ -2460,6 +2505,8 @@ app.on('before-quit', event => {
 
 app.whenReady().then(async () => {
   registerAnalyticsHandlers(() => mainWindow)
+  registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
+  registerQqCredentialHandlers(() => mainWindow, getLocalApiEndpoint)
   refreshAnalyticsPreference()
   analyticsService.recordAppStarted({
     launch_kind: isAutoStart ? 'auto_start' : 'manual',

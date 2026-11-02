@@ -71,3 +71,6 @@ class _ShutdownCoordinator:
 
 
 ShutdownCoordinator = _ShutdownCoordinator()
+
+
+__all__ = ["ShutdownCoordinator"]

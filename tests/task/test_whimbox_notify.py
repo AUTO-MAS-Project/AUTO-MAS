@@ -16,8 +16,8 @@
 
 from html import unescape
 
+import app.core.notify.formats.whimbox as notify_mod
 from app.models.notification import resolve_content
-from app.task.Whimbox.tools import notify as notify_mod
 
 BASE_MESSAGE = {
     "user_info": "u1",

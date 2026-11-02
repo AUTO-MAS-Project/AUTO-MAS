@@ -26,12 +26,12 @@
       <a-spin :spinning="searchLoading">
         <!-- 空状态 -->
         <div v-if="historyData.length === 0 && !searchLoading" class="empty-state">
-          <a-empty :image="noDataImage" :image-style="{ height: '120px' }">
+          <NoData :image-style="{ height: '120px' }">
             <template #description>
               <div class="empty-title">{{ t('core.history.emptyHistory') }}</div>
               <div class="empty-description">{{ t('core.history.emptyHint') }}</div>
             </template>
-          </a-empty>
+          </NoData>
         </div>
 
         <!-- 数据展示 -->
@@ -90,7 +90,6 @@
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import type { HistoryIndexItem } from '@/api'
@@ -100,7 +99,7 @@ import HistoryLogModal from './components/HistoryLogModal.vue'
 import HistorySearchPanel from './components/HistorySearchPanel.vue'
 import { useHistoryLogic } from './useHistoryLogic'
 import { historyStatistics } from './historyData'
-import { formatStoredDateTime } from '@/utils/dateDisplay'
+import { formatHistoryDateTime } from '@/utils/dateDisplay'
 
 const { t } = useI18n()
 
@@ -154,7 +153,7 @@ const handleModeUpdate = (mode: string) => {
 
 // 选择记录时打开弹窗
 const handleSelectRecord = async (index: number, record: HistoryIndexItem) => {
-  currentRecordDate.value = formatStoredDateTime(record.time)
+  currentRecordDate.value = formatHistoryDateTime(record.time)
   currentRecordStatus.value = record.status
   currentErrorMessage.value = record.message
   logModalOpen.value = true

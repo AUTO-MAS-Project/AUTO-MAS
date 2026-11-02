@@ -4,17 +4,19 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from app.config import config_manager
-from app.core.config import Config
-from app.core.notify import HostNotificationService
-from app.core.notify_channels import get_notify_channel_failures, get_notify_channels
+import app.core.notify.rendering as _notification_rendering
+from app.core import Config
+from app.core.notify.bootstrap import (
+    get_notify_channel_failures as get_notify_channel_failures,
+)
+from app.core.notify.bootstrap import get_notify_channels as get_notify_channels
+from app.core.notify.manager import NotificationManager as NotificationManager
+from app.core.runtime_tasks import OwnedTaskRegistry
 from app.models.notification import NotificationSummary, NotifyPayload
-from app.models.notification_channel import Notifier
-from app.models.notification_community import CommunityNotificationResult
-from app.models.notification_report import TaskReportPolicy
+from app.models.notification.channel import Notifier
+from app.models.notification.community import CommunityNotificationResult
+from app.models.notification.report import TaskReportPolicy
 from app.models.task import TaskItem
-from app.runtime_tasks import OwnedTaskRegistry
-from app.services.notification_rendering import AsyncNotificationRenderer
 
 _UNSET = object()
 
@@ -218,29 +220,36 @@ def _run(awaitable):
 
 @contextmanager
 def _service(config=None, *, notifier=None):
-    async def push_notice(**kwargs):
-        await Config.push_system_notice(**kwargs)
+    from app.core import Notify
+    from app.core.notify import manager, tasks
+    from app.core.notify.tasks import NotificationTasks
 
     environment = SimpleNamespace(
         setting=config if config is not None else Config.setting,
         ToolsConfig=Config.ToolsConfig,
-        push_system_notice=push_notice,
+        startup_notices=[],
     )
-    renderer = AsyncNotificationRenderer()
-    service = HostNotificationService(
-        config=environment,
-        transactions=config_manager,
-        channels=get_notify_channels(),
-        catalog_failures=get_notify_channel_failures(),
-        transport=notifier if notifier is not None else _Notify(),
-        renderer=renderer,
-        runtime=OwnedTaskRegistry(),
-        runtime_config=SimpleNamespace(read_proxy=lambda: None),
-    )
-    try:
-        yield service
-    finally:
-        renderer.close()
+    renderer = _notification_rendering.AsyncNotificationRenderer()
+    # 各用例隔离全局实例的资源，实际调用仍经过所有调用方共享的 Notify。
+    with (
+        patch.object(manager, "Config", environment),
+        patch.object(tasks, "RuntimeTasks", OwnedTaskRegistry()),
+        patch.dict(
+            Notify.__dict__,
+            {
+                "_channels": get_notify_channels(),
+                "_catalog_failures": get_notify_channel_failures(),
+                "_transport": notifier if notifier is not None else _Notify(),
+                "_renderer": renderer,
+                "_runtime_config": SimpleNamespace(read_proxy=lambda: None),
+                "tasks": NotificationTasks(),
+            },
+        ),
+    ):
+        try:
+            yield Notify
+        finally:
+            renderer.close()
 
 
 def _global_target(config, **kwargs):
@@ -561,6 +570,9 @@ class _Task(TaskItem):
             user_id=None,
         )
 
+    def schedule_on_change(self) -> None:
+        pass
+
     async def on_change(self) -> None:
         pass
 
@@ -644,7 +656,7 @@ def test_prepared_task_report_publishes_failure_notice() -> None:
 
     with _service(notifier=_Notify({"send_mail": ["false"]})) as notifications:
         with patch(
-            "app.core.config.Config.push_system_notice", new_callable=AsyncMock
+            "app.core.notify.Notify.push_system_notice", new_callable=AsyncMock
         ) as publish:
             result = _run(
                 notifications.prepare_task_report(task).dispatch(
@@ -665,7 +677,7 @@ def test_descriptor_fields_exist_in_config_and_schema() -> None:
     from typing import get_args
 
     from app.config.wire import config_contract
-    from app.core.config import Config
+    from app.core import Config
     from app.models.config import GlobalConfig
 
     notify_contract = config_contract(GlobalConfig).model_fields["Notify"].annotation
@@ -688,7 +700,7 @@ def test_descriptor_fields_exist_in_config_and_schema() -> None:
 
 def test_channels_endpoint_returns_metadata_only() -> None:
     from app.api.setting import get_notify_channels as endpoint
-    from app.models.ConfigBase import ConfigBase
+    from app.models.legacy_config.base import ConfigBase
 
     with patch.object(
         ConfigBase, "get", side_effect=AssertionError("描述端点不得读取配置")

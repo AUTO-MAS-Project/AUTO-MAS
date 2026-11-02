@@ -8,7 +8,7 @@
 |------|------|
 | `XxxConfig` / `XxxUserConfig` + 派生接口契约 | `app/models/config/script.py`、`app/config/wire.py`、所属 API 模块；公共契约在 `schema.py` |
 | `SCRIPT_BOOK`、`USER_BOOK`、`task_manager` 分支 | `app/core/`、`app/models/config/__init__.py` |
-| `TYPE_BOOK["XxxConfig"]` → 展示文案 | `app/utils/constants.py`（否则调度 `combox/task` KeyError） |
+| `TYPE_BOOK["XxxConfig"]` → 展示文案 | `app/utils/common/constants.py`（否则调度 `combox/task` KeyError） |
 | 后端改 schema 后 `yarn openapi` | `frontend/`；**禁止**手改 `src/api/models/*` |
 | OpenAPI 生效 | 重启后端 → `openapi.json` **文本**含新类型名（勿只靠 PowerShell 对象键）→ 确认开发环境端口 36164 为当前 `main.py`（正式版占 36163） |
 
@@ -254,7 +254,7 @@ else:
 | 进程管理 | `ProcessManager`、`ProcessInfo`、`System.kill_process` |
 | 日志监控 | `LogMonitor` 三参构造 |
 | 状态 | `log_record[start_time] = LogRecord()`，只写 `status` |
-| pre/post 脚本 | `from app.core.custom_script import execute_script_task` |
+| pre/post 脚本 | `from app.services import execute_script_task` |
 | 配置同步 | `ConfigFile` 目录约定 |
 | 跨类型重构 | 仅当已有多个真实调用者时上提共用逻辑；专项差异保留在所属模块 |
 

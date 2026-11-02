@@ -6,6 +6,7 @@ import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
 import { useObsReplayApi } from '@/composables/useObsReplayApi'
 import type { ObsReplayCheckResult } from '@/types/replay'
+import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 
 const { t } = useI18n()
 
@@ -163,20 +164,18 @@ const runSaveReplay = async () => {
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('core.setting.replay.enable') }}</span>
+            <a-checkbox
+              :checked="replayEnabled"
+              @change="
+                (event: CheckboxChangeEvent) => updateReplaySetting('Enabled', event.target.checked)
+              "
+            >
+              {{ t('core.setting.replay.enable') }}
+            </a-checkbox>
             <a-tooltip :title="t('core.setting.replay.enableTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
-          <a-select
-            :value="replayEnabled"
-            size="large"
-            style="width: 100%"
-            @change="(value: any) => updateReplaySetting('Enabled', value)"
-          >
-            <a-select-option :value="true">{{ t('core.common.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('core.common.no') }}</a-select-option>
-          </a-select>
         </div>
       </a-col>
       <a-col :span="8">

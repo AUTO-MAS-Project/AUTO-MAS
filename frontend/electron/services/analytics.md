@@ -51,6 +51,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `connection_incident_finished` | 非计划断线的一次恢复事故 | `outcome`、`recovery_kind`、`reason_kind`、耗时桶 | 多轮重连归并为一次 |
 
 完整 84 项入口、共享事件、结果边界及验证限制见 [场景覆盖台账](./analyticsCoverage.md)。
+托盘菜单的显式保存复用 `config_write_finished`，由主进程确认配置写入结果；菜单文本、任务标识、草稿编辑及取消均不采集。
 新增事件的字段固定枚举共用 [analyticsFeaturePolicy.ts](./analyticsFeaturePolicy.ts)，调用类型和主进程验证均从该声明派生。
 
 | 新增事件族 | 含义 | 固定属性（另含 outcome/耗时桶） |
@@ -58,10 +59,11 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `backend_restart_finished` | 主动更新和故障重启能否恢复 | `reason_kind` |
 | `runtime_alignment_finished` | Runtime 升级、校验、回退是否完成 | `operation`、`release_channel` |
 | `backend_update_finished` | 后端热更新完成或停在什么阶段 | `trigger_kind`、`phase` |
-| `renderer_recovery_decided` | 白屏、崩溃后自动恢复或放弃的比例 | `reason_kind`、`recovery_action`、`count_bucket` |
+| `renderer_recovery_decided` | 渲染进程异常退出后选择重载或放弃（仅决策） | `reason_kind`、`recovery_action`、`count_bucket` |
+| `renderer_recovery_finished` | 每次重载的实际观察结果 | `reason_kind`、`result_kind`、`count_bucket` |
 | `renderer_responsiveness_changed` | 卡死后能否恢复响应 | `state` |
-| `app_close_finished` | 正常收尾、用户取消、强制关闭占比 | `close_kind` |
-| `tray_action_requested` | 托盘入口是否有实际使用 | `action_kind` |
+| `app_close_finished` | 正常退出收尾、用户取消、强制退出占比（不含托盘隐藏） | `close_kind` |
+| `tray_action_requested` | 显示、隐藏、启动任务、停止全部任务和退出等托盘入口是否有实际使用 | `action_kind` |
 | `stop_all_requested` | 紧急停止入口的需求 | `source` |
 | `virtual_display_action_finished` | 虚拟屏检查、拆除、用户选择的效果 | `action` |
 | `virtual_display_prompt_answered` | 显示器恢复后用户怎样处理提示 | `choice` |
@@ -80,7 +82,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `game_sign_requested` | 手动签到的使用与被占用拒绝 | `trigger_kind` |
 | `community_account_manage_finished` | 签到账号创建、启停、删除 | `action` |
 | `community_activity_requested` | 社区活动工具是否有需求 | `operation_kind` |
-| `settings_change_finished` | 设置修改成功率及主要功能采用情况 | `setting_key`、`value_kind`、`setting_kind` |
+| `settings_change_finished` | 设置修改成功率及主要功能采用情况 | `setting_key`、`value_kind`、`setting_kind`；包含关闭应用二次确认开关 |
 | `appearance_preference_changed` | 主题、语言、低性能模式需求 | `preference_kind`、`preset_value` |
 | `appearance_package_finished` | 本地外观导入、启用、删除是否顺利 | `package_kind`、`action` |
 | `appearance_store_install_finished` | 主题商店发现到安装的转化 | `category_kind` |
@@ -88,12 +90,16 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `mascot_preference_changed` | 桌宠采用率和性能档位选择 | `action`、`fps_preset` |
 | `home_activity_load_finished` | 首页活动信息在哪类来源不可用 | `trigger_kind`、`source_kind`、`cache_kind` |
 | `home_layout_changed` | 首页布局与快速任务入口的使用 | `action`、`layout_preset` |
+| `taskboard_marking_finished` | 每周任务选择与打卡、版本标记能否保存 | `target_kind`、`action`、`count_bucket` |
 | `history_query_finished` | 历史检索能否帮助定位运行结果 | `filter_kind`、`count_bucket` |
 | `diagnostic_export_finished` | 问题包和普通日志能否导出；MaaEnd 已有自动归档时能否打开保存目录 | `bundle_kind`、`script_type`、`incomplete` |
 | `data_backup_export_finished` | 用户能否成功备份 MAS 数据 | 无 |
 | `replay_tool_finished` | 失败录屏连接、手动保存、回放的使用 | `action` |
 | `help_link_requested` | 哪些功能需要文档帮助 | `link_kind`、`entry_source` |
 | `adapter_setup_finished` | 专项配置引导与独有操作 | `script_type`、`operation_kind`、`engine_kind` |
+
+养成页手动刷新复用 `adapter_setup_finished`，`operation_kind=data_refresh`，仅在后端完整更新材料与目录后记录成功；自动缓存读取不重复采集。
+养成月卡选项保存复用 `useUserApi.updateUser` 的 `config_write_finished`，不发送月卡状态；材料时间为本地派生展示，不新增重算事件。
 
 历史附件视频的 `play` 意图由 `playing` 确认成功，缓冲恢复不会重复计数；请求播放前后的关联仅在内存中保存，不上报附件标识或地址。手动保存录屏仅用 `capture_path` 是否存在判断 success/skipped，不上传其内容。
 
@@ -142,6 +148,10 @@ Webhook 测试按接口实际响应记录成功或失败，网络异常记 `unkn
 脚本模板导入失败时，根据清理结果区分失败与部分完成；项目复用失败但保留基础记录为部分完成。
 脚本和用户写入覆盖共享 API，合并的保存请求不会额外计数；设置遥测开关自身不产生事件。
 专项独有保存、导入与计划编辑使用下述显式事件边界，不把配置内容带入共享统计。
+
+MAA 作业练度分析在 `useMaaCopilotApi` 的分析请求处复用 `adapter_setup_finished` 的
+`preview` 类别，后端完成分析后确认结果；请求异常记 `unknown`。不采集作业来源、
+账号练度、培养名单或分析选项，不记录 checkbox 切换、作业同步轮询或作者搜索。
 
 四种任务模式独立标记；受理不代表执行成功，跨专项整体结果标为 `multi`，不复制为各专项成功。
 整任务 `success` 只表示任务执行器正常收尾，不保证各脚本或账号的执行均成功。
@@ -272,3 +282,28 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
 群成员白名单编辑与“我的ID”查询不单独采集；成员标识属于访问控制信息，不进入遥测。
 
 QQ 高级手动配置复用 `notification_binding_finished`，`action=manual_bind`、`outcome=saved` 仅表示凭据验证并保存，不代表网关 READY 或通知送达；失败记 failure，不采集 AppID、密钥或 OpenID。
+
+脚本更新下载器开关复用 `settings_change_finished`，固定键为 `script_update_takeover`，只记录开关状态与保存结果。
+专项运行前的自动检查、缓存命中、下载进度和重试不逐次采集；任务终态由各专项复用 `script_run_finished` 的原观察者负责。
+
+脚本更新公共入口沿用这一观察边界，不另发完成事件。MFW、M9A、MSS 的自动更新统一在用户任务之前执行；更新时机配置保存仍由 `useScriptApi.updateScript` 观察，目录、版本和调度标识不进入匿名统计。
+官方安装器没有独立、可靠的统计完成契约，不把下载完成或本地包登记当成安装完成，也不上传版本、路径或下载地址。
+
+- MaaEnd 程序更新接管：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；检查、准备回退及安装拦截由现有 `script_run_finished` 观察任务终态。下载进度、哈希和路径不单独采集。
+
+- 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。
+
+HSR 运行前更新复用公共更新入口和 `script_run_finished` 的任务终态观察；更新选项保存沿用 `useScriptApi.updateScript`，不新增逐包、逐引擎或进度事件，不采集安装路径、版本及 CDK。
+
+## 渲染进程恢复
+
+主进程 `rendererRecoveryService.ts` 是重载结果的唯一观察者。保留
+`renderer_recovery_decided` 的 accepted 含义；新增 `renderer_recovery_finished`，
+每次真正调用重载最多一条。主页面加载完成且 Vue 挂载后的专用就绪 IPC 均收到才记 success；
+主 frame 加载失败、再次退出或 reload 抛错记 failure，30 秒未确认记 unknown；
+窗口关闭、应用退出或 Windows 会话结束打断观察记 cancelled。子 frame 失败与旧导航的
+ERR_ABORTED 不结束当前尝试。系统退出不触发新的恢复决策或崩溃事件，取消关机后恢复识别。
+
+两类统计沿用主进程有限字段、开关代次与限频，不上传退出码、加载地址或错误文本。
+Sentry 的诊断事件另保留退出码、退出次数、耗时和加载错误码的数值白名单；自由文本仍丢弃。
+Sentry 重载结果也绑定开始时的开关代次，关闭再开启不补发旧结果；不等待发送或新增退出 flush。

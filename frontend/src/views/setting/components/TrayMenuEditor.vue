@@ -1,337 +1,132 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Modal, message, type TableColumnsType } from 'ant-design-vue'
-import {
-  DeleteOutlined,
-  DownOutlined,
-  QuestionCircleOutlined,
-  UpOutlined,
-} from '@ant-design/icons-vue'
-import { Service } from '@/api/services/Service'
-import {
-  DEFAULT_TRAY_ITEMS,
-  TRAY_ACTION_OPTIONS,
-  type TrayAction,
-  type TrayMenuItem,
-} from '@/types/tray'
-
-interface TaskOption {
-  label: string
-  value: string
-}
+import { useI18n } from 'vue-i18n'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { DEFAULT_TRAY_ITEMS, TRAY_ACTION_OPTIONS, type TrayMenuItem } from '@/types/tray'
+import TrayMenuDialog from './TrayMenuDialog.vue'
 
 const { t } = useI18n()
-
-const items = ref<TrayMenuItem[]>([])
-const actionOptions = TRAY_ACTION_OPTIONS
-// 可启动的任务列表（队列 + 未锁定的脚本），供「启动任务」动作选择
-const taskOptions = ref<TaskOption[]>([])
 const logger = window.electronAPI?.getLogger?.('托盘菜单')
+const items = ref<TrayMenuItem[]>([])
+const loading = ref(true)
+const loadFailed = ref(false)
+const editorOpen = ref(false)
+let disposed = false
 
-const columns = computed<TableColumnsType>(() => [
-  { title: t('core.setting.tray.colLabel'), key: 'label', width: '35%' },
-  { title: t('core.setting.tray.colAction'), key: 'action' },
-  { title: t('core.setting.tray.colOps'), key: 'ops', width: 140, align: 'center' },
-])
-
-let persistTimer: ReturnType<typeof setTimeout> | null = null
-
-const createId = () =>
-  typeof crypto !== 'undefined' && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `tray-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-
-const labelOf = (action: TrayAction) =>
-  actionOptions.find(option => option.value === action)?.label ?? ''
-
-const taskLabelOf = (taskId?: string) =>
-  taskOptions.value.find(option => option.value === taskId)?.label ?? ''
-
-const isTrayAction = (action: unknown): action is TrayAction =>
-  typeof action === 'string' && actionOptions.some(option => option.value === action)
-
-const normalizeTrayItem = (item: unknown): TrayMenuItem => {
-  const savedItem = item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
-  const action = isTrayAction(savedItem.action) ? savedItem.action : 'show'
-  const taskId =
-    typeof savedItem.taskId === 'string' && savedItem.taskId.trim()
-      ? savedItem.taskId.trim()
-      : undefined
-
-  return {
-    id: typeof savedItem.id === 'string' && savedItem.id ? savedItem.id : createId(),
-    label: typeof savedItem.label === 'string' ? savedItem.label : labelOf(action),
-    action: action === 'startTask' && !taskId ? 'show' : action,
-    taskId: action === 'startTask' && taskId ? taskId : undefined,
-  }
-}
-
-// 标签未自定义（为空、某个动作默认名或某个任务默认名）时，跟随动作/任务自动更新
-const isDefaultLabel = (label: string) =>
-  !label.trim() ||
-  actionOptions.some(option => option.label === label) ||
-  taskOptions.value.some(option => option.label === label)
-
-// 标签未自定义时，跟随动作更新默认名
-const onActionChange = (item: TrayMenuItem, value: TrayAction) => {
-  if (isDefaultLabel(item.label)) {
-    item.label = labelOf(value)
-  }
-  if (value !== 'startTask') {
-    item.taskId = undefined
-  }
-  schedulePersist()
-}
-
-// 选中具体任务后，标签未自定义时自动采用任务名
-const onTaskChange = (item: TrayMenuItem) => {
-  if (isDefaultLabel(item.label)) {
-    item.label = taskLabelOf(item.taskId)
-  }
-  schedulePersist()
-}
+const preview = computed(() =>
+  items.value
+    .slice(0, 3)
+    .map(item => item.label)
+    .join(' · ')
+)
 
 const load = async () => {
+  loading.value = true
+  loadFailed.value = false
   try {
     const config = await window.electronAPI?.loadConfig()
-    const saved = config?.UI?.TrayItems
-    items.value =
-      Array.isArray(saved) && saved.length ? saved.map(normalizeTrayItem) : [...DEFAULT_TRAY_ITEMS]
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger?.warn(`读取托盘菜单配置失败: ${errorMsg}`)
-    items.value = [...DEFAULT_TRAY_ITEMS]
-  }
-}
-
-const loadTaskOptions = async () => {
-  try {
-    const response = await Service.getTaskComboxApiInfoComboxTaskPost()
-    if (response.code === 200) {
-      // 过滤「未选择」占位项（value 为 null）
-      taskOptions.value = (response.data || [])
-        .filter(item => item.value)
-        .map(item => ({ label: item.label, value: item.value as string }))
+    if (!config) throw new Error('未读取到托盘配置')
+    const saved = config.UI?.TrayItems
+    const savedItems = Array.isArray(saved)
+      ? saved.flatMap((item: unknown) => {
+          if (!item || typeof item !== 'object') return []
+          const value = item as Record<string, unknown>
+          const option = TRAY_ACTION_OPTIONS.find(option => option.value === value.action)
+          if (!option) return []
+          return [
+            {
+              id: typeof value.id === 'string' && value.id ? value.id : crypto.randomUUID(),
+              label: typeof value.label === 'string' ? value.label : option.label,
+              action: option.value,
+              taskId: typeof value.taskId === 'string' ? value.taskId.trim() : undefined,
+            },
+          ]
+        })
+      : []
+    if (!disposed) {
+      items.value = (savedItems.length ? savedItems : DEFAULT_TRAY_ITEMS).map(item => ({ ...item }))
     }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger?.warn(`读取可启动任务列表失败: ${errorMsg}`)
+    logger?.warn(`读取托盘菜单配置失败: ${error instanceof Error ? error.message : String(error)}`)
+    if (!disposed) loadFailed.value = true
+  } finally {
+    if (!disposed) loading.value = false
   }
 }
 
-const save = async () => {
-  try {
-    // items.value 是 Vue 响应式 Proxy，无法被 IPC 结构克隆，需转为普通对象再发送
-    const payload = items.value.map(item => ({
-      id: item.id,
-      label: item.label,
-      action: item.action,
-      taskId: item.taskId,
-    }))
-    const ok = await window.electronAPI?.updateTrayConfig(payload)
-    if (!ok) {
-      message.error(t('core.setting.toast.trayMenuSaveFailed'))
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger?.error(`托盘菜单保存失败: ${errorMsg}`)
-    message.error(t('core.setting.toast.trayMenuSaveFailed'))
-  }
+const handleSaved = (savedItems: TrayMenuItem[]) => {
+  items.value = savedItems.map(item => ({ ...item }))
+  editorOpen.value = false
 }
 
-// 编辑后延迟保存，避免频繁写配置与重建托盘菜单
-const schedulePersist = () => {
-  if (persistTimer) clearTimeout(persistTimer)
-  persistTimer = setTimeout(() => void save(), 300)
-}
-
-const add = () => {
-  items.value.push({ id: createId(), label: labelOf('show'), action: 'show' })
-  schedulePersist()
-}
-
-const remove = (index: number) => {
-  items.value.splice(index, 1)
-  // 删除后为空时回落到默认菜单，保证托盘菜单始终可用
-  if (!items.value.length) items.value = [...DEFAULT_TRAY_ITEMS]
-  schedulePersist()
-}
-
-const move = (index: number, dir: -1 | 1) => {
-  const target = index + dir
-  if (target < 0 || target >= items.value.length) return
-  const [item] = items.value.splice(index, 1)
-  items.value.splice(target, 0, item)
-  schedulePersist()
-}
-
-const reset = () => {
-  items.value = [...DEFAULT_TRAY_ITEMS]
-  void save()
-}
-
-const confirmReset = () => {
-  Modal.confirm({
-    title: t('core.setting.tray.resetTitle'),
-    content: t('core.setting.tray.resetContent'),
-    okText: t('core.setting.tray.reset'),
-    cancelText: t('core.common.cancel'),
-    onOk: () => {
-      reset()
-      message.success(t('core.setting.toast.trayMenuReset'))
-    },
-  })
-}
-
-onMounted(() => {
-  void load()
-  void loadTaskOptions()
-})
+onMounted(() => void load())
 onBeforeUnmount(() => {
-  if (persistTimer) clearTimeout(persistTimer)
+  disposed = true
 })
 </script>
 
 <template>
-  <div class="tray-menu-editor">
-    <div class="tray-menu-section-head">
-      <div class="tray-menu-section-title">
-        <span class="tray-menu-label">{{ t('core.setting.tray.section') }}</span>
+  <div class="tray-menu-summary" :aria-busy="loading">
+    <div class="tray-menu-description">
+      <div class="tray-menu-title">
+        <span>{{ t('core.setting.tray.section') }}</span>
         <a-tooltip :title="t('core.setting.tray.sectionTip')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
       </div>
-      <a-space :size="8">
-        <a-button size="middle" @click="add">{{ t('core.setting.tray.add') }}</a-button>
-        <a-button size="middle" @click="confirmReset">{{ t('core.setting.tray.reset') }}</a-button>
-      </a-space>
+      <div v-if="!loading && !loadFailed" class="tray-menu-preview" :title="preview">
+        {{ t('core.setting.tray.summary', { count: items.length }) }} · {{ preview }}
+      </div>
+      <div v-if="loadFailed" class="tray-menu-preview" role="alert">
+        {{ t('core.setting.tray.loadFailed') }}
+      </div>
     </div>
-
-    <div class="tray-menu-table-wrap">
-      <a-table
-        :columns="columns"
-        :data-source="items"
-        :pagination="false"
-        :scroll="{ x: 760 }"
-        row-key="id"
-        size="middle"
-      >
-        <template #bodyCell="{ column, record, index }">
-          <a-input
-            v-if="column.key === 'label'"
-            v-model:value="record.label"
-            size="middle"
-            :placeholder="t('core.setting.tray.colLabel')"
-            :maxlength="30"
-            style="width: 100%"
-            @change="schedulePersist"
-          />
-          <div
-            v-else-if="column.key === 'action'"
-            class="action-cell"
-            :class="{ 'action-cell--task': record.action === 'startTask' }"
-          >
-            <a-select
-              v-model:value="record.action"
-              size="middle"
-              style="width: 100%"
-              @change="(value: any) => onActionChange(record, value)"
-            >
-              <a-select-option v-for="opt in actionOptions" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </a-select-option>
-            </a-select>
-            <a-select
-              v-if="record.action === 'startTask'"
-              v-model:value="record.taskId"
-              size="middle"
-              style="width: 100%"
-              :placeholder="t('core.setting.tray.taskPlaceholder')"
-              show-search
-              option-filter-prop="label"
-              :options="taskOptions"
-              @change="() => onTaskChange(record)"
-            />
-          </div>
-          <a-space v-else-if="column.key === 'ops'" :size="4">
-            <a-button
-              size="middle"
-              type="text"
-              :disabled="index === 0"
-              :aria-label="t('core.setting.tray.moveUp')"
-              @click="move(index, -1)"
-            >
-              <UpOutlined />
-            </a-button>
-            <a-button
-              size="middle"
-              type="text"
-              :disabled="index === items.length - 1"
-              :aria-label="t('core.setting.tray.moveDown')"
-              @click="move(index, 1)"
-            >
-              <DownOutlined />
-            </a-button>
-            <a-button
-              size="middle"
-              type="text"
-              danger
-              :aria-label="t('core.setting.tray.remove')"
-              @click="remove(index)"
-            >
-              <DeleteOutlined />
-            </a-button>
-          </a-space>
-        </template>
-      </a-table>
-    </div>
+    <a-button v-if="loadFailed" size="small" @click="load">
+      {{ t('core.setting.tray.retry') }}
+    </a-button>
+    <a-button v-else size="small" :loading="loading" :disabled="loading" @click="editorOpen = true">
+      {{ t('core.setting.tray.edit') }}
+    </a-button>
+    <TrayMenuDialog
+      v-if="editorOpen"
+      :saved-items="items"
+      @saved="handleSaved"
+      @close="editorOpen = false"
+    />
   </div>
 </template>
 
 <style scoped>
-.tray-menu-editor {
-  margin-top: 12px;
+.tray-menu-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-block: 8px;
 }
 
-.tray-menu-section-head {
+.tray-menu-description {
+  flex: 1;
+  min-width: 0;
+}
+
+.tray-menu-title {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 12px;
-}
-
-.tray-menu-section-title {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.tray-menu-label {
-  font-size: 14px;
-  font-weight: 600;
   color: var(--ant-color-text);
+  font-size: 14px;
 }
 
-.help-icon {
+.help-icon,
+.tray-menu-preview {
   color: var(--ant-color-text-secondary);
   font-size: 12px;
 }
 
-.tray-menu-table-wrap {
-  width: 100%;
-  min-width: 0;
-}
-
-.action-cell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-}
-
-.action-cell--task {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.tray-menu-preview {
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

@@ -75,20 +75,25 @@ export const collectGameSignUsers = (
   }))
 }
 
-/** 全量用户参与统计；界面只折叠展示，不改变分子与分母。 */
+/**
+ * 只有拿到结果分项的用户才进分母。
+ *
+ * 完全没结果（`unknown`）的用户不代表签到失败，混进分母会让首页显示
+ * 「1/3 已签」这种把未知当未签的比例；未知数量单独返回给界面提示。
+ */
 export const summarizeGameSign = (
   result: PlatformResult,
   gameName: string,
   snapshots: readonly SignSnapshot[] = []
 ): GameSignSummary | null => {
   const users = collectGameSignUsers(result, gameName, snapshots)
-  return users.length
-    ? {
-        signed: users.filter(user => user.signed).length,
-        total: users.length,
-        unknown: users.filter(user => !user.entries.length).length,
-      }
-    : null
+  const known = users.filter(user => user.entries.length > 0)
+  if (!known.length) return null
+  return {
+    signed: known.filter(user => user.signed).length,
+    total: known.length,
+    unknown: users.length - known.length,
+  }
 }
 
 /** 外部账号名、奖励和失败原因作为 Markdown 纯文本，不能注入图片、链接或 HTML。 */

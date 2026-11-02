@@ -146,6 +146,9 @@ class MaaCopilotAnalyzeIn(BaseModel):
         default=90, ge=1, le=100, description="期望覆盖有可解析要求的作业百分比"
     )
     requireModules: bool = True
+    ignoreLevelGaps: bool = Field(
+        default=False, description="忽略精英阶段已达标干员的等级差距"
+    )
 
 
 class MaaCopilotGoal(BaseModel):
@@ -583,6 +586,33 @@ async def get_maa_cultivate_operators(
 
 
 @router.post(
+    "/maa/cultivate/refresh",
+    tags=["Update"],
+    summary="手动刷新 MAA 养成材料数据与干员目录",
+    response_model=OutBase,
+    status_code=200,
+)
+async def refresh_maa_cultivate_data(request: ScriptDeleteIn) -> OutBase:
+    from app.task.MAA.tools.cultivate.yituliu import YituliuDataError
+
+    try:
+        from app.task.MAA import api_service as maa_api
+
+        await maa_api.refresh_cultivate_data(request.scriptId)
+        return OutBase()
+    except YituliuDataError as e:
+        logger.warning(f"养成数据源刷新失败: {e}")
+        return OutBase(code=503, status="error", message="养成数据源不可用")
+    except OSError as e:
+        logger.warning(f"养成数据缓存写入失败: {e}")
+        return OutBase(code=507, status="error", message="养成数据缓存写入失败")
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+
+
+@router.post(
     "/maa/cultivate/import",
     tags=["Get"],
     summary="校验并转换 MAA 剪贴板养成目标（不落库）",
@@ -719,6 +749,7 @@ async def analyze_maa_copilot_training(
             query=request.query,
             coverage=request.coverage,
             require_modules=request.requireModules,
+            ignore_level_gaps=request.ignoreLevelGaps,
         )
         return MaaCopilotAnalyzeOut(**result)
     except ValueError as exc:

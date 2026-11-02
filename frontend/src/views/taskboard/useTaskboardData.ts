@@ -8,13 +8,29 @@ import { buildBlueArchiveActivityPresentation } from '@/views/home/activityModul
 import { blueArchivePresentation } from '@/views/home/blueArchivePresentation'
 import { useBlueArchiveActivitySource } from '@/views/home/useBlueArchiveActivitySource'
 import type { HomeActivityEntry, HomeActivityPanel, ResourceItem } from '@/types/home'
-import type { TaskboardActivity, TaskboardGameOption } from '@/types/taskboard'
-import { parseActivityTime } from '@/utils/activityTime'
+import type {
+  TaskboardActivity,
+  TaskboardGameOption,
+  TaskboardVersionStoryUpdate,
+} from '@/types/taskboard'
+import { formatBeijingDate, parseActivityTime } from '@/utils/activityTime'
+import { safeCoverUrl } from '@/utils/safeUrl'
 import { useTaskboardStateStore } from '@/stores/taskboardState'
 
 const ARCHIVE_KEEP_DAYS = 45
 const DAY = 86400000
 const URGENCY_DAYS = 30
+
+/** 只收集版本号稳定的游戏；没有干净版本号的游戏不进入版本时间线。 */
+const VERSION_STORY_GAMES = new Set([
+  'genshin',
+  'starrail',
+  'zenless',
+  'wutheringwaves',
+  'endfield',
+  'nte',
+  'infinitynikki',
+])
 
 const nowText = () => {
   const date = new Date()
@@ -90,6 +106,10 @@ export const useTaskboardData = (t: Composer['t']) => {
 
   const gameName = (key: string) => gameMetas.value.find(game => game.key === key)?.name || key
 
+  /** 活动没有配图时用该游戏当前版本的封面兜底，避免卡片顶部留一块空白。 */
+  const coverOf = (e: TaskboardActivity) =>
+    e.image_url || gameMetas.value.find(game => game.key === e.gameKey)?.cover || ''
+
   /** 本次成功取到数据的游戏：数据源成功返回空列表时，旧活动仍应保留。 */
   const readyGameKeys = computed(() => {
     const keys = new Set<string>()
@@ -133,6 +153,37 @@ export const useTaskboardData = (t: Composer['t']) => {
     }
     return out
   })
+
+  /** 复用首页活动面板已经取到的版本字段，避免为版本主线再请求一次数据源。 */
+  const versionStoryRecords = computed<TaskboardVersionStoryUpdate[]>(() => {
+    const out: TaskboardVersionStoryUpdate[] = []
+    for (const [key, module] of gameModules) {
+      if (!VERSION_STORY_GAMES.has(key)) continue
+      const panel = module.buildPanel(nowTs.value)
+      if (!panel.available || panel.stale || !panel.version || !panel.startTime || !panel.endTime) {
+        continue
+      }
+      out.push({
+        game: key,
+        version: panel.version,
+        version_name: panel.subtitle || panel.version,
+        start: panel.startTime,
+        end: panel.endTime,
+        cover_url: safeCoverUrl(panel.cover || ''),
+      })
+    }
+    return out
+  })
+
+  /* 与归档一致：先等后端状态读回，避免旧快照在保存之后覆盖新目录。 */
+  watch(
+    [versionStoryRecords, () => taskboardState.loaded] as const,
+    ([records, ready]) => {
+      if (!ready || !records.length) return
+      void taskboardState.saveVersionStory(records)
+    },
+    { immediate: true }
+  )
 
   /* 数据源只保留当期活动，已结束的会消失；后端累积一份缓存补出「已归档」。
    * 状态还没从后端取回来时不能写，否则会用空缓存覆盖已有归档。 */
@@ -229,48 +280,26 @@ export const useTaskboardData = (t: Composer['t']) => {
     return Math.max(4, Math.min(100, ((URGENCY_DAYS - days) / URGENCY_DAYS) * 100))
   }
 
-  const progressColor = (e: TaskboardActivity) =>
-    remaining(e) <= 7 * DAY ? 'var(--ant-color-error)' : 'var(--ant-color-primary)'
+  /* 「即将结束」的阈值：剩余不足 3 天。 */
+  const URGENT_LEFT = 3 * DAY
 
-  const countdownOf = (
-    e: TaskboardActivity
-  ): { tone: 'muted' | 'normal' | 'urgent'; text: string } => {
-    if (stateOf(e) === 'archived') {
-      const left = Math.ceil(
-        (parseActivityTime(e.end_time) + ARCHIVE_KEEP_DAYS * DAY - nowTs.value) / DAY
-      )
-      return {
-        tone: 'muted',
-        text:
-          left > 0
-            ? t('core.taskboard.deleteInDays', { p0: left })
-            : t('core.taskboard.deleteToday'),
-      }
-    }
-    const left = remaining(e)
-    if (!e.end_time) return { tone: 'normal', text: '' }
-    if (left <= 0) return { tone: 'muted', text: t('core.taskboard.ended') }
-    if (left < 3600000) return { tone: 'urgent', text: t('core.taskboard.endsSoon') }
-    if (left < DAY)
-      return {
-        tone: 'urgent',
-        text: t('core.taskboard.leftHours', { p0: Math.ceil(left / 3600000) }),
-      }
-    const days = Math.ceil(left / DAY)
-    return {
-      tone: days <= 7 ? 'urgent' : 'normal',
-      text: t('core.taskboard.leftDays', { p0: days }),
-    }
+  /* 已归档卡片底部只展示清理倒计时，其余状态没有文案。 */
+  const archivedNoteOf = (e: TaskboardActivity) => {
+    if (stateOf(e) !== 'archived') return ''
+    const left = Math.ceil(
+      (parseActivityTime(e.end_time) + ARCHIVE_KEEP_DAYS * DAY - nowTs.value) / DAY
+    )
+    return left > 0
+      ? t('core.taskboard.deleteInDays', { p0: left })
+      : t('core.taskboard.deleteToday')
   }
+
+  const endingSoonOf = (e: TaskboardActivity) =>
+    stateOf(e) === 'active' && remaining(e) < URGENT_LEFT
 
   /* 一律按北京时间显示：1999 源给的是 UTC（带 Z），直接切字符串会差 8 小时 */
-  const fmtDate = (value?: string) => {
-    const ts = parseActivityTime(value)
-    if (!ts) return t('core.taskboard.undetermined')
-    const date = new Date(ts + 8 * 3600 * 1000)
-    const pad = (n: number) => String(n).padStart(2, '0')
-    return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`
-  }
+  const fmtDate = (value?: string) =>
+    formatBeijingDate(value, true) || t('core.taskboard.undetermined')
 
   const sourceIssues = computed(() => {
     const issues: string[] = []
@@ -373,18 +402,19 @@ export const useTaskboardData = (t: Composer['t']) => {
     completionLoading,
     completionError,
     countByOption,
-    countdownOf,
+    coverOf,
+    archivedNoteOf,
     doneAtOf,
     fmtDate,
     gameMetas,
     gameName,
+    endingSoonOf,
     isCompletionReady,
     isCompleted,
     isSaving,
     load,
     loading,
     nowTs,
-    progressColor,
     progressOf,
     refreshing,
     reloadCompletions,

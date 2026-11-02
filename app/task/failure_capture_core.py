@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from app.tools.error_screenshot import save_error_screenshot
+from app.tools import error_screenshot as _tool_error_screenshot
 from app.utils import get_logger
 
 if TYPE_CHECKING:
@@ -38,7 +38,7 @@ class FailureCapture:
         if high - low < 8:
             logger.warning("失败补截为纯色画面，放弃保存")
             return None
-        return save_error_screenshot(
+        return _tool_error_screenshot.save_error_screenshot(
             image=image, dir_name=dir_name, file_prefix="failure"
         )
 

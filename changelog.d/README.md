@@ -95,7 +95,7 @@ python scripts/changelog.py add fix maa "修复理智不足时剿灭被误记为
   （或打 `skip-changelog`）。
 - 碎片必须有 `project:` 且键在项目表里（`dev` 除外），正文不超过 50 字。
 - 普通 PR 不得改 `CHANGELOG.md`、`res/version.json`，也不得改动 `pyproject.toml`、
-  `frontend/package.json`、`app/core/config.py`、`uv.lock` 里的版本号。
+  `frontend/package.json`、`app/core/config/manager.py`、`uv.lock` 里的版本号。
 - 不要修改或删除别人的碎片（加减 `highlight:` / `beta-only:` 除外）。
 - 维护者整理历史更新日志时给 PR 打 `changelog-maintenance` 标签，上述限制放开。
 

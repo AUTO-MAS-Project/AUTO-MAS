@@ -1,6 +1,6 @@
 # 案例：MaaEnd（MXU 线）
 
-MaaFramework **PI V2** 生态 + **MXU 通用 GUI** 承载配置会话。落盘与字段现场读 `app/task/MaaEnd/` 与 `app/utils/constants.py` 确认。
+MaaFramework **PI V2** 生态 + **MXU 通用 GUI** 承载配置会话。落盘与字段现场读 `app/task/MaaEnd/` 与 `app/utils/common/constants.py` 确认。
 
 ## 两个上游的角色区分（最容易混）
 
@@ -29,7 +29,7 @@ MFAA 线目前没有在役专项：M9A 原是这条线的例子，已并入 MFW�
 ## 落点线索（搜代码用）
 
 - `config/mxu-MaaEnd.json`：MXU 侧实例配置，AutoProxy / ScriptConfig 读写。
-- `__MXU_*` 任务名前缀（如 `__MXU_KILLPROC__`）：与 MXU 内置选项约定一致，常量集中在 `app/utils/constants.py`。
+- `__MXU_*` 任务名前缀（如 `__MXU_KILLPROC__`）：与 MXU 内置选项约定一致，常量集中在 `app/utils/common/constants.py`。
 - `runtime_bridge`：运行前生成/同步外置程序所需配置。
 - controller 类型（Win32 / ADB 等）要与表单、MXU controller 语义一致。
 

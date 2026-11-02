@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""一图流数据源适配器：下载、解析、规范化为内核契约类型。
+"""养成数据源适配器：优先下载站快照，回退一图流并规范化为内核契约。
 
 本模块是一图流字段名唯一允许出现的边界（规则：内核只认 CultivateDataSet
 契约）。解析函数全部为纯函数；下载与快照读写是仅有的 IO。
@@ -27,9 +27,12 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
 import json
+import math
 import time
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -48,6 +51,13 @@ from .types import (
 )
 
 logger = get_logger("一图流养成数据源")
+
+_SNAPSHOT_URL = (
+    "https://data.auto-mas.top/api/v1/files/auto-mas/Client/"
+    "cultivate-dataset-json/download"
+)
+_SNAPSHOT_MAX_BYTES = 32 * 1024 * 1024
+_SNAPSHOT_MAX_AGE_HOURS = 72.0
 
 # 一图流现架构为"静态 COS + 前端本地计算"，旧 API（/stage/t3 等）已 404
 _DEMAND_URL = (
@@ -144,7 +154,7 @@ _EXCLUDED_STAGE_ID_SUFFIXES = ("_perm",)
 
 
 class YituliuDataError(RuntimeError):
-    """一图流数据不可用（下载失败且无快照可回退）。"""
+    """养成数据不可用（下载站与一图流均失败且无兼容快照可回退）。"""
 
 
 def _positive_items(raw: Any) -> dict[str, int]:
@@ -267,7 +277,9 @@ def parse_drop_matrix(raw: Mapping[str, Any] | list) -> tuple[DropEntry, ...]:
     return tuple(drops)
 
 
-def parse_stage_info(raw: Mapping[str, Any] | list) -> dict[str, StageMeta]:
+def parse_stage_info(
+    raw: Mapping[str, Any] | list, *, include_local: bool = True
+) -> dict[str, StageMeta]:
     """解析关卡信息并合并 13 关常量表（资源本/芯片本在源数据中整类缺席）。"""
 
     entries: Any = (
@@ -286,8 +298,9 @@ def parse_stage_info(raw: Mapping[str, Any] | list) -> dict[str, StageMeta]:
             if isinstance(entry, dict) and entry.get("stageId")
         )
     }
-    for meta in _PERMANENT_STAGES:
-        stages.setdefault(meta.stage_id, meta)
+    if include_local:
+        for meta in _PERMANENT_STAGES:
+            stages.setdefault(meta.stage_id, meta)
     return stages
 
 
@@ -707,6 +720,15 @@ async def download_dataset(
 ) -> CultivateDataSet:
     """并发下载五个数据源并规范化；任何一路失败整体失败。"""
 
+    dataset, _ = await _download_source_snapshot(proxy, timeout=timeout)
+    return dataset
+
+
+async def _download_source_snapshot(
+    proxy: httpx.Proxy | str | None, *, timeout: float = 60.0
+) -> tuple[CultivateDataSet, list[dict[str, Any]]]:
+    """材料与干员目录从同一轮一图流需求表生成。"""
+
     async def fetch_json(client: httpx.AsyncClient, url: str) -> Any:
         response = await client.get(url)
         response.raise_for_status()
@@ -728,7 +750,12 @@ async def download_dataset(
             fetch_json(client, _RECIPE_URL),
             fetch_json(client, _ITEM_INFO_URL),
         )
-    return normalize_dataset(
+    # 必须在本地资源关/配方补齐前检查源数据，不能把空表包装成完整更新。
+    if not _has_usable_material_stages(
+        parse_stage_info(stage_raw, include_local=False)
+    ) or not parse_recipes(recipe_raw):
+        raise YituliuDataError("一图流未返回有效关卡或合成配方")
+    dataset = normalize_dataset(
         demand_raw,
         matrix_raw,
         stage_raw,
@@ -736,6 +763,7 @@ async def download_dataset(
         item_info_raw,
         data_version=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
     )
+    return dataset, parse_operator_catalog(demand_raw)
 
 
 def _max_cost_level(costs: Any, *, start: int) -> int:
@@ -852,6 +880,151 @@ def parse_operator_catalog(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 _operator_catalog_tasks: dict[Path, asyncio.Task[list[dict[str, Any]]]] = {}
+_refresh_tasks: dict[Path, asyncio.Task[None]] = {}
+
+
+def _is_catalog_compatible(operators: Any) -> bool:
+    """旧目录缺少可达档位或技能序号时不能用于当前选择器。"""
+
+    return (
+        isinstance(operators, list)
+        and bool(operators)
+        and all(
+            isinstance(operator, dict)
+            and all(
+                isinstance(operator.get(key), str) and operator[key]
+                for key in ("value", "label")
+            )
+            and all(
+                type(operator.get(key)) is int and operator[key] >= 0
+                for key in ("maxElite", "maxSkillLevel", "rarity")
+            )
+            and isinstance(operator.get("profession"), str)
+            and isinstance(operator.get("skills"), list)
+            and isinstance(operator.get("modules"), list)
+            and all(
+                isinstance(option, dict)
+                and isinstance(option.get("value"), str)
+                and option["value"]
+                and isinstance(option.get("label"), str)
+                and type(option.get("maxLevel")) is int
+                and option["maxLevel"] > 0
+                for option in operator["skills"] + operator["modules"]
+            )
+            and all(
+                type(skill.get("skillIndex")) is int and skill["skillIndex"] > 0
+                for skill in operator["skills"]
+            )
+            for operator in operators
+        )
+    )
+
+
+def _has_usable_material_stages(stages: Mapping[str, StageMeta]) -> bool:
+    """至少包含一个有效的非本地补齐材料关，拒绝空表和失效元数据。"""
+
+    local_ids = {stage.stage_id for stage in _PERMANENT_STAGES}
+    return any(
+        stage_id not in local_ids
+        and isinstance(stage.stage_code, str)
+        and bool(stage.stage_code.strip())
+        and isinstance(stage.ap_cost, (int, float))
+        and math.isfinite(stage.ap_cost)
+        and stage.ap_cost > 0
+        for stage_id, stage in stages.items()
+    )
+
+
+async def _load_published_snapshot(
+    cache_dir: Path,
+    proxy: httpx.Proxy | str | None,
+    *,
+    timeout: float = 30.0,
+    cache_result: bool = True,
+) -> tuple[CultivateDataSet, list[dict[str, Any]]]:
+    """下载并校验完整 gzip 快照；材料与目录全部有效后才原子写回缓存。"""
+
+    async with httpx.AsyncClient(
+        proxy=proxy, timeout=timeout, follow_redirects=True
+    ) as client:
+        async with client.stream("GET", _SNAPSHOT_URL) as response:
+            response.raise_for_status()
+            content = bytearray()
+            async for chunk in response.aiter_bytes():
+                content.extend(chunk)
+                if len(content) > _SNAPSHOT_MAX_BYTES:
+                    raise YituliuDataError("下载站养成快照超过大小限制")
+    with gzip.GzipFile(fileobj=BytesIO(content)) as stream:
+        decoded = stream.read(_SNAPSHOT_MAX_BYTES + 1)
+    if len(decoded) > _SNAPSHOT_MAX_BYTES:
+        raise YituliuDataError("下载站养成快照解压后超过大小限制")
+    snapshot = json.loads(decoded)
+    if not isinstance(snapshot, dict):
+        raise YituliuDataError("下载站养成快照格式不兼容")
+    raw = snapshot.get("dataset")
+    operators = snapshot.get("operators")
+    if (
+        not isinstance(raw, dict)
+        or raw.get("schema_version") != 2
+        or not all(raw.get(key) for key in ("demands", "drops", "stages", "recipes"))
+        or not _is_catalog_compatible(operators)
+    ):
+        raise YituliuDataError("下载站养成快照不完整或格式不兼容")
+    current = time.time()
+    if not all(
+        _is_fresh(
+            snapshot=snapshot,
+            max_age_hours=_SNAPSHOT_MAX_AGE_HOURS,
+            now=current,
+            timestamp_key=key,
+        )
+        for key in ("saved_at", "operators_saved_at")
+    ):
+        raise YituliuDataError("下载站养成快照已过期")
+    dataset = dataset_from_json(raw)
+    local_recipe_ids = {
+        recipe.result_item_id for recipe in _CHIP_RECIPES + _VOUCHER_RECIPES
+    }
+    if (
+        not dataset.demands
+        or not dataset.drops
+        or not _has_usable_material_stages(dataset.stages)
+        or not any(
+            recipe.result_item_id not in local_recipe_ids and recipe.ingredients
+            for recipe in dataset.recipes
+        )
+    ):
+        raise YituliuDataError("下载站养成快照缺少有效材料数据")
+
+    if cache_result:
+        _write_full_snapshot(cache_dir, dataset, operators)
+    return dataset, operators
+
+
+def _write_full_snapshot(
+    cache_dir: Path,
+    dataset: CultivateDataSet,
+    operators: list[dict[str, Any]],
+    *,
+    required: bool = False,
+) -> None:
+    """整包原子写回；本地 TTL 从本次成功下载起算。"""
+
+    current = time.time()
+    payload = {
+        "saved_at": current,
+        "dataset": dataset_to_json(dataset),
+        "operators_saved_at": current,
+        "operators": operators,
+    }
+    path = snapshot_path(cache_dir)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _utils_io.write_file(path, payload)
+    except OSError:
+        if required:
+            raise
+        # 自动读取仍可使用本次已校验的完整结果。
 
 
 async def load_operator_catalog(
@@ -861,13 +1034,19 @@ async def load_operator_catalog(
     timeout: float = 30.0,
     max_age_hours: float = 1.0,
 ) -> list[dict[str, Any]]:
-    """加载干员目录：独立缓存一小时，过期或缺失时拉取需求表。
+    """加载干员目录：独立缓存一小时，过期或缺失时优先下载站快照。
 
-    目录与材料数据共用快照文件，各自记录更新时间。刷新失败时回退兼容
-    目录且不延长有效期；没有兼容目录时抛 YituliuDataError。在途请求共享
-    本轮结果，一个等待者取消不影响其他等待者。
+    下载站失败时回退一图流需求表。目录与材料数据共用快照文件，各自
+    记录更新时间；全部源失败时回退兼容目录且不延长有效期。没有兼容
+    目录时抛 YituliuDataError。在途请求共享本轮结果，单个等待者可独立取消。
     """
 
+    refreshing = _refresh_tasks.get(cache_dir)
+    if refreshing is not None:
+        try:
+            await asyncio.shield(refreshing)
+        except Exception:
+            pass  # 自动读取仍可使用旧缓存；手动刷新请求单独报告失败。
     task = _operator_catalog_tasks.get(cache_dir)
     if task is None:
         task = asyncio.create_task(
@@ -901,19 +1080,7 @@ async def _load_operator_catalog(
 
     snapshot = read_snapshot(cache_dir)
     operators = snapshot.get("operators") if isinstance(snapshot, dict) else None
-    has_catalog = (
-        isinstance(operators, list)
-        and bool(operators)
-        and isinstance(operators[0], dict)
-        and "skills" in operators[0]
-        and "maxElite" in operators[0]
-        and "maxSkillLevel" in operators[0]
-        and all(
-            "skillIndex" in skill
-            for operator in operators
-            for skill in operator.get("skills", [])
-        )
-    )
+    has_catalog = _is_catalog_compatible(operators)
     if (
         has_catalog
         and snapshot is not None
@@ -926,6 +1093,12 @@ async def _load_operator_catalog(
     ):
         return operators
     # 旧目录缺少维度或可达上限时重拉，避免新目标因缓存缺字段而不可选。
+
+    try:
+        _, catalog = await _load_published_snapshot(cache_dir, proxy, timeout=timeout)
+        return catalog
+    except Exception as e:
+        logger.warning(f"下载站养成快照不可用，回退一图流干员目录: {e}")
 
     try:
         async with httpx.AsyncClient(
@@ -972,7 +1145,8 @@ def read_snapshot(cache_dir: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else None
     except (OSError, json.JSONDecodeError):
         return None
 
@@ -1013,7 +1187,9 @@ async def load_dataset(
     max_age_hours: float = 24.0,
     now: float | None = None,
 ) -> CultivateDataSet:
-    """加载数据集：新鲜快照直读，过期/缺失则下载，失败仅回退兼容快照。
+    """加载数据集：新鲜缓存直读，过期/缺失优先下载站，再回退一图流。
+
+    两个远端均失败时才回退已有兼容快照，失败不延长旧快照的有效期。
 
     Args:
         cache_dir: 快照缓存目录（MAS 配置目录）。
@@ -1043,6 +1219,11 @@ async def load_dataset(
         except (KeyError, TypeError, ValueError):
             pass  # 快照结构损坏：当作无快照处理，走下载路径
     try:
+        dataset, _ = await _load_published_snapshot(cache_dir, proxy)
+        return dataset
+    except Exception as e:
+        logger.warning(f"下载站养成快照不可用，回退一图流材料数据: {e}")
+    try:
         dataset = await download_dataset(proxy)
     except Exception as e:
         if raw is not None:
@@ -1057,6 +1238,60 @@ async def load_dataset(
 
 _dataset_cache: tuple[float, CultivateDataSet] | None = None
 _dataset_lock: asyncio.Lock | None = None
+
+
+async def refresh_data(cache_dir: Path, proxy: httpx.Proxy | str | None = None) -> None:
+    """强制刷新完整材料和目录；失败保留缓存并抛错，不把旧缓存当刷新成功。"""
+
+    task = _refresh_tasks.get(cache_dir)
+    if task is None:
+        task = asyncio.create_task(_refresh_data(cache_dir, proxy))
+        _refresh_tasks[cache_dir] = task
+
+        def finish(completed: asyncio.Task[None]) -> None:
+            _refresh_tasks.pop(cache_dir, None)
+            if not completed.cancelled():
+                completed.exception()
+
+        task.add_done_callback(finish)
+    await asyncio.shield(task)
+
+
+async def _refresh_data(cache_dir: Path, proxy: httpx.Proxy | str | None) -> None:
+    """等待旧目录写回，并与材料加载共用锁，避免旧请求覆盖手动刷新结果。"""
+
+    global _dataset_cache, _dataset_lock
+    pending = _operator_catalog_tasks.get(cache_dir)
+    if pending is not None:
+        try:
+            await asyncio.shield(pending)
+        except Exception:
+            pass
+    if _dataset_lock is None:
+        _dataset_lock = asyncio.Lock()
+    async with _dataset_lock:
+        try:
+            dataset, catalog = await _load_published_snapshot(
+                cache_dir, proxy, cache_result=False
+            )
+        except Exception as e:
+            logger.warning(f"下载站养成快照不可用，手动刷新回退一图流: {e}")
+            try:
+                dataset, catalog = await _download_source_snapshot(proxy)
+            except Exception as source_error:
+                raise YituliuDataError(
+                    "无法从下载站或一图流获取完整养成数据"
+                ) from source_error
+            if (
+                not dataset.demands
+                or not dataset.drops
+                or not _is_catalog_compatible(catalog)
+            ):
+                raise YituliuDataError("一图流未返回完整的养成数据与干员目录")
+        _write_full_snapshot(
+            cache_dir=cache_dir, dataset=dataset, operators=catalog, required=True
+        )
+        _dataset_cache = (time.time(), dataset)
 
 
 async def get_dataset_cached(

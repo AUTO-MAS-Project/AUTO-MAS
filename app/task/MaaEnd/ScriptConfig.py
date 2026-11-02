@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import Any
 
 from app.config import ConfigCollection
-from app.core.ws import Publisher, protocol
+from app.core import Publisher
+from app.core.ws import protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData

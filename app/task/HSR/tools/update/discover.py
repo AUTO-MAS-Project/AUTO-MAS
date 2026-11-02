@@ -70,10 +70,11 @@ class DiscoveryResult:
 def is_newer(remote: str, current: str | None) -> bool:
     """比较版本。解析不了时保守地当作「没有新版」，不乱升级。"""
 
-    if not current:
-        return True
     try:
-        return Version(str(remote).lstrip("v")) > Version(str(current).lstrip("v"))
+        remote_version = Version(str(remote).lstrip("v"))
+        if not current:
+            return True
+        return remote_version > Version(str(current).lstrip("v"))
     except InvalidVersion:
         logger.warning(f"HSR 更新：无法解析版本 {remote!r} / {current!r}，跳过本次更新")
         return False

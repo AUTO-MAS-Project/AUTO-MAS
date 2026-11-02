@@ -45,6 +45,9 @@ import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
 import type { FluxdownDetectOut } from '../models/FluxdownDetectOut';
+import type { FluxdownInstallIn } from '../models/FluxdownInstallIn';
+import type { FluxdownInstallOut } from '../models/FluxdownInstallOut';
+import type { FluxdownReleaseOut } from '../models/FluxdownReleaseOut';
 import type { GameCalendarActivitiesOut } from '../models/GameCalendarActivitiesOut';
 import type { GameCalendarActivityCompletionIn } from '../models/GameCalendarActivityCompletionIn';
 import type { GameSignAccountCreateOut } from '../models/GameSignAccountCreateOut';
@@ -107,8 +110,6 @@ import type { MaaFWShellInstanceImportIn } from '../models/MaaFWShellInstanceImp
 import type { MaaFWShellInstanceImportOut } from '../models/MaaFWShellInstanceImportOut';
 import type { MaaFWShellInstancesIn } from '../models/MaaFWShellInstancesIn';
 import type { MaaFWShellInstancesOut } from '../models/MaaFWShellInstancesOut';
-import type { MssDefenseStatusIn } from '../models/MssDefenseStatusIn';
-import type { MssDefenseStatusOut } from '../models/MssDefenseStatusOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { ObsReplayCheckOut } from '../models/ObsReplayCheckOut';
@@ -182,6 +183,9 @@ import type { TaskboardArchiveIn } from '../models/TaskboardArchiveIn';
 import type { TaskboardDoneAtIn } from '../models/TaskboardDoneAtIn';
 import type { TaskboardSelectionIn } from '../models/TaskboardSelectionIn';
 import type { TaskboardStateOut } from '../models/TaskboardStateOut';
+import type { TaskboardVersionStoryIn } from '../models/TaskboardVersionStoryIn';
+import type { TaskboardWeeklyIn } from '../models/TaskboardWeeklyIn';
+import type { TaskboardWeeklyOut } from '../models/TaskboardWeeklyOut';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
@@ -366,6 +370,25 @@ export class Service {
         });
     }
     /**
+     * 保存每周任务勾选的游戏
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setTaskboardWeeklySelectionApiInfoTaskboardWeeklySelectionPut(
+        requestBody: TaskboardSelectionIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/info/taskboard/weekly-selection',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 保存任务台归档缓存
      * @param requestBody
      * @returns OutBase Successful Response
@@ -396,6 +419,63 @@ export class Service {
         return __request(OpenAPI, {
             method: 'PUT',
             url: '/api/info/taskboard/done-at',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 记录或撤销任务台的每周任务
+     * @param requestBody
+     * @returns TaskboardWeeklyOut Successful Response
+     * @throws ApiError
+     */
+    public static setTaskboardWeeklyApiInfoTaskboardWeeklyPut(
+        requestBody: TaskboardWeeklyIn,
+    ): CancelablePromise<TaskboardWeeklyOut> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/info/taskboard/weekly',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 合并任务台的版本主线记录
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setTaskboardVersionStoryApiInfoTaskboardVersionStoryPut(
+        requestBody: TaskboardVersionStoryIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/info/taskboard/version-story',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 记录或撤销任务台的版本主线完成状态
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setTaskboardVersionStoryDoneApiInfoTaskboardVersionStoryDonePut(
+        requestBody: TaskboardDoneAtIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/info/taskboard/version-story/done',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1317,6 +1397,25 @@ export class Service {
         });
     }
     /**
+     * 手动刷新 MAA 养成材料数据与干员目录
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static refreshMaaCultivateDataApiScriptsMaaCultivateRefreshPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/refresh',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 校验并转换 MAA 剪贴板养成目标（不落库）
      * @param requestBody
      * @returns MaaCultivateImportOut Successful Response
@@ -1800,28 +1899,6 @@ export class Service {
             query: {
                 'scriptId': scriptId,
             },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 个人版「灾变防线」这一期的状态
-     * MSS 用户页显示「本期灾变防线打了没」。只读，不改任何配置。
-     *
-     * 「这一期」由后端按官网那一篇公告的开始时刻算，前端不复刻同一套口径。
-     * @param requestBody
-     * @returns MssDefenseStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static getMssDefenseStatusApiScriptsMaafwMssDefenseStatusPost(
-        requestBody: MssDefenseStatusIn,
-    ): CancelablePromise<MssDefenseStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/mss/defense-status',
-            body: requestBody,
-            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },
@@ -4649,6 +4726,38 @@ export class Service {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/update/fluxdown/detect',
+        });
+    }
+    /**
+     * 获取 FluxDown 最新 Release 直链
+     * 用于设置页展示 CLI / Server 两个包的 GitHub 下载链接。
+     * @returns FluxdownReleaseOut Successful Response
+     * @throws ApiError
+     */
+    public static getFluxdownReleaseApiUpdateFluxdownReleaseGet(): CancelablePromise<FluxdownReleaseOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/update/fluxdown/release',
+        });
+    }
+    /**
+     * 由 MAS 下载并安装 FluxDown CLI 与 Server
+     * 静默下载两个发布包，校验后解压到 MAS 数据目录并写入 FluxdownPath。
+     * @param requestBody
+     * @returns FluxdownInstallOut Successful Response
+     * @throws ApiError
+     */
+    public static installFluxdownApiUpdateFluxdownInstallPost(
+        requestBody: FluxdownInstallIn,
+    ): CancelablePromise<FluxdownInstallOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/fluxdown/install',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

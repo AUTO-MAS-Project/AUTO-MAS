@@ -12,41 +12,46 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
+import asyncio
 import uuid
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from datetime import datetime
 from pathlib import Path
 from time import time_ns
 
+import app.core.notify.formats.maaend as _format_maaend
+import app.core.notify.report as _node_report
 from app.config import ConfigCollection, config_manager
-from app.core import Config, EmulatorManager
-from app.core.maa_capture import capture_adb, capture_win32
-from app.core.ws import Publisher, protocol
+from app.core import Config, EmulatorManager, Notify, Publisher
+from app.core.notify.task_content import screenshot_entries as screenshot_entries
+from app.core.ws import protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
-from app.models.notification_report import TaskResultReport
+from app.models.notification.report import TaskResultReport, UserReportText
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
-from app.services.endfield_launcher import resolve_launcher_exe
+from app.services import capture_adb, capture_win32, script_install
+from app.services import endfield_launcher as _service_endfield_launcher
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
-from app.task.notify_core import screenshot_entries
 from app.task.proxy_helpers import push_dispatch_log
-from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import (
     BASE_NATIVE,
     BASE_SHARED,
     BASE_SOURCE_LABELS,
+    LOG_TYPE_ERROR,
     TASK_MODE_ZH,
     get_logger,
+    log_box,
 )
 from app.utils import io as _utils_io
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_base
+from .tools import script_update
 from .tools.backup_archive import archive_native_backup
-from .tools.notify import collect_recent_error_images
 from .tools.update import ensure_game_updated
 from .Update import EndfieldUpdateTask
 
@@ -97,6 +102,8 @@ class MaaEndManager(ScriptManagerBase):
         self._device_provider = device_provider
         self.error_image_start_ns: int | None = None
         self.error_screenshot_paths: list[Path] = []
+        self._install_access = ExitStack()
+        self._program_update_prepared = False
 
     async def check(self) -> str:
         # Update 是「检查更新」按钮的一次性任务，不进 METHOD_BOOK——那张表按用户循环。
@@ -158,7 +165,7 @@ class MaaEndManager(ScriptManagerBase):
                     return "当前 MaaEnd 或控制器不支持「MaaEnd 启动」，请选择启动器启动或 MAS 启动"
                 if script_config.Game.LauncherPath:
                     try:
-                        resolve_launcher_exe(
+                        _service_endfield_launcher.resolve_launcher_exe(
                             Path(str(script_config.Game.Path)),
                             str(script_config.Game.LauncherPath),
                         )
@@ -168,7 +175,7 @@ class MaaEndManager(ScriptManagerBase):
                 # MAS 两种启动方式需要有效启动器；原生模式由 MaaEnd 自行定位。
                 client_exe = Path(str(script_config.Game.Path or "").strip())
                 try:
-                    launcher = resolve_launcher_exe(
+                    launcher = _service_endfield_launcher.resolve_launcher_exe(
                         client_exe, str(script_config.Game.LauncherPath or "")
                     )
                 except ValueError as error:
@@ -194,9 +201,9 @@ class MaaEndManager(ScriptManagerBase):
     async def prepare(self):
 
         # 锁定脚本配置并加载用户配置
-        self.config_locks[
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].uid
-        ] = await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock_x()
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if config.uid not in self.config_locks:
+            self.config_locks[config.uid] = await config.lock_x()
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
 
         if self.task_info.mode == "Update":
@@ -220,6 +227,11 @@ class MaaEndManager(ScriptManagerBase):
         self.maaend_config_dir = root_path / "config"
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
 
+        # 先处置上次崩溃残留的快照, 再备份原始配置。无条件清空会把崩溃后唯一
+        # 一份原始配置副本删掉, 让注入污染的状态固化成「原始配置」。
+        self._recover_previous_run()
+        await self._prepare_program_update(root_path)
+
         # 初始化模拟器管理器
         if self.controller_protocol == "Adb":
             device_provider = (
@@ -231,9 +243,6 @@ class MaaEndManager(ScriptManagerBase):
         else:
             self.emulator_manager = None
 
-        # 先处置上次崩溃残留的快照, 再备份原始配置。无条件清空会把崩溃后唯一
-        # 一份原始配置副本删掉, 让注入污染的状态固化成「原始配置」。
-        self._recover_previous_run()
         if _utils_io.commit_native_config_snapshot(
             self.temp_path,
             self.maaend_config_dir,
@@ -265,6 +274,54 @@ class MaaEndManager(ScriptManagerBase):
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
         )
+
+    async def _prepare_program_update(self, root: Path) -> None:
+        if self._program_update_prepared:
+            return
+        if (
+            self.task_info.mode != "AutoProxy"
+            or not self.script_config.Update.TakeoverEnabled
+        ):
+            return
+        await push_dispatch_log(self.script_info, "正在检查 MaaEnd 程序更新…")
+
+        async def progress(downloaded: int, total: int, speed: float) -> None:
+            self.script_info.log = f"MaaEnd 更新下载：{downloaded / 1024**2:.1f} / {total / 1024**2:.1f} MB"
+
+        try:
+            result = await script_update.update_before_run(
+                root, self.script_config, progress=progress
+            )
+        except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
+            raise
+        except Exception as error:
+            await script_update.confirm_current_install(root)
+            result = f"MaaEnd 更新准备未完成，沿用当前安装继续任务：{error}"
+            logger.warning(result)
+            self.script_info.log = result
+            with suppress(Exception):
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="warning", message=result),
+                )
+        else:
+            await push_dispatch_log(self.script_info, result)
+        await asyncio.to_thread(
+            MaaEndResourceLoader.get_cached, root, force_reload=True
+        )
+        self.controller_protocol = load_maaend_controller_protocol(
+            root, str(self.script_config.Game.ControllerType)
+        )
+        removed = await script_install.run_worker(
+            script_update.discard_obsolete_mxu_packages, root
+        )
+        if removed:
+            await push_dispatch_log(
+                self.script_info,
+                f"已移除 {len(removed)} 个过期 MXU 更新包；MXU 启动时将清除对应的待安装记录",
+            )
+        self._program_update_prepared = True
 
     async def _restore_script_config_from_temp(self) -> None:
         """恢复任务开始前的 MaaEnd working 配置。"""
@@ -389,7 +446,32 @@ class MaaEndManager(ScriptManagerBase):
         return None
 
     async def main_task(self):
-
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if isinstance(config, MaaEndConfig):
+            # 路径读取与安装锁归属必须在同一份已锁配置上，避免等待恢复时 UI 改换目录。
+            self.config_locks[config.uid] = await config.lock_x()
+            self.script_config = config
+        if isinstance(config, MaaEndConfig) and config.Info.Path is not None:
+            root = config.Info.Path
+            self._install_access.enter_context(script_install.installation_access(root))
+            if (script_install.workspace(root) / "runtime-interface.json").exists():
+                await asyncio.to_thread(script_update.assert_idle, root)
+                script_update.recover_runtime_interface(root)
+            await script_install.run_worker(
+                script_install.recover_install,
+                root,
+                lambda: script_update.assert_idle(root),
+            )
+            if self.task_info.mode == "AutoProxy" and config.Update.TakeoverEnabled:
+                self.maaend_config_dir = root / "config"
+                self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+                self._recover_previous_run()
+                # 修复在原有资源预检之前，损坏的旧资源不能堵死恢复入口。
+                await self._prepare_program_update(root)
+            elif (script_install.workspace(root) / "installed.json").exists():
+                # 非接管模式沿用 MXU 自行更新的安装。恢复事务仍须完成，
+                # 但旧 MAS 回执不应阻断后续配置或运行，也不重算哈希冒充可信。
+                await script_update.confirm_current_install(root, verify_receipt=False)
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.warning(f"未通过配置检查: {self.check_result}")
@@ -501,13 +583,18 @@ class MaaEndManager(ScriptManagerBase):
                 # 按用户交错组装「用户结果行 + 该用户节点详情」：
                 # 开关关闭的用户未启 log_box，push_log 为空，自然只有结果行。
                 has_uncompleted = summary.uncompleted_count > 0
-                user_result_text = build_user_result_text(
-                    self.script_info.user_list, has_uncompleted
+                user_result_text = self._render_user_results(
+                    has_uncompleted=has_uncompleted
                 )
                 # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
-                mirror_report_to_dispatch(self.script_info, user_result_text)
+                if user_result_text:
+                    self.script_info.log = (
+                        f"{self.script_info.log}\n{user_result_text}"
+                        if self.script_info.log
+                        else user_result_text
+                    )
                 error_images = (
-                    collect_recent_error_images(
+                    _format_maaend.collect_recent_error_images(
                         self.script_config.Info.Path,
                         started_at_ns=self.error_image_start_ns,
                         ended_at_ns=time_ns(),
@@ -526,7 +613,7 @@ class MaaEndManager(ScriptManagerBase):
                     if self.all_users_maintenance_skipped:
                         await self.notify_maintenance()
                     else:
-                        await self.task_info.notifications.push_proxy_result(
+                        await Notify.push_proxy_result(
                             title=title,
                             report=TaskResultReport.from_message(result),
                             task_info=self.task_info,
@@ -553,13 +640,17 @@ class MaaEndManager(ScriptManagerBase):
             else:
                 self.script_info.status = "完成"
         finally:
-            script_config = getattr(self, "script_config", None)
-            if script_config is not None:
-                ticket = self.config_locks.pop(script_config.uid, None)
-                if ticket is not None:
-                    await script_config.unlock(ticket)
+            try:
+                script_config = getattr(self, "script_config", None)
+                if script_config is not None:
+                    ticket = self.config_locks.pop(script_config.uid, None)
+                    if ticket is not None:
+                        await script_config.unlock(ticket)
+            finally:
+                self._install_access.close()
 
     async def on_crash(self, e: Exception):
+        self.update_gate_failure = str(e)
         self.script_info.status = "异常"
         logger.opt(exception=True).warning(f"MaaEnd任务出现异常: {e}")
         with suppress(Exception):
@@ -575,3 +666,32 @@ class MaaEndManager(ScriptManagerBase):
             type=protocol.TASK_NOTICE,
             data=WSTaskNoticeData(level="error", message=f"MaaEnd任务出现异常: {e}"),
         )
+
+    def _render_user_results(self, *, has_uncompleted: bool) -> str:
+        """本专项选择报告条目和展示模式，公共服务只负责排版。"""
+        _report_rows = []
+        for _report_user in self.script_info.user_list:
+            _entries = [
+                item
+                if isinstance(item, log_box.LogEntry)
+                else log_box.LogEntry.from_legacy(item)
+                for item in _report_user.push_log
+                if (item.log_type if isinstance(item, log_box.LogEntry) else item[0])
+                != LOG_TYPE_ERROR
+                or has_uncompleted
+            ]
+            _mode = getattr(_report_user, "push_log_mode", "逐条")
+            if _mode == "关闭":
+                _details = []
+            elif _mode == "汇总":
+                _details = _node_report.render_aggregate_push_log(_entries)
+            else:
+                _details = _node_report.render_scatter_push_log(_entries)
+            _report_rows.append(
+                UserReportText(
+                    name=_report_user.name,
+                    result=_report_user.result,
+                    detail_lines=tuple(_details),
+                )
+            )
+        return _node_report.render_user_result_text(_report_rows)

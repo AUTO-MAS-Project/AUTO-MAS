@@ -21,6 +21,7 @@ export const createMaaScriptDraft = (): MAAScriptConfig => ({
     Index: '',
   },
   Update: {
+    Channel: 'stable',
     TakeoverEnabled: false,
     MirrorChyanCDK: '',
   },

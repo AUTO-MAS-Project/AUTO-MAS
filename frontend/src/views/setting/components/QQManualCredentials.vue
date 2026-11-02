@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { QqService } from '@/api'
 import type { ClawBindingState } from './ClawBinding.vue'
 
 const props = defineProps<{ binding: ClawBindingState }>()
@@ -14,7 +13,9 @@ const userOpenId = ref('')
 const clientSecret = ref('')
 const secretSet = ref(false)
 const originalAppId = ref('')
-const busy = computed(() => loading.value || props.binding.manualSaving)
+const busy = computed(
+  () => loading.value || props.binding.manualSaving || props.binding.statusLoading
+)
 const disabled = computed(
   () => busy.value || props.binding.open || props.binding.unbinding || props.binding.targetSaving
 )
@@ -32,7 +33,8 @@ async function load() {
   bindingId.value = ''
   clientSecret.value = ''
   try {
-    const result = await QqService.getCredentialsApiSettingOpenclawQqCredentialsGetPost()
+    if (!window.electronAPI?.getQqCredentials) throw new Error('QQ 凭据管理需要桌面客户端')
+    const result = await window.electronAPI.getQqCredentials()
     if (result.code !== 200) throw new Error(result.message)
     bindingId.value = result.bindingId || ''
     appId.value = originalAppId.value = result.appId || ''

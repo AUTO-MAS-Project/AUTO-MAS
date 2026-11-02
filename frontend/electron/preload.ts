@@ -30,6 +30,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.send('analytics:event', context, event),
   },
   isMacOS: process.platform === 'darwin',
+  installFluxdown: (mirror: string) => ipcRenderer.invoke('fluxdown:install', mirror),
+  getQqCredentials: () => ipcRenderer.invoke('qq-credentials:get'),
+  setQqCredentials: (value: unknown) => ipcRenderer.invoke('qq-credentials:set', value),
+  getQqStatus: () => ipcRenderer.invoke('qq-credentials:status'),
+  getQqGroups: () => ipcRenderer.invoke('qq-credentials:groups'),
+  setQqTarget: (value: unknown) => ipcRenderer.invoke('qq-credentials:target', value),
+  startQqLogin: () => ipcRenderer.invoke('qq-credentials:start'),
+  checkQqLogin: (value: unknown) => ipcRenderer.invoke('qq-credentials:check', value),
+  unbindQq: () => ipcRenderer.invoke('qq-credentials:unbind'),
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: unknown[]) => ipcRenderer.invoke('select-file', filters),
@@ -48,6 +57,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
   windowClose: () => ipcRenderer.invoke('window-close'),
+  windowHideToTray: () => ipcRenderer.invoke('window-hide-to-tray'),
+  notifyRendererReady: () => ipcRenderer.send('renderer-ready'),
+  notifyNativeCloseHandlerReady: () => ipcRenderer.send('native-window-close-handler-ready'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
   onWindowMaximizedChange: (callback: (maximized: boolean) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, maximized: boolean) => callback(maximized)
@@ -55,6 +67,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('window-maximized-changed', listener)
   },
   windowFocus: () => ipcRenderer.invoke('window-focus'),
+  onNativeWindowCloseRequested: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('native-window-close-requested', listener)
+    return () => ipcRenderer.removeListener('native-window-close-requested', listener)
+  },
   setDesktopMascotReady: (
     ready: boolean,
     labels?: DesktopMascotMenuLabels,
@@ -175,18 +192,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 托盘自定义菜单项
   updateTrayConfig: (trayItems: unknown) => ipcRenderer.invoke('update-tray-config', trayItems),
 
-  // 托盘动作请求（由渲染进程统一处理：启动任务 / 退出 / 重启）
+  // 托盘动作请求（由渲染进程统一处理：启动任务 / 退出）
   onTrayActionRequest: (
-    callback: (request: {
-      action: 'quit' | 'restart' | 'startTask'
-      taskId?: string
-      label?: string
-    }) => void
+    callback: (request: { action: 'quit' | 'startTask'; taskId?: string; label?: string }) => void
   ) => {
     const listener = (
       _event: Electron.IpcRendererEvent,
       request: {
-        action: 'quit' | 'restart' | 'startTask'
+        action: 'quit' | 'startTask'
         taskId?: string
         label?: string
       }

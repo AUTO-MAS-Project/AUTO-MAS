@@ -22,11 +22,11 @@ from pathlib import Path
 from typing import Callable
 
 from app.config import config_manager
-from app.core import Config, EmulatorManager
-from app.core.ws import Publisher, protocol
+from app.core import Config, EmulatorManager, Notify, Publisher
+from app.core.ws import protocol
 from app.models.config import SrcConfig
 from app.models.emulator import DeviceProvider
-from app.models.notification_report import TaskResultReport
+from app.models.notification.report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.emulator_core import close_emulator
@@ -914,7 +914,7 @@ class SrcManager(ScriptManagerBase):
         result = {**result, "summary_title": completion_title}
         try:
             await asyncio.wait_for(
-                self.task_info.notifications.push_proxy_result(
+                Notify.push_proxy_result(
                     title=title,
                     report=TaskResultReport.from_message(result),
                     task_info=self.task_info,

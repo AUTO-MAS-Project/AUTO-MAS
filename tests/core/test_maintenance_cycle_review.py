@@ -1,17 +1,19 @@
-from tests.config_support import activate_config, group_view
-
 """#1297 本地验证：维护消费排期但不留执行记录、不立即重试。"""
+
 import uuid
 from contextlib import nullcontext
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+
 import pytest
+
+import app.core.task_manager.manager as scheduler
 from app.core import Config
-from app.core import task_manager as scheduler
-from app.core.queue_cycle import CycleEntry, format_cycle_time
+from app.core.task_manager.cycle import CycleEntry
 from app.models.config import MaaConfig, QueueItem
 from app.models.task import ScriptItem, UserItem
+from tests.config_support import activate_config
 
 
 class FixedDatetime(datetime):
@@ -72,7 +74,7 @@ async def test_cycle_skip_preserves_last_run_and_schedules_future(
     monkeypatch.setattr(info, "schedule_on_change", lambda: None)
     script = ScriptItem(str(script_id), "test", "等待")
     info.script_list = [script]
-    task = scheduler.Task(info, [])
+    task = scheduler.Task(info, [], manager_factories={})
     monkeypatch.setattr(task, "_build_task_item", lambda *args, **kwargs: object())
     monkeypatch.setattr(task, "_publish_cycle_preview", AsyncMock())
     monkeypatch.setattr(task, "_observe_script_run", lambda *args: nullcontext())
@@ -103,7 +105,11 @@ async def test_cycle_skip_preserves_last_run_and_schedules_future(
 async def test_maintenance_does_not_trigger_immediate_retry(
     monkeypatch, result, retries
 ):
-    task = scheduler.Task(scheduler.TaskInfo("AutoProxy", "test", None, None, None), [])
+    task = scheduler.Task(
+        scheduler.TaskInfo("AutoProxy", "test", None, None, None),
+        [],
+        manager_factories={},
+    )
     entry = CycleEntry(
         str(uuid.uuid4()), str(uuid.uuid4()), "test", 0, datetime.now(), True
     )

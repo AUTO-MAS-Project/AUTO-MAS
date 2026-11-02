@@ -16,6 +16,10 @@ export type MaaCopilotAnalyzeIn = {
      */
     coverage?: number;
     requireModules?: boolean;
+    /**
+     * 忽略精英阶段已达标干员的等级差距
+     */
+    ignoreLevelGaps?: boolean;
 };
 export namespace MaaCopilotAnalyzeIn {
     export enum source {

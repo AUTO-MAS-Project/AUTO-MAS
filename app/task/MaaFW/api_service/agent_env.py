@@ -48,7 +48,6 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_proxy_url,
 )
 from app.utils import get_logger, sanitize_log_message
-from app.utils import paths as _utils_paths
 
 _maafw_env_logger = get_logger("MFW 运行环境")
 
@@ -134,8 +133,8 @@ async def prepare_agent_env(
 
     # 这些模块会拉起 runtime_pool 与 agent_env，放在函数内延迟导入，
     # 避免所有 API 请求都为它们付出导入成本。
+    from app.core import Publisher
     from app.core.ws import protocol as ws_protocol
-    from app.core.ws.publisher import Publisher
     from app.task.MaaFW.tools.core.runner.service import (
         MaaFWRunnerService,
         project_environment_fingerprint,
@@ -321,7 +320,7 @@ async def prepare_agent_env(
                     runtime_pool_id=route.pool_id,
                     # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
                     # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
-                    import_paths=[_utils_paths.SOURCE_ROOT],
+                    import_paths=[Config.source_path],
                     send_log=append_log,
                     progress=publish_progress,
                 )

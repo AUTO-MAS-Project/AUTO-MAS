@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import ProgramUpdateSettings from './ProgramUpdateSettings.vue'
 import { onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ScriptMirrorCdkData } from '@/api'
@@ -8,13 +8,11 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import MirrorCdkStatusHint from '@/components/MirrorCdkStatusHint.vue'
 
 const props = defineProps<{
-  update: MAAScriptConfig['Update']
   ready: boolean
 }>()
+const update = defineModel<MAAScriptConfig['Update']>('update', { required: true })
 const emit = defineEmits<{
   change: [key: string, value: boolean | string]
-  'update:cdk': [value: string]
-  'update:enabled': [value: boolean]
 }>()
 const { t } = useI18n()
 const { queryMirrorCdk } = useScriptApi()
@@ -28,11 +26,11 @@ const invalidate = () => {
   state.value = null
 }
 const refresh = async () => {
-  if (!props.ready || !props.update.TakeoverEnabled || checking.value) return
+  if (!props.ready || !update.value.TakeoverEnabled || checking.value) return
   const sequence = ++querySequence
   checking.value = true
   try {
-    const result = await queryMirrorCdk(props.update.MirrorChyanCDK ?? '')
+    const result = await queryMirrorCdk(update.value.MirrorChyanCDK ?? '')
     if (sequence === querySequence) state.value = result
   } finally {
     if (sequence === querySequence) checking.value = false
@@ -40,9 +38,9 @@ const refresh = async () => {
 }
 
 // 输入时清除旧结论；打开页面、切换接管开关和失焦时才查询。
-watch(() => props.update.MirrorChyanCDK, invalidate)
+watch(() => update.value.MirrorChyanCDK, invalidate)
 watch(
-  () => [props.ready, props.update.TakeoverEnabled],
+  () => [props.ready, update.value.TakeoverEnabled],
   () => {
     invalidate()
     void refresh()
@@ -52,63 +50,35 @@ watch(
 onScopeDispose(invalidate)
 
 const handleBlur = () => {
-  emit('change', 'MirrorChyanCDK', props.update.MirrorChyanCDK ?? '')
+  emit('change', 'MirrorChyanCDK', update.value.MirrorChyanCDK ?? '')
   void refresh()
 }
 const handleEnabled = (enabled: boolean) => {
-  emit('update:enabled', enabled)
+  update.value = { ...update.value, TakeoverEnabled: enabled }
   emit('change', 'TakeoverEnabled', enabled)
+}
+const handleChannel = (channel: 'stable' | 'beta') => {
+  update.value = { ...update.value, Channel: channel }
+  emit('change', 'Channel', channel)
 }
 </script>
 
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('core.edit.updateTakeover') }}</h3>
-    </div>
-    <a-row :gutter="24">
-      <a-col :span="8">
-        <a-form-item>
-          <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.updateTakeoverSwitch')"
-              :hint="t('core.edit.updateTakeoverTip')"
-              variant="form"
-            />
-          </template>
-          <a-switch
-            :checked="update.TakeoverEnabled"
-            size="large"
-            :disabled="!ready"
-            @change="handleEnabled"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :span="16">
-        <a-form-item>
-          <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.updateTakeoverCdk')"
-              :hint="t('core.edit.updateTakeoverCdkTip')"
-              variant="form"
-            />
-          </template>
-          <a-input-password
-            :value="update.MirrorChyanCDK"
-            :placeholder="t('core.edit.updateTakeoverCdkPlaceholder')"
-            size="large"
-            class="modern-input"
-            autocomplete="off"
-            :disabled="!ready || !update.TakeoverEnabled"
-            @update:value="emit('update:cdk', $event)"
-            @blur="handleBlur"
-          />
-          <MirrorCdkStatusHint :state="state" :checking="checking" @retry="refresh" />
-        </a-form-item>
-      </a-col>
-    </a-row>
-  </div>
+  <ProgramUpdateSettings
+    :ready="ready"
+    :enabled="update.TakeoverEnabled"
+    :channel="update.Channel"
+    :cdk="update.MirrorChyanCDK"
+    :title="t('core.edit.updateTakeover')"
+    :hint="t('core.edit.updateTakeoverTip')"
+    :cdk-hint="t('core.edit.updateTakeoverCdkTip')"
+    @enabled="handleEnabled"
+    @channel="handleChannel"
+    @cdk="update = { ...update, MirrorChyanCDK: $event }"
+    @save-cdk="handleBlur"
+  >
+    <template #cdk-status>
+      <MirrorCdkStatusHint :state="state" :checking="checking" @retry="refresh" />
+    </template>
+  </ProgramUpdateSettings>
 </template>
-
-<style scoped src="@/styles/scriptEditForm.css"></style>
-<style scoped src="@/styles/scriptEdit.css"></style>

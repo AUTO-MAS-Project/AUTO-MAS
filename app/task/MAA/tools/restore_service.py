@@ -20,7 +20,7 @@
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底预览全部由基座
-（``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
+（``app.utils.common.config.restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
 mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 + 页面核心
@@ -44,8 +44,8 @@ from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     read_config_base,
 )
-from app.utils import config_restore as _utils_config_restore
 from app.utils import get_logger
+from app.utils.common.config import restore as _utils_config_restore
 
 from .backup_archive import (
     build_backup_file_summary,
@@ -219,6 +219,18 @@ async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> No
         # （Info/Task），页面配置随文件一起回到备份时点，否则旧表单值下次
         # 保存会静默覆盖回滚结果
         restored = group_overlay(restored_overlay)
+        if task := restored.get("Task"):
+            # 三段理智的药石额度各自独立、留空即沿用 MAA；旧备份缺字段补 None，
+            # 不能拿一个字段的值去填另一个，否则会把库存额度当成养成额度。
+            for key in (
+                "DepotMaintainMedicineNumb",
+                "DepotMaintainStoneNumb",
+                "CultivateMedicineNumb",
+                "CultivateStoneNumb",
+                "EventDepotMaintainMedicineNumb",
+                "EventDepotMaintainStoneNumb",
+            ):
+                task.setdefault(key, None)
         if "StaminaPipelineVersion" not in restored.get("Data", {}):
             # 历史侧车没有新字段：只从该备份恢复旧意图，不能继承当前轮生成的计划。
             task = restored.setdefault("Task", {})

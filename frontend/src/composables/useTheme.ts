@@ -241,6 +241,7 @@ const updateCSSVariables = () => {
   root.style.setProperty('--ant-color-text-description', antTokens.colorTextDescription)
   root.style.setProperty('--ant-color-text-placeholder', antTokens.colorTextPlaceholder)
   root.style.setProperty('--ant-color-text-disabled', antTokens.colorTextDisabled)
+  root.style.setProperty('--ant-color-text-light-solid', antTokens.colorTextLightSolid)
 
   root.style.setProperty('--ant-color-bg-container', antTokens.colorBgContainer)
   root.style.setProperty('--ant-color-bg-layout', antTokens.colorBgLayout)

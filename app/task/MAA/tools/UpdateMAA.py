@@ -30,6 +30,7 @@ from app.utils import io as _utils_io
 from ..base_preset import ensure_maa_default_configuration
 from .native_config import maa_scheme_name
 from .resource_update import _wait_for_cleanup
+from .update_config import restore_maa_update_config, write_maa_update_config
 
 logger = get_logger("MAA 更新工具")
 _UPDATER_TIMEOUT = 120  # 秒，超时保留原生备份，待官方更新结束后由用户恢复
@@ -39,7 +40,7 @@ class MaaUpdaterRunningError(RuntimeError):
     """更新相关进程未能退出，不能恢复配置或启动新的托管任务。"""
 
 
-async def update_maa(maa_path: Path):
+async def update_maa(maa_path: Path, *, snapshot_path: Path, script_id: str):
     """更新 MAA 主程序"""
 
     # NEW: Update.UpdatePackage 优先生效
@@ -103,7 +104,9 @@ async def update_maa(maa_path: Path):
     # 更新配置
     update_set = maa_new_set.setdefault("Update", {})
     update_set["UpdatePackage"] = maa_update_package
+    update_set["CheckOnStartup"] = False
     update_set["CheckOnSchedule"] = False
+    update_set["UpdateSource"] = "GitHub"
     update_set["AutoDownloadUpdatePackage"] = False
     update_set["AutoInstallUpdatePackage"] = True
 
@@ -122,7 +125,9 @@ async def update_maa(maa_path: Path):
             configurations["Default"] = original_default
         maa_new_set["Current"] = active_scheme
 
-    _utils_io.write_file(maa_path / "config/gui.new.json", maa_new_set)
+    write_maa_update_config(
+        maa_path, maa_new_set, snapshot_path=snapshot_path, script_id=script_id
+    )
 
     try:
         await ProcessRunner.run_process(maa_path / "MAA.exe", timeout=60)
@@ -138,6 +143,15 @@ async def update_maa(maa_path: Path):
             await _wait_for_cleanup(cleanup)
             cleanup.result()
             raise
+        finally:
+            if (
+                cleanup.done()
+                and not cleanup.cancelled()
+                and cleanup.exception() is None
+            ):
+                restore_maa_update_config(
+                    maa_path, snapshot_path=snapshot_path, script_id=script_id
+                )
 
 
 async def _wait_for_updater(maa_path: Path) -> None:
@@ -145,11 +159,18 @@ async def _wait_for_updater(maa_path: Path) -> None:
         async with asyncio.timeout(_UPDATER_TIMEOUT):
             while await System.is_process_running(maa_path / "MAA.Updater.exe"):
                 await asyncio.sleep(0.2)
+        if not await System.kill_process(maa_path / "MAA.exe"):
+            raise MaaUpdaterRunningError(
+                "无法关闭更新后的 MAA 窗口，请退出 MAA 后从原生配置备份恢复"
+            )
     except TimeoutError as error:
         raise MaaUpdaterRunningError(
             "MAA 官方更新器等待超时，请等待更新结束并退出 MAA 后，从原生配置备份恢复"
         ) from error
-    if not await System.kill_process(maa_path / "MAA.exe"):
+    except MaaUpdaterRunningError:
+        raise
+    except Exception as error:
+        # 进程状态无法确认也不能恢复配置，留待下轮确认退出后再恢复。
         raise MaaUpdaterRunningError(
-            "无法关闭更新后的 MAA 窗口，请退出 MAA 后从原生配置备份恢复"
-        )
+            "无法确认 MAA 更新相关进程已退出，请稍后重试"
+        ) from error

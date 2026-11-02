@@ -8,7 +8,7 @@ metadata:
     organisation: Humanlayer
 ---
 
-本仓库 PR 正文的格式以文档站为准（[PR 正文规范](https://doc.auto-mas.top/developer/agent-and-repository-rules.html)）：`## 摘要` 下通常 1 到 4 条要点，有关联 Issue 时补一行 `Closes #n`（没有就删掉），用户可见变更要提醒更新 `res/version.json`。下面的模板只是在写这几条摘要时的取景技巧，与文档站冲突时以文档站为准。
+本仓库 PR 正文的格式以文档站为准（[PR 正文规范](https://doc.auto-mas.top/developer/agent-and-repository-rules.html)）：`## 摘要` 下通常 1 到 4 条要点，有关联 Issue 时补一行 `Closes #n`（没有就删掉），用户可见变更按项目规范新增更新日志碎片；普通 PR 不修改 `CHANGELOG.md`、`res/version.json` 或版本号。下面的模板只是在写这几条摘要时的取景技巧，与文档站冲突时以文档站为准。
 
 ```markdown
 ## 摘要

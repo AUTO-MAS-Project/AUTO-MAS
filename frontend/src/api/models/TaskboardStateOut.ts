@@ -17,5 +17,9 @@ export type TaskboardStateOut = {
      */
     message?: string;
     data?: TaskboardState;
+    /**
+     * 当前每周任务周键
+     */
+    weekly_week?: string;
 };
 

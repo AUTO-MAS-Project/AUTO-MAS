@@ -12,6 +12,7 @@ import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 const logger = window.electronAPI.getLogger('设置-其他')
 
 const { t } = useI18n()
+const emit = defineEmits<{ fluxdownInstalled: [] }>()
 
 const {
   version,
@@ -84,6 +85,7 @@ const copyAllInfo = async () => {
       :update-channel-options="updateChannelOptions"
       :handle-setting-change="handleSettingChange"
       :check-update="checkUpdate"
+      @fluxdown-installed="emit('fluxdownInstalled')"
     />
 
     <div class="form-section">

@@ -1,4 +1,5 @@
 import { beginMainFeature } from './featureAnalytics'
+import { getFluxdownInstallEnvironment } from './fluxdownInstallService'
 /**
  * 后端服务管理
  * 重构版本 - 只负责后端进程的启动、停止和管理
@@ -405,6 +406,7 @@ export class BackendService {
       runtimePath,
       appRoot: config.appRoot,
       dataRoot: config.dataRoot,
+      env: getFluxdownInstallEnvironment(),
     })
 
     if (config.mode === 'development') {
@@ -1507,6 +1509,7 @@ export class BackendService {
     env.AUTO_MAS_HTTP_PORT = String(resolveHttpPort())
     // 所有启动链路明确传入应用环境，覆盖宿主继承值。
     env.AUTO_MAS_ENV = getApplicationEnvironment()
+    Object.assign(env, getFluxdownInstallEnvironment())
     return env
   }
 

@@ -38,7 +38,7 @@ ZzzOd / MAA 字段回填模式）。
 MAS 配置目录 owner 由用户当前的 ``Info.Base`` 三态决定（shared=Default 共
 享、independent=独立目录、native=无 MAS 配置），解析逻辑见 ``restore_service``。
 时间戳快照、指纹去重、保留清理与整目录恢复的通用逻辑由公共模块
-``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
+``app.utils.common.config.archive`` 提供（默认每池保留 10 份），本模块只保留
 ok-ww 特有的 owner 目录布局、覆盖层侧车、恢复语义（恢复前强制归档当前）
 与归档目录布局。
 """
@@ -47,8 +47,8 @@ import json
 from pathlib import Path
 
 from app.utils import BASE_NATIVE, BASE_SHARED, BASE_SOURCE_LABELS, get_logger
-from app.utils import config_archive as _utils_config_archive
 from app.utils import io as _utils_io
+from app.utils.common.config import archive as _utils_config_archive
 
 read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 
