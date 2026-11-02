@@ -42,6 +42,11 @@ const createApp = (page: Page, testInfo: TestInfo): App => ({
         '.overview-panel-container',
         '.log-panel-container',
         '.queue-scope',
+        '.script-select',
+        '.queue-title-text',
+        '.ant-select-dropdown',
+        '.history-page',
+        '.log-modal-content',
         '.ant-message',
         '.ant-notification',
       ]
@@ -58,6 +63,13 @@ const createApp = (page: Page, testInfo: TestInfo): App => ({
 
 export const test = base.extend<{ app: App }>({
   app: async ({ page }, use, testInfo) => {
+    const pageErrors: string[] = []
+    page.on('pageerror', error => pageErrors.push(error.message))
+    page.on('console', message => {
+      if (message.type() === 'error' && message.text().includes('Vue应用错误')) {
+        pageErrors.push(message.text())
+      }
+    })
     await page.addInitScript(() => {
       ;(window as Window & { __AUTO_MAS_E2E__?: boolean }).__AUTO_MAS_E2E__ = true
     })
@@ -75,8 +87,12 @@ export const test = base.extend<{ app: App }>({
       })
     })
     await page.route('**/api/info/*/activity', route => route.abort())
-    await use(createApp(page, testInfo))
-    await attachBackendLog(testInfo)
+    try {
+      await use(createApp(page, testInfo))
+    } finally {
+      await attachBackendLog(testInfo)
+      expect(pageErrors, '页面异常及 Vue 全局错误').toEqual([])
+    }
   },
 })
 
