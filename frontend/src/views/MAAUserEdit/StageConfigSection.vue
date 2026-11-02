@@ -354,7 +354,7 @@ const formatTooltip = (text: string) => (text ? escapeHtml(text).replace(/\n/g, 
   min-height: 40px;
   padding: 8px 12px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-container);
   display: flex;
   align-items: center;
@@ -372,9 +372,10 @@ const formatTooltip = (text: string) => (text ? escapeHtml(text).replace(/\n/g, 
   font-size: 12px;
   color: var(--ant-color-primary);
   font-weight: 500;
-  padding: 2px 8px;
+  padding: 4px 8px;
   background: var(--ant-color-primary-bg);
-  border-radius: 12px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   border: 1px solid var(--ant-color-primary);
 }
 

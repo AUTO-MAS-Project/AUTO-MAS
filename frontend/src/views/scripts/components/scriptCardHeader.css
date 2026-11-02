@@ -41,7 +41,7 @@
 .script-logo-container {
   width: 48px;
   height: 48px;
-  border-radius: 12px;
+  border-radius: var(--ant-border-radius);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -74,7 +74,7 @@
 .script-type {
   font-size: 12px;
   font-weight: 500;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius-xs);
   border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
@@ -86,7 +86,7 @@
 }
 
 .action-button {
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   font-weight: 500;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
@@ -144,12 +144,12 @@
   }
 
   .header-actions {
-    gap: 6px;
+    gap: 8px;
   }
 
   .action-button {
     font-size: 11px;
     height: 26px;
-    padding: 0 6px;
+    padding: 0 8px;
   }
 }

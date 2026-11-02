@@ -482,7 +482,7 @@ watch(
   min-height: 40px;
   padding: 8px 12px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-container);
   display: flex;
   align-items: center;

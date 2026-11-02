@@ -561,7 +561,7 @@ onMounted(() => {
   padding: 12px 16px;
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   transition: all 0.2s ease;
 }
 
@@ -657,14 +657,14 @@ onMounted(() => {
 /* 标签样式 */
 :deep(.ant-tag) {
   margin: 0;
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
 }
 
 /* 脚本下拉框样式 - 使用与TimeSetManager.vue状态下拉框相同的样式 */
 .script-select :deep(.ant-select-selector) {
   background: transparent !important;
   border: none !important;
-  padding: 0 6px !important;
+  padding: 0 8px !important;
   min-height: 28px !important;
   line-height: 26px !important;
   box-shadow: none !important;

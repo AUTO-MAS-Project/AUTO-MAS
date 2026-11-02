@@ -216,7 +216,7 @@ defineExpose({
 
 .script-card {
   background: var(--ant-color-bg-container);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   border: 1px solid var(--ant-color-border-secondary);
   overflow: hidden;
   /* 移除transition避免数据更新时的闪烁 */
@@ -299,7 +299,7 @@ defineExpose({
   justify-content: center;
   padding: 12px;
   background: var(--ant-color-fill-quaternary);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   border: 1px dashed var(--ant-color-border);
 }
 
@@ -321,7 +321,7 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  padding: 12px 16px;
   /* 保留hover过渡，但减少时间 */
   transition: background-color 0.1s ease;
 }
@@ -355,7 +355,7 @@ defineExpose({
   }
 
   .script-header {
-    padding: 10px 12px;
+    padding: 12px 12px;
   }
 
   .script-name {

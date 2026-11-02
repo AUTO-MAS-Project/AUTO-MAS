@@ -732,7 +732,7 @@ onUnmounted(() => {
 }
 
 .config-card {
-  border-radius: 12px;
+  border-radius: var(--app-radius-card);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
@@ -786,7 +786,7 @@ onUnmounted(() => {
 .user-tag-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
   min-height: 40px;
 }

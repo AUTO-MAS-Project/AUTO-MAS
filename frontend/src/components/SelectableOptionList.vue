@@ -13,6 +13,6 @@ const value = defineModel<T>({ required: true })
   display: flex;
   width: 100%;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 </style>

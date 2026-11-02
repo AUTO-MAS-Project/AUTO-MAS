@@ -258,7 +258,7 @@ const statMaterialTime = computed(() => {
 <style scoped>
 .cultivation-overview {
   background: var(--ant-color-bg-container);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   padding: 8px 24px 16px;
   margin-bottom: 16px;
 }
@@ -269,7 +269,7 @@ const statMaterialTime = computed(() => {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 16px;
-  padding: 14px 0;
+  padding: 16px 0;
 }
 
 .setting-row + .setting-row,
@@ -344,7 +344,7 @@ const statMaterialTime = computed(() => {
   height: 28px;
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius-xs);
   background: transparent;
   color: var(--ant-color-text-tertiary);
   font-size: 14px;

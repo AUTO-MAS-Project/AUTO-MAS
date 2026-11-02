@@ -60,14 +60,14 @@ const { t } = useI18n()
 <style scoped>
 .preset-card {
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   background: var(--ant-color-bg-container);
 }
 
 .preset-card-inner {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   padding: 16px;
 }
 
@@ -80,7 +80,7 @@ const { t } = useI18n()
 .preset-icon-wrap {
   width: 36px;
   height: 36px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius-xs);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -140,9 +140,9 @@ const { t } = useI18n()
 /* 「N 个已失效」：虚线灰标签 */
 .queue-invalid-tag {
   flex: none;
-  padding: 0 7px;
+  padding: 0 8px;
   border: 1px dashed var(--ant-color-border);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   color: var(--ant-color-text-secondary);
   font-size: 12px;
   line-height: 20px;

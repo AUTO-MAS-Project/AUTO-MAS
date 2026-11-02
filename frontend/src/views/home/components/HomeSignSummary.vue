@@ -93,12 +93,12 @@ const renderUser = (user: GameSignUser) => {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
 }
 .sign-heading {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   color: var(--ant-color-text);
   font-size: 14px;
 }

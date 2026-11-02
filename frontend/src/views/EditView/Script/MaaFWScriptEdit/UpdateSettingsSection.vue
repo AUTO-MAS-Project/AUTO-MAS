@@ -366,7 +366,7 @@ const cdkHintText = computed(() => {
   min-width: 0;
   padding: 12px 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-container);
 }
 

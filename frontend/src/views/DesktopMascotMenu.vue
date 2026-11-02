@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { normalizeRadius } from '@/composables/themeRadii'
 import type {
   DesktopMascotMenuCapability,
   DesktopMascotMenuData,
@@ -41,7 +42,7 @@ const style = computed(() => {
     '--mascot-menu-text': skin?.text ?? colors.text,
     '--mascot-menu-border': skin?.border ?? colors.border,
     '--mascot-menu-accent': skin?.accent ?? colors.text,
-    '--mascot-menu-radius': `${skin?.radius ?? colors.radius}px`,
+    '--mascot-menu-radius': `${normalizeRadius(skin?.radius ?? colors.radius)}px`,
     '--mascot-menu-font': `${skin?.fontSize ?? 13}px`,
     '--mascot-menu-item-height': `${skin?.itemHeight ?? 32}px`,
     width: `${Math.min(Math.round(skin?.width ?? 180), viewport.value?.width ?? 180)}px`,
@@ -269,7 +270,7 @@ function keydown(event: KeyboardEvent): void {
 }
 .menu-items {
   display: grid;
-  gap: 2px;
+  gap: 4px;
 }
 .menu-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -278,12 +279,12 @@ button {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
   min-height: var(--mascot-menu-item-height);
   padding: 4px 8px;
   border: 0;
-  border-radius: calc(var(--mascot-menu-radius) / 2);
+  border-radius: max(4px, calc(var(--mascot-menu-radius) - 4px));
   color: inherit;
   background: transparent;
   font: inherit;
@@ -329,12 +330,12 @@ button:disabled {
 }
 .menu-options {
   display: grid;
-  gap: 2px;
+  gap: 4px;
 }
 .menu-empty,
 .menu-error {
   margin: 0;
-  padding: 8px 10px;
+  padding: 8px 12px;
   overflow-wrap: anywhere;
 }
 .menu-empty {

@@ -783,7 +783,7 @@ watch([() => props.scriptId, () => props.userId, () => props.mode], () => {
   align-items: center;
   padding: 16px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--app-radius-surface);
   background: var(--ant-color-bg-container);
   transition: all 0.2s ease;
 }
@@ -844,7 +844,7 @@ watch([() => props.scriptId, () => props.userId, () => props.mode], () => {
 
 .headers-input {
   border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   padding: 12px;
   background: var(--ant-color-bg-layout);
 }
@@ -865,7 +865,7 @@ watch([() => props.scriptId, () => props.userId, () => props.mode], () => {
 
 /* 紧凑模式（通知配置弹窗里）：URL 截断不折行，操作收成一行文字链接 */
 .webhook-item.compact {
-  padding: 10px 12px;
+  padding: 12px 12px;
 }
 
 .webhook-item.compact .webhook-name {
@@ -886,7 +886,7 @@ watch([() => props.scriptId, () => props.userId, () => props.mode], () => {
 }
 
 .webhook-actions.compact .ant-btn {
-  padding-inline: 6px;
+  padding-inline: 8px;
 }
 
 .add-hook {

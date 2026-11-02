@@ -259,12 +259,12 @@ defineExpose({ beforeLeave })
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
   width: 100%;
   min-height: 46px;
-  padding: 6px 8px;
+  padding: 8px 8px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   background: transparent;
   color: var(--ant-color-text);
   text-align: left;

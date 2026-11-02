@@ -68,8 +68,8 @@ defineExpose({ spawn, clear: texts.dispose })
 /* 角色台词：带尾巴的对话气泡 */
 .float-layer :deep(.star-burst-speech) {
   max-width: 280px;
-  padding: 6px 12px;
-  border-radius: 12px;
+  padding: 8px 12px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-elevated);
   border: 1px solid var(--ant-color-border-secondary);
   box-shadow: var(--ant-box-shadow-secondary);

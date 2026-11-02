@@ -70,9 +70,9 @@ onUnmounted(clearSlowTimer)
 }
 
 .startup-card {
-  padding: 30px 34px;
+  padding: 32px 36px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
+  border-radius: var(--app-radius-card);
   background: var(--ant-color-bg-elevated);
   box-shadow: 0 10px 36px rgba(0, 0, 0, 0.24);
 }

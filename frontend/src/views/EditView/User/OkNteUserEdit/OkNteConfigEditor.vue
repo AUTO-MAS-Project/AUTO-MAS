@@ -729,7 +729,7 @@ watch(
 .group-items {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .config-item {
@@ -737,7 +737,7 @@ watch(
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   cursor: pointer;
   transition: all 0.2s ease;
   border-left: 3px solid transparent;
@@ -767,8 +767,8 @@ watch(
 
 .config-item-badge {
   font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: 4px 8px;
+  border-radius: var(--ant-border-radius-xs);
   background: var(--ant-color-fill-secondary);
   color: var(--ant-color-text-secondary);
 }
@@ -821,7 +821,7 @@ watch(
 .object-field {
   padding: 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-fill-quaternary);
 }
 
@@ -839,9 +839,9 @@ watch(
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 12px 12px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-fill-quaternary);
 }
 
@@ -850,7 +850,7 @@ watch(
   flex: 1;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .routine-item-name {

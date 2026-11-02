@@ -97,10 +97,10 @@ const handleKeydown = (event: KeyboardEvent) => {
   gap: 4px;
   width: 168px;
   height: 32px;
-  padding: 0 7px;
+  padding: 0 8px;
   overflow: hidden;
   border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-container);
   cursor: pointer;
   outline: none;
@@ -137,10 +137,10 @@ const handleKeydown = (event: KeyboardEvent) => {
   display: inline-flex;
   align-items: center;
   height: 22px;
-  padding: 0 7px;
+  padding: 0 8px;
   border: 1px solid var(--ant-color-border);
   border-bottom-width: 2px;
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   background: var(--ant-color-fill-quaternary);
   color: var(--ant-color-text);
   font-size: 12px;

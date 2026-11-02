@@ -868,7 +868,7 @@ const handleToggleUserStatus = async (user: ScriptListUser) => {
 
 .mask-content {
   background: var(--ant-color-bg-elevated);
-  border-radius: 8px;
+  border-radius: var(--app-radius-card);
   padding: 24px;
   max-width: 480px;
   width: 100%;
@@ -968,7 +968,7 @@ const handleToggleUserStatus = async (user: ScriptListUser) => {
     align-items: stretch;
     flex-direction: column;
     gap: 16px;
-    padding: 0 2px;
+    padding: 0 4px;
   }
 
   .header-left {

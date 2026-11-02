@@ -292,6 +292,7 @@ defineExpose({ launch })
   width: 14px;
   height: 14px;
   border-radius: 50%;
+  corner-shape: round;
   background: radial-gradient(circle, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0));
   transform: translate(-50%, -50%) scale(0.5);
   animation: race-puff 700ms ease-out forwards;
@@ -345,6 +346,7 @@ defineExpose({ launch })
   width: 100%;
   height: 100%;
   border-radius: 50%;
+  corner-shape: round;
   border: 2px solid #4b5563;
   background: #1f2937;
   object-fit: cover;
@@ -366,7 +368,7 @@ defineExpose({ launch })
   right: -4px;
   top: 7px;
   height: 3px;
-  border-radius: 2px;
+  border-radius: var(--ant-border-radius-xs);
   background: #374151;
   transform: rotate(-18deg);
 }
@@ -383,6 +385,7 @@ defineExpose({ launch })
   width: 14px;
   height: 28px;
   border-radius: 50% 50% 50% 50% / 30% 30% 70% 70%;
+  corner-shape: round;
   background: radial-gradient(
     ellipse at 50% 20%,
     #fffbe0 0%,
@@ -408,8 +411,9 @@ defineExpose({ launch })
   position: absolute;
   left: 0;
   top: -54px;
-  padding: 1px 8px;
-  border-radius: 999px;
+  padding: 4px 8px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: rgba(15, 23, 42, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.16);
   font-size: 11px;

@@ -26,14 +26,14 @@ defineProps<{
 .field-label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   color: var(--ant-color-text-secondary);
   font-size: 13px;
   font-weight: 500;
 }
 
 .field-label:focus-visible {
-  border-radius: 3px;
+  border-radius: var(--ant-border-radius-xs);
   outline: 2px solid var(--ant-color-primary);
   outline-offset: 2px;
 }

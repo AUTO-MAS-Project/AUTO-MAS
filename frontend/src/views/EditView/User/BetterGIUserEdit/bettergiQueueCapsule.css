@@ -8,7 +8,8 @@
   position: relative;
   width: 44px;
   height: 22px;
-  border-radius: 11px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: var(--ant-color-fill-quaternary);
   border: 1px solid var(--ant-color-border);
   transition:
@@ -28,6 +29,7 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
+  corner-shape: round;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   transition: left 0.2s;

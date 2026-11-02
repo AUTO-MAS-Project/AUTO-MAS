@@ -173,9 +173,10 @@ const changeTab = (value: TabKey) => emit('update:tab', value)
 
 .tb-edit-btn {
   height: 42px;
-  padding: 0 18px;
+  padding: 0 20px;
   border: 1px dashed var(--ant-color-border);
-  border-radius: 999px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: transparent;
   color: var(--ant-color-text-secondary);
   font-size: 16px;
@@ -205,11 +206,12 @@ const changeTab = (value: TabKey) => emit('update:tab', value)
 .tb-tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin: 0;
-  padding: 6px 18px;
+  padding: 8px 20px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 999px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: var(--app-background-card-bg, var(--ant-color-bg-container));
   color: var(--ant-color-text);
   font-size: 16px;
@@ -262,6 +264,7 @@ const changeTab = (value: TabKey) => emit('update:tab', value)
   width: 5px;
   height: 5px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--ant-color-primary);
 }
 

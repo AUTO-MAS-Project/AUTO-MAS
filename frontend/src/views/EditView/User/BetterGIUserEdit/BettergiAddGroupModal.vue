@@ -482,7 +482,7 @@ defineExpose({ open: openAddToDragonModal, openForGroup: openAddScriptToGroup })
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   margin-bottom: 8px;
 }
 

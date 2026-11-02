@@ -112,7 +112,7 @@ const { t } = useI18n()
 .behavior-group {
   padding: 0 20px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-fill-quaternary);
 }
 

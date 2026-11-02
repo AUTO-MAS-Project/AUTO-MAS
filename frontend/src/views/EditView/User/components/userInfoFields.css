@@ -1,6 +1,6 @@
 /* 编辑页基础文本字段沿用原有输入框样式。 */
 .modern-input {
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   border: 2px solid var(--ant-color-border);
   background: var(--ant-color-bg-container);
   transition: all 0.3s ease;

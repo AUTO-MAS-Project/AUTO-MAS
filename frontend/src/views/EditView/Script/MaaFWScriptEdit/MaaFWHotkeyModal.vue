@@ -352,7 +352,7 @@ const handleSave = () => {
 }
 
 .hotkey-group-title {
-  padding: 12px 0 6px;
+  padding: 12px 0 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
   color: var(--ant-color-text);
   font-weight: 700;
@@ -411,7 +411,7 @@ const handleSave = () => {
 }
 
 .hotkey-error {
-  padding-top: 2px;
+  padding-top: 4px;
   color: var(--ant-color-error);
   font-size: 12px;
   line-height: 1.5;

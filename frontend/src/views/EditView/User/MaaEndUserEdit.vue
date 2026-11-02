@@ -727,7 +727,7 @@ onUnmounted(() => {
   color: var(--ant-color-text);
 }
 .section-card {
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
 }
 .section-card :deep(.ant-card-body) {
   padding: 24px;
@@ -735,7 +735,7 @@ onUnmounted(() => {
 .optional-section {
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
 }
 .maaend-preview-title {
   margin: 0 0 8px;

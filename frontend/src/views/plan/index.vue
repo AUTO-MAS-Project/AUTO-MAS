@@ -632,7 +632,7 @@ onMounted(() => {
   padding: 60px 20px;
   background: var(--ant-color-fill-quaternary);
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
+  border-radius: var(--app-radius-surface);
   margin: 20px 0;
 }
 

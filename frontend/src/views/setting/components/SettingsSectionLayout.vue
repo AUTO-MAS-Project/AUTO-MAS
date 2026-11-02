@@ -175,7 +175,7 @@ function scrollToSection(section: SettingsSection) {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: calc(var(--ant-border-radius) + 12px);
   background: var(--ant-color-bg-container);
 }
 
@@ -201,7 +201,7 @@ function scrollToSection(section: SettingsSection) {
 .settings-tabs :deep(.ant-tabs-tab) {
   margin-right: 8px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--ant-border-radius) var(--ant-border-radius) 0 0;
   background: transparent;
 }
 
@@ -272,7 +272,7 @@ function scrollToSection(section: SettingsSection) {
   bottom: 9px;
   left: -1px;
   width: 3px;
-  border-radius: 2px;
+  border-radius: var(--ant-border-radius-xs);
   background: var(--ant-color-primary);
   content: '';
 }

@@ -1633,7 +1633,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
 .source-cell {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .source-sub {
@@ -1645,9 +1645,9 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 12px 12px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   margin-bottom: 8px;
 }
 

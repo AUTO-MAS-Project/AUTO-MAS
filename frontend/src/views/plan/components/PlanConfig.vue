@@ -136,7 +136,7 @@ const handleRotateDaysChange = (value: number | string | null) => {
 <style scoped>
 .plan-config-card {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
+  border-radius: var(--app-radius-card);
   border: 1px solid var(--ant-color-border-secondary);
 }
 
@@ -179,12 +179,12 @@ const handleRotateDaysChange = (value: number | string | null) => {
 .plan-title-input {
   flex: 1;
   max-width: 400px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   transition: all 0.2s ease;
 }
 
 .config-table-container {
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   overflow: hidden;
   /* border: 1px solid var(--ant-color-border-secondary); */
 }

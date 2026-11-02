@@ -3,7 +3,7 @@
     size="small"
     class="tb-card"
     :class="{ done: state === 'done' }"
-    :body-style="{ padding: '12px 14px' }"
+    :body-style="{ padding: '16px' }"
   >
     <template #cover>
       <div class="tb-cover-wrap">
@@ -143,7 +143,7 @@ const hideCover = (ev: Event) => {
   flex-direction: column;
   overflow: hidden;
   border-color: var(--tb-card-border, var(--ant-color-border-secondary));
-  border-radius: var(--tb-card-radius, 10px);
+  border-radius: var(--tb-card-radius);
   background: var(--ant-color-bg-container);
   transition:
     border-color 0.15s,
@@ -201,7 +201,7 @@ const hideCover = (ev: Event) => {
   padding: 0 12px;
   overflow: hidden;
   border-color: var(--ant-color-border-secondary);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius-xs);
   background: var(--tb-tag-bg, var(--ant-color-bg-container));
   color: var(--ant-color-text);
   font-size: 12px;
@@ -254,7 +254,7 @@ const hideCover = (ev: Event) => {
 .tb-card-times {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   font-size: 12px;
   line-height: 18px;
   white-space: nowrap;
@@ -285,8 +285,8 @@ const hideCover = (ev: Event) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px 0;
-  border-radius: 6px;
+  padding: 12px 0;
+  border-radius: var(--ant-border-radius-xs);
   background: var(--ant-color-fill-quaternary);
 }
 
@@ -294,7 +294,7 @@ const hideCover = (ev: Event) => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   width: 100%;
   padding: 0;
   border: 0;
@@ -317,7 +317,7 @@ const hideCover = (ev: Event) => {
 .tb-state-line {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   color: var(--ant-color-primary);
   font-size: 14px;
   font-weight: 600;
@@ -346,12 +346,12 @@ const hideCover = (ev: Event) => {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   height: 32px;
   margin: 0 0 0 auto;
   padding: 0 12px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius-xs);
   background: var(--tb-tag-bg, var(--ant-color-bg-container));
   color: var(--ant-color-text);
   font-size: 12px;
@@ -363,6 +363,7 @@ const hideCover = (ev: Event) => {
   width: 5px;
   height: 5px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--ant-color-primary);
 }
 

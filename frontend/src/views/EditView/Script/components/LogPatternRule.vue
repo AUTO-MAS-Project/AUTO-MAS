@@ -423,7 +423,7 @@ const logTypeOptions = [
   font-size: 12px;
   line-height: 20px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   color: var(--ant-color-text-secondary);
   background: transparent;
   white-space: nowrap;
@@ -448,7 +448,7 @@ const logTypeOptions = [
 .doc-link {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   margin-left: 8px;
   color: var(--ant-color-primary);
   font-size: 12px;

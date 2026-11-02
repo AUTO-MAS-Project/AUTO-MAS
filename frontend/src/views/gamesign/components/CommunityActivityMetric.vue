@@ -50,11 +50,11 @@ const showStatus = computed(
   grid-template-columns: minmax(0, 1fr) auto;
   align-content: center;
   align-items: baseline;
-  gap: 0 6px;
+  gap: 0 8px;
   min-width: 0;
   min-height: 26px;
   box-sizing: border-box;
-  padding: 2px 0;
+  padding: 4px 0;
   border-bottom: 1px solid var(--ant-color-border-secondary);
   font-size: 12px;
   line-height: 1.35;
@@ -92,7 +92,7 @@ const showStatus = computed(
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
-  gap: 2px;
+  gap: 4px;
   border-bottom: 0;
 }
 

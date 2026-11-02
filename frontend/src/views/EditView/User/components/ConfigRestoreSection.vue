@@ -759,9 +759,9 @@ const confirmRestore = (item: BackupItem) => {
 }
 
 .preview-task-tag {
-  padding: 2px 10px;
+  padding: 4px 12px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   color: var(--ant-color-text-tertiary);
   font-size: 13px;
 }
@@ -806,9 +806,9 @@ const confirmRestore = (item: BackupItem) => {
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   background: transparent;
   cursor: pointer;
   text-align: left;
@@ -847,7 +847,7 @@ const confirmRestore = (item: BackupItem) => {
 .backup-file-content {
   margin: 0;
   padding: 12px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-fill-tertiary);
   color: var(--ant-color-text);
   font-family: var(--font-monospace, 'Consolas', 'Monaco', monospace);

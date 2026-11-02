@@ -185,7 +185,7 @@ const taskLabel = (label: string) => label.slice(label.indexOf(' ') + 1)
 .task-group-list {
   overflow: hidden;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   background: var(--ant-color-bg-container);
 }
 .task-option-panel {
@@ -208,7 +208,7 @@ const taskLabel = (label: string) => label.slice(label.indexOf(' ') + 1)
   align-items: center;
   gap: 8px;
   min-height: 44px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   border: none;
   border-bottom: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
@@ -226,7 +226,7 @@ const taskLabel = (label: string) => label.slice(label.indexOf(' ') + 1)
 }
 .task-row {
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
 }
 .task-group-row:hover,
 .task-row:hover:not(.task-row-disabled) {
@@ -234,7 +234,7 @@ const taskLabel = (label: string) => label.slice(label.indexOf(' ') + 1)
 }
 .task-group-selected,
 .task-group-selected:hover {
-  padding-left: 9px;
+  padding-left: 8px;
   border-left: 3px solid var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
 }
@@ -262,6 +262,7 @@ const taskLabel = (label: string) => label.slice(label.indexOf(' ') + 1)
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--ant-color-success);
 }
 @container (max-width: 1200px) {

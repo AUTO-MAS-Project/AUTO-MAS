@@ -1324,7 +1324,7 @@ const onConfirmBossPicker = (): void => {
 .bettergi-groups-settings-fields {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   max-height: 340px;
   overflow-y: auto;
   padding-right: 4px;
@@ -1354,7 +1354,7 @@ const onConfirmBossPicker = (): void => {
 .bettergi-setting-label {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   font-size: 14px;
   font-weight: 500;
@@ -1466,7 +1466,7 @@ const onConfirmBossPicker = (): void => {
 .bettergi-weekly-table-top {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   font-size: 14px;
   color: var(--ant-color-text);
 }
@@ -1490,11 +1490,11 @@ const onConfirmBossPicker = (): void => {
 }
 
 .bettergi-weekly-table :deep(.ant-table-thead > tr > th) {
-  padding: 6px 8px;
+  padding: 8px 8px;
 }
 
 .bettergi-weekly-table :deep(.ant-table-tbody > tr > td) {
-  padding: 5px 8px;
+  padding: 4px 8px;
 }
 
 .bettergi-weekly-table :deep(.ant-select),
@@ -1538,11 +1538,11 @@ const onConfirmBossPicker = (): void => {
   flex-direction: column;
   min-width: 0;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   overflow: hidden;
 }
 .bettergi-domain-picker-col-title {
-  padding: 8px 10px;
+  padding: 8px 12px;
   font-size: 13px;
   font-weight: 600;
   color: var(--ant-color-text-secondary);
@@ -1555,11 +1555,11 @@ const onConfirmBossPicker = (): void => {
   padding: 4px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 .bettergi-domain-picker-item {
-  padding: 7px 10px;
-  border-radius: 6px;
+  padding: 8px 12px;
+  border-radius: var(--ant-border-radius);
   font-size: 13px;
   color: var(--ant-color-text);
   cursor: pointer;
@@ -1575,7 +1575,7 @@ const onConfirmBossPicker = (): void => {
   font-weight: 500;
 }
 .bettergi-domain-picker-note {
-  padding: 8px 10px;
+  padding: 8px 12px;
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
 }

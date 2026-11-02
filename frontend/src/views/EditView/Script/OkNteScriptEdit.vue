@@ -603,7 +603,7 @@ onMounted(loadScript)
 
 <style scoped>
 .config-card {
-  border-radius: 16px;
+  border-radius: var(--app-radius-card);
   box-shadow:
     0 4px 20px rgba(0, 0, 0, 0.08),
     0 1px 3px rgba(0, 0, 0, 0.1);
@@ -631,7 +631,7 @@ onMounted(loadScript)
 }
 
 .modern-input {
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   border: 2px solid var(--ant-color-border);
 }
 

@@ -345,9 +345,10 @@ const saveGames = async (keys: string[]) => {
   gap: 8px;
   align-self: flex-start;
   margin: 0 0 12px;
-  padding: 5px 14px;
+  padding: 4px 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 999px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: var(--app-background-card-bg, var(--ant-color-bg-container));
   color: var(--ant-color-text-secondary);
   font-size: 12px;

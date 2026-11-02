@@ -380,7 +380,7 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
   gap: 12px;
   padding: 8px 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-fill-quaternary);
   transition:
     border-color 0.2s,

@@ -71,7 +71,7 @@
 .user-info-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
 }
 
@@ -79,7 +79,7 @@
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 12px;
   line-height: 18px;
   color: var(--ant-color-text-secondary);
@@ -100,6 +100,7 @@
   height: 6px;
   flex: none;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--ant-color-text-quaternary);
 }
 
@@ -112,7 +113,7 @@
   max-width: 120px;
   font-size: 11px;
   font-weight: 500;
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   margin: 0;
   border: 1px solid rgba(0, 0, 0, 0.15);
   overflow: hidden;
@@ -123,7 +124,7 @@
 .server-tag {
   font-size: 11px;
   font-weight: 500;
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
@@ -158,7 +159,7 @@
 }
 
 .user-action-btn {
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   font-weight: 500;
   min-width: 60px;
   border: 1px solid var(--ant-color-border);
@@ -196,7 +197,7 @@
   }
 
   .user-details-row {
-    gap: 6px;
+    gap: 8px;
   }
 
   .user-name-section {

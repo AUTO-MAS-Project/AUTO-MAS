@@ -186,21 +186,21 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
 
 .modal-head {
   flex: 0 0 auto;
-  padding: 16px 20px 14px;
+  padding: 16px 20px 16px;
   border-bottom: 1px solid var(--ant-color-split);
 }
 
 .modal-title-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .chan-icon-head {
   width: 30px;
   height: 30px;
   flex: 0 0 30px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   display: grid;
   place-items: center;
   font-size: 17px;
@@ -229,8 +229,8 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
   background: transparent;
   color: var(--ant-color-text-tertiary);
   font-size: 15px;
-  padding: 2px 6px;
-  border-radius: 6px;
+  padding: 4px 8px;
+  border-radius: var(--ant-border-radius);
   cursor: pointer;
 }
 
@@ -262,15 +262,15 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
   gap: 4px;
   background: var(--ant-color-fill-quaternary);
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  padding: 8px 14px;
+  border-radius: var(--ant-border-radius);
+  padding: 8px 16px;
 }
 
 .state-main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
 }
 
 .switch-label {

@@ -168,7 +168,7 @@ const onKeydown = (event: KeyboardEvent) => {
   min-width: 0;
   min-height: 150px;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: var(--app-radius-surface);
   background: var(--ant-color-fill-quaternary);
   color: #fff;
 }
@@ -205,13 +205,13 @@ const onKeydown = (event: KeyboardEvent) => {
   z-index: 1;
   min-width: 0;
   width: 100%;
-  padding: 14px 16px;
+  padding: 16px 16px;
 }
 .activity-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin-bottom: 8px;
 }
 .activity-head :deep(.ant-tag) {
@@ -322,7 +322,7 @@ const onKeydown = (event: KeyboardEvent) => {
   min-height: 0;
   padding: 12px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   color: var(--ant-color-text);
   background: var(--ant-color-fill-quaternary);
 }
@@ -332,7 +332,7 @@ const onKeydown = (event: KeyboardEvent) => {
   flex: 0 0 auto;
   width: 88px;
   height: 88px;
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   background: var(--ant-color-bg-container);
   transform: none;
 }
@@ -372,7 +372,7 @@ const onKeydown = (event: KeyboardEvent) => {
 .is-horizontal .activity-meta {
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: 8px;
 }
 .is-resource {
   align-items: center;

@@ -59,6 +59,7 @@ onBeforeUnmount(() => {
   padding: 0;
   border: none;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--ant-color-primary);
   color: #fff;
   cursor: pointer;

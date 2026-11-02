@@ -1776,7 +1776,7 @@ const addProjects = (rows: unknown[]) =>
   gap: 8px;
   padding: 8px 4px;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: var(--ant-border-radius);
   cursor: pointer;
   user-select: none;
   transition:
@@ -1921,7 +1921,7 @@ const addProjects = (rows: unknown[]) =>
 
 .bettergi-groups-pane {
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   background: var(--ant-color-bg-container);
   overflow: hidden;
 }
@@ -2051,7 +2051,7 @@ const addProjects = (rows: unknown[]) =>
 .bettergi-groups-settings-fields {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   max-height: 340px;
   overflow-y: auto;
   padding-right: 4px;
@@ -2080,7 +2080,7 @@ const addProjects = (rows: unknown[]) =>
 .bettergi-setting-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex: 0 1 auto;
   min-width: 0;
   font-size: 14px;
@@ -2191,8 +2191,8 @@ const addProjects = (rows: unknown[]) =>
   max-height: 300px;
   overflow-y: auto;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  padding: 10px;
+  border-radius: var(--ant-border-radius);
+  padding: 12px;
 }
 .strategy-picker-candidate {
   cursor: pointer;

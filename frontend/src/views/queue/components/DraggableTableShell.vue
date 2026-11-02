@@ -68,7 +68,7 @@ const items = computed<T[]>({
 .draggable-table-container {
   width: 100%;
   border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
+  border-radius: var(--app-radius-panel);
   overflow: hidden;
 }
 

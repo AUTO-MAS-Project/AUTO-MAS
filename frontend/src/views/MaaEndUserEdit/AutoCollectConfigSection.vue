@@ -174,7 +174,7 @@ const handleModeChange = (value: MaaEndAutoCollectMode) =>
 
 .route-panel {
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   padding: 12px 16px 16px;
 }
 
@@ -220,9 +220,9 @@ const handleModeChange = (value: MaaEndAutoCollectMode) =>
   align-items: center;
   min-width: 0;
   min-height: 44px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-container);
   transition: background-color 0.2s ease;
 }

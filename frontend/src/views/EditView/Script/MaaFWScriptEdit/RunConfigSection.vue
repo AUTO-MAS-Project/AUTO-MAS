@@ -160,7 +160,7 @@ const handleTaskTimeLimitOverridesSave = (value: string, loopGuard: boolean) => 
 
 <style scoped>
 .modern-number-input {
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
 }
 
 .period-task-row {

@@ -278,9 +278,9 @@ const jumpFromTaskCard = (appId: string) => {
 .task-card {
   display: flex;
   align-items: center;
-  padding: 10px 14px;
+  padding: 12px 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   background: var(--ant-color-fill-quaternary);
   transition:
     background 0.2s,
@@ -317,7 +317,7 @@ const jumpFromTaskCard = (appId: string) => {
 .task-card-actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
@@ -363,7 +363,7 @@ const jumpFromTaskCard = (appId: string) => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 2px 0;
+  padding: 4px 0;
 }
 
 .plan-modal-field-title {

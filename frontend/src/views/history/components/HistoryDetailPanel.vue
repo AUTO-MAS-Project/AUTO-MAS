@@ -85,7 +85,7 @@ defineEmits<{
   align-items: center;
   justify-content: center;
   background: var(--ant-color-bg-container);
-  border-radius: 12px;
+  border-radius: var(--app-radius-surface);
   border: 1px solid var(--ant-color-border-secondary);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   min-height: 300px;

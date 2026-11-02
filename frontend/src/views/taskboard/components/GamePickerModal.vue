@@ -146,7 +146,7 @@ const hideCover = (ev: Event) => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: 12px;
-  padding: 2px;
+  padding: 4px;
 }
 
 .tb-pick {
@@ -155,9 +155,9 @@ const hideCover = (ev: Event) => {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 10px 8px 12px;
+  padding: 12px 8px 12px;
   border: 2px solid transparent;
-  border-radius: 12px;
+  border-radius: var(--app-radius-panel);
   cursor: pointer;
   transition: background 0.15s;
   min-width: 0;
@@ -182,7 +182,7 @@ const hideCover = (ev: Event) => {
 .tb-pick-thumb {
   width: 100%;
   aspect-ratio: 16 / 9;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   overflow: hidden;
   background: var(--ant-color-fill-secondary);
 }

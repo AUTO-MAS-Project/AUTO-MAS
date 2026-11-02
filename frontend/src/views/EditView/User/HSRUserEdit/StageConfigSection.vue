@@ -342,7 +342,7 @@ const filterOption = (input: unknown, option?: { label?: unknown; children?: unk
 .form-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-weight: 600;
 }
 </style>

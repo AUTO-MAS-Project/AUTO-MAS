@@ -237,7 +237,7 @@ const toggleCollapsed = () => {
   width: 4px;
   height: 24px;
   background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
+  border-radius: var(--ant-border-radius-xs);
 }
 
 .docs-btn {

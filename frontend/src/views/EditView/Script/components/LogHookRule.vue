@@ -155,8 +155,8 @@ const typeOptions = [
   font-size: 12px;
   color: var(--ant-color-text-secondary);
   background: var(--ant-color-fill-quaternary);
-  border-radius: 4px;
-  padding: 1px 6px;
+  border-radius: var(--ant-border-radius-xs);
+  padding: 4px 8px;
 }
 
 .footer-hint {

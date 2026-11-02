@@ -855,7 +855,7 @@ const filterOption = (input: string, option: any) => {
   padding: 8px 16px;
   font-size: 14px;
   font-weight: 500;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius-xs);
   margin: 0;
 }
 </style>

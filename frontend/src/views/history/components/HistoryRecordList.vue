@@ -101,7 +101,7 @@ const formatRecordTime = (date: string) => formatHistoryDateTime(date)
   display: flex;
   flex-direction: column;
   background: var(--ant-color-bg-container);
-  border-radius: 12px;
+  border-radius: var(--app-radius-surface);
   border: 1px solid var(--ant-color-border-secondary);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   overflow: hidden;
@@ -113,7 +113,7 @@ const formatRecordTime = (date: string) => formatHistoryDateTime(date)
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 16px;
+  padding: 16px 16px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
@@ -129,15 +129,16 @@ const formatRecordTime = (date: string) => formatHistoryDateTime(date)
 .header-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .record-count {
   font-size: 12px;
   color: var(--ant-color-text-secondary);
   background: var(--ant-color-fill-quaternary);
-  padding: 2px 8px;
-  border-radius: 10px;
+  padding: 4px 8px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
 }
 
 .info-icon {
@@ -176,7 +177,7 @@ const formatRecordTime = (date: string) => formatHistoryDateTime(date)
   gap: 12px;
   padding: 12px;
   margin-bottom: 6px;
-  border-radius: 10px;
+  border-radius: var(--app-radius-panel);
   cursor: pointer;
   transition: all 0.2s ease;
   background: var(--ant-color-fill-quaternary);
@@ -204,7 +205,7 @@ const formatRecordTime = (date: string) => formatHistoryDateTime(date)
   position: absolute;
   left: 0;
   top: 0;
-  border-radius: 4px 0 0 4px;
+  border-radius: var(--ant-border-radius-xs) 0 0 var(--ant-border-radius-xs);
 }
 
 .record-status-bar.success {

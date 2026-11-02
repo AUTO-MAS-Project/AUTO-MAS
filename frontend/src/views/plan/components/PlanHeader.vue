@@ -102,7 +102,7 @@ const onAddPlanMenu = ({ key }: { key: string }) => {
   }
 
   .plans-header {
-    padding: 0 2px; /* 减少边距给内容更多空间 */
+    padding: 0 4px; /* 减少边距给内容更多空间 */
   }
 
   .header-actions {

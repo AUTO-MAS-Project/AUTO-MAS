@@ -176,7 +176,7 @@ const whimboxConfigModeOptions = WHIMBOX_CONFIG_MODES.map(value => ({
 .user-tag-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
   min-height: 40px;
 }

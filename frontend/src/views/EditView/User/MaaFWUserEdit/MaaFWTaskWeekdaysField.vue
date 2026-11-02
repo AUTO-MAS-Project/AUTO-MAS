@@ -97,7 +97,7 @@ const handleToggleAll = () => {
 .option-label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 14px;
   font-weight: 600;
   color: var(--ant-color-text);

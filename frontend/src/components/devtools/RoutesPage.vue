@@ -145,7 +145,7 @@ const navigate = async (path = targetPath.value) => {
 }
 .route-json {
   padding: 12px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-fill-quaternary);
 }
 .route-history {

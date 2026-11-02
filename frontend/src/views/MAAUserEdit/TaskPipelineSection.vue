@@ -439,7 +439,7 @@ const greenTicketStoreSummary = computed(() => {
 }
 
 .pipeline-phase {
-  padding: 12px 4px 6px;
+  padding: 12px 4px 8px;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
   font-weight: 600;

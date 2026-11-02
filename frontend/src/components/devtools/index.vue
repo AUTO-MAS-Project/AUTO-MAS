@@ -142,6 +142,7 @@ useEventListener(document, 'keydown', (event: KeyboardEvent) => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--ant-color-text-tertiary);
 }
 

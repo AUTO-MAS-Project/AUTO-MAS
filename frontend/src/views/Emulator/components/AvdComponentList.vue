@@ -63,7 +63,7 @@ const componentColor = (item: Emulator2AvdComponentItem) => {
 .component-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .component-row {

@@ -166,7 +166,7 @@ const stripStyle = (snapshot: ActivitySnapshot): CSSProperties => ({
 .note-strip-header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 
@@ -178,7 +178,7 @@ const stripStyle = (snapshot: ActivitySnapshot): CSSProperties => ({
   overflow: hidden;
   width: 26px;
   height: 26px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius-xs);
   color: var(--note-accent);
   font-size: 16px;
 }
@@ -193,7 +193,7 @@ const stripStyle = (snapshot: ActivitySnapshot): CSSProperties => ({
 .note-strip-title {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   white-space: nowrap;
 }
@@ -221,7 +221,7 @@ const stripStyle = (snapshot: ActivitySnapshot): CSSProperties => ({
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px 20px;
+  gap: 8px 20px;
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--ant-color-border-secondary);
@@ -230,7 +230,7 @@ const stripStyle = (snapshot: ActivitySnapshot): CSSProperties => ({
 .note-metric {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   font-size: 12px;
 }

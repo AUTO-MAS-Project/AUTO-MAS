@@ -877,7 +877,7 @@ onUnmounted(() => {
   padding: 60px 20px;
   background: var(--ant-color-fill-quaternary);
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
+  border-radius: var(--app-radius-surface);
   margin: 20px 0;
 }
 
@@ -891,7 +891,7 @@ onUnmounted(() => {
 /* 队列选择卡片 */
 .queue-selector-card {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
+  border-radius: var(--app-radius-card);
   border: 1px solid var(--ant-color-border-secondary);
 }
 
@@ -917,14 +917,14 @@ onUnmounted(() => {
 
 .queue-button {
   flex: 1 1 120px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   transition: all 0.2s ease;
 }
 
 /* 队列配置卡片 */
 .queue-config-card {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
+  border-radius: var(--app-radius-card);
   border: 1px solid var(--ant-color-border-secondary);
   min-height: 600px;
 }
@@ -964,7 +964,7 @@ onUnmounted(() => {
 .queue-title-input {
   flex: 1;
   max-width: 400px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   transition: all 0.2s ease;
 }
 

@@ -21,7 +21,7 @@
             :key="option.key"
             class="tb-weekly-card"
             :class="{ done: isDone(option.key) }"
-            :body-style="{ padding: '10px 12px' }"
+            :body-style="{ padding: '16px' }"
             @click="toggle(option.key)"
           >
             <template #cover>
@@ -135,9 +135,10 @@ const hideCover = (event: Event) => {
 }
 
 .tb-weekly-hint {
-  padding: 5px 14px;
+  padding: 4px 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 999px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: var(--app-background-card-bg, var(--ant-color-bg-container));
   color: var(--ant-color-text-secondary);
   font-size: 12px;
@@ -160,7 +161,7 @@ const hideCover = (event: Event) => {
   cursor: pointer;
   overflow: hidden;
   border-color: var(--tb-card-border, var(--ant-color-border-secondary));
-  border-radius: var(--tb-card-radius, 10px);
+  border-radius: var(--tb-card-radius);
   background: var(--ant-color-bg-container);
   transition:
     border-color 0.15s,
@@ -201,15 +202,15 @@ const hideCover = (event: Event) => {
   position: absolute;
   top: 8px;
   right: 8px;
-  padding: 2px 6px;
-  border-radius: 6px;
+  padding: 4px 8px;
+  border-radius: var(--ant-border-radius-xs);
   background: var(--ant-color-bg-container);
 }
 
 .tb-weekly-body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .tb-weekly-name {

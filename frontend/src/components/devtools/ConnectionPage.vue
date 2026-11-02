@@ -234,8 +234,8 @@ const copySummary = () =>
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 16px;
-  border-radius: 8px;
+  padding: 16px 16px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-fill-quaternary);
 }
 .summary-cell strong {

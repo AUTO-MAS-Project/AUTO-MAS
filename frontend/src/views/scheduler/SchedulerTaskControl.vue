@@ -510,7 +510,7 @@ const onDropdownVisibleChange = (open: boolean) => {
 <style scoped>
 .task-control {
   margin-bottom: 16px;
-  border-radius: 12px;
+  border-radius: var(--app-radius-surface);
   background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid var(--ant-color-border-secondary);
@@ -574,7 +574,7 @@ const onDropdownVisibleChange = (open: boolean) => {
 .queue-scope-groups {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   margin-top: 8px;
   max-height: 45vh;
   overflow-y: auto;

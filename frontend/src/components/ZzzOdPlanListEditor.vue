@@ -228,15 +228,15 @@ const removePlan = (index: number) => {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-fill-quaternary);
 }
 
 .plan-drag-handle {
   cursor: grab;
-  padding: 6px 2px;
+  padding: 8px 4px;
   color: var(--ant-color-text-quaternary);
   display: inline-flex;
   align-items: center;
@@ -258,7 +258,7 @@ const removePlan = (index: number) => {
   flex: 1;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 12px;
+  gap: 8px 12px;
   min-width: 0;
 }
 

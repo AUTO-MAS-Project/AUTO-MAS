@@ -73,7 +73,7 @@ const emit = defineEmits<{
 .account-icon {
   width: 44px;
   height: 44px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius-xs);
   object-fit: cover;
 }
 .account-title {

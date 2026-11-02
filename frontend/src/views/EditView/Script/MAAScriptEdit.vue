@@ -492,7 +492,7 @@ const selectMAAPath = async () => {
 <style scoped>
 .notice-alert {
   margin-bottom: 24px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
 }
 
 .notice-content p {

@@ -288,8 +288,8 @@ watch(visible, async newVisible => {
 }
 
 .markdown-content :deep(code) {
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 4px 8px;
+  border-radius: var(--ant-border-radius);
   font-size: 1em;
   color: var(--ant-color-primary);
   border: 1px solid var(--ant-color-border-secondary);
@@ -299,7 +299,7 @@ watch(visible, async newVisible => {
 
 .markdown-content :deep(pre) {
   padding: 12px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   overflow-x: auto;
   margin: 12px 0;
 }

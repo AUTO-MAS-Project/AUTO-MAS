@@ -1,0 +1,98 @@
+:root {
+  /* 首屏与独立窗口的默认值；主窗口由 ThemeTokenBridge 同步最终 Ant token。 */
+  --ant-border-radius: 8px;
+  --ant-border-radius-sm: 8px;
+  --ant-border-radius-xs: 4px;
+  --ant-border-radius-lg: 8px;
+  --app-radius-panel: calc(var(--ant-border-radius) + 8px);
+  --app-radius-surface: calc(var(--ant-border-radius) + 16px);
+  --app-radius-card: calc(var(--ant-border-radius) + 24px);
+  --app-radius-pill: 9999px;
+}
+
+/* 小卡片固定使用 12px 内边距；默认卡片和弹窗使用 24px 内边距。 */
+.ant-card.ant-card-small {
+  border-radius: calc(var(--ant-border-radius) + 12px);
+}
+
+/* 表单控件与菜单的间距对齐网格，连体控件的接缝仍由 AntD 管理。 */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number .ant-input-number-input,
+.ant-picker {
+  padding: 4px 12px;
+}
+
+.ant-input-affix-wrapper > .ant-input {
+  padding: 0;
+}
+
+.ant-input-sm,
+.ant-input-affix-wrapper-sm,
+.ant-input-number-sm .ant-input-number-input,
+.ant-picker-small {
+  padding: 0 8px;
+}
+
+.ant-input-lg,
+.ant-input-affix-wrapper-lg,
+.ant-input-number-lg .ant-input-number-input,
+.ant-picker-large {
+  padding: 8px 12px;
+}
+
+.ant-tag {
+  padding-inline: 8px;
+}
+
+.ant-select-multiple .ant-select-selection-item,
+.ant-select-dropdown .ant-select-item,
+.ant-dropdown-menu .ant-dropdown-menu-item,
+.ant-dropdown-menu .ant-dropdown-menu-submenu-title {
+  border-radius: var(--ant-border-radius-xs);
+}
+
+.ant-segmented {
+  padding: 4px;
+  border-radius: calc(var(--ant-border-radius) + 4px);
+}
+
+.ant-dropdown-menu .ant-dropdown-menu-item,
+.ant-dropdown-menu .ant-dropdown-menu-submenu-title {
+  padding-block: 4px;
+}
+
+@supports (corner-shape: superellipse(1.25)) {
+  :where(*) {
+    corner-shape: superellipse(1.25);
+  }
+
+  :where(*)::before,
+  :where(*)::after {
+    corner-shape: superellipse(1.25);
+  }
+
+  /* 全圆控件及其伪元素不使用连续曲线。 */
+  :is(
+    .app-round,
+    .ant-btn-round,
+    .ant-btn-circle,
+    .ant-avatar-circle,
+    .ant-badge-count,
+    .ant-badge-dot,
+    .ant-radio-inner,
+    .ant-switch,
+    .ant-progress-inner,
+    .ant-progress-bg,
+    .ant-progress-success-bg
+  ) {
+    corner-shape: round;
+  }
+
+  .ant-radio-inner::after,
+  .ant-switch-handle::before,
+  .ant-slider-handle::before,
+  .ant-slider-handle::after {
+    corner-shape: round;
+  }
+}

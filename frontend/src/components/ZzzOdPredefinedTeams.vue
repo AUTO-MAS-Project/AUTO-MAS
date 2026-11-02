@@ -188,7 +188,7 @@ defineExpose({ reload: loadTeams })
 /* 任务配置卡底部折叠区块 */
 .predefined-teams {
   margin-top: 16px;
-  padding-top: 14px;
+  padding-top: 16px;
   border-top: 1px solid var(--ant-color-border-secondary);
 }
 
@@ -237,23 +237,23 @@ defineExpose({ reload: loadTeams })
 .team-block {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: 12px;
+  padding: 12px 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-fill-quaternary);
 }
 
 .team-row-top {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .team-row-agents {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .team-row-agents .team-agent-select {

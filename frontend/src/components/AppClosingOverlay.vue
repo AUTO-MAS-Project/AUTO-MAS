@@ -42,7 +42,7 @@ defineProps<{
   text-align: center;
   color: white;
   padding: 32px;
-  border-radius: 12px;
+  border-radius: var(--app-radius-card);
   background: rgba(0, 0, 0, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);

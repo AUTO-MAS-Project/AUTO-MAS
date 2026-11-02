@@ -170,9 +170,9 @@ defineExpose({ showPolaroid, launchGenshin, launchRockets })
   z-index: 21;
   width: 230px;
   margin: 0;
-  padding: 10px 10px 30px;
+  padding: 12px 12px 32px;
   background: #fbfaf6;
-  border-radius: 3px;
+  border-radius: var(--ant-border-radius-xs);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
   transform: rotate(-5deg);
   pointer-events: none;
@@ -224,11 +224,12 @@ defineExpose({ showPolaroid, launchGenshin, launchRockets })
   z-index: 6;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   height: 30px;
-  padding: 0 14px;
+  padding: 0 16px;
   border: 1px solid var(--ant-color-primary-border);
-  border-radius: 999px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: color-mix(in srgb, var(--ant-color-bg-elevated) 82%, transparent);
   backdrop-filter: blur(6px);
   box-shadow: var(--ant-box-shadow-tertiary);
@@ -279,14 +280,15 @@ defineExpose({ showPolaroid, launchGenshin, launchRockets })
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 22px;
+  gap: 24px;
 }
 
 .egg-genshin-title {
   font-size: clamp(34px, 5.4vw, 76px);
   font-weight: 700;
   letter-spacing: 0.32em;
-  padding-left: 0.32em;
+  padding-left: 24px;
+  padding-left: round(nearest, 0.32em, 4px);
   background: linear-gradient(90deg, #7a5c2e, #d8b877, #7a5c2e);
   -webkit-background-clip: text;
   background-clip: text;
@@ -341,13 +343,14 @@ defineExpose({ showPolaroid, launchGenshin, launchRockets })
 
 .egg-genshin-elements {
   display: flex;
-  gap: 26px;
+  gap: 28px;
 }
 
 .egg-genshin-elements span {
   width: 15px;
   height: 15px;
   border-radius: 50%;
+  corner-shape: round;
   background: #d9d4c7;
   animation: egg-genshin-element 420ms var(--delay) ease-out forwards;
 }
@@ -369,6 +372,7 @@ defineExpose({ showPolaroid, launchGenshin, launchRockets })
   width: 4px;
   height: 4px;
   border-radius: 46% 46% 8px 8px / 30% 30% 8px 8px;
+  corner-shape: round;
   background: radial-gradient(
     ellipse at 50% 60%,
     #ffffff 0%,
@@ -404,7 +408,7 @@ defineExpose({ showPolaroid, launchGenshin, launchRockets })
   color: #8a7552;
   font-size: 18px;
   letter-spacing: 0.4em;
-  padding-left: 0.4em;
+  padding-left: 8px;
   opacity: 0;
   animation:
     egg-genshin-enter 600ms var(--enter-delay) ease-out forwards,

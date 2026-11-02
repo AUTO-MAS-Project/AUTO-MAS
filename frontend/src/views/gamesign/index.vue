@@ -256,7 +256,7 @@ onUnmounted(() => {
 
 .gamesign-content {
   background: var(--ant-color-bg-container);
-  border-radius: 8px;
+  border-radius: calc(var(--ant-border-radius) + 12px);
   width: 100%;
   flex: 1;
 }
@@ -279,7 +279,7 @@ onUnmounted(() => {
   margin-right: 8px;
   background: transparent;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--ant-border-radius) var(--ant-border-radius) 0 0;
 }
 
 .community-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active) {
@@ -325,7 +325,7 @@ onUnmounted(() => {
   width: 4px;
   height: 24px;
   background: var(--ant-color-primary);
-  border-radius: 2px;
+  border-radius: var(--ant-border-radius-xs);
 }
 
 :deep(.section-description) {

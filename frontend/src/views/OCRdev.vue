@@ -818,7 +818,7 @@ const resetClickForm = () => {
   margin-top: 24px;
   padding: 16px;
   background: var(--ant-color-bg-layout);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
 }
 
 .image-container h3 {
@@ -831,7 +831,7 @@ const resetClickForm = () => {
   max-width: 100%;
   height: auto;
   border: 1px solid var(--ant-color-border);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 </style>

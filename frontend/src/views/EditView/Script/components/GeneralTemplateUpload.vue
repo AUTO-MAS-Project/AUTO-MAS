@@ -389,6 +389,6 @@ onUnmounted(() => {
 
 .share-risk-list {
   margin: 0 0 8px;
-  padding-left: 18px;
+  padding-left: 20px;
 }
 </style>

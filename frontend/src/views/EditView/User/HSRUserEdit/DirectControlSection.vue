@@ -72,7 +72,7 @@ const engineDescription = (engine: HSREngine) =>
 .engine-card {
   padding: 20px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 10px;
+  border-radius: calc(var(--ant-border-radius) + 20px);
   background: var(--ant-color-bg-container);
 }
 

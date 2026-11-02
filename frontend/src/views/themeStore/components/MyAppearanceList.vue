@@ -173,7 +173,7 @@ const editDescription = (item: MyAppearanceItem): void => {
   overflow: hidden;
   flex-direction: column;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-surface);
   color: var(--ant-color-text);
   background: var(--ant-color-bg-container);
 }
@@ -213,7 +213,7 @@ const editDescription = (item: MyAppearanceItem): void => {
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  padding: 12px 14px 14px;
+  padding: 12px 16px 16px;
 }
 
 .mine-name {

@@ -236,7 +236,7 @@ const handleJsonBlur = (field: HSRManagedField, event: FocusEvent) => {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   color: var(--ant-color-text);
   font-size: 14px;
   font-weight: 600;
@@ -267,7 +267,7 @@ const handleJsonBlur = (field: HSRManagedField, event: FocusEvent) => {
 .override-actions {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .override-tag {

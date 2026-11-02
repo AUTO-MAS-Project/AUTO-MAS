@@ -1,7 +1,8 @@
 .config-group-item-capsule {
   width: 40px;
   height: 22px;
-  border-radius: 11px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   border: 1px solid var(--ant-color-border);
   background: var(--ant-color-bg-container);
   position: relative;
@@ -17,6 +18,7 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--ant-color-text-quaternary);
   transition: all 0.2s ease;
 }

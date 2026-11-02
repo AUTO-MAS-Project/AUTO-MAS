@@ -135,7 +135,7 @@ const describeMeta = (item: MaaFWShellInstanceItem) =>
 
 .shell-import-list {
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   overflow: hidden;
 }
 

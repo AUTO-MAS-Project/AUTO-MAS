@@ -186,7 +186,7 @@ const handleModalCancel = () => {
 }
 
 .update-download-modal :deep(.ant-modal-content) {
-  border-radius: 12px;
+  border-radius: var(--app-radius-card);
   overflow: hidden;
   box-shadow: 0 6px 30px rgba(0, 0, 0, 0.12);
 }
@@ -243,13 +243,15 @@ const handleModalCancel = () => {
 }
 
 .progress-bar :deep(.ant-progress-bg) {
-  border-radius: 4px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: linear-gradient(90deg, var(--ant-color-primary), var(--ant-color-primary-active));
   box-shadow: 0 1px 4px rgba(22, 119, 255, 0.15);
 }
 
 .progress-bar :deep(.ant-progress-outer) {
-  border-radius: 4px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
 }
 
 .download-source {
@@ -283,9 +285,9 @@ const handleModalCancel = () => {
   color: var(--ant-color-success);
   font-weight: 600;
   font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-  padding: 2px 8px;
+  padding: 4px 8px;
   background: var(--ant-color-success-bg);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   border: 1px solid var(--ant-color-success-border);
   font-size: 13px;
 }
@@ -293,7 +295,7 @@ const handleModalCancel = () => {
 .right-info {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .eta-label {
@@ -305,9 +307,9 @@ const handleModalCancel = () => {
   color: var(--ant-color-warning);
   font-weight: 600;
   font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-  padding: 2px 8px;
+  padding: 4px 8px;
   background: var(--ant-color-warning-bg);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   border: 1px solid var(--ant-color-warning-border);
   font-size: 13px;
 }
@@ -368,7 +370,7 @@ const handleModalCancel = () => {
 .success-actions .ant-btn {
   min-width: 120px;
   height: 40px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   font-weight: 500;
 }
 </style>

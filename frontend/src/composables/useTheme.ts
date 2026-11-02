@@ -5,6 +5,12 @@ import { theme } from 'ant-design-vue'
 import { getConfig, saveConfig, type FrontendConfig } from '@/utils/config'
 import { createAppearanceCursorValue } from '@/components/appearanceCursor'
 import { createAppearanceBackgroundApplier } from './appearanceBackground'
+import { createRadiusTheme } from './themeRadii'
+import {
+  cancelThemeTransition,
+  runThemeTransition,
+  type ThemeTransitionOptions,
+} from './themeTransition'
 import { createAppearanceSurfaceColor, getAppearanceSurfaceOpacity } from './appearanceSurfaces'
 import type { InstalledAppearance, OnlineAppearanceInstallResult } from '@/types/appearance'
 import {
@@ -136,6 +142,7 @@ const setPersistedThemeSnapshot = (snapshot: ThemeSnapshot) => {
 }
 
 const restorePersistedThemeSnapshot = () => {
+  cancelThemeTransition()
   themeMode.value = persistedThemeSnapshot.themeMode
   themeColor.value = persistedThemeSnapshot.themeColor
   appearanceId.value = persistedThemeSnapshot.appearanceId
@@ -206,6 +213,10 @@ const updateCSSVariables = () => {
   const primaryColor = customTokens?.colorPrimary ?? themeColors[themeColor.value]
   // 由 ConfigProvider 内的 ThemeTokenBridge 传入最终 token，包含包内的 alias overrides。
   const antTokens = resolvedAntTokens.value
+  root.style.setProperty('--ant-border-radius', `${antTokens.borderRadius}px`)
+  root.style.setProperty('--ant-border-radius-sm', `${antTokens.borderRadiusSM}px`)
+  root.style.setProperty('--ant-border-radius-xs', `${antTokens.borderRadiusXS}px`)
+  root.style.setProperty('--ant-border-radius-lg', `${antTokens.borderRadiusLG}px`)
 
   // 基础背景（用于估算混合）
   const baseLightBg = '#ffffff'
@@ -506,6 +517,7 @@ watch(themeColor, updateTheme)
 
 // Ant Design 主题配置
 function getThemeConfig() {
+  const radii = createRadiusTheme(activeAppearance.value?.tokens.borderRadius)
   return {
     algorithm: isDark.value ? theme.darkAlgorithm : theme.defaultAlgorithm,
     token: {
@@ -531,11 +543,10 @@ function getThemeConfig() {
       ...(activeAppearance.value?.tokens.colorBorderSecondary
         ? { colorBorderSecondary: activeAppearance.value.tokens.colorBorderSecondary }
         : {}),
-      ...(activeAppearance.value?.tokens.borderRadius !== undefined
-        ? { borderRadius: activeAppearance.value.tokens.borderRadius }
-        : {}),
+      ...radii.token,
     },
     components: {
+      ...radii.components,
       InputNumber: {
         // 步进按钮（▲▼）常驻显示：antd 默认悬停才出现，快速连续调整不直观
         handleVisible: true as const,
@@ -579,21 +590,26 @@ const loadCustomBackgroundIfNeeded = async (): Promise<void> => {
 }
 
 export function useTheme() {
-  const resetTheme = (): Promise<void> =>
+  // 快照回调可能晚一帧执行，真正写入状态时重新捕获代次，确保保存失败仍能正确回退。
+  const resetTheme = (transition?: ThemeTransitionOptions): Promise<void> =>
     observePreference('theme', 'auto', () =>
       queueThemeChange(async () => {
-        const revision = ++themeRevision
-        const savedConfigRevision = configRevision
+        let revision = ++themeRevision
+        let savedConfigRevision = configRevision
         const defaults: ThemeSnapshot = {
           themeMode: 'system',
           themeColor: 'blue',
           appearanceId: null,
         }
-        themeMode.value = defaults.themeMode
-        themeColor.value = defaults.themeColor
-        appearanceId.value = null
-        activeAppearance.value = null
-        updateTheme()
+        await runThemeTransition(() => {
+          revision = ++themeRevision
+          savedConfigRevision = configRevision
+          themeMode.value = defaults.themeMode
+          themeColor.value = defaults.themeColor
+          appearanceId.value = null
+          activeAppearance.value = null
+          updateTheme()
+        }, transition)
         try {
           await saveConfig(defaults)
           if (configRevision === savedConfigRevision) setPersistedThemeSnapshot(defaults)
@@ -605,15 +621,19 @@ export function useTheme() {
       })
     )
 
-  const setThemeMode = (mode: ThemeMode): Promise<void> =>
+  const setThemeMode = (mode: ThemeMode, transition?: ThemeTransitionOptions): Promise<void> =>
     observePreference('theme', mode === 'system' ? 'auto' : mode, () =>
       queueThemeChange(async () => {
-        const revision = ++themeRevision
-        const savedConfigRevision = configRevision
-        themeMode.value = mode
-        activeAppearance.value = null
-        appearanceId.value = null
-        updateTheme()
+        let revision = ++themeRevision
+        let savedConfigRevision = configRevision
+        await runThemeTransition(() => {
+          revision = ++themeRevision
+          savedConfigRevision = configRevision
+          themeMode.value = mode
+          activeAppearance.value = null
+          appearanceId.value = null
+          updateTheme()
+        }, transition)
         await loadCustomBackgroundIfNeeded()
         try {
           await saveConfig({ themeMode: mode, appearanceId: null })
@@ -634,13 +654,17 @@ export function useTheme() {
       })
     )
 
-  const setThemeColor = (color: ThemeColor): Promise<void> =>
+  const setThemeColor = (color: ThemeColor, transition?: ThemeTransitionOptions): Promise<void> =>
     observePreference('theme', 'custom', () =>
       queueThemeChange(async () => {
-        const revision = ++themeRevision
-        const savedConfigRevision = configRevision
-        themeColor.value = color
-        updateTheme()
+        let revision = ++themeRevision
+        let savedConfigRevision = configRevision
+        await runThemeTransition(() => {
+          revision = ++themeRevision
+          savedConfigRevision = configRevision
+          themeColor.value = color
+          updateTheme()
+        }, transition)
         try {
           await saveConfig({ themeColor: color })
           if (configRevision === savedConfigRevision) {
@@ -721,19 +745,23 @@ export function useTheme() {
     await loadCustomBackgroundIfNeeded()
   }
 
-  const setAppearance = (id: string | null): Promise<void> => {
+  const setAppearance = (id: string | null, transition?: ThemeTransitionOptions): Promise<void> => {
     let applied = false
     return observeFeature(
       'appearance_package_finished',
       { package_kind: 'theme', action: 'enable' },
       () =>
         queueThemeChange(async () => {
-          const revision = ++themeRevision
-          const savedConfigRevision = configRevision
+          let revision = ++themeRevision
+          let savedConfigRevision = configRevision
           if (!id) {
-            activeAppearance.value = null
-            appearanceId.value = null
-            updateTheme()
+            await runThemeTransition(() => {
+              revision = ++themeRevision
+              savedConfigRevision = configRevision
+              activeAppearance.value = null
+              appearanceId.value = null
+              updateTheme()
+            }, transition)
             await loadCustomBackgroundIfNeeded()
             try {
               await saveConfig({ appearanceId: null })
@@ -755,9 +783,13 @@ export function useTheme() {
             (await window.electronAPI.getAppearance?.(id))
           if (!appearance) throw new Error('外观不存在或已损坏')
           if (revision !== themeRevision) return
-          activeAppearance.value = appearance
-          appearanceId.value = appearance.id
-          updateTheme()
+          await runThemeTransition(() => {
+            revision = ++themeRevision
+            savedConfigRevision = configRevision
+            activeAppearance.value = appearance
+            appearanceId.value = appearance.id
+            updateTheme()
+          }, transition)
           await loadCustomBackgroundIfNeeded()
           try {
             await saveConfig({ appearanceId: appearance.id })

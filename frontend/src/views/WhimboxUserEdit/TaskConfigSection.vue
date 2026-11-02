@@ -318,7 +318,7 @@ const commitTextOption = (opt: WhimboxOptionCatalogItem, raw: unknown) => {
 }
 
 .modern-input {
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   border: 2px solid var(--ant-color-border);
   background: var(--ant-color-bg-container);
   transition: all 0.3s ease;
@@ -356,7 +356,7 @@ const commitTextOption = (opt: WhimboxOptionCatalogItem, raw: unknown) => {
   align-items: center;
   gap: 12px;
   min-height: 52px;
-  padding: 6px 4px;
+  padding: 8px 4px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 

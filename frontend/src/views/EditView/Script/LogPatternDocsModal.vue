@@ -198,7 +198,7 @@ watch(
 .modal-title {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .docs-tabs {
@@ -239,7 +239,7 @@ watch(
   font-size: 12.5px;
   line-height: 1.5;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   cursor: pointer;
   color: var(--ant-color-text-secondary);
   transition: all 0.15s ease;
@@ -309,7 +309,7 @@ watch(
   font-size: 13px;
   line-height: 1.7;
   color: var(--ant-color-text);
-  padding-left: 22px;
+  padding-left: 24px;
   margin: 6px 0;
 }
 
@@ -323,9 +323,9 @@ watch(
 }
 
 .markdown-content :deep(code) {
-  padding: 1px 6px;
+  padding: 4px 8px;
   background: var(--ant-color-fill-quaternary);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   font-family:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
     monospace;
@@ -335,9 +335,9 @@ watch(
 
 .markdown-content :deep(pre) {
   margin: 8px 0;
-  padding: 10px 14px;
+  padding: 12px 16px;
   background: var(--ant-color-fill-quaternary);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   overflow-x: auto;
 }
 
@@ -359,7 +359,7 @@ watch(
 .markdown-content :deep(th),
 .markdown-content :deep(td) {
   border: 1px solid var(--ant-color-border-secondary);
-  padding: 6px 10px;
+  padding: 8px 12px;
   text-align: left;
   vertical-align: top;
 }
@@ -390,7 +390,7 @@ watch(
 
 .markdown-content :deep(blockquote) {
   margin: 8px 0;
-  padding: 6px 12px;
+  padding: 8px 12px;
   border-left: 3px solid var(--ant-color-primary);
   background: var(--ant-color-fill-quaternary);
   color: var(--ant-color-text-secondary);

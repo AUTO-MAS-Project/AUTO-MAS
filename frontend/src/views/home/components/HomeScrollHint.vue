@@ -68,7 +68,7 @@ onBeforeUnmount(() => {
   border: none;
   cursor: pointer;
   background: transparent;
-  border-radius: 12px 12px 0 0;
+  border-radius: var(--ant-border-radius) var(--ant-border-radius) 0 0;
   transition: opacity 0.3s;
 }
 

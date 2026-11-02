@@ -52,9 +52,10 @@ defineExpose({ moveTo })
   z-index: 5;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border-radius: 999px;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-elevated);
   box-shadow: var(--ant-box-shadow-secondary);

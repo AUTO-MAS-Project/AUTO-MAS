@@ -239,7 +239,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 10px 3px;
+  padding: 12px 4px;
 }
 
 .sider-content :deep(.ant-menu) {
@@ -254,8 +254,8 @@ const onMenuClick: MenuProps['onClick'] = info => {
   /* 水平居中 */
   width: calc(100% - 16px);
   /* 两侧各留 8px 空隙 */
-  border-radius: 6px;
-  padding: 5px 16px !important;
+  border-radius: var(--ant-border-radius);
+  padding: 4px 16px !important;
   /* 左右内边距 */
   line-height: 36px;
   height: 40px;
@@ -263,7 +263,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
   align-items: center;
   justify-content: flex-start;
   /* 左对齐图标与文字 */
-  gap: 6px;
+  gap: 8px;
   transition:
     background 0.16s ease,
     color 0.16s ease;
@@ -273,18 +273,18 @@ const onMenuClick: MenuProps['onClick'] = info => {
 .sider-content :deep(.ant-menu .ant-menu-submenu) {
   width: calc(100% - 16px);
   margin: 2px auto;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
 }
 
 .sider-content :deep(.ant-menu .ant-menu-submenu-title) {
   height: 40px;
   margin: 0;
-  padding: 5px 16px !important;
+  padding: 4px 16px !important;
   line-height: 30px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   color: var(--ant-color-text);
   transition:
     background 0.16s ease,

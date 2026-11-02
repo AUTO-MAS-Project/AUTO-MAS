@@ -91,7 +91,7 @@ const expanded = ref(false)
   align-items: center;
   gap: 12px;
   min-height: 52px;
-  padding: 6px 4px;
+  padding: 8px 4px;
 }
 
 .row-main {
@@ -103,7 +103,7 @@ const expanded = ref(false)
   min-height: 40px;
   padding: 0 8px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -157,6 +157,7 @@ const expanded = ref(false)
   width: 20px;
   height: 20px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--ant-color-fill-secondary);
   color: var(--ant-color-text-secondary);
   font-size: 12px;
@@ -171,7 +172,7 @@ const expanded = ref(false)
   min-height: 28px;
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius-xs);
   background: transparent;
   color: var(--ant-color-text-tertiary);
   font-size: 14px;

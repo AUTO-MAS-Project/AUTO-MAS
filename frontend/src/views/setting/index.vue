@@ -482,7 +482,7 @@ onMounted(() => {
   font-size: 14px;
   font-weight: 500;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   border: 1px solid var(--ant-color-primary);
   transition: all 0.2s ease;
   display: flex;
@@ -502,11 +502,11 @@ onMounted(() => {
   padding: 0 12px;
   font-size: 13px;
   font-weight: 600;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 :deep(.section-update-button:hover) {
@@ -563,7 +563,7 @@ onMounted(() => {
 :deep(.link-card) {
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   padding: 20px;
   text-align: center;
   transition: all 0.3s ease;
@@ -616,7 +616,7 @@ onMounted(() => {
   background: var(--ant-color-primary);
   color: #fff !important;
   text-decoration: none;
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   font-size: 14px;
   font-weight: 500;
   transition: background-color 0.2s ease;

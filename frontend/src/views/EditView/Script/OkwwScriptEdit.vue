@@ -1152,7 +1152,7 @@ onUnmounted(() => {
 .auto-import-button {
   flex-shrink: 0;
   border-radius: 0;
-  padding: 0 18px;
+  padding: 0 20px;
 }
 
 .path-button {
@@ -1183,7 +1183,7 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: 12px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-layout);
 }
 

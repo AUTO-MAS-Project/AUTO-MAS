@@ -31,9 +31,9 @@
 }
 
 .mas-devtools .devtools-shortcut {
-  padding: 3px 6px;
+  padding: 4px 8px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   color: var(--ant-color-text-tertiary);
   font-family: var(--font-monospace);
   font-size: 11px;
@@ -68,7 +68,7 @@
 .mas-devtools .devtools-section {
   padding: 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-container);
 }
 

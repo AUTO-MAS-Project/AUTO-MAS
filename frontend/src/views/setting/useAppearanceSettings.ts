@@ -6,6 +6,8 @@ import { useI18n } from 'vue-i18n'
 
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { useTheme } from '@/composables/useTheme'
+import type { ThemeTransitionOptions } from '@/composables/themeTransition'
+import { usePerformanceStore } from '@/stores/performance'
 import type {
   AppearanceImportResult,
   InstalledAppearance,
@@ -21,6 +23,7 @@ import { saveConfig } from '@/utils/config'
 
 export function useAppearanceSettings() {
   const { t } = useI18n()
+  const performanceStore = usePerformanceStore()
   const [modal, modalContextHolder] = Modal.useModal()
   const modalOptions = { zIndex: 100, wrapClassName: 'appearance-modal' }
   const logger = window.electronAPI.getLogger('外观设置')
@@ -41,6 +44,14 @@ export function useAppearanceSettings() {
   } = useTheme()
   const appearanceBusy = ref(false)
   const themeResetting = ref(false)
+  const transitionFrom = (control?: Element | null): ThemeTransitionOptions | undefined => {
+    if (!control) return undefined
+    const rect = control.getBoundingClientRect()
+    return {
+      origin: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+      disabled: performanceStore.isLowPower,
+    }
+  }
   const themeModeOptions = computed(() => [
     { label: t('core.setting.themeMode.system'), value: 'system' },
     { label: t('core.setting.themeMode.light'), value: 'light' },
@@ -67,20 +78,24 @@ export function useAppearanceSettings() {
     }))
   )
 
-  const handleThemeModeChange = async (value: SelectValue): Promise<void> => {
+  const handleThemeModeChange = async (
+    value: SelectValue,
+    control?: Element | null
+  ): Promise<void> => {
     if (typeof value !== 'string') return
     try {
-      await setThemeMode(value as ThemeMode)
+      await setThemeMode(value as ThemeMode, transitionFrom(control))
     } catch {
       message.error(t('core.setting.basic.appearanceApplyFailed'))
     }
   }
 
-  const handleThemeReset = async (): Promise<void> => {
+  const handleThemeReset = async (event?: MouseEvent): Promise<void> => {
     if (appearanceBusy.value || themeResetting.value) return
     themeResetting.value = true
     try {
-      await resetTheme()
+      const control = event?.currentTarget
+      await resetTheme(transitionFrom(control instanceof Element ? control : null))
       message.success(t('core.setting.basic.themeReset'))
     } catch {
       message.error(t('core.setting.basic.themeResetFailed'))
@@ -89,10 +104,13 @@ export function useAppearanceSettings() {
     }
   }
 
-  const handleThemeColorChange = async (value: SelectValue): Promise<void> => {
+  const handleThemeColorChange = async (
+    value: SelectValue,
+    control?: Element | null
+  ): Promise<void> => {
     if (typeof value !== 'string') return
     try {
-      await setThemeColor(value as ThemeColor)
+      await setThemeColor(value as ThemeColor, transitionFrom(control))
     } catch {
       message.error(t('core.setting.basic.appearanceApplyFailed'))
     }
@@ -255,11 +273,16 @@ export function useAppearanceSettings() {
     }
   }
 
-  const handleAppearanceChange = async (value: SelectValue): Promise<void> => {
+  const handleAppearanceChange = async (
+    value: SelectValue,
+    control?: Element | null
+  ): Promise<void> => {
     if (typeof value !== 'string') return
     try {
-      if (value.startsWith('appearance:')) await setAppearance(value.slice('appearance:'.length))
-      else await setThemeMode(value as ThemeMode)
+      const transition = transitionFrom(control)
+      if (value.startsWith('appearance:'))
+        await setAppearance(value.slice('appearance:'.length), transition)
+      else await setThemeMode(value as ThemeMode, transition)
     } catch (error) {
       logger.error(`切换外观失败: ${error instanceof Error ? error.message : String(error)}`)
       message.error(t('core.setting.basic.appearanceApplyFailed'))

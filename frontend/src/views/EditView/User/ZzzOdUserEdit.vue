@@ -1732,7 +1732,7 @@ const clearDeletedInstance = (idx: number) => {
 .optional-section {
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   scroll-margin-top: 32px;
 }
 

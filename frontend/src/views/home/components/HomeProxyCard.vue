@@ -79,7 +79,7 @@ const formatProxyDisplay = (dateString: string) => {
 
 .proxy-card {
   width: 100%;
-  border-radius: 8px;
+  border-radius: var(--app-radius-card);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
@@ -97,7 +97,7 @@ const formatProxyDisplay = (dateString: string) => {
   min-height: 164px;
   padding: 16px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
 }
 
 .proxy-header {

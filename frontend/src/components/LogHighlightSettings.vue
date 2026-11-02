@@ -508,7 +508,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
   margin-top: 4px;
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
 }
 
 .advanced-settings :deep(.ant-collapse-header) {
@@ -537,7 +537,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 .advanced-settings-header {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 10px;
+  gap: 4px 12px;
 }
 
 .advanced-settings-title {
@@ -602,10 +602,10 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 10px;
+  padding: 8px 12px;
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
 }
 
 .color-info {
@@ -628,7 +628,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 .color-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .color-picker {
@@ -636,18 +636,18 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
   height: 20px;
   padding: 0;
   border: 1px solid var(--ant-color-border);
-  border-radius: 3px;
+  border-radius: var(--ant-border-radius-xs);
   cursor: pointer;
   background: transparent;
 }
 
 .color-picker::-webkit-color-swatch-wrapper {
-  padding: 1px;
+  padding: 4px;
 }
 
 .color-picker::-webkit-color-swatch {
   border: none;
-  border-radius: 2px;
+  border-radius: var(--ant-border-radius-xs);
 }
 
 .color-value {
@@ -659,7 +659,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 
 .preview-content {
   padding: 12px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   overflow-x: auto;
   font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, Courier, monospace;
 }

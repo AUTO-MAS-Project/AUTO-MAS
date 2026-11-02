@@ -255,7 +255,7 @@ const handleFieldReset = (key: string) => emit('fieldReset', key)
   overflow-y: auto;
   padding: 20px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-surface);
   background: var(--ant-color-bg-container);
 }
 
@@ -306,13 +306,13 @@ const handleFieldReset = (key: string) => emit('fieldReset', key)
 
 .notice-list {
   margin: 0 0 8px;
-  padding-left: 18px;
+  padding-left: 20px;
 }
 
 .notice-list li {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-items: baseline;
 }
 

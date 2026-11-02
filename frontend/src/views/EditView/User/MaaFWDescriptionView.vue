@@ -186,7 +186,7 @@ const handleContentClick = (event: MouseEvent) => {
 
 .maafw-description-view :deep(img) {
   max-width: 100%;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   border: 1px solid var(--ant-color-border-secondary);
   cursor: zoom-in;
 }
@@ -194,7 +194,7 @@ const handleContentClick = (event: MouseEvent) => {
 .maafw-description-view :deep(pre) {
   padding: 8px 12px;
   overflow: auto;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-fill-quaternary);
 }
 

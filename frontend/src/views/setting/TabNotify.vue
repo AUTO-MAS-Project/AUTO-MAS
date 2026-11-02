@@ -333,7 +333,7 @@ const modalPopupContainer = () =>
 
 .panel {
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   padding: 16px;
   margin-bottom: 16px;
 }
@@ -345,7 +345,7 @@ const modalPopupContainer = () =>
 .panel-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 14px;
   flex-wrap: wrap;
 }
@@ -367,6 +367,7 @@ const modalPopupContainer = () =>
   width: 7px;
   height: 7px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--ant-color-success);
   display: inline-block;
   flex: 0 0 7px;
@@ -392,6 +393,6 @@ const modalPopupContainer = () =>
 .rows {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 </style>

@@ -153,7 +153,7 @@ onMounted(async () => {
 <template>
   <ConfigProvider :theme="antdTheme" :locale="antdLocale" :render-empty="renderEmpty">
     <ThemeTokenBridge />
-    <AppearanceDecoration />
+    <AppearanceDecoration v-if="isInitializationPage || isStandalonePage" />
     <!-- 初始化页面使用带标题栏的全屏布局 -->
     <div v-if="isInitializationPage" class="initialization-container">
       <TitleBar />
@@ -175,8 +175,11 @@ onMounted(async () => {
     <!-- 其他页面使用带标题栏的应用布局 - 仅在初始化完成后挂载 -->
     <div v-else-if="isAppReady || languageResources.requested" class="app-container">
       <TitleBar />
-      <AppLayout v-if="languageResources.ready && performanceStore.initialized" />
-      <I18nResourceGate v-else @retry="retryLanguageResources" @recover="recoverInitialization" />
+      <div class="app-theme-surface">
+        <AppearanceDecoration />
+        <AppLayout v-if="languageResources.ready && performanceStore.initialized" />
+        <I18nResourceGate v-else @retry="retryLanguageResources" @recover="recoverInitialization" />
+      </div>
     </div>
 
     <!-- 开发构建才带调试面板；独立小窗口（日志、虚拟显示器询问）里它会盖住内容，不挂 -->

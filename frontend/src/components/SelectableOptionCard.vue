@@ -52,9 +52,9 @@ withDefaults(
   gap: 12px;
   align-items: center;
   margin-inline-end: 0;
-  padding: 14px;
+  padding: 16px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--app-radius-surface);
   color: var(--ant-color-text);
   background: var(--ant-color-bg-container);
   cursor: pointer;
@@ -124,7 +124,7 @@ withDefaults(
   flex: 0 0 38px;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
   font-size: 19px;
@@ -134,7 +134,7 @@ withDefaults(
   width: 34px;
   height: 34px;
   flex: 0 0 34px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   object-fit: contain;
 }
 </style>

@@ -1282,7 +1282,7 @@ onMounted(async () => {
 }
 
 .config-card {
-  border-radius: 16px;
+  border-radius: var(--app-radius-card);
   box-shadow: none;
   border: 1px solid var(--ant-color-border-secondary);
   overflow: hidden;
@@ -1292,7 +1292,7 @@ onMounted(async () => {
   font-size: 14px;
   font-weight: 600;
   padding: 8px 16px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius-xs);
   border: none;
 }
 
@@ -1356,7 +1356,7 @@ onMounted(async () => {
 .update-engine-card {
   padding: 12px 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-container);
   margin-bottom: 12px;
 }

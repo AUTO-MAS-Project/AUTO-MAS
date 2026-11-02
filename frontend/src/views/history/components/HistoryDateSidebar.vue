@@ -142,7 +142,7 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   display: flex;
   flex-direction: column;
   background: var(--ant-color-bg-container);
-  border-radius: 12px;
+  border-radius: var(--app-radius-surface);
   border: 1px solid var(--ant-color-border-secondary);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   overflow: hidden;
@@ -170,8 +170,8 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
 }
 
 .date-panel :deep(.ant-collapse-header) {
-  padding: 10px 12px !important;
-  border-radius: 8px !important;
+  padding: 12px 12px !important;
+  border-radius: var(--app-radius-panel) !important;
   transition: background-color 0.2s;
 }
 
@@ -219,8 +219,8 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  border-radius: 8px;
+  padding: 12px 12px;
+  border-radius: var(--ant-border-radius);
   cursor: pointer;
   transition: all 0.2s ease;
   background: var(--ant-color-fill-quaternary);
@@ -260,7 +260,7 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .result-count {

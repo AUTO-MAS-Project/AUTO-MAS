@@ -597,7 +597,7 @@ const chooseCustomConfig = () => {
 .list-toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 16px;
 }
 
@@ -609,14 +609,14 @@ const chooseCustomConfig = () => {
   display: grid;
   width: 100%;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 
 .type-sections {
   display: flex;
   width: 100%;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
 }
 
 .type-section-heading {
@@ -639,7 +639,7 @@ const chooseCustomConfig = () => {
 }
 
 .specialized-section {
-  padding-top: 14px;
+  padding-top: 16px;
   border-top: 1px solid var(--ant-color-border-secondary);
 }
 

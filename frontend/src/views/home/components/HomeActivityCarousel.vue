@@ -276,10 +276,10 @@ onBeforeUnmount(() => {
 .activity-header-top {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 5px;
+  gap: 12px;
+  padding: 4px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
+  border-radius: calc(var(--ant-border-radius) + 4px);
   background: var(--ant-color-bg-container);
 }
 
@@ -296,12 +296,13 @@ onBeforeUnmount(() => {
 .activity-all-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   height: 28px;
   margin-left: auto;
-  padding: 0 14px;
+  padding: 0 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 999px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: var(--app-background-card-bg, var(--ant-color-bg-container));
   color: var(--ant-color-primary);
   flex-shrink: 0;
@@ -339,7 +340,7 @@ onBeforeUnmount(() => {
 .banner-viewport {
   position: relative;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: var(--app-radius-card);
 }
 
 .banner-arrow {
@@ -354,6 +355,7 @@ onBeforeUnmount(() => {
   background: rgba(8, 10, 14, 0.42);
   border: none;
   border-radius: 50%;
+  corner-shape: round;
   cursor: pointer;
   opacity: 0;
   transform: translateY(-50%);
@@ -383,21 +385,21 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 4px;
   overflow-x: auto;
-  padding: 5px;
+  padding: 4px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
+  border-radius: calc(var(--ant-border-radius) + 4px);
   background: var(--ant-color-bg-container);
   scrollbar-width: thin;
 }
 
 .switcher-chip {
   flex: 0 0 auto;
-  padding: 9px 16px;
+  padding: 8px 16px;
   color: var(--ant-color-text-secondary);
   font-size: 13px;
   background: var(--ant-color-fill-quaternary);
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   cursor: pointer;
   transition:
     color 0.2s ease,

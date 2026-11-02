@@ -164,7 +164,7 @@ onMounted(() => {
   gap: 12px;
   padding: 8px 12px;
   background: var(--ant-color-bg-container);
-  border-radius: 12px;
+  border-radius: var(--app-radius-panel);
   border: 1px solid var(--ant-color-border-secondary);
 }
 
@@ -175,7 +175,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   padding: 4px 12px 4px 0;
   color: var(--ant-color-text-secondary);
   font-size: 12px;

@@ -302,7 +302,7 @@ const handleShellImported = (snapshot: Record<string, unknown>, info: Record<str
 }
 
 .config-card {
-  border-radius: 12px;
+  border-radius: var(--app-radius-card);
   border: 1px solid var(--ant-color-border-secondary);
 }
 
@@ -313,7 +313,7 @@ const handleShellImported = (snapshot: Record<string, unknown>, info: Record<str
 .card-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .title-logo {

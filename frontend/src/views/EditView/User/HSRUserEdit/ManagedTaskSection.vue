@@ -276,7 +276,7 @@ const handleClearInvalidOverrides = (keys: string[]) => {
   overflow-x: hidden;
   overflow-y: auto;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   background: var(--ant-color-bg-container);
 }
 
@@ -284,7 +284,7 @@ const handleClearInvalidOverrides = (keys: string[]) => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 16px 16px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
   color: var(--ant-color-text);
   cursor: pointer;
@@ -303,7 +303,7 @@ const handleClearInvalidOverrides = (keys: string[]) => {
 
 .module-row-selected,
 .module-row-selected:hover {
-  padding-left: 13px;
+  padding-left: 12px;
   border-left: 3px solid var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
 }
@@ -328,7 +328,7 @@ const handleClearInvalidOverrides = (keys: string[]) => {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .module-title :deep(.ant-tag) {

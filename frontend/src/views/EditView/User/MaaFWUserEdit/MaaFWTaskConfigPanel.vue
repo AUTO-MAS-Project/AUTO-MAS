@@ -203,7 +203,7 @@ const resolveMaaFWAssetUrl = (rawPath?: string | null) =>
   overflow-y: auto;
   padding: 20px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-surface);
   background: var(--ant-color-bg-container);
 }
 
@@ -266,9 +266,9 @@ const resolveMaaFWAssetUrl = (rawPath?: string | null) =>
 .missing-task-settings {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   padding: 12px 16px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-fill-quaternary);
 }
 
@@ -303,7 +303,7 @@ const resolveMaaFWAssetUrl = (rawPath?: string | null) =>
   align-items: center;
   justify-content: center;
   border: 1px dashed var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
 }
 
 .delete-task-button {

@@ -130,7 +130,7 @@ const isItemGroup = (group: CultivateGoalGroup) =>
 <style scoped>
 .operator-card {
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   background: var(--ant-color-bg-container);
   transition: border-color 0.2s;
 }
@@ -220,14 +220,14 @@ const isItemGroup = (group: CultivateGoalGroup) =>
 
 /* 正文左缩进与头部干员名对齐（勾选 16 + 箭头 22 + 两个间距 8 + 内边距 12） */
 .operator-body {
-  padding: 6px 12px 10px 54px;
+  padding: 8px 12px 12px 56px;
   border-top: 1px dashed var(--ant-color-border-secondary);
 }
 
 .goal-group-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin: 8px 0 2px;
   font-size: 12px;
   font-weight: 600;
@@ -247,7 +247,7 @@ const isItemGroup = (group: CultivateGoalGroup) =>
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 2px 0;
+  padding: 4px 0;
   min-width: 0;
 }
 

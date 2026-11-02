@@ -1754,8 +1754,8 @@ const selectLogPath = async () => {
   color: var(--ant-color-text-secondary);
   font-size: 12px;
   line-height: 1.5;
-  padding: 8px 10px;
-  border-radius: 6px;
+  padding: 8px 12px;
+  border-radius: var(--ant-border-radius);
   border-left: 3px solid var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
 }

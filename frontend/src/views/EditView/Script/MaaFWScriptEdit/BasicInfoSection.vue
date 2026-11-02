@@ -581,7 +581,7 @@ watch(
   margin: 8px auto 0;
   padding: 28px 24px;
   border: 1px dashed var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--app-radius-surface);
   background: var(--ant-color-fill-quaternary);
   text-align: center;
 }

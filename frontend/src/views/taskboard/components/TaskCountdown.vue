@@ -54,15 +54,15 @@ const pad2 = (value: number) => String(value).padStart(2, '0')
 .tb-countdown {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  gap: 8px;
 }
 
 .tb-cd-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 4px 0 3px;
-  border-radius: 6px;
+  padding: 4px 0 4px;
+  border-radius: var(--ant-border-radius-xs);
   background: var(--ant-color-fill-secondary);
 }
 

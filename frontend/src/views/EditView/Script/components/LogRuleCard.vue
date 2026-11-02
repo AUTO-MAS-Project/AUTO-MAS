@@ -118,7 +118,7 @@ const onEnabledChange = (enabled: boolean) => {
 .log-rule-card {
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-surface);
   padding: 16px;
   transition: opacity 0.2s;
 }
@@ -151,7 +151,7 @@ const onEnabledChange = (enabled: boolean) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   cursor: text;
   padding: 0 8px;
 }
@@ -168,7 +168,7 @@ const onEnabledChange = (enabled: boolean) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 2px 6px;
+  padding: 4px 8px;
   border-bottom: 1px dashed transparent;
   transition: border-color 0.2s;
 }

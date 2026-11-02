@@ -118,7 +118,7 @@ const syncPercent = computed(() =>
   gap: 12px;
   padding: 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-surface);
   background: var(--ant-color-fill-quaternary);
 }
 .source-icon {

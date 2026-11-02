@@ -285,7 +285,8 @@ onUnmounted(() => {
 
 .log-locked::-webkit-scrollbar-thumb {
   background-color: var(--ant-color-primary) !important;
-  border-radius: 6px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
 }
 
 .empty-state-mini {
@@ -297,7 +298,7 @@ onUnmounted(() => {
 
 @media (max-width: 768px) {
   .log-panel {
-    border-radius: 8px;
+    border-radius: var(--ant-border-radius);
   }
 
   .scheduler-panel-header {

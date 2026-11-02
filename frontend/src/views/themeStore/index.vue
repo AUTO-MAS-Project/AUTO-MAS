@@ -257,7 +257,7 @@ onBeforeUnmount(() => {
   flex: 1;
   flex-direction: column;
   padding: 20px 24px 24px;
-  border-radius: 8px;
+  border-radius: var(--app-radius-card);
   background: var(--ant-color-bg-container);
 }
 

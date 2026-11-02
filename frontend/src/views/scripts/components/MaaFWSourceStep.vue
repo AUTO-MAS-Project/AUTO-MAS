@@ -109,9 +109,9 @@ const reuseMeta = (choice: MfwReuseChoice) => {
 .choice-group-heading {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   margin-top: 10px;
-  padding: 0 2px;
+  padding: 0 4px;
 }
 
 .choice-group-title {
@@ -129,9 +129,9 @@ const reuseMeta = (choice: MfwReuseChoice) => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 14px;
+  padding: 12px 16px;
   border: 1px dashed var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   color: var(--ant-color-text-tertiary);
   font-size: 13px;
 }

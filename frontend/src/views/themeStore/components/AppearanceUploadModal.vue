@@ -597,7 +597,7 @@ watch(authorized, isAuthorized => {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   background: var(--ant-color-bg-layout);
 }
 
@@ -616,7 +616,7 @@ watch(authorized, isAuthorized => {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .upload-cover-buttons {

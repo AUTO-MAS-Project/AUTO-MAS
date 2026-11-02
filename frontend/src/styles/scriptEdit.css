@@ -2,7 +2,7 @@
 /* 内容区域 */
 
 .config-card {
-  border-radius: 16px;
+  border-radius: var(--app-radius-card);
   box-shadow:
     0 4px 20px rgba(0, 0, 0, 0.08),
     0 1px 3px rgba(0, 0, 0, 0.1);
@@ -52,7 +52,7 @@
 }
 
 .modern-input {
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   border: 2px solid var(--ant-color-border);
   background: var(--ant-color-bg-container);
   transition: all 0.3s ease;
@@ -70,7 +70,7 @@
 
 .modern-select :deep(.ant-select-selector) {
   border: 2px solid var(--ant-color-border) !important;
-  border-radius: 8px !important;
+  border-radius: var(--ant-border-radius) !important;
   background: var(--ant-color-bg-container) !important;
   transition: all 0.3s ease;
 }
@@ -85,12 +85,12 @@
 }
 
 .modern-number-input {
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
 }
 
 .modern-number-input :deep(.ant-input-number) {
   border: 2px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-container);
   transition: all 0.3s ease;
 }
@@ -106,7 +106,7 @@
 
 /* 路径输入组 */
 .path-input-group {
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   border: 2px solid var(--ant-color-border);
   transition: all 0.3s ease;
 }
@@ -246,7 +246,7 @@ html.dark .modern-number-input :deep(.ant-input-number-focused) {
   background: var(--ant-color-bg-elevated);
   color: var(--ant-color-text);
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   padding: 12px 16px;
   font-size: 13px;
   line-height: 1.5;

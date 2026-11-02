@@ -353,7 +353,7 @@ const apply = async () => {
   margin-inline-end: 0;
   padding: 12px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   background: var(--ant-color-bg-container);
   cursor: pointer;
   transition:
@@ -402,9 +402,9 @@ const apply = async () => {
 /* 「N 个已失效」：虚线灰标签 */
 .queue-invalid-tag {
   flex: none;
-  padding: 0 7px;
+  padding: 0 8px;
   border: 1px dashed var(--ant-color-border);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   color: var(--ant-color-text-secondary);
   font-size: 12px;
   line-height: 20px;
@@ -414,9 +414,9 @@ const apply = async () => {
 /* 「N 项密码需重填」：警告色标签 */
 .queue-password-tag {
   flex: none;
-  padding: 0 7px;
+  padding: 0 8px;
   border: 1px solid var(--ant-color-warning-border);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   background: var(--ant-color-warning-bg);
   color: var(--ant-color-warning-text);
   font-size: 12px;

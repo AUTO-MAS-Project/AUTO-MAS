@@ -20,7 +20,7 @@
   font-size: 14px;
   font-weight: 600;
   padding: 8px 16px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius-xs);
 }
 
 .form-section {

@@ -46,7 +46,7 @@ const renderInline = (text: string) => md.renderInline(text)
 .changelog-category-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin-bottom: 4px;
   font-size: 14px;
   font-weight: 600;
@@ -55,7 +55,7 @@ const renderInline = (text: string) => md.renderInline(text)
 
 .changelog-items {
   margin: 0;
-  padding-left: 22px;
+  padding-left: 24px;
 }
 
 .changelog-item {
@@ -71,7 +71,7 @@ const renderInline = (text: string) => md.renderInline(text)
 /* 破坏性变更：警示色块，最醒目 */
 .changelog-category--critical {
   padding: 8px 12px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-warning-bg);
   border: 1px solid var(--ant-color-warning);
 }
@@ -83,7 +83,7 @@ const renderInline = (text: string) => md.renderInline(text)
 /* 本次亮点：主题强调色，次醒目 */
 .changelog-category--highlight {
   padding: 8px 12px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-primary-bg);
   border: 1px solid var(--ant-color-primary-border);
 }

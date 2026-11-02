@@ -289,7 +289,7 @@ const handleOverlayChange = (event: RadioChangeEvent) => {
   min-height: 96px;
   padding: 16px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--app-radius-surface);
   background: var(--ant-color-bg-container);
   cursor: pointer;
   transition:
@@ -323,7 +323,7 @@ const handleOverlayChange = (event: RadioChangeEvent) => {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius-xs);
   background: var(--ant-color-bg-layout);
   color: var(--ant-color-text-secondary);
   font-size: 17px;
@@ -372,7 +372,7 @@ const handleOverlayChange = (event: RadioChangeEvent) => {
   padding: 12px 16px;
   border: 1px solid var(--ant-color-border-secondary);
   border-left: 4px solid var(--ant-color-primary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   background: var(--ant-color-bg-layout);
 }
 

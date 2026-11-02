@@ -32,10 +32,11 @@ const { t } = useI18n()
   z-index: 6;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 4px 12px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 999px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: var(--ant-color-bg-container);
   color: var(--ant-color-text-secondary);
   font-size: 12px;

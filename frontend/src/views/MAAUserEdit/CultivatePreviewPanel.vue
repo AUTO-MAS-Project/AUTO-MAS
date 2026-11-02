@@ -125,7 +125,7 @@ const availabilityNotice = computed(() => {
 .cultivate-preview {
   padding: 12px 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   background: var(--ant-color-bg-container);
 }
 
@@ -151,7 +151,7 @@ const availabilityNotice = computed(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 2px 0;
+  padding: 4px 0;
   font-size: 13px;
   color: var(--ant-color-text);
 }

@@ -1,0 +1,40 @@
+/* 截取完整的新配色，避免组件原有的颜色过渡叠加到扩散动画中。 */
+html.app-theme-transition {
+  view-transition-name: none;
+}
+
+html.app-theme-transition,
+html.app-theme-transition * {
+  transition: none !important;
+}
+
+html.app-theme-transition::view-transition,
+html.app-theme-transition::view-transition-group(root),
+html.app-theme-transition::view-transition-image-pair(root),
+html.app-theme-transition::view-transition-old(root),
+html.app-theme-transition::view-transition-new(root) {
+  pointer-events: none;
+}
+
+html.app-theme-transition::view-transition-group(root),
+html.app-theme-transition::view-transition-old(root),
+html.app-theme-transition::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+html.app-theme-transition::view-transition-old(root) {
+  z-index: 1;
+}
+
+html.app-theme-transition::view-transition-new(root) {
+  z-index: 2;
+}
+.app-theme-surface {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--ant-color-bg-layout);
+}

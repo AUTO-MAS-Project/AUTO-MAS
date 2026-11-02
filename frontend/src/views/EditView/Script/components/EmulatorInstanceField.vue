@@ -54,7 +54,7 @@ const { t } = useI18n()
 
 <style scoped>
 .modern-input {
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   border: 2px solid var(--ant-color-border);
   background: var(--ant-color-bg-container);
   transition: all 0.3s ease;

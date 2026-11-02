@@ -86,9 +86,10 @@ const emit = defineEmits<MaaFWUserHeaderSectionEmits>()
 .save-status-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border-radius: 12px;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   font-size: 12px;
   white-space: nowrap;
 }

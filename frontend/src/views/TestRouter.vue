@@ -151,7 +151,7 @@ h2 {
 .test-section {
   background: #ffffff;
   border: 1px solid #d9d9d9;
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   padding: 20px;
   margin-bottom: 20px;
 }
@@ -186,7 +186,7 @@ p {
   margin-top: 24px;
   padding: 16px;
   background: #f5f5f5;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
 }
 
 .result h4 {

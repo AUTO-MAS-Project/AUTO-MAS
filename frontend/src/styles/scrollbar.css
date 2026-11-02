@@ -27,7 +27,8 @@
 
 *::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: var(--app-scrollbar-thumb);
   background-clip: content-box;
 }

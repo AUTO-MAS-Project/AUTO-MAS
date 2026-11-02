@@ -137,7 +137,7 @@ const handleEndDateChange = (val: string) => {
 <style scoped>
 .search-panel {
   background: var(--ant-color-bg-container);
-  border-radius: 12px;
+  border-radius: calc(var(--ant-border-radius) + 20px);
   padding: 20px;
   margin-bottom: 20px;
   border: 1px solid var(--ant-color-border-secondary);
@@ -174,7 +174,7 @@ const handleEndDateChange = (val: string) => {
 .filter-item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .filter-label {

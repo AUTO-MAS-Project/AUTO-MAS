@@ -411,7 +411,7 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
   overflow-y: auto;
   padding: 12px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-layout);
 }
 

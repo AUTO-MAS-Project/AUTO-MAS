@@ -226,8 +226,8 @@ watch(
 <style scoped>
 .statistics-card {
   background: var(--ant-color-bg-container);
-  border-radius: 8px;
-  padding: 12px 16px;
+  border-radius: var(--app-radius-surface);
+  padding: 16px;
   margin-bottom: 16px;
   border: 1px solid var(--ant-color-border-secondary);
 }
@@ -259,7 +259,7 @@ watch(
 .stat-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .stat-section:first-child {
@@ -300,9 +300,9 @@ watch(
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 6px 16px;
+  padding: 8px 16px;
   background: var(--ant-color-fill-quaternary);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius-xs);
 }
 
 .stat-item:hover {
@@ -361,7 +361,7 @@ watch(
   color: var(--ant-color-text-secondary);
   font-size: 12px;
   background: var(--ant-color-fill-quaternary);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius-xs);
 }
 
 .pull-count-item strong {
@@ -398,12 +398,14 @@ watch(
 
 .drop-stages::-webkit-scrollbar-track {
   background: var(--ant-color-fill-quaternary);
-  border-radius: 3px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
 }
 
 .drop-stages::-webkit-scrollbar-thumb {
   background: var(--ant-color-fill-tertiary);
-  border-radius: 3px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
 }
 
 .drop-stages::-webkit-scrollbar-thumb:hover {
@@ -415,7 +417,7 @@ watch(
   min-width: auto;
   padding: 8px 16px;
   background: var(--ant-color-fill-quaternary);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   border: 1px solid var(--ant-color-border);
   cursor: pointer;
   transition: all 0.2s;
@@ -444,14 +446,14 @@ watch(
   font-weight: 600;
   color: var(--ant-color-text);
   margin-bottom: 8px;
-  padding-bottom: 6px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border);
 }
 
 .popover-drops {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .popover-drop-item {
@@ -460,7 +462,7 @@ watch(
   align-items: center;
   padding: 4px 8px;
   background: var(--ant-color-fill-quaternary);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   font-size: 12px;
 }
 
@@ -481,15 +483,15 @@ watch(
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   padding: 16px;
 }
 
 .matrix-empty {
   font-size: 13px;
   color: var(--ant-color-text-secondary);
-  padding: 10px 12px;
+  padding: 12px 12px;
   background: var(--ant-color-fill-quaternary);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
 }
 </style>

@@ -18,6 +18,8 @@ import { queryClient } from '@/services/queryClient'
 
 import Antd, { message } from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
+import '@/styles/corners.css'
+import '@/styles/themeTransition.css'
 import '@/styles/scrollbar.css'
 import '@/styles/formSection.css'
 import '@/styles/pageTitle.css'

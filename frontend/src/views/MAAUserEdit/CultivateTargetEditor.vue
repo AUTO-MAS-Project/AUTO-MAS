@@ -531,7 +531,7 @@ const { getPopupContainer, listHeight } = usePlanSelectPopup()
   height: 22px;
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius-xs);
   background: transparent;
   color: var(--ant-color-text-tertiary);
   font-size: 12px;

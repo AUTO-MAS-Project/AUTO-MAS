@@ -55,7 +55,7 @@ const { state, starting, authorized, pending, accountName, login, cancel, openVe
 
 .store-account-name {
   display: inline-flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
   color: var(--ant-color-text-secondary);
 }
@@ -68,7 +68,7 @@ const { state, starting, authorized, pending, accountName, login, cancel, openVe
 .store-account-code {
   padding: 0 8px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   color: var(--ant-color-text);
   font-family: var(--font-monospace);
   font-size: 15px;

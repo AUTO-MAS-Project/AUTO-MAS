@@ -42,8 +42,8 @@ const { t } = useI18n()
   top: 50%;
   right: 14px;
   width: 262px;
-  padding: 12px 14px;
-  border-radius: 12px;
+  padding: 12px 16px;
+  border-radius: var(--ant-border-radius);
   background: rgba(15, 23, 42, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
@@ -81,8 +81,8 @@ const { t } = useI18n()
   display: grid;
   grid-template-columns: 16px 20px minmax(0, 1fr) 54px 34px;
   align-items: center;
-  gap: 6px;
-  padding: 2px 0;
+  gap: 8px;
+  padding: 4px 0;
   font-size: 12px;
 }
 
@@ -97,6 +97,7 @@ const { t } = useI18n()
   width: 20px;
   height: 20px;
   border-radius: 50%;
+  corner-shape: round;
   background: #1f2937;
 }
 
@@ -116,7 +117,8 @@ const { t } = useI18n()
 
 .board-bar {
   height: 5px;
-  border-radius: 3px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: linear-gradient(90deg, #ffb347, #ffd36b);
   transform-origin: left center;
   transform: scaleX(0);

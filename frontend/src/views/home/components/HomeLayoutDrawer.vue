@@ -218,12 +218,12 @@ const onVisibilityChange = (key: HomeModuleKey, value: boolean | string | number
   color: var(--ant-color-text);
   background: var(--ant-color-fill-quaternary);
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
 }
 
 .home-layout-item.is-sub {
   min-height: 40px;
-  padding: 4px 10px;
+  padding: 4px 12px;
   background: var(--ant-color-bg-container);
 }
 
@@ -232,10 +232,10 @@ const onVisibilityChange = (key: HomeModuleKey, value: boolean | string | number
   flex-direction: column;
   gap: 8px;
   margin-left: 20px;
-  padding: 10px 10px 10px 12px;
+  padding: 12px 12px 12px 12px;
   background: var(--ant-color-fill-quaternary);
   border-left: 2px solid var(--ant-color-border-secondary);
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--ant-border-radius) var(--ant-border-radius) 0;
   transition: opacity 0.2s ease;
 }
 
@@ -277,7 +277,7 @@ const onVisibilityChange = (key: HomeModuleKey, value: boolean | string | number
   align-items: center;
   justify-content: center;
   color: var(--ant-color-text-tertiary);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   cursor: grab;
   user-select: none;
 }
@@ -325,11 +325,11 @@ const onVisibilityChange = (key: HomeModuleKey, value: boolean | string | number
   color: var(--ant-color-text);
   background: var(--ant-color-fill-quaternary);
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
 }
 
 .home-layout-extra.is-sub {
-  padding: 4px 10px;
+  padding: 4px 12px;
   background: var(--ant-color-bg-container);
 }
 </style>

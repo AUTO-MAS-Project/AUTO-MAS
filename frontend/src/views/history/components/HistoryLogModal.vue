@@ -272,7 +272,7 @@ const displayLogContent = computed(() => {
   flex-direction: column;
   height: 100%;
   background: var(--ant-color-bg-container);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   overflow: hidden;
 }
 
@@ -308,7 +308,7 @@ const displayLogContent = computed(() => {
 .header-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .header-title {
@@ -352,11 +352,11 @@ const displayLogContent = computed(() => {
 .stat-item {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   font-size: 12px;
-  padding: 2px 6px;
+  padding: 4px 8px;
   background: var(--ant-color-fill-quaternary);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
 }
 
 .star-text {
@@ -394,8 +394,8 @@ const displayLogContent = computed(() => {
   color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
   border: 1px solid var(--ant-color-primary);
-  border-radius: 4px;
-  padding: 2px 8px;
+  border-radius: var(--ant-border-radius-xs);
+  padding: 4px 8px;
   height: auto;
 }
 
@@ -413,7 +413,7 @@ const displayLogContent = computed(() => {
 .pull-count-popover {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
 }
@@ -436,14 +436,14 @@ const displayLogContent = computed(() => {
 .stage-items {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .drop-item {
   font-size: 12px;
-  padding: 2px 8px;
+  padding: 4px 8px;
   background: var(--ant-color-fill-quaternary);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   color: var(--ant-color-text-secondary);
 }
 
@@ -493,6 +493,6 @@ const displayLogContent = computed(() => {
   text-align: center;
   padding: 8px 16px;
   background: var(--ant-color-error-bg);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
 }
 </style>

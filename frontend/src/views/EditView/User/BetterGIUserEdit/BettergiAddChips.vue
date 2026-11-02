@@ -229,12 +229,12 @@ defineExpose({ focus: focusAddDraftInput, clearSelection: clearChipSelection })
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-height: 32px;
-  padding: 2px 11px;
+  padding: 4px 12px;
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   cursor: text;
   transition: border-color 0.15s ease;
 }
@@ -253,10 +253,11 @@ defineExpose({ focus: focusAddDraftInput, clearSelection: clearChipSelection })
   align-items: center;
   gap: 4px;
   max-width: 100%;
-  padding: 1px 6px 1px 10px;
+  padding: 4px 8px 4px 12px;
   font-size: 13px;
   line-height: 22px;
-  border-radius: 11px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   border: 1px solid transparent;
   cursor: default;
   user-select: none;
@@ -280,8 +281,9 @@ defineExpose({ focus: focusAddDraftInput, clearSelection: clearChipSelection })
   font-size: 10px;
   cursor: pointer;
   opacity: 0.6;
-  padding: 2px;
+  padding: 4px;
   border-radius: 50%;
+  corner-shape: round;
   transition:
     opacity 0.15s ease,
     background-color 0.15s ease;
@@ -301,7 +303,7 @@ defineExpose({ focus: focusAddDraftInput, clearSelection: clearChipSelection })
   font-size: 13px;
   line-height: 22px;
   color: var(--ant-color-text);
-  padding: 1px 0;
+  padding: 4px 0;
 }
 
 .add-dragon-tag-draft-input::placeholder {

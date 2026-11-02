@@ -131,7 +131,8 @@ const handleCancel = () => {
 :deep(.update-content::-webkit-scrollbar-thumb) {
   background: rgba(255, 255, 255, 0.12);
   /* 深色模式下更淡 */
-  border-radius: 8px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   border: 2px solid transparent;
   background-clip: padding-box;
   /* 让边缘更柔和 */
@@ -153,6 +154,6 @@ const handleCancel = () => {
 
 .update-actions {
   display: flex;
-  gap: 10px;
+  gap: 12px;
 }
 </style>

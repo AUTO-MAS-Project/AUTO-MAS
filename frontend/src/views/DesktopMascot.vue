@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { DesktopMascotData, DesktopMascotUpdate } from '@/types/desktopMascot'
 import { useDesktopMascotPlayback } from '@/composables/useDesktopMascotPlayback'
+import { normalizeRadius } from '@/composables/themeRadii'
 
 const data = ref<DesktopMascotData | null>(null)
 const dragging = ref(false)
@@ -66,8 +67,9 @@ const noticeStyle = computed(() => {
   const boxWidth = noticeWidth.value || maxNoticeWidth
   const left = Math.max(0, Math.min(anchor - boxWidth / 2, viewportWidth.value - boxWidth))
   const arrow = anchor - left
-  const leftRadius = Math.max(0, Math.min(colors.radius, arrow - 5))
-  const rightRadius = Math.max(0, Math.min(colors.radius, boxWidth - arrow - 5))
+  const radius = normalizeRadius(colors.radius)
+  const leftRadius = Math.max(4, Math.min(radius, Math.floor((arrow - 8) / 4) * 4))
+  const rightRadius = Math.max(4, Math.min(radius, Math.floor((boxWidth - arrow - 8) / 4) * 4))
   return {
     left: `${left}px`,
     maxWidth: `${maxNoticeWidth}px`,
@@ -80,8 +82,8 @@ const noticeStyle = computed(() => {
     '--ant-color-text': colors.text,
     '--ant-color-border': colors.border,
     borderRadius: noticeBelow
-      ? `${leftRadius}px ${rightRadius}px ${colors.radius}px ${colors.radius}px`
-      : `${colors.radius}px ${colors.radius}px ${rightRadius}px ${leftRadius}px`,
+      ? `${leftRadius}px ${rightRadius}px ${radius}px ${radius}px`
+      : `${radius}px ${radius}px ${rightRadius}px ${leftRadius}px`,
   }
 })
 
@@ -353,6 +355,7 @@ function endDrag(event?: PointerEvent): void {
   height: 30px;
   border: 1px solid var(--ant-color-border);
   border-radius: 50%;
+  corner-shape: round;
   background: var(--ant-color-bg-elevated);
   color: var(--ant-color-text);
   content: '?';

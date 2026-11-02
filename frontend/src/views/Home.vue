@@ -317,7 +317,7 @@ onMounted(async () => {
 .home-module {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 @media (max-width: 800px) {

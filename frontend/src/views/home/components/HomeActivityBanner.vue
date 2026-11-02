@@ -158,7 +158,7 @@ const countdownFormat = (item: ActivityBannerItem) => {
   min-height: 240px;
   overflow: hidden;
   background: var(--ant-color-fill-secondary);
-  border-radius: 12px;
+  border-radius: var(--app-radius-card);
 }
 
 .banner-cover {
@@ -197,7 +197,7 @@ const countdownFormat = (item: ActivityBannerItem) => {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 10px;
+  gap: 12px;
   max-width: 62%;
   padding: 0 24px;
 }
@@ -205,11 +205,12 @@ const countdownFormat = (item: ActivityBannerItem) => {
 .banner-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   align-self: flex-start;
   padding: 4px 12px;
   border: 1px solid color-mix(in srgb, var(--activity-accent) 45%, transparent);
-  border-radius: 999px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: rgba(11, 18, 32, 0.55);
 }
 
@@ -217,6 +218,7 @@ const countdownFormat = (item: ActivityBannerItem) => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
+  corner-shape: round;
 }
 
 .banner-badge-text {
@@ -248,11 +250,11 @@ const countdownFormat = (item: ActivityBannerItem) => {
   bottom: 16px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 12px 22px;
+  gap: 16px;
+  padding: 12px 24px;
   background: rgba(8, 10, 14, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 14px;
+  border-radius: var(--ant-border-radius);
   backdrop-filter: blur(10px);
 }
 

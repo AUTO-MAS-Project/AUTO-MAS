@@ -115,7 +115,8 @@ defineExpose({
 
 .overview-content::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
 }
 
 .overview-content::-webkit-scrollbar-thumb:hover {
@@ -131,7 +132,7 @@ defineExpose({
 
 @media (max-width: 768px) {
   .overview-panel {
-    border-radius: 8px;
+    border-radius: var(--ant-border-radius);
   }
 
   .scheduler-panel-header {

@@ -99,7 +99,8 @@ const clampedProgress = computed(() => Math.min(100, Math.max(0, Math.round(prop
 .launch-rail {
   height: 2px;
   margin-top: 18px;
-  border-radius: 2px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: var(--ant-color-fill-secondary);
   overflow: hidden;
 }
@@ -108,6 +109,7 @@ const clampedProgress = computed(() => Math.min(100, Math.max(0, Math.round(prop
   display: block;
   height: 100%;
   border-radius: inherit;
+  corner-shape: inherit;
   background: var(--ant-color-primary);
 }
 
@@ -161,7 +163,7 @@ const clampedProgress = computed(() => Math.min(100, Math.max(0, Math.round(prop
 .launch-node-body {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   color: var(--ant-color-text-quaternary);
   font-size: 12px;
   white-space: nowrap;
@@ -181,6 +183,7 @@ const clampedProgress = computed(() => Math.min(100, Math.max(0, Math.round(prop
   height: 6px;
   border: 1px solid currentcolor;
   border-radius: 50%;
+  corner-shape: round;
 }
 
 .launch-node.current .launch-dot {

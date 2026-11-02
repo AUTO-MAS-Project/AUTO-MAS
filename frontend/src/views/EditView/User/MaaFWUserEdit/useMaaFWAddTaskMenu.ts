@@ -74,7 +74,7 @@ export function useMaaFWAddTaskMenu({
   /** 选项文字后面挂 NEW 标签（任务）或一个点（含新任务的分组） */
   const markedLabel = (text: string, mark: 'badge' | 'dot' | null) =>
     mark
-      ? h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } }, [
+      ? h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '8px' } }, [
           text,
           h(MaaFWNewBadge, { dot: mark === 'dot' }),
         ])

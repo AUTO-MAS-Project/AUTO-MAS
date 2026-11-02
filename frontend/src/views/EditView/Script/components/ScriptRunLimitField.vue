@@ -35,12 +35,12 @@ const emit = defineEmits<{
 
 <style scoped>
 .modern-number-input {
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
 }
 
 .modern-number-input :deep(.ant-input-number) {
   border: 2px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-container);
   transition: all 0.3s ease;
 }

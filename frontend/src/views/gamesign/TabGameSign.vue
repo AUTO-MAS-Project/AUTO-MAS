@@ -706,7 +706,7 @@ onMounted(() => {
   font-size: 14px;
   font-weight: 500;
   line-height: 1;
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -735,7 +735,7 @@ onMounted(() => {
 /* ==================== 签到设置（开关列表） ==================== */
 .settings-list {
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   overflow: hidden;
   background: var(--ant-color-bg-container);
 }
@@ -745,7 +745,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 20px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
@@ -756,7 +756,7 @@ onMounted(() => {
 .setting-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -781,7 +781,7 @@ onMounted(() => {
 /* ==================== 用户列表表格 ==================== */
 .user-table-container {
   border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
+  border-radius: var(--app-radius-panel);
   overflow: hidden;
   background: var(--ant-color-bg-container);
 }
@@ -856,7 +856,7 @@ onMounted(() => {
 }
 
 .row-cell {
-  padding: 14px 16px;
+  padding: 16px 16px;
   text-align: center;
   border-right: 1px solid var(--ant-color-border);
   display: flex;
@@ -877,7 +877,7 @@ onMounted(() => {
 }
 .row-cell.actions-cell {
   justify-content: center;
-  padding: 14px 24px;
+  padding: 16px 24px;
 }
 
 /* 拖拽手柄 - 对齐 TimeSetManager */
@@ -937,10 +937,10 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
   min-width: 76px;
-  padding: 2px 8px;
-  border-radius: 3px;
+  padding: 4px 8px;
+  border-radius: var(--ant-border-radius-xs);
   font-size: 12px;
   line-height: 1.5;
   border: 1px solid transparent;
@@ -1015,7 +1015,7 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.95);
-  padding: 4px 0 2px;
+  padding: 4px 0 4px;
   margin-top: 4px;
   overflow-wrap: anywhere;
 }
@@ -1028,7 +1028,7 @@ onMounted(() => {
   align-items: center;
   width: 100%;
   min-width: 0;
-  padding: 2px 0;
+  padding: 4px 0;
   font-size: 13px;
   gap: 12px;
   overflow-wrap: anywhere;
@@ -1071,7 +1071,7 @@ onMounted(() => {
 /* ==================== 操作按钮 ==================== */
 .action-btn {
   padding: 4px 12px;
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius);
   font-size: 13px;
   border: 1px solid;
   background: transparent;
@@ -1174,7 +1174,7 @@ onMounted(() => {
     align-items: center;
     margin-bottom: 8px;
     border: 1px solid var(--ant-color-border);
-    border-radius: 8px;
+    border-radius: var(--ant-border-radius);
   }
 
   .user-row:last-child {
@@ -1233,7 +1233,7 @@ onMounted(() => {
   .empty-state {
     padding: 32px 16px;
     border: 1px solid var(--ant-color-border);
-    border-radius: 8px;
+    border-radius: var(--app-radius-surface);
     background: var(--ant-color-bg-container);
   }
 }

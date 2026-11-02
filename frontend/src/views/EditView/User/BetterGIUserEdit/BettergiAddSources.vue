@@ -300,7 +300,7 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
 @import './bettergiGroupTags.css';
 .add-dragon-candidates-empty {
   border: 1px dashed var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   padding: 24px 12px;
 }
 
@@ -320,7 +320,7 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
 
 .add-dragon-pathing-tree {
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   padding: 8px;
   max-height: 320px;
   overflow-y: auto;
@@ -331,7 +331,7 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
   flex-direction: column;
   gap: 4px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   padding: 8px;
   max-height: 320px;
   overflow-y: auto;
@@ -342,8 +342,8 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 10px;
-  border-radius: 6px;
+  padding: 4px 12px;
+  border-radius: var(--ant-border-radius);
   cursor: pointer;
   transition: background-color 0.15s ease;
 }
@@ -373,17 +373,18 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
   max-height: 240px;
   overflow-y: auto;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  padding: 10px;
+  border-radius: var(--ant-border-radius);
+  padding: 12px;
 }
 
 .add-dragon-candidate {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+  gap: 8px;
+  padding: 4px 12px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 16px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: var(--ant-color-bg-container);
   cursor: pointer;
   transition:

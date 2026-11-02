@@ -37,7 +37,7 @@ withDefaults(
 .section-header h3 {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin: 0;
   color: var(--ant-color-text);
   font-size: 18px;
@@ -47,7 +47,7 @@ withDefaults(
 .section-header h3::before {
   width: 4px;
   height: 20px;
-  border-radius: 2px;
+  border-radius: var(--ant-border-radius-xs);
   background: var(--ant-color-text-quaternary);
   content: '';
 }

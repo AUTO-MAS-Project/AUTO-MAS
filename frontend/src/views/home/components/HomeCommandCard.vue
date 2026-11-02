@@ -155,7 +155,7 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
 
 <style scoped>
 .command-card {
-  border-radius: 8px;
+  border-radius: var(--app-radius-card);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
@@ -180,7 +180,7 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
   flex-direction: column;
   justify-content: center;
   overflow: hidden;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   isolation: isolate;
 }
 
@@ -212,7 +212,7 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2px;
+  gap: 4px;
 }
 
 .command-author {
@@ -256,7 +256,7 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
   flex-direction: column;
   justify-content: center;
   overflow: hidden;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   isolation: isolate;
   border-left: 1px solid var(--ant-color-border);
 }
@@ -307,7 +307,7 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
 
   .scheduler-launcher {
     max-width: 100%;
-    padding: 18px 0 0;
+    padding: 20px 0 0;
     border-left: none;
     border-top: 1px solid var(--ant-color-border);
   }
@@ -315,7 +315,7 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
 
 @media (max-width: 800px) {
   .command-card :deep(.ant-card-body) {
-    padding: 18px;
+    padding: 20px;
   }
 
   .command-title {

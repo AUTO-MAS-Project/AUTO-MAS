@@ -338,7 +338,7 @@ onUnmounted(() => {
 .logs-content {
   flex: 1;
   background: var(--ant-color-bg-container);
-  border-radius: 12px;
+  border-radius: calc(var(--ant-border-radius) + 20px);
   padding: 20px;
   overflow: hidden;
   display: flex;
@@ -349,7 +349,7 @@ onUnmounted(() => {
 .editor-container {
   flex: 1;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   overflow: hidden;
   transition: all 0.3s ease;
   min-height: 0;
@@ -379,7 +379,7 @@ onUnmounted(() => {
 }
 
 :deep(.monaco-editor) {
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
 }
 
 :deep(.ant-spin-nested-loading),

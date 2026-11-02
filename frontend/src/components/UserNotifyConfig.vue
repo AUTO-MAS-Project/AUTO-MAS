@@ -206,7 +206,7 @@ const emitSave = (key: string, value: unknown) => emit('save', key, value)
 .notify-channel-list {
   padding: 4px 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   background: var(--ant-color-bg-container);
 }
 

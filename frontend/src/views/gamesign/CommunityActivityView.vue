@@ -238,7 +238,7 @@ onMounted(() => {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
-  padding-bottom: 6px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
@@ -284,21 +284,21 @@ onMounted(() => {
   gap: 4px;
   overflow-x: auto;
   margin-bottom: 10px;
-  padding: 5px;
+  padding: 4px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
+  border-radius: calc(var(--ant-border-radius) + 4px);
   background: var(--ant-color-bg-container);
   scrollbar-width: thin;
 }
 
 .activity-chip {
   flex: 0 0 auto;
-  padding: 6px 14px;
+  padding: 8px 16px;
   color: var(--ant-color-text-secondary);
   font-size: 13px;
   background: var(--ant-color-fill-quaternary);
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   cursor: pointer;
   transition:
     color 0.2s ease,
@@ -377,7 +377,7 @@ onMounted(() => {
   .activity-heading {
     align-items: flex-start;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
   }
 
   .activity-grid {

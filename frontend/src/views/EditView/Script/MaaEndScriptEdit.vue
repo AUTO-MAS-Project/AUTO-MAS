@@ -1092,7 +1092,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .config-card {
-  border-radius: 16px;
+  border-radius: var(--app-radius-card);
   box-shadow:
     0 4px 20px rgba(0, 0, 0, 0.08),
     0 1px 3px rgba(0, 0, 0, 0.1);
@@ -1111,7 +1111,7 @@ onBeforeUnmount(() => {
 
 .maaend-tip {
   margin-bottom: 24px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
 }
 
 .maaend-tip :deep(.ant-alert-description) {
@@ -1134,7 +1134,7 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   padding: 12px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-layout);
 }
 
@@ -1159,7 +1159,7 @@ onBeforeUnmount(() => {
 
 .mask-content {
   background: var(--ant-color-bg-elevated);
-  border-radius: 8px;
+  border-radius: var(--app-radius-card);
   padding: 24px;
   max-width: 480px;
   width: 100%;

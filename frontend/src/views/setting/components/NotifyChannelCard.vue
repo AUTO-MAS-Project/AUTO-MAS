@@ -76,11 +76,11 @@ const hintText = computed(() =>
   text-align: left;
   border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
-  border-radius: 8px;
-  padding: 14px 16px 12px;
+  border-radius: var(--app-radius-panel);
+  padding: 16px 16px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   min-height: 116px;
   cursor: pointer;
   color: inherit;
@@ -107,7 +107,7 @@ const hintText = computed(() =>
   width: 38px;
   height: 38px;
   flex: 0 0 38px;
-  border-radius: 9px;
+  border-radius: var(--ant-border-radius);
   display: grid;
   place-items: center;
   font-size: 20px;
@@ -118,7 +118,7 @@ const hintText = computed(() =>
   width: 26px;
   height: 26px;
   flex: 0 0 26px;
-  border-radius: 7px;
+  border-radius: var(--ant-border-radius);
   font-size: 15px;
 }
 
@@ -127,7 +127,7 @@ const hintText = computed(() =>
   color: var(--ant-color-success);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   white-space: nowrap;
 }
 
@@ -139,6 +139,7 @@ const hintText = computed(() =>
   width: 7px;
   height: 7px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--ant-color-success);
   display: inline-block;
 }
@@ -185,10 +186,10 @@ const hintText = computed(() =>
 .chan-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   padding: 8px 12px;
   min-height: 44px;
   cursor: pointer;

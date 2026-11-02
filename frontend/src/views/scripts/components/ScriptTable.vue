@@ -358,7 +358,7 @@ const handleCardAction = (action: ScriptCardAction, script: ScriptListItem) => {
   background: var(--ant-color-primary-bg) !important;
 }
 .script-card {
-  border-radius: 16px;
+  border-radius: var(--app-radius-card);
   border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
   overflow: hidden;
@@ -385,7 +385,7 @@ const handleCardAction = (action: ScriptCardAction, script: ScriptListItem) => {
 }
 @media (max-width: 768px) {
   .empty-users {
-    padding: 30px 16px;
+    padding: 32px 16px;
   }
 }
 </style>

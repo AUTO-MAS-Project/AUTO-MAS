@@ -212,7 +212,7 @@ const hideCover = (event: Event) => {
 .tb-version-block {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .tb-version-block-head {
@@ -220,10 +220,11 @@ const hideCover = (event: Event) => {
   align-self: flex-start;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 10px;
-  padding: 6px 14px;
+  gap: 12px;
+  padding: 8px 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 999px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: var(--app-background-card-bg, var(--ant-color-bg-container));
 }
 
@@ -247,11 +248,11 @@ const hideCover = (event: Event) => {
 .tb-version-current {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 220px;
-  padding: 8px 12px;
+  padding: 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: var(--tb-card-radius, 10px);
+  border-radius: var(--tb-card-radius);
   background: var(--app-background-card-bg, var(--ant-color-bg-container));
   color: var(--ant-color-text);
   font: inherit;
@@ -289,7 +290,7 @@ const hideCover = (event: Event) => {
   width: 48px;
   height: 48px;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-fill-secondary);
 }
 
@@ -304,7 +305,7 @@ const hideCover = (event: Event) => {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -339,9 +340,9 @@ const hideCover = (event: Event) => {
   flex-shrink: 0;
   align-items: center;
   gap: 4px;
-  padding: 0 7px;
+  padding: 0 8px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   color: var(--ant-color-text-secondary);
   font-size: 12px;
   line-height: 18px;

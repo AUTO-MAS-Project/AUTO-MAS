@@ -417,6 +417,6 @@ onMounted(() => {
 }
 
 .modern-input {
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
 }
 </style>

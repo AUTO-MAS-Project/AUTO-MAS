@@ -429,7 +429,7 @@ const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnity
   display: flex;
   flex-direction: column;
   line-height: 1.35;
-  padding: 2px 0;
+  padding: 4px 0;
 }
 
 .launch-option-title {

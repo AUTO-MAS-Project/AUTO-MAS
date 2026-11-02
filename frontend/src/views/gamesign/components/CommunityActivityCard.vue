@@ -230,7 +230,7 @@ watch(
   height: 100%;
   border: 1px solid var(--ant-color-border-secondary);
   border-top: 3px solid var(--activity-accent);
-  border-radius: 8px;
+  border-radius: var(--app-radius-surface);
   background: var(--ant-color-bg-container);
 }
 
@@ -249,7 +249,7 @@ watch(
   flex-direction: column;
   height: 100%;
   box-sizing: border-box;
-  padding: 8px 10px;
+  padding: 8px 12px;
 }
 
 .activity-background {
@@ -276,7 +276,7 @@ watch(
 .activity-card-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -311,7 +311,7 @@ watch(
   overflow: hidden;
   width: 26px;
   height: 26px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius-xs);
   color: var(--activity-accent);
 }
 
@@ -327,7 +327,7 @@ watch(
   flex: 1;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 2px 8px;
+  gap: 4px 8px;
   min-width: 0;
   line-height: 1.35;
 }
@@ -351,7 +351,7 @@ watch(
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px 8px;
+  gap: 4px 8px;
   margin: 4px 0 6px;
   color: var(--ant-color-text-secondary);
   font-size: 11px;
@@ -374,7 +374,7 @@ watch(
   display: grid;
   min-width: 0;
   gap: 12px;
-  padding: 4px 10px 4px 0;
+  padding: 4px 12px 4px 0;
   border-right: 1px solid var(--ant-color-border-secondary);
 }
 
@@ -393,13 +393,13 @@ watch(
 .activity-content--overview,
 .activity-content--details-only {
   grid-template-columns: minmax(0, 1fr);
-  gap: 6px;
+  gap: 8px;
 }
 
 .activity-content--overview .activity-featured {
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
-  padding: 2px 0 6px;
+  padding: 4px 0 8px;
   border-right: 0;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
@@ -412,7 +412,7 @@ watch(
 
 .activity-reason {
   margin: 8px 0;
-  padding: 6px 8px;
+  padding: 8px 8px;
 }
 
 .activity-reason :deep(.ant-alert-message) {
@@ -426,9 +426,9 @@ watch(
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 2px 8px;
+  gap: 4px 8px;
   margin-top: auto;
-  padding-top: 6px;
+  padding-top: 8px;
   color: var(--ant-color-text-secondary);
   font-size: 11px;
   line-height: 1.3;

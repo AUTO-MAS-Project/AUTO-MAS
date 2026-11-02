@@ -13,8 +13,9 @@ defineProps<{ dot?: boolean }>()
   display: inline-flex;
   align-items: center;
   flex: none;
-  padding: 0 6px;
-  border-radius: 10px;
+  padding: 0 8px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: linear-gradient(90deg, #ff4d8c, #ffa940);
   box-shadow: 0 0 6px rgb(255 89 128 / 45%);
   color: #fff;
@@ -31,6 +32,7 @@ defineProps<{ dot?: boolean }>()
   width: 6px;
   height: 6px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--ant-color-error);
 }
 </style>

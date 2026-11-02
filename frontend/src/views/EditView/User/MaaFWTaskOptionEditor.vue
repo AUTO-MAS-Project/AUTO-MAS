@@ -603,7 +603,7 @@ const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) =>
 .option-empty {
   padding: 24px;
   border: 1px dashed var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
 }
 
 .option-toolbar {
@@ -624,7 +624,7 @@ const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) =>
 .option-label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 14px;
   font-weight: 600;
   color: var(--ant-color-text);
@@ -677,7 +677,7 @@ const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) =>
 .input-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .sub-options {

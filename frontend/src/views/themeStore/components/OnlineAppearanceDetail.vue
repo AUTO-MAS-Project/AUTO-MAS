@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { normalizeRadius } from '@/composables/themeRadii'
 import { message } from 'ant-design-vue'
 import {
   ArrowLeftOutlined,
@@ -111,7 +112,7 @@ const swatchStyle = computed(() => {
     '--swatch-text-secondary': tokens?.colorTextSecondary ?? (dark ? '#ffffff73' : '#00000073'),
     '--swatch-border': tokens?.colorBorder ?? (dark ? '#424242' : '#d9d9d9'),
     '--swatch-primary': tokens?.colorPrimary ?? '#1677ff',
-    '--swatch-radius': `${tokens?.borderRadius ?? 6}px`,
+    '--swatch-radius': `${normalizeRadius(tokens?.borderRadius)}px`,
   }
 })
 
@@ -294,7 +295,7 @@ const handleVersionChange = (value: SelectValue): void => {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   background: var(--ant-color-bg-layout);
 }
 
@@ -349,17 +350,17 @@ const handleVersionChange = (value: SelectValue): void => {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   padding: 16px;
   border: 1px solid var(--swatch-border);
-  border-radius: var(--swatch-radius);
+  border-radius: calc(var(--swatch-radius) + 16px);
   background: var(--swatch-container);
 }
 
 .swatch-line {
   width: 70%;
   height: 8px;
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   background: var(--swatch-text-secondary);
 }
 
@@ -411,7 +412,7 @@ const handleVersionChange = (value: SelectValue): void => {
 .online-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   margin-top: 16px;
 }
 
@@ -428,7 +429,7 @@ const handleVersionChange = (value: SelectValue): void => {
 .online-facts {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 6px 12px;
+  gap: 8px 12px;
   margin: 16px 0 0;
 }
 

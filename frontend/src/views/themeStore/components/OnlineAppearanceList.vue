@@ -165,7 +165,7 @@ const handleKeywordInput = (value: string): void => {
   flex-direction: column;
   padding: 0;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-surface);
   color: var(--ant-color-text);
   background: var(--ant-color-bg-container);
   font: inherit;
@@ -210,7 +210,7 @@ const handleKeywordInput = (value: string): void => {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  padding: 12px 14px 14px;
+  padding: 12px 16px 16px;
 }
 
 .online-name {
@@ -225,7 +225,7 @@ const handleKeywordInput = (value: string): void => {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
-  gap: 2px 12px;
+  gap: 4px 12px;
   margin-top: 4px;
   color: var(--ant-color-text-tertiary);
   font-size: 12px;

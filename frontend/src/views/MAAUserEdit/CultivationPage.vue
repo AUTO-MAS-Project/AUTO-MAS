@@ -235,7 +235,7 @@ const sklandBoundComposite = computed(() => {
 /* ── 内容卡与 card 标签页（与游戏社区/设置页同款） ── */
 .cultivation-content {
   background: var(--ant-color-bg-container);
-  border-radius: 8px;
+  border-radius: calc(var(--ant-border-radius) + 12px);
   flex: 1;
 }
 
@@ -260,7 +260,7 @@ const sklandBoundComposite = computed(() => {
   margin-right: 8px;
   background: transparent;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--ant-border-radius) var(--ant-border-radius) 0 0;
 }
 
 .cultivation-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active) {

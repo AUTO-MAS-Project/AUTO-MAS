@@ -89,7 +89,8 @@ a:hover {
 
 ::-webkit-scrollbar-thumb {
   background: var(--ant-color-border);
-  border-radius: 3px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
 }
 
 ::-webkit-scrollbar-thumb:hover {

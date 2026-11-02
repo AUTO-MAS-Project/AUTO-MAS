@@ -120,7 +120,7 @@ const emit = defineEmits<{
   width: 240px;
   height: 240px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
 }
 
 .qr-status {

@@ -8,6 +8,7 @@ import {
   UploadOutlined,
 } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { ref } from 'vue'
 
 import { navigateTo } from '@/router'
 import { useLocale } from '@/composables/useLocale'
@@ -58,12 +59,12 @@ interface TabBasicProps {
   handlePressSoundImport(kind?: 'single' | 'press' | 'release'): Promise<void>
   handlePressSoundPreview(phase?: PressSoundPhase): void
   handleHomeSatelliteStyleChange(_style: HomeSatelliteStyle): Promise<void>
-  handleThemeModeChange(value: SelectValue): Promise<void>
-  handleAppearanceChange(value: SelectValue): Promise<void>
+  handleThemeModeChange(value: SelectValue, control?: Element | null): Promise<void>
+  handleAppearanceChange(value: SelectValue, control?: Element | null): Promise<void>
   handleAppearanceImport(): Promise<void>
   handleAppearanceRemove(): Promise<void>
-  handleThemeColorChange(value: SelectValue): Promise<void>
-  handleThemeReset(): Promise<void>
+  handleThemeColorChange(value: SelectValue, control?: Element | null): Promise<void>
+  handleThemeReset(event?: MouseEvent): Promise<void>
   handleCursorEffectChange(value: SelectValue): Promise<void>
   handleLowPerformanceModeChange(_enabled: boolean): Promise<void>
   handlePauseHomeEffectsWhenRunningChange(_enabled: boolean): Promise<void>
@@ -117,6 +118,13 @@ const {
 
 const { t } = useI18n()
 const { locale, setLocale } = useLocale()
+const appearanceField = ref<HTMLElement>()
+const themeColorField = ref<HTMLElement>()
+
+const changeAppearance = (value: SelectValue) =>
+  handleAppearanceChange(value, appearanceField.value?.querySelector('.appearance-select'))
+const changeThemeColor = (value: SelectValue) =>
+  handleThemeColorChange(value, themeColorField.value?.querySelector('.ant-select'))
 
 const handleLocaleChange = (value: unknown): void => {
   void setLocale(value as AppLocale)
@@ -137,7 +145,7 @@ const handleLocaleChange = (value: unknown): void => {
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
-          <div class="form-item-vertical">
+          <div ref="appearanceField" class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">{{ t('core.setting.basic.themeMode') }}</span>
               <a-tooltip :title="t('core.setting.basic.themeModeTip')">
@@ -150,7 +158,7 @@ const handleLocaleChange = (value: unknown): void => {
                 :value="appearanceValue"
                 :disabled="appearanceBusy"
                 size="large"
-                @change="handleAppearanceChange"
+                @change="changeAppearance"
               >
                 <a-select-option
                   v-for="option in appearanceOptions"
@@ -188,7 +196,7 @@ const handleLocaleChange = (value: unknown): void => {
           </div>
         </a-col>
         <a-col :span="12">
-          <div class="form-item-vertical">
+          <div ref="themeColorField" class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">{{ t('core.setting.basic.themeColor') }}</span>
               <a-tooltip :title="t('core.setting.basic.themeColorTip')">
@@ -200,7 +208,7 @@ const handleLocaleChange = (value: unknown): void => {
               :disabled="themeColorDisabled || appearanceBusy"
               size="large"
               style="width: 100%"
-              @change="handleThemeColorChange"
+              @change="changeThemeColor"
             >
               <a-select-option
                 v-for="option in themeColorOptions"
@@ -209,6 +217,7 @@ const handleLocaleChange = (value: unknown): void => {
               >
                 <div style="display: flex; align-items: center; gap: 8px">
                   <div
+                    class="app-round"
                     :style="{
                       width: '16px',
                       height: '16px',

@@ -376,7 +376,7 @@ const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
 /* 拖拽手柄：可见把手 + grab 光标，热区仅限手柄（行内控件不受影响） */
 .depot-drag-handle {
   cursor: grab;
-  padding: 6px 2px;
+  padding: 8px 4px;
   color: var(--ant-color-text-quaternary);
   display: inline-flex;
   align-items: center;

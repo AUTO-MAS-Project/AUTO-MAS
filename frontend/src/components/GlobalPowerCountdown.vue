@@ -112,7 +112,7 @@ const handleCancel = async () => {
 /* 电源操作倒计时 Modal 全局样式 */
 .power-countdown-modal .ant-modal-content {
   padding: 48px;
-  border-radius: 16px;
+  border-radius: calc(var(--ant-border-radius) + 48px);
 }
 
 .power-countdown-modal .ant-modal-body {

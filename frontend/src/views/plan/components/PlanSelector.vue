@@ -165,7 +165,7 @@ const getPlanTypeLabel = (planType: PlanConfigType) => PLAN_TYPE_REGISTRY[planTy
 <style scoped>
 .plan-selector-card {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
+  border-radius: var(--app-radius-card);
   border: 1px solid var(--ant-color-border-secondary);
 }
 
@@ -197,7 +197,7 @@ const getPlanTypeLabel = (planType: PlanConfigType) => PLAN_TYPE_REGISTRY[planTy
   color: var(--ant-color-text);
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -235,7 +235,7 @@ const getPlanTypeLabel = (planType: PlanConfigType) => PLAN_TYPE_REGISTRY[planTy
   align-items: center;
   justify-content: center;
   color: var(--ant-color-text-tertiary);
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   cursor: grab;
   user-select: none;
 }

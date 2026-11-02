@@ -346,12 +346,12 @@ const handleRowContextMenu = (item: ConfigGroupIdentity) => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .bettergi-groups-list-hint {
-  padding: 8px 14px 4px;
+  padding: 8px 16px 4px;
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
 }
@@ -364,11 +364,11 @@ const handleRowContextMenu = (item: ConfigGroupIdentity) => {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 8px;
+  gap: 12px;
+  padding: 12px 8px;
   border: none;
   border-bottom: 1px solid var(--ant-color-border-secondary);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   background: transparent;
   color: var(--ant-color-text);
   font: inherit;
@@ -403,10 +403,10 @@ const handleRowContextMenu = (item: ConfigGroupIdentity) => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 8px 12px;
   margin-bottom: 8px;
   border: 1px solid var(--ant-color-primary-border);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-primary-bg);
 }
 
@@ -435,14 +435,14 @@ const handleRowContextMenu = (item: ConfigGroupIdentity) => {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   cursor: grab;
 }
 
 .group-row-drag-handle {
   flex: 0 0 auto;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-xs);
   color: var(--ant-color-text-quaternary);
   font-size: 15px;
   transition:
@@ -478,7 +478,7 @@ const handleRowContextMenu = (item: ConfigGroupIdentity) => {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .group-row-action-btn {

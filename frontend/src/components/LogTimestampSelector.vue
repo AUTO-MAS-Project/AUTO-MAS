@@ -354,7 +354,7 @@ const applySelection = async () => {
 
 .visual-mode-container {
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   padding: 16px;
   background: var(--ant-color-bg-container);
 }
@@ -373,7 +373,7 @@ const applySelection = async () => {
   height: 300px;
   overflow: auto;
   border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   padding: 8px;
   background-color: var(--ant-color-bg-layout);
   font-family: monospace;
@@ -393,12 +393,14 @@ const applySelection = async () => {
 
 .log-preview-area::-webkit-scrollbar-track {
   background: var(--ant-color-bg-layout) !important;
-  border-radius: 8px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
 }
 
 .log-preview-area::-webkit-scrollbar-thumb {
   background: var(--ant-color-border) !important;
-  border-radius: 8px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
 }
 
 .log-preview-area::-webkit-scrollbar-thumb:hover {
@@ -433,7 +435,7 @@ const applySelection = async () => {
   top: 0;
   bottom: 0;
   background-color: var(--ant-color-primary-bg);
-  border-radius: 2px;
+  border-radius: var(--ant-border-radius-xs);
   pointer-events: none;
   z-index: 0;
 }
@@ -450,8 +452,8 @@ const applySelection = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
-  border-radius: 6px;
+  padding: 12px 12px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-layout);
   border: 1px solid var(--ant-color-border);
 }

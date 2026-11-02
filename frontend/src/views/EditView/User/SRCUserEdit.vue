@@ -758,7 +758,7 @@ onUnmounted(() => {
 }
 
 .config-card {
-  border-radius: 12px;
+  border-radius: var(--app-radius-card);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 

@@ -113,7 +113,7 @@ const handleDetach = async () => {
   background: var(--ant-color-bg-elevated, #ffffff);
   color: var(--ant-color-text, rgba(0, 0, 0, 0.88));
   border: 1px solid var(--ant-color-border, #d9d9d9);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   overflow: hidden;
   /* 无边框窗口：标题区域可拖动，正文和按钮不拖 */
   user-select: none;

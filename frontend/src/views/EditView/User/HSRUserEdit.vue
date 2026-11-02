@@ -1342,7 +1342,7 @@ const loadUserData = async () => {
 }
 
 .config-card {
-  border-radius: 12px;
+  border-radius: var(--app-radius-card);
   box-shadow: none;
 }
 
@@ -1359,7 +1359,7 @@ const loadUserData = async () => {
   padding: 20px 24px;
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
+  border-radius: var(--ant-border-radius);
 }
 
 /* 基本信息与体力配置沿用插件版的无卡片布局；标题分隔线仍保留。 */
@@ -1399,7 +1399,7 @@ const loadUserData = async () => {
 .form-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-weight: 600;
   font-size: 14px;
 }
@@ -1433,7 +1433,7 @@ const loadUserData = async () => {
 
 .page-warning-list {
   margin: 0;
-  padding-left: 18px;
+  padding-left: 20px;
 }
 
 .cloud-login-line {

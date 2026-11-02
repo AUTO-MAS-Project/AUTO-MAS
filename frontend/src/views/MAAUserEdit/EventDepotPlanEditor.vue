@@ -256,7 +256,7 @@ const setStageTarget = (row: EventRow, value: number | string | null) => {
   min-width: 0;
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 8px;
 }
 .stage-kind {
   min-width: 0;

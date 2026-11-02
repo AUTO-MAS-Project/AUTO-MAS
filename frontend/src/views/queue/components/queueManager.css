@@ -16,7 +16,7 @@
 }
 
 :deep(.ant-space) {
-  gap: 6px !important;
+  gap: 8px !important;
 }
 
 /* 按钮图标样式调整 */

@@ -92,14 +92,14 @@ const confirmChoice = (): void => {
   overflow: hidden;
   padding: 0;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 10px;
+  border-radius: var(--app-radius-card);
   background: var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated));
   box-shadow: var(--ant-box-shadow-secondary);
 }
 
 :global(.app-close-prompt-modal .ant-modal-header) {
   margin-bottom: 0;
-  padding: 26px 28px 8px;
+  padding: 28px 28px 8px;
   border-bottom: 0;
   background: transparent;
 }
@@ -113,7 +113,7 @@ const confirmChoice = (): void => {
   inset-inline-end: 17px;
   width: 30px;
   height: 30px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
 }
 
 :global(.app-close-prompt-modal .ant-modal-close:hover) {
@@ -147,8 +147,8 @@ const confirmChoice = (): void => {
   align-items: center;
   min-height: 36px;
   margin-inline-end: 0;
-  padding: 6px 8px;
-  border-radius: 6px;
+  padding: 8px 8px;
+  border-radius: var(--ant-border-radius);
   color: var(--ant-color-text);
 }
 
@@ -156,7 +156,7 @@ const confirmChoice = (): void => {
   display: block;
   min-width: 0;
   flex: 1;
-  padding-inline-start: 10px;
+  padding-inline-start: 12px;
   font-size: 14px;
 }
 

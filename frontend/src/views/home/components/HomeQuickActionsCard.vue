@@ -70,7 +70,7 @@ const quickActions = computed(() => [
 
 <style scoped>
 .shortcut-card {
-  border-radius: 8px;
+  border-radius: var(--app-radius-card);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
@@ -91,10 +91,10 @@ const quickActions = computed(() => [
 
 .quick-action {
   min-height: 108px;
-  padding: 18px;
+  padding: 20px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   text-align: left;
   color: var(--ant-color-text);
   background: transparent;
@@ -129,7 +129,7 @@ const quickActions = computed(() => [
   flex: 0 0 42px;
   color: var(--ant-color-primary);
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius-xs);
   font-size: 20px;
 }
 
@@ -137,7 +137,7 @@ const quickActions = computed(() => [
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .quick-action-title {

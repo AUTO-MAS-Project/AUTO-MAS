@@ -256,7 +256,7 @@ watch(
 .failure-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin: 0;
   color: var(--ant-color-text);
   font-size: 20px;
@@ -269,6 +269,7 @@ watch(
   width: 7px;
   height: 7px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--ant-color-error);
 }
 
@@ -330,13 +331,13 @@ watch(
 .failure-mirrors {
   margin-top: 18px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   overflow: hidden;
 }
 
 .mirrors-title {
   margin: 0;
-  padding: 9px 14px;
+  padding: 8px 16px;
   background: var(--ant-color-fill-quaternary);
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
@@ -350,9 +351,9 @@ watch(
   display: flex;
   width: 100%;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin-inline-end: 0;
-  padding: 9px 14px;
+  padding: 8px 16px;
   border: 0;
   border-top: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
@@ -411,7 +412,7 @@ watch(
 .doctor-checks {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 16px;
+  gap: 8px 16px;
   margin-top: 10px;
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
@@ -429,9 +430,9 @@ watch(
 .failure-log {
   max-height: 240px;
   margin: 10px 0 0;
-  padding: 11px 13px;
+  padding: 12px 12px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
+  border-radius: var(--app-radius-panel);
   background: var(--ant-color-fill-quaternary);
   color: var(--ant-color-text-secondary);
   font-family: Consolas, 'Courier New', monospace;

@@ -93,7 +93,7 @@ const queueContextText = computed(() => {
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 12px;
-  padding: 6px 16px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
   /* 填充色是半透明的，垫一层容器底色，滚过去的行不透上来 */
   background:

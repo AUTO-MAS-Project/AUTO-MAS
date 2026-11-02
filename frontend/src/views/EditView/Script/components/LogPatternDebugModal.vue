@@ -191,7 +191,7 @@ const configPreview = computed(() => {
 .modal-title {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .debug-body {
@@ -221,7 +221,7 @@ const configPreview = computed(() => {
   padding: 8px 12px;
   background: var(--ant-color-fill-tertiary);
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   margin-bottom: 12px;
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
@@ -307,9 +307,9 @@ const configPreview = computed(() => {
 }
 
 .debug-result-item {
-  padding: 8px 10px;
+  padding: 8px 12px;
   margin-bottom: 8px;
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
 }
@@ -335,14 +335,15 @@ const configPreview = computed(() => {
   flex-shrink: 0;
   min-width: 20px;
   height: 20px;
-  border-radius: 10px;
+  border-radius: var(--app-radius-pill);
+  corner-shape: round;
   background: var(--ant-color-fill-tertiary);
   color: var(--ant-color-text-tertiary);
   font-size: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 5px;
+  padding: 0 4px;
 }
 
 .debug-result-line-text {

@@ -822,7 +822,7 @@ onUnmounted(() => {
 }
 
 .config-card {
-  border-radius: 12px;
+  border-radius: var(--app-radius-card);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
@@ -901,7 +901,7 @@ onUnmounted(() => {
 
 .mask-content {
   background: var(--ant-color-bg-elevated);
-  border-radius: 8px;
+  border-radius: var(--app-radius-card);
   padding: 24px;
   max-width: 480px;
   width: 100%;

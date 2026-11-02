@@ -366,7 +366,7 @@ onDeactivated(() => {
   flex-direction: column;
   overflow: hidden;
   background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
   padding: 12px;
 }
 
@@ -435,7 +435,7 @@ onDeactivated(() => {
   width: 32px;
   height: 32px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
+  border-radius: var(--ant-border-radius);
   background-color: var(--app-background-card-elevated-bg, var(--ant-color-bg-container));
   color: var(--ant-color-text);
   display: flex;

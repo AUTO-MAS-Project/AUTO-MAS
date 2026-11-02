@@ -359,7 +359,7 @@ const hasBesidePackageName = computed(
 }
 
 .config-card {
-  border-radius: 16px;
+  border-radius: var(--app-radius-card);
   box-shadow: none;
   border: 1px solid var(--ant-color-border-secondary);
   overflow: hidden;
@@ -369,7 +369,7 @@ const hasBesidePackageName = computed(
   font-size: 14px;
   font-weight: 600;
   padding: 8px 16px;
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius-xs);
   border: none;
 }
 
