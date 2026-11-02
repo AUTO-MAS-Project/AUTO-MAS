@@ -709,17 +709,15 @@ class _FakeModavd:
         real_run_process = cli_module._run_process
 
         async def run(
-            args: Sequence[str],
-            timeout: float,
-            timeout_handler: object = None,
-            breakaway: bool = False,
+            args: Sequence[str], *rest: object, **options: object
         ) -> ProcessOutput:
+            # 只换掉要起的程序，其余参数照调用方原样交给真的 _run_process：调用约定对不上时
+            # 和真实运行一样报错（11-02 实测前，位置参数传给只收关键字的参数，单测没看出来）
             self.launched.append((time.monotonic(), list(args)[1:]))
             return await real_run_process(
                 [sys.executable, "-I", str(self.script), *list(args)[1:]],
-                timeout,
-                timeout_handler=timeout_handler,  # type: ignore[arg-type]
-                breakaway=breakaway,
+                *rest,  # type: ignore[arg-type]
+                **options,  # type: ignore[arg-type]
             )
 
         # ModAvdCli 默认 runner 在构造时取模块里的 _run_process，换掉它就覆盖所有调用点

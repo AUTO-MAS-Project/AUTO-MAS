@@ -142,11 +142,12 @@ Runner = Callable[
 async def _run_process(
     args: Sequence[str],
     timeout: float,
-    *,
     timeout_handler: ProcessTimeoutHandler | None = None,
     breakaway: bool = False,
 ) -> ProcessOutput:
-    """启动一次 modavd；超时处理只针对 CLI 进程，不碰它脱离出来的模拟器。"""
+    """启动一次 modavd；超时处理只针对 CLI 进程，不碰它脱离出来的模拟器。
+
+    参数按 :data:`Runner` 的位置约定收：``ModAvdCli._call`` 按位置传四个参数。"""
 
     try:
         process = await _utils_process_runner.create_subprocess(
