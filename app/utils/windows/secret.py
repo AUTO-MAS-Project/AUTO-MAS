@@ -1,7 +1,7 @@
 import base64
 
 from app.utils.common.errors import UnsupportedPlatformError
-from app.utils.common.secret import looks_like_dpapi_blob
+from app.utils.common.secret_format import looks_like_dpapi_blob
 
 __all__ = [
     "looks_like_dpapi_blob",

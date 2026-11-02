@@ -1,15 +1,21 @@
 """BGI 分步结果进入 box 后保持原有节点、统计文本与展示模式。"""
 
 import asyncio
+import threading
 from copy import deepcopy
 from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
 
-from app.log_box import log_box
-from app.log_box.report import build_user_result_text
+from app.task.BetterGI.AutoProxy import AutoProxyTask
 from app.task.BetterGI.tools import push_log
+from app.task.general.manager import GeneralManager
+
+
+def build_user_result_text(users, has_uncompleted):
+    manager = SimpleNamespace(script_info=SimpleNamespace(user_list=users))
+    return GeneralManager._render_user_results(manager, has_uncompleted=has_uncompleted)
 
 
 def step(**changes):
@@ -65,10 +71,8 @@ def test_bgi_report_matches_direct_injection(mode, steps):
     ]
     if mode != "关闭":
         previous.push_log.extend(push_log.steps_to_push_log(steps))
-    session = log_box.get_user_session(
-        push_log.make_bettergi_log_spec(steps), user=current, mode=mode
-    )
-    asyncio.run(session.close())
+    proxy = SimpleNamespace(cur_user_item=current)
+    asyncio.run(AutoProxyTask._append_step_details(proxy, steps))
     assert steps == original
     assert current.push_log == previous.push_log
     for has_uncompleted in (False, True):
@@ -77,20 +81,8 @@ def test_bgi_report_matches_direct_injection(mode, steps):
         )
 
 
-def test_step_snapshot_does_not_follow_later_mutation():
-    steps = [step()]
-    expected = push_log.steps_to_push_log(steps)
-    spec = push_log.make_bettergi_log_spec(steps)
-    steps[0]["task"] = "后续变化"
-    steps[0]["ok"] = False
-    user = SimpleNamespace(push_log=[], push_log_mode="汇总")
-    session = log_box.get_user_session(spec, user=user, mode="汇总")
-    asyncio.run(session.close())
-    assert user.push_log == expected
-
-
 def test_statistics_text_is_unaffected_by_box_delivery():
-    from app.task.BetterGI.tools.notify import build_statistics_payload
+    import app.core.notify.formats.bettergi as _format_bettergi
 
     steps = [step(ok=False, issue_count=1, issue_text="操作没有完成")]
     message = dict(
@@ -100,12 +92,52 @@ def test_statistics_text_is_unaffected_by_box_delivery():
         user_result="未完成",
         one_dragon_steps=steps,
     )
-    before = build_statistics_payload(title="统计", message=message).text
+    before = _format_bettergi.build_statistics_payload(
+        title="统计", message=message
+    ).text
     user = SimpleNamespace(push_log=[], push_log_mode="汇总")
     asyncio.run(
-        log_box.get_user_session(
-            push_log.make_bettergi_log_spec(steps), user=user, mode="汇总"
-        ).close()
+        AutoProxyTask._append_step_details(SimpleNamespace(cur_user_item=user), steps)
     )
-    after = build_statistics_payload(title="统计", message=message).text
+    after = _format_bettergi.build_statistics_payload(
+        title="统计", message=message
+    ).text
     assert after == before
+
+
+def test_caller_snapshot_and_delivery_survive_repeated_cancellation(monkeypatch):
+    from app.task.BetterGI import AutoProxy as module
+
+    started, release = threading.Event(), threading.Event()
+    steps = [step()]
+    expected = push_log.steps_to_push_log(steps)
+    user = SimpleNamespace(push_log=[], push_log_mode="汇总")
+    proxy = SimpleNamespace(cur_user_item=user)
+    convert = module.steps_to_push_log
+
+    def blocking_convert(snapshot):
+        started.set()
+        assert release.wait(5)
+        return convert(snapshot)
+
+    monkeypatch.setattr(module, "steps_to_push_log", blocking_convert)
+
+    async def run():
+        closing = asyncio.create_task(AutoProxyTask._append_step_details(proxy, steps))
+        try:
+            assert await asyncio.to_thread(started.wait, 3)
+            steps[0]["task"] = "后续账号的新数据"
+            proxy.cur_user_item = SimpleNamespace(push_log=[], push_log_mode="汇总")
+            closing.cancel()
+            await asyncio.sleep(0)
+            closing.cancel()
+            await asyncio.sleep(0)
+            assert not closing.done()
+        finally:
+            release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await closing
+
+    asyncio.run(run())
+    assert user.push_log == expected
+    assert proxy.cur_user_item.push_log == []

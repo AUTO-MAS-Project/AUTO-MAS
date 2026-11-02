@@ -63,13 +63,13 @@ const handleKeywordInput = (value: string): void => {
     </a-result>
   </div>
   <div v-else-if="items.length === 0" class="online-state">
-    <a-empty
+    <NoData
       :description="keyword.trim() ? t('core.themeStore.noMatch') : t('core.themeStore.empty')"
     >
       <a-button v-if="keyword.trim()" @click="clearKeyword">
         {{ t('core.themeStore.clearSearch') }}
       </a-button>
-    </a-empty>
+    </NoData>
   </div>
   <div v-else class="online-grid">
     <button

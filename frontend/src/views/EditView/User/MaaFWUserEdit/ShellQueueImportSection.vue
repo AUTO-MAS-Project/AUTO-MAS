@@ -55,7 +55,7 @@
             <MaaFWQueueChips :chips="candidate.chips" />
           </a-radio>
         </a-radio-group>
-        <a-empty
+        <NoData
           v-else-if="!userLoading"
           class="shell-queue-import-empty"
           :description="t('core.edit.queueImportNoUsers')"
@@ -82,7 +82,7 @@
           class="shell-queue-import-select"
           :options="instanceOptions"
         />
-        <a-empty
+        <NoData
           v-else-if="!shellLoading"
           class="shell-queue-import-empty"
           :description="t('core.edit.shellQueueImportNone')"

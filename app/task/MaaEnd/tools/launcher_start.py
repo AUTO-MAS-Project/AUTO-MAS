@@ -55,9 +55,9 @@ import numpy as np
 import psutil
 from PIL import Image
 
-from app.services.endfield_launcher import launcher_root
-from app.tools.error_screenshot import save_error_screenshot
-from app.tools.ocr import Box, OCRItem, ocr_image
+from app.services import endfield_launcher as _service_endfield_launcher
+from app.tools import error_screenshot as _tool_error_screenshot
+from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import display as _utils_display
 
@@ -97,7 +97,7 @@ _FRAME_HEIGHT = 1080
 
 # 右下角动作区（相对 1080p 帧）：启动按钮与下载状态都在此区域；左侧游戏列表、
 # 中间公告/新闻列表含大量富文本，不参与判定与点击，避免干扰误触
-_ACTION_ROI: Box = (1380, 860, 1920, 1080)
+_ACTION_ROI: _tool_ocr.Box = (1380, 860, 1920, 1080)
 
 # 主按钮文案（国服启动器）：有更新时是「更新游戏」，无更新时是「开始游戏」，
 # 下载中是「正在下载」。次要的「DirectX 11 启动（游戏异常时使用）」不含这些词，
@@ -189,7 +189,12 @@ def _window_area(hwnd: int) -> int:
 
 def _root_prefix(launcher_path: Path) -> str:
     """启动器安装根目录树前缀（casefold、带尾部分隔符），用于 exe 归属判定。"""
-    return str(launcher_root(launcher_path)).casefold().rstrip("\\/") + "\\"
+    return (
+        str(_service_endfield_launcher.launcher_root(launcher_path))
+        .casefold()
+        .rstrip("\\/")
+        + "\\"
+    )
 
 
 def _find_process_hwnd(process_name: str) -> int | None:
@@ -380,13 +385,13 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
 
 
-def _read_texts(hwnd: int) -> list[OCRItem]:
-    return ocr_image(_capture_window(hwnd, activate=False))
+def _read_texts(hwnd: int) -> list[_tool_ocr.OCRItem]:
+    return _tool_ocr.ocr_image(_capture_window(hwnd, activate=False))
 
 
 def _click_box(
     hwnd: int,
-    box: Box,
+    box: _tool_ocr.Box,
     *,
     activate: bool = False,
     after_sleep: float = 0.3,
@@ -417,14 +422,18 @@ def _click_box(
 # ── OCR 文本判定辅助 ─────────────────────────────────────────────────────
 
 
-def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
+def _find_text(
+    items: list[_tool_ocr.OCRItem], keywords: tuple[str, ...]
+) -> _tool_ocr.Box | None:
     for text, box in items:
         if any(keyword in text for keyword in keywords):
             return box
     return None
 
 
-def _find_dialog_button(items: list[OCRItem], labels: tuple[str, ...]) -> Box | None:
+def _find_dialog_button(
+    items: list[_tool_ocr.OCRItem], labels: tuple[str, ...]
+) -> _tool_ocr.Box | None:
     """弹窗按钮按整词匹配：正文说明文字里出现同词时不能误点（_find_text 是子串匹配），
     且 OCR 条目自上而下排列，正文先于按钮出现。"""
 
@@ -434,7 +443,7 @@ def _find_dialog_button(items: list[OCRItem], labels: tuple[str, ...]) -> Box | 
     return None
 
 
-def _find_self_update_button(items: list[OCRItem]) -> Box | None:
+def _find_self_update_button(items: list[_tool_ocr.OCRItem]) -> _tool_ocr.Box | None:
     """自更新弹窗按钮行定位：整词「退出」「更新」同行并排是该弹窗的强特征。
 
     以整词「退出」为锚，只接受同一按钮行（中心 y 相差不超过按钮高）、位于其
@@ -462,10 +471,10 @@ def _find_self_update_button(items: list[OCRItem]) -> Box | None:
     return None
 
 
-def _items_in_action_roi(items: list[OCRItem]) -> list[OCRItem]:
+def _items_in_action_roi(items: list[_tool_ocr.OCRItem]) -> list[_tool_ocr.OCRItem]:
     """按文字框中心过滤出右下角动作区内的条目（排除左侧列表等富文本干扰）。"""
     left, top, right, bottom = _ACTION_ROI
-    selected: list[OCRItem] = []
+    selected: list[_tool_ocr.OCRItem] = []
     for text, (x, y, width, height) in items:
         center_x = x + width / 2
         center_y = y + height / 2
@@ -474,7 +483,7 @@ def _items_in_action_roi(items: list[OCRItem]) -> list[OCRItem]:
     return selected
 
 
-def _download_progress_texts(items: list[OCRItem]) -> tuple[str, ...]:
+def _download_progress_texts(items: list[_tool_ocr.OCRItem]) -> tuple[str, ...]:
     """取百分比/体积/速度相关文本并剥离计时（见常量说明），供进度签名使用。"""
     texts = []
     for text, _ in items:
@@ -483,7 +492,7 @@ def _download_progress_texts(items: list[OCRItem]) -> tuple[str, ...]:
     return tuple(texts)
 
 
-def _find_busy_box(items: list[OCRItem]) -> Box | None:
+def _find_busy_box(items: list[_tool_ocr.OCRItem]) -> _tool_ocr.Box | None:
     """识别启动器下载态按钮；「预下载」不算忙碌。
 
     预下载开放且游戏可玩是官方预期状态，此时按钮区可能并存「开始游戏」与
@@ -551,7 +560,7 @@ def _save_error_screenshot(
             target = _find_game_hwnd()
         if target is None:
             return
-        screenshot_path = save_error_screenshot(
+        screenshot_path = _tool_error_screenshot.save_error_screenshot(
             _capture_window_image(target, activate=False),
             "maaend-launcher-start",
             "launcher-error",
@@ -643,7 +652,7 @@ def start_game_via_launcher(
         if hwnd is None:
             raise RuntimeError(
                 f"等待启动器窗口超时（{_LAUNCHER_WINDOW_TIMEOUT}s 未找到 "
-                f"{launcher_root(launcher_path)} 下的启动器窗口，"
+                f"{_service_endfield_launcher.launcher_root(launcher_path)} 下的启动器窗口，"
                 "若启动器弹出 UAC 请先确认）"
             )
         _activate_window(hwnd, stop_event=stop_event)

@@ -42,7 +42,7 @@
         </a-button>
       </div>
     </div>
-    <div v-else class="list-empty">{{ t('core.edit.hsrListEmpty') }}</div>
+    <NoData v-else class="list-empty" :description="t('core.edit.hsrListEmpty')" />
     <a-button size="small" type="dashed" :disabled="disabled" class="list-add" @click="addRow">
       <template #icon>
         <PlusOutlined />

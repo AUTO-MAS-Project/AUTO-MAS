@@ -58,11 +58,7 @@ from typing import Any, Protocol
 import httpx
 from packaging import version as pep440
 
-from app.services.update_transport import (
-    MIRROR_RESOURCE_API,
-    MirrorResourceError,
-    request_mirror_resource,
-)
+from app.services.common.update import transport as _service_update_transport
 from app.utils import MIRROR_ERROR_INFO, get_logger
 
 from .components import read_mod_build
@@ -459,13 +455,17 @@ class MirrorChyanSource:
     """Mirror 酱：``GET <api>/ModAVD/latest``，走 MAS 的代理设置。
 
     ``cdk`` 是 MAS 全局的 ``Update.MirrorChyanCDK``，只放进请求参数：错误信息里不带它，也不带含它的地址
-    （:func:`~app.services.update_transport.request_mirror_resource` 不用 ``raise_for_status``）。
+    （:func:`~app.services.common.update.transport.request_mirror_resource` 不用 ``raise_for_status``）。
     消耗 CDK 的是「带 CDK 要下载链接」（:meth:`package`）；查更新（:meth:`latest`）一律不带 CDK。
     """
 
     name = MIRROR_SOURCE
 
-    def __init__(self, cdk: str = "", api_root: str = MIRROR_RESOURCE_API) -> None:
+    def __init__(
+        self,
+        cdk: str = "",
+        api_root: str = _service_update_transport.MIRROR_RESOURCE_API,
+    ) -> None:
         self._cdk = cdk.strip()
         self.api_root = api_root
 
@@ -493,14 +493,14 @@ class MirrorChyanSource:
         if with_cdk and self._cdk:
             params["cdk"] = self._cdk
         try:
-            payload = await request_mirror_resource(
+            payload = await _service_update_transport.request_mirror_resource(
                 MODAVD_MIRROR_RID,
                 params=params,
                 proxy=proxy,
                 timeout=UPDATE_API_TIMEOUT_SECONDS,
                 api_root=self.api_root,
             )
-        except MirrorResourceError as e:
+        except _service_update_transport.MirrorResourceError as e:
             raise MirrorChyanError(mirror_error_text(e.code), e.code) from None
         except Exception as e:  # noqa: BLE001 - 连不上、不是 JSON 都算 Mirror 酱用不了
             detail = self._scrub(
@@ -526,7 +526,10 @@ class MirrorChyanSource:
 
 def mirror_api_root() -> str:
     """Mirror 酱的查询根地址；环境变量 ``AUTO_MAS_MODAVD_MIRROR_API`` 可换成本地模拟服务（只供测试）。"""
-    return os.environ.get(MODAVD_MIRROR_API_ENV, "").strip() or MIRROR_RESOURCE_API
+    return (
+        os.environ.get(MODAVD_MIRROR_API_ENV, "").strip()
+        or _service_update_transport.MIRROR_RESOURCE_API
+    )
 
 
 def github_api_url() -> str:

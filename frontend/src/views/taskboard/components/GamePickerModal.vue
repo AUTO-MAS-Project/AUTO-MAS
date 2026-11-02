@@ -52,9 +52,11 @@
           {{ t('core.taskboard.activeCount', { p0: option.activeCount ?? 0 }) }}
         </div>
       </div>
-      <div v-if="!filteredOptions.length" class="tb-pick-empty">
-        {{ t('core.taskboard.empty') }}
-      </div>
+      <NoData
+        v-if="!filteredOptions.length"
+        class="tb-pick-empty"
+        :description="t('core.taskboard.empty')"
+      />
     </div>
   </a-modal>
 </template>

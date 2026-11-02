@@ -125,7 +125,7 @@
             {{ t('core.edit.maaCultivateSklandDegradedHint') }}
           </div>
         </div>
-        <a-empty
+        <NoData
           v-else
           :description="
             t(

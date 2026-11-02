@@ -25,7 +25,7 @@
 接口取数失败退回默认行为属于功能边界，不在本文件覆盖。
 """
 
-from app.tools.bluearchive_activity import collect_activities, has_running_activity_in
+from app.tools.common.game_calendar import bluearchive as _tool_bluearchive_activity
 
 ## 判定函数只认这几个字段，时间一律是 Unix 秒
 NOW = 1_700_000_000
@@ -41,19 +41,44 @@ class TestHasRunningActivityIn:
     """时间轴 → 当前是否有进行中的活动"""
 
     def test_running_activity_is_detected(self) -> None:
-        assert has_running_activity_in([activity(NOW - 100, NOW + 100)], NOW) is True
+        assert (
+            _tool_bluearchive_activity.has_running_activity_in(
+                [activity(NOW - 100, NOW + 100)], NOW
+            )
+            is True
+        )
 
     def test_upcoming_activity_is_not_running(self) -> None:
-        assert has_running_activity_in([activity(NOW + 100, NOW + 200)], NOW) is False
+        assert (
+            _tool_bluearchive_activity.has_running_activity_in(
+                [activity(NOW + 100, NOW + 200)], NOW
+            )
+            is False
+        )
 
     def test_ended_activity_is_not_running(self) -> None:
-        assert has_running_activity_in([activity(NOW - 200, NOW - 100)], NOW) is False
+        assert (
+            _tool_bluearchive_activity.has_running_activity_in(
+                [activity(NOW - 200, NOW - 100)], NOW
+            )
+            is False
+        )
 
     def test_start_boundary_counts_as_running(self) -> None:
-        assert has_running_activity_in([activity(NOW, NOW + 100)], NOW) is True
+        assert (
+            _tool_bluearchive_activity.has_running_activity_in(
+                [activity(NOW, NOW + 100)], NOW
+            )
+            is True
+        )
 
     def test_end_boundary_does_not_count_as_running(self) -> None:
-        assert has_running_activity_in([activity(NOW - 100, NOW)], NOW) is False
+        assert (
+            _tool_bluearchive_activity.has_running_activity_in(
+                [activity(NOW - 100, NOW)], NOW
+            )
+            is False
+        )
 
     def test_one_running_activity_is_enough(self) -> None:
         timeline = [
@@ -61,7 +86,7 @@ class TestHasRunningActivityIn:
             activity(NOW + 100, NOW + 200),
             activity(NOW - 100, NOW + 100),
         ]
-        assert has_running_activity_in(timeline, NOW) is True
+        assert _tool_bluearchive_activity.has_running_activity_in(timeline, NOW) is True
 
     def test_other_types_are_ignored(self) -> None:
         """总力大决、多倍活动这些分类没有活动关，不算活动期"""
@@ -70,7 +95,9 @@ class TestHasRunningActivityIn:
             activity(NOW - 100, NOW + 100, kind="总力大决"),
             activity(NOW - 100, NOW + 100, kind="多倍活动"),
         ]
-        assert has_running_activity_in(timeline, NOW) is False
+        assert (
+            _tool_bluearchive_activity.has_running_activity_in(timeline, NOW) is False
+        )
 
     def test_items_without_numeric_time_are_skipped(self) -> None:
         timeline = [
@@ -78,10 +105,12 @@ class TestHasRunningActivityIn:
             {"activity_kind_name": "活动"},
             activity(NOW + 100, NOW + 200),
         ]
-        assert has_running_activity_in(timeline, NOW) is False
+        assert (
+            _tool_bluearchive_activity.has_running_activity_in(timeline, NOW) is False
+        )
 
     def test_empty_timeline(self) -> None:
-        assert has_running_activity_in([], NOW) is False
+        assert _tool_bluearchive_activity.has_running_activity_in([], NOW) is False
 
 
 def titled_activity(
@@ -106,13 +135,13 @@ class TestCollectActivities:
             titled_activity(NOW + 200, NOW + 300, title="下一个"),
         ]
 
-        running, upcoming = collect_activities(timeline, NOW)
+        running, upcoming = _tool_bluearchive_activity.collect_activities(timeline, NOW)
 
         assert running is not None and running.name == "进行中"
         assert upcoming is not None and upcoming.name == "下一个"
 
     def test_no_running_returns_next(self) -> None:
-        running, upcoming = collect_activities(
+        running, upcoming = _tool_bluearchive_activity.collect_activities(
             [titled_activity(NOW + 200, NOW + 300, title="下一个")], NOW
         )
 
@@ -129,7 +158,7 @@ class TestCollectActivities:
             ),
         ]
 
-        running, upcoming = collect_activities(timeline, NOW)
+        running, upcoming = _tool_bluearchive_activity.collect_activities(timeline, NOW)
 
         assert running is None
         assert upcoming is None
@@ -140,7 +169,7 @@ class TestCollectActivities:
             titled_activity(NOW - 100, NOW + 100, title="限时活动【夏日天空的约定】"),
         ]
 
-        running, _ = collect_activities(timeline, NOW)
+        running, _ = _tool_bluearchive_activity.collect_activities(timeline, NOW)
 
         assert running is not None and running.name == "限时活动【夏日天空的约定】"
 
@@ -151,7 +180,7 @@ class TestCollectActivities:
             titled_activity(NOW - 200, NOW + 100, title="早结束"),
         ]
 
-        running, _ = collect_activities(timeline, NOW)
+        running, _ = _tool_bluearchive_activity.collect_activities(timeline, NOW)
 
         assert running is not None and running.name == "早结束"
 
@@ -161,7 +190,7 @@ class TestCollectActivities:
             titled_activity(NOW + 200, NOW + 300, title="更早"),
         ]
 
-        _, upcoming = collect_activities(timeline, NOW)
+        _, upcoming = _tool_bluearchive_activity.collect_activities(timeline, NOW)
 
         assert upcoming is not None and upcoming.name == "更早"
 
@@ -173,14 +202,14 @@ class TestCollectActivities:
             titled_activity(NOW - 100, NOW + 300, title="活动"),
         ]
 
-        running, _ = collect_activities(timeline, NOW)
+        running, _ = _tool_bluearchive_activity.collect_activities(timeline, NOW)
 
         assert running is not None and running.end_time == NOW + 300
 
     def test_items_without_title_are_skipped(self) -> None:
         """没有名字的条目界面无法展示，按不存在处理"""
 
-        running, upcoming = collect_activities(
+        running, upcoming = _tool_bluearchive_activity.collect_activities(
             [
                 {
                     "activity_kind_name": "活动",
@@ -198,18 +227,18 @@ class TestCollectActivities:
             titled_activity(NOW - 100, NOW + 100, title="卡池", kind="总力大决")
         ]
 
-        running, upcoming = collect_activities(timeline, NOW)
+        running, upcoming = _tool_bluearchive_activity.collect_activities(timeline, NOW)
 
         assert running is None and upcoming is None
 
     def test_end_boundary_moves_to_upcoming(self) -> None:
         """刚好结束的活动不再算进行中，也不该被当成下一个"""
 
-        running, upcoming = collect_activities(
+        running, upcoming = _tool_bluearchive_activity.collect_activities(
             [titled_activity(NOW - 100, NOW, title="刚结束")], NOW
         )
 
         assert running is None and upcoming is None
 
     def test_empty_timeline(self) -> None:
-        assert collect_activities([], NOW) == (None, None)
+        assert _tool_bluearchive_activity.collect_activities([], NOW) == (None, None)

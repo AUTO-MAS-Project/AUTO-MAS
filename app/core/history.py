@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import ClassVar, Literal, TypeVar, cast
 from uuid import UUID, uuid4
 
+from app.core import Config
 from app.models.schema import (
     HistoryAggregate,
     HistoryAggregateError,
@@ -146,8 +147,8 @@ class HistoryStore:
     def __init__(self) -> None:
         """初始化历史目录、数据库位置及异步操作状态。"""
 
-        self.root: Path = Path.cwd() / "history"
-        self.database: Path = Path.cwd() / "data/history.db"
+        self.root: Path = Config.history_path
+        self.database: Path = Config.data_path / "history.db"
         self._lock: asyncio.Lock = asyncio.Lock()
         self._workers: dict[asyncio.Future[object], threading.Event] = {}
         self._workers_changed: asyncio.Event = asyncio.Event()
@@ -1288,4 +1289,6 @@ class HistoryStore:
         return await self._run(export)
 
 
-history_store = HistoryStore()
+History = HistoryStore()
+
+__all__ = ["History"]

@@ -5,6 +5,7 @@ FLUXDOWN_AGENT_NAME = None
 FLUXDOWN_DAEMON_NAME = None
 HPATCHZ_MEMBER = None
 HPATCHZ_FILENAME = None
+supports_fluxdown_install = False
 
 
 def candidate_drives() -> list[str]:

@@ -23,7 +23,7 @@
 状态**。
 
 本文件只做「取生效路径 → 判渠道 → 推调度台 → 决定本次任务是否继续」，查版本、下载、
-打补丁与落盘都在 :mod:`app.services.genshin_updater`；**更新过程的所有叙述都由编排层
+打补丁与落盘都在 :mod:`app.services.common.gi_updater.genshin`；**更新过程的所有叙述都由编排层
 写进 app.log**，这里只把影响本轮任务命运的少数几行推到调度台，免得刷掉专项自己的日志。
 两种入口共用同一条判定链：
 
@@ -48,7 +48,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from app.models.config import BetterGIConfig, BetterGIUserConfig
-from app.services.genshin_updater import UpdateKind, update_genshin_client
+from app.services.common.gi_updater import genshin as _service_genshin_updater
 from app.task.BetterGI.tools import game_info
 from app.utils import get_logger
 
@@ -154,14 +154,14 @@ async def ensure_game_updated(
         """只进调度台：更新过程的日志由编排层统一写 app.log，这里不再复述。"""
         await _report(on_log, line)
 
-    result = await update_genshin_client(
+    result = await _service_genshin_updater.update_genshin_client(
         str(game_exe.parent),
         resource=resource,
         on_progress=report,
         should_abort=should_abort,
     )
 
-    if result.kind == UpdateKind.Unknown.value:
+    if result.kind == _service_genshin_updater.UpdateKind.Unknown.value:
         # 问不出结论：自动流程已由编排层放行并留了 app.log，手动入口是用户当面来问的，
         # 查不出就是查不出，要把原因摊开而不是回一句「已是最新」
         if manual:

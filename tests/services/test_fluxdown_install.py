@@ -16,8 +16,8 @@ from fastapi import FastAPI
 
 from app.api import update as api
 from app.models.config import GlobalConfig
-from app.services import update_fluxdown_install as install
-from app.services import update_transport as transport
+from app.services.common.update import fluxdown_install as install
+from app.services.common.update import transport as transport
 from app.utils import fluxdown_cli as cli
 from tests.config_support import activate_config
 
@@ -38,7 +38,7 @@ def release():
 
 
 @pytest.fixture
-def packages(tmp_path, monkeypatch):
+def packages(tmp_path, monkeypatch, isolated_app_paths):
     monkeypatch.chdir(tmp_path)
     extracted = tmp_path / "extracted"
     extracted.mkdir()
@@ -279,7 +279,7 @@ async def test_cancel_keeps_lock_until_worker_finishes(monkeypatch):
         return {}
 
     monkeypatch.setattr(install, "_install_locked", installation)
-    monkeypatch.setattr(install.sys, "platform", "win32")
+    monkeypatch.setattr(install.update_native, "supports_fluxdown_install", True)
     task = asyncio.create_task(install.install_fluxdown())
     await asyncio.to_thread(started.wait, 5)
     task.cancel()
@@ -338,7 +338,11 @@ async def test_full_install_and_config(
     config = GlobalConfig.build()
     await activate_config(config)
     flush = AsyncMock(side_effect=OSError("disk full") if fail_save else None)
-    monkeypatch.setattr(install, "Config", SimpleNamespace(setting=config, flush=flush))
+    monkeypatch.setattr(
+        install,
+        "Config",
+        SimpleNamespace(setting=config, flush=flush, data_path=tmp_path / "data"),
+    )
     monkeypatch.setattr(
         install, "fetch_latest_release", AsyncMock(return_value=release)
     )

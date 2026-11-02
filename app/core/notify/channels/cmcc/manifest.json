@@ -1,0 +1,8 @@
+{
+  "interface_version": 1,
+  "id": "cmcc",
+  "entrypoint": "app.core.notify.channels.cmcc:register",
+  "requires": [
+    "websockets"
+  ]
+}
