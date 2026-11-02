@@ -72,6 +72,8 @@ _STOP_AFTER_START_ERRORS = frozenset(
 
 #: 取消 / 超时收尾时每隔这么多秒看一次装桥是否结束、CLI 是否退出。
 _CANCEL_POLL_SECONDS = 2.0
+#: 新建被取消 / 超时后，最多等 create CLI 自己退出这么久，再结束它。
+_CREATE_CLEANUP_SECONDS = STOP_PROCESS_TIMEOUT_SECONDS
 _next_start_at = 0.0
 
 
@@ -528,25 +530,33 @@ class ModAvdCli:
             return False
 
         async def stop_created_cli(process: asyncio.subprocess.Process) -> None:
+            # 这次新建出来的实例可能晚一点才列得出来（取消时文件还没建好，或某一次 list 失败）：
+            # 每一轮都重新找，找到过的都记着；查不到只是这一轮没找到，不顶掉原来的取消 / 超时
             indices: list[str] = []
-            with suppress(CLIError):
-                indices = await find_targets()
-            deadline = asyncio.get_running_loop().time() + STOP_PROCESS_TIMEOUT_SECONDS
+
+            async def discover() -> None:
+                with suppress(CLIError):
+                    for item in await find_targets():
+                        if item not in indices:
+                            indices.append(item)
+
+            deadline = asyncio.get_running_loop().time() + _CREATE_CLEANUP_SECONDS
             while (
                 process.returncode is None
                 and asyncio.get_running_loop().time() < deadline
             ):
+                await discover()
                 if await bridge_running(process, indices):
                     await asyncio.sleep(_CANCEL_POLL_SECONDS)
                     continue
                 await stop_targets(indices)
                 await asyncio.sleep(_CANCEL_POLL_SECONDS)
-                if not indices and process.returncode is not None:
-                    break
             if process.returncode is None:
                 process.kill()
                 with suppress(Exception):
                     await process.wait()
+            # CLI 退出或被结束以后再找一次：模拟器是脱离 CLI 起的，它最后那几步可能刚把实例开起来
+            await discover()
             await stop_targets(indices)
 
         # v0.2.0 起 create 会无头开一次机，和 start 一样要错开

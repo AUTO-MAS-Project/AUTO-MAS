@@ -1370,7 +1370,7 @@ async def test_cancelled_create_only_stops_the_instance_it_was_creating(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = _FakeModavd(tmp_path, monkeypatch)
-    monkeypatch.setattr(cli_module, "STOP_PROCESS_TIMEOUT_SECONDS", 1)
+    monkeypatch.setattr(cli_module, "_CREATE_CLEANUP_SECONDS", 1)
     cli = ModAvdCli(tmp_path)
 
     # 7 号原来就有实例：指定 7 号新建被取消时，收尾不能把那台关掉
@@ -1400,6 +1400,62 @@ async def test_cancelled_create_only_stops_the_instance_it_was_creating(
         await task
     stops = [item["args"] for item in fake.calls() if item["command"] == "stop"]
     assert stops and all(args == ["8"] for args in stops)
+
+
+@pytest.mark.parametrize("first_lookup", ["empty", "fails"])
+@pytest.mark.asyncio
+async def test_cancelled_create_keeps_looking_for_an_instance_that_shows_up_late(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, first_lookup: str
+) -> None:
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    monkeypatch.setattr(cli_module, "_CREATE_CLEANUP_SECONDS", 5)
+    cli = ModAvdCli(tmp_path)
+    fake.plan(list={"data": {"instances": []}}, create={"hold": 20}, stop={"data": {}})
+    task = asyncio.create_task(cli.create(index=8))
+    await _until(lambda: "create" in fake.commands())
+
+    # 取消时实例还列不出来（文件没建好），或这一次 list 失败
+    if first_lookup == "fails":
+        fake.plan(
+            list={"error": {"code": "internal", "message": "读不出"}, "exit": 1},
+            stop={"data": {}},
+        )
+    lists_before = fake.commands().count("list")
+    task.cancel()
+    await _until(lambda: fake.commands().count("list") > lists_before)
+    assert "stop" not in fake.commands()
+
+    # 之后 8 号以新建中出现：收尾要接着找到它并关掉
+    fake.plan(
+        list={"data": {"instances": [{"index": 8, "status": "creating"}]}},
+        stop={"data": {}},
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    stops = [item["args"] for item in fake.calls() if item["command"] == "stop"]
+    assert stops and all(args == ["8"] for args in stops)
+
+
+@pytest.mark.asyncio
+async def test_cancelled_create_looks_again_after_the_cli_is_ended(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    # 收尾时限一到就结束 CLI：模拟器是脱离 CLI 起的，结束以后还要再找一次、把它关掉
+    monkeypatch.setattr(cli_module, "_CREATE_CLEANUP_SECONDS", 0)
+    cli = ModAvdCli(tmp_path)
+    fake.plan(list={"data": {"instances": []}}, create={"hold": 20}, stop={"data": {}})
+    task = asyncio.create_task(cli.create(index=8))
+    await _until(lambda: "create" in fake.commands())
+    fake.plan(
+        list={"data": {"instances": [{"index": 8, "status": "create_failed"}]}},
+        stop={"data": {}},
+    )
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    stops = [item["args"] for item in fake.calls() if item["command"] == "stop"]
+    assert stops == [["8"]]
 
 
 @pytest.mark.asyncio
