@@ -834,7 +834,7 @@ def snapshot_run_records(root: Path, idx: int) -> dict[str, int]:
     result: dict[str, int] = {}
     if not record_dir.is_dir():
         return result
-    for path in sorted(record_dir.glob("*.yml")):
+    for path in sorted(record_dir.glob("*.yml", case_sensitive=True)):
         try:
             data = _utils_io.read_file(path, format=".sanitized.yaml")
             if data is None:
@@ -878,9 +878,14 @@ def _preserved_run_record_paths(root: Path, idx: int) -> list[Path]:
     只重置已知内置应用的简单记录。插件声明更新失败或插件卸载时，未知
     记录也不会因此被清空；不读取插件私有进度字段。
     """
-    builtin_ids = {
-        item["app_id"] for item in list_app_catalog(root, include_plugins=False)
-    }
+    try:
+        builtin_ids = {
+            item["app_id"] for item in list_app_catalog(root, include_plugins=False)
+        }
+    except Exception as exc:
+        # 清理现场不能依赖此时仍能读取源码；无法分类时宁可保留所有记录。
+        logger.warning(f"内置任务目录不可读，保留全部运行记录：{exc}")
+        builtin_ids = set()
     record_dir = instance_dir(root, idx) / _RUN_RECORD_DIR
     if not record_dir.is_dir():
         return []
@@ -952,14 +957,19 @@ def restore_run_record_files(
     if not snapshot:
         return
     record_dir = instance_dir(root, idx) / _RUN_RECORD_DIR
+    failed: list[str] = []
     for name, payload in snapshot.items():
         if payload is not None:
             try:
                 _utils_io.atomic_write(record_dir / name, payload)
             except OSError as exc:
-                if Path(name).stem in PERSISTENT_RUN_RECORD_APPS:
-                    raise
                 logger.warning(f"插件运行记录恢复失败，继续恢复其他记录：{name}: {exc}")
+                if Path(name).suffix == ".yml":
+                    failed.append(name)
+        elif Path(name).suffix == ".yml":
+            failed.append(name)
+    if failed:
+        raise OSError("运行记录未完整恢复：" + "、".join(failed))
 
 
 # ── 实例槽备份 / 恢复（运行与配置会话的现场保护）──

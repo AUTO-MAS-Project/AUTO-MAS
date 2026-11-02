@@ -24,7 +24,7 @@
 
 import ast
 import re
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from app.utils import get_logger
 
@@ -78,12 +78,12 @@ def list_app_catalog(root: Path, *, include_plugins: bool = True) -> list[dict]:
             continue
         apps.append(info)
     # 插件是可选扩展：单个目录损坏、更新中或权限异常不能影响内置目录。
-    known = {item["app_id"] for item in apps}
+    known = {item["app_id"].casefold() for item in apps}
     for info in _list_plugin_catalog(root) if include_plugins else []:
-        if info["app_id"] in known:
+        if info["app_id"].casefold() in known:
             logger.warning(f"插件应用 ID 重复，保留先注册的应用：{info['app_id']}")
             continue
-        known.add(info["app_id"])
+        known.add(info["app_id"].casefold())
         apps.append(info)
     apps.sort(key=lambda item: (item["priority"], item["app_id"]))
     return apps
@@ -140,7 +140,10 @@ def _list_plugin_catalog(root: Path) -> list[dict]:
                 or not isinstance(name, str)
                 or not name.strip()
                 or app_id != app_id.strip()
-                or any(c in app_id for c in "/\\")
+                or any(c in app_id for c in '<>:"/\\|?*')
+                or any(ord(c) < 32 for c in app_id)
+                or app_id.endswith((".", " "))
+                or PureWindowsPath(app_id).is_reserved()
                 or app_id in {".", ".."}
             ):
                 raise ValueError("应用 ID 和名称必须是非空文本")

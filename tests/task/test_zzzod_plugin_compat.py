@@ -177,13 +177,115 @@ def test_one_plugin_record_write_failure_does_not_block_other_records(
 
     monkeypatch.setattr(records._utils_io, "atomic_write", write)
     monkeypatch.setattr(records, "logger", SimpleNamespace(warning=warnings.append))
-    records.restore_run_record_files(
-        install, 1001, {"bad.yml": b"locked", "extra.yml": b"opaque progress"}
-    )
+    with pytest.raises(OSError, match="bad.yml"):
+        records.restore_run_record_files(
+            install, 1001, {"bad.yml": b"locked", "extra.yml": b"opaque progress"}
+        )
     assert (
         install / "config/1001/app_run_record/extra.yml"
     ).read_bytes() == b"opaque progress"
     assert warnings and "bad.yml" in warnings[0]
+
+
+@pytest.mark.parametrize("name", ["MAIL", "con", "NUL.txt", "bad:id", "bad?", "bad."])
+def test_unsafe_or_case_colliding_plugin_id_is_rejected(install, name):
+    folder = plugin(install)
+    (folder / "extra_const.py").write_text(
+        f'APP_ID = "{name}"\nAPP_NAME = "插件"\nDEFAULT_GROUP = True\n',
+        encoding="utf-8",
+    )
+    assert [x["app_id"] for x in catalog.list_app_catalog(install)] == ["mail"]
+
+
+def test_duplicate_display_names_do_not_override_record_failures():
+    from app.task.ZzzOd.AutoProxy import _failed_apps
+
+    book = {"mail": "邮件", "extra": "邮件"}
+    assert _failed_apps(
+        [("mail", 0, 2), ("extra", 0, 1)], "指令[ 邮件 ] 执行成功", book
+    ) == ["mail"]
+    assert _failed_apps(
+        [("mail", 0, 1), ("extra", 0, 2)], "指令[ 邮件 ] 执行成功", book
+    ) == ["extra"]
+
+
+def test_new_plugin_record_survives_restore_with_unreadable_catalog(
+    install, monkeypatch
+):
+    slot = install / "config/1001"
+    slot.mkdir(parents=True)
+    (slot / "original.yml").write_bytes(b"original")
+    backup = install / "backup"
+    records.backup_instance(install, 1001, backup)
+    record_dir = slot / "app_run_record"
+    record_dir.mkdir()
+    (record_dir / "new_plugin.yml").write_bytes(b"run_status: 1\nprogress: 9\n")
+
+    def broken(*args, **kwargs):
+        raise PermissionError("source updated during run")
+
+    monkeypatch.setattr(records, "list_app_catalog", broken)
+    current = records.snapshot_run_record_files(install, 1001)
+    records.restore_instance(install, 1001, backup)
+    records.restore_run_record_files(install, 1001, current)
+    assert (
+        record_dir / "new_plugin.yml"
+    ).read_bytes() == b"run_status: 1\nprogress: 9\n"
+
+
+def test_uppercase_sidecar_does_not_erase_yaml_failure(install, monkeypatch):
+    import importlib
+
+    module = importlib.import_module("app.task.ZzzOd.AutoProxy")
+    # Windows 无法同时创建同名大小写文件，用文件快照表达 Linux 可并存的情形。
+    monkeypatch.setattr(module, "snapshot_run_records", lambda *args: {"extra": 2})
+    monkeypatch.setattr(
+        module,
+        "snapshot_run_record_files",
+        lambda *args: {"extra.YML": b"old", "extra.yml": b"new"},
+    )
+    assert _judge_after(install, 1001, {"extra.YML": b"old", "extra.yml": b"old"}) == {
+        "extra": 2
+    }
+
+
+@pytest.mark.asyncio
+async def test_snapshot_exception_still_restores_injected_instance(
+    install, monkeypatch
+):
+    import importlib
+    import uuid
+    from unittest.mock import AsyncMock
+
+    module = importlib.import_module("app.task.ZzzOd.AutoProxy")
+    slot = install / "config/1001"
+    slot.mkdir(parents=True)
+    target = slot / "account.yml"
+    target.write_bytes(b"original")
+    backup = install / "backup"
+    records.backup_instance(install, 1001, backup)
+    target.write_bytes(b"injected")
+    proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.script_root_path = install
+    proxy._injected_slots = [(1001, backup)]
+    user = SimpleNamespace(status="完成")
+    proxy._slot_users = {1001: (user, None)}
+    proxy.cur_user_item = user
+    proxy.task_info = SimpleNamespace(task_id=uuid.uuid4())
+    proxy._shutdown_after_success = True
+    monkeypatch.setattr(module, "restore_instance_view", lambda *args: None)
+    monkeypatch.setattr(module, "snapshot_plan_run_times", lambda *args: {})
+    monkeypatch.setattr(module, "restore_plan_run_times", lambda *args: None)
+
+    def broken(*args):
+        raise PermissionError("snapshot unavailable")
+
+    monkeypatch.setattr(module, "snapshot_run_record_files", broken)
+    monkeypatch.setattr(module.Publisher, "send", AsyncMock())
+    await proxy._restore_injection()
+    assert target.read_bytes() == b"original"
+    assert user.status == "异常"
+    assert not proxy._shutdown_after_success
 
 
 @pytest.mark.asyncio

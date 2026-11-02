@@ -223,11 +223,16 @@ def _failed_apps(
         for app_id, _, new in diffs
         if new == RUN_STATUS_FAILED and app_id not in _SUMMARY_APP_IDS
     }
-    app_ids = {
-        name: app_id
-        for app_id, name in app_name_book.items()
-        if app_id not in _SUMMARY_APP_IDS
-    }
+    names: dict[str, list[str]] = {}
+    for app_id, name in app_name_book.items():
+        if app_id not in _SUMMARY_APP_IDS:
+            names.setdefault(name, []).append(app_id)
+    app_ids = {name: ids[0] for name, ids in names.items() if len(ids) == 1}
+    for name, ids in names.items():
+        if len(ids) > 1:
+            logger.warning(
+                f"任务名称重复，忽略歧义终态日志并按运行记录判定：{name} ({'、'.join(ids)})"
+            )
     results: dict[tuple[int | None, str], bool] = {}
     current_slot = None
     for line in log.splitlines():
@@ -330,7 +335,7 @@ def _judge_baseline(root: Path, idx: int) -> dict[str, int]:
 
     records = snapshot_run_records(root, idx)
     for name in snapshot_run_record_files(root, idx):
-        if Path(name).suffix.lower() != ".yml":
+        if Path(name).suffix != ".yml":
             continue
         app_id = Path(name).stem
         if app_id in records:
@@ -357,7 +362,7 @@ def _judge_after(
     current = snapshot_run_record_files(root, idx)
     for name in pre_files:
         # 附加文件只透传保存，不能按同名 stem 覆盖真正运行记录的终态。
-        if Path(name).suffix.lower() != ".yml":
+        if Path(name).suffix != ".yml":
             continue
         app_id = Path(name).stem
         if app_id not in records:
@@ -1479,11 +1484,26 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             try:
                 # 一条龙运行中会把计划进度写回槽内 per-app YAML、把周期进度写进
                 # 运行记录，整目录恢复会连它们一起回滚；先快照再恢复，随后回写
-                plan_run_times = snapshot_plan_run_times(self.script_root_path, slot)
-                record_files = snapshot_run_record_files(self.script_root_path, slot)
+                snapshot_errors: list[str] = []
+                plan_run_times = {}
+                record_files = {}
+                try:
+                    plan_run_times = snapshot_plan_run_times(
+                        self.script_root_path, slot
+                    )
+                except Exception as exc:
+                    snapshot_errors.append(f"计划进度快照失败：{exc}")
+                try:
+                    record_files = snapshot_run_record_files(
+                        self.script_root_path, slot
+                    )
+                except Exception as exc:
+                    snapshot_errors.append(f"运行记录快照失败：{exc}")
                 restore_instance(self.script_root_path, slot, backup_dir)
                 restore_plan_run_times(self.script_root_path, slot, plan_run_times)
                 restore_run_record_files(self.script_root_path, slot, record_files)
+                if snapshot_errors:
+                    raise OSError("；".join(snapshot_errors))
             except Exception as e:  # noqa: BLE001 - 单槽失败隔离，继续恢复其余槽
                 logger.opt(exception=True).warning(
                     f"恢复 ZZZ-OD 槽 {slot} 注入现场失败: {e}"
