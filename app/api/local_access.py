@@ -15,7 +15,9 @@ def require_local_desktop(request: Request) -> None:
     if not token or not secrets.compare_digest(
         authorization.encode(), f"Bearer {token}".encode()
     ):
-        raise HTTPException(status_code=403, detail="此操作未授权，请从桌面客户端启动或重启后端")
+        raise HTTPException(
+            status_code=403, detail="此操作未授权，请从桌面客户端启动或重启后端"
+        )
 
     def is_local(host: str | None) -> bool:
         if host == "localhost":
