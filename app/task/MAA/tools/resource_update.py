@@ -30,7 +30,7 @@ CheckAndDownloadResourceUpdate 只在 UpdateSource==MirrorChyan 且 CDK 非空�
 由触发脚本的接管开关与生效 CDK 驱动：脚本 CDK 优先、空则回退 MAS 全局
 配置；未开接管时完全不创建更新任务，检查与分发也只覆盖开了接管的安装。
 不使用 GitHub 资源源。
-每个 MAS 按本地日期每天最多尝试申请一次资源包，失败和取消也保留当天记账；
+每个资源版本按本地日期每天最多尝试申请一次，失败和取消也保留当天记账；
 免费版本查询与有效缓存分发不受每日限额影响。
 
 移除条件（任一落地即改为复用上游并删除本模块，见 .agents/skills/
@@ -343,7 +343,7 @@ async def _fetch_latest_version(current: str) -> datetime:
         raise _QueryError(f"version_name 无法解析: {name}") from e
 
 
-async def _mirror_download_url(cdk: str) -> str:
+async def _request_resource_package(cdk: str) -> tuple[str, datetime | None, bool]:
     """不指定增量基线，申请全量包；地址一次性，现查现下。"""
     try:
         async with asyncio.timeout(_QUERY_TIMEOUT):
@@ -362,9 +362,11 @@ async def _mirror_download_url(cdk: str) -> str:
         url = payload["data"].get("url")
     if not url:
         raise _DownloadError("镜像酱未返回下载地址")
-    if payload["data"].get("update_type") != "full":
-        raise _DownloadError("镜像酱未返回全量资源包，跳过以避免多实例重复取包")
-    return str(url)
+    try:
+        version = _parse_clock(str(payload["data"].get("version_name") or ""))
+    except ValueError:
+        version = None
+    return str(url), version, payload["data"].get("update_type") == "full"
 
 
 def _download_line(downloaded: int, total: int, speed: float) -> str:
@@ -709,19 +711,32 @@ async def _refresh_resource_stage(
     now = datetime.now(timezone.utc)
     credential_key = hashlib.sha256(cdk.encode("utf-8")).hexdigest()[:16]
     attempt_field = f"last_download_attempt_at/{credential_key}"
+    version_field = f"last_download_attempt_version/{credential_key}"
     failure_field = f"download_fail_until/{credential_key}"
     if backoff_active(state, failure_field, now):
         return stage
-    if attempted_today(state, attempt_field, now):
-        await _report(progress, "今日已尝试获取资源包，明日再试；已有缓存照常分发")
+    previous = parse_iso(state.get(version_field))
+    if (
+        attempted_today(state, attempt_field, now)
+        and previous is not None
+        and target <= previous
+    ):
+        await _report(
+            progress, "今日已尝试获取此版本资源包，出现新版或明日再试；已有缓存照常分发"
+        )
         return stage
     await _report(progress, f"发现新版本 {_format_clock(target)}，下载资源包…")
     try:
         # 凭据被拒、尚未取得下载地址时不消耗当天取包次数；不同 CDK 独立退避。
-        url = await _mirror_download_url(cdk)
+        url, actual, is_full = await _request_resource_package(cdk)
         state[attempt_field] = datetime.now(timezone.utc).isoformat()
+        state[version_field] = max(target, actual or target).isoformat()
         _utils_io.write_file(_STATE_FILE, state)
-        await _refresh_stage(target=target, url=url, progress=progress)
+        if not is_full:
+            raise _DownloadError("镜像酱未返回全量资源包")
+        if actual is None or actual < target:
+            raise _DownloadError("镜像酱资源包未达到已确认的目标版本，请稍后重试")
+        await _refresh_stage(target=actual, url=url, progress=progress)
         return _load_manifest()
     except _DownloadError as e:
         state[failure_field] = (
