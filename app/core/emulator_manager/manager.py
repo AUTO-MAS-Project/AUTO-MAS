@@ -124,6 +124,12 @@ class _EmulatorManager(EmulatorOperations, AvdUpdateOperations):
                 await temp_emulator.setVisible(index, False)
         except Exception as e:
             error = str(e)
+            # 界面点启动/关闭失败以前只发一条 WS 气泡就完了，app.log 里一行都没有，
+            # 排查时只能靠复现；这里补一条带现场信息的 error。
+            logger.opt(exception=True).error(
+                f"模拟器操作失败: {operate} - 实例 {index} - {emulator_id} - "
+                f"{type(e).__name__}: {e}"
+            )
             await Publisher.send(
                 id=protocol.ID_EMULATOR_MANAGER,
                 type=protocol.EMULATOR_NOTICE,
