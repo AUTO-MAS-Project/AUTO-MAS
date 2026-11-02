@@ -47,7 +47,9 @@ from .host import AdbPortConflict
 
 logger = get_logger("魔改 AVD CLI")
 
-SUPPORTED_PROTOCOL = 1
+#: MAS 认得的 modavd 协议版本。2 是 ModAVDManager 0.3.0 去掉 ``restart`` 命令时升的；MAS 重启本来就是
+#: 先 stop 再 start，两个都能用。逐个列出而不写成「≥1」，以后再升还能认出不兼容。
+SUPPORTED_PROTOCOLS = (1, 2)
 CLI_EXE_RELATIVE_PATH = Path("tools") / "modavd.exe"
 DEFAULT_START_TIMEOUT_SECONDS = 300
 CREATE_TIMEOUT_SECONDS = 1200
@@ -271,14 +273,15 @@ async def resolve_cli(root: str | Path) -> "ModAvdCli | None":
     if not isinstance(version, dict):
         raise ModAvdUnavailable("modavd 不可用：version --json 没有返回对象")
     protocol = version.get("protocol")
-    if protocol != SUPPORTED_PROTOCOL:
+    if protocol not in SUPPORTED_PROTOCOLS or isinstance(protocol, bool):
         direction = (
             "更旧"
-            if isinstance(protocol, int) and protocol < SUPPORTED_PROTOCOL
+            if isinstance(protocol, int) and protocol < min(SUPPORTED_PROTOCOLS)
             else "更新"
         )
+        known = " / ".join(str(item) for item in SUPPORTED_PROTOCOLS)
         message = (
-            f"modavd 协议 {protocol}（比 MAS 认识的 {SUPPORTED_PROTOCOL} {direction}），"
+            f"modavd 协议 {protocol}（比 MAS 认识的 {known} {direction}），"
             "请更新 ModAVD 或 MAS"
         )
         _VERSION_CACHE[key] = (size, mtime_ns, message)
@@ -716,7 +719,7 @@ __all__ = [
     "CREATE_TIMEOUT_SECONDS",
     "START_STAGGER_SECONDS",
     "STOP_PROCESS_TIMEOUT_SECONDS",
-    "SUPPORTED_PROTOCOL",
+    "SUPPORTED_PROTOCOLS",
     "map_cli_error",
     "map_status",
     "start_process_timeout",

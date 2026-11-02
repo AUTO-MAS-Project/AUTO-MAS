@@ -22,7 +22,6 @@ from app.utils.common.emulator2.avd import updater as updater_module
 from app.utils.common.emulator2.avd.cli import (
     CREATE_PROCESS_MARGIN_SECONDS,
     CREATE_TIMEOUT_SECONDS,
-    SUPPORTED_PROTOCOL,
     CLIError,
     ModAvdCli,
     ModAvdUnavailable,
@@ -73,7 +72,7 @@ async def test_resolve_cli_requires_executable_and_protocol(
     # while the version probe is replaced with the contract-shaped fake result.
     async def version(self: ModAvdCli) -> dict:
         del self
-        return {"protocol": SUPPORTED_PROTOCOL}
+        return {"protocol": 1}
 
     monkeypatch.setattr(ModAvdCli, "version", version)
     assert await resolve_cli(root) is not None
@@ -373,7 +372,7 @@ async def test_resolve_cli_caches_version_and_rejects_bad_protocol(
     async def version(self: ModAvdCli) -> dict:
         nonlocal calls
         calls += 1
-        return {"version": "0.36.0", "protocol": SUPPORTED_PROTOCOL}
+        return {"version": "0.36.0", "protocol": 1}
 
     monkeypatch.setattr(ModAvdCli, "version", version)
     assert await resolve_cli(tmp_path) is not None
@@ -407,7 +406,7 @@ async def test_resolve_cli_does_not_cache_transient_version_failure(
         calls += 1
         if calls == 1:
             raise CLIError("timeout", "暂时超时")
-        return {"version": "0.2.0", "protocol": SUPPORTED_PROTOCOL}
+        return {"version": "0.2.0", "protocol": 1}
 
     monkeypatch.setattr(ModAvdCli, "version", version)
     with pytest.raises(ModAvdUnavailable):
@@ -856,7 +855,7 @@ async def test_power_close_uses_stop_all_and_keeps_partial_failure(
     fake = _FakeModavd(tmp_path, monkeypatch)
     root = _root_with_exe(tmp_path)
     fake.plan(
-        version={"data": {"version": "0.1.0", "protocol": SUPPORTED_PROTOCOL}},
+        version={"data": {"version": "0.1.0", "protocol": 1}},
         stop={
             "data": {
                 "results": [{"index": 7}],
@@ -912,6 +911,33 @@ async def test_broken_modavd_is_reported_and_never_falls_back_to_python(
     # 更新器只按进程判断开着的实例，不起 modavd
     assert manager_module.running_instances(root) == []
     assert set(fake.commands()) == {"version"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("protocol", "usable"), [(1, True), (2, True), (3, False)])
+async def test_protocols_1_and_2_use_the_cli_and_others_are_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, protocol: int, usable: bool
+) -> None:
+    # 2 是 ModAVDManager 0.3.0 去掉 restart 时升的；MAS 重启是先 stop 再 start，两个都能用
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    root = _root_with_exe(tmp_path)
+    fake.plan(version={"data": {"version": "x", "protocol": protocol}})
+    manager_exe = str(root / "sdk" / "emulator" / "emulator.exe")
+
+    if usable:
+        manager = await manager_module.build_manager(
+            manager_exe, 60, runtime_policy=_policy()
+        )
+        assert manager._cli is not None
+    else:
+        # 认不出的协议照决定 1 报「modavd 不可用」，不退回 Python 实现
+        with pytest.raises(
+            ModAvdUnavailable, match="协议 3（比 MAS 认识的 1 / 2 更新）"
+        ):
+            await manager_module.build_manager(
+                manager_exe, 60, runtime_policy=_policy()
+            )
+    assert fake.commands() == ["version"]
 
 
 @pytest.mark.asyncio
@@ -1068,7 +1094,7 @@ async def test_creating_instance_shows_creating_and_is_never_stopped_or_started(
         json.dumps({"instances": {"7": {"creationState": "creating"}}}),
         encoding="utf-8",
     )
-    version = {"data": {"version": "0.2.0", "protocol": SUPPORTED_PROTOCOL}}
+    version = {"data": {"version": "0.2.0", "protocol": 1}}
     creating = {
         "index": 7,
         "title": "新实例",
@@ -1172,7 +1198,7 @@ async def test_list_marks_headless_instances_so_show_and_hide_are_greyed_out(
 
     monkeypatch.setattr(manager_module.psutil, "Process", _Process)
     fake.plan(
-        version={"data": {"version": "0.3.0", "protocol": SUPPORTED_PROTOCOL}},
+        version={"data": {"version": "0.3.0", "protocol": 2}},
         list={
             "data": {
                 "instances": [
@@ -1221,7 +1247,7 @@ async def test_restart_is_stop_then_start_and_running_mode_is_never_switched(
     fake = _FakeModavd(tmp_path, monkeypatch)
     root = _root_with_exe(tmp_path)
     fake.plan(
-        version={"data": {"version": "0.3.0", "protocol": SUPPORTED_PROTOCOL}},
+        version={"data": {"version": "0.3.0", "protocol": 2}},
         stop={"data": {}},
         start={"data": {"instance": {"index": 7, "status": "online"}}},
         window={"data": {"index": 7, "windows": 0}},
