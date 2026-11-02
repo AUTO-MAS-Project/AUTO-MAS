@@ -72,8 +72,8 @@ class DeviceInfo:
     """该进程的启动时刻（Unix 秒，``psutil.Process.create_time()``）。和进程号一起比对，进程号被
     系统复用给别的进程时也能认出原来的模拟器已经没了。"""
     headless: bool | None = None
-    """正在运行的实例是不是无头开机的（没有窗口，显示 / 隐藏无从谈起）。目前只有魔改 AVD 给；
-    其它后端、没在运行、读不到进程时为 ``None``。"""
+    """正在运行的实例是不是无头开机的（没有窗口，显示 / 隐藏无从谈起）。目前只有魔改 AVD 给：
+    modavd 0.3.0 起看它的 ``window`` 字段，旧版看 qemu 进程，认不出时按无头算；其它后端、没在运行时为 ``None``。"""
     creation_error: str = ""
     """:attr:`DeviceStatus.CREATE_FAILED` 时新建为什么失败（modavd 的 ``creation_error``）；其余为空串。"""
 

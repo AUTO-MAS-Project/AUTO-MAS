@@ -668,6 +668,7 @@ class _AvdCore(DeviceBase):
         pid = item.get("pid")
         if not isinstance(pid, int) or pid <= 0:
             pid = None
+        running = item.get("running") is True or pid is not None
         started_at: float | None = None
         headless: bool | None = None
         if pid is not None:
@@ -682,6 +683,13 @@ class _AvdCore(DeviceBase):
                     headless = _qemu_headless(process)
             except (OSError, psutil.Error):
                 pid = None
+        window = item.get("window")
+        if isinstance(window, bool):
+            # modavd 0.3.0 起 status / list 带 window：运行中有窗口时为 true
+            headless = (not window) if running else None
+        elif running and headless is None:
+            # 旧版 modavd 没有这个字段、qemu 进程也认不出：按没有窗口算，宁可把显示置灰
+            headless = True
         return DeviceInfo(
             str(item.get("title") or item.get("name") or index),
             status,
@@ -760,7 +768,10 @@ class _AvdCore(DeviceBase):
             f"127.0.0.1:{adb_port(idx)}",
             process_id=process.pid if process is not None else None,
             process_started_at=started_at,
-            headless=_qemu_headless(process) if process is not None else None,
+            # 认不出是不是无头时按无头算（显示置灰），和命令行路径一致
+            headless=(_qemu_headless(process) is not False)
+            if process is not None
+            else None,
         )
 
     async def getStatus(self, idx: str) -> DeviceStatus:
@@ -854,7 +865,7 @@ class _AvdCore(DeviceBase):
             status = await self._status_of(native_index, process)
             info = self._device_info(native_index, instance.title, status)
             if process is not None:
-                info.headless = _qemu_headless(process)
+                info.headless = _qemu_headless(process) is not False
             result[native_index] = info
         return result
 

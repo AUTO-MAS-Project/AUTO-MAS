@@ -1147,6 +1147,7 @@ async def test_list_marks_headless_instances_so_show_and_hide_are_greyed_out(
     processes = {
         4242: _Qemu("qemu-system-x86_64-headless.exe", "-no-window"),
         4343: _Qemu("qemu-system-x86_64.exe"),
+        4444: None,
     }
 
     class _Process:
@@ -1154,25 +1155,40 @@ async def test_list_marks_headless_instances_so_show_and_hide_are_greyed_out(
             self._qemu = processes[pid]
 
         def exe(self) -> str:
-            return str(qemu_dir / self._qemu.name())
+            return str(qemu_dir / "qemu-system-x86_64.exe")
 
         def create_time(self) -> float:
             return 1.0
 
         def name(self) -> str:
+            if self._qemu is None:
+                raise manager_module.psutil.AccessDenied(4444)
             return self._qemu.name()
 
         def cmdline(self) -> list[str]:
+            if self._qemu is None:
+                raise manager_module.psutil.AccessDenied(4444)
             return self._qemu.cmdline()
 
     monkeypatch.setattr(manager_module.psutil, "Process", _Process)
     fake.plan(
-        version={"data": {"version": "0.2.0", "protocol": SUPPORTED_PROTOCOL}},
+        version={"data": {"version": "0.3.0", "protocol": SUPPORTED_PROTOCOL}},
         list={
             "data": {
                 "instances": [
+                    # 0.3.0 带 window 字段：以它为准
+                    {"index": 1, "status": "online", "running": True, "window": True},
+                    {"index": 2, "status": "online", "running": True, "window": False},
+                    {
+                        "index": 3,
+                        "status": "offline",
+                        "running": False,
+                        "window": False,
+                    },
+                    # 旧版没有 window：看 qemu 进程，认不出就按无头（宁可置灰）
                     {"index": 7, "status": "online", "pid": 4242},
                     {"index": 8, "status": "online", "pid": 4343},
+                    {"index": 4, "status": "online", "pid": 4444},
                     {"index": 9, "status": "offline"},
                 ]
             }
@@ -1185,8 +1201,12 @@ async def test_list_marks_headless_instances_so_show_and_hide_are_greyed_out(
     info = await manager.getInfo(None)
 
     assert {key: item.headless for key, item in info.items()} == {
+        "1": False,
+        "2": True,
+        "3": None,
         "7": True,
         "8": False,
+        "4": True,
         "9": None,
     }
     path = SimpleNamespace(path_id="p", alias="AVD", type="avd")
@@ -1232,7 +1252,7 @@ async def test_restart_is_stop_then_start_and_running_mode_is_never_switched(
     assert "--window" not in starts[0]
     assert "--window" in starts[1]
 
-    # 实例正无头运行：再要窗口也只是接着用，不重启、不切换；脚本每轮调的显示照旧不抛
+    # 实例正无头运行：旧版 modavd 再要窗口也只是接着用，不重启、不切换；脚本每轮调的显示照旧不抛
     running["qemu"] = _Qemu("qemu-system-x86_64-headless.exe", "-no-window")
     before = len(fake.calls())
     assert (await manager.open("7", manual=True)).status == DeviceStatus.ONLINE
@@ -1242,3 +1262,19 @@ async def test_restart_is_stop_then_start_and_running_mode_is_never_switched(
         "window",
         "status",
     ]
+
+    # 0.3.0 碰上这种情况报 busy（退出码 5）：提示原样给用户，也不去关那台正在跑的实例
+    fake.plan(
+        start={
+            "error": {
+                "code": "busy",
+                "message": "魔改 AVD 实例 7 正在无头运行",
+                "advice": "先关机再换成带窗口",
+            },
+            "exit": 5,
+        },
+    )
+    before = len(fake.calls())
+    with pytest.raises(RuntimeError, match="正在无头运行（建议：先关机再换成带窗口）"):
+        await manager.open("7", manual=True)
+    assert [item["command"] for item in fake.calls()[before:]] == ["start"]
