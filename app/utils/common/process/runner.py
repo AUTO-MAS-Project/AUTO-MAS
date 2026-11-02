@@ -13,7 +13,7 @@ from app.utils import get_logger
 logger = get_logger("进程管理")
 
 
-def _terminate_process_tree(pid: int) -> None:
+def _terminate_process_tree(pid: int, *, grace_period: float = 3) -> None:
     """同步终止进程及其当前子进程，用于取消异步命令时的兜底清理。"""
 
     try:
@@ -26,12 +26,35 @@ def _terminate_process_tree(pid: int) -> None:
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
             process.terminate()
 
-    _, alive = psutil.wait_procs(processes, timeout=3)
+    _, alive = psutil.wait_procs(processes, timeout=grace_period)
     for process in alive:
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
             process.kill()
-    if alive:
-        psutil.wait_procs(alive, timeout=3)
+    if alive and grace_period > 0:
+        psutil.wait_procs(alive, timeout=grace_period)
+
+
+async def _stop_process(
+    process: asyncio.subprocess.Process,
+    *,
+    kill_tree: bool,
+    deadline: float | None,
+) -> None:
+    if kill_tree and process.pid is not None:
+        await asyncio.to_thread(
+            _terminate_process_tree,
+            process.pid,
+            grace_period=0 if deadline is not None else 3,
+        )
+    else:
+        with suppress(ProcessLookupError):
+            process.kill()
+    # 有截止时间的短命令不再为每个超时追加两轮 3 秒等待；仍给句柄释放留 1 秒余量。
+    try:
+        async with asyncio.timeout(1 if deadline is not None else None):
+            await process.wait()
+    except TimeoutError:
+        logger.warning("子进程已发送终止信号，等待句柄释放超时")
 
 
 @dataclass
@@ -137,52 +160,64 @@ class ProcessRunner:
         breakaway: bool = False,
         kill_tree_on_cancel: bool = False,
         env: Mapping[str, str] | None = None,
+        deadline: float | None = None,
     ) -> ProcessResult:
         """运行子进程并等待其结束，返回解码后的输出。
 
         breakaway 只给模拟器控制台这类会拉起不该随后端退出的进程的调用点，
         其余（taskkill/schtasks/adb 等工具）保持默认 False，留在监督器的 Job 里。
+        deadline 可选，使用 time.monotonic() 的绝对时间，覆盖创建和执行；超时或
+        取消后立即清理，最多再等 1 秒释放句柄。不传时保留原有超时与回收行为。
         """
 
         command = [str(program), *args]
         started_at = time.monotonic()
         logger.debug(f"启动子进程: {command}")
-        process = await create_subprocess(
-            program,
-            *args,
-            breakaway=breakaway,
-            cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
-            env=env,
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=(
-                asyncio.subprocess.STDOUT if if_merge_std else asyncio.subprocess.PIPE
-            ),
+        if deadline is not None and deadline <= started_at:
+            raise TimeoutError
+        loop = asyncio.get_running_loop()
+        expires_at = (
+            None
+            if deadline is None
+            else loop.time() + max(0, deadline - time.monotonic())
         )
+        process = None
         try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=timeout
-            )
+            async with asyncio.timeout_at(expires_at):
+                process = await create_subprocess(
+                    program,
+                    *args,
+                    breakaway=breakaway,
+                    cwd=cwd
+                    or (Path(program).parent if Path(program).is_file() else None),
+                    env=env,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=(
+                        asyncio.subprocess.STDOUT
+                        if if_merge_std
+                        else asyncio.subprocess.PIPE
+                    ),
+                )
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=timeout
+                )
         except asyncio.CancelledError:
             # 取消运行脚本的任务时，communicate() 不会替调用方回收子进程；
             # 先结束进程并等待句柄释放，避免停止队列后留下孤儿脚本进程。
-            if kill_tree_on_cancel and process.pid is not None:
-                await asyncio.to_thread(_terminate_process_tree, process.pid)
-            else:
-                with suppress(ProcessLookupError):
-                    process.kill()
-            with suppress(asyncio.CancelledError):
-                await process.wait()
+            if process is not None:
+                with suppress(asyncio.CancelledError):
+                    await _stop_process(
+                        process, kill_tree=kill_tree_on_cancel, deadline=deadline
+                    )
             raise
         except asyncio.TimeoutError:
-            if kill_tree_on_cancel and process.pid is not None:
-                await asyncio.to_thread(_terminate_process_tree, process.pid)
-            else:
-                with suppress(ProcessLookupError):
-                    process.kill()
-            await process.wait()
+            if process is not None:
+                await _stop_process(
+                    process, kill_tree=kill_tree_on_cancel, deadline=deadline
+                )
             logger.warning(
-                f"子进程执行超时，已结束进程: {command} - 用时: "
+                f"子进程命令超时: {command} - 用时: "
                 f"{time.monotonic() - started_at:.3f}秒 - 超时时间: {timeout}秒"
             )
             raise
