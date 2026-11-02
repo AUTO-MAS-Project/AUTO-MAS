@@ -25,10 +25,21 @@ import ctypes
 import logging
 import os
 import sys
+import tempfile
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+
+def configure_temporary_directory(work_path: Path) -> None:
+    """将当前进程及子进程的默认临时目录统一到应用工作目录。"""
+    temp_path = (work_path / "temp").resolve()
+    temp_path.mkdir(parents=True, exist_ok=True)
+    tempfile.tempdir = str(temp_path)
+    for name in ("TEMP", "TMP", "TMPDIR"):
+        os.environ[name] = str(temp_path)
+
 
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
@@ -259,6 +270,9 @@ def main():
         logger.warning(
             "受监督模式下不自行提权，当前非管理员，依赖模拟器/窗口操作的功能可能受限"
         )
+
+    # 先完成提权判断，避免创建临时目录的权限错误阻断重启。
+    configure_temporary_directory(Path.cwd())
 
     from app.core import Config, EmulatorManager, Notify
     from app.services import telemetry as _service_telemetry

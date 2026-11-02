@@ -101,9 +101,11 @@ def resolve_update_credentials(script_config: Any) -> MaaFWUpdateCredentials:
 
 
 def resolve_auto_update_mode(script_config: Any) -> AutoUpdateMode:
-    """读脚本的更新时机；非法值按默认值处理。"""
+    """更新统一在运行前执行；兼容旧版的运行后选项，关闭仍保持关闭。"""
 
     mode = _read_text(script_config, "Update", "AutoUpdateMode")
+    if mode == "AfterRun":
+        return "BeforeRun"
     if mode in AUTO_UPDATE_MODES:
         return mode  # type: ignore[return-value]
     return DEFAULT_AUTO_UPDATE_MODE

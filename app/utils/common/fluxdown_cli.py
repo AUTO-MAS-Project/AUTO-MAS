@@ -1148,32 +1148,48 @@ def fluxdown_server_forget(cli_exe: Path, url: str, destination: Path) -> None:
 
 
 def fluxdown_server_task_safe_to_overwrite(
-    cli_exe: Path, url: str, destination: Path, *, timeout: int = 15
+    cli_exe: Path,
+    url: str,
+    destination: Path,
+    *,
+    timeout: int = 15,
+    other_only: bool = False,
 ) -> bool:
-    """判断 (url, destination) 对应的 FluxDown server 任务是否已确认停止/不存在。
+    """确认所有映射到同一目标的 server 任务已经停写。
 
-    用于在改用内置 httpx 等"以 wb 重写 destination"的路径前排除双写：
-    - 无映射：从未经 server 下载过 → 安全
-    - paused(2)：已暂停，daemon 不再写输出文件 → 安全
-    - pending/downloading/preparing(0/1/5)：先 pause 再复查，只有确认离开
-      活动态才安全（这些状态随时可能开始写数据）
-    - completed/error(3/4)：终态 → 安全
-    - 未知状态码（不在 0..5）：语义不明，按不安全处理
-    - status 查询失败 / server 不可用：管理通道异常，**不能排除 daemon 仍在
-      写**，返回 False，调用方应阻止覆写
+    旧 URL 的任务也可能写当前目标，不能只按新 URL 查询。
+    other_only 供当前 URL 的 resume 使用：排除自己的任务，仍阻止旧来源双写。
     """
     key = _map_key(url, Path(destination))
-    entry = _load_task_map(cli_exe).get(key) or {}
-    task_id = entry.get("task_id")
-    if not task_id:
+    target = os.path.normcase(str(Path(destination).resolve()))
+    task_ids: set[str] = set()
+    for mapped_key, entry in _load_task_map(cli_exe).items():
+        if mapped_key == key and other_only:
+            continue
+        if not isinstance(entry, dict):
+            if mapped_key == key:
+                return False
+            continue
+        if mapped_key != key:
+            path = entry.get("save_path")
+            if not isinstance(path, str) or not path:
+                continue
+            try:
+                if os.path.normcase(str(Path(path).resolve())) != target:
+                    continue
+            except (OSError, ValueError):
+                return False
+        task_id = entry.get("task_id")
+        if task_id:
+            task_ids.add(str(task_id))
+    if not task_ids:
         return True
     handle = fluxdown_server_ensure(cli_exe)
     if handle is None:
-        # server 都起不来，无法证明 daemon 是否仍在写 destination，按不安全处理
         return False
     env = _cli_env(handle.gateway_port, handle.token)
 
-    def _status_code() -> int | None:
+    def _status_code(task_id: str) -> int | None:
         code, out = _run_cli(
             cli_exe, env, ["status", task_id, "--json"], timeout=timeout
         )
@@ -1187,22 +1203,26 @@ def fluxdown_server_task_safe_to_overwrite(
         except (TypeError, ValueError):
             return None
 
-    status = _status_code()
-    if status is None:
-        return False
-    if status == _TASK_STATUS_PAUSED:
-        return True
-    if status in _ACTIVE_STATUSES:
-        # 活动态：先暂停，再复查状态是否真的离开活动态。
-        # pause 返回 124（客户端超时）同样不能证明没生效，按未确认处理
-        pause_code, _ = _run_cli(cli_exe, env, ["pause", task_id], timeout=10)
-        if pause_code != 0:
+    for task_id in task_ids:
+        status = _status_code(task_id)
+        if status is None:
             return False
-        paused = _status_code()
-        return paused is not None and paused not in _ACTIVE_STATUSES
-    if status in (_TASK_STATUS_DONE, _TASK_STATUS_FAILED):
-        return True
-    return False
+        if status == _TASK_STATUS_PAUSED:
+            continue
+        if status in _ACTIVE_STATUSES:
+            pause_code, _ = _run_cli(cli_exe, env, ["pause", task_id], timeout=10)
+            if pause_code != 0:
+                return False
+            stopped = _status_code(task_id)
+            if stopped not in (
+                _TASK_STATUS_PAUSED,
+                _TASK_STATUS_DONE,
+                _TASK_STATUS_FAILED,
+            ):
+                return False
+        elif status not in (_TASK_STATUS_DONE, _TASK_STATUS_FAILED):
+            return False
+    return True
 
 
 def fluxdown_server_mark_failure(cli_exe: Path, url: str, destination: Path) -> int:

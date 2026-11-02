@@ -26,7 +26,15 @@
         </a-button>
       </a-col>
     </a-row>
-    <a-row :gutter="16">
+    <a-alert
+      v-if="isPlanMode && planStatus !== 'ready'"
+      :type="planStatus === 'error' ? 'error' : 'info'"
+      :message="
+        t(planStatus === 'error' ? 'core.edit.couldNotLoadPlan' : 'core.edit.loadingConfiguration')
+      "
+      show-icon
+    />
+    <a-row v-if="!isPlanMode || planStatus === 'ready'" :gutter="16">
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="medicineNumb">
           <template #label>
@@ -136,7 +144,7 @@
         </a-form-item>
       </a-col>
     </a-row>
-    <a-row :gutter="16">
+    <a-row v-if="!isPlanMode || planStatus === 'ready'" :gutter="16">
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
@@ -264,6 +272,7 @@ const props = defineProps<{
   stageModeOptions: any[]
   stageOptions: any[]
   isPlanMode: boolean
+  planStatus: 'idle' | 'loading' | 'ready' | 'error'
   displayMedicineNumb: number
   displaySeriesNumb: string
   displayStage: string

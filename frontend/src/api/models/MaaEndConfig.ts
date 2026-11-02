@@ -5,9 +5,11 @@
 import type { MaaEndConfig_Game } from './MaaEndConfig_Game';
 import type { MaaEndConfig_Info } from './MaaEndConfig_Info';
 import type { MaaEndConfig_Run } from './MaaEndConfig_Run';
+import type { MaaEndConfig_Update } from './MaaEndConfig_Update';
 export type MaaEndConfig = {
     Game?: (MaaEndConfig_Game | null);
     Info?: (MaaEndConfig_Info | null);
     Run?: (MaaEndConfig_Run | null);
+    Update?: (MaaEndConfig_Update | null);
 };
 

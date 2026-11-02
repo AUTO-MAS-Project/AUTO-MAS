@@ -44,9 +44,7 @@ const showNotice = (title: string, data: WSTaskNoticeData): void => {
   notify(
     data.level,
     title,
-    withHint
-      ? () => h('div', { style: { whiteSpace: 'pre-wrap' } }, data.message)
-      : data.message,
+    withHint ? () => h('div', { style: { whiteSpace: 'pre-wrap' } }, data.message) : data.message,
     withHint ? null : undefined
   )
 }

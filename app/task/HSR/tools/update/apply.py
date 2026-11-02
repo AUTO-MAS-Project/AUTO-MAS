@@ -145,7 +145,8 @@ def apply_package(
             f"HSR 更新：应用{engine_label(engine)}更新失败，开始回滚"
         )
         try:
-            rollback(install_root)
+            if not rollback(install_root):
+                raise HSRUpdateError("安装回滚未完成")
         except Exception as rollback_exc:  # noqa: BLE001
             logger.opt(exception=True).error(f"HSR 更新：回滚同样失败：{rollback_exc}")
             raise HSRUpdateApplyError(
@@ -169,25 +170,59 @@ def rollback(install_root: Path) -> bool:
         journal = json.loads(journal_file.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
-    if int(journal.get("schema", 0)) != _JOURNAL_SCHEMA:
+    if not isinstance(journal, dict) or journal.get("schema") != _JOURNAL_SCHEMA:
         logger.warning(f"HSR 更新：无法识别的 journal 版本，跳过回滚：{journal_file}")
         return False
 
     work = work_dir(install_root)
     backup = work / "backup"
-    failures: list[str] = []
+    entries = journal.get("entries")
+    if not isinstance(entries, list) or not 0 < len(entries) <= _MAX_ENTRIES:
+        logger.warning("HSR 更新：恢复记录条目格式或数量无效，已保留现场")
+        return False
 
-    for entry in journal.get("entries") or []:
-        rel = str(entry.get("rel") or "")
-        if not rel:
-            continue
-        target = install_root / rel
-        saved = backup / rel
+    # 一次性核对整份事务记录，防止先移动正常文件，再遇到恶意路径。
+    checked: list[tuple[Path, Path, str]] = []
+    seen: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("action") not in (
+            "create",
+            "replace",
+        ):
+            return False
+        rel = entry.get("rel")
+        if not isinstance(rel, str) or not rel:
+            return False
+        parts = rel.split("/")
+        if (
+            any(
+                part in ("", ".", "..") or ":" in part or "\\" in part for part in parts
+            )
+            or rel.startswith("/")
+            or rel.casefold() in seen
+        ):
+            logger.warning("HSR 更新：恢复记录含不安全路径，已保留现场")
+            return False
+        seen.add(rel.casefold())
+        for base in (install_root, backup):
+            cursor = base
+            for part in parts:
+                cursor = cursor / part
+                if cursor.is_symlink():
+                    logger.warning("HSR 更新：恢复记录路径经过符号链接，已保留现场")
+                    return False
+        checked.append(
+            (install_root.joinpath(*parts), backup.joinpath(*parts), entry["action"])
+        )
+
+    failures: list[str] = []
+    for target, saved, action in checked:
+        rel = str(target.relative_to(install_root))
         try:
             if saved.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
                 os.replace(saved, target)
-            elif entry.get("action") == "create" and target.exists():
+            elif action == "create" and target.exists():
                 target.unlink()
         except OSError as exc:
             failures.append(f"{rel}: {exc}")

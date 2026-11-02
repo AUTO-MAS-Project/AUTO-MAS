@@ -55,7 +55,8 @@ class ProcessResult:
 
 
 # 在导入时求值一次: locale.getpreferredencoding() 每次调用都会做一轮
-# 进程级 setlocale 往返, 而本函数位于日志逐行解码与 ADB 轮询热路径
+# 进程级 setlocale 往返, 而本函数位于日志逐行解码与 ADB 轮询热路径。
+# 系统编码仍用于通用配置文件；已知脚本的中文输出应由调用方指定编码顺序。
 ENCODINGS = tuple(
     e
     for e in dict.fromkeys(
@@ -65,10 +66,12 @@ ENCODINGS = tuple(
 )
 
 
-def decode_bytes(data: bytes | None) -> str:
+def decode_bytes(
+    data: bytes | None, *, encodings: tuple[str, ...] | None = None
+) -> str:
     if not data:
         return ""
-    for encoding in ENCODINGS:
+    for encoding in ENCODINGS if encodings is None else encodings:
         try:
             return data.decode(encoding, errors="strict")
         except (UnicodeDecodeError, LookupError):

@@ -197,7 +197,6 @@ const emit = defineEmits<MaaFWScriptUpdateSectionEmits>()
 const autoUpdateModeOptions = computed<Array<{ label: string; value: MaaFWAutoUpdateMode }>>(() => [
   { label: t('core.edit.autoUpdateModeOff'), value: 'Off' },
   { label: t('core.edit.autoUpdateModeBeforeRun'), value: 'BeforeRun' },
-  { label: t('core.edit.autoUpdateModeAfterRun'), value: 'AfterRun' },
 ])
 
 // 自动更新为什么用不了：没声明版本，或没有接入 Mirror 酱、又不能只看 GitHub
