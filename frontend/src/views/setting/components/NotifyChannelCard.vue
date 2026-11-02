@@ -73,11 +73,12 @@ const hintText = computed(() =>
 
 <style scoped>
 .chan-card {
+  --notify-icon-padding: var(--app-padding-panel);
   text-align: left;
   border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
-  border-radius: var(--app-radius-panel);
-  padding: 16px 16px 12px;
+  border-radius: var(--app-radius-panel-inner);
+  padding: var(--app-padding-panel) var(--app-padding-panel) 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -107,7 +108,10 @@ const hintText = computed(() =>
   width: 38px;
   height: 38px;
   flex: 0 0 38px;
-  border-radius: var(--ant-border-radius);
+  border-radius: max(
+    var(--ant-border-radius-xs),
+    calc(var(--app-radius-panel-inner) - var(--notify-icon-padding))
+  );
   display: grid;
   place-items: center;
   font-size: 20px;
@@ -118,7 +122,6 @@ const hintText = computed(() =>
   width: 26px;
   height: 26px;
   flex: 0 0 26px;
-  border-radius: var(--ant-border-radius);
   font-size: 15px;
 }
 
@@ -184,12 +187,13 @@ const hintText = computed(() =>
 }
 
 .chan-row {
+  --notify-icon-padding: 8px;
   display: flex;
   align-items: center;
   gap: 12px;
   border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
-  border-radius: var(--ant-border-radius);
+  border-radius: var(--app-radius-panel-inner);
   padding: 8px 12px;
   min-height: 44px;
   cursor: pointer;

@@ -5,6 +5,11 @@
   --ant-border-radius-xs: 4px;
   --ant-border-radius-lg: 8px;
   --app-radius-panel: calc(var(--ant-border-radius) + 8px);
+  --app-padding-panel: 16px;
+  --app-radius-panel-inner: max(
+    var(--ant-border-radius-xs),
+    calc(var(--app-radius-panel) - var(--app-padding-panel))
+  );
   --app-radius-surface: calc(var(--ant-border-radius) + 16px);
   --app-radius-card: calc(var(--ant-border-radius) + 24px);
   --app-radius-pill: 9999px;

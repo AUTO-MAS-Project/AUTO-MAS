@@ -46,15 +46,20 @@ withDefaults(
 
 <style scoped>
 .selectable-option-card {
+  --option-card-padding: 16px;
+  --option-content-radius: max(
+    var(--ant-border-radius-xs),
+    calc(var(--ant-border-radius) - var(--option-card-padding))
+  );
   display: flex;
   width: 100%;
   min-width: 0;
   gap: 12px;
   align-items: center;
   margin-inline-end: 0;
-  padding: 16px;
+  padding: var(--option-card-padding);
   border: 1px solid var(--ant-color-border);
-  border-radius: var(--app-radius-surface);
+  border-radius: var(--ant-border-radius);
   color: var(--ant-color-text);
   background: var(--ant-color-bg-container);
   cursor: pointer;
@@ -124,7 +129,7 @@ withDefaults(
   flex: 0 0 38px;
   align-items: center;
   justify-content: center;
-  border-radius: var(--ant-border-radius);
+  border-radius: var(--option-content-radius);
   color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
   font-size: 19px;
@@ -134,7 +139,7 @@ withDefaults(
   width: 34px;
   height: 34px;
   flex: 0 0 34px;
-  border-radius: var(--ant-border-radius);
+  border-radius: var(--option-content-radius);
   object-fit: contain;
 }
 </style>

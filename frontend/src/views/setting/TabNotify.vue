@@ -334,7 +334,7 @@ const modalPopupContainer = () =>
 .panel {
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: var(--app-radius-panel);
-  padding: 16px;
+  padding: var(--app-padding-panel);
   margin-bottom: 16px;
 }
 
