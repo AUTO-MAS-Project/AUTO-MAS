@@ -1,4 +1,4 @@
-"""手动 QQ 凭据只允许受信任的本机桌面客户端访问。"""
+"""QQ 普通接口调用与手动凭据更新契约。"""
 
 import asyncio
 from types import SimpleNamespace
@@ -9,13 +9,11 @@ import pytest
 from fastapi import FastAPI
 
 from app.api import openclaw_qq as api
-from app.api import setting
 from app.core.notify.channels.openclaw_qq.transport import Sender, _RuntimeCredentials
 
 
 @pytest.fixture
 def credentials_app(monkeypatch):
-    monkeypatch.setenv("AUTO_MAS_INSTALL_TOKEN", "test-token")
     config = SimpleNamespace(update=AsyncMock(), get=lambda _key: None)
     sender = Sender(SimpleNamespace(config=config))
     sender._runtime_credentials = _RuntimeCredentials("app", "secret", "owner")
@@ -26,102 +24,11 @@ def credentials_app(monkeypatch):
     monkeypatch.setattr(api.Notify, "channel_sender", lambda _key: sender)
     app = FastAPI()
     app.include_router(api.router)
-    app.include_router(setting.router)
     return app, sender
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("peer", "host", "headers"),
-    [
-        ("127.0.0.1", "127.0.0.1", {}),
-        ("127.0.0.1", "127.0.0.1", {"Authorization": "Bearer wrong"}),
-        ("203.0.113.10", "127.0.0.1", {"Authorization": "Bearer test-token"}),
-        ("127.0.0.1", "example.invalid", {"Authorization": "Bearer test-token"}),
-        (
-            "127.0.0.1",
-            "127.0.0.1",
-            {"Authorization": "Bearer test-token", "Origin": "https://example.invalid"},
-        ),
-    ],
-)
-async def test_untrusted_requests_cannot_read_or_change_credentials(
-    credentials_app, peer, host, headers
-):
-    app, sender = credentials_app
-    transport = httpx.ASGITransport(app=app, client=(peer, 12345))
-    async with httpx.AsyncClient(
-        transport=transport, base_url=f"http://{host}"
-    ) as client:
-        details = await client.post(
-            "/api/setting/openclaw-qq/credentials/get", headers=headers
-        )
-        saved = await client.post(
-            "/api/setting/openclaw-qq/credentials/set",
-            headers=headers,
-            json={
-                "bindingId": sender._binding_id,
-                "appId": "app",
-                "userOpenId": "other",
-            },
-        )
-    assert details.status_code == saved.status_code == 403
-    assert sender._credentials()[2] == "owner"
-    sender._request_json.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "path", ["/groups", "/status", "/target", "/unbind", "/login/start", "/login/check"]
-)
-async def test_other_binding_routes_reject_unauthorized_clients(credentials_app, path):
-    app, _ = credentials_app
-    transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://127.0.0.1"
-    ) as client:
-        response = await client.post(f"/api/setting/openclaw-qq{path}", json={})
-    assert response.status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_backup_requires_local_desktop_authority(
-    credentials_app, monkeypatch, tmp_path
-):
-    app, _ = credentials_app
-    backup = tmp_path / "backup.zip"
-    backup.write_bytes(b"test backup")
-    create = AsyncMock(return_value=backup)
-    monkeypatch.setattr(setting.Config, "create_data_backup", create)
-    transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://127.0.0.1"
-    ) as client:
-        assert (await client.get("/api/setting/backup")).status_code == 403
-        create.assert_not_awaited()
-        response = await client.get(
-            "/api/setting/backup", headers={"Authorization": "Bearer test-token"}
-        )
-    assert response.status_code == 200 and response.content == b"test backup"
-    create.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_empty_token_does_not_enable_access(credentials_app, monkeypatch):
-    app, _ = credentials_app
-    monkeypatch.delenv("AUTO_MAS_INSTALL_TOKEN")
-    transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://127.0.0.1"
-    ) as client:
-        assert (
-            await client.post("/api/setting/openclaw-qq/credentials/get")
-        ).status_code == 403
-        assert (await client.get("/api/setting/backup")).status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_authorized_desktop_binding_actions_still_work(credentials_app):
+async def test_binding_actions_work_without_desktop_authorization(credentials_app):
     app, sender = credentials_app
     sender.groups = lambda: SimpleNamespace(
         binding_id="binding", target_type="c2c", group_command_whitelist=[], groups=[]
@@ -139,23 +46,19 @@ async def test_authorized_desktop_binding_actions_still_work(credentials_app):
     )
     sender.unbind = AsyncMock()
     transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
-    headers = {"Authorization": "Bearer test-token"}
     async with httpx.AsyncClient(
         transport=transport, base_url="http://127.0.0.1"
     ) as client:
         root = "/api/setting/openclaw-qq"
-        status = await client.post(f"{root}/status", headers=headers)
-        groups = await client.post(f"{root}/groups", headers=headers)
+        status = await client.post(f"{root}/status")
+        groups = await client.post(f"{root}/groups")
         target = await client.post(
             f"{root}/target",
-            headers=headers,
             json={"bindingId": "binding", "targetType": "c2c"},
         )
-        start = await client.post(f"{root}/login/start", headers=headers)
-        check = await client.post(
-            f"{root}/login/check", headers=headers, json={"sessionId": "session"}
-        )
-        unbind = await client.post(f"{root}/unbind", headers=headers)
+        start = await client.post(f"{root}/login/start")
+        check = await client.post(f"{root}/login/check", json={"sessionId": "session"})
+        unbind = await client.post(f"{root}/unbind")
     assert all(
         response.status_code == 200 and response.json()["code"] == 200
         for response in (status, groups, target, start, check, unbind)
@@ -167,21 +70,19 @@ async def test_authorized_desktop_binding_actions_still_work(credentials_app):
 
 
 @pytest.mark.asyncio
-async def test_authorized_desktop_can_keep_secret_and_change_recipient(credentials_app):
+async def test_can_keep_secret_and_change_recipient_without_desktop_authorization(
+    credentials_app,
+):
     app, sender = credentials_app
     transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
-    headers = {"Authorization": "Bearer test-token"}
     async with httpx.AsyncClient(
         transport=transport, base_url="http://127.0.0.1"
     ) as client:
-        details = await client.post(
-            "/api/setting/openclaw-qq/credentials/get", headers=headers
-        )
+        details = await client.post("/api/setting/openclaw-qq/credentials/get")
         body = details.json()
         assert '"secret"' not in details.text and "test-token" not in details.text
         saved = await client.post(
             "/api/setting/openclaw-qq/credentials/set",
-            headers=headers,
             json={
                 "bindingId": body["bindingId"],
                 "appId": body["appId"],

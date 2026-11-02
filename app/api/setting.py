@@ -31,7 +31,7 @@ from typing import (
     Union,
 )
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import (
     BaseModel,
@@ -41,7 +41,6 @@ from starlette.background import BackgroundTask
 
 import app.core.notify.bootstrap as notify_channels
 import app.models.config as _config_models
-from app.api.local_access import require_local_desktop
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config, Notify
 from app.models.config import Webhook as WebhookConfig
@@ -304,7 +303,6 @@ async def save_obs_replay() -> ObsReplaySaveOut:
     summary="导出数据备份",
     response_model=None,
     status_code=200,
-    dependencies=[Depends(require_local_desktop)],
 )
 async def backup_data() -> FileResponse | JSONResponse:
     """导出数据、配置与历史记录。"""

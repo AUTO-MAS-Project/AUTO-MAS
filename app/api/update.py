@@ -22,19 +22,22 @@
 
 
 import asyncio
+import os
+import secrets
+from ipaddress import ip_address
 from typing import (
     Dict,
     List,
     Optional,
 )
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import (
     BaseModel,
     Field,
 )
 
-from app.api.local_access import require_local_desktop
 from app.core import Config, Updater
 from app.models.schema import OutBase, UpdateDownloadSnapshot
 from app.services.common.update import fluxdown_install as _fluxdown_install
@@ -322,9 +325,47 @@ async def get_fluxdown_release() -> FluxdownReleaseOut:
         )
 
 
+def _require_local_install(request: Request) -> None:
+    """验证主进程持有的安装凭据；回环和 Origin 检查仅作额外限制。"""
+
+    token = os.environ.get("AUTO_MAS_INSTALL_TOKEN", "")
+    authorization = request.headers.get("authorization", "")
+    if not token or not secrets.compare_digest(
+        authorization.encode(), f"Bearer {token}".encode()
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="安装请求未授权，请在 MAS 桌面客户端启动或重启后端后安装",
+        )
+
+    def is_local(host: str | None) -> bool:
+        if host == "localhost":
+            return True
+        try:
+            return ip_address(host or "").is_loopback
+        except ValueError:
+            return False
+
+    origin = request.headers.get("origin")
+    try:
+        source = urlsplit(origin) if origin not in (None, "null") else None
+        local_origin = source is None or (
+            source.scheme in ("http", "https") and is_local(source.hostname)
+        )
+    except ValueError:
+        local_origin = False
+    if (
+        request.client is None
+        or not is_local(request.client.host)
+        or not is_local(request.url.hostname)
+        or not local_origin
+    ):
+        raise HTTPException(status_code=403, detail="FluxDown 安装仅允许本机客户端")
+
+
 @router.post(
     "/fluxdown/install",
-    dependencies=[Depends(require_local_desktop)],
+    dependencies=[Depends(_require_local_install)],
     tags=["Get"],
     summary="由 MAS 下载并安装 FluxDown CLI 与 Server",
     response_model=FluxdownInstallOut,

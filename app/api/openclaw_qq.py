@@ -25,10 +25,9 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field, SecretStr, StringConstraints
 
-from app.api.local_access import require_local_desktop
 from app.core import Notify
 from app.core.notify.channels.openclaw_qq.transport import Sender as Sender
 from app.models.config.setting import QQGroupCommandWhitelist
@@ -132,7 +131,6 @@ class OpenClawQQCredentialsIn(BaseModel):
 router = APIRouter(
     prefix="/api/setting/openclaw-qq",
     tags=["QQ 官方机器人通知"],
-    dependencies=[Depends(require_local_desktop)],
 )
 logger = get_logger("QQ 机器人通知 API")
 

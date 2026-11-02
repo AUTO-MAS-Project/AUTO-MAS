@@ -33,8 +33,6 @@ import {
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerFluxdownInstallHandlers } from './ipc/fluxdownInstallHandlers'
-import { registerQqCredentialHandlers } from './ipc/qqCredentialHandlers'
-import { fetchProtectedLocal } from './services/protectedBackend'
 import {
   isAnalyticsSender,
   isApplicationWindowSender,
@@ -1753,10 +1751,7 @@ ipcMain.handle('maafw:listIssueReportScripts', (_event, configTypes?: unknown) =
   return listMaaFWIssueReportScripts(getAppRoot(), types)
 })
 
-ipcMain.handle('data:backup', async event => {
-  if (!isApplicationWindowSender(event, mainWindow, { allowDevelopment: true })) {
-    throw new Error('不允许此页面导出数据备份')
-  }
+ipcMain.handle('data:backup', async () => {
   return observeDataBackup(async () => {
     let partialPath: string | undefined
 
@@ -1777,10 +1772,11 @@ ipcMain.handle('data:backup', async event => {
 
       const zipPath = result.filePath
       partialPath = `${zipPath}.part-${process.pid}-${Date.now()}`
-      const response = await fetchProtectedLocal(getLocalApiEndpoint(), '/api/setting/backup')
+      const response = await fetch(`${getLocalApiEndpoint()}/api/setting/backup`, {
+        method: 'GET',
+      })
 
       if (!response.ok) {
-        if (response.status === 403) throw new Error('备份未授权，请使用桌面客户端重启后端')
         throw new Error(
           `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`
         )
@@ -2506,7 +2502,6 @@ app.on('before-quit', event => {
 app.whenReady().then(async () => {
   registerAnalyticsHandlers(() => mainWindow)
   registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
-  registerQqCredentialHandlers(() => mainWindow, getLocalApiEndpoint)
   refreshAnalyticsPreference()
   analyticsService.recordAppStarted({
     launch_kind: isAutoStart ? 'auto_start' : 'manual',

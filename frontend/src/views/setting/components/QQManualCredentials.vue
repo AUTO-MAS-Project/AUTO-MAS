@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { QqService } from '@/api'
 import { message } from 'ant-design-vue'
 import type { ClawBindingState } from './ClawBinding.vue'
 
@@ -33,8 +34,7 @@ async function load() {
   bindingId.value = ''
   clientSecret.value = ''
   try {
-    if (!window.electronAPI?.getQqCredentials) throw new Error('QQ 凭据管理需要桌面客户端')
-    const result = await window.electronAPI.getQqCredentials()
+    const result = await QqService.getCredentialsApiSettingOpenclawQqCredentialsGetPost()
     if (result.code !== 200) throw new Error(result.message)
     bindingId.value = result.bindingId || ''
     appId.value = originalAppId.value = result.appId || ''

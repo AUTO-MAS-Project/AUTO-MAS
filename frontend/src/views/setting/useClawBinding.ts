@@ -17,11 +17,10 @@ const POLL_INTERVAL = 2000
 const CHANNELS = {
   qq: {
     prefix: 'openclawQq',
-    status: () => window.electronAPI.getQqStatus(),
-    start: () => window.electronAPI.startQqLogin(),
-    check: (body: Parameters<typeof QqService.checkLoginApiSettingOpenclawQqLoginCheckPost>[0]) =>
-      window.electronAPI.checkQqLogin(body),
-    unbind: () => window.electronAPI.unbindQq(),
+    status: QqService.getStatusApiSettingOpenclawQqStatusPost,
+    start: QqService.startLoginApiSettingOpenclawQqLoginStartPost,
+    check: QqService.checkLoginApiSettingOpenclawQqLoginCheckPost,
+    unbind: QqService.unbindApiSettingOpenclawQqUnbindPost,
   },
 }
 
@@ -100,7 +99,7 @@ export function useClawBinding(
     groupsLoading.value = true
     groupsError.value = ''
     try {
-      const result = await window.electronAPI.getQqGroups()
+      const result = await QqService.getGroupsApiSettingOpenclawQqGroupsPost()
       if (disposed || id !== groupsRunId) return
       if (result.code !== 200) throw new Error(label('GroupsError'))
       groups.value = result
@@ -122,7 +121,7 @@ export function useClawBinding(
     groupsLoading.value = false
     groupsError.value = ''
     try {
-      const result = await window.electronAPI.setQqTarget({
+      const result = await QqService.setTargetApiSettingOpenclawQqTargetPost({
         bindingId: groups.value.bindingId,
         targetType,
         groupCommandWhitelist,
@@ -305,8 +304,7 @@ export function useClawBinding(
     clearTimeout(statusTimer)
     const operation = beginAnalyticsOperation('notification_binding_finished')
     try {
-      if (!window.electronAPI?.setQqCredentials) throw new Error('QQ 凭据管理需要桌面客户端')
-      checkResponse(await window.electronAPI.setQqCredentials(body))
+      checkResponse(await QqService.setCredentialsApiSettingOpenclawQqCredentialsSetPost(body))
       operation.finish({ channel_kind: 'openclaw_qq', action: 'manual_bind', outcome: 'saved' })
       isBound = true
       qqBindingObserved = true

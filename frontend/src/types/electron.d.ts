@@ -1,17 +1,4 @@
-import type {
-  FluxdownInstallOut,
-  GlobalConfig_UI,
-  GlobalConfig_Update,
-  OpenClawQQCredentialsIn,
-  OpenClawQQCredentialsOut,
-  OpenClawQQGroupsOut,
-  OpenClawQQQrCheckIn,
-  OpenClawQQQrCheckOut,
-  OpenClawQQQrStartOut,
-  OpenClawQQStatusOut,
-  OpenClawQQTargetIn,
-  OutBase,
-} from '@/api'
+import type { FluxdownInstallOut, GlobalConfig_UI, GlobalConfig_Update } from '@/api'
 import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
 import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
 import type {
@@ -246,14 +233,6 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   }
   isMacOS: boolean
   installFluxdown: (mirror: string) => Promise<FluxdownInstallOut>
-  getQqCredentials: () => Promise<OpenClawQQCredentialsOut>
-  setQqCredentials: (value: OpenClawQQCredentialsIn) => Promise<OutBase>
-  getQqStatus: () => Promise<OpenClawQQStatusOut>
-  getQqGroups: () => Promise<OpenClawQQGroupsOut>
-  setQqTarget: (value: OpenClawQQTargetIn) => Promise<OpenClawQQGroupsOut>
-  startQqLogin: () => Promise<OpenClawQQQrStartOut>
-  checkQqLogin: (value: OpenClawQQQrCheckIn) => Promise<OpenClawQQQrCheckOut>
-  unbindQq: () => Promise<OutBase>
   listMascots?: () => Promise<MascotSummary[]>
   importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
   removeMascot?: (id: string) => Promise<{ success: boolean; error?: string }>
