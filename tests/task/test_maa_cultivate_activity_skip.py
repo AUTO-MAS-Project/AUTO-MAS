@@ -66,6 +66,7 @@ async def test_activity_skip_only_suppresses_cultivation_farming(
     config = SimpleNamespace(
         Task=SimpleNamespace(
             IfCultivate=True,
+            CultivateAllOwned=False,
             CultivateTargets=json.dumps(
                 [{"operator_id": "one", "goals": [{"kind": "skill", "to_level": 7}]}]
             ),

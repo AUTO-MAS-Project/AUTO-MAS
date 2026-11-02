@@ -64,8 +64,8 @@ class UserRemovalPreparer(Protocol):
 class UserUpdatePreparer(Protocol):
     def __call__(
         self, script: ConfigEntry, user: ConfigEntry, *, data: dict[str, Any]
-    ) -> Awaitable[None] | None:
-        """原地准备本次补丁，不提交配置；异步步骤由写入方在同一 Task 等待。"""
+    ) -> Awaitable[Callable[[], None] | None] | Callable[[], None] | None:
+        """原地准备补丁，不提交配置；可返回提交保护范围内同步复核及补全补丁的回调。"""
         ...
 
 
