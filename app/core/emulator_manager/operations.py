@@ -462,6 +462,9 @@ class EmulatorOperations:
         else:
             native_index = await backend.create_instance(name)
 
+        # 魔改 AVD 新建要在后台开一次机，动辄几分钟；这期间另一次新建、设备列表轮询都可能存过槽位表。
+        # 拿新建前那份快照存会把它们登记的设备号盖掉，所以重新读一份最新的再登记
+        manager = await self.build_manager(emulator_id)
         added = manager.slots.sync_path(path_id, [native_index])
         await self._save(emulator_id, manager.paths, manager.slots)
         slot = (

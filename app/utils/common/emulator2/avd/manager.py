@@ -208,6 +208,29 @@ def shm_exists(port: int) -> bool:
     return emulator_native.shm_exists(port)
 
 
+def map_status(status: str | None, busy: str | None = "") -> DeviceStatus:
+    """把 modavd 的状态字符串翻译成公共 ``DeviceStatus``（:mod:`.cli` 只交回原样的字符串）。"""
+
+    busy_value = (busy or "").strip().lower()
+    status_value = (status or "").strip().lower()
+    # 新建的初始化（后台开机、装输入法和执行桥、关机）做完前一律是新建中，不管那几次开机从外面看像什么
+    if status_value == "creating" or busy_value == "creating":
+        return DeviceStatus.CREATING
+    if busy_value == "stopping":
+        return DeviceStatus.CLOSEING
+    if busy_value:
+        return DeviceStatus.STARTING
+    if status_value == "starting":
+        return DeviceStatus.STARTING
+    if status_value == "create_failed":
+        return DeviceStatus.CREATE_FAILED
+    if status_value == "online":
+        return DeviceStatus.ONLINE
+    if status_value == "offline":
+        return DeviceStatus.OFFLINE
+    return DeviceStatus.STARTING
+
+
 def _qemu_headless(process: psutil.Process) -> bool | None:
     """这台 qemu 是不是无头开的。模拟器带 ``-no-window`` 开机时起的是
     ``qemu-system-x86_64-headless.exe``，命令行里也带着 ``-no-window``；读不到进程信息返回 ``None``。"""
@@ -313,6 +336,14 @@ _OPENING_WAIT_EXTRA_SECONDS = 300.0
 def _cli_start_lock(key: str) -> asyncio.Lock:
     """只锁同一根目录的同一实例；不同实例可并行开机。"""
     return _CLI_START_LOCKS.setdefault(key, asyncio.Lock())
+
+
+_SETTINGS_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _settings_lock(key: str) -> asyncio.Lock:
+    """同一实例的改设置排队：对照 ``expected`` 和写入之间不能插进另一次写。"""
+    return _SETTINGS_LOCKS.setdefault(key, asyncio.Lock())
 
 
 async def _claim_opening(key: str, label: str, timeout: float) -> asyncio.Event:
@@ -661,7 +692,7 @@ class _AvdCore(DeviceBase):
         """把 ``list/info/status/start`` 的实例对象映射成公共设备信息。"""
         item = self._cli_data_instance(data)
         index = str(item.get("index", ""))
-        status = modavd_cli.map_status(item.get("status"), item.get("busy"))
+        status = map_status(item.get("status"), item.get("busy"))
         address = item.get("adb_address")
         if not isinstance(address, str) or not address:
             address = f"127.0.0.1:{adb_port(index)}" if index else ""
@@ -796,7 +827,7 @@ class _AvdCore(DeviceBase):
                     return DeviceStatus.NOT_FOUND
                 self._raise_cli_error(error)
             item = self._cli_data_instance(data)
-            return modavd_cli.map_status(item.get("status"), item.get("busy"))
+            return map_status(item.get("status"), item.get("busy"))
         if str(idx) not in self._instances():
             return DeviceStatus.NOT_FOUND
         process = await asyncio.to_thread(
@@ -1157,19 +1188,23 @@ class _AvdCore(DeviceBase):
     async def _cli_creating(self, idx: str) -> bool:
         """这台是不是正在新建（modavd v0.2.0 起 create 建完文件还要在后台开机做初始化）。
 
-        先看 ``mas-avd.json`` 里的 ``creationState``，记着 ``creating`` 再问 modavd：新建程序中途被
-        结束的也留着 ``creating``，modavd 按新建失败报，不算新建中。平常一次子进程都不起。"""
+        先看 ``mas-avd.json`` 里的 ``creationState``（modavd 自己写的），记着 ``creating`` 再问 modavd：
+        新建程序中途被结束的也留着 ``creating``，modavd 按新建失败报，不算新建中。平常一次子进程都不起。
+        记着 ``creating`` 却问不到 modavd 时不放行：这时贸然关机可能正好打断新建。"""
         if self._cli is None:
             return False
         if instance_meta(self.root, idx).get("creationState") != "creating":
             return False
         try:
             data = await self._cli.status(idx)
-        except modavd_cli.CLIError:
-            return False
+        except modavd_cli.CLIError as error:
+            raise RuntimeError(
+                f"魔改 AVD 实例 {idx} 可能还在新建，但查不到 modavd 的状态（{error.message}），"
+                "稍后再试"
+            ) from error
         return (
             isinstance(data, dict)
-            and modavd_cli.map_status(data.get("status"), data.get("busy"))
+            and map_status(data.get("status"), data.get("busy"))
             == DeviceStatus.CREATING
         )
 
@@ -2100,7 +2135,16 @@ class _AvdCore(DeviceBase):
     async def write_instance_settings(
         self, idx: str, changes: dict, expected: dict | None = None
     ) -> dict[str, int]:
-        """可改 CPU、内存与帧率（30 / 60，写 ``hw.lcd.vsync``），都是下次启动生效；显示固定 720p。"""
+        """可改 CPU、内存与帧率（30 / 60，写 ``hw.lcd.vsync``），都是下次启动生效；显示固定 720p。
+
+        同一台实例的改设置排队做：两个请求拿着同一份 ``expected`` 同时来时，后一个会看到前一个写的值、
+        报冲突，不会两个都说成功、互相覆盖。"""
+        async with _settings_lock(_instance_key(self.root, str(idx))):
+            return await self._write_instance_settings(idx, changes, expected)
+
+    async def _write_instance_settings(
+        self, idx: str, changes: dict, expected: dict | None = None
+    ) -> dict[str, int]:
         if self._cli is not None:
             if updater.update_in_progress(self.root):
                 raise RuntimeError("魔改 AVD 正在更新，更新完再改设置")
@@ -2270,6 +2314,9 @@ class _AvdCore(DeviceBase):
                 native_index = int(native_index)
                 if not valid_native_index(native_index):
                     raise ValueError(f"原生索引 {native_index} 不可用")
+            # 上面的检查和选编号要等几个子进程，更新可能在这期间开始：起 create 之前再看一次
+            if updater.update_in_progress(self.root):
+                raise RuntimeError("魔改 AVD 正在更新，更新完再新建实例")
             try:
                 data = await self._cli.create(
                     index=native_index,

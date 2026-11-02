@@ -200,57 +200,49 @@ async def close_running_instances(
 
     CLI 根目录一次调用 ``stop --all``，避免未登记实例被逐台 stop 时漏掉 sync；CLI 不可用时，
     按用户定的例外退回 Python 的 sync + emu kill 路径。
+
+    每个根目录的「探测 CLI → stop --all / 退回 Python」整个放进一个并发动作，共用 ``timeout`` 秒：
+    某个根目录的 modavd 卡在 ``version`` 上，不会推迟别的根目录开始关机，也不会让关机多等。
+    ``stop --all`` 有实例没关掉时这个根目录记 ``failed``，不报成 ``closed``。
     """
-    targets: list[tuple[str, Callable[[], Awaitable[object]]]] = []
     roots = await asyncio.to_thread(managed_roots, list(configs))
-    for root in roots:
-        if updater.update_in_progress(root):
-            # 换包期间不起 modavd（它会占着 tools\\modavd.exe）；这时本来就没有实例开着，只按进程扫一遍
-            targets.append(
-                (
-                    str(root),
-                    lambda root_path=root: _close_python_root(
-                        root_path, timeout=timeout
-                    ),
-                )
-            )
-            continue
-        try:
-            cli = await modavd_cli.resolve_cli(root)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(
-                f"{root} 的 modavd 不可用，关机前退回 Python sync + emu kill: {e}"
-            )
-            cli = None
-
-        if cli is not None:
-
-            async def stop_all(root_path=root, client=cli) -> object:
-                try:
-                    result = await client.stop_all()
-                except (modavd_cli.CLIError, modavd_cli.ModAvdUnavailable) as e:
-                    logger.warning(
-                        f"{root_path} 的 modavd stop --all 失败，退回 Python sync + emu kill: {e}"
-                    )
-                    return await _close_python_root(root_path, timeout=timeout)
-                failed = result.get("failed", []) if isinstance(result, dict) else []
-                if failed:
-                    logger.warning(f"{root_path} modavd stop --all 部分失败: {failed}")
-                return result
-
-            targets.append((str(root), stop_all))
-            continue
-
-        targets.append(
-            (
-                str(root),
-                lambda root_path=root: _close_python_root(root_path, timeout=timeout),
-            )
-        )
+    targets: list[tuple[str, Callable[[], Awaitable[object]]]] = [
+        (str(root), lambda root_path=root: _close_root(root_path, timeout=timeout))
+        for root in roots
+    ]
     if not targets:
         return {}
-    logger.info(f"关机前先正常关闭 {len(targets)} 台魔改 AVD 实例（安卓正常关机）")
+    logger.info(
+        f"关机前先正常关闭 {len(targets)} 个魔改 AVD 根目录的实例（安卓正常关机）"
+    )
     return await close_instances(targets, timeout=timeout)
+
+
+async def _close_root(root: Path, *, timeout: float) -> object:
+    """一个根目录的关机前收尾，见 :func:`close_running_instances`。"""
+    if updater.update_in_progress(root):
+        # 换包期间不起 modavd（它会占着 tools\\modavd.exe）；这时本来就没有实例开着，只按进程扫一遍
+        return await _close_python_root(root, timeout=timeout)
+    try:
+        cli = await modavd_cli.resolve_cli(root)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            f"{root} 的 modavd 不可用，关机前退回 Python sync + emu kill: {e}"
+        )
+        return await _close_python_root(root, timeout=timeout)
+    if cli is None:
+        return await _close_python_root(root, timeout=timeout)
+    try:
+        result = await cli.stop_all()
+    except (modavd_cli.CLIError, modavd_cli.ModAvdUnavailable) as e:
+        logger.warning(
+            f"{root} 的 modavd stop --all 失败，退回 Python sync + emu kill: {e}"
+        )
+        return await _close_python_root(root, timeout=timeout)
+    failed = result.get("failed", []) if isinstance(result, dict) else []
+    if failed:
+        raise RuntimeError(f"modavd stop --all 有 {len(failed)} 台没关掉: {failed}")
+    return result
 
 
 async def _close_python_root(root: Path, *, timeout: float) -> dict[str, str]:

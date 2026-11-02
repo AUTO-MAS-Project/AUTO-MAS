@@ -28,11 +28,10 @@ from app.utils.common.emulator2.avd.cli import (
     ProcessOutput,
     _run_process,
     map_cli_error,
-    map_status,
     resolve_cli,
 )
 from app.utils.common.emulator2.avd.host import AdbPortConflict
-from app.utils.common.emulator2.avd.manager import _AvdCore
+from app.utils.common.emulator2.avd.manager import _AvdCore, map_status
 from app.utils.common.emulator2.avd.precheck import PrecheckFailed
 
 
@@ -125,7 +124,8 @@ async def test_start_stop_window_install_flags_and_timeouts(tmp_path: Path) -> N
     await cli.start(3, window=True, timeout=10)
     args, process_timeout = fake.calls[-1][0], fake.calls[-1][1]
     assert args[4:] == ["start", "3", "--window", "--timeout", "10"]
-    assert process_timeout >= 190
+    # 一次开机加三轮装桥：10 + 60 + 3 × (300 + 28 + 30 + 10 + 60)
+    assert process_timeout == cli_module.start_process_timeout(10) == 1354
 
     await cli.stop(3)
     assert fake.calls[-1][0][4:] == ["stop", "3"]
@@ -184,6 +184,7 @@ async def test_create_retries_without_timeout_for_v01_usage_error(
 ) -> None:
     calls: list[tuple[list[str], float]] = []
     outputs = [
+        ProcessOutput(0, '{"ok":true,"data":{"instances":[]}}', ""),
         ProcessOutput(
             2,
             '{"ok":false,"error":{"code":"usage","message":"命令 create 没有选项 --timeout"}}',
@@ -200,11 +201,13 @@ async def test_create_retries_without_timeout_for_v01_usage_error(
 
     cli = ModAvdCli(tmp_path, exe=sys.executable, runner=runner)
     assert await cli.create(index=7) == {"index": 7}
-    assert "--timeout" in calls[0][0]
-    assert "--timeout" not in calls[1][0]
+    # 先 list 记下新建前就在的实例，超时收尾时不会把它们当成这次建的
+    assert calls[0][0][4:] == ["list"]
+    assert "--timeout" in calls[1][0]
+    assert "--timeout" not in calls[2][0]
     assert (
-        calls[0][1]
-        == calls[1][1]
+        calls[1][1]
+        == calls[2][1]
         == CREATE_TIMEOUT_SECONDS + CREATE_PROCESS_MARGIN_SECONDS
     )
 
@@ -346,17 +349,17 @@ async def test_run_process_uses_separate_streams_and_devnull_stdin(
 async def test_run_process_timeout_calls_cleanup_before_kill(tmp_path: Path) -> None:
     script = tmp_path / "sleep.py"
     script.write_text("import time; time.sleep(60)\n", encoding="utf-8")
-    called = False
+    alive_at_cleanup: list[bool] = []
 
-    async def cleanup(_process: asyncio.subprocess.Process) -> None:
-        nonlocal called
-        called = True
+    async def cleanup(process: asyncio.subprocess.Process) -> None:
+        alive_at_cleanup.append(process.returncode is None)
 
     with pytest.raises(CLIError) as exc_info:
         await _run_process(
             [sys.executable, str(script)], timeout=0.05, timeout_handler=cleanup
         )
-    assert called is True
+    # 收尾时 CLI 进程还活着：先收尾、后结束进程
+    assert alive_at_cleanup == [True]
     assert exc_info.value.code == "timeout"
 
 
@@ -649,8 +652,9 @@ def test_service_cli_status_result_maps_components_and_prechecks(
 # ---- 真的假 modavd 程序 -----------------------------------------------------------
 
 #: 按 ``--json`` 约定输出的假 modavd：经 ``sys.executable`` 当子进程起，调用记进状态目录的
-#: ``calls.log``；``plan.json`` 按命令给出数据、错误、原样输出、退出码，``hold`` 让进程活着直到
-#: 收到 ``stop``，``bridge_seconds`` 先起一个命令行带 ``modavd-bridge.ps1`` 的子进程（装桥）。
+#: ``calls.log``；``plan.json`` 按命令给出数据、错误、原样输出、退出码，``sleep`` 先干等这么多秒，
+#: ``hold`` 让进程活着直到收到 ``stop``，``bridge_seconds`` 先起一个命令行带 ``modavd-bridge.ps1`` 的
+#: 子进程（装桥）。
 _FAKE_MODAVD = r"""
 import json
 import os
@@ -680,6 +684,8 @@ if spec.get("bridge_seconds"):
          str(spec["bridge_seconds"]), "modavd-bridge.ps1"]
     )
     (state / "bridge-done").write_text(str(time.time()), encoding="utf-8")
+if spec.get("sleep"):
+    time.sleep(float(spec["sleep"]))
 if spec.get("hold"):
     deadline = time.time() + spec["hold"]
     while time.time() < deadline and not (state / "stopped").exists():
@@ -837,7 +843,10 @@ async def test_starts_of_all_roots_take_turns(
         ModAvdCli(tmp_path / "b").create(index=8),
     )
 
-    times = sorted(at for at, args in fake.launched)
+    # create 先 list 一次记下原有实例，那次不开机、不算
+    times = sorted(
+        at for at, args in fake.launched if args[args.index("--json") + 1] != "list"
+    )
     assert len(times) == 2
     assert times[1] - times[0] >= 0.5
     assert {item["root"] for item in fake.calls()} == {
@@ -847,7 +856,7 @@ async def test_starts_of_all_roots_take_turns(
 
 
 @pytest.mark.asyncio
-async def test_power_close_uses_stop_all_and_keeps_partial_failure(
+async def test_power_close_uses_stop_all_and_reports_partial_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = _FakeModavd(tmp_path, monkeypatch)
@@ -873,9 +882,45 @@ async def test_power_close_uses_stop_all_and_keeps_partial_failure(
 
     result = await service_module.close_running_instances([], timeout=10)
 
-    assert result == {str(root): "closed"}
+    # stop --all 回 ok 但有实例没关掉：这个根目录不能报成已关完
+    assert result == {str(root): "failed"}
     stop_calls = [item for item in fake.calls() if item["command"] == "stop"]
     assert [item["args"] for item in stop_calls] == [["--all"]]
+
+
+@pytest.mark.asyncio
+async def test_power_close_probe_shares_the_deadline_and_does_not_hold_up_other_roots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    stuck = _root_with_exe(tmp_path, "stuck")
+    healthy = _root_with_exe(tmp_path, "healthy")
+    # 健康的根目录已经检测过（结果在缓存里）；卡住的那个还没缓存，它的 version 半分钟不回
+    fake.plan(version={"data": {"version": "0.2.0", "protocol": 1}})
+    assert await resolve_cli(healthy) is not None
+    fake.plan(
+        version={"sleep": 30},
+        stop={"data": {"results": [{"index": 7}], "failed": []}},
+    )
+    monkeypatch.setattr(
+        service_module, "managed_roots", lambda configs: [stuck, healthy]
+    )
+
+    async def python_close(root_path: Path, *, timeout: float) -> dict:
+        raise AssertionError("两个根目录都有可用的 modavd，不该退回 Python")
+
+    monkeypatch.setattr(service_module, "_close_python_root", python_close)
+
+    started = time.monotonic()
+    result = await service_module.close_running_instances([], timeout=3)
+    elapsed = time.monotonic() - started
+
+    # 探测也算在关机的总时限里：健康的照常关，卡住的到时限放弃，整体不多等
+    assert result == {str(stuck): "timeout", str(healthy): "closed"}
+    assert elapsed < 6
+    stop_calls = [item for item in fake.calls() if item["command"] == "stop"]
+    assert [item["root"] for item in stop_calls] == [str(healthy)]
+    await asyncio.sleep(0.5)  # 让被取消的探测把它的子进程收掉
 
 
 @pytest.mark.asyncio
@@ -1120,6 +1165,15 @@ async def test_creating_instance_shows_creating_and_is_never_stopped_or_started(
         await manager.open("7", manual=True)
     assert not {"stop", "start", "restart"} & set(fake.commands())
 
+    # 记着新建中、却问不到 modavd 的状态：不放行，免得正好打断新建
+    fake.plan(
+        version=version,
+        status={"error": {"code": "internal", "message": "状态读不出"}, "exit": 1},
+    )
+    with pytest.raises(RuntimeError, match="查不到 modavd 的状态"):
+        await manager.close("7")
+    assert "stop" not in fake.commands()
+
     # 新建程序中途被结束：mas-avd.json 还记着 creating，modavd 按新建失败报；列表显示新建失败和原因，
     # 照常能关、能删
     failed = {
@@ -1302,3 +1356,134 @@ async def test_restart_is_stop_then_start_and_running_mode_is_never_switched(
     with pytest.raises(RuntimeError, match="正在无头运行（建议：先关机再换成带窗口）"):
         await manager.open("7", manual=True)
     assert [item["command"] for item in fake.calls()[before:]] == ["start"]
+
+
+async def _until(predicate, timeout: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        assert time.monotonic() < deadline, "等太久"
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_cancelled_create_only_stops_the_instance_it_was_creating(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    monkeypatch.setattr(cli_module, "STOP_PROCESS_TIMEOUT_SECONDS", 1)
+    cli = ModAvdCli(tmp_path)
+
+    # 7 号原来就有实例：指定 7 号新建被取消时，收尾不能把那台关掉
+    fake.plan(
+        list={"data": {"instances": [{"index": 7, "status": "online"}]}},
+        create={"hold": 20},
+        stop={"data": {}},
+    )
+    task = asyncio.create_task(cli.create(index=7))
+    await _until(lambda: "create" in fake.commands())
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert "stop" not in fake.commands()
+
+    # 8 号是这次建出来的（新建中）：取消时要关掉它，别留一台没人管的无头模拟器
+    (fake.state / "calls.log").unlink()
+    fake.plan(list={"data": {"instances": []}}, create={"hold": 20}, stop={"data": {}})
+    task = asyncio.create_task(cli.create(index=8))
+    await _until(lambda: "create" in fake.commands())
+    fake.plan(
+        list={"data": {"instances": [{"index": 8, "status": "creating"}]}},
+        stop={"data": {}},
+    )
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    stops = [item["args"] for item in fake.calls() if item["command"] == "stop"]
+    assert stops and all(args == ["8"] for args in stops)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_setting_writes_with_the_same_expected_value_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.utils.common.emulator2.settings import SettingsConflictError
+
+    class SettingsCli(_FakeManagerCli):
+        def __init__(self) -> None:
+            super().__init__()
+            self.memory = 4096
+
+        async def info(self, index: str) -> dict:
+            data = await super().info(index)
+            data["config"]["memory_mb"] = self.memory
+            return data
+
+        async def set(self, index: str, **kwargs: object) -> dict:
+            await asyncio.sleep(0.05)
+            self.memory = int(kwargs["memory"])  # type: ignore[arg-type]
+            return await super().set(index, **kwargs)
+
+    cli = SettingsCli()
+    manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
+    manager = _AvdCore(manager_exe, 60, False, cli=cli)  # type: ignore[arg-type]
+
+    results = await asyncio.gather(
+        manager.write_instance_settings("7", {"memoryMb": 6144}, {"memoryMb": 4096}),
+        manager.write_instance_settings("7", {"memoryMb": 3072}, {"memoryMb": 4096}),
+        return_exceptions=True,
+    )
+
+    # 两个请求拿着同一份「打开表单时看到的值」：只能有一个写成，另一个报冲突，不能互相覆盖
+    assert [isinstance(item, SettingsConflictError) for item in results] == [
+        False,
+        True,
+    ]
+    assert cli.memory == 6144
+
+
+@pytest.mark.asyncio
+async def test_concurrent_creates_keep_each_others_device_slots() -> None:
+    from app.utils.common.emulator2.slots import PathRecord, SlotTable
+
+    path = PathRecord("p", "D:/avd", "AVD", "avd", "37")
+    saved = {"slots": SlotTable().to_json()}
+    native = iter(["7", "8"])
+
+    class Backend:
+        async def create_instance(self, name: str | None, **options: object) -> str:
+            index = next(native)
+            await asyncio.sleep(0.05)  # 新建要在后台开一次机，两次新建叠在一起
+            return index
+
+    backend = Backend()
+
+    class Facade:
+        def __init__(self) -> None:
+            self.paths = [path]
+            self.slots = SlotTable.from_json(saved["slots"])
+
+        def path_of(self, path_id: str) -> PathRecord | None:
+            return path if path_id == path.path_id else None
+
+        async def manager_for(self, record: PathRecord) -> Backend:
+            return backend
+
+    class Operations(EmulatorOperations):
+        def __init__(self) -> None:
+            pass
+
+        async def build_manager(self, emulator_id: str):  # type: ignore[override]
+            return Facade()
+
+        async def _save(self, emulator_id, paths, slots) -> None:  # type: ignore[override]
+            saved["slots"] = slots.to_json()
+
+    operations = Operations()
+    results = await asyncio.gather(
+        operations.create_instance("e", "p"), operations.create_instance("e", "p")
+    )
+
+    assert all(item["ok"] for item in results)
+    # 后存的那次不能拿新建前的旧槽位表把先存的设备号盖掉
+    table = SlotTable.from_json(saved["slots"])
+    assert sorted(record.native_index for record in table.records) == ["7", "8"]

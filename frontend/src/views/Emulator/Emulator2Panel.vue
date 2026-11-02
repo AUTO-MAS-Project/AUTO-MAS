@@ -62,6 +62,7 @@ import {
 } from './settingsTiers'
 import AvdOptionsFields from './components/AvdOptionsFields.vue'
 import AvdRootDialog from './components/AvdRootDialog.vue'
+import DeviceStatusTag from './components/DeviceStatusTag.vue'
 import SettingsTierFields from './components/SettingsTierFields.vue'
 import type {
   Emulator2AffectedScript,
@@ -875,35 +876,6 @@ const blockedReason = (device: DeviceRow) => {
   return ''
 }
 
-/** 设备状态 → Tag。availability 优先：这次没枚举到就不该显示成离线。 */
-const deviceStatus = (device: DeviceRow) => {
-  if (device.availability === 'unavailable') {
-    return { color: 'default', text: t('core.emulator2.status.unavailable') }
-  }
-  if (device.availability === 'missing') {
-    return { color: 'warning', text: t('core.emulator2.status.missing') }
-  }
-  const map: Record<number, { color: string; text: string }> = {
-    [DeviceStatus.ONLINE]: { color: 'success', text: t('core.emulator.deviceStatus.online') },
-    [DeviceStatus.OFFLINE]: { color: 'default', text: t('core.emulator.deviceStatus.offline') },
-    [DeviceStatus.STARTING]: {
-      color: 'processing',
-      text: t('core.emulator.deviceStatus.starting'),
-    },
-    [DeviceStatus.CLOSING]: { color: 'processing', text: t('core.emulator.deviceStatus.closing') },
-    [DeviceStatus.ERROR]: { color: 'error', text: t('core.emulator.deviceStatus.error') },
-    [DeviceStatus.NOT_FOUND]: { color: 'default', text: t('core.emulator.deviceStatus.notFound') },
-    [DeviceStatus.CREATING]: { color: 'processing', text: t('core.emulator2.busy.creating') },
-    [DeviceStatus.CREATE_FAILED]: { color: 'error', text: t('core.emulator2.status.createFailed') },
-  }
-  return (
-    map[statusOf(device)] ?? {
-      color: 'default',
-      text: t('core.emulator.deviceStatus.unknown'),
-    }
-  )
-}
-
 /**
  * 表格滚动。
  *
@@ -1179,19 +1151,11 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
               <span v-else>—</span>
             </template>
             <template v-else-if="column.key === 'status'">
-              <a-tag v-if="rowLabel(record)" color="processing">
-                <LoadingOutlined style="margin-right: 4px" />
-                {{ rowLabel(record) }}
-              </a-tag>
-              <a-tooltip v-else :title="record.creationError || undefined">
-                <a-tag :color="deviceStatus(record).color">
-                  <LoadingOutlined
-                    v-if="isTransitional(statusOf(record))"
-                    style="margin-right: 4px"
-                  />
-                  {{ deviceStatus(record).text }}
-                </a-tag>
-              </a-tooltip>
+              <DeviceStatusTag
+                :device="record"
+                :status="statusOf(record)"
+                :label="rowLabel(record)"
+              />
             </template>
             <template v-else-if="column.key === 'resolution'">
               <span v-if="settingsLoaded || record.pendingKey">{{ resolutionText(record) }}</span>

@@ -20,9 +20,9 @@
 
 """调用发布包里的 ``tools\\modavd.exe``。
 
-这个模块只负责一次 CLI 调用：构造参数、隔离 stdout/stderr、解析 ``--json`` 信封以及把状态值
-翻译成 AUTO-MAS 的公共枚举。根目录是否应该走 CLI、以及业务异常如何和旧实现对齐，由
-``manager.py`` 决定：根目录没有 ``tools\\modavd.exe`` 时继续用原来的 Python 实现；exe 在但不可用时抛
+这个模块只负责一次 CLI 调用：构造参数、隔离 stdout/stderr、解析 ``--json`` 信封，交回 modavd
+原样的状态字符串，不依赖 MAS 的业务模型。状态值怎么翻译成 AUTO-MAS 的设备状态、根目录是否应该走
+CLI、业务异常如何和旧实现对齐，由 ``manager.py`` 决定：根目录没有 ``tools\\modavd.exe`` 时继续用原来的 Python 实现；exe 在但不可用时抛
 :class:`ModAvdUnavailable`，不回退，免得同一台实例两套开关机混用。
 """
 
@@ -39,7 +39,6 @@ from typing import Any, Awaitable, Callable, Sequence
 
 import psutil
 
-from app.models.emulator import DeviceStatus
 from app.utils import get_logger
 from app.utils.common.process import runner as _utils_process_runner
 
@@ -321,29 +320,6 @@ def map_cli_error(error: CLIError) -> RuntimeError:
     return RuntimeError(message)
 
 
-def map_status(status: str | None, busy: str | None = "") -> DeviceStatus:
-    """将 modavd 的字符串状态翻译为公共 ``DeviceStatus``。"""
-
-    busy_value = (busy or "").strip().lower()
-    status_value = (status or "").strip().lower()
-    # 新建的初始化（后台开机、装输入法和执行桥、关机）做完前一律是新建中，不管那几次开机从外面看像什么
-    if status_value == "creating" or busy_value == "creating":
-        return DeviceStatus.CREATING
-    if busy_value == "stopping":
-        return DeviceStatus.CLOSEING
-    if busy_value:
-        return DeviceStatus.STARTING
-    if status_value == "starting":
-        return DeviceStatus.STARTING
-    if status_value == "create_failed":
-        return DeviceStatus.CREATE_FAILED
-    if status_value == "online":
-        return DeviceStatus.ONLINE
-    if status_value == "offline":
-        return DeviceStatus.OFFLINE
-    return DeviceStatus.STARTING
-
-
 class ModAvdCli:
     """单个发布根目录的 modavd CLI 客户端。"""
 
@@ -498,17 +474,15 @@ class ModAvdCli:
         legacy_args = list(args)
         args.extend(("--timeout", str(create_timeout)))
         process_timeout = create_timeout + CREATE_PROCESS_MARGIN_SECONDS
-        existing: set[str] = set()
-        if index is None:
-            listing = await self.list()
-            raw_items = (
-                listing.get("instances", []) if isinstance(listing, dict) else []
-            )
-            existing = {
-                str(raw.get("index"))
-                for raw in raw_items
-                if isinstance(raw, dict) and raw.get("index") is not None
-            }
+        # 新建前就在的实例不是这次建的：超时 / 取消收尾时只能关这次新建出来的那台。指定了编号也要记，
+        # 那个编号上原来就有实例时 modavd 会拒绝新建，收尾不能把那台正在用的关掉
+        listing = await self.list()
+        raw_items = listing.get("instances", []) if isinstance(listing, dict) else []
+        existing = {
+            str(raw.get("index"))
+            for raw in raw_items
+            if isinstance(raw, dict) and raw.get("index") is not None
+        }
 
         async def stop_targets(targets: list[str], *, force: bool = False) -> None:
             for item in dict.fromkeys(targets):
@@ -527,6 +501,8 @@ class ModAvdCli:
                 if not isinstance(raw, dict) or raw.get("index") is None:
                     continue
                 item = str(raw["index"])
+                if index is not None and item != str(index):
+                    continue
                 status = str(raw.get("status") or "").lower()
                 if item not in existing and status in {"creating", "create_failed"}:
                     targets.append(item)
@@ -553,11 +529,8 @@ class ModAvdCli:
 
         async def stop_created_cli(process: asyncio.subprocess.Process) -> None:
             indices: list[str] = []
-            if index is not None:
-                indices.append(str(index))
-            else:
-                with suppress(CLIError):
-                    indices = await find_targets()
+            with suppress(CLIError):
+                indices = await find_targets()
             deadline = asyncio.get_running_loop().time() + STOP_PROCESS_TIMEOUT_SECONDS
             while (
                 process.returncode is None
@@ -722,6 +695,5 @@ __all__ = [
     "STOP_PROCESS_TIMEOUT_SECONDS",
     "SUPPORTED_PROTOCOLS",
     "map_cli_error",
-    "map_status",
     "start_process_timeout",
 ]
