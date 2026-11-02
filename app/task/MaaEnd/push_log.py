@@ -137,7 +137,7 @@ _LINE_TS_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
 def maaend_plain_text(line: str) -> str:
     """将上游用户可见富文本还原为纯文本，保留时间戳。"""
-    return unescape(re.sub(r"<[^>]*>", "", line))
+    return re.sub(r"<[^>]*>", "", unescape(line))
 
 
 # ── 节点名 emoji 清理 ────────────────────────────────────────────────────────

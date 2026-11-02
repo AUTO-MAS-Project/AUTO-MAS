@@ -15,6 +15,7 @@ from app.task.MaaEnd.AutoProxy import AutoProxyTask
         "路线 2：岩天使叶采集失败",
         "岩天使叶采集失败",
         '<span style="color: red; font-weight: bold;">岩天使叶采集失败</span>',
+        "&lt;span style=&quot;color: red; font-weight: bold;&quot;&gt;岩天使叶采集失败&lt;/span&gt;",
     ],
 )
 @pytest.mark.parametrize("mode", ["逐条", "汇总", "关闭"])
