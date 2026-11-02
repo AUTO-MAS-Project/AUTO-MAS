@@ -19,12 +19,15 @@
 from contextlib import suppress
 from pathlib import Path
 
-from app.core.ws import Publisher, protocol
+from app.core import Publisher
+from app.core.ws import protocol
 from app.models.config import OkwwConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services.wuthering_waves import check_wuthering_waves_update
-from app.services.wuthering_waves_updater import update_wuthering_waves
+from app.services import wuthering_waves as _service_wuthering_waves
+from app.services.common.wuthering_waves import (
+    updater as _service_wuthering_waves_updater,
+)
 from app.task.proxy_helpers import push_dispatch_log
 from app.utils import get_logger
 
@@ -66,7 +69,9 @@ class WuwaUpdateTask(TaskExecuteBase):
 
         await self._push_dispatch_log(f"正在检查 {self.resource} 鸣潮更新...")
         try:
-            update_info = await check_wuthering_waves_update(launcher, self.resource)
+            update_info = await _service_wuthering_waves.check_wuthering_waves_update(
+                launcher, self.resource
+            )
         except Exception as e:
             raise RuntimeError(f"鸣潮更新检查失败: {e}") from e
 
@@ -82,7 +87,7 @@ class WuwaUpdateTask(TaskExecuteBase):
             f" -> {update_info.release_version}"
         )
         limit_gb = int(self.script_config.Game.UpdateFullSyncLimit or 0)
-        await update_wuthering_waves(
+        await _service_wuthering_waves_updater.update_wuthering_waves(
             update_info.install_dir,
             self.resource,
             update_info.current_version,

@@ -12,6 +12,8 @@ import pytest
 from pydantic import ValidationError
 
 from app.models.config import MaaConfig
+from app.services.common.update import fluxdown as update_fluxdown
+from app.services.common.update import transport as update_transport
 from app.task.MAA import AutoProxy as auto_proxy
 from app.task.MAA import manager
 from app.task.MAA.AutoProxy import AutoProxyTask, _without_maa_update_changes
@@ -49,7 +51,7 @@ def installation(tmp_path, monkeypatch):
     release = AsyncMock(return_value={"version": "v6.1.0", "details": {"assets": []}})
     monkeypatch.setattr(update, "request_maa_release", release)
     mirror_query = AsyncMock(return_value={"data": {"version_name": "v6.1.0"}})
-    monkeypatch.setattr(update, "request_mirror_resource", mirror_query)
+    monkeypatch.setattr(update_transport, "request_mirror_resource", mirror_query)
     update._latest_versions.clear()
 
     async def download(url, path, **kwargs):
@@ -90,9 +92,8 @@ async def test_script_channel_and_global_downloader_are_independent(
     )
     assert all(c.args == (channel,) for c in release.call_args_list)
     assert downloader.call_args.args[0].endswith("/v6.1.0/" + name)
-    assert downloader.call_args.kwargs["downloader"] == (
-        "fluxdown" if fluxdown else "builtin"
-    )
+    assert downloader.call_args.kwargs["source"] == "GitHub"
+    assert downloader.call_args.kwargs["proxy"] is update.Config.proxy
     assert update.read_pending_update(root) == ("v6.1.0", str((root / name).resolve()))
     progress.assert_awaited_once()
 
@@ -213,7 +214,7 @@ async def test_resumable_retry_reuses_same_file(installation, monkeypatch):
         count += 1
         if count < 3:
             path.write_bytes(b"partial")
-            raise update.FluxdownResumableError("offline")
+            raise update_fluxdown.FluxdownResumableError("offline")
         assert path.read_bytes() == b"partial"
         return await original(url, path, **kwargs)
 
@@ -298,7 +299,7 @@ def resource_install(installation, monkeypatch):
         return path.stat().st_size
 
     downloader = AsyncMock(side_effect=download)
-    monkeypatch.setattr(resource, "download_file", downloader)
+    monkeypatch.setattr(resource, "download_script_package", downloader)
     return install, target, downloader
 
 
@@ -311,9 +312,7 @@ async def test_github_resources_are_installed_before_return(resource_install, fl
     assert not resource._STAGE_ZIP.exists()
     assert resource.read_resource_clock(install) == target
     assert (install / "resource/tasks/test.json").read_text() == '{"opaque":"upstream"}'
-    assert downloader.call_args.kwargs["downloader"] == (
-        "fluxdown" if fluxdown else "builtin"
-    )
+    assert downloader.call_args.kwargs["source"] == "GitHub"
     # A software reinstall can reset resources: the verified shared cache repairs them without another download.
     (install / "resource/version.json").write_text(
         '{"last_updated":"2026-10-01 00:00:00.000"}'

@@ -26,8 +26,12 @@ from app.core import Config
 from app.core.update import download_file
 from app.models.config import MaaEndConfig
 from app.services import script_install
-from app.services.update_fluxdown import FluxdownResumableError
-from app.services.update_transport import DownloadProgress, request_mirror_resource
+from app.services.common.update.fluxdown import FluxdownResumableError
+from app.services.common.update.transport import (
+    DownloadProgress,
+    request_mirror_resource,
+)
+from app.task.MaaEnd.tools.pipeline_migration import refresh_merged_pipelines
 from app.utils import fluxdown_cli as _fluxdown_cli
 from app.utils import io as _utils_io
 
@@ -247,7 +251,7 @@ async def update_before_run(
             PROTECTED,
             validate,
             lambda: assert_idle(root),
-            refresh_merged_pipelines=True,
+            prepare_ready=refresh_merged_pipelines,
         )
         _utils_io.write_file(
             script_install.workspace(root) / "program-identity.json", {"arch": arch}

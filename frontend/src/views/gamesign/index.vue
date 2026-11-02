@@ -92,6 +92,14 @@ const { updateStatus, startStatusPolling, stopStatusPolling } = useToolsStatusPo
     if (data.GameSign?.Status) {
       toolsConfig.GameSign!.Status = data.GameSign.Status
     }
+    // 「上次签到」是只读展示字段，必须跟随轮询刷新：手动签到或凭据变更后
+    // 后端会重写甚至重置该日期，只在挂载时读一次会一直显示旧值。
+    if (data.GameSign?.LastSignDate) {
+      toolsConfig.GameSign!.LastSignDate = data.GameSign.LastSignDate
+      if (editingConfig.GameSign) {
+        editingConfig.GameSign.LastSignDate = data.GameSign.LastSignDate
+      }
+    }
     syncGameSignResult(data.GameSign?.Result)
   },
   isActive: () => toolsConfig.GameSign?.Enabled === true,

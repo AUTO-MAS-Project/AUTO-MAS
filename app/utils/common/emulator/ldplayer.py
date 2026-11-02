@@ -368,7 +368,7 @@ class LDManager(DeviceBase):
 
         一次只读一次 ``list2``（判据与 ``ldplayer14.setVisible`` 一致），句柄没建
         出来交给调用方重试：反复读会白跑十几次子进程调用。句柄是否有效按
-        :func:`app.utils.common.window.is_window` 判定，不直接碰 ``win32gui``。
+        通过 ``app.utils`` 导出的 ``window.is_window`` 判定，不直接碰 ``win32gui``。
         """
 
         device = (await self.get_device_info(idx)).get(idx)

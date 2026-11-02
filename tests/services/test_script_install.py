@@ -10,6 +10,7 @@ from unittest.mock import Mock
 import pytest
 
 from app.services import script_install as install
+from app.task.MaaEnd.tools.pipeline_migration import refresh_merged_pipelines
 
 
 @pytest.fixture
@@ -296,7 +297,7 @@ def test_merged_pipeline_first_adoption_quarantines_obsolete_json(package):
         lambda _: None,
         lambda: None,
         threading.Event(),
-        refresh_merged_pipelines=True,
+        prepare_ready=refresh_merged_pipelines,
     )
     assert (root / "resource/pipeline/nodes.json").read_bytes() == old_split
     assert not (root / "resource/pipeline/AutoCollect.json").exists()
@@ -342,7 +343,7 @@ def test_merged_pipeline_quarantine_failure_preserves_old_install(package, monke
             lambda _: None,
             lambda: None,
             threading.Event(),
-            refresh_merged_pipelines=True,
+            prepare_ready=refresh_merged_pipelines,
         )
     assert (root / "app.exe").read_bytes() == b"old"
     assert (pipeline / "Old.json").is_file()
@@ -374,3 +375,70 @@ async def test_cancel_waits_for_worker_to_stop():
     with pytest.raises(asyncio.CancelledError):
         await task
     assert stopped.is_set()
+
+
+def test_missing_install_root_rejects_damaged_previous_backup(package, monkeypatch):
+    root, _ = package
+    replace = Path.replace
+
+    def fail_after_original_moved(path, target):
+        result = replace(path, target)
+        if path == root:
+            raise SystemExit("simulated interruption")
+        return result
+
+    monkeypatch.setattr(Path, "replace", fail_after_original_moved)
+    with pytest.raises(install.InstallUnsafeError):
+        apply(package)
+    monkeypatch.setattr(Path, "replace", replace)
+    previous = install.workspace(root) / "previous"
+    assert previous.exists() and not root.exists()
+    (previous / "app.exe").write_bytes(b"externally changed")
+    with pytest.raises(install.InstallUnsafeError, match="备份不完整"):
+        install.recover_install(root, lambda: None, threading.Event())
+    assert (previous / "app.exe").read_bytes() == b"externally changed"
+    assert (install.workspace(root) / "transaction.json").exists()
+
+
+def test_interrupted_backup_cleanup_can_safely_finish_on_next_run(package, monkeypatch):
+    root, _ = package
+    old_rmtree = install.shutil.rmtree
+    previous = install.workspace(root) / "previous"
+
+    def fail_cleanup(path, *args, **kwargs):
+        if Path(path) == previous:
+            (previous / "app.exe").unlink()
+            raise OSError("simulated interrupted backup cleanup")
+        return old_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(install.shutil, "rmtree", fail_cleanup)
+    with pytest.raises(install.InstallUnsafeError):
+        apply(package)
+    monkeypatch.setattr(install.shutil, "rmtree", old_rmtree)
+    assert (root / "app.exe").read_bytes() == b"new"
+    assert previous.exists()
+    install.recover_install(root, lambda: None, threading.Event())
+    assert (root / "app.exe").read_bytes() == b"new"
+    assert not previous.exists()
+    assert not (install.workspace(root) / "transaction.json").exists()
+
+
+def test_interrupted_backup_cleanup_keeps_external_modifications(package, monkeypatch):
+    root, _ = package
+    old_rmtree = install.shutil.rmtree
+    previous = install.workspace(root) / "previous"
+
+    def fail_cleanup(path, *args, **kwargs):
+        if Path(path) == previous:
+            (previous / "app.exe").unlink()
+            raise OSError("simulated interrupted cleanup")
+        return old_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(install.shutil, "rmtree", fail_cleanup)
+    with pytest.raises(install.InstallUnsafeError):
+        apply(package)
+    monkeypatch.setattr(install.shutil, "rmtree", old_rmtree)
+    (previous / "config/user.json").write_bytes(b"external modification")
+    with pytest.raises(install.InstallUnsafeError, match="备份发生外部修改"):
+        install.recover_install(root, lambda: None, threading.Event())
+    assert (previous / "config/user.json").read_bytes() == b"external modification"

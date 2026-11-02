@@ -127,7 +127,7 @@
         <!-- 空状态 -->
         <template #empty>
           <div class="empty-tab-content">
-            <a-empty :description="t('core.scheduler.emptyTabs')" />
+            <NoData :description="t('core.scheduler.emptyTabs')" />
           </div>
         </template>
       </a-tabs>

@@ -119,9 +119,15 @@ export const parseTaygedoCredential = (raw?: string | null): TaygedoCredential =
   if (!trimmed) return { taygedo: false, cloud: false }
   try {
     const parsed = JSON.parse(trimmed) as Record<string, unknown>
+    // 后端 parse_taygedo_credential 同时接受 camelCase 与 snake_case 别名，
+    // 这里必须一致，否则 snake_case 凭据会被判成「无凭据」而整块隐藏标签。
     return {
-      taygedo: Boolean(parsed.refreshToken || parsed.accessToken),
-      cloud: Boolean(parsed.cloudToken && parsed.cloudUserId),
+      taygedo: Boolean(
+        parsed.refreshToken || parsed.accessToken || parsed.refresh_token || parsed.access_token
+      ),
+      cloud: Boolean(
+        (parsed.cloudToken || parsed.cloud_token) && (parsed.cloudUserId || parsed.cloud_user_id)
+      ),
     }
   } catch {
     // 老版裸 Token

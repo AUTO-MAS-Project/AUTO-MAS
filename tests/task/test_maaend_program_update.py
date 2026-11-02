@@ -17,7 +17,7 @@ import pytest
 from packaging.version import Version
 
 from app.services import script_install
-from app.services.update_fluxdown import FluxdownResumableError
+from app.services.common.update.fluxdown import FluxdownResumableError
 from app.task.MaaEnd import manager
 from app.task.MaaEnd.tools import script_update as update
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
@@ -520,9 +520,9 @@ async def test_cancel_install_waits_for_worker_before_deleting_archive(
         _idle,
         cancelled,
         *,
-        refresh_merged_pipelines=False,
+        prepare_ready=None,
     ):
-        assert refresh_merged_pipelines
+        assert prepare_ready is update.refresh_merged_pipelines
         started.set()
         assert cancelled.wait(3)
         assert archive.is_file()

@@ -30,7 +30,7 @@ from app.config import ConfigEntry
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
-from app.utils import logger as _utils_logger
+from app.utils.common.log import logger as _utils_logger
 
 from .config_context import ZzzOdContext
 
@@ -109,7 +109,7 @@ class ZzzOdRecovery:
         from app.task.ZzzOd.slots import collect_used_slot_idxs, ensure_user_slot
         from app.task.ZzzOd.tools import restore_recycle_slot
         from app.task.ZzzOd.tools.backup_archive import recycle_backup_root
-        from app.utils import config_archive as _utils_config_archive
+        from app.utils.common.config import archive as _utils_config_archive
 
         script_config = self.context.script_config(script_id)
         root = self.context.root(script_config)
@@ -208,7 +208,7 @@ class ZzzOdRecovery:
             restore_mas_backup,
             restore_onedragon_backup,
         )
-        from app.utils import config_archive as _utils_config_archive
+        from app.utils.common.config import archive as _utils_config_archive
 
         _, root, user_cfg, uid = self.context.user(script_id, user_id)
 

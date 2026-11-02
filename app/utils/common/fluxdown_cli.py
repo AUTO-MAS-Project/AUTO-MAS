@@ -62,7 +62,12 @@ try:
 except ImportError:
     aiofiles = None
 
-from app.utils import get_logger, process_platform, resource_path, update_native
+from app.utils import (
+    file_lock,
+    get_logger,
+    process_platform,
+    update_native,
+)
 
 logger = get_logger("FluxDown")
 _LOCAL_CLI_LOCK = threading.Lock()
@@ -154,22 +159,20 @@ class FluxdownDownloadRecord:
 # ---------------------------------------------------------------------------
 
 
-def fluxdown_find_cli(configured_path: str | None = None) -> Path | None:
+def fluxdown_find_cli(
+    configured_path: str | None = None, *, search_dirs: tuple[Path, ...] = ()
+) -> Path | None:
     """定位 FluxDown CLI 二进制，返回路径或 None。
 
     查找顺序：
         1. 用户显式配置的 Update.FluxdownPath（尊重用户选择，可为全量版）
-        2. MAS 可执行文件所在目录下的 res/fluxdown-cli/（随打包一起带）
-        3. MAS 源码仓库 res/fluxdown-cli/（开发态运行时找得到）
-        4. 系统 PATH 里的 fluxdown.exe（兜底，用户自己装的）
+        2. 调用方提供的内置程序目录 search_dirs
+        3. 系统 PATH 里的 fluxdown.exe（兜底，用户自己装的）
 
-    自动定位的目录（2/3）必须带 ``portable`` 标记，避免误命中用户桌面版；
+    内置程序目录必须带 ``portable`` 标记，避免误命中用户桌面版；
     用户显式配置的目录（1）不做此限制——检测 UI 已就全量版给出污染风险警告。
     """
-    import os as _os
-    import sys as _sys
-
-    candidates: list[Path] = []
+    candidates: list[tuple[Path, bool]] = []
 
     # 1. 用户配置路径（兼容目录或 exe 文件路径，文件则取其所在目录）
     if configured_path:
@@ -177,21 +180,14 @@ def fluxdown_find_cli(configured_path: str | None = None) -> Path | None:
         if p.is_file():
             p = p.parent
         if p.is_dir():
-            candidates.append(p)
+            candidates.append((p, False))
 
-    # 2. MAS 安装目录（打包后可执行文件旁边）下的 res/fluxdown-cli/
-    if getattr(_sys, "frozen", False):
-        base = Path(_sys.executable).parent
-    else:
-        base = Path(_os.getcwd())
-    candidates.append(base / "res" / "fluxdown-cli")
-    # Runtime 的用户工作目录与源码目录不同，内置工具必须随源码资源定位。
-    candidates.append(resource_path("fluxdown-cli"))
+    candidates.extend((directory, True) for directory in search_dirs)
 
-    for idx, dir_path in enumerate(candidates):
+    for dir_path, require_portable in candidates:
         if not dir_path.is_dir():
             continue
-        if idx > 0 and not (dir_path / "portable").is_file():
+        if require_portable and not (dir_path / "portable").is_file():
             continue
         for name in _FLUXDOWN_EXE_NAMES:
             exe = dir_path / name
@@ -1152,32 +1148,48 @@ def fluxdown_server_forget(cli_exe: Path, url: str, destination: Path) -> None:
 
 
 def fluxdown_server_task_safe_to_overwrite(
-    cli_exe: Path, url: str, destination: Path, *, timeout: int = 15
+    cli_exe: Path,
+    url: str,
+    destination: Path,
+    *,
+    timeout: int = 15,
+    other_only: bool = False,
 ) -> bool:
-    """判断 (url, destination) 对应的 FluxDown server 任务是否已确认停止/不存在。
+    """确认所有映射到同一目标的 server 任务已经停写。
 
-    用于在改用内置 httpx 等"以 wb 重写 destination"的路径前排除双写：
-    - 无映射：从未经 server 下载过 → 安全
-    - paused(2)：已暂停，daemon 不再写输出文件 → 安全
-    - pending/downloading/preparing(0/1/5)：先 pause 再复查，只有确认离开
-      活动态才安全（这些状态随时可能开始写数据）
-    - completed/error(3/4)：终态 → 安全
-    - 未知状态码（不在 0..5）：语义不明，按不安全处理
-    - status 查询失败 / server 不可用：管理通道异常，**不能排除 daemon 仍在
-      写**，返回 False，调用方应阻止覆写
+    旧 URL 的任务也可能写当前目标，不能只按新 URL 查询。
+    other_only 供当前 URL 的 resume 使用：排除自己的任务，仍阻止旧来源双写。
     """
     key = _map_key(url, Path(destination))
-    entry = _load_task_map(cli_exe).get(key) or {}
-    task_id = entry.get("task_id")
-    if not task_id:
+    target = os.path.normcase(str(Path(destination).resolve()))
+    task_ids: set[str] = set()
+    for mapped_key, entry in _load_task_map(cli_exe).items():
+        if mapped_key == key and other_only:
+            continue
+        if not isinstance(entry, dict):
+            if mapped_key == key:
+                return False
+            continue
+        if mapped_key != key:
+            path = entry.get("save_path")
+            if not isinstance(path, str) or not path:
+                continue
+            try:
+                if os.path.normcase(str(Path(path).resolve())) != target:
+                    continue
+            except (OSError, ValueError):
+                return False
+        task_id = entry.get("task_id")
+        if task_id:
+            task_ids.add(str(task_id))
+    if not task_ids:
         return True
     handle = fluxdown_server_ensure(cli_exe)
     if handle is None:
-        # server 都起不来，无法证明 daemon 是否仍在写 destination，按不安全处理
         return False
     env = _cli_env(handle.gateway_port, handle.token)
 
-    def _status_code() -> int | None:
+    def _status_code(task_id: str) -> int | None:
         code, out = _run_cli(
             cli_exe, env, ["status", task_id, "--json"], timeout=timeout
         )
@@ -1191,22 +1203,26 @@ def fluxdown_server_task_safe_to_overwrite(
         except (TypeError, ValueError):
             return None
 
-    status = _status_code()
-    if status is None:
-        return False
-    if status == _TASK_STATUS_PAUSED:
-        return True
-    if status in _ACTIVE_STATUSES:
-        # 活动态：先暂停，再复查状态是否真的离开活动态。
-        # pause 返回 124（客户端超时）同样不能证明没生效，按未确认处理
-        pause_code, _ = _run_cli(cli_exe, env, ["pause", task_id], timeout=10)
-        if pause_code != 0:
+    for task_id in task_ids:
+        status = _status_code(task_id)
+        if status is None:
             return False
-        paused = _status_code()
-        return paused is not None and paused not in _ACTIVE_STATUSES
-    if status in (_TASK_STATUS_DONE, _TASK_STATUS_FAILED):
-        return True
-    return False
+        if status == _TASK_STATUS_PAUSED:
+            continue
+        if status in _ACTIVE_STATUSES:
+            pause_code, _ = _run_cli(cli_exe, env, ["pause", task_id], timeout=10)
+            if pause_code != 0:
+                return False
+            stopped = _status_code(task_id)
+            if stopped not in (
+                _TASK_STATUS_PAUSED,
+                _TASK_STATUS_DONE,
+                _TASK_STATUS_FAILED,
+            ):
+                return False
+        elif status not in (_TASK_STATUS_DONE, _TASK_STATUS_FAILED):
+            return False
+    return True
 
 
 def fluxdown_server_mark_failure(cli_exe: Path, url: str, destination: Path) -> int:
@@ -1296,7 +1312,7 @@ class FluxdownCancelUnconfirmed(RuntimeError):
     daemon 可能仍在写目标文件，上层不能把它当成"取消成功"静默收场，
     而应按显式失败上报并提示用户检查 FluxDown 状态。
 
-    定义在 cli 这一侧而非 ``app.services.update_fluxdown``，因为后者已经
+    定义在 cli 这一侧而非 ``app.services.common.update.fluxdown``，因为后者已经
     import 本模块，反向 import 会循环。
     """
 
@@ -1329,14 +1345,7 @@ async def fluxdown_destination_lock(cli_exe: Path, destination: Path):
         while True:
             handle.seek(0)
             try:
-                if os.name == "nt":
-                    import msvcrt
-
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                else:
-                    import fcntl
-
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                file_lock.acquire(handle)
                 break
             except OSError as error:
                 if error.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
@@ -1347,11 +1356,7 @@ async def fluxdown_destination_lock(cli_exe: Path, destination: Path):
             yield
         finally:
             _DESTINATION_OWNERS.reset(token)
-            handle.seek(0)
-            if os.name == "nt":
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            file_lock.release(handle)
 
 
 @_using_fluxdown

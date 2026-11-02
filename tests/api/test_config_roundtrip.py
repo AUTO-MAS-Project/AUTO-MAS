@@ -22,7 +22,7 @@ from fastapi import FastAPI
 
 import app.api.setting as setting_api
 from app.config import config_manager
-from app.core.config import AppConfig
+from app.core.config.manager import AppConfig
 from app.models.config import GlobalConfig as RuntimeGlobalConfig
 from app.utils import IS_WINDOWS
 from app.utils import io as _utils_io

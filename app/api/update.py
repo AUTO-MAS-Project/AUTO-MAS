@@ -40,7 +40,7 @@ from pydantic import (
 
 from app.core import Config, Updater
 from app.models.schema import OutBase, UpdateDownloadSnapshot
-from app.services import update_fluxdown_install as _fluxdown_install
+from app.services.common.update import fluxdown_install as _fluxdown_install
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
 from app.utils import get_logger
 

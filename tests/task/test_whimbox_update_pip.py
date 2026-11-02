@@ -23,7 +23,7 @@ import pytest
 from packaging.version import Version
 
 from app.task.Whimbox.tools import update
-from app.utils.common.process_runner import ProcessRunner
+from app.utils.common.process.runner import ProcessRunner
 from app.utils.common.proxy_env import proxy_environment
 
 PIP_BOOTSTRAP = (

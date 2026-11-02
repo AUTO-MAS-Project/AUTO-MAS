@@ -269,20 +269,47 @@ def recover_install(
         if previous.exists():
             _reject_link(previous)
             if not root.exists():
-                previous.replace(root)
-            elif not ready.exists() and tree_hashes(root, cancelled) == state["files"]:
-                # 原安装中的外部修改可能仅留在 previous，不能直接删掉。
                 original_files = state.get("original_files")
                 if (
                     not isinstance(original_files, dict)
                     or tree_hashes(previous, cancelled) != original_files
                 ):
                     raise InstallUnsafeError(
-                        "原安装备份发生外部修改，已保留现场，不能自动删除备份"
+                        "原安装备份不完整，已保留现场，不能自动恢复"
                     )
-                _write_state(
-                    directory, {"files": state["package_files"]}, "installed.json"
-                )
+                previous.replace(root)
+            elif not ready.exists() and tree_hashes(root, cancelled) == state["files"]:
+                # 新安装已确认后清理 previous 可中断重试，但必须复核剩余文件。
+                original_files = state.get("original_files")
+                if not isinstance(original_files, dict):
+                    raise InstallUnsafeError("原安装文件清单无效，不能自动清理备份")
+                remaining = tree_hashes(previous, cancelled)
+                if state.get("phase") == "installed":
+                    receipt = directory / "installed.json"
+                    _reject_link(receipt)
+                    recorded = json.loads(receipt.read_text(encoding="utf-8"))
+                    if not isinstance(recorded, dict) or recorded.get(
+                        "files"
+                    ) != state.get("package_files"):
+                        raise InstallUnsafeError(
+                            "更新确认记录与安装包不一致，已保留备份"
+                        )
+                    if any(
+                        original_files.get(name) != digest
+                        for name, digest in remaining.items()
+                    ):
+                        raise InstallUnsafeError(
+                            "清理期间原安装备份发生外部修改，已保留现场"
+                        )
+                else:
+                    if remaining != original_files:
+                        raise InstallUnsafeError(
+                            "原安装备份发生外部修改，已保留现场，不能自动删除备份"
+                        )
+                    _write_state(
+                        directory, {"files": state["package_files"]}, "installed.json"
+                    )
+                    _write_state(directory, {**state, "phase": "installed"})
                 shutil.rmtree(previous)
             else:
                 raise InstallUnsafeError(
@@ -301,61 +328,6 @@ def recover_install(
         raise InstallUnsafeError("无法确认脚本更新恢复状态，已停止启动") from error
 
 
-def _refresh_merged_pipelines(
-    ready: Path,
-    package: Path,
-    directory: Path,
-    cancelled: threading.Event,
-) -> None:
-    """重建官方已合并的 pipeline，保留旧版文件的完整独立备份。
-
-    旧拆分 JSON 与新版 nodes.json 共存会产生同名节点，导致资源加载失败。
-    只针对发行包明确包含 resource*/pipeline/nodes.json 的完整资源目录；
-    旧文件备份在工作区，不会被 MaaFramework 递归加载。
-    """
-    backup_root: Path | None = None
-    for resource in package.iterdir():
-        _check_cancel(cancelled)
-        if not resource.is_dir() or not resource.name.startswith("resource"):
-            continue
-        packaged_pipeline = resource / "pipeline"
-        if not (packaged_pipeline / "nodes.json").is_file():
-            continue
-        existing = ready / resource.name / "pipeline"
-        if not existing.exists():
-            continue
-        _reject_link(existing)
-        if not existing.is_dir():
-            raise InstallUnsafeError("原 pipeline 路径不是目录，不能安全更新")
-        # 没有完整旧清单时也要识别新版已废弃的文件。
-        # 即使是用户定制的 JSON 也不丢弃：备份后才从运行目录移出。
-        has_obsolete = any(
-            entry.is_file()
-            and not (packaged_pipeline / entry.relative_to(existing)).is_file()
-            for entry in existing.rglob("*")
-        )
-        if not has_obsolete:
-            continue
-        if backup_root is None:
-            saved = directory / "retired-pipelines"
-            saved.mkdir(exist_ok=True)
-            _reject_link(saved)
-            backup_root = Path(tempfile.mkdtemp(prefix="pipeline-", dir=saved))
-            (backup_root / "README.txt").write_text(
-                "旧版 MaaEnd pipeline 已在完整包升级时迁移到此备份。"
-                "这些文件不会再由新版资源加载器读取；需要自定义配置时请手动核对后迁移。\n",
-                encoding="utf-8",
-            )
-        previous_hashes = tree_hashes(existing, cancelled)
-        saved_pipeline = backup_root / resource.name / "pipeline"
-        saved_pipeline.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(existing, saved_pipeline)
-        if tree_hashes(saved_pipeline, cancelled) != previous_hashes:
-            raise InstallUnsafeError("旧 pipeline 备份校验失败，已停止安装")
-        _check_cancel(cancelled)
-        shutil.rmtree(existing)
-
-
 def install_package(
     root: Path,
     archive: Path,
@@ -366,7 +338,7 @@ def install_package(
     assert_idle: Callable[[], None],
     cancelled: threading.Event,
     *,
-    refresh_merged_pipelines: bool = False,
+    prepare_ready: Callable[[Path, Path, Path, threading.Event], None] | None = None,
 ) -> None:
     """完整暂存后才切换目录，失败保留原安装；不根据版本文件推断完整性。"""
     recover_install(root, assert_idle, cancelled)
@@ -406,8 +378,8 @@ def install_package(
                             "待移除的旧版文件曾被外部修改，已保留原安装"
                         )
                 obsolete.unlink()
-    if refresh_merged_pipelines:
-        _refresh_merged_pipelines(ready, package, directory, cancelled)
+    if prepare_ready is not None:
+        prepare_ready(ready, package, directory, cancelled)
     for source in package.rglob("*"):
         _check_cancel(cancelled)
         target = update_files.resolve_within(
@@ -425,15 +397,13 @@ def install_package(
         raise InstallUnsafeError("准备更新期间安装内容被外部修改，已停止切换")
     _check_cancel(cancelled)
     assert_idle()
-    _write_state(
-        directory,
-        {
-            "root": str(root.resolve()),
-            "files": expected,
-            "original_files": before,
-            "package_files": package_files,
-        },
-    )
+    transaction_state = {
+        "root": str(root.resolve()),
+        "files": expected,
+        "original_files": before,
+        "package_files": package_files,
+    }
+    _write_state(directory, transaction_state)
     try:
         root.replace(previous)
         try:
@@ -456,6 +426,8 @@ def install_package(
                 "切换期间原安装备份被外部修改，已保留备份，请手动处理"
             )
         _write_state(directory, {"files": package_files}, "installed.json")
+        # 从此阶段起，新安装与收据均已验证；旧备份清理可安全续做。
+        _write_state(directory, {**transaction_state, "phase": "installed"})
         shutil.rmtree(previous)
         (directory / "transaction.json").unlink()
     except BaseException as error:

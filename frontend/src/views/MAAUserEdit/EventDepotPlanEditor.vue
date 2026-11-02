@@ -72,7 +72,7 @@
         }}</span>
       </div>
     </div>
-    <a-empty
+    <NoData
       v-else
       :description="t('core.eventDepotPreview.noActivity')"
       :image-style="{ height: '48px' }"

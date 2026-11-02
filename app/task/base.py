@@ -5,7 +5,6 @@ from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
 
-from app.core.custom_script import execute_script_task
 from app.models.config import (
     BAAHConfig,
     BetterGIConfig,
@@ -20,6 +19,7 @@ from app.models.config import (
     ZzzOdConfig,
 )
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.services import execute_script_task
 from app.task.failure_capture_core import FailureCapture
 from app.task.proxy_helpers import push_dispatch_log
 from app.utils import get_logger

@@ -48,19 +48,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.core import Config
-from app.core.game_calendar import GameCalendar
-from app.core.taskboard_state import (
-    load_state,
-    merge_version_story,
-    save_archive,
-    save_selection,
-    save_weekly_selection,
-    set_done_at,
-    set_version_story_done,
-    set_weekly_done,
-    weekly_key,
-)
+from app.core import Config, GameCalendar, Taskboard
 from app.models.schema import (
     BlueArchiveActivityIn,
     ComboBoxItem,
@@ -75,13 +63,12 @@ from app.models.taskboard import (
     TaskboardState,
     TaskboardVersionStoryUpdate,
 )
-from app.tools.azurlane_activity import fetch_azurlane_activities
-from app.tools.bluearchive_activity_source import (
-    GAMEKEE_HEADERS,
-    fetch_bluearchive_activities,
+from app.tools.common.game_calendar import azurlane as _tool_azurlane_activity
+from app.tools.common.game_calendar import sra as _tool_sra_activity
+from app.tools.common.game_calendar import stella as _tool_stella_official
+from app.tools.common.game_calendar.bluearchive import (
+    source as _tool_bluearchive_activity_source,
 )
-from app.tools.sra_activity import fetch_sra_activities
-from app.tools.stella_official import classify_activity_name, fetch_official_activities
 from app.utils import get_logger
 
 
@@ -278,7 +265,7 @@ async def set_activity_completion(
         return OutBase(code=500, status="error", message="保存活动完成状态失败")
 
 
-## 任务台状态：文件读写与裁剪放在 app.core.taskboard_state，这里只做参数与错误转换。
+## 任务台状态：文件读写与裁剪放在 app.core.taskboard，这里只做参数与错误转换。
 @router.get(
     "/taskboard/state",
     tags=["Get"],
@@ -287,7 +274,9 @@ async def set_activity_completion(
 )
 async def get_taskboard_state() -> TaskboardStateOut:
     try:
-        return TaskboardStateOut(data=await load_state(), weekly_week=weekly_key())
+        return TaskboardStateOut(
+            data=await Taskboard.load_state(), weekly_week=Taskboard.weekly_key()
+        )
     except (OSError, TypeError, ValueError):
         logger.exception("读取任务台状态失败")
         return TaskboardStateOut(code=500, status="error", message="读取任务台状态失败")
@@ -301,7 +290,7 @@ async def get_taskboard_state() -> TaskboardStateOut:
 )
 async def set_taskboard_selection(payload: TaskboardSelectionIn) -> OutBase:
     try:
-        await save_selection(payload.games)
+        await Taskboard.save_selection(payload.games)
         return OutBase()
     except (OSError, TypeError, ValueError):
         logger.exception("保存任务台游戏选择失败")
@@ -316,7 +305,7 @@ async def set_taskboard_selection(payload: TaskboardSelectionIn) -> OutBase:
 )
 async def set_taskboard_weekly_selection(payload: TaskboardSelectionIn) -> OutBase:
     try:
-        await save_weekly_selection(payload.games)
+        await Taskboard.save_weekly_selection(payload.games)
         return OutBase()
     except (OSError, TypeError, ValueError):
         logger.exception("保存每周任务游戏选择失败")
@@ -331,7 +320,7 @@ async def set_taskboard_weekly_selection(payload: TaskboardSelectionIn) -> OutBa
 )
 async def set_taskboard_archive(payload: TaskboardArchiveIn) -> OutBase:
     try:
-        await save_archive(payload.archived)
+        await Taskboard.save_archive(payload.archived)
         return OutBase()
     except (OSError, TypeError, ValueError):
         logger.exception("保存任务台归档失败")
@@ -346,7 +335,7 @@ async def set_taskboard_archive(payload: TaskboardArchiveIn) -> OutBase:
 )
 async def set_taskboard_done_at(payload: TaskboardDoneAtIn) -> OutBase:
     try:
-        await set_done_at(payload.key, payload.record)
+        await Taskboard.set_done_at(payload.key, payload.record)
         return OutBase()
     except (OSError, TypeError, ValueError):
         logger.exception("保存任务台完成日期失败")
@@ -361,7 +350,9 @@ async def set_taskboard_done_at(payload: TaskboardDoneAtIn) -> OutBase:
 )
 async def set_taskboard_weekly(payload: TaskboardWeeklyIn) -> TaskboardWeeklyOut:
     try:
-        week, applied = await set_weekly_done(payload.key, payload.done, payload.week)
+        week, applied = await Taskboard.set_weekly_done(
+            payload.key, payload.done, payload.week
+        )
         return TaskboardWeeklyOut(week=week, applied=applied)
     except (OSError, TypeError, ValueError):
         logger.exception("保存任务台每周任务失败")
@@ -376,7 +367,7 @@ async def set_taskboard_weekly(payload: TaskboardWeeklyIn) -> TaskboardWeeklyOut
 )
 async def set_taskboard_version_story(payload: TaskboardVersionStoryIn) -> OutBase:
     try:
-        await merge_version_story(payload.records, payload.observed_at)
+        await Taskboard.merge_version_story(payload.records, payload.observed_at)
         return OutBase()
     except (OSError, TypeError, ValueError):
         logger.exception("保存任务台版本主线失败")
@@ -391,7 +382,7 @@ async def set_taskboard_version_story(payload: TaskboardVersionStoryIn) -> OutBa
 )
 async def set_taskboard_version_story_done(payload: TaskboardDoneAtIn) -> OutBase:
     try:
-        await set_version_story_done(payload.key, payload.record)
+        await Taskboard.set_version_story_done(payload.key, payload.record)
         return OutBase()
     except (OSError, TypeError, ValueError):
         logger.exception("保存任务台版本主线完成状态失败")
@@ -457,7 +448,7 @@ async def get_stage_combox(
     stage: GetStageIn = Body(..., description="关卡号类型"),
 ) -> ComboBoxOut:
 
-    from app.core.maa_stage import maa_stage_service
+    from app.task.MAA.stage import maa_stage_service
 
     try:
         raw_data = await maa_stage_service.get_stage_info(stage.type)
@@ -660,7 +651,7 @@ async def confirm_notice() -> OutBase:
 async def get_overview(
     refresh: bool = False,
 ) -> InfoOut:
-    from app.core.maa_stage import maa_stage_service
+    from app.task.MAA.stage import maa_stage_service
 
     try:
         if refresh:
@@ -714,7 +705,7 @@ async def get_bluearchive_activity(
     """
 
     try:
-        data = await fetch_bluearchive_activities(
+        data = await _tool_bluearchive_activity_source.fetch_bluearchive_activities(
             line_type=payload.line_type, page=payload.page, page_size=payload.page_size
         )
     except Exception as e:
@@ -747,7 +738,9 @@ async def get_bluearchive_image(
 
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.get(url, headers=GAMEKEE_HEADERS)
+            response = await client.get(
+                url, headers=_tool_bluearchive_activity_source.GAMEKEE_HEADERS
+            )
         response.raise_for_status()
         ## 这个接口带着自定义头去白名单域名取东西再原样吐给前端，所以要确认拿回来的确实是图片：
         ## 上游报错时可能返回一坨 200 的 HTML，直接转发会让前端拿着垃圾当图；大小也设个上限
@@ -1129,7 +1122,7 @@ async def get_arknights_activity() -> InfoOut:
         logger.opt(exception=True).warning(
             f"获取明日方舟活动数据失败: {type(e).__name__}: {e}"
         )
-        fallback = await fetch_sra_activities("ak")
+        fallback = await _tool_sra_activity.fetch_sra_activities("ak")
         if fallback is None:
             return InfoOut(
                 code=500,
@@ -1166,7 +1159,7 @@ async def get_stella_activity() -> InfoOut:
     """
 
     try:
-        data = await fetch_official_activities()
+        data = await _tool_stella_official.fetch_official_activities()
     except Exception as e:
         logger.opt(exception=True).warning(
             f"get_stella_activity失败: {type(e).__name__}: {e}"
@@ -1174,7 +1167,7 @@ async def get_stella_activity() -> InfoOut:
         data = None
 
     if data is None:
-        fallback = await fetch_sra_activities("xtlr")
+        fallback = await _tool_sra_activity.fetch_sra_activities("xtlr")
         if fallback is None:
             return InfoOut(
                 code=500,
@@ -1183,7 +1176,9 @@ async def get_stella_activity() -> InfoOut:
                 data={},
             )
         for item in fallback["activities"]:
-            item["kind"] = classify_activity_name(str(item["name"]))
+            item["kind"] = _tool_stella_official.classify_activity_name(
+                str(item["name"])
+            )
         logger.info("星塔旅人活动数据改用 SRA 兜底")
         data = fallback
 
@@ -1209,7 +1204,7 @@ async def get_azurlane_activity() -> InfoOut:
     """
 
     try:
-        data = await fetch_azurlane_activities()
+        data = await _tool_azurlane_activity.fetch_azurlane_activities()
     except Exception as e:
         logger.opt(exception=True).warning(
             f"get_azurlane_activity失败: {type(e).__name__}: {e}"

@@ -178,6 +178,40 @@
             @select-file="selectLauncherPath"
           />
 
+          <a-row v-if="isWinController && effectiveLaunchMode === 'MaaEnd'" :gutter="24">
+            <a-col :span="24">
+              <a-form-item
+                :label="t('core.edit.maaEndAutoHDR')"
+                :help="t('core.edit.maaEndAutoHDRHelp')"
+              >
+                <a-select
+                  :value="maaEndConfig.Game.AutoHDR ?? 'Unchanged'"
+                  size="large"
+                  :options="autoHDROptions"
+                  :disabled="isSaving || !launchCapabilitiesReady || !maaEndLaunchSupported"
+                  @change="handleAutoHDRChange"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-row v-if="isWinController && maaEndConfig.Game.CloseOnFinish" :gutter="24">
+            <a-col :span="24">
+              <a-form-item
+                :label="t('core.edit.maaEndRestoreAutoHDR')"
+                :help="t('core.edit.maaEndRestoreAutoHDRHelp')"
+              >
+                <a-select
+                  v-model:value="maaEndConfig.Game.RestoreAutoHDR"
+                  size="large"
+                  :options="autoHDROptions"
+                  :disabled="isSaving"
+                  @change="handleChange('Game', 'RestoreAutoHDR', $event)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
           <a-row v-if="isWinController" :gutter="24">
             <a-col :span="12">
               <a-form-item>
@@ -635,6 +669,11 @@ const effectiveLaunchMode = computed(() =>
     : maaEndConfig.Game.LaunchMode
 )
 const isMasLaunchMode = computed(() => effectiveLaunchMode.value === 'MAS')
+const autoHDROptions = computed(() => [
+  { value: 'Unchanged', label: t('core.edit.maaEndAutoHDRUnchanged') },
+  { value: 'Disable', label: t('core.edit.maaEndAutoHDRDisable') },
+  { value: 'Enable', label: t('core.edit.maaEndAutoHDREnable') },
+])
 const canSetResolution = computed(() =>
   effectiveLaunchMode.value === 'MaaEnd'
     ? maaEndLaunchSupported.value
@@ -672,6 +711,15 @@ const showManualEmulatorIndexInput = computed(
 // 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
 // 保存后回读一次界面才与落盘值一致；其余字段保存即生效不再整份回读
 const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>(['Info.Path', 'Game.Path'])
+
+const handleAutoHDRChange = async (value: MaaEndScriptConfig['Game']['AutoHDR']) => {
+  if (isInitializing.value) return
+  await enqueue(async () => {
+    const success = await updateScript(scriptId, { Game: { AutoHDR: value } })
+    if (success) maaEndConfig.Game.AutoHDR = value
+    return success
+  }, 'Game.AutoHDR')
+}
 
 const handleSetResolutionChange = async (value: unknown) => {
   if (typeof value !== 'boolean' || !canSetResolution.value || isInitializing.value) return

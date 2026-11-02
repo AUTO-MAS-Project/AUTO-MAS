@@ -20,11 +20,7 @@
 
     <div class="records-container">
       <div v-if="records.length === 0" class="empty-records">
-        <a-empty
-          :image="noDataImage"
-          :image-style="{ height: '80px' }"
-          :description="t('core.history.emptyRecords')"
-        />
+        <NoData :image-style="{ height: '80px' }" :description="t('core.history.emptyRecords')" />
       </div>
 
       <div v-else class="records-scroll">
@@ -71,7 +67,6 @@
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import {
   CheckCircleOutlined,

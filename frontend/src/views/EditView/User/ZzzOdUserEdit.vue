@@ -545,7 +545,7 @@
                           "
                         />
                       </template>
-                      <a-empty v-else :description="t('core.edit.zzzodDirectPickInstanceFirst')" />
+                      <NoData v-else :description="t('core.edit.zzzodDirectPickInstanceFirst')" />
                     </a-spin>
                   </template>
                   <!-- 用户：MAS 字段化启动参数（改动即时保存，运行时注入绑定槽） -->
