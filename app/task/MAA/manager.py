@@ -26,6 +26,7 @@ from app.core.notify.task_content import (
     NOTIFY_SCREENSHOT_LIMIT as NOTIFY_SCREENSHOT_LIMIT,
 )
 from app.core.notify.task_content import screenshot_entries as screenshot_entries
+from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.core.ws import protocol
 from app.models.config import MaaConfig, MaaUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
@@ -577,7 +578,11 @@ class MaaManager(ScriptManagerBase):
         """首位实际运行账号做更新准备；同批后续账号仅执行本地安全检查。"""
         self._update_config_dir = task.update_config_dir
         if not self._maa_update_checked:
-            await self._prepare_software_update(task)
+            await run_script_update(
+                ScriptUpdateRequest(str(self.script_info.script_id), "MAA"),
+                self._prepare_software_update,
+                task,
+            )
             # 普通更新失败且安全回退后也只尝试一次；异常不标记为完成。
             self._maa_update_checked = True
         else:

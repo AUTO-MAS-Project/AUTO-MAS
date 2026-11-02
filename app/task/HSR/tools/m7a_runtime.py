@@ -21,6 +21,7 @@
 
 
 import asyncio
+import locale
 import os
 import time
 from collections import deque
@@ -44,6 +45,13 @@ from .log_detect import (
 )
 
 logger = get_logger("HSR M7A 运行器")
+
+# 仅 M7A 输出中文编码优先；通用配置读取保留系统代码页。
+_M7A_OUTPUT_ENCODINGS = tuple(
+    dict.fromkeys(
+        ("utf-8", "utf-8-sig", "gbk", "gb18030", locale.getpreferredencoding())
+    )
+)
 
 # M7A 的四处「按任意键继续」统一由 utils/console.py 的 should_skip_pause() 放行，
 # 它认 MARCH7TH_GUI_STARTED，M7A 自己的图形界面拉起 CLI 时用的就是这个标记。
@@ -333,7 +341,9 @@ class M7ARunner:
         return "\n".join(
             line.strip()
             for raw_line in bytes(output).split(b"\n")
-            for line in unescape_backslash_u(decode_bytes(raw_line)).splitlines()
+            for line in unescape_backslash_u(
+                decode_bytes(raw_line, encodings=_M7A_OUTPUT_ENCODINGS)
+            ).splitlines()
             if line.strip()
         )
 
@@ -460,8 +470,12 @@ class M7ARunner:
                 )
             except asyncio.TimeoutError as exc:
                 raise _M7ACommandTimeout from exc
-            stdout = unescape_backslash_u(decode_bytes(stdout_bytes)).strip()
-            stderr = unescape_backslash_u(decode_bytes(stderr_bytes)).strip()
+            stdout = unescape_backslash_u(
+                decode_bytes(stdout_bytes, encodings=_M7A_OUTPUT_ENCODINGS)
+            ).strip()
+            stderr = unescape_backslash_u(
+                decode_bytes(stderr_bytes, encodings=_M7A_OUTPUT_ENCODINGS)
+            ).strip()
             self._emit_process_output("三月七", stdout)
             self._emit_process_output("三月七 stderr", stderr)
             for text in (stdout, stderr):
@@ -588,7 +602,20 @@ class M7ARunner:
         """执行一条 M7A 命令。"""
 
         async with self._command_lock:
-            return await self._run_task(task_name, timeout)
+            started_at = datetime.now(timezone.utc)
+            try:
+                return await self._run_task(task_name, timeout)
+            except Exception as error:
+                # 最终清理也可能失败；仍返回失败结果，取消继续原样传播。
+                logger.opt(exception=True).warning(f"三月七清理失败：{error}")
+                return M7ACommandResult(
+                    task_name=task_name,
+                    exe_path=str(self._m7a_exe),
+                    success=False,
+                    error=str(error),
+                    started_at=started_at,
+                    finished_at=datetime.now(timezone.utc),
+                )
 
     async def _run_task(self, task_name: str, timeout: int) -> M7ACommandResult:
         started_at = datetime.now(timezone.utc)

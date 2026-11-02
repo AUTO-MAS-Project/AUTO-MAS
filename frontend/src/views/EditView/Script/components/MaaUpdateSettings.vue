@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import ProgramUpdateSettings from './ProgramUpdateSettings.vue'
 import { onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ScriptMirrorCdkData } from '@/api'
@@ -64,67 +64,21 @@ const handleChannel = (channel: 'stable' | 'beta') => {
 </script>
 
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('core.edit.updateTakeover') }}</h3>
-    </div>
-    <a-row :gutter="24">
-      <a-col :span="8">
-        <a-form-item :label="t('core.edit.updateChannel')">
-          <a-select
-            :value="update.Channel"
-            :disabled="!ready"
-            size="large"
-            :options="[
-              { label: t('core.setting.channel.stable'), value: 'stable' },
-              { label: t('core.setting.channel.beta'), value: 'beta' },
-            ]"
-            @change="handleChannel"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :span="8">
-        <a-form-item>
-          <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.updateTakeoverSwitch')"
-              :hint="t('core.edit.updateTakeoverTip')"
-              variant="form"
-            />
-          </template>
-          <a-switch
-            :checked="update.TakeoverEnabled"
-            size="large"
-            :disabled="!ready"
-            @change="handleEnabled"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :span="8">
-        <a-form-item>
-          <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.updateTakeoverCdk')"
-              :hint="t('core.edit.updateTakeoverCdkTip')"
-              variant="form"
-            />
-          </template>
-          <a-input-password
-            :value="update.MirrorChyanCDK"
-            :placeholder="t('core.edit.updateTakeoverCdkPlaceholder')"
-            size="large"
-            class="modern-input"
-            autocomplete="off"
-            :disabled="!ready || !update.TakeoverEnabled"
-            @update:value="update = { ...update, MirrorChyanCDK: $event }"
-            @blur="handleBlur"
-          />
-          <MirrorCdkStatusHint :state="state" :checking="checking" @retry="refresh" />
-        </a-form-item>
-      </a-col>
-    </a-row>
-  </div>
+  <ProgramUpdateSettings
+    :ready="ready"
+    :enabled="update.TakeoverEnabled"
+    :channel="update.Channel"
+    :cdk="update.MirrorChyanCDK"
+    :title="t('core.edit.updateTakeover')"
+    :hint="t('core.edit.updateTakeoverTip')"
+    :cdk-hint="t('core.edit.updateTakeoverCdkTip')"
+    @enabled="handleEnabled"
+    @channel="handleChannel"
+    @cdk="update = { ...update, MirrorChyanCDK: $event }"
+    @save-cdk="handleBlur"
+  >
+    <template #cdk-status>
+      <MirrorCdkStatusHint :state="state" :checking="checking" @retry="refresh" />
+    </template>
+  </ProgramUpdateSettings>
 </template>
-
-<style scoped src="@/styles/scriptEditForm.css"></style>
-<style scoped src="@/styles/scriptEdit.css"></style>

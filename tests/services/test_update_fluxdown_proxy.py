@@ -11,6 +11,39 @@ from app.services.common.update import fluxdown as transport
 from app.utils.common import fluxdown_cli as cli
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blocked", [False, True])
+async def test_custom_http_resume_keeps_old_writer_safety_gate(
+    tmp_path, monkeypatch, blocked
+):
+    proxy = httpx.Proxy("http://127.0.0.1:7890")
+    resume = AsyncMock(return_value=42)
+    monkeypatch.setattr(
+        cli, "fluxdown_find_cli", lambda path, **kwargs: Path("fluxdown.exe")
+    )
+    gate = AsyncMock(
+        side_effect=cli.FluxdownCancelUnconfirmed("still writing") if blocked else None
+    )
+    monkeypatch.setattr(transport, "_ensure_can_downgrade", gate)
+    monkeypatch.setattr(cli, "fluxdown_server_forget", lambda *args: None)
+    operation = transport.download_file(
+        "https://example.invalid/package",
+        tmp_path / "package",
+        timeout=30,
+        proxy=proxy,
+        options=transport.FluxdownOptions("builtin", "GitHub", "", 8, True),
+        http_download=resume,
+    )
+    if blocked:
+        with pytest.raises(cli.FluxdownCancelUnconfirmed):
+            await operation
+        resume.assert_not_awaited()
+    else:
+        assert await operation == 42
+        assert resume.call_args.kwargs["proxy"] is proxy
+    gate.assert_awaited_once()
+
+
 @pytest.mark.parametrize(
     "url",
     [
@@ -452,3 +485,120 @@ async def test_server_download_prevents_installation_until_cancelled(
         tmp_path / "fluxdown.exe", tmp_path / "update.zip"
     ):
         pass
+
+
+def test_other_url_same_target_requires_stopped_writer(tmp_path, monkeypatch):
+    exe = tmp_path / "fluxdown.exe"
+    target = tmp_path / "package.zip"
+    old_url = "https://example.invalid/old"
+    new_url = "https://example.invalid/new"
+    mapping = {
+        cli._map_key(old_url, target): {
+            "task_id": "old-task",
+            "save_path": str(target),
+        }
+    }
+    monkeypatch.setattr(cli, "_load_task_map", lambda _exe: mapping)
+    monkeypatch.setattr(
+        cli,
+        "fluxdown_server_ensure",
+        lambda _exe: SimpleNamespace(gateway_port=12345, token="token"),
+    )
+    monkeypatch.setattr(cli, "_run_cli", lambda *_args, **_kwargs: (124, "timeout"))
+    assert not cli.fluxdown_server_task_safe_to_overwrite(exe, new_url, target)
+    assert not cli.fluxdown_server_task_safe_to_overwrite(
+        exe, new_url, target, other_only=True
+    )
+
+
+def test_other_url_paused_allows_new_writer_without_resuming_old(tmp_path, monkeypatch):
+    exe = tmp_path / "fluxdown.exe"
+    target = tmp_path / "package.zip"
+    old_url, new_url = "https://example.invalid/old", "https://example.invalid/new"
+    mapping = {
+        cli._map_key(old_url, target): {
+            "task_id": "old-task",
+            "save_path": str(target),
+        }
+    }
+    calls = []
+
+    def cli_command(_exe, _env, args, timeout=30):
+        calls.append(args)
+        if args[0] == "status":
+            return 0, json.dumps({"status": 2})
+        raise AssertionError("paused task must not be resumed")
+
+    monkeypatch.setattr(cli, "_load_task_map", lambda _exe: mapping)
+    monkeypatch.setattr(
+        cli,
+        "fluxdown_server_ensure",
+        lambda _exe: SimpleNamespace(gateway_port=12345, token="token"),
+    )
+    monkeypatch.setattr(cli, "_run_cli", cli_command)
+    assert cli.fluxdown_server_task_safe_to_overwrite(
+        exe, new_url, target, other_only=True
+    )
+    assert calls == [["status", "old-task", "--json"]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("downloader", ["fluxdown", "builtin"])
+async def test_cancelled_write_owner_probe_holds_target_lock_until_thread_exits(
+    tmp_path, monkeypatch, downloader
+):
+    import asyncio
+    import threading
+
+    monkeypatch.setattr(cli, "_server_data_dir", lambda _path: tmp_path)
+    executable = tmp_path / "fluxdown.exe"
+    destination = tmp_path / "release.zip"
+    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda _path, **kwargs: executable)
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    def slow_probe(*_args, **_kwargs):
+        started.set()
+        try:
+            assert release.wait(5), "probe thread was never released"
+            return True
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(cli, "fluxdown_server_task_safe_to_overwrite", slow_probe)
+    options = transport.FluxdownOptions(downloader, "GitHub", str(executable), 8, True)
+    first = asyncio.create_task(
+        transport.download_file(
+            "https://example.invalid/second",
+            destination,
+            timeout=30,
+            options=options,
+            downloader=downloader,
+            source="GitHub",
+            http_download=AsyncMock(return_value=1),
+        )
+    )
+    assert await asyncio.to_thread(started.wait, 3)
+    acquired = asyncio.Event()
+
+    async def next_owner():
+        async with cli.fluxdown_destination_lock(executable, destination):
+            acquired.set()
+
+    follower = None
+    try:
+        first.cancel()
+        await asyncio.sleep(0.05)
+        assert not first.done(), "cancellation released a still-running probe"
+        follower = asyncio.create_task(next_owner())
+        await asyncio.sleep(0.05)
+        assert not acquired.is_set(), "next owner entered while old probe is active"
+    finally:
+        release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(first, timeout=5)
+    assert finished.is_set()
+    assert follower is not None
+    await asyncio.wait_for(follower, timeout=5)
+    assert acquired.is_set()
