@@ -291,6 +291,13 @@ class Emulator2DeviceItem(BaseModel):
     title: str = Field(default="", description="实例名称")
     status: int = Field(default=5, description="设备状态码")
     adbAddress: str = Field(default="", description="ADB 地址")
+    headless: Optional[bool] = Field(
+        default=None,
+        description="正在运行的实例是不是无头开机的(没有窗口, 显示 / 隐藏用不了); 只有魔改 AVD 给, 其余为空",
+    )
+    creationError: str = Field(
+        default="", description="状态为新建失败时的原因(魔改 AVD), 其余为空"
+    )
     settings: Dict[str, Emulator2SettingField] = Field(
         default_factory=dict,
         description="已保存设置, 下次启动使用; 不是运行中实例的当前配置",
