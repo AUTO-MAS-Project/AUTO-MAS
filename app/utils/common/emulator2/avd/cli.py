@@ -322,11 +322,14 @@ def map_status(status: str | None, busy: str | None = "") -> DeviceStatus:
 
     busy_value = (busy or "").strip().lower()
     status_value = (status or "").strip().lower()
+    # 新建的初始化（后台开机、装输入法和执行桥、关机）做完前一律是新建中，不管那几次开机从外面看像什么
+    if status_value == "creating" or busy_value == "creating":
+        return DeviceStatus.CREATING
     if busy_value == "stopping":
         return DeviceStatus.CLOSEING
     if busy_value:
         return DeviceStatus.STARTING
-    if status_value in {"starting", "creating"}:
+    if status_value == "starting":
         return DeviceStatus.STARTING
     if status_value == "create_failed":
         return DeviceStatus.ERROR

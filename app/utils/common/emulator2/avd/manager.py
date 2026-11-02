@@ -208,6 +208,17 @@ def shm_exists(port: int) -> bool:
     return emulator_native.shm_exists(port)
 
 
+def _qemu_headless(process: psutil.Process) -> bool | None:
+    """这台 qemu 是不是无头开的。模拟器带 ``-no-window`` 开机时起的是
+    ``qemu-system-x86_64-headless.exe``，命令行里也带着 ``-no-window``；读不到进程信息返回 ``None``。"""
+    try:
+        name = (process.name() or "").lower()
+        cmdline = process.cmdline()
+    except (psutil.Error, OSError):
+        return None
+    return "headless" in name or "-no-window" in cmdline
+
+
 def _silence_enabled(runtime_policy: EmulatorRuntimePolicy) -> bool:
     """宿主「静默模式」开没开；读不到按开，宁可无头。"""
     try:
@@ -897,14 +908,26 @@ class _AvdCore(DeviceBase):
             "pid": process.pid,
         }
 
-    async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
+    async def setVisible(
+        self, idx: str, is_visible: bool, *, manual: bool = False
+    ) -> DeviceStatus:
         """显示 / 隐藏带窗口开机的实例（主窗口和侧边工具栏），照雷电用 ``SW_HIDE`` / ``SW_SHOW``。
 
         隐藏不影响渲染和截图：10-04 在 mas_6 带窗口开机、``SW_HIDE`` 30 秒，期间截图共享内存
         的帧号照常前进（约 51 帧/秒，显示时约 48 帧/秒），画面随客体操作照常变化。
         无头开机的实例没有窗口，开机后也补不出窗口，只记一笔。
-        不抛异常：脚本在静默模式下每轮都会调这个，抛了会把整次运行判失败。
+        不抛异常：脚本在静默模式下每轮都会调这个，抛了会把整次运行判失败。只有 ``manual``（模拟器页
+        手动点「显示」）对着无头开机的实例时抛，告诉用户运行中换不了，要窗口先关机。
         """
+        if manual and is_visible:
+            process = await asyncio.to_thread(
+                host.find_qemu_process, avd_name(idx), console_port(idx)
+            )
+            if process is not None and _qemu_headless(process):
+                raise RuntimeError(
+                    f"魔改 AVD 实例 {idx} 是无头开机的，没有窗口可显示；运行中不能切换，"
+                    "要窗口请先关机，再在模拟器页点启动"
+                )
         if self._cli is not None and updater.update_in_progress(self.root):
             return await self.getStatus(idx)
         if self._cli is not None:
@@ -979,7 +1002,17 @@ class _AvdCore(DeviceBase):
         if self._cli is not None:
             if updater.update_in_progress(self.root):
                 raise RuntimeError("魔改 AVD 正在更新，更新完再开机")
+            if await self._cli_creating(idx):
+                raise RuntimeError(
+                    f"魔改 AVD 实例 {idx} 正在新建（后台开机做初始化），等新建完成再开机"
+                )
             self._check_components()
+            self._check_window_mode(
+                idx,
+                await asyncio.to_thread(
+                    host.find_qemu_process, avd_name(idx), console_port(idx)
+                ),
+            )
             memory_mb = memory_for(instance_meta(self.root, idx))
             recommended = RECOMMENDED_MEMORY_MB.get(self._open_package or "")
             if recommended and memory_mb < recommended:
@@ -1043,6 +1076,7 @@ class _AvdCore(DeviceBase):
                 host.BOOTING.add(serial)
                 await self._launch(idx, instance)
             else:
+                self._check_window_mode(idx, process)
                 logger.info(f"魔改 AVD 实例 {idx} 已在运行（pid {process.pid}）")
             process = await self._wait_boot(idx, instance, launched, max_wait)
         finally:
@@ -1093,6 +1127,48 @@ class _AvdCore(DeviceBase):
     _open_package: str = ""
     #: 这次开机要不要窗口（:class:`AvdManager` 在开机前按启动入口设）；没人设时按无头。
     _open_window: bool = False
+    #: 这次开机是不是用户在模拟器页手动点的（:class:`AvdManager` 在开机前设）。
+    _open_manual: bool = False
+
+    def _check_window_mode(self, idx: str, process: psutil.Process | None) -> None:
+        """有没有窗口只在开机那一刻定，开着以后切换不了。实例已在运行、方式和这次要的不一样时：
+        模拟器页手动启动直接拒绝，让用户先关机再换；任务拉起照常接着用（静默模式下带窗口的会被隐藏），
+        只记一笔。"""
+        if process is None:
+            return
+        headless = _qemu_headless(process)
+        if headless is None or headless != self._open_window:
+            return
+        running = "无头" if headless else "带窗口"
+        wanted = "带窗口" if self._open_window else "无头"
+        if self._open_manual:
+            raise RuntimeError(
+                f"魔改 AVD 实例 {idx} 正在{running}运行，运行中不能换成{wanted}；"
+                f"要{wanted}请先关机再启动"
+            )
+        logger.info(
+            f"魔改 AVD 实例 {idx} 已在{running}运行，这次按{wanted}开机：运行中不能切换，"
+            f"接着用{running}的；要{wanted}请先关机"
+        )
+
+    async def _cli_creating(self, idx: str) -> bool:
+        """这台是不是正在新建（modavd v0.2.0 起 create 建完文件还要在后台开机做初始化）。
+
+        先看 ``mas-avd.json`` 里的 ``creationState``，记着 ``creating`` 再问 modavd：新建程序中途被
+        结束的也留着 ``creating``，modavd 按新建失败报，不算新建中。平常一次子进程都不起。"""
+        if self._cli is None:
+            return False
+        if instance_meta(self.root, idx).get("creationState") != "creating":
+            return False
+        try:
+            data = await self._cli.status(idx)
+        except modavd_cli.CLIError:
+            return False
+        return (
+            isinstance(data, dict)
+            and modavd_cli.map_status(data.get("status"), data.get("busy"))
+            == DeviceStatus.CREATING
+        )
 
     def _log_dir(self) -> Path:
         return self.root / LOGS_DIR
@@ -1811,6 +1887,11 @@ class _AvdCore(DeviceBase):
         if updater.update_in_progress(self.root):
             return DeviceStatus.OFFLINE
         if self._cli is not None:
+            # modavd stop 不拦新建中的实例，关了就把新建的初始化打断，留下一台「新建失败」
+            if await self._cli_creating(idx):
+                raise RuntimeError(
+                    f"魔改 AVD 实例 {idx} 正在新建（后台开机做初始化），新建完成前不能关机"
+                )
             try:
                 await self._cli.stop(
                     idx,
@@ -2406,6 +2487,7 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         - 任务拉起（``manual`` 不传）：跟「静默模式」走，``Function.IfSilence`` 开着无头，关着带窗口。
         """
         self._open_window = manual or not _silence_enabled(self.runtime_policy)
+        self._open_manual = manual
         # AppLaunchMixin 有意不把包名传给开机那一步；开机时要对照推荐内存记日志，所以在这里记下
         self._open_package = package_name or ""
         return await super().open(idx, package_name)
@@ -2420,6 +2502,11 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         _FROZEN.pop(key, None)
         if updater.update_in_progress(self.root):
             raise RuntimeError("魔改 AVD 正在更新，更新完再重启")
+        # modavd restart 先关机，同样会打断新建的初始化
+        if await self._cli_creating(str(idx)):
+            raise RuntimeError(
+                f"魔改 AVD 实例 {idx} 正在新建（后台开机做初始化），等新建完成再重启"
+            )
         self._check_components()
         memory_mb = memory_for(instance_meta(self.root, str(idx)))
         self._open_window = manual or not _silence_enabled(self.runtime_policy)

@@ -48,6 +48,8 @@ class DeviceStatus(IntEnum):
     """错误"""
     NOT_FOUND = 5
     """未找到设备"""
+    CREATING = 6
+    """正在新建：魔改 AVD（modavd v0.2.0 起）建完文件还要在后台无头开机一次做初始化，做完前不能开机、关机、改设置"""
     UNKNOWN = 10
     """未知状态"""
 

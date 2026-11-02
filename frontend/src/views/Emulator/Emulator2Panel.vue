@@ -861,7 +861,11 @@ const blockedReason = (device: DeviceRow) => {
   if (device.availability !== 'ok') return t('core.emulator2.blocked.missing')
   const status = statusOf(device)
   if (status === DeviceStatus.ERROR) return t('core.emulator2.blocked.error')
-  if (isTransitional(status) || pending.value.has(device.slot)) {
+  if (
+    isTransitional(status) ||
+    status === DeviceStatus.CREATING ||
+    pending.value.has(device.slot)
+  ) {
     return t('core.emulator2.blocked.busy')
   }
   if (status !== DeviceStatus.OFFLINE && status !== DeviceStatus.NOT_FOUND) {
@@ -888,6 +892,7 @@ const deviceStatus = (device: DeviceRow) => {
     [DeviceStatus.CLOSING]: { color: 'processing', text: t('core.emulator.deviceStatus.closing') },
     [DeviceStatus.ERROR]: { color: 'error', text: t('core.emulator.deviceStatus.error') },
     [DeviceStatus.NOT_FOUND]: { color: 'default', text: t('core.emulator.deviceStatus.notFound') },
+    [DeviceStatus.CREATING]: { color: 'processing', text: t('core.emulator2.busy.creating') },
   }
   return (
     map[statusOf(device)] ?? {

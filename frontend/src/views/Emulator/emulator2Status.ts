@@ -19,6 +19,8 @@ export const DeviceStatus = {
   CLOSING: 3,
   ERROR: 4,
   NOT_FOUND: 5,
+  /** 魔改 AVD 新建后在后台开机做初始化，做完前什么都不能动 */
+  CREATING: 6,
   UNKNOWN: 10,
 } as const
 
@@ -97,14 +99,15 @@ interface ActionAvailability {
  * - 设置：启动 / 关闭 / 删除进行中不能改——雷电的写入和启动共用同一把实例锁，这时点保存会
  *   一直等到启动结束才返回，看起来像卡死；显示 / 隐藏 / 游戏中心进行中照常可改。
  * - 删除：必须离线，且这行没有别的事在进行。
+ * - 新建中：全部不能点。魔改 AVD 新建后在后台开机做初始化，这时关机会把初始化打断。
  */
 export const actionAvailability = (
   device: Pick<Emulator2DeviceItem, 'availability' | 'status'>,
   pending: Pending | undefined,
   now: number
 ): ActionAvailability => {
-  const reachable = device.availability === 'ok'
   const status = effectiveStatus(device, pending, now)
+  const reachable = device.availability === 'ok' && status !== DeviceStatus.CREATING
   const busy = pending !== undefined && now < pending.expiresAt
   // 启动 / 关闭 / 删除会把这台实例整个占住（雷电还持有实例锁）；
   // 显示 / 隐藏 / 游戏中心只是对着窗口按几下，不该连关闭和设置一起锁掉

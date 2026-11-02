@@ -231,7 +231,8 @@ def test_error_mapping() -> None:
         ("offline", "starting", DeviceStatus.STARTING),
         ("online", "stopping", DeviceStatus.CLOSEING),
         ("unknown", "", DeviceStatus.STARTING),
-        ("creating", "", DeviceStatus.STARTING),
+        ("creating", "creating", DeviceStatus.CREATING),
+        ("creating", "stopping", DeviceStatus.CREATING),
         ("create_failed", "", DeviceStatus.ERROR),
         ("offline", "mystery", DeviceStatus.STARTING),
     ],
@@ -1042,6 +1043,9 @@ async def test_open_retries_start_when_guest_script_push_failed(
             }
 
     monkeypatch.setattr(_AvdCore, "_check_components", lambda self: None)
+    monkeypatch.setattr(
+        manager_module.host, "find_qemu_process", lambda avd, port: None
+    )
     cli = StartCli()
     manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
     manager = _AvdCore(manager_exe, 60, False, cli=cli)  # type: ignore[arg-type]
@@ -1050,3 +1054,104 @@ async def test_open_retries_start_when_guest_script_push_failed(
 
     assert cli.starts == 2
     assert info.status == DeviceStatus.ONLINE
+
+
+@pytest.mark.asyncio
+async def test_creating_instance_shows_creating_and_is_never_stopped_or_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    root = _root_with_exe(tmp_path)
+    (root / "mas-avd.json").write_text(
+        json.dumps({"instances": {"7": {"creationState": "creating"}}}),
+        encoding="utf-8",
+    )
+    version = {"data": {"version": "0.2.0", "protocol": SUPPORTED_PROTOCOL}}
+    creating = {
+        "index": 7,
+        "title": "新实例",
+        "status": "creating",
+        "busy": "creating",
+        "running": True,
+    }
+    fake.plan(
+        version=version,
+        status={"data": creating},
+        list={"data": {"instances": [creating]}},
+    )
+    monkeypatch.setattr(_AvdCore, "_check_components", lambda self: None)
+    manager = await manager_module.build_manager(
+        str(root / "sdk" / "emulator" / "emulator.exe"), 60, runtime_policy=_policy()
+    )
+
+    assert (await manager.getInfo(None))["7"].status == DeviceStatus.CREATING
+    # modavd stop 不拦新建中的实例，MAS 自己拦：关机、重启会打断后台初始化
+    with pytest.raises(RuntimeError, match="正在新建"):
+        await manager.close("7")
+    with pytest.raises(RuntimeError, match="正在新建"):
+        await manager.restart("7", manual=True)
+    with pytest.raises(RuntimeError, match="正在新建"):
+        await manager.open("7", manual=True)
+    assert not {"stop", "start", "restart"} & set(fake.commands())
+
+    # 新建程序中途被结束：mas-avd.json 还记着 creating，modavd 按新建失败报，照常能关
+    fake.plan(
+        version=version,
+        status={"data": {**creating, "status": "create_failed", "busy": ""}},
+        stop={"data": {}},
+    )
+    assert await manager.close("7") == DeviceStatus.OFFLINE
+    assert fake.commands()[-1] == "stop"
+
+
+class _Qemu:
+    def __init__(self, name: str, *flags: str) -> None:
+        self.pid = 4242
+        self._name = name
+        self._cmdline = [name, "-avd", "mas_7", "-ports", "20070,20071", *flags]
+
+    def name(self) -> str:
+        return self._name
+
+    def cmdline(self) -> list[str]:
+        return self._cmdline
+
+
+@pytest.mark.asyncio
+async def test_running_instance_keeps_its_window_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    root = _root_with_exe(tmp_path)
+    fake.plan(
+        version={"data": {"version": "0.2.0", "protocol": SUPPORTED_PROTOCOL}},
+        start={"data": {"instance": {"index": 7, "status": "online"}}},
+        window={"data": {"index": 7, "windows": 0}},
+        status={"data": {"index": 7, "status": "online"}},
+    )
+    monkeypatch.setattr(_AvdCore, "_check_components", lambda self: None)
+    running = {"qemu": _Qemu("qemu-system-x86_64-headless.exe", "-no-window")}
+    monkeypatch.setattr(
+        manager_module.host, "find_qemu_process", lambda avd, port: running["qemu"]
+    )
+    # 静默模式开着：任务拉起要无头，模拟器页手动启动要窗口
+    manager = await manager_module.build_manager(
+        str(root / "sdk" / "emulator" / "emulator.exe"), 60, runtime_policy=_policy()
+    )
+
+    # 正无头运行时手动要窗口：明确拒绝，不能当成已在运行接管
+    with pytest.raises(RuntimeError, match="先关机再启动"):
+        await manager.open("7", manual=True)
+    with pytest.raises(RuntimeError, match="要窗口请先关机"):
+        await manager.setVisible("7", True, manual=True)
+    assert not {"start", "window"} & set(fake.commands())
+    # 脚本每轮调的显示照旧不抛
+    await manager.setVisible("7", True)
+
+    # 任务拉起和运行方式一致，照常接着用
+    assert (await manager.open("7")).status == DeviceStatus.ONLINE
+    # 任务要无头、实例带窗口：照常接着用，静默模式随后会把窗口隐藏
+    running["qemu"] = _Qemu("qemu-system-x86_64.exe")
+    await manager.open("7")
+    await manager.open("7", manual=True)
+    assert fake.commands().count("start") == 3
