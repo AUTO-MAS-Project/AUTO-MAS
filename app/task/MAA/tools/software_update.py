@@ -53,8 +53,8 @@ gui.json 的 Global.VersionUpdate.VersionType），配置未表达时按实际�
 （pending-update-*.txt 标志文件、安装目录实际版本），不自建判定。
 
 失败语义：检查、下载或登记失败只写日志，不影响用户任务；主动取消正常
-传播。每日下载记账、查询地板与失败退避对齐 resource_update（Mirror 酱按
-CDK 计下载次数，alpha 通道每天出新版，不设限额会稳定消耗额度）。
+传播。同一版本每天最多尝试一次，先免费检查版本与复用缓存，再申请下载地址；
+失败退避仍生效。
 
 只支持 Mirror 酱完整包：查询不带 current_version（无增量基线，服务端只回
 完整包，对齐上游修复路径语义），响应 update_type 非 full 或包内含 OTA 清单
@@ -97,7 +97,7 @@ from .software_package import (
     validate_software_zip,
 )
 from .update_credentials import resolve_takeover_credentials
-from .update_state import attempted_today, backoff_active, load_state, parse_iso
+from .update_state import attempted_today, backoff_active, load_state
 
 logger = get_logger("MAA 本体更新")
 
@@ -108,7 +108,6 @@ _STATE_FILE = _WORK_DIR / "state.json"
 
 _QUERY_TIMEOUT = 10  # 秒
 _DOWNLOAD_TIMEOUT = 30 * 60  # 秒，单次网络操作上限（无下载总时限，完整包余量放宽）
-_QUERY_FLOOR = 10 * 60  # 秒，两次成功查询最小间隔
 _RETRY_INTERVAL = 60 * 60  # 秒，失败退避
 _PRECHECK_GRACE = 60  # 秒，登记前等待其他安装释放共享缓存的上限
 
@@ -422,37 +421,10 @@ def _store_verified_cache(
     logger.info(f"MAA 本体完整包已缓存: {latest.version}（win/{arch}/{channel}）")
 
 
-async def _ensure_cache(latest: _Latest, channel: str, arch: str, cdk: str) -> None:
-    """确保共享缓存里是目标版本：命中直接复用，否则下载并校验入缓存。
-
-    下载预算按缓存键记账（不同通道架构互不挤占），记账读写持模块锁且锁内
-    无网络等待。下载失败在此记账退避并返回，不外抛——查询失败与取包失败
-    的退避互不牵连。
-    """
+async def _ensure_cache(latest: _Latest, channel: str, arch: str) -> None:
+    """下载并校验已获准取包的版本，失败记录退避。"""
     cache_dir = software_cache_dir("win", arch, channel)
-    manifest = load_cache_manifest(cache_dir)
-    if (
-        manifest is not None
-        and manifest["version"] == latest.version
-        and await asyncio.to_thread(cache_zip_matches, cache_dir, manifest)
-    ):
-        logger.info(f"MAA 本体更新: 目标版本 {latest.version} 已在缓存，跳过下载")
-        return
     key = _cache_key(arch, channel)
-    async with _state_lock:
-        state = load_state(_STATE_FILE)
-        now = datetime.now(timezone.utc)
-        if backoff_active(state, f"download_fail_until/{key}", now):
-            logger.info("MAA 本体更新: 取包退避期内，本轮跳过下载")
-            return
-        if attempted_today(state, f"last_download_attempt_at/{key}", now):
-            logger.info(
-                "MAA 本体更新: 今日已尝试获取该通道的本体包，明日再试；已有缓存照常使用"
-            )
-            return
-        # 请求前持久记账：失败、取消或进程退出都不能再次消耗当天预算
-        state[f"last_download_attempt_at/{key}"] = now.isoformat()
-        _utils_io.write_file(_STATE_FILE, state)
     part = cache_dir / "package.zip.part"
     try:
         # Mirror 酱临时授权 URL 显式声明来源并锁定内置下载器，不依赖全局
@@ -514,8 +486,6 @@ def _cache_key(arch: str, channel: str) -> str:
 
 _precheck_tasks: dict[tuple[str, str], asyncio.Task[None]] = {}
 _cache_locks: dict[str, asyncio.Lock] = {}
-# 下载地址只留在内存，避免把带鉴权信息的 URL 写入状态文件。
-_latest_queries: dict[str, _Latest] = {}
 
 
 def _query_key(arch: str, channel: str, cdk: str) -> str:
@@ -548,47 +518,76 @@ async def _precheck_flow(maa_root: Path, channel: str, arch: str, cdk: str) -> N
 
 
 async def _precheck_inner(maa_root: Path, channel: str, arch: str, cdk: str) -> None:
-    query_key = _query_key(arch, channel, cdk)
-    latest = _latest_queries.get(query_key)
-    async with _state_lock:
-        state = load_state(_STATE_FILE)
-        now = datetime.now(timezone.utc)
-        if backoff_active(state, f"query_fail_until/{query_key}", now):
-            logger.info("MAA 本体更新: 查询退避期内，本轮跳过检查")
-            return
-        last_query = parse_iso(state.get(f"last_query_at/{query_key}"))
-        within_floor = last_query is not None and now - last_query < timedelta(
-            seconds=_QUERY_FLOOR
-        )
-    if within_floor:
-        if latest is None:
-            logger.info("MAA 本体更新: 距该通道上次查询不足 10 分钟，本轮复用已有包")
-            return
-    else:
-        latest = await _fetch_latest(channel, arch, cdk)
-        async with _state_lock:
-            state = load_state(_STATE_FILE)
-            state[f"last_query_at/{query_key}"] = datetime.now(timezone.utc).isoformat()
-            _utils_io.write_file(_STATE_FILE, state)
-            _latest_queries[query_key] = latest
-
-    # 高通道回落低通道版本（beta/alpha 返回正式版）是预期行为，不按响应
-    # 版本的通道拦截；方向由下面的版本比较守卫（不降级）
+    """先免费查询与检查缓存、额度，再申请一次性下载地址。"""
     release = read_installed_release(maa_root)
     if release is None:
         return
+    query_key = _query_key(arch, channel, cdk)
+    async with _state_lock:
+        state = load_state(_STATE_FILE)
+        if backoff_active(
+            state, f"query_fail_until/{query_key}", datetime.now(timezone.utc)
+        ):
+            return
+    try:
+        async with asyncio.timeout(_QUERY_TIMEOUT):
+            payload = await request_mirror_resource(
+                _MIRROR_RESOURCE_ID,
+                params={"os": "win", "arch": arch, "channel": channel},
+                proxy=Config.proxy,
+                timeout=_QUERY_TIMEOUT,
+            )
+    except Exception as error:
+        raise _UpdateError(f"镜像酱版本查询失败: {error}") from error
+    data = payload.get("data")
+    target_text = data.get("version_name") if isinstance(data, dict) else None
+    target = parse_version(target_text) if isinstance(target_text, str) else None
     current = parse_version(release[0])
-    target = parse_version(latest.version)
-    if current is None or target is None:
-        logger.warning(
-            "MAA 本体更新: 版本无法比较"
-            f"（当前 {release[0]!r} → 目标 {latest.version!r}），跳过"
-        )
-        return
+    if target is None or current is None:
+        raise _UpdateError("MAA 本体版本无法比较")
     if compare_versions(target, current) <= 0:
-        logger.info(f"MAA 本体更新: 已是最新（{release[0]}，{channel} 通道）")
         return
-    await _ensure_cache(latest, channel, arch, cdk)
+
+    cache_dir = software_cache_dir("win", arch, channel)
+    manifest = load_cache_manifest(cache_dir)
+    cached = parse_version(manifest["version"]) if manifest else None
+    if (
+        manifest is not None
+        and cached is not None
+        and compare_versions(cached, target) >= 0
+        and await asyncio.to_thread(cache_zip_matches, cache_dir, manifest)
+    ):
+        return
+
+    key = _cache_key(arch, channel)
+    attempt_field = f"last_download_attempt_at/{key}"
+    version_field = f"last_download_attempt_version/{key}"
+    async with _state_lock:
+        state = load_state(_STATE_FILE)
+        now = datetime.now(timezone.utc)
+        if backoff_active(state, f"download_fail_until/{key}", now):
+            return
+        previous = parse_version(str(state.get(version_field) or ""))
+        if (
+            attempted_today(state, attempt_field, now)
+            and previous is not None
+            and compare_versions(target, previous) <= 0
+        ):
+            return
+    latest = await _fetch_latest(channel, arch, cdk)
+    actual = parse_version(latest.version)
+    async with _state_lock:
+        state = load_state(_STATE_FILE)
+        state[attempt_field] = datetime.now(timezone.utc).isoformat()
+        state[version_field] = (
+            latest.version
+            if actual is not None and compare_versions(actual, target) > 0
+            else target_text
+        )
+        _utils_io.write_file(_STATE_FILE, state)
+    if actual is None or compare_versions(actual, target) < 0:
+        raise _UpdateError("镜像酱本体包未达到已确认的目标版本")
+    await _ensure_cache(latest, channel, arch)
 
 
 def start_maa_software_update_precheck(
@@ -597,7 +596,7 @@ def start_maa_software_update_precheck(
     """自动代理开始时启动本体更新预检查：检查版本并把完整包预下载进共享
     缓存，供收尾 prepare_maa_software_update 消费。
 
-    同一安装的任务进程内去重，同通道架构复用查询结果和完整包；脚本未开启
+    同一安装的任务进程内去重，同通道架构复用已校验的完整包；脚本未开启
     更新接管、无生效 CDK 或安装信息无法识别时不创建任务。本函数不等待
     网络，任何失败只写日志。
 
