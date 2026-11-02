@@ -204,6 +204,17 @@ async def close_running_instances(
     targets: list[tuple[str, Callable[[], Awaitable[object]]]] = []
     roots = await asyncio.to_thread(managed_roots, list(configs))
     for root in roots:
+        if updater.update_in_progress(root):
+            # 换包期间不起 modavd（它会占着 tools\\modavd.exe）；这时本来就没有实例开着，只按进程扫一遍
+            targets.append(
+                (
+                    str(root),
+                    lambda root_path=root: _close_python_root(
+                        root_path, timeout=timeout
+                    ),
+                )
+            )
+            continue
         try:
             cli = await modavd_cli.resolve_cli(root)
         except Exception as e:  # noqa: BLE001

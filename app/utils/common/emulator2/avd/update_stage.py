@@ -824,9 +824,17 @@ def ensure_not_in_use(root: str | Path, verb: str) -> None:
     """
     busy = processes_using(root)
     if busy:
+        # 模拟器关机后 netsimd 有时要过一阵才退：只剩它时提示等一会儿，别让用户以为要手动结束
+        lingering = all(
+            str(item.get("name") or "").lower() == "netsimd.exe" for item in busy
+        )
         raise SwapBlocked(
-            f"还有程序在用模拟器文件：{describe_processes(busy)}。什么都没动，请先关掉所有实例和"
-            f"这些程序再{verb}"
+            f"还有程序在用模拟器文件：{describe_processes(busy)}。什么都没动，"
+            + (
+                f"实例关机后 netsimd 可能还要一会儿才退出，稍等再{verb}"
+                if lingering
+                else f"请先关掉所有实例和这些程序再{verb}"
+            )
         )
 
 

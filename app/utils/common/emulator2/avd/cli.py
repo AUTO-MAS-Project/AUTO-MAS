@@ -22,7 +22,8 @@
 
 这个模块只负责一次 CLI 调用：构造参数、隔离 stdout/stderr、解析 ``--json`` 信封以及把状态值
 翻译成 AUTO-MAS 的公共枚举。根目录是否应该走 CLI、以及业务异常如何和旧实现对齐，由
-``manager.py`` 决定；没有可用的 CLI 时调用方可以继续使用原来的 Python 实现。
+``manager.py`` 决定：根目录没有 ``tools\\modavd.exe`` 时继续用原来的 Python 实现；exe 在但不可用时抛
+:class:`ModAvdUnavailable`，不回退，免得同一台实例两套开关机混用。
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,6 +58,30 @@ COMMAND_TIMEOUT_SECONDS = 60
 BRIDGE_ROUND_BOOT_SECONDS = 300
 BRIDGE_ROUND_STOP_SECONDS = 28
 BRIDGE_ROUND_RESTART_SECONDS = 30
+#: 本进程里所有根目录的 start / restart / create 至少错开这么多秒。0.36.0（modavd v0.1.0）开机后先把
+#: 客体脚本写进用户级的 ``%TEMP%\\modavd-guest``，各根目录共用；几个 modavd 同时第一次写会撞上
+#: 「文件被占用」，那次开机少推一个脚本、只在 ``warnings`` 里留一句。错开开机，开机后的设置也就错开；
+#: 仍然撞上的由管理器在拉游戏前补跑一次 start。
+START_STAGGER_SECONDS = 2.0
+#: start / restart 报这些错时实例可能被开了一半（modavd 自己的开机超时不关机），要补一次 stop；
+#: ``busy``（别的 modavd 正在开）、``precheck_failed``、``port_conflict`` 这类没开机的不能动。
+_STOP_AFTER_START_ERRORS = frozenset(
+    {"timeout", "launch_failed", "canceled", "internal"}
+)
+
+#: 取消 / 超时收尾时每隔这么多秒看一次装桥是否结束、CLI 是否退出。
+_CANCEL_POLL_SECONDS = 2.0
+_next_start_at = 0.0
+
+
+async def _wait_start_turn() -> None:
+    """排到下一个开机名额。读和写之间没有 await，不用锁，也不绑事件循环。"""
+    global _next_start_at
+    now = time.monotonic()
+    turn = max(now, _next_start_at)
+    _next_start_at = turn + START_STAGGER_SECONDS
+    if turn > now:
+        await asyncio.sleep(turn - now)
 
 
 def start_process_timeout(max_wait: int | float) -> float:
@@ -175,7 +201,8 @@ def _parse_envelope(output: ProcessOutput, *, allow_nonzero_ok: bool = False) ->
         # 日志已经和 stdout 分开收取；不把它拼进返回值，避免污染 JSON。
         logger.debug("modavd: {}", output.stderr.strip())
 
-    stderr_tail = output.stderr.strip()[-500:]
+    stderr_lines = [line.strip() for line in output.stderr.splitlines() if line.strip()]
+    stderr_tail = stderr_lines[-1][-300:] if stderr_lines else ""
     try:
         envelope = json.loads(output.stdout.lstrip("\ufeff").strip())
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -355,13 +382,13 @@ class ModAvdCli:
                 logger.warning(
                     f"modavd {label} 取消时正在装桥，等待这一轮结束: {index}"
                 )
-                await asyncio.sleep(2)
+                await asyncio.sleep(_CANCEL_POLL_SECONDS)
                 continue
             try:
                 await self.stop(index)
             except CLIError as exc:
                 logger.warning(f"modavd {label} 取消收尾 stop 失败: {exc.message}")
-            await asyncio.sleep(2)
+            await asyncio.sleep(_CANCEL_POLL_SECONDS)
         if process.returncode is None:
             logger.warning(f"modavd {label} 取消收尾超时，结束 CLI 进程: {index}")
             process.kill()
@@ -530,10 +557,10 @@ class ModAvdCli:
                 and asyncio.get_running_loop().time() < deadline
             ):
                 if await bridge_running(process, indices):
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(_CANCEL_POLL_SECONDS)
                     continue
                 await stop_targets(indices)
-                await asyncio.sleep(2)
+                await asyncio.sleep(_CANCEL_POLL_SECONDS)
                 if not indices and process.returncode is not None:
                     break
             if process.returncode is None:
@@ -542,6 +569,8 @@ class ModAvdCli:
                     await process.wait()
             await stop_targets(indices)
 
+        # v0.2.0 起 create 会无头开一次机，和 start 一样要错开
+        await _wait_start_turn()
         try:
             return await self._call(
                 "create",
@@ -612,6 +641,7 @@ class ModAvdCli:
             )
             await self._stop_after_cancel(index, process, "start")
 
+        await _wait_start_turn()
         try:
             return await self._call(
                 "start",
@@ -619,7 +649,11 @@ class ModAvdCli:
                 timeout=process_timeout,
                 timeout_handler=stop_started_cli,
             )
-        except (CLIError, asyncio.CancelledError):
+        except CLIError as error:
+            if error.code in _STOP_AFTER_START_ERRORS:
+                await self._stop_if_running(index, "start")
+            raise
+        except asyncio.CancelledError:
             await self._stop_if_running(index, "start")
             raise
 
@@ -652,6 +686,7 @@ class ModAvdCli:
             )
             await self._stop_after_cancel(index, process, "restart")
 
+        await _wait_start_turn()
         try:
             return await self._call(
                 "restart",
@@ -659,7 +694,11 @@ class ModAvdCli:
                 timeout=process_timeout,
                 timeout_handler=stop_restarted_cli,
             )
-        except (CLIError, asyncio.CancelledError):
+        except CLIError as error:
+            if error.code in _STOP_AFTER_START_ERRORS:
+                await self._stop_if_running(index, "restart")
+            raise
+        except asyncio.CancelledError:
             await self._stop_if_running(index, "restart")
             raise
 
@@ -711,6 +750,7 @@ __all__ = [
     "resolve_cli",
     "CREATE_PROCESS_MARGIN_SECONDS",
     "CREATE_TIMEOUT_SECONDS",
+    "START_STAGGER_SECONDS",
     "STOP_PROCESS_TIMEOUT_SECONDS",
     "SUPPORTED_PROTOCOL",
     "map_cli_error",

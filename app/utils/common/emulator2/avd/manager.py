@@ -601,6 +601,25 @@ class _AvdCore(DeviceBase):
         self._raise_blocking_check_items(result, error.message, error.advice)
         self._raise_cli_error(error)
 
+    async def _raise_cli_create_error(
+        self, error: modavd_cli.CLIError, index: int
+    ) -> NoReturn:
+        """新建失败。v0.2.0 的 create 开机、装桥没做完会把实例留成「新建失败」，要用户删掉再建；
+        没留下实例（参数错、起不了进程……）时按普通 CLI 错误报。"""
+        status = ""
+        if self._cli is not None:
+            with suppress(modavd_cli.CLIError):
+                data = await self._cli.status(str(index))
+                if isinstance(data, dict):
+                    status = str(data.get("status") or "").lower()
+        if status in {"creating", "create_failed"}:
+            advice = f"（建议：{error.advice}）" if error.advice else ""
+            raise RuntimeError(
+                f"新建没完成，实例 {index} 已标为新建失败，请在列表里删掉它再新建："
+                f"{error.message}{advice}"
+            ) from error
+        self._raise_cli_error(error)
+
     @staticmethod
     def _raise_blocking_check_items(
         result: object, message: str, advice: str = ""
@@ -983,9 +1002,9 @@ class _AvdCore(DeviceBase):
             if isinstance(warnings, list):
                 for warning in warnings:
                     logger.warning(f"实例 {idx} modavd start: {warning}")
-            for key in ("log_file", "logcat_file"):
-                if data.get(key):
-                    logger.debug(f"实例 {idx} modavd {key}: {data[key]}")
+            for name in ("log_file", "logcat_file"):
+                if data.get(name):
+                    logger.debug(f"实例 {idx} modavd {name}: {data[name]}")
             if data.get("setup_pending"):
                 logger.warning(f"实例 {idx} modavd start: 一次性设置仍待完成")
             if isinstance(warnings, list) and any(
@@ -1999,6 +2018,8 @@ class _AvdCore(DeviceBase):
     ) -> dict[str, int]:
         """可改 CPU、内存与帧率（30 / 60，写 ``hw.lcd.vsync``），都是下次启动生效；显示固定 720p。"""
         if self._cli is not None:
+            if updater.update_in_progress(self.root):
+                raise RuntimeError("魔改 AVD 正在更新，更新完再改设置")
             data_gb: int | None = None
             setting_changes = dict(changes)
             if "dataPartitionGb" in setting_changes:
@@ -2175,13 +2196,7 @@ class _AvdCore(DeviceBase):
                     fps=refresh,
                 )
             except modavd_cli.CLIError as error:
-                advice = f"（建议：{error.advice}）" if error.advice else ""
-                if error.code in {"timeout", "internal", "create_failed"}:
-                    raise RuntimeError(
-                        f"新建没完成，实例 {native_index} 已标为新建失败，请在列表里删掉它再新建："
-                        f"{error.message}{advice}"
-                    ) from error
-                self._raise_cli_error(error)
+                await self._raise_cli_create_error(error, native_index)
             item = self._cli_data_instance(data)
             index = item.get("index", native_index)
             if index is None:
@@ -2453,7 +2468,9 @@ class AvdManager(AppLaunchMixin, _AvdCore):
                         timeout=5,
                     )
                 except modavd_cli.CLIError as error:
-                    self._raise_cli_error(error)
+                    # 探一次失败（adb 一时连不上之类）当作还没挂好，到点照常拉游戏
+                    logger.debug(f"实例 {idx} 探 /sdcard 失败: {error.message}")
+                    result = None
                 if (
                     isinstance(result, dict)
                     and isinstance(result.get("exit_code"), int)
