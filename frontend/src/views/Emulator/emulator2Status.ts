@@ -21,6 +21,8 @@ export const DeviceStatus = {
   NOT_FOUND: 5,
   /** 魔改 AVD 新建后在后台开机做初始化，做完前什么都不能动 */
   CREATING: 6,
+  /** 魔改 AVD 新建后的初始化没做完，开不了机，只能删掉重建 */
+  CREATE_FAILED: 7,
   UNKNOWN: 10,
 } as const
 
@@ -101,6 +103,7 @@ interface ActionAvailability {
  *   一直等到启动结束才返回，看起来像卡死；显示 / 隐藏 / 游戏中心进行中照常可改。
  * - 删除：必须离线，且这行没有别的事在进行。
  * - 新建中：全部不能点。魔改 AVD 新建后在后台开机做初始化，这时关机会把初始化打断。
+ * - 新建失败：开不了机、改不了设置，只能删除；关闭留着，新建程序中途退出时可能还剩一台模拟器开着。
  */
 export const actionAvailability = (
   device: Pick<Emulator2DeviceItem, 'availability' | 'status' | 'headless'>,
@@ -120,7 +123,8 @@ export const actionAvailability = (
     status === DeviceStatus.ERROR ||
     status === DeviceStatus.NOT_FOUND ||
     status === DeviceStatus.UNKNOWN
-  const canStop = online || status === DeviceStatus.STARTING
+  const createFailed = status === DeviceStatus.CREATE_FAILED
+  const canStop = online || status === DeviceStatus.STARTING || createFailed
   const hasWindow = device.headless !== true
   return {
     start: reachable && !busy && canStart,
@@ -128,9 +132,11 @@ export const actionAvailability = (
     show: reachable && online && !busy && hasWindow,
     hide: reachable && online && !busy && hasWindow,
     store: reachable && online && !busy,
-    settings: reachable && !heavy,
+    settings: reachable && !heavy && !createFailed,
     delete:
-      reachable && !busy && (status === DeviceStatus.OFFLINE || status === DeviceStatus.NOT_FOUND),
+      reachable &&
+      !busy &&
+      (status === DeviceStatus.OFFLINE || status === DeviceStatus.NOT_FOUND || createFailed),
   }
 }
 
@@ -164,6 +170,7 @@ export const mergeSettings = (
       availability: old.availability,
       title: old.title,
       headless: old.headless,
+      creationError: old.creationError,
     }
   })
 }

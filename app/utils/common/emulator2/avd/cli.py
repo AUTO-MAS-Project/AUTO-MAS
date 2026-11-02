@@ -332,7 +332,7 @@ def map_status(status: str | None, busy: str | None = "") -> DeviceStatus:
     if status_value == "starting":
         return DeviceStatus.STARTING
     if status_value == "create_failed":
-        return DeviceStatus.ERROR
+        return DeviceStatus.CREATE_FAILED
     if status_value == "online":
         return DeviceStatus.ONLINE
     if status_value == "offline":

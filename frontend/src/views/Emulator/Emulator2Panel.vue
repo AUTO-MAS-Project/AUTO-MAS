@@ -861,6 +861,7 @@ const blockedReason = (device: DeviceRow) => {
   if (device.availability !== 'ok') return t('core.emulator2.blocked.missing')
   const status = statusOf(device)
   if (status === DeviceStatus.ERROR) return t('core.emulator2.blocked.error')
+  if (status === DeviceStatus.CREATE_FAILED) return t('core.emulator2.blocked.createFailed')
   if (
     isTransitional(status) ||
     status === DeviceStatus.CREATING ||
@@ -893,6 +894,7 @@ const deviceStatus = (device: DeviceRow) => {
     [DeviceStatus.ERROR]: { color: 'error', text: t('core.emulator.deviceStatus.error') },
     [DeviceStatus.NOT_FOUND]: { color: 'default', text: t('core.emulator.deviceStatus.notFound') },
     [DeviceStatus.CREATING]: { color: 'processing', text: t('core.emulator2.busy.creating') },
+    [DeviceStatus.CREATE_FAILED]: { color: 'error', text: t('core.emulator2.status.createFailed') },
   }
   return (
     map[statusOf(device)] ?? {
@@ -1181,13 +1183,15 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
                 <LoadingOutlined style="margin-right: 4px" />
                 {{ rowLabel(record) }}
               </a-tag>
-              <a-tag v-else :color="deviceStatus(record).color">
-                <LoadingOutlined
-                  v-if="isTransitional(statusOf(record))"
-                  style="margin-right: 4px"
-                />
-                {{ deviceStatus(record).text }}
-              </a-tag>
+              <a-tooltip v-else :title="record.creationError || undefined">
+                <a-tag :color="deviceStatus(record).color">
+                  <LoadingOutlined
+                    v-if="isTransitional(statusOf(record))"
+                    style="margin-right: 4px"
+                  />
+                  {{ deviceStatus(record).text }}
+                </a-tag>
+              </a-tooltip>
             </template>
             <template v-else-if="column.key === 'resolution'">
               <span v-if="settingsLoaded || record.pendingKey">{{ resolutionText(record) }}</span>

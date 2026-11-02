@@ -45,6 +45,10 @@ export type Emulator2DeviceItem = {
      */
     headless?: (boolean | null);
     /**
+     * 状态为新建失败时的原因(魔改 AVD), 其余为空
+     */
+    creationError?: string;
+    /**
      * 已保存设置, 下次启动使用; 不是运行中实例的当前配置
      */
     settings?: Record<string, Emulator2SettingField>;

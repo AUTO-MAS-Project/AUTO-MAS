@@ -689,6 +689,11 @@ class _AvdCore(DeviceBase):
             process_id=pid,
             process_started_at=started_at,
             headless=headless,
+            creation_error=(
+                str(item.get("creation_error") or "")
+                if status == DeviceStatus.CREATE_FAILED
+                else ""
+            ),
         )
 
     def _scan_processes(self) -> dict[str, psutil.Process]:

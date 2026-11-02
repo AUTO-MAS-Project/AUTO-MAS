@@ -229,7 +229,7 @@ def test_error_mapping() -> None:
         ("unknown", "", DeviceStatus.STARTING),
         ("creating", "creating", DeviceStatus.CREATING),
         ("creating", "stopping", DeviceStatus.CREATING),
-        ("create_failed", "", DeviceStatus.ERROR),
+        ("create_failed", "", DeviceStatus.CREATE_FAILED),
         ("offline", "mystery", DeviceStatus.STARTING),
     ],
 )
@@ -1096,14 +1096,32 @@ async def test_creating_instance_shows_creating_and_is_never_stopped_or_started(
         await manager.open("7", manual=True)
     assert not {"stop", "start", "restart"} & set(fake.commands())
 
-    # 新建程序中途被结束：mas-avd.json 还记着 creating，modavd 按新建失败报，照常能关
+    # 新建程序中途被结束：mas-avd.json 还记着 creating，modavd 按新建失败报；列表显示新建失败和原因，
+    # 照常能关、能删
+    failed = {
+        **creating,
+        "status": "create_failed",
+        "busy": "",
+        "creation_error": "新建它的程序中途退出了",
+    }
     fake.plan(
         version=version,
-        status={"data": {**creating, "status": "create_failed", "busy": ""}},
+        status={"data": failed},
+        list={"data": {"instances": [failed]}},
         stop={"data": {}},
+        delete={"data": {}},
     )
+    info = (await manager.getInfo(None))["7"]
+    assert (info.status, info.creation_error) == (
+        DeviceStatus.CREATE_FAILED,
+        "新建它的程序中途退出了",
+    )
+    path = SimpleNamespace(path_id="p", alias="AVD", type="avd")
+    row = EmulatorOperations._device_row(None, path, "1", "7", info, "ok")  # type: ignore[arg-type]
+    assert (row["status"], row["creationError"]) == (7, "新建它的程序中途退出了")
     assert await manager.close("7") == DeviceStatus.OFFLINE
-    assert fake.commands()[-1] == "stop"
+    await manager.delete_instance("7")
+    assert fake.commands()[-2:] == ["stop", "delete"]
 
 
 class _Qemu:

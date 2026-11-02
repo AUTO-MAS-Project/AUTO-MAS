@@ -50,6 +50,9 @@ class DeviceStatus(IntEnum):
     """未找到设备"""
     CREATING = 6
     """正在新建：魔改 AVD（modavd v0.2.0 起）建完文件还要在后台无头开机一次做初始化，做完前不能开机、关机、改设置"""
+    CREATE_FAILED = 7
+    """新建失败：魔改 AVD 新建后的初始化没做完（或新建它的程序中途退出），开不了机，只能删掉重建；原因见
+    :attr:`DeviceInfo.creation_error`"""
     UNKNOWN = 10
     """未知状态"""
 
@@ -71,6 +74,8 @@ class DeviceInfo:
     headless: bool | None = None
     """正在运行的实例是不是无头开机的（没有窗口，显示 / 隐藏无从谈起）。目前只有魔改 AVD 给；
     其它后端、没在运行、读不到进程时为 ``None``。"""
+    creation_error: str = ""
+    """:attr:`DeviceStatus.CREATE_FAILED` 时新建为什么失败（modavd 的 ``creation_error``）；其余为空串。"""
 
 
 @dataclass(frozen=True)
