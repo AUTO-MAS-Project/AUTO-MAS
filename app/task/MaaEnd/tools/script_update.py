@@ -107,6 +107,33 @@ async def request_release(channel: str) -> dict:
     return max(releases, key=lambda item: item[0])[1]
 
 
+async def request_release_for_version(version: Version, installed_tag: str) -> dict:
+    """对原生升级后的当前版本查找官方发行包；不相信本地文件的旧哈希。"""
+    tags = dict.fromkeys((installed_tag, f"v{version}", str(version)))
+    async with httpx.AsyncClient(
+        proxy=Config.proxy, timeout=15, follow_redirects=True
+    ) as client:
+        for tag in tags:
+            response = await client.get(
+                f"https://api.github.com/repos/{REPOSITORY}/releases/tags/"
+                f"{quote(tag, safe='')}"
+            )
+            if response.status_code == 404:
+                continue
+            response.raise_for_status()
+            release = response.json()
+            if not isinstance(release, dict) or release.get("draft"):
+                raise ValueError("当前 MaaEnd 版本没有可信的公开发行记录")
+            try:
+                official_version = Version(str(release["tag_name"]))
+            except (KeyError, TypeError, ValueError) as error:
+                raise ValueError("官方发行版本信息无效") from error
+            if official_version != version:
+                raise ValueError("官方发行版本与当前 MaaEnd 不一致")
+            return release
+    raise ValueError("当前 MaaEnd 版本没有可校验的官方完整发行包")
+
+
 def select_package(release: dict, arch: str) -> tuple[Version, str, str, int, str]:
     tag = release["tag_name"]
     version = Version(tag)
@@ -151,15 +178,40 @@ async def update_before_run(
     )
     if target == current and verified:
         return f"MaaEnd 当前版本 {current} 无需更新"
+    recover_native = target < current and not verified
     if target < current:
         if verified:
             return f"MaaEnd 当前版本 {current} 高于所选通道，无需更新"
-        raise ValueError(
-            "当前 MaaEnd 高于所选更新通道，且安装尚未通过校验，请选择匹配通道"
-        )
+        # MXU 可以在 MAS 接管之间独立升级；旧回执失效不等于新版本损坏。
+        # 只允许用当前版本的官方完整包重新安装验证，不降级、不重签旧文件。
+        try:
+            installed_tag = str(
+                _utils_io.read_dict_file(root / "interface.json", format=".json5")[
+                    "version"
+                ]
+            )
+            official_release = await request_release_for_version(current, installed_tag)
+            verified_target, name, url, size, digest = select_package(
+                official_release, arch
+            )
+            if verified_target != current:
+                raise ValueError("当前版本与官方完整包版本不一致")
+        except (OSError, ValueError, KeyError, TypeError, httpx.HTTPError) as error:
+            raise script_install.InstallUnsafeError(
+                "MXU 原生升级后，MAS 原安装回执已失效；"
+                "无法取得当前版本的可信官方完整包，请检查网络或手动修复，"
+                "不会自动降级"
+            ) from error
+        target = verified_target
+    # 当前版本高于所选通道时只用精确匹配的 GitHub 官方包恢复可信回执；
+    # Mirror 酱提供的是通道最新包，不能假定其中含有该历史版本。
     cdk = (
-        config.Update.MirrorChyanCDK.strip()
-        or Config.setting.Update.MirrorChyanCDK.strip()
+        ""
+        if recover_native
+        else (
+            config.Update.MirrorChyanCDK.strip()
+            or Config.setting.Update.MirrorChyanCDK.strip()
+        )
     )
     source = "GitHub"
     if cdk:
@@ -254,7 +306,8 @@ async def update_before_run(
             prepare_ready=refresh_merged_pipelines,
         )
         _utils_io.write_file(
-            script_install.workspace(root) / "program-identity.json", {"arch": arch}
+            script_install.workspace(root) / "program-identity.json",
+            {"arch": arch, "version": str(target)},
         )
         return f"MaaEnd 已更新至 {target}，完整性校验通过"
     finally:
