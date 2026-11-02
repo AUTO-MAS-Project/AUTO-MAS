@@ -993,7 +993,24 @@ async def _swap(runtime: _Runtime, *, host: UpdateHost) -> str:
         )
     _set(runtime, "installing", message="正在换上新版")
     await _publish(runtime, host=host)
-    return await asyncio.to_thread(stage.swap_in, root)
+    for attempt in range(4):
+        try:
+            return await asyncio.to_thread(stage.swap_in, root)
+        except stage.SwapBlocked:
+            if attempt == 3:
+                raise
+            occupants = await asyncio.to_thread(stage.processes_using, root)
+            only_cli = bool(occupants) and all(
+                str(item.get("name") or "").lower() == "modavd.exe"
+                for item in occupants
+            )
+            if not only_cli:
+                raise
+            logger.info(
+                f"{root} 换包被 modavd 查询进程短暂占用，第 {attempt + 1} 次重试"
+            )
+            await asyncio.sleep(1)
+    raise AssertionError("unreachable")
 
 
 async def _ensure_recovered(runtime: _Runtime) -> None:

@@ -31,6 +31,9 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('Emulator2')
 const api = useAvdUpdateApi()
 
+/** 没收到 WebSocket 时的兜底轮询间隔（毫秒），只在有更新在跑时轮询 */
+const BUSY_POLL_MS = 2000
+
 const status = ref<Emulator2AvdUpdateStatusOut | null>(null)
 const acting = ref(false)
 /** 这次打开后点过「检查更新」：之前不显示最新版本、不给「更新到 …」 */
@@ -39,7 +42,6 @@ const checking = ref(false)
 const progress = ref<WSAvdUpdateProgressData | null>(null)
 let subscription: string | null = null
 let pollTimer: ReturnType<typeof setTimeout> | null = null
-const POLL_MS = 2000
 /** 卸载后在途请求回来，不再更新状态、也不再排下一次轮询 */
 let disposed = false
 
@@ -71,15 +73,8 @@ const describe = (error: unknown) => (error instanceof Error ? error.message : S
 
 const schedulePoll = () => {
   if (pollTimer) clearTimeout(pollTimer)
-  if (disposed) {
-    pollTimer = null
-    return
-  }
-  // 更新状态接口在更新期间走文件快照，不会启动 modavd；WebSocket 断线时仍靠轮询收尾。
-  pollTimer = setTimeout(() => {
-    pollTimer = null
-    void refresh()
-  }, POLL_MS)
+  pollTimer =
+    !disposed && status.value?.busy ? setTimeout(() => void refresh(), BUSY_POLL_MS) : null
 }
 
 const refresh = async () => {

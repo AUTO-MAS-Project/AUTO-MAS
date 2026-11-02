@@ -33,10 +33,16 @@ from app.utils.common.emulator2.avd.precheck import PrecheckFailed
 class _FakeRunner:
     def __init__(self, output: ProcessOutput | None = None) -> None:
         self.output = output
-        self.calls: list[tuple[list[str], float]] = []
+        self.calls: list[tuple[list[str], float, object, bool]] = []
 
-    async def __call__(self, args: Sequence[str], timeout: float) -> ProcessOutput:
-        self.calls.append((list(args), timeout))
+    async def __call__(
+        self,
+        args: Sequence[str],
+        timeout: float,
+        timeout_handler: object = None,
+        breakaway: bool = False,
+    ) -> ProcessOutput:
+        self.calls.append((list(args), timeout, timeout_handler, breakaway))
         if self.output is None:
             raise AssertionError("fake runner has no output")
         return self.output
@@ -79,7 +85,7 @@ async def test_stderr_is_not_mixed_into_json_and_arguments_are_mapped(
     )
     cli = _cli(tmp_path, fake)
     assert await cli.list() == {"instances": []}
-    args, timeout = fake.calls[-1]
+    args, timeout = fake.calls[-1][0], fake.calls[-1][1]
     assert args[1:5] == ["--root", str(tmp_path), "--json", "list"]
     assert timeout > 0
 
@@ -111,7 +117,7 @@ async def test_start_stop_restart_flags_and_timeouts(tmp_path: Path) -> None:
     cli = _cli(tmp_path, fake)
 
     await cli.start(3, window=True, timeout=10)
-    args, process_timeout = fake.calls[-1]
+    args, process_timeout = fake.calls[-1][0], fake.calls[-1][1]
     assert args[4:] == ["start", "3", "--window", "--timeout", "10"]
     assert process_timeout >= 190
 
@@ -186,7 +192,9 @@ async def test_create_retries_without_timeout_for_v01_usage_error(
         ProcessOutput(0, '{"ok":true,"data":{"index":7}}', ""),
     ]
 
-    async def runner(args: Sequence[str], timeout: float) -> ProcessOutput:
+    async def runner(
+        args: Sequence[str], timeout: float, timeout_handler: object, breakaway: bool
+    ) -> ProcessOutput:
         calls.append((list(args), timeout))
         return outputs.pop(0)
 
@@ -235,8 +243,10 @@ def test_error_mapping_includes_advice() -> None:
 
 @pytest.mark.asyncio
 async def test_timeout_from_runner_is_a_cli_error(tmp_path: Path) -> None:
-    async def timeout_runner(args: Sequence[str], timeout: float) -> ProcessOutput:
-        del args, timeout
+    async def timeout_runner(
+        args: Sequence[str], timeout: float, timeout_handler: object, breakaway: bool
+    ) -> ProcessOutput:
+        del args, timeout, timeout_handler, breakaway
         raise asyncio.TimeoutError
 
     cli = ModAvdCli(tmp_path, exe=sys.executable, runner=timeout_runner)
@@ -286,8 +296,13 @@ async def test_real_fake_modavd_program_keeps_json_and_stderr_separate(
     )
     exe = Path(sys.executable)
 
-    async def runner(args: Sequence[str], timeout: float) -> ProcessOutput:
-        del timeout
+    async def runner(
+        args: Sequence[str],
+        timeout: float,
+        timeout_handler: object,
+        breakaway: bool,
+    ) -> ProcessOutput:
+        del timeout, timeout_handler, breakaway
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             str(script),
@@ -402,6 +417,8 @@ async def test_resolve_cli_does_not_cache_transient_version_failure(
 class _FakeManagerCli:
     def __init__(self) -> None:
         self.list_calls = 0
+        self.create_call = None
+        self.create_error: CLIError | None = None
 
     async def list(self) -> dict:
         self.list_calls += 1
@@ -443,6 +460,16 @@ class _FakeManagerCli:
                 "fps": kwargs.get("fps"),
             }
         }
+
+    async def check(self, *, memory: int | str | None = None) -> dict:
+        del memory
+        return {"items": []}
+
+    async def create(self, **kwargs: object) -> dict:
+        self.create_call = kwargs
+        if self.create_error is not None:
+            raise self.create_error
+        return {"index": kwargs.get("index")}
 
 
 @pytest.mark.asyncio
@@ -508,6 +535,39 @@ async def test_manager_set_visible_ignores_cli_error(tmp_path: Path) -> None:
         manager_exe, 60, False, cli=WindowErrorCli()
     )
     assert await manager.setVisible("2", True) == DeviceStatus.UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_manager_create_maps_all_options_and_fps(tmp_path: Path) -> None:
+    manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
+    cli = _FakeManagerCli()
+    manager = _AvdCore(manager_exe, 60, False, cli=cli)  # type: ignore[arg-type]
+    assert (
+        await manager.create_instance(
+            "x", memory_mb=4096, cpu=4, fps=30, data_partition_gb=64, native_index=7
+        )
+        == "7"
+    )
+    assert cli.create_call == {
+        "index": 7,
+        "title": "x",
+        "memory": 4096,
+        "cpu": 4,
+        "data_gb": 64,
+        "fps": 30,
+    }
+
+
+@pytest.mark.asyncio
+async def test_manager_create_timeout_preserves_cli_error_cause(tmp_path: Path) -> None:
+    manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
+    cli = _FakeManagerCli()
+    cli.create_error = CLIError("timeout", "超时", "查看日志")
+    manager = _AvdCore(manager_exe, 60, False, cli=cli)  # type: ignore[arg-type]
+    with pytest.raises(RuntimeError) as exc_info:
+        await manager.create_instance("x", native_index=7)
+    assert isinstance(exc_info.value.__cause__, CLIError)
+    assert exc_info.value.__cause__.code == "timeout"
 
 
 def test_service_cli_status_result_maps_components_and_prechecks(

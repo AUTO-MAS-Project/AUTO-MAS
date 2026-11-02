@@ -35,6 +35,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Sequence
 
+import psutil
+
 from app.models.emulator import DeviceStatus
 from app.utils import get_logger
 from app.utils.common.process import runner as _utils_process_runner
@@ -47,7 +49,7 @@ SUPPORTED_PROTOCOL = 1
 CLI_EXE_RELATIVE_PATH = Path("tools") / "modavd.exe"
 DEFAULT_START_TIMEOUT_SECONDS = 300
 CREATE_TIMEOUT_SECONDS = 1200
-CREATE_PROCESS_MARGIN_SECONDS = 180
+CREATE_PROCESS_MARGIN_SECONDS = 240
 STOP_PROCESS_TIMEOUT_SECONDS = 90
 INSTALL_PROCESS_TIMEOUT_SECONDS = 900
 COMMAND_TIMEOUT_SECONDS = 60
@@ -103,22 +105,25 @@ class ModAvdUnavailable(RuntimeError):
     """根目录有 modavd.exe，但它不可用；不允许悄悄切回 Python 实现。"""
 
 
-Runner = Callable[[Sequence[str], float], Awaitable[ProcessOutput]]
+ProcessTimeoutHandler = Callable[[asyncio.subprocess.Process], Awaitable[None]]
+Runner = Callable[
+    [Sequence[str], float, ProcessTimeoutHandler | None, bool], Awaitable[ProcessOutput]
+]
 
 
 async def _run_process(
     args: Sequence[str],
     timeout: float,
     *,
-    timeout_handler: Callable[[asyncio.subprocess.Process], Awaitable[None]]
-    | None = None,
+    timeout_handler: ProcessTimeoutHandler | None = None,
+    breakaway: bool = False,
 ) -> ProcessOutput:
     """启动一次 modavd；超时处理只针对 CLI 进程，不碰它脱离出来的模拟器。"""
 
     try:
         process = await _utils_process_runner.create_subprocess(
             *args,
-            breakaway=False,
+            breakaway=breakaway,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -129,20 +134,27 @@ async def _run_process(
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
     except asyncio.CancelledError:
-        if timeout_handler is not None:
+        try:
+            if timeout_handler is not None:
+                await asyncio.shield(timeout_handler(process))
+        except Exception as exc:  # noqa: BLE001 - kill/wait 仍必须执行
+            logger.warning(f"modavd 取消收尾失败: {exc}")
+        finally:
+            if process.returncode is None:
+                process.kill()
             with suppress(Exception):
-                await timeout_handler(process)
-        if process.returncode is None:
-            process.kill()
-        with suppress(Exception):
-            await process.wait()
+                await process.wait()
         raise
     except asyncio.TimeoutError as exc:
-        if timeout_handler is not None:
-            await timeout_handler(process)
-        if process.returncode is None:
-            process.kill()
-        await process.communicate()
+        try:
+            if timeout_handler is not None:
+                await timeout_handler(process)
+        except Exception as handler_error:  # noqa: BLE001 - timeout 本身优先返回
+            logger.warning(f"modavd 超时收尾失败: {handler_error}")
+        finally:
+            if process.returncode is None:
+                process.kill()
+            await process.communicate()
         raise CLIError("timeout", f"modavd 命令超过 {timeout:.0f} 秒未结束") from exc
 
     return ProcessOutput(
@@ -271,7 +283,7 @@ def map_cli_error(error: CLIError) -> RuntimeError:
                 "魔改 AVD 开机前检查",
                 False,
                 True,
-                message,
+                error.message,
                 error.advice,
             )
         )
@@ -316,6 +328,58 @@ class ModAvdCli:
     def executable_available(self) -> bool:
         return self.exe.is_file()
 
+    async def _stop_after_cancel(
+        self, index: str | int, process: asyncio.subprocess.Process, label: str
+    ) -> None:
+        """取消 start/restart 时等待装桥这一轮完成，再优雅 stop；超时才杀 CLI。"""
+        index = str(index)
+        deadline = asyncio.get_running_loop().time() + STOP_PROCESS_TIMEOUT_SECONDS
+        while (
+            process.returncode is None and asyncio.get_running_loop().time() < deadline
+        ):
+            bridging = False
+            with suppress(CLIError):
+                data = await self.status(index)
+                bridging = (
+                    isinstance(data, dict)
+                    and str(data.get("busy") or "").lower() == "bridging"
+                )
+            if not bridging:
+                with suppress(Exception):
+                    parent = psutil.Process(process.pid)
+                    bridging = any(
+                        "modavd-bridge.ps1" in " ".join(child.cmdline()).lower()
+                        for child in parent.children(recursive=True)
+                    )
+            if bridging:
+                logger.warning(
+                    f"modavd {label} 取消时正在装桥，等待这一轮结束: {index}"
+                )
+                await asyncio.sleep(2)
+                continue
+            try:
+                await self.stop(index)
+            except CLIError as exc:
+                logger.warning(f"modavd {label} 取消收尾 stop 失败: {exc.message}")
+            await asyncio.sleep(2)
+        if process.returncode is None:
+            logger.warning(f"modavd {label} 取消收尾超时，结束 CLI 进程: {index}")
+            process.kill()
+            with suppress(Exception):
+                await process.wait()
+        try:
+            await self.stop(index)
+        except CLIError as exc:
+            logger.warning(f"modavd {label} 取消后补 stop 失败: {exc.message}")
+
+    async def _stop_if_running(self, index: str | int, label: str) -> None:
+        try:
+            data = await self.status(index)
+            if isinstance(data, dict) and data.get("running"):
+                await self.stop(index)
+        except CLIError as exc:
+            logger.warning(f"modavd {label} 退出后补 stop 失败: {exc.message}")
+
     def _args(
         self,
         command: str,
@@ -335,10 +399,15 @@ class ModAvdCli:
         include_root: bool = True,
         timeout: float = COMMAND_TIMEOUT_SECONDS,
         allow_nonzero_ok: bool = False,
+        timeout_handler: ProcessTimeoutHandler | None = None,
+        breakaway: bool = False,
     ) -> Any:
         try:
             output = await self._runner(
-                self._args(command, *command_args, include_root=include_root), timeout
+                self._args(command, *command_args, include_root=include_root),
+                timeout,
+                timeout_handler,
+                breakaway,
             )
         except CLIError:
             raise
@@ -395,64 +464,105 @@ class ModAvdCli:
         legacy_args = list(args)
         args.extend(("--timeout", str(create_timeout)))
         process_timeout = create_timeout + CREATE_PROCESS_MARGIN_SECONDS
-        if self._runner is not _run_process:
-            try:
-                return await self._call("create", *args, timeout=process_timeout)
-            except CLIError as error:
-                # v0.1.0 的 create 尚未认识 --timeout；它本身只写配置，保留兼容性，
-                # 但仍按 1200 秒的外层预算等待，避免回到旧的 60 秒限制。
-                if (
-                    error.code not in {"invalid_argument", "usage"}
-                    or "--timeout" not in error.message
-                ):
-                    raise
-                return await self._call("create", *legacy_args, timeout=process_timeout)
+        existing: set[str] = set()
+        if index is None:
+            listing = await self.list()
+            raw_items = (
+                listing.get("instances", []) if isinstance(listing, dict) else []
+            )
+            existing = {
+                str(raw.get("index"))
+                for raw in raw_items
+                if isinstance(raw, dict) and raw.get("index") is not None
+            }
+
+        async def stop_targets(targets: list[str], *, force: bool = False) -> None:
+            for item in dict.fromkeys(targets):
+                try:
+                    await self.stop(item, force=force)
+                except CLIError as exc:
+                    logger.warning(
+                        f"modavd create 收尾 stop {item} 失败: {exc.message}"
+                    )
+
+        async def find_targets() -> list[str]:
+            listing = await self.list()
+            items = listing.get("instances", []) if isinstance(listing, dict) else []
+            targets: list[str] = []
+            for raw in items:
+                if not isinstance(raw, dict) or raw.get("index") is None:
+                    continue
+                item = str(raw["index"])
+                status = str(raw.get("status") or "").lower()
+                if item not in existing and status in {"creating", "create_failed"}:
+                    targets.append(item)
+            return targets
+
+        async def bridge_running(
+            process: asyncio.subprocess.Process, targets: list[str]
+        ) -> bool:
+            for item in targets:
+                with suppress(CLIError):
+                    data = await self.status(item)
+                    if (
+                        isinstance(data, dict)
+                        and str(data.get("busy") or "").lower() == "bridging"
+                    ):
+                        return True
+            with suppress(Exception):
+                parent = psutil.Process(process.pid)
+                for child in parent.children(recursive=True):
+                    cmdline = " ".join(child.cmdline()).lower()
+                    if "modavd-bridge.ps1" in cmdline:
+                        return True
+            return False
 
         async def stop_created_cli(process: asyncio.subprocess.Process) -> None:
             indices: list[str] = []
             if index is not None:
                 indices.append(str(index))
             else:
+                with suppress(CLIError):
+                    indices = await find_targets()
+            deadline = asyncio.get_running_loop().time() + STOP_PROCESS_TIMEOUT_SECONDS
+            while (
+                process.returncode is None
+                and asyncio.get_running_loop().time() < deadline
+            ):
+                if await bridge_running(process, indices):
+                    await asyncio.sleep(2)
+                    continue
+                await stop_targets(indices)
+                await asyncio.sleep(2)
+                if not indices and process.returncode is not None:
+                    break
+            if process.returncode is None:
+                process.kill()
                 with suppress(Exception):
-                    listing = await self.list()
-                    items = (
-                        listing.get("instances", [])
-                        if isinstance(listing, dict)
-                        else []
-                    )
-                    for raw in items:
-                        if not isinstance(raw, dict):
-                            continue
-                        status = str(raw.get("status") or "").lower()
-                        busy = str(raw.get("busy") or "").lower()
-                        if status in {"creating", "create_failed"} or busy:
-                            if raw.get("index") is not None:
-                                indices.append(str(raw["index"]))
-            for item in dict.fromkeys(indices):
-                with suppress(Exception):
-                    await self.stop(item, force=True)
-            with suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(process.wait(), STOP_PROCESS_TIMEOUT_SECONDS)
+                    await process.wait()
+            await stop_targets(indices)
 
         try:
-            output = await _run_process(
-                self._args("create", *args),
-                process_timeout,
+            return await self._call(
+                "create",
+                *args,
+                timeout=process_timeout,
                 timeout_handler=stop_created_cli,
+                breakaway=True,
             )
-            return _parse_envelope(output)
         except CLIError as error:
             if (
                 error.code not in {"invalid_argument", "usage"}
                 or "--timeout" not in error.message
             ):
                 raise
-            output = await _run_process(
-                self._args("create", *legacy_args),
-                process_timeout,
+            return await self._call(
+                "create",
+                *legacy_args,
+                timeout=process_timeout,
                 timeout_handler=stop_created_cli,
+                breakaway=True,
             )
-            return _parse_envelope(output)
 
     async def set(
         self,
@@ -495,26 +605,23 @@ class ModAvdCli:
             args.append("--window")
         args.extend(("--timeout", str(boot_timeout)))
         process_timeout = start_process_timeout(boot_timeout)
-        if self._runner is not _run_process:
-            return await self._call("start", *args, timeout=process_timeout)
 
         async def stop_started_cli(process: asyncio.subprocess.Process) -> None:
             logger.warning(
                 f"modavd start 超时，先请求 stop，再等待 start CLI 进程退出: {index}"
             )
-            try:
-                await self.stop(index)
-            except CLIError as exc:
-                logger.warning(f"modavd 超时收尾 stop 失败: {exc.message}")
-            with suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(process.wait(), STOP_PROCESS_TIMEOUT_SECONDS)
+            await self._stop_after_cancel(index, process, "start")
 
-        output = await _run_process(
-            self._args("start", *args),
-            process_timeout,
-            timeout_handler=stop_started_cli,
-        )
-        return _parse_envelope(output)
+        try:
+            return await self._call(
+                "start",
+                *args,
+                timeout=process_timeout,
+                timeout_handler=stop_started_cli,
+            )
+        except (CLIError, asyncio.CancelledError):
+            await self._stop_if_running(index, "start")
+            raise
 
     async def stop(self, index: str | int, *, force: bool = False) -> Any:
         args = [str(index)]
@@ -538,26 +645,23 @@ class ModAvdCli:
         if force:
             args.append("--force")
         process_timeout = start_process_timeout(boot_timeout)
-        if self._runner is not _run_process:
-            return await self._call("restart", *args, timeout=process_timeout)
 
         async def stop_restarted_cli(process: asyncio.subprocess.Process) -> None:
             logger.warning(
                 f"modavd restart 超时，先请求 stop，再等待 CLI 进程退出: {index}"
             )
-            try:
-                await self.stop(index, force=force)
-            except CLIError as exc:
-                logger.warning(f"modavd restart 超时收尾 stop 失败: {exc.message}")
-            with suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(process.wait(), STOP_PROCESS_TIMEOUT_SECONDS)
+            await self._stop_after_cancel(index, process, "restart")
 
-        output = await _run_process(
-            self._args("restart", *args),
-            process_timeout,
-            timeout_handler=stop_restarted_cli,
-        )
-        return _parse_envelope(output)
+        try:
+            return await self._call(
+                "restart",
+                *args,
+                timeout=process_timeout,
+                timeout_handler=stop_restarted_cli,
+            )
+        except (CLIError, asyncio.CancelledError):
+            await self._stop_if_running(index, "restart")
+            raise
 
     async def stop_all(self, *, force: bool = False) -> Any:
         args = ["--all"]

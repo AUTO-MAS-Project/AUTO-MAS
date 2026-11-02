@@ -598,6 +598,13 @@ class _AvdCore(DeviceBase):
             result = await self._cli.check(memory=memory_mb)
         except modavd_cli.CLIError:
             self._raise_cli_error(error)
+        self._raise_blocking_check_items(result, error.message, error.advice)
+        self._raise_cli_error(error)
+
+    @staticmethod
+    def _raise_blocking_check_items(
+        result: object, message: str, advice: str = ""
+    ) -> None:
         items = result.get("items", []) if isinstance(result, dict) else []
         for item in items:
             if not isinstance(item, dict) or item.get("blocking") is not True:
@@ -609,11 +616,10 @@ class _AvdCore(DeviceBase):
                         str(item.get("title") or "魔改 AVD 开机前检查"),
                         False,
                         True,
-                        str(item.get("reason") or error.message),
-                        str(item.get("advice") or error.advice),
+                        str(item.get("reason") or message),
+                        str(item.get("advice") or advice),
                     )
                 )
-        self._raise_cli_error(error)
 
     @staticmethod
     def _cli_data_instance(data: object) -> dict[str, Any]:
@@ -812,7 +818,7 @@ class _AvdCore(DeviceBase):
         return result
 
     async def list_devices(self) -> dict[str, str]:
-        if self._cli is not None:
+        if self._cli is not None and not updater.update_in_progress(self.root):
             try:
                 data = await self._cli.list()
             except modavd_cli.CLIError as error:
@@ -880,6 +886,8 @@ class _AvdCore(DeviceBase):
         无头开机的实例没有窗口，开机后也补不出窗口，只记一笔。
         不抛异常：脚本在静默模式下每轮都会调这个，抛了会把整次运行判失败。
         """
+        if self._cli is not None and updater.update_in_progress(self.root):
+            return await self.getStatus(idx)
         if self._cli is not None:
             try:
                 await self._cli.window(str(idx), visible=is_visible)
@@ -1781,6 +1789,8 @@ class _AvdCore(DeviceBase):
         port = console_port(idx)
         _stop_watchdog(self.root, idx)
         _FROZEN.pop(key, None)
+        if updater.update_in_progress(self.root):
+            return DeviceStatus.OFFLINE
         if self._cli is not None:
             try:
                 await self._cli.stop(
@@ -1932,7 +1942,7 @@ class _AvdCore(DeviceBase):
     # ---- 设置 -----------------------------------------------------------
 
     async def read_instance_settings(self, idx: str) -> InstanceSettings:
-        if self._cli is not None:
+        if self._cli is not None and not updater.update_in_progress(self.root):
             try:
                 raw = self._cli_data_instance(await self._cli.info(str(idx)))
             except modavd_cli.CLIError as error:
@@ -2132,6 +2142,29 @@ class _AvdCore(DeviceBase):
         memory, cores, data_gb = validate_options(memory_mb, cpu, data_partition_gb)
         refresh = validate_fps(fps)
         if self._cli is not None:
+            if updater.update_in_progress(self.root):
+                raise RuntimeError("魔改 AVD 正在更新，更新完再新建实例")
+            self._check_components()
+            try:
+                check_result = await self._cli.check(memory=memory)
+            except modavd_cli.CLIError as error:
+                await self._raise_cli_precheck(error, memory)
+            self._raise_blocking_check_items(check_result, "魔改 AVD 开机前检查未通过")
+            if native_index is None:
+                listing = await self._cli.list()
+                raw_items = (
+                    listing.get("instances", []) if isinstance(listing, dict) else []
+                )
+                existing = {
+                    int(raw["index"])
+                    for raw in raw_items
+                    if isinstance(raw, dict) and str(raw.get("index", "")).isdigit()
+                }
+                native_index = await asyncio.to_thread(self._free_index, existing)
+            else:
+                native_index = int(native_index)
+                if not valid_native_index(native_index):
+                    raise ValueError(f"原生索引 {native_index} 不可用")
             try:
                 data = await self._cli.create(
                     index=native_index,
@@ -2142,9 +2175,11 @@ class _AvdCore(DeviceBase):
                     fps=refresh,
                 )
             except modavd_cli.CLIError as error:
-                if error.code == "timeout":
+                advice = f"（建议：{error.advice}）" if error.advice else ""
+                if error.code in {"timeout", "internal", "create_failed"}:
                     raise RuntimeError(
-                        f"新建魔改 AVD 实例未完成，可以重新新建：{error.message}"
+                        f"新建没完成，实例 {native_index} 已标为新建失败，请在列表里删掉它再新建："
+                        f"{error.message}{advice}"
                     ) from error
                 self._raise_cli_error(error)
             item = self._cli_data_instance(data)
@@ -2186,6 +2221,8 @@ class _AvdCore(DeviceBase):
 
     async def delete_instance(self, native_index: str) -> None:
         if self._cli is not None:
+            if updater.update_in_progress(self.root):
+                raise RuntimeError("魔改 AVD 正在更新，更新完再删除实例")
             try:
                 await self._cli.delete(str(native_index))
             except modavd_cli.CLIError as error:
@@ -2229,6 +2266,8 @@ class _AvdCore(DeviceBase):
         """在开着的实例里装一个 ``.apk``（``adb install -r``，同包名覆盖安装、保留数据）。
 
         只收单个 ``.apk``：``.xapk`` / 拆分包（``install-multiple``）不支持。返回 adb 的结果行。"""
+        if updater.update_in_progress(self.root):
+            raise RuntimeError("魔改 AVD 正在更新，更新完再安装 APK")
         if self._cli is not None:
             try:
                 data = await self._cli.install(str(idx), apk)
