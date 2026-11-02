@@ -74,7 +74,7 @@ async def test_installs_and_verifies_before_clearing_marker(installation):
     assert "--only-binary=:all:" in calls[1].args
     assert "--upgrade" in calls[1].args
     assert calls[2].args[1:] == ("-m", "pip", "check")
-    assert update.download_file.await_args.kwargs["downloader"] == "builtin"
+    assert update.download_file.await_args.kwargs["source"] == "GitHub"
 
 
 @pytest.mark.asyncio
@@ -147,7 +147,9 @@ def managed_batch(installation, monkeypatch):
     users = [
         SimpleNamespace(user_id=str(uuid.uuid4()), status="等待") for _ in range(2)
     ]
-    instance.script_info = SimpleNamespace(user_list=users, current_index=0, log="")
+    instance.script_info = SimpleNamespace(
+        script_id=str(uuid.uuid4()), user_list=users, current_index=0, log=""
+    )
     instance.script_config = SimpleNamespace(
         Update=SimpleNamespace(TakeoverEnabled=True)
     )
