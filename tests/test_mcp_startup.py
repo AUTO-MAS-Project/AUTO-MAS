@@ -16,9 +16,12 @@ from app.core.lifecycle import _ShutdownCoordinator
 from app.core.runtime_tasks import OwnedTaskRegistry
 
 
-@pytest.mark.parametrize("failure", [False, True])
+@pytest.mark.parametrize(
+    "failure,cleanup_failure",
+    [(False, False), (True, False), (False, True), ("timer", False)],
+)
 def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
-    monkeypatch, isolated_app_paths, failure
+    monkeypatch, isolated_app_paths, failure, cleanup_failure
 ):
     from app.config import config_manager
     from app.services import System, obs_replay
@@ -35,6 +38,8 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
 
     monkeypatch.setattr(core_api, "MCP", service)
     monkeypatch.setattr(main, "is_admin", lambda: True)
+    monkeypatch.setattr(core.Config, "server", None)
+    monkeypatch.setattr(System, "avd_instance_closer", None)
     monkeypatch.setattr(main, "configure_temporary_directory", lambda _: None)
     entered = threading.Event()
     release = threading.Event()
@@ -42,6 +47,8 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
 
     async def timer_start():
         calls.append("timer")
+        if failure == "timer":
+            raise RuntimeError("timer failed")
 
     def blocked_build(*args):
         entered.set()
@@ -91,14 +98,38 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
             monkeypatch.setattr(owner, method, AsyncMock())
     monkeypatch.setattr(core.MainTimer, "start", timer_start)
     monkeypatch.setattr(core.Publisher, "send", AsyncMock(return_value=False))
+    if cleanup_failure:
+        original_shutdown = service.shutdown
+
+        def failing_shutdown():
+            shutdown = original_shutdown()
+
+            async def finish():
+                await shutdown
+                raise RuntimeError("MCP cleanup failed")
+
+            return finish()
+
+        monkeypatch.setattr(service, "shutdown", failing_shutdown)
 
     class Server:
         def __init__(self, config):
             self.app = config.app
 
         async def serve(self):
+            stopped = asyncio.Event()
+            core.MainTimer.stop.side_effect = stopped.set
+            release_task = None
             async with self.app.router.lifespan_context(self.app):
                 try:
+                    if failure == "timer":
+                        async with asyncio.timeout(2):
+                            while self.app.state.background_status == "starting":
+                                await asyncio.sleep(0)
+                        assert self.app.state.background_status == "failed"
+                        assert service.status().state == "pending"
+                        assert not entered.is_set()
+                        return
                     assert await asyncio.to_thread(entered.wait, 5)
                     assert calls == ["timer"]
                     assert self.app.state.background_status == "ready"
@@ -118,8 +149,26 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
                         assert service.status().state == "failed"
                         assert self.app.state.background_status == "ready"
                 finally:
-                    release.set()
+                    if failure:
+                        release.set()
+                    else:
+
+                        async def release_after_business_stops():
+                            try:
+                                await asyncio.wait_for(stopped.wait(), timeout=2)
+                                assert service._closing
+                            finally:
+                                release.set()
+
+                        release_task = asyncio.create_task(
+                            release_after_business_stops()
+                        )
+            if release_task is not None:
+                await release_task
 
     monkeypatch.setattr(uvicorn, "Server", Server)
     main.main.__wrapped__()
     assert service.status().state == "cancelled"
+    core.MainTimer.stop.assert_awaited_once()
+    core.Notify.close.assert_awaited_once()
+    core.MainConnection.begin_shutdown.assert_awaited_once()

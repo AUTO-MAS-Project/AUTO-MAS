@@ -1,5 +1,5 @@
 // WebSocket 统一消息协议类型
-import type { McpStatusData } from '@/api'
+import type { McpStatusData } from '../../api'
 // 与后端 app/core/ws/protocol.py、app/models/schema.py 保持一致
 
 // ==================== 信封 ====================

@@ -205,12 +205,38 @@ async def test_ws_error_does_not_fail_mcp(service, app, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_cleanup_failure_is_a_new_revision_and_disables_retry(
+    service, app, monkeypatch
+):
+    before_cleanup = []
+    release = service._release
+
+    def invalid(*args):
+        raise RuntimeError("invalid tools")
+
+    async def broken_release():
+        before_cleanup.append(service.status())
+        raise RuntimeError("cleanup blocked")
+
+    monkeypatch.setattr(module, "_validate_mcp", invalid)
+    monkeypatch.setattr(service, "_release", broken_release)
+    service.start(app)
+    await wait_loaded(service)
+    failed = service.status()
+    assert failed.error == "cleanup_failed"
+    assert failed.revision > before_cleanup[0].revision
+    assert not service.retry()
+    monkeypatch.setattr(service, "_release", release)
+
+
+@pytest.mark.asyncio
 async def test_full_application_whitelist_and_schema_guards(monkeypatch):
     from fastapi_mcp.openapi import utils
 
     import app.api as api
 
     registry = OwnedTaskRegistry()
+    monkeypatch.setenv("AUTO_MAS_ENABLE_MCP", "1")
     monkeypatch.setattr(module, "RuntimeTasks", registry)
     monkeypatch.setattr(Publisher, "send", AsyncMock(return_value=False))
     service = module.McpService()

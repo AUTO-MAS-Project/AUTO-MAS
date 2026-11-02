@@ -28,7 +28,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from datetime import datetime, timezone
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
@@ -466,6 +466,7 @@ class McpService:
                     # 资源所有权不确定时禁用重试，不能再创建一份有冲突的实例。
                     self._closing = True
                     self._status.error = "cleanup_failed"
+                    self._status.revision += 1
                     logger.exception("MCP 资源清理失败，已禁止再次加载")
             await self._publish()
 
@@ -489,9 +490,12 @@ class McpService:
                 await self._client.aclose()
                 self._client = None
 
-    async def shutdown(self) -> None:
-        """先拒绝新加载，再等待不可取消线程并回收会话和 HTTP client。"""
+    def shutdown(self) -> Coroutine[Any, Any, None]:
+        """调用时立即封禁新加载；返回等待线程和资源回收的协程。"""
         self._closing = True
+        return self._shutdown()
+
+    async def _shutdown(self) -> None:
         async with self._shutdown_lock:
             if self._task is not None:
                 try:

@@ -130,8 +130,9 @@ test.describe('@tools MCP service', () => {
       await gate
       await route.fulfill({ json: { code: 200, accepted: true, data: accepted } })
     })
-    await page.getByRole('button', { name: 'Reload', exact: true }).click()
-    await expect(page.getByRole('button', { name: 'Reload', exact: true })).toBeDisabled()
+    const reload = card.getByRole('button', { name: /Reload$/ })
+    await reload.click()
+    await expect(reload).toBeDisabled()
     expect(retries).toBe(1)
     release()
     await expect(card).toContainText('Importing MCP dependencies')

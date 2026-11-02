@@ -514,8 +514,8 @@ def main():
             from app.core import Dispatcher, MainConnection, RuntimeTasks, Updater
             from app.services import System
 
-            # 先禁止 MCP 新加载；等待已在执行的线程，不能把协程取消当作线程终止。
-            await MCP.shutdown()
+            # 同步封禁新加载，独立回收 MCP；不能让不可取消线程挡住停止主业务。
+            mcp_shutdown = asyncio.create_task(MCP.shutdown(), name="mcp-shutdown")
 
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
             if background_task is not None and not background_task.done():
@@ -566,6 +566,11 @@ def main():
             await Notify.close()
 
             await config_manager.flush()
+            try:
+                await mcp_shutdown
+            except Exception:
+                # MCP 是可选服务，清理失败不能跳过主业务的任何收尾步骤。
+                logger.exception("MCP 服务收尾失败，详见后端日志")
             logger.info("AUTO-MAS 后端服务清理完成")
 
         from app.core import ShutdownCoordinator

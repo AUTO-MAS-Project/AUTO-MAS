@@ -41,7 +41,7 @@ async function fetchStatus(): Promise<McpStatusData> {
   const epoch = generation
   const mutation = mutationSequence
   const response = await Service.getMcpStatusApiCoreMcpStatusGet()
-  if (response.code !== 200) throw new Error(t('tools.mcp.queryFailed'))
+  if (response.code !== 200) throw new Error(t('core.tools.mcp.queryFailed'))
   const current = queryClient.getQueryData<McpStatusData>(STATUS_KEY)
   if (epoch !== generation || sequence !== requestSequence) return current ?? response.data
   // 请求期间先收到新进程的 WS 时，旧进程的在途快照不能把它换回去。
@@ -96,7 +96,7 @@ export function useMcpApi() {
     try {
       await fetchStatus()
     } catch {
-      if (active) error.value = t('tools.mcp.queryFailed')
+      if (active) error.value = t('core.tools.mcp.queryFailed')
     } finally {
       if (active) loading.value = false
     }
@@ -116,9 +116,9 @@ export function useMcpApi() {
         result => (result.accepted ? 'accepted' : 'rejected')
       )
       if (epoch === generation) applyStatus(response.data)
-      if (!response.accepted && active) error.value = t('tools.mcp.retryRejected')
+      if (!response.accepted && active) error.value = t('core.tools.mcp.retryRejected')
     } catch {
-      if (active) error.value = t('tools.mcp.retryFailed')
+      if (active) error.value = t('core.tools.mcp.retryFailed')
     } finally {
       if (active) retrying.value = false
     }

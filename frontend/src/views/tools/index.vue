@@ -13,7 +13,7 @@ const running = computed(() => status.value?.state === 'running')
 const description = computed(() => {
   const snapshot = status.value
   if (!snapshot) return ''
-  return t(`tools.mcp.${snapshot.state === 'running' ? snapshot.stage : snapshot.state}`)
+  return t(`core.tools.mcp.${snapshot.state === 'running' ? snapshot.stage : snapshot.state}`)
 })
 const elapsed = computed(() => {
   const snapshot = status.value
@@ -47,15 +47,15 @@ onUnmounted(() => {
 
 <template>
   <div class="tools-page">
-    <h1>{{ t('tools.title') }}</h1>
+    <h1>{{ t('core.tools.title') }}</h1>
     <a-alert v-if="error" type="error" show-icon :message="error" class="tools-error">
       <template #action>
         <a-button size="small" :loading="loading" @click="refresh">{{
-          t('tools.mcp.refresh')
+          t('core.tools.mcp.refresh')
         }}</a-button>
       </template>
     </a-alert>
-    <a-card :title="t('tools.mcp.title')">
+    <a-card :title="t('core.tools.mcp.title')">
       <template #extra>
         <a-button
           v-if="status?.state === 'failed'"
@@ -63,12 +63,12 @@ onUnmounted(() => {
           :loading="retrying"
           :disabled="retrying || status.error === 'cleanup_failed'"
           @click="retry"
-          >{{ t('tools.mcp.retry') }}</a-button
+          >{{ t('core.tools.mcp.retry') }}</a-button
         >
       </template>
       <div v-if="!status" class="tools-initial-loading">
         <a-spin v-if="loading" />
-        <a-empty v-else :description="t('tools.mcp.noStatus')" />
+        <a-empty v-else :description="t('core.tools.mcp.noStatus')" />
       </div>
       <template v-else>
         <a-space class="tools-status">
@@ -76,14 +76,19 @@ onUnmounted(() => {
           <a-tag :color="statusColor">{{ description }}</a-tag>
         </a-space>
         <a-descriptions :column="1" size="small">
-          <a-descriptions-item :label="t('tools.mcp.enabled')">
-            {{ t(status.enabled ? 'tools.mcp.yes' : 'tools.mcp.no') }}
+          <a-descriptions-item :label="t('core.tools.mcp.enabled')">
+            {{ t(status.enabled ? 'core.tools.mcp.yes' : 'core.tools.mcp.no') }}
           </a-descriptions-item>
-          <a-descriptions-item :label="t('tools.mcp.elapsed')">{{ elapsed }}</a-descriptions-item>
-          <a-descriptions-item v-if="status.state === 'ready'" :label="t('tools.mcp.toolCount')">
+          <a-descriptions-item :label="t('core.tools.mcp.elapsed')">{{
+            elapsed
+          }}</a-descriptions-item>
+          <a-descriptions-item
+            v-if="status.state === 'ready'"
+            :label="t('core.tools.mcp.toolCount')"
+          >
             {{ status.toolCount }}
           </a-descriptions-item>
-          <a-descriptions-item v-if="status.state === 'ready'" :label="t('tools.mcp.address')">
+          <a-descriptions-item v-if="status.state === 'ready'" :label="t('core.tools.mcp.address')">
             <a-typography-text copyable>{{ address }}</a-typography-text>
           </a-descriptions-item>
         </a-descriptions>
@@ -91,8 +96,8 @@ onUnmounted(() => {
           v-if="status.error"
           type="error"
           show-icon
-          :message="t(`tools.mcp.errors.${status.error}`)"
-          :description="t('tools.mcp.seeLogs')"
+          :message="t(`core.tools.mcp.errors.${status.error}`)"
+          :description="t('core.tools.mcp.seeLogs')"
         />
       </template>
     </a-card>

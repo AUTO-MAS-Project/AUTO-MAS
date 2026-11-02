@@ -68,25 +68,6 @@ class McpRetryOut(McpStatusOut):
     accepted: bool = Field(description="仅表示已受理加载，成功以 data.state=ready 为准")
 
 
-@router.get("/mcp/status", summary="获取 MCP 服务状态", response_model=McpStatusOut)
-async def get_mcp_status() -> McpStatusOut:
-    return McpStatusOut(data=MCP.status())
-
-
-@router.post(
-    "/mcp/retry", summary="重新加载失败的 MCP 服务", response_model=McpRetryOut
-)
-async def retry_mcp() -> McpRetryOut:
-    accepted = MCP.retry()
-    return McpRetryOut(
-        code=200 if accepted else 409,
-        status="success" if accepted else "error",
-        message="" if accepted else "MCP 当前状态不允许重新加载",
-        accepted=accepted,
-        data=MCP.status(),
-    )
-
-
 # AUTO-MAS-Runtime 健康检查协议版本：固定返回后端自身支持的版本，不回显监督器注入值，
 # 协议升级后只有如此监督器才能检出版本不兼容。
 HEALTH_PROTOCOL_VERSION = 1
@@ -142,6 +123,25 @@ async def get_health(request: Request) -> BackendHealthOut:
         version=_resolve_injected_identity("AUTO_MAS_EXPECTED_VERSION")
         or Config.VERSION,
         commit=_resolve_injected_identity("AUTO_MAS_EXPECTED_COMMIT") or "",
+    )
+
+
+@router.get("/mcp/status", summary="获取 MCP 服务状态", response_model=McpStatusOut)
+async def get_mcp_status() -> McpStatusOut:
+    return McpStatusOut(data=MCP.status())
+
+
+@router.post(
+    "/mcp/retry", summary="重新加载失败的 MCP 服务", response_model=McpRetryOut
+)
+async def retry_mcp() -> McpRetryOut:
+    accepted = MCP.retry()
+    return McpRetryOut(
+        code=200 if accepted else 409,
+        status="success" if accepted else "error",
+        message="" if accepted else "MCP 当前状态不允许重新加载",
+        accepted=accepted,
+        data=MCP.status(),
     )
 
 
