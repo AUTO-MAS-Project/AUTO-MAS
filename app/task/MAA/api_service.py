@@ -39,8 +39,8 @@ from typing import Any, Awaitable, Callable, Literal, Mapping
 
 from app.core import Config
 from app.models.config import MaaConfig
-from app.services.maa_copilot import CopilotRepository, CopilotScope
-from app.services.update_transport import MirrorCdkStatus
+from app.services import maa_copilot as _service_maa_copilot
+from app.services.common.update import transport as _service_update_transport
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
@@ -54,10 +54,12 @@ from .constants import MAA_DEPOT_EXCLUDED_ITEM_IDS
 
 logger = get_logger("脚本管理 API")
 
-_copilot_repository: CopilotRepository | None = None
+_copilot_repository: _service_maa_copilot.CopilotRepository | None = None
 
 
-async def query_mirror_cdk(cdk: str) -> tuple[MirrorCdkStatus, bool]:
+async def query_mirror_cdk(
+    cdk: str,
+) -> tuple[_service_update_transport.MirrorCdkStatus, bool]:
     """校验编辑草稿，并返回是否使用全局凭据；查询失败沿用错误状态。"""
     from app.task.MAA.tools.update_credentials import query_takeover_cdk
 
@@ -66,23 +68,28 @@ async def query_mirror_cdk(cdk: str) -> tuple[MirrorCdkStatus, bool]:
         result = await query_takeover_cdk(cdk)
     except Exception as error:
         logger.warning(f"脚本 Mirror 酱 CDK 查询失败: {type(error).__name__}")
-        result = MirrorCdkStatus(status="error")
+        result = _service_update_transport.MirrorCdkStatus(status="error")
     return result, using_global
 
 
-def _get_copilot_repository() -> CopilotRepository:
+def _get_copilot_repository() -> _service_maa_copilot.CopilotRepository:
     global _copilot_repository
     if _copilot_repository is None:
-        _copilot_repository = CopilotRepository(Path.cwd() / "data/cache/maa-copilot")
+        _copilot_repository = _service_maa_copilot.CopilotRepository(
+            Path.cwd() / "data/cache/maa-copilot"
+        )
     return _copilot_repository
 
 
 async def get_copilot_source(
-    source: CopilotScope, query: str, *, action: Literal["load", "refresh", "status"]
+    source: _service_maa_copilot.CopilotScope,
+    query: str,
+    *,
+    action: Literal["load", "refresh", "status"],
 ) -> dict[str, Any]:
-    from app.services.maa_copilot import normalize_source
+    from app.services import maa_copilot as _service_maa_copilot
 
-    query = normalize_source(source, query)
+    query = _service_maa_copilot.normalize_source(source, query)
     repository = _get_copilot_repository()
     if action == "status":
         return repository.status(source, query)
@@ -94,10 +101,10 @@ async def get_copilot_source(
 async def search_copilot_authors(keyword: str) -> list[dict[str, str]]:
     import httpx
 
-    from app.services.maa_copilot import request_data
+    from app.services import maa_copilot as _service_maa_copilot
 
     async with httpx.AsyncClient(proxy=Config.proxy or None, timeout=20) as client:
-        users = await request_data(
+        users = await _service_maa_copilot.request_data(
             client, "/user/search", userName=keyword.strip(), page=1, size=20
         )
     return [
@@ -109,14 +116,14 @@ async def analyze_copilot_training(
     script_id: str,
     user_id: str,
     *,
-    source: CopilotScope,
+    source: _service_maa_copilot.CopilotScope,
     query: str,
     coverage: int,
     require_modules: bool,
     binding_key: str = "",
     ignore_level_gaps: bool = False,
 ) -> dict[str, Any]:
-    from app.services.maa_copilot import normalize_source
+    from app.services import maa_copilot as _service_maa_copilot
     from app.task.MAA.tools.cultivate import depot_cultivate_service
     from app.task.MAA.tools.cultivate.copilot import analyze_copilots
 
@@ -125,7 +132,9 @@ async def analyze_copilot_training(
     actual_binding_key = "|".join(binding) if binding else ""
     if binding_key and binding_key != actual_binding_key:
         raise ValueError("森空岛角色绑定尚未保存或已变更，请保存后重新分析")
-    snapshot = _get_copilot_repository().cached(source, normalize_source(source, query))
+    snapshot = _get_copilot_repository().cached(
+        source, _service_maa_copilot.normalize_source(source, query)
+    )
     if snapshot is None:
         raise ValueError("请先完成作业数据同步")
     skland = await get_cultivate_skland_progression(script_id, user_id, force=True)

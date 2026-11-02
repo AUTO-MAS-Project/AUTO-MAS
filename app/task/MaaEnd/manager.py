@@ -18,27 +18,30 @@ from datetime import datetime
 from pathlib import Path
 from time import time_ns
 
+import app.core.notify.formats.maaend as _format_maaend
+import app.core.notify.report as _node_report
 from app.config import ConfigCollection, config_manager
-from app.core import Config, EmulatorManager
-from app.core.maa_capture import capture_adb, capture_win32
-from app.core.ws import Publisher, protocol
-from app.log_box.report import build_user_result_text, mirror_report_to_dispatch
+from app.core import Config, EmulatorManager, Notify, Publisher
+from app.core.notify.task_content import screenshot_entries as screenshot_entries
+from app.core.ws import protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
-from app.models.notification_report import TaskResultReport
+from app.models.notification.report import TaskResultReport, UserReportText
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
-from app.services.endfield_launcher import resolve_launcher_exe
+from app.services import capture_adb, capture_win32
+from app.services import endfield_launcher as _service_endfield_launcher
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
-from app.task.notify_core import screenshot_entries
 from app.task.proxy_helpers import push_dispatch_log
 from app.utils import (
     BASE_NATIVE,
     BASE_SHARED,
     BASE_SOURCE_LABELS,
+    LOG_TYPE_ERROR,
     TASK_MODE_ZH,
     get_logger,
+    log_box,
 )
 from app.utils import io as _utils_io
 
@@ -46,7 +49,6 @@ from .AutoProxy import AutoProxyTask
 from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_base
 from .tools.backup_archive import archive_native_backup
-from .tools.notify import collect_recent_error_images
 from .tools.update import ensure_game_updated
 from .Update import EndfieldUpdateTask
 
@@ -158,7 +160,7 @@ class MaaEndManager(ScriptManagerBase):
                     return "当前 MaaEnd 或控制器不支持「MaaEnd 启动」，请选择启动器启动或 MAS 启动"
                 if script_config.Game.LauncherPath:
                     try:
-                        resolve_launcher_exe(
+                        _service_endfield_launcher.resolve_launcher_exe(
                             Path(str(script_config.Game.Path)),
                             str(script_config.Game.LauncherPath),
                         )
@@ -168,7 +170,7 @@ class MaaEndManager(ScriptManagerBase):
                 # MAS 两种启动方式需要有效启动器；原生模式由 MaaEnd 自行定位。
                 client_exe = Path(str(script_config.Game.Path or "").strip())
                 try:
-                    launcher = resolve_launcher_exe(
+                    launcher = _service_endfield_launcher.resolve_launcher_exe(
                         client_exe, str(script_config.Game.LauncherPath or "")
                     )
                 except ValueError as error:
@@ -501,13 +503,18 @@ class MaaEndManager(ScriptManagerBase):
                 # 按用户交错组装「用户结果行 + 该用户节点详情」：
                 # 开关关闭的用户未启 log_box，push_log 为空，自然只有结果行。
                 has_uncompleted = summary.uncompleted_count > 0
-                user_result_text = build_user_result_text(
-                    self.script_info.user_list, has_uncompleted
+                user_result_text = self._render_user_results(
+                    has_uncompleted=has_uncompleted
                 )
                 # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
-                mirror_report_to_dispatch(self.script_info, user_result_text)
+                if user_result_text:
+                    self.script_info.log = (
+                        f"{self.script_info.log}\n{user_result_text}"
+                        if self.script_info.log
+                        else user_result_text
+                    )
                 error_images = (
-                    collect_recent_error_images(
+                    _format_maaend.collect_recent_error_images(
                         self.script_config.Info.Path,
                         started_at_ns=self.error_image_start_ns,
                         ended_at_ns=time_ns(),
@@ -526,7 +533,7 @@ class MaaEndManager(ScriptManagerBase):
                     if self.all_users_maintenance_skipped:
                         await self.notify_maintenance()
                     else:
-                        await self.task_info.notifications.push_proxy_result(
+                        await Notify.push_proxy_result(
                             title=title,
                             report=TaskResultReport.from_message(result),
                             task_info=self.task_info,
@@ -575,3 +582,32 @@ class MaaEndManager(ScriptManagerBase):
             type=protocol.TASK_NOTICE,
             data=WSTaskNoticeData(level="error", message=f"MaaEnd任务出现异常: {e}"),
         )
+
+    def _render_user_results(self, *, has_uncompleted: bool) -> str:
+        """本专项选择报告条目和展示模式，公共服务只负责排版。"""
+        _report_rows = []
+        for _report_user in self.script_info.user_list:
+            _entries = [
+                item
+                if isinstance(item, log_box.LogEntry)
+                else log_box.LogEntry.from_legacy(item)
+                for item in _report_user.push_log
+                if (item.log_type if isinstance(item, log_box.LogEntry) else item[0])
+                != LOG_TYPE_ERROR
+                or has_uncompleted
+            ]
+            _mode = getattr(_report_user, "push_log_mode", "逐条")
+            if _mode == "关闭":
+                _details = []
+            elif _mode == "汇总":
+                _details = _node_report.render_aggregate_push_log(_entries)
+            else:
+                _details = _node_report.render_scatter_push_log(_entries)
+            _report_rows.append(
+                UserReportText(
+                    name=_report_user.name,
+                    result=_report_user.result,
+                    detail_lines=tuple(_details),
+                )
+            )
+        return _node_report.render_user_result_text(_report_rows)

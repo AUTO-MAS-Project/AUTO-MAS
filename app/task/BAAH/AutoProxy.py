@@ -36,20 +36,30 @@ from pathlib import Path
 from typing import Any
 
 from app.config import ConfigCollection
-from app.core import Config
-from app.core.ws import Publisher, protocol
-from app.log_box import UserLogSession, log_box
+from app.core import Config, Notify, Publisher
+from app.core.notify.task_content import (
+    build_script_statistics_payload as build_script_statistics_payload,
+)
+from app.core.ws import protocol
 from app.models.config import BAAHConfig, BAAHPlanConfig, BAAHUserConfig
 from app.models.emulator import DeviceBase
-from app.models.notification_ports import LocalNotice
+from app.models.notification import LocalNotice
 from app.models.schema import HistoryWrite, WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem
+from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import System
 from app.task.base import ScriptAutoProxyBase
-from app.task.notify_core import build_script_statistics_payload
-from app.tools.bluearchive_activity import BlueArchiveLineType, has_running_activity
-from app.utils import UTC4, LogMonitor, ProcessManager, compile_log_signs, get_logger
+from app.tools.common.game_calendar import bluearchive as _tool_bluearchive_activity
+from app.utils import (
+    LOG_TYPE_NORMAL,
+    UTC4,
+    LogMonitor,
+    ProcessManager,
+    compile_log_signs,
+    get_logger,
+    log_box,
+)
 from app.utils import update_files as _utils_update_files
+from app.utils.common.log import sources as log_source
 
 from .tools import (
     CONFIG_DIR_NAME,
@@ -64,7 +74,7 @@ from .tools import (
     resolve_user_config_path,
     restore_managed_config,
 )
-from .tools.push_log import BAAH_LOG_SPEC
+from .tools import push_log as _push_log
 
 logger = get_logger("BAAH 自动代理")
 
@@ -247,7 +257,11 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         ## 本次活动使用的配置文件名：check() 里确定，prepare() 复用
         self.effective_config_name: str | None = None
         ## log_box：任务节点采集（受「推送任务节点详情」开关控制，关闭时不创建）
-        self.log_collect: UserLogSession | None = None
+        self._log_source: log_source.LogSource | None = None
+        self._log_pipeline: log_box.LogPipeline | None = None
+        self._log_user: UserItem | None = None
+        self._log_failed = False
+        self._log_close_task: asyncio.Task[None] | None = None
         self.script_log_path: Path | None = None
         self.emulator_adb_address: str = ""
         ## 本用户的开始时刻，用于统计信息通知
@@ -341,7 +355,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         ## 该用户 push_log 保持为空，报告自然不含 BAAH 的任务节点；任务日志记录
         ## 与结果判定都不受它影响，照常进行
         self.push_log_enabled = bool(self.script_config.Script.PushLogEnabled)
-        self.log_collect = None
+        self._log_source = None
+        self._log_pipeline = None
+        self._log_user = None
+        self._log_close_task = None
 
         ## 配置文件名在 check() 里已解析并缓存，这里复用同一结果
         config_name = await self._resolve_effective_config_name()
@@ -539,8 +556,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         if not bool(self.cur_user_config.Info.IfEventFirst):
             return self._plan_stage_runtime_values()
 
-        line_type: BlueArchiveLineType = self.cur_user_config.Info.ActivityLineType
-        running = await has_running_activity(line_type)
+        line_type: _tool_bluearchive_activity.BlueArchiveLineType = (
+            self.cur_user_config.Info.ActivityLineType
+        )
+        running = await _tool_bluearchive_activity.has_running_activity(line_type)
         if running is None:
             logger.warning("未取到碧蓝档案活动排期, 本次沿用计划表或 BAAH 原生配置")
             return self._plan_stage_runtime_values()
@@ -780,19 +799,16 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         if not self.push_log_enabled or self.script_log_path is None:
             return
 
-        self.log_collect = log_box.get_user_session(
-            BAAH_LOG_SPEC,
-            user=self.cur_user_item,
+        self._prepare_log_details(
+            self.script_log_path,
             mode=self.cur_user_item.push_log_mode,
             enabled=self.push_log_enabled,
-            paths=[self.script_log_path],
-            start_from_end=True,
+            rotated_name=None,
         )
 
     async def _close_log_collect(self) -> None:
         """本轮与崩溃兜底共用幂等收尾，返回前节点已交付。"""
-        if self.log_collect is not None:
-            await self.log_collect.close()
+        await self._close_log_details()
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调：判定本次运行的结果"""
@@ -864,7 +880,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
         await self.kill_managed_process()
 
-        await self.task_info.local_notifier.send_notice(
+        await Notify.send_notice(
             LocalNotice(
                 title="用户自动代理出现异常！",
                 message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
@@ -981,7 +997,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         )
 
         try:
-            await self.task_info.notifications.push_statistics_report(
+            await Notify.push_statistics_report(
                 payload=build_script_statistics_payload(
                     title=title, message=statistics, result_label="BAAH 执行结果"
                 ),
@@ -1023,3 +1039,75 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             type=protocol.TASK_NOTICE,
             data=WSTaskNoticeData(level="error", message=f"BAAH 任务出现异常: {e}"),
         )
+
+    def _prepare_log_details(
+        self, path: Path, *, mode: str, enabled: bool, rotated_name: str | None
+    ) -> None:
+        """本专项固定来源与用户；读取和交付时机由自身生命周期控制。"""
+        self._log_user = self.cur_user_item
+        self._log_user.push_log_mode = mode
+        self._log_source = None
+        self._log_pipeline = None
+        self._log_close_task = None
+        self._log_failed = False
+        if not enabled:
+            return
+        try:
+            pipeline = log_box.LogPipeline()
+
+            for rule in _push_log.BAAH_PUSH_RULES:
+                pipeline.add_rule(*rule)
+            pipeline.postprocessors.append(_push_log.baah_resolve)
+            source = log_source.LogSource(
+                path, start_from_end=True, rotated_name=rotated_name
+            )
+            source.open()
+            self._log_source = source
+            self._log_pipeline = pipeline
+        except Exception:
+            self._log_failed = True
+            logger.opt(exception=True).warning("BAAH 节点采集初始化失败")
+
+    async def _close_log_details(self) -> None:
+        """本专项只交付一次；取消先等待交付完成再继续传播。"""
+        if self._log_user is None:
+            return
+        if self._log_close_task is None:
+            self._log_close_task = asyncio.create_task(self._collect_log_details())
+        cancelled = None
+        while not self._log_close_task.done():
+            try:
+                await asyncio.shield(self._log_close_task)
+            except asyncio.CancelledError as error:
+                cancelled = error
+        self._log_close_task.result()
+        if cancelled is not None:
+            raise cancelled
+
+    async def _collect_log_details(self) -> None:
+        user = self._log_user
+        source = self._log_source
+        pipeline = self._log_pipeline
+        if user is None or (source is None and not self._log_failed):
+            return
+        if not self._log_failed:
+            try:
+                assert source is not None and pipeline is not None
+
+                def read():
+                    for line in source.read_new():
+                        pipeline.feed(line, timestamp=time.time())
+                    return pipeline.finish()
+
+                entries = await asyncio.to_thread(read)
+                for entry in entries:
+                    user.push_log.append((entry.log_type, entry.text, entry.timestamp))
+            except Exception:
+                self._log_failed = True
+                logger.opt(exception=True).warning("节点采集或交付失败")
+
+        if self._log_failed:
+            try:
+                user.push_log.append((LOG_TYPE_NORMAL, "⚠️ 节点采集失败", time.time()))
+            except Exception:
+                logger.opt(exception=True).warning("节点采集失败提示无法交付")

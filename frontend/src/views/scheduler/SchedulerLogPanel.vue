@@ -35,7 +35,7 @@
       :style="{ backgroundColor: logBackground, color: logForeground }"
     >
       <div v-if="!logContent" class="empty-state">
-        <a-empty :image="noDataImage" :image-style="{ height: '80px' }" :description="false" />
+        <NoData :image-style="{ height: '80px' }" :description="false" />
       </div>
       <div v-else class="monaco-container">
         <vue-monaco-editor
@@ -52,7 +52,6 @@
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { useTheme } from '@/composables/useTheme'

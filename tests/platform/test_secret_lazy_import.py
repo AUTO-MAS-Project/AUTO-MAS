@@ -15,7 +15,7 @@ import pytest
 
 _SECRET_MODULES = (
     "app.utils.windows.secret",
-    "app.utils.common.secret",
+    "app.utils.unsupported.secret",
 )
 
 

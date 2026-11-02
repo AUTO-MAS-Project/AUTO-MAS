@@ -29,7 +29,7 @@
         />
       </a-spin>
     </div>
-    <a-empty
+    <NoData
       v-else-if="!previewData"
       :description="t('core.edit.interfaceJsonHasNot')"
       class="task-empty"
@@ -88,7 +88,7 @@
             @apply-queue-template="name => emit('applyQueueTemplate', name)"
             @apply-preset-template="presetName => emit('applyPresetTemplate', presetName)"
           />
-          <a-empty
+          <NoData
             v-else-if="orderedTasks.length === 0"
             :description="t('core.edit.addTaskAbove')"
             class="task-queue-empty"

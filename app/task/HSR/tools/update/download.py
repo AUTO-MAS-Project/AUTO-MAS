@@ -11,8 +11,8 @@ from pathlib import Path
 import httpx
 
 from app.core.script_update import download_script_package
-from app.services.update_fluxdown import FluxdownResumableError
-from app.services.update_transport import DownloadProgress
+from app.services.common.update.fluxdown import FluxdownResumableError
+from app.services.common.update.transport import DownloadProgress
 from app.utils import get_logger
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 

@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from app.services import update as updater
-from app.services import update_fluxdown as transport
+from app.services.common.update import fluxdown as transport
 from app.utils.common import fluxdown_cli as cli
 
 
@@ -18,7 +18,9 @@ async def test_custom_http_resume_keeps_old_writer_safety_gate(
 ):
     proxy = httpx.Proxy("http://127.0.0.1:7890")
     resume = AsyncMock(return_value=42)
-    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda path: Path("fluxdown.exe"))
+    monkeypatch.setattr(
+        cli, "fluxdown_find_cli", lambda path, **kwargs: Path("fluxdown.exe")
+    )
     gate = AsyncMock(
         side_effect=cli.FluxdownCancelUnconfirmed("still writing") if blocked else None
     )
@@ -68,7 +70,9 @@ def test_direct_proxy_and_history_redaction():
 async def test_mas_update_passes_configured_proxy(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     proxy = httpx.Proxy("http://127.0.0.1:7890")
-    monkeypatch.setattr(updater, "Config", SimpleNamespace(proxy=proxy))
+    monkeypatch.setattr(
+        updater, "Config", SimpleNamespace(proxy=proxy, work_path=tmp_path)
+    )
 
     async def download(url, destination, **kwargs):
         assert kwargs["proxy"] is proxy
@@ -97,7 +101,9 @@ async def test_dispatch_passes_proxy_to_both_cli_modes(tmp_path, monkeypatch, mo
     record = cli.FluxdownDownloadRecord(status="success")
     local = AsyncMock(return_value=(42, record))
     server = AsyncMock(return_value=(42, record))
-    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda path: Path("fluxdown.exe"))
+    monkeypatch.setattr(
+        cli, "fluxdown_find_cli", lambda path, **kwargs: Path("fluxdown.exe")
+    )
     monkeypatch.setattr(cli, "fluxdown_server_available", lambda path, enabled: True)
     monkeypatch.setattr(
         cli, "fluxdown_server_task_safe_to_overwrite", lambda *a, **kw: True
@@ -192,7 +198,7 @@ async def test_authenticated_proxy_uses_httpx_without_cli_credentials(
     builtin = AsyncMock(return_value=42)
     server, local = AsyncMock(), AsyncMock()
     monkeypatch.setattr(transport, "_httpx_download", builtin)
-    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda path: None)
+    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda path, **kwargs: None)
     monkeypatch.setattr(cli, "fluxdown_server_download", server)
     monkeypatch.setattr(cli, "fluxdown_download", local)
     assert (
@@ -547,7 +553,7 @@ async def test_cancelled_write_owner_probe_holds_target_lock_until_thread_exits(
     monkeypatch.setattr(cli, "_server_data_dir", lambda _path: tmp_path)
     executable = tmp_path / "fluxdown.exe"
     destination = tmp_path / "release.zip"
-    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda _path: executable)
+    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda _path, **kwargs: executable)
     started = threading.Event()
     release = threading.Event()
     finished = threading.Event()

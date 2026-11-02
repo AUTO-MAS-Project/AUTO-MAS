@@ -190,14 +190,14 @@ onBeforeUnmount(() => {
           </a-button>
         </template>
       </a-alert>
-      <a-empty
+      <NoData
         v-else-if="!accountsLoading && !accounts.length"
         :description="t('core.mystery.tokens.noAccounts')"
       >
         <a-button @click="navigateTo('/gamesign')">{{
           t('core.mystery.tokens.manageAccounts')
         }}</a-button>
-      </a-empty>
+      </NoData>
       <a-form v-else layout="vertical">
         <a-form-item :label="t('core.mystery.tokens.account')" required>
           <a-select

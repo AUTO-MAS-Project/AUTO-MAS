@@ -1,7 +1,7 @@
 <template>
   <div class="task-tree-container">
     <div v-if="taskData.length === 0" class="empty-state">
-      <a-empty :image="noDataImage" :image-style="{ height: '80px' }" :description="false" />
+      <NoData :image-style="{ height: '80px' }" :description="false" />
     </div>
     <div v-else class="task-tree">
       <div v-for="script in taskData" :key="`script-${script.script_id}`" class="script-card">
@@ -60,7 +60,6 @@
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import { CaretDownOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'

@@ -70,8 +70,8 @@ import psutil
 from PIL import Image
 
 from app.task.proxy_helpers import find_pids_by_name
-from app.tools.error_screenshot import save_error_screenshot
-from app.tools.ocr import Box, OCRItem, ocr_image
+from app.tools import error_screenshot as _tool_error_screenshot
+from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import display as _utils_display
 
@@ -169,7 +169,7 @@ _DROPDOWN_ARROW_POINT = (1202, 497)
 # ⚠️ ocr_image 的 roi 参数是 (left, top, right, bottom) 语义（与返回识别框的
 # (x, y, w, h) 不同）：此前按 (x, y, w, h) 传入导致裁剪为空切片、RapidOCR
 # 抛异常，表现为「选号点击已生效却在回读校验时切号失败」（2026-09-22 实机）。
-_ACCOUNT_FIELD_ROI: Box = (694, 459, 1238, 534)
+_ACCOUNT_FIELD_ROI: _tool_ocr.Box = (694, 459, 1238, 534)
 # 账密表单：账号输入框 / 密码输入框 / 「进入游戏」按钮中心
 _FORM_ACCOUNT_POINT = (958, 399)
 _FORM_PASSWORD_POINT = (958, 484)
@@ -410,7 +410,7 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
 
 
-def _dump_ocr_items(items: list[OCRItem]) -> None:
+def _dump_ocr_items(items: list[_tool_ocr.OCRItem]) -> None:
     """诊断旁路：把一次 OCR 的全部识别文本写入诊断文件（标注调用函数）。"""
     if _DIAGNOSTIC_PATH is None:
         return
@@ -424,15 +424,15 @@ def _dump_ocr_items(items: list[OCRItem]) -> None:
         _write_diagnostic(f"  ({x:4},{y:4} {w:3}x{h:3}) {text}\n")
 
 
-def _read_texts(hwnd: int, roi: Box | None = None) -> list[OCRItem]:
+def _read_texts(hwnd: int, roi: _tool_ocr.Box | None = None) -> list[_tool_ocr.OCRItem]:
     frame = _capture_window(hwnd, activate=False)
-    items = ocr_image(frame, roi)
+    items = _tool_ocr.ocr_image(frame, roi)
     _dump_ocr_items(items)
     return items
 
 
 def _click_box(
-    hwnd: int, box: Box, *, activate: bool = False, after_sleep: float = 0.3
+    hwnd: int, box: _tool_ocr.Box, *, activate: bool = False, after_sleep: float = 0.3
 ) -> None:
     """点击 1080p 坐标空间中的一个文字框中心。"""
     with _utils_display.per_monitor_dpi():
@@ -481,7 +481,9 @@ def _scroll_list(hwnd: int, point: tuple[int, int] = _LIST_SCROLL_POINT) -> None
 # ── OCR 文本判定辅助 ─────────────────────────────────────────────────────
 
 
-def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
+def _find_text(
+    items: list[_tool_ocr.OCRItem], keywords: tuple[str, ...]
+) -> _tool_ocr.Box | None:
     for text, box in items:
         if any(keyword in text for keyword in keywords):
             return box
@@ -492,9 +494,9 @@ def _wait_ocr_text(
     hwnd: int,
     keywords: tuple[str, ...],
     *,
-    roi: Box | None = None,
+    roi: _tool_ocr.Box | None = None,
     timeout: int,
-) -> Box | None:
+) -> _tool_ocr.Box | None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         box = _find_text(_read_texts(hwnd, roi), keywords)
@@ -543,7 +545,7 @@ def _check_is_marked(frame: np.ndarray, point: tuple[int, int]) -> bool:
 
 
 def _click_checkbox_near_text(
-    hwnd: int, text_box: Box, *, expect_checked: bool | None = None
+    hwnd: int, text_box: _tool_ocr.Box, *, expect_checked: bool | None = None
 ) -> None:
     """点击文本左侧的勾选框/单选圆点（圆点在文本左侧 ``_CHECK_OFFSET_X`` 处）。
 
@@ -620,7 +622,7 @@ def _mask_pattern(account: str) -> re.Pattern[str] | None:
     return re.compile("".join(pieces))
 
 
-def _box_center_in(box: Box, region: Box) -> bool:
+def _box_center_in(box: _tool_ocr.Box, region: _tool_ocr.Box) -> bool:
     """判断识别框中心是否落在 (left, top, right, bottom) 区域内。"""
     x, y, w, h = box
     left, top, right, bottom = region
@@ -628,8 +630,8 @@ def _box_center_in(box: Box, region: Box) -> bool:
 
 
 def _find_masked_account(
-    hwnd: int, pattern: re.Pattern[str], *, exclude: Box | None = None
-) -> Box | None:
+    hwnd: int, pattern: re.Pattern[str], *, exclude: _tool_ocr.Box | None = None
+) -> _tool_ocr.Box | None:
     """在当前画面中查找匹配目标掩码的账号文本框。
 
     Args:
@@ -710,7 +712,7 @@ def _wait_until_state(
     state_wait_start = time.monotonic()
     last_progress = time.monotonic()
     last_sig: int | None = None
-    items_full: list[OCRItem] = []
+    items_full: list[_tool_ocr.OCRItem] = []
     iter_count = 0
     while time.monotonic() < deadline:
         try:
@@ -727,7 +729,7 @@ def _wait_until_state(
         sig = _frame_signature(frame)
         if sig != last_sig:
             # 画面有变化才跑 OCR；帧哈希未变时沿用上次识别结果
-            items_full = ocr_image(frame)
+            items_full = _tool_ocr.ocr_image(frame)
             last_sig = sig
             last_progress = time.monotonic()
         if iter_count % _DIAGNOSTIC_DUMP_EVERY_POLLS == 0:
@@ -812,7 +814,7 @@ def _reacquire_game_hwnd(on_log: Callable[[str], None]) -> int:
 # ── 退出登录弹窗 → 登录对话框 ───────────────────────────────────────────
 
 
-def _find_logout_confirm_box(items: list[OCRItem]) -> Box | None:
+def _find_logout_confirm_box(items: list[_tool_ocr.OCRItem]) -> _tool_ocr.Box | None:
     """在 OCR 条目中定位退出弹窗的「退出」按钮。
 
     弹窗内还有标题「退出登录」与单选项「退出并清除/保留登录记录」，均含
@@ -849,7 +851,7 @@ def _open_login_dialog(hwnd: int, on_log: Callable[[str], None]) -> None:
     on_log("正在点击标题界面右侧退出图标")
     _click_point(hwnd, *_LOGOUT_ICON_POINT, after_sleep=1.5)
 
-    confirm: Box | None = None
+    confirm: _tool_ocr.Box | None = None
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         items = _read_texts(hwnd)
@@ -1285,7 +1287,7 @@ def _bili_card_row_y(hwnd: int) -> int | None:
 
 def _find_bili_account(
     hwnd: int, nickname: str, *, exclude_y: int | None = None
-) -> Box | None:
+) -> _tool_ocr.Box | None:
     """在当前画面找与目标B站昵称最相似的文本框（LCS ≥ 阈值，取最高分）。
 
     Args:
@@ -1294,7 +1296,7 @@ def _find_bili_account(
             列表展开后当前账号卡片同样显示昵称且在列表上方，误点卡片会把
             列表收起而不是选中目标账号。
     """
-    best: tuple[float, Box] | None = None
+    best: tuple[float, _tool_ocr.Box] | None = None
     for text, box in _read_texts(hwnd):
         if exclude_y is not None:
             center_y = box[1] + box[3] // 2
@@ -1515,7 +1517,7 @@ def _switch_account_bili(
 def _save_error_screenshot(hwnd: int) -> None:
     """保存切换失败时的窗口截图，便于排查 OCR 文本漂移。"""
     try:
-        save_error_screenshot(
+        _tool_error_screenshot.save_error_screenshot(
             _capture_window_image(hwnd, activate=False),
             "bgi-account-switch",
             "switch-error",

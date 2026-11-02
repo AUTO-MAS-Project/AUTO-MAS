@@ -1173,6 +1173,16 @@ class MaaEndConfig(DomainEntry):
             description="自定义恢复分辨率宽度",
         )
 
+        RestoreAutoHDR: Literal["Unchanged", "Disable", "Enable"] = Field(
+            default_factory=lambda: "Unchanged",
+            description="关闭游戏时的自动 HDR 设置",
+        )
+
+        AutoHDR: Literal["Unchanged", "Disable", "Enable"] = Field(
+            default_factory=lambda: "Unchanged",
+            description="MaaEnd 启动时的自动 HDR 设置",
+        )
+
         SetResolution: bool = Field(
             default_factory=lambda: False,
             description="是否在启动游戏时执行 MaaEnd 分辨率设置预任务",

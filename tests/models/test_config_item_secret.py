@@ -13,7 +13,7 @@ import base64
 
 import pytest
 
-from app.models.ConfigBase import (
+from app.models.legacy_config.base import (
     UNREADABLE_SECRET_PLACEHOLDER,
     ConfigItem,
     EncryptValidator,

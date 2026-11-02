@@ -157,7 +157,7 @@ def test_cache_identity_isolates_sources_and_downloaders(tmp_path, monkeypatch):
 async def test_fluxdown_resumable_errors_keep_partial_and_exception(
     tmp_path, monkeypatch
 ):
-    from app.services.update_fluxdown import FluxdownResumableError
+    from app.services.common.update.fluxdown import FluxdownResumableError
 
     target = tmp_path / "release.zip"
     partial = target.with_suffix(".zip.part")

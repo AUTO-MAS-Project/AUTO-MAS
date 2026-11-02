@@ -47,3 +47,9 @@ jobs:
 
       - name: Run full pytest suite
         run: uv run --no-sync python -m pytest tests -q
+
+      - name: Check platform contracts for Windows, Linux and macOS
+        run: |
+          uv run --no-sync mypy --config-file mypy-platform.ini --platform win32
+          uv run --no-sync mypy --config-file mypy-platform.ini --platform linux
+          uv run --no-sync mypy --config-file mypy-platform.ini --platform darwin

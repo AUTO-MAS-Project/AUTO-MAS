@@ -98,7 +98,7 @@
     </a-popconfirm>
   </div>
   <div v-else class="task-option-empty">
-    <a-empty :description="t('core.edit.pickTaskLeftConfigure')" />
+    <NoData :description="t('core.edit.pickTaskLeftConfigure')" />
   </div>
 </template>
 

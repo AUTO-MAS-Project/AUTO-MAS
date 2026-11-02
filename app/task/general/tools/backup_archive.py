@@ -38,15 +38,15 @@ General 的目录模型与 MAA 不同：``ConfigFile`` **恒按用户**（每个
 （文件名 + 大小），详细内容经「查看详细配置」在脚本 GUI 里查看。
 
 时间戳快照、指纹去重、保留清理与整目录恢复的通用逻辑由公共模块
-``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
+``app.utils.common.config.archive`` 提供（默认每池保留 10 份），本模块只保留
 General 特有的 File/Folder 两态语义与恢复前强制归档。
 """
 
 import shutil
 from pathlib import Path
 
-from app.utils import config_archive as _utils_config_archive
 from app.utils import get_logger
+from app.utils.common.config import archive as _utils_config_archive
 
 logger = get_logger("通用脚本配置备份")
 

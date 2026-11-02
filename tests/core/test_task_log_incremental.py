@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from app.core.task_manager import TaskInfo, _TaskManager
+from app.core.task_manager.manager import TaskInfo, _TaskManager
 from app.core.ws import protocol
 from app.models.task import ScriptItem
 
@@ -33,7 +33,7 @@ class TaskLogIncrementalTest(unittest.IsolatedAsyncioTestCase):
     async def test_first_push_replaces_and_appends_send_only_delta(self) -> None:
         task_info = _make_task_info()
         with patch(
-            "app.core.task_manager.Publisher.send", new_callable=AsyncMock
+            "app.core.task_manager.manager.Publisher.send", new_callable=AsyncMock
         ) as send:
             task_info.script_list[0].log = "line1\n"
             await task_info.on_change()
@@ -48,7 +48,7 @@ class TaskLogIncrementalTest(unittest.IsolatedAsyncioTestCase):
     async def test_unchanged_log_does_not_push_but_info_still_does(self) -> None:
         task_info = _make_task_info()
         with patch(
-            "app.core.task_manager.Publisher.send", new_callable=AsyncMock
+            "app.core.task_manager.manager.Publisher.send", new_callable=AsyncMock
         ) as send:
             task_info.script_list[0].log = "same"
             await task_info.on_change()
@@ -66,7 +66,7 @@ class TaskLogIncrementalTest(unittest.IsolatedAsyncioTestCase):
     async def test_shrunk_log_falls_back_to_full_replace(self) -> None:
         task_info = _make_task_info()
         with patch(
-            "app.core.task_manager.Publisher.send", new_callable=AsyncMock
+            "app.core.task_manager.manager.Publisher.send", new_callable=AsyncMock
         ) as send:
             task_info.script_list[0].log = "abc"
             await task_info.on_change()
@@ -84,7 +84,7 @@ class TaskLogIncrementalTest(unittest.IsolatedAsyncioTestCase):
         task_info = _make_task_info()
         long_log = "x" * 200_005
         with patch(
-            "app.core.task_manager.Publisher.send", new_callable=AsyncMock
+            "app.core.task_manager.manager.Publisher.send", new_callable=AsyncMock
         ) as send:
             task_info.script_list[0].log = long_log
             await task_info.on_change()
@@ -100,7 +100,9 @@ class TaskLogIncrementalTest(unittest.IsolatedAsyncioTestCase):
         manager = _TaskManager()
         manager.task_info[__import__("uuid").uuid4()] = task_info
         with (
-            patch("app.core.task_manager.Publisher.send", new_callable=AsyncMock),
+            patch(
+                "app.core.task_manager.manager.Publisher.send", new_callable=AsyncMock
+            ),
             patch.object(_TaskManager, "_scheduled_script_identities", return_value=[]),
         ):
             task_info.script_list[0].log = "pushed"

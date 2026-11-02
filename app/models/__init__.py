@@ -29,12 +29,7 @@ _MODULE_EXPORTS = {
     "emulator",
     "task",
     "notification",
-    "notification_channel",
-    "notification_report",
-    "notification_ports",
-    "notification_community",
     "legacy_config",
-    "ConfigBase",
 }
 
 

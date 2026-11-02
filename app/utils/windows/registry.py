@@ -1,10 +1,22 @@
 """Windows 注册表窄读取接口。"""
 
 import winreg
+from collections.abc import Iterable, Iterator
 from contextlib import suppress
 
 
-def uninstall_entries(paths):
+def user_subkey_values(path: str, value_name: str) -> Iterator[tuple[str, str]]:
+    """读取当前用户指定键的直接子键值；缺项跳过，不推断业务含义。"""
+    with suppress(OSError):
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path) as root:
+            for index in range(winreg.QueryInfoKey(root)[0]):
+                child = winreg.EnumKey(root, index)
+                with suppress(OSError):
+                    with winreg.OpenKey(root, child) as entry:
+                        yield child, str(winreg.QueryValueEx(entry, value_name)[0])
+
+
+def uninstall_entries(paths: Iterable[str]) -> Iterator[tuple[str, str]]:
     for path in paths:
         with suppress(FileNotFoundError, OSError):
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path) as key:

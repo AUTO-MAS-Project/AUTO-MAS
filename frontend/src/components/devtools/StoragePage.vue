@@ -248,10 +248,12 @@ useEventListener(window, 'beforeunload', event => {
         :pagination="{ pageSize: 6, showSizeChanger: false, hideOnSinglePage: true }"
         :row-selection="{ type: 'radio', selectedRowKeys, onSelect: selectEntry, columnWidth: 32 }"
         :custom-row="(record: StorageEntry) => ({ onClick: () => selectEntry(record) })"
-        :locale="{
-          emptyText: t(search ? 'core.devtools.noMatches' : 'core.devtools.emptyStorage'),
-        }"
       >
+        <template #emptyText>
+          <NoData
+            :description="t(search ? 'core.devtools.noMatches' : 'core.devtools.emptyStorage')"
+          />
+        </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'key'">
             <button class="devtools-route-button" @click.stop="selectEntry(record)">
@@ -329,12 +331,7 @@ useEventListener(window, 'beforeunload', event => {
         </div>
       </a-form>
     </section>
-    <a-empty
-      v-else
-      class="storage-empty"
-      :description="t('core.devtools.selectStorage')"
-      :image="false"
-    />
+    <NoData v-else class="storage-empty" :description="t('core.devtools.selectStorage')" />
   </div>
   <p class="devtools-muted">{{ t('core.devtools.storageHint') }}</p>
 </template>

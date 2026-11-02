@@ -38,21 +38,8 @@ from typing import Awaitable, Callable, Mapping
 
 import httpx
 
-from app.tools.common.community_activity_roles import (
-    CommunityActivityRole,
-    normalize_skland_roles,
-)
-from app.tools.skland import (
-    SklandCredentialExpiredError,
-    create_skland_client,
-    fetch_skland_binding_payload,
-    fetch_skland_player_info,
-    get_cached_device_id,
-    prepare_skland_session_credential,
-    refresh_skland_session_credential,
-    serialize_skland_credential,
-    skland_sign_lock,
-)
+from app.tools.common.community.activity import roles as _tool_community_activity_roles
+from app.tools.common.community.providers import skland as _tool_skland
 from app.utils import get_logger
 
 from .providers import parse_player_info_payload
@@ -85,7 +72,9 @@ _cache: dict[
 # 角色列表缓存：键 账号组 uid → (过期时刻, 角色元组)。绑定端点每次展开都
 # 遍历全部账号组刷新凭据，代价高；只缓存非空成功结果——凭据缺失的空元组
 # 零网络成本不缓存，失败路径保持原语义（调用方逐组记日志跳过）。
-_role_entries_cache: dict[str, tuple[float, tuple[CommunityActivityRole, ...]]] = {}
+_role_entries_cache: dict[
+    str, tuple[float, tuple[_tool_community_activity_roles.CommunityActivityRole, ...]]
+] = {}
 
 
 async def fetch_skland_progression(
@@ -127,15 +116,17 @@ async def fetch_skland_progression(
 
     # 与签到流程共用同一把流程锁：签名 token 存在两个独立轮换写者（签到
     # 编排与本驱动层），并发刷新会把对方刚回写的 token 作废（评审备忘）
-    async with skland_sign_lock:
+    async with _tool_skland.skland_sign_lock:
         try:
             raw = await load_credential(ref.account_uid)
             if not raw:
                 put(None)
                 return None
 
-            async with create_skland_client(proxy=proxy) as client:
-                device_id = await get_cached_device_id(proxy, client=client)
+            async with _tool_skland.create_skland_client(proxy=proxy) as client:
+                device_id = await _tool_skland.get_cached_device_id(
+                    proxy, client=client
+                )
                 credential = await _prepare_and_refresh_credential(
                     client,
                     raw=raw,
@@ -143,7 +134,7 @@ async def fetch_skland_progression(
                     device_id=device_id,
                     save_credential=save_credential,
                 )
-                payload = await fetch_skland_player_info(
+                payload = await _tool_skland.fetch_skland_player_info(
                     client,
                     cred=credential["cred"],
                     sign_token=credential["token"],
@@ -151,7 +142,7 @@ async def fetch_skland_progression(
                     device_id=device_id,
                     proxy=proxy,
                 )
-        except SklandCredentialExpiredError:
+        except _tool_skland.SklandCredentialExpiredError:
             logger.warning(
                 f"森空岛凭据已失效，练度源降级为本地档案（{ref.account_uid}）"
             )
@@ -192,9 +183,13 @@ async def _prepare_and_refresh_credential(
     与刷新结果序列化不同即视为轮换、执行回写。
     """
 
-    credential = await prepare_skland_session_credential(client, raw, device_id)
-    credential = await refresh_skland_session_credential(client, credential, device_id)
-    serialized = serialize_skland_credential(credential)
+    credential = await _tool_skland.prepare_skland_session_credential(
+        client, raw, device_id
+    )
+    credential = await _tool_skland.refresh_skland_session_credential(
+        client, credential, device_id
+    )
+    serialized = _tool_skland.serialize_skland_credential(credential)
     if save_credential is not None and serialized != raw:
         await save_credential(account_uid, serialized)
     return credential
@@ -207,7 +202,7 @@ async def fetch_skland_role_entries(
     save_credential: CredentialSaver | None = None,
     proxy: str | None = None,
     now: float | None = None,
-) -> tuple[CommunityActivityRole, ...]:
+) -> tuple[_tool_community_activity_roles.CommunityActivityRole, ...]:
     """拉取账号组在明日方舟的角色条目（绑定下拉用，方案 T4.4）。
 
     只需账号组引用，不需要已选游戏 uid——角色列表正是 uid 的来源。
@@ -228,13 +223,13 @@ async def fetch_skland_role_entries(
     if cached is not None and cached[0] > current:
         return cached[1]
 
-    async with skland_sign_lock:
+    async with _tool_skland.skland_sign_lock:
         raw = await load_credential(account_uid)
         if not raw:
             return ()
 
-        async with create_skland_client(proxy=proxy) as client:
-            device_id = await get_cached_device_id(proxy, client=client)
+        async with _tool_skland.create_skland_client(proxy=proxy) as client:
+            device_id = await _tool_skland.get_cached_device_id(proxy, client=client)
             credential = await _prepare_and_refresh_credential(
                 client,
                 raw=raw,
@@ -243,14 +238,16 @@ async def fetch_skland_role_entries(
                 save_credential=save_credential,
             )
             # 复用便签的角色归一化：覆盖无 appCode 分组等响应变体（评审跟进项）
-            payload = await fetch_skland_binding_payload(
+            payload = await _tool_skland.fetch_skland_binding_payload(
                 client,
                 cred=credential["cred"],
                 sign_token=credential["token"],
                 device_id=device_id,
                 proxy=proxy,
             )
-            roles = normalize_skland_roles(payload).roles_for_game("明日方舟")
+            roles = _tool_community_activity_roles.normalize_skland_roles(
+                payload
+            ).roles_for_game("明日方舟")
             if roles:
                 _role_entries_cache[account_uid] = (
                     current + SKLAND_ROLE_TTL_SECONDS,

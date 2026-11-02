@@ -59,7 +59,8 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `backend_restart_finished` | 主动更新和故障重启能否恢复 | `reason_kind` |
 | `runtime_alignment_finished` | Runtime 升级、校验、回退是否完成 | `operation`、`release_channel` |
 | `backend_update_finished` | 后端热更新完成或停在什么阶段 | `trigger_kind`、`phase` |
-| `renderer_recovery_decided` | 白屏、崩溃后自动恢复或放弃的比例 | `reason_kind`、`recovery_action`、`count_bucket` |
+| `renderer_recovery_decided` | 渲染进程异常退出后选择重载或放弃（仅决策） | `reason_kind`、`recovery_action`、`count_bucket` |
+| `renderer_recovery_finished` | 每次重载的实际观察结果 | `reason_kind`、`result_kind`、`count_bucket` |
 | `renderer_responsiveness_changed` | 卡死后能否恢复响应 | `state` |
 | `app_close_finished` | 正常退出收尾、用户取消、强制退出占比（不含托盘隐藏） | `close_kind` |
 | `tray_action_requested` | 显示、隐藏、启动任务、停止全部任务和退出等托盘入口是否有实际使用 | `action_kind` |
@@ -287,3 +288,16 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
 - 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。
 
 HSR 运行前更新复用公共更新入口和 `script_run_finished` 的任务终态观察；更新选项保存沿用 `useScriptApi.updateScript`，不新增逐包、逐引擎或进度事件，不采集安装路径、版本及 CDK。
+
+## 渲染进程恢复
+
+主进程 `rendererRecoveryService.ts` 是重载结果的唯一观察者。保留
+`renderer_recovery_decided` 的 accepted 含义；新增 `renderer_recovery_finished`，
+每次真正调用重载最多一条。主页面加载完成且 Vue 挂载后的专用就绪 IPC 均收到才记 success；
+主 frame 加载失败、再次退出或 reload 抛错记 failure，30 秒未确认记 unknown；
+窗口关闭、应用退出或 Windows 会话结束打断观察记 cancelled。子 frame 失败与旧导航的
+ERR_ABORTED 不结束当前尝试。系统退出不触发新的恢复决策或崩溃事件，取消关机后恢复识别。
+
+两类统计沿用主进程有限字段、开关代次与限频，不上传退出码、加载地址或错误文本。
+Sentry 的诊断事件另保留退出码、退出次数、耗时和加载错误码的数值白名单；自由文本仍丢弃。
+Sentry 重载结果也绑定开始时的开关代次，关闭再开启不补发旧结果；不等待发送或新增退出 flush。

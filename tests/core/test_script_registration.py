@@ -2,20 +2,21 @@
 
 import asyncio
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
 from app.config import ConfigCollection
-from app.core.config import AppConfig
-from app.core.restore_bindings import RestorePoolResolver
-from app.core.script_config import ScriptConfigHandler
-from app.core.script_registration import ScriptRegistration, build_script_capabilities
-from app.core.task_manager import Task, TaskInfo, _TaskManager
+from app.core.config.manager import AppConfig
+from app.core.task_manager.manager import Task, TaskInfo, _TaskManager
 from app.models.config import GeneralConfig, GeneralUserConfig
+from app.models.script_contracts import ScriptConfigHandler
 from app.models.task import ScriptItem
-from app.utils.common.config_restore import ConfigRestorePool
+from app.task.registration import ScriptRegistration, build_script_capabilities
+from app.task.restore_registry import RestorePoolResolver
+from app.utils.common.config.restore import ConfigRestorePool
 
 
 class AdapterConfig(GeneralConfig):
@@ -46,6 +47,9 @@ def declaration(entry_type=AdapterConfig, **changes):
 def host(capabilities):
     # 仅构建配置消费边界，集合不登记全局名称，不创建真实设备和持久化根。
     config = AppConfig.__new__(AppConfig)
+    config.work_path = Path.cwd()
+    config.data_path = config.work_path / "data"
+    config.config_path = config.work_path / "config"
     config._script_config_handlers = {}
     config._restore_pool_resolver = None
     config.ScriptConfig = ConfigCollection.build(
@@ -293,14 +297,13 @@ async def test_associated_hook_commits_and_failure_stay_in_same_transaction(erro
 async def test_public_task_creation_passes_current_host_factories(mode, monkeypatch):
     from unittest.mock import AsyncMock, Mock
 
-    from app.core import task_manager as scheduler
+    import app.core.task_manager.manager as scheduler
     from app.models.config import QueueItem
     from app.models.schema import WSTaskScriptIdentityData
 
     caps = build_script_capabilities([declaration()], expected_types=[AdapterConfig])
     manager = _TaskManager()
     manager.bind_manager_factories(caps.manager_factories)
-    manager.bind_notifications(Mock())
     script_uid, queue_uid, item_uid = uuid4(), uuid4(), uuid4()
     item = QueueItem()
     item.Info.ScriptId = script_uid
