@@ -10,7 +10,11 @@
 - 暂存、事务、锁、激活、序列化：`app/config/core/{node,manager,entry,group,collection}.py`。
 - 字段能力：`app/config/{types,shortcuts}.py` 与 `fields/`。
 - 接口契约：`app/config/wire.py`、所属 `app/api/` 模块及公共 `app/models/schema.py`。
-- 启动、升级：`app/core/config.py`、`app/core/config_upgrade.py`；前端时间转换为 `frontend/src/utils/configDateTime.ts`，Electron 启动读取为 `frontend/electron/services/backendConfig.ts`。
+- 启动、升级：`app/core/config/manager.py`、`app/core/config/upgrade.py`；前端时间转换为 `frontend/src/utils/configDateTime.ts`，Electron 启动读取为 `frontend/electron/services/backendConfig.ts`。
+
+`app/config/` 仅提供配置基础机制；应用级配置启动、业务 CRUD、专项适配、升级和备份由 `app/core/config/` 实现，包入口创建全局 Config。不能将这些应用封装放进基础框架的 application 子包，也不能让 core 只剩实例化空壳。此职责拆分不改变节点身份、激活顺序或事务契约。
+
+应用主路径由 Config 的 Path 属性统一提供，资源用 `Config.resource_path / ...`，配置和用户数据分别用 `Config.config_path`、`Config.data_path` 等。Runtime 的源码目录可能与工作目录不同，不能混用；工具需要主路径时由调用方传入，不新增路径转发函数，也不让基础框架或 utils 导入 Config。
 
 普通字段与调用点任务按以下规则处理；涉及 `app/config/` 的设计变更时，先说明问题、必要性、行为差异及方案，由用户确认后实施。已有明确授权的方案继续执行，不重复询问，也不将普通适配扩大为框架重构。
 
@@ -41,7 +45,7 @@
 
 1. 构造及 `model_validate()` 产生冷态对象，校验与字段赋值不激活、不发送运行时信号、不保存；引用目标存在性在热态校验。`build(payload=...)` 保留原始待激活载荷，普通属性尚未反映其内容。正常文件启动使用 payload 重建集合成员，不把旧冷态成员作为激活结果直接发布。
 2. `activate()` 依次经历 `INACTIVE → INITIALIZING → ACTIVE`。普通路径按字段或成员建立局部回退边界，成功部分可保留，最后抛出聚合错误；独立根激活抛聚合错误时可能已部分提交。`activate(fast_init=True)` 只扩大当前 Entry 的字段事务边界：任一字段校验或 Init 信号失败时，整次尝试先回退，再从首字段执行原逐字段路径；不保留快速尝试中的成功部分，也不改变严格校验顺序和即时信号语义。嵌套 Entry 各自尝试和回退，父事务失败则一起恢复冷态及待激活载荷。
-3. 引用目标先登记、激活，再激活依赖方；启动顺序由 `app/core/config.py` 编排。只有根节点关联 `.yaml/.yml` 文件，`payload` 与 `file` 互斥，UUID 在登记前确定；子集合随根持久化。
+3. 引用目标先登记、激活，再激活依赖方；启动顺序由 `app/core/config/manager.py` 编排。只有根节点关联 `.yaml/.yml` 文件，`payload` 与 `file` 互斥，UUID 在登记前确定；子集合随根持久化。
 4. 热态普通字段赋值只 stage，`await node.commit()` 才应用。仅支持整字段赋值；列表、字典及嵌套可变值先复制修改，再整字段赋值。原地 `append`、下标写入及内部对象修改绕过校验、锁、信号和回退，后续 `commit()` 不会补救。深层隔离是已标注的待完善边界，不能宣称已支持。
 5. `await entry.update(same_type_cold_entry)` 依据 Entry 与 Group 的 `model_fields_set` 更新实际提供字段并自动提交，默认检查显隐，跳过虚拟项；不承接嵌套集合。外部请求保持默认显隐检查，内部明确需要时使用 `check_visibility=False`。
 6. 集合使用 `add/remove/set_order/add_type/remove_type/reload_type/replace_type` 加 `commit()`。`add(payload=...)` 返回预分配 UUID；提交成功后才可取得成员。`replace_type` 由调用方转换载荷，保留 UUID 和顺序，发送类型替换事件，不冒充 remove；新实例不继承旧实例订阅。

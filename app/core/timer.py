@@ -23,25 +23,20 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, time, timedelta, timezone
 from functools import partial
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from app.models.notification_community import community_notification_results
-from app.models.notification_ports import CommunityNotifier
-from app.services.telemetry import record_daily_active
-from app.tools.common.community_scheduler import (
-    TASK_COMMUNITY_SOURCES,
-    CommunityTriggerSource,
-    all_community_accounts_signed,
-    should_run_community_for_source,
-)
+from app.core import Community, Notify
+from app.models.notification.community import community_notification_results
+from app.services import telemetry as _service_telemetry
 from app.utils import UTC4, UTC8, get_logger
 
+from .community.scheduling import (
+    TASK_COMMUNITY_SOURCES,
+    CommunityTriggerSource,
+)
 from .config import Config
 from .game_calendar import CALENDAR_REFRESH_INTERVAL_SECONDS, GameCalendar
 from .task_manager import TaskManager
-
-if TYPE_CHECKING:
-    from app.core.notify import HostNotificationService
 
 logger = get_logger("主业务定时器")
 
@@ -86,9 +81,7 @@ def _timed_slots_in_window(
 
 
 class _MainTimer:
-    def __init__(self, *, community_notifier: CommunityNotifier | None = None):
-        self._community_notifier = community_notifier
-        self._drain_notifications: Callable[[float], Awaitable[bool]] | None = None
+    def __init__(self):
         self.started = False
         self.second_timer: asyncio.Task[None] | None = None
         self.hour_timer: asyncio.Task[None] | None = None
@@ -103,16 +96,6 @@ class _MainTimer:
         self._timed_fired: set[tuple[str, str, datetime]] = set()
         # 定时循环里各步骤最近一次的异常摘要，用于同一错误只记一次日志
         self._loop_errors: dict[str, str] = {}
-
-    def bind_notifications(self, notifications: "HostNotificationService") -> None:
-        self._community_notifier = notifications.community
-        self._drain_notifications = notifications.tasks.drain_notifications
-
-    @property
-    def community_notifier(self) -> CommunityNotifier:
-        if self._community_notifier is None:
-            raise RuntimeError("定时器的通知依赖尚未装配")
-        return self._community_notifier
 
     async def start(self):
         """启动定时器"""
@@ -178,7 +161,7 @@ class _MainTimer:
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             if Config.setting.Data.LastTelemetryActive.strftime("%Y-%m-%d") == today:
                 return
-            if record_daily_active():
+            if _service_telemetry.record_daily_active():
                 await Config.setting.update(
                     type(Config.setting).model_validate(
                         {"Data": {"LastTelemetryActive": datetime.now(timezone.utc)}}
@@ -194,12 +177,12 @@ class _MainTimer:
             if self._last_cleanup_date == today:
                 return
             self._last_cleanup_date = today
-            from app.core.history import history_store
+            from app.core import History
 
             await self._run_loop_step(
                 "历史记录清理",
                 partial(
-                    history_store.prune,
+                    History.prune,
                     today=datetime.now(tz=UTC4).date(),
                     retention_days=Config.setting.Function.HistoryRetentionTime,
                 ),
@@ -461,13 +444,11 @@ class _MainTimer:
                 )
                 if pending:
                     return False
-            if self._drain_notifications is None:
-                raise RuntimeError("定时器的通知等待能力尚未装配")
-            if not await self._drain_notifications(
+            if not await Notify.tasks.drain_notifications(
                 max(0, deadline - asyncio.get_running_loop().time())
             ):
                 return False
-            if not await self.community_notifier.drain(
+            if not await Notify.community.drain(
                 max(0, deadline - asyncio.get_running_loop().time())
             ):
                 return False
@@ -479,25 +460,21 @@ class _MainTimer:
         self, *, source: CommunityTriggerSource = "scheduled"
     ) -> list[dict[str, object]]:
         """执行游戏社区签到并按触发来源决定通知方式。"""
-        from app.tools.common.community import format_community_sign_results
-        from app.tools.common.sign.community_sign import (
-            CommunitySignInProgressError,
-            community_sign_flow,
-            run_community_sign_in,
-        )
+        from app.core.community.sign import CommunitySignInProgressError
+        from app.tools import community as _tool_community
 
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
         try:
             # 流程锁覆盖签到和结果落盘，通知在锁外发送。
-            async with community_sign_flow():
+            async with Community.community_sign_flow():
                 logger.info("开始执行游戏社区签到")
-                results = await run_community_sign_in(force=False)
+                results = await Community.run_community_sign_in(force=False)
 
                 # 如果所有用户都已签到（无新结果），保留已有结果
                 if not results:
                     logger.info("所有用户今日已签到，跳过")
-                    if all_community_accounts_signed(
+                    if Community.all_community_accounts_signed(
                         Config.ToolsConfig.GameSign_Accounts, today
                     ):
                         await Config.ToolsConfig.update(
@@ -509,11 +486,11 @@ class _MainTimer:
                     return []
 
                 # 格式化并合并结果
-                formatted = format_community_sign_results(results)
+                formatted = _tool_community.format_community_sign_results(results)
                 await Config.update_community_results(formatted)
 
                 # 检查是否所有用户都已签到，更新全局 LastSignDate
-                if all_community_accounts_signed(
+                if Community.all_community_accounts_signed(
                     Config.ToolsConfig.GameSign_Accounts, today
                 ):
                     await Config.ToolsConfig.update(
@@ -528,7 +505,7 @@ class _MainTimer:
             # 任务触发的结果由任务完成通知消费；其它自动来源单独发送。
             if source not in TASK_COMMUNITY_SOURCES:
                 try:
-                    failed_channels = await self.community_notifier.send(
+                    failed_channels = await Notify.community.send(
                         community_notification_results(results)
                     )
                 except Exception as exc:
@@ -569,7 +546,7 @@ class _MainTimer:
     def _has_pending_community_sign(self, *, source: CommunityTriggerSource) -> bool:
         """共享后台派发和直接执行的触发条件，未启用或今日已完成时立即跳过。"""
 
-        if not should_run_community_for_source(
+        if not Community.should_run_community_for_source(
             enabled=Config.ToolsConfig.GameSign.Enabled,
             run_on_startup=Config.ToolsConfig.GameSign.RunOnStartup,
             source=source,
@@ -578,9 +555,12 @@ class _MainTimer:
 
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
-        return not all_community_accounts_signed(
+        return not Community.all_community_accounts_signed(
             Config.ToolsConfig.GameSign_Accounts, today
         )
 
 
 MainTimer = _MainTimer()
+
+
+__all__ = ["MainTimer"]

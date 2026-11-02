@@ -48,9 +48,9 @@ import shutil
 import zipfile
 from pathlib import Path
 
-from app.utils import config_archive as _utils_config_archive
 from app.utils import get_logger
 from app.utils import io as _utils_io
+from app.utils.common.config import archive as _utils_config_archive
 
 # 复用资源包的同款原语（哈希与覆盖式复制），避免第二套实现
 from .resource_package import _copy_if_changed, _file_sha256

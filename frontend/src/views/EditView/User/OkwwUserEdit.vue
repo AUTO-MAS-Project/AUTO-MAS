@@ -323,7 +323,7 @@
     >
       <!-- ok-ww 备份摘要为文件集结构，用插槽完全接管预览区 -->
       <template #preview="{ raw }">
-        <a-empty
+        <NoData
           v-if="!previewFiles(raw).length"
           :description="t('core.edit.configRestorePreviewEmpty')"
         />

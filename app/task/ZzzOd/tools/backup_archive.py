@@ -34,7 +34,7 @@
   用户维度，槽号被新用户复用后留在原位会串到别人名下。
 
 时间戳快照、指纹去重、保留清理与整目录恢复的通用逻辑由公共模块
-``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
+``app.utils.common.config.archive`` 提供（默认每池保留 10 份），本模块只保留
 zzz-od 特有的文件集收集（排除 MAS 槽）、恢复语义（先清合成视图、恢复前
 强制归档当前）与归档目录布局。
 """
@@ -45,9 +45,9 @@ from pathlib import Path
 
 import yaml
 
-from app.utils import config_archive as _utils_config_archive
 from app.utils import get_logger
 from app.utils import io as _utils_io
+from app.utils.common.config import archive as _utils_config_archive
 
 from .zzz_od_config import (
     _one_dragon_file,

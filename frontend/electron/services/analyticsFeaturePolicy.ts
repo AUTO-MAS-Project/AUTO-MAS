@@ -65,6 +65,20 @@ export const featureAnalyticsSchemas = {
     recovery_action: ['reload', 'give_up'] as const,
     count_bucket: count,
   }),
+  renderer_recovery_finished: finished({
+    reason_kind: ['crashed', 'oom', 'killed', 'launch_failed', 'other'] as const,
+    result_kind: [
+      'ready',
+      'load_failed',
+      'renderer_gone',
+      'reload_threw',
+      'timeout',
+      'window_closed',
+      'app_quitting',
+      'session_end',
+    ] as const,
+    count_bucket: count,
+  }),
   renderer_responsiveness_changed: finished({ state: ['unresponsive', 'responsive'] as const }),
   app_close_finished: finished({ close_kind: ['user', 'backend', 'force'] as const }),
   tray_action_requested: finished({
@@ -291,6 +305,7 @@ export const mainOnlyFeatureEvents = [
   'app_close_finished',
   'runtime_alignment_finished',
   'renderer_recovery_decided',
+  'renderer_recovery_finished',
   'renderer_responsiveness_changed',
   'tray_action_requested',
   'virtual_display_prompt_answered',

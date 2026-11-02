@@ -32,6 +32,7 @@ class EmulatorRuntimePolicy:
 
     silence_enabled: Callable[[], bool]
     block_ads_enabled: Callable[[], bool]
+    resource_path: Path
 
 
 class DeviceStatus(IntEnum):

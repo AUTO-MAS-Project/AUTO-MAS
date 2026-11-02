@@ -1,14 +1,10 @@
 ---
 name: mas-game-community
 description: >-
-  Add, refactor, or review AUTO-MAS game community (游戏社区) code: sign-in
-  orchestration, provider registry and result contract under
-  app/tools/common/sign/, daily-activity snapshots (日常便笺) and the shared
-  community base (contract, credentials, http, plugins, accounts, scheduler)
-  under app/tools/common/, Skland/Miyoushe/CloudGenshin/Kuro/Taygedo adapters
-  in app/tools/*.py, credential parsing and one-time login routes, trigger
-  paths and locks in app/core/timer.py and app/core/task_report.py, the
-  GameSign account-group config, and the frontend gamesign views.
+  Add, refactor, or review AUTO-MAS game community sign-in and daily-activity
+  flows: core.Community orchestration, locks and caching; provider protocols,
+  credentials and result contracts under app/tools/common/community/;
+  core.Notify community notifications; account-group config and gamesign UI.
 ---
 
 # 游戏社区（签到 + 日常便笺）
@@ -17,24 +13,21 @@ description: >-
 
 ## 代码归属（硬规则）
 
-社区的**全部**实现收束在 `app/tools/common/`：
+按 [后端源码组织规范](../mas-module-boundary/SKILL.md) 分配职责：
 
-| 位置 | 内容 |
-| --- | --- |
-| `app/tools/common/sign/` | 签到专属：`community_sign.py`（编排与两把锁）、`community_sign_provider.py`（平台注册表与结果归一）、`community_sign_result.py`（结果构建与合并） |
-| `app/tools/common/` | 共享底座：`community.py`（facade）、`community_activity*.py`（便笺四件套 + 消费层）、`community_contract.py`、`community_credentials.py`、`community_http.py`、`community_plugins.py`、`community_accounts.py`、`community_scheduler.py`（触发来源判定与便笺锁） |
-| `app/tools/{skland,miyoushe,miyoushe_qr,kuro,taygedo,cloud_genshin}.py` | 单平台适配器，留在 `app/tools/` 顶层 |
-| `app/core/`、`app/api/` | 只放触发时机、结果落盘与请求响应整形 |
+- `app/core/community/`：全局 `Community` 实例的配置读取、签到编排、锁、活动缓存与调度策略。
+- `app/tools/common/community/`：本功能的契约、凭据、账号辅助、平台协议与活动解析；平台适配在 `providers/`，活动实现细分在 `activity/`。
+- `app/core/notify/`：社区通知、任务报告、渠道与后台投递。业务通过 `from app.core import Notify` 使用。
+- `app/api/community/`：账号、签到和扫码登录薄入口，既有 `/api/tools/*` 路径保持不变。
+- 配置模型仍在 `app/models/config/tools.py`，工具内部契约不得迁入共享 models。
 
-- 新增社区模块一律进 `app/tools/common/`；签到专属进 `app/tools/common/sign/`，便笺与跨两者的共享件留 `app/tools/common/` 根。
-- **不要**再把社区业务逻辑放进 `app/core`、`app/services`、`app/utils`。既有例外只有通知管线（`app/core/community_notification.py` + `app/services/community_notification.py`），由 dev 维护，社区侧只负责产出结果与渲染数据。
-- 导入一律写绝对路径 `app.tools.common.*`；`app/tools/__init__.py` 与调用点的**函数内延迟导入**是防启动期循环依赖的既有写法（`app/core/config.py` ↔ `sign/community_sign.py` 尤其敏感），不要为了「统一出口」把社区模块提到包顶层。
-- 细节与命名规范见 [references/layout.md](references/layout.md)。
+调用方通过 `from app.core import Community` 使用核心实例；工具公共模块由 `app.tools` 入口提供，内部模块使用实际功能包路径。导入与缓存机制不构成绕过依赖边界的理由。当前源码和历史排布不自动成为组织规范例外。
+详见 [references/layout.md](references/layout.md)。
 
 ## 三条不能违反的语义
 
 1. **平台注册表是唯一入口**：`_COMMUNITY_SIGN_PROVIDERS` 派生凭据字段表与「该平台是否已配置」判据；不要另写平台清单或凭据字段清单。见 [references/sign-in.md](references/sign-in.md)。
-2. **成功判据只有一处**：`community_contract.is_community_sign_completed()`，即 `status in COMMUNITY_SIGN_SUCCESS_STATUSES or _completed`。编排、手动端点、通知计数全部走它。
+2. **成功判据只有一处**：`contracts.is_community_sign_completed()`，即 `status in COMMUNITY_SIGN_SUCCESS_STATUSES or _completed`。编排与手动端点复用它；通知结果模型只投影既有结果，不反向决定签到完成或落盘。
 3. **锁不合并、通知在锁外**：`community_sign_flow`、`_community_sign_lock`、`skland_sign_lock`、`community_activity_flow` 语义各不相同；签到锁**快速失败**（API 映射 409），便笺锁串行等待。
 
 ## 凭据与安全
@@ -43,7 +36,7 @@ description: >-
 
 ## 最小验证
 
-- 后端：`python -m pytest tests/tools tests/core/test_notify.py tests/api -q`
+- 后端：`uv run --no-sync python -m pytest tests/tools tests/core/test_components.py tests/core/test_notify.py tests/api -q`
 - 前端：只跑受影响的 `*.test.ts`；配置/schema 变更后重新生成 OpenAPI 客户端，禁止手改 `frontend/src/api/**`
 - 开发期的签到/便笺验证脚本属于一次性产物，默认不提交，也不新增社区 e2e 用例。
 

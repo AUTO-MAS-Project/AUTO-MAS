@@ -193,7 +193,7 @@ async def ensure_backend_updated(root: Path) -> str:
     await asyncio.to_thread(verify_digest, wheel, digest)
     # 源码依赖在准备阶段隔离构建成 wheel，不往现有后端安装构建工具。
     # 每轮使用独立目录，避免旧缓存的源码包或版本参与离线安装。
-    with tempfile.TemporaryDirectory(prefix="packages-", dir=stage) as directory:
+    with tempfile.TemporaryDirectory(prefix="packages-") as directory:
         packages = Path(directory)
         await run_python(
             root,

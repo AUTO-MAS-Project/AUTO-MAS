@@ -26,12 +26,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import app.core.notify.formats.bettergi as _format_bettergi
 from app.config import ConfigCollection
+from app.core import Notify, Publisher
 from app.core.history import aggregate_data
-from app.core.ws import Publisher, protocol
-from app.log_box import log_box
+from app.core.ws import protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
-from app.models.notification_ports import LocalNotice
+from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import System
@@ -56,7 +57,6 @@ from .tools import (
     account_switch,
     account_switch_native,
     archive_mas_runtime_backup,
-    build_statistics_payload,
     game_info,
     one_dragon,
     one_dragon_bridge,
@@ -76,7 +76,7 @@ from .tools.one_dragon_report import (
     parse_execution_layer_report,
     parse_one_dragon_report,
 )
-from .tools.push_log import make_bettergi_log_spec
+from .tools.push_log import steps_to_push_log
 
 logger = get_logger("BetterGI 自动代理")
 
@@ -1173,7 +1173,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
             await self.kill_managed_process()
             try:
-                await self.task_info.local_notifier.send_notice(
+                await Notify.send_notice(
                     LocalNotice(
                         title="BetterGI 自动代理出现异常！",
                         message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
@@ -2061,16 +2061,11 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
 
         # ── 节点详情注入（推送报告用）──
         # 分步表即节点：日志已由 LogMonitor 按相/按轮捕获进 log_record，这里只把
-        # 合并分步表交给 log_box 转换并交付，manager.final_task 经 build_user_result_text
-        # 聚合进报告正文。开关关闭时不注入，push_log 保持为空；on_crash 后 final_task
+        # 合并分步表在专项内转换并交付，manager.final_task 选择条目并调用公共报告排版。
+        # 开关关闭时不注入，push_log 保持为空；on_crash 后 final_task
         # 仍会执行，崩溃前能解析出的步骤同样进报告。
         if self.cur_user_item.push_log_mode != "关闭" and one_dragon_report:
-            session = log_box.get_user_session(
-                make_bettergi_log_spec(one_dragon_report),
-                user=self.cur_user_item,
-                mode=self.cur_user_item.push_log_mode,
-            )
-            await session.close()
+            await self._append_step_details(one_dragon_report)
 
         # 掉落统计：解析各轮日志里的「本轮奖励识别结果」（BGI 奖励识别打印的行），
         # 按物品跨轮跨来源累加。与分步报告不同——掉落是逐轮产出，必须合并全部轮次，
@@ -2134,8 +2129,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                     f"用户 {self.cur_user_item.name} 统计通知字段: "
                     f"{sorted(statistics.keys())}"
                 )
-                await self.task_info.notifications.push_statistics_report(
-                    payload=build_statistics_payload(
+                await Notify.push_statistics_report(
+                    payload=_format_bettergi.build_statistics_payload(
                         title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 BetterGI 自动代理统计报告",
                         message=statistics,
                     ),
@@ -2224,7 +2219,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 and self.cur_user_log.status
                 and self.cur_user_log.status != "Success!"
             ):
-                await self.task_info.local_notifier.send_notice(
+                await Notify.send_notice(
                     LocalNotice(
                         title="BetterGI 运行异常",
                         message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
@@ -2386,3 +2381,29 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             )
             return False
         return True
+
+    async def _append_step_details(self, steps: list[dict]) -> None:
+        """由专项固定分步快照、处理转换异常，并在宿主线程交付。"""
+        user = self.cur_user_item
+        if user.push_log_mode == "关闭":
+            return
+        snapshot = [dict(step) for step in steps]
+
+        async def deliver() -> None:
+            try:
+                entries = await asyncio.to_thread(steps_to_push_log, snapshot)
+                for entry in entries:
+                    user.push_log.append(entry)
+            except Exception:
+                logger.opt(exception=True).warning("BetterGI 节点结果交付失败")
+
+        task = asyncio.create_task(deliver())
+        cancelled = None
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError as error:
+                cancelled = error
+        task.result()
+        if cancelled is not None:
+            raise cancelled

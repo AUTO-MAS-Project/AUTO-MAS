@@ -10,9 +10,11 @@
 """
 
 import ctypes
+from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from ctypes import wintypes
-from dataclasses import dataclass
+
+from ..contracts.display import MonitorInfo as MonitorInfo
 
 DEFAULT_DPI = 96
 MONITORINFOF_PRIMARY = 0x00000001
@@ -104,44 +106,6 @@ _MONITORENUMPROC = ctypes.WINFUNCTYPE(
 )
 
 
-@dataclass(frozen=True)
-class MonitorInfo:
-    """一块显示器的几何信息，坐标均为物理像素。"""
-
-    device: str
-    handle: int
-    bounds: tuple[int, int, int, int]
-    work: tuple[int, int, int, int]
-    dpi: int
-    primary: bool
-
-    @property
-    def size(self) -> tuple[int, int]:
-        left, top, right, bottom = self.bounds
-        return right - left, bottom - top
-
-    @property
-    def work_size(self) -> tuple[int, int]:
-        """去掉任务栏之后的可用区域。窗口能不能放下要看它，不是看整块屏。"""
-
-        left, top, right, bottom = self.work
-        return right - left, bottom - top
-
-    @property
-    def scaling(self) -> float:
-        return self.dpi / DEFAULT_DPI
-
-    def describe(self) -> str:
-        width, height = self.size
-        work_width, work_height = self.work_size
-        return (
-            f"{self.device} {width}x{height}"
-            f"(可用 {work_width}x{work_height})"
-            f" DPI={self.dpi}({self.scaling:.2f}x)"
-            f"{' 主显示器' if self.primary else ''}"
-        )
-
-
 # 用私有的 WinDLL 实例，不是 `_user32`：后者是进程级共享缓存，在它上面
 # 声明 restype 会波及仓库里其它同样用它的模块（如 OkNte 的 launcher_start）。
 _user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -184,7 +148,7 @@ _declare_prototypes()
 
 
 @contextmanager
-def per_monitor_dpi():
+def per_monitor_dpi() -> Iterator[None]:
     """临时切到 per-monitor DPI 感知，保证拿到的是物理像素。
 
     不用进程级的 `SetProcessDpiAwareness`：那是一次性且不可逆的全局副作用，

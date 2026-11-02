@@ -169,7 +169,7 @@
         </template>
       </draggable>
     </div>
-    <a-empty
+    <NoData
       v-else
       :description="t('core.edit.noStockKeepingPlans')"
       :image-style="{ height: '48px' }"

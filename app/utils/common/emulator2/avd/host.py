@@ -47,7 +47,7 @@ from pathlib import Path
 import psutil
 
 from app.utils import emulator_native, get_logger, process_platform
-from app.utils import process_runner as _utils_process_runner
+from app.utils.common.process import runner as _utils_process_runner
 
 from .components import (
     adb_exe,

@@ -1,10 +1,16 @@
 import os
 import subprocess
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Unpack
 
-from ..common.process_runner import ProcessRunner
+from app.utils.common.process.runner import ProcessRunner
+
+from ..contracts.process import ElevatedProcess, EmulatorPopenOptions
 
 
 class WindowsProcessPlatform:
+    supports_elevation = True
     # 后端被 AUTO-MAS-Runtime 用 Job Object 监督（KILL_ON_JOB_CLOSE，且允许
     # breakaway）时，子进程默认都留在 Job 里：MAA.exe、各专项脚本进程、MaaFW
     # agent、taskkill/schtasks 之类的工具调用，在后端被硬杀或宿主崩溃时都要
@@ -59,7 +65,9 @@ class WindowsProcessPlatform:
     )
 
     @staticmethod
-    def popen_emulator(args, **kwargs):
+    def popen_emulator(
+        args: Sequence[str], **kwargs: Unpack[EmulatorPopenOptions]
+    ) -> subprocess.Popen[bytes]:
         try:
             return subprocess.Popen(
                 args, creationflags=WindowsProcessPlatform.emulator_flags, **kwargs
@@ -75,12 +83,14 @@ class WindowsProcessPlatform:
             )
 
     @staticmethod
-    def prepare_elevated():
+    def prepare_elevated() -> ElevatedProcess:
         """在事件循环线程解析 UAC 依赖，再返回同步启动函数。"""
         import win32api
         import win32con
 
-        def open_elevated(program, args, cwd) -> None:
+        def open_elevated(
+            program: str | Path, args: Sequence[str], cwd: str | Path | None
+        ) -> None:
             parameters = subprocess.list2cmdline(list(args)) if args else None
             working_directory = str(cwd) if cwd is not None else None
 

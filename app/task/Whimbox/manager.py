@@ -29,11 +29,11 @@ from datetime import datetime
 from pathlib import Path
 
 from app.config import ConfigCollection, config_manager
-from app.core import Config
+from app.core import Config, Notify, Publisher
 from app.core.script_update import ScriptUpdateRequest, run_script_update
-from app.core.ws import Publisher, protocol
+from app.core.ws import protocol
 from app.models.config import WhimboxConfig, WhimboxUserConfig
-from app.models.notification_report import TaskResultReport
+from app.models.notification.report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
@@ -254,7 +254,7 @@ class WhimboxManager(ScriptManagerBase):
                 result = self.build_proxy_report()
 
                 try:
-                    await self.task_info.notifications.push_proxy_result(
+                    await Notify.push_proxy_result(
                         title=title,
                         report=TaskResultReport.from_message(result),
                         task_info=self.task_info,

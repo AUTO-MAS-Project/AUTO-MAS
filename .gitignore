@@ -29,6 +29,7 @@ list/
 /runtime/
 /script/
 /environment/
+/temp/
 
 # Frontend dependencies & caches
 /node_modules/
