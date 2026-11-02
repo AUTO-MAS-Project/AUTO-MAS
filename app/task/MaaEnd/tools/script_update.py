@@ -190,9 +190,7 @@ async def update_before_run(
                     "version"
                 ]
             )
-            official_release = await request_release_for_version(
-                current, installed_tag
-            )
+            official_release = await request_release_for_version(current, installed_tag)
             verified_target, name, url, size, digest = select_package(
                 official_release, arch
             )
@@ -210,8 +208,10 @@ async def update_before_run(
     cdk = (
         ""
         if recover_native
-        else config.Update.MirrorChyanCDK.strip()
-        or Config.setting.Update.MirrorChyanCDK.strip()
+        else (
+            config.Update.MirrorChyanCDK.strip()
+            or Config.setting.Update.MirrorChyanCDK.strip()
+        )
     )
     source = "GitHub"
     if cdk:

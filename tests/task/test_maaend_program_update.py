@@ -716,9 +716,7 @@ def _official_release_for_test(tmp_path: Path, tag: str) -> tuple[Path, dict]:
         package.writestr("MaaEnd.exe", pe())
         package.writestr(
             "interface.json",
-            json.dumps(
-                {"name": "MaaEnd", "version": tag, "mirrorchyan_rid": "MaaEnd"}
-            ),
+            json.dumps({"name": "MaaEnd", "version": tag, "mirrorchyan_rid": "MaaEnd"}),
         )
         package.writestr("resource/data.json", '{"native": true}')
         package.writestr("agent/service.exe", b"native agent")
@@ -763,6 +761,7 @@ async def test_native_beta_newer_than_stable_uses_exact_official_package(
     mirror = AsyncMock()
     monkeypatch.setattr(update, "request_mirror_resource", mirror)
     config.Update.MirrorChyanCDK = "test-cdk"
+    update.Config.setting.Update.MirrorChyanCDK = "global-cdk"
 
     result = await update.update_before_run(root, config)
     assert "已更新" in result
@@ -856,25 +855,17 @@ async def test_exact_release_lookup_checks_official_tag_and_draft(
         "AsyncClient",
         lambda **_kwargs: original_client(transport=transport),
     )
-    got = await update.request_release_for_version(
-        Version("2.3.0b1"), "v2.3.0-beta.1"
-    )
+    got = await update.request_release_for_version(Version("2.3.0b1"), "v2.3.0-beta.1")
     assert got == release
-    assert observed == [
-        "/repos/MaaEnd/MaaEnd/releases/tags/v2.3.0-beta.1"
-    ]
+    assert observed == ["/repos/MaaEnd/MaaEnd/releases/tags/v2.3.0-beta.1"]
 
     release["tag_name"] = "v2.4.0"
     with pytest.raises(ValueError, match="不一致"):
-        await update.request_release_for_version(
-            Version("2.3.0b1"), "v2.3.0-beta.1"
-        )
+        await update.request_release_for_version(Version("2.3.0b1"), "v2.3.0-beta.1")
     release["tag_name"] = "v2.3.0-beta.1"
     release["draft"] = True
     with pytest.raises(ValueError, match="公开发行"):
-        await update.request_release_for_version(
-            Version("2.3.0b1"), "v2.3.0-beta.1"
-        )
+        await update.request_release_for_version(Version("2.3.0b1"), "v2.3.0-beta.1")
 
 
 @pytest.mark.asyncio
