@@ -132,4 +132,42 @@ describe('全部已有干员托管', () => {
     expect(task.CultivateTargets).toBe('[]')
     expect(controller.managing.value).toBe(false)
   })
+
+  it('迟到回读不覆盖请求期间新编辑的目标', async () => {
+    const { task, controller } = setup()
+    let completeRead: (value: unknown) => void = () => {}
+    getUser.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          completeRead = resolve
+        })
+    )
+    const pending = controller.setManaged(true)
+    await Promise.resolve()
+    expect(getUser).toHaveBeenCalledTimes(1)
+    task.CultivateTargets = '[{"operator_id":"new-edit","goals":[]}]'
+    completeRead({ code: 200, data: { user: { Task: { CultivateTargets: '[]' } } } })
+    await pending
+    expect(task.CultivateTargets).toContain('new-edit')
+  })
+
+  it('开启保存期间发生的目标编辑也不会被后续回读覆盖', async () => {
+    const { task, saveField, controller } = setup()
+    let completeSave: (value: boolean) => void = () => {}
+    saveField.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          completeSave = resolve
+        })
+    )
+    getUser.mockResolvedValueOnce({
+      code: 200,
+      data: { user: { Task: { CultivateTargets: '[]' } } },
+    })
+    const pending = controller.setManaged(true)
+    task.CultivateTargets = '[{"operator_id":"new-edit","goals":[]}]'
+    completeSave(true)
+    await pending
+    expect(task.CultivateTargets).toContain('new-edit')
+  })
 })

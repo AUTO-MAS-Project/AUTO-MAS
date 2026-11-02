@@ -207,6 +207,13 @@ export function useMaaCultivation(options: CultivationOptions) {
     }
   }
 
+  // 开启保存和回读期间仍允许编辑目标；迟到快照不得撤销新的编辑。
+  let cultivateTargetsVersion = 0
+  watch(
+    () => options.task().CultivateTargets,
+    () => cultivateTargetsVersion++,
+    { flush: 'sync' }
+  )
   const managing = ref(false)
   provide(cultivateManagementKey, {
     managed: computed(() => options.task().CultivateAllOwned ?? false),
@@ -217,6 +224,7 @@ export function useMaaCultivation(options: CultivationOptions) {
       try {
         await options.trackEdit(async () => {
           const userId = options.getUserId()
+          const targetsVersion = cultivateTargetsVersion
           const saved = await options.saveField('Task.CultivateAllOwned', enabled)
           if (!saved || !enabled) return
           // 开启托管会由后端同步补入目标；只回读目标，不覆盖其他表单草稿。
@@ -225,7 +233,9 @@ export function useMaaCultivation(options: CultivationOptions) {
           const task = (response.data[userId] as MaaUserConfig | undefined)?.Task
           if (response.code !== 200 || !task?.CultivateTargets)
             throw new Error('Could not reload cultivation targets')
-          options.task().CultivateTargets = task.CultivateTargets
+          if (targetsVersion === cultivateTargetsVersion) {
+            options.task().CultivateTargets = task.CultivateTargets
+          }
           await loadCultivateOperatorOptions()
         })
       } finally {

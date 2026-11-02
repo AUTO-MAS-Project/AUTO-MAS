@@ -16,6 +16,7 @@
 """MAA 用户配置更新策略。"""
 
 import json
+from collections.abc import Callable
 from typing import Any, cast
 
 from app.config import ConfigEntry
@@ -31,7 +32,7 @@ from .tools.cultivate import (
 
 async def prepare_user_update(
     script: ConfigEntry, user: ConfigEntry, *, data: dict[str, Any]
-) -> None:
+) -> Callable[[], None] | None:
     """校验原生来源占用，并准备本专项的用户补丁。"""
     script_config = cast(MaaConfig, script)
     user_config = cast(MaaUserConfig, user)
@@ -59,6 +60,7 @@ async def prepare_user_update(
             "每个脚本仅允许一个原生来源用户, 多账号请在该用户的实例管理中配置"
         )
 
+    guard: Callable[[], None] | None = None
     # 关闭养成接管后，清理上一轮运行留下的提示；判定与运行注入同源。
     if isinstance(data.get("Task"), dict):
         task_patch = data["Task"]
@@ -73,6 +75,10 @@ async def prepare_user_update(
 
             from .api_service import get_cultivate_skland_progression
 
+            binding = (
+                user_config.Task.CultivateSklandAccount,
+                user_config.Task.CultivateSklandUid,
+            )
             # 不在同一个补丁内换绑：当前已保存角色才是本次注入的账号。
             if any(
                 task_patch.get(key, getattr(user_config.Task, key))
@@ -88,19 +94,31 @@ async def prepare_user_update(
             catalog = await depot_cultivate_service.operator_catalog(
                 config_path=Config.config_path, proxy=Config.proxy
             )
-            # 网络读取完成后再读目标，保留期间已保存的手工配置。
-            raw_targets = json.loads(
-                task_patch.get("CultivateTargets", user_config.Task.CultivateTargets)
-            )
-            task_patch["CultivateTargets"] = json.dumps(
-                append_owned_cultivate_targets(
-                    raw_targets, catalog=catalog, progressions=skland[0]
-                ),
-                ensure_ascii=False,
-            )
+
+            def finish_owned_update() -> None:
+                if binding != (
+                    user_config.Task.CultivateSklandAccount,
+                    user_config.Task.CultivateSklandUid,
+                ):
+                    raise ValueError("森空岛绑定已变更，请重新开启全部干员培养托管")
+                # 写入方持有短保护范围后再读目标，保留同步和等待期间的手工保存。
+                raw_targets = json.loads(
+                    task_patch.get(
+                        "CultivateTargets", user_config.Task.CultivateTargets
+                    )
+                )
+                task_patch["CultivateTargets"] = json.dumps(
+                    append_owned_cultivate_targets(
+                        raw_targets, catalog=catalog, progressions=skland[0]
+                    ),
+                    ensure_ascii=False,
+                )
+
+            guard = finish_owned_update
         notice = takeover_notice_patch_value(
             task_patch.get("IfCultivate", user_config.Task.IfCultivate),
             task_patch.get("CultivateTargets", user_config.Task.CultivateTargets),
         )
         if notice is not None:
             data.setdefault("Data", {})["CultivateNotice"] = notice
+    return guard

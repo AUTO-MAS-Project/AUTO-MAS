@@ -1449,17 +1449,24 @@ class AppConfig:
         script_config = self.ScriptConfig[script_uid]
         user_config = script_config.UserData[user_uid]
 
+        guard: Callable[[], None] | None = None
         handler = self._get_script_config_handler(script_config)
         if handler is not None and handler.prepare_user_update is not None:
             prepared = handler.prepare_user_update(
                 script_config, user_config, data=data
             )
             if inspect.isawaitable(prepared):
-                await prepared
+                guard = await prepared
+            else:
+                guard = prepared
 
-        if precondition is not None and not precondition():
-            return False
-        await user_config.update(type(user_config).model_validate(data))
+        # 网络预处理不占用配置入口；复核快照归属和提交之间不插入其他写入。
+        async with config_manager.execution_gate():
+            if precondition is not None and not precondition():
+                return False
+            if guard is not None:
+                guard()
+            await user_config.update(type(user_config).model_validate(data))
         return True
 
     async def import_script_config_file(
