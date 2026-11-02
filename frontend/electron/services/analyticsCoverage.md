@@ -64,7 +64,7 @@
 | T053 | community_activity_requested：社区活动工具是否有需求 | 已接入，持续复核 |
 | T054 | notification_test_finished：配置通知后测试是否顺利 | 已接入，持续复核 |
 | T055 | notification_channel_changed：各内置通知渠道的启用情况 | 已接入，持续复核 |
-| T056 | notification_binding_finished：二维码绑定、取消和解绑是否完成 | 已接入，持续复核 |
+| T056 | notification_binding_finished：二维码绑定、取消、解绑及高级手动配置保存是否完成 | 已接入，持续复核 |
 | T057 | webhook_test_finished：自定义通知配置是否容易出错 | 已接入，持续复核 |
 | T058 | settings_change_finished：设置修改成功率及主要功能采用情况（含关闭确认开关） | 已接入，持续复核 |
 | T059 | appearance_preference_changed：主题、语言、低性能模式需求 | 已接入，持续复核 |
@@ -121,6 +121,7 @@
 - T015/T016：设置页只记录手动检查/拆除，自动状态探测不计数。询问窗的用户选择走限定窗口和主 frame 的专用桥，通用遥测桥仍只允许主窗；拆除请求由主进程持有，后端提前关窗不会丢掉实际 HTTP 结果。后端自动收窗不冒充用户取消。开发窗口可操作，但依旧停采。
 - T071–T084：14 类专项的创建、MAS 配置保存、原生/查看会话和任务更新共用已有边界；源码中实际存在的其他引导分别接入：MAA 基建导入/选择、养成预览与作业练度分析、MaaEnd 启动器发现、General 模板导入、MaaFW/M9A/MSS 项目预览/副本导入/同步/克隆/外壳实例导入/环境/更新、HSR M7A/SRA 更新与云登录、OK-WW 安装与游戏启动器发现、BetterGI 配置组保存、OK-NTE 独有配置保存、ZZZ-OD 原生/任务保存、导入、实例增删及回收操作。SRC、BAAH、奇想盒沿用其实际提供的公共保存/导入/原生会话，不虚构不存在的独有引导。
 - 养成页手动刷新在 `useMaaCultivateDataApi` 复用 `adapter_setup_finished / data_refresh`，只观察后端完整刷新结果；目录和预览的自动重读不重复上报。
+- 全部已有干员托管的开启与关闭复用 `useUserApi.updateUser` 的配置写入结果；开启同步失败仍走保存失败，关闭不改目标。运行前增量补入目标沿用现有任务终态，不新增名单、目标内容或自动重算事件。
 - 养成月卡设置经现有字段保存队列进入 `useUserApi.updateUser`，复用配置写入结果；不采集月卡值、理智或预计天数，本地重算不另发事件。
 - 专项检查更新与应用更新分开；检查发现新版不能当作安装完成。已有任务式更新只记录 accepted/rejected，实际运行终态仍由任务观察事件报告；原生保存/安装没有可靠完成信号时同样不猜测成功。
 - T081：OK-WW 更新以用户 UID 发起原业务请求，入口显式传入 Okww 分类；不拿用户 UID 查询脚本 UID 缓存，也不上报任何 UID。

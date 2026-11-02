@@ -42,9 +42,11 @@ def build_config_handler() -> ScriptConfigHandler:
     from app.task.MAA.resources import SUPPORTS_MOD_AVD as maa_supports_mod_avd
     from app.task.MAA.resources import declare_task_resources as maa_task_resources
     from app.task.MAA.user_update import prepare_user_update as prepare_maa_user_update
+    from app.task.MAA.user_update import resolve_user_config_dir
 
     return ScriptConfigHandler(
         user_config_class=MaaUserConfig,
+        user_config_directory=resolve_user_config_dir,
         prepare_user_update=prepare_maa_user_update,
         task_resources=maa_task_resources,
         emulator_binding=maa_emulator_binding,

@@ -140,9 +140,10 @@ export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
   }
   notification_binding_finished: {
     channel_kind: 'openclaw_qq'
-    action: 'bind' | 'rebind' | 'unbind'
+    action: 'bind' | 'rebind' | 'unbind' | 'manual_bind'
     outcome:
       | 'connected'
+      | 'saved'
       | 'unbound'
       | 'failure'
       | 'expired'

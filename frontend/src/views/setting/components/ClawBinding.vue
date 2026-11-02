@@ -5,6 +5,7 @@ import { CheckCircleOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design
 import type { UnwrapNestedRefs } from 'vue'
 import type { useClawBinding } from '../useClawBinding'
 import QQGroupCommands from './QQGroupCommands.vue'
+import QQManualCredentials from './QQManualCredentials.vue'
 
 // 提升后的绑定状态：useClawBinding 的返回值经 reactive() 包一层传入，
 // 嵌套 ref 在模板里自动解包。整个对象只由 TabNotify 构造一份。
@@ -90,7 +91,12 @@ onBeforeUnmount(() => clearInterval(groupsTimer))
         <a-space wrap>
           <a-button
             :type="connected ? 'default' : 'primary'"
-            :disabled="binding.statusLoading || binding.unbinding || binding.targetSaving"
+            :disabled="
+              binding.statusLoading ||
+              binding.unbinding ||
+              binding.targetSaving ||
+              binding.manualSaving
+            "
             @click="binding.start"
           >
             <template #icon><QrcodeOutlined /></template>
@@ -103,13 +109,17 @@ onBeforeUnmount(() => clearInterval(groupsTimer))
             :get-popup-container="getContainer"
             @confirm="binding.unbind"
           >
-            <a-button danger :loading="binding.unbinding" :disabled="binding.targetSaving">{{
-              binding.label('Unbind')
-            }}</a-button>
+            <a-button
+              danger
+              :loading="binding.unbinding"
+              :disabled="binding.targetSaving || binding.manualSaving"
+              >{{ binding.label('Unbind') }}</a-button
+            >
           </a-popconfirm>
         </a-space>
       </div>
     </div>
+    <QQManualCredentials :binding="binding" />
     <a-form v-if="connected" layout="vertical" class="target-form">
       <a-form-item :label="binding.label('TargetLabel')" html-for="qq-notification-target">
         <div class="target-row">
@@ -117,11 +127,12 @@ onBeforeUnmount(() => clearInterval(groupsTimer))
             id="qq-notification-target"
             :value="binding.groups?.targetType"
             :options="targetOptions"
-            :loading="binding.groupsLoading || binding.targetSaving"
+            :loading="binding.groupsLoading || binding.targetSaving || binding.manualSaving"
             :disabled="
               !binding.groups ||
               binding.groupsLoading ||
               binding.targetSaving ||
+              binding.manualSaving ||
               binding.unbinding ||
               binding.open
             "
@@ -131,7 +142,9 @@ onBeforeUnmount(() => clearInterval(groupsTimer))
           />
           <a-button
             :loading="binding.groupsLoading"
-            :disabled="binding.targetSaving || binding.unbinding || binding.open"
+            :disabled="
+              binding.targetSaving || binding.manualSaving || binding.unbinding || binding.open
+            "
             @click="binding.loadGroups"
           >
             <template #icon><ReloadOutlined /></template>
@@ -143,8 +156,10 @@ onBeforeUnmount(() => clearInterval(groupsTimer))
         v-if="binding.groups && binding.groups.targetType !== 'c2c'"
         v-model="binding.groupWhitelistDraft"
         :members="binding.groups.groupCommandWhitelist || []"
-        :saving="binding.targetSaving"
-        :disabled="binding.unbinding || binding.open || binding.targetSaving"
+        :saving="binding.targetSaving || binding.manualSaving"
+        :disabled="
+          binding.unbinding || binding.open || binding.targetSaving || binding.manualSaving
+        "
         :save="binding.saveGroupWhitelist"
       />
       <a-alert v-if="binding.groupsError" type="error" show-icon :message="binding.groupsError" />

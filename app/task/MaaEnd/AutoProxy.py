@@ -79,7 +79,7 @@ from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
 
 from .inventory_report import INVENTORY_REPORT_RULE, InventoryReport, inventory_resolve
-from .push_log import MAAEND_PUSH_RULES, maaend_resolve
+from .push_log import MAAEND_PUSH_RULES, maaend_plain_text, maaend_resolve
 from .resource_loader import (
     MaaEndResourceLoader,
     get_loaded_maaend_options,
@@ -665,7 +665,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if (
             not preserve_running_game
             and self.mode == self.first_run_mode
-            and self.script_config.Game.SetResolution
+            and (
+                self.script_config.Game.SetResolution
+                or self._launch_mode() == "MaaEnd"
+                and self.script_config.Game.AutoHDR != "Unchanged"
+            )
         ):
             self._read_original_game_settings()
             # 路径、签名与预任务参数全部就绪后再关闭游戏，校验失败不打断现有游戏。
@@ -722,7 +726,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         needs_wait = not is_process_running(_MAAEND_CLIENT_PROCESS) or (
             not preserve_running_game
             and self.mode == self.first_run_mode
-            and bool(self.script_config.Game.SetResolution)
+            and (
+                self.script_config.Game.SetResolution
+                or self.script_config.Game.AutoHDR != "Unchanged"
+            )
         )
         await self._apply_launcher_game_settings(
             preserve_running_game=preserve_running_game
@@ -2069,11 +2076,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
     def _configure_resolution_restore(
         self, tasks: list[dict[str, Any]]
     ) -> dict[str, Any] | None:
-        """仅在最后一个实际阶段，通过 MaaEnd 关闭游戏任务恢复分辨率。"""
+        """仅在最后一个实际阶段，通过 MaaEnd 关闭游戏任务恢复显示与自动 HDR 设置。"""
         resolution = self.script_config.Game.RestoreResolution
+        restore_hdr = self.script_config.Game.RestoreAutoHDR
+        restore_resolution = bool(resolution and resolution != "Off")
         if (
-            not resolution
-            or resolution == "Off"
+            (not restore_resolution and restore_hdr == "Unchanged")
             or (not self.script_config.Game.CloseOnFinish)
             or (self.emulator_manager is not None)
         ):
@@ -2096,23 +2104,32 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             return None
         if resolution == "Original" and original is None:
             logger.warning("无法读取启动前的终末地注册表显示设置，本轮跳过关闭时恢复")
-            for task in close_tasks:
-                task.setdefault("optionValues", {})["CloseGamePCApplyGameSetting"] = {
-                    "type": "switch",
-                    "value": False,
-                }
-            return None
-        required_options = (
-            "CloseGamePCApplyGameSetting",
-            "CloseGamePCGameSettingDisplayType",
-            "CloseGamePCGameSettingResolution",
-        )
+            restore_resolution = False
+            if restore_hdr == "Unchanged":
+                for task in close_tasks:
+                    task.setdefault("optionValues", {})[
+                        "CloseGamePCApplyGameSetting"
+                    ] = {
+                        "type": "switch",
+                        "value": False,
+                    }
+                return None
+        required_options = ["CloseGamePCApplyGameSetting"]
+        if restore_hdr != "Unchanged":
+            required_options.append("CloseGamePCAutoHDR")
+        if restore_resolution:
+            required_options.extend(
+                (
+                    "CloseGamePCGameSettingDisplayType",
+                    "CloseGamePCGameSettingResolution",
+                )
+            )
         if self._maaend_task_supported("CloseGamePC") is not True or not all(
             self._maaend_task_option_supported("CloseGamePC", name)
             for name in required_options
         ):
             raise ValueError(
-                "当前 MaaEnd 不支持关闭游戏时恢复分辨率，请更新 MaaEnd 或关闭此设置"
+                "当前 MaaEnd 不支持关闭游戏时恢复所选设置，请更新 MaaEnd 或关闭此设置"
             )
         close_task = (
             close_tasks[0]
@@ -2132,34 +2149,37 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             str(self.script_config.Game.ControllerType)
         ] = True
         tasks.append(close_task)
-        display_type = (
-            original[2]
-            if original is not None
-            else str(self.script_config.Game.RestoreDisplayType or "Window")
-        )
-        if display_type not in {"Window", "Fullscreen"}:
-            display_type = "Window"
-        if resolution == "Original":
-            assert original is not None
-            width, height = str(original[0]), str(original[1])
-        elif resolution == "Custom":
-            width = str(self.script_config.Game.RestoreResolutionWidth)
-            height = str(self.script_config.Game.RestoreResolutionHeight)
-        else:
-            width, height = resolution.split("x")
         values = close_task.setdefault("optionValues", {})
         values["CloseGamePCApplyGameSetting"] = {"type": "switch", "value": True}
-        values["CloseGamePCGameSettingDisplayType"] = {
-            "type": "select",
-            "caseName": display_type,
-        }
-        values["CloseGamePCGameSettingResolution"] = {
-            "type": "input",
-            "values": {
-                "CloseGamePCGameSettingResolutionWidth": width,
-                "CloseGamePCGameSettingResolutionHeight": height,
-            },
-        }
+        if restore_hdr != "Unchanged":
+            values["CloseGamePCAutoHDR"] = {"type": "select", "caseName": restore_hdr}
+        if restore_resolution:
+            display_type = (
+                original[2]
+                if original is not None
+                else str(self.script_config.Game.RestoreDisplayType or "Window")
+            )
+            if display_type not in {"Window", "Fullscreen"}:
+                display_type = "Window"
+            if resolution == "Original":
+                assert original is not None
+                width, height = str(original[0]), str(original[1])
+            elif resolution == "Custom":
+                width = str(self.script_config.Game.RestoreResolutionWidth)
+                height = str(self.script_config.Game.RestoreResolutionHeight)
+            else:
+                width, height = resolution.split("x")
+            values["CloseGamePCGameSettingDisplayType"] = {
+                "type": "select",
+                "caseName": display_type,
+            }
+            values["CloseGamePCGameSettingResolution"] = {
+                "type": "input",
+                "values": {
+                    "CloseGamePCGameSettingResolutionWidth": width,
+                    "CloseGamePCGameSettingResolutionHeight": height,
+                },
+            }
         return close_task
 
     def _read_original_game_settings(self) -> tuple[int, int, str] | None:
@@ -2323,8 +2343,22 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             controller_type = str(self.script_config.Game.ControllerType)
             setting_pretask = self._game_setting_pretask()
             if setting_pretask is not None:
-                apply_settings = self.mode == self.first_run_mode and bool(
-                    self.script_config.Game.SetResolution
+                auto_hdr = self.script_config.Game.AutoHDR
+                apply_hdr = (
+                    setting_pretask == _MAAEND_LAUNCH_GAME_PRETASK
+                    and auto_hdr != "Unchanged"
+                )
+                if apply_hdr:
+                    interface = load_interface_model(self.maaend_root_path)
+                    if (
+                        "LaunchGamePCAutoHDR"
+                        not in build_task_option_maps(interface)[setting_pretask]
+                    ):
+                        raise ValueError(
+                            "当前 MaaEnd 不支持自动 HDR 设置，请更新 MaaEnd"
+                        )
+                apply_settings = self.mode == self.first_run_mode and (
+                    self.script_config.Game.SetResolution or apply_hdr
                 )
                 # 保存的配置可能早于当前资源；先补齐入口，再覆写本轮托管开关。
                 _place_managed_task(
@@ -2345,6 +2379,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                             "type": "switch",
                             "value": apply_settings,
                         }
+                        if apply_hdr:
+                            task["optionValues"]["LaunchGamePCAutoHDR"] = {
+                                "type": "select",
+                                "value": auto_hdr,
+                            }
                     if task["taskName"] == setting_pretask:
                         self.launcher_game_setting_options = task["optionValues"]
             # 上游预任务在 MXU 外按所选方式执行；保存的其他版本入口也必须禁用。
@@ -3352,6 +3391,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         def read() -> list[log_box.LogEntry]:
             pipeline = log_box.LogPipeline()
+            pipeline.preprocessors.append(maaend_plain_text)
             for rule in MAAEND_PUSH_RULES:
                 pipeline.add_rule(*rule)
             pipeline.postprocessors.append(maaend_resolve)

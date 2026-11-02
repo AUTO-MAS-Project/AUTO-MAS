@@ -99,6 +99,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `adapter_setup_finished` | 专项配置引导与独有操作 | `script_type`、`operation_kind`、`engine_kind` |
 
 养成页手动刷新复用 `adapter_setup_finished`，`operation_kind=data_refresh`，仅在后端完整更新材料与目录后记录成功；自动缓存读取不重复采集。
+全部干员托管开关经字段保存队列复用 `useUserApi.updateUser` 的 `config_write_finished`；开启时以账号快照补入目标后才返回保存结果。每轮自动补充沿用任务终态观察，不采集托管值、账号、干员名单或目标内容。
 养成月卡选项保存复用 `useUserApi.updateUser` 的 `config_write_finished`，不发送月卡状态；材料时间为本地派生展示，不新增重算事件。
 
 历史附件视频的 `play` 意图由 `playing` 确认成功，缓冲恢复不会重复计数；请求播放前后的关联仅在内存中保存，不上报附件标识或地址。手动保存录屏仅用 `capture_path` 是否存在判断 success/skipped，不上传其内容。
@@ -281,11 +282,19 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
 
 群成员白名单编辑与“我的ID”查询不单独采集；成员标识属于访问控制信息，不进入遥测。
 
+QQ 高级手动配置复用 `notification_binding_finished`，`action=manual_bind`、`outcome=saved` 仅表示凭据验证并保存，不代表网关 READY 或通知送达；失败记 failure，不采集 AppID、密钥或 OpenID。
+
 脚本更新下载器开关复用 `settings_change_finished`，固定键为 `script_update_takeover`，只记录开关状态与保存结果。
 专项运行前的自动检查、缓存命中、下载进度和重试不逐次采集；任务终态由各专项复用 `script_run_finished` 的原观察者负责。
+
+脚本更新公共入口沿用这一观察边界，不另发完成事件。MFW、M9A、MSS 的自动更新统一在用户任务之前执行；更新时机配置保存仍由 `useScriptApi.updateScript` 观察，目录、版本和调度标识不进入匿名统计。
 官方安装器没有独立、可靠的统计完成契约，不把下载完成或本地包登记当成安装完成，也不上传版本、路径或下载地址。
 
+- MaaEnd 程序更新接管：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；检查、准备回退及安装拦截由现有 `script_run_finished` 观察任务终态。下载进度、哈希和路径不单独采集。
+
 - 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。
+
+HSR 运行前更新复用公共更新入口和 `script_run_finished` 的任务终态观察；更新选项保存沿用 `useScriptApi.updateScript`，不新增逐包、逐引擎或进度事件，不采集安装路径、版本及 CDK。
 
 ## 渲染进程恢复
 

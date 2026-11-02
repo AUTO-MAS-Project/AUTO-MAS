@@ -107,7 +107,6 @@ from .slots import collect_used_slot_idxs, ensure_user_slot, recycle_unbound_slo
 from .tools import (
     INSTANCE_RUN_ALL,
     INSTANCE_RUN_CURRENT,
-    PERSISTENT_RUN_RECORD_APPS,
     RUN_STATUS_FAILED,
     RUN_STATUS_NOT_RUN,
     RUN_STATUS_RUNNING,
@@ -224,11 +223,16 @@ def _failed_apps(
         for app_id, _, new in diffs
         if new == RUN_STATUS_FAILED and app_id not in _SUMMARY_APP_IDS
     }
-    app_ids = {
-        name: app_id
-        for app_id, name in app_name_book.items()
-        if app_id not in _SUMMARY_APP_IDS
-    }
+    names: dict[str, list[str]] = {}
+    for app_id, name in app_name_book.items():
+        if app_id not in _SUMMARY_APP_IDS:
+            names.setdefault(name, []).append(app_id)
+    app_ids = {name: ids[0] for name, ids in names.items() if len(ids) == 1}
+    for name, ids in names.items():
+        if len(ids) > 1:
+            logger.warning(
+                f"任务名称重复，忽略歧义终态日志并按运行记录判定：{name} ({'、'.join(ids)})"
+            )
     results: dict[tuple[int | None, str], bool] = {}
     current_slot = None
     for line in log.splitlines():
@@ -323,14 +327,17 @@ def _snapshot_all_run_records(root: Path) -> dict[str, int]:
 def _judge_baseline(root: Path, idx: int) -> dict[str, int]:
     """本轮终判基准：注入后的运行记录快照，保留类应用一律按未跑计。
 
-    保留类应用（:data:`PERSISTENT_RUN_RECORD_APPS`）的记录不在注入时清空，
+    保留类内置应用和插件的记录不在注入时清空，
     其上一轮终态会让「本轮有没有变化」的差分失真——连续两轮失败会因前后同为
     失败被判成没变化，失败明细与重试提示一起丢掉。基准里把这些应用归零，
     与 :func:`_judge_after` 的 after 侧归一配对使用。
     """
 
     records = snapshot_run_records(root, idx)
-    for app_id in PERSISTENT_RUN_RECORD_APPS:
+    for name in snapshot_run_record_files(root, idx):
+        if Path(name).suffix != ".yml":
+            continue
+        app_id = Path(name).stem
         if app_id in records:
             records[app_id] = RUN_STATUS_NOT_RUN
     return records
@@ -353,9 +360,12 @@ def _judge_after(
     if not pre_files:
         return records
     current = snapshot_run_record_files(root, idx)
-    for app_id in PERSISTENT_RUN_RECORD_APPS:
-        name = f"{app_id}.yml"
-        if app_id not in records or name not in pre_files:
+    for name in pre_files:
+        # 附加文件只透传保存，不能按同名 stem 覆盖真正运行记录的终态。
+        if Path(name).suffix != ".yml":
+            continue
+        app_id = Path(name).stem
+        if app_id not in records:
             continue
         pre = pre_files[name]
         if pre is None or pre == current.get(name):
@@ -460,6 +470,8 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self._app_name_book: dict[str, str] = {}
         # 本轮应用级失败名单（_judge_final 写入；重试前判「重试无意义」用）
         self._failed_app_ids: list[str] = []
+        # 插件失败保留原生结果；整轮已走完时不单独触发单账号整轮重跑。
+        self._plugin_app_ids: frozenset[str] = frozenset()
         # 白名单解析结果（app_id 集，prepare 经应用目录解析）
         self._futile_app_ids: frozenset[str] = frozenset()
 
@@ -839,10 +851,11 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             self.check_log,
         )
 
-        self._app_name_book = {
-            item["app_id"]: item["app_name"]
-            for item in list_app_catalog(self.script_root_path)
-        }
+        catalog = list_app_catalog(self.script_root_path)
+        self._plugin_app_ids = frozenset(
+            item["app_id"] for item in catalog if item.get("is_plugin")
+        )
+        self._app_name_book = {item["app_id"]: item["app_name"] for item in catalog}
         if not self._app_name_book:
             raise ValueError("未能加载一条龙任务目录，请检查安装文件是否完整")
 
@@ -1183,6 +1196,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             diffs = diff_run_records(records_before, records_after)
             failed_apps = _failed_apps(diffs, log, self._app_name_book)
             self._failed_app_ids = failed_apps
+            for app_id in failed_apps:
+                if app_id in self._plugin_app_ids:
+                    logger.warning(
+                        f"插件任务执行失败，失败结果已保留："
+                        f"{self._app_display_name(app_id)} ({app_id})"
+                    )
             if failed_apps:
                 failed_names = [
                     self._app_display_name(app_id) for app_id in failed_apps
@@ -1223,7 +1242,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             self.cur_user_item.status = user_status
 
     def _all_failures_futile(self, log: str) -> bool:
-        """本轮失败是否已无重试价值：整轮正常走完且失败应用全部命中白名单。
+        """整轮正常走完且仅插件或白名单应用失败时，不再整轮重跑。
 
         白名单应用的失败不触发重试，也不拦其余应用的重试；仅注入模式单实例
         会话启用——独立基座的多实例切换与原生裸跑一轮覆盖多个用户或实例
@@ -1237,7 +1256,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             return False
         if _ZZZOD_ONE_DRAGON_SUCCESS not in log:
             return False
-        return _failures_all_futile(self._failed_app_ids, self._futile_app_ids)
+        return _failures_all_futile(
+            self._failed_app_ids, self._futile_app_ids | self._plugin_app_ids
+        )
 
     def _launch_evidence(self, log: str, records_changed: bool) -> bool:
         """启动器是否已成功启动：出现应用层运行上下文日志或运行记录有变化即视为已启动。
@@ -1317,6 +1338,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             )
             diffs = diff_run_records(before, after)
             failed_apps = _failed_apps(diffs, log, self._app_name_book, slot_idx=slot)
+            for app_id in failed_apps:
+                if app_id in self._plugin_app_ids:
+                    logger.warning(
+                        f"实例 {slot} 插件任务执行失败，失败结果已保留："
+                        f"{self._app_display_name(app_id)} ({app_id})"
+                    )
             success = any(new == RUN_STATUS_SUCCESS for _, _, new in diffs)
             # 记录保留后，本周期已全部完成的用户整轮被跳过、diff 为空，需要
             # 回落判完成（详见 _judge_all_skipped：以「整轮跑完」为判据，
@@ -1457,11 +1484,26 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             try:
                 # 一条龙运行中会把计划进度写回槽内 per-app YAML、把周期进度写进
                 # 运行记录，整目录恢复会连它们一起回滚；先快照再恢复，随后回写
-                plan_run_times = snapshot_plan_run_times(self.script_root_path, slot)
-                record_files = snapshot_run_record_files(self.script_root_path, slot)
+                snapshot_errors: list[str] = []
+                plan_run_times = {}
+                record_files = {}
+                try:
+                    plan_run_times = snapshot_plan_run_times(
+                        self.script_root_path, slot
+                    )
+                except Exception as exc:
+                    snapshot_errors.append(f"计划进度快照失败：{exc}")
+                try:
+                    record_files = snapshot_run_record_files(
+                        self.script_root_path, slot
+                    )
+                except Exception as exc:
+                    snapshot_errors.append(f"运行记录快照失败：{exc}")
                 restore_instance(self.script_root_path, slot, backup_dir)
                 restore_plan_run_times(self.script_root_path, slot, plan_run_times)
                 restore_run_record_files(self.script_root_path, slot, record_files)
+                if snapshot_errors:
+                    raise OSError("；".join(snapshot_errors))
             except Exception as e:  # noqa: BLE001 - 单槽失败隔离，继续恢复其余槽
                 logger.opt(exception=True).warning(
                     f"恢复 ZZZ-OD 槽 {slot} 注入现场失败: {e}"

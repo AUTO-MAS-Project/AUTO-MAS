@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { OpenClawQQCredentialsIn } from '../models/OpenClawQQCredentialsIn';
+import type { OpenClawQQCredentialsOut } from '../models/OpenClawQQCredentialsOut';
 import type { OpenClawQQGroupsOut } from '../models/OpenClawQQGroupsOut';
 import type { OpenClawQQQrCheckIn } from '../models/OpenClawQQQrCheckIn';
 import type { OpenClawQQQrCheckOut } from '../models/OpenClawQQQrCheckOut';
@@ -105,6 +107,36 @@ export class QqService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/openclaw-qq/unbind',
+        });
+    }
+    /**
+     * 读取 QQ 机器人高级配置，不返回密钥
+     * @returns OpenClawQQCredentialsOut Successful Response
+     * @throws ApiError
+     */
+    public static getCredentialsApiSettingOpenclawQqCredentialsGetPost(): CancelablePromise<OpenClawQQCredentialsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/openclaw-qq/credentials/get',
+        });
+    }
+    /**
+     * 验证并保存 QQ 机器人手动凭据
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setCredentialsApiSettingOpenclawQqCredentialsSetPost(
+        requestBody: OpenClawQQCredentialsIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/openclaw-qq/credentials/set',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
 }

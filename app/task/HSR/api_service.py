@@ -158,6 +158,7 @@ async def update_engine(script_id: str, engine: str, action: str) -> HSRApiReply
 
     try:
         script_config = hsr_script_config(script_id)
+        from app.core.script_update import ScriptUpdateRequest, run_script_update
         from app.task.HSR.task_mapping import engine_label
         from app.task.HSR.tools.native_control import resolve_script_path
         from app.task.HSR.tools.update import (
@@ -212,7 +213,9 @@ async def update_engine(script_id: str, engine: str, action: str) -> HSRApiReply
             return HSRApiReply.error(409, str(e))
 
         try:
-            outcome = await update_engine_if_needed(
+            outcome = await run_script_update(
+                ScriptUpdateRequest(script_id, "HSR", engine),
+                update_engine_if_needed,
                 engine,
                 Path(root),
                 source=source,

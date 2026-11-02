@@ -29,14 +29,14 @@ Mirror 酱源（临时授权 URL + 短期 token）在本文件里一律跳过 Fl
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 import httpx
 
-from app.services.common.update.transport import DownloadProgress
+from app.services.common.update.transport import BuiltinDownload, DownloadProgress
 from app.services.common.update.transport import download_file as _httpx_download
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
 from app.utils import get_logger
@@ -73,6 +73,7 @@ async def download_file(
     progress: DownloadProgress | None = None,
     downloader: str | None = None,
     source: str | None = None,
+    http_download: BuiltinDownload | None = None,
 ) -> int:
     """同一输出文件的下载、回退和清映射共用跨进程锁。"""
     async with _utils_fluxdown_cli.fluxdown_destination_lock(
@@ -88,6 +89,7 @@ async def download_file(
             progress=progress,
             downloader=downloader,
             source=source,
+            http_download=http_download,
         )
 
 
@@ -102,6 +104,7 @@ async def _download_file(
     progress: DownloadProgress | None = None,
     downloader: str | None = None,
     source: str | None = None,
+    http_download: BuiltinDownload | None = None,
 ) -> int:
     """根据宿主选项分发下载：FluxDown 或内置 httpx。
 
@@ -121,6 +124,7 @@ async def _download_file(
     CDN 多，FluxDown 的 Range 续传可能和短期 token 冲突。
     """
     explicit_builtin = downloader == "builtin"
+    builtin_download = http_download or _httpx_download
     downloader = downloader or options.downloader
     frozen_source = source if source is not None else options.source
     segments = options.segments
@@ -152,7 +156,7 @@ async def _download_file(
                 action="改用内置 httpx 下载",
                 write_history=write_history,
             )
-        size = await _httpx_download(
+        size = await builtin_download(
             url, destination, timeout=timeout, proxy=proxy, progress=progress
         )
         if explicit_builtin:
@@ -172,7 +176,7 @@ async def _download_file(
     if cli_path is None:
         # CLI 不存在 → 回退 httpx
         logger.warning("未找到 FluxDown CLI,回退内置 httpx 下载")
-        return await _httpx_download(
+        return await builtin_download(
             url, destination, timeout=timeout, proxy=proxy, progress=progress
         )
 
@@ -222,7 +226,7 @@ async def _download_file(
             ),
             write_history=write_history,
         )
-        return await _httpx_download(
+        return await builtin_download(
             url, destination, timeout=timeout, proxy=proxy, progress=progress
         )
 
@@ -249,6 +253,27 @@ async def _download_via_fluxdown(
     segments = options.segments
     proxy_str = _proxy_to_str(proxy)
     server_on = options.server_mode
+
+    # 无论选择 FluxDown 还是 httpx，同一路径的其他 URL 任务都不得继续写盘。
+    if not await _utils_fluxdown_cli._to_thread_strong(
+        partial(
+            _utils_fluxdown_cli.fluxdown_server_task_safe_to_overwrite,
+            cli_path,
+            url,
+            destination,
+            other_only=True,
+        ),
+        propagate_cancel=True,
+    ):
+        await _block_downgrade(
+            cli_path,
+            url,
+            destination,
+            segments=segments,
+            proxy_str=proxy_str,
+            detail="同一文件其他下载来源的 FluxDown 任务尚未确认停止",
+            write_history=write_history,
+        )
 
     if server_on and _utils_fluxdown_cli.fluxdown_server_available(
         cli_path, enabled=True
@@ -366,11 +391,12 @@ async def _can_downgrade(cli_path: Path, url: str, destination: Path) -> bool:
     统一 ``--local`` 与内置 httpx 两条降级路径的门槛，避免旧 daemon 仍在写
     同一目标时启动第二个写入者。
     """
-    return await asyncio.to_thread(
+    return await _utils_fluxdown_cli._to_thread_strong(
         _utils_fluxdown_cli.fluxdown_server_task_safe_to_overwrite,
         cli_path,
         url,
         destination,
+        propagate_cancel=True,
     )
 
 

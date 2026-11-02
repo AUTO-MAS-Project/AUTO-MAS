@@ -212,7 +212,7 @@ class QueueItemNotFoundError(LookupError):
 
 
 class AppConfig:
-    VERSION = "v5.8.0-beta.2"
+    VERSION = "v5.8.0-beta.3"
 
     def __init__(self) -> None:
 
@@ -1449,17 +1449,24 @@ class AppConfig:
         script_config = self.ScriptConfig[script_uid]
         user_config = script_config.UserData[user_uid]
 
+        guard: Callable[[], None] | None = None
         handler = self._get_script_config_handler(script_config)
         if handler is not None and handler.prepare_user_update is not None:
             prepared = handler.prepare_user_update(
                 script_config, user_config, data=data
             )
             if inspect.isawaitable(prepared):
-                await prepared
+                guard = await prepared
+            else:
+                guard = prepared
 
-        if precondition is not None and not precondition():
-            return False
-        await user_config.update(type(user_config).model_validate(data))
+        # 网络预处理不占用配置入口；复核快照归属和提交之间不插入其他写入。
+        async with config_manager.execution_gate():
+            if precondition is not None and not precondition():
+                return False
+            if guard is not None:
+                guard()
+            await user_config.update(type(user_config).model_validate(data))
         return True
 
     async def import_script_config_file(
@@ -1557,16 +1564,24 @@ class AppConfig:
             await asyncio.to_thread(_utils_io.force_rmtree, user_data_dir)
 
     async def get_user_config_dir(self, script_id: str, user_id: str) -> Path:
-        """获取用户配置目录, 不存在时创建"""
+        """获取专项声明的生效配置目录，未声明时沿用用户数据目录。"""
 
         logger.info(f"{script_id} 获取用户配置目录: {user_id}")
 
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
-        if user_uid not in self.ScriptConfig[script_uid].UserData:
+        script_config = self.ScriptConfig[script_uid]
+        if user_uid not in script_config.UserData:
             raise ValueError("用户不存在")
 
         user_config_dir = self.data_path / f"{script_id}/{user_id}"
+        handler = self._get_script_config_handler(script_config)
+        if handler is not None and handler.user_config_directory is not None:
+            user_config_dir = handler.user_config_directory(
+                script_config,
+                script_config.UserData[user_uid],
+                data_path=self.data_path,
+            )
         user_config_dir.mkdir(parents=True, exist_ok=True)
 
         return user_config_dir
