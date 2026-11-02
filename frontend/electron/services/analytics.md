@@ -289,6 +289,8 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
 
 - 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。
 
+HSR 运行前更新复用公共更新入口和 `script_run_finished` 的任务终态观察；更新选项保存沿用 `useScriptApi.updateScript`，不新增逐包、逐引擎或进度事件，不采集安装路径、版本及 CDK。
+
 ## 渲染进程恢复
 
 主进程 `rendererRecoveryService.ts` 是重载结果的唯一观察者。保留
