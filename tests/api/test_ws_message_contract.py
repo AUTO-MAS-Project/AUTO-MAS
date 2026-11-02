@@ -1,6 +1,6 @@
 """主 WebSocket 出站消息的字段契约快照。
 
-后端经 `app.core.ws.Publisher.send` 把 `app.models.schema` 里的 WS*Data 模型
+后端经 `app.core.Publisher.send` 把 `app.models.schema` 里的 WS*Data 模型
 （`model_dump(mode="json")`，键即字段名）发给前端；前端 `services/websocket/types.ts`
 按同名字段消费。字段被误改名或删掉时前后端都不报错，只是界面静默不更新，所以这里把
 每种出站消息的字段名集合钉成显式快照。改字段即改对外契约，必须同步改这份快照。

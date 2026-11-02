@@ -66,7 +66,7 @@
           </template>
         </MaaFWQueueCard>
       </div>
-      <a-empty v-else :description="t('core.edit.queueTemplateEmpty')" />
+      <NoData v-else :description="t('core.edit.queueTemplateEmpty')" />
     </template>
 
     <div v-else class="preset-section-modal">

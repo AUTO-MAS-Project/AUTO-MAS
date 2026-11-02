@@ -95,6 +95,8 @@ export interface MaaEndScriptConfig {
     WaitTime: number
     EmulatorId: string
     EmulatorIndex: string
+    RestoreAutoHDR: 'Unchanged' | 'Disable' | 'Enable'
+    AutoHDR: 'Unchanged' | 'Disable' | 'Enable'
     SetResolution: boolean
     CloseOnFinish: boolean
     RestoreDisplayType: 'Window' | 'Fullscreen'

@@ -13,11 +13,11 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from app.config import ConfigCollection
-from app.core.config import AppConfig
-from app.core.script_config_bindings import build_builtin_script_capabilities
-from app.core.script_registration import ManagerBuildContext
+from app.core.config.manager import AppConfig
 from app.models import config as models
 from app.models.task import ScriptItem
+from app.task.builtin_registration import build_builtin_script_capabilities
+from app.task.registration import ManagerBuildContext
 
 # 固定迁移前的能力契约；可选钩子缺省是明确不支持，不要求各专项长成同一形状。
 EXPECTED = [
@@ -83,6 +83,9 @@ def capabilities():
 
 def config_host(caps):
     config = AppConfig.__new__(AppConfig)
+    config.work_path = Path.cwd()
+    config.data_path = config.work_path / "data"
+    config.config_path = config.work_path / "config"
     config._script_config_handlers = {}
     config._restore_pool_resolver = None
     for entry_type, handler in caps.config_handlers:
@@ -274,7 +277,7 @@ folders = ["MAA","SRC","general","MaaEnd","MaaFW","Okww","OkNte","HSR","BetterGI
 with patch("asyncio.create_task",side_effect=AssertionError("spawn")):
     for folder in folders:
         importlib.import_module("app.task."+folder+".registration")
-forbidden = [n for n in sys.modules if n in {"app.core.config","app.core.task_manager"} or (n.startswith("app.task.") and (n.endswith((".manager",".embedded_manager",".restore_service",".AutoProxy")) or ".tools.core.runner" in n))]
+forbidden = [n for n in sys.modules if n in {"app.core.config.manager","app.core.task_manager.manager"} or (n.startswith("app.task.") and (n.endswith((".manager",".embedded_manager",".restore_service",".AutoProxy")) or ".tools.core.runner" in n))]
 assert not forbidden, forbidden
 assert not __import__("pathlib").Path("config").exists()
 assert not __import__("pathlib").Path("data").exists()

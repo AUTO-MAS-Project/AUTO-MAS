@@ -84,7 +84,7 @@ const editDescription = (item: MyAppearanceItem): void => {
     </a-result>
   </div>
   <div v-else-if="items.length === 0" class="mine-state">
-    <a-empty :description="t('core.themeStore.mine.empty')" />
+    <NoData :description="t('core.themeStore.mine.empty')" />
   </div>
   <div v-else class="mine-grid">
     <div v-for="item in items" :key="item.fileId" class="mine-card">

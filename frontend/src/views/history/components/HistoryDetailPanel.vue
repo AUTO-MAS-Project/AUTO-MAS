@@ -2,13 +2,12 @@
   <div class="detail-panel">
     <!-- 未选择用户时的空状态 -->
     <div v-if="!hasUserSelected" class="empty-state">
-      <a-empty :image-style="{ height: '56px' }">
-        <template #image><UserSwitchOutlined class="empty-icon" /></template>
+      <NoData :image-style="{ height: '56px' }">
         <template #description>
           <div>{{ t('core.history.selectUser') }}</div>
           <div>{{ t('core.history.selectUserDesc') }}</div>
         </template>
-      </a-empty>
+      </NoData>
     </div>
 
     <!-- 已选择用户时显示详情 -->
@@ -41,7 +40,6 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { UserSwitchOutlined } from '@ant-design/icons-vue'
 import HistoryRecordList from './HistoryRecordList.vue'
 import UserStatisticsCard from './UserStatisticsCard.vue'
 import type { PullCountStatistics } from '@/types/history'
@@ -91,10 +89,6 @@ defineEmits<{
   border: 1px solid var(--ant-color-border-secondary);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   min-height: 300px;
-}
-
-.empty-icon {
-  font-size: 56px;
 }
 
 .detail-content {

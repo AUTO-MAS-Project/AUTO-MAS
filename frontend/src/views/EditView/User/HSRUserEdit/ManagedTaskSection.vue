@@ -17,7 +17,7 @@
     />
 
     <a-spin :spinning="loading">
-      <a-empty
+      <NoData
         v-if="!snapshot && !loading"
         :description="t('core.edit.nativeTaskConfigurationHas')"
       />

@@ -55,23 +55,25 @@ MAS 用户与 zzz-od 实例槽**固定绑定**：每个用户绑定一个槽（�
 import asyncio
 import json
 import re
+import time
 import uuid
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
 from app.config import ConfigCollection
-from app.core import Config
+from app.core import Config, Notify, Publisher
 from app.core.history import aggregate_data
-from app.core.ws import Publisher, protocol
-from app.log_box import UserLogSession, log_box
+from app.core.notify.task_content import (
+    build_user_statistics_payload as build_user_statistics_payload,
+)
+from app.core.ws import protocol
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
-from app.models.notification_ports import LocalNotice
+from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import System
 from app.task.base import ScriptAutoProxyBase
-from app.task.notify_core import build_user_statistics_payload
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
@@ -90,15 +92,17 @@ from app.utils import (
     ProcessManager,
     get_logger,
     is_process_running,
+    log_box,
 )
+from app.utils.common.log import sources as log_source
 
+from . import push_log as _push_log
 from .launchers import (
     _ZZZOD_LAUNCHER_BOOK,
     _other_launcher_label,
     find_launcher_exe,
     resolve_launcher,
 )
-from .push_log import ZzzLogSnapshot, make_zzzod_log_spec
 from .slots import collect_used_slot_idxs, ensure_user_slot, recycle_unbound_slots
 from .tools import (
     INSTANCE_RUN_ALL,
@@ -425,7 +429,11 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
         # log_box 采集会话（用户级「节点详情推送模式」关闭时不创建，prepare 按配置启停）
-        self.log_collect: UserLogSession | None = None
+        self._log_source: log_source.LogSource | None = None
+        self._log_pipeline: log_box.LogPipeline | None = None
+        self._log_user: UserItem | None = None
+        self._log_failed = False
+        self._log_close_task: asyncio.Task[None] | None = None
         # 实例 idx → 账号名映射（原生来源=原生注册表快照；注入=绑定槽用户名），供后置
         # 处理器把「开始加载实例配置 N」段边界映射为账号归属
         self._idx_names: dict[int, str] = {}
@@ -858,21 +866,10 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         )
         # 目录和账号映射会在运行期变化：收尾时再固定快照，不能在 prepare 提前捕获。
         # 触发用户关闭但其他启用用户需要详情时仍采集，保留原有多账号开关语义。
-        self.log_collect = log_box.get_user_session(
-            make_zzzod_log_spec(
-                lambda: ZzzLogSnapshot(
-                    app_names=frozenset(self._app_name_book.values()),
-                    idx_names=self._idx_names,
-                    users=self._push_user_book,
-                    fallback_user=self.cur_user_item,
-                )
-            ),
-            user=self.cur_user_item,
+        self._prepare_log_details(
+            self.script_log_path,
             mode=self.cur_user_item.push_log_mode,
             enabled=self._push_log_enabled(),
-            paths=[self.script_log_path],
-            start_from_end=True,
-            # zzz-od 跨零点滚动为 log.txt.YYYY-MM-DD，无 inode 时按原模板补偿。
             rotated_name=f"{self.script_log_path.name}.%Y-%m-%d",
         )
         self.run_book = False
@@ -1006,7 +1003,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                             kill_game=self._mas_should_close_game()
                         )
                         try:
-                            await self.task_info.local_notifier.send_notice(
+                            await Notify.send_notice(
                                 LocalNotice(
                                     title="ZZZ-OD 自动代理出现异常！",
                                     message=f"用户 {self.cur_user_item.name} 游戏启动失败",
@@ -1120,7 +1117,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 self.script_info.log = f"{failure_reason}\n正在中止相关程序"
                 await self.kill_managed_process(kill_game=self._mas_should_close_game())
                 try:
-                    await self.task_info.local_notifier.send_notice(
+                    await Notify.send_notice(
                         LocalNotice(
                             title="ZZZ-OD 自动代理出现异常！",
                             message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
@@ -1562,8 +1559,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
         # box 在宿主固定动态映射，后台归并后回到宿主按账号交付；
         # 返回前节点已就位，manager 与调度台继续使用同一份用户结果。
-        if self.log_collect is not None:
-            await self.log_collect.close()
+        await self._close_log_details()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd/Okww/BetterGI 行为）
         await self._persist_user_run_result()
@@ -1660,7 +1656,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     user_result = "代理任务全部完成"
                 statistics["user_result"] = user_result
                 success_symbol = "√" if self.run_book else "X"
-                await self.task_info.notifications.push_statistics_report(
+                await Notify.push_statistics_report(
                     payload=build_user_statistics_payload(
                         title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 ZZZ-OD 自动代理统计报告",
                         message=statistics,
@@ -1736,7 +1732,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 and self.cur_user_log.status
                 and self.cur_user_log.status != "Success!"
             ):
-                await self.task_info.local_notifier.send_notice(
+                await Notify.send_notice(
                     LocalNotice(
                         title="ZZZ-OD 运行异常",
                         message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
@@ -1829,3 +1825,85 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 await self._push_dispatch_log(message)
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")
+
+    def _prepare_log_details(
+        self, path: Path, *, mode: str, enabled: bool, rotated_name: str | None
+    ) -> None:
+        """本专项固定来源与用户；读取和交付时机由自身生命周期控制。"""
+        self._log_user = self.cur_user_item
+        self._log_user.push_log_mode = mode
+        self._log_source = None
+        self._log_pipeline = None
+        self._log_close_task = None
+        self._log_failed = False
+        if not enabled:
+            return
+        try:
+            pipeline = log_box.LogPipeline()
+
+            for rule in _push_log.ZZZOD_PUSH_RULES:
+                pipeline.add_rule(*rule)
+
+            source = log_source.LogSource(
+                path, start_from_end=True, rotated_name=rotated_name
+            )
+            source.open()
+            self._log_source = source
+            self._log_pipeline = pipeline
+        except Exception:
+            self._log_failed = True
+            logger.opt(exception=True).warning("ZzzOd 节点采集初始化失败")
+
+    async def _close_log_details(self) -> None:
+        """本专项只交付一次；取消先等待交付完成再继续传播。"""
+        if self._log_user is None:
+            return
+        if self._log_close_task is None:
+            self._log_close_task = asyncio.create_task(self._collect_log_details())
+        cancelled = None
+        while not self._log_close_task.done():
+            try:
+                await asyncio.shield(self._log_close_task)
+            except asyncio.CancelledError as error:
+                cancelled = error
+        self._log_close_task.result()
+        if cancelled is not None:
+            raise cancelled
+
+    async def _collect_log_details(self) -> None:
+        user = self._log_user
+        source = self._log_source
+        pipeline = self._log_pipeline
+        if user is None or (source is None and not self._log_failed):
+            return
+        if not self._log_failed:
+            try:
+                assert source is not None and pipeline is not None
+                users = dict(self._push_user_book)
+                pipeline.postprocessors.append(
+                    _push_log.make_zzzod_resolve(
+                        set(self._app_name_book.values()), dict(self._idx_names)
+                    )
+                )
+
+                def read():
+                    for line in source.read_new():
+                        pipeline.feed(line, timestamp=time.time())
+                    return pipeline.finish()
+
+                entries = await asyncio.to_thread(read)
+                for entry in entries:
+                    match = _push_log.ACCOUNT_PREFIX_RE.match(entry.text)
+                    if match is not None and match.group(1) in users:
+                        target = users[match.group(1)]
+                        if target.push_log_mode != "关闭":
+                            target.push_log.append(
+                                (entry.log_type, match.group(2), entry.timestamp)
+                            )
+                    else:
+                        user.push_log.append(
+                            (entry.log_type, entry.text, entry.timestamp)
+                        )
+            except Exception:
+                self._log_failed = True
+                logger.opt(exception=True).warning("节点采集或交付失败")

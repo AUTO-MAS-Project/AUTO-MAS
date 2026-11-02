@@ -29,13 +29,16 @@ from pathlib import Path
 from typing import Literal
 
 from app.config import ConfigCollection
-from app.core.ws import Publisher, protocol
+from app.core import Notify, Publisher
+from app.core.notify.task_content import (
+    build_script_statistics_payload as build_script_statistics_payload,
+)
+from app.core.ws import protocol
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.notification import NotifyPayload
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
-from app.services.system import System
-from app.task.notify_core import build_script_statistics_payload
+from app.services import System
 from app.utils import UTC4, ProcessManager, get_logger, is_process_running
 
 from .history import save_hsr_user_history
@@ -556,7 +559,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         success_symbol = "√" if self.cur_user_item.status == "完成" else "X"
 
         try:
-            await self.task_info.notifications.push_statistics_report(
+            await Notify.push_statistics_report(
                 payload=build_script_statistics_payload(
                     title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 HSR 自动代理统计报告",
                     message=statistics,
@@ -651,14 +654,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 logger.info(
                     f"开始推送通知, 模式: 云登录提醒, 标题: {user_name} 需要登录云·星穹铁道"
                 )
-                await self.task_info.notifications.dispatch_task_notification(
+                await Notify.dispatch_task_notification(
                     NotifyPayload(
                         title=f"{user_name} 需要登录云·星穹铁道",
                         text=message,
                     ),
-                    self.task_info.notifications.statistic_targets(
-                        self.cur_user_config
-                    ),
+                    Notify.statistic_targets(self.cur_user_config),
                     task_info=self.task_info,
                 )
             except Exception as e:  # noqa: BLE001

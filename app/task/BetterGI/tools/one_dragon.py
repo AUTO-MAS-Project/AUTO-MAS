@@ -40,9 +40,10 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from app.core import Config
 from app.models.config import _BGI_BUILTIN_ONE_DRAGON_GROUPS
 from app.task.BetterGI.tools.one_dragon_plan import BUILTIN_COMBAT_STEP_NAMES
-from app.utils import get_logger, resource_path
+from app.utils import get_logger
 from app.utils import io as _utils_io
 
 read_file = _utils_io.read_file
@@ -63,7 +64,7 @@ GLOBAL_CONFIG_LOCK = threading.Lock()
 _ONE_DRAGON_REL_DIR = Path("User") / "OneDragon"
 
 # 内置种子模板（随 MAS 版本同步）
-_RES_TEMPLATE_DIR = resource_path("templates", "BetterGI")
+_RES_TEMPLATE_DIR = Config.resource_path / "templates" / "BetterGI"
 _SEED_TEMPLATE = _RES_TEMPLATE_DIR / "OneDragon" / "默认配置.json"
 
 # 空配置名的显式兜底配置名

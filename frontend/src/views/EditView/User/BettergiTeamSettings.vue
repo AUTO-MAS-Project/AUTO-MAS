@@ -198,7 +198,7 @@
           </template>
         </draggable>
 
-        <a-empty v-if="!rows.length" :description="t('core.edit.bettergiTeamEmpty')" />
+        <NoData v-if="!rows.length" :description="t('core.edit.bettergiTeamEmpty')" />
       </div>
     </template>
 

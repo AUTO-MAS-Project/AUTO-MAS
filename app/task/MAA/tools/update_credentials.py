@@ -25,7 +25,7 @@ from pathlib import Path
 
 from app.core import Config
 from app.models.config import MaaConfig
-from app.services.update_transport import MirrorCdkStatus, query_mirror_cdk_status
+from app.services.common.update import transport as _service_update_transport
 from app.utils import get_logger
 from app.utils import io as _utils_io
 
@@ -79,9 +79,9 @@ def use_maa_github_update(config: MaaConfig, *, config_dirs: Sequence[Path]) -> 
     return True
 
 
-async def query_takeover_cdk(cdk: str) -> MirrorCdkStatus:
+async def query_takeover_cdk(cdk: str) -> _service_update_transport.MirrorCdkStatus:
     """仅校验 MAA 的有效凭据，不依赖安装目录或读取 MAA 加密配置。"""
     # CDK 的有效期不随安装版本变化；使用稳定版元数据完成无下载查询。
-    return await query_mirror_cdk_status(
+    return await _service_update_transport.query_mirror_cdk_status(
         "MAA", cdk=resolve_takeover_cdk(cdk), channel="stable", proxy=Config.proxy
     )

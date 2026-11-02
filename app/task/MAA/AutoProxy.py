@@ -25,18 +25,21 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import app.core.notify.formats.maa as _format_maa
 from app.config import ConfigCollection
-from app.core import Config
+from app.core import Config, Notify, Publisher
 from app.core.history import aggregate_data
-from app.core.maa_stage import maa_stage_service
-from app.core.ws import Publisher, protocol
+from app.core.notify.task_content import (
+    prepare_screenshot_images as prepare_screenshot_images,
+)
+from app.core.notify.task_content import screenshot_entries as screenshot_entries
+from app.core.ws import protocol
 from app.models.config import (
     MaaConfig,
     MaaUserConfig,
 )
 from app.models.emulator import DeviceBase, DeviceInfo
-from app.models.notification import NotificationImage
-from app.models.notification_ports import LocalNotice
+from app.models.notification import LocalNotice, NotificationImage
 from app.models.schema import (
     HistoryAggregationItem,
     HistoryAttachmentInput,
@@ -54,7 +57,7 @@ from app.task.emulator_core import (
     script_process_env,
 )
 from app.task.failure_capture_core import FailureCapture
-from app.task.notify_core import prepare_screenshot_images, screenshot_entries
+from app.task.MAA.stage import maa_stage_service
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
@@ -83,12 +86,7 @@ from .constants import (
     MAA_TASKS,
     MAA_TASKS_ZH,
 )
-from .tools import (
-    agree_bilibili,
-    build_recruitment_payload,
-    build_statistics_payload,
-    log_statistics,
-)
+from .tools import agree_bilibili, log_statistics
 from .tools.activity_inventory import resolve_activity_inventory_plans
 from .tools.avd import (
     build_maa_connect_settings,
@@ -1446,7 +1444,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
                     await close_emulator(self)
 
-                    await self.task_info.local_notifier.send_notice(
+                    await Notify.send_notice(
                         LocalNotice(
                             title="用户自动代理出现异常！",
                             message=f"用户 {self.cur_user_item.name} 的{MAA_RUN_MOOD_BOOK[self.mode]}部分出现一次异常",
@@ -1533,7 +1531,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     if self.mode == "GreenTicketStore":
                         self.run_book[self.mode] = True
                     else:
-                        await self.task_info.local_notifier.send_notice(
+                        await Notify.send_notice(
                             LocalNotice(
                                 title="用户自动代理出现异常！",
                                 message=f"用户 {self.cur_user_item.name} 的{MAA_RUN_MOOD_BOOK[self.mode]}部分出现一次异常",
@@ -1852,9 +1850,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         await self.cur_user_config.commit()
 
     async def _prepare_cultivate_injection(
-        self, source_queue: list[dict], *, skip_this_round: bool = False
+        self,
+        source_queue: list[dict],
+        *,
+        skip_this_round: bool = False,
+        skip_farming: bool = False,
     ) -> tuple[dict | None, bool, CultivatePlan | None]:
-        """准备当轮养成计划，同时保留完整消耗供库存预留。
+        """准备当轮养成计划；刷取未跳过时保留完整消耗供库存预留。
 
         仅在开关开启且目标非空时生效（Routine 门控由调用方负责）；数据集、
         练度、库存不可用时暂停本轮养成，保留普通库存及后续理智任务。
@@ -2016,6 +2018,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             return None, True, None
         self._cultivate_round_paused = False
         self._cultivate_execution_targets = auto_targets
+
+        if skip_farming:
+            # 不把预留量合并进普通库存目标，避免间接刷取养成材料。
+            logger.info(f"用户 {self.cur_user_item.name} 活动期间跳过养成材料刷取")
+            return None, True, None
 
         cultivate_task = None
         if plan.entries:
@@ -2294,9 +2301,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 cultivate_plan,
             ) = await self._prepare_cultivate_injection(
                 source_queue,
-                skip_this_round=activity_open
-                and self.cur_user_config.Task.CultivateSkipDuringActivity
-                or (
+                skip_farming=activity_open
+                and self.cur_user_config.Task.CultivateSkipDuringActivity,
+                skip_this_round=(
                     resource_collection_open
                     and self.cur_user_config.Task.CultivateSkipDuringResourceCollection
                 ),
@@ -3284,7 +3291,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         )
 
         if self.run_book["Annihilation"] and self.run_book["Routine"]:
-            await self.task_info.local_notifier.send_notice(
+            await Notify.send_notice(
                 LocalNotice(
                     title="成功完成一个自动代理任务！",
                     message=f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
@@ -3303,8 +3310,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         )
         if should_send_statistics:
             try:
-                await self.task_info.notifications.push_statistics_report(
-                    payload=build_statistics_payload(
+                await Notify.push_statistics_report(
+                    payload=_format_maa.build_statistics_payload(
                         title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
                         message=statistics,
                         images=images,
@@ -3328,14 +3335,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 logger.info(
                     f"开始推送通知, 模式: 公招六星, 标题: 喜报: 用户 {self.cur_user_item.name} 公招出六星啦！"
                 )
-                await self.task_info.notifications.dispatch_task_notification(
-                    build_recruitment_payload(
+                await Notify.dispatch_task_notification(
+                    _format_maa.build_recruitment_payload(
                         title=f"喜报: 用户 {self.cur_user_item.name} 公招出六星啦！",
                         message={"user_name": self.cur_user_item.name},
                     ),
-                    self.task_info.notifications.recruitment_targets(
-                        self.cur_user_config
-                    ),
+                    Notify.recruitment_targets(self.cur_user_config),
                     task_info=self.task_info,
                 )
             except Exception as e:

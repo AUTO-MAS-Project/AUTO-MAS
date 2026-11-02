@@ -22,14 +22,51 @@
 
 
 from importlib import import_module
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .community import Community as Community
+    from .config import Config as Config
+    from .desktop_guard import DesktopGuard as DesktopGuard
+    from .emulator_manager import EmulatorManager as EmulatorManager
+    from .game_calendar import GameCalendar as GameCalendar
+    from .game_maintenance import GameMaintenance as GameMaintenance
+    from .history import History as History
+    from .i18n import I18n as I18n
+    from .lifecycle import ShutdownCoordinator as ShutdownCoordinator
+    from .maa_manager import MaaFWManager as MaaFWManager
+    from .notify import Notify as Notify
+    from .runtime_tasks import RuntimeTasks as RuntimeTasks
+    from .task_manager import TaskManager as TaskManager
+    from .taskboard import Taskboard as Taskboard
+    from .timer import MainTimer as MainTimer
+    from .update import Updater as Updater
+    from .ws import Commands as Commands
+    from .ws import Dispatcher as Dispatcher
+    from .ws import MainConnection as MainConnection
+    from .ws import Publisher as Publisher
 
 _LAZY_EXPORTS = {
     "Config": (".config", "Config"),
-    "EmulatorManager": (".emulator_manager", "EmulatorManager"),
+    "Notify": (".notify", "Notify"),
+    "RuntimeTasks": (".runtime_tasks", "RuntimeTasks"),
     "TaskManager": (".task_manager", "TaskManager"),
-    "MaaFWManager": (".maa_manager", "MaaFWManager"),
     "MainTimer": (".timer", "MainTimer"),
+    "EmulatorManager": (".emulator_manager", "EmulatorManager"),
     "Updater": (".update", "Updater"),
+    "MaaFWManager": (".maa_manager", "MaaFWManager"),
+    "DesktopGuard": (".desktop_guard", "DesktopGuard"),
+    "GameCalendar": (".game_calendar", "GameCalendar"),
+    "GameMaintenance": (".game_maintenance", "GameMaintenance"),
+    "History": (".history", "History"),
+    "I18n": (".i18n", "I18n"),
+    "ShutdownCoordinator": (".lifecycle", "ShutdownCoordinator"),
+    "Community": (".community", "Community"),
+    "Taskboard": (".taskboard", "Taskboard"),
+    "MainConnection": (".ws", "MainConnection"),
+    "Commands": (".ws", "Commands"),
+    "Dispatcher": (".ws", "Dispatcher"),
+    "Publisher": (".ws", "Publisher"),
 }
 
 
@@ -44,9 +81,23 @@ def __getattr__(name: str):
 
 __all__ = [
     "Config",
-    "MainTimer",
+    "Notify",
+    "RuntimeTasks",
     "TaskManager",
+    "MainTimer",
     "EmulatorManager",
-    "MaaFWManager",
     "Updater",
+    "MaaFWManager",
+    "DesktopGuard",
+    "GameCalendar",
+    "GameMaintenance",
+    "History",
+    "I18n",
+    "ShutdownCoordinator",
+    "Community",
+    "Taskboard",
+    "MainConnection",
+    "Commands",
+    "Dispatcher",
+    "Publisher",
 ]

@@ -73,12 +73,7 @@ For functions reading or modifying config state, use [the configuration framewor
 6. `activate(fast_init=True)` is an optional Entry initialization optimization. It shares one transaction across that Entry's field loop, rolls the whole attempt back on a field or Init-signal failure, then reruns the original per-field path from the first field. Do not reuse successful fast-attempt values, suppress repeated callbacks, or treat external IO as transactional.
 
 ## Placement
-1. `api`: parse input, call core/service, map output.
-2. `core`: orchestrate flow and state transitions.
-3. `task`: execute domain run lifecycle per script type.
-4. `services`: wrap external/system capabilities.
-5. `utils`: generic reusable helpers without business policy.
-6. `models/schema`: no business logic functions.
+Follow [mas-module-boundary](../mas-module-boundary/SKILL.md) for backend layer ownership, core singleton organization, functional packages and dependency rules.
 
 ## Naming
 1. Use verb-first names for actions (`load_*`, `build_*`, `merge_*`, `send_*`).

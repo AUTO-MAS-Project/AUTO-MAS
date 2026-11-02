@@ -1,8 +1,0 @@
-{
-  "interface_version": 1,
-  "id": "serverchan",
-  "entrypoint": "app.notification_channels.serverchan:register",
-  "requires": [
-    "httpx"
-  ]
-}

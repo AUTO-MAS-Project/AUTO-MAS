@@ -59,11 +59,11 @@ _RELEASE_ASSET_PATH = re.compile(r"^/[^/]+/[^/]+/releases/download/.+")
 def _mirror_mode() -> str:
     """全局 ``Update.GitHubMirror``；读不到或值非法一律当 ``Auto``。
 
-    ``app.core.config`` 会拉起整份全局配置，按接缝层的惯例在函数里导入。
+    ``app.core.config.manager`` 会拉起整份全局配置，按接缝层的惯例在函数里导入。
     """
 
     try:
-        from app.core.config import Config
+        from app.core import Config
 
         value = str(Config.setting.Update.GitHubMirror or "").strip()
     except Exception:  # noqa: BLE001 - 旧配置文件缺这一项不该挡住更新

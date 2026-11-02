@@ -13,7 +13,7 @@ import httpx
 
 from app.core import Config
 from app.core.update import download_file
-from app.services.update_transport import BuiltinDownload, DownloadProgress
+from app.services.common.update.transport import BuiltinDownload, DownloadProgress
 from app.utils import get_logger
 
 logger = get_logger("脚本更新")

@@ -32,7 +32,7 @@
       </span>
     </p>
     <a-spin :spinning="backupsLoading">
-      <a-empty v-if="!backups.length" :description="t('core.edit.configRestoreEmpty')" />
+      <NoData v-if="!backups.length" :description="t('core.edit.configRestoreEmpty')" />
       <a-list v-else :data-source="backups" size="small" row-key="time">
         <template #renderItem="{ item }">
           <a-list-item>
@@ -121,13 +121,13 @@
                 {{ task.app_name }}
               </span>
             </div>
-            <a-empty v-else :description="t('core.edit.configRestorePreviewNoTasks')" />
+            <NoData v-else :description="t('core.edit.configRestorePreviewNoTasks')" />
           </template>
-          <a-empty v-else :description="t('core.edit.configRestorePreviewEmpty')" />
+          <NoData v-else :description="t('core.edit.configRestorePreviewEmpty')" />
         </template>
         <!-- 脚本级：实例列表可展开查看账号/任务明细 -->
         <template v-else>
-          <a-empty
+          <NoData
             v-if="!previewData.instances.length"
             :description="t('core.edit.configRestorePreviewEmpty')"
           />

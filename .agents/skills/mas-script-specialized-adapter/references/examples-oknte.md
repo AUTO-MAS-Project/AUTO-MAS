@@ -2,7 +2,7 @@
 
 OkNte 与 [Okww](./examples-okww.md) 同属 `ok-script` 家族、同用 `-t N -e` 启动，但字段来源和配置通道仍可不同；二者都遵循统一的脚本 / 用户 / 直控三态来源，以及独立用户级快速配置开关。维护 OkNte 时不要套用 Okww 的固定 schema 或「仅 GUI 遮罩」约束。
 
-具体文件、字段、端点签名现场读 `app/task/OkNte/` 与 `app/api/scripts.py` 确认。本文件只记推不出来的部分。
+具体文件、字段、端点签名现场读 `app/task/OkNte/` 与 `app/api/scripts/` 确认。本文件只记推不出来的部分。
 
 ## 为何必须动态推断（最关键的一条）
 

@@ -4,7 +4,67 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import { selectBatchTargets } from './real-batch.mjs'
-import { acquireRealRunLock, parseLauncherArgs, seedRealProfile } from './run.mjs'
+import { cleanupRealRun } from './real-cleanup.ts'
+import {
+  acquireRealRunLock,
+  parseLauncherArgs,
+  seedBrowserHistory,
+  seedRealProfile,
+} from './run.mjs'
+
+test('真实任务响应缺失时先找回并终止任务，空闲未确认时不关闭模拟器', async () => {
+  const calls = []
+  const cleanup = {
+    startAttempted: true,
+    taskId: undefined,
+    findTask: async () => {
+      calls.push('find')
+      return 'accepted-task'
+    },
+    terminateTask: async taskId => {
+      calls.push(`stop:${taskId}`)
+    },
+    waitForIdle: async () => {
+      calls.push('idle')
+    },
+    closeEmulator: async () => {
+      calls.push('close')
+    },
+  }
+  await cleanupRealRun(cleanup)
+  assert.deepEqual(calls, ['find', 'stop:accepted-task', 'idle', 'close'])
+  calls.length = 0
+  await assert.rejects(
+    cleanupRealRun({
+      ...cleanup,
+      waitForIdle: async () => {
+        throw new Error('busy')
+      },
+    }),
+    /busy/
+  )
+  assert.deepEqual(calls, ['find', 'stop:accepted-task'])
+  calls.length = 0
+  await assert.rejects(
+    cleanupRealRun({ ...cleanup, findTask: async () => undefined }),
+    /无法确认任务/
+  )
+  assert.deepEqual(calls, [])
+})
+
+test('历史种子只写普通隔离根，真实与就地模式保持原数据', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'auto-mas-history-check-'))
+  try {
+    await seedBrowserHistory(root, { real: true, inPlace: false })
+    await seedBrowserHistory(root, { real: false, inPlace: true })
+    assert.deepEqual(await readdir(root), [])
+    await seedBrowserHistory(root, { real: false, inPlace: false })
+    assert.ok((await readFile(path.join(root, 'data', 'history.db'))).length > 0)
+    assert.ok((await readdir(path.join(root, 'history'))).length > 0)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 test('真实流程按公开 MAS 配置隔离用户并允许无模拟器专项', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'auto-mas-e2e-check-'))

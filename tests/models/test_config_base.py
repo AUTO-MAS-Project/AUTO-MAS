@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, patch
 
-from app.models.ConfigBase import (
+from app.models.legacy_config.base import (
     BoolValidator,
     ConfigBase,
     ConfigItem,

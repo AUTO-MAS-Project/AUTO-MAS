@@ -21,7 +21,7 @@
 """BAAH 推送日志采集参数（log_box 实例的喂参方）
 
 BAAH 专项作为 log_box 的一个实例：本模块只提供参数（规则与后置处理器），
-日志获取、规则匹配、后置处理与推送全部由 log_box 完成。
+文本内核只匹配规则和执行处理器；读取、账号归属和交付由专项负责。
 
 BAAH 的运行日志没有需要翻译的文本，也不挂前置处理器，匹配与提取都作用于
 日志原文。任务节点由三类行刻画（依据 BAAH 2.4.13 的真实运行日志），节点名
@@ -43,7 +43,7 @@ BAAH 没有单任务失败日志：任务内抛出异常会直接终止整个运
 
 import re
 
-from app.log_box import LogSpec, LogType
+from app.utils import LOG_TYPE_NORMAL
 
 ## BAAH 的任务目录名由字母、数字与下划线组成，用它把任务名从整行里切出来。
 ## 只截取任务名本身，整行中排在它后面的其它文本不会被带进节点名
@@ -78,7 +78,9 @@ BAAH_PUSH_RULES: list[tuple[str, str]] = [
 _STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
 
 
-def baah_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, float]]:
+def baah_resolve(
+    results: list[tuple[str, str, float | None]],
+) -> list[tuple[str, str, float | None]]:
     """后处理：按任务节点解析最终状态（失败 > 跳过 > 成功）
 
     输入/输出均为 ``(log_type, text, ts)`` 元组（与 log_box ``_PostProcessor``
@@ -99,13 +101,13 @@ def baah_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
     """
     order: list[str] = []
     states: dict[str, tuple[int, str]] = {}
-    ts_of: dict[str, float] = {}
+    ts_of: dict[str, float | None] = {}
     ## 「已开始、未结束」的任务栈，元素为 (任务名, 开始时间戳)
-    running: list[tuple[str, float]] = []
+    running: list[tuple[str, float | None]] = []
     error_text: str | None = None
-    error_ts: float = 0.0
+    error_ts: float | None = 0.0
 
-    def _mark(status: str, node: str, ts: float) -> None:
+    def _mark(status: str, node: str, ts: float | None) -> None:
         rank = _STATUS_RANK[status]
         if node in states:
             order.remove(node)  # 移至末尾：保留最后一次出现顺序
@@ -142,16 +144,8 @@ def baah_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
     if error_text is not None and not running:
         _mark("❌ 失败", error_text, error_ts)
 
-    ## 规则均为二元组，经 LogCollect.collect 后 log_type 恒为 LogType.NORMAL；
+    ## 规则均为二元组，经文本管线 add_rule 后 log_type 恒为 LOG_TYPE_NORMAL；
     ## 节点级失败由文本「❌ 失败:」体现，不依赖逐条类型过滤，故直接输出普通
     return [
-        (LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node]) for node in order
+        (LOG_TYPE_NORMAL, f"{states[node][1]}: {node}", ts_of[node]) for node in order
     ]
-
-
-BAAH_LOG_SPEC = LogSpec(
-    rules=tuple(BAAH_PUSH_RULES),
-    postprocessor=baah_resolve,
-    error_message="BAAH log_box 收尾推送失败（baah_resolve）",
-    failure_text="⚠️ 节点采集失败",
-)

@@ -23,8 +23,8 @@ export function usePlanApi() {
   const loading = ref(false)
 
   // 获取所有计划
-  const getPlans = async (planId?: string) => {
-    loading.value = true
+  const getPlans = async (planId?: string, options?: { silent?: boolean }) => {
+    if (!options?.silent) loading.value = true
     try {
       const params: PlanGetIn = planId ? { planId } : {}
       const response = await Service.getPlanApiPlanGetPost(params)
@@ -33,12 +33,14 @@ export function usePlanApi() {
       }
       return response
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`获取计划失败: ${errorMsg}`)
-      message.error(t('core.misc.couldNotLoadPlan'))
+      if (!options?.silent) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`获取计划失败: ${errorMsg}`)
+        message.error(t('core.misc.couldNotLoadPlan'))
+      }
       throw error
     } finally {
-      loading.value = false
+      if (!options?.silent) loading.value = false
     }
   }
 

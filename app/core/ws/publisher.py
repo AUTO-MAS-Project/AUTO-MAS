@@ -25,10 +25,8 @@ from typing import Mapping, Optional, Union
 
 from pydantic import BaseModel, JsonValue
 
+from app.core.ws.protocol import build_message
 from app.utils import get_logger
-
-from .manager import MainConnection
-from .protocol import build_message
 
 logger = get_logger("WS发布器")
 
@@ -56,6 +54,8 @@ class _WSPublisher:
         Returns:
             bool: 发送是否成功；未连接时返回 False。
         """
+        from app.core import MainConnection
+
         payload = (
             data.model_dump(mode="json")
             if isinstance(data, BaseModel)
@@ -65,6 +65,3 @@ class _WSPublisher:
         if not sent:
             logger.debug(f"主连接未就绪，消息已丢弃: id={id}, type={type}")
         return sent
-
-
-Publisher = _WSPublisher()

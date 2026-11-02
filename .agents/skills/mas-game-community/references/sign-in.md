@@ -1,6 +1,6 @@
 # 游戏社区签到链路
 
-签到是「凭据驱动的批量外部请求」：遍历账号组、逐平台跑一次上游签到、归一结果、落盘日期、再交给通知。编排在 `app/tools/common/sign/community_sign.py`，平台知识集中在 `community_sign_provider.py`。
+签到是「凭据驱动的批量外部请求」：遍历账号组、逐平台跑一次上游签到、归一结果、落盘日期、再交给通知。编排在 `app/core/community/sign.py`，平台知识集中在 `app/tools/common/community/sign.py`。
 
 ## 平台注册表是唯一入口
 
@@ -34,10 +34,10 @@
 
 1. **写平台适配模块** `app/tools/<platform>.py`。对外只暴露「跑一次签到」入口、`validate_<platform>_credential()` 与必要的凭据序列化函数。参考了第三方项目接口知识时，按现有模块的文件头格式加致谢与许可声明。
 2. **加凭据字段**：在 `app/models/config/tools.py` 的 `GameSignAccountFields` 增加 `<Name>Token`，类型用 `Annotated[str, encrypted()]`，描述以 `GameSignAccount - ` 开头并注明 DPAPI 加密。
-3. **登记校验器**：在 `app/tools/common/community_credentials.py` 的 `_CREDENTIAL_VALIDATORS` 加一项，指向适配器的本地校验函数。
-4. **写 provider runner**：在 `sign/community_sign_provider.py` 加 `_run_<platform>_provider()`，返回 `_CommunityProviderRun(results=..., platforms=..., credential_updates=...)`。
+3. **登记校验器**：在 `app/tools/common/community/credentials.py` 的 `_CREDENTIAL_VALIDATORS` 加一项，指向适配器的本地校验函数。
+4. **写 provider runner**：在 `app/tools/common/community/sign.py` 加 `_run_<platform>_provider()`，返回 `_CommunityProviderRun(results=..., platforms=..., credential_updates=...)`。
 5. **注册**：在 `_COMMUNITY_SIGN_PROVIDERS` 追加一项。凭据字段表、并发执行、凭据回写、日期标记全部自动生效。
-6. **通知排序**：在 `app/services/community_notification.py` 的 `_PLATFORM_ORDER` 追加平台名。缺失时该平台落到排序尾部而不是报错，容易漏掉。
+6. **通知排序**：在 `app/core/notify/community_content.py` 的 `_PLATFORM_ORDER` 追加平台名。缺失时该平台落到排序尾部而不是报错，容易漏掉。
 7. **重新生成 OpenAPI 客户端**，再在 `TabGameSign.vue` 加录入入口。禁止手改 `frontend/src/api/**`。
 
 ## 并发与重复触发
@@ -46,14 +46,14 @@
 
 | 锁 | 位置 | 覆盖范围 | 违反时 |
 | --- | --- | --- | --- |
-| `community_sign_flow()` | `sign/community_sign.py` | 签到请求 **加** 结果落盘；通知在锁外 | 直接抛 `CommunitySignInProgressError`，不排队 |
-| `_community_sign_lock` | `sign/community_sign.py` | 全局签到执行，配合 `_community_sign_lock_owner` ContextVar 支持**同任务嵌套重入** | 同上，快速失败 |
-| `skland_sign_lock` | `app/tools/skland.py` | 森空岛签到全流程与养成练度源共用，互斥签名 token 的两个轮换写者 | 串行等待 |
-| `community_activity_flow()` | `community_scheduler.py` | 日常便笺查询串行化；后到者等锁后复用缓存 | 串行等待（不抛错） |
+| `community_sign_flow()` | `app/core/community/sign.py` | 签到请求 **加** 结果落盘；通知在锁外 | 直接抛 `CommunitySignInProgressError`，不排队 |
+| `_community_sign_lock` | `app/core/community/sign.py` | 全局签到执行，配合 `_community_sign_lock_owner` ContextVar 支持**同任务嵌套重入** | 同上，快速失败 |
+| `skland_sign_lock` | `app/tools/common/community/providers/skland.py` | 森空岛签到全流程与养成练度源共用，互斥签名 token 的两个轮换写者 | 串行等待 |
+| `community_activity_flow()` | `app/core/community/scheduling.py` | 日常便笺查询串行化；后到者等锁后复用缓存 | 串行等待（不抛错） |
 
 签到锁是**快速失败**而非等待：`if lock.locked(): raise`。API 层把 `CommunitySignInProgressError` 映射为 `code=409`；timer 层降级为 `logger.info` 后跳过本次触发（任务来源则原样抛出，由任务完成回调交付异常终态）。新增触发入口时必须选一种处理，不要静默 `await` 到锁释放。
 
-练度源的凭据回写走注入的 `save_credential` 回调（`app/core/config.py`），不进 `credential_updates`——它不是注册表 runner；改这两条链路时必须保住 `skland_sign_lock`，否则会把对方刚回写的 token 作废。编排层收尾回写前会重读存量、发现已被别的链路轮换即跳过写入，也是防同一件事。
+练度源的凭据回写走注入的 `save_credential` 回调（`app/core/config/manager.py`），不进 `credential_updates`——它不是注册表 runner；改这两条链路时必须保住 `skland_sign_lock`，否则会把对方刚回写的 token 作废。编排层收尾回写前会重读存量、发现已被别的链路轮换即跳过写入，也是防同一件事。
 
 通知**必须在流程锁外**发送。慢渠道会阻塞后续操作，这是锁边界画在落盘之后的原因。
 
@@ -87,7 +87,7 @@ reason        失败原因
 - `_notification_only`：占位结果（如「未获取到可签到角色」）。它只参与「本轮有没有结果」的判断，`format_community_sign_results` 与通知侧都会过滤它，前端和通知都看不到；某账号本轮全是占位时一条通知都不会发（既定口径，不是缺陷）。
 - `_completed`：流程已跑完、但没拿到明确成功状态的旁路标记（如云异环没确认到新增时长）。
 
-**成功判据只有一处实现**：`app/tools/common/community_contract.py` 的 `is_community_sign_completed()`，即 `status in COMMUNITY_SIGN_SUCCESS_STATUSES or _completed`。编排层 `all_enabled_community_platforms_signed`、手动端点 `manual_game_sign`、通知的 ✅/❌ 与 (x/y) 计数全部走它，改成功语义只改这一处；不要再在别处手写状态元组。前端标签云仍按 `status` 判定，`_completed` 行显示为失败，属于已知差异（该组合只在同一天二次确认云异环时出现）。
+**成功判据只有一处实现**：`app/tools/common/community/contracts.py` 的 `is_community_sign_completed()`，即 `status in COMMUNITY_SIGN_SUCCESS_STATUSES or _completed`。编排层 `all_enabled_community_platforms_signed`、手动端点 `manual_game_sign`、通知模型据此语义投影既有结果，不反向参与日期与凭据落盘；不要再增加业务成功判据。前端标签云仍按 `status` 判定，`_completed` 行显示为失败，属于已知差异（该组合只在同一天二次确认云异环时出现）。
 
 `_decorate_provider_run()` 负责归一：补 `account` 与 `account_uid`、为没有结果的平台补占位。runner 返回的结果**不必**自己填 `account_uid`。
 
@@ -117,9 +117,9 @@ reason        失败原因
 
 ## 已知不一致（改动时留意，不要照抄）
 
-1. `app/api/qr_login.py`、`app/api/skland_qr.py` 把 `QrCreateOut` / `QrCheckIn` / `QrCheckOut` / `QrSaveIn` 一类 schema **定义在路由文件内**。新增社区 schema 优先放所属 `api` 模块顶部或 `app/models/schema.py`，不要照搬。
+1. 端点专用输入输出模型放在所属 API 文件顶部；跨模块共享契约才放入 `app/models/schema.py`。配置字段由配置类派生，不重复声明凭据字段。
 2. 路由 tag 不统一：账号组路由用 `tags=["GameSign"]`，手动签到用 `tags=["Action"]`，便笺查询用 `tags=["Community"]`，扫码用中文 `tags=["扫码登录"]`。沿用所在文件的既有 tag，不要顺手改动已生成客户端的方法名。
-3. `qr_login.py` 的 `QrSaveIn` 用 snake_case（`account_uid`），`tools.py` 的账号组请求用 camelCase（`accountId`）。这是既有契约，改名会破坏生成客户端。账号组标识是 UUID，比较时走 `community_accounts.is_known_community_account()`，不要直接比字符串。
+3. `miyoushe.py` 的 `QrSaveIn` 用 snake_case（`account_uid`），`accounts.py` 的账号组请求用 camelCase（`accountId`）。这是既有契约，改名会破坏生成客户端。账号组标识是 UUID，比较时走 `accounts.is_known_community_account()`，不要直接比字符串。
 4. `ToolsConfig.GameSign.AutoStart` 只有字段声明、没有运行时消费者、也没有页面入口。它当前仍留在模型里（dev 现状）：删除它必须同时重新生成前端客户端，否则生成模型与后端不一致。
 5. `CommunityTriggerSource` 里的 `"scheduled"` 目前没有任何入口会触发；新增定时签到要同时补触发点和 `should_run_community_for_source` 判定，只改字面量没有意义。
-6. 扫码 `/check`（`qr_login.py`、`skland_qr.py`）把上游 Passport 的**单行状态文案**当 `message` 回传，前端扫码弹窗直接显示它作为进度引导；真正的凭据是同一响应里的 `cookies_str` / `scan_code`，已单独处理。改成白名单等于枚举上游状态机，漏一个用户就看不到进度，所以保持现状。边界：只允许短状态文案，**不得**回传响应正文、HTML、堆栈或 Cookie。
+6. 扫码 `/check`（`miyoushe.py`、`skland_qr.py`）把上游 Passport 的**单行状态文案**当 `message` 回传，前端扫码弹窗直接显示它作为进度引导；真正的凭据是同一响应里的 `cookies_str` / `scan_code`，已单独处理。改成白名单等于枚举上游状态机，漏一个用户就看不到进度，所以保持现状。边界：只允许短状态文案，**不得**回传响应正文、HTML、堆栈或 Cookie。

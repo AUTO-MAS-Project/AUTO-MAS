@@ -37,7 +37,7 @@ from app.task.MSS.flavor import (
     DEFENSE_MAX_FAILED_DAYS,
     personal_mss_enabled,
 )
-from app.tools.stella_official import permanent_activity_window
+from app.tools.common.game_calendar import stella as _tool_stella_official
 from app.utils import get_logger
 
 logger = get_logger("MSS 灾变防线状态")
@@ -78,7 +78,9 @@ async def defense_status(script_id: str, user_id: str) -> dict[str, Any]:
         logger.warning(f"读用户配置失败（{script_id} / {user_id}）：{exc}")
         user = {}
     record = _record((user.get("Data") or {}).get("PersonalMssDefense"))
-    period = await permanent_activity_window(DEFENSE_ACTIVITY_NAME)
+    period = await _tool_stella_official.permanent_activity_window(
+        DEFENSE_ACTIVITY_NAME
+    )
 
     same_period = bool(period) and str(record.get("period") or "") == period
     failed_days = _failed_days(record) if same_period else []

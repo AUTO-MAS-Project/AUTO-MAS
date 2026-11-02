@@ -36,14 +36,13 @@
       </div>
 
       <div v-else-if="!loading" class="empty-state">
-        <a-empty :image="noDataImage" :image-style="{ height: '120px' }" :description="false" />
+        <NoData :image-style="{ height: '120px' }" :description="false" />
       </div>
     </a-card>
   </section>
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import { UserOutlined } from '@ant-design/icons-vue'
 import { formatHistoryDateTime } from '@/utils/dateDisplay'

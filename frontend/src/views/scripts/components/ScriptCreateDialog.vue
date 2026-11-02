@@ -75,9 +75,9 @@
               </div>
             </section>
           </SelectableOptionList>
-          <a-empty v-else :description="t('core.scripts.create.noTypeMatch')">
+          <NoData v-else :description="t('core.scripts.create.noTypeMatch')">
             <a-button @click="clearTypeFilters">{{ t('core.scripts.clearSearch') }}</a-button>
-          </a-empty>
+          </NoData>
         </template>
 
         <!-- MFW 家族第二步：项目从哪来（新建一个别的项目 / 复用已导入的同类型项目）。
@@ -213,7 +213,7 @@
                 />
               </div>
             </template>
-            <a-empty
+            <NoData
               v-else
               :description="
                 templateKeyword
@@ -227,7 +227,7 @@
               <a-button v-else @click="chooseCustomConfig">{{
                 t('core.scripts.create.switchToCustom')
               }}</a-button>
-            </a-empty>
+            </NoData>
           </template>
         </template>
 

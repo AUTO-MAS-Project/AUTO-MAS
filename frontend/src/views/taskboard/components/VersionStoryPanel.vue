@@ -72,7 +72,7 @@
       </template>
 
       <div v-else-if="!taskboardState.loading" class="tb-version-empty">
-        <a-empty :description="t('core.taskboard.versionEmpty')" />
+        <NoData :description="t('core.taskboard.versionEmpty')" />
         <div class="tb-version-empty-hint">{{ t('core.taskboard.versionLocalOnly') }}</div>
       </div>
     </a-spin>

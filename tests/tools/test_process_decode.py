@@ -25,7 +25,7 @@ def test_system_ansi_config_is_not_redecoded_as_gbk():
     code = (
         "import locale; "
         "locale.getpreferredencoding = lambda: 'cp1252'; "
-        "from app.utils.common.process_runner import decode_bytes; "
+        "from app.utils.common.process.runner import decode_bytes; "
         'assert decode_bytes(b\'{"name":"Caf\\xe9Tool"}\') == \'{"name":"CaféTool"}\''
     )
     subprocess.run(

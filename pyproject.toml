@@ -53,6 +53,7 @@ Repository = "https://github.com/AUTO-MAS-Project/AUTO-MAS"
 [dependency-groups]
 # 仅开发/回归测试使用，生产安装不需要
 dev = [
+    "mypy==2.4.1",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "ruff==0.16.8",
