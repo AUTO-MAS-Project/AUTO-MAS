@@ -462,6 +462,9 @@ class EmulatorOperations:
         else:
             native_index = await backend.create_instance(name)
 
+        # 魔改 AVD 新建要在后台开一次机，动辄几分钟；这期间另一次新建、设备列表轮询都可能存过槽位表。
+        # 拿新建前那份快照存会把它们登记的设备号盖掉，所以重新读一份最新的再登记
+        manager = await self.build_manager(emulator_id)
         added = manager.slots.sync_path(path_id, [native_index])
         await self._save(emulator_id, manager.paths, manager.slots)
         slot = (
@@ -665,6 +668,9 @@ class EmulatorOperations:
             "title": getattr(info, "title", ""),
             "status": int(getattr(info, "status", 5)),
             "adbAddress": getattr(info, "adb_address", ""),
+            # 魔改 AVD 无头运行的实例没有窗口，界面据此把显示 / 隐藏置灰
+            "headless": getattr(info, "headless", None),
+            "creationError": getattr(info, "creation_error", ""),
             # 这里给的是「已保存设置，下次启动使用」，不是运行中实例的当前配置——
             # 运行中保存后这里立刻变，但那台实例还在用旧值。
             "settings": settings or {},

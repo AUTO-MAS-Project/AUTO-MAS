@@ -62,6 +62,7 @@ import {
 } from './settingsTiers'
 import AvdOptionsFields from './components/AvdOptionsFields.vue'
 import AvdRootDialog from './components/AvdRootDialog.vue'
+import DeviceStatusTag from './components/DeviceStatusTag.vue'
 import SettingsTierFields from './components/SettingsTierFields.vue'
 import type {
   Emulator2AffectedScript,
@@ -861,40 +862,18 @@ const blockedReason = (device: DeviceRow) => {
   if (device.availability !== 'ok') return t('core.emulator2.blocked.missing')
   const status = statusOf(device)
   if (status === DeviceStatus.ERROR) return t('core.emulator2.blocked.error')
-  if (isTransitional(status) || pending.value.has(device.slot)) {
+  if (status === DeviceStatus.CREATE_FAILED) return t('core.emulator2.blocked.createFailed')
+  if (
+    isTransitional(status) ||
+    status === DeviceStatus.CREATING ||
+    pending.value.has(device.slot)
+  ) {
     return t('core.emulator2.blocked.busy')
   }
   if (status !== DeviceStatus.OFFLINE && status !== DeviceStatus.NOT_FOUND) {
     return t('core.emulator2.deleteNeedsOffline')
   }
   return ''
-}
-
-/** 设备状态 → Tag。availability 优先：这次没枚举到就不该显示成离线。 */
-const deviceStatus = (device: DeviceRow) => {
-  if (device.availability === 'unavailable') {
-    return { color: 'default', text: t('core.emulator2.status.unavailable') }
-  }
-  if (device.availability === 'missing') {
-    return { color: 'warning', text: t('core.emulator2.status.missing') }
-  }
-  const map: Record<number, { color: string; text: string }> = {
-    [DeviceStatus.ONLINE]: { color: 'success', text: t('core.emulator.deviceStatus.online') },
-    [DeviceStatus.OFFLINE]: { color: 'default', text: t('core.emulator.deviceStatus.offline') },
-    [DeviceStatus.STARTING]: {
-      color: 'processing',
-      text: t('core.emulator.deviceStatus.starting'),
-    },
-    [DeviceStatus.CLOSING]: { color: 'processing', text: t('core.emulator.deviceStatus.closing') },
-    [DeviceStatus.ERROR]: { color: 'error', text: t('core.emulator.deviceStatus.error') },
-    [DeviceStatus.NOT_FOUND]: { color: 'default', text: t('core.emulator.deviceStatus.notFound') },
-  }
-  return (
-    map[statusOf(device)] ?? {
-      color: 'default',
-      text: t('core.emulator.deviceStatus.unknown'),
-    }
-  )
 }
 
 /**
@@ -1172,17 +1151,11 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
               <span v-else>—</span>
             </template>
             <template v-else-if="column.key === 'status'">
-              <a-tag v-if="rowLabel(record)" color="processing">
-                <LoadingOutlined style="margin-right: 4px" />
-                {{ rowLabel(record) }}
-              </a-tag>
-              <a-tag v-else :color="deviceStatus(record).color">
-                <LoadingOutlined
-                  v-if="isTransitional(statusOf(record))"
-                  style="margin-right: 4px"
-                />
-                {{ deviceStatus(record).text }}
-              </a-tag>
+              <DeviceStatusTag
+                :device="record"
+                :status="statusOf(record)"
+                :label="rowLabel(record)"
+              />
             </template>
             <template v-else-if="column.key === 'resolution'">
               <span v-if="settingsLoaded || record.pendingKey">{{ resolutionText(record) }}</span>
