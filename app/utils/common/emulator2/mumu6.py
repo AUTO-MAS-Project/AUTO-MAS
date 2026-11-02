@@ -206,9 +206,10 @@ class MuMu6Manager(AppLaunchMixin, _utils_emulator.mumu.MumuManager):
     async def _describe_launch_failure(self, idx: str) -> str:
         """把 MuMu 自己对这次启动的诊断拼进父类的失败 / 超时报错，拼不出来返回空串。
 
-        ``MuMuManager info`` 除了在不在线，还会给 ``launch_err_code`` / ``launch_err_msg`` /
-        ``player_state`` / ``error_code``——启动失败的原因 MuMu 自己是说了的，只报「超时」
-        等于把它丢掉。任何一步失败都不能影响原本的报错。
+        ``MuMuManager info`` 还可能带 ``launch_err_code`` / ``launch_err_msg`` /
+        ``player_state`` / ``error_code``，有就带上，没有就返回空串。6.8.8 实测：实例离线时
+        只有 ``error_code``，``launch_err_*`` 与 ``player_state`` 都不出现。
+        任何一步失败都不能影响原本的报错。
         """
         try:
             data = await self.get_device_info(idx)

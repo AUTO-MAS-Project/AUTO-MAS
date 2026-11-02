@@ -15,6 +15,7 @@
 #   Contact: DLmaster_361@163.com
 import asyncio
 import json
+import re
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -30,6 +31,7 @@ from app.models.emulator import (
 )
 from app.utils import IS_WINDOWS, ProcessRunner, get_logger
 from app.utils import emulator as _utils_emulator
+from app.utils import integrity as platform_integrity
 from app.utils import window as platform_window
 
 logger = get_logger("MuMu模拟器管理")
@@ -47,6 +49,46 @@ MUMU_FORCE_KILL_WAIT_SECONDS = 10
 MUMU_CLOSE_SETTLE_SECONDS = 2
 MUMU_STORE_PACKAGE = "com.mumu.store"
 MUMU_STORE_OVERLAY_APP_OP = "SYSTEM_ALERT_WINDOW"
+# MuMu 6.8.8 主进程连不上时 control launch 的返回码
+MUMU_MAINNX_ERRCODE = -503
+# 见到 -503 且安装目录带低完整性标签时附在异常里的修复办法。标签来自旧版安装器，
+# 6.8.8 只在原目录上升级就会继承，光看 -503 无法自证，所以提示要带上判断依据和命令。
+MUMU_LOW_INTEGRITY_HINT = (
+    "。检测到 MuMu 安装目录带有低完整性标签（{root}），"
+    "MuMuNxMain.exe 会以低完整性级别启动并立即退出，因此返回 {errcode}。"
+    "请先彻底退出 MuMu，再用管理员权限执行下面这条命令后重试：\n"
+    'icacls "{root}" /setintegritylevel "(OI)(CI)M"'
+)
+
+
+def _errcode(stdout: str) -> int | None:
+    """从 MuMuManager 的输出里取 errcode；输出被日志挤花或者没有该字段时返回 None。"""
+
+    match = re.search(r'"errcode"\s*:\s*(-?\d+)', stdout or "")
+    return int(match.group(1)) if match else None
+
+
+def _low_integrity_hint(emulator_path: Path, stdout: str) -> str:
+    """-503 且安装目录带 Low 完整性标签时返回修复提示，其余情况返回空串。
+
+    计划任务把后端提到 High 后，control launch 拉起的子进程完整性级别取父令牌与
+    映像文件中的较低者；安装目录被老安装器标成 Low 时 min(High, Low) 落到 Low，
+    主进程会立即终止，MuMuManager 重试满 25 轮后报 -503。检测失败一律不提示，
+    免得把无关错误也归到标签上。
+    """
+
+    if not IS_WINDOWS or _errcode(stdout) != MUMU_MAINNX_ERRCODE:
+        return ""
+    try:
+        level = platform_integrity.mandatory_label_rid(emulator_path)
+    except Exception:  # 诊断自身出错时保持沉默，不能盖住原始错误
+        return ""
+    if level != platform_integrity.INTEGRITY_LOW:
+        return ""
+    # MuMuManager.exe 在 nx_main/shell 这类一层子目录里，再上一层就是安装根
+    install_root = emulator_path.parent.parent
+    target = install_root if install_root.is_dir() else emulator_path.parent
+    return MUMU_LOW_INTEGRITY_HINT.format(root=target, errcode=MUMU_MAINNX_ERRCODE)
 
 
 class MumuManager(DeviceBase):
@@ -410,10 +452,21 @@ class MumuManager(DeviceBase):
         # 参考命令 MuMuManager.exe control -v 2 launch
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
+            # 界面入口（emulator_manager 的 except）以前只发 WS 气泡不写日志，
+            # 只靠下面这条 raise，失败原因在 app.log 里是空白的。
+            # 这里不拼 _describe_launch_failure：6.8.8 的 info 在实例离线时不产出
+            # launch_err_* / player_state，拼出来恒为空串。
+            # -503 另有环境层面的成因，能自证时把修复命令一起带到界面提示里。
+            hint = _low_integrity_hint(self.emulator_path, result.stdout)
+            logger.error(
+                f"MuMu 启动命令失败: {idx} - {package_name} - {result.failure_detail()}"
+            )
+            raise RuntimeError(f"命令执行失败: {result.failure_detail()}{hint}")
 
+        # 只说明命令返回 0，不代表实例会起来：真正的结论在下面的等待循环，
+        # 措辞不要写成「已完成」，否则日志会把静默空等读成成功。
         logger.info(
-            f"MuMu 启动命令已完成，等待实例在线: {idx} - 用时: "
+            f"MuMu 启动命令已返回，等待实例在线: {idx} - 用时: "
             f"{time.monotonic() - launch_started_at:.3f}秒"
         )
         online_started_at = time.monotonic()
@@ -458,7 +511,9 @@ class MumuManager(DeviceBase):
             logger.warning(
                 f"模拟器启动等待超时: {idx} - {package_name} - "
                 f"当前状态: {status} - 用时: "
-                f"{time.monotonic() - started_at:.3f}秒"
+                f"{time.monotonic() - started_at:.3f}秒（含启动命令本身） - "
+                f"启动命令返回 0 后已等待 "
+                f"{time.monotonic() - online_started_at:.3f}秒仍未上线"
             )
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(

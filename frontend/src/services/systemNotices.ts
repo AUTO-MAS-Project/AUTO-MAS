@@ -21,8 +21,13 @@ let subscriptionIds: string[] = []
 type NoticeLevel = WSTaskNoticeData['level']
 type NoticeDescription = string | (() => ReturnType<typeof h>)
 
-const notify = (level: NoticeLevel, title: string, description: NoticeDescription): void => {
-  const args = { message: title, description }
+const notify = (
+  level: NoticeLevel,
+  title: string,
+  description: NoticeDescription,
+  duration: number | null = 4.5
+): void => {
+  const args = { message: title, description, duration }
   if (level === 'error') {
     notification.error(args)
   } else if (level === 'warning') {
@@ -33,7 +38,15 @@ const notify = (level: NoticeLevel, title: string, description: NoticeDescriptio
 }
 
 const showNotice = (title: string, data: WSTaskNoticeData): void => {
-  notify(data.level, title, data.message)
+  // 模拟器启动失败可能附上一段修复提示，里面有要照抄的命令：用 pre-wrap 保住换行
+  // （否则 antd 会把换行折成空格），并且不自动消失，免得还没看完就关了
+  const withHint = data.message.includes('\n')
+  notify(
+    data.level,
+    title,
+    withHint ? () => h('div', { style: { whiteSpace: 'pre-wrap' } }, data.message) : data.message,
+    withHint ? null : undefined
+  )
 }
 
 // 迁移结果这类通知一条里有好几行（迁了哪些脚本、停用了谁、丢了什么），

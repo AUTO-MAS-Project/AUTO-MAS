@@ -5,6 +5,7 @@ MuMu 会把埋点与 C++ 日志混进同一份 stdout，对整段裸调 ``json.l
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -12,6 +13,8 @@ from app.utils import emulator as _utils_emulator
 
 decode = _utils_emulator.mumu.MumuManager._decode_polluted_json
 has_devices = _utils_emulator.mumu.MumuManager._has_device_entries
+_errcode = _utils_emulator.mumu._errcode
+_low_integrity_hint = _utils_emulator.mumu._low_integrity_hint
 
 DEVICE_JSON = """{
     "0": {"index": 0, "name": "MuMu模拟器12", "is_android_started": true},
@@ -77,3 +80,27 @@ def test_no_json_at_all_raises():
 def test_empty_output_raises():
     with pytest.raises(json.JSONDecodeError):
         decode("", has_devices)
+
+
+def test_errcode_reads_mainnx_failure():
+    assert _errcode('{"errcode": -503, "errmsg": "mainnx connect failed"}') == -503
+
+
+def test_errcode_absent_returns_none():
+    assert _errcode("no json here") is None
+
+
+def test_low_integrity_hint_ignores_other_errcodes():
+    """只有 -503 才谈安装目录的完整性标签，别的失败码不往这上面归因。"""
+    assert (
+        _low_integrity_hint(Path("C:/nonexistent/MuMuManager.exe"), '{"errcode": -100}')
+        == ""
+    )
+
+
+def test_low_integrity_hint_skips_path_without_low_label(tmp_path):
+    """目录没有低完整性标签时不多说一句，免得把无关的 -503 也引到改标签上。"""
+    exe = tmp_path / "nx_main" / "MuMuManager.exe"
+    exe.parent.mkdir()
+    exe.write_bytes(b"")
+    assert _low_integrity_hint(exe, '{"errcode": -503}') == ""
