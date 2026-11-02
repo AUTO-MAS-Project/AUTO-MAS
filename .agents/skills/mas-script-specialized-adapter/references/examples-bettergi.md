@@ -84,7 +84,7 @@ BetterGI 已接入通用配置恢复（mas/native 双池 + 字段侧车 + viewOn
   final_task 仍会跑，崩溃前解析出的步骤同样进报告）。`manager.final_task`
   用 `build_user_result_text` + `mirror_report_to_dispatch` 聚合，与 ZzzOd 同型。
 - **节点文本不带原因与异常计数**：只保留「✅ 成功/❌ 失败: 任务名」，
-  与 `app/log_box/report.py` 的状态行契约及汇总式渲染对齐；步内可恢复报错
+  与 `app/core/notify/report.py` 的状态行契约及汇总式渲染对齐；步内可恢复报错
   （含树脂耗尽这类预期停止）的数量与完整原因都在统计通知的分步表里，
   节点时间戳取步骤开始时刻（naive 时刻须按今天组合，
   直接 `timestamp()` 在 Windows 抛 OSError）。

@@ -80,6 +80,11 @@ from .shared import (
 DepotQuotaNumb = Annotated[int | None, Field(ge=0, le=9999)]
 """库存保持与干员养成每条计划的理智药/源石额度；留空即沿用 MAA 原设置。"""
 
+MaaEndInstallPath = Annotated[
+    NativePath | None, path_policy(kind="folder", blocked_dirs=STANDARD_BLOCKED_DIRS)
+]
+"""保留更新中断时暂缺的安装路径，供恢复入口定位相邻的原安装备份。"""
+
 
 class MaaUserConfig(DomainEntry):
     "MAA用户配置"
@@ -1173,6 +1178,16 @@ class MaaEndConfig(DomainEntry):
             description="自定义恢复分辨率宽度",
         )
 
+        RestoreAutoHDR: Literal["Unchanged", "Disable", "Enable"] = Field(
+            default_factory=lambda: "Unchanged",
+            description="关闭游戏时的自动 HDR 设置",
+        )
+
+        AutoHDR: Literal["Unchanged", "Disable", "Enable"] = Field(
+            default_factory=lambda: "Unchanged",
+            description="MaaEnd 启动时的自动 HDR 设置",
+        )
+
         SetResolution: bool = Field(
             default_factory=lambda: False,
             description="是否在启动游戏时执行 MaaEnd 分辨率设置预任务",
@@ -1194,7 +1209,8 @@ class MaaEndConfig(DomainEntry):
             default_factory=lambda: "新 MaaEnd 脚本", description="MaaEnd 脚本名称"
         )
 
-        Path: FolderPath = Field(
+        # 目录切换中断时路径可能暂时不存在，必须保留以便运行前恢复原安装。
+        Path: MaaEndInstallPath = Field(
             default_factory=lambda: None, description="MaaEnd 路径"
         )
 
@@ -1239,6 +1255,21 @@ class MaaEndConfig(DomainEntry):
 
     Run: RunFields = Field(default_factory=RunFields)
     UserData: ConfigCollection[MaaEndUserConfig] = collection(MaaEndUserConfig)
+
+    class UpdateFields(ConfigGroup):
+        TakeoverEnabled: bool = Field(
+            default_factory=lambda: False,
+            description="运行前由 MAS 下载、校验并安装 MaaEnd 官方完整包；不暂停 MXU 自身的更新检查",
+        )
+        Channel: Literal["stable", "beta"] = Field(
+            default_factory=lambda: "stable", description="MaaEnd 更新通道"
+        )
+        MirrorChyanCDK: Annotated[str, encrypted()] = Field(
+            default_factory=lambda: "",
+            description="MaaEnd Mirror 酱 CDK，留空使用全局 CDK，无 CDK 使用 GitHub",
+        )
+
+    Update: UpdateFields = Field(default_factory=UpdateFields)
 
     @classmethod
     def normalize_payload(cls, data):
@@ -2108,9 +2139,9 @@ class HSRConfig(DomainEntry):
     TaskSwitch: TaskSwitchFields = Field(default_factory=TaskSwitchFields)
 
     class UpdateFields(ConfigGroup):
-        AutoUpdateMode: Literal["Off", "AfterRun"] = Field(
-            default_factory=lambda: "Off",
-            description="外部脚本（M7A / SRA）的自动更新。默认关闭：这两个是用户自己安装、 自带更新器的第三方工具，未经开启就改写它们的目录属于越界；停留在 某个旧版也是真实需求。 只有 AfterRun 一档，没有 BeforeRun：更新的收益本来就落在下一次运行 上，没有理由让当前这轮先等一个 170–750MB 的下载。想立刻更新走配置 页的手动按钮。留成枚举而非布尔，是为了日后要加档时不必做 bool→enum 迁移（MaaFW 正为此背着一个废弃字段）。 选项顺序有意义：OptionsValidator.correct() 回退的是 **options[0]**， 不是这里的默认值，Off 必须排在最前。",
+        AutoUpdateMode: Literal["Off", "BeforeRun", "AfterRun"] = Field(
+            default_factory=lambda: "BeforeRun",
+            description="SRA、三月七的自动更新：Off 关闭，BeforeRun 在任务开始前由 MAS 检查、下载、校验并安装。默认运行前更新；旧配置 AfterRun 兼容为运行前执行，显式关闭保持关闭。",
         )
 
         Channel: Literal["stable", "beta"] = Field(
@@ -2582,7 +2613,7 @@ class MaaFWConfig(DomainEntry):
             ),
         ] = Field(
             default_factory=lambda: "BeforeRun",
-            description="项目自动更新时机：Off 不更新 / BeforeRun 运行前 / AfterRun 全部用户跑完后。 由 embedded_manager 在用户任务之外执行，耗时不计入 Run.RunTimeLimit。",
+            description="项目自动更新时机：Off 不更新，BeforeRun 在用户任务开始前更新。旧配置 AfterRun 兼容为运行前更新。更新和环境准备耗时不计入用户任务时限。",
         )
 
         Channel: Literal["stable", "beta"] = Field(

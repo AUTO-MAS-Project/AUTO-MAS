@@ -21,7 +21,7 @@
 以下差异均通过 MaaFW 的既有钩子声明，执行与重试流程仍由通用引擎负责：
 
 1. 活动：队列里有「活动快速战斗」（entry ``活动快速战斗_入口``）时查一次活动排期
-   （``app/tools/stella_official.py``，只认会开活动关的「版本活动」）。有进行中的活动
+   （``app/tools/common/game_calendar/stella.py``，只认会开活动关的「版本活动」）。有进行中的活动
    就把它挪到悬赏试炼前面先打；确实没有活动就把它摘掉；取不到数据时按队列原样跑——
    真在活动期却摘掉，整轮就漏打了活动。
 2. 日常：用户选了 MSS 计划表（``Info.PlanMode`` 不是 ``Fixed``）时，按当天槽位改写
@@ -157,12 +157,12 @@ def activity_running() -> bool | None:
     万一在事件循环线程里被调，拿不到结果，按「说不准」处理。
     """
 
-    from app.tools.stella_official import has_running_official_activity
+    from app.tools.common.game_calendar import stella as _tool_stella_official
 
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(has_running_official_activity())
+        return asyncio.run(_tool_stella_official.has_running_official_activity())
     return None
 
 

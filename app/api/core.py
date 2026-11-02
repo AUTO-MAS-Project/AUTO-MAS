@@ -34,10 +34,16 @@ from pydantic import (
     Field,
 )
 
-from app.api.ws_command import ws_command
-from app.core import Config, TaskManager
-from app.core.lifecycle import ShutdownCoordinator
-from app.core.ws import MainConnection, Publisher, protocol
+from app.core import (
+    Commands,
+    Config,
+    MainConnection,
+    Notify,
+    Publisher,
+    ShutdownCoordinator,
+    TaskManager,
+)
+from app.core.ws import protocol
 from app.models.schema import OutBase
 from app.services import System
 from app.utils import get_logger, is_supervised, should_preserve_backend
@@ -129,7 +135,7 @@ async def get_ws_meta() -> WebSocketMetaOut:
 # 主连接建立后触发启动时调度队列
 MainConnection.on_connect(TaskManager.start_startup_queue)
 # 启动期的系统通知（配置迁移结果之类）等主连接建立后再发，否则没人收。
-MainConnection.on_connect(Config.flush_startup_notices)
+MainConnection.on_connect(Notify.flush_startup_notices)
 
 
 @router.websocket("/ws")
@@ -180,7 +186,7 @@ async def _shutdown_backend() -> None:
         Config.server.should_exit = True
 
 
-@ws_command("core.close")
+@Commands.register("core.close")
 @router.post(
     "/close",
     summary="关闭后端程序",

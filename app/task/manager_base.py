@@ -10,12 +10,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, overload
 
+from app.core.notify.lifecycle import NotificationTaskBase as NotificationTaskBase
+from app.core.notify.task_content import (
+    push_maintenance_notice as push_maintenance_notice,
+)
 from app.models.config import ScriptConfigType, UserConfigType
-from app.models.notification_report import TaskResultData
+from app.models.notification.report import TaskResultData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, TaskItem, UserItem
 from app.task.maintenance import get_user_maintenance
-from app.task.notification_lifecycle import NotificationTaskBase
-from app.task.notify_core import push_maintenance_notice
 from app.utils import TASK_MODE_ZH, get_logger
 from app.utils import game_update as _utils_game_update
 

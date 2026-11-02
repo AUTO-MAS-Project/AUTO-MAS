@@ -50,7 +50,7 @@
                 <!-- object 类型：子任务配置组 -->
                 <template v-if="field.type === 'object'">
                   <div class="object-field">
-                    <a-empty
+                    <NoData
                       v-if="!field.children || field.children.length === 0"
                       :description="t('core.edit.thisSubtaskHasNo')"
                     />
@@ -300,13 +300,13 @@
               </a-form-item>
 
               <div v-if="selectedConfig.fields.length === 0" class="empty-fields">
-                <a-empty :description="t('core.edit.thisConfigurationFileHas')" />
+                <NoData :description="t('core.edit.thisConfigurationFileHas')" />
               </div>
             </a-form>
           </div>
 
           <div v-else class="no-selection">
-            <a-empty :description="t('core.edit.pickConfigurationFileLeft')" />
+            <NoData :description="t('core.edit.pickConfigurationFileLeft')" />
           </div>
         </a-col>
       </a-row>

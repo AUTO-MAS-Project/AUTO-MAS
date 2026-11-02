@@ -19,7 +19,7 @@
 """ZZZ-OD 节点日志采集参数（log_box 实例的喂参方）
 
 ZZZ-OD 专项作为 log_box 的一个实例：本模块只提供参数（规则、后置处理器），
-日志获取、规则匹配、后置处理与推送全部由 log_box 完成。
+文本内核只匹配规则和执行处理器；读取、账号归属和交付由专项负责。
 
 规则说明（对应 zzz-od 统一日志 .log/log.txt 的实际输出）：
 
@@ -41,22 +41,18 @@ ZZZ-OD 专项作为 log_box 的一个实例：本模块只提供参数（规则�
     未被恢复、且原因命中白名单（_WARNING_FAIL_REASONS，fail-closed，仅注册的
     有价值异常才透出，如体力刷本计划被游戏拦截后仍按「返回大世界」成功结束）
     的辅助指令失败，紧跟对应应用节点行输出；判定仍取上游结果面。
-    ⚠ 异常 是通用渲染层（app/tools/push_log.py）认可的第四种状态前缀，
+    ⚠ 异常 是通用渲染层（Notify.report）认可的第四种状态前缀，
     汇总模式下按状态归组
 多账号（≥2 个实例段）时节点行加「【账号名】」前缀（报告渲染按前缀区分账号
-归属，见 app/tools/push_log.py）；单账号不加前缀，与通用「状态: 节点」渲染
+归属，见 Notify.report）；单账号不加前缀，与通用「状态: 节点」渲染
 一致。同一账号同一应用取最后一次非跳过终态（整体口径）：重试轮的「应用已
 完成」跳过行不覆盖此前成功/失败，只给从未出现的应用补录跳过态；真实重跑
 的应用随最后一次终态移至末尾。
 """
 
 import re
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 
-from app.log_box import LogBinding, LogSpec, LogType
-from app.log_box.results import LogEntry
-from app.log_box.session import LogUser
+from app.utils import LOG_TYPE_NORMAL, log_box
 
 # 推送规则：(匹配正则, 提取表达式)；均为普通类型，节点级失败由文本「❌ 失败:」
 # 体现（始终展示），推送时机由全局 SendTaskResultTime 控制。
@@ -109,7 +105,9 @@ _WARNING_FAIL_REASONS = frozenset(
 )
 
 
-def make_zzzod_resolve(app_names: set[str], idx_names: dict[int, str]):
+def make_zzzod_resolve(
+    app_names: set[str], idx_names: dict[int, str]
+) -> log_box.PostProcessor:
     """构造 log_box 后置处理器（节点终态聚合 + 账号归属 + 白名单吞失败警告）。
 
     输入/输出均为 ``(log_type, text, ts)`` 元组（与 log_box 后置处理器契约
@@ -122,11 +120,11 @@ def make_zzzod_resolve(app_names: set[str], idx_names: dict[int, str]):
     """
 
     def resolve(
-        results: list[tuple[str, str, float]],
-    ) -> list[tuple[str, str, float]]:
+        results: list[tuple[str, str, float | None]],
+    ) -> list[tuple[str, str, float | None]]:
         order: list[tuple[str | None, str]] = []
-        states: dict[tuple[str | None, str], tuple[str, str | None, float]] = {}
-        battery: dict[str | None, tuple[int, float]] = {}
+        states: dict[tuple[str | None, str], tuple[str, str | None, float | None]] = {}
+        battery: dict[str | None, tuple[int, float | None]] = {}
         # 待归因窗口：账号 → 辅助指令名 → 最后一次失败原因。辅助指令失败先记入
         # 当前账号窗口，成功视为该指令已恢复；窗口由应用终态行/段边界结算
         pending_fails: dict[str | None, dict[str, str]] = {}
@@ -209,7 +207,7 @@ def make_zzzod_resolve(app_names: set[str], idx_names: dict[int, str]):
             warnings[key] = warn_texts
 
         multi = len(seg_names) > 1
-        output: list[tuple[str, str, float]] = []
+        output: list[tuple[str, str, float | None]] = []
         for account, node in order:
             status, extra, ts = states[(account, node)]
             if extra is None:
@@ -219,70 +217,18 @@ def make_zzzod_resolve(app_names: set[str], idx_names: dict[int, str]):
                 line = f"{status}: {node}（{extra}）"
             if multi and account:
                 line = f"【{account}】{line}"
-            output.append((LogType.NORMAL, line, ts))
+            output.append((LOG_TYPE_NORMAL, line, ts))
             for warn in warnings.get((account, node), ()):
                 if multi and account:
                     warn = f"【{account}】{warn}"
-                output.append((LogType.NORMAL, warn, ts))
+                output.append((LOG_TYPE_NORMAL, warn, ts))
         # 剩余体力独立成行（对齐 ok-nte 的「⚡ 剩余体力」），追加在各账号
         # 节点之后；汇总渲染时普通行位于常规状态组之后、「⚠ 异常」组之前
         for account, (value, ts) in battery.items():
             line = f"🔋 剩余体力: {value}"
             if multi and account:
                 line = f"【{account}】{line}"
-            output.append((LogType.NORMAL, line, ts))
+            output.append((LOG_TYPE_NORMAL, line, ts))
         return output
 
     return resolve
-
-
-@dataclass(frozen=True)
-class ZzzLogSnapshot:
-    """本次运行结束后的目录与账号映射；只从 MAS 宿主取得，不读上游私有状态。"""
-
-    app_names: frozenset[str]
-    idx_names: Mapping[int, str]
-    users: Mapping[str, LogUser]
-    fallback_user: LogUser
-
-
-def make_zzzod_log_spec(snapshot: Callable[[], ZzzLogSnapshot]) -> LogSpec:
-    """声明运行后才确定的账号归属；box 负责快照时机、异步处理与交付。"""
-
-    def bind() -> LogBinding:
-        current = snapshot()
-        # 解析线程只持有目录、实例名的副本，用户对象仅供宿主交付使用。
-        app_names = set(current.app_names)
-        idx_names = dict(current.idx_names)
-        users = dict(current.users)
-        fallback = current.fallback_user
-
-        def deliver(entries: list[LogEntry]) -> int:
-            delivered = 0
-            for entry in entries:
-                match = ACCOUNT_PREFIX_RE.match(entry.text)
-                if match is not None and match.group(1) in users:
-                    target = users[match.group(1)]
-                    if target.push_log_mode != "关闭":
-                        target.push_log.append(
-                            (entry.log_type, match.group(2), entry.timestamp)
-                        )
-                        delivered += 1
-                else:
-                    # 原生账号或无归属行保留前缀落到触发用户，由公共报告区分账号。
-                    fallback.push_log.append(
-                        (entry.log_type, entry.text, entry.timestamp)
-                    )
-                    delivered += 1
-            return delivered
-
-        return LogBinding(
-            postprocessor=make_zzzod_resolve(app_names, idx_names),
-            deliver=deliver,
-        )
-
-    return LogSpec(
-        rules=tuple(ZZZOD_PUSH_RULES),
-        bind=bind,
-        error_message="ZZZ-OD 节点采集推送失败",
-    )

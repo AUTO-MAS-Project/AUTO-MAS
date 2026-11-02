@@ -91,15 +91,12 @@
     "
     class="empty-state"
   >
-    <div class="empty-content">
-      <div class="empty-image-container">
-        <img src="@/assets/NoData.svg" :alt="t('core.scripts.empty.alt')" class="empty-image" />
-      </div>
-      <div class="empty-text-content">
+    <NoData :image-style="{ height: '120px' }">
+      <template #description>
         <h3 class="empty-title">{{ t('core.scripts.empty.title') }}</h3>
         <p class="empty-description">{{ t('core.scripts.empty.desc') }}</p>
-      </div>
-    </div>
+      </template>
+    </NoData>
   </div>
 
   <div
@@ -108,9 +105,9 @@
     "
     class="empty-state"
   >
-    <a-empty :description="t('core.scripts.empty.noMatch')">
+    <NoData :description="t('core.scripts.empty.noMatch')">
       <a-button @click="scriptSearchKeyword = ''">{{ t('core.scripts.clearSearch') }}</a-button>
-    </a-empty>
+    </NoData>
   </div>
 
   <ScriptTable
@@ -922,15 +919,6 @@ const handleToggleUserStatus = async (user: ScriptListUser) => {
   justify-content: center;
   height: calc(100vh - 200px);
   text-align: center;
-}
-
-.empty-image-container {
-  margin-bottom: 16px;
-}
-
-.empty-image {
-  max-width: 100%;
-  height: auto;
 }
 
 .empty-title {

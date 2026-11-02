@@ -25,8 +25,11 @@ import threading
 import time
 from contextlib import suppress
 from ctypes import wintypes
-from dataclasses import dataclass
-from enum import Enum
+from types import TracebackType
+
+from ..contracts.vdd import VddError as VddError
+from ..contracts.vdd import VddProbeResult as VddProbeResult
+from ..contracts.vdd import VddStatus as VddStatus
 
 DIGCF_PRESENT = 0x00000002
 DIGCF_DEVICEINTERFACE = 0x00000010
@@ -237,26 +240,6 @@ def _declare_prototypes() -> None:
 
 
 _declare_prototypes()
-
-
-class VddStatus(Enum):
-    """探测结果。区分这几档是有意的：给用户的提示完全不同。"""
-
-    OK = "ok"
-    NOT_INSTALLED = "not_installed"
-    ACCESS_DENIED = "access_denied"
-    ERROR = "error"
-
-
-@dataclass(frozen=True)
-class VddProbeResult:
-    status: VddStatus
-    version: int | None = None
-    detail: str = ""
-
-
-class VddError(RuntimeError):
-    """驱动可用但操作失败。"""
 
 
 def _find_device_path() -> str | None:
@@ -537,7 +520,12 @@ class VirtualDisplay:
             self.applied_mode = current_mode(self.device)
         return self
 
-    def __exit__(self, *_exc) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         self.close()
 
     def _heartbeat(self) -> None:

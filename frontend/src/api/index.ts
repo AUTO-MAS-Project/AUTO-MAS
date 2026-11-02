@@ -452,6 +452,8 @@ export type { MaaEndConfig_Info } from './models/MaaEndConfig_Info';
 export type { MaaEndConfig_InfoInput } from './models/MaaEndConfig_InfoInput';
 export type { MaaEndConfig_Run } from './models/MaaEndConfig_Run';
 export type { MaaEndConfig_RunInput } from './models/MaaEndConfig_RunInput';
+export type { MaaEndConfig_Update } from './models/MaaEndConfig_Update';
+export type { MaaEndConfig_UpdateInput } from './models/MaaEndConfig_UpdateInput';
 export type { MaaEndConfigInput } from './models/MaaEndConfigInput';
 export type { MaaEndEssenceTargetGroup } from './models/MaaEndEssenceTargetGroup';
 export type { MaaEndInventoryOptions } from './models/MaaEndInventoryOptions';

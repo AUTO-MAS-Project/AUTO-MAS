@@ -87,7 +87,7 @@
       </a-alert>
 
       <template v-if="form">
-        <a-empty v-if="!form.fields.length" :description="t('core.edit.thisVersionHasNothing')" />
+        <NoData v-if="!form.fields.length" :description="t('core.edit.thisVersionHasNothing')" />
         <template v-else>
           <DynamicManagedFields
             v-if="layout.common.length"
@@ -121,7 +121,7 @@
           </a-collapse>
         </template>
       </template>
-      <a-empty v-else :description="t('core.edit.engineReturnedNoDynamic')" />
+      <NoData v-else :description="t('core.edit.engineReturnedNoDynamic')" />
     </a-form>
 
     <div class="panel-footer">

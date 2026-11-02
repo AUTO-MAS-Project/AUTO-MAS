@@ -83,11 +83,7 @@
               v-else-if="!script.usersLoadError && !isUsersCollapsed(script.id)"
               class="empty-users"
             >
-              <a-empty
-                :image="noDataImage"
-                :image-style="{ height: '120px' }"
-                :description="false"
-              />
+              <NoData :image-style="{ height: '120px' }" :description="false" />
             </div>
           </a-card>
         </div>
@@ -96,7 +92,6 @@
   </div>
 </template>
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.svg'
 import ScriptCardHeader, {
   type ScriptCardAction,
 } from '@/views/scripts/components/ScriptCardHeader.vue'

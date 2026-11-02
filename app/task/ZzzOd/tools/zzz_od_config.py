@@ -41,6 +41,8 @@ from typing import Any, Callable
 from app.utils import get_logger
 from app.utils import io as _utils_io
 
+from .catalog import list_app_catalog
+
 logger = get_logger("绝区零一条龙配置")
 
 # zzz-od game_account.yml 的 game_region 取值 → 中文展示
@@ -832,15 +834,20 @@ def snapshot_run_records(root: Path, idx: int) -> dict[str, int]:
     result: dict[str, int] = {}
     if not record_dir.is_dir():
         return result
-    for path in sorted(record_dir.glob("*.yml")):
+    for path in sorted(record_dir.glob("*.yml", case_sensitive=True)):
         try:
-            data = _utils_io.read_file(path, format=".sanitized.yaml") or {}
+            data = _utils_io.read_file(path, format=".sanitized.yaml")
+            if data is None:
+                data = {}
         except Exception as exc:  # noqa: BLE001 - 单个坏记录不应中断整个任务
             logger.warning(f"运行记录读取失败，按未跑处理：{path.name}：{exc}")
             data = {}
         try:
+            if not isinstance(data, dict):
+                raise ValueError("运行记录根节点不是映射")
             result[path.stem] = int(data.get("run_status", 0) or 0)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError) as exc:
+            logger.warning(f"运行记录状态无效，按未跑处理：{path}: {exc}")
             result[path.stem] = 0
     return result
 
@@ -865,18 +872,47 @@ def diff_run_records(
     return diffs
 
 
+def _preserved_run_record_paths(root: Path, idx: int) -> list[Path]:
+    """插件及未知记录整文件保留，周期与进度语义仍由上游维护。
+
+    只重置已知内置应用的简单记录。插件声明更新失败或插件卸载时，未知
+    记录也不会因此被清空；不读取插件私有进度字段。
+    """
+    try:
+        builtin_ids = {
+            item["app_id"] for item in list_app_catalog(root, include_plugins=False)
+        }
+    except Exception as exc:
+        # 清理现场不能依赖此时仍能读取源码；无法分类时宁可保留所有记录。
+        logger.warning(f"内置任务目录不可读，保留全部运行记录：{exc}")
+        builtin_ids = set()
+    record_dir = instance_dir(root, idx) / _RUN_RECORD_DIR
+    if not record_dir.is_dir():
+        return []
+    return [
+        path
+        for path in sorted(record_dir.iterdir())
+        if path.is_file()
+        and (
+            path.suffix != ".yml"
+            or path.stem in PERSISTENT_RUN_RECORD_APPS
+            or path.stem not in builtin_ids
+        )
+    ]
+
+
 def clear_run_records(root: Path, idx: int) -> None:
     """清空实例运行记录，让 zzz-od 把任务视为未完成（每用户独立跑）。
 
     注入用户配置后调用：清空后快照即为全零基准，跑完 diff 出的即本用户
-    本次结果。:data:`PERSISTENT_RUN_RECORD_APPS` 的记录原样保留——它们承载
-    上游的周期进度，清掉后收尾还会整目录还原，进度再也回不来。
+    本次结果。带周期进度的内置记录、插件及未知记录原样保留；后者只做
+    文件透传，避免插件更新失效后被误当作无进度记录清空。
     """
 
     record_dir = instance_dir(root, idx) / _RUN_RECORD_DIR
     if not record_dir.is_dir():
         return
-    keep = {f"{app_id}.yml" for app_id in PERSISTENT_RUN_RECORD_APPS}
+    keep = {path.name for path in _preserved_run_record_paths(root, idx)}
     for path in record_dir.iterdir():
         if path.is_file() and path.name not in keep:
             path.unlink(missing_ok=True)
@@ -898,8 +934,7 @@ def snapshot_run_record_files(root: Path, idx: int) -> dict[str, bytes | None]:
     if not record_dir.is_dir():
         return {}
     snapshot: dict[str, bytes | None] = {}
-    for app_id in sorted(PERSISTENT_RUN_RECORD_APPS):
-        path = record_dir / f"{app_id}.yml"
+    for path in _preserved_run_record_paths(root, idx):
         if not path.is_file():
             continue
         try:
@@ -922,9 +957,19 @@ def restore_run_record_files(
     if not snapshot:
         return
     record_dir = instance_dir(root, idx) / _RUN_RECORD_DIR
+    failed: list[str] = []
     for name, payload in snapshot.items():
         if payload is not None:
-            _utils_io.atomic_write(record_dir / name, payload)
+            try:
+                _utils_io.atomic_write(record_dir / name, payload)
+            except OSError as exc:
+                logger.warning(f"插件运行记录恢复失败，继续恢复其他记录：{name}: {exc}")
+                if Path(name).suffix == ".yml":
+                    failed.append(name)
+        elif Path(name).suffix == ".yml":
+            failed.append(name)
+    if failed:
+        raise OSError("运行记录未完整恢复：" + "、".join(failed))
 
 
 # ── 实例槽备份 / 恢复（运行与配置会话的现场保护）──

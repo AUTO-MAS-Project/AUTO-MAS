@@ -189,7 +189,7 @@
     >
       <!-- mas 备份为快速配置侧车、native 备份为 mxu 配置摘要，共用文件集插槽 -->
       <template #preview="{ raw }">
-        <a-empty
+        <NoData
           v-if="!previewFiles(raw).length"
           :description="t('core.edit.configRestorePreviewEmpty')"
         />

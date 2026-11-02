@@ -18,7 +18,7 @@
 | T007 | backend_restart_finished：主动更新和故障重启能否恢复 | 已接入，持续复核 |
 | T008 | runtime_alignment_finished：Runtime 升级、校验、回退是否完成 | 已接入，持续复核 |
 | T009 | backend_update_finished：后端热更新完成或停在什么阶段 | 已接入，持续复核 |
-| T010 | renderer_recovery_decided：白屏、崩溃后自动恢复或放弃的比例 | 已接入，持续复核 |
+| T010 | renderer_recovery_decided / renderer_recovery_finished：恢复决策与重载观察结果 | 已接入，持续复核 |
 | T011 | renderer_responsiveness_changed：卡死后能否恢复响应 | 已接入，持续复核 |
 | T012 | app_close_finished：正常退出收尾、用户取消、强制退出占比（不含托盘隐藏） | 已接入，持续复核 |
 | T013 | tray_action_requested：显示、隐藏、启动任务、停止全部任务和退出等托盘入口是否有实际使用 | 已接入，持续复核 |
@@ -161,3 +161,8 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
 ## 任务台批次补充
 
 - 新增 `taskboard_marking_finished`，不在 Issue #1605 的 84 项场景内：每周任务的全选/清空保存、单条打卡与撤销，以及版本主线的标记/取消标记，按真实接口结果各记一次。`target_kind` 只区分 `weekly_task` / `version`，`action` 只区分 `select` / `mark` / `unmark`，`count_bucket` 描述本次影响对象数量。不发送游戏 key、任务标题、版本号、版本名、时间或封面地址；本地已判定重复的保存不重复记录，接口返回非 200 记为 failure，请求异常记为 unknown，客户端周键过期被后端拒绝时记为 blocked。
+
+- T010 补充：重载结果由主进程窗口恢复服务确认，页面加载完成和 Vue 挂载信号缺一不计成功；
+  加载失败、再次退出、异常、超时及退出取消各有有限分类，一次尝试仅结算一次。
+  Windows 会话结束不新建恢复尝试；取消关机后重新允许恢复。验证采用隔离窗口事件和本地采集器，
+  不代表真实 Windows 关机或生产接收验收。
