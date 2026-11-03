@@ -71,6 +71,7 @@ When overriding Ant Design Vue internals:
 5. Reference only `--ant-*` names defined by `useTheme.updateCSSVariables()`. Every `--ant-*` definition must map to the matching `antTokens.<token>` value derived from the same Ant Design algorithm and seed used by `ConfigProvider`; never approximate Ant Design tokens with hand-written light/dark values. Use a literal name in each `setProperty` call so the variable stays greppable.
 6. Reserve `--app-*` for project-specific shared values that have no Ant Design token equivalent. Derive those values from the app theme in `useTheme.ts`, with explicit light/dark behavior where needed.
 7. When adding theme-aware styles, verify both themes with the app's own theme switch, not the OS setting.
+8. New or renamed page surfaces and tabs must also match the shared [appearance surface rules](../../../frontend/src/styles/appearanceSurfaces.css). Reuse the outer surface color/opacity, transparent nested content, and active-tab treatment; extend the existing selector groups only where the new classes are not covered. Using `--ant-color-bg-container` alone does not provide custom-background compatibility. Preserve the shared exclusions for modals, drawers, dropdowns, and other overlays, and leave input and selection states intact.
 
 ## CSS Variable Audit
 
@@ -179,7 +180,7 @@ For WebSocket, scheduler, download, backend startup, and other process flows, di
 
 Before declaring UI work complete:
 
-1. Check light mode and dark mode when visual styling changes.
+1. Check light mode and dark mode when visual styling changes. For page backgrounds, surfaces, or tabs, also check a custom background with partial surface opacity in both themes, compare with an existing user-facing page, and verify that clearing the custom background restores the normal surface.
 2. Confirm text does not overlap, clip important actions, or overflow containers at common desktop widths.
 3. Confirm loading, empty, error, disabled, success, and failure states affected by the task.
 4. Run the relevant project verification from `mas-frontend-standards`.
