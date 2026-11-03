@@ -43,61 +43,6 @@ export const eventStageIdentity = (type: EventDepotStageType, index: number): st
 export const eventDepotPlanIdentity = (plan: EventDepotMaintainPlan) =>
   `${plan.StageType ?? 'material'}:${plan.StageType === 'all' ? '' : plan.StageIndex}`
 
-// 只投影旧选择用于展示；用户主动编辑后，再由完整的新选择替换旧项。
-export const getLegacyEventDepotPlans = (
-  plans: EventDepotMaintainPlan[],
-  stages: ActivityItem[],
-  template: ('material' | 'orundum')[] = []
-): Map<string, EventDepotMaintainPlan> => {
-  const kinds = stages.length
-    ? stages.map(stage =>
-        isOrundumStage(stage) ? 'orundum' : /^\d+$/.test(stage.Drop) ? 'material' : undefined
-      )
-    : template
-  const result = new Map<string, EventDepotMaintainPlan>()
-  for (const plan of plans) {
-    const index = plan.StageIndex
-    if (
-      (!plan.LegacyActivityFirst && !plan.LegacyIndex) ||
-      !Number.isInteger(index) ||
-      !index ||
-      index < 1
-    )
-      continue
-    const sourceKind = plan.StageType ?? 'material'
-    const pool = sourceKind === 'activity' ? kinds : kinds.filter(kind => kind === sourceKind)
-    if (plan.Skip && index > pool.length) continue
-    // 沿用旧序号越界时回到第一关的选择，活动空档仅借上期类别展示。
-    const position = index > pool.length ? 0 : index - 1
-    const kind = pool[position]
-    if (!kind) continue
-    const stageIndex = pool.slice(0, position + 1).filter(value => value === kind).length
-    const identity = eventStageIdentity(kind, stageIndex)
-    const previous = result.get(identity)
-    // 多个旧序号回退到同一关时，保留最高自定义目标，活动默认不抬高它。
-    if (previous) {
-      if (previous.Skip && !plan.Skip) continue
-      if (!plan.Skip || previous.Skip) {
-        const count =
-          kind === 'orundum' ? (plan.OrundumDropCount ?? plan.DropCount) : plan.DropCount
-        const previousCount =
-          kind === 'orundum'
-            ? (previous.OrundumDropCount ?? previous.DropCount)
-            : previous.DropCount
-        if (plan.LegacyActivityFirst || (!previous.LegacyActivityFirst && previousCount >= count))
-          continue
-      }
-    }
-    const { key: _key, ...target } = plan
-    result.set(identity, {
-      ...target,
-      StageType: kind,
-      StageIndex: stageIndex,
-    })
-  }
-  return result
-}
-
 export const parseEventDepotPlans = (parsed: unknown): EventDepotMaintainPlan[] => {
   if (!Array.isArray(parsed)) return []
   return parsed.flatMap((plan, index) => {
