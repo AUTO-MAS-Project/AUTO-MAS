@@ -4884,4 +4884,15 @@ export class Service {
             url: '/api/core/mcp/retry',
         });
     }
+    /**
+     * 通知首页首帧已渲染
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static notifyMcpHomePaintedApiCoreMcpHomePaintedPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/core/mcp/home-painted',
+        });
+    }
 }

@@ -131,6 +131,12 @@ async def get_mcp_status() -> McpStatusOut:
     return McpStatusOut(data=MCP.status())
 
 
+@router.post("/mcp/home-painted", summary="通知首页首帧已渲染", response_model=OutBase)
+async def notify_mcp_home_painted() -> OutBase:
+    MCP.notify_home_painted()
+    return OutBase()
+
+
 @router.post(
     "/mcp/retry", summary="重新加载失败的 MCP 服务", response_model=McpRetryOut
 )

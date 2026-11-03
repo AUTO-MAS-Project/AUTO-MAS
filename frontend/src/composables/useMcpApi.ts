@@ -16,6 +16,39 @@ let generation = 0
 let requestSequence = 0
 let mutationSequence = 0
 const retiredInstances = new Set<string>()
+let homePainted = false
+let homePaintRetryTimer: ReturnType<typeof setTimeout> | null = null
+
+function cancelHomePaintRetry(): void {
+  if (homePaintRetryTimer !== null) clearTimeout(homePaintRetryTimer)
+  homePaintRetryTimer = null
+}
+
+async function releaseMcpAfterHomePaint(attempt = 0): Promise<void> {
+  if (subscription === null || connectionState().value !== 'open') return
+  cancelHomePaintRetry()
+  const epoch = generation
+  try {
+    const response = await Service.notifyMcpHomePaintedApiCoreMcpHomePaintedPost()
+    if (response.code !== 200) throw new Error(response.message)
+  } catch (error) {
+    logger.warn(`通知首页首帧失败: ${String(error)}`)
+    if (epoch === generation && connectionState().value === 'open' && attempt < 2) {
+      homePaintRetryTimer = setTimeout(() => {
+        homePaintRetryTimer = null
+        if (epoch === generation && connectionState().value === 'open') {
+          void releaseMcpAfterHomePaint(attempt + 1)
+        }
+      }, 1000)
+    }
+  }
+}
+
+export function notifyMcpHomePainted(): void {
+  if (homePainted) return
+  homePainted = true
+  if (connectionState().value === 'open') void releaseMcpAfterHomePaint()
+}
 
 function applyStatus(next: McpStatusData): McpStatusData {
   const current = queryClient.getQueryData<McpStatusData>(STATUS_KEY)
@@ -58,7 +91,10 @@ export function bootstrapMcpStatus(): void {
     applyStatus(message.data)
   })
   const reconnect = async () => {
+    cancelHomePaintRetry()
     generation++
+    // 后端重启会恢复为 pending；首页已经绘制过的窗口无需再次导航回首页。
+    if (homePainted) void releaseMcpAfterHomePaint()
     try {
       await fetchStatus()
     } catch (error) {
@@ -70,6 +106,7 @@ export function bootstrapMcpStatus(): void {
 }
 
 export function disposeMcpStatus(): void {
+  cancelHomePaintRetry()
   if (subscription !== null) unsubscribe(subscription)
   subscription = null
   disposeConnected?.()
@@ -94,7 +131,8 @@ export function useMcpApi() {
     loading.value = true
     error.value = ''
     try {
-      await fetchStatus()
+      const snapshot = await fetchStatus()
+      if (active && homePainted && snapshot.state === 'pending') void releaseMcpAfterHomePaint()
     } catch {
       if (active) error.value = t('core.tools.mcp.queryFailed')
     } finally {

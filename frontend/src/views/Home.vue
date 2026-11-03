@@ -119,7 +119,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { BellOutlined, EditOutlined } from '@ant-design/icons-vue'
 import NoticeModal from '@/components/NoticeModal.vue'
 import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
@@ -140,6 +140,7 @@ import { useHomeOverview } from '@/views/home/useHomeOverview'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
 import { usePerformanceStore } from '@/stores/performance'
 import { useHomeSatelliteStore } from '@/stores/homeSatellite'
+import { notifyMcpHomePainted } from '@/composables/useMcpApi'
 
 defineOptions({
   name: 'HomeView',
@@ -201,6 +202,23 @@ const {
 } = useHomeOverview()
 
 const { t } = useI18n()
+
+let paintFrame = 0
+watch(
+  layoutReady,
+  ready => {
+    if (!ready) return
+    // post 确保首页内容已提交 DOM；两次 rAF 之间留出一次浏览器绘制机会。
+    paintFrame = requestAnimationFrame(() => {
+      paintFrame = requestAnimationFrame(() => {
+        if (import.meta.env.DEV) performance.mark('auto-mas:home-first-paint')
+        notifyMcpHomePainted()
+      })
+    })
+  },
+  { flush: 'post' }
+)
+onUnmounted(() => cancelAnimationFrame(paintFrame))
 
 const activities = useHomeActivities({
   visibleKeys: visibleActivityKeys,

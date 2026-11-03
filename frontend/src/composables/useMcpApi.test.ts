@@ -9,9 +9,10 @@ const boundaries = vi.hoisted(() => ({
   unsubscribe: vi.fn(),
   disconnect: vi.fn(),
   observe: vi.fn(),
+  connection: { value: 'idle' },
 }))
 vi.mock('@/services/websocket/connection', () => ({
-  connectionState: () => ({ value: 'idle' }),
+  connectionState: () => boundaries.connection,
   onConnected: (callback: () => Promise<void>) => {
     boundaries.connected = callback
     return boundaries.disconnect
@@ -73,6 +74,7 @@ describe('MCP status reconciliation', () => {
     vi.stubGlobal('window', { electronAPI: { getLogger: () => ({ warn: vi.fn() }) } })
     vi.resetModules()
     vi.clearAllMocks()
+    boundaries.connection.value = 'idle'
     cache = (await import('@/services/queryClient')).queryClient
     backend = (await import('@/api')).Service
     module = await import('./useMcpApi')
@@ -81,16 +83,71 @@ describe('MCP status reconciliation', () => {
     scope = effectScope()
     api = scope.run(() => app.runWithContext(() => module.useMcpApi()))!
     module.bootstrapMcpStatus()
-  })
+  }, 30_000)
   afterEach(() => {
     api.dispose()
     scope.stop()
     module.disposeMcpStatus()
     cache.clear()
     vi.restoreAllMocks()
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
   const current = () => cache.getQueryData<McpStatusData>(['core', 'mcp-status'])!
+
+  it('releases MCP only after home paint, including a later backend connection', async () => {
+    const release = vi
+      .spyOn(backend, 'notifyMcpHomePaintedApiCoreMcpHomePaintedPost')
+      .mockResolvedValue({ code: 200, status: 'success', message: '' })
+    vi.spyOn(backend, 'getMcpStatusApiCoreMcpStatusGet').mockResolvedValue({
+      code: 200,
+      data: snapshot(),
+    } as never)
+    await boundaries.connected!()
+    expect(release).not.toHaveBeenCalled()
+    module.notifyMcpHomePainted()
+    expect(release).not.toHaveBeenCalled()
+    boundaries.connection.value = 'open'
+    await boundaries.connected!()
+    expect(release).toHaveBeenCalledTimes(1)
+    module.notifyMcpHomePainted()
+    expect(release).toHaveBeenCalledTimes(1)
+    await boundaries.connected!()
+    expect(release).toHaveBeenCalledTimes(2)
+  })
+
+  it('releases MCP immediately when the home frame follows the backend connection', () => {
+    const release = vi
+      .spyOn(backend, 'notifyMcpHomePaintedApiCoreMcpHomePaintedPost')
+      .mockResolvedValue({ code: 200, status: 'success', message: '' })
+    boundaries.connection.value = 'open'
+    module.notifyMcpHomePainted()
+    module.notifyMcpHomePainted()
+    expect(release).toHaveBeenCalledTimes(1)
+  })
+
+  it('bounds failed home notifications and allows a manual refresh to recover', async () => {
+    vi.useFakeTimers()
+    const release = vi
+      .spyOn(backend, 'notifyMcpHomePaintedApiCoreMcpHomePaintedPost')
+      .mockRejectedValue(new Error('network unavailable'))
+    vi.spyOn(backend, 'getMcpStatusApiCoreMcpStatusGet').mockResolvedValue({
+      code: 200,
+      data: snapshot(0, { state: McpStatusData.state.PENDING }),
+    } as never)
+    boundaries.connection.value = 'open'
+    module.notifyMcpHomePainted()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(release).toHaveBeenCalledTimes(3)
+    release.mockResolvedValue({ code: 200, status: 'success', message: '' })
+    await api.refresh()
+    expect(release).toHaveBeenCalledTimes(4)
+    release.mockRejectedValue(new Error('network unavailable'))
+    await api.refresh()
+    module.disposeMcpStatus()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(release).toHaveBeenCalledTimes(5)
+  })
 
   it('preserves a newer WS update when an older snapshot arrives', async () => {
     const request = deferred<{ code: number; data: McpStatusData }>()
