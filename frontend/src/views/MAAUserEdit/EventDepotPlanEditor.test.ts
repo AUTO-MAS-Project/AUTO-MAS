@@ -41,6 +41,7 @@ async function renderEditor(rows: EventDepotMaintainPlan[], activity = stages) {
   const checked: boolean[] = []
   const toggles: ((value: boolean) => void)[] = []
   const targets: ((value: number) => void)[] = []
+  const values: number[] = []
   let editor!: ReturnType<typeof useDepotMaintainPlanEditor>
   const app = createSSRApp({
     setup() {
@@ -96,13 +97,14 @@ async function renderEditor(rows: EventDepotMaintainPlan[], activity = stages) {
       props: ['value', 'disabled'],
       emits: ['change'],
       setup(props, { emit }) {
+        values.push(props.value)
         targets.push(value => emit('change', value))
         return () => h('input', { type: 'number', value: props.value })
       },
     })
   )
   await renderToString(app)
-  return { editor, saved, checked, toggles, targets }
+  return { editor, saved, checked, toggles, targets, values }
 }
 
 describe('MAA activity selection migration', () => {
@@ -191,5 +193,78 @@ describe('MAA activity selection migration', () => {
       { StageType: 'all', DropCount: 999, OrundumDropCount: 9999 },
       { StageType: 'material', StageIndex: 1, DropCount: 999, Skip: true },
     ])
+  })
+
+  it.each([false, true])(
+    'takes over old material fallback with activity-first=%s',
+    async activityFirst => {
+      const old: EventDepotMaintainPlan = {
+        StageType: 'material',
+        StageIndex: 3,
+        DropCount: 123,
+        LegacyIndex: true,
+        UseMedicine: true,
+        MedicineCount: 2,
+      }
+      const panel = await renderEditor(activityFirst ? [old, legacy] : [old], [
+        stages[0],
+        stages[3],
+      ])
+      expect(panel.saved).toEqual([])
+      expect(panel.checked).toEqual([true, false])
+      expect(panel.values).toEqual([123, 9999])
+      panel.toggles[0](false)
+      expect(panel.saved).toHaveLength(1)
+      expect(panel.saved[0]).toHaveLength(2)
+      expect(
+        panel.saved[0].every(plan => plan.Skip && !plan.LegacyIndex && !plan.LegacyActivityFirst)
+      ).toBe(true)
+      expect(panel.saved[0][0]).toMatchObject({
+        StageType: 'material',
+        StageIndex: 1,
+        DropCount: 123,
+        UseMedicine: true,
+        MedicineCount: 2,
+      })
+    }
+  )
+
+  it('keeps the highest custom target when several old indices fall back to one stage', async () => {
+    const rows: EventDepotMaintainPlan[] = [
+      { StageType: 'material', StageIndex: 2, DropCount: 250, LegacyIndex: true },
+      { StageType: 'material', StageIndex: 3, DropCount: 123, LegacyIndex: true },
+      legacy,
+    ]
+    const panel = await renderEditor(rows, [stages[0], stages[3]])
+    expect(panel.values[0]).toBe(250)
+    panel.toggles[1](true)
+    expect(panel.saved[0]).toHaveLength(2)
+    expect(panel.saved[0][0].DropCount).toBe(250)
+    expect(panel.saved[0].some(plan => plan.LegacyIndex || plan.LegacyActivityFirst)).toBe(false)
+  })
+
+  it('shows an old explicit cancellation ahead of other legacy fallback targets', async () => {
+    const panel = await renderEditor(
+      [
+        { StageType: 'material', StageIndex: 1, DropCount: 123, LegacyIndex: true, Skip: true },
+        { StageType: 'material', StageIndex: 3, DropCount: 250, LegacyIndex: true },
+        legacy,
+      ],
+      [stages[0], stages[3]]
+    )
+    expect(panel.checked).toEqual([false, false])
+    panel.toggles[1](true)
+    expect(panel.saved[0][0]).toMatchObject({ DropCount: 123, Skip: true })
+  })
+
+  it('does not project an out-of-range cancellation onto the first current stage', async () => {
+    const panel = await renderEditor(
+      [
+        { StageType: 'material', StageIndex: 99, DropCount: 123, LegacyIndex: true, Skip: true },
+        legacy,
+      ],
+      [stages[0], stages[3]]
+    )
+    expect(panel.checked).toEqual([true, false])
   })
 })

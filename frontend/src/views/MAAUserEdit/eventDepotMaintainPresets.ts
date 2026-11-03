@@ -57,14 +57,39 @@ export const getLegacyEventDepotPlans = (
   const result = new Map<string, EventDepotMaintainPlan>()
   for (const plan of plans) {
     const index = plan.StageIndex
-    if (!plan.LegacyActivityFirst || !Number.isInteger(index) || !index || index < 1) continue
+    if (
+      (!plan.LegacyActivityFirst && !plan.LegacyIndex) ||
+      !Number.isInteger(index) ||
+      !index ||
+      index < 1
+    )
+      continue
+    const sourceKind = plan.StageType ?? 'material'
+    const pool = sourceKind === 'activity' ? kinds : kinds.filter(kind => kind === sourceKind)
+    if (plan.Skip && index > pool.length) continue
     // 沿用旧序号越界时回到第一关的选择，活动空档仅借上期类别展示。
-    const position = index > kinds.length ? 0 : index - 1
-    const kind = kinds[position]
+    const position = index > pool.length ? 0 : index - 1
+    const kind = pool[position]
     if (!kind) continue
-    const stageIndex = kinds.slice(0, position + 1).filter(value => value === kind).length
-    const { key: _key, LegacyActivityFirst: _legacy, LegacyIndex: _index, ...target } = plan
-    result.set(eventStageIdentity(kind, stageIndex), {
+    const stageIndex = pool.slice(0, position + 1).filter(value => value === kind).length
+    const identity = eventStageIdentity(kind, stageIndex)
+    const previous = result.get(identity)
+    // 多个旧序号回退到同一关时，保留最高自定义目标，活动默认不抬高它。
+    if (previous) {
+      if (previous.Skip && !plan.Skip) continue
+      if (!plan.Skip || previous.Skip) {
+        const count =
+          kind === 'orundum' ? (plan.OrundumDropCount ?? plan.DropCount) : plan.DropCount
+        const previousCount =
+          kind === 'orundum'
+            ? (previous.OrundumDropCount ?? previous.DropCount)
+            : previous.DropCount
+        if (plan.LegacyActivityFirst || (!previous.LegacyActivityFirst && previousCount >= count))
+          continue
+      }
+    }
+    const { key: _key, ...target } = plan
+    result.set(identity, {
       ...target,
       StageType: kind,
       StageIndex: stageIndex,

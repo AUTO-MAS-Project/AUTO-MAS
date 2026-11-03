@@ -87,6 +87,41 @@ def test_same_index_in_different_categories_does_not_cancel_another_stage():
     assert [plan["Stage"] for plan in plans] == ["TL-4"]
 
 
+@pytest.mark.parametrize("skip", [False, True])
+def test_new_selection_overrides_old_material_index_fallback(skip):
+    old = {
+        "StageType": "material",
+        "StageIndex": 3,
+        "DropCount": 123,
+        "LegacyIndex": True,
+    }
+    selected = {
+        "StageType": "material",
+        "StageIndex": 1,
+        "DropCount": 321,
+        "Skip": skip,
+    }
+    plans, _ = resolve_activity_inventory_plans(
+        json.dumps([old, LEGACY, selected]), [STAGES[0], STAGES[-1]]
+    )
+    assert [(plan["Stage"], plan["DropCount"]) for plan in plans] == (
+        [] if skip else [("TL-9", 321)]
+    )
+
+
+def test_unedited_old_material_target_still_overrides_activity_default():
+    old = {
+        "StageType": "material",
+        "StageIndex": 3,
+        "DropCount": 123,
+        "LegacyIndex": True,
+    }
+    plans, _ = resolve_activity_inventory_plans(
+        json.dumps([old, LEGACY]), [STAGES[0], STAGES[-1]]
+    )
+    assert [(plan["Stage"], plan["DropCount"]) for plan in plans] == [("TL-9", 123)]
+
+
 def test_alternating_accounts_does_not_reuse_previous_selection():
     source = [{"Stage": "TL-9", "DropId": "31113", "UseMedicine": True}]
     original = deepcopy(source)

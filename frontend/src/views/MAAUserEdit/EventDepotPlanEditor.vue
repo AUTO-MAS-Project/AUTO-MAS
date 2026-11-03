@@ -126,7 +126,9 @@ const { plans, ensureEventPlan, savePlans, queueSave } = props.editor
 const materialStages = computed(() => getEventDepotStages(props.stages))
 const orundumStages = computed(() => getEventOrundumStages(props.stages))
 const placeholder = computed(() => !props.stages.length && !!props.template?.length)
-const hasLegacy = computed(() => plans.value.some(plan => plan.LegacyActivityFirst))
+const hasLegacy = computed(() =>
+  plans.value.some(plan => plan.LegacyActivityFirst || plan.LegacyIndex)
+)
 const legacyPlans = computed(() =>
   getLegacyEventDepotPlans(plans.value, props.stages, props.template)
 )
@@ -140,7 +142,7 @@ const stockColumnTitle = computed(() =>
 const rows = computed<EventRow[]>(() => {
   const saved = new Map(
     plans.value
-      .filter(plan => plan.StageType !== 'all')
+      .filter(plan => plan.StageType !== 'all' && !plan.LegacyActivityFirst && !plan.LegacyIndex)
       .map(plan => [eventDepotPlanIdentity(plan), plan])
   )
   const allRow = plans.value.find(plan => plan.StageType === 'all')
@@ -201,9 +203,12 @@ const itemTextOf = (stage: ActivityItem) =>
 
 const adoptLegacyPlans = () => {
   if (!hasLegacy.value) return
-  for (const row of rows.value) {
+  const selections = rows.value
+  const legacy = legacyPlans.value
+  plans.value = plans.value.filter(plan => !plan.LegacyActivityFirst && !plan.LegacyIndex)
+  for (const row of selections) {
     const plan = ensureEventPlan({
-      ...legacyPlans.value.get(row.identity),
+      ...legacy.get(row.identity),
       StageType: row.type,
       StageIndex: row.index,
       DropCount: row.target,
@@ -211,8 +216,8 @@ const adoptLegacyPlans = () => {
     if (row.farmed) delete plan.Skip
     else plan.Skip = true
     delete plan.LegacyIndex
+    delete plan.LegacyActivityFirst
   }
-  plans.value = plans.value.filter(plan => !plan.LegacyActivityFirst)
 }
 
 const toggleFarm = (row: EventRow, farmed: boolean) => {

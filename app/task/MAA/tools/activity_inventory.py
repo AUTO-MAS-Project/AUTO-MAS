@@ -164,6 +164,12 @@ def resolve_activity_inventory_plans(
         for position, plan in selected.items()
         if not rows[position].get("LegacyActivityFirst")
     }
+    edited_keys = {
+        (plan["Stage"], plan["DropId"])
+        for position, plan in selected.items()
+        if not rows[position].get("LegacyActivityFirst")
+        and not rows[position].get("LegacyIndex")
+    }
     plans = []
     for position, row in enumerate(rows):
         if not isinstance(row, dict):
@@ -181,10 +187,13 @@ def resolve_activity_inventory_plans(
             current = [selected[position]] if position in selected else []
         for plan in current:
             key = (plan["Stage"], plan["DropId"])
-            if row.get("LegacyActivityFirst") and (
-                key in custom_plans or key in skipped_keys
+            if row.get("LegacyActivityFirst") and key in custom_plans:
+                # 默认 999/9999 不能抬高旧自定义目标。
+                continue
+            if (row.get("LegacyActivityFirst") or row.get("LegacyIndex")) and (
+                key in edited_keys or key in skipped_keys
             ):
-                # 已保存的新选择优先，旧默认不能恢复取消的关卡或抬高自定义目标。
+                # 新选择优先于旧项，包括旧材料序号越界后的第一关回退。
                 continue
             plans.append(plan)
     return plans, notices
