@@ -38,6 +38,9 @@ const logger = getLogger('后端服务')
 const RUNTIME_READY_TIMEOUT_MS = 180000
 // 等待 Runtime 完成关闭的上限，超时由客户端 kill Runtime 进程本身，进程树由其 Job Object 收走。
 const RUNTIME_SHUTDOWN_TIMEOUT_MS = 30000
+// 开发版沿用原有 30 秒清理窗口，另留 5 秒等待 Runtime 收口。
+const DEVELOPMENT_BACKEND_SHUTDOWN_SECONDS = 30
+const DEVELOPMENT_RUNTIME_SHUTDOWN_TIMEOUT_MS = 35000
 // 启动阶段每路输出只保留最近这么多行：后端每行 DEBUG 日志都会以 log 事件到达，
 // 失败界面也只需要尾部；无上限累积会在长驻监督期间把内存吃光。
 const RUNTIME_STARTUP_LOG_LINE_LIMIT = 200
@@ -130,6 +133,7 @@ export class BackendService {
   // 本次监督进程的句柄与就绪地址。
   private runtimeHandle: RuntimeSuperviseHandle | null = null
   private runtimeBaseUrl: string | null = null
+  private runtimeShutdownTimeoutMs = RUNTIME_SHUTDOWN_TIMEOUT_MS
   private runtimeStopping = false
   private runtimeUpdateFlight: Promise<RuntimeBackendUpdateCheck> | null = null
   private runtimeUpdateReady: RuntimeBackendUpdateCheck | null = null
@@ -269,6 +273,26 @@ export class BackendService {
       }
     }
 
+    const developmentPort =
+      config.mode === 'development' && process.env.AUTO_MAS_HTTP_PORT
+        ? resolveHttpPort()
+        : undefined
+    if (developmentPort !== undefined && developmentPort < 1024) {
+      return {
+        success: false,
+        error:
+          'Runtime 开发模式要求 AUTO_MAS_HTTP_PORT 为 1024–65535；' +
+          '请改用此范围内的端口，低端口调试请独立运行后端与 yarn web。',
+        code: 'INVALID_ARGUMENT',
+        retryable: true,
+        remediation: ['retry', 'open-log'],
+      }
+    }
+    const shutdownTimeoutMs =
+      config.mode === 'development'
+        ? DEVELOPMENT_RUNTIME_SHUTDOWN_TIMEOUT_MS
+        : RUNTIME_SHUTDOWN_TIMEOUT_MS
+
     logger.info(
       `经 Runtime 启动后端 - 模式: ${config.mode}, Runtime: ${runtimePath}, ` +
         `Runtime 根目录: ${config.appRoot}${config.repo ? `, 源码目录: ${config.repo}` : ''}`
@@ -345,10 +369,9 @@ export class BackendService {
         mode: config.mode,
         repo: config.repo,
         // 保留源码开发的自定义端口；最终端点仍只采纳 Runtime 的 running 事件。
-        port:
-          config.mode === 'development' && process.env.AUTO_MAS_HTTP_PORT
-            ? resolveHttpPort()
-            : undefined,
+        port: developmentPort,
+        shutdownTimeoutSeconds:
+          config.mode === 'development' ? DEVELOPMENT_BACKEND_SHUTDOWN_SECONDS : undefined,
         onLog: event => {
           const lines = event.stream === 'stderr' ? stderrLines : stdoutLines
           pushBoundedLine(lines, event.message, RUNTIME_STARTUP_LOG_LINE_LIMIT)
@@ -409,7 +432,7 @@ export class BackendService {
         const message = error instanceof Error ? error.message : String(error)
         logger.error(`后端版本校验失败，关闭 Runtime: ${message}`)
         try {
-          await handle.shutdown({ timeoutMs: RUNTIME_SHUTDOWN_TIMEOUT_MS })
+          await handle.shutdown({ timeoutMs: shutdownTimeoutMs })
         } catch (shutdownError) {
           const shutdownMessage =
             shutdownError instanceof Error ? shutdownError.message : String(shutdownError)
@@ -426,7 +449,7 @@ export class BackendService {
         )
       }
       releaseStartup()
-      this.adoptRuntimeHandle(handle, outcome.baseUrl)
+      this.adoptRuntimeHandle(handle, outcome.baseUrl, shutdownTimeoutMs)
       logger.info(`后端服务启动成功，Runtime PID: ${handle.pid}，后端地址: ${outcome.baseUrl}`)
       return { success: true }
     }
@@ -434,7 +457,7 @@ export class BackendService {
     if (outcome === 'timeout') {
       logger.error(`等待 Runtime 报告后端就绪超过 ${timeoutMs}ms，请求关闭 Runtime`)
       try {
-        const settled = await handle.shutdown({ timeoutMs: RUNTIME_SHUTDOWN_TIMEOUT_MS })
+        const settled = await handle.shutdown({ timeoutMs: shutdownTimeoutMs })
         return this.buildRuntimeStartFailure(settled, stdoutLines, stderrLines)
       } catch (error) {
         return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
@@ -492,7 +515,12 @@ export class BackendService {
   }
 
   /** 记下监督句柄与后端地址，并在 Runtime 结束时清理状态。 */
-  private adoptRuntimeHandle(handle: RuntimeSuperviseHandle, baseUrl: string): void {
+  private adoptRuntimeHandle(
+    handle: RuntimeSuperviseHandle,
+    baseUrl: string,
+    shutdownTimeoutMs: number
+  ): void {
+    this.runtimeShutdownTimeoutMs = shutdownTimeoutMs
     this.runtimeHandle = handle
     this.runtimeBaseUrl = baseUrl
     this.startTime = new Date()
@@ -633,7 +661,7 @@ export class BackendService {
 
     logger.info(`向 Runtime 发送 shutdown，Runtime PID: ${handle.pid}`)
     try {
-      const outcome = await handle.shutdown({ timeoutMs: RUNTIME_SHUTDOWN_TIMEOUT_MS })
+      const outcome = await handle.shutdown({ timeoutMs: this.runtimeShutdownTimeoutMs })
       if (!outcome.success) {
         logger.warn(`Runtime 关闭后端报告失败: ${outcome.code} ${outcome.result.message}`)
       } else {

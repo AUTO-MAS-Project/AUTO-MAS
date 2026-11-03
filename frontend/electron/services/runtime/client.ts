@@ -171,6 +171,8 @@ export interface RuntimeSuperviseOptions extends RuntimeRunOptions {
   repo?: string
   /** 显式开发端口；未提供时由 Runtime 按模式决定。 */
   port?: number
+  /** 后端清理预算（秒），未提供时沿用 Runtime 默认值。 */
+  shutdownTimeoutSeconds?: number
 }
 
 export interface RuntimeShutdownOptions {
@@ -899,6 +901,9 @@ export class RuntimeClient extends EventEmitter {
     }
 
     if (options.port !== undefined) command.push('--port', String(options.port))
+    if (options.shutdownTimeoutSeconds !== undefined) {
+      command.push('--shutdown-timeout', String(options.shutdownTimeoutSeconds))
+    }
 
     const session = new RuntimeSession(this.options, command, options, this)
 

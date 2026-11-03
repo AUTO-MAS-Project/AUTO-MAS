@@ -297,6 +297,8 @@ describe('development 模式', () => {
       'development',
       '--repo',
       appRoot,
+      '--shutdown-timeout',
+      '30',
     ])
 
     // WS 根地址由 baseUrl 派生，不按 resolveHttpPort 另算。
@@ -333,7 +335,7 @@ describe('development 模式', () => {
       const child = await passEnvironmentEnsure()
       child.stdout.feed(helloLine + runningStateLine)
       expect(await pending).toEqual({ success: true })
-      expect(spawnedArgs(1).slice(-2)).toEqual(['--port', '36184'])
+      expect(spawnedArgs(1).slice(-4)).toEqual(['--port', '36184', '--shutdown-timeout', '30'])
       expect(service.getRuntimeApiEndpoints()?.local).toBe('http://127.0.0.1:36163')
       child.stdout.feed(stoppedResultLine)
       child.close(0)
@@ -341,6 +343,69 @@ describe('development 模式', () => {
       vi.unstubAllEnvs()
     }
   })
+
+  it.each([1, 80, 1023])('Runtime 开发启动在准备前明确拒绝低端口 %s', async port => {
+    vi.stubEnv('AUTO_MAS_HTTP_PORT', String(port))
+    resolveHttpPortMock.mockReturnValueOnce(port)
+    try {
+      mockSpawn()
+      const result = await createService().startBackend()
+      expect(result).toMatchObject({ success: false, code: 'INVALID_ARGUMENT' })
+      expect(result.error).toContain('1024–65535')
+      expect(result.error).toContain('yarn web')
+      expect(spawnMock).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it.each([1024, 65535])('Runtime 开发端口边界 %s 正常传递', async port => {
+    vi.stubEnv('AUTO_MAS_HTTP_PORT', String(port))
+    resolveHttpPortMock.mockReturnValueOnce(port)
+    try {
+      mockSpawn()
+      const service = createService()
+      const pending = service.startBackend()
+      const child = await passEnvironmentEnsure()
+      child.stdout.feed(helloLine + runningStateLine)
+      expect(await pending).toEqual({ success: true })
+      expect(spawnedArgs(1)).toContain(String(port))
+      child.stdout.feed(stoppedResultLine)
+      child.close(0)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it.each(['completes', 'times-out'] as const)(
+    '开发后端清理超过 5 秒时等待完整预算：%s',
+    async outcome => {
+      mockSpawn()
+      const service = createService()
+      const pending = service.startBackend()
+      const child = await passEnvironmentEnsure()
+      child.stdout.feed(helloLine + runningStateLine)
+      await pending
+      vi.useFakeTimers()
+      try {
+        const stopped = service.stopBackend()
+        await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
+        await vi.advanceTimersByTimeAsync(7000)
+        expect(child.killed).toBe(false)
+        if (outcome === 'completes') {
+          child.stdout.feed(stoppedResultLine)
+          child.close(0)
+        } else {
+          await vi.advanceTimersByTimeAsync(28000)
+          expect(child.killed).toBe(true)
+        }
+        expect(await stopped).toEqual({ success: true })
+      } finally {
+        vi.useRealTimers()
+        if (!child.killed && child.exitCode === null) child.close(0)
+      }
+    }
+  )
 
   it('Runtime 报告就绪但后端版本不匹配时显式失败，不采纳句柄', async () => {
     const service = createService()

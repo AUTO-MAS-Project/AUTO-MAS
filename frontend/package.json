@@ -6,7 +6,7 @@
   "author": "AUTO-MAS Team",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "concurrently \"vp dev\" \"yarn watch:main\" \"yarn electron-dev\"",
+    "dev": "yarn build:main && concurrently \"vp dev\" \"yarn watch:main\" \"yarn electron-dev\"",
     "dev:fullstack": "yarn dev",
     "backend": "cross-env PYTHONIOENCODING=utf-8 AUTO_MAS_HTTP_PORT=36164 uv run --project .. --locked python ../main.py",
     "watch:main": "tsc -p tsconfig.electron.json --watch",
