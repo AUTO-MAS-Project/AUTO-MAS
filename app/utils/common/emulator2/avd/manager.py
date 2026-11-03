@@ -70,6 +70,7 @@ from ..settings import validate_changes as validate_setting_changes
 from . import cli as modavd_cli
 from . import host, precheck, update_stage, updater
 from .components import (
+    MetadataUnreadable,
     component_installed,
     emulator_exe,
     launcher_apk,
@@ -1781,16 +1782,20 @@ class _AvdCore(DeviceBase):
                 "游戏会占满 CPU，请更新显卡驱动"
             )
 
-        update_instance_meta(
-            self.root,
-            idx,
-            initialized=not failures,
-            initializedAt=datetime.now().isoformat(timespec="seconds"),
-            launcher=launcher,
-            renderer=renderer,
-            softwareRenderer=software,
-            initErrors=failures,
-        )
+        try:
+            update_instance_meta(
+                self.root,
+                idx,
+                initialized=not failures,
+                initializedAt=datetime.now().isoformat(timespec="seconds"),
+                launcher=launcher,
+                renderer=renderer,
+                softwareRenderer=software,
+                initErrors=failures,
+            )
+        except MetadataUnreadable as e:
+            # 不开机失败，也不盖掉读不出的文件；没记下 initialized，下次开机再初始化一遍
+            logger.warning(f"魔改 AVD 实例 {idx} 的初始化结果没记进元数据: {e}")
         if failures:
             logger.warning(
                 f"魔改 AVD 实例 {idx} 初始化有失败项，下次开机重试: {failures}"
