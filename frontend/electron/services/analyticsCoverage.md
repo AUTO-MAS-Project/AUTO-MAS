@@ -4,6 +4,9 @@
   `useMcpApi` 唯一记录 `mcp_retry_requested` 的 accepted/rejected/unknown 与耗时桶。
   accepted 只表示后端受理，不计作加载完成；快照恢复、WS 阶段更新和自动加载不逐次采集，
   不上传进程/运行标识、连接地址、错误或工具清单。
+- 首页首帧后的 MCP 自动放行属于内部启动协调，不新增点击或加载事件；`renderer_ready`
+  仍只表示 Vue 挂载。开发构建用固定 Performance mark 验证首帧，不进入生产构建或上报。
+  提前切页后等待当前业务页首帧；通知超时与退避恢复仍不逐次采集。
 
 本表对应 [Issue #1605 的 84 项场景](https://github.com/AUTO-MAS-Project/AUTO-MAS/issues/1605#issuecomment-6354559213)。
 场景可以共享事件族，事件契约存在不表示业务入口已经接入。每次提交前重新同步上游，并复核所有已接入项。

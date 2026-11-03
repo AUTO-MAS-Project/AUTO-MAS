@@ -47,6 +47,48 @@ async def wait_loaded(service):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("paint_first", [False, True])
+async def test_desktop_waits_for_both_business_and_home_paint(
+    service, app, monkeypatch, paint_first
+):
+    monkeypatch.setenv("AUTO_MAS_MCP_WAIT_FOR_HOME", "1")
+    desktop = module.McpService()
+    try:
+        if paint_first:
+            desktop.notify_home_painted()
+            assert desktop._task is None
+        started = desktop.start(app)
+        assert started is paint_first
+        if not paint_first:
+            assert desktop.status().state == "pending"
+            assert desktop.status().startedAt is None
+            assert desktop._task is None
+        desktop.notify_home_painted()
+        task = desktop._task
+        desktop.notify_home_painted()
+        assert desktop._task is task
+        await wait_loaded(desktop)
+        assert desktop.status().state == "ready"
+        assert len([route for route in app.routes if route.path == "/mcp"]) == 1
+    finally:
+        await desktop.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_while_waiting_for_home_does_not_start_mcp(
+    service, app, monkeypatch
+):
+    monkeypatch.setenv("AUTO_MAS_MCP_WAIT_FOR_HOME", "1")
+    desktop = module.McpService()
+    assert not desktop.start(app)
+    await desktop.shutdown()
+    desktop.notify_home_painted()
+    assert not desktop.start(app)
+    assert desktop._task is None
+    assert desktop.status().state == "cancelled"
+
+
+@pytest.mark.asyncio
 async def test_real_transport_tools_call_stages_and_cleanup(service, app):
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client

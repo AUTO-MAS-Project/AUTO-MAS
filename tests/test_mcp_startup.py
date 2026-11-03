@@ -17,11 +17,17 @@ from app.core.runtime_tasks import OwnedTaskRegistry
 
 
 @pytest.mark.parametrize(
-    "failure,cleanup_failure",
-    [(False, False), (True, False), (False, True), ("timer", False)],
+    "failure,cleanup_failure,desktop",
+    [
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        ("timer", False, False),
+        (False, False, True),
+    ],
 )
 def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
-    monkeypatch, isolated_app_paths, failure, cleanup_failure
+    monkeypatch, isolated_app_paths, failure, cleanup_failure, desktop
 ):
     from app.config import config_manager
     from app.services import System, obs_replay
@@ -32,6 +38,7 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
     monkeypatch.setattr(mcp, "RuntimeTasks", registry)
     monkeypatch.setattr(core, "ShutdownCoordinator", _ShutdownCoordinator())
     monkeypatch.setenv("AUTO_MAS_ENABLE_MCP", "1")
+    monkeypatch.setenv("AUTO_MAS_MCP_WAIT_FOR_HOME", "1" if desktop else "0")
     service = mcp.McpService()
     monkeypatch.setattr(core, "MCP", service)
     import app.api.core as core_api
@@ -130,6 +137,21 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
                         assert service.status().state == "pending"
                         assert not entered.is_set()
                         return
+                    if desktop:
+                        async with asyncio.timeout(2):
+                            while self.app.state.background_status in {
+                                "starting",
+                                "running",
+                            }:
+                                await asyncio.sleep(0)
+                        assert self.app.state.background_status == "ready"
+                        assert service.status().state == "pending"
+                        assert not entered.is_set()
+                        async with httpx.AsyncClient(
+                            transport=httpx.ASGITransport(app=self.app),
+                            base_url="http://localhost",
+                        ) as client:
+                            await client.post("/api/core/mcp/home-painted")
                     assert await asyncio.to_thread(entered.wait, 5)
                     assert calls == ["timer"]
                     assert self.app.state.background_status == "ready"

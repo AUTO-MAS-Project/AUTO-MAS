@@ -65,7 +65,7 @@
         </a-alert>
         <router-view v-slot="{ Component, route: currentRoute }">
           <keep-alive :include="['SchedulerPage']">
-            <component :is="Component" :key="currentRoute.path" />
+            <component :is="Component" :key="currentRoute.path" @vue:mounted="onPageMounted" />
           </keep-alive>
         </router-view>
       </a-layout-content>
@@ -90,7 +90,7 @@ import {
   UnorderedListOutlined,
   ToolOutlined,
 } from '@ant-design/icons-vue'
-import { computed, nextTick, watch } from 'vue'
+import { computed, nextTick, onUnmounted, watch } from 'vue'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
@@ -99,6 +99,7 @@ import type { MenuProps } from 'ant-design-vue'
 import type { AppearanceMenuIconKey } from '@/types/appearance'
 import { createAppearanceMenuIcon } from './appearanceMenuIcon'
 import { useBackendI18nStore } from '@/stores/backendI18n'
+import { cancelMcpPaint, scheduleMcpAfterPaint } from '@/composables/useMcpApi'
 
 const { t } = useI18n()
 const languageResources = useBackendI18nStore()
@@ -109,6 +110,13 @@ const router = useRouter()
 const route = useRoute()
 const { isDark, activeAppearance } = useTheme()
 const { isRouteLocked, triggerBlockCallback } = useRouteLock()
+
+// 首页等布局就绪；若用户提前切页，由当前业务页的首帧接续启动放行。
+function onPageMounted(): void {
+  if (route.name !== 'Home') scheduleMcpAfterPaint()
+}
+watch(() => route.path, cancelMcpPaint, { flush: 'pre' })
+onUnmounted(cancelMcpPaint)
 
 // 内容区滚动复位：滚动容器是 .content-area（div），路由 scrollBehavior 管不到。
 // 路径变化（页面切换）时回顶，避免旧页面的滚动位置被带到新页面；
