@@ -98,19 +98,17 @@ const handleMaaFWMenuClick = ({ key }: { key: string | number }) => {
   void exportMaaFWIssueReport(String(key))
 }
 
-// Runtime 灰度开关：持久化设置 + 当前生效值（重启后生效）
+// Runtime 启动模式：持久化设置 + 当前生效值（重启后生效）
 const runtimeLaunchMode = ref<RuntimeLaunchModeSetting>('auto')
 const runtimeLaunchModeState = ref<RuntimeLaunchModeState | null>(null)
 const runtimeLaunchModeLoading = ref(false)
 
 const runtimeLaunchModeOptions = computed(() => [
   { label: t('core.setting.advanced.runtimeLaunchModeAuto'), value: 'auto' },
-  { label: t('core.setting.advanced.runtimeLaunchModeOff'), value: 'off' },
   { label: t('core.setting.advanced.runtimeLaunchModeManaged'), value: 'managed' },
 ])
 
-const runtimeLaunchModeLabels: Record<'off' | 'development' | 'managed', string> = {
-  off: 'runtimeLaunchModeOff',
+const runtimeLaunchModeLabels: Record<'development' | 'managed', string> = {
   development: 'runtimeLaunchModeDevelopment',
   managed: 'runtimeLaunchModeManaged',
 }

@@ -1,4 +1,4 @@
-import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
+import { isBrowserDevelopment } from '@/utils/environment'
 import type { RuntimeInitMode } from '@/types/electron'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 
@@ -59,7 +59,7 @@ async function resolveInitializationDecision(): Promise<InitializationDecision> 
     }
   }
 
-  if (isDev) {
+  if (isBrowserDevelopment()) {
     return {
       mode: 'skip-home',
       currentVersion,
@@ -247,7 +247,6 @@ export function decideFailureActions(context: FailureContext): FailureActionPlan
   // 主进程没给模式（旧版本主进程）时按旧链路处理，镜像面板照常可用。
   const canSwitchMirror =
     context.runtimeMode === undefined ||
-    context.runtimeMode === 'off' ||
     (context.stage !== undefined && RUNTIME_MIRROR_STAGES.has(context.stage))
 
   const kinds: FailureActionKind[] = []
@@ -325,7 +324,7 @@ export function filterRuntimeMirrors<T extends { key: string }>(
   runtimeMode: RuntimeInitMode | undefined,
   mirrorKeys: Readonly<Record<string, string[]>> | undefined
 ): T[] {
-  if (runtimeMode === undefined || runtimeMode === 'off') return [...mirrors]
+  if (runtimeMode === undefined) return [...mirrors]
 
   const allowed = new Set(mirrorKeys?.[stage] ?? [])
   return mirrors.filter(mirror => allowed.has(mirror.key))

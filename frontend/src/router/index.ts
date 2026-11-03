@@ -1,4 +1,4 @@
-import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
+import { isDevelopmentEnvironment as isDev, isBrowserDevelopment } from '@/utils/environment'
 import { createRouter, createWebHashHistory, type LocationQueryRaw } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
@@ -421,8 +421,8 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
-  if (isDev) {
-    // 开发模式免初始化门禁，但直达内页（如刷新后落在 /scripts）时仍需
+  if (isBrowserDevelopment()) {
+    // 浏览器调试免初始化门禁，但直达内页（如刷新后落在 /scripts）时仍需
     // 建立主 WebSocket 连接并标记初始化，否则 isAppReady 恒为 false 导致整窗空白。
     // 旧版由 useWebSocket 单体的全局自动连接掩盖了这一缺口。
     if (!isInitialized.value && !isBootstrapping.value) {

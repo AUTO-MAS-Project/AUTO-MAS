@@ -166,7 +166,7 @@ const props = withDefaults(defineProps<Props>(), {
   selectedMirror: '',
   doctorChecks: null,
   doctorRunning: false,
-  runtimeMode: 'off',
+  runtimeMode: 'managed',
   showSkipButton: false,
   docsUrl: '',
 })

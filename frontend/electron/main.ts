@@ -213,18 +213,9 @@ async function forceKillRelatedProcesses(): Promise<void> {
   forceKillPromise = (async () => {
     const backendService = getBackendService()
 
-    // Runtime 监督链路：只向监督进程发 shutdown（有上限，超时才 kill Runtime 进程本身），
-    // 后端进程树由 Runtime 的 Job Object 收走，不再走 processManager 的全局清理。
-    if (backendService.isRuntimeSupervised()) {
-      const result = await backendService.stopBackend()
-      if (!result.success) throw new Error(result.error || '未知错误')
-      logger.info('Runtime 监督的后端已关闭')
-      return
-    }
-
-    const result = await backendService.forceStopBackend()
+    const result = await backendService.stopBackend()
     if (!result.success) throw new Error(result.error || '未知错误')
-    logger.info('所有相关进程已清理')
+    logger.info('Runtime 监督的后端已关闭')
   })().finally(() => {
     forceKillPromise = null
   })
@@ -295,7 +286,7 @@ interface AppConfig extends DesktopMascotHostPreferences {
   Function: {
     IfEnableTelemetry: boolean
   }
-  // Runtime 灰度开关的持久化设置，见 services/runtime/launchConfig.ts 的三级优先级说明。
+  // Runtime 启动模式的持久化设置，见 services/runtime/launchConfig.ts 的三级优先级说明。
   Runtime: {
     LaunchMode: PersistedRuntimeLaunchMode
   }
@@ -615,16 +606,6 @@ function finishCoordinatedQuit(): void {
   app.quit()
 }
 
-async function shouldPreserveBackendOnExit(): Promise<boolean> {
-  // 受 Runtime 监督的后端归 Runtime 生命周期管，即便是 development 模式也必须随之关闭，
-  // 否则 Electron 退出后会遗留一个没人负责的监督进程。
-  if (getBackendService().isRuntimeSupervised()) return false
-
-  const preserveBackend = await getBackendService().shouldPreserveBackend()
-  if (preserveBackend !== null) return preserveBackend
-  return isDevelopmentEnvironment()
-}
-
 async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   if (forceQuitInProgress || coordinatedQuit) return
   closeTelemetry ??= beginMainFeature('app_close_finished')
@@ -632,16 +613,9 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   clearQuitFallback()
   logger.error(`renderer 未完成协调退出，执行最终强制清理: ${reason}`)
 
-  // Electron 开发进程可能复用由开发者单独启动的后端；renderer 失联时也不能误杀。
-  if (await shouldPreserveBackendOnExit()) {
-    logger.info('开发模式最终兜底：保留后端，仅关闭 Electron 前端')
-    finishCoordinatedQuit()
-    return
-  }
-
   try {
     await forceKillRelatedProcesses()
-    // forceStopBackend 只有在 scoped taskkill 已复查全部 PID 后才返回 success。
+    // Runtime 终态确认后才允许 Electron 退出。
     finishCoordinatedQuit()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -2150,36 +2124,7 @@ ipcMain.handle('get-runtime-init-context', async () => resolveRuntimeInitContext
 ipcMain.handle('check-critical-files', async () => {
   try {
     // Runtime 链路不再有 environment/python 这套目录，改问 Runtime doctor 要受管布局。
-    const runtimeCheck = await checkCriticalFilesViaRuntime()
-    if (runtimeCheck) return runtimeCheck
-
-    const appRoot = getAppRoot()
-
-    // 检查Python可执行文件
-    const pythonPath = path.join(appRoot, 'environment', 'python', 'python.exe')
-    const pythonExists = fs.existsSync(pythonPath)
-
-    // 检查pip（通常与Python一起安装）
-    const pipPath = path.join(appRoot, 'environment', 'python', 'Scripts', 'pip.exe')
-    const pipExists = fs.existsSync(pipPath)
-
-    // 检查Git可执行文件
-    const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
-    const gitExists = fs.existsSync(gitPath)
-
-    // 检查后端主文件
-    const mainPyPath = path.join(appRoot, 'main.py')
-    const mainPyExists = fs.existsSync(mainPyPath)
-
-    const result = {
-      pythonExists,
-      pipExists,
-      gitExists,
-      mainPyExists,
-    }
-
-    logger.info('关键文件检查结果')
-    return result
+    return await checkCriticalFilesViaRuntime()
   } catch {
     logger.error('检查关键文件失败')
     return {
@@ -2420,7 +2365,7 @@ ipcMain.handle('set-initialized-version', async (_event, version: string) => {
   }
 })
 
-// Runtime 灰度开关：持久化设置 + 当前生效值（供设置界面展示来源与效果，重启后生效）
+// Runtime 启动模式：持久化设置 + 当前生效值（供设置界面展示来源与效果，重启后生效）
 ipcMain.handle('get-runtime-launch-mode', async () => {
   try {
     const config = loadConfig()
@@ -2431,7 +2376,7 @@ ipcMain.handle('get-runtime-launch-mode', async () => {
     return { persisted, mode: resolution.mode, source: resolution.source }
   } catch (error) {
     logger.error('读取 Runtime 启动方式失败', error)
-    return { persisted: 'auto', mode: 'off', source: 'default' }
+    throw error
   }
 })
 

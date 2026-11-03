@@ -54,7 +54,7 @@ import BootstrapLanguageSelect from '@/components/BootstrapLanguageSelect.vue'
 import I18nResourceGate from '@/components/I18nResourceGate.vue'
 import { useBackendI18nStore } from '@/stores/backendI18n'
 import { cancelAppEntry } from '@/utils/appEntry'
-import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
+import { isBrowserDevelopment } from '@/utils/environment'
 
 defineOptions({ name: 'RuntimeInitializationPage' })
 
@@ -63,7 +63,7 @@ const resources = useBackendI18nStore()
 const recoverInitialization = async () => {
   cancelAppEntry()
   resources.cancelEntry()
-  if (isDev) await handleLocalEnterApp(true)
+  if (isBrowserDevelopment()) await handleLocalEnterApp(true)
 }
 const {
   currentStep,
