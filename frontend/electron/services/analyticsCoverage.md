@@ -12,6 +12,8 @@
 运行环境隔离统一使用 Electron 打包状态和 preload 下发值；Runtime 启动模式不改变采集环境。
 设置页布局偏好由 `SettingsSectionLayout` 的唯一保存入口复用 `settings_change_finished`（settings_layout/other/default|custom），按前端配置保存结果记录成功或失败；初始化、窗口缩放与目录跳转不采集，不发送设置内容或卡片位置。
 设置页工具栏的明暗主题快捷入口复用 `useTheme.setThemeMode` 的 `appearance_preference_changed` 保存结果，不增加点击事件或重复观察；自动保存说明是静态提示，不表示某次写入成功。
+源码 Electron 与安装版统一由 BackendService 记录 Runtime 启动结果，初始化阶段复用实际命令
+边界；移除旧安装器后不再产生 off 模式事件。独立后端和浏览器调试不新增采集。
 此次复用既有事件族与结果所有者；关闭应用二次确认开关复用 `settings_change_finished`，托盘菜单保存由主进程按真实写入结果补齐 `config_write_finished`（settings/ui/none），不发送菜单文本、任务标识或草稿操作。分区目录、打开编辑和取消不采集，托盘隐藏动作不单独采集；受控探针不作为正式服务入库证据。
 
 | 编号 | 场景 | 当前进度 |

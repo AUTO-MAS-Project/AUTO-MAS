@@ -26,9 +26,8 @@ import { beginMainFeature } from './featureAnalytics'
  *   与所有持有旧路径字符串的地方都不用动——`RuntimeClient` 每条命令都是重新 spawn 同一个
  *   路径。旧文件先改名为 `<exe>.old` 让路，新文件确认跑得起来才清掉备份，见
  *   {@link replaceRuntimeBinary}。
- * - **下载首选 CNB，再走 gh-proxy 家族，GitHub 官方兜底。** 顺序自己实现，不复用
- *   `MirrorRotationService`：后者的 `sortMirrors()` 会把 key 里含 `github` 的源提到最前
- *   （为初始化拉源码的测试版场景加的），套到这里正好把国内用户最连不上的官方源排到第一个。
+ * - **下载首选 CNB，再走 gh-proxy 家族，GitHub 官方兜底。** 按此顺序尝试，避免将
+ *   国内用户较难连通的官方源提前。
  * - **对齐失败通常停下，但网络不可用时可复用本地环境。** 解析不到最新版本时初始化编排器
  *   可用 `bootstrap --if-needed` 复用已就绪的本地环境，供断网开机自启使用；切换目标版本的
  *   更新流程仍然必须先完成对齐。

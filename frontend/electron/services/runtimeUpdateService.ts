@@ -2,7 +2,7 @@ import { beginMainFeature } from './featureAnalytics'
 /**
  * Runtime 链路的后端更新
  *
- * 灰度开关打开后，后端更新不再由 Python 侧自己下载 `UpdatePack_<版本>.zip` 再拉起
+ * 受管模式下，后端更新不再由 Python 侧自己下载 `UpdatePack_<版本>.zip` 再拉起
  * Inno Setup 安装器整包替换，而是由 Electron 做停机与更新编排者，严格按三步走：
  *
  * 1. 向当前 `backend supervise` 的 stdin 发 `shutdown`，等最终 `result` 与进程退出
@@ -128,7 +128,7 @@ export interface RuntimeUpdateOutcome {
   supportRequired?: boolean
   /** 用户主动取消。 */
   cancelled?: boolean
-  /** 当前模式根本不支持自动更新（development 或灰度开关关闭）。 */
+  /** 当前模式根本不支持自动更新（development）。 */
   unsupported?: boolean
 }
 
@@ -287,11 +287,6 @@ async function runBackendUpdate(
   deps: RuntimeUpdateDependencies
 ): Promise<RuntimeUpdateOutcome> {
   const { launchConfig } = deps
-
-  if (launchConfig.mode === 'off') {
-    logger.info('灰度开关关闭，Runtime 更新链路不可用')
-    return unsupported('灰度开关关闭时后端更新仍走原有的下载安装包流程')
-  }
 
   if (launchConfig.mode === 'development') {
     // 开发检出是开发者自己的源码，Runtime 只监督它，绝不替换。

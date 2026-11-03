@@ -7,13 +7,8 @@ import { getFluxdownInstallEnvironment } from './fluxdownInstallService'
  */
 
 import * as fs from 'fs'
-import * as path from 'path'
-import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
-
-import { killAllRelatedProcesses } from '../utils/processManager'
-import { MirrorService } from './mirrorService'
-import { getApplicationEnvironment, isDevelopmentEnvironment } from './instanceConfig'
 import { resolveHttpPort } from './instanceConfig'
+
 import {
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
   RuntimeClient,
@@ -22,13 +17,12 @@ import {
   RuntimeRunControl,
   RuntimeLogEvent,
   RuntimeSuperviseHandle,
-  RuntimeSupervisedLaunchConfig,
+  RuntimeLaunchConfig,
   createRuntimeClient,
   formatStartupLogs,
   isRuntimeClientError,
   readRuntimeBaseUrl,
   resolveRuntimeLaunchConfig,
-  resolveRuntimeLaunchMode,
 } from './runtime'
 import { resolveRuntimeTargetVersion, toRuntimeVersion } from './runtimeInitializationService'
 
@@ -38,13 +32,14 @@ import { analyticsService, refreshAnalyticsPreference } from './analyticsService
 import { analyticsDuration } from './analyticsPolicy'
 import type { AnalyticsRuntimeMode } from '../../src/types/analytics'
 const logger = getLogger('后端服务')
-const BACKEND_UNAVAILABLE_CONFIRMATIONS = 3
 
 // Runtime 链路等待 state:running 的兜底上限。正常情况下 Runtime 自己的健康超时会先给出
 // BACKEND_HEALTH_TIMEOUT，这个上限只防止 Runtime 既不就绪也不给终态时把启动流程挂死。
 const RUNTIME_READY_TIMEOUT_MS = 180000
-// 等待 Runtime 完成关闭的上限，超时由客户端 kill Runtime 进程本身，进程树由其 Job Object 收走。
-const RUNTIME_SHUTDOWN_TIMEOUT_MS = 30000
+// 监督后端统一保留原有 30 秒清理窗口，覆盖旧 off 生产用户迁入 managed 的情况。
+const BACKEND_SHUTDOWN_SECONDS = 30
+// 另留 5 秒等待 Runtime 收口；超时才结束 Runtime，由其 Job Object 回收进程树。
+const RUNTIME_SHUTDOWN_TIMEOUT_MS = 35000
 // 启动阶段每路输出只保留最近这么多行：后端每行 DEBUG 日志都会以 log 事件到达，
 // 失败界面也只需要尾部；无上限累积会在长驻监督期间把内存吃光。
 const RUNTIME_STARTUP_LOG_LINE_LIMIT = 200
@@ -80,9 +75,6 @@ export interface BackendStatus {
 }
 
 export interface BackendStartOptions {
-  pythonPath?: string
-  mainPyPath?: string
-  cwd?: string
   timeout?: number // 启动超时时间（毫秒）
 }
 
@@ -90,7 +82,7 @@ export interface BackendStartResult {
   success: boolean
   error?: string
   logs?: string
-  /** Runtime 链路的结构化结果码，供界面决定重试或修复；旧链路不产生。 */
+  /** Runtime 链路的结构化结果码，供界面决定重试或修复。 */
   code?: string
   retryable?: boolean
   remediation?: RuntimeRemediation[]
@@ -128,26 +120,19 @@ export type BackendStatusCallback = (status: BackendStatus) => void
 // ==================== 后端服务管理类 ====================
 
 export class BackendService {
-  private appRoot: string
-  private mirrorService: MirrorService
-  private backendProcess: ChildProcessWithoutNullStreams | null = null
   private startTime: Date | null = null
   private statusCallback: BackendStatusCallback | null = null
-  private startupStdout = ''
-  private startupStderr = ''
-  private isCapturingStartupLogs = false
   // 进程变更统一进入同一串行队列；同类重复调用共享在途 Promise。
   // restart 在一个队列单元内直接调用内部 stop/start，避免公共方法二次入队造成自锁。
   private operationTail: Promise<void> = Promise.resolve()
   private startFlight: Promise<BackendStartResult> | null = null
   private stopFlight: Promise<BackendStopResult> | null = null
   private restartFlight: Promise<BackendStartResult> | null = null
-  private forceStopFlight: Promise<BackendStopResult> | null = null
-  private forceStopRequested = false
-  private lastKnownPreserveBackend: boolean | null = null
-  // Runtime 监督链路的句柄与就绪地址；旧链路下始终为 null。
+  private stopRequested = false
+  // 本次监督进程的句柄与就绪地址。
   private runtimeHandle: RuntimeSuperviseHandle | null = null
   private runtimeBaseUrl: string | null = null
+  private startingRuntimeHandle: RuntimeSuperviseHandle | null = null
   private runtimeStopping = false
   private runtimeUpdateFlight: Promise<RuntimeBackendUpdateCheck> | null = null
   private runtimeUpdateReady: RuntimeBackendUpdateCheck | null = null
@@ -156,11 +141,7 @@ export class BackendService {
 
   private readonly startupHealthPath = '/api/core/health'
   private analyticsRuntimeMode: AnalyticsRuntimeMode = 'unknown'
-
-  constructor(appRoot: string, mirrorService: MirrorService) {
-    this.appRoot = appRoot
-    this.mirrorService = mirrorService
-  }
+  constructor(private readonly appRoot: string) {}
 
   private enqueueOperation<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.operationTail.then(operation, operation)
@@ -236,118 +217,10 @@ export class BackendService {
       }
     )
   }
-
   private async startBackendProcess(options?: BackendStartOptions): Promise<BackendStartResult> {
-    // 灰度开关打开后整条生命周期都走 Runtime 监督链路，绝不与旧链路混用：两条链路的端口、
-    // 关闭语义与进程归属都不同，中途回退只会留下无人负责的后端进程。
     const launchConfig = resolveRuntimeLaunchConfig(this.appRoot)
     this.analyticsRuntimeMode = launchConfig.mode
-    if (launchConfig.mode !== 'off') {
-      return this.startBackendViaRuntime(launchConfig, options)
-    }
-
-    // 检查是否已经在运行
-    if (this.isTrackedProcessRunning()) {
-      logger.info('后端服务已在运行，等待健康检查')
-      try {
-        await this.waitUntilReady(options?.timeout || 60000)
-        return { success: true }
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        return { success: false, error: errorMsg }
-      }
-    }
-
-    this.resetStartupLogs()
-
-    try {
-      const shouldStartNewBackend = await this.prepareUntrackedBackendForStart()
-      if (!shouldStartNewBackend) {
-        return { success: true }
-      }
-      if (this.forceStopRequested) {
-        throw new Error('强制停止已请求，取消启动后端')
-      }
-
-      let pythonExe =
-        options?.pythonPath || path.join(this.appRoot, 'environment', 'python', 'python.exe')
-      const mainPy = options?.mainPyPath || path.join(this.appRoot, 'main.py')
-      const cwd = options?.cwd || this.appRoot
-      const timeout = options?.timeout || 60000
-
-      // 检查文件是否存在。开发环境（源码仓库）没有内嵌 Python，
-      // 回退系统解释器直跑 main.py，否则「重启后端」在开发态永远失败。
-      if (!fs.existsSync(pythonExe)) {
-        if (isDevelopmentEnvironment()) {
-          pythonExe = process.platform === 'win32' ? 'python' : 'python3'
-          logger.warn(`内嵌 Python 不存在,开发环境回退系统解释器: ${pythonExe}`)
-        } else {
-          throw new Error(`Python 可执行文件不存在: ${pythonExe}`)
-        }
-      }
-      if (!fs.existsSync(mainPy)) {
-        throw new Error(`后端主文件不存在: ${mainPy}`)
-      }
-
-      // 合并关键信息到一行日志
-      logger.info(`启动后端 - Python: ${pythonExe}, Main.py: ${mainPy}, 工作目录: ${cwd}`)
-
-      this.isCapturingStartupLogs = true
-
-      // 启动后端进程
-      this.backendProcess = spawn(pythonExe, [mainPy], {
-        cwd,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: this.createBackendEnvironment(),
-      })
-
-      this.startTime = new Date()
-
-      // 设置输出监听
-      this.setupProcessListeners()
-
-      // 等待后端健康接口可用
-      await this.waitUntilReady(timeout)
-
-      logger.info(`后端服务启动成功，PID: ${this.backendProcess.pid}`)
-      this.resetStartupLogs()
-
-      return { success: true }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      const startupLogs = this.formatStartupLogs()
-      logger.error(`后端服务启动失败: ${errorMsg}`)
-
-      // force-stop 已在同一队列中等待时，由它唯一负责 scoped taskkill；
-      // start 此处不能先清理一次，否则会对同一组 PID 重复执行强杀。
-      if (this.forceStopRequested) {
-        this.resetStartupLogs()
-        return { success: false, error: errorMsg, logs: startupLogs }
-      }
-
-      // 启动失败后必须等待 scoped taskkill 确认退出；仅发送 kill 信号就清引用，
-      // 会让旧 child 的延迟 exit 事件干扰下一次 start。
-      const failedProcess = this.backendProcess
-      if (failedProcess) {
-        try {
-          await killAllRelatedProcesses(this.appRoot)
-          if (this.backendProcess === failedProcess) {
-            this.resetTrackedProcess()
-          } else {
-            this.resetStartupLogs()
-          }
-        } catch (cleanupError) {
-          const cleanupMessage =
-            cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
-          logger.error(`启动失败后的后端清理未确认完成: ${cleanupMessage}`)
-          this.resetStartupLogs()
-        }
-      } else {
-        this.resetStartupLogs()
-      }
-
-      return { success: false, error: errorMsg, logs: startupLogs }
-    }
+    return this.startBackendViaRuntime(launchConfig, options)
   }
 
   // ==================== Runtime 监督链路 ====================
@@ -355,7 +228,7 @@ export class BackendService {
   /**
    * 经 `auto-mas-runtime.exe backend supervise` 启动后端。
    *
-   * 与旧链路的三点区别：
+   * Runtime 负责后端身份与进程生命周期：
    * 1. 不注入 `AUTO_MAS_DEV` / `AUTO_MAS_HTTP_PORT`：受监督后端的端口与身份由 Runtime 注入的
    *    `AUTO_MAS_SUPERVISED` 一组变量决定，这里再注入只会互相打架。`AUTO_MAS_ENV`
    *    与遥测开关由 `createRuntimeClient` 按应用环境统一注入（见 runtimeEnv.ts），
@@ -368,23 +241,27 @@ export class BackendService {
    * 先 bootstrap，消费已暂存的同分支更新，并在新进程启动前同步依赖。
    */
   private async startBackendViaRuntime(
-    config: RuntimeSupervisedLaunchConfig,
+    config: RuntimeLaunchConfig,
     options?: BackendStartOptions
   ): Promise<BackendStartResult> {
     if (this.runtimeHandle) {
       logger.info('Runtime 已在监督后端，跳过重复启动')
       return { success: true }
     }
-    if (this.stopFlight || this.forceStopRequested) {
+    if (this.stopFlight || this.stopRequested) {
       return { success: false, error: '正在关闭后端，取消启动' }
     }
     this.runtimeStopping = false
 
     const runtimePath = config.runtimePath
     if (!runtimePath) {
-      // 灰度期一次生命周期只走一条链路，找不到可执行文件时直接失败展示，不回退旧链路。
+      // 缺失时显式失败，不能启动安装根目录残留的旧后端。
       const definition = RUNTIME_CLIENT_ERROR_DEFINITIONS.RUNTIME_NOT_FOUND
-      const message = `找不到 Runtime 可执行文件，无法以 ${config.mode} 模式启动后端`
+      const message =
+        `找不到 Runtime 可执行文件，无法以 ${config.mode} 模式启动后端` +
+        (config.mode === 'development'
+          ? '；请设置 AUTO_MAS_RUNTIME_EXE 指向 Runtime，并先运行 uv sync --locked 准备 .venv'
+          : '')
       logger.error(message)
       return {
         success: false,
@@ -392,6 +269,22 @@ export class BackendService {
         code: definition.code,
         retryable: definition.retryable,
         remediation: [...definition.remediation],
+      }
+    }
+
+    const developmentPort =
+      config.mode === 'development' && process.env.AUTO_MAS_HTTP_PORT
+        ? resolveHttpPort()
+        : undefined
+    if (developmentPort !== undefined && developmentPort < 1024) {
+      return {
+        success: false,
+        error:
+          'Runtime 开发模式要求 AUTO_MAS_HTTP_PORT 为 1024–65535；' +
+          '请改用此范围内的端口，低端口调试请独立运行后端与 yarn web。',
+        code: 'INVALID_ARGUMENT',
+        retryable: true,
+        remediation: ['retry', 'open-log'],
       }
     }
 
@@ -470,6 +363,9 @@ export class BackendService {
       handle = await client.supervise({
         mode: config.mode,
         repo: config.repo,
+        // 保留源码开发的自定义端口；最终端点仍只采纳 Runtime 的 running 事件。
+        port: developmentPort,
+        shutdownTimeoutSeconds: BACKEND_SHUTDOWN_SECONDS,
         onLog: event => {
           const lines = event.stream === 'stderr' ? stderrLines : stdoutLines
           pushBoundedLine(lines, event.message, RUNTIME_STARTUP_LOG_LINE_LIMIT)
@@ -490,6 +386,14 @@ export class BackendService {
       // 握手阶段的失败（可执行文件缺失、spawn 被拒、协议不匹配、参数错误）都在这里收敛。
       return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
     }
+
+    // supervise 独立于一次性准备命令：即使仍在等待就绪，也只能通过 shutdown 请求收尾。
+    const releaseStartup = () => {
+      if (this.startingRuntimeHandle === handle) this.startingRuntimeHandle = null
+    }
+    this.startingRuntimeHandle = handle
+    void handle.completion.then(releaseStartup, releaseStartup)
+    if (this.runtimeStopping) await this.stopBackendViaRuntime(handle)
 
     const timeoutMs = options?.timeout || RUNTIME_READY_TIMEOUT_MS
     let timer: NodeJS.Timeout | undefined
@@ -528,6 +432,15 @@ export class BackendService {
         }
         return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
       }
+      if (this.runtimeStopping) {
+        const stopped = await ended
+        return this.buildRuntimeStartFailure(
+          'result' in stopped ? stopped.result : stopped.error,
+          stdoutLines,
+          stderrLines
+        )
+      }
+      releaseStartup()
       this.adoptRuntimeHandle(handle, outcome.baseUrl)
       logger.info(`后端服务启动成功，Runtime PID: ${handle.pid}，后端地址: ${outcome.baseUrl}`)
       return { success: true }
@@ -560,7 +473,7 @@ export class BackendService {
    */
   private async ensureDevelopmentRuntimeEnvironment(
     client: RuntimeClient,
-    config: RuntimeSupervisedLaunchConfig
+    config: RuntimeLaunchConfig
   ): Promise<BackendStartResult | null> {
     try {
       fs.mkdirSync(config.appRoot, { recursive: true })
@@ -577,16 +490,9 @@ export class BackendService {
     const stderrLines: string[] = []
     let outcome: RuntimeRunResult
     try {
-      outcome = await client.run(['environment', 'ensure'], {
-        onProgress: event => logger.info(`Runtime ${event.stage}: ${event.message}`),
-        onState: event => logger.info(`Runtime ${event.stage}: ${event.message}`),
-        onLog: event => {
-          if (event.stream === 'stderr') {
-            stderrLines.push(event.message)
-            return
-          }
-          stdoutLines.push(event.message)
-        },
+      outcome = await this.runRuntimePreparation(client, ['environment', 'ensure'], event => {
+        const lines = event.stream === 'stderr' ? stderrLines : stdoutLines
+        pushBoundedLine(lines, event.message, RUNTIME_STARTUP_LOG_LINE_LIMIT)
       })
     } catch (error) {
       return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
@@ -624,7 +530,7 @@ export class BackendService {
   }
 
   /**
-   * 把 Runtime 的失败终态或调用侧异常转成与旧链路同形的启动失败结果。
+   * 把 Runtime 的失败终态或调用侧异常转成启动失败结果。
    *
    * `logs` 保持 `[stdout]…\n\n[stderr]…` 的整块格式，现有失败界面不需要改动；`code` /
    * `retryable` / `remediation` 供界面判断可用操作，界面不解析日志或中文文案。
@@ -733,8 +639,9 @@ export class BackendService {
    * 关闭超时由 `handle.shutdown` 兜底 kill Runtime 进程本身，后端进程树由 Runtime 的
    * Job Object 收走，这里不触碰 processManager 的全局清理。
    */
-  private async stopBackendViaRuntime(): Promise<BackendStopResult> {
-    const handle = this.runtimeHandle
+  private async stopBackendViaRuntime(
+    handle: RuntimeSuperviseHandle | null = this.runtimeHandle
+  ): Promise<BackendStopResult> {
     if (!handle) {
       logger.info('Runtime 链路未持有监督句柄，无需停止后端')
       return { success: true }
@@ -781,109 +688,12 @@ export class BackendService {
     )
   }
 
-  /**
-   * 本次生命周期是否走 Runtime 监督链路。
-   *
-   * 已持有句柄时必然是；尚未启动成功时以灰度开关为准，避免在新链路下误用旧链路的
-   * scoped taskkill 清理。
-   */
-  isRuntimeSupervised(): boolean {
-    return this.runtimeHandle !== null || resolveRuntimeLaunchMode(this.appRoot) !== 'off'
-  }
-
-  /** Runtime 就绪后下发的后端地址；旧链路或尚未就绪时返回 null，由调用方回退原有端点。 */
+  /** Runtime 就绪后下发的后端地址；尚未就绪时返回 null。 */
   getRuntimeApiEndpoints(): BackendApiEndpoints | null {
     if (!this.runtimeBaseUrl) return null
     return {
       local: this.runtimeBaseUrl,
       websocket: deriveWebsocketEndpoint(this.runtimeBaseUrl),
-    }
-  }
-
-  /** 后端 HTTP 根地址：Runtime 就绪后以它下发的为准，否则用镜像源服务的端点。 */
-  private resolveLocalApiEndpoint(): string {
-    return this.runtimeBaseUrl ?? this.mirrorService.getApiEndpoint('local')
-  }
-
-  // ==================== 旧链路 ====================
-
-  private async prepareUntrackedBackendForStart(): Promise<boolean> {
-    const apiEndpoint = this.mirrorService.getApiEndpoint('local')
-    const metaUrl = `${apiEndpoint}/api/core/ws_meta`
-    const closeUrl = `${apiEndpoint}/api/core/close`
-
-    let reuseDevBackend = false
-    try {
-      logger.info(`启动前检查旧后端: ${metaUrl}`)
-      const metaResponse = await this.fetchWithTimeout(metaUrl, { method: 'GET' }, 3000)
-      if (!metaResponse.ok) {
-        return true
-      }
-
-      const meta = (await metaResponse.json()) as { devMode?: boolean }
-      if (typeof meta.devMode === 'boolean') {
-        this.lastKnownPreserveBackend = meta.devMode
-      }
-      if (meta.devMode) {
-        reuseDevBackend = true
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
-      logger.debug(`启动前未发现旧后端: ${errorMsg}`)
-      return true
-    }
-
-    if (reuseDevBackend) {
-      // 静默复用前必须确认版本一致（issue #30）：否则会把旧版本后端悄悄留给本次会话。
-      // 校验放在 try/catch 之外，版本错误不能被上面的「未发现旧后端」吞掉。
-      const reusedVersion = await this.fetchRunningBackendVersion(apiEndpoint, 3000)
-      this.assertBackendVersionMatches(reusedVersion)
-      logger.info('检测到开发模式旧后端，版本一致，复用现有后端进程')
-      return false
-    }
-
-    logger.info(`检测到生产模式旧后端，尝试通过 ${closeUrl} 关闭`)
-    const closeResponse = await this.fetchWithTimeout(
-      closeUrl,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      },
-      5000
-    )
-    if (!closeResponse.ok) {
-      throw new Error(`旧后端关闭请求返回错误: ${closeResponse.status}`)
-    }
-
-    const closed = await this.waitForBackendUnavailable(metaUrl, 5000)
-    if (!closed) {
-      throw new Error('旧后端关闭超时，取消启动新后端以避免端口冲突')
-    }
-    return true
-  }
-
-  /**
-   * 读取后端退出保留策略；暂时不可达时回退最近一次成功结果。
-   */
-  async shouldPreserveBackend(): Promise<boolean | null> {
-    const apiEndpoint = this.resolveLocalApiEndpoint()
-    const metaUrl = `${apiEndpoint}/api/core/ws_meta`
-
-    try {
-      const response = await this.fetchWithTimeout(metaUrl, { method: 'GET' }, 1000)
-      if (!response.ok) return this.lastKnownPreserveBackend
-
-      const meta = (await response.json()) as { devMode?: boolean }
-      if (typeof meta.devMode !== 'boolean') return this.lastKnownPreserveBackend
-
-      this.lastKnownPreserveBackend = meta.devMode
-      return meta.devMode
-    } catch (error) {
-      const errorMsg = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
-      logger.debug(`读取后端退出策略失败，使用最近结果: ${errorMsg}`)
-      return this.lastKnownPreserveBackend
     }
   }
 
@@ -905,177 +715,46 @@ export class BackendService {
     }
   }
 
-  private async waitForBackendUnavailable(metaUrl: string, timeoutMs: number): Promise<boolean> {
-    const startedAt = Date.now()
-    let unavailableCount = 0
-
-    while (Date.now() - startedAt < timeoutMs) {
-      try {
-        await this.fetchWithTimeout(metaUrl, { method: 'GET' }, 1000)
-        // 任意 HTTP 响应都证明监听端仍可达，包括启动或关闭过程中的非 2xx。
-        unavailableCount = 0
-      } catch {
-        unavailableCount += 1
-        if (unavailableCount >= BACKEND_UNAVAILABLE_CONFIRMATIONS) return true
-      }
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
-    return false
-  }
-
   /**
    * 停止后端服务
-   * 通过调用 /api/core/close 接口优雅关闭后端
+   * 通过 Runtime shutdown 关闭后端
    */
   stopBackend(): Promise<BackendStopResult> {
+    this.stopRequested = true
     if (this.stopFlight) return this.stopFlight
     const cancelled = this.cancelRuntimePreparations()
+    // 停止请求先打断启动等待，再进入队列收口；不能排在尚未就绪的 start 后才发 shutdown。
+    const startingStopped = this.stopBackendViaRuntime(this.startingRuntimeHandle)
     const operation = this.enqueueOperation(async () => {
       await cancelled
+      const result = await startingStopped
+      if (!result.success) return result
       return this.stopBackendInternal()
     })
     this.stopFlight = operation
     void operation.then(
       () => {
-        if (this.stopFlight === operation) this.stopFlight = null
+        if (this.stopFlight === operation) {
+          this.stopFlight = null
+          this.stopRequested = false
+        }
       },
       () => {
-        if (this.stopFlight === operation) this.stopFlight = null
+        if (this.stopFlight === operation) {
+          this.stopFlight = null
+          this.stopRequested = false
+        }
       }
     )
     return operation
   }
-
   private async stopBackendInternal(): Promise<BackendStopResult> {
     await this.cancelRuntimePreparations()
-    if (this.isRuntimeSupervised()) {
-      return this.stopBackendViaRuntime()
+    if (this.startingRuntimeHandle) {
+      const result = await this.stopBackendViaRuntime(this.startingRuntimeHandle)
+      if (!result.success) return result
     }
-
-    const pid = this.backendProcess?.pid
-    const hasTrackedProcess = this.isTrackedProcessRunning()
-    let metaUrl: string | null = null
-
-    if (hasTrackedProcess) {
-      logger.info(`停止后端服务，PID: ${pid}`)
-    } else {
-      logger.info('尝试停止后端服务（未追踪到进程，可能是外部启动的）')
-    }
-
-    // 第一步：尝试通过 API 优雅关闭（无论是否追踪到进程）
-    let apiSuccess = false
-    try {
-      // 从 MirrorService 获取 API 端点
-      const apiEndpoint = this.mirrorService.getApiEndpoint('local')
-      metaUrl = `${apiEndpoint}/api/core/ws_meta`
-      const apiUrl = `${apiEndpoint}/api/core/close`
-
-      logger.info(`尝试通过 ${apiUrl} 接口关闭后端`)
-      const response = await this.fetchWithTimeout(
-        apiUrl,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          redirect: 'follow',
-        },
-        5000
-      )
-
-      if (response.ok) {
-        logger.info('API 关闭请求发送成功，等待后端退出')
-        apiSuccess = true
-      } else {
-        logger.warn(`API 关闭请求返回错误: ${response.status}`)
-      }
-    } catch (e: unknown) {
-      // API 调用失败（可能后端已经崩溃或网络不可达）
-      const errorMsg = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
-      logger.warn(`API 关闭请求失败: ${errorMsg}`)
-
-      // 检查具体错误类型
-      const cause =
-        e instanceof Error
-          ? (e as Error & { cause?: { code?: string; message?: string } }).cause
-          : undefined
-      if (cause?.code === 'ECONNREFUSED') {
-        logger.warn('连接被拒绝，后端可能未运行或已关闭')
-      } else if (e instanceof Error && e.name === 'AbortError') {
-        logger.warn('API 请求超时，后端可能无响应')
-      } else if (cause) {
-        logger.warn(`底层错误: ${cause.code || cause.message || String(cause)}`)
-      }
-    }
-
-    // 如果没有追踪到进程
-    if (!hasTrackedProcess) {
-      if (apiSuccess && metaUrl) {
-        const closed = await this.waitForBackendUnavailable(metaUrl, 5000)
-        if (closed) {
-          logger.info('已确认未追踪后端退出')
-          return { success: true }
-        }
-        logger.warn('API 已响应，但未追踪后端仍可访问，转入强制清理')
-      } else {
-        logger.info('API 调用失败，转入强制清理相关进程')
-      }
-      try {
-        await killAllRelatedProcesses(this.appRoot)
-        return { success: true }
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        return { success: false, error: errorMsg }
-      }
-    }
-
-    // 第二步：等待进程自行退出，或超时后强制结束
-    const trackedProcess = this.backendProcess
-    return new Promise(resolve => {
-      let settled = false
-      let timeout: NodeJS.Timeout | null = null
-      const finish = (result: BackendStopResult): void => {
-        if (settled) return
-        settled = true
-        if (timeout) clearTimeout(timeout)
-        resolve(result)
-      }
-
-      // 设置超时强制结束（5秒，给后端足够时间清理）
-      timeout = setTimeout(() => {
-        void (async () => {
-          logger.warn('等待后端退出超时，强制清理所有相关进程')
-          try {
-            await killAllRelatedProcesses(this.appRoot)
-            if (this.backendProcess === trackedProcess) {
-              this.backendProcess = null
-              this.startTime = null
-              this.notifyStatusChange()
-            }
-            finish({ success: true })
-          } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error)
-            logger.error(`等待退出超时后的强制清理失败: ${errorMsg}`)
-            finish({ success: false, error: errorMsg })
-          }
-        })()
-      }, 5000)
-
-      // 监听进程退出
-      if (trackedProcess) {
-        trackedProcess.once('exit', (code, signal) => {
-          logger.info(`后端服务已退出，code: ${code}, signal: ${signal}`)
-          if (this.backendProcess === trackedProcess) {
-            this.backendProcess = null
-            this.startTime = null
-            this.notifyStatusChange()
-          }
-          finish({ success: true })
-        })
-      } else {
-        finish({ success: true })
-      }
-    })
+    return this.stopBackendViaRuntime()
   }
 
   /**
@@ -1088,17 +767,13 @@ export class BackendService {
     if (this.restartFlight) return this.restartFlight
     const telemetry = beginMainFeature('backend_restart_finished')
     const operation = this.enqueueOperation(async () => {
-      if (this.forceStopRequested) {
+      if (this.stopRequested) {
         return { success: false, error: '强制停止已请求，取消后端重启' }
       }
       logger.info('重启后端服务')
       const stopResult = await this.stopBackendInternal()
       if (!stopResult.success) return stopResult
-      if (this.forceStopRequested) {
-        return { success: false, error: '强制停止已请求，取消后端重启' }
-      }
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      if (this.forceStopRequested) {
+      if (this.stopRequested) {
         return { success: false, error: '强制停止已请求，取消后端重启' }
       }
       return this.startBackendInternal(options)
@@ -1115,47 +790,6 @@ export class BackendService {
       },
       () => {
         if (this.restartFlight === operation) this.restartFlight = null
-      }
-    )
-    return operation
-  }
-
-  /**
-   * 强制结束相关进程。与 start/stop/restart 共用串行队列，保证 taskkill
-   * 永远不会和后端重启并发执行。
-   */
-  forceStopBackend(): Promise<BackendStopResult> {
-    this.forceStopRequested = true
-    if (this.forceStopFlight) return this.forceStopFlight
-    const cancelled = this.cancelRuntimePreparations()
-    const operation = this.enqueueOperation(async () => {
-      await cancelled
-      logger.warn('强制结束后端相关进程')
-      try {
-        await killAllRelatedProcesses(this.appRoot)
-        this.backendProcess = null
-        this.startTime = null
-        this.notifyStatusChange()
-        return { success: true }
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`强制结束后端相关进程失败: ${errorMsg}`)
-        return { success: false, error: errorMsg }
-      }
-    })
-    this.forceStopFlight = operation
-    void operation.then(
-      () => {
-        if (this.forceStopFlight === operation) {
-          this.forceStopFlight = null
-          this.forceStopRequested = false
-        }
-      },
-      () => {
-        if (this.forceStopFlight === operation) {
-          this.forceStopFlight = null
-          this.forceStopRequested = false
-        }
       }
     )
     return operation
@@ -1198,65 +832,12 @@ export class BackendService {
       `后端版本不匹配：期望 ${expected}，实际 ${actualText}；请更新后端或关闭旧后端后重试`
     )
   }
-
-  async waitUntilReady(timeoutMs: number = 60000): Promise<void> {
-    const healthUrl = `${this.mirrorService.getApiEndpoint('local')}${this.startupHealthPath}`
-    const startedAt = Date.now()
-
-    while (Date.now() - startedAt < timeoutMs) {
-      if (this.forceStopRequested) {
-        throw new Error('强制停止已请求，取消等待后端启动')
-      }
-      if (this.backendProcess && !this.isTrackedProcessRunning()) {
-        throw new Error('后端进程已退出')
-      }
-
-      // 版本校验抛错必须穿透这里的「尚未监听」catch，否则会被当成未就绪无限重试。
-      let health: { ready?: boolean; version?: unknown } | null = null
-      try {
-        const response = await this.fetchWithTimeout(healthUrl, { method: 'GET' }, 1000)
-        if (response.ok) {
-          health = (await response.json()) as { ready?: boolean; version?: unknown }
-        }
-      } catch {
-        // 后端尚未监听，继续等待。
-      }
-      if (health?.ready) {
-        // 就绪即校验版本（issue #30）：旧链路的复用与全新启动都汇聚到这里。
-        this.assertBackendVersionMatches(this.extractHealthVersion(health))
-        return
-      }
-
-      if (this.forceStopRequested) {
-        throw new Error('强制停止已请求，取消等待后端启动')
-      }
-      await new Promise(resolve => setTimeout(resolve, 100))
-    }
-
-    throw new Error('等待后端健康检查超时')
-  }
-
-  /**
-   * 获取后端状态
-   */
   getStatus(): BackendStatus {
-    // Runtime 链路下追踪的是监督进程，后端进程树归 Runtime 管，这里不持有它的 PID。
-    if (this.runtimeHandle) {
-      return {
-        isRunning: true,
-        pid: this.runtimeHandle.pid,
-        startTime: this.startTime || undefined,
-        runtimeSupervised: true,
-      }
-    }
-
-    const isRunning = this.isTrackedProcessRunning()
-
     return {
-      isRunning,
-      pid: this.backendProcess?.pid,
+      isRunning: this.runtimeHandle !== null,
+      pid: this.runtimeHandle?.pid,
       startTime: this.startTime || undefined,
-      runtimeSupervised: this.isRuntimeSupervised(),
+      runtimeSupervised: true,
     }
   }
 
@@ -1401,116 +982,6 @@ export class BackendService {
    */
   setStatusCallback(callback: BackendStatusCallback): void {
     this.statusCallback = callback
-  }
-
-  /**
-   * 设置进程监听器
-   */
-  private setupProcessListeners(): void {
-    if (!this.backendProcess) return
-    const process = this.backendProcess
-
-    process.stdout?.setEncoding('utf8')
-    process.stderr?.setEncoding('utf8')
-
-    process.stdout?.on('data', data => {
-      this.captureStartupOutput('stdout', data)
-    })
-
-    process.stderr?.on('data', data => {
-      this.captureStartupOutput('stderr', data)
-    })
-
-    process.once('exit', (code, signal) => {
-      logger.info(`后端进程退出，code: ${code}, signal: ${signal}`)
-      if (this.backendProcess === process) {
-        this.backendProcess = null
-        this.startTime = null
-        this.notifyStatusChange()
-      }
-    })
-
-    process.once('error', error => {
-      logger.error(`后端进程错误: ${error}`)
-      if (this.backendProcess === process) this.notifyStatusChange()
-    })
-  }
-
-  private isTrackedProcessRunning(): boolean {
-    return Boolean(
-      this.backendProcess?.pid &&
-      !this.backendProcess.killed &&
-      this.backendProcess.exitCode === null
-    )
-  }
-
-  private resetTrackedProcess(): void {
-    this.backendProcess = null
-    this.startTime = null
-    this.resetStartupLogs()
-    this.notifyStatusChange()
-  }
-
-  private captureStartupOutput(stream: 'stdout' | 'stderr', data: Buffer | string): void {
-    if (!this.isCapturingStartupLogs) return
-
-    const output = data.toString()
-
-    if (stream === 'stdout') {
-      this.startupStdout += output
-      return
-    }
-
-    this.startupStderr += output
-  }
-
-  private formatStartupLogs(): string | undefined {
-    const sections: string[] = []
-    const stdout = this.startupStdout.trimEnd()
-    const stderr = this.startupStderr.trimEnd()
-
-    if (stdout) {
-      sections.push(`[stdout]\n${stdout}`)
-    }
-
-    if (stderr) {
-      sections.push(`[stderr]\n${stderr}`)
-    }
-
-    return sections.length > 0 ? sections.join('\n\n') : undefined
-  }
-
-  private resetStartupLogs(): void {
-    this.startupStdout = ''
-    this.startupStderr = ''
-    this.isCapturingStartupLogs = false
-  }
-
-  /**
-   * 通知状态变化
-   */
-  private createBackendEnvironment(): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = { ...process.env }
-    const inheritedPath = process.env.PATH || process.env.Path
-
-    for (const key of Object.keys(env)) {
-      if (key.toLowerCase() === 'path') {
-        delete env[key]
-      }
-    }
-
-    if (inheritedPath !== undefined) {
-      env[process.platform === 'win32' ? 'Path' : 'PATH'] = inheritedPath
-    }
-    env.PYTHONIOENCODING = 'utf-8'
-    // 由前端拉起的后端无需自行提权
-    env.AUTO_MAS_DEV = '1'
-    // 与前端使用的端点对齐，避免后端按自身环境判定另选端口
-    env.AUTO_MAS_HTTP_PORT = String(resolveHttpPort())
-    // 所有启动链路明确传入应用环境，覆盖宿主继承值。
-    env.AUTO_MAS_ENV = getApplicationEnvironment()
-    Object.assign(env, getFluxdownInstallEnvironment())
-    return env
   }
 
   private notifyStatusChange(): void {

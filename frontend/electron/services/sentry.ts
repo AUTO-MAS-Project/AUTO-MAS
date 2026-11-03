@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/electron/main'
 import { app } from 'electron'
 
-import { isDevelopmentEnvironment } from './environmentService'
+import { isDevelopmentEnvironment } from './instanceConfig'
 import { sanitizeMainSentryEvent } from './sentryPrivacy'
 import type { RendererCrashDetails, RendererReloadResult } from '../rendererCrashRecovery'
 

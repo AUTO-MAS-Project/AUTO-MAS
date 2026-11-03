@@ -84,6 +84,11 @@ describe('websocket connection 状态机', () => {
     vi.unstubAllGlobals()
   })
 
+  it('源码 Electron 的开发环境不再表示退出时保留独立后端', async () => {
+    const connection = await loadConnection()
+    expect(connection.shouldPreserveBackend()).toBe(false)
+  })
+
   it('并发 connect 只建立一个连接尝试（单飞行）', async () => {
     const conn = await loadConnection()
     const p1 = conn.connect()
@@ -218,8 +223,9 @@ describe('devMode 协商', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubGlobal('WebSocket', FakeWebSocket)
-    // hostname 为 localhost 时本地回退值是 devMode=true，正是 Runtime 链路下页面先于后端起来的情形。
+    // 浏览器调试在后端元信息暂不可达时仍保留独立后端。
     vi.stubGlobal('window', {
+      __AUTO_MAS_BROWSER_DEV_MODE__: true,
       electronAPI: { getLogger: () => logger },
       location: { hostname: 'localhost' },
       setTimeout: (fn: () => void, ms?: number) => setTimeout(fn, ms),
@@ -259,6 +265,7 @@ describe('devMode 协商', () => {
     conn.shutdown('测试关闭')
     releaseMeta!() // 补协商完成，但连接层已终态
     await new Promise(resolve => setTimeout(resolve, 20))
+    expect(conn.connectionInfo().backendDevMode).toBe(true)
     expect(conn.shouldPreserveBackend()).toBe(true)
   })
 })
