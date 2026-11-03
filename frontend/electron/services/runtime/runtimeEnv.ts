@@ -23,7 +23,7 @@ const logger = getLogger('Runtime环境变量')
 /** 透传给 Runtime 的遥测开关环境变量名。 */
 export const RUNTIME_TELEMETRY_ENV = 'AUTO_MAS_TELEMETRY'
 
-/** 透传给 Runtime（再到后端）的运行环境标记变量名，与旧链路 `createBackendEnvironment` 同名。 */
+/** 透传给 Runtime（再到后端）的应用环境标记变量名。 */
 export const RUNTIME_APP_ENV = 'AUTO_MAS_ENV'
 
 /** 出站代理环境变量名；Go 的 `ProxyFromEnvironment` 与 uv 都认这两个。 */

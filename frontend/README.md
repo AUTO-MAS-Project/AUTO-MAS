@@ -47,11 +47,36 @@ yarn cross-env ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" yarn in
 
 ### 开发模式
 
-直接打开electron窗口
+源码 Electron 使用 Runtime 的 `development` 模式监督当前检出，安装版默认使用 `managed`。
+旧的 `off` 值按构建默认值处理，不再直接启动 Python。应用环境仍独立判断，源码默认为开发环境。
 
-```bash
+在仓库根目录准备虚拟环境，再从 `frontend/` 启动。Runtime 开发模式不会创建或同步项目 `.venv`：
+
+```powershell
+uv sync --locked --group dev
+Set-Location frontend
+$env:AUTO_MAS_RUNTIME_EXE = 'D:/Github/AUTO-MAS-Runtime/bin/auto-mas-runtime.exe'
 yarn dev
 ```
+
+Runtime 可使用官方发行版，或按 [本地构建说明](../scripts/README.md) 构建。首次启动会准备 Runtime
+自身所需的 uv；Runtime 的状态目录位于开发版 userData 下，源码和配置仍使用当前检出。
+`yarn dev:fullstack` 与 `yarn dev` 使用同一入口，不会再额外启动一个独立后端。
+开发时可用 `AUTO_MAS_HTTP_PORT` 指定端口，Electron 会将它传给 Runtime。
+Electron 退出会经 Runtime 关闭后端及其进程树；缺少 Runtime 时显示启动失败，不回退旧链路。
+
+独立后端与浏览器调试继续保留，不需要 Runtime。在两个终端分别运行：
+
+```powershell
+# 终端一，frontend/ 目录；独立后端默认使用开发环境与 36164 端口。
+yarn backend
+
+# 终端二，frontend/ 目录。
+yarn web
+```
+
+浏览器只连接独立后端，关闭预览不会停止它；后端由开发者在终端中管理。
+独立验证生产行为时需显式设置 `AUTO_MAS_ENV=production`。
 
 ### 构建
 

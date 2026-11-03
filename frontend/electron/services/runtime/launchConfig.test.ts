@@ -11,6 +11,7 @@ import {
   resolveDevelopmentRuntimeRoot,
   resolveRuntimeExecutable,
   resolveRuntimeLaunchConfig,
+  resolveRuntimeLaunchModeDetail,
 } from './launchConfig'
 
 const warn = vi.fn()
@@ -122,5 +123,42 @@ describe('resolveRuntimeLaunchConfig', () => {
       repo: undefined,
       dataRoot: appRoot,
     })
+  })
+})
+
+describe('启动模式默认值与存量配置', () => {
+  it('源码与安装版分别默认使用 development 和 managed', () => {
+    expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({
+      mode: 'development',
+      source: 'default',
+    })
+    setPackaged(true)
+    expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({ mode: 'managed', source: 'default' })
+  })
+
+  it('存量 off 设置按构建默认值处理，不能绕过 Runtime', () => {
+    fs.mkdirSync(path.join(appRoot, 'config'))
+    fs.writeFileSync(
+      path.join(appRoot, 'config', 'frontend_config.json'),
+      JSON.stringify({ Runtime: { LaunchMode: 'off' } })
+    )
+    expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({
+      mode: 'development',
+      source: 'default',
+    })
+    setPackaged(true)
+    expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({ mode: 'managed', source: 'default' })
+  })
+
+  it('旧 off 环境变量不覆盖合法设置，合法环境变量仍有最高优先级', () => {
+    fs.mkdirSync(path.join(appRoot, 'config'))
+    fs.writeFileSync(
+      path.join(appRoot, 'config', 'frontend_config.json'),
+      JSON.stringify({ Runtime: { LaunchMode: 'managed' } })
+    )
+    process.env[RUNTIME_MODE_ENV] = 'off'
+    expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({ mode: 'managed', source: 'setting' })
+    process.env[RUNTIME_MODE_ENV] = 'development'
+    expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({ mode: 'development', source: 'env' })
   })
 })

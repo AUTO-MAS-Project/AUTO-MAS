@@ -173,7 +173,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setInitializedVersion: (version: string) =>
     ipcRenderer.invoke('set-initialized-version', version),
 
-  // Runtime 灰度开关：持久化设置 + 当前生效值与来源
+  // Runtime 启动模式：持久化设置 + 当前生效值与来源
   getRuntimeLaunchMode: () => ipcRenderer.invoke('get-runtime-launch-mode'),
   setRuntimeLaunchMode: (mode: string) => ipcRenderer.invoke('set-runtime-launch-mode', mode),
 
@@ -345,7 +345,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // API 端点获取
   getApiEndpoint: (key: string) => ipcRenderer.invoke('get-api-endpoint', key),
 
-  // 完整初始化流程（Runtime 首次初始化与旧链路共用）
+  // Runtime 完整初始化流程
   initialize: (targetBranch?: string, startBackend?: boolean) =>
     ipcRenderer.invoke('initialize', targetBranch, startBackend),
 

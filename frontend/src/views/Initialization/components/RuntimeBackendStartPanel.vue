@@ -46,7 +46,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   showSkipButton: false,
   retrying: false,
-  runtimeMode: 'off',
+  runtimeMode: 'managed',
 })
 
 const emit = defineEmits<{

@@ -11,7 +11,7 @@ vi.mock('@sentry/electron/main', () => ({
   captureMessage: sdk.captureMessage,
 }))
 vi.mock('electron', () => ({ app: {} }))
-vi.mock('./environmentService', () => ({ isDevelopmentEnvironment: () => false }))
+vi.mock('./instanceConfig', () => ({ isDevelopmentEnvironment: () => false }))
 
 const crash = { reason: 'killed', exitCode: 1073807364, crashCount: 1, action: 'reload' as const }
 const result = { outcome: 'success' as const, resultKind: 'ready' as const, durationMs: 100.2 }

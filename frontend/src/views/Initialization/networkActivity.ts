@@ -8,7 +8,7 @@
  * - 传输：只保留最新一条带文件名的进度。
  *
  * 判定只看 `runtimeStage` / `runtimeStatus` 与几个数值字段，不解析 `message` 文案。
- * 旧版 Runtime 与旧链路的进度没有这些字段，状态始终为空，界面与以前一致。
+ * 旧版 Runtime 的进度没有这些字段，状态始终为空，界面与以前一致。
  */
 
 import { formatBytes, formatSpeed } from '@/utils/byteFormat'
@@ -50,7 +50,7 @@ export interface NetworkActivity {
    * 本次运行里是否出现过任何网络细节。
    *
    * 出现过之后细节行的位置就一直留着（哪怕暂时为空），免得整块居中内容上下跳；
-   * 一次都没出现过（旧版 Runtime、旧链路）则完全不占位，界面与以前一致。
+   * 一次都没出现过（旧版 Runtime）则完全不占位，界面与以前一致。
    */
   seen: boolean
 }

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import type { MirrorConfig, MirrorSource } from './mirrorService'
-import type { RuntimeEvent, RuntimeRunOptions, RuntimeSupervisedLaunchConfig } from './runtime'
+import type { RuntimeEvent, RuntimeRunOptions, RuntimeLaunchConfig } from './runtime'
 import {
   RUNTIME_BINARY_CANCELLED,
   RUNTIME_LATEST_UNAVAILABLE,
@@ -169,10 +169,10 @@ const alignStub = {
 }
 
 function createService(
-  overrides: Partial<RuntimeSupervisedLaunchConfig> = {},
+  overrides: Partial<RuntimeLaunchConfig> = {},
   mirrorService: MirrorLookup = fakeMirrorService()
 ) {
-  const launchConfig: RuntimeSupervisedLaunchConfig = {
+  const launchConfig: RuntimeLaunchConfig = {
     mode: 'managed',
     runtimePath: RUNTIME_PATH,
     appRoot: APP_ROOT,

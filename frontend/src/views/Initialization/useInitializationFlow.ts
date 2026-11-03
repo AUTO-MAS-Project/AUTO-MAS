@@ -1,4 +1,4 @@
-import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
+import { isDevelopmentEnvironment as isDev, isBrowserDevelopment } from '@/utils/environment'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
@@ -112,7 +112,7 @@ export function useInitializationFlow() {
   })
 
   const currentStepIndex = ref(0)
-  const runtimeMode = ref<RuntimeInitMode>('off')
+  const runtimeMode = ref<RuntimeInitMode>(isDev ? 'development' : 'managed')
   /** Runtime 报上来的测速结果与当前下载文件，只在 Runtime 链路有内容；页面级，不分段。 */
   const networkActivity = ref<NetworkActivity>(EMPTY_NETWORK_ACTIVITY)
   const runtimeMirrorKeys = ref<Record<string, string[]>>({})
@@ -212,12 +212,11 @@ export function useInitializationFlow() {
    * 进度条下面的网络细节，最多两行：测速时是「各源实测」+「最终顺序」，下载时是
    * 「文件名」+「已下载 / 总量 · 速度 · 来源」。
    *
-   * 本次运行一次都没出现过细节（旧链路、旧版 Runtime、还没到有字段的阶段）时为 undefined，
+   * 本次运行一次都没出现过细节（旧版 Runtime、还没到有字段的阶段）时为 undefined，
    * LaunchStatus 不占位，界面与以前一致；出现过之后就一直交给它一个数组（哪怕为空），
    * 让两行的位置留着，细节出现和消失时步骤条不会上下跳。
    */
   const statusDetails = computed<string[] | undefined>(() => {
-    if (runtimeMode.value === 'off') return undefined
     const lines = formatNetworkDetails(networkActivity.value, networkDetailLabels)
     if (lines === undefined) return undefined
     return currentState.value.status === 'processing' ? lines : []
@@ -411,7 +410,7 @@ export function useInitializationFlow() {
   }
 
   function isRuntimeTakenOver(stepKey: InitializationStepKey): boolean {
-    return runtimeMode.value !== 'off' && RUNTIME_TAKEOVER_STEPS.has(stepKey)
+    return RUNTIME_TAKEOVER_STEPS.has(stepKey)
   }
 
   async function executeStep(stepKey: InitializationStepKey, rebuild = false): Promise<boolean> {
@@ -474,7 +473,7 @@ export function useInitializationFlow() {
     logger.info('开始初始化流程')
 
     try {
-      if (runtimeMode.value !== 'off' && startIndex === 0) {
+      if (startIndex === 0) {
         const success = await executeRuntimeInitialization()
         if (!success) logger.warn('Runtime 初始化失败，等待用户处理')
         return
@@ -609,10 +608,9 @@ export function useInitializationFlow() {
     state.message = errorMessage
 
     if (
-      runtimeMode.value !== 'off' &&
-      (failure.code === 'DEPENDENCY_SYNC_FAILED' ||
-        failure.code === 'ENVIRONMENT_BROKEN' ||
-        (runtimeMode.value === 'managed' && canRestoreWorkspace(failure.code)))
+      failure.code === 'DEPENDENCY_SYNC_FAILED' ||
+      failure.code === 'ENVIRONMENT_BROKEN' ||
+      (runtimeMode.value === 'managed' && canRestoreWorkspace(failure.code))
     ) {
       // 启动时应用后台更新也可能需要修复依赖，复用安装阶段的失败处置。
       state.status = 'waiting'
@@ -785,14 +783,14 @@ export function useInitializationFlow() {
     ensureAnalyticsAttempt()
     logger.info('初始化界面已加载')
 
-    if (isDev) {
+    if (isBrowserDevelopment()) {
       await handleLocalEnterApp()
       return
     }
 
     const api = window.electronAPI
     try {
-      const context = await api.getRuntimeInitContext?.()
+      const context = await api.getRuntimeInitContext()
       if (context) {
         runtimeMode.value = context.mode
         runtimeMirrorKeys.value = context.mirrorKeys ?? {}
@@ -800,11 +798,17 @@ export function useInitializationFlow() {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
-      logger.warn(`读取 Runtime 上下文失败，回退兼容链路: ${errorMessage}`)
+      logger.error(`读取 Runtime 上下文失败: ${errorMessage}`)
+      markStepFailed('python', errorMessage, {})
+      return
     }
 
-    if (runtimeMode.value !== 'off') {
-      for (const stepKey of RUNTIME_TAKEOVER_STEPS) markStepTakenOver(stepStates.value[stepKey])
+    for (const stepKey of RUNTIME_TAKEOVER_STEPS) markStepTakenOver(stepStates.value[stepKey])
+    if (runtimeMode.value === 'development') {
+      flowKind.value = 'startup'
+      markStepsBefore(steps.length - 1)
+      currentStepIndex.value = steps.length - 1
+      return
     }
 
     const startIndex = await resolveStartIndex()
