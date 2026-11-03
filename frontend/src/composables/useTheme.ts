@@ -59,6 +59,7 @@ let customSurfaceRevision = 0
 let themeChangeQueue: Promise<void> = Promise.resolve()
 let themeTransitionTimer: ReturnType<typeof setTimeout> | undefined
 const THEME_TRANSITION_DURATION_MS = 220
+const LINK_CONTRAST_STEPS = 1000
 
 // 连续操作按顺序完成状态变更和持久化，失败回退后再处理下一项设置。
 const queueThemeChange = (change: () => Promise<void>): Promise<void> => {
@@ -559,6 +560,8 @@ function getThemeConfig() {
   ]
   const linkDirection =
     contrastRatio('#ffffff', linkBackground) > contrastRatio('#000000', linkBackground) ? 1 : -1
+  const minimumLinkContrast = (color: string) =>
+    Math.min(...linkBackgrounds.map(background => contrastRatio(color, background)))
   // 三种链接状态分别微调亮度，保持主题色相并兼顾页面、卡片与浮层表面。
   const [linkColor, linkHover, linkActive] = [
     primaryColor,
@@ -566,12 +569,17 @@ function getThemeConfig() {
     colorTokens.colorPrimaryActive,
   ].map(initialColor => {
     let color = initialColor
-    for (
-      let step = 1;
-      linkBackgrounds.some(background => contrastRatio(color, background) < 4.5) && step <= 100;
-      step++
-    ) {
-      color = hslAdjust(initialColor, (step / 100) * linkDirection)
+    let bestContrast = minimumLinkContrast(color)
+    // 双向细步进寻找窄可行区；未找到共同解时保留最佳候选，避免退化。
+    for (let step = 1; bestContrast < 4.5 && step <= LINK_CONTRAST_STEPS; step++) {
+      for (const direction of [linkDirection, -linkDirection]) {
+        const candidate = hslAdjust(initialColor, (step / LINK_CONTRAST_STEPS) * direction)
+        const candidateContrast = minimumLinkContrast(candidate)
+        if (candidateContrast > bestContrast) {
+          color = candidate
+          bestContrast = candidateContrast
+        }
+      }
     }
     return color
   })
