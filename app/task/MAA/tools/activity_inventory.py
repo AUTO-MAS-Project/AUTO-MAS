@@ -186,13 +186,14 @@ def migrate_activity_inventory_plans(
         replacements = explicit_keys.get(old_key) or (
             explicit_keys.get(key) if key is not None else None
         )
-        target: dict | None = row
+        target = row
         if not replacements:
             if key is None or stage is None:
                 continue
-            target = _build_activity_plan(row, stage, notices=[])
-            if target is None:
+            plan = _build_activity_plan(row, stage, notices=[])
+            if plan is None:
                 continue
+            target = plan
             target.pop("Stage", None)
             target.pop("DropId", None)
             target.update(StageType=key[0], StageIndex=key[1])
