@@ -1,4 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
+import type { InstalledAppearance } from '../src/types/appearance'
+import type { ElectronAPI } from '../src/types/electron'
 import { expect, test } from './fixtures'
 
 const chooseOption = async (page: Page, select: Locator, label: string) => {
@@ -25,6 +27,88 @@ const backgroundColor = (page: Page) =>
   })
 
 test.describe('@settings user preferences', () => {
+  test('preserves appearance sidebar and title colors and restores the built-in theme', async ({
+    app,
+    page,
+  }) => {
+    const appearances: InstalledAppearance[] = [
+      {
+        formatVersion: 1,
+        id: 'settings-light',
+        name: 'Settings light appearance',
+        mode: 'light',
+        tokens: {
+          colorPrimary: '#b45148',
+          colorBgElevated: '#fff4dd',
+          colorText: '#49352d',
+          colorBorder: '#765432',
+          colorPageTitle: '#b45148',
+        },
+      },
+      {
+        formatVersion: 1,
+        id: 'settings-dark',
+        name: 'Settings dark appearance',
+        mode: 'dark',
+        tokens: {
+          colorPrimary: '#a78bfa',
+          colorBgElevated: '#252038',
+          colorText: '#eeeaf4',
+          colorBorder: '#c4b5fd',
+          colorPageTitle: '#c4b5fd',
+        },
+      },
+    ]
+    await page.addInitScript(appearances => {
+      let bridge: ElectronAPI | undefined
+      Object.defineProperty(window, 'electronAPI', {
+        configurable: true,
+        get: () => bridge,
+        set: (base: ElectronAPI) => {
+          bridge = {
+            ...base,
+            listAppearances: async () => appearances,
+            getAppearance: async id => appearances.find(appearance => appearance.id === id) ?? null,
+          }
+        },
+      })
+    }, appearances)
+    await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
+    await app.goto('/settings')
+    const sider = page.locator('.app-sider')
+    const title = page.locator('.settings-header h1')
+    const selector = page.locator('.appearance-select')
+    await expect(selector).toBeVisible()
+    const builtInBackground = await sider.evaluate(
+      element => getComputedStyle(element).backgroundColor
+    )
+    const builtInTitle = await title.evaluate(element => getComputedStyle(element).color)
+    for (const appearance of appearances) {
+      await chooseOption(page, selector, appearance.name)
+      const light = appearance.mode === 'light'
+      if (light) await expect(page.locator('html')).not.toHaveClass(/dark/)
+      else await expect(page.locator('html')).toHaveClass(/dark/)
+      await expect
+        .soft(sider)
+        .toHaveCSS('background-color', light ? 'rgb(255, 244, 221)' : 'rgb(37, 32, 56)', {
+          timeout: 1000,
+        })
+      await expect
+        .soft(sider)
+        .toHaveCSS('border-right-color', light ? 'rgb(118, 84, 50)' : 'rgb(196, 181, 253)', {
+          timeout: 1000,
+        })
+      await expect
+        .soft(title)
+        .toHaveCSS('color', light ? 'rgb(180, 81, 72)' : 'rgb(196, 181, 253)', { timeout: 1000 })
+      await expect(page.locator('.theme-mode-control input').first()).toBeDisabled()
+    }
+    await chooseOption(page, selector, 'Default appearance')
+    await expect(sider).toHaveCSS('background-color', builtInBackground)
+    await expect(title).toHaveCSS('color', builtInTitle)
+    await app.evidence('appearance-colors-restored')
+  })
+
   test('changes the visible theme and retains it after navigation and reload', async ({
     app,
     page,

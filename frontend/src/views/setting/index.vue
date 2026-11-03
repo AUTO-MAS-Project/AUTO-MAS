@@ -468,7 +468,7 @@ onMounted(() => {
 
 .page-title {
   margin: 0;
-  color: var(--ant-color-text);
+  color: var(--app-page-title-color, var(--ant-color-text));
   background: none;
   font-size: 28px;
   line-height: 36px;

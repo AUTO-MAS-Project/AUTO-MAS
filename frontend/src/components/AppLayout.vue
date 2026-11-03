@@ -9,7 +9,12 @@
       background: transparent;
     "
   >
-    <a-layout-sider :width="SIDER_WIDTH" :theme="isDark ? 'dark' : 'light'" class="app-sider">
+    <a-layout-sider
+      :width="SIDER_WIDTH"
+      :theme="isDark ? 'dark' : 'light'"
+      class="app-sider"
+      :class="{ 'app-sider--appearance': activeAppearance }"
+    >
       <div class="sider-content">
         <a-menu
           v-model:selected-keys="selectedKeys"
@@ -234,13 +239,17 @@ const onMenuClick: MenuProps['onClick'] = info => {
 </script>
 
 <style scoped>
-/* 侧栏走 --app-sider-bg：深色下是近黑（#080808 量级）只带极轻主色染色，
-   与页面底色同一层次；自定义背景图开启时让位给半透明表面色。 */
+/* 内置侧栏使用轻染色背景；外观包和自定义背景保留各自的表面色。 */
 .app-sider {
   background: var(--app-sider-bg, var(--ant-color-bg-elevated));
   border-right: 1px solid var(--app-sider-border-color, var(--ant-color-border));
 }
 
+.app-sider--appearance {
+  border-right-color: var(--ant-color-border);
+}
+
+.app-sider--appearance,
 html.appearance-background-custom .app-sider {
   background: var(--app-appearance-elevated-surface-bg);
 }
