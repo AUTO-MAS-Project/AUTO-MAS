@@ -1,15 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  DeleteOutlined,
-  PictureOutlined,
-  QuestionCircleOutlined,
-  UploadOutlined,
-} from '@ant-design/icons-vue'
+import { DeleteOutlined, PictureOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useTheme } from '@/composables/useTheme'
 import { CUSTOM_BACKGROUND_MAX_BYTES, hasCustomBackgroundExtension } from '@/utils/customBackground'
+import SectionCard from '@/components/ui/SectionCard.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
 import { createCustomSurfaceOpacityControl } from './customSurfaceOpacityControl'
 
 const { t } = useI18n()
@@ -113,10 +110,7 @@ const handleRetry = async (): Promise<void> => {
 </script>
 
 <template>
-  <div class="form-section custom-background-settings">
-    <div class="section-header">
-      <h3>{{ t('core.setting.basic.customBackgroundSection') }}</h3>
-    </div>
+  <SectionCard :title="t('core.setting.basic.customBackgroundSection')" :icon="PictureOutlined">
     <a-alert
       v-if="hasAppearanceBackground"
       class="package-background-alert"
@@ -124,86 +118,87 @@ const handleRetry = async (): Promise<void> => {
       :message="t('core.setting.basic.customBackgroundPackageActive')"
       show-icon
     />
-    <a-row :gutter="24">
-      <a-col :span="12">
-        <div class="form-item-vertical">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('core.setting.basic.customBackground') }}</span>
-            <a-tooltip :title="t('core.setting.basic.customBackgroundTip')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </div>
-          <div class="background-controls">
-            <a-button :loading="importing" :disabled="importing || clearing" @click="handleImport">
-              <template #icon><UploadOutlined /></template>
-              {{ t('core.setting.basic.customBackgroundSelect') }}
-            </a-button>
-            <a-button
-              v-if="customBackgroundPath"
-              danger
-              :loading="clearing"
-              :disabled="importing || clearing"
-              :aria-label="t('core.setting.basic.customBackgroundClear')"
-              @click="handleClear"
-            >
-              <template #icon><DeleteOutlined /></template>
-              {{ t('core.setting.basic.customBackgroundClear') }}
-            </a-button>
-          </div>
-          <div class="background-state">
-            <PictureOutlined class="background-state-icon" />
-            <span v-if="customBackgroundPath" :title="customBackgroundPath">
-              {{ customBackgroundFileName }}
-            </span>
-            <span v-else>{{ t('core.setting.basic.customBackgroundEmpty') }}</span>
-          </div>
-          <div v-if="customBackgroundLoadFailed" class="background-load-error">
-            <span>{{ t('core.setting.basic.customBackgroundLoadFailed') }}</span>
-            <a-button size="small" :loading="retrying" @click="handleRetry">
-              {{ t('core.setting.basic.customBackgroundRetry') }}
-            </a-button>
-          </div>
+
+    <SettingRow
+      stacked
+      :label="t('core.setting.basic.customBackground')"
+      :hint="t('core.setting.basic.customBackgroundTip')"
+    >
+      <div class="background-control">
+        <div class="background-control-main">
+          <a-button :loading="importing" :disabled="importing || clearing" @click="handleImport">
+            <template #icon><UploadOutlined /></template>
+            {{ t('core.setting.basic.customBackgroundSelect') }}
+          </a-button>
+          <a-button
+            v-if="customBackgroundPath"
+            danger
+            :loading="clearing"
+            :disabled="importing || clearing"
+            :aria-label="t('core.setting.basic.customBackgroundClear')"
+            @click="handleClear"
+          >
+            <template #icon><DeleteOutlined /></template>
+            {{ t('core.setting.basic.customBackgroundClear') }}
+          </a-button>
         </div>
-      </a-col>
-      <a-col :span="12">
-        <div class="form-item-vertical">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('core.setting.basic.customSurfaceOpacity') }}</span>
-            <a-tooltip :title="t('core.setting.basic.customSurfaceOpacityTip')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </div>
-          <div class="opacity-controls">
-            <a-slider
-              style="flex: 1; min-width: 0"
-              :value="displayedSurfaceOpacity"
-              :min="0.1"
-              :max="1"
-              :step="0.05"
-              :disabled="!customBackgroundUrl || hasAppearanceBackground"
-              :aria-label="t('core.setting.basic.customSurfaceOpacity')"
-              @change="handleOpacityChange"
-              @afterChange="handleOpacityAfterChange"
-            />
-            <span class="opacity-percent"> {{ Math.round(displayedSurfaceOpacity * 100) }}% </span>
-          </div>
+        <div class="background-state">
+          <PictureOutlined class="background-state-icon" />
+          <span v-if="customBackgroundPath" :title="customBackgroundPath">
+            {{ customBackgroundFileName }}
+          </span>
+          <span v-else>{{ t('core.setting.basic.customBackgroundEmpty') }}</span>
         </div>
-      </a-col>
-    </a-row>
-  </div>
+        <div v-if="customBackgroundLoadFailed" class="background-load-error">
+          <span>{{ t('core.setting.basic.customBackgroundLoadFailed') }}</span>
+          <a-button size="small" :loading="retrying" @click="handleRetry">
+            {{ t('core.setting.basic.customBackgroundRetry') }}
+          </a-button>
+        </div>
+      </div>
+    </SettingRow>
+
+    <SettingRow
+      :label="t('core.setting.basic.customSurfaceOpacity')"
+      :hint="t('core.setting.basic.customSurfaceOpacityTip')"
+    >
+      <div class="opacity-controls">
+        <a-slider
+          class="opacity-slider"
+          :value="displayedSurfaceOpacity"
+          :min="0.1"
+          :max="1"
+          :step="0.05"
+          :disabled="!customBackgroundUrl || hasAppearanceBackground"
+          :aria-label="t('core.setting.basic.customSurfaceOpacity')"
+          @change="handleOpacityChange"
+          @afterChange="handleOpacityAfterChange"
+        />
+        <span class="opacity-percent">{{ Math.round(displayedSurfaceOpacity * 100) }}%</span>
+      </div>
+    </SettingRow>
+  </SectionCard>
 </template>
 
 <style scoped>
 .package-background-alert {
-  margin-bottom: 16px;
+  margin: 0 0 4px;
 }
 
-.background-controls {
+.background-control {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.background-control-main {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  width: 100%;
 }
 
 .background-state {
@@ -211,7 +206,6 @@ const handleRetry = async (): Promise<void> => {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  margin-top: 8px;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
 }
@@ -231,7 +225,6 @@ const handleRetry = async (): Promise<void> => {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
   color: var(--ant-color-error);
   font-size: 12px;
 }
@@ -239,8 +232,15 @@ const handleRetry = async (): Promise<void> => {
 .opacity-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   width: 100%;
+  max-width: 360px;
+}
+
+.opacity-slider {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
 }
 
 .opacity-percent {

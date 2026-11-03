@@ -57,13 +57,13 @@ const hintText = computed(() =>
       <span class="chan-icon" :style="{ '--c': iconColor, color: iconColor }">
         <component :is="icon" />
       </span>
+      <span class="chan-name">{{ t(channel.nameKey) }}</span>
       <span class="state" :class="{ idle: !stateActive }">
         <i class="dot" :class="{ off: !stateActive }" />{{ stateText }}
       </span>
     </div>
-    <div class="chan-name">
-      {{ t(channel.nameKey) }}<span class="tag">{{ groupTag }}</span>
-    </div>
+    <span v-if="normalizeGroup(channel.group) === 'custom'" class="tag">{{ groupTag }}</span>
+    <div v-if="channel.descKey" class="chan-description">{{ t(channel.descKey) }}</div>
     <div v-if="summary" class="chan-summary" :title="summary">{{ summary }}</div>
     <div class="chan-hint">{{ hintText }} ›</div>
   </button>
@@ -77,11 +77,11 @@ const hintText = computed(() =>
   border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
   border-radius: 8px;
-  padding: 14px 16px 12px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-height: 116px;
+  gap: 8px;
+  min-height: 148px;
   cursor: pointer;
   color: inherit;
   font: inherit;
@@ -98,19 +98,19 @@ const hintText = computed(() =>
 
 .chan-card-top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
 .chan-icon {
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-  border-radius: 9px;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 7px;
   display: grid;
   place-items: center;
-  font-size: 20px;
+  font-size: 16px;
   background: color-mix(in srgb, var(--c) 12%, transparent);
 }
 
@@ -150,6 +150,8 @@ const hintText = computed(() =>
 
 .chan-name {
   display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
   gap: 8px;
   font-size: 14px;
@@ -162,7 +164,6 @@ const hintText = computed(() =>
 }
 
 .chan-summary {
-  margin-top: auto;
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
   overflow: hidden;
@@ -170,16 +171,16 @@ const hintText = computed(() =>
   white-space: nowrap;
 }
 
-.chan-hint {
+.chan-description {
+  color: var(--ant-color-text-secondary);
   font-size: 12px;
-  color: var(--ant-color-primary);
-  opacity: 0;
-  transition: opacity 0.16s ease;
+  line-height: 19px;
 }
 
-.chan-card:hover .chan-hint,
-.chan-card:focus-visible .chan-hint {
-  opacity: 1;
+.chan-hint {
+  margin-top: auto;
+  font-size: 12px;
+  color: var(--ant-color-primary);
 }
 
 .chan-row {

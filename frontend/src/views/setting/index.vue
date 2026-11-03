@@ -357,10 +357,13 @@ onMounted(() => {
 <template>
   <div class="settings-container">
     <component :is="modalContextHolder" />
-    <div class="settings-header">
-      <h1 class="page-title app-page-title">{{ t('core.setting.title') }}</h1>
-    </div>
     <SettingsSectionLayout v-model:active-key="activeKey" :loading="loading">
+      <template #header>
+        <div class="settings-header">
+          <h1 class="page-title app-page-title">{{ t('core.setting.title') }}</h1>
+          <p class="settings-subtitle">{{ t('core.setting.subtitle') }}</p>
+        </div>
+      </template>
       <template #basic>
         <TabBasic
           :settings="settings"
@@ -446,6 +449,8 @@ onMounted(() => {
 <style scoped>
 /* 统一样式，使用 :deep 作用到子组件内部 */
 .settings-container {
+  position: relative;
+  isolation: isolate;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -458,12 +463,22 @@ onMounted(() => {
 }
 
 .settings-header {
-  margin-bottom: 16px;
-  padding: 0 4px;
+  padding: 0;
 }
 
 .page-title {
   margin: 0;
+  color: var(--app-page-title-color, var(--ant-color-text));
+  background: none;
+  font-size: 28px;
+  line-height: 36px;
+  -webkit-text-fill-color: currentcolor;
+}
+
+.settings-subtitle {
+  margin: 4px 0 0;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
 }
 
 :deep(.form-section:last-child) {
@@ -560,92 +575,6 @@ onMounted(() => {
   text-decoration: underline;
 }
 
-:deep(.link-card) {
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  padding: 20px;
-  text-align: center;
-  transition: all 0.3s ease;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-:deep(.link-card:hover) {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transform: translateY(-2px);
-}
-
-:deep(.link-icon) {
-  font-size: 48px;
-  margin-bottom: 16px;
-  line-height: 1;
-  color: var(--ant-color-primary);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-:deep(.link-content) {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-:deep(.link-content h4) {
-  margin: 0 0 8px;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-:deep(.link-content p) {
-  margin: 0 0 16px;
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  line-height: 1.5;
-  flex: 1;
-}
-
-:deep(.link-button) {
-  display: inline-block;
-  padding: 8px 16px;
-  background: var(--ant-color-primary);
-  color: #fff !important;
-  text-decoration: none;
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: 500;
-  transition: background-color 0.2s ease;
-  margin-top: auto;
-}
-
-:deep(.link-button:hover) {
-  background: var(--ant-color-primary-hover);
-  color: #fff !important;
-  text-decoration: none;
-}
-
-/* link-grid styles moved into TabOthers.vue (scoped) */
-:deep(.info-item) {
-  display: flex;
-  align-items: center;
-  margin-bottom: 12px;
-  line-height: 1.5;
-}
-
-:deep(.info-label) {
-  font-weight: 600;
-  color: var(--ant-color-text);
-  min-width: 100px;
-  flex-shrink: 0;
-}
-
-:deep(.info-value) {
-  color: var(--ant-color-text-secondary);
-  margin-left: 8px;
-}
+/* 项目链接与应用信息的样式已随布局迁入各卡片组件（TabOthers.vue scoped），
+   这里不再保留同名 :deep 规则，避免与子组件的同选择器互相覆盖 */
 </style>

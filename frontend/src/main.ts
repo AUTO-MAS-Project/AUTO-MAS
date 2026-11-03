@@ -23,6 +23,7 @@ import '@/styles/formSection.css'
 import '@/styles/pageTitle.css'
 import '@/styles/appearanceCursor.css'
 import '@/styles/appearanceSurfaces.css'
+import '@/styles/themeTransition.css'
 import '@/styles/appOverlays.css'
 import '@/styles/taskboardTokens.css'
 

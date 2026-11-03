@@ -16,6 +16,8 @@ export interface FrontendConfig {
   // 主题设置
   themeMode: ThemeMode
   themeColor: ThemeColor
+  /** 设置页卡片布局；窄窗口仅回流，不修改用户偏好。 */
+  settingsLayoutMode?: 'single' | 'dual'
   /** 当前自定义外观包 ID；为空时使用内置外观模式。 */
   appearanceId?: string | null
   /** 为空时跟随主题附带的桌宠；否则固定使用独立桌宠。 */
@@ -81,6 +83,7 @@ const DEFAULT_CONFIG: FrontendConfig = {
   lastCloseAction: 'quit',
   themeMode: 'system',
   themeColor: 'blue',
+  settingsLayoutMode: 'single',
   desktopMascotFps: null,
   cursorEffect: 'none',
   lowPerformanceMode: false,

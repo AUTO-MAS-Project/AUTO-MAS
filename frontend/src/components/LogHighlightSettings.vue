@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { ref, computed } from 'vue'
 import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { useLogHighlight, type LogHighlightColors } from '@/composables/useLogHighlight'
+import SettingRow from '@/components/ui/SettingRow.vue'
 import { useTheme } from '@/composables/useTheme'
 import { message } from 'ant-design-vue'
 
@@ -185,75 +186,61 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 
 <template>
   <div class="log-highlight-settings">
-    <a-row :gutter="24">
-      <a-col :span="12">
-        <div class="form-item-vertical">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('core.comp.fontSize') }}</span>
-          </div>
-          <a-select
-            :value="editorConfig.fontSize"
-            size="large"
-            style="width: 100%"
-            @change="(v: number) => setEditorConfig({ fontSize: v })"
-          >
-            <a-select-option v-for="size in fontSizeOptions" :key="size" :value="size">
-              {{ size }}px
-            </a-select-option>
-          </a-select>
-        </div>
-      </a-col>
-      <a-col :span="12">
-        <div class="form-item-vertical">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('core.comp.lineHeight') }}</span>
-          </div>
-          <a-select
-            :value="editorConfig.lineHeight"
-            size="large"
-            style="width: 100%"
-            @change="(v: number) => setEditorConfig({ lineHeight: v })"
-          >
-            <a-select-option v-for="h in lineHeightOptions" :key="h" :value="h">
-              {{ h }}
-            </a-select-option>
-          </a-select>
-        </div>
-      </a-col>
-      <a-col :span="24">
-        <div class="form-item-vertical text-style-item">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('core.comp.boldText') }}</span>
-          </div>
-          <div class="checkbox-row">
-            <a-checkbox
-              :checked="styles.timestampBold"
-              @change="(e: any) => setStyles({ timestampBold: e.target.checked })"
-            >
-              {{ t('core.comp.boldTimestamps') }}
-            </a-checkbox>
-            <a-checkbox
-              :checked="styles.levelBold"
-              @change="(e: any) => setStyles({ levelBold: e.target.checked })"
-            >
-              {{ t('core.comp.boldLogLevels') }}
-            </a-checkbox>
-            <a-checkbox
-              :checked="styles.keywordBold"
-              @change="(e: any) => setStyles({ keywordBold: e.target.checked })"
-            >
-              {{ t('core.comp.boldKeywords') }}
-            </a-checkbox>
-            <a-checkbox
-              :checked="styles.urlUnderline"
-              @change="(e: any) => setStyles({ urlUnderline: e.target.checked })"
-            >
-              {{ t('core.comp.urlUnderline') }}
-            </a-checkbox>
-          </div>
-        </div>
-      </a-col>
-    </a-row>
+    <!-- 编辑器排版：三行，全部行内控件 -->
+    <SettingRow :label="t('core.comp.fontSize')">
+      <a-select
+        class="log-select"
+        :value="editorConfig.fontSize"
+        :aria-label="t('core.comp.fontSize')"
+        @change="(v: number) => setEditorConfig({ fontSize: v })"
+      >
+        <a-select-option v-for="size in fontSizeOptions" :key="size" :value="size">
+          {{ size }}px
+        </a-select-option>
+      </a-select>
+    </SettingRow>
+
+    <SettingRow :label="t('core.comp.lineHeight')">
+      <a-select
+        class="log-select"
+        :value="editorConfig.lineHeight"
+        :aria-label="t('core.comp.lineHeight')"
+        @change="(v: number) => setEditorConfig({ lineHeight: v })"
+      >
+        <a-select-option v-for="h in lineHeightOptions" :key="h" :value="h">
+          {{ h }}
+        </a-select-option>
+      </a-select>
+    </SettingRow>
+
+    <SettingRow stacked :label="t('core.comp.boldText')">
+      <div class="checkbox-row">
+        <a-checkbox
+          :checked="styles.timestampBold"
+          @change="(e: any) => setStyles({ timestampBold: e.target.checked })"
+        >
+          {{ t('core.comp.boldTimestamps') }}
+        </a-checkbox>
+        <a-checkbox
+          :checked="styles.levelBold"
+          @change="(e: any) => setStyles({ levelBold: e.target.checked })"
+        >
+          {{ t('core.comp.boldLogLevels') }}
+        </a-checkbox>
+        <a-checkbox
+          :checked="styles.keywordBold"
+          @change="(e: any) => setStyles({ keywordBold: e.target.checked })"
+        >
+          {{ t('core.comp.boldKeywords') }}
+        </a-checkbox>
+        <a-checkbox
+          :checked="styles.urlUnderline"
+          @change="(e: any) => setStyles({ urlUnderline: e.target.checked })"
+        >
+          {{ t('core.comp.urlUnderline') }}
+        </a-checkbox>
+      </div>
+    </SettingRow>
 
     <a-collapse class="advanced-settings" :bordered="false">
       <a-collapse-panel key="highlight">
@@ -468,6 +455,10 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
   padding: 0;
 }
 
+.log-select {
+  width: 140px;
+}
+
 .config-section {
   margin-bottom: 20px;
   padding-bottom: 16px;
@@ -483,6 +474,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   margin-bottom: 12px;
 }
 
@@ -506,8 +498,8 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 .advanced-settings {
   overflow: hidden;
   margin-top: 4px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
 }
 
@@ -546,34 +538,16 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
   color: var(--ant-color-text);
 }
 
-.advanced-settings-description {
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
-}
-
 .checkbox-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  min-height: 40px;
   gap: 8px 24px;
 }
 
 .checkbox-row :deep(.ant-checkbox-wrapper) {
   font-size: 14px;
   margin-inline-start: 0;
-}
-
-/* 原有颜色配置样式 */
-.config-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.config-label {
-  font-size: 12px;
-  color: var(--ant-color-text-secondary);
 }
 
 .color-group {
@@ -603,9 +577,9 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
   justify-content: space-between;
   align-items: center;
   padding: 6px 10px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 4px;
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 6px;
 }
 
 .color-info {
@@ -621,7 +595,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 }
 
 .help-icon {
-  color: var(--ant-color-text-secondary);
+  color: var(--ant-color-text-tertiary);
   font-size: 11px;
 }
 
@@ -635,7 +609,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
   width: 28px;
   height: 20px;
   padding: 0;
-  border: 1px solid var(--ant-color-border);
+  border: 1px solid var(--ant-color-border-secondary);
   border-radius: 3px;
   cursor: pointer;
   background: transparent;

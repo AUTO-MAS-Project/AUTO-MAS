@@ -2,11 +2,7 @@ import type { Page } from '@playwright/test'
 import type { I18nMessagesOut } from '../src/api/models/I18nMessagesOut'
 import { expect, test } from './fixtures'
 
-const languageSelect = (page: Page) =>
-  page
-    .locator('.form-item-vertical')
-    .filter({ has: page.locator('.form-label').filter({ hasText: /^(Language|语言|言語)$/ }) })
-    .locator('.ant-select')
+const languageSelect = (page: Page) => page.locator('.language-select')
 
 const chooseLanguage = async (page: Page, name: string) => {
   await languageSelect(page).click()
