@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { DEFAULT_TRAY_ITEMS, TRAY_ACTION_OPTIONS, type TrayMenuItem } from '@/types/tray'
+import SettingRow from '@/components/ui/SettingRow.vue'
 import TrayMenuDialog from './TrayMenuDialog.vue'
 
 const { t } = useI18n()
@@ -66,67 +66,56 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="tray-menu-summary" :aria-busy="loading">
-    <div class="tray-menu-description">
-      <div class="tray-menu-title">
-        <span>{{ t('core.setting.tray.section') }}</span>
-        <a-tooltip :title="t('core.setting.tray.sectionTip')">
-          <QuestionCircleOutlined class="help-icon" />
-        </a-tooltip>
-      </div>
-      <div v-if="!loading && !loadFailed" class="tray-menu-preview" :title="preview">
+  <!-- 纯控件形态：标签与 ⓘ 提示由 SettingRow 承担，这里只留预览摘要和编辑入口 -->
+  <SettingRow :label="t('core.setting.tray.section')" :hint="t('core.setting.tray.sectionTip')">
+    <div class="tray-menu-summary" :aria-busy="loading">
+      <span v-if="!loading && !loadFailed" class="tray-menu-preview" :title="preview">
         {{ t('core.setting.tray.summary', { count: items.length }) }} · {{ preview }}
-      </div>
-      <div v-if="loadFailed" class="tray-menu-preview" role="alert">
+      </span>
+      <span v-else-if="loadFailed" class="tray-menu-preview tray-menu-preview--error" role="alert">
         {{ t('core.setting.tray.loadFailed') }}
-      </div>
+      </span>
+      <a-button v-if="loadFailed" size="small" @click="load">
+        {{ t('core.setting.tray.retry') }}
+      </a-button>
+      <a-button
+        v-else
+        size="small"
+        :loading="loading"
+        :disabled="loading"
+        @click="editorOpen = true"
+      >
+        {{ t('core.setting.tray.edit') }}
+      </a-button>
+      <TrayMenuDialog
+        v-if="editorOpen"
+        :saved-items="items"
+        @saved="handleSaved"
+        @close="editorOpen = false"
+      />
     </div>
-    <a-button v-if="loadFailed" size="small" @click="load">
-      {{ t('core.setting.tray.retry') }}
-    </a-button>
-    <a-button v-else size="small" :loading="loading" :disabled="loading" @click="editorOpen = true">
-      {{ t('core.setting.tray.edit') }}
-    </a-button>
-    <TrayMenuDialog
-      v-if="editorOpen"
-      :saved-items="items"
-      @saved="handleSaved"
-      @close="editorOpen = false"
-    />
-  </div>
+  </SettingRow>
 </template>
 
 <style scoped>
 .tray-menu-summary {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding-block: 8px;
-}
-
-.tray-menu-description {
-  flex: 1;
+  justify-content: flex-end;
+  gap: 12px;
   min-width: 0;
 }
 
-.tray-menu-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon,
 .tray-menu-preview {
+  min-width: 0;
+  overflow: hidden;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
-}
-
-.tray-menu-preview {
-  margin-top: 4px;
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tray-menu-preview--error {
+  color: var(--ant-color-error);
 }
 </style>

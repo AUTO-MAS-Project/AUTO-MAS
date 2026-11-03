@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { PlayCircleOutlined, QuestionCircleOutlined, UploadOutlined } from '@ant-design/icons-vue'
+import { PlayCircleOutlined, SoundOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import type { PressSoundPhase, PressSoundPreset } from '@/types/pressSound'
-import type { RadioChangeEvent } from 'ant-design-vue'
-import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
+import SectionCard from '@/components/ui/SectionCard.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
 
 const props = defineProps<{
   enabled: boolean
@@ -31,6 +31,10 @@ const soundOptions = computed(() => [
   { label: t('core.setting.pressSound.duck'), value: 'duck' },
   { label: t('core.setting.pressSound.fx1'), value: 'fx1' },
   { label: t('core.setting.pressSound.custom'), value: 'custom' },
+])
+const modeOptions = computed(() => [
+  { label: t('core.setting.basic.pressSoundSame'), value: 'custom' },
+  { label: t('core.setting.basic.pressSoundSeparate'), value: 'customPair' },
 ])
 const fileRows = computed(() => [
   {
@@ -60,108 +64,95 @@ const ready = computed(() => !isCustom.value || fileRows.value.every(file => Boo
 </script>
 
 <template>
-  <div class="form-section press-sound-settings">
-    <div class="section-header">
-      <h3>{{ t('core.setting.basic.pressSoundSection') }}</h3>
-    </div>
-    <a-row :gutter="24">
-      <a-col :xs="24" :md="12">
-        <div class="form-item-vertical">
-          <div class="form-label-wrapper">
-            <a-checkbox
-              :checked="enabled"
-              :disabled="saving"
-              :aria-busy="saving"
-              @change="(event: CheckboxChangeEvent) => emit('enabledChange', event.target.checked)"
-            >
-              {{ t('core.setting.basic.pressSoundEnabled') }}
-            </a-checkbox>
-            <a-tooltip :title="t('core.setting.basic.pressSoundEnabledTip')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </div>
-        </div>
-      </a-col>
-      <a-col :xs="24" :md="12">
-        <div class="form-item-vertical">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('core.setting.basic.pressSoundPreset') }}</span>
-          </div>
-          <a-select
-            :value="isCustom ? 'custom' : preset"
-            :options="soundOptions"
-            :disabled="saving"
-            size="large"
-            style="width: 100%"
-            @change="(value: unknown) => emit('presetChange', value as PressSoundPreset)"
-          />
-        </div>
-      </a-col>
-    </a-row>
-
-    <div v-if="isCustom" class="form-item-vertical">
-      <div class="form-label-wrapper">
-        <span class="form-label">{{ t('core.setting.basic.pressSoundMode') }}</span>
-      </div>
-      <a-radio-group
-        :value="preset"
+  <SectionCard :title="t('core.setting.basic.pressSoundSection')" :icon="SoundOutlined">
+    <SettingRow
+      :label="t('core.setting.basic.pressSoundEnabled')"
+      :hint="t('core.setting.basic.pressSoundEnabledTip')"
+    >
+      <a-switch
+        :checked="enabled"
+        :loading="saving"
         :disabled="saving"
-        class="sound-mode"
-        @change="(event: RadioChangeEvent) => emit('presetChange', event.target.value)"
-      >
-        <a-radio-button value="custom">{{ t('core.setting.basic.pressSoundSame') }}</a-radio-button>
-        <a-radio-button value="customPair">{{
-          t('core.setting.basic.pressSoundSeparate')
-        }}</a-radio-button>
-      </a-radio-group>
-      <p class="sound-help">
-        {{
-          t(
-            preset === 'customPair'
-              ? 'core.setting.basic.pressSoundSeparateTip'
-              : 'core.setting.basic.pressSoundSameTip'
-          )
-        }}
-      </p>
-      <div v-for="file in fileRows" :key="file.kind" class="sound-file-row">
-        <span class="sound-file-label">{{ file.label }}</span>
-        <a-input
-          :value="file.name || file.path.split(/[\\/]/).pop()"
-          :placeholder="t('core.setting.basic.pressSoundNoFile')"
-          :title="file.path || undefined"
-          :aria-label="file.label"
-          readonly
-          class="sound-file-name"
-        />
-        <a-button :disabled="saving" @click="emit('import', file.kind)">
-          <template #icon><UploadOutlined /></template>
-          {{ t('core.setting.basic.pressSoundChooseFile') }}
-        </a-button>
-        <a-button
-          :disabled="saving || !file.path"
-          :aria-label="t('core.setting.basic.pressSoundPreviewFile', { name: file.label })"
-          @click="emit('preview', file.phase)"
-        >
-          <template #icon><PlayCircleOutlined /></template>
-          {{ t('core.setting.basic.pressSoundPreviewAction') }}
-        </a-button>
-      </div>
-      <p class="sound-help">{{ t('core.setting.basic.pressSoundFileHint') }}</p>
-    </div>
+        :aria-busy="saving"
+        :aria-label="t('core.setting.basic.pressSoundEnabled')"
+        @change="(checked: boolean | string | number) => emit('enabledChange', !!checked)"
+      />
+    </SettingRow>
 
-    <div class="form-item-vertical">
-      <div class="form-label-wrapper">
-        <span class="form-label">{{ t('core.setting.basic.pressSoundVolume') }}</span>
+    <SettingRow
+      :label="t('core.setting.basic.pressSoundPreset')"
+      :hint="t('core.setting.basic.pressSoundPresetTip')"
+    >
+      <a-select
+        class="preset-select"
+        :value="isCustom ? 'custom' : preset"
+        :options="soundOptions"
+        :disabled="saving"
+        :aria-label="t('core.setting.basic.pressSoundPreset')"
+        @change="(value: unknown) => emit('presetChange', value as PressSoundPreset)"
+      />
+    </SettingRow>
+
+    <!-- 自定义音效：模式与逐文件选择都需要整行空间 -->
+    <SettingRow
+      v-if="isCustom"
+      stacked
+      :label="t('core.setting.basic.pressSoundMode')"
+      :hint="
+        t(
+          preset === 'customPair'
+            ? 'core.setting.basic.pressSoundSeparateTip'
+            : 'core.setting.basic.pressSoundSameTip'
+        )
+      "
+    >
+      <div class="sound-custom">
+        <a-segmented
+          :value="preset"
+          :options="modeOptions"
+          :disabled="saving"
+          @change="(value: any) => emit('presetChange', value as PressSoundPreset)"
+        />
+        <div v-for="file in fileRows" :key="file.kind" class="sound-file-row">
+          <span class="sound-file-label">{{ file.label }}</span>
+          <a-input
+            :value="file.name || file.path.split(/[\\/]/).pop()"
+            :placeholder="t('core.setting.basic.pressSoundNoFile')"
+            :title="file.path || undefined"
+            :aria-label="file.label"
+            readonly
+            class="sound-file-name"
+          />
+          <a-button :disabled="saving" @click="emit('import', file.kind)">
+            <template #icon><UploadOutlined /></template>
+            {{ t('core.setting.basic.pressSoundChooseFile') }}
+          </a-button>
+          <a-button
+            :disabled="saving || !file.path"
+            :aria-label="t('core.setting.basic.pressSoundPreviewFile', { name: file.label })"
+            @click="emit('preview', file.phase)"
+          >
+            <template #icon><PlayCircleOutlined /></template>
+            {{ t('core.setting.basic.pressSoundPreviewAction') }}
+          </a-button>
+        </div>
+        <p class="sound-help">{{ t('core.setting.basic.pressSoundFileHint') }}</p>
       </div>
+    </SettingRow>
+
+    <SettingRow
+      :label="t('core.setting.basic.pressSoundVolume')"
+      :hint="t('core.setting.basic.pressSoundVolumeTip')"
+    >
       <div class="sound-volume-row">
         <a-slider
+          class="sound-volume-slider"
           :value="volume"
           :min="0"
           :max="1"
           :step="0.05"
           :disabled="saving"
           :aria-label="t('core.setting.basic.pressSoundVolume')"
-          class="sound-volume-slider"
           @change="(value: unknown) => emit('volumeChange', value as number)"
         />
         <span class="sound-percent">{{ Math.round(volume * 100) }}%</span>
@@ -170,15 +161,22 @@ const ready = computed(() => !isCustom.value || fileRows.value.every(file => Boo
           {{ t('core.setting.basic.pressSoundPreviewPair') }}
         </a-button>
       </div>
-    </div>
-  </div>
+    </SettingRow>
+  </SectionCard>
 </template>
 
 <style scoped>
-.sound-mode {
+.preset-select {
+  width: 220px;
+}
+
+.sound-custom {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 0;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .sound-file-row {
@@ -186,40 +184,47 @@ const ready = computed(() => !isCustom.value || fileRows.value.every(file => Boo
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  width: 100%;
 }
 
 .sound-file-label {
   width: 48px;
   flex-shrink: 0;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
 }
 
 .sound-file-name {
-  flex: 1 1 160px;
+  flex: 1 1 200px;
   min-width: 0;
+  max-width: 360px;
   text-overflow: ellipsis;
 }
 
 .sound-help {
-  color: var(--ant-color-text-secondary);
-  margin: 8px 0 0;
+  margin: 0;
+  color: var(--ant-color-text-tertiary);
   font-size: 12px;
+  line-height: 1.5;
 }
 
 .sound-volume-row {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  width: 100%;
+  max-width: 480px;
 }
 
 .sound-volume-slider {
   flex: 1;
   min-width: 64px;
-  max-width: 360px;
+  margin: 0;
 }
 
 .sound-percent {
   min-width: 36px;
+  color: var(--ant-color-text);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }

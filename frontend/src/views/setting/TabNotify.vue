@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { ApiOutlined, BellOutlined, FileTextOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import type { GlobalConfig, NotifyChannelOut } from '@/api'
 import { Service } from '@/api'
@@ -10,10 +11,13 @@ import {
   FALLBACK_POLICY_FIELDS,
   channelSummary,
   groupChannels,
+  isChannelEnabled,
+  sortChannels,
   idleStateKey,
   scopeFields,
 } from './notifyChannelView'
 import NotifyFieldRenderer from './components/NotifyFieldRenderer.vue'
+import SectionCard from '@/components/ui/SectionCard.vue'
 import { handleExternalLink } from '@/utils/openExternal'
 
 const props = defineProps<{
@@ -92,6 +96,7 @@ const loadWebhookNames = async () => {
 }
 
 const groups = computed(() => groupChannels(channels.value, 'global', notifyValues.value))
+const channelCards = computed(() => sortChannels([...groups.value.active, ...groups.value.idle]))
 
 const summaryOf = (channel: NotifyChannelOut) =>
   channelSummary(channel, notifyValues.value, t, {
@@ -170,7 +175,7 @@ const modalPopupContainer = () =>
         >
           {{ t('core.setting.notify.usageDoc') }}
         </a>
-        <a-button type="primary" :loading="testingNotify" size="middle" @click="testNotify">
+        <a-button type="primary" :loading="testingNotify" @click="testNotify">
           {{ t('core.setting.notify.sendTest') }}
         </a-button>
       </div>
@@ -192,10 +197,7 @@ const modalPopupContainer = () =>
 
     <!-- 通知内容：全局推送策略，非渠道段，不参与渠道分组；
          描述端点失败时用本地兜底字段，保证这里仍可改 -->
-    <section v-if="policyFields.length" class="panel">
-      <div class="panel-head">
-        <h3>{{ policyTitle }}</h3>
-      </div>
+    <SectionCard v-if="policyFields.length" :title="policyTitle" :icon="FileTextOutlined">
       <div class="policy-grid">
         <NotifyFieldRenderer
           v-for="field in policyFields"
@@ -206,68 +208,36 @@ const modalPopupContainer = () =>
           @save="value => saveField(field.group, field.name, value)"
         />
       </div>
-    </section>
+    </SectionCard>
 
     <template v-if="!channelsError">
-      <section class="panel">
-        <div class="panel-head">
-          <i class="dot" />
-          <h3 class="count">
-            {{ t('core.setting.notify.countTemplate', { n: groups.active.length }) }}
-          </h3>
-        </div>
-        <div v-if="groups.active.length" class="cards">
+      <SectionCard :title="t('core.setting.notify.channelsTitle')" :icon="BellOutlined">
+        <div v-if="channelsLoading" class="channels-loading"><a-spin /></div>
+        <div v-else-if="channelCards.length" class="channel-grid">
           <NotifyChannelCard
-            v-for="channel in groups.active"
+            v-for="channel in channelCards"
             :key="channel.key"
             :channel="channel"
             variant="card"
-            :state-text="t('core.setting.notify.stateEnabled')"
-            :state-active="true"
+            :state-text="
+              t(
+                `core.setting.notify.${isChannelEnabled(channel, notifyValues) ? 'stateEnabled' : idleStateKey(channel, { clawConnected, webhookNames: [] })}`
+              )
+            "
+            :state-active="isChannelEnabled(channel, notifyValues)"
             :summary="summaryOf(channel)"
             @open="openChannel"
           />
         </div>
-        <NoData
-          v-else
-          :description="t('core.setting.notify.activeEmpty')"
-          :image-style="{ height: '48px' }"
-        />
-      </section>
+        <NoData v-else :image-style="{ height: '48px' }" />
+      </SectionCard>
 
-      <section class="panel dashed">
-        <div class="panel-head">
-          <i class="dot off" />
-          <h3 class="count">{{ t('core.setting.notify.idleSection') }}</h3>
-        </div>
-        <div v-if="groups.idle.length" class="rows">
-          <NotifyChannelCard
-            v-for="channel in groups.idle"
-            :key="channel.key"
-            :channel="channel"
-            variant="row"
-            :state-text="
-              t(
-                `core.setting.notify.${idleStateKey(channel, { clawConnected: clawConnected, webhookNames: [] })}`
-              )
-            "
-            :state-active="false"
-            :summary="''"
-            @open="openChannel"
-          />
-        </div>
-        <NoData
-          v-else
-          :description="t('core.setting.notify.idleEmpty')"
-          :image-style="{ height: '48px' }"
-        />
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
+      <SectionCard :icon="ApiOutlined">
+        <template #title>
           <i class="dot" :class="{ off: !webhookNames.length }" />
-          <h3>{{ t('core.setting.notify.customSection') }}</h3>
-        </div>
+          {{ t('core.setting.notify.customSection') }}
+          <span class="card-count">{{ groups.custom.length }}</span>
+        </template>
         <div v-if="groups.custom.length" class="cards">
           <NotifyChannelCard
             v-for="channel in groups.custom"
@@ -285,7 +255,7 @@ const modalPopupContainer = () =>
           :description="t('core.setting.notify.customEmpty')"
           :image-style="{ height: '48px' }"
         />
-      </section>
+      </SectionCard>
     </template>
 
     <NotifyChannelModal
@@ -331,38 +301,13 @@ const modalPopupContainer = () =>
   margin-bottom: 16px;
 }
 
-.panel {
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
+.channels-loading {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
 }
 
-.panel.dashed {
-  border-style: dashed;
-}
-
-.panel-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-}
-
-.panel-head h3 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.panel-head .count {
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--ant-color-text-secondary);
-}
-
+/* 卡片头部状态点：绿点表示该组至少有一个渠道可用，灰点表示全未启用 */
 .dot {
   width: 7px;
   height: 7px;
@@ -377,21 +322,48 @@ const modalPopupContainer = () =>
   opacity: 0.5;
 }
 
-.policy-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px 32px;
+.card-count {
+  margin-left: 2px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ant-color-fill-secondary);
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
 }
 
-.cards {
+.policy-grid {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0 10px;
+}
+
+.policy-grid :deep(.field-item) {
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.policy-grid :deep(.field-item:last-child) {
+  border-bottom: 0;
+}
+
+.cards,
+.channel-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
   gap: 12px;
+  padding: 4px 0 10px;
 }
 
-.rows {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
-  gap: 10px;
+.channel-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container (max-width: 480px) {
+  .channel-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

@@ -9,14 +9,7 @@
       background: transparent;
     "
   >
-    <a-layout-sider
-      :width="SIDER_WIDTH"
-      :theme="isDark ? 'dark' : 'light'"
-      :style="{
-        background: 'var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated))',
-        borderRight: '1px solid var(--ant-color-border)',
-      }"
-    >
+    <a-layout-sider :width="SIDER_WIDTH" :theme="isDark ? 'dark' : 'light'" class="app-sider">
       <div class="sider-content">
         <a-menu
           v-model:selected-keys="selectedKeys"
@@ -46,7 +39,7 @@
       </div>
     </a-layout-sider>
 
-    <a-layout style="flex: 1; min-width: 0; background: transparent">
+    <a-layout class="app-body" style="flex: 1; min-width: 0; background: transparent">
       <a-layout-content class="content-area">
         <a-alert
           v-if="languageResources.error"
@@ -237,6 +230,17 @@ const onMenuClick: MenuProps['onClick'] = info => {
 </script>
 
 <style scoped>
+/* 侧栏走 --app-sider-bg：深色下是近黑（#080808 量级）只带极轻主色染色，
+   与页面底色同一层次；自定义背景图开启时让位给半透明表面色。 */
+.app-sider {
+  background: var(--app-sider-bg, var(--ant-color-bg-elevated));
+  border-right: 1px solid var(--app-sider-border-color, var(--ant-color-border));
+}
+
+:global(html.appearance-background-custom) .app-sider {
+  background: var(--app-appearance-elevated-surface-bg);
+}
+
 .sider-content {
   height: 100%;
   display: flex;
@@ -256,7 +260,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
   /* 水平居中 */
   width: calc(100% - 16px);
   /* 两侧各留 8px 空隙 */
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 5px 16px !important;
   /* 左右内边距 */
   line-height: 36px;
@@ -275,7 +279,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
 .sider-content :deep(.ant-menu .ant-menu-submenu) {
   width: calc(100% - 16px);
   margin: 2px auto;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
 .sider-content :deep(.ant-menu .ant-menu-submenu-title) {
@@ -283,7 +287,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
   margin: 0;
   padding: 5px 16px !important;
   line-height: 30px;
-  border-radius: 6px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -371,7 +375,14 @@ const onMenuClick: MenuProps['onClick'] = info => {
   margin-top: auto;
 }
 
+.app-body {
+  position: relative;
+  isolation: isolate;
+}
+
 .content-area {
+  position: relative;
+  z-index: 1;
   min-height: 0;
   overflow: auto;
   scrollbar-width: none;

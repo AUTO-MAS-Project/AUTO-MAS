@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { DownOutlined, DownloadOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import {
+  BugOutlined,
+  CloudDownloadOutlined,
+  CodeOutlined,
+  DownOutlined,
+  DownloadOutlined,
+  LoadingOutlined,
+} from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import type { RuntimeLaunchModeSetting, RuntimeLaunchModeState } from '@/types/electron'
@@ -18,6 +25,9 @@ import { useMaaFWIssueReport } from '@/composables/useMaaFWIssueReport'
 import { useM9AIssueReport } from '@/composables/useM9AIssueReport'
 import { useMSSIssueReport } from '@/composables/useMSSIssueReport'
 import { useScriptApi } from '@/composables/useScriptApi'
+import SectionCard from '@/components/ui/SectionCard.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
+import { SCRIPT_LABELS, SCRIPT_LOGOS } from '@/utils/scriptLogos'
 import {
   maafwScriptTypeByConfigType,
   resolveMaaFWFlavor,
@@ -97,6 +107,50 @@ const handleMaaFWMenuOpenChange = (open: boolean) => {
 const handleMaaFWMenuClick = ({ key }: { key: string | number }) => {
   void exportMaaFWIssueReport(String(key))
 }
+
+/** 一块专项问题包磁贴：图标与名字统一取 scriptLogos，避免再引 core.scripts.type.* 的「脚本」后缀 */
+interface IssueTile {
+  type: ScriptType
+  logo: string
+  label: string
+  visible: boolean
+  loading: boolean
+  /** 点击导出；MFW 走下拉，没有直接动作 */
+  run?: () => void
+  /** MFW 按脚本导出，磁贴改成下拉触发 */
+  dropdown?: boolean
+}
+
+const tileOf = (
+  type: ScriptType,
+  loading: boolean,
+  run?: () => void,
+  visibleTypes: ScriptType[] = [type]
+): IssueTile => ({
+  type,
+  logo: SCRIPT_LOGOS[type],
+  label: SCRIPT_LABELS[type],
+  visible: hasScriptType(...visibleTypes),
+  loading,
+  run,
+})
+
+// 顺序即页面顺序：MFW 仍夹在 BetterGI 与 M9A 之间，与改版前的按钮顺序保持一致
+const issueTiles = computed<IssueTile[]>(() => [
+  tileOf('MAA', exportingMaaLogs.value, () => void exportMaaIssueReport()),
+  tileOf('MaaEnd', exportingMaaEndLogs.value, () => void exportMaaEndIssueReport()),
+  tileOf('Okww', exportingOkwwLogs.value, () => void exportOkwwIssueReport()),
+  tileOf('OkNte', exportingOkNteLogs.value, () => void exportOkNteIssueReport()),
+  tileOf('ZzzOd', exportingZzzOdLogs.value, () => void exportZzzOdIssueReport()),
+  tileOf('Whimbox', exportingWhimboxLogs.value, () => void exportWhimboxIssueReport()),
+  tileOf('BetterGI', exportingBetterGILogs.value, () => void exportBetterGIIssueReport()),
+  {
+    ...tileOf('MaaFW', exportingMaaFWLogs.value, undefined, ['MaaFW', 'M9A', 'MSS']),
+    dropdown: true,
+  },
+  tileOf('M9A', exportingM9ALogs.value, () => void exportM9AIssueReport()),
+  tileOf('MSS', exportingMSSLogs.value, () => void exportMSSIssueReport()),
+])
 
 // Runtime 灰度开关：持久化设置 + 当前生效值（重启后生效）
 const runtimeLaunchMode = ref<RuntimeLaunchModeSetting>('auto')
@@ -192,254 +246,246 @@ const exportDataBackup = async () => {
 </script>
 <template>
   <div class="tab-content">
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('core.setting.advanced.backupSection') }}</h3>
+    <!-- 备份与导出：两条「标题 + 说明 + 按钮」的行，主色只留给最该被点的数据备份 -->
+    <SectionCard
+      :title="t('core.setting.advanced.backupExportSection')"
+      :icon="CloudDownloadOutlined"
+    >
+      <div class="export-row">
+        <div class="export-row-text">
+          <span class="export-row-title">{{ t('core.setting.advanced.exportBackup') }}</span>
+          <span class="export-row-desc">{{ t('core.setting.advanced.backupDesc') }}</span>
+        </div>
+        <a-button type="primary" :loading="exportingDataBackup" @click="exportDataBackup">
+          {{ t('core.setting.advanced.exportAction') }}
+        </a-button>
       </div>
-      <a-row :gutter="24">
-        <a-col :span="24">
-          <div class="backup-action-row">
-            <a-button type="primary" :loading="exportingDataBackup" @click="exportDataBackup">
-              <template #icon>
-                <DownloadOutlined />
-              </template>
-              {{ t('core.setting.advanced.exportBackup') }}
-            </a-button>
-            <span class="backup-description">{{ t('core.setting.advanced.backupDesc') }}</span>
-          </div>
-        </a-col>
-      </a-row>
-    </div>
 
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('core.setting.advanced.logSection') }}</h3>
+      <div class="export-row">
+        <div class="export-row-text">
+          <span class="export-row-title">{{ t('core.setting.advanced.exportLog') }}</span>
+          <span class="export-row-desc">{{ t('core.setting.advanced.exportLogDesc') }}</span>
+        </div>
+        <a-button :loading="exportingLogs" @click="exportLogsZip">
+          {{ t('core.setting.advanced.exportAction') }}
+        </a-button>
       </div>
-      <a-row :gutter="24">
-        <a-col :span="24">
-          <a-button type="primary" :loading="exportingLogs" @click="exportLogsZip">
-            <template #icon>
-              <DownloadOutlined />
+    </SectionCard>
+
+    <!-- 专项问题包：一个专项一块磁贴，只出现已添加的脚本；MFW 点开是脚本列表 -->
+    <SectionCard
+      :title="t('core.setting.advanced.issueSection')"
+      :subtitle="t('core.setting.advanced.issueSectionDesc')"
+      :icon="BugOutlined"
+    >
+      <p v-if="issueTiles.every(tile => !tile.visible)" class="issue-empty">
+        {{ t('core.setting.advanced.issueSectionEmpty') }}
+      </p>
+
+      <div v-else class="issue-grid">
+        <template v-for="tile in issueTiles" :key="tile.type">
+          <a-dropdown
+            v-if="tile.dropdown && tile.visible"
+            :trigger="['click']"
+            :disabled="tile.loading"
+            @open-change="handleMaaFWMenuOpenChange"
+          >
+            <button type="button" class="issue-tile" :disabled="tile.loading">
+              <img :src="tile.logo" alt="" class="issue-tile-logo" />
+              <span class="issue-tile-name">{{ tile.label }}</span>
+              <DownOutlined v-if="!tile.loading" class="issue-tile-action" aria-hidden="true" />
+              <LoadingOutlined v-else class="issue-tile-action is-loading" aria-hidden="true" />
+            </button>
+            <template #overlay>
+              <a-menu @click="handleMaaFWMenuClick">
+                <a-menu-item v-for="script in maafwReportScripts" :key="script.uid">
+                  {{ script.name }}
+                  <a-tag :color="script.flavor.typeTagColor" class="maafw-report-tag">
+                    {{ script.flavor.typeTagLabel }}
+                  </a-tag>
+                </a-menu-item>
+                <a-menu-item v-if="maafwReportScripts.length === 0" key="" disabled>
+                  {{ t('core.setting.advanced.exportMaaFWEmpty') }}
+                </a-menu-item>
+              </a-menu>
             </template>
-            {{ t('core.setting.advanced.exportLog') }}
-          </a-button>
-        </a-col>
-      </a-row>
-    </div>
+          </a-dropdown>
 
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('core.setting.advanced.issueSection') }}</h3>
+          <button
+            v-else-if="tile.visible"
+            type="button"
+            class="issue-tile"
+            :disabled="tile.loading"
+            @click="tile.run?.()"
+          >
+            <img :src="tile.logo" alt="" class="issue-tile-logo" />
+            <span class="issue-tile-name">{{ tile.label }}</span>
+            <DownloadOutlined v-if="!tile.loading" class="issue-tile-action" aria-hidden="true" />
+            <LoadingOutlined v-else class="issue-tile-action is-loading" aria-hidden="true" />
+          </button>
+        </template>
       </div>
-      <a-row :gutter="24">
-        <a-col :span="24">
-          <a-space size="large" wrap>
-            <a-button
-              v-if="hasScriptType('MAA')"
-              type="primary"
-              :loading="exportingMaaLogs"
-              @click="exportMaaIssueReport"
-            >
-              <template #icon>
-                <DownloadOutlined />
-              </template>
-              {{ t('core.setting.advanced.exportMaa') }}
-            </a-button>
-            <a-button
-              v-if="hasScriptType('MaaEnd')"
-              type="primary"
-              :loading="exportingMaaEndLogs"
-              @click="exportMaaEndIssueReport"
-            >
-              <template #icon>
-                <DownloadOutlined />
-              </template>
-              {{ t('core.setting.advanced.exportMaaEnd') }}
-            </a-button>
-            <a-button
-              v-if="hasScriptType('Okww')"
-              type="primary"
-              :loading="exportingOkwwLogs"
-              @click="exportOkwwIssueReport"
-            >
-              <template #icon>
-                <DownloadOutlined />
-              </template>
-              {{ t('core.setting.advanced.exportOkww') }}
-            </a-button>
-            <a-button
-              v-if="hasScriptType('OkNte')"
-              type="primary"
-              :loading="exportingOkNteLogs"
-              @click="exportOkNteIssueReport"
-            >
-              <template #icon>
-                <DownloadOutlined />
-              </template>
-              {{ t('core.setting.advanced.exportOkNte') }}
-            </a-button>
-            <a-button
-              v-if="hasScriptType('ZzzOd')"
-              type="primary"
-              :loading="exportingZzzOdLogs"
-              @click="exportZzzOdIssueReport"
-            >
-              <template #icon>
-                <DownloadOutlined />
-              </template>
-              {{ t('core.setting.advanced.exportZzzOd') }}
-            </a-button>
-            <a-button
-              v-if="hasScriptType('Whimbox')"
-              type="primary"
-              :loading="exportingWhimboxLogs"
-              @click="exportWhimboxIssueReport"
-            >
-              <template #icon>
-                <DownloadOutlined />
-              </template>
-              {{ t('core.setting.advanced.exportWhimbox') }}
-            </a-button>
-            <a-button
-              v-if="hasScriptType('BetterGI')"
-              type="primary"
-              :loading="exportingBetterGILogs"
-              @click="exportBetterGIIssueReport"
-            >
-              <template #icon>
-                <DownloadOutlined />
-              </template>
-              {{ t('core.setting.advanced.exportBetterGI') }}
-            </a-button>
-            <a-dropdown
-              v-if="hasScriptType('MaaFW', 'M9A', 'MSS')"
-              :trigger="['click']"
-              :disabled="exportingMaaFWLogs"
-              @open-change="handleMaaFWMenuOpenChange"
-            >
-              <a-button type="primary" :loading="exportingMaaFWLogs">
-                <template #icon>
-                  <DownloadOutlined />
-                </template>
-                {{ t('core.setting.advanced.exportMaaFW') }}
-                <DownOutlined />
-              </a-button>
-              <template #overlay>
-                <a-menu @click="handleMaaFWMenuClick">
-                  <a-menu-item v-for="script in maafwReportScripts" :key="script.uid">
-                    {{ script.name }}
-                    <a-tag :color="script.flavor.typeTagColor" class="maafw-report-tag">
-                      {{ script.flavor.typeTagLabel }}
-                    </a-tag>
-                  </a-menu-item>
-                  <a-menu-item v-if="maafwReportScripts.length === 0" key="" disabled>
-                    {{ t('core.setting.advanced.exportMaaFWEmpty') }}
-                  </a-menu-item>
-                </a-menu>
-              </template>
-            </a-dropdown>
-            <a-button
-              v-if="hasScriptType('M9A')"
-              type="primary"
-              :loading="exportingM9ALogs"
-              @click="exportM9AIssueReport"
-            >
-              <template #icon>
-                <DownloadOutlined />
-              </template>
-              {{ t('core.setting.advanced.exportM9A') }}
-            </a-button>
-            <a-button
-              v-if="hasScriptType('MSS')"
-              type="primary"
-              :loading="exportingMSSLogs"
-              @click="exportMSSIssueReport"
-            >
-              <template #icon>
-                <DownloadOutlined />
-              </template>
-              {{ t('core.setting.advanced.exportMSS') }}
-            </a-button>
-          </a-space>
-        </a-col>
-      </a-row>
-    </div>
+    </SectionCard>
 
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('core.setting.advanced.devSection') }}</h3>
-      </div>
-      <a-row :gutter="24">
-        <a-col :span="24">
-          <a-space size="large">
-            <a-button size="large" @click="openDevTools">
-              {{ t('core.setting.advanced.openDevTools') }}
-            </a-button>
-          </a-space>
-        </a-col>
-      </a-row>
-    </div>
+    <!-- 运行与调试：低频的两个开关收在同一张卡里，说明走行提示 -->
+    <SectionCard :title="t('core.setting.advanced.runtimeDebugSection')" :icon="CodeOutlined">
+      <SettingRow
+        :label="t('core.setting.advanced.runtimeLaunchMode')"
+        :hint="t('core.setting.advanced.runtimeLaunchModeTip')"
+      >
+        <a-segmented
+          :aria-label="t('core.setting.advanced.runtimeLaunchMode')"
+          :value="runtimeLaunchMode"
+          :options="runtimeLaunchModeOptions"
+          :disabled="runtimeLaunchModeLoading"
+          @change="handleRuntimeLaunchModeChange"
+        />
+        <!-- 生效值跟着分段控件走，紧贴控件放，避免再多一行标签 -->
+        <span v-if="runtimeLaunchModeState" class="mode-effective">
+          {{
+            t('core.setting.advanced.runtimeLaunchModeEffective', {
+              mode: effectiveModeLabel,
+            })
+          }}
+          · {{ t('core.setting.advanced.runtimeLaunchModeRestartHint') }}
+        </span>
+      </SettingRow>
 
-    <div class="form-section">
-      <div class="section-header">
-        <h3>
-          {{ t('core.setting.advanced.runtimeLaunchMode') }}
-          <a-tooltip :title="t('core.setting.advanced.runtimeLaunchModeTip')">
-            <QuestionCircleOutlined class="help-icon" />
-          </a-tooltip>
-        </h3>
-      </div>
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <a-select
-              :aria-label="t('core.setting.advanced.runtimeLaunchMode')"
-              :value="runtimeLaunchMode"
-              :options="runtimeLaunchModeOptions"
-              :loading="runtimeLaunchModeLoading"
-              size="large"
-              style="width: 100%"
-              @change="handleRuntimeLaunchModeChange"
-            />
-            <span v-if="runtimeLaunchModeState" class="runtime-mode-hint">
-              {{
-                t('core.setting.advanced.runtimeLaunchModeEffective', {
-                  mode: effectiveModeLabel,
-                })
-              }}
-              · {{ t('core.setting.advanced.runtimeLaunchModeRestartHint') }}
-            </span>
-          </div>
-        </a-col>
-      </a-row>
-    </div>
+      <SettingRow :label="t('core.setting.advanced.devToolsLabel')">
+        <a-button @click="openDevTools">{{ t('core.setting.advanced.openDevTools') }}</a-button>
+      </SettingRow>
+    </SectionCard>
   </div>
 </template>
 
 <style scoped>
-.backup-action-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.backup-description {
-  color: var(--ant-color-text-secondary);
-  font-size: 14px;
-  line-height: 1.6;
-  flex: 1 1 360px;
-  min-width: 240px;
-}
-
 .maafw-report-tag {
   margin-inline-start: 8px;
   margin-inline-end: 0;
 }
 
-.runtime-mode-hint {
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
+/* 备份与导出：左说明右按钮，两条行分隔线与卡片内其它行一致 */
+.export-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 48px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.export-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.export-row-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.export-row-title {
+  color: var(--ant-color-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.export-row-desc {
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* 一个专项都没添加时给一句说明，避免只留下一张空卡片 */
+.issue-empty {
+  margin: 0;
+  padding: 12px 0 6px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* 专项问题包磁贴：默认低调的填充底色，hover 才亮主色，避免一屏全是主色块 */
+.issue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  padding: 8px 0 6px;
+}
+
+.issue-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 10px;
+  background: var(--ant-color-fill-quaternary);
+  color: var(--ant-color-text);
+  font-size: 14px;
+  line-height: 22px;
+  text-align: start;
+  cursor: pointer;
+  transition:
+    border-color 0.16s,
+    background 0.16s;
+}
+
+.issue-tile:hover:not(:disabled) {
+  border-color: var(--ant-color-primary);
+}
+
+.issue-tile:focus-visible {
+  border-color: var(--ant-color-primary);
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+}
+
+.issue-tile:disabled {
+  cursor: progress;
+}
+
+.issue-tile-logo {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.issue-tile-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.issue-tile-action {
+  flex: 0 0 auto;
+  color: var(--ant-color-text-tertiary);
+  font-size: 14px;
+  transition: color 0.16s;
+}
+
+.issue-tile:hover:not(:disabled) .issue-tile-action,
+.issue-tile-action.is-loading {
+  color: var(--ant-color-primary);
+}
+
+/* 生效说明跟在控件右侧，窄屏时整体折到下一行，不与分段控件抢宽度 */
+.mode-effective {
+  flex: 1 1 240px;
+  min-width: 0;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
   line-height: 1.6;
+  text-align: right;
 }
 </style>

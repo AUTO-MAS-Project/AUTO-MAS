@@ -7,11 +7,22 @@ const chooseOption = async (page: Page, select: Locator, label: string) => {
   await expect(select.locator('.ant-select-selection-item')).toHaveText(label)
 }
 
+const chooseSegment = async (control: Locator, label: string) => {
+  await control.getByText(label, { exact: true }).click()
+  await expect(control.getByRole('radio', { name: label, exact: true })).toBeChecked()
+}
+
 const settingsResponse = (page: Page, action: 'get' | 'update') =>
   page.waitForResponse(
     response =>
       response.url().endsWith(`/api/setting/${action}`) && response.request().method() === 'POST'
   )
+
+const backgroundColor = (page: Page) =>
+  page.locator('body').evaluate(async body => {
+    await Promise.all(body.getAnimations().map(animation => animation.finished))
+    return getComputedStyle(body).backgroundColor
+  })
 
 test.describe('@settings user preferences', () => {
   test('changes the visible theme and retains it after navigation and reload', async ({
@@ -19,17 +30,18 @@ test.describe('@settings user preferences', () => {
     page,
   }) => {
     await app.goto('/settings')
-    const theme = page.locator('.appearance-select')
+    const theme = page.locator('.theme-mode-control')
     await expect(theme).toBeVisible()
-    const original = await theme.locator('.ant-select-selection-item').innerText()
+    const original = await theme.locator('.ant-segmented-item-selected').innerText()
     try {
-      await chooseOption(page, theme, 'Light')
+      await chooseSegment(theme, 'Light')
       await expect(page.locator('html')).not.toHaveClass(/dark/)
-      await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(245, 245, 245)')
+      const lightBackground = await backgroundColor(page)
 
-      await chooseOption(page, theme, 'Dark')
+      await chooseSegment(theme, 'Dark')
       await expect(page.locator('html')).toHaveClass(/dark/)
-      await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(0, 0, 0)')
+      const darkBackground = await backgroundColor(page)
+      expect(darkBackground).not.toBe(lightBackground)
 
       await page
         .getByRole('menuitem')
@@ -40,14 +52,103 @@ test.describe('@settings user preferences', () => {
         .getByRole('menuitem')
         .filter({ has: page.getByText('Settings', { exact: true }) })
         .click()
-      await expect(theme.locator('.ant-select-selection-item')).toHaveText('Dark')
+      await expect(theme.getByRole('radio', { name: 'Dark', exact: true })).toBeChecked()
       await page.reload()
-      await expect(theme.locator('.ant-select-selection-item')).toHaveText('Dark')
+      await expect(theme.getByRole('radio', { name: 'Dark', exact: true })).toBeChecked()
       await expect(page.locator('html')).toHaveClass(/dark/)
-      await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(0, 0, 0)')
+      await expect(page.locator('body')).toHaveCSS('background-color', darkBackground)
       await app.evidence('settings-dark-reloaded')
     } finally {
-      await chooseOption(page, theme, original)
+      await chooseSegment(theme, original)
+    }
+  })
+
+  test('keeps section order, controls and layout preference across responsive changes', async ({
+    app,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await app.goto('/settings')
+    const layout = page.locator('.settings-section-layout')
+    const selector = page.locator('[aria-label="Settings layout"]')
+    const navigation = page.getByRole('navigation', { name: 'Settings sections' })
+    const pane = page.locator('.ant-tabs-tabpane-active')
+    const headings = pane.locator('.form-section > .section-header > h3')
+    const cards = pane.locator('.tab-content > .form-section')
+    try {
+      await expect(layout).toHaveAttribute('data-layout-mode', 'single')
+      await expect(layout).toHaveAttribute('data-effective-layout', 'single')
+      await expect(
+        selector.getByRole('radio', { name: 'Single column', exact: true })
+      ).toBeChecked()
+      await expect(navigation).toBeVisible()
+      await expect.poll(() => headings.count()).toBeGreaterThan(1)
+      const order = (await headings.allTextContents()).map(title => title.trim())
+      await expect(navigation.getByRole('button')).toHaveText(order)
+      expect((await cards.nth(0).boundingBox())!.x).toBe((await cards.nth(1).boundingBox())!.x)
+
+      const lastLink = navigation.getByRole('button').last()
+      await lastLink.click()
+      await expect(lastLink).toHaveAttribute('aria-current', 'location')
+      await expect
+        .poll(() => layout.locator('.ant-tabs-content-holder').evaluate(node => node.scrollTop))
+        .toBeGreaterThan(0)
+      await expect(headings.last()).toBeInViewport()
+
+      await page.getByRole('tab', { name: 'Features', exact: true }).click()
+      const featureOrder = (await headings.allTextContents()).map(title => title.trim())
+      // 录像存储上限由独立的保存按钮提交，适合验证切换布局时保留未保存的输入。
+      const draft = pane.locator('.number-input input').nth(1)
+      const draftElement = await draft.elementHandle()
+      const originalDraft = await draft.inputValue()
+      await draft.fill('4096')
+      await page.setViewportSize({ width: 1040, height: 900 })
+      await expect(navigation).toHaveCount(0)
+      await expect(page.getByText('On this page', { exact: true })).toHaveCount(0)
+      await expect(draft).toHaveValue('4096')
+      expect(await draftElement!.evaluate(node => node.isConnected)).toBe(true)
+
+      await page.setViewportSize({ width: 1920, height: 1080 })
+      await chooseSegment(selector, 'Two columns')
+      await expect(layout).toHaveAttribute('data-layout-mode', 'dual')
+      await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
+      await expect(navigation).toHaveCount(0)
+      await expect(headings).toHaveText(featureOrder)
+      expect((await cards.nth(0).boundingBox())!.x).toBeLessThan(
+        (await cards.nth(1).boundingBox())!.x
+      )
+      await expect(draft).toHaveValue('4096')
+      expect(await draftElement!.evaluate(node => node.isConnected)).toBe(true)
+      await draft.fill(originalDraft)
+
+      await page.setViewportSize({ width: 1040, height: 900 })
+      await expect(layout).toHaveAttribute('data-layout-mode', 'dual')
+      await expect(layout).toHaveAttribute('data-effective-layout', 'single')
+      await expect(navigation).toHaveCount(0)
+      await expect(page.getByText('On this page', { exact: true })).toHaveCount(0)
+      await expect(headings).toHaveText(featureOrder)
+      expect((await cards.nth(0).boundingBox())!.x).toBe((await cards.nth(1).boundingBox())!.x)
+
+      await page.setViewportSize({ width: 1920, height: 1080 })
+      await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
+      await page.reload()
+      await expect(selector.getByRole('radio', { name: 'Two columns', exact: true })).toBeChecked()
+      await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
+      for (const tab of ['Features', 'Notifications', 'Advanced']) {
+        await page.getByRole('tab', { name: tab, exact: true }).click()
+        await expect(
+          selector.getByRole('radio', { name: 'Two columns', exact: true })
+        ).toBeChecked()
+        await expect(navigation).toHaveCount(0)
+      }
+      await page.getByRole('tab', { name: 'About', exact: true }).click()
+      await expect(selector).toHaveCount(0)
+      await expect(navigation).toHaveCount(0)
+      await app.evidence('settings-layout-about')
+    } finally {
+      await page.getByRole('tab', { name: 'Interface', exact: true }).click()
+      await chooseSegment(selector, 'Single column')
     }
   })
 

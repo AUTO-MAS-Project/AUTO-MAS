@@ -83,7 +83,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `game_sign_requested` | 手动签到的使用与被占用拒绝 | `trigger_kind` |
 | `community_account_manage_finished` | 签到账号创建、启停、删除 | `action` |
 | `community_activity_requested` | 社区活动工具是否有需求 | `operation_kind` |
-| `settings_change_finished` | 设置修改成功率及主要功能采用情况 | `setting_key`、`value_kind`、`setting_kind`；包含关闭应用二次确认开关 |
+| `settings_change_finished` | 设置修改成功率及主要功能采用情况 | `setting_key`、`value_kind`、`setting_kind`；包含关闭应用二次确认开关及设置页布局偏好 |
 | `appearance_preference_changed` | 主题、语言、低性能模式需求 | `preference_kind`、`preset_value` |
 | `appearance_package_finished` | 本地外观导入、启用、删除是否顺利 | `package_kind`、`action` |
 | `appearance_store_install_finished` | 主题商店发现到安装的转化 | `category_kind` |
@@ -286,6 +286,8 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
 QQ 高级手动配置复用 `notification_binding_finished`，`action=manual_bind`、`outcome=saved` 仅表示凭据验证并保存，不代表网关 READY 或通知送达；失败记 failure，不采集 AppID、密钥或 OpenID。
 
 脚本更新下载器开关复用 `settings_change_finished`，固定键为 `script_update_takeover`，只记录开关状态与保存结果。
+
+设置页布局复用 `settings_change_finished`，由布局组件在前端配置实际保存后记录结果。固定键为 `settings_layout`、类别为 `other`，单列映射 `default`、双列映射 `custom`；初次读取、响应式回流及目录跳转不产生事件，不上传卡片内容或位置。
 专项运行前的自动检查、缓存命中、下载进度和重试不逐次采集；任务终态由各专项复用 `script_run_finished` 的原观察者负责。
 
 脚本更新公共入口沿用这一观察边界，不另发完成事件。MFW、M9A、MSS 的自动更新统一在用户任务之前执行；更新时机配置保存仍由 `useScriptApi.updateScript` 观察，目录、版本和调度标识不进入匿名统计。
