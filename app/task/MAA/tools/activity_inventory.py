@@ -181,8 +181,10 @@ def resolve_activity_inventory_plans(
             current = [selected[position]] if position in selected else []
         for plan in current:
             key = (plan["Stage"], plan["DropId"])
-            if row.get("LegacyActivityFirst") and key in custom_plans:
-                # 默认 999/9999 不能抬高旧自定义目标。
+            if row.get("LegacyActivityFirst") and (
+                key in custom_plans or key in skipped_keys
+            ):
+                # 已保存的新选择优先，旧默认不能恢复取消的关卡或抬高自定义目标。
                 continue
             plans.append(plan)
     return plans, notices

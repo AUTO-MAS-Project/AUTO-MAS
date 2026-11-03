@@ -43,6 +43,36 @@ export const eventStageIdentity = (type: EventDepotStageType, index: number): st
 export const eventDepotPlanIdentity = (plan: EventDepotMaintainPlan) =>
   `${plan.StageType ?? 'material'}:${plan.StageType === 'all' ? '' : plan.StageIndex}`
 
+// 只投影旧选择用于展示；用户主动编辑后，再由完整的新选择替换旧项。
+export const getLegacyEventDepotPlans = (
+  plans: EventDepotMaintainPlan[],
+  stages: ActivityItem[],
+  template: ('material' | 'orundum')[] = []
+): Map<string, EventDepotMaintainPlan> => {
+  const kinds = stages.length
+    ? stages.map(stage =>
+        isOrundumStage(stage) ? 'orundum' : /^\d+$/.test(stage.Drop) ? 'material' : undefined
+      )
+    : template
+  const result = new Map<string, EventDepotMaintainPlan>()
+  for (const plan of plans) {
+    const index = plan.StageIndex
+    if (!plan.LegacyActivityFirst || !Number.isInteger(index) || !index || index < 1) continue
+    // 沿用旧序号越界时回到第一关的选择，活动空档仅借上期类别展示。
+    const position = index > kinds.length ? 0 : index - 1
+    const kind = kinds[position]
+    if (!kind) continue
+    const stageIndex = kinds.slice(0, position + 1).filter(value => value === kind).length
+    const { key: _key, LegacyActivityFirst: _legacy, LegacyIndex: _index, ...target } = plan
+    result.set(eventStageIdentity(kind, stageIndex), {
+      ...target,
+      StageType: kind,
+      StageIndex: stageIndex,
+    })
+  }
+  return result
+}
+
 export const parseEventDepotPlans = (parsed: unknown): EventDepotMaintainPlan[] => {
   if (!Array.isArray(parsed)) return []
   return parsed.flatMap((plan, index) => {

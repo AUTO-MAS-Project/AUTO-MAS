@@ -89,6 +89,7 @@ import {
   eventStageIdentity,
   getEventDepotStages,
   getEventOrundumStages,
+  getLegacyEventDepotPlans,
 } from './eventDepotMaintainPresets'
 import type { ActivityItem } from '@/types/home'
 import type {
@@ -125,6 +126,10 @@ const { plans, ensureEventPlan, savePlans, queueSave } = props.editor
 const materialStages = computed(() => getEventDepotStages(props.stages))
 const orundumStages = computed(() => getEventOrundumStages(props.stages))
 const placeholder = computed(() => !props.stages.length && !!props.template?.length)
+const hasLegacy = computed(() => plans.value.some(plan => plan.LegacyActivityFirst))
+const legacyPlans = computed(() =>
+  getLegacyEventDepotPlans(plans.value, props.stages, props.template)
+)
 const stockColumnTitle = computed(() =>
   props.depotInventoryTime
     ? t('core.edit.stockRecognizedAt', { time: props.depotInventoryTime })
@@ -148,6 +153,7 @@ const rows = computed<EventRow[]>(() => {
     for (let i = 0; i < count; i++) {
       const identity = eventStageIdentity(type, i + 1)
       const plan = saved.get(identity)
+      const effectivePlan = plan ?? legacyPlans.value.get(identity)
       const preset =
         type === 'orundum' ? (allRow?.OrundumDropCount ?? 9999) : (allRow?.DropCount ?? 999)
       result.push({
@@ -156,11 +162,11 @@ const rows = computed<EventRow[]>(() => {
         index: i + 1,
         stage: placeholder.value ? undefined : stages[i],
         plan,
-        farmed: !plan?.Skip,
-        target: plan
+        farmed: effectivePlan ? !effectivePlan.Skip : !!allRow || !hasLegacy.value,
+        target: effectivePlan
           ? type === 'orundum'
-            ? (plan.OrundumDropCount ?? plan.DropCount)
-            : plan.DropCount
+            ? (effectivePlan.OrundumDropCount ?? effectivePlan.DropCount)
+            : effectivePlan.DropCount
           : preset,
       })
     }
@@ -168,12 +174,12 @@ const rows = computed<EventRow[]>(() => {
   return result
 })
 
-// 保留旧配置的当期补齐行为；仅查看占位不会自动新增、保存目标。
+// 尚未编辑的旧选择只展示，不因打开页面补成全选；占位也不自动保存。
 watch(
   () => [props.stages, props.activityLoading, props.activityError] as const,
   () => {
     if (props.loading || props.activityLoading || props.activityError || placeholder.value) return
-    if (plans.value.some(plan => plan.StageType === 'all')) return
+    if (hasLegacy.value || plans.value.some(plan => plan.StageType === 'all')) return
     let added = false
     for (const row of rows.value) {
       if (row.plan) continue
@@ -193,7 +199,24 @@ const itemTextOf = (stage: ActivityItem) =>
   props.itemOptions.find(option => option.value === eventDepotItemId(stage))?.label ??
   stage.DropName
 
+const adoptLegacyPlans = () => {
+  if (!hasLegacy.value) return
+  for (const row of rows.value) {
+    const plan = ensureEventPlan({
+      ...legacyPlans.value.get(row.identity),
+      StageType: row.type,
+      StageIndex: row.index,
+      DropCount: row.target,
+    })
+    if (row.farmed) delete plan.Skip
+    else plan.Skip = true
+    delete plan.LegacyIndex
+  }
+  plans.value = plans.value.filter(plan => !plan.LegacyActivityFirst)
+}
+
 const toggleFarm = (row: EventRow, farmed: boolean) => {
+  adoptLegacyPlans()
   const plan = ensureEventPlan({
     StageType: row.type,
     StageIndex: row.index,
@@ -204,6 +227,7 @@ const toggleFarm = (row: EventRow, farmed: boolean) => {
   savePlans()
 }
 const setStageTarget = (row: EventRow, value: number | string | null) => {
+  adoptLegacyPlans()
   const next = Math.max(1, Math.trunc(Number(value) || 1))
   const plan = ensureEventPlan({ StageType: row.type, StageIndex: row.index, DropCount: next })
   if (row.type === 'orundum' && plan.OrundumDropCount !== undefined) plan.OrundumDropCount = next
