@@ -16,6 +16,7 @@ html.appearance-background-custom
     .settings-content,
     .tb-content,
     .gamesign-content,
+    .tools-content,
     .cultivation-overview,
     .cultivation-content,
     .theme-store-content,
@@ -52,6 +53,7 @@ html.appearance-background-custom
     .settings-content,
     .tb-content,
     .gamesign-content,
+    .tools-content,
     .cultivation-content,
     .theme-store-content,
     .logs-content,
@@ -144,7 +146,7 @@ html.appearance-background-custom
   > th:not(:where(.ant-modal *, .ant-drawer *)),
 html.appearance-background-custom
   .content-area
-  :is(.settings-tabs, .community-tabs, .cultivation-tabs)
+  :is(.settings-tabs, .community-tabs, .tools-tabs, .cultivation-tabs)
   .ant-tabs-nav
   .ant-tabs-tab-active {
   background-color: var(--ant-color-fill-secondary);
