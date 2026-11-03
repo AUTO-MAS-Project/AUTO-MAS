@@ -90,7 +90,9 @@ from .constants import (
     FALLBACK_KILL_TIMEOUT_SECONDS,
     FALLBACK_SYNC_TIMEOUT_SECONDS,
     FORCE_KILL_WAIT_SECONDS,
-    GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
+    GO_HOME_SETTLE_SECONDS,
+    GO_HOME_TIMEOUT_SECONDS,
+    GRACEFUL_SHUTDOWN_DEADLINE_SECONDS,
     GUEST_DIRTY_EXPIRE_CENTISECS,
     GUEST_DIRTY_WRITEBACK_CENTISECS,
     GUEST_PATCH_DIR,
@@ -107,6 +109,7 @@ from .constants import (
     PIXEL_LAUNCHER_PACKAGE,
     PORT_BASE,
     PORT_STEP,
+    PRE_SHUTDOWN_SYNC_TIMEOUT_SECONDS,
     RECOMMENDED_MEMORY_MB,
     REQUIRED_COMPONENTS,
     SCREEN_DENSITY,
@@ -399,6 +402,9 @@ async def _wait_closing(key: str, label: str) -> None:
 
 #: 被看门狗判冻结并强杀过的实例 → 原因。``getStatus`` 据此报 ERROR，直到下次 open / close。
 _FROZEN: dict[str, str] = {}
+
+#: MAS 在这台实例上拉起过的游戏 → 包名，关机时取走：关机前先按 HOME 让它退到后台（见 ``_close``）。
+_LAUNCHED: dict[str, str] = {}
 
 
 def _instance_key(root: Path, native_index: str) -> str:
@@ -1927,6 +1933,7 @@ class _AvdCore(DeviceBase):
         port = console_port(idx)
         _stop_watchdog(self.root, idx)
         _FROZEN.pop(key, None)
+        game = _LAUNCHED.pop(key, None)
         if updater.update_in_progress(self.root):
             return DeviceStatus.OFFLINE
         if self._cli is not None:
@@ -1949,12 +1956,14 @@ class _AvdCore(DeviceBase):
         if process is None:
             return DeviceStatus.OFFLINE
 
-        # 默认让安卓自己正常关机（``sys.powerctl shutdown``），等 qemu 自己退出；不成再退回
+        # 默认让安卓走框架的正常关机（``svc power shutdown``），等 qemu 自己退出；不成再退回
         # 「sync + 控制台 kill + 强杀」。控制台 kill / 强杀都直接结束 qemu，客体不走关机流程：
         # 页缓存里没写回的数据会丢（星铁热更新清单因此变成过 0 字节，表现成「网络请求超时」和黑屏），
         # 而且 sync 之后到 qemu 真正退出之间还有 2–3 秒，这段时间里游戏写的东西 sync 也管不到。
-        # 正常关机时客体 init 依次结束各个服务和应用、把页缓存写回、卸载分区，最后断电让 qemu 自己
-        # 退出，和手机关机、MuMu / 雷电关机一样。
+        # 正常关机时安卓先让前台应用停到 onPause / onStop，再由 init 依次结束各个服务和应用、把页缓存
+        # 写回、卸载分区，最后断电让 qemu 自己退出，和手机关机、MuMu / 雷电关机一样。
+        # 关机前：这次拉起过游戏就先按 HOME 让它退到后台、等几秒收尾，再 sync。退回那条路发生时 adbd
+        # 多半已经没了，那时的 sync 做不成，发关机命令前写下的数据要靠这一次 sync 落盘。
         # 磁盘 write-through 只保证已经写到虚拟盘的数据，管不到还在客体内存里的。
         # 强制关闭（ForceKillOnClose）不走正常关机，只先 sync 再强杀。
         # 时限：调用方（任务收尾 close_emulator）整体只给 30 秒，超了连强杀都执行不到。各步上限与
@@ -1974,7 +1983,14 @@ class _AvdCore(DeviceBase):
             return DeviceStatus.OFFLINE
 
         if problem is None:
-            reason = await self._graceful_shutdown(port, process)
+            if game:
+                await self._send_to_background(idx, port, game)
+            await self._sync_before_kill(
+                idx, port, None, PRE_SHUTDOWN_SYNC_TIMEOUT_SECONDS
+            )
+            reason = await self._graceful_shutdown(
+                port, process, started + GRACEFUL_SHUTDOWN_DEADLINE_SECONDS
+            )
             if reason is None:
                 logger.info(
                     f"魔改 AVD 实例 {idx} 正常关机完成"
@@ -2004,38 +2020,68 @@ class _AvdCore(DeviceBase):
         logger.info(f"魔改 AVD 实例 {idx} 已关闭")
         return DeviceStatus.OFFLINE
 
-    async def _graceful_shutdown(
-        self, port: int, process: psutil.Process
-    ) -> str | None:
-        """让安卓正常关机，等 qemu 自己退出，发命令连同等待最多
-        :data:`~.constants.GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS` 秒。退出了返回 ``None``，否则返回原因。
-
-        ``sys.powerctl`` 只有 root 能写，这些 userdebug 镜像上用 ``su 0``（同 :meth:`_su`）。
-        """
-        started = time.monotonic()
+    async def _send_to_background(self, idx: str, port: int, game: str) -> None:
+        """按 HOME 让 MAS 拉起的游戏退到后台，再等 :data:`~.constants.GO_HOME_SETTLE_SECONDS` 秒，
+        让它在 onPause 之后把手上的写入做完。关机流程里留给应用的只有约 2 秒。失败只记警告。"""
         code, output = await host.run_adb(
             self.root,
             "shell",
-            "su 0 setprop sys.powerctl shutdown",
+            "input keyevent KEYCODE_HOME",
             serial=host.serial_of(port),
-            timeout=GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
+            timeout=GO_HOME_TIMEOUT_SECONDS,
             reregister=False,
             total_timeout=True,
         )
         if code != 0:
-            return f"关机命令没有成功返回（返回码 {code}）: {output}"
-        remaining = GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS - (time.monotonic() - started)
+            logger.warning(
+                f"魔改 AVD 实例 {idx} 关机前按 HOME 失败，照常关机: {output}"
+            )
+            return
+        logger.info(
+            f"魔改 AVD 实例 {idx} 关机前已把 {game} 切到后台，等 "
+            f"{GO_HOME_SETTLE_SECONDS:.0f} 秒再关机"
+        )
+        await asyncio.sleep(GO_HOME_SETTLE_SECONDS)
+
+    async def _graceful_shutdown(
+        self, port: int, process: psutil.Process, deadline: float
+    ) -> str | None:
+        """让安卓走框架的正常关机，等 qemu 自己退出，最晚等到 ``deadline``（``time.monotonic()``
+        的时刻）。退出了返回 ``None``，否则返回原因。
+
+        ``svc power shutdown`` 经安卓的 ShutdownThread：发关机广播、把前台应用停到 onPause /
+        onStop，再交给 init 结束服务、卸载分区；shell 身份就能发，不用 su。
+        ``setprop sys.powerctl shutdown`` 直接让 init 关机，前台应用收不到任何通知就被结束。
+
+        这条命令不会正常返回：关机途中 adbd 被结束，adb 约 2.4 秒后报返回码 255。所以返回码不是 0
+        照样等 qemu 退出；返回 0 说明命令跑完了却没关机（比如只打出了用法），马上退回。
+        """
+        code, output = await host.run_adb(
+            self.root,
+            "shell",
+            "svc power shutdown",
+            serial=host.serial_of(port),
+            timeout=max(deadline - time.monotonic(), 0.1),
+            reregister=False,
+            total_timeout=True,
+        )
+        if code == 0:
+            return f"关机命令返回了却没有关机: {output.strip()[-200:]}"
+        remaining = deadline - time.monotonic()
         if remaining > 0:
             with suppress(psutil.TimeoutExpired):
                 await asyncio.to_thread(process.wait, remaining)
         if process.is_running():
-            return f"{GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS:.0f} 秒内没有自己退出"
+            return (
+                f"开始关机后 {GRACEFUL_SHUTDOWN_DEADLINE_SECONDS:.0f} 秒内没有自己退出"
+                f"（关机命令返回码 {code}）"
+            )
         return None
 
     async def _sync_before_kill(
         self, idx: str, port: int, problem: str | None, timeout: float
     ) -> None:
-        """控制台 kill / 强杀前先 ``sync``，把客体页缓存写回虚拟盘。失败只记警告。"""
+        """发关机命令、控制台 kill、强杀之前先 ``sync``，把客体页缓存写回虚拟盘。失败只记警告。"""
         started = time.monotonic()
         if problem is None:
             code, output = await host.run_adb(
@@ -2606,13 +2652,16 @@ class AvdManager(AppLaunchMixin, _AvdCore):
                     f"实例 {idx} 的 /sdcard/Android/data 未在 30 秒内挂好，继续拉起 {package_name}"
                 )
         max_wait = float(self.config.Info.MaxWaitTime)
-        return await ensure_app_running(
+        result = await ensure_app_running(
             run_adb,
             package_name,
             boot_timeout=min(max_wait, _BOOT_TIMEOUT_CAP),
             launch_timeout=launch_timeout or min(max_wait, _LAUNCH_TIMEOUT_CAP),
             label=str(idx),
         )
+        if result.ok:
+            _LAUNCHED[_instance_key(self.root, str(idx))] = package_name
+        return result
 
     async def stop_background_games(self, idx: str, keep: str) -> list[str]:
         """前台只留要跑的那个游戏，其余第三方应用直接结束（用户 09-26 定）。
