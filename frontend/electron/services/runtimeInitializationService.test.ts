@@ -239,6 +239,13 @@ describe('bootstrap', () => {
     const outcome = await createService().bootstrap(update => updates.push(update))
 
     expect(outcome.success).toBe(true)
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        runtimeStage: 'uv.check',
+        runtimeStatus: 'preparing_uv',
+        message: '正在准备固定版本 uv',
+      })
+    )
     expect(FakeRuntimeClient.calls).toHaveLength(1)
     expect(FakeRuntimeClient.calls[0].command).toEqual(['bootstrap', '--version', 'v5.5.0-beta.3'])
     expect(FakeRuntimeClient.calls[0].mirrors).toEqual([])

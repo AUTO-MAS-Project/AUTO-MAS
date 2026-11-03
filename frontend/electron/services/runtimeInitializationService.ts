@@ -259,7 +259,7 @@ export interface BootstrapProgressUpdate {
    * （接管段、段收口、失败）没有这个字段。
    */
   runtimeStage?: string
-  /** 产生本条更新的 `progress.status` 原文；state 事件与桥接合成的更新没有。 */
+  /** 产生本条更新的 progress / state status 原文；桥接合成的更新没有。 */
   runtimeStatus?: string
   /** 当前条目：正在下载的文件名，或测速时的源 key。 */
   item?: string
@@ -1225,7 +1225,8 @@ export class RuntimeInitializationService {
             source: event.source,
             bytesPerSecond: event.bytesPerSecond,
           }),
-        onState: event => bridge.observe(event.stage, event.message),
+        onState: event =>
+          bridge.observe(event.stage, event.message, undefined, { status: event.status }),
         onLog: event => {
           if (event.stream === 'stderr') {
             stderrLines.push(event.message)

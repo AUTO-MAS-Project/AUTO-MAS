@@ -82,6 +82,8 @@ export interface RuntimeBinaryUpdateCheck {
 }
 
 export interface RuntimeBinaryProgress {
+  /** Electron 更新器的正常阶段；旧事件缺失时保留原文。 */
+  phase?: 'check' | 'download' | 'complete'
   progress: number
   message: string
 }

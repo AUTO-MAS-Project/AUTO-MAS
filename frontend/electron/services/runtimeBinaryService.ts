@@ -440,6 +440,8 @@ export interface RuntimeBinarySyncResult {
 }
 
 export interface RuntimeBinarySyncProgress {
+  /** Electron 更新器的正常阶段；旧事件缺失时保留原文。 */
+  phase?: 'check' | 'download' | 'complete'
   /** 0~100；总量未知时停在 0。 */
   progress: number
   message: string
@@ -774,7 +776,11 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
   if (!fs.existsSync(backupPath)) removeQuietly(`${backupPath}.version`)
 
   logger.info(`Runtime 已更新到线上最新 ${target.version}`)
-  options.onProgress?.({ progress: 100, message: `Runtime 已更新到 ${target.version}` })
+  options.onProgress?.({
+    phase: 'complete',
+    progress: 100,
+    message: `Runtime 已更新到 ${target.version}`,
+  })
   return { status: 'upgraded', target }
 }
 
@@ -879,7 +885,11 @@ async function downloadTarget(
   const sourceTimeoutMs = options.sourceTimeoutMs ?? RUNTIME_BINARY_SOURCE_TIMEOUT_MS
 
   // 第一步：可信来源的校验清单。它的进度不往上报——几十字节瞬间到 100% 再回到 0 只会让界面跳动。
-  options.onProgress?.({ progress: 0, message: `正在获取 Runtime ${target.version} 的校验信息` })
+  options.onProgress?.({
+    phase: 'check',
+    progress: 0,
+    message: `正在获取 Runtime ${target.version} 的校验信息`,
+  })
   const trusted = await fetchTrustedRuntimeHash(target.version, {
     fetchText: options.fetchText,
     timeoutMs: Math.min(Math.max(deadline - Date.now(), 1), RUNTIME_TEXT_FETCH_TIMEOUT_MS),
@@ -903,7 +913,13 @@ async function downloadTarget(
 
     const label = `${source.name}（${index + 1}/${sources.length}）`
     const message = `正在从 ${label} 下载 Runtime ${target.version}`
-    options.onProgress?.({ progress: 0, message, item: asset, source: source.key })
+    options.onProgress?.({
+      phase: 'download',
+      progress: 0,
+      message,
+      item: asset,
+      source: source.key,
+    })
 
     logger.info(`尝试从 ${label} 下载 Runtime ${target.version}: ${source.url}`)
     const downloadPath = nextDownloadPath(runtimePath)
@@ -914,6 +930,7 @@ async function downloadTarget(
       Math.min(deadline - Date.now(), sourceTimeoutMs),
       progress =>
         options.onProgress?.({
+          phase: 'download',
           progress: progress.progress,
           message,
           item: asset,
@@ -1252,7 +1269,7 @@ async function runRuntimeAlignment(
     return { status: 'skipped' }
   }
 
-  options.onProgress?.({ progress: 0, message: '正在获取线上最新的 Runtime 版本' })
+  options.onProgress?.({ phase: 'check', progress: 0, message: '正在获取线上最新的 Runtime 版本' })
   const lookup = await (options.fetchLatest ?? defaultLatestResolver)(channel)
   if (lookup.status === 'unavailable') {
     const error = describeLatestUnavailable(lookup.error)

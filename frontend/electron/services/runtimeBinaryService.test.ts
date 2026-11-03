@@ -189,8 +189,11 @@ describe('syncRuntimeBinary', () => {
     const [first] = buildRuntimeBinarySources(TARGET_VERSION)
     expect(urls).toEqual([first.url])
     expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
+    expect(progress.some(update => update.phase === 'check')).toBe(true)
+    expect(progress.some(update => update.phase === 'download')).toBe(true)
     expect(progress.at(-1)).toEqual({
       progress: 100,
+      phase: 'complete',
       message: `Runtime 已更新到 ${TARGET_VERSION}`,
     })
   })

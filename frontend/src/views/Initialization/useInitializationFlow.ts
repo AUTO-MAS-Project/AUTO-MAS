@@ -2,6 +2,7 @@ import { isDevelopmentEnvironment as isDev, isBrowserDevelopment } from '@/utils
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
+import { formatRuntimeProgress } from './runtimeProgress'
 import { finishInitializationEntry } from './finishInitializationEntry'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 import type { AnalyticsEventProps } from '@/types/analytics'
@@ -54,6 +55,8 @@ export function useInitializationFlow() {
   interface StepState {
     status: InitializationStepStatus
     message: string
+    runtimeProgress?: NetworkActivityPayload
+    messageKey?: string
     progress: number
     progressIndeterminate: boolean
     showMirrorSelection: boolean
@@ -187,9 +190,12 @@ export function useInitializationFlow() {
   })
 
   const statusTitle = computed(() => {
-    // 安装器和 Runtime 报上来的进度描述本身就是给人看的，有就直接用。
+    // 在显示时翻译，保留原文和事件字段，语言变化不必重跑初始化。
     if (currentState.value.status === 'processing' && currentState.value.message) {
-      return currentState.value.message
+      return currentState.value.messageKey
+        ? t(currentState.value.messageKey)
+        : formatRuntimeProgress(currentState.value.runtimeProgress ?? {}, t) ||
+            currentState.value.message
     }
     if (flowKind.value === 'update') return t('bootstrap.launch.updating')
     return t('bootstrap.launch.preparing')
@@ -206,6 +212,7 @@ export function useInitializationFlow() {
   const networkDetailLabels: NetworkDetailLabels = {
     transferSource: source => t('bootstrap.launch.transferSource', { source }),
     probeUnavailable: source => t('bootstrap.launch.probeUnavailable', { source }),
+    sourceOrder: (kind, sources) => t('bootstrap.launch.sourceOrder', { kind, sources }),
   }
 
   /**
@@ -228,7 +235,7 @@ export function useInitializationFlow() {
 
     return {
       title: t(`bootstrap.init.steps.${activeStageKey.value}`),
-      message: state.message,
+      message: state.messageKey ? t(state.messageKey) : state.message,
       failureActions: state.failureActions,
       failureNotice: state.failureNotice,
       failureLogs: state.failureLogs,
@@ -277,6 +284,8 @@ export function useInitializationFlow() {
   function handleProgress(stepKey: InitializationStepKey, value: unknown) {
     const state = stepStates.value[stepKey]
     const progress = readProgressPayload(value)
+    state.runtimeProgress = progress
+    state.messageKey = undefined
     const previousStatus = state.status
     const previousMessage = state.message
     networkActivity.value = reduceNetworkActivity(networkActivity.value, progress)
@@ -288,7 +297,8 @@ export function useInitializationFlow() {
       state.progressIndeterminate = false
     } else if (progress.status === 'failed') {
       state.status = 'failed'
-      state.message = progress.message || t('bootstrap.init.msg.execFailed')
+      state.message = progress.message || ''
+      state.messageKey = progress.message ? undefined : 'bootstrap.init.msg.execFailed'
       state.progressIndeterminate = false
     } else {
       state.status = 'processing'
@@ -370,6 +380,7 @@ export function useInitializationFlow() {
     )
     const state = stepStates.value[stepKey]
     state.status = 'failed'
+    state.messageKey = errorMessage ? undefined : 'bootstrap.init.msg.execFailed'
     state.message = errorMessage
     logger.error(`步骤 ${stepKey} 失败: ${errorMessage}`)
 
@@ -387,7 +398,7 @@ export function useInitializationFlow() {
         )
         const failedStepKey = failedStep?.key ?? 'python'
         currentStepIndex.value = steps.findIndex(step => step.key === failedStepKey)
-        markStepFailed(failedStepKey, result.error || t('bootstrap.init.msg.execFailed'), result)
+        markStepFailed(failedStepKey, result.error || '', result)
         return false
       }
 
@@ -454,7 +465,7 @@ export function useInitializationFlow() {
 
       if (!result.success) {
         failure = result
-        throw new Error(result.error || t('bootstrap.init.msg.execFailed'))
+        throw new Error(result.error || '')
       }
 
       state.status = 'success'
@@ -521,6 +532,8 @@ export function useInitializationFlow() {
   }
 
   function resetFailureState(state: StepState) {
+    state.messageKey = undefined
+    state.runtimeProgress = undefined
     state.showMirrorSelection = false
     state.failureActions = []
     state.failureNotice = null
@@ -579,6 +592,7 @@ export function useInitializationFlow() {
     for (const stepKey of RUNTIME_TAKEOVER_STEPS) markStepTakenOver(stepStates.value[stepKey])
     networkActivity.value = EMPTY_NETWORK_ACTIVITY
     stepStates.value.python.status = 'processing'
+    stepStates.value.python.messageKey = 'bootstrap.init.failure.runtimeRestarting'
     stepStates.value.python.message = t('bootstrap.init.failure.runtimeRestarting')
     await loadMirrorConfigs()
     await startInitialization(0)
@@ -605,6 +619,7 @@ export function useInitializationFlow() {
   async function handleBackendError(errorMessage: string, failure: RuntimeFailureFields = {}) {
     const state = stepStates.value.backend
     state.status = 'failed'
+    state.messageKey = undefined
     state.message = errorMessage
 
     if (
@@ -633,6 +648,7 @@ export function useInitializationFlow() {
         resetFailureState(state)
         currentStepIndex.value = 0
         stepStates.value[steps[0].key].status = 'processing'
+        stepStates.value[steps[0].key].messageKey = 'bootstrap.init.failure.restoringWorkspace'
         stepStates.value[steps[0].key].message = t('bootstrap.init.failure.restoringWorkspace')
         await executeRuntimeInitialization()
         return
