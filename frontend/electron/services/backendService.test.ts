@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -531,10 +531,14 @@ describe('development 模式', () => {
       try {
         if (phase === 'before-hello') {
           child.stdout.feed(helloLine)
-          await vi.waitFor(() => expect(child.killed).toBe(true))
+          await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
+          expect(JSON.parse(child.stdin.chunks[0])).toMatchObject({ command: 'shutdown' })
+          expect(child.killed).toBe(false)
+          child.stdout.feed(stoppedResultLine)
+          child.close(0)
         } else {
           await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
-          expect(JSON.parse(child.stdin.chunks[0])).toMatchObject({ command: 'cancel' })
+          expect(JSON.parse(child.stdin.chunks[0])).toMatchObject({ command: 'shutdown' })
           child.stdout.feed(stoppedResultLine)
           child.close(0)
         }
@@ -550,7 +554,7 @@ describe('development 模式', () => {
     }
   )
 
-  it('版本校验期间退出不会接管已经停止的 Runtime', async () => {
+  it('版本校验期间退出通过 shutdown 等待慢清理，不直接 cancel 强杀后端', async () => {
     let finishHealth: () => void = () => undefined
     fetchMock.mockImplementationOnce(
       () =>
@@ -565,17 +569,28 @@ describe('development 模式', () => {
     const child = await passEnvironmentEnsure()
     child.stdout.feed(helloLine + runningStateLine)
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    const write = child.stdin.write.bind(child.stdin)
+    vi.spyOn(child.stdin, 'write').mockImplementation(chunk => {
+      const result = write(chunk)
+      // Runtime 的 cancel 会直接清理进程；shutdown 才请求后端收尾。
+      if (JSON.parse(chunk).command === 'cancel') child.kill()
+      return result
+    })
+    vi.useFakeTimers()
     const pendingStop = service.stopBackend()
     try {
       await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
-      expect(JSON.parse(child.stdin.chunks[0])).toMatchObject({ command: 'cancel' })
+      expect(JSON.parse(child.stdin.chunks[0])).toMatchObject({ command: 'shutdown' })
+      finishHealth()
+      await vi.advanceTimersByTimeAsync(7000)
+      expect(child.killed).toBe(false)
       child.stdout.feed(stoppedResultLine)
       child.close(0)
-      finishHealth()
       expect((await pendingStart).success).toBe(false)
       expect(await pendingStop).toEqual({ success: true })
       expect(service.getStatus().isRunning).toBe(false)
     } finally {
+      vi.useRealTimers()
       finishHealth()
       if (child.exitCode === null && !child.killed) child.close(0)
       await Promise.allSettled([pendingStart, pendingStop])
@@ -1006,6 +1021,48 @@ describe('managed 模式', () => {
     expect(spawnMock).toHaveBeenCalledTimes(1)
   })
 
+  it('原 off 生产设置迁入 managed 后仍给慢清理完整的 30 秒预算', async () => {
+    appState.isPackaged = true
+    delete process.env[RUNTIME_MODE_ENV]
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    mkdirSync(join(appRoot, 'config'))
+    writeFileSync(
+      join(appRoot, 'config/frontend_config.json'),
+      JSON.stringify({ Runtime: { LaunchMode: 'off' } })
+    )
+    mockSpawn()
+    const service = createService()
+    const pending = service.startBackend()
+    const child = await passManagedPreparation()
+    child.stdout.feed(helloLine + runningStateLine)
+    await pending
+    try {
+      expect(spawnedArgs(2).slice(-6)).toEqual([
+        'backend',
+        'supervise',
+        '--mode',
+        'managed',
+        '--shutdown-timeout',
+        '30',
+      ])
+      vi.useFakeTimers()
+      const stopped = service.stopBackend()
+      await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
+      expect(JSON.parse(child.stdin.chunks[0])).toMatchObject({ command: 'shutdown' })
+      await vi.advanceTimersByTimeAsync(31000)
+      expect(child.killed).toBe(false)
+      child.stdout.feed(stoppedResultLine)
+      child.close(0)
+      expect(await stopped).toEqual({ success: true })
+    } finally {
+      vi.useRealTimers()
+      if (child.exitCode === null && !child.killed) {
+        child.stdout.feed(stoppedResultLine)
+        child.close(0)
+      }
+    }
+  })
+
   it('不传 --repo、不先跑 environment ensure，--app-root 就是用户数据根', async () => {
     appState.isPackaged = true
     process.env.AUTO_MAS_ENV = 'development'
@@ -1025,7 +1082,14 @@ describe('managed 模式', () => {
     expect(spawnMock).toHaveBeenCalledTimes(3)
     // managed 模式 --app-root 就是用户数据根（与 dataRoot 相同），不是仓外的 runtime 目录。
     expect(spawnedArgs(2).slice(0, 2)).toEqual(['--app-root', appRoot])
-    expect(spawnedArgs(2).slice(-4)).toEqual(['backend', 'supervise', '--mode', 'managed'])
+    expect(spawnedArgs(2).slice(-6)).toEqual([
+      'backend',
+      'supervise',
+      '--mode',
+      'managed',
+      '--shutdown-timeout',
+      '30',
+    ])
     expect(spawnedArgs(2)).not.toContain('--repo')
     expect(spawnedEnv(2).AUTO_MAS_ENV).toBe('production')
     expect(spawnedEnv(2).AUTO_MAS_INSTALL_TOKEN).toBe(

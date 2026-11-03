@@ -77,6 +77,21 @@ yarn backend
 yarn web
 ```
 
+`yarn backend` 固定使用 36164。需要 80 等低端口时，不使用该快捷命令，在两个终端分别执行：
+
+```powershell
+# 终端一：仓库根目录，直接启动独立后端。
+$env:AUTO_MAS_HTTP_PORT = '80'
+uv run --locked python main.py
+
+# 终端二：frontend/ 目录，让浏览器开发服务器连接同一端口。
+$env:AUTO_MAS_HTTP_PORT = '80'
+yarn web
+```
+
+此方式在浏览器里调试共用的 Vue 页面与 HTTP/WebSocket，不启动 Electron，也不验证 preload、
+原生窗口或 Runtime 监督；这些能力继续使用 1024–65535 端口的 `yarn dev` 验证。
+
 浏览器只连接独立后端，关闭预览不会停止它；后端由开发者在终端中管理。
 独立验证生产行为时需显式设置 `AUTO_MAS_ENV=production`。
 
