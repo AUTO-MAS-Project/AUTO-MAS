@@ -39,7 +39,11 @@
       </div>
     </a-layout-sider>
 
-    <a-layout class="app-body" style="flex: 1; min-width: 0; background: transparent">
+    <a-layout
+      class="app-body"
+      :class="{ 'app-body--glow': isDark && !activeAppearance }"
+      style="flex: 1; min-width: 0; background: transparent"
+    >
       <a-layout-content class="content-area">
         <a-alert
           v-if="languageResources.error"
@@ -378,6 +382,36 @@ html.appearance-background-custom .app-sider {
 .app-body {
   position: relative;
   isolation: isolate;
+}
+
+.app-body::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(
+      ellipse 75% 65% at 10% 0%,
+      color-mix(in srgb, var(--ant-color-primary) 20%, transparent),
+      transparent 75%
+    ),
+    radial-gradient(
+      ellipse 65% 75% at 100% 100%,
+      color-mix(in srgb, var(--ant-color-primary) 10%, transparent),
+      transparent 75%
+    );
+  transition: opacity var(--app-theme-transition-duration) ease;
+}
+
+.app-body--glow::before {
+  opacity: 1;
+}
+
+/* 背景图片自行提供氛围，避免再叠加主题光晕。 */
+html.appearance-background-custom .app-body::before {
+  opacity: 0;
 }
 
 .content-area {
