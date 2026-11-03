@@ -242,6 +242,7 @@ const updateCSSVariables = () => {
   root.style.setProperty('--ant-color-primary-bg', antTokens.colorPrimaryBg)
   root.style.setProperty('--ant-color-primary-bg-hover', antTokens.colorPrimaryBgHover)
   root.style.setProperty('--ant-color-primary-border', antTokens.colorPrimaryBorder)
+  root.style.setProperty('--ant-color-link', antTokens.colorLink)
 
   root.style.setProperty('--ant-color-text', antTokens.colorText)
   root.style.setProperty('--ant-color-text-secondary', antTokens.colorTextSecondary)

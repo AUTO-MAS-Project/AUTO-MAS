@@ -41,12 +41,17 @@ defineProps<{
 
 <style scoped>
 .ui-section-card {
+  --section-card-padding: 24px;
   margin-bottom: 16px;
-  padding: 0 20px 8px;
+  padding: 0 var(--section-card-padding) 8px;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 10px;
   background: var(--app-appearance-surface-bg, var(--ant-color-bg-container));
   container-type: inline-size;
+}
+
+html:not(.dark) .ui-section-card {
+  border-color: color-mix(in srgb, var(--ant-color-border) 92%, var(--ant-color-text) 8%);
 }
 
 /* 头部两行网格：第一行标题 + 动作区，第二行副标题占满整行 */
@@ -56,14 +61,15 @@ defineProps<{
   align-items: center;
   gap: 0 12px;
   margin-bottom: 0;
-  padding: 14px 0 10px;
+  min-height: 60px;
+  padding: 16px 0 10px;
   border-bottom: 0;
 }
 
 .ui-section-card .section-header h3 {
   gap: 10px;
   min-width: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   line-height: 24px;
 }
@@ -117,11 +123,57 @@ defineProps<{
   align-items: center;
   justify-content: space-between;
   gap: 8px 16px;
-  margin: 8px -20px -8px;
-  padding: 12px 20px;
+  margin: 8px calc(-1 * var(--section-card-padding)) -8px;
+  padding: 12px var(--section-card-padding);
   border-top: 1px solid var(--ant-color-border-secondary);
   border-radius: 0 0 10px 10px;
   background: var(--ant-color-fill-quaternary);
+}
+
+.ui-section-card :deep(.ant-segmented) {
+  padding: 3px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 7px;
+}
+
+.ui-section-card :deep(:is(.ant-select, .ant-input, .ant-input-number, .ant-btn, .ant-segmented)) {
+  font-size: 12px;
+}
+
+/* 浅色默认边框过于接近灰白卡面；仅加强静止控件，保留主题色 hover/focus。 */
+html:not(.dark)
+  .ui-section-card
+  :deep(
+    :is(
+        .ant-select-selector,
+        .ant-input,
+        .ant-input-affix-wrapper,
+        .ant-input-number,
+        .ant-picker,
+        .ant-btn-default
+      ):not(:hover):not(:focus-within)
+  ) {
+  border-color: var(--ant-color-text-tertiary);
+}
+
+html:not(.dark) .ui-section-card :deep(.ant-segmented-item-selected) {
+  color: var(--ant-color-link);
+  box-shadow: inset 0 0 0 1px var(--ant-color-text-tertiary);
+}
+
+.settings-card-grid .ui-section-card,
+.about-settings .ui-section-card {
+  --section-card-padding: 20px;
+}
+
+/* 关于页保持原先的卡片密度。 */
+.about-settings .ui-section-card .section-header {
+  min-height: 0;
+  padding-top: 14px;
+}
+
+.about-settings .ui-section-card .section-header h3 {
+  font-size: 15px;
 }
 
 @container (max-width: 480px) {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { EditOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { DEFAULT_TRAY_ITEMS, TRAY_ACTION_OPTIONS, type TrayMenuItem } from '@/types/tray'
 import SettingRow from '@/components/ui/SettingRow.vue'
@@ -66,13 +67,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <!-- 纯控件形态：标签与 ⓘ 提示由 SettingRow 承担，这里只留预览摘要和编辑入口 -->
-  <SettingRow :label="t('core.setting.tray.section')" :hint="t('core.setting.tray.sectionTip')">
+  <SettingRow
+    :label="t('core.setting.tray.section')"
+    :hint="t('core.setting.tray.sectionTip')"
+    :description="!loading && !loadFailed ? preview : undefined"
+    stacked
+  >
     <div class="tray-menu-summary" :aria-busy="loading">
-      <span v-if="!loading && !loadFailed" class="tray-menu-preview" :title="preview">
-        {{ t('core.setting.tray.summary', { count: items.length }) }} · {{ preview }}
-      </span>
-      <span v-else-if="loadFailed" class="tray-menu-preview tray-menu-preview--error" role="alert">
+      <span v-if="loadFailed" class="tray-menu-preview tray-menu-preview--error" role="alert">
         {{ t('core.setting.tray.loadFailed') }}
       </span>
       <a-button v-if="loadFailed" size="small" @click="load">
@@ -85,6 +87,7 @@ onBeforeUnmount(() => {
         :disabled="loading"
         @click="editorOpen = true"
       >
+        <template #icon><EditOutlined /></template>
         {{ t('core.setting.tray.edit') }}
       </a-button>
       <TrayMenuDialog
@@ -101,7 +104,8 @@ onBeforeUnmount(() => {
 .tray-menu-summary {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  flex-wrap: wrap;
   gap: 12px;
   min-width: 0;
 }

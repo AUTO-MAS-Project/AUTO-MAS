@@ -237,7 +237,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
   border-right: 1px solid var(--app-sider-border-color, var(--ant-color-border));
 }
 
-:global(html.appearance-background-custom) .app-sider {
+html.appearance-background-custom .app-sider {
   background: var(--app-appearance-elevated-surface-bg);
 }
 

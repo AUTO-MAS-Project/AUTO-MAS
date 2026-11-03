@@ -6,6 +6,7 @@ import {
   AimOutlined,
   SkinOutlined,
   UploadOutlined,
+  ArrowRightOutlined,
 } from '@ant-design/icons-vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -167,8 +168,10 @@ const handleLocaleChange = (value: unknown): void => {
       </SettingRow>
 
       <SettingRow
+        class="theme-color-row"
         :label="t('core.setting.basic.themeColor')"
         :hint="t('core.setting.basic.themeColorTip')"
+        stacked
       >
         <div class="color-swatches" :aria-label="t('core.setting.basic.themeColor')">
           <a-button
@@ -212,11 +215,14 @@ const handleLocaleChange = (value: unknown): void => {
         </a-select>
       </SettingRow>
 
-      <SettingRow :label="t('core.common.language')" :hint="t('core.common.languageTip')">
+      <SettingRow
+        :label="t('core.setting.basic.interfaceLanguage')"
+        :hint="t('core.common.languageTip')"
+      >
         <a-select
           class="row-select language-select"
           :value="locale"
-          :aria-label="t('core.common.language')"
+          :aria-label="t('core.setting.basic.interfaceLanguage')"
           @change="handleLocaleChange"
         >
           <a-select-option v-for="item in SUPPORTED_LOCALES" :key="item" :value="item">
@@ -225,7 +231,7 @@ const handleLocaleChange = (value: unknown): void => {
         </a-select>
       </SettingRow>
 
-      <SettingRow :label="t('core.setting.basic.appearancePreset')">
+      <SettingRow :label="t('core.setting.basic.appearancePreset')" stacked>
         <a-select
           class="row-select appearance-select"
           :value="appearanceValue.startsWith('appearance:') ? appearanceValue : 'default'"
@@ -244,6 +250,7 @@ const handleLocaleChange = (value: unknown): void => {
         }}</span>
         <div class="appearance-actions">
           <a-button
+            type="link"
             :loading="appearanceBusy"
             :disabled="appearanceBusy"
             @click="handleAppearanceImport"
@@ -251,8 +258,8 @@ const handleLocaleChange = (value: unknown): void => {
             <template #icon><UploadOutlined /></template>
             {{ t('core.setting.basic.importAppearance') }}
           </a-button>
-          <a-button :disabled="appearanceBusy" @click="navigateTo('/theme-store')">
-            <template #icon><SkinOutlined /></template>
+          <a-button type="link" :disabled="appearanceBusy" @click="navigateTo('/theme-store')">
+            <template #icon><ArrowRightOutlined /></template>
             {{ t('core.setting.basic.themeStore') }}
           </a-button>
           <a-button
@@ -370,17 +377,26 @@ const handleLocaleChange = (value: unknown): void => {
 }
 
 .row-select {
-  width: 204px;
+  width: 280px;
   max-width: 100%;
 }
 
+.appearance-select {
+  width: 440px;
+}
+
+.theme-color-row :deep(.ui-row-control) {
+  gap: 16px;
+}
+
 .theme-color-select {
-  width: 120px;
+  width: 180px;
+  max-width: 100%;
 }
 
 .color-swatches {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 
 .color-swatch {
@@ -409,7 +425,11 @@ const handleLocaleChange = (value: unknown): void => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 20px;
+}
+
+.appearance-actions :deep(.ant-btn-link) {
+  padding-inline: 0;
 }
 
 .color-option {

@@ -71,6 +71,7 @@ const fpsOptions = [8, 16, 24, 30, 60, 120].map(value => ({ label: `${value} FPS
     <SettingRow
       :label="t('core.setting.basic.mascotSelect')"
       :hint="t('core.setting.basic.mascotImportTip')"
+      stacked
     >
       <div class="mascot-source">
         <a-select
@@ -159,7 +160,7 @@ const fpsOptions = [8, 16, 24, 30, 60, 120].map(value => ({ label: `${value} FPS
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
   min-width: 0;
 }

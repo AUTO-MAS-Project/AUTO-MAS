@@ -38,16 +38,20 @@ withDefaults(
 <style scoped>
 .ui-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(0, 1.35fr);
-  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  gap: 32px;
   align-items: center;
-  min-height: 54px;
-  padding: 10px 0;
+  min-height: 64px;
+  padding: 13px 0;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .ui-row:last-child {
   border-bottom: 0;
+}
+
+html:not(.dark) .ui-row {
+  border-bottom-color: var(--ant-color-border);
 }
 
 .ui-row-label {
@@ -84,8 +88,24 @@ withDefaults(
   justify-content: flex-start;
 }
 
+.settings-card-grid .ui-row:not(.ui-row--stacked) {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+  min-height: 58px;
+  gap: 20px;
+  padding-block: 12px;
+}
+
+.about-settings .ui-row:not(.ui-row--stacked) {
+  grid-template-columns: minmax(160px, 1fr) minmax(0, 1.35fr);
+  min-height: 54px;
+  gap: 24px;
+  padding-block: 10px;
+}
+
 @container (max-width: 560px) {
-  .ui-row {
+  .ui-row,
+  .settings-card-grid .ui-row:not(.ui-row--stacked),
+  .about-settings .ui-row:not(.ui-row--stacked) {
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { InfoCircleOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { AppstoreOutlined, BarsOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 import { getConfig, saveConfig } from '@/utils/config'
 import { useSettingsSectionLayout, type SettingsLayoutMode } from './useSettingsSectionLayout'
+import SettingsPageToolbar from './SettingsPageToolbar.vue'
 
 defineProps<{ loading: boolean }>()
 const activeKey = defineModel<string>('activeKey', { required: true })
@@ -29,16 +30,6 @@ const tabs = computed(() => [
   { key: 'notify', title: t('core.setting.tab.notify') },
   { key: 'advanced', title: t('core.setting.tab.advanced') },
   { key: 'others', title: t('core.setting.tab.others') },
-])
-const layoutOptions = computed(() => [
-  {
-    value: 'single',
-    label: () => [h(BarsOutlined, { 'aria-hidden': true }), t('core.setting.layout.single')],
-  },
-  {
-    value: 'dual',
-    label: () => [h(AppstoreOutlined, { 'aria-hidden': true }), t('core.setting.layout.dual')],
-  },
 ])
 let disposed = false
 
@@ -105,14 +96,12 @@ async function changeLayout(value: unknown) {
         <!-- 页面标题跟卡片列同一个容器，居中后标题、页签、卡片三者左边缘始终对齐 -->
         <div class="settings-shell-header">
           <div class="settings-title"><slot name="header" /></div>
-          <a-segmented
-            v-if="activeKey !== 'others'"
-            class="settings-layout-selector"
-            :value="layoutMode"
-            :options="layoutOptions"
-            :aria-label="t('core.setting.layout.ariaLabel')"
-            :disabled="!layoutReady || savingLayout"
-            @change="changeLayout"
+          <SettingsPageToolbar
+            :mode="layoutMode"
+            :show-layout="activeKey !== 'others'"
+            :disabled="!layoutReady"
+            :saving-layout="savingLayout"
+            @layout-change="changeLayout"
           />
         </div>
         <a-tabs v-model:active-key="activeKey" :animated="false" class="settings-tabs">
@@ -149,6 +138,10 @@ async function changeLayout(value: unknown) {
             </button>
           </li>
         </ul>
+        <div class="navigation-save-note">
+          <InfoCircleOutlined aria-hidden="true" />
+          <span>{{ t('core.setting.toolbar.autoSave') }}</span>
+        </div>
       </nav>
     </div>
   </div>
@@ -179,7 +172,6 @@ async function changeLayout(value: unknown) {
 
 .settings-shell--with-nav {
   max-width: 1240px;
-  padding-right: 184px;
 }
 
 .settings-shell--dual {
@@ -212,22 +204,6 @@ async function changeLayout(value: unknown) {
   min-width: 0;
 }
 
-.settings-layout-selector {
-  flex-shrink: 0;
-}
-
-.settings-layout-selector :deep(.ant-segmented-item-label) {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding-inline: 12px;
-}
-
-.settings-layout-selector :deep(.ant-segmented-item:has(input:focus-visible)) {
-  outline: 2px solid var(--ant-color-primary);
-  outline-offset: 2px;
-}
-
 .settings-tabs {
   flex: 1;
   min-height: 0;
@@ -250,6 +226,11 @@ async function changeLayout(value: unknown) {
   overscroll-behavior-y: contain;
   scrollbar-gutter: stable;
   overflow-anchor: none;
+}
+
+/* 标题和页签占满整体限宽，只有滚动卡片列为右侧目录留位。 */
+.settings-shell--with-nav .settings-tabs :deep(.ant-tabs-content-holder) {
+  margin-right: 184px;
 }
 
 /* 页签：无边框、无填充，只用字重与下划线指示当前项 */
@@ -284,7 +265,7 @@ async function changeLayout(value: unknown) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-rows: 1px;
-  column-gap: 24px;
+  column-gap: 16px;
   align-items: start;
 }
 
@@ -325,7 +306,7 @@ async function changeLayout(value: unknown) {
   position: relative;
   display: block;
   width: 100%;
-  padding: 7px 12px;
+  padding: 8px 12px;
   border: 0;
   border-radius: 0 5px 5px 0;
   background: transparent;
@@ -364,5 +345,16 @@ async function changeLayout(value: unknown) {
 .navigation-link:focus-visible {
   outline: 2px solid var(--ant-color-primary);
   outline-offset: 2px;
+}
+
+.navigation-save-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 24px 0 0 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ant-color-border);
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
 }
 </style>

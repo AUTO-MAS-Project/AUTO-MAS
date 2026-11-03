@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { PoweroffOutlined } from '@ant-design/icons-vue'
+import { DesktopOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
-import type { RadioChangeEvent } from 'ant-design-vue/es/radio/interface'
 import type { GlobalConfig } from '@/api'
 import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
@@ -22,12 +21,12 @@ const { t } = useI18n()
   <SectionCard
     class="startup-window-settings"
     :title="t('core.setting.basic.startupWindowSection')"
-    :icon="PoweroffOutlined"
+    :icon="DesktopOutlined"
   >
     <SettingRow
+      class="startup-options-row"
       :label="t('core.setting.basic.startupOptions')"
-      :description="t('core.setting.basic.startupBehaviorHint')"
-      stacked
+      :hint="t('core.setting.basic.startupBehaviorHint')"
     >
       <a-checkbox
         :checked="settings.Start?.IfSelfStart === true"
@@ -53,16 +52,17 @@ const { t } = useI18n()
     </SettingRow>
 
     <SettingRow :label="t('core.setting.basic.minimizeBehavior')">
-      <a-radio-group
-        :value="settings.UI?.IfToTray ?? false"
+      <a-segmented
+        :value="settings.UI?.IfToTray === true ? 'tray' : 'taskbar'"
+        :options="[
+          { label: t('core.setting.basic.minToTray'), value: 'tray' },
+          { label: t('core.setting.basic.minToTaskbar'), value: 'taskbar' },
+        ]"
         :aria-label="t('core.setting.basic.minimizeBehavior')"
         @change="
-          (event: RadioChangeEvent) => handleSettingChange('UI', 'IfToTray', event.target.value)
+          (value: string | number) => handleSettingChange('UI', 'IfToTray', value === 'tray')
         "
-      >
-        <a-radio :value="true">{{ t('core.setting.basic.minToTray') }}</a-radio>
-        <a-radio :value="false">{{ t('core.setting.basic.minToTaskbar') }}</a-radio>
-      </a-radio-group>
+      />
     </SettingRow>
 
     <SettingRow
@@ -88,3 +88,15 @@ const { t } = useI18n()
     <TrayMenuEditor />
   </SectionCard>
 </template>
+
+<style scoped>
+.settings-card-grid .startup-window-settings :deep(.ui-row.startup-options-row) {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+@container (max-width: 560px) {
+  .settings-card-grid .startup-window-settings :deep(.ui-row.startup-options-row) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+</style>

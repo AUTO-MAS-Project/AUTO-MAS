@@ -63,6 +63,95 @@ test.describe('@settings user preferences', () => {
     }
   })
 
+  test('preserves startup and appearance preferences with the shared header controls', async ({
+    app,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 })
+    await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
+    const loaded = settingsResponse(page, 'get')
+    await app.goto('/settings')
+    const originalMinimize = (await (await loaded).json()).data.UI.IfToTray === true
+    const minimize = page.locator('[aria-label="When minimizing"]')
+    const toolbar = page.locator('.settings-page-toolbar')
+    const selector = page.locator('[aria-label="Settings layout"]')
+    const theme = page.locator('.theme-mode-control')
+    const originalTheme = await theme.locator('.ant-segmented-item-selected').innerText()
+    const originalAccent = await page
+      .locator('.color-swatch[aria-pressed="true"]')
+      .getAttribute('aria-label')
+    try {
+      for (const toTray of [!originalMinimize, originalMinimize]) {
+        const saved = settingsResponse(page, 'update')
+        await chooseSegment(minimize, toTray ? 'Minimize to tray' : 'Minimize to taskbar')
+        const response = await saved
+        expect(response.request().postDataJSON()).toMatchObject({
+          data: { UI: { IfToTray: toTray } },
+        })
+        expect((await response.json()).code).toBe(200)
+      }
+      await expect(theme.getByRole('radio', { name: 'Follow system', exact: true })).toBeChecked()
+      await expect(toolbar.locator('.settings-save-note')).toBeVisible()
+      await page.getByRole('button', { name: 'Purple', exact: true }).click()
+      await chooseSegment(selector, 'Two columns')
+      await toolbar.getByRole('button', { name: 'Switch to dark mode', exact: true }).click()
+      await expect(page.locator('html')).toHaveClass(/dark/)
+      await expect(theme.getByRole('radio', { name: 'Dark', exact: true })).toBeChecked()
+      await expect(page.getByRole('button', { name: 'Purple', exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      )
+      for (const tab of ['Features', 'Notifications', 'Advanced', 'About']) {
+        await page.getByRole('tab', { name: tab, exact: true }).click()
+        await expect(
+          toolbar.getByRole('button', { name: 'Switch to light mode', exact: true })
+        ).toBeVisible()
+        if (tab === 'About') await expect(selector).toHaveCount(0)
+        else
+          await expect(
+            selector.getByRole('radio', { name: 'Two columns', exact: true })
+          ).toBeChecked()
+      }
+      await toolbar.getByRole('button', { name: 'Switch to light mode', exact: true }).click()
+      await expect(page.locator('html')).not.toHaveClass(/dark/)
+      await page.getByRole('tab', { name: 'Interface', exact: true }).click()
+      await expect(theme.getByRole('radio', { name: 'Light', exact: true })).toBeChecked()
+      await page.setViewportSize({ width: 1040, height: 900 })
+      await expect(
+        toolbar.getByRole('button', { name: 'Switch to dark mode', exact: true })
+      ).toBeVisible()
+      await expect(page.getByRole('navigation', { name: 'Settings sections' })).toHaveCount(0)
+      await page.reload()
+      await expect(theme.getByRole('radio', { name: 'Light', exact: true })).toBeChecked()
+      await expect(selector.getByRole('radio', { name: 'Two columns', exact: true })).toBeChecked()
+      await expect(page.locator('.settings-section-layout')).toHaveAttribute(
+        'data-effective-layout',
+        'single'
+      )
+      await expect(page.getByRole('button', { name: 'Purple', exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      )
+      await app.evidence('settings-header-narrow-reloaded')
+    } finally {
+      await page.getByRole('tab', { name: 'Interface', exact: true }).click()
+      const originalMinimizeLabel = originalMinimize ? 'Minimize to tray' : 'Minimize to taskbar'
+      if (
+        !(await minimize
+          .getByRole('radio', { name: originalMinimizeLabel, exact: true })
+          .isChecked())
+      ) {
+        const restored = settingsResponse(page, 'update')
+        await chooseSegment(minimize, originalMinimizeLabel)
+        expect((await (await restored).json()).code).toBe(200)
+      }
+      await chooseSegment(theme, originalTheme)
+      await chooseSegment(selector, 'Single column')
+      if (originalAccent)
+        await page.getByRole('button', { name: originalAccent, exact: true }).click()
+    }
+  })
+
   test('keeps section order, controls and layout preference across responsive changes', async ({
     app,
     page,
