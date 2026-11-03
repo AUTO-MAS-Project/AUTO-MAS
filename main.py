@@ -29,6 +29,7 @@ import tempfile
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 
@@ -250,6 +251,7 @@ def _resolve_supervised_port() -> int:
 
 @logger.catch
 def main():
+    startup_started = perf_counter()
     raw_environment = os.getenv("AUTO_MAS_ENV", "").strip().lower()
     if raw_environment not in {"", "dev", "development", "production"}:
         logger.warning("AUTO_MAS_ENV 取值无效，按开发环境启动")
@@ -338,6 +340,9 @@ def main():
         asyncio.create_task(asyncio.to_thread(ssl.create_default_context))
 
         await Config.init_config()
+        logger.info(
+            f"启动阶段: 必要配置完成，已耗时 {(perf_counter() - startup_started) * 1000:.0f} ms"
+        )
         from app.core import History
         from app.utils import UTC4
 
@@ -355,7 +360,7 @@ def main():
         await _service_obs_replay.ObsReplay.cleanup_temporary()
 
         from app.config import config_manager
-        from app.core import RuntimeTasks
+        from app.core import MCP, RuntimeTasks
 
         RuntimeTasks.spawn(
             maaend_config_service.preload_resources(), name="maaend-resource-preload"
@@ -363,7 +368,7 @@ def main():
         background_task: asyncio.Task | None = None
 
         async def initialize_background_services() -> None:
-            """后台完成重活初始化：MCP 挂载、活动关卡、历史清理、诊断文件清理、主定时器。
+            """后台完成主业务初始化，就绪后独立启动可选 MCP 服务。
 
             lifespan 提前 yield 后 uvicorn 立即打印 "Uvicorn running"，
             让前端等待就绪的耗时只包含核心配置初始化。
@@ -400,11 +405,6 @@ def main():
                 if failure is not None:
                     warnings.append(failure)
 
-            async def mount_mcp() -> None:
-                from app.api.mcp import mount_mcp as mount_mcp_server
-
-                await mount_mcp_server(app)
-
             async def start_desktop_guard() -> None:
                 from app.core import DesktopGuard
 
@@ -423,7 +423,6 @@ def main():
 
             app.state.background_status = "running"
             try:
-                await run_optional_step("MCP 服务挂载", mount_mcp)
                 await run_optional_step("活动关卡信息获取", init_stage_info)
 
                 async def _maafw_startup_maintenance() -> None:
@@ -454,6 +453,9 @@ def main():
                 # 要在主定时器之前：定时器可能马上拉起实例，而 sdk\emulator 可能正停在换到一半
                 await run_optional_step("魔改 AVD 更新恢复", init_avd_update)
                 timer_error = await run_step("主业务定时器", MainTimer.start)
+                logger.info(
+                    f"启动阶段: 主定时器结束，已耗时 {(perf_counter() - startup_started) * 1000:.0f} ms"
+                )
 
                 await run_optional_step("通知渠道", Notify.start)
 
@@ -487,6 +489,9 @@ def main():
                     app.state.background_status = "ready"
                     if not warnings:
                         logger.info("后端后台初始化完成")
+                    logger.info(
+                        f"启动阶段: 主业务就绪，已耗时 {(perf_counter() - startup_started) * 1000:.0f} ms"
+                    )
             except asyncio.CancelledError:
                 app.state.background_status = "cancelled"
                 raise
@@ -494,6 +499,9 @@ def main():
                 app.state.background_status = "failed"
                 app.state.background_error = f"{type(error).__name__}: {error}"
                 logger.exception(f"后台初始化失败: {app.state.background_error}")
+            # 不属于上面的主业务失败边界；MCP 错误只由专属组件记录。
+            if app.state.background_status == "ready":
+                MCP.start(app)
 
         app.state.background_status = "starting"
         app.state.background_error = None
@@ -505,6 +513,9 @@ def main():
 
             from app.core import Dispatcher, MainConnection, RuntimeTasks, Updater
             from app.services import System
+
+            # 同步封禁新加载，独立回收 MCP；不能让不可取消线程挡住停止主业务。
+            mcp_shutdown = asyncio.create_task(MCP.shutdown(), name="mcp-shutdown")
 
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
             if background_task is not None and not background_task.done():
@@ -555,6 +566,11 @@ def main():
             await Notify.close()
 
             await config_manager.flush()
+            try:
+                await mcp_shutdown
+            except Exception:
+                # MCP 是可选服务，清理失败不能跳过主业务的任何收尾步骤。
+                logger.exception("MCP 服务收尾失败，详见后端日志")
             logger.info("AUTO-MAS 后端服务清理完成")
 
         from app.core import ShutdownCoordinator

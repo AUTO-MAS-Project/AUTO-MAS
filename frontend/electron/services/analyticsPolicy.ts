@@ -25,6 +25,7 @@ const runtime = ['off', 'managed', 'development', 'unknown']
 const updateSource = ['cnb', 'github', 'mirrorchyan', 'autosite', 'unknown']
 const mode = ['AutoProxy', 'ScriptConfig', 'Update', 'CycleRun', 'unknown']
 const screens = [
+  'tools',
   'initialization',
   'home',
   'scripts',

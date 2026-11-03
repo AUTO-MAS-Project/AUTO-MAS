@@ -35,6 +35,7 @@ from pydantic import (
 )
 
 from app.core import (
+    MCP,
     Commands,
     Config,
     MainConnection,
@@ -44,7 +45,7 @@ from app.core import (
     TaskManager,
 )
 from app.core.ws import protocol
-from app.models.schema import OutBase
+from app.models.schema import McpStatusData, OutBase
 from app.services import System
 from app.utils import get_logger, is_supervised, should_preserve_backend
 
@@ -57,6 +58,14 @@ class WebSocketMetaOut(BaseModel):
 
     devMode: bool = Field(description="退出前端时是否保留非托管的开发后端")
     wsPath: str = Field(default="/api/core/ws", description="主 WebSocket 路径")
+
+
+class McpStatusOut(OutBase):
+    data: McpStatusData
+
+
+class McpRetryOut(McpStatusOut):
+    accepted: bool = Field(description="仅表示已受理加载，成功以 data.state=ready 为准")
 
 
 # AUTO-MAS-Runtime 健康检查协议版本：固定返回后端自身支持的版本，不回显监督器注入值，
@@ -114,6 +123,25 @@ async def get_health(request: Request) -> BackendHealthOut:
         version=_resolve_injected_identity("AUTO_MAS_EXPECTED_VERSION")
         or Config.VERSION,
         commit=_resolve_injected_identity("AUTO_MAS_EXPECTED_COMMIT") or "",
+    )
+
+
+@router.get("/mcp/status", summary="获取 MCP 服务状态", response_model=McpStatusOut)
+async def get_mcp_status() -> McpStatusOut:
+    return McpStatusOut(data=MCP.status())
+
+
+@router.post(
+    "/mcp/retry", summary="重新加载失败的 MCP 服务", response_model=McpRetryOut
+)
+async def retry_mcp() -> McpRetryOut:
+    accepted = MCP.retry()
+    return McpRetryOut(
+        code=200 if accepted else 409,
+        status="success" if accepted else "error",
+        message="" if accepted else "MCP 当前状态不允许重新加载",
+        accepted=accepted,
+        data=MCP.status(),
     )
 
 

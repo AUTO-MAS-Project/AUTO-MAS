@@ -75,6 +75,7 @@ export type AnalyticsTaskSource =
   | 'script_update'
   | 'unknown'
 export type AnalyticsScreen =
+  | 'tools'
   | 'initialization'
   | 'home'
   | 'scripts'

@@ -652,7 +652,7 @@ def test_service_cli_status_result_maps_components_and_prechecks(
 # ---- 真的假 modavd 程序 -----------------------------------------------------------
 
 #: 按 ``--json`` 约定输出的假 modavd：经 ``sys.executable`` 当子进程起，调用记进状态目录的
-#: ``calls.log``；``plan.json`` 按命令给出数据、错误、原样输出、退出码，``sleep`` 先干等这么多秒，
+#: 独立的 ``call-*.json``；``plan.json`` 按命令给出数据、错误、原样输出、退出码，``sleep`` 先干等这么多秒，
 #: ``hold`` 让进程活着直到收到 ``stop``，``bridge_seconds`` 先起一个命令行带 ``modavd-bridge.ps1`` 的
 #: 子进程（装桥）。
 _FAKE_MODAVD = r"""
@@ -662,6 +662,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from uuid import uuid4
 
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
@@ -670,8 +671,14 @@ args = sys.argv[1:]
 root = args[args.index("--root") + 1] if "--root" in args else ""
 command = args[args.index("--json") + 1]
 rest = args[args.index("--json") + 2 :]
-with (state / "calls.log").open("a", encoding="utf-8") as log:
-    log.write(json.dumps({"at": time.time(), "root": root, "command": command, "args": rest}) + "\n")
+# Windows 上并发追加同一文件可能覆盖其他进程的记录；各自完整写入后再发布。
+call_id = uuid4().hex
+pending = state / ("call-" + call_id + ".tmp")
+pending.write_text(
+    json.dumps({"at": time.time(), "root": root, "command": command, "args": rest}),
+    encoding="utf-8",
+)
+pending.replace(state / ("call-" + call_id + ".json"))
 plan_file = state / "plan.json"
 plan = json.loads(plan_file.read_text(encoding="utf-8")) if plan_file.exists() else {}
 spec = plan.get(command, {})
@@ -735,12 +742,11 @@ class _FakeModavd:
         )
 
     def calls(self) -> list[dict]:
-        log = self.state / "calls.log"
-        if not log.exists():
-            return []
-        return [
-            json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()
+        records = [
+            json.loads(log.read_text(encoding="utf-8"))
+            for log in self.state.glob("call-*.json")
         ]
+        return sorted(records, key=lambda record: record["at"])
 
     def commands(self) -> list[str]:
         return [item["command"] for item in self.calls()]
@@ -1387,7 +1393,8 @@ async def test_cancelled_create_only_stops_the_instance_it_was_creating(
     assert "stop" not in fake.commands()
 
     # 8 号是这次建出来的（新建中）：取消时要关掉它，别留一台没人管的无头模拟器
-    (fake.state / "calls.log").unlink()
+    for record in fake.state.glob("call-*.json"):
+        record.unlink()
     fake.plan(list={"data": {"instances": []}}, create={"hold": 20}, stop={"data": {}})
     task = asyncio.create_task(cli.create(index=8))
     await _until(lambda: "create" in fake.commands())
