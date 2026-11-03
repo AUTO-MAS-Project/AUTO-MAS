@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
+import type { RuntimeLaunchModeSetting, RuntimeLaunchModeState } from '@/types/electron'
 import type { ScriptType } from '@/types/script'
 
 import { useLogExport } from '@/composables/useLogExport'
@@ -151,7 +152,65 @@ const issueTiles = computed<IssueTile[]>(() => [
   tileOf('MSS', exportingMSSLogs.value, () => void exportMSSIssueReport()),
 ])
 
+// Runtime 启动模式：持久化设置 + 当前生效值（重启后生效）
+const runtimeLaunchMode = ref<RuntimeLaunchModeSetting>('auto')
+const runtimeLaunchModeState = ref<RuntimeLaunchModeState | null>(null)
+const runtimeLaunchModeLoading = ref(false)
+
+const runtimeLaunchModeOptions = computed(() => [
+  { label: t('core.setting.advanced.runtimeLaunchModeAuto'), value: 'auto' },
+  { label: t('core.setting.advanced.runtimeLaunchModeManaged'), value: 'managed' },
+])
+
+const runtimeLaunchModeLabels: Record<'development' | 'managed', string> = {
+  development: 'runtimeLaunchModeDevelopment',
+  managed: 'runtimeLaunchModeManaged',
+}
+
+const effectiveModeLabel = computed(() => {
+  const state = runtimeLaunchModeState.value
+  return state ? t(`core.setting.advanced.${runtimeLaunchModeLabels[state.mode]}`) : ''
+})
+
+const loadRuntimeLaunchMode = async () => {
+  try {
+    const state = await window.electronAPI?.getRuntimeLaunchMode?.()
+    if (!state) return
+    runtimeLaunchModeState.value = state
+    runtimeLaunchMode.value = state.persisted
+    logger.info(`Runtime 启动方式: ${state.mode}（来源: ${state.source}）`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`读取 Runtime 启动方式失败: ${errorMsg}`)
+  }
+}
+
+const handleRuntimeLaunchModeChange = async (value: unknown) => {
+  if (typeof value !== 'string') return
+  const mode = value as RuntimeLaunchModeSetting
+  const previous = runtimeLaunchMode.value
+  runtimeLaunchMode.value = mode
+  runtimeLaunchModeLoading.value = true
+  try {
+    const state = await window.electronAPI?.setRuntimeLaunchMode?.(mode)
+    if (state) {
+      runtimeLaunchModeState.value = state
+      logger.info(
+        `Runtime 启动方式已保存: ${mode}，解析结果: ${state.mode}（来源: ${state.source}），重启后生效`
+      )
+    }
+  } catch (error) {
+    runtimeLaunchMode.value = previous
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存 Runtime 启动方式失败: ${errorMsg}`)
+    message.error(t('core.setting.advanced.runtimeLaunchModeSaveFailed'))
+  } finally {
+    runtimeLaunchModeLoading.value = false
+  }
+}
+
 onMounted(() => {
+  void loadRuntimeLaunchMode()
   void loadMaaFWReportScripts()
   void loadAddedScriptTypes()
 })
@@ -267,6 +326,27 @@ const exportDataBackup = async () => {
     </SectionCard>
 
     <SectionCard :title="t('core.setting.advanced.runtimeDebugSection')" :icon="CodeOutlined">
+      <SettingRow
+        :label="t('core.setting.advanced.runtimeLaunchMode')"
+        :hint="t('core.setting.advanced.runtimeLaunchModeTip')"
+      >
+        <a-segmented
+          :aria-label="t('core.setting.advanced.runtimeLaunchMode')"
+          :value="runtimeLaunchMode"
+          :options="runtimeLaunchModeOptions"
+          :disabled="runtimeLaunchModeLoading"
+          @change="handleRuntimeLaunchModeChange"
+        />
+        <span v-if="runtimeLaunchModeState" class="mode-effective">
+          {{
+            t('core.setting.advanced.runtimeLaunchModeEffective', {
+              mode: effectiveModeLabel,
+            })
+          }}
+          · {{ t('core.setting.advanced.runtimeLaunchModeRestartHint') }}
+        </span>
+      </SettingRow>
+
       <SettingRow :label="t('core.setting.advanced.devToolsLabel')">
         <a-button @click="openDevTools">{{ t('core.setting.advanced.openDevTools') }}</a-button>
       </SettingRow>
@@ -393,5 +473,14 @@ const exportDataBackup = async () => {
 .issue-tile:hover:not(:disabled) .issue-tile-action,
 .issue-tile-action.is-loading {
   color: var(--ant-color-primary);
+}
+
+.mode-effective {
+  flex: 1 1 240px;
+  min-width: 0;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: right;
 }
 </style>
