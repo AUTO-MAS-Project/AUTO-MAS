@@ -36,7 +36,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .components import avd_home, read_metadata, write_metadata
+from .components import avd_home, read_metadata, read_metadata_strict, write_metadata
 from .constants import (
     AVD_NAME_PREFIX,
     CPU_CHOICES,
@@ -218,7 +218,7 @@ def instance_meta(root: str | Path, native_index: int | str) -> dict[str, Any]:
 def update_instance_meta(
     root: str | Path, native_index: int | str, **changes: Any
 ) -> dict[str, Any]:
-    data = read_metadata(root)
+    data = read_metadata_strict(root)
     instances = data.get("instances")
     if not isinstance(instances, dict):
         instances = {}

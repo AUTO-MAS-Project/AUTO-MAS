@@ -259,7 +259,7 @@ def replace_with_retry(source: Path, target: Path) -> None:
 
 
 def update_metadata(root: str | Path, **changes: Any) -> dict[str, Any]:
-    data = read_metadata(root)
+    data = read_metadata_strict(root)
     data.update(changes)
     write_metadata(root, data)
     return data
