@@ -245,6 +245,11 @@ export function resolveRuntimeTargetVersion(): string {
 // ==================== 进度桥接 ====================
 
 export interface BootstrapProgressUpdate {
+  /** Electron 更新器提供的目标版本与当前下载尝试；旧事件可缺省。 */
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
   stage: InitializationRunStage
   status: InitializationStageStatus
   progress: number
@@ -275,6 +280,11 @@ export interface BootstrapProgressUpdate {
 
 /** `observe` 的第四个参数：progress 事件上除 stage / message / percent 之外的可选字段。 */
 interface BootstrapProgressDetail {
+  /** Electron 更新器提供的目标版本与当前下载尝试；旧事件可缺省。 */
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
   status?: string
   current?: number
   total?: number
@@ -385,6 +395,10 @@ export class BootstrapProgressBridge {
         ? undefined
         : resolveProgressPercent(rawPercent, detail)
     const extra: Partial<BootstrapProgressUpdate> = {
+      targetVersion: detail.targetVersion,
+      sourceName: detail.sourceName,
+      sourceIndex: detail.sourceIndex,
+      sourceCount: detail.sourceCount,
       runtimeStage: stage,
       runtimeStatus: detail.status,
       item: detail.item,
@@ -1098,9 +1112,13 @@ export class RuntimeInitializationService {
             progress.message,
             undefined,
             {
-              status: 'running',
+              status: progress.phase === 'complete' ? 'succeeded' : 'running',
               item: progress.item,
               source: progress.source,
+              targetVersion: progress.targetVersion,
+              sourceName: progress.sourceName,
+              sourceIndex: progress.sourceIndex,
+              sourceCount: progress.sourceCount,
               bytesPerSecond: progress.bytesPerSecond,
               current: progress.current,
               total: progress.total,

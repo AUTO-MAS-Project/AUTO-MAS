@@ -6,12 +6,17 @@ import LaunchStatus from '@/components/LaunchStatus.vue'
 import { useInitializationFlow } from './useInitializationFlow'
 import { useRuntimeBinaryUpdate } from './useRuntimeBinaryUpdate'
 import { formatRuntimeProgress } from './runtimeProgress'
+import type { RuntimeBinaryProgress } from '@/types/electron'
+import { RUNTIME_STAGES } from '../../../electron/services/runtime/protocol'
 
 const lifecycle = vi.hoisted(() => ({ mounted: [] as Array<() => unknown> }))
 vi.mock('vue', async importOriginal => ({
   ...(await importOriginal<typeof import('vue')>()),
   onMounted: (callback: () => unknown) => lifecycle.mounted.push(callback),
   onUnmounted: vi.fn(),
+}))
+vi.mock('ant-design-vue', () => ({
+  message: { error: vi.fn(), warning: vi.fn(), success: vi.fn() },
 }))
 vi.mock('@/utils/environment', () => ({
   isDevelopmentEnvironment: false,
@@ -236,11 +241,7 @@ describe('initialization progress language switching', () => {
 
   it('updates recovery download text reactively and preserves legacy update events', async () => {
     let update!: ReturnType<typeof useRuntimeBinaryUpdate>
-    let progress!: (value: {
-      progress: number
-      message: string
-      phase?: 'check' | 'download' | 'complete'
-    }) => void
+    let progress!: (value: RuntimeBinaryProgress) => void
     let finish!: (value: unknown) => void
     Object.assign(window.electronAPI, {
       checkRuntimeBinaryUpdate: async () => ({
@@ -266,13 +267,52 @@ describe('initialization progress language switching', () => {
     await renderToString(app)
     await update.checkForUpdate()
     const pending = update.updateRuntime()
-    progress({ progress: 20, phase: 'download', message: '原始 Runtime 下载消息' })
-    for (const locale of ['zh-CN', 'en-US', 'ja-JP'] as const) {
+    const event = {
+      progress: 20,
+      phase: 'download' as const,
+      message: '正在从 CNB（1/5）下载 Runtime v0.1.99',
+      targetVersion: 'v0.1.99',
+      source: 'cnb',
+      sourceName: 'CNB',
+      sourceIndex: 1,
+      sourceCount: 5,
+    }
+    progress(event)
+    for (const [locale, text] of [
+      ['zh-CN', '正在从 CNB（1/5）下载 Runtime v0.1.99'],
+      ['en-US', 'Downloading Runtime v0.1.99 from CNB (1/5)'],
+      ['ja-JP', 'CNB（1/5）から Runtime v0.1.99 をダウンロード中'],
+    ] as const) {
       i18n.global.locale.value = locale
-      expect(update.updateMessage.value).toBe(
-        i18n.global.t('bootstrap.init.progress.runtimeDownload')
-      )
+      expect(update.updateMessage.value).toBe(text)
+      expect(
+        await renderToString(createSSRApp({ render: () => h('p', update.updateMessage.value) }))
+      ).toContain(text)
       expect(update.updateProgress.value).toBe(20)
+    }
+    progress({
+      ...event,
+      source: 'github',
+      sourceName: 'GitHub 官方',
+      sourceIndex: 5,
+      message: '正在从 GitHub 官方（5/5）下载 Runtime v0.1.99',
+    })
+    for (const [locale, source] of [
+      ['zh-CN', 'GitHub 官方'],
+      ['en-US', 'GitHub (official)'],
+      ['ja-JP', 'GitHub 公式'],
+    ] as const) {
+      i18n.global.locale.value = locale
+      expect(update.updateMessage.value).toContain(source)
+      expect(update.updateMessage.value).toContain('5/5')
+      expect(update.updateMessage.value).toContain('v0.1.99')
+    }
+    for (const incomplete of [
+      { progress: 30, phase: 'download' as const, message: '旧事件仅有阶段' },
+      { ...event, sourceCount: undefined, message: '旧事件没有总源数' },
+    ]) {
+      progress(incomplete)
+      expect(update.updateMessage.value).toBe(incomplete.message)
     }
     progress({ progress: 30, message: '旧更新器原文' })
     expect(update.updateMessage.value).toBe('旧更新器原文')
@@ -284,32 +324,220 @@ describe('initialization progress language switching', () => {
         i18n.global.t('bootstrap.init.failure.runtimeUpdateSkipped')
       )
     }
-    expect(logger.info).toHaveBeenCalledWith('原始 Runtime 下载消息')
+    expect(logger.info).toHaveBeenCalledWith(event.message)
+    expect(logger.info).toHaveBeenCalledWith('正在从 GitHub 官方（5/5）下载 Runtime v0.1.99')
+  })
+
+  it.each(['failed', 'cancelled'] as const)(
+    'keeps %s recovery and a subsequent retry compatible',
+    async status => {
+      let update!: ReturnType<typeof useRuntimeBinaryUpdate>
+      let progress!: (value: RuntimeBinaryProgress) => void
+      let finish!: (value: unknown) => void
+      const onUpdated = vi.fn()
+      const remove = vi.fn()
+      Object.assign(window.electronAPI, {
+        checkRuntimeBinaryUpdate: async () => ({
+          status: 'available',
+          target: { version: 'v0.1.99' },
+        }),
+        onRuntimeBinaryProgress: (callback: typeof progress) => {
+          progress = callback
+        },
+        removeRuntimeBinaryProgressListener: remove,
+        updateRuntimeBinary: () =>
+          new Promise(resolve => {
+            finish = resolve
+          }),
+      })
+      const app = createSSRApp({
+        setup() {
+          update = useRuntimeBinaryUpdate(onUpdated)
+          return () => h('p', update.updateMessage.value)
+        },
+      })
+      app.use(i18n)
+      await renderToString(app)
+      await update.checkForUpdate()
+      const first = update.updateRuntime()
+      const event: RuntimeBinaryProgress = {
+        phase: 'download',
+        progress: 50,
+        message: '完整下载日志',
+        targetVersion: 'v0.1.99',
+        source: 'cnb',
+        sourceName: 'CNB',
+        sourceIndex: 1,
+        sourceCount: 5,
+      }
+      progress(event)
+      finish({ status, error: 'HTTP 503: original error' })
+      await first
+      expect(update.updating.value).toBe(false)
+      expect(onUpdated).not.toHaveBeenCalled()
+      expect(remove).toHaveBeenCalledTimes(1)
+      for (const locale of ['zh-CN', 'en-US', 'ja-JP'] as const) {
+        i18n.global.locale.value = locale
+        if (status === 'failed')
+          expect(update.updateMessage.value).toContain('HTTP 503: original error')
+        else
+          expect(update.updateMessage.value).toBe(
+            i18n.global.t('bootstrap.init.failure.runtimeUpdateSkipped')
+          )
+      }
+      const retry = update.updateRuntime()
+      expect(update.updateMessage.value).toBe(
+        i18n.global.t('bootstrap.init.failure.runtimeUpdating')
+      )
+      progress({
+        ...event,
+        source: 'ghproxy_cloudflare',
+        sourceName: 'gh-proxy (Cloudflare)',
+        sourceIndex: 2,
+      })
+      expect(update.updateMessage.value).toContain('gh-proxy (Cloudflare)')
+      expect(update.updateMessage.value).toContain('2/5')
+      finish({ status: 'cancelled' })
+      await retry
+      expect(remove).toHaveBeenCalledTimes(2)
+      expect(logger.info).toHaveBeenCalledWith(event.message)
+      if (status === 'failed')
+        expect(logger.error).toHaveBeenCalledWith('更新 Runtime 失败: HTTP 503: original error')
+    }
+  )
+
+  it('localizes the reachable top-level states and keeps unrelated protocol stages raw', async () => {
+    await initialize()
+    for (const [stage, status, raw, texts] of [
+      [
+        'repair',
+        'preparing_uv',
+        '正在检查并修复运行环境',
+        [
+          '正在检查并修复运行环境',
+          'Checking and repairing the runtime environment',
+          '実行環境を確認・修復中',
+        ],
+      ],
+      [
+        'bootstrap',
+        'ready_to_start',
+        '当前运行环境已就绪',
+        ['当前运行环境已就绪', 'The runtime environment is ready', '実行環境の準備が完了しました'],
+      ],
+    ] as const) {
+      receive({
+        stage: 'python',
+        status: 'running',
+        runtimeStage: stage,
+        runtimeStatus: status,
+        message: raw,
+      })
+      for (const [index, locale] of (['zh-CN', 'en-US', 'ja-JP'] as const).entries()) {
+        i18n.global.locale.value = locale
+        expect(await render()).toContain(texts[index])
+      }
+    }
+    for (const stage of [
+      'cleanup',
+      'doctor',
+      'runtime.handshake',
+      'backend.spawn',
+      'future.stage',
+    ]) {
+      receive({
+        stage: 'python',
+        status: 'running',
+        runtimeStage: stage,
+        runtimeStatus: 'running',
+        message: '原始诊断',
+      })
+      expect(await render()).toContain('原始诊断')
+    }
+    for (const stage of ['bootstrap', 'repair']) {
+      for (const status of ['failed', 'cancelled', 'future']) {
+        expect(
+          formatRuntimeProgress({ runtimeStage: stage, runtimeStatus: status }, i18n.global.t)
+        ).toBeUndefined()
+      }
+    }
+  })
+
+  it('retains download details through the initialization IPC path', async () => {
+    await initialize()
+    receive({
+      stage: 'python',
+      status: 'running',
+      runtimeStage: 'runtime.download',
+      runtimeStatus: 'running',
+      message: '原始下载信息',
+      targetVersion: 'v0.1.99',
+      source: 'cnb',
+      sourceName: 'CNB',
+      sourceIndex: 2,
+      sourceCount: 5,
+    })
+    for (const locale of ['zh-CN', 'en-US', 'ja-JP'] as const) {
+      i18n.global.locale.value = locale
+      const html = await render()
+      expect(html).toContain('CNB')
+      expect(html).toContain('2/5')
+      expect(html).toContain('v0.1.99')
+    }
   })
 
   it('localizes known normal statuses while leaving failures and unknown events untouched', () => {
+    const normalStages = [
+      'runtime.check',
+      'runtime.download',
+      'network.probe',
+      'uv.check',
+      'uv.download',
+      'uv.verify',
+      'workspace.check',
+      'workspace.clone',
+      'workspace.verify',
+      'workspace.swap',
+      'workspace.cleanup',
+      'python.check',
+      'python.install',
+      'dependencies.check',
+      'dependencies.sync',
+      'dependencies.rebuild',
+    ]
+    // Every protocol stage is deliberately classified; new ones require a display-path review.
+    const otherPaths = [
+      'runtime.handshake',
+      'doctor',
+      'cleanup',
+      'backend.spawn',
+      'backend.health',
+      'backend.run',
+      'backend.restart',
+      'backend.shutdown',
+      'backend.cleanup',
+    ]
+    expect(
+      new Set([
+        ...normalStages.filter(stage => !stage.startsWith('runtime.')),
+        'bootstrap',
+        'repair',
+        ...otherPaths,
+      ])
+    ).toEqual(new Set(RUNTIME_STAGES))
     for (const locale of ['zh-CN', 'en-US', 'ja-JP'] as const) {
       i18n.global.locale.value = locale
-      for (const stage of [
-        'runtime.check',
-        'runtime.download',
-        'network.probe',
-        'uv.check',
-        'uv.download',
-        'uv.verify',
-        'workspace.check',
-        'workspace.clone',
-        'workspace.verify',
-        'workspace.swap',
-        'workspace.cleanup',
-        'python.check',
-        'python.install',
-        'dependencies.check',
-        'dependencies.sync',
-        'dependencies.rebuild',
-      ]) {
+      for (const stage of normalStages) {
         const text = formatRuntimeProgress(
-          { runtimeStage: stage, runtimeStatus: 'running' },
+          {
+            runtimeStage: stage,
+            runtimeStatus: 'running',
+            targetVersion: 'v0.1.99',
+            source: 'cnb',
+            sourceName: 'CNB',
+            sourceIndex: 1,
+            sourceCount: 5,
+          },
           i18n.global.t
         )
         for (const [status, key] of [

@@ -440,6 +440,11 @@ export interface RuntimeBinarySyncResult {
 }
 
 export interface RuntimeBinarySyncProgress {
+  /** Electron 更新器提供的目标版本与当前下载尝试；旧事件可缺省。 */
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
   /** Electron 更新器的正常阶段；旧事件缺失时保留原文。 */
   phase?: 'check' | 'download' | 'complete'
   /** 0~100；总量未知时停在 0。 */
@@ -778,6 +783,7 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
   logger.info(`Runtime 已更新到线上最新 ${target.version}`)
   options.onProgress?.({
     phase: 'complete',
+    targetVersion: target.version,
     progress: 100,
     message: `Runtime 已更新到 ${target.version}`,
   })
@@ -887,6 +893,7 @@ async function downloadTarget(
   // 第一步：可信来源的校验清单。它的进度不往上报——几十字节瞬间到 100% 再回到 0 只会让界面跳动。
   options.onProgress?.({
     phase: 'check',
+    targetVersion: target.version,
     progress: 0,
     message: `正在获取 Runtime ${target.version} 的校验信息`,
   })
@@ -919,6 +926,10 @@ async function downloadTarget(
       message,
       item: asset,
       source: source.key,
+      targetVersion: target.version,
+      sourceName: source.name,
+      sourceIndex: index + 1,
+      sourceCount: sources.length,
     })
 
     logger.info(`尝试从 ${label} 下载 Runtime ${target.version}: ${source.url}`)
@@ -935,6 +946,10 @@ async function downloadTarget(
           message,
           item: asset,
           source: source.key,
+          targetVersion: target.version,
+          sourceName: source.name,
+          sourceIndex: index + 1,
+          sourceCount: sources.length,
           bytesPerSecond: progress.speed,
           current: progress.downloadedSize,
           total: progress.totalSize,

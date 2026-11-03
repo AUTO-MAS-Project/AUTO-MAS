@@ -63,6 +63,11 @@ export const EMPTY_NETWORK_ACTIVITY: NetworkActivity = Object.freeze({
 
 /** 进度载荷里与网络细节有关的字段，全部可选。 */
 export interface NetworkActivityPayload {
+  /** Electron 更新器提供的目标版本与当前下载尝试；旧事件可缺省。 */
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
   runtimeStage?: string
   runtimeStatus?: string
   message?: string

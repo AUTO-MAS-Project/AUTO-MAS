@@ -56,6 +56,7 @@ export function useRuntimeBinaryUpdate(onUpdated: () => void) {
           return (
             formatRuntimeProgress(
               {
+                ...progress,
                 runtimeStage: `runtime.${progress.phase}`,
                 runtimeStatus: 'running',
               },

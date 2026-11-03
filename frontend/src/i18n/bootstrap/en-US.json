@@ -102,7 +102,6 @@
     },
     "progress": {
       "runtimeCheck": "Checking Runtime updates and the local environment",
-      "runtimeDownload": "Downloading Runtime",
       "networkProbe": "Testing download sources",
       "uvCheck": "Checking uv",
       "uvDownload": "Downloading uv",
@@ -118,7 +117,12 @@
       "dependenciesSync": "Syncing dependencies",
       "dependenciesRebuild": "Rebuilding the dependency environment",
       "finished": "Current stage complete",
-      "skipped": "Current stage skipped"
+      "skipped": "Current stage skipped",
+      "bootstrapReady": "The runtime environment is ready",
+      "runtimeRepair": "Checking and repairing the runtime environment",
+      "runtimeDownloadDetails": "Downloading Runtime {version} from {source} ({index}/{count})",
+      "runtimeCheckVersion": "Fetching verification information for Runtime {version}",
+      "runtimeGithubSource": "GitHub (official)"
     }
   },
   "launch": {
