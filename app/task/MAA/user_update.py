@@ -29,6 +29,7 @@ from app.task.proxy_helpers import (
 )
 from app.utils import constants as _utils_constants
 
+from .tools.activity_inventory import migrate_activity_inventory_plans
 from .tools.cultivate import (
     append_owned_cultivate_targets,
     depot_cultivate_service,
@@ -141,4 +142,39 @@ async def prepare_user_update(
         )
         if notice is not None:
             data.setdefault("Data", {})["CultivateNotice"] = notice
+        if "EventDepotMaintainPlans" in task_patch:
+            rows = json.loads(task_patch["EventDepotMaintainPlans"])
+            if any(
+                isinstance(row, dict)
+                and (row.get("LegacyActivityFirst") or row.get("LegacyIndex"))
+                for row in rows
+            ):
+                from .stage import maa_stage_service
+
+                server = data.get("Info", {}).get("Server", user_config.Info.Server)
+                stage_info = await maa_stage_service.get_stage_info(
+                    "Info", server=server
+                )
+                stages = (
+                    stage_info.get("Activity", [])
+                    if stage_info.get("ActivityStatus") == "ready"
+                    else []
+                )
+                previous_guard = guard
+
+                def finish_activity_migration() -> None:
+                    if previous_guard is not None:
+                        previous_guard()
+                    # 区服在等待期间变化时，不用旧区服数据永久改写序号。
+                    current_server = data.get("Info", {}).get(
+                        "Server", user_config.Info.Server
+                    )
+                    task_patch["EventDepotMaintainPlans"] = (
+                        migrate_activity_inventory_plans(
+                            task_patch["EventDepotMaintainPlans"],
+                            stages if current_server == server else [],
+                        )
+                    )
+
+                guard = finish_activity_migration
     return guard
