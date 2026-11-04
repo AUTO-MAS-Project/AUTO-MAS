@@ -256,7 +256,8 @@ class BAAHManager(ScriptManagerBase):
 
             # 安装准备/用户执行异常不可被常规收尾覆盖成“完成”。
             if self.script_info.status == "异常" or any(
-                user.status == "异常" for user in self.script_info.user_list
+                user.status not in {"完成", "跳过"}
+                for user in self.script_info.user_list
             ):
                 self.script_info.status = "异常"
             else:
