@@ -193,7 +193,7 @@ async def prepare_update(root: Path) -> PreparedUpdate | None:
     if repository == "global":
         repository = "https://github.com/LmeSzinc/StarRailCopilot"
     parsed = urlsplit(repository)
-    if (
+    if not cn_source and (
         parsed.scheme != "https"
         or not parsed.hostname
         or parsed.username
