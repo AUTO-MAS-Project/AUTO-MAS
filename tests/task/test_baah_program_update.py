@@ -156,6 +156,7 @@ async def test_existing_install_allows_toolkit_adb_but_update_remains_strict(
         "process_iter",
         lambda fields: [SimpleNamespace(info={"exe": str(adb), "name": "adb.exe"})],
     )
+
     def check_idle(root, *, allow_background_adb=False):
         if not allow_background_adb:
             raise script_install.InstallUnsafeError("adb is still running")
@@ -201,4 +202,3 @@ async def test_install_lock_conflict_never_marks_unrun_task_complete(
     await instance.final_task()
     assert instance.script_info.status == "异常"
     assert instance.check_result != "Pass"
-

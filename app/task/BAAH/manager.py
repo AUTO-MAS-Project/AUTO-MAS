@@ -98,9 +98,7 @@ class BAAHManager(ScriptManagerBase):
             return "未填写 BAAH 主程序路径, 请检查脚本配置中的主程序路径设置！"
         if not path.is_file():
             directory = script_install.workspace(path.parent)
-            if not (
-                (directory / "transaction.json").exists()
-            ):
+            if not ((directory / "transaction.json").exists()):
                 return "BAAH 主程序不存在，且没有可信的中断安装记录，请检查安装路径"
 
         return "Pass"
