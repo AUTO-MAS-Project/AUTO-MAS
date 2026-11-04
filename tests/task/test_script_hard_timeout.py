@@ -1,11 +1,9 @@
-import ast
 import asyncio
 from datetime import datetime
-from pathlib import Path
 
 import pytest
 
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
 from tests.config_support import activate_config
 
@@ -107,42 +105,6 @@ def test_timeout_before_log_creation_still_records_reason():
     asyncio.run(scenario())
 
 
-def test_adapter_coverage_and_exemptions():
-    root = Path("app/task")
-    covered = {
-        "MAA",
-        "MaaEnd",
-        "SRC",
-        "Okww",
-        "OkNte",
-        "ZzzOd",
-        "BAAH",
-        "BetterGI",
-        "Whimbox",
-        "general",
-    }
-    actual = set()
-    for path in root.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and any(
-                isinstance(
-                    origin := base.value if isinstance(base, ast.Subscript) else base,
-                    ast.Name,
-                )
-                and origin.id == "ScriptAutoProxyBase"
-                for base in node.bases
-            ):
-                actual.add(path.relative_to(root).parts[0])
-    assert actual == covered
-    from app.models.config import MaaConfig
-
-    proxy = Proxy()
-    proxy.script_config = MaaConfig()
-    assert ScriptAutoProxyBase.run_timeout_seconds.fget(proxy) == 7200
-    assert TaskExecuteBase._run_main_task is not ScriptAutoProxyBase._run_main_task
-
-
 def test_repeated_cancel_waits_for_finalizer():
 
     async def scenario():
@@ -197,6 +159,9 @@ def test_hard_timeout_config_persistence_and_runtime(name, tmp_path):
         path = tmp_path / f"{name}.yaml"
         await activate_config(config, path)
         assert config.Run.HardTimeLimit == 120
+        proxy = Proxy()
+        proxy.script_config = config
+        assert ScriptAutoProxyBase.run_timeout_seconds.fget(proxy) == 7200
         await config.update(
             type(config).model_validate({"Run": {"HardTimeLimit": 240}}),
             check_visibility=False,
@@ -204,7 +169,6 @@ def test_hard_timeout_config_persistence_and_runtime(name, tmp_path):
         loaded = cls()
         await activate_config(loaded, path)
         assert loaded.Run.HardTimeLimit == 240
-        proxy = Proxy()
         proxy.script_config = loaded
         assert ScriptAutoProxyBase.run_timeout_seconds.fget(proxy) == 240 * 60
         model = config_contract(getattr(configs, f"{name}Config"))

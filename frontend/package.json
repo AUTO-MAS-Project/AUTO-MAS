@@ -8,10 +8,12 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "yarn build:main && concurrently \"vp dev\" \"yarn watch:main\" \"yarn electron-dev\"",
+    "dev:frontend": "yarn build:main && concurrently \"vp dev\" \"yarn watch:main\" \"yarn electron-dev:frontend\"",
     "dev:fullstack": "yarn dev",
     "backend": "cross-env PYTHONIOENCODING=utf-8 AUTO_MAS_HTTP_PORT=36164 uv run --project .. --locked python ../main.py",
     "watch:main": "tsc -p tsconfig.electron.json --watch",
     "electron-dev": "wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "electron-dev:frontend": "wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron . --connect-existing-backend",
     "build:main": "tsc -p tsconfig.electron.json",
     "build": "vp build && yarn build:main && electron-builder --publish never",
     "web": "vp dev",

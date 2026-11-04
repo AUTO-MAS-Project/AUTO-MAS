@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 from app.models.config import CLASS_BOOK
 from app.task.registration import ScriptCapabilities, build_script_capabilities
+from app.utils.common.startup_timing import startup_stage
 
 if TYPE_CHECKING:
     from app.task.MaaEnd.api_service import MaaEndConfigService
@@ -32,19 +33,32 @@ def build_builtin_script_capabilities(
     *, maaend: MaaEndConfigService, zzzod: ZzzOdRecovery
 ) -> ScriptCapabilities:
     """绑定服务只属于本次装配；模块静态声明不保存 Config 或服务实例。"""
-    from app.task.BAAH.registration import REGISTRATION as baah
-    from app.task.BetterGI.registration import REGISTRATION as bettergi
-    from app.task.general.registration import REGISTRATION as general
-    from app.task.HSR.registration import REGISTRATION as hsr
-    from app.task.MAA.registration import REGISTRATION as maa
-    from app.task.MaaEnd.registration import registration as maaend_registration
-    from app.task.MaaFW.registration import REGISTRATION as maafw
-    from app.task.MaaFW.tools.embedded.script_lifecycle import cleanup_script_files
-    from app.task.OkNte.registration import REGISTRATION as oknte
-    from app.task.Okww.registration import REGISTRATION as okww
-    from app.task.SRC.registration import REGISTRATION as src
-    from app.task.Whimbox.registration import REGISTRATION as whimbox
-    from app.task.ZzzOd.registration import registration as zzzod_registration
+    with startup_stage("后端/专项注册导入/BAAH.registration"):
+        from app.task.BAAH.registration import REGISTRATION as baah
+    with startup_stage("后端/专项注册导入/BetterGI.registration"):
+        from app.task.BetterGI.registration import REGISTRATION as bettergi
+    with startup_stage("后端/专项注册导入/general.registration"):
+        from app.task.general.registration import REGISTRATION as general
+    with startup_stage("后端/专项注册导入/HSR.registration"):
+        from app.task.HSR.registration import REGISTRATION as hsr
+    with startup_stage("后端/专项注册导入/MAA.registration"):
+        from app.task.MAA.registration import REGISTRATION as maa
+    with startup_stage("后端/专项注册导入/MaaEnd.registration"):
+        from app.task.MaaEnd.registration import registration as maaend_registration
+    with startup_stage("后端/专项注册导入/MaaFW.registration"):
+        from app.task.MaaFW.registration import REGISTRATION as maafw
+    with startup_stage("后端/专项注册导入/MaaFW.tools.embedded.script_lifecycle"):
+        from app.task.MaaFW.tools.embedded.script_lifecycle import cleanup_script_files
+    with startup_stage("后端/专项注册导入/OkNte.registration"):
+        from app.task.OkNte.registration import REGISTRATION as oknte
+    with startup_stage("后端/专项注册导入/Okww.registration"):
+        from app.task.Okww.registration import REGISTRATION as okww
+    with startup_stage("后端/专项注册导入/SRC.registration"):
+        from app.task.SRC.registration import REGISTRATION as src
+    with startup_stage("后端/专项注册导入/Whimbox.registration"):
+        from app.task.Whimbox.registration import REGISTRATION as whimbox
+    with startup_stage("后端/专项注册导入/ZzzOd.registration"):
+        from app.task.ZzzOd.registration import registration as zzzod_registration
 
     capabilities = build_script_capabilities(
         (

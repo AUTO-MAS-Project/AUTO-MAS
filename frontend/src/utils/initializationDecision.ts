@@ -1,4 +1,4 @@
-import { isBrowserDevelopment } from '@/utils/environment'
+import { managesBackendProcess } from '@/utils/environment'
 import type { RuntimeInitMode } from '@/types/electron'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 
@@ -19,7 +19,7 @@ export async function getInitializationDecision(): Promise<InitializationDecisio
   decisionObserved = true
   const operation = beginAnalyticsOperation('initialization_decided')
   const runtime = Promise.resolve()
-    .then(() => window.electronAPI.getRuntimeInitContext?.())
+    .then(() => (managesBackendProcess() ? window.electronAPI.getRuntimeInitContext?.() : null))
     .catch(() => null)
   const decision = await resolveInitializationDecision()
   // 额外的模式查询仅用于统计，不延长路由守卫的等待。
@@ -39,7 +39,8 @@ async function resolveInitializationDecision(): Promise<InitializationDecision> 
   const forceBackendUpdate = sessionStorage.getItem('forceBackendUpdate') === 'true'
   const disableSkip = sessionStorage.getItem('disableInitializationSkip') === 'true'
 
-  if (forceBackendUpdate) {
+  if (forceBackendUpdate && managesBackendProcess()) {
+    await api.cancelDesktopStartup?.()
     return {
       mode: 'force-backend-update',
       currentVersion,
@@ -59,12 +60,23 @@ async function resolveInitializationDecision(): Promise<InitializationDecision> 
     }
   }
 
-  if (isBrowserDevelopment()) {
+  if (!managesBackendProcess()) {
     return {
       mode: 'skip-home',
       currentVersion,
       savedVersion: currentVersion,
       autoUpdateEnabled: false,
+      forceBackendUpdate,
+    }
+  }
+
+  const startup = await api.desktopStartupStatus?.()
+  if (startup) {
+    return {
+      mode: startup.fullInitialization ? 'full-init' : 'skip-home',
+      currentVersion,
+      savedVersion: startup.flowKind === 'first-run' ? null : currentVersion,
+      autoUpdateEnabled: startup.fullInitialization,
       forceBackendUpdate,
     }
   }

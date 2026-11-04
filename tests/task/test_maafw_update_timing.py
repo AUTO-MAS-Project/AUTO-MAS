@@ -1,7 +1,5 @@
 """MaaFW、M9A、MSS 共享运行前更新时机，保留显式关闭。"""
 
-from types import SimpleNamespace
-
 import pytest
 
 from app.models.config import M9AConfig, MaaFWConfig, MSSConfig
@@ -18,5 +16,6 @@ def test_flavors_update_before_run(config_type, stored, expected):
     assert resolve_auto_update_mode(config) == expected
 
 
-def test_missing_update_mode_defaults_to_before_run():
-    assert resolve_auto_update_mode(SimpleNamespace()) == "BeforeRun"
+def test_missing_stored_update_mode_uses_config_default():
+    config = MaaFWConfig.model_validate({})
+    assert resolve_auto_update_mode(config) == "BeforeRun"

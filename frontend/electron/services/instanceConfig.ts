@@ -9,7 +9,7 @@
 
 import * as path from 'path'
 import { app } from 'electron'
-import type { ApplicationEnvironment } from '../../src/types/environment'
+import type { ApplicationEnvironment, BackendOwnership } from '../../src/types/environment'
 
 // ==================== 常量 ====================
 
@@ -33,7 +33,15 @@ export function isDevelopmentEnvironment(): boolean {
 }
 
 export function getRendererEnvironmentArguments(): string[] {
-  return [`--auto-mas-environment=${getApplicationEnvironment()}`]
+  return [
+    `--auto-mas-environment=${getApplicationEnvironment()}`,
+    `--auto-mas-backend-ownership=${getBackendOwnership()}`,
+  ]
+}
+
+/** 只连接入口必须显式选择，不根据端口占用接管已有进程。 */
+export function getBackendOwnership(): BackendOwnership {
+  return process.argv.includes('--connect-existing-backend') ? 'external' : 'owned'
 }
 
 export function getDevelopmentServerUrl(): string | undefined {

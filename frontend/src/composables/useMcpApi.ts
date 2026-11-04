@@ -7,6 +7,7 @@ import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import { WS_ID_MCP, WS_MCP_STATUS_UPDATED } from '@/services/websocket/types'
 import { observeFeature } from '@/utils/featureAnalytics'
 import { translate as t } from '@/i18n'
+import { finishStartupStage } from '@/utils/startupTiming'
 
 const STATUS_KEY = ['core', 'mcp-status'] as const
 const HOME_PAINT_TIMEOUT_MS = 5000
@@ -87,6 +88,7 @@ export function scheduleMcpAfterPaint(): void {
     paintFrame = requestAnimationFrame(() => {
       paintFrame = null
       if (import.meta.env.DEV) performance.mark('auto-mas:mcp-release-paint')
+      finishStartupStage('首页布局绘制后', 0)
       notifyMcpHomePainted()
     })
   })

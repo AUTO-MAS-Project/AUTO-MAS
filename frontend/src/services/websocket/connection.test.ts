@@ -84,11 +84,6 @@ describe('websocket connection 状态机', () => {
     vi.unstubAllGlobals()
   })
 
-  it('源码 Electron 的开发环境不再表示退出时保留独立后端', async () => {
-    const connection = await loadConnection()
-    expect(connection.shouldPreserveBackend()).toBe(false)
-  })
-
   it('并发 connect 只建立一个连接尝试（单飞行）', async () => {
     const conn = await loadConnection()
     const p1 = conn.connect()
@@ -266,6 +261,5 @@ describe('devMode 协商', () => {
     releaseMeta!() // 补协商完成，但连接层已终态
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(conn.connectionInfo().backendDevMode).toBe(true)
-    expect(conn.shouldPreserveBackend()).toBe(true)
   })
 })

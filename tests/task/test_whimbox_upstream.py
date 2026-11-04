@@ -52,7 +52,7 @@ MATERIAL = {
 
 
 @pytest.fixture
-def surface(tmp_path: Path) -> WheelAssetsConfigSurface:
+def surface(tmp_path: Path, monkeypatch) -> WheelAssetsConfigSurface:
     assets = tmp_path / REL_SITE_PACKAGES / "whimbox" / "assets"
     assets.mkdir(parents=True)
     (assets / "default_config.json").write_text(
@@ -66,12 +66,8 @@ def surface(tmp_path: Path) -> WheelAssetsConfigSurface:
     )
     (tmp_path / APP_EXE_NAME).write_bytes(b"exe")
     (tmp_path / REL_PYTHON_EXE).write_bytes(b"py")
-    import app.task.Whimbox.tools.upstream as upstream_mod
-
-    original = upstream_mod.Path.cwd
-    upstream_mod.Path.cwd = lambda: tmp_path
-    yield WheelAssetsConfigSurface(tmp_path)
-    upstream_mod.Path.cwd = original
+    monkeypatch.chdir(tmp_path)
+    return WheelAssetsConfigSurface(tmp_path)
 
 
 class TestInstallSentinel:

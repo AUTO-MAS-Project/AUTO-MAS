@@ -26,8 +26,9 @@ import * as path from 'path'
 import { getAppRoot } from './services/environmentService'
 import {
   registerInitializationHandlers,
+  startDesktopStartup,
+  stopDesktopStartup,
   checkCriticalFilesViaRuntime,
-  getBackendService,
   getLocalApiEndpoint,
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
@@ -94,6 +95,7 @@ import {
   isDevelopmentEnvironment,
   getDevelopmentServerUrl,
   getRendererEnvironmentArguments,
+  getBackendOwnership,
 } from './services/instanceConfig'
 import {
   PersistedRuntimeLaunchMode,
@@ -102,12 +104,14 @@ import {
 } from './services/runtime'
 import AdmZip = require('adm-zip')
 import { migrateUserData, selectUserDataLock } from './services/userDataMigration'
+import { recordDesktopStartup } from './services/startupTiming'
 
 // 开发版目录必须在 app ready 之前确定。
 applyInstanceIdentity()
 
 // 初始化日志系统（必须在创建 logger 之前）
 initializeLogger()
+recordDesktopStartup('主进程模块加载')
 const logger = getLogger('主进程')
 
 const targetUserDataPath = app.getPath('userData')
@@ -246,11 +250,8 @@ let forceKillPromise: Promise<void> | null = null
 async function forceKillRelatedProcesses(): Promise<void> {
   if (forceKillPromise) return forceKillPromise
   forceKillPromise = (async () => {
-    const backendService = getBackendService()
-
-    const result = await backendService.stopBackend()
-    if (!result.success) throw new Error(result.error || '未知错误')
-    logger.info('Runtime 监督的后端已关闭')
+    await stopDesktopStartup(true)
+    logger.info('本次桌面启动的后端资源已释放')
   })().finally(() => {
     forceKillPromise = null
   })
@@ -848,6 +849,7 @@ function assertDevelopmentRuntime(): void {
 }
 
 function createWindow() {
+  const windowStartedAt = performance.now()
   logger.info('开始创建主窗口')
 
   const config = loadConfig()
@@ -924,6 +926,7 @@ function createWindow() {
   })
 
   // 把局部的 win 赋值给模块级（供其他模块/函数用）
+  recordDesktopStartup('主窗口构造', windowStartedAt)
   mainWindow = win
   nativeCloseHandlerReady = false
   desktopMascot.attachMainWindow(win)
@@ -1094,6 +1097,12 @@ function createWindow() {
 
   win.setMenuBarVisibility(false)
   assertDevelopmentRuntime()
+  const pageLoadStartedAt = performance.now()
+  win.webContents.once('dom-ready', () => recordDesktopStartup('页面 DOM 就绪', pageLoadStartedAt))
+  win.once('ready-to-show', () => recordDesktopStartup('窗口可绘制', pageLoadStartedAt))
+  win.webContents.once('did-finish-load', () =>
+    recordDesktopStartup('页面加载完成', pageLoadStartedAt)
+  )
   const devServer = getDevelopmentServerUrl()
   if (devServer) {
     logger.info(`加载开发服务器: ${devServer}`)
@@ -1237,6 +1246,7 @@ function createWindow() {
 
   // 初始托盘配置（使用文件配置）
   updateTrayVisibility(config)
+  recordDesktopStartup('主窗口与 IPC 装配', windowStartedAt)
 
   // 等待窗口准备完成后再初始化托盘和处理启动配置
   win.webContents.once('did-finish-load', () => {
@@ -1890,6 +1900,7 @@ ipcMain.handle('window-close', () => {
 // 页面加载事件不能证明 Vue 已挂载；只接受当前主窗口主 frame 的就绪信号。
 ipcMain.on('renderer-ready', event => {
   if (!isApplicationWindowSender(event, mainWindow, { allowDevelopment: true })) return
+  recordDesktopStartup('Vue 根组件就绪')
   if (event.senderFrame) mainRendererRecovery?.rendererReady(event.senderFrame)
 })
 
@@ -2472,12 +2483,28 @@ app.on('before-quit', event => {
 })
 
 app.whenReady().then(async () => {
+  recordDesktopStartup('Electron 就绪')
+  const startupConfig = loadConfig()
+  void startDesktopStartup({
+    version: app.getVersion(),
+    initializedVersion:
+      typeof startupConfig.initializedVersion === 'string'
+        ? startupConfig.initializedVersion
+        : undefined,
+    autoUpdate: startupConfig.Update.IfAutoUpdate,
+  }).then(result => {
+    if (!result.success) logger.warn(`桌面启动未完成: ${result.error ?? result.code}`)
+  })
+  const handlersStartedAt = performance.now()
   registerAnalyticsHandlers(() => mainWindow)
   registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
   refreshAnalyticsPreference()
   analyticsService.recordAppStarted({
     launch_kind: isAutoStart ? 'auto_start' : 'manual',
-    runtime_mode: resolveRuntimeLaunchModeDetail(getAppRoot()).mode,
+    runtime_mode:
+      getBackendOwnership() === 'owned'
+        ? resolveRuntimeLaunchModeDetail(getAppRoot()).mode
+        : 'unknown',
     release_channel: app.getVersion().includes('-beta.') ? 'beta' : 'stable',
   })
   logger.info(`应用版本: ${app.getVersion()}`)
@@ -2516,6 +2543,7 @@ app.whenReady().then(async () => {
     }
   })
 
+  recordDesktopStartup('就绪后处理器与桌面能力注册', handlersStartedAt)
   createWindow()
 })
 

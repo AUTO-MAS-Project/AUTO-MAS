@@ -8,7 +8,7 @@
  * `development` 模式下 Runtime 只监督开发者自己的检出、不碰源码，入口直接禁用。
  */
 
-import { isBrowserDevelopment } from '@/utils/environment'
+import { managesBackendProcess } from '@/utils/environment'
 import { computed, ref } from 'vue'
 
 import type {
@@ -66,7 +66,7 @@ let progressListenerAttached = false
 
 /** 只查一次：启动模式在进程启动时定下，一个生命周期内不会变。 */
 async function ensureLaunchMode(): Promise<RuntimeLaunchMode | null> {
-  if (isBrowserDevelopment()) return null
+  if (!managesBackendProcess()) return null
   if (launchMode.value) return launchMode.value
   try {
     // 启动模式返回的是 {persisted, mode, source}，这里只关心生效值。
@@ -128,9 +128,9 @@ async function settle(result: RuntimeUpdateOutcome): Promise<void> {
 }
 
 export function useBackendRuntimeUpdate() {
-  const isRuntimeManaged = computed(() => launchMode.value === 'managed')
+  const isRuntimeManaged = computed(() => managesBackendProcess() && launchMode.value === 'managed')
   const isRuntimeDevelopment = computed(
-    () => isBrowserDevelopment() || launchMode.value === 'development'
+    () => managesBackendProcess() && launchMode.value === 'development'
   )
 
   /** 完成的段数占总段数，Runtime 不给细粒度百分比，这里也不编。 */
@@ -142,7 +142,7 @@ export function useBackendRuntimeUpdate() {
   const stageOrder = computed(() => UPDATE_STAGE_ORDER)
 
   async function start(version: string): Promise<void> {
-    if (running.value) return
+    if (!managesBackendProcess() || running.value) return
 
     resetProgress()
     targetVersion.value = version
@@ -166,7 +166,7 @@ export function useBackendRuntimeUpdate() {
   }
 
   async function retry(action: RuntimeUpdateRetryAction): Promise<void> {
-    if (running.value) return
+    if (!managesBackendProcess() || running.value) return
 
     outcome.value = null
     cancelling.value = false
@@ -200,6 +200,7 @@ export function useBackendRuntimeUpdate() {
 
   /** `restart` 结局下的兜底：源码与依赖都已就位，只是后端没起来，再拉一次。 */
   async function restartBackend(): Promise<void> {
+    if (!managesBackendProcess()) return
     const telemetry = (restartObservation ??= beginAnalyticsOperation('backend_update_finished'))
     restartingBackend.value = true
     try {

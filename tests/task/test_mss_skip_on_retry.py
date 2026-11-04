@@ -8,10 +8,8 @@ MSS 那份 entry 列表一旦再被误删，第一条用例就会红。
 
 from types import SimpleNamespace
 
-import pytest
-
+from app.models.config import MSSConfig
 from app.task.MaaFW.tools.embedded import runner_task as runner_task_module
-from app.task.MSS.flavor import MSSFlavor
 
 DEFENSE_ENTRY = "灾变防线_入口"
 CLIMB_ENTRY = "星塔_入口_agent"
@@ -33,20 +31,13 @@ def _task(name: str, entry: str) -> SimpleNamespace:
 
 
 def _runner(completed: list[str]) -> runner_task_module.MaaFWPluginAutoProxyTask:
-    """绕过 __init__ 造出只带重试状态的实例；resolve_flavor 由 fixture 换成真实特调。"""
+    """只初始化重试筛选需要的状态，特调由真实配置解析。"""
 
     runner = object.__new__(runner_task_module.MaaFWPluginAutoProxyTask)
-    runner.script_config = None
+    runner.script_config = MSSConfig()
     runner._completed_this_run = completed
     runner._retry_rerun_duplicates = []
     return runner
-
-
-@pytest.fixture(autouse=True)
-def _mss_flavor(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        runner_task_module, "resolve_flavor", lambda _config: MSSFlavor()
-    )
 
 
 def test_completed_defense_is_not_dispatched_again() -> None:
@@ -77,9 +68,3 @@ def test_duplicate_named_defense_keeps_existing_rerun_policy() -> None:
     # 同名两份分不清完成的是哪份：沿用引擎的保守策略，全部重跑
     assert result is plan
     assert set(runner._retry_rerun_duplicates) == {"灾变防线"}
-
-
-def test_mss_declares_defense_entry() -> None:
-    """直接钉住声明本身：删掉这一条时上面的用例也会红，这里给出更直白的原因。"""
-
-    assert DEFENSE_ENTRY in MSSFlavor.skip_on_retry_entries

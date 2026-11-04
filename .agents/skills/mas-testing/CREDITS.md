@@ -1,10 +1,8 @@
 # 来源与许可
 
-本 Skill 基于 Matt Pocock 的 mattpocock/skills 中 `skills/engineering/tdd`，导入依据为本地 mattpocock-skills 1.3.2。
+早期测试资料参考并改编过 Matt Pocock 的 mattpocock/skills（本地 mattpocock-skills 1.3.2）。当前规范由 AUTO-MAS 独立维护，不依赖或调用上游技能；本文件仅保留素材的来源与许可，不作为执行规则。
 
-`tests.md`、`mocking.md` 保留原文。`SKILL.md` 以中文改编原有公开边界、独立预期和逐条红绿循环；补充 AUTO-MAS 的可达性、已有测试去重、执行证据与存量治理要求。原作要求逐次与用户确认边界，本地改为沿用已明确的需求，仅在验收存在歧义时询问；未引入本仓库外的 Skill 依赖。
-
-按本目录约定仅保留纯文本来源。原作与本目录改编内容按 MIT 许可分发：
+原作与本目录改编内容按 MIT 许可分发：
 
 ```text
 MIT License

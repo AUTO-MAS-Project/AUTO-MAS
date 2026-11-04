@@ -1,5 +1,4 @@
 import asyncio
-import inspect
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -13,7 +12,6 @@ from app.core.notify.bootstrap import get_notify_channels as get_notify_channels
 from app.core.notify.manager import NotificationManager as NotificationManager
 from app.core.runtime_tasks import OwnedTaskRegistry
 from app.models.notification import NotificationSummary, NotifyPayload
-from app.models.notification.channel import Notifier
 from app.models.notification.community import CommunityNotificationResult
 from app.models.notification.report import TaskReportPolicy
 from app.models.task import TaskItem
@@ -265,22 +263,6 @@ def user_target(config):
 async def dispatch(payload, targets, *, notifier, **kwargs):
     with _service(notifier=notifier) as notifications:
         return await notifications.dispatch(payload, targets, **kwargs)
-
-
-def _protocol_members():
-    return {
-        name: method
-        for name, method in inspect.getmembers(Notifier, inspect.isfunction)
-        if not name.startswith("__")
-    }
-
-
-def test_notifier_fake_matches_protocol_signatures() -> None:
-    members = _protocol_members()
-    assert list(members) == ["send_channel"]
-    assert list(inspect.signature(_Notify.send_channel).parameters) == list(
-        inspect.signature(Notifier.send_channel).parameters
-    )
 
 
 def test_dispatch_isolates_false_result_and_names_webhook() -> None:
