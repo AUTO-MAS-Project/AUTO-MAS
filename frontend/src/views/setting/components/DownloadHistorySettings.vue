@@ -98,6 +98,7 @@ const showUpdateHistory = ref(false)
     :title="t('core.setting.others.lastUpdateHistory')"
     :width="700"
     :footer="null"
+    :destroy-on-close="true"
     class="update-history-modal"
   >
     <a-spin :spinning="historyLoading" class="history-loading">
@@ -153,6 +154,7 @@ const showUpdateHistory = ref(false)
 }
 
 :global(.update-history-modal .ant-modal-body) {
+  margin-top: 8px;
   padding: 24px;
 }
 
