@@ -486,6 +486,27 @@ async def test_resource_lock_contention_has_deadline(resource_install, monkeypat
     assert not resource._prepare_install_lock.locked()
 
 
+@pytest.mark.asyncio
+async def test_local_resource_lock_contention_has_deadline(
+    resource_install, monkeypatch
+):
+    install, _, downloader = resource_install
+    lock = asyncio.Lock()
+    await lock.acquire()
+    monkeypatch.setattr(resource, "_prepare_install_lock", lock)
+    monkeypatch.setattr(resource, "_RESOURCE_LOCK_TIMEOUT", 0.001)
+    try:
+        with pytest.raises(RuntimeError, match="资源更新超时"):
+            await asyncio.wait_for(
+                resource.prepare_install_resources(install, cdk=None, github=True),
+                timeout=1,
+            )
+        assert lock.locked()  # The waiting caller cannot release another caller's lock.
+        downloader.assert_not_awaited()
+    finally:
+        lock.release()
+
+
 @pytest.mark.parametrize("limit", ["entries", "bytes"])
 def test_resource_archive_limits_reject_before_extracting(tmp_path, monkeypatch, limit):
     from app.task.MAA.tools import resource_package
