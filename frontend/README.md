@@ -95,6 +95,21 @@ yarn web
 浏览器只连接独立后端，关闭预览不会停止它；后端由开发者在终端中管理。
 独立验证生产行为时需显式设置 `AUTO_MAS_ENV=production`。
 
+需要单独调试桌面前端时，在两个终端分别运行：
+
+```powershell
+# 终端一，frontend/ 目录。
+yarn backend
+
+# 终端二，frontend/ 目录，只启动 Electron、Vite 与主进程持续编译。
+yarn dev:frontend
+```
+
+已有 Vite 服务时可用 `yarn electron-dev:frontend` 只启动 Electron。
+该入口显式传入 `--connect-existing-backend`，默认连接 36164，可通过
+`AUTO_MAS_HTTP_PORT` 指定端口。它不需要 Runtime，不安装、更新或重启后端；退出只断开连接，
+保留后端及其任务，断线和系统唤醒后只重连。普通 `yarn dev` 仍负责后端的启动与退出。
+
 ### 构建
 
 ```bash

@@ -21,21 +21,38 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .community import router as community_router
-from .core import router as core_router
-from .dispatch import router as dispatch_router
-from .emulator import router as emulator_router
-from .history import router as history_router
-from .i18n import router as i18n_router
-from .info import router as info_router
-from .ocr import router as ocr_router
-from .openclaw_qq import router as openclaw_qq_router
-from .plan import router as plan_router
-from .queue import router as queue_router
-from .scripts import router as scripts_router
-from .setting import router as setting_router
-from .share import router as share_router
-from .update import router as update_router
+from app.utils.common.startup_timing import startup_stage
+
+with startup_stage("后端/API 导入/community"):
+    from .community import router as community_router
+with startup_stage("后端/API 导入/core"):
+    from .core import router as core_router
+with startup_stage("后端/API 导入/dispatch"):
+    from .dispatch import router as dispatch_router
+with startup_stage("后端/API 导入/emulator"):
+    from .emulator import router as emulator_router
+with startup_stage("后端/API 导入/history"):
+    from .history import router as history_router
+with startup_stage("后端/API 导入/i18n"):
+    from .i18n import router as i18n_router
+with startup_stage("后端/API 导入/info"):
+    from .info import router as info_router
+with startup_stage("后端/API 导入/ocr"):
+    from .ocr import router as ocr_router
+with startup_stage("后端/API 导入/openclaw_qq"):
+    from .openclaw_qq import router as openclaw_qq_router
+with startup_stage("后端/API 导入/plan"):
+    from .plan import router as plan_router
+with startup_stage("后端/API 导入/queue"):
+    from .queue import router as queue_router
+with startup_stage("后端/API 导入/scripts"):
+    from .scripts import router as scripts_router
+with startup_stage("后端/API 导入/setting"):
+    from .setting import router as setting_router
+with startup_stage("后端/API 导入/share"):
+    from .share import router as share_router
+with startup_stage("后端/API 导入/update"):
+    from .update import router as update_router
 
 __all__ = [
     "community_router",

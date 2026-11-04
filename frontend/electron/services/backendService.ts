@@ -14,7 +14,6 @@ import {
   RuntimeClient,
   RuntimeRemediation,
   RuntimeRunResult,
-  RuntimeRunControl,
   RuntimeLogEvent,
   RuntimeSuperviseHandle,
   RuntimeLaunchConfig,
@@ -136,8 +135,7 @@ export class BackendService {
   private runtimeStopping = false
   private runtimeUpdateFlight: Promise<RuntimeBackendUpdateCheck> | null = null
   private runtimeUpdateReady: RuntimeBackendUpdateCheck | null = null
-  private readonly runtimeCommands = new Set<RuntimeRunControl>()
-  private readonly runtimeRuns = new Set<Promise<RuntimeRunResult>>()
+  private readonly runtimeClients = new Set<RuntimeClient>()
 
   private readonly startupHealthPath = '/api/core/health'
   private analyticsRuntimeMode: AnalyticsRuntimeMode = 'unknown'
@@ -173,6 +171,10 @@ export class BackendService {
   }
 
   private async startBackendInternal(options?: BackendStartOptions): Promise<BackendStartResult> {
+    if (this.runtimeHandle) {
+      logger.info('Runtime 已在监督后端，跳过重复启动')
+      return { success: true }
+    }
     const startedAt = performance.now()
     refreshAnalyticsPreference()
     const context = analyticsService.getContext()
@@ -213,6 +215,9 @@ export class BackendService {
           performance.now() - startedAt,
           attributes
         )
+        logger.info(
+          `[启动计时] 桌面/Runtime 与后端启动${result.success ? '完成' : '失败'}，阶段 ${(performance.now() - startedAt).toFixed(1)} ms`
+        )
         return result
       }
     )
@@ -244,10 +249,6 @@ export class BackendService {
     config: RuntimeLaunchConfig,
     options?: BackendStartOptions
   ): Promise<BackendStartResult> {
-    if (this.runtimeHandle) {
-      logger.info('Runtime 已在监督后端，跳过重复启动')
-      return { success: true }
-    }
     if (this.stopFlight || this.stopRequested) {
       return { success: false, error: '正在关闭后端，取消启动' }
     }
@@ -359,6 +360,7 @@ export class BackendService {
     })
 
     let handle: RuntimeSuperviseHandle
+    const superviseStartedAt = performance.now()
     try {
       handle = await client.supervise({
         mode: config.mode,
@@ -379,9 +381,15 @@ export class BackendService {
             logger.warn('Runtime 报告 backend.run running 但未携带 baseUrl，忽略该事件')
             return
           }
+          logger.info(
+            `[启动计时] 桌面/Runtime 报告后端就绪，阶段 ${(performance.now() - superviseStartedAt).toFixed(1)} ms`
+          )
           resolveReady(baseUrl)
         },
       })
+      logger.info(
+        `[启动计时] 桌面/Runtime 监督握手，阶段 ${(performance.now() - superviseStartedAt).toFixed(1)} ms`
+      )
     } catch (error) {
       // 握手阶段的失败（可执行文件缺失、spawn 被拒、协议不匹配、参数错误）都在这里收敛。
       return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
@@ -392,7 +400,7 @@ export class BackendService {
       if (this.startingRuntimeHandle === handle) this.startingRuntimeHandle = null
     }
     this.startingRuntimeHandle = handle
-    void handle.completion.then(releaseStartup, releaseStartup)
+    void handle.closed.then(releaseStartup)
     if (this.runtimeStopping) await this.stopBackendViaRuntime(handle)
 
     const timeoutMs = options?.timeout || RUNTIME_READY_TIMEOUT_MS
@@ -518,7 +526,7 @@ export class BackendService {
       logger.info('Runtime 监督进程已结束，清理后端运行状态')
       this.clearRuntimeState(handle)
     }
-    void handle.completion.then(onFinished, onFinished)
+    void handle.closed.then(onFinished)
   }
 
   private clearRuntimeState(handle: RuntimeSuperviseHandle): void {
@@ -660,8 +668,8 @@ export class BackendService {
       return { success: true }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      this.clearRuntimeState(handle)
       if (this.hasRuntimeProcessExited(error)) {
+        this.clearRuntimeState(handle)
         // 关闭超时被客户端 kill、或 Runtime 没给终态就退出：进程本身已经不在了，
         // 后端进程树随 Job Object 一并回收，对调用方而言后端已停止，不必再弹「无法安全退出」。
         logger.warn(`Runtime 未给出关闭终态就已退出，按已停止处理: ${errorMsg}`)
@@ -937,44 +945,20 @@ export class BackendService {
     onLog?: (event: RuntimeLogEvent) => void
   ): Promise<RuntimeRunResult> {
     if (this.runtimeStopping) throw new Error('应用正在关闭，取消后端准备')
-    let control: RuntimeRunControl | undefined
-    const operation = client.run(args, {
-      onLog,
-      onStarted: started => {
-        control = started
-        this.runtimeCommands.add(started)
-        if (this.runtimeStopping) started.kill()
-      },
-      onProgress: event => logger.debug(`Runtime ${event.stage}: ${event.message}`),
-    })
-    this.runtimeRuns.add(operation)
+    this.runtimeClients.add(client)
     try {
-      return await operation
+      return await client.run(args, {
+        onLog,
+        onProgress: event => logger.debug(`Runtime ${event.stage}: ${event.message}`),
+      })
     } finally {
-      this.runtimeRuns.delete(operation)
-      if (control) this.runtimeCommands.delete(control)
+      if (!client.hasActiveSessions) this.runtimeClients.delete(client)
     }
   }
 
   private async cancelRuntimePreparations(): Promise<void> {
     this.runtimeStopping = true
-    if (this.runtimeRuns.size === 0) return
-    for (const control of this.runtimeCommands) {
-      try {
-        control.cancel()
-      } catch {
-        control.kill()
-      }
-    }
-    const timer = setTimeout(() => {
-      for (const control of this.runtimeCommands) control.kill()
-    }, 5000)
-    timer.unref?.()
-    try {
-      await Promise.allSettled([...this.runtimeRuns])
-    } finally {
-      clearTimeout(timer)
-    }
+    await Promise.all([...this.runtimeClients].map(client => client.stop()))
   }
 
   /**

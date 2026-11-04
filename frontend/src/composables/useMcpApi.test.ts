@@ -83,7 +83,9 @@ describe('MCP status reconciliation', () => {
   let scope: ReturnType<typeof effectScope>
   let api: ReturnType<(typeof import('./useMcpApi'))['useMcpApi']>
   beforeEach(async () => {
-    vi.stubGlobal('window', { electronAPI: { getLogger: () => ({ warn: vi.fn() }) } })
+    vi.stubGlobal('window', {
+      electronAPI: { getLogger: () => ({ warn: vi.fn(), info: vi.fn() }) },
+    })
     vi.resetModules()
     vi.clearAllMocks()
     boundaries.connection.value = 'idle'

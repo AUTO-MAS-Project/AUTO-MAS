@@ -7,7 +7,7 @@ import { translate as t } from '@/i18n'
 import { ref, type Ref } from 'vue'
 import { Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api'
-import { isBrowserDevelopment } from '@/utils/environment'
+import { managesBackendProcess } from '@/utils/environment'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 import type { AnalyticsEventProps } from '@/types/analytics'
 import { useAppClosing } from '@/composables/useAppClosing'
@@ -27,7 +27,6 @@ import {
 import {
   connect,
   connectionState,
-  shouldPreserveBackend,
   onConnected,
   onDisconnected,
   onReconnectCycleFailed,
@@ -52,9 +51,6 @@ import {
 const logger = window.electronAPI.getLogger('应用生命周期')
 
 // ==================== 常量 ====================
-
-// 浏览器退出时等待独立后端完成任务与电源清理，超时仍保留后端进程。
-const CLOSE_READY_TIMEOUT = 30000
 
 // 后端自动重启：时间窗内累计达到上限即进入恢复失败终态。不能按「重新连上就清零」计数：
 // 后端能接受 WS 随即崩溃时，每次恢复都会先连上再断开，计数永远到不了上限，变成无限重启
@@ -101,9 +97,7 @@ let residentSubscriptionIds: string[] = []
 let closePromise: Promise<void> | null = null
 // 保存准备可以撤销；只有真正开始关闭后端后，断线才进入禁止重连的终态。
 let backendClosing = false
-let shutdownReadyReceived = false
 let closeRequestedByBackend = false
-let resolveShutdownReady: ((ready: boolean) => void) | null = null
 
 // 后端自动重启状态
 let restartPromise: Promise<void> | null = null
@@ -156,8 +150,6 @@ const handleShutdownReady = (): void => {
     return
   }
   logger.info('收到 backend.shutdown.ready，后端清理完成')
-  shutdownReadyReceived = true
-  resolveShutdownReady?.(true)
 }
 
 const handleCloseRequested = (restart = false): void => {
@@ -305,23 +297,6 @@ const handleConnected = async (): Promise<void> => {
 
 // ==================== 正常关闭流程 ====================
 
-const waitForShutdownReady = (timeoutMs: number): Promise<boolean> => {
-  if (shutdownReadyReceived) return Promise.resolve(true)
-  return new Promise<boolean>(resolve => {
-    let settled = false
-    let timer: number | undefined
-    const settle = (ready: boolean): void => {
-      if (settled) return
-      settled = true
-      if (timer !== undefined) window.clearTimeout(timer)
-      resolveShutdownReady = null
-      resolve(ready)
-    }
-    resolveShutdownReady = settle
-    timer = window.setTimeout(() => settle(false), timeoutMs)
-  })
-}
-
 const queryBackendRunning = async (): Promise<boolean | null> => {
   try {
     const status = await window.electronAPI?.backendStatus?.()
@@ -414,7 +389,7 @@ const runRuntimeSupervisedClose = async (): Promise<void> => {
 
 const runCloseFlow = async (): Promise<void> => {
   backendClosing = true
-  logger.info('开始执行退出并关闭后端流程')
+  logger.info('开始执行退出流程')
   const { showClosingOverlay } = useAppClosing()
   showClosingOverlay()
 
@@ -425,19 +400,8 @@ const runCloseFlow = async (): Promise<void> => {
   endIntentionalBackendRestart('进入关闭流程')
   dismissDisconnectIncident()
 
-  if (isBrowserDevelopment()) {
-    // 沿用浏览器调试的轻量退出：停止任务与电源计划，保留独立后端进程。
-    const readyPromise =
-      connectionState().value === 'open'
-        ? waitForShutdownReady(CLOSE_READY_TIMEOUT)
-        : Promise.resolve(false)
-    try {
-      await Service.closeApiCoreClosePost()
-    } catch (error) {
-      logger.warn(`POST /close 请求失败: ${error instanceof Error ? error.message : String(error)}`)
-    }
-    await readyPromise
-    shutdownConnection('浏览器调试结束')
+  if (!managesBackendProcess()) {
+    shutdownConnection('前端退出，保留外部后端')
     disposeAppLifecycle()
     await window.electronAPI?.appQuit?.()
     return
@@ -458,7 +422,7 @@ const runBackendRequestedClose = async (restart = false): Promise<void> => {
     // 退出本身不作特殊处理，与「退出软件」共用同一条已协调好的流程
     await window.electronAPI?.appRestartOnQuit?.()
   }
-  if (!isBrowserDevelopment()) {
+  if (managesBackendProcess()) {
     // Runtime 链路：后端自行退出会被 Runtime 当作异常并重启，必须让 Electron 经 Runtime 收口
     const stopped = await stopBackendViaRuntime()
     if (!stopped) {
@@ -512,7 +476,7 @@ export function closeApp(): Promise<void> {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`关闭流程异常: ${errorMsg}`)
     stopReconnect()
-    const stopped = isBrowserDevelopment() || (await stopBackendViaRuntime())
+    const stopped = !managesBackendProcess() || (await stopBackendViaRuntime())
     shutdownConnection('关闭流程异常')
     disposeAppLifecycle()
     if (!stopped) {
@@ -569,7 +533,7 @@ const countRecentBackendRestarts = (): number => {
   return backendRestartTimestamps.length
 }
 
-const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
+const restartBackendFlow = (): Promise<void> => {
   // 单飞行：断开、重连周期失败和系统恢复只能共享同一个后端重启流程。
   // 关闭流程具有最高优先级，任何异步步骤后都会重新检查并退出。
   if (restartPromise) return restartPromise
@@ -579,8 +543,8 @@ const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
     logger.info('后端有意重启进行中，跳过自动恢复')
     return Promise.resolve()
   }
-  if (isBrowserDevelopment() || (shouldPreserveBackend() && !allowDevMode)) {
-    logger.warn('开发模式后端由开发者管理，跳过自动重启并继续重连')
+  if (!managesBackendProcess()) {
+    logger.info('外部后端由开发者管理，继续重连')
     scheduleReconnect(DEV_MODE_RETRY_DELAY)
     return Promise.resolve()
   }
@@ -711,7 +675,7 @@ const showDisconnectNotice = (event: WSDisconnectEvent): void => {
     key: DISCONNECT_NOTICE_KEY,
     message: t('bootstrap.misc.lostConnectionBackend'),
     description: t(
-      shouldPreserveBackend()
+      !managesBackendProcess()
         ? 'bootstrap.misc.devBackendReconnecting'
         : 'bootstrap.misc.checkingBackendRecoveringAutomatically'
     ),
@@ -722,7 +686,7 @@ const showDisconnectNotice = (event: WSDisconnectEvent): void => {
 
 const escalateDisconnectIncident = (): void => {
   // 只升级由断开事件开启的事故；开发模式与已升级过的事故不重复弹
-  if (!disconnectIncidentShown || closeDisconnectModal || shouldPreserveBackend()) return
+  if (!disconnectIncidentShown || closeDisconnectModal || !managesBackendProcess()) return
   notification.close(DISCONNECT_NOTICE_KEY)
   const modal = Modal.warning({
     title: t('bootstrap.misc.lostConnectionBackend'),
@@ -759,6 +723,10 @@ const showSupersededNotice = (event: WSDisconnectEvent): void => {
 }
 
 const recoverAfterDisconnect = (): Promise<void> => {
+  if (!managesBackendProcess()) {
+    scheduleReconnect(DEV_MODE_RETRY_DELAY)
+    return Promise.resolve()
+  }
   if (disconnectRecoveryPromise) return disconnectRecoveryPromise
   disconnectRecoveryPromise = (async () => {
     const running = await queryBackendRunning()
@@ -773,7 +741,6 @@ const recoverAfterDisconnect = (): Promise<void> => {
 const handleDisconnected = (event: WSDisconnectEvent): void => {
   if (isClosing() || closeRequestedByBackend) {
     shutdownConnection('关闭流程中断开')
-    if (!shutdownReadyReceived) resolveShutdownReady?.(false)
     return
   }
   if (event.code === WS_CLOSE_CODE_REPLACED) {
@@ -796,6 +763,10 @@ const handleDisconnected = (event: WSDisconnectEvent): void => {
 
 const handleReconnectCycleFailed = async (): Promise<void> => {
   if (isClosing() || restartFailureShown) return
+  if (!managesBackendProcess()) {
+    scheduleReconnect(DEV_MODE_RETRY_DELAY)
+    return
+  }
   if (isIntentionalRestart()) {
     // 更新流程可能正在装依赖，耗时远超一轮重连（约 40 秒）：不升级弹窗、不抢着起后端，
     // 只缩短下一轮间隔，后端一起来就能连上
@@ -816,7 +787,7 @@ const handleReconnectCycleFailed = async (): Promise<void> => {
   } else {
     // 后端进程存活或状态未知：延迟后继续下一轮重连
     logger.warn('后端进程仍在运行或状态未知，稍后继续重连')
-    scheduleReconnect(shouldPreserveBackend() ? DEV_MODE_RETRY_DELAY : NEXT_CYCLE_DELAY)
+    scheduleReconnect(NEXT_CYCLE_DELAY)
   }
 }
 
@@ -842,7 +813,7 @@ const handleSystemResume = (): Promise<void> => {
 
       if (running === false || !httpReachable) {
         // 已处于恢复失败终态时 restartBackendFlow 直接返回：终态只停自动重启，弹窗保留
-        recovery_kind = 'backend_restart'
+        recovery_kind = managesBackendProcess() ? 'backend_restart' : 'reconnect'
         await restartBackendFlow()
         return
       }

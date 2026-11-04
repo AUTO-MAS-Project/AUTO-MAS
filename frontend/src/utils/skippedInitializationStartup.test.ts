@@ -12,7 +12,7 @@ const calls = vi.hoisted(() => ({
   finish: vi.fn(),
 }))
 
-vi.mock('@/utils/environment', () => ({ isBrowserDevelopment: () => state.browser }))
+vi.mock('@/utils/environment', () => ({ managesBackendProcess: () => !state.browser }))
 vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
 vi.mock('ant-design-vue', () => ({ message: { error: vi.fn() } }))
 vi.mock('@/composables/useAppInitialization', () => ({ useAppInitialization: () => calls }))
