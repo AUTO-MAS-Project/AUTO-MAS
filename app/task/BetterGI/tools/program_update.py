@@ -205,9 +205,7 @@ def unpack_mirror_installer(
         allowed = {name, f"downloads/BetterGI_Install/{name}"}
         files = [member for member in package.infolist() if not member.is_dir()]
         directories = [
-            member.filename
-            for member in package.infolist()
-            if member.is_dir()
+            member.filename for member in package.infolist() if member.is_dir()
         ]
         if (
             len(files) != 1

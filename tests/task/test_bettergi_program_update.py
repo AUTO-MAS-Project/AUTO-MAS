@@ -490,7 +490,9 @@ async def test_beta_mirror_alpha_without_github_prerelease(
 
 
 @pytest.mark.asyncio
-async def test_mirror_accepts_upstream_sevenzip_nested_installer(installation, monkeypatch, tmp_path):
+async def test_mirror_accepts_upstream_sevenzip_nested_installer(
+    installation, monkeypatch, tmp_path
+):
     root, config, _ = installation
     config.Update.MirrorChyanCDK = "test-cdk"
     archive = tmp_path / "nested.zip"
