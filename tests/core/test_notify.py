@@ -703,7 +703,7 @@ def test_channels_endpoint_returns_metadata_only() -> None:
     from app.models.config import GlobalConfig
 
     secret = "synthetic-notification-credential"
-    setting = GlobalConfig.model_validate({"Notify": {"AuthorizationCode": secret}})
+    setting = GlobalConfig.model_validate({"Notify": {"ServerChanKey": secret}})
     with patch.object(Config, "setting", setting):
         result = _run(endpoint())
 
