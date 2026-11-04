@@ -347,7 +347,9 @@ async def test_unsafe_update_is_not_reported_as_completed_during_finalization(
 
 
 @pytest.mark.asyncio
-async def test_installer_timeout_waits_for_exit_before_releasing_lock(tmp_path, monkeypatch):
+async def test_installer_timeout_waits_for_exit_before_releasing_lock(
+    tmp_path, monkeypatch
+):
     finished = asyncio.Event()
 
     async def pending():
@@ -365,7 +367,9 @@ async def test_installer_timeout_waits_for_exit_before_releasing_lock(tmp_path, 
         raise TimeoutError("installer still running")
 
     monkeypatch.setattr(update.asyncio, "wait_for", timed_out)
-    running = asyncio.create_task(update.run_installer(tmp_path / "installer.exe", tmp_path))
+    running = asyncio.create_task(
+        update.run_installer(tmp_path / "installer.exe", tmp_path)
+    )
     await asyncio.sleep(0)
     await asyncio.sleep(0)
     assert not running.done()
