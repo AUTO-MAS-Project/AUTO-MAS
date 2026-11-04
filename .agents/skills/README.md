@@ -29,6 +29,7 @@
 - `mas-script-specialized-adapter`：用于新增或维护专项脚本适配，按脚本前端架构线完成问诊、前端表面与后端任务接入。
 - `mas-e2e`：用于选择、编写和运行隔离浏览器流程及作者本机真实脚本调度 E2E，并整理脱敏证据。
 - `mas-testing`：选择验证方式或设计、编写、修改、审查测试前必读；按可达行为与验证成本复用自动化、控制新增范围，并按需执行 TDD。
+- `mas-doc-tutorial`：用于从验证过的 Playwright 操作生成或修订文档站教程，核对截图与 UI 漂移，并交付逐主题结果和图文预览。
 - `mas-plan-schedule`：用于新增、重构或审查计划表类型与调度配置。
 - `mas-game-community`：用于新增、重构或审查游戏社区（签到与日常便笺），涵盖 `app/tools/community*` 的平台注册表、凭据加密与登录路由、社区 HTTP 传输、签到锁与触发路径、结果与通知契约。
 - `mas-ci-checks`：用于排查 PR 上失败的 CI、在推送前本地复现 dev PR 的各项门禁（格式 / lint / 类型检查、更新日志碎片、`uv.lock`、误回退提示、CNB 镜像、未签名 Windows 构建），并给出每项的本地命令。
@@ -44,6 +45,11 @@
    选择验证方式或涉及测试设计、编写、修改、审查时必须加载 `mas-testing/SKILL.md`；仅运行已有测试不触发。
 3. 若任务涉及贡献流程、分支、提交、PR/Issue 正文或版本记录，回到文档站确认。
 4. 若任务涉及主程序代码，仍需在主程序仓库中查看相邻实现并遵守本地风格。
+
+## 教程制作
+
+Codex 可调用 `$mas-doc-tutorial`；DeepSeek Harness 或未发现 Skill 的宿主可显式读取
+`.agents/skills/mas-doc-tutorial/SKILL.md`，共用同一份流程。
 
 ## 来源与许可
 
