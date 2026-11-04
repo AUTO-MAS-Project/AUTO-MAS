@@ -28,7 +28,7 @@ describe('用户数据目录迁移', () => {
     fs.mkdirSync(path.join(legacy, 'Cache'))
     fs.writeFileSync(path.join(legacy, 'Cache', 'regenerable'), 'cache')
 
-    expect(migrateUserData(legacy, target, legacy)).toEqual({ path: target })
+    expect(migrateUserData(legacy, target, legacy, 'win32')).toEqual({ path: target })
     expect(fs.readFileSync(path.join(target, 'appearances', 'theme', 'theme.json'), 'utf8')).toBe(
       'theme'
     )
@@ -39,7 +39,7 @@ describe('用户数据目录迁移', () => {
     expect(fs.existsSync(path.join(target, 'Cache'))).toBe(false)
 
     fs.writeFileSync(path.join(target, 'appearance-sources.json'), 'updated')
-    expect(migrateUserData(legacy, target, legacy)).toEqual({ path: target })
+    expect(migrateUserData(legacy, target, legacy, 'win32')).toEqual({ path: target })
     expect(fs.readFileSync(path.join(target, 'appearance-sources.json'), 'utf8')).toBe('updated')
   })
 
@@ -123,7 +123,9 @@ describe('用户数据目录迁移', () => {
     expect(selectUserDataLock(developmentLegacy, developmentTarget)).toBe(developmentTarget)
     fs.mkdirSync(developmentTarget)
     fs.writeFileSync(path.join(developmentTarget, 'lockfile'), '')
-    expect(migrateUserData(developmentLegacy, developmentTarget, developmentTarget)).toEqual({
+    expect(
+      migrateUserData(developmentLegacy, developmentTarget, developmentTarget, 'win32')
+    ).toEqual({
       path: developmentTarget,
     })
     expect(fs.existsSync(developmentLegacy)).toBe(false)
@@ -156,7 +158,7 @@ describe('用户数据目录迁移', () => {
     fs.writeFileSync(path.join(abandoned, '.auto-mas-user-data'), 'curr')
 
     expect(selectUserDataLock(legacy, target)).toBe(target)
-    expect(migrateUserData(legacy, target, target)).toEqual({ path: target })
+    expect(migrateUserData(legacy, target, target, 'win32')).toEqual({ path: target })
     expect(fs.readFileSync(path.join(target, '.auto-mas-user-data'), 'utf8')).toBe('current\n')
     expect(selectUserDataLock(legacy, target)).toBe(target)
   })
