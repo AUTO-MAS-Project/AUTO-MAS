@@ -63,7 +63,11 @@ async def test_no_downgrade_or_unnecessary_install(installation):
 
 @pytest.mark.asyncio
 async def test_installs_and_verifies_before_clearing_marker(installation):
-    update.installed_version.side_effect = [Version("3.1.0"), Version("3.1.1")]
+    update.installed_version.side_effect = [
+        Version("3.1.0"),
+        Version("3.1.0"),
+        Version("3.1.1"),
+    ]
     await update.ensure_backend_updated(installation)
     assert not update.pending_marker(installation).exists()
     calls = update.run_python.await_args_list
@@ -110,6 +114,24 @@ async def test_bad_download_never_starts_installation(installation):
         await update.ensure_backend_updated(installation)
     assert not update.pending_marker(installation).exists()
     update.run_python.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_prefetch_only_builds_dependencies_and_rejects_tampering(installation):
+    candidate = await update.prepare_update(installation)
+    assert isinstance(candidate, update.PreparedUpdate)
+    assert all("install" not in call.args for call in update.run_python.await_args_list)
+    assert not update.pending_marker(installation).exists()
+    candidate.wheel.write_bytes(b"tampered")
+    try:
+        with pytest.raises(RuntimeError):
+            await update.apply_update(installation, candidate)
+        assert not update.pending_marker(installation).exists()
+        assert all(
+            "install" not in call.args for call in update.run_python.await_args_list
+        )
+    finally:
+        update.discard_update(candidate)
 
 
 @pytest.mark.asyncio
@@ -350,7 +372,9 @@ async def test_wheelhouse_is_fresh_and_install_is_binary_only(installation):
     update.run_python.side_effect = run
     update.installed_version.side_effect = [
         Version("3.1.0"),
+        Version("3.1.0"),
         Version("3.1.1"),
+        Version("3.1.0"),
         Version("3.1.0"),
         Version("3.1.1"),
     ]
@@ -369,7 +393,11 @@ async def test_build_uses_configured_proxy_without_credentials_in_arguments(
 
     proxy = httpx.Proxy("http://127.0.0.1:7890", auth=("user", "secret-password"))
     monkeypatch.setattr(update.Config, "proxy", proxy)
-    update.installed_version.side_effect = [Version("3.1.0"), Version("3.1.1")]
+    update.installed_version.side_effect = [
+        Version("3.1.0"),
+        Version("3.1.0"),
+        Version("3.1.1"),
+    ]
     await update.ensure_backend_updated(installation)
     build = update.run_python.await_args_list[0]
     assert build.kwargs["env"]["https_proxy"] == (

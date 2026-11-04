@@ -10,7 +10,12 @@
 """
 
 import asyncio
+import hashlib
+import shutil
+import tempfile
 import time
+from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
@@ -23,6 +28,7 @@ from app.services.common.update import transport as _service_update_transport
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
 from app.utils import get_logger
 
+from .resource_update import _run_write_thread
 from .software_package import (
     has_delegated_update_failure,
     read_pending_update,
@@ -104,13 +110,34 @@ async def _select_package(current: str, latest: str, arch: str, channel: str) ->
     return full
 
 
+@dataclass(frozen=True)
+class PreparedUpdate:
+    release: tuple[str, str]
+    version: str
+    package: Path
+    digest: str
+
+
+def _digest(path: Path) -> str:
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+def discard_prepared_update(candidate: PreparedUpdate) -> None:
+    with suppress(OSError):
+        candidate.package.unlink(missing_ok=True)
+        candidate.package.parent.rmdir()
+
+
 async def prepare_maa_fluxdown_update(
     maa_root: Path,
     *,
     config: MaaConfig,
     config_dir: Path,
     progress: _service_update_transport.DownloadProgress | None = None,
-) -> str | None:
+    download_only: bool = False,
+    prepared: PreparedUpdate | None = None,
+) -> str | PreparedUpdate | None:
     """下载并登记官方包；无更新返回当前版本，不接管返回 None，失败阻止启动。
 
     调用方持有安装访问锁，且须在启动账号任务前调用官方 update_maa()。
@@ -119,6 +146,18 @@ async def prepare_maa_fluxdown_update(
     if not use_maa_github_update(config, config_dirs=[config_dir, maa_root / "config"]):
         return None
     try:
+        if prepared is not None:
+            if (
+                read_installed_release(maa_root) != prepared.release
+                or await asyncio.to_thread(_digest, prepared.package) != prepared.digest
+            ):
+                raise RuntimeError("MAA 安装或预下载包已变化，请重新检查更新")
+            destination = maa_root / prepared.package.name
+            await _run_write_thread(shutil.copyfile, prepared.package, destination)
+            write_pending_update(
+                maa_root, version=prepared.version, package=str(destination.resolve())
+            )
+            return prepared.version
         release = read_installed_release(maa_root)
         if release is None or has_delegated_update_failure(maa_root):
             raise RuntimeError("无法确认 MAA 安装状态，请先在 MAA 内完成修复")
@@ -144,8 +183,14 @@ async def prepare_maa_fluxdown_update(
         # 只使用官方规范包名，不接受清单中的任意下载 URL。
         tag = latest if latest.startswith("v") else f"v{latest}"
         filename = await _select_package(current, latest, arch, channel)
-        destination = maa_root / filename
-        part = maa_root / f"{filename}.part"
+        if download_only:
+            cache = Path.cwd() / "data" / "maa_github_update"
+            cache.mkdir(parents=True, exist_ok=True)
+            directory = Path(tempfile.mkdtemp(prefix="download-", dir=cache))
+        else:
+            directory = maa_root
+        destination = directory / filename
+        part = directory / f"{filename}.part"
         url = f"https://github.com/MaaAssistantArknights/MaaAssistantArknights/releases/download/{tag}/{filename}"
         logger.info(f"开始下载 MAA {latest}，完成后交给官方更新器安装")
         for attempt in range(3):
@@ -176,6 +221,13 @@ async def prepare_maa_fluxdown_update(
             logger.info("下载期间更新来源已变更，保留文件但不登记安装")
             return None
         part.replace(destination)
+        if download_only:
+            return PreparedUpdate(
+                release,
+                latest,
+                destination,
+                await asyncio.to_thread(_digest, destination),
+            )
         # 启动应用路径不再核对 OTA 的基线；登记前由持安装锁的调用方复核。
         if read_installed_release(maa_root) != release:
             raise RuntimeError("下载期间 MAA 安装版本发生变化，请重新运行")

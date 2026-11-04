@@ -99,6 +99,33 @@ async def test_script_channel_and_global_downloader_are_independent(
 
 
 @pytest.mark.asyncio
+async def test_prefetch_is_outside_install_and_registers_only_when_consumed(
+    installation, monkeypatch
+):
+    root, _, downloader = installation
+    monkeypatch.chdir(root.parent)
+    config = script_config(channel="stable")
+    candidate = await update.prepare_maa_fluxdown_update(
+        root, config=config, config_dir=root / "config", download_only=True
+    )
+    assert isinstance(candidate, update.PreparedUpdate)
+    assert not candidate.package.is_relative_to(root)
+    assert update.read_pending_update(root) == ("", "")
+    assert (
+        await update.prepare_maa_fluxdown_update(
+            root, config=config, config_dir=root / "config", prepared=candidate
+        )
+        == "v6.1.0"
+    )
+    downloader.assert_awaited_once()
+    version, package = update.read_pending_update(root)
+    assert version == "v6.1.0"
+    assert update.Path(package).is_relative_to(root)
+    update.discard_prepared_update(candidate)
+    assert update.Path(package).is_file()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "asset",
     [

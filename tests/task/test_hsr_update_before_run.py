@@ -195,8 +195,9 @@ def test_failed_rollback_is_reported_as_unsafe(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     "engine,exe", [("M7A", "March7th Assistant.exe"), ("SRA", "SRA-cli.exe")]
 )
+@pytest.mark.parametrize("prefetch", [False, True])
 async def test_reused_pipeline_installs_package_and_preserves_user_files(
-    tmp_path, monkeypatch, engine, exe
+    tmp_path, monkeypatch, engine, exe, prefetch
 ):
     root = tmp_path / "script"
     root.mkdir()
@@ -222,14 +223,30 @@ async def test_reused_pipeline_installs_package_and_preserves_user_files(
     monkeypatch.setattr(update, "check_no_process_running", lambda root: None)
     monkeypatch.setattr(update, "check_writable", lambda root: None)
     monkeypatch.setattr(update, "check_disk_space", lambda **kwargs: None)
+    prepared = None
+    if prefetch:
+        monkeypatch.setattr(update, "read_installed_version", lambda *args: "1.0")
+        prepared = await update.prepare_engine_update(
+            engine,
+            root,
+            source="MirrorChyan",
+            channel="stable",
+            cdk="",
+            proxy=None,
+            download_dir=tmp_path,
+        )
+        assert (root / exe).read_bytes() == b"old engine"
+        assert not installer.has_pending_journal(root)
     result = await update.update_engine_if_needed(
-        engine, root, source="MirrorChyan", download_dir=tmp_path
+        engine, root, source="MirrorChyan", download_dir=tmp_path, prepared=prepared
     )
     assert result.updated
     assert not result.blocking
     assert (root / exe).read_bytes() == b"new engine"
     assert config.read_bytes() == b"user settings"
     assert not installer.has_pending_journal(root)
+    update.check_engine_update.assert_awaited_once()
+    update._download_with_space_check.assert_awaited_once()
 
 
 @pytest.mark.parametrize(

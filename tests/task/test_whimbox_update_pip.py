@@ -132,7 +132,7 @@ def real_update(tmp_path, monkeypatch, pip_runtime):
     monkeypatch.setattr(
         update,
         "installed_version",
-        AsyncMock(side_effect=[Version("3.1.0"), Version("3.1.1")]),
+        AsyncMock(side_effect=[Version("3.1.0"), Version("3.1.0"), Version("3.1.1")]),
     )
     phases = []
 

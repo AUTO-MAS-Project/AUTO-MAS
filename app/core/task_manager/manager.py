@@ -49,6 +49,8 @@ from app.core import (
     RuntimeTasks,
 )
 from app.core.desktop_guard import ensure_desktop_available
+from app.core.script_update import ScriptUpdateRequest, run_script_update
+from app.core.script_update_queue import ScriptUpdateQueue
 from app.core.task_manager.cycle import (
     SUCCESS_USER_STATUSES,
     CycleEntry,
@@ -636,6 +638,9 @@ class Task(TaskExecuteBase):
         self._queue_before_script_ran = False
         self._queue_after_script_ran = False
         self._queue_script_task: asyncio.Task | None = None
+        self._update_queue = ScriptUpdateQueue()
+        self._prefetched_manager: tuple[int, object, TaskExecuteBase] | None = None
+        self._cycle_next_update_index: int | None = None
 
     def _record_error(self, error: str) -> None:
         """保留任务遇到的首个错误，供完成事件提供机器可读结果。"""
@@ -921,14 +926,28 @@ class Task(TaskExecuteBase):
         """
 
         results: list[str] = []
-        for stale in pending:
+        for pending_index, stale in enumerate(pending):
             entries = self._collect_entries(queue_uid)
             entry = next(
                 (e for e in entries if e.queue_item_id == stale.queue_item_id), None
             )
             if entry is None or not entry.is_due:
                 continue
+            next_ids = {item.queue_item_id for item in pending[pending_index + 1 :]}
+            next_entry = next(
+                (
+                    item
+                    for item in entries
+                    if item.queue_item_id in next_ids and item.is_due
+                ),
+                None,
+            )
+            self._cycle_next_update_index = (
+                next_entry.index if next_entry is not None else None
+            )
             results.append(await self._run_cycle_entry(queue_uid, entry, entries))
+        self._cycle_next_update_index = None
+        await self._discard_prefetched_manager()
 
         if results and not any(result in ("success", "skipped") for result in results):
             await asyncio.sleep(CYCLE_RETRY_SLEEP_SECONDS)
@@ -1055,14 +1074,25 @@ class Task(TaskExecuteBase):
                     check_visibility=False,
                 )
 
-            task_item = self._build_task_item(
-                script_item,
-                script_config,
-                script_uid=script_uid,
-                reservation_owner=reservation_owner,
-                root_paths=root_paths,
-                emulator_key=emulator_key,
-            )
+            pending = self._prefetched_manager
+            task_item = None
+            if pending is not None:
+                if pending[0] == entry.index and pending[
+                    1
+                ] == self._update_config_identity(script_config, script_item.script_id):
+                    task_item = pending[2]
+                    self._prefetched_manager = None
+                else:
+                    await self._discard_prefetched_manager()
+            if task_item is None:
+                task_item = self._build_task_item(
+                    script_item,
+                    script_config,
+                    script_uid=script_uid,
+                    reservation_owner=reservation_owner,
+                    root_paths=root_paths,
+                    emulator_key=emulator_key,
+                )
             if task_item is None:
                 script_item.status = "异常"
                 logger.error(f"不支持的脚本类型: {type(script_config).__name__}")
@@ -1153,15 +1183,26 @@ class Task(TaskExecuteBase):
         """
 
         child = self.spawn(task_item)
+        next_index = self._cycle_next_update_index
+        if next_index is not None:
+            self._update_queue.watch(
+                self.task_info.script_list[entry.index],
+                lambda: self._prefetch_next_script(next_index),
+            )
         refresher = RuntimeTasks.spawn(
             self._refresh_preview_while_running(queue_uid, entry),
             name=f"cycle-preview:{self.task_info.task_id}",
         )
         try:
             await child
+        except BaseException:
+            await self._update_queue.finish(cancelled=True)
+            raise
         finally:
+            await task_item.discard_prefetched_update()
             if refresher is not None:
                 refresher.cancel()
+        await self._update_queue.finish()
 
     async def _refresh_preview_while_running(
         self, queue_uid: uuid.UUID, running: CycleEntry
@@ -1330,7 +1371,68 @@ class Task(TaskExecuteBase):
             return True
         return self.run_weekday in self.script_run_days[index]
 
+    def _update_config_identity(self, script_config, script_id: str) -> object:
+        # 只在内存比较；凭据和配置不进入日志、缓存名或统计。
+        return (
+            script_id,
+            script_config.model_dump(mode="python"),
+            Config.setting.Update.model_dump(mode="python"),
+        )
+
+    async def _prefetch_next_script(self, index: int) -> None:
+        if index >= len(self.task_info.script_list):
+            return
+        item = self.task_info.script_list[index]
+        uid = uuid.UUID(item.script_id)
+        scope = self.task_info.script_user_scope(item.script_id)
+        if (
+            uid not in Config.ScriptConfig
+            or (scope is not None and not scope)
+            or (
+                not self.task_info.is_cycle
+                and not self._is_script_scheduled_today(index)
+            )
+        ):
+            return
+        config = Config.ScriptConfig[uid]
+        identity = self._update_config_identity(config, item.script_id)
+        roots, emulator = _exclusive_resources(config)
+        manager = self._build_task_item(
+            item,
+            config,
+            script_uid=uid,
+            reservation_owner=self.task_info.task_id,
+            root_paths=roots,
+            emulator_key=emulator,
+        )
+        if manager is None:
+            return
+        try:
+            await run_script_update(
+                ScriptUpdateRequest(
+                    item.script_id,
+                    _SCRIPT_TYPE_BY_CLASS.get(type(config).__name__, "unknown"),
+                ),
+                manager.prefetch_script_update,
+            )
+        except BaseException:
+            await manager.discard_prefetched_update()
+            raise
+        self._prefetched_manager = (index, identity, manager)
+
+    async def _discard_prefetched_manager(self) -> None:
+        pending, self._prefetched_manager = self._prefetched_manager, None
+        if pending is not None:
+            await pending[2].discard_prefetched_update()
+
     async def _run_script_list(self, start_index: int) -> None:
+        try:
+            await self._run_script_list_items(start_index)
+        finally:
+            await self._update_queue.finish(cancelled=True)
+            await self._discard_prefetched_manager()
+
+    async def _run_script_list_items(self, start_index: int) -> None:
         for self.task_info.current_index in range(
             start_index, len(self.task_info.script_list)
         ):
@@ -1417,14 +1519,27 @@ class Task(TaskExecuteBase):
                 script_item.status = "运行"
                 logger.info(f"任务开始: {current_script_uid}")
 
-                task_item = self._build_task_item(
-                    script_item,
-                    script_config,
-                    script_uid=current_script_uid,
-                    reservation_owner=reservation_owner,
-                    root_paths=root_paths,
-                    emulator_key=emulator_key,
-                )
+                task_item = None
+                pending = self._prefetched_manager
+                if pending is not None:
+                    if pending[0] == self.task_info.current_index and pending[
+                        1
+                    ] == self._update_config_identity(
+                        script_config, script_item.script_id
+                    ):
+                        task_item = pending[2]
+                        self._prefetched_manager = None
+                    else:
+                        await self._discard_prefetched_manager()
+                if task_item is None:
+                    task_item = self._build_task_item(
+                        script_item,
+                        script_config,
+                        script_uid=current_script_uid,
+                        reservation_owner=reservation_owner,
+                        root_paths=root_paths,
+                        emulator_key=emulator_key,
+                    )
                 if task_item is None:
                     script_item.status = "异常"
                     self._record_error(
@@ -1439,12 +1554,26 @@ class Task(TaskExecuteBase):
                     continue
 
                 # 运行任务
-                with self._observe_script_run(script_item, script_config):
-                    await self.spawn(task_item)
+                if self.task_info.mode == "AutoProxy":
+                    next_index = self.task_info.current_index + 1
+                    self._update_queue.watch(
+                        script_item, lambda: self._prefetch_next_script(next_index)
+                    )
+                try:
+                    with self._observe_script_run(script_item, script_config):
+                        await self.spawn(task_item)
+                except BaseException:
+                    await self._update_queue.finish(cancelled=True)
+                    raise
+                finally:
+                    await task_item.discard_prefetched_update()
+                await self._update_queue.finish()
             finally:
                 self.script_reservations.release(current_script_uid, reservation_owner)
 
     async def final_task(self) -> None:
+        await self._update_queue.finish(cancelled=True)
+        await self._discard_prefetched_manager()
         await self.task_info.discard_history_captures()
 
         # 收尾脚本完成后才发布终态，期间队列仍可被停止。

@@ -15,6 +15,7 @@ import os
 import threading
 import zipfile
 from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
@@ -152,13 +153,39 @@ def select_package(release: dict, arch: str) -> tuple[Version, str, str, int, st
     raise ValueError("MaaEnd 官方发行版没有当前安装架构的完整包")
 
 
-async def update_before_run(
+@dataclass(frozen=True)
+class PreparedUpdate:
+    root: Path
+    current: tuple[Version, str] | None
+    target: Version
+    arch: str
+    destination: Path
+    size: int
+    digest: str
+
+
+def discard_update(candidate: PreparedUpdate | str) -> None:
+    if isinstance(candidate, PreparedUpdate):
+        with suppress(OSError):
+            candidate.destination.unlink(missing_ok=True)
+            candidate.destination.parent.rmdir()
+
+
+async def prepare_update(
     root: Path, config: MaaEndConfig, *, progress: DownloadProgress | None = None
-) -> str:
-    """调用方持安装锁；所有下载失败都发生在原安装尚未改动时。"""
-    await asyncio.to_thread(assert_idle, root)
+) -> PreparedUpdate | str:
+    """只读安装身份并下载到独立 MAS 缓存；不要求原安装空闲。"""
+    channel = config.Update.Channel
+    effective_cdk = (
+        config.Update.MirrorChyanCDK.strip()
+        or Config.setting.Update.MirrorChyanCDK.strip()
+    )
+    proxy = Config.proxy
+    downloader = "fluxdown" if Config.setting.Update.FluxdownTakeoverAll else "builtin"
+    original = None
     try:
         current, arch = await asyncio.to_thread(read_install, root)
+        original = (current, arch)
     except (OSError, ValueError):
         # 曾经成功安装过的目录可按原架构修复损坏的 exe/interface；不按主机架构猜测。
         identity = _utils_io.read_dict_file(
@@ -171,7 +198,7 @@ async def update_before_run(
             )
         current = Version("0")
     target, name, url, size, digest = select_package(
-        await request_release(config.Update.Channel), arch
+        await request_release(channel), arch
     )
     verified = await script_install.run_worker(
         script_install.verify_installed_files, root
@@ -205,14 +232,7 @@ async def update_before_run(
         target = verified_target
     # 当前版本高于所选通道时只用精确匹配的 GitHub 官方包恢复可信回执；
     # Mirror 酱提供的是通道最新包，不能假定其中含有该历史版本。
-    cdk = (
-        ""
-        if recover_native
-        else (
-            config.Update.MirrorChyanCDK.strip()
-            or Config.setting.Update.MirrorChyanCDK.strip()
-        )
-    )
+    cdk = "" if recover_native else (effective_cdk)
     source = "GitHub"
     if cdk:
         payload = await request_mirror_resource(
@@ -221,9 +241,9 @@ async def update_before_run(
                 "cdk": cdk,
                 "os": "win",
                 "arch": "x64" if arch == "x86_64" else "arm64",
-                "channel": config.Update.Channel,
+                "channel": channel,
             },
-            proxy=Config.proxy,
+            proxy=proxy,
         )
         data = payload.get("data", {})
         if (
@@ -247,8 +267,6 @@ async def update_before_run(
     cache = Path.cwd() / "data" / "maaend_update"
     cache.mkdir(parents=True, exist_ok=True)
     destination = Path(tempfile.mkdtemp(dir=cache, prefix="download-")) / name
-    downloader = "fluxdown" if Config.setting.Update.FluxdownTakeoverAll else "builtin"
-    proxy = Config.proxy
     builtin_transport = (
         downloader == "builtin"
         or source == "MirrorChyan"
@@ -287,6 +305,33 @@ async def update_before_run(
                 destination.parent.rmdir()
         raise
 
+    try:
+        await script_install.run_worker(
+            script_install.verify_archive, destination, size, digest
+        )
+    except BaseException:
+        discard_update(
+            PreparedUpdate(root, original, target, arch, destination, size, digest)
+        )
+        raise
+    return PreparedUpdate(
+        root.resolve(), original, target, arch, destination, size, digest
+    )
+
+
+async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
+    """调用方持安装锁；候选复核后才允许切换目录。"""
+    await asyncio.to_thread(assert_idle, root)
+    if isinstance(candidate, str):
+        return candidate
+    target, arch = candidate.target, candidate.arch
+    try:
+        current = await asyncio.to_thread(read_install, root)
+    except (OSError, ValueError):
+        current = None
+    if root.resolve() != candidate.root or current != candidate.current:
+        raise ValueError("MaaEnd 安装已变化，预下载候选已失效，请重新检查更新")
+
     def validate(path: Path) -> None:
         version, actual_arch = read_install(path)
         if version != target or actual_arch != arch:
@@ -297,9 +342,9 @@ async def update_before_run(
         await script_install.run_worker(
             script_install.install_package,
             root,
-            destination,
-            size,
-            digest,
+            candidate.destination,
+            candidate.size,
+            candidate.digest,
             PROTECTED,
             validate,
             lambda: assert_idle(root),
@@ -312,9 +357,19 @@ async def update_before_run(
         return f"MaaEnd 已更新至 {target}，完整性校验通过"
     finally:
         # run_worker 在取消时等待安装线程结束，避免删掉仍在使用的压缩包。
-        with suppress(OSError):
-            destination.unlink(missing_ok=True)
-            destination.parent.rmdir()
+        discard_update(candidate)
+
+
+async def update_before_run(
+    root: Path, config: MaaEndConfig, *, progress: DownloadProgress | None = None
+) -> str:
+    """手动与无预取路径仍在安装锁下完整等待更新。"""
+    await asyncio.to_thread(assert_idle, root)
+    candidate = await prepare_update(root, config, progress=progress)
+    try:
+        return await apply_update(root, candidate)
+    finally:
+        discard_update(candidate)
 
 
 async def confirm_current_install(root: Path, *, verify_receipt: bool = True) -> None:

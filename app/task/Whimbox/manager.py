@@ -43,6 +43,7 @@ from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
+from .tools import update as backend_update
 from .tools.update import (
     RECOVERY_HINT,
     WhimboxUpdateUnsafeError,
@@ -58,6 +59,19 @@ logger = get_logger("奇想盒 调度器")
 
 class WhimboxManager(ScriptManagerBase):
     """奇想盒控制器（无限暖暖，PC 前台原生来源线）"""
+
+    async def prefetch_script_update(self) -> None:
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if config.Update.TakeoverEnabled and config.Info.RootPath is not None:
+            self._update_candidate = await backend_update.prepare_update(
+                config.Info.RootPath
+            )
+
+    async def discard_prefetched_update(self) -> None:
+        candidate = getattr(self, "_update_candidate", None)
+        self._update_candidate = None
+        if candidate is not None:
+            backend_update.discard_update(candidate)
 
     def __init__(self, script_info: ScriptItem):
         super().__init__()
@@ -180,8 +194,15 @@ class WhimboxManager(ScriptManagerBase):
             try:
                 result = await run_script_update(
                     ScriptUpdateRequest(str(self.script_info.script_id), "Whimbox"),
-                    ensure_backend_updated,
+                    backend_update.apply_update
+                    if getattr(self, "_update_candidate", None) is not None
+                    else ensure_backend_updated,
                     root,
+                    *(
+                        [self._update_candidate]
+                        if getattr(self, "_update_candidate", None) is not None
+                        else []
+                    ),
                 )
             except (WhimboxUpdateUnsafeError, FluxdownCancelUnconfirmed):
                 raise

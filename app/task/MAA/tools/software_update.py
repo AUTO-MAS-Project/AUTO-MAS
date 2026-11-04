@@ -649,6 +649,15 @@ async def _precheck_inner(
     return latest.version
 
 
+async def prefetch_maa_software_update(maa_root: Path, config: MaaConfig) -> None:
+    """由队列拥有生命周期的只下载入口，不创建专项后台任务。"""
+    enabled, cdk = resolve_takeover_credentials(config)
+    release = read_installed_release(maa_root)
+    channel = config.Update.Channel
+    if enabled and cdk is not None and release is not None and channel is not None:
+        await _precheck_flow(maa_root, channel, release[1], cdk)
+
+
 def start_maa_software_update_precheck(
     maa_root: Path, *, config_dir: Path | None = None, config: MaaConfig | None = None
 ) -> None:

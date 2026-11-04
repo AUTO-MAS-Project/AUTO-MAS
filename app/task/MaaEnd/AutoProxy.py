@@ -2825,6 +2825,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         log = "".join(log_content)
         self.cur_user_log.content = log_content
+        if any(re.search(r"任务完成:\s*[^\r\n]+", line) for line in log_content):
+            self.cur_user_item.mark_task_completed()
         self.script_info.log = log
         if "资源加载失败" in log:
             # 资源文件损坏/缺失，重启脚本也不会好：不再重试

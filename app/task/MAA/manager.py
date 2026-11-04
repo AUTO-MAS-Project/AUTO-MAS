@@ -574,6 +574,37 @@ class MaaManager(ScriptManagerBase):
             if getattr(task, "report_image_pairs", None):
                 self._rollup_image_pairs.extend(task.report_image_pairs)
 
+    async def prefetch_script_update(self) -> None:
+        from .tools.fluxdown_update import PreparedUpdate
+        from .tools.resource_update import prefetch_resources
+        from .tools.software_update import prefetch_maa_software_update
+
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        root = config.Info.Path
+        if not config.Update.TakeoverEnabled or root is None:
+            return
+        # Info.Path 是 MAA 可执行文件所在目录，配置目录为其 config/。
+        if use_maa_github_update(config, config_dirs=[root / "config"]):
+            candidate = await prepare_maa_fluxdown_update(
+                root, config=config, config_dir=root / "config", download_only=True
+            )
+            if isinstance(candidate, PreparedUpdate):
+                self._github_update_candidate = candidate
+            await prefetch_resources(root, github=True, cdk=None)
+        else:
+            enabled, cdk = resolve_takeover_credentials(config)
+            if enabled and cdk is not None:
+                await prefetch_maa_software_update(root, config)
+                await prefetch_resources(root, github=False, cdk=cdk)
+
+    async def discard_prefetched_update(self) -> None:
+        from .tools.fluxdown_update import discard_prepared_update
+
+        candidate = getattr(self, "_github_update_candidate", None)
+        self._github_update_candidate = None
+        if candidate is not None:
+            discard_prepared_update(candidate)
+
     async def _prepare_software_update_once(self, task: AutoProxyTask) -> None:
         """首位实际运行账号做更新准备；同批后续账号仅执行本地安全检查。"""
         self._update_config_dir = task.update_config_dir
@@ -736,6 +767,7 @@ class MaaManager(ScriptManagerBase):
                 config=self.script_config,
                 config_dir=task.update_config_dir,
                 progress=report,
+                prepared=getattr(self, "_github_update_candidate", None),
             )
         else:
             target = await prepare_maa_software_before_run(

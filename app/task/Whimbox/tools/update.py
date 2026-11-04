@@ -12,9 +12,11 @@ import asyncio
 import hashlib
 import os
 import re
+import shutil
 import tempfile
 from collections.abc import Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
 
@@ -165,16 +167,41 @@ def verify_digest(path: Path, expected: str) -> None:
         raise ValueError("奇想盒更新包校验失败，请重新运行下载")
 
 
-async def ensure_backend_updated(root: Path) -> str:
-    """调用方持安装锁；每批用户一次，成功返回可展示的版本状态。"""
+@dataclass(frozen=True)
+class PreparedUpdate:
+    root: Path
+    target: Version
+    current: Version | None
+    repairing: bool
+    wheel: Path
+    packages: Path
+    hashes: dict[str, str]
+
+
+def _package_hashes(directory: Path) -> dict[str, str]:
+    result = {}
+    for path in directory.iterdir():
+        if path.is_file():
+            with path.open("rb") as handle:
+                result[path.name] = hashlib.file_digest(handle, "sha256").hexdigest()
+    return result
+
+
+def discard_update(candidate: PreparedUpdate | str) -> None:
+    if isinstance(candidate, PreparedUpdate):
+        shutil.rmtree(candidate.packages.parent, ignore_errors=True)
+
+
+async def prepare_update(root: Path) -> PreparedUpdate | str:
+    """下载 wheel 及隔离构建依赖，只写独立缓存。"""
+    proxy = Config.proxy
     if not (root / APP_EXE_NAME).is_file() or not (root / REL_PYTHON_EXE).is_file():
         raise RuntimeError("奇想盒安装不完整，请先在 app 内完成初始化")
-    if await asyncio.to_thread(find_upstream_pids, root):
-        raise RuntimeError("请先退出奇想盒 app 和后端，再运行更新")
     marker = pending_marker(root)
     target, name, url, digest = select_wheel(await request_release())
     # 上次安装失败时，元数据也可能损坏：强制重装，不按残留版本跳过。
     repairing = marker.exists()
+    current = None
     if not repairing:
         current = await installed_version(root)
         if current >= target:
@@ -182,19 +209,21 @@ async def ensure_backend_updated(root: Path) -> str:
     key = hashlib.sha256(os.path.normcase(str(root.resolve())).encode()).hexdigest()
     stage = Path.cwd() / "data" / "whimbox_update" / key
     stage.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix="download-", dir=stage))
     wheel = stage / name
     await download_file(
         url,
         wheel,
         timeout=30 * 60,
-        proxy=Config.proxy,
+        proxy=proxy,
         source="GitHub",
     )
     await asyncio.to_thread(verify_digest, wheel, digest)
     # 源码依赖在准备阶段隔离构建成 wheel，不往现有后端安装构建工具。
     # 每轮使用独立目录，避免旧缓存的源码包或版本参与离线安装。
-    with tempfile.TemporaryDirectory(prefix="packages-") as directory:
-        packages = Path(directory)
+    packages = stage / "packages"
+    packages.mkdir()
+    try:
         await run_python(
             root,
             "-m",
@@ -209,8 +238,45 @@ async def ensure_backend_updated(root: Path) -> str:
             str(packages),
             str(wheel),
             timeout=10 * 60,
-            env=proxy_environment(Config.proxy),
+            env=proxy_environment(proxy),
         )
+    except BaseException:
+        shutil.rmtree(stage, ignore_errors=True)
+        raise
+    hashes = await asyncio.to_thread(_package_hashes, packages)
+    hashes["../" + wheel.name] = await asyncio.to_thread(_wheel_digest, wheel)
+    return PreparedUpdate(
+        root.resolve(), target, current, repairing, wheel, packages, hashes
+    )
+
+
+def _wheel_digest(path: Path) -> str:
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
+    """持安装锁后复核原安装和全部依赖，再离线安装。"""
+    if isinstance(candidate, str):
+        return candidate
+    target, wheel, packages, repairing = (
+        candidate.target,
+        candidate.wheel,
+        candidate.packages,
+        candidate.repairing,
+    )
+    marker = pending_marker(root)
+    current = None if marker.exists() else await installed_version(root)
+    hashes = await asyncio.to_thread(_package_hashes, packages)
+    hashes["../" + wheel.name] = await asyncio.to_thread(_wheel_digest, wheel)
+    if (
+        root.resolve() != candidate.root
+        or current != candidate.current
+        or marker.exists() != repairing
+        or hashes != candidate.hashes
+    ):
+        raise RuntimeError("奇想盒安装或预下载包已变化，请重新检查更新")
+    try:
         if await asyncio.to_thread(find_upstream_pids, root):
             raise RuntimeError("依赖准备期间奇想盒已启动，请退出后重试")
         # 只有准备完成才进入写盘阶段；安装失败或取消仍保留标记。
@@ -233,6 +299,8 @@ async def ensure_backend_updated(root: Path) -> str:
             str(wheel),
             timeout=10 * 60,
         )
+    finally:
+        discard_update(candidate)
     if await installed_version(root) != target:
         raise WhimboxUpdateUnsafeError(RECOVERY_HINT)
     await run_python(root, "-m", "pip", "check")
@@ -241,3 +309,14 @@ async def ensure_backend_updated(root: Path) -> str:
     )
     marker.unlink()
     return f"奇想盒后端已更新至 {target}，准备启动任务"
+
+
+async def ensure_backend_updated(root: Path) -> str:
+    """调用方持安装锁；完整等待下载、安装与校验。"""
+    if await asyncio.to_thread(find_upstream_pids, root):
+        raise RuntimeError("请先退出奇想盒 app 和后端，再运行更新")
+    candidate = await prepare_update(root)
+    try:
+        return await apply_update(root, candidate)
+    finally:
+        discard_update(candidate)

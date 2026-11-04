@@ -900,6 +900,11 @@ async def _sweep(progress: _Progress | None = None, cdk: str = "") -> None:
     )
 
 
+async def prefetch_resources(install: Path, *, github: bool, cdk: str | None) -> None:
+    """共享 staging 的只下载边界，绝不分发到任何安装目录。"""
+    await prepare_install_resources(install, github=github, cdk=cdk, download_only=True)
+
+
 async def _run_update(cdk: str) -> None:
     try:
         with _MachineLock() as lock:
@@ -988,6 +993,7 @@ async def prepare_install_resources(
     cdk: str | None,
     github: bool,
     progress: _Progress | None = None,
+    download_only: bool = False,
 ) -> None:
     """本体安装之后、账号启动之前补齐资源；调用方已持有安装访问锁。
 
@@ -1031,23 +1037,30 @@ async def prepare_install_resources(
             stage = await asyncio.to_thread(_load_valid_manifest)
             if not _stage_reusable(stage, target):
                 if github:
+                    import uuid
+
                     _WORK_DIR.mkdir(parents=True, exist_ok=True)
+                    archive = (
+                        _WORK_DIR / f"prefetch-{uuid.uuid4().hex}.zip"
+                        if download_only
+                        else _STAGE_ZIP
+                    )
                     await _report(progress, "启动前下载 GitHub 全量资源包…")
                     await download_script_package(
                         "https://github.com/MaaAssistantArknights/MaaResource/"
                         "archive/refs/heads/main.zip",
-                        _STAGE_ZIP,
+                        archive,
                         proxy=Config.proxy,
                         timeout=_DOWNLOAD_TIMEOUT,
                         source="GitHub",
                     )
                     try:
                         await _run_write_thread(
-                            _build_stage, _STAGE_ZIP, target, github=True
+                            _build_stage, archive, target, github=True
                         )
                     finally:
                         # _run_write_thread 在取消时也会等写盘结束，之后才可删除归档。
-                        _STAGE_ZIP.unlink(missing_ok=True)
+                        archive.unlink(missing_ok=True)
                 else:
                     _WORK_DIR.mkdir(parents=True, exist_ok=True)
                     stage = await _refresh_resource_stage(
@@ -1062,6 +1075,8 @@ async def prepare_install_resources(
                         raise RuntimeError(
                             "MAA 资源包未准备完成，请检查 CDK、额度或网络后重试"
                         )
+            if download_only:
+                return
             await _report(progress, "启动前安装 MAA 资源更新…")
             stage_clock = await asyncio.to_thread(read_resource_clock, _STAGE_DIR)
             if stage_clock is None or stage_clock < target:

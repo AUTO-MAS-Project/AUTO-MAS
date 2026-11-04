@@ -24,6 +24,7 @@ import app.core.notify.report as _node_report
 from app.config import ConfigCollection, config_manager
 from app.core import Config, EmulatorManager, Notify, Publisher
 from app.core.notify.task_content import screenshot_entries as screenshot_entries
+from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.core.ws import protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
@@ -104,6 +105,19 @@ class MaaEndManager(ScriptManagerBase):
         self.error_screenshot_paths: list[Path] = []
         self._install_access = ExitStack()
         self._program_update_prepared = False
+        self._update_candidate: script_update.PreparedUpdate | str | None = None
+
+    async def prefetch_script_update(self) -> None:
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if config.Update.TakeoverEnabled and config.Info.Path is not None:
+            self._update_candidate = await script_update.prepare_update(
+                config.Info.Path, config
+            )
+
+    async def discard_prefetched_update(self) -> None:
+        candidate, self._update_candidate = self._update_candidate, None
+        if candidate is not None:
+            script_update.discard_update(candidate)
 
     async def check(self) -> str:
         # Update 是「检查更新」按钮的一次性任务，不进 METHOD_BOOK——那张表按用户循环。
@@ -289,9 +303,19 @@ class MaaEndManager(ScriptManagerBase):
             self.script_info.log = f"MaaEnd 更新下载：{downloaded / 1024**2:.1f} / {total / 1024**2:.1f} MB"
 
         try:
-            result = await script_update.update_before_run(
-                root, self.script_config, progress=progress
-            )
+            request = ScriptUpdateRequest(str(self.script_info.script_id), "MaaEnd")
+            if self._update_candidate is not None:
+                result = await run_script_update(
+                    request, script_update.apply_update, root, self._update_candidate
+                )
+            else:
+                result = await run_script_update(
+                    request,
+                    script_update.update_before_run,
+                    root,
+                    self.script_config,
+                    progress=progress,
+                )
         except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
             raise
         except Exception as error:

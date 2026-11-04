@@ -95,10 +95,14 @@ class UserItem:
     maintenance_skipped: bool = field(default=False, repr=False)
     # 正在跑的任务进度（见 UserTaskProgress），随任务快照推给调度台；不落盘。
     progress: Optional[UserTaskProgress] = None
+    # 只由专项已有的成功结果面置位；单调时间不落盘、不推送。
+    first_task_completed_at: float | None = field(default=None, repr=False)
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
         previous = getattr(self, name, None)
+        if name == "status" and value == "运行" and previous != value:
+            object.__setattr__(self, "first_task_completed_at", None)
         super().__setattr__(name, value)
         # 监听所有字段变化
         if (
@@ -117,8 +121,14 @@ class UserItem:
 
     def add_log_record(self, started_at: datetime, record: LogRecord) -> None:
         """每次尝试保留实际开始时刻，同一时刻也不能覆盖此前一轮。"""
+        self.first_task_completed_at = None
         self._history_log_records.append((started_at, record))
         self.log_record[started_at] = record
+
+    def mark_task_completed(self) -> None:
+        """收到本次运行首个成功任务节点；重复日志不会重新计时。"""
+        if self.status == "运行" and self.first_task_completed_at is None:
+            self.first_task_completed_at = time.monotonic()
 
     def iter_history_logs(self) -> list[tuple[datetime, LogRecord]]:
         """返回本轮各次尝试；未使用追加入口的现有日志仍可正常读取。"""
@@ -373,6 +383,16 @@ class TaskExecuteBase(ABC):
     # 日志停滞判定的内部状态，按阶段分桶：{key: (上次推进的 latest_time, 单调读数)}
     # 不加类型注解，避免被 @dataclass 收作字段。
     _log_progress = None
+
+    async def prefetch_script_update(self) -> None:
+        """调度器确认前一脚本稳定运行后调用；仅允许写 MAS 下载缓存。
+
+        未接入两阶段更新的专项不预取，仍在自己的启动前更新。
+        BetterGI / SRC / BAAH 的独立更新 PR 合入后在此接入同一契约。
+        """
+
+    async def discard_prefetched_update(self) -> None:
+        """预取已停止后回收本对象持有的候选，不触碰原安装。"""
 
     def is_log_stalled(
         self, latest_time: datetime, minutes: float, key: str = "default"

@@ -688,6 +688,60 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
     # 项目自动更新
     # ------------------------------------------------------------------
 
+    async def prefetch_script_update(self) -> None:
+        from app.task.MaaFW.tools.core.project_update.transport import (
+            download_resumable,
+        )
+        from app.task.MaaFW.tools.core.project_update.updater import (
+            discover_maafw_project_update,
+        )
+        from app.task.MaaFW.tools.embedded.update_mirrors import (
+            github_release_mirror_urls,
+        )
+
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if resolve_auto_update_mode(config) == "Off" or follow_source_enabled(config):
+            return
+        credentials = resolve_update_credentials(config)
+        project = resolve_maafw_project_root(
+            str(self.script_info.script_id), config
+        ).resolve()
+        source = {
+            "package_source": credentials.package_source,
+            "mirror_cdk": credentials.cdk,
+            "channel": credentials.channel,
+            "project_shell_hint": shell_hint_from_report(config),
+        }
+        from app.task.MaaFW.tools.embedded.update_session import UpdateProxy
+
+        proxy = UpdateProxy.parse(
+            resolve_update_proxy_url(config) or None, warn=logger.warning
+        ).client
+        interface = await asyncio.to_thread(self._load_interface_model, project)
+        discovery = await discover_maafw_project_update(
+            interface, source_config=source, proxy=proxy, prefer_full_package=True
+        )
+        if (
+            discovery is None
+            or discovery.candidate is None
+            or not discovery.candidate.download_url
+        ):
+            return
+        candidate = discovery.candidate
+        await download_resumable(
+            source=candidate.source,
+            version=candidate.to_version or candidate.version,
+            download_url=candidate.download_url,
+            expected_sha256=candidate.sha256,
+            artifact_id=candidate.artifact_id,
+            proxy=proxy,
+            expected_size=candidate.size,
+            alternates=github_release_mirror_urls(candidate.download_url),
+        )
+        # 完整包留在核心的共享缓存，启动前按相同基线重新发现、校验并消费。
+        self._prefetched_full_package = True
+        self._prefetched_project_update = (str(interface.version or ""), discovery)
+
     def _take_project_update_logs(self) -> list[str]:
         logs, self.project_update_logs = self.project_update_logs, []
         return logs
@@ -971,6 +1025,8 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             return await update_maafw_project_if_needed(
                 view_path,
                 interface_model,
+                prefetch_full_package=getattr(self, "_prefetched_full_package", False),
+                prefetched=getattr(self, "_prefetched_project_update", None),
                 mirror_cdk=credentials.cdk,
                 channel=credentials.channel,
                 proxy=session.proxy.client,

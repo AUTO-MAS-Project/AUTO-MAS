@@ -329,6 +329,48 @@ class HSRManager(NotificationTaskBase):
         root_task = getattr(task_item, "task", None) if task_item else None
         return bool(root_task is not None and root_task.cancelled())
 
+    async def prefetch_script_update(self) -> None:
+        from app.task.HSR.tools.update import prepare_engine_update
+
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if config.Update.AutoUpdateMode == "Off":
+            return
+        self._prefetched_updates = {}
+        # 每个引擎的来源、通道、凭据在首个 await 前冻结。
+        requests = [
+            (
+                engine,
+                resolve_script_path(config, engine),
+                str(getattr(config.Update, f"{engine}Source") or ""),
+            )
+            for engine in ("M7A", "SRA")
+        ]
+        channel, cdk, proxy = (
+            str(config.Update.Channel or "stable"),
+            str(config.Update.MirrorChyanCDK or ""),
+            Config.proxy,
+        )
+        for engine, root, source in requests:
+            if root:
+                candidate = await prepare_engine_update(
+                    engine,
+                    Path(root),
+                    source=source,
+                    channel=channel,
+                    cdk=cdk,
+                    proxy=proxy,
+                    download_dir=Path.cwd() / "data" / "hsr_update",
+                )
+                if candidate is not None:
+                    self._prefetched_updates[engine] = candidate
+
+    async def discard_prefetched_update(self) -> None:
+        from app.task.HSR.tools.update import discard_prepared_update
+
+        for candidate in getattr(self, "_prefetched_updates", {}).values():
+            discard_prepared_update(candidate)
+        self._prefetched_updates = {}
+
     async def _update_external_scripts(self) -> str | None:
         """在备份配置、启动任务前更新两个外部脚本。非空返回值阻止任务启动。
 
@@ -373,6 +415,7 @@ class HSRManager(NotificationTaskBase):
                     download_dir=download_dir,
                     send_log=self._append_log,
                     should_abort=self._update_aborted,
+                    prepared=getattr(self, "_prefetched_updates", {}).get(engine),
                 )
             except Exception as e:  # noqa: BLE001 - 未知安装状态不能沿用旧版运行
                 name = engine_label(engine, left=False)

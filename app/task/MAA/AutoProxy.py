@@ -2952,6 +2952,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             else None
         )
         # 整份脚本日志可达数 MB，check_log 又每秒轮询一次，收尾判定只扫一遍。
+        if re.search(r"完成任务:\s*[^\r\n]+", log):
+            self.cur_user_item.mark_task_completed()
         completed_log = "任务已全部完成！" in log
         failed_log = _has_maa_task_failure(log)
         if avd_fallback is not None:

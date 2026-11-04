@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import re
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
@@ -145,6 +146,7 @@ async def update_engine_if_needed(
     download_dir: Path,
     send_log: LogFn | None = None,
     should_abort: AbortFn | None = None,
+    prepared: PreparedUpdate | None = None,
 ) -> UpdateOutcome:
     """查、下、装。任何可预期失败都收敛成 ``UpdateOutcome``，不向上抛。
 
@@ -160,14 +162,27 @@ async def update_engine_if_needed(
         return UpdateOutcome(engine, checked=False, updated=False)
 
     try:
-        result = await check_engine_update(
-            engine,
-            install_root,
-            source=source,
-            channel=channel,
-            cdk=cdk,
-            proxy=proxy,
-        )
+        if prepared is not None:
+            current = await asyncio.to_thread(
+                read_installed_version, spec, install_root
+            )
+            if (
+                prepared.root != install_root.resolve()
+                or current != prepared.result.current_version
+                or await asyncio.to_thread(_package_digest, prepared.package)
+                != prepared.digest
+            ):
+                raise HSRUpdateError("预下载后安装或包体已变化，请重新运行更新")
+            result = prepared.result
+        else:
+            result = await check_engine_update(
+                engine,
+                install_root,
+                source=source,
+                channel=channel,
+                cdk=cdk,
+                proxy=proxy,
+            )
     except HSRUpdateError as exc:
         log(f"{label}更新检查失败，按现有版本继续：{exc}")
         return UpdateOutcome(engine, checked=False, updated=False, message=str(exc))
@@ -212,14 +227,18 @@ async def update_engine_if_needed(
 
     package = _cache_package_path(download_dir, spec, candidate, proxy)
     try:
-        package = await _download_with_space_check(
-            candidate,
-            package,
-            install_root=install_root,
-            download_dir=download_dir,
-            proxy=proxy,
-            log=log,
-            should_abort=should_abort,
+        package = (
+            prepared.package
+            if prepared is not None
+            else await _download_with_space_check(
+                candidate,
+                package,
+                install_root=install_root,
+                download_dir=download_dir,
+                proxy=proxy,
+                log=log,
+                should_abort=should_abort,
+            )
         )
     except HSRUpdateAborted as exc:
         log(f"{label}{exc}")
@@ -285,6 +304,63 @@ async def update_engine_if_needed(
         updated=True,
         message=message,
     )
+
+
+@dataclass(frozen=True)
+class PreparedUpdate:
+    root: Path
+    result: DiscoveryResult
+    package: Path
+    digest: str
+
+
+def _package_digest(path: Path) -> str:
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+async def prepare_engine_update(
+    engine: str,
+    install_root: Path,
+    *,
+    source: str,
+    channel: str,
+    cdk: str,
+    proxy: httpx.Proxy | None,
+    download_dir: Path,
+) -> PreparedUpdate | None:
+    """仅发现与下载；不停止运行中的程序，不写安装目录。"""
+    result = await check_engine_update(
+        engine, install_root, source=source, channel=channel, cdk=cdk, proxy=proxy
+    )
+    if not result.update_available or result.blocked_reason or result.candidate is None:
+        return None
+    directory = download_dir / uuid.uuid4().hex
+    package = _cache_package_path(directory, get_spec(engine), result.candidate, proxy)
+    package = await _download_with_space_check(
+        result.candidate,
+        package,
+        install_root=install_root,
+        download_dir=directory,
+        proxy=proxy,
+        log=_noop,
+    )
+    if package is None:
+        return None
+    return PreparedUpdate(
+        install_root.resolve(),
+        result,
+        package,
+        await asyncio.to_thread(_package_digest, package),
+    )
+
+
+def discard_prepared_update(prepared: PreparedUpdate) -> None:
+    _discard(prepared.package)
+    try:
+        prepared.package.parent.rmdir()
+    except OSError:
+        pass
 
 
 async def rollback_pending(

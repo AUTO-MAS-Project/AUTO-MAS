@@ -291,9 +291,10 @@ def scheduler(installation, monkeypatch):
     root, config = installation
     instance = object.__new__(manager.MaaEndManager)
     instance.script_config = config
-    instance.script_info = SimpleNamespace(log="")
+    instance.script_info = SimpleNamespace(script_id="test-script", log="")
     instance.task_info = SimpleNamespace(mode="AutoProxy", task_id="test")
     instance._program_update_prepared = False
+    instance._update_candidate = None
     monkeypatch.setattr(manager.MaaEndResourceLoader, "get_cached", Mock())
     monkeypatch.setattr(
         manager, "load_maaend_controller_protocol", lambda *args: "Win32"
@@ -301,6 +302,43 @@ def scheduler(installation, monkeypatch):
     monkeypatch.setattr(manager, "push_dispatch_log", AsyncMock())
     monkeypatch.setattr(manager.Publisher, "send", AsyncMock())
     return instance
+
+
+@pytest.mark.asyncio
+async def test_prefetch_does_not_require_idle_or_change_install(
+    installation, monkeypatch
+):
+    root, config = installation
+    original = (root / "interface.json").read_bytes()
+    monkeypatch.setattr(
+        update, "assert_idle", Mock(side_effect=RuntimeError("running"))
+    )
+    candidate = await update.prepare_update(root, config)
+    assert isinstance(candidate, update.PreparedUpdate)
+    assert (root / "interface.json").read_bytes() == original
+    assert candidate.destination.is_file()
+    assert not (script_install.workspace(root) / "transaction.json").exists()
+    with pytest.raises(RuntimeError, match="running"):
+        await update.apply_update(root, candidate)
+    monkeypatch.setattr(update, "assert_idle", Mock())
+    await update.apply_update(root, candidate)
+    assert json.loads((root / "interface.json").read_text())["version"] == "v2.2.0"
+    assert not candidate.destination.exists()
+
+
+@pytest.mark.asyncio
+async def test_prefetched_candidate_rejects_native_upgrade(installation):
+    root, config = installation
+    candidate = await update.prepare_update(root, config)
+    (root / "interface.json").write_text(
+        json.dumps({"name": "MaaEnd", "version": "v2.3.0"})
+    )
+    try:
+        with pytest.raises(ValueError):
+            await update.apply_update(root, candidate)
+        assert json.loads((root / "interface.json").read_text())["version"] == "v2.3.0"
+    finally:
+        update.discard_update(candidate)
 
 
 @pytest.mark.asyncio

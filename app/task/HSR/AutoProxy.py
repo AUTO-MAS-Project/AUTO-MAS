@@ -1698,6 +1698,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     continue
 
                 if bool(getattr(result, "success", False)):
+                    self.cur_user_item.mark_task_completed()
                     if item.on_success is not None:
                         item.on_success(result)
                     # 历战余响、差分宇宙、货币战争的最终结果由 on_success 按日志判定
