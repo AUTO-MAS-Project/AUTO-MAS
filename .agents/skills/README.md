@@ -28,6 +28,7 @@
 - `mas-schema-naming`：用于统一后端 schema 的命名方式，减少字段语义漂移。
 - `mas-script-specialized-adapter`：用于新增或维护专项脚本适配，按脚本前端架构线完成问诊、前端表面与后端任务接入。
 - `mas-e2e`：用于选择、编写和运行隔离浏览器流程及作者本机真实脚本调度 E2E，并整理脱敏证据。
+- `tdd`：设计、新增、修改或审查测试前必读；以可达场景、独立预期、最小红绿验证和已有覆盖去重约束测试新增。
 - `mas-doc-tutorial`：用于从验证过的 Playwright 操作生成或修订文档站教程，核对截图与 UI 漂移，并交付逐主题结果和图文预览。
 - `mas-plan-schedule`：用于新增、重构或审查计划表类型与调度配置。
 - `mas-game-community`：用于新增、重构或审查游戏社区（签到与日常便笺），涵盖 `app/tools/community*` 的平台注册表、凭据加密与登录路由、社区 HTTP 传输、签到锁与触发路径、结果与通知契约。
@@ -41,6 +42,7 @@
 
 1. AUTO-MAS 开发任务先读 `mas-skills/SKILL.md`。
 2. 按任务意图选择最小必要的子 Skill。
+   涉及测试设计、编写、修改或审查时必须加载 `tdd/SKILL.md`；仅运行已有测试不触发。
 3. 若任务涉及贡献流程、分支、提交、PR/Issue 正文或版本记录，回到文档站确认。
 4. 若任务涉及主程序代码，仍需在主程序仓库中查看相邻实现并遵守本地风格。
 
@@ -61,7 +63,9 @@ DeepSeek Harness 也可使用这条文件入口；自动发现和工具执行能
 
 ## 来源与许可
 
-`grill-me`、`grilling`、`code-review`、`pr` 取自第三方简体中文汉化仓库 devcxl/mattpocock-skills-zh（原作 Matt Pocock 的技能集），按上游 MIT 许可使用（MIT License，Copyright (c) 2026 Matt Pocock）；导入时仅按本仓库文档站的贡献流程改动其中的流程引用。本目录其余内容随主程序以 AGPL-3.0 分发。按本目录约定，第三方来源只保留纯文本署名与许可声明，不留外部链接；`pr` 的摘要视图部分复制自 Humanlayer 的 show-me 技能（作者 Dex Horthy，MIT License，Copyright (c) 2026 HumanLayer，全文见 `pr/CREDITS.md`）。
+`grill-me`、`grilling`、`code-review`、`pr` 取自第三方简体中文汉化仓库 devcxl/mattpocock-skills-zh（原作 Matt Pocock 的技能集），按上游 MIT 许可使用（MIT License，Copyright (c) 2026 Matt Pocock）；导入时仅按本仓库文档站的贡献流程改动其中的流程引用。本节列出的第三方内容以各自许可分发，其余内容随主程序以 AGPL-3.0 分发。按本目录约定，第三方来源只保留纯文本署名与许可声明，不留外部链接；`pr` 的摘要视图部分复制自 Humanlayer 的 show-me 技能（作者 Dex Horthy，MIT License，Copyright (c) 2026 HumanLayer，全文见 `pr/CREDITS.md`）。
+
+`tdd` 基于 Matt Pocock 的同名 Skill，按 MIT 许可导入并补充 AUTO-MAS 测试准入规则；来源、改动说明及许可全文见 [tdd/CREDITS.md](tdd/CREDITS.md)。
 
 ## Claude Code 接入
 
