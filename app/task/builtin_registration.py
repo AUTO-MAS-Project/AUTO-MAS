@@ -25,10 +25,8 @@ from app.task.registration import ScriptCapabilities, build_script_capabilities
 from app.utils.common.startup_timing import startup_stage
 
 if TYPE_CHECKING:
-    with startup_stage("后端/专项注册导入/MaaEnd.api_service"):
-        from app.task.MaaEnd.api_service import MaaEndConfigService
-    with startup_stage("后端/专项注册导入/ZzzOd.recovery"):
-        from app.task.ZzzOd.recovery import ZzzOdRecovery
+    from app.task.MaaEnd.api_service import MaaEndConfigService
+    from app.task.ZzzOd.recovery import ZzzOdRecovery
 
 
 def build_builtin_script_capabilities(

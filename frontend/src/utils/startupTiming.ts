@@ -3,7 +3,10 @@ const logger = () => window.electronAPI.getLogger('启动计时')
 
 export function finishStartupStage(name: string, startedAt: number): void {
   const finishedAt = performance.now()
-  performance.measure(`启动/${name}`, { start: startedAt, end: finishedAt })
+  // 生产 Sentry 会自动采集 Performance 条目；阶段计时只写本地日志。
+  if (import.meta.env.DEV) {
+    performance.measure(`启动/${name}`, { start: startedAt, end: finishedAt })
+  }
   logger().info(
     `[启动计时] 前端/${name} 完成，阶段 ${(finishedAt - startedAt).toFixed(1)} ms，累计 ${finishedAt.toFixed(1)} ms`
   )
