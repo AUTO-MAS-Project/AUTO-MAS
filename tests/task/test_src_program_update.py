@@ -229,7 +229,9 @@ async def test_up_to_date_removes_readonly_git_objects(installation, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_cn_repository_does_not_silently_switch_to_github(installation, monkeypatch):
+async def test_cn_repository_does_not_silently_switch_to_github(
+    installation, monkeypatch
+):
     root, _ = installation
     deploy_path = root / "config" / "deploy.yaml"
     deploy_path.write_text(
@@ -244,7 +246,6 @@ async def test_cn_repository_does_not_silently_switch_to_github(installation, mo
     )
     with pytest.raises(ValueError, match="Git-over-CDN"):
         await update.prepare_update(root)
-
 
 
 @pytest.mark.asyncio
@@ -272,14 +273,15 @@ async def test_cn_prefetch_uses_official_git_pack_without_touching_src(
         package.write(source_idx, f"pack-{target}.idx")
 
     monkeypatch.setattr(
-        update, "request_cn_latest",
+        update,
+        "request_cn_latest",
         AsyncMock(return_value=("https://vip.123pan.cn/example", target)),
     )
     from app.core import script_update
 
     downloader = AsyncMock(
-        side_effect=lambda url, destination, **kwargs: (
-            __import__("shutil").copyfile(archive, destination)
+        side_effect=lambda url, destination, **kwargs: __import__("shutil").copyfile(
+            archive, destination
         )
     )
     monkeypatch.setattr(script_update, "download_script_package", downloader)
@@ -290,6 +292,7 @@ async def test_cn_prefetch_uses_official_git_pack_without_touching_src(
     assert git(root, "rev-parse", "HEAD") == original_head
     assert prepared.target_commit == target
     assert downloader.await_args.args[0].endswith(f"/{target}/{original_head}.zip")
-    assert hashlib.sha256((root / "code.py").read_bytes()).hexdigest() == hashlib.sha256(
-        b"old"
-    ).hexdigest()
+    assert (
+        hashlib.sha256((root / "code.py").read_bytes()).hexdigest()
+        == hashlib.sha256(b"old").hexdigest()
+    )

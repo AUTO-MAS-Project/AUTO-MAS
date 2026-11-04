@@ -181,8 +181,6 @@ async def prepare_cn_objects(root: Path, git: str, objects: Path, base: str) -> 
         archive.unlink(missing_ok=True)
 
 
-
-
 async def prepare_update(root: Path) -> PreparedUpdate | None:
     """只读部署偏好和当前提交，网络对象下载到 MAS 缓存，不修改原安装的 .git。"""
     root = root.resolve()
