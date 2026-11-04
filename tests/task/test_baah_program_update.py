@@ -147,7 +147,9 @@ async def test_download_cancellation_cannot_modify_installation(installation):
 async def test_existing_install_allows_toolkit_adb_but_update_remains_strict(
     installation, monkeypatch
 ):
-    root, _, _, _ = installation
+    root, config, _, _ = installation
+    prepared = await update.prepare_update(root, config)
+    assert prepared is not None
     adb = root / "tools" / "adb" / "adb.exe"
     adb.parent.mkdir(parents=True)
     adb.write_bytes(pe())
@@ -165,17 +167,7 @@ async def test_existing_install_allows_toolkit_adb_but_update_remains_strict(
     # A non-mutating confirmation tolerates a server, but applying a package does not.
     await update.confirm_current_install(root)
     with pytest.raises(script_install.InstallUnsafeError, match="adb"):
-        await update.apply_update(
-            root,
-            update.PreparedUpdate(
-                root.resolve(),
-                update.exe_digest(root),
-                Version("2.5.7"),
-                root / "missing.zip",
-                1,
-                "0" * 64,
-            ),
-        )
+        await update.apply_update(root, prepared)
 
 
 @pytest.mark.asyncio
