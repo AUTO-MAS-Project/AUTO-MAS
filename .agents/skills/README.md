@@ -46,20 +46,10 @@
 3. 若任务涉及贡献流程、分支、提交、PR/Issue 正文或版本记录，回到文档站确认。
 4. 若任务涉及主程序代码，仍需在主程序仓库中查看相邻实现并遵守本地风格。
 
-## 教程制作：Codex 与 DeepSeek Harness
+## 教程制作
 
-两种环境共用 `mas-doc-tutorial/SKILL.md`，不复制两份教程规则。Codex 可显式调用
-`$mas-doc-tutorial`；宿主未发现 Skill 时，在对话中指定文件路径：
-
-```text
-读取 .agents/skills/mas-doc-tutorial/SKILL.md，按它修订计划表与调度队列教程。
-使用指定发行版本和演示数据，先生成本地图文预览，不发布。
-```
-
-DeepSeek Harness 也可使用这条文件入口；自动发现和工具执行能力需按实际宿主版本核验。
-`agents/openai.yaml` 仅提供 Codex 界面元数据，不是两种环境共享流程的执行依赖。
-首版复用主仓隔离 E2E，由 Agent 按主题建立或复用采集流程，没有独立教程 CLI 或 MCP 服务。
-已验证的先行效果与未覆盖范围见 [首批试验](mas-doc-tutorial/references/validated-pilot.md)。
+Codex 可调用 `$mas-doc-tutorial`；DeepSeek Harness 或未发现 Skill 的宿主可显式读取
+`.agents/skills/mas-doc-tutorial/SKILL.md`，共用同一份流程。
 
 ## 来源与许可
 
