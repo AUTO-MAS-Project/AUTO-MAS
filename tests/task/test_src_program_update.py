@@ -207,7 +207,7 @@ async def test_up_to_date_removes_readonly_git_objects(installation, monkeypatch
     initial = git(root, "rev-parse", "HEAD")
 
     async def no_new_revision(*args, **kwargs):
-        if args[:2] == ("rev-parse", "FETCH_HEAD"):
+        if args[-2:] == ("rev-parse", "FETCH_HEAD"):
             return initial
         if len(args) > 1 and args[1] == "fetch":
             return ""
@@ -232,8 +232,10 @@ async def test_up_to_date_removes_readonly_git_objects(installation, monkeypatch
 async def test_cn_repository_does_not_silently_switch_to_github(installation):
     root, _ = installation
     deploy_path = root / "config" / "deploy.yaml"
-    deploy_path.write_text(deploy_path.read_text().replace(
-        "Repository: https://src.example/repo", "Repository: cn"
-    ))
+    deploy_path.write_text(
+        deploy_path.read_text().replace(
+            "Repository: https://src.example/repo", "Repository: cn"
+        )
+    )
     with pytest.raises(ValueError, match="Git-over-CDN"):
         await update.prepare_update(root)
