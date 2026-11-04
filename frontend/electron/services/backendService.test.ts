@@ -503,27 +503,25 @@ describe('development 模式', () => {
       try {
         if (phase === 'before-hello') {
           ensure.stdout.feed(hello)
-          await vi.waitFor(() => expect(ensure.killed).toBe(true))
-        } else {
-          await vi.waitFor(() => expect(ensure.stdin.chunks).toHaveLength(1))
-          expect(JSON.parse(ensure.stdin.chunks[0])).toMatchObject({ command: 'cancel' })
-          ensure.stdout.feed(
-            line({
-              ...base,
-              type: 'result',
-              sequence: 2,
-              success: false,
-              code: 'OPERATION_CANCELLED',
-              stage: 'uv.download',
-              status: 'cancelled',
-              message: '已取消',
-              retryable: true,
-              remediation: ['retry'],
-              details: {},
-            })
-          )
-          ensure.close(10)
         }
+        await vi.waitFor(() => expect(ensure.stdin.chunks).toHaveLength(1))
+        expect(JSON.parse(ensure.stdin.chunks[0])).toMatchObject({ command: 'cancel' })
+        ensure.stdout.feed(
+          line({
+            ...base,
+            type: 'result',
+            sequence: 2,
+            success: false,
+            code: 'OPERATION_CANCELLED',
+            stage: 'uv.download',
+            status: 'cancelled',
+            message: '已取消',
+            retryable: true,
+            remediation: ['retry'],
+            details: {},
+          })
+        )
+        ensure.close(10)
         expect((await pendingStart).success).toBe(false)
         expect(await pendingStop).toEqual({ success: true })
         expect(spawnMock).toHaveBeenCalledTimes(1)
@@ -1176,6 +1174,109 @@ describe('桌面前端只连接已有后端', () => {
     await handlers.stopDesktopStartup(true)
     expect(spawnMock).not.toHaveBeenCalled()
     expect(killAllMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('关闭时收口仍在运行的 Runtime 命令', () => {
+  it.each(['startup', 'repair', 'update'])(
+    '%s 提交后迟到取消保留真实结果并禁止重启后端',
+    async entry => {
+      process.env[RUNTIME_MODE_ENV] = 'managed'
+      process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+      mockSpawn()
+      vi.resetModules()
+      ipcHandlers.clear()
+      const handlers = await import('../ipc/initializationHandlers')
+      handlers.registerInitializationHandlers(new BrowserWindow())
+      const event = { sender: { isDestroyed: () => false, send: vi.fn() } }
+      const work = Promise.resolve(
+        entry === 'startup'
+          ? handlers.startDesktopStartup({ version: '5.5.0-beta.3', autoUpdate: true })
+          : entry === 'repair'
+            ? ipcHandlers.get('install-dependencies')?.(event)
+            : ipcHandlers.get('update-backend-via-runtime')?.(event, '5.5.0-beta.4')
+      )
+      const child = await waitForSpawn()
+      const lines = fixtureLines('bootstrap-success.ndjson')
+      child.stdout.feed(lines[0])
+      const firstStop = handlers.stopDesktopStartup()
+      const finalStop = handlers.stopDesktopStartup(true)
+      await vi.waitFor(() => expect(child.stdin.chunks.join('')).toContain('cancel'))
+      expect(child.killed).toBe(false)
+      child.stdout.feed(lines.slice(1).join(''))
+      child.close(0)
+      const result = await work
+      await Promise.all([firstStop, finalStop])
+      expect(result).toMatchObject({ success: entry === 'repair' })
+      if (entry === 'update') expect(result).toMatchObject({ phase: 'restart', cancelled: true })
+      expect(child.killed).toBe(false)
+      expect(spawnMock).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it('无法确认进程退出时有界报错，保留关闭状态供最终清理重试', async () => {
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    mockSpawn()
+    const service = new InitializationService(appRoot)
+    const work = service.startDesktopStartup({ version: '5.5.0-beta.3', autoUpdate: true })
+    const child = await waitForSpawn()
+    child.stdout.feed(fixtureLines('bootstrap-success.ndjson')[0])
+    child.kill = () => {
+      child.killed = true
+      return true
+    }
+    vi.useFakeTimers()
+    const stop = service.stopDesktopStartup(true).then(
+      () => null,
+      (error: unknown) => error
+    )
+    try {
+      await vi.advanceTimersByTimeAsync(70_000)
+      expect(await stop).toBeInstanceOf(Error)
+      expect(() => service.resetDesktopStartup()).toThrow()
+      expect(child.exitCode).toBeNull()
+      expect(spawnMock).toHaveBeenCalledTimes(1)
+    } finally {
+      child.close(1)
+      vi.useRealTimers()
+      await work
+    }
+  })
+
+  it.each(['startup', 'repair', 'update'])('%s 不响应取消时有界退出且不遗留命令', async entry => {
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    mockSpawn()
+    vi.resetModules()
+    ipcHandlers.clear()
+    const handlers = await import('../ipc/initializationHandlers')
+    handlers.registerInitializationHandlers(new BrowserWindow())
+    const event = { sender: { isDestroyed: () => false, send: vi.fn() } }
+    const work = Promise.resolve(
+      entry === 'startup'
+        ? handlers.startDesktopStartup({ version: '5.5.0-beta.3', autoUpdate: true })
+        : entry === 'repair'
+          ? ipcHandlers.get('install-dependencies')?.(event)
+          : ipcHandlers.get('update-backend-via-runtime')?.(event, '5.5.0-beta.4')
+    )
+    const child = await waitForSpawn()
+    child.stdout.feed(fixtureLines('bootstrap-success.ndjson')[0])
+    vi.useFakeTimers()
+    let stopped = false
+    const stop = handlers.stopDesktopStartup(true).then(() => {
+      stopped = true
+    })
+    try {
+      await vi.advanceTimersByTimeAsync(70_000)
+      expect(stopped).toBe(true)
+      expect(child.killed).toBe(true)
+      expect(spawnMock).toHaveBeenCalledTimes(1)
+    } finally {
+      child.close(1)
+      vi.useRealTimers()
+      await Promise.allSettled([work, stop])
+    }
   })
 })
 

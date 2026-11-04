@@ -114,8 +114,10 @@ export function startDesktopStartup(preferences: {
 }
 
 export async function stopDesktopStartup(shutdown = false) {
-  await abortRuntimeUpdateForShutdown()
-  return getInitService().stopDesktopStartup(shutdown)
+  await Promise.all([
+    abortRuntimeUpdateForShutdown(),
+    getInitService().stopDesktopStartup(shutdown),
+  ])
 }
 
 /**

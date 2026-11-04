@@ -140,6 +140,10 @@ class FakeRuntimeClient {
 
   constructor(readonly options: { runtimePath: string; appRoot: string }) {}
 
+  async stop(): Promise<void> {
+    await FakeRuntimeClient.gate
+  }
+
   async run(command: string[], options: RuntimeRunOptions = {}) {
     callLog.push(`run:${command.join(' ')}`)
     const script =

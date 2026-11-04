@@ -6,6 +6,7 @@
 import { MirrorService } from './mirrorService'
 import { BackendService } from './backendService'
 import { getBackendOwnership } from './instanceConfig'
+import { RUNTIME_KILL_WAIT_MS, RUNTIME_STOP_TIMEOUT_MS, waitForSettle } from './runtime/shutdown'
 import { RuntimeLaunchMode, RuntimeRemediation, resolveRuntimeLaunchConfig } from './runtime'
 import {
   BootstrapProgressUpdate,
@@ -97,6 +98,8 @@ export class InitializationService {
   } | null = null
   private closing = false
   private environmentOperation: Promise<unknown> | null = null
+  private stopFlight: Promise<void> | null = null
+  private shutdownRequested = false
 
   /** 进程拥有启动任务；晚到的窗口读取快照并接回同一结果，包括失败。 */
   startDesktopStartup(
@@ -190,17 +193,31 @@ export class InitializationService {
   }
 
   /** 取消覆盖镜像准备、Runtime 对齐、bootstrap 和尚未就绪的 supervise。 */
-  async stopDesktopStartup(shutdown = false): Promise<void> {
-    if (!this.ownsBackend) return
+  stopDesktopStartup(shutdown = false): Promise<void> {
+    if (!this.ownsBackend) return Promise.resolve()
+    this.shutdownRequested ||= shutdown
+    if (this.stopFlight) return this.stopFlight
     this.closing = true
-    this.runtimeService?.cancel()
-    const stopped = this.backendService.stopBackend()
-    await Promise.allSettled([this.desktopStartup, this.environmentOperation])
-    const result = await stopped
-    if (!result.success) throw new Error(result.error || '无法停止后端')
-    this.desktopStartup = null
-    this.desktopState = null
-    this.closing = shutdown
+    const deadline = Date.now() + RUNTIME_STOP_TIMEOUT_MS + RUNTIME_KILL_WAIT_MS
+    this.stopFlight = (async () => {
+      const [result] = await Promise.all([
+        this.backendService.stopBackend(),
+        this.runtimeService?.shutdown(),
+      ])
+      if (!result.success) throw new Error(result.error || '无法停止后端')
+      const settled = await waitForSettle(
+        Promise.allSettled([this.desktopStartup, this.environmentOperation]),
+        Math.max(0, deadline - Date.now())
+      )
+      if (!settled) throw new Error('无法确认运行环境操作已结束，请重试退出。')
+      this.desktopStartup = null
+      this.desktopState = null
+      this.runtimeService = null
+      this.closing = this.shutdownRequested
+    })().finally(() => {
+      this.stopFlight = null
+    })
+    return this.stopFlight
   }
 
   /**

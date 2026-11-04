@@ -21,6 +21,7 @@ import { beginMainFeature } from './featureAnalytics'
 
 import type { BackendStartResult, BackendStopResult } from './backendService'
 import { getLogger } from './logger'
+import { RUNTIME_STOP_TIMEOUT_MS, waitForSettle } from './runtime/shutdown'
 import { MirrorService } from './mirrorService'
 import type { RuntimeLaunchConfig, RuntimeRemediation } from './runtime'
 import {
@@ -210,14 +211,14 @@ interface RuntimeUpdateAbortResult {
 }
 
 /** 退出清场默认等在途命令落地的上限。 */
-const RUNTIME_UPDATE_ABORT_TIMEOUT_MS = 5000
+const RUNTIME_UPDATE_ABORT_TIMEOUT_MS = RUNTIME_STOP_TIMEOUT_MS
 
 /**
  * 应用退出时中止更新。
  *
  * 只置空会话不够：bootstrap 子进程会跑成孤儿，下次启动撞 `MUTATION_IN_PROGRESS`。
  * 这里先对在途命令下发 cancel，等它在时限内落地（Runtime 收到 cancel 会以
- * `OPERATION_CANCELLED` 收尾），再置空；超时也置空，不拖住退出。
+ * `OPERATION_CANCELLED` 收尾），超时结束并确认命令进程退出后才清理会话。
  */
 export async function abortRuntimeUpdateForShutdown(
   timeoutMs = RUNTIME_UPDATE_ABORT_TIMEOUT_MS
@@ -228,30 +229,20 @@ export async function abortRuntimeUpdateForShutdown(
   current.cancelRequested = true
   current.abortedForShutdown = true
   const forwarded = current.runtimeService.cancel()
+  const deadline = Date.now() + timeoutMs
+  await current.runtimeService.shutdown(timeoutMs)
 
   let settled = true
   const inFlight = current.inFlight
   if (inFlight) {
     logger.info(`应用退出，等待在途更新命令落地（上限 ${timeoutMs}ms）`)
-    settled = await waitForSettle(inFlight, timeoutMs)
-    if (!settled) logger.warn('在途更新命令未在时限内落地，放弃等待')
+    settled = await waitForSettle(inFlight, Math.max(0, deadline - Date.now()))
+    if (!settled) throw new Error('无法确认后端更新已结束，请重试退出。')
   }
 
   if (session === current) session = null
   logger.info(`更新会话已因应用退出清场${forwarded ? '，并已通知在途步骤取消' : ''}`)
   return { hadSession: true, forwarded, settled }
-}
-
-/** 等一个 promise 落地（无论成败），超时返回 false。 */
-function waitForSettle(target: Promise<unknown>, timeoutMs: number): Promise<boolean> {
-  return new Promise(resolve => {
-    const timer = setTimeout(() => resolve(false), timeoutMs)
-    const done = (): void => {
-      clearTimeout(timer)
-      resolve(true)
-    }
-    target.then(done, done)
-  })
 }
 
 const defaultRuntimeServiceFactory = (
@@ -527,6 +518,14 @@ async function restartBackend(
   current: UpdateSession,
   onProgress: (update: RuntimeUpdateProgress) => void
 ): Promise<RuntimeUpdateOutcome> {
+  if (current.abortedForShutdown) {
+    return {
+      success: false,
+      phase: 'restart',
+      cancelled: true,
+      error: '运行环境已准备完成，退出期间不再启动后端',
+    }
+  }
   onProgress({ stage: 'restart', status: 'started', progress: 0, message: RESTART_MESSAGE })
 
   const startResult = await current.backend.startBackend()

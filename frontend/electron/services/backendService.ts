@@ -14,7 +14,6 @@ import {
   RuntimeClient,
   RuntimeRemediation,
   RuntimeRunResult,
-  RuntimeRunControl,
   RuntimeLogEvent,
   RuntimeSuperviseHandle,
   RuntimeLaunchConfig,
@@ -136,8 +135,7 @@ export class BackendService {
   private runtimeStopping = false
   private runtimeUpdateFlight: Promise<RuntimeBackendUpdateCheck> | null = null
   private runtimeUpdateReady: RuntimeBackendUpdateCheck | null = null
-  private readonly runtimeCommands = new Set<RuntimeRunControl>()
-  private readonly runtimeRuns = new Set<Promise<RuntimeRunResult>>()
+  private readonly runtimeClients = new Set<RuntimeClient>()
 
   private readonly startupHealthPath = '/api/core/health'
   private analyticsRuntimeMode: AnalyticsRuntimeMode = 'unknown'
@@ -947,44 +945,20 @@ export class BackendService {
     onLog?: (event: RuntimeLogEvent) => void
   ): Promise<RuntimeRunResult> {
     if (this.runtimeStopping) throw new Error('应用正在关闭，取消后端准备')
-    let control: RuntimeRunControl | undefined
-    const operation = client.run(args, {
-      onLog,
-      onStarted: started => {
-        control = started
-        this.runtimeCommands.add(started)
-        if (this.runtimeStopping) started.kill()
-      },
-      onProgress: event => logger.debug(`Runtime ${event.stage}: ${event.message}`),
-    })
-    this.runtimeRuns.add(operation)
+    this.runtimeClients.add(client)
     try {
-      return await operation
+      return await client.run(args, {
+        onLog,
+        onProgress: event => logger.debug(`Runtime ${event.stage}: ${event.message}`),
+      })
     } finally {
-      this.runtimeRuns.delete(operation)
-      if (control) this.runtimeCommands.delete(control)
+      if (!client.hasActiveSessions) this.runtimeClients.delete(client)
     }
   }
 
   private async cancelRuntimePreparations(): Promise<void> {
     this.runtimeStopping = true
-    if (this.runtimeRuns.size === 0) return
-    for (const control of this.runtimeCommands) {
-      try {
-        control.cancel()
-      } catch {
-        control.kill()
-      }
-    }
-    const timer = setTimeout(() => {
-      for (const control of this.runtimeCommands) control.kill()
-    }, 5000)
-    timer.unref?.()
-    try {
-      await Promise.allSettled([...this.runtimeRuns])
-    } finally {
-      clearTimeout(timer)
-    }
+    await Promise.all([...this.runtimeClients].map(client => client.stop()))
   }
 
   /**

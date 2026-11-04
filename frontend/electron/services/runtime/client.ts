@@ -21,6 +21,7 @@ import * as fs from 'fs'
 
 import { getLogger } from '../logger'
 import { NdjsonEventStream, NdjsonItem } from './ndjson'
+import { RUNTIME_KILL_WAIT_MS, RUNTIME_STOP_TIMEOUT_MS, waitForSettle } from './shutdown'
 import {
   RUNTIME_EXIT_CODES,
   RUNTIME_PROTOCOL_VERSION,
@@ -455,6 +456,10 @@ class RuntimeSession {
   readonly child: ChildProcessWithoutNullStreams
   readonly hello: Promise<RuntimeHelloEvent>
   readonly completion: Promise<RuntimeRunResult>
+  readonly closed: Promise<void>
+  private resolveClosed!: () => void
+  private stopFlight: Promise<void> | null = null
+  private cancelSent = false
 
   private readonly listeners = new Set<(event: RuntimeEvent) => void>()
   private readonly stdoutStream = new NdjsonEventStream()
@@ -496,6 +501,9 @@ class RuntimeSession {
     this.completion = new Promise<RuntimeRunResult>((resolve, reject) => {
       this.resolveCompletion = resolve
       this.rejectCompletion = reject
+    })
+    this.closed = new Promise(resolve => {
+      this.resolveClosed = resolve
     })
     // hello 与 completion 会同时失败，而 run() 只 await 其中一个；
     // 这里各挂一个空 catch 标记为已处理，避免 unhandled rejection 警告。
@@ -571,14 +579,51 @@ class RuntimeSession {
     }
 
     stdin.write(serializeControlCommand(payload))
+    if (command === 'cancel') this.cancelSent = true
     logger.debug(`已下发控制命令 ${command}，commandId=${commandId}`)
     return commandId
   }
 
   kill(signal?: NodeJS.Signals): void {
-    if (this.child.exitCode === null && !this.child.killed) {
+    if (
+      this.child.exitCode === null &&
+      this.child.signalCode === null &&
+      (!this.child.killed || signal === 'SIGKILL')
+    ) {
       this.child.kill(signal)
     }
+  }
+
+  /** 停止本次持有的进程；完成只代表已收到 close，不改写 Runtime 的提交结果。 */
+  stop(command: 'cancel' | 'shutdown' | null, timeoutMs: number): Promise<void> {
+    if (this.stopFlight) return this.stopFlight
+    this.stopFlight = (async () => {
+      if (command) {
+        const requestStop = (hello: RuntimeHelloEvent): void => {
+          if (
+            hello.capabilities.includes(`stdin.${command}`) &&
+            !(command === 'cancel' && this.cancelSent)
+          ) {
+            this.sendControl(command)
+          }
+        }
+        if (this.helloEvent) requestStop(this.helloEvent)
+        else void this.hello.then(requestStop, () => undefined)
+      }
+      if (await waitForSettle(this.closed, timeoutMs)) return
+      logger.warn(`Runtime 在 ${timeoutMs}ms 内未退出，结束本次持有的进程 PID=${this.child.pid}`)
+      this.kill('SIGKILL')
+      if (!(await waitForSettle(this.closed, RUNTIME_KILL_WAIT_MS))) {
+        throw new RuntimeClientError('RUNTIME_EXITED_UNEXPECTEDLY', '无法确认 Runtime 进程已退出', {
+          exitCode: this.child.exitCode,
+          signal: this.child.signalCode,
+          argv: this.argv,
+        })
+      }
+    })().finally(() => {
+      this.stopFlight = null
+    })
+    return this.stopFlight
   }
 
   private stderr(): string {
@@ -723,6 +768,7 @@ class RuntimeSession {
   }
 
   private onClose(exitCode: number | null, signal: NodeJS.Signals | null): void {
+    this.resolveClosed()
     for (const item of this.stdoutStream.flush()) {
       this.consumeItem(item)
     }
@@ -856,8 +902,20 @@ class RuntimeSession {
  * 刻意不使用 `error` 事件名，避免无监听者时 EventEmitter 直接抛出。
  */
 export class RuntimeClient extends EventEmitter {
+  private readonly sessions = new Set<RuntimeSession>()
+  private stopping = false
   constructor(private readonly options: RuntimeClientOptions) {
     super()
+  }
+
+  get hasActiveSessions(): boolean {
+    return this.sessions.size > 0
+  }
+
+  /** 一次性命令归客户端所有，覆盖握手前；禁止关闭后再派生新命令。 */
+  async stop(timeoutMs = RUNTIME_STOP_TIMEOUT_MS): Promise<void> {
+    this.stopping = true
+    await Promise.all([...this.sessions].map(session => session.stop('cancel', timeoutMs)))
   }
 
   get runtimePath(): string {
@@ -876,7 +934,10 @@ export class RuntimeClient extends EventEmitter {
    * 不会抛异常，而是以 `result.success === false` 返回，由调用方读 `result.code`。
    */
   async run(command: string[], options: RuntimeRunOptions = {}): Promise<RuntimeRunResult> {
+    if (this.stopping) throw new Error('Runtime 客户端正在关闭')
     const session = new RuntimeSession(this.options, command, options, this)
+    this.sessions.add(session)
+    void session.closed.then(() => this.sessions.delete(session))
 
     await session.hello
     options.onStarted?.({
@@ -909,7 +970,6 @@ export class RuntimeClient extends EventEmitter {
 
     const hello = await session.hello
     const canShutdown = hello.capabilities.includes('stdin.shutdown')
-    let shutdownRequested = false
 
     return {
       hello,
@@ -929,26 +989,11 @@ export class RuntimeClient extends EventEmitter {
           logger.warn(
             `Runtime 未宣告 stdin.shutdown 能力（已宣告 [${hello.capabilities.join(', ')}]），跳过优雅关闭，直接强制结束进程`
           )
-          session.kill()
+          await session.stop(null, 0)
           return session.completion
         }
-
-        if (!shutdownRequested) {
-          shutdownRequested = true
-          session.sendControl('shutdown')
-        }
-
-        const timer = setTimeout(() => {
-          logger.warn(`Runtime 在 ${timeoutMs}ms 内未完成关闭，强制结束进程`)
-          session.kill()
-        }, timeoutMs)
-        timer.unref?.()
-
-        try {
-          return await session.completion
-        } finally {
-          clearTimeout(timer)
-        }
+        await session.stop('shutdown', timeoutMs)
+        return session.completion
       },
     }
   }

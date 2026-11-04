@@ -1,6 +1,7 @@
 import { spawn } from 'child_process'
-import { EventEmitter } from 'node:events'
-import { readFileSync } from 'node:fs'
+import { EventEmitter, once } from 'node:events'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
@@ -103,6 +104,77 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+})
+
+describe('一次性命令退出', () => {
+  it('握手前也持有并回收命令进程，关闭后不能再派生命令', async () => {
+    const client = createClient()
+    const child = mockSpawn()
+    const work = client.run(['bootstrap']).catch(() => undefined)
+    await client.stop(20)
+    await work
+    expect(child.killed).toBe(true)
+    expect(client.hasActiveSessions).toBe(false)
+    await expect(client.run(['doctor'])).rejects.toBeInstanceOf(Error)
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['ignore-cancel', 'finish-commit'])(
+    '原生子进程 %s 时确认真实退出并保留终态',
+    async behavior => {
+      const { spawn: nativeSpawn } =
+        await vi.importActual<typeof import('child_process')>('child_process')
+      const root = mkdtempSync(join(tmpdir(), 'mas-runtime-stop-'))
+      const script = join(root, 'runtime.cjs')
+      const lines = fixture('bootstrap-success.ndjson').trim().split('\n')
+      writeFileSync(
+        script,
+        `
+      process.stdout.write(${JSON.stringify(lines[0] + '\n')});
+      let finishing = false;
+      process.stdin.on('data', () => {
+        if (${JSON.stringify(behavior === 'finish-commit')} && !finishing) {
+          finishing = true;
+          setTimeout(() => process.stdout.write(${JSON.stringify(lines.slice(1).join('\n') + '\n')}, () => process.exit(0)), 30);
+        }
+      });
+      setInterval(() => {}, 1000);
+    `
+      )
+      let child: ReturnType<typeof nativeSpawn> | undefined
+      spawnMock.mockImplementation((_command, _args, options) => {
+        child = nativeSpawn(process.execPath, [script], options)
+        return child as never
+      })
+      const client = createClient()
+      let started!: () => void
+      const ready = new Promise<void>(resolve => {
+        started = resolve
+      })
+      const work = client.run(['bootstrap'], { onStarted: () => started() }).catch(() => null)
+      try {
+        await ready
+        await client.stop(200)
+        const outcome = await work
+        expect(client.hasActiveSessions).toBe(false)
+        expect(child!.exitCode !== null || child!.signalCode !== null).toBe(true)
+        if (behavior === 'finish-commit') {
+          expect(outcome).toMatchObject({ success: true })
+          expect(child!.killed).toBe(false)
+        } else {
+          expect(outcome).toBeNull()
+          expect(child!.killed).toBe(true)
+        }
+      } finally {
+        if (child && child.exitCode === null && child.signalCode === null) {
+          const exited = once(child, 'close')
+          child.kill('SIGKILL')
+          await exited
+        }
+        rmSync(root, { recursive: true, force: true })
+      }
+    }
+  )
 })
 
 // ==================== 参数与工具 ====================
