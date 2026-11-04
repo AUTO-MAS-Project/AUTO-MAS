@@ -40,7 +40,7 @@ from app.models.task import ScriptItem
 from app.services import script_install
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
-from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box
+from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box, update_files
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
@@ -73,6 +73,7 @@ class BAAHManager(ScriptManagerBase):
         self.script_info = script_info
         self.check_result = "-"
         self._install_access = ExitStack()
+        self._directory_lock = None
         self.emulator_manager: DeviceBase | None = None
         self._device_provider = device_provider
 
@@ -130,6 +131,11 @@ class BAAHManager(ScriptManagerBase):
     async def _prepare_program_update(self) -> None:
         root = self.script_config.Script.BAAHPath.parent
         self.check_result = "BAAH 更新准备未完成"
+        # 按真实安装路径排队，等待前一 BAAH 的所有用户和恢复动作结束；
+        # 跨 MAS 进程仍由文件锁保障，不改变不同安装目录的并行能力。
+        lock = update_files.directory_lock(root.resolve())
+        await lock.acquire()
+        self._directory_lock = lock
         self._install_access.enter_context(script_install.installation_access(root))
         if self.script_config.Update.TakeoverEnabled:
 
@@ -201,6 +207,9 @@ class BAAHManager(ScriptManagerBase):
                 self.user_config,
                 self.emulator_manager,
             )
+            # manager 已按整个任务生命周期持有目录锁，避免 AutoProxy 再次
+            # 获取不可重入的 asyncio.Lock，导致自身死锁。
+            task.directory_reserved = True
             await self.run_user_task(current_user, task)
 
     async def final_task(self):
@@ -263,7 +272,13 @@ class BAAHManager(ScriptManagerBase):
             else:
                 self.script_info.status = "完成"
         finally:
-            self._install_access.close()
+            try:
+                self._install_access.close()
+            finally:
+                directory_lock = getattr(self, "_directory_lock", None)
+                if directory_lock is not None:
+                    self._directory_lock = None
+                    directory_lock.release()
             script_config = getattr(self, "script_config", None)
             if script_config is not None:
                 ticket = self.config_locks.pop(script_config.uid, None)

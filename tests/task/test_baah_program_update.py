@@ -194,3 +194,37 @@ async def test_install_lock_conflict_never_marks_unrun_task_complete(
     await instance.final_task()
     assert instance.script_info.status == "异常"
     assert instance.check_result != "Pass"
+
+
+@pytest.mark.asyncio
+async def test_second_baah_config_waits_for_same_directory(installation, monkeypatch):
+    import asyncio
+    from app.utils import update_files
+
+    root, config, _, _ = installation
+    config.Update.TakeoverEnabled = False
+    monkeypatch.setattr(manager.script_install, "run_worker", AsyncMock())
+    one = object.__new__(manager.BAAHManager)
+    two = object.__new__(manager.BAAHManager)
+    for instance in (one, two):
+        instance._install_access = ExitStack()
+        instance._directory_lock = None
+        instance.script_config = SimpleNamespace(
+            Script=SimpleNamespace(BAAHPath=root / "BAAH.exe"),
+            Update=config.Update,
+        )
+        instance.check_result = "Pass"
+
+    # 第一个任务在整个用户运行期间独占目录；第二个任务要等待。
+    await one._prepare_program_update()
+    pending = asyncio.create_task(two._prepare_program_update())
+    await asyncio.sleep(0)
+    assert not pending.done()
+    assert update_files.directory_lock(root).locked()
+    one._install_access.close()
+    one._directory_lock.release()
+    one._directory_lock = None
+    await asyncio.wait_for(pending, 2)
+    assert two.check_result == "Pass"
+    two._install_access.close()
+    two._directory_lock.release()
