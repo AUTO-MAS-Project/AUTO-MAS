@@ -226,12 +226,13 @@ class BetterGIManager(ScriptManagerBase):
 
         self.script_info.user_config = self.user_config
 
-        # Update / ScriptConfig 也会拉起原生 GUI，不能绕过未完成安装标记。
-        # 非 AutoProxy 不主动联网更新，只确认没有正在进行的不安全安装。
-        if self.task_info.mode in {"Update", "ScriptConfig"}:
-            root = self._update_root
-            if root is not None:
-                await program_update.confirm_current_install(root)
+        # Update 只更新原神客户端，不启动 BetterGI；运行中的正常 BGI
+        # 不应该阻断游戏更新，但未完成的本体安装必须阻断。
+        root = self._update_root
+        if root is not None and self.task_info.mode == "Update":
+            await program_update.confirm_safe_game_update(root)
+        elif root is not None and self.task_info.mode == "ScriptConfig":
+            await program_update.confirm_current_install(root)
 
         # 「检查更新」不动 BetterGI 配置，不必归档，直接进更新任务
         if self.task_info.mode == "Update":

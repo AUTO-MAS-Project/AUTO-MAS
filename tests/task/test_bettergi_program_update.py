@@ -403,3 +403,73 @@ async def test_beta_release_does_not_silently_fall_back_to_stable(monkeypatch):
     monkeypatch.setattr(update.httpx, "AsyncClient", lambda **kwargs: Client())
     with pytest.raises(ValueError, match="不会回退"):
         await update.request_release("beta")
+
+
+@pytest.mark.asyncio
+async def test_game_update_allows_running_bgi_but_refuses_native_installer(
+    installation, monkeypatch
+):
+    root, _, _ = installation
+    processes = [SimpleNamespace(info={"exe": str(root / "BetterGI.exe"), "name": "BetterGI.exe"})]
+    monkeypatch.setattr(update.psutil, "process_iter", lambda fields: processes)
+    await update.confirm_safe_game_update(root)
+    processes.append(
+        SimpleNamespace(
+            info={
+                "exe": str(script_install.workspace(root) / "download-1" / "BetterGI.Install.0.66.exe"),
+                "name": "BetterGI.Install.0.66.exe",
+            }
+        )
+    )
+    with pytest.raises(script_install.InstallUnsafeError, match="安装器"):
+        await update.confirm_safe_game_update(root)
+    processes.pop()
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("{}")
+    with pytest.raises(script_install.InstallUnsafeError, match="未确认"):
+        await update.confirm_safe_game_update(root)
+
+
+@pytest.mark.asyncio
+async def test_beta_mirror_alpha_without_github_prerelease(installation, monkeypatch, tmp_path):
+    root, config, _ = installation
+    config.Update.Channel = "beta"
+    config.Update.MirrorChyanCDK = "test-cdk"
+    version = [Version("0.66.0")]
+    monkeypatch.setattr(update, "read_version", lambda _root: version[0])
+    monkeypatch.setattr(
+        update,
+        "request_release",
+        AsyncMock(side_effect=AssertionError("beta must not depend on GitHub Releases")),
+    )
+    archive = tmp_path / "alpha.zip"
+    with zipfile.ZipFile(archive, "w") as package:
+        package.writestr("BetterGI.Install.0.66.3-alpha.1.exe", pe())
+    monkeypatch.setattr(
+        update,
+        "request_mirror_resource",
+        AsyncMock(
+            return_value={
+                "data": {
+                    "update_type": "full",
+                    "version_name": "0.66.3-alpha.1",
+                    "url": "https://example.com/alpha.zip",
+                    "filesize": archive.stat().st_size,
+                    "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+                }
+            }
+        ),
+    )
+
+    async def download(url, destination, **kwargs):
+        shutil.copyfile(archive, destination)
+
+    async def install(installer, path):
+        version[0] = Version("0.66.3-alpha.1")
+
+    update.download_script_package.side_effect = download
+    update.run_installer.side_effect = install
+    assert "已更新" in await update.update_before_run(root, config)
+    update.request_release.assert_not_awaited()
+    assert update.request_mirror_resource.await_args.kwargs["params"]["channel"] == "alpha"

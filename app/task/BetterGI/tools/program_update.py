@@ -65,6 +65,39 @@ def assert_idle(root: Path) -> None:
             ) from error
 
 
+async def confirm_safe_game_update(root: Path) -> None:
+    """游戏客户端更新不启动 BetterGI，但必须排除本体安装仍在进行。"""
+    await asyncio.to_thread(assert_no_active_installer, root)
+
+
+def assert_no_active_installer(root: Path) -> None:
+    workspace = script_install.workspace(root)
+    if (workspace / "bgi-install.json").exists():
+        raise script_install.InstallUnsafeError(
+            "BetterGI 上次本体安装未确认，禁止在安装过程中执行游戏更新"
+        )
+    for process in psutil.process_iter(["exe", "name"]):
+        try:
+            executable = process.info.get("exe")
+            name = str(process.info.get("name") or "").casefold()
+            if not (name.startswith("bettergi.install.") or name == "bettergi.update.exe"):
+                continue
+            if executable and not any(
+                Path(executable).resolve().is_relative_to(path.resolve())
+                for path in (workspace, root)
+            ):
+                continue
+            raise script_install.InstallUnsafeError(
+                "BetterGI 本体安装器尚未退出，请先完成安装"
+            )
+        except psutil.NoSuchProcess:
+            continue
+        except psutil.AccessDenied as error:
+            raise script_install.InstallUnsafeError(
+                "无法确认 BetterGI 安装器已退出，请以管理员身份重试"
+            ) from error
+
+
 def read_version(root: Path) -> Version:
     """读取官方程序版本资源，不以 MAS 的上次版本记录代替实际安装版本。"""
     import win32api
@@ -158,7 +191,7 @@ def verify_installer(
 
 
 def unpack_mirror_installer(
-    archive: Path, destination: Path, name: str, size: int
+    archive: Path, destination: Path, name: str, size: int | None
 ) -> None:
     # BGI 不带 os/arch 的 Mirror 资源是安装器 ZIP；不执行其中的其他文件，
     # 上游会给 Mirror 包内安装器追加 VC 运行库，因此不能用 GitHub 的哈希校验它。
@@ -166,7 +199,13 @@ def unpack_mirror_installer(
         if package.namelist() != [name]:
             raise ValueError("Mirror 酱包不是预期的 BetterGI 完整安装器")
         info = package.getinfo(name)
-        if not size <= info.file_size <= size + 256 * 1024**2 or info.flag_bits & 1:
+        minimum = size if size is not None else 1
+        maximum = (
+            size + 256 * 1024**2
+            if size is not None
+            else min(4 * 1024**3, archive.stat().st_size + 512 * 1024**2)
+        )
+        if not minimum <= info.file_size <= maximum or info.flag_bits & 1:
             raise ValueError("Mirror 酱安装器大小无效或已加密")
         with package.open(info) as source, destination.open("xb") as output:
             remaining = info.file_size
@@ -215,9 +254,37 @@ async def update_before_run(
     current = await asyncio.to_thread(read_version, root)
     if script_install.read_pe_architecture(root / "BetterGI.exe") != "x86_64":
         raise script_install.InstallUnsafeError("BetterGI 当前安装架构不支持自动更新")
-    target, name, url, size, digest = select_installer(
-        await request_release(config.Update.Channel)
+    cdk = (
+        config.Update.MirrorChyanCDK.strip()
+        or Config.setting.Update.MirrorChyanCDK.strip()
     )
+    # 公测构建由上游上传到 Mirror，但不一定创建 GitHub prerelease。
+    # 优先使用 Mirror 自己的可信版本和包校验信息，不能依赖 Release 推断。
+    mirror_data = None
+    if cdk and config.Update.Channel != "stable":
+        payload = await request_mirror_resource(
+            "BGI",
+            params={"cdk": cdk, "channel": "alpha"},
+            proxy=Config.proxy,
+        )
+        mirror_data = payload.get("data", {})
+        mirror_version = str(mirror_data.get("version_name", ""))
+        if not re.fullmatch(
+            r"v?\\d+\\.\\d+\\.\\d+-(?:alpha|beta|rc)\\.\\d+",
+            mirror_version,
+            flags=re.IGNORECASE,
+        ):
+            raise ValueError("Mirror 酱 BetterGI 公测版本格式无效")
+        target = Version(mirror_version)
+        name = f"BetterGI.Install.{mirror_version.removeprefix('v')}.exe"
+        size = None
+        digest = ""
+        url = ""
+    else:
+        target, name, url, size, digest = select_installer(
+            await request_release(config.Update.Channel)
+        )
+
     directory = script_install.workspace(root)
     marker = directory / "bgi-install.json"
     if target <= current and not marker.exists():
@@ -229,27 +296,22 @@ async def update_before_run(
     directory.mkdir(parents=True, exist_ok=True)
     cache = Path(tempfile.mkdtemp(dir=directory, prefix="download-"))
     installer = cache / name
-    cdk = (
-        config.Update.MirrorChyanCDK.strip()
-        or Config.setting.Update.MirrorChyanCDK.strip()
-    )
     source = "GitHub"
     destination = installer
     if cdk:
-        payload = await request_mirror_resource(
-            "BGI",
-            params={
-                "cdk": cdk,
-                "channel": "stable" if config.Update.Channel == "stable" else "alpha",
-            },
-            proxy=Config.proxy,
-        )
-        data = payload.get("data", {})
+        if mirror_data is None:
+            payload = await request_mirror_resource(
+                "BGI",
+                params={"cdk": cdk, "channel": "stable"},
+                proxy=Config.proxy,
+            )
+            mirror_data = payload.get("data", {})
+        data = mirror_data
         if (
             data.get("update_type") != "full"
             or Version(str(data.get("version_name", ""))) != target
         ):
-            raise ValueError("Mirror 酱安装包版本与官方发行版不一致")
+            raise ValueError("Mirror 酱安装包版本与所选通道版本不一致")
         url = str(data.get("url", ""))
         parsed = urlsplit(url)
         if (
@@ -261,8 +323,8 @@ async def update_before_run(
             raise ValueError("Mirror 酱下载地址无效")
         source = "MirrorChyan"
         destination = cache / "installer.zip"
-        # Mirror 发行流程追加运行库，包体与 GitHub 不同。只接受 API 的可信摘要，
-        # 不把下载后自算的哈希冒充来源校验。
+        # 上游为公测发布的带运行库安装器未必有 GitHub Release，
+        # 其整包完整性只能由 Mirror API 的 SHA256 和大小共同校验。
         mirror_digest = str(data.get("sha256", ""))
         if not re.fullmatch(r"[0-9a-fA-F]{64}", mirror_digest):
             raise ValueError("Mirror 酱 BetterGI 安装包缺少可信 SHA256")
