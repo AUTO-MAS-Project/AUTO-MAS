@@ -54,7 +54,7 @@ Use these samples as style lenses only. For frontend engineering or UI decisions
 10. Keep frequently edited task-configuration logic visible in the owning flow with a short comment instead of hiding it behind one-off helpers.
 11. Do not copy another script/domain's special-case logs, timeout exemptions, ignore lists, or workaround branches into a new module until that behavior is confirmed locally.
 12. If a new capability is used only once, default to an inline block or local helper; split into `builder`, `loader`, or extra services only after real reuse or boundary pressure appears.
-13. Trust existing validators, config containers, and task bases when they already guarantee an invariant; do not add a second layer of fallback or correction.
+13. Trust existing validators, config containers, and task bases when they already guarantee an invariant. Validate untrusted data at its owning boundary; add guards or fallbacks only for reachable inputs, supported compatibility contracts, or runtime failures. Type annotations alone do not establish runtime guarantees. Do not bypass established validation in a test and then add production branches for that invented state; follow [mas-testing](../mas-testing/SKILL.md).
 14. For new Python-heavy flows, keep signatures and call sites compatible with at least basic static type checking.
 15. Prefer deleting redundant imports, waits, and wrappers over preserving "explicit" but noisy scaffolding.
 16. Use Conventional Commits for commit messages: `<type>(<scope>): <subject>`, with documented types such as `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `build`, and `ci`.

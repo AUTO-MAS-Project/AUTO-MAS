@@ -86,7 +86,7 @@ Follow [mas-module-boundary](../mas-module-boundary/SKILL.md) for backend layer 
 1. Function exceeds clear readability for one screenful of logic.
 2. Same decision branch appears in multiple places.
 3. Repeated parameter bundles travel together across call sites.
-4. Testing one behavior requires heavy environment setup.
+4. Testing a public behavior requires heavy setup because business logic and IO are mixed. Check existing isolation seams before changing production structure solely for tests; follow [mas-testing](../mas-testing/SKILL.md).
 5. A dict/registry mapping can replace multiple near-identical branches without hiding the main flow.
 6. A proposed helper adds more lookup cost than it removes.
 7. A proposed fallback only mirrors an invariant already enforced by the owning model or base class.

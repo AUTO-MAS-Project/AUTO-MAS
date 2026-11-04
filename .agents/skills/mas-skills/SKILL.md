@@ -53,7 +53,7 @@ Use these skills as needed:
 12. `mas-game-community`: game community sign-in providers, credential encryption and login routes, sign-in locks and trigger paths, and result/notification contracts.
 13. `mas-ci-checks`: every gate that runs on a PR to `dev` (format, lint, typecheck, full pytest suite, changelog fragment, `uv.lock`, revert hints, CNB mirror, unsigned Windows build) and the exact local command for each.
 14. `mas-telemetry`: proactive anonymous telemetry for new or changed business workflows, safe field contracts, result ownership, operation deduplication and isolated validation.
-15. `tdd`: required before designing, adding, changing or reviewing tests; grounds each test in a reachable scenario, an independent expected result and a distinct regression it can detect.
+15. `mas-testing`: required before choosing verification or designing, adding, changing or reviewing tests; selects checks by reachable behavior and total cost, reuses automation and applies TDD when appropriate.
 
 ## Global Constraints
 
@@ -75,7 +75,7 @@ Apply these constraints before selecting or combining sub-skills.
 For every new or changed user-visible operation, page, lifecycle path or script-adapter flow, load `mas-telemetry` in addition to the domain skills below. Do not wait for an explicit telemetry request. Pure prose/style/generated-only edits and read-only tasks do not authorize new collection or implementation.
 Choose sub-skills by task intent.
 
-Before designing, adding, changing or reviewing any test, load [tdd](../tdd/SKILL.md), including tests planned during feature or bug-fix work and tests outside `tests/`. Apply it before test code is written; running existing tests alone does not trigger it.
+Before choosing verification or designing, adding, changing or reviewing any test, load [mas-testing](../mas-testing/SKILL.md), including verification planned during feature or bug-fix work and tests outside `tests/`. Apply it before deciding to add tests; running existing tests alone does not trigger it.
 
 1. Task mentions field names, shared terms, schema key consistency:
 Use `mas-schema-naming`.

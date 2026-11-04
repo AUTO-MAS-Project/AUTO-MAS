@@ -1,4 +1,0 @@
-interface:
-  display_name: "Behavior-driven TDD"
-  short_description: "Ground tests in reachable behavior and red-green evidence"
-  default_prompt: "Use $tdd to select the smallest tests for reachable AUTO-MAS behavior, verify independent expectations, and record red-green evidence."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAS Testing"
+  short_description: "Reuse automation and test reachable MAS behavior at low cost"
+  default_prompt: "Use $mas-testing to select the lowest-cost checks for reachable AUTO-MAS behavior, reuse existing automation, and apply TDD when appropriate."

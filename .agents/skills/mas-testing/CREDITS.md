@@ -2,7 +2,7 @@
 
 本 Skill 基于 Matt Pocock 的 mattpocock/skills 中 `skills/engineering/tdd`，导入依据为本地 mattpocock-skills 1.3.2。
 
-`tests.md`、`mocking.md` 保留原文。`SKILL.md` 以中文改编原有公开边界、独立预期和逐条红绿循环；补充 AUTO-MAS 的可达性、已有测试去重、执行证据与存量治理要求。原作要求逐次与用户确认边界，本地改为沿用已明确的需求，仅在验收存在歧义时询问；未引入本仓库外的 Skill 依赖。
+本地原以 `tdd` 导入，现重命名为仓库 Skill `mas-testing`。`SKILL.md`、`tests.md`、`mocking.md` 均按 AUTO-MAS 改编，保留公开边界、独立预期和逐条红绿循环，补充可达性、验证成本、自动化复用、测试去重、执行证据与存量治理要求。原作要求逐次与用户确认边界，本地沿用已明确的需求，仅在验收存在歧义时询问；TDD 按任务和现有验证能力选择，不要求每个函数新增测试，未引入本仓库外的 Skill 依赖。
 
 按本目录约定仅保留纯文本来源。原作与本目录改编内容按 MIT 许可分发：
 
