@@ -56,6 +56,7 @@ from .tools.backup_archive import (
     mas_config_dir,
     read_overlay_values,
 )
+from .tools.guide import MAA_GUIDE_SKIP_VALUES
 
 logger = get_logger("MAA 脚本设置")
 
@@ -91,6 +92,11 @@ _SESSION_STARTUP_OVERRIDES: tuple[tuple[str, tuple[str, ...], object], ...] = (
     ("gui.new.json", ("Update", "CheckOnSchedule"), False),
     ("gui.new.json", ("Update", "AutoDownloadUpdatePackage"), False),
     ("gui.new.json", ("Update", "AutoInstallUpdatePackage"), False),
+    # 引导跳过仅作用于会话，回写前同样还原原值与缺失状态。
+    *(
+        ("gui.new.json", ("Gui", key), value)
+        for key, value in MAA_GUIDE_SKIP_VALUES.items()
+    ),
 )
 
 
