@@ -1,4 +1,4 @@
-import { isDevelopmentEnvironment as isDev, isBrowserDevelopment } from '@/utils/environment'
+import { isDevelopmentEnvironment as isDev, managesBackendProcess } from '@/utils/environment'
 import { createRouter, createWebHashHistory, type LocationQueryRaw } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
@@ -6,6 +6,7 @@ import { startSkippedInitializationStartup } from '@/utils/skippedInitialization
 import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
 import { buildMaaFWRoutes } from './maafwFlavorRoutes'
 import { registerRouterAnalytics } from './analytics'
+import { measureStartup } from '@/utils/startupTiming'
 const logger = window.electronAPI.getLogger('路由管理')
 
 // MaaFW 与各特调的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按特调注册表生成；
@@ -66,7 +67,7 @@ const routes = [
   {
     path: '/home',
     name: 'Home',
-    component: () => import('../views/Home.vue'),
+    component: () => measureStartup('首页模块加载', () => import('../views/Home.vue')),
     meta: { title: '主页' },
   },
   {
@@ -405,7 +406,7 @@ router.beforeEach(async (to, from, next) => {
 
   if (to.path === '/initialization') {
     if (!isInitialized.value && !isBootstrapping.value) {
-      const decision = await getInitializationDecision()
+      const decision = await measureStartup('初始化决策', getInitializationDecision)
       if (decision.mode === 'skip-home') {
         needInitLanding = false
         logger.info(`命中跳过初始化条件，直接进入主页: ${JSON.stringify(decision)}`)
@@ -421,8 +422,8 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
-  if (isBrowserDevelopment()) {
-    // 浏览器调试免初始化门禁，但直达内页（如刷新后落在 /scripts）时仍需
+  if (!managesBackendProcess()) {
+    // 只连接入口免安装门禁，但直达内页（如刷新后落在 /scripts）时仍需
     // 建立主 WebSocket 连接并标记初始化，否则 isAppReady 恒为 false 导致整窗空白。
     // 旧版由 useWebSocket 单体的全局自动连接掩盖了这一缺口。
     if (!isInitialized.value && !isBootstrapping.value) {
@@ -431,14 +432,16 @@ router.beforeEach(async (to, from, next) => {
       void (async () => {
         try {
           const { connectWithRetry } = await import('@/composables/useAppLifecycle')
-          await connectWithRetry()
+          await measureStartup('主 WebSocket 连接', connectWithRetry)
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error)
           logger.error(`开发模式直达内页启动失败: ${errorMsg}`)
         } finally {
           // 开发模式仍须准备界面词表；失败时由本地资源恢复界面承接。
           const { useBackendI18nStore } = await import('@/stores/backendI18n')
-          if (await useBackendI18nStore().ensure()) markAsInitialized()
+          if (await measureStartup('业务词表加载', () => useBackendI18nStore().ensure())) {
+            markAsInitialized()
+          }
           finishBootstrap()
         }
       })()

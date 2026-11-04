@@ -111,6 +111,7 @@ from app.task.M9A.migration import (
 from app.utils import constants as _utils_constants
 from app.utils import get_logger, is_supervised
 from app.utils import io as _utils_io
+from app.utils.common.startup_timing import startup_stage
 
 # 各专项失败诊断目录里参与保留期清理的文件后缀（诊断日志与截图）；
 # 不在集合内的文件（如未来的标记/锁文件）不被自动清理触碰
@@ -406,39 +407,45 @@ class AppConfig:
     async def init_config(self) -> None:
         """初始化配置管理"""
 
-        await self.check_data()
-        # 配置已按依赖激活；存量 MAA 的更新接管仅迁移一次。
-        for script in self.ScriptConfig.values():
-            if isinstance(script, MaaConfig) and await script.migrate_update_takeover(
-                global_cdk=str(self.setting.Update.MirrorChyanCDK or "")
-            ):
-                logger.info("MAA 更新接管迁移：已为配置 CDK 的旧脚本开启接管")
-            if (
-                isinstance(script, MaaConfig)
-                and not script.Update.ChannelMigrationVersion
-            ):
-                from app.task.MAA.tools.software_update import (
-                    migrate_maa_update_channel,
-                )
+        with startup_stage("后端/配置/数据检查与加载"):
+            await self.check_data()
+        with startup_stage("后端/配置/专项迁移"):
+            # 配置已按依赖激活；存量 MAA 的更新接管仅迁移一次。
+            for script in self.ScriptConfig.values():
+                if isinstance(
+                    script, MaaConfig
+                ) and await script.migrate_update_takeover(
+                    global_cdk=str(self.setting.Update.MirrorChyanCDK or "")
+                ):
+                    logger.info("MAA 更新接管迁移：已为配置 CDK 的旧脚本开启接管")
+                if (
+                    isinstance(script, MaaConfig)
+                    and not script.Update.ChannelMigrationVersion
+                ):
+                    from app.task.MAA.tools.software_update import (
+                        migrate_maa_update_channel,
+                    )
 
-                await migrate_maa_update_channel(script)
-        if self._m9a_migration is not None:
-            if self._m9a_migration.changed or self._m9a_migration.failure:
-                await self._settle_m9a_migration(self._m9a_migration)
-        for result in (self._m9a_repair, self._m9a_managed):
-            if result is not None and result.needs_notice:
-                self.startup_notices.append(result.notice())
+                    await migrate_maa_update_channel(script)
+            if self._m9a_migration is not None:
+                if self._m9a_migration.changed or self._m9a_migration.failure:
+                    await self._settle_m9a_migration(self._m9a_migration)
+            for result in (self._m9a_repair, self._m9a_managed):
+                if result is not None and result.needs_notice:
+                    self.startup_notices.append(result.notice())
 
         # 游戏社区：恢复当天的结果快照，跨日结果不继续展示
-        today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
-        self.ToolsConfig._game_sign_result_data = _load_game_sign_result_snapshot(
-            self.config_path / GAME_SIGN_RESULT_FILENAME,
-            result_date=today,
-        )
-        self._game_sign_result_date = today
+        with startup_stage("后端/配置/签到结果恢复"):
+            today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
+            self.ToolsConfig._game_sign_result_data = _load_game_sign_result_snapshot(
+                self.config_path / GAME_SIGN_RESULT_FILENAME,
+                result_date=today,
+            )
+            self._game_sign_result_date = today
 
-        from app.services import System
-        from app.services import telemetry as _service_telemetry
+        with startup_stage("后端/配置/系统服务导入"):
+            from app.services import System
+            from app.services import telemetry as _service_telemetry
 
         async def on_self_start(sender, event):
             await System.set_SelfStart(event.value)
@@ -484,11 +491,12 @@ class AppConfig:
             field="VideoStorageLimitMiB",
         )
 
-        from app.core import Community
+        with startup_stage("后端/配置/社区订阅绑定"):
+            from app.core import Community
 
-        Community.connect_community_activity_cache(
-            self.ToolsConfig, setting=self.setting
-        )
+            Community.connect_community_activity_cache(
+                self.ToolsConfig, setting=self.setting
+            )
         # 注册自启动会读写注册表, 不阻塞初始化; 持有引用避免被 GC 且异常不被静默吞掉
         self_start_task = asyncio.create_task(
             System.set_SelfStart(self.setting.Start.IfSelfStart)
@@ -502,7 +510,8 @@ class AppConfig:
                 logger.warning(f"设置开机自启动失败: {t.exception()}")
 
         self_start_task.add_done_callback(_self_start_done)
-        await System.set_Sleep(self.setting.Function.IfAllowSleep)
+        with startup_stage("后端/配置/系统休眠设置"):
+            await System.set_Sleep(self.setting.Function.IfAllowSleep)
         _service_telemetry.set_telemetry_enabled(
             self.setting.Function.IfEnableTelemetry
         )
@@ -600,12 +609,14 @@ class AppConfig:
         for _old, _new, key in CONFIG_FILES:
             node = self._config_nodes[key]
             if node.activation_state == NodeState.INACTIVE:
-                await node.activate(fast_init=True)
+                with startup_stage(f"后端/配置/激活/{key}"):
+                    await node.activate(fast_init=True)
                 if key == "ScriptConfig":
                     self._script_configs_loaded = True
-        for script in self.ScriptConfig.values():
-            await self._initialize_script_config(script)
-        await config_manager.flush()
+        with startup_stage("后端/配置/专项初始化与保存"):
+            for script in self.ScriptConfig.values():
+                await self._initialize_script_config(script)
+            await config_manager.flush()
         if version not in {"v2.0", "v2.1"}:
             # 本次迁移、全部配置激活及最终保存均成功后，才标记 v2.0。
             with closing(sqlite3.connect(self.database_path)) as database:

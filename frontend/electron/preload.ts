@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld(
   'appEnvironment',
   process.argv.includes('--auto-mas-environment=production') ? 'production' : 'development'
 )
+contextBridge.exposeInMainWorld(
+  'backendOwnership',
+  process.argv.includes('--auto-mas-backend-ownership=external') ? 'external' : 'owned'
+)
 
 window.addEventListener('DOMContentLoaded', () => {
   // 预加载脚本已加载
@@ -157,6 +161,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 初始化相关API
   checkCriticalFiles: () => ipcRenderer.invoke('check-critical-files'),
+
+  waitDesktopStartup: () => ipcRenderer.invoke('desktop-startup-wait'),
+  desktopStartupStatus: () => ipcRenderer.invoke('desktop-startup-status'),
+  cancelDesktopStartup: () => ipcRenderer.invoke('desktop-startup-cancel'),
 
   // 后端管理
   startBackend: () => ipcRenderer.invoke('backend-start'),
@@ -350,7 +358,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('initialize', targetBranch, startBackend),
 
   // 后端服务管理（startBackend/stopBackend 与 backendStart 两套命名都有渲染进程在用，先都保留）
-  backendStart: () => ipcRenderer.invoke('backend-start'),
+  backendStart: (retry?: boolean) => ipcRenderer.invoke('backend-start', retry),
   backendRestart: (reason?: 'manual' | 'recovery') => ipcRenderer.invoke('backend-restart', reason),
   backendStatus: () => ipcRenderer.invoke('backend-status'),
   checkRuntimeBackendUpdate: () => ipcRenderer.invoke('check-runtime-backend-update'),

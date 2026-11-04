@@ -173,6 +173,10 @@ export class BackendService {
   }
 
   private async startBackendInternal(options?: BackendStartOptions): Promise<BackendStartResult> {
+    if (this.runtimeHandle) {
+      logger.info('Runtime 已在监督后端，跳过重复启动')
+      return { success: true }
+    }
     const startedAt = performance.now()
     refreshAnalyticsPreference()
     const context = analyticsService.getContext()
@@ -213,6 +217,9 @@ export class BackendService {
           performance.now() - startedAt,
           attributes
         )
+        logger.info(
+          `[启动计时] 桌面/Runtime 与后端启动${result.success ? '完成' : '失败'}，阶段 ${(performance.now() - startedAt).toFixed(1)} ms`
+        )
         return result
       }
     )
@@ -244,10 +251,6 @@ export class BackendService {
     config: RuntimeLaunchConfig,
     options?: BackendStartOptions
   ): Promise<BackendStartResult> {
-    if (this.runtimeHandle) {
-      logger.info('Runtime 已在监督后端，跳过重复启动')
-      return { success: true }
-    }
     if (this.stopFlight || this.stopRequested) {
       return { success: false, error: '正在关闭后端，取消启动' }
     }
@@ -359,6 +362,7 @@ export class BackendService {
     })
 
     let handle: RuntimeSuperviseHandle
+    const superviseStartedAt = performance.now()
     try {
       handle = await client.supervise({
         mode: config.mode,
@@ -379,9 +383,15 @@ export class BackendService {
             logger.warn('Runtime 报告 backend.run running 但未携带 baseUrl，忽略该事件')
             return
           }
+          logger.info(
+            `[启动计时] 桌面/Runtime 报告后端就绪，阶段 ${(performance.now() - superviseStartedAt).toFixed(1)} ms`
+          )
           resolveReady(baseUrl)
         },
       })
+      logger.info(
+        `[启动计时] 桌面/Runtime 监督握手，阶段 ${(performance.now() - superviseStartedAt).toFixed(1)} ms`
+      )
     } catch (error) {
       // 握手阶段的失败（可执行文件缺失、spawn 被拒、协议不匹配、参数错误）都在这里收敛。
       return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
