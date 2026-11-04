@@ -314,3 +314,36 @@ async def test_cn_no_update_does_not_require_git_pack(installation, monkeypatch)
         AsyncMock(return_value=("https://vip.123pan.cn/example", base)),
     )
     assert await update.prepare_update(root) is None
+
+
+@pytest.mark.asyncio
+async def test_cn_unconfirmed_download_does_not_delete_active_archive(
+    installation, monkeypatch
+):
+    from app.core import script_update
+    from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+    root, _ = installation
+    deploy = root / "config" / "deploy.yaml"
+    deploy.write_text(
+        deploy.read_text()
+        .replace("Repository: https://src.example/repo", "Repository: cn")
+        .replace("Branch: main", "Branch: master")
+    )
+    target = git(root.parent / "remote", "rev-parse", "HEAD")
+    monkeypatch.setattr(
+        update,
+        "request_cn_latest",
+        AsyncMock(return_value=("https://vip.123pan.cn/example", target)),
+    )
+
+    async def interrupted(url, destination, **kwargs):
+        destination.write_bytes(b"partial FluxDown output")
+        raise FluxdownCancelUnconfirmed("download still running")
+
+    monkeypatch.setattr(script_update, "download_script_package", interrupted)
+    with pytest.raises(FluxdownCancelUnconfirmed):
+        await update.prepare_update(root)
+    archives = list((update.Config.data_path / "src_update").glob("git-*.zip"))
+    assert len(archives) == 1
+    assert archives[0].read_bytes() == b"partial FluxDown output"
