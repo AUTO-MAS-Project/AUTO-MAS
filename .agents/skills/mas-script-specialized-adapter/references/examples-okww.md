@@ -60,7 +60,7 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 成功标记有两个、任一命中即成功，都归上游所有（ok-ww 走 `AUTO_UPDATE`，MAS 不钉版本），改判据前先核对上游事实：
 
 - **框架退出语** `Successfully Executed Task, Exiting Game and App!`（ok-script 框架 `ok/task/TaskExecutor.py`）：`DailyTask.run()` 正常返回后才打印，失败路径走异常分支不打印；logger 硬编码英文、不走 gettext，是唯一不受 ok-ww 界面语言影响的成功标志。MAS 固定传 `-e`（exit_after_task），成功后必打，比关游戏的 `connected:0` 早约 5 秒。
-- **旧版英文完成日志** `Daily Task Completed`（`src/task/DailyTask.py` 的 `run()` 末尾）：v3.7.4 及更早硬编码英文、无框架退出语，保留兜底。新版起该文案走 gettext（中文环境输出「每日任务已完成」），不要用翻译文案当标记——「每日任务已完成，开始传送并刷取4C声骸」是 farm 4C 追加阶段预告，子串命中会在中途误判成功杀进程；退出语已覆盖全部语言。
+- **旧版英文完成日志** `Daily Task Completed`（`src/task/DailyTask.py` 的 `run()` 末尾）：v3.7.4 源码核实为硬编码英文（其框架 ok-script 2.0.8 已有退出语，双判据均命中），保留既有判据兜底以覆盖更早无法核实的版本。新版起该文案走 gettext（中文环境输出「每日任务已完成」），不要用翻译文案当标记——「每日任务已完成，开始传送并刷取4C声骸」是 farm 4C 追加阶段预告，子串命中会在中途误判成功杀进程；退出语已覆盖全部语言。
 
 上游改判据措辞或调整任务顺序（`-t 1` 指向的 `onetime_tasks[0]`）会让本专项静默退化（永不判成功，每轮等到超时）。完成文案 gettext 化（v3.7.5–v3.7.12 间）就触发过一次：中文环境已完成的任务被判断连、重试到次数耗尽。
 
