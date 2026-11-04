@@ -24,6 +24,9 @@ describe('用户数据目录迁移', () => {
     fs.writeFileSync(path.join(legacy, 'appearances', 'theme', 'theme.json'), 'theme')
     fs.writeFileSync(path.join(legacy, 'appearance-sources.json'), 'sources')
     fs.writeFileSync(path.join(legacy, 'Local Storage', 'state'), 'storage')
+    fs.writeFileSync(path.join(legacy, 'lockfile'), 'stale-lock')
+    fs.mkdirSync(path.join(legacy, 'Cache'))
+    fs.writeFileSync(path.join(legacy, 'Cache', 'regenerable'), 'cache')
 
     expect(migrateUserData(legacy, target, legacy)).toEqual({ path: target })
     expect(fs.readFileSync(path.join(target, 'appearances', 'theme', 'theme.json'), 'utf8')).toBe(
@@ -32,6 +35,8 @@ describe('用户数据目录迁移', () => {
     expect(fs.readFileSync(path.join(target, 'appearance-sources.json'), 'utf8')).toBe('sources')
     expect(fs.readFileSync(path.join(target, 'Local Storage', 'state'), 'utf8')).toBe('storage')
     expect(fs.readFileSync(path.join(legacy, 'appearance-sources.json'), 'utf8')).toBe('sources')
+    expect(fs.existsSync(path.join(target, 'lockfile'))).toBe(false)
+    expect(fs.existsSync(path.join(target, 'Cache'))).toBe(false)
 
     fs.writeFileSync(path.join(target, 'appearance-sources.json'), 'updated')
     expect(migrateUserData(legacy, target, legacy)).toEqual({ path: target })
@@ -46,12 +51,32 @@ describe('用户数据目录迁移', () => {
   it('新目录被其他数据占用时保留两边并回退旧目录', () => {
     fs.mkdirSync(legacy)
     fs.mkdirSync(target)
+    fs.writeFileSync(path.join(legacy, 'resource'), 'keep')
     fs.writeFileSync(path.join(target, 'other'), 'existing')
     expect(migrateUserData(legacy, target, legacy)).toMatchObject({
       path: legacy,
       error: expect.any(String),
     })
     expect(fs.readFileSync(path.join(target, 'other'), 'utf8')).toBe('existing')
+    expect(fs.readFileSync(path.join(legacy, 'resource'), 'utf8')).toBe('keep')
+  })
+
+  it('旧锁持有期间接受 Electron 刚创建的空目标目录', () => {
+    fs.mkdirSync(legacy)
+    fs.writeFileSync(path.join(legacy, 'resource'), 'old')
+    fs.mkdirSync(target)
+    expect(migrateUserData(legacy, target, legacy)).toEqual({ path: target })
+    expect(fs.readFileSync(path.join(target, 'resource'), 'utf8')).toBe('old')
+  })
+
+  it('新锁持有期间遇到目标目录冲突，不回退到未加锁的旧目录', () => {
+    fs.mkdirSync(target)
+    fs.writeFileSync(path.join(target, 'other'), 'existing')
+    expect(migrateUserData(legacy, target, target)).toMatchObject({
+      path: target,
+      error: expect.any(String),
+    })
+    expect(fs.existsSync(legacy)).toBe(false)
   })
 
   it('复制失败时不留下已完成的目标目录，下次可以重试', () => {
@@ -104,5 +129,11 @@ describe('用户数据目录迁移', () => {
     expect(fs.existsSync(developmentLegacy)).toBe(false)
     fs.mkdirSync(developmentLegacy)
     expect(selectUserDataLock(developmentLegacy, developmentTarget)).toBe(developmentTarget)
+  })
+
+  it('标记损坏时拒绝猜测单实例锁路径', () => {
+    fs.mkdirSync(target)
+    fs.writeFileSync(path.join(target, '.auto-mas-user-data'), 'unknown')
+    expect(() => selectUserDataLock(legacy, target)).toThrow('用户数据目录标记无效')
   })
 })

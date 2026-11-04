@@ -106,12 +106,24 @@ import { migrateUserData, selectUserDataLock } from './services/userDataMigratio
 // 开发版目录必须在 app ready 之前确定。
 applyInstanceIdentity()
 
+// 初始化日志系统（必须在创建 logger 之前）
+initializeLogger()
+const logger = getLogger('主进程')
+
 const targetUserDataPath = app.getPath('userData')
 const legacyUserDataPath = path.join(
   app.getPath('appData'),
   isDevelopmentEnvironment() ? 'frontend-dev' : 'frontend'
 )
-const lockPath = selectUserDataLock(legacyUserDataPath, targetUserDataPath)
+let lockPath: string
+try {
+  lockPath = selectUserDataLock(legacyUserDataPath, targetUserDataPath)
+} catch (error) {
+  // 标记不可读时无法确定另一实例持有哪把锁，停止启动以免并发写入。
+  logger.error('读取用户数据迁移标记失败', error)
+  app.quit()
+  process.exit(1)
+}
 if (lockPath !== targetUserDataPath) app.setPath('userData', lockPath)
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
@@ -122,15 +134,16 @@ if (!gotTheLock) {
 const userDataMigration = migrateUserData(legacyUserDataPath, targetUserDataPath, lockPath)
 if (userDataMigration.path !== app.getPath('userData')) {
   app.setPath('userData', userDataMigration.path)
-  app.setPath('sessionData', userDataMigration.path)
 }
+app.setPath('sessionData', userDataMigration.path)
 
-// 初始化日志系统（必须在创建 logger 之前）
-initializeLogger()
-
-const logger = getLogger('主进程')
-if (userDataMigration.error)
-  logger.warn(`用户数据迁移失败，继续使用原目录: ${userDataMigration.error}`)
+if (userDataMigration.error) {
+  logger.warn(`用户数据迁移失败: ${userDataMigration.error}`)
+  if (lockPath === targetUserDataPath) {
+    app.quit()
+    process.exit(1)
+  }
+}
 const STOP_ALL_TASKS_SHORTCUT = resolveStopAllTasksShortcut()
 let isStoppingAllTasks = false
 
