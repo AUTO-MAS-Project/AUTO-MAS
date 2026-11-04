@@ -28,6 +28,7 @@
 - `mas-schema-naming`：用于统一后端 schema 的命名方式，减少字段语义漂移。
 - `mas-script-specialized-adapter`：用于新增或维护专项脚本适配，按脚本前端架构线完成问诊、前端表面与后端任务接入。
 - `mas-e2e`：用于选择、编写和运行隔离浏览器流程及作者本机真实脚本调度 E2E，并整理脱敏证据。
+- `mas-doc-tutorial`：用于从验证过的 Playwright 操作生成或修订文档站教程，核对截图与 UI 漂移，并交付逐主题结果和图文预览。
 - `mas-plan-schedule`：用于新增、重构或审查计划表类型与调度配置。
 - `mas-game-community`：用于新增、重构或审查游戏社区（签到与日常便笺），涵盖 `app/tools/community*` 的平台注册表、凭据加密与登录路由、社区 HTTP 传输、签到锁与触发路径、结果与通知契约。
 - `mas-ci-checks`：用于排查 PR 上失败的 CI、在推送前本地复现 dev PR 的各项门禁（格式 / lint / 类型检查、更新日志碎片、`uv.lock`、误回退提示、CNB 镜像、未签名 Windows 构建），并给出每项的本地命令。
@@ -42,6 +43,21 @@
 2. 按任务意图选择最小必要的子 Skill。
 3. 若任务涉及贡献流程、分支、提交、PR/Issue 正文或版本记录，回到文档站确认。
 4. 若任务涉及主程序代码，仍需在主程序仓库中查看相邻实现并遵守本地风格。
+
+## 教程制作：Codex 与 DeepSeek Harness
+
+两种环境共用 `mas-doc-tutorial/SKILL.md`，不复制两份教程规则。Codex 可显式调用
+`$mas-doc-tutorial`；宿主未发现 Skill 时，在对话中指定文件路径：
+
+```text
+读取 .agents/skills/mas-doc-tutorial/SKILL.md，按它修订计划表与调度队列教程。
+使用指定发行版本和演示数据，先生成本地图文预览，不发布。
+```
+
+DeepSeek Harness 也可使用这条文件入口；自动发现和工具执行能力需按实际宿主版本核验。
+`agents/openai.yaml` 仅提供 Codex 界面元数据，不是两种环境共享流程的执行依赖。
+首版复用主仓隔离 E2E，由 Agent 按主题建立或复用采集流程，没有独立教程 CLI 或 MCP 服务。
+已验证的先行效果与未覆盖范围见 [首批试验](mas-doc-tutorial/references/validated-pilot.md)。
 
 ## 来源与许可
 
