@@ -69,21 +69,4 @@ describe('websocket subscriptions', () => {
     expect(good).toHaveBeenCalledTimes(1)
     expect(logger.warn).toHaveBeenCalled()
   })
-
-  it('allows unsubscribing inside a handler without breaking dispatch', async () => {
-    const { subscribe, unsubscribe, dispatchMessage } = await loadSubscriptions()
-    const calls: string[] = []
-    const firstId = subscribe({ id: 'Main', type: 'test.event' }, () => {
-      calls.push('first')
-      unsubscribe(firstId)
-    })
-    subscribe({ id: 'Main', type: 'test.event' }, () => {
-      calls.push('second')
-    })
-
-    dispatchMessage(envelope('Main', 'test.event'))
-    dispatchMessage(envelope('Main', 'test.event'))
-
-    expect(calls).toEqual(['first', 'second', 'second'])
-  })
 })

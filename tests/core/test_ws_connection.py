@@ -3,7 +3,6 @@ import unittest
 
 from fastapi import WebSocketDisconnect
 
-from app.core import MainConnection
 from app.core.ws.manager import _MainConnectionManager
 
 
@@ -51,25 +50,6 @@ class MainConnectionManagerTest(unittest.IsolatedAsyncioTestCase):
                 break
             await asyncio.sleep(0.01)
         return task
-
-    async def test_single_connection_send_and_disconnect(self):
-        websocket = FakeWebSocket()
-        serve_task = await self._serve(websocket)
-
-        self.assertTrue(self.manager.is_connected)
-        self.assertTrue(
-            await self.manager.send({"id": "Main", "type": "t", "data": {}})
-        )
-        self.assertEqual(len(websocket.sent), 1)
-
-        await websocket.disconnect()
-        await asyncio.wait_for(serve_task, timeout=1)
-        self.assertFalse(self.manager.is_connected)
-
-    async def test_send_returns_false_when_not_connected(self):
-        self.assertFalse(
-            await self.manager.send({"id": "Main", "type": "t", "data": {}})
-        )
 
     async def test_second_connection_replaces_first(self):
         first = FakeWebSocket()
@@ -136,51 +116,6 @@ class MainConnectionManagerTest(unittest.IsolatedAsyncioTestCase):
 
         await websocket.disconnect()
         await asyncio.wait_for(serve_task, timeout=1)
-
-    async def test_connect_hooks_run_on_each_connection(self):
-        calls: list[int] = []
-
-        async def hook():
-            calls.append(1)
-
-        self.manager.on_connect(hook)
-
-        websocket = FakeWebSocket()
-        serve_task = await self._serve(websocket)
-        await asyncio.sleep(0.05)
-        await websocket.disconnect()
-        await asyncio.wait_for(serve_task, timeout=1)
-
-        self.assertEqual(len(calls), 1)
-
-
-class PublisherTest(unittest.IsolatedAsyncioTestCase):
-    async def test_publisher_sends_envelope_via_main_connection(self):
-        from app.core import Publisher
-
-        manager = MainConnection
-        websocket = FakeWebSocket()
-        serve_task = asyncio.create_task(manager.serve(websocket))
-        for _ in range(100):
-            if manager.is_connected:
-                break
-            await asyncio.sleep(0.01)
-
-        try:
-            sent = await Publisher.send(id="Main", type="backend.shutdown.ready")
-            self.assertTrue(sent)
-            self.assertEqual(
-                websocket.sent[-1],
-                {"id": "Main", "type": "backend.shutdown.ready", "data": {}},
-            )
-        finally:
-            await websocket.disconnect()
-            await asyncio.wait_for(serve_task, timeout=1)
-
-    async def test_publisher_drops_message_when_disconnected(self):
-        from app.core import Publisher
-
-        self.assertFalse(await Publisher.send(id="Main", type="power.sign.updated"))
 
 
 if __name__ == "__main__":

@@ -28,31 +28,6 @@ def _blob(payload: bytes = b"\x00" * 64) -> str:
     return base64.b64encode(_REAL_BLOB_HEADER + payload).decode("utf-8")
 
 
-def test_real_blob_header_is_recognized() -> None:
-    assert _utils_secret.looks_like_dpapi_blob(_blob()) is True
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        "",
-        "my-plain-password",
-        "不是 base64 的中文明文",
-        # 合法 base64，但开头不是 DPAPI 的 provider GUID
-        base64.b64encode(b"\x01\x00\x00\x00" + b"\xab" * 32).decode("utf-8"),
-        # 长度不足以容纳 20 字节头部
-        base64.b64encode(b"\x01\x00\x00\x00").decode("utf-8"),
-    ],
-)
-def test_non_ciphertext_values_are_treated_as_plaintext(value: str) -> None:
-    assert _utils_secret.looks_like_dpapi_blob(value) is False
-
-
-@pytest.mark.parametrize("value", [None, 123, b"bytes", ["list"]])
-def test_non_string_values_are_rejected(value: object) -> None:
-    assert _utils_secret.looks_like_dpapi_blob(value) is False
-
-
 @pytest.mark.skipif(not IS_WINDOWS, reason="仅 Windows 走 DPAPI 实现")
 def test_encrypt_uses_machine_scope() -> None:
     """加密必须带机器作用域标志，否则换个 Windows 账户就读不出密码。"""

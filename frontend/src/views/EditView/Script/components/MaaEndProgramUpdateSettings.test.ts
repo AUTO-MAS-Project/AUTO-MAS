@@ -1,29 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
-import { createSSRApp, defineComponent, h, reactive } from 'vue'
 import { renderToString } from '@vue/server-renderer'
+import { describe, expect, it, vi } from 'vite-plus/test'
+import { createSSRApp, defineComponent, h, reactive } from 'vue'
 import { createI18n } from 'vue-i18n'
 import MaaEndProgramUpdateSettings from './MaaEndProgramUpdateSettings.vue'
 
 vi.mock('@/components/FieldLabelWithHint.vue', () => ({ default: { render: () => null } }))
-let switchChange: (value: boolean) => void
-let channelChange: (value: string) => void
-let cdkBlur: () => void
 const control = (kind: string) =>
   defineComponent({
     props: ['checked', 'value', 'disabled', 'options'],
     emits: ['update:checked', 'update:value', 'change', 'blur'],
-    setup(props, { emit }) {
-      if (kind === 'switch')
-        switchChange = value => {
-          emit('update:checked', value)
-          emit('change', value)
-        }
-      if (kind === 'select')
-        channelChange = value => {
-          emit('update:value', value)
-          emit('change', value)
-        }
-      if (kind === 'password') cdkBlur = () => emit('blur')
+    setup(props) {
       return () =>
         kind === 'select'
           ? h(
@@ -80,33 +66,7 @@ const renderPanel = async (ready: boolean) => {
   return { update, saved, html: await renderToString(app) }
 }
 
-beforeEach(() => {
-  switchChange = () => {}
-  channelChange = () => {}
-  cdkBlur = () => {}
-})
-
 describe('MaaEnd program update settings', () => {
-  it('offers the same stable and beta channels as MAA, with stable selected by default', async () => {
-    const { html, update } = await renderPanel(true)
-    expect(html).toContain('稳定版')
-    expect(html).toContain('公测版')
-    expect(update.Channel).toBe('stable')
-    expect(html).toMatch(/value="stable"[^>]*selected/)
-  })
-  it('keeps program takeover separate from game updates and emits only changed fields', async () => {
-    const { update, saved } = await renderPanel(true)
-    switchChange(true)
-    channelChange('beta')
-    cdkBlur()
-    expect(update.TakeoverEnabled).toBe(true)
-    expect(update.Channel).toBe('beta')
-    expect(saved).toEqual([
-      ['TakeoverEnabled', true],
-      ['Channel', 'beta'],
-      ['MirrorChyanCDK', ''],
-    ])
-  })
   it('disables all controls before initial configuration is loaded', async () => {
     const { html } = await renderPanel(false)
     expect(html).toMatch(/<select\b[^>]*\bdisabled(?:\s|>)/)

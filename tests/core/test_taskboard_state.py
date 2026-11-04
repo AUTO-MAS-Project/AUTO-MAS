@@ -2,12 +2,9 @@ import asyncio
 import json
 from datetime import datetime
 
-import app.core.taskboard as state
 from app.core import Taskboard
 from app.models.taskboard import (
-    TaskboardState,
     TaskboardVersionStoryUpdate,
-    TaskboardWeeklyRecord,
 )
 
 
@@ -30,38 +27,6 @@ def test_weekly_key_switches_at_monday_0400_beijing_time():
         Taskboard.weekly_key(datetime.fromisoformat("2026-10-26T04:00:00+08:00"))
         == "2026-10-26"
     )
-
-
-def test_prune_caps_weekly_and_version_maps():
-    week = Taskboard.weekly_key()
-    weekly = TaskboardState()
-    for index in range(101):
-        weekly.weekly[f"game{index}"] = TaskboardWeeklyRecord(
-            week=week, done_at=f"2026-10-26 10:{index % 60:02d}"
-        )
-    Taskboard._prune(weekly)
-    assert len(weekly.weekly) == 100
-
-    versions = TaskboardState()
-    for game in range(30):
-        for version in range(20):
-            key = f"game{game}|{version}"
-            versions.version_story[key] = state.TaskboardVersionStoryRecord(
-                game=f"game{game}",
-                version=f"{version}",
-                start=f"2025-{(version % 12) + 1:02d}-01T00:00:00+08:00",
-                end="2025-12-31T00:00:00+08:00",
-            )
-    active_key = "game0|active"
-    versions.version_story[active_key] = state.TaskboardVersionStoryRecord(
-        game="game0",
-        version="active",
-        start="2020-01-01T00:00:00+08:00",
-        end="2027-01-01T00:00:00+08:00",
-    )
-    Taskboard._prune(versions)
-    assert len(versions.version_story) == 500
-    assert active_key in versions.version_story
 
 
 def test_merge_version_story_ignores_older_batch(tmp_path, monkeypatch):

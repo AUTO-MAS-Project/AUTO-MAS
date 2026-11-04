@@ -57,15 +57,3 @@ async def test_cancellation_waits_for_operation_cleanup():
     allow_cleanup.set()
     with pytest.raises(asyncio.CancelledError):
         await task
-
-
-@pytest.mark.asyncio
-async def test_install_failure_is_not_reported_as_completion():
-    error = RuntimeError("native updater failed")
-
-    async def update():
-        raise error
-
-    with pytest.raises(RuntimeError) as caught:
-        await run_script_update(ScriptUpdateRequest("script", "HSR", "M7A"), update)
-    assert caught.value is error

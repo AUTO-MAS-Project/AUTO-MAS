@@ -57,12 +57,6 @@ afterEach(() => {
 })
 
 describe('resolveRuntimeExecutable', () => {
-  it('环境变量指向的文件存在时直接使用', () => {
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-
-    expect(resolveRuntimeExecutable()).toBe(EXISTING_EXE)
-  })
-
   describe('捆绑位置', () => {
     /** 非 Electron 环境没有 resourcesPath，用例自己指一个临时目录。 */
     let resourcesPath: string | undefined

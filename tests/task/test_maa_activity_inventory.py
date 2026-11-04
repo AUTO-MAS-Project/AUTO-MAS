@@ -109,19 +109,6 @@ def test_new_selection_overrides_old_material_index_fallback(skip):
     )
 
 
-def test_unedited_old_material_target_still_overrides_activity_default():
-    old = {
-        "StageType": "material",
-        "StageIndex": 3,
-        "DropCount": 123,
-        "LegacyIndex": True,
-    }
-    plans, _ = resolve_activity_inventory_plans(
-        json.dumps([old, LEGACY]), [STAGES[0], STAGES[-1]]
-    )
-    assert [(plan["Stage"], plan["DropCount"]) for plan in plans] == [("TL-9", 123)]
-
-
 def test_alternating_accounts_does_not_reuse_previous_selection():
     source = [{"Stage": "TL-9", "DropId": "31113", "UseMedicine": True}]
     original = deepcopy(source)

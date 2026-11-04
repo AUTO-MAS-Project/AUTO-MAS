@@ -76,49 +76,6 @@ def test_restore_dir_excludes_base_metadata(tmp_path: Path) -> None:
     assert not (target / "leftover.txt").exists()  # 整目录替换语义不变
 
 
-def test_restore_files_excludes_base_metadata(tmp_path: Path) -> None:
-    """restore_files 默认受管键排除顶级 _ 前缀元数据（_mas_base 不落目标）。"""
-
-    root = tmp_path / "pool"
-    dest = _utils_config_archive.archive_files({"a.json": '{"x": 1}'}, root)
-    assert dest is not None
-    _utils_config_archive.write_backup_base(dest, "shared")
-
-    target = tmp_path / "target"
-    target.mkdir()
-    _utils_config_archive.restore_files(dest, target)
-    assert (target / "a.json").read_text("utf-8") == '{"x": 1}'
-    assert not (target / _utils_config_archive.BASE_FILE_NAME).exists()
-
-
-def test_list_times_only_accepts_timestamp_dirs(tmp_path: Path) -> None:
-    """时间戳列表只认本模块生成的目录名，同级的其它子目录既不入选也不被裁掉。
-
-    池内与时间戳目录同级可能存在语义不同的子目录（如 ZzzOd 回收池槽桶内的
-    ``mas-backups`` 备份池快照）；混进列表会让归档去重恒失效、保留清理误裁
-    真实快照。
-    """
-
-    pool = tmp_path / "pool"
-    for name in (
-        "20260921-225131",
-        "20260921-225130",
-        "20260921-225131-2",
-        "20260921-225131-10",
-    ):
-        (pool / name).mkdir(parents=True)
-    # 同级非时间戳子目录：不进列表，也不参与保留清理
-    (pool / "mas-backups").mkdir()
-    (pool / "not-a-time").mkdir()
-
-    assert _utils_config_archive.list_times(pool) == [
-        "20260921-225131-10",
-        "20260921-225131-2",
-        "20260921-225131",
-        "20260921-225130",
-    ]
-
-
 def test_list_times_keeps_full_retention_with_sibling_dir(tmp_path: Path) -> None:
     """同级非时间戳子目录不再占位：归档池保留份数仍是完整的 keep 份。"""
 

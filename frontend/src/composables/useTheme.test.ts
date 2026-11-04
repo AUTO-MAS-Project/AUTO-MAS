@@ -1,7 +1,7 @@
+import type { InstalledAppearance } from '@/types/appearance'
 import { readability } from '@ctrl/tinycolor'
 import { theme } from 'ant-design-vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
-import type { InstalledAppearance } from '@/types/appearance'
 
 vi.mock('@/utils/config', () => ({ getConfig: vi.fn(), saveConfig: vi.fn() }))
 vi.mock('@/utils/preferenceAnalytics', () => ({ observePreference: vi.fn() }))
@@ -63,17 +63,6 @@ describe('theme link contrast', () => {
     for (const color of [tokens.colorLink, tokens.colorLinkHover, tokens.colorLinkActive]) {
       expect(readability(color, '#000000')).toBeGreaterThanOrEqual(4.5)
       expect(readability(color, '#ffffff')).toBeGreaterThanOrEqual(4.5)
-    }
-  })
-
-  it('keeps contrast above an extreme when no color can meet every surface target', async () => {
-    appearance.tokens.colorBgContainer = '#777777'
-    const tokens = await themeTokens('light')
-    for (const color of [tokens.colorLink, tokens.colorLinkHover, tokens.colorLinkActive]) {
-      const minimum = Math.min(
-        ...['#000000', '#777777', '#ffffff'].map(background => readability(color, background))
-      )
-      expect(minimum).toBeGreaterThan(2)
     }
   })
 

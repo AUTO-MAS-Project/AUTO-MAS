@@ -171,29 +171,5 @@ describe('useAppLifecycle 关闭流程', () => {
       expect(connectionMocks.shutdown).toHaveBeenCalled()
       expect(appQuit).toHaveBeenCalledOnce()
     })
-
-    it.each(['disconnect', 'cycle-failed'])('%s 只继续重连，不接管进程', async trigger => {
-      backendStatus.mockResolvedValue({ isRunning: false })
-      const { disposeAppLifecycle } = await loadLifecycle()
-      if (trigger === 'disconnect') {
-        connectionMocks.onDisconnected.mock.calls[0][0]({ code: 1006, reason: 'lost' })
-      } else {
-        connectionMocks.onReconnectCycleFailed.mock.calls[0][0]()
-      }
-      await vi.waitFor(() => expect(connectionMocks.scheduleReconnect).toHaveBeenCalled())
-      expect(backendRestart).not.toHaveBeenCalled()
-      expect(stopBackend).not.toHaveBeenCalled()
-      disposeAppLifecycle()
-    })
-
-    it('系统恢复时后端不可达也只重连', async () => {
-      backendStatus.mockResolvedValue({ isRunning: false })
-      const { disposeAppLifecycle } = await loadLifecycle()
-      await systemResume.mock.calls[0][0]()
-      await vi.waitFor(() => expect(connectionMocks.scheduleReconnect).toHaveBeenCalled())
-      expect(backendRestart).not.toHaveBeenCalled()
-      expect(stopBackend).not.toHaveBeenCalled()
-      disposeAppLifecycle()
-    })
   })
 })

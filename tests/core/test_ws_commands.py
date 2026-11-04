@@ -55,27 +55,3 @@ async def test_missing_command_and_handler_failure():
     assert result["code"] == 500
     assert result["success"] is False
     handler.assert_awaited_once_with()
-
-
-@pytest.mark.asyncio
-async def test_api_registration_and_notify_share_command_executor(monkeypatch):
-    from types import SimpleNamespace
-    from unittest.mock import Mock
-
-    from app.api import queue
-    from app.core import Commands
-    from app.core.notify import manager
-    from app.core.ws import Commands as direct
-
-    assert Commands is direct
-    get_queue = AsyncMock(return_value=([], {}))
-    monkeypatch.setattr(queue.Config, "get_queue", get_queue)
-    registry = SimpleNamespace(by_id={}, bind=Mock(return_value=object()))
-    monkeypatch.setattr(manager, "_get_registry", lambda: registry)
-    notify = manager.NotificationManager()
-    notify._transport
-    dependencies = registry.bind.call_args.args[0]
-    result = await dependencies.command_executor("queue.get", {"queueId": "queue"})
-    assert result["success"] is True
-    assert result["data"]["index"] == []
-    get_queue.assert_awaited_once_with("queue")

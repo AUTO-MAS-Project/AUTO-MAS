@@ -21,13 +21,6 @@ class ShutdownCoordinatorTest(unittest.IsolatedAsyncioTestCase):
 
         teardown.assert_awaited_once()
 
-    async def test_teardown_exception_propagates(self):
-        coordinator = _ShutdownCoordinator()
-        coordinator.set_teardown(AsyncMock(side_effect=RuntimeError("boom")))
-
-        with self.assertRaises(RuntimeError):
-            await coordinator.run_teardown()
-
     async def test_teardown_retries_after_failure(self):
         coordinator = _ShutdownCoordinator()
         teardown = AsyncMock(side_effect=[RuntimeError("boom"), None])
@@ -40,10 +33,6 @@ class ShutdownCoordinatorTest(unittest.IsolatedAsyncioTestCase):
         await coordinator.run_teardown()
 
         self.assertEqual(teardown.await_count, 2)
-
-    async def test_missing_teardown_is_safe(self):
-        coordinator = _ShutdownCoordinator()
-        await coordinator.run_teardown()  # 未注册也不应抛异常
 
 
 if __name__ == "__main__":

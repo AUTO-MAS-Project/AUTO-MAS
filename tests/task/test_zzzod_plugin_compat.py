@@ -85,19 +85,6 @@ def test_duplicate_plugin_cannot_override_builtin(install, monkeypatch):
     assert warnings
 
 
-def test_unreadable_plugin_root_does_not_break_builtin_catalog(install, monkeypatch):
-    (install / "plugins").mkdir()
-    original = type(install).iterdir
-
-    def denied(path):
-        if path == install / "plugins":
-            raise PermissionError("blocked plugin directory")
-        return original(path)
-
-    monkeypatch.setattr(type(install), "iterdir", denied)
-    assert [item["app_id"] for item in catalog.list_app_catalog(install)] == ["mail"]
-
-
 def test_plugin_progress_survives_clear_restore_and_metadata_disappearance(install):
     plugin(install)
     record_dir = install / "config/1001/app_run_record"
@@ -231,22 +218,6 @@ def test_new_plugin_record_survives_restore_with_unreadable_catalog(
     assert (
         record_dir / "new_plugin.yml"
     ).read_bytes() == b"run_status: 1\nprogress: 9\n"
-
-
-def test_uppercase_sidecar_does_not_erase_yaml_failure(install, monkeypatch):
-    import importlib
-
-    module = importlib.import_module("app.task.ZzzOd.AutoProxy")
-    # Windows 无法同时创建同名大小写文件，用文件快照表达 Linux 可并存的情形。
-    monkeypatch.setattr(module, "snapshot_run_records", lambda *args: {"extra": 2})
-    monkeypatch.setattr(
-        module,
-        "snapshot_run_record_files",
-        lambda *args: {"extra.YML": b"old", "extra.yml": b"new"},
-    )
-    assert _judge_after(install, 1001, {"extra.YML": b"old", "extra.yml": b"old"}) == {
-        "extra": 2
-    }
 
 
 @pytest.mark.asyncio

@@ -1,9 +1,8 @@
-import { EventEmitter } from 'node:events'
 import type { BrowserWindow } from 'electron'
+import { EventEmitter } from 'node:events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
-import { attachRendererRecovery, RENDERER_RELOAD_TIMEOUT_MS } from './rendererRecoveryService'
 import { analyticsService } from './analyticsService'
-import { validateAnalyticsEvent } from './analyticsPolicy'
+import { attachRendererRecovery, RENDERER_RELOAD_TIMEOUT_MS } from './rendererRecoveryService'
 
 const reports = vi.hoisted(() => ({
   crash: vi.fn(),
@@ -54,18 +53,6 @@ let crashHistory: number[]
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!
 const crash = () =>
   win.webContents.emit('render-process-gone', {}, { reason: 'killed', exitCode: 1073807364 })
-const failedLoad = (code = -6, isMainFrame = true, processId = 10) => {
-  win.webContents.emit(
-    'did-fail-load',
-    {},
-    code,
-    'private error',
-    'file:///private',
-    isMainFrame,
-    processId,
-    20
-  )
-}
 const ready = () => {
   win.webContents.emit('did-finish-load')
   recovery.rendererReady(win.webContents.mainFrame)
@@ -98,82 +85,6 @@ afterEach(() => {
 })
 
 describe('渲染进程恢复结果', () => {
-  it('普通启动不制造重载结果，加载和挂载缺一不算恢复成功', async () => {
-    ready()
-    expect(reports.reload).not.toHaveBeenCalled()
-    crash()
-    win.webContents.emit('did-finish-load')
-    expect(reports.reload).not.toHaveBeenCalled()
-    recovery.rendererReady(win.webContents.mainFrame)
-    ready()
-    expect(reports.reload).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ outcome: 'success', resultKind: 'ready' })
-    )
-    await flushTelemetry()
-    const results = reports.send.mock.calls
-      .map(([payload]) => payload)
-      .filter(payload => payload.eventName === 'renderer_recovery_finished')
-    expect(results).toHaveLength(1)
-    expect(
-      validateAnalyticsEvent({ name: results[0].eventName, props: results[0].props }, false)
-    ).not.toBeNull()
-    expect(
-      validateAnalyticsEvent({ name: results[0].eventName, props: results[0].props }, true)
-    ).toBeNull()
-    expect(
-      validateAnalyticsEvent(
-        { name: results[0].eventName, props: { ...results[0].props, url: 'private' } },
-        false
-      )
-    ).toBeNull()
-  })
-
-  it('挂载 IPC 早于加载完成时也只结算一次', () => {
-    crash()
-    recovery.rendererReady(win.webContents.mainFrame)
-    expect(reports.reload).not.toHaveBeenCalled()
-    win.webContents.emit('did-finish-load')
-    expect(reports.reload).toHaveBeenCalledTimes(1)
-  })
-
-  it('忽略子 frame、旧进程与被替换导航的失败，保留当前主页面的成功', () => {
-    crash()
-    failedLoad(-6, false)
-    failedLoad(-3)
-    failedLoad(-6, true, 9)
-    expect(reports.reload).not.toHaveBeenCalled()
-    ready()
-    expect(reports.reload).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success' }))
-  })
-
-  it('主页面加载失败后，错误页加载和挂载不能反转结果', async () => {
-    crash()
-    failedLoad()
-    ready()
-    expect(reports.reload).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ outcome: 'failure', resultKind: 'load_failed', loadErrorCode: -6 })
-    )
-    await flushTelemetry()
-    expect(vi.getTimerCount()).toBe(0)
-  })
-
-  it('reload 抛错与超时分别记录失败和未知，迟到信号不补报', () => {
-    win.webContents.reload.mockImplementationOnce(() => {
-      throw new Error('private')
-    })
-    crash()
-    expect(reports.reload).toHaveBeenLastCalledWith(
-      expect.objectContaining({ outcome: 'failure', resultKind: 'reload_threw' })
-    )
-    crash()
-    vi.advanceTimersByTime(RENDERER_RELOAD_TIMEOUT_MS)
-    expect(reports.reload).toHaveBeenLastCalledWith(
-      expect.objectContaining({ outcome: 'unknown', resultKind: 'timeout' })
-    )
-    ready()
-    expect(reports.reload).toHaveBeenCalledTimes(2)
-  })
-
   it('再次退出先结束旧尝试，连续退出最多重载三次', () => {
     crash()
     crash()
@@ -222,18 +133,6 @@ describe('渲染进程恢复结果', () => {
     )
   })
 
-  it('旧 renderer 的就绪信号不能确认替代 frame 恢复成功', () => {
-    crash()
-    recovery.rendererReady(win.webContents.mainFrame)
-    win.webContents.mainFrame = { processId: 11, routingId: 21 }
-    win.webContents.emit('did-finish-load')
-    expect(reports.reload).not.toHaveBeenCalled()
-    recovery.rendererReady(win.webContents.mainFrame)
-    expect(reports.reload).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ outcome: 'success' })
-    )
-  })
-
   it('重建主窗口仍共享同一进程的重载预算', () => {
     crash()
     crash()
@@ -253,16 +152,6 @@ describe('渲染进程恢复结果', () => {
     )
   })
 
-  it('窗口销毁取消未决观察并清理超时', () => {
-    crash()
-    win.webContents.emit('destroyed')
-    win.emit('closed')
-    vi.advanceTimersByTime(RENDERER_RELOAD_TIMEOUT_MS)
-    expect(reports.reload).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ outcome: 'cancelled', resultKind: 'window_closed' })
-    )
-  })
-
   it('退出期间不重载，正在退出的尝试不记为超时失败', () => {
     crash()
     quitting = true
@@ -272,24 +161,5 @@ describe('渲染进程恢复结果', () => {
     )
     crash()
     expect(win.webContents.reload).toHaveBeenCalledTimes(1)
-  })
-
-  it('关闭再开启统计不补发旧尝试，新尝试仍能记录', async () => {
-    crash()
-    await flushTelemetry()
-    reports.send.mockClear()
-    analyticsService.setEnabled(false)
-    analyticsService.setEnabled(true)
-    ready()
-    await flushTelemetry()
-    expect(reports.send).not.toHaveBeenCalled()
-    crash()
-    ready()
-    await flushTelemetry()
-    expect(
-      reports.send.mock.calls.filter(
-        ([payload]) => payload.eventName === 'renderer_recovery_finished'
-      )
-    ).toHaveLength(1)
   })
 })

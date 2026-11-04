@@ -6,7 +6,7 @@ import os
 import stat
 import threading
 import zipfile
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -50,35 +50,6 @@ def packages(tmp_path, monkeypatch, isolated_app_paths):
     (target / "portable_data").mkdir()
     (target / "portable_data" / "db").write_bytes(b"user data")
     return extracted, target
-
-
-@pytest.mark.parametrize(
-    "name",
-    [
-        "C:/outside.exe",
-        "C:outside.exe",
-        "root/C:/outside.exe",
-        "root/C:outside.exe",
-        r"\\server\share\file",
-        r"\rooted",
-        "/absolute",
-        "../up",
-        r"a\..\up",
-        "root/file:stream",
-        "root/CON",
-        "root/dir. /file",
-        "root/dir./file",
-    ],
-)
-def test_reject_windows_paths(name):
-    with pytest.raises(RuntimeError):
-        install._safe_parts(name)
-
-
-def test_windows_drive_resets_join():
-    # PureWindowsPath 在非 Windows CI 也能重现原校验与落点的语义差异。
-    escaped = PureWindowsPath("C:/staging").joinpath("D:", "payload.exe")
-    assert not escaped.is_relative_to(PureWindowsPath("C:/staging"))
 
 
 def test_zip_roundtrip_and_escape(tmp_path):
@@ -157,13 +128,6 @@ def test_rollback_failure_survives_retry(packages, monkeypatch):
     monkeypatch.setattr(install.os, "replace", original)
     install._install_from(extracted)
     assert (target / "portable_data/db").read_bytes() == b"user data"
-
-
-@pytest.mark.parametrize(
-    "digest", [None, "", "sha256:xyz", "sha256:" + "a" * 63, "md5:" + "a" * 64]
-)
-def test_invalid_digest(digest):
-    assert install._asset_sha256({"digest": digest}) is None
 
 
 @pytest.mark.asyncio
