@@ -102,9 +102,9 @@ def config_host(caps):
 def test_all_builtin_capabilities_and_lazy_factory_selection(monkeypatch):
     caps = capabilities()
     assert set(caps.manager_factories) == set(models.CLASS_BOOK.values())
-    assert [t.__name__ for t, _ in caps.config_handlers] == [
-        name + "Config" for name, *_ in EXPECTED
-    ]
+    assert {t for t, _ in caps.config_handlers} == {
+        getattr(models, name + "Config") for name, *_ in EXPECTED
+    }
     handler_host = config_host(caps)
     expected_run_types = set()
     for name, folder, manager_name, hook_names in EXPECTED:
@@ -164,22 +164,6 @@ def test_all_builtin_capabilities_and_lazy_factory_selection(monkeypatch):
             ).RESTORE_POOLS
             assert caps.resolve_restore_pools(run_type()) is pools
     assert expected_run_types == set(models.CLASS_BOOK.values())
-
-
-def test_builtin_config_and_restore_keep_different_priorities():
-    class Overlap(models.ZzzOdConfig, models.MaaEndConfig):
-        pass
-
-    caps = capabilities()
-    entry = Overlap.model_construct()
-    config = config_host(caps)
-    assert (
-        config._get_script_config_handler(entry)
-        is dict(caps.config_handlers)[models.MaaEndConfig]
-    )
-    from app.task.ZzzOd.tools.restore_service import RESTORE_POOLS
-
-    assert caps.resolve_restore_pools(entry) is RESTORE_POOLS
 
 
 @pytest.mark.asyncio

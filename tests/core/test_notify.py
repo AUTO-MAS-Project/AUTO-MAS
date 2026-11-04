@@ -700,14 +700,15 @@ def test_descriptor_fields_exist_in_config_and_schema() -> None:
 
 def test_channels_endpoint_returns_metadata_only() -> None:
     from app.api.setting import get_notify_channels as endpoint
-    from app.models.legacy_config.base import ConfigBase
+    from app.models.config import GlobalConfig
 
-    with patch.object(
-        ConfigBase, "get", side_effect=AssertionError("描述端点不得读取配置")
-    ):
+    secret = "synthetic-notification-credential"
+    setting = GlobalConfig.model_validate({"Notify": {"AuthorizationCode": secret}})
+    with patch.object(Config, "setting", setting):
         result = _run(endpoint())
 
     assert result.code == 200
+    assert secret not in result.model_dump_json()
     assert len(result.channels) == 8
     assert [channel.key for channel in result.channels][0] == "system"
     assert result.channels[-1].kind == "policy"

@@ -217,10 +217,11 @@ def test_mark_injected_updates_marker_only_for_own_script(tmp_path: Path) -> Non
     assert state.injected == _utils_io.dir_fingerprint(live)
 
     # 归属不符: 不改写
+    marker = snapshot.with_name(snapshot.name + ".ready.json")
+    recorded = marker.read_bytes()
+    (live / "mxu-MaaEnd.json").write_text("changed", encoding="utf-8")
     _utils_io.mark_native_config_injected(snapshot, live, script_id="other")
-    state = _utils_io.read_native_config_snapshot(snapshot)
-    assert state is not None
-    assert state.script_id == "script-1"
+    assert marker.read_bytes() == recorded
 
     # 无快照: 空操作不报错
     _utils_io.mark_native_config_injected(tmp_path / "no-snapshot", live, script_id="s")

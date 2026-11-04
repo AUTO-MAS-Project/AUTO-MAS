@@ -22,7 +22,6 @@ class BaseSourceValidatorTest(unittest.TestCase):
 
         for base in ("shared", "independent", "native"):
             self.assertEqual(adapter.validate_python(base), base)
-            self.assertEqual(adapter.validate_python(base), base)
 
     def test_legacy_values_normalize_to_bases(self) -> None:
         """旧版「脚本/用户/直控」与「简洁/详细/自定义」在父类校验前归一。"""

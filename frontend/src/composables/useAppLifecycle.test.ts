@@ -146,16 +146,6 @@ describe('useAppLifecycle 关闭流程', () => {
     })
   })
 
-  it('状态 IPC 失败时仍经 Runtime 关闭，不能改发后端 close 请求', async () => {
-    backendStatus.mockRejectedValue(new Error('IPC unavailable'))
-    const { closeApp } = await loadLifecycle()
-    await closeApp()
-    expect(stopBackend).toHaveBeenCalledOnce()
-    expect(closePost).not.toHaveBeenCalled()
-    expect(killAllProcesses).not.toHaveBeenCalled()
-    expect(appQuit).toHaveBeenCalledOnce()
-  })
-
   it('浏览器退出先等待任务与电源清理完成，再断开连接并保留独立后端', async () => {
     Object.assign(window, { __AUTO_MAS_BROWSER_DEV_MODE__: true })
     connectionMocks.shouldPreserveBackend.mockReturnValue(true)

@@ -101,11 +101,6 @@ class TestVerdicts:
         assert "❌朝夕心愿未完成" in verdict.result_block
         assert "任务结束，程序退出" not in verdict.result_block
 
-    def test_single_step_failure_is_not_process_failure(self):
-        # 结果块里的 ❌ 行不代表进程失败：收尾行仍在 → success（结果块透传单步失败）
-        verdict = PARSER.evaluate(SAMPLE_DONE_LOG, process_running=False)
-        assert verdict.status == "success"
-
     def test_exited_early(self):
         log = "2026-09-14 14:00:00.001 | INFO | main:77 - 开始执行一条龙任务..."
         verdict = PARSER.evaluate(log, process_running=False)

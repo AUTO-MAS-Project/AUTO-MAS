@@ -79,6 +79,9 @@ class ConfigBaseLifecycleTest(ConfigBaseTestCase):
         self.assertTrue(self.config.get("Info", "Enabled"))
         self.assertEqual(self.config.get("Info", "Name"), "已有配置")
         self.assertEqual(self.config.get("Info", "RetryCount"), 2)
+        self.assertEqual(
+            list(self.config_path.parent.glob("Config.json.corrupt-*")), []
+        )
 
     async def test_connect_rejects_non_json_path(self) -> None:
         with self.assertRaisesRegex(ValueError, "必须是扩展名为 '.json'"):

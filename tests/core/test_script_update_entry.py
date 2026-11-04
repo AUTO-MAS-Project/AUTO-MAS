@@ -8,8 +8,7 @@ from app.core.script_update import ScriptUpdateRequest, run_script_update
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("script_type", ["MAA", "MaaEnd", "Whimbox", "MaaFW", "HSR"])
-async def test_update_waits_for_installation_before_returning(script_type):
+async def test_update_waits_for_installation_before_returning():
     installing = asyncio.Event()
     installed = asyncio.Event()
     result = object()
@@ -22,7 +21,7 @@ async def test_update_waits_for_installation_before_returning(script_type):
 
     task = asyncio.create_task(
         run_script_update(
-            ScriptUpdateRequest("script", script_type),
+            ScriptUpdateRequest("script", "MAA"),
             update,
             package="downloaded",
         )

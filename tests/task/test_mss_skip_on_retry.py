@@ -77,9 +77,3 @@ def test_duplicate_named_defense_keeps_existing_rerun_policy() -> None:
     # 同名两份分不清完成的是哪份：沿用引擎的保守策略，全部重跑
     assert result is plan
     assert set(runner._retry_rerun_duplicates) == {"灾变防线"}
-
-
-def test_mss_declares_defense_entry() -> None:
-    """直接钉住声明本身：删掉这一条时上面的用例也会红，这里给出更直白的原因。"""
-
-    assert DEFENSE_ENTRY in MSSFlavor.skip_on_retry_entries

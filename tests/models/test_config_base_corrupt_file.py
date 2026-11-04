@@ -1,7 +1,6 @@
 """配置文件损坏时保留 .corrupt-* 副本后按默认值加载; save 串行落盘且顺序与调用顺序一致。"""
 
 import asyncio
-import json
 import time
 import unittest
 from pathlib import Path
@@ -65,17 +64,6 @@ class CorruptConfigFileTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(self._corrupt_copies()), 1)
         self.assertEqual(len(config), 0)
-
-    async def test_valid_json_still_loads_normally(self) -> None:
-        self.config_path.write_text(
-            json.dumps({"Info": {"Enabled": True}}), encoding="utf-8"
-        )
-        config = SampleConfig()
-
-        await config.connect(self.config_path)
-
-        self.assertEqual(self._corrupt_copies(), [])
-        self.assertTrue(config.get("Info", "Enabled"))
 
 
 class SerializedSaveTest(unittest.IsolatedAsyncioTestCase):

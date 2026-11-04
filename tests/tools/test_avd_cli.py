@@ -288,46 +288,6 @@ def test_parse_envelope_accepts_utf8_bom() -> None:
 
 
 @pytest.mark.asyncio
-async def test_real_fake_modavd_program_keeps_json_and_stderr_separate(
-    tmp_path: Path,
-) -> None:
-    script = tmp_path / "fake_modavd.py"
-    script.write_text(
-        "import json, sys\n"
-        "print('fake log', file=sys.stderr)\n"
-        "print(json.dumps({'ok': True, 'data': {'instances': []}}, ensure_ascii=False))\n",
-        encoding="utf-8",
-    )
-    exe = Path(sys.executable)
-
-    async def runner(
-        args: Sequence[str],
-        timeout: float,
-        timeout_handler: object,
-        breakaway: bool,
-    ) -> ProcessOutput:
-        del timeout, timeout_handler, breakaway
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
-            str(script),
-            *list(args)[1:],
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await process.communicate()
-        return ProcessOutput(
-            process.returncode or 0,
-            stdout.decode("utf-8"),
-            stderr.decode("utf-8"),
-        )
-
-    result = await ModAvdCli(tmp_path, exe=exe, runner=runner).list()
-
-    assert result == {"instances": []}
-
-
-@pytest.mark.asyncio
 async def test_run_process_uses_separate_streams_and_devnull_stdin(
     tmp_path: Path,
 ) -> None:

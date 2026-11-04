@@ -196,9 +196,16 @@ async def test_authenticated_proxy_uses_httpx_without_cli_credentials(
     monkeypatch.chdir(tmp_path)
     proxy = httpx.Proxy("http://user:password@127.0.0.1:7890")
     builtin = AsyncMock(return_value=42)
-    server, local = AsyncMock(), AsyncMock()
-    monkeypatch.setattr(transport, "_httpx_download", builtin)
-    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda path, **kwargs: None)
+    record = cli.FluxdownDownloadRecord(status="success")
+    server = AsyncMock(return_value=(42, record))
+    local = AsyncMock(return_value=(42, record))
+    monkeypatch.setattr(
+        cli, "fluxdown_find_cli", lambda path, **kwargs: tmp_path / "fluxdown.exe"
+    )
+    monkeypatch.setattr(cli, "fluxdown_server_available", lambda path, enabled: True)
+    monkeypatch.setattr(
+        cli, "fluxdown_server_task_safe_to_overwrite", lambda *args, **kwargs: True
+    )
     monkeypatch.setattr(cli, "fluxdown_server_download", server)
     monkeypatch.setattr(cli, "fluxdown_download", local)
     assert (
@@ -208,10 +215,17 @@ async def test_authenticated_proxy_uses_httpx_without_cli_credentials(
             timeout=30,
             proxy=proxy,
             options=transport.FluxdownOptions("fluxdown", "GitHub", "", 8, True),
+            http_download=builtin,
         )
         == 42
     )
-    assert builtin.call_args.kwargs["proxy"] is proxy
+    builtin.assert_awaited_once_with(
+        "https://example.invalid",
+        tmp_path / "package",
+        timeout=30,
+        proxy=proxy,
+        progress=None,
+    )
     server.assert_not_called()
     local.assert_not_called()
 
