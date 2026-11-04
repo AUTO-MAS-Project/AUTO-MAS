@@ -25,8 +25,7 @@ yarn audit:i18n --check
 `audit:i18n --check` 拒绝缺译、占位符差异、源码引用不存在的词条和用户界面硬编码中文。
 死词条和疑似动态引用只输出报告，不作为失败条件。
 
-未使用符号、重复文本和 Markdown 写法不再设独立扫描入口。测试与 lint 的逐项清理依据见
-[检查清理记录](../docs/testing/check-audit.md)。
+未使用符号、重复文本和 Markdown 写法不再设独立扫描入口。
 
 ## 验证
 

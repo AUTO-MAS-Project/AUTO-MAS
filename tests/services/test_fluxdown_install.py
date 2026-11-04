@@ -194,32 +194,6 @@ async def test_bounded_download(tmp_path, monkeypatch, headers):
     assert not destination.exists() or destination.stat().st_size <= 10
 
 
-@pytest.mark.asyncio
-async def test_download_install_exclusion(monkeypatch):
-    started, finish = asyncio.Event(), asyncio.Event()
-
-    @cli._using_fluxdown
-    async def download():
-        started.set()
-        await finish.wait()
-
-    task = asyncio.create_task(download())
-    await started.wait()
-    shutdown = AsyncMock()
-    monkeypatch.setattr(cli, "fluxdown_server_shutdown", shutdown)
-    with pytest.raises(RuntimeError):
-        with cli.fluxdown_install_guard():
-            pytest.fail("must not install during download")
-    shutdown.assert_not_called()
-    finish.set()
-    await task
-    monkeypatch.setattr(cli, "fluxdown_server_shutdown", lambda: None)
-    with cli.fluxdown_install_guard():
-        with pytest.raises(RuntimeError):
-            await download()
-    assert cli._active_downloads == 0
-
-
 def test_foreign_agent_not_killed(monkeypatch):
     monkeypatch.setattr(cli._server, "handle", object())
     monkeypatch.setattr(cli._server, "spawned_by_us", False)

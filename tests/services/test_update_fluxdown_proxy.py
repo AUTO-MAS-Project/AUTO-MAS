@@ -306,6 +306,54 @@ with open(sys.argv[1], 'r+b') as handle:
         assert await proc.wait() == 0
 
 
+@pytest.mark.asyncio
+async def test_server_download_prevents_installation_until_cancelled(
+    tmp_path, monkeypatch
+):
+    import asyncio
+
+    started = asyncio.Event()
+
+    async def download(*args, **kwargs):
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(cli, "_server_data_dir", lambda path: tmp_path)
+    monkeypatch.setattr(cli, "_fluxdown_server_download", download)
+    shutdown = AsyncMock()
+    monkeypatch.setattr(cli, "fluxdown_server_shutdown", shutdown)
+    task = asyncio.create_task(
+        cli.fluxdown_server_download(
+            "https://example.test/update.zip",
+            tmp_path / "update.zip",
+            cli_exe=tmp_path / "fluxdown.exe",
+        )
+    )
+    try:
+        await asyncio.wait_for(started.wait(), timeout=1)
+        with pytest.raises(RuntimeError):
+            with cli.fluxdown_install_guard():
+                pytest.fail("installation must not interrupt the active download")
+        shutdown.assert_not_called()
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert cli._active_downloads == 0
+    async with cli.fluxdown_destination_lock(
+        tmp_path / "fluxdown.exe", tmp_path / "update.zip"
+    ):
+        pass
+    monkeypatch.setattr(cli, "fluxdown_server_shutdown", lambda: None)
+    with cli.fluxdown_install_guard():
+        with pytest.raises(RuntimeError, match="正在安装"):
+            await cli.fluxdown_server_download(
+                "https://example.test/update.zip",
+                tmp_path / "update.zip",
+                cli_exe=tmp_path / "fluxdown.exe",
+            )
+
+
 def test_other_url_same_target_requires_stopped_writer(tmp_path, monkeypatch):
     exe = tmp_path / "fluxdown.exe"
     target = tmp_path / "package.zip"
