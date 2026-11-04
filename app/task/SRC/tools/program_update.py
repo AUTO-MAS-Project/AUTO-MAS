@@ -173,6 +173,7 @@ async def prepare_update(root: Path) -> PreparedUpdate | None:
 
 def remove_cached_git_objects(objects: Path) -> None:
     """Windows Git 对象通常只读；成功安装后的缓存清理不能使安装失败。"""
+
     def make_writable(func, path, exc):
         try:
             Path(path).chmod(Path(path).stat().st_mode | stat.S_IWRITE)

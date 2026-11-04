@@ -144,7 +144,6 @@ async def test_cancelled_write_waits_until_process_finishes(tmp_path, monkeypatc
         await operation
 
 
-
 def test_cached_git_objects_windows_readonly_cleanup(tmp_path):
     import stat
 
@@ -169,15 +168,20 @@ def test_independent_user_deploy_restores_only_injected_update_fields(tmp_path):
     (src_config / "src.json").write_text('{"Alas":{}}')
     (user / "src.json").write_text('{"Alas":{}}')
     (src_config / "deploy.yaml").write_text(
-        "AutoUpdate: false\\nEnableReload: false\\nAppAsarUpdate: false\\nBranch: dev\\n".replace("\\\\n", "\\n")
+        "AutoUpdate: false\\nEnableReload: false\\n"
+        "AppAsarUpdate: false\\nBranch: dev\\n"
     )
     (user / "deploy.yaml").write_text(
-        "AutoUpdate: true\\nEnableReload: true\\nAppAsarUpdate: true\\nBranch: main\\n".replace("\\\\n", "\\n")
+        "AutoUpdate: true\\nEnableReload: true\\n"
+        "AppAsarUpdate: true\\nBranch: main\\n"
     )
     save_src_user_config(
-        src_config, user,
+        src_config,
+        user,
         runtime_deploy_baseline={
-            "AutoUpdate": False, "EnableReload": False, "AppAsarUpdate": False
+            "AutoUpdate": False,
+            "EnableReload": False,
+            "AppAsarUpdate": False,
         },
     )
     result = (user / "deploy.yaml").read_text()
