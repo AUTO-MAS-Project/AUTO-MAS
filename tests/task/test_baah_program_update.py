@@ -1,6 +1,8 @@
 """BAAH 下载/安装分离及配置保护；网络与真实程序进程在边界隔离。"""
 
 import hashlib
+import uuid
+from contextlib import ExitStack
 import json
 import shutil
 import zipfile
@@ -12,6 +14,7 @@ from packaging.version import Version
 
 from app.services import script_install
 from app.task.BAAH.tools import program_update as update
+from app.task.BAAH import manager
 
 
 def pe(extra=b""):
@@ -59,7 +62,7 @@ def installation(tmp_path, monkeypatch):
             setting=SimpleNamespace(Update=SimpleNamespace(MirrorChyanCDK="")),
         ),
     )
-    monkeypatch.setattr(update, "assert_idle", lambda root: None)
+    monkeypatch.setattr(update, "assert_idle", lambda root, **kwargs: None)
     monkeypatch.setattr(update, "request_release", AsyncMock(return_value=release))
 
     async def download(url, destination, **kwargs):
@@ -138,3 +141,84 @@ async def test_download_cancellation_cannot_modify_installation(installation):
     with pytest.raises(asyncio.CancelledError):
         await update.prepare_update(root, config)
     assert (root / "BAAH.exe").read_bytes() == pe()
+
+
+
+@pytest.mark.asyncio
+async def test_existing_install_allows_toolkit_adb_but_update_remains_strict(
+    installation, monkeypatch
+):
+    root, _, _, _ = installation
+    adb = root / "tools" / "adb" / "adb.exe"
+    adb.parent.mkdir(parents=True)
+    adb.write_bytes(pe())
+    monkeypatch.setattr(
+        update.psutil,
+        "process_iter",
+        lambda fields: [SimpleNamespace(info={"exe": str(adb), "name": "adb.exe"})],
+    )
+    # Confirming an unchanged installation must not fail because adb server persists.
+    await update.confirm_current_install(root)
+    # Replacing the installation directory must still refuse an open adb binary.
+    with pytest.raises(script_install.InstallUnsafeError):
+        await update.apply_update(
+            root,
+            update.PreparedUpdate(
+                root.resolve(),
+                update.exe_digest(root),
+                Version("2.5.7"),
+                root / "missing.zip",
+                1,
+                "0" * 64,
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_install_lock_conflict_never_marks_unrun_task_complete(
+    installation, monkeypatch
+):
+    root, config, _, _ = installation
+    instance = object.__new__(manager.BAAHManager)
+    instance._install_access = ExitStack()
+    instance.check_result = "Pass"
+    instance.script_config = SimpleNamespace(
+        Script=SimpleNamespace(BAAHPath=root / "BAAH.exe"),
+        Update=config.Update,
+        uid=uuid.uuid4(),
+    )
+    instance.script_info = SimpleNamespace(status="等待", user_list=[])
+    instance.config_locks = {}
+    instance.task_info = SimpleNamespace(mode="AutoProxy")
+    monkeypatch.setattr(manager.Publisher, "send", AsyncMock())
+    with script_install.installation_access(root):
+        with pytest.raises(script_install.InstallUnsafeError) as raised:
+            await instance._prepare_program_update()
+    await instance.on_crash(raised.value)
+    await instance.final_task()
+    assert instance.script_info.status == "异常"
+    assert instance.check_result != "Pass"
+
+
+@pytest.mark.asyncio
+async def test_missing_baah_path_requires_recovery_record(installation, monkeypatch):
+    root, _, _, _ = installation
+    import uuid
+
+    path = root / "missing.exe"
+    config = SimpleNamespace(
+        Script=SimpleNamespace(BAAHPath=path),
+        Emulator=SimpleNamespace(Id="emulator", Index="0"),
+    )
+    fake = object.__new__(manager.BAAHManager)
+    fake.task_info = SimpleNamespace(mode="AutoProxy")
+    fake.script_info = SimpleNamespace(script_id=str(uuid.uuid4()))
+    monkeypatch.setattr(
+        manager.Config, "ScriptConfig", {uuid.UUID(fake.script_info.script_id): config}
+    )
+    result = await fake.check()
+    assert "不存在" in result
+    journal = script_install.workspace(root) / "transaction.json"
+    journal.parent.mkdir(parents=True, exist_ok=True)
+    journal.write_text("{}")
+    assert await fake.check() == "Pass"

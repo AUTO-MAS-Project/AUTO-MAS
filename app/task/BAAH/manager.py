@@ -93,8 +93,16 @@ class BAAHManager(ScriptManagerBase):
             return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
 
         ## 程序目录、配置目录与日志目录都由 BAAHPath 派生，只需校验它
-        if not str(script_config.Script.BAAHPath or "").strip():
+        path = script_config.Script.BAAHPath
+        if path is None:
             return "未填写 BAAH 主程序路径, 请检查脚本配置中的主程序路径设置！"
+        if not path.is_file():
+            directory = script_install.workspace(path.parent)
+            if not (
+                (directory / "transaction.json").exists()
+                or (directory / "previous").exists()
+            ):
+                return "BAAH 主程序不存在，且没有可信的中断安装记录，请检查安装路径"
 
         return "Pass"
 
@@ -124,8 +132,8 @@ class BAAHManager(ScriptManagerBase):
 
     async def _prepare_program_update(self) -> None:
         root = self.script_config.Script.BAAHPath.parent
-        self._install_access.enter_context(script_install.installation_access(root))
         self.check_result = "BAAH 更新准备未完成"
+        self._install_access.enter_context(script_install.installation_access(root))
         if self.script_config.Update.TakeoverEnabled:
 
             async def progress(downloaded: int, total: int, speed: float) -> None:
@@ -249,7 +257,13 @@ class BAAHManager(ScriptManagerBase):
                         ),
                     )
 
-            self.script_info.status = "完成"
+            # 安装准备/用户执行异常不可被常规收尾覆盖成“完成”。
+            if self.script_info.status == "异常" or any(
+                user.status == "异常" for user in self.script_info.user_list
+            ):
+                self.script_info.status = "异常"
+            else:
+                self.script_info.status = "完成"
         finally:
             self._install_access.close()
             script_config = getattr(self, "script_config", None)

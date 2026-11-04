@@ -55,7 +55,9 @@ def read_version(root: Path) -> Version:
     return Version(str(state["NOWVERSION"]).removeprefix("BAAH").strip())
 
 
-def assert_idle(root: Path) -> None:
+def assert_idle(root: Path, *, allow_background_adb: bool = False) -> None:
+    """切换目录必须完全空闲；只确认旧安装可启动时允许内置 ADB server。"""
+    root = root.resolve()
     for process in psutil.process_iter(["exe", "name"]):
         try:
             exe = process.info["exe"]
@@ -64,7 +66,14 @@ def assert_idle(root: Path) -> None:
                 raise script_install.InstallUnsafeError(
                     "无法确认 BAAH 更新器已退出，请以管理员身份重试"
                 )
-            if exe and Path(exe).resolve().is_relative_to(root.resolve()):
+            if exe and Path(exe).resolve().is_relative_to(root):
+                candidate = Path(exe).resolve()
+                if (
+                    allow_background_adb
+                    and candidate.name.casefold() == "adb.exe"
+                    and candidate.is_relative_to(root / "tools" / "adb")
+                ):
+                    continue
                 raise script_install.InstallUnsafeError(
                     "BAAH 或其更新器仍在运行，请退出后重试"
                 )
@@ -77,7 +86,7 @@ def assert_idle(root: Path) -> None:
 
 
 async def confirm_current_install(root: Path) -> None:
-    await asyncio.to_thread(assert_idle, root)
+    await asyncio.to_thread(assert_idle, root, allow_background_adb=True)
     if (script_install.workspace(root) / "transaction.json").exists():
         raise script_install.InstallUnsafeError("BAAH 安装尚未确认，请开启更新托管修复")
     if script_install.read_pe_architecture(root / "BAAH.exe") != "x86_64":
