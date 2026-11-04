@@ -163,6 +163,7 @@ async def prepare_cn_objects(root: Path, git: str, objects: Path, base: str) -> 
     alternate.parent.mkdir(parents=True, exist_ok=True)
     alternate.write_text(str((root / ".git" / "objects").resolve()) + "\n")
     archive = objects.parent / f"{objects.name}.zip"
+    download_finished = False
     try:
         from app.core.script_update import download_script_package
 
@@ -173,12 +174,15 @@ async def prepare_cn_objects(root: Path, git: str, objects: Path, base: str) -> 
             timeout=30 * 60,
             proxy=getattr(Config, "proxy", None),
         )
+        download_finished = True
         pack = await asyncio.to_thread(unpack_cn_git_pack, archive, objects, target)
         await command(git, "index-pack", str(pack), cwd=objects)
         await command(git, "cat-file", "-e", f"{target}^{{commit}}", cwd=objects)
         return target
     finally:
-        archive.unlink(missing_ok=True)
+        # FluxDown 未确认取消时可能仍在写目标 ZIP，不能提前移除文件。
+        if download_finished:
+            archive.unlink(missing_ok=True)
 
 
 async def prepare_update(root: Path) -> PreparedUpdate | None:
