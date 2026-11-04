@@ -80,7 +80,11 @@ def assert_no_active_installer(root: Path) -> None:
         try:
             executable = process.info.get("exe")
             name = str(process.info.get("name") or "").casefold()
-            if not (name.startswith("bettergi.install.") or name == "bettergi.update.exe"):
+            if executable and not name:
+                name = Path(executable).name.casefold()
+            if not (
+                name.startswith("bettergi.install.") or name == "bettergi.update.exe"
+            ):
                 continue
             if executable and not any(
                 Path(executable).resolve().is_relative_to(path.resolve())
@@ -270,7 +274,7 @@ async def update_before_run(
         mirror_data = payload.get("data", {})
         mirror_version = str(mirror_data.get("version_name", ""))
         if not re.fullmatch(
-            r"v?\\d+\\.\\d+\\.\\d+-(?:alpha|beta|rc)\\.\\d+",
+            r"v?\d+\.\d+\.\d+-(?:alpha|beta|rc)\.\d+",
             mirror_version,
             flags=re.IGNORECASE,
         ):

@@ -410,13 +410,21 @@ async def test_game_update_allows_running_bgi_but_refuses_native_installer(
     installation, monkeypatch
 ):
     root, _, _ = installation
-    processes = [SimpleNamespace(info={"exe": str(root / "BetterGI.exe"), "name": "BetterGI.exe"})]
+    processes = [
+        SimpleNamespace(
+            info={"exe": str(root / "BetterGI.exe"), "name": "BetterGI.exe"}
+        )
+    ]
     monkeypatch.setattr(update.psutil, "process_iter", lambda fields: processes)
     await update.confirm_safe_game_update(root)
     processes.append(
         SimpleNamespace(
             info={
-                "exe": str(script_install.workspace(root) / "download-1" / "BetterGI.Install.0.66.exe"),
+                "exe": str(
+                    script_install.workspace(root)
+                    / "download-1"
+                    / "BetterGI.Install.0.66.exe"
+                ),
                 "name": "BetterGI.Install.0.66.exe",
             }
         )
@@ -432,7 +440,9 @@ async def test_game_update_allows_running_bgi_but_refuses_native_installer(
 
 
 @pytest.mark.asyncio
-async def test_beta_mirror_alpha_without_github_prerelease(installation, monkeypatch, tmp_path):
+async def test_beta_mirror_alpha_without_github_prerelease(
+    installation, monkeypatch, tmp_path
+):
     root, config, _ = installation
     config.Update.Channel = "beta"
     config.Update.MirrorChyanCDK = "test-cdk"
@@ -441,7 +451,9 @@ async def test_beta_mirror_alpha_without_github_prerelease(installation, monkeyp
     monkeypatch.setattr(
         update,
         "request_release",
-        AsyncMock(side_effect=AssertionError("beta must not depend on GitHub Releases")),
+        AsyncMock(
+            side_effect=AssertionError("beta must not depend on GitHub Releases")
+        ),
     )
     archive = tmp_path / "alpha.zip"
     with zipfile.ZipFile(archive, "w") as package:
@@ -472,4 +484,6 @@ async def test_beta_mirror_alpha_without_github_prerelease(installation, monkeyp
     update.run_installer.side_effect = install
     assert "已更新" in await update.update_before_run(root, config)
     update.request_release.assert_not_awaited()
-    assert update.request_mirror_resource.await_args.kwargs["params"]["channel"] == "alpha"
+    assert (
+        update.request_mirror_resource.await_args.kwargs["params"]["channel"] == "alpha"
+    )
