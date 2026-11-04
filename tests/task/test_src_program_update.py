@@ -142,3 +142,57 @@ async def test_cancelled_write_waits_until_process_finishes(tmp_path, monkeypatc
     finished.set()
     with pytest.raises(asyncio.CancelledError):
         await operation
+
+
+
+def test_cached_git_objects_windows_readonly_cleanup(tmp_path):
+    import stat
+
+    cache = tmp_path / "objects"
+    nested = cache / "pack"
+    nested.mkdir(parents=True)
+    child = nested / "object"
+    child.write_text("git object")
+    child.chmod(stat.S_IREAD)
+    update.remove_cached_git_objects(cache)
+    assert not cache.exists()
+
+
+def test_independent_user_deploy_restores_only_injected_update_fields(tmp_path):
+    from app.task.SRC.tools.config import save_src_user_config
+
+    root = tmp_path / "SRC"
+    src_config = root / "config"
+    src_config.mkdir(parents=True)
+    user = tmp_path / "independent"
+    user.mkdir()
+    (src_config / "src.json").write_text('{"Alas":{}}')
+    (user / "src.json").write_text('{"Alas":{}}')
+    (src_config / "deploy.yaml").write_text(
+        "AutoUpdate: false\\nEnableReload: false\\nAppAsarUpdate: false\\nBranch: dev\\n".replace("\\\\n", "\\n")
+    )
+    (user / "deploy.yaml").write_text(
+        "AutoUpdate: true\\nEnableReload: true\\nAppAsarUpdate: true\\nBranch: main\\n".replace("\\\\n", "\\n")
+    )
+    save_src_user_config(
+        src_config, user,
+        runtime_deploy_baseline={
+            "AutoUpdate": False, "EnableReload": False, "AppAsarUpdate": False
+        },
+    )
+    result = (user / "deploy.yaml").read_text()
+    assert "AutoUpdate: true" in result
+    assert "EnableReload: true" in result
+    assert "AppAsarUpdate: true" in result
+    assert "Branch: dev" in result
+
+
+def test_src_launch_gate_refuses_unconfirmed_install(tmp_path, monkeypatch):
+    root = tmp_path / "SRC"
+    (root / "config").mkdir(parents=True)
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("{}")
+    monkeypatch.setattr(update, "assert_idle", lambda root, **kwargs: None)
+    with pytest.raises(script_install.InstallUnsafeError):
+        update.assert_safe_to_launch(root)

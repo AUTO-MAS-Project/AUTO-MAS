@@ -117,6 +117,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         self.process_cleanup_success = True
         self.prepared = False
         self._src_injected_config: dict | None = None
+        self._src_injected_deploy: dict | None = None
         # 配置来源三态与独立的快速配置开关：来源决定是否下发 MAS 托管配置，
         # 快速配置决定是否把面板值写进 SRC 原生配置（两段互不替代）。
         self.config_base, self.native_base = resolve_config_base(
@@ -378,6 +379,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                     / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
                     expected_installation_id=self.src_installation_id,
                     runtime_baseline=self._src_injected_config,
+                    runtime_deploy_baseline=self._src_injected_deploy,
                 )
                 logger.success("SRC 脚本配置文件已更新")
 
@@ -570,10 +572,14 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         deploy_set = poor_yaml_read(staging_path / "deploy.yaml")
 
         # 运行期更新覆盖与 Run 一同处于现有配置快照范围，最终恢复原生配置。
+        self._src_injected_deploy = None
         if self.script_config.Update.TakeoverEnabled:
-            deploy_set["AutoUpdate"] = False
-            deploy_set["EnableReload"] = False
-            deploy_set["AppAsarUpdate"] = False
+            self._src_injected_deploy = {
+                key: False
+                for key in ("AutoUpdate", "EnableReload", "AppAsarUpdate")
+                if key in deploy_set
+            }
+            deploy_set.update(self._src_injected_deploy)
 
         # 直接运行任务
         deploy_set["Run"] = ["src"]

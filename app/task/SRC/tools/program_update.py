@@ -5,7 +5,9 @@
 import asyncio
 import re
 import shutil
+import stat
 import tempfile
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -31,7 +33,8 @@ class PreparedUpdate:
     python: Path
 
 
-def assert_idle(root: Path) -> None:
+def assert_idle(root: Path, *, allow_background_adb: bool = False) -> None:
+    root = root.resolve()
     for process in psutil.process_iter(["exe", "name"]):
         try:
             exe = process.info["exe"]
@@ -39,7 +42,10 @@ def assert_idle(root: Path) -> None:
                 raise script_install.InstallUnsafeError(
                     "无法确认 SRC 已退出，请以管理员身份重试"
                 )
-            if exe and Path(exe).resolve().is_relative_to(root.resolve()):
+            if exe and Path(exe).resolve().is_relative_to(root):
+                candidate = Path(exe).resolve()
+                if allow_background_adb and candidate.name.casefold() == "adb.exe":
+                    continue
                 raise script_install.InstallUnsafeError(
                     "SRC 或其子程序仍在运行，请退出后重试"
                 )
@@ -165,11 +171,36 @@ async def prepare_update(root: Path) -> PreparedUpdate | None:
     )
 
 
+def remove_cached_git_objects(objects: Path) -> None:
+    """Windows Git 对象通常只读；成功安装后的缓存清理不能使安装失败。"""
+    def make_writable(func, path, exc):
+        try:
+            Path(path).chmod(Path(path).stat().st_mode | stat.S_IWRITE)
+            func(path)
+        except OSError:
+            raise exc[1]
+
+    try:
+        shutil.rmtree(objects, onerror=make_writable)
+    except OSError as error:
+        warnings.warn(f"SRC 已安装成功，但无法清理 Git 预下载缓存 {objects}: {error}")
+
+
+def assert_safe_to_launch(root: Path) -> None:
+    """不触网的统一启动门禁；运行前先恢复临时部署设置。"""
+    recover_deploy(root)
+    marker = script_install.workspace(root) / "src-install.json"
+    if marker.exists():
+        raise script_install.InstallUnsafeError(
+            "SRC 上次更新尚未确认，禁止启动原生界面或自动代理"
+        )
+
+
 def recover_deploy(root: Path) -> None:
     journal = script_install.workspace(root) / "src-deploy.json"
     if not journal.exists():
         return
-    assert_idle(root)
+    assert_idle(root, allow_background_adb=True)
     state = io_utils.read_dict_file(journal)
     if state["root"] != str(root.resolve()):
         raise script_install.InstallUnsafeError(
@@ -186,7 +217,7 @@ def recover_deploy(root: Path) -> None:
 
 
 async def confirm_current_install(root: Path) -> None:
-    await asyncio.to_thread(assert_idle, root)
+    await asyncio.to_thread(assert_idle, root, allow_background_adb=True)
     if (script_install.workspace(root) / "src-install.json").exists():
         raise script_install.InstallUnsafeError(
             "SRC 上次代码或依赖安装未确认，请开启更新托管重试或手动修复"
@@ -266,7 +297,7 @@ async def apply_update(root: Path, prepared: PreparedUpdate) -> None:
     finally:
         # 原生安装器已退出后撤销临时部署设置，失败标记不随配置恢复被删除。
         recover_deploy(root)
-    shutil.rmtree(prepared.objects)
+    remove_cached_git_objects(prepared.objects)
 
 
 async def update_before_run(root: Path) -> str:

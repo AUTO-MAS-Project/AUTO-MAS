@@ -833,6 +833,8 @@ class SrcManager(ScriptManagerBase):
 
         if self.task_info.mode == "AutoProxy":
             await self._cleanup_current_src_root()
+        if self.task_info.mode != "AutoProxy":
+            program_update.assert_safe_to_launch(self.src_root_path)
         await self._prepare_program_update()
         await self.prepare()
 
