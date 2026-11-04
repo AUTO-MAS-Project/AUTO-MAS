@@ -1,7 +1,7 @@
 """启动器更新不能被普通启动超时中止，也不能无限续时。"""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -50,6 +50,12 @@ def launch(tmp_path, monkeypatch):
                 f"2026-11-04 INFO pyappify_lib::emitter: INFO [ok-ww]: {message}\n"
             )
 
+    def emit_to(name, message):
+        with (log.parent / name).open("a", encoding="utf-8") as file:
+            file.write(
+                f"2026-11-04 INFO pyappify_lib::emitter: INFO [ok-ww]: {message}\n"
+            )
+
     async def run():
         await startup.start_okww(
             manager, tmp_path / "ok-ww.exe", [], target=object(), on_log=AsyncMock()
@@ -59,6 +65,7 @@ def launch(tmp_path, monkeypatch):
         run=run,
         schedule=schedule,
         emit=emit,
+        emit_to=emit_to,
         found=found,
         clock=clock,
         manager=manager,
@@ -145,6 +152,36 @@ async def test_quiet_download_past_repeat_window_survives(launch):
     )
     await launch.run()
     assert launch.clock.now >= 400
+
+
+@pytest.mark.asyncio
+async def test_single_repeat_then_silence_survives(launch):
+    # 下载重试打印一次旧进展后转入静默下载是真实路径：单次重复不应让刷屏
+    # 判定永久武装，静默窗口须继续生效。
+    launch.schedule.extend(
+        [
+            (30, lambda: launch.emit("Downloading large-package")),
+            (40, lambda: launch.emit("Downloading large-package")),
+            (400, launch.found.set),
+        ]
+    )
+    await launch.run()
+    assert launch.clock.now >= 400
+
+
+@pytest.mark.asyncio
+async def test_utc_dated_log_file_is_picked_up(launch):
+    # 上游按 UTC 日期滚动命名日志；北京时间凌晨 UTC 当日即本地昨天，启动前
+    # 该文件不存在时启动后新建的文件也必须被发现，否则进展漏读、60 秒误判。
+    utc_name = (datetime.now() - timedelta(days=1)).strftime("app.%Y-%m-%d")
+    launch.schedule.extend(
+        [
+            (30, lambda: launch.emit_to(utc_name, "Downloading utc-package")),
+            (100, launch.found.set),
+        ]
+    )
+    await launch.run()
+    assert launch.clock.now >= 100
 
 
 @pytest.mark.asyncio

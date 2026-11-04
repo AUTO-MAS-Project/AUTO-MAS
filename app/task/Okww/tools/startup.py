@@ -1,10 +1,10 @@
 """等待 OK-WW 启动器完成自更新，再接管工作进程。"""
 
 import asyncio
+import re
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from datetime import datetime
 from pathlib import Path
 
 from app.utils import ProcessInfo, ProcessManager
@@ -18,8 +18,14 @@ _UPDATE_STALL_TIMEOUT = 900.0
 # 重复进展刷屏上限：依赖下载失败后重试会交替刷同一组消息，5 分钟内没有
 # 任何新消息即可判卡死，避免无限续时（总上限之外的第二道兜底）。
 _REPEAT_STALL_TIMEOUT = 300.0
+# 重试循环仍在进行时旧进展会在一分钟内再次出现；更久远的单次重复不构成
+# 持续刷屏，不得让刷屏判定在静默下载期保持武装。
+_REPEAT_ACTIVE_WINDOW = 60.0
 _TOTAL_TIMEOUT = 1800.0
 _EMITTER = "pyappify_lib::emitter: INFO [ok-ww]: "
+# 启动器日志按日滚动命名（上游按 UTC 日期）；只认日期形态的文件，排除
+# app.previous 等轮转产物——轮转补偿由 LogSource 按文件身份处理。
+_LOG_NAME = re.compile(r"app\.\d{4}-\d{2}-\d{2}")
 # 仅匹配启动器可见输出，不消费 app.json 的内部更新状态。
 _PROGRESS = (
     "Fetching updates for existing repository",
@@ -64,7 +70,7 @@ async def start_okww(
     sources: dict[Path, LogSource] = {}
     log_dir = program.parent / "logs"
     for path in log_dir.glob("app.*"):
-        if not path.is_file():
+        if not path.is_file() or not _LOG_NAME.fullmatch(path.name):
             continue
         source = LogSource(path)
         source.open()
@@ -94,12 +100,17 @@ async def start_okww(
                 return
 
             def read_logs() -> list[str]:
-                # 启动器按日建文件；跨午夜时继续读旧文件并接入新文件。
-                today = log_dir / datetime.now().strftime("app.%Y-%m-%d")
-                if today not in sources:
-                    source = LogSource(today, start_from_end=False)
+                # 启动器日志按日滚动且上游按 UTC 日期命名（本地凌晨时 UTC
+                # 当日即本地昨天），不按本地日期猜文件名；每轮扫描目录接入
+                # 新出现的日志文件。启动前已存在的文件已按当前末尾接入。
+                for path in log_dir.glob("app.*"):
+                    if path in sources or not path.is_file():
+                        continue
+                    if not _LOG_NAME.fullmatch(path.name):
+                        continue
+                    source = LogSource(path, start_from_end=False)
                     source.open()
-                    sources[today] = source
+                    sources[path] = source
                 return [
                     line for source in sources.values() for line in source.read_new()
                 ]
@@ -139,6 +150,7 @@ async def start_okww(
             if (
                 last_repeat is not None
                 and last_repeat > last_new
+                and now - last_repeat <= _REPEAT_ACTIVE_WINDOW
                 and now - last_new >= _REPEAT_STALL_TIMEOUT
             ):
                 raise RuntimeError(

@@ -59,7 +59,6 @@ export function createOkwwIssueReport(appRoot: string, zipPath: string): OkwwIss
   // 按天滚动的命名排序即日期序，取最近两天以覆盖跨午夜的自更新排查。
   for (const installation of installations) {
     const logDir = path.join(installation.rootPath, 'logs')
-    if (!fs.existsSync(logDir)) continue
     let files: string[]
     try {
       files = fs
@@ -69,6 +68,9 @@ export function createOkwwIssueReport(appRoot: string, zipPath: string): OkwwIss
         .sort()
         .slice(-2)
     } catch (error) {
+      // 目录不存在属正常状态（启动器尚未运行过）；无权限等其余读取失败
+      // 记跳过条目，避免启动器日志静默丢失。
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
       logger.debug(`读取 OK-WW 启动器日志失败: ${logDir}, ${String(error)}`)
       addSkippedEntry(
         state,
