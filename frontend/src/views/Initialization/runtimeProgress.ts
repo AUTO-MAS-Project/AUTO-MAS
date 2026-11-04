@@ -46,6 +46,13 @@ export function formatRuntimeProgress(
     return undefined
   if (progress.runtimeStage === 'repair' && progress.runtimeStatus !== 'preparing_uv')
     return undefined
+  if (progress.runtimeStage === 'dependencies.sync') {
+    // 当前 Runtime 的逐源尝试及官方回退只写在 message 中，不能从测速顺序猜来源。
+    // 没有下载详情时保留原文，避免通用译文遮住来源、回退事实或未知诊断。
+    if (progress.runtimeStatus === 'running' && !progress.item && !progress.source) return undefined
+    if (progress.runtimeStatus === 'ready_to_start')
+      return t('bootstrap.init.progress.bootstrapReady')
+  }
   if (progress.runtimeStatus === 'succeeded') return t('bootstrap.init.progress.finished')
   if (progress.runtimeStatus === 'skipped') return t('bootstrap.init.progress.skipped')
   if (!activeStatuses.has(progress.runtimeStatus)) return undefined

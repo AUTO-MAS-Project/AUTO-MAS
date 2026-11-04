@@ -8,6 +8,7 @@ import { useInitializationFlow } from '@/views/Initialization/useInitializationF
 import { InitializationService } from '../services/initializationService'
 import type { InitializationProgress } from '../services/initializationService'
 import { RuntimeInitializationService } from '../services/runtimeInitializationService'
+import type { RuntimeRunOptions, RuntimeProgressEvent } from '../services/runtime'
 import type { RuntimeBinarySyncProgress } from '../services/runtimeBinaryService'
 import { registerInitializationHandlers } from './initializationHandlers'
 
@@ -254,6 +255,143 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
         expect(last.sourceName).toBeUndefined()
         expect(last.sourceIndex).toBeUndefined()
         expect(last.sourceCount).toBeUndefined()
+      } finally {
+        finish()
+        await pending
+      }
+    }
+  )
+
+  it.each(['initialize', 'installDependencies'] as const)(
+    'keeps dependency source attempts and official fallback visible through %s',
+    async entry => {
+      let emit!: (
+        progress: Pick<RuntimeProgressEvent, 'message' | 'item' | 'source' | 'current' | 'total'>
+      ) => void
+      let ready!: () => void
+      let finish!: () => void
+      const runtime = new RuntimeInitializationService({
+        launchConfig: bridge.config,
+        mirrorService: { getMirrors: () => [] },
+        alignRuntimeBinary: async () => ({ status: 'current', target: { version: 'v0.1.99' } }),
+        createClient: () =>
+          ({
+            run: async (_command: string[], options: RuntimeRunOptions) => {
+              let sequence = 0
+              const common = () => ({
+                protocol: 1 as const,
+                operationId: 'dependency-source-test',
+                sequence: ++sequence,
+                timestamp: '2026-11-04T00:00:00Z',
+              })
+              emit = progress =>
+                options.onProgress?.({
+                  ...common(),
+                  type: 'progress',
+                  stage: 'dependencies.sync',
+                  status: 'running',
+                  ...progress,
+                })
+              ready = () =>
+                options.onState?.({
+                  ...common(),
+                  type: 'state',
+                  stage: 'dependencies.sync',
+                  status: 'ready_to_start',
+                  message: '运行环境已就绪',
+                  details: {},
+                })
+              await new Promise<void>(resolve => {
+                finish = resolve
+              })
+              throw new Error('Controlled Runtime process stopped after assertions')
+            },
+          }) as never,
+      })
+      vi.spyOn(InitializationService.prototype, 'getRuntimeService').mockReturnValue(runtime)
+      let flow!: ReturnType<typeof useInitializationFlow>
+      const app = createSSRApp({
+        setup() {
+          flow = useInitializationFlow()
+          return () => h('div')
+        },
+      })
+      app.use(i18n)
+      await renderToString(app)
+      for (const callback of bridge.mounted) await callback()
+      vi.clearAllTimers()
+      if (entry === 'installDependencies') {
+        await flow.handleBackendError('Dependency setup needs retry', {
+          code: 'DEPENDENCY_SYNC_FAILED',
+        })
+      }
+      const pending =
+        entry === 'initialize'
+          ? window.electronAPI.initialize('dev', false)
+          : window.electronAPI.installDependencies()
+      const channel = entry === 'initialize' ? 'initialization-progress' : 'dependency-progress'
+      const html = () =>
+        renderToString(
+          createSSRApp({
+            render: () =>
+              h(LaunchStatus, {
+                title: flow.statusTitle.value,
+                details: flow.statusDetails.value,
+                progress: flow.statusProgress.value,
+              }),
+          })
+        )
+      try {
+        await vi.waitFor(() => expect(emit).toBeTypeOf('function'))
+        // Runtime mirrorAttemptProgress reports these facts only in message, with
+        // no item/source. The probe ranking cannot identify the active attempt.
+        emit({ message: '正在同步锁定依赖' })
+        for (const message of [
+          '正在从镜像源 aliyun 同步锁定依赖',
+          '正在从镜像源 tsinghua 同步锁定依赖',
+          '镜像源均不可用，正在从官方源 pypi 按原锁同步依赖',
+          'Future source diagnostic: keep this intact',
+        ]) {
+          emit({ message })
+          const sent = bridge.sent.filter(event => event.channel === channel).at(-1)!
+            .payload as InitializationProgress
+          expect(sent).toMatchObject({
+            runtimeStage: 'dependencies.sync',
+            runtimeStatus: 'running',
+            message,
+          })
+          expect(sent.source).toBeUndefined()
+          expect(sent.item).toBeUndefined()
+          for (const locale of ['zh-CN', 'en-US', 'ja-JP'] as const) {
+            i18n.global.locale.value = locale
+            await nextTick()
+            expect(await html()).toContain(message)
+          }
+          expect(bridge.logs).toContainEqual(['info', '初始化流程', `[dependency] ${message}`])
+        }
+        emit({
+          message: '正在下载锁定依赖',
+          item: 'package.whl',
+          source: 'aliyun',
+          current: 1024,
+          total: 2048,
+        })
+        for (const locale of ['zh-CN', 'en-US', 'ja-JP'] as const) {
+          i18n.global.locale.value = locale
+          expect(flow.statusTitle.value).toBe(
+            i18n.global.t('bootstrap.init.progress.dependenciesSync')
+          )
+          expect(await html()).toContain('package.whl')
+          expect(await html()).toContain('aliyun')
+          expect(await html()).toContain('1 KB / 2 KB')
+        }
+        ready()
+        for (const locale of ['zh-CN', 'en-US', 'ja-JP'] as const) {
+          i18n.global.locale.value = locale
+          expect(flow.statusTitle.value).toBe(
+            i18n.global.t('bootstrap.init.progress.bootstrapReady')
+          )
+        }
       } finally {
         finish()
         await pending
