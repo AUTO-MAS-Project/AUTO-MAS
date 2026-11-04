@@ -55,7 +55,8 @@ export function createOkwwIssueReport(appRoot: string, zipPath: string): OkwwIss
   }
 
   addPerInstallationFile(state, installations, OKWW_REL_LOG_FILE, 'okww')
-  // 启动器更新发生在工作日志创建之前，每个安装单独收集最近日志。
+  // 启动器更新发生在工作日志创建之前，每个安装单独收集启动器日志；
+  // 按天滚动的命名排序即日期序，取最近两天以覆盖跨午夜的自更新排查。
   for (const installation of installations) {
     const logDir = path.join(installation.rootPath, 'logs')
     if (!fs.existsSync(logDir)) continue

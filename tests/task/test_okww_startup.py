@@ -134,6 +134,20 @@ async def test_alternating_retries_do_not_extend_stall_deadline(launch):
 
 
 @pytest.mark.asyncio
+async def test_quiet_download_past_repeat_window_survives(launch):
+    # 非 tty 下 pip 输出「Downloading 包名」一行后静默下载：大包慢速下载期
+    # 可超过 5 分钟无完整新行，不应被判为停滞而提前中止。
+    launch.schedule.extend(
+        [
+            (30, lambda: launch.emit("Downloading large-package")),
+            (400, launch.found.set),
+        ]
+    )
+    await launch.run()
+    assert launch.clock.now >= 400
+
+
+@pytest.mark.asyncio
 async def test_normal_start_returns_without_waiting_for_timeout(launch):
     launch.schedule.append((2, launch.found.set))
     await launch.run()
