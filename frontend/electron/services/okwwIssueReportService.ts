@@ -6,9 +6,11 @@ import { getLogger } from './logger'
 import {
   CollectorState,
   addDebugDirectory,
+  addDiagnosticFile,
   addDirectory,
   addLatestMasHistoryLog,
   addPerInstallationFile,
+  addSkippedEntry,
   discoverInstallations,
   resolveDataRoots,
 } from './issueReportCore'
@@ -53,6 +55,36 @@ export function createOkwwIssueReport(appRoot: string, zipPath: string): OkwwIss
   }
 
   addPerInstallationFile(state, installations, OKWW_REL_LOG_FILE, 'okww')
+  // 启动器更新发生在工作日志创建之前，每个安装单独收集最近日志。
+  for (const installation of installations) {
+    const logDir = path.join(installation.rootPath, 'logs')
+    if (!fs.existsSync(logDir)) continue
+    let files: string[]
+    try {
+      files = fs
+        .readdirSync(logDir, { withFileTypes: true })
+        .filter(entry => entry.isFile() && /^app\.\d{4}-\d{2}-\d{2}$/.test(entry.name))
+        .map(entry => entry.name)
+        .sort()
+        .slice(-2)
+    } catch (error) {
+      logger.debug(`读取 OK-WW 启动器日志失败: ${logDir}, ${String(error)}`)
+      addSkippedEntry(
+        state,
+        path.posix.join('okww', installation.label, 'launcher'),
+        0,
+        '无法读取启动器日志目录'
+      )
+      continue
+    }
+    for (const name of files) {
+      addDiagnosticFile(
+        state,
+        path.join(logDir, name),
+        path.posix.join('okww', installation.label, 'launcher', name)
+      )
+    }
+  }
 
   try {
     fs.mkdirSync(path.dirname(zipPath), { recursive: true })

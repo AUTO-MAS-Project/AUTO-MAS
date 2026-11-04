@@ -76,6 +76,7 @@ from .tools.launcher_start import (
     find_launcher_pids,
     has_launcher_window,
 )
+from .tools.startup import start_okww
 
 logger = get_logger("OK-WW 自动代理")
 
@@ -868,10 +869,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             )
 
             try:
-                await self.okww_process_manager.open_process(
+                await start_okww(
+                    self.okww_process_manager,
                     self.script_exe_path,
-                    *self.okww_args,
-                    target_process=self.script_target_process_info,
+                    args=self.okww_args,
+                    target=self.script_target_process_info,
+                    on_log=self._push_dispatch_log,
                 )
             except (OSError, RuntimeError) as e:
                 # 启动器可能已拉起进程；清理后再重试，避免下一轮重复启动。
