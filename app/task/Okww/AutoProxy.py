@@ -110,9 +110,19 @@ _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
 # 约 5s；日志监控若跨过这 5s，两行会落进同一批，故只在没有完成日志时判未连接（见 check_log）。
 _OKWW_DISCONNECT_LOG: tuple[str, ...] = ("connected:False", "connected:0")
 _OKWW_DISCONNECT_MSG = "OK-WW 未连接游戏客户端"
-# 成功只认任务级完成日志：ok-ww 的 DailyTask 正常跑完（run() 末尾）才会打印；
+# 成功判据（任一命中即完成）：
+# 1. ok-script 框架 TaskExecutor 的退出语：DailyTask.run() 正常返回后才打印
+#    （失败路径走异常分支，跳过退出日志），logger 硬编码英文、不走 gettext，
+#    不受 ok-ww 界面语言影响。MAS 固定传 -e（exit_after_task），成功后必打，
+#    比关游戏的断连日志早约 5 秒。新版 ok-ww 任务完成文案 gettext 化，中文
+#    环境不再输出英文完成日志，仅靠第 2 条会把已完成任务误判为断连重试。
+# 2. 旧版 ok-ww（v3.7.4 及更早）没有框架退出语，DailyTask.run() 末尾完成
+#    文案为硬编码英文，保留兜底。
 # 窗口关闭日志（Window closed exit_event.is_set）在任何退出路径都会出现，不能作为完成依据。
-_OKWW_SUCCESS_LOG = "Daily Task Completed"
+_OKWW_SUCCESS_LOG: tuple[str, ...] = (
+    "Successfully Executed Task, Exiting Game and App!",
+    "Daily Task Completed",
+)
 
 # ok-ww 项目结构固定相对路径（从 RootPath 派生，不依赖用户存储值）
 # ⚠️ 与前端 OkwwScriptEdit.vue 的 OKWW_EXE_NAME 保持同步，改这里时需同步改前端
@@ -985,7 +995,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 user_item_status = "异常"
                 break
         else:
-            if _OKWW_SUCCESS_LOG in log:
+            if any(needle in log for needle in _OKWW_SUCCESS_LOG):
                 log_status = "Success!"
                 user_item_status = "完成"
             elif any(needle in log for needle in _OKWW_DISCONNECT_LOG):
