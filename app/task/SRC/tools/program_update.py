@@ -8,10 +8,12 @@ import shutil
 import stat
 import tempfile
 import warnings
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import httpx
 import psutil
 
 from app.core import Config
@@ -104,18 +106,90 @@ def git_executable(root: Path, deploy: dict) -> str:
     raise ValueError("未找到 SRC 原生 Git，请先完成 SRC 安装")
 
 
+CN_GIT_OVER_CDN = (
+    "https://vip.123pan.cn/1815343254/pack/LmeSzinc_StarRailCopilot_master",
+    "https://1815343254.v.123yx.com/1815343254/pack/LmeSzinc_StarRailCopilot_master",
+)
+
+
+async def request_cn_latest() -> tuple[str, str]:
+    """按 SRC 上游定义的 Git-over-CDN 协议选择可用节点。"""
+    async with httpx.AsyncClient(
+        proxy=getattr(Config, "proxy", None),
+        timeout=15,
+        follow_redirects=True,
+    ) as client:
+        for url in CN_GIT_OVER_CDN:
+            try:
+                response = await client.get(f"{url}/latest.json")
+                response.raise_for_status()
+                data = response.json()
+                commit = data["commit"]
+                if re.fullmatch(r"[0-9a-f]{40}", commit):
+                    return url, commit
+            except (httpx.HTTPError, KeyError, ValueError, TypeError):
+                continue
+    raise ValueError("SRC 国内 Git-over-CDN 当前无法获取有效版本，不会回退到 GitHub")
+
+
+def unpack_cn_git_pack(archive: Path, objects: Path, target: str) -> Path:
+    """限制官方 delta ZIP 的文件名和展开大小，校验实际 Git pack 的完整性。"""
+    names = {f"pack-{target}.pack", f"pack-{target}.idx"}
+    pack_dir = objects / "objects" / "pack"
+    pack_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive) as package:
+        if set(package.namelist()) != names or len(package.infolist()) != 2:
+            raise ValueError("SRC 国内更新 ZIP 不包含完整、唯一的 Git pack/index")
+        for name in sorted(names):
+            member = package.getinfo(name)
+            if (
+                member.flag_bits & 1
+                or member.file_size <= 0
+                or member.file_size > 2 * 1024**3
+            ):
+                raise ValueError("SRC 国内更新 ZIP 文件大小或加密状态异常")
+            with package.open(member) as source, (pack_dir / name).open("xb") as dest:
+                shutil.copyfileobj(source, dest, 1024 * 1024)
+    return pack_dir / f"pack-{target}.pack"
+
+
+async def prepare_cn_objects(root: Path, git: str, objects: Path, base: str) -> str:
+    """CDN ZIP 只导入 MAS 私有 bare Git，绝不触碰 SRC 工作目录。"""
+    url, target = await request_cn_latest()
+    if target == base:
+        return target
+    # 供 Git 校验 delta pack 中对本地已有对象的引用；只读借用源对象库。
+    alternate = objects / "objects" / "info" / "alternates"
+    alternate.parent.mkdir(parents=True, exist_ok=True)
+    alternate.write_text(str((root / ".git" / "objects").resolve()) + "\n")
+    archive = objects.parent / f"{objects.name}.zip"
+    try:
+        from app.core.script_update import download_script_package
+
+        await download_script_package(
+            f"{url}/{target}/{base}.zip",
+            archive,
+            source="GitOverCdn",
+            timeout=30 * 60,
+            proxy=getattr(Config, "proxy", None),
+        )
+        pack = await asyncio.to_thread(unpack_cn_git_pack, archive, objects, target)
+        await command(git, "index-pack", str(pack), cwd=objects)
+        await command(git, "cat-file", "-e", f"{target}^{{commit}}", cwd=objects)
+        return target
+    finally:
+        archive.unlink(missing_ok=True)
+
+
+
+
 async def prepare_update(root: Path) -> PreparedUpdate | None:
     """只读部署偏好和当前提交，网络对象下载到 MAS 缓存，不修改原安装的 .git。"""
     root = root.resolve()
     deploy = await asyncio.to_thread(read_deploy, root)
     git = git_executable(root, deploy)
     repository = str(deploy.get("Repository") or "cn")
-    if repository == "cn":
-        raise ValueError(
-            "SRC 当前配置使用 Git-over-CDN 国内源；MAS 不能把 cn 静默改成 "
-            "GitHub 直连。此源尚不支持独立对象预下载，请选择 global 或 "
-            "暂时关闭 MAS 更新托管"
-        )
+    cn_source = repository == "cn"
     if repository == "global":
         repository = "https://github.com/LmeSzinc/StarRailCopilot"
     parsed = urlsplit(repository)
@@ -147,22 +221,27 @@ async def prepare_update(root: Path) -> PreparedUpdate | None:
     cache.mkdir(parents=True, exist_ok=True)
     objects = Path(tempfile.mkdtemp(prefix="git-", dir=cache))
     await command(git, "init", "--bare", str(objects), cwd=cache)
-    proxy = str(deploy.get("GitProxy") or "").strip()
-    # 原生 GitProxy 优先；配置中的代理只传给子进程，不进入日志或任务身份。
-    await command(
-        git,
-        "-c",
-        f"http.proxy={proxy}",
-        "-c",
-        "http.sslVerify=true",
-        "fetch",
-        "--no-tags",
-        "--",
-        repository,
-        branch,
-        cwd=objects,
-    )
-    target = await command(git, "rev-parse", "FETCH_HEAD", cwd=objects)
+    if cn_source:
+        if branch != "master":
+            raise ValueError("SRC 原生 Git-over-CDN 仅提供 master 分支，请切换代码源")
+        target = await prepare_cn_objects(root, git, objects, base)
+    else:
+        proxy = str(deploy.get("GitProxy") or "").strip()
+        # 原生 GitProxy 优先；配置中的代理只传给子进程，不进入日志或任务身份。
+        await command(
+            git,
+            "-c",
+            f"http.proxy={proxy}",
+            "-c",
+            "http.sslVerify=true",
+            "fetch",
+            "--no-tags",
+            "--",
+            repository,
+            branch,
+            cwd=objects,
+        )
+        target = await command(git, "rev-parse", "FETCH_HEAD", cwd=objects)
     if not re.fullmatch(r"[0-9a-f]{40}", target):
         raise ValueError("SRC 下载结果不是可识别的 Git 提交")
     await command(git, "merge-base", "--is-ancestor", base, target, cwd=objects)
@@ -240,8 +319,6 @@ async def apply_update(root: Path, prepared: PreparedUpdate) -> None:
     await asyncio.to_thread(assert_idle, root)
     deploy = await asyncio.to_thread(read_deploy, root)
     repository = str(deploy.get("Repository") or "cn")
-    if repository == "cn":
-        raise ValueError("SRC 国内源在预下载后发生变化，请重新检查更新")
     if repository == "global":
         repository = "https://github.com/LmeSzinc/StarRailCopilot"
     if (
