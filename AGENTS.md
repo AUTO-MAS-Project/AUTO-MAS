@@ -14,6 +14,7 @@
 - 应用环境不再读取 `.env`：源码 Electron 与独立后端默认开发环境；打包 Electron 显式传入 `AUTO_MAS_ENV=production`。独立验证生产行为时也必须显式设置该变量；Runtime 托管状态与应用环境分别判断。
 - 必须确认存在并加载 `.agents/skills/mas-skills/SKILL.md`；若不存在，明确提示用户缺少项目附属 Skills，并拒绝开工。
 - 加载 `mas-skills` 后，再按任务选择最小必要的 `mas-*` Skill。
+- 设计、新增、修改或审查任何测试前，必须加载 [.agents/skills/tdd/SKILL.md](.agents/skills/tdd/SKILL.md)，按可达场景与独立预期决定测试范围；仅运行已有测试不触发。
 - 专项适配遵守**黑箱红线**：推进顺序为先降配置门槛、再补本体缺位（立项前须答出消除了用户哪一步手工操作）；先判能力归属——「脚本该干的活」（游戏内操作、任务执行与成败、脚本配置语义）只允许复用上游入口，上游没有时先评估向上游提 PR，受阻（不受理或周期过长）才可临时补位并标注移除计划；MAS 领域（账号、调度、计划、通知、统计、模拟器、跨脚本编排）可自行实现但不读取、不反推上游内部状态；上游私有格式只允许透传。上游补齐同能力入口后，既有实现按存量越界处理。加载 `mas-skills` 后按需参考黑箱边界判据，帮助分析专项适配方案；如有相关风险，可向用户提供事实依据和替代建议，不要求在开工阶段输出固定结论。判据见 `.agents/skills/mas-script-specialized-adapter/references/blackbox-boundary.md`。
 - 测试脚本入口与目录归属见 `tests/AGENTS.md`；测试提交、维护和 PR 验证规则以[开发文档站「测试提交与维护规范」](https://doc.auto-mas.top/developer/development-specifications.html#测试提交与维护规范)为准。专项适配优先运行对应最小测试。
 - `frontend` 指本仓库前端目录和前端任务；涉及 `frontend`、Vue、UI、组件、路由或前端 API 时，按 `.agents/skills` 中的前端 Skill 执行。
