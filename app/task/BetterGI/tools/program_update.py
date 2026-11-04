@@ -200,9 +200,25 @@ def unpack_mirror_installer(
     # BGI 不带 os/arch 的 Mirror 资源是安装器 ZIP；不执行其中的其他文件，
     # 上游会给 Mirror 包内安装器追加 VC 运行库，因此不能用 GitHub 的哈希校验它。
     with zipfile.ZipFile(archive) as package:
-        if package.namelist() != [name]:
+        # 上游 7z 直接归档 ./downloads/BetterGI_Install/<exe>，
+        # ZIP 可带目录前缀；限定为官方已知布局且仅包含一个可执行文件。
+        allowed = {name, f"downloads/BetterGI_Install/{name}"}
+        files = [member for member in package.infolist() if not member.is_dir()]
+        directories = [
+            member.filename
+            for member in package.infolist()
+            if member.is_dir()
+        ]
+        if (
+            len(files) != 1
+            or files[0].filename not in allowed
+            or any(
+                directory not in {"downloads/", "downloads/BetterGI_Install/"}
+                for directory in directories
+            )
+        ):
             raise ValueError("Mirror 酱包不是预期的 BetterGI 完整安装器")
-        info = package.getinfo(name)
+        info = files[0]
         minimum = size if size is not None else 1
         maximum = (
             size + 256 * 1024**2

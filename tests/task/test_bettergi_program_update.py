@@ -487,3 +487,36 @@ async def test_beta_mirror_alpha_without_github_prerelease(
     assert (
         update.request_mirror_resource.await_args.kwargs["params"]["channel"] == "alpha"
     )
+
+
+@pytest.mark.asyncio
+async def test_mirror_accepts_upstream_sevenzip_nested_installer(installation, monkeypatch, tmp_path):
+    root, config, _ = installation
+    config.Update.MirrorChyanCDK = "test-cdk"
+    archive = tmp_path / "nested.zip"
+    with zipfile.ZipFile(archive, "w") as package:
+        package.writestr(
+            "downloads/BetterGI_Install/BetterGI.Install.0.56.0.exe",
+            pe(),
+        )
+    monkeypatch.setattr(
+        update,
+        "request_mirror_resource",
+        AsyncMock(
+            return_value={
+                "data": {
+                    "update_type": "full",
+                    "version_name": "0.56.0",
+                    "url": "https://example.com/nested.zip",
+                    "filesize": archive.stat().st_size,
+                    "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+                }
+            }
+        ),
+    )
+
+    async def download(url, destination, **kwargs):
+        shutil.copyfile(archive, destination)
+
+    update.download_script_package.side_effect = download
+    assert "已更新" in await update.update_before_run(root, config)
