@@ -12,16 +12,13 @@
 2. 发布构建不自动启用浏览器 Electron bridge。需要时在页面脚本执行前注入该版本已有桥接；先核对 `frontend/src/utils/browserDevElectronAPI.ts` 的导入与初始化依赖。不要直接把依赖开发条件的模块塞进生产 bundle。不能复用时记录阻塞，不另造一套应用状态。
 3. 固定语言、时区、明暗主题和窗口尺寸。定时示例按界面时区核对，API 时间按该版本的序列化约定换算后比较。截图前确认开发菜单不存在、目标可见、字体已加载且没有未处理错误。只叠加教学编号或框线、关闭动画和光标，不改变配置值、隐藏失败提示或隐藏开发入口冒充发行版。
 
-临时配置为每个主题的每次尝试设置独立的 Playwright `outputDir` 和 HTML reporter `outputFolder`，覆盖继承的共享结果及报告路径。运行结束后保留截图、trace、附件与报告，确认归档完整再开始下一主题；不要只更改教程 PNG 的保存位置。
+临时配置和采集脚本要在本次工作区实际建立后才运行。以下是调用形式，不是仓库已内置的教程命令；配置文件名与 tag 使用本次创建的值，从 `frontend/` 执行：
 
-临时配置和采集脚本要在本次工作区实际建立后才运行。以下是 PowerShell 调用形式，不是仓库已内置的教程命令；配置文件名与 tag 使用本次创建的值，从 `frontend/` 执行。启动前明确清除继承的就地模式变量，参数中也不得包含 `--in-place`：
-
-```powershell
-Remove-Item Env:AUTO_MAS_E2E_IN_PLACE -ErrorAction SilentlyContinue
+```text
 yarn e2e --config <capture-config.ts> --grep <tutorial-tag>
 ```
 
-使用 POSIX shell 时，在同一条启动命令前用 `env -u AUTO_MAS_E2E_IN_PLACE` 清除该变量。每次运行由 `run.mjs` 创建全新的临时数据根，关闭复用现有服务，不连接用户日常实例。一次只选一个主题，下一主题另开一次运行。按所选版本的源码约定配置运行环境，隔离后端显式使用 development；不能仅凭 `.env` 文件存在推断应用环境。
+保持由 `run.mjs` 创建临时数据根，关闭复用现有服务；不启用就地模式，不连接用户日常实例。一次只选一个主题，下一主题另开一次运行。按所选版本的源码约定配置运行环境，隔离后端显式使用 development；不能仅凭 `.env` 文件存在推断应用环境。
 
 ## 流程与截图
 
