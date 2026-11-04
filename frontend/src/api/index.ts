@@ -119,6 +119,8 @@ export type { BetterGIConfig_Info } from './models/BetterGIConfig_Info';
 export type { BetterGIConfig_InfoInput } from './models/BetterGIConfig_InfoInput';
 export type { BetterGIConfig_Run } from './models/BetterGIConfig_Run';
 export type { BetterGIConfig_RunInput } from './models/BetterGIConfig_RunInput';
+export type { BetterGIConfig_Update } from './models/BetterGIConfig_Update';
+export type { BetterGIConfig_UpdateInput } from './models/BetterGIConfig_UpdateInput';
 export type { BetterGIConfigInput } from './models/BetterGIConfigInput';
 export type { BetterGICustomGroupOut } from './models/BetterGICustomGroupOut';
 export type { BetterGICustomGroupsOut } from './models/BetterGICustomGroupsOut';
