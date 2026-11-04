@@ -344,3 +344,58 @@ async def test_unsafe_update_is_not_reported_as_completed_during_finalization(
     await instance.on_crash(failure.value)
     await instance.final_task()
     assert instance.script_info.status == "异常"
+
+
+@pytest.mark.asyncio
+async def test_installer_timeout_waits_for_exit_before_releasing_lock(tmp_path, monkeypatch):
+    finished = asyncio.Event()
+
+    async def pending():
+        await finished.wait()
+        return 0
+
+    monkeypatch.setattr(
+        update.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=SimpleNamespace(wait=pending)),
+    )
+    original_wait_for = update.asyncio.wait_for
+
+    async def timed_out(awaitable, timeout):
+        raise TimeoutError("installer still running")
+
+    monkeypatch.setattr(update.asyncio, "wait_for", timed_out)
+    running = asyncio.create_task(update.run_installer(tmp_path / "installer.exe", tmp_path))
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert not running.done()
+    finished.set()
+    with pytest.raises(script_install.InstallUnsafeError, match="尚未退出"):
+        await running
+    monkeypatch.setattr(update.asyncio, "wait_for", original_wait_for)
+
+
+@pytest.mark.asyncio
+async def test_beta_release_does_not_silently_fall_back_to_stable(monkeypatch):
+    stable = {"tag_name": "0.66.0", "draft": False, "prerelease": False, "assets": []}
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return [stable]
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def get(self, url):
+            return Response()
+
+    monkeypatch.setattr(update.httpx, "AsyncClient", lambda **kwargs: Client())
+    with pytest.raises(ValueError, match="不会回退"):
+        await update.request_release("beta")

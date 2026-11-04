@@ -113,11 +113,17 @@ async def request_release(channel: str) -> dict:
             version = Version(release["tag_name"])
         except (KeyError, ValueError, TypeError):
             continue
-        if channel == "stable" and (release.get("prerelease") or version.is_prerelease):
+        prerelease = bool(release.get("prerelease") or version.is_prerelease)
+        if channel == "stable" and prerelease:
+            continue
+        if channel != "stable" and not prerelease:
             continue
         releases.append((version, release))
     if not releases:
-        raise ValueError("未找到可识别的 BetterGI 官方发行版")
+        raise ValueError(
+            "未找到带官方安装器的 BetterGI 对应通道 Release；"
+            "公测构建可能仅发布于 Actions，不会回退使用正式版"
+        )
     return max(releases, key=lambda item: item[0])[1]
 
 
@@ -186,6 +192,13 @@ async def run_installer(installer: Path, root: Path) -> None:
                 await asyncio.shield(waiter)
         raise
     except TimeoutError as error:
+        # 超时不是安装结束。持有目录锁直到安装器真正退出，否则下一任务
+        # 可能在同一目录仍被原生安装器修改时启动。
+        while not waiter.done():
+            try:
+                await asyncio.shield(waiter)
+            except asyncio.CancelledError:
+                continue
         raise script_install.InstallUnsafeError(
             "BetterGI 官方安装器尚未退出，已保留安装现场，请手动确认"
         ) from error
