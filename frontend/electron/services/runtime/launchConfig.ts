@@ -237,8 +237,8 @@ export const RUNTIME_DEVELOPMENT_ROOT_DIRNAME = 'auto-mas-runtime'
  * `reason=runtime_root_inside_development_repo`），而 Electron 开发态的 `getAppRoot()` 恰好就是
  * 源码仓根；源码仓也不该被 Runtime 的 `runtime/`、`runtime-state/`、`debug/runtime/` 污染。
  * 所以 Runtime 根目录放到仓外：
- * - Electron 环境：`<userData>/auto-mas-runtime`。开发态的 userData 已由 `applyInstanceIdentity()`
- *   与正式版分开（`<appData>/<name>-dev`），两版各自一份 Runtime 布局，互不干扰；
+ * - Electron 环境：`<userData>/auto-mas-runtime`。开发态的 userData 与正式版分开
+ *   （`<appData>/AUTO-MAS-dev`），两版各自一份 Runtime 布局，互不干扰；
  * - 非 Electron 环境（单元测试、脚本）：源码根的同级目录 `<父目录>/<源码根目录名>-runtime`，
  *   与源码根一一对应且可预测，不依赖任何全局状态。
  *
