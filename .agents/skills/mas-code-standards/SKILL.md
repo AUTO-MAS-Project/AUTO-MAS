@@ -54,7 +54,7 @@ Use these samples as style lenses only. For frontend engineering or UI decisions
 10. Keep frequently edited task-configuration logic visible in the owning flow with a short comment instead of hiding it behind one-off helpers.
 11. Do not copy another script/domain's special-case logs, timeout exemptions, ignore lists, or workaround branches into a new module until that behavior is confirmed locally.
 12. If a new capability is used only once, default to an inline block or local helper; split into `builder`, `loader`, or extra services only after real reuse or boundary pressure appears.
-13. Trust existing validators, config containers, and task bases when they already guarantee an invariant. Validate untrusted data at its owning boundary; add guards or fallbacks only for reachable inputs, supported compatibility contracts, or runtime failures. Type annotations alone do not establish runtime guarantees. Do not bypass established validation in a test and then add production branches for that invented state; follow [mas-testing](../mas-testing/SKILL.md).
+13. When designing, changing or reviewing validation, guards, exceptions, retries or compatibility paths, load [mas-defensive-programming](../mas-defensive-programming/SKILL.md) for branch admission and failure semantics.
 14. For new Python-heavy flows, keep signatures and call sites compatible with at least basic static type checking.
 15. Prefer deleting redundant imports, waits, and wrappers over preserving "explicit" but noisy scaffolding.
 16. Use Conventional Commits for commit messages: `<type>(<scope>): <subject>`, with documented types such as `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `build`, and `ci`.
@@ -85,9 +85,8 @@ Protect these comments especially:
 6. Update OpenAPI-generated files through the project generator, never by hand. Complete authorized regeneration when the local prerequisites are available; report blockers precisely.
 7. Do not split equivalent behavior into multiple methods or API routes when a dict selector or type field represents the difference directly.
 8. Do not leave dead support paths for future detailed/raw config when there is no complete UI-to-runtime path yet.
-9. Do not add maintainer-facing "safety" code that only repeats guarantees already enforced by base classes or validators.
-10. Do not complete a user-visible feature or fix without adding its changelog fragment under `changelog.d/`.
-11. Do not delete useful comments just to make a diff look cleaner.
+9. Do not complete a user-visible feature or fix without adding its changelog fragment under `changelog.d/`.
+10. Do not delete useful comments just to make a diff look cleaner.
 
 ## Review Checklist
 
