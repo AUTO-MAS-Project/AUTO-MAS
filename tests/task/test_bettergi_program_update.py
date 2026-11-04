@@ -303,3 +303,44 @@ async def test_notice_restore_failure_still_releases_all_locks(
     unlocked.assert_awaited_once_with("ticket")
     assert released == [True]
     assert instance.script_info.status == "异常"
+
+
+@pytest.mark.asyncio
+async def test_unsafe_update_is_not_reported_as_completed_during_finalization(
+    installation, monkeypatch
+):
+    from contextlib import ExitStack
+
+    root, config, _ = installation
+    instance = object.__new__(manager.BetterGIManager)
+    instance._update_root = root
+    instance._program_update_prepared = False
+    instance._install_access = ExitStack()
+    instance.config_locks = {}
+    instance.check_result = "Pass"
+    instance.user_config = None
+    instance.script_config = config
+    config.uid = uuid.uuid4()
+    instance.script_info = SimpleNamespace(
+        script_id=str(uuid.uuid4()),
+        name="BGI",
+        log="",
+        status="等待",
+        user_list=[SimpleNamespace(status="等待")],
+    )
+    instance.task_info = SimpleNamespace(task_id=str(uuid.uuid4()), mode="AutoProxy")
+    monkeypatch.setattr(
+        update,
+        "update_before_run",
+        AsyncMock(side_effect=script_install.InstallUnsafeError("unfinished install")),
+    )
+    monkeypatch.setattr(manager.Publisher, "send", AsyncMock())
+    monkeypatch.setattr(manager.Notify, "push_proxy_result", AsyncMock())
+    instance.collect_user_results = lambda: SimpleNamespace(uncompleted_count=1)
+    instance._render_user_results = lambda **kwargs: ""
+    instance.build_proxy_report = lambda **kwargs: "failed"
+    with pytest.raises(script_install.InstallUnsafeError) as failure:
+        await instance._prepare_program_update()
+    await instance.on_crash(failure.value)
+    await instance.final_task()
+    assert instance.script_info.status == "异常"

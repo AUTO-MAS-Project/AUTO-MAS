@@ -165,9 +165,11 @@ class BetterGIManager(ScriptManagerBase):
         root = self._update_root
         if root is None:
             return
+        self.check_result = "BetterGI 更新准备未完成"
         if self._program_update_prepared:
             if self.script_config.Update.TakeoverEnabled:
                 await program_update.confirm_current_install(root)
+            self.check_result = "Pass"
             return
         if self.script_config.Update.TakeoverEnabled:
             self.script_info.log = "正在检查 BetterGI 本体更新…"
@@ -205,6 +207,7 @@ class BetterGIManager(ScriptManagerBase):
                     "BetterGI 上次安装未确认，请开启更新托管重试或手动修复"
                 )
         self._program_update_prepared = True
+        self.check_result = "Pass"
 
     async def main_task(self):
         self.check_result = await self.check()
@@ -304,7 +307,9 @@ class BetterGIManager(ScriptManagerBase):
             if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                 await config_manager.flush()
 
-            if any(user.status == "异常" for user in self.script_info.user_list):
+            if self.script_info.status == "异常" or any(
+                user.status == "异常" for user in self.script_info.user_list
+            ):
                 self.script_info.status = "异常"
             else:
                 self.script_info.status = "完成"
