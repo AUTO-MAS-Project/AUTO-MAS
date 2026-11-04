@@ -43,7 +43,7 @@ def installation(tmp_path, monkeypatch):
     git(upstream, "add", ".")
     git(upstream, "commit", "-m", "update")
     monkeypatch.setattr(update, "Config", SimpleNamespace(data_path=tmp_path / "cache"))
-    monkeypatch.setattr(update, "assert_idle", lambda root: None)
+    monkeypatch.setattr(update, "assert_idle", lambda root, **kwargs: None)
     original = update.command
 
     async def transport(*args, **kwargs):
