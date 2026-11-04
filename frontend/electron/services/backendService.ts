@@ -400,7 +400,7 @@ export class BackendService {
       if (this.startingRuntimeHandle === handle) this.startingRuntimeHandle = null
     }
     this.startingRuntimeHandle = handle
-    void handle.completion.then(releaseStartup, releaseStartup)
+    void handle.closed.then(releaseStartup)
     if (this.runtimeStopping) await this.stopBackendViaRuntime(handle)
 
     const timeoutMs = options?.timeout || RUNTIME_READY_TIMEOUT_MS
@@ -526,7 +526,7 @@ export class BackendService {
       logger.info('Runtime 监督进程已结束，清理后端运行状态')
       this.clearRuntimeState(handle)
     }
-    void handle.completion.then(onFinished, onFinished)
+    void handle.closed.then(onFinished)
   }
 
   private clearRuntimeState(handle: RuntimeSuperviseHandle): void {
@@ -668,8 +668,8 @@ export class BackendService {
       return { success: true }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      this.clearRuntimeState(handle)
       if (this.hasRuntimeProcessExited(error)) {
+        this.clearRuntimeState(handle)
         // 关闭超时被客户端 kill、或 Runtime 没给终态就退出：进程本身已经不在了，
         // 后端进程树随 Job Object 一并回收，对调用方而言后端已停止，不必再弹「无法安全退出」。
         logger.warn(`Runtime 未给出关闭终态就已退出，按已停止处理: ${errorMsg}`)

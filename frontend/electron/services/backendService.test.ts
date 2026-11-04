@@ -1178,6 +1178,61 @@ describe('桌面前端只连接已有后端', () => {
 })
 
 describe('关闭时收口仍在运行的 Runtime 命令', () => {
+  it.each(['no-close', 'kill-error'])(
+    '监督进程 %s 时，第二次清理仍保留并处理同一进程',
+    async fault => {
+      process.env[RUNTIME_MODE_ENV] = 'development'
+      process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+      mockSpawn()
+      const service = new InitializationService(appRoot)
+      const startup = service.startDesktopStartup({
+        version: '5.5.0-beta.3',
+        initializedVersion: '5.5.0-beta.3',
+        autoUpdate: false,
+      })
+      const child = await passEnvironmentEnsure()
+      child.stdout.feed(helloLine + runningStateLine)
+      expect(await startup).toMatchObject({ success: true })
+      // 注入进程边界故障：结束请求已发出，但操作系统未交付 close，不能据此认定退出。
+      const kill = vi.fn(() => {
+        if (fault === 'kill-error') {
+          child.emit('error', Object.assign(new Error('kill denied'), { code: 'EPERM' }))
+          return false
+        }
+        child.killed = true
+        return true
+      })
+      child.kill = kill
+      vi.useFakeTimers()
+      try {
+        const first = service.stopDesktopStartup().then(
+          () => null,
+          (error: unknown) => error
+        )
+        await vi.advanceTimersByTimeAsync(40_000)
+        expect(await first).toBeInstanceOf(Error)
+        const firstAttempts = kill.mock.calls.length
+
+        const final = service.stopDesktopStartup(true).then(
+          () => null,
+          (error: unknown) => error
+        )
+        await vi.advanceTimersByTimeAsync(40_000)
+        expect(await final).toBeInstanceOf(Error)
+        expect(kill.mock.calls.length).toBeGreaterThan(firstAttempts)
+        expect(service.getBackendService().getStatus().isRunning).toBe(true)
+        expect(spawnMock).toHaveBeenCalledTimes(2)
+
+        child.close(null, 'SIGKILL')
+        await service.stopDesktopStartup(true)
+        expect(service.getBackendService().getStatus().isRunning).toBe(false)
+      } finally {
+        child.close(1)
+        vi.useRealTimers()
+      }
+    }
+  )
+
   it.each(['startup', 'repair', 'update'])(
     '%s 提交后迟到取消保留真实结果并禁止重启后端',
     async entry => {

@@ -188,6 +188,8 @@ export interface RuntimeSuperviseHandle {
   readonly capabilities: RuntimeCapability[]
   /** 最终 result 与进程退出后 resolve；未拿到 result 就退出则 reject。 */
   readonly completion: Promise<RuntimeRunResult>
+  /** 只在实际 close 后兑现；命令等待失败也不代表进程已退出。 */
+  readonly closed: Promise<void>
   /** 订阅全部事件，返回取消订阅函数。 */
   onEvent(listener: (event: RuntimeEvent) => void): () => void
   /** 最近的 log 事件快照（最多 `recentLogCapacity` 条），返回副本。 */
@@ -976,6 +978,7 @@ export class RuntimeClient extends EventEmitter {
       pid: session.child.pid,
       capabilities: hello.capabilities,
       completion: session.completion,
+      closed: session.closed,
       onEvent: listener => session.addListener(listener),
       recentLogs: () => session.recentLogSnapshot(),
       sendControl: command => session.sendControl(command),
