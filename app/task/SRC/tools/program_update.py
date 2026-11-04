@@ -242,7 +242,9 @@ async def prepare_update(root: Path) -> PreparedUpdate | None:
         target = await command(git, "rev-parse", "FETCH_HEAD", cwd=objects)
     if not re.fullmatch(r"[0-9a-f]{40}", target):
         raise ValueError("SRC 下载结果不是可识别的 Git 提交")
-    await command(git, "merge-base", "--is-ancestor", base, target, cwd=objects)
+    # CDN 回报最新且无需增量包时，bare 缓存不包含原 HEAD 对象。
+    if not (cn_source and base == target):
+        await command(git, "merge-base", "--is-ancestor", base, target, cwd=objects)
     if (
         base == target
         and not (script_install.workspace(root) / "src-install.json").exists()

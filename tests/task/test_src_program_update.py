@@ -296,3 +296,21 @@ async def test_cn_prefetch_uses_official_git_pack_without_touching_src(
         hashlib.sha256((root / "code.py").read_bytes()).hexdigest()
         == hashlib.sha256(b"old").hexdigest()
     )
+
+
+@pytest.mark.asyncio
+async def test_cn_no_update_does_not_require_git_pack(installation, monkeypatch):
+    root, _ = installation
+    deploy = root / "config" / "deploy.yaml"
+    deploy.write_text(
+        deploy.read_text()
+        .replace("Repository: https://src.example/repo", "Repository: cn")
+        .replace("Branch: main", "Branch: master")
+    )
+    base = git(root, "rev-parse", "HEAD")
+    monkeypatch.setattr(
+        update,
+        "request_cn_latest",
+        AsyncMock(return_value=("https://vip.123pan.cn/example", base)),
+    )
+    assert await update.prepare_update(root) is None
