@@ -131,6 +131,36 @@ describe('用户数据目录迁移', () => {
     expect(selectUserDataLock(developmentLegacy, developmentTarget)).toBe(developmentTarget)
   })
 
+  it('POSIX 新装接受 Electron 锁文件，但拒绝其他已有资料', () => {
+    fs.mkdirSync(target)
+    for (const name of ['SingletonLock', 'SingletonSocket', 'SingletonCookie'])
+      fs.writeFileSync(path.join(target, name), '')
+    expect(migrateUserData(legacy, target, target, 'linux')).toEqual({ path: target })
+    expect(selectUserDataLock(legacy, target)).toBe(target)
+
+    const otherTarget = path.join(root, 'occupied')
+    fs.mkdirSync(otherTarget)
+    fs.writeFileSync(path.join(otherTarget, 'SingletonLock'), '')
+    fs.writeFileSync(path.join(otherTarget, 'unrelated'), 'keep')
+    expect(migrateUserData(legacy, otherTarget, otherTarget, 'linux')).toMatchObject({
+      path: otherTarget,
+      error: expect.any(String),
+    })
+    expect(fs.readFileSync(path.join(otherTarget, 'unrelated'), 'utf8')).toBe('keep')
+  })
+
+  it('首次标记写入中断后，目标目录仍可重试', () => {
+    fs.mkdirSync(target)
+    fs.writeFileSync(path.join(target, 'lockfile'), '')
+    const abandoned = fs.mkdtempSync(path.join(root, '.auto-mas-marker-'))
+    fs.writeFileSync(path.join(abandoned, '.auto-mas-user-data'), 'curr')
+
+    expect(selectUserDataLock(legacy, target)).toBe(target)
+    expect(migrateUserData(legacy, target, target)).toEqual({ path: target })
+    expect(fs.readFileSync(path.join(target, '.auto-mas-user-data'), 'utf8')).toBe('current\n')
+    expect(selectUserDataLock(legacy, target)).toBe(target)
+  })
+
   it('标记损坏时拒绝猜测单实例锁路径', () => {
     fs.mkdirSync(target)
     fs.writeFileSync(path.join(target, '.auto-mas-user-data'), 'unknown')

@@ -25,12 +25,17 @@ export function selectUserDataLock(legacyPath: string, targetPath: string): stri
 export function migrateUserData(
   legacyPath: string,
   target: string,
-  lockPath: string
+  lockPath: string,
+  platform: NodeJS.Platform = process.platform
 ): {
   path: string
   error?: string
 } {
   const marker = path.join(target, MARKER_NAME)
+  const lockFiles =
+    platform === 'win32'
+      ? new Set(['lockfile'])
+      : new Set(['SingletonLock', 'SingletonSocket', 'SingletonCookie'])
   let staging: string | undefined
 
   try {
@@ -38,9 +43,17 @@ export function migrateUserData(
     if (fs.existsSync(target)) {
       const entries = fs.readdirSync(target)
       if (lockPath === target) {
-        // 当前实例在 Windows 上可能只创建 lockfile；其余已有内容绝不覆盖。
-        if (entries.some(name => name !== 'lockfile')) throw new Error('新用户数据目录已有其他数据')
-        fs.writeFileSync(marker, 'current\n', { flag: 'wx' })
+        // 只接受当前平台的 Electron 单实例锁产物，不覆盖其他已有资料。
+        if (entries.some(name => !lockFiles.has(name)))
+          throw new Error('新用户数据目录已有其他数据')
+        staging = fs.mkdtempSync(path.join(path.dirname(target), '.auto-mas-marker-'))
+        fs.writeFileSync(path.join(staging, MARKER_NAME), 'current\n', { flag: 'wx' })
+        fs.renameSync(path.join(staging, MARKER_NAME), marker)
+        try {
+          fs.rmdirSync(staging)
+        } catch {
+          // 标记已提交；下次启动不受遗留的空临时目录影响。
+        }
         return { path: target }
       }
       // Electron 查询默认 userData 时可能先创建空目录，旧锁持有期间可以移除它。
@@ -56,7 +69,7 @@ export function migrateUserData(
         filter: source => {
           const relative = path.relative(legacyPath, source)
           const first = relative.split(path.sep)[0]
-          return relative === '' || (first !== 'lockfile' && !REGENERABLE_DIRECTORIES.has(first))
+          return relative === '' || (!lockFiles.has(first) && !REGENERABLE_DIRECTORIES.has(first))
         },
       })
     fs.writeFileSync(
