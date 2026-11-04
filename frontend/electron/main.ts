@@ -101,14 +101,36 @@ import {
   resolveRuntimeLaunchModeDetail,
 } from './services/runtime'
 import AdmZip = require('adm-zip')
+import { migrateUserData, selectUserDataLock } from './services/userDataMigration'
 
-// 开发环境切换到独立的 userData 目录（必须在 app ready 之前）
+// 开发版目录必须在 app ready 之前确定。
 applyInstanceIdentity()
+
+const targetUserDataPath = app.getPath('userData')
+const legacyUserDataPath = path.join(
+  app.getPath('appData'),
+  isDevelopmentEnvironment() ? 'frontend-dev' : 'frontend'
+)
+const lockPath = selectUserDataLock(legacyUserDataPath, targetUserDataPath)
+if (lockPath !== targetUserDataPath) app.setPath('userData', lockPath)
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+  process.exit(0)
+}
+
+const userDataMigration = migrateUserData(legacyUserDataPath, targetUserDataPath, lockPath)
+if (userDataMigration.path !== app.getPath('userData')) {
+  app.setPath('userData', userDataMigration.path)
+  app.setPath('sessionData', userDataMigration.path)
+}
 
 // 初始化日志系统（必须在创建 logger 之前）
 initializeLogger()
 
 const logger = getLogger('主进程')
+if (userDataMigration.error)
+  logger.warn(`用户数据迁移失败，继续使用原目录: ${userDataMigration.error}`)
 const STOP_ALL_TASKS_SHORTCUT = resolveStopAllTasksShortcut()
 let isStoppingAllTasks = false
 
@@ -2400,14 +2422,6 @@ ipcMain.handle('set-runtime-launch-mode', async (_event, mode: unknown) => {
 })
 
 // 应用生命周期
-// 保证应用单例运行
-const gotTheLock = app.requestSingleInstanceLock()
-
-if (!gotTheLock) {
-  app.quit()
-  process.exit(0)
-}
-
 // 在沙箱环境下运行会导致无法启动子进程，强制禁用沙箱
 app.commandLine.appendSwitch('no-sandbox')
 

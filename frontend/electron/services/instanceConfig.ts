@@ -74,13 +74,7 @@ export function getDefaultApiEndpoints(): { local: string; websocket: string } {
   }
 }
 
-/**
- * 开发环境改用独立的 userData 目录
- *
- * userData 同时决定 Chromium profile 与 requestSingleInstanceLock 的锁键。打包版
- * asar 内的 package.json 仍为 name=frontend，与源码开发版取到同一个目录，后启动的
- * 一方会在窗口创建之前静默退出。必须在 app ready 之前调用。
- */
+/** 开发版使用独立的用户数据目录；正式版名称来自 package.json 的 productName。 */
 export function applyInstanceIdentity(): void {
   if (!app || !isDevelopmentEnvironment()) {
     return
