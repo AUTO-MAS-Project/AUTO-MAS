@@ -17,6 +17,9 @@ from app.task.BAAH.tools import program_update as update
 from app.task.BAAH import manager
 
 
+REAL_ASSERT_IDLE = update.assert_idle
+
+
 def pe(extra=b""):
     data = bytearray(134)
     data[:2] = b"MZ"
@@ -228,3 +231,22 @@ async def test_second_baah_config_waits_for_same_directory(installation, monkeyp
     assert two.check_result == "Pass"
     two._install_access.close()
     two._directory_lock.release()
+
+
+def test_real_idle_whitelist_rejects_baah_but_allows_known_adb(
+    installation, monkeypatch
+):
+    root, _, _, _ = installation
+    adb = root / "tools" / "adb" / "adb.exe"
+    adb.parent.mkdir(parents=True, exist_ok=True)
+    adb.write_bytes(pe())
+    processes = [SimpleNamespace(info={"exe": str(adb), "name": "adb.exe"})]
+    monkeypatch.setattr(update.psutil, "process_iter", lambda fields: processes)
+    REAL_ASSERT_IDLE(root, allow_background_adb=True)
+    with pytest.raises(script_install.InstallUnsafeError):
+        REAL_ASSERT_IDLE(root)
+    processes.append(
+        SimpleNamespace(info={"exe": str(root / "BAAH.exe"), "name": "BAAH.exe"})
+    )
+    with pytest.raises(script_install.InstallUnsafeError):
+        REAL_ASSERT_IDLE(root, allow_background_adb=True)
