@@ -28,7 +28,7 @@ from app.utils import ProcessRunner, get_logger
 from app.utils import io as _utils_io
 
 from ..base_preset import ensure_maa_default_configuration
-from .guide import ensure_maa_guide_skipped
+from .guide import MAA_GUIDE_SKIP_VALUES
 from .native_config import maa_scheme_name
 from .resource_update import _wait_for_cleanup
 from .update_config import restore_maa_update_config, write_maa_update_config
@@ -126,7 +126,7 @@ async def update_maa(maa_path: Path, *, snapshot_path: Path, script_id: str):
             configurations["Default"] = original_default
         maa_new_set["Current"] = active_scheme
 
-    ensure_maa_guide_skipped(root_gui)
+    root_gui.update(MAA_GUIDE_SKIP_VALUES)
     write_maa_update_config(
         maa_path, maa_new_set, snapshot_path=snapshot_path, script_id=script_id
     )
