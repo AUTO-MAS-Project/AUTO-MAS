@@ -168,8 +168,7 @@ def test_independent_user_deploy_restores_only_injected_update_fields(tmp_path):
     (src_config / "src.json").write_text('{"Alas":{}}')
     (user / "src.json").write_text('{"Alas":{}}')
     (src_config / "deploy.yaml").write_text(
-        "AutoUpdate: false\nEnableReload: false\n"
-        "AppAsarUpdate: false\nBranch: dev\n"
+        "AutoUpdate: false\nEnableReload: false\nAppAsarUpdate: false\nBranch: dev\n"
     )
     (user / "deploy.yaml").write_text(
         "AutoUpdate: true\nEnableReload: true\nAppAsarUpdate: true\nBranch: main\n"
@@ -199,3 +198,42 @@ def test_src_launch_gate_refuses_unconfirmed_install(tmp_path, monkeypatch):
     monkeypatch.setattr(update, "assert_idle", lambda root, **kwargs: None)
     with pytest.raises(script_install.InstallUnsafeError):
         update.assert_safe_to_launch(root)
+
+
+@pytest.mark.asyncio
+async def test_up_to_date_removes_readonly_git_objects(installation, monkeypatch):
+    root, _ = installation
+    original = update.command
+    initial = git(root, "rev-parse", "HEAD")
+
+    async def no_new_revision(*args, **kwargs):
+        if args[:2] == ("rev-parse", "FETCH_HEAD"):
+            return initial
+        if len(args) > 1 and args[1] == "fetch":
+            return ""
+        # The normal fixture's transport still handles remote mapping.
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(update, "command", no_new_revision)
+    removed = []
+    real_cleanup = update.remove_cached_git_objects
+
+    def track_cleanup(objects):
+        removed.append(objects)
+        real_cleanup(objects)
+
+    monkeypatch.setattr(update, "remove_cached_git_objects", track_cleanup)
+    assert await update.prepare_update(root) is None
+    assert len(removed) == 1
+    assert not removed[0].exists()
+
+
+@pytest.mark.asyncio
+async def test_cn_repository_does_not_silently_switch_to_github(installation):
+    root, _ = installation
+    deploy_path = root / "config" / "deploy.yaml"
+    deploy_path.write_text(deploy_path.read_text().replace(
+        "Repository: https://src.example/repo", "Repository: cn"
+    ))
+    with pytest.raises(ValueError, match="Git-over-CDN"):
+        await update.prepare_update(root)

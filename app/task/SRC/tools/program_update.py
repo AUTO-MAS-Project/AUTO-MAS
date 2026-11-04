@@ -110,7 +110,13 @@ async def prepare_update(root: Path) -> PreparedUpdate | None:
     deploy = await asyncio.to_thread(read_deploy, root)
     git = git_executable(root, deploy)
     repository = str(deploy.get("Repository") or "cn")
-    if repository in {"cn", "global"}:
+    if repository == "cn":
+        raise ValueError(
+            "SRC 当前配置使用 Git-over-CDN 国内源；MAS 不能把 cn 静默改成 "
+            "GitHub 直连。此源尚不支持独立对象预下载，请选择 global 或 "
+            "暂时关闭 MAS 更新托管"
+        )
+    if repository == "global":
         repository = "https://github.com/LmeSzinc/StarRailCopilot"
     parsed = urlsplit(repository)
     if (
@@ -164,7 +170,7 @@ async def prepare_update(root: Path) -> PreparedUpdate | None:
         base == target
         and not (script_install.workspace(root) / "src-install.json").exists()
     ):
-        shutil.rmtree(objects)
+        remove_cached_git_objects(objects)
         return None
     return PreparedUpdate(
         root, base, target, repository, branch, git, objects, python.resolve()
@@ -234,7 +240,9 @@ async def apply_update(root: Path, prepared: PreparedUpdate) -> None:
     await asyncio.to_thread(assert_idle, root)
     deploy = await asyncio.to_thread(read_deploy, root)
     repository = str(deploy.get("Repository") or "cn")
-    if repository in {"cn", "global"}:
+    if repository == "cn":
+        raise ValueError("SRC 国内源在预下载后发生变化，请重新检查更新")
+    if repository == "global":
         repository = "https://github.com/LmeSzinc/StarRailCopilot"
     if (
         repository != prepared.repository
