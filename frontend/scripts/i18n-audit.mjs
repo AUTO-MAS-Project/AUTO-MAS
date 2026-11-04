@@ -202,6 +202,9 @@ const audit = async () => {
     key => namespaces.has(key.split('.')[0]) && !sourceKeys.has(key)
   )
 
+  for (const key of RETAINED_UNUSED_KEYS.keys()) {
+    if (!sourceKeys.has(key)) throw new Error(`词条已移除，请同步清理保留记录：${key}`)
+  }
   const unreferenced = [...sourceKeys].filter(key => !literalKeys.has(key) && !covered(key))
   const unused = unreferenced.filter(key => !RETAINED_UNUSED_KEYS.has(key))
   const retainedUnused = unreferenced
@@ -441,6 +444,7 @@ const main = async () => {
       actual: Object.values(result.placeholders).reduce((sum, entries) => sum + entries.length, 0),
       max: numberArg('max-placeholder', 0),
     },
+    { name: '死词条', actual: result.unused.length, max: numberArg('max-unused', 0) },
     { name: '硬编码中文', actual: result.hardcoded.length, max: numberArg('max-hardcoded', 0) },
   ]
   const exceeded = limits.filter(limit => limit.actual > limit.max)

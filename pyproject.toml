@@ -53,6 +53,7 @@ Repository = "https://github.com/AUTO-MAS-Project/AUTO-MAS"
 [dependency-groups]
 # 仅开发/回归测试使用，生产安装不需要
 dev = [
+    "mypy==2.4.1",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "ruff==0.16.8",
@@ -67,11 +68,15 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-select = ["E9", "F"]
+select = ["E4", "E7", "E9", "F", "I"]
 
 # F403/F405 为架构性模式：schema 公共模型经 `from ... import *` 星号导出、
 # utils 经 __getattr__ 惰性导出，均属有意设计，不作为待修问题统计。
-ignore = ["F401", "F403", "F405", "F841"]
+ignore = ["E501", "F403", "F405"]
+
+[tool.ruff.lint.isort]
+# 将项目内部模块与第三方依赖正确分组。
+known-first-party = ["app"]
 
 [tool.ruff.format]
 quote-style = "double"

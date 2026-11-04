@@ -21,6 +21,8 @@
     "release:lite": "vp build && yarn build:main && electron-builder --win --publish always --config build-json/electron-builder-lite.json",
     "lint": "vp lint .",
     "lint:fix": "vp lint . --fix",
+    "lint:md": "markdownlint-cli2 \"**/*.md\"",
+    "lint:md:fix": "markdownlint-cli2 --fix \"**/*.md\"",
     "format": "vp fmt . --write",
     "format:check": "vp fmt . --check",
     "typecheck": "vue-tsc -p tsconfig.app.json --noEmit",
@@ -42,7 +44,9 @@
     "e2e:report": "playwright show-report playwright-report/browser",
     "e2e:check": "node --test e2e/harness.check.mjs && tsc -p tsconfig.e2e.json",
     "audit:baseline": "node scripts/audit-baseline.mjs",
-    "audit:i18n": "node scripts/i18n-audit.mjs"
+    "audit:i18n": "node scripts/i18n-audit.mjs",
+    "audit:unused": "knip --no-progress",
+    "audit:duplicates": "jscpd src electron"
   },
   "build": {
     "asar": true,
@@ -121,7 +125,10 @@
     "electron": "43.8.2",
     "electron-builder": "26.8.1",
     "electron-builder-squirrel-windows": "26.15.3",
+    "jscpd": "5.4.1",
+    "knip": "6.41.0",
     "markdown-it": "^14.1.1",
+    "markdownlint-cli2": "^0.18.1",
     "matter-js": "^0.20.0",
     "monaco-editor": "0.54.0",
     "openapi-typescript-codegen": "^0.29.0",

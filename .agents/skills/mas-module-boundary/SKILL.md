@@ -73,7 +73,7 @@ description: Define and enforce backend module boundaries for Python services. U
 - 公共能力可直接导入，不要求为其增加懒加载。不要只为简单的路径选择新增无实际复用价值的 platform.py。
 - 工具功能内的契约和模型保留内部；共享 models 并非 tools 的契约存放处。
 - 平台环境目录内仍按功能归组：同一组件的多文件实现进入所属功能包，不再为内部文件维护根包扁平别名。平台差异能力继续走统一入口。
-- 平台能力以可达的行为测试和实际交付验证为依据，不维护人工类型赋值样例。入口分发与类型声明不代表对应平台已完成原生能力移植。
+- `tests/platform/typing_contracts.py` 用实际实现校验契约；使用 `mypy-platform.ini` 分别检查 win32、linux、darwin。分发和类型检查不代表对应平台已完成原生能力移植。
 
 ## 归属与迁移检查
 

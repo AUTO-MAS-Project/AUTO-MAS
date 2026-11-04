@@ -1,0 +1,9 @@
+{
+  "minLines": 5,
+  "minTokens": 70,
+  "mode": "mild",
+  "format": ["typescript", "javascript", "vue", "css"],
+  "ignore": ["**/src/api/**", "**/src/i18n/**", "**/*.test.*", "**/*.d.ts"],
+  "reporters": ["console", "json"],
+  "output": "../.dev/frontend-governance/duplicates"
+}
