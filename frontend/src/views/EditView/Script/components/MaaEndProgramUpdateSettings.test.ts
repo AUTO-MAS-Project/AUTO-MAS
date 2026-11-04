@@ -109,6 +109,8 @@ describe('MaaEnd program update settings', () => {
   })
   it('disables all controls before initial configuration is loaded', async () => {
     const { html } = await renderPanel(false)
-    expect((html.match(/disabled/g) ?? []).length).toBe(3)
+    expect(html).toMatch(/<select\b[^>]*\bdisabled(?:\s|>)/)
+    expect(html).toMatch(/<input\b[^>]*data-kind="switch"[^>]*\bdisabled(?:\s|>)/)
+    expect(html).toMatch(/<input\b[^>]*data-kind="password"[^>]*\bdisabled(?:\s|>)/)
   })
 })

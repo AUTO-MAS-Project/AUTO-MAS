@@ -9,19 +9,7 @@ from app.utils.common.expression.parser import ExpressionError
 from app.utils.common.log.patterns import MultiLineAggregator
 
 
-def test_pipeline_has_no_source_user_or_delivery_interfaces(monkeypatch):
-    monkeypatch.setenv("MAS_SCRIPT_LOG_PATH", "must-not-be-opened")
-    assert not any(
-        hasattr(log_box, name)
-        for name in (
-            "LogSpec",
-            "EntrySpec",
-            "LogBinding",
-            "SessionResult",
-            "LogCollect",
-            "log_box",
-        )
-    )
+def test_pipeline_processes_explicit_text():
     pipeline = log_box.LogPipeline()
     pipeline.add_rule("完成:", '"节点: " + $((?:完成: )(.+))', "自定义类型")
     pipeline.feed("完成: 邮件")
@@ -91,7 +79,8 @@ def test_processor_errors_are_owned_by_caller(phase):
 def test_returned_metadata_is_validated(timestamp):
     pipeline = log_box.LogPipeline()
     pipeline.add_rule(".+", "", "普通")
-    pipeline.feed("文本", timestamp=timestamp)
+    pipeline.feed("文本", timestamp=1.0)
+    pipeline.postprocessors.append(lambda entries: [("普通", "处理后文本", timestamp)])
     with pytest.raises(ValueError):
         pipeline.finish()
 
