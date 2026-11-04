@@ -168,11 +168,11 @@ def test_independent_user_deploy_restores_only_injected_update_fields(tmp_path):
     (src_config / "src.json").write_text('{"Alas":{}}')
     (user / "src.json").write_text('{"Alas":{}}')
     (src_config / "deploy.yaml").write_text(
-        "AutoUpdate: false\\nEnableReload: false\\n"
-        "AppAsarUpdate: false\\nBranch: dev\\n"
+        "AutoUpdate: false\nEnableReload: false\n"
+        "AppAsarUpdate: false\nBranch: dev\n"
     )
     (user / "deploy.yaml").write_text(
-        "AutoUpdate: true\\nEnableReload: true\\nAppAsarUpdate: true\\nBranch: main\\n"
+        "AutoUpdate: true\nEnableReload: true\nAppAsarUpdate: true\nBranch: main\n"
     )
     save_src_user_config(
         src_config,
