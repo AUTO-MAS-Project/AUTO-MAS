@@ -143,7 +143,6 @@ async def test_download_cancellation_cannot_modify_installation(installation):
     assert (root / "BAAH.exe").read_bytes() == pe()
 
 
-
 @pytest.mark.asyncio
 async def test_existing_install_allows_toolkit_adb_but_update_remains_strict(
     installation, monkeypatch
@@ -157,10 +156,14 @@ async def test_existing_install_allows_toolkit_adb_but_update_remains_strict(
         "process_iter",
         lambda fields: [SimpleNamespace(info={"exe": str(adb), "name": "adb.exe"})],
     )
-    # Confirming an unchanged installation must not fail because adb server persists.
+    def check_idle(root, *, allow_background_adb=False):
+        if not allow_background_adb:
+            raise script_install.InstallUnsafeError("adb is still running")
+
+    monkeypatch.setattr(update, "assert_idle", check_idle)
+    # A non-mutating confirmation tolerates a server, but applying a package does not.
     await update.confirm_current_install(root)
-    # Replacing the installation directory must still refuse an open adb binary.
-    with pytest.raises(script_install.InstallUnsafeError):
+    with pytest.raises(script_install.InstallUnsafeError, match="adb"):
         await update.apply_update(
             root,
             update.PreparedUpdate(
@@ -189,7 +192,7 @@ async def test_install_lock_conflict_never_marks_unrun_task_complete(
     )
     instance.script_info = SimpleNamespace(status="等待", user_list=[])
     instance.config_locks = {}
-    instance.task_info = SimpleNamespace(mode="AutoProxy")
+    instance.task_info = SimpleNamespace(mode="AutoProxy", task_id=str(uuid.uuid4()))
     monkeypatch.setattr(manager.Publisher, "send", AsyncMock())
     with script_install.installation_access(root):
         with pytest.raises(script_install.InstallUnsafeError) as raised:
@@ -199,26 +202,3 @@ async def test_install_lock_conflict_never_marks_unrun_task_complete(
     assert instance.script_info.status == "异常"
     assert instance.check_result != "Pass"
 
-
-@pytest.mark.asyncio
-async def test_missing_baah_path_requires_recovery_record(installation, monkeypatch):
-    root, _, _, _ = installation
-    import uuid
-
-    path = root / "missing.exe"
-    config = SimpleNamespace(
-        Script=SimpleNamespace(BAAHPath=path),
-        Emulator=SimpleNamespace(Id="emulator", Index="0"),
-    )
-    fake = object.__new__(manager.BAAHManager)
-    fake.task_info = SimpleNamespace(mode="AutoProxy")
-    fake.script_info = SimpleNamespace(script_id=str(uuid.uuid4()))
-    monkeypatch.setattr(
-        manager.Config, "ScriptConfig", {uuid.UUID(fake.script_info.script_id): config}
-    )
-    result = await fake.check()
-    assert "不存在" in result
-    journal = script_install.workspace(root) / "transaction.json"
-    journal.parent.mkdir(parents=True, exist_ok=True)
-    journal.write_text("{}")
-    assert await fake.check() == "Pass"

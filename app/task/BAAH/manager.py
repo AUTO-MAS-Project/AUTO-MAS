@@ -100,7 +100,6 @@ class BAAHManager(ScriptManagerBase):
             directory = script_install.workspace(path.parent)
             if not (
                 (directory / "transaction.json").exists()
-                or (directory / "previous").exists()
             ):
                 return "BAAH 主程序不存在，且没有可信的中断安装记录，请检查安装路径"
 
