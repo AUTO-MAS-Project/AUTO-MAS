@@ -598,6 +598,11 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
       item?: string
       /** 当前字节来自哪个源的 key。 */
       source?: string
+      /** Runtime 下载的目标版本与当前源尝试；旧事件可缺省。 */
+      targetVersion?: string
+      sourceName?: string
+      sourceIndex?: number
+      sourceCount?: number
       /** 最近 1 秒窗口的吞吐（字节/秒）。 */
       bytesPerSecond?: number
       /** 已下载字节数。 */
