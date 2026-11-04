@@ -118,6 +118,7 @@ from .tools.cultivate import (
     summarize_achievements,
     takeover_notice_patch_value,
 )
+from .tools.guide import ensure_maa_guide_skipped
 from .tools.native_config import (
     infrast_plan_mode,
     load_infrast_plans,
@@ -2208,8 +2209,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     ignore=shutil.ignore_patterns(MAA_STAMINA_LEGACY_FILENAME),
                 )
 
-        # base 缺失/损坏时退回 MAA 自带 .bak 或随包预设；预设含完整根级 Gui
-        # 与 Timers，缺根级 Gui 时 MAA 会把这次启动当首次运行并弹新手引导。
+        # base 缺失/损坏时退回 MAA 自带 .bak 或随包预设；引导在运行写盘前跳过。
         gui_new_set = read_maa_config_with_fallback(self.maa_set_path)
         self._remember_pending_update()
 
@@ -2244,6 +2244,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 待更新包已保留；本次任务启动不再触发安装，结束后恢复登记。
         gui_new_set.setdefault("Update", {})["UpdatePackage"] = ""
 
+        ensure_maa_guide_skipped(gui_new_set["Gui"])
         _utils_io.write_file(self.maa_set_path / "gui.new.json", gui_new_set)
         self._snapshot_maa_config()
         _utils_io.mark_native_config_injected(
