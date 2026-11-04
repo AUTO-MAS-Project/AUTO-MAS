@@ -1004,6 +1004,8 @@ export type { SrcConfig_Info } from './models/SrcConfig_Info';
 export type { SrcConfig_InfoInput } from './models/SrcConfig_InfoInput';
 export type { SrcConfig_Run } from './models/SrcConfig_Run';
 export type { SrcConfig_RunInput } from './models/SrcConfig_RunInput';
+export type { SrcConfig_Update } from './models/SrcConfig_Update';
+export type { SrcConfig_UpdateInput } from './models/SrcConfig_UpdateInput';
 export type { SrcConfigInput } from './models/SrcConfigInput';
 export type { SrcUserConfig } from './models/SrcUserConfig';
 export type { SrcUserConfig_Data } from './models/SrcUserConfig_Data';

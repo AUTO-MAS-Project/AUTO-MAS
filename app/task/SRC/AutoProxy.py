@@ -569,6 +569,12 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         src_set = _utils_io.read_file(staging_path / "src.json")
         deploy_set = poor_yaml_read(staging_path / "deploy.yaml")
 
+        # 运行期更新覆盖与 Run 一同处于现有配置快照范围，最终恢复原生配置。
+        if self.script_config.Update.TakeoverEnabled:
+            deploy_set["AutoUpdate"] = False
+            deploy_set["EnableReload"] = False
+            deploy_set["AppAsarUpdate"] = False
+
         # 直接运行任务
         deploy_set["Run"] = ["src"]
 

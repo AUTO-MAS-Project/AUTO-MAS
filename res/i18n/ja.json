@@ -2168,6 +2168,7 @@
   "core.edit.sraProfileAuto": "自動（{name}）",
   "core.edit.sraProfileLoadFailed": "SRA 設定プロファイルを読み取れませんでした：{reason}",
   "core.edit.sraProfileTooltip": "SRA には複数の設定が保存されています（SRA で付けた名前のまま）。ここで選んだものが MAS の画面表示・実行時の設定・スナップショット取り込みの元になります。「自動」は Default を優先し、なければファイル名順の先頭を使います",
+  "core.edit.srcProgramUpdateHint": "元のリポジトリとブランチから Git 更新を先行取得し、依存関係は SRC 公式インストーラーで準備します。通常の取得失敗は既存版で続行し、実行後に元の更新設定を復元します。cn/global は公式 Git を使用し、依存関係の先行取得は未対応です。",
   "core.edit.srcAccountSwitchTipIntro": "アカウントの切り替えに使います。切り替えない場合は空欄にしてください。",
   "core.edit.srcConfigRestoreScriptDesc": "SRC インストールディレクトリの config フォルダーのバックアップです。復元すると SRC 本体の設定を直接上書きします。この編集ページに入る、または実行する前に重複を排除して自動作成され、最新10件を保持します",
   "core.edit.srcConfigRestoreUserDesc": "MAS 設定のバックアップ（ステージ設定などのページ項目とアカウント設定ディレクトリ）です。復元すると MAS 設定に直接適用されます。この編集ページを閉じる際に重複を排除して自動作成され、最新10件を保持します",
