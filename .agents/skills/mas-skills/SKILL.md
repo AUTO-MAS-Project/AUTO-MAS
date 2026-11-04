@@ -54,6 +54,7 @@ Use these skills as needed:
 13. `mas-ci-checks`: every gate that runs on a PR to `dev` (format, lint, typecheck, full pytest suite, changelog fragment, `uv.lock`, revert hints, CNB mirror, unsigned Windows build) and the exact local command for each.
 14. `mas-telemetry`: proactive anonymous telemetry for new or changed business workflows, safe field contracts, result ownership, operation deduplication and isolated validation.
 15. `tdd`: required before designing, adding, changing or reviewing tests; grounds each test in a reachable scenario, an independent expected result and a distinct regression it can detect.
+16. `mas-doc-tutorial`: documentation tutorials produced or refreshed from verified UI flows, versioned screenshots, and per-topic preview evidence.
 
 ## Global Constraints
 
@@ -107,6 +108,8 @@ Use `mas-game-community`.
 Apply the cherry-pick rule in **Project Rule Areas** before touching git; confirm the commit is small and pure backend by inspecting the files it actually touches.
 15. Task mentions a red PR, a CI failure, GitHub Actions, format / lint / typecheck gates, the `skip-changelog` or `changelog-maintenance` labels, or editing `.github/workflows`, `.github/actions`, `scripts/changelog.py`, `scripts/check_reverts.py`:
 Use `mas-ci-checks`.
+16. Task creates or refreshes user tutorials, batches documentation screenshots, or corrects drift between article instructions and the application UI:
+Use `mas-doc-tutorial`; combine `mas-e2e` when defining or running its capture flows.
 
 ## Combined Execution Order
 
