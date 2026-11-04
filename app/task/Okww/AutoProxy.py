@@ -113,8 +113,8 @@ _OKWW_DISCONNECT_MSG = "OK-WW 未连接游戏客户端"
 #    不受 ok-ww 界面语言影响。MAS 固定传 -e（exit_after_task），成功后必打，
 #    比关游戏的断连日志早约 5 秒。新版 ok-ww 任务完成文案 gettext 化，中文
 #    环境不再输出英文完成日志，仅靠第 2 条会把已完成任务误判为断连重试。
-# 2. 旧版 ok-ww（v3.7.4 及更早）没有框架退出语，DailyTask.run() 末尾完成
-#    文案为硬编码英文，保留兜底。
+# 2. 旧版 ok-ww 完成文案为硬编码英文（v3.7.4 源码核实，其框架 ok-script
+#    2.0.8 已有第 1 条退出语），保留既有判据兜底，覆盖更早无法核实的版本。
 # 窗口关闭日志（Window closed exit_event.is_set）在任何退出路径都会出现，不能作为完成依据。
 _OKWW_SUCCESS_LOG: tuple[str, ...] = (
     "Successfully Executed Task, Exiting Game and App!",

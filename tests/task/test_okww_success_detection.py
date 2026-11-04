@@ -116,3 +116,42 @@ def test_disconnect_without_completion_still_fails():
         assert proxy.wait_event.is_set()
 
     asyncio.run(scenario())
+
+
+def test_exit_line_alone_without_completion_text_marks_success():
+    """仅框架退出语、无任何完成文案也判成功：退出语是独立判据。"""
+
+    async def scenario():
+        proxy = await judge(
+            [
+                "2026-11-04 14:38:16,061 INFO TaskExecutor TaskExecutor:Successfully Executed Task, Exiting Game and App!\r\n",
+                "2026-11-04 14:38:21,157 INFO update_window_size hwnd_window:hwnd changed,connected:0\r\n",
+            ]
+        )
+        assert proxy.cur_user_log.status == "Success!"
+        assert proxy.cur_user_item.status == "完成"
+        assert proxy.wait_event.is_set()
+
+    asyncio.run(scenario())
+
+
+def test_localized_completion_text_without_exit_line_is_not_success():
+    """仅翻译完成文案（含 farm 4C 追加预告）、无退出语：不得判成功。
+
+    翻译文案是 farm 4C 追加阶段在完成日志之前打印的预告，若被误加为
+    成功判据，任务会在刷声骸中途被判完成并杀进程；无退出语时它只应
+    落回断连异常路径。
+    """
+
+    async def scenario():
+        proxy = await judge(
+            [
+                "2026-11-04 14:30:00,000 INFO TaskExecutor DailyTask:每日任务已完成，开始传送并刷取4C声骸\r\n",
+                "2026-11-04 14:35:00,000 INFO update_window_size hwnd_window:hwnd changed,connected:0\r\n",
+            ]
+        )
+        assert proxy.cur_user_log.status == "OK-WW 未连接游戏客户端"
+        assert proxy.cur_user_item.status == "异常"
+        assert proxy.wait_event.is_set()
+
+    asyncio.run(scenario())
