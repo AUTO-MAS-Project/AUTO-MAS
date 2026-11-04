@@ -58,7 +58,13 @@ from app.config.types import (
 from app.utils import constants as _utils_constants
 
 from .base import DomainEntry
-from .plan import BAAHPlanConfig, MaaEndPlanConfig, MaaPlanConfig, MSSPlanConfig
+from .plan import (
+    BAAHPlanConfig,
+    MaaEndPlanConfig,
+    MaaPlanConfig,
+    MSSPlanConfig,
+    UniversalPlanConfig,
+)
 from .queue import Webhook
 from .shared import (
     _BGI_LEGACY_SERVERS_TO_RESOURCE,
@@ -2781,6 +2787,16 @@ class GeneralUserConfig(DomainEntry):
     Data: DataFields = Field(default_factory=DataFields)
 
     class InfoFields(ConfigGroup):
+        PlanMode: Annotated[
+            UUID | Literal["Fixed"],
+            ref(
+                "PlanConfig",
+                default="Fixed",
+                allow_values=("Fixed",),
+                entry_types=(UniversalPlanConfig,),
+            ),
+        ] = Field(default="Fixed", description="固定配置或通用计划表")
+
         Base: Annotated[
             Literal["shared", "independent", "native"],
             legacy(

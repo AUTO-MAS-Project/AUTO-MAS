@@ -1051,6 +1051,12 @@ export type { ToolsConfig_GameSignInput } from './models/ToolsConfig_GameSignInp
 export type { ToolsConfigInput } from './models/ToolsConfigInput';
 export type { ToolsGetOut } from './models/ToolsGetOut';
 export type { ToolsUpdateIn } from './models/ToolsUpdateIn';
+export type { UniversalPlanConfig } from './models/UniversalPlanConfig';
+export type { UniversalPlanConfig_Info } from './models/UniversalPlanConfig_Info';
+export type { UniversalPlanConfig_InfoInput } from './models/UniversalPlanConfig_InfoInput';
+export type { UniversalPlanConfigInput } from './models/UniversalPlanConfigInput';
+export type { UniversalPlanStateIn } from './models/UniversalPlanStateIn';
+export type { UniversalPlanStateOut } from './models/UniversalPlanStateOut';
 export type { UpdateCheckIn } from './models/UpdateCheckIn';
 export type { UpdateCheckOut } from './models/UpdateCheckOut';
 export { UpdateDownloadSnapshot } from './models/UpdateDownloadSnapshot';

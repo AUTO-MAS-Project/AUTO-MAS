@@ -179,3 +179,5 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
   加载失败、再次退出、异常、超时及退出取消各有有限分类，一次尝试仅结算一次。
   Windows 会话结束不新建恢复尝试；取消关机后重新允许恢复。验证采用隔离窗口事件和本地采集器，
   不代表真实 Windows 关机或生产接收验收。
+
+通用计划初版复用 `plan_manage_finished`、`plan_config_action_finished`、`config_write_finished` 与原生配置会话事件；计划类型新增有限值 `UniversalPlanConfig`，不采集计划、用户、脚本 ID 或配置内容。

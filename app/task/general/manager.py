@@ -61,6 +61,7 @@ class GeneralManager(ScriptManagerBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self.plan_locks = []
         self.external_config_exists = False
         self.external_config_snapshot_ready = False
         self._device_provider = device_provider
@@ -234,7 +235,14 @@ class GeneralManager(ScriptManagerBase):
             return True
         user_config = self.user_config[uuid.UUID(user_id)]
         # 原生来源=不写；shared/independent 来源都写面板值
-        return read_config_base(user_config) != CONFIG_BASE_NATIVE
+        return (
+            (
+                self.task_info.mode == "AutoProxy"
+                and user_config.Info.PlanMode != "Fixed"
+            )
+            or bool(self.task_info.plan_id)
+            or read_config_base(user_config) != CONFIG_BASE_NATIVE
+        )
 
     async def prepare(self):
         """运行前准备"""
@@ -245,6 +253,17 @@ class GeneralManager(ScriptManagerBase):
         ] = await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock_x()
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         self.user_config = self.script_config.UserData
+        plan_ids = {
+            user.Info.PlanMode
+            for user in self.user_config.values()
+            if user.Info.PlanMode != "Fixed"
+        }
+        if self.task_info.plan_id:
+            plan_ids.add(uuid.UUID(self.task_info.plan_id))
+        for plan_id in plan_ids:
+            plan = Config.PlanConfig[plan_id]
+            ticket = await plan.lock_s()
+            self.plan_locks.append((plan, ticket))
         logger.success(f"{self.script_info.script_id}已锁定, 通用脚本配置提取完成")
 
         script_config_path = self.script_config.Script.ConfigPath
@@ -406,6 +425,9 @@ class GeneralManager(ScriptManagerBase):
 
             self.script_info.status = "完成"
         finally:
+            for plan, ticket in self.plan_locks:
+                await plan.unlock(ticket)
+            self.plan_locks.clear()
             script_config = getattr(self, "script_config", None)
             if script_config is not None:
                 ticket = self.config_locks.pop(script_config.uid, None)

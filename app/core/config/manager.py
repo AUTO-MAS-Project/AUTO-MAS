@@ -95,6 +95,7 @@ from app.models.config import (
     SrcConfig,
     SrcUserConfig,
     TimeSet,
+    UniversalPlanConfig,
     Webhook,
     WhimboxConfig,
     WhimboxUserConfig,
@@ -1104,6 +1105,10 @@ class AppConfig:
             document = self.ScriptConfig[script_uid].model_dump(
                 context={"audience": "persist"}
             )
+            if isinstance(self.ScriptConfig[script_uid], GeneralConfig):
+                # 日配置属于原脚本和原用户，复制托管后先沿用固定配置。
+                for user in document["UserData"]["data"].values():
+                    user.setdefault("Info", {})["PlanMode"] = "Fixed"
             async with config_manager.transaction():
                 new_uid = self.ScriptConfig.add(
                     CLASS_BOOK[script], payload=document, regenerate_uuids=True
@@ -1477,6 +1482,17 @@ class AppConfig:
                 return False
             if guard is not None:
                 guard()
+            if isinstance(script_config, GeneralConfig):
+                plan_id = (data.get("Info") or {}).get("PlanMode", "Fixed")
+                if plan_id != "Fixed":
+                    from app.core.config.universal_plan import plan_directory
+
+                    plan_directory(
+                        data_path=self.data_path,
+                        plan=self.PlanConfig[uuid.UUID(str(plan_id))],
+                        script_id=script_id,
+                        user_id=user_id,
+                    )
             await user_config.update(type(user_config).model_validate(data))
         return True
 
@@ -1611,11 +1627,19 @@ class AppConfig:
 
     async def add_plan(
         self,
-        script: Literal["MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan"],
+        script: Literal[
+            "MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan", "UniversalPlan"
+        ],
         *,
         payload: dict[str, Any] | None = None,
+        script_id: str | None = None,
     ) -> tuple[
-        uuid.UUID, MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConfig
+        uuid.UUID,
+        MaaPlanConfig
+        | MaaEndPlanConfig
+        | BAAHPlanConfig
+        | MSSPlanConfig
+        | UniversalPlanConfig,
     ]:
         """添加计划表"""
 
@@ -1626,6 +1650,13 @@ class AppConfig:
             for item in PLAN_BOOK.values()
             if item["create_type"] == script
         )
+        if plan_class is UniversalPlanConfig:
+            owner = self.ScriptConfig[uuid.UUID(script_id or "")]
+            if not isinstance(owner, GeneralConfig):
+                raise ValueError("初版通用计划仅支持通用脚本")
+            if owner.is_locked:
+                raise RuntimeError("脚本正在运行，无法创建计划")
+            payload = {"Info": {"ScriptId": str(owner.uid)}}
         _config_uid = self.PlanConfig.add(plan_class, payload=payload)
         await self.PlanConfig.commit()
         _config_entry = self.PlanConfig[_config_uid]
@@ -1648,6 +1679,35 @@ class AppConfig:
         index = data["order"]
         return list(index), data["data"]
 
+    def get_universal_plan_days(self, plan_id: str) -> list[str]:
+        import calendar
+
+        from app.core.config.universal_plan import plan_directory
+
+        plan = self.PlanConfig[uuid.UUID(plan_id)]
+        if not isinstance(plan, UniversalPlanConfig) or plan.Info.ScriptId is None:
+            raise ValueError("通用计划不存在或未绑定脚本")
+        script = self.ScriptConfig[plan.Info.ScriptId]
+        if not isinstance(script, GeneralConfig):
+            raise ValueError("计划所属脚本不存在")
+        result = []
+        for day in ["ALL", *calendar.day_name, *(f"Day{i}" for i in range(1, 32))]:
+            directory = plan_directory(
+                data_path=self.data_path,
+                plan=plan,
+                script_id=str(plan.Info.ScriptId),
+                day=day,
+            )
+            ready = directory.is_dir() and any(directory.iterdir())
+            if script.Script.ConfigPathMode == "File":
+                ready = (
+                    script.Script.ConfigPath is not None
+                    and (directory / script.Script.ConfigPath.name).is_file()
+                )
+            if ready:
+                result.append(day)
+        return result
+
     async def update_plan(self, plan_id: str, data: Dict[str, Dict[str, Any]]) -> None:
         """更新计划表配置"""
 
@@ -1655,9 +1715,14 @@ class AppConfig:
 
         plan_uid = uuid.UUID(plan_id)
 
-        await self.PlanConfig[plan_uid].update(
-            type(self.PlanConfig[plan_uid]).model_validate(data)
-        )
+        plan = self.PlanConfig[plan_uid]
+        if isinstance(plan, UniversalPlanConfig):
+            for name in ("ScriptId",):
+                if name in (data.get("Info") or {}) and str(data["Info"][name]) != str(
+                    getattr(plan.Info, name)
+                ):
+                    raise ValueError("通用计划所属脚本不可修改")
+        await plan.update(type(plan).model_validate(data))
 
     async def del_plan(self, plan_id: str) -> None:
         """删除计划表配置"""

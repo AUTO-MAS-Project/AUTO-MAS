@@ -8,6 +8,14 @@ export type TaskCreateIn = {
      */
     taskId: string;
     /**
+     * 通用计划配置会话的计划 ID
+     */
+    planId?: (string | null);
+    /**
+     * 通用计划配置会话的日期分组
+     */
+    planDay?: (string | null);
+    /**
      * 任务模式; CycleRun 为循环运行, 仅接受循环队列, 其脚本按 AutoProxy 执行
      */
     mode: TaskCreateIn.mode;

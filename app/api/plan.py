@@ -36,6 +36,9 @@ from app.models.config import PLAN_BOOK
 from app.models.schema import OutBase
 from app.utils import get_logger
 
+UniversalPlanConfig = ConfigPayload[_config_models.UniversalPlanConfig]
+UniversalPlanConfigInput = StrictConfigInput[_config_models.UniversalPlanConfig]
+
 BAAHPlanConfig = ConfigPayload[_config_models.BAAHPlanConfig]
 BAAHPlanConfigInput = StrictConfigInput[_config_models.BAAHPlanConfig]
 MSSPlanConfig = ConfigPayload[_config_models.MSSPlanConfig]
@@ -46,7 +49,11 @@ MaaPlanConfig = ConfigPayload[_config_models.MaaPlanConfig]
 MaaPlanConfigInput = StrictConfigInput[_config_models.MaaPlanConfig]
 
 PlanConfigType = Literal[
-    "MaaPlanConfig", "MaaEndPlanConfig", "BAAHPlanConfig", "MSSPlanConfig"
+    "MaaPlanConfig",
+    "MaaEndPlanConfig",
+    "BAAHPlanConfig",
+    "MSSPlanConfig",
+    "UniversalPlanConfig",
 ]
 
 
@@ -55,20 +62,30 @@ class PlanIndexItem(BaseModel):
     type: PlanConfigType = Field(..., description="配置类型")
 
 
-PlanCreateType = Literal["MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan"]
+PlanCreateType = Literal[
+    "MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan", "UniversalPlan"
+]
 
 
-type PlanConfigData = MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConfig
+type PlanConfigData = (
+    MaaPlanConfig
+    | MaaEndPlanConfig
+    | BAAHPlanConfig
+    | MSSPlanConfig
+    | UniversalPlanConfig
+)
 type PlanConfigDataInput = (
     MaaPlanConfigInput
     | MaaEndPlanConfigInput
     | BAAHPlanConfigInput
     | MSSPlanConfigInput
+    | UniversalPlanConfigInput
 )
 
 
 class PlanCreateIn(BaseModel):
     type: PlanCreateType
+    scriptId: str | None = None
 
 
 class PlanCreateOut(OutBase):
@@ -115,6 +132,16 @@ class PlanReorderIn(BaseModel):
     indexList: List[str] = Field(..., description="计划ID列表, 按新顺序排列")
 
 
+class UniversalPlanStateIn(BaseModel):
+    planId: str
+
+
+class UniversalPlanStateOut(OutBase):
+    configuredDays: list[str] = Field(
+        default_factory=list, description="已保存完整配置的日期分组"
+    )
+
+
 router = APIRouter(prefix="/api/plan", tags=["计划管理"])
 logger = get_logger("计划管理 API")
 
@@ -129,7 +156,7 @@ logger = get_logger("计划管理 API")
 async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
 
     try:
-        uid, config = await Config.add_plan(plan.type)
+        uid, config = await Config.add_plan(plan.type, script_id=plan.scriptId)
         document = config.model_dump()
         document.pop("ui", None)
         data = cast(PlanConfigData, config_contract(type(config))(**document))
@@ -241,3 +268,20 @@ async def reorder_plan(plan: PlanReorderIn = Body(...)) -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+@router.post(
+    "/universal-state",
+    tags=["Get"],
+    summary="查询通用计划已配置的日期",
+    response_model=UniversalPlanStateOut,
+)
+async def get_universal_plan_state(
+    plan: UniversalPlanStateIn = Body(...),
+) -> UniversalPlanStateOut:
+    try:
+        return UniversalPlanStateOut(
+            configuredDays=Config.get_universal_plan_days(plan.planId)
+        )
+    except (KeyError, ValueError, TypeError) as error:
+        return UniversalPlanStateOut(code=400, status="error", message=str(error))

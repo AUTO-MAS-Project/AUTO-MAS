@@ -1,4 +1,4 @@
-import { Service } from '@/api'
+import { Service, AppLocale as ApiLocale } from '@/api'
 import { t, type AppLocale } from '@/i18n'
 import { getApiErrorMessage } from '@/utils/apiError'
 
@@ -16,7 +16,9 @@ export function useBackendI18nApi() {
 
   async function getMessages(locale: AppLocale) {
     try {
-      const response = await Service.getMessagesApiI18NMessagesGet(locale)
+      const response = await Service.getMessagesApiI18NMessagesGet(
+        { 'zh-CN': ApiLocale.ZH_CN, 'en-US': ApiLocale.EN_US, 'ja-JP': ApiLocale.JA_JP }[locale]
+      )
       if (response.code !== 200) throw new Error(response.message)
       return response.data
     } catch (error) {

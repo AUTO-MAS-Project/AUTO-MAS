@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.config import ConfigCollection
-from app.core import Notify, Publisher
+from app.core import Config, Notify, Publisher
 from app.core.history import aggregate_data
 from app.core.notify.task_content import (
     build_script_statistics_payload as build_script_statistics_payload,
@@ -130,12 +130,42 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
+        self.mas_config_dir = (
+            Config.data_path
+            / self.script_info.script_id
+            / str(self.cur_user_uid)
+            / "ConfigFile"
+        )
+        self.plan_active = self.cur_user_config.Info.PlanMode != "Fixed"
+        if self.plan_active:
+            from app.core.config.universal_plan import plan_directory
+
+            self.plan_template_dir = plan_directory(
+                data_path=Config.data_path,
+                plan=Config.PlanConfig[self.cur_user_config.Info.PlanMode],
+                script_id=self.script_info.script_id,
+                user_id=str(self.cur_user_uid),
+            )
+            self.mas_config_dir = plan_directory(
+                data_path=Config.data_path,
+                plan=Config.PlanConfig[self.cur_user_config.Info.PlanMode],
+                script_id=self.script_info.script_id,
+                user_id=str(self.cur_user_uid),
+                day=self.plan_template_dir.parent.name,
+                runtime=True,
+            )
         self.config_base = read_config_base(self.cur_user_config)
         # 是否写 MAS 侧配置：原生来源=不写，shared/independent 来源都写面板值。
-        self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE
+        self.use_mas_config = self.plan_active or self.config_base != CONFIG_BASE_NATIVE
         self.check_result = "-"
 
     async def check(self) -> str:
+        if self.plan_active:
+            source = self.plan_template_dir
+            if self.script_config.Script.ConfigPathMode == "File":
+                source = source / self.script_config.Script.ConfigPath.name
+            if not source.exists():
+                return "当天的通用计划尚未配置，请先编辑并保存该日期的配置"
 
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
@@ -149,13 +179,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
-        if (
-            self.use_mas_config
-            and not (
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-            ).is_dir()
-        ):
+        if self.use_mas_config and not self.mas_config_dir.is_dir():
             # MAS 侧还没为该用户存过配置（新建用户后直接跑自动代理）：不判异常、
             # 不阻断任务，只提示。下发环节会跳过、让脚本用它自己已有的配置，与
             # ScriptConfig.set_general 同口径 —— 这里一旦 return，跳过逻辑就永远
@@ -167,6 +191,15 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         return "Pass"
 
     async def prepare(self):
+
+        if self.plan_active:
+            from app.core.config.universal_plan import save_plan_config
+
+            save_plan_config(
+                source=self.plan_template_dir,
+                destination=self.mas_config_dir,
+                mode="Folder",
+            )
 
         self.general_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
@@ -576,11 +609,18 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             logger.info("脚本原生配置：跳过回写用户独立配置")
             return
 
+        if self.plan_active:
+            from app.core.config.universal_plan import save_plan_config
+
+            save_plan_config(
+                source=self.script_config_path,
+                destination=self.mas_config_dir,
+                mode=self.script_config.Script.ConfigPathMode,
+            )
+            return
+
         config_path_mode = self.script_config.Script.ConfigPathMode
-        mas_config_dir = (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-        )
+        mas_config_dir = self.mas_config_dir
 
         # 源是用户填的脚本配置位置，可能不存在或类型与模式不符（路径填错、脚本
         # 还没生成过配置）。按模式校验类型、不匹配就跳过：既要挡住 rmtree /
@@ -657,17 +697,14 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         # 它；指纹去重，失败不阻断运行）。General 的 ConfigFile 恒按用户
         from .tools.backup_archive import archive_mas_runtime_backup
 
-        archive_mas_runtime_backup(
-            self.script_info.script_id,
-            str(self.cur_user_uid),
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
-        )
+        if not self.plan_active:
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                self.mas_config_dir,
+            )
 
-        mas_config_dir = (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-        )
+        mas_config_dir = self.mas_config_dir
         config_path_mode = self.script_config.Script.ConfigPathMode
 
         # 导入配置文件。MAS 侧还没为这个用户存过配置时（新建用户后直接跑自动代理）

@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type GeneralUserConfig_InfoInput = {
     /**
+     * 固定配置或通用计划表
+     */
+    PlanMode?: (string | null);
+    /**
      * base 来源（shared=共享/independent=独立/native=原生）
      */
     Base?: ('shared' | 'independent' | 'native' | null);

@@ -201,6 +201,8 @@ import type { TimeSetReorderIn } from '../models/TimeSetReorderIn';
 import type { TimeSetUpdateIn } from '../models/TimeSetUpdateIn';
 import type { ToolsGetOut } from '../models/ToolsGetOut';
 import type { ToolsUpdateIn } from '../models/ToolsUpdateIn';
+import type { UniversalPlanStateIn } from '../models/UniversalPlanStateIn';
+import type { UniversalPlanStateOut } from '../models/UniversalPlanStateOut';
 import type { UpdateCheckIn } from '../models/UpdateCheckIn';
 import type { UpdateCheckOut } from '../models/UpdateCheckOut';
 import type { UpdateDownloadSnapshot } from '../models/UpdateDownloadSnapshot';
@@ -273,6 +275,39 @@ export class Service {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/core/health',
+        });
+    }
+    /**
+     * 获取 MCP 服务状态
+     * @returns McpStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getMcpStatusApiCoreMcpStatusGet(): CancelablePromise<McpStatusOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/core/mcp/status',
+        });
+    }
+    /**
+     * 通知首页首帧已渲染
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static notifyMcpHomePaintedApiCoreMcpHomePaintedPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/core/mcp/home-painted',
+        });
+    }
+    /**
+     * 重新加载失败的 MCP 服务
+     * @returns McpRetryOut Successful Response
+     * @throws ApiError
+     */
+    public static retryMcpApiCoreMcpRetryPost(): CancelablePromise<McpRetryOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/core/mcp/retry',
         });
     }
     /**
@@ -3444,6 +3479,25 @@ export class Service {
         });
     }
     /**
+     * 查询通用计划已配置的日期
+     * @param requestBody
+     * @returns UniversalPlanStateOut Successful Response
+     * @throws ApiError
+     */
+    public static getUniversalPlanStateApiPlanUniversalStatePost(
+        requestBody: UniversalPlanStateIn,
+    ): CancelablePromise<UniversalPlanStateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/universal-state',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询模拟器配置
      * @param requestBody
      * @returns EmulatorGetOut Successful Response
@@ -4208,6 +4262,106 @@ export class Service {
         });
     }
     /**
+     * 创建二维码
+     * @returns QrCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCreateApiToolsSignMiyousheQrCreatePost(): CancelablePromise<QrCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/create',
+        });
+    }
+    /**
+     * 轮询扫码状态
+     * 轮询状态，确认后返回 Passport App 或 Web 链路的完整 cookies。
+     * @param requestBody
+     * @returns QrCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCheckApiToolsSignMiyousheQrCheckPost(
+        requestBody: QrCheckIn,
+    ): CancelablePromise<QrCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/check',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存 cookie 到账号配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static qrSaveApiToolsSignMiyousheQrSavePost(
+        requestBody: QrSaveIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/save',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 创建二维码
+     * @returns SklandQrCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCreateApiToolsSignSklandQrCreatePost(): CancelablePromise<SklandQrCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/skland/qr/create',
+        });
+    }
+    /**
+     * 轮询扫码状态
+     * 确认后返回短时 scanCode，由前端随后提交保存。
+     * @param requestBody
+     * @returns SklandQrCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCheckApiToolsSignSklandQrCheckPost(
+        requestBody: SklandQrCheckIn,
+    ): CancelablePromise<SklandQrCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/skland/qr/check',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存森空岛 Token
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static qrSaveApiToolsSignSklandQrSavePost(
+        requestBody: SklandQrSaveIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/skland/qr/save',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询全局 Mirror 酱 CDK 状态与到期时间
      * @param requestBody
      * @returns SettingMirrorCdkOut Successful Response
@@ -4760,139 +4914,6 @@ export class Service {
             errors: {
                 422: `Validation Error`,
             },
-        });
-    }
-    /**
-     * 创建二维码
-     * @returns QrCreateOut Successful Response
-     * @throws ApiError
-     */
-    public static qrCreateApiToolsSignMiyousheQrCreatePost(): CancelablePromise<QrCreateOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/miyoushe/qr/create',
-        });
-    }
-    /**
-     * 轮询扫码状态
-     * 轮询状态，确认后返回 Passport App 或 Web 链路的完整 cookies。
-     * @param requestBody
-     * @returns QrCheckOut Successful Response
-     * @throws ApiError
-     */
-    public static qrCheckApiToolsSignMiyousheQrCheckPost(
-        requestBody: QrCheckIn,
-    ): CancelablePromise<QrCheckOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/miyoushe/qr/check',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 保存 cookie 到账号配置
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static qrSaveApiToolsSignMiyousheQrSavePost(
-        requestBody: QrSaveIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/miyoushe/qr/save',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 创建二维码
-     * @returns SklandQrCreateOut Successful Response
-     * @throws ApiError
-     */
-    public static qrCreateApiToolsSignSklandQrCreatePost(): CancelablePromise<SklandQrCreateOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/skland/qr/create',
-        });
-    }
-    /**
-     * 轮询扫码状态
-     * 确认后返回短时 scanCode，由前端随后提交保存。
-     * @param requestBody
-     * @returns SklandQrCheckOut Successful Response
-     * @throws ApiError
-     */
-    public static qrCheckApiToolsSignSklandQrCheckPost(
-        requestBody: SklandQrCheckIn,
-    ): CancelablePromise<SklandQrCheckOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/skland/qr/check',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 保存森空岛 Token
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static qrSaveApiToolsSignSklandQrSavePost(
-        requestBody: SklandQrSaveIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/skland/qr/save',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取 MCP 服务状态
-     * @returns McpStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static getMcpStatusApiCoreMcpStatusGet(): CancelablePromise<McpStatusOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/core/mcp/status',
-        });
-    }
-    /**
-     * 重新加载失败的 MCP 服务
-     * @returns McpRetryOut Successful Response
-     * @throws ApiError
-     */
-    public static retryMcpApiCoreMcpRetryPost(): CancelablePromise<McpRetryOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/core/mcp/retry',
-        });
-    }
-    /**
-     * 通知首页首帧已渲染
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static notifyMcpHomePaintedApiCoreMcpHomePaintedPost(): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/core/mcp/home-painted',
         });
     }
 }

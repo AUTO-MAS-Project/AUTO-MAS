@@ -10,6 +10,7 @@ type PlanCreateType = PlanCreateIn.type
 export type PlanConfigData = PlanGetOut['data'][string]
 
 export const PLAN_CONFIG_TYPES = {
+  UNIVERSAL: PlanIndexItem.type.UNIVERSAL_PLAN_CONFIG,
   MAA: PlanIndexItem.type.MAA_PLAN_CONFIG,
   MAA_END: PlanIndexItem.type.MAA_END_PLAN_CONFIG,
   BAAH: PlanIndexItem.type.BAAHPLAN_CONFIG,
@@ -47,6 +48,18 @@ interface PlanTypeDescriptor {
 // ==================== 注册表 ====================
 
 export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
+  [PLAN_CONFIG_TYPES.UNIVERSAL]: {
+    configType: PLAN_CONFIG_TYPES.UNIVERSAL,
+    createType: PlanCreateIn.type.UNIVERSAL_PLAN,
+    displayNameKey: 'core.plan.type.universal',
+    defaultName: '新通用计划表',
+    selectorTag: '通用',
+    reloadAfterSave: false,
+    supportsSimpleView: false,
+    tableComponent: defineAsyncComponent(
+      () => import('@/views/plan/tables/UniversalPlanTable.vue')
+    ),
+  },
   [PLAN_CONFIG_TYPES.MAA]: {
     configType: PLAN_CONFIG_TYPES.MAA,
     createType: PlanCreateIn.type.MAA_PLAN,

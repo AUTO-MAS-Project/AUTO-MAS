@@ -41,6 +41,7 @@ const plan = [
   'MaaEndPlanConfig',
   'BAAHPlanConfig',
   'MSSPlanConfig',
+  'UniversalPlanConfig',
   'multi',
   'unknown',
 ] as const
