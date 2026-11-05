@@ -97,6 +97,7 @@ from app.task.history_core import UserHistoryDependencies, save_user_history
 from app.task.registration import ManagerBuildContext, ManagerFactory
 from app.utils import LOG_TYPE_ERROR, LazyProxy, get_logger
 from app.utils.common.log_box.results import LogEntry
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 System = LazyProxy("app.services", "System")
 
@@ -1105,6 +1106,18 @@ class Task(TaskExecuteBase):
                     script_item.status,
                     (user.status for user in script_item.user_list),
                 )
+        except FluxdownCancelUnconfirmed as e:
+            # Unconfirmed daemon shutdown is not a retryable cycle failure:
+            # the next script must not start while a downloader may still write.
+            script_item.status = "异常"
+            detail = "无法确认预下载已停止；后台可能仍在写入，循环队列已中止"
+            if self.stopped_manually:
+                self._exit_result = "cancelled"
+                self._exit_error = detail
+            else:
+                self._record_error(detail)
+            logger.error(f"{detail}: {entry.script_name}: {e}")
+            raise
         except Exception as e:
             script_item.status = "异常"
             logger.exception(f"循环任务出现异常: {entry.script_name}: {e}")
