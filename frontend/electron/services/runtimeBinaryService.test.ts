@@ -189,9 +189,109 @@ describe('syncRuntimeBinary', () => {
     const [first] = buildRuntimeBinarySources(TARGET_VERSION)
     expect(urls).toEqual([first.url])
     expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
-    expect(progress.at(-1)).toEqual({
-      progress: 100,
-      message: `Runtime 已更新到 ${TARGET_VERSION}`,
+    expect(progress).toEqual([
+      {
+        phase: 'check',
+        progress: 0,
+        targetVersion: TARGET_VERSION,
+        message: `正在获取 Runtime ${TARGET_VERSION} 的校验信息`,
+      },
+      ...[0, 50].map(value => ({
+        phase: 'download',
+        progress: value,
+        targetVersion: TARGET_VERSION,
+        item: TARGET_ASSET,
+        source: first.key,
+        sourceName: first.name,
+        sourceIndex: 1,
+        sourceCount: buildRuntimeBinarySources(TARGET_VERSION).length,
+        message: `正在从 ${first.name}（1/${buildRuntimeBinarySources(TARGET_VERSION).length}） 下载 Runtime ${TARGET_VERSION}`,
+        ...(value === 50
+          ? { bytesPerSecond: undefined, current: undefined, total: undefined }
+          : {}),
+      })),
+      {
+        phase: 'complete',
+        progress: 100,
+        targetVersion: TARGET_VERSION,
+        message: `Runtime 已更新到 ${TARGET_VERSION}`,
+      },
+    ])
+  })
+
+  it('下载失败切源后按实际来源与尝试序号报告，重试不沿用上一轮序号', async () => {
+    const sources = buildRuntimeBinarySources(TARGET_VERSION)
+    const { download, urls } = createDownload(url =>
+      url === sources[0].url
+        ? { success: false, error: 'HTTP 503' }
+        : { success: true, content: NEW_BINARY }
+    )
+    const progress: RuntimeBinarySyncProgress[] = []
+    const outcome = await syncRuntimeBinary(
+      syncOptions({ download, onProgress: update => progress.push(update) })
+    )
+    expect(outcome.status).toBe('upgraded')
+    expect(urls).toEqual(sources.slice(0, 2).map(source => source.url))
+    expect(
+      progress.map(({ phase, source, sourceIndex, sourceCount, targetVersion }) => ({
+        phase,
+        source,
+        sourceIndex,
+        sourceCount,
+        targetVersion,
+      }))
+    ).toEqual(
+      [
+        { phase: 'check', targetVersion: TARGET_VERSION },
+        {
+          phase: 'download',
+          source: sources[0].key,
+          sourceIndex: 1,
+          sourceCount: sources.length,
+          targetVersion: TARGET_VERSION,
+        },
+        {
+          phase: 'download',
+          source: sources[1].key,
+          sourceIndex: 2,
+          sourceCount: sources.length,
+          targetVersion: TARGET_VERSION,
+        },
+        {
+          phase: 'download',
+          source: sources[1].key,
+          sourceIndex: 2,
+          sourceCount: sources.length,
+          targetVersion: TARGET_VERSION,
+        },
+        { phase: 'complete', targetVersion: TARGET_VERSION },
+      ].map(value => ({
+        source: undefined,
+        sourceIndex: undefined,
+        sourceCount: undefined,
+        ...value,
+      }))
+    )
+    for (const event of progress.filter(event => event.phase === 'download')) {
+      const source = sources[event.sourceIndex! - 1]
+      expect(event.sourceName).toBe(source.name)
+      expect(event.message).toContain(`${source.name}（${event.sourceIndex}/${sources.length}）`)
+    }
+
+    fs.writeFileSync(runtimePath, OLD_BINARY)
+    const retry: RuntimeBinarySyncProgress[] = []
+    await syncRuntimeBinary(
+      syncOptions({
+        download: createDownload(() => ({ success: true, content: NEW_BINARY })).download,
+        onProgress: update => retry.push(update),
+      })
+    )
+    expect(retry.map(event => event.phase)).toEqual(['check', 'download', 'download', 'complete'])
+    expect(retry[1]).toMatchObject({
+      source: sources[0].key,
+      sourceIndex: 1,
+      sourceCount: sources.length,
+      targetVersion: TARGET_VERSION,
     })
   })
 
