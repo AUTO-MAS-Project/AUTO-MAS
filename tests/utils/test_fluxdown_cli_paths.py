@@ -35,9 +35,7 @@ def test_auto_detect_only_returns_complete_folder(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli.shutil, "which", lambda _: None)
     monkeypatch.setattr(cli, "_candidate_drives", lambda: [])
-    monkeypatch.setattr(
-        cli.update_native, "FLUXDOWN_AGENT_NAME", "fluxdown-agent.exe"
-    )
+    monkeypatch.setattr(cli.update_native, "FLUXDOWN_AGENT_NAME", "fluxdown-agent.exe")
     monkeypatch.setattr(cli.update_native, "FLUXDOWN_DAEMON_NAME", "fluxdownd.exe")
 
     directory = tmp_path / "installed"
@@ -60,9 +58,7 @@ def test_auto_detect_rejects_empty_server_binary(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli.shutil, "which", lambda _: None)
     monkeypatch.setattr(cli, "_candidate_drives", lambda: [])
-    monkeypatch.setattr(
-        cli.update_native, "FLUXDOWN_AGENT_NAME", "fluxdown-agent.exe"
-    )
+    monkeypatch.setattr(cli.update_native, "FLUXDOWN_AGENT_NAME", "fluxdown-agent.exe")
     monkeypatch.setattr(cli.update_native, "FLUXDOWN_DAEMON_NAME", "fluxdownd.exe")
 
     directory = tmp_path / "installed"
