@@ -1058,3 +1058,30 @@ async def test_unconfirmed_writer_map_failure_preserves_ownership_error(
             action="退出",
             write_history=None,
         )
+
+
+@pytest.mark.asyncio
+async def test_destination_lock_io_failure_does_not_grant_file_ownership(
+    tmp_path, monkeypatch
+):
+    import errno
+
+    exe, destination = tmp_path / "exe", tmp_path / "shared.zip"
+    destination.write_bytes(b"other writer")
+    monkeypatch.setattr(cli, "_server_data_dir", lambda *_: tmp_path)
+
+    def fail_lock(_handle):
+        raise OSError(errno.EIO, "file lock unavailable")
+
+    monkeypatch.setattr(cli.file_lock, "acquire", fail_lock)
+    backend = AsyncMock()
+    with pytest.raises(transport.FluxdownWriterUnconfirmed):
+        await transport.download_file(
+            "https://example.invalid/package",
+            destination,
+            timeout=10,
+            options=transport.FluxdownOptions("builtin", "GitHub", str(exe), 8, True),
+            http_download=backend,
+        )
+    backend.assert_not_awaited()
+    assert destination.read_bytes() == b"other writer"

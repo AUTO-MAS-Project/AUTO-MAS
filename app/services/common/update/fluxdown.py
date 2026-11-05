@@ -95,11 +95,11 @@ async def download_file(
                 source=source,
                 http_download=http_download,
             )
-    except asyncio.CancelledError:
+    except (asyncio.CancelledError, Exception) as error:
         if not entered:
             raise FluxdownWriterUnconfirmed(
-                "取消等待下载文件锁，其他写入者尚未确认停止"
-            ) from None
+                "未取得下载文件锁，其他写入者尚未确认停止"
+            ) from error
         raise
 
 
