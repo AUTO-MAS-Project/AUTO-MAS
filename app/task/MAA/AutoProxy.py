@@ -1416,7 +1416,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 self._cultivate_archive_versions.clear()
                 self.cur_user_log = LogRecord()
                 self.cur_user_item.add_log_record(
-                    self.log_start_time, self.cur_user_log
+                    self.log_start_time, self.cur_user_log, retry=i > 0
                 )
 
                 try:

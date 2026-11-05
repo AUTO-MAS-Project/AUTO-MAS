@@ -3448,7 +3448,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         start_time = datetime.now().astimezone()
         self.cur_user_log_started_at = start_time
         self.cur_user_log = LogRecord()
-        self.cur_user_item.add_log_record(start_time, self.cur_user_log)
+        self.cur_user_item.add_log_record(
+            start_time, self.cur_user_log, retry=True
+        )
         # 这份日志从零开始，行号也要回到 1，否则会接着上一个用户的行号往下数
         self.script_info.log_first_line = 1
 

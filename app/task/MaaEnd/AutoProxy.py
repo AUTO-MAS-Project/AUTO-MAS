@@ -1583,7 +1583,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self.cur_user_log = LogRecord(
                 phase=self.mode if if_quick_config else "Source"
             )
-            self.cur_user_item.add_log_record(self.log_start_time, self.cur_user_log)
+            self.cur_user_item.add_log_record(
+                self.log_start_time, self.cur_user_log, retry=i > 1
+            )
 
             self.script_info.log = "正在启动游戏..."
             account_switch_method = self._account_switch_method()

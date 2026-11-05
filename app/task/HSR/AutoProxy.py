@@ -278,7 +278,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self._current_user_item = user_item
         self._current_log_start_time = datetime.now().astimezone()
         self._current_user_log = LogRecord(status="HSR 正常运行中")
-        user_item.add_log_record(self._current_log_start_time, self._current_user_log)
+        user_item.add_log_record(
+            self._current_log_start_time, self._current_user_log, retry=attempt > 1
+        )
         user_item.status = "运行"
         if attempt <= 1:
             self._append_log(f"开始处理用户「{user_name}」")
