@@ -376,7 +376,9 @@ def _extract_zip(archive: Path, target: Path) -> None:
             parts = _safe_parts(info.filename)
             if parts:
                 entries.append((info, parts))
-        strip_root = _common_root(parts for _, parts in entries)
+        strip_root = _common_root(
+            parts for info, parts in entries if not info.is_dir()
+        )
         for info, parts in entries:
             relative = parts[1:] if strip_root and len(parts) > 1 else parts
             if not relative:
@@ -410,7 +412,9 @@ def _extract_tar(archive: Path, target: Path) -> None:
     """安全按流解压 tar.gz，去掉唯一的版本号外层目录。"""
     members = _read_tar_members(archive)
     entries = [(m, _safe_parts(m.name)) for m in members]
-    strip = _common_root(parts for _, parts in entries if parts)
+    strip = _common_root(
+        parts for member, parts in entries if member.isfile() and parts
+    )
     with tarfile.open(archive, "r:gz") as bundle:
         for member, parts in entries:
             relative = parts[1:] if strip and parts[0] == strip else parts
