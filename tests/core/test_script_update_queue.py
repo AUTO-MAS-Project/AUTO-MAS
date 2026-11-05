@@ -556,7 +556,7 @@ async def test_cycle_unconfirmed_stop_never_starts_next_entry(monkeypatch):
         await task._run_due_entries(queue_id, entries)
     assert started == [0]
     assert task._exit_result == "cancelled"
-    assert "未停止" in task._exit_error
+    assert "无法确认" in task._exit_error
     assert task.script_reservations.try_acquire(
         script_a, "another", root_paths=(), emulator_key=None
     )
