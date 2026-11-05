@@ -51,29 +51,14 @@
           </a-select>
         </div>
         <div class="row-cell days-cell">
-          <a-select
+          <QueueWeekdaySelect
             v-model:value="record.days"
-            mode="multiple"
-            size="small"
             style="width: 100%"
-            :placeholder="t('core.queue.time.selectDays')"
             :disabled="loading"
-            :max-tag-count="isEveryDay(record.days) ? 0 : 7"
-            :max-tag-placeholder="maxTagPlaceholder"
             :bordered="false"
             class="days-select"
             @change="updateTimeSetDays(record)"
-          >
-            <a-select-option value="Monday">{{ t('core.queue.time.Monday') }}</a-select-option>
-            <a-select-option value="Tuesday">{{ t('core.queue.time.Tuesday') }}</a-select-option>
-            <a-select-option value="Wednesday">{{
-              t('core.queue.time.Wednesday')
-            }}</a-select-option>
-            <a-select-option value="Thursday">{{ t('core.queue.time.Thursday') }}</a-select-option>
-            <a-select-option value="Friday">{{ t('core.queue.time.Friday') }}</a-select-option>
-            <a-select-option value="Saturday">{{ t('core.queue.time.Saturday') }}</a-select-option>
-            <a-select-option value="Sunday">{{ t('core.queue.time.Sunday') }}</a-select-option>
-          </a-select>
+          />
         </div>
         <div class="row-cell time-cell">
           <a-time-picker
@@ -108,6 +93,7 @@
 <script setup lang="ts">
 import DragHandle from '@/components/DragHandle.vue'
 import DraggableTableShell from './DraggableTableShell.vue'
+import QueueWeekdaySelect from './QueueWeekdaySelect.vue'
 import { useI18n } from 'vue-i18n'
 import { ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
@@ -118,13 +104,6 @@ import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
 
 const { t } = useI18n()
 
-// 七天全选时仅简化显示，不改变实际星期数组。
-const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-const isEveryDay = (days: string[] = []) => WEEKDAYS.every(day => days.includes(day))
-const maxTagPlaceholder = (omittedValues: unknown[]) =>
-  omittedValues.length === WEEKDAYS.length
-    ? t('core.plan.week.ALL')
-    : `+${omittedValues.length}`
 const logger = window.electronAPI.getLogger('定时项管理')
 
 // Props
