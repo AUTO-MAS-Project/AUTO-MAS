@@ -1873,12 +1873,17 @@ async def _fluxdown_server_download(
         # A private server can be killed only when it is ours and this is
         # its sole known download. Never kill an independently managed or
         # shared server, even on explicit user cancellation.
-        if await _to_thread_strong(
-            fluxdown_server_emergency_stop_if_exclusive,
-            cli_exe,
-            url,
-            destination,
-        ):
+        try:
+            stopped = await _to_thread_strong(
+                fluxdown_server_emergency_stop_if_exclusive,
+                cli_exe,
+                url,
+                destination,
+            )
+        except Exception as error:
+            logger.warning(f"[server] 紧急停止服务异常，无法确认已停止: {error}")
+            stopped = False
+        if stopped:
             record.error = "用户取消，私有 FluxDown 服务已强制结束"
             raise
         # 无法确认已停止：daemon 可能仍在写目标文件，不能谎报"取消成功"，
