@@ -79,16 +79,23 @@ DownloadProgress = Callable[[int, int, float], Awaitable[None]]
 _usage_lock = threading.Lock()
 _active_downloads = 0
 _installing = False
+_server_emergency_stopping = False
 
 
 def _using_fluxdown(function):
     @wraps(function)
     async def guarded(*args, **kwargs):
         global _active_downloads
-        with _usage_lock:
-            if _installing:
-                raise RuntimeError("FluxDown 正在安装，请稍后重试下载")
-            _active_downloads += 1
+        while True:
+            # An exclusive shutdown can take several seconds in a worker
+            # thread; never block the event loop waiting for its process lock.
+            with _usage_lock:
+                if not _server_emergency_stopping:
+                    if _installing:
+                        raise RuntimeError("FluxDown 正在安装，请稍后重试下载")
+                    _active_downloads += 1
+                    break
+            await asyncio.sleep(0.05)
         try:
             return await function(*args, **kwargs)
         finally:
@@ -1069,12 +1076,14 @@ def fluxdown_server_emergency_stop_if_exclusive(
     another MAS download, or a process whose executable identity is uncertain.
     False means the caller must report unconfirmed writer ownership instead.
     """
+    global _server_emergency_stopping
     with _usage_lock:
-        if _installing or _active_downloads != 1:
+        if _installing or _server_emergency_stopping or _active_downloads != 1:
             return False
-        # Keep the admission lock through the entire exclusivity check and
-        # process termination. Another download must not register after we
-        # count owners but before the shared daemon is stopped.
+        # Close admission atomically, then release the tiny registration lock
+        # before waiting for process termination under the server lock.
+        _server_emergency_stopping = True
+    try:
         with _server.lock:
             handle = _server.handle
             if not _server.spawned_by_us or handle is None:
@@ -1120,6 +1129,9 @@ def fluxdown_server_emergency_stop_if_exclusive(
                 "[server] 用户停止下载，暂停无法确认；已结束独占的 MAS 私有 FluxDown 服务"
             )
             return True
+    finally:
+        with _usage_lock:
+            _server_emergency_stopping = False
 
 
 atexit.register(fluxdown_server_shutdown)
