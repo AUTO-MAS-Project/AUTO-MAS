@@ -196,11 +196,13 @@ class WhimboxManager(ScriptManagerBase):
                     ScriptUpdateRequest(str(self.script_info.script_id), "Whimbox"),
                     backend_update.apply_update
                     if getattr(self, "_update_candidate", None) is not None
+                    and not isinstance(self._update_candidate, str)
                     else ensure_backend_updated,
                     root,
                     *(
                         [self._update_candidate]
                         if getattr(self, "_update_candidate", None) is not None
+                        and not isinstance(self._update_candidate, str)
                         else []
                     ),
                 )
