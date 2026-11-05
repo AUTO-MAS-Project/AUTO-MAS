@@ -285,7 +285,9 @@ async def detect_fluxdown() -> FluxdownDetectOut:
     try:
         configured = str(Config.setting.Update.FluxdownPath or "")
         result = await asyncio.to_thread(
-            _utils_fluxdown_cli.fluxdown_detect, configured
+            _utils_fluxdown_cli.fluxdown_detect,
+            configured,
+            managed_dir=Config.data_path / "fluxdown" / "bin",
         )
         return FluxdownDetectOut(**result)
     except Exception as e:
