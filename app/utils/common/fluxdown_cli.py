@@ -585,20 +585,19 @@ def fluxdown_components(directory: Path) -> dict[str, bool]:
 def fluxdown_detect(
     configured_path: str | None = None,
     scan_budget: float = 20.0,
+    *,
+    managed_dir: Path | None = None,
 ) -> dict:
     """自动检测完整的 CLI + Server 目录，不把缺件桌面版判为已安装。
 
     未完成的候选目录仍会出现在 candidates 中，供设置页提示补装组件；
     只有 CLI 和 Agent/Daemon 同目录时才返回可保存的 path。
     """
-    from app.core import Config
-
     raw: list[Path] = []
     configured = Path(configured_path) if configured_path else None
-    known_dirs = [
-        Config.data_path / "fluxdown" / "bin",
-        Path.cwd() / "res" / "fluxdown-cli",
-    ]
+    known_dirs = [Path.cwd() / "res" / "fluxdown-cli"]
+    if managed_dir is not None:
+        known_dirs.insert(0, Path(managed_dir))
     if configured is not None:
         known_dirs.insert(0, configured if configured.is_dir() else configured.parent)
     if getattr(sys, "frozen", False):
@@ -800,7 +799,7 @@ def _server_binaries(cli_exe: Path) -> tuple[Path, Path] | None:
     return None
 
 
-def _server_data_dir(cli_exe: Path) -> Path:
+def _server_data_dir(cli_exe: Path, *, data_root: Path | None = None) -> Path:
     """MAS 私有的 server 数据根：token、任务映射、日志都放在其下。
 
     不能复用 ``cli_exe.parent / "portable_data"``：那是用户便携版自己的数据库
@@ -811,15 +810,15 @@ def _server_data_dir(cli_exe: Path) -> Path:
 
     ``cli_exe`` 仅为保持调用方签名稳定而保留，数据根与 CLI 位置无关。
     """
-    legacy = Path.cwd() / "data" / "fluxdown_server"
+    # 无应用级配置依赖：调用方可传入数据根，旧调用使用工作目录兼容路径。
+    root = Path(data_root) if data_root is not None else Path.cwd() / "data"
+    legacy = root / "fluxdown_server"
     if legacy.exists():
         return legacy  # 保留热更前的任务记录、token 和续传状态
-    from app.core import Config
-
-    return Config.data_path / "fluxdown" / "server"
+    return root / "fluxdown" / "server"
 
 
-def _local_cli_exe(cli_exe: Path) -> Path:
+def _local_cli_exe(cli_exe: Path, *, data_root: Path | None = None) -> Path:
     """把 CLI 复制进 MAS 私有便携目录，让 ``--local`` 的数据落在 MAS 数据根。
 
     官方 ``--local`` 用 ``resolve_data_dir(None)`` 定位数据目录，只认 exe 同目录
@@ -832,13 +831,12 @@ def _local_cli_exe(cli_exe: Path) -> Path:
     复制失败（磁盘/权限）抛 :class:`RuntimeError`，由上层回退 httpx；绝不退回
     使用用户 CLI，以免污染用户数据。
     """
-    legacy = Path.cwd() / "data" / "fluxdown_local"
+    base = Path(data_root) if data_root is not None else Path.cwd() / "data"
+    legacy = base / "fluxdown_local"
     if (legacy / "portable_data").exists():
         root = legacy  # 不能丢弃旧版 --local 断点数据
     else:
-        from app.core import Config
-
-        root = Config.data_path / "fluxdown" / "local"
+        root = base / "fluxdown" / "local"
     try:
         with _LOCAL_CLI_LOCK:
             root.mkdir(parents=True, exist_ok=True)
