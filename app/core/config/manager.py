@@ -1652,10 +1652,10 @@ class AppConfig:
         )
         if plan_class is UniversalPlanConfig:
             if not script_id:
-                raise ValueError("通用计划必须指定所属脚本")
+                raise ValueError("通用脚本计划表必须指定所属脚本")
             owner = self.ScriptConfig[uuid.UUID(script_id)]
             if not isinstance(owner, GeneralConfig):
-                raise ValueError("初版通用计划仅支持通用脚本")
+                raise ValueError("通用脚本计划表只支持通用脚本")
             if owner.is_locked:
                 raise RuntimeError("脚本正在运行，无法创建计划")
             payload = {"Info": {"ScriptId": str(owner.uid)}}
@@ -1688,7 +1688,7 @@ class AppConfig:
 
         plan = self.PlanConfig[uuid.UUID(plan_id)]
         if not isinstance(plan, UniversalPlanConfig) or plan.Info.ScriptId is None:
-            raise ValueError("通用计划不存在或未绑定脚本")
+            raise ValueError("通用脚本计划表不存在或未绑定脚本")
         script = self.ScriptConfig[plan.Info.ScriptId]
         if not isinstance(script, GeneralConfig):
             raise ValueError("计划所属脚本不存在")
@@ -1723,7 +1723,7 @@ class AppConfig:
                 if name in (data.get("Info") or {}) and str(data["Info"][name]) != str(
                     getattr(plan.Info, name)
                 ):
-                    raise ValueError("通用计划所属脚本不可修改")
+                    raise ValueError("通用脚本计划表所属脚本不可修改")
         await plan.update(type(plan).model_validate(data))
 
     async def del_plan(self, plan_id: str) -> None:
@@ -1740,7 +1740,11 @@ class AppConfig:
 
         consumer_config = PLAN_BOOK[plan_type]
         user_list: list[
-            MaaUserConfig | MaaEndUserConfig | BAAHUserConfig | MSSUserConfig
+            MaaUserConfig
+            | MaaEndUserConfig
+            | BAAHUserConfig
+            | MSSUserConfig
+            | GeneralUserConfig
         ] = []
 
         for script in self.ScriptConfig.values():

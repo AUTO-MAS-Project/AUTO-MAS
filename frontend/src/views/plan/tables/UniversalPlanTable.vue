@@ -12,7 +12,7 @@
         :value="info?.ResetHour ?? 4"
         :min="0"
         :max="23"
-        :disabled="busy || locked"
+        :disabled="busy || Boolean(taskId) || locked"
         :aria-label="t('core.plan.universal.hourLabel')"
         @change="saveTime('ResetHour', $event)"
       />
@@ -21,7 +21,7 @@
         :value="info?.ResetMinute ?? 0"
         :min="0"
         :max="59"
-        :disabled="busy || locked"
+        :disabled="busy || Boolean(taskId) || locked"
         :aria-label="t('core.plan.universal.minuteLabel')"
         @change="saveTime('ResetMinute', $event)"
       />
@@ -31,15 +31,14 @@
       v-if="taskId"
       type="warning"
       show-icon
-      :message="t('core.plan.universal.session', { day: editingLabel })"
+      :message="t('core.plan.universal.sessionRunning', { day: editingLabel })"
     >
       <template #action
-        ><a-button :loading="busy" @click="saveSession">{{
+        ><a-button :loading="stopping" :disabled="starting" @click="finishSession">{{
           t('core.plan.universal.save')
         }}</a-button></template
       >
     </a-alert>
-    <a-alert v-if="sessionError" type="error" :message="sessionError" show-icon />
     <a-list bordered :data-source="days">
       <template #renderItem="{ item }">
         <a-list-item>
@@ -51,9 +50,11 @@
                 : t('core.plan.universal.unconfigured')
             }}</span
           >
-          <a-button :disabled="Boolean(taskId) || busy || locked" @click="editDay(item)">{{
-            t('core.plan.universal.configure')
-          }}</a-button>
+          <a-button
+            :disabled="Boolean(taskId) || starting || stopping || locked"
+            @click="editDay(item)"
+            >{{ t('core.plan.universal.gotoConfig') }}</a-button
+          >
         </a-list-item>
       </template>
     </a-list>
@@ -62,10 +63,10 @@
 
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { TaskCreateIn, type UniversalPlanConfig } from '@/api'
-import { requestTaskStart, stopNativeConfig, readTaskStatus } from '@/composables/useTaskApi'
+import { message } from 'ant-design-vue'
+import { type UniversalPlanConfig } from '@/api'
+import { useNativeGuiSession } from '@/composables/useNativeGuiSession'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { readUniversalPlanState } from '@/composables/usePlanApi'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
@@ -87,26 +88,48 @@ const days = computed(() =>
   props.currentMode === 'ALL' ? ['ALL'] : planDayKeys(props.currentMode, info.value?.RotateDays)
 )
 const savedDays = ref<string[]>([])
+const busy = ref(false)
+const editingLabel = ref('')
+let disposed = false
+
+// 复用脚本页的原生设置会话：同一个「保存并结束」语义、超时自动保存与丢弃提示
+const {
+  taskId,
+  configLoading: starting,
+  stopping,
+  startSession,
+  saveSession,
+  dispose: disposeSession,
+} = useNativeGuiSession({
+  loggerName: '计划管理',
+  keys: {
+    stopFailed: 'core.plan.universal.stopFailed',
+    startFailed: 'core.plan.universal.startFailed',
+    setupFailed: 'core.plan.universal.setupFailed',
+    opened: 'core.plan.universal.sessionOpened',
+    viewOpened: 'core.plan.universal.sessionOpened',
+    timeoutWarn: 'core.plan.universal.sessionTimeoutWarn',
+    saved: 'core.plan.universal.sessionSaved',
+    saveFailed: 'core.plan.universal.saveFailed',
+  },
+})
+
+function label(day: string) {
+  if (day === 'ALL') return t('core.plan.modeAll')
+  const value = planDayLabel(day)
+  return t(value.key, value.params)
+}
+
 async function refreshDays() {
   const id = props.planId
   try {
     const days = await readUniversalPlanState(id)
     if (props.planId === id && !disposed) savedDays.value = days
   } catch (error) {
-    if (!disposed && props.planId === id) sessionError.value = String(error)
+    if (!disposed && props.planId === id) message.error(String(error))
   }
 }
-const busy = ref(false)
-const taskId = ref('')
-const editingLabel = ref('')
-const sessionError = ref('')
-let timer: ReturnType<typeof setTimeout> | undefined
-let disposed = false
-function label(day: string) {
-  if (day === 'ALL') return t('core.plan.modeAll')
-  const value = planDayLabel(day)
-  return t(value.key, value.params)
-}
+
 async function saveTime(field: 'ResetHour' | 'ResetMinute', value: number | string | null) {
   if (typeof value !== 'number') return
   busy.value = true
@@ -116,68 +139,30 @@ async function saveTime(field: 'ResetHour' | 'ResetMinute', value: number | stri
     busy.value = false
   }
 }
-async function pollSession() {
-  const id = taskId.value
-  if (!id || disposed) return
-  try {
-    const result = await readTaskStatus(id)
-    if (taskId.value !== id || disposed) return
-    if (result.code !== 200)
-      throw new Error(result.message || t('core.plan.universal.sessionReadFailed'))
-    if (result.status !== 'running') {
-      taskId.value = ''
-      await refreshDays()
-      sessionError.value =
-        result.status === 'error'
-          ? result.error || result.detail || t('core.plan.universal.sessionFailed')
-          : ''
-      return
-    }
-    sessionError.value = ''
-  } catch (error) {
-    sessionError.value = String(error)
-  }
-  if (!disposed) timer = setTimeout(pollSession, 2000)
-}
+
+/** 拉起该脚本的配置界面：脚本侧把当天模板换入原生配置，保存后回写当天模板 */
 async function editDay(day: string) {
   if (!info.value?.ScriptId) return
-  busy.value = true
-  sessionError.value = ''
-  try {
-    const result = await requestTaskStart({
-      taskId: info.value.ScriptId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-      planId: props.planId,
-      planDay: planColumnGroup(day),
-    })
-    if (result.code !== 200) throw new Error(result.message || t('core.plan.universal.startFailed'))
-    taskId.value = result.taskId
-    editingLabel.value = label(day)
-    void pollSession()
-  } catch (error) {
-    message.error(String(error))
-  } finally {
-    busy.value = false
-  }
+  const started = await startSession(info.value.ScriptId, false, 'script', {
+    planId: props.planId,
+    planDay: planColumnGroup(day),
+  })
+  if (started) editingLabel.value = label(day)
 }
-async function saveSession() {
-  busy.value = true
-  try {
-    const result = await stopNativeConfig(taskId.value, 'save')
-    if (result.code !== 200) throw new Error(result.message || t('core.plan.universal.saveFailed'))
-  } catch (error) {
-    message.error(String(error))
-  } finally {
-    busy.value = false
-  }
+
+async function finishSession() {
+  await saveSession()
+  if (!taskId.value) editingLabel.value = ''
 }
+
 defineExpose({
   beforeLeave: () => {
-    if (!taskId.value && !busy.value) return true
+    if (!taskId.value && !starting.value && !stopping.value) return true
     message.warning(t('core.plan.universal.finishFirst'))
     return false
   },
 })
+
 watch(
   () => props.planId,
   () => {
@@ -186,6 +171,11 @@ watch(
   },
   { immediate: true }
 )
+watch(taskId, value => {
+  if (value) return
+  editingLabel.value = ''
+  void refreshDays()
+})
 watch(
   () => info.value?.ScriptId,
   async id => {
@@ -198,6 +188,6 @@ watch(
 )
 onUnmounted(() => {
   disposed = true
-  clearTimeout(timer)
+  void disposeSession()
 })
 </script>

@@ -26,6 +26,8 @@ import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useScriptApi } from '@/composables/useScriptApi'
 const { t } = useI18n()
+// 通用脚本计划表只服务通用脚本；专项各自用自己的计划表
+const UNIVERSAL_PLAN_SCRIPT_TYPE = 'General'
 const props = defineProps<{ activePlanId: string; creating?: boolean }>()
 const emit = defineEmits<{ create: [scriptId: string] }>()
 const { getScripts } = useScriptApi()
@@ -42,7 +44,7 @@ async function show() {
   try {
     const scripts = await getScripts()
     options.value = scripts
-      .filter(script => script.type === 'General')
+      .filter(script => script.type === UNIVERSAL_PLAN_SCRIPT_TYPE)
       .map(script => ({ label: script.name, value: script.uid }))
     if (!options.value.length) error.value = t('core.plan.universal.noScripts')
   } catch (reason) {

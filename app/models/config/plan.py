@@ -683,7 +683,7 @@ class UniversalPlanConfig(PlanDaysConfig):
     """完整原生配置的按日轮换；初版由通用脚本消费。"""
 
     class InfoFields(ConfigGroup):
-        Name: str = Field(default="新通用计划表", description="计划表名称")
+        Name: str = Field(default="新通用脚本计划表", description="计划表名称")
         Mode: Literal["ALL", "Weekly", "Rotate"] = Field(
             default="Weekly", description="计划表模式"
         )

@@ -52,7 +52,7 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
     configType: PLAN_CONFIG_TYPES.UNIVERSAL,
     createType: PlanCreateIn.type.UNIVERSAL_PLAN,
     displayNameKey: 'core.plan.type.universal',
-    defaultName: '新通用计划表',
+    defaultName: '新通用脚本计划表',
     selectorTag: '通用',
     reloadAfterSave: false,
     supportsSimpleView: false,

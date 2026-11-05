@@ -142,7 +142,7 @@ export function useNativeGuiSession(options: {
     startTaskId: string,
     viewOnly = false,
     targetKind: TaskTargetKind = 'unknown',
-    startOptions: Pick<TaskCreateIn, 'instanceIdx'> = {}
+    startOptions: Pick<TaskCreateIn, 'instanceIdx' | 'planId' | 'planDay'> = {}
   ): Promise<boolean> => {
     // 同一页面只持有一条会话；收尾帧窗口结束前也不覆盖旧订阅。
     if (startingPromise || taskId.value || stoppingPromise || savingPromise) {

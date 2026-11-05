@@ -27,7 +27,7 @@ test.describe('@universal-plan', () => {
     await page.locator('.header-actions .ant-dropdown-trigger').click()
     await page
       .getByRole('menuitem')
-      .filter({ hasText: /universal plan/i })
+      .filter({ hasText: /universal script plan/i })
       .click()
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible()
@@ -52,7 +52,7 @@ test.describe('@universal-plan', () => {
       data: { Info: { Name: 'Shared universal plan' } },
     })
     await app.goto(`/scripts/${script.scriptId}/users/${user.userId}/edit/general`)
-    // 通用计划与 MaaEnd 一致：一个「固定配置 / 计划名」选择框 + 跳转到计划表
+    // 通用脚本计划表与 MaaEnd 一致：一个「固定配置 / 计划名」选择框 + 跳转到计划表
     const planSelect = page.locator('.universal-plan-select')
     await expect(planSelect).toContainText('Fixed configuration')
     await planSelect.click()

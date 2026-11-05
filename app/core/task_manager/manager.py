@@ -1916,7 +1916,7 @@ class _TaskManager:
 
         if plan_id is not None or plan_day is not None:
             if mode != "ScriptConfig" or view_only or not plan_id or not plan_day:
-                raise ValueError("计划日期仅用于通用计划的编辑会话")
+                raise ValueError("计划日期仅用于通用脚本计划表的编辑会话")
             from app.core.config.universal_plan import plan_directory
             from app.models.config import GeneralConfig, UniversalPlanConfig
 
@@ -1924,7 +1924,7 @@ class _TaskManager:
             if not isinstance(plan, UniversalPlanConfig) or not isinstance(
                 Config.ScriptConfig[script_uid], GeneralConfig
             ):
-                raise ValueError("此脚本不支持通用计划配置会话")
+                raise ValueError("此脚本不支持通用脚本计划表配置会话")
             plan_directory(
                 data_path=Config.data_path,
                 plan=plan,

@@ -169,9 +169,9 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                 # 不置状态会让报告停在「等待」，看不出该用户已被处理过
                 self.cur_user_item.status = "跳过"
                 logger.warning(
-                    f"用户: {self.cur_user_uid} - 当天的通用计划尚未配置, 跳过本次运行"
+                    f"用户: {self.cur_user_uid} - 当天通用脚本计划表尚未配置, 跳过本次运行"
                 )
-                return "当天的通用计划尚未配置，请先编辑并保存该日期的配置"
+                return "当天的通用脚本计划表尚未配置，请先编辑并保存该日期的配置"
 
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (

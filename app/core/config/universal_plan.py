@@ -21,9 +21,9 @@ def plan_directory(
     now: datetime | None = None,
 ) -> Path:
     if not isinstance(plan, UniversalPlanConfig):
-        raise ValueError("所选配置不是通用计划")
+        raise ValueError("所选配置不是通用脚本计划表")
     if plan.Info.ScriptId != UUID(script_id):
-        raise ValueError("通用计划不属于当前脚本")
+        raise ValueError("通用脚本计划表不属于当前脚本")
     group = day or plan.current_group(now or datetime.now().astimezone())
     if group != "ALL" and plan.day_group_of(group) != group:
         if not (group.startswith("Day") and plan.day_group_of(group[3:]) == group):

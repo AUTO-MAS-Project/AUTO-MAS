@@ -93,6 +93,22 @@ def test_failed_save_preserves_previous_configuration(tmp_path, monkeypatch):
     assert (target / source.name).read_text() == "old"
 
 
+def test_universal_plan_general_only():
+    """通用脚本计划表只绑通用脚本；专项用户配置不带 PlanMode。"""
+
+    from app.models.config import (
+        PLAN_BOOK,
+        GeneralConfig,
+        OkNteUserConfig,
+        OkwwUserConfig,
+    )
+
+    assert PLAN_BOOK["UniversalPlanConfig"]["script_class"] is GeneralConfig
+    assert GeneralUserConfig().Info.PlanMode == "Fixed"
+    for user_cls in (OkwwUserConfig, OkNteUserConfig):
+        assert "PlanMode" not in type(user_cls().Info).model_fields
+
+
 @pytest.mark.asyncio
 async def test_runtime_and_edit_session_use_selected_day(
     isolated_app_paths, monkeypatch
