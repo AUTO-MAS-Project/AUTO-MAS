@@ -778,10 +778,17 @@ async def _save_path(
     }
 
 
-async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, Any]:
+async def _install_locked(
+    mirror: str, proxy: httpx.Proxy | None, *, force_managed: bool = False
+) -> dict[str, Any]:
     original_path = str(Config.setting.Update.FluxdownPath or "")
     await _report_install_progress("check")
-    target, external = await asyncio.to_thread(_choose_install_target, original_path)
+    if force_managed:
+        target, external = _install_dir(), False
+    else:
+        target, external = await asyncio.to_thread(
+            _choose_install_target, original_path
+        )
     current = _fluxdown_cli.fluxdown_components(target)
     need_cli = not current["cli"]
     need_server = not current["server"]
@@ -803,6 +810,7 @@ async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, A
     extracted.mkdir(parents=True, exist_ok=True)
 
     cli_size = server_size = 0
+    retry_managed = False
     try:
         if need_cli:
             cli_size = await _download_asset(
@@ -858,10 +866,22 @@ async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, A
                 _assert_complete_install(extracted)
                 _install_from(extracted)
 
-        await asyncio.to_thread(publish)
-        _assert_complete_install(target)
+        try:
+            await asyncio.to_thread(publish)
+        except PermissionError as error:
+            if not external:
+                raise
+            # 目录权限可能在预检后改变；已创建的组件由补装函数回滚。
+            # 释放文件锁并清理暂存后，再到 MAS 自管目录安装完整套件。
+            logger.warning(f"FluxDown 外部目录写入被拒绝，改用 MAS 托管目录: {error}")
+            retry_managed = True
+        else:
+            _assert_complete_install(target)
     finally:
         shutil.rmtree(temp, ignore_errors=True)
+
+    if retry_managed:
+        return await _install_locked(mirror, proxy, force_managed=True)
 
     return await _save_path(
         original_path,
