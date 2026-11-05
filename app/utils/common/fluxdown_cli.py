@@ -1072,51 +1072,54 @@ def fluxdown_server_emergency_stop_if_exclusive(
     with _usage_lock:
         if _installing or _active_downloads != 1:
             return False
-    with _server.lock:
-        handle = _server.handle
-        if not _server.spawned_by_us or handle is None:
-            return False
-        if os.path.normcase(str(handle.cli_exe.resolve())) != os.path.normcase(
-            str(cli_exe.resolve())
-        ):
-            return False
-        key = _map_key(url, Path(destination))
-        if any(
-            mapped_key != key
-            and (not isinstance(entry, dict) or bool(entry.get("task_id")))
-            for mapped_key, entry in _load_task_map(cli_exe).items()
-        ):
-            return False
-        bins = _server_binaries(cli_exe)
-        if bins is None:
-            return False
-        try:
-            process = psutil.Process(handle.agent_pid)
-            expected = os.path.normcase(str(bins[0].resolve()))
-            actual = os.path.normcase(str(Path(process.exe()).resolve()))
-            if actual != expected:
+        # Keep the admission lock through the entire exclusivity check and
+        # process termination. Another download must not register after we
+        # count owners but before the shared daemon is stopped.
+        with _server.lock:
+            handle = _server.handle
+            if not _server.spawned_by_us or handle is None:
                 return False
-            children = process.children(recursive=True)
-        except (psutil.Error, OSError, ValueError):
-            return False
-        _kill_pid(handle.agent_pid)
-        try:
-            still_running = any(
-                proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE
-                for proc in (process, *children)
+            if os.path.normcase(str(handle.cli_exe.resolve())) != os.path.normcase(
+                str(cli_exe.resolve())
+            ):
+                return False
+            key = _map_key(url, Path(destination))
+            if any(
+                mapped_key != key
+                and (not isinstance(entry, dict) or bool(entry.get("task_id")))
+                for mapped_key, entry in _load_task_map(cli_exe).items()
+            ):
+                return False
+            bins = _server_binaries(cli_exe)
+            if bins is None:
+                return False
+            try:
+                process = psutil.Process(handle.agent_pid)
+                expected = os.path.normcase(str(bins[0].resolve()))
+                actual = os.path.normcase(str(Path(process.exe()).resolve()))
+                if actual != expected:
+                    return False
+                children = process.children(recursive=True)
+            except (psutil.Error, OSError, ValueError):
+                return False
+            _kill_pid(handle.agent_pid)
+            try:
+                still_running = any(
+                    proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE
+                    for proc in (process, *children)
+                )
+            except psutil.NoSuchProcess:
+                still_running = False
+            except (psutil.Error, OSError):
+                return False
+            if still_running:
+                return False
+            _server.handle = None
+            _server.spawned_by_us = False
+            logger.warning(
+                "[server] 用户停止下载，暂停无法确认；已结束独占的 MAS 私有 FluxDown 服务"
             )
-        except psutil.NoSuchProcess:
-            still_running = False
-        except (psutil.Error, OSError):
-            return False
-        if still_running:
-            return False
-        _server.handle = None
-        _server.spawned_by_us = False
-        logger.warning(
-            "[server] 用户停止下载，暂停无法确认；已结束独占的 MAS 私有 FluxDown 服务"
-        )
-        return True
+            return True
 
 
 atexit.register(fluxdown_server_shutdown)
