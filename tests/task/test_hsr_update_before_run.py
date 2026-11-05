@@ -232,3 +232,149 @@ def test_rollback_journal_validates_all_entries_before_mutating(tmp_path):
     )
     assert installer.rollback(root) is False
     assert first.read_text() == "must be preserved"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["M7A", "SRA"])
+async def test_cancelled_builtin_prefetch_removes_private_partial(
+    tmp_path, monkeypatch, engine
+):
+    """Cancel after actual HSR download dispatch has written some bytes."""
+    from app.task.HSR.tools.update import download as transport
+    from app.task.HSR.tools.update.discover import DiscoveryResult, UpdateCandidate
+
+    candidate = UpdateCandidate(
+        engine, "1.0", "2.0", "GitHub", "zip", "https://example.invalid/pkg"
+    )
+    monkeypatch.setattr(
+        update,
+        "check_engine_update",
+        AsyncMock(return_value=DiscoveryResult(engine, "1.0", "2.0", True, candidate)),
+    )
+    monkeypatch.setattr(update, "_remote_size", AsyncMock(return_value=0))
+    started = asyncio.Event()
+
+    async def interrupted(_url, destination, **_kwargs):
+        destination.write_bytes(b"partial bytes")
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(transport, "download_script_package", interrupted)
+    root = tmp_path / "script"
+    root.mkdir()
+    downloads = tmp_path / "downloads"
+    task = asyncio.create_task(
+        update.prepare_engine_update(
+            engine,
+            root,
+            source="GitHub",
+            channel="stable",
+            cdk="",
+            proxy=None,
+            download_dir=downloads,
+        )
+    )
+    await asyncio.wait_for(started.wait(), 3)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not list(downloads.rglob("*.part"))
+    assert not list(downloads.iterdir())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure,keep",
+    [
+        ("ordinary", False),
+        ("unsafe", True),
+        ("resumable", True),
+    ],
+)
+async def test_hsr_prefetch_failure_releases_only_owned_files(
+    tmp_path, monkeypatch, failure, keep
+):
+    """Do not delete FluxDown-owned segments from an unreturned candidate."""
+    from app.services.common.update.fluxdown import FluxdownResumableError
+    from app.task.HSR.tools.update import download as transport
+    from app.task.HSR.tools.update.discover import DiscoveryResult, UpdateCandidate
+    from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+    candidate = UpdateCandidate(
+        "M7A", "1.0", "2.0", "GitHub", "zip", "https://example.invalid/pkg"
+    )
+    monkeypatch.setattr(
+        update,
+        "check_engine_update",
+        AsyncMock(return_value=DiscoveryResult("M7A", "1.0", "2.0", True, candidate)),
+    )
+    monkeypatch.setattr(update, "_remote_size", AsyncMock(return_value=0))
+    monkeypatch.setattr(transport, "_RETRY_DELAY", 0)
+
+    async def interrupted(_url, destination, **_kwargs):
+        destination.write_bytes(b"partial bytes")
+        if failure == "unsafe":
+            raise FluxdownCancelUnconfirmed("daemon may still write")
+        if failure == "resumable":
+            raise FluxdownResumableError("resume later")
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(transport, "download_script_package", interrupted)
+    root = tmp_path / "script"
+    root.mkdir()
+    downloads = tmp_path / "downloads"
+    exception = {
+        "ordinary": update.HSRUpdateError,
+        "unsafe": FluxdownCancelUnconfirmed,
+        "resumable": FluxdownResumableError,
+    }[failure]
+    with pytest.raises(exception):
+        await update.prepare_engine_update(
+            "M7A",
+            root,
+            source="GitHub",
+            channel="stable",
+            cdk="",
+            proxy=None,
+            download_dir=downloads,
+        )
+    assert bool(list(downloads.rglob("*.part"))) is keep
+    assert bool(list(downloads.iterdir())) is keep
+
+
+@pytest.mark.asyncio
+async def test_hsr_prefetch_digest_failure_cleans_package(tmp_path, monkeypatch):
+    from app.task.HSR.tools.update.discover import DiscoveryResult, UpdateCandidate
+
+    candidate = UpdateCandidate(
+        "M7A", "1.0", "2.0", "GitHub", "zip", "https://example.invalid/pkg"
+    )
+    monkeypatch.setattr(
+        update,
+        "check_engine_update",
+        AsyncMock(return_value=DiscoveryResult("M7A", "1.0", "2.0", True, candidate)),
+    )
+
+    async def downloaded(_candidate, package, **_kwargs):
+        package.parent.mkdir(parents=True, exist_ok=True)
+        package.write_bytes(b"downloaded")
+        return package
+
+    monkeypatch.setattr(update, "_download_with_space_check", downloaded)
+    monkeypatch.setattr(
+        update, "_package_digest", Mock(side_effect=OSError("digest failed"))
+    )
+    root = tmp_path / "script"
+    root.mkdir()
+    downloads = tmp_path / "downloads"
+    with pytest.raises(OSError, match="digest failed"):
+        await update.prepare_engine_update(
+            "M7A",
+            root,
+            source="GitHub",
+            channel="stable",
+            cdk="",
+            proxy=None,
+            download_dir=downloads,
+        )
+    assert not list(downloads.iterdir())
