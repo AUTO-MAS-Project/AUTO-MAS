@@ -630,8 +630,7 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
         # 在 MAS 托管目录重新安装完整套件，可保留用户原目录不受影响。
         try:
             return any(
-                (directory / name).is_file()
-                and (directory / name).stat().st_size == 0
+                (directory / name).is_file() and (directory / name).stat().st_size == 0
                 for name in (*_cli_names(), *_server_names())
             )
         except OSError:
@@ -643,7 +642,9 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
         if available(directory) and not (directory != managed and damaged(directory)):
             return directory, directory != managed
         if available(directory) and directory != managed:
-            logger.warning(f"FluxDown 外部目录存在空文件，改在 MAS 托管目录补装: {directory}")
+            logger.warning(
+                f"FluxDown 外部目录存在空文件，改在 MAS 托管目录补装: {directory}"
+            )
             return managed, False
 
     # 没配置时也应尽量复用桌面版目录，避免另建一套 Agent/Daemon。
@@ -675,7 +676,9 @@ def _install_missing_to_existing(extracted: Path, target: Path) -> None:
         (target / name).is_file() and (target / name).stat().st_size == 0
         for name in (*_cli_names(), *_server_names())
     ):
-        raise RuntimeError("外部 FluxDown 目录包含空文件，拒绝覆盖；请改用 MAS 托管安装")
+        raise RuntimeError(
+            "外部 FluxDown 目录包含空文件，拒绝覆盖；请改用 MAS 托管安装"
+        )
 
     missing: list[str] = []
     existing_cli = any((target / name).is_file() for name in _cli_names())
