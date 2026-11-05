@@ -4376,6 +4376,7 @@
   "core.setting.others.fluxdownInstallExtracting": "FluxDown パッケージを展開しています…",
   "core.setting.others.fluxdownInstallMissing": "FluxDown が見つかりましたが、同一フォルダーに CLI と Server がそろっていません。「MAS で代理ダウンロード」で補完できます。",
   "core.setting.others.fluxdownInstallSaving": "FluxDown のインストール先を保存しています…",
+  "core.setting.others.fluxdownInstallVerifyFailed": "インストール後の自動検出で CLI と Server が同じフォルダーにあることを確認できませんでした。",
   "core.setting.others.fluxdownInstallVerifying": "パッケージの SHA-256 を検証しています…",
   "core.setting.others.fluxdownInstallCliLink": "CLI パッケージ {version} をダウンロード",
   "core.setting.others.fluxdownInstallDownloading": "FluxDown パッケージをダウンロードしています…",
