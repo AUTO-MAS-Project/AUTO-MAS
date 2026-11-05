@@ -107,9 +107,24 @@ _release_cache: tuple[float, FluxdownRelease] | None = None
 _install_lock = asyncio.Lock()
 
 
+async def _report_install_progress(
+    stage: str, *, name: str = "", downloaded: int = 0,
+    total: int = 0, speed: float = 0.0
+) -> None:
+    """向设置页报告阶段和实时字节数；不包含 URL、路径或私有凭据。"""
+    from app.core import Publisher
+    from app.core.ws.protocol import FLUXDOWN_INSTALL_PROGRESS, ID_UPDATE
+
+    await Publisher.send(
+        ID_UPDATE, FLUXDOWN_INSTALL_PROGRESS,
+        {"stage": stage, "name": name, "downloaded": downloaded,
+         "total": total, "speed": speed},
+    )
+
+
 def _install_dir() -> Path:
     """安装目录：MAS 用户数据目录，跟随 MAS 本体而不是 repo/ 资源目录。"""
-    return Config.data_path / "fluxdown-cli"
+    return Config.data_path / "fluxdown" / "bin"
 
 
 def _arch() -> str:
@@ -245,10 +260,18 @@ async def _download_asset(
     errors: list[str] = []
     destination = work / name
     for url in _download_urls(name, release.tag, mirror):
+        async def on_progress(downloaded: int, total: int, speed: float) -> None:
+            await _report_install_progress(
+                "download", name=name, downloaded=downloaded,
+                total=total, speed=speed,
+            )
+
         try:
             await download_file(
-                url, destination, timeout=60, proxy=proxy, max_bytes=_MAX_ARCHIVE_BYTES
+                url, destination, timeout=60, proxy=proxy,
+                max_bytes=_MAX_ARCHIVE_BYTES, progress=on_progress,
             )
+            await _report_install_progress("verify", name=name)
             actual = await asyncio.to_thread(_sha256_of, destination)
             if actual != sha256:
                 raise RuntimeError("sha256 校验失败")
@@ -325,6 +348,54 @@ def _extract_zip(archive: Path, target: Path) -> None:
                 shutil.copyfileobj(source, sink)
 
 
+
+def _check_package(archive: Path, expected: set[str], forbidden: set[str]) -> None:
+    """在解压前确认下载到的是目标类型的官方组件包，不接受错包或嵌套可执行文件。"""
+    try:
+        with zipfile.ZipFile(archive) as bundle:
+            infos = bundle.infolist()
+            if len(infos) > _MAX_MEMBERS or sum(i.file_size for i in infos) > _MAX_EXTRACTED_BYTES:
+                raise RuntimeError("FluxDown 安装包超出大小或文件数量限制")
+            entries = [
+                (info, _safe_parts(info.filename))
+                for info in infos if not info.is_dir()
+            ]
+            strip = _common_root(parts for _, parts in entries if parts)
+            binaries: set[str] = set()
+            for info, parts in entries:
+                if not parts:
+                    continue
+                rel = parts[1:] if strip and parts[0] == strip else parts
+                if not rel:
+                    continue
+                name = rel[-1].lower()
+                if name in expected | forbidden:
+                    if len(rel) != 1 or info.file_size <= 0 or name in binaries:
+                        raise RuntimeError(f"安装包中 {name} 不在唯一的根目录位置")
+                    binaries.add(name)
+            if binaries != expected:
+                raise RuntimeError(
+                    f"FluxDown 下载到错误的发布包：需要 {sorted(expected)}，"
+                    f"实际存在 {sorted(binaries)}"
+                )
+    except (zipfile.BadZipFile, zipfile.LargeZipFile) as error:
+        raise RuntimeError(f"FluxDown 安装包 ZIP 损坏: {archive.name}") from error
+
+
+def _assert_complete_install(directory: Path) -> None:
+    """必须同目录包含独立 CLI、Agent 和 Daemon，且不是空文件。"""
+    if not any(
+        (directory / name).is_file() and (directory / name).stat().st_size > 0
+        for name in update_native.FLUXDOWN_EXE_NAMES
+    ):
+        raise RuntimeError("安装目录缺少有效的 FluxDown CLI")
+    for name in (update_native.FLUXDOWN_AGENT_NAME, update_native.FLUXDOWN_DAEMON_NAME):
+        if name is None or not (directory / name).is_file():
+            raise RuntimeError(f"安装目录缺少 FluxDown Server 组件: {name}")
+        if (directory / name).stat().st_size <= 0:
+            raise RuntimeError(f"安装目录中的 {name} 为空文件")
+
+
 def _install_from(extracted: Path) -> Path:
     """把解压结果整理成可用的安装目录并原子替换旧版本。"""
 
@@ -337,13 +408,7 @@ def _install_from(extracted: Path) -> Path:
     shutil.rmtree(new_dir, ignore_errors=True)
     shutil.copytree(extracted, new_dir)
 
-    for name in _REQUIRED_BINARIES:
-        if (new_dir / name).is_file():
-            continue
-        matches = list(new_dir.rglob(name))
-        if not matches:
-            raise RuntimeError(f"安装包缺少 {name}")
-        shutil.copy2(matches[0], new_dir / name)
+    _assert_complete_install(new_dir)
 
     # 便携标记：CLI 与 server 都只认 exe 同目录的这个文件，缺了会写进用户本体
     (new_dir / "portable").touch()
