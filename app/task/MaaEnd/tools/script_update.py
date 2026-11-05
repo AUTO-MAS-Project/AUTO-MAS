@@ -323,6 +323,9 @@ async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
     """调用方持安装锁；候选复核后才允许切换目录。"""
     await asyncio.to_thread(assert_idle, root)
     if isinstance(candidate, str):
+        # A no-update decision is only a snapshot taken during prefetch.
+        # Another updater may have modified the install while waiting.
+        await confirm_current_install(root)
         return candidate
     target, arch = candidate.target, candidate.arch
     try:
