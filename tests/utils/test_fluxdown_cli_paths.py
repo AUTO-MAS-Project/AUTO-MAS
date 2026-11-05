@@ -29,3 +29,45 @@ def test_explicit_cli_directory_does_not_require_portable(tmp_path, monkeypatch)
     executable = tmp_path / cli._FLUXDOWN_EXE_NAMES[0]
     executable.write_bytes(b"test binary")
     assert cli.fluxdown_find_cli(str(tmp_path)) == executable
+
+
+def test_auto_detect_only_returns_complete_folder(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli.shutil, "which", lambda _: None)
+    monkeypatch.setattr(cli, "_candidate_drives", lambda: [])
+    monkeypatch.setattr(
+        cli.update_native, "FLUXDOWN_AGENT_NAME", "fluxdown-agent.exe"
+    )
+    monkeypatch.setattr(cli.update_native, "FLUXDOWN_DAEMON_NAME", "fluxdownd.exe")
+
+    directory = tmp_path / "installed"
+    directory.mkdir()
+    (directory / "fluxdown-desktop.exe").write_bytes(b"desktop")
+    (directory / "fluxdown-agent.exe").write_bytes(b"agent")
+    (directory / "fluxdownd.exe").write_bytes(b"daemon")
+
+    incomplete = cli.fluxdown_detect(str(directory), scan_budget=0.0)
+    assert incomplete["path"] is None
+    assert incomplete["candidates"]
+
+    (directory / "fluxdown-cli.exe").write_bytes(b"cli")
+    ready = cli.fluxdown_detect(str(directory), scan_budget=0.0)
+    assert ready["path"] == str(directory)
+    assert not ready["only_full_warning"] or ready["is_portable_cli"] is False
+
+
+def test_auto_detect_rejects_empty_server_binary(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli.shutil, "which", lambda _: None)
+    monkeypatch.setattr(cli, "_candidate_drives", lambda: [])
+    monkeypatch.setattr(
+        cli.update_native, "FLUXDOWN_AGENT_NAME", "fluxdown-agent.exe"
+    )
+    monkeypatch.setattr(cli.update_native, "FLUXDOWN_DAEMON_NAME", "fluxdownd.exe")
+
+    directory = tmp_path / "installed"
+    directory.mkdir()
+    (directory / "fluxdown-cli.exe").write_bytes(b"cli")
+    (directory / "fluxdown-agent.exe").write_bytes(b"agent")
+    (directory / "fluxdownd.exe").touch()
+    assert cli.fluxdown_detect(str(directory), scan_budget=0.0)["path"] is None
