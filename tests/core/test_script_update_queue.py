@@ -441,3 +441,42 @@ async def test_unconfirmed_fluxdown_cancel_remains_visible():
     await started.wait()
     with pytest.raises(FluxdownCancelUnconfirmed):
         await queue._cancel_and_wait(task)
+
+
+
+@pytest.mark.asyncio
+async def test_second_account_retry_keeps_running_prefetch(running):
+    """Account B retry does not cancel A's script-level success clock."""
+    from datetime import datetime
+
+    from app.models.task import LogRecord
+
+    script, first, clock = running
+    second = UserItem("second", "", "运行")
+    script.user_list.append(second)
+    parent = SimpleNamespace(
+        script_list=[script],
+        on_status_changed=lambda *_: None,
+        schedule_on_change=lambda: None,
+    )
+    script._task_item_ref = lambda: parent
+    first._task_item_ref = second._task_item_ref = lambda: parent
+    first.first_task_completed_at = script.first_task_completed_at = 100
+    clock.now = 200
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def download():
+        started.set()
+        await release.wait()
+
+    pipeline = queue.ScriptUpdateQueue()
+    pipeline.watch(script, download)
+    await asyncio.wait_for(started.wait(), 1)
+    first.status = "完成"
+    script.current_index = 1
+    second.add_log_record(datetime.now(), LogRecord(), retry=True)
+    assert script.first_task_completed_at == 100
+    await settle()
+    assert pipeline._download is not None and not pipeline._download.done()
+    release.set()
+    await pipeline.finish()
