@@ -96,6 +96,7 @@ def _server_names() -> tuple[str, str]:
         raise RuntimeError("当前操作系统不支持 FluxDown Server")
     return agent, daemon
 
+
 _RELEASE_CACHE_TTL = 600.0
 _MAX_ARCHIVE_BYTES = 256 * 1024**2
 _MAX_MEMBER_BYTES = 512 * 1024**2
@@ -123,17 +124,27 @@ _install_lock = asyncio.Lock()
 
 
 async def _report_install_progress(
-    stage: str, *, name: str = "", downloaded: int = 0,
-    total: int = 0, speed: float = 0.0
+    stage: str,
+    *,
+    name: str = "",
+    downloaded: int = 0,
+    total: int = 0,
+    speed: float = 0.0,
 ) -> None:
     """向设置页报告阶段和实时字节数；不包含 URL、路径或私有凭据。"""
     from app.core import Publisher
     from app.core.ws.protocol import FLUXDOWN_INSTALL_PROGRESS, ID_UPDATE
 
     await Publisher.send(
-        ID_UPDATE, FLUXDOWN_INSTALL_PROGRESS,
-        {"stage": stage, "name": name, "downloaded": downloaded,
-         "total": total, "speed": speed},
+        ID_UPDATE,
+        FLUXDOWN_INSTALL_PROGRESS,
+        {
+            "stage": stage,
+            "name": name,
+            "downloaded": downloaded,
+            "total": total,
+            "speed": speed,
+        },
     )
 
 
@@ -146,9 +157,11 @@ def _platform_asset() -> tuple[str, str, str]:
     """根据真实 OS/CPU 选择 Release 资产，不把未知架构误识别为 x64。"""
     system = platform.system().lower()
     machine = platform.machine().lower()
-    systems = {"windows": ("windows", "zip"),
-               "linux": ("linux", "tar.gz"),
-               "darwin": ("macos", "tar.gz")}
+    systems = {
+        "windows": ("windows", "zip"),
+        "linux": ("linux", "tar.gz"),
+        "darwin": ("macos", "tar.gz"),
+    }
     if system not in systems:
         raise RuntimeError(f"FluxDown 不支持当前操作系统: {system}")
     architectures = {
@@ -304,16 +317,24 @@ async def _download_asset(
     errors: list[str] = []
     destination = work / name
     for url in _download_urls(name, release.tag, mirror):
+
         async def on_progress(downloaded: int, total: int, speed: float) -> None:
             await _report_install_progress(
-                "download", name=name, downloaded=downloaded,
-                total=total, speed=speed,
+                "download",
+                name=name,
+                downloaded=downloaded,
+                total=total,
+                speed=speed,
             )
 
         try:
             await download_file(
-                url, destination, timeout=60, proxy=proxy,
-                max_bytes=_MAX_ARCHIVE_BYTES, progress=on_progress,
+                url,
+                destination,
+                timeout=60,
+                proxy=proxy,
+                max_bytes=_MAX_ARCHIVE_BYTES,
+                progress=on_progress,
             )
             await _report_install_progress("verify", name=name)
             actual = await asyncio.to_thread(_sha256_of, destination)
@@ -376,9 +397,7 @@ def _extract_zip(archive: Path, target: Path) -> None:
             parts = _safe_parts(info.filename)
             if parts:
                 entries.append((info, parts))
-        strip_root = _common_root(
-            parts for info, parts in entries if not info.is_dir()
-        )
+        strip_root = _common_root(parts for info, parts in entries if not info.is_dir())
         for info, parts in entries:
             relative = parts[1:] if strip_root and len(parts) > 1 else parts
             if not relative:
@@ -399,12 +418,17 @@ def _read_tar_members(archive: Path) -> list[tarfile.TarInfo]:
     """只读 tar.gz 目录，任何链接、特殊文件、异常路径均拒绝。"""
     with tarfile.open(archive, "r:gz") as bundle:
         members = bundle.getmembers()
-    if len(members) > _MAX_MEMBERS or sum(i.size for i in members) > _MAX_EXTRACTED_BYTES:
+    if (
+        len(members) > _MAX_MEMBERS
+        or sum(i.size for i in members) > _MAX_EXTRACTED_BYTES
+    ):
         raise RuntimeError("FluxDown 安装包超出大小或文件数量限制")
     for member in members:
         _safe_parts(member.name)
         if member.size > _MAX_MEMBER_BYTES or not (member.isfile() or member.isdir()):
-            raise RuntimeError(f"FluxDown 安装包含非法文件类型或过大文件: {member.name}")
+            raise RuntimeError(
+                f"FluxDown 安装包含非法文件类型或过大文件: {member.name}"
+            )
     return members
 
 
@@ -451,16 +475,21 @@ def _check_package(archive: Path, expected: set[str], forbidden: set[str]) -> No
         if archive.name.endswith(".zip"):
             with zipfile.ZipFile(archive) as bundle:
                 infos = bundle.infolist()
-                if len(infos) > _MAX_MEMBERS or sum(i.file_size for i in infos) > _MAX_EXTRACTED_BYTES:
+                if (
+                    len(infos) > _MAX_MEMBERS
+                    or sum(i.file_size for i in infos) > _MAX_EXTRACTED_BYTES
+                ):
                     raise RuntimeError("FluxDown 安装包超出大小或文件数量限制")
                 entries = [
                     (info.filename, _safe_parts(info.filename), info.file_size)
-                    for info in infos if not info.is_dir()
+                    for info in infos
+                    if not info.is_dir()
                 ]
         elif archive.name.endswith(".tar.gz"):
             entries = [
                 (m.name, _safe_parts(m.name), m.size)
-                for m in _read_tar_members(archive) if m.isfile()
+                for m in _read_tar_members(archive)
+                if m.isfile()
             ]
         else:
             raise RuntimeError(f"不支持的 FluxDown 安装包格式: {archive.name}")
@@ -485,6 +514,7 @@ def _check_package(archive: Path, expected: set[str], forbidden: set[str]) -> No
             )
     except (zipfile.BadZipFile, zipfile.LargeZipFile, tarfile.TarError) as error:
         raise RuntimeError(f"FluxDown 安装包损坏: {archive.name}") from error
+
 
 def _assert_complete_install(directory: Path) -> None:
     """校验当前 OS 的三个组件同目录齐全，且不能是空文件。"""
@@ -588,9 +618,13 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
     def available(directory: Path) -> bool:
         if directory == legacy:
             return False
-        return any((directory / name).is_file() for name in (
-            *_cli_names(), "fluxdown-desktop.exe",
-        ))
+        return any(
+            (directory / name).is_file()
+            for name in (
+                *_cli_names(),
+                "fluxdown-desktop.exe",
+            )
+        )
 
     if configured_path:
         configured = Path(configured_path)
@@ -599,9 +633,7 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
             return directory, directory != managed
 
     # 没配置时也应尽量复用桌面版目录，避免另建一套 Agent/Daemon。
-    detected = _fluxdown_cli.fluxdown_detect(
-        configured_path=None, scan_budget=8.0
-    )
+    detected = _fluxdown_cli.fluxdown_detect(configured_path=None, scan_budget=8.0)
     for candidate in detected["candidates"]:
         directory = Path(candidate["path"])
         if (directory / "fluxdown-desktop.exe").is_file():
@@ -612,15 +644,17 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
 
 def _install_missing_to_existing(extracted: Path, target: Path) -> None:
     """只添加缺少的程序，不覆盖用户桌面版、Agent 或 CLI 的现有版本。"""
-    if not any((target / name).is_file() for name in (
-        *_cli_names(), "fluxdown-desktop.exe",
-    )):
+    if not any(
+        (target / name).is_file()
+        for name in (
+            *_cli_names(),
+            "fluxdown-desktop.exe",
+        )
+    ):
         raise RuntimeError("原有 FluxDown 目录已变化，请重新检测路径")
 
     missing: list[str] = []
-    existing_cli = any(
-        (target / name).is_file() for name in _cli_names()
-    )
+    existing_cli = any((target / name).is_file() for name in _cli_names())
     if not existing_cli:
         missing.append(_cli_names()[0])
     for name in _server_names():
@@ -655,15 +689,17 @@ def _install_missing_to_existing(extracted: Path, target: Path) -> None:
 
 
 async def _save_path(
-    original_path: str, target: Path, *,
-    version: str, cli_size: int, server_size: int,
+    original_path: str,
+    target: Path,
+    *,
+    version: str,
+    cli_size: int,
+    server_size: int,
 ) -> dict[str, Any]:
     """安装结果可用才保存路径；保留下载期间用户手动改的设置。"""
     _assert_complete_install(target)
     # 安装结束后自动复用设置页的目录检测规则；拒绝仅有 GUI 或部分组件的目录。
-    detected = await asyncio.to_thread(
-        _fluxdown_cli.fluxdown_detect, str(target), 0.0
-    )
+    detected = await asyncio.to_thread(_fluxdown_cli.fluxdown_detect, str(target), 0.0)
     if not detected["path"] or Path(detected["path"]).resolve() != target.resolve():
         raise RuntimeError("安装后 FluxDown 自动检测未通过，未保存路径")
     await _report_install_progress("save")
@@ -720,7 +756,8 @@ async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, A
                 release, release.cli_name, release.cli_sha256, mirror, work, proxy
             )
             await asyncio.to_thread(
-                _check_package, work / release.cli_name,
+                _check_package,
+                work / release.cli_name,
                 {_cli_names()[0]},
                 {*_server_names(), "fluxdown-desktop.exe"},
             )
@@ -730,11 +767,16 @@ async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, A
             )
         if need_server:
             server_size = await _download_asset(
-                release, release.server_name, release.server_sha256,
-                mirror, work, proxy,
+                release,
+                release.server_name,
+                release.server_sha256,
+                mirror,
+                work,
+                proxy,
             )
             await asyncio.to_thread(
-                _check_package, work / release.server_name,
+                _check_package,
+                work / release.server_name,
                 set(_server_names()),
                 {*_cli_names(), "fluxdown-desktop.exe"},
             )
@@ -752,8 +794,8 @@ async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, A
                     return
                 if not need_cli:
                     current_cli = next(
-                        (target / n for n in _cli_names()
-                         if (target / n).is_file()), None
+                        (target / n for n in _cli_names() if (target / n).is_file()),
+                        None,
                     )
                     if current_cli is not None:
                         shutil.copy2(current_cli, extracted / current_cli.name)
@@ -769,8 +811,11 @@ async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, A
         shutil.rmtree(temp, ignore_errors=True)
 
     return await _save_path(
-        original_path, target, version=release.version,
-        cli_size=cli_size, server_size=server_size,
+        original_path,
+        target,
+        version=release.version,
+        cli_size=cli_size,
+        server_size=server_size,
     )
 
 
