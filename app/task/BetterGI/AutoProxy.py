@@ -1478,17 +1478,23 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 失败而判本次执行层失败（配置组照样走到「执行结束」），所以只能按 BGI 项目行自己补计；
         # 否则这类失败会静默消失（2026-09-19 实机：脚本项失败仍报「成功」）。
         exec_steps = parse_execution_layer_report("".join(exec_log.content)) or []
-        custom_failed = sum(
-            not step["ok"] for step in exec_steps if step.get("bgi_project")
-        )
+        custom_failed_names = [
+            step["task"]
+            for step in exec_steps
+            if step.get("bgi_project") and not step["ok"]
+        ]
+        custom_failed = len(custom_failed_names)
         # JS 收尾不覆盖 BGI 明确报出的任务失败；同一步只计一次，自定义项另行累加。
         parsed_failed = sum(
             not step["ok"] for step in exec_steps if not step.get("bgi_project")
         )
         failed_steps = max(partial_failed, step_failed, parsed_failed) + custom_failed
+        failed_names = "、".join(step["task"] for step in exec_steps if not step["ok"])
+        failure_detail = f"：{failed_names}" if failed_names else ""
         if custom_failed:
             logger.warning(
-                f"用户 {self.cur_user_item.name} 执行层有 {custom_failed} 个自定义项失败"
+                f"用户 {self.cur_user_item.name} 执行层有 {custom_failed} 个自定义项失败："
+                f"{'、'.join(custom_failed_names)}"
                 f"（配置组/脚本/路径/录制，已跳过并继续后续项目）"
             )
 
@@ -1506,10 +1512,11 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             if failed_steps:
                 logger.warning(
                     f"用户 {self.cur_user_item.name} 执行层完成，"
-                    f"但 {failed_steps} 个步骤失败（已跳过并继续后续步骤）"
+                    f"但 {failed_steps} 个步骤失败{failure_detail}（已跳过并继续后续步骤）"
                 )
                 await self._push_dispatch_log(
-                    f"执行层完成，{failed_steps} 个步骤失败已跳过（结果记为部分失败）"
+                    f"执行层完成，{failed_steps} 个步骤失败已跳过{failure_detail}"
+                    f"（结果记为部分失败）"
                 )
             else:
                 await self._push_dispatch_log("执行层完成")
