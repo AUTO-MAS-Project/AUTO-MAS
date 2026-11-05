@@ -51,6 +51,7 @@ async def test_prefetched_candidate_consumption_checks_baseline_and_gate(
             apply.assert_awaited_once()
             assert apply.await_args.kwargs["range_delta"] is False
 
+
 @pytest.mark.asyncio
 async def test_shared_artifact_cache_serializes_coroutines(tmp_path, monkeypatch):
     """Prefetch and regular updating the same asset must not write concurrently."""
@@ -85,6 +86,7 @@ async def test_shared_artifact_cache_serializes_coroutines(tmp_path, monkeypatch
     release_first.set()
     await asyncio.wait_for(asyncio.gather(first, second), 1)
     assert maximum == 1
+
 
 @pytest.mark.asyncio
 async def test_prefetch_discovery_forwards_precheck_gate_before_url(monkeypatch):
