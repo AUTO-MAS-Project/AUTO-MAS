@@ -32,9 +32,9 @@ from .state import (
 # An asyncio.Lock must be held in addition to the thread-reentrant process lock:
 # two download coroutines share one thread and must not write the same .partial.
 # Weak values avoid retaining old pytest/event loops or unused artifact locks.
-_ASYNC_ARTIFACT_LOCKS: WeakValueDictionary[
-    tuple[int, str, str], asyncio.Lock
-] = WeakValueDictionary()
+_ASYNC_ARTIFACT_LOCKS: WeakValueDictionary[tuple[int, str, str], asyncio.Lock] = (
+    WeakValueDictionary()
+)
 _ASYNC_ARTIFACT_LOCK_GUARD = threading.Lock()
 
 
@@ -49,9 +49,7 @@ def _artifact_async_lock(root: Path, stable_id: str) -> asyncio.Lock:
 
 
 @asynccontextmanager
-async def _artifact_download_access(
-    root: Path, stable_id: str
-) -> AsyncIterator[None]:
+async def _artifact_download_access(root: Path, stable_id: str) -> AsyncIterator[None]:
     async with _artifact_async_lock(root, stable_id):
         # Retain the original cross-process lock and its cache checkpoint rules.
         with artifact_lock(root, stable_id):
