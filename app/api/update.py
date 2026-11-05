@@ -66,6 +66,11 @@ class FluxdownCandidateOut(BaseModel):
     is_portable_cli: bool = Field(
         ..., description="是否为带 portable 标记的 CLI 便携版"
     )
+    has_cli: bool = False
+    has_server: bool = False
+    has_desktop: bool = False
+    complete: bool = False
+    missing: str = ""
 
 
 class FluxdownDetectOut(OutBase):
