@@ -304,11 +304,15 @@ class MaaEndManager(ScriptManagerBase):
 
         try:
             request = ScriptUpdateRequest(str(self.script_info.script_id), "MaaEnd")
-            if self._update_candidate is not None:
+            if self._update_candidate is not None and not isinstance(
+                self._update_candidate, str
+            ):
                 result = await run_script_update(
                     request, script_update.apply_update, root, self._update_candidate
                 )
             else:
+                # A no-update observation is not an install snapshot. Recheck
+                # the live version and recovery state before starting MaaEnd.
                 result = await run_script_update(
                     request,
                     script_update.update_before_run,
