@@ -693,17 +693,13 @@ def fluxdown_detect(
         "scanned_drives": drives,
         "candidates": [
             {
-                key: value
-                for key, value in c.items()
-                if key in (
-                    "path",
-                    "is_portable_cli",
-                    "complete",
-                    "has_cli",
-                    "has_server",
-                    "has_desktop",
-                    "missing",
-                )
+                "path": c["path"],
+                "is_portable_cli": c["is_portable_cli"],
+                "complete": c["complete"],
+                "has_cli": c["has_cli"],
+                "has_server": c["has_server"],
+                "has_desktop": c["has_desktop"],
+                "missing": c["missing"],
             }
             for c in candidates[:8]
         ],
