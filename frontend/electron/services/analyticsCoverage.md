@@ -67,7 +67,7 @@
 | T044 | emulator_discovery_finished：搜索、导入模拟器是否顺利 | 已接入，持续复核 |
 | T045 | emulator_operation_result：启停、显示等操作是否被接受 | 已接入，持续复核 |
 | T046 | emulator_operation_observed_finished：前端观察到的模拟器操作结局 | 已接入，持续复核 |
-| T047 | emulator_instance_manage_finished：实例创建、删除与批量设置 | 已接入，持续复核 |
+| T047 | emulator_instance_manage_finished：实例创建、删除与设置（含 AVD 分辨率档位） | 已接入，持续复核 |
 | T048 | emulator_guard_changed：稳定模式和配置守卫是否解决使用障碍 | 已接入，持续复核 |
 | T049 | avd_root_added：自定义 AVD 安装导入完成率 | 已接入，持续复核 |
 | T050 | game_sign_requested：手动签到的使用与被占用拒绝 | 已接入，持续复核 |

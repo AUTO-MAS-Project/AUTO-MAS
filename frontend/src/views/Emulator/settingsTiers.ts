@@ -5,7 +5,7 @@
  * （等距取大的那档），保存时把对齐后的值写进去；读不到或从没设过的项不对齐、不写。
  * 和界面拆开，是为了能在 node 里直接测；组件只管把结果画出来。
  */
-import { FPS_CHOICES, MEMORY_CHOICES_MB } from './avdLogic'
+import { AVD_RESOLUTIONS, FPS_CHOICES, MEMORY_CHOICES_MB } from './avdLogic'
 
 /** ``standard`` 雷电 14 / MuMu 6；``avd`` 魔改 AVD */
 export type TierKind = 'standard' | 'avd'
@@ -36,14 +36,22 @@ export const AVD_TIERS = {
   fps: FPS_CHOICES,
 } as const
 
-/** 魔改 AVD 显示固定 720p，弹窗里只显示、不能改 */
-export const AVD_FIXED = { resolution: '720p' as ResolutionTier }
+const avdResolutions = { '720p': AVD_RESOLUTIONS[720], '1080p': AVD_RESOLUTIONS[1080] }
+const resolutionOf = (tier: ResolutionTier, kind: TierKind) =>
+  kind === 'avd' ? avdResolutions[tier] : RESOLUTIONS[tier]
+
+const displayOf = (actual: ActualSettings, tier: ResolutionTier, kind: TierKind) => {
+  const target = resolutionOf(tier, kind)
+  return kind === 'avd' && (actual.height ?? 0) > (actual.width ?? 0)
+    ? { width: target.height, height: target.width, dpi: target.dpi }
+    : target
+}
 
 export const tierKindOf = (realType: string | undefined): TierKind =>
   realType === 'avd' ? 'avd' : 'standard'
 
 /**
- * 批量设置按整条配置下发。配置里全是魔改 AVD 时只给它能改的三项，否则按雷电 / MuMu 的档位给；
+ * 批量设置按整条配置下发。配置里全是魔改 AVD 时使用它的档位，否则按雷电 / MuMu 的档位给；
  * 混着放的配置里，魔改 AVD 改不了的项由后端逐台拒绝，列在失败清单里。
  */
 export const batchKindOf = (pathTypes: string[]): TierKind =>
@@ -118,20 +126,14 @@ export const alignSettings = (
   const cpu = nearestTier(actual.cpu, tiers.cpu)
   const memoryMb = nearestTier(actual.memoryMb, tiers.memoryMb)
   const fps = nearestTier(actual.fps, tiers.fps)
-  if (kind === 'avd') {
-    return {
-      form: { resolution: AVD_FIXED.resolution, cpu, memoryMb, fps },
-      snapped: {
-        resolution: null,
-        dpi: null,
-        cpu: snappedIf(actual.cpu, cpu),
-        memoryMb: snappedIf(actual.memoryMb, memoryMb),
-        fps: snappedIf(actual.fps, fps),
-      },
-    }
-  }
-  const resolution = resolutionTierOf(actual.width, actual.height)
-  const target = resolution ? RESOLUTIONS[resolution] : null
+  const resolution =
+    kind === 'avd'
+      ? (actual.width === 1920 && actual.height === 1080) ||
+        (actual.width === 1080 && actual.height === 1920)
+        ? '1080p'
+        : '720p'
+      : resolutionTierOf(actual.width, actual.height)
+  const target = resolution ? displayOf(actual, resolution, kind) : null
   return {
     form: { resolution, cpu, memoryMb, fps },
     snapped: {
@@ -155,7 +157,7 @@ export const alignSettings = (
  *
  * 分辨率按档位整体处理：宽高与档位不同、或 DPI 与档位推出的值不同，就宽、高、DPI 三项一起写
  * （实例从没设过 DPI、宽高又正好在档位上时不写）。
- * 魔改 AVD 不写分辨率。
+ * 魔改 AVD 使用自身的 DPI 档位并保留方向。
  */
 export const settingsChanges = (
   actual: ActualSettings,
@@ -163,8 +165,8 @@ export const settingsChanges = (
   kind: TierKind
 ): Record<string, number> => {
   const changes: Record<string, number> = {}
-  if (kind === 'standard' && form.resolution) {
-    const target = RESOLUTIONS[form.resolution]
+  if (form.resolution) {
+    const target = displayOf(actual, form.resolution, kind)
     const resized = actual.width !== target.width || actual.height !== target.height
     const dpiOff = actual.dpi !== null && actual.dpi !== target.dpi
     // 分辨率是一个整体档位：要写就三项一起写。MuMu 写任一项都会把整组切到自定义模式，
@@ -182,11 +184,11 @@ export const settingsChanges = (
   return changes
 }
 
-/** 批量：只下发选了的项；分辨率选了就连 DPI 一起下发。魔改 AVD 不下发分辨率。 */
+/** 批量：只下发选了的项；分辨率选了就连 DPI 一起下发。魔改 AVD 由后端逐台保留方向。 */
 export const batchChanges = (form: TierForm, kind: TierKind): Record<string, number> => {
   const changes: Record<string, number> = {}
-  if (kind === 'standard' && form.resolution) {
-    const target = RESOLUTIONS[form.resolution]
+  if (form.resolution) {
+    const target = resolutionOf(form.resolution, kind)
     changes.width = target.width
     changes.height = target.height
     changes.dpi = target.dpi

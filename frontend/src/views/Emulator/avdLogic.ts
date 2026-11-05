@@ -11,11 +11,19 @@ import type {
 
 // ---- 实例选项 ----
 
-/** 新建实例时的选项。显示固定 720p、不带声卡、气球固定开，不在这里；核数用后端默认。 */
+/** 新建实例时的选项。分辨率联动 DPI；核数用后端默认。 */
 export interface AvdOptionsForm {
   memoryMb: number
   fps: number
+  resolution: AvdResolution
 }
+
+export const AVD_RESOLUTIONS = {
+  1080: { width: 1920, height: 1080, dpi: 280 },
+  720: { width: 1280, height: 720, dpi: 240 },
+} as const
+export type AvdResolution = keyof typeof AVD_RESOLUTIONS
+export const RESOLUTION_CHOICES: readonly AvdResolution[] = [1080, 720]
 
 /** 内存只收这几档（与后端 ``MEMORY_CHOICES_MB`` 一致）。 */
 export const MEMORY_CHOICES_MB = [3072, 4096, 5120, 6144] as const
@@ -33,12 +41,14 @@ export const RECOMMENDED_MEMORY_GB = { reverse1999: 4 } as const
 export const defaultAvdOptions = (): AvdOptionsForm => ({
   memoryMb: DEFAULT_MEMORY_MB,
   fps: DEFAULT_FPS,
+  resolution: 1080,
 })
 
 /** 新建实例时随请求带上的魔改 AVD 选项。 */
 export const createOptions = (form: AvdOptionsForm) => ({
   memoryMb: form.memoryMb,
   fps: form.fps,
+  resolution: form.resolution,
 })
 
 // ---- 开机前检查 ----

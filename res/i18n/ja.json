@@ -2752,6 +2752,7 @@
   "core.emulator2.avd.fieldMemory": "メモリ",
   "core.emulator2.avd.localSdk": "ローカル SDK",
   "core.emulator2.avd.manage": "コンポーネントとチェック",
+  "core.emulator2.avd.resolutionHint": "720p はリソース使用量を抑えます。DPI は解像度に連動します。",
   "core.emulator2.avd.memoryRecommend": "推奨：1999 {reverse1999} GB",
   "core.emulator2.avd.needsTestPackage": "ベータパッケージが必要です",
   "core.emulator2.avd.optional": "オプション",
