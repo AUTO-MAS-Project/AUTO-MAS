@@ -96,6 +96,9 @@ class MaaEndInventoryOptions(BaseModel):
 
 
 class MaaEndOptionsOut(OutBase):
+    servers: list[ComboBoxItem] = Field(
+        default_factory=list, description="MaaEnd 原生 PC 启动服务器选项"
+    )
     crisisDrills: list[ComboBoxItem] = Field(
         default_factory=list, description="当前 MaaEnd 支持的危境预演任务"
     )
