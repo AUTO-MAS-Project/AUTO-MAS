@@ -561,14 +561,23 @@ def _common_prefix_len(a: Path, b: Path) -> int:
 
 
 def fluxdown_components(directory: Path) -> dict[str, bool]:
-    """只认同目录下的独立 CLI + 完整 Server；Desktop 不可充当 CLI。"""
+    """按当前系统只认同目录 CLI + Agent + Daemon，Desktop 不可充当 CLI。"""
+    def valid(name: str | None) -> bool:
+        if not name:
+            return False
+        binary = directory / name
+        try:
+            return binary.is_file() and binary.stat().st_size > 0
+        except OSError:
+            return False
+
     return {
-        "cli": any((directory / name).is_file() for name in _FLUXDOWN_EXE_NAMES),
+        "cli": any(valid(name) for name in _FLUXDOWN_EXE_NAMES),
         "server": (
-            (directory / "fluxdown-agent.exe").is_file()
-            and (directory / "fluxdownd.exe").is_file()
+            valid(update_native.FLUXDOWN_AGENT_NAME)
+            and valid(update_native.FLUXDOWN_DAEMON_NAME)
         ),
-        "desktop": (directory / "fluxdown-desktop.exe").is_file(),
+        "desktop": valid("fluxdown-desktop.exe"),
     }
 
 
@@ -636,7 +645,10 @@ def fluxdown_detect(
         })
 
     mas_root = Path.cwd()
+    preferred = str(configured if configured is not None and configured.is_dir()
+                    else configured.parent if configured is not None else "").lower()
     candidates.sort(key=lambda c: (
+        0 if preferred and c["path"].lower() == preferred else 1,
         0 if c["complete"] else 1,
         0 if c["is_portable_cli"] else 1,
         0 if Path(c["path"]).drive.lower() == mas_root.drive.lower() else 1,
