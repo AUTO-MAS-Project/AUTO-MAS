@@ -680,3 +680,78 @@ async def test_cancelled_mirror_prefetch_does_not_use_daily_attempt(
         )
     assert not any(k.startswith("last_download_attempt_") for k in state)
     assert writes
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["offline", "cancelled", "writer-unknown"])
+async def test_resource_prefetch_failed_download_cleanup(
+    resource_install, monkeypatch, failure
+):
+    install, _, downloader = resource_install
+
+    async def fail(_url, path, **_kwargs):
+        path.write_bytes(b"partial resource zip")
+        if failure == "cancelled":
+            raise asyncio.CancelledError
+        if failure == "writer-unknown":
+            raise update._utils_fluxdown_cli.FluxdownCancelUnconfirmed("busy")
+        raise RuntimeError("offline")
+
+    downloader.side_effect = fail
+    with pytest.raises(
+        asyncio.CancelledError
+        if failure == "cancelled"
+        else (
+            update._utils_fluxdown_cli.FluxdownCancelUnconfirmed
+            if failure == "writer-unknown"
+            else RuntimeError
+        )
+    ):
+        await resource.prefetch_resources(install, github=True, cdk=None)
+    archives = list(resource._WORK_DIR.glob("prefetch-*.zip"))
+    assert len(archives) == (1 if failure == "writer-unknown" else 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["offline", "cancelled", "resumable", "writer-unknown"])
+async def test_maa_software_prefetch_failed_directory_cleanup(
+    installation, monkeypatch, failure
+):
+    root, _, downloader = installation
+    monkeypatch.chdir(root.parent)
+
+    async def fail(_url, path, **_kwargs):
+        path.write_bytes(b"partial software zip")
+        if failure == "cancelled":
+            raise asyncio.CancelledError
+        if failure == "resumable":
+            raise update._service_update_fluxdown.FluxdownResumableError("resume")
+        if failure == "writer-unknown":
+            raise update._utils_fluxdown_cli.FluxdownCancelUnconfirmed("busy")
+        raise RuntimeError("offline")
+
+    downloader.side_effect = fail
+    expected = (
+        asyncio.CancelledError
+        if failure == "cancelled"
+        else (
+            update._service_update_fluxdown.FluxdownResumableError
+            if failure == "resumable"
+            else (
+                update._utils_fluxdown_cli.FluxdownCancelUnconfirmed
+                if failure == "writer-unknown"
+                else RuntimeError
+            )
+        )
+    )
+    with pytest.raises(expected):
+        await update.prepare_maa_fluxdown_update(
+            root,
+            config=script_config(),
+            config_dir=root / "config",
+            download_only=True,
+        )
+    directories = list((root.parent / "data/maa_github_update").glob("download-*"))
+    assert len(directories) == (
+        1 if failure in ("resumable", "writer-unknown") else 0
+    )
