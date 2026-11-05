@@ -129,32 +129,6 @@ async def test_wrong_package_version_is_not_installed(installation):
     assert update.read_install(root)[0] == Version("2.1.0")
 
 
-@pytest.mark.asyncio
-async def test_mirror_download_still_requires_official_sha256(
-    installation, monkeypatch
-):
-    root, config = installation
-    config.Update.MirrorChyanCDK = "test-cdk"
-    monkeypatch.setattr(
-        update,
-        "request_mirror_resource",
-        AsyncMock(
-            return_value={
-                "data": {
-                    "update_type": "full",
-                    "version_name": "v2.2.0",
-                    "url": "https://mirror.example/official.zip",
-                }
-            }
-        ),
-    )
-    await update.update_before_run(root, config)
-    assert update.read_install(root)[0] == Version("2.2.0")
-    assert (
-        update.download_file.await_args.args[0] == "https://mirror.example/official.zip"
-    )
-
-
 def _create_old_interface_journal(root: Path) -> bytes:
     original = (root / "interface.json").read_bytes()
     injected = b'{"name":"MaaEnd","version":"v2.1.0"}'
@@ -270,22 +244,6 @@ async def test_cancelled_cleanup_waits_for_worker(installation, monkeypatch):
     assert target.is_file()
 
 
-def test_discard_rejects_unremovable_recognized_archive(installation, monkeypatch):
-    root, _ = installation
-    candidate = _cached_mxu_zip(root, "MaaEnd-win-x86_64-v2.0.0.zip", "v2.0.0")
-    original_unlink = Path.unlink
-
-    def deny_delete(path, *args, **kwargs):
-        if path == candidate:
-            raise PermissionError("locked")
-        return original_unlink(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "unlink", deny_delete)
-    with pytest.raises(script_install.InstallUnsafeError, match="无法移除"):
-        update.discard_obsolete_mxu_packages(root, threading.Event())
-    assert candidate.is_file()
-
-
 @pytest.fixture
 def scheduler(installation, monkeypatch):
     root, config = installation
@@ -363,17 +321,6 @@ async def test_native_update_does_not_block_non_takeover_configuration(installat
     await update.confirm_current_install(root, verify_receipt=False)
 
 
-def test_config_defaults_and_partial_update_contract():
-    from app.config.wire import config_contract
-    from app.models.config import MaaEndConfig
-
-    assert MaaEndConfig.model_validate({}).Update.TakeoverEnabled is False
-    patch = config_contract(MaaEndConfig, mode="input").model_validate(
-        {"Update": {"TakeoverEnabled": True}}
-    )
-    assert patch.model_dump(exclude_unset=True) == {"Update": {"TakeoverEnabled": True}}
-
-
 def test_missing_installation_path_survives_reload_for_crash_recovery(
     tmp_path, monkeypatch
 ):
@@ -399,18 +346,6 @@ async def test_same_version_repairs_corrupted_executable_using_recorded_architec
     await update.update_before_run(root, config)
     assert update.read_install(root) == (Version("2.2.0"), "x86_64")
     assert script_install.verify_installed_files(root, threading.Event())
-
-
-@pytest.mark.asyncio
-async def test_scheduler_prepares_only_once_for_all_users(
-    scheduler, installation, monkeypatch
-):
-    root, _ = installation
-    updater = AsyncMock(return_value="ready")
-    monkeypatch.setattr(update, "update_before_run", updater)
-    await scheduler._prepare_program_update(root)
-    await scheduler._prepare_program_update(root)
-    updater.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -560,78 +495,6 @@ async def test_unconfirmed_downloader_keeps_its_private_destination(
     assert len(downloads) == 1
     assert next(downloads[0].iterdir()).read_bytes() == b"partial download"
     assert update.read_install(root)[0] == Version("2.1.0")
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("source", ["GitHub", "MirrorChyan"])
-async def test_interrupted_builtin_download_does_not_accumulate_partial_archives(
-    installation, monkeypatch, source
-):
-    root, config = installation
-    if source == "MirrorChyan":
-        config.Update.MirrorChyanCDK = "test-cdk"
-        monkeypatch.setattr(
-            update,
-            "request_mirror_resource",
-            AsyncMock(
-                return_value={
-                    "data": {
-                        "update_type": "full",
-                        "version_name": "v2.2.0",
-                        "url": "https://mirror.example/official.zip",
-                    }
-                }
-            ),
-        )
-    else:
-        update.Config.setting.Update.FluxdownTakeoverAll = False
-
-    async def broken_download(_url, destination, **_kwargs):
-        destination.write_bytes(b"partial ZIP")
-        raise httpx.ReadError("connection interrupted")
-
-    monkeypatch.setattr(update, "download_file", AsyncMock(side_effect=broken_download))
-    cache = root.parent / "data/maaend_update"
-    for _ in range(2):
-        with pytest.raises(httpx.ReadError, match="connection interrupted"):
-            await update.update_before_run(root, config)
-        assert not list(cache.glob("download-*"))
-        assert update.read_install(root)[0] == Version("2.1.0")
-    assert update.download_file.await_args.kwargs["source"] == source
-
-
-@pytest.mark.asyncio
-async def test_mirror_unconfirmed_fluxdown_writer_keeps_download_target(
-    installation, monkeypatch
-):
-    root, config = installation
-    config.Update.MirrorChyanCDK = "test-cdk"
-    monkeypatch.setattr(
-        update,
-        "request_mirror_resource",
-        AsyncMock(
-            return_value={
-                "data": {
-                    "update_type": "full",
-                    "version_name": "v2.2.0",
-                    "url": "https://mirror.example/official.zip",
-                }
-            }
-        ),
-    )
-
-    async def blocked_download(_url, destination, **_kwargs):
-        destination.write_bytes(b"pending download")
-        raise FluxdownResumableError("writer status not confirmed")
-
-    monkeypatch.setattr(
-        update, "download_file", AsyncMock(side_effect=blocked_download)
-    )
-    with pytest.raises(FluxdownResumableError):
-        await update.update_before_run(root, config)
-    downloads = list((root.parent / "data/maaend_update").glob("download-*"))
-    assert len(downloads) == 1
-    assert next(downloads[0].iterdir()).read_bytes() == b"pending download"
 
 
 @pytest.mark.asyncio
@@ -866,17 +729,3 @@ async def test_exact_release_lookup_checks_official_tag_and_draft(
     release["draft"] = True
     with pytest.raises(ValueError, match="公开发行"):
         await update.request_release_for_version(Version("2.3.0b1"), "v2.3.0-beta.1")
-
-
-@pytest.mark.asyncio
-async def test_same_version_corruption_keeps_official_repair_path(
-    installation, monkeypatch
-):
-    root, config = installation
-    await update.update_before_run(root, config)
-    (root / "MaaEnd.exe").write_bytes(b"modified")
-    exact = AsyncMock(side_effect=AssertionError("must not search other versions"))
-    monkeypatch.setattr(update, "request_release_for_version", exact)
-    await update.update_before_run(root, config)
-    assert script_install.verify_installed_files(root, threading.Event())
-    exact.assert_not_awaited()

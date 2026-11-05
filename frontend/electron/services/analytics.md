@@ -12,6 +12,8 @@ Electron 主进程按 Aptabase 的单事件协议向
 主动复用或补齐埋点。首页活动只统计实际开始的新加载批次，busy 跳过不复用旧结果；
 OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固定脚本类型，标识不进入事件属性。
 
+桌面启动由主进程提前编排；`backend_start_finished` 和 Runtime 阶段事件仍由原服务确认结果，窗口接入已有启动任务不重复上报。完整初始化结果仍在界面词表与应用入口就绪后记录。
+
 ## 当前采集范围
 
 | 事件 | 含义 | 自定义字段 | 频率 |
@@ -51,6 +53,11 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `update_install_requested` | 立即或稍后安装的选择 | `choice`、`request_outcome`、耗时桶 | 稍后不发安装请求；受理不代表安装器已启动 |
 | `connection_incident_finished` | 非计划断线的一次恢复事故 | `outcome`、`recovery_kind`、`reason_kind`、耗时桶 | 多轮重连归并为一次 |
 
+首页首帧后的 MCP 自动放行只用于内部启动协调，不单独采集；`renderer_ready` 仍表示 Vue 挂载，
+不改为首页首帧口径。首帧性能标记仅在开发构建中启用，不上传。
+只连接外部后端时不产生后端启动或安装事件，启动与初始化统计的 `runtime_mode` 记为
+`unknown`；断线和系统唤醒恢复沿用现有事件，仅按实际重连结果记录。
+
 完整 84 项入口、共享事件、结果边界及验证限制见 [场景覆盖台账](./analyticsCoverage.md)。
 托盘菜单的显式保存复用 `config_write_finished`，由主进程确认配置写入结果；菜单文本、任务标识、草稿编辑及取消均不采集。
 新增事件的字段固定枚举共用 [analyticsFeaturePolicy.ts](./analyticsFeaturePolicy.ts)，调用类型和主进程验证均从该声明派生。
@@ -83,7 +90,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `game_sign_requested` | 手动签到的使用与被占用拒绝 | `trigger_kind` |
 | `community_account_manage_finished` | 签到账号创建、启停、删除 | `action` |
 | `community_activity_requested` | 社区活动工具是否有需求 | `operation_kind` |
-| `settings_change_finished` | 设置修改成功率及主要功能采用情况 | `setting_key`、`value_kind`、`setting_kind`；包含关闭应用二次确认开关 |
+| `settings_change_finished` | 设置修改成功率及主要功能采用情况 | `setting_key`、`value_kind`、`setting_kind`；包含关闭应用二次确认开关及设置页布局偏好 |
 | `appearance_preference_changed` | 主题、语言、低性能模式需求 | `preference_kind`、`preset_value` |
 | `appearance_package_finished` | 本地外观导入、启用、删除是否顺利 | `package_kind`、`action` |
 | `appearance_store_install_finished` | 主题商店发现到安装的转化 | `category_kind` |
@@ -288,6 +295,8 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
 QQ 高级手动配置复用 `notification_binding_finished`，`action=manual_bind`、`outcome=saved` 仅表示凭据验证并保存，不代表网关 READY 或通知送达；失败记 failure，不采集 AppID、密钥或 OpenID。
 
 脚本更新下载器开关复用 `settings_change_finished`，固定键为 `script_update_takeover`，只记录开关状态与保存结果。
+
+设置页布局复用 `settings_change_finished`，由布局组件在前端配置实际保存后记录结果。固定键为 `settings_layout`、类别为 `other`，单列映射 `default`、双列映射 `custom`；初次读取、响应式回流及目录跳转不产生事件，不上传卡片内容或位置。
 专项运行前的自动检查、缓存命中、下载进度和重试不逐次采集；任务终态由各专项复用 `script_run_finished` 的原观察者负责。
 
 脚本更新公共入口沿用这一观察边界，不另发完成事件。MFW、M9A、MSS 的自动更新统一在用户任务之前执行；更新时机配置保存仍由 `useScriptApi.updateScript` 观察，目录、版本和调度标识不进入匿名统计。

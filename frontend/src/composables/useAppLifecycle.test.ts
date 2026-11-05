@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
-import {
-  WS_BACKEND_SHUTDOWN_READY,
-  WS_ID_MAIN,
-  type WSDisconnectEvent,
-  type WSJsonObject,
-} from '@/services/websocket/types'
+import { type WSDisconnectEvent, type WSJsonObject } from '@/services/websocket/types'
 
 // ==================== 全局桩 ====================
 
@@ -16,14 +11,15 @@ const backendStatus = vi.fn()
 const stopBackend = vi.fn()
 const killAllProcesses = vi.fn()
 const appQuit = vi.fn()
+const backendRestart = vi.fn()
+const systemResume = vi.fn((_handler: () => void) => () => undefined)
 
 const connectionMocks = vi.hoisted(() => ({
   connect: vi.fn(async () => true),
   connectionState: vi.fn(() => ({ value: 'open' })),
-  shouldPreserveBackend: vi.fn(() => false),
   onConnected: vi.fn(() => () => undefined),
   onDisconnected: vi.fn((_handler: (event: WSDisconnectEvent) => void) => () => undefined),
-  onReconnectCycleFailed: vi.fn(() => () => undefined),
+  onReconnectCycleFailed: vi.fn((_handler: () => void) => () => undefined),
   reconnectNow: vi.fn(async () => true),
   scheduleReconnect: vi.fn(),
   shutdown: vi.fn(),
@@ -83,7 +79,6 @@ describe('useAppLifecycle 关闭流程', () => {
         return `sub_${filter.type}`
       }
     )
-    connectionMocks.shouldPreserveBackend.mockReturnValue(false)
     connectionMocks.connectionState.mockReturnValue({ value: 'open' })
     closePost.mockResolvedValue(undefined)
     stopBackend.mockResolvedValue({ success: true })
@@ -96,7 +91,8 @@ describe('useAppLifecycle 关闭流程', () => {
         stopBackend,
         killAllProcesses,
         appQuit,
-        onSystemResume: vi.fn(() => () => undefined),
+        backendRestart,
+        onSystemResume: systemResume,
         onAppCloseRequested: vi.fn(() => () => undefined),
       },
       setTimeout: (fn: () => void, ms?: number) => setTimeout(fn, ms),
@@ -115,7 +111,6 @@ describe('useAppLifecycle 关闭流程', () => {
 
     it('不发 POST /close、不等后端进程消失，只请求 Electron 经 Runtime 关闭后再退出', async () => {
       // 页面先于后端起来时 ws_meta 可能回退成 devMode=true；Runtime 链路下它不能左右关闭方式。
-      connectionMocks.shouldPreserveBackend.mockReturnValue(true)
       const { closeApp } = await loadLifecycle()
 
       await closeApp()
@@ -156,47 +151,25 @@ describe('useAppLifecycle 关闭流程', () => {
     expect(appQuit).toHaveBeenCalledOnce()
   })
 
-  it('浏览器退出先等待任务与电源清理完成，再断开连接并保留独立后端', async () => {
-    Object.assign(window, { __AUTO_MAS_BROWSER_DEV_MODE__: true })
-    connectionMocks.shouldPreserveBackend.mockReturnValue(true)
-    const { closeApp } = await loadLifecycle()
-    const pending = closeApp()
-    await vi.waitFor(() => expect(closePost).toHaveBeenCalledOnce())
-    expect(appQuit).not.toHaveBeenCalled()
-    subscriptionHandlers.get(WS_BACKEND_SHUTDOWN_READY)?.({
-      id: WS_ID_MAIN,
-      type: WS_BACKEND_SHUTDOWN_READY,
-      data: {},
+  describe.each(['browser', 'desktop'] as const)('%s 只连接外部后端', surface => {
+    beforeEach(() => {
+      Object.assign(
+        window,
+        surface === 'browser'
+          ? { __AUTO_MAS_BROWSER_DEV_MODE__: true }
+          : { backendOwnership: 'external' }
+      )
     })
-    await pending
-    expect(stopBackend).not.toHaveBeenCalled()
-    expect(killAllProcesses).not.toHaveBeenCalled()
-    expect(connectionMocks.shutdown).toHaveBeenCalledWith('浏览器调试结束')
-    expect(appQuit).toHaveBeenCalledOnce()
-    expect(callOrder(closePost)).toBeLessThan(callOrder(connectionMocks.shutdown))
-  })
 
-  it('浏览器退出期间断线时结束清理等待，不停止独立后端', async () => {
-    Object.assign(window, { __AUTO_MAS_BROWSER_DEV_MODE__: true })
-    const { closeApp } = await loadLifecycle()
-    const pending = closeApp()
-    await vi.waitFor(() => expect(closePost).toHaveBeenCalledOnce())
-    connectionMocks.onDisconnected.mock.calls[0][0]({ code: 1006, reason: 'lost' })
-    await pending
-    expect(stopBackend).not.toHaveBeenCalled()
-    expect(killAllProcesses).not.toHaveBeenCalled()
-    expect(appQuit).toHaveBeenCalledOnce()
-  })
-
-  it('浏览器未连接且清理请求失败时也只退出前端', async () => {
-    Object.assign(window, { __AUTO_MAS_BROWSER_DEV_MODE__: true })
-    connectionMocks.connectionState.mockReturnValue({ value: 'closed' })
-    closePost.mockRejectedValue(new Error('backend unavailable'))
-    const { closeApp } = await loadLifecycle()
-    await closeApp()
-    expect(closePost).toHaveBeenCalledOnce()
-    expect(stopBackend).not.toHaveBeenCalled()
-    expect(killAllProcesses).not.toHaveBeenCalled()
-    expect(appQuit).toHaveBeenCalledOnce()
+    it.each(['open', 'closed'])('%s 时退出只断开连接，保留后端任务', async state => {
+      connectionMocks.connectionState.mockReturnValue({ value: state })
+      const { closeApp } = await loadLifecycle()
+      await closeApp()
+      expect(closePost).not.toHaveBeenCalled()
+      expect(stopBackend).not.toHaveBeenCalled()
+      expect(killAllProcesses).not.toHaveBeenCalled()
+      expect(connectionMocks.shutdown).toHaveBeenCalled()
+      expect(appQuit).toHaveBeenCalledOnce()
+    })
   })
 })

@@ -84,11 +84,6 @@ describe('websocket connection 状态机', () => {
     vi.unstubAllGlobals()
   })
 
-  it('源码 Electron 的开发环境不再表示退出时保留独立后端', async () => {
-    const connection = await loadConnection()
-    expect(connection.shouldPreserveBackend()).toBe(false)
-  })
-
   it('并发 connect 只建立一个连接尝试（单飞行）', async () => {
     const conn = await loadConnection()
     const p1 = conn.connect()
@@ -216,56 +211,5 @@ describe('websocket connection 状态机', () => {
     expect(conn.connectionState().value).toBe('open')
 
     conn.shutdown()
-  })
-})
-
-describe('devMode 协商', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    vi.stubGlobal('WebSocket', FakeWebSocket)
-    // 浏览器调试在后端元信息暂不可达时仍保留独立后端。
-    vi.stubGlobal('window', {
-      __AUTO_MAS_BROWSER_DEV_MODE__: true,
-      electronAPI: { getLogger: () => logger },
-      location: { hostname: 'localhost' },
-      setTimeout: (fn: () => void, ms?: number) => setTimeout(fn, ms),
-      clearTimeout: (id: number) => clearTimeout(id),
-    })
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  it('补协商期间连接层已 shutdown 时丢弃结果，不复活旧连接的 devMode', async () => {
-    let releaseMeta: (() => void) | null = null
-    const fetchMock = vi
-      .fn()
-      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
-      .mockImplementationOnce(
-        () =>
-          new Promise(resolve => {
-            releaseMeta = () =>
-              resolve({
-                ok: true,
-                status: 200,
-                json: async () => ({ devMode: false, wsPath: '/api/core/ws' }),
-              })
-          })
-      )
-    vi.stubGlobal('fetch', fetchMock)
-
-    const conn = await loadConnection()
-    const promise = conn.connect()
-    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
-    latestSocket().triggerOpen()
-    await expect(promise).resolves.toBe(true)
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
-
-    conn.shutdown('测试关闭')
-    releaseMeta!() // 补协商完成，但连接层已终态
-    await new Promise(resolve => setTimeout(resolve, 20))
-    expect(conn.connectionInfo().backendDevMode).toBe(true)
-    expect(conn.shouldPreserveBackend()).toBe(true)
   })
 })

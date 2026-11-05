@@ -6,6 +6,7 @@ import { startTitlebarVersionCheck } from '@/composables/useVersionService'
 import { readUpdatePauseState, useUpdateChecker } from '@/composables/useUpdateChecker'
 import { markAsInitialized } from '@/composables/useAppInitialization'
 import { useBackendI18nStore } from '@/stores/backendI18n'
+import { measureStartup } from '@/utils/startupTiming'
 
 const logger = window.electronAPI.getLogger('应用入口')
 
@@ -81,7 +82,7 @@ export async function enterApp(
 
   try {
     // 尝试建立WebSocket连接
-    wsConnected = await connectWithRetry()
+    wsConnected = await measureStartup('主 WebSocket 连接', connectWithRetry)
     if (wsConnected) {
       logger.info(`${reason}：WebSocket连接建立成功`)
     } else {
@@ -99,7 +100,7 @@ export async function enterApp(
     }
 
     pendingEntryReason = reason
-    if (!(await useBackendI18nStore().ensure())) return false
+    if (!(await measureStartup('业务词表加载', () => useBackendI18nStore().ensure()))) return false
     resumePendingEntry()
     return true
   } else {

@@ -5,6 +5,8 @@
 
 import { MirrorService } from './mirrorService'
 import { BackendService } from './backendService'
+import { getBackendOwnership } from './instanceConfig'
+import { RUNTIME_KILL_WAIT_MS, RUNTIME_STOP_TIMEOUT_MS, waitForSettle } from './runtime/shutdown'
 import { RuntimeLaunchMode, RuntimeRemediation, resolveRuntimeLaunchConfig } from './runtime'
 import {
   BootstrapProgressUpdate,
@@ -77,6 +79,7 @@ export interface InitializationResult {
 // ==================== 初始化服务类 ====================
 
 export class InitializationService {
+  readonly ownsBackend = getBackendOwnership() === 'owned'
   private appRoot: string
   private mirrorService: MirrorService
   private backendService: BackendService
@@ -89,6 +92,138 @@ export class InitializationService {
     this.backendService = new BackendService(appRoot)
   }
 
+  private desktopStartup: Promise<InitializationResult> | null = null
+  private desktopState: {
+    runtimeMode: RuntimeLaunchMode
+    flowKind: 'startup' | 'first-run' | 'update'
+    fullInitialization: boolean
+    state: 'running' | 'ready' | 'failed'
+    progress: InitializationProgress[]
+  } | null = null
+  private closing = false
+  private environmentOperation: Promise<unknown> | null = null
+  private stopFlight: Promise<void> | null = null
+  private shutdownRequested = false
+
+  /** 进程拥有启动任务；晚到的窗口读取快照并接回同一结果，包括失败。 */
+  startDesktopStartup(
+    preferences: { version: string; initializedVersion?: string; autoUpdate: boolean },
+    onProgress?: InitializationProgressCallback
+  ): Promise<InitializationResult> {
+    if (!this.ownsBackend) return Promise.resolve({ success: true, completedStages: [] })
+    if (this.desktopStartup) return this.desktopStartup
+    const runtimeMode = resolveRuntimeLaunchConfig(this.appRoot).mode
+    const fullInitialization =
+      runtimeMode === 'managed' &&
+      (preferences.autoUpdate || preferences.initializedVersion !== preferences.version)
+    this.desktopState = {
+      runtimeMode,
+      flowKind: fullInitialization
+        ? preferences.initializedVersion
+          ? 'update'
+          : 'first-run'
+        : 'startup',
+      fullInitialization,
+      state: 'running',
+      progress: [],
+    }
+    const state = this.desktopState
+    const publish = (progress: InitializationProgress) => {
+      const index = state.progress.findIndex(item => item.stage === progress.stage)
+      if (index < 0) state.progress.push(progress)
+      else state.progress[index] = progress
+      onProgress?.(progress)
+    }
+    // 先登记 Promise，再执行，窗口创建无需等待这条链。
+    this.desktopStartup = Promise.resolve()
+      .then(async () => {
+        if (this.closing) return this.cancelledStartup()
+        if (fullInitialization) {
+          await this.mirrorService.initialize()
+          if (this.closing) return this.cancelledStartup()
+          return this.initialize(publish)
+        }
+        return this.startBackendStage(publish, 7, [])
+      })
+      .catch((error: unknown): InitializationResult => ({
+        success: false,
+        completedStages: [],
+        failedStage: fullInitialization ? 'python' : 'backend',
+        error: error instanceof Error ? error.message : String(error),
+      }))
+      .then(result => {
+        state.state = result.success ? 'ready' : 'failed'
+        return result
+      })
+    return this.desktopStartup
+  }
+
+  getDesktopStartupSnapshot() {
+    return this.desktopState ? structuredClone(this.desktopState) : null
+  }
+
+  waitForDesktopStartup(): Promise<InitializationResult> | null {
+    return this.desktopStartup
+  }
+
+  /** 显式重试或修复才清除终态；启动期间不允许另一条环境变更链插入。 */
+  resetDesktopStartup(): void {
+    if (this.desktopState?.state === 'running') throw new Error('启动尚未结束，请稍后再试')
+    if (this.closing) throw new Error('应用正在关闭')
+    if (this.environmentOperation) throw new Error('运行环境操作尚未结束，请稍后再试。')
+    this.desktopStartup = null
+    this.desktopState = null
+  }
+
+  get isEnvironmentBusy(): boolean {
+    return this.environmentOperation !== null || this.runtimeService?.isBusy === true
+  }
+
+  /** 手动准备、修复和更新共用占用边界，内部仍复用各服务的启停队列。 */
+  async runEnvironmentOperation<T>(operation: () => Promise<T>): Promise<T> {
+    this.assertBackendOwnership()
+    this.resetDesktopStartup()
+    const running = Promise.resolve().then(operation)
+    this.environmentOperation = running
+    try {
+      return await running
+    } finally {
+      if (this.environmentOperation === running) this.environmentOperation = null
+    }
+  }
+
+  private cancelledStartup(): InitializationResult {
+    return { success: false, completedStages: [], code: 'OPERATION_CANCELLED', error: '启动已取消' }
+  }
+
+  /** 取消覆盖镜像准备、Runtime 对齐、bootstrap 和尚未就绪的 supervise。 */
+  stopDesktopStartup(shutdown = false): Promise<void> {
+    if (!this.ownsBackend) return Promise.resolve()
+    this.shutdownRequested ||= shutdown
+    if (this.stopFlight) return this.stopFlight
+    this.closing = true
+    const deadline = Date.now() + RUNTIME_STOP_TIMEOUT_MS + RUNTIME_KILL_WAIT_MS
+    this.stopFlight = (async () => {
+      const [result] = await Promise.all([
+        this.backendService.stopBackend(),
+        this.runtimeService?.shutdown(),
+      ])
+      if (!result.success) throw new Error(result.error || '无法停止后端')
+      const settled = await waitForSettle(
+        Promise.allSettled([this.desktopStartup, this.environmentOperation]),
+        Math.max(0, deadline - Date.now())
+      )
+      if (!settled) throw new Error('无法确认运行环境操作已结束，请重试退出。')
+      this.desktopStartup = null
+      this.desktopState = null
+      this.runtimeService = null
+      this.closing = this.shutdownRequested
+    })().finally(() => {
+      this.stopFlight = null
+    })
+    return this.stopFlight
+  }
+
   /**
    * 取本次生命周期的 Runtime 编排器。
    *
@@ -96,6 +231,7 @@ export class InitializationService {
    * 给出的处置动作（决定重试用 `dependencies sync` 还是 `dependencies rebuild`）。
    */
   getRuntimeService(): RuntimeInitializationService {
+    this.assertBackendOwnership()
     const launchConfig = resolveRuntimeLaunchConfig(this.appRoot)
     if (!this.runtimeService || this.runtimeService.launchConfig.mode !== launchConfig.mode) {
       this.runtimeService = new RuntimeInitializationService({
@@ -113,6 +249,7 @@ export class InitializationService {
     onProgress?: InitializationProgressCallback,
     startBackend: boolean = true
   ): Promise<InitializationResult> {
+    this.assertBackendOwnership()
     if (resolveRuntimeLaunchConfig(this.appRoot).mode === 'development') {
       return this.initializeViaDevelopmentRuntime(onProgress, startBackend)
     }
@@ -213,6 +350,7 @@ export class InitializationService {
     totalStages: number,
     completedStages: string[]
   ): Promise<InitializationResult> {
+    if (this.closing) return this.cancelledStartup()
     onProgress?.({
       stage: 'backend',
       stageIndex: INITIALIZATION_STAGE_INDEX.backend,
@@ -325,6 +463,11 @@ export class InitializationService {
    * 获取后端服务实例（用于外部访问）
    */
   getBackendService(): BackendService {
+    this.assertBackendOwnership()
     return this.backendService
+  }
+
+  private assertBackendOwnership(): void {
+    if (!this.ownsBackend) throw new Error('当前仅连接外部后端，请在其终端中管理后端。')
   }
 }

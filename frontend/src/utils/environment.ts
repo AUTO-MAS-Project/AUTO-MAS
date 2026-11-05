@@ -18,3 +18,8 @@ export function isBrowserDevelopment(): boolean {
       .__AUTO_MAS_BROWSER_DEV_MODE__ === true
   )
 }
+
+/** 浏览器和桌面只连接入口均不管理外部后端的进程。 */
+export function managesBackendProcess(): boolean {
+  return !isBrowserDevelopment() && window.backendOwnership !== 'external'
+}

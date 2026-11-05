@@ -4,7 +4,7 @@
  * `runtimeInitializationService.ts`（W9b）与 `backendService.ts`（W9c）各有一处构造
  * `RuntimeClient` 的地方，此前分别裸 `new RuntimeClient(...)`，遥测开关这类需要每次构造都
  * 生效的策略只能各写一份。收敛到这里统一注入 `buildRuntimeEnv()`，两个调用点都改成调这个
- * 工厂，不改它们原有的控制流程。应用环境始终由 Electron 决定；其它显式 `env` 保留覆盖能力。
+ * 工厂，不改它们原有的控制流程。应用环境和等待首页的 MCP 策略由 Electron 决定。
  */
 
 import { RuntimeClient, RuntimeClientOptions } from './client'
@@ -28,6 +28,8 @@ export function createRuntimeClient(options: CreateRuntimeClientOptions): Runtim
       ...buildRuntimeEnv(dataRoot ?? options.appRoot),
       ...options.env,
       [RUNTIME_APP_ENV]: getApplicationEnvironment(),
+      // 桌面端优先完成首页首帧；独立后端不注入，仍在主业务就绪后自动加载。
+      AUTO_MAS_MCP_WAIT_FOR_HOME: '1',
     },
   })
 }

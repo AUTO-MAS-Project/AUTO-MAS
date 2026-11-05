@@ -12,10 +12,8 @@
     <a-layout-sider
       :width="SIDER_WIDTH"
       :theme="isDark ? 'dark' : 'light'"
-      :style="{
-        background: 'var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated))',
-        borderRight: '1px solid var(--ant-color-border)',
-      }"
+      class="app-sider"
+      :class="{ 'app-sider--appearance': activeAppearance }"
     >
       <div class="sider-content">
         <a-menu
@@ -46,7 +44,11 @@
       </div>
     </a-layout-sider>
 
-    <a-layout style="flex: 1; min-width: 0; background: transparent">
+    <a-layout
+      class="app-body"
+      :class="{ 'app-body--glow': isDark && !activeAppearance }"
+      style="flex: 1; min-width: 0; background: transparent"
+    >
       <a-layout-content class="content-area">
         <a-alert
           v-if="languageResources.error"
@@ -63,7 +65,7 @@
         </a-alert>
         <router-view v-slot="{ Component, route: currentRoute }">
           <keep-alive :include="['SchedulerPage']">
-            <component :is="Component" :key="currentRoute.path" />
+            <component :is="Component" :key="currentRoute.path" @vue:mounted="onPageMounted" />
           </keep-alive>
         </router-view>
       </a-layout-content>
@@ -88,7 +90,7 @@ import {
   UnorderedListOutlined,
   ToolOutlined,
 } from '@ant-design/icons-vue'
-import { computed, nextTick, watch } from 'vue'
+import { computed, nextTick, onUnmounted, watch } from 'vue'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
@@ -97,6 +99,7 @@ import type { MenuProps } from 'ant-design-vue'
 import type { AppearanceMenuIconKey } from '@/types/appearance'
 import { createAppearanceMenuIcon } from './appearanceMenuIcon'
 import { useBackendI18nStore } from '@/stores/backendI18n'
+import { cancelMcpPaint, scheduleMcpAfterPaint } from '@/composables/useMcpApi'
 
 const { t } = useI18n()
 const languageResources = useBackendI18nStore()
@@ -107,6 +110,13 @@ const router = useRouter()
 const route = useRoute()
 const { isDark, activeAppearance } = useTheme()
 const { isRouteLocked, triggerBlockCallback } = useRouteLock()
+
+// 首页等布局就绪；若用户提前切页，由当前业务页的首帧接续启动放行。
+function onPageMounted(): void {
+  if (route.name !== 'Home') scheduleMcpAfterPaint()
+}
+watch(() => route.path, cancelMcpPaint, { flush: 'pre' })
+onUnmounted(cancelMcpPaint)
 
 // 内容区滚动复位：滚动容器是 .content-area（div），路由 scrollBehavior 管不到。
 // 路径变化（页面切换）时回顶，避免旧页面的滚动位置被带到新页面；
@@ -237,6 +247,21 @@ const onMenuClick: MenuProps['onClick'] = info => {
 </script>
 
 <style scoped>
+/* 内置侧栏使用轻染色背景；外观包和自定义背景保留各自的表面色。 */
+.app-sider {
+  background: var(--app-sider-bg, var(--ant-color-bg-elevated));
+  border-right: 1px solid var(--app-sider-border-color, var(--ant-color-border));
+}
+
+.app-sider--appearance {
+  border-right-color: var(--ant-color-border);
+}
+
+.app-sider--appearance,
+html.appearance-background-custom .app-sider {
+  background: var(--app-appearance-elevated-surface-bg);
+}
+
 .sider-content {
   height: 100%;
   display: flex;
@@ -256,7 +281,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
   /* 水平居中 */
   width: calc(100% - 16px);
   /* 两侧各留 8px 空隙 */
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 5px 16px !important;
   /* 左右内边距 */
   line-height: 36px;
@@ -275,7 +300,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
 .sider-content :deep(.ant-menu .ant-menu-submenu) {
   width: calc(100% - 16px);
   margin: 2px auto;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
 .sider-content :deep(.ant-menu .ant-menu-submenu-title) {
@@ -283,7 +308,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
   margin: 0;
   padding: 5px 16px !important;
   line-height: 30px;
-  border-radius: 6px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -371,7 +396,44 @@ const onMenuClick: MenuProps['onClick'] = info => {
   margin-top: auto;
 }
 
+.app-body {
+  position: relative;
+  isolation: isolate;
+}
+
+.app-body::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(
+      ellipse 75% 65% at 10% 0%,
+      color-mix(in srgb, var(--ant-color-primary) 20%, transparent),
+      transparent 75%
+    ),
+    radial-gradient(
+      ellipse 65% 75% at 100% 100%,
+      color-mix(in srgb, var(--ant-color-primary) 10%, transparent),
+      transparent 75%
+    );
+  transition: opacity var(--app-theme-transition-duration) ease;
+}
+
+.app-body--glow::before {
+  opacity: 1;
+}
+
+/* 背景图片自行提供氛围，避免再叠加主题光晕。 */
+html.appearance-background-custom .app-body::before {
+  opacity: 0;
+}
+
 .content-area {
+  position: relative;
+  z-index: 1;
   min-height: 0;
   overflow: auto;
   scrollbar-width: none;

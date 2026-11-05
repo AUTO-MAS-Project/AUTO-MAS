@@ -282,6 +282,8 @@ class McpService:
             revision=0,
         )
         self._app: FastAPI | None = None
+        self._wait_for_home = os.getenv("AUTO_MAS_MCP_WAIT_FOR_HOME", "0") == "1"
+        self._home_painted = False
         self._task: asyncio.Task[None] | None = None
         self._closing = False
         self._shutdown_lock = asyncio.Lock()
@@ -297,11 +299,21 @@ class McpService:
         return snapshot
 
     def start(self, app: FastAPI) -> bool:
-        """仅在主业务 ready 后调用；不执行重导入，也不等待加载。"""
+        """主业务 ready 后登记应用；桌面端再等首页首帧，不等待实际加载。"""
         if self._closing or self._status.state != "pending" or self._task is not None:
             return False
         self._app = app
+        if self._wait_for_home and not self._home_painted:
+            return False
         return self._spawn()
+
+    def notify_home_painted(self) -> None:
+        """记住首页首帧信号；主业务与首帧都就绪后才加载，重复通知不重复启动。"""
+        if self._closing:
+            return
+        self._home_painted = True
+        if self._app is not None:
+            self.start(self._app)
 
     def retry(self) -> bool:
         """仅允许已完成清理的失败尝试重试；受理与 ready 是两个结果。"""

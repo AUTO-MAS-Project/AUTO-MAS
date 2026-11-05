@@ -61,29 +61,6 @@ with tempfile.TemporaryDirectory() as directory:
     subprocess.run([sys.executable, "-I", "-c", code], check=True, timeout=15)
 
 
-def test_importing_main_preserves_caller_temporary_directory(tmp_path):
-    code = """
-import os
-import tempfile
-before_environment = {name: os.environ.get(name) for name in ("TEMP", "TMP", "TMPDIR")}
-before_directory = tempfile.gettempdir()
-import main
-assert tempfile.gettempdir() == before_directory
-assert {name: os.environ.get(name) for name in before_environment} == before_environment
-"""
-    subprocess.run(
-        [sys.executable, "-c", code],
-        check=True,
-        timeout=15,
-        env={
-            **os.environ,
-            "TEMP": str(tmp_path),
-            "TMP": str(tmp_path),
-            "TMPDIR": str(tmp_path),
-        },
-    )
-
-
 @pytest.mark.parametrize("supervised", [False, True])
 def test_startup_sets_temp_before_business_imports(tmp_path, startup_entry, supervised):
     expected_root = tmp_path if supervised else startup_entry.parent

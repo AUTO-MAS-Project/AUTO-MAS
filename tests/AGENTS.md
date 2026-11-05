@@ -2,6 +2,8 @@
 
 `tests/` 是 pytest 回归测试目录。测试按被测边界归档，避免把专项适配入口堆在根目录。
 
+选择验证方式或设计、新增、修改、审查测试前，必须先加载 [mas-testing Skill](../.agents/skills/mas-testing/SKILL.md)。验证选择、测试撰写、自动化复用与去重按该 Skill 执行；目录、运行及隔离方式见下文。
+
 ## 目录归属
 
 - `tests/api/`：HTTP/API 行为

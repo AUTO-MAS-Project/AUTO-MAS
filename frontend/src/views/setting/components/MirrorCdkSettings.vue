@@ -6,6 +6,7 @@ import type { GlobalConfig, SettingMirrorCdkData } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import MirrorCdkStatusHint from '@/components/MirrorCdkStatusHint.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
 import { handleExternalLink } from '@/utils/openExternal'
 
 const props = defineProps<{
@@ -83,11 +84,10 @@ const handleBlur = async () => {
   }
 }
 </script>
-
 <template>
-  <div class="form-item-vertical">
-    <div class="form-label-wrapper">
-      <span class="form-label">{{ t('core.setting.others.cdk') }}</span>
+  <!-- 行内控件：标签与 ⓘ 提示由 SettingRow 承担，这里只放输入、状态与续期入口 -->
+  <SettingRow>
+    <template #label>
       <a-tooltip>
         <template #title>
           <div>
@@ -100,48 +100,82 @@ const handleBlur = async () => {
             >
             {{ t('core.setting.others.cdkGet') }}
           </div>
+          <div>{{ t('core.setting.others.cdkHint') }}</div>
         </template>
-        <QuestionCircleOutlined class="help-icon" />
+        <span class="cdk-label" tabindex="0">
+          {{ t('core.setting.others.cdk') }}
+          <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+        </span>
       </a-tooltip>
+    </template>
+    <div class="cdk-control">
+      <div class="cdk-control-main">
+        <a-input-password
+          :value="cdk"
+          :disabled="settings.Update?.Source !== 'MirrorChyan'"
+          :placeholder="t('core.setting.others.cdkPlaceholder')"
+          :visibility-toggle="true"
+          class="cdk-input"
+          autocomplete="off"
+          @update:value="handleInput"
+          @blur="handleBlur"
+        />
+        <a
+          class="cdk-link"
+          href="https://mirrorchyan.com?source=automas_settings"
+          @click="handleExternalLink"
+          >{{ t('core.setting.others.cdkGetLink') }}</a
+        >
+      </div>
+      <MirrorCdkStatusHint :state="state" :checking="checking" @retry="refresh" />
     </div>
-    <a-input-password
-      :value="cdk"
-      :disabled="settings.Update?.Source !== 'MirrorChyan'"
-      :placeholder="t('core.setting.others.cdkPlaceholder')"
-      :visibility-toggle="true"
-      size="large"
-      autocomplete="off"
-      @update:value="handleInput"
-      @blur="handleBlur"
-    />
-    <MirrorCdkStatusHint :state="state" :checking="checking" @retry="refresh" />
-    <div class="form-hint">
-      {{ t('core.setting.others.cdkHint') }}
-      <a
-        href="https://mirrorchyan.com?source=automas_settings"
-        class="form-hint-link"
-        @click="handleExternalLink"
-        >{{ t('core.setting.others.cdkGetLink') }}</a
-      >
-    </div>
-  </div>
+  </SettingRow>
 </template>
 
 <style scoped>
-.form-hint {
-  margin-top: 6px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-  line-height: 1.5;
+.cdk-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ant-color-text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: help;
 }
 
-.form-hint-link {
-  margin-left: 4px;
+.cdk-label:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+}
+
+.cdk-control {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.cdk-control-main {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cdk-input {
+  width: 260px;
+}
+
+.cdk-link {
+  flex: 0 0 auto;
   color: var(--ant-color-primary);
-  text-decoration: underline;
+  font-size: 13px;
 }
 
-.form-hint-link:hover {
+.cdk-link:hover {
   color: var(--ant-color-primary-hover);
 }
 </style>

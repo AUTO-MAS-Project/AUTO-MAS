@@ -1,4 +1,4 @@
-import { isDevelopmentEnvironment as isDev, isBrowserDevelopment } from '@/utils/environment'
+import { isDevelopmentEnvironment as isDev, managesBackendProcess } from '@/utils/environment'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
@@ -114,6 +114,7 @@ export function useInitializationFlow() {
     backend: createStepState(),
   })
 
+  let disposed = false
   const currentStepIndex = ref(0)
   const runtimeMode = ref<RuntimeInitMode>(isDev ? 'development' : 'managed')
   /** Runtime 报上来的测速结果与当前下载文件，只在 Runtime 链路有内容；页面级，不分段。 */
@@ -138,7 +139,7 @@ export function useInitializationFlow() {
     analyticsAttempt?.finish({
       outcome,
       flow_kind: flowKind.value,
-      runtime_mode: runtimeMode.value,
+      runtime_mode: managesBackendProcess() ? runtimeMode.value : 'unknown',
       failed_stage: stage,
     })
     analyticsAttempt = null
@@ -717,7 +718,7 @@ export function useInitializationFlow() {
     await finishInitializationEntry({
       operation,
       flowKind: flowKind.value,
-      runtimeMode: runtimeMode.value,
+      runtimeMode: managesBackendProcess() ? runtimeMode.value : 'unknown',
       skipped: skippedStage,
       resourcesOnly,
     })
@@ -734,10 +735,10 @@ export function useInitializationFlow() {
     }
   }
 
-  async function loadMirrorConfigs() {
+  async function loadMirrorConfigs(initialize = true) {
     const api = window.electronAPI
     try {
-      await api.initMirrors()
+      if (initialize) await api.initMirrors()
       const [pythonMirrors, getPipMirrors, gitMirrors, repoMirrors, pipMirrors] = await Promise.all(
         [
           api.getMirrors('python'),
@@ -803,12 +804,22 @@ export function useInitializationFlow() {
     ensureAnalyticsAttempt()
     logger.info('初始化界面已加载')
 
-    if (isBrowserDevelopment()) {
+    if (!managesBackendProcess()) {
       await handleLocalEnterApp()
       return
     }
 
     const api = window.electronAPI
+    // 先接事件再补快照；首次启动和同页恢复共用这些监听。
+    api.onPythonProgress?.(progress => handleProgress('python', progress))
+    api.onPipProgress?.(progress => handleProgress('pip', progress))
+    api.onGitProgress?.(progress => handleProgress('git', progress))
+    api.onRepositoryProgress?.(progress => handleProgress('repository', progress))
+    api.onDependencyProgress?.(progress => handleProgress('dependency', progress))
+    api.onInitializationProgress?.(handleRuntimeInitializationProgress)
+    api.onBackendStatus?.(backendStatus => {
+      if (backendStatus.isRunning) stepStates.value.backend.status = 'processing'
+    })
     try {
       const context = await api.getRuntimeInitContext()
       if (context) {
@@ -820,6 +831,27 @@ export function useInitializationFlow() {
       const errorMessage = error instanceof Error ? error.message : String(error)
       logger.error(`读取 Runtime 上下文失败: ${errorMessage}`)
       markStepFailed('python', errorMessage, {})
+      return
+    }
+
+    // 初始化由主进程拥有，页面晚到时先补快照，再等待同一结果。
+    const startup = await api.desktopStartupStatus?.()
+    if (startup) {
+      flowKind.value = startup.flowKind
+      runtimeMode.value = startup.runtimeMode
+      startup.progress.forEach(handleRuntimeInitializationProgress)
+      const result = await api.waitDesktopStartup()
+      if (disposed) return
+      if (result && !result.success) {
+        if (startup.fullInitialization) await loadMirrorConfigs(false)
+        if (disposed) return
+        const failedStep = steps.find(step => step.key === result.failedStage)?.key ?? 'backend'
+        currentStepIndex.value = steps.findIndex(step => step.key === failedStep)
+        markStepFailed(failedStep, result.error || t('bootstrap.init.msg.initFailed'), result)
+        return
+      }
+      markStepsBefore(steps.length - 1)
+      currentStepIndex.value = steps.length - 1
       return
     }
 
@@ -837,16 +869,6 @@ export function useInitializationFlow() {
     // 已完成过同版本初始化时只启动后端，不再为不会执行的安装步骤加载镜像配置。
     if (startIndex < steps.length - 1) await loadMirrorConfigs()
 
-    api.onPythonProgress?.(progress => handleProgress('python', progress))
-    api.onPipProgress?.(progress => handleProgress('pip', progress))
-    api.onGitProgress?.(progress => handleProgress('git', progress))
-    api.onRepositoryProgress?.(progress => handleProgress('repository', progress))
-    api.onDependencyProgress?.(progress => handleProgress('dependency', progress))
-    api.onInitializationProgress?.(handleRuntimeInitializationProgress)
-    api.onBackendStatus?.(backendStatus => {
-      if (backendStatus.isRunning) stepStates.value.backend.status = 'processing'
-    })
-
     if (startIndex < steps.length - 1) {
       initializationTimer = setTimeout(() => {
         void startInitialization(startIndex)
@@ -855,6 +877,7 @@ export function useInitializationFlow() {
   })
 
   onUnmounted(() => {
+    disposed = true
     analyticsAttempt = null
     if (initializationTimer) clearTimeout(initializationTimer)
 

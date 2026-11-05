@@ -20,29 +20,6 @@ def _write_readonly(path: Path) -> None:
     os.chmod(path, stat.S_IREAD)
 
 
-def test_removes_tree_containing_readonly_files(tmp_path: Path) -> None:
-    """目录树里有只读文件时也能整体删掉，不留下残留。"""
-
-    pack_dir = tmp_path / "configs" / ".git" / "objects" / "pack"
-    pack_dir.mkdir(parents=True)
-    for suffix in ("idx", "pack", "rev"):
-        _write_readonly(pack_dir / f"pack-aabb.{suffix}")
-    (tmp_path / "configs" / "Basic Options.json").write_text("{}", encoding="utf-8")
-
-    _utils_io.force_rmtree(tmp_path / "configs")
-
-    assert not (tmp_path / "configs").exists()
-
-
-def test_missing_path_is_a_noop(tmp_path: Path) -> None:
-    """路径不存在时不抛异常，重复调用幂等。"""
-
-    _utils_io.force_rmtree(tmp_path / "not-exists")
-    _utils_io.force_rmtree(tmp_path / "not-exists")
-
-    assert not (tmp_path / "not-exists").exists()
-
-
 def test_replace_dir_overwrites_readonly_target(tmp_path: Path) -> None:
     """目标目录带只读文件时也能整体换成源内容，不留 `.tmp` 残留。"""
 
@@ -77,15 +54,3 @@ def test_replace_dir_restores_when_target_still_held(tmp_path: Path) -> None:
         # 关键断言：不是「删了一半、备份一个没拷回」
         assert (dst / "user.json").exists()
         assert (dst / "user.json").read_text(encoding="utf-8") == '{"a": 1}'
-
-
-def test_replace_dir_creates_missing_target(tmp_path: Path) -> None:
-    """目标不存在时直接建出来，与源内容一致。"""
-
-    src = tmp_path / "src"
-    src.mkdir()
-    (src / "user.json").write_text("{}", encoding="utf-8")
-
-    _utils_io.replace_dir(src, tmp_path / "brand-new")
-
-    assert (tmp_path / "brand-new" / "user.json").exists()

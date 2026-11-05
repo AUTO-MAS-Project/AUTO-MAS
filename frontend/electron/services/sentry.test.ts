@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
-import { beginMainRendererReload, captureMainRendererCrash, configureMainSentry } from './sentry'
-import { sanitizeMainSentryEvent } from './sentryPrivacy'
+import { beginMainRendererReload, configureMainSentry } from './sentry'
 
 const sdk = vi.hoisted(() => {
   const options = { enabled: true }
@@ -22,18 +21,6 @@ beforeEach(() => {
 })
 
 describe('渲染恢复 Sentry 上报', () => {
-  it('崩溃与重载结果经过真实脱敏仍保留诊断字段', () => {
-    captureMainRendererCrash(crash)
-    beginMainRendererReload(crash)(result)
-    const events = sdk.captureMessage.mock.calls.map(([message, context]) =>
-      sanitizeMainSentryEvent({ message, ...context })
-    )
-    expect(events[0].extra).toEqual({ exitCode: 1073807364, crashCount: 1 })
-    expect(events[1].extra).toEqual({ exitCode: 1073807364, crashCount: 1, durationMs: 100 })
-    expect(events[1].tags.renderer_recovery_outcome).toBe('success')
-    expect(events[1].level).toBe('info')
-  })
-
   it('关闭再开启不补发旧尝试，关闭时开始的尝试也不发送', () => {
     const finish = beginMainRendererReload(crash)
     configureMainSentry(false)

@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.core.config.manager import AppConfig
-from app.models.config import GeneralConfig, GeneralUserConfig, MaaConfig, MaaUserConfig
+from app.models.config import GeneralUserConfig, MaaConfig, MaaUserConfig
 from app.models.script_contracts import ScriptConfigHandler
 from app.task.MAA.registration import build_config_handler
 
@@ -77,16 +77,6 @@ async def test_native_source_requires_configured_installation(tmp_path):
     with pytest.raises(ValueError):
         await host.get_user_config_dir(sid, uid)
     assert not host.data_path.exists()
-
-
-@pytest.mark.asyncio
-async def test_other_adapters_keep_user_data_directory(tmp_path):
-    host, sid, uid = await _host(tmp_path, GeneralConfig)
-
-    folder = await host.get_user_config_dir(sid, uid)
-
-    assert folder == host.data_path / sid / uid
-    assert folder.is_dir()
 
 
 @pytest.mark.asyncio

@@ -616,11 +616,6 @@ export function connectionState(): Ref<WSConnectionState> {
   return state
 }
 
-/** 前端退出时是否应保留后端；与应用环境、Runtime 托管模式分别判断。 */
-export function shouldPreserveBackend(): boolean {
-  return isBrowserDevelopment()
-}
-
 /** 注册断开事件监听（生命周期协调器使用） */
 export function onDisconnected(listener: DisconnectListener): () => void {
   disconnectListeners.push(listener)

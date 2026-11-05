@@ -1,13 +1,24 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { HomeOutlined, GithubOutlined, QqOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { ref } from 'vue'
 import type { GlobalConfig, VersionOut } from '@/api'
 import ChangelogView from '@/components/ChangelogView.vue'
 import UpdateSettingsSection from '@/views/setting/UpdateSettingsSection.vue'
+import SectionCard from '@/components/ui/SectionCard.vue'
+import appIcon from '@/assets/AUTO-MAS.ico'
 import type { ChangelogData } from '@/utils/changelog'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
+import {
+  CopyOutlined,
+  ExportOutlined,
+  FileTextOutlined,
+  GithubOutlined,
+  HomeOutlined,
+  InfoCircleOutlined,
+  LinkOutlined,
+  QqOutlined,
+} from '@ant-design/icons-vue'
 
 const logger = window.electronAPI.getLogger('设置-其他')
 
@@ -65,7 +76,7 @@ const copyAllInfo = async () => {
     document.body.appendChild(textArea)
     textArea.select()
     try {
-      document.execCommand('copy')
+      if (!document.execCommand('copy')) throw new Error('复制未完成')
       message.success(t('core.setting.toast.versionCopied'))
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -77,116 +88,96 @@ const copyAllInfo = async () => {
 }
 </script>
 <template>
-  <div class="tab-content">
-    <!-- 更新配置：独立子组件，避免本组件随业务扩展超限 -->
-    <UpdateSettingsSection
-      :settings="settings"
-      :update-source-options="updateSourceOptions"
-      :update-channel-options="updateChannelOptions"
-      :handle-setting-change="handleSettingChange"
-      :check-update="checkUpdate"
-      @fluxdown-installed="emit('fluxdownInstalled')"
-    />
+  <div class="tab-content about-settings">
+    <section class="version-card" :aria-label="t('core.setting.others.appVersion')">
+      <img :src="appIcon" class="app-icon" alt="" />
+      <div class="version-details">
+        <h2>AUTO-MAS</h2>
+        <div class="version-meta">
+          <span class="version-number">{{ version }}</span>
+          <a-tag v-if="version.includes('-beta.')">{{ t('core.setting.channel.beta') }}</a-tag>
+          <span class="backend-hash">
+            {{ t('core.setting.others.backendHash') }}
+            <code>{{
+              backendUpdateInfo?.current_hash?.substring(0, 8) || t('core.common.unknown')
+            }}</code>
+          </span>
+        </div>
+      </div>
+      <div class="version-actions">
+        <a-button @click="changelogVisible = true">
+          <template #icon><FileTextOutlined aria-hidden="true" /></template>
+          {{ t('core.setting.others.viewChangelog') }}
+        </a-button>
+        <a-button @click="copyAllInfo">
+          <template #icon><CopyOutlined aria-hidden="true" /></template>
+          {{ t('core.setting.others.copyInfo') }}
+        </a-button>
+      </div>
+    </section>
 
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('core.setting.others.linkSection') }}</h3>
+    <div class="about-grid">
+      <div class="about-main">
+        <UpdateSettingsSection
+          :settings="settings"
+          :update-source-options="updateSourceOptions"
+          :update-channel-options="updateChannelOptions"
+          :handle-setting-change="handleSettingChange"
+          :check-update="checkUpdate"
+          @fluxdown-installed="emit('fluxdownInstalled')"
+        />
       </div>
-      <div class="link-grid">
-        <div class="link-item">
-          <div class="link-card">
-            <div class="link-icon">
-              <HomeOutlined />
-            </div>
-            <div class="link-content">
-              <h4>{{ t('core.setting.others.site') }}</h4>
-              <p>{{ t('core.setting.others.siteDesc') }}</p>
-              <a href="https://auto-mas.top" class="link-button" @click="handleExternalLink">{{
-                t('core.setting.others.visitSite')
-              }}</a>
-            </div>
-          </div>
-        </div>
-        <div class="link-item">
-          <div class="link-card">
-            <div class="link-icon">
-              <GithubOutlined />
-            </div>
-            <div class="link-content">
-              <h4>{{ t('core.setting.others.repo') }}</h4>
-              <p>{{ t('core.setting.others.repoDesc') }}</p>
-              <a
-                href="https://github.com/AUTO-MAS-Project/AUTO-MAS"
-                class="link-button"
-                @click="handleExternalLink"
-                >{{ t('core.setting.others.visitRepo') }}</a
-              >
-            </div>
-          </div>
-        </div>
-        <div class="link-item">
-          <div class="link-card">
-            <div class="link-icon">
-              <QqOutlined />
-            </div>
-            <div class="link-content">
-              <h4>{{ t('core.setting.others.qq') }}</h4>
-              <p>{{ t('core.setting.others.qqDesc') }}</p>
-              <a :href="MAS_QQ_GROUP_URL" class="link-button" @click="handleExternalLink">{{
-                t('core.setting.others.joinQq')
-              }}</a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('core.setting.others.appSection') }}</h3>
-      </div>
-      <div class="app-info-container">
-        <div class="app-info-left">
-          <div class="info-item">
-            <span class="info-label">{{ t('core.setting.others.appName') }}</span>
-            <span class="info-value">AUTO-MAS</span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">{{ t('core.setting.others.developer') }}</span>
-            <span class="info-value">AUTO-MAS Team</span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">{{ t('core.setting.others.license') }}</span>
-            <span class="info-value">AGPL-3.0 license</span>
-          </div>
-        </div>
-        <div class="app-info-right">
-          <div class="info-item">
-            <span class="info-label">{{ t('core.setting.others.appVersion') }}</span>
-            <a-tag color="blue" class="info-badge" @click="copyAllInfo">
-              {{ version }}
-            </a-tag>
-            <a-button
-              type="link"
-              size="small"
-              class="changelog-button"
-              @click="changelogVisible = true"
+      <aside class="about-sidebar">
+        <SectionCard :title="t('core.setting.others.linkSection')" :icon="LinkOutlined">
+          <div class="link-cards">
+            <a class="link-card" href="https://auto-mas.top" @click="handleExternalLink">
+              <span class="link-card__head">
+                <HomeOutlined class="link-card__icon" />
+                <span class="link-card__title">{{ t('core.setting.others.site') }}</span>
+              </span>
+              <span class="link-card__desc">{{ t('core.setting.others.siteDesc') }}</span>
+              <ExportOutlined class="link-card__external" aria-hidden="true" />
+            </a>
+            <a
+              class="link-card"
+              href="https://github.com/AUTO-MAS-Project/AUTO-MAS"
+              @click="handleExternalLink"
             >
-              {{ t('core.setting.others.viewChangelog') }}
-            </a-button>
+              <span class="link-card__head">
+                <GithubOutlined class="link-card__icon" />
+                <span class="link-card__title">{{ t('core.setting.others.repo') }}</span>
+              </span>
+              <span class="link-card__desc">{{ t('core.setting.others.repoDesc') }}</span>
+              <ExportOutlined class="link-card__external" aria-hidden="true" />
+            </a>
+            <a class="link-card" :href="MAS_QQ_GROUP_URL" @click="handleExternalLink">
+              <span class="link-card__head">
+                <QqOutlined class="link-card__icon" />
+                <span class="link-card__title">{{ t('core.setting.others.qq') }}</span>
+              </span>
+              <span class="link-card__desc">{{ t('core.setting.others.qqDesc') }}</span>
+              <ExportOutlined class="link-card__external" aria-hidden="true" />
+            </a>
           </div>
-          <div class="info-item">
-            <span class="info-label">{{ t('core.setting.others.backendHash') }}</span>
-            <a-tag color="purple" class="info-badge" @click="copyAllInfo">
-              {{
-                backendUpdateInfo?.current_hash
-                  ? backendUpdateInfo.current_hash.substring(0, 8)
-                  : t('core.common.unknown')
-              }}
-            </a-tag>
-          </div>
-        </div>
-      </div>
+        </SectionCard>
+
+        <SectionCard :title="t('core.setting.others.appSection')" :icon="InfoCircleOutlined">
+          <dl class="info-grid">
+            <div class="info-item">
+              <dt>{{ t('core.setting.others.appName') }}</dt>
+              <dd>AUTO-MAS</dd>
+            </div>
+            <div class="info-item">
+              <dt>{{ t('core.setting.others.developer') }}</dt>
+              <dd>AUTO-MAS Team</dd>
+            </div>
+            <div class="info-item">
+              <dt>{{ t('core.setting.others.license') }}</dt>
+              <dd>AGPL-3.0</dd>
+            </div>
+          </dl>
+        </SectionCard>
+      </aside>
     </div>
   </div>
 
@@ -204,99 +195,181 @@ const copyAllInfo = async () => {
 </template>
 
 <style scoped>
-.changelog-button {
-  padding: 0 4px;
-  height: auto;
+.version-card {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 24px;
+  margin-bottom: 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 10px;
+  background: var(--app-appearance-surface-bg);
+}
+
+.app-icon {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+}
+
+.version-details {
+  flex: 1;
+  min-width: 200px;
+}
+
+.version-details h2 {
+  margin: 0;
+  color: var(--ant-color-text);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.version-meta,
+.version-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.version-meta {
+  margin-top: 8px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+
+.version-number,
+.backend-hash code {
+  font-family: monospace;
+}
+
+.backend-hash {
+  padding-left: 12px;
+  border-left: 1px solid var(--ant-color-border-secondary);
+}
+
+.about-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.95fr) minmax(260px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.about-main,
+.about-sidebar {
+  min-width: 0;
+}
+
+.link-cards {
+  display: flex;
+  flex-direction: column;
+}
+
+.link-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  color: inherit;
+  text-decoration: none;
+}
+
+.link-card:last-child {
+  border-bottom: 0;
+}
+
+.link-card:hover .link-card__title {
+  color: var(--ant-color-primary);
+}
+
+.link-card:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+}
+
+.link-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.link-card__icon {
+  color: var(--ant-color-text-secondary);
+  font-size: 16px;
+}
+
+.link-card__title {
+  color: var(--ant-color-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.link-card__desc {
+  color: var(--ant-color-text-secondary);
+  padding-left: 24px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.link-card__external {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  align-self: center;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+
+.info-grid {
+  margin: 0;
+}
+
+.info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 40px;
+  gap: 16px;
+  padding: 8px 0;
+  font-size: 12px;
+}
+
+.info-item dt {
+  color: var(--ant-color-text-secondary);
+}
+
+.info-item dd {
+  margin: 0;
+  color: var(--ant-color-text);
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .changelog-modal-body {
   padding-right: 8px;
 }
 
-/* Responsive grid for link cards: ensures cards expand to fill available width */
-.link-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 24px;
-  align-items: stretch;
-  width: 100%;
-}
-
-.link-item {
-  display: flex;
-}
-
-/* Make sure link-card fills its grid cell */
-.link-card {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.link-content {
-  flex: 1 1 auto;
-}
-
-/* 应用信息布局 */
-.app-info-container {
-  display: flex;
-  gap: 32px;
-  align-items: flex-start;
-}
-
-.app-info-left {
-  flex: 1;
-  min-width: 300px;
-}
-
-.app-info-right {
-  flex: 1;
-  min-width: 300px;
-}
-
-/* 右侧徽章样式 */
-.info-badge {
-  position: relative;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  user-select: none;
-  margin-left: 8px;
-}
-
-.info-badge:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-.info-badge:active {
-  transform: translateY(0);
-}
-
-/* 响应式布局 */
-@media (max-width: 768px) {
-  .app-info-container {
-    flex-direction: column;
-    gap: 24px;
+@media (max-width: 1080px) {
+  .about-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .app-info-left,
-  .app-info-right {
-    min-width: auto;
+  .about-sidebar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    align-items: start;
+  }
+}
+
+@media (max-width: 800px) {
+  .about-sidebar {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .badge-item {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-
-  .badge-label {
-    min-width: auto;
-  }
-
-  .info-badge {
-    align-self: stretch;
-    justify-content: center;
+  .version-actions {
+    width: 100%;
   }
 }
 </style>

@@ -10,6 +10,8 @@ description: >-
 
 Use this skill when a change needs an end-to-end proof of a user path, a PR-specific one-off flow, or a local real run through MAS scheduling.
 
+Select test scope and assertions with [mas-testing](../mas-testing/SKILL.md); this skill owns E2E launch, isolation and evidence.
+
 ## Entry point
 
 - Use `frontend/e2e/run.mjs` as the only per-run Playwright launcher and `frontend/e2e/real-batch.mjs` as the only multi-adapter launcher; both go through `run.mjs` per target. `run.mjs` creates the isolated data root, starts the backend and Vite, selects the requested grep, and removes the temporary root after the run.
@@ -48,7 +50,7 @@ Repeat the offer after a later push when the changed path changed too.
 ## Add a flow
 
 1. Start from the user action and the smallest observable assertion. Prefer the public UI, MAS HTTP/WebSocket contracts, task terminal status, and public user result.
-2. Put a stable cross-feature flow in `frontend/e2e/<scenario>.pw.ts`; put a PR-only regression in the PR branch and remove it after verification unless it is a reusable contract.
+2. Put deterministic, isolated flows that protect stable user behavior or public contracts in `frontend/e2e/<scenario>.pw.ts` and maintain them with the implementation. Keep exploratory or non-isolatable runs as local verification evidence; retention follows [tests/AGENTS.md](../../../tests/AGENTS.md).
 3. Tag the flow with `test.describe('@<scope>', ...)`; real game side effects additionally require `@real`. Use `app.goto()` and `app.evidence()` from `fixtures.ts`.
 4. Wait for visible state, API responses, WebSocket events, or terminal task status with a timeout. Keep real startup and game delays separate from short injected debounce or retry delays.
 5. Attach only selected screenshots and `real-e2e-summary.json` to a PR when useful. Record the commit SHA, dirty state, command, preconditions, result, evidence path, and uncovered branches.

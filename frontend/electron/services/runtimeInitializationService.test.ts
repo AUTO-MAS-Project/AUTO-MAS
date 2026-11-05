@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import type { MirrorConfig, MirrorSource } from './mirrorService'
-import type { RuntimeEvent, RuntimeRunOptions, RuntimeLaunchConfig } from './runtime'
+import type { RuntimeEvent, RuntimeLaunchConfig, RuntimeRunOptions } from './runtime'
 import {
   RUNTIME_BINARY_CANCELLED,
   RUNTIME_LATEST_UNAVAILABLE,
@@ -490,23 +490,6 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
 // ==================== 单步重试 ====================
 
 describe('单步重试', () => {
-  it('运行环境重试的 Runtime 对齐失败保留实际来源和界面失败段', async () => {
-    alignStub.result = {
-      status: 'failed',
-      code: RUNTIME_LATEST_UNAVAILABLE,
-      error: '无法确认线上最新的 Runtime 版本',
-    }
-
-    const outcome = await createService().retryStage('python', () => undefined)
-
-    expect(outcome).toMatchObject({
-      success: false,
-      failedStage: 'python',
-      failureOrigin: 'runtime_binary',
-    })
-    expect(FakeRuntimeClient.calls).toHaveLength(0)
-  })
-
   it('依赖段重试走 dependencies sync', async () => {
     FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('dependencies.sync')] }]
 

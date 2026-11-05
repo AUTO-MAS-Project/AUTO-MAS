@@ -677,6 +677,8 @@ const defaultClientFactory: RuntimeClientFactory = options => createRuntimeClien
  * RuntimeClient 里，后端启动仍由 backendService 负责（W9c）。
  */
 export class RuntimeInitializationService {
+  private readonly clients = new Set<RuntimeClient>()
+  private shuttingDown = false
   private readonly createClient: RuntimeClientFactory
   private readonly mirrorService: MirrorLookup
   /** 各段上一次失败给出的 remediation，决定单步重试用普通重试还是重建环境。 */
@@ -805,6 +807,13 @@ export class RuntimeInitializationService {
     return false
   }
 
+  /** 关闭整个编排器，等待它拥有的命令退出，不丢弃仍在运行的进程。 */
+  async shutdown(timeoutMs?: number): Promise<void> {
+    this.shuttingDown = true
+    this.cancelRequested = true
+    await Promise.all([...this.clients].map(client => client.stop(timeoutMs)))
+  }
+
   /**
    * 跑一次 `bootstrap --version <目标版本>`，把阶段映射进 `onProgress`。
    *
@@ -827,6 +836,7 @@ export class RuntimeInitializationService {
     onProgress: (update: BootstrapProgressUpdate) => void,
     mirror?: RuntimeMirrorSelection | null
   ): Promise<RuntimeStageOutcome> {
+    if (this.shuttingDown) return cancelledOutcome()
     const version = this.targetVersion
     const bridge = new BootstrapProgressBridge(onProgress)
     bridge.takeOver()
@@ -1034,15 +1044,18 @@ export class RuntimeInitializationService {
    * 返回 undefined 表示 doctor 自己没跑成，调用方按「查不出来」处理。
    */
   async doctor(): Promise<RuntimeDoctorCheck[] | undefined> {
+    if (this.shuttingDown) return undefined
     const runtimePath = this.options.launchConfig.runtimePath
     if (!runtimePath) return undefined
 
+    let client: RuntimeClient | undefined
     try {
-      const client = this.createClient({
+      client = this.createClient({
         runtimePath,
         appRoot: this.options.launchConfig.appRoot,
         dataRoot: this.options.launchConfig.dataRoot,
       })
+      this.clients.add(client)
       const outcome = await client.run(['doctor'])
       if (!outcome.success) {
         logger.warn(`Runtime doctor 报告失败: ${outcome.code} ${outcome.result.message}`)
@@ -1054,6 +1067,8 @@ export class RuntimeInitializationService {
         `Runtime doctor 调用失败: ${error instanceof Error ? error.message : String(error)}`
       )
       return undefined
+    } finally {
+      if (client && !client.hasActiveSessions) this.clients.delete(client)
     }
   }
 
@@ -1104,7 +1119,7 @@ export class RuntimeInitializationService {
         channel,
         runtimePath,
         appRoot,
-        isCancelled: () => this.cancelRequested,
+        isCancelled: () => this.cancelRequested || this.shuttingDown,
         onProgress: progress => {
           const downloading = progress.item !== undefined
           bridge.observe(
@@ -1227,6 +1242,8 @@ export class RuntimeInitializationService {
       `执行 Runtime 命令: ${command.join(' ')}${mirror ? `（镜像 ${mirror.kind}=${mirror.key}）` : ''}`
     )
 
+    if (this.shuttingDown) return cancelledOutcome()
+    this.clients.add(client)
     let outcome: RuntimeRunResult
     try {
       outcome = await client.run(command, {
@@ -1276,6 +1293,7 @@ export class RuntimeInitializationService {
       }
     } finally {
       this.activeControl = null
+      if (!client.hasActiveSessions) this.clients.delete(client)
     }
 
     if (outcome.success) {

@@ -1,4 +1,4 @@
-import { isBrowserDevelopment } from '@/utils/environment'
+import { managesBackendProcess } from '@/utils/environment'
 import { translate as t } from '@/i18n'
 import { message } from 'ant-design-vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
@@ -25,7 +25,7 @@ export function startSkippedInitializationStartup(): Promise<void> {
     let failureOutcome: 'failure' | 'cancelled' = 'failure'
 
     try {
-      if (!isBrowserDevelopment()) {
+      if (managesBackendProcess()) {
         const backendStatus = await api.backendStatus?.().catch(() => null)
 
         if (!backendStatus?.isRunning) {

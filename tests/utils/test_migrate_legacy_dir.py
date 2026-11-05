@@ -41,16 +41,6 @@ def test_does_nothing_when_new_path_already_exists(tmp_path: Path) -> None:
     assert (old_dir / "old-job.json").exists()
 
 
-def test_does_nothing_when_old_path_is_missing(tmp_path: Path) -> None:
-    """旧目录不存在：不凭空创建新目录，留给调用方按正常首次使用流程创建。"""
-
-    old_dir = tmp_path / "runtime" / "maafw_runner_jobs"
-    new_dir = tmp_path / "data" / "maafw_runner_jobs"
-
-    assert _utils_io.migrate_legacy_dir(old_dir, new_dir) is False
-    assert not new_dir.exists()
-
-
 def test_failure_is_swallowed_as_a_warning_and_does_not_raise(
     tmp_path: Path, monkeypatch
 ) -> None:

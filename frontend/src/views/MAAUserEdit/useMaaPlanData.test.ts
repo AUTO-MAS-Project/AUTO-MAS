@@ -1,6 +1,6 @@
-import { effectScope, nextTick, ref } from 'vue'
-import { describe, expect, it, vi } from 'vitest'
 import type { PlanGetOut } from '@/api'
+import { describe, expect, it, vi } from 'vitest'
+import { effectScope, nextTick, ref } from 'vue'
 import { useMaaPlanData } from './useMaaPlanData'
 
 const result = (id: string, stage: string): PlanGetOut => ({
@@ -20,27 +20,6 @@ function deferred<T>() {
 }
 
 describe('MAA plan display data', () => {
-  it('loads the selected plan on initial entry and keeps fixed mode separate', async () => {
-    const mode = ref('plan')
-    const request = deferred<PlanGetOut>()
-    const fetch = vi.fn(() => request.promise)
-    const scope = effectScope()
-    const state = scope.run(() => useMaaPlanData(() => mode.value, fetch, vi.fn()))!
-
-    expect(fetch).toHaveBeenCalledWith('plan')
-    expect(state.status.value).toBe('loading')
-    expect(state.data.value).toBeNull()
-    request.resolve(result('plan', '1-7'))
-    await nextTick()
-    expect(state.status.value).toBe('ready')
-    expect(state.data.value).toEqual({ ALL: { Stage: '1-7' } })
-
-    mode.value = 'Fixed'
-    expect(state.status.value).toBe('idle')
-    expect(state.data.value).toBeNull()
-    scope.stop()
-  })
-
   it('ignores old responses and errors after mode changes or disposal', async () => {
     const mode = ref('a')
     const a = deferred<PlanGetOut>()

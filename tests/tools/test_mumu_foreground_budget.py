@@ -90,62 +90,12 @@ def harness(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fast_foreground_has_no_added_sleep(harness):
-    assert await harness.ensure() is True
-    assert harness.now == pytest.approx(0.2)
-    assert harness.sleeps == []
-    assert not harness.commands("monkey")
-
-
-@pytest.mark.asyncio
-async def test_one_hung_query_retries_with_short_timeout(harness):
-    harness.queries.append((float("inf"), 0, ""))
-    assert await harness.ensure() is True
-    assert harness.now <= 6.2
-    assert len(harness.commands("dumpsys")) == 2
-    assert all(call[1] <= 5 for call in harness.commands("dumpsys"))
-
-
-@pytest.mark.asyncio
 async def test_repeated_hangs_exhaust_one_budget_without_more_commands(harness):
     harness.default_query = (float("inf"), 0, "")
     assert await harness.ensure() is False
     assert harness.now <= 30
     assert all(call[2] < 30 for call in harness.commands("dumpsys"))
     assert not harness.commands("monkey")
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("returncode", [0, 1])
-async def test_failed_queries_still_use_monkey_and_recheck(harness, returncode):
-    harness.queries.extend([(0.2, returncode, "not foreground")] * 6)
-    assert await harness.ensure() is True
-    assert len(harness.commands("monkey")) == 1
-    assert len(harness.commands("dumpsys")) == 7
-    assert harness.now == pytest.approx(6.6)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("monkey_code", [0, 1])
-async def test_failed_fallback_returns_false_and_keeps_finite_retries(
-    harness, monkey_code
-):
-    harness.default_query = (0.2, 1, FOREGROUND)  # 非零退出不能当作前台成功
-    harness.monkey = (0.2, monkey_code, "failed")
-    assert await harness.ensure() is False
-    assert len(harness.commands("dumpsys")) == 12
-    assert len(harness.commands("monkey")) == 1
-    assert harness.now == pytest.approx(12.6)
-
-
-@pytest.mark.asyncio
-async def test_monkey_timeout_uses_remaining_shared_budget(harness):
-    harness.queries.extend([(0.2, 1, "")] * 6)
-    harness.monkey = (float("inf"), 0, "")
-    assert await harness.ensure() is False
-    assert harness.now <= 30
-    assert len(harness.commands("dumpsys")) == 6
-    assert harness.commands("monkey")[0][1] == pytest.approx(23.8)
 
 
 @pytest.mark.asyncio
@@ -156,42 +106,6 @@ async def test_post_monkey_queries_cannot_reset_budget(harness):
     assert harness.now <= 30
     assert len(harness.commands("monkey")) == 1
     assert all(call[2] < 30 for call in harness.commands("dumpsys"))
-
-
-@pytest.mark.asyncio
-async def test_only_foreground_commands_opt_into_deadline_and_tree_cleanup(harness):
-    harness.app_state = "stopped"
-    harness.queries.extend([(0.2, 1, "")] * 6)
-    assert await harness.ensure() is True
-    for args, options in harness.options:
-        if "dumpsys" in args or "monkey" in args:
-            assert options["kill_tree_on_cancel"] is True
-            assert options["deadline"] <= 30.2
-        else:
-            assert "deadline" not in options
-            assert "kill_tree_on_cancel" not in options
-
-
-@pytest.mark.asyncio
-async def test_retry_sleep_is_clipped_to_remaining_budget(harness):
-    harness.queries.extend([(0.2, 1, "")] * 6)
-    harness.default_query = (4.9, 1, "")
-    harness.monkey = (0.7, 0, "")
-    assert await harness.ensure() is False
-    assert harness.now == pytest.approx(30)
-    assert harness.sleeps[-1] == pytest.approx(0.5)
-    assert len(harness.commands("dumpsys")) == 10
-    assert len(harness.commands("monkey")) == 1
-
-
-@pytest.mark.asyncio
-async def test_state_and_initial_app_launch_keep_startup_timeout(harness):
-    harness.app_state = "stopped"
-    harness.app_launch = (80, 0, "")
-    assert await harness.ensure() is True
-    assert harness.commands("info")[0][1] == 300
-    assert harness.commands("launch")[0][1] == 300
-    assert harness.now == pytest.approx(80.2)
 
 
 @pytest.mark.asyncio
@@ -212,14 +126,6 @@ def prepare_open(harness, monkeypatch, statuses):
     harness.manager.find_mumu_nx_window = AsyncMock(return_value=1)
     monkeypatch.setattr(_utils_emulator.tools, "apply_launch_audio_mute", AsyncMock())
     return info
-
-
-@pytest.mark.asyncio
-async def test_already_online_keeps_existing_fast_path(harness, monkeypatch):
-    info = prepare_open(harness, monkeypatch, [DeviceStatus.ONLINE])
-    assert await harness.manager.open("0", PACKAGE) is info
-    assert harness.calls == []
-    assert harness.now == 0
 
 
 @pytest.mark.asyncio

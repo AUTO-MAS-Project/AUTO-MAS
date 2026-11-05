@@ -1,0 +1,49 @@
+:root {
+  --app-theme-transition-duration: 220ms;
+}
+
+/* 只在明暗模式变化时过渡颜色，保留控件自身的位移和尺寸动画。 */
+html.theme-transition body,
+html.theme-transition
+  #app
+  :where(
+    .ant-layout,
+    .app-sider,
+    .ant-menu,
+    .ant-menu-item,
+    .title-bar,
+    .content-area,
+    .settings-content,
+    .ant-card,
+    .ant-card-head,
+    .ui-section-card,
+    .ui-section-card-icon,
+    .ui-section-card-footer,
+    .ui-row,
+    .ui-row-description,
+    .field-label-form,
+    .ant-collapse,
+    .ant-tabs-nav,
+    .ant-tabs-tab,
+    .ant-segmented,
+    .ant-segmented-item,
+    .ant-btn,
+    .ant-input,
+    .ant-select-selector,
+    .ant-radio-button-wrapper,
+    .settings-section-navigation,
+    .navigation-link,
+    .app-page-title
+  ) {
+  transition:
+    background-color var(--app-theme-transition-duration) ease,
+    color var(--app-theme-transition-duration) ease,
+    border-color var(--app-theme-transition-duration) ease,
+    box-shadow var(--app-theme-transition-duration) ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --app-theme-transition-duration: 0ms;
+  }
+}

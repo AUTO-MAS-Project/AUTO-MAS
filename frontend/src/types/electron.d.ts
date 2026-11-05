@@ -544,8 +544,25 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     } & RuntimeFailureFields
   >
 
+  waitDesktopStartup: () => Promise<
+    ({ success: boolean; error?: string; failedStage?: string } & RuntimeFailureFields) | null
+  >
+  desktopStartupStatus: () => Promise<{
+    runtimeMode: RuntimeInitMode
+    flowKind: 'startup' | 'first-run' | 'update'
+    fullInitialization: boolean
+    state: 'running' | 'ready' | 'failed'
+    progress: Array<{
+      stage: string
+      progress: number
+      message: string
+      status?: 'started' | 'running' | 'completed' | 'failed'
+    }>
+  } | null>
+  cancelDesktopStartup: () => Promise<void>
+
   // 后端服务管理
-  backendStart: () => Promise<InstallStageResult>
+  backendStart: (retry?: boolean) => Promise<InstallStageResult>
   backendRestart: (reason?: 'manual' | 'recovery') => Promise<InstallStageResult>
   backendStatus: () => Promise<BackendStatus>
   checkRuntimeBackendUpdate: () => Promise<{

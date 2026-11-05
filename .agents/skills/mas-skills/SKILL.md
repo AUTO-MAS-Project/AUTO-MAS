@@ -1,6 +1,6 @@
 ---
 name: mas-skills
-description: Use when a task needs AUTO-MAS engineering conventions across frontend, UI, code style, schema naming, module boundaries, function design, API contracts, data modeling, script adapters (MAA, SRC, MaaEnd, General, ok-script family such as Okww and OkNte, multi-engine HSR), anonymous telemetry, E2E flows, plan schedules, or game community sign-in.
+description: Use when a task needs AUTO-MAS engineering conventions across frontend, UI, code style, validation and failure handling, test design, schema naming, module boundaries, function design, API contracts, data modeling, script adapters (MAA, SRC, MaaEnd, General, ok-script family such as Okww and OkNte, multi-engine HSR), anonymous telemetry, E2E flows, plan schedules, or game community sign-in.
 ---
 
 # MAS Skills
@@ -53,6 +53,9 @@ Use these skills as needed:
 12. `mas-game-community`: game community sign-in providers, credential encryption and login routes, sign-in locks and trigger paths, and result/notification contracts.
 13. `mas-ci-checks`: every gate that runs on a PR to `dev` (format, lint, typecheck, full pytest suite, changelog fragment, `uv.lock`, revert hints, CNB mirror, unsigned Windows build) and the exact local command for each.
 14. `mas-telemetry`: proactive anonymous telemetry for new or changed business workflows, safe field contracts, result ownership, operation deduplication and isolated validation.
+15. `mas-testing`: required before choosing verification or designing, adding, changing or reviewing tests; selects checks by reachable behavior and total cost, reuses automation and requires execution evidence.
+16. `mas-doc-tutorial`: documentation tutorials produced or refreshed from verified UI flows, versioned screenshots, and per-topic preview evidence.
+17. `mas-defensive-programming`: validation, guards, exception handling, fallbacks, retries and compatibility paths based on reachable inputs and existing guarantees.
 
 ## Global Constraints
 
@@ -60,7 +63,7 @@ Apply these constraints before selecting or combining sub-skills.
 
 1. Make minimal necessary changes first; avoid broad refactors unless explicitly requested. Required extraction under the frontend [Component Size Policy](../mas-frontend-standards/SKILL.md#component-size-policy) is part of the affected task, not unrelated cleanup.
 2. Align with current code style and existing project conventions in the touched module.
-3. Avoid over-engineering, over-abstraction, and defensive programming that does not match existing code patterns.
+3. Avoid over-engineering and over-abstraction; validation and failure-handling decisions follow [mas-defensive-programming](../mas-defensive-programming/SKILL.md).
 4. Study similar existing implementations deeply before coding and follow established local patterns.
 5. Generated OpenAPI files are updated only through the project generator. Run regeneration within the authorized task; report a concrete blocker if the required backend or toolchain is unavailable. Do not hand-edit generated code or stop at a regeneration reminder when the generation step is executable.
 6. For frontend work, load `mas-frontend-standards`; for UI or user-facing component behavior, also load `mas-frontend-ui`.
@@ -73,6 +76,10 @@ Apply these constraints before selecting or combining sub-skills.
 
 For every new or changed user-visible operation, page, lifecycle path or script-adapter flow, load `mas-telemetry` in addition to the domain skills below. Do not wait for an explicit telemetry request. Pure prose/style/generated-only edits and read-only tasks do not authorize new collection or implementation.
 Choose sub-skills by task intent.
+
+Before choosing verification or designing, adding, changing or reviewing any test, load [mas-testing](../mas-testing/SKILL.md), including verification planned during feature or bug-fix work and tests outside `tests/`. Apply it before deciding to add tests; running existing tests alone does not trigger it.
+
+Before designing, changing or reviewing production validation, guards, exception handling, fallbacks, retries or compatibility paths, load [mas-defensive-programming](../mas-defensive-programming/SKILL.md). It applies independently of test work.
 
 1. Task mentions field names, shared terms, schema key consistency:
 Use `mas-schema-naming`.
@@ -104,6 +111,8 @@ Use `mas-game-community`.
 Apply the cherry-pick rule in **Project Rule Areas** before touching git; confirm the commit is small and pure backend by inspecting the files it actually touches.
 15. Task mentions a red PR, a CI failure, GitHub Actions, format / lint / typecheck gates, the `skip-changelog` or `changelog-maintenance` labels, or editing `.github/workflows`, `.github/actions`, `scripts/changelog.py`, `scripts/check_reverts.py`:
 Use `mas-ci-checks`.
+16. Task creates or refreshes user tutorials, batches documentation screenshots, or corrects drift between article instructions and the application UI:
+Use `mas-doc-tutorial`; combine `mas-e2e` when defining or running its capture flows.
 
 ## Combined Execution Order
 
@@ -112,6 +121,7 @@ When multiple concerns appear, apply this order:
 1. `mas-frontend-standards`, when the task touches frontend code or docs.
 2. `mas-frontend-ui`, when the task touches UI or user-facing component behavior.
 3. `mas-code-standards`
+   Load `mas-defensive-programming` here when the task involves validation or failure handling.
 4. `mas-module-boundary`
 5. `mas-data-model`
 6. `mas-schema-naming`

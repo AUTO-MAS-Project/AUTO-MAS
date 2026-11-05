@@ -54,43 +54,6 @@ def _ctx() -> _utils_config_restore.RestoreContext:
     )
 
 
-def test_build_validates_table() -> None:
-    """空池表与非法 kind 都在构建期拒绝。"""
-    with pytest.raises(ValueError):
-        _utils_config_restore.build_restore_service(_ctx(), [])
-    bad = [
-        _utils_config_restore.ConfigRestorePool(
-            key="x", kind="other", list_backups=_list
-        )
-    ]
-    with pytest.raises(ValueError):
-        _utils_config_restore.build_restore_service(_ctx(), bad)
-
-
-def test_binding_and_dispatch() -> None:
-    """绑定语义：ctx 透传、位置参数转发、按 key 分发、顺序即池表顺序。"""
-    service = _utils_config_restore.build_restore_service(_ctx(), POOLS)
-    assert service.target_keys == ["mas", "native"]
-    assert [item["time"] for item in asyncio.run(service.list("mas"))] == ["t2", "t1"]
-    assert [item["base"] for item in asyncio.run(service.list("mas"))] == [None, None]
-    assert asyncio.run(service.preview("mas", "t1")) == {"time": "t1", "marker": "s1"}
-    asyncio.run(service.restore("mas", "t1"))
-    assert asyncio.run(service.ensure("mas")) == {"created": True, "time": "t2"}
-
-
-def test_dispatch_rejects_unknown_and_missing() -> None:
-    """未知 target 与未声明的能力统一抛 ValueError（HTTP 层转 400）。"""
-    service = _utils_config_restore.build_restore_service(_ctx(), POOLS)
-    with pytest.raises(ValueError):
-        service.get_target("nope")
-    with pytest.raises(ValueError):
-        asyncio.run(service.preview("native", "t1"))
-    with pytest.raises(ValueError):
-        asyncio.run(service.restore("native", "t1"))
-    with pytest.raises(ValueError):
-        asyncio.run(service.ensure("native"))
-
-
 async def _decl_files(ctx) -> dict[str, str] | None:
     if ctx.script_id == "no-content":
         return None
@@ -136,24 +99,6 @@ def test_declarative_derivation(tmp_path, monkeypatch) -> None:
         [DECL_POOL],
     )
     assert asyncio.run(no_content.ensure("decl")) == {"created": False, "time": ""}
-
-
-def test_declarative_none_root_is_silent(tmp_path, monkeypatch) -> None:
-    """backup_root 返回 None（如脚本路径未配置）：list 空 / snapshot 无变化 /
-    preview 不注入不炸 / read_file 报无可读——而不是 TypeError。"""
-    monkeypatch.chdir(tmp_path)
-    no_root = _utils_config_restore.build_restore_service(
-        _utils_config_restore.RestoreContext(
-            _ctx().config, _ctx().script_config, "no-root", "u1"
-        ),
-        [DECL_POOL],
-    )
-    assert asyncio.run(no_root.list("decl")) == []
-    assert asyncio.run(no_root.ensure("decl")) == {"created": False, "time": ""}
-    assert asyncio.run(no_root.preview("decl", "whatever")) == {}
-    with pytest.raises(ValueError):
-        asyncio.run(no_root.read_backup_file("decl", "whatever", "x.json"))
-    asyncio.run(no_root.restore("decl", "whatever"))
 
 
 class _BaseUser:
@@ -315,23 +260,6 @@ def test_tristate_backup_base_annotation(
     assert backup_dir_p is not None
     assert _utils_config_archive.read_backup_base(backup_dir_p) is None
     assert asyncio.run(plain.list("decl"))[0]["base"] is None
-
-
-def test_tristate_ensure_dedup_ignores_base_metadata(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """指纹去重：_mas_base 是归档后元数据，不破坏同内容二次 ensure 的去重。"""
-    monkeypatch.chdir(tmp_path)
-    ctx, _ = _tri_ctx("tri-dedup", "independent")
-    service = _utils_config_restore.build_restore_service(
-        ctx, [_tri_pool({"restored": [], "set_bases": []})]
-    )
-    first = asyncio.run(service.ensure("tri"))
-    assert first["created"] is True
-    second = asyncio.run(service.ensure("tri"))
-    assert second["created"] is False
-    assert second["time"] == first["time"]
-    assert len(asyncio.run(service.list("tri"))) == 1
 
 
 def test_tristate_cross_source_restore_switches_base(

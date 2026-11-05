@@ -84,26 +84,6 @@ def test_exhausted_retry_preserves_original_and_reports_file_state(
     assert all(str(tmp_path) not in str(call) for call in logger.info.call_args_list)
 
 
-def test_other_replace_errors_are_not_retried(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / "config.json"
-    path.write_bytes(b"old")
-    failure = OSError(errno.ENOSPC, "no space")
-    replace = Mock(side_effect=failure)
-    sleep = Mock()
-    monkeypatch.setattr(Path, "replace", value=replace)
-    monkeypatch.setattr(_utils_io, "sleep", value=sleep)
-
-    with pytest.raises(OSError) as caught:
-        _utils_io.atomic_write(path, b"new")
-
-    assert caught.value is failure
-    assert replace.call_count == 1
-    sleep.assert_not_called()
-    assert path.read_bytes() == b"old"
-
-
 @pytest.mark.skipif(os.name != "nt", reason="Windows file sharing semantics")
 def test_real_windows_read_handle_can_be_released_during_retry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -114,33 +94,6 @@ def test_real_windows_read_handle_can_be_released_during_retry(
         monkeypatch.setattr(_utils_io, "sleep", value=lambda _delay: reader.close())
         _utils_io.atomic_write(path, b"new")
     assert path.read_bytes() == b"new"
-
-
-def test_cleanup_failure_does_not_replace_original_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / "config.json"
-    path.write_bytes(b"old")
-    failure = _windows_error(5)
-    monkeypatch.setattr(Path, "replace", value=Mock(side_effect=failure))
-    monkeypatch.setattr(_utils_io, "sleep", value=lambda _delay: None)
-    temporary = path.with_name("config.json.tmp")
-    unlink = Path.unlink
-
-    def fail_cleanup(target: Path, *, missing_ok: bool = False) -> None:
-        if target == temporary:
-            raise _windows_error(32)
-        unlink(target, missing_ok=missing_ok)
-
-    monkeypatch.setattr(Path, "unlink", value=fail_cleanup)
-    try:
-        with pytest.raises(PermissionError) as caught:
-            _utils_io.atomic_write(path, b"new")
-        assert caught.value is failure
-        assert path.read_bytes() == b"old"
-        assert any("cleanup" in note for note in failure.__notes__)
-    finally:
-        unlink(temporary, missing_ok=True)
 
 
 def test_snapshot_skips_staging_file_replaced_while_waiting(

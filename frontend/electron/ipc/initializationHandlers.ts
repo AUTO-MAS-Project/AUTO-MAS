@@ -7,6 +7,7 @@ import { ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import * as path from 'path'
 import { getAppRoot } from '../services/environmentService'
 import { InitializationService } from '../services'
+import { getDefaultApiEndpoints } from '../services/instanceConfig'
 import type { BackendService } from '../services/backendService'
 import { getLogger } from '../services/logger'
 import type { RuntimeBinaryAlignResult } from '../services/runtimeBinaryService'
@@ -28,6 +29,7 @@ import type {
   RuntimeUpdateRetryAction,
 } from '../services/runtimeUpdateService'
 import {
+  abortRuntimeUpdateForShutdown,
   cancelBackendUpdate,
   retryBackendUpdate,
   updateBackendViaRuntime,
@@ -62,6 +64,7 @@ const isRetryAction = (value: unknown): value is RuntimeUpdateRetryAction =>
 
 // 全局实例
 let initService: InitializationService | null = null
+let initializationWindow: BrowserWindow | null = null
 let runtimeBinaryUpdating = false
 
 /**
@@ -98,12 +101,32 @@ export function getBackendService(): BackendService {
   return getInitService().getBackendService()
 }
 
+/** Electron ready 时发起，窗口只接入结果。 */
+export function startDesktopStartup(preferences: {
+  version: string
+  initializedVersion?: string
+  autoUpdate: boolean
+}) {
+  return getInitService().startDesktopStartup(preferences, progress => {
+    const sender = initializationWindow?.webContents
+    if (sender && !sender.isDestroyed()) sender.send('initialization-progress', progress)
+  })
+}
+
+export async function stopDesktopStartup(shutdown = false) {
+  await Promise.all([
+    abortRuntimeUpdateForShutdown(),
+    getInitService().stopDesktopStartup(shutdown),
+  ])
+}
+
 /**
  * 主进程与渲染进程共用的后端端点解析。
  *
  * Runtime 就绪后使用 `state:running` 下发的 baseUrl；开发与受管模式的端口由 Runtime 决定。
  */
 function resolveApiEndpoints(): ApiEndpoints {
+  if (!getInitService().ownsBackend) return getDefaultApiEndpoints()
   const runtimeEndpoints = getBackendService().getRuntimeApiEndpoints()
   if (runtimeEndpoints) return runtimeEndpoints
 
@@ -141,14 +164,16 @@ async function runStageViaRuntime(
   rebuild?: boolean
 ): Promise<RuntimeStageOutcome> {
   const initService = getInitService()
-  return initService.retryStageViaRuntime(
-    stage,
-    progress => {
-      if (progress.stage !== stage) return
-      sendToSender(event, progressChannel, progress)
-    },
-    selectedMirror,
-    toRetryMode(rebuild)
+  return initService.runEnvironmentOperation(() =>
+    initService.retryStageViaRuntime(
+      stage,
+      progress => {
+        if (progress.stage !== stage) return
+        sendToSender(event, progressChannel, progress)
+      },
+      selectedMirror,
+      toRetryMode(rebuild)
+    )
   )
 }
 
@@ -197,7 +222,8 @@ export async function checkCriticalFilesViaRuntime(): Promise<CriticalFilesCheck
 /**
  * 注册所有初始化相关的 IPC 处理器
  */
-export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
+export function registerInitializationHandlers(mainWindow: BrowserWindow) {
+  initializationWindow = mainWindow
   if (isRegistered) {
     logger.info('初始化处理器已经注册，跳过重复注册')
     return
@@ -342,10 +368,11 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
       const initService = getInitService()
 
-      const result = await initService.initialize(progress => {
-        // 发送进度到渲染进程
-        sendToSender(event, 'initialization-progress', progress)
-      }, startBackend)
+      const result = await initService.runEnvironmentOperation(() =>
+        initService.initialize(progress => {
+          sendToSender(event, 'initialization-progress', progress)
+        }, startBackend)
+      )
 
       if (result.success) {
         // 保存后端服务实例
@@ -368,12 +395,14 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
   // ==================== 仅更新模式 ====================
 
   ipcMain.handle('check-runtime-binary-update', async () => {
+    if (!getInitService().ownsBackend) return { status: 'skipped' }
     const runtime = getInitService().getRuntimeService()
     return runtime.checkRuntimeBinaryUpdate()
   })
 
   ipcMain.handle('update-runtime-binary', async (event): Promise<RuntimeBinaryAlignResult> => {
     const init = getInitService()
+    if (!init.ownsBackend) return { status: 'failed', error: '当前仅连接外部后端。' }
     const runtime = init.getRuntimeService()
     if (runtime.launchConfig.mode !== 'managed') {
       return { status: 'failed', error: '当前运行模式不支持更新 Runtime。' }
@@ -384,17 +413,17 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
     runtimeBinaryUpdating = true
     try {
-      return await runtime.updateRuntimeBinary(
-        progress => sendToSender(event, 'runtime-binary-progress', progress),
-        async () => {
-          // 先占用 Runtime 操作，再停止残留后端，避免等待退出时又开始 bootstrap。
-          for (const backend of new Set([getBackendService(), init.getBackendService()])) {
-            const result = await backend.stopBackend()
+      return await init.runEnvironmentOperation(() =>
+        runtime.updateRuntimeBinary(
+          progress => sendToSender(event, 'runtime-binary-progress', progress),
+          async () => {
+            // 先占用 Runtime 操作，再停止残留后端，避免等待退出时又开始 bootstrap。
+            const result = await init.getBackendService().stopBackend()
             if (!result.success) {
               throw new Error(result.error || '无法停止后端，请重启程序后重试。')
             }
           }
-        }
+        )
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -407,7 +436,11 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
   // ==================== 后端服务管理 ====================
 
-  ipcMain.handle('backend-start', async event => {
+  ipcMain.handle('desktop-startup-wait', () => getInitService().waitForDesktopStartup())
+  ipcMain.handle('desktop-startup-status', () => getInitService().getDesktopStartupSnapshot())
+  ipcMain.handle('desktop-startup-cancel', () => stopDesktopStartup())
+
+  ipcMain.handle('backend-start', async (event, retry = false) => {
     logger.info('启动后端服务')
 
     const backend = getBackendService()
@@ -417,6 +450,13 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       sendToSender(event, 'backend-status', status)
     })
 
+    const init = getInitService()
+    if (retry) init.resetDesktopStartup()
+    const startup = await init.waitForDesktopStartup()
+    if (startup && !startup.success) return startup
+    if (runtimeBinaryUpdating || init.isEnvironmentBusy) {
+      return { success: false, error: '运行环境操作尚未结束，请稍后再试。' }
+    }
     const result = await backend.startBackend()
 
     if (!result.success) {
@@ -428,15 +468,9 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
   ipcMain.handle('backend-stop', async () => {
     logger.info('停止后端服务')
-
-    const backend = getBackendService()
-    const result = await backend.stopBackend()
-
-    if (!result.success) {
-      logger.error(`后端停止失败: ${result.error}`)
-    }
-
-    return result
+    if (!getInitService().ownsBackend) return { success: false, error: '当前仅连接外部后端。' }
+    await stopDesktopStartup()
+    return { success: true }
   })
 
   ipcMain.handle('backend-restart', async (event, reason?: unknown) => {
@@ -449,9 +483,8 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       sendToSender(event, 'backend-status', status)
     })
 
-    const result = await backend.restartBackend(
-      undefined,
-      reason === 'recovery' ? 'recovery' : 'manual'
+    const result = await getInitService().runEnvironmentOperation(() =>
+      backend.restartBackend(undefined, reason === 'recovery' ? 'recovery' : 'manual')
     )
 
     if (!result.success) {
@@ -461,12 +494,31 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     return result
   })
 
-  ipcMain.handle('backend-status', () => {
+  ipcMain.handle('backend-status', async () => {
+    if (!getInitService().ownsBackend) {
+      try {
+        const response = await fetch(`${getLocalApiEndpoint()}/api/core/health`, {
+          signal: AbortSignal.timeout(3000),
+        })
+        const health: unknown = response.ok ? await response.json() : null
+        return {
+          isRunning:
+            typeof health === 'object' &&
+            health !== null &&
+            'ready' in health &&
+            health.ready === true,
+          runtimeSupervised: false,
+        }
+      } catch {
+        return { isRunning: false, runtimeSupervised: false }
+      }
+    }
     const backend = getBackendService()
     return backend.getStatus()
   })
 
   ipcMain.handle('check-runtime-backend-update', async () => {
+    if (!getInitService().ownsBackend) return { staged: false }
     return getBackendService().checkRuntimeBackendUpdate()
   })
 
@@ -478,13 +530,15 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     async (event, targetVersion: unknown): Promise<RuntimeUpdateOutcome> => {
       logger.info(`收到 Runtime 后端更新请求，目标版本: ${String(targetVersion)}`)
 
-      const result = await updateBackendViaRuntime(
-        typeof targetVersion === 'string' ? targetVersion : '',
-        progress => sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress),
-        {
-          backend: getBackendService(),
-          launchConfig: resolveRuntimeLaunchConfig(getAppRoot()),
-        }
+      const result = await getInitService().runEnvironmentOperation(() =>
+        updateBackendViaRuntime(
+          typeof targetVersion === 'string' ? targetVersion : '',
+          progress => sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress),
+          {
+            backend: getBackendService(),
+            launchConfig: resolveRuntimeLaunchConfig(getAppRoot()),
+          }
+        )
       )
 
       if (!result.success) {
@@ -500,8 +554,10 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       if (!isRetryAction(action)) throw new TypeError(`不支持的重试入口: ${String(action)}`)
 
       logger.info(`重试 Runtime 后端更新: ${action}`)
-      const result = await retryBackendUpdate(action, progress =>
-        sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress)
+      const result = await getInitService().runEnvironmentOperation(() =>
+        retryBackendUpdate(action, progress =>
+          sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress)
+        )
       )
 
       if (!result.success) {

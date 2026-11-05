@@ -4,12 +4,17 @@
   `useMcpApi` 唯一记录 `mcp_retry_requested` 的 accepted/rejected/unknown 与耗时桶。
   accepted 只表示后端受理，不计作加载完成；快照恢复、WS 阶段更新和自动加载不逐次采集，
   不上传进程/运行标识、连接地址、错误或工具清单。
+- 首页首帧后的 MCP 自动放行属于内部启动协调，不新增点击或加载事件；`renderer_ready`
+  仍只表示 Vue 挂载。开发构建用固定 Performance mark 验证首帧，不进入生产构建或上报。
+  提前切页后等待当前业务页首帧；通知超时与退避恢复仍不逐次采集。
 
 本表对应 [Issue #1605 的 84 项场景](https://github.com/AUTO-MAS-Project/AUTO-MAS/issues/1605#issuecomment-6354559213)。
 场景可以共享事件族，事件契约存在不表示业务入口已经接入。每次提交前重新同步上游，并复核所有已接入项。
 “已接入”描述代码边界，不表示已经完成真实游戏、扫码、升级或正式服务入库验收。
 
 运行环境隔离统一使用 Electron 打包状态和 preload 下发值；Runtime 启动模式不改变采集环境。
+设置页布局偏好由 `SettingsSectionLayout` 的唯一保存入口复用 `settings_change_finished`（settings_layout/other/default|custom），按前端配置保存结果记录成功或失败；初始化、窗口缩放与目录跳转不采集，不发送设置内容或卡片位置。
+设置页工具栏的明暗主题快捷入口复用 `useTheme.setThemeMode` 的 `appearance_preference_changed` 保存结果，不增加点击事件或重复观察；自动保存说明是静态提示，不表示某次写入成功。
 源码 Electron 与安装版统一由 BackendService 记录 Runtime 启动结果，初始化阶段复用实际命令
 边界；移除旧安装器后不再产生 off 模式事件。独立后端和浏览器调试不新增采集。
 此次复用既有事件族与结果所有者；关闭应用二次确认开关复用 `settings_change_finished`，托盘菜单保存由主进程按真实写入结果补齐 `config_write_finished`（settings/ui/none），不发送菜单文本、任务标识或草稿操作。分区目录、打开编辑和取消不采集，托盘隐藏动作不单独采集；受控探针不作为正式服务入库证据。
