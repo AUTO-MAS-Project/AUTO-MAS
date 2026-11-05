@@ -65,10 +65,9 @@ def resolve_external_lock_paths(
 class HSRExternalPathLockLease:
     """One ownership handle for all locks acquired by an HSR operation."""
 
-    __slots__ = ("_keys", "_locks", "_released")
+    __slots__ = ("_locks", "_released")
 
     def __init__(self, keys: tuple[str, ...], locks: tuple[asyncio.Lock, ...]) -> None:
-        self._keys = keys
         self._locks = locks
         self._released = False
 

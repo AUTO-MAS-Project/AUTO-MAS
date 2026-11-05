@@ -105,5 +105,3 @@ export function useMaaFWScriptDraft(scriptId: string) {
     applyScriptConfig,
   }
 }
-
-export type MaaFWScriptDraft = ReturnType<typeof useMaaFWScriptDraft>

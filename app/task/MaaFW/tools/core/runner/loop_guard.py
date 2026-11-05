@@ -220,10 +220,6 @@ class MaaFWLoopGuard:
         self._step_index = -1
         self._runs = [_PeriodRun(p) for p in range(1, MAX_PERIOD + 1)]
 
-    @property
-    def disabled(self) -> bool:
-        return self._disabled
-
     def reset(self) -> None:
         """新任务开始：清掉循环状态与本任务的卡死判定；``unsupported`` 不恢复。"""
 

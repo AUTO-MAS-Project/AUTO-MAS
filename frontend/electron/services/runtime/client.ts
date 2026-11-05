@@ -211,18 +211,6 @@ export interface RuntimeSuperviseHandle {
   kill(signal?: NodeJS.Signals): void
 }
 
-/** RuntimeClient 上的事件名。刻意不用 `error`，避免 EventEmitter 的抛异常语义。 */
-export interface RuntimeClientEventMap {
-  event: [RuntimeEvent]
-  progress: [RuntimeProgressEvent]
-  state: [RuntimeStateEvent]
-  log: [RuntimeLogEvent]
-  warning: [RuntimeWarningEvent]
-  'runtime-error': [RuntimeErrorEvent]
-  result: [RuntimeResultEvent]
-  'protocol-error': [RuntimeClientError]
-}
-
 // ==================== 工具函数 ====================
 
 const ULID_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'

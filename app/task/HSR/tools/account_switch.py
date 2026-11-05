@@ -681,8 +681,6 @@ class HSRAccountSwitcher:
                 )
         if track_last_script:
             self.runtime.last_external_script = script
-        if script == "M7A":
-            self.runtime.game_session_clean = False
 
     async def _restart_game_after_script_switch(self, user_name: str) -> None:
         """M7A/SRA 切换时由 MAS 关闭并重新启动游戏。"""
@@ -704,7 +702,6 @@ class HSRAccountSwitcher:
         self.runtime.game_exe_path = game_exe_path
         self.runtime.game_launch_checked = False
         self.runtime.game_started_by_mas = False
-        self.runtime.game_session_clean = False
         self.runtime.last_external_script = None
         self.runtime.game_transitioning = True
 
@@ -792,7 +789,6 @@ class HSRAccountSwitcher:
 
         if self.cloud:
             self.runtime.game_launch_checked = True
-            self.runtime.game_session_clean = False
             self.runtime.last_external_script = None
             self.runtime.game_transitioning = False
             await self.ensure_cloud_browser()
@@ -801,7 +797,6 @@ class HSRAccountSwitcher:
         if not is_game_management_enabled(self.script_config):
             self.runtime.game_launch_checked = True
             self.runtime.game_started_by_mas = False
-            self.runtime.game_session_clean = False
             self.runtime.last_external_script = None
             self.runtime.game_transitioning = False
             self._append_log(
@@ -815,7 +810,6 @@ class HSRAccountSwitcher:
         self.runtime.game_exe_path = game_exe_path
         self.runtime.game_launch_checked = False
         self.runtime.game_started_by_mas = False
-        self.runtime.game_session_clean = False
         self.runtime.last_external_script = None
         self.runtime.game_transitioning = True
 
@@ -913,7 +907,6 @@ class HSRAccountSwitcher:
             timeout_seconds=timeout_seconds,
             track_script_switch=False,
         )
-        self.runtime.game_session_clean = bool(result.success)
         return result
 
     async def _wait_after_game_process_detected(self, process_name: str) -> None:

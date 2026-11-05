@@ -84,7 +84,6 @@ from .tools.software_package import (
     write_pending_update,
 )
 from .tools.software_update import (
-    cancel_maa_software_update_precheck,
     compare_versions,
     parse_version,
     prepare_maa_software_before_run,
@@ -153,51 +152,46 @@ class MaaManager(ScriptManagerBase):
 
     async def _finalize_task(self) -> None:
         try:
-            # 预检查只属于本轮；主动中止或异常也必须回收，避免跨脚本后无法停止。
-            if self._update_config_dir is not None:
-                await cancel_maa_software_update_precheck(self.maa_set_path.parent)
+            if self._update_config_dir is not None and not self._updater_running:
+                try:
+                    self._remember_pending_update()
+                except (OSError, ValueError) as error:
+                    logger.warning(
+                        f"MAA 本体更新: 保存恢复登记失败，仍尝试原生还原: {error}"
+                    )
+            await super()._finalize_task()
         finally:
             try:
-                if self._update_config_dir is not None and not self._updater_running:
-                    try:
-                        self._remember_pending_update()
-                    except (OSError, ValueError) as error:
-                        logger.warning(
-                            f"MAA 本体更新: 保存恢复登记失败，仍尝试原生还原: {error}"
+                if self.prepared and not self.maintenance_only:
+                    if self._updater_running:
+                        self.script_info.status = "异常"
+                        # 官方写盘后的配置可能无法按注入指纹自动恢复，原始内容留进已有备份池。
+                        backup_path = await _run_write_thread(
+                            _utils_config_archive.archive_files,
+                            files=collect_native_files(self.temp_path),
+                            store_root=native_backup_root(self.maa_set_path),
+                            force=True,
                         )
-                await super()._finalize_task()
+                        logger.warning(
+                            f"MAA 更新相关进程未能退出，任务前原生配置备份: {backup_path}；"
+                            "请等待更新结束并退出 MAA 后，从原生配置备份恢复"
+                        )
+                    else:
+                        restore_maa_update_config(
+                            self.maa_set_path.parent,
+                            snapshot_path=self.temp_path,
+                            script_id=self.script_info.script_id,
+                        )
+                        # 通知、用户收尾异常或中止也必须恢复，再保留尚未安装的登记。
+                        if (
+                            self.temp_path.exists()
+                            and not self._keep_script_config_changes()
+                        ):
+                            _utils_io.swap_in_dir(self.temp_path, self.maa_set_path)
+                        await self._restore_pending_update()
+                        _utils_io.clear_native_config_snapshot(self.temp_path)
             finally:
-                try:
-                    if self.prepared and not self.maintenance_only:
-                        if self._updater_running:
-                            self.script_info.status = "异常"
-                            # 官方写盘后的配置可能无法按注入指纹自动恢复，原始内容留进已有备份池。
-                            backup_path = await _run_write_thread(
-                                _utils_config_archive.archive_files,
-                                files=collect_native_files(self.temp_path),
-                                store_root=native_backup_root(self.maa_set_path),
-                                force=True,
-                            )
-                            logger.warning(
-                                f"MAA 更新相关进程未能退出，任务前原生配置备份: {backup_path}；"
-                                "请等待更新结束并退出 MAA 后，从原生配置备份恢复"
-                            )
-                        else:
-                            restore_maa_update_config(
-                                self.maa_set_path.parent,
-                                snapshot_path=self.temp_path,
-                                script_id=self.script_info.script_id,
-                            )
-                            # 通知、用户收尾异常或中止也必须恢复，再保留尚未安装的登记。
-                            if (
-                                self.temp_path.exists()
-                                and not self._keep_script_config_changes()
-                            ):
-                                _utils_io.swap_in_dir(self.temp_path, self.maa_set_path)
-                            await self._restore_pending_update()
-                            _utils_io.clear_native_config_snapshot(self.temp_path)
-                finally:
-                    self._resource_access.close()
+                self._resource_access.close()
 
     def _remember_pending_update(self) -> None:
         """子任务被中止时也接回它保存的登记，再补读最后一次原生写盘。"""

@@ -663,7 +663,7 @@ class OCRTool:
 
             # 执行模板匹配
             result = cv2.matchTemplate(screenshot_cv, template, cv2.TM_CCOEFF_NORMED)
-            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+            _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
             # 判断是否匹配成功
             if max_val >= threshold:
@@ -1000,7 +1000,7 @@ class OCRTool:
                 screenshot_np = np.array(screenshot)
 
                 # 使用 OCR 识别文字
-                result, elapse = cls().ocr_engine(screenshot_np)
+                result, _ = cls().ocr_engine(screenshot_np)
 
                 if result is None:
                     logger.debug(f"第 {attempt + 1} 次尝试中未识别到任何文字")

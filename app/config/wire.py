@@ -91,16 +91,6 @@ class StrictConfigInput[T: BaseModel](ConfigInput[T]):
     _contract_extra = "forbid"
 
 
-type WireScalar = str | int | float | bool
-"""Wire 叶子标量。"""
-
-type WireValue = WireScalar | None | dict[str, Any] | list[Any]
-"""Wire 单值；嵌套 dict/list 用 ``Any``，便于 ``to_dict`` 多层下标。"""
-
-type WireDict = dict[str, Any]
-"""Wire 顶层或 Entry 级 dict。"""
-
-
 @dataclass
 class ExportContext:
     """``_export_wire`` 导出上下文：控制解密与是否携带响应式字段。"""

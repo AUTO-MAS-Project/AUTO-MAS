@@ -75,7 +75,6 @@ PROTOCOL_VERSION = 2
 EVENT_HELLO = "hello"
 EVENT_LOG = "log"
 EVENT_ERROR = "error"
-EVENT_RESULT = "result"
 
 AUDIENCE_UI = "ui"
 AUDIENCE_WORKER_LOG = "worker_log"
@@ -227,15 +226,6 @@ def log_event(
         "message": message,
         "audience": audience if audience in _AUDIENCES else log_audience(message),
         "level": level if level in _LEVELS else LEVEL_INFO,
-    }
-
-
-def error_event(message: str) -> dict[str, Any]:
-    return {
-        "type": EVENT_ERROR,
-        "message": message,
-        "audience": log_audience(message),
-        "level": LEVEL_ERROR,
     }
 
 

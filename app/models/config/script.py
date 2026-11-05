@@ -2365,7 +2365,6 @@ class MaaFWConfig(DomainEntry):
     """
 
     related_config: ClassVar = {}
-    DEFAULT_SCRIPT_NAME: ClassVar = "新 MFW 脚本"
     USER_CONFIG_CLASS: ClassVar = MaaFWUserConfig
     FLAVOR: ClassVar = None
     DEFAULT_TASK_TIME_LIMIT_OVERRIDES: ClassVar = "{ }"
@@ -2662,7 +2661,6 @@ class M9AConfig(MaaFWConfig):
     ``app/task/M9A/migration.py`` 一次性迁到这个形状。
     """
 
-    DEFAULT_SCRIPT_NAME: ClassVar = "新 M9A 脚本"
     USER_CONFIG_CLASS: ClassVar = M9AUserConfig
     FLAVOR: ClassVar = "app.task.M9A.flavor:FLAVOR"
     DEFAULT_TASK_TIME_LIMIT_OVERRIDES: ClassVar = (
@@ -2746,7 +2744,6 @@ class MSSConfig(MaaFWConfig):
     （活动期先打活动、按计划表改悬赏试炼、新版爬塔放最后）。
     """
 
-    DEFAULT_SCRIPT_NAME: ClassVar = "新 MSS 脚本"
     USER_CONFIG_CLASS: ClassVar = MSSUserConfig
     FLAVOR: ClassVar = "app.task.MSS.flavor:FLAVOR"
 

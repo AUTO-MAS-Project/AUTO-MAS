@@ -97,16 +97,9 @@ def github_release_mirror_urls(download_url: str) -> list[tuple[str, str]]:
     return [(name, f"{prefix}{value}") for name, prefix in GITHUB_RELEASE_MIRRORS]
 
 
-def describe_github_mirror() -> str:
-    """给日志用的一句话：镜像是开着还是被关了。"""
-
-    return "自动" if _mirror_mode() == MIRROR_MODE_AUTO else "已关闭"
-
-
 __all__: Sequence[str] = [
     "GITHUB_RELEASE_MIRRORS",
     "MIRROR_MODE_AUTO",
     "MIRROR_MODE_OFF",
-    "describe_github_mirror",
     "github_release_mirror_urls",
 ]

@@ -381,8 +381,6 @@ class GitHubReleaseSource:
         return release_from_github(data)
 
 
-#: CDK 本身有问题的 Mirror 酱业务码：过期、错误、当天下载次数用完、不含这个资源、被封禁。
-MIRROR_CDK_ERRORS = frozenset({7001, 7002, 7003, 7004, 7005})
 #: 这个系统和架构下没有包（不带 os/arch 时也是它）。
 MIRROR_NO_PACKAGE = 8001
 
@@ -394,10 +392,6 @@ class MirrorChyanError(UpdateSourceError):
     def __init__(self, message: str, code: int | None = None) -> None:
         super().__init__(message)
         self.code = code
-
-    @property
-    def cdk_problem(self) -> bool:
-        return self.code in MIRROR_CDK_ERRORS
 
 
 def mirror_error_text(code: int) -> str:
@@ -468,10 +462,6 @@ class MirrorChyanSource:
     ) -> None:
         self._cdk = cdk.strip()
         self.api_root = api_root
-
-    @property
-    def has_cdk(self) -> bool:
-        return bool(self._cdk)
 
     def _scrub(self, text: str) -> str:
         return text.replace(self._cdk, "***") if self._cdk else text
@@ -548,7 +538,6 @@ def update_sources(*, github_only: bool = False) -> list[UpdateSource]:
 
 __all__ = [
     "GITHUB_SOURCE",
-    "MIRROR_CDK_ERRORS",
     "MIRROR_NO_PACKAGE",
     "MIRROR_SOURCE",
     "GitHubReleaseSource",

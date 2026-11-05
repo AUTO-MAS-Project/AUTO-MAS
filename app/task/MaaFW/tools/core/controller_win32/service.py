@@ -32,18 +32,6 @@ class MaaFWWindowMatch(MaaFWWin32Window):
 class MaaFWWin32ControllerService:
     """maafw.controller.win32 service."""
 
-    key = "win32"
-    display_name = "Win32"
-    controller_types = ["Win32"]
-
-    def get_provider_definition(self) -> dict[str, Any]:
-        return {
-            "key": self.key,
-            "displayName": self.display_name,
-            "controllerTypes": list(self.controller_types),
-            "capabilities": ["window_scan", "device_spec"],
-        }
-
     def list_windows(self) -> list[MaaFWWin32Window]:
         if sys.platform != "win32":
             raise RuntimeError("Win32 窗口扫描仅支持 Windows")
@@ -106,22 +94,6 @@ class MaaFWWin32ControllerService:
             )
 
         return matched
-
-    def build_device_spec(
-        self,
-        *,
-        h_wnd: int | None = None,
-        screencap_method: int = 0,
-        mouse_method: int = 0,
-        keyboard_method: int = 0,
-    ) -> dict[str, Any]:
-        return {
-            "type": "Win32",
-            "hWnd": h_wnd,
-            "screencapMethod": screencap_method,
-            "mouseMethod": mouse_method,
-            "keyboardMethod": keyboard_method,
-        }
 
 
 def controller_has_window_rules(controller: MaaFWController) -> bool:

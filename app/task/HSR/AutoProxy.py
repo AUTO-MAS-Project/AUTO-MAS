@@ -346,7 +346,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         await self._stop_external_processes()
         if is_cloud_platform(self.script_config):
             self.runtime.last_external_script = None
-            self.runtime.game_session_clean = False
             self._append_log(
                 f"用户「{user_name}」{reason}，云·星穹铁道保持浏览器不重启"
             )
@@ -355,7 +354,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         if not is_game_management_enabled(self.script_config):
             self.runtime.game_launch_checked = True
             self.runtime.game_started_by_mas = False
-            self.runtime.game_session_clean = False
             self.runtime.last_external_script = None
             self._append_log(
                 f"用户「{user_name}」{reason}，MAS 未管理游戏，跳过游戏重启并继续执行"
@@ -370,7 +368,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self.runtime.game_exe_path = game_exe_path
         self.runtime.game_launch_checked = False
         self.runtime.game_started_by_mas = False
-        self.runtime.game_session_clean = False
         self.runtime.last_external_script = None
         self.runtime.game_transitioning = True
 

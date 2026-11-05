@@ -273,7 +273,6 @@ const controllerType = ref<string | null>(null)
 const {
   maaEndOptionsLoading,
   maaEndOptionsLoaded,
-  controllerProtocol,
   presetSupported,
   resourceOptions,
   crisisDrillsOptions,

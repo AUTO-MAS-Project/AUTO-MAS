@@ -147,10 +147,6 @@ class GameVersion:
         """调试用的 ``GameVersion(x.y.z.w)`` 形式。"""
         return f"GameVersion({self.version_string})"
 
-    def is_empty(self) -> bool:
-        """是否为全 0 的空版本。"""
-        return self.as_tuple() == (0, 0, 0, 0)
-
     # 四个大小比较把右操作数交给 :func:`_coerce`（读不出的一律按全 0 空版本算），
     # 因此「未安装」排在任何具体版本之前；``__eq__`` 是另一套规则，见它的说明。
 
@@ -275,11 +271,6 @@ class GameVersionBase:
         exec_prefix = os.path.splitext(self.preset.executable_name)[0]
         return os.path.join(self.game_path, f"{exec_prefix}_Data")
 
-    @property
-    def game_data_persistent_path(self) -> str:
-        """``<Data>/Persistent`` 目录。"""
-        return os.path.join(self.game_data_path, "Persistent")
-
     # ================================================================== ini
 
     def update_game_path(self, path: str, save: bool = True) -> None:
@@ -371,11 +362,6 @@ class GameVersionBase:
     def latest_version(self) -> Optional[GameVersion]:
         """远程最新版本；还没拉过分支时为 ``None``。"""
         return GameVersion.parse(self.remote_tag)
-
-    @property
-    def preload_version(self) -> Optional[GameVersion]:
-        """远程预下载版本；官方没开预下载时为 ``None``。"""
-        return GameVersion.parse(self.preload_tag)
 
     # ================================================================== 状态
 

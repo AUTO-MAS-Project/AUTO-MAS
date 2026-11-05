@@ -231,12 +231,6 @@ class ConfigRestoreService:
             raise ValueError("配置恢复服务至少需要一个目标池")
         self._targets = {t.key: t for t in targets}
 
-    @property
-    def target_keys(self) -> list[str]:
-        """目标池顺序（即前端 segmented 展示顺序，MAS 在前脚本在后）。"""
-
-        return list(self._targets)
-
     def get_target(self, key: str) -> ConfigRestoreTarget:
         target = self._targets.get(key)
         if target is None:

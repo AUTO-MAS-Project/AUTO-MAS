@@ -115,7 +115,6 @@ class SrcManager(ScriptManagerBase):
         self.prepared = False
         self.config_lock_acquired = False
         self.recovery_context_initialized = False
-        self.recovery_started = False
         self.recovery_completed = False
         self.current_cleanup_completed = False
         self._cleaned_src_roots: set[Path] = set()
@@ -252,7 +251,6 @@ class SrcManager(ScriptManagerBase):
             return
 
         await self._initialize_recovery_context()
-        self.recovery_started = True
         if not hasattr(self, "_cleaned_src_roots"):
             self._cleaned_src_roots = set()
 

@@ -47,8 +47,6 @@ export interface DesktopMascotSelection {
   enabled: boolean
 }
 
-export type DesktopMascotPointerAction = 'hover' | 'move' | 'end'
-
 export interface DesktopMascotDragStart {
   x: number
   y: number

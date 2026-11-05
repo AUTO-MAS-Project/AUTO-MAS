@@ -41,8 +41,6 @@ const { t } = useI18n()
 const {
   themeMode,
   themeColor,
-  appearances,
-  appearanceId,
   activeAppearance,
   modalContextHolder,
   appearanceBusy,

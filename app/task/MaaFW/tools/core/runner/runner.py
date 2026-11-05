@@ -1059,7 +1059,6 @@ class MaaFWRunner:
         # 运行前项目自带 Python 检查没通过、按「报错照跑」放行的原因（prepare_agent_python_envs 写）
         self._agent_health_warnings: list[str] = []
         self.event_sinks: list[Any] = []
-        self.embedded_agent_sys_paths: list[str] = []
         self.send_log: Callable[[str], None] = send_log or (lambda _: None)
         # 结构化运行记录（run_events.py）：阶段与任务起止推给宿主，旁路，发不出去不影响运行。
         self.send_record: Callable[[dict[str, Any]], None] = send_record or (
@@ -1070,7 +1069,6 @@ class MaaFWRunner:
         self._record_task: tuple[int, str] | None = None
         self._record_outcome: tuple[str, str | None, bool, float] | None = None
         self._initialized: bool = False
-        self._python_env_checked: dict[str, bool] = {}
         self._stop_requested: threading.Event = threading.Event()
         self._external_stop_seen: threading.Event = threading.Event()
         self._self_stop_lock: threading.Lock = threading.Lock()
@@ -1116,7 +1114,6 @@ class MaaFWRunner:
         self._task_deadline_limit_seconds: int = 0
         self._task_deadline_hit: threading.Event = threading.Event()
         self._task_deadline_timer: threading.Timer | None = None
-        self._task_deadline_stop_posted: bool = False
         # 单任务时限到点后发起停止的定时器线程（它在里面等停止 job）。
         self._task_deadline_stop_thread: threading.Thread | None = None
         self._completed_tasks: list[str] = []
@@ -1309,7 +1306,6 @@ class MaaFWRunner:
         self._deadline_hit.clear()
         self._deadline_stop_posted = False
         self._task_deadline_hit.clear()
-        self._task_deadline_stop_posted = False
         self._task_deadline_stop_thread = None
         self._failure_screenshots = []
         self._completed_tasks = []
@@ -1609,7 +1605,6 @@ class MaaFWRunner:
 
         self._cancel_task_deadline_timer()
         self._task_deadline_hit.clear()
-        self._task_deadline_stop_posted = False
         self._task_deadline_task = task.name
         seconds = self._task_deadline_seconds(task)
         self._task_deadline_limit_seconds = seconds
@@ -1659,7 +1654,6 @@ class MaaFWRunner:
         self._log(
             f"{TASK_TIMEOUT_MESSAGE}，正在停止当前任务并截图", level=LEVEL_WARNING
         )
-        self._task_deadline_stop_posted = True
         try:
             self._post_self_stop()
         except Exception as exc:

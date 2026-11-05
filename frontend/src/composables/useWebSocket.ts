@@ -4,14 +4,6 @@
 
 import { connectionInfo, connectionState, request, send } from '@/services/websocket/connection'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
-import type {
-  WSConnectionState,
-  WSEnvelope,
-  WSMessageHandler,
-  WSSubscriptionKey,
-} from '@/services/websocket/types'
-
-export type { WSConnectionState, WSEnvelope, WSMessageHandler, WSSubscriptionKey }
 export { subscribe, unsubscribe, send, request }
 
 export function useWebSocket() {

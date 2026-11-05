@@ -179,21 +179,6 @@ def resolve_uv_cache_dir(pool_root: str | Path) -> Path:
     return path
 
 
-def resolve_python_install_dir(pool_root: str | Path) -> Path:
-    """解析 MaaFW 运行池实际使用的 Python 安装目录。
-
-    受监督时优先复用 Runtime 经 ``AUTO_MAS_UV_PYTHON_INSTALL_DIR`` 注入的受管
-    Python 安装目录，与 Runtime 主项目共用同一份解释器；未设置、相对路径或
-    父目录不存在时视为无效注入，回退到池本地目录 ``<pool_root>/python``。
-
-    只要路径，不关心是否命中注入；需要一并知道「是否注入」时改用
-    ``_resolve_python_install_dir_with_source``。
-    """
-
-    path, _injected = _resolve_python_install_dir_with_source(pool_root)
-    return path
-
-
 def _split_semicolon_list(raw: str | None) -> list[str]:
     """按 ``;`` 切分一份有序源列表，去首尾空白、丢弃空项；不做去重。"""
 
@@ -1271,7 +1256,7 @@ def _canonicalize_pool_paths(
     caller does not say otherwise — this is the ``False`` default for both
     flags, i.e. the strict/pre-C11 behaviour.
 
-    Under supervision, ``resolve_python_install_dir``/``resolve_uv_cache_dir``
+    Under supervision, ``_resolve_python_install_dir_with_source``/``resolve_uv_cache_dir``
     (via their ``_with_source`` variants) may legitimately return a
     Runtime-injected shared directory outside ``pool_root`` instead
     (``AUTO_MAS_UV_PYTHON_INSTALL_DIR`` / ``AUTO_MAS_UV_CACHE_DIR``, C11).

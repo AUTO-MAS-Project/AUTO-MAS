@@ -117,10 +117,6 @@ class MaaFWRuntimePool:
             self._initialize()
             return copy.deepcopy(self._root_identity)
 
-    @property
-    def rootIdentity(self) -> dict[str, Any]:  # noqa: N802 - public JSON contract
-        return self.root_identity
-
     def storage_info(self) -> dict[str, Any]:
         identity = self.root_identity
         return {

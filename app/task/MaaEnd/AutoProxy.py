@@ -470,7 +470,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self.run_book: dict[str, bool] = {mode: False for mode in MAAEND_RUN_MOOD_BOOK}
         self.task_dict: dict[str, dict[str, bool]] | None = None
         self.task_name_map: dict[str, str] = {}
-        self.unique_task: dict[str, str] = {}
         self.maaend_config_file: Path | None = None
         self.maaend_root_path: Path | None = None
         # 一轮运行内 check/prepare 会多次读同一份 mxu-MaaEnd.json，按文件签名缓存解析结果
@@ -1105,7 +1104,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self.maaend_root_path = maaend_root_path
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
         self.maaend_set_path = self.maaend_root_path / "config"
-        self.maaend_log_path = self.maaend_root_path / "debug/maa.log"
 
         self.maaend_log_monitor = LogMonitor(
             (1, 23), "%Y-%m-%d %H:%M:%S.%f", self.check_log

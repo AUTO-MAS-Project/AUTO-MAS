@@ -39,14 +39,13 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any, Literal
+from typing import Any
 
 from app.utils import get_logger
 
 logger = get_logger("BetterGI 一条龙计划")
 
 # 步骤来源类型，与前端队列 kind 保持一致
-StepKind = Literal["builtin", "js", "pathing", "scriptgroup", "keymouse", "custom"]
 _STEP_KINDS: frozenset[str] = frozenset(
     {"builtin", "js", "pathing", "scriptgroup", "keymouse", "custom"}
 )

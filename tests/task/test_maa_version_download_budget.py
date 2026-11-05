@@ -52,7 +52,6 @@ def software_install(tmp_path, monkeypatch, isolated_app_paths):
         software, "read_installed_release", lambda root: ("v6.0.0", "x64")
     )
     monkeypatch.setattr(software, "_cache_locks", {})
-    monkeypatch.setattr(software, "_precheck_tasks", {})
     query = AsyncMock(return_value="v6.1.0")
     monkeypatch.setattr(github, "query_latest_maa_version", query)
     request = AsyncMock(

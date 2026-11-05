@@ -8,7 +8,6 @@ from app.utils import get_logger
 logger = get_logger("电源管理")
 
 ES_CONTINUOUS = 0x80000000
-ES_SYSTEM_REQUIRED = 0x00000001
 ES_DISPLAY_REQUIRED = 0x00000002
 MOUSEEVENTF_MOVE = 0x0001
 

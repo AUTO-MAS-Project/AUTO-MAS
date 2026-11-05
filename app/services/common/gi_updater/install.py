@@ -144,11 +144,6 @@ class UpdatePlan:
     message: str = ""
 
     @property
-    def needs_action(self) -> bool:
-        """是否需要真正下载与写盘。"""
-        return self.kind not in (UpdateKind.Noop, UpdateKind.Unknown)
-
-    @property
     def file_count(self) -> int:
         """本轮要处理的文件数。"""
         return self.summary.file_count

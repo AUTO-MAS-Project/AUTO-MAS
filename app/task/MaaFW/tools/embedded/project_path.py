@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import os
 import threading
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 
 _ACTIVE_PROJECT_PATHS: set[str] = set()
@@ -76,17 +74,6 @@ def end_project_updating(key: str) -> None:
             _UPDATING_PROJECT_PATHS[key] = remaining
         else:
             _UPDATING_PROJECT_PATHS.pop(key, None)
-
-
-@contextmanager
-def mark_project_updating(path: str | Path) -> Iterator[None]:
-    """在这段里把该视图登记为「正在更新」；可嵌套。"""
-
-    key = begin_project_updating(path)
-    try:
-        yield
-    finally:
-        end_project_updating(key)
 
 
 def is_project_updating(path: str | Path) -> bool:

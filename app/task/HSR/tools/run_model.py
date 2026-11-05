@@ -154,7 +154,6 @@ class HSRRuntimeState:
     # final_task 必须在关闭游戏后恢复并清空。
     game_resolution_override: HSRGameResolutionOverride | None = None
     last_external_script: HSRScriptRunner | None = None
-    game_session_clean: bool = False
     game_transitioning: bool = False
     # 云平台下当前用户的 MAS 托管浏览器；任一时刻只有一个（三月七只认标记不认
     # 账号），换用户时关旧起新，final_task 全关。

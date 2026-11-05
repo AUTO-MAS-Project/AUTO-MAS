@@ -33,8 +33,6 @@ const virtualDisplayModeOptions = computed(() => [
 ])
 
 const {
-  vddDriverReady,
-  vddDriverMessage,
   vddHolding,
   vddSwitchDisabled,
   vddWarning,
