@@ -97,18 +97,18 @@ D:/Dev/AUTO-MAS/
 
 每项的 `registration.py` 提供运行工厂和配置能力；L2 按配置的**精确类型**查工厂。模拟器绑定字段仍属于配置能力，不再生成独立任务资源声明。并非按类名拼接导入 manager。
 
-- MAA：[manager.py](D:/Dev/AUTO-MAS/app/task/MAA/manager.py)、[AutoProxy.py](D:/Dev/AUTO-MAS/app/task/MAA/AutoProxy.py)、[ScriptConfig.py](D:/Dev/AUTO-MAS/app/task/MAA/ScriptConfig.py)。manager 协调安装访问、更新、配置备份恢复、用户任务和汇总通知；单用户文件处理实际专项调用。
-- MaaEnd：[manager.py](D:/Dev/AUTO-MAS/app/task/MaaEnd/manager.py) 及同目录 AutoProxy、ScriptConfig、Update；更新文件属于专项能力，不是公开 TaskMode。
-- SRC：[manager.py](D:/Dev/AUTO-MAS/app/task/SRC/manager.py) 及同目录 AutoProxy、ScriptConfig；取得托管配置锁后读取并固定本轮安装路径，历史配置恢复仍归 manager。
-- General：[manager.py](D:/Dev/AUTO-MAS/app/task/general/manager.py) 及同目录 AutoProxy、ScriptConfig。
-- BetterGI：[manager.py](D:/Dev/AUTO-MAS/app/task/BetterGI/manager.py) 及同目录 AutoProxy、ScriptConfig、Update。
-- Okww：[manager.py](D:/Dev/AUTO-MAS/app/task/Okww/manager.py) 及同目录 AutoProxy、ScriptConfig、Update。
-- OkNte：[manager.py](D:/Dev/AUTO-MAS/app/task/OkNte/manager.py) 及同目录 AutoProxy、ScriptConfig。
-- HSR：[manager.py](D:/Dev/AUTO-MAS/app/task/HSR/manager.py) 及同目录 AutoProxy、history；其多引擎选择、恢复和通知继续归专项。
-- ZzzOd：[manager.py](D:/Dev/AUTO-MAS/app/task/ZzzOd/manager.py) 及同目录 AutoProxy、ScriptConfig；恢复服务由宿主装配提供。
-- BAAH：[manager.py](D:/Dev/AUTO-MAS/app/task/BAAH/manager.py) 及同目录 AutoProxy；不假定所有专项支持全部模式。
-- Whimbox：[manager.py](D:/Dev/AUTO-MAS/app/task/Whimbox/manager.py) 及同目录 AutoProxy、ScriptConfig。
-- MaaFW、M9A、MSS：[embedded\_manager.py](D:/Dev/AUTO-MAS/app/task/MaaFW/embedded_manager.py) 共用宿主执行入口；[runner\_task.py](D:/Dev/AUTO-MAS/app/task/MaaFW/tools/embedded/runner_task.py) 等继续管理嵌入式 worker。M9A/MSS 在 MaaFW 的运行类型声明中登记。
+- MAA：[manager.py](../app/task/MAA/manager.py)、[AutoProxy.py](../app/task/MAA/AutoProxy.py)、[ScriptConfig.py](../app/task/MAA/ScriptConfig.py)。manager 协调安装访问、更新、配置备份恢复、用户任务和汇总通知；单用户文件处理实际专项调用。
+- MaaEnd：[manager.py](../app/task/MaaEnd/manager.py) 及同目录 AutoProxy、ScriptConfig、Update；更新文件属于专项能力，不是公开 TaskMode。
+- SRC：[manager.py](../app/task/SRC/manager.py) 及同目录 AutoProxy、ScriptConfig；取得托管配置锁后读取并固定本轮安装路径，历史配置恢复仍归 manager。
+- General：[manager.py](../app/task/general/manager.py) 及同目录 AutoProxy、ScriptConfig。
+- BetterGI：[manager.py](../app/task/BetterGI/manager.py) 及同目录 AutoProxy、ScriptConfig、Update。
+- Okww：[manager.py](../app/task/Okww/manager.py) 及同目录 AutoProxy、ScriptConfig、Update。
+- OkNte：[manager.py](../app/task/OkNte/manager.py) 及同目录 AutoProxy、ScriptConfig。
+- HSR：[manager.py](../app/task/HSR/manager.py) 及同目录 AutoProxy、history；其多引擎选择、恢复和通知继续归专项。
+- ZzzOd：[manager.py](../app/task/ZzzOd/manager.py) 及同目录 AutoProxy、ScriptConfig；恢复服务由宿主装配提供。
+- BAAH：[manager.py](../app/task/BAAH/manager.py) 及同目录 AutoProxy；不假定所有专项支持全部模式。
+- Whimbox：[manager.py](../app/task/Whimbox/manager.py) 及同目录 AutoProxy、ScriptConfig。
+- MaaFW、M9A、MSS：[embedded\_manager.py](../app/task/MaaFW/embedded_manager.py) 共用宿主执行入口；[runner\_task.py](../app/task/MaaFW/tools/embedded/runner_task.py) 等继续管理嵌入式 worker。M9A/MSS 在 MaaFW 的运行类型声明中登记。
 
 本文逐方法解释公共调度骨架；专项内部的游戏参数转换、文件格式处理、日志解析和截图算法不逐个展开，入口按上述文件定位。
 
@@ -116,26 +116,26 @@ D:/Dev/AUTO-MAS/
 
 ### 3.1 Python 静态类型和运行校验是两条链
 
-1. [app/models/task.py](D:/Dev/AUTO-MAS/app/models/task.py) 是模式和运行结构的声明源：`TaskMode(StrEnum)`、`TaskParams`、各节点的 `Info`/`Current`、`ConfigCollection[具体节点]`。`ScriptItem`、`UserItem` 是新节点类的别名，不是另一套状态模型。
-2. [app/config/core/node.py](D:/Dev/AUTO-MAS/app/config/core/node.py) 提供 `uid: UUID`、`parent`、`root`、锁票据和提交方法；`ConfigEntry`/`ConfigGroup`/`ConfigCollection[T]` 的注解与泛型让调用方知道字段和成员类型。热态属性读取和写入拦截是运行机制，不代替这些静态声明。
-3. `Virtual[T]` 和 `Trigger` 定义在 [fields/ref.py](D:/Dev/AUTO-MAS/app/config/fields/ref.py)。`Virtual[T]` 实际是带元数据的 `T | None`，计算绑定来自 `@virtual_field`；`Trigger` 是带元数据的 bool，动作绑定来自 `@trigger_field`。Pydantic 元数据负责运行行为，不保证所有类型检查器都能把动态投影推断为具体类。
-4. [app/models/config/\_\_init\_\_.py](D:/Dev/AUTO-MAS/app/models/config/__init__.py) 汇总专项配置类型和 `CLASS_BOOK`；旧 manager 使用 `ScriptConfigType`/`UserConfigType` 等联合类型。`ScriptAutoProxyBase[S, U]` 用泛型细化某专项和用户配置类型；`selected_user_configs()` 的 overload 尽量保留传入的用户具体类型。
-5. [app/task/registration.py](D:/Dev/AUTO-MAS/app/task/registration.py) 定义 `ManagerFactory = Callable[[ScriptItem], TaskExecuteBase]`、`ScriptRegistration`、`ScriptCapabilities`。工厂只接收当前托管运行节点，节点参数继续由 `TaskContext` 传递。配置类型和运行工厂的联系来自注册校验，不是类型检查器自动证明的映射关系。
-6. [app/core/\_\_init\_\_.py](D:/Dev/AUTO-MAS/app/core/__init__.py) 在 `TYPE_CHECKING` 下显式导入真实单例，为编辑器提供 `Config`/`TaskManager`/`MainTimer` 等的类型；运行时由 `__getattr__` 按需导入并缓存。静态检查不必真的初始化所有核心组件。
-7. [app/models/task.py](D:/Dev/AUTO-MAS/app/models/task.py) 对旧 `TaskExecuteBase` 同样使用 `TYPE_CHECKING` 导入和运行时 `__getattr__`，实际实现归 [app/task/legacy.py](D:/Dev/AUTO-MAS/app/task/legacy.py)。这是旧导入路径兼容，不是模型层拥有执行实现。
-8. [TaskContext](D:/Dev/AUTO-MAS/app/task/context.py) 用 dataclass 和 `JsonValue` 描述当前层参数，不重复保存任务根。队列、托管、用户的 `params` 分别复制传递，**不自动合并上层参数**。字段 `instance_idx` 从当前托管节点的 params 读取，并校验为非负整数。
+1. [app/models/task.py](../app/models/task.py) 是模式和运行结构的声明源：`TaskMode(StrEnum)`、`TaskParams`、各节点的 `Info`/`Current`、`ConfigCollection[具体节点]`。`ScriptItem`、`UserItem` 是新节点类的别名，不是另一套状态模型。
+2. [app/config/core/node.py](../app/config/core/node.py) 提供 `uid: UUID`、`parent`、`root`、锁票据和提交方法；`ConfigEntry`/`ConfigGroup`/`ConfigCollection[T]` 的注解与泛型让调用方知道字段和成员类型。热态属性读取和写入拦截是运行机制，不代替这些静态声明。
+3. `Virtual[T]` 和 `Trigger` 定义在 [fields/ref.py](../app/config/fields/ref.py)。`Virtual[T]` 实际是带元数据的 `T | None`，计算绑定来自 `@virtual_field`；`Trigger` 是带元数据的 bool，动作绑定来自 `@trigger_field`。Pydantic 元数据负责运行行为，不保证所有类型检查器都能把动态投影推断为具体类。
+4. [app/models/config/\_\_init\_\_.py](../app/models/config/__init__.py) 汇总专项配置类型和 `CLASS_BOOK`；旧 manager 使用 `ScriptConfigType`/`UserConfigType` 等联合类型。`ScriptAutoProxyBase[S, U]` 用泛型细化某专项和用户配置类型；`selected_user_configs()` 的 overload 尽量保留传入的用户具体类型。
+5. [app/task/registration.py](../app/task/registration.py) 定义 `ManagerFactory = Callable[[ScriptItem], TaskExecuteBase]`、`ScriptRegistration`、`ScriptCapabilities`。工厂只接收当前托管运行节点，节点参数继续由 `TaskContext` 传递。配置类型和运行工厂的联系来自注册校验，不是类型检查器自动证明的映射关系。
+6. [app/core/\_\_init\_\_.py](../app/core/__init__.py) 在 `TYPE_CHECKING` 下显式导入真实单例，为编辑器提供 `Config`/`TaskManager`/`MainTimer` 等的类型；运行时由 `__getattr__` 按需导入并缓存。静态检查不必真的初始化所有核心组件。
+7. [app/models/task.py](../app/models/task.py) 对旧 `TaskExecuteBase` 同样使用 `TYPE_CHECKING` 导入和运行时 `__getattr__`，实际实现归 [app/task/legacy.py](../app/task/legacy.py)。这是旧导入路径兼容，不是模型层拥有执行实现。
+8. [TaskContext](../app/task/context.py) 用 dataclass 和 `JsonValue` 描述当前层参数，不重复保存任务根。队列、托管、用户的 `params` 分别复制传递，**不自动合并上层参数**。字段 `instance_idx` 从当前托管节点的 params 读取，并校验为非负整数。
 
 根集合调用 `build()` 时须显式绑定泛型，例如 `ConfigCollection[QueueConfig].build([QueueConfig], name="QueueConfig")`。其返回注解是 Self，未绑定调用类时，当前检查器会把集合成员推断为 Unknown；参数列表负责登记允许运行的成员类型。模拟器、计划、脚本、队列和社区账号集合现均已绑定成员类型，模型私有字段及属性返回值也保留准确泛型；混合计划与脚本集合使用对应的具体配置联合类型。
 
 ### 3.2 输入校验、运行树导出与前端类型
 
-- HTTP 创建包装 [TaskCreateIn](D:/Dev/AUTO-MAS/app/api/dispatch.py) 只属于端点：`mode` 与 `tasks`；内部直接调用 `TaskManager.start(mode, tasks)`，不要求构造包装对象。
-- [TaskSelectionNode](D:/Dev/AUTO-MAS/app/models/schema.py) 递归声明 `uid`、`params`、`children`；`extra="forbid"` 拒绝多余字段。同文件的 `TaskRequirements` 是内部允许模型节点或字典的宽输入类型；L1 的 `_launch()` 用 `TypeAdapter(dict[int, TaskSelectionNode])` 解析，直接在建树时校验顺序、归属和层数。
+- HTTP 创建包装 [TaskCreateIn](../app/api/dispatch.py) 只属于端点：`mode` 与 `tasks`；内部直接调用 `TaskManager.start(mode, tasks)`，不要求构造包装对象。
+- [TaskSelectionNode](../app/models/schema.py) 递归声明 `uid`、`params`、`children`；`extra="forbid"` 拒绝多余字段。同文件的 `TaskRequirements` 是内部允许模型节点或字典的宽输入类型；L1 的 `_launch()` 用 `TypeAdapter(dict[int, TaskSelectionNode])` 解析，直接在建树时校验顺序、归属和层数。
 - `TaskTreeData = config_contract(TaskItem, include_collections=True)` 从运行节点声明派生传输模型，集合形状是 `order + data`。这是动态生成的 Pydantic 契约，不是手写另一份运行数据。
 - FastAPI 根据端点/公共模型导出 OpenAPI；前端执行 `yarn openapi` 调用 openapi-typescript-codegen 和 `scripts/postprocess-openapi.mjs`，生成 `TaskMode`、`TaskSelectionNode`、`TaskItemDocument`、`TaskScriptItemDocument` 等及 HTTP 客户端。
-- [websocket/types.ts](D:/Dev/AUTO-MAS/frontend/src/services/websocket/types.ts) 把 `task.info.updated` 数据别名指向生成的 `TaskItemDocument`，并声明消息类型映射；其他消息仍有手写类型。
-- [realtimeSnapshotApi.ts](D:/Dev/AUTO-MAS/frontend/src/services/realtimeSnapshotApi.ts) 使用生成的快照类型和 GetService 方法，移除了手写快照外壳与通用 request 调用。WS 完成消息仍有手写信封类型，但 task 字段引用生成树类型。
-- [taskTreeProjection.ts](D:/Dev/AUTO-MAS/frontend/src/composables/taskTreeProjection.ts) 的展示接口、[useTaskRuntimeState.ts](D:/Dev/AUTO-MAS/frontend/src/composables/useTaskRuntimeState.ts) 的运行缓存类型和页面选择类型属于前端内部投影。
+- [websocket/types.ts](../frontend/src/services/websocket/types.ts) 把 `task.info.updated` 数据别名指向生成的 `TaskItemDocument`，并声明消息类型映射；其他消息仍有手写类型。
+- [realtimeSnapshotApi.ts](../frontend/src/services/realtimeSnapshotApi.ts) 使用生成的快照类型和 GetService 方法，移除了手写快照外壳与通用 request 调用。WS 完成消息仍有手写信封类型，但 task 字段引用生成树类型。
+- [taskTreeProjection.ts](../frontend/src/composables/taskTreeProjection.ts) 的展示接口、[useTaskRuntimeState.ts](../frontend/src/composables/useTaskRuntimeState.ts) 的运行缓存类型和页面选择类型属于前端内部投影。
 
 ### 3.3 当前类型覆盖的实际限度
 
@@ -269,7 +269,7 @@ L4 完成用户 finish 并提交该收尾协程自身暂存，返回后由 L3 �
 
 停止当前轮或 ALL 不修改队列启动/定时/循环开关。timer 后续到期仍会提交新任务；屏障只覆盖这次停止全部过程。要关闭未来触发，需要修改队列配置。
 
-[main.py](D:/Dev/AUTO-MAS/main.py) 的 shutdown_services 停 WS 入站和连接钩子、取消电源动作，并行停止 MainTimer 和全部任务；History.close 等用户收尾，再回收桌面资源、更新/回放服务，shutdown BackgroundTaskManager、关闭通知，最后 flush 配置。`ShutdownCoordinator` 保证退出清理只执行一次。
+[main.py](../main.py) 的 shutdown_services 停 WS 入站和连接钩子、取消电源动作，并行停止 MainTimer 和全部任务；History.close 等用户收尾，再回收桌面资源、更新/回放服务，shutdown BackgroundTaskManager、关闭通知，最后 flush 配置。`ShutdownCoordinator` 保证退出清理只执行一次。
 
 ## 6. 状态、日志、历史和界面怎样一致
 
@@ -344,335 +344,335 @@ Cycle 的 IntervalMinutes 为队列统一间隔，LastRunAt 是最近循环成�
 
 ### app/api/dispatch.py
 
-- [TaskCreateIn.validate\_indices](D:/Dev/AUTO-MAS/app/api/dispatch.py:69)：在 Pydantic 解析前要求顶层索引按传入顺序从 0 连续递增。
-- [async get\_task\_runtime\_snapshot](D:/Dev/AUTO-MAS/app/api/dispatch.py:130)：返回运行中任务的完整树、当前日志及已启用排期的脚本标识。
-- [async get\_task\_status](D:/Dev/AUTO-MAS/app/api/dispatch.py:143)：按根 taskId 查询运行状态或最近终态；不存在时返回业务 404。
-- [async get\_tasks](D:/Dev/AUTO-MAS/app/api/dispatch.py:158)：查询指定根或全部运行根的完整树，组装 index/data。
-- [async get\_power\_countdown\_snapshot](D:/Dev/AUTO-MAS/app/api/dispatch.py:178)：读取独立电源倒计时的初始快照。
-- [async add\_task](D:/Dev/AUTO-MAS/app/api/dispatch.py:191)：拆出 mode/tasks 调用 L1，返回 taskId 或错误外壳。
-- [async stop\_task](D:/Dev/AUTO-MAS/app/api/dispatch.py:210)：调用 TaskManager 停止指定根或 ALL，等待生命周期收尾后返回。
-- [async get\_power](D:/Dev/AUTO-MAS/app/api/dispatch.py:229)：读取当前待执行电源动作或尚未启动倒计时的全局标志。
-- [async set\_power](D:/Dev/AUTO-MAS/app/api/dispatch.py:252)：改全局完成后动作，清队列延时并取消旧待执行电源任务。
-- [async cancel\_power\_task](D:/Dev/AUTO-MAS/app/api/dispatch.py:276)：撤销电源任务，错误转为业务错误外壳。
+- [TaskCreateIn.validate\_indices](../app/api/dispatch.py:69)：在 Pydantic 解析前要求顶层索引按传入顺序从 0 连续递增。
+- [async get\_task\_runtime\_snapshot](../app/api/dispatch.py:130)：返回运行中任务的完整树、当前日志及已启用排期的脚本标识。
+- [async get\_task\_status](../app/api/dispatch.py:143)：按根 taskId 查询运行状态或最近终态；不存在时返回业务 404。
+- [async get\_tasks](../app/api/dispatch.py:158)：查询指定根或全部运行根的完整树，组装 index/data。
+- [async get\_power\_countdown\_snapshot](../app/api/dispatch.py:178)：读取独立电源倒计时的初始快照。
+- [async add\_task](../app/api/dispatch.py:191)：拆出 mode/tasks 调用 L1，返回 taskId 或错误外壳。
+- [async stop\_task](../app/api/dispatch.py:210)：调用 TaskManager 停止指定根或 ALL，等待生命周期收尾后返回。
+- [async get\_power](../app/api/dispatch.py:229)：读取当前待执行电源动作或尚未启动倒计时的全局标志。
+- [async set\_power](../app/api/dispatch.py:252)：改全局完成后动作，清队列延时并取消旧待执行电源任务。
+- [async cancel\_power\_task](../app/api/dispatch.py:276)：撤销电源任务，错误转为业务错误外壳。
 
 ### app/core/task_manager.py
 
-- [\_TaskManager.\_\_init\_\_](D:/Dev/AUTO-MAS/app/core/task_manager.py:55)：初始化执行能力、运行登记、终态缓存，以及创建与停止全部的同步状态。
-- [\_TaskManager.bind\_manager\_factories](D:/Dev/AUTO-MAS/app/core/task_manager.py:71)：[兼容旧专项] 仅供现有宿主绑定旧 manager 工厂；新插件执行能力接入 L3/L4。
-- [property \_TaskManager.task\_info](D:/Dev/AUTO-MAS/app/core/task_manager.py:84)：[兼容旧调用方] 旧运行表视图；新查询使用 get_task() 或 get_runtime_snapshot()。
-- [property \_TaskManager.task\_handler](D:/Dev/AUTO-MAS/app/core/task_manager.py:98)：[兼容旧调用方] 旧执行器表视图；新代码通过 stop() 和任务查询接口操作。
-- [\_TaskManager.\_check\_accepting](D:/Dev/AUTO-MAS/app/core/task_manager.py:105)：创建前检查停止全部屏障，并确认宿主已提供旧工厂或插件解析能力。
-- [async \_TaskManager.start](D:/Dev/AUTO-MAS/app/core/task_manager.py:112)：按模式、单入口要求树和触发原因创建普通任务，返回运行 UUID。
-- [async \_TaskManager.start\_maintenance](D:/Dev/AUTO-MAS/app/core/task_manager.py:131)：[兼容旧专项] 旧手动更新入口；普通任务使用 start()，新专项维护能力放在专项业务入口。
-- [async \_TaskManager.\_launch](D:/Dev/AUTO-MAS/app/core/task_manager.py:145)：L1：完整校验单入口要求树、建树和记时，随后登记、通知并启动 L2。
-- [async \_TaskManager.stop\_task](D:/Dev/AUTO-MAS/app/core/task_manager.py:324)：[兼容旧调用方] 停止方法旧名；新代码直接调用 stop()。
-- [async \_TaskManager.stop](D:/Dev/AUTO-MAS/app/core/task_manager.py:328)：停止指定任务或 ALL，并等待对应执行器完成收尾。
-- [\_TaskManager.\_prune\_recent](D:/Dev/AUTO-MAS/app/core/task_manager.py:355)：按最旧记录优先清理最近终态，最多保留 200 项及结束后 30 分钟。
-- [\_TaskManager.get\_task](D:/Dev/AUTO-MAS/app/core/task_manager.py:366)：按运行 UUID 查询完整任务树，包含全部日志；找不到时返回 None。
-- [\_TaskManager.get\_task\_status](D:/Dev/AUTO-MAS/app/core/task_manager.py:381)：从完整任务树生成轻量状态响应，将 pending 映射为 running。
-- [\_TaskManager.get\_runtime\_snapshot](D:/Dev/AUTO-MAS/app/core/task_manager.py:398)：组装初次连接或重连快照：普通运行任务及完整日志基线。
-- [async \_TaskManager.drop](D:/Dev/AUTO-MAS/app/core/task_manager.py:432)：顶层 ended 后注销同一执行器、清理日志游标并缓存完整终态。
+- [\_TaskManager.\_\_init\_\_](../app/core/task_manager.py:55)：初始化执行能力、运行登记、终态缓存，以及创建与停止全部的同步状态。
+- [\_TaskManager.bind\_manager\_factories](../app/core/task_manager.py:71)：[兼容旧专项] 仅供现有宿主绑定旧 manager 工厂；新插件执行能力接入 L3/L4。
+- [property \_TaskManager.task\_info](../app/core/task_manager.py:84)：[兼容旧调用方] 旧运行表视图；新查询使用 get_task() 或 get_runtime_snapshot()。
+- [property \_TaskManager.task\_handler](../app/core/task_manager.py:98)：[兼容旧调用方] 旧执行器表视图；新代码通过 stop() 和任务查询接口操作。
+- [\_TaskManager.\_check\_accepting](../app/core/task_manager.py:105)：创建前检查停止全部屏障，并确认宿主已提供旧工厂或插件解析能力。
+- [async \_TaskManager.start](../app/core/task_manager.py:112)：按模式、单入口要求树和触发原因创建普通任务，返回运行 UUID。
+- [async \_TaskManager.start\_maintenance](../app/core/task_manager.py:131)：[兼容旧专项] 旧手动更新入口；普通任务使用 start()，新专项维护能力放在专项业务入口。
+- [async \_TaskManager.\_launch](../app/core/task_manager.py:145)：L1：完整校验单入口要求树、建树和记时，随后登记、通知并启动 L2。
+- [async \_TaskManager.stop\_task](../app/core/task_manager.py:324)：[兼容旧调用方] 停止方法旧名；新代码直接调用 stop()。
+- [async \_TaskManager.stop](../app/core/task_manager.py:328)：停止指定任务或 ALL，并等待对应执行器完成收尾。
+- [\_TaskManager.\_prune\_recent](../app/core/task_manager.py:355)：按最旧记录优先清理最近终态，最多保留 200 项及结束后 30 分钟。
+- [\_TaskManager.get\_task](../app/core/task_manager.py:366)：按运行 UUID 查询完整任务树，包含全部日志；找不到时返回 None。
+- [\_TaskManager.get\_task\_status](../app/core/task_manager.py:381)：从完整任务树生成轻量状态响应，将 pending 映射为 running。
+- [\_TaskManager.get\_runtime\_snapshot](../app/core/task_manager.py:398)：组装初次连接或重连快照：普通运行任务及完整日志基线。
+- [async \_TaskManager.drop](../app/core/task_manager.py:432)：顶层 ended 后注销同一执行器、清理日志游标并缓存完整终态。
 
 ### app/task/lifecycle.py
 
-- [TaskBase.\_\_init\_\_](D:/Dev/AUTO-MAS/app/task/lifecycle.py:55)：初始化顶层句柄、唯一 finalizer、error/cancelled 和 accomplish。
-- [async TaskBase.main\_task](D:/Dev/AUTO-MAS/app/task/lifecycle.py:63)：抽象主流程，具体层必须实现。
-- [async TaskBase.final\_task](D:/Dev/AUTO-MAS/app/task/lifecycle.py:66)：可覆盖的生命周期收尾钩子，不自带业务配置恢复策略。
-- [async TaskBase.on\_crash](D:/Dev/AUTO-MAS/app/task/lifecycle.py:69)：默认记录未处理异常，并保护记录动作本身。
-- [property TaskBase.running](D:/Dev/AUTO-MAS/app/task/lifecycle.py:77)：判断 start 创建的顶层 Task 是否仍未结束。
-- [TaskBase.start](D:/Dev/AUTO-MAS/app/task/lifecycle.py:80)：重置本轮控制状态，create_task(run) 派发顶层任务，运行中重复启动报错。
-- [async TaskBase.spawn](D:/Dev/AUTO-MAS/app/task/lifecycle.py:90)：同 asyncio Task 内直接 await child.run，子任务完整收尾结束才返回。
-- [async TaskBase.run](D:/Dev/AUTO-MAS/app/task/lifecycle.py:98)：执行 main_task，区分取消和普通异常，finally 等收尾。
-- [async TaskBase.\_finalize](D:/Dev/AUTO-MAS/app/task/lifecycle.py:111)：执行 final_task、处理普通收尾异常，顶层发 ended，最后设置 accomplish。
-- [async TaskBase.\_wait\_finalizer](D:/Dev/AUTO-MAS/app/task/lifecycle.py:127)：只创建一次收尾 Task，用 shield 抵挡等待者的重复取消，收尾结束后再传播取消。
-- [async TaskBase.stop](D:/Dev/AUTO-MAS/app/task/lifecycle.py:140)：取消并等待顶层 Task；尚未进入 run 就取消时也补齐收尾。
+- [TaskBase.\_\_init\_\_](../app/task/lifecycle.py:55)：初始化顶层句柄、唯一 finalizer、error/cancelled 和 accomplish。
+- [async TaskBase.main\_task](../app/task/lifecycle.py:63)：抽象主流程，具体层必须实现。
+- [async TaskBase.final\_task](../app/task/lifecycle.py:66)：可覆盖的生命周期收尾钩子，不自带业务配置恢复策略。
+- [async TaskBase.on\_crash](../app/task/lifecycle.py:69)：默认记录未处理异常，并保护记录动作本身。
+- [property TaskBase.running](../app/task/lifecycle.py:77)：判断 start 创建的顶层 Task 是否仍未结束。
+- [TaskBase.start](../app/task/lifecycle.py:80)：重置本轮控制状态，create_task(run) 派发顶层任务，运行中重复启动报错。
+- [async TaskBase.spawn](../app/task/lifecycle.py:90)：同 asyncio Task 内直接 await child.run，子任务完整收尾结束才返回。
+- [async TaskBase.run](../app/task/lifecycle.py:98)：执行 main_task，区分取消和普通异常，finally 等收尾。
+- [async TaskBase.\_finalize](../app/task/lifecycle.py:111)：执行 final_task、处理普通收尾异常，顶层发 ended，最后设置 accomplish。
+- [async TaskBase.\_wait\_finalizer](../app/task/lifecycle.py:127)：只创建一次收尾 Task，用 shield 抵挡等待者的重复取消，收尾结束后再传播取消。
+- [async TaskBase.stop](../app/task/lifecycle.py:140)：取消并等待顶层 Task；尚未进入 run 就取消时也补齐收尾。
 
 ### app/task/context.py
 
-- [TaskContext.with\_params](D:/Dev/AUTO-MAS/app/task/context.py:15)：用 deepcopy 替换当前层 params，返回新上下文，不把父层参数隐式合并进来。
+- [TaskContext.with\_params](../app/task/context.py:15)：用 deepcopy 替换当前层 params，返回新上下文，不把父层参数隐式合并进来。
 
 ### app/task/script_expander.py
 
-- [ScriptExpander.\_\_init\_\_](D:/Dev/AUTO-MAS/app/task/script_expander.py:28)：持有 TaskItem、历史会话、报告协调器与当前旧 manager。
-- [async ScriptExpander.stop](D:/Dev/AUTO-MAS/app/task/script_expander.py:43)：在树中记录取消，停止接收回放采集并通知旧 manager，然后沿 TaskBase 取消与等待。
-- [async ScriptExpander.main\_task](D:/Dev/AUTO-MAS/app/task/script_expander.py:51)：在任务级遥测 span 内执行 _run_task。
-- [async ScriptExpander.\_run\_task](D:/Dev/AUTO-MAS/app/task/script_expander.py:66)：直接遍历根下托管，按星期条件跳过或派发；不按来源队列分段，汇总根终态。
-- [async ScriptExpander.\_run\_script](D:/Dev/AUTO-MAS/app/task/script_expander.py:111)：先检查托管存在性，再为插件取得非级联 X 锁；传已锁配置给 L3，等待完整收尾后归还；旧 manager 自持递归锁。
-- [async ScriptExpander.\_release\_script\_lock](D:/Dev/AUTO-MAS/app/task/script_expander.py:206)：归还 L2 当前仍持有的托管凭证并清空引用；正常路径和 final_task 共用。
-- [async ScriptExpander.on\_crash](D:/Dev/AUTO-MAS/app/task/script_expander.py:213)：给根标异常、发错误提示，再走基础日志兜底。
-- [async ScriptExpander.final\_task](D:/Dev/AUTO-MAS/app/task/script_expander.py:225)：兜底解锁、关闭历史、结清报告、发布不含正文的终态树与动态结果，记录原有统计。
+- [ScriptExpander.\_\_init\_\_](../app/task/script_expander.py:28)：持有 TaskItem、历史会话、报告协调器与当前旧 manager。
+- [async ScriptExpander.stop](../app/task/script_expander.py:43)：在树中记录取消，停止接收回放采集并通知旧 manager，然后沿 TaskBase 取消与等待。
+- [async ScriptExpander.main\_task](../app/task/script_expander.py:51)：在任务级遥测 span 内执行 _run_task。
+- [async ScriptExpander.\_run\_task](../app/task/script_expander.py:66)：直接遍历根下托管，按星期条件跳过或派发；不按来源队列分段，汇总根终态。
+- [async ScriptExpander.\_run\_script](../app/task/script_expander.py:111)：先检查托管存在性，再为插件取得非级联 X 锁；传已锁配置给 L3，等待完整收尾后归还；旧 manager 自持递归锁。
+- [async ScriptExpander.\_release\_script\_lock](../app/task/script_expander.py:206)：归还 L2 当前仍持有的托管凭证并清空引用；正常路径和 final_task 共用。
+- [async ScriptExpander.on\_crash](../app/task/script_expander.py:213)：给根标异常、发错误提示，再走基础日志兜底。
+- [async ScriptExpander.final\_task](../app/task/script_expander.py:225)：兜底解锁、关闭历史、结清报告、发布不含正文的终态树与动态结果，记录原有统计。
 
 ### app/task/user_expander.py
 
-- [\_UserLookup.get](D:/Dev/AUTO-MAS/app/task/user_expander.py:22)：只读用户查找契约；允许各具体 ConfigCollection 保留自己的用户类型。
-- [UserExpander.\_\_init\_\_](D:/Dev/AUTO-MAS/app/task/user_expander.py:26)：接收当前托管运行节点和 L2 已锁的热态托管配置。
-- [UserExpander.user\_collection](D:/Dev/AUTO-MAS/app/task/user_expander.py:39)：默认访问公开 UserData；保留真实插件声明配置访问的接入位置。
-- [UserExpander.resolve\_user](D:/Dev/AUTO-MAS/app/task/user_expander.py:43)：从已锁托管配置解析本用户，并核对创建时记录的对象身份。
-- [UserExpander.can\_run\_user](D:/Dev/AUTO-MAS/app/task/user_expander.py:52)：自动代理检查启用且剩余天数不为 0；配置/查看会话不做该筛选。
-- [async UserExpander.record\_user\_state](D:/Dev/AUTO-MAS/app/task/user_expander.py:57)：新增带原因的日志节点，并提交用户状态。
-- [async UserExpander.main\_task](D:/Dev/AUTO-MAS/app/task/user_expander.py:66)：执行托管检查和准备，逐用户先检查存在再取级联 X 锁，锁内复核准入并把已锁配置交 L4。
-- [async UserExpander.\_release\_user\_lock](D:/Dev/AUTO-MAS/app/task/user_expander.py:117)：归还 L3 当前仍持有的用户凭证并清空引用，不更新任务树锁字段。
-- [async UserExpander.check](D:/Dev/AUTO-MAS/app/task/user_expander.py:124)：可覆盖托管级检查，返回非空原因则中止该托管。
-- [async UserExpander.prepare](D:/Dev/AUTO-MAS/app/task/user_expander.py:128)：可覆盖托管级准备；主协程暂存应在该协程提交。
-- [UserExpander.build\_worker](D:/Dev/AUTO-MAS/app/task/user_expander.py:132)：按真实能力构造 L4，并显式传入已锁用户配置；共享目标传 None。
-- [async UserExpander.finish](D:/Dev/AUTO-MAS/app/task/user_expander.py:138)：可覆盖托管恢复与结果保存钩子，仍在持锁期。
-- [async UserExpander.on\_crash](D:/Dev/AUTO-MAS/app/task/user_expander.py:141)：提交托管异常和原因日志，基础层记录异常。
-- [async UserExpander.final\_task](D:/Dev/AUTO-MAS/app/task/user_expander.py:149)：插件恢复及游戏释放预留后，提交本收尾协程暂存并兜底释放用户锁；托管锁由 L2 释放。
+- [\_UserLookup.get](../app/task/user_expander.py:22)：只读用户查找契约；允许各具体 ConfigCollection 保留自己的用户类型。
+- [UserExpander.\_\_init\_\_](../app/task/user_expander.py:26)：接收当前托管运行节点和 L2 已锁的热态托管配置。
+- [UserExpander.user\_collection](../app/task/user_expander.py:39)：默认访问公开 UserData；保留真实插件声明配置访问的接入位置。
+- [UserExpander.resolve\_user](../app/task/user_expander.py:43)：从已锁托管配置解析本用户，并核对创建时记录的对象身份。
+- [UserExpander.can\_run\_user](../app/task/user_expander.py:52)：自动代理检查启用且剩余天数不为 0；配置/查看会话不做该筛选。
+- [async UserExpander.record\_user\_state](../app/task/user_expander.py:57)：新增带原因的日志节点，并提交用户状态。
+- [async UserExpander.main\_task](../app/task/user_expander.py:66)：执行托管检查和准备，逐用户先检查存在再取级联 X 锁，锁内复核准入并把已锁配置交 L4。
+- [async UserExpander.\_release\_user\_lock](../app/task/user_expander.py:117)：归还 L3 当前仍持有的用户凭证并清空引用，不更新任务树锁字段。
+- [async UserExpander.check](../app/task/user_expander.py:124)：可覆盖托管级检查，返回非空原因则中止该托管。
+- [async UserExpander.prepare](../app/task/user_expander.py:128)：可覆盖托管级准备；主协程暂存应在该协程提交。
+- [UserExpander.build\_worker](../app/task/user_expander.py:132)：按真实能力构造 L4，并显式传入已锁用户配置；共享目标传 None。
+- [async UserExpander.finish](../app/task/user_expander.py:138)：可覆盖托管恢复与结果保存钩子，仍在持锁期。
+- [async UserExpander.on\_crash](../app/task/user_expander.py:141)：提交托管异常和原因日志，基础层记录异常。
+- [async UserExpander.final\_task](../app/task/user_expander.py:149)：插件恢复及游戏释放预留后，提交本收尾协程暂存并兜底释放用户锁；托管锁由 L2 释放。
 
 ### app/task/mode_worker.py
 
-- [ModeWorker.\_\_init\_\_](D:/Dev/AUTO-MAS/app/task/mode_worker.py:20)：接收父 L3、用户运行节点及上层已锁用户配置，不再拥有票据。
-- [async ModeWorker.main\_task](D:/Dev/AUTO-MAS/app/task/mode_worker.py:32)：校验模式与已锁配置，设置用户进度，调用 check/prepare/main_logic。
-- [async ModeWorker.check](D:/Dev/AUTO-MAS/app/task/mode_worker.py:47)：可覆盖单用户检查，非空原因转异常。
-- [async ModeWorker.prepare](D:/Dev/AUTO-MAS/app/task/mode_worker.py:51)：可覆盖单用户脚本准备，修改须本协程提交。
-- [async ModeWorker.main\_logic](D:/Dev/AUTO-MAS/app/task/mode_worker.py:55)：抽象真实插件调用，负责给出用户结果并就地提交主流程修改。
-- [async ModeWorker.finish](D:/Dev/AUTO-MAS/app/task/mode_worker.py:58)：可覆盖锁内用户恢复和保存。
-- [async ModeWorker.on\_crash](D:/Dev/AUTO-MAS/app/task/mode_worker.py:61)：通过 L3 记录当前用户异常及日志。
-- [async ModeWorker.final\_task](D:/Dev/AUTO-MAS/app/task/mode_worker.py:70)：完成用户恢复并提交本收尾协程暂存，记录取消或校验结果；返回后由 L3 解锁。
+- [ModeWorker.\_\_init\_\_](../app/task/mode_worker.py:20)：接收父 L3、用户运行节点及上层已锁用户配置，不再拥有票据。
+- [async ModeWorker.main\_task](../app/task/mode_worker.py:32)：校验模式与已锁配置，设置用户进度，调用 check/prepare/main_logic。
+- [async ModeWorker.check](../app/task/mode_worker.py:47)：可覆盖单用户检查，非空原因转异常。
+- [async ModeWorker.prepare](../app/task/mode_worker.py:51)：可覆盖单用户脚本准备，修改须本协程提交。
+- [async ModeWorker.main\_logic](../app/task/mode_worker.py:55)：抽象真实插件调用，负责给出用户结果并就地提交主流程修改。
+- [async ModeWorker.finish](../app/task/mode_worker.py:58)：可覆盖锁内用户恢复和保存。
+- [async ModeWorker.on\_crash](../app/task/mode_worker.py:61)：通过 L3 记录当前用户异常及日志。
+- [async ModeWorker.final\_task](../app/task/mode_worker.py:70)：完成用户恢复并提交本收尾协程暂存，记录取消或校验结果；返回后由 L3 解锁。
 
 ### app/task/legacy.py
 
-- [async LegacyUserState.append\_push\_log](D:/Dev/AUTO-MAS/app/task/legacy.py:43)：[兼容旧专项] 旧通知素材追加接口；新代码将通知素材交通知业务层处理。
-- [LegacyCallbacks.\_\_init\_\_](D:/Dev/AUTO-MAS/app/task/legacy.py:53)：[兼容旧专项] 仅初始化旧回调桥；新执行树不创建独立的运行态提交消费者。
-- [LegacyCallbacks.submit](D:/Dev/AUTO-MAS/app/task/legacy.py:65)：[兼容旧专项] 旧回调排队接口；新执行树在产生暂存的同一协程中提交。
-- [async LegacyCallbacks.\_consume](D:/Dev/AUTO-MAS/app/task/legacy.py:99)：[兼容旧专项] 仅消费旧回调队列；新执行树直接 await 下层并就地提交。
-- [async LegacyCallbacks.drain](D:/Dev/AUTO-MAS/app/task/legacy.py:114)：[兼容旧专项] 仅等待旧回调桥结清；新执行树使用 TaskBase 的完整生命周期等待。
-- [async LegacyCallbacks.close](D:/Dev/AUTO-MAS/app/task/legacy.py:125)：[兼容旧专项] 仅关闭旧回调桥；新背景资源使用 BackgroundTaskManager 的任务组生命周期。
-- [maintenance\_requirements](D:/Dev/AUTO-MAS/app/task/legacy.py:133)：[兼容旧专项] 仅解析旧专项手动更新目标；新任务直接构造标准要求树。
-- [\_LegacyExecution.\_\_init\_\_](D:/Dev/AUTO-MAS/app/task/legacy.py:166)：[兼容旧专项] 仅关联旧执行器；新执行树直接初始化 TaskBase 子类。
-- [async \_LegacyExecution.main\_task](D:/Dev/AUTO-MAS/app/task/legacy.py:171)：[兼容旧专项] 仅桥接旧 _run_main_task；新执行器直接实现 TaskBase.main_task。
-- [async \_LegacyExecution.final\_task](D:/Dev/AUTO-MAS/app/task/legacy.py:175)：[兼容旧专项] 仅桥接旧收尾和回调排空；新执行器直接实现 TaskBase.final_task。
-- [async \_LegacyExecution.on\_crash](D:/Dev/AUTO-MAS/app/task/legacy.py:183)：[兼容旧专项] 仅桥接旧异常处理；新执行器直接实现 TaskBase.on_crash。
-- [TaskExecuteBase.\_\_init\_\_](D:/Dev/AUTO-MAS/app/task/legacy.py:197)：[兼容旧专项] 仅装配旧专项执行桥与私有状态；新执行树使用 TaskBase 和显式上下文。
-- [TaskExecuteBase.user\_state](D:/Dev/AUTO-MAS/app/task/legacy.py:208)：[兼容旧专项] 只读取旧专项私有素材；新代码不依赖此状态容器。
-- [property TaskExecuteBase.execution\_mode](D:/Dev/AUTO-MAS/app/task/legacy.py:213)：[兼容旧专项] 将 ScriptView／隐藏更新转换成旧模式；新代码直接使用 TaskMode。
-- [async TaskExecuteBase.send\_notice](D:/Dev/AUTO-MAS/app/task/legacy.py:220)：[兼容旧专项] 旧专项通知便捷入口；新代码使用所属业务层的既有通知能力。
-- [property TaskExecuteBase.task](D:/Dev/AUTO-MAS/app/task/legacy.py:231)：[兼容旧专项] 旧底层 asyncio Task 别名；新执行树通过 TaskBase 生命周期操作。
-- [property TaskExecuteBase.accomplish](D:/Dev/AUTO-MAS/app/task/legacy.py:236)：[兼容旧专项] 旧完成事件别名；新执行器使用自己的 TaskBase.accomplish。
-- [property TaskExecuteBase.stopped\_manually](D:/Dev/AUTO-MAS/app/task/legacy.py:241)：[兼容旧专项] 旧停止标记读取；新执行树使用 TaskBase.cancelled。
-- [setter TaskExecuteBase.stopped\_manually](D:/Dev/AUTO-MAS/app/task/legacy.py:250)：[兼容旧专项] 旧停止标记写入；新代码通过 TaskBase.stop() 请求中止。
-- [async TaskExecuteBase.main\_task](D:/Dev/AUTO-MAS/app/task/legacy.py:255)：[兼容旧专项] 旧专项主流程扩展点；新执行器直接实现 TaskBase.main_task。
-- [async TaskExecuteBase.final\_task](D:/Dev/AUTO-MAS/app/task/legacy.py:260)：[兼容旧专项] 旧专项收尾扩展点；新执行器直接实现 TaskBase.final_task。
-- [async TaskExecuteBase.on\_crash](D:/Dev/AUTO-MAS/app/task/legacy.py:265)：[兼容旧专项] 旧专项异常扩展点；新执行器直接实现 TaskBase.on_crash。
-- [async TaskExecuteBase.\_run\_main\_task](D:/Dev/AUTO-MAS/app/task/legacy.py:269)：[兼容旧专项] 旧主流程转接名；新代码直接实现 TaskBase.main_task。
-- [async TaskExecuteBase.\_finalize\_task](D:/Dev/AUTO-MAS/app/task/legacy.py:273)：[兼容旧专项] 旧收尾转接名；新代码直接实现 TaskBase.final_task。
-- [async TaskExecuteBase.\_execute\_task](D:/Dev/AUTO-MAS/app/task/legacy.py:277)：[兼容旧专项] 旧运行入口，parent_tg 仅保留签名；新代码使用 TaskBase.run() 或父层 spawn()。
-- [async TaskExecuteBase.\_run\_final\_task](D:/Dev/AUTO-MAS/app/task/legacy.py:281)：[兼容旧专项] 旧收尾等待入口；新代码通过 TaskBase.run()/stop() 等待完整生命周期。
-- [async TaskExecuteBase.spawn](D:/Dev/AUTO-MAS/app/task/legacy.py:285)：[兼容旧专项] 旧子任务上下文转接；新层级通过 TaskBase.spawn() 派发并显式传入上下文。
-- [TaskExecuteBase.execute](D:/Dev/AUTO-MAS/app/task/legacy.py:303)：[兼容旧专项] 旧启动方法名；新顶层执行器使用 TaskBase.start()。
-- [async TaskExecuteBase.stop](D:/Dev/AUTO-MAS/app/task/legacy.py:307)：[兼容旧专项] 旧停止接口；新执行器直接使用 TaskBase.stop()。
-- [TaskExecuteBase.\_on\_finalize\_cancel\_requested](D:/Dev/AUTO-MAS/app/task/legacy.py:313)：[兼容旧专项] 旧专项取消钩子；新执行树在所属层响应取消并由 final_task 收尾。
-- [TaskExecuteBase.is\_log\_stalled](D:/Dev/AUTO-MAS/app/task/legacy.py:317)：[兼容旧专项] 旧专项日志停滞判断；新执行树的超时策略归相应业务层。
+- [async LegacyUserState.append\_push\_log](../app/task/legacy.py:43)：[兼容旧专项] 旧通知素材追加接口；新代码将通知素材交通知业务层处理。
+- [LegacyCallbacks.\_\_init\_\_](../app/task/legacy.py:53)：[兼容旧专项] 仅初始化旧回调桥；新执行树不创建独立的运行态提交消费者。
+- [LegacyCallbacks.submit](../app/task/legacy.py:65)：[兼容旧专项] 旧回调排队接口；新执行树在产生暂存的同一协程中提交。
+- [async LegacyCallbacks.\_consume](../app/task/legacy.py:99)：[兼容旧专项] 仅消费旧回调队列；新执行树直接 await 下层并就地提交。
+- [async LegacyCallbacks.drain](../app/task/legacy.py:114)：[兼容旧专项] 仅等待旧回调桥结清；新执行树使用 TaskBase 的完整生命周期等待。
+- [async LegacyCallbacks.close](../app/task/legacy.py:125)：[兼容旧专项] 仅关闭旧回调桥；新背景资源使用 BackgroundTaskManager 的任务组生命周期。
+- [maintenance\_requirements](../app/task/legacy.py:133)：[兼容旧专项] 仅解析旧专项手动更新目标；新任务直接构造标准要求树。
+- [\_LegacyExecution.\_\_init\_\_](../app/task/legacy.py:166)：[兼容旧专项] 仅关联旧执行器；新执行树直接初始化 TaskBase 子类。
+- [async \_LegacyExecution.main\_task](../app/task/legacy.py:171)：[兼容旧专项] 仅桥接旧 _run_main_task；新执行器直接实现 TaskBase.main_task。
+- [async \_LegacyExecution.final\_task](../app/task/legacy.py:175)：[兼容旧专项] 仅桥接旧收尾和回调排空；新执行器直接实现 TaskBase.final_task。
+- [async \_LegacyExecution.on\_crash](../app/task/legacy.py:183)：[兼容旧专项] 仅桥接旧异常处理；新执行器直接实现 TaskBase.on_crash。
+- [TaskExecuteBase.\_\_init\_\_](../app/task/legacy.py:197)：[兼容旧专项] 仅装配旧专项执行桥与私有状态；新执行树使用 TaskBase 和显式上下文。
+- [TaskExecuteBase.user\_state](../app/task/legacy.py:208)：[兼容旧专项] 只读取旧专项私有素材；新代码不依赖此状态容器。
+- [property TaskExecuteBase.execution\_mode](../app/task/legacy.py:213)：[兼容旧专项] 将 ScriptView／隐藏更新转换成旧模式；新代码直接使用 TaskMode。
+- [async TaskExecuteBase.send\_notice](../app/task/legacy.py:220)：[兼容旧专项] 旧专项通知便捷入口；新代码使用所属业务层的既有通知能力。
+- [property TaskExecuteBase.task](../app/task/legacy.py:231)：[兼容旧专项] 旧底层 asyncio Task 别名；新执行树通过 TaskBase 生命周期操作。
+- [property TaskExecuteBase.accomplish](../app/task/legacy.py:236)：[兼容旧专项] 旧完成事件别名；新执行器使用自己的 TaskBase.accomplish。
+- [property TaskExecuteBase.stopped\_manually](../app/task/legacy.py:241)：[兼容旧专项] 旧停止标记读取；新执行树使用 TaskBase.cancelled。
+- [setter TaskExecuteBase.stopped\_manually](../app/task/legacy.py:250)：[兼容旧专项] 旧停止标记写入；新代码通过 TaskBase.stop() 请求中止。
+- [async TaskExecuteBase.main\_task](../app/task/legacy.py:255)：[兼容旧专项] 旧专项主流程扩展点；新执行器直接实现 TaskBase.main_task。
+- [async TaskExecuteBase.final\_task](../app/task/legacy.py:260)：[兼容旧专项] 旧专项收尾扩展点；新执行器直接实现 TaskBase.final_task。
+- [async TaskExecuteBase.on\_crash](../app/task/legacy.py:265)：[兼容旧专项] 旧专项异常扩展点；新执行器直接实现 TaskBase.on_crash。
+- [async TaskExecuteBase.\_run\_main\_task](../app/task/legacy.py:269)：[兼容旧专项] 旧主流程转接名；新代码直接实现 TaskBase.main_task。
+- [async TaskExecuteBase.\_finalize\_task](../app/task/legacy.py:273)：[兼容旧专项] 旧收尾转接名；新代码直接实现 TaskBase.final_task。
+- [async TaskExecuteBase.\_execute\_task](../app/task/legacy.py:277)：[兼容旧专项] 旧运行入口，parent_tg 仅保留签名；新代码使用 TaskBase.run() 或父层 spawn()。
+- [async TaskExecuteBase.\_run\_final\_task](../app/task/legacy.py:281)：[兼容旧专项] 旧收尾等待入口；新代码通过 TaskBase.run()/stop() 等待完整生命周期。
+- [async TaskExecuteBase.spawn](../app/task/legacy.py:285)：[兼容旧专项] 旧子任务上下文转接；新层级通过 TaskBase.spawn() 派发并显式传入上下文。
+- [TaskExecuteBase.execute](../app/task/legacy.py:303)：[兼容旧专项] 旧启动方法名；新顶层执行器使用 TaskBase.start()。
+- [async TaskExecuteBase.stop](../app/task/legacy.py:307)：[兼容旧专项] 旧停止接口；新执行器直接使用 TaskBase.stop()。
+- [TaskExecuteBase.\_on\_finalize\_cancel\_requested](../app/task/legacy.py:313)：[兼容旧专项] 旧专项取消钩子；新执行树在所属层响应取消并由 final_task 收尾。
+- [TaskExecuteBase.is\_log\_stalled](../app/task/legacy.py:317)：[兼容旧专项] 旧专项日志停滞判断；新执行树的超时策略归相应业务层。
 
 ### app/models/task.py
 
-- [async RuntimeEntry.set\_state](D:/Dev/AUTO-MAS/app/models/task.py:74)：需要时激活节点，按 info 字段赋值后 await commit。
-- [property RuntimeEntry.task\_info](D:/Dev/AUTO-MAS/app/models/task.py:83)：[兼容旧专项] 旧任务根别名；新代码通过 root 或执行层显式上下文获取任务根。
-- [property RuntimeEntry.name](D:/Dev/AUTO-MAS/app/models/task.py:88)：[兼容旧专项] 旧平铺名称；新代码读取具体节点的 info.name。
-- [property RuntimeEntry.status](D:/Dev/AUTO-MAS/app/models/task.py:94)：[兼容旧专项] 旧平铺状态；新代码读取具体节点的 info.status。
-- [property RuntimeEntry.result](D:/Dev/AUTO-MAS/app/models/task.py:100)：[兼容旧专项] 旧平铺结果；新代码读取具体节点的 info.result。
-- [LogRecord.\_\_init\_\_](D:/Dev/AUTO-MAS/app/models/task.py:117)：[兼容旧专项] 旧平铺日志构造参数；新代码使用 info 分组载荷或 logs.add()。
-- [async LogRecord.append\_content](D:/Dev/AUTO-MAS/app/models/task.py:133)：在短事务中复制追加日志行并提交整字段。
-- [property LogRecord.content](D:/Dev/AUTO-MAS/app/models/task.py:138)：[兼容旧专项] 旧正文别名；新代码读取 info.content，追加使用 append_content()。
-- [property LogRecord.phase](D:/Dev/AUTO-MAS/app/models/task.py:143)：[兼容旧专项] 旧阶段别名；新代码读取 info.phase。
-- [TaskUserItem.\_\_init\_\_](D:/Dev/AUTO-MAS/app/models/task.py:162)：[兼容旧专项] 旧平铺用户构造及 Default 归一；新代码使用 info 载荷和 default。
-- [TaskUserItem.iter\_history\_logs](D:/Dev/AUTO-MAS/app/models/task.py:180)：[兼容旧专项] 旧按本地时间读取日志的投影；新代码遍历 logs 并读取各记录的 info。
-- [async TaskUserItem.add\_log\_record](D:/Dev/AUTO-MAS/app/models/task.py:186)：[兼容旧专项] 旧时间加记录的登记签名；新代码使用 logs.add(LogRecord, payload=...) 后提交。
-- [TaskUserItem.compute\_result](D:/Dev/AUTO-MAS/app/models/task.py:197)：由日志轮次时间和状态计算虚拟用户结果。
-- [property TaskUserItem.user\_id](D:/Dev/AUTO-MAS/app/models/task.py:206)：[兼容旧专项] 旧用户标识及 Default 大小写；新代码读取 info.user_id，使用 default。
-- [property TaskUserItem.log\_record](D:/Dev/AUTO-MAS/app/models/task.py:211)：[兼容旧专项] 旧按时间索引的日志字典；新代码使用有序 logs 集合和运行 UUID。
-- [TaskScriptItem.\_\_init\_\_](D:/Dev/AUTO-MAS/app/models/task.py:237)：[兼容旧专项] 旧平铺托管构造参数；新代码使用 info 分组载荷。
-- [async TaskScriptItem.set\_current\_index](D:/Dev/AUTO-MAS/app/models/task.py:253)：[兼容旧专项] 旧整数位置转运行 UUID；新代码设置 current.index 为用户运行 UUID 后提交。
-- [async TaskScriptItem.set\_users](D:/Dev/AUTO-MAS/app/models/task.py:258)：[兼容旧专项] 仅旧 manager 可重建用户列表；新执行链消费 L1 固定的 users 快照。
-- [async TaskScriptItem.set\_log](D:/Dev/AUTO-MAS/app/models/task.py:281)：[兼容旧专项] 旧托管字符串日志写法；新代码写当前 LogRecord，流程日志按 current.log 提交。
-- [async TaskScriptItem.append\_log](D:/Dev/AUTO-MAS/app/models/task.py:286)：[兼容旧专项] 旧托管字符串日志追加；新代码追加当前 LogRecord 的按行正文。
-- [TaskScriptItem.compute\_result](D:/Dev/AUTO-MAS/app/models/task.py:291)：由各用户虚拟结果拼成托管虚拟结果。
-- [property TaskScriptItem.script\_id](D:/Dev/AUTO-MAS/app/models/task.py:300)：[兼容旧专项] 旧平铺配置 ID；新代码读取 info.script_id，运行身份使用 uid。
-- [property TaskScriptItem.script\_type](D:/Dev/AUTO-MAS/app/models/task.py:305)：[兼容旧专项] 旧平铺类型；新代码读取 info.script_type。
-- [property TaskScriptItem.user\_list](D:/Dev/AUTO-MAS/app/models/task.py:310)：[兼容旧专项] 旧列表投影；新代码使用 users 有序集合。
-- [property TaskScriptItem.current\_index](D:/Dev/AUTO-MAS/app/models/task.py:315)：[兼容旧专项] 旧整数进度位置；新代码使用 current.index 的用户运行 UUID。
-- [property TaskScriptItem.log](D:/Dev/AUTO-MAS/app/models/task.py:323)：[兼容旧专项] 旧字符串日志别名；新代码根据当前来源读取日志记录或 current.log。
-- [TaskItem.clear\_log\_cursor](D:/Dev/AUTO-MAS/app/models/task.py:355)：清理已发送日志的私有基线，保留完整运行树正文。
-- [TaskItem.get\_log\_snapshot](D:/Dev/AUTO-MAS/app/models/task.py:360)：查询完整日志；只有当前来源与已发基线相符才提供可追加序号。
-- [TaskItem.get\_update](D:/Dev/AUTO-MAS/app/models/task.py:381)：按 effective 配置分组和有序集合生成不含正文的元数据投影。
-- [async TaskItem.set\_current\_index](D:/Dev/AUTO-MAS/app/models/task.py:428)：[兼容旧专项] 旧整数位置转运行 UUID；新代码设置 current.index 为托管运行 UUID 后提交。
-- [property TaskItem.instance\_idx](D:/Dev/AUTO-MAS/app/models/task.py:434)：[兼容旧专项] 旧平铺启动参数；新代码从对应托管 info.params 或执行上下文读取。
-- [TaskItem.is\_target\_user](D:/Dev/AUTO-MAS/app/models/task.py:445)：[兼容旧专项] 供旧 manager 再展开时筛选；新 L3 直接派发 L1 已选定的用户运行节点。
-- [TaskItem.compute\_result](D:/Dev/AUTO-MAS/app/models/task.py:457)：直接遍历根的托管集合，动态汇总用户数量和托管结果。
-- [TaskItem.current\_log\_source](D:/Dev/AUTO-MAS/app/models/task.py:475)：按运行指针找到当前用户最近日志，缺少用户日志时回退至当前托管流程日志。
-- [TaskItem.compute\_log](D:/Dev/AUTO-MAS/app/models/task.py:485)：读取完整当前日志正文，不按行数或字符数截尾。
-- [property TaskItem.mode](D:/Dev/AUTO-MAS/app/models/task.py:492)：[兼容旧专项] 旧平铺模式别名；新代码使用 info.mode 的 TaskMode 枚举。
-- [property TaskItem.task\_id](D:/Dev/AUTO-MAS/app/models/task.py:497)：[兼容旧调用方] 旧字符串任务 ID 投影；新代码以 uid 保存身份，在接口边界转字符串。
-- [property TaskItem.view\_only](D:/Dev/AUTO-MAS/app/models/task.py:502)：[兼容旧专项] 旧查看开关；新代码比较 info.mode 与 TaskMode.SCRIPT_VIEW。
-- [property TaskItem.script\_list](D:/Dev/AUTO-MAS/app/models/task.py:507)：[兼容旧专项] 旧托管列表投影；新代码使用 scripts 有序集合。
-- [property TaskItem.current\_index](D:/Dev/AUTO-MAS/app/models/task.py:512)：[兼容旧专项] 旧整数进度位置；新代码使用 current.index 的托管运行 UUID。
-- [property TaskItem.script\_id](D:/Dev/AUTO-MAS/app/models/task.py:524)：[兼容旧调用方] 首个托管的旧平铺 ID；新代码按 scripts 各运行节点读取 info.script_id。
-- [property TaskItem.current\_script\_id](D:/Dev/AUTO-MAS/app/models/task.py:529)：[兼容旧专项] 旧当前配置 ID 投影；新代码用 current.index 定位运行节点后读取 info。
-- [property TaskItem.user\_id](D:/Dev/AUTO-MAS/app/models/task.py:538)：[兼容旧调用方] 单目标会话的旧平铺用户 ID；新代码从目标用户运行节点读取 info.user_id。
-- [property TaskItem.notification\_state](D:/Dev/AUTO-MAS/app/models/task.py:549)：读取同一根私有持有的通知协调状态。
-- [property TaskItem.is\_queue\_task](D:/Dev/AUTO-MAS/app/models/task.py:553)：[兼容旧专项] 仅供旧专项次数策略识别队列项；新框架在所属层处理准入和执行条件。
-- [async \_info\_changed](D:/Dev/AUTO-MAS/app/models/task.py:570)：模型定义完成后直接声明的配置类订阅，按运行登记过滤、生成元数据并通过既有 Publisher 发送。
-- [async \_log\_changed](D:/Dev/AUTO-MAS/app/models/task.py:609)：模型定义完成后直接声明的配置类订阅，按私有行基线计算增量或替换，实际发送后推进游标。
-- [\_\_getattr\_\_](D:/Dev/AUTO-MAS/app/models/task.py:706)：[兼容旧专项] 仅保留 TaskExecuteBase 的旧导入路径；新执行器继承 app.task.lifecycle.TaskBase。
+- [async RuntimeEntry.set\_state](../app/models/task.py:74)：需要时激活节点，按 info 字段赋值后 await commit。
+- [property RuntimeEntry.task\_info](../app/models/task.py:83)：[兼容旧专项] 旧任务根别名；新代码通过 root 或执行层显式上下文获取任务根。
+- [property RuntimeEntry.name](../app/models/task.py:88)：[兼容旧专项] 旧平铺名称；新代码读取具体节点的 info.name。
+- [property RuntimeEntry.status](../app/models/task.py:94)：[兼容旧专项] 旧平铺状态；新代码读取具体节点的 info.status。
+- [property RuntimeEntry.result](../app/models/task.py:100)：[兼容旧专项] 旧平铺结果；新代码读取具体节点的 info.result。
+- [LogRecord.\_\_init\_\_](../app/models/task.py:117)：[兼容旧专项] 旧平铺日志构造参数；新代码使用 info 分组载荷或 logs.add()。
+- [async LogRecord.append\_content](../app/models/task.py:133)：在短事务中复制追加日志行并提交整字段。
+- [property LogRecord.content](../app/models/task.py:138)：[兼容旧专项] 旧正文别名；新代码读取 info.content，追加使用 append_content()。
+- [property LogRecord.phase](../app/models/task.py:143)：[兼容旧专项] 旧阶段别名；新代码读取 info.phase。
+- [TaskUserItem.\_\_init\_\_](../app/models/task.py:162)：[兼容旧专项] 旧平铺用户构造及 Default 归一；新代码使用 info 载荷和 default。
+- [TaskUserItem.iter\_history\_logs](../app/models/task.py:180)：[兼容旧专项] 旧按本地时间读取日志的投影；新代码遍历 logs 并读取各记录的 info。
+- [async TaskUserItem.add\_log\_record](../app/models/task.py:186)：[兼容旧专项] 旧时间加记录的登记签名；新代码使用 logs.add(LogRecord, payload=...) 后提交。
+- [TaskUserItem.compute\_result](../app/models/task.py:197)：由日志轮次时间和状态计算虚拟用户结果。
+- [property TaskUserItem.user\_id](../app/models/task.py:206)：[兼容旧专项] 旧用户标识及 Default 大小写；新代码读取 info.user_id，使用 default。
+- [property TaskUserItem.log\_record](../app/models/task.py:211)：[兼容旧专项] 旧按时间索引的日志字典；新代码使用有序 logs 集合和运行 UUID。
+- [TaskScriptItem.\_\_init\_\_](../app/models/task.py:237)：[兼容旧专项] 旧平铺托管构造参数；新代码使用 info 分组载荷。
+- [async TaskScriptItem.set\_current\_index](../app/models/task.py:253)：[兼容旧专项] 旧整数位置转运行 UUID；新代码设置 current.index 为用户运行 UUID 后提交。
+- [async TaskScriptItem.set\_users](../app/models/task.py:258)：[兼容旧专项] 仅旧 manager 可重建用户列表；新执行链消费 L1 固定的 users 快照。
+- [async TaskScriptItem.set\_log](../app/models/task.py:281)：[兼容旧专项] 旧托管字符串日志写法；新代码写当前 LogRecord，流程日志按 current.log 提交。
+- [async TaskScriptItem.append\_log](../app/models/task.py:286)：[兼容旧专项] 旧托管字符串日志追加；新代码追加当前 LogRecord 的按行正文。
+- [TaskScriptItem.compute\_result](../app/models/task.py:291)：由各用户虚拟结果拼成托管虚拟结果。
+- [property TaskScriptItem.script\_id](../app/models/task.py:300)：[兼容旧专项] 旧平铺配置 ID；新代码读取 info.script_id，运行身份使用 uid。
+- [property TaskScriptItem.script\_type](../app/models/task.py:305)：[兼容旧专项] 旧平铺类型；新代码读取 info.script_type。
+- [property TaskScriptItem.user\_list](../app/models/task.py:310)：[兼容旧专项] 旧列表投影；新代码使用 users 有序集合。
+- [property TaskScriptItem.current\_index](../app/models/task.py:315)：[兼容旧专项] 旧整数进度位置；新代码使用 current.index 的用户运行 UUID。
+- [property TaskScriptItem.log](../app/models/task.py:323)：[兼容旧专项] 旧字符串日志别名；新代码根据当前来源读取日志记录或 current.log。
+- [TaskItem.clear\_log\_cursor](../app/models/task.py:355)：清理已发送日志的私有基线，保留完整运行树正文。
+- [TaskItem.get\_log\_snapshot](../app/models/task.py:360)：查询完整日志；只有当前来源与已发基线相符才提供可追加序号。
+- [TaskItem.get\_update](../app/models/task.py:381)：按 effective 配置分组和有序集合生成不含正文的元数据投影。
+- [async TaskItem.set\_current\_index](../app/models/task.py:428)：[兼容旧专项] 旧整数位置转运行 UUID；新代码设置 current.index 为托管运行 UUID 后提交。
+- [property TaskItem.instance\_idx](../app/models/task.py:434)：[兼容旧专项] 旧平铺启动参数；新代码从对应托管 info.params 或执行上下文读取。
+- [TaskItem.is\_target\_user](../app/models/task.py:445)：[兼容旧专项] 供旧 manager 再展开时筛选；新 L3 直接派发 L1 已选定的用户运行节点。
+- [TaskItem.compute\_result](../app/models/task.py:457)：直接遍历根的托管集合，动态汇总用户数量和托管结果。
+- [TaskItem.current\_log\_source](../app/models/task.py:475)：按运行指针找到当前用户最近日志，缺少用户日志时回退至当前托管流程日志。
+- [TaskItem.compute\_log](../app/models/task.py:485)：读取完整当前日志正文，不按行数或字符数截尾。
+- [property TaskItem.mode](../app/models/task.py:492)：[兼容旧专项] 旧平铺模式别名；新代码使用 info.mode 的 TaskMode 枚举。
+- [property TaskItem.task\_id](../app/models/task.py:497)：[兼容旧调用方] 旧字符串任务 ID 投影；新代码以 uid 保存身份，在接口边界转字符串。
+- [property TaskItem.view\_only](../app/models/task.py:502)：[兼容旧专项] 旧查看开关；新代码比较 info.mode 与 TaskMode.SCRIPT_VIEW。
+- [property TaskItem.script\_list](../app/models/task.py:507)：[兼容旧专项] 旧托管列表投影；新代码使用 scripts 有序集合。
+- [property TaskItem.current\_index](../app/models/task.py:512)：[兼容旧专项] 旧整数进度位置；新代码使用 current.index 的托管运行 UUID。
+- [property TaskItem.script\_id](../app/models/task.py:524)：[兼容旧调用方] 首个托管的旧平铺 ID；新代码按 scripts 各运行节点读取 info.script_id。
+- [property TaskItem.current\_script\_id](../app/models/task.py:529)：[兼容旧专项] 旧当前配置 ID 投影；新代码用 current.index 定位运行节点后读取 info。
+- [property TaskItem.user\_id](../app/models/task.py:538)：[兼容旧调用方] 单目标会话的旧平铺用户 ID；新代码从目标用户运行节点读取 info.user_id。
+- [property TaskItem.notification\_state](../app/models/task.py:549)：读取同一根私有持有的通知协调状态。
+- [property TaskItem.is\_queue\_task](../app/models/task.py:553)：[兼容旧专项] 仅供旧专项次数策略识别队列项；新框架在所属层处理准入和执行条件。
+- [async \_info\_changed](../app/models/task.py:570)：模型定义完成后直接声明的配置类订阅，按运行登记过滤、生成元数据并通过既有 Publisher 发送。
+- [async \_log\_changed](../app/models/task.py:609)：模型定义完成后直接声明的配置类订阅，按私有行基线计算增量或替换，实际发送后推进游标。
+- [\_\_getattr\_\_](../app/models/task.py:706)：[兼容旧专项] 仅保留 TaskExecuteBase 的旧导入路径；新执行器继承 app.task.lifecycle.TaskBase。
 
 ### app/task/manager_base.py
 
-- [property UserRunSummary.uncompleted\_count](D:/Dev/AUTO-MAS/app/task/manager_base.py:40)：汇总失败和等待用户数。
-- [ScriptManagerBase.\_\_init\_\_](D:/Dev/AUTO-MAS/app/task/manager_base.py:57)：初始化维护全跳过标志、开始时间及实际执行过的用户集合。
-- [ScriptManagerBase.is\_user\_selected](D:/Dev/AUTO-MAS/app/task/manager_base.py:63)：[兼容旧专项] 旧 manager 重展开用户时筛选；新 L3 按固定运行节点在锁内复核准入。
-- [overload ScriptManagerBase.selected\_user\_configs](D:/Dev/AUTO-MAS/app/task/manager_base.py:72)：[兼容旧专项] 旧 manager 读取当前配置并重筛用户；新执行树不重新展开 L1 用户清单。
-- [overload ScriptManagerBase.selected\_user\_configs](D:/Dev/AUTO-MAS/app/task/manager_base.py:79)：[兼容旧专项] 旧 manager 读取当前配置并重筛用户；新执行树不重新展开 L1 用户清单。
-- [ScriptManagerBase.selected\_user\_configs](D:/Dev/AUTO-MAS/app/task/manager_base.py:85)：[兼容旧专项] 旧 manager 读取当前配置并重筛用户；新执行树不重新展开 L1 用户清单。
-- [ScriptManagerBase.build\_proxy\_user\_list](D:/Dev/AUTO-MAS/app/task/manager_base.py:100)：[兼容旧专项] 旧用户列表构造；新代码保留 L1 已生成的用户运行 UUID 与参数。
-- [ScriptManagerBase.collect\_user\_results](D:/Dev/AUTO-MAS/app/task/manager_base.py:111)：按专项声明的成功状态把用户分为完成/失败/等待/跳过/其他。
-- [property ScriptManagerBase.all\_users\_maintenance\_skipped](D:/Dev/AUTO-MAS/app/task/manager_base.py:130)：判断非空运行用户是否全因维护跳过。
-- [property ScriptManagerBase.has\_proxy\_run](D:/Dev/AUTO-MAS/app/task/manager_base.py:137)：判断是否实际进入过自动代理用户执行。
-- [ScriptManagerBase.record\_user\_run\_start](D:/Dev/AUTO-MAS/app/task/manager_base.py:140)：记录实际执行的原用户 ID。
-- [async ScriptManagerBase.run\_user\_task](D:/Dev/AUTO-MAS/app/task/manager_base.py:143)：记用户已开始，await 旧适配 spawn，等待完整用户收尾。
-- [ScriptManagerBase.build\_proxy\_report](D:/Dev/AUTO-MAS/app/task/manager_base.py:149)：按专项成功口径组装报告标题、时间、人数和已有结果文本。
-- [async ScriptManagerBase.\_record\_user\_result](D:/Dev/AUTO-MAS/app/task/manager_base.py:167)：记录用户跳过/异常、日志、脚本文本及任务提示。
-- [async ScriptManagerBase.skip\_user](D:/Dev/AUTO-MAS/app/task/manager_base.py:183)：设置维护标志后按跳过记录原因。
-- [async ScriptManagerBase.notify\_user\_check\_failure](D:/Dev/AUTO-MAS/app/task/manager_base.py:189)：保留专项已判跳过状态，必要时标异常并发检查失败提示。
-- [ScriptManagerBase.maintenance\_game](D:/Dev/AUTO-MAS/app/task/manager_base.py:195)：专项覆盖以声明用户所属游戏/区服公告对象，默认不查询。
-- [async ScriptManagerBase.update\_game\_before\_run](D:/Dev/AUTO-MAS/app/task/manager_base.py:199)：专项覆盖的既有游戏更新流程入口。
-- [async ScriptManagerBase.skip\_maintenance\_user](D:/Dev/AUTO-MAS/app/task/manager_base.py:202)：查公告维护并按维护跳过当前用户。
-- [async ScriptManagerBase.check\_user\_before\_run](D:/Dev/AUTO-MAS/app/task/manager_base.py:214)：自动代理逐用户复查公告及需手动更新的失败，其他执行模式直接放行。
-- [async ScriptManagerBase.notify\_maintenance](D:/Dev/AUTO-MAS/app/task/manager_base.py:235)：发送维护通知，通知失败只记警告。
-- [async ScriptManagerBase.\_run\_main\_task](D:/Dev/AUTO-MAS/app/task/manager_base.py:243)：[兼容旧专项] 旧 manager 主流程转接；新执行层按 TaskBase.main_task 实现。
+- [property UserRunSummary.uncompleted\_count](../app/task/manager_base.py:40)：汇总失败和等待用户数。
+- [ScriptManagerBase.\_\_init\_\_](../app/task/manager_base.py:57)：初始化维护全跳过标志、开始时间及实际执行过的用户集合。
+- [ScriptManagerBase.is\_user\_selected](../app/task/manager_base.py:63)：[兼容旧专项] 旧 manager 重展开用户时筛选；新 L3 按固定运行节点在锁内复核准入。
+- [overload ScriptManagerBase.selected\_user\_configs](../app/task/manager_base.py:72)：[兼容旧专项] 旧 manager 读取当前配置并重筛用户；新执行树不重新展开 L1 用户清单。
+- [overload ScriptManagerBase.selected\_user\_configs](../app/task/manager_base.py:79)：[兼容旧专项] 旧 manager 读取当前配置并重筛用户；新执行树不重新展开 L1 用户清单。
+- [ScriptManagerBase.selected\_user\_configs](../app/task/manager_base.py:85)：[兼容旧专项] 旧 manager 读取当前配置并重筛用户；新执行树不重新展开 L1 用户清单。
+- [ScriptManagerBase.build\_proxy\_user\_list](../app/task/manager_base.py:100)：[兼容旧专项] 旧用户列表构造；新代码保留 L1 已生成的用户运行 UUID 与参数。
+- [ScriptManagerBase.collect\_user\_results](../app/task/manager_base.py:111)：按专项声明的成功状态把用户分为完成/失败/等待/跳过/其他。
+- [property ScriptManagerBase.all\_users\_maintenance\_skipped](../app/task/manager_base.py:130)：判断非空运行用户是否全因维护跳过。
+- [property ScriptManagerBase.has\_proxy\_run](../app/task/manager_base.py:137)：判断是否实际进入过自动代理用户执行。
+- [ScriptManagerBase.record\_user\_run\_start](../app/task/manager_base.py:140)：记录实际执行的原用户 ID。
+- [async ScriptManagerBase.run\_user\_task](../app/task/manager_base.py:143)：记用户已开始，await 旧适配 spawn，等待完整用户收尾。
+- [ScriptManagerBase.build\_proxy\_report](../app/task/manager_base.py:149)：按专项成功口径组装报告标题、时间、人数和已有结果文本。
+- [async ScriptManagerBase.\_record\_user\_result](../app/task/manager_base.py:167)：记录用户跳过/异常、日志、脚本文本及任务提示。
+- [async ScriptManagerBase.skip\_user](../app/task/manager_base.py:183)：设置维护标志后按跳过记录原因。
+- [async ScriptManagerBase.notify\_user\_check\_failure](../app/task/manager_base.py:189)：保留专项已判跳过状态，必要时标异常并发检查失败提示。
+- [ScriptManagerBase.maintenance\_game](../app/task/manager_base.py:195)：专项覆盖以声明用户所属游戏/区服公告对象，默认不查询。
+- [async ScriptManagerBase.update\_game\_before\_run](../app/task/manager_base.py:199)：专项覆盖的既有游戏更新流程入口。
+- [async ScriptManagerBase.skip\_maintenance\_user](../app/task/manager_base.py:202)：查公告维护并按维护跳过当前用户。
+- [async ScriptManagerBase.check\_user\_before\_run](../app/task/manager_base.py:214)：自动代理逐用户复查公告及需手动更新的失败，其他执行模式直接放行。
+- [async ScriptManagerBase.notify\_maintenance](../app/task/manager_base.py:235)：发送维护通知，通知失败只记警告。
+- [async ScriptManagerBase.\_run\_main\_task](../app/task/manager_base.py:243)：[兼容旧专项] 旧 manager 主流程转接；新执行层按 TaskBase.main_task 实现。
 
 ### app/task/base.py
 
-- [\_running\_inflight\_detection](D:/Dev/AUTO-MAS/app/task/base.py:37)：回收完成的维护检测任务、取回异常；返回同事件循环内仍在途检测。
-- [ScriptAutoProxyBase.\_on\_finalize\_cancel\_requested](D:/Dev/AUTO-MAS/app/task/base.py:75)：[兼容旧专项] 仅桥接旧专项取消；新执行器在所属层响应取消。
-- [property ScriptAutoProxyBase.run\_timeout\_seconds](D:/Dev/AUTO-MAS/app/task/base.py:102)：将当前专项 HardTimeLimit 分钟转换为秒。
-- [async ScriptAutoProxyBase.run\_user\_scripts\_before](D:/Dev/AUTO-MAS/app/task/base.py:105)：每用户一次执行前置脚本，并标记后置配对责任。
-- [async ScriptAutoProxyBase.run\_user\_scripts\_after](D:/Dev/AUTO-MAS/app/task/base.py:115)：前置已经进入时只执行一次后置脚本，失败写提示而非重新执行用户。
-- [async ScriptAutoProxyBase.skip\_on\_game\_maintenance](D:/Dev/AUTO-MAS/app/task/base.py:134)：调用单次画面检测，命中则记录维护跳过并通知。
-- [async ScriptAutoProxyBase.\_detect\_game\_maintenance](D:/Dev/AUTO-MAS/app/task/base.py:158)：同脚本仅允许一个在途线程检测；15 秒超时放弃等待，实际线程继续持有句柄。
-- [async ScriptAutoProxyBase.notify\_maintenance\_skip](D:/Dev/AUTO-MAS/app/task/base.py:186)：发布维护跳过通知，失败不改变跳过结论。
-- [async ScriptAutoProxyBase.watch\_game\_maintenance](D:/Dev/AUTO-MAS/app/task/base.py:195)：后台周期检测并连续命中确认，写原因后置停止 Event；最终结论由专项主流程消费。
-- [async ScriptAutoProxyBase.clear\_maintenance\_hit](D:/Dev/AUTO-MAS/app/task/base.py:241)：已成功时清除晚到维护标志，避免覆盖成功。
-- [async ScriptAutoProxyBase.\_finalize\_task](D:/Dev/AUTO-MAS/app/task/base.py:246)：[兼容旧专项] 旧收尾方法名；新执行器在 TaskBase.final_task 完成所属资源恢复。
-- [async ScriptAutoProxyBase.\_run\_main\_task](D:/Dev/AUTO-MAS/app/task/base.py:260)：[兼容旧专项] 旧主流程加超时保护；新 L4 的业务超时在执行器所属层实现。
+- [\_running\_inflight\_detection](../app/task/base.py:37)：回收完成的维护检测任务、取回异常；返回同事件循环内仍在途检测。
+- [ScriptAutoProxyBase.\_on\_finalize\_cancel\_requested](../app/task/base.py:75)：[兼容旧专项] 仅桥接旧专项取消；新执行器在所属层响应取消。
+- [property ScriptAutoProxyBase.run\_timeout\_seconds](../app/task/base.py:102)：将当前专项 HardTimeLimit 分钟转换为秒。
+- [async ScriptAutoProxyBase.run\_user\_scripts\_before](../app/task/base.py:105)：每用户一次执行前置脚本，并标记后置配对责任。
+- [async ScriptAutoProxyBase.run\_user\_scripts\_after](../app/task/base.py:115)：前置已经进入时只执行一次后置脚本，失败写提示而非重新执行用户。
+- [async ScriptAutoProxyBase.skip\_on\_game\_maintenance](../app/task/base.py:134)：调用单次画面检测，命中则记录维护跳过并通知。
+- [async ScriptAutoProxyBase.\_detect\_game\_maintenance](../app/task/base.py:158)：同脚本仅允许一个在途线程检测；15 秒超时放弃等待，实际线程继续持有句柄。
+- [async ScriptAutoProxyBase.notify\_maintenance\_skip](../app/task/base.py:186)：发布维护跳过通知，失败不改变跳过结论。
+- [async ScriptAutoProxyBase.watch\_game\_maintenance](../app/task/base.py:195)：后台周期检测并连续命中确认，写原因后置停止 Event；最终结论由专项主流程消费。
+- [async ScriptAutoProxyBase.clear\_maintenance\_hit](../app/task/base.py:241)：已成功时清除晚到维护标志，避免覆盖成功。
+- [async ScriptAutoProxyBase.\_finalize\_task](../app/task/base.py:246)：[兼容旧专项] 旧收尾方法名；新执行器在 TaskBase.final_task 完成所属资源恢复。
+- [async ScriptAutoProxyBase.\_run\_main\_task](../app/task/base.py:260)：[兼容旧专项] 旧主流程加超时保护；新 L4 的业务超时在执行器所属层实现。
 
 ### app/task/registration.py
 
-- [build\_script\_capabilities](D:/Dev/AUTO-MAS/app/task/registration.py:65)：校验配置与运行类型登记唯一及完整性，创建只读工厂映射、配置 handler 和恢复解析器。
+- [build\_script\_capabilities](../app/task/registration.py:65)：校验配置与运行类型登记唯一及完整性，创建只读工厂映射、配置 handler 和恢复解析器。
 
 ### app/task/builtin_registration.py
 
-- [build\_builtin\_script\_capabilities](D:/Dev/AUTO-MAS/app/task/builtin_registration.py:31)：正式宿主显式导入内建专项声明，绑定本次服务依赖并构造三份能力索引。
+- [build\_builtin\_script\_capabilities](../app/task/builtin_registration.py:31)：正式宿主显式导入内建专项声明，绑定本次服务依赖并构造三份能力索引。
 
 ### app/core/notify/lifecycle.py
 
-- [async NotificationTaskBase.lock\_script\_config](D:/Dev/AUTO-MAS/app/core/notify/lifecycle.py:19)：[兼容旧专项] 仅旧 manager 取递归锁；新 L2 取托管非级联 X 锁，L3 取用户级联 X 锁。
+- [async NotificationTaskBase.lock\_script\_config](../app/core/notify/lifecycle.py:19)：[兼容旧专项] 仅旧 manager 取递归锁；新 L2 取托管非级联 X 锁，L3 取用户级联 X 锁。
 
 ### app/models/schema.py
 
-- [TaskSelectionNode.validate\_indices](D:/Dev/AUTO-MAS/app/models/schema.py:48)：逐层要求 children 是按顺序从 0 连续递增的索引字典。
+- [TaskSelectionNode.validate\_indices](../app/models/schema.py:48)：逐层要求 children 是按顺序从 0 连续递增的索引字典。
 
 ### app/models/config/queue.py
 
-- [TimeSet.time\_visibility](D:/Dev/AUTO-MAS/app/models/config/queue.py:145)：有父队列时按 TimeEnabled 禁用整组，未挂父级时正常展示。
-- [QueueConfig.next\_cycle\_run](D:/Dev/AUTO-MAS/app/models/config/queue.py:264)：由 LastRunAt 和 IntervalMinutes 计算虚拟下次触发，无上次时间返回 None。
-- [QueueConfig.cycle\_visibility](D:/Dev/AUTO-MAS/app/models/config/queue.py:272)：按 CycleEnabled 决定整组可编辑或禁用。
-- [async QueueConfig.reset\_cycle\_timer](D:/Dev/AUTO-MAS/app/models/config/queue.py:276)：Trigger 回调将 LastRunAt 设为本地现在，并在本协程提交。
-- [QueueConfig.normalize\_payload](D:/Dev/AUTO-MAS/app/models/config/queue.py:284)：兼容旧 StartUpEnabled 布尔字段，缺少 StartUpMode 时转换为 Always/Never。
-- [reject\_disabled\_time\_writes](D:/Dev/AUTO-MAS/app/models/config/queue.py:296)：订阅时间项字段与所属集合结构的运行时信号，禁用时抛错并由事务回滚；初始化加载不受限制。
+- [TimeSet.time\_visibility](../app/models/config/queue.py:145)：有父队列时按 TimeEnabled 禁用整组，未挂父级时正常展示。
+- [QueueConfig.next\_cycle\_run](../app/models/config/queue.py:264)：由 LastRunAt 和 IntervalMinutes 计算虚拟下次触发，无上次时间返回 None。
+- [QueueConfig.cycle\_visibility](../app/models/config/queue.py:272)：按 CycleEnabled 决定整组可编辑或禁用。
+- [async QueueConfig.reset\_cycle\_timer](../app/models/config/queue.py:276)：Trigger 回调将 LastRunAt 设为本地现在，并在本协程提交。
+- [QueueConfig.normalize\_payload](../app/models/config/queue.py:284)：兼容旧 StartUpEnabled 布尔字段，缺少 StartUpMode 时转换为 Always/Never。
+- [reject\_disabled\_time\_writes](../app/models/config/queue.py:296)：订阅时间项字段与所属集合结构的运行时信号，禁用时抛错并由事务回滚；初始化加载不受限制。
 
 ### app/core/timer.py
 
-- [\_local\_now](D:/Dev/AUTO-MAS/app/core/timer.py:50)：返回本机带时区现在，独立入口便于验证注入。
-- [\_timed\_slots\_in\_window](D:/Dev/AUTO-MAS/app/core/timer.py:56)：按本地墙钟区间展开配置 HH:MM，回拨空区间不生成槽。
-- [\_MainTimer.\_\_init\_\_](D:/Dev/AUTO-MAS/app/core/timer.py:85)：持有各定时后台句柄、启动仅一次标志、定时去重和检查游标。
-- [async \_MainTimer.start](D:/Dev/AUTO-MAS/app/core/timer.py:103)：只启动一次启动队列检查异步任务及秒/小时/日历循环，按配置安排社区签到。
-- [async \_MainTimer.stop](D:/Dev/AUTO-MAS/app/core/timer.py:130)：取消并等待组件持有的未完成后台任务，不修改队列触发开关。
-- [async \_MainTimer.second\_task](D:/Dev/AUTO-MAS/app/core/timer.py:154)：先等启动检查，再每秒依次做队列触发和到期日历通知。
-- [async \_MainTimer.\_run\_loop\_step](D:/Dev/AUTO-MAS/app/core/timer.py:234)：保护单次循环步骤，取消继续抛，同一连续故障去重记录。
-- [async \_MainTimer.timed\_start](D:/Dev/AUTO-MAS/app/core/timer.py:259)：独立计算启动、定时、循环命中并分别提交单一原因的普通任务，只维护定时槽去重，不写队列运行时间。
-- [\_MainTimer.\_due\_timed\_slots](D:/Dev/AUTO-MAS/app/core/timer.py:333)：按时间项开关/星期、去重、持久化水位和 10 分钟补跑窗返回到期槽。
+- [\_local\_now](../app/core/timer.py:50)：返回本机带时区现在，独立入口便于验证注入。
+- [\_timed\_slots\_in\_window](../app/core/timer.py:56)：按本地墙钟区间展开配置 HH:MM，回拨空区间不生成槽。
+- [\_MainTimer.\_\_init\_\_](../app/core/timer.py:85)：持有各定时后台句柄、启动仅一次标志、定时去重和检查游标。
+- [async \_MainTimer.start](../app/core/timer.py:103)：只启动一次启动队列检查异步任务及秒/小时/日历循环，按配置安排社区签到。
+- [async \_MainTimer.stop](../app/core/timer.py:130)：取消并等待组件持有的未完成后台任务，不修改队列触发开关。
+- [async \_MainTimer.second\_task](../app/core/timer.py:154)：先等启动检查，再每秒依次做队列触发和到期日历通知。
+- [async \_MainTimer.\_run\_loop\_step](../app/core/timer.py:234)：保护单次循环步骤，取消继续抛，同一连续故障去重记录。
+- [async \_MainTimer.timed\_start](../app/core/timer.py:259)：独立计算启动、定时、循环命中并分别提交单一原因的普通任务，只维护定时槽去重，不写队列运行时间。
+- [\_MainTimer.\_due\_timed\_slots](../app/core/timer.py:333)：按时间项开关/星期、去重、持久化水位和 10 分钟补跑窗返回到期槽。
 
 ### app/api/scripts/operations.py
 
-- [async start\_operation](D:/Dev/AUTO-MAS/app/api/scripts/operations.py:23)：独立维护 HTTP 入口；调用 start_maintenance，参数/状态冲突分别转业务 400/409。
+- [async start\_operation](../app/api/scripts/operations.py:23)：独立维护 HTTP 入口；调用 start_maintenance，参数/状态冲突分别转业务 400/409。
 
 ### `app/core/__init__.py`
 
-- [\_\_getattr\_\_](D:/Dev/AUTO-MAS/app/core/__init__.py:73)：按显式导出表延迟导入真实组件并缓存到 globals；静态提示来自 TYPE_CHECKING 分支。
+- [\_\_getattr\_\_](../app/core/__init__.py:73)：按显式导出表延迟导入真实组件并缓存到 globals；静态提示来自 TYPE_CHECKING 分支。
 
 ### app/core/ws/publisher.py
 
-- [async \_WSPublisher.send](D:/Dev/AUTO-MAS/app/core/ws/publisher.py:40)：将 Pydantic/字典数据变为 WS 信封交主连接发送；未连接返回 False，不持久排队。
+- [async \_WSPublisher.send](../app/core/ws/publisher.py:40)：将 Pydantic/字典数据变为 WS 信封交主连接发送；未连接返回 False，不持久排队。
 
 ### app/core/notify/commands.py
 
-- [async execute\_notification\_command](D:/Dev/AUTO-MAS/app/core/notify/commands.py:36)：把通知渠道名称解析为唯一托管或队列，构造 AutoProxy 要求树直接调用 L1。
+- [async execute\_notification\_command](../app/core/notify/commands.py:36)：把通知渠道名称解析为唯一托管或队列，构造 AutoProxy 要求树直接调用 L1。
 
 ### app/task/history_core.py
 
-- [async save\_user\_history](D:/Dev/AUTO-MAS/app/task/history_core.py:40)：依原顺序归档专项条目、追加末条附件，并最终释放采集副本。
-- [TaskHistorySession.\_\_init\_\_](D:/Dev/AUTO-MAS/app/task/history_core.py:77)：持有根引用、类型化采集句柄、受管临时文件和运行 UUID 去重集合。
-- [TaskHistorySession.\_capture\_group](D:/Dev/AUTO-MAS/app/task/history_core.py:86)：按任务根申请失败附件采集组；文件所有权独立保存到历史会话。
-- [TaskHistorySession.observe](D:/Dev/AUTO-MAS/app/task/history_core.py:91)：确认仍为托管异常且没有用户采集归属时请求诊断。
-- [TaskHistorySession.begin\_user\_history\_capture](D:/Dev/AUTO-MAS/app/task/history_core.py:105)：以托管/用户运行 UUID 去重，异步采集失败副本。
-- [async TaskHistorySession.save\_user\_history](D:/Dev/AUTO-MAS/app/task/history_core.py:136)：装配 History.record、附件与错误反馈，再复用公共归档管线。
-- [async TaskHistorySession.\_report\_history\_save\_failure](D:/Dev/AUTO-MAS/app/task/history_core.py:163)：发送归档告警，不改执行结论。
-- [async TaskHistorySession.collect\_user\_history\_attachments](D:/Dev/AUTO-MAS/app/task/history_core.py:170)：等待对应用户采集，只为有效失败返回附件。
-- [async TaskHistorySession.\_discard\_history\_capture\_file](D:/Dev/AUTO-MAS/app/task/history_core.py:206)：委托 OBS 服务执行受管临时文件清理。
-- [async TaskHistorySession.discard\_user\_history\_capture](D:/Dev/AUTO-MAS/app/task/history_core.py:211)：归档后丢弃该运行用户的采集副本。
-- [async TaskHistorySession.close](D:/Dev/AUTO-MAS/app/task/history_core.py:221)：注销采集组并等待取消收尾，再清理所有受管副本；结果过期不丢失文件归属。
-- [TaskHistorySession.\_request\_unassigned\_replay](D:/Dev/AUTO-MAS/app/task/history_core.py:231)：使用托管运行 UUID 去重诊断原件，不伪造用户历史。
+- [async save\_user\_history](../app/task/history_core.py:40)：依原顺序归档专项条目、追加末条附件，并最终释放采集副本。
+- [TaskHistorySession.\_\_init\_\_](../app/task/history_core.py:77)：持有根引用、类型化采集句柄、受管临时文件和运行 UUID 去重集合。
+- [TaskHistorySession.\_capture\_group](../app/task/history_core.py:86)：按任务根申请失败附件采集组；文件所有权独立保存到历史会话。
+- [TaskHistorySession.observe](../app/task/history_core.py:91)：确认仍为托管异常且没有用户采集归属时请求诊断。
+- [TaskHistorySession.begin\_user\_history\_capture](../app/task/history_core.py:105)：以托管/用户运行 UUID 去重，异步采集失败副本。
+- [async TaskHistorySession.save\_user\_history](../app/task/history_core.py:136)：装配 History.record、附件与错误反馈，再复用公共归档管线。
+- [async TaskHistorySession.\_report\_history\_save\_failure](../app/task/history_core.py:163)：发送归档告警，不改执行结论。
+- [async TaskHistorySession.collect\_user\_history\_attachments](../app/task/history_core.py:170)：等待对应用户采集，只为有效失败返回附件。
+- [async TaskHistorySession.\_discard\_history\_capture\_file](../app/task/history_core.py:206)：委托 OBS 服务执行受管临时文件清理。
+- [async TaskHistorySession.discard\_user\_history\_capture](../app/task/history_core.py:211)：归档后丢弃该运行用户的采集副本。
+- [async TaskHistorySession.close](../app/task/history_core.py:221)：注销采集组并等待取消收尾，再清理所有受管副本；结果过期不丢失文件归属。
+- [TaskHistorySession.\_request\_unassigned\_replay](../app/task/history_core.py:231)：使用托管运行 UUID 去重诊断原件，不伪造用户历史。
 
 ### app/services/common/obs_replay.py
 
-- [async ObsReplayService.discard\_temporary](D:/Dev/AUTO-MAS/app/services/common/obs_replay.py:338)：校验受管目录与链接边界后删除临时副本，保留 OBS 原件。
+- [async ObsReplayService.discard\_temporary](../app/services/common/obs_replay.py:338)：校验受管目录与链接边界后删除临时副本，保留 OBS 原件。
 
 ### app/services/common/telemetry.py
 
-- [\_publish\_script\_observation](D:/Dev/AUTO-MAS/app/services/common/telemetry.py:548)：申请 32 并发的背景任务组，以完成事件和发送标志保证 started/finished 顺序，不缓存发送结果。
-- [task\_trigger\_category](D:/Dev/AUTO-MAS/app/services/common/telemetry.py:582)：仅在统计消费边界将 TaskTriggerReason 归入既有来源分类。
-- [observe\_script\_run](D:/Dev/AUTO-MAS/app/services/common/telemetry.py:596)：上下文观察一次托管运行，统一原有计数和 started/finished 本地消息。
+- [\_publish\_script\_observation](../app/services/common/telemetry.py:548)：申请 32 并发的背景任务组，以完成事件和发送标志保证 started/finished 顺序，不缓存发送结果。
+- [task\_trigger\_category](../app/services/common/telemetry.py:582)：仅在统计消费边界将 TaskTriggerReason 归入既有来源分类。
+- [observe\_script\_run](../app/services/common/telemetry.py:596)：上下文观察一次托管运行，统一原有计数和 started/finished 本地消息。
 
 ### app/core/background_tasks.py
 
-- [TaskOutcome.unwrap](D:/Dev/AUTO-MAS/app/core/background_tasks.py:31)：提取成功值（可为 None）；失败、取消或执行超时则抛出对应异常。
-- [BackgroundTaskHandle.\_\_init\_\_](D:/Dev/AUTO-MAS/app/core/background_tasks.py:56)：保存类型化组归属、任务 UUID 和完成事件，不暴露 asyncio.Task。
-- [BackgroundTaskHandle.done](D:/Dev/AUTO-MAS/app/core/background_tasks.py:61)：查询执行是否真正退出，不读取或提取结果。
-- [BackgroundTaskHandle.cancel](D:/Dev/AUTO-MAS/app/core/background_tasks.py:64)：向仍在执行的任务请求取消，不提前释放执行容量。
-- [async BackgroundTaskHandle.wait\_done](D:/Dev/AUTO-MAS/app/core/background_tasks.py:67)：有限等待完成事件；等待者取消与超时不取消背景执行。
-- [async BackgroundTaskHandle.wait\_take](D:/Dev/AUTO-MAS/app/core/background_tasks.py:76)：委托所属组等待并一次性提取结果。
-- [BackgroundTaskGroup.\_\_init\_\_](D:/Dev/AUTO-MAS/app/core/background_tasks.py:93)：校验容量与期限策略，建立当前组的执行和结果记录集合。
-- [BackgroundTaskGroup.spawn](D:/Dev/AUTO-MAS/app/core/background_tasks.py:120)：先检查关闭、事件循环与两种容量，再创建执行工厂的任务；可选择不保留结果。
-- [BackgroundTaskGroup.query](D:/Dev/AUTO-MAS/app/core/background_tasks.py:154)：读取任务元信息；不消费结果、不续期，已清理时返回 None。
-- [BackgroundTaskGroup.try\_take](D:/Dev/AUTO-MAS/app/core/background_tasks.py:166)：未完成返回 PENDING；已完成则原子移除并返回 TaskOutcome，不存在抛 KeyError。
-- [async BackgroundTaskGroup.wait\_take](D:/Dev/AUTO-MAS/app/core/background_tasks.py:180)：等待后调用 try_take；多个提取者只有一个成功，等待超时不影响任务。
-- [async BackgroundTaskGroup.drain](D:/Dev/AUTO-MAS/app/core/background_tasks.py:193)：在共同期限内等待组内执行退出，覆盖等待期间新接纳的任务；不消费、不取消。
-- [BackgroundTaskGroup.\_check\_owner](D:/Dev/AUTO-MAS/app/core/background_tasks.py:208)：验证句柄属于当前组，防止相同名称的新组混用旧句柄。
-- [BackgroundTaskGroup.\_cancel](D:/Dev/AUTO-MAS/app/core/background_tasks.py:212)：请求取消未退出的执行，已有取消请求时避免再次打断异步收尾。
-- [BackgroundTaskGroup.\_timeout](D:/Dev/AUTO-MAS/app/core/background_tasks.py:217)：记录执行超时并请求取消；容量仍占用到执行真正退出。
-- [BackgroundTaskGroup.\_finish](D:/Dev/AUTO-MAS/app/core/background_tasks.py:223)：读取唯一执行结果，释放运行容量；按策略保留并启动 TTL，或直接丢弃。
-- [BackgroundTaskGroup.\_discard](D:/Dev/AUTO-MAS/app/core/background_tasks.py:251)：释放结果记录与到期计时器，记录未提取的异常；不清理业务文件。
-- [BackgroundTaskGroup.\_close](D:/Dev/AUTO-MAS/app/core/background_tasks.py:267)：封闭提交、取消执行、清理已完成记录；最后一个执行退出后移除组。
-- [BackgroundTaskRegistry.\_\_init\_\_](D:/Dev/AUTO-MAS/app/core/background_tasks.py:281)：持有名称唯一的应用级任务组和关闭屏障。
-- [BackgroundTaskRegistry.register\_group](D:/Dev/AUTO-MAS/app/core/background_tasks.py:285)：按显式策略申请任务组；重复名称或管理器已关闭时报错。
-- [BackgroundTaskRegistry.get\_group](D:/Dev/AUTO-MAS/app/core/background_tasks.py:310)：按名称查找现存组，不隐式申请。
-- [async BackgroundTaskRegistry.unregister\_group](D:/Dev/AUTO-MAS/app/core/background_tasks.py:313)：验证归属、封闭组并取消等待；超时返回 False，组保持关闭及持有状态。
-- [async BackgroundTaskRegistry.shutdown](D:/Dev/AUTO-MAS/app/core/background_tasks.py:322)：先封闭全部组，再以同一期限等待退出；超时不丢失引用。
-- [BackgroundTaskRegistry.\_remove](D:/Dev/AUTO-MAS/app/core/background_tasks.py:337)：按对象身份移除真正退出的组，允许之后重新申请同名组。
+- [TaskOutcome.unwrap](../app/core/background_tasks.py:31)：提取成功值（可为 None）；失败、取消或执行超时则抛出对应异常。
+- [BackgroundTaskHandle.\_\_init\_\_](../app/core/background_tasks.py:56)：保存类型化组归属、任务 UUID 和完成事件，不暴露 asyncio.Task。
+- [BackgroundTaskHandle.done](../app/core/background_tasks.py:61)：查询执行是否真正退出，不读取或提取结果。
+- [BackgroundTaskHandle.cancel](../app/core/background_tasks.py:64)：向仍在执行的任务请求取消，不提前释放执行容量。
+- [async BackgroundTaskHandle.wait\_done](../app/core/background_tasks.py:67)：有限等待完成事件；等待者取消与超时不取消背景执行。
+- [async BackgroundTaskHandle.wait\_take](../app/core/background_tasks.py:76)：委托所属组等待并一次性提取结果。
+- [BackgroundTaskGroup.\_\_init\_\_](../app/core/background_tasks.py:93)：校验容量与期限策略，建立当前组的执行和结果记录集合。
+- [BackgroundTaskGroup.spawn](../app/core/background_tasks.py:120)：先检查关闭、事件循环与两种容量，再创建执行工厂的任务；可选择不保留结果。
+- [BackgroundTaskGroup.query](../app/core/background_tasks.py:154)：读取任务元信息；不消费结果、不续期，已清理时返回 None。
+- [BackgroundTaskGroup.try\_take](../app/core/background_tasks.py:166)：未完成返回 PENDING；已完成则原子移除并返回 TaskOutcome，不存在抛 KeyError。
+- [async BackgroundTaskGroup.wait\_take](../app/core/background_tasks.py:180)：等待后调用 try_take；多个提取者只有一个成功，等待超时不影响任务。
+- [async BackgroundTaskGroup.drain](../app/core/background_tasks.py:193)：在共同期限内等待组内执行退出，覆盖等待期间新接纳的任务；不消费、不取消。
+- [BackgroundTaskGroup.\_check\_owner](../app/core/background_tasks.py:208)：验证句柄属于当前组，防止相同名称的新组混用旧句柄。
+- [BackgroundTaskGroup.\_cancel](../app/core/background_tasks.py:212)：请求取消未退出的执行，已有取消请求时避免再次打断异步收尾。
+- [BackgroundTaskGroup.\_timeout](../app/core/background_tasks.py:217)：记录执行超时并请求取消；容量仍占用到执行真正退出。
+- [BackgroundTaskGroup.\_finish](../app/core/background_tasks.py:223)：读取唯一执行结果，释放运行容量；按策略保留并启动 TTL，或直接丢弃。
+- [BackgroundTaskGroup.\_discard](../app/core/background_tasks.py:251)：释放结果记录与到期计时器，记录未提取的异常；不清理业务文件。
+- [BackgroundTaskGroup.\_close](../app/core/background_tasks.py:267)：封闭提交、取消执行、清理已完成记录；最后一个执行退出后移除组。
+- [BackgroundTaskRegistry.\_\_init\_\_](../app/core/background_tasks.py:281)：持有名称唯一的应用级任务组和关闭屏障。
+- [BackgroundTaskRegistry.register\_group](../app/core/background_tasks.py:285)：按显式策略申请任务组；重复名称或管理器已关闭时报错。
+- [BackgroundTaskRegistry.get\_group](../app/core/background_tasks.py:310)：按名称查找现存组，不隐式申请。
+- [async BackgroundTaskRegistry.unregister\_group](../app/core/background_tasks.py:313)：验证归属、封闭组并取消等待；超时返回 False，组保持关闭及持有状态。
+- [async BackgroundTaskRegistry.shutdown](../app/core/background_tasks.py:322)：先封闭全部组，再以同一期限等待退出；超时不丢失引用。
+- [BackgroundTaskRegistry.\_remove](../app/core/background_tasks.py:337)：按对象身份移除真正退出的组，允许之后重新申请同名组。
 
 ### app/core/notify/tasks.py
 
-- [NotificationTasks.group](D:/Dev/AUTO-MAS/app/core/notify/tasks.py:49)：申请当前通知服务的任务投递组，完成即释放结果。
-- [NotificationTasks.community\_group](D:/Dev/AUTO-MAS/app/core/notify/tasks.py:56)：申请社区通知组，允许短暂等待结果及迟到投递。
-- [async NotificationTasks.close](D:/Dev/AUTO-MAS/app/core/notify/tasks.py:62)：注销已申请的通知组，等执行退出后才能释放渠道资源。
-- [NotificationTasks.spawn\_notification](D:/Dev/AUTO-MAS/app/core/notify/tasks.py:69)：接受协程工厂并向通知组提交，不自行维护在途任务集合。
-- [NotificationTasks.task\_notification\_batch](D:/Dev/AUTO-MAS/app/core/notify/tasks.py:125)：为当前专项保存通知批次和 L2 提供的报告协调器，子账号与收尾继承同一上下文。
-- [NotificationTasks.current\_task\_report\_coordinator](D:/Dev/AUTO-MAS/app/core/notify/tasks.py:148)：读取当前批次的协调器，退出批次后不再持有该引用。
-- [async NotificationTasks.drain\_notifications](D:/Dev/AUTO-MAS/app/core/notify/tasks.py:172)：委托任务组有限等待投递；超时不取消发送。
+- [NotificationTasks.group](../app/core/notify/tasks.py:49)：申请当前通知服务的任务投递组，完成即释放结果。
+- [NotificationTasks.community\_group](../app/core/notify/tasks.py:56)：申请社区通知组，允许短暂等待结果及迟到投递。
+- [async NotificationTasks.close](../app/core/notify/tasks.py:62)：注销已申请的通知组，等执行退出后才能释放渠道资源。
+- [NotificationTasks.spawn\_notification](../app/core/notify/tasks.py:69)：接受协程工厂并向通知组提交，不自行维护在途任务集合。
+- [NotificationTasks.task\_notification\_batch](../app/core/notify/tasks.py:125)：为当前专项保存通知批次和 L2 提供的报告协调器，子账号与收尾继承同一上下文。
+- [NotificationTasks.current\_task\_report\_coordinator](../app/core/notify/tasks.py:148)：读取当前批次的协调器，退出批次后不再持有该引用。
+- [async NotificationTasks.drain\_notifications](../app/core/notify/tasks.py:172)：委托任务组有限等待投递；超时不取消发送。
 
 ### app/core/notify/task_report.py
 
-- [prepare\_task\_report](D:/Dev/AUTO-MAS/app/core/notify/task_report.py:137)：复用当前任务批次的报告协调器；任务 ID 不匹配或独立调用时按原策略单独装配。
+- [prepare\_task\_report](../app/core/notify/task_report.py:137)：复用当前任务批次的报告协调器；任务 ID 不匹配或独立调用时按原策略单独装配。
 
 ## 10. 前端任务链的方法职责
 
@@ -680,14 +680,14 @@ Cycle 的 IntervalMinutes 为队列统一间隔，LastRunAt 是最近循环成�
 
 ### 10.1 页面选择与创建/停止请求
 
-在 [useTaskOptions.ts](D:/Dev/AUTO-MAS/frontend/src/composables/useTaskOptions.ts)：
+在 [useTaskOptions.ts](../frontend/src/composables/useTaskOptions.ts)：
 
 - `fetchTaskTargets()`：通过现存队列和托管配置接口读取带显式类型的候选，Vue Query 共享在途查询；不按文案判断类型、不隐藏已锁定的目标。
 - `configuredTaskRequest()`：快捷入口按真实配置类型生成默认要求树。
 - `fetchTaskScope()`：按队列项 UUID 和顺序展开本次选择，重复托管共享用户名单读取但选择互相独立；禁用和天数不足的用户仍保留。
 - `configSessionRequest()`：标记为兼容旧专项，由目标 UUID 反查托管归属；新入口直接提供规范要求树。
 
-在 [taskSelection.ts](D:/Dev/AUTO-MAS/frontend/src/composables/taskSelection.ts)：
+在 [taskSelection.ts](../frontend/src/composables/taskSelection.ts)：
 
 - `indexed()`：把有序节点数组转为连续索引字典。
 - `targetRequest()`：构造整队列、直接托管或唯一 default 配置目标的要求树。
@@ -696,7 +696,7 @@ Cycle 的 IntervalMinutes 为队列统一间隔，LastRunAt 是最近循环成�
 - `reconcileScope()`：刷新展示配置并保留队列项级选择；新增对象不扩大显式范围，删除或替换的已选对象显示失效。
 - `persistScope()`：只持久化会话内选择意图，不复制配置展示、日志或脚本参数。
 
-在 [useTaskApi.ts](D:/Dev/AUTO-MAS/frontend/src/composables/useTaskApi.ts)：
+在 [useTaskApi.ts](../frontend/src/composables/useTaskApi.ts)：
 
 - `taskRequestError()`：优先从生成客户端 ApiError 的 body 提取后端 message，其他错误转 Error。
 - `nativeScriptType()`：从运行状态或目标标识查询有限统计类型。
@@ -711,7 +711,7 @@ Cycle 的 IntervalMinutes 为队列统一间隔，LastRunAt 是最近循环成�
 
 ### 10.2 应用级运行数据、订阅与恢复
 
-[useTaskRuntimeState.ts](D:/Dev/AUTO-MAS/frontend/src/composables/useTaskRuntimeState.ts) 是运行数据的唯一所有者。每个运行 UUID 对应一份任务信息、日志、序号和终态，页面或标签不再复制这些数据。
+[useTaskRuntimeState.ts](../frontend/src/composables/useTaskRuntimeState.ts) 是运行数据的唯一所有者。每个运行 UUID 对应一份任务信息、日志、序号和终态，页面或标签不再复制这些数据。
 
 - `bootstrapTaskRuntimeState()` / `disposeTaskRuntimeState()`：在应用生命周期内订阅任务创建、重连事件并定期清理未绑定的已完成缓存；关闭时释放订阅、定时器和缓存。
 - `ensureTaskSubscriptions()` / `releaseTaskSubscriptions()`：按运行 UUID 统一管理信息、日志、通知和完成订阅。
@@ -724,17 +724,17 @@ Cycle 的 IntervalMinutes 为队列统一间隔，LastRunAt 是最近循环成�
 - `retainTaskRuntime()` / `releaseTaskRuntime()` / `pruneCompletedStates()`：标签绑定期间保留完成结果；解除绑定后沿用五分钟缓存清理。
 - `onTaskRuntimeEvent()`、`getTaskRuntimeState()`、`getTaskRuntimeStates()`、`useTaskRuntimeState()`：供应用反馈、统计和界面按需读取同一份数据。
 
-[taskLogBuffer.ts](D:/Dev/AUTO-MAS/frontend/src/composables/taskLogBuffer.ts) 负责旧日志协议的追加、替换、序号连续性与首行号维护。`applyTaskLogUpdate()` 在缺少基线或序号跳跃时返回 `resync`；保留既有前端 200000 字符尾部缓存限制，此限制不改变后端查询的完整任务信息。
+[taskLogBuffer.ts](../frontend/src/composables/taskLogBuffer.ts) 负责旧日志协议的追加、替换、序号连续性与首行号维护。`applyTaskLogUpdate()` 在缺少基线或序号跳跃时返回 `resync`；保留既有前端 200000 字符尾部缓存限制，此限制不改变后端查询的完整任务信息。
 
-[taskTreeProjection.ts](D:/Dev/AUTO-MAS/frontend/src/composables/taskTreeProjection.ts) 的 `projectTaskTree()` 按配置树 `order` 读取 `data`，生成只读托管／用户展示投影。节点 ID 使用运行 UUID，`config_id` 使用原配置 UUID。
+[taskTreeProjection.ts](../frontend/src/composables/taskTreeProjection.ts) 的 `projectTaskTree()` 按配置树 `order` 读取 `data`，生成只读托管／用户展示投影。节点 ID 使用运行 UUID，`config_id` 使用原配置 UUID。
 
-[useTaskFeedback.ts](D:/Dev/AUTO-MAS/frontend/src/composables/useTaskFeedback.ts) 单独承接应用级任务通知、完成提示、音效及专项反馈弹窗；通过 `bootstrapTaskFeedback()` / `disposeTaskFeedback()` 订阅运行生命周期，不依赖调度页是否打开。失败判定继续复用 [taskFailures.ts](D:/Dev/AUTO-MAS/frontend/src/utils/taskFailures.ts) 的 `resolveTaskCompletionFeedback()` 等函数；任务遥测继续由原有 API／运行生命周期入口负责，日志不产生生命周期统计。
+[useTaskFeedback.ts](../frontend/src/composables/useTaskFeedback.ts) 单独承接应用级任务通知、完成提示、音效及专项反馈弹窗；通过 `bootstrapTaskFeedback()` / `disposeTaskFeedback()` 订阅运行生命周期，不依赖调度页是否打开。失败判定继续复用 [taskFailures.ts](../frontend/src/utils/taskFailures.ts) 的 `resolveTaskCompletionFeedback()` 等函数；任务遥测继续由原有 API／运行生命周期入口负责，日志不产生生命周期统计。
 
-[useScriptConfigLock.ts](D:/Dev/AUTO-MAS/frontend/src/composables/useScriptConfigLock.ts) 直接读取资源锁查询接口，按目标共享 Vue Query 缓存并每秒刷新；锁权限不从任务展示状态推断。
+[useScriptConfigLock.ts](../frontend/src/composables/useScriptConfigLock.ts) 直接读取资源锁查询接口，按目标共享 Vue Query 缓存并每秒刷新；锁权限不从任务展示状态推断。
 
 ### 10.3 标签草稿与调度页
 
-[stores/scheduler.ts](D:/Dev/AUTO-MAS/frontend/src/stores/scheduler.ts) 只保存标签、选择草稿、活动页和运行 UUID 绑定。`panels` 从公共运行对象派生名称、模式和状态，不依赖日志正文。
+[stores/scheduler.ts](../frontend/src/stores/scheduler.ts) 只保存标签、选择草稿、活动页和运行 UUID 绑定。`panels` 从公共运行对象派生名称、模式和状态，不依赖日志正文。
 
 - `addTab()` / `removeTab()`：管理标签和活动页。
 - `bindRun()`：按确切运行 UUID 合并 WS 先建的标签，仅调整绑定，不迁移、重置日志。
@@ -743,7 +743,7 @@ Cycle 的 IntervalMinutes 为队列统一间隔，LastRunAt 是最近循环成�
 - `persist()`：结构变更、绑定和活动页立即写入 sessionStorage；草稿修改合并延迟 800ms 保存。持久化内容不含日志、运行树副本或终态。
 - UUID 绑定变化时申请／释放运行缓存保留。刷新后通过快照恢复仍在运行的任务；已结束且仅有本地绑定的标签显示未知结果，不伪造日志和结果。
 
-[useSchedulerLogic.ts](D:/Dev/AUTO-MAS/frontend/src/views/scheduler/useSchedulerLogic.ts) 仅处理页面交互：
+[useSchedulerLogic.ts](../frontend/src/views/scheduler/useSchedulerLogic.ts) 仅处理页面交互：
 
 - `loadTaskOptions()` / `loadTaskScope()`：加载配置候选及当前运行范围，协调已有草稿并拒绝过期异步响应。
 - `handleTaskSelectionChange()`：切换目标并加载对应草稿。
@@ -753,19 +753,19 @@ Cycle 的 IntervalMinutes 为队列统一间隔，LastRunAt 是最近循环成�
 - `getPowerState()` / `onPowerActionChange()`：读取、修改现有完成后电源操作。
 - `initialize()` / `setSchedulerViewActive()` / `cleanup()`：维护页面配置刷新及电源订阅；页面离开不销毁应用级运行数据和任务订阅。
 
-[SchedulerRunScope.vue](D:/Dev/AUTO-MAS/frontend/src/views/scheduler/SchedulerRunScope.vue) 继续承接启动前的大面积运行范围弹窗；运行时隐藏。目标选择与要求树生成仍复用现有配置 API 和 `taskSelection`，本轮未新增后端接口。
+[SchedulerRunScope.vue](../frontend/src/views/scheduler/SchedulerRunScope.vue) 继续承接启动前的大面积运行范围弹窗；运行时隐藏。目标选择与要求树生成仍复用现有配置 API 和 `taskSelection`，本轮未新增后端接口。
 
-[SchedulerRunPanels.vue](D:/Dev/AUTO-MAS/frontend/src/views/scheduler/SchedulerRunPanels.vue) 保留原总览／日志分栏布局，按运行对象派生展示内容。[TaskOverviewPanel.vue](D:/Dev/AUTO-MAS/frontend/src/views/scheduler/TaskOverviewPanel.vue) 直接接收只读任务信息 prop，不再通过 ref 回放或维护第二份快照。[SchedulerLogPanel.vue](D:/Dev/AUTO-MAS/frontend/src/views/scheduler/SchedulerLogPanel.vue) 只维护供编辑器显示的文本：首条日志、切换运行、恢复可见及完成结果立即刷新，连续输出合并为 200ms 更新；隐藏标签或离开页面时停止渲染，公共运行模块仍持续收集日志。既有 120000 字符渲染限制、行号、跟随、主题和操作按钮保持原行为。编辑器作为异步组件先等待既有 configureLocalMonaco() 完成，避免刷新恢复日志时抢在空闲预热之前初始化并退回 CDN。
+[SchedulerRunPanels.vue](../frontend/src/views/scheduler/SchedulerRunPanels.vue) 保留原总览／日志分栏布局，按运行对象派生展示内容。[TaskOverviewPanel.vue](../frontend/src/views/scheduler/TaskOverviewPanel.vue) 直接接收只读任务信息 prop，不再通过 ref 回放或维护第二份快照。[SchedulerLogPanel.vue](../frontend/src/views/scheduler/SchedulerLogPanel.vue) 只维护供编辑器显示的文本：首条日志、切换运行、恢复可见及完成结果立即刷新，连续输出合并为 200ms 更新；隐藏标签或离开页面时停止渲染，公共运行模块仍持续收集日志。既有 120000 字符渲染限制、行号、跟随、主题和操作按钮保持原行为。编辑器作为异步组件先等待既有 configureLocalMonaco() 完成，避免刷新恢复日志时抢在空闲预热之前初始化并退回 CDN。
 
-应用组合根 [realtimeResidents.ts](D:/Dev/AUTO-MAS/frontend/src/bootstrap/realtimeResidents.ts) 分别注册运行数据、反馈和标签草稿常驻生命周期。App、主页、托盘及桌宠直接访问 store，不再导入调度页控制器；关闭窗口的运行判断读取公共运行状态。
+应用组合根 [realtimeResidents.ts](../frontend/src/bootstrap/realtimeResidents.ts) 分别注册运行数据、反馈和标签草稿常驻生命周期。App、主页、托盘及桌宠直接访问 store，不再导入调度页控制器；关闭窗口的运行判断读取公共运行状态。
 
 ## 11. 对照检查入口
 
-- [test\_task\_tree\_dispatch.py](D:/Dev/AUTO-MAS/tests/core/test_task_tree_dispatch.py)：要求树、参数传递、重复队列项、创建通知顺序、删除后快照、热态配置、插件锁范围、提交失败解锁、停止全部创建屏障。
-- [test\_maintenance\_cycle\_review.py](D:/Dev/AUTO-MAS/tests/core/test_maintenance_cycle_review.py)：三种触发独立派发、运行中继续提交、失败不推进时间、本地日期、启动一次、虚拟下一次/重置、模块禁用、星期跳过和重置竞争。
-- [test\_task\_state\_changes.py](D:/Dev/AUTO-MAS/tests/core/test_task_state_changes.py)、[test\_task\_log\_updates.py](D:/Dev/AUTO-MAS/tests/core/test_task_log_updates.py)：运行状态和日志变化。
-- [test\_ws\_message\_contract.py](D:/Dev/AUTO-MAS/tests/api/test_ws_message_contract.py)：WS 公共契约覆盖。
-- [useTaskRuntimeState.test.ts](D:/Dev/AUTO-MAS/frontend/src/composables/useTaskRuntimeState.test.ts)、[taskSelection.test.ts](D:/Dev/AUTO-MAS/frontend/src/composables/taskSelection.test.ts)：前端树转换、运行身份、快照/实时更新和锁状态。
+- [test\_task\_tree\_dispatch.py](../tests/core/test_task_tree_dispatch.py)：要求树、参数传递、重复队列项、创建通知顺序、删除后快照、热态配置、插件锁范围、提交失败解锁、停止全部创建屏障。
+- [test\_maintenance\_cycle\_review.py](../tests/core/test_maintenance_cycle_review.py)：三种触发独立派发、运行中继续提交、失败不推进时间、本地日期、启动一次、虚拟下一次/重置、模块禁用、星期跳过和重置竞争。
+- [test\_task\_state\_changes.py](../tests/core/test_task_state_changes.py)、[test\_task\_log\_updates.py](../tests/core/test_task_log_updates.py)：运行状态和日志变化。
+- [test\_ws\_message\_contract.py](../tests/api/test_ws_message_contract.py)：WS 公共契约覆盖。
+- [useTaskRuntimeState.test.ts](../frontend/src/composables/useTaskRuntimeState.test.ts)、[taskSelection.test.ts](../frontend/src/composables/taskSelection.test.ts)：前端树转换、运行身份、快照/实时更新和锁状态。
 
 以上是检查定位，不声称每条异常路径都已做真实游戏验证。后续类型修复记录见第 12 节；自动化回归结果不能代替具体专项的真实设备中止/恢复验证。
 
@@ -791,7 +791,7 @@ Cycle 的 IntervalMinutes 为队列统一间隔，LastRunAt 是最近循环成�
 
 ### 12.2 临时兼容边界：保留并逐行抑制
 
-位置：[RuntimeEntry](D:/Dev/AUTO-MAS/app/models/task.py) 的 name、status、result 三个平铺属性。
+位置：[RuntimeEntry](../app/models/task.py) 的 name、status、result 三个平铺属性。
 
 这些属性为旧专项调用形状保留，部分新编排目前也复用它们。底层 ConfigEntry 不固定名为 info 的分组，更不保证日志分组具有 name/result；每个具体运行节点才声明自己的分组。为了保留旧读取方式，不给通用配置基类伪造这些字段，只在三个返回表达式上分别使用 mypy 的 attr-defined 和 Pyright 的 reportAttributeAccessIssue 局部抑制，旁边写明原因及旧兼容移除时的清理位置。
 
@@ -799,7 +799,7 @@ Cycle 的 IntervalMinutes 为队列统一间隔，LastRunAt 是最近循环成�
 
 ### 12.3 动态配置投影的工具限制：单独标明
 
-位置：[TaskGetOut.data](D:/Dev/AUTO-MAS/app/api/dispatch.py)。TaskTreeData 是 config_contract 在运行时生成的 Pydantic 类；Pyright 不允许把普通工厂调用的结果直接当注解类型。
+位置：[TaskGetOut.data](../app/api/dispatch.py)。TaskTreeData 是 config_contract 在运行时生成的 Pydantic 类；Pyright 不允许把普通工厂调用的结果直接当注解类型。
 
 此处不属于旧专项兼容，也不是缺少运行时校验。保留真实动态投影以保证 OpenAPI 和配置声明同源，只在这一条注解上使用 Pyright 的 reportInvalidTypeForm 和 mypy 的 valid-type 局部抑制并写明原因；不重写一份手工树模型，不用 Any 替换整个 API 契约，也不把该规则全局关闭。
 
@@ -931,7 +931,7 @@ Config 的四个时间项 CRUD/排序方法已删除开关判断。更新方法�
 
 ## 22. 背景任务组替换原注册表
 
-单文件 [background\_tasks.py](D:/Dev/AUTO-MAS/app/core/background_tasks.py) 定义实现类 `BackgroundTaskRegistry`，模块底部建立 `BackgroundTaskManager` 单例；业务统一从 `app.core` 导入。`TYPE_CHECKING` 引用真实单例，组和句柄的泛型参数把工厂返回值保留到 `TaskOutcome[T]`。它独立于任务执行树，来源 `TaskBase` 没有增加背景任务职责。原 `runtime_tasks.py` 已删除，不保留兼容别名。
+单文件 [background\_tasks.py](../app/core/background_tasks.py) 定义实现类 `BackgroundTaskRegistry`，模块底部建立 `BackgroundTaskManager` 单例；业务统一从 `app.core` 导入。`TYPE_CHECKING` 引用真实单例，组和句柄的泛型参数把工厂返回值保留到 `TaskOutcome[T]`。它独立于任务执行树，来源 `TaskBase` 没有增加背景任务职责。原 `runtime_tasks.py` 已删除，不保留兼容别名。
 
 基本用法：
 
@@ -1116,11 +1116,11 @@ TaskManager 只管理实际执行任务。删除 _scheduled_script_identities �
 
 新增只读 GET /api/info/scripts/status，由以下职责链提供展示数据：
 
-- [AppConfig.get\_script\_status\_overview](D:/Dev/AUTO-MAS/app/core/config/manager.py)：读取当前托管标识、类型、名称与队列排期关系，调用历史查询后返回概览；不读取 TaskManager、不修改配置、不更新时间。
-- [HistoryStore.get\_latest\_script\_results](D:/Dev/AUTO-MAS/app/core/history.py)：使用已有 script_name 索引，在一个数据库连接内查询每个名称最近一条结果；不读取日志正文或附件。
-- [get\_script\_status\_overview](D:/Dev/AUTO-MAS/app/api/info.py)：返回统一信封；历史读取失败返回业务错误，不能伪造“最近成功”。
-- [ScriptStatusOverviewItem](D:/Dev/AUTO-MAS/app/models/schema.py)：共享字段为 scriptId、scriptType、scheduled、lastRunAt、lastFailed；接口响应模型留在所属 API 模块。前端客户端只通过实际 OpenAPI 导出和生成器更新。
-- [useSatelliteStatus](D:/Dev/AUTO-MAS/frontend/src/composables/useSatelliteStatus.ts)：Vue Query 缓存配置／历史概览，按卫星的脚本类型或 MaaFW 项目映射聚合。排期取任一托管已安排，失败取组内最近历史结果；同一时间有失败即标失败。查询失败保留上次成功结果。
+- [AppConfig.get\_script\_status\_overview](../app/core/config/manager.py)：读取当前托管标识、类型、名称与队列排期关系，调用历史查询后返回概览；不读取 TaskManager、不修改配置、不更新时间。
+- [HistoryStore.get\_latest\_script\_results](../app/core/history.py)：使用已有 script_name 索引，在一个数据库连接内查询每个名称最近一条结果；不读取日志正文或附件。
+- [get\_script\_status\_overview](../app/api/info.py)：返回统一信封；历史读取失败返回业务错误，不能伪造“最近成功”。
+- [ScriptStatusOverviewItem](../app/models/schema.py)：共享字段为 scriptId、scriptType、scheduled、lastRunAt、lastFailed；接口响应模型留在所属 API 模块。前端客户端只通过实际 OpenAPI 导出和生成器更新。
+- [useSatelliteStatus](../frontend/src/composables/useSatelliteStatus.ts)：Vue Query 缓存配置／历史概览，按卫星的脚本类型或 MaaFW 项目映射聚合。排期取任一托管已安排，失败取组内最近历史结果；同一时间有失败即标失败。查询失败保留上次成功结果。
 
 已安排沿用配置含义：启用循环，或启用定时且存在启用、星期非空的时间项。这里只展示排期关系，不推断是否到期、当日队列项是否执行或用户是否准入；只启用软件启动触发的队列不算定时／循环排期。
 
@@ -1309,7 +1309,7 @@ MAA 的 prepare 在配置 X 锁之前还可能等待安装写入互斥与安装�
 
 ## 54. 提交前同步 dev 与冲突适配
 
-本次同步基线为 `origin/dev` 的 `76eac7930`，保留上游 MCP 可选服务拆分、专项程序更新、定时唤醒和托管／账号展示语义。新调度模式、要求树、运行 UUID、L2 兼容分叉及 timer 所有权继续遵守本文主干，没有恢复旧循环会话、旧任务参数或目录预约器。
+本次先同步 `origin/dev` 的 `76eac7930`，提交前再同步至 `36f87613c`，保留上游 MCP 可选服务拆分、专项程序更新、定时唤醒和托管／账号展示语义。新调度模式、要求树、运行 UUID、L2 兼容分叉及 timer 所有权继续遵守本文主干，没有恢复旧循环会话、旧任务参数或目录预约器。
 
 上游新增的专项更新进度与异常状态改用运行模型的提交方法；MaaEnd 更新准备已持有的配置锁在 prepare 中复用，不重复等待自身。SRC 的原生安装访问保护从已锁定的热态路径建立。用户配置预处理返回的 guard 在提交保护范围内复核，保留上游并发编辑保护。
 
@@ -1318,3 +1318,5 @@ MCP 服务自行长期持有加载 Task 并负责停止收尾；MaaEnd 资源预
 浏览器刷新验证发现，本地 Monaco 空闲预热尚未完成时挂载日志编辑器会启动 CDN 加载。日志组件现复用本地初始化 Promise 后再挂载，页面其余内容不等待；组件规模为 372 行。运行回归主动阻断远程 Monaco 请求，检查两种启动顺序、刷新、切页、漏包恢复和停止结果。上游新增队列 UI 用例保留创建、拖排、范围选择和删除验证，已有触发设置验证独立保留。重连与真实运行验证按 config_id 查业务对象，按运行 UUID 定位运行节点。
 
 合并后 Windows 全量后端回归为 1262 passed、1 skipped、15 subtests passed；前端 46 个文件共 246 项测试通过。保留的 Pydantic 依赖弃用警告不影响运行；未执行真实账号、MAA、游戏或模拟器验收。类型、格式、构建与浏览器验证的原始记录在本地 `.dev/pr-*`，不进入提交。
+
+补充同步 `36f87613c` 时保留 MaaEnd 按材料合并逐轮收获的通知逻辑；该通知仍写入专项私有用户素材，经既有回调桥交付，不恢复公共运行树中的推送素材字段。

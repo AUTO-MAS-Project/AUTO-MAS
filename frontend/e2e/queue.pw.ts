@@ -116,11 +116,13 @@ test.describe('@queue @scheduler user queue', () => {
       await goTo('Home')
       await expect(page.locator('.home-title')).toBeVisible()
       await goTo('Queue')
+      await page.locator('.queue-button').filter({ hasText: name }).click()
       await expect(selectedScripts).toHaveText([
         `MAA - ${scripts[1]!.name}`,
         `MAA - ${scripts[0]!.name}`,
       ])
       await page.reload()
+      await page.locator('.queue-button').filter({ hasText: name }).click()
       await expect(page.locator('.queue-title-text')).toHaveText(name)
       await expect(selectedScripts).toHaveText([
         `MAA - ${scripts[1]!.name}`,
@@ -158,6 +160,7 @@ test.describe('@queue @scheduler user queue', () => {
       await app.evidence('queue-account-scope')
 
       await goTo('Queue')
+      await page.locator('.queue-button').filter({ hasText: name }).click()
       await rows.first().getByRole('button', { name: 'Delete' }).click()
       await page
         .locator('.ant-modal-confirm:visible')
@@ -199,7 +202,7 @@ test.describe('@queue @scheduler user queue', () => {
         .click()
       expect((await (await deleted).json()).code).toBe(200)
       queueId = undefined
-      await expect(page.getByText('No queues', { exact: true })).toBeVisible()
+      await expect(page.locator('.queue-button').filter({ hasText: name })).toHaveCount(0)
       await goTo('Scheduler')
       await page.locator('.task-control .ant-select').first().click()
       await expect(
