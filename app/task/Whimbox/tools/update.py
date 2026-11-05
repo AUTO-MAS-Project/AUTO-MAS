@@ -258,6 +258,10 @@ def _wheel_digest(path: Path) -> str:
 async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
     """持安装锁后复核原安装和全部依赖，再离线安装。"""
     if isinstance(candidate, str):
+        # The no-update result may be stale after a parallel native repair.
+        # Check the pending marker, package health and installed version again
+        # before allowing the following script to start.
+        await confirm_usable_installation(root)
         return candidate
     target, wheel, packages, repairing = (
         candidate.target,
