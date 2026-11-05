@@ -14,7 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
-"""按专项聚合脚本路由，统一保留脚本管理前缀与标签。"""
+"""按专项聚合脚本路由，保留兼容的 /api/scripts 前缀与「脚本管理」标签。"""
 
 from fastapi import APIRouter
 

@@ -56,7 +56,7 @@ class ZzzOdContext:
 
         script_config = self.scripts[uuid.UUID(script_id)]
         if not isinstance(script_config, ZzzOdConfig):
-            raise TypeError("脚本配置类型错误, 不是 ZZZ-OD 类型")
+            raise TypeError("托管配置类型错误, 不是 ZZZ-OD 类型")
         return script_config
 
     def root(self, script_config: ZzzOdConfig) -> Path:
@@ -89,7 +89,7 @@ class ZzzOdContext:
         return resolved
 
     def ensure_install_unlocked(self, root: Path) -> None:
-        """任一指向同一安装的 ZzzOd 脚本正在运行时拒绝槽级写操作。
+        """任一指向同一安装的 ZzzOd 托管正在运行时拒绝槽级写操作。
 
         槽目录跨脚本共享同一份安装目录：另一脚本运行中时，其用户的绑定号
         可能尚未持久化（首次分配的 SlotIdx 还在等待异步落盘），
@@ -118,13 +118,13 @@ class ZzzOdContext:
     def user(
         self, script_id: str, user_id: str
     ) -> tuple[ZzzOdConfig, Path, ZzzOdUserConfig, uuid.UUID]:
-        """解析 ZZZ-OD 脚本/安装目录/用户配置对象，拒绝无效 ID。"""
+        """解析 ZZZ-OD 脚本/安装目录/账号配置对象，拒绝无效 ID。"""
 
         script_config = self.script_config(script_id)
         root = self.root(script_config)
         uid = uuid.UUID(user_id)
         if uid not in script_config.UserData:
-            raise ValueError("用户不存在")
+            raise ValueError("账号不存在")
         return script_config, root, script_config.UserData[uid], uid
 
     def slot_occupant(
@@ -136,26 +136,26 @@ class ZzzOdContext:
         *,
         exclude_same_script: bool = False,
     ) -> str | None:
-        """判定目标实例槽当前被谁占用（返回可读描述；空闲/仅本用户时 None）。
+        """判定目标实例槽当前被谁占用（返回可读描述；空闲/仅本账号时 None）。
 
-        占用者可能是：指向同一份安装的其他 ZzzOd 脚本/同脚本其他用户（按
+        占用者可能是：指向同一份安装的其他 ZzzOd 脚本/同托管其他账号（按
         ``Info.SlotIdx`` 绑定）或一条龙原生实例（按原生注册表）。绑定只算
         指向本安装的脚本——槽目录按安装目录隔离，别的安装的同号槽互不相干。
         注册表源走原生原件（合成视图在盘时读 sidecar），与备份口径一致。
-        仅本用户绑定或槽目录虽在但无人认领（孤儿槽）视为空闲——孤儿槽可被
-        恢复重新认领。``user_uid=None`` 表示不排除任何用户（回收池恢复这类
-        没有用户上下文的场景：任何绑定都算占用）。
+        仅本账号绑定或槽目录虽在但无人认领（孤儿槽）视为空闲——孤儿槽可被
+        恢复重新认领。``user_uid=None`` 表示不排除任何账号（回收池恢复这类
+        没有账号上下文的场景：任何绑定都算占用）。
 
-        ``exclude_same_script=True``：忽略本脚本内用户的绑定占用（仅剩其他
-        脚本与原生实例算占用）——删脚本时整个脚本都在移除，同脚本用户间的
-        相互占用不该挡住回收（否则共享同一槽的两个用户会互相把对方当占用、
+        ``exclude_same_script=True``：忽略本托管内用户的绑定占用（仅剩其他
+        脚本与原生实例算占用）——删脚本时整个脚本都在移除，同托管账号间的
+        相互占用不该挡住回收（否则共享同一槽的两个账号会互相把对方当占用、
         双双跳过，槽与备份池残留）。
         """
 
         from app.task.ZzzOd.tools import read_native_registry
         from app.utils.common.config import archive as _utils_config_archive
 
-        # 1) 其他 ZzzOd 用户（含其他脚本）按 SlotIdx 绑定占用
+        # 1) 其他 ZzzOd 账号（含其他托管）按 SlotIdx 绑定占用
         key = _utils_config_archive.config_root_key(root)
         for script_uid, script_config in self.scripts.items():
             if not isinstance(script_config, ZzzOdConfig):
@@ -174,7 +174,7 @@ class ZzzOdContext:
                     continue
                 if int(cfg.Info.SlotIdx or -1) == slot:
                     user_name = str(cfg.Info.Name or "未知用户")
-                    return f"脚本「{script_name}」的用户「{user_name}」"
+                    return f"脚本「{script_name}」的账号「{user_name}」"
 
         # 2) 一条龙原生实例（按原生注册表）
         data = read_native_registry(root)

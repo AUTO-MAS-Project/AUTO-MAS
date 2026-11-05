@@ -121,11 +121,11 @@ async def heal_projection(
     post_validate: Callable[[Path], Any] | None = None,
     cancel_event: threading.Event | None = None,
 ) -> HealOutcome | None:
-    """检查并按需补齐本脚本所在组的载荷；不用查时返回 None（不拿锁、不联网）。
+    """检查并按需补齐本托管所在组的载荷；不用查时返回 None（不拿锁、不联网）。
 
     ``reservation_held`` / ``lock_timeout`` / ``cancel_event`` 与 :func:`run_view_update`
     同义；拿不到谱系锁（同项目正在更新）就这次不查，令牌置位（用户停止）就不再开始取回。
-    返回的 ``HealOutcome.switched`` 表示本脚本的视图换了载荷。**从不抛异常**（取消除外）：
+    返回的 ``HealOutcome.switched`` 表示本托管的视图换了载荷。**从不抛异常**（取消除外）：
     失败只记日志，照常用当前版本运行。``post_validate`` 给测试替换预检；缺省按更新的预检建。
     """
 

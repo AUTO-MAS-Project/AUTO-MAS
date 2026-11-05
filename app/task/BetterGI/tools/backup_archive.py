@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""BetterGI 配置备份归档：MAS 用户配置（per-user 副本 + 字段侧车）/ BetterGI 原生配置。
+"""BetterGI 配置备份归档：MAS 账号配置（per-user 副本 + 字段侧车）/ BetterGI 原生配置。
 
 备份时机（MAS「动手前」，此时 BetterGI 配置尚未被触碰）：
 
@@ -28,7 +28,7 @@
   实配** ``{RootPath}/User/OneDragon/*.json``——用户在 BGI GUI 里直接
   编辑的配置，改坏无 MAS 侧找回点（用户实测场景）；
 - 运行物化前（AutoProxy ``_write_one_dragon_config`` 前）：``mas`` 归档
-  本用户 per-user 副本（运行会把字段物化进副本与 BGI 槽位）；
+  本账号 per-user 副本（运行会把字段物化进副本与 BGI 槽位）；
 - 编辑界面进入 / 退出（前端 ensure）：进入时归档 ``native``、退出时归档
   ``mas``（编辑会话包络的 MAS 侧终态）。
 
@@ -38,7 +38,7 @@
   （一条龙配置副本）、``ScriptGroup/``（配置组副本）、``GlobalDomain/``
   （秘境刷取配置副本）——前端端点直接读写、就是页面编辑对象（对齐
   OkNte「ConfigFile 即页面编辑对象」）；shared/independent/native 都走 per-user
-  副本（副本与来源无关，原生来源下前端编辑同样落盘），池**恒按用户分桶**，
+  副本（副本与来源无关，原生来源下前端编辑同样落盘），池**恒按账号分桶**，
   无 owner 解耦（对齐 General）。
 - 字段侧车：OneDragon 段全部字段 + Task.OneDragonConfigName + Switch.
   Resource（运行时物化进副本/原生或注入切号脚本）+ Info.Base（仅预览：
@@ -49,7 +49,7 @@
 ``native`` 池 = BetterGI 全局主配置 ``{RootPath}/User/config.json`` +
 **BGI 一条龙实配**（``{RootPath}/User/OneDragon/*.json``，排除 MAS 运行时
 临时槽位「MAS独立配置.json」——运行物化、结束删除，不是用户实配），按
-物理安装根指纹分桶、跨脚本共享、不随脚本删除。一条龙实配在用户独立配置
+物理安装根指纹分桶、跨脚本共享、不随脚本删除。一条龙实配在独立配置
 模式下 MAS 零接触，但它是用户在 BGI GUI 里的直接编辑对象（原生来源/手工编辑
 场景），纳入备份提供改坏找回点。
 
@@ -70,7 +70,7 @@ read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 
 logger = get_logger("BetterGI 配置备份")
 
-# ══════════════════ MAS 用户配置（per-user 副本 + 字段侧车） ══════════════════
+# ══════════════════ MAS 账号配置（per-user 副本 + 字段侧车） ══════════════════
 
 _OVERLAY_KEY_GROUPS = {
     "Info": ("Base",),
@@ -183,7 +183,7 @@ def mas_user_dir(script_id: str, user_id: str) -> Path:
 
 
 def mas_backup_root(script_id: str, user_id: str) -> Path:
-    """MAS 池归档根：``data/{script_id}/BetterGIBackups/mas/{user_id}``（恒按用户）。"""
+    """MAS 池归档根：``data/{script_id}/BetterGIBackups/mas/{user_id}``（恒按账号）。"""
 
     return Path.cwd() / "data" / script_id / "BetterGIBackups" / "mas" / user_id
 
@@ -212,7 +212,7 @@ def archive_mas_backup(
     overlay: dict | None = None,
     force: bool = False,
 ) -> Path | None:
-    """归档 per-user 副本 + 页面字段侧车到用户池（指纹去重，无变化跳过）。
+    """归档 per-user 副本 + 页面字段侧车到账号池（指纹去重，无变化跳过）。
 
     副本与侧车都参与指纹：只改页面字段、未动副本时同样新建归档。副本
     全部缺失（用户从未保存过配置组/秘境刷取且未运行过任务）时无可恢复
@@ -230,18 +230,18 @@ def archive_mas_backup(
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
-    logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
-    """用户池的全部归档时间戳（倒序，最新在前）。"""
+    """账号池的全部归档时间戳（倒序，最新在前）。"""
 
     return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
-    """取用户池指定时间戳的归档目录；不存在返回 None。"""
+    """取账号池指定时间戳的归档目录；不存在返回 None。"""
 
     return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
@@ -249,7 +249,7 @@ def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
 def restore_mas_backup(
     script_id: str, user_id: str, ts: str, overlay: dict | None = None
 ) -> dict | None:
-    """把用户池归档恢复到 per-user 副本（恢复前自动归档当前，误恢复可找回）。
+    """把账号池归档恢复到 per-user 副本（恢复前自动归档当前，误恢复可找回）。
 
     恢复走基座 ``restore_files`` 的 replace 语义：受管副本子目录
     （OneDragon/ScriptGroup/GlobalDomain）整棵替换为备份时点内容，副本内
@@ -257,7 +257,7 @@ def restore_mas_backup(
     内容（切号脚本残留等）原样保留。侧车与模式标注不写回副本，侧车读回
     供调用方回填 UserData 后即分离删除。
     归档只含侧车（用户只有页面字段、尚未产生任何副本文件的首个
-    independent 来源用户）时
+    independent 来源账号）时
     无副本可写回，跳过文件恢复只回填侧车——此时强行调用会因受管键为空
     抛「备份内容为空」。
 
@@ -280,12 +280,12 @@ def restore_mas_backup(
             backup_dir, mas_user_dir(script_id, user_id), rel_keys=managed
         )
     restored_overlay = read_overlay_sidecar(backup_dir)
-    logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 
 
 def archive_mas_runtime_backup(script_id: str, user_id: str, overlay: dict) -> None:
-    """运行物化前归档 per-user 副本 + 页面字段到用户池。
+    """运行物化前归档 per-user 副本 + 页面字段到账号池。
 
     运行会把字段物化进副本与 BGI 槽位、覆盖副本内容，物化前存底；指纹
     去重，失败只记日志，绝不中止随后的运行或会话（归档是现场保护，不是
@@ -550,7 +550,7 @@ def build_mas_preview(backup_dir: Path, overlay: dict | None) -> dict:
         file_rows = [
             {"key": rel, "value": f"{size} B"} for rel, size in sorted(files.items())
         ]
-        sections.append({"name": "copies", "label": "用户配置副本", "rows": file_rows})
+        sections.append({"name": "copies", "label": "账号配置副本", "rows": file_rows})
     return {"sections": sections}
 
 

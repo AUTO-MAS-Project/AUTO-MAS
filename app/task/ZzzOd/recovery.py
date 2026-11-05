@@ -42,7 +42,7 @@ class ZzzOdRecovery:
         self.context = context
 
     async def prepare_script_removal(self, script: ConfigEntry) -> None:
-        """删脚本前回收全部槽及其恢复历史，同脚本用户互不阻挡。"""
+        """删脚本前回收全部槽及其恢复历史，同托管账号互不阻挡。"""
         script_id = str(script.uid)
         script_config = cast(ZzzOdConfig, script)
         for uid in list(script_config.UserData.keys()):
@@ -50,7 +50,7 @@ class ZzzOdRecovery:
                 script_id=script_id,
                 script_config=script_config,
                 user_uid=uid,
-                action="删除脚本",
+                action="删除托管",
                 exclude_same_script=True,
             )
 
@@ -72,7 +72,7 @@ class ZzzOdRecovery:
             user_uid=user_id,
             slot=slot,
             name=str(user_cfg.Info.Name or ""),
-            action="删除用户",
+            action="删除账号",
         )
 
     async def restore_recycle(
@@ -84,24 +84,24 @@ class ZzzOdRecovery:
         target_user: str | None = None,
         new_user_name: str | None = None,
     ) -> tuple[int, str]:
-        """把回收池里的一条槽快照恢复给某个 MAS 用户（现有用户或新建用户）。
+        """把回收池里的一条槽快照恢复给某个 MAS 账号（现有用户或新建账号）。
 
         恢复的落点是**用户的绑定槽**，而不是某个裸槽号：只把内容物化到
         ``config/NN`` 而不建立绑定的恢复没有出口——MAS 下次运行不会认领它，
         用户拿不到内容（想取出文件用回收池的「查看」直接复制）。
 
-        ``target_user`` 指定现有用户 uid；``new_user_name`` 新建一个用户并把
-        内容恢复到它的槽（名字即该值）。二者必须且只能给一个。目标用户尚无
+        ``target_user`` 指定现有账号 uid；``new_user_name`` 新建一个账号并把
+        内容恢复到它的槽（名字即该值）。二者必须且只能给一个。目标账号尚无
         绑定槽时按常规分配（含认领它上次没跑完的槽）；已有绑定槽时覆盖其内容
         ——恢复前自动存底，误恢复可从回收池找回。
 
         Returns:
-            ``(目标槽号, 用户名)``。
+            ``(目标槽号, 账号名称)``。
 
         Raises:
-            RuntimeError: 有同安装的 ZzzOd 脚本正在运行，或本脚本配置已锁定
+            RuntimeError: 有同安装的 ZzzOd 托管正在运行，或本托管配置已锁定
                 （恢复会写 ``config/NN`` 与用户绑定号，可能与在跑任务竞态）。
-            ValueError: 恢复目标非法（两个都给/都不给、新用户名为空、指定用户
+            ValueError: 恢复目标非法（两个都给/都不给、新账号名为空、指定账号
                 不属于该脚本），或回收条目不存在/内容为空。条目问题先于建用户
                 判定，恢复中失败也会把刚建的用户撤掉，不留半成品。
         """
@@ -115,9 +115,9 @@ class ZzzOdRecovery:
         root = self.context.root(script_config)
         self.context.ensure_install_unlocked(root)
         if script_config.is_locked:
-            raise RuntimeError("脚本正在运行, 请结束后再试")
+            raise RuntimeError("托管正在运行, 请结束后再试")
         if bool(target_user) == bool(new_user_name):
-            raise ValueError("恢复目标必须且只能选一个：现有用户或新建用户")
+            raise ValueError("恢复目标必须且只能选一个：现有用户或新建账号")
         # 先验明快照在场再动手：建用户、写绑定都是持久化的，等写完才发现
         # 条目不对就留下一个没内容的半成品用户
         if (
@@ -133,12 +133,12 @@ class ZzzOdRecovery:
             if new_user_name is not None:
                 name = str(new_user_name).strip()
                 if not name:
-                    raise ValueError("新用户名称不能为空")
-                # 复用宿主的通用添加用户入口，初始化与守卫不另走分支。
+                    raise ValueError("新账号名称不能为空")
+                # 复用宿主的通用添加账号入口，初始化与守卫不另走分支。
                 uid, created_user = await self.context.add_user(script_id)
                 created_uid = uid
                 if not isinstance(created_user, ZzzOdUserConfig):
-                    raise TypeError("用户配置类型错误")
+                    raise TypeError("账号配置类型错误")
                 user_cfg = created_user
                 await user_cfg.update(
                     type(user_cfg).model_validate({"Info": {"Name": name}}),
@@ -167,11 +167,11 @@ class ZzzOdRecovery:
                     await script_config.UserData.commit()
                 except Exception as e:
                     logger.opt(exception=True).warning(
-                        f"恢复失败后撤回新建用户失败（请手动删除）: {e}"
+                        f"恢复失败后撤回新建账号失败（请手动删除）: {e}"
                     )
             raise
         logger.info(
-            f"ZZZ-OD 槽 {slot_idx:02d} 已从回收池恢复到用户「{name}」的槽 "
+            f"ZZZ-OD 槽 {slot_idx:02d} 已从回收池恢复到账号「{name}」的槽 "
             f"{dest:02d} 快照 {ts}"
         )
         return dest, name
@@ -184,7 +184,7 @@ class ZzzOdRecovery:
         - target="onedragon"：把一条龙原生配置备份（one_dragon.yml + 原生
           实例目录）恢复到一条龙本身——只写回备份中的文件，MAS 槽目录永不
           触碰；恢复前自动归档当前原生配置，误恢复可找回；
-        - target="mas"：把 MAS 用户槽备份恢复到绑定槽，并从恢复后的槽内容
+        - target="mas"：把 MAS 账号槽备份恢复到绑定槽，并从恢复后的槽内容
           把账号字段与任务编排全量回填到 MAS 本页字段（表单随即刷新）——
           配队等 MAS 不管的内容随槽内容回到该时点。
 
@@ -213,8 +213,8 @@ class ZzzOdRecovery:
         _, root, user_cfg, uid = self.context.user(script_id, user_id)
 
         if target == "onedragon":
-            # 恢复守卫：备份内的原生实例 idx 若已被任一 MAS 用户绑定为配置槽
-            # （任何脚本、含本用户——恢复会整目录替换槽目录），中止并点名，
+            # 恢复守卫：备份内的原生实例 idx 若已被任一 MAS 账号绑定为配置槽
+            # （任何脚本、含本账号——恢复会整目录替换槽目录），中止并点名，
             # 避免把绑定槽内容覆盖成原生实例；原生注册表不在此列，恢复本就
             # 是把原生世界拉回该时点（恢复前已强制存底）
             backup_dir = get_onedragon_backup_dir(root, ts)
@@ -235,20 +235,20 @@ class ZzzOdRecovery:
                     if bound_slot not in backup_idxs:
                         continue
                     if bound_uid == uid:
-                        who = "本用户"
+                        who = "本账号"
                     else:
-                        who = f"脚本「{str(bound_script.Info.Name or '未知脚本')}」的用户「{str(bound_cfg.Info.Name or '未知用户')}」"
+                        who = f"脚本「{str(bound_script.Info.Name or '未知脚本')}」的账号「{str(bound_cfg.Info.Name or '未知用户')}」"
                     raise ValueError(
                         f"备份含原生实例 {bound_slot:02d}，已被{who}绑定为配置槽，"
                         "恢复会覆盖其内容，已中止"
                     )
             restore_onedragon_backup(root, ts, snapshot_current=not force)
-            logger.info(f"ZZZ-OD 用户 {uid} 已把备份 {ts} 恢复到一条龙原生配置")
+            logger.info(f"ZZZ-OD 账号 {uid} 已把备份 {ts} 恢复到一条龙原生配置")
             return -1
 
         slot = int(user_cfg.Info.SlotIdx or -1)
         if slot <= 0:
-            raise ValueError("该用户还没有生成过配置备份")
+            raise ValueError("该账号还没有生成过配置备份")
         backup_dir = get_mas_backup_dir(script_id, slot, ts)
         if backup_dir is None:
             raise ValueError(f"备份不存在: {ts}")
@@ -269,7 +269,7 @@ class ZzzOdRecovery:
                 )
         except _utils_io.ConfigCorruptedError as exc:
             raise ValueError(f"备份内容已损坏，无法恢复：{exc}") from exc
-        # 恢复守卫：目标槽必须仍归本用户或空闲，被其他实体占用则拦截并点名，
+        # 恢复守卫：目标槽必须仍归本账号或空闲，被其他实体占用则拦截并点名，
         # 避免把别人的槽内容覆盖掉（覆盖前也不归档他人内容）。注册表损坏时
         # 守卫读不了原生占用，未 force 抛给上层转 409；force 视为空闲放行
         # （用户已确认，覆盖前 restore_mas_backup 内部仍会强制存底）
@@ -365,7 +365,7 @@ class ZzzOdRecovery:
             ),
             check_visibility=False,
         )
-        # 信息字段回填（用户名/启用/base 来源/启动器/剩余天数/备注/节点详情推送）：
+        # 信息字段回填（账号名称/启用/base 来源/启动器/剩余天数/备注/节点详情推送）：
         # 旧备份可能没有该快照，缺失字段跳过，保持向前兼容
         for field in (
             "Name",
@@ -391,7 +391,7 @@ class ZzzOdRecovery:
             )
         await self.context.flush()
         logger.info(
-            f"ZZZ-OD 用户 {uid} 已把备份 {ts} 恢复到 MAS 配置 "
+            f"ZZZ-OD 账号 {uid} 已把备份 {ts} 恢复到 MAS 配置 "
             f"(槽 {slot:02d} + 字段回填, 任务 {len(all_apps)} 项)"
         )
         return slot
@@ -399,7 +399,7 @@ class ZzzOdRecovery:
     async def import_config(
         self, script_id: str, user_id: str, instance_idx: int
     ) -> dict:
-        """基于一条龙已有实例快速生成当前用户配置（账号信息 + 已启用任务编排 + 实例级配置）。
+        """基于一条龙已有实例快速生成当前账号配置（账号信息 + 已启用任务编排 + 实例级配置）。
 
         覆盖前强制归档当前 MAS 槽配置（与「配置恢复」一致：即使内容与最近
         备份一致也生成新时间戳条目）——导入前的状态可在配置恢复中按 MAS
@@ -430,7 +430,7 @@ class ZzzOdRecovery:
         slot = int(user_cfg.Info.SlotIdx or -1)
         # 来源校验必须先于存底物化：自身槽不能既作母版又被页面字段覆盖。
         if slot > 0 and int(instance_idx) == slot:
-            raise ValueError("不能从当前用户绑定的 MAS 槽导入配置")
+            raise ValueError("不能从当前账号绑定的 MAS 槽导入配置")
         instance = next(
             (
                 item
@@ -515,7 +515,7 @@ class ZzzOdRecovery:
         # - one_dragon/ 全部 per-app 配置（charge_plan.yml 体力计划、coffee.yml
         #   咖啡店、suibian_temple.yml 随便观等）随导入整目录对齐
         # _group.yml 例外：任务编排走上面的 AppList 整表语义（含未启用项），不整搬。
-        # 均不经 MAS 用户字段承载，直接对齐到绑定槽（注入运行的实例目录）；
+        # 均不经 MAS 账号字段承载，直接对齐到绑定槽（注入运行的实例目录）；
         # 用户尚无绑定槽时按全局查重分配（语义与运行注入的 ensure_user_slot
         # 一致）。来源缺失的文件对齐为删除 = 沿用 zzz-od 默认
         slot = int(user_cfg.Info.SlotIdx or -1)
@@ -572,7 +572,7 @@ class ZzzOdRecovery:
             else f"应用通知/按键配置/体力计划已对齐槽 {slot:02d}"
         )
         logger.info(
-            f"ZZZ-OD 用户 {uid} 已从实例 {int(instance_idx):02d} 导入配置"
+            f"ZZZ-OD 账号 {uid} 已从实例 {int(instance_idx):02d} 导入配置"
             f"(账号字段 {imported_accounts} 项, 任务 {len(all_apps)} 项, "
             f"{align_note})"
         )
@@ -632,12 +632,12 @@ class ZzzOdRecovery:
         也跳过。删除动作不因回收失败中断（每一步的失败都只告警）。
 
         槽的 MAS 备份池一并回收：mas 池按（脚本, 槽）分桶、没有用户维度，
-        槽号分给新用户后留在原位会串到别人名下（见
+        槽号分给新账号后留在原位会串到别人名下（见
         :func:`app.task.ZzzOd.tools.recycle_mas_backups`）。槽目录收走后该号
         同时移出分配台账（台账只记 MAS 手上还在用的号）。
 
-        ``exclude_same_script``：删脚本时传 True——整个脚本都在移除，同脚本
-        用户间的相互占用不挡回收（否则共享同一槽的两个用户会双双跳过，
+        ``exclude_same_script``：删脚本时传 True——整个脚本都在移除，同托管
+        账号间的相互占用不挡回收（否则共享同一槽的两个账号会双双跳过，
         mas 池随后被 data/{script_id} 整删且未经归档，恢复历史丢失）。
         """
 
@@ -719,7 +719,7 @@ class ZzzOdRecovery:
     ) -> dict:
         """读取指定备份的配置摘要（纯读不恢复），供「预览配置」快速展示。
 
-        - target="mas"：基本信息卡信息字段（用户名/启用/base 来源/启动器/剩余天数/
+        - target="mas"：基本信息卡信息字段（账号名称/启用/base 来源/启动器/剩余天数/
           备注/节点详情推送，来自备份内信息快照）+ 账号字段（缺失合并默认值，
           密码掩码）+ 任务编排（应用目录并入中文名）；
         - target="onedragon"：备份内 one_dragon.yml 注册表的实例列表。
@@ -815,7 +815,7 @@ class ZzzOdRecovery:
         _, root, user_cfg, _ = self.context.user(script_id, user_id)
         slot = int(user_cfg.Info.SlotIdx or -1)
         if slot <= 0:
-            raise ValueError("该用户还没有生成过配置备份")
+            raise ValueError("该账号还没有生成过配置备份")
         backup = get_mas_backup_dir(script_id, slot, ts)
         if backup is None:
             raise ValueError(f"备份不存在: {ts}")

@@ -90,7 +90,7 @@ if IS_WINDOWS:
 logger = get_logger("BetterGI 账号切换")
 
 # 切换流程互斥锁：两个切换线程并发驱动同一游戏窗口会互相踩踏（2026-09-23 实机：
-# 任务反复启停留下僵尸切换线程，与下一个用户的切换并发，一个点开账密表单、
+# 任务反复启停留下僵尸切换线程，与下一个账号的切换并发，一个点开账密表单、
 # 另一个在滚轮翻页，最终把隐私政策文档页都点了出来）。非阻塞获取，抢不到
 # 直接响亮失败，不排队。
 _SWITCH_LOCK = threading.Lock()
@@ -648,7 +648,7 @@ def _find_masked_account(
     return None
 
 
-# ── 游戏内退出到标题（多用户循环时上一账号仍登录在游戏内的兜底）──────────
+# ── 游戏内退出到标题（多账号循环时上一账号仍登录在游戏内的兜底）──────────
 
 
 def _exit_to_title_from_game(hwnd: int, on_log: Callable[[str], None]) -> bool:
@@ -1545,7 +1545,7 @@ def account_switch(
             面板显示的昵称匹配选号）。
         password: 账号密码；官服非空时走「登录其他账号 + 剪贴板输入账密」
             版本。B服暂不支持账密登录（验证码无法自动完成），填了也忽略。
-        resource: 目标服务器（用户配置 Switch.Resource），决定走哪套登录 UI；
+        resource: 目标服务器（账号配置 Switch.Resource），决定走哪套登录 UI；
             暂仅接受「官服/B服」，其余（国际服各服）响亮失败。
         on_log: 流程进度回调（供 MAS 推送调度台日志），默认仅写日志。
 
@@ -1622,7 +1622,7 @@ def account_switch(
                 _switch_account_bili(hwnd, account, _on_log)
             else:
                 # 启动稳定化：等界面进入「标题 / 登录对话框 / 账密表单」之一再分流，
-                # 滞留游戏内时自动经派蒙菜单退出到标题（多用户循环的常见起点）；
+                # 滞留游戏内时自动经派蒙菜单退出到标题（多账号循环的常见起点）；
                 # 等待期间窗口失效重定位后的新句柄经返回值带回，后续流程不再用死句柄
                 hwnd = _wait_for_actionable_state(hwnd, _on_log)
                 if not (_on_login_dialog(hwnd) or _on_password_form(hwnd)):

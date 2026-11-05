@@ -28,13 +28,13 @@ from app.utils import constants as _utils_constants
 def prepare_user_update(
     script: ConfigEntry, user: ConfigEntry, *, data: dict[str, Any]
 ) -> None:
-    """原生来源只保留一个用户，并关闭不参与原生运行的注入配置。"""
+    """原生来源只保留一个账号，并关闭不参与原生运行的注入配置。"""
     script_config = cast(ZzzOdConfig, script)
     user_config = cast(ZzzOdUserConfig, user)
     new_base = _utils_constants.normalize_base_source(data.get("Info", {}).get("Base"))
     if new_base == _utils_constants.BASE_NATIVE:
         data.setdefault("OneDragon", {})["AppList"] = "[]"
-        # 直控恒为纯原生裸跑，旧快速配置开关归关。
+        # 直控恒为纯原生裸跑，旧覆写常规配置开关归关。
         data.setdefault("Info", {})["IfQuickConfig"] = False
     if (
         new_base == _utils_constants.BASE_NATIVE
@@ -52,5 +52,5 @@ def prepare_user_update(
         )
     ):
         raise ValueError(
-            "每个脚本仅允许一个原生来源用户, 多账号请在该用户的实例管理中配置"
+            "每个托管仅允许一个原生来源账号, 多账号请在该账号的实例管理中配置"
         )

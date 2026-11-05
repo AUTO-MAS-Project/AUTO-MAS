@@ -16,12 +16,12 @@
 #   You should have received a copy of the GNU Affero General Public
 #   License along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""MaaEnd 配置备份归档：MAS 用户配置 / 脚本原生配置，两类独立快照。
+"""MaaEnd 配置备份归档：MAS 账号配置 / 脚本原生配置，两类独立快照。
 
 备份时机（MAS「动手前」，此时 MaaEnd 尚未被触碰）：
 
 - 任务 / 配置会话启动（manager ``prepare``）：``native`` 归档 MaaEnd 安装
-  目录 ``config/`` 当前状态（整目录）——安装配置物理上跨用户共享，只在
+  目录 ``config/`` 当前状态（整目录）——安装配置物理上跨账号共享，只在
   任务级归档一次；
 - 运行 / 配置会话下发前（AutoProxy / ScriptConfig 的 ``set_maaend``）：
   ``mas`` 归档本轮下发源（shared 来源共享 Default 目录、independent 来源当前用户目录，
@@ -29,9 +29,9 @@
 - 编辑界面进入 / 退出（前端 ensure）：进入时归档 ``native``（MAS 触碰前
   原始态）、退出时归档 ``mas``（编辑会话包络的 MAS 侧终态）。
 
-``mas`` 池的内容 = ConfigFile 整目录 + **快速配置覆盖层字段侧车**：页面
-任务配置卡片（快速配置）的字段存在 MAS 用户配置里、运行时才覆盖进
-mxu-MaaEnd.json 的任务开关与选项，不在 ConfigFile 中——侧车让「MAS 用户
+``mas`` 池的内容 = ConfigFile 整目录 + **覆写常规配置覆盖层字段侧车**：页面
+任务配置卡片（覆写常规配置）的字段存在 MAS 账号配置里、运行时才覆盖进
+mxu-MaaEnd.json 的任务开关与选项，不在 ConfigFile 中——侧车让「MAS 账号
 配置备份」真正覆盖用户在 MAS 页面配的东西，恢复时随文件一起回滚并回填
 表单（对齐 ok-ww 覆盖层模式）。MAS 配置目录 owner 由用户当前的
 ``Info.Base`` 决定（shared=Default 共享、independent=独立目录、native=无 MAS 配置），
@@ -61,7 +61,7 @@ logger = get_logger("MaaEnd 配置备份")
 
 
 def backup_root(script_id: str) -> Path:
-    """某脚本的备份归档根目录（MAS 用户池用）：``data/{script_id}/MaaEndBackups``。"""
+    """某脚本的备份归档根目录（MAS 账号池用）：``data/{script_id}/MaaEndBackups``。"""
 
     return Path.cwd() / "data" / script_id / "MaaEndBackups"
 
@@ -71,7 +71,7 @@ def project_backup_root() -> Path:
 
     native（脚本原生配置）池挂在这里而不是脚本目录下——同一份物理安装
     可被多个脚本实例引用，原生备份按物理配置根指纹分桶、跨脚本共享、
-    不随脚本删除（mas 用户池仍按脚本，见 :func:`mas_backup_root`）。
+    不随脚本删除（mas 账号池仍按脚本，见 :func:`mas_backup_root`）。
     """
 
     return Path.cwd() / "data" / "MaaEndBackups"
@@ -80,9 +80,9 @@ def project_backup_root() -> Path:
 def mas_backup_root(script_id: str, user_id: str) -> Path:
     """MAS 池归档根：``data/{script_id}/MaaEndBackups/mas/{user_id}``。
 
-    **恒按用户分桶**——备份内容（ConfigFile 快照 + 快速配置覆盖层侧车）
-    的侧车是用户级的，按用户分桶才能保证每个用户只看到、只恢复自己的
-    备份。池与恢复目标解耦：shared 来源用户的下发源是共享 Default 目录，但
+    **恒按账号分桶**——备份内容（ConfigFile 快照 + 覆写常规配置覆盖层侧车）
+    的侧车是账号级的，按账号分桶才能保证每个账号只看到、只恢复自己的
+    备份。池与恢复目标解耦：shared 来源账号的下发源是共享 Default 目录，但
     其池仍是 ``mas/{user_id}``。
     """
 
@@ -109,7 +109,7 @@ def mas_config_dir(script_id: str, owner: str) -> Path:
     return Path.cwd() / "data" / script_id / owner / "ConfigFile"
 
 
-# ══════════════════ MAS 配置（池按用户，目标路径按 owner） ══════════════════
+# ══════════════════ MAS 配置（池按账号，目标路径按 owner） ══════════════════
 
 _OVERLAY_INFO_KEYS = (
     "Base",
@@ -118,7 +118,7 @@ _OVERLAY_INFO_KEYS = (
     "SanityStrategy",
     "SanityMode",
 )
-"""MAS 页面基础字段（UserData.Info）：来源仅预览，账号/快速配置/理智模式参与回填"""
+"""MAS 页面基础字段（UserData.Info）：来源仅预览，账号/覆写常规配置/理智模式参与回填"""
 
 _OVERLAY_SANITY_KEYS = (
     "SanityTaskType",
@@ -132,7 +132,7 @@ _OVERLAY_SANITY_KEYS = (
     "SupplyPlanLimits",
     "ProtocolSpaceObtainModeClaim",
 )
-"""理智任务选项字段（UserData.Task，快速配置开启时运行时写入任务选项）"""
+"""理智任务选项字段（UserData.Task，覆写常规配置开启时运行时写入任务选项）"""
 
 _OVERLAY_TASK_KEYS = (
     *(f"If{task}" for task in MAAEND_TASKS),
@@ -146,7 +146,7 @@ _OVERLAY_TASK_KEYS = (
     "DailyOnceTasks",
     *_OVERLAY_SANITY_KEYS,
 )
-"""快速配置覆盖层字段（UserData.Task，运行时覆盖进 mxu-MaaEnd.json 任务开关与选项）"""
+"""覆写常规配置覆盖层字段（UserData.Task，运行时覆盖进 mxu-MaaEnd.json 任务开关与选项）"""
 
 _OVERLAY_KEY_GROUPS = {"Info": _OVERLAY_INFO_KEYS, "Task": _OVERLAY_TASK_KEYS}
 """侧车字段的配置段归属（两组键名无交集，侧车内平铺存储）"""
@@ -196,7 +196,7 @@ _TASK_LABELS.update(
 )
 """MaaEnd 任务中文名（含独立送货/采集阶段与本体其余任务；不依赖本体运行时）"""
 
-# 快速配置开关覆盖的任务（mas 池「任务启用」罗列行）
+# 覆写常规配置开关覆盖的任务（mas 池「任务启用」罗列行）
 _QUICK_CONFIG_TASKS = (*MAAEND_TASKS, MAAEND_DELIVERY_TASK, MAAEND_AUTO_COLLECT_TASK)
 
 _OVERLAY_FIELD_LABELS = {
@@ -217,7 +217,7 @@ _OVERLAY_FIELD_LABELS = {
     # IfSanity 的开关用分组名「理智作战」，与合成的「理智任务」行区分
     "IfSanity": "理智作战",
 }
-"""侧车字段中文标签（对齐 MaaEnd 用户编辑页词表）"""
+"""侧车字段中文标签（对齐 MaaEnd 账号编辑页词表）"""
 
 _SANITY_TASK_TYPE_LABELS = {
     "OperatorProgression": "干员养成",
@@ -286,7 +286,7 @@ _REWARDS_OPTION_REWARDS_FLAG = {
 
 
 def read_overlay_values(config: ConfigEntry) -> dict:
-    """按配置分组的 JSON 导出规则读取快速配置字段，UUID 引用导出为字符串。
+    """按配置分组的 JSON 导出规则读取覆写常规配置字段，UUID 引用导出为字符串。
 
     值为 ``None``（配置项不存在）的键不纳入侧车。
     """
@@ -322,10 +322,10 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
 def collect_mas_files(
     mas_dir: str | Path, overlay: dict | None = None
 ) -> dict[str, "Path | str"]:
-    """收集 MAS 配置目录文件集 + 快速配置覆盖层字段侧车（相对键 → 路径/内存内容）。
+    """收集 MAS 配置目录文件集 + 覆写常规配置覆盖层字段侧车（相对键 → 路径/内存内容）。
 
     侧车为内存 JSON（:func:`archive_files` 支持内存内容），免临时文件；
-    目录缺失或为空时仅归档侧车——用户级目录要等首次运行/播种物化，页面
+    目录缺失或为空时仅归档侧车——账号级目录要等首次运行/播种物化，页面
     字段不能因目录未建而一起丢（否则从未运行的用户切来源、改配置后退出，
     mas 池永远为空）。
     """
@@ -349,9 +349,9 @@ def archive_mas_backup(
     force: bool = False,
     base: str | None = None,
 ) -> Path | None:
-    """归档 MAS 配置整份 + 快速配置覆盖层字段侧车到用户池（指纹去重，无变化跳过）。
+    """归档 MAS 配置整份 + 覆写常规配置覆盖层字段侧车到账号池（指纹去重，无变化跳过）。
 
-    ``user_id`` 是池归属（恒按用户分桶，见 :func:`mas_backup_root`）；
+    ``user_id`` 是池归属（恒按账号分桶，见 :func:`mas_backup_root`）；
     ``mas_dir`` 是归档/恢复目标路径，由调用方按 owner 解析（shared 来源共享
     Default 目录、independent 来源用独立目录）——池与目标解耦。
     侧车参与指纹：只改表单覆盖层字段、未动 ConfigFile 时同样新建归档
@@ -375,18 +375,18 @@ def archive_mas_backup(
         return None
     if base:
         _utils_config_archive.write_backup_base(dest, base)
-    logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
-    """用户池的全部归档时间戳（倒序，最新在前）。"""
+    """账号池的全部归档时间戳（倒序，最新在前）。"""
 
     return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
-    """取用户池指定时间戳的归档目录；不存在返回 None。"""
+    """取账号池指定时间戳的归档目录；不存在返回 None。"""
 
     return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
@@ -399,12 +399,12 @@ def restore_mas_backup(
     overlay: dict | None = None,
     base: str | None = None,
 ) -> dict | None:
-    """把用户池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
+    """把账号池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
 
-    ``user_id`` 是池归属（与归档一致按用户分桶）；``mas_dir`` 是恢复目标
+    ``user_id`` 是池归属（与归档一致按账号分桶）；``mas_dir`` 是恢复目标
     路径，由调用方按 owner 解析（shared 来源共享 Default 目录、independent 来源用独立目
-    录）。``overlay`` 为当前用户的覆盖层字段，随恢复前存底一起归档。
-    返回该备份的覆盖层字段（供调用方回填 MAS 用户配置；旧版备份无侧车
+    录）。``overlay`` 为当前账号的覆盖层字段，随恢复前存底一起归档。
+    返回该备份的覆盖层字段（供调用方回填 MAS 账号配置；旧版备份无侧车
     返回 ``None``），侧车文件随即从目录中分离删除，不留在 ConfigFile 里。
     """
 
@@ -439,7 +439,7 @@ def restore_mas_backup(
             )
     else:
         restored_overlay = read_overlay_sidecar(backup_dir)
-    logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 
 
@@ -450,13 +450,13 @@ def archive_mas_runtime_backup(
     overlay: dict | None = None,
     base: str | None = None,
 ) -> None:
-    """运行 / 配置会话下发前归档 MAS 配置（下发源）到用户池。
+    """运行 / 配置会话下发前归档 MAS 配置（下发源）到账号池。
 
     会话保存会覆盖它，下发前存底；指纹去重，失败只记日志，绝不中止随后
     的运行或会话（归档是现场保护，不是前置条件）。
-    ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前用户
-    owner 解析（shared 来源=Default 共享目录、independent 来源=独立目录；原生来源用户无 MAS
-    配置，调用方不调用本函数）。native 池与此处无关：原生配置跨用户
+    ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前账号
+    owner 解析（shared 来源=Default 共享目录、independent 来源=独立目录；原生来源账号无 MAS
+    配置，调用方不调用本函数）。native 池与此处无关：原生配置跨账号
     共享，由 manager ``prepare`` 在任务级一次性归档
     （见 :func:`archive_native_backup`）。
     """
@@ -581,7 +581,7 @@ def _select_instance(config: dict) -> dict | None:
 def _native_task_display_name(task: dict) -> str:
     """TaskQueue 任务条目 → 展示名（customName → MAS 词表 → 原任务名）。
 
-    MAS 词表与 mas 池快速配置开关共用（同口径规则：同一任务概念在两池
+    MAS 词表与 mas 池覆写常规配置开关共用（同口径规则：同一任务概念在两池
     同标签）；词表外的任务（上游新增/用户自建）回退 customName 或原名。
     """
 
@@ -905,11 +905,11 @@ def build_overlay_summary(
     返回三个分区（前端按文件集逐区渲染）：**任务启用**用罗列行（启用了
     哪些），**配置内容**用表单行（具体刷本等细节），二者按**概念是否有
     MaaEnd GUI 对应**归入 MaaEnd 对应区；MaaEnd GUI 无对应概念的调度类
-    字段（配置文件来源/快速配置/每日仅执行一次）归 MAS 独有区。
+    字段（配置文件来源/覆写常规配置/每日仅执行一次）归 MAS 独有区。
 
-    快速配置关闭时，覆盖层字段运行时不生效（任务启用以 mxu 配置原值为
+    覆写常规配置关闭时，覆盖层字段运行时不生效（任务启用以 mxu 配置原值为
     准），任务启用与配置内容区随门控隐藏（账号除外——登录与账号切换
-    不受快速配置影响）。分区无行时整体省略（旧版备份可能只有部分字段）。
+    不受覆写常规配置影响）。分区无行时整体省略（旧版备份可能只有部分字段）。
     """
 
     quick_config_on = bool(overlay.get("IfQuickConfig"))

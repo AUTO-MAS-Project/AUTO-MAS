@@ -20,7 +20,7 @@
 
 """BAAH 控制器。
 
-按用户逐个拉起 BAAH 自动代理任务，结束时统一组装任务报告并推送。
+按账号逐个拉起 BAAH 自动代理任务，结束时统一组装任务报告并推送。
 """
 
 import uuid
@@ -85,18 +85,18 @@ class BAAHManager(ScriptManagerBase):
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if not isinstance(script_config, BAAHConfig):
-            return "脚本配置类型错误, 不是 BAAH 脚本类型"
+            return "托管配置类型错误, 不是 BAAH 托管类型"
 
         if script_config.Emulator.Id == "-" or script_config.Emulator.Index in [
             "",
             "-",
         ]:
-            return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
+            return "未完成模拟器配置, 请检查托管配置中的模拟器设置！"
 
         ## 程序目录、配置目录与日志目录都由 BAAHPath 派生，只需校验它
         path = script_config.Script.BAAHPath
         if path is None:
-            return "未填写 BAAH 主程序路径, 请检查脚本配置中的主程序路径设置！"
+            return "未填写 BAAH 主程序路径, 请检查托管配置中的主程序路径设置！"
         if not path.is_file():
             directory = script_install.workspace(path.parent)
             if not ((directory / "transaction.json").exists()):
@@ -112,13 +112,13 @@ class BAAHManager(ScriptManagerBase):
         ] = await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock_x()
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         self.user_config = self.script_config.UserData
-        logger.success(f"{self.script_info.script_id} 已锁定, BAAH 脚本配置提取完成")
+        logger.success(f"{self.script_info.script_id} 已锁定, BAAH 托管配置提取完成")
 
         self.script_info.user_list = self.build_proxy_user_list(
             self.user_config.items()
         )
         logger.info(
-            f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
+            f"账号列表加载完成, 已筛选账号数: {len(self.script_info.user_list)}"
         )
 
         # 初始化模拟器管理器：模拟器的启动与关闭统一由本软件调度,
@@ -131,7 +131,7 @@ class BAAHManager(ScriptManagerBase):
     async def _prepare_program_update(self) -> None:
         root = self.script_config.Script.BAAHPath.parent
         self.check_result = "BAAH 更新准备未完成"
-        # 按真实安装路径排队，等待前一 BAAH 的所有用户和恢复动作结束；
+        # 按真实安装路径排队，等待前一 BAAH 运行的全部账号及恢复动作结束；
         # 跨 MAS 进程仍由文件锁保障，不改变不同安装目录的并行能力。
         lock = update_files.directory_lock(root.resolve())
         await lock.acquire()
@@ -188,7 +188,7 @@ class BAAHManager(ScriptManagerBase):
         await self.prepare()
 
         if not isinstance(self.script_config, BAAHConfig):
-            raise RuntimeError("脚本配置类型错误, 不是 BAAH 脚本类型")
+            raise RuntimeError("托管配置类型错误, 不是 BAAH 托管类型")
 
         await self._prepare_program_update()
 
@@ -232,8 +232,8 @@ class BAAHManager(ScriptManagerBase):
                     f"{self.script_info.name or '空白'}的"
                     f"{TASK_MODE_ZH[self.task_info.mode]}任务报告"
                 )
-                ## 按用户交错组装「用户结果行 + 该用户节点详情」，
-                ## 失败类型条目仅在本次任务存在未完成用户时纳入报告
+                ## 按账号交错组装「账号结果行 + 该账号节点详情」，
+                ## 失败类型条目仅在本次任务存在未完成账号时纳入报告
                 has_uncompleted = summary.uncompleted_count > 0
                 user_result_text = self._render_user_results(
                     has_uncompleted=has_uncompleted
@@ -263,7 +263,7 @@ class BAAHManager(ScriptManagerBase):
                         ),
                     )
 
-            # 安装准备/用户执行异常不可被常规收尾覆盖成“完成”。
+            # 安装准备/账号执行异常不可被常规收尾覆盖成“完成”。
             if self.script_info.status == "异常" or any(
                 user.status not in {"完成", "跳过"}
                 for user in self.script_info.user_list

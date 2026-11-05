@@ -187,7 +187,7 @@ async def _unify_views_to_group(
     for entry in entries:
         member = entry.member
         script_id, name = member.script_id, member.name
-        # 用户之间不持视图预约；运行中的脚本还须按配置锁跳过，在事件循环上查。
+        # 账号之间不持视图预约；运行中的脚本还须按配置锁跳过，在事件循环上查。
         config = dict(script_configs()).get(script_id)
         if config is None:
             continue

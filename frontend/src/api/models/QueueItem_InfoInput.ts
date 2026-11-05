@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type QueueItem_InfoInput = {
     /**
-     * 脚本 ID
+     * 托管 ID
      */
     ScriptId?: (string | null);
 };

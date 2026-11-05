@@ -91,7 +91,7 @@ from app.task.MaaFW.tools.embedded.update_progress import (
 from app.task.MaaFW.tools.embedded.update_session import UpdateProxy, UpdateSession
 from app.utils import get_logger, sanitize_log_message
 
-UPDATE_SCRIPT_BUSY = "脚本正在运行，运行结束后再更新项目"
+UPDATE_SCRIPT_BUSY = "托管正在运行，运行结束后再更新项目"
 UPDATE_PROJECT_UPDATING = "该项目正在更新，请等当前更新完成"
 # 预约被占、又不是在更新：编辑页准备运行环境、兄弟脚本的更新切过来后确认环境、导入 / 克隆、
 # 启动期迁移都会短暂持有。分不清是哪一个，只说被占用，不说「正在运行」误导用户。
@@ -192,8 +192,8 @@ def _maafw_update_message_with_cdk(message: str, extra: dict[str, Any]) -> str:
 def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, str]:
     """组装 MaaFW 项目更新实现所需的 source_config。
 
-    只包含用户可配置的三项：``package_source``（脚本级 ``Update.Source``，
-    Mirror 酱 / GitHub）、``mirror_cdk``、``channel``。三项**都只看脚本级、
+    只包含用户可配置的三项：``package_source``（托管级 ``Update.Source``，
+    Mirror 酱 / GitHub）、``mirror_cdk``、``channel``。三项**都只看托管级、
     不做全局兜底**，与 ``tools/embedded/update_credentials.py`` 用的是同一个
     解析函数，保证手动更新与运行时自动更新的行为一致。
 
@@ -207,7 +207,7 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
     （兜底在 ``update_maafw_project_if_needed`` 里），故必须在此补上。
     """
 
-    # 三项都只看脚本级，不做全局兜底（与 embedded 侧的 resolve_update_credentials
+    # 三项都只看托管级，不做全局兜底（与 embedded 侧的 resolve_update_credentials
     # 一致）：全局那两项服务的是 MAS 自身的更新，语义不同。
     credentials = resolve_update_credentials(script_config)
     config = {
@@ -223,14 +223,14 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
 
 
 def _describe_group_ahead(version: str) -> str:
-    return f"同项目的其他脚本已更新到 {version}，点「更新」即可切换（无需下载）"
+    return f"同项目的其他托管已更新到 {version}，点「更新」即可切换（无需下载）"
 
 
 def _group_ahead_version(root_path: Path, channel: str) -> str | None:
-    """同项目、同更新通道的其他脚本已经更新到、比本脚本新的版本；没有为 None。
+    """同项目、同更新通道的其他托管已经更新到、比本托管新的版本；没有为 None。
 
-    只读视图标记与谱系记录（不联网）。本脚本运行中被跳过、随后又被停止时会落后于
-    其他脚本；这时「更新」只是切过去，不用下载。
+    只读视图标记与谱系记录（不联网）。本托管运行中被跳过、随后又被停止时会落后于
+    其他托管；这时「更新」只是切过去，不用下载。
     """
 
     from app.task.MaaFW.tools.core.project_update.payloads import version_newer
@@ -433,7 +433,7 @@ async def _open_update_request(
         return MaaFWApiReply.error(
             400,
             "找不到项目文件。请关闭本页后重新打开，MAS 会尝试自动修复；"
-            "仍不行就新建脚本重新导入",
+            "仍不行就新建托管重新导入",
         )
 
     try:
@@ -447,7 +447,7 @@ async def _open_update_request(
         return MaaFWApiReply.error(500, f"MFW interface 读取失败: {exc}")
 
     source_config = _maafw_update_source_config(script_config)
-    # 代理按脚本级解析（留空跟随全局），与运行前自动更新同一口径；地址可能带
+    # 代理按托管级解析（留空跟随全局），与运行前自动更新同一口径；地址可能带
     # user:pw，不进日志，也不走 ``Config.proxy``（它每次访问都记一行地址）。地址填错时
     # 下载已按直连，预检的 uv / pip 也整条直连（``url`` 成空串），别把一个 httpx 都不认的
     # 串再塞进子进程环境变量。
@@ -489,7 +489,7 @@ async def _check_project_update(req: _UpdateRequest) -> MaaFWApiReply:
         shell_hint=str(req.source_config.get("project_shell_hint") or ""),
         send_log=req.panel.send_update_log,
     )
-    # 组里已有比本脚本新的版本时，以它为准问远端（与应用时第 1 步组同步之后一致），
+    # 组里已有比本托管新的版本时，以它为准问远端（与应用时第 1 步组同步之后一致），
     # 远端没有更新的就提示「点更新即可切换」，别引导用户去配 CDK 或等下次运行。
     try:
         group_version = await asyncio.to_thread(
@@ -523,7 +523,7 @@ async def _check_project_update(req: _UpdateRequest) -> MaaFWApiReply:
 
 
 def _reply_group_ahead(req: _UpdateRequest, group_version: str) -> MaaFWApiReply:
-    """远端没有更新的（或查不了），但同项目其他脚本已有更新的版本：「更新」即可切过去。"""
+    """远端没有更新的（或查不了），但同项目其他托管已有更新的版本：「更新」即可切过去。"""
 
     message = _describe_group_ahead(group_version)
     req.panel.finished(success=True, message=message)
@@ -628,7 +628,7 @@ def _reply_discovered(
     if not installable and unavailable_reason:
         message = f"{message}（暂无可安装更新包: {unavailable_reason}）"
         if group_version:
-            # 远端的装不了，但同项目其他脚本已有更新的版本：「更新」能先切过去。
+            # 远端的装不了，但同项目其他托管已有更新的版本：「更新」能先切过去。
             message = f"{message}；{_describe_group_ahead(group_version)}"
             installable = True
     req.panel.finished(
@@ -746,7 +746,7 @@ async def _run_apply(req: _UpdateRequest) -> tuple[Any, str | None] | MaaFWApiRe
             req.root_path, req.panel.send_update_log, proxy_url=req.proxy.url
         )
     if outcome.updated and not outcome.registered_id:
-        # 第 1 步组同步就切到了同项目其他脚本已有的版本，核心包随后的收尾说的是远端
+        # 第 1 步组同步就切到了同项目其他托管已有的版本，核心包随后的收尾说的是远端
         # （「已是最新」或「没有可安装的更新包」，后者按失败显示）：结论以切换为准。
         req.panel.finished(
             success=True, message=str(getattr(outcome.result, "message", "") or "")
@@ -773,7 +773,7 @@ def _apply_core_call(
         )
         memo_path_for = memo_path_factory(target.lineage)
         # 进度出口不交给环境准备：它的收尾事件 completed / failed 会被进度跟踪器当成
-        # 更新终态，而此时还在 post_validating。预检里的 uv / pip 子进程也走脚本级代理。
+        # 更新终态，而此时还在 post_validating。预检里的 uv / pip 子进程也走托管级代理。
         post_validate = session.precheck(
             pool_root=pool_root,
             failure={},
@@ -869,7 +869,7 @@ def _apply_reply(req: _UpdateRequest, outcome: Any) -> MaaFWApiReply:
 async def query_mirror_cdk(script_id: str, cdk: str) -> MaaFWApiReply:
     """``/maafw/mirror-cdk``：编辑页 CDK 输入框下那行小字要的 CDK 状态与到期时间。
 
-    CDK 用请求里的值（输入框当前值，失焦后保存可能还没落盘）；渠道与代理按脚本级
+    CDK 用请求里的值（输入框当前值，失焦后保存可能还没落盘）；渠道与代理按托管级
     ``Update.*``，与手动更新同一口径。项目根按脚本取视图，但**不**像 ``/maafw/update``
     那样先补建视图——这只是一行提示，不该在打开页面时触发导入；视图不在、interface 读不了
     都按 ``unsupported`` 返回，界面上什么都不显示。查不到（网络等）同样按成功返回

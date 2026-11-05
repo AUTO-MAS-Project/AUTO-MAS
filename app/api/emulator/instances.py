@@ -114,8 +114,8 @@ class Emulator2PathRemoveIn(BaseModel):
 
 
 class Emulator2AffectedScript(BaseModel):
-    scriptId: str = Field(..., description="脚本ID")
-    name: str = Field(..., description="脚本名称")
+    scriptId: str = Field(..., description="托管ID")
+    name: str = Field(..., description="托管名称")
     slot: str = Field(..., description="绑定的设备号")
     running: bool = Field(default=False, description="是否正在运行")
 

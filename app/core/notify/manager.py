@@ -351,7 +351,7 @@ class NotificationManager:
         )
 
     def user_target(self, user_config: NotificationSourceConfig) -> NotifyTarget:
-        """按用户配置构造独立通知目标。"""
+        """按账号配置构造独立通知目标。"""
         return self._resolve_target(
             config=user_config, scope="user", empty_policy="warn"
         )
@@ -450,7 +450,7 @@ class NotificationManager:
         global_empty_policy: EmptyPolicy = "send",
         compact_summary: bool = False,
     ) -> list[NotifyTarget]:
-        """返回全局与用户级统计通知目标。"""
+        """返回全局与账号级统计通知目标。"""
 
         targets = []
         if Config.setting.Notify.IfSendStatistic:
@@ -557,8 +557,8 @@ class NotificationManager:
             f"{report.result}"
         )
         counts = (
-            f"已完成用户数: {report.completed_count}, "
-            f"未完成用户数: {report.uncompleted_count}"
+            f"已完成账号数: {report.completed_count}, "
+            f"未完成账号数: {report.uncompleted_count}"
         )
         # 有未完成的用户时摘要标题不能再说「已完成！」；调用方显式给的摘要标题优先
         summary_title = report.summary_title or title.replace(

@@ -22,7 +22,7 @@
 一样经 ``update_session.UpdateSession`` 挂到 ``view_update.run_view_update`` 上：谱系锁 → 组同步 → 核对 / 建清理后的载荷 / 登记 →
 切触发脚本 → 同组空闲脚本立即切并确认运行环境（运行中的跑完再切）。
 
-放在这里而不是 ``embedded_manager``：触发点是某个用户某次尝试的资源加载失败，在
+放在这里而不是 ``embedded_manager``：触发点是某个账号某次尝试的资源加载失败，在
 ``runner_task`` 的重试循环里，那时它正持着本视图的项目预约（``reservation_held=True``）；
 ``tools/embedded`` 是宿主与核心包之间唯一的接缝，核心包不碰宿主，worker 的导入闭包不受影响。
 """
@@ -77,7 +77,7 @@ LOCK_BUSY_REASON = "同项目的另一个脚本正在更新，这次没有核对
 RETRY_LATER_HINT = "稍后再运行一次即可"
 # 组 latest 已是另一个版本：运行中不跨版本切视图（interface 与运行计划是按本视图的版本建的，
 # 跨版本要走运行前检查重建），留给下次运行前的组同步。
-NEWER_IN_GROUP_REASON = "同项目的其他脚本已换到 {version}"
+NEWER_IN_GROUP_REASON = "同项目的其他托管已换到 {version}"
 NEXT_RUN_SWITCH_HINT = "下次运行前会自动换过去，这次不再核对"
 
 
@@ -110,7 +110,7 @@ def _state(
     """**本视图自己挂的**载荷的核对状态与记录、视图是不是在组 latest 上，以及组 latest 是
     另一个版本时它的版本号（同版本或在 latest 上时为 None）。
 
-    不看组 latest 的状态：同组兄弟清理过残留、新载荷顶替了 latest，传播那一刻本脚本正在跑
+    不看组 latest 的状态：同组兄弟清理过残留、新载荷顶替了 latest，传播那一刻本托管正在跑
     被跳过，它的视图还挂着被污染的旧载荷——按 latest 判会说「核对过、没有多余的文件」。
     """
 
@@ -165,7 +165,7 @@ def _release(version: str) -> str:
 
 
 def describe_outcome(outcome: CleanOutcome) -> str:
-    """给用户日志的一句话（视图没换的情况都说明不会再重试）。"""
+    """给账号日志的一句话（视图没换的情况都说明不会再重试）。"""
 
     release = _release(outcome.version)
     hint = f"；{NEXT_UPDATE_HINT}" if outcome.update_cleans else ""
@@ -179,12 +179,12 @@ def describe_outcome(outcome: CleanOutcome) -> str:
         if outcome.switched:
             # 视图原先不在组 latest 上（同组兄弟已清理过），经组同步换过来了。
             return (
-                f"已换上同项目其他脚本在用的版本（已与{release}核对过，没有多余的文件）"
+                f"已换上同项目其他托管在用的版本（已与{release}核对过，没有多余的文件）"
             )
         return (
             f"已与{release}核对，项目里没有多余的文件，资源加载失败不是旧版本残留造成的"
         )
-    switched = "已换上同项目其他脚本在用的版本；" if outcome.switched else ""
+    switched = "已换上同项目其他托管在用的版本；" if outcome.switched else ""
     if outcome.status == "failed":
         return (
             f"{switched}项目里有 {len(outcome.removed)} 个文件不属于{release}："
@@ -214,9 +214,9 @@ async def check_view_release(
     cache_root: Path | None = None,
     cancel_event: threading.Event | None = None,
 ) -> CleanOutcome:
-    """本脚本视图挂的载荷还没核对过发行包就核对一次，有残留就清掉并切过去。
+    """本托管视图挂的载荷还没核对过发行包就核对一次，有残留就清掉并切过去。
 
-    调用方持有本视图的项目预约。**从不抛异常**（取消除外）。返回的 ``switched`` 表示本脚本的
+    调用方持有本视图的项目预约。**从不抛异常**（取消除外）。返回的 ``switched`` 表示本托管的
     视图换了载荷——只有这时立刻重跑才有意义：清掉了残留，或视图原先不在组 latest 上、经组
     同步换了过来（同组兄弟已清理过，那份就是清理后的）。``update_cleans`` 按视图最后挂的载荷填。
     """

@@ -18,17 +18,17 @@
 #
 #   Contact: DLmaster_361@163.com
 
-"""HSR 配置恢复服务：MAS 用户字段池 / M7A+SRA 原生配置池（声明式池）。
+"""HSR 配置恢复服务：MAS 账号字段池 / M7A+SRA 原生配置池（声明式池）。
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底全部由基座
 （``app.utils.common.config.restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
-mas 池 = **纯字段侧车**（HSR 无 per-user 目录，用户配置即字段）：用户表
-（Info/Notify/Control）恒按用户，计划表（TaskSwitch/Stage/TaskOpt/Managed）
-按配置来源取脚本共享计划或用户计划，平铺键 ``组.键``，另带 ``_plan_owner``
-标注；Info.Base 仅预览；不收录加密凭据、Data 运行统计、子表。恢复 = 用户表
+mas 池 = **纯字段侧车**（HSR 无 per-user 目录，账号配置即字段）：账号表
+（Info/Notify/Control）恒按账号，计划表（TaskSwitch/Stage/TaskOpt/Managed）
+按配置来源取托管共享计划或用户计划，平铺键 ``组.键``，另带 ``_plan_owner``
+标注；Info.Base 仅预览；不收录加密凭据、Data 运行统计、子表。恢复 = 账号表
 回填 UserData、计划表写回当前 owner。native 池 = M7A config.yaml +
 SRA settings.json/cache.json/configs/（按 SRA appdata 根 + M7A 安装根
 组合指纹分桶）。
@@ -63,10 +63,10 @@ logger = get_logger("HSR 配置恢复")
 
 
 def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
-    """恢复守卫：目标用户必须存在，避免把字段回填进孤儿配置。"""
+    """恢复守卫：目标账号必须存在，避免把字段回填进孤儿配置。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
-        raise ValueError("HSR 用户不存在，请刷新后重试")
+        raise ValueError("HSR 账号不存在，请刷新后重试")
 
 
 def _m7a_root(ctx: _utils_config_restore.RestoreContext) -> Path | None:

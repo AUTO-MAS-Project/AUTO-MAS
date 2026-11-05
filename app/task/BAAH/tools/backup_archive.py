@@ -18,25 +18,25 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""BAAH 配置备份归档：MAS 用户字段侧车 / BAAH 原生配置（动态目标文件）。
+"""BAAH 配置备份归档：MAS 账号字段侧车 / BAAH 原生配置（动态目标文件）。
 
 备份时机（MAS「动手前」）：
 
 - 任务启动（AutoProxy ``prepare`` 之后、``run_once`` 托管写入之前）：
-  ``native`` 归档当前用户 ``ConfigName`` 指向的用户配置 JSON 与
+  ``native`` 归档当前账号 ``ConfigName`` 指向的账号配置 JSON 与
   ``software_config.json``——随后托管项写入会改这两个文件，任务结束按
   ``managed_backup`` 键级还原（还原 ≠ 归档：托管键之外的内容不还原）；
 - 编辑界面进入（前端 ensure）：``native`` 捕捉「MAS 操作前原始态」；
 - 编辑界面退出（前端 ensure）：``mas`` 归档 MAS 编辑页字段侧车终态。
 
-BAAH 与其它专项的根本差异：**用户身份 = BAAH 侧的 JSON 文件名**（
+BAAH 与其它专项的根本差异：**MAS 账号通过 BAAH 侧的 JSON 文件名绑定配置**（
 ``Info.ConfigName``），MAS 不持有配置本体；用户在 BAAH jsoneditor 里改坏/
 误删配置后 MAS 侧无从找回——native 池是本专项的核心价值。池 key 恒为
-``native``，**目标文件按当前用户 ConfigName 动态解析**（配置名可改可
+``native``，**目标文件按当前账号 ConfigName 动态解析**（配置名可改可
 不存在），归档内以 ``{config_name}.json`` 保存；缺失（未创建/被误删）
 时无可归档内容。
 
-mas 池当前只有元字段（配置来源/快速配置/配置文件名）——BAAH 无字段化
+mas 池当前只有元字段（配置来源/覆写常规配置/配置文件名）——BAAH 无字段化
 配置面板，这些值不注入 BAAH 配置，仅作「未来 MAS 侧扩展配置内容」的
 预留（恢复即回填）。
 
@@ -65,13 +65,13 @@ read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 
 logger = get_logger("BAAH 配置备份")
 
-# ══════════════════ MAS 用户字段侧车 ══════════════════
+# ══════════════════ MAS 账号字段侧车 ══════════════════
 
 _OVERLAY_INFO_KEYS = ("Base", "IfQuickConfig", "ConfigName")
 """MAS 编辑页字段（UserData.Info；当前均为元字段，预留未来扩展）"""
 
 _OVERLAY_PREVIEW_ONLY_KEYS = {"Base", "IfQuickConfig"}
-"""仅预览不回填的字段：来源与快速配置决定 MAS 是否写入 BAAH，恢复以当前值为准"""
+"""历史兼容字段仅预览不回填；BAAH 运行不消费 Base / IfQuickConfig"""
 
 
 def read_overlay_values(config) -> dict:
@@ -87,7 +87,7 @@ def read_overlay_values(config) -> dict:
 def group_overlay(overlay: dict) -> dict[str, dict]:
     """把平铺的侧车字段分组（恢复回填 BAAHUserConfig 用）。
 
-    来源与快速配置只预览不回填：回填旧值会静默改变 MAS 是否写入 BAAH。
+    Base / IfQuickConfig 仅兼容保留，不参与 BAAH 运行，维持只预览不回填的规则。
     """
 
     grouped: dict[str, dict] = {}
@@ -99,7 +99,7 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
 
 
 def mas_backup_root(script_id: str, user_id: str) -> Path:
-    """MAS 池归档根：``data/{script_id}/BAAHBackups/mas/{user_id}``（恒按用户）。"""
+    """MAS 池归档根：``data/{script_id}/BAAHBackups/mas/{user_id}``（恒按账号）。"""
 
     return Path.cwd() / "data" / script_id / "BAAHBackups" / "mas" / user_id
 
@@ -107,7 +107,7 @@ def mas_backup_root(script_id: str, user_id: str) -> Path:
 def archive_mas_backup(
     script_id: str, user_id: str, overlay: dict, force: bool = False
 ) -> Path | None:
-    """归档 MAS 页面字段侧车到用户池（指纹去重，无变化跳过）。"""
+    """归档 MAS 页面字段侧车到账号池（指纹去重，无变化跳过）。"""
 
     dest = _utils_config_archive.archive_files(
         {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
@@ -115,9 +115,9 @@ def archive_mas_backup(
         force=force,
     )
     if dest is None:
-        logger.info("用户 {} 的 MAS 配置无变化，跳过归档", user_id)
+        logger.info("账号 {} 的 MAS 配置无变化，跳过归档", user_id)
         return None
-    logger.info("用户 {} 的 MAS 配置已归档: {}", user_id, dest.name)
+    logger.info("账号 {} 的 MAS 配置已归档: {}", user_id, dest.name)
     return dest
 
 
@@ -130,7 +130,7 @@ def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
 
 
 def restore_mas_backup(script_id: str, user_id: str, ts: str) -> dict | None:
-    """读取用户池归档的侧车（供调用方回填 BAAHUserConfig）；无目录目标。"""
+    """读取账号池归档的侧车（供调用方回填 BAAHUserConfig）；无目录目标。"""
 
     backup_dir = get_mas_backup_dir(script_id, user_id, ts)
     if backup_dir is None:
@@ -141,17 +141,16 @@ def restore_mas_backup(script_id: str, user_id: str, ts: str) -> dict | None:
 # ══════════════════ BAAH 原生配置（ConfigName 动态目标） ══════════════════
 
 _SOFTWARE_CONFIG_KEY = "software_config.json"
-"""归档内软件配置的固定键（与用户配置文件名不会冲突：resolve_config_name 禁路径分隔符）"""
+"""归档内软件配置的固定键（与账号配置文件名不会冲突：resolve_config_name 禁路径分隔符）"""
 
 
 def native_backup_root(config_dir: str | Path, user_id: str) -> Path:
     """BAAH 配置目录的项目级归档根：``data/BAAHBackups/native/{key}/{user_id}``。
 
     ``key`` 按物理配置目录指纹分桶（同一份 BAAH 安装跨脚本实例共享）；
-    **再按用户分桶**——归档内容是用户绑定的 ``<ConfigName>.json``，是用户
-    级数据，多用户绑定同一安装时必须隔离，否则用户 A 的列表会出现用户 B
+    **再按账号分桶**——归档内容是账号绑定的 ``<ConfigName>.json``，是账号级数据，多账号绑定同一安装时必须隔离，否则账号 A 的列表会出现账号 B
     的备份、点恢复会串配置（§1.1.1 池分桶教训）。software_config.json
-    是安装级共享文件，随每个用户的备份一并归档（恢复各自写同一份）。
+    是安装级共享文件，随每个账号的备份一并归档（恢复各自写同一份）。
     """
 
     return (
@@ -165,10 +164,10 @@ def native_backup_root(config_dir: str | Path, user_id: str) -> Path:
 
 
 def resolve_native_targets(config_dir: Path, config_name: str) -> dict[str, Path]:
-    """解析当前用户配置名的归档目标文件集（用户配置 + 软件配置）。
+    """解析当前账号配置名的归档目标文件集（账号配置 + 软件配置）。
 
     ``config_name`` 经 :func:`resolve_config_name` 校验（防空/防路径穿越）；
-    用户配置文件不存在时抛 ``FileNotFoundError``（调用方决定跳过或报错）。
+    账号配置文件不存在时抛 ``FileNotFoundError``（调用方决定跳过或报错）。
     """
 
     name = resolve_config_name(config_name)
@@ -183,9 +182,9 @@ def resolve_native_targets(config_dir: Path, config_name: str) -> dict[str, Path
 
 
 def collect_native_files(config_dir: str | Path, config_name: str) -> dict[str, Path]:
-    """收集当前配置名的归档目标文件集（用户配置 + 软件配置）。
+    """收集当前配置名的归档目标文件集（账号配置 + 软件配置）。
 
-    配置目录缺失、配置名非法或用户配置文件不存在时返回空 dict（缺失项
+    配置目录缺失、配置名非法或账号配置文件不存在时返回空 dict（缺失项
     跳过）；供声明式池声明归档内容（``files`` 回调），也供
     :func:`archive_native_backup` 复用。
     """
@@ -204,7 +203,7 @@ def collect_native_files(config_dir: str | Path, config_name: str) -> dict[str, 
 def archive_native_backup(
     config_dir: Path, config_name: str, user_id: str, force: bool = False
 ) -> Path | None:
-    """归档 BAAH 用户配置 + 软件配置（指纹去重，无变化跳过）。
+    """归档 BAAH 账号配置 + 软件配置（指纹去重，无变化跳过）。
 
     配置文件不存在（未创建/已被误删）时无可归档内容，返回 ``None``——
     「归档了但内容为空」比「列表为空」更接近真实，但此时连归档对象都没有，
@@ -240,7 +239,7 @@ def restore_native_backup(
 ) -> str:
     """把归档恢复到 BAAH 配置目录（恢复前强制归档当前，误恢复可找回）。
 
-    只覆盖归档内包含的文件；恢复用户配置后**不回填 ConfigName**——备份
+    只覆盖归档内包含的文件；恢复账号配置后**不回填 ConfigName**——备份
     文件名即 ``{归档时的配置名}.json``，若与当前 ConfigName 不同说明用户
     改过绑定，恢复内容写到当前 ConfigName 指向的文件（覆盖语义，确认弹窗
     已提示）。返回归档时的配置文件名（供预览/日志展示）。
@@ -290,7 +289,7 @@ def _summary_text(value) -> str:
 
 
 def build_overlay_preview(overlay: dict) -> dict:
-    """mas 池预览：分区行（BAAH 独有 = 来源/快速配置；BAAH 配置 = 配置文件名）。"""
+    """mas 池预览：历史兼容来源与当前绑定的 BAAH 配置文件名。"""
 
     def _row(key: str, value) -> dict:
         return {"key": key, "value": _summary_text(value)}
@@ -300,7 +299,9 @@ def build_overlay_preview(overlay: dict) -> dict:
     mas_rows: list[dict] = []
     if "Base" in overlay:
         base = str(overlay["Base"])
-        mas_rows.append(_row("配置文件来源", BASE_SOURCE_LABELS.get(base, base)))
+        mas_rows.append(
+            _row("历史配置来源（不参与运行）", BASE_SOURCE_LABELS.get(base, base))
+        )
     if mas_rows:
         sections.append({"name": "mas-only", "label": "MAS 独有配置", "rows": mas_rows})
 
@@ -314,14 +315,14 @@ def build_overlay_preview(overlay: dict) -> dict:
 
 
 def build_native_preview(config_dir: Path, user_id: str, ts: str) -> dict:
-    """native 池预览：反读备份内用户配置关键字段（扁平 JSON 结构稳定可读）。
+    """native 池预览：反读备份内账号配置关键字段（扁平 JSON 结构稳定可读）。
 
     反读范围：目标设备（IP:端口 / 串号直连）、BAAH 行为键（自动关闭等）、
     任务编排（``TASK_ORDER`` + ``TASK_ACTIVATE`` 对位合成「已启用任务」，
     实测结构，缺任一键则降级不反读）；其余内部字段不进预览。软件配置
     单列日志开关一行。
 
-    用户配置文件名取备份内实际存在的 json（与当前 ConfigName 无关）——
+    账号配置文件名取备份内实际存在的 json（与当前 ConfigName 无关）——
     用户改过绑定后看旧备份仍能预览；恢复时同样按备份内实际文件写当前名
     （覆盖语义，见 :func:`restore_native_backup`）。
     """

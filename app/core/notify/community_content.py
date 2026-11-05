@@ -62,7 +62,7 @@ def _result_account(item: CommunityNotificationResult) -> str:
     if account:
         return account
     account_uid = item.account_uid.strip()
-    return account_uid or "未知用户"
+    return account_uid or "未知账号"
 
 
 def _result_nickname(item: CommunityNotificationResult) -> str:

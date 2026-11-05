@@ -52,7 +52,7 @@ from app.utils import io as _utils_io
 
 from .constants import MAA_DEPOT_EXCLUDED_ITEM_IDS
 
-logger = get_logger("脚本管理 API")
+logger = get_logger("托管管理 API")
 
 _copilot_repository: _service_maa_copilot.CopilotRepository | None = None
 
@@ -173,7 +173,7 @@ def _maa_script_config(script_id: str) -> MaaConfig:
 
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     if not isinstance(script_config, MaaConfig):
-        raise TypeError(f"脚本 {script_id} 不是 MAA 脚本")
+        raise TypeError(f"托管 {script_id} 不是 MAA 脚本")
     return script_config
 
 
@@ -210,7 +210,7 @@ async def set_infrastructure(script_id: str, user_id: str, jsonFile: str) -> Non
         raise FileNotFoundError(f"文件未找到: {json_path}")
 
     if not isinstance(Config.ScriptConfig[script_uid], MaaConfig):
-        raise TypeError(f"脚本 {script_id} 不是 MAA 脚本, 无法设置基建配置")
+        raise TypeError(f"托管 {script_id} 不是 MAA 脚本, 无法设置基建配置")
 
     try:
         infrast_data = json.loads(
@@ -268,11 +268,11 @@ def _infrast_config_dir(script_id: str, user_id: str) -> Path:
 def _infrast_plans(script_id: str, user_id: str) -> tuple[list[dict], str | None, str]:
     """生效排班表 (plans, problem, state), 与运行时使用的那份同源。
 
-    原生来源且关闭快速配置时 set_maa 跳过注入, 运行时直接用 MAA 原生配置,
+    原生来源且关闭覆写常规配置时 set_maa 跳过注入, 运行时直接用 MAA 原生配置,
     排班表只存在原生的 Infrast 任务里(InfrastPlan 不落盘, 事实源是
-    Filename 指向的排班文件); 其余组合(托管 / 原生来源+快速配置)都由 MAS
-    注入存档排班表。若不加区分地对原生来源读 MAS 存档, 原生来源用户的班次会被
-    空存档误拒; 反过来在原生来源+快速配置下读原生配置, 又会与运行时不一致。
+    Filename 指向的排班文件); 其余组合(托管 / 原生来源+覆写常规配置)都由 MAS
+    注入存档排班表。若不加区分地对原生来源读 MAS 存档, 原生来源账号的班次会被
+    空存档误拒; 反过来在原生来源+覆写常规配置下读原生配置, 又会与运行时不一致。
     """
 
     from .tools.native_config import (
@@ -322,9 +322,9 @@ def _infrast_plans(script_id: str, user_id: str) -> tuple[list[dict], str | None
 
 
 def _infrast_plan_owned_by_mas(script_id: str, user_id: str) -> bool:
-    """班次指针是否由 MAS 用户字段管理, 与 set_maa 的注入判定同源。
+    """班次指针是否由 MAS 账号字段管理, 与 set_maa 的注入判定同源。
 
-    快速配置开着时 MAS 注入排班表, 班次由 MAS 决定: 带时段表一律交 MAA 按
+    覆写常规配置开着时 MAS 注入排班表, 班次由 MAS 决定: 带时段表一律交 MAA 按
     时段选班, 无时段表注入用户自己的 ``Data.InfrastPlanIndex``。关着时 MAS
     不注入, MAA 跑的是来源配置自己的队列, 班次仍在那份配置的 PlanSelect 里。
     """
@@ -335,11 +335,11 @@ def _infrast_plan_owned_by_mas(script_id: str, user_id: str) -> bool:
 
 
 async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> int:
-    """把用户选定的基建班次写入该用户的事实源。
+    """把用户选定的基建班次写入该账号的事实源。
 
     index 与 MAA 原生语义一致: -1=自动, 0..n-1=从该班开始顺序轮换。MAS 注入
-    的组合下事实源是用户配置的 ``Data.InfrastPlanIndex``(每用户一份, 推进由
-    MAS 在基建换班完成后做), 带时段表只接受 -1; 原生来源且关快速配置时写 MAA
+    的组合下事实源是账号配置的 ``Data.InfrastPlanIndex``(每账号一份, 推进由
+    MAS 在基建换班完成后做), 带时段表只接受 -1; 原生来源且关覆写常规配置时写 MAA
     原生配置。写不进去时抛异常(而不是返回入参假装成功), 由接口层转成错误响应。
     """
 
@@ -353,11 +353,11 @@ async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> i
     user_uid = uuid.UUID(user_id)
     script_config = Config.ScriptConfig[script_uid]
     if not isinstance(script_config, MaaConfig):
-        raise TypeError(f"脚本 {script_id} 不是 MAA 脚本, 无法设置基建班次")
+        raise TypeError(f"托管 {script_id} 不是 MAA 脚本, 无法设置基建班次")
     if index < -1:
         raise ValueError("基建班次索引不能小于 -1")
     if user_uid not in script_config.UserData:
-        raise ValueError(f"脚本 {script_id} 下不存在用户 {user_id}")
+        raise ValueError(f"托管 {script_id} 下不存在账号 {user_id}")
 
     # 显式班次要落在 -1..班次数-1 内: MAA 侧只会把越界值静默修正成第一班
     # 或直接报错, 与其静默改掉用户的选择不如在入口拒绝; -1 是默认值无需校验
@@ -390,7 +390,7 @@ async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> i
     config_dir = _infrast_config_dir(script_id, user_id)
     data = read_maa_config(config_dir / "gui.new.json")
     if data is None:
-        raise ValueError("未找到或无法读取该用户的 MAA 配置, 无法设置基建班次")
+        raise ValueError("未找到或无法读取该账号的 MAA 配置, 无法设置基建班次")
     scheme = maa_scheme_name(data)
     queue = maa_task_queue(data, scheme)
     if not isinstance(queue, list):
@@ -413,8 +413,8 @@ async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> i
 async def get_infrast_plan_select(script_id: str, user_id: str) -> int:
     """读取当前基建班次索引; 带时段表 / 未设置过时返回 -1(自动)。
 
-    MAS 注入的组合下, 无时段表返回用户字段里的指针(下次从该班开始);
-    原生来源且关快速配置时读 MAA 原生配置。
+    MAS 注入的组合下, 无时段表返回账号字段里的指针(下次从该班开始);
+    原生来源且关覆写常规配置时读 MAA 原生配置。
     """
 
     from .tools.native_config import (
@@ -459,9 +459,9 @@ async def get_user_combox_infrastructure(script_id: str, user_id: str) -> dict:
 
     script_config = Config.ScriptConfig[script_uid]
 
-    # 根据脚本类型选择添加对应用户配置
+    # 根据托管类型选择添加对应账号配置
     if not isinstance(script_config, MaaConfig):
-        raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
+        raise TypeError(f"不支持的托管配置类型: {type(script_config)}")
 
     logger.info("开始获取用户自定义基建排班下拉框信息")
 
@@ -547,10 +547,10 @@ async def get_depot_stage_candidates_batch(
 async def get_depot_inventory(
     script_id: str, user_id: str
 ) -> tuple[list[dict[str, str]], str | None]:
-    """获取当前用户档案的仓库库存（label=数量，value=物品ID）与识别时间。
+    """获取当前账号档案的仓库库存（label=数量，value=物品ID）与识别时间。
 
-    查询链只读用户档案（决策 31）：多用户共用 MAA 安装时不再可能读到
-    他人数字；档案由运行期识别采集写入（T1.17），缺失 = 该用户未识别。
+    查询链只读用户档案（决策 31）：多账号共用 MAA 安装时不再可能读到
+    他人数字；档案由运行期识别采集写入（T1.17），缺失 = 该账号未识别。
     """
 
     _maa_script_config(script_id)
@@ -625,7 +625,7 @@ async def get_cultivate_operators(
 
 
 async def parse_cultivate_import(script_id: str, content: str) -> dict[str, Any]:
-    """转换剪贴板目标，不写用户配置；完整目录避免过滤掉已满级干员。"""
+    """转换剪贴板目标，不写账号配置；完整目录避免过滤掉已满级干员。"""
 
     from app.task.MAA.tools.cultivate import (
         depot_cultivate_service,
@@ -709,7 +709,7 @@ def _cultivate_skland_ref(
 async def get_cultivate_skland_progression(
     script_id: str, user_id: str, *, force: bool = False
 ) -> tuple[Mapping[str, Any], int] | None:
-    """取当前用户绑定的森空岛练度快照（带 TTL 缓存）；未绑定返回 None。
+    """取当前账号绑定的森空岛练度快照（带 TTL 缓存）；未绑定返回 None。
 
     预览走缓存（force=False），注入前强刷（force=True，决策 38）；
     拉取失败由驱动层降级为 None，绝不影响注入/预览主流程。

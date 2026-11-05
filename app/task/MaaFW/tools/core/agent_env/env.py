@@ -72,7 +72,7 @@ DETAIL_OUTPUT_LIMIT = 20000
 #: Popen，杀软刚隔离掉 agent.exe 时用户先看到的是准备环境这一句。
 AGENT_PROGRAM_MISSING_HINT = (
     "常见原因是被杀毒软件隔离或删除；请检查杀毒软件的隔离区并把项目目录加入信任，"
-    "确认无误后在脚本页重新导入项目"
+    "确认无误后在托管页重新导入项目"
 )
 VENV_PROBE_TIMEOUT = 30
 # uv 兜底可能需要下载 managed Python,给足余量
@@ -546,7 +546,7 @@ def _stale_maafw_dist_infos(python_exe: str | Path) -> list[Path]:
 
 
 def _is_embedded_copy(project_path: Path) -> bool:
-    """项目目录是不是 AUTO-MAS 自己的内嵌副本（``data/mfw/<脚本 id>``）。"""
+    """项目目录是不是 AUTO-MAS 自己的内嵌副本（``data/mfw/<托管 id>``）。"""
 
     try:
         project_path.resolve().relative_to(

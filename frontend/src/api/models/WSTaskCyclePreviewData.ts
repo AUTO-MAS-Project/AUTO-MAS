@@ -11,11 +11,11 @@ export type WSTaskCyclePreviewData = {
      */
     queueItemId: string;
     /**
-     * 脚本 ID
+     * 托管 ID
      */
     scriptId: string;
     /**
-     * 脚本名称
+     * 托管名称
      */
     scriptName: string;
     /**

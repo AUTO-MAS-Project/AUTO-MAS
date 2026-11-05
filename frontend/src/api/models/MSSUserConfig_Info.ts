@@ -8,7 +8,7 @@ export type MSSUserConfig_Info = {
      */
     Account?: (string | null);
     /**
-     * base 来源（shared=共享/independent=独立/native=原生）
+     * 兼容字段；MFW 运行不按 base 三态切换配置，任务来源为账号任务队列
      */
     Base?: ('shared' | 'independent' | 'native' | null);
     /**
@@ -16,7 +16,7 @@ export type MSSUserConfig_Info = {
      */
     Controller?: (string | null);
     /**
-     * 是否启用快速配置（与配置来源独立，按用户保存）
+     * 兼容字段；MFW 运行不消费此开关，始终使用账号任务队列
      */
     IfQuickConfig?: (boolean | null);
     /**
@@ -28,7 +28,7 @@ export type MSSUserConfig_Info = {
      */
     IfScriptBeforeTask?: (boolean | null);
     /**
-     * 用户名称
+     * 账号名称
      */
     Name?: (string | null);
     /**
@@ -60,7 +60,7 @@ export type MSSUserConfig_Info = {
      */
     Status?: (boolean | null);
     /**
-     * 用户标签信息
+     * 账号标签信息
      */
     readonly Tag?: (string | null);
     /**

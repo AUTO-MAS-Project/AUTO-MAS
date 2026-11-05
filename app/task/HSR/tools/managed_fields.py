@@ -186,7 +186,7 @@ M7A_MANAGED_FIELDS: dict[str, tuple[ManagedFieldSpec, ...]] = {
         "daily_himeko_try_enable",
         "daily_memory_one_enable",
     ),
-    # 不露出 weekly_divergent_stable_mode：以脚本级「低性能兼容模式」为准。
+    # 不露出 weekly_divergent_stable_mode：以托管级「低性能兼容模式」为准。
     "DivergentUniverse": _specs(
         "common",
         "weekly_divergent_type",

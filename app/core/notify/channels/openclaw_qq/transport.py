@@ -398,7 +398,7 @@ class Sender:
             if len(self._command_ids) > 1024:
                 self._command_ids.popitem(last=False)
             reply = (
-                "请发送：重试 脚本名称，或：启动队列 队列名称。"
+                "请发送：重试 托管名称，或：启动队列 队列名称。"
                 "名称须与 MAS 中一致，循环队列将按循环配置运行。"
             )
             if identity_query:

@@ -8,8 +8,8 @@
 > [config-archive.md](config-archive.md)。
 >
 > **接入前先定模式**：守卫/预览/快照/恢复只依赖 `script_config` + 备份文件
-> → **自包含式**（逻辑全在专项 tools，范本 OkNte）；需使用跨脚本配置集合、
-> 共用用户创建或落盘能力 → **服务装配式**（从 `ctx.config` 注入所需的通用
+> → **自包含式**（逻辑全在专项 tools，范本 OkNte）；需使用跨托管配置集合、
+> 共用账号创建或落盘能力 → **服务装配式**（从 `ctx.config` 注入所需的通用
 > 配置能力，池函数调用专项服务，范本 ZzzOd）。业务流程与语义仍归专项，
 > 不经配置总管的专项方法反向委托。两种模式池声明接口一致，同一专项不同池
 > 也可分开选。
@@ -28,61 +28,62 @@
 >
 > 参考实现（按优先级）：
 > - **OkNte（自包含式）**：`app/task/OkNte/tools/restore_service.py` +
->   `useOknteGuiSession.ts` + `OkNteUserEdit.vue`
+>   `useOknteGuiSession.ts` + `OkNteUserEdit.vue`。mas 备份按账号收录账号 `ConfigFile` 与 `QuickConfig` 面板；运行的共享基础来源仍读取 `Default/ConfigFile`，池策略与运行来源分别核对。
 > - **Okww（自包含式 + 覆盖层侧车）**：`app/task/Okww/tools/restore_service.py` +
 >   `useOkwwGuiSession.ts` + `OkwwUserEdit.vue`——mas 池带覆盖层字段侧车，
 >   三态专项的池分桶教训见 §1.1
 > - **MAA（自包含式 + 任务侧车）**：`app/task/MAA/tools/restore_service.py` +
 >   `useMaaGuiSession.ts` + `MAAUserEdit.vue`——mas 池带侧车（Info/Task 两段
->   的 MAS 可配置核心内容），两态 owner；新建用户首次进入必须先等 userId
+>   的 MAS 可配置核心内容），两态 owner；新建账号首次进入必须先等 userId
 >   就绪再 ensure；会话包络对齐运行包络的教训见 §1.1.3
-> - **MaaEnd（自包含式 + 快速配置侧车）**：`app/task/MaaEnd/tools/restore_service.py` +
->   `useMaaEndGuiSession.ts` + `MaaEndUserEdit.vue`——mas 池带快速配置覆盖层
->   侧车（对齐 ok-ww），脚本/用户/直控三态（直控无 mas 池，见 §1.1.1）；
+> - **MaaEnd（自包含式 + 覆写常规配置侧车）**：`app/task/MaaEnd/tools/restore_service.py` +
+>   `useMaaEndGuiSession.ts` + `MaaEndUserEdit.vue`——mas 池带覆写常规配置覆盖层
+>   侧车（对齐 ok-ww），共享/独立/原生三态（原生来源无 mas 池，见 §1.1.1）；
 >   预览为「任务启用罗列 + 配置内容表单」结构，专项要求见 examples-maaend.md
 > - **M9A（不是专项，走下面的 MaaFW 分支）**：M9A 是 MaaFW 的特调类型，
 >   没有自己的 restore_service 与编辑页，备份恢复用 MaaFW 的两个池
 >   （`data/<sid>/MaaFWBackups/{mas,native}`）；旧 `M9ABackups/` 不再被列出、
 >   不支持恢复、原地保留（见 `app/task/M9A/AGENTS.md`）
 > - **General（自包含式 + 无侧车目录池，有会话）**：`app/task/general/tools/restore_service.py` +
->   `GeneralUserEdit.vue`——ConfigFile 恒按用户（无 owner 解耦、无侧车：
+>   `GeneralUserEdit.vue`——ConfigFile 恒按账号（无 owner 解耦、无侧车：
 >   MAS 编辑页字段不注入原生配置，不属于配置内容，见 §1.1.4 末段）；原生
 >   配置为用户自填 ConfigPath（File/Folder 两态），预览为**文件清单粒度**
 >   （配置格式任意透传，不解析内容，直接吃基座标准 `files` 注入，零定制
 >   preview——声明式零定制样板）；提供「查看详细配置」（viewOnly，
->   脚本级跳过下发直接读 `task_info.view_only`，无需构造参数与 manager 透传）；
->   **通用性专项**：native 池收敛到脚本级（§1.1.1b）
+>   托管级跳过下发直接读 `task_info.view_only`，无需构造参数与 manager 透传）；
+>   **通用性专项**：native 池收敛到托管级（§1.1.1b）
 > - **SRC（自包含式 + 页面字段侧车，有会话）**：`app/task/SRC/tools/restore_service.py` +
 >   `SRCUserEdit.vue`——MAA 孪生形态（ConfigFile 目录副本 + Stage/Server 侧车
 >   + ScriptConfig 会话 + manager 任务级原生快照）；native 恢复前守卫 Temp
 >   待恢复快照（`Temp.ready` 残留时拒绝，防止恢复结果被下次任务回滚覆盖）、
 >   viewOnly 会话不登记 `config_user_id`（中断恢复路径不保存回 ConfigFile），
 >   SRC 特有陷阱见 examples-src.md
-> - **BetterGI（自包含式 + per-user 副本目录 + 字段侧车，有会话）**：
+> - **BetterGI（自包含式 + per-account 副本目录 + 字段侧车，有会话）**：
 >   `app/task/BetterGI/tools/restore_service.py` + `BetterGIUserEdit.vue`——
->   前端端点直接读写 per-user 副本（OneDragon/ScriptGroup/GlobalDomain，
->   即页面编辑对象，恒按用户、无 owner 解耦）；mas 池**不含**全局
+>   前端端点直接读写 per-account 副本（OneDragon/ScriptGroup/GlobalDomain，
+>   即页面编辑对象，恒按账号、无 owner 解耦）；mas 池**不含**全局
 >   `User/config.json`——它是安装根级单份共享的 BGI 全局态，不属任何
->   MAS 用户，MAS 字段经运行/查看会话物化写入、触碰前由 native 池存底；
+>   MAS 账号，MAS 字段经运行/查看会话物化写入、触碰前由 native 池存底；
 >   native = BGI 全局 `User/config.json` + 一条龙实配 `User/OneDragon/*.json`
 >   （用户在 BGI GUI 直接编辑的对象，排除 MAS 运行时槽位），两池「已启用
 >   任务」同标签同口径，详见 examples-bettergi.md
 > - **MaaFW（自包含式 + 纯字段侧车，无会话）**：`app/task/MaaFW/tools/
 >   restore_service.py` + `MaaFWUserEdit.vue`——M9A 特调同走此分支：mas 池是纯字段
->   侧车（Info/Task.SelectedPreset/TaskSnapshot/Device 段，无 per-user 目录），
+>   侧车（Info/Task.SelectedPreset/TaskSnapshot/Device 段，无 per-account 目录），
 >   native = 项目 `config/` + `interface.json`（运行时物化处，排除 resource/
->   资产）；无原生 GUI 遮罩会话；**通用性专项**：native 池收敛到脚本级
->   （§1.1.1b——MaaFW 项目属于绑定它的脚本，跨脚本共享备份没有意义）
+>   资产）；无原生 GUI 遮罩会话；**通用性专项**：native 池收敛到托管级
+>   （§1.1.1b——MaaFW 项目属于绑定它的托管，跨托管共享备份没有意义）
 > - **HSR（自包含式 + 纯字段侧车，无会话，一对多两引擎）**：
 >   `app/task/HSR/tools/restore_service.py` + `HSRUserEdit.vue`——mas 池是
->   纯字段侧车收录 **MAS 用户配置全量**（Info.Mode 仅预览 + TaskSwitch/
->   Stage/TaskOpt/Notify/Control/Managed/Direct 元数据，平铺键 ``组.键``；
->   不含加密凭据与快照内容、Data 统计、子表，无 per-user 目录），native = M7A
+>   纯字段侧车收录 **MAS 账号配置全量**（Info.Base 仅预览 + TaskSwitch/
+>   Stage/TaskOpt/Notify/Control/Managed；已删除的 `Direct.*` 不回填，平铺键 ``组.键``；
+>   不含加密凭据与快照内容、Data 统计、子表，无 per-account 目录），native = M7A
 >   `config.yaml` + SRA `settings.json`/`cache.json`/`configs/`（按 SRA appdata
->   根 + M7A 安装根**组合指纹**分桶，两根任一不同即独立池；跨脚本共享、M7A
+>   根 + M7A 安装根**组合指纹**分桶，两根任一不同即独立池；跨托管共享、M7A
 >   随 SRA 池一并归档）；无原生 GUI 遮罩会话
-> - **ZzzOd（服务装配式）**：宿主注入配置集合、通用用户创建与落盘能力，
->   恢复/预览及跨脚本占用检查由专项服务持有；池函数不委托 core 专项门面。
+> - **ZzzOd（服务装配式）**：宿主注入配置集合、通用账号创建与落盘能力，
+>   恢复/预览及跨托管占用检查由专项服务持有；池函数不委托 core 专项门面。
+> - **BAAH（引用型）**：运行按账号 `ConfigName` 引用 BAAH JSON，不消费 `Base` / `IfQuickConfig`；mas 侧车只回填配置名，兼容来源与覆写字段仅预览。native 池按当前引用文件恢复，运行托管与计划表写入仍按各自开关生效。
 
 ---
 
@@ -92,77 +93,76 @@
 
 | 池 | `kind` | 恢复作用于 |
 | --- | --- | --- |
-| `mas`（MAS 用户配置） | `user`，**恒在前** | MAS 侧目录副本 / 触发字段回填 |
+| `mas`（MAS 账号配置） | `user`，**恒在前** | MAS 侧目录副本 / 触发字段回填 |
 | `native`（脚本原生配置） | `script` | 脚本本体原生配置目录 |
 
 池表顺序 = 前端 segmented 展示顺序。`key` 任意（`mas`/`onedragon`/`native`…），
 非法 key 由服务层统一 400。
 
-#### 1.1.1 池分桶必须按用户，恢复目标才按三态 owner（Okww 教训）
+#### 1.1.1 池分桶必须按账号，恢复目标才按三态 owner（Okww 教训）
 
-**三态专项（脚本/用户/直控）的「池归属」与「恢复目标路径」是两回事，必须解耦**：
+**三态专项（共享/独立/原生）的「池归属」与「恢复目标路径」是两回事，必须解耦**：
 
-- **池分桶恒按用户**（`mas/{user_id}`）。备份内容若含用户级数据（如 ok-ww 快速
-  配置覆盖层字段侧车），按共享 owner（脚本态 `Default`）分桶会把多个用户的
-  用户级内容混进同一个池——用户 A 会看到并恢复用户 B 的侧车，回填进自己的
-  UserData，跨用户污染。
-- **恢复目标路径才按三态 owner**：脚本态 `Default` 共享目录、用户态独立目录、
-  直控无 MAS 配置。脚本态多用户各自持有共享目录的快照（内容重复但完整），
-  恢复任一备份 = 把共享目录回滚到该用户归档时点（覆盖语义，确认弹窗已提示）。
+- **池分桶恒按账号**（`mas/{user_id}`）。备份内容若含账号级数据（如 ok-ww 快速
+  配置覆盖层字段侧车），按共享 owner（共享来源 `Default`）分桶会把多个账号的
+  账号级内容混进同一个池——账号 A 会看到并恢复账号 B 的侧车，回填进自己的
+  UserData，跨账号污染。
+- **恢复目标路径才按三态 owner**：共享来源 `Default` 共享目录、独立来源独立目录、
+  原生来源无 MAS 配置。共享来源多账号各自持有共享目录的快照（内容重复但完整），
+  恢复任一备份 = 把共享目录回滚到该账号归档时点（覆盖语义，确认弹窗已提示）。
 
 实现上：池函数一般用 `ctx.user_id` 定位归档根（ZzzOd 例外：mas 池按绑定槽
-`Info.SlotIdx` 分桶，等效按用户）；`mas_dir`（归档/恢复目标）由
+`Info.SlotIdx` 分桶，等效按账号）；`mas_dir`（归档/恢复目标）由
 专项按 owner 解析后显式传入 `archive_mas_backup` / `restore_mas_backup`。
 
-#### 1.1.1a 三态来源必须显式声明（mas 池的 `mas_mode`）
+#### 1.1.1a 按恢复目标声明来源策略（mas 池的 `mas_base`）
 
-三态（脚本 / 用户 / 直控）不是靠基座猜的：**每个专项的 mas 池必须声明
-`mas_mode`**，基座据此标注备份来源、校验跨来源恢复。取值与义务：
+`mas_base` 描述恢复目标与来源标注策略，不声明运行支持哪些基础来源。根据真实恢复对象选择下表策略；未启用来源增强时可保持 `None`。运行是否消费 `Info.Base`，仍须核对界面、运行和会话消费者，不能只看池策略推断。
 
-| `mas_mode` | 适用 | 归档标注 | 恢复校验 |
+| `mas_base` | 适用 | 归档标注 | 恢复校验 |
 | --- | --- | --- | --- |
-| `tri_state` | owner 随 `Info.Mode` 切换（脚本=共享 `Default`、用户=独立目录、直控=无 MAS 配置）——MAA / MaaEnd / Okww / SRC | 备份时点 Mode | 跨来源自动切回（必须同时声明 `set_mode`） |
-| `user_only` | 恒按用户目录、备份内容与 Mode 无关——OkNte / BetterGI / General / **ZzzOd** | 恒「用户」 | 不校验（备份内容与 Mode 无关） |
-| `sidecar_only` | 纯字段侧车、无目录副本——MaaFW（含 M9A 特调）/ HSR / BAAH | 实际 Mode（仅作标签） | 不校验（恢复是字段回填，Mode 仅预览不回填） |
+| `tri_state` | owner 随 `Info.Base` 切换（shared=共享 `Default`、independent=独立目录、native=无 MAS 配置）——MAA / MaaEnd / Okww / SRC | 备份时点 Base | 跨来源自动切回（必须同时声明 `set_base`） |
+| `user_only` | 该池恢复目标恒为账号目录或绑定槽——OkNte / BetterGI / General / **ZzzOd**；不据此推断运行来源 | 恒 `independent` | 不做跨来源切换；OkNte 的运行仍消费三态基础来源 |
+| `sidecar_only` | 纯字段侧车、无目录副本——MaaFW（含 M9A 特调）/ HSR / BAAH | 保存的 Base（仅作标签；MFW / BAAH 为兼容值） | 恢复是字段回填，Base 仅预览不回填；兼容标注不意味着运行消费它 |
 
-- `current_mode` 缺省读统一字段 `UserData.Info.Mode`，专项结构特殊时才覆写；
-  `set_mode`（把 `Info.Mode` 写回备份时点）**只有 `tri_state` 需要**，缺省时
+- `current_base` 缺省读统一字段 `UserData.Info.Base`，专项结构特殊时才覆写；
+  `set_base`（把 `Info.Base` 写回备份时点）**只有 `tri_state` 需要**，缺省时
   跨来源恢复直接报错拒绝，避免「目录写过去了状态没切回」的半恢复。
-- 备份元数据 `_mas_mode` 在归档时写入（**不参与指纹**，见存档文档），
-  列表项 `mode` 即读它；旧备份无标注 `mode=None`（不显示标签、不触发跨来源）。
+- 备份元数据 `_mas_base` 在归档时写入（**不参与指纹**，见存档文档），
+  列表项 `base` 即读它；读取时兼容旧 `_mas_mode` 并归一来源值，无任何标注时为 `base=None`（不显示标签、不触发跨来源）。
   `tri_state` 池的**所有**归档入口都必须带标注：基座 `ensure`（编辑页进出）
   自动写；运行前/会话前与恢复前 force 归档走专项 helper（`archive_mas_backup`
-  等），调用方必须把当前来源（`Info.Mode` 或 owner 推导）经 `mode` 参数传入，
+  等），调用方必须把当前来源（`Info.Base` 或 owner 推导）经 `base` 参数传入，
   漏标会让该备份被当旧版无标注条目、恢复时不切来源。
-- **不要**给 `kind="script"` 池声明 `mas_mode`（仅 `kind="user"` 有意义，基座
-  会忽略）；也不要自行读 `_mas_mode` 做校验——标签与跨来源判定统一走基座。
+- **不要**给 `kind="script"` 池声明 `mas_base`（仅 `kind="user"` 有意义，基座
+  会忽略）；也不要自行读 `_mas_base` 做校验——标签与跨来源判定统一走基座。
 - 前端共用件 `frontend/src/utils/configRestoreMode.ts`（`isCrossSourceRestore` /
   `buildRestoreConfirm` / `sourceLabelKey` / `sourceTagColor`）：跨来源确认
   **单弹窗**——标题换 `configRestoreCrossSourceTitle`、正文追加
-  `configRestoreCrossSourceDesc`（备份来源 ≠ 当前来源时），备份为脚本级时再追加
+  `configRestoreCrossSourceDesc`（备份来源 ≠ 当前来源时），备份为托管级时再追加
   `configRestoreCrossSourceShared`（共享配置会被覆盖）。各页不要再各写一份比对。
 
-#### 1.1.1b 通用性专项的 native 池收敛到脚本级（General/MaaFW 规则）
+#### 1.1.1b 通用性专项的 native 池收敛到托管级（General/MaaFW 规则）
 
 **通用性专项**（一个 ScriptType 接入**任意第三方项目/脚本**，不是特定软件的
 适配——现有 General 通用脚本、MaaFW 的 MaaFramework 项目接入，后续同类
-专项一律照此）的 native 池归档根必须**收敛到脚本级**：
+专项一律照此）的 native 池归档根必须**收敛到托管级**：
 
 - 归档根 = `data/{script_id}/{Xxx}Backups/native/{config_root_key(路径)}`，
-  生命周期**随脚本实例**（脚本删除，备份随之失去意义）；
-- 池内仍保留 `config_root_key` 二级分桶——脚本内换绑项目/配置路径后，旧
+  生命周期**随托管实例**（托管删除，备份随之失去意义）；
+- 池内仍保留 `config_root_key` 二级分桶——托管内换绑项目/配置路径后，旧
   备份不与新路径混淆；
 - **不要**做成全局项目级桶（`data/{Xxx}Backups/native/{key}`）——通用性
-  专项的「项目」本质是该脚本绑定的资源，跨脚本共享备份没有意义。
+  专项的「项目」本质是该托管绑定的资源，跨托管共享备份没有意义。
 
-判定标准：外部目录是否**真被多个脚本并发共享**。是（如 SRA appdata、
-BetterGI 全局 User/ 是安装根级共享目录）→ 按物理根指纹项目级分桶、跨脚本
-共享、不随脚本删除；否（general/MaaFW 的项目只属于绑定它的脚本）→ 脚本级。
+判定标准：外部目录是否**真被多个托管并发共享**。是（如 SRA appdata、
+BetterGI 全局 User/ 是安装根级共享目录）→ 按物理根指纹项目级分桶、跨托管
+共享、不随托管删除；否（general/MaaFW 的项目只属于绑定它的托管）→ 托管级。
 
 #### 1.1.2 覆盖层字段侧车（Okww）
 
-MAS 编辑页配置的字段可能**不落盘在被备份的文件里**（ok-ww：快速配置覆盖层
-字段存在 UserData，运行时才覆盖进 DailyTask.json）。此时「MAS 用户配置」池要
+MAS 编辑页配置的字段可能**不落盘在被备份的文件里**（ok-ww：覆写常规配置覆盖层
+字段存在 UserData，运行时才覆盖进 DailyTask.json）。此时「MAS 账号配置」池要
 在 ConfigFile 副本之外**附带一个侧车**（`_mas_overlay.json`）：
 
 - **侧车参与指纹**——只改表单、没动文件也要新建备份（否则表单改动丢备份）；
@@ -174,23 +174,23 @@ MAS 编辑页配置的字段可能**不落盘在被备份的文件里**（ok-ww�
 
 #### 1.1.3 会话包络必须与运行包络同源（MAA 教训）
 
-配置会话的下发源/回写目标必须与运行下发走**同一套 owner 规则**。MAA 脚本态
-曾三处两张皮：运行读 `Default`，会话硬编码用户目录，备份跟运行——结果脚本态
-用户的会话改动运行时根本不读（改了白改）、退出归档采不到会话现场（指纹去重
+配置会话的下发源/回写目标必须与运行下发走**同一套 owner 规则**。MAA 共享来源
+曾三处两张皮：运行读 `Default`，会话硬编码账号目录，备份跟运行——结果共享来源
+账号的会话改动运行时根本不读（改了白改）、退出归档采不到会话现场（指纹去重
 静默跳过，「改了配置却不生产备份」）、恢复也写不进会话读取的目录。对齐后三者
 才自洽；排查手法：任一采集点不产生新条目时，先核对**该时刻被覆盖的目录**与
 **归档目标目录**是否同一个。
 
 另一面：归档目标目录要有**初始化保证**，否则第一次退出归档会静默空转
 （目录缺失 → 无内容可归档）。ok-ww 在 add_user 时从本体 configs 播种 owner
-目录；MAA 在 mas 快照时播种（MAA 路径可晚于用户配置，播种失败不挡建用户）；
-OkNte 的用户目录是页面编辑对象天然存在；ZzzOd 进页即物理化槽位。
+目录；MAA 在 mas 快照时播种（MAA 路径可晚于账号配置，播种失败不挡建账号）；
+OkNte 的面板目标由 `ensure_quick_config_dir` 初始化，基础配置另按来源选目录；ZzzOd 进页即物理化槽位。
 
 #### 1.1.4 无 ConfigFile 目录的专项：纯字段侧车（MaaFW）
 
-MaaFW（M9A 是它的特调类型，同走这一套）的 MAS 用户配置是**字段**（存共享
-ScriptConfig.json 的 Info / Task.SelectedPreset / TaskSnapshot / Device 段），
-没有 per-user ConfigFile 目录。此时 mas 池是**纯字段侧车**——归档内唯一
+MaaFW（M9A 是它的特调类型，同走这一套）的 MAS 账号配置是**字段**（账号模型的
+Info / Task.SelectedPreset / TaskSnapshot / Device 段），
+没有 per-account ConfigFile 目录。此时 mas 池是**纯字段侧车**——归档内唯一
 文件就是 `_mas_overlay.json`，没有目录部分。MaaFW 的侧车只存原始字段，
 预览时直接从 TaskSnapshot 取已启用任务；下面「原始值 + 展示快照」几条
 是旧 M9A 专项（MFAA 线，已随 #973 删除）留下的口径，给需要把选项 index
@@ -271,12 +271,12 @@ async def _restore_mas(ctx, ts: str) -> None:
     ...
 
 RESTORE_POOLS = [
-    # mas 池必须声明三态来源；tri_state 还必须给 set_mode（跨来源恢复切换用）
-    ConfigRestorePool(key="mas", kind="user", mas_mode="sidecar_only",
+    # 按恢复对象选择来源策略；tri_state 还必须给 set_base（跨来源恢复切换用）
+    ConfigRestorePool(key="mas", kind="user", mas_base="sidecar_only",
                       files=_mas_files, backup_root=_mas_root,
                       preview=_preview_mas, restore=_restore_mas),
-    #                  tri_state → 另传 set_mode=_set_mode（写回 Info.Mode）
-    ConfigRestorePool(key="native", kind="script", ...),  # 同上，脚本级
+    #                  tri_state → 另传 set_base=_set_base（写回 Info.Base）
+    ConfigRestorePool(key="native", kind="script", ...),  # 同上，托管级
 ]
 ```
 
@@ -318,9 +318,9 @@ return build_restore_service(
 
 | 服务方法 | 端点 | 用途 |
 | --- | --- | --- |
-| `service.list(key)` | `GET /api/scripts/backup/list` | 时间倒序备份列表（每项带来源标注 `mode`）+ 响应 `mode` = 当前来源（仅三态池） |
+| `service.list(key)` | `GET /api/scripts/backup/list` | 时间倒序备份列表（每项带来源标注 `base`）+ 响应 `base` = 当前来源（仅三态池） |
 | `service.ensure(key)` | `POST /api/scripts/backup/ensure` | 三时机按需归档（前端进入/退出编辑页调用） |
-| `service.restore(key, ts)` | `POST /api/scripts/backup/restore` | 一键恢复（restore 回调内已含恢复前存底；三态跨来源时基座先 `set_mode` 切回备份时点） |
+| `service.restore(key, ts)` | `POST /api/scripts/backup/restore` | 一键恢复（restore 回调内已含恢复前存底；三态跨来源时基座先 `set_base` 切回备份时点） |
 | `service.preview(key, ts)` | `GET /api/scripts/backup/preview` | 预览载荷（`data` 结构由专项定义） |
 | `service.read_backup_file(key, ts, path)` | `GET /api/scripts/backup/file` | 只读读取备份内文本文件（「备份文件」点击查看，§3.4） |
 
@@ -339,7 +339,7 @@ return build_restore_service(
 | 一键恢复 | 确认（`Modal.confirm`，共用词条）→ `api.restore` → 成功关弹窗 + `onRestored` |
 | 查看详细配置 | 底部按钮，**onDetail 未传时不渲染**（避免无响应按钮）→ onDetail 回调 |
 | 预览 | 内置渲染 or `#preview` 插槽；滚动由弹窗 body-style 限高（`maxHeight: 70vh`）承担——body 是唯一滚动容器，专项不要加滚动容器；「查看详细配置 / 关闭」按钮在 footer 常驻，不随 body 滚动 |
-| 配置来源标签 | 备份行按列表项 `mode` 渲染（脚本级蓝 / 用户级绿 / 直控橙，`sourceTagColor`）；描述行下方显示「当前配置来源」（仅三态池有值），供用户与标签比对 |
+| 配置来源标签 | 备份行按列表项 `base` 渲染（共享蓝 / 独立绿 / 原生橙，`sourceTagColor`）；描述行下方显示「当前配置来源」（仅三态池有值），供用户与标签比对 |
 | 跨来源恢复 | **单弹窗**：`buildRestoreConfirm`（§1.1.1a）在跨来源时换标题 + 追加来源切换说明；不加二次确认步骤、不改按钮语义 |
 | 文案 | `{script}` 用 `scriptName`（专项统一名）插值 |
 | 预览冲突确认 | 「查看详细配置」确认弹窗：共用词条 `configRestoreDetailView`（标题）/ `configRestoreDetailConfirm`（正文）/ `configRestoreConfirmOk`（确认），红色正文 `h('p')`；与一键恢复**同口径**走 `buildRestoreConfirm`（跨来源同样追加说明）。**正文必须是用户话术**（§5.1），不写后端机制 |
@@ -370,22 +370,22 @@ return build_restore_service(
   `GET /backup/file`）。**接入必填**（12 个已接入专项全部提供，HSR 先例），
   缺失时「备份文件」链接点击提示不支持——新接入漏掉它属于接线 bug。
 - `onRestored(target, item)`：一键恢复成功后父组件处理（mas 恢复含字段回填 →
-  刷新表单；脚本级由组件自行刷新列表）。
-- `onDetail(target, item, currentMode)`：`item.mode` 是备份来源、`currentMode`
+  刷新表单；托管级由组件自行刷新列表）。
+- `onDetail(target, item, currentMode)`：`item.base` 是备份来源、`currentMode`
   是当前来源（仅三态非空）；专项的「查看详细配置」确认文案用
   `buildRestoreConfirm` 组装，与一键恢复同口径（§3 表）。**返回
   `Promise<boolean>`**：`true` = 已恢复（组件据此关闭预览弹窗），
   `false` / 异常 = 取消或失败（保持预览打开）。
 
 **恢复入口必须恒可达（MaaFW/HSR 互补双入口范式）**：恢复按钮若放在条件渲染
-区块内（如 Okww 快速配置卡、HSR 的体力配置 `v-if="dailyStageEngine"`、MaaFW
+区块内（如 Okww 覆写常规配置卡、HSR 的体力配置 `v-if="dailyStageEngine"`、MaaFW
 的任务队列区 `v-if="IfQuickConfig"`），条件不成立时用户会完全失去入口。规则：
 - 主入口所在的区块，其 `v-if` 不成立时，必须在**常驻区块**（基本信息标题行）
   补一个**反向条件**的兜底按钮（如 HSR `v-if="!dailyStageEngine"`、MaaFW
   `v-if="!IfQuickConfig"`），点击 `restoreOpen = true`（子组件则
   `emit('openRestore')` + 父组件 `@open-restore="restoreOpen = true"`）；
 - 兜底条件 = 「主入口不可见」的**完整补集**，不能只写一半——HSR 曾有
-  `!dailyStageEngine` 兜底但主入口还要求 `controlMode === 'managed'`，直控+有引擎
+  `!dailyStageEngine` 兜底但主入口还要求 `controlMode === 'managed'`，原生+有引擎
   时双入口同灭（修法：`controlMode !== 'managed' || !dailyStageEngine`）；
 - 兜底按钮的 `@click` 必须是**单个表达式或方法调用**（如 `restoreOpen = true`）；
   多行多语句内联会被 oxfmt 折叠成无分号、Vue 模板解析失败（踩坑），需要多步
@@ -395,7 +395,7 @@ return build_restore_service(
 
 - `user` 池：基本信息（`info`）+ 账号（`account`）+ 任务编排清单（`tasks`，
   `enabled` 高亮）；载荷无字段语义时不渲染空表，回落「无可展示摘要」空态
-  提示（与脚本级一致的基座默认兜底，文件折叠节仍显示）；
+  提示（与托管级一致的基座默认兜底，文件折叠节仍显示）；
 - `script` 池：实例折叠列表（`instances`，每条含 account/tasks）。
 
 预览结构约定（ZzzOd 用这套）：`info` / `account`（`{key,value}`）、`tasks`
@@ -412,8 +412,8 @@ return build_restore_service(
   「核心」，**列清单请维护者/用户勾选后再实现**，不要自己拍板。
 - **mas 池**：优先展示**与页面表单同源的内容**。页面字段不落盘在被备份文件
   时（ok-ww 覆盖层、MAA 任务/战斗参数等），用**侧车**承载并展示（见
-  §1.1.2）；页面字段就落盘在被备份文件时（OkNte 的 ConfigFile 即页面编辑
-  对象），展示文件内页面管理的关键字段。侧车字段按**「原生对应 / 专项
+  §1.1.2）；页面字段就落盘在被备份文件时（如 OkNte 的账号 `QuickConfig`
+  面板），展示文件内页面管理的关键字段。侧车字段按**「原生对应 / 专项
   独有」分区**展示，**分类按概念映射，不按数据存放位置**——侧车字段的
   备份值本来就只能在预览看到（查看会话注入的是当前值），这不构成独有
   的理由：原生 GUI 有对应概念的字段（任务开关、战斗参数等）归「原生
@@ -433,7 +433,7 @@ return build_restore_service(
   数量大且无法固化词表的枚举（如 MaaEnd 目标武器名）展示**数量**而不
   硬编码臆造译文。影响恢复目标或危险回填的字段（如 MAA/MaaEnd 的配置
   文件来源）只进预览、不参与回填。覆盖层字段被专项开关门控生效的（如
-  MaaEnd 快速配置），开关关闭时运行不生效，对应行随门控隐藏（不受门控
+  MaaEnd 覆写常规配置），开关关闭时运行不生效，对应行随门控隐藏（不受门控
   的字段如账号要显式豁免）。
 - **native 池**：展示脚本原生配置里**结构稳定、用户关心的字段**；随版本漂移、
   用户读不懂的内部字段不进预览（经「查看详细配置」在原生 GUI 里看）。
@@ -485,7 +485,7 @@ return build_restore_service(
 | `#preview` 插槽 | **完全接管预览摘要区** | 字段型专项（HSR…）用自身结构渲染键值摘要；**备份文件清单不进插槽**——由基座按 `raw.files`（§3.4）统一渲染兜底 |
 | `#preview-title` 插槽 | 覆盖预览弹窗标题/说明 | 缺省「配置预览 · 时间」 |
 | `fieldLabels` / `formatValue` | 预览字段标签与枚举词表 | 内置渲染用 |
-| `userDesc` / `scriptDesc` | 描述文案覆写 | 专项归档时机措辞与通用不同时（如 ok-nte 的脚本级/用户级归档措辞） |
+| `userDesc` / `scriptDesc` | 描述文案覆写 | 专项归档时机措辞与通用不同时（如 ok-nte 的托管级/账号级归档措辞） |
 | `onRestored` / `onDetail` | 一键恢复后动作 / 查看详细配置流程 | `onRestored` 刷新表单；`onDetail` 按 §5.3 固定流程执行（不应自定义流程） |
 | 查看会话遮罩 | `GuiSessionMask` 是纯 UI | 专项只控制显示/隐藏与按钮行为，视觉统一复用 |
 
@@ -508,7 +508,7 @@ return build_restore_service(
 - **面向用户只讲「要做什么 + 别运行脚本」，绝不解释后端机制**——恢复/下发/
   复制/注入/回写等内部逻辑一律不写进弹窗：用户不关心实现，写进来反而误导。
   唯一的例外是三态跨来源（`buildRestoreConfirm` 追加的来源切换与共享覆盖提示，
-  §1.1.1a）：它描述的是用户可感知的后果（配置来源会切换、其他用户配置被覆盖）。
+  §1.1.1a）：它描述的是用户可感知的后果（配置来源会切换、其他账号配置被覆盖）。
 - 文案必须**通用、易懂**：不提任何专项独有概念（如「切换任务开关」「编排」），
   专项确有额外会话内提醒时用专项词条叠加，不污染通用词条（见 §6）。
 - 误覆盖有保护：恢复前系统先归档当前配置（指纹去重：与已有备份相同则不新增
@@ -521,9 +521,9 @@ manager 传参 → ScriptConfigTask`。专项实现时：
 
 - manager spawn 时对 ScriptConfig 模式传 `view_only=self.task_info.view_only`；
 - ScriptConfigTask 收 `view_only`，按“临时注入，看完还原”实现：
-  - 用户级查看：按专项形态选「照常下发（目录副本型，GUI 所见即备份）」或
+  - 账号级查看：按专项形态选「照常下发（目录副本型，GUI 所见即备份）」或
     「跳过基线注入（合成视图型，注入即污染）」；
-  - 脚本级查看：**跳过下发**（原生目录即刚恢复的备份）；
+  - 托管级查看：**跳过下发**（原生目录即刚恢复的备份）；
   - `final_task`：**跳过一切回写**（原生现场由 manager 任务前快照还原）。
 - 前端超时策略照 `useOknteGuiSession.ts`：查看会话 30 分钟**静默关闭**；配置
   会话提前 30 秒提醒 + 自动保存。
@@ -533,7 +533,7 @@ manager 传参 → ScriptConfigTask`。专项实现时：
 ```
 Modal.confirm(共用词条, 红色正文) → api.restore → 关弹窗
   → startSession(userId, true)   // mas 备份：打开脚本查看页面（备份视角）
-  → startSession(scriptId, true) // 原生备份：脚本级查看页面（原生即备份）
+  → startSession(scriptId, true) // 原生备份：托管级查看页面（原生即备份）
 ```
 
 ## 6. 词条规范（zh + en 必做；ja-JP 滞后可接受）
@@ -601,8 +601,8 @@ showOknteViewMask.value = viewOnly
       改到配置读写时同步补齐；仅确无任何配置文件落盘的专项可豁免
 - [ ] 池表：`kind` user 池在前、script 池在后；前端 `scriptName` prop =
       专项统一名（`{script}` 插值用）
-- [ ] mas 池已声明 `mas_mode`（tri_state / user_only / sidecar_only，§1.1.1a）；
-      `tri_state` 同时给了 `set_mode`；备份列表标签与跨来源提示走共用件，未自写比对
+- [ ] mas 池的 `mas_base` 与真实恢复目标一致（tri_state / user_only / sidecar_only，未启用来源增强时可为 None，§1.1.1a）；没有据此推断运行支持哪些基础来源；
+      `tri_state` 同时给了 `set_base`；备份列表标签与跨来源提示走共用件，未自写比对
 - [ ] 池函数普通函数收 `RestoreContext`；守卫在池内；非法 key 由服务层 400
 - [ ] 池回调（preview/restore/snapshot）要有**直接调用的测试**——只测载荷
       构建函数抓不住签名改动漏改调用点的问题（MaaEnd 曾漏：`_preview_mas`

@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type M9AConfig_Device = {
     /**
-     * ADB 地址，留空时启动脚本级模拟器获取
+     * ADB 地址，留空时启动托管级模拟器获取
      */
     AdbAddress?: (string | null);
     /**

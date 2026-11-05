@@ -300,7 +300,7 @@ async def prepare_agent_env(
             lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
         )
         # 这个端点按请求里的 path 定位项目、不经脚本配置（见 MaaFW/AGENTS.md），
-        # 所以代理只在 scriptId 能解析到一份 MFW 脚本配置时才按脚本级取；
+        # 所以代理只在 scriptId 能解析到一份 MFW 脚本配置时才按托管级取；
         # 编辑页新建项目还没有脚本时落回全局。
         proxy_url = Config.proxy_url
         if progress_id:

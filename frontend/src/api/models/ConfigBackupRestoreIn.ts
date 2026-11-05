@@ -7,11 +7,11 @@
  */
 export type ConfigBackupRestoreIn = {
     /**
-     * 所属脚本ID
+     * 所属托管ID
      */
     scriptId: string;
     /**
-     * 目标用户ID
+     * 目标账号ID
      */
     userId: string;
     /**
