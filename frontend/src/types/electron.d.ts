@@ -1,5 +1,6 @@
 import type { FluxdownInstallOut, GlobalConfig_UI, GlobalConfig_Update } from '@/api'
 import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
+import type { FrontendCloseRequest } from '@/types/appLifecycle'
 import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
 import type {
   DesktopMascotHostAPI,
@@ -273,7 +274,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   /** 倒计时结束或取消：撤回置顶 */
   powerWarningEnd?: () => Promise<void>
   appQuit: () => Promise<void>
-  appObserveBackendClose?: () => void
+  appObserveBackendClose?: (request?: FrontendCloseRequest) => void
   /** 等待用户确认期间暂停退出兜底，保留关闭请求锁。 */
   appWaitForQuitConfirmation?: () => Promise<boolean>
   /** 保存前领取退出凭证；准备超时不会强制关闭后端。 */

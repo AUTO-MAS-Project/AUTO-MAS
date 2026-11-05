@@ -334,6 +334,10 @@ class GlobalConfig(DomainEntry):
         return bool(self.Replay.Password)
 
     class StartFields(ConfigGroup):
+        IfScheduledWakeUp: bool = Field(
+            default_factory=lambda: False, description="是否在定时队列前五分钟唤醒电脑"
+        )
+
         IfMinimizeDirectly: bool = Field(
             default_factory=lambda: False, description="是否启动时直接最小化"
         )

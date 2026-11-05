@@ -621,6 +621,8 @@ class WSSystemNoticeData(BaseModel):
     level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
     title: str = Field(..., description="标题")
     lines: List[str] = Field(default_factory=list, description="正文，每项一行")
+    titleKey: Optional[str] = Field(default=None, description="可选标题词表键")
+    lineKeys: List[str] = Field(default_factory=list, description="可选正文词表键")
 
 
 class WSEmulatorOperationData(BaseModel):
@@ -834,6 +836,15 @@ class WSTaskCreatedData(BaseModel):
     queueId: Optional[str] = Field(default=None, description="所属调度队列ID")
     taskName: Optional[str] = Field(default=None, description="任务名称")
     taskType: Optional[str] = Field(default=None, description="任务类型")
+
+
+class WSFrontendCloseRequestedData(BaseModel):
+    """关闭/重启请求，以及自动退出期间需继续履行的唤醒计划。"""
+
+    automatic: bool = Field(default=False, description="是否为队列完成后自动退出")
+    nextWakeAt: Optional[AwareDatetime] = Field(
+        default=None, description="最近的未来系统唤醒时刻"
+    )
 
 
 class WSPowerCountdownData(BaseModel):
@@ -1804,6 +1815,7 @@ __all__ = [
     "WSTaskScriptStartedData",
     "WSTaskScriptFinishedData",
     "WSPowerCountdownData",
+    "WSFrontendCloseRequestedData",
     "PowerCountdownSnapshot",
     "WSPowerSignData",
     "WSDisplayMonitorRectData",

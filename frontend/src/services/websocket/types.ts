@@ -1,5 +1,6 @@
 // WebSocket 统一消息协议类型
 import type { McpStatusData } from '../../api'
+import type { FrontendCloseRequest } from '../../types/appLifecycle'
 // 与后端 app/core/ws/protocol.py、app/models/schema.py 保持一致
 
 // ==================== 信封 ====================
@@ -325,6 +326,8 @@ export interface WSSystemNoticeData {
   title: string
   /** 正文，每项一行 */
   lines: string[]
+  titleKey?: string | null
+  lineKeys?: string[]
 }
 
 type WSEmptyData = Record<string, never>
@@ -342,8 +345,8 @@ interface WSMessageDataMap {
   [WS_TASK_SCRIPT_STARTED]: WSTaskScriptStartedData
   [WS_TASK_SCRIPT_FINISHED]: WSTaskScriptFinishedData
   [WS_BACKEND_SHUTDOWN_READY]: WSEmptyData
-  [WS_FRONTEND_CLOSE_REQUESTED]: WSEmptyData
-  [WS_FRONTEND_RESTART_REQUESTED]: WSEmptyData
+  [WS_FRONTEND_CLOSE_REQUESTED]: FrontendCloseRequest
+  [WS_FRONTEND_RESTART_REQUESTED]: FrontendCloseRequest
   [WS_POWER_COUNTDOWN_UPDATED]: WSPowerCountdownData
   [WS_POWER_COUNTDOWN_CANCELLED]: WSEmptyData
   [WS_POWER_SIGN_UPDATED]: WSPowerSignData
