@@ -82,6 +82,14 @@ OCR 走共享工具 `app/tools/common/ocr/__init__.py`（用法见 [ocr-tools.md
 - 切换失败留 OCR 文本 + 原图截图到 `debug/okww-account-switch/`，经
   `handle_pre_okww_error` 走调度台报错 + 通知 + 重试，不回退静默。
 
+## 节点详情规则（log_box）
+
+- **不读上游 ok.po、不做前置翻译**：上游 `log_info` 按界面语言翻译，`info_set` 行始终是英文键；规则必须直接同时覆盖英文源文案与当前中文译文，节点名由提取表达式固定输出中文。读 ok.po 会把节点详情绑到上游私有资源布局，译文一变规则就静默失效。
+- **不要用 traceback 回显的源码行当指纹**（如 `if self.click_dialog_left_button():`）：那是依赖上游内部实现，上游改写法即失效，且违反黑箱边界。只认上游公开日志；异常路径没有公开信号时按失败呈现，需要更精确的结果就向上游要日志/结果入口。
+- 规则改动后用日志样本同时覆盖中文界面、英文界面与 `info_set` 原始键；`tests/task/test_okww_push_log_rules.py` 是对应回归入口。
+- **任务级失败要认上游直接 return 的错误行**：`MergeEchoTask` 开包失败只打 `can not open bag with hotkey` 后直接 return，不进入 DailyTask 的 `MergeEchoTask Failed` 分支；漏认会把失败显示成成功。
+- `nightmare nest unreachable` / `nightmare nest: died ... skip this run` 是**单巢跳过**，不是任务级跳过；直接映射成节点跳过会在其它巢成功时误报。
+
 ## 陷阱
 
 - **兼容字段不等于现行功能**：`LaunchBeforeTask` 等仅存在于 config/schema、未被当前 UI 或任务逻辑读取的字段，不得写成现行功能；移除前仍要评估旧配置兼容。`Game.Enabled` 才是当前的游戏启停总开关。
