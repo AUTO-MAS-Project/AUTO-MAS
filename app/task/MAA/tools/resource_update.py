@@ -77,6 +77,8 @@ import psutil
 from app.core import Config
 from app.core.script_update import download_script_package
 from app.core.update import download_file
+from app.services.common.update.fluxdown import FluxdownResumableError
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.models.config import MaaConfig
 from app.services.common.update import transport as _service_update_transport
 from app.utils import get_logger
@@ -1045,22 +1047,37 @@ async def prepare_install_resources(
                         if download_only
                         else _STAGE_ZIP
                     )
-                    await _report(progress, "启动前下载 GitHub 全量资源包…")
-                    await download_script_package(
-                        "https://github.com/MaaAssistantArknights/MaaResource/"
-                        "archive/refs/heads/main.zip",
-                        archive,
-                        proxy=Config.proxy,
-                        timeout=_DOWNLOAD_TIMEOUT,
-                        source="GitHub",
-                    )
+                    # Own the archive from its allocation onward, including
+                    # incomplete httpx downloads and unsuccessful ZIP builds.
+                    # A daemon whose writer is unconfirmed, or whose task is
+                    # retained for FluxDown resume, still owns its output:
+                    # never remove that file until it is safe to do so.
+                    can_cleanup = True
                     try:
+                        await _report(progress, "启动前下载 GitHub 全量资源包…")
+                        try:
+                            await download_script_package(
+                                "https://github.com/MaaAssistantArknights/MaaResource/"
+                                "archive/refs/heads/main.zip",
+                                archive,
+                                proxy=Config.proxy,
+                                timeout=_DOWNLOAD_TIMEOUT,
+                                source="GitHub",
+                            )
+                        except (
+                            FluxdownCancelUnconfirmed,
+                            FluxdownResumableError,
+                        ):
+                            can_cleanup = False
+                            raise
                         await _run_write_thread(
                             _build_stage, archive, target, github=True
                         )
                     finally:
-                        # _run_write_thread 在取消时也会等写盘结束，之后才可删除归档。
-                        archive.unlink(missing_ok=True)
+                        # The download/write awaitables have settled here.
+                        # Preserve only files still owned by FluxDown.
+                        if can_cleanup:
+                            archive.unlink(missing_ok=True)
                 else:
                     _WORK_DIR.mkdir(parents=True, exist_ok=True)
                     stage = await _refresh_resource_stage(
