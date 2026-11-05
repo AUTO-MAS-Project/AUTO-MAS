@@ -60,8 +60,8 @@ _GITHUB_API_LATEST = f"https://api.github.com/repos/{_REPOSITORY}/releases/lates
 _GITHUB_RELEASES = f"https://github.com/{_REPOSITORY}/releases"
 RELEASE_PAGE = f"{_GITHUB_RELEASES}/latest"
 
-_ASSET_CLI = "FluxDown-CLI-{version}-windows-{arch}.zip"
-_ASSET_SERVER = "FluxDown-Server-{version}-windows-{arch}.zip"
+_ASSET_CLI = "FluxDown-CLI-{version}-{system}-{arch}.{archive}"
+_ASSET_SERVER = "FluxDown-Server-{version}-{system}-{arch}.{archive}"
 
 # 大陆可用的下载源。官方镜像在大陆会 302 到 dl-cn，其余地区回退 GitHub；
 # gh-proxy / ghfast 直接前缀拼接 GitHub 地址。清单与 MaaFW 模块、前端
@@ -128,9 +128,32 @@ def _install_dir() -> Path:
     return Config.data_path / "fluxdown" / "bin"
 
 
-def _arch() -> str:
+def _platform_asset() -> tuple[str, str, str]:
+    """根据真实 OS/CPU 选择 Release 资产，不把未知架构误识别为 x64。"""
+    system = platform.system().lower()
     machine = platform.machine().lower()
-    return "arm64" if "arm" in machine or "aarch" in machine else "x64"
+    systems = {"windows": ("windows", "zip"),
+               "linux": ("linux", "tar.gz"),
+               "darwin": ("macos", "tar.gz")}
+    if system not in systems:
+        raise RuntimeError(f"FluxDown 不支持当前操作系统: {system}")
+    architectures = {
+        "amd64": "x64",
+        "x86_64": "x64",
+        "x64": "x64",
+        "aarch64": "arm64",
+        "arm64": "arm64",
+    }
+    arch = architectures.get(machine)
+    if arch is None:
+        raise RuntimeError(f"FluxDown 不支持当前 CPU 架构: {machine}")
+    release_os, archive = systems[system]
+    return release_os, arch, archive
+
+
+def _arch() -> str:
+    """兼容已有调用方，架构严格校验而非所有非 ARM 均默认 x64。"""
+    return _platform_asset()[1]
 
 
 def _asset_sha256(asset: dict[str, Any]) -> str | None:
@@ -185,9 +208,13 @@ def _parse_release(payload: dict[str, Any]) -> FluxdownRelease:
     if not re.fullmatch(r"[vV]?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?", tag):
         raise RuntimeError("FluxDown Release 信息缺少版本号")
 
-    arch = _arch()
-    cli_name = _ASSET_CLI.format(version=version, arch=arch)
-    server_name = _ASSET_SERVER.format(version=version, arch=arch)
+    system, arch, archive = _platform_asset()
+    cli_name = _ASSET_CLI.format(
+        version=version, system=system, arch=arch, archive=archive
+    )
+    server_name = _ASSET_SERVER.format(
+        version=version, system=system, arch=arch, archive=archive
+    )
     assets = {
         str(asset.get("name") or ""): asset
         for asset in payload.get("assets") or []
@@ -196,7 +223,9 @@ def _parse_release(payload: dict[str, Any]) -> FluxdownRelease:
     cli_asset = assets.get(cli_name)
     server_asset = assets.get(server_name)
     if cli_asset is None or server_asset is None:
-        raise RuntimeError(f"最新 Release {tag} 缺少 Windows {arch} 的 CLI/Server 资产")
+        raise RuntimeError(
+            f"最新 Release {tag} 缺少 {system}/{arch} 的 CLI/Server 资产"
+        )
 
     def url_of(name: str, asset: dict[str, Any]) -> str:
         browser = asset.get("browser_download_url")
