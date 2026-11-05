@@ -47,6 +47,9 @@ def test_auto_detect_only_returns_complete_folder(tmp_path, monkeypatch):
     incomplete = cli.fluxdown_detect(str(directory), scan_budget=0.0)
     assert incomplete["path"] is None
     assert incomplete["candidates"]
+    assert incomplete["candidates"][0]["has_server"]
+    assert not incomplete["candidates"][0]["has_cli"]
+    assert incomplete["candidates"][0]["missing"] == "CLI"
 
     (directory / "fluxdown-cli.exe").write_bytes(b"cli")
     ready = cli.fluxdown_detect(str(directory), scan_budget=0.0)
