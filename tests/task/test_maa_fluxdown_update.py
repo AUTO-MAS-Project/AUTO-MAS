@@ -816,3 +816,63 @@ async def test_resource_prefetch_cleans_archive_and_reuses_stage_on_consumption(
     await resource.prepare_install_resources(install, github=True, cdk=None)
     assert resource.read_resource_clock(install) == target
     downloader.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("probe_result", [True, False, "error"])
+async def test_cancelled_stop_probe_preserves_shared_resource_archive(
+    resource_install, monkeypatch, probe_result
+):
+    from app.core.script_update import download_script_package
+    from app.models.config.setting import GlobalConfig
+    from app.services.common.update import fluxdown as transport
+    from app.utils.common import fluxdown_cli as cli
+
+    install, _, _ = resource_install
+    resource._WORK_DIR.mkdir(parents=True)
+    resource._STAGE_ZIP.write_bytes(b"previous daemon still owns this archive")
+    update.Config.setting.Update = GlobalConfig.UpdateFields(FluxdownTakeoverAll=False)
+    monkeypatch.setattr(resource, "download_script_package", download_script_package)
+    exe = install.parent / "fluxdown.exe"
+    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda *_a, **_kw: exe)
+    monkeypatch.setattr(cli, "_server_data_dir", lambda _: install.parent / "server")
+    backend = AsyncMock(side_effect=AssertionError("must not start another writer"))
+    monkeypatch.setattr(transport, "_httpx_download", backend)
+    entered, release = threading.Event(), threading.Event()
+
+    def probe(*_args, **_kwargs):
+        entered.set()
+        assert release.wait(5)
+        if probe_result == "error":
+            raise OSError("stop probe unavailable")
+        return probe_result
+
+    monkeypatch.setattr(cli, "fluxdown_server_task_safe_to_overwrite", probe)
+    task = asyncio.create_task(
+        resource.prepare_install_resources(install, github=True, cdk=None)
+    )
+    try:
+        assert await asyncio.to_thread(entered.wait, 3)
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=0.05)
+        assert not done
+        assert resource._STAGE_ZIP.is_file()
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=0.05)
+        assert not done
+    finally:
+        release.set()
+    with pytest.raises(
+        asyncio.CancelledError
+        if probe_result is True
+        else transport.FluxdownWriterUnconfirmed
+    ):
+        await asyncio.wait_for(task, 3)
+    backend.assert_not_awaited()
+    if probe_result is True:
+        assert not resource._STAGE_ZIP.exists()
+    else:
+        assert (
+            resource._STAGE_ZIP.read_bytes()
+            == b"previous daemon still owns this archive"
+        )

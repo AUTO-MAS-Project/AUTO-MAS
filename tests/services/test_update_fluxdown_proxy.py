@@ -411,8 +411,9 @@ def test_other_url_paused_allows_new_writer_without_resuming_old(tmp_path, monke
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("downloader", ["fluxdown", "builtin"])
+@pytest.mark.parametrize("probe_result", [True, False, "error"])
 async def test_cancelled_write_owner_probe_holds_target_lock_until_thread_exits(
-    tmp_path, monkeypatch, downloader
+    tmp_path, monkeypatch, downloader, probe_result
 ):
     import asyncio
     import threading
@@ -429,12 +430,15 @@ async def test_cancelled_write_owner_probe_holds_target_lock_until_thread_exits(
         started.set()
         try:
             assert release.wait(5), "probe thread was never released"
-            return True
+            if probe_result == "error":
+                raise OSError("stop probe unavailable")
+            return probe_result
         finally:
             finished.set()
 
     monkeypatch.setattr(cli, "fluxdown_server_task_safe_to_overwrite", slow_probe)
     options = transport.FluxdownOptions(downloader, "GitHub", str(executable), 8, True)
+    backend = AsyncMock(return_value=1)
     first = asyncio.create_task(
         transport.download_file(
             "https://example.invalid/second",
@@ -443,7 +447,7 @@ async def test_cancelled_write_owner_probe_holds_target_lock_until_thread_exits(
             options=options,
             downloader=downloader,
             source="GitHub",
-            http_download=AsyncMock(return_value=1),
+            http_download=backend,
         )
     )
     assert await asyncio.to_thread(started.wait, 3)
@@ -463,9 +467,14 @@ async def test_cancelled_write_owner_probe_holds_target_lock_until_thread_exits(
         assert not acquired.is_set(), "next owner entered while old probe is active"
     finally:
         release.set()
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(
+        asyncio.CancelledError
+        if probe_result is True
+        else transport.FluxdownWriterUnconfirmed
+    ):
         await asyncio.wait_for(first, timeout=5)
     assert finished.is_set()
+    backend.assert_not_awaited()
     assert follower is not None
     await asyncio.wait_for(follower, timeout=5)
     assert acquired.is_set()

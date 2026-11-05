@@ -256,16 +256,7 @@ async def _download_via_fluxdown(
     server_on = options.server_mode
 
     # 无论选择 FluxDown 还是 httpx，同一路径的其他 URL 任务都不得继续写盘。
-    if not await _utils_fluxdown_cli._to_thread_strong(
-        partial(
-            _utils_fluxdown_cli.fluxdown_server_task_safe_to_overwrite,
-            cli_path,
-            url,
-            destination,
-            other_only=True,
-        ),
-        propagate_cancel=True,
-    ):
+    if not await _can_downgrade(cli_path, url, destination, other_only=True):
         await _block_downgrade(
             cli_path,
             url,
@@ -386,19 +377,43 @@ async def _download_via_fluxdown(
     return size
 
 
-async def _can_downgrade(cli_path: Path, url: str, destination: Path) -> bool:
-    """是否可安全降级改写目标文件：旧 FluxDown 任务已确认停止/不存在。
+async def _can_downgrade(
+    cli_path: Path, url: str, destination: Path, *, other_only: bool = False
+) -> bool:
+    """统一 --local 和 httpx 的停写门槛，避免新旧写入者同时改写目标。
 
-    统一 ``--local`` 与内置 httpx 两条降级路径的门槛，避免旧 daemon 仍在写
-    同一目标时启动第二个写入者。
+    取消时先确认文件所有权，只有确认安全后才能传播普通取消。
     """
-    return await _utils_fluxdown_cli._to_thread_strong(
-        _utils_fluxdown_cli.fluxdown_server_task_safe_to_overwrite,
-        cli_path,
-        url,
-        destination,
-        propagate_cancel=True,
+    probe = asyncio.create_task(
+        _utils_fluxdown_cli._to_thread_strong(
+            partial(
+                _utils_fluxdown_cli.fluxdown_server_task_safe_to_overwrite,
+                cli_path,
+                url,
+                destination,
+                other_only=other_only,
+            )
+        )
     )
+    cancelled: asyncio.CancelledError | None = None
+    try:
+        try:
+            safe = await asyncio.shield(probe)
+        except asyncio.CancelledError as error:
+            cancelled = error
+            # 重复取消也要等待结果；不能让通用等待器先丢掉不安全结果。
+            safe = await _utils_fluxdown_cli._wait_thread_done(probe)
+    except Exception as error:
+        raise FluxdownWriterUnconfirmed(
+            "FluxDown 停写探测失败，文件仍可能被写入"
+        ) from error
+    if cancelled is not None:
+        if not safe:
+            raise FluxdownWriterUnconfirmed(
+                "取消停写探测后，FluxDown 任务仍未确认停止"
+            ) from None
+        raise cancelled
+    return safe
 
 
 async def _block_downgrade(
