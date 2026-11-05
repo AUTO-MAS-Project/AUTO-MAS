@@ -560,3 +560,51 @@ async def test_cycle_unconfirmed_stop_never_starts_next_entry(monkeypatch):
     assert task.script_reservations.try_acquire(
         script_a, "another", root_paths=(), emulator_key=None
     )
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_daemon_from_real_service_blocks_next_script(
+    running, tmp_path, monkeypatch
+):
+    """Status/pause failure must reach the queue and abort the script handoff."""
+    from app.services.common.update import fluxdown as transport
+    from app.utils.common import fluxdown_cli as cli
+
+    script, user, clock = running
+    user.first_task_completed_at = 100
+    clock.now = 200
+    exe, target = tmp_path / "fluxdown.exe", tmp_path / "next.zip"
+    url = "https://example.invalid/next.zip"
+    monkeypatch.setattr(cli, "_server_data_dir", lambda _exe: tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "fluxdown_server_ensure",
+        lambda _exe: SimpleNamespace(gateway_port=12345, token="test"),
+    )
+    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda *_a, **_kw: exe)
+    monkeypatch.setattr(cli, "fluxdown_server_available", lambda *_a, **_kw: True)
+    monkeypatch.setattr(cli, "_run_cli", lambda *_a, **_kw: (124, "timeout"))
+    cli._map_put(exe, cli._map_key(url, target), "active", url, target)
+    options = transport.FluxdownOptions("fluxdown", "GitHub", str(exe), 8, True)
+    operation_started = asyncio.Event()
+
+    async def download_next():
+        operation_started.set()
+        await transport.download_file(
+            url, target, timeout=30, options=options, source="GitHub"
+        )
+
+    pipeline = queue.ScriptUpdateQueue()
+    pipeline.watch(script, download_next)
+    await asyncio.wait_for(operation_started.wait(), 1)
+    next_script_started = False
+
+    async def handoff():
+        nonlocal next_script_started
+        await pipeline.finish()
+        next_script_started = True
+
+    with pytest.raises(transport.FluxdownWriterUnconfirmed):
+        await handoff()
+    assert not next_script_started
+    assert cli._load_task_map(exe)[cli._map_key(url, target)]["task_id"] == "active"
