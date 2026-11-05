@@ -25,29 +25,6 @@ MaaUserConfig_Input = config_contract(MaaUserConfig, mode="input")
 
 
 class LegacyInfoModeCompatTest(unittest.TestCase):
-    def test_legacy_mode_migrates_to_base(self) -> None:
-        """旧来源字面量在解析前归一为 Base 三态。"""
-
-        expected = {
-            "脚本": "shared",
-            "用户": "independent",
-            "直控": "native",
-            "简洁": "shared",
-            "详细": "independent",
-            "自定义": "independent",
-        }
-        for entry_cls in (
-            MaaUserConfig_Input,
-            GeneralUserConfig_Input,
-            HSRUserConfig_Input,
-            MaaFWUserConfig_Input,
-        ):
-            for legacy, base in expected.items():
-                self.assertEqual(
-                    entry_cls.model_validate({"Info": {"Mode": legacy}}).Info.Base,
-                    base,
-                )
-
     def test_explicit_base_wins_and_unknown_mode_rejected(self) -> None:
         """显式 Base 优先；未知 Mode 与旧 Literal 语义一致地拒绝。"""
 

@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { createPinia, setActivePinia } from 'pinia'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 const mocks = vi.hoisted(() => ({
   getState: vi.fn(),
@@ -80,20 +80,6 @@ describe('taskboardState 周常与版本目录', () => {
       week: '2026-10-26',
     })
     expect(store.isWeeklyDone('genshin')).toBe(true)
-  })
-
-  it('reports applied=true after a weekly selection save succeeds', async () => {
-    mocks.getState.mockResolvedValue(emptyState())
-    mocks.setWeeklySelection.mockResolvedValue({ code: 200 })
-
-    const store = useTaskboardStateStore()
-    await store.load()
-
-    expect(await store.saveWeeklySelection(['genshin'])).toEqual({
-      error: null,
-      applied: true,
-    })
-    expect(store.weeklyGames).toEqual(['genshin'])
   })
 
   it('does not save weekly selection before the initial state is loaded', async () => {

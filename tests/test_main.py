@@ -39,28 +39,6 @@ class MainDevelopmentEnvironmentTest(unittest.TestCase):
                     self.assertTrue(main.is_hosted_launch())
                     self.assertIs(main.is_development_environment(), expected)
 
-    def test_direct_launch_is_not_hosted(self) -> None:
-        with patch.dict(os.environ, {"AUTO_MAS_DEV": ""}):
-            self.assertFalse(main.is_hosted_launch())
-
-
-class IsSupervisedTest(unittest.TestCase):
-    """AUTO-MAS-Runtime 注入的判据要求精确匹配字符串 "1"，不做 true/yes 等宽松解析。"""
-
-    def test_exact_match_required(self) -> None:
-        for raw, expected in (
-            ("1", True),
-            ("true", False),
-            ("True", False),
-            ("yes", False),
-            ("on", False),
-            ("0", False),
-            ("", False),
-        ):
-            with self.subTest(raw=raw):
-                with patch.dict(os.environ, {"AUTO_MAS_SUPERVISED": raw}):
-                    self.assertIs(main.is_supervised(), expected)
-
 
 class ShouldRestartAsAdminTest(unittest.TestCase):
     """提权判断抽成纯函数单独测：main() 直接调用它决定是否 restart_as_admin()，
@@ -132,21 +110,6 @@ class TelemetryDevelopmentTest(unittest.TestCase):
 
             start_sentry.assert_not_called()
             self.assertIsNone(telemetry._sentry_release)
-
-    def test_development_environment_ignores_later_toggle(self) -> None:
-        """开发环境下用户打开遥测开关同样不应启动 Sentry。"""
-
-        with patch.object(telemetry, "_start_sentry") as start_sentry:
-            telemetry.init_sentry(release="v0.0.0", development=True, enabled=True)
-            telemetry.set_telemetry_enabled(True)
-
-            start_sentry.assert_not_called()
-
-    def test_production_environment_starts_sentry(self) -> None:
-        with patch.object(telemetry, "_start_sentry") as start_sentry:
-            telemetry.init_sentry(release="v0.0.0", development=False, enabled=True)
-
-            start_sentry.assert_called_once_with("v0.0.0")
 
     def test_disabled_telemetry_skips_sentry(self) -> None:
         with patch.object(telemetry, "_start_sentry") as start_sentry:

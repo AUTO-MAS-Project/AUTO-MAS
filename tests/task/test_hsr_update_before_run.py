@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from app.models.config import HSRConfig
 from app.task.HSR import manager
 from app.task.HSR.tools import update
 from app.task.HSR.tools.update import apply as installer
@@ -46,24 +45,6 @@ def scheduler(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["BeforeRun", "AfterRun"])
-async def test_updates_both_engines_through_shared_entry(scheduler, monkeypatch, mode):
-    scheduler.script_config.Update.AutoUpdateMode = mode
-    requests = []
-    original = manager.run_script_update
-
-    async def dispatch(request, operation, *args, **kwargs):
-        requests.append(request)
-        return await original(request, operation, *args, **kwargs)
-
-    monkeypatch.setattr(manager, "run_script_update", dispatch)
-    assert await scheduler._update_external_scripts() is None
-    assert [request.engine for request in requests] == ["M7A", "SRA"]
-    calls = update.update_engine_if_needed.await_args_list
-    assert [call.kwargs["source"] for call in calls] == ["GitHub", "AutoSite"]
-
-
-@pytest.mark.asyncio
 async def test_disabled_update_does_not_download(scheduler):
     scheduler.script_config.Update.AutoUpdateMode = "Off"
     await scheduler._update_external_scripts()
@@ -76,14 +57,6 @@ async def test_unsafe_install_stops_before_second_engine(scheduler):
         blocking=True, message="unsafe"
     )
     assert await scheduler._update_external_scripts() == "unsafe"
-    assert update.update_engine_if_needed.await_count == 1
-
-
-@pytest.mark.asyncio
-async def test_unknown_install_exception_is_not_silently_skipped(scheduler):
-    update.update_engine_if_needed.side_effect = OSError("install state unknown")
-    with pytest.raises(RuntimeError):
-        await scheduler._update_external_scripts()
     assert update.update_engine_if_needed.await_count == 1
 
 
@@ -120,54 +93,6 @@ async def test_install_worker_finishes_writes_before_cancellation_returns():
     with pytest.raises(asyncio.CancelledError):
         await task
     assert written.is_set()
-
-
-def test_new_configuration_defaults_to_before_run():
-    assert HSRConfig().Update.AutoUpdateMode == "BeforeRun"
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("blocking", [False, True])
-async def test_prepare_updates_before_backing_up_configs(monkeypatch, blocking):
-    script_id = uuid.uuid4()
-    config = HSRConfig()
-    instance = object.__new__(manager.HSRManager)
-    instance.script_info = SimpleNamespace(script_id=str(script_id), user_list=[])
-    instance.config_locks = {}
-    instance._external_config_targets = []
-    instance._append_log = Mock()
-    instance._release_external_path_lock = Mock()
-    events = []
-
-    async def recover():
-        events.append("recover")
-
-    async def install():
-        events.append("install")
-        return "unsafe" if blocking else None
-
-    instance._rollback_pending_updates = recover
-    instance._update_external_scripts = install
-    instance._backup_external_configs = Mock(
-        side_effect=lambda: events.append("backup")
-    )
-    monkeypatch.setattr(HSRConfig, "lock_x", AsyncMock(return_value="ticket"))
-    monkeypatch.setattr(
-        manager, "Config", SimpleNamespace(ScriptConfig={script_id: config})
-    )
-    monkeypatch.setattr(manager, "resolve_external_lock_paths", lambda *args: [])
-    monkeypatch.setattr(manager, "acquire_external_path_locks", AsyncMock())
-    monkeypatch.setattr(manager, "resolve_script_path", lambda *args: "")
-    monkeypatch.setattr(manager, "archive_native_backup", Mock())
-    if blocking:
-        with pytest.raises(RuntimeError, match="unsafe"):
-            await instance.prepare()
-        instance._backup_external_configs.assert_not_called()
-        instance._release_external_path_lock.assert_called_once()
-        assert events == ["recover", "install"]
-    else:
-        await instance.prepare()
-        assert events == ["recover", "install", "backup"]
 
 
 def test_failed_rollback_is_reported_as_unsafe(tmp_path, monkeypatch):

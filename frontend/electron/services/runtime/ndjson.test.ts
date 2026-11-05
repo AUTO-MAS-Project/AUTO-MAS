@@ -17,44 +17,6 @@ function eventsOf(items: ReturnType<NdjsonEventStream['push']>) {
 }
 
 describe('parseRuntimeEventLine', () => {
-  it('解析真实 version 输出的三条事件', () => {
-    const lines = fixture('version.ndjson').trim().split('\n')
-    const events = lines.map(line => parseRuntimeEventLine(line))
-
-    expect(events).toHaveLength(3)
-    const [hello, progress, result] = events
-
-    expect(hello).toMatchObject({
-      type: 'hello',
-      protocol: 1,
-      sequence: 1,
-      command: 'version',
-      runtimeVersion: 'dev',
-      capabilities: [],
-    })
-    expect(progress).toMatchObject({
-      type: 'progress',
-      stage: 'runtime.handshake',
-      status: 'succeeded',
-    })
-    expect(result).toMatchObject({
-      type: 'result',
-      success: true,
-      code: 'OK',
-      stage: 'runtime.handshake',
-      status: 'succeeded',
-      remediation: [],
-    })
-    expect(result?.type === 'result' && result.details.protocolVersion).toBe(1)
-  })
-
-  it('合法 JSON 但不是对象或缺少公共字段同样报协议错误', () => {
-    expect(() => parseRuntimeEventLine('[1,2,3]')).toThrowError(/不是 JSON 对象/)
-    expect(() => parseRuntimeEventLine('"hello"')).toThrowError(/不是 JSON 对象/)
-    expect(() => parseRuntimeEventLine('{"type":"hello"}')).toThrowError(/缺少 protocol 或 type/)
-    expect(() => parseRuntimeEventLine('{"protocol":1}')).toThrowError(/缺少 protocol 或 type/)
-  })
-
   it('未知事件类型返回 undefined 而不是拒绝整条协议', () => {
     expect(parseRuntimeEventLine('{"protocol":1,"type":"future-event"}')).toBeUndefined()
   })

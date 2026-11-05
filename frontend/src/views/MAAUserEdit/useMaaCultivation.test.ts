@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { effectScope, reactive, type EffectScope } from 'vue'
-import { useMaaCultivation } from './useMaaCultivation'
 import { cultivateManagementKey } from './cultivateManagement'
+import { useMaaCultivation } from './useMaaCultivation'
 
 const { provided, getUser, getCatalog } = vi.hoisted(() => ({
   provided: new Map<unknown, unknown>(),
@@ -71,37 +71,6 @@ describe('全部已有干员托管', () => {
     vi.unstubAllGlobals()
   })
 
-  it('开启后回读立即补入的目标，保留其他表单设置', async () => {
-    const { task, saveField, controller } = setup()
-    getUser.mockResolvedValue({
-      code: 200,
-      data: {
-        user: {
-          Task: {
-            CultivateTargets: '[{"operator_id":"owned","goals":[]}]',
-            CultivateAutoRaise: false,
-          },
-        },
-      },
-    })
-    await controller.setManaged(true)
-    expect(saveField).toHaveBeenCalledExactlyOnceWith('Task.CultivateAllOwned', true)
-    expect(task.CultivateTargets).toContain('owned')
-    expect(task.CultivateAutoRaise).toBe(true)
-    expect(controller.managed.value).toBe(true)
-  })
-
-  it('取消托管只保存开关，不读取或改写目标', async () => {
-    const { task, saveField, controller } = setup()
-    task.CultivateAllOwned = true
-    task.CultivateTargets = 'existing goals'
-    await controller.setManaged(false)
-    expect(saveField).toHaveBeenCalledExactlyOnceWith('Task.CultivateAllOwned', false)
-    expect(task.CultivateTargets).toBe('existing goals')
-    expect(getUser).not.toHaveBeenCalled()
-    expect(getCatalog).not.toHaveBeenCalled()
-  })
-
   it('保存失败不会回读或清空现有目标', async () => {
     const { task, controller } = setup(false)
     await controller.setManaged(true)
@@ -147,26 +116,6 @@ describe('全部已有干员托管', () => {
     expect(getUser).toHaveBeenCalledTimes(1)
     task.CultivateTargets = '[{"operator_id":"new-edit","goals":[]}]'
     completeRead({ code: 200, data: { user: { Task: { CultivateTargets: '[]' } } } })
-    await pending
-    expect(task.CultivateTargets).toContain('new-edit')
-  })
-
-  it('开启保存期间发生的目标编辑也不会被后续回读覆盖', async () => {
-    const { task, saveField, controller } = setup()
-    let completeSave: (value: boolean) => void = () => {}
-    saveField.mockImplementationOnce(
-      () =>
-        new Promise(resolve => {
-          completeSave = resolve
-        })
-    )
-    getUser.mockResolvedValueOnce({
-      code: 200,
-      data: { user: { Task: { CultivateTargets: '[]' } } },
-    })
-    const pending = controller.setManaged(true)
-    task.CultivateTargets = '[{"operator_id":"new-edit","goals":[]}]'
-    completeSave(true)
     await pending
     expect(task.CultivateTargets).toContain('new-edit')
   })

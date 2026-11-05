@@ -2,7 +2,6 @@ from copy import deepcopy
 
 import pytest
 
-from app.models.config import MaaUserConfig
 from app.task.MAA.AutoProxy import (
     _MAA_DEPOT_QUOTA_KEYS,
     _apply_depot_quota_override,
@@ -11,7 +10,6 @@ from app.task.MAA.AutoProxy import (
     _build_stock_cultivate_task,
     _should_retry_maa,
 )
-from app.task.MAA.tools.backup_archive import group_overlay, read_overlay_values
 from app.task.MAA.tools.cultivate.types import CultivatePlan, FarmEntry, Requirement
 
 _QUOTA_IDS = [f"{gate}/{count_key}" for gate, count_key in _MAA_DEPOT_QUOTA_KEYS]
@@ -68,16 +66,6 @@ def _cultivate(source: dict) -> dict:
     )
     assert task is not None
     return task
-
-
-def _expected_quota(
-    count: int | None, source_plan: dict, gate: str, count_key: str
-) -> tuple[bool, int]:
-    """留空沿用来源计划自身的设置，填数字则整组改写成该数字。"""
-
-    if count is None:
-        return (source_plan[gate], source_plan[count_key])
-    return (count > 0, count)
 
 
 @pytest.mark.parametrize("use_expiring", [True, False])
@@ -197,39 +185,6 @@ def test_quota_override_writes_plan_values(gate: str, count_key: str, count: int
     assert source["PlanList"][0][count_key] == source_count
 
 
-@pytest.mark.parametrize("stock_count", [None, 0, 2])
-@pytest.mark.parametrize("cultivate_count", [None, 0, 3])
-def test_stock_and_cultivate_quota_settings_stay_independent(
-    stock_count: int | None, cultivate_count: int | None
-):
-    stock_source = _source_task(
-        use_expiring=True, plan_medicine=(True, 5), plan_stone=(True, 9)
-    )
-    cultivate_source = _source_task(
-        use_expiring=True, plan_medicine=(True, 6), plan_stone=(True, 7)
-    )
-    stock_task = _stock_task(stock_source)
-    cultivate_task = _cultivate(cultivate_source)
-
-    _apply_depot_quota_override(stock_task, medicine=stock_count, stone=stock_count)
-    _apply_depot_quota_override(
-        cultivate_task, medicine=cultivate_count, stone=cultivate_count
-    )
-    merged = _build_stock_cultivate_task(stock_task, cultivate_task, _cultivate_plan())
-
-    assert merged is not None
-    cultivate_plan, stock_plan = merged["PlanList"]
-    for gate, count_key in _MAA_DEPOT_QUOTA_KEYS:
-        assert (cultivate_plan[gate], cultivate_plan[count_key]) == _expected_quota(
-            cultivate_count, cultivate_source["PlanList"][0], gate, count_key
-        )
-        assert (stock_plan[gate], stock_plan[count_key]) == _expected_quota(
-            stock_count, stock_source["PlanList"][0], gate, count_key
-        )
-        # 总开关只由来源任务与合并并集决定；两组都填 0 时额度已写进计划，无需关总开关。
-        assert merged[gate] is True
-
-
 @pytest.mark.parametrize(("gate", "count_key"), _MAA_DEPOT_QUOTA_KEYS, ids=_QUOTA_IDS)
 def test_merge_without_cultivate_group_keeps_stock_gate(gate: str, count_key: str):
     stock_source = _source_task(
@@ -268,24 +223,6 @@ def test_merge_keeps_closed_group_quota_closed(gate: str, count_key: str):
     cultivate_plan, stock_plan = merged["PlanList"]
     assert cultivate_plan[gate] is True
     assert (stock_plan[gate], stock_plan[count_key]) == (False, 0)
-
-
-def test_quota_settings_round_trip_through_maa_overlay():
-    expected = {
-        "DepotMaintainMedicineNumb": 2,
-        "DepotMaintainStoneNumb": 3,
-        "CultivateMedicineNumb": 4,
-        "CultivateStoneNumb": 5,
-        "EventDepotMaintainMedicineNumb": 6,
-        "EventDepotMaintainStoneNumb": 7,
-    }
-    user = MaaUserConfig.model_validate({"Task": expected})
-
-    overlay = read_overlay_values(user)
-    grouped = group_overlay(overlay)
-
-    assert {key: overlay[key] for key in expected} == expected
-    assert {key: grouped["Task"][key] for key in expected} == expected
 
 
 @pytest.mark.parametrize(

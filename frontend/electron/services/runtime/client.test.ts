@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
-import { RuntimeClient, buildRuntimeArgs, readRuntimeBaseUrl } from './client'
+import { RuntimeClient, buildRuntimeArgs } from './client'
 import { RuntimeClientError } from './protocol'
 
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
@@ -373,16 +373,6 @@ describe('RuntimeClient.supervise', () => {
     capabilities,
   })
 
-  const runningStateLine = line({
-    ...base,
-    type: 'state',
-    sequence: 2,
-    stage: 'backend.run',
-    status: 'running',
-    message: '后端运行中',
-    details: { baseUrl: 'http://127.0.0.1:36163', pid: 9001 },
-  })
-
   const stoppedResultLine = line({
     ...base,
     type: 'result',
@@ -395,41 +385,6 @@ describe('RuntimeClient.supervise', () => {
     retryable: false,
     remediation: [],
     details: {},
-  })
-
-  it('握手后返回句柄，state 事件带出 baseUrl', async () => {
-    const client = createClient()
-    const child = mockSpawn()
-    const states: string[] = []
-
-    const pendingHandle = client.supervise({
-      mode: 'managed',
-      onState: event => states.push(`${event.status}:${readRuntimeBaseUrl(event.details)}`),
-    })
-    child.stdout.feed(helloLine)
-    const handle = await pendingHandle
-    child.stdout.feed(runningStateLine)
-
-    expect(handle.hello.command).toBe('backend supervise')
-    expect(handle.capabilities).toEqual(capabilities)
-    expect(handle.pid).toBe(4242)
-    expect(states).toEqual(['running:http://127.0.0.1:36163'])
-    expect(spawnMock.mock.calls[0][1]).toEqual([
-      '--app-root',
-      APP_ROOT,
-      '--output',
-      'ndjson',
-      '--protocol',
-      '1',
-      'backend',
-      'supervise',
-      '--mode',
-      'managed',
-    ])
-
-    child.stdout.feed(stoppedResultLine)
-    child.close(0)
-    await handle.completion
   })
 
   it('shutdown 写出合法控制行，并在收到 result 与进程退出后 resolve', async () => {

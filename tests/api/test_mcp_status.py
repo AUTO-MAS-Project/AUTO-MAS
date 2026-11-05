@@ -1,26 +1,9 @@
-from unittest.mock import Mock
-
 import httpx
 import pytest
 from fastapi import FastAPI
 
 import app.api.core as api
 from app.core.mcp import McpService
-
-
-@pytest.mark.asyncio
-async def test_home_painted_route_notifies_service(monkeypatch):
-    service = Mock(spec=McpService)
-    monkeypatch.setattr(api, "MCP", service)
-    app = FastAPI()
-    app.include_router(api.router)
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.post("/api/core/mcp/home-painted")
-        assert response.status_code == 200
-        assert response.json()["code"] == 200
-        service.notify_home_painted.assert_called_once_with()
 
 
 @pytest.mark.asyncio

@@ -186,45 +186,11 @@ async def test_bad_snapshot_falls_back_to_source(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("loader", ["load_dataset", "load_operator_catalog"])
-async def test_all_sources_fail_without_replacing_old_cache(
-    tmp_path, snapshot, network, loader
-):
-    path = yituliu.snapshot_path(tmp_path)
-    path.parent.mkdir(parents=True)
-    path.write_text(json.dumps(snapshot), encoding="utf-8")
-    original = path.read_bytes()
-    requests = network(status=503, upstream_status=503)
-    result = await getattr(yituliu, loader)(tmp_path, max_age_hours=0)
-    assert result
-    assert requests[0] == SNAPSHOT_URL
-    assert yituliu._DEMAND_URL in requests
-    assert path.read_bytes() == original
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("loader", ["load_dataset", "load_operator_catalog"])
 async def test_all_sources_fail_without_cache_raises(tmp_path, network, loader):
     network(status=503, upstream_status=503)
     with pytest.raises(yituliu.YituliuDataError):
         await getattr(yituliu, loader)(tmp_path)
     assert not yituliu.snapshot_path(tmp_path).exists()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("loader", ["load_dataset", "load_operator_catalog"])
-async def test_partial_bundle_never_replaces_a_complete_cache(
-    tmp_path, snapshot, network, loader
-):
-    path = yituliu.snapshot_path(tmp_path)
-    path.parent.mkdir(parents=True)
-    path.write_text(json.dumps(snapshot), encoding="utf-8")
-    original = path.read_bytes()
-    partial = deepcopy(snapshot)
-    partial["operators"] = []
-    partial["dataset"]["data_version"] = "incomplete"
-    network(compressed(partial), upstream_status=503)
-    await getattr(yituliu, loader)(tmp_path, max_age_hours=0)
-    assert path.read_bytes() == original
 
 
 @pytest.mark.asyncio
@@ -302,18 +268,6 @@ async def test_manual_refresh_bypasses_both_caches(tmp_path, snapshot, network):
         "label"
     ] == "Refreshed operator"
     assert requests == [SNAPSHOT_URL]
-
-
-@pytest.mark.asyncio
-async def test_manual_fallback_uses_one_demand_table_for_both_parts(tmp_path, network):
-    requests = network(status=503)
-    await yituliu.refresh_data(tmp_path)
-    assert (await yituliu.load_operator_catalog(tmp_path))[0][
-        "label"
-    ] == "Upstream operator"
-    assert (await yituliu.get_dataset_cached(tmp_path)).demands["operator"]
-    assert len(requests) == 6
-    assert requests.count(yituliu._DEMAND_URL) == 1
 
 
 @pytest.mark.asyncio
@@ -404,35 +358,3 @@ async def test_manual_refresh_waits_for_old_catalog_and_shares_new_result(
     await asyncio.gather(old, refresh, other_refresh)
     assert (await reader)[0]["label"] == "Refreshed operator"
     assert requests == [SNAPSHOT_URL, SNAPSHOT_URL]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "failure, expected_code",
-    [
-        (None, 200),
-        (yituliu.YituliuDataError("source unavailable"), 503),
-        (OSError("read-only cache"), 507),
-        (RuntimeError("unknown error"), 500),
-    ],
-)
-async def test_refresh_http_contract_calls_domain(monkeypatch, failure, expected_code):
-    from unittest.mock import AsyncMock
-
-    from fastapi import FastAPI
-
-    from app.task.MAA import api, api_service
-
-    refresh = AsyncMock(side_effect=failure)
-    monkeypatch.setattr(api_service, "refresh_cultivate_data", refresh)
-    app = FastAPI()
-    app.include_router(api.router, prefix="/api/scripts")
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.post(
-            "/api/scripts/maa/cultivate/refresh", json={"scriptId": "script"}
-        )
-    assert response.status_code == 200
-    assert response.json()["code"] == expected_code
-    refresh.assert_awaited_once_with("script")

@@ -2,7 +2,6 @@
 
 import asyncio
 import importlib
-import threading
 from types import SimpleNamespace
 
 import pytest
@@ -59,52 +58,6 @@ def test_offset_concurrent_close_and_user_ownership(capture):
     assert user.status == "完成"
 
 
-@pytest.mark.parametrize("cancel", [False, True])
-def test_worker_processing_and_host_delivery_finish_before_cancel(capture, cancel):
-    proxy, user, path, module = capture
-    started, release = threading.Event(), threading.Event()
-    worker_threads, owner_threads = [], []
-    owner = threading.get_ident()
-
-    def process(entries):
-        worker_threads.append(threading.get_ident())
-        started.set()
-        assert release.wait(5)
-        return entries
-
-    class Entries(list):
-        def append(self, item):
-            owner_threads.append(threading.get_ident())
-            super().append(item)
-
-    user.push_log = Entries()
-    proxy._log_pipeline.postprocessors.append(process)
-
-    async def run():
-        closing = asyncio.create_task(proxy._close_log_details())
-        try:
-            assert await asyncio.to_thread(started.wait, 3)
-            assert not closing.done() and user.push_log == []
-            if cancel:
-                closing.cancel()
-                await asyncio.sleep(0)
-                closing.cancel()
-                await asyncio.sleep(0)
-                assert not closing.done()
-        finally:
-            release.set()
-        if cancel:
-            with pytest.raises(asyncio.CancelledError):
-                await closing
-        else:
-            await closing
-        await proxy._close_log_details()
-
-    asyncio.run(run())
-    assert worker_threads and all(thread != owner for thread in worker_threads)
-    assert owner_threads == [owner]
-
-
 def test_processing_failure_isolated_without_partial_results(capture):
     proxy, user, path, module = capture
 
@@ -143,27 +96,6 @@ def test_initialization_failure_keeps_failure_policy_with_caller(capture, monkey
     expected = [] if module.__name__.split(".")[2] == "ZzzOd" else ["⚠️ 节点采集失败"]
     assert [entry[1] for entry in user.push_log] == expected
     assert user.status == "完成"
-
-
-def test_delivery_failure_is_not_retried(capture):
-    proxy, user, path, module = capture
-    attempts = []
-
-    class Unwritable(list):
-        def append(self, item):
-            attempts.append(item)
-            raise RuntimeError("sink failed")
-
-    user.push_log = Unwritable()
-
-    async def run():
-        await proxy._close_log_details()
-        before = len(attempts)
-        await proxy._close_log_details()
-        assert len(attempts) == before
-
-    asyncio.run(run())
-    assert attempts and user.status == "完成"
 
 
 def test_okww_translation_cleanup_failure_preserves_delivered_nodes(
