@@ -470,13 +470,13 @@ class FluxdownResumableError(RuntimeError):
     """
 
 
-
 class FluxdownWriterUnconfirmed(_utils_fluxdown_cli.FluxdownCancelUnconfirmed):
     """The server writer may still be active despite a failed stop probe.
 
     Keep the resumable task mapping, but never let a scheduler treat this as
     an ordinary download failure or start the next script.
     """
+
 
 def _proxy_to_str(proxy: httpx.Proxy | None) -> str | None:
     """仅返回不含凭据的代理端点，认证保留在 httpx.Proxy 中。"""
