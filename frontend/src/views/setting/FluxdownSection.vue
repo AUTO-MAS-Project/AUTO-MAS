@@ -59,11 +59,15 @@ const handleFluxdownDetect = async () => {
       }
     } else {
       fluxdownOnlyFull.value = false
-      message.warning(
-        result.candidates?.length
-          ? t('core.setting.others.fluxdownInstallMissing')
-          : t('core.setting.others.fluxdownDetectNotFound')
-      )
+      const incomplete = result.candidates?.find(candidate => !candidate.complete)
+      const missingKey = incomplete
+        ? incomplete.has_server && !incomplete.has_cli
+          ? 'fluxdownInstallMissingCli'
+          : incomplete.has_cli && !incomplete.has_server
+            ? 'fluxdownInstallMissingServer'
+            : 'fluxdownInstallMissing'
+        : 'fluxdownDetectNotFound'
+      message.warning(t(`core.setting.others.${missingKey}`))
     }
   } catch (error) {
     const errorMsg =
