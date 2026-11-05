@@ -725,9 +725,7 @@ async def test_permission_fallback_preserves_user_selected_path(
                 bundle.writestr("package/" + binary, b"new binary")
         if len(downloaded) == 1:
             await config.update(
-                type(config).model_validate(
-                    {"Update": {"FluxdownPath": user_choice}}
-                ),
+                type(config).model_validate({"Update": {"FluxdownPath": user_choice}}),
                 check_visibility=False,
             )
         return 100
