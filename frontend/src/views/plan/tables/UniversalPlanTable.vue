@@ -42,14 +42,16 @@
     <a-list bordered :data-source="days">
       <template #renderItem="{ item }">
         <a-list-item>
-          <span
-            >{{ label(item) }} ·
-            {{
-              savedDays.includes(planColumnGroup(item))
-                ? t('core.plan.universal.configured')
-                : t('core.plan.universal.unconfigured')
-            }}</span
-          >
+          <a-space size="small">
+            <span>{{ label(item) }}</span>
+            <a-tag :color="isConfigured(item) ? 'success' : undefined">
+              {{
+                isConfigured(item)
+                  ? t('core.plan.universal.configured')
+                  : t('core.plan.universal.unconfigured')
+              }}
+            </a-tag>
+          </a-space>
           <a-button
             :disabled="Boolean(taskId) || starting || stopping || locked"
             @click="editDay(item)"
@@ -118,6 +120,10 @@ function label(day: string) {
   if (day === 'ALL') return t('core.plan.modeAll')
   const value = planDayLabel(day)
   return t(value.key, value.params)
+}
+
+function isConfigured(day: string) {
+  return savedDays.value.includes(planColumnGroup(day))
 }
 
 async function refreshDays() {
