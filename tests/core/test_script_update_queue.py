@@ -443,7 +443,6 @@ async def test_unconfirmed_fluxdown_cancel_remains_visible():
         await queue._cancel_and_wait(task)
 
 
-
 @pytest.mark.asyncio
 async def test_second_account_retry_keeps_running_prefetch(running):
     """Account B retry does not cancel A's script-level success clock."""
@@ -480,7 +479,6 @@ async def test_second_account_retry_keeps_running_prefetch(running):
     assert pipeline._download is not None and not pipeline._download.done()
     release.set()
     await pipeline.finish()
-
 
 
 @pytest.mark.asyncio
