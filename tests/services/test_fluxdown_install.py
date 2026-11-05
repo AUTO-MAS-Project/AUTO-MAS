@@ -449,6 +449,7 @@ def test_valid_zip_asset_and_co_located_extraction(tmp_path):
         (second, ("fluxdown-agent.exe", "fluxdownd.exe")),
     ):
         with zipfile.ZipFile(archive, "w") as bundle:
+            bundle.writestr("release/", b"")
             for name in names:
                 bundle.writestr("release/" + name, name.encode())
     install._check_package(
@@ -469,6 +470,9 @@ def test_tar_packages_and_reject_links(tmp_path):
 
     package = tmp_path / "FluxDown-CLI.tar.gz"
     with tarfile.open(package, "w:gz") as archive:
+        folder = tarfile.TarInfo("release")
+        folder.type = tarfile.DIRTYPE
+        archive.addfile(folder)
         member = tarfile.TarInfo("release/fluxdown")
         member.size = len(b"binary")
         member.mode = 0o755
