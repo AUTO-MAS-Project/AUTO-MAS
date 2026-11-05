@@ -961,3 +961,92 @@ async def test_cancelled_fluxdown_resume_checks_current_writer_before_archive_cl
     backend.assert_not_awaited()
     server_download.assert_not_awaited()
     local_download.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stop_state", ["paused", "unconfirmed", "unavailable"])
+async def test_server_initialization_cancel_preserves_archive_until_writer_stops(
+    resource_install, monkeypatch, stop_state
+):
+    from app.core.script_update import download_script_package
+    from app.models.config.setting import GlobalConfig
+    from app.services.common.update import fluxdown as transport
+    from app.utils.common import fluxdown_cli as cli
+
+    install, _, _ = resource_install
+    resource._WORK_DIR.mkdir(parents=True)
+    archive = resource._STAGE_ZIP
+    payload = b"old daemon still owns this resource archive"
+    archive.write_bytes(payload)
+    update.Config.setting.Update = GlobalConfig.UpdateFields(FluxdownTakeoverAll=True)
+    monkeypatch.setattr(resource, "download_script_package", download_script_package)
+    exe = install.parent / "fluxdown.exe"
+    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda *_a, **_kw: exe)
+    monkeypatch.setattr(cli, "_server_data_dir", lambda _: install.parent / "server")
+    monkeypatch.setattr(cli, "fluxdown_server_available", lambda *_a, **_kw: True)
+    monkeypatch.setattr(
+        cli, "fluxdown_server_emergency_stop_if_exclusive", lambda *_: False
+    )
+    url = "https://github.com/MaaAssistantArknights/MaaResource/archive/refs/heads/main.zip"
+    key = cli._map_key(url, archive)
+    cli._map_put(exe, key, "old-task", url, archive, None)
+    initializing, release_init = threading.Event(), threading.Event()
+    checking, release_check = threading.Event(), threading.Event()
+
+    def ensure(_exe):
+        initializing.set()
+        assert release_init.wait(5)
+        return (
+            None
+            if stop_state == "unavailable"
+            else SimpleNamespace(gateway_port=17800, token="test")
+        )
+
+    commands = []
+
+    def command(_exe, _env, args, *_, **_kwargs):
+        commands.append(args)
+        assert args[0] in ("status", "pause")
+        checking.set()
+        assert release_check.wait(5)
+        if args[0] == "pause":
+            return 124, "pause unconfirmed"
+        status = cli._TASK_STATUS_PAUSED if stop_state == "paused" else 1
+        return 0, json.dumps({"status": status})
+
+    monkeypatch.setattr(cli, "fluxdown_server_ensure", ensure)
+    monkeypatch.setattr(cli, "_run_cli", command)
+    backend = AsyncMock(side_effect=AssertionError("must not start another writer"))
+    local = AsyncMock(side_effect=AssertionError("must not start local fallback"))
+    monkeypatch.setattr(transport, "_httpx_download", backend)
+    monkeypatch.setattr(cli, "fluxdown_download", local)
+    task = asyncio.create_task(
+        resource.prepare_install_resources(install, github=True, cdk=None)
+    )
+    try:
+        assert await asyncio.to_thread(initializing.wait, 3)
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=0.05)
+        assert not done, "initialization must finish before ownership cleanup"
+        assert archive.read_bytes() == payload
+        task.cancel()
+        release_init.set()
+        if stop_state != "unavailable":
+            assert await asyncio.to_thread(checking.wait, 3)
+            task.cancel()
+            done, _ = await asyncio.wait({task}, timeout=0.05)
+            assert not done, "repeated cancellation must await writer confirmation"
+            assert archive.read_bytes() == payload
+    finally:
+        release_init.set()
+        release_check.set()
+        await asyncio.gather(task, return_exceptions=True)
+    if stop_state == "paused":
+        assert task.cancelled()
+        assert not archive.exists()
+    else:
+        assert isinstance(task.exception(), cli.FluxdownCancelUnconfirmed)
+        assert archive.read_bytes() == payload
+    assert cli._load_task_map(exe)[key]["task_id"] == "old-task"
+    backend.assert_not_awaited()
+    local.assert_not_awaited()

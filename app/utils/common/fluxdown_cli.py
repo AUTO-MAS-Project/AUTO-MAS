@@ -1480,16 +1480,8 @@ async def _fluxdown_server_download(
     )
     t0 = time.monotonic()
 
-    # ensure 的结果缓存于 _ServerState 单例（线程内完成写入），取消时即使放弃
-    # 等待也不丢状态，故此处无需强等待
-    handle = await asyncio.to_thread(fluxdown_server_ensure, cli_exe)
-    if handle is None:
-        record.status = "failed"
-        record.error = "server 套件不可用或启动超时"
-        record.duration_ms = int((time.monotonic() - t0) * 1000)
-        raise RuntimeError("FluxDown server 不可用")
-
-    env = _cli_env(handle.gateway_port, handle.token)
+    # 在第一个 await 前保留旧任务身份，初始化期间取消也要确认它已停写。
+    env: dict[str, str] = {}
     key = _map_key(url, destination)
     mapping = _load_task_map(cli_exe).get(key) or {}
     task_id: str | None = mapping.get("task_id")
@@ -1521,6 +1513,16 @@ async def _fluxdown_server_download(
         取消不能打断"暂停 + 复查"，否则任务会在无人等待时继续下载。
         """
         try:
+            if not env:
+                # 初始化已收敛，但取消发生在取得管理环境之前；从持久映射
+                # 完整确认写入者，不能把“还没开始 resume”当成没有旧下载。
+                return await _to_thread_strong(
+                    fluxdown_server_task_safe_to_overwrite,
+                    cli_exe,
+                    url,
+                    destination,
+                    propagate_cancel=propagate_cancel,
+                )
             code, _ = await _to_thread_strong(
                 _run_cli,
                 cli_exe,
@@ -1552,10 +1554,18 @@ async def _fluxdown_server_download(
             return False
         return status_code in (2, 3, 4)
 
-    # 既有任务查询 → resume/add → 映射落盘 → 轮询 → 完成归位，整段共用一个
-    # 取消作用域：任一阶段被取消都走同一套清理（确认暂停），不吞掉取消，
-    # 也不会继续走完成路径。
+    # 服务初始化 → 既有任务查询 → resume/add → 映射落盘 → 轮询 → 完成归位，
+    # 整段共用一个取消作用域；任一阶段取消都确认旧写入者已停止。
     try:
+        handle = await _to_thread_strong(
+            fluxdown_server_ensure, cli_exe, propagate_cancel=True
+        )
+        if handle is None:
+            record.status = "failed"
+            record.error = "server 套件不可用或启动超时"
+            record.duration_ms = int((time.monotonic() - t0) * 1000)
+            raise RuntimeError("FluxDown server 不可用")
+        env = _cli_env(handle.gateway_port, handle.token)
         if task_id and mapping.get("proxy_hash") != _proxy_hash(proxy):
             # resume 不接受 --proxy，必须停下旧任务后重建。旧版映射没有指纹，
             # 同样不能假定其网络配置；不删除旧任务的文件，残包沿用下方隔离路径。
