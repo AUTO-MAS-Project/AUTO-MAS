@@ -608,3 +608,111 @@ async def test_unconfirmed_daemon_from_real_service_blocks_next_script(
         await handoff()
     assert not next_script_started
     assert cli._load_task_map(exe)[cli._map_key(url, target)]["task_id"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_download_history_does_not_invalidate_prefetched_candidate(monkeypatch):
+    """A FluxDown history write during a successful prefetch is not a config edit."""
+    from app.core import script_update
+    from app.models.config.setting import FluxdownRecord, GlobalConfig
+    from app.models.task import TaskExecuteBase
+
+    uid = uuid.uuid4()
+    script = ScriptItem(str(uid), "test", "等待")
+    config = SimpleNamespace(is_locked=False, revision=0)
+    config.model_dump = lambda **_: {"revision": config.revision}
+    update_settings = GlobalConfig.UpdateFields()
+    info = SimpleNamespace(
+        mode="AutoProxy",
+        is_cycle=False,
+        script_list=[script],
+        task_id="test",
+        script_user_scope=lambda _: None,
+    )
+    instances = []
+
+    class Manager(TaskExecuteBase):
+        def __init__(self):
+            super().__init__()
+            self.discarded = False
+
+        async def prefetch_script_update(self):
+            update_settings.LastUpdateHistory.append(
+                FluxdownRecord(status="success")
+            )
+
+        async def main_task(self): ...
+        async def final_task(self): ...
+        async def on_crash(self, error): ...
+
+        async def discard_prefetched_update(self):
+            self.discarded = True
+
+    def make_manager(*_args, **_kwargs):
+        instance = Manager()
+        instances.append(instance)
+        return instance
+
+    session = script_update.ScriptUpdateSession(
+        info,
+        make_manager=make_manager,
+        resources=lambda _: ((), None),
+        scheduled=lambda _: True,
+        config=SimpleNamespace(
+            ScriptConfig={uid: config},
+            setting=SimpleNamespace(Update=update_settings),
+        ),
+    )
+    await session._prefetch(0)
+    assert await session.take(0) is instances[0]
+    assert not instances[0].discarded
+
+    await session._prefetch(0)
+    update_settings.Source = "MirrorChyan"
+    assert await session.take(0) is None
+    assert instances[1].discarded
+
+
+@pytest.mark.asyncio
+async def test_update_install_setting_still_invalidates_prefetch():
+    """Downloader/source policy changes must not reuse an old package."""
+    from app.core import script_update
+    from app.models.config.setting import GlobalConfig
+    from app.models.task import TaskExecuteBase
+
+    uid = uuid.uuid4()
+    script = ScriptItem(str(uid), "test", "等待")
+    script_config = SimpleNamespace(is_locked=False, model_dump=lambda **_: {})
+    update_settings = GlobalConfig.UpdateFields()
+    info = SimpleNamespace(
+        mode="AutoProxy",
+        is_cycle=False,
+        script_list=[script],
+        task_id="test",
+        script_user_scope=lambda _: None,
+    )
+    discarded = []
+
+    class Manager(TaskExecuteBase):
+        async def prefetch_script_update(self): ...
+        async def main_task(self): ...
+        async def final_task(self): ...
+        async def on_crash(self, error): ...
+
+        async def discard_prefetched_update(self):
+            discarded.append(True)
+
+    session = script_update.ScriptUpdateSession(
+        info,
+        make_manager=lambda *_args, **_kwargs: Manager(),
+        resources=lambda _: ((), None),
+        scheduled=lambda _: True,
+        config=SimpleNamespace(
+            ScriptConfig={uid: script_config},
+            setting=SimpleNamespace(Update=update_settings),
+        ),
+    )
+    await session._prefetch(0)
+    update_settings.FluxdownTakeoverAll = True
+    assert await session.take(0) is None
+    assert discarded == [True]
