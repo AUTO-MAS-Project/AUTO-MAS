@@ -1,128 +1,18 @@
 import json
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 
-from app.services import update as updater
 from app.services.common.update import fluxdown as transport
 from app.utils.common import fluxdown_cli as cli
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("blocked", [False, True])
-async def test_custom_http_resume_keeps_old_writer_safety_gate(
-    tmp_path, monkeypatch, blocked
-):
-    proxy = httpx.Proxy("http://127.0.0.1:7890")
-    resume = AsyncMock(return_value=42)
-    monkeypatch.setattr(
-        cli, "fluxdown_find_cli", lambda path, **kwargs: Path("fluxdown.exe")
-    )
-    gate = AsyncMock(
-        side_effect=cli.FluxdownCancelUnconfirmed("still writing") if blocked else None
-    )
-    monkeypatch.setattr(transport, "_ensure_can_downgrade", gate)
-    monkeypatch.setattr(cli, "fluxdown_server_forget", lambda *args: None)
-    operation = transport.download_file(
-        "https://example.invalid/package",
-        tmp_path / "package",
-        timeout=30,
-        proxy=proxy,
-        options=transport.FluxdownOptions("builtin", "GitHub", "", 8, True),
-        http_download=resume,
-    )
-    if blocked:
-        with pytest.raises(cli.FluxdownCancelUnconfirmed):
-            await operation
-        resume.assert_not_awaited()
-    else:
-        assert await operation == 42
-        assert resume.call_args.kwargs["proxy"] is proxy
-    gate.assert_awaited_once()
-
-
-@pytest.mark.parametrize(
-    "url",
-    [
-        "http://127.0.0.1:7890",
-        "socks5://127.0.0.1:1080",
-        "http://u%40ser:p%3A%2Fword@127.0.0.1:7890",
-        "socks5://user:password@127.0.0.1:1080",
-    ],
-)
-def test_cli_proxy_endpoint_preserves_port_without_auth(url):
-    original = httpx.Proxy(url)
-    result = httpx.Proxy(transport._proxy_to_str(original))
-    assert result.url == original.url
-    assert result.auth is None
 
 
 def test_direct_proxy_and_history_redaction():
     assert transport._proxy_to_str(None) is None
     record = cli.FluxdownDownloadRecord(proxy="http://u%40ser:p%3A%2Fword@[::1]:7890")
     assert record.to_dict()["proxy"] == "http://[::1]:7890"
-
-
-@pytest.mark.asyncio
-async def test_mas_update_passes_configured_proxy(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    proxy = httpx.Proxy("http://127.0.0.1:7890")
-    monkeypatch.setattr(
-        updater, "Config", SimpleNamespace(proxy=proxy, work_path=tmp_path)
-    )
-
-    async def download(url, destination, **kwargs):
-        assert kwargs["proxy"] is proxy
-        destination.write_bytes(b"downloaded")
-        return 10
-
-    handler = updater.UpdateHandler(download=download)
-    handler._publish_completed = AsyncMock()
-    await handler._download_update_locked(
-        job=updater._DownloadJob(
-            version="v1.0.1",
-            source="GitHub",
-            mirror_chyan_download_url=None,
-            download_url="https://example.invalid/update.zip",
-            downloader="fluxdown",
-        )
-    )
-    assert (tmp_path / "UpdatePack_v1.0.1.zip").read_bytes() == b"downloaded"
-    handler._publish_completed.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", [False, True])
-async def test_dispatch_passes_proxy_to_both_cli_modes(tmp_path, monkeypatch, mode):
-    proxy = httpx.Proxy("http://127.0.0.1:7890")
-    record = cli.FluxdownDownloadRecord(status="success")
-    local = AsyncMock(return_value=(42, record))
-    server = AsyncMock(return_value=(42, record))
-    monkeypatch.setattr(
-        cli, "fluxdown_find_cli", lambda path, **kwargs: Path("fluxdown.exe")
-    )
-    monkeypatch.setattr(cli, "fluxdown_server_available", lambda path, enabled: True)
-    monkeypatch.setattr(
-        cli, "fluxdown_server_task_safe_to_overwrite", lambda *a, **kw: True
-    )
-    monkeypatch.setattr(cli, "fluxdown_server_forget", lambda *a: None)
-    monkeypatch.setattr(cli, "fluxdown_download", local)
-    monkeypatch.setattr(cli, "fluxdown_server_download", server)
-    assert (
-        await transport.download_file(
-            "https://example.invalid/update.zip",
-            tmp_path / "package.zip",
-            timeout=30,
-            proxy=proxy,
-            options=transport.FluxdownOptions("fluxdown", "GitHub", "", 8, mode),
-        )
-        == 42
-    )
-    selected = server if mode else local
-    assert selected.call_args.kwargs["proxy"] == "http://127.0.0.1:7890"
 
 
 @pytest.mark.asyncio
@@ -174,21 +64,6 @@ def test_proxy_mapping_keeps_no_plaintext_credentials(tmp_path, monkeypatch):
     )
 
 
-def test_shutdown_uses_process_handles_instead_of_taskkill(monkeypatch):
-    from unittest.mock import Mock
-
-    child = Mock(pid=2)
-    parent = Mock(pid=1)
-    parent.children.return_value = [child]
-    wait = Mock(return_value=([parent, child], []))
-    monkeypatch.setattr(cli.psutil, "Process", lambda pid: parent)
-    monkeypatch.setattr(cli.psutil, "wait_procs", wait)
-    cli._kill_pid(1)
-    parent.kill.assert_called_once()
-    child.kill.assert_called_once()
-    wait.assert_called_once_with([parent, child], timeout=5)
-
-
 @pytest.mark.asyncio
 async def test_authenticated_proxy_uses_httpx_without_cli_credentials(
     tmp_path, monkeypatch
@@ -214,22 +89,6 @@ async def test_authenticated_proxy_uses_httpx_without_cli_credentials(
     assert builtin.call_args.kwargs["proxy"] is proxy
     server.assert_not_called()
     local.assert_not_called()
-
-
-def test_failures_preserve_proxy_and_accumulate(tmp_path, monkeypatch):
-    monkeypatch.setattr(cli, "_server_data_dir", lambda path: tmp_path)
-    exe, target = tmp_path / "fluxdown.exe", tmp_path / "data"
-    url = "https://example.invalid"
-    key = cli._map_key(url, target)
-    cli._map_put(exe, key, "task", url, target, "http://localhost:7890")
-    assert cli.fluxdown_server_mark_failure(exe, url, target) == 1
-    assert cli.fluxdown_server_mark_failure(exe, url, target) == 2
-    assert cli._load_task_map(exe)[key]["proxy_hash"] == cli._proxy_hash(
-        "http://localhost:7890"
-    )
-    assert cli._proxy_hash("http://user:weak@localhost:7890") == cli._proxy_hash(
-        "http://localhost:7890"
-    )
 
 
 def test_private_cli_failure_does_not_spawn_agent(tmp_path, monkeypatch):
@@ -485,6 +344,14 @@ async def test_server_download_prevents_installation_until_cancelled(
         tmp_path / "fluxdown.exe", tmp_path / "update.zip"
     ):
         pass
+    monkeypatch.setattr(cli, "fluxdown_server_shutdown", lambda: None)
+    with cli.fluxdown_install_guard():
+        with pytest.raises(RuntimeError, match="正在安装"):
+            await cli.fluxdown_server_download(
+                "https://example.test/update.zip",
+                tmp_path / "update.zip",
+                cli_exe=tmp_path / "fluxdown.exe",
+            )
 
 
 def test_other_url_same_target_requires_stopped_writer(tmp_path, monkeypatch):

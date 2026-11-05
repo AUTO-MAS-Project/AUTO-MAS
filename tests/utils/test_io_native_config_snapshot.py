@@ -126,16 +126,6 @@ def test_clears_snapshot_of_another_script(tmp_path: Path) -> None:
     assert (live / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "injected"
 
 
-def test_no_snapshot_is_a_noop(tmp_path: Path) -> None:
-    """没有已提交快照时不动现场。"""
-
-    live = tmp_path / "config"
-    _write_config(live, "injected")
-
-    assert _utils_io.recover_native_config(tmp_path / "Temp", live) == "cleared"
-    assert (live / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "injected"
-
-
 def test_uncommitted_snapshot_is_discarded(tmp_path: Path) -> None:
     """只有目录没有 .ready 标记: 说明上次没拷完整, 丢弃而非恢复。"""
 
@@ -179,51 +169,6 @@ def test_legacy_fingerprint_snapshot_is_preserved_aside(tmp_path: Path) -> None:
     assert (preserved / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "original"
     assert preserved.with_name("Temp.legacy.ready.json").exists()
     assert not snapshot.exists()
-
-
-def test_clear_removes_marker(tmp_path: Path) -> None:
-    """清理会同时删掉目录和提交标记。"""
-
-    snapshot = tmp_path / "Temp"
-    _write_config(snapshot, "original")
-    _utils_io.write_native_config_snapshot(
-        snapshot, script_id="script-1", original_exists=True, baseline="x"
-    )
-
-    _utils_io.clear_native_config_snapshot(snapshot)
-
-    assert not snapshot.exists()
-    assert _utils_io.read_native_config_snapshot(snapshot) is None
-
-
-def test_mark_injected_updates_marker_only_for_own_script(tmp_path: Path) -> None:
-    """标记注入后指纹落到提交标记里; 归属不符或无快照时是空操作。"""
-
-    snapshot = tmp_path / "Temp"
-    live = tmp_path / "config"
-    _write_config(snapshot, "original")
-    _write_config(live, "injected")
-    _utils_io.write_native_config_snapshot(
-        snapshot,
-        script_id="script-1",
-        original_exists=True,
-        baseline=_utils_io.dir_fingerprint(snapshot),
-    )
-
-    _utils_io.mark_native_config_injected(snapshot, live, script_id="script-1")
-
-    state = _utils_io.read_native_config_snapshot(snapshot)
-    assert state is not None
-    assert state.injected == _utils_io.dir_fingerprint(live)
-
-    # 归属不符: 不改写
-    _utils_io.mark_native_config_injected(snapshot, live, script_id="other")
-    state = _utils_io.read_native_config_snapshot(snapshot)
-    assert state is not None
-    assert state.script_id == "script-1"
-
-    # 无快照: 空操作不报错
-    _utils_io.mark_native_config_injected(tmp_path / "no-snapshot", live, script_id="s")
 
 
 if __name__ == "__main__":

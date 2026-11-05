@@ -83,7 +83,7 @@
               v-model:form-data="formData"
               :loading="loading"
               :resource-options="resourceOptions"
-              :show-resource="controllerProtocol === 'Adb' && controllerType !== 'CloudADB'"
+              :show-resource="resourceOptions.length > 0 && controllerType !== 'CloudADB'"
               @save="handleFieldSave"
             />
           </a-card>
@@ -275,6 +275,7 @@ const {
   maaEndOptionsLoaded,
   controllerProtocol,
   presetSupported,
+  resourceOptions,
   crisisDrillsOptions,
   essenceLocationOptions,
   essenceMenuOptions,
@@ -289,7 +290,6 @@ const {
 )
 
 const maaEndImportLoading = ref(false)
-const resourceOptions = [{ label: '官服', value: '官服' }]
 
 interface FieldChange {
   key: string

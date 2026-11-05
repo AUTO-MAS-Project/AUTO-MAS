@@ -305,6 +305,7 @@ def save_src_user_config(
     preserve_commit_marker: bool = False,
     expected_installation_id: str | None = None,
     runtime_baseline: dict | None = None,
+    runtime_deploy_baseline: dict | None = None,
 ) -> None:
     """以可恢复的目录替换事务保存一次 SRC 用户配置。"""
 
@@ -325,6 +326,20 @@ def save_src_user_config(
         source = _utils_io.read_file(config_path / "src.json")
         _restore_unchanged_source_values(current, runtime_baseline, source)
         _utils_io.write_file(staging_path / "src.json", current)
+    if runtime_deploy_baseline:
+        # 在拷贝回独立用户前剔除 MAS 暂时关闭的原生更新开关。
+        # 只恢复仍等于注入值的键，避免覆盖用户在原生 GUI 中主动修改的设置。
+        from .poor_yaml import poor_yaml_read, poor_yaml_write
+
+        deployed = poor_yaml_read(staging_path / "deploy.yaml")
+        source = poor_yaml_read(config_path / "deploy.yaml")
+        restore = {
+            key: source[key]
+            for key, injected in runtime_deploy_baseline.items()
+            if key in source and deployed.get(key) == injected
+        }
+        if restore:
+            poor_yaml_write(restore, staging_path / "deploy.yaml")
     if expected_installation_id is not None:
         validate_src_installation(
             src_set_path.parent,

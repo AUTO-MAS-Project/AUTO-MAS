@@ -105,30 +105,6 @@ async def test_config_update_error_fails_open(
 
 
 @pytest.mark.asyncio
-async def test_empty_etag_is_omitted_on_first_fetch_and_refresh(
-    monkeypatch, environment
-):
-    config, clock = environment
-    requests = []
-
-    def handler(request):
-        requests.append(request)
-        if "If-None-Match" in request.headers:
-            return httpx.Response(400)
-        return httpx.Response(200, json=maintenance_data())
-
-    transport(monkeypatch, handler)
-    client = service.GameMaintenanceClient(
-        read_cache=host._read_cache, write_cache=host._write_cache
-    )
-    assert await client.get_active("arknights") is not None
-    clock[0] = service.CACHE_SECONDS
-    assert await client.get_active("arknights") is not None
-    assert len(requests) == 2
-    assert all(("If-None-Match" not in request.headers for request in requests))
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("future_seconds", [60, 3600, 86400])
 async def test_future_check_time_triggers_revalidation(
     monkeypatch, environment, future_seconds

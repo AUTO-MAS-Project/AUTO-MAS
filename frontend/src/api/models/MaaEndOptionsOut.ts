@@ -20,6 +20,10 @@ export type MaaEndOptionsOut = {
      */
     message?: string;
     /**
+     * MaaEnd 原生 PC 启动服务器选项
+     */
+    servers?: Array<ComboBoxItem>;
+    /**
      * 当前 MaaEnd 支持的危境预演任务
      */
     crisisDrills?: Array<ComboBoxItem>;

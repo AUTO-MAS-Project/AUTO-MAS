@@ -99,6 +99,30 @@
       "dependency": "Dependencies",
       "environment": "Environment",
       "repository": "Program files"
+    },
+    "progress": {
+      "runtimeCheck": "Checking Runtime updates and the local environment",
+      "networkProbe": "Testing download sources",
+      "uvCheck": "Checking uv",
+      "uvDownload": "Downloading uv",
+      "uvVerify": "Verifying uv",
+      "workspaceCheck": "Checking program files",
+      "workspaceClone": "Receiving backend repository data",
+      "workspaceVerify": "Verifying program files",
+      "workspaceSwap": "Replacing program files",
+      "workspaceCleanup": "Cleaning up program files",
+      "pythonCheck": "Checking Python",
+      "pythonInstall": "Installing Python",
+      "dependenciesCheck": "Checking dependencies",
+      "dependenciesSync": "Syncing dependencies",
+      "dependenciesRebuild": "Rebuilding the dependency environment",
+      "finished": "Current stage complete",
+      "skipped": "Current stage skipped",
+      "bootstrapReady": "The runtime environment is ready",
+      "runtimeRepair": "Checking and repairing the runtime environment",
+      "runtimeDownloadDetails": "Downloading Runtime {version} from {source} ({index}/{count})",
+      "runtimeCheckVersion": "Fetching verification information for Runtime {version}",
+      "runtimeGithubSource": "GitHub (official)"
     }
   },
   "launch": {
@@ -111,7 +135,8 @@
     "starting": "Starting",
     "transferSource": "from {source}",
     "updating": "Updating",
-    "viewLog": "Open the log"
+    "viewLog": "Open the log",
+    "sourceOrder": "{kind} source order: {sources}"
   },
   "locale": {
     "en-US": "English",

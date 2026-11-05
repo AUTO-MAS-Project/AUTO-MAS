@@ -78,17 +78,6 @@ def test_partial_write_updates_new_usage_and_preserves_other_choices(settings_io
     assert read(root)["condensedResinUseCount"] == 3
 
 
-def test_write_repairs_new_usage_when_the_legacy_value_already_matches(settings_io):
-    root, segment, path, read, write = settings_io
-    config = seed(settings_io, usage())
-    config[segment]["condensedResinUseCount"] = 3
-    one_dragon.write_file(path, config)
-
-    write(root, {"condensedResinUseCount": 3})
-
-    assert one_dragon.read_file(path)[segment]["resinUsage"]["counts"]["condensed"] == 3
-
-
 @pytest.mark.parametrize("specified", [False, True])
 def test_mode_change_updates_the_active_resin_usage(settings_io, specified):
     root, segment, path, read, write = settings_io

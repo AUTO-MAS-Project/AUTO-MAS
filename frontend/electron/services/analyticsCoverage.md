@@ -171,6 +171,8 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
 
 - 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。
 
+- SRC 本体托管更新：设置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`，更新失败继续、安装阻断沿用 `task_observed_finished`；Git 预取不等同于依赖安装完成，不采集仓库、提交、代理或路径。
+
 ## 任务台批次补充
 
 - 新增 `taskboard_marking_finished`，不在 Issue #1605 的 84 项场景内：每周任务的全选/清空保存、单条打卡与撤销，以及版本主线的标记/取消标记，按真实接口结果各记一次。`target_kind` 只区分 `weekly_task` / `version`，`action` 只区分 `select` / `mark` / `unmark`，`count_bucket` 描述本次影响对象数量。不发送游戏 key、任务标题、版本号、版本名、时间或封面地址；本地已判定重复的保存不重复记录，接口返回非 200 记为 failure，请求异常记为 unknown，客户端周键过期被后端拒绝时记为 blocked。
@@ -181,3 +183,5 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
   不代表真实 Windows 关机或生产接收验收。
 
 - BAAH 本体托管更新：设置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`，更新失败继续与安装阻断沿用 `task_observed_finished`；预下载不单独上报安装成功，不采集版本、CDK 或路径。
+
+- BetterGI 本体托管更新：设置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；每批更新准备、普通失败后继续及安装未确认拦截沿用 `task_observed_finished`。安装阶段不另建事件，不采集版本、CDK 或路径。

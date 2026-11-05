@@ -103,16 +103,51 @@ import {
   resolveRuntimeLaunchModeDetail,
 } from './services/runtime'
 import AdmZip = require('adm-zip')
+import { migrateUserData, selectUserDataLock } from './services/userDataMigration'
 import { recordDesktopStartup } from './services/startupTiming'
 
-// 开发环境切换到独立的 userData 目录（必须在 app ready 之前）
+// 开发版目录必须在 app ready 之前确定。
 applyInstanceIdentity()
 
 // 初始化日志系统（必须在创建 logger 之前）
 initializeLogger()
 recordDesktopStartup('主进程模块加载')
-
 const logger = getLogger('主进程')
+
+const targetUserDataPath = app.getPath('userData')
+const legacyUserDataPath = path.join(
+  app.getPath('appData'),
+  isDevelopmentEnvironment() ? 'frontend-dev' : 'frontend'
+)
+let lockPath: string
+try {
+  lockPath = selectUserDataLock(legacyUserDataPath, targetUserDataPath)
+} catch (error) {
+  // 标记不可读时无法确定另一实例持有哪把锁，停止启动以免并发写入。
+  logger.error('读取用户数据迁移标记失败', error)
+  app.quit()
+  process.exit(1)
+}
+if (lockPath !== targetUserDataPath) app.setPath('userData', lockPath)
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+  process.exit(0)
+}
+
+const userDataMigration = migrateUserData(legacyUserDataPath, targetUserDataPath, lockPath)
+if (userDataMigration.path !== app.getPath('userData')) {
+  app.setPath('userData', userDataMigration.path)
+}
+app.setPath('sessionData', userDataMigration.path)
+
+if (userDataMigration.error) {
+  logger.warn(`用户数据迁移失败: ${userDataMigration.error}`)
+  if (lockPath === targetUserDataPath) {
+    app.quit()
+    process.exit(1)
+  }
+}
 const STOP_ALL_TASKS_SHORTCUT = resolveStopAllTasksShortcut()
 let isStoppingAllTasks = false
 
@@ -2411,14 +2446,6 @@ ipcMain.handle('set-runtime-launch-mode', async (_event, mode: unknown) => {
 })
 
 // 应用生命周期
-// 保证应用单例运行
-const gotTheLock = app.requestSingleInstanceLock()
-
-if (!gotTheLock) {
-  app.quit()
-  process.exit(0)
-}
-
 // 在沙箱环境下运行会导致无法启动子进程，强制禁用沙箱
 app.commandLine.appendSwitch('no-sandbox')
 

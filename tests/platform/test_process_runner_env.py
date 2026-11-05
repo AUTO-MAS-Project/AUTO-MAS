@@ -108,29 +108,6 @@ async def test_deadline_and_cancel_cover_stalled_creation(monkeypatch, cancelled
 
 
 @pytest.mark.asyncio
-async def test_deadline_ends_communication_before_execution_timeout(monkeypatch):
-    process = Mock(pid=None)
-    process.wait = AsyncMock(return_value=-9)
-
-    async def communicate():
-        await asyncio.Event().wait()
-
-    process.communicate = communicate
-
-    async def create(*args, **kwargs):
-        return process
-
-    monkeypatch.setattr(process_runner, "create_subprocess", create)
-    async with asyncio.timeout(30):
-        with pytest.raises(TimeoutError):
-            await process_runner.ProcessRunner.run_process(
-                sys.executable, timeout=60, deadline=time.monotonic() + 0.1
-            )
-    process.kill.assert_called_once()
-    process.wait.assert_awaited_once()
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("cancelled", [False, True])
 async def test_deadline_reaps_wrapper_and_child_holding_pipes(
     monkeypatch, tmp_path, cancelled

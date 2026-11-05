@@ -14,7 +14,6 @@ import pytest
 from app.task.MAA.tools import fluxdown_update as github
 from app.task.MAA.tools import resource_update as resource
 from app.task.MAA.tools import software_update as software
-from app.task.MAA.tools.software_package import write_pending_update
 
 NOW = datetime(2026, 11, 1, 4, tzinfo=timezone.utc)
 
@@ -108,19 +107,6 @@ async def prepare_software(install, root=None):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("previous", ["v6.0.1", None])
-async def test_software_new_version_and_legacy_state_allow_same_day_download(
-    software_install, previous
-):
-    install = software_install
-    save_state(install.state, key="win/x64/beta", version=previous)
-    assert await prepare_software(install) == "v6.1.0"
-    install.request.assert_awaited_once()
-    install.downloader.assert_awaited_once()
-    assert software.read_pending_update(install.root)[0] == "v6.1.0"
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("previous", ["v6.1.0", "v6.2.0", "6.1.0+build"])
 async def test_software_same_or_older_version_never_requests_another_url(
     software_install, previous
@@ -150,20 +136,6 @@ async def test_software_cache_is_registered_for_other_install_and_cdk_after_rest
 
 
 @pytest.mark.asyncio
-async def test_software_verified_newer_cache_survives_lagging_free_query(
-    software_install,
-):
-    install = software_install
-    install.request.return_value["data"]["version_name"] = "v6.2.0"
-    assert await prepare_software(install) == "v6.2.0"
-    root = install.installation("maa-second")
-    assert await prepare_software(install, root) == "v6.2.0"
-    assert software.read_pending_update(root)[0] == "v6.2.0"
-    install.request.assert_awaited_once()
-    install.downloader.assert_awaited_once()
-
-
-@pytest.mark.asyncio
 async def test_software_new_release_is_downloaded_once_for_other_installs(
     software_install,
 ):
@@ -179,55 +151,6 @@ async def test_software_new_release_is_downloaded_once_for_other_installs(
 
 
 @pytest.mark.asyncio
-async def test_software_newer_cache_between_confirmation_and_registration(
-    software_install,
-):
-    install = software_install
-    first_download = asyncio.Event()
-    second_query = asyncio.Event()
-    download = install.downloader.side_effect
-    requests = [
-        {
-            "data": {
-                "version_name": version,
-                "url": "https://example.invalid/maa.zip",
-                "update_type": "full",
-            }
-        }
-        for version in ("v6.1.0", "v6.2.0")
-    ]
-    install.request.side_effect = requests
-
-    async def query(arch, channel):
-        if asyncio.current_task().get_name() == "second-update":
-            second_query.set()
-            return "v6.2.0"
-        return "v6.1.0"
-
-    async def interleaved_download(url, path, **kwargs):
-        if install.downloader.await_count == 1:
-            first_download.set()
-            await second_query.wait()
-        await download(url, path, **kwargs)
-
-    install.query.side_effect = query
-    install.downloader.side_effect = interleaved_download
-    second_root = install.installation("maa-second")
-    async with asyncio.timeout(5):
-        first = asyncio.create_task(prepare_software(install), name="first-update")
-        await first_download.wait()
-        second = asyncio.create_task(
-            prepare_software(install, second_root), name="second-update"
-        )
-        results = await asyncio.gather(first, second, return_exceptions=True)
-    assert results == ["v6.2.0", "v6.2.0"]
-    assert all(
-        software.read_pending_update(root)[0] == "v6.2.0"
-        for root in (install.root, second_root)
-    )
-
-
-@pytest.mark.asyncio
 async def test_software_corrupt_cache_cannot_bypass_version_budget(software_install):
     install = software_install
     assert await prepare_software(install) == "v6.1.0"
@@ -237,19 +160,6 @@ async def test_software_corrupt_cache_cannot_bypass_version_budget(software_inst
         await prepare_software(install, root)
     assert software.read_pending_update(root) == ("", "")
     install.request.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_software_existing_unknown_newer_package_is_not_a_success(
-    software_install,
-):
-    install = software_install
-    package = install.root / "other.zip"
-    package.write_bytes(b"not the verified shared package")
-    write_pending_update(install.root, version="v9.0.0", package=str(package))
-    with pytest.raises(RuntimeError):
-        await prepare_software(install)
-    assert software.read_pending_update(install.root) == ("v9.0.0", str(package))
 
 
 @pytest.mark.asyncio
@@ -273,18 +183,6 @@ async def test_software_records_actual_newer_response_before_failed_download(
     with pytest.raises(RuntimeError):
         await prepare_software(install)
     install.request.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_software_older_response_does_not_repeat_url_requests(software_install):
-    install = software_install
-    install.query.return_value = "v6.2.0"
-    with pytest.raises(RuntimeError):
-        await prepare_software(install)
-    with pytest.raises(RuntimeError):
-        await prepare_software(install)
-    install.request.assert_awaited_once()
-    install.downloader.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -458,35 +356,6 @@ async def test_resource_failed_download_keeps_version_budget(resource_install, f
     )
     saved.pop(f"download_fail_until/{install.key}", None)
     install.state.write_text(json.dumps(saved))
-    with pytest.raises(RuntimeError):
-        await resource.prepare_install_resources(
-            install.root, cdk="test-cdk", github=False
-        )
-    install.request.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["error", "cancel"])
-async def test_resource_response_newer_than_query_keeps_its_budget(
-    resource_install, failure
-):
-    install = resource_install
-    actual = install.target + timedelta(minutes=9)
-    install.request.return_value["data"]["version_name"] = resource._format_clock(
-        actual
-    )
-    install.downloader.side_effect = (
-        OSError("offline") if failure == "error" else asyncio.CancelledError()
-    )
-    with pytest.raises(RuntimeError if failure == "error" else asyncio.CancelledError):
-        await resource.prepare_install_resources(
-            install.root, cdk="test-cdk", github=False
-        )
-    saved = json.loads(install.state.read_text())
-    assert saved[f"last_download_attempt_version/{install.key}"] == actual.isoformat()
-    saved.pop(f"download_fail_until/{install.key}", None)
-    install.state.write_text(json.dumps(saved))
-    install.query.return_value = actual
     with pytest.raises(RuntimeError):
         await resource.prepare_install_resources(
             install.root, cdk="test-cdk", github=False

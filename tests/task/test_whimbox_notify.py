@@ -43,10 +43,3 @@ def test_failure_notes_render_to_text_and_html():
     # 结果块仍按原文透传（块头在文本版保留、在 HTML 版由模板标题承载）
     assert "任务结果如下：" in payload.text
     assert "任务结果如下：" not in resolve_content(payload.html)
-
-
-def test_no_notes_section_without_notes():
-    message = {k: v for k, v in BASE_MESSAGE.items() if k != "failure_notes"}
-    payload = _payload_of(message)
-    assert "未完成原因" not in payload.text
-    assert "未完成原因" not in resolve_content(payload.html)

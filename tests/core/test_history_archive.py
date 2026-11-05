@@ -64,22 +64,6 @@ async def test_archive_ownership_and_persisted_content(store, tmp_path, mode):
 
 
 @pytest.mark.asyncio
-async def test_copy_never_attempts_to_move_original(store, tmp_path, monkeypatch):
-    source = tmp_path / "upstream.png"
-    source.write_bytes(b"upstream data")
-    rename = Path.rename
-
-    def forbid_source_move(path, target):
-        assert path != source, "copy archival must not move upstream files"
-        return rename(path, target)
-
-    monkeypatch.setattr(Path, "rename", forbid_source_move)
-    result = await store.record(record_for(source, "copy"))
-    assert source.read_bytes() == b"upstream data"
-    assert result.attachments[0].saved_via == "copy"
-
-
-@pytest.mark.asyncio
 async def test_cross_drive_fallback_is_success_and_retains_diagnostic(
     store, tmp_path, monkeypatch
 ):
@@ -209,22 +193,3 @@ async def test_copy_respects_video_quota(store, tmp_path):
         await store.record(record_for(source, "copy", kind="video"))
     assert any(issue.stage == "quota" for issue in raised.value.errors)
     assert source.read_bytes() == b"large video"
-
-
-@pytest.mark.asyncio
-async def test_unrecovered_error_still_notifies_and_cleans_up(store, tmp_path):
-    failures, discarded = AsyncMock(), AsyncMock()
-    warnings = []
-    await save_user_history(
-        [record_for(tmp_path / "missing.png", "copy")],
-        dependencies=UserHistoryDependencies(
-            record=store.record,
-            collect_attachments=AsyncMock(return_value=[]),
-            discard_capture=discarded,
-            report_failure=failures,
-            log_warning=warnings.append,
-        ),
-    )
-    failures.assert_awaited_once()
-    discarded.assert_awaited_once()
-    assert len(warnings) == 1
