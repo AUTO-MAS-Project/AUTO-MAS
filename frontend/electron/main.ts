@@ -2,6 +2,12 @@ import { detachPromptVirtualDisplay } from './services/virtualDisplayPromptActio
 import { observeDiagnosticExport, observeDataBackup } from './services/diagnosticAnalytics'
 import { beginMainFeature } from './services/featureAnalytics'
 import { analyticsDuration } from './services/analyticsPolicy'
+import {
+  isScheduledWakeupLaunch,
+  keepAwakeForScheduledWakeup,
+  normalRelaunchArgs,
+  prepareSystemResumeRecovery,
+} from './services/scheduledWakeup'
 import { readBackendDocument } from './services/backendConfig'
 import {
   app,
@@ -297,7 +303,8 @@ let saveWindowStateTimeout: NodeJS.Timeout | null = null
 let mainRendererRecovery: ReturnType<typeof attachRendererRecovery> | null = null
 const rendererCrashes: number[] = []
 let isInitialStartup = true // 标记是否为初次启动
-const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
+const isScheduledWakeup = isScheduledWakeupLaunch(process.argv)
+const isAutoStart = process.argv.includes('--auto-start') || isScheduledWakeup
 
 // 配置接口
 interface AppConfig extends DesktopMascotHostPreferences {
@@ -638,7 +645,7 @@ function finishCoordinatedQuit(): void {
     saveWindowStateTimeout = null
   }
   destroyTray()
-  if (relaunchAfterQuit) app.relaunch()
+  if (relaunchAfterQuit) app.relaunch({ args: normalRelaunchArgs(process.argv.slice(1)) })
   app.quit()
 }
 
@@ -2449,7 +2456,8 @@ ipcMain.handle('set-runtime-launch-mode', async (_event, mode: unknown) => {
 // 在沙箱环境下运行会导致无法启动子进程，强制禁用沙箱
 app.commandLine.appendSwitch('no-sandbox')
 
-app.on('second-instance', () => {
+app.on('second-instance', (_event, argv) => {
+  if (keepAwakeForScheduledWakeup(argv)) return
   if (mainWindow) {
     showMainWindow()
   }
@@ -2483,6 +2491,7 @@ app.on('before-quit', event => {
 })
 
 app.whenReady().then(async () => {
+  keepAwakeForScheduledWakeup(process.argv)
   recordDesktopStartup('Electron 就绪')
   const startupConfig = loadConfig()
   void startDesktopStartup({
@@ -2500,7 +2509,7 @@ app.whenReady().then(async () => {
   registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
   refreshAnalyticsPreference()
   analyticsService.recordAppStarted({
-    launch_kind: isAutoStart ? 'auto_start' : 'manual',
+    launch_kind: isScheduledWakeup ? 'scheduled_wakeup' : isAutoStart ? 'auto_start' : 'manual',
     runtime_mode:
       getBackendOwnership() === 'owned'
         ? resolveRuntimeLaunchModeDetail(getAppRoot()).mode
@@ -2537,6 +2546,7 @@ app.whenReady().then(async () => {
   }
 
   powerMonitor.on('resume', () => {
+    prepareSystemResumeRecovery()
     logger.info('主进程检测到系统恢复，通知 renderer 检查后端连接')
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('system-resumed')

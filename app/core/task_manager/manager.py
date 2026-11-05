@@ -2101,6 +2101,10 @@ class _TaskManager:
     async def start_startup_queue(self):
         """开始运行启动时运行的调度队列"""
 
+        if System.is_scheduled_wakeup():
+            logger.info("定时唤醒启动，等待原定时间，跳过启动时队列")
+            return
+
         # 旧连接的回调还在等待时，新连接的回调不能直接跳过：旧回调随后会随旧连接
         # 一起被取消，启动队列就要拖到下一次连接才跑。这里等它结束后再重新判断。
         while (running_task := self._startup_queue_task) is not None:

@@ -96,7 +96,7 @@ export type AnalyticsScreen =
   | 'taskboard'
 export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
   app_started: {
-    launch_kind: 'manual' | 'auto_start' | 'unknown'
+    launch_kind: 'manual' | 'auto_start' | 'scheduled_wakeup' | 'unknown'
     runtime_mode: AnalyticsRuntimeMode
     release_channel: 'stable' | 'beta' | 'unknown'
   }

@@ -11,7 +11,12 @@ import { analyticsService } from './analyticsService'
 import { BackendService } from './backendService'
 import { getFluxdownInstallEnvironment } from './fluxdownInstallService'
 import { InitializationService } from './initializationService'
-import { RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'
+import { createRuntimeClient, RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'
+import {
+  getSystemResumeTime,
+  prepareSystemResumeRecovery,
+  scheduledWakeupBackendReady,
+} from './scheduledWakeup'
 
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
 vi.mock('https', () => ({
@@ -271,6 +276,20 @@ afterEach(() => {
 })
 
 // ==================== Runtime 监督链路 ====================
+
+it('metadata-only Runtime clients do not retain a healthy resume source', async () => {
+  vi.useFakeTimers()
+  try {
+    prepareSystemResumeRecovery()
+    createRuntimeClient({ runtimePath: EXISTING_EXE, appRoot })
+    // 更新检查与 doctor 也创建客户端，但不启动后端，不应锁存来源。
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000)
+    expect(getSystemResumeTime()).toBeUndefined()
+  } finally {
+    scheduledWakeupBackendReady()
+    vi.useRealTimers()
+  }
+})
 
 describe('development 模式', () => {
   beforeEach(() => {

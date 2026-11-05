@@ -325,6 +325,8 @@ export interface WSSystemNoticeData {
   title: string
   /** 正文，每项一行 */
   lines: string[]
+  titleKey?: string | null
+  lineKeys?: string[]
 }
 
 type WSEmptyData = Record<string, never>

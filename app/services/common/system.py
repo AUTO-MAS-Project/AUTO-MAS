@@ -21,8 +21,11 @@
 
 
 import asyncio
+import os
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -61,6 +64,116 @@ class _SystemHandler:
         self._power_cancelled_event_task: Optional[asyncio.Task] = None
         self.current_power_operation: Optional[str] = None
         self.current_power_remaining = 0
+        self._wakeup_signature: tuple[Path, tuple[tuple[int, int, int], ...]] | None = (
+            None
+        )
+        self._wakeup_attempt: tuple[Path, tuple[tuple[int, int, int], ...]] | None = (
+            None
+        )
+        self._wakeup_retry_at = 0.0
+        self._resume_wakeup: bool | None = None
+
+    def is_scheduled_wakeup(self) -> bool:
+        """明确的唤醒启动，或恢复时仍有前五分钟至补跑宽限内的有效定时。"""
+        if os.getenv("AUTO_MAS_SCHEDULED_WAKEUP") == "1":
+            return True
+        resumed_at = os.getenv("AUTO_MAS_SYSTEM_RESUME")
+        if not resumed_at:
+            return False
+        # 两个消费者共享启动时的判定，不能因初始化耗时、派发或重连而改变。
+        if self._resume_wakeup is not None:
+            return self._resume_wakeup
+        self._resume_wakeup = False
+        if not Config.setting.Start.IfScheduledWakeUp:
+            return False
+        resume_wall = (
+            datetime.fromisoformat(resumed_at).astimezone().replace(tzinfo=None)
+        )
+        for queue in Config.QueueConfig.values():
+            if queue.Info.CycleEnabled or not queue.Info.TimeEnabled:
+                continue
+            last_run = queue.Data.LastTimedStart.replace(tzinfo=None)
+            for slot in queue.TimeSet.values():
+                if not slot.Info.Enabled:
+                    continue
+                for day_offset in (-1, 0, 1):
+                    day = resume_wall.date() + timedelta(days=day_offset)
+                    planned = datetime.combine(day, slot.Info.Time.time())
+                    if (
+                        planned > last_run
+                        and planned.strftime("%A") in slot.Info.Days
+                        and -timedelta(minutes=5)
+                        <= resume_wall - planned
+                        <= timedelta(minutes=10)
+                    ):
+                        self._resume_wakeup = True
+                        return True
+        return False
+
+    async def sync_scheduled_wakeup(self, *, force: bool = False) -> None:
+        """把已提交的队列定时同步到系统；开发环境不改系统任务。"""
+        if _utils_environment.is_development_environment() or not startup.supported:
+            return
+        times: set[tuple[int, int, int]] = set()
+        weekdays = (
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        )
+        if Config.setting.Start.IfScheduledWakeUp:
+            for queue in Config.QueueConfig.values():
+                if queue.Info.CycleEnabled or not queue.Info.TimeEnabled:
+                    continue
+                for slot in queue.TimeSet.values():
+                    if not slot.Info.Enabled:
+                        continue
+                    for day in slot.Info.Days:
+                        planned = datetime(2000, 1, 3) + timedelta(
+                            days=weekdays.index(day),
+                            hours=slot.Info.Time.hour,
+                            minutes=slot.Info.Time.minute,
+                        )
+                        wake = planned - timedelta(minutes=5)
+                        times.add((wake.weekday(), wake.hour, wake.minute))
+        executable = Config.work_path / "AUTO-MAS.exe"
+        signature = (executable, tuple(sorted(times)))
+        if signature == self._wakeup_signature:
+            return
+        if (
+            not force
+            and signature == self._wakeup_attempt
+            and time.monotonic() < self._wakeup_retry_at
+        ):
+            return
+        first_attempt = signature != self._wakeup_attempt
+        self._wakeup_attempt = signature
+        self._wakeup_retry_at = time.monotonic() + 60
+        # 注册可能只完成一部分后被取消；此后不能再把旧缓存当作系统现状。
+        self._wakeup_signature = None
+        # 冷启动会重读磁盘；配置未落盘时不能先更新系统任务。
+        try:
+            await Config.flush()
+            if times and not executable.is_file():
+                raise FileNotFoundError(f"找不到定时唤醒启动程序：{executable}")
+            await startup.sync_wakeup(executable=executable, times=signature[1])
+        except Exception:
+            if first_attempt:
+                from app.core import Notify
+
+                await Notify.push_system_notice(
+                    level="warning",
+                    title="定时唤醒同步失败",
+                    lines=["请检查日志和 Windows 任务计划程序，修正后将自动重试。"],
+                    title_key="core.setting.func.scheduledWakeupFailure",
+                    line_keys=["core.setting.func.scheduledWakeupFailureTip"],
+                )
+            raise
+        self._wakeup_signature = signature
+        logger.info(f"定时唤醒已同步：{len(times)} 个每周触发时间")
 
     def get_power_countdown_snapshot(self) -> PowerCountdownSnapshot:
         """返回当前电源倒计时的 HTTP 初始快照。"""

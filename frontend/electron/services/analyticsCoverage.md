@@ -1,5 +1,9 @@
 # 匿名统计场景覆盖台账
 
+- 定时唤醒开关复用设置保存事件的 `scheduled_wakeup` 类别，唤醒启动复用
+  `app_started` 的同名来源。只记录配置保存和应用 ready，不推断硬件唤醒结果，
+  不发送定时时刻、星期、队列或安装路径。
+
 - MCP 工具页沿用 `screen_view` 的有限页面/来源分类 `tools`；手动重新加载由
   `useMcpApi` 唯一记录 `mcp_retry_requested` 的 accepted/rejected/unknown 与耗时桶。
   accepted 只表示后端受理，不计作加载完成；快照恢复、WS 阶段更新和自动加载不逐次采集，
