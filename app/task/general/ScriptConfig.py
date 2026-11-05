@@ -172,7 +172,7 @@ class ScriptConfigTask(TaskExecuteBase):
                         self.script_config_path, staging / self.script_config_path.name
                     )
                 else:
-                    raise ValueError("没有可复制的基础配置，请先完成用户的通用配置")
+                    raise ValueError("没有可复制的基础配置，请先完成账号的通用配置")
                 self.mas_config_dir.parent.mkdir(parents=True, exist_ok=True)
                 _utils_io.swap_in_dir(staging, self.mas_config_dir)
         await self.set_general()

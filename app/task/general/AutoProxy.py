@@ -166,10 +166,10 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                 source = source / self.script_config.Script.ConfigPath.name
             if not source.exists():
                 # 未配置的日期按「跳过」处理：按日轮换的计划本就允许某些天不运行，
-                # 不置状态会让报告停在「等待」，看不出该用户已被处理过
+                # 不置状态会让报告停在「等待」，看不出该账号已被处理过
                 self.cur_user_item.status = "跳过"
                 logger.warning(
-                    f"用户: {self.cur_user_uid} - 当天通用脚本计划表尚未配置, 跳过本次运行"
+                    f"账号: {self.cur_user_uid} - 当天通用脚本计划表尚未配置, 跳过本次运行"
                 )
                 return "当天的通用脚本计划表尚未配置，请先编辑并保存该日期的配置"
 
