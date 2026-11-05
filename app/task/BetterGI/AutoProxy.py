@@ -1521,7 +1521,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             else:
                 await self._push_dispatch_log("执行层完成")
         else:
-            await self._push_dispatch_log("执行层失败")
+            await self._push_dispatch_log(f"执行层失败{failure_detail}")
         return result["success"]
 
     def _account_switch_method(self) -> str:
