@@ -876,3 +876,88 @@ async def test_cancelled_stop_probe_preserves_shared_resource_archive(
             resource._STAGE_ZIP.read_bytes()
             == b"previous daemon still owns this archive"
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stopped", [True, False])
+async def test_cancelled_fluxdown_resume_checks_current_writer_before_archive_cleanup(
+    resource_install, monkeypatch, stopped
+):
+    from app.core.script_update import download_script_package
+    from app.models.config.setting import GlobalConfig
+    from app.services.common.update import fluxdown as transport
+    from app.utils.common import fluxdown_cli as cli
+
+    install, _, _ = resource_install
+    resource._WORK_DIR.mkdir(parents=True)
+    archive = resource._STAGE_ZIP
+    payload = b"same-source daemon still owns this archive"
+    archive.write_bytes(payload)
+    update.Config.setting.Update = GlobalConfig.UpdateFields(FluxdownTakeoverAll=True)
+    monkeypatch.setattr(resource, "download_script_package", download_script_package)
+    exe = install.parent / "fluxdown.exe"
+    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda *_a, **_kw: exe)
+    monkeypatch.setattr(cli, "_server_data_dir", lambda _: install.parent / "server")
+    monkeypatch.setattr(
+        cli,
+        "fluxdown_server_ensure",
+        lambda _: SimpleNamespace(gateway_port=17800, token="test"),
+    )
+    url = "https://github.com/MaaAssistantArknights/MaaResource/archive/refs/heads/main.zip"
+    key = cli._map_key(url, archive)
+    cli._map_put(exe, key, "current-task", url, archive, None)
+    original_load = cli._load_task_map
+    first_probe, release_first = threading.Event(), threading.Event()
+    current_probe, release_current = threading.Event(), threading.Event()
+
+    def load_mapping(path):
+        if not first_probe.is_set():
+            first_probe.set()
+            assert release_first.wait(5)
+        return original_load(path)
+
+    def command(_exe, _env, args, **_kwargs):
+        assert args == ["status", "current-task", "--json"]
+        current_probe.set()
+        assert release_current.wait(5)
+        return (
+            (0, json.dumps({"status": cli._TASK_STATUS_PAUSED}))
+            if stopped
+            else (124, "status unavailable")
+        )
+
+    monkeypatch.setattr(cli, "_load_task_map", load_mapping)
+    monkeypatch.setattr(cli, "_run_cli", command)
+    backend = AsyncMock(side_effect=AssertionError("must not start a second writer"))
+    monkeypatch.setattr(transport, "_httpx_download", backend)
+    server_download, local_download = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(cli, "fluxdown_server_download", server_download)
+    monkeypatch.setattr(cli, "fluxdown_download", local_download)
+    task = asyncio.create_task(
+        resource.prepare_install_resources(install, github=True, cdk=None)
+    )
+    try:
+        assert await asyncio.to_thread(first_probe.wait, 3)
+        task.cancel()
+        release_first.set()
+        assert await asyncio.to_thread(current_probe.wait, 3), (
+            "cancellation must also probe the skipped current task"
+        )
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=0.05)
+        assert not done
+        assert archive.read_bytes() == payload
+    finally:
+        release_first.set()
+        release_current.set()
+        await asyncio.gather(task, return_exceptions=True)
+    if stopped:
+        assert task.cancelled()
+        assert not archive.exists()
+    else:
+        assert isinstance(task.exception(), transport.FluxdownWriterUnconfirmed)
+        assert archive.read_bytes() == payload
+    assert original_load(exe)[key]["task_id"] == "current-task"
+    backend.assert_not_awaited()
+    server_download.assert_not_awaited()
+    local_download.assert_not_awaited()

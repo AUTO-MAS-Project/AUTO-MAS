@@ -403,6 +403,15 @@ async def _can_downgrade(
             cancelled = error
             # 重复取消也要等待结果；不能让通用等待器先丢掉不安全结果。
             safe = await _utils_fluxdown_cli._wait_thread_done(probe)
+        if cancelled is not None and safe and other_only:
+            # 续传预检跳过当前来源的旧任务；取消后必须连它一起确认停写。
+            # 此时已在收尾，重复取消也不能跳过这次完整探测。
+            safe = await _utils_fluxdown_cli._to_thread_strong(
+                _utils_fluxdown_cli.fluxdown_server_task_safe_to_overwrite,
+                cli_path,
+                url,
+                destination,
+            )
     except Exception as error:
         raise FluxdownWriterUnconfirmed(
             "FluxDown 停写探测失败，文件仍可能被写入"
