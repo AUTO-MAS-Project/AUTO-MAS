@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""ZZZ-OD 配置备份归档：一条龙原生配置 / MAS 用户配置，两类独立快照。
+"""ZZZ-OD 配置备份归档：一条龙原生配置 / MAS 账号配置，两类独立快照。
 
 备份时机：MAS 运行注入前、配置会话基线注入前——此时 zzz-od 尚未被 MAS
 触碰，两个视角各自捕获「动手前」的状态：
@@ -25,13 +25,13 @@
   注册表）+ 注册表内的原生实例目录（**排除 MAS-xxx 槽**）。防止 MAS 的
   注入/合成视图等机制意外破坏原生配置后可完整找回；恢复只写回这些文件，
   MAS 槽目录永不触碰。
-- ``mas``：MAS 用户配置 = 绑定槽（MAS-xxx）目录整份快照——含本页注入的
+- ``mas``：MAS 账号配置 = 绑定槽（MAS-xxx）目录整份快照——含本页注入的
   账号/任务编排与用户在原生 GUI 里维护的配队等；恢复到槽并回填本页字段。
 - ``recycle``：槽回收池 = 槽目录被删除前的最后一份存底（删用户/删脚本/
   孤儿槽回收三处），挂在项目级、按安装根指纹分桶——槽目录的归属是那份
   安装目录而不是某个脚本实例，删脚本不该把存底一起删掉。槽的 mas 备份池
   也随槽一起搬进来（``{slot}/mas-backups``）：mas 池按脚本+槽分桶、没有
-  用户维度，槽号被新用户复用后留在原位会串到别人名下。
+  用户维度，槽号被新账号复用后留在原位会串到别人名下。
 
 时间戳快照、指纹去重、保留清理与整目录恢复的通用逻辑由公共模块
 ``app.utils.common.config.archive`` 提供（默认每池保留 10 份），本模块只保留
@@ -69,7 +69,7 @@ from .zzz_od_config import (
 logger = get_logger("ZZZ-OD 配置备份")
 
 MAS_SLOT_PREFIX = "MAS-"
-"""MAS 用户槽在注册表中的实例名前缀"""
+"""MAS 账号槽在注册表中的实例名前缀"""
 
 MAS_USER_INFO_FILE = "mas_user_info.yml"
 """归档在 MAS 槽备份目录内的信息字段快照：基本信息卡中槽文件之外的字段。"""
@@ -86,9 +86,9 @@ _MAS_INFO_FIELDS: tuple[str, ...] = (
 
 
 def collect_mas_user_info(user_config) -> dict:
-    """从用户配置对象收集基本信息卡的信息字段（Name/Status/Base/.../PushLogMode）。
+    """从账号配置对象收集基本信息卡的信息字段（Name/Status/Base/.../PushLogMode）。
 
-    槽备份只落盘账号与任务编排；用户名、启用状态、配置模式、启动器、剩余
+    槽备份只落盘账号与任务编排；账号名称、启用状态、配置模式、启动器、剩余
     天数、备注与节点详情推送存在 UserData 中，恢复/预览需要与槽快照同批
     归档。字段缺失时跳过，保持与旧备份兼容。
     """
@@ -111,7 +111,7 @@ def collect_mas_user_info(user_config) -> dict:
 
 
 def backup_root(script_id: str) -> Path:
-    """某脚本的备份归档根目录（MAS 用户槽池用）：``data/{script_id}/ZzzOdBackups``。"""
+    """某脚本的备份归档根目录（MAS 账号槽池用）：``data/{script_id}/ZzzOdBackups``。"""
 
     return Path.cwd() / "data" / script_id / "ZzzOdBackups"
 
@@ -132,7 +132,7 @@ def onedragon_backup_root(root: str | Path) -> Path:
     ``key`` 是物理安装根的指纹（:func:`config_root_key`）——同一份安装目录
     无论被哪个脚本引用都归同一个池；跨脚本共享、不随脚本删除。
 
-    旧布局（beta.4 及更早的脚本级池 ``data/{script_id}/ZzzOdBackups/onedragon/``）
+    旧布局（beta.4 及更早的托管级池 ``data/{script_id}/ZzzOdBackups/onedragon/``）
     **刻意不兼容**：不做兼容读取、也不自动搬迁。旧池内容本身是干净的原生
     快照（排除 MAS 槽、不含账号/编排，恢复只写回原生位置），但新池按物理
     安装根指纹归桶、跨脚本共享——旧脚本目录的条目无法与桶一一对应，接进
@@ -148,7 +148,7 @@ def onedragon_backup_root(root: str | Path) -> Path:
 
 
 def mas_backup_root(script_id: str, slot_idx: int) -> Path:
-    """MAS 用户槽的归档目录：``.../ZzzOdBackups/mas/{slot:02d}``。"""
+    """MAS 账号槽的归档目录：``.../ZzzOdBackups/mas/{slot:02d}``。"""
 
     return backup_root(script_id) / "mas" / f"{int(slot_idx):02d}"
 
@@ -322,7 +322,7 @@ def collect_onedragon_files(root: Path) -> dict[str, Path]:
     for raw in read_native_registry(root).get("instance_list") or []:
         item = raw if isinstance(raw, dict) else {}
         if str(item.get("name") or "").startswith(MAS_SLOT_PREFIX):
-            continue  # MAS 用户槽不属于一条龙原生配置
+            continue  # MAS 账号槽不属于一条龙原生配置
         idx = int(item.get("idx", -1))
         idx_dir = instance_dir(root, idx)
         if not idx_dir.is_dir():
@@ -429,7 +429,7 @@ def restore_onedragon_backup(
     logger.info(f"一条龙原生配置已恢复备份 {ts} (实例目录 {len(idx_dirs)} 个)")
 
 
-# ══════════════════ MAS 用户配置（绑定槽） ══════════════════
+# ══════════════════ MAS 账号配置（绑定槽） ══════════════════
 
 
 def mas_user_info_content(meta: dict) -> str:
@@ -441,7 +441,7 @@ def mas_user_info_content(meta: dict) -> str:
 def collect_mas_files(
     slot_dir: str | Path, meta: dict | None = None
 ) -> dict[str, "Path | str"]:
-    """收集 MAS 用户槽文件集 + 信息字段快照（内存 YAML，免临时落盘）。
+    """收集 MAS 账号槽文件集 + 信息字段快照（内存 YAML，免临时落盘）。
 
     槽目录不存在时无可归档内容，返回空 dict（信息快照不单独入档）。
     """
@@ -462,7 +462,7 @@ def archive_mas_backup(
     force: bool = False,
     meta: dict | None = None,
 ) -> Path | None:
-    """归档 MAS 用户槽目录整份（覆盖式加时间戳）。
+    """归档 MAS 账号槽目录整份（覆盖式加时间戳）。
 
     内容与最近一份备份完全一致时跳过（``force=True`` 恢复前存底，同样
     不产生冗余条目）；跳过返回 ``None``，否则返回归档目录。``meta`` 为随槽一起归档的
@@ -489,7 +489,7 @@ def archive_mas_backup(
 
 
 def list_mas_backups(script_id: str, slot_idx: int) -> list[str]:
-    """MAS 用户槽全部归档时间戳（倒序，最新在前）。"""
+    """MAS 账号槽全部归档时间戳（倒序，最新在前）。"""
 
     return _utils_config_archive.list_times(mas_backup_root(script_id, slot_idx))
 
@@ -509,7 +509,7 @@ def restore_mas_backup(
     slot_dir: Path,
     meta: dict | None = None,
 ) -> None:
-    """把归档恢复到 MAS 用户槽目录（恢复前自动归档当前，误恢复可找回）。
+    """把归档恢复到 MAS 账号槽目录（恢复前自动归档当前，误恢复可找回）。
 
     ``meta`` 为恢复前当前信息字段快照，随归档一并存底（恢复动作自身会覆盖
     UserData 的信息字段，需把覆盖前的值也留下）。
@@ -570,7 +570,7 @@ def archive_mas_config_backup(
     meta: dict | None = None,
     fail_on_snapshot_error: bool = False,
 ) -> Path | None:
-    """归档 MAS 用户槽的「页面配置快照」：先物化账号+编排，再走原语快照。
+    """归档 MAS 账号槽的「页面配置快照」：先物化账号+编排，再走原语快照。
 
     ZzzOd 的账号/编排只存在 MAS UserData，槽要会话/运行注入才带上——**所有
     把当前 MAS 配置存为备份的入口（编辑页退出 / 会话启动 / 运行注入前 /
@@ -668,12 +668,12 @@ def list_slot_idxs(root: Path) -> list[int]:
 def list_orphan_slots(
     root: Path, bound_idxs: set[int], *, allocated_idxs: set[int] | None = None
 ) -> list[int]:
-    """盘上既不在原生注册表、也没有 MAS 用户绑定的槽（升序）。
+    """盘上既不在原生注册表、也没有 MAS 账号绑定的槽（升序）。
 
     这类槽是「MAS 分配过、用户或脚本已删除」的残留：一条龙注册表里没有它，
     GUI 看不见也删不掉，只能由 MAS 回收；不回收就永久占用 idx
-    （``find_free_instance_idx`` 把盘上目录也当占用），新用户只能往后排。
-    ``bound_idxs`` 必须含全部 ZzzOd 用户（含本次要注入/会话的），否则会把
+    （``find_free_instance_idx`` 把盘上目录也当占用），新账号只能往后排。
+    ``bound_idxs`` 必须含全部 ZzzOd 账号（含本次要注入/会话的），否则会把
     正在用的槽当孤儿回收，槽里的配队等随即丢失。
 
     ``allocated_idxs`` 是「允许回收的号」白名单：自动路径传的是台账里归属
@@ -800,8 +800,8 @@ def recycle_mas_backups(
 ) -> bool:
     """把槽的 MAS 备份池整体归档进回收池后删除原池（幂等）。
 
-    mas 池按 ``(脚本, 槽)`` 分桶、没有用户维度，槽被回收后 idx 会分给新用户
-    ——留在原位会让新用户在「配置恢复」里看到前任用户的备份，甚至一键把
+    mas 池按 ``(脚本, 槽)`` 分桶、没有用户维度，槽被回收后 idx 会分给新账号
+    ——留在原位会让新账号在「配置恢复」里看到前任账号的备份，甚至一键把
     前任的账号/编排恢复到自己的槽。归档进回收池（``.../{slot}/mas-backups``）
     而不是直接删：不丢历史，仍可从回收池找回。
 
@@ -852,11 +852,11 @@ def list_slot_overview(root: Path, owners: dict[int, list[dict]]) -> list[dict]:
     """盘上实例槽总览：原生实例 / MAS 绑定槽 / 无主残留（按槽号升序）。
 
     元素含 ``idx`` / ``kind`` / ``has_dir`` / ``size`` / ``owners``。
-    ``kind``：``native``=一条龙原生注册表里的实例；``mas``=有 MAS 用户绑定；
+    ``kind``：``native``=一条龙原生注册表里的实例；``mas``=有 MAS 账号绑定；
     ``orphan``=盘上有目录但既非原生也无人绑定（回收对象）。``owners`` 由
     调用方按同一份安装（:func:`config_root_key`）收集后传入——本模块不感知
-    MAS 用户结构。**绑定但盘上无目录的槽也会出现**（``has_dir=False``）：
-    那正是「槽目录数与用户数对不上」时最该看到的一行。
+    MAS 账号结构。**绑定但盘上无目录的槽也会出现**（``has_dir=False``）：
+    那正是「槽目录数与账号数对不上」时最该看到的一行。
 
     Raises:
         ConfigCorruptedError: 注册表不可读——原生名单缺失，不能把原生实例
@@ -944,7 +944,7 @@ def restore_recycle_slot(
     """把回收池里的槽目录快照恢复到 ``config/{目标槽:02d}``（先存底当前内容）。
 
     ``target_slot`` 留空表示恢复回原槽号；给出其他槽号即落到指定槽（现唯一
-    调用方传的是目标用户的绑定槽——只物化内容不建立绑定的恢复没有出口，
+    调用方传的是目标账号的绑定槽——只物化内容不建立绑定的恢复没有出口，
     见 ``ZzzOdRecovery.restore_recycle``）。恢复是覆盖性操作，目标槽的选定
     与归属由调用方经 ``ensure_user_slot`` 解析；目标槽当前内容先按同一套归档
     进回收池——误恢复可找回。

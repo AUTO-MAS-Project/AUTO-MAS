@@ -492,7 +492,7 @@ _SCAN_PRUNE_DIRS = {
     "temp",
 }
 
-# 全量版桌面程序的 exe 名（无 portable 标记，用它下载会在用户队列里留记录）
+# 只有真正的 CLI 程序可以执行 add/list/status；桌面 GUI 不属于 CLI。
 _FLUXDOWN_EXE_NAMES = update_native.FLUXDOWN_EXE_NAMES
 
 
@@ -526,7 +526,7 @@ def _scan_drives(
             name = entry.name.lower()
             try:
                 if entry.is_file(follow_symlinks=False):
-                    if name in _FLUXDOWN_EXE_NAMES:
+                    if name in (*_FLUXDOWN_EXE_NAMES, "fluxdown-desktop.exe"):
                         found.append(Path(entry.path))
                 elif entry.is_dir(follow_symlinks=False):
                     if name in _SCAN_PRUNE_DIRS or name.startswith("$"):
@@ -541,6 +541,8 @@ def _scan_drives(
         pref = preferred_drive.rstrip("\\").lower()
         ordered.sort(key=lambda d: 0 if d.rstrip("\\").lower() == pref else 1)
 
+    if not ordered:
+        return found
     t0 = time.monotonic()
     per_drive = budget / len(ordered)
     for idx, drive in enumerate(ordered):
@@ -558,100 +560,149 @@ def _common_prefix_len(a: Path, b: Path) -> int:
     return n
 
 
+def fluxdown_components(directory: Path) -> dict[str, bool]:
+    """按当前系统只认同目录 CLI + Agent + Daemon，Desktop 不可充当 CLI。"""
+
+    def valid(name: str | None) -> bool:
+        if not name:
+            return False
+        binary = directory / name
+        try:
+            return binary.is_file() and binary.stat().st_size > 0
+        except OSError:
+            return False
+
+    return {
+        "cli": any(valid(name) for name in _FLUXDOWN_EXE_NAMES),
+        "server": (
+            valid(update_native.FLUXDOWN_AGENT_NAME)
+            and valid(update_native.FLUXDOWN_DAEMON_NAME)
+        ),
+        "desktop": valid("fluxdown-desktop.exe"),
+    }
+
+
 def fluxdown_detect(
     configured_path: str | None = None,
     scan_budget: float = 20.0,
+    *,
+    managed_dir: Path | None = None,
 ) -> dict:
-    """全盘检测 FluxDown：收集候选 → CLI 便携版优先 → 就近优先 → 新目录优先。
+    """自动检测完整的 CLI + Server 目录，不把缺件桌面版判为已安装。
 
-    择优顺序：
-        1. CLI 便携版（同目录有 ``portable`` 标记）优先于全量版
-        2. 与 MAS 同一盘符优先
-        3. 与 MAS 路径公共前缀更长（更"近"，含同父目录）优先
-        4. exe 所在目录修改时间更新者优先
-
-    返回 dict（可直接展开为 FluxdownDetectOut）：
-        path: 择优后的 exe 路径，未找到为 None
-        is_portable_cli: 选中项是否 CLI 便携版
-        only_full_warning: 设备上没有任何 CLI 便携版、选中项是全量版时为 True
-                           ——此时用它下载会在用户 FluxDown 队列里留记录
-        scanned_drives: 实际扫描的盘符
-        candidates: 全部候选（按择优顺序，最多 8 条）
+    未完成的候选目录仍会出现在 candidates 中，供设置页提示补装组件；
+    只有 CLI 和 Agent/Daemon 同目录时才返回可保存的 path。
     """
     raw: list[Path] = []
-
-    # 快速候选：用户配置目录 / MAS 便携包 / PATH（不需要全盘扫描就能命中的位置）
-    known_dirs: list[Path] = []
-    if configured_path:
-        p = Path(configured_path)
-        if p.is_dir():
-            known_dirs.append(p)
+    configured = Path(configured_path) if configured_path else None
+    known_dirs = [Path.cwd() / "res" / "fluxdown-cli"]
+    if managed_dir is not None:
+        known_dirs.insert(0, Path(managed_dir))
+    if configured is not None:
+        known_dirs.insert(0, configured if configured.is_dir() else configured.parent)
     if getattr(sys, "frozen", False):
-        base = Path(sys.executable).parent
-    else:
-        base = Path.cwd()
-    known_dirs.append(base / "res" / "fluxdown-cli")
-    known_dirs.append(Path.cwd() / "res" / "fluxdown-cli")
-    for dir_path in known_dirs:
-        if dir_path.is_dir():
-            for name in _FLUXDOWN_EXE_NAMES:
-                exe = dir_path / name
-                if exe.is_file():
-                    raw.append(exe)
+        known_dirs.append(Path(sys.executable).parent / "res" / "fluxdown-cli")
+    for directory in known_dirs:
+        if not directory.is_dir():
+            continue
+        raw.extend(
+            directory / name
+            for name in (*_FLUXDOWN_EXE_NAMES, "fluxdown-desktop.exe")
+            if (directory / name).is_file()
+        )
     for name in ("fluxdown", "fluxdown-cli"):
         found = shutil.which(name)
         if found:
             raw.append(Path(found))
 
-    # 全盘扫描（时限内尽量找全，用户配置目录即使没有 portable 标记也会被扫出来）
     drives = _candidate_drives()
     mas_drive = str(Path.cwd().drive)
     raw.extend(_scan_drives(drives, scan_budget, mas_drive + "\\"))
-
-    # 去重（Windows 大小写不敏感）
-    unique: dict[str, Path] = {}
+    seen: dict[str, Path] = {}
     for exe in raw:
-        unique.setdefault(str(exe).lower(), exe)
+        seen.setdefault(str(exe.parent).lower(), exe.parent)
 
-    candidates: list[FluxdownCandidate] = []
-    for exe in unique.values():
-        is_cli = (exe.parent / "portable").is_file()
+    candidates: list[dict] = []
+    for directory in seen.values():
+        state = fluxdown_components(directory)
+        if not (state["cli"] or state["desktop"]):
+            continue
         try:
-            mtime = exe.parent.stat().st_mtime
+            mtime = directory.stat().st_mtime
         except OSError:
             mtime = 0.0
-        candidates.append(FluxdownCandidate(exe, is_cli, mtime))
-
-    if not candidates:
-        return {
-            "path": None,
-            "is_portable_cli": False,
-            "only_full_warning": False,
-            "scanned_drives": drives,
-            "candidates": [],
-        }
+        candidates.append(
+            {
+                "path": str(directory),
+                "is_portable_cli": state["cli"] and (directory / "portable").is_file(),
+                "complete": state["cli"] and state["server"],
+                "has_cli": state["cli"],
+                "has_server": state["server"],
+                "has_desktop": state["desktop"],
+                "missing": (
+                    ("CLI" if not state["cli"] else "")
+                    + ("、" if not state["cli"] and not state["server"] else "")
+                    + ("Server" if not state["server"] else "")
+                ),
+                "_mtime": mtime,
+                "_desktop": state["desktop"],
+            }
+        )
 
     mas_root = Path.cwd()
+    preferred = str(
+        configured
+        if configured is not None and configured.is_dir()
+        else configured.parent
+        if configured is not None
+        else ""
+    ).lower()
     candidates.sort(
         key=lambda c: (
-            0 if c.is_portable_cli else 1,
-            0 if c.path.drive.lower() == mas_root.drive.lower() else 1,
-            -_common_prefix_len(c.path.parent, mas_root),
-            -c.dir_mtime,
+            0 if preferred and c["path"].lower() == preferred else 1,
+            0 if c["complete"] else 1,
+            0 if c["is_portable_cli"] else 1,
+            0 if Path(c["path"]).drive.lower() == mas_root.drive.lower() else 1,
+            -_common_prefix_len(Path(c["path"]), mas_root),
+            -c["_mtime"],
         )
     )
-
-    best = candidates[0]
-    has_cli = any(c.is_portable_cli for c in candidates)
+    ready = next((candidate for candidate in candidates if candidate["complete"]), None)
+    partial = next(
+        (candidate for candidate in candidates if not candidate["complete"]), None
+    )
+    if ready is not None:
+        has_portable = any(c["complete"] and c["is_portable_cli"] for c in candidates)
+        path = ready["path"]
+        portable = ready["is_portable_cli"]
+        warning = not portable and not has_portable
+        message = ""
+    else:
+        path, portable, warning = None, False, False
+        message = (
+            f"发现不完整的 FluxDown：{partial['path']}；缺少 {partial['missing']}，"
+            "请使用「由 MAS 代为下载」补齐。"
+            if partial
+            else "未找到同时包含 CLI 和 Server 的 FluxDown 文件夹"
+        )
     return {
-        "path": str(best.path),
-        "is_portable_cli": best.is_portable_cli,
-        "only_full_warning": not best.is_portable_cli and not has_cli,
+        "path": path,
+        "is_portable_cli": portable,
+        "only_full_warning": warning,
         "scanned_drives": drives,
         "candidates": [
-            {"path": str(c.path), "is_portable_cli": c.is_portable_cli}
+            {
+                "path": c["path"],
+                "is_portable_cli": c["is_portable_cli"],
+                "complete": c["complete"],
+                "has_cli": c["has_cli"],
+                "has_server": c["has_server"],
+                "has_desktop": c["has_desktop"],
+                "missing": c["missing"],
+            }
             for c in candidates[:8]
         ],
+        "message": message,
     }
 
 
@@ -748,7 +799,7 @@ def _server_binaries(cli_exe: Path) -> tuple[Path, Path] | None:
     return None
 
 
-def _server_data_dir(cli_exe: Path) -> Path:
+def _server_data_dir(cli_exe: Path, *, data_root: Path | None = None) -> Path:
     """MAS 私有的 server 数据根：token、任务映射、日志都放在其下。
 
     不能复用 ``cli_exe.parent / "portable_data"``：那是用户便携版自己的数据库
@@ -759,10 +810,15 @@ def _server_data_dir(cli_exe: Path) -> Path:
 
     ``cli_exe`` 仅为保持调用方签名稳定而保留，数据根与 CLI 位置无关。
     """
-    return Path.cwd() / "data" / "fluxdown_server"
+    # 无应用级配置依赖：调用方可传入数据根，旧调用使用工作目录兼容路径。
+    root = Path(data_root) if data_root is not None else Path.cwd() / "data"
+    legacy = root / "fluxdown_server"
+    if legacy.exists():
+        return legacy  # 保留热更前的任务记录、token 和续传状态
+    return root / "fluxdown" / "server"
 
 
-def _local_cli_exe(cli_exe: Path) -> Path:
+def _local_cli_exe(cli_exe: Path, *, data_root: Path | None = None) -> Path:
     """把 CLI 复制进 MAS 私有便携目录，让 ``--local`` 的数据落在 MAS 数据根。
 
     官方 ``--local`` 用 ``resolve_data_dir(None)`` 定位数据目录，只认 exe 同目录
@@ -775,7 +831,12 @@ def _local_cli_exe(cli_exe: Path) -> Path:
     复制失败（磁盘/权限）抛 :class:`RuntimeError`，由上层回退 httpx；绝不退回
     使用用户 CLI，以免污染用户数据。
     """
-    root = Path.cwd() / "data" / "fluxdown_local"
+    base = Path(data_root) if data_root is not None else Path.cwd() / "data"
+    legacy = base / "fluxdown_local"
+    if (legacy / "portable_data").exists():
+        root = legacy  # 不能丢弃旧版 --local 断点数据
+    else:
+        root = base / "fluxdown" / "local"
     try:
         with _LOCAL_CLI_LOCK:
             root.mkdir(parents=True, exist_ok=True)
@@ -1148,32 +1209,48 @@ def fluxdown_server_forget(cli_exe: Path, url: str, destination: Path) -> None:
 
 
 def fluxdown_server_task_safe_to_overwrite(
-    cli_exe: Path, url: str, destination: Path, *, timeout: int = 15
+    cli_exe: Path,
+    url: str,
+    destination: Path,
+    *,
+    timeout: int = 15,
+    other_only: bool = False,
 ) -> bool:
-    """判断 (url, destination) 对应的 FluxDown server 任务是否已确认停止/不存在。
+    """确认所有映射到同一目标的 server 任务已经停写。
 
-    用于在改用内置 httpx 等"以 wb 重写 destination"的路径前排除双写：
-    - 无映射：从未经 server 下载过 → 安全
-    - paused(2)：已暂停，daemon 不再写输出文件 → 安全
-    - pending/downloading/preparing(0/1/5)：先 pause 再复查，只有确认离开
-      活动态才安全（这些状态随时可能开始写数据）
-    - completed/error(3/4)：终态 → 安全
-    - 未知状态码（不在 0..5）：语义不明，按不安全处理
-    - status 查询失败 / server 不可用：管理通道异常，**不能排除 daemon 仍在
-      写**，返回 False，调用方应阻止覆写
+    旧 URL 的任务也可能写当前目标，不能只按新 URL 查询。
+    other_only 供当前 URL 的 resume 使用：排除自己的任务，仍阻止旧来源双写。
     """
     key = _map_key(url, Path(destination))
-    entry = _load_task_map(cli_exe).get(key) or {}
-    task_id = entry.get("task_id")
-    if not task_id:
+    target = os.path.normcase(str(Path(destination).resolve()))
+    task_ids: set[str] = set()
+    for mapped_key, entry in _load_task_map(cli_exe).items():
+        if mapped_key == key and other_only:
+            continue
+        if not isinstance(entry, dict):
+            if mapped_key == key:
+                return False
+            continue
+        if mapped_key != key:
+            path = entry.get("save_path")
+            if not isinstance(path, str) or not path:
+                continue
+            try:
+                if os.path.normcase(str(Path(path).resolve())) != target:
+                    continue
+            except (OSError, ValueError):
+                return False
+        task_id = entry.get("task_id")
+        if task_id:
+            task_ids.add(str(task_id))
+    if not task_ids:
         return True
     handle = fluxdown_server_ensure(cli_exe)
     if handle is None:
-        # server 都起不来，无法证明 daemon 是否仍在写 destination，按不安全处理
         return False
     env = _cli_env(handle.gateway_port, handle.token)
 
-    def _status_code() -> int | None:
+    def _status_code(task_id: str) -> int | None:
         code, out = _run_cli(
             cli_exe, env, ["status", task_id, "--json"], timeout=timeout
         )
@@ -1187,22 +1264,26 @@ def fluxdown_server_task_safe_to_overwrite(
         except (TypeError, ValueError):
             return None
 
-    status = _status_code()
-    if status is None:
-        return False
-    if status == _TASK_STATUS_PAUSED:
-        return True
-    if status in _ACTIVE_STATUSES:
-        # 活动态：先暂停，再复查状态是否真的离开活动态。
-        # pause 返回 124（客户端超时）同样不能证明没生效，按未确认处理
-        pause_code, _ = _run_cli(cli_exe, env, ["pause", task_id], timeout=10)
-        if pause_code != 0:
+    for task_id in task_ids:
+        status = _status_code(task_id)
+        if status is None:
             return False
-        paused = _status_code()
-        return paused is not None and paused not in _ACTIVE_STATUSES
-    if status in (_TASK_STATUS_DONE, _TASK_STATUS_FAILED):
-        return True
-    return False
+        if status == _TASK_STATUS_PAUSED:
+            continue
+        if status in _ACTIVE_STATUSES:
+            pause_code, _ = _run_cli(cli_exe, env, ["pause", task_id], timeout=10)
+            if pause_code != 0:
+                return False
+            stopped = _status_code(task_id)
+            if stopped not in (
+                _TASK_STATUS_PAUSED,
+                _TASK_STATUS_DONE,
+                _TASK_STATUS_FAILED,
+            ):
+                return False
+        elif status not in (_TASK_STATUS_DONE, _TASK_STATUS_FAILED):
+            return False
+    return True
 
 
 def fluxdown_server_mark_failure(cli_exe: Path, url: str, destination: Path) -> int:

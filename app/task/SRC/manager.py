@@ -16,18 +16,20 @@
 import asyncio
 import shutil
 import uuid
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from datetime import datetime
 from pathlib import Path
 
 from app.config import config_manager
 from app.core import Config, EmulatorManager, Notify, Publisher
+from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.core.ws import protocol
 from app.models.config import SrcConfig
 from app.models.emulator import DeviceProvider
 from app.models.notification.report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
+from app.services import script_install
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import (
@@ -36,6 +38,7 @@ from app.task.proxy_helpers import (
     read_config_base,
 )
 from app.utils import TASK_MODE_ZH, ProcessManager, get_logger
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -46,6 +49,7 @@ from .tools import (
     has_committed_src_user_config_transaction,
     is_src_config_available,
     kill_src_processes,
+    program_update,
     read_src_config_snapshot_state,
     read_src_installation_id,
     read_src_process_state,
@@ -88,6 +92,8 @@ class SrcManager(ScriptManagerBase):
         self.script_info = script_info
         self._device_provider = device_provider
         self.check_result = "-"
+        self._install_access = ExitStack()
+        self._program_update_prepared = False
         self.process_cleanup_success = True
         self.prepared = False
         self.config_lock_acquired = False
@@ -104,13 +110,13 @@ class SrcManager(ScriptManagerBase):
         if not isinstance(
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], SrcConfig
         ):
-            return "脚本配置类型错误, 不是SRC脚本类型"
+            return "托管配置类型错误, 不是SRC托管类型"
         if Config.ScriptConfig[
             uuid.UUID(self.script_info.script_id)
         ].Emulator.Id == "-" or Config.ScriptConfig[
             uuid.UUID(self.script_info.script_id)
         ].Emulator.Index in ("", "-"):
-            return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
+            return "未完成模拟器配置, 请检查托管配置中的模拟器设置！"
         root_path = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Info.Path
         if root_path is None or not (root_path / "src.exe").exists():
             return "src.exe文件不存在, 请检查SRC路径设置！"
@@ -123,7 +129,7 @@ class SrcManager(ScriptManagerBase):
         )
         if not src_config_available and not temp_config_available:
             return "SRC配置文件不存在或已损坏, 请检查SRC路径设置或检查配置文件情况！"
-        # 脚本级存档仅在存在非原生来源用户时需要: 原生来源直接使用 SRC 安装目录的原生配置
+        # 托管级存档仅在存在非原生来源账号时需要: 原生来源直接使用 SRC 安装目录的原生配置
         if (
             self.execution_mode != "ScriptConfig"
             and self._has_mas_config_user()
@@ -135,11 +141,11 @@ class SrcManager(ScriptManagerBase):
         return "Pass"
 
     def _has_mas_config_user(self) -> bool:
-        """目标用户里是否存在非原生来源（shared/independent）配置来源的用户。
+        """目标账号里是否存在非原生来源（shared/independent）配置来源的用户。
 
         check() 先于 prepare() 执行，此时 self.user_config 尚未加载、user_list
-        还是占位项；直接读脚本配置持久化的 UserData，按参与运行的用户（启用、
-        剩余天数非 0、命中目标用户）判定，与 M9A._uses_direct_control 同构。
+        还是占位项；直接读脚本配置持久化的 UserData，按参与运行的账号（启用、
+        剩余天数非 0、命中目标账号）判定，与 M9A._uses_direct_control 同构。
         """
 
         return any(
@@ -155,11 +161,11 @@ class SrcManager(ScriptManagerBase):
 
         await self._recover_previous_run()
 
-        # 加载用户配置
+        # 加载账号配置
         self.user_config = self.script_config.UserData
         logger.success(f"{self.script_info.script_id}已锁定, SRC配置提取完成")
 
-        # 初始化模拟器管理器和用户列表
+        # 初始化模拟器管理器和账号列表
         device_provider = self._device_provider or EmulatorManager.get_emulator_instance
         self.emulator_manager = await device_provider(self.script_config.Emulator.Id)
         if self.execution_mode == "ScriptConfig":
@@ -177,7 +183,7 @@ class SrcManager(ScriptManagerBase):
                 self.build_proxy_user_list(self.user_config.items())
             )
         logger.info(
-            f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
+            f"账号列表加载完成, 已筛选账号数: {len(self.script_info.user_list)}"
         )
 
         await self._cleanup_current_src_root()
@@ -211,6 +217,9 @@ class SrcManager(ScriptManagerBase):
         if locked_root_path is None:
             raise ValueError("Path未配置，请检查路径设置")
         locked_root_path = locked_root_path.resolve()
+        self._install_access.enter_context(
+            script_install.installation_access(locked_root_path)
+        )
         self.src_root_path = locked_root_path
         self.src_exe_path = self.src_root_path / "src.exe"
         self.src_set_path = self.src_root_path / "config"
@@ -450,7 +459,7 @@ class SrcManager(ScriptManagerBase):
             self.temp_ready_path.unlink(missing_ok=True)
 
     def _recover_default_user_config_transaction(self) -> None:
-        """在配置检查前恢复非设置任务依赖的默认用户配置。"""
+        """在配置检查前恢复非设置任务依赖的默认账号配置。"""
 
         if self.execution_mode == "ScriptConfig":
             return
@@ -463,7 +472,7 @@ class SrcManager(ScriptManagerBase):
 
         原生来源会话 MAS 零写入（ScriptConfig 原生来源分支直接 return），安装
         config/ 由本体保存；若 final_task 无条件用任务前快照还原，会把
-        用户刚在原生 GUI 里改的配置抹回会话前状态。脚本级（Default）与
+        用户刚在原生 GUI 里改的配置抹回会话前状态。托管级（Default）与
         用户shared 来源会话不豁免——它们的 GUI 改动已由 ScriptConfig 收尾回写
         MAS 目录，安装目录现场仍按任务前快照还原。viewOnly 查看会话不保留
         任何现场改动，结束后也还原任务前快照。
@@ -529,7 +538,7 @@ class SrcManager(ScriptManagerBase):
         self,
         protected_roots: list[Path] | None = None,
     ) -> None:
-        """拒绝接管其他脚本尚未恢复的 SRC 根目录。"""
+        """拒绝接管其他托管尚未恢复的 SRC 根目录。"""
 
         data_path = Path.cwd() / "data"
         if not data_path.exists():
@@ -559,7 +568,7 @@ class SrcManager(ScriptManagerBase):
                 for protected_root in protected_roots
             ):
                 raise RuntimeError(
-                    "SRC 路径仍由其他脚本的待恢复快照占用，请先重试对应脚本: "
+                    "SRC 路径仍由其他托管的待恢复快照占用，请先重试对应脚本: "
                     f"{ready_path.parent.name}"
                 )
 
@@ -733,6 +742,42 @@ class SrcManager(ScriptManagerBase):
         self.src_process_state_path.unlink(missing_ok=True)
         shutil.rmtree(discarded_path, ignore_errors=True)
 
+    async def _prepare_program_update(self) -> None:
+        if self.execution_mode != "AutoProxy" or self._program_update_prepared:
+            return
+        program_update.recover_deploy(self.src_root_path)
+        self.check_result = "SRC 更新准备未完成"
+        if self.script_config.Update.TakeoverEnabled:
+            try:
+                await self.script_info.set_log(
+                    await run_script_update(
+                        ScriptUpdateRequest(self.script_info.script_id, "SRC"),
+                        program_update.update_before_run,
+                        self.src_root_path,
+                    )
+                )
+            except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
+                raise
+            except Exception as error:
+                await program_update.confirm_current_install(self.src_root_path)
+                message = f"SRC 更新准备失败，沿用当前安装继续任务：{error}"
+                logger.warning(message)
+                await self.script_info.set_log(message)
+                with suppress(Exception):
+                    await Publisher.send(
+                        id=self.task_info.task_id,
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(level="warning", message=message),
+                    )
+        elif (
+            script_install.workspace(self.src_root_path) / "src-install.json"
+        ).exists():
+            raise script_install.InstallUnsafeError(
+                "SRC 上次安装未确认，请开启更新托管重试或手动修复"
+            )
+        self._program_update_prepared = True
+        self.check_result = "Pass"
+
     async def main_task(self):
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -749,10 +794,15 @@ class SrcManager(ScriptManagerBase):
             )
             return
 
+        if self.execution_mode == "AutoProxy":
+            await self._cleanup_current_src_root()
+        if self.execution_mode != "AutoProxy":
+            program_update.assert_safe_to_launch(self.src_root_path)
+        await self._prepare_program_update()
         await self.prepare()
 
         if not isinstance(self.script_config, SrcConfig):
-            raise RuntimeError("脚本配置类型错误, 不是 SRC 脚本类型")
+            raise RuntimeError("托管配置类型错误, 不是 SRC 托管类型")
 
         for _runtime_user_index in range(len(self.script_info.user_list)):
             await self.script_info.set_current_index(_runtime_user_index)
@@ -837,6 +887,7 @@ class SrcManager(ScriptManagerBase):
             if should_notify:
                 await self._send_final_notification()
         finally:
+            self._install_access.close()
             script_config = getattr(self, "script_config", None)
             if script_config is not None:
                 ticket = self.config_locks.pop(script_config.uid, None)
@@ -846,8 +897,11 @@ class SrcManager(ScriptManagerBase):
     async def _complete_locked_final_task(self) -> bool:
         """在脚本仍锁定时写回任务结果。"""
 
-        if not self.process_cleanup_success or any(
-            user.status == "异常" for user in self.script_info.user_list
+        if (
+            self.check_result != "Pass"
+            or self.script_info.status == "异常"
+            or not self.process_cleanup_success
+            or any(user.status == "异常" for user in self.script_info.user_list)
         ):
             await self.script_info.set_state(status="异常")
         else:

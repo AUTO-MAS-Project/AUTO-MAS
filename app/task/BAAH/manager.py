@@ -20,26 +20,31 @@
 
 """BAAH 控制器。
 
-按用户逐个拉起 BAAH 自动代理任务，结束时统一组装任务报告并推送。
+按账号逐个拉起 BAAH 自动代理任务，结束时统一组装任务报告并推送。
 """
 
 import uuid
+from contextlib import ExitStack, suppress
 from datetime import datetime
 
 import app.core.notify.report as _node_report
 from app.config import config_manager
 from app.core import Config, EmulatorManager, Notify, Publisher
+from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.core.ws import protocol
 from app.models.config import BAAHConfig
 from app.models.emulator import DeviceBase, DeviceProvider
 from app.models.notification.report import TaskResultReport, UserReportText
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem
+from app.services import script_install
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
-from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box
+from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box, update_files
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
+from .tools import program_update
 
 logger = get_logger("BAAH 调度器")
 
@@ -50,6 +55,8 @@ METHOD_BOOK: dict[str, type[AutoProxyTask]] = {
 
 class BAAHManager(ScriptManagerBase):
     """BAAH 控制器"""
+
+    wait_for_finalizer_on_cancel = True
 
     def __init__(
         self,
@@ -65,6 +72,8 @@ class BAAHManager(ScriptManagerBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self._install_access = ExitStack()
+        self._directory_lock = None
         self.emulator_manager: DeviceBase | None = None
         self._device_provider = device_provider
 
@@ -76,17 +85,22 @@ class BAAHManager(ScriptManagerBase):
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if not isinstance(script_config, BAAHConfig):
-            return "脚本配置类型错误, 不是 BAAH 脚本类型"
+            return "托管配置类型错误, 不是 BAAH 托管类型"
 
         if script_config.Emulator.Id == "-" or script_config.Emulator.Index in [
             "",
             "-",
         ]:
-            return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
+            return "未完成模拟器配置, 请检查托管配置中的模拟器设置！"
 
         ## 程序目录、配置目录与日志目录都由 BAAHPath 派生，只需校验它
-        if not str(script_config.Script.BAAHPath or "").strip():
-            return "未填写 BAAH 主程序路径, 请检查脚本配置中的主程序路径设置！"
+        path = script_config.Script.BAAHPath
+        if path is None:
+            return "未填写 BAAH 主程序路径, 请检查托管配置中的主程序路径设置！"
+        if not path.is_file():
+            directory = script_install.workspace(path.parent)
+            if not ((directory / "transaction.json").exists()):
+                return "BAAH 主程序不存在，且没有可信的中断安装记录，请检查安装路径"
 
         return "Pass"
 
@@ -100,13 +114,13 @@ class BAAHManager(ScriptManagerBase):
         )
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         self.user_config = self.script_config.UserData
-        logger.success(f"{self.script_info.script_id} 已锁定, BAAH 脚本配置提取完成")
+        logger.success(f"{self.script_info.script_id} 已锁定, BAAH 托管配置提取完成")
 
         await self.script_info.set_users(
             self.build_proxy_user_list(self.user_config.items())
         )
         logger.info(
-            f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
+            f"账号列表加载完成, 已筛选账号数: {len(self.script_info.user_list)}"
         )
 
         # 初始化模拟器管理器：模拟器的启动与关闭统一由本软件调度,
@@ -115,6 +129,54 @@ class BAAHManager(ScriptManagerBase):
         self.emulator_manager: DeviceBase = await device_provider(
             self.script_config.Emulator.Id
         )
+
+    async def _prepare_program_update(self) -> None:
+        root = self.script_config.Script.BAAHPath.parent
+        self.check_result = "BAAH 更新准备未完成"
+        # 按真实安装路径排队，等待前一 BAAH 运行的全部账号及恢复动作结束；
+        # 跨 MAS 进程仍由文件锁保障，不改变不同安装目录的并行能力。
+        lock = update_files.directory_lock(root.resolve())
+        await lock.acquire()
+        self._directory_lock = lock
+        self._install_access.enter_context(script_install.installation_access(root))
+        if self.script_config.Update.TakeoverEnabled:
+
+            async def progress(downloaded: int, total: int, speed: float) -> None:
+                await self.script_info.set_log(
+                    f"BAAH 更新下载：{downloaded / 1024**2:.1f} / {total / 1024**2:.1f} MB"
+                )
+
+            try:
+                await self.script_info.set_log(
+                    await run_script_update(
+                        ScriptUpdateRequest(self.script_info.script_id, "BAAH"),
+                        program_update.update_before_run,
+                        root,
+                        self.script_config,
+                        progress=progress,
+                    )
+                )
+            except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
+                raise
+            except Exception as error:
+                await program_update.confirm_current_install(root)
+                message = f"BAAH 更新准备失败，沿用当前安装继续任务：{error}"
+                await self.script_info.set_log(message)
+                logger.warning(message)
+                with suppress(Exception):
+                    await Publisher.send(
+                        id=self.task_info.task_id,
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(level="warning", message=message),
+                    )
+        else:
+            # 即使关闭接管，上轮未确认安装也必须先恢复。
+            await script_install.run_worker(
+                script_install.recover_install,
+                root,
+                lambda: program_update.assert_idle(root),
+            )
+        self.check_result = "Pass"
 
     async def main_task(self):
 
@@ -132,7 +194,9 @@ class BAAHManager(ScriptManagerBase):
         await self.prepare()
 
         if not isinstance(self.script_config, BAAHConfig):
-            raise RuntimeError("脚本配置类型错误, 不是 BAAH 脚本类型")
+            raise RuntimeError("托管配置类型错误, 不是 BAAH 托管类型")
+
+        await self._prepare_program_update()
 
         for _runtime_user_index in range(len(self.script_info.user_list)):
             await self.script_info.set_current_index(_runtime_user_index)
@@ -150,6 +214,9 @@ class BAAHManager(ScriptManagerBase):
                 self.user_config,
                 self.emulator_manager,
             )
+            # manager 已按整个任务生命周期持有目录锁，避免 AutoProxy 再次
+            # 获取不可重入的 asyncio.Lock，导致自身死锁。
+            task.directory_reserved = True
             await self.run_user_task(current_user, task)
 
     async def final_task(self):
@@ -172,8 +239,8 @@ class BAAHManager(ScriptManagerBase):
                     f"{self.script_info.name or '空白'}的"
                     f"{TASK_MODE_ZH[self.execution_mode]}任务报告"
                 )
-                ## 按用户交错组装「用户结果行 + 该用户节点详情」，
-                ## 失败类型条目仅在本次任务存在未完成用户时纳入报告
+                ## 按账号交错组装「账号结果行 + 该账号节点详情」，
+                ## 失败类型条目仅在本次任务存在未完成账号时纳入报告
                 has_uncompleted = summary.uncompleted_count > 0
                 user_result_text = self._render_user_results(
                     has_uncompleted=has_uncompleted
@@ -203,8 +270,22 @@ class BAAHManager(ScriptManagerBase):
                         ),
                     )
 
-            await self.script_info.set_state(status="完成")
+            # 安装准备/账号执行异常不可被常规收尾覆盖成“完成”。
+            if self.script_info.status == "异常" or any(
+                user.status not in {"完成", "跳过"}
+                for user in self.script_info.user_list
+            ):
+                await self.script_info.set_state(status="异常")
+            else:
+                await self.script_info.set_state(status="完成")
         finally:
+            try:
+                self._install_access.close()
+            finally:
+                directory_lock = getattr(self, "_directory_lock", None)
+                if directory_lock is not None:
+                    self._directory_lock = None
+                    directory_lock.release()
             script_config = getattr(self, "script_config", None)
             if script_config is not None:
                 ticket = self.config_locks.pop(script_config.uid, None)

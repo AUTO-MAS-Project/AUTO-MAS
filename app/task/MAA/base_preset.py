@@ -71,14 +71,6 @@ def _normalize_root_gui(doc: dict) -> None:
         # 已有 Gui 优先，旧 GUI 只补缺键，避免反过来覆盖新配置。
         _fill_missing(gui, legacy)
 
-    guide_step = gui.get("GuideStep")
-    if (
-        isinstance(guide_step, bool)
-        or not isinstance(guide_step, int)
-        or guide_step <= 0
-    ):
-        gui["GuideStep"] = 7
-
 
 def ensure_maa_default_configuration(gui_new_set: dict) -> None:
     """Fold the active configuration into ``Default`` and guarantee its containers.
@@ -89,11 +81,9 @@ def ensure_maa_default_configuration(gui_new_set: dict) -> None:
     ``Default``. Folding and the fallback must therefore run unconditionally, or
     the later hard indexing of ``Configurations["Default"]`` raises ``KeyError``.
 
-    根级 ``Gui`` / ``Timers`` 也按随包预设补齐缺键：存档是用户自己那份 MAA 配置的
-    副本，MAA 后来新增的字段（尤其 ``Gui.GuideStep``）在里面根本不存在，下发后
-    MAA 每次都按首次运行处理，直接把新手引导弹出来。只补缺失键，不覆盖用户值；
-    旧版根级 ``GUI`` 先合并进 ``Gui`` 并删除，后续只认 ``Gui``；折叠方案后
-    再补 ``Default.Gui`` 的运行期容器，直接索引不会落空。
+    根级 ``Gui`` / ``Timers`` 按随包预设补齐缺键，不覆盖已有值；旧版根级
+    ``GUI`` 先合并进 ``Gui`` 并删除。折叠方案后再补 ``Default.Gui`` 的
+    运行期容器，直接索引不会落空；引导跳过由各启动路径单独注入。
     """
 
     _normalize_root_gui(gui_new_set)

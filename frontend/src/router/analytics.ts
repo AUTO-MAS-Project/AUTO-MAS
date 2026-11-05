@@ -7,6 +7,7 @@ import {
 } from '@/utils/analytics'
 
 const screens: Record<string, AnalyticsScreen> = {
+  Tools: 'tools',
   Initialization: 'initialization',
   Home: 'home',
   Scripts: 'scripts',

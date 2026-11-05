@@ -1,5 +1,6 @@
 import type { FluxdownInstallOut, GlobalConfig_UI, GlobalConfig_Update } from '@/api'
 import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
+import type { FrontendCloseRequest } from '@/types/appLifecycle'
 import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
 import type {
   DesktopMascotHostAPI,
@@ -65,8 +66,8 @@ export type ElectronApiEndpointKey = 'local' | 'websocket'
 
 // ==================== Runtime 后端更新 ====================
 
-/** 后端启动链路：`off` 走原有的自行启动 python.exe，其余两种由 Runtime 监督。 */
-export type RuntimeLaunchMode = 'off' | 'development' | 'managed'
+/** 后端启动模式：开发源码或受管工作区，均由 Runtime 监督。 */
+export type RuntimeLaunchMode = 'development' | 'managed'
 
 export interface RuntimeBinaryUpdateResult {
   status: 'upgraded' | 'current' | 'skipped' | 'cancelled' | 'failed'
@@ -82,6 +83,14 @@ export interface RuntimeBinaryUpdateCheck {
 }
 
 export interface RuntimeBinaryProgress {
+  /** Electron 更新器提供的目标版本与当前下载尝试；旧事件可缺省。 */
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
+  source?: string
+  /** Electron 更新器的正常阶段；旧事件缺失时保留原文。 */
+  phase?: 'check' | 'download' | 'complete'
   progress: number
   message: string
 }
@@ -132,13 +141,8 @@ export interface RuntimeUpdateOutcome {
 
 // ==================== Runtime 初始化界面 ====================
 
-/**
- * Runtime 灰度开关的三态。
- *
- * `off` 是原有的自装 Python / pip / Git 链路，另外两态由 auto-mas-runtime.exe 接管；
- * 主进程没给这个字段时（旧版本主进程、旧链路进度）界面一律按 `off` 处理。
- */
-export type RuntimeInitMode = 'off' | 'development' | 'managed'
+/** Runtime 初始化模式。 */
+export type RuntimeInitMode = 'development' | 'managed'
 
 /** 初始化界面开局问一次的 Runtime 上下文。 */
 export interface RuntimeInitContext {
@@ -162,7 +166,7 @@ export interface RuntimeDoctorCheck {
 /**
  * Runtime 链路失败时随结果一起给出的结构化字段。
  *
- * 旧链路一律缺省，所以全是可选的；界面按这些机器字段决定给哪些按钮，
+ * 启动前失败可能没有结构化字段；界面按可用的机器字段决定给哪些按钮，
  * 绝不解析 `error` 里的中文文案。
  */
 export interface RuntimeFailureFields {
@@ -179,16 +183,16 @@ export interface RuntimeFailureFields {
   logPath?: string
 }
 
-/** 单步安装与重试的返回形状：旧链路只有前两项，Runtime 链路额外带结构化字段。 */
+/** 单步准备与重试的返回形状，失败时携带 Runtime 结构化字段。 */
 export type InstallStageResult = {
   success: boolean
   error?: string
 } & RuntimeFailureFields
 
-// ==================== Runtime 灰度开关 ====================
+// ==================== Runtime 启动模式 ====================
 
-/** Runtime 灰度开关的持久化设置取值；`auto` 表示跟随构建默认值。 */
-export type RuntimeLaunchModeSetting = 'auto' | 'off' | 'development' | 'managed'
+/** Runtime 启动模式的持久化设置取值；`auto` 表示跟随构建默认值。 */
+export type RuntimeLaunchModeSetting = 'auto' | 'development' | 'managed'
 /** 最终生效值来自哪一级。 */
 export type RuntimeLaunchModeSource = 'env' | 'setting' | 'default'
 
@@ -216,7 +220,7 @@ export interface RuntimeLaunchModeState {
   /** 持久化设置里存的原始值，用于回填选择控件。 */
   persisted: RuntimeLaunchModeSetting
   /** 本次实际生效的模式（`auto` 已被解析成具体值）。 */
-  mode: 'off' | 'development' | 'managed'
+  mode: 'development' | 'managed'
   source: RuntimeLaunchModeSource
 }
 
@@ -256,6 +260,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
   windowHideToTray: () => Promise<boolean>
+  notifyRendererReady?: () => void
   notifyNativeCloseHandlerReady?: () => void
   appRestart: () => Promise<void>
   /** 只标记「这次退出后重新拉起」，退出本身仍走 appQuit；后端请求的重启用它 */
@@ -269,7 +274,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   /** 倒计时结束或取消：撤回置顶 */
   powerWarningEnd?: () => Promise<void>
   appQuit: () => Promise<void>
-  appObserveBackendClose?: () => void
+  appObserveBackendClose?: (request?: FrontendCloseRequest) => void
   /** 等待用户确认期间暂停退出兜底，保留关闭请求锁。 */
   appWaitForQuitConfirmation?: () => Promise<boolean>
   /** 保存前领取退出凭证；准备超时不会强制关闭后端。 */
@@ -313,7 +318,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   getInitializedVersion: () => Promise<string | null>
   setInitializedVersion: (version: string) => Promise<boolean>
 
-  // Runtime 灰度开关：持久化设置 + 当前生效值与来源，重启后生效。
+  // Runtime 启动模式：持久化设置 + 当前生效值与来源，重启后生效。
   // `mode` 同时是标题栏更新入口走哪条链路的判据。
   getRuntimeLaunchMode: () => Promise<RuntimeLaunchModeState>
   setRuntimeLaunchMode: (mode: RuntimeLaunchModeSetting) => Promise<RuntimeLaunchModeState>
@@ -518,7 +523,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   ) => Promise<InstallStageResult & { skipped?: boolean }>
   getMirrors: (type: ElectronMirrorType) => Promise<ElectronMirrorSource[]>
   /** 初始化界面开局问一次：走没走 Runtime、回退日志文件、各段可用镜像键。 */
-  getRuntimeInitContext?: () => Promise<RuntimeInitContext>
+  getRuntimeInitContext: () => Promise<RuntimeInitContext>
   updateRuntimeBinary: () => Promise<RuntimeBinaryUpdateResult>
   checkRuntimeBinaryUpdate: () => Promise<RuntimeBinaryUpdateCheck>
   onRuntimeBinaryProgress: (callback: (progress: RuntimeBinaryProgress) => void) => void
@@ -527,7 +532,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   // API 端点获取
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
 
-  // 完整初始化流程（Runtime 首次初始化与旧链路共用）
+  // Runtime 完整初始化流程
   initialize: (
     targetBranch?: string,
     startBackend?: boolean
@@ -540,8 +545,25 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     } & RuntimeFailureFields
   >
 
+  waitDesktopStartup: () => Promise<
+    ({ success: boolean; error?: string; failedStage?: string } & RuntimeFailureFields) | null
+  >
+  desktopStartupStatus: () => Promise<{
+    runtimeMode: RuntimeInitMode
+    flowKind: 'startup' | 'first-run' | 'update'
+    fullInitialization: boolean
+    state: 'running' | 'ready' | 'failed'
+    progress: Array<{
+      stage: string
+      progress: number
+      message: string
+      status?: 'started' | 'running' | 'completed' | 'failed'
+    }>
+  } | null>
+  cancelDesktopStartup: () => Promise<void>
+
   // 后端服务管理
-  backendStart: () => Promise<InstallStageResult>
+  backendStart: (retry?: boolean) => Promise<InstallStageResult>
   backendRestart: (reason?: 'manual' | 'recovery') => Promise<InstallStageResult>
   backendStatus: () => Promise<BackendStatus>
   checkRuntimeBackendUpdate: () => Promise<{
@@ -580,20 +602,25 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
       totalStages: number
       progress: number
       message: string
-      /** Runtime 链路给出的机器可读段状态；旧链路不产生。 */
+      /** Runtime 链路给出的机器可读段状态。 */
       status?: 'started' | 'running' | 'completed' | 'failed'
-      /** 本条进度来自哪条链路；旧链路不产生，按 off 处理。 */
+      /** 本条进度对应的 Runtime 模式。 */
       runtimeMode?: RuntimeInitMode
       /** 当前阶段没有可靠总量，应展示持续活动状态而不是精确百分比。 */
       indeterminate?: boolean
-      /** 产生本条进度的 Runtime stage 原文（`network.probe` / `uv.download` …）；旧链路不产生。 */
+      /** 产生本条进度的 Runtime stage 原文（`network.probe` / `uv.download` …）。 */
       runtimeStage?: string
-      /** 产生本条进度的 Runtime progress.status 原文；旧链路不产生。 */
+      /** 产生本条进度的 Runtime progress.status 原文。 */
       runtimeStatus?: string
       /** 当前条目：正在下载的文件名，或测速时的源 key。 */
       item?: string
       /** 当前字节来自哪个源的 key。 */
       source?: string
+      /** Runtime 下载的目标版本与当前源尝试；旧事件可缺省。 */
+      targetVersion?: string
+      sourceName?: string
+      sourceIndex?: number
+      sourceCount?: number
       /** 最近 1 秒窗口的吞吐（字节/秒）。 */
       bytesPerSecond?: number
       /** 已下载字节数。 */

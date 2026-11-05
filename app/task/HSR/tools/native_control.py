@@ -1,6 +1,6 @@
 """HSR 原生配置与脚本原生来源的 old-dev 兼容层。
 
-old-dev 只保存脚本 ``Info.M7APath``/``Info.SRAPath`` 和用户 ``Info`` 凭据。
+old-dev 只保存脚本 ``Info.M7APath``/``Info.SRAPath`` 和账号 ``Info`` 凭据。
 本模块不启动原生编辑器；provider 仅负责检查与运行原生来源会话，外部配置文件
 的写回由 HSRManager 的备份/恢复区负责。
 
@@ -8,8 +8,8 @@ old-dev 只保存脚本 ``Info.M7APath``/``Info.SRAPath`` 和用户 ``Info`` 凭
 指向真实 profile 文件，三月七以真实安装根目录启动。不建临时目录、不复制
 任何东西，用户在脚本 GUI 里改什么下次就跑什么。这是
 ``mas-script-specialized-adapter`` 里「原生来源＝直接使用脚本原有配置、由原生
-GUI 维护」的口径。一个脚本挂多个账号、各跑不同计划的需求由「用户」来源
-承担（每用户一份计划叠在活配置上），不再有直控快照。
+GUI 维护」的口径。一个脚本挂多个账号、各跑不同计划的需求由独立来源
+承担（每账号一份计划叠在活配置上），不再有直控快照。
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ PHASE_TIMEOUT_CONFIG: dict[HSRPhase, tuple[str, int]] = {
 
 @dataclass(frozen=True, slots=True)
 class HSRNativeControlSnapshot:
-    """脚本级的原生来源就绪诊断，不看任何用户配置。
+    """托管级的原生来源就绪诊断，不看任何账号配置。
 
     ``import_ready``：原生配置文件当前存在（字段名沿用旧契约）。
     ``direct_run_ready``：可执行文件与原生配置文件都存在，原生来源此刻就能跑。
@@ -153,17 +153,17 @@ HSRPlanOwner = Literal["script", "user"]
 
 
 def resolve_plan_owner(user_config: Any) -> HSRPlanOwner | None:
-    """按 ``Info.Base`` 决定该用户的任务计划挂在谁身上。
+    """按 ``Info.Base`` 决定该账号的任务计划挂在谁身上。
 
-    - ``shared``（共享来源）→ ``"script"``：本脚本下所有共享来源用户共用
+    - ``shared``（共享来源）→ ``"script"``：本托管下所有共享来源账号共用
       ``HSRConfig`` 上的同名组（TaskSwitch / Stage / TaskOpt /
       Managed.Options / TaskMapping）；
-    - ``independent``（独立来源）→ ``"user"``：该用户 ``HSRUserConfig`` 上自己的一份；
+    - ``independent``（独立来源）→ ``"user"``：该账号 ``HSRUserConfig`` 上自己的一份；
     - ``native``（原生来源）→ ``None``：没有 MAS 计划，原样运行原生配置。
 
-    账号密码、剩余天数、完成态（``Data``）与通知恒按用户，不随 owner 变化。
+    账号密码、剩余天数、完成态（``Data``）与通知恒按账号，不随 owner 变化。
     非法值由 Base 字段声明在加载时纠成 ``shared``，这里对空值（如未
-    指定用户的接口调用）同样按 ``shared`` 处理。
+    指定账号的接口调用）同样按 ``shared`` 处理。
     """
 
     base = _utils_constants.normalize_base_source(
@@ -177,7 +177,7 @@ def resolve_plan_owner(user_config: Any) -> HSRPlanOwner | None:
 
 
 def resolve_plan(user_config: Any, script_config: Any) -> Any | None:
-    """返回该用户实际生效的任务计划对象；原生来源返回 ``None``。
+    """返回该账号实际生效的任务计划对象；原生来源返回 ``None``。
 
     两份计划组名、键名完全相同（``declare_hsr_plan_items``），调用方只需把
     返回值当作「读计划键的对象」传下去：读计划键用它，读 ``Info`` / ``Data`` /
@@ -203,9 +203,9 @@ def resolve_user_control(
     原生来源跑哪些引擎由 ``Control.{engine}`` 决定，一个都没勾时回落到已配置脚本
     路径的引擎（否则会「原生来源但什么都不跑」）。
 
-    ``Info.IfQuickConfig``：HSR **明确声明不支持快速配置**——SRA/M7A 的原生
+    ``Info.IfQuickConfig``：HSR **明确声明不支持覆写常规配置**——SRA/M7A 的原生
     配置由脚本 GUI 维护，MAS 侧托管字段（每日关卡等）的写入深度耦合托管
-    运行器（临时配置覆盖而非直接写原生文件），不存在可独立下发的快速配置
+    运行器（临时配置覆盖而非直接写原生文件），不存在可独立下发的覆写常规配置
     子集，故开关不产生任何行为差异；前端不渲染该开关（死开关）。
     """
 
@@ -217,7 +217,7 @@ def resolve_user_control(
         if bool(_config_value(user_config, "Control", engine, False))
     )  # type: ignore[assignment]
     if direct and not engines and script_config is not None:
-        # 原生来源但未勾选引擎：回落到「配了脚本路径」的引擎，与脚本管理页展示的
+        # 原生来源但未勾选引擎：回落到「配了脚本路径」的引擎，与托管管理页展示的
         # effective_engines 同源，避免用户选了原生来源却什么都不跑。
         engines = resolve_configured_engines(script_config)
         from .account_switch import is_cloud_platform
@@ -236,7 +236,7 @@ def resolve_user_control(
 
 @dataclass(frozen=True, slots=True)
 class HSRUserControlSettings:
-    """一个用户的托管/原生来源设置。
+    """一个账号的托管/原生来源设置。
 
     原生来源把整份原生配置交给 ``SRA-cli run`` / ``M7A main`` 一次跑完，日常与
     周常没有边界，所以单个引擎的运行上限取脚本「日常 + 周常」两项超时之和，而
@@ -363,7 +363,7 @@ class M7ADirectControlSession:
     def __init__(self, root: Path, log, script_config: Any = None) -> None:
         self._root = root
         self._log = log
-        # 原生来源不写用户配置：云平台只靠环境变量钉（优先于 config.yaml）；客户端
+        # 原生来源不写账号配置：云平台只靠环境变量钉（优先于 config.yaml）；客户端
         # 平台不钉云开关，按三月七自己的配置跑（见 configure_m7a_runner）。
         self._script_config = script_config
         self._runner: M7ARunner | None = None

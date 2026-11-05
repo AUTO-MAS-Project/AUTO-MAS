@@ -109,7 +109,7 @@ class QueueItem(DomainEntry):
                 allow_values=("-",),
                 display_field="Info.Name",
             ),
-        ] = Field(default_factory=lambda: "-", description="脚本 ID")
+        ] = Field(default_factory=lambda: "-", description="托管 ID")
 
     Info: InfoFields = Field(default_factory=InfoFields)
 

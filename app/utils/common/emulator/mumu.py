@@ -15,6 +15,7 @@
 #   Contact: DLmaster_361@163.com
 import asyncio
 import json
+import re
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -30,6 +31,7 @@ from app.models.emulator import (
 )
 from app.utils import IS_WINDOWS, ProcessRunner, get_logger
 from app.utils import emulator as _utils_emulator
+from app.utils import integrity as platform_integrity
 from app.utils import window as platform_window
 
 logger = get_logger("MuMu模拟器管理")
@@ -47,6 +49,52 @@ MUMU_FORCE_KILL_WAIT_SECONDS = 10
 MUMU_CLOSE_SETTLE_SECONDS = 2
 MUMU_STORE_PACKAGE = "com.mumu.store"
 MUMU_STORE_OVERLAY_APP_OP = "SYSTEM_ALERT_WINDOW"
+# MuMu 6.8.8 主进程连不上时 control launch 的返回码
+MUMU_MAINNX_ERRCODE = -503
+# 见到 -503 且安装目录带低完整性标签时附在异常里的修复办法。标签来自旧版安装器，
+# 6.8.8 只在原目录上升级就会继承，光看 -503 无法自证，所以提示要带上判断依据和命令。
+MUMU_LOW_INTEGRITY_HINT = (
+    "。检测到 MuMu 安装目录带有低完整性标签（{root}），"
+    "MuMuNxMain.exe 会以低完整性级别启动并立即退出，因此返回 {errcode}。"
+    "请先彻底退出 MuMu，再用管理员权限执行下面这条命令后重试：\n"
+    'icacls "{root}" /setintegritylevel "(OI)(CI)M"'
+)
+
+# #1506 的正常前台查询约 0.2–0.35 秒，5 秒留出十倍以上余量，避免复用开机级等待。
+MUMU_FOREGROUND_QUERY_TIMEOUT = 5.0
+# 原有两轮各 6 次、间隔 1 秒；正常查询两轮约 13 秒。30 秒给补启动和偶发慢查询
+# 留余量，同时限制持续挂起的总等待；不包含应用状态查询、首次启动和开机等待。
+MUMU_FOREGROUND_BUDGET = 30.0
+
+
+def _errcode(stdout: str) -> int | None:
+    """从 MuMuManager 的输出里取 errcode；输出被日志挤花或者没有该字段时返回 None。"""
+
+    match = re.search(r'"errcode"\s*:\s*(-?\d+)', stdout or "")
+    return int(match.group(1)) if match else None
+
+
+def _low_integrity_hint(emulator_path: Path, stdout: str) -> str:
+    """-503 且安装目录带 Low 完整性标签时返回修复提示，其余情况返回空串。
+
+    计划任务把后端提到 High 后，control launch 拉起的子进程完整性级别取父令牌与
+    映像文件中的较低者；安装目录被老安装器标成 Low 时 min(High, Low) 落到 Low，
+    主进程会立即终止，MuMuManager 重试满 25 轮后报 -503。检测失败一律不提示，
+    免得把无关错误也归到标签上。
+    """
+
+    if not IS_WINDOWS or _errcode(stdout) != MUMU_MAINNX_ERRCODE:
+        return ""
+    try:
+        level = platform_integrity.mandatory_label_rid(emulator_path)
+    except Exception:  # 诊断自身出错时保持沉默，不能盖住原始错误
+        return ""
+    if level != platform_integrity.INTEGRITY_LOW:
+        return ""
+    # MuMuManager.exe 在 nx_main/shell 这类一层子目录里，再上一层就是安装根
+    install_root = emulator_path.parent.parent
+    target = install_root if install_root.is_dir() else emulator_path.parent
+    return MUMU_LOW_INTEGRITY_HINT.format(root=target, errcode=MUMU_MAINNX_ERRCODE)
 
 
 class MumuManager(DeviceBase):
@@ -141,10 +189,26 @@ class MumuManager(DeviceBase):
             for line in data.splitlines()
         )
 
-    async def _wait_app_foreground(self, idx: str, package_name: str) -> bool:
+    async def _wait_app_foreground(
+        self, idx: str, package_name: str, *, deadline: float, phase: str
+    ) -> bool:
         started_at = time.monotonic()
-        logger.info(f"开始检查 MuMu 应用前台状态: {idx} - {package_name}")
+        attempts = 0
+        logger.info(
+            f"开始检查 MuMu 应用前台状态: {idx} - {package_name} - 阶段: {phase} - "
+            f"单次上限: {MUMU_FOREGROUND_QUERY_TIMEOUT:.3f}秒 - "
+            f"剩余预算: {max(0, deadline - started_at):.3f}秒"
+        )
         for attempt in range(6):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            attempts = attempt + 1
+            timeout = min(MUMU_FOREGROUND_QUERY_TIMEOUT, remaining)
+            logger.info(
+                f"MuMu 前台查询: {idx} - 阶段: {phase} - 第 {attempts}/6 次 - "
+                f"单次预算: {timeout:.3f}秒 - 剩余预算: {remaining:.3f}秒"
+            )
             try:
                 result = await ProcessRunner.run_process(
                     self.emulator_path,
@@ -155,12 +219,28 @@ class MumuManager(DeviceBase):
                     "dumpsys",
                     "activity",
                     "activities",
-                    timeout=self.config.Info.MaxWaitTime,
+                    timeout=timeout,
+                    deadline=min(deadline, time.monotonic() + timeout),
                     if_merge_std=True,
                     breakaway=True,
+                    kill_tree_on_cancel=True,
+                )
+            except asyncio.CancelledError:
+                logger.info(
+                    f"MuMu 前台查询已取消: {idx} - 阶段: {phase} - 第 {attempts}/6 次"
+                )
+                raise
+            except TimeoutError:
+                logger.warning(
+                    f"MuMu 前台查询超时: {idx} - 阶段: {phase} - 第 {attempts}/6 次 - "
+                    f"单次预算: {timeout:.3f}秒 - "
+                    f"剩余预算: {max(0, deadline - time.monotonic()):.3f}秒"
                 )
             except Exception as e:
-                logger.debug(f"检查 MuMu 应用前台状态失败({attempt + 1}/6): {e}")
+                logger.warning(
+                    f"MuMu 前台查询失败: {idx} - 阶段: {phase} - "
+                    f"第 {attempts}/6 次 - {type(e).__name__}"
+                )
             else:
                 if result.returncode == 0 and self._is_app_foreground(
                     result.stdout, package_name
@@ -171,18 +251,25 @@ class MumuManager(DeviceBase):
                         f"{time.monotonic() - started_at:.3f}秒"
                     )
                     return True
-                logger.debug(
+                logger.info(
                     f"MuMu 应用未进入前台({attempt + 1}/6): "
                     f"{idx} - {package_name} - returncode={result.returncode}"
                 )
-                if result.returncode != 0:
-                    logger.debug(f"检查 MuMu 应用前台状态失败: {result.stdout.strip()}")
 
             if attempt < 5:
-                await asyncio.sleep(1)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                try:
+                    await asyncio.sleep(min(1, remaining))
+                except asyncio.CancelledError:
+                    logger.info(f"MuMu 前台重试等待已取消: {idx} - 阶段: {phase}")
+                    raise
 
         logger.warning(
-            f"MuMu 应用前台检查超时: {idx} - {package_name} - 用时: "
+            f"MuMu 应用前台检查未确认: {idx} - {package_name} - 阶段: {phase} - "
+            f"已查询 {attempts}/6 次 - 剩余预算: "
+            f"{max(0, deadline - time.monotonic()):.3f}秒 - 用时: "
             f"{time.monotonic() - started_at:.3f}秒"
         )
         return False
@@ -221,7 +308,11 @@ class MumuManager(DeviceBase):
                 logger.warning(f"MuMu 应用补启动失败: {e}")
 
         foreground_started_at = time.monotonic()
-        if await self._wait_app_foreground(idx, package_name):
+        deadline = foreground_started_at + MUMU_FOREGROUND_BUDGET
+        logger.info(f"MuMu 前台辅助检测总预算: {MUMU_FOREGROUND_BUDGET:.3f}秒")
+        if await self._wait_app_foreground(
+            idx, package_name, deadline=deadline, phase="首次检查"
+        ):
             logger.info(
                 f"MuMu 应用前台补启动结束: {idx} - {package_name} - 结果: 成功 - "
                 f"总用时: {time.monotonic() - started_at:.3f}秒"
@@ -232,34 +323,52 @@ class MumuManager(DeviceBase):
             f"{time.monotonic() - foreground_started_at:.3f}秒"
         )
 
-        logger.warning(f"MuMu 应用未进入前台，尝试使用 monkey 补启动: {package_name}")
-        try:
-            monkey_started_at = time.monotonic()
-            result = await ProcessRunner.run_process(
-                self.emulator_path,
-                "adb",
-                "-v",
-                idx,
-                "shell",
-                "monkey",
-                "-p",
-                package_name,
-                "1",
-                timeout=self.config.Info.MaxWaitTime,
-                if_merge_std=True,
-                breakaway=True,
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            logger.warning(
+                f"MuMu 应用未进入前台，尝试使用 monkey 补启动: {package_name} - "
+                f"剩余预算: {remaining:.3f}秒"
             )
-            if result.returncode != 0:
-                logger.warning(f"MuMu monkey 补启动失败: {result.stdout.strip()}")
-            else:
-                logger.info(
-                    f"MuMu monkey 补启动命令已完成: {idx} - {package_name} - "
-                    f"用时: {time.monotonic() - monkey_started_at:.3f}秒"
+            try:
+                monkey_started_at = time.monotonic()
+                result = await ProcessRunner.run_process(
+                    self.emulator_path,
+                    "adb",
+                    "-v",
+                    idx,
+                    "shell",
+                    "monkey",
+                    "-p",
+                    package_name,
+                    "1",
+                    timeout=remaining,
+                    deadline=deadline,
+                    if_merge_std=True,
+                    breakaway=True,
+                    kill_tree_on_cancel=True,
                 )
-        except Exception as e:
-            logger.warning(f"MuMu monkey 补启动失败: {e}")
+                if result.returncode != 0:
+                    logger.warning(
+                        f"MuMu monkey 补启动失败: {idx} - returncode={result.returncode}"
+                    )
+                else:
+                    logger.info(
+                        f"MuMu monkey 补启动命令已完成: {idx} - {package_name} - "
+                        f"用时: {time.monotonic() - monkey_started_at:.3f}秒"
+                    )
+            except asyncio.CancelledError:
+                logger.info(f"MuMu monkey 补启动已取消: {idx}")
+                raise
+            except TimeoutError:
+                logger.warning(f"MuMu monkey 补启动超时，前台辅助检测预算已耗尽: {idx}")
+            except Exception as e:
+                logger.warning(f"MuMu monkey 补启动失败: {idx} - {type(e).__name__}")
+        else:
+            logger.warning(f"MuMu 前台辅助检测预算已耗尽，跳过 monkey 补启动: {idx}")
 
-        if await self._wait_app_foreground(idx, package_name):
+        if await self._wait_app_foreground(
+            idx, package_name, deadline=deadline, phase="补启动后检查"
+        ):
             logger.info(
                 f"MuMu 应用前台补启动结束: {idx} - {package_name} - 结果: 成功 - "
                 f"总用时: {time.monotonic() - started_at:.3f}秒"
@@ -410,10 +519,21 @@ class MumuManager(DeviceBase):
         # 参考命令 MuMuManager.exe control -v 2 launch
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
+            # 界面入口（emulator_manager 的 except）以前只发 WS 气泡不写日志，
+            # 只靠下面这条 raise，失败原因在 app.log 里是空白的。
+            # 这里不拼 _describe_launch_failure：6.8.8 的 info 在实例离线时不产出
+            # launch_err_* / player_state，拼出来恒为空串。
+            # -503 另有环境层面的成因，能自证时把修复命令一起带到界面提示里。
+            hint = _low_integrity_hint(self.emulator_path, result.stdout)
+            logger.error(
+                f"MuMu 启动命令失败: {idx} - {package_name} - {result.failure_detail()}"
+            )
+            raise RuntimeError(f"命令执行失败: {result.failure_detail()}{hint}")
 
+        # 只说明命令返回 0，不代表实例会起来：真正的结论在下面的等待循环，
+        # 措辞不要写成「已完成」，否则日志会把静默空等读成成功。
         logger.info(
-            f"MuMu 启动命令已完成，等待实例在线: {idx} - 用时: "
+            f"MuMu 启动命令已返回，等待实例在线: {idx} - 用时: "
             f"{time.monotonic() - launch_started_at:.3f}秒"
         )
         online_started_at = time.monotonic()
@@ -458,7 +578,9 @@ class MumuManager(DeviceBase):
             logger.warning(
                 f"模拟器启动等待超时: {idx} - {package_name} - "
                 f"当前状态: {status} - 用时: "
-                f"{time.monotonic() - started_at:.3f}秒"
+                f"{time.monotonic() - started_at:.3f}秒（含启动命令本身） - "
+                f"启动命令返回 0 后已等待 "
+                f"{time.monotonic() - online_started_at:.3f}秒仍未上线"
             )
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(

@@ -37,8 +37,10 @@ def read_task_catalog(root: Path) -> list[dict[str, Any]]:
     return [
         {
             **item,
-            "configurable": get_task_app_fields(str(item["app_id"])) is not None,
-            "jump": get_task_app_jump(str(item["app_id"])),
+            "configurable": not item.get("is_plugin", False)
+            and get_task_app_fields(str(item["app_id"])) is not None,
+            "jump": bool(item.get("is_plugin"))
+            or get_task_app_jump(str(item["app_id"])),
         }
         for item in list_app_catalog(root)
     ]
@@ -55,7 +57,7 @@ class ZzzOdService:
         return self.context.root(self.context.script_config(script_id))
 
     def get_instances(self, script_id: str) -> list[dict]:
-        """列出 zzz-od 实例（供用户配置「快速导入」选择来源实例）。"""
+        """列出 zzz-od 实例（供账号配置「快速导入」选择来源实例）。"""
 
         script_config = self.context.script_config(script_id)
         root = self.context.root(script_config)
@@ -137,7 +139,7 @@ class ZzzOdService:
     def set_instance_run_mode(self, script_id: str, instance_run: str) -> None:
         """直控：设置运行实例（one_dragon.yml 全局 instance_run，白名单校验）。
 
-        运行实例是脚本级全局设置，与直控页当前编辑哪个实例无关。
+        运行实例是托管级全局设置，与直控页当前编辑哪个实例无关。
         """
 
         script_config = self.context.script_config(script_id)
@@ -188,7 +190,7 @@ class ZzzOdService:
         """实例槽总览：原生实例 / MAS 绑定槽 / 无主残留（含未落盘的绑定）。
 
         槽目录是 MAS 分配在一条龙安装目录里的，注册表里没有它、GUI 看不见，
-        「槽目录数为什么和用户数对不上」只能靠这份对照表看清：``kind`` 与
+        「槽目录数为什么和账号数对不上」只能靠这份对照表看清：``kind`` 与
         ``has_dir`` 一起看——绑定但没跑过的用户是「mas 且无目录」。
 
         Raises:
@@ -212,11 +214,11 @@ class ZzzOdService:
         被任一 ZzzOd 用户绑定的槽不动），但范围更宽、且失败会抛出：手动清理
         不受「只收归属用户已不存在的号」的台账限制（来路不明的残留正是用户要清的
         对象），注册表缺失/损坏也直接报错，界面才能说明「为什么没清」。
-        原生来源用户显式发起即可，不受「原生来源零写入」约束——那条约束管的是 MAS
+        原生来源账号显式发起即可，不受「原生来源零写入」约束——那条约束管的是 MAS
         在运行期间自行写安装目录。
 
         Raises:
-            RuntimeError: 有同安装的 ZzzOd 脚本正在运行（在跑用户的绑定号
+            RuntimeError: 有同安装的 ZzzOd 托管正在运行（正在运行的账号的绑定号
                 可能未持久化，清理会误收其槽）。
             ValueError: 一条龙注册表不存在或不可读（无从判定无主槽）。
         """
@@ -252,7 +254,7 @@ class ZzzOdService:
         mas 配置恢复池在别的子树，不受影响。
 
         Raises:
-            RuntimeError: 有同安装的 ZzzOd 脚本正在运行——运行路径会向回收池
+            RuntimeError: 有同安装的 ZzzOd 托管正在运行——运行路径会向回收池
                 归档存底（注入前回收、撞号存底），并发清空会互相踩。
         """
 
@@ -467,7 +469,7 @@ class ZzzOdService:
             )
         else:
             logger.info(
-                f"ZZZ-OD 用户 {user_id} 任务 {app_id} 配置已保存到槽 {slot:02d}: {values}"
+                f"ZZZ-OD 账号 {user_id} 任务 {app_id} 配置已保存到槽 {slot:02d}: {values}"
             )
         return config
 

@@ -12,8 +12,9 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
+import asyncio
 import uuid
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from datetime import datetime
 from pathlib import Path
 from time import time_ns
@@ -29,7 +30,7 @@ from app.models.emulator import DeviceProvider
 from app.models.notification.report import TaskResultReport, UserReportText
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
-from app.services import capture_adb, capture_win32
+from app.services import capture_adb, capture_win32, script_install
 from app.services import endfield_launcher as _service_endfield_launcher
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
@@ -44,10 +45,12 @@ from app.utils import (
     log_box,
 )
 from app.utils import io as _utils_io
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_base
+from .tools import script_update
 from .tools.backup_archive import archive_native_backup
 from .tools.update import ensure_game_updated
 from .Update import EndfieldUpdateTask
@@ -66,10 +69,10 @@ class MaaEndManager(ScriptManagerBase):
     maintenance_message = "终末地正在维护"
 
     def maintenance_game(self, user_config: UserConfigType) -> str | None:
-        if (
-            isinstance(user_config, MaaEndUserConfig)
-            and user_config.Info.Resource == "官服"
-        ):
+        if isinstance(user_config, MaaEndUserConfig) and user_config.Info.Resource in {
+            "官服",
+            "CN",
+        }:
             return "endfield"
         return None
 
@@ -97,16 +100,18 @@ class MaaEndManager(ScriptManagerBase):
         self._device_provider = device_provider
         self.error_image_start_ns: int | None = None
         self.error_screenshot_paths: list[Path] = []
+        self._install_access = ExitStack()
+        self._program_update_prepared = False
 
     async def check(self) -> str:
-        # Update 是「检查更新」按钮的一次性任务，不进 METHOD_BOOK——那张表按用户循环。
+        # Update 是「检查更新」按钮的一次性任务，不进 METHOD_BOOK——那张表按账号循环。
         if self.execution_mode not in (*METHOD_BOOK, "Update"):
             return "不支持的任务模式, 请检查任务配置！"
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
 
         if not isinstance(script_config, MaaEndConfig):
-            return "脚本配置类型错误, 不是 MaaEnd 脚本类型"
+            return "托管配置类型错误, 不是 MaaEnd 托管类型"
 
         root_path = script_config.Info.Path
         if root_path is None or not (root_path / "MaaEnd.exe").exists():
@@ -120,7 +125,7 @@ class MaaEndManager(ScriptManagerBase):
 
         controller_name = str(script_config.Game.ControllerType or "").strip()
         if not controller_name:
-            return "未选择 MaaEnd 控制器，请在脚本编辑页选择控制器！"
+            return "未选择 MaaEnd 控制器，请在托管编辑页选择控制器！"
 
         try:
             self.controller_protocol = load_maaend_controller_protocol(
@@ -133,21 +138,21 @@ class MaaEndManager(ScriptManagerBase):
             # 只更新 PC 客户端：不读 mxu-MaaEnd.json，也不起模拟器。
             if self.controller_protocol != "Win32":
                 return (
-                    "终末地客户端更新仅支持 PC 控制器, 请检查脚本配置中的控制器设置！"
+                    "终末地客户端更新仅支持 PC 控制器, 请检查托管配置中的控制器设置！"
                 )
             if not Path(str(script_config.Game.Path or "").strip()).is_file():
-                return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
+                return "未完成游戏配置, 请检查托管配置中的游戏设置！"
             return "Pass"
 
         if self.controller_protocol == "Adb" and (
             script_config.Game.EmulatorId == "-"
             or script_config.Game.EmulatorIndex in ["", "-"]
         ):
-            return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
+            return "未完成模拟器配置, 请检查托管配置中的模拟器设置！"
         elif self.controller_protocol == "Win32" and (
             not script_config.Game.Path or not script_config.Game.Path.exists()
         ):
-            return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
+            return "未完成游戏配置, 请检查托管配置中的游戏设置！"
         if self.controller_protocol == "Win32" and self.execution_mode == "AutoProxy":
             loader = MaaEndResourceLoader.get_loaded(Path(script_config.Info.Path))
             launch_mode = loader.resolve_launch_mode(
@@ -193,12 +198,10 @@ class MaaEndManager(ScriptManagerBase):
 
     async def prepare(self):
 
-        # 锁定脚本配置并加载用户配置
-        self.config_locks[
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].uid
-        ] = await self.lock_script_config(
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-        )
+        # 更新准备可能已经持锁；同一 manager 不能再次等待自己的 X 锁。
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if config.uid not in self.config_locks:
+            self.config_locks[config.uid] = await self.lock_script_config(config)
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
 
         if self.execution_mode == "Update":
@@ -211,7 +214,7 @@ class MaaEndManager(ScriptManagerBase):
             return
 
         if not isinstance(self.script_config, MaaEndConfig):
-            raise TypeError("脚本配置类型错误")
+            raise TypeError("托管配置类型错误")
 
         self.user_config = self.script_config.UserData
         logger.success(f"{self.script_info.script_id}已锁定, MAAEnd配置提取完成")
@@ -221,6 +224,11 @@ class MaaEndManager(ScriptManagerBase):
             raise ValueError("Path未配置，请检查路径设置")
         self.maaend_config_dir = root_path / "config"
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+
+        # 先处置上次崩溃残留的快照, 再备份原始配置。无条件清空会把崩溃后唯一
+        # 一份原始配置副本删掉, 让注入污染的状态固化成「原始配置」。
+        self._recover_previous_run()
+        await self._prepare_program_update(root_path)
 
         # 初始化模拟器管理器
         if self.controller_protocol == "Adb":
@@ -233,9 +241,6 @@ class MaaEndManager(ScriptManagerBase):
         else:
             self.emulator_manager = None
 
-        # 先处置上次崩溃残留的快照, 再备份原始配置。无条件清空会把崩溃后唯一
-        # 一份原始配置副本删掉, 让注入污染的状态固化成「原始配置」。
-        self._recover_previous_run()
         if _utils_io.commit_native_config_snapshot(
             self.temp_path,
             self.maaend_config_dir,
@@ -244,13 +249,13 @@ class MaaEndManager(ScriptManagerBase):
             self.had_original_script_config = True
 
         # 任务级一次性归档 MaaEnd 原生配置（项目级池，指纹去重，失败不阻断
-        # 任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」的安装
+        # 任务）：原生配置物理上跨账号共享，只代表「本轮任务动手前」的安装
         # 现场，必须在任何下发前归档这一次
         if self.maaend_config_dir.exists():
             with suppress(Exception):
                 archive_native_backup(self.maaend_config_dir)
 
-        # 构建用户列表
+        # 构建账号列表
         if self.execution_mode == "ScriptConfig":
             target_user_id = self.task_info.user_id or "Default"
             await self.script_info.set_users(
@@ -265,8 +270,58 @@ class MaaEndManager(ScriptManagerBase):
                 self.build_proxy_user_list(self.user_config.items())
             )
         logger.info(
-            f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
+            f"账号列表加载完成, 已筛选账号数: {len(self.script_info.user_list)}"
         )
+
+    async def _prepare_program_update(self, root: Path) -> None:
+        if self._program_update_prepared:
+            return
+        if (
+            self.execution_mode != "AutoProxy"
+            or not self.script_config.Update.TakeoverEnabled
+        ):
+            return
+        await push_dispatch_log(self.script_info, "正在检查 MaaEnd 程序更新…")
+
+        async def progress(downloaded: int, total: int, speed: float) -> None:
+            await self.script_info.set_log(
+                f"MaaEnd 更新下载：{downloaded / 1024**2:.1f} / {total / 1024**2:.1f} MB"
+            )
+
+        try:
+            result = await script_update.update_before_run(
+                root, self.script_config, progress=progress
+            )
+        except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
+            raise
+        except Exception as error:
+            await script_update.confirm_current_install(root)
+            result = f"MaaEnd 更新准备未完成，沿用当前安装继续任务：{error}"
+            logger.warning(result)
+            await self.script_info.set_log(result)
+            with suppress(Exception):
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="warning", message=result),
+                )
+        else:
+            await push_dispatch_log(self.script_info, result)
+        await asyncio.to_thread(
+            MaaEndResourceLoader.get_cached, root, force_reload=True
+        )
+        self.controller_protocol = load_maaend_controller_protocol(
+            root, str(self.script_config.Game.ControllerType)
+        )
+        removed = await script_install.run_worker(
+            script_update.discard_obsolete_mxu_packages, root
+        )
+        if removed:
+            await push_dispatch_log(
+                self.script_info,
+                f"已移除 {len(removed)} 个过期 MXU 更新包；MXU 启动时将清除对应的待安装记录",
+            )
+        self._program_update_prepared = True
 
     async def _restore_script_config_from_temp(self) -> None:
         """恢复任务开始前的 MaaEnd working 配置。"""
@@ -325,7 +380,7 @@ class MaaEndManager(ScriptManagerBase):
     async def _ensure_game_client_updated(self) -> str | None:
         """任务启动前接管终末地 PC 客户端更新。
 
-        更新对象是脚本级的 `Game.Path`，多用户与重试轮次都只该检查一次，所以要赶在本轮
+        更新对象是托管级的 `Game.Path`，多账号与重试轮次都只该检查一次，所以要赶在本轮
         游戏被拉起来之前做完——那时才不存在覆盖正被占用文件的竞争。
 
         跨脚本互斥不在这里做：`add_task` 按脚本粒度挡重复派发，多账号是同一脚本内的
@@ -391,7 +446,32 @@ class MaaEndManager(ScriptManagerBase):
         return None
 
     async def main_task(self):
-
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if isinstance(config, MaaEndConfig):
+            # 路径读取与安装锁归属必须在同一份已锁配置上，避免等待恢复时 UI 改换目录。
+            self.config_locks[config.uid] = await self.lock_script_config(config)
+            self.script_config = config
+        if isinstance(config, MaaEndConfig) and config.Info.Path is not None:
+            root = config.Info.Path
+            self._install_access.enter_context(script_install.installation_access(root))
+            if (script_install.workspace(root) / "runtime-interface.json").exists():
+                await asyncio.to_thread(script_update.assert_idle, root)
+                script_update.recover_runtime_interface(root)
+            await script_install.run_worker(
+                script_install.recover_install,
+                root,
+                lambda: script_update.assert_idle(root),
+            )
+            if self.execution_mode == "AutoProxy" and config.Update.TakeoverEnabled:
+                self.maaend_config_dir = root / "config"
+                self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+                self._recover_previous_run()
+                # 修复在原有资源预检之前，损坏的旧资源不能堵死恢复入口。
+                await self._prepare_program_update(root)
+            elif (script_install.workspace(root) / "installed.json").exists():
+                # 非接管模式沿用 MXU 自行更新的安装。恢复事务仍须完成，
+                # 但旧 MAS 回执不应阻断后续配置或运行，也不重算哈希冒充可信。
+                await script_update.confirm_current_install(root, verify_receipt=False)
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.warning(f"未通过配置检查: {self.check_result}")
@@ -408,7 +488,7 @@ class MaaEndManager(ScriptManagerBase):
         await self.prepare()
 
         if not isinstance(self.script_config, MaaEndConfig):
-            raise RuntimeError("脚本配置类型错误, 不是 MaaEnd 脚本类型")
+            raise RuntimeError("托管配置类型错误, 不是 MaaEnd 托管类型")
 
         if self.execution_mode == "Update":
             # current_index 必须归零：子任务从 user_list[current_index] 取结论落点，
@@ -421,7 +501,7 @@ class MaaEndManager(ScriptManagerBase):
         if failure is not None:
             # 绝不能改 self.check_result：final_task 在它不是 Pass 时早退并跳过
             # unlock()，而此刻脚本配置已被 prepare() 锁上，写它就是永久泄锁。
-            # 用户状态也不动：这些账号一个都没跑，逐个改状态会给每人排一次 OBS 回放，
+            # 账号状态也不动：这些账号一个都没跑，逐个改状态会给每人排一次 OBS 回放，
             # 还把维护窗口里的账号一并报成失败。
             self.update_gate_failure = failure
             await Publisher.send(
@@ -443,7 +523,7 @@ class MaaEndManager(ScriptManagerBase):
                 current_config = self.user_config[uuid.UUID(current_user.user_id)]
                 config_base = maaend_config_base(current_config.Info.Base)
                 logger.info(
-                    f"用户 {current_user.user_id} 配置来源: "
+                    f"账号 {current_user.user_id} 配置来源: "
                     f"{BASE_SOURCE_LABELS.get(config_base, config_base)}"
                 )
                 if config_base == BASE_NATIVE:
@@ -469,7 +549,7 @@ class MaaEndManager(ScriptManagerBase):
                 if self.execution_mode != "ScriptConfig":
                     await self._restore_script_config_from_temp()
             if isinstance(task, AutoProxyTask) and task.update_failed:
-                # 安装状态未确认时，同一目录上的后续用户也不能继续执行。
+                # 安装状态未确认时，同一目录上的后续账号也不能继续执行。
                 return
 
     async def final_task(self):
@@ -501,7 +581,7 @@ class MaaEndManager(ScriptManagerBase):
                 error_count = len(summary.failed)
 
                 title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.execution_mode]}任务报告"
-                # 按用户交错组装「用户结果行 + 该用户节点详情」：
+                # 按账号交错组装「账号结果行 + 该账号节点详情」：
                 # 开关关闭的用户未启 log_box，push_log 为空，自然只有结果行。
                 has_uncompleted = summary.uncompleted_count > 0
                 user_result_text = self._render_user_results(
@@ -561,13 +641,17 @@ class MaaEndManager(ScriptManagerBase):
             else:
                 await self.script_info.set_state(status="完成")
         finally:
-            script_config = getattr(self, "script_config", None)
-            if script_config is not None:
-                ticket = self.config_locks.pop(script_config.uid, None)
-                if ticket is not None:
-                    await script_config.unlock(ticket)
+            try:
+                script_config = getattr(self, "script_config", None)
+                if script_config is not None:
+                    ticket = self.config_locks.pop(script_config.uid, None)
+                    if ticket is not None:
+                        await script_config.unlock(ticket)
+            finally:
+                self._install_access.close()
 
     async def on_crash(self, e: Exception):
+        self.update_gate_failure = str(e)
         await self.script_info.set_state(status="异常")
         logger.opt(exception=True).warning(f"MaaEnd任务出现异常: {e}")
         with suppress(Exception):

@@ -22,7 +22,7 @@
 MAS 内置冻结副本：MAS 只写订阅清单，由 BetterGI 把脚本更新到
 ``User/JsScript/SwitchAccountMultipleMode``。切号/一条龙的「运行前先同步更新、更新完成
 再执行」特性当前已冻结停用（仅保留后台自动更新与误删恢复）。
-MAS 按当前用户配置生成一个独立的配置组 ``MAS切换账号``，供
+MAS 按当前账号配置生成一个独立的配置组 ``MAS切换账号``，供
 ``BetterGI.exe --startGroups MAS切换账号`` 单独执行。
 
 - 订阅清单: ``{RootPath}/User/Subscriptions/bettergi-scripts-list.json`` = 路径数组
@@ -35,7 +35,7 @@ MAS 按当前用户配置生成一个独立的配置组 ``MAS切换账号``，�
   ``record_switch_checkout_result``），下一轮才删除中央仓库副本
   ``{RootPath}/Repos/bettergi-scripts-list`` 强制完整重建；首次启用不会删用户已有仓库。
 
-账号密码来源：MAS 用户配置 ``Info.Id`` / ``Info.Password``（密码已加密存储），
+账号密码来源：MAS 账号配置 ``Info.Id`` / ``Info.Password``（密码已加密存储），
 下拉列表模式下由 MAS 负责把完整手机号/邮箱转换为游戏下拉列表显示的打码形式。
 """
 
@@ -316,7 +316,7 @@ def write_switch_group(
     """生成（覆盖）BetterGI 切换账号配置组 ``MAS切换账号``。
 
     ``folderName`` 固定指向脚本仓库检出目录 ``SwitchAccountMultipleMode``，与
-    ``ensure_switch_subscription`` 对齐；``jsScriptSettingsObject`` 按用户注入。
+    ``ensure_switch_subscription`` 对齐；``jsScriptSettingsObject`` 按账号注入。
     Returns:
         写入的配置组 JSON 文件路径。
     """

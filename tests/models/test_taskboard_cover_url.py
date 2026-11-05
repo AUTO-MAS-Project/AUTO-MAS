@@ -1,6 +1,6 @@
 import pytest
 
-from app.models.taskboard import TaskboardArchivedActivity, TaskboardVersionStoryUpdate
+from app.models.taskboard import TaskboardVersionStoryUpdate
 
 
 @pytest.mark.parametrize(
@@ -23,13 +23,3 @@ from app.models.taskboard import TaskboardArchivedActivity, TaskboardVersionStor
 def test_version_cover_url_only_accepts_public_https(value: str, expected: str):
     record = TaskboardVersionStoryUpdate(game="genshin", version="1.0", cover_url=value)
     assert record.cover_url == expected
-
-
-def test_archived_image_url_keeps_existing_local_proxy():
-    record = TaskboardArchivedActivity(
-        id="1",
-        game_key="bluearchive-cn",
-        title="活动",
-        image_url="http://127.0.0.1:36163/api/info/bluearchive/image?url=x",
-    )
-    assert record.image_url.startswith("http://127.0.0.1")

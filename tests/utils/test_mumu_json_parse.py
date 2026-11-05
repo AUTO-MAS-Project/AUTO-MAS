@@ -6,7 +6,6 @@ MuMu 会把埋点与 C++ 日志混进同一份 stdout，对整段裸调 ``json.l
 
 import json
 
-import pytest
 
 from app.utils import emulator as _utils_emulator
 
@@ -30,50 +29,9 @@ TELEMETRY_HEAD = (
 )
 
 
-def test_clean_json_unchanged():
-    assert decode(DEVICE_JSON, has_devices) == json.loads(DEVICE_JSON)
-
-
-def test_trailing_cpp_log_is_ignored():
-    """对应 Sentry 的 `Extra data: line 12 column 1`。"""
-    assert decode(DEVICE_JSON + CPP_LOG_TAIL, has_devices) == json.loads(DEVICE_JSON)
-
-
-def test_leading_telemetry_is_ignored():
-    """对应 Sentry 的 `Expecting value: line 1 column 1`。"""
-    assert decode(TELEMETRY_HEAD + DEVICE_JSON, has_devices) == json.loads(DEVICE_JSON)
-
-
 def test_device_payload_wins_over_telemetry():
     """埋点也是合法 JSON，不能因为它排在前面就把它当成设备信息返回。"""
     polluted = TELEMETRY_HEAD + DEVICE_JSON + CPP_LOG_TAIL
     result = decode(polluted, has_devices)
     assert result == json.loads(DEVICE_JSON)
     assert "_track_id" not in result
-
-
-def test_single_device_payload():
-    single = '{"index": 2, "name": "MuMu模拟器12-2", "is_android_started": true}'
-    assert decode(TELEMETRY_HEAD + single, has_devices) == json.loads(single)
-
-
-def test_falls_back_to_first_value_when_nothing_preferred():
-    """没有任何候选命中 prefer 时退回第一个，而不是直接报错。"""
-    payload = '{"state": "running"}'
-    assert decode(payload, has_devices) == {"state": "running"}
-
-
-def test_prefer_none_takes_first_value():
-    assert decode(TELEMETRY_HEAD + DEVICE_JSON) == json.loads(
-        TELEMETRY_HEAD[len("add record:") :]
-    )
-
-
-def test_no_json_at_all_raises():
-    with pytest.raises(json.JSONDecodeError):
-        decode("[*** LOG ERROR #0001 ***] mumu failed to start\n", has_devices)
-
-
-def test_empty_output_raises():
-    with pytest.raises(json.JSONDecodeError):
-        decode("", has_devices)

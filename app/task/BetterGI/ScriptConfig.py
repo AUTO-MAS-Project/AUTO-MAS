@@ -59,11 +59,11 @@ class ScriptConfigTask(TaskExecuteBase):
         # 与配置会话共享同一打开路径，无需额外分支
         self.view_only = view_only
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
-        # 脚本级配置（"Default"）强制使用 MAS 配置；真实用户按配置来源决定。
+        # 托管级配置（"Default"）强制使用 MAS 配置；实际账号按配置来源决定。
         self.use_mas_config = True
         if self.cur_user_item.user_id != "Default":
             current_user = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
-            # 原生来源 = 用 BGI 原生配置，MAS 不接管（与 AutoProxy 同口径；快速配置不参与）
+            # 原生来源 = 用 BGI 原生配置，MAS 不接管（与 AutoProxy 同口径；覆写常规配置不参与）
             base = read_config_base(current_user)
             self.use_mas_config = base != CONFIG_BASE_NATIVE
         self.process_manager = ProcessManager()
@@ -80,7 +80,7 @@ class ScriptConfigTask(TaskExecuteBase):
         if not self.use_mas_config:
             return
         with suppress(Exception):
-            # 按用户短 id 前缀扫描删除历史残留物化组（只命中 MAS-{短id}-自定义配置组*，不碰 BGI 本体）
+            # 按账号短 id 前缀扫描删除历史残留物化组（只命中 MAS-{短id}-自定义配置组*，不碰 BGI 本体）
             one_dragon.cleanup_leftover_mas_groups(
                 self.root_path, self.script_info.script_id, self.cur_user_item.user_id
             )

@@ -20,7 +20,7 @@
 #   Contact: DLmaster_361@163.com
 
 
-"""把用户 ``Managed.Options`` 覆盖值叠到 SRA / M7A 原生字段上。
+"""把账号 ``Managed.Options`` 覆盖值叠到 SRA / M7A 原生字段上。
 
 用户升级外部脚本或更换 profile 后，覆盖层里可能残留原生配置已不存在的键，
 或者值类型对不上。这里不再整体抛错：对不上的键逐个丢弃、用原生值兜底，

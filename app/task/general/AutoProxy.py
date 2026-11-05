@@ -147,7 +147,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             )
         ):
             await self.cur_user_item.set_state(status="跳过")
-            return "今日代理次数已达上限, 跳过该用户"
+            return "今日代理次数已达上限, 跳过该账号"
 
         if (
             self.use_mas_config
@@ -156,13 +156,13 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
             ).is_dir()
         ):
-            # MAS 侧还没为该用户存过配置（新建用户后直接跑自动代理）：不判异常、
+            # MAS 侧还没为该账号存过配置（新建账号后直接跑自动代理）：不判异常、
             # 不阻断任务，只提示。下发环节会跳过、让脚本用它自己已有的配置，与
             # ScriptConfig.set_general 同口径 —— 这里一旦 return，跳过逻辑就永远
             # 走不到，用户看到的仍是「未找到配置文件」的死结。
             logger.warning(
-                "MAS 中尚未保存该用户的通用脚本配置，本次将使用脚本自身已有配置；"
-                "如需由 MAS 下发配置，请先在用户配置页完成 「通用配置」 步骤"
+                "MAS 中尚未保存该账号的通用脚本配置，本次将使用脚本自身已有配置；"
+                "如需由 MAS 下发配置，请先在账号配置页完成 「通用配置」 步骤"
             )
         return "Pass"
 
@@ -320,23 +320,23 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                     type=protocol.TASK_NOTICE,
                     data=WSTaskNoticeData(
                         level="error",
-                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                        message=f"账号 {self.cur_user_item.name} 检查未通过: {self.check_result}",
                     ),
                 )
             return
 
         await self.prepare()
-        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
-        logger.info(f"开始代理用户: {self.cur_user_uid}")
+        logger.info(f"开始代理账号: {self.cur_user_uid}")
         await self.cur_user_item.set_state(status="运行")
 
         for i in range(self.script_config.Run.RunTimesLimit):
             if self.run_book:
                 break
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
+                f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
             )
             self.log_start_time = datetime.now().astimezone()
             self.log_start_at = time.monotonic()
@@ -503,7 +503,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
 
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
-                logger.info(f"用户: {self.cur_user_uid} - 通用脚本进程完成代理任务")
+                logger.info(f"账号: {self.cur_user_uid} - 通用脚本进程完成代理任务")
                 await self.script_info.set_log(
                     "检测到通用脚本进程完成代理任务\n正在等待相关程序结束"
                 )
@@ -512,13 +512,13 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
 
                 await asyncio.sleep(10)
 
-                # 更新脚本配置文件
+                # 回写 MAS 配置副本
                 if self.script_config.Script.UpdateConfigMode in ("Success", "Always"):
                     await self.update_config()
 
             else:
                 logger.warning(
-                    f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
+                    f"账号: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
                 await self.script_info.set_log(
                     f"{self.cur_user_log.status}\n正在中止相关程序"
@@ -528,15 +528,15 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
 
                 await Notify.send_notice(
                     LocalNotice(
-                        title="用户自动代理出现异常！",
-                        message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        title="账号自动代理出现异常！",
+                        message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
                         ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                         duration_seconds=3,
                     )
                 )
 
                 await asyncio.sleep(10)
-                # 更新脚本配置文件
+                # 回写 MAS 配置副本
                 if self.script_config.Script.UpdateConfigMode in ("Failure", "Always"):
                     await self.update_config()
 
@@ -547,7 +547,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
     ):
 
         if e is None:
-            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
+            logger.warning(f"账号: {self.cur_user_uid} - {error_message}")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -555,7 +555,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             )
         else:
             logger.opt(exception=True).warning(
-                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+                f"账号: {self.cur_user_uid} - {error_message}: {e}"
             )
             await Publisher.send(
                 id=self.task_info.task_id,
@@ -569,8 +569,8 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
 
         await Notify.send_notice(
             LocalNotice(
-                title="用户自动代理出现异常！",
-                message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                title="账号自动代理出现异常！",
+                message=f"账号 {self.cur_user_item.name} 自动代理时{error_message}",
                 ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                 duration_seconds=3,
             )
@@ -579,7 +579,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
     async def update_config(self):
 
         if not self.use_mas_config:
-            logger.info("脚本原生配置：跳过回写用户独立配置")
+            logger.info("脚本原生配置：跳过回写独立配置")
             return
 
         config_path_mode = self.script_config.Script.ConfigPathMode
@@ -659,8 +659,8 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             logger.info("脚本原生来源配置：跳过写入脚本配置")
             return
 
-        # 下发前归档 MAS 配置到用户池（下发源，运行回写 update_config 会覆盖
-        # 它；指纹去重，失败不阻断运行）。General 的 ConfigFile 恒按用户
+        # 下发前归档 MAS 配置到账号池（下发源，运行回写 update_config 会覆盖
+        # 它；指纹去重，失败不阻断运行）。General 的 ConfigFile 恒按账号
         from .tools.backup_archive import archive_mas_runtime_backup
 
         archive_mas_runtime_backup(
@@ -676,13 +676,13 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         )
         config_path_mode = self.script_config.Script.ConfigPathMode
 
-        # 导入配置文件。MAS 侧还没为这个用户存过配置时（新建用户后直接跑自动代理）
+        # 导入配置文件。MAS 侧还没为这个账号存过配置时（新建账号后直接跑自动代理）
         # 跳过下发、让脚本用它自己的配置 —— 与 ScriptConfig.set_general 同口径，
         # 否则 swap_in_dir / copy 会直接抛异常，把任务判成失败。源与目标都按
         # ConfigPathMode 校验类型：源不存在或类型不符即跳过，不阻断任务。
         if config_path_mode == "Folder":
             if not mas_config_dir.is_dir():
-                logger.warning("MAS 中尚无该用户的配置, 跳过配置下发")
+                logger.warning("MAS 中尚无该账号的配置, 跳过配置下发")
                 return
             if (
                 self.script_config_path.exists()
@@ -705,7 +705,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         elif config_path_mode == "File":
             mas_config_file = mas_config_dir / self.script_config_path.name
             if not mas_config_file.is_file():
-                logger.warning("MAS 中尚无该用户的配置文件, 跳过配置下发")
+                logger.warning("MAS 中尚无该账号的配置文件, 跳过配置下发")
                 return
             if self.script_config_path.is_dir():
                 logger.warning(
@@ -872,9 +872,9 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             )
             await self.cur_user_config.commit()
             await self.cur_user_item.set_state(status="完成")
-            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
+            logger.success(f"账号 {self.cur_user_uid} 的自动代理任务已完成")
         else:
-            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            logger.warning(f"账号 {self.cur_user_uid} 的自动代理任务未完成")
             await self.cur_user_item.set_state(status="异常")
 
         await self.run_user_scripts_after()
@@ -929,7 +929,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                     )
                 )
 
-        # 将本次采集的推送日志回写到用户项，供调度器聚合到推送报告
+        # 将本次采集的推送日志回写到账号项，供调度器聚合到推送报告
         self.user_state(self.cur_user_item).push_log = list(self.push_log_buffer)
 
         if history_records:
@@ -944,7 +944,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             await Notify.send_notice(
                 LocalNotice(
                     title="成功完成一个自动代理任务！",
-                    message=f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
+                    message=f"已完成账号 {self.cur_user_item.name} 的自动代理任务",
                     ticker=f"已完成 {self.cur_user_item.name} 的自动代理任务",
                     duration_seconds=3,
                 )

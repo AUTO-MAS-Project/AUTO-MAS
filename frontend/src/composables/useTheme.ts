@@ -57,6 +57,9 @@ let appearanceLoadRevision = 0
 let customBackgroundRevision = 0
 let customSurfaceRevision = 0
 let themeChangeQueue: Promise<void> = Promise.resolve()
+let themeTransitionTimer: ReturnType<typeof setTimeout> | undefined
+const THEME_TRANSITION_DURATION_MS = 220
+const LINK_CONTRAST_STEPS = 1000
 
 // 连续操作按顺序完成状态变更和持久化，失败回退后再处理下一项设置。
 const queueThemeChange = (change: () => Promise<void>): Promise<void> => {
@@ -110,6 +113,14 @@ const updateTheme = () => {
     shouldBeDark = themeMode.value === 'dark'
   }
 
+  // 首次挂载前只恢复主题；后续明暗切换才启用颜色过渡。
+  if (resolvedAntTokens.value && isDark.value !== shouldBeDark) {
+    clearTimeout(themeTransitionTimer)
+    document.documentElement.classList.add('theme-transition')
+    themeTransitionTimer = setTimeout(() => {
+      document.documentElement.classList.remove('theme-transition')
+    }, THEME_TRANSITION_DURATION_MS + 80)
+  }
   isDark.value = shouldBeDark
 
   // 更新HTML类名
@@ -232,6 +243,7 @@ const updateCSSVariables = () => {
   root.style.setProperty('--ant-color-primary-bg', antTokens.colorPrimaryBg)
   root.style.setProperty('--ant-color-primary-bg-hover', antTokens.colorPrimaryBgHover)
   root.style.setProperty('--ant-color-primary-border', antTokens.colorPrimaryBorder)
+  root.style.setProperty('--ant-color-link', antTokens.colorLink)
 
   root.style.setProperty('--ant-color-text', antTokens.colorText)
   root.style.setProperty('--ant-color-text-secondary', antTokens.colorTextSecondary)
@@ -447,7 +459,6 @@ const hslAdjust = (hex: string, dl: number) => {
 }
 
 const hslLighten = (hex: string, percent: number) => hslAdjust(hex, percent / 100)
-const hslDarken = (hex: string, percent: number) => hslAdjust(hex, -percent / 100)
 
 // 对比度 (WCAG)
 const contrastRatio = (hex1: string, hex2: string) => {
@@ -482,15 +493,16 @@ const pickAccessibleColor = (c1: string, c2: string, bg: string, minRatio = 4.5)
   return r1 >= r2 ? c1 : c2
 }
 
-// 改进侧栏背景：如果深色模式，降低亮度并略增饱和；浅色模式提高亮度轻度染色
+// 侧栏背景：深色模式贴住近黑（#080808 量级）只留极轻主色染色，浅色模式提高亮度轻度染色。
+// 深色下不再按 0.22 混主色，否则整条侧栏会被主色染成蓝色，与页面纯黑底割裂。
 const deriveSiderBg = (primary: string, base: string, dark: boolean) => {
-  const mixRatio = dark ? 0.22 : 0.18
-  const mixed = blendColors(base, primary, mixRatio)
-  return dark ? hslDarken(mixed, 8) : hslLighten(mixed, 6)
+  if (dark) return blendColors('#080808', primary, 0.02)
+  return hslLighten(blendColors(base, primary, 0.18), 6)
 }
 
 const deriveSiderBorder = (siderBg: string, primary: string, dark: boolean) => {
-  return dark ? blendColors(siderBg, primary, 0.3) : blendColors('#d9d9d9', primary, 0.25)
+  // 深色下用极淡白色描边（≈#161616），跟随主色会变成一条蓝色分界线
+  return dark ? blendColors(siderBg, '#ffffff', 0.055) : blendColors('#d9d9d9', primary, 0.25)
 }
 
 // 监听系统主题变化
@@ -506,36 +518,85 @@ watch(themeColor, updateTheme)
 
 // Ant Design 主题配置
 function getThemeConfig() {
+  const algorithm = isDark.value ? theme.darkAlgorithm : theme.defaultAlgorithm
+  const primaryColor = activeAppearance.value?.tokens.colorPrimary ?? themeColors[themeColor.value]
+  const token = {
+    colorPrimary: primaryColor,
+    // 中性灰白降低大面积表面的亮度；外观包仍可覆盖自己的背景。
+    ...(!isDark.value
+      ? { colorBgLayout: '#e9e9e9', colorBgContainer: '#f2f2f2', colorBgElevated: '#f7f7f7' }
+      : {}),
+    ...(activeAppearance.value?.tokens.colorBgLayout
+      ? { colorBgLayout: activeAppearance.value.tokens.colorBgLayout }
+      : {}),
+    ...(activeAppearance.value?.tokens.colorBgContainer
+      ? { colorBgContainer: activeAppearance.value.tokens.colorBgContainer }
+      : {}),
+    ...(activeAppearance.value?.tokens.colorBgElevated
+      ? { colorBgElevated: activeAppearance.value.tokens.colorBgElevated }
+      : {}),
+    ...(activeAppearance.value?.tokens.colorText
+      ? { colorText: activeAppearance.value.tokens.colorText }
+      : {}),
+    ...(activeAppearance.value?.tokens.colorTextSecondary
+      ? { colorTextSecondary: activeAppearance.value.tokens.colorTextSecondary }
+      : {}),
+    ...(activeAppearance.value?.tokens.colorBorder
+      ? { colorBorder: activeAppearance.value.tokens.colorBorder }
+      : {}),
+    ...(activeAppearance.value?.tokens.colorBorderSecondary
+      ? { colorBorderSecondary: activeAppearance.value.tokens.colorBorderSecondary }
+      : {}),
+    ...(activeAppearance.value?.tokens.borderRadius !== undefined
+      ? { borderRadius: activeAppearance.value.tokens.borderRadius }
+      : {}),
+  }
+  const colorTokens = algorithm({ ...theme.defaultSeed, ...token })
+  const linkBackground = token.colorBgContainer ?? colorTokens.colorBgContainer
+  const linkBackgrounds = [
+    token.colorBgLayout ?? colorTokens.colorBgLayout,
+    linkBackground,
+    token.colorBgElevated ?? colorTokens.colorBgElevated,
+  ]
+  const linkDirection =
+    contrastRatio('#ffffff', linkBackground) > contrastRatio('#000000', linkBackground) ? 1 : -1
+  const minimumLinkContrast = (color: string) =>
+    Math.min(...linkBackgrounds.map(background => contrastRatio(color, background)))
+  // 三种链接状态分别微调亮度，保持主题色相并兼顾页面、卡片与浮层表面。
+  const [linkColor, linkHover, linkActive] = [
+    primaryColor,
+    colorTokens.colorPrimaryHover,
+    colorTokens.colorPrimaryActive,
+  ].map(initialColor => {
+    let color = initialColor
+    let bestContrast = minimumLinkContrast(color)
+    // 双向细步进寻找窄可行区；未找到共同解时保留最佳候选，避免退化。
+    for (let step = 1; bestContrast < 4.5 && step <= LINK_CONTRAST_STEPS; step++) {
+      for (const direction of [linkDirection, -linkDirection]) {
+        const candidate = hslAdjust(initialColor, (step / LINK_CONTRAST_STEPS) * direction)
+        const candidateContrast = minimumLinkContrast(candidate)
+        if (candidateContrast > bestContrast) {
+          color = candidate
+          bestContrast = candidateContrast
+        }
+      }
+    }
+    return color
+  })
   return {
-    algorithm: isDark.value ? theme.darkAlgorithm : theme.defaultAlgorithm,
+    algorithm,
     token: {
-      colorPrimary: activeAppearance.value?.tokens.colorPrimary ?? themeColors[themeColor.value],
-      ...(activeAppearance.value?.tokens.colorBgLayout
-        ? { colorBgLayout: activeAppearance.value.tokens.colorBgLayout }
-        : {}),
-      ...(activeAppearance.value?.tokens.colorBgContainer
-        ? { colorBgContainer: activeAppearance.value.tokens.colorBgContainer }
-        : {}),
-      ...(activeAppearance.value?.tokens.colorBgElevated
-        ? { colorBgElevated: activeAppearance.value.tokens.colorBgElevated }
-        : {}),
-      ...(activeAppearance.value?.tokens.colorText
-        ? { colorText: activeAppearance.value.tokens.colorText }
-        : {}),
-      ...(activeAppearance.value?.tokens.colorTextSecondary
-        ? { colorTextSecondary: activeAppearance.value.tokens.colorTextSecondary }
-        : {}),
-      ...(activeAppearance.value?.tokens.colorBorder
-        ? { colorBorder: activeAppearance.value.tokens.colorBorder }
-        : {}),
-      ...(activeAppearance.value?.tokens.colorBorderSecondary
-        ? { colorBorderSecondary: activeAppearance.value.tokens.colorBorderSecondary }
-        : {}),
-      ...(activeAppearance.value?.tokens.borderRadius !== undefined
-        ? { borderRadius: activeAppearance.value.tokens.borderRadius }
-        : {}),
+      ...token,
+      colorLink: linkColor,
+      colorLinkHover: linkHover,
+      colorLinkActive: linkActive,
     },
     components: {
+      Segmented: {
+        // 视图选中是低强调状态，与主操作按钮保持层级。
+        colorBgElevated: colorTokens.colorPrimaryBg,
+        boxShadow: 'none',
+      },
       InputNumber: {
         // 步进按钮（▲▼）常驻显示：antd 默认悬停才出现，快速连续调整不直观
         handleVisible: true as const,

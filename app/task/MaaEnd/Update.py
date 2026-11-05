@@ -45,7 +45,7 @@ class EndfieldUpdateTask(TaskExecuteBase):
     """手动触发的一次客户端更新，不持有需要跨轮保留的资源。
 
     Args:
-        script_info: 已绑定 `task_info` 的脚本项；结论写进它的调度台日志。
+        script_info: 已绑定 `task_info` 的托管项；结论写进它的调度台日志。
         script_config: 该脚本的 MaaEnd 配置，只用 `Game.Path` 与
             `Game.UpdateTimeLimit`。
     """

@@ -252,7 +252,7 @@ _WORKER_STREAM_LINE_LIMIT = 16 * 1024 * 1024
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
 # Game.WaitTime 填 0 时等游戏窗口出现的上限（秒）
 _WINDOW_READY_FALLBACK_SECONDS = 60
-# 脚本页没有填窗口句柄的入口，提示不能让用户去找一个不存在的设置。
+# 托管页没有填窗口句柄的入口，提示不能让用户去找一个不存在的设置。
 _WIN32_NO_WINDOW_RULES_MESSAGE = (
     "该项目的这个 Win32 控制器没有声明窗口匹配规则（interface 里的 class_regex / "
     "window_regex），MAS 无法确定要控制哪个窗口，为避免控制错窗口不运行；请换用项目的"
@@ -285,7 +285,7 @@ _RERUN_AFTER_CLEANUP = (
     "清理残留后的重新运行",
 )
 _RERUN_AFTER_SWITCH = (
-    "已换上同项目其他脚本在用的版本，立即重新运行（不计入尝试次数）",
+    "已换上同项目其他托管在用的版本，立即重新运行（不计入尝试次数）",
     "换版本后的重新运行",
 )
 # 用户点停止后，等核对 / 清理线程收尾的上限：到点就不等了，预约交给它完成后再放。
@@ -398,7 +398,7 @@ class _MaaFWRunTimeoutError(RuntimeError):
 
 
 class _MaaFWGameUpdateRequired(RuntimeError):
-    """特调的游戏更新钩子判定客户端要手动更新：本用户本次判失败，不重试。"""
+    """特调的游戏更新钩子判定客户端要手动更新：本账号本次判失败，不重试。"""
 
 
 class _FrameworkLogWriter:
@@ -522,10 +522,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.base_run_plan: MaaFWRunPlan | None = None
         self.run_plan: MaaFWRunPlan | None = None
         self.cur_user_log: LogRecord | None = None
-        # 运行前检查时本用户的日志还没建（特调钩子建计划时的提示就在这时候到），
+        # 运行前检查时本账号的日志还没建（特调钩子建计划时的提示就在这时候到），
         # 先攒在这里，prepare() 建好日志时并进去
         self._pending_user_log: list[str] = []
-        # 与 MAA 等专项同口径：user_start_time 是本用户这一轮的开始（统计通知用），
+        # 与 MAA 等专项同口径：user_start_time 是本账号这一轮的开始（统计通知用），
         # cur_user_log_started_at 是当前这次尝试的开始（日志记录与 history 文件名用）
         self.user_start_time: datetime | None = None
         self.cur_user_log_started_at: datetime | None = None
@@ -548,7 +548,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.check_result = "-"
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.run_complete = False
-        # 本用户运行期间的「保持显示开启」请求，见 main_task。
+        # 本账号运行期间的「保持显示开启」请求，见 main_task。
         self._display_hold: Any = None
         self.opened_emulator = False
         self.opened_game = False
@@ -573,18 +573,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._cached_adb_profile: MaaFWAdbControlProfile | None = None
         # 随模拟器拉起的游戏包名（空串表示没拉起），交给特调的游戏更新钩子
         self._launched_package_name = ""
-        # 游戏更新钩子每个用户每次运行只调一次，重试重新开模拟器时不再查
+        # 游戏更新钩子每个账号每次运行只调一次，重试重新开模拟器时不再查
         self._game_update_checked = False
         self.maafw_runtime_pool_root: Path | None = None
         self.maafw_runtime_pool_id: str | None = None
-        # 本轮（整个脚本）的信号账：同一资源已确认维护时后续用户直接跳过，收尾时由
+        # 本轮（整个脚本）的信号账：同一资源已确认维护时后续账号直接跳过，收尾时由
         # 管理器按「信号 + 资源」各发一条通知。管理器传入共享的一份。
         self.signal_tracker = signal_tracker or MaaFWSignalTracker()
-        # 本用户这次运行命中的信号（worker 回报），决定收尾怎么结算。
+        # 本账号这次运行命中的信号（worker 回报），决定收尾怎么结算。
         self.run_signal: str | None = None
-        # 运行前检查发现同一资源本轮已确认在维护、本用户没启动就跳过。
+        # 运行前检查发现同一资源本轮已确认在维护、本账号没启动就跳过。
         self.maintenance_skipped = False
-        # 运行前检查时项目预约被占（手动更新、编辑页准备环境 / 导入），本用户没跑成。
+        # 运行前检查时项目预约被占（手动更新、编辑页准备环境 / 导入），本账号没跑成。
         self.project_busy_skipped = False
         # 队列里 interface 已没有的任务名（项目更新改了 name），建计划时填，进任务报告
         self.missing_task_names: list[str] = []
@@ -597,7 +597,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 原生日志副本里的 ERR 行：资源包加载失败时据此说出具体原因，后者优先（见 resource_failure）。
         self._stdout_native_errors: list[str] = []
         self._attempt_native_errors: list[str] = []
-        # 资源包加载失败后的发行包核对每个用户每次运行只做一次；清理过就额外再跑一次（不占重试
+        # 资源包加载失败后的发行包核对每个账号每次运行只做一次；清理过就额外再跑一次（不占重试
         # 次数），``_extra_attempts`` 记多出来的几次。
         self._release_check_done = False
         self._extra_attempts = 0
@@ -618,7 +618,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             and proxy_times >= self.script_config.Run.ProxyTimesLimit
         ):
             await self.cur_user_item.set_state(status="跳过")
-            return "今日代理次数已达上限，跳过该用户"
+            return "今日代理次数已达上限，跳过该账号"
 
         if not await self._try_enter_project_path():
             # 项目被占着没跑成：记「异常」而不是「跳过」。「跳过」不进异常用户，
@@ -627,9 +627,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await self.cur_user_item.set_state(status="异常")
             self.project_busy_skipped = True
             if is_project_updating(self.project_path):
-                return "项目正在更新，本次未运行该用户"
+                return "项目正在更新，本次未运行该账号"
             return (
-                "项目正被编辑页的准备运行环境、导入或另一次运行占用，本次未运行该用户"
+                "项目正被编辑页的准备运行环境、导入或另一次运行占用，本次未运行该账号"
             )
 
         keep_reservation = False
@@ -637,7 +637,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             loop = asyncio.get_running_loop()
 
             def send_plan_log(message: str) -> None:
-                # 运行计划在工作线程里构建，特调钩子的用户日志要回到事件循环线程
+                # 运行计划在工作线程里构建，特调钩子的账号日志要回到事件循环线程
                 # 再写 script_info.log（与 send_runner_log 同一做法），否则撞上
                 # 「no running event loop」，整份计划都算构建失败。
                 loop.call_soon_threadsafe(self._append_log, message)
@@ -675,7 +675,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 return _period_all_done_message(self.run_plan)
 
             # 本轮前面的用户已经撞上同一资源的停服维护：不再拉起游戏 / 模拟器，
-            # 并进那条维护通知的用户列表。代理次数、上次状态都不动。
+            # 并进那条维护通知的账号列表。代理次数、上次状态都不动。
             maintenance = self.signal_tracker.maintenance(self.run_plan.resourceName)
             if maintenance is not None:
                 maintenance.add_user(str(self.cur_user_uid), self.cur_user_item.name)
@@ -689,7 +689,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if emulator_id == "-" or emulator_index in ("", "-"):
                     await self.cur_user_item.set_state(status="异常")
                     return (
-                        "当前 MaaFW controller 需要 ADB，请在脚本管理页选择模拟器和实例"
+                        "当前 MaaFW controller 需要 ADB，请在托管管理页选择模拟器和实例"
                     )
             elif game_path_error is not None:
                 await self.cur_user_item.set_state(status="异常")
@@ -741,9 +741,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             (logger.warning if self.cur_user_item.status == "异常" else logger.info)(
                 f"MFW 用户运行前检查未通过（{self.cur_user_item.name}，{self.cur_user_item.status}）：{self.check_result}"
             )
-            # 项目被占用不逐个弹窗：所有用户撞的是同一件事，10 个用户就弹 10 次、响 10 次
-            # 提示音。与 embedded_manager._check 那条「整个脚本一句话跳过，别让每个用户在
-            # runner_task 里各报一遍」同一用意；「异常」状态、本用户日志与统计
+            # 项目被占用不逐个弹窗：所有账号撞的是同一件事，10 个账号就弹 10 次、响 10 次
+            # 提示音。与 embedded_manager._check 那条「整个脚本一句话跳过，别让每个账号在
+            # runner_task 里各报一遍」同一用意；「异常」状态、本账号日志与统计
             # 照常记（见下面与 final_task），汇总与「仅失败时」推送照常带上它。
             if self.cur_user_item.status == "异常" and not self.project_busy_skipped:
                 await Publisher.send(
@@ -752,31 +752,31 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     data=WSTaskNoticeData(
                         level="error",
                         message=(
-                            f"用户 {self.cur_user_item.name} 检查未通过: "
+                            f"账号 {self.cur_user_item.name} 检查未通过: "
                             f"{self.check_result}"
                         ),
                     ),
                 )
             if self.maintenance_skipped or self.project_busy_skipped:
-                # 同一资源已确认在维护、或项目被占用没跑成：记一份本用户的日志，让代理
+                # 同一资源已确认在维护、或项目被占用没跑成：记一份本账号的日志，让代理
                 # 结果汇总与统计信息写明原因（其他跳过原因照旧不记），未派发用户不建历史。
                 # 前面拿到的运行前更新日志也随这份内存日志保留。
-                # 窗口与行号由 _append_log 按本用户日志算好（前面可能还有更新日志与
+                # 窗口与行号由 _append_log 按本账号日志算好（前面可能还有更新日志与
                 # 检查阶段的特调提示），不再改写成只剩这一行
                 await self.prepare()
                 self._append_log(self.check_result)
                 if self.cur_user_log is not None:
                     await self.cur_user_log.set_state(status=self.check_result)
             else:
-                # 没有本用户的日志：窗口只剩检查结果这一行，行号回到 1，
-                # 不接着上一个用户的行号往下数
+                # 没有本账号的日志：窗口只剩检查结果这一行，行号回到 1，
+                # 不接着上一个账号的行号往下数
                 await self.script_info.set_log(self.check_result)
             return
 
         await self._mark_run_started()
         await self.prepare()
         await self.cur_user_item.set_state(status="运行")
-        logger.info(f"开始代理 MaaFW 用户: {self.cur_user_uid}")
+        logger.info(f"开始代理 MaaFW 账号: {self.cur_user_uid}")
         if self.run_plan is not None:
             selected_preset = str(
                 self.cur_user_config.Task.SelectedPreset or ""
@@ -792,10 +792,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         # Windows 到点熄屏后，鹰角启动器这类网页界面不出画面，项目的运行前设置在里面什么都
         # 认不出（2026-10-17/18 生产 MaaEnd「🚀启动游戏（PC）」两晚失败，亮屏 5 秒即过）。
-        # 整个用户运行期间保持显示开启，屏已熄就先叫醒；收尾时撤销，final_task 再兜一次。
+        # 整个账号运行期间保持显示开启，屏已熄就先叫醒；收尾时撤销，final_task 再兜一次。
         self._ensure_display_hold()
         self._user_teardown_pending = True
-        # 执行任务前脚本（每用户仅一次，重试不重复跑）。
+        # 执行任务前脚本（每账号仅一次，重试不重复跑）。
         # 用户后脚本和清理在受保护的 final_task 中配对执行。
         if self.cur_user_config.Info.IfScriptBeforeTask:
             await execute_script_task(
@@ -832,13 +832,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
             if rerun_note is not None:
                 header, current_label = rerun_note
-                self._append_log(f"用户 {self.cur_user_item.name} - {header}")
+                self._append_log(f"账号 {self.cur_user_item.name} - {header}")
                 rerun_note = None
                 self._attempt_title = current_label
             else:
                 ordinal = index + 1 - self._extra_attempts
                 self._append_log(
-                    f"用户 {self.cur_user_item.name} - 尝试次数: "
+                    f"账号 {self.cur_user_item.name} - 尝试次数: "
                     f"{ordinal}/{self.script_config.Run.RunTimesLimit}"
                 )
                 current_label = f"第 {ordinal} 次"
@@ -875,7 +875,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     )
                 result = await self._run_maafw(device_config)
             except _MaaFWGameUpdateRequired as exc:
-                # 游戏客户端要手动更新：重试多少次都一样，本用户本次直接判失败。
+                # 游戏客户端要手动更新：重试多少次都一样，本账号本次直接判失败。
                 # 说明已由 _ensure_game_updated 写进运行日志，这里不再重复。
                 message = str(exc)
                 self._record_attempt(
@@ -910,7 +910,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     index + 1,
                     [],
                     message,
-                    # 宿主自己抛的多是 MAS 写的人话（「当前 controller 需要 ADB，请在脚本管理页
+                    # 宿主自己抛的多是 MAS 写的人话（「当前 controller 需要 ADB，请在托管管理页
                     # 选择模拟器」「Path未配置」），推送照它说；带的排障片段由 run_report 滤掉。
                     # 整次运行超时有固定说法，不用异常原文
                     user_message=(
@@ -1212,7 +1212,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         ):
             game_path = self._resolve_game_launch_path()
             if game_path is None or not game_path.is_file():
-                game_path_error = "当前 MaaFW controller 需要由 MAS 启动游戏，请在脚本管理页选择实际游戏 exe"
+                game_path_error = "当前 MaaFW controller 需要由 MAS 启动游戏，请在托管管理页选择实际游戏 exe"
         return interface_model, base_run_plan, run_plan, game_path_error
 
     def _build_run_plan(
@@ -1221,7 +1221,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         *,
         send_log: Callable[[str], None] | None = None,
     ) -> MaaFWRunPlan:
-        # 不看 Info.IfQuickConfig：MaaFW 没有可退回的原生配置，用户页上配的任务队列就是
+        # 不看 Info.IfQuickConfig：MaaFW 没有可退回的原生配置，账号页上配的任务队列就是
         # 唯一的任务来源。开关在界面上已经不提供，这里若还读它，被隐藏的旧值会让页面上
         # 能改、运行时却不生效。
         task_snapshot = _load_json_dict(self.cur_user_config.Task.TaskSnapshot)
@@ -1234,13 +1234,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 钩子装饰（首尾任务、切号绑定之类），再按装饰后的列表建计划。通用 MaaFW
         # 没有钩子，仍按快照直接建计划，行为不变。
         flavor = resolve_flavor(self.script_config)
-        # 脚本级键位（Game.Hotkeys）：坏 JSON / 不是对象当空，字段级的校验在建计划时做。
+        # 托管级键位（Game.Hotkeys）：坏 JSON / 不是对象当空，字段级的校验在建计划时做。
         script_hotkeys = _load_script_hotkeys(self.script_config.Game.Hotkeys)
         missing_skips: list[MaaFWSkippedTaskPlan] = []
         unselectable_names: list[str] = []
         try:
             # 密码字段（PI v2.10.0）在配置里是密文，只在这份内存副本里解开交给计划；
-            # 用户配置本身不动，运行后的整表写回也就写不出明文。
+            # 账号配置本身不动，运行后的整表写回也就写不出明文。
             task_snapshot = open_task_snapshot(task_snapshot, interface_model)
             # 项目更新改了任务 name 后，队列里的旧 id 在归一化时就被滤掉了，运行日志里
             # 一点痕迹都没有。先按原始快照把它们找出来，建完计划记成跳过。
@@ -1357,7 +1357,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 or ALL_TASKS_SKIPPED_MESSAGE in message
             ):
                 # 队列里只剩虚影时「没有可执行任务」说不清原因，把对不上的任务名带上；
-                # 只剩不可选任务时同理（前面的「已跳过」行在用户日志里，报错里看不到）。
+                # 只剩不可选任务时同理（前面的「已跳过」行在账号日志里，报错里看不到）。
                 # 别的报错（拆用户、找不到 controller……）与它们无关，不附加
                 if missing_skips:
                     names = "、".join(
@@ -1374,7 +1374,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     ) -> tuple[str | None, str | None]:
         """``(交给建计划的 controller 名, 实际生效的 resource 名)``，口径见 ``resolve_run_selection``。
 
-        用户在脚本页显式选的 controller 优先。这里曾把「配了模拟器」排在前面，于是先在 ADB
+        用户在托管页显式选的 controller 优先。这里曾把「配了模拟器」排在前面，于是先在 ADB
         模式下选过模拟器、之后把控制方式改成 Win32 的用户会被静默改回 ADB：Emulator.Id 还留着
         旧值（Win32 分支下模拟器下拉被隐藏，用户没有入口清它），运行时回落到第一个 Adb
         controller，按 Win32 编排的任务被 run_plan 过滤掉，或者直接报「当前 controller/resource
@@ -1489,12 +1489,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._append_log(
                 f"项目里识别到多个游戏包名（{'、'.join(resolution.candidates)}），"
                 "无法确定用哪个，本次不随模拟器启动游戏；"
-                "需要的话在脚本管理页填写游戏包名"
+                "需要的话在托管管理页填写游戏包名"
             )
         else:
             self._append_log(
                 "未能从项目里识别出游戏包名，本次不随模拟器启动游戏；"
-                "需要的话在脚本管理页填写游戏包名"
+                "需要的话在托管管理页填写游戏包名"
             )
         return ""
 
@@ -1502,11 +1502,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self._cached_adb_address is not None:
             return self._cached_adb_address, self._cached_device_info
         if self.emulator_manager is None:
-            raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器")
+            raise RuntimeError("当前 controller 需要 ADB，请在托管管理页选择模拟器")
 
         emulator_index = self.script_config.Emulator.Index
         if emulator_index in ("", "-"):
-            raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器实例")
+            raise RuntimeError("当前 controller 需要 ADB，请在托管管理页选择模拟器实例")
 
         package_name = await self._resolve_game_package()
         self._launched_package_name = package_name
@@ -1585,7 +1585,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _ensure_game_updated(self, address: str, adb_path: str | None) -> None:
         """模拟器启动后、第一个任务下发前，调特调的游戏更新钩子（契约见 flavor.py）。
 
-        每个用户每次运行只调一次。钩子判定要手动更新时抛 ``_MaaFWGameUpdateRequired``，
+        每个账号每次运行只调一次。钩子判定要手动更新时抛 ``_MaaFWGameUpdateRequired``，
         由 main_task 判失败且不重试；钩子自己出错只记警告，照常运行。
         """
 
@@ -2064,7 +2064,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._stdout_native_errors = []
         self._attempt_native_errors = []
         prepare_cancel_event = threading.Event()
-        # 与运行前更新 / 预检同一份解析：脚本级 Update.ProxyAddress 优先，留空跟随
+        # 与运行前更新 / 预检同一份解析：托管级 Update.ProxyAddress 优先，留空跟随
         # 全局。运行时装依赖也走它，否则「更新能走代理、真跑时装不上」。
         proxy_url = resolve_update_proxy_url(self.script_config)
 
@@ -2497,7 +2497,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         del self._stdout_native_errors[:-MAX_NATIVE_ERROR_LINES]
 
     def _run_password_values(self) -> list[str]:
-        """本次运行要打码的密码值：计划里 password 字段的值 + 该用户快照里全部密文解开的值
+        """本次运行要打码的密码值：计划里 password 字段的值 + 该账号快照里全部密文解开的值
         （项目撤掉了 password 标记的字段建计划时照样解开，见 option_secrets）。"""
 
         if self.run_plan is None or self.interface_model is None:
@@ -2514,7 +2514,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return secret_log_variants(self._run_password_values())
 
     def _project_log_secret_variants(self, plan_variants: list[str]) -> list[str]:
-        """项目日志不一定是本次运行的用户写的（上一个用户留下的片段也可能落在本次新增里），
+        """项目日志不一定是本次运行的用户写的（上一个账号留下的片段也可能落在本次新增里），
         所以按脚本全部用户的密码打码，再并上本次运行计划里的。"""
 
         try:
@@ -2618,7 +2618,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 魔改 AVD 实例：pretask 若用 adb，也走脚本专用 server（同 worker）
         env.update(await self._script_adb_env())
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        # 运行前设置没有自己的时限设置：沿用本脚本的「单次运行时间限制」（RunTimeLimit），
+        # 运行前设置没有自己的时限设置：沿用本托管的「单次运行时间限制」（RunTimeLimit），
         # 一次尝试里全部运行前设置合计不超过它（MaaFW 豁免了 HardTimeLimit，这里是它缺的外层兜底；
         # worker 那一段另起计时，见 ``_run_maafw``）。
         limit_minutes = self.script_config.Run.RunTimeLimit or 120
@@ -2993,7 +2993,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return True
         try:
             # 失败原因（含超时）记 warning 进 app.log：#708 设成静默的理由「插件清理属
-            # 预期路径」已经不成立（没有插件这一层了）。用户日志不写：重试路径下一轮
+            # 预期路径」已经不成立（没有插件这一层了）。账号日志不写：重试路径下一轮
             # MAS 会自己重开模拟器，「请手动关闭」会误导。
             return await close_emulator(self)
         finally:
@@ -3023,7 +3023,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         game_path = self._resolve_game_launch_path()
         if game_path is None or not await asyncio.to_thread(game_path.is_file):
             raise RuntimeError(
-                "当前 MaaFW controller 需要由 MAS 启动游戏，请在脚本管理页选择实际游戏 exe"
+                "当前 MaaFW controller 需要由 MAS 启动游戏，请在托管管理页选择实际游戏 exe"
             )
 
         if self.interface_model is not None and self.run_plan is not None:
@@ -3046,7 +3046,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         if await asyncio.to_thread(_is_process_path_running, game_path):
             # 走 _append_log（它同样写 app.log）：直接改 script_info.log 会整块替换日志
-            # 窗口，这一行也不进用户日志与 history，下一条日志一来就没了。
+            # 窗口，这一行也不进账号日志与 history，下一条日志一来就没了。
             self._append_log(
                 f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {game_path.name}"
             )
@@ -3308,7 +3308,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._append_log("游戏窗口前置失败，将继续启动 MaaFW 任务")
 
     def _attempt_limit(self) -> int:
-        """本用户这次运行最多跑几次：``Run.RunTimesLimit``，加上清理残留后额外的重跑。"""
+        """本账号这次运行最多跑几次：``Run.RunTimesLimit``，加上清理残留后额外的重跑。"""
 
         return int(self.script_config.Run.RunTimesLimit or 0) + self._extra_attempts
 
@@ -3377,13 +3377,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 等锁那几秒里组被推到了新版本、视图跟着换了：本次的 interface 与运行计划是按旧
             # 版本建的，不能拿来跑新版本。停下，下次运行前按新版本重做检查。
             self._append_log(
-                f"本脚本已换到 {outcome.version or '新版本'}，这一轮不再重新运行，"
+                f"本托管已换到 {outcome.version or '新版本'}，这一轮不再重新运行，"
                 "下次运行会按新版本重新准备",
                 warning=True,
             )
             return None
         if outcome.switched:
-            # 视图换了载荷就重跑，不看 status：同组兄弟已清理过、本脚本经组同步换过来时，
+            # 视图换了载荷就重跑，不看 status：同组兄弟已清理过、本托管经组同步换过来时，
             # 核对的是换来的那份（status 是 verified / clean），旧视图里的残留照样没了。
             self._append_log(
                 "已换上清理后的版本，立即重新运行（不重启游戏/模拟器）"
@@ -3393,7 +3393,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return _RERUN_AFTER_CLEANUP if cleaned else _RERUN_AFTER_SWITCH
         if cleaned:
             self._append_log(
-                "清理后的版本已准备好，但本脚本这次没能切换过去，下次运行前自动切换",
+                "清理后的版本已准备好，但本托管这次没能切换过去，下次运行前自动切换",
                 warning=True,
             )
         self._append_log(_RESOURCE_FAILURE_STOP_MESSAGE, warning=True)
@@ -3445,7 +3445,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.cur_user_log = await self.cur_user_item.add_log_record(
             start_time, self.cur_user_log
         )
-        # 这份日志从零开始，行号也要回到 1，否则会接着上一个用户的行号往下数
+        # 这份日志从零开始，行号也要回到 1，否则会接着上一个账号的行号往下数
 
     def _run_record_call(self, action: Callable[[], Any]) -> Any:
         """运行记录是旁路：记录这一侧出了错只记后端日志、返回 None，不影响运行与收尾。"""
@@ -3519,7 +3519,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # runner 那行「游戏停服维护中，本轮剩余任务已跳过: <任务>」已进任务日志，
         # 这里只记后端日志，不在界面上再复述一遍。
         logger.warning(
-            f"MaaFW 用户 {self.cur_user_item.name} 命中项目信号 {signal}"
+            f"MaaFW 账号 {self.cur_user_item.name} 命中项目信号 {signal}"
             f"（节点 {result.signalNode}）：{message}"
         )
         # 证据图只认命中那个任务、kind 是信号那种的：前面任务普通失败的 failed 图不算。
@@ -3584,7 +3584,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return self.maintenance_skipped or self.run_signal == SERVER_MAINTENANCE
 
     def _signal_user_message(self) -> str | None:
-        """本用户因信号没跑成时给人看的原因；没有信号返回 None。"""
+        """本账号因信号没跑成时给人看的原因；没有信号返回 None。"""
 
         if self.maintenance_skipped:
             return MAINTENANCE_SKIP_MESSAGE
@@ -3680,7 +3680,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             hold.release()
 
     async def _freeze_notification_images(self) -> None:
-        """归档会移动临时文件，通知及跨用户报告先持有自己的图片内容。"""
+        """归档会移动临时文件，通知及跨账号报告先持有自己的图片内容。"""
         self._notification_screenshots = []
         for label, path in self._collect_failure_screenshots()[
             -NOTIFY_SCREENSHOT_LIMIT:
@@ -3806,7 +3806,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         )
 
     def _collect_failure_screenshots(self) -> list[tuple[str, Path]]:
-        """本用户要随通知发出去的失败截图（标签, 路径），按时间顺序。
+        """本账号要随通知发出去的失败截图（标签, 路径），按时间顺序。
 
         最终成功的运行不带图：任务详情那边成功时也不提前面尝试的失败，
         早先尝试的失败画面对已经跑通的一轮没有意义。张数上限由消费方裁。
@@ -3821,7 +3821,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return shots
 
     def report_screenshots(self) -> list[tuple[str, bytes]]:
-        """给脚本级「代理结果」报告用的失败截图，标签带上用户名以区分多用户。"""
+        """给托管级「代理结果」报告用的失败截图，标签带上账号名称以区分多账号。"""
 
         return [
             (f"{self.cur_user_item.name} · {label}", path)
@@ -3829,7 +3829,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         ]
 
     def _build_task_details(self) -> str:
-        """用户级统计报告的任务详情：最后一次尝试的逐任务时间线（见 ``run_report``）。
+        """账号级统计报告的任务详情：最后一次尝试的逐任务时间线（见 ``run_report``）。
 
         最后没成功时另起一段列各次尝试里的原地打转 / 单任务超时（每类一行），队列里有
         失效任务时末尾再附一行。整次运行一个任务都没开始时没有时间线，原因在运行结果那行。
@@ -3883,10 +3883,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return "已完成: " + ("、".join(merged) if merged else "无")
 
     def _report_result(self, *, short: bool = False) -> str:
-        """本用户这次的结果，用户级统计报告与脚本级「代理结果」同一口径。
+        """本账号这次的结果，账号级统计报告与托管级「代理结果」同一口径。
 
         成功只说完成；失败说失败在哪些任务、为什么（只用人话，见 ``run_report``）；
-        信号与运行前检查跳过沿用原来那句话。``short``：脚本级每个用户一行用的简短说法。
+        信号与运行前检查跳过沿用原来那句话。``short``：托管级每个账号一行用的简短说法。
         """
 
         if self.run_complete:
@@ -3915,8 +3915,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return "代理任务未完成"
 
     def proxy_report_line(self) -> str | None:
-        """脚本级「代理结果」里本用户的那一行；运行前检查没过、也没记日志的返回 None，
-        由管理器沿用通用的用户结果。"""
+        """托管级「代理结果」里本账号的那一行；运行前检查没过、也没记日志的返回 None，
+        由管理器沿用通用的账号结果。"""
 
         if self.check_result != "Pass" and self.cur_user_log is None:
             return None
@@ -3930,12 +3930,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return f"{MISSING_TASK_NOTICE_PREFIX}: " + "、".join(self.missing_task_names)
 
     async def _push_user_statistics(self) -> None:
-        """按通知设置推送用户级统计信息。
+        """按通知设置推送账号级统计信息。
 
         与 M9A 专项同形（``M9A/AutoProxy.py`` 的「统计信息」分支）：合并本轮各次
-        尝试的统计文件，补上用户名 / 起止时间 / 结果，再发往全局与该用户自己的
+        尝试的统计文件，补上账号名称 / 起止时间 / 结果，再发往全局与该账号自己的
         渠道。``MaaFWUserConfig`` 的 Notify 组一直都在、编辑页也能配，但在此之前
-        没有任何代码往它发——脚本级「代理结果」是唯一会发出去的报告。
+        没有任何代码往它发——托管级「代理结果」是唯一会发出去的报告。
 
         放在状态落定之后：``user_result`` 要读最终的 ``run_complete``。
         """
@@ -3994,7 +3994,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 await Notify.send_notice(
                     LocalNotice(
                         title="MaaFW 自动代理任务完成，但有失效任务",
-                        message=f"用户 {self.cur_user_item.name} 的队列里有 interface 内已没有的任务，"
+                        message=f"账号 {self.cur_user_item.name} 的队列里有 interface 内已没有的任务，"
                         f"已跳过：{names}",
                         ticker=f"{self.cur_user_item.name} 有失效任务：{names}",
                         duration_seconds=3,
@@ -4004,7 +4004,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await Notify.send_notice(
                 LocalNotice(
                     title="MaaFW 自动代理任务完成",
-                    message=f"已完成用户 {self.cur_user_item.name} 的 MaaFW 自动代理任务",
+                    message=f"已完成账号 {self.cur_user_item.name} 的 MaaFW 自动代理任务",
                     ticker=f"已完成 {self.cur_user_item.name} 的 MaaFW 自动代理任务",
                     duration_seconds=3,
                 )
@@ -4013,7 +4013,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             logger.warning(f"MaaFW 插件用户通知发送失败: {exc}")
 
     def _append_log(self, message: str, *, warning: bool = False) -> None:
-        # 失败类的用户日志按 WARNING 进 app.log，事后按级别筛得出来
+        # 失败类的账号日志按 WARNING 进 app.log，事后按级别筛得出来
         (logger.warning if warning else logger.info)(message)
         if self.cur_user_log is None:
             self._pending_user_log.append(_format_user_log_line(message))
@@ -4118,7 +4118,7 @@ def _resolve_win32_method(
     warn: Callable[[str], None] | None = None,
     combinable: bool = False,
 ) -> int:
-    """脚本级配置的数值优先，其次 interface 里写的名字，最后是默认方式。
+    """托管级配置的数值优先，其次 interface 里写的名字，最后是默认方式。
 
     名字不认识时退回默认方式并**告警**：以前是静默换成 DXGI_DesktopDup / Seize，
     项目要的后台截图 / 后台输入悄悄变成前台，用户只看到游戏被抢了鼠标。
@@ -4976,7 +4976,7 @@ def _format_run_overview_log(
 
 #: 任务报告里「失效任务」一行的前缀：队列里的任务 interface 已没有，本次跳过。
 MISSING_TASK_NOTICE_PREFIX = (
-    "失效任务（interface 内已无，已跳过，请到用户配置里重新添加）"
+    "失效任务（interface 内已无，已跳过，请到账号配置里重新添加）"
 )
 #: 其余任务都跑完、但队列里有失效任务时统计报告的结果：照常算完成，不说「全部完成」。
 MISSING_TASK_USER_RESULT = "代理任务完成，但有失效任务"

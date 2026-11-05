@@ -1,5 +1,7 @@
 import type { TaskItemDocument, TaskTriggerReason } from '@/api'
 // WebSocket 统一消息协议类型
+import type { McpStatusData } from '../../api'
+import type { FrontendCloseRequest } from '../../types/appLifecycle'
 // 与后端 app/core/ws/protocol.py、app/models/schema.py 保持一致
 
 // ==================== 信封 ====================
@@ -22,6 +24,8 @@ export interface WSEnvelope<T = WSJsonObject> {
 // ==================== 固定路由 ID ====================
 
 export const WS_ID_MAIN = 'Main'
+export const WS_ID_MCP = 'MCP'
+export const WS_MCP_STATUS_UPDATED = 'mcp.status.updated'
 export const WS_ID_I18N = 'I18n'
 export const WS_I18N_UPDATED = 'i18n.updated'
 export const WS_ID_TASK_MANAGER = 'TaskManager'
@@ -56,6 +60,7 @@ export const WS_POWER_SIGN_UPDATED = 'power.sign.updated'
 
 // 更新下载（id=Update）
 export const WS_UPDATE_PROGRESS = 'update.progress'
+export const WS_FLUXDOWN_INSTALL_PROGRESS = 'fluxdown.install.progress'
 export const WS_UPDATE_COMPLETED = 'update.completed'
 export const WS_UPDATE_FAILED = 'update.failed'
 export const WS_UPDATE_CANCELLED = 'update.cancelled'
@@ -224,6 +229,14 @@ export interface WSUpdateProgressData {
   source: string
 }
 
+export interface WSFluxdownInstallProgressData {
+  stage: 'check' | 'download' | 'verify' | 'extract' | 'install' | 'save' | 'done' | 'failed'
+  name: string
+  downloaded: number
+  total: number
+  speed: number
+}
+
 interface WSUpdateCompletedData {
   file: string
 }
@@ -297,12 +310,15 @@ export interface WSSystemNoticeData {
   title: string
   /** 正文，每项一行 */
   lines: string[]
+  titleKey?: string | null
+  lineKeys?: string[]
 }
 
 type WSEmptyData = Record<string, never>
 
 /** 已知关键消息的 type → data 映射。未知消息回退到 WSJsonObject。 */
 interface WSMessageDataMap {
+  [WS_MCP_STATUS_UPDATED]: McpStatusData
   [WS_I18N_UPDATED]: { revision: string }
   [WS_TASK_INFO_UPDATED]: WSTaskInfoUpdatedData
   [WS_TASK_LOG_UPDATED]: WSTaskLogUpdatedData
@@ -313,12 +329,13 @@ interface WSMessageDataMap {
   [WS_TASK_SCRIPT_STARTED]: WSTaskScriptStartedData
   [WS_TASK_SCRIPT_FINISHED]: WSTaskScriptFinishedData
   [WS_BACKEND_SHUTDOWN_READY]: WSEmptyData
-  [WS_FRONTEND_CLOSE_REQUESTED]: WSEmptyData
-  [WS_FRONTEND_RESTART_REQUESTED]: WSEmptyData
+  [WS_FRONTEND_CLOSE_REQUESTED]: FrontendCloseRequest
+  [WS_FRONTEND_RESTART_REQUESTED]: FrontendCloseRequest
   [WS_POWER_COUNTDOWN_UPDATED]: WSPowerCountdownData
   [WS_POWER_COUNTDOWN_CANCELLED]: WSEmptyData
   [WS_POWER_SIGN_UPDATED]: WSPowerSignData
   [WS_UPDATE_PROGRESS]: WSUpdateProgressData
+  [WS_FLUXDOWN_INSTALL_PROGRESS]: WSFluxdownInstallProgressData
   [WS_UPDATE_COMPLETED]: WSUpdateCompletedData
   [WS_UPDATE_FAILED]: WSUpdateFailedData
   [WS_UPDATE_CANCELLED]: WSEmptyData

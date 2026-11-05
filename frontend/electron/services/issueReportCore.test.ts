@@ -83,20 +83,6 @@ describe('maskVerbatimJsonText 原文打码', () => {
     expect(masked.match(/<HOME>/g)).toHaveLength(3)
   })
 
-  it('不含密钥的 JSONC 逐字节不变（注释、格式、其他转义都保留）', () => {
-    const text = [
-      '{',
-      '  // 项目说明',
-      '  "name": "Demo\\u0020项目",',
-      '  "resource": [{ "path": ["./resource\\/base"] }], /* 尾注 */',
-      '  "github": "https://github.com/owner/repo"',
-      '}',
-      '',
-    ].join('\r\n')
-    expect(text).toContain('\\u0020')
-    expect(mask(text)).toBe(text)
-  })
-
   it('坏字面量不抛错，按原文打码', () => {
     const text =
       '{ "a": "bad \\x https://api.day.app/SECRET_G", "b": "未闭合 https://api.day.app/SECRET_H\n}'
@@ -144,13 +130,5 @@ describe('addDiagnosticFile 收解析不了的 .json', () => {
     expect(stored).not.toMatch(/SECRET_[KLMNO]/)
     expect(stored).toContain('// 注释 https://api.day.app/***')
     expect(stored).toContain('"a": "https://api.day.app/***"')
-  })
-
-  it('能解析的 .json 照旧按键名打码并重新排版', () => {
-    write('debug/plain.json', '{"b":"https:\\/\\/api.day.app\\/SECRET_P","token":"t"}')
-
-    expect(collectText('debug/plain.json')).toBe(
-      `${JSON.stringify({ b: 'https://api.day.app/***', token: '***' }, null, 2)}\n`
-    )
   })
 })

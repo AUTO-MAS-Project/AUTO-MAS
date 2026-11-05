@@ -196,7 +196,7 @@ def parse_cultivate_targets(payload: object) -> tuple[OperatorTarget, ...]:
             continue
         raw_goals = entry.get("goals")
         # 同一 (kind, target_id) 只保留首条：手改配置可能造出重复 goal，
-        # 重复条目在编辑器里不可见却会重复计缺口（keep-first，不重排用户配置）
+        # 重复条目在编辑器里不可见却会重复计缺口（keep-first，不重排账号配置）
         goals_by_key: dict[tuple[GoalKind, str], Goal] = {}
         for item in raw_goals if isinstance(raw_goals, list) else []:
             if (goal := _parse_goal(item)) is not None:
@@ -205,6 +205,44 @@ def parse_cultivate_targets(payload: object) -> tuple[OperatorTarget, ...]:
         if goals:
             targets.append(OperatorTarget(operator_id, tuple(goals)))
     return tuple(targets)
+
+
+def append_owned_cultivate_targets(
+    raw_targets: list,
+    *,
+    catalog: list[dict],
+    progressions: Mapping[str, Progression],
+) -> list:
+    """为已有干员补充未达成的默认目标，整条保留已配置干员及未知字段。"""
+
+    targets = list(raw_targets)
+    configured = {
+        entry["operator_id"]
+        for entry in targets
+        if isinstance(entry, dict) and isinstance(entry.get("operator_id"), str)
+    }
+    for operator in catalog:
+        operator_id = operator["value"]
+        progression = progressions.get(operator_id)
+        if operator_id in configured or progression is None:
+            continue
+        goals: list[Goal] = []
+        elite = min(2, operator.get("maxElite", 0))
+        skill = min(7, operator.get("maxSkillLevel", 0))
+        if elite > progression.elite:
+            goals.append(Goal("elite", "", elite))
+        if (
+            skill > 1
+            and progression.skill_level is not None
+            and skill > progression.skill_level
+        ):
+            goals.append(Goal("skill", "", skill))
+        if goals:
+            targets.extend(
+                dump_cultivate_targets([OperatorTarget(operator_id, tuple(goals))])
+            )
+            configured.add(operator_id)
+    return targets
 
 
 def takeover_notice_patch_value(
@@ -295,7 +333,7 @@ def filter_catalog_by_goals(
 def dump_cultivate_targets(
     targets: tuple[OperatorTarget, ...] | list[OperatorTarget],
 ) -> list[dict]:
-    """把契约目标序列化回用户配置 JSON（与 parse_cultivate_targets 对称）。"""
+    """把契约目标序列化回账号配置 JSON（与 parse_cultivate_targets 对称）。"""
 
     return [
         {
@@ -628,6 +666,7 @@ depot_cultivate_service = DepotCultivateService()
 
 __all__ = [
     "DepotCultivateService",
+    "append_owned_cultivate_targets",
     "depot_cultivate_service",
     "get_certifying_chain",
     "get_inventory_chain",

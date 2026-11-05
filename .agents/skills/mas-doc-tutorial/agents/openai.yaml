@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAS 文档教程"
+  short_description: "从真实操作生成并修订 AUTO-MAS 图文教程与版本截图"
+  default_prompt: "使用 $mas-doc-tutorial 生成或修订 AUTO-MAS 教程，核对版本与截图，并先展示本地图文预览。"

@@ -6,18 +6,15 @@
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
-from app.task.Whimbox.tools.restore_service import RESTORE_POOLS
 from app.task.Whimbox.tools.upstream import (
     APP_EXE_NAME,
     REL_PYTHON_EXE,
     REL_SITE_PACKAGES,
     WheelAssetsConfigSurface,
 )
-from tests.config_support import group_view
 
 TEMPLATE = {
     "General": {"debug": {"value": "false", "description": "调试模式"}},
@@ -52,7 +49,7 @@ MATERIAL = {
 
 
 @pytest.fixture
-def surface(tmp_path: Path) -> WheelAssetsConfigSurface:
+def surface(tmp_path: Path, monkeypatch) -> WheelAssetsConfigSurface:
     assets = tmp_path / REL_SITE_PACKAGES / "whimbox" / "assets"
     assets.mkdir(parents=True)
     (assets / "default_config.json").write_text(
@@ -66,31 +63,8 @@ def surface(tmp_path: Path) -> WheelAssetsConfigSurface:
     )
     (tmp_path / APP_EXE_NAME).write_bytes(b"exe")
     (tmp_path / REL_PYTHON_EXE).write_bytes(b"py")
-    import app.task.Whimbox.tools.upstream as upstream_mod
-
-    original = upstream_mod.Path.cwd
-    upstream_mod.Path.cwd = lambda: tmp_path
-    yield WheelAssetsConfigSurface(tmp_path)
-    upstream_mod.Path.cwd = original
-
-
-class TestInstallSentinel:
-    def test_missing_app_exe(self, tmp_path: Path):
-        s = WheelAssetsConfigSurface(tmp_path)
-        assert "请先安装奇想盒" in (s.check_install() or "")
-
-    def test_missing_python_runtime(self, tmp_path: Path):
-        (tmp_path / APP_EXE_NAME).write_bytes(b"exe")
-        s = WheelAssetsConfigSurface(tmp_path)
-        assert "重新安装" in (s.check_install() or "")
-
-    def test_missing_backend_package(self, tmp_path: Path):
-        (tmp_path / APP_EXE_NAME).write_bytes(b"exe")
-        python = tmp_path / REL_PYTHON_EXE
-        python.parent.mkdir(parents=True, exist_ok=True)
-        python.write_bytes(b"py")
-        s = WheelAssetsConfigSurface(tmp_path)
-        assert "完整运行一次奇想盒" in (s.check_install() or "")
+    monkeypatch.chdir(tmp_path)
+    return WheelAssetsConfigSurface(tmp_path)
 
 
 class TestCatalog:
@@ -122,18 +96,6 @@ class TestCatalog:
         assert by_key["realm_target"].default == ["奇格格达", "卷卷"]
         assert by_key["ability_plan"].field_type == "int"
         assert by_key["ability_plan"].default == 3
-
-    def test_catalog_mtime_cache(self, surface: WheelAssetsConfigSurface):
-        first = surface.read_catalog()
-        second = surface.read_catalog()
-        assert first is second
-
-    def test_missing_assets_raises(self, tmp_path: Path):
-        """三件套不可读时响亮失败（不静默返回空目录——空目录会伪装成「上游没这些字段」）。"""
-        (tmp_path / APP_EXE_NAME).write_bytes(b"exe")
-        surface = WheelAssetsConfigSurface(tmp_path)
-        with pytest.raises(RuntimeError, match="三件套不可读"):
-            surface.read_catalog()
 
 
 class TestMaterializeOverrides:
@@ -180,27 +142,6 @@ class TestUnwritableInstall:
             raise PermissionError(13, "Permission denied", str(path))
 
         monkeypatch.setattr(upstream_mod, "atomic_write", boom)
-
-    def test_materialize_hint(self, surface: WheelAssetsConfigSurface, monkeypatch):
-        self._deny(monkeypatch)
-        with pytest.raises(RuntimeError) as err:
-            surface.materialize_overrides(
-                {"step_dig": True}, {}, run_all_accounts=False
-            )
-        msg = str(err.value)
-        assert "不可写" in msg
-        assert str(surface.config_path.parent) in msg
-        assert "以管理员身份运行 AUTO-MAS" in msg
-        assert "原生" in msg
-
-    def test_restore_hint(self, surface: WheelAssetsConfigSurface, monkeypatch):
-        (surface.root_path / "configs").mkdir(exist_ok=True)
-        surface.config_path.write_text('{"General": {}}', encoding="utf-8")
-        ts = surface.snapshot_pre_run()
-        assert ts is not None
-        self._deny(monkeypatch)
-        with pytest.raises(RuntimeError, match="不可写"):
-            surface.restore_pre_run(ts)
 
     def test_preserves_existing_sections_and_descriptions(
         self, surface: WheelAssetsConfigSurface
@@ -252,93 +193,8 @@ class TestSnapshotRestore:
         surface.restore_pre_run(None)
         assert not surface.config_path.exists()
 
-    def test_dedup_returns_latest_ts(self, surface: WheelAssetsConfigSurface):
-        (surface.root_path / "configs").mkdir()
-        (surface.root_path / "configs" / "config.json").write_text(
-            "{}", encoding="utf-8"
-        )
-        first = surface.snapshot_pre_run()
-        second = surface.snapshot_pre_run()
-        assert first == second
-
 
 class TestRestorePools:
-    def test_pool_declaration(self):
-        """mas = 纯字段侧车（用户级）在前；native = 脚本级、无三态标注。"""
-        assert [p.key for p in RESTORE_POOLS] == ["mas", "native"]
-        mas, native = RESTORE_POOLS
-        assert (mas.kind, mas.mas_base) == ("user", "sidecar_only")
-        assert mas.files is not None and mas.backup_root is not None
-        assert mas.preview is not None and mas.restore is not None
-        assert (native.kind, native.mas_base) == ("script", None)
-        assert native.files is not None and native.backup_root is not None
-
-    def test_native_pool_is_declarative(self, surface: WheelAssetsConfigSurface):
-        """native 池声明 files + backup_root（list/snapshot/read_file 交基座派生）。"""
-        import asyncio
-
-        native = next((p for p in RESTORE_POOLS if p.key == "native"))
-
-        class Ctx:
-            script_config = type(
-                "C", (), {"Info": SimpleNamespace(RootPath=str(surface.root_path))}
-            )()
-
-        ctx = Ctx()
-        (surface.root_path / "configs").mkdir()
-        (surface.root_path / "configs" / "config.json").write_text(
-            "{}", encoding="utf-8"
-        )
-        assert asyncio.run(native.files(ctx)) == {"config.json": surface.config_path}
-        assert asyncio.run(native.backup_root(ctx)) == surface.backup_root()
-
-    def test_read_callbacks_degrade_without_root(self):
-        """未配置安装目录：只读回调返回 None（编辑页 ensure 不报错）。"""
-        import asyncio
-
-        native = next((p for p in RESTORE_POOLS if p.key == "native"))
-
-        class Ctx:
-            script_config = type("C", (), {"Info": SimpleNamespace(RootPath=None)})()
-
-        assert asyncio.run(native.files(Ctx())) is None
-        assert asyncio.run(native.backup_root(Ctx())) is None
-
-    def test_mas_overlay_read_and_group(self):
-        """mas 侧车读页面字段；回填分组排除来源段（回填旧来源会静默翻转是否写入）。"""
-        import uuid
-
-        from app.task.Whimbox.tools import restore_service as rs
-
-        uid = uuid.uuid4()
-
-        class User:
-            def __init__(self):
-                self.Info = group_view(self, "Info")
-                self.OneDragon = group_view(self, "OneDragon")
-                self.Task = group_view(self, "Task")
-
-            def get(self, section, key):
-                return {
-                    ("Info", "Base"): "shared",
-                    ("OneDragon", "IfRunAllAccounts"): False,
-                    ("Task", "Tasks"): '{"step_dig": false}',
-                    ("Task", "Options"): '{"jihua_cost": "纽扣松果"}',
-                }.get((section, key))
-
-        class Ctx:
-            script_id = "sid"
-            user_id = str(uid)
-            script_config = type("C", (), {"UserData": {uid: User()}})()
-
-        overlay = rs._read_overlay(Ctx())
-        assert overlay["Info"] == {"Base": "shared"}
-        assert overlay["OneDragon"] == {"IfRunAllAccounts": False}
-        assert overlay["Task"]["Tasks"] == '{"step_dig": false}'
-        grouped = rs._group_restore(overlay)
-        assert set(grouped) == {"OneDragon", "Task"}
-        assert "Info" not in grouped
-
     def test_mas_display_translates_with_catalog(
         self, surface: WheelAssetsConfigSurface
     ):

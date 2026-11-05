@@ -1,21 +1,23 @@
 """全部内置接入、家族复用、宿主服务绑定与冷导入边界。"""
 
 import importlib
+from pathlib import Path
+from unittest.mock import AsyncMock, Mock
+
 import json
 import os
 import subprocess
 import sys
 from dataclasses import fields, replace
-from pathlib import Path
 from types import ModuleType
-from unittest.mock import AsyncMock, Mock
 
 import pytest
+
+from app.models.task import ScriptItem
 
 from app.config import ConfigCollection
 from app.core.config.manager import AppConfig
 from app.models import config as models
-from app.models.task import ScriptItem
 from app.task.builtin_registration import build_builtin_script_capabilities
 
 # 固定迁移前的能力契约；可选钩子缺省是明确不支持，不要求各专项长成同一形状。
@@ -36,7 +38,7 @@ EXPECTED = [
         "Maa",
         "MAA",
         "MaaManager",
-        {"prepare_user_update", "emulator_binding"},
+        {"prepare_user_update", "emulator_binding", "user_config_directory"},
     ),
     (
         "Src",

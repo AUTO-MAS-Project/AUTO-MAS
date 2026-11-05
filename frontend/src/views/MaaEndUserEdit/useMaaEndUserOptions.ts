@@ -13,6 +13,7 @@ export const useMaaEndUserOptions = (
   const maaEndOptionsLoaded = ref(false)
   const controllerProtocol = ref<string | null>(null)
   const presetSupported = ref(true)
+  const resourceOptions = ref<Array<{ label: string; value: string }>>([])
   const crisisDrillsOptions = ref<ComboBoxItem[]>([])
   const essenceLocationOptions = ref<ComboBoxItem[]>([])
   const essenceMenuOptions = ref<ComboBoxItem[]>([])
@@ -33,6 +34,12 @@ export const useMaaEndUserOptions = (
         essenceMenuOptions.value = response.essenceMenus ?? []
         essenceTargetWeaponGroups.value = response.essenceTargetWeaponGroups ?? []
         controllerProtocol.value = response.controllerTypes[controllerType() ?? ''] ?? null
+        resourceOptions.value =
+          controllerProtocol.value === 'Win32'
+            ? (response.servers ?? []).flatMap(item =>
+                item.value === null ? [] : [{ label: item.label, value: item.value }]
+              )
+            : [{ label: '官服', value: '官服' }]
         presetSupported.value = controllerProtocol.value === 'Win32'
         maaEndOptionsLoaded.value = true
       }
@@ -46,6 +53,7 @@ export const useMaaEndUserOptions = (
     maaEndOptionsLoaded,
     controllerProtocol,
     presetSupported,
+    resourceOptions,
     crisisDrillsOptions,
     essenceLocationOptions,
     essenceMenuOptions,

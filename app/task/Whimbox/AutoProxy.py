@@ -20,13 +20,13 @@
 
 执行链（对齐 BetterGI 线）：
 1. ``check()``：安装哨兵三件 + 上游进程占用 + 今日次数/剩余天数；
-2. 运行前：强制归档 ``configs/config.json`` → 若接管配置，把用户覆盖集按当前
+2. 运行前：强制归档 ``configs/config.json`` → 若接管配置，把账号覆盖集按当前
    模板键集过滤后原子合并写入 → spawn 嵌入式 Python 无头一条龙；
 3. 运行中：``IRunEventFeed`` 盯当日日志，实时把步骤/账号进展推调度台，
    判定交给 ``IRunResultParser``（管理员致命 / 收尾行 + 完成行结果块头 /
    中止 / 早退 / 停滞超时）；
 4. 结束（final_task / on_crash 全覆盖）：停监控、清进程、还原运行前归档、
-   写历史、落用户状态、推通知（结果块原文透传 + 未完成原因原文）。
+   写历史、落账号状态、推通知（结果块原文透传 + 未完成原因原文）。
 
 成败判定全部取自上游结果面（日志收尾行与结果块），不自造判定信号；
 多账号循环归上游 ``change_account``，MAS 不做账号定向。重试也只救「没有上游结论」
@@ -114,7 +114,7 @@ def _should_retry(
 
 
 class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
-    """奇想盒自动代理任务（每用户一轮）。
+    """奇想盒自动代理任务（每账号一轮）。
 
     四边界经构造注入，默认实现就地兜底构造（L1 组合，零容器）；单测经构造
     参数注入假实现，不经过 manager。
@@ -147,7 +147,7 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
         self.cur_user_config: WhimboxUserConfig = self.user_config[self.cur_user_uid]
         # base 来源三态（共享/独立/原生）：shared/independent=把面板值写入上游 config.json
         # （运行时物化）；原生来源=用上游原生配置、MAS 零写入——除非开启覆写层
-        # （快速配置，overlay：任务前物化面板覆盖集、结束还原，与家族「原生+开启」语义一致）
+        # （覆写常规配置，overlay：任务前物化面板覆盖集、结束还原，与家族「原生+开启」语义一致）
         self.config_base = read_config_base(self.cur_user_config)
         self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE or bool(
             self.cur_user_config.Info.IfQuickConfig
@@ -221,10 +221,10 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
             and proxy_times >= self.script_config.Run.ProxyTimesLimit
         ):
             await self.cur_user_item.set_state(status="跳过")
-            return "今日代理次数已达上限, 跳过该用户"
+            return "今日代理次数已达上限, 跳过该账号"
         if self.cur_user_config.Info.RemainedDay == 0:
             await self.cur_user_item.set_state(status="跳过")
-            return "用户剩余天数为 0, 跳过该用户"
+            return "账号剩余天数为 0, 跳过该账号"
 
         return "Pass"
 
@@ -233,7 +233,7 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
         self.user_start_time = datetime.now()
 
     def _takeover_config(self) -> None:
-        """快照 → 物化：接管配置时把用户覆盖集写入上游 config.json。
+        """快照 → 物化：接管配置时把账号覆盖集写入上游 config.json。
 
         归档无条件执行（运行前安全网）；物化与还原只在接管时——原生态未开
         覆写层时 MAS 零写入，上游运行期的自我迁移（合并默认键等）属其内部
@@ -276,7 +276,7 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
         await self.cur_user_item.set_state(status="运行")
 
         self._takeover_config()
-        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
         run_limit = int(self.script_config.Run.RunTimesLimit)
@@ -284,7 +284,7 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
             if self.run_book:
                 break
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
+                f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
             )
             await self.cur_user_item.set_state(status="运行")
             self.last_verdict_status = None
@@ -322,7 +322,7 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
                 break
 
             logger.warning(
-                f"用户 {self.cur_user_item.name} - 奇想盒代理异常: {self.cur_user_log.status}"
+                f"账号 {self.cur_user_item.name} - 奇想盒代理异常: {self.cur_user_log.status}"
             )
             await self.script_info.set_log(
                 f"{self.cur_user_log.status}\n正在中止相关程序"
@@ -332,7 +332,7 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
                 await Notify.send_notice(
                     LocalNotice(
                         title="奇想盒自动代理出现异常！",
-                        message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
                         ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                         duration_seconds=3,
                     )
@@ -353,7 +353,7 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
                     "\n请按提示处理后重新运行"
                 )
                 logger.warning(
-                    f"用户 {self.cur_user_item.name} - 判定 {self.last_verdict_status}"
+                    f"账号 {self.cur_user_item.name} - 判定 {self.last_verdict_status}"
                     f"（{reason}），跳过自动重试"
                 )
                 break
@@ -659,9 +659,9 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
                 )
             except Exception as e:
                 # 失败不再静默：既记 ERROR 日志，也推到调度台实时日志
-                await push_dispatch_log(self.script_info, f"推送用户统计通知失败: {e}")
+                await push_dispatch_log(self.script_info, f"推送账号统计通知失败: {e}")
                 logger.opt(exception=True).error(
-                    f"推送奇想盒用户统计通知时出现异常: {e}"
+                    f"推送奇想盒账号统计通知时出现异常: {e}"
                 )
 
     async def _persist_user_run_result(self) -> None:
@@ -684,7 +684,7 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
             self.cur_user_config.Data.LastProxyStatus = "成功"
             await self.cur_user_config.commit()
             await self.cur_user_item.set_state(status="完成")
-            logger.success(f"用户 {self.cur_user_uid} 的奇想盒自动代理任务已完成")
+            logger.success(f"账号 {self.cur_user_uid} 的奇想盒自动代理任务已完成")
         else:
             self.cur_user_config.Data.LastProxyStatus = "失败"
             await self.cur_user_config.commit()
@@ -729,7 +729,7 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
                 await Notify.send_notice(
                     LocalNotice(
                         title="奇想盒运行异常",
-                        message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
+                        message=f"账号 {self.cur_user_item.name}：{self.cur_user_log.status}",
                         ticker="异常",
                         duration_seconds=3,
                     )

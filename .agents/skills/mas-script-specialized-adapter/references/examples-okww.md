@@ -10,21 +10,21 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 - 前端只存**官方启动器完整路径**，由后端读启动器缓存解析真实客户端 exe——**启动器路径与游戏进程路径职责分离**，不要在前端直接存客户端路径。
 - MAS 任务只开放 `1`（DailyTask）与 `7`（MultiAccountDailyTask）；旧值 `2` 读取时纠正为 `7`。
 
-## 三态来源与独立快速配置
+## 三态来源与独立覆写常规配置
 
-`Info.Mode` 三态只决定**脚本配置 owner**：
+`Info.Base` 三态只决定**基础配置 owner**：
 
 | 来源 | 配置归属 |
 | --- | --- |
-| 脚本 | `data/{scriptId}/Default/ConfigFile`，所有用户共用 |
-| 用户 | `data/{scriptId}/{userId}/ConfigFile`，用户独立 |
-| 直控 | 直接读取脚本原有 working 配置，由原生 GUI 维护，**不另建全量 MAS 配置**（仍有一处运行时必需写入，见下节） |
+| 共享 | `data/{scriptId}/Default/ConfigFile`，所有账号共用 |
+| 独立 | `data/{scriptId}/{userId}/ConfigFile`，账号独立 |
+| 原生 | 直接读取脚本原有 working 配置，由原生 GUI 维护，**不另建全量 MAS 配置**（仍有一处运行时必需写入，见下节） |
 
-`Info.IfQuickConfig` 是独立的用户级快速配置开关，三种来源均可使用：开启时用该用户快速配置面板的高频字段覆盖当前原生配置；关闭时使用来源配置中的完整任务设置。直控+关闭只使用脚本原生配置（不含 MAS 侧全量配置，仅有运行时必需写入，见下节）；直控+开启则任务前注入、任务后按快照策略恢复。
+`Info.IfQuickConfig` 是独立的账号级覆写常规配置开关，三种来源均可使用：开启时用该账号覆写常规配置面板的高频字段覆盖当前原生配置；关闭时使用来源配置中的完整任务设置。原生+关闭只使用脚本原生配置（不含 MAS 侧全量配置，仅有运行时必需写入，见下节）；原生+开启则任务前注入、任务后按快照策略恢复。
 
-旧值 `简洁` / `详细` 读取时迁移为 `脚本` / `用户`，**迁移不得改变用户实际生效的来源**。
+旧值 `简洁` / `详细` 与 `脚本` / `用户` 读取时归一为 `shared` / `independent`，**迁移不得改变用户实际生效的来源**。
 
-配置初始化、AutoProxy、ScriptConfig 三处必须用**同一套来源规则**；直控不得为了"字段齐全"复制脚本全量配置。
+配置初始化、AutoProxy、ScriptConfig 三处必须用**同一套来源规则**；原生来源不得为了"字段齐全"复制脚本全量配置。
 
 ## 原生配置写入：overlay 覆盖一律可还原
 
@@ -42,7 +42,7 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 
 - `current_profile` 是**发行/更新渠道**（`China`=阿里云+腾讯CNB、`Global`=GitHub+PyPi 更新源，见上游 `pyappify.yml` 与 `build.yml` 发行说明），**与游戏区服（官服/国际服）无关**——ok-ww 本体不消费它（仅 ok-script 用于窗口标题）。MAS 不写它、不接管：用户安装哪个包就保持哪个更新渠道，避免静默改指向另一 git 源。真正按区服区分的是 MAS 自己的鸣潮更新器（`app/services/common/wuthering_waves/__init__.py` 两个官方 index.json）。
 - `auto_start` / `update_method` 是「缺省才补」的启动器默认值，无事零写入、不需要还原。
-- `Basic Options.json` 与 `DailyTask.json` 都在换入后的 working 目录里，**三态一律覆盖**（直控同样覆盖），任务结束由整目录快照还原——因此不会固化进任何来源的 base。
+- `Basic Options.json` 与 `DailyTask.json` 都在换入后的 working 目录里，**三态一律覆盖**（原生来源同样覆盖），任务结束由整目录快照还原——因此不会固化进任何来源的 base。
 - **配置会话（`ScriptConfig`）不得注入 overlay 值**：会话结束时原生目录会整目录回写 base，且会话没有还原路径，写进去就是永久固化。base 只保留用户在 ok-ww GUI 里的设置。
 
 ## 哨兵契约
@@ -53,11 +53,16 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 
 ## 判态与清理
 
-判态顺序：内置 fatal 日志（游戏更新、`info_set 错误`）→ `Daily Task Completed`（ok-ww 的 DailyTask 跑完才打印）视为成功 → `connected:0`/`connected:False` 视为未连接异常 → 未见成功标记而进程退出视为异常 → 日志停滞超 `RunTimeLimit` 视为超时。
+判态顺序：内置 fatal 日志（游戏更新、`info_set 错误`）→ 任一成功标记（见下段）视为成功 → `connected:0`/`connected:False` 视为未连接异常 → 未见成功标记而进程退出视为异常 → 日志停滞超 `RunTimeLimit` 视为超时。
 
 `Window closed exit_event.is_set` 是关窗日志，任何退出路径都会打，不能作完成依据。`connected:0` 也不能进内置 fatal：ok-ww 成功后按 `-e` 关游戏同样会打它（只比完成日志晚约 5s），日志监控若跨过这 5s，两行会落进同一批——所以未连接只在没有完成日志时判定。
 
-判据依赖上游契约：成功标记 `Daily Task Completed`（ok-ww `src/task/DailyTask.py` 的 `run()` 末尾）与 `-t 1` 指向的 `onetime_tasks[0]` 都归上游所有，而 ok-ww 走 `AUTO_UPDATE`（MAS 不钉版本）：上游改名或调整任务顺序会让本专项静默退化（永不判成功，每轮等到超时）。改判据前先核对这两个上游事实。
+成功标记有两个、任一命中即成功，都归上游所有（ok-ww 走 `AUTO_UPDATE`，MAS 不钉版本），改判据前先核对上游事实：
+
+- **框架退出语** `Successfully Executed Task, Exiting Game and App!`（ok-script 框架 `ok/task/TaskExecutor.py`）：`DailyTask.run()` 正常返回后才打印，失败路径走异常分支不打印；logger 硬编码英文、不走 gettext，是唯一不受 ok-ww 界面语言影响的成功标志。MAS 固定传 `-e`（exit_after_task），成功后必打，比关游戏的 `connected:0` 早约 5 秒。
+- **旧版英文完成日志** `Daily Task Completed`（`src/task/DailyTask.py` 的 `run()` 末尾）：v3.7.4 源码核实为硬编码英文（其框架 ok-script 2.0.8 已有退出语，双判据均命中），保留既有判据兜底以覆盖更早无法核实的版本。新版起该文案走 gettext（中文环境输出「每日任务已完成」），不要用翻译文案当标记——「每日任务已完成，开始传送并刷取4C声骸」是 farm 4C 追加阶段预告，子串命中会在中途误判成功杀进程；退出语已覆盖全部语言。
+
+上游改判据措辞或调整任务顺序（`-t 1` 指向的 `onetime_tasks[0]`）会让本专项静默退化（永不判成功，每轮等到超时）。完成文案 gettext 化（v3.7.5–v3.7.12 间）就触发过一次：中文环境已完成的任务被判断连、重试到次数耗尽。
 
 「游戏更新成功, 游戏即将重启」是环境变更而非脚本错误：命中后照常杀进程收尾，但本轮运行次数用尽也要把次数延长一轮保底重跑——重试时游戏已是新版，预期成功。每个任务只延长一次（总轮次封顶 `RunTimesLimit + 1`）：再命中说明更新根本没应用成功，属持久性环境问题，按异常收尾。这是唯一允许突破 `RunTimesLimit` 的 fatal；MAS 的鸣潮前置更新器只镜像官方启动器通道（index.json + state 记账），客户端自身的游戏内更新检查是另一条通道，前置判「无需更新」时它仍可能弹框，此标记是唯一的兜底网。其他专项未实测出游戏内自更新通道前，不要预加同类标记，交给通用兜底 + 默认次数承接。
 
@@ -91,22 +96,22 @@ OCR 走共享工具 `app/tools/common/ocr/__init__.py`（用法见 [ocr-tools.md
 ok-ww 已接入通用配置恢复（`ConfigRestoreSection`），mas 池形态与其他专项不同：
 
 - **mas 池 = ConfigFile 副本 + 覆盖层字段侧车**：页面任务配置卡片的字段存在
-  MAS 用户配置（`UserData.Task`）、运行时才覆盖进 DailyTask.json，不在
+  MAS 账号配置（`UserData.Task`）、运行时才覆盖进 DailyTask.json，不在
   ConfigFile 中。备份/恢复两端都带侧车，预览展示侧车（与页面认知同源），
   恢复时文件回滚 + 侧车回填 UserData + 前端重拉表单（对齐 ZzzOd 字段回填）。
-- **池恒按用户分桶**（`OkwwBackups/mas/{user_id}`），三态 owner 只决定归档/
-  恢复目标路径（脚本=Default 共享目录、用户=独立目录、直控=无）——脚本态多
-  用户若共享一个 Default 池，各自的侧车会混池、跨用户污染。通用教训见
-  [config-restore.md §1.1](config-restore.md#111-池分桶必须按用户恢复目标才按三态-ownerokww-教训)。
+- **池恒按账号分桶**（`OkwwBackups/mas/{user_id}`），三态 owner 只决定归档/
+  恢复目标路径（共享=Default 共享目录、独立=账号目录、原生=无）——共享来源多
+  账号若共享一个 Default 池，各自的侧车会混池、跨账号污染。通用教训见
+  [config-restore.md §1.1](config-restore.md#111-池分桶必须按账号恢复目标才按三态-ownerokww-教训)。
 - **原生池恒为 working/configs 整目录**（ok-ww 无 Folder/File 双模式），项目级
   按物理路径指纹分桶。
 
 ## 审查清单
 
-- [ ] Manager 同时支持 `AutoProxy` 与 `ScriptConfig`；脚本级与用户级入口传对目标 ID
+- [ ] Manager 同时支持 `AutoProxy` 与 `ScriptConfig`；托管级与账号级入口传对目标 ID
 - [ ] 三态映射到正确 owner；旧简洁/详细迁移不改变实际来源
-- [ ] 快速配置开关真实控制是否覆盖高频字段
-- [ ] 直控直接读脚本原配置，任务前后保留原配置快照
+- [ ] 覆写常规配置开关真实控制是否覆盖高频字段
+- [ ] 原生来源直接读脚本原配置，任务前后保留原配置快照
 - [ ] 原生配置写入一律可还原：`working/configs` 内靠整目录快照，`app.json` 靠键级快照；只有「缺省才补」的启动器默认值可无快照
 - [ ] `app.json` 的 `current_profile` 覆盖后，任务结束（含异常/崩溃）必须回到任务前原值；任务期外部改动不被回滚
 - [ ] 配置会话（`ScriptConfig`）不注入 overlay 值（会话回写 base 且无还原路径）

@@ -9,3 +9,17 @@ export const applicationEnvironment: ApplicationEnvironment =
       : 'production'
 
 export const isDevelopmentEnvironment = applicationEnvironment === 'development'
+
+/** 浏览器预览连接独立后端，不拥有其进程生命周期。 */
+export function isBrowserDevelopment(): boolean {
+  return (
+    isDevelopmentEnvironment &&
+    (window as Window & { __AUTO_MAS_BROWSER_DEV_MODE__?: boolean })
+      .__AUTO_MAS_BROWSER_DEV_MODE__ === true
+  )
+}
+
+/** 浏览器和桌面只连接入口均不管理外部后端的进程。 */
+export function managesBackendProcess(): boolean {
+  return !isBrowserDevelopment() && window.backendOwnership !== 'external'
+}

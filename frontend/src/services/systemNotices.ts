@@ -6,6 +6,7 @@
 
 import { h } from 'vue'
 import { notification } from 'ant-design-vue'
+import { translate as t } from '@/i18n'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
   WS_EMULATOR_NOTICE,
@@ -21,8 +22,13 @@ let subscriptionIds: string[] = []
 type NoticeLevel = WSTaskNoticeData['level']
 type NoticeDescription = string | (() => ReturnType<typeof h>)
 
-const notify = (level: NoticeLevel, title: string, description: NoticeDescription): void => {
-  const args = { message: title, description }
+const notify = (
+  level: NoticeLevel,
+  title: string,
+  description: NoticeDescription,
+  duration: number | null = 4.5
+): void => {
+  const args = { message: title, description, duration }
   if (level === 'error') {
     notification.error(args)
   } else if (level === 'warning') {
@@ -33,20 +39,34 @@ const notify = (level: NoticeLevel, title: string, description: NoticeDescriptio
 }
 
 const showNotice = (title: string, data: WSTaskNoticeData): void => {
-  notify(data.level, title, data.message)
+  // 模拟器启动失败可能附上一段修复提示，里面有要照抄的命令：用 pre-wrap 保住换行
+  // （否则 antd 会把换行折成空格），并且不自动消失，免得还没看完就关了
+  const withHint = data.message.includes('\n')
+  notify(
+    data.level,
+    title,
+    withHint ? () => h('div', { style: { whiteSpace: 'pre-wrap' } }, data.message) : data.message,
+    withHint ? null : undefined
+  )
 }
 
 // 迁移结果这类通知一条里有好几行（迁了哪些脚本、停用了谁、丢了什么），
 // 用户要能读完才关，所以不自动消失；行数多时给个滚动条而不是撑满屏
 const showSystemNotice = (data: WSSystemNoticeData): void => {
-  const lines = (data.lines ?? []).filter(line => typeof line === 'string' && line.trim())
+  const lines = (
+    data.lineKeys?.length ? data.lineKeys.map(key => t(key)) : (data.lines ?? [])
+  ).filter(line => typeof line === 'string' && line.trim())
   const description = () =>
     h(
       'div',
       { style: { maxHeight: '60vh', overflowY: 'auto', whiteSpace: 'pre-wrap' } },
       lines.map((line, index) => h('div', { key: index }, line))
     )
-  const args = { message: data.title, description, duration: null }
+  const args = {
+    message: data.titleKey ? t(data.titleKey) : data.title,
+    description,
+    duration: null,
+  }
   if (data.level === 'error') {
     notification.error(args)
   } else if (data.level === 'warning') {

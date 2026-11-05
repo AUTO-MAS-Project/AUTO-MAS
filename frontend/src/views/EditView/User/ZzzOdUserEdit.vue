@@ -1622,7 +1622,7 @@ const refreshAfterSession = () => {
       })
     }
   } else {
-    void loadUserData().catch(e => {
+    void Promise.all([loadUserData(), loadCatalog()]).catch(e => {
       logger.error(e instanceof Error ? e.message : String(e))
     })
   }

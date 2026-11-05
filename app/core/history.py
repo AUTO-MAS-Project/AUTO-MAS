@@ -989,7 +989,7 @@ class HistoryStore:
         return await self._run(read)
 
     async def get_overview(self, *, day: date) -> dict[str, HistoryUserOverview]:
-        """汇总指定日期各用户的执行次数、失败记录和最近时间。"""
+        """汇总指定日期各账号的执行次数、失败记录和最近时间。"""
 
         if not self._initialized:
             raise HistoryStorageError("历史服务尚未初始化")

@@ -8,7 +8,7 @@ export type WhimboxUserConfig_InfoInput = {
      */
     Base?: ('shared' | 'independent' | 'native' | null);
     /**
-     * 是否启用覆写层（快速配置，与来源独立，按账号保存，默认关）：开启时原生态 也会在任务前把面板覆盖集写入奇想盒（overlay，任务结束还原）；共享/独立态 面板本就是 base 来源，开关暂无额外消费点，为后续特殊功能预留。默认关保证 「原生=零写入」与 _write_config_or_hint 报错里「切原生绕开写入」的出路成立
+     * 是否启用覆写层（覆写常规配置，与来源独立，按账号保存，默认关）：开启时原生态 也会在任务前把面板覆盖集写入奇想盒（overlay，任务结束还原）；共享/独立态 面板本就是 base 来源，开关暂无额外消费点，为后续特殊功能预留。默认关保证 「原生=零写入」与 _write_config_or_hint 报错里「切原生绕开写入」的出路成立
      */
     IfQuickConfig?: (boolean | null);
     /**
@@ -20,7 +20,7 @@ export type WhimboxUserConfig_InfoInput = {
      */
     IfScriptBeforeTask?: (boolean | null);
     /**
-     * 用户名
+     * 账号名称
      */
     Name?: (string | null);
     /**
@@ -40,11 +40,11 @@ export type WhimboxUserConfig_InfoInput = {
      */
     ScriptBeforeTask?: (string | null);
     /**
-     * 用户状态
+     * 账号状态
      */
     Status?: (boolean | null);
     /**
-     * 用户标签列表（JSON字符串，TagItem的dict列表）
+     * 账号标签列表（JSON字符串，TagItem的dict列表）
      */
     readonly Tag?: (string | null);
 };

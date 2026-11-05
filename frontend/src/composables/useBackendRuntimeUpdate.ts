@@ -1,14 +1,14 @@
 /**
  * Runtime 链路的后端更新
  *
- * 灰度开关打开（`managed`）时，标题栏的「检测到后端更新」入口不再走「关后端 → 跳初始化页
+ * 受管模式（`managed`）下，标题栏的「检测到后端更新」入口不再走「关后端 → 跳初始化页
  * → 后端自己下整包 → 拉安装器」那条链，而是让主进程按 停机 → `bootstrap --version` →
  * 重新监督 三步完成，本模块只负责把进度与三类失败结局搬到界面上。
  *
  * `development` 模式下 Runtime 只监督开发者自己的检出、不碰源码，入口直接禁用。
- * 灰度开关关闭（`off`）时本模块不参与，标题栏仍走原有流程。
  */
 
+import { managesBackendProcess } from '@/utils/environment'
 import { computed, ref } from 'vue'
 
 import type {
@@ -64,16 +64,17 @@ export const isBackendRuntimeUpdating = (): boolean => running.value
 
 let progressListenerAttached = false
 
-/** 只查一次：灰度开关是进程启动时定下的，一个生命周期内不会变。 */
-async function ensureLaunchMode(): Promise<RuntimeLaunchMode> {
+/** 只查一次：启动模式在进程启动时定下，一个生命周期内不会变。 */
+async function ensureLaunchMode(): Promise<RuntimeLaunchMode | null> {
+  if (!managesBackendProcess()) return null
   if (launchMode.value) return launchMode.value
   try {
-    // 灰度开关升级为三级来源后返回的是 {persisted, mode, source}，这里只关心生效值。
+    // 启动模式返回的是 {persisted, mode, source}，这里只关心生效值。
     launchMode.value = (await window.electronAPI.getRuntimeLaunchMode()).mode
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.warn(`获取 Runtime 启动模式失败，按 off 处理: ${errorMsg}`)
-    launchMode.value = 'off'
+    logger.warn(`获取 Runtime 启动模式失败，禁用后端更新入口: ${errorMsg}`)
+    launchMode.value = null
   }
   return launchMode.value
 }
@@ -127,8 +128,10 @@ async function settle(result: RuntimeUpdateOutcome): Promise<void> {
 }
 
 export function useBackendRuntimeUpdate() {
-  const isRuntimeManaged = computed(() => launchMode.value === 'managed')
-  const isRuntimeDevelopment = computed(() => launchMode.value === 'development')
+  const isRuntimeManaged = computed(() => managesBackendProcess() && launchMode.value === 'managed')
+  const isRuntimeDevelopment = computed(
+    () => managesBackendProcess() && launchMode.value === 'development'
+  )
 
   /** 完成的段数占总段数，Runtime 不给细粒度百分比，这里也不编。 */
   const overallPercent = computed(() => {
@@ -139,7 +142,7 @@ export function useBackendRuntimeUpdate() {
   const stageOrder = computed(() => UPDATE_STAGE_ORDER)
 
   async function start(version: string): Promise<void> {
-    if (running.value) return
+    if (!managesBackendProcess() || running.value) return
 
     resetProgress()
     targetVersion.value = version
@@ -163,7 +166,7 @@ export function useBackendRuntimeUpdate() {
   }
 
   async function retry(action: RuntimeUpdateRetryAction): Promise<void> {
-    if (running.value) return
+    if (!managesBackendProcess() || running.value) return
 
     outcome.value = null
     cancelling.value = false
@@ -197,6 +200,7 @@ export function useBackendRuntimeUpdate() {
 
   /** `restart` 结局下的兜底：源码与依赖都已就位，只是后端没起来，再拉一次。 */
   async function restartBackend(): Promise<void> {
+    if (!managesBackendProcess()) return
     const telemetry = (restartObservation ??= beginAnalyticsOperation('backend_update_finished'))
     restartingBackend.value = true
     try {

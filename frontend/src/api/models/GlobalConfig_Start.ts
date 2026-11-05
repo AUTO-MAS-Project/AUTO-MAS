@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type GlobalConfig_Start = {
     /**
+     * 是否在定时队列前五分钟唤醒电脑
+     */
+    IfScheduledWakeUp?: (boolean | null);
+    /**
      * 是否启动时直接最小化
      */
     IfMinimizeDirectly?: (boolean | null);

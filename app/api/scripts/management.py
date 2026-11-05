@@ -15,7 +15,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
 
-"""脚本管理路由与端点专用模型。"""
+"""托管管理路由与端点专用模型。"""
 
 import uuid
 from typing import (
@@ -170,15 +170,15 @@ class ScriptCreateIn(BaseModel):
         "MSS",
     ] = Field(
         ...,
-        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本",
+        description="托管类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本",
     )
     scriptId: str | None = Field(
-        default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
+        default=None, description="直接从该托管ID复制创建, 仅在复制创建时使用"
     )
 
 
 class ScriptCreateOut(OutBase):
-    scriptId: str = Field(..., description="新创建的脚本ID")
+    scriptId: str = Field(..., description="新创建的托管ID")
     data: Union[
         MaaConfig,
         SrcConfig,
@@ -194,17 +194,17 @@ class ScriptCreateOut(OutBase):
         BAAHConfig,
         WhimboxConfig,
         MSSConfig,
-    ] = Field(..., description="脚本配置数据")
+    ] = Field(..., description="托管配置数据")
 
 
 class ScriptGetIn(BaseModel):
     scriptId: Optional[str] = Field(
-        default=None, description="脚本ID, 未携带时表示获取所有脚本数据"
+        default=None, description="托管ID, 未携带时表示获取所有托管数据"
     )
 
 
 class ScriptGetOut(OutBase):
-    index: List[ScriptIndexItem] = Field(..., description="脚本索引列表")
+    index: List[ScriptIndexItem] = Field(..., description="托管索引列表")
     data: Dict[
         str,
         Union[
@@ -223,7 +223,7 @@ class ScriptGetOut(OutBase):
             WhimboxConfig,
             MSSConfig,
         ],
-    ] = Field(..., description="脚本数据字典, key来自于index列表的uid")
+    ] = Field(..., description="托管数据字典, key来自于index列表的uid")
 
 
 class ScriptLockIn(UserInBase):
@@ -235,7 +235,7 @@ class ScriptLockOut(OutBase):
 
 
 class ScriptUpdateIn(BaseModel):
-    scriptId: str = Field(..., description="脚本ID")
+    scriptId: str = Field(..., description="托管ID")
     data: Union[
         MaaConfigInput,
         SrcConfigInput,
@@ -251,7 +251,7 @@ class ScriptUpdateIn(BaseModel):
         BAAHConfigInput,
         WhimboxConfigInput,
         MSSConfigInput,
-    ] = Field(..., description="脚本更新数据")
+    ] = Field(..., description="托管更新数据")
 
     @model_validator(mode="before")
     @classmethod
@@ -270,23 +270,23 @@ class ScriptUpdateIn(BaseModel):
 
 
 class ScriptReorderIn(BaseModel):
-    indexList: List[str] = Field(..., description="脚本ID列表, 按新顺序排列")
+    indexList: List[str] = Field(..., description="托管ID列表, 按新顺序排列")
 
 
 class ScriptConfigImportIn(UserInBase):
     userId: Optional[str] = Field(
-        default=None, description="用户ID, 未携带时导入到脚本级配置文件"
+        default=None, description="账号ID, 未携带时导入到托管级配置文件"
     )
 
 
 router = APIRouter()
-logger = get_logger("脚本管理 API")
+logger = get_logger("托管管理 API")
 
 
 @router.post(
     "/add",
     tags=["Add"],
-    summary="添加脚本",
+    summary="添加托管",
     response_model=ScriptCreateOut,
     status_code=200,
 )
@@ -313,7 +313,7 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
 @router.post(
     "/get",
     tags=["Get"],
-    summary="查询脚本配置信息",
+    summary="查询托管配置信息",
     response_model=ScriptGetOut,
     status_code=200,
 )
@@ -361,7 +361,7 @@ async def get_script_lock(target: ScriptLockIn) -> ScriptLockOut:
 @router.post(
     "/update",
     tags=["Update"],
-    summary="更新脚本配置信息",
+    summary="更新托管配置信息",
     response_model=OutBase,
     status_code=200,
 )
@@ -389,7 +389,7 @@ async def update_script(
 @router.post(
     "/delete",
     tags=["Delete"],
-    summary="删除脚本",
+    summary="删除托管",
     response_model=OutBase,
     status_code=200,
 )
@@ -410,7 +410,7 @@ async def delete_script(script: ScriptDeleteIn = Body(...)) -> OutBase:
 @router.post(
     "/order",
     tags=["Update"],
-    summary="重新排序脚本",
+    summary="重新排序托管",
     response_model=OutBase,
     status_code=200,
 )

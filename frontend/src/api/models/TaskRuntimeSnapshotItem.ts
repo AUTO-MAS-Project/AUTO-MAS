@@ -36,7 +36,7 @@ export type TaskRuntimeSnapshotItem = {
      */
     stopping?: boolean;
     /**
-     * 任务关联的脚本静态标识
+     * 任务关联的托管静态标识
      */
     scripts?: Array<WSTaskScriptIdentityData>;
     /**

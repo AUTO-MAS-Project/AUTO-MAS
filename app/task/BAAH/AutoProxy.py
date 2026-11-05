@@ -146,7 +146,7 @@ def prioritize_event_quest(
     没有任何效果。
 
     Args:
-        task_order_group: 用户配置里的 ``TASK_ORDER_GROUP`` 取值。
+        task_order_group: 账号配置里的 ``TASK_ORDER_GROUP`` 取值。
         enabled: 是否处于活动期间。
 
     Returns:
@@ -264,7 +264,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         self._log_close_task: asyncio.Task[None] | None = None
         self.script_log_path: Path | None = None
         self.emulator_adb_address: str = ""
-        ## 本用户的开始时刻，用于统计信息通知
+        ## 本账号的开始时刻，用于统计信息通知
         self.user_start_time = datetime.now()
 
         self._resolve_paths()
@@ -289,7 +289,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
     async def _resolve_effective_config_name(self) -> str:
         """决定本次运行使用哪份 BAAH 配置文件。
 
-        只看用户配置里的 ``Info.ConfigName``：活动相关的那份「换配置文件」逻辑已经
+        只看账号配置里的 ``Info.ConfigName``：活动相关的那份「换配置文件」逻辑已经
         拆掉，用哪份配置不再随时间变化。
 
         Returns:
@@ -309,17 +309,17 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         return self.effective_config_name
 
     async def check(self) -> str:
-        """校验 BAAH 运行所需的路径与用户配置"""
+        """校验 BAAH 运行所需的路径与账号配置"""
 
         if not self.baah_path.is_file():
             await self.cur_user_item.set_state(status="异常")
-            return "未找到 BAAH 主程序, 请检查脚本配置中的主程序路径设置！"
+            return "未找到 BAAH 主程序, 请检查托管配置中的主程序路径设置！"
 
         try:
             config_name = await self._resolve_effective_config_name()
         except ValueError as e:
             await self.cur_user_item.set_state(status="异常")
-            return f"{e}, 请在用户配置中填写 BAAH 配置文件名称！"
+            return f"{e}, 请在账号配置中填写 BAAH 配置文件名称！"
 
         if not resolve_user_config_path(self.config_dir, config_name).is_file():
             await self.cur_user_item.set_state(status="异常")
@@ -350,9 +350,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
         ## 配置托管总开关：关闭时照常启动 BAAH，但不改动它的任何配置文件
         self.if_manage_config = bool(self.script_config.Script.IfManageConfig)
-        ## BAAH 没有用户快速配置面板，模拟器等托管项只受脚本级总开关控制。
+        ## BAAH 没有账号覆写常规配置面板，模拟器等托管项只受托管级总开关控制。
         ## 推送任务节点详情开关：关闭时**不创建 log_box**（不读日志、不匹配），
-        ## 该用户 push_log 保持为空，报告自然不含 BAAH 的任务节点；任务日志记录
+        ## 该账号 push_log 保持为空，报告自然不含 BAAH 的任务节点；任务日志记录
         ## 与结果判定都不受它影响，照常进行
         self.push_log_enabled = bool(self.script_config.Script.PushLogEnabled)
         self._log_source = None
@@ -369,7 +369,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
         self.user_start_time = datetime.now()
 
-        ## 每日重置：跨天后代理次数归零，用户标签里的「任务」状态才会重新变成
+        ## 每日重置：跨天后代理次数归零，账号标签里的「任务」状态才会重新变成
         ## 「未代理」（通用脚本同一套口径）
         curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != curdate:
@@ -386,14 +386,14 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(
                     level="error",
-                    message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                    message=f"账号 {self.cur_user_item.name} 检查未通过: {self.check_result}",
                 ),
             )
             return
 
         await self.prepare()
 
-        logger.info(f"开始代理用户: {self.cur_user_uid}")
+        logger.info(f"开始代理账号: {self.cur_user_uid}")
         await self.cur_user_item.set_state(status="运行")
 
         for i in range(self.script_config.Run.RunTimesLimit):
@@ -401,7 +401,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
                 break
 
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
+                f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
             )
             self.log_start_time = datetime.now().astimezone()
             self.log_start_at = time.monotonic()
@@ -415,12 +415,12 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
                 await self.cur_user_item.set_state(status="完成")
-                logger.success(f"用户: {self.cur_user_uid} - BAAH 完成代理任务")
+                logger.success(f"账号: {self.cur_user_uid} - BAAH 完成代理任务")
                 break
 
             await self.cur_user_item.set_state(status="异常")
             logger.warning(
-                f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
+                f"账号: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
             )
             await asyncio.sleep(3)
 
@@ -479,7 +479,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         }
 
     def _plan_stage_runtime_values(self) -> dict[str, Any]:
-        """按用户选的关卡计划表覆盖 BAAH 的五类非活动关卡配置。
+        """按账号选的关卡计划表覆盖 BAAH 的五类非活动关卡配置。
 
         ``Info.StageMode`` 为 ``Fixed`` 时**一个字节都不动**，用户在 BAAH 界面里自己配的
         多天轮换原样保留；选了计划表才用计划表当天那一格的 key 覆盖。
@@ -605,9 +605,13 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         最后无论成功失败都恢复托管配置。
         """
 
-        # 不同 MAS 托管可指向同一安装；软件配置也共享，按真实安装目录串行。
-        async with _utils_update_files.directory_lock(self.root_path.resolve()):
+        # manager 持有从更新准备到全体账号收尾的目录锁；独立调用的
+        # AutoProxyTask 仍然自己获取锁，避免同一 BAAH 安装中的配置被并发写入。
+        if getattr(self, "directory_reserved", False):
             await self._run_once_locked()
+        else:
+            async with _utils_update_files.directory_lock(self.root_path.resolve()):
+                await self._run_once_locked()
 
     async def _run_once_locked(self) -> None:
         """持有安装目录锁时执行，归档、读取和最终还原均不与其他任务交错。"""
@@ -617,7 +621,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         if not await self._ensure_emulator_online():
             return
 
-        ## 运行前归档该用户的 BAAH 配置（按用户分桶，指纹去重，失败不阻断
+        ## 运行前归档该账号的 BAAH 配置（按账号分桶，指纹去重，失败不阻断
         ## 任务）：锁内归档，确保不会把另一个任务的托管取值当成用户原配置。
         from .tools.backup_archive import archive_native_backup
 
@@ -630,7 +634,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
                 "BAAH 运行前配置归档失败，已跳过（不阻断任务）"
             )
 
-        ## 关卡计划表与活动关优先是用户在用户页单独打开的开关，与「托管 BAAH
+        ## 关卡计划表与活动关优先是用户在账号页单独打开的开关，与「托管 BAAH
         ## 运行配置」无关：托管没开时它们照样要在本次运行生效。两者都只在这一次
         ## 运行里成立，所以仍然走托管项写盘、跑完由 restore_managed_config 还原
         runtime_values = await self._stage_runtime_values()
@@ -863,7 +867,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         """处理运行前的准备阶段错误"""
 
         if e is None:
-            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
+            logger.warning(f"账号: {self.cur_user_uid} - {error_message}")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -871,7 +875,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             )
         else:
             logger.opt(exception=True).warning(
-                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+                f"账号: {self.cur_user_uid} - {error_message}: {e}"
             )
             await Publisher.send(
                 id=self.task_info.task_id,
@@ -886,8 +890,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
         await Notify.send_notice(
             LocalNotice(
-                title="用户自动代理出现异常！",
-                message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                title="账号自动代理出现异常！",
+                message=f"账号 {self.cur_user_item.name} 自动代理时{error_message}",
                 ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                 duration_seconds=3,
             )
@@ -917,7 +921,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
         if self.run_book:
             ## 与通用脚本同一套口径：当天首次成功才递减剩余天数，代理次数始终累加。
-            ## 不更新的话用户标签会一直停在「任务：未代理」、剩余天数也不减
+            ## 不更新的话账号标签会一直停在「任务：未代理」、剩余天数也不减
             if (
                 self.cur_user_config.Data.ProxyTimes == 0
                 and self.cur_user_config.Info.RemainedDay != -1
@@ -980,9 +984,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         await self._push_statistic()
 
     async def _push_statistic(self) -> None:
-        """推送本用户的统计信息通知。
+        """推送本账号的统计信息通知。
 
-        渠道由该用户的 ``Notify`` 配置决定（邮件 / Server 酱 / 自定义 Webhook），
+        渠道由该账号的 ``Notify`` 配置决定（邮件 / Server 酱 / 自定义 Webhook），
         未开启通知时整条链路直接返回，不发任何内容。
         """
 
@@ -1047,7 +1051,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
     def _prepare_log_details(
         self, path: Path, *, mode: str, enabled: bool, rotated_name: str | None
     ) -> None:
-        """本专项固定来源与用户；读取和交付时机由自身生命周期控制。"""
+        """本专项固定来源与账号；读取和交付时机由自身生命周期控制。"""
         self._log_user = self.cur_user_item
         self.user_state(self._log_user).push_log_mode = mode
         self._log_source = None

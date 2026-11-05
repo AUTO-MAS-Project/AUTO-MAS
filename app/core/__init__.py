@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from .i18n import I18n as I18n
     from .lifecycle import ShutdownCoordinator as ShutdownCoordinator
     from .maa_manager import MaaFWManager as MaaFWManager
+    from .mcp import MCP as MCP
     from .notify import Notify as Notify
     from .task_manager import TaskManager as TaskManager
     from .taskboard import Taskboard as Taskboard
@@ -50,6 +51,7 @@ _LAZY_EXPORTS = {
     "Config": (".config", "Config"),
     "Notify": (".notify", "Notify"),
     "BackgroundTaskManager": (".background_tasks", "BackgroundTaskManager"),
+    "MCP": (".mcp", "MCP"),
     "TaskManager": (".task_manager", "TaskManager"),
     "MainTimer": (".timer", "MainTimer"),
     "EmulatorManager": (".emulator_manager", "EmulatorManager"),
@@ -83,6 +85,7 @@ __all__ = [
     "Config",
     "Notify",
     "BackgroundTaskManager",
+    "MCP",
     "TaskManager",
     "MainTimer",
     "EmulatorManager",

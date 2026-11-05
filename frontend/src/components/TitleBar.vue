@@ -32,8 +32,8 @@
           </span>
           <span
             v-else-if="
-              runtimeBackendUpdateAvailable ||
-              (backendUpdateInfo?.if_need_update && !isRuntimeManaged)
+              isRuntimeManaged &&
+              (runtimeBackendUpdateAvailable || backendUpdateInfo?.if_need_update)
             "
             class="update-hint clickable"
             @click="handleBackendUpdateClick"
@@ -126,10 +126,6 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import {
-  beginIntentionalBackendRestart,
-  endIntentionalBackendRestart,
-} from '@/composables/useAppLifecycle'
 import { useTheme } from '@/composables/useTheme'
 import {
   updateInfo,
@@ -149,7 +145,6 @@ import { resolveBackendUpdateActions } from '@/utils/backendUpdateActions'
 import { LoadingOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { computed, h, onBeforeUnmount, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import WindowControls from '@/components/WindowControls.vue'
 
 import type { RuntimeUpdateRetryAction } from '@/types/electron'
@@ -158,8 +153,7 @@ const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('标题栏')
 const isMacOS = window.electronAPI.isMacOS
-const router = useRouter()
-const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
+const { isBootstrapping } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 let removeTrayActionListener: (() => void) | undefined
 
@@ -296,45 +290,6 @@ const handleBackendUpdateClick = () => {
       if (isRuntimeManaged.value) {
         await startRuntimeUpdate(resolveRuntimeUpdateVersion())
         return
-      }
-
-      // 关后端到初始化流程重新拉起它之间的断开是计划内的：先打好标记，
-      // 否则生命周期协调器会当成事故——提示用户断线，并 taskkill 后抢着起一个后端
-      beginIntentionalBackendRestart('标题栏触发后端更新')
-      try {
-        logger.info('开始更新后端')
-
-        // 1. 先关闭后端
-        logger.info('正在关闭后端...')
-        const result = await window.electronAPI.stopBackend()
-        if (result.success) {
-          logger.info('后端已成功关闭')
-        } else {
-          logger.warn(`后端关闭失败: ${String(result.error)}`)
-        }
-
-        // 2. 重置初始化状态
-        resetInitializationStatus()
-
-        // 3. 设置强制后端更新标志（在清理 sessionStorage 之前）
-        sessionStorage.setItem('forceBackendUpdate', 'true')
-        logger.info('已设置强制后端更新标志')
-
-        // 4. 清理 sessionStorage 中的其他状态（保留 forceBackendUpdate）
-        const forceUpdateFlag = sessionStorage.getItem('forceBackendUpdate')
-        sessionStorage.clear()
-        if (forceUpdateFlag) {
-          sessionStorage.setItem('forceBackendUpdate', forceUpdateFlag)
-        }
-
-        // 5. 跳转到初始化页面
-        await router.push('/initialization')
-        logger.info('已跳转到初始化页面')
-      } catch (error) {
-        // 没能走到初始化页：后端不会有人再拉起它，交回协调器按事故处理
-        endIntentionalBackendRestart('后端更新流程异常中断')
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`更新后端失败: ${errorMsg}`)
       }
     },
   })

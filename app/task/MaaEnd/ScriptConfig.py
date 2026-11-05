@@ -42,7 +42,7 @@ def maaend_config_base(raw: object) -> str:
 
 
 def maaend_mas_config_dir(script_id: str, user_id: str, base: str) -> Path:
-    """返回脚本共享或用户独立配置目录。"""
+    """返回脚本共享或独立配置目录。"""
 
     base = maaend_config_base(base)
     if base == _utils_constants.BASE_NATIVE:
@@ -100,8 +100,8 @@ class ScriptConfigTask(TaskExecuteBase):
 
     会话包络（下发源 + 回写目标）与运行下发同一套 owner 规则
     （:func:`maaend_mas_config_dir`：shared 来源=Default 共享、independent 来源=独立目录）。
-    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——用户级
-    会话下发的 owner 目录即刚恢复的备份（所见即备份），脚本级会话跳过
+    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——账号级
+    会话下发的 owner 目录即刚恢复的备份（所见即备份），托管级会话跳过
     下发（原生目录即备份）；结束不回写 MAS 配置，安装 config/ 由 manager
     的任务前快照还原（临时注入，看完还原）。
     """
@@ -169,14 +169,14 @@ class ScriptConfigTask(TaskExecuteBase):
     async def set_maaend(self):
         """配置 MaaEnd 运行参数"""
 
-        logger.info(f"开始配置 MaaEnd 运行参数: 设置脚本 {self.cur_user_item.user_id}")
+        logger.info(f"开始配置 MaaEnd 运行参数: 设置账号 {self.cur_user_item.user_id}")
 
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
         maaend_set_path = self.maaend_set_path / "mxu-MaaEnd.json"
 
-        # 查看会话的脚本级入口：原生目录即所选备份，跳过下发与注入
+        # 查看会话的托管级入口：原生目录即所选备份，跳过下发与注入
         if self.view_only and self.cur_user_item.user_id == "Default":
             if maaend_set_path.exists():
                 maaend_set = _utils_io.read_file(maaend_set_path)
@@ -213,7 +213,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 dirs_exist_ok=True,
             )
 
-        # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；带快速
+        # 下发前归档 MAS 配置到账号池（下发源，会话保存会覆盖它；带快速
         # 配置覆盖层字段侧车，指纹去重，失败不阻断会话）。native 池由
         # manager.prepare 在任务级一次性归档
         if self.use_mas_config and self.config_file_path:

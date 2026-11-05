@@ -162,7 +162,7 @@ def read_src_process_state(
     if not isinstance(script_id, str) or not script_id.strip():
         raise ValueError(f"SRC 进程状态脚本无效: {script_id}")
     if expected_script_id is not None and script_id != expected_script_id:
-        raise ValueError(f"SRC 进程状态所属脚本无效: {script_id}")
+        raise ValueError(f"SRC 进程状态所属托管无效: {script_id}")
 
     src_root_path = state["src_root_path"]
     if not isinstance(src_root_path, str) or not src_root_path.strip():

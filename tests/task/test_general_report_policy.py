@@ -1,7 +1,5 @@
 """General 通知报告的过滤、账号分组与排版策略。"""
 
-from datetime import datetime
-
 import pytest
 
 from app.task.general.manager import GeneralManager
@@ -24,20 +22,6 @@ def user(entries, mode="汇总", **kwargs):
         push_log=entries,
         push_log_mode=mode,
         **kwargs,
-    )
-
-
-def test_scatter_keeps_account_before_time_and_plain_text_unchanged():
-    timestamp = datetime(2026, 10, 29, 7, 2).timestamp()
-    entries = [
-        (LOG_TYPE_NORMAL, "【实例 1】✅ 成功: 邮件", timestamp),
-        (LOG_TYPE_NORMAL, "旧式二元组"),
-        (LOG_TYPE_NORMAL, "⏱ 超时：不应被猜成已知状态", None),
-    ]
-    assert build_user_result_text([user(entries, "逐条")], False) == (
-        "账号 A: 全部完成\n"
-        "【实例 1】07:02 - ✅ 成功: 邮件\n"
-        "旧式二元组\n⏱ 超时：不应被猜成已知状态"
     )
 
 

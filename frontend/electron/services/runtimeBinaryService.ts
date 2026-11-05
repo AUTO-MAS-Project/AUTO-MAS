@@ -26,9 +26,8 @@ import { beginMainFeature } from './featureAnalytics'
  *   与所有持有旧路径字符串的地方都不用动——`RuntimeClient` 每条命令都是重新 spawn 同一个
  *   路径。旧文件先改名为 `<exe>.old` 让路，新文件确认跑得起来才清掉备份，见
  *   {@link replaceRuntimeBinary}。
- * - **下载首选 CNB，再走 gh-proxy 家族，GitHub 官方兜底。** 顺序自己实现，不复用
- *   `MirrorRotationService`：后者的 `sortMirrors()` 会把 key 里含 `github` 的源提到最前
- *   （为初始化拉源码的测试版场景加的），套到这里正好把国内用户最连不上的官方源排到第一个。
+ * - **下载首选 CNB，再走 gh-proxy 家族，GitHub 官方兜底。** 按此顺序尝试，避免将
+ *   国内用户较难连通的官方源提前。
  * - **对齐失败通常停下，但网络不可用时可复用本地环境。** 解析不到最新版本时初始化编排器
  *   可用 `bootstrap --if-needed` 复用已就绪的本地环境，供断网开机自启使用；切换目标版本的
  *   更新流程仍然必须先完成对齐。
@@ -441,6 +440,13 @@ export interface RuntimeBinarySyncResult {
 }
 
 export interface RuntimeBinarySyncProgress {
+  /** Electron 更新器提供的目标版本与当前下载尝试；旧事件可缺省。 */
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
+  /** Electron 更新器的正常阶段；旧事件缺失时保留原文。 */
+  phase?: 'check' | 'download' | 'complete'
   /** 0~100；总量未知时停在 0。 */
   progress: number
   message: string
@@ -775,7 +781,12 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
   if (!fs.existsSync(backupPath)) removeQuietly(`${backupPath}.version`)
 
   logger.info(`Runtime 已更新到线上最新 ${target.version}`)
-  options.onProgress?.({ progress: 100, message: `Runtime 已更新到 ${target.version}` })
+  options.onProgress?.({
+    phase: 'complete',
+    targetVersion: target.version,
+    progress: 100,
+    message: `Runtime 已更新到 ${target.version}`,
+  })
   return { status: 'upgraded', target }
 }
 
@@ -880,7 +891,12 @@ async function downloadTarget(
   const sourceTimeoutMs = options.sourceTimeoutMs ?? RUNTIME_BINARY_SOURCE_TIMEOUT_MS
 
   // 第一步：可信来源的校验清单。它的进度不往上报——几十字节瞬间到 100% 再回到 0 只会让界面跳动。
-  options.onProgress?.({ progress: 0, message: `正在获取 Runtime ${target.version} 的校验信息` })
+  options.onProgress?.({
+    phase: 'check',
+    targetVersion: target.version,
+    progress: 0,
+    message: `正在获取 Runtime ${target.version} 的校验信息`,
+  })
   const trusted = await fetchTrustedRuntimeHash(target.version, {
     fetchText: options.fetchText,
     timeoutMs: Math.min(Math.max(deadline - Date.now(), 1), RUNTIME_TEXT_FETCH_TIMEOUT_MS),
@@ -904,7 +920,17 @@ async function downloadTarget(
 
     const label = `${source.name}（${index + 1}/${sources.length}）`
     const message = `正在从 ${label} 下载 Runtime ${target.version}`
-    options.onProgress?.({ progress: 0, message, item: asset, source: source.key })
+    options.onProgress?.({
+      phase: 'download',
+      progress: 0,
+      message,
+      item: asset,
+      source: source.key,
+      targetVersion: target.version,
+      sourceName: source.name,
+      sourceIndex: index + 1,
+      sourceCount: sources.length,
+    })
 
     logger.info(`尝试从 ${label} 下载 Runtime ${target.version}: ${source.url}`)
     const downloadPath = nextDownloadPath(runtimePath)
@@ -915,10 +941,15 @@ async function downloadTarget(
       Math.min(deadline - Date.now(), sourceTimeoutMs),
       progress =>
         options.onProgress?.({
+          phase: 'download',
           progress: progress.progress,
           message,
           item: asset,
           source: source.key,
+          targetVersion: target.version,
+          sourceName: source.name,
+          sourceIndex: index + 1,
+          sourceCount: sources.length,
           bytesPerSecond: progress.speed,
           current: progress.downloadedSize,
           total: progress.totalSize,
@@ -1253,7 +1284,7 @@ async function runRuntimeAlignment(
     return { status: 'skipped' }
   }
 
-  options.onProgress?.({ progress: 0, message: '正在获取线上最新的 Runtime 版本' })
+  options.onProgress?.({ phase: 'check', progress: 0, message: '正在获取线上最新的 Runtime 版本' })
   const lookup = await (options.fetchLatest ?? defaultLatestResolver)(channel)
   if (lookup.status === 'unavailable') {
     const error = describeLatestUnavailable(lookup.error)

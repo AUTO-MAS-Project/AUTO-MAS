@@ -1,13 +1,12 @@
 /**
  * Runtime 初始化链路
  *
- * 灰度开关打开后，首次初始化的「装 Python → 装 pip → 装 Git → clone 仓库 → pip 装依赖」
+ * Runtime 首次初始化的「装 Python → 装 pip → 装 Git → clone 仓库 → pip 装依赖」
  * 五步链换成一次 `auto-mas-runtime.exe bootstrap --version <目标版本>`：Runtime 内部按
  * uv → 仓库 → Python → 依赖的顺序完成全部准备工作，Electron 只负责把它的 stage 映射回
  * 现有初始化界面的 7 段模型，再另行启动后端（`backend supervise` 由 backendService 负责）。
  *
- * 本模块只做映射与编排，不改动旧链路的任何一行；旧链路仍由 initializationService 直接调用
- * environmentService / repositoryService / dependencyService。
+ * 本模块负责 Runtime 命令映射与初始化、重试和诊断编排；后端生命周期由 backendService 管理。
  */
 
 import { join } from 'node:path'
@@ -39,7 +38,7 @@ import {
   RuntimeRunControl,
   RuntimeRunResult,
   RuntimeStage,
-  RuntimeSupervisedLaunchConfig,
+  RuntimeLaunchConfig,
   createRuntimeClient,
   formatStartupLogs,
   isRuntimeClientError,
@@ -61,7 +60,7 @@ export type InitializationStage =
   | 'complete'
 
 /**
- * 段状态。旧链路只发进度百分比，新链路额外给出机器可读的段状态，
+ * 段状态。Runtime 同时给出进度百分比和机器可读的段状态，
  * 界面（W9d）据此判断段的开始与结束，不解析中文文案。
  */
 export type InitializationStageStatus = 'started' | 'running' | 'completed' | 'failed'
@@ -124,7 +123,7 @@ export function mapRuntimeStage(stage: RuntimeStage): InitializationRunStage {
 // ==================== 镜像源映射 ====================
 
 /**
- * 旧链路镜像键到 Runtime `--mirror <类型>=<键>` 的显式映射。
+ * 桌面镜像配置键到 Runtime `--mirror <类型>=<键>` 的显式映射。
  *
  * 两套键名不是一套东西，逐项对照 Runtime 的 `internal/mirror/defaults.go` 后只有下面
  * 几项语义对得上，映射不到的一律不传 `--mirror`，交给 Runtime 自己按内置目录轮换：
@@ -160,7 +159,7 @@ const MIRROR_KEY_MAP: Readonly<
 export type MirrorLookup = Pick<MirrorService, 'getMirrors'>
 
 /**
- * `MIRROR_KEY_MAP` 的段与旧链路镜像类型（`mirrorService.ts` 的 `MirrorConfig` 键）的对应。
+ * `MIRROR_KEY_MAP` 的段与桌面镜像类型（`mirrorService.ts` 的 `MirrorConfig` 键）的对应。
  *
  * 只列 `RUNTIME_BOOTSTRAP_STAGE_ORDER` 里真正会传镜像选择的三段；`mirror` / `pip` / `git`
  * 在新链路没有对应物，`retryStage` 里直接短路，走不到这张表。
@@ -176,7 +175,7 @@ const LEGACY_MIRROR_TYPE_BY_STAGE: Readonly<
 /**
  * 把界面选中的旧镜像标识解析成 `MirrorSource.key`。
  *
- * 旧链路的 `MirrorRotationService.execute(..., preferredMirrorName)` 按 `mirror.name`
+ * 桌面镜像选项按 `mirror.name`
  * 匹配，渲染进程存的选中值也是 `name`（`Initialization/index.vue` 的 `convertMirror`
  * 甚至把展示层的 `key` 字段本身都填成了 `name`）；但 `MIRROR_KEY_MAP` 是按
  * `MirrorSource.key` 建的表。两种取值都可能传进来，按 key 或 name 任一命中即可。
@@ -246,6 +245,11 @@ export function resolveRuntimeTargetVersion(): string {
 // ==================== 进度桥接 ====================
 
 export interface BootstrapProgressUpdate {
+  /** Electron 更新器提供的目标版本与当前下载尝试；旧事件可缺省。 */
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
   stage: InitializationRunStage
   status: InitializationStageStatus
   progress: number
@@ -260,7 +264,7 @@ export interface BootstrapProgressUpdate {
    * （接管段、段收口、失败）没有这个字段。
    */
   runtimeStage?: string
-  /** 产生本条更新的 `progress.status` 原文；state 事件与桥接合成的更新没有。 */
+  /** 产生本条更新的 progress / state status 原文；桥接合成的更新没有。 */
   runtimeStatus?: string
   /** 当前条目：正在下载的文件名，或测速时的源 key。 */
   item?: string
@@ -276,6 +280,11 @@ export interface BootstrapProgressUpdate {
 
 /** `observe` 的第四个参数：progress 事件上除 stage / message / percent 之外的可选字段。 */
 interface BootstrapProgressDetail {
+  /** Electron 更新器提供的目标版本与当前下载尝试；旧事件可缺省。 */
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
   status?: string
   current?: number
   total?: number
@@ -386,6 +395,10 @@ export class BootstrapProgressBridge {
         ? undefined
         : resolveProgressPercent(rawPercent, detail)
     const extra: Partial<BootstrapProgressUpdate> = {
+      targetVersion: detail.targetVersion,
+      sourceName: detail.sourceName,
+      sourceIndex: detail.sourceIndex,
+      sourceCount: detail.sourceCount,
       runtimeStage: stage,
       runtimeStatus: detail.status,
       item: detail.item,
@@ -491,17 +504,17 @@ function clampRunningPercent(percent: number): number {
 
 // ==================== 结果 ====================
 
-/** Runtime 链路的失败细节，与旧链路的失败形状叠加，界面（W9d）按需消费。 */
+/** Runtime 的结构化失败详情，供初始化界面按需展示。 */
 export interface RuntimeStageOutcome {
   success: boolean
   error?: string
   /** 第 0 步的全部线上来源均因网络失败。 */
   networkUnavailable?: true
-  /** Runtime 的结构化结果码；旧链路不产生。 */
+  /** Runtime 的结构化结果码。 */
   code?: string
   retryable?: boolean
   remediation?: RuntimeRemediation[]
-  /** `[stdout]…\n\n[stderr]…` 整块文本，与旧链路失败界面的展示格式一致。 */
+  /** `[stdout]…\n\n[stderr]…` 整块文本，与初始化失败界面的展示格式一致。 */
   logs?: string
   /**
    * Runtime 按命令与日期轮转的日志文件路径（`result.details.logPath`），供界面
@@ -637,7 +650,7 @@ type RuntimeClientFactory = (options: CreateRuntimeClientOptions) => RuntimeClie
 export type RuntimeRetryMode = 'auto' | 'sync' | 'rebuild'
 
 export interface RuntimeInitializationOptions {
-  launchConfig: RuntimeSupervisedLaunchConfig
+  launchConfig: RuntimeLaunchConfig
   /** 解析镜像选择要用到的旧 `MirrorService`；复用调用方已有的实例，这里不再新建。 */
   mirrorService: MirrorLookup
   createClient?: RuntimeClientFactory
@@ -664,6 +677,8 @@ const defaultClientFactory: RuntimeClientFactory = options => createRuntimeClien
  * RuntimeClient 里，后端启动仍由 backendService 负责（W9c）。
  */
 export class RuntimeInitializationService {
+  private readonly clients = new Set<RuntimeClient>()
+  private shuttingDown = false
   private readonly createClient: RuntimeClientFactory
   private readonly mirrorService: MirrorLookup
   /** 各段上一次失败给出的 remediation，决定单步重试用普通重试还是重建环境。 */
@@ -686,7 +701,7 @@ export class RuntimeInitializationService {
     this.alignRuntimeBinary = options.alignRuntimeBinary ?? alignRuntimeBinaryWithLatest
   }
 
-  get launchConfig(): RuntimeSupervisedLaunchConfig {
+  get launchConfig(): RuntimeLaunchConfig {
     return this.options.launchConfig
   }
 
@@ -792,6 +807,13 @@ export class RuntimeInitializationService {
     return false
   }
 
+  /** 关闭整个编排器，等待它拥有的命令退出，不丢弃仍在运行的进程。 */
+  async shutdown(timeoutMs?: number): Promise<void> {
+    this.shuttingDown = true
+    this.cancelRequested = true
+    await Promise.all([...this.clients].map(client => client.stop(timeoutMs)))
+  }
+
   /**
    * 跑一次 `bootstrap --version <目标版本>`，把阶段映射进 `onProgress`。
    *
@@ -814,6 +836,7 @@ export class RuntimeInitializationService {
     onProgress: (update: BootstrapProgressUpdate) => void,
     mirror?: RuntimeMirrorSelection | null
   ): Promise<RuntimeStageOutcome> {
+    if (this.shuttingDown) return cancelledOutcome()
     const version = this.targetVersion
     const bridge = new BootstrapProgressBridge(onProgress)
     bridge.takeOver()
@@ -1021,15 +1044,18 @@ export class RuntimeInitializationService {
    * 返回 undefined 表示 doctor 自己没跑成，调用方按「查不出来」处理。
    */
   async doctor(): Promise<RuntimeDoctorCheck[] | undefined> {
+    if (this.shuttingDown) return undefined
     const runtimePath = this.options.launchConfig.runtimePath
     if (!runtimePath) return undefined
 
+    let client: RuntimeClient | undefined
     try {
-      const client = this.createClient({
+      client = this.createClient({
         runtimePath,
         appRoot: this.options.launchConfig.appRoot,
         dataRoot: this.options.launchConfig.dataRoot,
       })
+      this.clients.add(client)
       const outcome = await client.run(['doctor'])
       if (!outcome.success) {
         logger.warn(`Runtime doctor 报告失败: ${outcome.code} ${outcome.result.message}`)
@@ -1041,6 +1067,8 @@ export class RuntimeInitializationService {
         `Runtime doctor 调用失败: ${error instanceof Error ? error.message : String(error)}`
       )
       return undefined
+    } finally {
+      if (client && !client.hasActiveSessions) this.clients.delete(client)
     }
   }
 
@@ -1091,7 +1119,7 @@ export class RuntimeInitializationService {
         channel,
         runtimePath,
         appRoot,
-        isCancelled: () => this.cancelRequested,
+        isCancelled: () => this.cancelRequested || this.shuttingDown,
         onProgress: progress => {
           const downloading = progress.item !== undefined
           bridge.observe(
@@ -1099,9 +1127,13 @@ export class RuntimeInitializationService {
             progress.message,
             undefined,
             {
-              status: 'running',
+              status: progress.phase === 'complete' ? 'succeeded' : 'running',
               item: progress.item,
               source: progress.source,
+              targetVersion: progress.targetVersion,
+              sourceName: progress.sourceName,
+              sourceIndex: progress.sourceIndex,
+              sourceCount: progress.sourceCount,
               bytesPerSecond: progress.bytesPerSecond,
               current: progress.current,
               total: progress.total,
@@ -1181,7 +1213,7 @@ export class RuntimeInitializationService {
   ): Promise<RuntimeStageOutcome> {
     const runtimePath = this.options.launchConfig.runtimePath
     if (!runtimePath) {
-      // 灰度期一次生命周期只走一条链路，找不到可执行文件时直接失败展示，不回退旧链路。
+      // 找不到可执行文件时直接失败展示，不启动安装根目录残留的旧后端。
       const definition = RUNTIME_CLIENT_ERROR_DEFINITIONS.RUNTIME_NOT_FOUND
       const message = `找不到 Runtime 可执行文件，无法以 ${this.options.launchConfig.mode} 模式初始化`
       logger.error(message)
@@ -1210,6 +1242,8 @@ export class RuntimeInitializationService {
       `执行 Runtime 命令: ${command.join(' ')}${mirror ? `（镜像 ${mirror.kind}=${mirror.key}）` : ''}`
     )
 
+    if (this.shuttingDown) return cancelledOutcome()
+    this.clients.add(client)
     let outcome: RuntimeRunResult
     try {
       outcome = await client.run(command, {
@@ -1226,7 +1260,8 @@ export class RuntimeInitializationService {
             source: event.source,
             bytesPerSecond: event.bytesPerSecond,
           }),
-        onState: event => bridge.observe(event.stage, event.message),
+        onState: event =>
+          bridge.observe(event.stage, event.message, undefined, { status: event.status }),
         onLog: event => {
           if (event.stream === 'stderr') {
             stderrLines.push(event.message)
@@ -1258,6 +1293,7 @@ export class RuntimeInitializationService {
       }
     } finally {
       this.activeControl = null
+      if (!client.hasActiveSessions) this.clients.delete(client)
     }
 
     if (outcome.success) {

@@ -26,8 +26,6 @@ import type { MaaFWShellInstanceImportIn } from '../models/MaaFWShellInstanceImp
 import type { MaaFWShellInstanceImportOut } from '../models/MaaFWShellInstanceImportOut';
 import type { MaaFWShellInstancesIn } from '../models/MaaFWShellInstancesIn';
 import type { MaaFWShellInstancesOut } from '../models/MaaFWShellInstancesOut';
-import type { MssDefenseStatusIn } from '../models/MssDefenseStatusIn';
-import type { MssDefenseStatusOut } from '../models/MssDefenseStatusOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -53,7 +51,7 @@ export class MaaFwService {
     }
     /**
      * 按来源目录导入（或重新导入）副本
-     * 脚本页选目录就是走这里：第一次是导入，之后是换来源或按当前来源重导。
+     * 托管页选目录就是走这里：第一次是导入，之后是换来源或按当前来源重导。
      *
      * 导入成功才把来源写进 Info.Path；失败时旧副本与旧来源都原样不动。
      * @param requestBody
@@ -75,7 +73,7 @@ export class MaaFwService {
     }
     /**
      * 立即从来源目录同步（跟随来源目录 / 源码形态）
-     * 脚本页「立即同步」：按当前来源目录强制重导进脚本的私有渠道，不看签名。
+     * 托管页「立即同步」：按当前来源目录强制重导进脚本的私有渠道，不看签名。
      *
      * 只在跟随来源目录（开发者模式或源码形态）时可用；脚本运行中、项目正在更新或被占用时拒绝。
      * ``message`` 是给用户看的结果：变了哪些文件 / 内容未变化。
@@ -98,7 +96,7 @@ export class MaaFwService {
     }
     /**
      * 列出可作为克隆来源的其它 MFW 脚本
-     * 新建脚本对话框里「复用已有脚本的项目」的候选：有健康副本的 MFW / M9A 脚本。
+     * 新建托管对话框里「复用已有托管的项目」的候选：有健康副本的 MFW / M9A 托管。
      *
      * 新建时脚本还没建出来，所以不要求 ``scriptId``；传了就把它自己排除掉。
      * @param requestBody
@@ -123,9 +121,9 @@ export class MaaFwService {
      * 同一个项目要开第二、第三个脚本（不同模拟器并行跑）时走这里，不用再选目录
      * 重新投影，来源目录已经删了也能建。
      *
-     * 副本从源脚本的副本硬链接克隆（运行时、模型与其它副本共用，只多小文件），
-     * ``Info.Path`` 与 ``Embedded.*`` 沿用源脚本的记录；类型随项目（M9A 项目 → M9A）。
-     * 用户、任务队列与运行设置不带——那是「复制脚本」的事。
+     * 副本从源托管的副本硬链接克隆（运行时、模型与其它副本共用，只多小文件），
+     * ``Info.Path`` 与 ``Embedded.*`` 沿用源托管的记录；类型随项目（M9A 项目 → M9A）。
+     * 用户、任务队列与运行设置不带——那是「复制托管」的事。
      * @param requestBody
      * @returns MaaFWEmbeddedStatusOut Successful Response
      * @throws ApiError
@@ -145,7 +143,7 @@ export class MaaFwService {
     }
     /**
      * 列出项目目录里外壳（MFAAvalonia / MXU / MFW-PyQt6）保存的配置实例
-     * 新建脚本引导最后一步用：外壳里配好的每份实例都可以导入成一个用户。只读外壳文件。
+     * 新建托管引导最后一步用：外壳里配好的每份实例都可以导入成一个账号。只读外壳文件。
      * @param requestBody
      * @returns MaaFWShellInstancesOut Successful Response
      * @throws ApiError
@@ -165,7 +163,7 @@ export class MaaFwService {
     }
     /**
      * 把选中的外壳配置实例导入成用户
-     * 每个实例建一个用户：用户名取实例名，任务队列与任务选项一起导入。
+     * 每个实例建一个账号：账号名称取实例名，任务队列与任务选项一起导入。
      *
      * 逐个实例独立处理，失败原因与当前项目里对不上而跳过的任务 / 选项写在各项结果里。
      * @param requestBody
@@ -186,11 +184,11 @@ export class MaaFwService {
         });
     }
     /**
-     * 把一份外壳配置的任务队列覆盖到已有用户
-     * 脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个用户。
+     * 把一份外壳配置的任务队列覆盖到已有账号
+     * 脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个账号。
      *
      * 与「导入成用户」共用同一套换算，所以当前项目里对不上的任务 / 选项同样会被跳过并列在结果里。
-     * 覆盖的是任务队列与任务选项，用户名不动。
+     * 覆盖的是任务队列与任务选项，账号名称不动。
      * @param requestBody
      * @returns MaaFWShellInstanceApplyOut Successful Response
      * @throws ApiError
@@ -210,9 +208,9 @@ export class MaaFwService {
     }
     /**
      * 按所选 resource 推断 MFW 项目的安卓游戏包名
-     * 脚本编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
+     * 托管编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
      *
-     * 只看 resource 的 pipeline，不带用户任务的 pipeline_override（编辑脚本时还没有
+     * 只看 resource 的 pipeline，不带账号任务的 pipeline_override（编辑脚本时还没有
      * 运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
      * @param requestBody
      * @returns MaaFWGamePackageOut Successful Response
@@ -301,7 +299,7 @@ export class MaaFwService {
     }
     /**
      * 查询 MFW 项目的 Mirror 酱 CDK 状态
-     * 脚本编辑页 CDK 输入框下那行小字：CDK 还剩多久到期，或者为什么不能用。
+     * 托管编辑页 CDK 输入框下那行小字：CDK 还剩多久到期，或者为什么不能用。
      *
      * 带着 CDK 按「当前版本 = 最新版本」查一次 Mirror 酱，服务端只校验 CDK、不签发下载地址，
      * 不占当日下载额度。CDK 只放在请求体里。项目不支持或查询失败也按成功返回对应状态。
@@ -382,13 +380,13 @@ export class MaaFwService {
     }
     /**
      * 读取 MFW 脚本的项目图标
-     * 脚本列表的头像：项目 interface 顶层 ``icon`` 指的图片。
+     * 托管列表的头像：项目 interface 顶层 ``icon`` 指的图片。
      *
      * 取不到（项目还没导入、没写 icon、文件不在）一律 404，前端回退到类型图标；
      * 具体原因只写日志，不放进响应。
      * 项目更新可能原地换掉图标而地址不变，所以带 ``no-cache``，不让浏览器拿缓存的旧图；
      * FileResponse 不处理 If-None-Match，每次都完整返回。
-     * @param scriptId MFW 脚本 ID
+     * @param scriptId MFW 托管 ID
      * @returns any Successful Response
      * @throws ApiError
      */
@@ -401,28 +399,6 @@ export class MaaFwService {
             query: {
                 'scriptId': scriptId,
             },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 个人版「灾变防线」这一期的状态
-     * MSS 用户页显示「本期灾变防线打了没」。只读，不改任何配置。
-     *
-     * 「这一期」由后端按官网那一篇公告的开始时刻算，前端不复刻同一套口径。
-     * @param requestBody
-     * @returns MssDefenseStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static getMssDefenseStatusApiScriptsMaafwMssDefenseStatusPost(
-        requestBody: MssDefenseStatusIn,
-    ): CancelablePromise<MssDefenseStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/mss/defense-status',
-            body: requestBody,
-            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

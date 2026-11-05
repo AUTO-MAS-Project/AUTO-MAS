@@ -46,8 +46,8 @@ from app.models.schema import (
 )
 from app.utils import get_logger
 
-# 这些日志原先由 API 层记录，模块名沿用「脚本管理 API」：搬家不改日志上的模块名。
-logger = get_logger("脚本管理 API")
+# 这些日志原先由 API 层记录，模块名沿用「托管管理 API」：搬家不改日志上的模块名。
+logger = get_logger("托管管理 API")
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,7 +83,7 @@ def hsr_script_config(script_id: str):
 
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     if not isinstance(script_config, RuntimeHSRConfig):
-        raise TypeError("脚本配置类型错误, 不是 HSR 类型")
+        raise TypeError("托管配置类型错误, 不是 HSR 类型")
     return script_config
 
 
@@ -158,6 +158,7 @@ async def update_engine(script_id: str, engine: str, action: str) -> HSRApiReply
 
     try:
         script_config = hsr_script_config(script_id)
+        from app.core.script_update import ScriptUpdateRequest, run_script_update
         from app.task.HSR.task_mapping import engine_label
         from app.task.HSR.tools.native_control import resolve_script_path
         from app.task.HSR.tools.update import (
@@ -212,7 +213,9 @@ async def update_engine(script_id: str, engine: str, action: str) -> HSRApiReply
             return HSRApiReply.error(409, str(e))
 
         try:
-            outcome = await update_engine_if_needed(
+            outcome = await run_script_update(
+                ScriptUpdateRequest(script_id, "HSR", engine),
+                update_engine_if_needed,
                 engine,
                 Path(root),
                 source=source,
@@ -251,7 +254,7 @@ async def update_engine(script_id: str, engine: str, action: str) -> HSRApiReply
 
 
 async def cloud_login(script_id: str, user_id: str) -> HSRApiReply:
-    """``/hsr/cloud-login``：为该用户登录云·星穹铁道；忙时 409，未确认登录 400。"""
+    """``/hsr/cloud-login``：为该账号登录云·星穹铁道；忙时 409，未确认登录 400。"""
 
     try:
         script_config = hsr_script_config(script_id)
@@ -297,7 +300,7 @@ async def cloud_login(script_id: str, user_id: str) -> HSRApiReply:
 
 
 async def get_managed_config(script_id: str | None, user_id: str | None) -> HSRApiReply:
-    """``/hsr/managed-config``：原生动态托管字段，按用户配置来源决定读哪份计划。"""
+    """``/hsr/managed-config``：原生动态托管字段，按账号配置来源决定读哪份计划。"""
 
     try:
         if not script_id:

@@ -755,7 +755,7 @@ Cycle 的 IntervalMinutes 为队列统一间隔，LastRunAt 是最近循环成�
 
 [SchedulerRunScope.vue](D:/Dev/AUTO-MAS/frontend/src/views/scheduler/SchedulerRunScope.vue) 继续承接启动前的大面积运行范围弹窗；运行时隐藏。目标选择与要求树生成仍复用现有配置 API 和 `taskSelection`，本轮未新增后端接口。
 
-[SchedulerRunPanels.vue](D:/Dev/AUTO-MAS/frontend/src/views/scheduler/SchedulerRunPanels.vue) 保留原总览／日志分栏布局，按运行对象派生展示内容。[TaskOverviewPanel.vue](D:/Dev/AUTO-MAS/frontend/src/views/scheduler/TaskOverviewPanel.vue) 直接接收只读任务信息 prop，不再通过 ref 回放或维护第二份快照。[SchedulerLogPanel.vue](D:/Dev/AUTO-MAS/frontend/src/views/scheduler/SchedulerLogPanel.vue) 只维护供编辑器显示的文本：首条日志、切换运行、恢复可见及完成结果立即刷新，连续输出合并为 200ms 更新；隐藏标签或离开页面时停止渲染，公共运行模块仍持续收集日志。既有 120000 字符渲染限制、行号、跟随、主题和操作按钮保持原行为。
+[SchedulerRunPanels.vue](D:/Dev/AUTO-MAS/frontend/src/views/scheduler/SchedulerRunPanels.vue) 保留原总览／日志分栏布局，按运行对象派生展示内容。[TaskOverviewPanel.vue](D:/Dev/AUTO-MAS/frontend/src/views/scheduler/TaskOverviewPanel.vue) 直接接收只读任务信息 prop，不再通过 ref 回放或维护第二份快照。[SchedulerLogPanel.vue](D:/Dev/AUTO-MAS/frontend/src/views/scheduler/SchedulerLogPanel.vue) 只维护供编辑器显示的文本：首条日志、切换运行、恢复可见及完成结果立即刷新，连续输出合并为 200ms 更新；隐藏标签或离开页面时停止渲染，公共运行模块仍持续收集日志。既有 120000 字符渲染限制、行号、跟随、主题和操作按钮保持原行为。编辑器作为异步组件先等待既有 configureLocalMonaco() 完成，避免刷新恢复日志时抢在空闲预热之前初始化并退回 CDN。
 
 应用组合根 [realtimeResidents.ts](D:/Dev/AUTO-MAS/frontend/src/bootstrap/realtimeResidents.ts) 分别注册运行数据、反馈和标签草稿常驻生命周期。App、主页、托盘及桌宠直接访问 store，不再导入调度页控制器；关闭窗口的运行判断读取公共运行状态。
 
@@ -1306,3 +1306,15 @@ MAA 的 prepare 在配置 X 锁之前还可能等待安装写入互斥与安装�
 新增的公共日志回归在修复前失败，修复后通过。MAA 隔离验证执行真实 main_task 的建记录／提示／启动顺序，设备 open 保持挂起，确认原生日志为空时已有非空 WS 日志与相同 HTTP 快照；另覆盖安装写入等待、访问锁提示去重、取得锁及取消退出。没有启动真实模拟器、MAA 或游戏。等待日志不进入匿名统计，继续复用既有任务生命周期观察入口。
 
 本轮验证：全量 pytest 为 1329 passed、3 skipped、29 subtests passed，耗时 197.76s；5 个涉及文件的 Ruff 与格式检查通过。Pyright 的 MAA 旧实现基线和修复后均为 76 条已有诊断，对照无新增诊断，运行模型文件无诊断。测试输出与前后静态诊断留在 `.dev/wait-log-*`、`.dev/maa-wait-log.log`。确认调试后端空闲且队列自动触发均关闭后，经正常关闭接口重启，继续使用原导入测试数据；未启动真实专项。
+
+## 54. 提交前同步 dev 与冲突适配
+
+本次同步基线为 `origin/dev` 的 `76eac7930`，保留上游 MCP 可选服务拆分、专项程序更新、定时唤醒和托管／账号展示语义。新调度模式、要求树、运行 UUID、L2 兼容分叉及 timer 所有权继续遵守本文主干，没有恢复旧循环会话、旧任务参数或目录预约器。
+
+上游新增的专项更新进度与异常状态改用运行模型的提交方法；MaaEnd 更新准备已持有的配置锁在 prepare 中复用，不重复等待自身。SRC 的原生安装访问保护从已锁定的热态路径建立。用户配置预处理返回的 guard 在提交保护范围内复核，保留上游并发编辑保护。
+
+MCP 服务自行长期持有加载 Task 并负责停止收尾；MaaEnd 资源预热沿 BackgroundTaskManager 挂载，没有重新引入 RuntimeTasks。定时唤醒改读 LastStartTime，定时与循环开关独立，开启循环不移除已启用的定时唤醒。唤醒启动沿用 dev 的定时补跑与普通启动队列分流。
+
+浏览器刷新验证发现，本地 Monaco 空闲预热尚未完成时挂载日志编辑器会启动 CDN 加载。日志组件现复用本地初始化 Promise 后再挂载，页面其余内容不等待；组件规模为 372 行。运行回归主动阻断远程 Monaco 请求，检查两种启动顺序、刷新、切页、漏包恢复和停止结果。上游新增队列 UI 用例保留创建、拖排、范围选择和删除验证，已有触发设置验证独立保留。重连与真实运行验证按 config_id 查业务对象，按运行 UUID 定位运行节点。
+
+合并后 Windows 全量后端回归为 1262 passed、1 skipped、15 subtests passed；前端 46 个文件共 246 项测试通过。保留的 Pydantic 依赖弃用警告不影响运行；未执行真实账号、MAA、游戏或模拟器验收。类型、格式、构建与浏览器验证的原始记录在本地 `.dev/pr-*`，不进入提交。

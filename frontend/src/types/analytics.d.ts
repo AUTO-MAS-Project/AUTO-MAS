@@ -81,6 +81,7 @@ export type AnalyticsTaskSource =
   | 'script_update'
   | 'unknown'
 export type AnalyticsScreen =
+  | 'tools'
   | 'initialization'
   | 'home'
   | 'scripts'
@@ -101,7 +102,7 @@ export type AnalyticsScreen =
   | 'taskboard'
 export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
   app_started: {
-    launch_kind: 'manual' | 'auto_start' | 'unknown'
+    launch_kind: 'manual' | 'auto_start' | 'scheduled_wakeup' | 'unknown'
     runtime_mode: AnalyticsRuntimeMode
     release_channel: 'stable' | 'beta' | 'unknown'
   }
@@ -146,9 +147,10 @@ export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
   }
   notification_binding_finished: {
     channel_kind: 'openclaw_qq'
-    action: 'bind' | 'rebind' | 'unbind'
+    action: 'bind' | 'rebind' | 'unbind' | 'manual_bind'
     outcome:
       | 'connected'
+      | 'saved'
       | 'unbound'
       | 'failure'
       | 'expired'

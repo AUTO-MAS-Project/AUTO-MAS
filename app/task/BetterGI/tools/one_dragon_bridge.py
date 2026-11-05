@@ -49,7 +49,7 @@ _JS_SCRIPT_REL_DIR = Path("User") / "JsScript"
 _RES_TEMPLATE_DIR = Config.resource_path / "templates" / "BetterGI"
 _SCRIPT_ASSET_DIR = _RES_TEMPLATE_DIR / "MASOneDragon"
 
-# 执行层「段」配置组在 BGI 列表里的 index 基准（固定高位，避免与用户配置组插队）。
+# 执行层「段」配置组在 BGI 列表里的 index 基准（固定高位，避免与账号配置组插队）。
 _SEGMENT_INDEX_BASE = 890
 
 # 内置战斗 4 项（路径 B 下由本配置组直连执行层；其余由随后一条龙承接）
@@ -255,7 +255,7 @@ def write_execution_groups(
 
     这些组由 MAS 每次运行前重新生成，不属于用户资产，运行结束由
     ``remove_execution_groups`` 删除；脚本本体（``User/JsScript/MASOneDragon``）保留。
-    ``index`` 取固定高位区间，避免与用户配置组在 BGI 列表里插队。
+    ``index`` 取固定高位区间，避免与账号配置组在 BGI 列表里插队。
     """
     if not segments:
         return []
@@ -292,7 +292,7 @@ def remove_execution_groups(root_path: Path, created: list[Path]) -> None:
 
 
 def cleanup_leftover_execution_groups(root_path: Path, user_id: str) -> int:
-    """清理该用户历史残留的执行层「段」配置组文件（进程被强杀等异常场景）。"""
+    """清理该账号历史残留的执行层「段」配置组文件（进程被强杀等异常场景）。"""
     short = _mas_user_short_id(user_id)
     removed = 0
     sg_dir = root_path / _GROUP_REL_DIR

@@ -18,10 +18,10 @@
 
 """ZZZ-OD 自动代理：按配置来源与账号切换方式拉起一条龙并监控日志。
 
-MAS 用户与 zzz-od 实例槽**固定绑定**：每个用户绑定一个槽（绑定下标存于
-用户配置 Info.SlotIdx，首次运行/配置时按全局查重分配），槽目录持久保留
+MAS 账号与 zzz-od 实例槽**固定绑定**：每个账号绑定一个槽（绑定下标存于
+账号配置 Info.SlotIdx，首次运行/配置时按全局查重分配），槽目录持久保留
 （用户经「在一条龙内配置」维护配队等复杂配置）；注册表不持久写入——
-运行/会话窗口内以**合成注册表视图**临时替换 one_dragon.yml（仅本脚本
+运行/会话窗口内以**合成注册表视图**临时替换 one_dragon.yml（仅本托管
 用户槽），窗口结束恢复原生内容，zzz-od 原生世界零 MAS 痕迹。
 
 新槽一律落在 ``MAS_SLOT_BASE``（1001）起的高位段：一条龙的「新增实例」只在
@@ -32,14 +32,14 @@ MAS 用户与 zzz-od 实例槽**固定绑定**：每个用户绑定一个槽（�
 同安装另有 ZzzOd 脚本在跑时整体跳过（它在用槽的绑定号要到 ``final_task`` 才
 回写，此时回收会拆掉它的现场）。
 
-- independent 来源 + 「多实例切换」（脚本级下拉，不推荐）：把全部启用用户的配置
+- independent 来源 + 「多实例切换」（托管级下拉，不推荐）：把全部启用账号的配置
   注入各自绑定槽（备份 → 注入 → 清非保留类应用的运行记录），随后
   ``--onedragon --instance {slot1,slot2,...}`` 一次性运行多账号一条龙——
   zzz-od 内部依次执行各实例并自行切换游戏账号；结果按各实例槽运行记录
   diff 归属到对应用户。
-- 注入模式 + 「单实例切换」（脚本级下拉，默认，推荐）：逐用户独立会话——注入
-  该用户配置到其绑定槽 → 单实例运行（仅运行当前，无槽间切换）→ 跑完关闭
-  → 下一个用户。失败域隔离，某用户失败只重启该用户。
+- 注入模式 + 「单实例切换」（托管级下拉，默认，推荐）：逐账号独立会话——注入
+  该账号配置到其绑定槽 → 单实例运行（仅运行当前，无槽间切换）→ 跑完关闭
+  → 下一个账号。失败域隔离，某账号失败只重启该账号。
 - 注入模式 + 「MAS切换」（暂未开放）：MAS 侧 OCR 操控游戏完成账号切换后交
   一条龙运行。
 - 原生来源：不注入不建视图，直接 ``--onedragon`` 裸跑，完全尊重 zzz-od 自己
@@ -107,7 +107,6 @@ from .slots import collect_used_slot_idxs, ensure_user_slot, recycle_unbound_slo
 from .tools import (
     INSTANCE_RUN_ALL,
     INSTANCE_RUN_CURRENT,
-    PERSISTENT_RUN_RECORD_APPS,
     RUN_STATUS_FAILED,
     RUN_STATUS_NOT_RUN,
     RUN_STATUS_RUNNING,
@@ -224,11 +223,16 @@ def _failed_apps(
         for app_id, _, new in diffs
         if new == RUN_STATUS_FAILED and app_id not in _SUMMARY_APP_IDS
     }
-    app_ids = {
-        name: app_id
-        for app_id, name in app_name_book.items()
-        if app_id not in _SUMMARY_APP_IDS
-    }
+    names: dict[str, list[str]] = {}
+    for app_id, name in app_name_book.items():
+        if app_id not in _SUMMARY_APP_IDS:
+            names.setdefault(name, []).append(app_id)
+    app_ids = {name: ids[0] for name, ids in names.items() if len(ids) == 1}
+    for name, ids in names.items():
+        if len(ids) > 1:
+            logger.warning(
+                f"任务名称重复，忽略歧义终态日志并按运行记录判定：{name} ({'、'.join(ids)})"
+            )
     results: dict[tuple[int | None, str], bool] = {}
     current_slot = None
     for line in log.splitlines():
@@ -290,7 +294,7 @@ def parse_user_apps(user_config: ZzzOdUserConfig) -> list[dict]:
 def inject_user_fields(
     root: Path, slot_idx: int, user_config: ZzzOdUserConfig, apps: list[dict]
 ) -> None:
-    """把 MAS 用户字段写入绑定槽（game_account patch + game.yml 启动参数 + 任务编排整表）。
+    """把 MAS 账号字段写入绑定槽（game_account patch + game.yml 启动参数 + 任务编排整表）。
 
     不清运行记录、不备份——配置会话（以本页配置为基线打开 GUI）与运行时
     注入（配合 clear_run_records）共用。
@@ -323,14 +327,17 @@ def _snapshot_all_run_records(root: Path) -> dict[str, int]:
 def _judge_baseline(root: Path, idx: int) -> dict[str, int]:
     """本轮终判基准：注入后的运行记录快照，保留类应用一律按未跑计。
 
-    保留类应用（:data:`PERSISTENT_RUN_RECORD_APPS`）的记录不在注入时清空，
+    保留类内置应用和插件的记录不在注入时清空，
     其上一轮终态会让「本轮有没有变化」的差分失真——连续两轮失败会因前后同为
     失败被判成没变化，失败明细与重试提示一起丢掉。基准里把这些应用归零，
     与 :func:`_judge_after` 的 after 侧归一配对使用。
     """
 
     records = snapshot_run_records(root, idx)
-    for app_id in PERSISTENT_RUN_RECORD_APPS:
+    for name in snapshot_run_record_files(root, idx):
+        if Path(name).suffix != ".yml":
+            continue
+        app_id = Path(name).stem
         if app_id in records:
             records[app_id] = RUN_STATUS_NOT_RUN
     return records
@@ -353,9 +360,12 @@ def _judge_after(
     if not pre_files:
         return records
     current = snapshot_run_record_files(root, idx)
-    for app_id in PERSISTENT_RUN_RECORD_APPS:
-        name = f"{app_id}.yml"
-        if app_id not in records or name not in pre_files:
+    for name in pre_files:
+        # 附加文件只透传保存，不能按同名 stem 覆盖真正运行记录的终态。
+        if Path(name).suffix != ".yml":
+            continue
+        app_id = Path(name).stem
+        if app_id not in records:
             continue
         pre = pre_files[name]
         if pre is None or pre == current.get(name):
@@ -378,7 +388,7 @@ def _judge_all_skipped(log: str, diffs: list) -> bool:
 
 
 class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
-    """ZZZ-OD 自动代理：逐用户按三态来源拉起启动器 CLI 一条龙并监控"""
+    """ZZZ-OD 自动代理：逐账号按三态来源拉起启动器 CLI 一条龙并监控"""
 
     # 取消时等 final_task 完整收尾（SRC/MaaFW 同款）：不设此 flag 时外层取消会
     # 立刻打断 shield 的 final_task，导致 kill_managed_process 没跑——取消任务后
@@ -399,8 +409,8 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self.script_info = script_info
         self.script_config = script_config
         self.user_config = user_config
-        # 本任务实际执行的用户子集（manager 按配置来源分派人）：None=全部用户。
-        # 注入轮只含注入模式用户，原生裸跑轮只含原生来源用户——report 聚合仍用
+        # 本任务实际执行的账号子集（manager 按配置来源分派人）：None=全部用户。
+        # 注入轮只含注入模式用户，原生裸跑轮只含原生来源账号——report 聚合仍用
         # script_info.user_list（同一批 UserItem 对象，状态互通）
         self._task_users = users if users is not None else self.script_info.user_list
 
@@ -409,8 +419,8 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self.cur_user_config: ZzzOdUserConfig = self.user_config[self.cur_user_uid]
         # base 来源三态（shared/independent=本配置字段注入运行 / native=zzz-od 原生配置）
         self.base = read_config_base(self.cur_user_config)
-        # 账号切换方式（脚本级下拉，仅注入模式生效）：
-        # 多实例切换=多用户注入多实例槽一轮跑；单实例切换=逐用户独立会话
+        # 账号切换方式（托管级下拉，仅注入模式生效）：
+        # 多实例切换=多账号注入多实例槽一轮跑；单实例切换=逐账号独立会话
         self.account_switch = str(self.script_config.Game.AccountSwitch or "单实例切换")
         self.cur_user_log: LogRecord | None = None
         self.launcher_process_manager: ProcessManager | None = None
@@ -427,16 +437,16 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self._launcher_switched = False
         self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
-        # log_box 采集会话（用户级「节点详情推送模式」关闭时不创建，prepare 按配置启停）
+        # log_box 采集会话（账号级「节点详情推送模式」关闭时不创建，prepare 按配置启停）
         self._log_source: log_source.LogSource | None = None
         self._log_pipeline: log_box.LogPipeline | None = None
         self._log_user: UserItem | None = None
         self._log_failed = False
         self._log_close_task: asyncio.Task[None] | None = None
-        # 实例 idx → 账号名映射（原生来源=原生注册表快照；注入=绑定槽用户名），供后置
+        # 实例 idx → 账号名映射（原生来源=原生注册表快照；注入=绑定槽账号名称），供后置
         # 处理器把「开始加载实例配置 N」段边界映射为账号归属
         self._idx_names: dict[int, str] = {}
-        # 用户名 → UserItem（注入多实例切换的 sink 路由用；原生来源等无归属场景为空）
+        # 账号名称 → UserItem（注入多实例切换的 sink 路由用；原生来源等无归属场景为空）
         self._push_user_book: dict[str, UserItem] = {}
         # 注入前账密守卫的告警（多账号一轮时剔除账密不全的用户），main_task 推调度台
         self._guard_warnings: list[str] = []
@@ -459,11 +469,13 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self._app_name_book: dict[str, str] = {}
         # 本轮应用级失败名单（_judge_final 写入；重试前判「重试无意义」用）
         self._failed_app_ids: list[str] = []
+        # 插件失败保留原生结果；整轮已走完时不单独触发单账号整轮重跑。
+        self._plugin_app_ids: frozenset[str] = frozenset()
         # 白名单解析结果（app_id 集，prepare 经应用目录解析）
         self._futile_app_ids: frozenset[str] = frozenset()
 
     def _enabled_app_list(self) -> list[dict]:
-        """当前用户的一条龙任务编排 enabled 项列表。"""
+        """当前账号的一条龙任务编排 enabled 项列表。"""
 
         return parse_user_apps(self.cur_user_config)
 
@@ -526,7 +538,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         return missing
 
     def _push_log_enabled(self) -> bool:
-        """节点详情采集开关：触发用户或（多实例切换时）任一启用用户未关闭即采集。"""
+        """节点详情采集开关：触发用户或（多实例切换时）任一启用账号未关闭即采集。"""
 
         if self.user_state(self.cur_user_item).push_log_mode != "关闭":
             return True
@@ -547,10 +559,10 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
     async def _collect_inject_users(
         self,
     ) -> list[tuple[UserItem, ZzzOdUserConfig, list[dict]]]:
-        """多实例切换的注入名单：启用且有任务编排的用户（按调度顺序）。
+        """多实例切换的注入名单：启用且有任务编排的账号（按调度顺序）。
 
-        逐用户施加跳过条件（剩余天数 / 今日代理次数上限 / 任务编排为空），
-        命中的用户标记「跳过」不入列。原生来源用户绝不入列（原生来源=零注入，
+        逐账号施加跳过条件（剩余天数 / 今日代理次数上限 / 任务编排为空），
+        命中的用户标记「跳过」不入列。原生来源账号绝不入列（原生来源=零注入，
         manager 本就不应分派，此处兜底防御）。多账号一轮时额外做账密守卫：
         任一用户缺账号或密码都会在槽间切换时失败并拖死整轮，缺失者标记
         「异常」剔除，告警写入调度台。
@@ -565,7 +577,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 continue
             if user_uses_native_base(cfg):
                 logger.warning(
-                    f"用户 {user_item.name} 为原生来源配置, 不参与注入运行（原生裸跑由调度单独分派）"
+                    f"账号 {user_item.name} 为原生来源配置, 不参与注入运行（原生裸跑由调度单独分派）"
                 )
                 continue
             if cfg.Info.RemainedDay == 0:
@@ -596,7 +608,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     continue
                 await user_item.set_state(status="异常")
                 message = (
-                    f"用户 {user_item.name} 缺少账号或密码, 多账号运行时无法完成"
+                    f"账号 {user_item.name} 缺少账号或密码, 多账号运行时无法完成"
                     f"账号切换, 已从本轮注入名单剔除"
                 )
                 logger.warning(message)
@@ -607,7 +619,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
     def _inject_user_config(
         self, slot_idx: int, user_config: ZzzOdUserConfig, apps: list[dict]
     ) -> None:
-        """把用户配置字段生成 zzz-od YAML 写入实例槽（MaaEnd 式字段下发）。
+        """把账号配置字段生成 zzz-od YAML 写入实例槽（MaaEnd 式字段下发）。
 
         账号字段只覆盖 MAS 侧非空字段，槽内 game_account.yml 的其余字段
         （platform、自定义窗口标题等）原样保留；启动参数整组覆盖 game.yml；
@@ -621,11 +633,11 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
     async def _prepare_injection(
         self, users: list[tuple[UserItem, ZzzOdUserConfig, list[dict]]]
     ) -> None:
-        """注入模式：合成注册表视图 + 各用户字段写入绑定槽。
+        """注入模式：合成注册表视图 + 各账号字段写入绑定槽。
 
-        多实例切换=全部启用用户各注入各槽（多账号一次跑）；单实例切换=仅当前
-        用户（逐用户循环）。槽目录持久保留（配队等复杂配置），运行内容由
-        备份/恢复保证零痕迹；注册表以合成视图呈现（仅本脚本用户槽）。
+        多实例切换=全部启用账号各注入各槽（多账号一次跑）；单实例切换=仅当前
+        账号（逐账号循环）。槽目录持久保留（配队等复杂配置），运行内容由
+        备份/恢复保证零痕迹；注册表以合成视图呈现（仅本托管账号槽）。
         """
 
         backup_base = (
@@ -667,7 +679,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             backup_dir = backup_base / f"{slot:02d}"
             if instance_dir(self.script_root_path, slot).is_dir():
                 backup_instance(self.script_root_path, slot, backup_dir)
-                # 时间戳归档：MAS 用户槽快照（含配队等全部内容），供配置恢复
+                # 时间戳归档：MAS 账号槽快照（含配队等全部内容），供配置恢复
                 # ——统一入口会先物化本页账号+编排进槽（账号/编排只存在
                 # UserData，槽要注入才带上；直接快照会漏、恢复会清空本页字段）
                 archive_mas_config_backup(
@@ -689,8 +701,8 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 self.script_root_path, slot
             )
             self._multi_uids.add(user_item.user_id)
-            # 多实例切换共用一个 log_box：各用户的节点详情推送模式与归属
-            # （sink 按「【用户名】」前缀路由，idx→用户名供后置处理器归属）
+            # 多实例切换共用一个 log_box：各账号的节点详情推送模式与归属
+            # （sink 按「【账号名称】」前缀路由，idx→账号名称供后置处理器归属）
             self.user_state(user_item).push_log_mode = str(
                 cfg.Notify.PushLogMode or "汇总"
             )
@@ -698,14 +710,14 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self._push_user_book = {user_item.name: user_item for user_item, _, _ in users}
 
     def _write_view(self) -> None:
-        """（重）写合成注册表视图：仅本脚本注入槽，活跃=首槽。
+        """（重）写合成注册表视图：仅本托管注入槽，活跃=首槽。
 
         每轮尝试前调用：一条龙切换会把活跃实例写回视图（one_dragon.yml 即
         合成视图本体），不重写的话重试会从上次停留的槽开始；单槽注入用
         「仅运行当前」，规避上游 wrap-around 对自己的无意义登出/登录切换。
 
         单槽（单实例切换）且该用户配置了账号时置 ``force_login_before_run``：
-        进入游戏前强制按账密登录该用户的账号，避免沿用游戏里上一个用户
+        进入游戏前强制按账密登录该账号的账号，避免沿用游戏里上一个账号
         （或原生）的登录态串号；未配置账号不置位（沿用登录态语义）。
         多槽（多实例切换）不置位——槽间切换由上游 switch_account 处理
         （switch=True 时进入游戏自动强制登录）。
@@ -726,7 +738,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         )
 
     async def _reset_daily_proxy_count(self) -> None:
-        """跨日重置：仅重置日期变化的用户（多实例切换下每个用户都判一次）。
+        """跨日重置：仅重置日期变化的账号（多实例切换下每个账号都判一次）。
 
         单独放在 check 入口而非 main_task 是为避免 main_task 的「仅重置触发用户」
         漏洞——非触发用户的 ProxyTimes/LastProxyDate 从不重置就会从第二天起
@@ -753,8 +765,8 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         except ValueError as e:
             return str(e)
 
-        # base 来源三态：shared/independent=按该用户的 MAS 配置注入运行（shared=
-        # 脚本级共享配置载体，仍落到该用户绑定槽）；native=原生裸跑零注入。
+        # base 来源三态：shared/independent=按该账号的 MAS 配置注入运行（shared=
+        # 托管级共享配置载体，仍落到该账号绑定槽）；native=原生裸跑零注入。
         if self.base not in (
             CONFIG_BASE_SHARED,
             CONFIG_BASE_INDEPENDENT,
@@ -763,7 +775,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             return f"不支持的配置来源: {self.base}"
 
         if self.base in (CONFIG_BASE_SHARED, CONFIG_BASE_INDEPENDENT):
-            # 同脚本用户名唯一（绑定槽名与统计都依赖名字区分）
+            # 同托管账号名唯一（绑定槽名与统计都依赖名字区分）
             names = [
                 str(cfg.Info.Name or "").strip()
                 for cfg in self.user_config.values()
@@ -772,16 +784,16 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             duplicates = sorted({n for n in names if names.count(n) > 1})
             if duplicates:
                 return (
-                    f"存在同名用户: {'、'.join(duplicates)}, 请为每个用户设置不同的名称"
+                    f"存在同名账号: {'、'.join(duplicates)}, 请为每个账号设置不同的名称"
                 )
             if self._is_multi_account():
-                # 多实例切换：cur_user 只是触发者，逐用户跳过条件在注入名单中施加
+                # 多实例切换：cur_user 只是触发者，逐账号跳过条件在注入名单中施加
                 if not await self._collect_inject_users():
                     return "没有可注入的用户, 请确认用户已启用且任务配置非空"
             else:
                 try:
                     if not self._enabled_app_list():
-                        return "未启用任何一条龙任务, 请在用户配置中开启至少一个任务"
+                        return "未启用任何一条龙任务, 请在账号配置中开启至少一个任务"
                 except ValueError as e:
                     return str(e)
                 if (
@@ -790,10 +802,10 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     >= self.script_config.Run.ProxyTimesLimit
                 ):
                     await self.cur_user_item.set_state(status="跳过")
-                    return "今日代理次数已达上限, 跳过该用户"
+                    return "今日代理次数已达上限, 跳过该账号"
                 if self.cur_user_config.Info.RemainedDay == 0:
                     await self.cur_user_item.set_state(status="跳过")
-                    return "用户剩余天数为 0, 跳过该用户"
+                    return "账号剩余天数为 0, 跳过该账号"
         else:
             # 原生来源=原生裸跑零注入，运行前先自愈上次注入模式残留的合成视图
             # （只含 MAS 槽）：否则下面读到的是视图，会把 MAS 槽当运行目标、
@@ -840,10 +852,11 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             self.check_log,
         )
 
-        self._app_name_book = {
-            item["app_id"]: item["app_name"]
-            for item in list_app_catalog(self.script_root_path)
-        }
+        catalog = list_app_catalog(self.script_root_path)
+        self._plugin_app_ids = frozenset(
+            item["app_id"] for item in catalog if item.get("is_plugin")
+        )
+        self._app_name_book = {item["app_id"]: item["app_name"] for item in catalog}
         if not self._app_name_book:
             raise ValueError("未能加载一条龙任务目录，请检查安装文件是否完整")
 
@@ -861,12 +874,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 f"不在应用目录中, 可能已更名, 失配条目按可重试处理"
             )
 
-        # 用户级节点详情推送模式（build_user_result_text 按此渲染）
+        # 账号级节点详情推送模式（build_user_result_text 按此渲染）
         self.user_state(self.cur_user_item).push_log_mode = str(
             self.cur_user_config.Notify.PushLogMode or "汇总"
         )
         # 目录和账号映射会在运行期变化：收尾时再固定快照，不能在 prepare 提前捕获。
-        # 触发用户关闭但其他启用用户需要详情时仍采集，保留原有多账号开关语义。
+        # 触发用户关闭但其他启用账号需要详情时仍采集，保留原有多账号开关语义。
         self._prepare_log_details(
             self.script_log_path,
             mode=self.user_state(self.cur_user_item).push_log_mode,
@@ -888,12 +901,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         # 跨日重置：check 入口已对全部用户完成日期+ProxyTimes 同步，main_task
         # 无需再就地重置触发用户
         await self.cur_user_item.set_state(status="运行")
-        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
         run_limit = int(self.script_config.Run.RunTimesLimit)
         try:
-            # 注入现场（注入模式）：绑定槽备份 → 由用户配置字段生成 YAML 写入槽 →
+            # 注入现场（注入模式）：绑定槽备份 → 由账号配置字段生成 YAML 写入槽 →
             # 临时切 instance_run。注入只做一次——重试不清运行记录，
             # 让 zzz-od 按记录跳过已完成任务。
             if self.base == CONFIG_BASE_NATIVE:
@@ -905,12 +918,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     for item in list_instances(self.script_root_path)
                     if isinstance(item, dict)
                 }
-                # 原生来源=MAS 零注入零干涉（快速配置已封锁，见 ZzzOdUserConfig.load），
+                # 原生来源=MAS 零注入零干涉（覆写常规配置已封锁，见 ZzzOdUserConfig.load），
                 # 完全尊重 zzz-od 自己的 instance_run / 活跃实例 / 多账号运行设置
                 launcher_args = ["--onedragon"]
             else:
                 if self._is_multi_account():
-                    # 多实例切换：全部启用用户 → 各自绑定槽，一条龙多账号一次跑
+                    # 多实例切换：全部启用账号 → 各自绑定槽，一条龙多账号一次跑
                     inject_users = await self._collect_inject_users()
                     if not inject_users:
                         raise RuntimeError(
@@ -924,7 +937,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                             data=WSTaskNoticeData(level="error", message=warning),
                         )
                 else:
-                    # 单实例切换：仅当前用户（逐用户循环）
+                    # 单实例切换：仅当前账号（逐账号循环）
                     inject_users = [
                         (
                             self.cur_user_item,
@@ -945,7 +958,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             # 延后到 MAS 确认最终成功并完成收尾，避免首轮部分失败就启动倒计时，
             # 导致补跑中途关机。延时固定 60 秒，与一条龙 GUI 一致。取值随来源：
             # native=原生 after_done（与原生配置/GUI 显示一致），shared/independent
-            # =该用户的 MAS 字段（经配置会话双向联动与 GUI 保持一致）。多实例
+            # =该账号的 MAS 字段（经配置会话双向联动与 GUI 保持一致）。多实例
             # 切换整轮共用触发者的值。与 MAS 收尾的 CloseOnFinish
             # （kill_managed_process）相互独立，同时配置会各执行一次，无害。
             if self.base == CONFIG_BASE_NATIVE:
@@ -972,7 +985,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 if self.run_book:
                     break
                 logger.info(
-                    f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
+                    f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
                 )
                 # 多实例切换时触发者可能不在注入名单（如无任务被跳过），
                 # 不能把它的「跳过」状态覆盖为「运行」
@@ -1002,7 +1015,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                         )
                         await self.script_info.set_log(self.cur_user_log.status)
                         logger.opt(exception=True).warning(
-                            f"用户 {self.cur_user_item.name} - MAS 启动游戏失败: {e}"
+                            f"账号 {self.cur_user_item.name} - MAS 启动游戏失败: {e}"
                         )
                         await self.kill_managed_process(
                             kill_game=self._mas_should_close_game()
@@ -1011,7 +1024,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                             await Notify.send_notice(
                                 LocalNotice(
                                     title="ZZZ-OD 自动代理出现异常！",
-                                    message=f"用户 {self.cur_user_item.name} 游戏启动失败",
+                                    message=f"账号 {self.cur_user_item.name} 游戏启动失败",
                                     ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                                     duration_seconds=3,
                                 )
@@ -1029,7 +1042,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
                 base_label = BASE_SOURCE_LABELS.get(self.base, self.base)
                 run_desc = (
-                    f"{base_label}配置·多实例切换·{len(self._injected_slots)}个用户"
+                    f"{base_label}配置·多实例切换·{len(self._injected_slots)}个账号"
                     if self._is_multi_account()
                     else f"{base_label}配置"
                 )
@@ -1116,7 +1129,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     else self.cur_user_log.status
                 )
                 logger.warning(
-                    f"用户 {self.cur_user_item.name} - ZZZ-OD 代理异常: "
+                    f"账号 {self.cur_user_item.name} - ZZZ-OD 代理异常: "
                     f"{failure_reason}"
                 )
                 await self.script_info.set_log(f"{failure_reason}\n正在中止相关程序")
@@ -1125,7 +1138,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     await Notify.send_notice(
                         LocalNotice(
                             title="ZZZ-OD 自动代理出现异常！",
-                            message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                            message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
                             ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                             duration_seconds=3,
                         )
@@ -1142,7 +1155,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                             f"\n失败的应用均无重试价值（{futile_names}），已跳过剩余重试"
                         )
                         logger.info(
-                            f"用户 {self.cur_user_item.name} - "
+                            f"账号 {self.cur_user_item.name} - "
                             f"失败应用均无重试价值({futile_names}), 跳过剩余重试"
                         )
                         await self._push_dispatch_log(
@@ -1194,6 +1207,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             diffs = diff_run_records(records_before, records_after)
             failed_apps = _failed_apps(diffs, log, self._app_name_book)
             self._failed_app_ids = failed_apps
+            for app_id in failed_apps:
+                if app_id in self._plugin_app_ids:
+                    logger.warning(
+                        f"插件任务执行失败，失败结果已保留："
+                        f"{self._app_display_name(app_id)} ({app_id})"
+                    )
             if failed_apps:
                 failed_names = [
                     self._app_display_name(app_id) for app_id in failed_apps
@@ -1234,10 +1253,10 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             await self.cur_user_item.set_state(status=user_status)
 
     def _all_failures_futile(self, log: str) -> bool:
-        """本轮失败是否已无重试价值：整轮正常走完且失败应用全部命中白名单。
+        """整轮正常走完且仅插件或白名单应用失败时，不再整轮重跑。
 
         白名单应用的失败不触发重试，也不拦其余应用的重试；仅注入模式单实例
-        会话启用——独立基座的多实例切换与原生裸跑一轮覆盖多个用户或实例
+        会话启用——独立基座的多实例切换与原生裸跑一轮覆盖多个账号或实例
         （共享基座本就走既有单槽路径），个别应用的确定性失败不应剥夺其余
         目标的补跑机会。以「指令[ 一条龙 ] 执行成功」确认整轮走完：启动器
         提前退出时未跑到的应用不在失败名单里，缺这条证据按可重试处理，
@@ -1248,7 +1267,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             return False
         if _ZZZOD_ONE_DRAGON_SUCCESS not in log:
             return False
-        return _failures_all_futile(self._failed_app_ids, self._futile_app_ids)
+        return _failures_all_futile(
+            self._failed_app_ids, self._futile_app_ids | self._plugin_app_ids
+        )
 
     def _launch_evidence(self, log: str, records_changed: bool) -> bool:
         """启动器是否已成功启动：出现应用层运行上下文日志或运行记录有变化即视为已启动。
@@ -1300,12 +1321,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         return True
 
     async def _judge_multi(self, log: str) -> None:
-        """多实例切换：按各实例槽运行记录 diff 归属每个用户的结果。
+        """多实例切换：按各实例槽运行记录 diff 归属每个账号的结果。
 
         check_log 已标记的运行级终态（超时等）优先于运行记录 diff——收尾
         阶段卡死超时即使各槽已写出成功记录也不能判成功。致命日志次之：
-        整轮异常时未完成的用户一律标记异常。整轮结果独立控制重试，
-        用户日志保留各自结论；任一用户未完成则进入
+        整轮异常时未完成的账号一律标记异常。整轮结果独立控制重试，
+        账号日志保留各自结论；任一用户未完成则进入
         重试（zzz-od 按运行记录跳过已完成任务）。
         """
 
@@ -1328,6 +1349,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             )
             diffs = diff_run_records(before, after)
             failed_apps = _failed_apps(diffs, log, self._app_name_book, slot_idx=slot)
+            for app_id in failed_apps:
+                if app_id in self._plugin_app_ids:
+                    logger.warning(
+                        f"实例 {slot} 插件任务执行失败，失败结果已保留："
+                        f"{self._app_display_name(app_id)} ({app_id})"
+                    )
             success = any(new == RUN_STATUS_SUCCESS for _, _, new in diffs)
             # 记录保留后，本周期已全部完成的用户整轮被跳过、diff 为空，需要
             # 回落判完成（详见 _judge_all_skipped：以「整轮跑完」为判据，
@@ -1367,7 +1394,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             if record is not self.cur_user_log:
                 await record.set_state(content=list(self.cur_user_log.content))
             # 节点详情由 log_box 统一采集（final_task 收尾时按账号路由）；
-            # 每轮同步最终状态，成功计数在整个补跑期间每个用户只增加一次。
+            # 每轮同步最终状态，成功计数在整个补跑期间每个账号只增加一次。
             await self._persist_multi_user_result(
                 cfg, ok, slot in self._multi_succeeded
             )
@@ -1391,11 +1418,11 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 for user_item, _ in self._slot_users.values()
                 if user_item.status != "完成"
             )
-            self._multi_run_status = f"ZZZ-OD 部分用户执行失败: {failed_users}"
+            self._multi_run_status = f"ZZZ-OD 部分账号执行失败: {failed_users}"
             await self.script_info.set_log(self._multi_run_status)
 
         if self.cur_user_item.user_id not in self._multi_uids:
-            # 非参与用户只承担本次启动与进度展示，其日志不作为用户历史保存。
+            # 非参与用户只承担本次启动与进度展示，其日志不作为账号历史保存。
             await self.cur_user_log.set_state(status=self._multi_run_status)
 
         self.run_book = all_ok
@@ -1416,7 +1443,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
     async def _persist_multi_user_result(
         self, cfg: ZzzOdUserConfig, ok: bool, succeeded_before: bool
     ) -> None:
-        """多实例切换：逐用户写回代理数据（对齐 _persist_user_run_result 语义）。
+        """多实例切换：逐账号写回代理数据（对齐 _persist_user_run_result 语义）。
 
         每轮同步成败状态，首次成功才累计次数，避免其他账号失败导致的重跑
         重复计次；后续失败仍需如实落盘。
@@ -1468,18 +1495,33 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             try:
                 # 一条龙运行中会把计划进度写回槽内 per-app YAML、把周期进度写进
                 # 运行记录，整目录恢复会连它们一起回滚；先快照再恢复，随后回写
-                plan_run_times = snapshot_plan_run_times(self.script_root_path, slot)
-                record_files = snapshot_run_record_files(self.script_root_path, slot)
+                snapshot_errors: list[str] = []
+                plan_run_times = {}
+                record_files = {}
+                try:
+                    plan_run_times = snapshot_plan_run_times(
+                        self.script_root_path, slot
+                    )
+                except Exception as exc:
+                    snapshot_errors.append(f"计划进度快照失败：{exc}")
+                try:
+                    record_files = snapshot_run_record_files(
+                        self.script_root_path, slot
+                    )
+                except Exception as exc:
+                    snapshot_errors.append(f"运行记录快照失败：{exc}")
                 restore_instance(self.script_root_path, slot, backup_dir)
                 restore_plan_run_times(self.script_root_path, slot, plan_run_times)
                 restore_run_record_files(self.script_root_path, slot, record_files)
+                if snapshot_errors:
+                    raise OSError("；".join(snapshot_errors))
             except Exception as e:  # noqa: BLE001 - 单槽失败隔离，继续恢复其余槽
                 logger.opt(exception=True).warning(
                     f"恢复 ZZZ-OD 槽 {slot} 注入现场失败: {e}"
                 )
                 failed.append((slot, str(e)))
         if failed:
-            # 配置未完整恢复时保留现场，不能因实际运行用户已完成就自动关机。
+            # 配置未完整恢复时保留现场，不能因实际运行账号已完成就自动关机。
             self._shutdown_after_success = False
             # 失败槽里留着 MAS 注入内容：只标该槽对应的用户，不牵连已恢复成功的槽
             for slot, _ in failed:
@@ -1568,7 +1610,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         await self._restore_injection()
 
         # box 在宿主固定动态映射，后台归并后回到宿主按账号交付；
-        # 返回前节点已就位，manager 与调度台继续使用同一份用户结果。
+        # 返回前节点已就位，manager 与调度台继续使用同一份账号结果。
         await self._close_log_details()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd/Okww/BetterGI 行为）
@@ -1622,7 +1664,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     user=self.cur_user_item,
                     log_warning=logger.opt(exception=True).warning,
                 )
-        # 一次上游运行可同时执行多个实例，各用户沿用自己已确认的每轮结论。
+        # 一次上游运行可同时执行多个实例，各账号沿用自己已确认的每轮结论。
         for user in self._history_users.values():
             if user is self.cur_user_item:
                 continue
@@ -1676,9 +1718,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 )
             except Exception as e:
                 # 失败不再静默：既记 ERROR 日志，也推到调度台实时日志
-                await self._push_dispatch_log(f"推送用户统计通知失败: {e}")
+                await self._push_dispatch_log(f"推送账号统计通知失败: {e}")
                 logger.opt(exception=True).error(
-                    f"推送 ZZZ-OD 用户统计通知时出现异常: {e}"
+                    f"推送 ZZZ-OD 账号统计通知时出现异常: {e}"
                 )
 
         # 多实例触发者可能被正常跳过，整轮是否成功以实际参与用户的结果为准。
@@ -1699,14 +1741,14 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 await self._push_dispatch_log("一条龙任务已完成，60 秒后关机")
 
     async def _persist_user_run_result(self) -> None:
-        # 多实例切换：各用户的数据已在 _judge_multi 逐用户写回，避免重复计数
+        # 多实例切换：各账号的数据已在 _judge_multi 逐账号写回，避免重复计数
         if self._multi_ran:
             return
 
         if self.run_book:
             await self._apply_proxy_success(self.cur_user_config)
             await self.cur_user_item.set_state(status="完成")
-            logger.success(f"用户 {self.cur_user_uid} 的 ZZZ-OD 自动代理任务已完成")
+            logger.success(f"账号 {self.cur_user_uid} 的 ZZZ-OD 自动代理任务已完成")
         else:
             self.cur_user_config.Data.LastProxyStatus = "失败"
             await self.cur_user_config.commit()
@@ -1745,7 +1787,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 await Notify.send_notice(
                     LocalNotice(
                         title="ZZZ-OD 运行异常",
-                        message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
+                        message=f"账号 {self.cur_user_item.name}：{self.cur_user_log.status}",
                         ticker="异常",
                         duration_seconds=3,
                     )
@@ -1839,7 +1881,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
     def _prepare_log_details(
         self, path: Path, *, mode: str, enabled: bool, rotated_name: str | None
     ) -> None:
-        """本专项固定来源与用户；读取和交付时机由自身生命周期控制。"""
+        """本专项固定来源与账号；读取和交付时机由自身生命周期控制。"""
         self._log_user = self.cur_user_item
         self.user_state(self._log_user).push_log_mode = mode
         self._log_source = None

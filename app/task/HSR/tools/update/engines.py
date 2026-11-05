@@ -5,7 +5,7 @@
 
 契约由 ``scripts/hsr_update_contract_check.py`` 实测核对过：Mirror 酱两个 rid
 都是单平台（带 ``os``/``arch`` 一律 404），M7A 的 ``update.7z`` 是单根
-``update/`` 且不含任何用户状态，SRA 发行包是扁平布局。改这里之前先把那份脚本
+``update/`` 且不含任何账号状态，SRA 发行包是扁平布局。改这里之前先把那份脚本
 跑一遍。
 """
 

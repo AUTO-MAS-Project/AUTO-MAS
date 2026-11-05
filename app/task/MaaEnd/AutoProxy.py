@@ -79,7 +79,7 @@ from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
 
 from .inventory_report import INVENTORY_REPORT_RULE, InventoryReport, inventory_resolve
-from .push_log import MAAEND_PUSH_RULES, maaend_resolve
+from .push_log import MAAEND_PUSH_RULES, maaend_plain_text, maaend_resolve
 from .resource_loader import (
     MaaEndResourceLoader,
     get_loaded_maaend_options,
@@ -463,7 +463,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self.game_launch_result_path = (
             Path.cwd() / f"data/{script_info.script_id}/game-launch.json"
         )
-        # 用户级「节点详情推送」开关（Notify.PushLogMode），prepare 时按配置启用
+        # 账号级「节点详情推送」开关（Notify.PushLogMode），prepare 时按配置启用
         self.push_log_enabled = False
         self.inventory_status_messages: set[str] = set()
         self.mode = "Routine"
@@ -631,6 +631,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     "type": "input",
                     "values": {"LauncherExe": str(launcher_path)},
                 }
+        if task_name == _MAAEND_LAUNCH_GAME_PRETASK:
+            server = self.cur_user_config.Info.Resource
+            setting_options["LaunchGamePCRegion"] = {
+                "type": "select",
+                "value": "CN" if server == "官服" else server,
+            }
         values = _mxu_option_values(
             setting_options,
             build_task_option_maps(interface)[task_name],
@@ -665,7 +671,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if (
             not preserve_running_game
             and self.mode == self.first_run_mode
-            and self.script_config.Game.SetResolution
+            and (
+                self.script_config.Game.SetResolution
+                or self._launch_mode() == "MaaEnd"
+                and self.script_config.Game.AutoHDR != "Unchanged"
+            )
         ):
             self._read_original_game_settings()
             # 路径、签名与预任务参数全部就绪后再关闭游戏，校验失败不打断现有游戏。
@@ -722,7 +732,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         needs_wait = not is_process_running(_MAAEND_CLIENT_PROCESS) or (
             not preserve_running_game
             and self.mode == self.first_run_mode
-            and bool(self.script_config.Game.SetResolution)
+            and (
+                self.script_config.Game.SetResolution
+                or self.script_config.Game.AutoHDR != "Unchanged"
+            )
         )
         await self._apply_launcher_game_settings(
             preserve_running_game=preserve_running_game
@@ -862,7 +875,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             )
         ):
             await self.cur_user_item.set_state(status="跳过")
-            return "今日代理次数已达上限, 跳过该用户"
+            return "今日代理次数已达上限, 跳过该账号"
 
         account_id = str(self.cur_user_config.Info.Id).strip()
         account_switch_method = self._account_switch_method()
@@ -997,7 +1010,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         )
 
     def _quick_task_daily_once_done(self, task_name: str) -> bool:
-        """判断快速配置中的逻辑任务是否已在当天完成。"""
+        """判断覆写常规配置中的逻辑任务是否已在当天完成。"""
 
         if task_name != "Sanity":
             return self._daily_once_task_done(task_name)
@@ -1056,7 +1069,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             await self.cur_user_config.commit()
 
     def _daily_once_skip_reason(self) -> str | None:
-        """判断当前用户是否所有阶段都因每日一次规则而无需启动。"""
+        """判断当前账号是否所有阶段都因每日一次规则而无需启动。"""
 
         mode_results = [self._mode_skip_reason(mode) for mode in MAAEND_RUN_MOOD_BOOK]
         if any(reason is None or missing for reason, missing in mode_results):
@@ -1070,7 +1083,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             daily_once_done(task_name) for task_name in self._daily_once_task_names()
         ):
             return None
-        return "每日仅执行一次的任务今日已完成，跳过该用户"
+        return "每日仅执行一次的任务今日已完成，跳过该账号"
 
     async def prepare(self):
 
@@ -1082,7 +1095,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self.log_start_time = datetime.now().astimezone()
 
         # ── 推送详情开关（在专项侧，不在 log_box）：关闭时不创建采集会话 ──
-        # 该用户 push_log 保持为空，报告聚合自然只有结果行
+        # 该账号 push_log 保持为空，报告聚合自然只有结果行
         self.user_state(
             self.cur_user_item
         ).push_log_mode = self.cur_user_config.Notify.PushLogMode
@@ -1130,7 +1143,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             )
         for mode, reason in mode_skip_reasons.items():
             logger.info(
-                f"用户 {self.cur_user_item.name} 跳过{MAAEND_RUN_MOOD_BOOK[mode]}阶段: {reason}"
+                f"账号 {self.cur_user_item.name} 跳过{MAAEND_RUN_MOOD_BOOK[mode]}阶段: {reason}"
             )
         for mode in missing_task_modes:
             await Publisher.send(
@@ -1139,7 +1152,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 data=WSTaskNoticeData(
                     level="warning",
                     message=(
-                        f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中不存在"
+                        f"账号 {self.cur_user_item.name} 当前 MaaEnd 配置中不存在"
                         f"{MAAEND_RUN_MOOD_BOOK[mode]}阶段所需任务，已跳过该阶段，"
                         "请在 MaaEnd 中添加并启用对应任务"
                     ),
@@ -1147,7 +1160,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             )
 
     def _source_maaend_tasks(self) -> list[dict[str, object]] | None:
-        """读取当前用户所选 MaaEnd 实例的任务列表（文件未变时复用上次解析结果）。"""
+        """读取当前账号所选 MaaEnd 实例的任务列表（文件未变时复用上次解析结果）。"""
 
         if self.maaend_config_file is None:
             return None
@@ -1205,18 +1218,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         ]
 
     def _quick_config_base_skip_reason(self, mode: str) -> tuple[str | None, bool]:
-        """快速配置下按 MAS 任务开关与 MaaEnd 配置判断阶段是否可执行。"""
+        """覆写常规配置下按 MAS 任务开关与 MaaEnd 配置判断阶段是否可执行。"""
 
         native_sanity = self.cur_user_config.Info.SanityStrategy == "Native"
         inventory_sanity = self.cur_user_config.Info.SanityStrategy == "Inventory"
         if mode == "Delivery":
             if not self.cur_user_config.Task.IfSeizeDeliveryJobs:
-                return "快速配置未开启抢委托送货", False
+                return "覆写常规配置未开启抢委托送货", False
             task_name = MAAEND_DELIVERY_TASK
             task_label = "抢委托送货"
         elif mode == "AutoCollect":
             if not self.cur_user_config.Task.IfAutoCollect:
-                return "快速配置未开启自动采集", False
+                return "覆写常规配置未开启自动采集", False
             if not any(self.auto_collect_routes.values()):
                 return "今日采集周期无待执行路线", False
             task_name = MAAEND_AUTO_COLLECT_TASK
@@ -1235,7 +1248,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     )
                 )
             ):
-                return "快速配置未开启任何日常任务", False
+                return "覆写常规配置未开启任何日常任务", False
 
             tasks = self._source_maaend_tasks()
             if tasks is None:
@@ -1520,7 +1533,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             await self.cur_user_item.add_log_record(
                 datetime.now().astimezone(), LogRecord(status=self.check_result)
             )
-            message = f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}"
+            message = f"账号 {self.cur_user_item.name} 检查未通过: {self.check_result}"
             await self.script_info.set_log(message)
             if self.cur_user_item.status == "异常":
                 logger.warning(message)
@@ -1535,9 +1548,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         await self.prepare()
 
-        logger.info(f"开始代理用户 {self.cur_user_uid}")
+        logger.info(f"开始代理账号 {self.cur_user_uid}")
         await self.cur_user_item.set_state(status="运行")
-        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
         run_times_limit = self.script_config.Run.RunTimesLimit
@@ -1558,7 +1571,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 continue
             if i >= run_times_limit:
                 logger.warning(
-                    f"用户: {self.cur_user_uid} - {stage_label}阶段重试次数已耗尽"
+                    f"账号: {self.cur_user_uid} - {stage_label}阶段重试次数已耗尽"
                 )
                 mode_index += 1
                 i = 0
@@ -1571,7 +1584,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self.emulator_info = None
             self.retryable = True
             logger.info(
-                f"用户 {self.cur_user_item.name} - {stage_label}"
+                f"账号 {self.cur_user_item.name} - {stage_label}"
                 f"阶段尝试次数: {i}/{run_times_limit}"
             )
             self.log_start_time = datetime.now().astimezone()
@@ -1641,16 +1654,16 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     )
                     continue
                 keep_game_for_login_retry = False
-                logger.info(f"用户 {self.cur_user_item.user_id} MAS 自建账号切换成功")
+                logger.info(f"账号 {self.cur_user_item.user_id} MAS 自建账号切换成功")
                 await self.script_info.set_log("MAS 自建账号切换完成")
             elif account_id:
                 logger.info(
-                    f"用户 {self.cur_user_item.user_id} 将由 MAAEND 内置任务切换账号"
+                    f"账号 {self.cur_user_item.user_id} 将由 MAAEND 内置任务切换账号"
                 )
                 await self.script_info.set_log("游戏已启动，等待 MaaEnd 执行账号切换")
             else:
                 logger.info(
-                    f"用户 {self.cur_user_item.user_id} 未配置账号，跳过账号切换"
+                    f"账号 {self.cur_user_item.user_id} 未配置账号，跳过账号切换"
                 )
                 await self.script_info.set_log(
                     "等待 MaaEnd 启动游戏"
@@ -1727,7 +1740,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
             else:
                 logger.warning(
-                    f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
+                    f"账号: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
                 await self.script_info.set_log(
                     f"{self.cur_user_log.status}\n正在中止相关程序"
@@ -1745,8 +1758,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 try:
                     await Notify.send_notice(
                         LocalNotice(
-                            title="用户自动代理出现异常！",
-                            message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                            title="账号自动代理出现异常！",
+                            message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
                             ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                             duration_seconds=3,
                         )
@@ -1763,7 +1776,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
     ):
 
         if e is None:
-            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
+            logger.warning(f"账号: {self.cur_user_uid} - {error_message}")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -1771,7 +1784,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             )
         else:
             logger.opt(exception=True).warning(
-                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+                f"账号: {self.cur_user_uid} - {error_message}: {e}"
             )
             await Publisher.send(
                 id=self.task_info.task_id,
@@ -1787,8 +1800,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         try:
             await Notify.send_notice(
                 LocalNotice(
-                    title="用户自动代理出现异常！",
-                    message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                    title="账号自动代理出现异常！",
+                    message=f"账号 {self.cur_user_item.name} 自动代理时{error_message}",
                     ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                     duration_seconds=3,
                 )
@@ -2081,11 +2094,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
     def _configure_resolution_restore(
         self, tasks: list[dict[str, Any]]
     ) -> dict[str, Any] | None:
-        """仅在最后一个实际阶段，通过 MaaEnd 关闭游戏任务恢复分辨率。"""
+        """仅在最后一个实际阶段，通过 MaaEnd 关闭游戏任务恢复显示与自动 HDR 设置。"""
         resolution = self.script_config.Game.RestoreResolution
+        restore_hdr = self.script_config.Game.RestoreAutoHDR
+        restore_resolution = bool(resolution and resolution != "Off")
         if (
-            not resolution
-            or resolution == "Off"
+            (not restore_resolution and restore_hdr == "Unchanged")
             or (not self.script_config.Game.CloseOnFinish)
             or (self.emulator_manager is not None)
         ):
@@ -2108,23 +2122,32 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             return None
         if resolution == "Original" and original is None:
             logger.warning("无法读取启动前的终末地注册表显示设置，本轮跳过关闭时恢复")
-            for task in close_tasks:
-                task.setdefault("optionValues", {})["CloseGamePCApplyGameSetting"] = {
-                    "type": "switch",
-                    "value": False,
-                }
-            return None
-        required_options = (
-            "CloseGamePCApplyGameSetting",
-            "CloseGamePCGameSettingDisplayType",
-            "CloseGamePCGameSettingResolution",
-        )
+            restore_resolution = False
+            if restore_hdr == "Unchanged":
+                for task in close_tasks:
+                    task.setdefault("optionValues", {})[
+                        "CloseGamePCApplyGameSetting"
+                    ] = {
+                        "type": "switch",
+                        "value": False,
+                    }
+                return None
+        required_options = ["CloseGamePCApplyGameSetting"]
+        if restore_hdr != "Unchanged":
+            required_options.append("CloseGamePCAutoHDR")
+        if restore_resolution:
+            required_options.extend(
+                (
+                    "CloseGamePCGameSettingDisplayType",
+                    "CloseGamePCGameSettingResolution",
+                )
+            )
         if self._maaend_task_supported("CloseGamePC") is not True or not all(
             self._maaend_task_option_supported("CloseGamePC", name)
             for name in required_options
         ):
             raise ValueError(
-                "当前 MaaEnd 不支持关闭游戏时恢复分辨率，请更新 MaaEnd 或关闭此设置"
+                "当前 MaaEnd 不支持关闭游戏时恢复所选设置，请更新 MaaEnd 或关闭此设置"
             )
         close_task = (
             close_tasks[0]
@@ -2144,34 +2167,37 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             str(self.script_config.Game.ControllerType)
         ] = True
         tasks.append(close_task)
-        display_type = (
-            original[2]
-            if original is not None
-            else str(self.script_config.Game.RestoreDisplayType or "Window")
-        )
-        if display_type not in {"Window", "Fullscreen"}:
-            display_type = "Window"
-        if resolution == "Original":
-            assert original is not None
-            width, height = str(original[0]), str(original[1])
-        elif resolution == "Custom":
-            width = str(self.script_config.Game.RestoreResolutionWidth)
-            height = str(self.script_config.Game.RestoreResolutionHeight)
-        else:
-            width, height = resolution.split("x")
         values = close_task.setdefault("optionValues", {})
         values["CloseGamePCApplyGameSetting"] = {"type": "switch", "value": True}
-        values["CloseGamePCGameSettingDisplayType"] = {
-            "type": "select",
-            "caseName": display_type,
-        }
-        values["CloseGamePCGameSettingResolution"] = {
-            "type": "input",
-            "values": {
-                "CloseGamePCGameSettingResolutionWidth": width,
-                "CloseGamePCGameSettingResolutionHeight": height,
-            },
-        }
+        if restore_hdr != "Unchanged":
+            values["CloseGamePCAutoHDR"] = {"type": "select", "caseName": restore_hdr}
+        if restore_resolution:
+            display_type = (
+                original[2]
+                if original is not None
+                else str(self.script_config.Game.RestoreDisplayType or "Window")
+            )
+            if display_type not in {"Window", "Fullscreen"}:
+                display_type = "Window"
+            if resolution == "Original":
+                assert original is not None
+                width, height = str(original[0]), str(original[1])
+            elif resolution == "Custom":
+                width = str(self.script_config.Game.RestoreResolutionWidth)
+                height = str(self.script_config.Game.RestoreResolutionHeight)
+            else:
+                width, height = resolution.split("x")
+            values["CloseGamePCGameSettingDisplayType"] = {
+                "type": "select",
+                "caseName": display_type,
+            }
+            values["CloseGamePCGameSettingResolution"] = {
+                "type": "input",
+                "values": {
+                    "CloseGamePCGameSettingResolutionWidth": width,
+                    "CloseGamePCGameSettingResolutionHeight": height,
+                },
+            }
         return close_task
 
     def _read_original_game_settings(self) -> tuple[int, int, str] | None:
@@ -2229,7 +2255,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
             )
 
-        # 下发前归档 MAS 配置到用户池（下发源；带快速配置覆盖层字段侧车，
+        # 下发前归档 MAS 配置到账号池（下发源；带覆写常规配置覆盖层字段侧车，
         # 指纹去重，失败不阻断运行）。原生来源无 MAS 配置目录，不归档；native
         # 池由 manager.prepare 在任务级一次性归档
         if config_base != CONFIG_BASE_NATIVE:
@@ -2335,8 +2361,22 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             controller_type = str(self.script_config.Game.ControllerType)
             setting_pretask = self._game_setting_pretask()
             if setting_pretask is not None:
-                apply_settings = self.mode == self.first_run_mode and bool(
-                    self.script_config.Game.SetResolution
+                auto_hdr = self.script_config.Game.AutoHDR
+                apply_hdr = (
+                    setting_pretask == _MAAEND_LAUNCH_GAME_PRETASK
+                    and auto_hdr != "Unchanged"
+                )
+                if apply_hdr:
+                    interface = load_interface_model(self.maaend_root_path)
+                    if (
+                        "LaunchGamePCAutoHDR"
+                        not in build_task_option_maps(interface)[setting_pretask]
+                    ):
+                        raise ValueError(
+                            "当前 MaaEnd 不支持自动 HDR 设置，请更新 MaaEnd"
+                        )
+                apply_settings = self.mode == self.first_run_mode and (
+                    self.script_config.Game.SetResolution or apply_hdr
                 )
                 # 保存的配置可能早于当前资源；先补齐入口，再覆写本轮托管开关。
                 _place_managed_task(
@@ -2357,6 +2397,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                             "type": "switch",
                             "value": apply_settings,
                         }
+                        if apply_hdr:
+                            task["optionValues"]["LaunchGamePCAutoHDR"] = {
+                                "type": "select",
+                                "value": auto_hdr,
+                            }
                     if task["taskName"] == setting_pretask:
                         self.launcher_game_setting_options = task["optionValues"]
             # 上游预任务在 MXU 外按所选方式执行；保存的其他版本入口也必须禁用。
@@ -2536,11 +2581,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
             if sanity_missing:
                 warning_message = (
-                    f"用户 {self.cur_user_item.name} 未在 MaaEnd 配置中启用理智任务，"
+                    f"账号 {self.cur_user_item.name} 未在 MaaEnd 配置中启用理智任务，"
                     "请在「配置库存目标」中启用协议空间或基质刷取"
                     if native_sanity
-                    else f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 {target_task_name} 任务，"
-                    "已跳过理智任务快速配置"
+                    else f"账号 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 {target_task_name} 任务，"
+                    "已跳过理智任务覆写常规配置"
                 )
                 logger.warning(warning_message)
                 await Publisher.send(
@@ -2551,7 +2596,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
             if removed_task_names:
                 warning_message = (
-                    f"用户 {self.cur_user_item.name} 的 MaaEnd 配置中存在"
+                    f"账号 {self.cur_user_item.name} 的 MaaEnd 配置中存在"
                     f"当前版本已移除的任务：{'、'.join(sorted(removed_task_names))}，"
                     "已自动跳过，请重做「MaaEnd 配置」以同步最新任务列表"
                 )
@@ -2758,7 +2803,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         }
 
         # 原生 CDK（含 MXU 加密值）优先；全局 CDK 仅作运行期补充，
-        # 随 manager 的原生配置快照恢复，不写回脚本或用户配置来源。
+        # 随 manager 的原生配置快照恢复，不写回脚本或账号配置来源。
         global_cdk = str(Config.setting.Update.MirrorChyanCDK or "").strip()
         if global_cdk:
             mirror_settings = settings.get("mirrorChyan")
@@ -2776,7 +2821,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         # 失败日志包的取证时机取决于 MXU 是否每次启动都清空 debug/：要保存日志包时
         # 强制打开「启动时清理日志」，一次尝试的现场就只有这一轮。打包失败过则反过来
         # 强制关闭，宁可下一轮日志混一点，也要保住还没保存成功的现场。同样随 manager
-        # 的原生配置快照恢复，不写回脚本或用户配置来源。
+        # 的原生配置快照恢复，不写回脚本或账号配置来源。
         if self.script_config.Run.IfSaveLogBundle:
             settings["autoClearLogsOnLaunch"] = not self._bundle_failed
 
@@ -3335,11 +3380,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self.cur_user_config.Data.LastProxyStatus = "成功"
             await self.cur_user_config.commit()
             await self.cur_user_item.set_state(status="完成")
-            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
+            logger.success(f"账号 {self.cur_user_uid} 的自动代理任务已完成")
         else:
             self.cur_user_config.Data.LastProxyStatus = "失败"
             await self.cur_user_config.commit()
-            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            logger.warning(f"账号 {self.cur_user_uid} 的自动代理任务未完成")
             await self.cur_user_item.set_state(status="异常")
 
         if history_records:
@@ -3354,7 +3399,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             await Notify.send_notice(
                 LocalNotice(
                     title="成功完成一个自动代理任务！",
-                    message=f"已完成用户 {self.cur_user_item.name} 的 MaaEnd 自动代理任务",
+                    message=f"已完成账号 {self.cur_user_item.name} 的 MaaEnd 自动代理任务",
                     ticker=f"已完成 {self.cur_user_item.name} 的 MaaEnd 自动代理任务",
                     duration_seconds=3,
                 )
@@ -3381,6 +3426,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         def read() -> list[log_box.LogEntry]:
             pipeline = log_box.LogPipeline()
+            pipeline.preprocessors.append(maaend_plain_text)
             for rule in MAAEND_PUSH_RULES:
                 pipeline.add_rule(*rule)
             pipeline.postprocessors.append(maaend_resolve)

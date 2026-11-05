@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type UserConfigDirIn = {
     /**
-     * 所属脚本ID
+     * 所属托管ID
      */
     scriptId: string;
     /**
-     * 用户ID
+     * 账号ID
      */
     userId: string;
 };

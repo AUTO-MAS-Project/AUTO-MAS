@@ -14,7 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
-"""脚本管理：BetterGI 路由与端点专用模型。"""
+"""托管管理：BetterGI 路由与端点专用模型。"""
 
 from typing import (
     Any,
@@ -63,8 +63,8 @@ class BetterGIOneDragonSettingsOut(OutBase):
 class BetterGIOneDragonSettingsIn(BaseModel):
     """BetterGI 一条龙设置项写入请求"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
-    userId: str = Field(..., description="所属用户ID")
+    scriptId: str = Field(..., description="所属托管ID")
+    userId: str = Field(..., description="所属账号ID")
     configName: str = Field(..., description="一条龙配置名")
     groupName: str = Field(
         default="",
@@ -91,9 +91,9 @@ class BetterGIGlobalDomainSettingsOut(OutBase):
 class BetterGIGlobalDomainSettingsIn(BaseModel):
     """BetterGI 秘境刷取配置写入请求（per-user 副本；userId 为空时原生来源 BGI 全局 config.json）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
+    scriptId: str = Field(..., description="所属托管ID")
     userId: Optional[str] = Field(
-        default="", description="所属用户ID（空=写 BGI 全局实配）"
+        default="", description="所属账号ID（空=写 BGI 全局实配）"
     )
     groupName: str = Field(
         default="",
@@ -121,9 +121,9 @@ class BetterGIGlobalStygianSettingsOut(OutBase):
 class BetterGIGlobalStygianSettingsIn(BaseModel):
     """BetterGI 幽境危战设置写入请求（per-user 副本；userId 为空时原生来源 BGI 全局 config.json）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
+    scriptId: str = Field(..., description="所属托管ID")
     userId: Optional[str] = Field(
-        default="", description="所属用户ID（空=写 BGI 全局实配）"
+        default="", description="所属账号ID（空=写 BGI 全局实配）"
     )
     groupName: str = Field(
         default="",
@@ -175,8 +175,8 @@ class BetterGIScriptGroupDetailOut(OutBase):
 class BetterGIScriptGroupSaveIn(BaseModel):
     """BetterGI 配置组 json 写入请求（保存到 per-user 副本，不触碰 BGI 同名实配）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
-    userId: str = Field(..., description="所属用户ID")
+    scriptId: str = Field(..., description="所属托管ID")
+    userId: str = Field(..., description="所属账号ID")
     name: str = Field(..., description="配置组名（文件名）")
     data: Dict[str, Any] = Field(
         default_factory=dict,
@@ -239,10 +239,10 @@ class BetterGIScriptDirsOut(OutBase):
 
 
 class BetterGIGameInfoOut(OutBase):
-    """BetterGI 游戏客户端信息（用户页透传展示）"""
+    """BetterGI 游戏客户端信息（账号页透传展示）"""
 
     installPath: Optional[str] = Field(
-        default=None, description="生效游戏路径（用户级优先，否则 BGI 全局配置）"
+        default=None, description="生效游戏路径（账号级优先，否则 BGI 全局配置）"
     )
     globalPath: Optional[str] = Field(
         default=None, description="BetterGI 全局配置的游戏路径原值"
@@ -256,7 +256,7 @@ class BetterGIGameInfoOut(OutBase):
 
 
 router = APIRouter()
-logger = get_logger("脚本管理 API")
+logger = get_logger("托管管理 API")
 
 
 @router.get(
@@ -306,8 +306,8 @@ async def get_bettergi_custom_groups_api(
 ) -> BetterGICustomGroupsOut:
     """返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。
 
-    ``useMasConfig=True``（用户独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
-    槽位名，副本缺失按内置模板），返回该用户将写入槽位的自定义组；``userId`` 必填。
+    ``useMasConfig=True``（独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
+    槽位名，副本缺失按内置模板），返回该账号将写入槽位的自定义组；``userId`` 必填。
     否则（非独立模式用 BGI 原生配置）读取 BGI ``{configName}`` 实配的自定义组。
     """
 
@@ -463,13 +463,13 @@ async def get_bettergi_key_mouse_scripts_api(scriptId: str) -> ComboBoxOut:
 async def get_bettergi_script_groups_api(
     scriptId: str, userId: str = ""
 ) -> ComboBoxOut:
-    """返回 BetterGI 配置组候选：BGI ``User/ScriptGroup/*.json`` 文件名；带 userId 时并集该用户 per-user 副本名。
+    """返回 BetterGI 配置组候选：BGI ``User/ScriptGroup/*.json`` 文件名；带 userId 时并集该账号 per-user 副本名。
 
     BetterGI 的「配置组」（GUI 中可加入一条龙的自定义任务组）以独立 json 保存于
     ``User/ScriptGroup``，文件名（不含 ``.json``）即组名，与一条龙 TaskDefinitions
     的引用名一致。每次调用实时扫描，供「添加配置组」弹窗「配置组」标签页展示。
 
-    ``userId`` 非空时把该用户的 per-user ScriptGroup 副本名一并并入（副本是 MAS
+    ``userId`` 非空时把该账号的 per-user ScriptGroup 副本名一并并入（副本是 MAS
     独立配置的权威内容源，复制自 JS/路径等来源的新组也只存在于副本目录，需要能被
     识别/展示为配置组）。
     """
@@ -509,7 +509,7 @@ async def get_bettergi_script_groups_api(
 async def get_bettergi_script_group_detail_api(
     scriptId: str, userId: str, name: str
 ) -> BetterGIScriptGroupDetailOut:
-    """返回某用户的配置组 json（per-user 副本 → BGI 实配的种子顺序）。
+    """返回某账号的配置组 json（per-user 副本 → BGI 实配的种子顺序）。
 
     右栏「配置组」标签页选中 scriptgroup 时，据此列出其 json 内 ``projects`` 的
     每个项目；也供 JS/路径等单项目组展示（项目名=组名）。
@@ -722,7 +722,7 @@ async def get_bettergi_auto_pathing_tree_api(scriptId: str) -> BetterGIPathingTr
 async def get_bettergi_one_dragon_settings_api(
     scriptId: str, userId: str, configName: str = "", groupName: str = ""
 ) -> BetterGIOneDragonSettingsOut:
-    """返回某用户一条龙配置的设置项（per-user 副本 → BGI 实配 → 内置模板的种子顺序）。
+    """返回某账号一条龙配置的设置项（per-user 副本 → BGI 实配 → 内置模板的种子顺序）。
 
     供右栏按任务分组渲染并回显该任务在 BGI 一条龙里的可设置字段。
     ``groupName`` 为右栏当前编辑的内置组名，战斗 4 项 Plan 回显按其查映射，
@@ -765,7 +765,7 @@ async def get_bettergi_one_dragon_settings_api(
 async def save_bettergi_one_dragon_settings_api(
     req: BetterGIOneDragonSettingsIn = Body(...),
 ) -> OutBase:
-    """把右栏编辑的设置项写回该用户一条龙配置副本（不触碰 BGI 同名实配）。"""
+    """把右栏编辑的设置项写回该账号一条龙配置副本（不触碰 BGI 同名实配）。"""
 
     try:
         from app.task.BetterGI import api_service as bettergi_api
@@ -856,8 +856,8 @@ async def get_bettergi_global_domain_settings_api(
 ) -> BetterGIGlobalDomainSettingsOut:
     """返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
 
-    ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-    使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（原生来源模式）读
+    ``userId`` 非空时以该账号 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
+    使独立配置下每个账号的秘境刷取设置互不影响；``userId`` 为空（原生来源模式）读
     BGI 全局 config.json（autoDomainConfig/autoArtifactSalvageConfig，camelCase）。
     """
 
@@ -935,8 +935,8 @@ async def get_bettergi_global_stygian_settings_api(
 ) -> BetterGIGlobalStygianSettingsOut:
     """返回自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
 
-    ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-    使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（原生来源模式）读
+    ``userId`` 非空时以该账号 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
+    使独立配置下每个账号的幽境设置互不影响；``userId`` 为空（原生来源模式）读
     BGI 全局 config.json（autoStygianOnslaughtConfig 段，camelCase）。
     """
 
@@ -1054,7 +1054,7 @@ async def save_bettergi_script_group_api(
     req: BetterGIScriptGroupSaveIn = Body(...),
 ) -> OutBase:
     """把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
-    该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
+    该账号的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
 
     「路径」类引用（名字含 ``/``）不能作文件名，落盘到 ``per_user_copy_name`` 的确定性别名
     （右栏把路径项加成多项目配置组后需要载体）。不触碰 BetterGI 全局
@@ -1077,7 +1077,7 @@ async def save_bettergi_script_group_api(
         return OutBase(
             code=200,
             status="success",
-            message=f"已保存配置组 {req.name}（共 {project_count} 个项目）到用户配置",
+            message=f"已保存配置组 {req.name}（共 {project_count} 个项目）到账号配置",
         )
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -1095,7 +1095,7 @@ async def save_bettergi_script_group_api(
 @router.get(
     "/bettergi/game-info",
     tags=["BetterGI"],
-    summary="获取游戏客户端信息（路径 + 渠道，用户页透传展示）",
+    summary="获取游戏客户端信息（路径 + 渠道，账号页透传展示）",
     response_model=BetterGIGameInfoOut,
     status_code=200,
 )
@@ -1105,7 +1105,7 @@ async def get_bettergi_game_info_api(
     """读取 BetterGI 配置的游戏路径并识别客户端渠道（官服/B服/国际服）。
 
     ``detectPath`` 非空时对该路径做渠道识别（用户自填路径的即时标注），
-    为空时返回生效路径（用户级优先，否则 BGI 全局配置）及其渠道。
+    为空时返回生效路径（账号级优先，否则 BGI 全局配置）及其渠道。
     """
 
     try:

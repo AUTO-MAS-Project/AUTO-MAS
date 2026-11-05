@@ -56,13 +56,14 @@ from .tools.backup_archive import (
     mas_config_dir,
     read_overlay_values,
 )
+from .tools.guide import MAA_GUIDE_SKIP_VALUES
 
 logger = get_logger("MAA 脚本设置")
 
 # 配置会话注入的启动编排项：(文件, 路径, 注入值)。配置会话只让用户调设置，
 # 不该自动跑任务、拉模拟器或拉游戏，所以这些项在会话期间强制关闭；会话结束
 # 回写时逐项还原成会话前的值，绝不写进 base——它们是会话级的运行编排，
-# 不是用户配置。StartGame 关掉后 MAA 打开就是可配置状态，用户不必先终止队列。
+# 不是账号配置。StartGame 关掉后 MAA 打开就是可配置状态，用户不必先终止队列。
 _SESSION_STARTUP_OVERRIDES: tuple[tuple[str, tuple[str, ...], object], ...] = (
     (
         "gui.new.json",
@@ -91,6 +92,11 @@ _SESSION_STARTUP_OVERRIDES: tuple[tuple[str, tuple[str, ...], object], ...] = (
     ("gui.new.json", ("Update", "CheckOnSchedule"), False),
     ("gui.new.json", ("Update", "AutoDownloadUpdatePackage"), False),
     ("gui.new.json", ("Update", "AutoInstallUpdatePackage"), False),
+    # 引导跳过仅作用于会话，回写前同样还原原值与缺失状态。
+    *(
+        ("gui.new.json", ("Gui", key), value)
+        for key, value in MAA_GUIDE_SKIP_VALUES.items()
+    ),
 )
 
 
@@ -156,8 +162,8 @@ class ScriptConfigTask(TaskExecuteBase):
 
     会话包络（下发源 + 回写目标）与运行下发同一套 owner 规则（shared 来源共享
     Default、independent 来源独立目录），见 :meth:`_mas_owner`。view_only=True 时为
-    查看会话：只读预览（如「查看历史备份」）——用户级会话下发的 owner 目录
-    即刚恢复的备份（所见即备份），脚本级会话跳过下发（原生目录即备份）；
+    查看会话：只读预览（如「查看历史备份」）——账号级会话下发的 owner 目录
+    即刚恢复的备份（所见即备份），托管级会话跳过下发（原生目录即备份）；
     结束不回写 MAS 配置，安装 config/ 由 manager 的任务前快照还原（临时
     注入，看完还原）。
     """
@@ -217,8 +223,8 @@ class ScriptConfigTask(TaskExecuteBase):
         """本会话的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
 
         与运行下发（AutoProxy ``set_maa``）同一套来源规则——会话的下发与
-        回写此前硬编码用户目录，共享来源用户的会话改动运行时根本不读（改了
-        白改），配置备份也因此采不到会话现场；现对齐运行态。原生来源用户没有
+        回写此前硬编码用户目录，共享来源账号的会话改动运行时根本不读（改了
+        白改），配置备份也因此采不到会话现场；现对齐运行态。原生来源账号没有
         MAS 托管配置目录（对齐 MaaEnd 的「原生来源无 mas 池」），返回 ``None``。
         """
 
@@ -233,7 +239,7 @@ class ScriptConfigTask(TaskExecuteBase):
         return user_id if base == CONFIG_BASE_INDEPENDENT else "Default"
 
     def _uses_managed_queue(self) -> bool:
-        """仅脚本预设和启用快速配置的用户使用三段托管队列。"""
+        """仅脚本预设和启用覆写常规配置的用户使用三段托管队列。"""
 
         user_id = self.cur_user_item.user_id
         return (
@@ -244,12 +250,12 @@ class ScriptConfigTask(TaskExecuteBase):
     async def set_maa(self):
         """配置MAA运行参数"""
 
-        logger.info(f"开始配置MAA运行参数: 设置脚本 {self.cur_user_item.user_id}")
+        logger.info(f"开始配置MAA运行参数: 设置账号 {self.cur_user_item.user_id}")
 
         await self.maa_process_manager.close()
         await System.kill_process(self.maa_exe_path)
 
-        # 查看会话的脚本级入口：原生目录即所选备份，跳过下发与注入
+        # 查看会话的托管级入口：原生目录即所选备份，跳过下发与注入
         if self.view_only and self.cur_user_item.user_id == "Default":
             logger.info("MAA 查看会话跳过配置下发: 原生目录即所选备份")
             return
@@ -260,7 +266,7 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.info("MAA 原生来源会话: 直接使用安装目录原生配置, MAS 零写入")
             return
 
-        # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；带页面
+        # 下发前归档 MAS 配置到账号池（下发源，会话保存会覆盖它；带页面
         # 核心字段侧车，指纹去重，失败不阻断会话）。native 池由
         # manager.prepare 在任务级一次性归档
         target_user_id = self.cur_user_item.user_id
@@ -320,7 +326,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # 该文件不由 MAS 生成，兜底必须无条件执行。
         ensure_maa_default_configuration(gui_new_set)
 
-        # 快速配置使用三段预设；关闭快速配置和查看备份时保留来源原队列。
+        # 覆写常规配置使用三段预设；关闭覆写常规配置和查看备份时保留来源原队列。
         for configuration in gui_new_set["Configurations"].values():
             if not isinstance(configuration, dict):
                 continue
@@ -366,7 +372,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # 会话基线：final_task 以此甄别用户在 MAA GUI 里的真实修改，
         # 不把 MAA 保存时自带的原生默认任务固化进 MAS 存档
         self._maa_config_baseline = {"gui.new.json": deepcopy(gui_new_set)}
-        logger.success(f"MAA运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}")
+        logger.success(f"MAA运行参数配置完成: 设置账号 {self.cur_user_item.user_id}")
 
     async def _notify_config_discarded(
         self, reason: Literal["structure", "unreadable", "not_written"]

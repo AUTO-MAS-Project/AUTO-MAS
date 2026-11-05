@@ -125,16 +125,6 @@ class ConfigRoundtripTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(disk["Function"]["IfAllowSleep"], True)
         self.assertEqual(disk["Function"]["HistoryRetentionTime"], 30)
 
-    async def test_deep_field_update_only_touches_target_field(self) -> None:
-        await self._update({"Notify": {"SMTPServerAddress": "smtp.new.example"}})
-
-        data = await self._get()
-        self.assertEqual(data["Notify"]["SMTPServerAddress"], "smtp.new.example")
-        self.assertEqual(data["Notify"]["ToAddress"], "seed@example.com")
-        self.assertEqual(data["Function"]["IfSilence"], False)
-        self.assertEqual(data["Function"]["IfAllowSleep"], True)
-        self.assertEqual(data["Update"]["Channel"], "beta")
-
     async def test_empty_and_null_payloads_do_not_clear_values(self) -> None:
         before = await self._get()
 

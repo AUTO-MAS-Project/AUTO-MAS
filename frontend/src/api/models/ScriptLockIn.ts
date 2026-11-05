@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type ScriptLockIn = {
     /**
-     * 所属脚本ID
+     * 所属托管ID
      */
     scriptId: string;
     /**

@@ -1,191 +1,222 @@
 import { expect, test } from './fixtures'
 
-test.describe('@queue persistence', () => {
-  test('creates, renames, configures, and reloads a queue', async ({ app, page }) => {
-    const queueUpdateResponse = () =>
+const backend = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? 36174}`
+
+test.describe('@queue @scheduler user queue', () => {
+  test('builds, reorders, selects accounts, and deletes a queue through the UI', async ({
+    app,
+    page,
+  }) => {
+    const post = async (path: string, data: unknown = {}) => {
+      const response = await page.request.post(`${backend}${path}`, { data })
+      expect(response.ok()).toBeTruthy()
+      const body = await response.json()
+      expect(body.code).toBe(200)
+      return body
+    }
+    const responseFor = (path: string) =>
       page.waitForResponse(
-        response =>
-          response.url().endsWith('/api/queue/update') &&
-          response.request().method() === 'POST' &&
-          response.ok()
+        response => response.url().endsWith(path) && response.request().method() === 'POST'
       )
+    const goTo = async (name: string) => {
+      await page
+        .getByRole('menuitem')
+        .filter({ has: page.getByText(name, { exact: true }) })
+        .click()
+    }
+    const scripts: { scriptId: string; userId?: string; name: string; account: string }[] = []
+    let queueId: string | undefined
+    const name = 'E2E daily queue'
+    const rows = page.locator('.queue-item-card .draggable-row')
+    const selectedScripts = rows.locator('.script-select .ant-select-selection-item')
 
-    await app.goto('/queue')
-    await expect(page.getByText('No queues', { exact: true })).toBeVisible()
+    try {
+      for (const suffix of ['A', 'B']) {
+        const created = await post('/api/scripts/add', { type: 'MAA' })
+        const script = {
+          scriptId: created.scriptId as string,
+          userId: undefined as string | undefined,
+          name: `Queue script ${suffix}`,
+          account: `Queue account ${suffix}`,
+        }
+        scripts.push(script)
+        await post('/api/scripts/update', {
+          scriptId: script.scriptId,
+          data: { Info: { Name: script.name } },
+        })
+        script.userId = (await post('/api/scripts/user/add', { scriptId: script.scriptId })).userId
+        await post('/api/scripts/user/update', {
+          scriptId: script.scriptId,
+          userId: script.userId,
+          data: { Info: { Name: script.account, Status: true, RemainedDay: -1 } },
+        })
+      }
 
-    await page.getByRole('button', { name: 'New queue' }).click()
-    await expect(page.getByRole('button', { name: /New queue|New scheduling queue/ })).toBeVisible()
-    const queueTitle = page.locator('.queue-title-text')
-    await expect(queueTitle).toBeVisible()
-    await page.locator('.queue-edit-btn').click()
-    const nameInput = page.locator('.queue-title-input')
-    await nameInput.fill('PR 队列验证')
-    const renameResponse = queueUpdateResponse()
-    await nameInput.press('Enter')
-    await renameResponse
-    await expect(queueTitle).toHaveText('PR 队列验证')
+      await app.goto('/queue')
+      const created = responseFor('/api/queue/add')
+      await page.getByRole('button', { name: 'New queue' }).click()
+      queueId = (await (await created).json()).queueId
+      expect(queueId).toBeTruthy()
+      await page.locator('.queue-edit-btn').click()
+      await page.locator('.queue-title-input').fill(name)
+      const renamed = responseFor('/api/queue/update')
+      await page.locator('.queue-title-input').press('Enter')
+      expect((await (await renamed).json()).code).toBe(200)
+      await expect(page.locator('.queue-title-text')).toHaveText(name)
 
-    const startupSelect = page
-      .locator('.queue-trigger-settings .ant-form-item')
-      .filter({ hasText: 'Run at startup' })
-      .locator('.ant-select-selector')
-    await startupSelect.click()
-    const alwaysResponse = queueUpdateResponse()
-    await page
-      .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
-      .filter({ hasText: 'Run every time' })
-      .click()
-    await alwaysResponse
-    await expect(
-      page.locator('.ant-select-selection-item', { hasText: 'Run every time' })
-    ).toBeVisible()
+      const startup = page
+        .locator('.queue-trigger-settings .ant-form-item')
+        .filter({ hasText: 'Run at startup' })
+        .locator('.ant-select')
+      for (const label of ['Run every time', 'Never']) {
+        await startup.click()
+        const saved = responseFor('/api/queue/update')
+        await page
+          .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
+          .getByText(label, { exact: true })
+          .click()
+        expect((await (await saved).json()).code).toBe(200)
+        await expect(startup.locator('.ant-select-selection-item')).toHaveText(label)
+        await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0)
+      }
 
-    const timerCard = page.locator('.time-set-card')
-    await expect(timerCard).toHaveCount(0)
-    const timedToggle = page
-      .locator('.queue-trigger-settings .ant-form-item')
-      .filter({ hasText: 'Run on schedule' })
-      .getByRole('button')
-    const cyclicToggle = page
-      .locator('.queue-trigger-settings .ant-form-item')
-      .filter({ hasText: 'Cycle trigger' })
-      .getByRole('button')
-    const interval = page
-      .locator('.queue-cycle-settings .ant-form-item')
-      .filter({ hasText: 'Cycle interval' })
-      .getByRole('spinbutton')
-    const reset = page.getByRole('button', { name: 'Reset', exact: true })
-    await expect(page.locator('.queue-cycle-settings')).toHaveCount(0)
-    const enableTimed = queueUpdateResponse()
-    await timedToggle.click()
-    await enableTimed
-    await expect(timerCard.getByRole('button').first()).toBeEnabled()
-    const added = page.waitForResponse(response => response.url().endsWith('/api/queue/time/add'))
-    await timerCard.getByRole('button').first().click()
-    expect((await (await added).json()).code).toBe(200)
-    const timeStatus = timerCard.locator('.setting-toggle-button').first()
-    await expect(timeStatus).toHaveAttribute('aria-pressed', 'true')
-    const disableTime = page.waitForResponse(
-      response =>
-        response.url().endsWith('/api/queue/time/update') && response.request().method() === 'POST'
-    )
-    await timeStatus.click()
-    expect((await (await disableTime).json()).code).toBe(200)
-    await expect(timeStatus).toHaveAttribute('aria-pressed', 'false')
-    const enableCycle = queueUpdateResponse()
-    await cyclicToggle.click()
-    await enableCycle
-    await expect(interval).toBeEnabled()
-    const intervalSaved = page.waitForResponse(
-      response =>
-        response.url().endsWith('/api/queue/update') &&
-        response.request().postDataJSON()?.data?.Cycle?.IntervalMinutes === 90
-    )
-    await interval.fill('90')
-    await interval.press('Tab')
-    expect((await (await intervalSaved).json()).code).toBe(200)
-    await page.reload()
-    await expect(interval).toHaveValue('90')
-    const hideCycle = queueUpdateResponse()
-    await cyclicToggle.click()
-    await hideCycle
-    await expect(page.locator('.queue-cycle-settings')).toHaveCount(0)
-    await expect(timerCard).toBeVisible()
-    const showCycle = queueUpdateResponse()
-    await cyclicToggle.click()
-    await showCycle
-    await expect(interval).toHaveValue('90')
-    const sectionOrder = await page
-      .locator('.queue-config-card')
-      .evaluate(element =>
-        [
-          '.queue-trigger-settings',
-          '.time-set-card',
-          '.queue-cycle-settings',
-          '.queue-item-card',
-          '.queue-extra-settings',
-        ].map(selector => element.querySelector(selector)!.getBoundingClientRect().top)
-      )
-    expect(sectionOrder.every((top, index) => index === 0 || top > sectionOrder[index - 1])).toBe(
-      true
-    )
-    await app.evidence('queue-groups-enabled')
-    await expect(timedToggle).toHaveAttribute('aria-pressed', 'true')
-    await expect(timerCard.getByRole('button').first()).toBeEnabled()
-    const resetResponse = page.waitForResponse(
-      response =>
-        response.url().endsWith('/api/queue/update') &&
-        response.request().postDataJSON()?.data?.Cycle?.ResetTimer === true
-    )
-    await reset.click()
-    expect((await (await resetResponse).json()).code).toBe(200)
-    const disableTimed = queueUpdateResponse()
-    await timedToggle.click()
-    await disableTimed
-    await expect(timerCard).toHaveCount(0)
+      for (const [index, script] of scripts.entries()) {
+        const added = responseFor('/api/queue/item/add')
+        await page.getByRole('button', { name: 'Add task' }).click()
+        expect((await (await added).json()).code).toBe(200)
+        await expect(rows).toHaveCount(index + 1)
+        await rows.nth(index).locator('.script-select').click()
+        const [saved] = await Promise.all([
+          responseFor('/api/queue/item/update'),
+          page
+            .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
+            .filter({ hasText: script.name })
+            .click(),
+        ])
+        expect((await saved.json()).code).toBe(200)
+        await expect(selectedScripts.nth(index)).toHaveText(`MAA - ${script.name}`)
+        await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0)
+      }
 
-    await expect(cyclicToggle).toHaveAttribute('aria-pressed', 'true')
-    await expect(reset).toBeEnabled()
+      const reordered = responseFor('/api/queue/item/order')
+      const from = await rows.first().locator('.drag-handle').boundingBox()
+      const to = await rows.last().boundingBox()
+      expect(from).not.toBeNull()
+      expect(to).not.toBeNull()
+      await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(to!.x + 18, to!.y + to!.height - 2, { steps: 12 })
+      await page.mouse.up()
+      expect((await (await reordered).json()).code).toBe(200)
+      await expect(selectedScripts).toHaveText([
+        `MAA - ${scripts[1]!.name}`,
+        `MAA - ${scripts[0]!.name}`,
+      ])
 
-    await app.evidence('queue-configured')
-    // 必须整页刷新才会重新从后端读配置：hash 路由来回切用的是内存里的旧数据，断言不到持久化
-    await page.reload()
-    await expect(page.locator('.queue-title-text')).toHaveText('PR 队列验证')
-    await expect(
-      page.locator('.ant-select-selection-item', { hasText: 'Run every time' })
-    ).toBeVisible()
-    await expect(timedToggle).toHaveAttribute('aria-pressed', 'false')
-    await expect(cyclicToggle).toHaveAttribute('aria-pressed', 'true')
-    await expect(timerCard).toHaveCount(0)
-    const restoreTimed = queueUpdateResponse()
-    await timedToggle.click()
-    await restoreTimed
-    await expect(timeStatus).toHaveAttribute('aria-pressed', 'false')
-    const restoreHidden = queueUpdateResponse()
-    await timedToggle.click()
-    await restoreHidden
-    await expect(timerCard).toHaveCount(0)
-    const extraToggle = page
-      .locator('.queue-config-card .form-section .setting-toggle-button')
-      .first()
-    await expect(extraToggle).toHaveAttribute('aria-pressed', 'false')
-    const beforeScriptResponse = queueUpdateResponse()
-    await extraToggle.click()
-    expect((await (await beforeScriptResponse).json()).code).toBe(200)
-    await expect(extraToggle).toHaveAttribute('aria-pressed', 'true')
-    const beforeScriptOff = queueUpdateResponse()
-    await extraToggle.click()
-    expect((await (await beforeScriptOff).json()).code).toBe(200)
-    await expect(extraToggle).toHaveAttribute('aria-pressed', 'false')
-    await app.evidence('queue-reloaded')
+      await goTo('Home')
+      await expect(page.locator('.home-title')).toBeVisible()
+      await goTo('Queue')
+      await expect(selectedScripts).toHaveText([
+        `MAA - ${scripts[1]!.name}`,
+        `MAA - ${scripts[0]!.name}`,
+      ])
+      await page.reload()
+      await expect(page.locator('.queue-title-text')).toHaveText(name)
+      await expect(selectedScripts).toHaveText([
+        `MAA - ${scripts[1]!.name}`,
+        `MAA - ${scripts[0]!.name}`,
+      ])
+      await expect(startup.locator('.ant-select-selection-item')).toHaveText('Never')
+      await app.evidence('queue-content-reloaded')
 
-    await startupSelect.click()
-    const neverResponse = queueUpdateResponse()
-    await page
-      .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
-      .filter({ hasText: 'Never' })
-      .click()
-    await neverResponse
-    await expect(page.locator('.ant-select-selection-item', { hasText: 'Never' })).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(timerCard).toHaveCount(0)
-    await page.locator('.queue-cycle-settings').scrollIntoViewIfNeeded()
-    await app.evidence('queue-time-settings-hidden')
-    await page.evaluate(async () => {
-      const themeModule = '/src/composables/useTheme.ts'
-      const { useTheme } = await import(themeModule)
-      await useTheme().setThemeMode('dark')
-      await Promise.allSettled(
-        document
-          .getAnimations()
-          .filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
-          .map(animation => animation.finished)
-      )
-    })
-    await expect(page.locator('html')).toHaveClass(/dark/)
-    await expect(timerCard).toHaveCount(0)
-    await app.evidence('queue-cycle-settings-dark')
-    await page.locator('.queue-trigger-settings').scrollIntoViewIfNeeded()
-    await app.evidence('queue-triggers-dark')
+      await goTo('Scheduler')
+      await page.locator('.task-control .ant-select').first().click()
+      await page
+        .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
+        .filter({ hasText: name })
+        .click()
+      const scopeButton = page.getByRole('button', { name: /Run scope/ })
+      await expect(scopeButton).toContainText('2/2')
+      await scopeButton.click()
+      const scope = page.locator('.scheduler-scope-modal .ant-modal:visible')
+      for (const script of scripts) {
+        await expect(scope.getByText(script.name, { exact: true })).toBeVisible()
+        await expect(
+          scope.getByRole('checkbox', { name: script.account, exact: true })
+        ).toBeChecked()
+      }
+      await scope.getByRole('checkbox', { name: scripts[1]!.account, exact: true }).uncheck()
+      await expect(scopeButton).toContainText('1/2')
+      await expect(page.locator('.task-control .ant-btn-primary')).toBeEnabled()
+      await scope.getByRole('checkbox', { name: scripts[0]!.account, exact: true }).uncheck()
+      await expect(scopeButton).toContainText('0/2')
+      await expect(page.locator('.task-control .ant-btn-primary')).toBeDisabled()
+      await scope.getByRole('checkbox', { name: scripts[1]!.account, exact: true }).check()
+      await expect(scopeButton).toContainText('1/2')
+      await expect(page.locator('.task-control .ant-btn-primary')).toBeEnabled()
+      await scope.getByRole('button', { name: 'OK', exact: true }).click()
+      await app.evidence('queue-account-scope')
+
+      await goTo('Queue')
+      await rows.first().getByRole('button', { name: 'Delete' }).click()
+      await page
+        .locator('.ant-modal-confirm:visible')
+        .getByRole('button', { name: 'Cancel', exact: true })
+        .click()
+      await expect(selectedScripts).toHaveText([
+        `MAA - ${scripts[1]!.name}`,
+        `MAA - ${scripts[0]!.name}`,
+      ])
+      await rows.first().getByRole('button', { name: 'Delete' }).click()
+      const removed = responseFor('/api/queue/item/delete')
+      await page
+        .locator('.ant-modal-confirm:visible')
+        .getByRole('button', { name: 'Delete', exact: true })
+        .click()
+      expect((await (await removed).json()).code).toBe(200)
+      await expect(selectedScripts).toHaveText([`MAA - ${scripts[0]!.name}`])
+
+      await page.getByRole('button', { name: 'Delete this queue' }).click()
+      await page
+        .locator('.ant-modal-confirm:visible')
+        .getByRole('button', { name: 'Cancel', exact: true })
+        .click()
+      await expect(page.locator('.queue-title-text')).toHaveText(name)
+      await goTo('Scheduler')
+      await page.locator('.task-control .ant-select').first().click()
+      await expect(
+        page
+          .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
+          .filter({ hasText: name })
+      ).toBeVisible()
+      await page.keyboard.press('Escape')
+      await goTo('Queue')
+      await page.getByRole('button', { name: 'Delete this queue' }).click()
+      const deleted = responseFor('/api/queue/delete')
+      await page
+        .locator('.ant-modal-confirm:visible')
+        .getByRole('button', { name: 'Delete', exact: true })
+        .click()
+      expect((await (await deleted).json()).code).toBe(200)
+      queueId = undefined
+      await expect(page.getByText('No queues', { exact: true })).toBeVisible()
+      await goTo('Scheduler')
+      await page.locator('.task-control .ant-select').first().click()
+      await expect(
+        page
+          .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
+          .filter({ hasText: name })
+      ).toHaveCount(0)
+    } finally {
+      if (queueId) await post('/api/queue/delete', { queueId })
+      for (const script of scripts) {
+        if (script.userId)
+          await post('/api/scripts/user/delete', {
+            scriptId: script.scriptId,
+            userId: script.userId,
+          })
+        await post('/api/scripts/delete', { scriptId: script.scriptId })
+      }
+    }
   })
 })

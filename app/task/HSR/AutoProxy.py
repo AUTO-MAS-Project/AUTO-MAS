@@ -165,7 +165,7 @@ def _has_enabled_phase_module(plan, phase: HSRPhase) -> bool:
 
 
 class HSRAutoProxyTask(TaskExecuteBase):
-    """HSR 单用户自动代理任务。"""
+    """HSR 单账号自动代理任务。"""
 
     def __init__(
         self,
@@ -188,7 +188,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self.cur_user_config: HSRUserConfig = self.user_config[self.cur_user_uid]
         self.runtime = runtime
         self._log_lines: list[str] = runtime.log_lines
-        # 用户级任务前/后脚本成对标记：前置跑过才收尾后置，且每用户只收尾一次。
+        # 账号级任务前/后脚本成对标记：前置跑过才收尾后置，且每账号只收尾一次。
         self._extra_scripts_started = False
         self._completion_writebacks: list[CompletionWriteback] = (
             runtime.completion_writebacks
@@ -231,7 +231,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self._managed_options_cache: dict[tuple[int, str, str], dict[str, object]] = {}
         # 输出回调里派生的后台任务（如终止三月七），持有引用防止被回收。
         self._background_tasks: set[asyncio.Task] = set()
-        # 本用户的 SRA 登录项工厂（按阶段）；登录计划不走 SRA StartGame 时为 None。
+        # 本账号的 SRA 登录项工厂（按阶段）；登录计划不走 SRA StartGame 时为 None。
         # 队列中途因模块失败重启游戏后，下一个 SRA 模块前要先用它登录一次。
         self._restart_login_item_factory: Callable[[HSRPhase], HSRRunItem] | None = None
 
@@ -271,7 +271,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         attempt: int = 1,
         retry_limit: int = 1,
     ) -> None:
-        """为当前 HSR 用户创建运行日志记录。"""
+        """为当前 HSR 账号创建运行日志记录。"""
 
         self._current_user_item = user_item
         self._current_log_start_time = datetime.now().astimezone()
@@ -281,10 +281,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
         )
         await user_item.set_state(status="运行")
         if attempt <= 1:
-            self._append_log(f"开始处理用户「{user_name}」")
+            self._append_log(f"开始处理账号「{user_name}」")
         else:
             self._append_log(
-                f"开始处理用户「{user_name}」第 {attempt}/{retry_limit} 次尝试"
+                f"开始处理账号「{user_name}」第 {attempt}/{retry_limit} 次尝试"
             )
 
     async def _finish_current_user_log(
@@ -292,7 +292,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         log_status: str,
         user_status: str = "完成",
     ) -> None:
-        """结束当前用户日志记录，并清空当前用户上下文。"""
+        """结束当前账号日志记录，并清空当前账号上下文。"""
 
         if self._current_user_log is not None:
             await self._current_user_log.set_state(status=log_status)
@@ -307,7 +307,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         log_status: str,
         user_status: str = "异常",
     ) -> None:
-        """异常或中止时给当前用户补充明确结果。"""
+        """异常或中止时给当前账号补充明确结果。"""
 
         if self._current_user_log is not None:
             await self._current_user_log.set_state(status=log_status)
@@ -339,7 +339,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     async def _restart_game(self, user_name: str, reason: str) -> None:
         """按开关决定是否由 MAS 关闭并重新启动游戏。
 
-        云平台不重启浏览器：同一用户的模块之间浏览器保持在游戏画面里，三月七
+        云平台不重启浏览器：同一账号的模块之间浏览器保持在游戏画面里，三月七
         下一次连回去不用重新登录、排队；这里只确认它还活着。
         """
 
@@ -348,7 +348,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             self.runtime.last_external_script = None
             self.runtime.game_session_clean = False
             self._append_log(
-                f"用户「{user_name}」{reason}，云·星穹铁道保持浏览器不重启"
+                f"账号「{user_name}」{reason}，云·星穹铁道保持浏览器不重启"
             )
             await self._account_switcher.ensure_cloud_browser()
             return
@@ -358,14 +358,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
             self.runtime.game_session_clean = False
             self.runtime.last_external_script = None
             self._append_log(
-                f"用户「{user_name}」{reason}，MAS 未管理游戏，跳过游戏重启并继续执行"
+                f"账号「{user_name}」{reason}，MAS 未管理游戏，跳过游戏重启并继续执行"
             )
             return
 
         game_exe_path = resolve_game_executable_path(self.script_config)
         process_name = HSR_GAME_PROCESS_NAME
 
-        self._append_log(f"用户「{user_name}」{reason}，正在由 MAS 重启游戏")
+        self._append_log(f"账号「{user_name}」{reason}，正在由 MAS 重启游戏")
 
         self.runtime.game_exe_path = game_exe_path
         self.runtime.game_launch_checked = False
@@ -401,7 +401,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             self.runtime.game_transitioning = False
 
     def _get_run_times_limit(self) -> int:
-        """读取脚本页最大尝试次数，最小为 1。"""
+        """读取托管页最大尝试次数，最小为 1。"""
 
         value = self.script_config.Run.RunTimesLimit
         return max(1, int(value or 3))
@@ -442,14 +442,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 fields=fields,
             )
         )
-        logger.info(f"用户「{user_name}」已登记 HSR 完成态写回：{reason}")
+        logger.info(f"账号「{user_name}」已登记 HSR 完成态写回：{reason}")
 
     @staticmethod
     def _build_daily_proxy_writeback_fields(
         user_config,
         now_dt: datetime | None = None,
     ) -> list[tuple[str, str, object]]:
-        """构造日常代理状态写回字段，口径与用户列表标签保持一致。"""
+        """构造日常代理状态写回字段，口径与账号列表标签保持一致。"""
 
         now_dt = _server_day_clock(now_dt)
 
@@ -475,12 +475,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
         user_id: str,
         user_name: str,
     ) -> None:
-        """整轮 HSR 用户任务成功后，登记列表日常代理状态写回。"""
+        """整轮 HSR 账号任务成功后，登记列表日常代理状态写回。"""
 
         self._queue_data_writeback(
             user_id=user_id,
             user_name=user_name,
-            reason="HSR 用户任务成功完成",
+            reason="HSR 账号任务成功完成",
             fields=self._build_daily_proxy_writeback_fields(self.cur_user_config),
         )
 
@@ -510,7 +510,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         )
 
     def _format_current_user_module_results(self) -> str:
-        """格式化当前用户的模块完成情况。"""
+        """格式化当前账号的模块完成情况。"""
 
         items = [
             item
@@ -539,7 +539,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         return "\n".join(lines)
 
     async def _push_user_statistics_notification(self) -> None:
-        """推送当前用户的 HSR 统计通知。"""
+        """推送当前账号的 HSR 统计通知。"""
 
         started_at = self.user_start_time or datetime.now()
         user_result = self.cur_user_item.result
@@ -569,13 +569,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 task_info=self.task_info,
             )
         except Exception as e:
-            logger.opt(exception=True).warning(f"推送 HSR 用户统计通知时出现异常: {e}")
+            logger.opt(exception=True).warning(f"推送 HSR 账号统计通知时出现异常: {e}")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(
                     level="error",
-                    message=f"推送 HSR 用户统计通知时出现异常: {e}",
+                    message=f"推送 HSR 账号统计通知时出现异常: {e}",
                 ),
             )
 
@@ -624,9 +624,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
             runtime.cloud_login_suppressed.add(uid)
             runtime.cloud_login_times.pop(uid, None)
             self._append_log(
-                f"用户「{user_name}」三月七没找到 MAS 托管的云浏览器，正准备自己新建"
+                f"账号「{user_name}」三月七没找到 MAS 托管的云浏览器，正准备自己新建"
                 "（通常是云游戏窗口被关掉后三月七重试启动）；已终止本次三月七，"
-                "下次尝试前由 MAS 重新启动该用户的浏览器，本轮不记录登录时间"
+                "下次尝试前由 MAS 重新启动该账号的浏览器，本轮不记录登录时间"
             )
             runner = runtime.m7a_runner
             if runner is not None:
@@ -643,7 +643,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             runtime.cloud_login_notified.add(uid)
             minutes = timeout_minutes or cloud_login_timeout_minutes(self.script_config)
             message = (
-                f"用户「{user_name}」需要在 {self.script_info.name or 'HSR'} "
+                f"账号「{user_name}」需要在 {self.script_info.name or 'HSR'} "
                 "弹出的云·星穹铁道浏览器窗口里登录米哈游通行证（扫码或密码均可），"
                 f"请在 {minutes} 分钟内完成"
             )
@@ -674,7 +674,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             )
             if uid in runtime.cloud_login_notified:
                 runtime.cloud_login_notified.discard(uid)
-                message = f"用户「{user_name}」已登录云·星穹铁道"
+                message = f"账号「{user_name}」已登录云·星穹铁道"
                 self._append_log(message)
                 await self._send_task_notice("info", message)
             return
@@ -684,12 +684,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
             runtime.cloud_remaining[uid] = remaining
             total, paid, free = remaining
             self._append_log(
-                f"用户「{user_name}」云·星穹铁道剩余时长 {total} 分钟"
+                f"账号「{user_name}」云·星穹铁道剩余时长 {total} 分钟"
                 f"（付费 {paid} 分钟，免费 {free} 分钟）"
             )
             if total < HSR_CLOUD_REMAINING_WARN_MINUTES:
                 self._append_log(
-                    f"用户「{user_name}」云·星穹铁道剩余时长不足 "
+                    f"账号「{user_name}」云·星穹铁道剩余时长不足 "
                     f"{HSR_CLOUD_REMAINING_WARN_MINUTES} 分钟，可能跑不完本轮任务"
                 )
 
@@ -721,7 +721,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 reason=reason,
             )
             self._append_log(
-                f"用户「{user_name}」历战余响保持未完成：{reason}；"
+                f"账号「{user_name}」历战余响保持未完成：{reason}；"
                 "下次 HSR 运行会继续尝试"
             )
             return
@@ -774,7 +774,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         *,
         plan=None,
     ) -> tuple[bool, bool]:
-        """解析本周历战余响任务，不写用户 Data。
+        """解析本周历战余响任务，不写账号 Data。
 
         开始日读 ``plan``（缺省即 ``user_config``），完成态读 ``user_config``。
         """
@@ -827,7 +827,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         *,
         plan=None,
     ) -> tuple[bool, str, bool]:
-        """解析周常是否本周已完成，不写用户 Data。
+        """解析周常是否本周已完成，不写账号 Data。
 
         模块开关读 ``plan``（缺省即 ``user_config``），完成态读 ``user_config``。
         """
@@ -936,7 +936,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             selected = bool(values.get("reward_redemption_code_enable", True))
         if not selected:
             self._append_log(
-                f"用户「{user_name}」已关闭{engine_label(engine)}兑换码奖励，本轮跳过"
+                f"账号「{user_name}」已关闭{engine_label(engine)}兑换码奖励，本轮跳过"
             )
             return False, None
         if engine == "M7A":
@@ -950,14 +950,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
             fingerprint = redeem_code_fingerprint(engine, self.script_config)
         except (OSError, ValueError, TypeError) as exc:
             logger.warning(
-                f"用户「{user_name}」读取{engine_label(engine)}兑换码版本失败，"
+                f"账号「{user_name}」读取{engine_label(engine)}兑换码版本失败，"
                 f"保守执行：{exc}"
             )
             return True, None
         previous = str(getattr(user_cfg.Data, f"{engine}RedeemCodeFingerprint") or "")
         if previous == fingerprint:
             self._append_log(
-                f"用户「{user_name}」{engine_label(engine, left=False)}兑换码未变化，"
+                f"账号「{user_name}」{engine_label(engine, left=False)}兑换码未变化，"
                 "本轮跳过兑换码领取"
             )
             return False, fingerprint
@@ -989,7 +989,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         effective_eow_enabled = daily_eow_enabled and eow_configured
         if daily_eow_enabled and not eow_configured:
             reason = "本周需要历战余响，但未配置历战余响关卡，已跳过"
-            self._append_log(f"用户「{user_name}」历战余响跳过：{reason}")
+            self._append_log(f"账号「{user_name}」历战余响跳过：{reason}")
             self._record_module_result(
                 user_id=uid,
                 user_name=user_name,
@@ -1034,7 +1034,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 continue
 
             # shared 来源时 plan 是脚本配置，其 Managed.TaskMapping 恒为空，
-            # 自然落到脚本级 TaskMapping。
+            # 自然落到托管级 TaskMapping。
             assigned = resolve_script_assignment(
                 module,
                 self.script_config,
@@ -1056,7 +1056,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
                 if not main_configured and not module_daily_eow_enabled:
                     reason = "未配置体力主关卡或可执行的历战余响关卡"
-                    self._append_log(f"用户「{user_name}」体力模块跳过：{reason}")
+                    self._append_log(f"账号「{user_name}」体力模块跳过：{reason}")
                     self._record_module_result(
                         user_id=uid,
                         user_name=user_name,
@@ -1200,7 +1200,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     ) -> HSRLoginPlan:
         """根据 SRA 可用性和账号密码生成本轮登录计划。
 
-        云平台不走 SRA StartGame：按切号处理，由切换器换成本用户的云浏览器，
+        云平台不走 SRA StartGame：按切号处理，由切换器换成本账号的云浏览器，
         登录态在该用户自己的浏览器 profile 里。
         """
 
@@ -1427,9 +1427,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
         script_id: str,
         temp_files: list[Path],
     ) -> list[HSRRunItem]:
-        """按用户构建本轮 HSR 执行队列。
+        """按账号构建本轮 HSR 执行队列。
 
-        ``plan`` 是该用户生效的任务计划（shared 来源为脚本配置，independent 来源为
+        ``plan`` 是该账号生效的任务计划（shared 来源为脚本配置，independent 来源为
         ``user_cfg`` 本身）；``Data`` / ``Info`` 恒读 ``user_cfg``。
         """
 
@@ -1440,7 +1440,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             user_cfg, plan=plan
         )
         logger.debug(
-            f"用户「{user_name}」resolver: "
+            f"账号「{user_name}」resolver: "
             f"daily_eow_enabled={daily_eow_enabled}, "
             f"eow_is_new_week={eow_is_new_week}, "
             f"weekly_skip={weekly_skip} ({weekly_skip_reason!r}), "
@@ -1483,7 +1483,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
             )
         else:
-            self._append_log(f"用户「{user_name}」周常跳过：{weekly_skip_reason}")
+            self._append_log(f"账号「{user_name}」周常跳过：{weekly_skip_reason}")
 
         return self._with_login_items_for_queue(
             items,
@@ -1537,7 +1537,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         ):
             return None
         self._append_log(
-            f"用户「{item.user_name}」游戏已重启，执行 SRA 模块「{item.module_name}」前"
+            f"账号「{item.user_name}」游戏已重启，执行 SRA 模块「{item.module_name}」前"
             "先登录进入游戏"
         )
         return factory(item.phase)
@@ -1589,7 +1589,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         item = login_item
                 item.attempts += 1
                 self._append_log(
-                    f"用户「{item.user_name}」执行{engine_label(item.script)}"
+                    f"账号「{item.user_name}」执行{engine_label(item.script)}"
                     f"{item.module_name}：{item.description}"
                 )
                 try:
@@ -1598,12 +1598,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     raise
                 except HSRNonRetryableTaskError as e:
                     # 云·星穹铁道的登录超时、排队超时、时长耗尽、浏览器起不来：
-                    # 后面的模块和补跑都只会再撞一遍，本用户本轮直接判失败。
+                    # 后面的模块和补跑都只会再撞一遍，本账号本轮直接判失败。
                     item.last_error = str(e)
                     item.retryable = False
                     failures.append(item)
                     self._append_log(
-                        f"用户「{item.user_name}」模块「{item.module_name}」执行失败"
+                        f"账号「{item.user_name}」模块「{item.module_name}」执行失败"
                         f"（不重试）：{item.last_error}"
                     )
                     remaining = self._remaining_items_after(
@@ -1619,13 +1619,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         skipped.retryable = False
                     if remaining:
                         self._append_log(
-                            f"用户「{item.user_name}」{HSR_ABORT_REASON_CLOUD}"
+                            f"账号「{item.user_name}」{HSR_ABORT_REASON_CLOUD}"
                             f"（共 {len(remaining)} 项）"
                         )
                     failures.extend(remaining)
                     await self._send_task_notice(
                         "error",
-                        f"HSR 用户「{item.user_name}」{item.module_name}失败，"
+                        f"HSR 账号「{item.user_name}」{item.module_name}失败，"
                         f"本轮不再补跑：{item.last_error}",
                     )
                     return failures
@@ -1633,7 +1633,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     item.last_error = str(e)
                     failures.append(item)
                     self._append_log(
-                        f"用户「{item.user_name}」模块「{item.module_name}」执行失败："
+                        f"账号「{item.user_name}」模块「{item.module_name}」执行失败："
                         f"{item.last_error}"
                     )
                     abort_reason: str | None = None
@@ -1654,7 +1654,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         )
                         if remaining:
                             self._append_log(
-                                f"用户「{item.user_name}」{abort_reason}"
+                                f"账号「{item.user_name}」{abort_reason}"
                                 f"（共 {len(remaining)} 项）"
                             )
                         failures.extend(remaining)
@@ -1668,11 +1668,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     item.retryable = False
                     failures.append(item)
                     logger.opt(exception=True).warning(
-                        f"用户「{item.user_name}」模块「{item.module_name}」执行异常："
+                        f"账号「{item.user_name}」模块「{item.module_name}」执行异常："
                         f"{item.last_error}"
                     )
                     self._append_log(
-                        f"用户「{item.user_name}」模块「{item.module_name}」执行异常："
+                        f"账号「{item.user_name}」模块「{item.module_name}」执行异常："
                         f"{item.last_error}"
                     )
                     if item.module_key == "StartGame":
@@ -1689,7 +1689,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             skipped.retryable = False
                         if remaining:
                             self._append_log(
-                                f"用户「{item.user_name}」{HSR_ABORT_REASON_LOGIN_FAILED}"
+                                f"账号「{item.user_name}」{HSR_ABORT_REASON_LOGIN_FAILED}"
                                 f"（共 {len(remaining)} 项）"
                             )
                         failures.extend(remaining)
@@ -1719,14 +1719,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             reason="外部脚本返回成功",
                         )
                     self._append_log(
-                        f"用户「{item.user_name}」模块「{item.module_name}」执行完成"
+                        f"账号「{item.user_name}」模块「{item.module_name}」执行完成"
                     )
                     continue
 
                 item.last_error = external_result_failure_summary(result)
                 failures.append(item)
                 self._append_log(
-                    f"用户「{item.user_name}」模块「{item.module_name}」执行失败："
+                    f"账号「{item.user_name}」模块「{item.module_name}」执行失败："
                     f"{item.last_error}"
                 )
 
@@ -1820,12 +1820,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
         failures: list[HSRRunItem],
         retry_limit: int,
     ) -> str:
-        """格式化用户级重试后仍失败的任务。"""
+        """格式化账号级重试后仍失败的任务。"""
 
-        parts = [f"HSR 用户任务重试后仍未完成（最大尝试次数 {retry_limit}）"]
+        parts = [f"HSR 账号任务重试后仍未完成（最大尝试次数 {retry_limit}）"]
         for item in failures:
             parts.append(
-                f"用户「{item.user_name}」模块「{item.module_name}」"
+                f"账号「{item.user_name}」模块「{item.module_name}」"
                 f"（{engine_label(item.script, left=False, right=False)}，"
                 f"已尝试 {item.attempts} 次）："
                 f"{item.last_error or '未知错误'}"
@@ -1853,16 +1853,16 @@ class HSRAutoProxyTask(TaskExecuteBase):
         await self._restart_game(user_name, "补跑失败任务前")
 
     async def main_task(self):
-        """执行当前用户的 HSR 队列。"""
+        """执行当前账号的 HSR 队列。"""
 
         user_item = self.cur_user_item
         uid = user_item.user_id
         user_cfg = self.cur_user_config
         user_name = user_cfg.Info.Name
-        # 原生来源用户由 HSRManager._run_direct_user 执行，不会进这里。
+        # 原生来源账号由 HSRManager._run_direct_user 执行，不会进这里。
         plan = resolve_plan(user_cfg, self.script_config)
         if plan is None:
-            raise RuntimeError(f"用户「{user_name}」为原生来源，不能进入 MAS 托管队列")
+            raise RuntimeError(f"账号「{user_name}」为原生来源，不能进入 MAS 托管队列")
         m7a_path = resolve_script_path(self.script_config, "M7A")
         sra_path = resolve_script_path(self.script_config, "SRA")
         script_id = self.script_info.script_id
@@ -1881,8 +1881,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
             self.runtime.m7a_runner = m7a_runner
         # 平台钉扎走环境变量（优先于 config.yaml），与 patch 里的平台字段一致。
         configure_m7a_runner(m7a_runner, self.script_config)
-        # 运行器在用户之间复用，逐行回调要换成当前用户的（云登录提醒、剩余时长
-        # 与 LastLogin 都按当前用户记）。
+        # 运行器在账号之间复用，逐行回调要换成当前账号的（云登录提醒、剩余时长
+        # 与 LastLogin 都按当前账号记）。
         m7a_runner.set_output_line_callback(self._on_m7a_output_line)
         login_plan = self._build_login_plan(user_cfg=user_cfg, sra_path=sra_path)
         if login_plan.uses_sra_start_game:
@@ -1903,7 +1903,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         else:
             self._restart_login_item_factory = None
 
-        # 物化前归档本用户字段侧车（_build_user_queue 会把托管字段注入原生
+        # 物化前归档本账号字段侧车（_build_user_queue 会把托管字段注入原生
         # 配置；指纹去重，失败只记日志不阻断运行——native 池由 manager
         # prepare 在任务级一次性归档）
         archive_mas_runtime_backup(
@@ -1927,11 +1927,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         if not full_queue:
             await self._start_user_log(user_item, user_name)
-            self._append_log(f"用户「{user_name}」本轮没有需要执行的 HSR 任务")
+            self._append_log(f"账号「{user_name}」本轮没有需要执行的 HSR 任务")
             await self._finish_current_user_log("HSR 本轮无需执行，已跳过")
             return
 
-        # 执行任务前脚本（每用户仅一次，补跑不重复执行）
+        # 执行任务前脚本（每账号仅一次，补跑不重复执行）
         self._extra_scripts_started = True
         await run_script_before_task(user_cfg)
 
@@ -1966,10 +1966,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 raise
 
             if not failed_items:
-                status = "HSR 用户任务完成" if attempt == 1 else "HSR 失败任务补跑完成"
+                status = "HSR 账号任务完成" if attempt == 1 else "HSR 失败任务补跑完成"
             else:
                 status = (
-                    "HSR 用户任务部分失败"
+                    "HSR 账号任务部分失败"
                     if attempt == 1
                     else "HSR 失败任务补跑部分失败"
                 )
@@ -1987,8 +1987,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
             ]
             if _daily_items and len(_daily_failed) < len(_daily_items):
                 self._queue_daily_proxy_completion(uid, user_name)
-            # 结束当前用户日志会清空用户上下文，每轮只能调用一次；
-            # 用户状态必须在这一次里定好，否则后续补写全部失效。
+            # 结束当前账号日志会清空账号上下文，每轮只能调用一次；
+            # 账号状态必须在这一次里定好，否则后续补写全部失效。
             if not failed_items:
                 await self._finish_current_user_log(status)
                 return
@@ -2004,7 +2004,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 else:
                     retry_action = "MAS 未管理游戏，直接补跑"
                 self._append_log(
-                    f"用户「{user_name}」第 {attempt}/{retry_limit} 次尝试后，"
+                    f"账号「{user_name}」第 {attempt}/{retry_limit} 次尝试后，"
                     f"仍有 {len(retryable_failures)} 个失败任务，{retry_action}"
                 )
                 await self._finish_current_user_log(status, user_status="运行")
@@ -2038,7 +2038,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
 
     async def final_task(self):
-        """用户任务结束后清理临时配置；异常时停止外部脚本。"""
+        """账号任务结束后清理临时配置；异常时停止外部脚本。"""
 
         self.history.begin_user_history_capture(
             self.script_info,
@@ -2053,7 +2053,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 cleanup_sra_temp_config(tp)
         finally:
             try:
-                # 每用户只配对一次；清理、取消与任务后脚本故障都不丢失历史。
+                # 每账号只配对一次；清理、取消与任务后脚本故障都不丢失历史。
                 if self._extra_scripts_started:
                     self._extra_scripts_started = False
                     try:
@@ -2077,15 +2077,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.crashed = True
         self.error_message = str(e)
-        await self._mark_current_user_abnormal(f"HSR 用户任务异常: {e}")
+        await self._mark_current_user_abnormal(f"HSR 账号任务异常: {e}")
         logger.opt(exception=True).warning(
-            f"HSR 用户「{self.cur_user_item.name}」任务出现异常：{e}"
+            f"HSR 账号「{self.cur_user_item.name}」任务出现异常：{e}"
         )
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,
             data=WSTaskNoticeData(
                 level="error",
-                message=f"HSR 用户「{self.cur_user_item.name}」任务出现异常：{e}",
+                message=f"HSR 账号「{self.cur_user_item.name}」任务出现异常：{e}",
             ),
         )

@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""奇想盒配置恢复服务：MAS 用户字段侧车池 / 上游原生配置池。
+"""奇想盒配置恢复服务：MAS 账号字段侧车池 / 上游原生配置池。
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底全部由基座
@@ -83,10 +83,10 @@ def _surface_or_none(
 
 
 def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
-    """恢复守卫：目标用户必须存在，避免把字段回填进孤儿目录。"""
+    """恢复守卫：目标账号必须存在，避免把字段回填进孤儿目录。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
-        raise ValueError("奇想盒用户不存在，请刷新后重试")
+        raise ValueError("奇想盒账号不存在，请刷新后重试")
 
 
 def _read_overlay(ctx: _utils_config_restore.RestoreContext) -> dict:
@@ -163,7 +163,7 @@ def _on_off(value: object) -> str:
     return "开启" if value else "关闭"
 
 
-# ══ mas 池：MAS 用户字段侧车（纯字段，恒按用户分桶） ══════════════════════
+# ══ mas 池：MAS 账号字段侧车（纯字段，恒按账号分桶） ══════════════════════
 
 
 def _mas_root(ctx: _utils_config_restore.RestoreContext) -> Path:
@@ -292,7 +292,7 @@ async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> No
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     # 回填后前端重拉表单，否则旧表单值下次保存会静默覆盖恢复结果
     await user.update(type(user).model_validate(_group_restore(restored)))
-    logger.info(f"用户 {ctx.user_id} 的 MAS 字段已恢复备份 {ts}")
+    logger.info(f"账号 {ctx.user_id} 的 MAS 字段已恢复备份 {ts}")
 
 
 # ══ native 池：上游 config.json（文件清单与 read_file 由基座派生） ═════════

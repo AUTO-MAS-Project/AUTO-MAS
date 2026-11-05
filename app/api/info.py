@@ -476,7 +476,7 @@ async def get_stage_combox(
 @router.post(
     "/combox/script",
     tags=["Get"],
-    summary="获取脚本下拉框信息",
+    summary="获取托管下拉框信息",
     response_model=ComboBoxOut,
     status_code=200,
 )

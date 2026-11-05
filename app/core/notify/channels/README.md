@@ -124,7 +124,7 @@ M9A 统计随 MaaFW 使用 `MaaFW_statistics.html`，旧 `m9a_statistics.html` �
 无会话渠道声明 `transport_fields`：元组列出从全局 Notify 固定的字段，空元组
 表示只固定代理。邮件固定 SMTP 地址、发件人和授权码；系统提示固定本次开关；
 Server 酱、Webhook 和移动消息固定代理。接收者及 Webhook 地址、模板等仍由原有
-目标快照提供。用户级通知的传输设置来自全局，接收目标来自用户配置。
+目标快照提供。账号级通知的传输设置来自全局，接收目标来自用户配置。
 
 宿主在准备目标时生成不可变 `NotificationTransportSnapshot`。绑定表通过原发送器
 工厂注入本次快照和固定代理，重试沿用同一数据。下一次准备目标读取最新配置。

@@ -51,6 +51,7 @@ const finished = <T extends Record<string, readonly string[]>>(fields: T) => ({
 })
 
 export const featureAnalyticsSchemas = {
+  mcp_retry_requested: finished({}),
   backend_restart_finished: finished({ reason_kind: ['manual', 'recovery', 'update'] as const }),
   runtime_alignment_finished: finished({
     operation: ['align', 'manual_update'] as const,
@@ -63,6 +64,20 @@ export const featureAnalyticsSchemas = {
   renderer_recovery_decided: finished({
     reason_kind: ['crashed', 'oom', 'killed', 'launch_failed', 'other'] as const,
     recovery_action: ['reload', 'give_up'] as const,
+    count_bucket: count,
+  }),
+  renderer_recovery_finished: finished({
+    reason_kind: ['crashed', 'oom', 'killed', 'launch_failed', 'other'] as const,
+    result_kind: [
+      'ready',
+      'load_failed',
+      'renderer_gone',
+      'reload_threw',
+      'timeout',
+      'window_closed',
+      'app_quitting',
+      'session_end',
+    ] as const,
     count_bucket: count,
   }),
   renderer_responsiveness_changed: finished({ state: ['unresponsive', 'responsive'] as const }),
@@ -143,6 +158,7 @@ export const featureAnalyticsSchemas = {
   settings_change_finished: finished({
     setting_key: [
       'auto_start',
+      'scheduled_wakeup',
       'start_minimized',
       'show_tray',
       'close_to_tray',
@@ -167,6 +183,7 @@ export const featureAnalyticsSchemas = {
       'update_pause',
       'proxy',
       'performance_effects',
+      'settings_layout',
       'other',
     ] as const,
     value_kind: ['enabled', 'disabled', 'default', 'custom'] as const,
@@ -291,6 +308,7 @@ export const mainOnlyFeatureEvents = [
   'app_close_finished',
   'runtime_alignment_finished',
   'renderer_recovery_decided',
+  'renderer_recovery_finished',
   'renderer_responsiveness_changed',
   'tray_action_requested',
   'virtual_display_prompt_answered',

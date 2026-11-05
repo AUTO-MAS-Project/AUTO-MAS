@@ -19,6 +19,10 @@ export const DeviceStatus = {
   CLOSING: 3,
   ERROR: 4,
   NOT_FOUND: 5,
+  /** 魔改 AVD 新建后在后台开机做初始化，做完前什么都不能动 */
+  CREATING: 6,
+  /** 魔改 AVD 新建后的初始化没做完，开不了机，只能删掉重建 */
+  CREATE_FAILED: 7,
   UNKNOWN: 10,
 } as const
 
@@ -93,18 +97,21 @@ interface ActionAvailability {
  * - 启动：离线 / 出错 / 未知才能点；启动中和关闭中都不能——那正是用户抱怨的地方，
  *   启动中还亮着「启动」等于邀请他再点一次。
  * - 关闭：在线和**启动中**都能点。启动卡住时用户需要的正是这个按钮。
- * - 显示 / 隐藏 / 游戏中心：只有在线才有意义。
+ * - 显示 / 隐藏 / 游戏中心：只有在线才有意义。魔改 AVD 无头开机的实例没有窗口，显示 / 隐藏置灰；
+ *   运行中不切换有头无头，也不靠重启补窗口。
  * - 设置：启动 / 关闭 / 删除进行中不能改——雷电的写入和启动共用同一把实例锁，这时点保存会
  *   一直等到启动结束才返回，看起来像卡死；显示 / 隐藏 / 游戏中心进行中照常可改。
  * - 删除：必须离线，且这行没有别的事在进行。
+ * - 新建中：全部不能点。魔改 AVD 新建后在后台开机做初始化，这时关机会把初始化打断。
+ * - 新建失败：开不了机、改不了设置，只能删除；关闭留着，新建程序中途退出时可能还剩一台模拟器开着。
  */
 export const actionAvailability = (
-  device: Pick<Emulator2DeviceItem, 'availability' | 'status'>,
+  device: Pick<Emulator2DeviceItem, 'availability' | 'status' | 'headless'>,
   pending: Pending | undefined,
   now: number
 ): ActionAvailability => {
-  const reachable = device.availability === 'ok'
   const status = effectiveStatus(device, pending, now)
+  const reachable = device.availability === 'ok' && status !== DeviceStatus.CREATING
   const busy = pending !== undefined && now < pending.expiresAt
   // 启动 / 关闭 / 删除会把这台实例整个占住（雷电还持有实例锁）；
   // 显示 / 隐藏 / 游戏中心只是对着窗口按几下，不该连关闭和设置一起锁掉
@@ -116,16 +123,20 @@ export const actionAvailability = (
     status === DeviceStatus.ERROR ||
     status === DeviceStatus.NOT_FOUND ||
     status === DeviceStatus.UNKNOWN
-  const canStop = online || status === DeviceStatus.STARTING
+  const createFailed = status === DeviceStatus.CREATE_FAILED
+  const canStop = online || status === DeviceStatus.STARTING || createFailed
+  const hasWindow = device.headless !== true
   return {
     start: reachable && !busy && canStart,
     stop: reachable && canStop && !(heavy && pending.op !== 'open'),
-    show: reachable && online && !busy,
-    hide: reachable && online && !busy,
+    show: reachable && online && !busy && hasWindow,
+    hide: reachable && online && !busy && hasWindow,
     store: reachable && online && !busy,
-    settings: reachable && !heavy,
+    settings: reachable && !heavy && !createFailed,
     delete:
-      reachable && !busy && (status === DeviceStatus.OFFLINE || status === DeviceStatus.NOT_FOUND),
+      reachable &&
+      !busy &&
+      (status === DeviceStatus.OFFLINE || status === DeviceStatus.NOT_FOUND || createFailed),
   }
 }
 
@@ -158,6 +169,8 @@ export const mergeSettings = (
       adbAddress: old.adbAddress,
       availability: old.availability,
       title: old.title,
+      headless: old.headless,
+      creationError: old.creationError,
     }
   })
 }

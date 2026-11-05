@@ -52,7 +52,7 @@ class GameSignAccountGroup(DomainEntry):
         )
         Enabled: bool = Field(
             default_factory=lambda: True,
-            description="GameSignAccount - 是否启用（该用户是否参与签到）",
+            description="GameSignAccount - 是否启用（该账号是否参与签到）",
         )
 
         KuroToken: Annotated[str, encrypted()] = Field(
@@ -61,7 +61,7 @@ class GameSignAccountGroup(DomainEntry):
         )
         LastSignDate: Annotated[datetime, tz(UTC8), ui(format="date")] = Field(
             default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC8),
-            description="GameSignAccount - 上次签到日期 (按用户隔离，防止重复触发)",
+            description="GameSignAccount - 上次签到日期 (按账号隔离，防止重复触发)",
         )
 
         MiyousheDeviceFp: Annotated[str, encrypted()] = Field(
@@ -77,7 +77,7 @@ class GameSignAccountGroup(DomainEntry):
             description="GameSignAccount - 米游社登录凭证 (DPAPI 加密)",
         )
         Name: str = Field(
-            default_factory=lambda: "用户 1", description="GameSignAccount - 账号组名称"
+            default_factory=lambda: "账号 1", description="GameSignAccount - 账号组名称"
         )
 
         SklandToken: Annotated[str, encrypted()] = Field(

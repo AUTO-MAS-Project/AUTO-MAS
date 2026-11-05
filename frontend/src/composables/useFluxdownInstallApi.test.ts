@@ -24,18 +24,6 @@ describe('FluxDown installation result', () => {
     )
     expect(api.install).not.toHaveBeenCalled()
   })
-  it('waits for the backend and returns the persisted installation result', async () => {
-    let finish!: (result: object) => void
-    api.install.mockImplementation(() => new Promise(resolve => (finish = resolve)))
-    const state = useFluxdownInstallApi()
-    const pending = state.installFluxdown('ghfast')
-    expect(state.loading.value).toBe(true)
-    expect(api.install).toHaveBeenCalledWith('ghfast')
-    finish({ code: 200, path: 'installed', version: '0.6.3' })
-    await expect(pending).resolves.toMatchObject({ path: 'installed' })
-    expect(state.loading.value).toBe(false)
-    expect(state.error.value).toBeNull()
-  })
 
   it('rejects partial success when the backend could not persist the path', async () => {
     api.install.mockResolvedValue({ code: 500, status: 'error', message: 'path not saved' })

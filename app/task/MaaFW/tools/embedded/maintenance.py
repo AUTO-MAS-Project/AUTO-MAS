@@ -39,7 +39,7 @@ class MaaFWMaintenanceService:
         self._process_started_at = process_started_at
 
     def _scripts(self) -> list[tuple[str, MaaFWConfig]]:
-        """在事件循环上取当前脚本快照，不把宿主集合交给工作线程。"""
+        """在事件循环上取当前托管快照，不把宿主集合交给工作线程。"""
         return [
             (uid, config)
             for uid, config in self._script_configs()

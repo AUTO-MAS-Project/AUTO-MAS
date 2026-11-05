@@ -80,15 +80,27 @@ from .shared import (
 DepotQuotaNumb = Annotated[int | None, Field(ge=0, le=9999)]
 """库存保持与干员养成每条计划的理智药/源石额度；留空即沿用 MAA 原设置。"""
 
+MaaEndInstallPath = Annotated[
+    NativePath | None, path_policy(kind="folder", blocked_dirs=STANDARD_BLOCKED_DIRS)
+]
+"""保留更新中断时暂缺的安装路径，供恢复入口定位相邻的原安装备份。"""
+
+
+BAAHInstallPath = Annotated[
+    NativePath | None,
+    path_policy(kind="file", extensions=(".exe",), blocked_dirs=STANDARD_BLOCKED_DIRS),
+]
+"""保留目录切换中断时暂缺的主程序路径，供安装恢复定位原目录。"""
+
 
 class MaaUserConfig(DomainEntry):
-    "MAA用户配置"
+    "MAA账号配置"
 
     related_config: ClassVar = {}
 
     class DataFields(ConfigGroup):
         def _game_day_timezone(self):
-            """按当前用户服务器读取游戏日时间，不改变保存的 UTC 时刻。"""
+            """按当前账号服务器读取游戏日时间，不改变保存的 UTC 时刻。"""
             return _utils_constants.get_game_day_tz(self.__dict__["_entry"].Info.Server)
 
         AnnihilationCompletedWeek: Annotated[str, none_as("")] = Field(
@@ -120,7 +132,7 @@ class MaaUserConfig(DomainEntry):
             ui(visibility=UiVisibility.HIDE),
         ] = Field(
             default_factory=lambda: 0,
-            description="无时段排班表下一班的索引：每用户一份、由 MAS 在基建换班完成后推进； 带时段表交 MAA 按时段选班，不读它",
+            description="无时段排班表下一班的索引：每账号一份、由 MAS 在基建换班完成后推进； 带时段表交 MAA 按时段选班，不读它",
         )
 
         LastProxyDate: Annotated[
@@ -145,12 +157,12 @@ class MaaUserConfig(DomainEntry):
         ] = Field(default_factory=lambda: 0, description="代理次数")
 
         StaminaPipelineBackup: JsonDictString = Field(
-            description="理智流程升级前完整用户配置 JSON", default_factory=lambda: "{}"
+            description="理智流程升级前完整账号配置 JSON", default_factory=lambda: "{}"
         )
 
         StaminaPipelineVersion: Annotated[int, Field(ge=0, le=1)] = Field(
             default_factory=lambda: 1,
-            description="理智流程配置迁移版本与升级前完整用户配置（关闭的旧计划仍可找回）",
+            description="理智流程配置迁移版本与升级前完整账号配置（关闭的旧计划仍可找回）",
         )
 
     Data: DataFields = Field(default_factory=DataFields)
@@ -168,11 +180,11 @@ class MaaUserConfig(DomainEntry):
             description="base 来源（shared=共享/independent=独立/native=原生）",
         )
 
-        Id: str = Field(default_factory=lambda: "", description="用户 ID")
+        Id: str = Field(default_factory=lambda: "", description="账号 ID")
 
         IfQuickConfig: bool = Field(
             default_factory=lambda: True,
-            description="是否启用快速配置（与配置来源独立，按用户保存）",
+            description="是否启用覆写常规配置（与配置来源独立，按账号保存）",
         )
 
         IfScriptAfterTask: bool = Field(
@@ -184,7 +196,7 @@ class MaaUserConfig(DomainEntry):
         )
 
         Name: WindowsNameString = Field(
-            default_factory=lambda: "新用户", description="用户名称"
+            default_factory=lambda: "新账号", description="账号名称"
         )
 
         Notes: str = Field(default_factory=lambda: "无", description="备注")
@@ -212,7 +224,7 @@ class MaaUserConfig(DomainEntry):
 
         Tag: Virtual[str] = Field(
             default_factory=lambda: None,
-            description="用户标签信息（虚拟字段，供前端显示）",
+            description="账号标签信息（虚拟字段，供前端显示）",
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
@@ -334,6 +346,11 @@ class MaaUserConfig(DomainEntry):
             default_factory=lambda: False, description="是否注入 MAA 原生干员培养任务"
         )
 
+        CultivateAllOwned: bool = Field(
+            default_factory=lambda: False,
+            description="是否托管全部已有干员，按森空岛练度补充精二与技能七级目标",
+        )
+
         CultivateSkipDuringActivity: bool = Field(
             default_factory=lambda: False, description="活动期间是否跳过养成计划"
         )
@@ -385,7 +402,7 @@ class MaaUserConfig(DomainEntry):
             default_factory=lambda: (
                 '[{"Stage":"PR-A-1","DropId":"3261","DropCount":20},{"Stage":"PR-A-1","DropId":"3231","DropCount":20},{"Stage":"PR-B-1","DropId":"3251","DropCount":20},{"Stage":"PR-B-1","DropId":"3241","DropCount":20},{"Stage":"PR-C-1","DropId":"3211","DropCount":20},{"Stage":"PR-C-1","DropId":"3271","DropCount":20},{"Stage":"PR-D-1","DropId":"3221","DropCount":20},{"Stage":"PR-D-1","DropId":"3281","DropCount":20},{"Stage":"PR-A-2","DropId":"3262","DropCount":20},{"Stage":"PR-A-2","DropId":"3232","DropCount":20},{"Stage":"PR-B-2","DropId":"3252","DropCount":20},{"Stage":"PR-B-2","DropId":"3242","DropCount":20},{"Stage":"PR-C-2","DropId":"3212","DropCount":20},{"Stage":"PR-C-2","DropId":"3272","DropCount":20},{"Stage":"PR-D-2","DropId":"3222","DropCount":20},{"Stage":"PR-D-2","DropId":"3282","DropCount":20},{"Stage":"CE-6","DropId":"4001","DropCount":2000000},{"Stage":"AP-5","DropId":"4006","DropCount":5000},{"Stage":"CA-5","DropId":"3303","DropCount":200}]'
             ),
-            description="库存保持计划（快速配置面板维护；MAA 侧同名 PlanList 为透传载体）",
+            description="库存保持计划（覆写常规配置面板维护；MAA 侧同名 PlanList 为透传载体）",
         )
 
         EventDepotMaintainPlans: JsonListString = Field(
@@ -477,7 +494,7 @@ class MaaUserConfig(DomainEntry):
             return "未命名自定义基建"
 
     def getTags(self) -> str:
-        """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
+        """生成账号标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
         tags.append(
             _tag_proxy(self, tz=_utils_constants.get_game_day_tz(self.Info.Server))
@@ -585,7 +602,7 @@ class MaaConfig(DomainEntry):
 
     class InfoFields(ConfigGroup):
         Name: str = Field(
-            default_factory=lambda: "新 MAA 脚本", description="MAA 脚本名称"
+            default_factory=lambda: "新 MAA 托管", description="MAA 托管名称"
         )
 
         Path: FolderPath = Field(default_factory=lambda: None, description="MAA 路径")
@@ -643,7 +660,7 @@ class MaaConfig(DomainEntry):
 
         MirrorChyanCDK: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "",
-            description="本脚本的 Mirror 酱 CDK（加密存储，留空回退 MAS 全局配置）",
+            description="本托管的 Mirror 酱 CDK（加密存储，留空回退 MAS 全局配置）",
         )
         TakeoverEnabled: bool = Field(
             default_factory=lambda: False,
@@ -669,7 +686,7 @@ class MaaConfig(DomainEntry):
         return data
 
     async def migrate_update_takeover(self, *, global_cdk: str) -> bool:
-        """为有 CDK 的旧脚本一次性开启接管，之后保留用户的选择。"""
+        """为有 CDK 的既有托管一次性开启接管，之后保留用户的选择。"""
         if self.Update.TakeoverMigrationVersion:
             return False
         enabled = bool(self.Update.MirrorChyanCDK.strip() or global_cdk.strip())
@@ -681,7 +698,7 @@ class MaaConfig(DomainEntry):
 
 
 class MaaEndUserConfig(DomainEntry):
-    "MaaEnd用户配置"
+    "MaaEnd账号配置"
 
     related_config: ClassVar = {}
 
@@ -721,10 +738,10 @@ class MaaEndUserConfig(DomainEntry):
             description="base 来源（shared=共享/independent=独立/native=原生）",
         )
 
-        Id: str = Field(default_factory=lambda: "", description="用户ID")
+        Id: str = Field(default_factory=lambda: "", description="账号ID")
 
         IfQuickConfig: bool = Field(
-            default_factory=lambda: True, description="是否启用快速配置"
+            default_factory=lambda: True, description="是否启用覆写常规配置"
         )
 
         IfScriptAfterTask: bool = Field(
@@ -736,7 +753,7 @@ class MaaEndUserConfig(DomainEntry):
         )
 
         Name: WindowsNameString = Field(
-            default_factory=lambda: "新用户", description="用户名称"
+            default_factory=lambda: "新账号", description="账号名称"
         )
 
         Notes: str = Field(default_factory=lambda: "无", description="备注")
@@ -748,8 +765,9 @@ class MaaEndUserConfig(DomainEntry):
             default_factory=lambda: -1, description="剩余天数"
         )
 
-        Resource: Literal["官服"] = Field(
-            default_factory=lambda: "官服", description="资源名称"
+        Resource: str = Field(
+            default_factory=lambda: "官服",
+            description="MaaEnd 启动服务器选项原值，官服为旧配置兼容值",
         )
 
         SanityStrategy: Literal["MAS", "Native", "Inventory"] = Field(
@@ -778,7 +796,7 @@ class MaaEndUserConfig(DomainEntry):
         Status: bool = Field(default_factory=lambda: True, description="是否启用")
 
         Tag: Virtual[str] = Field(
-            default_factory=lambda: None, description="用户标签信息"
+            default_factory=lambda: None, description="账号标签信息"
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
@@ -1003,7 +1021,7 @@ class MaaEndUserConfig(DomainEntry):
         return (plan.get_current_key(), str(mode))
 
     def getTags(self) -> str:
-        """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
+        """生成账号标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
         tags.append(
             {
@@ -1078,7 +1096,7 @@ class MaaEndUserConfig(DomainEntry):
         info_data = data.get("Info")
         if isinstance(info_data, dict):
             legacy_base = str(info_data.get("Mode") or "")
-            # 旧 Mode 同时决定来源和快速配置开关；已给出的新来源始终优先。
+            # 旧 Mode 同时决定来源和覆写常规配置开关；已给出的新来源始终优先。
             if "Base" not in info_data and legacy_base == "自定义":
                 info_data["Base"] = "independent"
                 info_data["IfQuickConfig"] = False
@@ -1173,6 +1191,16 @@ class MaaEndConfig(DomainEntry):
             description="自定义恢复分辨率宽度",
         )
 
+        RestoreAutoHDR: Literal["Unchanged", "Disable", "Enable"] = Field(
+            default_factory=lambda: "Unchanged",
+            description="关闭游戏时的自动 HDR 设置",
+        )
+
+        AutoHDR: Literal["Unchanged", "Disable", "Enable"] = Field(
+            default_factory=lambda: "Unchanged",
+            description="MaaEnd 启动时的自动 HDR 设置",
+        )
+
         SetResolution: bool = Field(
             default_factory=lambda: False,
             description="是否在启动游戏时执行 MaaEnd 分辨率设置预任务",
@@ -1191,10 +1219,11 @@ class MaaEndConfig(DomainEntry):
 
     class InfoFields(ConfigGroup):
         Name: str = Field(
-            default_factory=lambda: "新 MaaEnd 脚本", description="MaaEnd 脚本名称"
+            default_factory=lambda: "新 MaaEnd 托管", description="MaaEnd 托管名称"
         )
 
-        Path: FolderPath = Field(
+        # 目录切换中断时路径可能暂时不存在，必须保留以便运行前恢复原安装。
+        Path: MaaEndInstallPath = Field(
             default_factory=lambda: None, description="MaaEnd 路径"
         )
 
@@ -1240,6 +1269,21 @@ class MaaEndConfig(DomainEntry):
     Run: RunFields = Field(default_factory=RunFields)
     UserData: ConfigCollection[MaaEndUserConfig] = collection(MaaEndUserConfig)
 
+    class UpdateFields(ConfigGroup):
+        TakeoverEnabled: bool = Field(
+            default_factory=lambda: False,
+            description="运行前由 MAS 下载、校验并安装 MaaEnd 官方完整包；不暂停 MXU 自身的更新检查",
+        )
+        Channel: Literal["stable", "beta"] = Field(
+            default_factory=lambda: "stable", description="MaaEnd 更新通道"
+        )
+        MirrorChyanCDK: Annotated[str, encrypted()] = Field(
+            default_factory=lambda: "",
+            description="MaaEnd Mirror 酱 CDK，留空使用全局 CDK，无 CDK 使用 GitHub",
+        )
+
+    Update: UpdateFields = Field(default_factory=UpdateFields)
+
     @classmethod
     def normalize_payload(cls, data):
         data = deepcopy(data)
@@ -1256,7 +1300,7 @@ class MaaEndConfig(DomainEntry):
 
 
 class SrcUserConfig(DomainEntry):
-    "SRC用户配置"
+    "SRC账号配置"
 
     related_config: ClassVar = {}
 
@@ -1287,11 +1331,11 @@ class SrcUserConfig(DomainEntry):
             description="base 来源（shared=共享/independent=独立/native=原生）",
         )
 
-        Id: str = Field(default_factory=lambda: "", description="用户 ID")
+        Id: str = Field(default_factory=lambda: "", description="账号 ID")
 
         IfQuickConfig: bool = Field(
             default_factory=lambda: True,
-            description="是否启用快速配置（与配置来源独立，按用户保存）",
+            description="是否启用覆写常规配置（与配置来源独立，按账号保存）",
         )
 
         IfScriptAfterTask: bool = Field(
@@ -1303,7 +1347,7 @@ class SrcUserConfig(DomainEntry):
         )
 
         Name: WindowsNameString = Field(
-            default_factory=lambda: "新用户", description="用户名称"
+            default_factory=lambda: "新账号", description="账号名称"
         )
 
         Notes: str = Field(default_factory=lambda: "无", description="备注")
@@ -1336,7 +1380,7 @@ class SrcUserConfig(DomainEntry):
         Status: bool = Field(default_factory=lambda: True, description="是否启用")
 
         Tag: Virtual[str] = Field(
-            default_factory=lambda: None, description="用户标签信息"
+            default_factory=lambda: None, description="账号标签信息"
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
@@ -1511,7 +1555,7 @@ class SrcUserConfig(DomainEntry):
     Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
 
     def getTags(self) -> str:
-        """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
+        """生成账号标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
         tags.append(_tag_proxy(self))
         tags.append(_tag_remained_days(self))
@@ -1551,6 +1595,14 @@ class SrcUserConfig(DomainEntry):
 class SrcConfig(DomainEntry):
     "SRC配置"
 
+    class UpdateFields(ConfigGroup):
+        TakeoverEnabled: bool = Field(
+            default=False,
+            description="运行前由 MAS 预取 SRC 原生代码源并调用官方安装器完成更新，普通下载失败后沿用当前安装；运行期暂停原生更新并在任务结束后恢复",
+        )
+
+    Update: UpdateFields = Field(default_factory=UpdateFields)
+
     related_config: ClassVar = {}
 
     class EmulatorFields(ConfigGroup):
@@ -1569,7 +1621,7 @@ class SrcConfig(DomainEntry):
 
     class InfoFields(ConfigGroup):
         Name: str = Field(
-            default_factory=lambda: "新 SRC 脚本", description="SRC 脚本名称"
+            default_factory=lambda: "新 SRC 托管", description="SRC 托管名称"
         )
 
         Path: FolderPath = Field(default_factory=lambda: None, description="SRC 路径")
@@ -1618,7 +1670,7 @@ class SrcConfig(DomainEntry):
 
 
 class HSRUserConfig(DomainEntry):
-    "HSR用户配置"
+    "HSR账号配置"
 
     related_config: ClassVar = {}
 
@@ -1700,15 +1752,15 @@ class HSRUserConfig(DomainEntry):
             ),
         ] = Field(
             default_factory=lambda: "shared",
-            description="base 来源（shared/independent/native）：shared = 共用脚本级计划； independent = 本用户自己的计划；native = 原样运行 SRA / 三月七 当前的原生配置",
+            description="base 来源（shared/independent/native）：shared = 共用托管级计划； independent = 本账号自己的计划；native = 原样运行 SRA / 三月七 当前的原生配置",
         )
 
         Id: Annotated[str, encrypted()] = Field(
-            default_factory=lambda: "", description="用户 ID（账号）"
+            default_factory=lambda: "", description="账号"
         )
         IfQuickConfig: bool = Field(
             default_factory=lambda: True,
-            description="是否启用快速配置（与配置来源独立，按用户保存）",
+            description="兼容字段；HSR 运行不消费此开关，不提供覆写常规配置",
         )
 
         IfScriptAfterTask: bool = Field(
@@ -1720,7 +1772,7 @@ class HSRUserConfig(DomainEntry):
         )
 
         Name: WindowsNameString = Field(
-            default_factory=lambda: "新用户", description="用户名称"
+            default_factory=lambda: "新账号", description="账号名称"
         )
 
         Notes: str = Field(default_factory=lambda: "无", description="备注")
@@ -1748,7 +1800,7 @@ class HSRUserConfig(DomainEntry):
 
         Tag: Virtual[str] = Field(
             default_factory=lambda: None,
-            description="用户标签信息（虚拟字段，供前端显示）",
+            description="账号标签信息（虚拟字段，供前端显示）",
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
@@ -1840,8 +1892,8 @@ class HSRUserConfig(DomainEntry):
         """标签读计划字段时用的对象。
 
         ``shared`` 来源的计划在所属 ``HSRConfig`` 的同名组上，经
-        ``related_config["ScriptConfig"]`` 找到持有自己的那份脚本配置；
-        ``independent`` / ``native`` 来源，或找不到所属脚本（如未挂到全局配置的
+        ``related_config["ScriptConfig"]`` 找到持有自己的那份托管配置；
+        ``independent`` / ``native`` 来源，或找不到所属托管（如未挂到全局配置的
         独立实例）时读自己。
         """
         if self.Info.Base in ("independent", "native"):
@@ -1857,7 +1909,7 @@ class HSRUserConfig(DomainEntry):
         return self
 
     def getTags(self) -> str:
-        """生成 HSR 用户标签列表，返回JSON字符串格式的TagItem列表。"""
+        """生成 HSR 账号标签列表，返回JSON字符串格式的TagItem列表。"""
         tags: list[dict] = []
         server = self.Info.Server
         server_label_map = {"CN-Official": "官服"}
@@ -1929,7 +1981,7 @@ class HSRConfig(DomainEntry):
     class CloudFields(ConfigGroup):
         LastLogin: JsonDictString = Field(
             default_factory=lambda: "{ }",
-            description="各用户最近一次确认已登录的时间（user_id → ISO 时间），只读展示用， 由运行结束后的写回与「登录云游戏」接口维护",
+            description="各账号最近一次确认已登录的时间（user_id → ISO 时间），只读展示用， 由运行结束后的写回与「登录云游戏」接口维护",
         )
 
         LoginTimeoutMinutes: Annotated[int, Field(ge=1, le=9999)] = Field(
@@ -1989,7 +2041,7 @@ class HSRConfig(DomainEntry):
         )
 
         Name: str = Field(
-            default_factory=lambda: "新 HSR 脚本", description="HSR 脚本名称"
+            default_factory=lambda: "新 HSR 托管", description="HSR 托管名称"
         )
 
         SRAPath: FolderPath = Field(
@@ -2108,9 +2160,9 @@ class HSRConfig(DomainEntry):
     TaskSwitch: TaskSwitchFields = Field(default_factory=TaskSwitchFields)
 
     class UpdateFields(ConfigGroup):
-        AutoUpdateMode: Literal["Off", "AfterRun"] = Field(
-            default_factory=lambda: "Off",
-            description="外部脚本（M7A / SRA）的自动更新。默认关闭：这两个是用户自己安装、 自带更新器的第三方工具，未经开启就改写它们的目录属于越界；停留在 某个旧版也是真实需求。 只有 AfterRun 一档，没有 BeforeRun：更新的收益本来就落在下一次运行 上，没有理由让当前这轮先等一个 170–750MB 的下载。想立刻更新走配置 页的手动按钮。留成枚举而非布尔，是为了日后要加档时不必做 bool→enum 迁移（MaaFW 正为此背着一个废弃字段）。 选项顺序有意义：OptionsValidator.correct() 回退的是 **options[0]**， 不是这里的默认值，Off 必须排在最前。",
+        AutoUpdateMode: Literal["Off", "BeforeRun", "AfterRun"] = Field(
+            default_factory=lambda: "BeforeRun",
+            description="SRA、三月七的自动更新：Off 关闭，BeforeRun 在任务开始前由 MAS 检查、下载、校验并安装。默认运行前更新；旧配置 AfterRun 兼容为运行前执行，显式关闭保持关闭。",
         )
 
         Channel: Literal["stable", "beta"] = Field(
@@ -2137,7 +2189,7 @@ class HSRConfig(DomainEntry):
 
 
 class MaaFWUserConfig(DomainEntry):
-    "MaaFW 用户配置"
+    "MaaFW 账号配置"
 
     class DataFields(ConfigGroup):
         IfPassCheck: bool = Field(
@@ -2169,7 +2221,7 @@ class MaaFWUserConfig(DomainEntry):
     class DeviceFields(ConfigGroup):
         AdbAddress: str = Field(
             default_factory=lambda: "",
-            description="当前用户覆盖 ADB 地址，留空时使用脚本级模拟器配置",
+            description="当前账号覆盖 ADB 地址，留空时使用托管级模拟器配置",
         )
 
         HWnd: Annotated[int, Field(ge=0, le=999999999999)] = Field(
@@ -2202,7 +2254,7 @@ class MaaFWUserConfig(DomainEntry):
             ),
         ] = Field(
             default_factory=lambda: "independent",
-            description="base 来源（shared=共享/independent=独立/native=原生）",
+            description="兼容字段；MFW 运行不按 base 三态切换配置，任务来源为账号任务队列",
         )
 
         Controller: str = Field(
@@ -2212,7 +2264,7 @@ class MaaFWUserConfig(DomainEntry):
 
         IfQuickConfig: bool = Field(
             default_factory=lambda: True,
-            description="是否启用快速配置（与配置来源独立，按用户保存）",
+            description="兼容字段；MFW 运行不消费此开关，始终使用账号任务队列",
         )
 
         IfScriptAfterTask: bool = Field(
@@ -2224,7 +2276,7 @@ class MaaFWUserConfig(DomainEntry):
         )
 
         Name: WindowsNameString = Field(
-            default_factory=lambda: "新用户", description="用户名称"
+            default_factory=lambda: "新账号", description="账号名称"
         )
 
         Notes: str = Field(default_factory=lambda: "无", description="备注")
@@ -2253,7 +2305,7 @@ class MaaFWUserConfig(DomainEntry):
         Status: bool = Field(default_factory=lambda: True, description="是否启用")
 
         Tag: Virtual[str] = Field(
-            default_factory=lambda: None, description="用户标签信息"
+            default_factory=lambda: None, description="账号标签信息"
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
@@ -2290,14 +2342,14 @@ class MaaFWUserConfig(DomainEntry):
         # 新队列的 keepUnchecked 标记随 JSON 原样保存；无标记的旧 false 实例仍隐藏。
         TaskSnapshot: JsonDictString = Field(
             default_factory=lambda: "{ }",
-            description="当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions/globalOptions， 可选 taskLabels（用户给某一份实例起的显示名，只影响界面显示）， 可选 taskSchedules（``{实例 id: {weekdays: [1..7]}}``，ISO 星期 1=周一，升序去重；只在本机今天的星期在其中时运行这一份，开跑建计划时判一次；七天全选即不限制、不写这一项，空表或非法值按不限制处理）； 除 globalOptions 外各键都是任务实例 id，同一个任务可以重复入队（见 MaaFWTaskSnapshot）； globalOptions 是全局选项的值，每个用户一份、所有任务共用。 默认的空快照在建用户、读用户与运行前按项目默认（预设或默认勾选）补成实打实的队列， 见 app/task/MaaFW/tools/embedded/default_snapshot.py",
+            description="当前账号的任务快照，结构为 taskOrder/taskChecked/taskOptions/globalOptions， 可选 taskLabels（用户给某一份实例起的显示名，只影响界面显示）， 可选 taskSchedules（``{实例 id: {weekdays: [1..7]}}``，ISO 星期 1=周一，升序去重；只在本机今天的星期在其中时运行这一份，开跑建计划时判一次；七天全选即不限制、不写这一项，空表或非法值按不限制处理）； 除 globalOptions 外各键都是任务实例 id，同一个任务可以重复入队（见 MaaFWTaskSnapshot）； globalOptions 是全局选项的值，每个账号一份、所有任务共用。 默认的空快照在创建账号、读取账号与运行前按项目默认（预设或默认勾选）补成实打实的队列， 见 app/task/MaaFW/tools/embedded/default_snapshot.py",
         )
 
     Task: TaskFields = Field(default_factory=TaskFields)
     Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
 
     def getTags(self) -> str:
-        """生成 MaaFW 用户标签列表"""
+        """生成 MaaFW 账号标签列表"""
         tags = []
         last_status = self.Data.LastProxyStatus
         tags.append(
@@ -2324,11 +2376,11 @@ class MaaFWUserConfig(DomainEntry):
 class MaaFWConfig(DomainEntry):
     """MaaFW 项目配置。
 
-    特调通过继承配置分组扩展默认值，并显式声明自身的用户集合类型。
+    特调通过继承配置分组扩展默认值，并显式声明自身的账号集合类型。
     """
 
     related_config: ClassVar = {}
-    DEFAULT_SCRIPT_NAME: ClassVar = "新 MFW 脚本"
+    DEFAULT_SCRIPT_NAME: ClassVar = "新 MFW 托管"
     USER_CONFIG_CLASS: ClassVar = MaaFWUserConfig
     FLAVOR: ClassVar = None
     DEFAULT_TASK_TIME_LIMIT_OVERRIDES: ClassVar = "{ }"
@@ -2336,7 +2388,7 @@ class MaaFWConfig(DomainEntry):
     class DeviceFields(ConfigGroup):
         AdbAddress: str = Field(
             default_factory=lambda: "",
-            description="ADB 地址，留空时启动脚本级模拟器获取",
+            description="ADB 地址，留空时启动托管级模拟器获取",
         )
 
         AdbInputMethods: Annotated[int, Field(ge=-999, le=999999999999)] = Field(
@@ -2392,7 +2444,7 @@ class MaaFWConfig(DomainEntry):
     class EmbeddedFields(ConfigGroup):
         FollowSource: bool = Field(
             default_factory=lambda: False,
-            description="跟随来源目录（开发者模式），默认关。开着时每次运行前比一下来源目录（投影会带走的 文件的路径 + 大小 + 修改时间），变了就重新导入到这个脚本自己的私有渠道（不比版本、 不与同项目其它脚本共用版本），不做项目更新；关掉后回到 Update.Channel 的组。 见 tools/embedded/embedded_project.py「跟随来源目录」一节。",
+            description="跟随来源目录（开发者模式），默认关。开着时每次运行前比一下来源目录（投影会带走的 文件的路径 + 大小 + 修改时间），变了就重新导入到这个托管自己的私有渠道（不比版本、 不与同项目其它托管共用版本），不做项目更新；关掉后回到 Update.Channel 的组。 见 tools/embedded/embedded_project.py「跟随来源目录」一节。",
         )
 
         ImportedAt: Annotated[
@@ -2406,7 +2458,7 @@ class MaaFWConfig(DomainEntry):
 
         SourceVersion: str = Field(
             default_factory=lambda: "",
-            description="由 AUTO-MAS 内嵌一份按 interface 白名单投影的副本来运行。副本在 data/mfw/<脚本 uuid 前 12 位>/，由脚本 ID 推出、不进配置、用户不可手改； Info.Path 继续存用户选的来源目录。更新落地时同样只写白名单内的条目。 导入时来源的 interface 版本，仅展示",
+            description="由 AUTO-MAS 内嵌一份按 interface 白名单投影的副本来运行。副本在 data/mfw/<托管 uuid 前 12 位>/，由托管 ID 推出、不进配置、用户不可手改； Info.Path 继续存用户选的来源目录。更新落地时同样只写白名单内的条目。 导入时来源的 interface 版本，仅展示",
         )
 
     Embedded: EmbeddedFields = Field(default_factory=EmbeddedFields)
@@ -2435,7 +2487,7 @@ class MaaFWConfig(DomainEntry):
 
         Hotkeys: JsonDictString = Field(
             default_factory=lambda: "{}",
-            description='脚本级键位（PI v2.8 hotkey 选项）：``{option 名: {字段名: 组合键字符串}}``， 组合键写成「修饰键+…+主键」（如 ``"Ctrl+E"``）。只存与 interface 默认不同的 字段；运行时叠加到每个任务实际生效的 hotkey 选项上，盖过用户快照 / 预设里的值。 仅 Win32 控制器生效（Adb 等其他控制器不叠加）。interface 里已没有的 option / 字段静默忽略，映射不了的值告警后回落到快照 / 默认值（runner/run_plan.py）。',
+            description='托管级键位（PI v2.8 hotkey 选项）：``{option 名: {字段名: 组合键字符串}}``， 组合键写成「修饰键+…+主键」（如 ``"Ctrl+E"``）。只存与 interface 默认不同的 字段；运行时叠加到每个任务实际生效的 hotkey 选项上，盖过账号快照 / 预设里的值。 仅 Win32 控制器生效（Adb 等其他控制器不叠加）。interface 里已没有的 option / 字段静默忽略，映射不了的值告警后回落到快照 / 默认值（runner/run_plan.py）。',
         )
 
         LaunchMode: Literal["DirectExe", "AttachOnly"] = Field(
@@ -2471,7 +2523,7 @@ class MaaFWConfig(DomainEntry):
         )
 
         Name: str = Field(
-            default_factory=lambda: "新 MFW 脚本", description="MaaFW 脚本名称"
+            default_factory=lambda: "新 MFW 托管", description="MaaFW 托管名称"
         )
 
         # 导入完成后来源可删除；完整保留版本号目录名，不能去后缀或清空。
@@ -2523,7 +2575,7 @@ class MaaFWConfig(DomainEntry):
 
         RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
-            description="单次运行时间限制（分钟），套在单个用户的整次运行上。截止时刻随 job 文件交给 worker：到点它自己停掉当前任务、截一张超时图、带回已完成的任务；宿主只在 worker 没能及时停下时才强杀（那时既没有截图也没有进度）。MaaFW 项目一轮日常 动辄几十分钟，30 分钟默认值实测常被误伤，放宽到 120。",
+            description="单次运行时间限制（分钟），套在单个账号的整次运行上。截止时刻随 job 文件交给 worker：到点它自己停掉当前任务、截一张超时图、带回已完成的任务；宿主只在 worker 没能及时停下时才强杀（那时既没有截图也没有进度）。MaaFW 项目一轮日常 动辄几十分钟，30 分钟默认值实测常被误伤，放宽到 120。",
         )
 
         RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
@@ -2551,7 +2603,7 @@ class MaaFWConfig(DomainEntry):
     class SelectionFields(ConfigGroup):
         Controller: JsonListString = Field(
             default_factory=lambda: "[ ]",
-            description="当前阶段保留：manager.py 仍从 Selection.* 读取运行范围， 字段迁移到 Info.* / 用户任务配置属于后续 P3 前端回收。 选中的 controller 列表",
+            description="当前阶段保留：manager.py 仍从 Selection.* 读取运行范围， 字段迁移到 Info.* / 账号任务配置属于后续 P3 前端回收。 选中的 controller 列表",
         )
 
         Resource: JsonListString = Field(
@@ -2567,7 +2619,7 @@ class MaaFWConfig(DomainEntry):
     class TaskFields(ConfigGroup):
         Templates: JsonListString = Field(
             default_factory=lambda: "[ ]",
-            description='用户页任务队列的自定义模板，同一脚本的用户共用。JSON 列表，每项 ``{"name": 模板名, "snapshot": {taskOrder, taskChecked, taskOptions, taskLabels?, taskSchedules?}}``， 快照形状同用户的 Task.TaskSnapshot（键是任务实例 id），但不含受管任务、密码字段 与全局选项（globalOptions 归各用户自己）； 名称在脚本内唯一。运行流程不读它，只由用户页套用到某个用户的队列。',
+            description='账号页任务队列的自定义模板，同一托管的账号共用。JSON 列表，每项 ``{"name": 模板名, "snapshot": {taskOrder, taskChecked, taskOptions, taskLabels?, taskSchedules?}}``， 快照形状同账号的 Task.TaskSnapshot（键是任务实例 id），但不含受管任务、密码字段 与全局选项（globalOptions 归各账号自己）； 名称在托管内唯一。运行流程不读它，只由账号页套用到某个账号的队列。',
         )
 
     Task: TaskFields = Field(default_factory=TaskFields)
@@ -2582,7 +2634,7 @@ class MaaFWConfig(DomainEntry):
             ),
         ] = Field(
             default_factory=lambda: "BeforeRun",
-            description="项目自动更新时机：Off 不更新 / BeforeRun 运行前 / AfterRun 全部用户跑完后。 由 embedded_manager 在用户任务之外执行，耗时不计入 Run.RunTimeLimit。",
+            description="项目自动更新时机：Off 不更新，BeforeRun 在账号任务开始前更新。旧配置 AfterRun 兼容为运行前更新。更新和环境准备耗时不计入账号任务时限。",
         )
 
         Channel: Literal["stable", "beta"] = Field(
@@ -2596,12 +2648,12 @@ class MaaFWConfig(DomainEntry):
         )
         ProxyAddress: str = Field(
             default_factory=lambda: "",
-            description="脚本级网络代理，给这个项目的更新包下载与运行环境安装（uv / pip、 binding 源码兜底）用。与 CDK / 渠道不同，这一项**留空就跟随全局** `Update.ProxyAddress`（设置 → 其他 → 网络代理），填了就只走自己的： 代理解决的是「这台机器连不连得上」，多数人全局一份就够，个别项目 的源在别的网络才需要单独指。格式同全局项，`host:port` 不带协议时 补 `http://`（合并逻辑见 tools/embedded/update_credentials.py）。",
+            description="托管级网络代理，给这个项目的更新包下载与运行环境安装（uv / pip、 binding 源码兜底）用。与 CDK / 渠道不同，这一项**留空就跟随全局** `Update.ProxyAddress`（设置 → 其他 → 网络代理），填了就只走自己的： 代理解决的是「这台机器连不连得上」，多数人全局一份就够，个别项目 的源在别的网络才需要单独指。格式同全局项，`host:port` 不带协议时 补 `http://`（合并逻辑见 tools/embedded/update_credentials.py）。",
         )
 
         Source: Literal["GitHub", "MirrorChyan"] = Field(
             default_factory=lambda: "GitHub",
-            description="更新包的下载源，由用户显式选择——**不做自动分流**。 版本检查始终走 Mirror 酱（无 CDK 也能查），但下载去哪由这一项决定： 选 Mirror 酱就必须自己填 CDK，CDK 不可用时明确报错，不悄悄换成 GitHub——用户得知道自己在从哪下载，出问题才查得动。 默认 GitHub：零配置即可用，与全局 Update.Source 的默认值一致。 选项顺序有意义：OptionsValidator.correct() 回退的是 **options[0]**， 不是这里的默认值。旧配置里 Source 是空串（旧默认），加载时会被 correct 成第一项并写回磁盘——GitHub 必须排在前面，否则所有既有 脚本会被静默改成 Mirror 酱，而它们并没有 CDK，每次运行都更新失败。",
+            description="更新包的下载源，由用户显式选择——**不做自动分流**。 版本检查始终走 Mirror 酱（无 CDK 也能查），但下载去哪由这一项决定： 选 Mirror 酱就必须自己填 CDK，CDK 不可用时明确报错，不悄悄换成 GitHub——用户得知道自己在从哪下载，出问题才查得动。 默认 GitHub：零配置即可用，与全局 Update.Source 的默认值一致。 选项顺序有意义：OptionsValidator.correct() 回退的是 **options[0]**， 不是这里的默认值。旧配置里 Source 是空串（旧默认），加载时会被 correct 成第一项并写回磁盘——GitHub 必须排在前面，否则所有既有托管会被静默改成 Mirror 酱，而它们并没有 CDK，每次运行都更新失败。",
         )
 
     Update: UpdateFields = Field(default_factory=UpdateFields)
@@ -2609,7 +2661,7 @@ class MaaFWConfig(DomainEntry):
 
 
 class M9AUserConfig(MaaFWUserConfig):
-    """M9A 用户配置：与 MaaFW 用户配置同形。
+    """M9A 账号配置：与 MaaFW 账号配置同形。
 
     ``Info.Account`` 在这里不只是备注：脚本资源为官服且账号非空时，运行前会自动插入
     「切换账号」任务（见 ``app/task/M9A/flavor.py``）。
@@ -2617,15 +2669,15 @@ class M9AUserConfig(MaaFWUserConfig):
 
 
 class M9AConfig(MaaFWConfig):
-    """M9A 脚本配置：MaaFW 的特调类型。
+    """M9A 托管配置：MaaFW 的特调类型。
 
     字段集与 MaaFW 完全一致，运行、更新、内嵌副本全部走 MaaFW 引擎；差别只有类型身份
-    （键 / 图标 / 创建卡）、默认脚本名、内置的按任务单任务时限，以及运行前的队列装饰
+    （键 / 图标 / 创建卡）、默认托管名、内置的按任务单任务时限，以及运行前的队列装饰
     （启动 / 关闭游戏首尾、``Info.Account`` 绑定切号）。旧版 M9A 专项的配置形状在启动时由
     ``app/task/M9A/migration.py`` 一次性迁到这个形状。
     """
 
-    DEFAULT_SCRIPT_NAME: ClassVar = "新 M9A 脚本"
+    DEFAULT_SCRIPT_NAME: ClassVar = "新 M9A 托管"
     USER_CONFIG_CLASS: ClassVar = M9AUserConfig
     FLAVOR: ClassVar = "app.task.M9A.flavor:FLAVOR"
     DEFAULT_TASK_TIME_LIMIT_OVERRIDES: ClassVar = (
@@ -2634,7 +2686,7 @@ class M9AConfig(MaaFWConfig):
 
     class InfoFields(MaaFWConfig.InfoFields):
         Name: str = Field(
-            default_factory=lambda: "新 M9A 脚本", description="MaaFW 脚本名称"
+            default_factory=lambda: "新 M9A 托管", description="MaaFW 托管名称"
         )
 
     # 独立配置类型有意覆盖分组及集合，保留专项默认值与准确字段类型。
@@ -2667,7 +2719,7 @@ class M9AConfig(MaaFWConfig):
 
 
 class MSSUserConfig(MaaFWUserConfig):
-    """MSS（MaaStellaSora / 星塔旅人）用户配置：MaaFW 用户配置再加一项计划表引用。
+    """MSS（MaaStellaSora / 星塔旅人）账号配置：MaaFW 账号配置再加一项计划表引用。
 
     ``Info.PlanMode`` 是比 MaaFW 多出的唯一字段：``Fixed`` 表示悬赏试炼按任务队列里
     用户自己配的选项跑；填了 MSS 计划表的 UID，运行前由特调钩子按当天槽位改写悬赏试炼的
@@ -2675,19 +2727,6 @@ class MSSUserConfig(MaaFWUserConfig):
     """
 
     related_config: ClassVar = {}
-
-    class DataFields(MaaFWUserConfig.DataFields):
-        PersonalMssDefense: Annotated[
-            JsonDictString, ui(visibility=UiVisibility.HIDE)
-        ] = Field(
-            default_factory=lambda: "{ }",
-            description='个人版「灾变防线」的编排记录，形如 {"armed": 期, "done": 期}。 armed 是上次把它编进队列的那一期，done 是已经确认打完的那一期： 用「上次运行是否成功」把 armed 升成 done，所以跑失败的那期下次还会重试。 期取活动公告的开始时刻（见 app/tools/stella_official.py），跨月也认得出是同一期。',
-        )
-
-    # 独立配置类型有意扩展分组，保留专项字段及其校验声明。
-    Data: DataFields = Field(  # pyright: ignore[reportIncompatibleVariableOverride]
-        default_factory=DataFields
-    )
 
     class InfoFields(MaaFWUserConfig.InfoFields):
         IfActivityFirst: bool = Field(
@@ -2715,20 +2754,20 @@ class MSSUserConfig(MaaFWUserConfig):
 
 
 class MSSConfig(MaaFWConfig):
-    """MSS 脚本配置：MaaFW 的特调类型。
+    """MSS 托管配置：MaaFW 的特调类型。
 
     字段集与 MaaFW 完全一致，运行、更新、内嵌副本全部走 MaaFW 引擎；差别只有类型身份
-    （键 / 图标 / 创建卡）、默认脚本名、用户上的计划表引用，以及运行前的队列装饰
+    （键 / 图标 / 创建卡）、默认托管名、账号上的计划表引用，以及运行前的队列装饰
     （活动期先打活动、按计划表改悬赏试炼、新版爬塔放最后）。
     """
 
-    DEFAULT_SCRIPT_NAME: ClassVar = "新 MSS 脚本"
+    DEFAULT_SCRIPT_NAME: ClassVar = "新 MSS 托管"
     USER_CONFIG_CLASS: ClassVar = MSSUserConfig
     FLAVOR: ClassVar = "app.task.MSS.flavor:FLAVOR"
 
     class InfoFields(MaaFWConfig.InfoFields):
         Name: str = Field(
-            default_factory=lambda: "新 MSS 脚本", description="MaaFW 脚本名称"
+            default_factory=lambda: "新 MSS 托管", description="MaaFW 托管名称"
         )
 
     # 独立配置类型有意覆盖分组及集合，保留专项默认值与准确字段类型。
@@ -2741,7 +2780,7 @@ class MSSConfig(MaaFWConfig):
 
 
 class GeneralUserConfig(DomainEntry):
-    "通用脚本用户配置"
+    "通用脚本账号配置"
 
     class DataFields(ConfigGroup):
         LastProxyDate: Annotated[
@@ -2767,7 +2806,7 @@ class GeneralUserConfig(DomainEntry):
             ),
         ] = Field(
             default_factory=lambda: "independent",
-            description="base 来源（shared=共享/independent=独立/native=原生）",
+            description="配置来源：independent 使用当前账号配置；兼容值 shared 当前仍使用该账号配置；native 使用外部脚本现有配置",
         )
 
         IfScriptAfterTask: bool = Field(
@@ -2779,11 +2818,11 @@ class GeneralUserConfig(DomainEntry):
         )
 
         IfUseMasConfig: bool = Field(
-            default_factory=lambda: True, description="兼容旧版用户独立脚本配置"
+            default_factory=lambda: True, description="兼容旧版账号独立配置开关"
         )
 
         Name: WindowsNameString = Field(
-            default_factory=lambda: "新用户", description="用户名称"
+            default_factory=lambda: "新账号", description="账号名称"
         )
 
         Notes: str = Field(default_factory=lambda: "无", description="备注")
@@ -2803,7 +2842,7 @@ class GeneralUserConfig(DomainEntry):
         Status: bool = Field(default_factory=lambda: True, description="是否启用")
 
         Tag: Virtual[str] = Field(
-            default_factory=lambda: None, description="用户标签信息"
+            default_factory=lambda: None, description="账号标签信息"
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
@@ -2833,7 +2872,7 @@ class GeneralUserConfig(DomainEntry):
     Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
 
     def getTags(self) -> str:
-        """生成通用用户标签列表"""
+        """生成通用账号标签列表"""
         tags = []
         tags.append(_tag_proxy(self, "任务"))
         tags.append(_tag_remained_days(self))
@@ -2849,7 +2888,7 @@ class GeneralUserConfig(DomainEntry):
 
 
 class OkwwUserConfig(DomainEntry):
-    "OK-WW 用户配置（ok-script 线）"
+    "OK-WW 账号配置（ok-script 线）"
 
     OKWW_TASK_BOOK: ClassVar = {1: "日常"}
 
@@ -2893,7 +2932,7 @@ class OkwwUserConfig(DomainEntry):
 
         IfQuickConfig: bool = Field(
             default_factory=lambda: True,
-            description="是否启用 MAS 快速配置覆盖高频任务字段",
+            description="是否启用 MAS 覆写常规配置覆盖高频任务字段",
         )
 
         IfScriptAfterTask: bool = Field(
@@ -2905,7 +2944,7 @@ class OkwwUserConfig(DomainEntry):
         )
 
         Name: WindowsNameString = Field(
-            description="用户名", default_factory=lambda: "新用户"
+            description="账号名称", default_factory=lambda: "新账号"
         )
 
         Notes: str = Field(description="备注", default_factory=lambda: "无")
@@ -2926,10 +2965,10 @@ class OkwwUserConfig(DomainEntry):
             description="任务前脚本路径", default_factory=lambda: None
         )
 
-        Status: bool = Field(description="用户状态", default_factory=lambda: True)
+        Status: bool = Field(description="账号状态", default_factory=lambda: True)
 
         Tag: Virtual[str] = Field(
-            description="用户标签列表（JSON字符串，TagItem的dict列表）",
+            description="账号标签列表（JSON字符串，TagItem的dict列表）",
             default_factory=lambda: None,
         )
 
@@ -2937,7 +2976,7 @@ class OkwwUserConfig(DomainEntry):
 
     class NotifyFields(ConfigGroup):
         Enabled: bool = Field(
-            default_factory=lambda: False, description="是否启用用户通知"
+            default_factory=lambda: False, description="是否启用账号通知"
         )
 
         IfSendMail: bool = Field(
@@ -2945,7 +2984,7 @@ class OkwwUserConfig(DomainEntry):
         )
 
         IfSendStatistic: bool = Field(
-            default_factory=lambda: False, description="是否发送用户统计信息"
+            default_factory=lambda: False, description="是否发送账号统计信息"
         )
 
         IfServerChan: bool = Field(
@@ -2968,7 +3007,9 @@ class OkwwUserConfig(DomainEntry):
             default_factory=lambda: "", description="Server 酱密钥"
         )
 
-        ToAddress: str = Field(default_factory=lambda: "", description="用户收件地址")
+        ToAddress: str = Field(
+            default_factory=lambda: "", description="账号通知收件地址"
+        )
 
     Notify: NotifyFields = Field(default_factory=NotifyFields)
 
@@ -3033,7 +3074,7 @@ class OkwwUserConfig(DomainEntry):
 
 
 class OkNteUserConfig(DomainEntry):
-    "OK-NTE 用户配置（ok-script 线）"
+    "OK-NTE 账号配置（ok-script 线）"
 
     OKNTE_TASK_BOOK: ClassVar = {
         1: "启动游戏",
@@ -3096,7 +3137,7 @@ class OkNteUserConfig(DomainEntry):
         Id: str = Field(description="账号", default_factory=lambda: "")
 
         IfQuickConfig: bool = Field(
-            description="是否启用快速配置（与配置来源独立）",
+            description="是否启用覆写常规配置（与配置来源独立）",
             default_factory=lambda: True,
         )
 
@@ -3109,7 +3150,7 @@ class OkNteUserConfig(DomainEntry):
         )
 
         Name: WindowsNameString = Field(
-            description="用户名", default_factory=lambda: "新用户"
+            description="账号名称", default_factory=lambda: "新账号"
         )
 
         Notes: str = Field(description="备注", default_factory=lambda: "无")
@@ -3133,10 +3174,10 @@ class OkNteUserConfig(DomainEntry):
             description="任务前脚本路径", default_factory=lambda: None
         )
 
-        Status: bool = Field(description="用户状态", default_factory=lambda: True)
+        Status: bool = Field(description="账号状态", default_factory=lambda: True)
 
         Tag: Virtual[str] = Field(
-            description="用户标签列表（JSON字符串，TagItem的dict列表）",
+            description="账号标签列表（JSON字符串，TagItem的dict列表）",
             default_factory=lambda: None,
         )
 
@@ -3212,7 +3253,7 @@ class OkNteUserConfig(DomainEntry):
 
 
 class BetterGIUserConfig(DomainEntry):
-    "BetterGI 用户配置（更好的原神）"
+    "BetterGI 账号配置（更好的原神）"
 
     class DataFields(ConfigGroup):
         LastProxyDate: Annotated[
@@ -3249,7 +3290,7 @@ class BetterGIUserConfig(DomainEntry):
 
         IfQuickConfig: bool = Field(
             default_factory=lambda: True,
-            description="是否启用快速配置（与配置来源独立，按用户保存）",
+            description="是否启用覆写常规配置（与配置来源独立，按账号保存）",
         )
 
         IfScriptAfterTask: bool = Field(
@@ -3261,11 +3302,11 @@ class BetterGIUserConfig(DomainEntry):
         )
 
         IfUseMasConfig: bool = Field(
-            default_factory=lambda: True, description="兼容旧版用户独立一条龙配置"
+            default_factory=lambda: True, description="兼容旧版账号一条龙独立配置开关"
         )
 
         Name: WindowsNameString = Field(
-            description="用户名", default_factory=lambda: "新用户"
+            description="账号名称", default_factory=lambda: "新账号"
         )
 
         Notes: str = Field(description="备注", default_factory=lambda: "无")
@@ -3285,10 +3326,10 @@ class BetterGIUserConfig(DomainEntry):
             description="任务前脚本路径", default_factory=lambda: None
         )
 
-        Status: bool = Field(description="用户状态", default_factory=lambda: True)
+        Status: bool = Field(description="账号状态", default_factory=lambda: True)
 
         Tag: Virtual[str] = Field(
-            description="用户标签列表（JSON字符串，TagItem的dict列表）",
+            description="账号标签列表（JSON字符串，TagItem的dict列表）",
             default_factory=lambda: None,
         )
 
@@ -3296,7 +3337,7 @@ class BetterGIUserConfig(DomainEntry):
 
     class NotifyFields(ConfigGroup):
         Enabled: bool = Field(
-            default_factory=lambda: False, description="是否启用用户通知"
+            default_factory=lambda: False, description="是否启用账号通知"
         )
 
         IfSendDropStatistics: bool = Field(
@@ -3309,7 +3350,7 @@ class BetterGIUserConfig(DomainEntry):
         )
 
         IfSendStatistic: bool = Field(
-            default_factory=lambda: False, description="是否发送用户统计信息"
+            default_factory=lambda: False, description="是否发送账号统计信息"
         )
 
         IfServerChan: bool = Field(
@@ -3325,7 +3366,9 @@ class BetterGIUserConfig(DomainEntry):
             default_factory=lambda: "", description="Server 酱密钥"
         )
 
-        ToAddress: str = Field(default_factory=lambda: "", description="用户收件地址")
+        ToAddress: str = Field(
+            default_factory=lambda: "", description="账号通知收件地址"
+        )
 
     Notify: NotifyFields = Field(default_factory=NotifyFields)
 
@@ -3399,12 +3442,12 @@ class BetterGIUserConfig(DomainEntry):
     class SwitchFields(ConfigGroup):
         GamePath: FilePath = Field(
             default_factory=lambda: None,
-            description="游戏客户端路径（用户级覆盖，可空）：官服/B服/国际服是三个互相隔离的客户端， B站账号只能登录B服客户端。留空 = 跟随 BetterGI 全局配置的游戏路径；填写后该 用户运行时由 MAS 按此路径临时拉起游戏（不修改 BetterGI 配置），实现同脚本 混服用户各用各的客户端",
+            description="游戏客户端路径（账号级覆盖，可空）：官服/B服/国际服是三个互相隔离的客户端， B站账号只能登录B服客户端。留空 = 跟随 BetterGI 全局配置的游戏路径；填写后该账号运行时由 MAS 按此路径临时拉起游戏（不修改 BetterGI 配置），实现同托管 混服账号各用各的客户端",
         )
 
         Resource: Literal["官服", "B服", "亚服", "欧服", "美服", "港澳台服"] = Field(
             default_factory=lambda: "官服",
-            description="切换账号配置（BetterGI「切换账号多模式」脚本专项适配） 账号/密码复用 Info.Id / Info.Password（密码经 EncryptValidator 加密） 切换模式不再由用户配置，运行时按密码是否填写推断： 填密码 → 「账号+密码+OCR」，未填 → 「下拉列表」；B服 强制「B服切换另一个账号匹配+键鼠」。 游戏服务器（账号所在服务器：官服/B服/国际服各服务器）",
+            description="切换账号配置（BetterGI「切换账号多模式」脚本专项适配） 账号/密码复用 Info.Id / Info.Password（密码经 EncryptValidator 加密） 切换模式不再由账号配置，运行时按密码是否填写推断： 填密码 → 「账号+密码+OCR」，未填 → 「下拉列表」；B服 强制「B服切换另一个账号匹配+键鼠」。 游戏服务器（账号所在服务器：官服/B服/国际服各服务器）",
         )
 
         Uid: str = Field(
@@ -3517,7 +3560,7 @@ class GeneralConfig(DomainEntry):
     Game: GameFields = Field(default_factory=GameFields)
 
     class InfoFields(ConfigGroup):
-        Name: str = Field(default_factory=lambda: "新通用脚本", description="脚本名称")
+        Name: str = Field(default_factory=lambda: "新通用托管", description="托管名称")
 
         RootPath: FolderPath = Field(
             default_factory=lambda: None, description="根目录路径"
@@ -3710,7 +3753,7 @@ class OkwwConfig(DomainEntry):
 
     class InfoFields(ConfigGroup):
         Name: str = Field(
-            default_factory=lambda: "新 OK-WW 脚本", description="脚本名称"
+            default_factory=lambda: "新 OK-WW 托管", description="托管名称"
         )
 
         RootPath: FolderPath = Field(
@@ -3772,7 +3815,7 @@ class OkNteConfig(DomainEntry):
 
         LaunchMode: Literal["Autoplay", "LauncherUi"] = Field(
             default_factory=lambda: "Autoplay",
-            description="静默启动（Autoplay）= 启动器带 /autoplay 拉起，不点按钮；启动器界面启动 （LauncherUi）= 打开启动器界面，由 OCR 点「开始游戏」及其弹窗/更新分支。 默认值双轨：新建脚本取类默认 Autoplay；存量脚本（配置无该键）由 load 迁移 固化升级前的 LauncherUi（见 _migrate_oknte_launch_mode_default），保持升级前行为。",
+            description="静默启动（Autoplay）= 启动器带 /autoplay 拉起，不点按钮；启动器界面启动 （LauncherUi）= 打开启动器界面，由 OCR 点「开始游戏」及其弹窗/更新分支。 默认值双轨：新建托管取类默认 Autoplay；既有托管（配置无该键）由 load 迁移 固化升级前的 LauncherUi（见 _migrate_oknte_launch_mode_default），保持升级前行为。",
         )
 
         Path: FilePath = Field(
@@ -3796,7 +3839,7 @@ class OkNteConfig(DomainEntry):
 
     class InfoFields(ConfigGroup):
         Name: str = Field(
-            description="脚本名称", default_factory=lambda: "新 OK-NTE 脚本"
+            description="托管名称", default_factory=lambda: "新 OK-NTE 托管"
         )
 
         RootPath: FolderPath = Field(
@@ -3828,7 +3871,7 @@ class OkNteConfig(DomainEntry):
     class ScriptFields(ConfigGroup):
         Arguments: CliArgumentListString = Field(
             default_factory=lambda: "",
-            description="OkNte 运行参数建议由用户配置（-t / -e 由用户配置 Task 决定），但仍保留高级参数入口",
+            description="OkNte 运行参数建议由账号配置（-t / -e 由账号配置 Task 决定），但仍保留高级参数入口",
         )
 
         ConfigPath: Annotated[
@@ -3922,6 +3965,21 @@ class OkNteConfig(DomainEntry):
 class BetterGIConfig(DomainEntry):
     "BetterGI 配置（更好的原神，原生 GUI 原生来源 + 仅一条龙任务）"
 
+    class UpdateFields(ConfigGroup):
+        TakeoverEnabled: bool = Field(
+            default=False,
+            description="运行前由 MAS 下载校验 BetterGI 官方安装包并静默更新，普通检查下载失败后沿用当前安装；运行期暂时屏蔽本体更新提示，结束恢复",
+        )
+        Channel: Literal["stable", "beta"] = Field(
+            default="stable", description="BetterGI 正式版或公测版（上游 alpha）"
+        )
+        MirrorChyanCDK: Annotated[str, encrypted()] = Field(
+            default="",
+            description="BetterGI Mirror 酱 CDK，留空使用全局 CDK，无 CDK 使用 GitHub",
+        )
+
+    Update: UpdateFields = Field(default_factory=UpdateFields)
+
     class GameFields(ConfigGroup):
         CloseOnFinish: bool = Field(
             default_factory=lambda: True, description="任务结束后关闭游戏"
@@ -3941,7 +3999,7 @@ class BetterGIConfig(DomainEntry):
 
     class InfoFields(ConfigGroup):
         Name: str = Field(
-            description="脚本名称", default_factory=lambda: "新 BetterGI 脚本"
+            description="托管名称", default_factory=lambda: "新 BetterGI 托管"
         )
 
         RootPath: FolderPath = Field(
@@ -3953,7 +4011,7 @@ class BetterGIConfig(DomainEntry):
     class RunFields(ConfigGroup):
         AccountSwitchMethod: Literal["BGI", "MAS"] = Field(
             default_factory=lambda: "MAS",
-            description="账号切换方式（脚本级，参考 MaaEnd Run.AccountSwitchMethod）： BGI = BetterGI「切换账号多模式」脚本执行（国际服请改用此方式）；MAS = MAS 侧 前台 OCR 直接操控游戏切号（官服/B服，游戏由 MAS 托管启动），官服/B服推荐。 默认值双轨：新建脚本取类默认 MAS；存量脚本（配置无该键）由 load 迁移固化 旧默认 BGI（见 _migrate_bgi_account_switch_default），保持升级前行为。",
+            description="账号切换方式（托管级，参考 MaaEnd Run.AccountSwitchMethod）： BGI = BetterGI「切换账号多模式」脚本执行（国际服请改用此方式）；MAS = MAS 侧 前台 OCR 直接操控游戏切号（官服/B服，游戏由 MAS 托管启动），官服/B服推荐。 默认值双轨：新建托管取类默认 MAS；既有托管（配置无该键）由 load 迁移固化 旧默认 BGI（见 _migrate_bgi_account_switch_default），保持升级前行为。",
         )
 
         HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
@@ -3989,9 +4047,9 @@ class BetterGIConfig(DomainEntry):
 
 
 class ZzzOdUserConfig(DomainEntry):
-    """绝区零一条龙用户配置（zzz-od 线，MaaEnd 式字段化用户配置）
+    """绝区零一条龙账号配置（zzz-od 线，MaaEnd 式字段化账号配置）
 
-    用户配置的事实源是本类的 配置字段（web 界面直接编辑，走通用
+    账号配置的事实源是本类的 配置字段（web 界面直接编辑，走通用
     updateUser 链路）：Game 区为账号/区服/游戏路径，OneDragon 区为一条龙
     任务编排（JSON，顺序即执行顺序）。运行时由这些字段生成 game_account.yml
     与 one_dragon/_group.yml 注入当前活跃实例槽、结束恢复原状（MAS 不留
@@ -4116,7 +4174,7 @@ class ZzzOdUserConfig(DomainEntry):
 
         IfQuickConfig: bool = Field(
             default_factory=lambda: True,
-            description="是否启用快速配置（已封锁，仅保留字段兼容存量数据：原生来源在 load/update 归一为关，共享/独立来源不消费本开关）",
+            description="是否启用覆写常规配置（已封锁，仅保留字段兼容存量数据：原生来源在 load/update 归一为关，共享/独立来源不消费本开关）",
         )
 
         IfScriptAfterTask: bool = Field(
@@ -4133,7 +4191,7 @@ class ZzzOdUserConfig(DomainEntry):
         )
 
         Name: WindowsNameString = Field(
-            description="用户名", default_factory=lambda: "新用户"
+            description="账号名称", default_factory=lambda: "新账号"
         )
 
         Notes: str = Field(description="备注", default_factory=lambda: "无")
@@ -4155,10 +4213,10 @@ class ZzzOdUserConfig(DomainEntry):
             description="绑定的 zzz-od 实例槽下标（运行/配置会话内临时合成视图写回原生配置，非持久注册）：-1=未分配，首次运行或 「在一条龙内配置」时自动分配空闲 idx 并锁定该槽至会话结束， 此后配置会话与运行时注入都固定使用该槽。新槽从 MAS_SLOT_BASE（1001）起， 退到一条龙「升序找最小空号」够不到的高位段（上限 9999 与之一致放宽）",
         )
 
-        Status: bool = Field(description="用户状态", default_factory=lambda: True)
+        Status: bool = Field(description="账号状态", default_factory=lambda: True)
 
         Tag: Virtual[str] = Field(
-            description="用户标签列表（JSON字符串，TagItem的dict列表）",
+            description="账号标签列表（JSON字符串，TagItem的dict列表）",
             default_factory=lambda: None,
         )
 
@@ -4166,7 +4224,7 @@ class ZzzOdUserConfig(DomainEntry):
 
     class NotifyFields(ConfigGroup):
         Enabled: bool = Field(
-            default_factory=lambda: False, description="是否启用用户通知"
+            default_factory=lambda: False, description="是否启用账号通知"
         )
 
         IfSendMail: bool = Field(
@@ -4174,7 +4232,7 @@ class ZzzOdUserConfig(DomainEntry):
         )
 
         IfSendStatistic: bool = Field(
-            default_factory=lambda: False, description="是否发送用户统计信息"
+            default_factory=lambda: False, description="是否发送账号统计信息"
         )
 
         IfServerChan: bool = Field(
@@ -4190,7 +4248,9 @@ class ZzzOdUserConfig(DomainEntry):
             default_factory=lambda: "", description="Server 酱密钥"
         )
 
-        ToAddress: str = Field(default_factory=lambda: "", description="用户收件地址")
+        ToAddress: str = Field(
+            default_factory=lambda: "", description="账号通知收件地址"
+        )
 
     Notify: NotifyFields = Field(default_factory=NotifyFields)
 
@@ -4292,7 +4352,7 @@ class ZzzOdConfig(DomainEntry):
     class GameFields(ConfigGroup):
         AccountSwitch: Literal["单实例切换", "多实例切换", "MAS切换"] = Field(
             default_factory=lambda: "单实例切换",
-            description="多用户账号切换方式（脚本级下拉，value 对应 manager 的分派分支）： 单实例切换（默认，推荐）= 逐用户独立会话：注入该用户配置 → 单实例 运行（仅运行当前，无槽间切换）→ 跑完关闭 → 下一个用户。失败域 隔离最好，重试只重启失败用户； 多实例切换（不推荐）= 全部启用用户合并为一轮多账号运行，一条龙内部 依次切换账号。总时长最短，但单槽失败会拖整轮重试、切换次数随 用户数线性增长； MAS切换 = MAS 侧 OCR 操控游戏完成账号切换后交一条龙运行（暂未开放）。",
+            description="多账号账号切换方式（托管级下拉，value 对应 manager 的分派分支）： 单实例切换（默认，推荐）= 逐账号独立会话：注入该账号配置 → 单实例 运行（仅运行当前，无槽间切换）→ 跑完关闭 → 下一个账号。失败域 隔离最好，重试只重启失败账号； 多实例切换（不推荐）= 全部启用账号合并为一轮多账号运行，一条龙内部 依次切换账号。总时长最短，但单槽失败会拖整轮重试、切换次数随 账号数线性增长； MAS切换 = MAS 侧 OCR 操控游戏完成账号切换后交一条龙运行（暂未开放）。",
         )
 
         Arguments: CliArgumentString = Field(
@@ -4301,7 +4361,7 @@ class ZzzOdConfig(DomainEntry):
 
         CloseOnFinish: bool = Field(
             default_factory=lambda: True,
-            description="任务结束后由 MAS 关闭游戏（收尾/手动停止时按进程名结束游戏本体， 覆盖失败重试与手动停止场景，是「结束后操作」的兜底）。与用户级 OneDragon.AfterDone 下发的 --close-game 相互独立，同时配置会各 执行一次（无害）",
+            description="任务结束后由 MAS 关闭游戏（收尾/手动停止时按进程名结束游戏本体， 覆盖失败重试与手动停止场景，是「结束后操作」的兜底）。与账号级 OneDragon.AfterDone 下发的 --close-game 相互独立，同时配置会各 执行一次（无害）",
         )
 
         Enabled: bool = Field(
@@ -4328,7 +4388,7 @@ class ZzzOdConfig(DomainEntry):
 
     class InfoFields(ConfigGroup):
         Name: str = Field(
-            default_factory=lambda: "新绝区零一条龙脚本", description="脚本名称"
+            default_factory=lambda: "新绝区零一条龙托管", description="托管名称"
         )
 
         RootPath: FolderPath = Field(
@@ -4362,7 +4422,7 @@ class ZzzOdConfig(DomainEntry):
 
 
 class BAAHUserConfig(DomainEntry):
-    "BAAH 用户配置"
+    "BAAH 账号配置"
 
     related_config: ClassVar = {}
 
@@ -4395,7 +4455,7 @@ class BAAHUserConfig(DomainEntry):
             ),
         ] = Field(
             default_factory=lambda: "independent",
-            description="base 来源（shared=共享/independent=独立/native=原生）",
+            description="兼容字段；BAAH 运行不消费此来源值，始终使用 Info.ConfigName 绑定的 BAAH 配置文件",
         )
 
         ConfigName: str = Field(
@@ -4410,11 +4470,11 @@ class BAAHUserConfig(DomainEntry):
 
         IfQuickConfig: bool = Field(
             default_factory=lambda: True,
-            description="是否启用快速配置（与配置来源独立，按用户保存）",
+            description="兼容字段；BAAH 运行不消费此开关，运行期写入由配置托管、计划表及活动优先等实际选项决定",
         )
 
         Name: WindowsNameString = Field(
-            default_factory=lambda: "新用户", description="用户名称"
+            default_factory=lambda: "新账号", description="账号名称"
         )
 
         Notes: str = Field(default_factory=lambda: "无", description="备注")
@@ -4434,13 +4494,13 @@ class BAAHUserConfig(DomainEntry):
             ),
         ] = Field(
             default_factory=lambda: "Fixed",
-            description="关卡计划表；Fixed 表示按脚本配置",
+            description="关卡计划表；Fixed 表示沿用 BAAH 中的关卡配置",
         )
 
         Status: bool = Field(default_factory=lambda: True, description="是否启用")
 
         Tag: Virtual[str] = Field(
-            default_factory=lambda: None, description="用户标签信息"
+            default_factory=lambda: None, description="账号标签信息"
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
@@ -4470,7 +4530,7 @@ class BAAHUserConfig(DomainEntry):
     Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
 
     def getTags(self) -> str:
-        """生成 BAAH 用户标签列表"""
+        """生成 BAAH 账号标签列表"""
         tags = []
         tags.append(_tag_proxy(self, "任务"))
         tags.append(_tag_remained_days(self))
@@ -4494,6 +4554,21 @@ class BAAHUserConfig(DomainEntry):
 class BAAHConfig(DomainEntry):
     "BAAH 配置"
 
+    class UpdateFields(ConfigGroup):
+        TakeoverEnabled: bool = Field(
+            default=False,
+            description="运行前由 MAS 下载校验并安装 BAAH 官方更新包，普通下载失败后沿用当前安装",
+        )
+        Channel: Literal["stable", "beta"] = Field(
+            default="stable", description="BAAH 更新通道"
+        )
+        MirrorChyanCDK: Annotated[str, encrypted()] = Field(
+            default="",
+            description="BAAH Mirror 酱 CDK，留空使用全局 CDK，无 CDK 使用 GitHub",
+        )
+
+    Update: UpdateFields = Field(default_factory=UpdateFields)
+
     related_config: ClassVar = {}
 
     class EmulatorFields(ConfigGroup):
@@ -4512,7 +4587,7 @@ class BAAHConfig(DomainEntry):
 
     class InfoFields(ConfigGroup):
         Name: str = Field(
-            default_factory=lambda: "新 BAAH 脚本", description="脚本名称"
+            default_factory=lambda: "新 BAAH 托管", description="托管名称"
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
@@ -4535,7 +4610,7 @@ class BAAHConfig(DomainEntry):
     Run: RunFields = Field(default_factory=RunFields)
 
     class ScriptFields(ConfigGroup):
-        BAAHPath: FilePath = Field(
+        BAAHPath: BAAHInstallPath = Field(
             default_factory=lambda: None,
             description="BAAH 主程序路径；程序目录、配置目录与日志目录都从它派生",
         )
@@ -4555,7 +4630,7 @@ class BAAHConfig(DomainEntry):
 
 
 class WhimboxUserConfig(DomainEntry):
-    """奇想盒用户配置（无限暖暖，一条龙配置档）
+    """奇想盒账号配置（无限暖暖，一条龙配置档）
 
     一条龙字段定义与值域完全来自上游安装目录三件套（任务目录，运行时读取），
     本类只存「用户勾了哪些步骤、选了哪些值」的覆盖集（Tasks/Options 两个
@@ -4596,7 +4671,7 @@ class WhimboxUserConfig(DomainEntry):
 
         IfQuickConfig: bool = Field(
             default_factory=lambda: False,
-            description="是否启用覆写层（快速配置，与来源独立，按账号保存，默认关）：开启时原生态 也会在任务前把面板覆盖集写入奇想盒（overlay，任务结束还原）；共享/独立态 面板本就是 base 来源，开关暂无额外消费点，为后续特殊功能预留。默认关保证 「原生=零写入」与 _write_config_or_hint 报错里「切原生绕开写入」的出路成立",
+            description="是否启用覆写层（覆写常规配置，与来源独立，按账号保存，默认关）：开启时原生态 也会在任务前把面板覆盖集写入奇想盒（overlay，任务结束还原）；共享/独立态 面板本就是 base 来源，开关暂无额外消费点，为后续特殊功能预留。默认关保证 「原生=零写入」与 _write_config_or_hint 报错里「切原生绕开写入」的出路成立",
         )
 
         IfScriptAfterTask: bool = Field(
@@ -4608,7 +4683,7 @@ class WhimboxUserConfig(DomainEntry):
         )
 
         Name: WindowsNameString = Field(
-            description="用户名", default_factory=lambda: "新用户"
+            description="账号名称", default_factory=lambda: "新账号"
         )
 
         Notes: str = Field(description="备注", default_factory=lambda: "无")
@@ -4625,10 +4700,10 @@ class WhimboxUserConfig(DomainEntry):
             description="任务前脚本路径", default_factory=lambda: None
         )
 
-        Status: bool = Field(description="用户状态", default_factory=lambda: True)
+        Status: bool = Field(description="账号状态", default_factory=lambda: True)
 
         Tag: Virtual[str] = Field(
-            description="用户标签列表（JSON字符串，TagItem的dict列表）",
+            description="账号标签列表（JSON字符串，TagItem的dict列表）",
             default_factory=lambda: None,
         )
 
@@ -4636,7 +4711,7 @@ class WhimboxUserConfig(DomainEntry):
 
     class NotifyFields(ConfigGroup):
         Enabled: bool = Field(
-            default_factory=lambda: False, description="是否启用用户通知"
+            default_factory=lambda: False, description="是否启用账号通知"
         )
 
         IfSendMail: bool = Field(
@@ -4644,7 +4719,7 @@ class WhimboxUserConfig(DomainEntry):
         )
 
         IfSendStatistic: bool = Field(
-            default_factory=lambda: False, description="是否发送用户统计信息"
+            default_factory=lambda: False, description="是否发送账号统计信息"
         )
 
         IfServerChan: bool = Field(
@@ -4655,7 +4730,9 @@ class WhimboxUserConfig(DomainEntry):
             default_factory=lambda: "", description="Server 酱密钥"
         )
 
-        ToAddress: str = Field(default_factory=lambda: "", description="用户收件地址")
+        ToAddress: str = Field(
+            default_factory=lambda: "", description="账号通知收件地址"
+        )
 
     Notify: NotifyFields = Field(default_factory=NotifyFields)
 
@@ -4682,7 +4759,7 @@ class WhimboxUserConfig(DomainEntry):
     Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
 
     def getTags(self) -> str:
-        """生成奇想盒用户标签列表"""
+        """生成奇想盒账号标签列表"""
         tags = []
         tags.append(_tag_proxy(self, "任务"))
         tags.append(_tag_remained_days(self))
@@ -4702,7 +4779,7 @@ class WhimboxConfig(DomainEntry):
 
     class InfoFields(ConfigGroup):
         Name: str = Field(
-            description="脚本名称", default_factory=lambda: "新奇想盒脚本"
+            description="托管名称", default_factory=lambda: "新奇想盒托管"
         )
 
         RootPath: FolderPath = Field(

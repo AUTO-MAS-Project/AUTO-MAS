@@ -38,11 +38,12 @@ Design backend functions that are predictable, easy to trace, and easy to evolve
 10. Use keyword arguments for boolean arguments and for calls with more than two parameters.
 
 ## Error Handling
+
+For validation, fallback, catch and retry decisions, load [mas-defensive-programming](../mas-defensive-programming/SKILL.md).
+
 1. Raise domain-meaningful exceptions at domain layers.
 2. Convert exceptions to API-safe output only at API boundary.
-3. Do not swallow exceptions without logging context and fallback reason.
-4. Keep retry logic near integration boundaries, not in pure helpers.
-5. Include enough context in errors for diagnosis (`script_id`, `user_id`, step).
+3. Include enough context in errors for diagnosis (`script_id`, `user_id`, step).
 
 ## Side Effects And Async
 1. Keep file IO, network, process, and global state operations explicit.
@@ -86,10 +87,9 @@ Follow [mas-module-boundary](../mas-module-boundary/SKILL.md) for backend layer 
 1. Function exceeds clear readability for one screenful of logic.
 2. Same decision branch appears in multiple places.
 3. Repeated parameter bundles travel together across call sites.
-4. Testing one behavior requires heavy environment setup.
+4. Testing a public behavior requires heavy setup because business logic and IO are mixed. Check existing isolation seams before changing production structure solely for tests; follow [mas-testing](../mas-testing/SKILL.md).
 5. A dict/registry mapping can replace multiple near-identical branches without hiding the main flow.
 6. A proposed helper adds more lookup cost than it removes.
-7. A proposed fallback only mirrors an invariant already enforced by the owning model or base class.
 
 ## Review Checklist
 1. Function has one primary responsibility.
@@ -100,7 +100,6 @@ Follow [mas-module-boundary](../mas-module-boundary/SKILL.md) for backend layer 
 6. Placement follows `mas-module-boundary`.
 7. Shared schema semantics align with `mas-schema-naming`.
 8. One-off helpers were not extracted unless they created real reuse.
-9. Existing base-layer guarantees were reused instead of reimplemented in the function body.
-10. Optional values and temporary placeholders remain type-safe under basic static analysis.
-11. Multi-argument and boolean-heavy calls use keyword arguments for readability and fewer ordering mistakes.
-12. Task classes preserve the documented `main_task`/`final_task`/`on_crash` lifecycle and nested cancellation behavior.
+9. Optional values and temporary placeholders remain type-safe under basic static analysis.
+10. Multi-argument and boolean-heavy calls use keyword arguments for readability and fewer ordering mistakes.
+11. Task classes preserve the documented `main_task`/`final_task`/`on_crash` lifecycle and nested cancellation behavior.

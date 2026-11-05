@@ -103,6 +103,7 @@ from .tools.cultivate import (
     OperatorTarget,
     ProviderContext,
     YituliuDataError,
+    append_owned_cultivate_targets,
     apply_achievements,
     depot_cultivate_service,
     dump_cultivate_targets,
@@ -117,6 +118,7 @@ from .tools.cultivate import (
     summarize_achievements,
     takeover_notice_patch_value,
 )
+from .tools.guide import MAA_GUIDE_SKIP_VALUES
 from .tools.native_config import (
     infrast_plan_mode,
     load_infrast_plans,
@@ -260,7 +262,7 @@ def _should_run_annihilation(
     completed_week: str,
     now: datetime,
 ) -> bool:
-    """判断当前用户本次是否应执行剿灭。"""
+    """判断当前账号本次是否应执行剿灭。"""
 
     if completed_week == _current_week_marker(now):
         return False
@@ -1233,8 +1235,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
-        # base 来源三态与独立的快速配置开关：来源决定是否下发 MAS 托管配置，
-        # 快速配置决定是否把面板值写进 MAA 原生配置（两段互不替代）。
+        # base 来源三态与独立的覆写常规配置开关：来源决定是否下发 MAS 托管配置，
+        # 覆写常规配置决定是否把面板值写进 MAA 原生配置（两段互不替代）。
         self.config_base, self.native_base = resolve_config_base(
             self.cur_user_config, CONFIG_BASE_SHARED
         )
@@ -1242,8 +1244,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self.maa_root_path: Path | None = None
         self.pending_update: tuple[str, str] | None = None
         self._annihilation_weekly_completion_recorded = False
-        # 无时段排班表本轮注入的班次：同一用户的多次重试都注入这一个值，
-        # 基建换班完成后只把用户配置里的指针推进一次
+        # 无时段排班表本轮注入的班次：同一账号的多次重试都注入这一个值，
+        # 基建换班完成后只把账号配置里的指针推进一次
         self._infrast_plan_index: int | None = None
         self._infrast_plan_count = 0
         self._infrast_plan_advanced = False
@@ -1260,7 +1262,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             ).exists()
         ):
             await self.cur_user_item.set_state(status="异常")
-            return "未找到用户的 MAA 配置文件，请先在用户配置页完成 「MAA配置」 步骤"
+            return "未找到账号的 MAA 配置文件，请先在账号配置页完成 「MAA配置」 步骤"
         return "Pass"
 
     async def prepare(self):
@@ -1270,7 +1272,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self.emulator_info: DeviceInfo | None = None
         # 失败尝试在关模拟器前补截的现场画面；收尾组装通知时消费
         self._failure_shot: Path | None = None
-        # 本用户的失败画面资源（标签+图片），manager 汇总「代理结果」时收集
+        # 本账号的失败画面资源（标签+图片），manager 汇总「代理结果」时收集
         self.report_image_pairs: list[tuple[str, NotificationImage]] = []
         self.maa_log_monitor = LogMonitor(
             (1, 20),
@@ -1331,7 +1333,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             ) == _current_month_marker(datetime.now(tz=_utils_constants.UTC4)):
                 self.run_book["GreenTicketStore"] = True
                 logger.info(
-                    f"用户 {self.cur_user_item.name} 本次跳过绿票商店："
+                    f"账号 {self.cur_user_item.name} 本次跳过绿票商店："
                     f"本月记录={completed_at}"
                 )
 
@@ -1344,7 +1346,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             ):
                 self.run_book["Annihilation"] = True
                 logger.info(
-                    f"用户 {self.cur_user_item.name} 本次跳过剿灭：开始日={start_weekday}，本周记录={self.cur_user_config.Data.AnnihilationCompletedWeek}"
+                    f"账号 {self.cur_user_item.name} 本次跳过剿灭：开始日={start_weekday}，本周记录={self.cur_user_config.Data.AnnihilationCompletedWeek}"
                 )
 
     def _resolve_log_file_path(self) -> Path:
@@ -1361,17 +1363,17 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     type=protocol.TASK_NOTICE,
                     data=WSTaskNoticeData(
                         level="error",
-                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                        message=f"账号 {self.cur_user_item.name} 检查未通过: {self.check_result}",
                     ),
                 )
             return
 
         await self.prepare()
 
-        logger.info(f"开始代理用户: {self.cur_user_uid}")
+        logger.info(f"开始代理账号: {self.cur_user_uid}")
         await self.cur_user_item.set_state(status="运行")
 
-        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
         # 执行绿票商店 + 剿灭 + 日常
@@ -1402,14 +1404,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 self.task_dict = {task: task == "StartUp" for task in MAA_TASKS}
 
             logger.info(
-                f"用户 {self.cur_user_item.name} - 模式: {self.mode} - 任务列表: {list(self.task_dict.values())}"
+                f"账号 {self.cur_user_item.name} - 模式: {self.mode} - 任务列表: {list(self.task_dict.values())}"
             )
 
             for i in range(self.script_config.Run.RunTimesLimit):
                 if self.run_book[self.mode]:
                     break
                 logger.info(
-                    f"用户 {self.cur_user_item.name} - 模式: {self.mode} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
+                    f"账号 {self.cur_user_item.name} - 模式: {self.mode} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
                 )
                 self.log_start_time = datetime.now().astimezone()
                 self._cultivate_archive_positions.clear()
@@ -1429,7 +1431,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     self.emulator_info = emulator_info
                 except Exception as e:
                     logger.opt(exception=True).warning(
-                        f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}"
+                        f"账号: {self.cur_user_uid} - 模拟器启动失败: {e}"
                     )
                     await Publisher.send(
                         id=self.task_info.task_id,
@@ -1448,8 +1450,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
                     await Notify.send_notice(
                         LocalNotice(
-                            title="用户自动代理出现异常！",
-                            message=f"用户 {self.cur_user_item.name} 的{MAA_RUN_MOOD_BOOK[self.mode]}部分出现一次异常",
+                            title="账号自动代理出现异常！",
+                            message=f"账号 {self.cur_user_item.name} 的{MAA_RUN_MOOD_BOOK[self.mode]}部分出现一次异常",
                             ticker=f"{self.cur_user_item.name}的{MAA_RUN_MOOD_BOOK[self.mode]}出现异常",
                             duration_seconds=3,
                         )
@@ -1457,7 +1459,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     continue
 
                 logger.info(
-                    f"模拟器启动完成: 用户 {self.cur_user_uid} - 模式 {self.mode} - 实例 {self.script_config.Emulator.Index} - ADB {emulator_info.adb_address}"
+                    f"模拟器启动完成: 账号 {self.cur_user_uid} - 模式 {self.mode} - 实例 {self.script_config.Emulator.Index} - ADB {emulator_info.adb_address}"
                 )
 
                 if Config.setting.Function.IfSilence:
@@ -1503,7 +1505,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
                 if self.cur_user_log.status == "Success!":
                     self.run_book[self.mode] = True
-                    logger.info(f"用户: {self.cur_user_uid} - MAA进程完成代理任务")
+                    logger.info(f"账号: {self.cur_user_uid} - MAA进程完成代理任务")
                     await self.script_info.set_log(
                         "检测到 MAA 完成代理任务\n正在等待相关程序结束"
                     )
@@ -1516,7 +1518,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                         self.if_game_hot_update = False
                 else:
                     logger.warning(
-                        f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
+                        f"账号: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                     )
                     await self.script_info.set_log(
                         f"{self.cur_user_log.status}\n正在中止相关程序"
@@ -1535,8 +1537,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     else:
                         await Notify.send_notice(
                             LocalNotice(
-                                title="用户自动代理出现异常！",
-                                message=f"用户 {self.cur_user_item.name} 的{MAA_RUN_MOOD_BOOK[self.mode]}部分出现一次异常",
+                                title="账号自动代理出现异常！",
+                                message=f"账号 {self.cur_user_item.name} 的{MAA_RUN_MOOD_BOOK[self.mode]}部分出现一次异常",
                                 ticker=f"{self.cur_user_item.name}的{MAA_RUN_MOOD_BOOK[self.mode]}出现异常",
                                 duration_seconds=3,
                             )
@@ -1551,13 +1553,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 if not _should_retry_maa(self.cur_user_log.status, maa_log):
                     if self.cur_user_log.status != "Success!":
                         logger.warning(
-                            f"用户 {self.cur_user_item.name} 的"
+                            f"账号 {self.cur_user_item.name} 的"
                             f"{MAA_RUN_MOOD_BOOK[self.mode]}已收到 MAA 任务失败终态，停止重试"
                         )
                     break
 
     def _cultivate_archive_dir(self) -> Path:
-        """当前用户的识别数据档案目录（方案决策 31：归属以写入时的
+        """当前账号的识别数据档案目录（方案决策 31：归属以写入时的
         cur_user_uid 为准；查询、缺口判定与养成注入只读档案。安装目录那份
         DepotData 是 MAA 的工作缓存，只有 overlay 层才按账号覆写它，见
         _apply_depot_context）。"""
@@ -1565,7 +1567,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         return Path.cwd() / f"data/{self.script_info.script_id}/{self.cur_user_uid}"
 
     def _apply_depot_context(self, gui_new_set: dict) -> None:
-        """overlay 层：把当前用户档案的库存缓存覆写进 MAA 安装目录。
+        """overlay 层：把当前账号档案的库存缓存覆写进 MAA 安装目录。
 
         安装目录那份 DepotData 是 MAA 的工作缓存，物理上跨账号共用；开启覆写
         常规配置时按本账号档案覆写，覆写前键级存底，任务结束在 _finalize_task
@@ -1593,7 +1595,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(archive, target)
                     logger.info(
-                        f"用户 {self.cur_user_item.name} 的库存缓存已覆写进 MAA 安装目录"
+                        f"账号 {self.cur_user_item.name} 的库存缓存已覆写进 MAA 安装目录"
                     )
                 else:
                     # 本账号还没有档案：清掉安装目录里的旧缓存让 MAA 重新识别，
@@ -1602,7 +1604,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 return
             except OSError:
                 logger.opt(exception=True).warning(
-                    f"用户 {self.cur_user_item.name} 覆写 MAA 库存缓存失败"
+                    f"账号 {self.cur_user_item.name} 覆写 MAA 库存缓存失败"
                 )
 
         for task in depot_tasks:
@@ -1610,7 +1612,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self.task_dict["DepotMaintain"] = False
         self.task_dict["EventDepotMaintain"] = False
         logger.warning(
-            f"用户 {self.cur_user_item.name} 本轮跳过库存保持/养成执行, "
+            f"账号 {self.cur_user_item.name} 本轮跳过库存保持/养成执行, "
             "请检查 MAA 数据目录的写入权限"
         )
 
@@ -1635,7 +1637,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
     def _archive_recognition_file(
         self, name: str, *, require_fresh_sync_time: bool = False
     ) -> bool:
-        """把 MAA 安装目录的识别结果只读复制进当前用户档案（T1.17）。
+        """把 MAA 安装目录的识别结果只读复制进当前账号档案（T1.17）。
 
         整份原子覆盖；已归档且源文件未变化时跳过，读取期间仍在写入时
         留待收尾补存，保留此前有效档案。
@@ -1675,25 +1677,25 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     raise _utils_io.ConfigCorruptedError(source) from e
                 if sync_time < int(self.log_start_time.timestamp()):
                     logger.warning(
-                        f"用户 {self.cur_user_item.name} 的 {name} syncTime 早于本轮开始, 弃用本次采集"
+                        f"账号 {self.cur_user_item.name} 的 {name} syncTime 早于本轮开始, 弃用本次采集"
                     )
                     return False
             archive_dir = self._cultivate_archive_dir()
             archive_dir.mkdir(parents=True, exist_ok=True)
             _utils_io.write_file(archive_dir / name, payload)
             self._cultivate_archive_versions[name] = version
-            logger.info(f"用户 {self.cur_user_item.name} 的识别数据已落档案: {name}")
+            logger.info(f"账号 {self.cur_user_item.name} 的识别数据已落档案: {name}")
             return True
         except (OSError, ValueError, TypeError):
             logger.opt(exception=True).warning(
-                f"用户 {self.cur_user_item.name} 采集识别数据失败: {name}"
+                f"账号 {self.cur_user_item.name} 采集识别数据失败: {name}"
             )
             return False
 
     def _collect_cultivate_archive(self, log: str, *, finalizing: bool = False) -> None:
         """新的识别完成标记采集一次完整快照，后续缓存变化在收尾归档。
 
-        归因依据"该链运行在当前用户的 MAA 会话内"（串行调度 + StartUp 已
+        归因依据"该链运行在当前账号的 MAA 会话内"（串行调度 + StartUp 已
         切号）；每类数据每轮以最后一次识别标记为准并覆盖档案——队列里养成
         计划（刷取前）与更新数据（刷取后）各有一条仓库识别，取后者下一轮
         缺口判定才用得上刷取后的库存，否则补齐材料后仍会多接管一轮。
@@ -1760,7 +1762,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             )
             if skland_bound and not (skland and skland[0]):
                 logger.warning(
-                    f"用户 {self.cur_user_item.name} 森空岛练度刷新失败, 保留养成目标"
+                    f"账号 {self.cur_user_item.name} 森空岛练度刷新失败, 保留养成目标"
                 )
                 self._cultivate_collected_depot = False
                 self._cultivate_collected_oper_box = False
@@ -1824,7 +1826,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 )
                 await self.cur_user_config.commit()
                 # 最后一个目标达成被移除后目标清空：接管已不可能，残留的接管
-                # 提示要一并清掉——这条路不经过用户配置写入漏斗
+                # 提示要一并清掉——这条路不经过账号配置写入漏斗
                 if not merged_payload:
                     await self._set_cultivate_notice("")
                 removed = summarize_achievements(
@@ -1836,7 +1838,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             self._cultivate_progress_synced = not deferred
         except Exception as e:
             logger.opt(exception=True).warning(
-                f"用户 {self.cur_user_item.name} 养成达成刷新失败: {e}"
+                f"账号 {self.cur_user_item.name} 养成达成刷新失败: {e}"
             )
         # 刷新被取消时不会执行到这里，收尾仍可重试本轮尚未完成的刷新。
         self._cultivate_collected_depot = False
@@ -1852,11 +1854,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         await self.cur_user_config.commit()
 
     async def _prepare_cultivate_injection(
-        self, source_queue: list[dict], *, skip_this_round: bool = False
+        self,
+        source_queue: list[dict],
+        *,
+        skip_this_round: bool = False,
+        skip_farming: bool = False,
     ) -> tuple[dict | None, bool, CultivatePlan | None]:
-        """准备当轮养成计划，同时保留完整消耗供库存预留。
+        """准备当轮养成计划；刷取未跳过时保留完整消耗供库存预留。
 
-        仅在开关开启且目标非空时生效（Routine 门控由调用方负责）；数据集、
+        仅在开关开启且目标非空或托管全部干员时生效（Routine 门控由调用方负责）；数据集、
         练度、库存不可用时暂停本轮养成，保留普通库存及后续理智任务。
         绑定森空岛后拉取失败时暂停自动培养，
         不使用缺少本轮识别保障的旧练度档案。
@@ -1877,14 +1883,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         notice = takeover_notice_patch_value(
             self.cur_user_config.Task.IfCultivate, raw_targets
         )
-        if notice is not None:
+        manage_owned = self.cur_user_config.Task.CultivateAllOwned
+        if notice is not None and not (
+            self.cur_user_config.Task.IfCultivate and manage_owned
+        ):
             await self._set_cultivate_notice(notice)
             return None, False, None
         if skip_this_round:
             await self._set_cultivate_notice("")
             return None, True, None
-        original_targets = parse_cultivate_targets(raw_targets)
-
         skland_bound = bool(
             self.cur_user_config.Task.CultivateSklandAccount.strip()
             and self.cur_user_config.Task.CultivateSklandUid.strip()
@@ -1896,16 +1903,16 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             )
         except Exception as e:
             logger.opt(exception=True).warning(
-                f"用户 {self.cur_user_item.name} 森空岛练度查询失败: {e}"
+                f"账号 {self.cur_user_item.name} 森空岛练度查询失败: {e}"
             )
             skland = None
-        if skland_bound and not (skland and skland[0]):
+        if (skland_bound or manage_owned) and not (skland and skland[0]):
             await self._set_cultivate_notice("")
             message = (
                 "森空岛练度同步失败，本轮养成已暂停；请检查网络或重新绑定森空岛，"
                 "日常与库存保持照常执行"
             )
-            logger.warning(f"用户 {self.cur_user_item.name} {message}")
+            logger.warning(f"账号 {self.cur_user_item.name} {message}")
             if message not in self._missing_task_source_warned:
                 self._missing_task_source_warned.add(message)
                 await Publisher.send(
@@ -1920,6 +1927,20 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             return None, True, None
 
         try:
+            if manage_owned and skland:
+                catalog = await depot_cultivate_service.operator_catalog(
+                    config_path=Config.config_path, proxy=Config.proxy
+                )
+                merged_targets = append_owned_cultivate_targets(
+                    raw_targets, catalog=catalog, progressions=skland[0]
+                )
+                if merged_targets != raw_targets:
+                    raw_targets = merged_targets
+                    self.cur_user_config.Task.CultivateTargets = json.dumps(
+                        raw_targets, ensure_ascii=False
+                    )
+                    await self.cur_user_config.commit()
+            original_targets = parse_cultivate_targets(raw_targets)
             context = ProviderContext(
                 maa_data_dir=self._cultivate_archive_dir(),
                 skland_progressions=skland[0] if skland else {},
@@ -1941,7 +1962,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             )
             if deferred:
                 logger.warning(
-                    f"用户 {self.cur_user_item.name} 本轮延期 {len(deferred)} 个缺少练度数据的养成目标: "
+                    f"账号 {self.cur_user_item.name} 本轮延期 {len(deferred)} 个缺少练度数据的养成目标: "
                     + ", ".join(target.operator_id for target in deferred)
                 )
                 message = (
@@ -1981,7 +2002,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             )
         except Exception as e:
             logger.opt(exception=True).warning(
-                f"用户 {self.cur_user_item.name} 养成数据准备失败, 本轮跳过养成注入: {e}"
+                f"账号 {self.cur_user_item.name} 养成数据准备失败, 本轮跳过养成注入: {e}"
             )
             await self._set_cultivate_notice("")
             message = "养成数据暂时不可用，本轮养成已暂停；库存保持与理智任务继续执行"
@@ -2016,6 +2037,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             return None, True, None
         self._cultivate_round_paused = False
         self._cultivate_execution_targets = auto_targets
+
+        if skip_farming:
+            # 不把预留量合并进普通库存目标，避免间接刷取养成材料。
+            logger.info(f"账号 {self.cur_user_item.name} 活动期间跳过养成材料刷取")
+            return None, True, None
 
         cultivate_task = None
         if plan.entries:
@@ -2086,7 +2112,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             )
         except Exception as e:
             logger.opt(exception=True).warning(
-                f"用户 {self.cur_user_item.name} 自动培养准备失败, 本轮不注入: {e}"
+                f"账号 {self.cur_user_item.name} 自动培养准备失败, 本轮不注入: {e}"
             )
             message = "自动培养未注入：培养数据暂时不可用，请刷新干员目录后重试；材料刷取照常执行"
             if message not in self._missing_task_source_warned:
@@ -2114,7 +2140,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         """
 
         message = (
-            f"用户 {self.cur_user_item.name} 的 MAA 任务队列里认不出「{source_name}」"
+            f"账号 {self.cur_user_item.name} 的 MAA 任务队列里认不出「{source_name}」"
             f"任务（队列里没有，或有多个同类任务且名字都对不上），{affected}本次按"
             f"默认设置运行，在 MAA 里为它设置的选项不会生效"
         )
@@ -2144,7 +2170,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         else:
             await agree_bilibili(self.maa_tasks_path, False)
 
-        # 下发前归档 MAS 配置到用户池（下发源，运行回写 _sync_maa_config_updates
+        # 下发前归档 MAS 配置到账号池（下发源，运行回写 _sync_maa_config_updates
         # 会覆盖它；带页面任务字段侧车，指纹去重，失败不阻断运行）。目标路径
         # 按来源 owner（共享来源共享 Default 目录，原生来源无 MAS 配置目录不归档）。
         # native 池由 manager prepare 在任务级一次性归档
@@ -2163,7 +2189,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # ── 第一段：来源落盘 ──────────────────────────────────────────
         # 用 MAS 托管配置覆盖 MAA 原生配置目录。原生来源跳过这一段——
         # 原生来源的事实源是 MAA 安装目录里现有的原生配置。
-        # 来源目录可能不存在（新建脚本/用户首次运行，或用户删掉专项重建）：
+        # 来源目录可能不存在（新建托管/用户首次运行，或用户删掉专项重建）：
         # 此时保持安装目录现有的 MAA 配置不动，它天然是可运行的默认配置。
         if self.config_base == CONFIG_BASE_SHARED:
             self._copy_source_config(
@@ -2175,7 +2201,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
             )
         elif self.native_base:
-            # 原生来源从本轮原生快照开始，不能继承上一用户或上一阶段的快速配置。
+            # 原生来源从本轮原生快照开始，不能继承上一账号或上一阶段的覆写常规配置。
             source = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
             if source.is_dir():
                 shutil.copytree(
@@ -2185,8 +2211,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     ignore=shutil.ignore_patterns(MAA_STAMINA_LEGACY_FILENAME),
                 )
 
-        # base 缺失/损坏时退回 MAA 自带 .bak 或随包预设；预设含完整根级 Gui
-        # 与 Timers，缺根级 Gui 时 MAA 会把这次启动当首次运行并弹新手引导。
+        # base 缺失/损坏时退回 MAA 自带 .bak 或随包预设；引导在运行写盘前跳过。
         gui_new_set = read_maa_config_with_fallback(self.maa_set_path)
         self._remember_pending_update()
 
@@ -2221,6 +2246,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 待更新包已保留；本次任务启动不再触发安装，结束后恢复登记。
         gui_new_set.setdefault("Update", {})["UpdatePackage"] = ""
 
+        gui_new_set["Gui"].update(MAA_GUIDE_SKIP_VALUES)
         _utils_io.write_file(self.maa_set_path / "gui.new.json", gui_new_set)
         self._snapshot_maa_config()
         _utils_io.mark_native_config_injected(
@@ -2233,7 +2259,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
     def _copy_source_config(self, source: Path) -> None:
         """把 MAS 托管配置覆盖进 MAA 配置目录；来源不存在时保持现状。
 
-        来源目录缺失是正常情形（新建脚本、新建用户、删除专项后重建），此时
+        来源目录缺失是正常情形（新建托管、新建账号、删除专项后重建），此时
         MAA 安装目录里的现有配置就是可运行的事实源，直接沿用即可，不必也无法
         从空目录拷贝。
         """
@@ -2249,7 +2275,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         )
 
     async def _apply_maa_quick_config(self, gui_new_set: dict) -> None:
-        """仅开启快速配置时构造面板任务，来源导入与启动设置留在外层。"""
+        """仅开启覆写常规配置时构造面板任务，来源导入与启动设置留在外层。"""
 
         task_set = {}
         source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
@@ -2294,9 +2320,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 cultivate_plan,
             ) = await self._prepare_cultivate_injection(
                 source_queue,
-                skip_this_round=activity_open
-                and self.cur_user_config.Task.CultivateSkipDuringActivity
-                or (
+                skip_farming=activity_open
+                and self.cur_user_config.Task.CultivateSkipDuringActivity,
+                skip_this_round=(
                     resource_collection_open
                     and self.cur_user_config.Task.CultivateSkipDuringResourceCollection
                 ),
@@ -2372,7 +2398,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             medicine=self.cur_user_config.Task.CultivateMedicineNumb,
             stone=self.cur_user_config.Task.CultivateStoneNumb,
         )
-        # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖
+        # 库存保持计划：MAS 覆写常规配置面板维护的计划写回原生 PlanList。只覆盖
         # MAS 管理的三项（Stage/DropId/DropCount），其余原生字段（含用户在 MAA 里
         # 设的药/石开关）整条透传，不按 #927 前的口径硬编码 UseMedicine/UseStone。
         if "DepotMaintain" in task_set:
@@ -2405,7 +2431,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 ):
                     conditions.append("资源全开放期间跳过")
                 logger.info(
-                    f"用户 {self.cur_user_item.name} 普通库存本轮暂停，命中来源设置: "
+                    f"账号 {self.cur_user_item.name} 普通库存本轮暂停，命中来源设置: "
                     + "、".join(conditions)
                 )
                 del task_set["DepotMaintain"]
@@ -2525,7 +2551,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                         task_set["Infrast"]["PlanSelect"] = -1
                 else:
                     logger.warning(
-                        f"用户 {self.cur_user_item.name} 的{infrast_problem}, 将使用普通基建模式"
+                        f"账号 {self.cur_user_item.name} 的{infrast_problem}, 将使用普通基建模式"
                     )
                     await Publisher.send(
                         id=self.task_info.task_id,
@@ -2533,7 +2559,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                         data=WSTaskNoticeData(
                             level="warning",
                             message=(
-                                f"用户 {self.cur_user_item.name} 的{infrast_problem}，"
+                                f"账号 {self.cur_user_item.name} 的{infrast_problem}，"
                                 f"将使用普通基建模式"
                             ),
                         ),
@@ -2643,7 +2669,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         gui_new_set: dict,
         emulator_info: DeviceInfo,
     ) -> None:
-        """两种快速配置状态均需的启动、模拟器和账号设置，不改任务选择。"""
+        """两种覆写常规配置状态均需的启动、模拟器和账号设置，不改任务选择。"""
 
         current_gui = gui_new_set["Configurations"]["Default"]["Gui"]
 
@@ -2740,7 +2766,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         current_gui["RuntimeSettings"]["ClientType"] = _MAA_CLIENT_TYPE_TO_INT.get(
             server, 0
         )
-        # 账号属于基本信息；关闭快速配置时只更新来源中已有的开始唤醒任务。
+        # 账号属于基本信息；关闭覆写常规配置时只更新来源中已有的开始唤醒任务。
         for task in gui_new_set["Configurations"]["Default"].get("TaskQueue", []):
             if task.get("TaskType") != "StartUp" or server not in (
                 "Official",
@@ -2770,9 +2796,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             self._maa_config_baseline = None
 
     def _config_archive_dir(self) -> Path | None:
-        """当前用户的 MAA 配置来源存档目录, 与 set_maa 的导入路径对称。
+        """当前账号的 MAA 配置来源存档目录, 与 set_maa 的导入路径对称。
 
-        原生来源用户没有 MAS 托管配置目录（对齐 MaaEnd 的「原生来源无 mas 池」），
+        原生来源账号没有 MAS 托管配置目录（对齐 MaaEnd 的「原生来源无 mas 池」），
         返回 ``None``：不下发前归档、运行产出也不回写——安装目录现场由
         任务结束的原生配置快照恢复机制管理。
         """
@@ -2788,7 +2814,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
     @property
     def update_config_dir(self) -> Path:
-        """当前用户的配置来源目录，用于保留其原生更新来源选择。"""
+        """当前账号的配置来源目录，用于保留其原生更新来源选择。"""
         return self._config_archive_dir() or (
             Path.cwd() / f"data/{self.script_info.script_id}/Temp"
         )
@@ -2854,7 +2880,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 continue
             _utils_io.write_file(archive_dir / name, archive_new)
             logger.info(
-                f"用户 {self.cur_user_item.name} 的 MAA 配置变更已回写存档: {name}"
+                f"账号 {self.cur_user_item.name} 的 MAA 配置变更已回写存档: {name}"
             )
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
@@ -2882,7 +2908,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                         f"{progress[0]}/{progress[1]}" if progress else "完成任务日志"
                     )
                     logger.info(
-                        f"用户 {self.cur_user_item.name} 剿灭已达到本周上限："
+                        f"账号 {self.cur_user_item.name} 剿灭已达到本周上限："
                         f"{progress_text}"
                     )
 
@@ -2897,7 +2923,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 tz=_utils_constants.UTC4
             )
             await self.cur_user_config.commit()
-            logger.info(f"用户 {self.cur_user_item.name} 已完成本月绿票商店购买")
+            logger.info(f"账号 {self.cur_user_item.name} 已完成本月绿票商店购买")
 
         # 无时段排班表: 基建换班完成即推进用户自己的班次指针, 一轮内只推一次;
         # 后续重试注入的仍是本轮的班次, 不会把下一班提前换上
@@ -2912,7 +2938,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             self.cur_user_config.Data.InfrastPlanIndex = next_index
             await self.cur_user_config.commit()
             logger.info(
-                f"用户 {self.cur_user_item.name} 基建换班已完成第 "
+                f"账号 {self.cur_user_item.name} 基建换班已完成第 "
                 f"{self._infrast_plan_index + 1} 班, 下次从第 {next_index + 1} 班开始"
             )
 
@@ -2921,7 +2947,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         if self.cur_user_config.Info.IfQuickConfig:
             self._collect_cultivate_archive(log)
 
-        # 魔改 AVD 实例上截图不许回落到普通 adb（约 250 ms，用户 09-26 定「不如不做」）
+        # 魔改 AVD 实例上截图不许回落到普通 adb（约 250 ms，账号 09-26 定「不如不做」）
         avd_fallback = (
             screencap_fallback_status(log)
             if getattr(self, "_avd_screencap_guard", False)
@@ -3116,7 +3142,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             failure_shot = await self._take_failure_shot()
 
         if self.script_config.Run.TaskTransitionMethod == "ExitEmulator":
-            logger.info("用户任务结束, 关闭模拟器")
+            logger.info("账号任务结束, 关闭模拟器")
             await close_emulator(self)
 
         await self.run_user_scripts_after()
@@ -3219,7 +3245,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 )
         if progress_lines:
             statistics["cultivate_progress"] = "；".join(progress_lines)
-        # 本轮有干员达成养成目标时随统计报告告知用户（目标消失可查）
+        # 本轮有干员达成养成目标时随统计报告告知账号（目标消失可查）
         if self._cultivate_achievement_summary:
             statistics["cultivate_achievement"] = "、".join(
                 self._cultivate_achievement_summary
@@ -3235,7 +3261,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             try:
                 loaded = await prepare_screenshot_images(
                     [(self.cur_user_item.name, failure_shot)],
-                    # ID 带用户序号：manager 汇总拼接各用户的图，前缀不唯一
+                    # ID 带用户序号：manager 汇总拼接各账号的图，前缀不唯一
                     # 会让邮件里同名 cid 互相覆盖
                     image_id_prefix=f"maa{self.script_info.current_index}",
                 )
@@ -3262,9 +3288,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             await self.cur_user_config.commit()
 
             await self.cur_user_item.set_state(status="完成")
-            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
+            logger.success(f"账号 {self.cur_user_uid} 的自动代理任务已完成")
         else:
-            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            logger.warning(f"账号 {self.cur_user_uid} 的自动代理任务未完成")
             await self.cur_user_item.set_state(status="异常")
 
         if failure_shot is not None and history_records:
@@ -3289,7 +3315,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             await Notify.send_notice(
                 LocalNotice(
                     title="成功完成一个自动代理任务！",
-                    message=f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
+                    message=f"已完成账号 {self.cur_user_item.name} 的自动代理任务",
                     ticker=f"已完成 {self.cur_user_item.name} 的自动代理任务",
                     duration_seconds=3,
                 )
@@ -3328,11 +3354,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         if if_six_star:
             try:
                 logger.info(
-                    f"开始推送通知, 模式: 公招六星, 标题: 喜报: 用户 {self.cur_user_item.name} 公招出六星啦！"
+                    f"开始推送通知, 模式: 公招六星, 标题: 喜报: 账号 {self.cur_user_item.name} 公招出六星啦！"
                 )
                 await Notify.dispatch_task_notification(
                     _format_maa.build_recruitment_payload(
-                        title=f"喜报: 用户 {self.cur_user_item.name} 公招出六星啦！",
+                        title=f"喜报: 账号 {self.cur_user_item.name} 公招出六星啦！",
                         message={"user_name": self.cur_user_item.name},
                     ),
                     Notify.recruitment_targets(self.cur_user_config),

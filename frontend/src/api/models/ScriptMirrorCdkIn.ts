@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type ScriptMirrorCdkIn = {
     /**
-     * 脚本类型，决定凭据回退规则
+     * 托管类型，决定凭据回退规则
      */
     type: string;
     /**

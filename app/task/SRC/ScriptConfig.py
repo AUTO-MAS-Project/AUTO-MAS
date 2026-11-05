@@ -78,7 +78,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self.user_config = user_config
         self.src_installation_id = src_installation_id
         # view_only=True 时为查看会话：只读预览（如「查看历史备份」）——
-        # 用户级照常下发（目录副本即备份）但结束不回写，脚本级跳过下发
+        # 账号级照常下发（目录副本即备份）但结束不回写，托管级跳过下发
         self.view_only = view_only
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.src_webui_port: int | None = None
@@ -90,8 +90,8 @@ class ScriptConfigTask(TaskExecuteBase):
         """本会话的 MAS 配置目录 owner；原生来源时返回 ``None``。
 
         与运行下发（AutoProxy ``set_src``）同一套来源规则。会话的下发与
-        回写此前硬编码用户目录，shared 来源用户的会话改动运行时根本不读（改了
-        白改），配置备份也因此采不到会话现场；现对齐运行态。原生来源用户没有
+        回写此前硬编码用户目录，shared 来源账号的会话改动运行时根本不读（改了
+        白改），配置备份也因此采不到会话现场；现对齐运行态。原生来源账号没有
         MAS 托管配置目录，返回 ``None``。
         """
 
@@ -172,7 +172,7 @@ class ScriptConfigTask(TaskExecuteBase):
     async def set_src(self):
         """配置SRC运行参数"""
 
-        logger.info(f"开始配置SRC运行参数: 设置脚本 {self.cur_user_item.user_id}")
+        logger.info(f"开始配置SRC运行参数: 设置账号 {self.cur_user_item.user_id}")
 
         cleanup_success = await kill_src_processes(
             self.src_process_manager,
@@ -191,7 +191,7 @@ class ScriptConfigTask(TaskExecuteBase):
             self.src_installation_id,
         )
 
-        # 查看会话的脚本级入口：原生目录即所选备份，跳过下发与注入
+        # 查看会话的托管级入口：原生目录即所选备份，跳过下发与注入
         if self.view_only and self.cur_user_item.user_id == "Default":
             logger.info("SRC 查看会话跳过配置下发: 原生目录即所选备份")
             return
@@ -206,8 +206,8 @@ class ScriptConfigTask(TaskExecuteBase):
         config_path = mas_config_dir(self.script_info.script_id, owner)
         recover_src_user_config(config_path)
 
-        # 下发前归档下发源到用户池（会话保存会覆盖它；带页面核心字段侧车，
-        # 指纹去重，失败不阻断会话）。池归属是当前真实用户（shared 来源多用户
+        # 下发前归档下发源到账号池（会话保存会覆盖它；带页面核心字段侧车，
+        # 指纹去重，失败不阻断会话）。池归属是当前真实账号（shared 来源多账号
         # 各自持有共享 Default 目录的快照），目标路径才按 owner 解析。
         # native 池由 manager.prepare 在任务级一次性归档
         overlay = (
@@ -270,7 +270,7 @@ class ScriptConfigTask(TaskExecuteBase):
             staging_path,
             expected_installation_id=self.src_installation_id,
         )
-        logger.success(f"SRC运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}")
+        logger.success(f"SRC运行参数配置完成: 设置账号 {self.cur_user_item.user_id}")
 
     async def final_task(self):
 

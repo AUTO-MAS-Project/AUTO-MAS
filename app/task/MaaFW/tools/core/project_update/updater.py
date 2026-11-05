@@ -548,7 +548,7 @@ async def update_maafw_project_if_needed(
     if not configured_cdk and inherited_cdk:
         # 调用方既可以用 ``mirror_cdk=`` 参数给 CDK，也可以塞进 source_config；
         # 前者为准只在后者为空时生效。不能用 ``setdefault``：schema 会把未填的
-        # CDK 序列化成空串而不是缺键。（这里说的不是全局兜底——凭据只看脚本级，
+        # CDK 序列化成空串而不是缺键。（这里说的不是全局兜底——凭据只看托管级，
         # 合并发生在调用方，见 tools/embedded/update_credentials.py。）
         merged_source_config["mirror_cdk"] = inherited_cdk
     if not str(merged_source_config.get("channel") or "").strip():
@@ -1160,7 +1160,7 @@ async def _discover_project_update_detailed(
             return (
                 None,
                 version_check,
-                f"自动更新不回退发错的版本号，可在脚本编辑页点「更新」回到 {latest}",
+                f"自动更新不回退发错的版本号，可在托管编辑页点「更新」回到 {latest}",
             )
         misnumbered = True
         send_update_log(

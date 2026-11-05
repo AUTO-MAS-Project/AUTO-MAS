@@ -25,6 +25,7 @@ const runtime = ['off', 'managed', 'development', 'unknown']
 const updateSource = ['cnb', 'github', 'mirrorchyan', 'autosite', 'unknown']
 const mode = ['AutoProxy', 'ScriptConfig', 'ScriptView', 'Update', 'CycleRun', 'unknown']
 const screens = [
+  'tools',
   'initialization',
   'home',
   'scripts',
@@ -47,7 +48,7 @@ const screens = [
 const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
   ...featureAnalyticsSchemas,
   app_started: {
-    launch_kind: ['manual', 'auto_start', 'unknown'],
+    launch_kind: ['manual', 'auto_start', 'scheduled_wakeup', 'unknown'],
     runtime_mode: runtime,
     release_channel: ['stable', 'beta', 'unknown'],
   },
@@ -121,8 +122,17 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
   },
   notification_binding_finished: {
     channel_kind: ['openclaw_qq'],
-    action: ['bind', 'rebind', 'unbind'],
-    outcome: ['connected', 'unbound', 'failure', 'expired', 'cancelled', 'replaced', 'unmounted'],
+    action: ['bind', 'rebind', 'unbind', 'manual_bind'],
+    outcome: [
+      'connected',
+      'saved',
+      'unbound',
+      'failure',
+      'expired',
+      'cancelled',
+      'replaced',
+      'unmounted',
+    ],
     duration_bucket: duration,
   },
   webhook_test_finished: {

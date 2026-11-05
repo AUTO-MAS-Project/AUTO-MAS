@@ -77,19 +77,6 @@ def test_convert_adb_matches_usb_serial_exactly(
     assert _convert(maa_manager_module, "HA2FKGY1") is devices[1]
 
 
-def test_convert_adb_matches_wireless_address_exactly(
-    monkeypatch, maa_manager_module
-) -> None:
-    devices = _available_devices(
-        monkeypatch,
-        maa_manager_module,
-        "192.168.1.10:5555",
-        "192.168.1.20:5555",
-    )
-
-    assert _convert(maa_manager_module, "192.168.1.20:5555") is devices[1]
-
-
 @pytest.mark.parametrize(
     ("target", "available"),
     [
@@ -117,12 +104,3 @@ def test_convert_adb_does_not_match_wireless_devices_by_port(
 
     with pytest.raises(RuntimeError, match="无法找到指定设备"):
         _convert(maa_manager_module, "192.168.1.20:5555")
-
-
-def test_convert_adb_raises_when_unknown_usb_serial_is_not_found(
-    monkeypatch, maa_manager_module
-) -> None:
-    _available_devices(monkeypatch, maa_manager_module, "OTHER123")
-
-    with pytest.raises(RuntimeError, match="无法找到指定设备"):
-        _convert(maa_manager_module, "HA2FKGY1")

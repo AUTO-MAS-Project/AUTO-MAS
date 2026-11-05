@@ -46,7 +46,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   showSkipButton: false,
   retrying: false,
-  runtimeMode: 'off',
+  runtimeMode: 'managed',
 })
 
 const emit = defineEmits<{
@@ -77,8 +77,6 @@ const status = ref<'waiting' | 'starting' | 'running' | 'success' | 'failed'>('w
 const errorMessage = ref('')
 const backendLogs = ref('')
 const slow = ref(false)
-let startTimer: ReturnType<typeof setTimeout> | null = null
-let completeTimer: ReturnType<typeof setTimeout> | null = null
 let slowTimer: ReturnType<typeof setTimeout> | null = null
 
 const hintText = computed(() => {
@@ -110,7 +108,7 @@ async function handleOpenDocumentation() {
   }
 }
 
-async function startBackend() {
+async function startBackend(retry = false) {
   status.value = 'starting'
   emit('update:status', 'starting')
   backendLogs.value = ''
@@ -121,7 +119,7 @@ async function startBackend() {
   let pollingStarted = false
 
   try {
-    const result = await window.electronAPI.backendStart()
+    const result = await window.electronAPI.backendStart(retry)
 
     if (!result.success) {
       failure = result
@@ -158,7 +156,7 @@ async function startBackend() {
       `后端服务启动完成 - PID: ${backendStatus.pid}, WebSocket: ${wsConnected ? '已连接' : '未连接'}, 版本检查: ${pollingStarted ? '已启动' : '未启动'}`
     )
 
-    completeTimer = setTimeout(() => emit('complete'), 300)
+    emit('complete')
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.error(`后端启动失败: ${message}`)
@@ -178,7 +176,7 @@ async function handleFailureAction(kind: FailureActionKind) {
     await openLaunchLogWindow('后端启动步骤')
     return
   }
-  await startBackend()
+  await startBackend(true)
 }
 
 onMounted(() => {
@@ -186,14 +184,10 @@ onMounted(() => {
     logger.debug(`收到后端状态: ${JSON.stringify(backendStatus)}`)
   })
 
-  startTimer = setTimeout(() => {
-    void startBackend()
-  }, 400)
+  void startBackend()
 })
 
 onUnmounted(() => {
-  if (startTimer) clearTimeout(startTimer)
-  if (completeTimer) clearTimeout(completeTimer)
   clearSlowTimer()
   window.electronAPI.removeBackendStatusListener?.()
 })

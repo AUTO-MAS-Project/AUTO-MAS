@@ -115,6 +115,11 @@ test.describe('@scheduler runtime ownership', () => {
           body: JSON.stringify({ code: 200 }),
         })
       })
+      let remoteEditorLoads = 0
+      await page.route('https://cdn.jsdelivr.net/npm/monaco-editor*/**', route => {
+        remoteEditorLoads++
+        return route.abort()
+      })
       try {
         await app.goto('/scheduler')
         await page.locator('.task-control .ant-select-selector').first().click()
@@ -154,6 +159,7 @@ test.describe('@scheduler runtime ownership', () => {
         await page.reload()
         await expect(logPanel).toContainText('WAITING_FOR_CONFIG_LOCK')
         await expect(logPanel).toContainText('LOG_WHILE_PAGE_INACTIVE')
+        expect(remoteEditorLoads).toBe(0)
         await expect(page.locator('.ant-tabs-tab')).toHaveCount(1)
         const beforeGap = snapshots
         log += 'RECOVERED_GAP\n'

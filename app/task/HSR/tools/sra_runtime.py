@@ -325,7 +325,7 @@ def build_sra_module_config(
 ) -> dict:
     """构造只启用一个目标模块的 SRA TasksConfig。
 
-    副本与托管覆盖读 ``plan``（该用户生效的任务计划，缺省即 ``user_config``），
+    副本与托管覆盖读 ``plan``（该账号生效的任务计划，缺省即 ``user_config``），
     货币战争的开拓者名称读 ``user_config``。
     """
 
@@ -445,7 +445,7 @@ def build_sra_module_config(
 
 
 def get_sra_app_data_dir() -> Path:
-    """定位 SRA 与前端共用的用户配置目录。"""
+    """定位 SRA 与前端共用的账号配置目录。"""
 
     appdata = os.environ.get("APPDATA")
     if appdata:
@@ -980,7 +980,7 @@ def _build_sra_trailblaze_tasklist(
     user_config,
     eow_enabled: bool = False,
 ) -> list[dict]:
-    """按 HSR 用户配置构造 SRA trailblazePower.tasklist。"""
+    """按 HSR 账号配置构造 SRA trailblazePower.tasklist。"""
 
     tasklist: list[dict] = []
     main_item: dict | None = None
@@ -1040,8 +1040,8 @@ def build_sra_echo_of_war_config(
     单独跑一次手动副本，不依赖培养目标内容与 SRA 版本。
 
     Args:
-        script_config: HSR 脚本配置，用于沿用用户的原生体力选项。
-        user_config: HSR 用户配置，提供历战余响关卡。
+        script_config: HSR 托管配置，用于沿用用户的原生体力选项。
+        user_config: HSR 账号配置，提供历战余响关卡。
         name: 写入 SRA 临时配置的配置名。
 
     Returns:

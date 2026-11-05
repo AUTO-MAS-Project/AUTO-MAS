@@ -65,7 +65,7 @@ class WuwaUpdateTask(TaskExecuteBase):
         await self.cur_user_item.set_state(status="运行")
         launcher = Path(str(self.script_config.Game.Path or "").strip())
         if not launcher.is_file():
-            raise RuntimeError("请先在脚本配置中导入有效的鸣潮官方启动器")
+            raise RuntimeError("请先在托管配置中导入有效的鸣潮官方启动器")
 
         await self._push_dispatch_log(f"正在检查 {self.resource} 鸣潮更新...")
         try:

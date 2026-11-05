@@ -1,22 +1,9 @@
 import { isDevelopmentEnvironment } from '../instanceConfig'
 /**
- * Runtime 后端监督链路的灰度开关与可执行文件定位
+ * Runtime 启动模式与可执行文件定位。
  *
- * 灰度期同时存在两条后端启动链路：
- * - `off`（源码开发默认）：Electron 自己 spawn `python.exe`，就绪靠健康检查，停止靠 scoped taskkill；
- * - `development` / `managed`：交给 `auto-mas-runtime.exe backend supervise` 监督。
- *
- * 一次生命周期只走一条链路：模式非 `off` 却找不到可执行文件时，按 `RUNTIME_NOT_FOUND`
- * 失败并展示，绝不静默回退旧链路——否则用户会在不知情的情况下拿到另一套端口与关闭语义。
- *
- * 灰度开关的来源分三级，优先级从高到低：
- * 1. 环境变量 `AUTO_MAS_RUNTIME_MODE`；
- * 2. 设置界面持久化的用户选择（`<appRoot>/config/frontend_config.json` 的
- *    `Runtime.LaunchMode`，与 `main.ts` 的 `loadConfig()/saveConfig()` 同一份文件）；
- * 3. 构建默认值：打包安装默认 `managed`，源码开发默认 `off`。Runtime 文件缺失不改变
- *    启动模式，避免自动恢复时启动安装根目录残留的旧后端。
- *
- * 任一级取值非法都记 warning 后落到下一级，不再像早前只有环境变量一级时那样直接判 `off`。
+ * 源码默认 development，安装版默认 managed。环境变量优先于用户设置和构建默认值；
+ * 存量 off 值视为未覆盖，不再提供直接启动 Python 的执行链。
  */
 
 import { app } from 'electron'
@@ -30,7 +17,7 @@ const logger = getLogger('Runtime启动配置')
 /** 捆绑在安装包 resources 目录下的 Runtime 文件名。 */
 export const RUNTIME_EXECUTABLE_NAME = 'auto-mas-runtime.exe'
 
-/** 灰度开关的环境变量名。 */
+/** 启动模式的环境变量名。 */
 export const RUNTIME_MODE_ENV = 'AUTO_MAS_RUNTIME_MODE'
 
 /** 手动指定 Runtime 可执行文件路径的环境变量名。 */
@@ -42,9 +29,9 @@ export const RUNTIME_EXE_ENV = 'AUTO_MAS_RUNTIME_EXE'
  * `development` 监督开发者自己的源码检出（要求 `<repo>/main.py`、`<repo>/pyproject.toml`
  * 与已存在的 `<repo>/.venv`，Runtime 不创建它们）；`managed` 监督 Runtime 自己维护的受管工作区。
  */
-export type RuntimeLaunchMode = 'off' | 'development' | 'managed'
+export type RuntimeLaunchMode = 'development' | 'managed'
 
-const RUNTIME_LAUNCH_MODES: readonly RuntimeLaunchMode[] = ['off', 'development', 'managed']
+const RUNTIME_LAUNCH_MODES: readonly RuntimeLaunchMode[] = ['development', 'managed']
 
 /** 持久化设置比运行时开关多一个哨兵值：`auto` 表示不覆盖，跟随构建默认值。 */
 export type PersistedRuntimeLaunchMode = RuntimeLaunchMode | 'auto'
@@ -63,16 +50,9 @@ export interface RuntimeLaunchModeResolution {
   source: RuntimeLaunchModeSource
 }
 
-/** 灰度开关关闭时的定位信息：不去找可执行文件。 */
-export interface RuntimeDisabledLaunchConfig {
-  mode: 'off'
-  runtimePath: null
-  appRoot: string
-}
-
 /** 走 Runtime 监督链路时的定位信息。 */
-export interface RuntimeSupervisedLaunchConfig {
-  mode: Exclude<RuntimeLaunchMode, 'off'>
+export interface RuntimeLaunchConfig {
+  mode: RuntimeLaunchMode
   /** 找不到可执行文件时为 null，由调用方按 `RUNTIME_NOT_FOUND` 处理。 */
   runtimePath: string | null
   /**
@@ -89,9 +69,6 @@ export interface RuntimeSupervisedLaunchConfig {
    */
   dataRoot: string
 }
-
-/** 一次启动所需的全部定位信息，按 `mode` 判别。 */
-export type RuntimeLaunchConfig = RuntimeDisabledLaunchConfig | RuntimeSupervisedLaunchConfig
 
 function isRuntimeLaunchMode(value: string): value is RuntimeLaunchMode {
   return (RUNTIME_LAUNCH_MODES as readonly string[]).includes(value)
@@ -136,16 +113,16 @@ function readPersistedLaunchMode(appRoot: string): string | undefined {
   }
 }
 
-/** 构建默认值只由打包状态决定，Runtime 缺失由启动流程报错，不能切换到旧链路。 */
+/** 构建默认值只由打包状态决定，Runtime 缺失由启动流程显式报错。 */
 function resolveBuildDefaultLaunchMode(): RuntimeLaunchMode {
-  return isDevelopmentEnvironment() ? 'off' : 'managed'
+  return isDevelopmentEnvironment() ? 'development' : 'managed'
 }
 
 /**
- * 解析灰度开关，并带上生效来源。
+ * 解析启动模式，并带上生效来源。
  *
  * 优先级：环境变量 `AUTO_MAS_RUNTIME_MODE` > 持久化的用户设置 > 构建默认值。任一级取值
- * 非法都记 warning 后落到下一级，而不是直接判 `off`——最终结果永远来自某一级的合法取值，
+ * 非法都记 warning 后落到下一级，最终结果来自合法设置或构建默认值，
  * 不会因为拼错一个单词就整体失效。
  */
 export function resolveRuntimeLaunchModeDetail(appRoot: string): RuntimeLaunchModeResolution {
@@ -156,7 +133,7 @@ export function resolveRuntimeLaunchModeDetail(appRoot: string): RuntimeLaunchMo
       return { mode: normalizedEnv, source: 'env' }
     }
     logger.warn(
-      `${RUNTIME_MODE_ENV} 取值非法：${rawEnv}，改按持久化设置处理（可选值：off/development/managed）`
+      `${RUNTIME_MODE_ENV} 取值非法：${rawEnv}，改按持久化设置处理（可选值：development/managed）`
     )
   }
 
@@ -260,8 +237,8 @@ export const RUNTIME_DEVELOPMENT_ROOT_DIRNAME = 'auto-mas-runtime'
  * `reason=runtime_root_inside_development_repo`），而 Electron 开发态的 `getAppRoot()` 恰好就是
  * 源码仓根；源码仓也不该被 Runtime 的 `runtime/`、`runtime-state/`、`debug/runtime/` 污染。
  * 所以 Runtime 根目录放到仓外：
- * - Electron 环境：`<userData>/auto-mas-runtime`。开发态的 userData 已由 `applyInstanceIdentity()`
- *   与正式版分开（`<appData>/<name>-dev`），两版各自一份 Runtime 布局，互不干扰；
+ * - Electron 环境：`<userData>/auto-mas-runtime`。开发态的 userData 与正式版分开
+ *   （`<appData>/AUTO-MAS-dev`），两版各自一份 Runtime 布局，互不干扰；
  * - 非 Electron 环境（单元测试、脚本）：源码根的同级目录 `<父目录>/<源码根目录名>-runtime`，
  *   与源码根一一对应且可预测，不依赖任何全局状态。
  *
@@ -285,10 +262,6 @@ export function resolveDevelopmentRuntimeRoot(dataRoot: string): string {
  */
 export function resolveRuntimeLaunchConfig(appRoot: string): RuntimeLaunchConfig {
   const mode = resolveRuntimeLaunchMode(appRoot)
-  if (mode === 'off') {
-    return { mode, runtimePath: null, appRoot }
-  }
-
   if (mode === 'development') {
     return {
       mode,

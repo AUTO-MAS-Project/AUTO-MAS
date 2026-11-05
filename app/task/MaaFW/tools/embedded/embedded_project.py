@@ -20,9 +20,9 @@
 
 MFW 脚本一律在视图上跑，没有开关：用户选一次项目目录，AUTO-MAS 按 interface 白名单
 投影成一份**载荷**（``data/mfw/.payloads/<谱系>/<版本>-<hash>``，全局一份、登记后不再改），
-再给脚本物化一棵**视图** ``data/mfw/<脚本 uuid 前 12 位>/``：载荷里 ≥ 64 KB 的文件在视图里
+再给脚本物化一棵**视图** ``data/mfw/<托管 uuid 前 12 位>/``：载荷里 ≥ 64 KB 的文件在视图里
 是指向载荷 / 共用库的硬链接，小文件拷贝，运行期产物（``debug/``、``config/`` 里 agent 写的、
-``.pycache`` …）是视图私有的。视图路径由脚本 ID 推出，不进配置，用户不可手改；
+``.pycache`` …）是视图私有的。视图路径由托管 ID 推出，不进配置，用户不可手改；
 ``Info.Path`` 只是来源目录——导入完成后它对运行没有任何作用，用户删掉也无妨。
 
 视图根上的 ``.auto_mas_view.json`` 记它挂在哪个载荷上（谱系、载荷 id、版本、物化时刻），
@@ -106,8 +106,8 @@ from app.utils import get_logger
 EMBEDDED_PROJECTS_DIR = Path(*EMBEDDED_COPIES_DIR_PARTS)
 logger = get_logger("MFW 内嵌")
 
-# 副本目录名 = 脚本 uuid 去掉连字符的前 12 位（48 位，一个用户几百个脚本撞上的概率可以忽略），
-# 仍能从脚本 ID 直接推出、不用查表。不用完整 uuid 只为路径长度，见 EMBEDDED_COPIES_DIR_PARTS。
+# 副本目录名 = 托管 uuid 去掉连字符的前 12 位（48 位，一个账号几百个脚本撞上的概率可以忽略），
+# 仍能从托管 ID 直接推出、不用查表。不用完整 uuid 只为路径长度，见 EMBEDDED_COPIES_DIR_PARTS。
 COPY_DIR_NAME_LENGTH = 12
 
 STAGING_DIR_NAME = ".staging"
@@ -161,7 +161,7 @@ def _staging_root(base: Path | None) -> Path:
 
 
 def embedded_copy_dir_name(script_id: str) -> str:
-    """副本目录名：脚本 uuid 去掉连字符的前 12 位；不是 uuid 形状就拒绝，别让别的东西拼进路径。"""
+    """副本目录名：托管 uuid 去掉连字符的前 12 位；不是 uuid 形状就拒绝，别让别的东西拼进路径。"""
 
     normalized = str(script_id or "").strip()
     if not normalized:
@@ -181,7 +181,7 @@ def is_embedded_copy_dir_name(name: str) -> bool:
 
 
 def embedded_project_dir(script_id: str, base: Path | None = None) -> Path:
-    """视图目录：``data/mfw/<脚本 uuid 前 12 位>``，由脚本 ID 推出、不进配置。"""
+    """视图目录：``data/mfw/<托管 uuid 前 12 位>``，由托管 ID 推出、不进配置。"""
 
     return embedded_projects_root(base) / embedded_copy_dir_name(script_id)
 
@@ -304,7 +304,7 @@ def _script_channel(script_config: Any) -> str:
 # 内容哈希），与视图标记里 ``followSource.signature``（视图挂的这份载荷是从哪个来源状态导入的）
 # 比，不同就重新导入、登记进私有渠道（``register(always_advance=True)``，不比版本，版本号带
 # ``+dev``），视图切过去。读不了来源就沿用上次同步的视图并告警（:func:`_sync_follow_source`）。
-# 同项目的其它脚本、官方更新都在普通渠道，碰不到它，它也碰不到它们。关掉后回到
+# 同项目的其它托管、官方更新都在普通渠道，碰不到它，它也碰不到它们。关掉后回到
 # ``Update.Channel`` 的组（:func:`_leave_follow_source`）；复制 / 克隆都不继承开发者载荷。
 
 # 视图标记里记「这份载荷是从哪个来源状态导入的」的字段：{path, signature, files, syncedAt}。
@@ -935,7 +935,7 @@ def _seed_private_state(
 ) -> None:
     """导入：来源目录里投影留下、但载荷不收的运行期状态（``debug/`` 下不是日志的文件，
     如 MaaEnd 的 ``debug/record/``、MPA 的 ``debug/*_zone_offset.json``）作为视图私有文件放进
-    staging。视图里已有同名文件（本脚本自己跑出来的）一律以视图为准；与新载荷撞路径的不放。
+    staging。视图里已有同名文件（本托管自己跑出来的）一律以视图为准；与新载荷撞路径的不放。
     一律**复制**：链接会让 agent 原地写视图时写穿到用户的来源目录。"""
 
     for rel, source in sorted(seed.items()):
@@ -975,7 +975,7 @@ def _realize_view(
     adopted_channel: str | None = None,
 ) -> ViewResult:
     """按载荷（重）建视图并原子换入。``carry=True`` 且视图有标记时就是 :func:`switch_view`；
-    否则整棵换掉（没有标记的老副本、全新脚本）。``assume_marker`` 给没有标记的老副本
+    否则整棵换掉（没有标记的老副本、全新托管）。``assume_marker`` 给没有标记的老副本
     用（采纳）：把它当成已经挂在那个载荷上，私有文件照常带过去。``seed_private``（导入用，
     项目相对路径 → 来源文件）：视图里没有的才放进去，见 :func:`_seed_private_state`。
 
@@ -1273,7 +1273,7 @@ def recover_switches(
 
     - ``building``：两次 rename 都没发生 → 删 staging、删 journal；
     - ``swapping`` 且视图不在、old 在：rename#1 做了、#2 没做 → old 放回；
-    - ``swapping`` 且视图不在、old 也不在（新建视图：导入到新脚本、克隆、重建丢失视图，
+    - ``swapping`` 且视图不在、old 也不在（新建视图：导入到新托管、克隆、重建丢失视图，
       本来就没有旧视图）：staging 里的标记 = ``to`` → 把 staging 换成视图；否则删 staging、删 journal；
     - ``swapping`` 且视图标记 = ``to``：两次 rename 都做完了 → 删 old（若还在）、删 journal；
     - ``swapping`` 且视图标记 ≠ ``to``（或没有标记）：rename#1 还没发生 → 删 staging、删 journal。
@@ -1457,7 +1457,7 @@ def _shell_hint_from_families(families: Any) -> str:
 
 
 def _script_proxy_url(script_config: Any) -> str | None:
-    """导入时核对发行包用的代理：与项目更新同一份解析（脚本级优先、留空跟随全局）。地址可能带
+    """导入时核对发行包用的代理：与项目更新同一份解析（托管级优先、留空跟随全局）。地址可能带
     ``user:pw@``，不进日志；读不了就直连。"""
 
     try:
@@ -1642,7 +1642,7 @@ def import_embedded_project(
     except payloads.PayloadError as exc:
         raise EmbeddedProjectError(f"导入失败：{exc}") from exc
     if plan.rules.source_layout:
-        # 源码形态没有发行包可更新，一律跟随来源目录：进本脚本的私有渠道，不推普通渠道的组。
+        # 源码形态没有发行包可更新，一律跟随来源目录：进本托管的私有渠道，不推普通渠道的组。
         follow_source = True
     if follow_source:
         channel = follow_source_channel(script_id)
@@ -1777,7 +1777,7 @@ def import_embedded_project(
             raise EmbeddedProjectError(
                 f"导入失败：{_describe_source_failure(exc)}。新版本 "
                 f"{registered.manifest.get('version') or registered.payload_id} 已经登记，"
-                "同项目同渠道的其他脚本下次运行时会切换到它"
+                "同项目同渠道的其他托管下次运行时会切换到它"
             ) from exc
     if view_result.seeded:
         preview = ", ".join(view_result.seeded[:10])
@@ -1823,7 +1823,7 @@ def import_embedded_project(
     warnings = list(report.get("warnings") or [])
     logger.info(
         mask_home_path(
-            f"[MFW 内嵌] 脚本 {script_id} 已从 {source} 导入：版本 {source_version or '未声明'}，"
+            f"[MFW 内嵌] 托管 {script_id} 已从 {source} 导入：版本 {source_version or '未声明'}，"
             f"渠道 {channel or DEFAULT_CHANNEL}，载荷 {registered.payload_id}"
             f"（视图用 {registered.target_id}），副本 {final_dir}，"
             f"来源 {int(report.get('sourceSizeBytes') or 0) / 2**20:.1f} MB → "
@@ -1898,7 +1898,7 @@ def _follow_source_label(source_form: bool) -> str:
 def describe_follow_source_sync(
     result: Mapping[str, Any], *, manual: bool = False, source_form: bool = False
 ) -> str:
-    """开发者模式重新导入后给运行日志（``manual``：脚本页「立即同步」）的那一行。"""
+    """开发者模式重新导入后给运行日志（``manual``：托管页「立即同步」）的那一行。"""
 
     label = _follow_source_label(source_form)
     changed = result.get("changed")
@@ -1937,7 +1937,7 @@ def _payload_available(lineage: str, payload_id: str, base: Path | None) -> bool
 
 
 class FollowSourceCloneUnavailable(EmbeddedProjectError):
-    """源脚本挂的是开发者载荷，而它原渠道的组在本机还没有载荷可复用。"""
+    """源托管挂的是开发者载荷，而它原渠道的组在本机还没有载荷可复用。"""
 
 
 def clone_embedded_copy(
@@ -1948,15 +1948,15 @@ def clone_embedded_copy(
     group_channel: str | None = None,
     source_form: bool = False,
 ) -> bool:
-    """同一项目再建一个脚本：从源脚本挂着的载荷物化目标视图；返回是否克隆了。
+    """同一项目再建一个脚本：从源托管挂着的载荷物化目标视图；返回是否克隆了。
 
     源有标记（或正在切换）→ 直接从载荷物化，不读源视图，源运行期的私有状态不带过去。
     源是还没采纳的老副本 → 退回按目录克隆（已共用的再挂链接、共用候选经共用库放、其余复制，
     ``debug/`` 与字节码不带）。目标原有的视图只在新树建好后才被换掉，失败时原样不动。
 
     源挂的是开发者载荷（开着开发者模式 / 源码形态）时不复用它（那是开发者本地改过的内容），改用
-    源脚本原渠道（``group_channel``，源的 ``Update.Channel``）组的 latest；组里没有载荷就抛
-    :class:`FollowSourceCloneUnavailable`，由调用方决定退路。``source_form``（源脚本是源码形态）：
+    源托管原渠道（``group_channel``，源的 ``Update.Channel``）组的 latest；组里没有载荷就抛
+    :class:`FollowSourceCloneUnavailable`，由调用方决定退路。``source_form``（源托管是源码形态）：
     没有「原渠道」可言（同谱系普通渠道里的是发行包形态的版本），一律抛，由调用方按来源目录导入。
     """
 
@@ -1972,13 +1972,13 @@ def clone_embedded_copy(
         if is_follow_source_manifest(source_manifest):
             if source_form:
                 raise FollowSourceCloneUnavailable(
-                    "源脚本是源码形态（始终跟随来源目录），没有可复用的正式版本"
+                    "源托管是源码形态（始终跟随来源目录），没有可复用的正式版本"
                 )
             channel = group_channel or DEFAULT_CHANNEL
             payload_id = _group_target(lineage, channel, "", base)
             if not payload_id:
                 raise FollowSourceCloneUnavailable(
-                    "源脚本开着开发者模式，挂的是从来源目录同步的本地版本，不复用；"
+                    "源托管开着开发者模式，挂的是从来源目录同步的本地版本，不复用；"
                     f"同项目「{channel}」渠道在本机还没有可复用的版本"
                 )
         _realize_view(
@@ -2004,7 +2004,7 @@ def _clone_legacy_copy(
     if source_key is None:
         # 复用入口只在新建对话框里，失败后这个脚本已经建好、没法再复用，别让用户「稍后再试」
         raise EmbeddedProjectError(
-            "所选脚本正在运行、更新或准备运行环境，这时复用不了它的项目"
+            "所选托管正在运行、更新或准备运行环境，这时复用不了它的项目"
         )
     try:
         return _clone_legacy_copy_locked(source_script_id, target_script_id, base)
@@ -2443,7 +2443,7 @@ def view_imported_from(script_id: str, source: str, base: Path | None = None) ->
 def inherit_embedded_record(
     source_config: Any, target_script_id: str, base: Path | None = None
 ) -> dict[str, Any]:
-    """从源脚本克隆之后，目标该写进 ``Embedded.*`` 的记录：报告沿用源的（``copyPath``
+    """从源托管克隆之后，目标该写进 ``Embedded.*`` 的记录：报告沿用源的（``copyPath``
     改成自己的），来源版本沿用源记的（没有就读视图 interface），导入时间取现在。
     ``Info.Path`` 与 ``Report.sourcePath`` 必须成对继承（``ensure_embedded_copy`` 靠它们
     判断要不要重导）。"""
@@ -2518,8 +2518,8 @@ def _rebuild_from_group(
 ) -> dict[str, Any] | None:
     """来源目录已删、视图又没了：从同项目的载荷重建。找不到返回 None。
 
-    视图没了、标记也跟着没了，谱系只能从同来源的其它脚本上认出来：有标记的兄弟 →
-    按它的谱系取本脚本渠道的 ``latest`` 物化（不读兄弟视图、不要兄弟空闲）；只有没采纳的
+    视图没了、标记也跟着没了，谱系只能从同来源的其它托管上认出来：有标记的兄弟 →
+    按它的谱系取本托管渠道的 ``latest`` 物化（不读兄弟视图、不要兄弟空闲）；只有没采纳的
     老副本兄弟 → 照旧按目录克隆（持兄弟预约）。
     """
 
@@ -2689,7 +2689,7 @@ def _readopt_lost_payload(
         _say(
             send_log,
             f"重新登记项目版本失败：{exc}；本次照常运行，项目更新会跳过，"
-            "在脚本页重新选择项目目录导入一次即可恢复",
+            "在托管页重新选择项目目录导入一次即可恢复",
             warning=True,
         )
         return
@@ -3303,7 +3303,7 @@ class GroupMember:
     channel: str
     busy: bool = False
     name: str = ""
-    # 该脚本自己解析出的代理（脚本级优先，留空跟随全局）；切过去之后的运行环境确认用它。
+    # 该脚本自己解析出的代理（托管级优先，留空跟随全局）；切过去之后的运行环境确认用它。
     proxy_url: str | None = None
 
 
@@ -3411,7 +3411,7 @@ def propagate_payload(
                     keep = True
             except Exception as exc:  # noqa: BLE001 - 一个 T 失败只影响它自己
                 logger.opt(exception=True).warning(
-                    f"[MFW 内嵌] 同步脚本 {script_id} 到 {payload_id} 失败: {exc}"
+                    f"[MFW 内嵌] 同步托管 {script_id} 到 {payload_id} 失败: {exc}"
                 )
                 result.failed[script_id] = str(exc) or type(exc).__name__
             finally:

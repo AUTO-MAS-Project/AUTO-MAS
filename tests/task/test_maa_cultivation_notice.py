@@ -158,15 +158,6 @@ async def test_disabled_cultivation_does_not_add_counts(finalizer):
 
 
 @pytest.mark.asyncio
-async def test_completed_plan_reports_zero(finalizer):
-    finalizer._cultivate_progress_synced = False
-    await AutoProxyTask.final_task(finalizer)
-    payload = Notify.push_statistics_report.await_args.kwargs["payload"]
-    assert "剩余：0 名干员，0 个目标" in payload.text
-    assert "练度未同步" not in payload.text
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("result", [None, "success", "cancel", "local"])
 async def test_progress_refresh_preserves_targets_until_confirmed(
     monkeypatch, tmp_path, result

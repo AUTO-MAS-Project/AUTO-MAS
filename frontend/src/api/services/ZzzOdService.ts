@@ -173,7 +173,7 @@ export class ZzzOdService {
      * 获取实例槽总览（原生实例 / MAS 绑定槽 / 无主残留）
      * 槽目录是 MAS 分配在一条龙安装目录里的，注册表与 GUI 都看不到。
      *
-     * 这份对照表用于诊断「槽目录数与用户数对不上」（绑定但没跑过的槽没有目录）
+     * 这份对照表用于诊断「槽目录数与账号数对不上」（绑定但没跑过的槽没有目录）
      * 与定位无主残留。
      * @param scriptId
      * @returns ZzzOdSlotsOut Successful Response
@@ -263,7 +263,7 @@ export class ZzzOdService {
     }
     /**
      * 获取一条龙任务目录
-     * 静态解析安装目录下的应用注册信息，供用户配置渲染任务卡片中文名。
+     * 静态解析安装目录下的应用注册信息，供账号配置渲染任务卡片中文名。
      * @param scriptId
      * @returns ZzzOdCatalogOut Successful Response
      * @throws ApiError
@@ -422,8 +422,8 @@ export class ZzzOdService {
         });
     }
     /**
-     * 基于一条龙已有实例快速生成当前用户配置（覆盖前自动归档当前配置）
-     * 把来源实例的账号信息与已启用任务编排写入本用户；覆盖前强制归档当前 MAS 槽配置，
+     * 基于一条龙已有实例快速生成当前账号配置（覆盖前自动归档当前配置）
+     * 把来源实例的账号信息与已启用任务编排写入本账号；覆盖前强制归档当前 MAS 槽配置，
      * 导入前状态可在「配置恢复」中找回。
      * @param requestBody
      * @returns ZzzOdImportOut Successful Response

@@ -10,6 +10,8 @@ description: >-
 
 Use this skill when a change needs an end-to-end proof of a user path, a PR-specific one-off flow, or a local real run through MAS scheduling.
 
+Select test scope and assertions with [mas-testing](../mas-testing/SKILL.md); this skill owns E2E launch, isolation and evidence.
+
 ## Entry point
 
 - Use `frontend/e2e/run.mjs` as the only per-run Playwright launcher and `frontend/e2e/real-batch.mjs` as the only multi-adapter launcher; both go through `run.mjs` per target. `run.mjs` creates the isolated data root, starts the backend and Vite, selects the requested grep, and removes the temporary root after the run.
@@ -47,15 +49,15 @@ Repeat the offer after a later push when the changed path changed too.
 
 ## Add a flow
 
-1. Start from the user action and the smallest observable assertion. Prefer the public UI, MAS HTTP/WebSocket contracts, task terminal status, and public user result.
-2. Put a stable cross-feature flow in `frontend/e2e/<scenario>.pw.ts`; put a PR-only regression in the PR branch and remove it after verification unless it is a reusable contract.
+1. Start from the user action and the smallest observable assertion. Prefer the public UI, MAS HTTP/WebSocket contracts, task terminal status, and public account result.
+2. Put deterministic, isolated flows that protect stable user behavior or public contracts in `frontend/e2e/<scenario>.pw.ts` and maintain them with the implementation. Keep exploratory or non-isolatable runs as local verification evidence; retention follows [tests/AGENTS.md](../../../tests/AGENTS.md).
 3. Tag the flow with `test.describe('@<scope>', ...)`; real game side effects additionally require `@real`. Use `app.goto()` and `app.evidence()` from `fixtures.ts`.
 4. Wait for visible state, API responses, WebSocket events, or terminal task status with a timeout. Keep real startup and game delays separate from short injected debounce or retry delays.
 5. Attach only selected screenshots and `real-e2e-summary.json` to a PR when useful. Record the commit SHA, dirty state, command, preconditions, result, evidence path, and uncovered branches.
 
 ## Real-run contract
 
-The author-local runner accepts a script UUID, enabled user UUID, and configured account name. Everything it needs comes from the developer's own machine — the repository ships no game resources, script installs, or test accounts; the "config" it uses is the developer's real MAS configuration. It copies only the selected public MAS configuration and opaque script data into a temporary root, removes notifications from the copied user, and leaves the source `config/` and `data/` untouched. The runner has an explicit allowlist for every current script config type; an unlisted type fails with an instruction for the script author to add its prerequisites and harness assertion. A script may bind an emulator; when it does, the real flow waits for the MAS emulator operation event and device readiness. A script without a binding skips emulator steps. BetterGI and other supported script lines use the same contract when their installation and configuration are available locally.
+The author-local runner accepts a managed-script UUID, enabled account UUID, and configured account name. Everything it needs comes from the developer's own machine — the repository ships no game resources, script installs, or test accounts; the "config" it uses is the developer's real MAS configuration. It copies only the selected public MAS configuration and opaque script data into a temporary root, removes notifications from the copied account, and leaves the source `config/` and `data/` untouched. The runner has an explicit allowlist for every current script config type; an unlisted type fails with an instruction for the script author to add its prerequisites and harness assertion. A managed script may bind an emulator; when it does, the real flow waits for the MAS emulator operation event and device readiness. A managed script without a binding skips emulator steps. BetterGI and other supported script lines use the same contract when their installation and configuration are available locally.
 
 The real runner takes a machine-wide atomic lock so two local game runs cannot compete for one installation or emulator. If a forced termination leaves a lock file, confirm no real run is active before removing it manually.
 

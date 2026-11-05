@@ -86,6 +86,7 @@ class _MainTimer:
         self.started = False
         self.startup_task: asyncio.Task[None] | None = None
         self._startup_dispatched = False
+        self.wakeup_timer: asyncio.Task[None] | None = None
         self.second_timer: asyncio.Task[None] | None = None
         self.hour_timer: asyncio.Task[None] | None = None
         self.calendar_timer: asyncio.Task[None] | None = None
@@ -115,6 +116,7 @@ class _MainTimer:
                 )
             )
         self.second_timer = asyncio.create_task(self.second_task())
+        self.wakeup_timer = asyncio.create_task(self.wakeup_task())
         self.hour_timer = asyncio.create_task(self.hour_task())
         self.calendar_timer = asyncio.create_task(self.calendar_task())
         self.started = True
@@ -135,6 +137,7 @@ class _MainTimer:
             for task in (
                 self.startup_task,
                 self.second_timer,
+                self.wakeup_timer,
                 self.hour_timer,
                 self.calendar_timer,
                 self.calendar_send_task,
@@ -148,6 +151,14 @@ class _MainTimer:
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
                 logger.info("主业务定时器已关闭")
+            if self.started:
+                # 最后一次修改后立即退出时，也要把新计划或取消结果同步完。
+                from app.services import System
+
+                async def final_wakeup_sync() -> None:
+                    await System.sync_scheduled_wakeup(force=True)
+
+                await self._run_loop_step("定时唤醒同步", final_wakeup_sync)
         finally:
             self.started = False
 
@@ -162,6 +173,14 @@ class _MainTimer:
             await self._run_loop_step(
                 "游戏日历日程派发", self.schedule_calendar_notifications
             )
+            await asyncio.sleep(1)
+
+    async def wakeup_task(self) -> None:
+        """独立对账，不让系统任务注册阻塞原有定时启动检查。"""
+        from app.services import System
+
+        while True:
+            await self._run_loop_step("定时唤醒同步", System.sync_scheduled_wakeup)
             await asyncio.sleep(1)
 
     async def hour_task(self):
@@ -267,15 +286,23 @@ class _MainTimer:
         时进行，超出的记日志放弃。星期按计划时刻所在的本地日期判定。
         """
 
+        from app.services import System
+
         now = _local_now()
         now_wall = now.replace(tzinfo=None)
         minute_floor = now_wall.replace(second=0, microsecond=0) - timedelta(
             microseconds=1
         )
         prev = self._last_timed_check
+        first_wakeup_check = prev is None and System.is_scheduled_wakeup()
         if prev is None:
-            prev_wall = minute_floor
-            real_elapsed = now_wall - minute_floor
+            # 唤醒后的初始化可能超过五分钟；只为该启动来源补跑宽限内的定时。
+            prev_wall = (
+                now_wall - TIMED_START_GRACE - timedelta(microseconds=1)
+                if first_wakeup_check
+                else minute_floor
+            )
+            real_elapsed = now_wall - prev_wall
         else:
             prev_wall = min(prev.replace(tzinfo=None), minute_floor)
             real_elapsed = now.astimezone(timezone.utc) - prev.astimezone(timezone.utc)
@@ -290,15 +317,25 @@ class _MainTimer:
 
         for uid, queue in list(Config.QueueConfig.items()):
             try:
+                check_start = prev_wall
+                if first_wakeup_check:
+                    # 冷启动不保留本轮去重集合，不能重跑持久化记录之前的旧槽。
+                    check_start = max(
+                        check_start, queue.Data.LastStartTime.replace(tzinfo=None)
+                    )
                 due = self._due_timed_slots(
-                    uid, queue, prev_wall, now_wall, real_elapsed
+                    uid, queue, check_start, now_wall, real_elapsed
                 )
-                startup_due = startup and (
-                    queue.Info.StartUpMode == "Always"
-                    or (
-                        queue.Info.StartUpMode == "DailyFirst"
-                        and queue.Data.LastStartupTime.astimezone(now.tzinfo).date()
-                        != now.date()
+                startup_due = (
+                    startup
+                    and not System.is_scheduled_wakeup()
+                    and (
+                        queue.Info.StartUpMode == "Always"
+                        or (
+                            queue.Info.StartUpMode == "DailyFirst"
+                            and queue.Data.LastStartupTime.astimezone(now.tzinfo).date()
+                            != now.date()
+                        )
                     )
                 )
                 next_cycle = queue.Cycle.NextRunAt

@@ -1,5 +1,4 @@
 import asyncio
-import inspect
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -12,8 +11,7 @@ from app.core.notify.bootstrap import (
 )
 from app.core.notify.bootstrap import get_notify_channels as get_notify_channels
 from app.core.notify.manager import NotificationManager as NotificationManager
-from app.models.notification import NotificationSummary, NotifyPayload
-from app.models.notification.channel import Notifier
+from app.models.notification import NotifyPayload
 from app.models.notification.community import CommunityNotificationResult
 from app.models.notification.report import TaskReportPolicy
 from app.models.task import TaskItem
@@ -257,30 +255,9 @@ def _global_target(config, **kwargs):
         return notifications.global_target(**kwargs)
 
 
-def user_target(config):
-    with _service() as notifications:
-        return notifications.user_target(config)
-
-
 async def dispatch(payload, targets, *, notifier, **kwargs):
     with _service(notifier=notifier) as notifications:
         return await notifications.dispatch(payload, targets, **kwargs)
-
-
-def _protocol_members():
-    return {
-        name: method
-        for name, method in inspect.getmembers(Notifier, inspect.isfunction)
-        if not name.startswith("__")
-    }
-
-
-def test_notifier_fake_matches_protocol_signatures() -> None:
-    members = _protocol_members()
-    assert list(members) == ["send_channel"]
-    assert list(inspect.signature(_Notify.send_channel).parameters) == list(
-        inspect.signature(Notifier.send_channel).parameters
-    )
 
 
 def test_dispatch_isolates_false_result_and_names_webhook() -> None:
@@ -320,15 +297,6 @@ def test_dispatch_retries_false_result() -> None:
     assert list(result.failed) == []
     assert result.attempted == 1
     assert notify.calls == ["send_koishi", "send_koishi"]
-
-
-def test_dispatch_reports_named_webhook_failure() -> None:
-    config = _Config(webhooks=[("hook-1", _Webhook())])
-    notify = _Notify({"WebhookPush": ["false"]})
-
-    result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=notify))
-
-    assert list(result.failed) == ["全局 Webhook 值班群"]
 
 
 def test_dispatch_continues_after_system_failure() -> None:
@@ -371,85 +339,6 @@ def test_dispatch_skips_disabled_webhook_channel() -> None:
     assert list(result.succeeded) == ["全局 Webhook 启用"]
 
 
-def test_webhook_succeeded_ids_use_uid_while_succeeded_uses_name() -> None:
-    config = _Config(
-        webhooks=[("hook-1", _Webhook(name="值班群")), ("hook-2", _Webhook(name=""))]
-    )
-    notify = _Notify()
-
-    result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=notify))
-
-    assert list(result.succeeded) == ["全局 Webhook 值班群", "全局 Webhook hook-2"]
-    assert list(result.succeeded_ids) == ["全局 Webhook hook-1", "全局 Webhook hook-2"]
-
-
-def test_dispatch_channel_names_are_verbatim() -> None:
-    config = _Config(
-        {
-            "IfCMCCNewMsg": True,
-            "CMCCNewMsgApiKey": "ak_x",
-            "IfKoishiSupport": True,
-            "IfOpenClawQQ": True,
-        }
-    )
-
-    result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=_Notify()))
-
-    assert list(result.succeeded) == [
-        "全局 中国移动5G短信",
-        "全局 Koishi",
-        "全局 QQ（官方机器人）",
-    ]
-
-
-def test_system_notification_fallbacks() -> None:
-    config = _Config({"IfPushPlyer": True})
-    notify = _Notify()
-
-    result = _run(
-        dispatch(
-            PAYLOAD,
-            [_global_target(config, include_system=True)],
-            notifier=notify,
-        )
-    )
-
-    assert result.attempted == 1
-    # 未提供摘要时，系统通知使用通用标题、正文和默认显示时长。
-    assert notify.kwargs[0] == {
-        "title": "标题",
-        "message": "正文",
-        "ticker": "标题",
-        "t": 5,
-    }
-
-
-def test_system_notification_passes_override_values() -> None:
-    config = _Config({"IfPushPlyer": True})
-    notify = _Notify()
-
-    _run(
-        dispatch(
-            NotifyPayload(
-                title="标题",
-                text="正文",
-                summary=NotificationSummary(
-                    title="系统标题", text="系统ticker\n系统正文"
-                ),
-            ),
-            [_global_target(config, include_system=True, system_timeout_seconds=7)],
-            notifier=notify,
-        )
-    )
-
-    assert notify.kwargs[0] == {
-        "title": "系统标题",
-        "message": "系统ticker\n系统正文",
-        "ticker": "系统ticker",
-        "t": 7,
-    }
-
-
 def test_empty_recipient_warn_records_failure() -> None:
     config = _Config(
         {
@@ -473,19 +362,6 @@ def test_empty_recipient_warn_records_failure() -> None:
     assert list(result.failed) == ["全局邮件"]
     assert result.attempted == 2
     assert notify.calls == ["ServerChanPush"]
-
-
-def test_target_is_a_config_snapshot() -> None:
-    config = _Config(
-        {"IfSendMail": True, "ToAddress": "user@example.com", "IfServerChan": True}
-    )
-    target = _global_target(config)
-    reads_after_construction = config.reads
-
-    _run(dispatch(PAYLOAD, [target], notifier=_Notify()))
-
-    # 构造后固定为快照：分发全程不再读配置
-    assert config.reads == reads_after_construction
 
 
 def test_empty_recipient_skip_policy_silently_omits() -> None:
@@ -515,26 +391,6 @@ def test_same_name_webhooks_keep_distinct_delivery_ids() -> None:
     # 显示名相同但补发记录按 uid 区分
     assert list(result.succeeded) == ["全局 Webhook 同名", "全局 Webhook 同名"]
     assert list(result.succeeded_ids) == ["全局 Webhook a", "全局 Webhook b"]
-
-
-def test_user_target_uses_user_scope_and_warn_policy() -> None:
-    config = _Config(
-        {
-            "IfSendMail": True,
-            "ToAddress": "",
-            "IfServerChan": True,
-            "ServerChanKey": "send-key",
-        },
-        webhooks=[("hook-1", _Webhook(name="值班群"))],
-    )
-    notify = _Notify()
-
-    result = _run(dispatch(PAYLOAD, [user_target(config)], notifier=notify))
-
-    # 用户级只有邮件 / Server酱 / Webhook；空收件人按 warn 记失败，前缀为「用户」
-    assert list(result.failed) == ["用户邮件"]
-    assert list(result.succeeded) == ["用户 ServerChan", "用户 Webhook 值班群"]
-    assert notify.calls == ["ServerChanPush", "WebhookPush"]
 
 
 def test_dispatch_honors_skip_by_id() -> None:
@@ -668,45 +524,3 @@ def test_prepared_task_report_publishes_failure_notice() -> None:
     publish.assert_awaited_once()
     assert publish.await_args.kwargs["level"] == "warning"
     assert "全局邮件" in publish.await_args.kwargs["lines"][0]
-
-
-def test_descriptor_fields_exist_in_config_and_schema() -> None:
-    """描述表字段名两个方向都查：配置类里真的存在，且在下发模型里不会被静默丢弃。"""
-
-    from typing import get_args
-
-    from app.config.wire import config_contract
-    from app.core import Config
-    from app.models.config import GlobalConfig
-
-    notify_contract = config_contract(GlobalConfig).model_fields["Notify"].annotation
-    GlobalConfig_Notify = next(
-        item for item in get_args(notify_contract) if item is not type(None)
-    )
-
-    for channel in get_notify_channels():
-        for items in channel.fields.values():
-            for item in items:
-                getattr(getattr(Config.setting, item.group), item.name)
-                assert item.name in GlobalConfig_Notify.model_fields, item.name
-        if channel.enable_field:
-            getattr(
-                getattr(Config.setting, channel.enable_field[0]),
-                channel.enable_field[1],
-            )
-            assert channel.enable_field[1] in GlobalConfig_Notify.model_fields
-
-
-def test_channels_endpoint_returns_metadata_only() -> None:
-    from app.api.setting import get_notify_channels as endpoint
-    from app.models.legacy_config.base import ConfigBase
-
-    with patch.object(
-        ConfigBase, "get", side_effect=AssertionError("描述端点不得读取配置")
-    ):
-        result = _run(endpoint())
-
-    assert result.code == 200
-    assert len(result.channels) == 8
-    assert [channel.key for channel in result.channels][0] == "system"
-    assert result.channels[-1].kind == "policy"

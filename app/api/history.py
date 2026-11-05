@@ -50,7 +50,7 @@ class HistorySearchIn(BaseModel):
 
 class HistorySearchOut(OutBase):
     data: dict[str, dict[str, HistoryBucket]] = Field(
-        ..., description="日期 → 用户名 → 记录与统计"
+        ..., description="日期 → 账号名 → 记录与统计"
     )
 
 

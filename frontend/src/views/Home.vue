@@ -140,6 +140,7 @@ import { useHomeOverview } from '@/views/home/useHomeOverview'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
 import { usePerformanceStore } from '@/stores/performance'
 import { useHomeSatelliteStore } from '@/stores/homeSatellite'
+import { scheduleMcpAfterPaint } from '@/composables/useMcpApi'
 
 defineOptions({
   name: 'HomeView',
@@ -201,6 +202,14 @@ const {
 } = useHomeOverview()
 
 const { t } = useI18n()
+
+watch(
+  layoutReady,
+  ready => {
+    if (ready) scheduleMcpAfterPaint()
+  },
+  { flush: 'post' }
+)
 
 const activities = useHomeActivities({
   visibleKeys: visibleActivityKeys,

@@ -24,6 +24,10 @@ export type MaaUserConfig_Task = {
      */
     CultivateAutoRaise?: (boolean | null);
     /**
+     * 是否托管全部已有干员，按森空岛练度补充精二与技能七级目标
+     */
+    CultivateAllOwned?: (boolean | null);
+    /**
      * 活动期间是否跳过养成计划
      */
     CultivateSkipDuringActivity?: (boolean | null);
@@ -64,7 +68,7 @@ export type MaaUserConfig_Task = {
      */
     CultivateTargets?: (string | null);
     /**
-     * 库存保持计划（快速配置面板维护；MAA 侧同名 PlanList 为透传载体）
+     * 库存保持计划（覆写常规配置面板维护；MAA 侧同名 PlanList 为透传载体）
      */
     DepotMaintainPlans?: (string | null);
     /**

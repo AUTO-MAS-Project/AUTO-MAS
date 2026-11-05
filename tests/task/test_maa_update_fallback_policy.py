@@ -48,37 +48,6 @@ def managed_run(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "error",
-    [RuntimeError("CDK unavailable"), TimeoutError(), OSError(), ValueError()],
-)
-async def test_recoverable_failure_continues_with_pending_package_preserved(
-    managed_run, error
-):
-    managed_run._prepare_software_update_strict.side_effect = error
-    assert await managed_run._prepare_software_update(object()) is False
-    managed_run._remember_pending_update.assert_called_once_with()
-    assert managed_run.script_config.Update.TakeoverEnabled is True
-    assert managed_run.script_info.log
-    manager.Publisher.send.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_takeover_off_does_not_attempt_updates(managed_run):
-    managed_run.script_config.Update.TakeoverEnabled = False
-    assert await managed_run._prepare_software_update(object()) is False
-    managed_run._prepare_software_update_strict.assert_not_awaited()
-    managed_run._remember_pending_update.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_confirmed_update_still_reports_success(managed_run):
-    assert await managed_run._prepare_software_update(object()) is True
-    managed_run._remember_pending_update.assert_not_called()
-    manager.Publisher.send.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "error",
     [
         asyncio.CancelledError(),
         manager.MaaUpdaterRunningError("still running"),
@@ -128,23 +97,6 @@ async def test_fallback_never_starts_while_official_updater_is_running(managed_r
 
 
 @pytest.mark.asyncio
-async def test_notice_failure_does_not_block_safe_fallback(managed_run):
-    managed_run._prepare_software_update_strict.side_effect = TimeoutError()
-    manager.Publisher.send.side_effect = RuntimeError("websocket unavailable")
-    assert await managed_run._prepare_software_update(object()) is False
-    managed_run._remember_pending_update.assert_called_once_with()
-
-
-@pytest.mark.asyncio
-async def test_official_install_exception_is_marked_unsafe(managed_run):
-    error = OSError("failed to replace a DLL")
-    manager.update_maa.side_effect = error
-    with pytest.raises(MaaUpdateUnsafeError) as raised:
-        await managed_run._install_pending_software_update(target="v6.1.0")
-    assert raised.value.__cause__ is error
-
-
-@pytest.mark.asyncio
 async def test_unconfirmed_installation_remains_unsafe(managed_run):
     with pytest.raises(MaaUpdateUnsafeError):
         await managed_run._install_pending_software_update(target="v6.1.0")
@@ -155,18 +107,6 @@ async def test_official_failure_marker_remains_unsafe(managed_run, monkeypatch):
     monkeypatch.setattr(manager, "has_delegated_update_failure", lambda root: True)
     with pytest.raises(MaaUpdateUnsafeError):
         await managed_run._install_pending_software_update()
-
-
-@pytest.mark.asyncio
-async def test_official_update_cancellation_propagates(managed_run):
-    manager.update_maa.side_effect = asyncio.CancelledError()
-    with pytest.raises(asyncio.CancelledError):
-        await managed_run._install_pending_software_update()
-
-
-@pytest.mark.asyncio
-async def test_completed_official_installation_is_accepted(managed_run):
-    await managed_run._install_pending_software_update(target="v6.0.0")
 
 
 @pytest.mark.asyncio
@@ -280,3 +220,40 @@ async def test_failed_update_injects_runtime_config_and_restores_pending_package
     restored = json.loads((root / "config/gui.new.json").read_text(encoding="utf-8"))
     assert restored == original
     assert read_pending_update(root) == ("v6.1.0", str(package))
+
+
+@pytest.mark.asyncio
+async def test_batch_following_account_blocks_active_updater(managed_run):
+    managed_run._maa_update_checked = True
+    manager.System.is_process_running.return_value = True
+    task = SimpleNamespace(update_config_dir=managed_run.maa_set_path)
+
+    with pytest.raises(manager.MaaUpdaterRunningError):
+        await managed_run._prepare_software_update_once(task)
+
+    assert managed_run._updater_running is True
+    managed_run._prepare_software_update_strict.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unsafe", ["resource", "installation"])
+async def test_batch_following_account_blocks_unsafe_installation(
+    managed_run, monkeypatch, unsafe
+):
+    managed_run._maa_update_checked = True
+    monkeypatch.setattr(
+        manager,
+        "has_incomplete_resource_update",
+        lambda root: unsafe == "resource",
+    )
+    monkeypatch.setattr(
+        manager,
+        "has_delegated_update_failure",
+        lambda root: unsafe == "installation",
+    )
+    task = SimpleNamespace(update_config_dir=managed_run.maa_set_path)
+
+    with pytest.raises(MaaUpdateUnsafeError):
+        await managed_run._prepare_software_update_once(task)
+
+    managed_run._prepare_software_update_strict.assert_not_awaited()

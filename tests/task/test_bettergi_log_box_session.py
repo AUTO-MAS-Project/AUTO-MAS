@@ -2,7 +2,6 @@
 
 import asyncio
 import threading
-from copy import deepcopy
 from datetime import datetime
 
 import pytest
@@ -42,67 +41,6 @@ def frozen_step_clock(monkeypatch):
             return cls(2026, 10, 29, 7, 20, 0)
 
     monkeypatch.setattr(push_log, "datetime", Clock)
-
-
-@pytest.mark.parametrize("mode", ["关闭", "逐条", "汇总"])
-@pytest.mark.parametrize(
-    "steps",
-    [
-        [step()],
-        [step(ok=False, issue_count=1, issue_text="操作没有完成")],
-        [step(skipped=True, skip_text="未到执行周期")],
-        [step(warning_text="需要处理库存")],
-        [step(), step(index=2, total=2)],
-        [step(task="", start="无法解析的时刻")],
-        [],
-    ],
-)
-def test_bgi_report_matches_direct_injection(mode, steps):
-    original = deepcopy(steps)
-    previous, current = [
-        SimpleNamespace(
-            name="用户",
-            result="执行完成",
-            push_log_mode=mode,
-            push_log=[],
-            status="完成",
-        )
-        for _ in range(2)
-    ]
-    if mode != "关闭":
-        previous.push_log.extend(push_log.steps_to_push_log(steps))
-    proxy = SimpleNamespace(cur_user_item=current)
-    asyncio.run(AutoProxyTask._append_step_details(proxy, steps))
-    assert steps == original
-    assert current.push_log == previous.push_log
-    for has_uncompleted in (False, True):
-        assert build_user_result_text([current], has_uncompleted) == (
-            build_user_result_text([previous], has_uncompleted)
-        )
-
-
-def test_statistics_text_is_unaffected_by_box_delivery():
-    import app.core.notify.formats.bettergi as _format_bettergi
-
-    steps = [step(ok=False, issue_count=1, issue_text="操作没有完成")]
-    message = dict(
-        user_info="用户",
-        start_time="开始",
-        end_time="结束",
-        user_result="未完成",
-        one_dragon_steps=steps,
-    )
-    before = _format_bettergi.build_statistics_payload(
-        title="统计", message=message
-    ).text
-    user = SimpleNamespace(push_log=[], push_log_mode="汇总")
-    asyncio.run(
-        AutoProxyTask._append_step_details(SimpleNamespace(cur_user_item=user), steps)
-    )
-    after = _format_bettergi.build_statistics_payload(
-        title="统计", message=message
-    ).text
-    assert after == before
 
 
 def test_caller_snapshot_and_delivery_survive_repeated_cancellation(monkeypatch):

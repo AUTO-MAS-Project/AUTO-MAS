@@ -135,7 +135,7 @@ _BGI_LOG_TIME_FORMAT = "%H:%M:%S.%f"
 #
 # ⚠️ 与 MAS_STEP_FAIL 的分工：后者是运行期异常（识别失败等），按既有决策「单步失败跳过
 # 继续、仅统计数量不判负」；本标记是前置配置错误、重试无用，必须判负并让用户看见——否则
-# 该步被静默跳过、整轮仍报成功，用户表现为「一条龙直接完成」而任务其实没跑。
+# 该步被静默跳过、整轮仍报成功，账号表现为「一条龙直接完成」而任务其实没跑。
 _BGI_MISSING_CONFIG_RE = re.compile(
     r"MAS_STEP_MISSING_CONFIG:\s*(\S+)\s+(\S+)\s+([^\r\n]+)"
 )
@@ -203,14 +203,14 @@ _BGI_GAME_PROCESS_NAMES: tuple[str, ...] = (
 # 云原神无本地安装路径概念，不参与存活客户端与用户路径的一致性比较
 _BGI_LOCAL_GAME_PROCESS_NAMES: tuple[str, ...] = ("YuanShen.exe", "GenshinImpact.exe")
 
-# 多用户连跑：上一用户收尾 taskkill /F 返回 ≠ 进程已从系统快照消失（原神
-# 提交内存大，内核异步回收需数秒），下一用户的「已在运行」检测会扫到正在
+# 多账号连跑：上一账号收尾 taskkill /F 返回 ≠ 进程已从系统快照消失（原神
+# 提交内存大，内核异步回收需数秒），下一账号的「已在运行」检测会扫到正在
 # 回收的进程而误判跳过启动（2026-10-14 实机：3 账号连跑第 2 个切号必失败）。
-# 收尾后等游戏进程完全退出再放行下一用户；上限对齐切号的窗口等待宽限期。
+# 收尾后等游戏进程完全退出再放行下一账号；上限对齐切号的窗口等待宽限期。
 _GAME_EXIT_WAIT_SECONDS = 120.0
 _GAME_EXIT_POLL_INTERVAL = 1.0
 
-# 用户服务器（Switch.Resource）→ 应使用的客户端渠道；客户端渠道由
+# 账号服务器（Switch.Resource）→ 应使用的客户端渠道；客户端渠道由
 # game_info.detect_channel 识别（config.ini channel/cps + 主程序名）
 _RESOURCE_EXPECTED_CHANNEL: dict[str, str] = {
     "官服": "官服",
@@ -378,22 +378,22 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         self.cur_user_config: BetterGIUserConfig = self.user_config[self.cur_user_uid]
         # 配置来源决定「谁拥有本次运行的配置」：原生来源 = 用 BGI 所选原生配置，MAS 不接管
         # （一条龙配置名回到 Task.OneDragonConfigName，前端也据此显示原生控件）；
-        # shared/independent = MAS 侧配置（脚本级共享 / per-user 独立）。
-        # 注：快速配置不参与这里的判定——它在原生来源下的语义是「要不要把面板值写入
+        # shared/independent = MAS 侧配置（托管级共享 / per-user 独立）。
+        # 注：覆写常规配置不参与这里的判定——它在原生来源下的语义是「要不要把面板值写入
         # 原生配置」，与「用哪份配置启动」是两件事，混在一起会让原生来源被锁回 MAS 槽位。
-        # （合并 dev #781「全专项快速配置开关语义」时保留本分支这一语义：见下 writes_native_config。）
+        # （合并 dev #781「全专项覆写常规配置开关语义」时保留本分支这一语义：见下 writes_native_config。）
         self.config_base = read_config_base(self.cur_user_config)
         # 配置来源决定「谁拥有本次运行的配置」：原生来源 = 用 BGI 所选原生配置，MAS 不接管；
-        # 脚本/用户 = MAS 侧配置。**快速配置不参与这个判定**（维护者决策：放弃把快速配置
+        # 脚本/账号 = MAS 侧配置。**覆写常规配置不参与这个判定**（维护者决策：放弃把覆写常规配置
         # 当作配置来源开关）——它在原生来源下只表示「要不要把面板值写进那份原生配置」，
         # 见下方 writes_native_config。
         # 注：此处与 dev #781 的 use_mas_config = IfQuickConfig 相左，PR 内已同步调整 dev 的
         # test_quick_config_sources 相应断言，评审时请一并确认。
         self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE
-        # 原生来源 + 快速配置开启：把面板值写入 BGI **那份原生配置**（运行前快照、结束还原）。
+        # 原生来源 + 覆写常规配置开启：把面板值写入 BGI **那份原生配置**（运行前快照、结束还原）。
         # 与 use_mas_config 分开：后者只决定「用哪份配置启动」，这里决定「要不要接管写入」。
-        # ⚠️ 该开关已从 BetterGI 用户页隐藏，改由配置来源派生（BetterGIUserConfig.load：
-        # 原生来源 = 关，脚本 / 用户 = 开），故此处对原生来源恒为假 —— 整条 _write_native_one_dragon
+        # ⚠️ 该开关已从 BetterGI 账号页隐藏，改由配置来源派生（BetterGIUserConfig.load：
+        # 原生来源 = 关，脚本 / 账号 = 开），故此处对原生来源恒为假 —— 整条 _write_native_one_dragon
         # 路径当前不可达（含一条龙平面周表键那部分写入）。按维护者决策保留实现，
         # 将来若恢复开关可直接复用。
         self.writes_native_config = self.config_base == CONFIG_BASE_NATIVE and bool(
@@ -441,15 +441,15 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             >= self.script_config.Run.ProxyTimesLimit
         ):
             await self.cur_user_item.set_state(status="跳过")
-            return "今日代理次数已达上限, 跳过该用户"
+            return "今日代理次数已达上限, 跳过该账号"
         if self.cur_user_config.Info.RemainedDay == 0:
             await self.cur_user_item.set_state(status="跳过")
-            return "用户剩余天数为 0, 跳过该用户"
+            return "账号剩余天数为 0, 跳过该账号"
 
         # MAS 方式切号的前置校验（对齐 MaaEnd：不满足直接报错而非运行期失败）。
         # MAS 侧实现覆盖官服（miHoYo 登录界面）与B服（bilibili 登录记录面板）；
         # 国际服请沿用 BetterGI 脚本方式（Run.AccountSwitchMethod = BGI）。
-        # 只校验「填了账号、要执行切号」的用户：未配账号 = 不切号，对任何服务器都是
+        # 只校验「填了账号、要执行切号」的账号：未配账号 = 不切号，对任何服务器都是
         # 合法配置（国际服未配账号不应被拦，2026-09-24 复核）。
         method = self._account_switch_method()
         resource = str(self.cur_user_config.Switch.Resource or "官服").strip()
@@ -469,13 +469,13 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 await self.cur_user_item.set_state(status="异常")
                 return (
                     "MAS 方式账号切换暂仅支持官服/B服用户，"
-                    "请改回 BetterGI 脚本切换方式或调整该用户的服务器"
+                    "请改回 BetterGI 脚本切换方式或调整该账号的服务器"
                 )
             # B服的「账户」字段即B站用户名：未填时由外层 account 条件放行、运行期
             # 跳过切换（同 OK-WW 未配置账号语义），填了即按昵称匹配选号
 
         # 渠道一致性校验（仅对填了账号、要执行切号的用户）：官服/B服/国际服是三个
-        # 互相隔离的客户端（B站账号无法登录官服客户端），客户端渠道与用户服务器
+        # 互相隔离的客户端（B站账号无法登录官服客户端），客户端渠道与账号服务器
         # 不符时整条任务链都不成立，提前给出可操作错误而非运行期莫名失败。
         # 不切号的用户不校验——其 Switch.Resource 可能只是未改动的默认值。
         if account:
@@ -487,9 +487,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 if info["channel"] and info["channel"] != expected:
                     await self.cur_user_item.set_state(status="异常")
                     return (
-                        f"该用户服务器为 {resource}，但游戏客户端是"
+                        f"该账号服务器为 {resource}，但游戏客户端是"
                         f"{info['channel']}客户端（{info['installPath']}）；"
-                        "请在用户配置中为该用户指定对应的游戏客户端路径，"
+                        "请在账号配置中为该账号指定对应的游戏客户端路径，"
                         "或调整 BetterGI 的游戏路径"
                     )
 
@@ -523,7 +523,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             self.check_log,
         )
 
-        # 「用户独立配置」开启时：一条龙配置名固定为 MAS 专属槽位「MAS独立配置」，
+        # 「独立配置」开启时：一条龙配置名固定为 MAS 专属槽位「MAS独立配置」，
         # 忽略用户旧所选名（Task.OneDragonConfigName 冻结不用），BGI 同名实配全程零接触；
         # 关闭时维持现状：原生来源 BGI 所选实配、MAS 不干预。
         self.one_dragon_config = (
@@ -567,7 +567,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             if self.use_mas_config
             else []
         )
-        # 原生来源模式（非用户独立配置）下 MAS 不干预一条龙：禁用执行层与自定义项执行层，
+        # 原生来源模式（非独立配置）下 MAS 不干预一条龙：禁用执行层与自定义项执行层，
         # 仅按所选实配名裸跑 BGI 一条龙（启动参数已固定 startOneDragon <configName>）。
         # 否则残留的 UseExecutionLayer/Plan/Queue 会触发路径 B 执行层，违背原生来源设计初衷。
         self.use_execution_layer = bool(self.use_mas_config) and bool(
@@ -589,7 +589,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 路径 B 执行层开关与 Plan：UseExecutionLayer 开且 Plan 含启用的战斗 4 项时进入 plan 模式。
         # 只有「Plan 中配过该组」且「队列中该条目启用」的战斗组才由执行层接管，其余战斗组
         # 留在一条龙副本（_write_one_dragon_config 只剔除实际接管的组，避免重复执行）。
-        # 条件比 dev #781 宽一档：原生来源 + 快速配置时**要**算 Plan——那一路由
+        # 条件比 dev #781 宽一档：原生来源 + 覆写常规配置时**要**算 Plan——那一路由
         # _write_native_one_dragon 把 Plan 写成原生设置，不算出来就没内容可写。
         _plan_steps = (
             parse_one_dragon_plan(self.cur_user_config.OneDragon.Plan or "")
@@ -635,7 +635,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                     _step["settings"] = _settings
                 if not _settings.get(_field):
                     _settings[_field] = _default_party
-        # 掉落统计（用户级开关，默认开）：数据源是 BGI 的「奖励识别」，因此开启时强制把
+        # 掉落统计（账号级开关，默认开）：数据源是 BGI 的「奖励识别」，因此开启时强制把
         # 本次会跑的战斗步骤打开识别（执行层走 Plan.settings），并在运行前把 BGI 全局
         # autoDomainConfig.rewardRecognitionEnabled 置 true（覆盖原生一条龙路径）。
         self.drop_statistics_enabled = bool(
@@ -654,7 +654,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                     _step["settings"] = _settings
                 _settings["rewardRecognitionEnabled"] = True
 
-        # 节点详情推送模式（用户级三态）：关闭时 final_task 不注入节点详情，
+        # 节点详情推送模式（账号级三态）：关闭时 final_task 不注入节点详情，
         # 报告聚合（build_user_result_text）自然只有结果行。写回 UserItem 供
         # final_task 收尾读取——prepare 在此之前崩溃时读到 UserItem 默认「汇总」，
         # 不会 AttributeError 掩盖原始错误。
@@ -710,14 +710,14 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
     def _write_one_dragon_config(
         self, exclude_task_names: list[str] | None = None
     ) -> None:
-        """用户独立配置模式下，把组开关应用到一条龙配置并物化到 BGI（槽位 + 前缀配置组）。
+        """独立配置模式下，把组开关应用到一条龙配置并物化到 BGI（槽位 + 前缀配置组）。
 
         物化的配置组文件路径记录在 ``self._materialized_script_groups``，
         由 ``_restore_one_dragon_config`` 在结束后删除。
         ``exclude_task_names`` 用于路径 B：把已改由执行层直连的战斗 4 项从一条龙副本过滤掉。
         """
         if not self.use_mas_config:
-            # 原生来源：快速配置开启才接管写入，且写的是 BGI 那份原生配置（非 MAS 槽位）
+            # 原生来源：覆写常规配置开启才接管写入，且写的是 BGI 那份原生配置（非 MAS 槽位）
             self._write_native_one_dragon(exclude_task_names=exclude_task_names)
             return
         party_name = str(self.cur_user_config.OneDragon.PartyName or "")
@@ -817,22 +817,22 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             self.cur_user_item.user_id,
         ):
             logger.info(
-                f"已物化用户 {self.cur_user_item.name} 的秘境刷取配置到全局 config.json"
+                f"已物化账号 {self.cur_user_item.name} 的秘境刷取配置到全局 config.json"
             )
-        # 掉落统计：把「启用奖励识别」写进全局 autoDomainConfig 段。必须排在用户副本
+        # 掉落统计：把「启用奖励识别」写进全局 autoDomainConfig 段。必须排在账号副本
         # 物化**之后**（副本里的值可能是关，先写会被覆盖回 false）；该叶子已含在运行时
         # 快照集合内，运行结束随队伍/策略一起还原，不留残留。
         if self.drop_statistics_enabled:
             one_dragon.apply_global_reward_recognition(self.script_root_path)
         logger.info(
-            f"已写入用户 {self.cur_user_item.name} 的独立一条龙配置（槽位 "
+            f"已写入账号 {self.cur_user_item.name} 的独立一条龙配置（槽位 "
             f"{one_dragon.launch_slot_name()}），物化配置组 {len(self._materialized_script_groups)} 个"
         )
 
     def _write_native_one_dragon(
         self, exclude_task_names: list[str] | None = None
     ) -> None:
-        """原生来源 + 快速配置开启：把面板值写入 BGI **那份原生一条龙配置**。
+        """原生来源 + 覆写常规配置开启：把面板值写入 BGI **那份原生一条龙配置**。
 
         不建 MAS 槽位、不物化 ``MAS-`` 前缀配置组（原生配置引用的是用户自己的组）。
         写入内容留档给 ``_restore_one_dragon_config`` 比对，用于保护运行期间的外部修改。
@@ -880,8 +880,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             self.cur_user_item.user_id,
         )
         logger.info(
-            f"已把用户 {self.cur_user_item.name} 的面板值写入一条龙配置"
-            f"「{self.one_dragon_config}」（原生来源 + 快速配置）"
+            f"已把账号 {self.cur_user_item.name} 的面板值写入一条龙配置"
+            f"「{self.one_dragon_config}」（原生来源 + 覆写常规配置）"
         )
 
     def _backup_one_dragon_config(self) -> None:
@@ -892,7 +892,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         仍需运行时临时补写、结束还原，故这里先快照。同时清理上一轮强杀可能残留的
         前缀物化组（只命中 MAS-{短id}-自定义配置组*，不碰 BGI 本体）。
 
-        原生来源且快速配置开启时改为接管 **BGI 那份原生一条龙配置**：先整份快照，
+        原生来源且覆写常规配置开启时改为接管 **BGI 那份原生一条龙配置**：先整份快照，
         再连同全局叶子一起补写，运行/异常结束由 ``_restore_one_dragon_config`` 还原。
         """
         if not self.use_mas_config:
@@ -903,7 +903,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             )
             if self._native_one_dragon_snapshot is None:
                 logger.warning(
-                    f"用户 {self.cur_user_item.name} 原生来源快速配置：未找到一条龙配置"
+                    f"账号 {self.cur_user_item.name} 原生来源覆写常规配置：未找到一条龙配置"
                     f"「{self.one_dragon_config}」，本次不写入面板值"
                 )
             self._reseed_global_config = one_dragon.snapshot_global_battle_config(
@@ -926,13 +926,13 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
     def _restore_one_dragon_config(self) -> None:
         """运行/异常结束后还原现场：删除物化配置组文件、还原 config.json 叶子、删槽位。
 
-        仅在「用户独立配置」模式下生效（非独立模式 MAS 不写槽位/物化文件，绝不触碰
+        仅在「独立配置」模式下生效（非独立模式 MAS 不写槽位/物化文件，绝不触碰
         BGI 目录）：删除物化的前缀配置组文件与槽位是幂等执行；只有真正接管过全局
         config.json 队伍/策略叶子（``_reseed_global_config`` 非 None）才还原叶子。
         各步置空后再次调用即安全，避免 final_task 与 on_crash 相继触发时重复操作。
         """
         if not self.use_mas_config:
-            # 原生来源 + 快速配置：只还原本次真正写过的那份原生配置；先在写前比对——运行期间
+            # 原生来源 + 覆写常规配置：只还原本次真正写过的那份原生配置；先在写前比对——运行期间
             # 被外部改过的配置保留外部改动（与各专项「发现外侧新修改时保护该修改」同口径）
             if self.writes_native_config:
                 if self._native_one_dragon_written is not None:
@@ -947,7 +947,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                             )
                     else:
                         logger.warning(
-                            f"用户 {self.cur_user_item.name} 的一条龙配置在运行期间被外部"
+                            f"账号 {self.cur_user_item.name} 的一条龙配置在运行期间被外部"
                             "修改，保留该修改、不做还原"
                         )
                 if self._reseed_global_config is not None:
@@ -995,7 +995,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             )
         except (OSError, ValueError, KeyError, TypeError) as e:
             logger.opt(exception=True).warning(
-                f"用户 {self.cur_user_item.name} 一条龙配置读取失败: {e}"
+                f"账号 {self.cur_user_item.name} 一条龙配置读取失败: {e}"
             )
             return None
         enabled = cfg.get("TaskEnabledList") if isinstance(cfg, dict) else None
@@ -1015,19 +1015,19 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 self.script_root_path, self.launch_config_name
             )
         except (OSError, ValueError, KeyError, TypeError) as e:
-            logger.warning(f"用户 {self.cur_user_item.name} 一条龙任务名读取失败: {e}")
+            logger.warning(f"账号 {self.cur_user_item.name} 一条龙任务名读取失败: {e}")
             return []
         names = one_dragon.enabled_one_dragon_task_names(cfg)
         # 留痕：分步表任务名对不上时，先看这行就知道是配置读不到还是顺序表与本次运行不符
         logger.info(
-            f"用户 {self.cur_user_item.name} 原生一条龙任务名（按配置顺序）: {names}"
+            f"账号 {self.cur_user_item.name} 原生一条龙任务名（按配置顺序）: {names}"
         )
         return names
 
     async def main_task(self):
         await self.prepare()
 
-        # 任务前脚本每用户一次，先于游戏更新、切号、执行层与全部重试
+        # 任务前脚本每账号一次，先于游戏更新、切号、执行层与全部重试
         await self.run_user_scripts_before()
 
         # 切号与一条龙都会拉起游戏，客户端停在旧版本时只会让整轮任务白跑，
@@ -1047,12 +1047,12 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         if not await self._switch_account():
             await self.cur_user_item.set_state(status="异常")
             await self.script_info.set_log("切换账号失败，已中止任务")
-            logger.error(f"用户 {self.cur_user_item.name} 切换账号失败，中止任务")
+            logger.error(f"账号 {self.cur_user_item.name} 切换账号失败，中止任务")
             return
 
-        # 用户独立配置：先备份现场再写入，结束后 (final_task/on_crash) 还原
+        # 独立配置：先备份现场再写入，结束后 (final_task/on_crash) 还原
         self._backup_one_dragon_config()
-        # 物化前归档本用户 per-user 副本 + 页面字段（运行会把字段物化进副本
+        # 物化前归档本账号 per-user 副本 + 页面字段（运行会把字段物化进副本
         # 与 BGI 槽位、覆盖副本内容；指纹去重，失败不阻断运行）。native 池
         # 由 manager.prepare 在任务级一次性归档
         with suppress(Exception):
@@ -1073,7 +1073,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             if not exec_ok:
                 await self.script_info.set_log("执行层失败，继续执行一条龙日常")
                 logger.warning(
-                    f"用户 {self.cur_user_item.name} 执行层失败，记录警告并继续一条龙日常"
+                    f"账号 {self.cur_user_item.name} 执行层失败，记录警告并继续一条龙日常"
                 )
 
         # 原生一条龙（阶段2）无启用任务：不再启动 BetterGI，避免空一条龙进程不退出导致任务挂死。
@@ -1088,7 +1088,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             else:
                 await self.script_info.set_log("一条龙无启用任务，跳过")
             logger.info(
-                f"用户 {self.cur_user_item.name} 原生一条龙无启用任务，跳过 BetterGI 启动"
+                f"账号 {self.cur_user_item.name} 原生一条龙无启用任务，跳过 BetterGI 启动"
             )
             return
 
@@ -1099,7 +1099,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             await self.cur_user_item.set_state(status="异常")
             await self.script_info.set_log(_BGI_UNKILLABLE_HINT)
             logger.error(
-                f"用户 {self.cur_user_item.name} 无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}"
+                f"账号 {self.cur_user_item.name} 无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}"
             )
             await self._push_dispatch_log(f"无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}")
             return
@@ -1109,7 +1109,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             if self.run_book:
                 break
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
+                f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
             )
             await self.cur_user_item.set_state(status="运行")
             self.log_start_time = datetime.now().astimezone()
@@ -1126,7 +1126,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 await self.cur_user_log.set_state(status=_BGI_UNKILLABLE_HINT)
                 await self.script_info.set_log(_BGI_UNKILLABLE_HINT)
                 logger.error(
-                    f"用户 {self.cur_user_item.name} 无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}"
+                    f"账号 {self.cur_user_item.name} 无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}"
                 )
                 await self._push_dispatch_log(
                     f"无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}"
@@ -1169,7 +1169,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 break
 
             logger.warning(
-                f"用户 {self.cur_user_item.name} - BetterGI 代理异常: "
+                f"账号 {self.cur_user_item.name} - BetterGI 代理异常: "
                 f"{self.cur_user_log.status}"
             )
             await self.script_info.set_log(
@@ -1180,7 +1180,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 await Notify.send_notice(
                     LocalNotice(
                         title="BetterGI 自动代理出现异常！",
-                        message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
                         ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                         duration_seconds=3,
                     )
@@ -1327,7 +1327,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             # 没有需要接管的段 = 本次没有执行层任务要跑，不建记录
             return True
 
-        # 执行层是一次真实运行，必须留下 log_record：否则本用户这次运行在 MAS 侧没有
+        # 执行层是一次真实运行，必须留下 log_record：否则本账号这次运行在 MAS 侧没有
         # 任何记录（结果列落到「未开始运行」、不写历史日志、不发统计通知、分步报告与
         # 掉落统计无数据可解析）。原生一条龙随后会另开一条记录，结果形如「执行层 | 一条龙」。
         exec_log = LogRecord(phase="执行层")
@@ -1342,7 +1342,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             f"开始执行层: --startGroups {' '.join(group_names)}"
         )
         logger.info(
-            f"用户 {self.cur_user_item.name} 启动 BetterGI 执行层: "
+            f"账号 {self.cur_user_item.name} 启动 BetterGI 执行层: "
             f"{self.script_exe_path} --startGroups {' '.join(group_names)}"
         )
 
@@ -1352,7 +1352,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             failure_reason = _BGI_UNKILLABLE_HINT
             await exec_log.set_state(status=failure_reason)
             logger.error(
-                f"用户 {self.cur_user_item.name} 执行层未启动：{failure_reason}"
+                f"账号 {self.cur_user_item.name} 执行层未启动：{failure_reason}"
             )
             await self._push_dispatch_log(f"执行层未启动：{failure_reason}")
             return False
@@ -1460,7 +1460,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                         f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
                     )
                     logger.warning(
-                        f"用户 {self.cur_user_item.name} 执行层空闲超时"
+                        f"账号 {self.cur_user_item.name} 执行层空闲超时"
                         f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
                     )
                     break
@@ -1479,12 +1479,12 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             failure_reason = f"执行层有任务未执行（配置缺失）: {reason}"
             await self._push_dispatch_log(f"执行层有任务未执行：{reason}")
             logger.warning(
-                f"用户 {self.cur_user_item.name} 执行层有任务未执行（配置缺失）: {reason}"
+                f"账号 {self.cur_user_item.name} 执行层有任务未执行（配置缺失）: {reason}"
             )
 
         # 自定义项（配置组 / 脚本 / 路径 / 录制）不走 main.js，BGI 也不会因为其中某个项目
         # 失败而判本次执行层失败（配置组照样走到「执行结束」），所以只能按 BGI 项目行自己补计；
-        # 否则这类失败会静默消失（2026-09-19 实机：脚本项失败仍报「成功」）。
+        # 否则这类失败会静默消失（2026-09-19 实机：自定义项失败仍报「成功」）。
         exec_steps = parse_execution_layer_report("".join(exec_log.content)) or []
         custom_failed = sum(
             not step["ok"] for step in exec_steps if step.get("bgi_project")
@@ -1496,7 +1496,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         failed_steps = max(partial_failed, step_failed, parsed_failed) + custom_failed
         if custom_failed:
             logger.warning(
-                f"用户 {self.cur_user_item.name} 执行层有 {custom_failed} 个自定义项失败"
+                f"账号 {self.cur_user_item.name} 执行层有 {custom_failed} 个自定义项失败"
                 f"（配置组/脚本/路径/录制，已跳过并继续后续项目）"
             )
 
@@ -1517,7 +1517,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         if result["success"]:
             if failed_steps:
                 logger.warning(
-                    f"用户 {self.cur_user_item.name} 执行层完成，"
+                    f"账号 {self.cur_user_item.name} 执行层完成，"
                     f"但 {failed_steps} 个步骤失败（已跳过并继续后续步骤）"
                 )
                 await self._push_dispatch_log(
@@ -1530,7 +1530,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         return result["success"]
 
     def _account_switch_method(self) -> str:
-        """读取脚本级账号切换方式；缺失或非法值回落类默认 MAS。
+        """读取托管级账号切换方式；缺失或非法值回落类默认 MAS。
 
         存量脚本（5.5.0 升级、配置无该键）由 ``BetterGIConfig.load`` 迁移固化
         BGI，正常路径不会缺失；此兜底仅覆盖未走迁移的边缘场景。
@@ -1541,7 +1541,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
     async def _switch_account(self) -> bool:
         """单独执行一次切号，返回是否切换成功。
 
-        按脚本级 ``Run.AccountSwitchMethod`` 分流（新建脚本默认 MAS、存量脚本
+        按托管级 ``Run.AccountSwitchMethod`` 分流（新建托管默认 MAS、存量脚本
         由配置迁移固化 BGI，取值口径见 ``BetterGIConfig.Run_AccountSwitchMethod``
         注释）：
 
@@ -1553,9 +1553,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         未配置账号时直接返回 True（无需切换）；失败/超时返回 False，
         由调用方决定是否继续执行一条龙。
         """
-        # 用户级游戏客户端路径（临时覆盖）：不写 BetterGI 全局配置——installPath
-        # 是全局单值，写入会污染其他「跟随全局」的用户（2026-09-23 实机）。
-        # 生效方式：MAS 方式自行按用户路径拉起游戏；BGI 脚本方式由 MAS 预拉起
+        # 账号级游戏客户端路径（临时覆盖）：不写 BetterGI 全局配置——installPath
+        # 是全局单值，写入会污染其他「跟随全局」的账号（2026-09-23 实机）。
+        # 生效方式：MAS 方式自行按账号路径拉起游戏；BGI 脚本方式由 MAS 预拉起
         # 后 BGI attach 运行中的客户端。
         user_game_path = str(self.cur_user_config.Switch.GamePath or "").strip()
 
@@ -1609,14 +1609,14 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             f"开始切换账号: --startGroups {account_switch.GROUP_NAME}"
         )
         logger.info(
-            f"用户 {self.cur_user_item.name} 启动 BetterGI 切换账号: "
+            f"账号 {self.cur_user_item.name} 启动 BetterGI 切换账号: "
             f"{self.script_exe_path} --startGroups {account_switch.GROUP_NAME}"
         )
 
         # 2. 杀旧进程，保证单实例下 --startGroups 由新进程执行；杀不掉必须中止（同执行层）
         if not await self.kill_managed_process():
             logger.error(
-                f"用户 {self.cur_user_item.name} 切换账号未启动：{_BGI_UNKILLABLE_HINT}"
+                f"账号 {self.cur_user_item.name} 切换账号未启动：{_BGI_UNKILLABLE_HINT}"
             )
             await self._push_dispatch_log(f"切换账号未启动：{_BGI_UNKILLABLE_HINT}")
             return False
@@ -1640,7 +1640,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 "本轮若因此失败，下次运行会强制重建脚本仓库"
             )
 
-        # 4. 用户级游戏客户端路径（临时覆盖）：MAS 先按生效路径拉起该用户的
+        # 4. 账号级游戏客户端路径（临时覆盖）：MAS 先按生效路径拉起该账号的
         # 客户端，BGI 启动后 attach 运行中的游戏——不写 BGI 全局配置
         # （installPath 是全局单值，写入会污染其他跟随全局的用户）
         if user_game_path:
@@ -1648,7 +1648,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 await self._ensure_user_game_running(user_game_path)
             except Exception as e:
                 logger.opt(exception=True).warning(
-                    f"用户 {self.cur_user_item.name} 游戏客户端启动失败: {e}"
+                    f"账号 {self.cur_user_item.name} 游戏客户端启动失败: {e}"
                 )
                 await self._push_dispatch_log(f"游戏客户端启动失败: {e}")
                 return False
@@ -1722,7 +1722,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 )
             except asyncio.TimeoutError:
                 switch_result["success"] = False
-                logger.warning(f"用户 {self.cur_user_item.name} 切换账号超时")
+                logger.warning(f"账号 {self.cur_user_item.name} 切换账号超时")
         except Exception as e:
             logger.opt(exception=True).warning(f"切换账号执行异常: {e}")
             switch_result["success"] = False
@@ -1742,11 +1742,11 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
 
         if switch_result["success"]:
             await self._push_dispatch_log("切换账号完成")
-            logger.success(f"用户 {self.cur_user_item.name} 切换账号完成")
+            logger.success(f"账号 {self.cur_user_item.name} 切换账号完成")
         else:
             await self._push_dispatch_log("切换账号失败或超时，已中止任务")
             logger.warning(
-                f"用户 {self.cur_user_item.name} 切换账号失败或超时，已中止任务"
+                f"账号 {self.cur_user_item.name} 切换账号失败或超时，已中止任务"
             )
         return switch_result["success"]
 
@@ -1764,13 +1764,13 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         password = str(self.cur_user_config.Info.Password or "")
         resource = str(self.cur_user_config.Switch.Resource or "官服").strip()
 
-        # MAS 托管游戏启动（同 OK-NTE 语义）：已运行跳过，未运行按用户级路径
+        # MAS 托管游戏启动（同 OK-NTE 语义）：已运行跳过，未运行按账号级路径
         # （留空跟随 BGI 全局）拉起；游戏起不来切号无从执行，直接失败中止
         try:
             await self._ensure_user_game_running(user_game_path)
         except Exception as e:
             logger.opt(exception=True).warning(
-                f"用户 {self.cur_user_item.name} 游戏启动失败: {e}"
+                f"账号 {self.cur_user_item.name} 游戏启动失败: {e}"
             )
             await self._push_dispatch_log(f"游戏启动失败: {e}")
             return False
@@ -1791,25 +1791,25 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             success = False
             await self._push_dispatch_log(f"MAS 账号切换失败: {e}")
             logger.opt(exception=True).warning(
-                f"用户 {self.cur_user_item.name} MAS 账号切换失败: {e}"
+                f"账号 {self.cur_user_item.name} MAS 账号切换失败: {e}"
             )
         if success:
             await self._push_dispatch_log("MAS 账号切换完成")
-            logger.success(f"用户 {self.cur_user_item.name} MAS 账号切换完成")
+            logger.success(f"账号 {self.cur_user_item.name} MAS 账号切换完成")
         else:
             await self._push_dispatch_log("MAS 账号切换失败，已中止任务")
             logger.warning(
-                f"用户 {self.cur_user_item.name} MAS 账号切换失败，已中止任务"
+                f"账号 {self.cur_user_item.name} MAS 账号切换失败，已中止任务"
             )
         return success
 
     async def _ensure_user_game_running(self, user_game_path: str = "") -> Path:
-        """确保该用户的游戏客户端在运行（用户级路径临时生效，不写 BGI 配置）。
+        """确保该账号的游戏客户端在运行（账号级路径临时生效，不写 BGI 配置）。
 
-        生效路径 = 用户级 ``Switch.GamePath``（优先）或 BGI 全局配置。已运行的
+        生效路径 = 账号级 ``Switch.GamePath``（优先）或 BGI 全局配置。已运行的
         本地客户端与生效路径一致时跳过启动；不一致时（CloseOnFinish 关闭时的
-        上一用户残留 / BGI 全局被外部改动）终止残留后拉起正确客户端——切号与
-        一条龙必须跑在该用户服务器对应的客户端上。
+        上一账号残留 / BGI 全局被外部改动）终止残留后拉起正确客户端——切号与
+        一条龙必须跑在该账号服务器对应的客户端上。
 
         Returns:
             Path: 生效的游戏主程序路径。
@@ -1824,12 +1824,12 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         if running is not None:
             if game_info.same_path(running, game_exe):
                 logger.info(
-                    f"检测到原神已在运行且与该用户客户端一致，跳过启动: {running}"
+                    f"检测到原神已在运行且与该账号客户端一致，跳过启动: {running}"
                 )
                 await self._push_dispatch_log("检测到原神已在运行，跳过游戏启动")
                 return game_exe
             await self._push_dispatch_log(
-                f"检测到运行中的客户端 ({running}) 与该用户的游戏客户端不一致，正在关闭..."
+                f"检测到运行中的客户端 ({running}) 与该账号的游戏客户端不一致，正在关闭..."
             )
             await self._kill_game_processes(_BGI_LOCAL_GAME_PROCESS_NAMES)
         await self._push_dispatch_log(f"正在由 MAS 启动原神: {game_exe.name}")
@@ -1857,14 +1857,14 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         for hint in (_combat_script_miss_hint(log), _back_to_main_failed_hint(log)):
             if hint and hint not in self._bgi_hints_pushed:
                 self._bgi_hints_pushed.add(hint)
-                logger.warning(f"用户 {self.cur_user_item.name} {hint}")
+                logger.warning(f"账号 {self.cur_user_item.name} {hint}")
                 await self._push_dispatch_log(f"BetterGI 运行提示：{hint}")
 
         # 切队配置错误（战斗队伍名在游戏内置找不到）优先于笼统的 [ERR] 判定，
         # 并给一次指明队伍名的明确报错
         if party_err := _party_config_error(log):
             # 队伍名命中「队伍配置」表时额外标注来源：场景选队是运行时随机抽取的，
-            # 不指明来源用户很难定位到底是哪一行配置引起的
+            # 不指明来源账号很难定位到底是哪一行配置引起的
             from_teams = any(t["name"] == party_err for t in self.one_dragon_teams)
             source = "「队伍配置」表" if from_teams else "「战斗队伍」配置"
             log_status = (
@@ -1876,7 +1876,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 self._party_err_pushed = True
                 await self._push_dispatch_log(
                     f"BetterGI 运行异常：战斗队伍「{party_err}」在游戏内未找到，"
-                    f"请核对 MAS 里该用户的{source}"
+                    f"请核对 MAS 里该账号的{source}"
                 )
         else:
             for needle, msg in _BGI_BUILTIN_FATAL:
@@ -2060,13 +2060,13 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         if native_failed:
             self.partial_failed_steps += native_failed
             logger.warning(
-                f"用户 {self.cur_user_item.name} 一条龙有 {native_failed} 个任务未干成"
+                f"账号 {self.cur_user_item.name} 一条龙有 {native_failed} 个任务未干成"
                 f"（已跳过并继续后续任务）"
             )
         if one_dragon_report:
             # 必须留痕：分步表少了一相时，先看这行就知道是「那相没跑/没解析出步骤」还是「拼接漏了」
             logger.info(
-                f"用户 {self.cur_user_item.name} 分步表：执行层 {len(exec_steps or [])} 步 + "
+                f"账号 {self.cur_user_item.name} 分步表：执行层 {len(exec_steps or [])} 步 + "
                 f"一条龙 {len(native_steps or [])} 步 = {len(one_dragon_report)} 行"
             )
 
@@ -2140,7 +2140,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                     success_symbol = "⚠"
                 # 统计通知的字段清单：用于确认分步表/掉落表这类可选区块到底有没有下发
                 logger.info(
-                    f"用户 {self.cur_user_item.name} 统计通知字段: "
+                    f"账号 {self.cur_user_item.name} 统计通知字段: "
                     f"{sorted(statistics.keys())}"
                 )
                 await Notify.push_statistics_report(
@@ -2154,9 +2154,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 )
             except Exception as e:
                 # 失败不再静默：既记 ERROR 日志，也推到调度台实时日志，让用户能看到推送为何失败
-                await self._push_dispatch_log(f"推送用户统计通知失败: {e}")
+                await self._push_dispatch_log(f"推送账号统计通知失败: {e}")
                 logger.opt(exception=True).error(
-                    f"推送 BetterGI 用户统计通知时出现异常: {e}"
+                    f"推送 BetterGI 账号统计通知时出现异常: {e}"
                 )
 
     async def _persist_user_run_result(self) -> None:
@@ -2184,12 +2184,12 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             )
             if self.partial_failed_steps or self.warning_steps:
                 logger.warning(
-                    f"用户 {self.cur_user_uid} 的 BetterGI 自动代理流程完成（有警告："
+                    f"账号 {self.cur_user_uid} 的 BetterGI 自动代理流程完成（有警告："
                     f"{self.partial_failed_steps} 个步骤失败，{self.warning_steps} 项需关注）"
                 )
             else:
                 logger.success(
-                    f"用户 {self.cur_user_uid} 的 BetterGI 自动代理任务已完成"
+                    f"账号 {self.cur_user_uid} 的 BetterGI 自动代理任务已完成"
                 )
         else:
             self.cur_user_config.Data.LastProxyStatus = "失败"
@@ -2236,7 +2236,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 await Notify.send_notice(
                     LocalNotice(
                         title="BetterGI 运行异常",
-                        message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
+                        message=f"账号 {self.cur_user_item.name}：{self.cur_user_log.status}",
                         ticker="异常",
                         duration_seconds=3,
                     )
@@ -2288,17 +2288,17 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         await self._push_dispatch_log("游戏进程已关闭")
 
     async def wait_game_exit_before_next_user(self) -> None:
-        """多用户切换：等上一用户的原神进程完全退出后再进下个用户。
+        """多账号切换：等上一账号的原神进程完全退出后再进下个账号。
 
-        调度器仅在上一用户已收尾、下一用户通过检查且将实际执行时调用。
-        关闭请求后进程仍可能短暂可见，须等其退出后再做下一用户的启动检测；
+        调度器仅在上一账号已收尾、下一账号通过检查且将实际执行时调用。
+        关闭请求后进程仍可能短暂可见，须等其退出后再做下一账号的启动检测；
         检查范围与收尾关闭的客户端一致，含云原神。不关游戏的配置不等待。
         """
         if not self.script_config.Game.CloseOnFinish:
             return
         deadline = time.monotonic() + _GAME_EXIT_WAIT_SECONDS
         while time.monotonic() < deadline:
-            # 用户间等待可被取消；调度器的停止标志同步置位，不再继续切换用户。
+            # 账号间等待可被取消；调度器的停止标志同步置位，不再继续切换账号。
             if self.stopped_manually:
                 return
             # 按进程存活判断（不依赖窗口）：窗口销毁后进程可能仍存活片刻。
@@ -2309,11 +2309,11 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                     alive = True
                     break
             if not alive:
-                logger.info("原神游戏进程已完全退出，继续下一用户")
+                logger.info("原神游戏进程已完全退出，继续下一账号")
                 return
             await asyncio.sleep(_GAME_EXIT_POLL_INTERVAL)
         logger.warning(
-            f"等待原神游戏进程退出超时（{_GAME_EXIT_WAIT_SECONDS:g}s），继续下一用户"
+            f"等待原神游戏进程退出超时（{_GAME_EXIT_WAIT_SECONDS:g}s），继续下一账号"
         )
 
     async def _bgi_alive(self) -> bool:

@@ -26,6 +26,7 @@ from app.core.notify.task_content import (
     NOTIFY_SCREENSHOT_LIMIT as NOTIFY_SCREENSHOT_LIMIT,
 )
 from app.core.notify.task_content import screenshot_entries as screenshot_entries
+from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.core.ws import protocol
 from app.models.config import MaaConfig, MaaUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
@@ -145,6 +146,8 @@ class MaaManager(ScriptManagerBase):
         self._pending_update: tuple[str, str] | None = None
         self._active_proxy_task: AutoProxyTask | None = None
         self._updater_running: bool = False
+        # 每批任务最多尝试一次更新；新 MaaManager 实例会重新检查。
+        self._maa_update_checked = False
 
     async def _finalize_task(self) -> None:
         try:
@@ -248,7 +251,7 @@ class MaaManager(ScriptManagerBase):
         """更新游戏客户端，不执行代理或账号前后置脚本。"""
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if not isinstance(script_config, MaaConfig):
-            raise TypeError("脚本配置类型错误")
+            raise TypeError("托管配置类型错误")
         selected = self.selected_user_configs(script_config.UserData.items())
         if not selected or not script_config.Run.IfCheckGameUpdate:
             return
@@ -291,19 +294,19 @@ class MaaManager(ScriptManagerBase):
         if not isinstance(
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], MaaConfig
         ):
-            return "脚本配置类型错误, 不是MAA脚本类型"
+            return "托管配置类型错误, 不是MAA托管类型"
         if Config.ScriptConfig[
             uuid.UUID(self.script_info.script_id)
         ].Emulator.Id == "-" or Config.ScriptConfig[
             uuid.UUID(self.script_info.script_id)
         ].Emulator.Index in ["", "-"]:
-            return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
+            return "未完成模拟器配置, 请检查托管配置中的模拟器设置！"
         root_path = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Info.Path
         if root_path is None or not (root_path / "MAA.exe").exists():
             return "MAA.exe文件不存在, 请检查MAA路径设置！"
         if not (root_path / "config/gui.new.json").exists():
             return "MAA配置文件不存在, 请检查MAA路径设置或先启动MAA完成配置文件生成！"
-        # 脚本级存档仅在确实有用户选择共享来源时需要；独立来源使用各自的
+        # 托管级存档仅在确实有用户选择共享来源时需要；独立来源使用各自的
         # 用户目录，原生来源则直接使用 MAA 安装目录的原生配置。
         if (
             self.execution_mode != "ScriptConfig"
@@ -316,11 +319,11 @@ class MaaManager(ScriptManagerBase):
         return "Pass"
 
     def _has_script_config_user(self) -> bool:
-        """目标用户里是否存在选择脚本级配置来源的用户。
+        """参与运行的账号中是否有使用共享配置的账号。
 
         check() 先于 prepare() 执行，此时 self.user_config 尚未加载、user_list
-        还是占位项；直接读脚本配置持久化的 UserData，按参与运行的用户（启用、
-        剩余天数非 0、命中目标用户）判定。
+        还是占位项；直接读脚本配置持久化的 UserData，按参与运行的账号（启用、
+        剩余天数非 0、命中目标账号）判定。
         """
 
         return any(
@@ -334,7 +337,7 @@ class MaaManager(ScriptManagerBase):
     async def prepare(self):
         """运行前准备"""
 
-        # 锁定脚本配置并加载用户配置
+        # 锁定脚本配置并加载账号配置
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         # 配置会话不触发下载，启动前取得安装访问锁并持有至子任务结束；
         # 更新器跳过被占用的安装，两侧共用互斥，避免启动 GUI 与写入交错。
@@ -402,13 +405,13 @@ class MaaManager(ScriptManagerBase):
             self.had_original_script_config = True
 
         # 任务级一次性归档 MAA 原生配置（项目级池，指纹去重，失败不阻断
-        # 任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」的安装
-        # 现场——下发处按用户归档会把上一轮下发的 MAS 配置误当原生内容挤进
+        # 任务）：原生配置物理上跨账号共享，只代表「本轮任务动手前」的安装
+        # 现场——下发处按账号归档会把上一轮下发的 MAS 配置误当原生内容挤进
         # 保留池，必须在任何下发前归档这一次
         with suppress(Exception):
             archive_native_backup(self.maa_set_path)
 
-        # 构建用户列表
+        # 构建账号列表
         if self.execution_mode == "ScriptConfig":
             await self.script_info.set_users(
                 [
@@ -424,10 +427,10 @@ class MaaManager(ScriptManagerBase):
                 self.build_proxy_user_list(self.user_config.items())
             )
         logger.info(
-            f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
+            f"账号列表加载完成, 已筛选账号数: {len(self.script_info.user_list)}"
         )
 
-        # 活动关卡信息整个任务只刷新一次, 各用户注入配置时直接用缓存
+        # 活动关卡信息整个任务只刷新一次, 各账号注入配置时直接用缓存
         if self.execution_mode == "AutoProxy":
             await maa_stage_service.get_stage(refresh=True)
 
@@ -476,7 +479,7 @@ class MaaManager(ScriptManagerBase):
 
         原生来源会话 MAS 零写入（ScriptConfig ``set_maa`` 原生分支直接 return），
         安装 config/ 由本体保存；若 final_task 无条件用任务前快照还原，会把
-        用户刚在原生 GUI 里改的配置抹回会话前状态。脚本级（Default）与独立
+        用户刚在原生 GUI 里改的配置抹回会话前状态。托管级（Default）与独立
         来源会话不豁免——它们的 GUI 改动已由 ``set_maa`` 收尾回写 MAS 目
         录，安装目录现场仍按任务前快照还原。viewOnly 查看会话不保留任何现
         场改动，结束后也还原任务前快照。
@@ -513,7 +516,7 @@ class MaaManager(ScriptManagerBase):
             return
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # 各用户失败画面（标签+图片）按序累积，供汇总「代理结果」带图
+        # 各账号失败画面（标签+图片）按序累积，供汇总「代理结果」带图
         self._rollup_image_pairs: list[tuple[str, NotificationImage]] = []
         await self.prepare()
         # prepare() 内每次 await 都可能被中止。只有它整体返回后，收尾依赖的
@@ -521,7 +524,7 @@ class MaaManager(ScriptManagerBase):
         self.prepared = True
 
         if not isinstance(self.script_config, MaaConfig):
-            raise RuntimeError("脚本配置类型错误, 不是MAA脚本类型")
+            raise RuntimeError("托管配置类型错误, 不是MAA托管类型")
 
         for _runtime_user_index in range(len(self.script_info.user_list)):
             await self.script_info.set_current_index(_runtime_user_index)
@@ -553,7 +556,7 @@ class MaaManager(ScriptManagerBase):
                     and (current_config.Data.ProxyTimes >= limit)
                 ):
                     await self.skip_user(
-                        current_user, "今日代理次数已达上限, 跳过该用户"
+                        current_user, "今日代理次数已达上限, 跳过该账号"
                     )
                     continue
             kwargs: dict = dict(
@@ -571,9 +574,7 @@ class MaaManager(ScriptManagerBase):
             task = METHOD_BOOK[self.execution_mode](**kwargs)
             if isinstance(task, AutoProxyTask):
                 self._active_proxy_task = task
-                # 启动前尽力更新；失败沿用当前安装时，运行期间仍暂停原生更新。
-                self._update_config_dir = task.update_config_dir
-                await self._prepare_software_update(task)
+                await self._prepare_software_update_once(task)
             await self.run_user_task(
                 self.script_info.user_list[self.script_info.current_index], task
             )
@@ -582,6 +583,46 @@ class MaaManager(ScriptManagerBase):
             # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有
             if getattr(task, "report_image_pairs", None):
                 self._rollup_image_pairs.extend(task.report_image_pairs)
+
+    async def _prepare_software_update_once(self, task: AutoProxyTask) -> None:
+        """首位实际运行账号做更新准备；同批后续账号仅执行本地安全检查。"""
+        self._update_config_dir = task.update_config_dir
+        if not self._maa_update_checked:
+            await run_script_update(
+                ScriptUpdateRequest(str(self.script_info.script_id), "MAA"),
+                self._prepare_software_update,
+                task,
+            )
+            # 普通更新失败且安全回退后也只尝试一次；异常不标记为完成。
+            self._maa_update_checked = True
+        else:
+            await self._check_software_update_safety()
+
+    async def _check_software_update_safety(self) -> None:
+        """后续账号只检查本地安装是否安全，避免重复更新请求。"""
+        root = self.maa_set_path.parent
+        if self._updater_running or await System.is_process_running(
+            root / "MAA.Updater.exe"
+        ):
+            self._updater_running = True
+            raise MaaUpdaterRunningError("MAA 官方更新器仍在运行，不能启动后续账号任务")
+        if has_incomplete_resource_update(root):
+            raise MaaUpdateUnsafeError("MAA 资源更新未完成，不能安全启动后续账号任务")
+        if has_delegated_update_failure(root):
+            raise MaaUpdateUnsafeError(
+                "MAA 官方更新器报告安装失败，不能安全启动后续账号任务"
+            )
+        if self.script_config.Update.TakeoverEnabled and (
+            not (root / "MAA.exe").is_file()
+            or (
+                (release := read_installed_release(root)) is None
+                or parse_version(release[0]) is None
+            )
+            or read_resource_clock(root) is None
+        ):
+            raise MaaUpdateUnsafeError(
+                "MAA 当前安装或资源状态无法确认，不能安全启动后续账号任务"
+            )
 
     async def _prepare_software_update(self, task: AutoProxyTask) -> bool:
         """启动前尽力更新；普通准备失败时沿用当前安装继续任务。"""
@@ -797,7 +838,7 @@ class MaaManager(ScriptManagerBase):
                 result = self.build_proxy_report()
 
                 try:
-                    # 汇总带图（MaaFW 同款）：各失败用户的现场画面，多了取最后几张
+                    # 汇总带图（MaaFW 同款）：各失败账号的现场画面，多了取最后几张
                     rollup_pairs = self._rollup_image_pairs[-NOTIFY_SCREENSHOT_LIMIT:]
                     if rollup_pairs:
                         result["screenshots"] = screenshot_entries(rollup_pairs)

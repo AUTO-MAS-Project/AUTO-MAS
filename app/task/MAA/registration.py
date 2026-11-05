@@ -37,9 +37,11 @@ def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
 def build_config_handler() -> ScriptConfigHandler:
     from app.models.config import MaaUserConfig
     from app.task.MAA.user_update import prepare_user_update as prepare_maa_user_update
+    from app.task.MAA.user_update import resolve_user_config_dir
 
     return ScriptConfigHandler(
         user_config_class=MaaUserConfig,
+        user_config_directory=resolve_user_config_dir,
         prepare_user_update=prepare_maa_user_update,
         emulator_binding=ScriptEmulatorBinding(
             group="Emulator", id_field="Id", index_field="Index"

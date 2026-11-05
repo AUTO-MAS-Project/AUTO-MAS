@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 import type { RendererAnalyticsEvent } from '../src/types/analytics'
+import type { FrontendCloseRequest } from '../src/types/appLifecycle'
 import type { AppearanceCategory } from '../src/types/mascotPack'
 import type {
   DesktopMascotColors,
@@ -16,6 +17,10 @@ import type {
 contextBridge.exposeInMainWorld(
   'appEnvironment',
   process.argv.includes('--auto-mas-environment=production') ? 'production' : 'development'
+)
+contextBridge.exposeInMainWorld(
+  'backendOwnership',
+  process.argv.includes('--auto-mas-backend-ownership=external') ? 'external' : 'owned'
 )
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -50,6 +55,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
   windowClose: () => ipcRenderer.invoke('window-close'),
   windowHideToTray: () => ipcRenderer.invoke('window-hide-to-tray'),
+  notifyRendererReady: () => ipcRenderer.send('renderer-ready'),
   notifyNativeCloseHandlerReady: () => ipcRenderer.send('native-window-close-handler-ready'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
   onWindowMaximizedChange: (callback: (maximized: boolean) => void) => {
@@ -116,7 +122,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   powerWarningStart: () => ipcRenderer.invoke('power-warning:start'),
   powerWarningEnd: () => ipcRenderer.invoke('power-warning:end'),
   appQuit: () => ipcRenderer.invoke('app-quit'),
-  appObserveBackendClose: () => ipcRenderer.send('app-backend-close-observed'),
+  appObserveBackendClose: (request?: FrontendCloseRequest) =>
+    ipcRenderer.send('app-backend-close-observed', request),
   appWaitForQuitConfirmation: () => ipcRenderer.invoke('app-wait-for-quit-confirmation'),
   appPrepareQuit: () => ipcRenderer.invoke('app-prepare-quit'),
   appConfirmQuit: (token: number) => ipcRenderer.invoke('app-confirm-quit', token),
@@ -157,6 +164,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 初始化相关API
   checkCriticalFiles: () => ipcRenderer.invoke('check-critical-files'),
 
+  waitDesktopStartup: () => ipcRenderer.invoke('desktop-startup-wait'),
+  desktopStartupStatus: () => ipcRenderer.invoke('desktop-startup-status'),
+  cancelDesktopStartup: () => ipcRenderer.invoke('desktop-startup-cancel'),
+
   // 后端管理
   startBackend: () => ipcRenderer.invoke('backend-start'),
   stopBackend: () => ipcRenderer.invoke('backend-stop'),
@@ -172,7 +183,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setInitializedVersion: (version: string) =>
     ipcRenderer.invoke('set-initialized-version', version),
 
-  // Runtime 灰度开关：持久化设置 + 当前生效值与来源
+  // Runtime 启动模式：持久化设置 + 当前生效值与来源
   getRuntimeLaunchMode: () => ipcRenderer.invoke('get-runtime-launch-mode'),
   setRuntimeLaunchMode: (mode: string) => ipcRenderer.invoke('set-runtime-launch-mode', mode),
 
@@ -344,12 +355,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // API 端点获取
   getApiEndpoint: (key: string) => ipcRenderer.invoke('get-api-endpoint', key),
 
-  // 完整初始化流程（Runtime 首次初始化与旧链路共用）
+  // Runtime 完整初始化流程
   initialize: (targetBranch?: string, startBackend?: boolean) =>
     ipcRenderer.invoke('initialize', targetBranch, startBackend),
 
   // 后端服务管理（startBackend/stopBackend 与 backendStart 两套命名都有渲染进程在用，先都保留）
-  backendStart: () => ipcRenderer.invoke('backend-start'),
+  backendStart: (retry?: boolean) => ipcRenderer.invoke('backend-start', retry),
   backendRestart: (reason?: 'manual' | 'recovery') => ipcRenderer.invoke('backend-restart', reason),
   backendStatus: () => ipcRenderer.invoke('backend-status'),
   checkRuntimeBackendUpdate: () => ipcRenderer.invoke('check-runtime-backend-update'),

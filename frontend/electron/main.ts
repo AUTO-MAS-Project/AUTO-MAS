@@ -1,7 +1,15 @@
 import { detachPromptVirtualDisplay } from './services/virtualDisplayPromptActions'
 import { observeDiagnosticExport, observeDataBackup } from './services/diagnosticAnalytics'
-import { beginMainFeature, mainCountBucket } from './services/featureAnalytics'
+import { beginMainFeature } from './services/featureAnalytics'
 import { analyticsDuration } from './services/analyticsPolicy'
+import {
+  isScheduledWakeupLaunch,
+  keepAwakeForScheduledWakeup,
+  observeScheduledWakeupQuit,
+  cancelScheduledWakeupQuit,
+  finishScheduledWakeupQuit,
+  prepareSystemResumeRecovery,
+} from './services/scheduledWakeup'
 import { readBackendDocument } from './services/backendConfig'
 import {
   app,
@@ -26,8 +34,9 @@ import * as path from 'path'
 import { getAppRoot } from './services/environmentService'
 import {
   registerInitializationHandlers,
+  startDesktopStartup,
+  stopDesktopStartup,
   checkCriticalFilesViaRuntime,
-  getBackendService,
   getLocalApiEndpoint,
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
@@ -62,7 +71,7 @@ import {
   canRequestRendererClose,
   markForceQuitFailed,
 } from './quitCoordinationState'
-import { decideRendererRecovery } from './rendererCrashRecovery'
+import { attachRendererRecovery } from './services/rendererRecoveryService'
 import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
@@ -83,7 +92,6 @@ import { createOkNteIssueReport } from './services/okNteIssueReportService'
 import { createZzzOdIssueReport } from './services/zzzOdIssueReportService'
 import { createWhimboxIssueReport } from './services/whimboxIssueReportService'
 import {
-  captureMainRendererCrash,
   configureMainSentry,
   recordMainCount,
   recordMainStartup,
@@ -95,6 +103,7 @@ import {
   isDevelopmentEnvironment,
   getDevelopmentServerUrl,
   getRendererEnvironmentArguments,
+  getBackendOwnership,
 } from './services/instanceConfig'
 import {
   PersistedRuntimeLaunchMode,
@@ -102,14 +111,51 @@ import {
   resolveRuntimeLaunchModeDetail,
 } from './services/runtime'
 import AdmZip = require('adm-zip')
+import { migrateUserData, selectUserDataLock } from './services/userDataMigration'
+import { recordDesktopStartup } from './services/startupTiming'
 
-// 开发环境切换到独立的 userData 目录（必须在 app ready 之前）
+// 开发版目录必须在 app ready 之前确定。
 applyInstanceIdentity()
 
 // 初始化日志系统（必须在创建 logger 之前）
 initializeLogger()
-
+recordDesktopStartup('主进程模块加载')
 const logger = getLogger('主进程')
+
+const targetUserDataPath = app.getPath('userData')
+const legacyUserDataPath = path.join(
+  app.getPath('appData'),
+  isDevelopmentEnvironment() ? 'frontend-dev' : 'frontend'
+)
+let lockPath: string
+try {
+  lockPath = selectUserDataLock(legacyUserDataPath, targetUserDataPath)
+} catch (error) {
+  // 标记不可读时无法确定另一实例持有哪把锁，停止启动以免并发写入。
+  logger.error('读取用户数据迁移标记失败', error)
+  app.quit()
+  process.exit(1)
+}
+if (lockPath !== targetUserDataPath) app.setPath('userData', lockPath)
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+  process.exit(0)
+}
+
+const userDataMigration = migrateUserData(legacyUserDataPath, targetUserDataPath, lockPath)
+if (userDataMigration.path !== app.getPath('userData')) {
+  app.setPath('userData', userDataMigration.path)
+}
+app.setPath('sessionData', userDataMigration.path)
+
+if (userDataMigration.error) {
+  logger.warn(`用户数据迁移失败: ${userDataMigration.error}`)
+  if (lockPath === targetUserDataPath) {
+    app.quit()
+    process.exit(1)
+  }
+}
 const STOP_ALL_TASKS_SHORTCUT = resolveStopAllTasksShortcut()
 let isStoppingAllTasks = false
 
@@ -212,20 +258,8 @@ let forceKillPromise: Promise<void> | null = null
 async function forceKillRelatedProcesses(): Promise<void> {
   if (forceKillPromise) return forceKillPromise
   forceKillPromise = (async () => {
-    const backendService = getBackendService()
-
-    // Runtime 监督链路：只向监督进程发 shutdown（有上限，超时才 kill Runtime 进程本身），
-    // 后端进程树由 Runtime 的 Job Object 收走，不再走 processManager 的全局清理。
-    if (backendService.isRuntimeSupervised()) {
-      const result = await backendService.stopBackend()
-      if (!result.success) throw new Error(result.error || '未知错误')
-      logger.info('Runtime 监督的后端已关闭')
-      return
-    }
-
-    const result = await backendService.forceStopBackend()
-    if (!result.success) throw new Error(result.error || '未知错误')
-    logger.info('所有相关进程已清理')
+    await stopDesktopStartup(true)
+    logger.info('本次桌面启动的后端资源已释放')
   })().finally(() => {
     forceKillPromise = null
   })
@@ -268,9 +302,11 @@ let activeQuitPreparation: number | null = null
 let quitPreparationExpired = false
 const RENDERER_QUIT_FALLBACK_MS = 25000
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
-let rendererCrashes: number[] = []
+let mainRendererRecovery: ReturnType<typeof attachRendererRecovery> | null = null
+const rendererCrashes: number[] = []
 let isInitialStartup = true // 标记是否为初次启动
-const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
+const isScheduledWakeup = isScheduledWakeupLaunch(process.argv)
+const isAutoStart = process.argv.includes('--auto-start') || isScheduledWakeup
 
 // 配置接口
 interface AppConfig extends DesktopMascotHostPreferences {
@@ -295,7 +331,7 @@ interface AppConfig extends DesktopMascotHostPreferences {
   Function: {
     IfEnableTelemetry: boolean
   }
-  // Runtime 灰度开关的持久化设置，见 services/runtime/launchConfig.ts 的三级优先级说明。
+  // Runtime 启动模式的持久化设置，见 services/runtime/launchConfig.ts 的三级优先级说明。
   Runtime: {
     LaunchMode: PersistedRuntimeLaunchMode
   }
@@ -593,6 +629,7 @@ function cancelQuitRequest(token?: number): void {
   quitPreparationExpired = false
   quitRequestInFlight = false
   relaunchAfterQuit = false
+  cancelScheduledWakeupQuit()
   showMainWindow()
 }
 
@@ -611,18 +648,7 @@ function finishCoordinatedQuit(): void {
     saveWindowStateTimeout = null
   }
   destroyTray()
-  if (relaunchAfterQuit) app.relaunch()
   app.quit()
-}
-
-async function shouldPreserveBackendOnExit(): Promise<boolean> {
-  // 受 Runtime 监督的后端归 Runtime 生命周期管，即便是 development 模式也必须随之关闭，
-  // 否则 Electron 退出后会遗留一个没人负责的监督进程。
-  if (getBackendService().isRuntimeSupervised()) return false
-
-  const preserveBackend = await getBackendService().shouldPreserveBackend()
-  if (preserveBackend !== null) return preserveBackend
-  return isDevelopmentEnvironment()
 }
 
 async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
@@ -632,16 +658,9 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   clearQuitFallback()
   logger.error(`renderer 未完成协调退出，执行最终强制清理: ${reason}`)
 
-  // Electron 开发进程可能复用由开发者单独启动的后端；renderer 失联时也不能误杀。
-  if (await shouldPreserveBackendOnExit()) {
-    logger.info('开发模式最终兜底：保留后端，仅关闭 Electron 前端')
-    finishCoordinatedQuit()
-    return
-  }
-
   try {
     await forceKillRelatedProcesses()
-    // forceStopBackend 只有在 scoped taskkill 已复查全部 PID 后才返回 success。
+    // Runtime 终态确认后才允许 Electron 退出。
     finishCoordinatedQuit()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -657,6 +676,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
     forceQuitInProgress = retryableState.forceQuitInProgress
     quitRequestInFlight = retryableState.quitRequestInFlight
     relaunchAfterQuit = retryableState.relaunchAfterQuit
+    cancelScheduledWakeupQuit()
     if (mainWindow && !mainWindow.isDestroyed()) {
       showMainWindow()
     } else if (app.isReady()) {
@@ -678,6 +698,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
 function requestRendererClose(reason: string, confirmRunningTasks = false): void {
   if (!canRequestRendererClose({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight }))
     return
+  observeScheduledWakeupQuit({ automatic: false })
   closeTelemetry ??= beginMainFeature('app_close_finished')
   const win = mainWindow
   if (!win || win.isDestroyed()) {
@@ -839,6 +860,7 @@ function assertDevelopmentRuntime(): void {
 }
 
 function createWindow() {
+  const windowStartedAt = performance.now()
   logger.info('开始创建主窗口')
 
   const config = loadConfig()
@@ -915,10 +937,14 @@ function createWindow() {
   })
 
   // 把局部的 win 赋值给模块级（供其他模块/函数用）
+  recordDesktopStartup('主窗口构造', windowStartedAt)
   mainWindow = win
   nativeCloseHandlerReady = false
   desktopMascot.attachMainWindow(win)
   lastWindowActivity = null
+
+  // 页面拒绝关闭时撤销唤醒重启义务，不忽略 beforeunload 的阻止。
+  win.webContents.on('will-prevent-unload', cancelScheduledWakeupQuit)
 
   win.webContents.on('did-start-loading', () => {
     nativeCloseHandlerReady = false
@@ -926,63 +952,29 @@ function createWindow() {
 
   // 崩溃时窗口若在托盘里，恢复后保持隐藏，不要自己弹出来打断用户。
   let keepHiddenAfterRecovery = false
+  let hasShownMainWindow = false
+  win.once('show', () => {
+    hasShownMainWindow = true
+  })
 
   // 主框架重载或导航后旧确认窗已销毁，撤销等待；同文档路由切换不触发此事件。
   win.webContents.on('did-navigate', () => {
     if (quitConfirmationPending) cancelQuitRequest()
   })
 
-  // 渲染进程崩溃恢复。Electron 不会自动重建崩掉的渲染进程：BrowserWindow 还在，
-  // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
-  // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
-  win.webContents.on('render-process-gone', (_event, details) => {
-    nativeCloseHandlerReady = false
-    // 等待确认或保存期间 renderer 消失就取消退出，按通常崩溃流程恢复。
-    if (quitConfirmationPending) cancelQuitRequest()
-    else if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
-    const decision = decideRendererRecovery({
-      reason: details.reason,
-      exitCode: details.exitCode,
-      isQuitting: coordinatedQuit || forceQuitInProgress || quitRequestInFlight,
-      isWindowDestroyed: win.isDestroyed(),
-      now: Date.now(),
-      previousCrashes: rendererCrashes,
-    })
-    rendererCrashes = decision.crashes
-
-    if (decision.action === 'ignore') {
-      logger.info(decision.detail)
-      return
-    }
-
-    logger.error(decision.detail)
-    captureMainRendererCrash({
-      reason: details.reason,
-      exitCode: details.exitCode,
-      crashCount: decision.crashCount,
-      action: decision.action,
-      detail: decision.detail,
-    })
-
-    beginMainFeature('renderer_recovery_decided').finish({
-      reason_kind:
-        details.reason === 'crashed'
-          ? 'crashed'
-          : details.reason === 'oom'
-            ? 'oom'
-            : details.reason === 'killed'
-              ? 'killed'
-              : details.reason === 'launch-failed'
-                ? 'launch_failed'
-                : 'other',
-      recovery_action: decision.action === 'give-up' ? 'give_up' : 'reload',
-      count_bucket: mainCountBucket(decision.crashCount),
-      outcome: 'accepted',
-    })
-    if (decision.action === 'give-up') return
-
-    keepHiddenAfterRecovery = !win.isVisible()
-    win.webContents.reload()
+  mainRendererRecovery = attachRendererRecovery(win, {
+    crashHistory: rendererCrashes,
+    isQuitting: () => coordinatedQuit || forceQuitInProgress || quitRequestInFlight,
+    onRendererGone: () => {
+      nativeCloseHandlerReady = false
+      // 等待确认或保存期间 renderer 消失就取消退出，按通常崩溃流程恢复。
+      if (quitConfirmationPending) cancelQuitRequest()
+      else if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
+    },
+    onReload: () => {
+      // 崩溃前窗口就在托盘里，重载后继续保持隐藏。
+      keepHiddenAfterRecovery = hasShownMainWindow && !win.isVisible()
+    },
   })
 
   let responseIncident: ReturnType<
@@ -1029,7 +1021,7 @@ function createWindow() {
     if (keepHiddenAfterRecovery) {
       keepHiddenAfterRecovery = false
       notifyWindowActivity('background')
-      logger.info('渲染进程已恢复，窗口保持托盘隐藏状态')
+      logger.info('重载页面已加载，窗口保持托盘隐藏状态')
       return
     }
 
@@ -1119,6 +1111,12 @@ function createWindow() {
 
   win.setMenuBarVisibility(false)
   assertDevelopmentRuntime()
+  const pageLoadStartedAt = performance.now()
+  win.webContents.once('dom-ready', () => recordDesktopStartup('页面 DOM 就绪', pageLoadStartedAt))
+  win.once('ready-to-show', () => recordDesktopStartup('窗口可绘制', pageLoadStartedAt))
+  win.webContents.once('did-finish-load', () =>
+    recordDesktopStartup('页面加载完成', pageLoadStartedAt)
+  )
   const devServer = getDevelopmentServerUrl()
   if (devServer) {
     logger.info(`加载开发服务器: ${devServer}`)
@@ -1133,7 +1131,7 @@ function createWindow() {
   win.on('close', (event: Electron.Event) => {
     const quitState = { coordinatedQuit, forceQuitInProgress, quitRequestInFlight }
 
-    if (!canElectronExitImmediately(quitState)) {
+    if (!mainRendererRecovery?.isSessionEnding() && !canElectronExitImmediately(quitState)) {
       event.preventDefault()
       if (forceQuitInProgress) {
         logger.warn('强制清理仍在进行，暂不允许窗口提前关闭')
@@ -1149,7 +1147,7 @@ function createWindow() {
         win.webContents.send('native-window-close-requested')
       }
     } else {
-      // 仅在 renderer 已完成协调退出后允许真实关闭窗口，并立即保存窗口状态
+      // 协调退出和系统会话结束均直接关闭，并立即保存窗口状态。
       if (!win.isDestroyed()) {
         try {
           const config = loadConfig()
@@ -1175,6 +1173,7 @@ function createWindow() {
 
   win.on('closed', () => {
     logger.info('主窗口已关闭')
+    mainRendererRecovery = null
     nativeCloseHandlerReady = false
     closeVirtualDisplayPrompt()
     // 清理监听（可选）
@@ -1261,6 +1260,7 @@ function createWindow() {
 
   // 初始托盘配置（使用文件配置）
   updateTrayVisibility(config)
+  recordDesktopStartup('主窗口与 IPC 装配', windowStartedAt)
 
   // 等待窗口准备完成后再初始化托盘和处理启动配置
   win.webContents.once('did-finish-load', () => {
@@ -1911,6 +1911,13 @@ ipcMain.handle('window-close', () => {
   requestRendererClose('renderer 请求关闭窗口')
 })
 
+// 页面加载事件不能证明 Vue 已挂载；只接受当前主窗口主 frame 的就绪信号。
+ipcMain.on('renderer-ready', event => {
+  if (!isApplicationWindowSender(event, mainWindow, { allowDevelopment: true })) return
+  recordDesktopStartup('Vue 根组件就绪')
+  if (event.senderFrame) mainRendererRecovery?.rendererReady(event.senderFrame)
+})
+
 ipcMain.on('native-window-close-handler-ready', event => {
   if (mainWindow && event.sender === mainWindow.webContents) {
     nativeCloseHandlerReady = true
@@ -1987,8 +1994,9 @@ ipcMain.handle('app-restart-on-quit', () => {
 })
 
 // renderer 仅在后端优雅关闭或超时兜底完成后调用，作为最终退出确认。
-ipcMain.on('app-backend-close-observed', event => {
+ipcMain.on('app-backend-close-observed', (event, request: unknown) => {
   if (!isAnalyticsSender(event)) return
+  observeScheduledWakeupQuit(request)
   closeTelemetry ??= beginMainFeature('app_close_finished')
   closeTelemetryKind = 'backend'
 })
@@ -2014,6 +2022,7 @@ ipcMain.handle('app-wait-for-quit-confirmation', () => {
 ipcMain.handle('app-prepare-quit', () => {
   if (coordinatedQuit || forceQuitInProgress) return null
   if (activeQuitPreparation !== null) return activeQuitPreparation
+  observeScheduledWakeupQuit({ automatic: false })
   closeTelemetry ??= beginMainFeature('app_close_finished')
   clearQuitFallback()
   quitConfirmationPending = false
@@ -2177,36 +2186,7 @@ ipcMain.handle('get-runtime-init-context', async () => resolveRuntimeInitContext
 ipcMain.handle('check-critical-files', async () => {
   try {
     // Runtime 链路不再有 environment/python 这套目录，改问 Runtime doctor 要受管布局。
-    const runtimeCheck = await checkCriticalFilesViaRuntime()
-    if (runtimeCheck) return runtimeCheck
-
-    const appRoot = getAppRoot()
-
-    // 检查Python可执行文件
-    const pythonPath = path.join(appRoot, 'environment', 'python', 'python.exe')
-    const pythonExists = fs.existsSync(pythonPath)
-
-    // 检查pip（通常与Python一起安装）
-    const pipPath = path.join(appRoot, 'environment', 'python', 'Scripts', 'pip.exe')
-    const pipExists = fs.existsSync(pipPath)
-
-    // 检查Git可执行文件
-    const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
-    const gitExists = fs.existsSync(gitPath)
-
-    // 检查后端主文件
-    const mainPyPath = path.join(appRoot, 'main.py')
-    const mainPyExists = fs.existsSync(mainPyPath)
-
-    const result = {
-      pythonExists,
-      pipExists,
-      gitExists,
-      mainPyExists,
-    }
-
-    logger.info('关键文件检查结果')
-    return result
+    return await checkCriticalFilesViaRuntime()
   } catch {
     logger.error('检查关键文件失败')
     return {
@@ -2447,7 +2427,7 @@ ipcMain.handle('set-initialized-version', async (_event, version: string) => {
   }
 })
 
-// Runtime 灰度开关：持久化设置 + 当前生效值（供设置界面展示来源与效果，重启后生效）
+// Runtime 启动模式：持久化设置 + 当前生效值（供设置界面展示来源与效果，重启后生效）
 ipcMain.handle('get-runtime-launch-mode', async () => {
   try {
     const config = loadConfig()
@@ -2458,7 +2438,7 @@ ipcMain.handle('get-runtime-launch-mode', async () => {
     return { persisted, mode: resolution.mode, source: resolution.source }
   } catch (error) {
     logger.error('读取 Runtime 启动方式失败', error)
-    return { persisted: 'auto', mode: 'off', source: 'default' }
+    throw error
   }
 })
 
@@ -2482,18 +2462,11 @@ ipcMain.handle('set-runtime-launch-mode', async (_event, mode: unknown) => {
 })
 
 // 应用生命周期
-// 保证应用单例运行
-const gotTheLock = app.requestSingleInstanceLock()
-
-if (!gotTheLock) {
-  app.quit()
-  process.exit(0)
-}
-
 // 在沙箱环境下运行会导致无法启动子进程，强制禁用沙箱
 app.commandLine.appendSwitch('no-sandbox')
 
-app.on('second-instance', () => {
+app.on('second-instance', (_event, argv) => {
+  if (keepAwakeForScheduledWakeup(argv)) return
   if (mainWindow) {
     showMainWindow()
   }
@@ -2508,12 +2481,14 @@ app.on('child-process-gone', (_event, details) => {
 })
 
 app.on('will-quit', () => {
+  finishScheduledWakeupQuit({ restart: relaunchAfterQuit })
   disposeAnalytics()
   desktopMascot.dispose()
   globalShortcut.unregisterAll()
 })
 
 app.on('before-quit', event => {
+  if (mainRendererRecovery?.isSessionEnding()) return
   if (canElectronExitImmediately({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight })) {
     return
   }
@@ -2526,12 +2501,29 @@ app.on('before-quit', event => {
 })
 
 app.whenReady().then(async () => {
+  keepAwakeForScheduledWakeup(process.argv)
+  recordDesktopStartup('Electron 就绪')
+  const startupConfig = loadConfig()
+  void startDesktopStartup({
+    version: app.getVersion(),
+    initializedVersion:
+      typeof startupConfig.initializedVersion === 'string'
+        ? startupConfig.initializedVersion
+        : undefined,
+    autoUpdate: startupConfig.Update.IfAutoUpdate,
+  }).then(result => {
+    if (!result.success) logger.warn(`桌面启动未完成: ${result.error ?? result.code}`)
+  })
+  const handlersStartedAt = performance.now()
   registerAnalyticsHandlers(() => mainWindow)
   registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
   refreshAnalyticsPreference()
   analyticsService.recordAppStarted({
-    launch_kind: isAutoStart ? 'auto_start' : 'manual',
-    runtime_mode: resolveRuntimeLaunchModeDetail(getAppRoot()).mode,
+    launch_kind: isScheduledWakeup ? 'scheduled_wakeup' : isAutoStart ? 'auto_start' : 'manual',
+    runtime_mode:
+      getBackendOwnership() === 'owned'
+        ? resolveRuntimeLaunchModeDetail(getAppRoot()).mode
+        : 'unknown',
     release_channel: app.getVersion().includes('-beta.') ? 'beta' : 'stable',
   })
   logger.info(`应用版本: ${app.getVersion()}`)
@@ -2564,12 +2556,14 @@ app.whenReady().then(async () => {
   }
 
   powerMonitor.on('resume', () => {
+    prepareSystemResumeRecovery()
     logger.info('主进程检测到系统恢复，通知 renderer 检查后端连接')
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('system-resumed')
     }
   })
 
+  recordDesktopStartup('就绪后处理器与桌面能力注册', handlersStartedAt)
   createWindow()
 })
 

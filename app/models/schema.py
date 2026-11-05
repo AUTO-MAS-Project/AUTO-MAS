@@ -64,6 +64,31 @@ TaskTreeData = config_contract(TaskItem, include_collections=True)
 type HistoryCounterValue = int | float | dict[str, HistoryCounterValue]
 
 
+class McpStatusData(BaseModel):
+    """MCP 的 HTTP 快照与 WS 进度共用契约；revision 在同一进程内单调递增。"""
+
+    enabled: bool
+    state: Literal["skipped", "pending", "running", "ready", "failed", "cancelled"]
+    stage: Literal["importing", "building", "validating", "mounting"] | None
+    startedAt: AwareDatetime | None
+    finishedAt: AwareDatetime | None
+    elapsedMs: int = Field(ge=0)
+    toolCount: int = Field(ge=0)
+    error: (
+        Literal[
+            "import_failed",
+            "build_failed",
+            "validation_failed",
+            "mount_failed",
+            "cleanup_failed",
+        ]
+        | None
+    )
+    instanceId: str = Field(description="后端进程标识；重启后 revision 重新开始")
+    runId: str = Field(description="加载尝试标识，显式重试时更换")
+    revision: int = Field(ge=0)
+
+
 class HistoryCounterStatistic(BaseModel):
     kind: Literal["counter"] = "counter"
     # 现有客户端生成器不能编译递归 Record 别名；仅展开传输首层，Python仍完整校验数值树。
@@ -626,6 +651,8 @@ class WSSystemNoticeData(BaseModel):
     level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
     title: str = Field(..., description="标题")
     lines: List[str] = Field(default_factory=list, description="正文，每项一行")
+    titleKey: Optional[str] = Field(default=None, description="可选标题词表键")
+    lineKeys: List[str] = Field(default_factory=list, description="可选正文词表键")
 
 
 class WSEmulatorOperationData(BaseModel):
@@ -683,10 +710,10 @@ class WSTaskLogUpdatedData(BaseModel):
 
 
 class WSTaskScriptIdentityData(BaseModel):
-    """任务关联的脚本静态标识。"""
+    """任务关联的托管静态标识。"""
 
-    scriptId: str = Field(..., description="脚本 ID")
-    scriptType: str = Field(..., description="脚本类型键")
+    scriptId: str = Field(..., description="托管 ID")
+    scriptType: str = Field(..., description="托管类型键")
 
 
 class TaskRuntimeSnapshotItem(BaseModel):
@@ -704,7 +731,7 @@ class TaskRuntimeSnapshotItem(BaseModel):
     userId: Optional[str] = Field(default=None, description="用户 ID")
     stopping: bool = Field(default=False, description="任务是否正在停止")
     scripts: List[WSTaskScriptIdentityData] = Field(
-        default_factory=list, description="任务关联的脚本静态标识"
+        default_factory=list, description="任务关联的托管静态标识"
     )
 
     log: str = Field(default="", description="任务当前日志")
@@ -762,7 +789,7 @@ class WSTaskCompletedData(BaseModel):
 
 
 class WSTaskScriptStartedData(BaseModel):
-    """一次脚本执行的本地关联信息；同一循环任务的每轮使用新的 runId。"""
+    """一次托管执行的本地关联信息；同一循环任务的每轮使用新的 runId。"""
 
     taskId: str
     runId: str
@@ -784,10 +811,19 @@ class WSTaskCreatedData(BaseModel):
     taskId: str = Field(..., description="新任务ID")
     mode: TaskMode = Field(..., description="任务模式, 与创建请求一致")
     scripts: List[WSTaskScriptIdentityData] = Field(
-        default_factory=list, description="任务关联的脚本静态标识"
+        default_factory=list, description="任务关联的托管静态标识"
     )
     taskName: Optional[str] = Field(default=None, description="任务名称")
     taskType: Optional[str] = Field(default=None, description="任务类型")
+
+
+class WSFrontendCloseRequestedData(BaseModel):
+    """关闭/重启请求，以及自动退出期间需继续履行的唤醒计划。"""
+
+    automatic: bool = Field(default=False, description="是否为队列完成后自动退出")
+    nextWakeAt: Optional[AwareDatetime] = Field(
+        default=None, description="最近的未来系统唤醒时刻"
+    )
 
 
 class WSPowerCountdownData(BaseModel):
@@ -1121,8 +1157,8 @@ class HSRManagedConfigData(BaseModel):
     plan_owner: Literal["script", "user"] = Field(
         default="script",
         description=(
-            "任务计划的归属：script=脚本共享计划（保存到脚本配置），"
-            "user=该用户自己的计划（保存到用户配置）"
+            "任务计划的归属：script=托管共享计划（保存到托管配置），"
+            "user=该账号自己的独立计划（保存到账号配置）"
         ),
     )
     tasks: List[HSRManagedTask] = Field(default_factory=list, description="托管任务")
@@ -1145,7 +1181,7 @@ class HSRSRAProfilesData(BaseModel):
         default=False, description="档案目录是否可读且至少有一份档案"
     )
     unavailable_reason: Optional[str] = Field(default=None, description="不可用原因")
-    configured: str = Field(default="", description="脚本配置的档案 id；空串表示自动")
+    configured: str = Field(default="", description="托管配置的档案 id；空串表示自动")
     auto_id: str = Field(..., description="自动模式会选中的档案 id")
     selected: str = Field(..., description="当前实际生效的档案 id")
     fallback: bool = Field(
@@ -1313,7 +1349,7 @@ class MaaFWOptionInfo(BaseModel):
 class MaaFWTaskSnapshot(BaseModel):
     """ProjectInterface 预设转换出的任务快照，前三个字段的键都是任务 name。
 
-    与用户自己的任务快照同构。用户队列允许同一个任务加多份，那边的键是任务
+    与账号自己的任务快照同构。账号队列允许同一个任务加多份，那边的键是任务
     实例 id（首份就是任务 name）；预设里的重复任务会被折叠，因此这里只有 name。
     全局选项（global_option 及其子选项）的值不在 taskOptions 里，在 globalOptions。
     """
@@ -1373,12 +1409,12 @@ class MaaFWInterfacePreviewData(BaseModel):
 
 
 class MaaFWEmbeddedSourceItem(BaseModel):
-    scriptId: str = Field(..., description="可作为克隆来源的 MFW 脚本 ID")
-    name: str = Field(default="", description="脚本名")
-    type: str = Field(default="MaaFW", description="脚本类型（MaaFW / M9A / MSS）")
+    scriptId: str = Field(..., description="可作为克隆来源的 MFW 托管 ID")
+    name: str = Field(default="", description="托管名")
+    type: str = Field(default="MaaFW", description="托管类型（MaaFW / M9A / MSS）")
     projectName: str = Field(default="", description="副本 interface 里的项目名")
     version: str = Field(default="", description="副本 interface 里的版本")
-    busy: bool = Field(default=False, description="源脚本正在运行，此刻不能克隆")
+    busy: bool = Field(default=False, description="源托管正在运行，此刻不能克隆")
 
 
 class MaaFWEmbeddedProjection(BaseModel):
@@ -1432,7 +1468,7 @@ class MaaFWShellInstanceItem(BaseModel):
     name: str = Field(..., description="外壳里的实例名")
     userName: str = Field(
         ...,
-        description="导入后的用户名（与已有用户、同名实例重名时带「 (2)」这类后缀）",
+        description="导入后的账号名（与已有账号、同名实例重名时带「 (2)」这类后缀）",
     )
     source: Literal["MFAAvalonia", "MXU", "MFW-PyQt6"] = Field(
         ..., description="实例来自哪个外壳"
@@ -1460,9 +1496,9 @@ class MaaFWShellInstanceImportItem(BaseModel):
     success: bool = Field(default=False, description="是否导入成功")
     userId: str = Field(
         default="",
-        description="用户 ID：建成新用户时就是它，覆盖已有用户时是那个用户",
+        description="账号 ID：建成新账号时就是它，覆盖已有账号时是那个账号",
     )
-    name: str = Field(default="", description="用户名")
+    name: str = Field(default="", description="账号名")
     importedTaskCount: int = Field(default=0, description="导入进队列的任务数")
     skipped: List[str] = Field(
         default_factory=list, description="当前项目里对不上、没导入的任务 / 选项 / 取值"
@@ -1512,7 +1548,7 @@ class MaaFWProjectUpdateJobResult(BaseModel):
 
 
 class MaaFWProjectUpdateJobData(BaseModel):
-    """该脚本当前或最近一次手动更新（apply）。只在后端进程内保留：下一次手动更新开始
+    """该托管当前或最近一次手动更新（apply）。只在后端进程内保留：下一次手动更新开始
     或后端重启即被替换 / 清空。"""
 
     state: Literal["idle", "running", "finished"] = Field(
@@ -1613,10 +1649,10 @@ class ObsReplayCheckOut(OutBase):
 
 class WebhookInBase(BaseModel):
     scriptId: Optional[str] = Field(
-        default=None, description="所属脚本ID, 获取全局设置的Webhook数据时无需携带"
+        default=None, description="所属托管ID, 获取全局设置的Webhook数据时无需携带"
     )
     userId: Optional[str] = Field(
-        default=None, description="所属用户ID, 获取全局设置的Webhook数据时无需携带"
+        default=None, description="所属账号ID, 获取全局设置的Webhook数据时无需携带"
     )
 
 
@@ -1676,19 +1712,19 @@ class MSSPlanKey(BaseModel):
     FightTimes: int = Field(default=1, ge=1, le=99, description="自定义快速作战次数")
 
 
-# 脚本管理多个路由共用的请求契约。
+# 托管管理多个路由共用的请求契约。
 
 
 class ScriptDeleteIn(BaseModel):
-    scriptId: str = Field(..., description="脚本ID")
+    scriptId: str = Field(..., description="托管ID")
 
 
 class UserInBase(BaseModel):
-    scriptId: str = Field(..., description="所属脚本ID")
+    scriptId: str = Field(..., description="所属托管ID")
 
 
 class UserDeleteIn(UserInBase):
-    userId: str = Field(..., description="用户ID")
+    userId: str = Field(..., description="账号ID")
 
 
 __all__ = [
@@ -1755,6 +1791,7 @@ __all__ = [
     "WSTaskScriptStartedData",
     "WSTaskScriptFinishedData",
     "WSPowerCountdownData",
+    "WSFrontendCloseRequestedData",
     "PowerCountdownSnapshot",
     "WSPowerSignData",
     "WSDisplayMonitorRectData",

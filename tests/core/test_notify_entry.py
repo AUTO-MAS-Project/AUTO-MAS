@@ -103,11 +103,18 @@ async def test_global_system_notice_survives_disconnection_and_flushes(monkeypat
     send = AsyncMock(return_value=False)
     monkeypatch.setattr(Publisher, "send", send)
     await Notify.push_system_notice(
-        level="warning", title="初始化提示", lines=["待连接"]
+        level="warning",
+        title="初始化提示",
+        lines=["待连接"],
+        title_key="core.setting.func.scheduledWakeupFailure",
+        line_keys=["core.setting.func.scheduledWakeupFailureTip"],
     )
     assert len(Config.startup_notices) == 1
     send.return_value = True
     await Notify.flush_startup_notices()
     assert Config.startup_notices == []
+    data = send.await_args.kwargs["data"]
+    assert data.titleKey == "core.setting.func.scheduledWakeupFailure"
+    assert data.lineKeys == ["core.setting.func.scheduledWakeupFailureTip"]
     await Notify.flush_startup_notices()
     assert send.await_count == 2

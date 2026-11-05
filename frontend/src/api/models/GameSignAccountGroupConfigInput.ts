@@ -11,7 +11,7 @@ export type GameSignAccountGroupConfigInput = {
      */
     CloudGenshinToken?: (string | null);
     /**
-     * GameSignAccount - 是否启用（该用户是否参与签到）
+     * GameSignAccount - 是否启用（该账号是否参与签到）
      */
     Enabled?: (boolean | null);
     /**
@@ -19,7 +19,7 @@ export type GameSignAccountGroupConfigInput = {
      */
     KuroToken?: (string | null);
     /**
-     * GameSignAccount - 上次签到日期 (按用户隔离，防止重复触发)
+     * GameSignAccount - 上次签到日期 (按账号隔离，防止重复触发)
      */
     LastSignDate?: (string | null);
     /**

@@ -37,14 +37,14 @@ async def execute_notification_command(
     action: NotificationCommandAction,
     name: str,
 ) -> str:
-    """将渠道传入的名称解析为 ID，复用现有脚本和队列启动入口。"""
+    """将渠道传入的名称解析为 ID，复用现有托管和队列启动入口。"""
 
     from app.core import Config, TaskManager
 
     targets: ConfigCollection[ScriptConfigType] | ConfigCollection[QueueConfig]
     if action == "retry_script":
         targets = Config.ScriptConfig
-        label = "脚本"
+        label = "托管"
     elif action == "start_queue":
         targets = Config.QueueConfig
         label = "队列"

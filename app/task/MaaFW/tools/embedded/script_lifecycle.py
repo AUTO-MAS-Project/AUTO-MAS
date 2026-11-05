@@ -63,9 +63,9 @@ async def clone_script(source: ConfigEntry, target: ConfigEntry) -> None:
             )
         )
     except FollowSourceCloneUnavailable as exc:
-        logger.info(f"复制脚本时先不建视图，第一次运行前按来源目录导入: {exc}")
+        logger.info(f"复制托管时先不建视图，第一次运行前按来源目录导入: {exc}")
     except Exception as exc:  # noqa: BLE001 - 失败下次运行会按来源 / 载荷重建
-        logger.warning(f"复制脚本时建视图失败，将按需重建: {exc}")
+        logger.warning(f"复制托管时建视图失败，将按需重建: {exc}")
     finally:
         await release_project_path(target_key)
 

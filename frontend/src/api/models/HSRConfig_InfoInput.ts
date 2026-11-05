@@ -8,7 +8,7 @@ export type HSRConfig_InfoInput = {
      */
     M7APath?: (string | null);
     /**
-     * HSR 脚本名称
+     * HSR 托管名称
      */
     Name?: (string | null);
     /**

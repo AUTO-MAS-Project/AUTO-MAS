@@ -5,6 +5,7 @@ import { beginAnalyticsOperation } from './analytics'
 type Setting = AnalyticsEventProps['settings_change_finished']
 const entries = [
   ['Start', 'IfSelfStart', 'startup', 'auto_start'],
+  ['Start', 'IfScheduledWakeUp', 'scheduler', 'scheduled_wakeup'],
   ['Start', 'IfMinimizeDirectly', 'startup', 'start_minimized'],
   ['UI', 'IfShowTray', 'close', 'show_tray'],
   ['UI', 'IfToTray', 'close', 'close_to_tray'],
@@ -12,7 +13,6 @@ const entries = [
   ['Function', 'IfAllowSleep', 'scheduler', 'allow_sleep'],
   ['Function', 'IfBlockAd', 'emulator', 'block_ads'],
   ['Function', 'IfSilence', 'notification', 'silent'],
-  ['Function', 'IfPersonalMss', 'scheduler', 'mss_personal'],
   ['Display', 'IfEnableVirtualDisplay', 'emulator', 'virtual_display'],
   ['Display', 'VirtualDisplayMode', 'emulator', 'virtual_display_mode'],
   ['Replay', 'Enabled', 'replay', 'replay_enabled'],

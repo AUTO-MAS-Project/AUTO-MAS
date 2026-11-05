@@ -21,8 +21,11 @@
 
 
 import asyncio
-from collections.abc import Awaitable, Callable
+import os
+import time
+from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -30,7 +33,11 @@ import psutil
 
 from app.core import MainConnection, Publisher
 from app.core.ws import protocol
-from app.models.schema import PowerCountdownSnapshot, WSPowerCountdownData
+from app.models.schema import (
+    PowerCountdownSnapshot,
+    WSFrontendCloseRequestedData,
+    WSPowerCountdownData,
+)
 from app.services import power, startup
 from app.utils import LazyProxy, get_logger, process_platform
 from app.utils import environment as _utils_environment
@@ -58,9 +65,159 @@ class _SystemHandler:
         # 应用生命周期注入，仅提供 AVD 关闭能力，不把宿主配置带进系统服务。
         self.avd_instance_closer: Callable[[], Awaitable[object]] | None = None
         self.power_task: Optional[asyncio.Task] = None
+        self._power_task_lock = asyncio.Lock()
         self._power_cancelled_event_task: Optional[asyncio.Task] = None
         self.current_power_operation: Optional[str] = None
         self.current_power_remaining = 0
+        self._wakeup_signature: tuple[Path, tuple[tuple[int, int, int], ...]] | None = (
+            None
+        )
+        self._wakeup_attempt: tuple[Path, tuple[tuple[int, int, int], ...]] | None = (
+            None
+        )
+        self._wakeup_retry_at = 0.0
+        self._wakeup_notice_sent = False
+        self._resume_wakeup: bool | None = None
+
+    def is_scheduled_wakeup(self) -> bool:
+        """明确的唤醒启动，或恢复时仍有前五分钟至补跑宽限内的有效定时。"""
+        if os.getenv("AUTO_MAS_SCHEDULED_WAKEUP") == "1":
+            return True
+        resumed_at = os.getenv("AUTO_MAS_SYSTEM_RESUME")
+        if not resumed_at:
+            return False
+        # 两个消费者共享启动时的判定，不能因初始化耗时、派发或重连而改变。
+        if self._resume_wakeup is not None:
+            return self._resume_wakeup
+        self._resume_wakeup = self._has_pending_wakeup_schedule(
+            datetime.fromisoformat(resumed_at).astimezone()
+        )
+        return self._resume_wakeup
+
+    def _has_pending_wakeup_schedule(self, at: datetime) -> bool:
+        """是否有已进入提前唤醒或补跑窗口、且尚未派发的队列定时。"""
+        now_wall = at.replace(tzinfo=None)
+        return any(
+            planned.replace(second=0, microsecond=0) - timedelta(minutes=5)
+            <= now_wall
+            <= planned + timedelta(minutes=10)
+            for planned in self._pending_wakeup_slots(at)
+        )
+
+    def _next_scheduled_wakeup(self, at: datetime) -> datetime | None:
+        """退出前交接最近的未来唤醒时刻，避免单实例锁吞掉收尾期间的启动。"""
+        now_wall = at.replace(tzinfo=None)
+        wakes = (
+            planned.replace(second=0, microsecond=0) - timedelta(minutes=5)
+            for planned in self._pending_wakeup_slots(at)
+        )
+        wake = min((wake for wake in wakes if wake > now_wall), default=None)
+        return wake.astimezone() if wake is not None else None
+
+    def _pending_wakeup_slots(self, at: datetime) -> Iterator[datetime]:
+        """枚举补跑窗口及未来一周内尚未派发的有效定时。"""
+        if not Config.setting.Start.IfScheduledWakeUp:
+            return
+        now_wall = at.replace(tzinfo=None)
+        for queue in Config.QueueConfig.values():
+            if not queue.Info.TimeEnabled:
+                continue
+            last_run = queue.Data.LastStartTime.replace(tzinfo=None)
+            for slot in queue.TimeSet.values():
+                if not slot.Info.Enabled:
+                    continue
+                for day_offset in range(-1, 8):
+                    day = now_wall.date() + timedelta(days=day_offset)
+                    planned = datetime.combine(day, slot.Info.Time.time())
+                    if planned > last_run and planned.strftime("%A") in slot.Info.Days:
+                        yield planned
+
+    async def _cancel_automatic_power_for_schedule(
+        self, mode: str, *, automatic: bool, at: datetime
+    ) -> bool:
+        if not automatic or not Config.setting.Start.IfScheduledWakeUp:
+            return False
+        from app.core import TaskManager
+
+        if TaskManager.task_handler or self._has_pending_wakeup_schedule(at):
+            logger.info(f"定时队列即将或正在运行，取消本次自动完成后操作: {mode}")
+            await self._publish_power_cancelled(asyncio.current_task())
+            return True
+        return False
+
+    async def sync_scheduled_wakeup(self, *, force: bool = False) -> None:
+        """把已提交的队列定时同步到系统；开发环境不改系统任务。"""
+        if _utils_environment.is_development_environment() or not startup.supported:
+            return
+        times: set[tuple[int, int, int]] = set()
+        weekdays = (
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        )
+        if Config.setting.Start.IfScheduledWakeUp:
+            for queue in Config.QueueConfig.values():
+                if not queue.Info.TimeEnabled:
+                    continue
+                for slot in queue.TimeSet.values():
+                    if not slot.Info.Enabled:
+                        continue
+                    for day in slot.Info.Days:
+                        planned = datetime(2000, 1, 3) + timedelta(
+                            days=weekdays.index(day),
+                            hours=slot.Info.Time.hour,
+                            minutes=slot.Info.Time.minute,
+                        )
+                        wake = planned - timedelta(minutes=5)
+                        times.add((wake.weekday(), wake.hour, wake.minute))
+        executable = Config.work_path / "AUTO-MAS.exe"
+        signature = (executable, tuple(sorted(times)))
+        if signature == self._wakeup_signature:
+            return
+        if (
+            not force
+            and signature == self._wakeup_attempt
+            and time.monotonic() < self._wakeup_retry_at
+        ):
+            return
+        if signature != self._wakeup_attempt:
+            self._wakeup_notice_sent = False
+        report_failure = Config.setting.Start.IfScheduledWakeUp or bool(
+            self._wakeup_attempt and self._wakeup_attempt[1]
+        )
+        self._wakeup_attempt = signature
+        self._wakeup_retry_at = time.monotonic() + 60
+        # 注册可能只完成一部分后被取消；此后不能再把旧缓存当作系统现状。
+        self._wakeup_signature = None
+        # 冷启动会重读磁盘；配置未落盘时不能先更新系统任务。
+        try:
+            await Config.flush()
+            if times and not executable.is_file():
+                raise FileNotFoundError(f"找不到定时唤醒启动程序：{executable}")
+            await startup.sync_wakeup(executable=executable, times=signature[1])
+        except Exception as exc:
+            if not report_failure:
+                # 首次关闭状态仍尝试清理旧任务；系统服务不可用时安静地等待重试。
+                logger.debug(f"定时唤醒未启用，清理旧任务失败，稍后重试: {exc}")
+                return
+            if not self._wakeup_notice_sent:
+                from app.core import Notify
+
+                await Notify.push_system_notice(
+                    level="warning",
+                    title="定时唤醒同步失败",
+                    lines=["请检查日志和 Windows 任务计划程序，修正后将自动重试。"],
+                    title_key="core.setting.func.scheduledWakeupFailure",
+                    line_keys=["core.setting.func.scheduledWakeupFailureTip"],
+                )
+                self._wakeup_notice_sent = True
+            raise
+        self._wakeup_signature = signature
+        logger.info(f"定时唤醒已同步：{len(times)} 个每周触发时间")
 
     def get_power_countdown_snapshot(self) -> PowerCountdownSnapshot:
         """返回当前电源倒计时的 HTTP 初始快照。"""
@@ -119,6 +276,8 @@ class _SystemHandler:
             "Logoff",
         ],
         from_frontend: bool = False,
+        *,
+        automatic: bool = False,
     ) -> None:
         """
         执行系统电源操作
@@ -136,13 +295,25 @@ class _SystemHandler:
         if not await ObsReplay.drain():
             logger.warning("失败回放尚未保存完成，继续执行电源操作")
 
+        checked_at = datetime.now().astimezone()
+        if await self._cancel_automatic_power_for_schedule(
+            mode, automatic=automatic, at=checked_at
+        ):
+            return
+
         if mode in {"KillSelf", "RestartSelf"} and Config.server is not None:
             restart = mode == "RestartSelf"
             action = "重启" if restart else "退出"
             logger.info(f"执行{action}主程序操作")
             if not from_frontend:
                 try:
-                    await self._request_frontend_close(restart=restart)
+                    await self._request_frontend_close(
+                        restart=restart,
+                        automatic=automatic,
+                        next_wake_at=self._next_scheduled_wakeup(checked_at)
+                        if automatic
+                        else None,
+                    )
                 except TimeoutError as e:
                     # 退出 / 重启是用户设定的完成后操作或安装更新的要求，前端卡死不能让
                     # 后端就此留下不退；此前这里只抛异常，退出被静默放弃。
@@ -158,12 +329,23 @@ class _SystemHandler:
             await self.close_avd_instances()
         if mode in {"Shutdown", "Reboot", "Logoff"}:
             await self.kill_emulator_processes()
+        # 模拟器收尾可能跨过唤醒时刻，真正执行系统操作前重新读取当前计划。
+        if await self._cancel_automatic_power_for_schedule(
+            mode, automatic=automatic, at=datetime.now().astimezone()
+        ):
+            return
         logger.info(f"执行电源操作: {mode}")
         # 系统电源动作必须先于前端关闭执行：请求前端退出会让 Electron 退出并连带结束后端进程，
         # 若先等前端断开，关机/重启等命令将永远没有机会执行（issue #611）。
         await power.execute(mode)
 
-    async def _request_frontend_close(self, restart: bool = False) -> None:
+    async def _request_frontend_close(
+        self,
+        restart: bool = False,
+        *,
+        automatic: bool = False,
+        next_wake_at: datetime | None = None,
+    ) -> None:
         """请求前端退出或重启，并等待主会话断开（后端自行的 KillSelf / RestartSelf 场景）。"""
 
         action = "重启" if restart else "退出"
@@ -173,6 +355,9 @@ class _SystemHandler:
                 protocol.FRONTEND_RESTART_REQUESTED
                 if restart
                 else protocol.FRONTEND_CLOSE_REQUESTED
+            ),
+            data=WSFrontendCloseRequestedData(
+                automatic=automatic, nextWakeAt=next_wake_at
             ),
         )
         if not sent:
@@ -230,7 +415,7 @@ class _SystemHandler:
                 await asyncio.sleep(1)
             if before_power is not None and not await before_power():
                 logger.warning("后台任务收尾超时，继续执行电源操作")
-            await self.set_power(power_sign)
+            await self.set_power(power_sign, automatic=True)
         except asyncio.CancelledError:
             await self._publish_power_cancelled(asyncio.current_task())
             raise
@@ -246,7 +431,16 @@ class _SystemHandler:
     ):
         """开始电源任务"""
 
-        if self.power_task is None or self.power_task.done():
+        # 替换与取消共用一个交接入口，旧任务收尾后才发布新倒计时。
+        async with self._power_task_lock:
+            if Config.power_sign == "NoAction":
+                return
+            power_task = self.power_task
+            if power_task is not None and not power_task.done():
+                await self._cancel_power_task(power_task)
+            # 用户可在等待收尾时取消尚未接手的完成后操作。
+            if Config.power_sign == "NoAction":
+                return
             power_sign = Config.power_sign
             delay = Config.power_delay
             self._power_cancelled_event_task = None
@@ -273,8 +467,6 @@ class _SystemHandler:
             )
             Config.power_sign = "NoAction"
             Config.power_delay = 0
-        else:
-            logger.warning("已有电源任务在运行, 请勿重复启动")
 
     async def _publish_power_cancelled(
         self, power_task: Optional[asyncio.Task]
@@ -289,27 +481,36 @@ class _SystemHandler:
         )
 
     async def cancel_pending_power_task(self) -> None:
-        """存在待执行的电源任务时取消它，没有则跳过。"""
+        """撤销旧任务，不清除留给下次完成时执行的电源意图。"""
 
-        if self.power_task is not None and not self.power_task.done():
-            await self.cancel_power_task()
+        async with self._power_task_lock:
+            power_task = self.power_task
+            if power_task is not None and not power_task.done():
+                await self._cancel_power_task(power_task)
 
     async def cancel_power_task(self):
-        """取消电源任务"""
+        """幂等取消当前电源任务及待接续意图。"""
 
-        power_task = self.power_task
-        if power_task is not None and not power_task.done():
-            power_task.cancel()
-            try:
-                await power_task
-            except asyncio.CancelledError:
-                logger.info("电源任务已取消")
-            self.current_power_operation = None
-            self.current_power_remaining = 0
-            await self._publish_power_cancelled(power_task)
-        else:
-            logger.warning("当前无电源任务在运行")
-            raise RuntimeError("当前无电源任务在运行")
+        # 在等待交接锁之前清除意图，避免取消期间又启动同一个完成后操作。
+        Config.power_sign = "NoAction"
+        Config.power_delay = 0
+        async with self._power_task_lock:
+            # 手动改选可能刚完成旧任务撤销；本次取消仍应清除等待期间写入的意图。
+            Config.power_sign = "NoAction"
+            Config.power_delay = 0
+            power_task = self.power_task
+            if power_task is not None and not power_task.done():
+                await self._cancel_power_task(power_task)
+
+    async def _cancel_power_task(self, power_task: asyncio.Task) -> None:
+        power_task.cancel()
+        try:
+            await power_task
+        except asyncio.CancelledError:
+            logger.info("电源任务已取消")
+        self.current_power_operation = None
+        self.current_power_remaining = 0
+        await self._publish_power_cancelled(power_task)
 
     async def close_avd_instances(self) -> None:
         """按进程名强杀之前，先把在跑的魔改 AVD 实例正常关掉（安卓正常关机，不成再 sync + 关）。

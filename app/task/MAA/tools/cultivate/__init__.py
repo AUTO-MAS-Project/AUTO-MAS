@@ -50,6 +50,7 @@ from .providers import (
 )
 from .service import (
     DepotCultivateService,
+    append_owned_cultivate_targets,
     depot_cultivate_service,
     dump_cultivate_targets,
     filter_observed_cultivate_targets,
@@ -96,6 +97,7 @@ from .yituliu import (
 )
 
 __all__ = [
+    "append_owned_cultivate_targets",
     "Achievement",
     "SklandAccountRef",
     "SklandProgressionProvider",

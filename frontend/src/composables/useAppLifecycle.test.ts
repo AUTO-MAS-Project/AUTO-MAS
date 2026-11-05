@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
-import { WS_BACKEND_SHUTDOWN_READY, type WSJsonObject } from '@/services/websocket/types'
+import { type WSDisconnectEvent, type WSJsonObject } from '@/services/websocket/types'
 
 // ==================== 全局桩 ====================
 
@@ -11,14 +11,16 @@ const backendStatus = vi.fn()
 const stopBackend = vi.fn()
 const killAllProcesses = vi.fn()
 const appQuit = vi.fn()
+const observeBackendClose = vi.fn()
+const backendRestart = vi.fn()
+const systemResume = vi.fn((_handler: () => void) => () => undefined)
 
 const connectionMocks = vi.hoisted(() => ({
   connect: vi.fn(async () => true),
   connectionState: vi.fn(() => ({ value: 'open' })),
-  shouldPreserveBackend: vi.fn(() => false),
   onConnected: vi.fn(() => () => undefined),
-  onDisconnected: vi.fn(() => () => undefined),
-  onReconnectCycleFailed: vi.fn(() => () => undefined),
+  onDisconnected: vi.fn((_handler: (event: WSDisconnectEvent) => void) => () => undefined),
+  onReconnectCycleFailed: vi.fn((_handler: () => void) => () => undefined),
   reconnectNow: vi.fn(async () => true),
   scheduleReconnect: vi.fn(),
   shutdown: vi.fn(),
@@ -58,12 +60,6 @@ vi.mock('@/services/websocket/residentResources', () => ({
 vi.mock('@/services/websocket/connection', () => connectionMocks)
 vi.mock('@/services/websocket/subscriptions', () => subscriptionMocks)
 
-const pushMessage = (type: string): void => {
-  const handler = subscriptionHandlers.get(type)
-  if (!handler) throw new Error(`未注册常驻订阅: ${type}`)
-  handler({ id: 'Main', type, data: {} })
-}
-
 const loadLifecycle = async () => {
   vi.resetModules()
   const module = await import('./useAppLifecycle')
@@ -84,7 +80,7 @@ describe('useAppLifecycle 关闭流程', () => {
         return `sub_${filter.type}`
       }
     )
-    connectionMocks.shouldPreserveBackend.mockReturnValue(false)
+    connectionMocks.connectionState.mockReturnValue({ value: 'open' })
     closePost.mockResolvedValue(undefined)
     stopBackend.mockResolvedValue({ success: true })
     killAllProcesses.mockResolvedValue({ success: true })
@@ -96,7 +92,9 @@ describe('useAppLifecycle 关闭流程', () => {
         stopBackend,
         killAllProcesses,
         appQuit,
-        onSystemResume: vi.fn(() => () => undefined),
+        appObserveBackendClose: observeBackendClose,
+        backendRestart,
+        onSystemResume: systemResume,
         onAppCloseRequested: vi.fn(() => () => undefined),
       },
       setTimeout: (fn: () => void, ms?: number) => setTimeout(fn, ms),
@@ -113,9 +111,31 @@ describe('useAppLifecycle 关闭流程', () => {
       backendStatus.mockResolvedValue({ isRunning: true, runtimeSupervised: true })
     })
 
+    it('把自动退出与下一次唤醒时间交给主进程，再等待 Runtime 关闭', async () => {
+      let finishStop: (result: { success: boolean }) => void = () => undefined
+      stopBackend.mockImplementation(
+        () =>
+          new Promise(resolve => {
+            finishStop = resolve
+          })
+      )
+      await loadLifecycle()
+      const data = { automatic: true, nextWakeAt: '2026-11-02T08:01:00+08:00' }
+      subscriptionHandlers.get('frontend.close.requested')?.({
+        id: 'Main',
+        type: 'frontend.close.requested',
+        data,
+      })
+      expect(observeBackendClose).toHaveBeenCalledWith(data)
+      expect(stopBackend).toHaveBeenCalledOnce()
+      expect(appQuit).not.toHaveBeenCalled()
+      finishStop({ success: true })
+      await vi.waitFor(() => expect(appQuit).toHaveBeenCalledOnce())
+      expect(callOrder(observeBackendClose)).toBeLessThan(callOrder(stopBackend))
+    })
+
     it('不发 POST /close、不等后端进程消失，只请求 Electron 经 Runtime 关闭后再退出', async () => {
       // 页面先于后端起来时 ws_meta 可能回退成 devMode=true；Runtime 链路下它不能左右关闭方式。
-      connectionMocks.shouldPreserveBackend.mockReturnValue(true)
       const { closeApp } = await loadLifecycle()
 
       await closeApp()
@@ -124,8 +144,8 @@ describe('useAppLifecycle 关闭流程', () => {
       expect(killAllProcesses).not.toHaveBeenCalled()
       expect(stopBackend).toHaveBeenCalledTimes(1)
       expect(appQuit).toHaveBeenCalledTimes(1)
-      // Runtime 存活期间 isRunning 恒为 true：关闭流程只能查一次链路，不能轮询等它变 false。
-      expect(backendStatus).toHaveBeenCalledTimes(1)
+      // Electron 始终由 Runtime 关闭，不依赖状态 IPC 成功或 ws_meta 的开发标记。
+      expect(backendStatus).not.toHaveBeenCalled()
       expect(connectionMocks.stopReconnect).toHaveBeenCalled()
       expect(connectionMocks.shutdown).toHaveBeenCalledWith('应用关闭')
       // 先收连接，再让 Runtime 关后端，最后退前端。
@@ -146,26 +166,35 @@ describe('useAppLifecycle 关闭流程', () => {
     })
   })
 
-  describe('旧链路（AUTO_MAS_RUNTIME_MODE=off）', () => {
-    it('仍由渲染进程 POST /close、等 ready 与进程退出，不经 Runtime 停止', async () => {
-      backendStatus.mockResolvedValue({ isRunning: true, runtimeSupervised: false })
-      closePost.mockImplementation(async () => {
-        // 后端清理完成后广播 ready，随后进程退出
-        pushMessage(WS_BACKEND_SHUTDOWN_READY)
-        backendStatus.mockResolvedValue({ isRunning: false, runtimeSupervised: false })
-      })
+  it('状态 IPC 失败时仍经 Runtime 关闭，不能改发后端 close 请求', async () => {
+    backendStatus.mockRejectedValue(new Error('IPC unavailable'))
+    const { closeApp } = await loadLifecycle()
+    await closeApp()
+    expect(stopBackend).toHaveBeenCalledOnce()
+    expect(closePost).not.toHaveBeenCalled()
+    expect(killAllProcesses).not.toHaveBeenCalled()
+    expect(appQuit).toHaveBeenCalledOnce()
+  })
+
+  describe.each(['browser', 'desktop'] as const)('%s 只连接外部后端', surface => {
+    beforeEach(() => {
+      Object.assign(
+        window,
+        surface === 'browser'
+          ? { __AUTO_MAS_BROWSER_DEV_MODE__: true }
+          : { backendOwnership: 'external' }
+      )
+    })
+
+    it.each(['open', 'closed'])('%s 时退出只断开连接，保留后端任务', async state => {
+      connectionMocks.connectionState.mockReturnValue({ value: state })
       const { closeApp } = await loadLifecycle()
-
       await closeApp()
-
-      expect(closePost).toHaveBeenCalledTimes(1)
+      expect(closePost).not.toHaveBeenCalled()
       expect(stopBackend).not.toHaveBeenCalled()
       expect(killAllProcesses).not.toHaveBeenCalled()
-      expect(appQuit).toHaveBeenCalledTimes(1)
-      expect(connectionMocks.shutdown).toHaveBeenCalledWith('应用关闭')
-      // 先 POST /close 收 ready，再确认进程退出，最后才收连接、退前端。
-      expect(callOrder(closePost)).toBeLessThan(callOrder(connectionMocks.shutdown))
-      expect(callOrder(connectionMocks.shutdown)).toBeLessThan(callOrder(appQuit))
+      expect(connectionMocks.shutdown).toHaveBeenCalled()
+      expect(appQuit).toHaveBeenCalledOnce()
     })
   })
 })

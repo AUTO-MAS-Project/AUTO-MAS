@@ -777,12 +777,17 @@ def processes_using(root: str | Path) -> list[dict[str, Any]]:
 
     - 可执行文件在 ``sdk\\emulator`` 下的（emulator.exe、qemu、netsimd、crashpad_handler 都算）。两边都按
       真实路径比：根目录可能是经目录链接（junction）登记的，进程报的却是链接指向的真实路径；
+    - 根目录 ``tools\\modavd.exe`` 和 ``ModAVD.exe`` 的任何进程都算占用（含 ``__bootwatch`` / ``__spawn``）；
     - 读不到可执行文件路径、名字又像模拟器的（``qemu-system*``、``emulator*``、``netsimd``、
       ``crashpad_handler``）也算上（``unknownPath``），宁可拒绝换上也不在它运行时换目录。
     """
     prefixes = {
         _real_path(emulator_dir(root)) + os.sep,
         os.path.normcase(os.path.abspath(emulator_dir(root))) + os.sep,
+    }
+    modavd_paths = {
+        _real_path(Path(root) / "tools" / "modavd.exe"),
+        _real_path(Path(root) / "ModAVD.exe"),
     }
     cache: dict[str, str] = {}
     found: list[dict[str, Any]] = []
@@ -793,6 +798,9 @@ def processes_using(root: str | Path) -> list[dict[str, Any]]:
             continue
         name = info.get("name") or ""
         exe = info.get("exe") or ""
+        if exe and _real_path(exe, cache) in modavd_paths:
+            found.append({"pid": info["pid"], "name": name, "unknownPath": False})
+            continue
         if exe:
             if any(_real_path(exe, cache).startswith(prefix) for prefix in prefixes):
                 found.append({"pid": info["pid"], "name": name, "unknownPath": False})
@@ -816,9 +824,17 @@ def ensure_not_in_use(root: str | Path, verb: str) -> None:
     """
     busy = processes_using(root)
     if busy:
+        # 模拟器关机后 netsimd 有时要过一阵才退：只剩它时提示等一会儿，别让用户以为要手动结束
+        lingering = all(
+            str(item.get("name") or "").lower() == "netsimd.exe" for item in busy
+        )
         raise SwapBlocked(
-            f"还有程序在用模拟器文件：{describe_processes(busy)}。什么都没动，请先关掉所有实例和"
-            f"这些程序再{verb}"
+            f"还有程序在用模拟器文件：{describe_processes(busy)}。什么都没动，"
+            + (
+                f"实例关机后 netsimd 可能还要一会儿才退出，稍等再{verb}"
+                if lingering
+                else f"请先关掉所有实例和这些程序再{verb}"
+            )
         )
 
 
