@@ -874,9 +874,7 @@ async def test_unconfirmed_writer_survives_history_cancellation_via_public_downl
             "https://example.invalid/payload",
             destination,
             timeout=10,
-            options=transport.FluxdownOptions(
-                "builtin", "AutoSite", str(exe), 8, True
-            ),
+            options=transport.FluxdownOptions("builtin", "AutoSite", str(exe), 8, True),
             downloader="builtin",
             write_history=blocked_history,
             http_download=backend,
