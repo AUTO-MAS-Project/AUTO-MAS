@@ -422,9 +422,7 @@ async def test_prefetch_cancel_after_partial_builtin_download_removes_private_di
             started.set()
             await asyncio.Event().wait()
 
-    monkeypatch.setattr(
-        hsr_download, "download_script_package", partial_download
-    )
+    monkeypatch.setattr(hsr_download, "download_script_package", partial_download)
     task = asyncio.create_task(
         update.prepare_engine_update(
             "SRA",
@@ -466,9 +464,7 @@ async def test_prefetch_failure_cleans_only_when_downloader_releases_ownership(
             raise FluxdownCancelUnconfirmed("server writer may be active")
         raise OSError("network lost")
 
-    monkeypatch.setattr(
-        hsr_download, "download_script_package", partial_download
-    )
+    monkeypatch.setattr(hsr_download, "download_script_package", partial_download)
     exception = (
         FluxdownResumableError
         if failure == "resumable"
@@ -508,15 +504,18 @@ async def test_prefetch_verified_package_transfers_ownership_to_candidate(
     install, download_dir, old = hsr_prefetch_case
     payload = b"verified script package"
     candidate = UpdateCandidate(
-        old.engine, old.current_version, old.latest_version,
-        old.source, old.asset_kind, old.download_url, hashlib.sha256(payload).hexdigest()
+        old.engine,
+        old.current_version,
+        old.latest_version,
+        old.source,
+        old.asset_kind,
+        old.download_url,
+        hashlib.sha256(payload).hexdigest(),
     )
     monkeypatch.setattr(
         update,
         "check_engine_update",
-        AsyncMock(
-            return_value=DiscoveryResult("SRA", "1.0", "2.0", True, candidate)
-        ),
+        AsyncMock(return_value=DiscoveryResult("SRA", "1.0", "2.0", True, candidate)),
     )
 
     async def download(_url, destination, **_kwargs):
