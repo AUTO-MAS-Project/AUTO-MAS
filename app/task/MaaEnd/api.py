@@ -96,6 +96,9 @@ class MaaEndInventoryOptions(BaseModel):
 
 
 class MaaEndOptionsOut(OutBase):
+    servers: list[ComboBoxItem] = Field(
+        default_factory=list, description="MaaEnd 原生 PC 启动服务器选项"
+    )
     crisisDrills: list[ComboBoxItem] = Field(
         default_factory=list, description="当前 MaaEnd 支持的危境预演任务"
     )
@@ -209,6 +212,7 @@ async def get_maaend_options(
     try:
         data = await service.get_options(options.scriptId)
         return MaaEndOptionsOut(
+            servers=[ComboBoxItem(**item) for item in data.get("servers", [])],
             crisisDrills=[ComboBoxItem(**item) for item in data["crisisDrills"]],
             launchGameControllers=data["launchGameControllers"],
             gameSettingControllers=data["gameSettingControllers"],
