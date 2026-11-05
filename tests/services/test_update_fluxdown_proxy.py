@@ -638,9 +638,7 @@ async def test_failed_emergency_shutdown_reports_unconfirmed_writer(
         raise OSError("denied")
 
     monkeypatch.setattr(cli, "_run_cli", command)
-    monkeypatch.setattr(
-        cli, "fluxdown_server_emergency_stop_if_exclusive", failed_stop
-    )
+    monkeypatch.setattr(cli, "fluxdown_server_emergency_stop_if_exclusive", failed_stop)
     task = asyncio.create_task(cli.fluxdown_server_download(url, target, cli_exe=exe))
     await asyncio.wait_for(started.wait(), 1)
     task.cancel()
