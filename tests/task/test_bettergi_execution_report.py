@@ -87,7 +87,10 @@ def test_terminal_failure_takes_priority_over_recoverable_error():
 
 
 @pytest.mark.asyncio
-async def test_execution_failure_logs_name_builtin_and_custom_tasks(monkeypatch):
+@pytest.mark.parametrize("execution_finished", [True, False])
+async def test_execution_failure_logs_name_builtin_and_custom_tasks(
+    monkeypatch, execution_finished
+):
     from app.models.task import ScriptItem, UserItem
     from app.task.BetterGI import AutoProxy as module
 
@@ -108,7 +111,12 @@ async def test_execution_failure_logs_name_builtin_and_custom_tasks(monkeypatch)
                 "09:00:06", "INF", "ScriptService", '→ 脚本执行结束: "自动购买商品"'
             ),
             log_entry(
-                "09:00:07", "INF", "ScriptService", '配置组 "执行层段1" 执行结束'
+                "09:00:07",
+                "INF",
+                "ScriptService",
+                '配置组 "执行层段1" 执行结束'
+                if execution_finished
+                else "执行配置组任务时失败",
             ),
         ]
     )
@@ -144,16 +152,38 @@ async def test_execution_failure_logs_name_builtin_and_custom_tasks(monkeypatch)
         lambda message: warnings.append(message.record["message"]), level="WARNING"
     )
     try:
-        assert await module.AutoProxyTask._run_execution_layer(proxy) is True
+        assert (
+            await module.AutoProxyTask._run_execution_layer(proxy) is execution_finished
+        )
     finally:
         module.logger.remove(sink)
 
     assert proxy.partial_failed_steps == 2
     custom_warning = next(line for line in warnings if "个自定义项失败" in line)
     assert "自动购买商品" in custom_warning
-    summary = next(line for line in warnings if "个步骤失败" in line)
-    assert "自动地脉花" in summary
-    assert "自动购买商品" in summary
-    assert "自动秘境" not in summary
-    assert "自动地脉花" in script.log
-    assert "自动购买商品" in script.log
+    if execution_finished:
+        summary = next(line for line in warnings if "个步骤失败" in line)
+        assert "自动地脉花" in summary
+        assert "自动购买商品" in summary
+        assert "自动秘境" not in summary
+    dispatch_summary = script.log.splitlines()[-1]
+    assert "自动地脉花" in dispatch_summary
+    assert "自动购买商品" in dispatch_summary
+    assert "自动秘境" not in dispatch_summary
+
+
+def test_legacy_leyline_setting_survives_panel_save_and_reload():
+    from app.task.BetterGI.tools.one_dragon_plan import (
+        extract_rightbar_from_plan,
+        merge_rightbar_into_plan,
+        parse_one_dragon_plan,
+    )
+
+    saved = merge_rightbar_into_plan(
+        "", "自动地脉花", {"useAdventurerHandbook": True, "LeyLineRunCount": 3}
+    )
+
+    assert parse_one_dragon_plan(saved)[0]["settings"]["useAdventurerHandbook"] is True
+    assert (
+        extract_rightbar_from_plan(saved, "自动地脉花")["useAdventurerHandbook"] is True
+    )
