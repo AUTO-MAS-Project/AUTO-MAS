@@ -2299,6 +2299,8 @@
   "core.edit.updateScriptConfigurationFile": "選んだタイミングでスクリプトの設定ファイルを更新します",
   "core.edit.updateSource": "更新ソース",
   "core.edit.updateSourceTip": "MirrorChyan：CDK が必要で、ダウンロードが速く sha256 で検証します。GitHub：プロジェクトの GitHub Release からダウンロードし、CDK は不要です。MirrorChyan に対応していないプロジェクトでも、GitHub を選べば更新を確認できます（プロジェクトに GitHub リポジトリの記載が必要です）",
+  "core.edit.baahProgramUpdate": "BAAH プログラム更新",
+  "core.edit.baahProgramUpdateHint": "タスクごとに公式更新 ZIP を取得・検証し、設定を保持して更新します。通常の取得失敗は既存版で続行し、未確認のインストールは停止します。先行取得は MAS キャッシュのみ変更します。",
   "core.edit.bettergiProgramUpdate": "BetterGI プログラム更新",
   "core.edit.bettergiProgramUpdateHint": "タスク単位で公式版を確認・更新します。ベータは上流の alpha に対応します。確認・ダウンロード失敗時は既存版で続行し、インストール未確認時は停止します。実行中は更新通知を一時的に非表示にし、終了時に復元します。バックグラウンドのバージョン照会は続きます。",
   "core.edit.maaEndProgramUpdate": "MaaEnd プログラム更新",

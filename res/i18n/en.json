@@ -2299,6 +2299,8 @@
   "core.edit.updateScriptConfigurationFile": "Update the script configuration file at the chosen moment",
   "core.edit.updateSource": "Update source",
   "core.edit.updateSourceTip": "MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: downloads from the project GitHub Release, no CDK needed. Projects not on MirrorChyan can still be checked for updates with GitHub selected (the project must name its GitHub repository)",
+  "core.edit.baahProgramUpdate": "BAAH program updates",
+  "core.edit.baahProgramUpdateHint": "Download and verify the official update ZIP once per task batch, then install while preserving user settings. Continue after ordinary download failures; block unconfirmed installations. Prefetch only writes to the MAS cache.",
   "core.edit.bettergiProgramUpdate": "BetterGI program updates",
   "core.edit.bettergiProgramUpdateHint": "Check and install official BetterGI releases once per task batch; beta maps to upstream alpha. Continue after ordinary check or download failures, but stop if installation is unconfirmed. Temporarily hide native update prompts during managed runs and restore afterwards. Upstream background version queries still run.",
   "core.edit.maaEndProgramUpdate": "MaaEnd program updates",

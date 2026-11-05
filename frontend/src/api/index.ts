@@ -19,6 +19,8 @@ export type { BAAHConfig_Run } from './models/BAAHConfig_Run';
 export type { BAAHConfig_RunInput } from './models/BAAHConfig_RunInput';
 export type { BAAHConfig_Script } from './models/BAAHConfig_Script';
 export type { BAAHConfig_ScriptInput } from './models/BAAHConfig_ScriptInput';
+export type { BAAHConfig_Update } from './models/BAAHConfig_Update';
+export type { BAAHConfig_UpdateInput } from './models/BAAHConfig_UpdateInput';
 export type { BAAHConfigInput } from './models/BAAHConfigInput';
 export type { BAAHPlanConfig } from './models/BAAHPlanConfig';
 export type { BAAHPlanConfig_ALL } from './models/BAAHPlanConfig_ALL';

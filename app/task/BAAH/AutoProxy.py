@@ -603,9 +603,13 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         最后无论成功失败都恢复托管配置。
         """
 
-        # 不同 MAS 托管可指向同一安装；软件配置也共享，按真实安装目录串行。
-        async with _utils_update_files.directory_lock(self.root_path.resolve()):
+        # manager 持有从更新准备到全体用户收尾的目录锁；独立调用的
+        # AutoProxyTask 仍然自己获取锁，避免共享配置并发写入。
+        if getattr(self, "directory_reserved", False):
             await self._run_once_locked()
+        else:
+            async with _utils_update_files.directory_lock(self.root_path.resolve()):
+                await self._run_once_locked()
 
     async def _run_once_locked(self) -> None:
         """持有安装目录锁时执行，归档、读取和最终还原均不与其他任务交错。"""

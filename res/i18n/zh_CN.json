@@ -2299,6 +2299,8 @@
   "core.edit.updateScriptConfigurationFile": "在选定的时刻更新脚本配置文件",
   "core.edit.updateSource": "更新源",
   "core.edit.updateSourceTip": "Mirror 酱：需要填写 CDK，下载快且校验 sha256；GitHub：从项目的 GitHub Release 下载，不需要 CDK。项目没接入 Mirror 酱时，选 GitHub 也能检查更新（项目要写明 GitHub 仓库）",
+  "core.edit.baahProgramUpdate": "BAAH 程序更新",
+  "core.edit.baahProgramUpdateHint": "每批任务运行前下载并校验官方更新 ZIP，再安全安装并保留用户配置。普通下载失败后继续当前安装；安装未确认时停止。下载与安装已分离，预下载不修改安装目录。",
   "core.edit.bettergiProgramUpdate": "BetterGI 程序更新",
   "core.edit.bettergiProgramUpdateHint": "每批任务运行前检查并安装 BetterGI 官方版本，公测版对应上游 alpha。普通检查或下载失败时沿用当前安装；安装未确认时停止任务。运行期间临时屏蔽本体更新弹窗，结束后恢复；上游后台版本查询仍会执行。",
   "core.edit.maaEndProgramUpdate": "MaaEnd 程序更新",
