@@ -3,7 +3,8 @@
 import string
 from pathlib import Path
 
-FLUXDOWN_EXE_NAMES = ("fluxdown.exe", "fluxdown-cli.exe", "fluxdown-desktop.exe")
+FLUXDOWN_EXE_NAMES = ("fluxdown.exe", "fluxdown-cli.exe")
+FLUXDOWN_DESKTOP_EXE_NAME = "fluxdown-desktop.exe"
 FLUXDOWN_AGENT_NAME = "fluxdown-agent.exe"
 FLUXDOWN_DAEMON_NAME = "fluxdownd.exe"
 HPATCHZ_MEMBER = "windows64/hpatchz.exe"
