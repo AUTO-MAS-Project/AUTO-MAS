@@ -50,8 +50,12 @@ class DispatchIn(BaseModel):
 
 
 class TaskCreateIn(DispatchIn):
-    planId: str | None = Field(default=None, description="通用脚本计划表配置会话的计划 ID")
-    planDay: str | None = Field(default=None, description="通用脚本计划表配置会话的日期分组")
+    planId: str | None = Field(
+        default=None, description="通用脚本计划表配置会话的计划 ID"
+    )
+    planDay: str | None = Field(
+        default=None, description="通用脚本计划表配置会话的日期分组"
+    )
     mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"] = Field(
         ...,
         description="任务模式; CycleRun 为循环运行, 仅接受循环队列, 其托管按 AutoProxy 执行",
