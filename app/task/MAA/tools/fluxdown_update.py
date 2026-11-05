@@ -243,12 +243,12 @@ async def prepare_maa_fluxdown_update(
         return latest
     except asyncio.CancelledError:
         raise
-    except (
-        _utils_fluxdown_cli.FluxdownCancelUnconfirmed,
-        _service_update_fluxdown.FluxdownResumableError,
-    ):
-        # Keep a resumable or unconfirmed server task's destination intact.
+    except _utils_fluxdown_cli.FluxdownCancelUnconfirmed:
+        # Never reclaim a private directory while its writer is unconfirmed.
         retain_download = True
+        raise
+    except _service_update_fluxdown.FluxdownResumableError:
+        # The dispatcher confirmed stop; random prefetch paths are not reused.
         raise
     except Exception as error:
         raise RuntimeError(f"MAA 更新准备失败: {error}") from error

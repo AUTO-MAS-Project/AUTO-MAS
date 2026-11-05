@@ -25,7 +25,6 @@ from typing import TypeVar
 import httpx
 
 from app.core.script_update import script_downloader
-from app.services.common.update.fluxdown import FluxdownResumableError
 from app.utils import get_logger
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
@@ -355,9 +354,9 @@ async def prepare_engine_update(
                 proxy=proxy,
                 log=_noop,
             )
-        except (FluxdownCancelUnconfirmed, FluxdownResumableError):
-            # A daemon may still own the output, or may need this file for
-            # resume. Never delete a destination with uncertain ownership.
+        except FluxdownCancelUnconfirmed:
+            # Only an unconfirmed daemon retains this private destination.
+            # Confirmed failures cannot reuse a randomly named prefetch path.
             keep_for_fluxdown = True
             raise
         if package is None:

@@ -91,9 +91,13 @@ async def test_partial_install_blocks_fallback_then_forces_repair(
 
 
 @pytest.mark.asyncio
-async def test_failed_prefetch_cleans_download_stage(installation):
-    update.download_file.side_effect = TimeoutError("network unavailable")
-    with pytest.raises(TimeoutError):
+@pytest.mark.parametrize("resumable", [False, True])
+async def test_failed_prefetch_cleans_download_stage(installation, resumable):
+    from app.services.common.update.fluxdown import FluxdownResumableError
+
+    error = FluxdownResumableError if resumable else TimeoutError
+    update.download_file.side_effect = error("network unavailable, stopped")
+    with pytest.raises(error):
         await update.prepare_update(installation)
     assert not list((installation.parent / "data/whimbox_update").rglob("download-*"))
 

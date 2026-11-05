@@ -25,7 +25,6 @@ from packaging.version import Version
 
 from app.core import Config
 from app.core.script_update import download_script_package as download_file
-from app.services.common.update.fluxdown import FluxdownResumableError
 from app.services.script_release import request_github_release
 from app.utils import ProcessRunner
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
@@ -264,7 +263,7 @@ async def prepare_update(root: Path) -> PreparedUpdate | str:
         return PreparedUpdate(
             root.resolve(), target, current, repairing, wheel, packages, hashes
         )
-    except (FluxdownCancelUnconfirmed, FluxdownResumableError):
+    except FluxdownCancelUnconfirmed:
         # The daemon might still own this isolated destination. Do not
         # delete a file that an external writer may continue to update.
         raise

@@ -27,7 +27,6 @@ from app.core import Config
 from app.core.update import download_file
 from app.models.config import MaaEndConfig
 from app.services import script_install
-from app.services.common.update.fluxdown import FluxdownResumableError
 from app.services.common.update.transport import (
     DownloadProgress,
     request_mirror_resource,
@@ -283,14 +282,11 @@ async def prepare_update(
             destination.unlink(missing_ok=True)
             destination.parent.rmdir()
         raise
-    except (
-        _fluxdown_cli.FluxdownCancelUnconfirmed,
-        FluxdownResumableError,
-    ):
-        # FluxDown 未确认停止或保留了续传任务，不能删除其输出目标。
+    except _fluxdown_cli.FluxdownCancelUnconfirmed:
+        # FluxDown 未确认停止，不能删除其输出目标。
         raise
     except Exception:
-        # 不明写入与可续传错误已由上面的专用异常分支保留。
+        # 不明写入由上面的专用异常保留；停写后的独立路径不再复用。
         with suppress(OSError):
             destination.unlink(missing_ok=True)
             destination.parent.rmdir()

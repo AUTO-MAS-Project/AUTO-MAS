@@ -522,6 +522,7 @@ async def _ensure_can_downgrade(
 class FluxdownResumableError(RuntimeError):
     """FluxDown server 任务级失败（网络中断/超时/任务 failed），task 已保留可续传。
 
+    抛出前已确认任务停写；未确认停写使用 FluxdownWriterUnconfirmed。
     上层应原地重试（同一 url+destination 会走 resume）；连续重试仍失败时
     在最终失败提示中建议改用内置 httpx 重新下载（downloader="builtin"），
     不要落 --local（会删掉已下载的分段文件）。

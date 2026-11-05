@@ -530,8 +530,11 @@ async def test_unconfirmed_downloader_keeps_its_private_destination(
     with pytest.raises(error_type):
         await update.update_before_run(root, config)
     downloads = list((root.parent / "data/maaend_update").glob("download-*"))
-    assert len(downloads) == 1
-    assert next(downloads[0].iterdir()).read_bytes() == b"partial download"
+    if error_type is FluxdownCancelUnconfirmed:
+        assert len(downloads) == 1
+        assert next(downloads[0].iterdir()).read_bytes() == b"partial download"
+    else:
+        assert not downloads
     assert update.read_install(root)[0] == Version("2.1.0")
 
 
@@ -597,7 +600,10 @@ async def test_cancel_fluxdown_download_preserves_unconfirmed_partial_zip(
     async def partial_fluxdown_download(_url, destination, **_kwargs):
         destination.write_bytes(b"unconfirmed FluxDown part")
         started.set()
-        await asyncio.Event().wait()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            raise FluxdownCancelUnconfirmed("daemon still writing") from None
 
     monkeypatch.setattr(
         update, "download_file", AsyncMock(side_effect=partial_fluxdown_download)
@@ -605,7 +611,7 @@ async def test_cancel_fluxdown_download_preserves_unconfirmed_partial_zip(
     pending = asyncio.create_task(update.update_before_run(root, config))
     await asyncio.wait_for(started.wait(), timeout=5)
     pending.cancel()
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(FluxdownCancelUnconfirmed):
         await asyncio.wait_for(pending, timeout=5)
     downloads = list((root.parent / "data/maaend_update").glob("download-*"))
     assert len(downloads) == 1

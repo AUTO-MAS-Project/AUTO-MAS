@@ -300,7 +300,7 @@ async def test_cancelled_builtin_prefetch_removes_private_partial(
     [
         ("ordinary", False),
         ("unsafe", True),
-        ("resumable", True),
+        ("resumable", False),
     ],
 )
 async def test_hsr_prefetch_failure_releases_only_owned_files(
@@ -497,7 +497,7 @@ async def test_prefetch_failure_cleans_only_when_downloader_releases_ownership(
             download_dir=download_dir,
         )
     stages = list(download_dir.iterdir()) if download_dir.exists() else []
-    if failure == "ordinary":
+    if failure in ("ordinary", "resumable"):
         assert not stages
     else:
         assert len(stages) == 1

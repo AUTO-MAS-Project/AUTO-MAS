@@ -1066,11 +1066,13 @@ async def prepare_install_resources(
                                 timeout=_DOWNLOAD_TIMEOUT,
                                 source="GitHub",
                             )
-                        except (
-                            FluxdownCancelUnconfirmed,
-                            FluxdownResumableError,
-                        ):
+                        except FluxdownCancelUnconfirmed:
                             can_cleanup = False
+                            raise
+                        except FluxdownResumableError:
+                            # Keep the shared retry path, but reclaim random
+                            # prefetch archives after confirmed stop.
+                            can_cleanup = download_only
                             raise
                         await _run_write_thread(
                             _build_stage, archive, target, github=True
