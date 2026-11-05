@@ -54,11 +54,13 @@ def installation(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_no_downgrade_or_unnecessary_install(installation):
+async def test_no_downgrade_or_unnecessary_install(installation, monkeypatch):
     update.installed_version.return_value = Version("3.2.0")
+    confirm = AsyncMock()
+    monkeypatch.setattr(update, "confirm_usable_installation", confirm)
     await update.ensure_backend_updated(installation)
     update.download_file.assert_not_awaited()
-    update.run_python.assert_not_awaited()
+    confirm.assert_awaited_once_with(installation)
 
 
 @pytest.mark.asyncio
@@ -85,6 +87,21 @@ async def test_partial_install_blocks_fallback_then_forces_repair(
         call for call in update.run_python.await_args_list if "install" in call.args
     ]
     assert "--force-reinstall" in installs[-1].args
+
+
+@pytest.mark.asyncio
+async def test_failed_prefetch_cleans_download_stage(installation):
+    update.download_file.side_effect = TimeoutError("network unavailable")
+    with pytest.raises(TimeoutError):
+        await update.prepare_update(installation)
+    assert not list((installation.parent / "data/whimbox_update").rglob("download-*"))
+
+
+@pytest.mark.asyncio
+async def test_stale_no_update_prefetch_rechecks_pending_marker(installation):
+    update.pending_marker(installation).touch()
+    with pytest.raises(update.WhimboxUpdateUnsafeError):
+        await update.apply_update(installation, "already up to date")
 
 
 @pytest.mark.asyncio
