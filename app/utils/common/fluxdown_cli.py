@@ -1801,14 +1801,18 @@ async def _fluxdown_server_download(
                 speed = 0.0
                 # 等待(0)/下载中(1)/准备中(5) 都算活动态：排队/准备卡死同样要判定
                 if status in _ACTIVE_STATUSES and now - last_change > timeout:
-                    # 尽力暂停旧任务再抛错：防止 daemon 后台继续下载，
-                    # 分发层降 --local 时双写同一文件
-                    try:
-                        await asyncio.to_thread(
-                            _run_cli, cli_exe, env, ["pause", task_id], 10
+                    # A pause request is not a stopped-writer acknowledgement.
+                    # If pause and status cannot be confirmed, the queue must
+                    # stop instead of treating this as a retryable network error.
+                    confirmed_stopped = await _confirm_paused()
+                    if not confirmed_stopped:
+                        record.status = "failed"
+                        record.error = (
+                            "下载停滞且无法确认 FluxDown 任务已停止，"
+                            "后台仍可能写入目标文件"
                         )
-                    except Exception:
-                        pass
+                        record.duration_ms = int((time.monotonic() - t0) * 1000)
+                        raise FluxdownCancelUnconfirmed(record.error)
                     record.status = "failed"
                     record.error = (
                         f"下载停滞（{timeout:.0f}s 无新字节），task 已保留可续传"
