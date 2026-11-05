@@ -51,28 +51,14 @@
           />
         </div>
         <div v-if="!showCycleConfig" class="row-cell days-cell">
-          <a-select
+          <QueueWeekdaySelect
             v-model:value="record.schedule.Days"
-            mode="multiple"
-            size="small"
             style="width: 100%"
             class="days-select"
-            :placeholder="t('core.queue.time.selectDays')"
             :disabled="locked"
-            :max-tag-count="7"
             :bordered="false"
             @change="saveDays(record)"
-          >
-            <a-select-option value="Monday">{{ t('core.queue.time.Monday') }}</a-select-option>
-            <a-select-option value="Tuesday">{{ t('core.queue.time.Tuesday') }}</a-select-option>
-            <a-select-option value="Wednesday">{{
-              t('core.queue.time.Wednesday')
-            }}</a-select-option>
-            <a-select-option value="Thursday">{{ t('core.queue.time.Thursday') }}</a-select-option>
-            <a-select-option value="Friday">{{ t('core.queue.time.Friday') }}</a-select-option>
-            <a-select-option value="Saturday">{{ t('core.queue.time.Saturday') }}</a-select-option>
-            <a-select-option value="Sunday">{{ t('core.queue.time.Sunday') }}</a-select-option>
-          </a-select>
+          />
         </div>
         <div v-if="showCycleConfig" class="row-cell cycle-cell">
           <div class="cycle-panel">
@@ -135,38 +121,12 @@
                   :allow-clear="false"
                   @change="saveScheduleTime(record)"
                 />
-                <a-select
+                <QueueWeekdaySelect
                   v-model:value="record.schedule.Days"
-                  mode="multiple"
-                  size="small"
                   style="min-width: 168px"
-                  :placeholder="t('core.queue.time.selectDays')"
                   :disabled="!record.schedule.Enabled"
-                  :max-tag-count="3"
                   @change="saveDays(record)"
-                >
-                  <a-select-option value="Monday">{{
-                    t('core.queue.time.Monday')
-                  }}</a-select-option>
-                  <a-select-option value="Tuesday">
-                    {{ t('core.queue.time.Tuesday') }}
-                  </a-select-option>
-                  <a-select-option value="Wednesday">
-                    {{ t('core.queue.time.Wednesday') }}
-                  </a-select-option>
-                  <a-select-option value="Thursday">
-                    {{ t('core.queue.time.Thursday') }}
-                  </a-select-option>
-                  <a-select-option value="Friday">{{
-                    t('core.queue.time.Friday')
-                  }}</a-select-option>
-                  <a-select-option value="Saturday">
-                    {{ t('core.queue.time.Saturday') }}
-                  </a-select-option>
-                  <a-select-option value="Sunday">{{
-                    t('core.queue.time.Sunday')
-                  }}</a-select-option>
-                </a-select>
+                />
               </template>
             </div>
 
@@ -209,6 +169,8 @@
 <script setup lang="ts">
 import DragHandle from '@/components/DragHandle.vue'
 import DraggableTableShell from './DraggableTableShell.vue'
+import QueueWeekdaySelect from './QueueWeekdaySelect.vue'
+import { QUEUE_WEEKDAYS } from './queueWeekdays'
 import { useI18n } from 'vue-i18n'
 import { onMounted, ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
@@ -353,11 +315,9 @@ const saveInterval = async (record: any) => {
 }
 
 // 周几按星期顺序存盘，和定时列表保持一致
-const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-
 const saveDays = async (record: any) => {
   const days = [...(record.schedule.Days || [])].sort(
-    (a: string, b: string) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b)
+    (a: string, b: string) => QUEUE_WEEKDAYS.indexOf(a) - QUEUE_WEEKDAYS.indexOf(b)
   )
   record.schedule.Days = days
   await saveSchedule(record, { Days: days })

@@ -94,6 +94,58 @@ test.describe('@queue @scheduler user queue', () => {
         await expect(selectedScripts.nth(index)).toHaveText(`MAA - ${script.name}`)
       }
 
+      await page.keyboard.press('Escape')
+      await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0)
+      const timeAdded = responseFor('/api/queue/time/add')
+      await page.getByRole('button', { name: 'Add schedule' }).click()
+      expect((await (await timeAdded).json()).code).toBe(200)
+      const timeDays = page.locator('.time-set-card .draggable-row .days-cell')
+      await expect(timeDays).toHaveText(['Every day'])
+      await expect(timeDays.locator('input, button, .ant-select')).toHaveCount(0)
+
+      const weekdays = rows.locator('.days-select')
+      await expect(weekdays).toHaveText(['Every day', 'Every day'])
+      await weekdays.first().click()
+      for (const day of ['Tue', 'Thu', 'Sat', 'Sun']) {
+        const saved = responseFor('/api/queue/item/update')
+        await page
+          .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
+          .getByText(day, { exact: true })
+          .click()
+        expect((await (await saved).json()).code).toBe(200)
+      }
+      await page.keyboard.press('Escape')
+      await expect(weekdays.first().locator('.ant-select-selection-item')).toHaveText([
+        'Mon',
+        'Wed',
+        'Fri',
+      ])
+
+      // 空选择按原规则保存为空，不把它折叠成每天。
+      await weekdays.first().click()
+      for (const day of ['Mon', 'Wed', 'Fri']) {
+        const saved = responseFor('/api/queue/item/update')
+        await page
+          .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
+          .getByText(day, { exact: true })
+          .click()
+        expect((await (await saved).json()).code).toBe(200)
+      }
+      await page.keyboard.press('Escape')
+      await expect(weekdays.first().locator('.ant-select-selection-placeholder')).toHaveText(
+        'Select the days'
+      )
+      await weekdays.first().click()
+      for (const day of ['Mon', 'Wed', 'Fri']) {
+        const saved = responseFor('/api/queue/item/update')
+        await page
+          .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
+          .getByText(day, { exact: true })
+          .click()
+        expect((await (await saved).json()).code).toBe(200)
+      }
+      await page.keyboard.press('Escape')
+
       const reordered = responseFor('/api/queue/item/order')
       const from = await rows.first().locator('.drag-handle').boundingBox()
       const to = await rows.last().boundingBox()
@@ -123,6 +175,12 @@ test.describe('@queue @scheduler user queue', () => {
         `MAA - ${scripts[0]!.name}`,
       ])
       await expect(startup.locator('.ant-select-selection-item')).toHaveText('Never')
+      await expect(weekdays.first()).toHaveText('Every day')
+      await expect(weekdays.last().locator('.ant-select-selection-item')).toHaveText([
+        'Mon',
+        'Wed',
+        'Fri',
+      ])
       await app.evidence('queue-content-reloaded')
 
       await goTo('Scheduler')
@@ -213,6 +271,133 @@ test.describe('@queue @scheduler user queue', () => {
           })
         await post('/api/scripts/delete', { scriptId: script.scriptId })
       }
+    }
+  })
+
+  test('preserves raw trigger weekdays while task weekdays are edited and reloaded', async ({
+    app,
+    page,
+  }) => {
+    const post = async (path: string, data: unknown = {}) => {
+      const response = await page.request.post(`${backend}${path}`, { data })
+      expect(response.ok()).toBeTruthy()
+      const body = await response.json()
+      expect(body.code).toBe(200)
+      return body
+    }
+    const responseFor = (path: string) =>
+      page.waitForResponse(
+        response => response.url().endsWith(path) && response.request().method() === 'POST'
+      )
+    let queueId: string | undefined
+    let scriptId: string | undefined
+    try {
+      scriptId = (await post('/api/scripts/add', { type: 'MAA' })).scriptId
+      queueId = (await post('/api/queue/add')).queueId
+      const taskIds: string[] = []
+      const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+      for (const schedule of [
+        { Enabled: false, Days: allDays },
+        { Enabled: true, Days: [] },
+      ]) {
+        const { queueItemId } = await post('/api/queue/item/add', { queueId })
+        taskIds.push(queueItemId)
+        await post('/api/queue/item/update', {
+          queueId,
+          queueItemId,
+          data: { Info: { ScriptId: scriptId }, Schedule: schedule },
+        })
+      }
+
+      for (const info of [
+        { Enabled: false, Days: ['Tuesday', 'Thursday'] },
+        { Enabled: true, Days: [] },
+      ]) {
+        const { timeSetId } = await post('/api/queue/time/add', { queueId })
+        await post('/api/queue/time/update', { queueId, timeSetId, data: { Info: info } })
+      }
+      const originalTimes = await post('/api/queue/time/get', { queueId })
+      const originalTasks = await post('/api/queue/item/get', { queueId })
+
+      await app.goto('/queue')
+      const timeRows = page.locator('.time-set-card .draggable-row')
+      const timeDays = timeRows.locator('.days-cell')
+      const taskDays = page.locator('.queue-item-card .draggable-row .days-select')
+      await expect(timeDays).toHaveText(['Tue, Thu', '—'])
+      await expect(timeDays.locator('input, button, .ant-select')).toHaveCount(0)
+      await expect(taskDays.first()).toHaveText('Every day')
+      await expect(taskDays.last().locator('.ant-select-selection-placeholder')).toHaveText(
+        'Select the days'
+      )
+
+      await taskDays.first().click()
+      for (const day of ['Tue', 'Thu', 'Sat', 'Sun']) {
+        const saved = responseFor('/api/queue/item/update')
+        await page
+          .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
+          .getByText(day, { exact: true })
+          .click()
+        const response = await saved
+        expect((await response.json()).code).toBe(200)
+        expect(response.request().postDataJSON()).toMatchObject({
+          queueId,
+          queueItemId: taskIds[0],
+        })
+      }
+      await page.keyboard.press('Escape')
+      await expect(taskDays.first().locator('.ant-select-selection-item')).toHaveText([
+        'Mon',
+        'Wed',
+        'Fri',
+      ])
+      // 此时任务日期与定时触发日期完全错开，上方仍展示原始日期。
+      await expect(timeDays).toHaveText(['Tue, Thu', '—'])
+
+      for (const label of ['Enabled', 'Disabled']) {
+        await timeRows.first().locator('.status-select').click()
+        const saved = responseFor('/api/queue/time/update')
+        await page
+          .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
+          .getByText(label, { exact: true })
+          .click()
+        expect((await (await saved).json()).code).toBe(200)
+        await expect(
+          timeRows.first().locator('.status-select .ant-select-selection-item')
+        ).toHaveText(label)
+        await expect(timeDays).toHaveText(['Tue, Thu', '—'])
+      }
+
+      await page.reload()
+      await expect(timeDays).toHaveText(['Tue, Thu', '—'])
+      await expect(timeDays.locator('input, button, .ant-select')).toHaveCount(0)
+      await expect(taskDays.first().locator('.ant-select-selection-item')).toHaveText([
+        'Mon',
+        'Wed',
+        'Fri',
+      ])
+      await expect(taskDays.last().locator('.ant-select-selection-placeholder')).toHaveText(
+        'Select the days'
+      )
+      const savedTimes = await post('/api/queue/time/get', { queueId })
+      expect(savedTimes.index).toEqual(originalTimes.index)
+      expect(savedTimes.data).toEqual(originalTimes.data)
+      const savedTasks = await post('/api/queue/item/get', { queueId })
+      expect(savedTasks.index).toEqual(originalTasks.index)
+      expect(savedTasks.data).toEqual({
+        ...originalTasks.data,
+        [taskIds[0]!]: {
+          ...originalTasks.data[taskIds[0]!],
+          Schedule: {
+            ...originalTasks.data[taskIds[0]!].Schedule,
+            Days: ['Monday', 'Wednesday', 'Friday'],
+          },
+        },
+      })
+      await page.locator('.time-set-card').scrollIntoViewIfNeeded()
+      await app.evidence('queue-trigger-and-task-weekdays')
+    } finally {
+      if (queueId) await post('/api/queue/delete', { queueId })
+      if (scriptId) await post('/api/scripts/delete', { scriptId })
     }
   })
 })

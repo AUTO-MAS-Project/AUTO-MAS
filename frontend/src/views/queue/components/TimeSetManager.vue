@@ -51,28 +51,7 @@
           </a-select>
         </div>
         <div class="row-cell days-cell">
-          <a-select
-            v-model:value="record.days"
-            mode="multiple"
-            size="small"
-            style="width: 100%"
-            :placeholder="t('core.queue.time.selectDays')"
-            :disabled="loading"
-            :max-tag-count="7"
-            :bordered="false"
-            class="days-select"
-            @change="updateTimeSetDays(record)"
-          >
-            <a-select-option value="Monday">{{ t('core.queue.time.Monday') }}</a-select-option>
-            <a-select-option value="Tuesday">{{ t('core.queue.time.Tuesday') }}</a-select-option>
-            <a-select-option value="Wednesday">{{
-              t('core.queue.time.Wednesday')
-            }}</a-select-option>
-            <a-select-option value="Thursday">{{ t('core.queue.time.Thursday') }}</a-select-option>
-            <a-select-option value="Friday">{{ t('core.queue.time.Friday') }}</a-select-option>
-            <a-select-option value="Saturday">{{ t('core.queue.time.Saturday') }}</a-select-option>
-            <a-select-option value="Sunday">{{ t('core.queue.time.Sunday') }}</a-select-option>
-          </a-select>
+          <span>{{ formatDays(record.days) }}</span>
         </div>
         <div class="row-cell time-cell">
           <a-time-picker
@@ -107,6 +86,7 @@
 <script setup lang="ts">
 import DragHandle from '@/components/DragHandle.vue'
 import DraggableTableShell from './DraggableTableShell.vue'
+import { areAllWeekdaysSelected, QUEUE_WEEKDAYS } from './queueWeekdays'
 import { useI18n } from 'vue-i18n'
 import { ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
@@ -115,7 +95,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 import { Service } from '@/composables/useTimeSetApi'
 import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const logger = window.electronAPI.getLogger('定时项管理')
 
 // Props
@@ -141,21 +121,12 @@ const parseTimeString = (value: string) => parseConfigTime(value, timeOffset)
 const formatTimeValue = (value: Dayjs | string, original: string) =>
   serializeConfigTime(value, original, timeOffset)
 
-// 星期排序工具函数
-type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday'
-
-const sortDays = (days: string[]): DayOfWeek[] => {
-  const dayOrder: { [key: string]: number } = {
-    Monday: 1,
-    Tuesday: 2,
-    Wednesday: 3,
-    Thursday: 4,
-    Friday: 5,
-    Saturday: 6,
-    Sunday: 7,
-  }
-  return [...days].sort((a, b) => dayOrder[a] - dayOrder[b]) as DayOfWeek[]
-}
+// 只格式化展示，不回写定时触发日期；空选择仍表示不触发。
+const formatDays = (days: string[]) =>
+  areAllWeekdaysSelected(days)
+    ? t('core.plan.week.ALL')
+    : days.map(day => t(`core.queue.time.${day}`)).join(locale.value === 'en-US' ? ', ' : '、') ||
+      '—'
 
 // 计算属性 - 使用props传入的数据
 const timeSets = ref([...props.timeSets])
@@ -165,7 +136,9 @@ const processTimeSets = (rawTimeSets: any[]) => {
   return rawTimeSets.map(item => ({
     ...item,
     timeValue: parseTimeString(item.time),
-    days: sortDays(item.days || []),
+    days: [...(item.days || [])].sort(
+      (a, b) => QUEUE_WEEKDAYS.indexOf(a) - QUEUE_WEEKDAYS.indexOf(b)
+    ),
   }))
 }
 
@@ -295,39 +268,6 @@ const updateTimeSetStatus = async (timeSet: any) => {
     message.error(t('core.queue.toast.updateStatusFailed', { error: errorMsg }))
     // 回滚状态
     timeSet.enabled = !timeSet.enabled
-  }
-}
-
-// 更新定时项执行周期
-const updateTimeSetDays = async (timeSet: any) => {
-  try {
-    // 对选中的日期按星期顺序排序
-    const sortedDays = sortDays(timeSet.days || [])
-    timeSet.days = sortedDays
-
-    const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
-      queueId: props.queueId,
-      timeSetId: timeSet.id,
-      data: {
-        Info: {
-          Days: sortedDays,
-        },
-      },
-    })
-
-    if (response.code === 200) {
-      // 周期更新成功，无需通知
-    } else {
-      message.error(
-        t('core.queue.toast.daysUpdateFailed', {
-          error: response.message || t('core.queue.toast.unknownError'),
-        })
-      )
-    }
-  } catch (error: any) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`更新执行周期失败: ${errorMsg}`)
-    message.error(t('core.queue.toast.updateDaysFailed', { error: errorMsg }))
   }
 }
 
@@ -602,16 +542,5 @@ const onDragEnd = async (evt: any) => {
   flex: 1;
   min-width: 120px;
   max-width: 200px;
-}
-
-/* 执行周期选择器样式优化 */
-.days-select :deep(.ant-select-selection-item) {
-  background: transparent !important;
-  border: none !important;
-  padding-right: 4px !important;
-}
-
-.days-select :deep(.ant-select-selection-item-remove) {
-  display: none !important;
 }
 </style>
