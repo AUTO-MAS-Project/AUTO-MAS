@@ -46,14 +46,14 @@
 请求通道不一致不拦截（回落是预期行为），「不降级」由版本比较守卫。
 
 合规边界：不读取/解密 MAA 配置内的 MirrorChyanCdk；版本信号只用 MAA.dll 的
-版本资源与 PE 头（不执行任何被检测文件）；通道偏好读上游配置字段（值经手
-语义不过手）；登记只写上游配置字段；安装成败取上游结果面
+版本资源与 PE 头（不执行任何被检测文件）；历史通道偏好迁移后服从 MAS
+脚本配置；登记只写上游配置字段；安装成败取上游结果面
 （pending-update-*.txt 标志文件、安装目录实际版本），不自建判定。
 
-失败语义：旧缓存预检查失败只写日志；启动前入口会复核登记并在失败时停止
-用户任务。主动取消正常
-传播。同一目标版本按本地日期每天最多尝试一次，出现新版可再次取包，失败
-退避仍生效；先免费查版本与复用有效缓存，再申请带 CDK 的一次性下载地址。
+失败语义：缓存登记失败只写日志；启动前入口会复核登记并在失败时停止
+用户任务。主动取消正常传播。同一目标版本按本地日期每天最多尝试一次，
+出现新版可再次取包，失败退避仍生效；先免费查版本与复用有效缓存，
+再申请带 CDK 的一次性下载地址。
 
 只支持 Mirror 酱完整包：查询不带 current_version（无增量基线，服务端只回
 完整包，对齐上游修复路径语义），响应 update_type 非 full 或包内含 OTA 清单
@@ -538,16 +538,12 @@ async def _precheck_inner(
     arch: str,
     cdk: str,
     *,
-    target_version: str | None = None,
+    target_version: str,
 ) -> str | None:
     """持缓存锁检查目标与额度，必要时取包，返回确认的版本供启动入口登记。"""
     release = read_installed_release(maa_root)
     if release is None:
         return None
-    if target_version is None:
-        from .fluxdown_update import query_latest_maa_version
-
-        target_version = await query_latest_maa_version(arch, channel)
     current = parse_version(release[0])
     target = parse_version(target_version)
     if current is None or target is None:
@@ -609,18 +605,16 @@ async def _precheck_inner(
 async def prepare_maa_software_update(
     maa_root: Path, *, config_dir: Path | None = None, config: MaaConfig | None = None
 ) -> str | None:
-    """整批用户结束、update_maa() 之前调用。
+    """复核当前安装，将共享缓存中的完整更新包登记到安装目录。
 
-    等待本轮预下载收尾（下载自身有总超时，主动取消交管理器回收），再复核
-    当前安装是否仍需更新，把共享缓存完整包复制进安装目录并登记；安装由既有的
-    update_maa() → MAA 官方更新链完成。任何失败只写日志，不改变 update_maa()
+    等待共享缓存锁后复核版本与包完整性，再复制并登记；安装由调用方交给
+    MAA 官方更新链完成。任何失败只写日志，不改变 update_maa()
     对既有合法待更新包的处理；主动取消正常传播。登记成功返回实际版本，否则返回 None。
 
     Args:
         maa_root: MAA 安装目录。
-        config_dir: 优先读取更新通道偏好的配置目录，同
-            prepare_maa_software_before_run。
-        config: 脚本配置（MaaConfig），按 get(段, 键) 读取接管开关与 CDK。
+        config_dir: 现有调用签名中的配置目录，本阶段不读取。
+        config: 脚本配置，提供更新接管开关、通道与 CDK。
     """
     try:
         if config is None:
@@ -669,7 +663,7 @@ async def prepare_maa_software_update(
                     "MAA 本体更新: 检测到 MAA.Updater.exe 正在安装，本轮跳过登记"
                 )
                 return
-            # 等待预检查/缓存及进程扫描期间，全局回退 CDK 可能被清空。
+            # 等待缓存锁及进程扫描期间，全局回退 CDK 可能被清空。
             enabled, _ = resolve_takeover_credentials(config)
             if not enabled:
                 logger.info("MAA 本体更新: 登记前已不满足接管条件，本轮跳过")
