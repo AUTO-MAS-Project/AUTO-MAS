@@ -1095,7 +1095,11 @@ def fluxdown_server_emergency_stop_if_exclusive(
             key = _map_key(url, Path(destination))
             if any(
                 mapped_key != key
-                and (not isinstance(entry, dict) or bool(entry.get("task_id")))
+                and (
+                    not isinstance(entry, dict)
+                    or bool(entry.get("task_id"))
+                    or bool(entry.get("pending_add"))
+                )
                 for mapped_key, entry in _load_task_map(cli_exe).items()
             ):
                 return False
@@ -1187,7 +1191,7 @@ def _map_pop(cli_exe: Path, key: str) -> None:
 def _map_put(
     cli_exe: Path,
     key: str,
-    task_id: str,
+    task_id: str | None,
     url: str,
     destination: Path,
     proxy: str | None = None,
@@ -1197,6 +1201,7 @@ def _map_put(
         m = _load_task_map(cli_exe)
         m[key] = {
             "task_id": task_id,
+            "pending_add": task_id is None,
             "url": url,
             "save_path": str(destination),
             "updated": time.time(),
@@ -1221,6 +1226,47 @@ def fluxdown_server_forget(cli_exe: Path, url: str, destination: Path) -> None:
     _map_pop(cli_exe, _map_key(url, Path(destination)))
 
 
+def _recover_pending_add(cli_exe: Path, url: str, destination: Path) -> str | None:
+    """通过公开任务列表恢复丢失的 add 响应；空列表也不能证明请求未被接受。"""
+    key = _map_key(url, destination)
+    entry = _load_task_map(cli_exe).get(key) or {}
+    if entry.get("task_id"):
+        return str(entry["task_id"])
+    handle = fluxdown_server_ensure(cli_exe)
+    if handle is None:
+        return None
+    code, out = _run_cli(
+        cli_exe, _cli_env(handle.gateway_port, handle.token), ["list", "--json"], 15
+    )
+    tasks = _parse_cli_json(out) if code == 0 else None
+    if not isinstance(tasks, list):
+        return None
+    target = os.path.normcase(str(destination.resolve()))
+    matches = set()
+    for task in tasks:
+        if not isinstance(task, dict) or not all(
+            isinstance(task.get(name), str) and task[name]
+            for name in ("taskId", "url", "saveDir", "fileName")
+        ):
+            return None
+        path = Path(task["saveDir"]) / task["fileName"]
+        if task["url"] == url and os.path.normcase(str(path.resolve())) == target:
+            matches.add(task["taskId"])
+    if len(matches) != 1:
+        return None
+    task_id = matches.pop()
+    with _TASK_MAP_LOCK:
+        mapping = _load_task_map(cli_exe)
+        mapping[key] = {
+            **mapping[key],
+            "task_id": task_id,
+            "pending_add": False,
+            "updated": time.time(),
+        }
+        _save_task_map(cli_exe, mapping)
+    return task_id
+
+
 def fluxdown_server_task_safe_to_overwrite(
     cli_exe: Path,
     url: str,
@@ -1238,7 +1284,11 @@ def fluxdown_server_task_safe_to_overwrite(
     target = os.path.normcase(str(Path(destination).resolve()))
     task_ids: set[str] = set()
     for mapped_key, entry in _load_task_map(cli_exe).items():
-        if mapped_key == key and other_only:
+        if (
+            mapped_key == key
+            and other_only
+            and not (isinstance(entry, dict) and entry.get("pending_add"))
+        ):
             continue
         if not isinstance(entry, dict):
             if mapped_key == key:
@@ -1254,6 +1304,14 @@ def fluxdown_server_task_safe_to_overwrite(
             except (OSError, ValueError):
                 return False
         task_id = entry.get("task_id")
+        if entry.get("pending_add"):
+            task_id = _recover_pending_add(
+                cli_exe, entry["url"], Path(entry["save_path"])
+            )
+            if task_id is None:
+                return False
+            if mapped_key == key and other_only:
+                continue
         if task_id:
             task_ids.add(str(task_id))
     if not task_ids:
@@ -1485,6 +1543,7 @@ async def _fluxdown_server_download(
     key = _map_key(url, destination)
     mapping = _load_task_map(cli_exe).get(key) or {}
     task_id: str | None = mapping.get("task_id")
+    add_unconfirmed = bool(mapping.get("pending_add"))
 
     def _status(tid: str) -> dict | None:
         code, out = _run_cli(cli_exe, env, ["status", tid, "--json"], timeout=15)
@@ -1566,6 +1625,16 @@ async def _fluxdown_server_download(
             record.duration_ms = int((time.monotonic() - t0) * 1000)
             raise RuntimeError("FluxDown server 不可用")
         env = _cli_env(handle.gateway_port, handle.token)
+        if add_unconfirmed:
+            task_id = await _to_thread_strong(
+                _recover_pending_add, cli_exe, url, destination, propagate_cancel=True
+            )
+            if task_id is None:
+                raise FluxdownCancelUnconfirmed(
+                    "上次 add 请求结果未确认，保留目标文件且禁止新建下载"
+                )
+            add_unconfirmed = False
+            mapping = _load_task_map(cli_exe).get(key) or {}
         if task_id and mapping.get("proxy_hash") != _proxy_hash(proxy):
             # resume 不接受 --proxy，必须停下旧任务后重建。旧版映射没有指纹，
             # 同样不能假定其网络配置；不删除旧任务的文件，残包沿用下方隔离路径。
@@ -1725,18 +1794,41 @@ async def _fluxdown_server_download(
             ]
             if proxy:
                 args += ["--proxy", proxy]
+            # 请求前持久化不明身份，客户端响应丢失或 MAS 退出后也不能重复 add。
+            await _to_thread_strong(
+                _map_put,
+                cli_exe,
+                key,
+                None,
+                url,
+                destination,
+                proxy,
+                propagate_cancel=True,
+            )
+            add_unconfirmed = True
             inflight_cli = asyncio.ensure_future(
                 asyncio.to_thread(_run_cli, cli_exe, env, args, 60)
             )
             code, out = await asyncio.shield(inflight_cli)
             inflight_cli = None
             new_id: str | None = _extract_task_id(out)
-            if code != 0 or not new_id:
+            if not new_id:
+                new_id = await _to_thread_strong(
+                    _recover_pending_add,
+                    cli_exe,
+                    url,
+                    destination,
+                    propagate_cancel=True,
+                )
+                if new_id is None:
+                    raise FluxdownCancelUnconfirmed(
+                        "add 响应没有任务 ID，无法确认写入者，已保留目标文件"
+                    )
+            add_unconfirmed = False
+            if code != 0:
                 # add 失败：若服务端已把任务建出来了（"added <id>" 后 probe 失败），
                 # 取出该 id 并持久化映射 —— 重试时 resume 续传，不重新 add；
                 # 同时尽力暂停该任务，防止 daemon 后台继续下载。
-                # 若连 id 都没有（add 完全没成功），抛错但**不视为进程异常**：
-                # 让上层以可续传语义重试（同 url 会再次尝试 add，已有分段由服务端保留）。
                 if new_id:
                     task_id = new_id
                     # 强等待：取消时也必须落盘+暂停，否则 daemon 后台继续下载
@@ -1890,7 +1982,22 @@ async def _fluxdown_server_download(
                     logger.info(f"[server] 取消时补救 add: 已持久化 task {task_id}")
             except Exception:
                 pass
+        if task_id is None and add_unconfirmed:
+            try:
+                task_id = await _to_thread_strong(
+                    _recover_pending_add, cli_exe, url, destination
+                )
+            except Exception as error:
+                raise FluxdownCancelUnconfirmed(
+                    "取消后无法恢复 add 请求的任务身份，保留目标文件"
+                ) from error
+            if task_id is None:
+                raise FluxdownCancelUnconfirmed(
+                    "取消时 add 请求结果未确认，保留目标文件且禁止重复下载"
+                )
         if task_id is None:
+            # 未发出 add，只可能留下请求前的标记，可安全清除。
+            await _to_thread_strong(_map_pop, cli_exe, key)
             # 还没有任何服务端任务，取消本身就是干净退出
             record.error = "用户取消"
             logger.info(f"[server] 用户取消(任务尚未建立): {url}")

@@ -1050,3 +1050,122 @@ async def test_server_initialization_cancel_preserves_archive_until_writer_stops
     assert cli._load_task_map(exe)[key]["task_id"] == "old-task"
     backend.assert_not_awaited()
     local.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("identity", ["recovered", "unavailable", "ambiguous", "empty"])
+async def test_cancelled_add_without_response_recovers_or_preserves_writer(
+    resource_install, monkeypatch, identity
+):
+    from app.core.script_update import download_script_package
+    from app.models.config.setting import GlobalConfig
+    from app.services.common.update import fluxdown as transport
+    from app.utils.common import fluxdown_cli as cli
+
+    install, _, _ = resource_install
+    update.Config.setting.Update = GlobalConfig.UpdateFields(FluxdownTakeoverAll=True)
+    monkeypatch.setattr(resource, "download_script_package", download_script_package)
+    exe = install.parent / "fluxdown.exe"
+    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda *_a, **_kw: exe)
+    monkeypatch.setattr(cli, "_server_data_dir", lambda _: install.parent / "server")
+    monkeypatch.setattr(cli, "fluxdown_server_available", lambda *_a, **_kw: True)
+    monkeypatch.setattr(
+        cli,
+        "fluxdown_server_ensure",
+        lambda _: SimpleNamespace(gateway_port=17800, token="test"),
+    )
+    monkeypatch.setattr(
+        cli, "fluxdown_server_emergency_stop_if_exclusive", lambda *_: False
+    )
+    archive = resource._STAGE_ZIP
+    payload = b"created by daemon before response was lost"
+    url = "https://github.com/MaaAssistantArknights/MaaResource/archive/refs/heads/main.zip"
+    accepted, release_add = threading.Event(), threading.Event()
+    querying, release_query = threading.Event(), threading.Event()
+    commands, paused = [], False
+
+    def command(_exe, _env, args, *_, **_kwargs):
+        nonlocal paused
+        commands.append(args)
+        if args[0] == "add":
+            archive.write_bytes(payload)
+            accepted.set()
+            assert release_add.wait(5)
+            return 124, "request timed out without task ID"
+        if args[0] == "list":
+            querying.set()
+            assert release_query.wait(5)
+            if identity == "unavailable":
+                return 124, "management unavailable"
+            task = {
+                "taskId": "accepted-task",
+                "url": url,
+                "saveDir": str(archive.parent),
+                "fileName": archive.name,
+            }
+            tasks = (
+                [task]
+                if identity == "recovered"
+                else [task, {**task, "taskId": "other-task"}]
+            )
+            if identity == "empty":
+                tasks = []
+            return 0, json.dumps(tasks)
+        if args[0] == "pause":
+            assert args[1] == "accepted-task"
+            paused = True
+            return 0, "paused"
+        if args[0] == "status":
+            assert args[1] == "accepted-task"
+            return 0, json.dumps({"status": 2 if paused else 1})
+        raise AssertionError(f"unexpected command {args}")
+
+    monkeypatch.setattr(cli, "_run_cli", command)
+    backend = AsyncMock(side_effect=AssertionError("must not start another writer"))
+    local = AsyncMock(side_effect=AssertionError("must not start local fallback"))
+    monkeypatch.setattr(transport, "_httpx_download", backend)
+    monkeypatch.setattr(cli, "fluxdown_download", local)
+    task = asyncio.create_task(
+        resource.prepare_install_resources(install, github=True, cdk=None)
+    )
+    try:
+        assert await asyncio.to_thread(accepted.wait, 3)
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=0.05)
+        assert not done
+        assert archive.read_bytes() == payload
+        task.cancel()
+        release_add.set()
+        assert await asyncio.to_thread(querying.wait, 3), (
+            "missing add response must trigger task identity recovery"
+        )
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=0.05)
+        assert not done
+        assert archive.read_bytes() == payload
+    finally:
+        release_add.set()
+        release_query.set()
+        await asyncio.gather(task, return_exceptions=True)
+    key = cli._map_key(url, archive)
+    entry = cli._load_task_map(exe)[key]
+    if identity == "recovered":
+        assert paused
+        assert task.cancelled()
+        assert not archive.exists()
+        assert entry["task_id"] == "accepted-task"
+    else:
+        assert isinstance(task.exception(), cli.FluxdownCancelUnconfirmed)
+        assert archive.read_bytes() == payload
+        assert entry["pending_add"] is True
+        with pytest.raises(cli.FluxdownCancelUnconfirmed):
+            await cli.fluxdown_server_download(url, archive, cli_exe=exe)
+        assert not cli.fluxdown_server_task_safe_to_overwrite(
+            exe, url + "?other", archive
+        )
+        assert not cli.fluxdown_server_task_safe_to_overwrite(
+            exe, url, archive, other_only=True
+        )
+    assert sum(args[0] == "add" for args in commands) == 1
+    backend.assert_not_awaited()
+    local.assert_not_awaited()

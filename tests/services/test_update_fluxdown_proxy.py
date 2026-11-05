@@ -550,7 +550,12 @@ async def test_confirmed_server_stop_allows_safe_builtin_handoff(
 
 @pytest.mark.parametrize(
     "owned,other_download,expected",
-    [(True, False, True), (False, False, False), (True, True, False)],
+    [
+        (True, False, True),
+        (False, False, False),
+        (True, True, False),
+        (True, "pending", False),
+    ],
 )
 def test_emergency_shutdown_only_for_exclusive_owned_agent(
     tmp_path, monkeypatch, owned, other_download, expected
@@ -562,7 +567,11 @@ def test_emergency_shutdown_only_for_exclusive_owned_agent(
     key = cli._map_key(url, target)
     mapping = {key: {"task_id": "own", "save_path": str(target)}}
     if other_download:
-        mapping["another"] = {"task_id": "other", "save_path": "other.zip"}
+        mapping["another"] = {
+            "task_id": None if other_download == "pending" else "other",
+            "pending_add": other_download == "pending",
+            "save_path": "other.zip",
+        }
     monkeypatch.setattr(cli, "_active_downloads", 1)
     monkeypatch.setattr(cli, "_installing", False)
     monkeypatch.setattr(cli, "_load_task_map", lambda _exe: mapping)
@@ -895,3 +904,60 @@ async def test_unconfirmed_writer_survives_history_cancellation_via_public_downl
         await asyncio.wait_for(task, 3)
     assert destination.read_bytes() == b"still daemon-owned"
     backend.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_lost_add_response_blocks_retry_until_task_can_be_recovered(
+    server_fixture, monkeypatch
+):
+    exe, target, url = server_fixture
+    visible = False
+    commands = []
+
+    def command(_exe, _env, args, *_, **_kwargs):
+        commands.append(args)
+        if args[0] == "add":
+            target.write_bytes(b"data")
+            return 124, "request timed out"
+        if args[0] == "list":
+            return 0, json.dumps(
+                [
+                    {
+                        "taskId": "late-task",
+                        "url": url,
+                        "saveDir": str(target.parent),
+                        "fileName": target.name,
+                    }
+                ]
+                if visible
+                else []
+            )
+        if args[0] == "resume":
+            assert args[1] == "late-task"
+            return 0, "resumed"
+        if args[0] == "status":
+            return 0, json.dumps(
+                {
+                    "status": 3,
+                    "downloadedBytes": 4,
+                    "totalBytes": 4,
+                    "saveDir": str(target.parent),
+                    "fileName": target.name,
+                }
+            )
+        raise AssertionError(args)
+
+    monkeypatch.setattr(cli, "_run_cli", command)
+    for _ in range(2):
+        with pytest.raises(cli.FluxdownCancelUnconfirmed):
+            await cli.fluxdown_server_download(url, target, cli_exe=exe)
+        assert cli._load_task_map(exe)[cli._map_key(url, target)]["pending_add"]
+        assert target.read_bytes() == b"data"
+    visible = True
+    size, _ = await cli.fluxdown_server_download(url, target, cli_exe=exe)
+    assert size == 4
+    entry = cli._load_task_map(exe)[cli._map_key(url, target)]
+    assert entry["task_id"] == "late-task"
+    assert not entry["pending_add"]
+    assert sum(args[0] == "add" for args in commands) == 1
+    assert ["resume", "late-task"] in commands
