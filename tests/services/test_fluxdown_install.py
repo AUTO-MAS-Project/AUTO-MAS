@@ -33,9 +33,7 @@ def windows_fluxdown_layout(monkeypatch):
     monkeypatch.setattr(
         install.update_native, "FLUXDOWN_AGENT_NAME", "fluxdown-agent.exe"
     )
-    monkeypatch.setattr(
-        install.update_native, "FLUXDOWN_DAEMON_NAME", "fluxdownd.exe"
-    )
+    monkeypatch.setattr(install.update_native, "FLUXDOWN_DAEMON_NAME", "fluxdownd.exe")
     monkeypatch.setattr(
         cli, "_FLUXDOWN_EXE_NAMES", ("fluxdown.exe", "fluxdown-cli.exe")
     )
