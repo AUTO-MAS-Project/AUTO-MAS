@@ -1,9 +1,11 @@
 """BetterGI 的任务失败结果优先于执行层的正常返回标记。"""
 
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
+from uuid import uuid4
 
 import pytest
 
@@ -87,9 +89,12 @@ def test_terminal_failure_takes_priority_over_recoverable_error():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("execution_finished", [True, False])
+@pytest.mark.parametrize(
+    ("execution_finished", "native_enabled"),
+    [(True, False), (False, False), (False, True)],
+)
 async def test_execution_failure_logs_name_builtin_and_custom_tasks(
-    monkeypatch, execution_finished
+    monkeypatch, tmp_path, execution_finished, native_enabled
 ):
     from app.models.task import ScriptItem, UserItem
     from app.task.BetterGI import AutoProxy as module
@@ -139,7 +144,9 @@ async def test_execution_failure_logs_name_builtin_and_custom_tasks(
         script_info=script,
         script_exe_path=Path("BetterGI.exe"),
         script_target_process_info=None,
-        script_config=SimpleNamespace(Run=SimpleNamespace(UseAdmin=False)),
+        script_config=SimpleNamespace(
+            Run=SimpleNamespace(UseAdmin=False, RunTimesLimit=1)
+        ),
         bettergi_process_manager=SimpleNamespace(open_process=AsyncMock()),
         kill_managed_process=AsyncMock(return_value=True),
         _resolve_log_file_path=lambda: Path("better-genshin-impact.log"),
@@ -147,14 +154,49 @@ async def test_execution_failure_logs_name_builtin_and_custom_tasks(
         log_time_format="%H:%M:%S.%f",
     )
     proxy._push_dispatch_log = module.AutoProxyTask._push_dispatch_log.__get__(proxy)
+    if not execution_finished:
+        # 从 main_task 走完后续原生阶段；只隔离游戏、更新、配置写盘及外部完成等待。
+        proxy.prepare = AsyncMock()
+        proxy.run_user_scripts_before = AsyncMock()
+        proxy._switch_account = AsyncMock(return_value=True)
+        proxy._backup_one_dragon_config = Mock()
+        proxy._write_one_dragon_config = Mock()
+        proxy.cur_user_uid = uuid4()
+        proxy.cur_user_config = module.BetterGIUserConfig()
+        proxy.script_root_path = tmp_path
+        proxy.launch_config_name = "daily"
+        proxy.bettergi_args = ["startOneDragon", "daily"]
+        proxy.wait_event = asyncio.Event()
+        proxy.run_book = False
+        proxy.log_monitor = SimpleNamespace(
+            start_monitor_file=AsyncMock(), stop=AsyncMock()
+        )
+        proxy._run_execution_layer = module.AutoProxyTask._run_execution_layer.__get__(
+            proxy
+        )
+        proxy._native_one_dragon_has_tasks = (
+            module.AutoProxyTask._native_one_dragon_has_tasks.__get__(proxy)
+        )
+        module.one_dragon.write_one_dragon(
+            tmp_path, "daily", {"TaskEnabledList": {"领取邮件": native_enabled}}
+        )
+
+        async def native_finished():
+            proxy.cur_user_log.status = "Success!"
+
+        proxy._wait_for_bgi_result = AsyncMock(side_effect=native_finished)
+        monkeypatch.setattr(module, "ensure_game_updated", AsyncMock(return_value=True))
+        monkeypatch.setattr(module, "archive_mas_runtime_backup", Mock())
     warnings = []
     sink = module.logger.add(
         lambda message: warnings.append(message.record["message"]), level="WARNING"
     )
     try:
-        assert (
-            await module.AutoProxyTask._run_execution_layer(proxy) is execution_finished
-        )
+        if execution_finished:
+            assert await module.AutoProxyTask._run_execution_layer(proxy) is True
+        else:
+            await module.AutoProxyTask.main_task(proxy)
+            assert proxy.run_book is native_enabled
     finally:
         module.logger.remove(sink)
 
@@ -166,7 +208,12 @@ async def test_execution_failure_logs_name_builtin_and_custom_tasks(
         assert "自动地脉花" in summary
         assert "自动购买商品" in summary
         assert "自动秘境" not in summary
-    dispatch_summary = script.log.splitlines()[-1]
+    else:
+        summary = next(line for line in warnings if "继续一条龙日常" in line)
+        assert "自动地脉花" in summary
+        assert "自动购买商品" in summary
+        assert "自动秘境" not in summary
+    dispatch_summary = script.log
     assert "自动地脉花" in dispatch_summary
     assert "自动购买商品" in dispatch_summary
     assert "自动秘境" not in dispatch_summary
