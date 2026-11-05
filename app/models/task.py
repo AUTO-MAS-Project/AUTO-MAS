@@ -121,14 +121,36 @@ class UserItem:
 
     def add_log_record(self, started_at: datetime, record: LogRecord) -> None:
         """每次尝试保留实际开始时刻，同一时刻也不能覆盖此前一轮。"""
+        # 同一账号重试时，仅作废它贡献的首次成功信号；正常切号不清空脚本时钟。
+        previous = self.first_task_completed_at
+        task = self._task_item_ref() if self._task_item_ref is not None else None
+        if previous is not None and task is not None:
+            for script in task.script_list:
+                if any(user is self for user in script.user_list):
+                    if script.first_task_completed_at == previous:
+                        object.__setattr__(script, "first_task_completed_at", None)
+                    break
         self.first_task_completed_at = None
         self._history_log_records.append((started_at, record))
         self.log_record[started_at] = record
 
     def mark_task_completed(self) -> None:
-        """收到本次运行首个成功任务节点；重复日志不会重新计时。"""
-        if self.status == "运行" and self.first_task_completed_at is None:
-            self.first_task_completed_at = time.monotonic()
+        """首个成功节点同时写入脚本级单调时间，切换账号不能丢失 60 秒基准。"""
+        if self.status != "运行" or self.first_task_completed_at is not None:
+            return
+        completed_at = time.monotonic()
+        self.first_task_completed_at = completed_at
+        task = self._task_item_ref() if self._task_item_ref is not None else None
+        if task is not None:
+            for script in task.script_list:
+                if script.status == "运行" and any(
+                    user is self for user in script.user_list
+                ):
+                    if script.first_task_completed_at is None:
+                        object.__setattr__(
+                            script, "first_task_completed_at", completed_at
+                        )
+                    break
 
     def iter_history_logs(self) -> list[tuple[datetime, LogRecord]]:
         """返回本轮各次尝试；未使用追加入口的现有日志仍可正常读取。"""
@@ -154,6 +176,10 @@ class ScriptItem:
     status: str  # 脚本执行状态
     user_list: List[UserItem] = field(default_factory=list)  # 用户信息列表
     current_index: int = -1  # 当前执行的用户索引，-1 表示未开始
+    # 本轮首个成功节点，不进入构造参数、API、磁盘或遥测。
+    first_task_completed_at: float | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
     log: str = ""  # 脚本执行日志
     # log 第一行在完整日志里的行号。**截断日志的生产者要一起维护它**（如 MaaFW 只留
     # 最近 80 条），界面才能显示真实行号而不是每次都从 1 重数；不截断就保持 1。
@@ -162,6 +188,8 @@ class ScriptItem:
 
     def __setattr__(self, name, value):
         previous = getattr(self, name, None)
+        if name == "status" and value == "运行" and previous != value:
+            object.__setattr__(self, "first_task_completed_at", None)
         super().__setattr__(name, value)
 
         # 如果 user_list 被整体替换，重新绑定

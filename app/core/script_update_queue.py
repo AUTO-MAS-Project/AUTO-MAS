@@ -8,7 +8,7 @@ import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 
-from app.models.task import ScriptItem, UserItem
+from app.models.task import ScriptItem
 from app.utils import get_logger
 
 logger = get_logger("脚本更新调度")
@@ -16,13 +16,22 @@ PREFETCH_GRACE_SECONDS = 60
 PREFETCH_POLL_SECONDS = 0.5
 
 
-def _active_user(script: ScriptItem) -> UserItem | None:
-    if script.status == "运行" and 0 <= script.current_index < len(script.user_list):
-        user = script.user_list[script.current_index]
-        if user.status == "运行":
-            return user
-    return None
-
+def _first_script_success(script: ScriptItem) -> float | None:
+    """跨账号查找本轮首次成功节点；兼容未绑定 TaskItem 的独立脚本对象。"""
+    if script.status != "运行":
+        return None
+    if script.first_task_completed_at is not None:
+        return script.first_task_completed_at
+    if not any(user.status == "运行" for user in script.user_list):
+        return None
+    return min(
+        (
+            user.first_task_completed_at
+            for user in script.user_list
+            if user.first_task_completed_at is not None
+        ),
+        default=None,
+    )
 
 async def _cancel_and_wait(task: asyncio.Task) -> None:
     if not task.done():
@@ -51,8 +60,10 @@ class ScriptUpdateQueue:
         self, script: ScriptItem, prepare_next: Callable[[], Awaitable[None]]
     ) -> None:
         while True:
-            user = _active_user(script)
-            completed_at = user.first_task_completed_at if user is not None else None
+            if script.status != "运行":
+                # 尚未满 60 秒，当前脚本已经结束/失败：不执行预下载。
+                return
+            completed_at = _first_script_success(script)
             if (
                 completed_at is not None
                 and time.monotonic() - completed_at >= PREFETCH_GRACE_SECONDS
@@ -61,17 +72,12 @@ class ScriptUpdateQueue:
             await asyncio.sleep(PREFETCH_POLL_SECONDS)
 
         self._download = asyncio.create_task(prepare_next())
-        user_index = script.current_index
         try:
             while not self._download.done():
-                # 切号、失败或重试已开始时停止预取，避免和下一次登录抢网络。
+                # 脚本内部正常切号不取消下载；失败或真正重试使成功信号失效。
                 if script.status in ("异常", "跳过") or (
                     script.status == "运行"
-                    and (
-                        script.current_index != user_index
-                        or user.status in ("异常", "跳过")
-                        or user.first_task_completed_at != completed_at
-                    )
+                    and _first_script_success(script) != completed_at
                 ):
                     await _cancel_and_wait(self._download)
                     return
@@ -81,7 +87,7 @@ class ScriptUpdateQueue:
             await _cancel_and_wait(self._download)
             raise
         except Exception:
-            # 启动前更新和安全回退仍由专项决定，预取失败不能中断当前任务。
+            # 预下载失败不影响当前任务，后项仍使用自身的启动前更新逻辑。
             logger.opt(exception=True).warning("下一脚本预下载未完成，将在启动前处理")
 
     async def finish(self, *, cancelled: bool = False) -> None:

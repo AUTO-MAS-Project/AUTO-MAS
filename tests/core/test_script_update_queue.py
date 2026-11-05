@@ -93,7 +93,7 @@ async def test_normal_finish_waits_for_inflight_download(running):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stop", ["cancel", "switch", "retry", "failure"])
+@pytest.mark.parametrize("stop", ["cancel", "retry", "failure"])
 async def test_cancellation_waits_for_download_cleanup(running, stop):
     script, user, clock = running
     user.first_task_completed_at, clock.now = 100, 200
@@ -110,10 +110,7 @@ async def test_cancellation_waits_for_download_cleanup(running, stop):
     pipeline = queue.ScriptUpdateQueue()
     pipeline.watch(script, download)
     await asyncio.wait_for(started.wait(), 1)
-    if stop == "switch":
-        script.user_list.append(UserItem("next", "", "运行"))
-        script.current_index = 1
-    elif stop == "retry":
+    if stop == "retry":
         user.first_task_completed_at = None
     elif stop == "failure":
         user.status = "异常"
@@ -241,4 +238,124 @@ async def test_three_scripts_download_then_install_in_queue_order(
         assert events.index(("finish", index - 1)) < events.index(("install", index))
         assert events.index(("download", index)) < events.index(("install", index))
     assert events.count(("download", 1)) == (2 if change_config else 1)
-    assert task._prefetched_manager is None
+    assert task._script_updates._pending is None
+
+@pytest.mark.asyncio
+async def test_account_switch_keeps_prefetch_and_avoids_second_download(running):
+    script, user, clock = running
+    script.first_task_completed_at = user.first_task_completed_at = 100
+    clock.now = 200
+    started, release = asyncio.Event(), asyncio.Event()
+    count = 0
+
+    async def download():
+        nonlocal count
+        count += 1
+        started.set()
+        await release.wait()
+
+    pipeline = queue.ScriptUpdateQueue()
+    pipeline.watch(script, download)
+    await asyncio.wait_for(started.wait(), 1)
+    user.status = "完成"
+    script.user_list.append(UserItem("second", "", "运行"))
+    script.current_index = 1
+    await settle()
+    assert count == 1
+    assert pipeline._download is not None and not pipeline._download.done()
+    script.status = "完成"
+    finishing = asyncio.create_task(pipeline.finish())
+    await settle()
+    assert not finishing.done()
+    release.set()
+    await asyncio.wait_for(finishing, 1)
+    assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_first_success_clock_survives_account_switch_before_sixty(running):
+    script, user, clock = running
+    script.first_task_completed_at = user.first_task_completed_at = 100
+    clock.now = 130
+    started = asyncio.Event()
+    pipeline = queue.ScriptUpdateQueue()
+    pipeline.watch(script, AsyncMock(side_effect=started.set))
+    await settle()
+    user.status = "完成"
+    script.user_list.append(UserItem("second", "", "运行"))
+    script.current_index = 1
+    clock.now = 160
+    await asyncio.wait_for(started.wait(), 1)
+    await pipeline.finish()
+
+
+def test_script_success_signal_resets_on_retry_without_account_switch(monkeypatch):
+    from datetime import datetime
+
+    from app.models import task as task_models
+    from app.models.task import LogRecord
+
+    user = UserItem("user", "", "运行")
+    script = ScriptItem("script", "", "运行", user_list=[user])
+    task_info = SimpleNamespace(script_list=[script])
+    user._task_item_ref = lambda: task_info
+    monkeypatch.setattr(
+        task_models, "time", SimpleNamespace(monotonic=lambda: 123.0)
+    )
+    user.mark_task_completed()
+    assert script.first_task_completed_at == 123.0
+    user.add_log_record(datetime.now(), LogRecord())
+    assert script.first_task_completed_at is None
+
+
+@pytest.mark.asyncio
+async def test_public_update_entry_skips_next_non_runnable_item(monkeypatch):
+    from app.core import script_update
+    from app.models.task import TaskExecuteBase
+
+    monkeypatch.setattr(queue, "PREFETCH_GRACE_SECONDS", 0)
+    monkeypatch.setattr(queue, "PREFETCH_POLL_SECONDS", 0.001)
+    script_ids = [uuid.uuid4() for _ in range(3)]
+    scripts = [ScriptItem(str(uid), "", "等待") for uid in script_ids]
+    user = UserItem("first", "", "运行")
+    scripts[0].user_list = [user]
+    scripts[0].status = "运行"
+    user.first_task_completed_at = scripts[0].first_task_completed_at = 1
+    configs = {
+        uid: SimpleNamespace(is_locked=False, model_dump=lambda **_: {})
+        for uid in script_ids
+    }
+    info = SimpleNamespace(
+        mode="AutoProxy",
+        is_cycle=False,
+        script_list=scripts,
+        task_id="task",
+        script_user_scope=lambda script_id: (
+            frozenset() if script_id == str(script_ids[1]) else None
+        ),
+    )
+    settings = SimpleNamespace(Update=SimpleNamespace(model_dump=lambda **_: {}))
+    calls = []
+
+    class Manager(TaskExecuteBase):
+        async def prefetch_script_update(self):
+            calls.append("download")
+
+        async def main_task(self): ...
+        async def final_task(self): ...
+        async def on_crash(self, e): ...
+
+    session = script_update.ScriptUpdateSession(
+        info,
+        make_manager=lambda item, *_args, **_kwargs: (
+            calls.append(item.script_id) or Manager()
+        ),
+        resources=lambda config: ((), None),
+        scheduled=lambda _: True,
+        config=SimpleNamespace(ScriptConfig=configs, setting=settings),
+    )
+    session.watch(scripts[0], 1)
+    await settle()
+    await session.finish()
+    assert calls == [str(script_ids[2]), "download"]
+    await session.close()
