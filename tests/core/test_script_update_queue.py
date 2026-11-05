@@ -181,7 +181,10 @@ async def test_three_scripts_download_then_install_in_queue_order(
         SimpleNamespace(
             ScriptConfig=configs,
             proxy=None,
-            setting=SimpleNamespace(Update=SimpleNamespace(model_dump=lambda **_: {})),
+            setting=SimpleNamespace(
+                Update=SimpleNamespace(model_dump=lambda **_: {}),
+                Replay=SimpleNamespace(Enabled=False),
+            ),
         ),
     )
     monkeypatch.setattr(scheduler, "_exclusive_resources", lambda _: ((), None))
