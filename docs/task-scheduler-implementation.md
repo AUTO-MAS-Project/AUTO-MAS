@@ -1293,7 +1293,7 @@ TaskManager.describe_lock_holders 只读当前配置节点实际 S／X token，�
 
 typecheck、lint、format、E2E 入口检查、CSS 变量审计和 `yarn exec vp build` 通过。lint 保留已有 QueueDeleteButton.text 缺少默认值警告，本轮未修改该组件。后端及生成客户端未变，未重复执行后端全量测试；此前后端锁等待验证记录见第 51 节。完成日志留存仍限于当前应用缓存；刷新后无法从仅列出活动任务的接口重建已经结束的完整结果。
 
-本地证据归档在 `.dev/scheduler-simplify-evidence`，原始检测日志及改前快照留在 `.dev`，不进入提交。没有创建提交、推送或 PR。
+本地证据归档在 `.dev/scheduler-simplify-evidence`，原始检测日志及改前快照留在 `.dev`，不进入提交。本段记录的是调度台简化时的本地验证。
 
 ## 53. 旧专项启动前等待日志恢复
 
@@ -1317,6 +1317,8 @@ MCP 服务自行长期持有加载 Task 并负责停止收尾；MaaEnd 资源预
 
 浏览器刷新验证发现，本地 Monaco 空闲预热尚未完成时挂载日志编辑器会启动 CDN 加载。日志组件现复用本地初始化 Promise 后再挂载，页面其余内容不等待；组件规模为 372 行。运行回归主动阻断远程 Monaco 请求，检查两种启动顺序、刷新、切页、漏包恢复和停止结果。上游新增队列 UI 用例保留创建、拖排、范围选择和删除验证，已有触发设置验证独立保留。重连与真实运行验证按 config_id 查业务对象，按运行 UUID 定位运行节点。
 
-合并后 Windows 全量后端回归为 1262 passed、1 skipped、15 subtests passed；前端 46 个文件共 246 项测试通过。保留的 Pydantic 依赖弃用警告不影响运行；未执行真实账号、MAA、游戏或模拟器验收。类型、格式、构建与浏览器验证的原始记录在本地 `.dev/pr-*`，不进入提交。
+同步首个基线后 Windows 全量后端回归为 1262 passed、1 skipped、15 subtests passed；前端 46 个文件共 246 项测试通过。保留的 Pydantic 依赖弃用警告不影响运行；未执行真实账号、MAA、游戏或模拟器验收。类型、格式、构建与浏览器验证的原始记录在本地 `.dev/pr-*`，不进入提交。
 
 补充同步 `36f87613c` 时保留 MaaEnd 按材料合并逐轮收获的通知逻辑；该通知仍写入专项私有用户素材，经既有回调桥交付，不恢复公共运行树中的推送素材字段。
+
+最终同步 `36f87613c` 后的 Windows 全量回归为 1265 passed、1 skipped、15 subtests passed；新增上游通知用例已适配兼容桥，不放宽原有报告断言。前端仍为 246 项通过，类型、lint、格式、Electron 类型和 `vp build` 通过。

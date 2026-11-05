@@ -194,6 +194,7 @@ test.describe('@queue @scheduler user queue', () => {
       ).toBeVisible()
       await page.keyboard.press('Escape')
       await goTo('Queue')
+      await page.locator('.queue-button').filter({ hasText: name }).click()
       await page.getByRole('button', { name: 'Delete this queue' }).click()
       const deleted = responseFor('/api/queue/delete')
       await page
