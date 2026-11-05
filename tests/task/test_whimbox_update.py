@@ -247,6 +247,14 @@ async def test_disabled_takeover_cannot_bypass_partial_install(
 
 
 @pytest.mark.asyncio
+async def test_no_update_prefetch_is_rechecked_at_launch(managed_batch, installation):
+    managed_batch._update_candidate = "backend already up to date"
+    await managed_batch._run_prepared(installation)
+    manager.ensure_backend_updated.assert_awaited_once_with(installation)
+    assert managed_batch.run_user_task.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_disabled_takeover_keeps_existing_run(managed_batch, installation):
     managed_batch.script_config.Update.TakeoverEnabled = False
     await managed_batch._run_prepared(installation)
