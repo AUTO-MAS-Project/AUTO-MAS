@@ -257,3 +257,69 @@ async def test_disabled_wakeup_query_failure_is_quiet_and_cleanup_retries(
     with pytest.raises(RuntimeError, match="Access denied"):
         await system._SystemHandler().sync_scheduled_wakeup()
     assert events == [protocol.SYSTEM_NOTICE]
+
+
+@pytest.mark.asyncio
+async def test_wakeup_flush_failure_notifies_once_until_the_plan_changes(
+    isolated_app_paths, scheduler, monkeypatch
+):
+    from app.config import ConfigCollection
+    from app.core import Publisher
+    from app.core.ws import protocol
+    from app.models.config import GlobalConfig, QueueConfig
+    from app.models.config.queue import TimeSet
+    from app.services.common import system
+    from tests.config_support import activate_config
+
+    setting = await activate_config(
+        GlobalConfig.model_validate({"Start": {"IfScheduledWakeUp": True}})
+    )
+    queues = await activate_config(ConfigCollection.build([QueueConfig]))
+    uid = queues.add(QueueConfig, payload={"Info": {"TimeEnabled": True}})
+    await queues.commit()
+    queue = queues[uid]
+    slot_id = queue.TimeSet.add(
+        TimeSet, payload={"Info": {"Time": datetime(2000, 1, 3, 8).astimezone()}}
+    )
+    await queue.TimeSet.commit()
+    monkeypatch.setattr(isolated_app_paths, "setting", setting)
+    monkeypatch.setattr(isolated_app_paths, "QueueConfig", queues)
+    monkeypatch.setattr(system, "startup", WindowsStartupManager())
+    monkeypatch.setenv("AUTO_MAS_ENV", "production")
+    (isolated_app_paths.work_path / "AUTO-MAS.exe").touch()
+    events = []
+
+    async def send(**kwargs):
+        events.append(kwargs["type"])
+        return True
+
+    async def disk_full():
+        raise OSError("Disk full")
+
+    async def query_denied(*args, **kwargs):
+        return subprocess.CompletedProcess(args, 1, "", "Access denied")
+
+    monkeypatch.setattr(Publisher, "send", send)
+    handler = system._SystemHandler()
+    with monkeypatch.context() as storage:
+        storage.setattr(isolated_app_paths, "flush", disk_full)
+        with pytest.raises(OSError, match="Disk full"):
+            await handler.sync_scheduled_wakeup()
+    assert events == [protocol.SYSTEM_NOTICE]
+    assert scheduler == {}
+    # 落盘恢复后任务注册仍失败，同一计划只通知一次，重试仍向调用方报告失败。
+    with monkeypatch.context() as windows:
+        windows.setattr(runner.ProcessRunner, "run_process", query_denied)
+        for _ in range(2):
+            with pytest.raises(RuntimeError, match="Access denied"):
+                await handler.sync_scheduled_wakeup(force=True)
+    assert events == [protocol.SYSTEM_NOTICE]
+    await handler.sync_scheduled_wakeup(force=True)
+    assert scheduler
+    queue.TimeSet[slot_id].Info.Enabled = False
+    await queue.TimeSet[slot_id].commit()
+    with monkeypatch.context() as windows:
+        windows.setattr(runner.ProcessRunner, "run_process", query_denied)
+        with pytest.raises(RuntimeError, match="Access denied"):
+            await handler.sync_scheduled_wakeup(force=True)
+    assert events == [protocol.SYSTEM_NOTICE, protocol.SYSTEM_NOTICE]

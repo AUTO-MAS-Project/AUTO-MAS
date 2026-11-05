@@ -1,8 +1,10 @@
-"""相邻定时之间不自动再次睡眠；测试始终隔离系统电源边界。"""
+"""相邻定时之间保持调度可用；测试始终隔离系统电源与前端关闭边界。"""
 
 from datetime import datetime, timedelta
 
 import pytest
+from uvicorn import Config as ServerConfig
+from uvicorn import Server
 
 from app.config import ConfigCollection
 from app.models.config import GlobalConfig, QueueConfig
@@ -11,17 +13,20 @@ from tests.config_support import activate_config
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("operation", ["Sleep", "Hibernate"])
-async def test_finished_queue_does_not_suspend_before_next_woken_schedule(
-    isolated_app_paths, monkeypatch, operation
+@pytest.mark.parametrize(
+    "operation,second", [("Sleep", 0), ("Hibernate", 0), ("KillSelf", 0), ("Sleep", 30)]
+)
+async def test_finished_queue_preserves_next_woken_schedule(
+    isolated_app_paths, monkeypatch, operation, second
 ):
     from app.core import Publisher, TaskManager, timer
     from app.core.ws import protocol
     from app.services.common import system
     from app.services.windows.power import WindowsPowerController
 
-    planned = datetime(2026, 11, 2, 8, 6).astimezone()
-    now = planned - timedelta(minutes=2)
+    planned = datetime(2026, 11, 2, 8, 6, second).astimezone()
+    # 系统唤醒按分钟注册，导入的定时即使带秒也已在 08:01:00 唤醒。
+    now = planned.replace(second=0) - timedelta(minutes=5) + timedelta(seconds=10)
 
     class Clock(datetime):
         @classmethod
@@ -41,6 +46,8 @@ async def test_finished_queue_does_not_suspend_before_next_woken_schedule(
     monkeypatch.setattr(isolated_app_paths, "setting", setting)
     monkeypatch.setattr(isolated_app_paths, "QueueConfig", queues)
     monkeypatch.setattr(TaskManager, "task_handler", {})
+    server = Server(ServerConfig("app.api:app"))
+    monkeypatch.setattr(isolated_app_paths, "server", server)
     native_operations = []
     events = []
 
@@ -49,7 +56,7 @@ async def test_finished_queue_does_not_suspend_before_next_woken_schedule(
 
     async def send(**kwargs):
         events.append(kwargs["type"])
-        return True
+        return kwargs["type"] != protocol.FRONTEND_CLOSE_REQUESTED
 
     # CI 的 Linux 宿主也验证 Windows 调度契约，只替换真正的系统电源调用。
     monkeypatch.setattr(system, "power", WindowsPowerController())
@@ -63,11 +70,15 @@ async def test_finished_queue_does_not_suspend_before_next_woken_schedule(
     await handler.start_power_task()
     await handler.power_task
     assert native_operations == []
+    assert not server.should_exit
     assert protocol.POWER_COUNTDOWN_CANCELLED in events
 
-    # 用户直接选择立即睡眠或休眠时保留意图，不复用自动完成后的避让。
+    # 用户直接选择睡眠、休眠或退出时保留意图，不复用自动完成后的避让。
     await handler.set_power(operation, from_frontend=True)
-    assert native_operations == [operation]
+    expected_native = [] if operation == "KillSelf" else [operation]
+    assert native_operations == expected_native
+    assert server.should_exit == (operation == "KillSelf")
+    server.should_exit = False
 
     dispatched = []
 
@@ -85,4 +96,5 @@ async def test_finished_queue_does_not_suspend_before_next_woken_schedule(
     isolated_app_paths.power_sign = operation
     await handler.start_power_task()
     await handler.power_task
-    assert native_operations == [operation, operation]
+    assert native_operations == expected_native * 2
+    assert server.should_exit == (operation == "KillSelf")

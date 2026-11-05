@@ -71,6 +71,7 @@ class _SystemHandler:
             None
         )
         self._wakeup_retry_at = 0.0
+        self._wakeup_notice_sent = False
         self._resume_wakeup: bool | None = None
 
     def is_scheduled_wakeup(self) -> bool:
@@ -106,9 +107,10 @@ class _SystemHandler:
                     if (
                         planned > last_run
                         and planned.strftime("%A") in slot.Info.Days
-                        and -timedelta(minutes=5)
-                        <= now_wall - planned
-                        <= timedelta(minutes=10)
+                        and planned.replace(second=0, microsecond=0)
+                        - timedelta(minutes=5)
+                        <= now_wall
+                        <= planned + timedelta(minutes=10)
                     ):
                         return True
         return False
@@ -152,7 +154,8 @@ class _SystemHandler:
             and time.monotonic() < self._wakeup_retry_at
         ):
             return
-        first_attempt = signature != self._wakeup_attempt
+        if signature != self._wakeup_attempt:
+            self._wakeup_notice_sent = False
         report_failure = Config.setting.Start.IfScheduledWakeUp or bool(
             self._wakeup_attempt and self._wakeup_attempt[1]
         )
@@ -161,8 +164,8 @@ class _SystemHandler:
         # 注册可能只完成一部分后被取消；此后不能再把旧缓存当作系统现状。
         self._wakeup_signature = None
         # 冷启动会重读磁盘；配置未落盘时不能先更新系统任务。
-        await Config.flush()
         try:
+            await Config.flush()
             if times and not executable.is_file():
                 raise FileNotFoundError(f"找不到定时唤醒启动程序：{executable}")
             await startup.sync_wakeup(executable=executable, times=signature[1])
@@ -171,7 +174,7 @@ class _SystemHandler:
                 # 首次关闭状态仍尝试清理旧任务；系统服务不可用时安静地等待重试。
                 logger.debug(f"定时唤醒未启用，清理旧任务失败，稍后重试: {exc}")
                 return
-            if first_attempt:
+            if not self._wakeup_notice_sent:
                 from app.core import Notify
 
                 await Notify.push_system_notice(
@@ -181,6 +184,7 @@ class _SystemHandler:
                     title_key="core.setting.func.scheduledWakeupFailure",
                     line_keys=["core.setting.func.scheduledWakeupFailureTip"],
                 )
+                self._wakeup_notice_sent = True
             raise
         self._wakeup_signature = signature
         logger.info(f"定时唤醒已同步：{len(times)} 个每周触发时间")
@@ -261,6 +265,17 @@ class _SystemHandler:
         if not await ObsReplay.drain():
             logger.warning("失败回放尚未保存完成，继续执行电源操作")
 
+        if automatic and Config.setting.Start.IfScheduledWakeUp:
+            from app.core import TaskManager
+
+            # 先完成异步收尾再检查；旧队列的退出或电源操作不能消耗后续定时的提前启动。
+            if TaskManager.task_handler or self._has_pending_wakeup_schedule(
+                datetime.now().astimezone()
+            ):
+                logger.info(f"定时队列即将或正在运行，取消本次自动完成后操作: {mode}")
+                await self._publish_power_cancelled(asyncio.current_task())
+                return
+
         if mode in {"KillSelf", "RestartSelf"} and Config.server is not None:
             restart = mode == "RestartSelf"
             action = "重启" if restart else "退出"
@@ -277,21 +292,6 @@ class _SystemHandler:
 
         if mode not in power.supported_actions:
             raise RuntimeError(f"当前平台不支持电源操作: {mode}")
-        if (
-            automatic
-            and mode in {"Sleep", "Hibernate"}
-            and Config.setting.Start.IfScheduledWakeUp
-        ):
-            from app.core import TaskManager
-
-            # 先完成异步收尾再检查，避免收尾期间跨过下一队列的唤醒时刻。
-            # 后续队列接管完成后操作，旧队列不能再次睡眠而消耗掉唯一的提前唤醒。
-            if TaskManager.task_handler or self._has_pending_wakeup_schedule(
-                datetime.now().astimezone()
-            ):
-                logger.info("定时队列即将或正在运行，取消本次自动睡眠/休眠")
-                await self._publish_power_cancelled(asyncio.current_task())
-                return
         # 强制关机（shutdown /f）不等程序退出，魔改 AVD 实例同样要先让安卓正常关机（不成再 sync 后关）；
         # 其余模拟器的进程清理仍只在原来三种操作上做
         if mode in {"Shutdown", "ShutdownForce", "Reboot", "Logoff"}:
