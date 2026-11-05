@@ -206,3 +206,54 @@ async def test_wakeup_launch_skips_startup_queue_wait(monkeypatch):
     # 连接建立后的普通启动会等十秒；唤醒启动应立即返回，留给原定时调度。
     monkeypatch.setenv("AUTO_MAS_SCHEDULED_WAKEUP", "1")
     await asyncio.wait_for(TaskManager.start_startup_queue(), timeout=0.5)
+
+
+@pytest.mark.asyncio
+async def test_disabled_wakeup_query_failure_is_quiet_and_cleanup_retries(
+    isolated_app_paths, scheduler, monkeypatch
+):
+    from app.config import ConfigCollection
+    from app.core import Publisher
+    from app.core.ws import protocol
+    from app.models.config import GlobalConfig, QueueConfig
+    from app.services.common import system
+    from tests.config_support import activate_config
+
+    setting = await activate_config(GlobalConfig())
+    queues = await activate_config(ConfigCollection.build([QueueConfig]))
+    monkeypatch.setattr(isolated_app_paths, "setting", setting)
+    monkeypatch.setattr(isolated_app_paths, "QueueConfig", queues)
+    monkeypatch.setattr(system, "startup", WindowsStartupManager())
+    monkeypatch.setenv("AUTO_MAS_ENV", "production")
+    executable = isolated_app_paths.work_path / "AUTO-MAS.exe"
+    executable.touch()
+    # 上次退出前没能完成取消，关闭状态下的首次对账仍需移除遗留任务。
+    await system.startup.sync_wakeup(executable=executable, times=((0, 7, 55),))
+    assert scheduler
+    events = []
+
+    async def send(**kwargs):
+        events.append(kwargs["type"])
+        return True
+
+    monkeypatch.setattr(Publisher, "send", send)
+    process_call = runner.ProcessRunner.run_process
+
+    async def query_denied(*args, **kwargs):
+        return subprocess.CompletedProcess(args, 1, "", "Access denied")
+
+    monkeypatch.setattr(runner.ProcessRunner, "run_process", query_denied)
+    handler = system._SystemHandler()
+    await handler.sync_scheduled_wakeup()
+    assert protocol.SYSTEM_NOTICE not in events
+    assert scheduler
+    monkeypatch.setattr(runner.ProcessRunner, "run_process", process_call)
+    await handler.sync_scheduled_wakeup(force=True)
+    assert scheduler == {}
+    # 启用后同样的查询失败必须仍然通知用户，不能把失败一概当成成功。
+    setting.Start.IfScheduledWakeUp = True
+    await setting.commit()
+    monkeypatch.setattr(runner.ProcessRunner, "run_process", query_denied)
+    with pytest.raises(RuntimeError, match="Access denied"):
+        await system._SystemHandler().sync_scheduled_wakeup()
+    assert events == [protocol.SYSTEM_NOTICE]
