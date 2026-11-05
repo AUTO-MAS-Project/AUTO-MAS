@@ -197,7 +197,12 @@ class MaaEndResourceLoader:
         if cached is not None and cached[0] == signature:
             return cached[1]
 
-        data = json5.loads(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        # 大部分上游资源是标准 JSON，优先走 C 解析器；注释、尾逗号仍由 JSON5 处理。
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            data = json5.loads(text)
         self._file_cache[path] = (signature, data)
         self._cache_dirty = True
         return data
@@ -505,6 +510,12 @@ class MaaEndResourceLoader:
             ),
             "inventory": self._inventory_options(locale),
             "autoCollectGroups": self._auto_collect_groups(locale),
+            "servers": self._localize_options(
+                self._task_options.get("pretasks", {})
+                .get("LaunchGamePCRegion", {})
+                .get("cases", []),
+                locale,
+            ),
             "controllers": self._localize_options(controller_cases, locale),
             "controllerTypes": {
                 controller["name"]: controller["type"]
