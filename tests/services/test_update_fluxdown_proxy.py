@@ -650,3 +650,107 @@ async def test_failed_emergency_shutdown_reports_unconfirmed_writer(
     task.cancel()
     with pytest.raises(cli.FluxdownCancelUnconfirmed):
         await task
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pause_confirmed", [False, True])
+async def test_stalled_download_checks_pause_before_queue_handoff(
+    server_fixture, monkeypatch, pause_confirmed
+):
+    """Stalled daemon cannot be a normal retry unless its writer stopped."""
+    exe, target, url = server_fixture
+    cli._map_put(exe, cli._map_key(url, target), "existing", url, target)
+    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda *_args, **_kw: exe)
+    monkeypatch.setattr(cli, "fluxdown_server_available", lambda *_args, **_kw: True)
+    paused = False
+    commands = []
+
+    def command(_exe, _env, args, timeout=30):
+        nonlocal paused
+        commands.append(args[0])
+        if args[0] == "resume":
+            return 0, ""
+        if args[0] == "pause":
+            if pause_confirmed:
+                paused = True
+                return 0, ""
+            return 124, "timeout"
+        if args[0] == "status":
+            return 0, json.dumps(
+                {"status": 2 if paused else 1, "downloadedBytes": 0}
+            )
+        raise AssertionError(args)
+
+    monkeypatch.setattr(cli, "_run_cli", command)
+    options = transport.FluxdownOptions("fluxdown", "GitHub", str(exe), 8, True)
+    expected = (
+        cli.FluxdownCancelUnconfirmed
+        if not pause_confirmed
+        else transport.FluxdownResumableError
+    )
+    with pytest.raises(expected):
+        await transport.download_file(
+            url, target, timeout=-1, options=options, source="GitHub"
+        )
+    assert "pause" in commands
+    assert cli._load_task_map(exe)[cli._map_key(url, target)]["task_id"] == "existing"
+
+
+def test_exclusive_shutdown_blocks_new_download_admission(tmp_path, monkeypatch):
+    """A cannot kill a daemon after B starts joining it during shutdown."""
+    import threading
+
+    exe, agent = tmp_path / "fluxdown.exe", tmp_path / "fluxdown-agent.exe"
+    target, url = tmp_path / "asset.zip", "https://example.invalid/asset"
+    cli._map_put(exe, cli._map_key(url, target), "own", url, target)
+    monkeypatch.setattr(cli, "_active_downloads", 1)
+    monkeypatch.setattr(cli, "_installing", False)
+    monkeypatch.setattr(cli, "_server_binaries", lambda _: (agent, tmp_path / "daemon"))
+    monkeypatch.setattr(
+        cli._server, "handle", SimpleNamespace(cli_exe=exe, agent_pid=24680)
+    )
+    monkeypatch.setattr(cli._server, "spawned_by_us", True)
+    process = SimpleNamespace(
+        exe=lambda: str(agent),
+        children=lambda recursive: [],
+        is_running=lambda: False,
+    )
+    monkeypatch.setattr(cli.psutil, "Process", lambda _: process)
+    in_kill, release_kill, downloaded = (
+        threading.Event(),
+        threading.Event(),
+        threading.Event(),
+    )
+
+    def slow_kill(_pid):
+        in_kill.set()
+        assert release_kill.wait(5)
+
+    monkeypatch.setattr(cli, "_kill_pid", slow_kill)
+    shutdown = threading.Thread(
+        target=lambda: cli.fluxdown_server_emergency_stop_if_exclusive(
+            exe, url, target
+        )
+    )
+
+    @cli._using_fluxdown
+    async def competing_download():
+        downloaded.set()
+
+    def run_second():
+        asyncio.run(competing_download())
+
+    shutdown.start()
+    competitor = None
+    try:
+        assert in_kill.wait(5)
+        competitor = threading.Thread(target=run_second)
+        competitor.start()
+        assert not downloaded.wait(0.05)
+    finally:
+        release_kill.set()
+        shutdown.join(timeout=5)
+        if competitor is not None:
+            competitor.join(timeout=5)
+    assert not shutdown.is_alive()
+    assert downloaded.is_set()
