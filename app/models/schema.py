@@ -838,6 +838,15 @@ class WSTaskCreatedData(BaseModel):
     taskType: Optional[str] = Field(default=None, description="任务类型")
 
 
+class WSFrontendCloseRequestedData(BaseModel):
+    """关闭/重启请求，以及自动退出期间需继续履行的唤醒计划。"""
+
+    automatic: bool = Field(default=False, description="是否为队列完成后自动退出")
+    nextWakeAt: Optional[AwareDatetime] = Field(
+        default=None, description="最近的未来系统唤醒时刻"
+    )
+
+
 class WSPowerCountdownData(BaseModel):
     """电源倒计时更新数据 (id=Main, type=power.countdown.updated)"""
 
@@ -1806,6 +1815,7 @@ __all__ = [
     "WSTaskScriptStartedData",
     "WSTaskScriptFinishedData",
     "WSPowerCountdownData",
+    "WSFrontendCloseRequestedData",
     "PowerCountdownSnapshot",
     "WSPowerSignData",
     "WSDisplayMonitorRectData",

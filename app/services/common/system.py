@@ -23,7 +23,7 @@
 import asyncio
 import os
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -33,7 +33,11 @@ import psutil
 
 from app.core import MainConnection, Publisher
 from app.core.ws import protocol
-from app.models.schema import PowerCountdownSnapshot, WSPowerCountdownData
+from app.models.schema import (
+    PowerCountdownSnapshot,
+    WSFrontendCloseRequestedData,
+    WSPowerCountdownData,
+)
 from app.services import power, startup
 from app.utils import LazyProxy, get_logger, process_platform
 from app.utils import environment as _utils_environment
@@ -91,8 +95,28 @@ class _SystemHandler:
 
     def _has_pending_wakeup_schedule(self, at: datetime) -> bool:
         """是否有已进入提前唤醒或补跑窗口、且尚未派发的队列定时。"""
+        now_wall = at.replace(tzinfo=None)
+        return any(
+            planned.replace(second=0, microsecond=0) - timedelta(minutes=5)
+            <= now_wall
+            <= planned + timedelta(minutes=10)
+            for planned in self._pending_wakeup_slots(at)
+        )
+
+    def _next_scheduled_wakeup(self, at: datetime) -> datetime | None:
+        """退出前交接最近的未来唤醒时刻，避免单实例锁吞掉收尾期间的启动。"""
+        now_wall = at.replace(tzinfo=None)
+        wakes = (
+            planned.replace(second=0, microsecond=0) - timedelta(minutes=5)
+            for planned in self._pending_wakeup_slots(at)
+        )
+        wake = min((wake for wake in wakes if wake > now_wall), default=None)
+        return wake.astimezone() if wake is not None else None
+
+    def _pending_wakeup_slots(self, at: datetime) -> Iterator[datetime]:
+        """枚举补跑窗口及未来一周内尚未派发的有效定时。"""
         if not Config.setting.Start.IfScheduledWakeUp:
-            return False
+            return
         now_wall = at.replace(tzinfo=None)
         for queue in Config.QueueConfig.values():
             if queue.Info.CycleEnabled or not queue.Info.TimeEnabled:
@@ -101,18 +125,23 @@ class _SystemHandler:
             for slot in queue.TimeSet.values():
                 if not slot.Info.Enabled:
                     continue
-                for day_offset in (-1, 0, 1):
+                for day_offset in range(-1, 8):
                     day = now_wall.date() + timedelta(days=day_offset)
                     planned = datetime.combine(day, slot.Info.Time.time())
-                    if (
-                        planned > last_run
-                        and planned.strftime("%A") in slot.Info.Days
-                        and planned.replace(second=0, microsecond=0)
-                        - timedelta(minutes=5)
-                        <= now_wall
-                        <= planned + timedelta(minutes=10)
-                    ):
-                        return True
+                    if planned > last_run and planned.strftime("%A") in slot.Info.Days:
+                        yield planned
+
+    async def _cancel_automatic_power_for_schedule(
+        self, mode: str, *, automatic: bool, at: datetime
+    ) -> bool:
+        if not automatic or not Config.setting.Start.IfScheduledWakeUp:
+            return False
+        from app.core import TaskManager
+
+        if TaskManager.task_handler or self._has_pending_wakeup_schedule(at):
+            logger.info(f"定时队列即将或正在运行，取消本次自动完成后操作: {mode}")
+            await self._publish_power_cancelled(asyncio.current_task())
+            return True
         return False
 
     async def sync_scheduled_wakeup(self, *, force: bool = False) -> None:
@@ -265,16 +294,11 @@ class _SystemHandler:
         if not await ObsReplay.drain():
             logger.warning("失败回放尚未保存完成，继续执行电源操作")
 
-        if automatic and Config.setting.Start.IfScheduledWakeUp:
-            from app.core import TaskManager
-
-            # 先完成异步收尾再检查；旧队列的退出或电源操作不能消耗后续定时的提前启动。
-            if TaskManager.task_handler or self._has_pending_wakeup_schedule(
-                datetime.now().astimezone()
-            ):
-                logger.info(f"定时队列即将或正在运行，取消本次自动完成后操作: {mode}")
-                await self._publish_power_cancelled(asyncio.current_task())
-                return
+        checked_at = datetime.now().astimezone()
+        if await self._cancel_automatic_power_for_schedule(
+            mode, automatic=automatic, at=checked_at
+        ):
+            return
 
         if mode in {"KillSelf", "RestartSelf"} and Config.server is not None:
             restart = mode == "RestartSelf"
@@ -282,7 +306,13 @@ class _SystemHandler:
             logger.info(f"执行{action}主程序操作")
             if not from_frontend:
                 try:
-                    await self._request_frontend_close(restart=restart)
+                    await self._request_frontend_close(
+                        restart=restart,
+                        automatic=automatic,
+                        next_wake_at=self._next_scheduled_wakeup(checked_at)
+                        if automatic
+                        else None,
+                    )
                 except TimeoutError as e:
                     # 退出 / 重启是用户设定的完成后操作或安装更新的要求，前端卡死不能让
                     # 后端就此留下不退；此前这里只抛异常，退出被静默放弃。
@@ -298,12 +328,23 @@ class _SystemHandler:
             await self.close_avd_instances()
         if mode in {"Shutdown", "Reboot", "Logoff"}:
             await self.kill_emulator_processes()
+        # 模拟器收尾可能跨过唤醒时刻，真正执行系统操作前重新读取当前计划。
+        if await self._cancel_automatic_power_for_schedule(
+            mode, automatic=automatic, at=datetime.now().astimezone()
+        ):
+            return
         logger.info(f"执行电源操作: {mode}")
         # 系统电源动作必须先于前端关闭执行：请求前端退出会让 Electron 退出并连带结束后端进程，
         # 若先等前端断开，关机/重启等命令将永远没有机会执行（issue #611）。
         await power.execute(mode)
 
-    async def _request_frontend_close(self, restart: bool = False) -> None:
+    async def _request_frontend_close(
+        self,
+        restart: bool = False,
+        *,
+        automatic: bool = False,
+        next_wake_at: datetime | None = None,
+    ) -> None:
         """请求前端退出或重启，并等待主会话断开（后端自行的 KillSelf / RestartSelf 场景）。"""
 
         action = "重启" if restart else "退出"
@@ -313,6 +354,9 @@ class _SystemHandler:
                 protocol.FRONTEND_RESTART_REQUESTED
                 if restart
                 else protocol.FRONTEND_CLOSE_REQUESTED
+            ),
+            data=WSFrontendCloseRequestedData(
+                automatic=automatic, nextWakeAt=next_wake_at
             ),
         )
         if not sent:

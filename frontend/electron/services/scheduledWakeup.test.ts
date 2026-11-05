@@ -80,3 +80,88 @@ it('keeps the resume source for a failed backend preparation retry after the kee
   wakeup.scheduledWakeupBackendReady()
   expect(wakeup.getSystemResumeTime()).toBeUndefined()
 })
+
+it('relaunches once when cleanup passes the wake time before the forwarded launch is dispatched', async () => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-11-02T08:00:59+08:00'))
+  const wakeup = await import('./scheduledWakeup')
+  wakeup.observeScheduledWakeupQuit({ automatic: true, nextWakeAt: '2026-11-02T08:01:00+08:00' })
+  const releaseLock = vi.fn(() => vi.setSystemTime(new Date('2026-11-02T08:01:10+08:00')))
+  const relaunch = vi.fn()
+  const options = { argv: ['app.asar', '--scheduled-wakeup'], restart: true, releaseLock, relaunch }
+  // 模拟 beforeunload 尚未通过时不进入 will-quit，锁与重启都不能提前发生。
+  expect(releaseLock).not.toHaveBeenCalled()
+  expect(relaunch).not.toHaveBeenCalled()
+  wakeup.finishScheduledWakeupQuit(options)
+  wakeup.finishScheduledWakeupQuit(options)
+  expect(releaseLock).toHaveBeenCalledOnce()
+  expect(relaunch).toHaveBeenCalledExactlyOnceWith(['app.asar', '--scheduled-wakeup'])
+  expect(releaseLock.mock.invocationCallOrder[0]).toBeLessThan(relaunch.mock.invocationCallOrder[0])
+})
+
+it('retains a received wake while automatic cleanup outlasts the keep-awake timer', async () => {
+  vi.useFakeTimers()
+  const wakeup = await import('./scheduledWakeup')
+  wakeup.observeScheduledWakeupQuit({ automatic: true, nextWakeAt: null })
+  wakeup.keepAwakeForScheduledWakeup(['AUTO-MAS.exe', '--scheduled-wakeup'])
+  await vi.advanceTimersByTimeAsync(11 * 60 * 1000)
+  expect(wakeup.shouldSkipStartupQueues()).toBe(false)
+  const relaunch = vi.fn()
+  wakeup.finishScheduledWakeupQuit({
+    argv: ['app.asar'],
+    restart: false,
+    releaseLock: vi.fn(),
+    relaunch,
+  })
+  expect(relaunch).toHaveBeenCalledExactlyOnceWith(['app.asar', '--scheduled-wakeup'])
+})
+
+it.each(['manual', 'cancelled', 'legacy'] as const)(
+  '%s exit does not inherit a wake relaunch',
+  async kind => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-02T08:01:10+08:00'))
+    const wakeup = await import('./scheduledWakeup')
+    wakeup.observeScheduledWakeupQuit({
+      automatic: kind !== 'manual',
+      nextWakeAt: '2026-11-02T08:01:00+08:00',
+    })
+    if (kind === 'manual') {
+      // 手动退出保存尚未结束时，后到的自动请求不能把本次退出改成自动重启。
+      wakeup.observeScheduledWakeupQuit({
+        automatic: true,
+        nextWakeAt: '2026-11-02T08:01:00+08:00',
+      })
+    }
+    wakeup.keepAwakeForScheduledWakeup(['AUTO-MAS.exe', '--scheduled-wakeup'])
+    if (kind === 'cancelled') wakeup.cancelScheduledWakeupQuit()
+    if (kind === 'legacy') wakeup.observeScheduledWakeupQuit(undefined)
+    const releaseLock = vi.fn()
+    const relaunch = vi.fn()
+    wakeup.finishScheduledWakeupQuit({
+      argv: ['app.asar', '--scheduled-wakeup'],
+      restart: false,
+      releaseLock,
+      relaunch,
+    })
+    expect(releaseLock).toHaveBeenCalledOnce()
+    expect(relaunch).not.toHaveBeenCalled()
+  }
+)
+
+it('allows a fresh automatic quit after a manual attempt was cancelled', async () => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-11-02T08:01:10+08:00'))
+  const wakeup = await import('./scheduledWakeup')
+  wakeup.observeScheduledWakeupQuit({ automatic: false })
+  wakeup.cancelScheduledWakeupQuit()
+  wakeup.observeScheduledWakeupQuit({ automatic: true, nextWakeAt: '2026-11-02T08:01:00+08:00' })
+  const relaunch = vi.fn()
+  wakeup.finishScheduledWakeupQuit({
+    argv: ['app.asar'],
+    restart: false,
+    releaseLock: vi.fn(),
+    relaunch,
+  })
+  expect(relaunch).toHaveBeenCalledExactlyOnceWith(['app.asar', '--scheduled-wakeup'])
+})

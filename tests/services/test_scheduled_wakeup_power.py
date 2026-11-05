@@ -14,7 +14,8 @@ from tests.config_support import activate_config
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "operation,second", [("Sleep", 0), ("Hibernate", 0), ("KillSelf", 0), ("Sleep", 30)]
+    "operation,second",
+    [("Sleep", 0), ("Hibernate", 0), ("KillSelf", 0), ("Sleep", 30), ("Shutdown", 0)],
 )
 async def test_finished_queue_preserves_next_woken_schedule(
     isolated_app_paths, monkeypatch, operation, second
@@ -63,6 +64,18 @@ async def test_finished_queue_preserves_next_woken_schedule(
     monkeypatch.setattr(system.power, "execute", execute)
     monkeypatch.setattr(Publisher, "send", send)
     handler = system._SystemHandler()
+    if operation == "Shutdown":
+        wake_at = planned - timedelta(minutes=5)
+        now = wake_at - timedelta(seconds=1)
+
+        async def close_avd():
+            nonlocal now
+            now = max(now, wake_at + timedelta(seconds=10))
+
+        handler.avd_instance_closer = close_avd
+        monkeypatch.setattr(
+            system.psutil, "process_iter", lambda *args, **kwargs: iter(())
+        )
     # 冻结在前一队列的倒计时结束时刻，测试不等待真实的一分钟。
     handler.countdown = 0
     monkeypatch.setattr(isolated_app_paths, "power_sign", operation)
@@ -98,3 +111,61 @@ async def test_finished_queue_preserves_next_woken_schedule(
     await handler.power_task
     assert native_operations == expected_native * 2
     assert server.should_exit == (operation == "KillSelf")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("automatic", [True, False])
+async def test_exit_hands_next_wakeup_to_the_frontend(
+    isolated_app_paths, monkeypatch, automatic
+):
+    from app.core import Publisher, TaskManager
+    from app.core.ws import protocol
+    from app.services.common import system
+
+    planned = datetime(2026, 11, 2, 8, 6, 30).astimezone()
+    wake_at = planned.replace(second=0) - timedelta(minutes=5)
+    checked_at = wake_at - timedelta(seconds=1)
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return (
+                checked_at.astimezone(tz)
+                if tz is not None
+                else checked_at.replace(tzinfo=None)
+            )
+
+    monkeypatch.setattr(system, "datetime", Clock)
+    setting = await activate_config(
+        GlobalConfig.model_validate({"Start": {"IfScheduledWakeUp": True}})
+    )
+    queues = await activate_config(ConfigCollection.build([QueueConfig]))
+    uid = queues.add(QueueConfig, payload={"Info": {"TimeEnabled": True}})
+    await queues.commit()
+    queues[uid].TimeSet.add(
+        TimeSet, payload={"Info": {"Time": planned, "Days": ["Monday"]}}
+    )
+    await queues[uid].TimeSet.commit()
+    monkeypatch.setattr(isolated_app_paths, "setting", setting)
+    monkeypatch.setattr(isolated_app_paths, "QueueConfig", queues)
+    monkeypatch.setattr(
+        isolated_app_paths, "server", Server(ServerConfig("app.api:app"))
+    )
+    monkeypatch.setattr(TaskManager, "task_handler", {})
+    requests = []
+
+    async def send(**kwargs):
+        if kwargs["type"] == protocol.FRONTEND_CLOSE_REQUESTED:
+            requests.append(kwargs.get("data"))
+        return False
+
+    monkeypatch.setattr(Publisher, "send", send)
+    await system._SystemHandler().set_power("KillSelf", automatic=automatic)
+    assert len(requests) == 1
+    assert requests[0] is not None
+    data = requests[0].model_dump(mode="json")
+    assert data["automatic"] == automatic
+    if automatic:
+        assert datetime.fromisoformat(data["nextWakeAt"]) == wake_at
+    else:
+        assert data["nextWakeAt"] is None

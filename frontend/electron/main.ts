@@ -5,7 +5,9 @@ import { analyticsDuration } from './services/analyticsPolicy'
 import {
   isScheduledWakeupLaunch,
   keepAwakeForScheduledWakeup,
-  normalRelaunchArgs,
+  observeScheduledWakeupQuit,
+  cancelScheduledWakeupQuit,
+  finishScheduledWakeupQuit,
   prepareSystemResumeRecovery,
 } from './services/scheduledWakeup'
 import { readBackendDocument } from './services/backendConfig'
@@ -627,6 +629,7 @@ function cancelQuitRequest(token?: number): void {
   quitPreparationExpired = false
   quitRequestInFlight = false
   relaunchAfterQuit = false
+  cancelScheduledWakeupQuit()
   showMainWindow()
 }
 
@@ -645,7 +648,6 @@ function finishCoordinatedQuit(): void {
     saveWindowStateTimeout = null
   }
   destroyTray()
-  if (relaunchAfterQuit) app.relaunch({ args: normalRelaunchArgs(process.argv.slice(1)) })
   app.quit()
 }
 
@@ -674,6 +676,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
     forceQuitInProgress = retryableState.forceQuitInProgress
     quitRequestInFlight = retryableState.quitRequestInFlight
     relaunchAfterQuit = retryableState.relaunchAfterQuit
+    cancelScheduledWakeupQuit()
     if (mainWindow && !mainWindow.isDestroyed()) {
       showMainWindow()
     } else if (app.isReady()) {
@@ -695,6 +698,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
 function requestRendererClose(reason: string, confirmRunningTasks = false): void {
   if (!canRequestRendererClose({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight }))
     return
+  observeScheduledWakeupQuit({ automatic: false })
   closeTelemetry ??= beginMainFeature('app_close_finished')
   const win = mainWindow
   if (!win || win.isDestroyed()) {
@@ -938,6 +942,9 @@ function createWindow() {
   nativeCloseHandlerReady = false
   desktopMascot.attachMainWindow(win)
   lastWindowActivity = null
+
+  // 页面拒绝关闭时撤销唤醒重启义务，不忽略 beforeunload 的阻止。
+  win.webContents.on('will-prevent-unload', cancelScheduledWakeupQuit)
 
   win.webContents.on('did-start-loading', () => {
     nativeCloseHandlerReady = false
@@ -1987,8 +1994,9 @@ ipcMain.handle('app-restart-on-quit', () => {
 })
 
 // renderer 仅在后端优雅关闭或超时兜底完成后调用，作为最终退出确认。
-ipcMain.on('app-backend-close-observed', event => {
+ipcMain.on('app-backend-close-observed', (event, request: unknown) => {
   if (!isAnalyticsSender(event)) return
+  observeScheduledWakeupQuit(request)
   closeTelemetry ??= beginMainFeature('app_close_finished')
   closeTelemetryKind = 'backend'
 })
@@ -2014,6 +2022,7 @@ ipcMain.handle('app-wait-for-quit-confirmation', () => {
 ipcMain.handle('app-prepare-quit', () => {
   if (coordinatedQuit || forceQuitInProgress) return null
   if (activeQuitPreparation !== null) return activeQuitPreparation
+  observeScheduledWakeupQuit({ automatic: false })
   closeTelemetry ??= beginMainFeature('app_close_finished')
   clearQuitFallback()
   quitConfirmationPending = false
@@ -2472,6 +2481,12 @@ app.on('child-process-gone', (_event, details) => {
 })
 
 app.on('will-quit', () => {
+  finishScheduledWakeupQuit({
+    argv: process.argv.slice(1),
+    restart: relaunchAfterQuit,
+    releaseLock: () => app.releaseSingleInstanceLock(),
+    relaunch: args => app.relaunch({ args }),
+  })
   disposeAnalytics()
   desktopMascot.dispose()
   globalShortcut.unregisterAll()

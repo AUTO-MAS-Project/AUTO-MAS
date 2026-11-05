@@ -8,6 +8,62 @@ let deadline: ReturnType<typeof setTimeout> | undefined
 let wakeupBackendPending = isScheduledWakeupLaunch(process.argv)
 let resumeBackendPending = false
 let systemResumeTime: string | undefined
+let quitContext:
+  | { kind: 'manual' }
+  | { kind: 'automatic'; nextWakeAt: number | undefined; wakeReceived: boolean }
+  | undefined
+let quitFinished = false
+
+/** IPC 边界兼容旧的空退出请求；只有自动退出承担后续唤醒义务。 */
+export function observeScheduledWakeupQuit(request: unknown): void {
+  quitFinished = false
+  if (
+    typeof request !== 'object' ||
+    request === null ||
+    !('automatic' in request) ||
+    request.automatic !== true
+  ) {
+    quitContext = { kind: 'manual' }
+    return
+  }
+  if (quitContext?.kind === 'manual') return
+  const nextWakeAt =
+    'nextWakeAt' in request && typeof request.nextWakeAt === 'string'
+      ? Date.parse(request.nextWakeAt)
+      : NaN
+  quitContext = {
+    kind: 'automatic',
+    nextWakeAt: Number.isFinite(nextWakeAt) ? nextWakeAt : undefined,
+    wakeReceived: quitContext?.wakeReceived ?? false,
+  }
+}
+
+export function cancelScheduledWakeupQuit(): void {
+  quitContext = undefined
+  quitFinished = false
+}
+
+/** 只在 will-quit 调用：此时窗口未取消关闭，Runtime 也已完成收尾。 */
+export function finishScheduledWakeupQuit(options: {
+  argv: readonly string[]
+  restart: boolean
+  releaseLock: () => void
+  relaunch: (args: string[]) => void
+}): void {
+  if (quitFinished) return
+  quitFinished = true
+  // 先释放锁，之后到达的启动直接交给新实例；已被旧锁转发的启动由时间边界兜住。
+  options.releaseLock()
+  const wakeup =
+    quitContext?.kind === 'automatic' &&
+    (quitContext.wakeReceived ||
+      (quitContext.nextWakeAt !== undefined && Date.now() >= quitContext.nextWakeAt))
+  if (options.restart || wakeup) {
+    const args = normalRelaunchArgs(options.argv)
+    if (wakeup) args.push(WAKEUP_ARGUMENT)
+    options.relaunch(args)
+  }
+}
 
 export function isScheduledWakeupLaunch(argv: readonly string[]): boolean {
   return argv.includes(WAKEUP_ARGUMENT)
@@ -51,6 +107,7 @@ export function normalRelaunchArgs(argv: readonly string[]): string[] {
 /** 冷启动或已运行实例收到唤醒启动时，保活十分钟等待定时调度接管。 */
 export function keepAwakeForScheduledWakeup(argv: readonly string[]): boolean {
   if (!isScheduledWakeupLaunch(argv)) return false
+  if (quitContext?.kind === 'automatic') quitContext.wakeReceived = true
   if (blocker === undefined) blocker = powerSaveBlocker.start('prevent-app-suspension')
   renewWakeupWindow()
   return true
