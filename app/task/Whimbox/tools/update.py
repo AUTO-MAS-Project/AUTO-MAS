@@ -257,6 +257,7 @@ async def prepare_update(root: Path) -> PreparedUpdate | str:
         await asyncio.to_thread(shutil.rmtree, stage, ignore_errors=True)
         raise
 
+
 def _wheel_digest(path: Path) -> str:
     with path.open("rb") as handle:
         return hashlib.file_digest(handle, "sha256").hexdigest()
