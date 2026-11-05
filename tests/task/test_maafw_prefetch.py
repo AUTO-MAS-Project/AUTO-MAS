@@ -53,6 +53,194 @@ async def test_prefetched_candidate_consumption_checks_baseline_and_gate(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("changed", [False, True])
+async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
+    tmp_path, monkeypatch, isolated_app_paths, changed
+):
+    """同版重新导入改变来源时，旧下载不能登记到新谱系；未变化的来源继续复用。"""
+    import asyncio
+    import hashlib
+    import io
+    import json
+    import threading
+    import uuid
+    import zipfile
+
+    import httpx
+
+    from app.core import script_update
+    from app.core.task_manager.manager import TaskInfo
+    from app.models.config import GlobalConfig, MaaFWConfig
+    from app.models.task import ScriptItem
+    from app.task.MaaFW import embedded_manager
+    from app.task.MaaFW.tools.core.project_update import transport
+    from app.task.MaaFW.tools.embedded import embedded_project
+    from app.task.MaaFW.tools.embedded.update_credentials import (
+        resolve_update_credentials,
+    )
+    from tests.config_support import activate_config
+
+    install = tmp_path / "mas"
+    install.mkdir()
+    monkeypatch.chdir(install)
+    source = tmp_path / "source"
+    (source / "resource").mkdir(parents=True)
+    (source / "resource/data.json").write_text('{"source":"shared"}')
+
+    def interface(repo, version="1.0"):
+        return {
+            "interface_version": 2,
+            "name": "Audit",
+            "version": version,
+            "github": f"https://github.com/audit/{repo}",
+            "resource": [{"name": "Default", "path": ["resource"]}],
+            "task": [],
+        }
+
+    previous = interface("aaaa")
+    replacement = interface("bbbb" if changed else "aaaa")
+    assert len(json.dumps(previous)) == len(json.dumps(replacement))
+    (source / "interface.json").write_text(json.dumps(previous))
+    package = io.BytesIO()
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("interface.json", json.dumps(interface("aaaa", "2.0")))
+        archive.writestr("resource/data.json", '{"source":"aaaa-v2"}')
+    package_bytes = package.getvalue()
+    requests = []
+
+    def respond(request):
+        url = str(request.url)
+        requests.append(url)
+        if url == "https://example.com/old.zip":
+            return httpx.Response(200, content=package_bytes)
+        if "/releases/tags/1.0" in url or "/releases/tags/v1.0" in url:
+            # 两个项目都已撤下旧版本的发行包，实际导入核对返回同样的报告。
+            return httpx.Response(404, json={"message": "Not Found"})
+        if "/repos/audit/aaaa/" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "tag_name": "2.0",
+                    "assets": [
+                        {
+                            "name": "Audit-win-x86_64-2.0.zip",
+                            "browser_download_url": "https://example.com/old.zip",
+                            "size": len(package_bytes),
+                            "digest": "sha256:"
+                            + hashlib.sha256(package_bytes).hexdigest(),
+                            "id": 1122,
+                        }
+                    ],
+                },
+            )
+        if "/repos/audit/bbbb/" in url:
+            return httpx.Response(200, json={"tag_name": "1.0", "assets": []})
+        raise AssertionError(url)
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: client(**kwargs, transport=httpx.MockTransport(respond)),
+    )
+    monkeypatch.setattr(updater, "DEFAULT_CACHE_ROOT", tmp_path / "cache")
+    monkeypatch.setattr(transport, "DEFAULT_CACHE_ROOT", tmp_path / "cache")
+    monkeypatch.setattr(updater, "DEFAULT_OPERATION_ROOT", tmp_path / "operations")
+    uid = uuid.uuid4()
+    script_id = str(uid)
+    first = await asyncio.to_thread(
+        embedded_project.import_embedded_project, script_id, source
+    )
+
+    def imported_fields(imported):
+        return {
+            "Report": json.dumps(imported["report"], ensure_ascii=False),
+            "SourceVersion": imported["sourceVersion"],
+            "ImportedAt": imported["importedAt"],
+        }
+
+    config = MaaFWConfig.build(
+        payload={
+            "Info": {"Path": str(source)},
+            "Embedded": imported_fields(first),
+            "Update": {"AutoUpdateMode": "BeforeRun", "Source": "GitHub"},
+        }
+    )
+    await activate_config(config)
+    assert config.Info.Path == source
+    monkeypatch.setattr(isolated_app_paths, "ScriptConfig", {uid: config})
+    monkeypatch.setattr(
+        isolated_app_paths,
+        "setting",
+        GlobalConfig.model_validate({"Update": {"GitHubMirror": "Off"}}),
+    )
+    view = embedded_project.embedded_project_dir(script_id)
+    item = ScriptItem(script_id, "audit", "等待")
+    info = TaskInfo("AutoProxy", "audit", "queue", None, None)
+    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
+    info.script_list = [item]
+    session = script_update.ScriptUpdateSession(
+        info,
+        make_manager=lambda item, *_args, **_kwargs: (
+            embedded_manager.MaaFWEmbeddedManager(item)
+        ),
+        resources=lambda _: ((view.resolve(),), None),
+        scheduled=lambda _: True,
+        config=isolated_app_paths,
+    )
+    before = session._identity(0)
+    await session._prefetch(0)
+    (source / "interface.json").write_text(json.dumps(replacement))
+    second = await asyncio.to_thread(
+        embedded_project.import_embedded_project, script_id, source
+    )
+    await config.update(
+        MaaFWConfig.model_validate({"Embedded": imported_fields(second)})
+    )
+    assert first["report"] == second["report"]
+    assert session._identity(0) == before
+    manager = await session.take(0)
+    assert manager is not None
+    assert json.loads((view / "interface.json").read_text()) == replacement
+    marker_before = embedded_project.read_view_marker(view)
+    before_consume = list(requests)
+
+    # 只隔离真实运行池/agent 环境准备；发现、缓存、预检门、登记和视图切换照常执行。
+    manager.script_config = config
+    monkeypatch.setattr(
+        manager,
+        "_resolve_runtime_pool_route",
+        lambda: SimpleNamespace(root=tmp_path / "runtime"),
+    )
+    monkeypatch.setattr(
+        embedded_manager.MaaFWEmbeddedManager,
+        "_prepare_project_environment_sync",
+        lambda *_args, **_kwargs: True,
+    )
+    outcome = await manager._invoke_project_update(
+        view,
+        resolve_update_credentials(config),
+        update_cancel=threading.Event(),
+    )
+    installed = json.loads((view / "interface.json").read_text())
+    assert installed["github"] == replacement["github"]
+    assert installed["version"] == ("1.0" if changed else "2.0")
+    assert json.loads((view / "resource/data.json").read_text()) == {
+        "source": "shared" if changed else "aaaa-v2"
+    }
+    assert outcome.updated is not changed
+    assert (
+        embedded_project.read_view_marker(view)["lineage"] == marker_before["lineage"]
+    )
+    if changed:
+        assert any(
+            "/repos/audit/bbbb/" in url for url in requests[len(before_consume) :]
+        )
+    else:
+        assert requests == before_consume
+
+
+@pytest.mark.asyncio
 async def test_shared_artifact_cache_serializes_coroutines(tmp_path):
     """Prefetch and regular updating the same asset must not write concurrently."""
     import asyncio

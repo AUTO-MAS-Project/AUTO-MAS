@@ -186,6 +186,256 @@ async def test_reused_pipeline_installs_package_and_preserves_user_files(
     update._download_with_space_check.assert_awaited_once()
 
 
+@pytest.fixture
+def m7a_update_release(tmp_path, monkeypatch):
+    import hashlib
+    import shutil
+
+    import httpx
+
+    from app.task.HSR.tools.update import download as transport
+
+    root = tmp_path / "M7A"
+    root.mkdir()
+    packages = {}
+    for version in ("1.0", "2.0", "3.0"):
+        package = tmp_path / f"release-{version}.zip"
+        with zipfile.ZipFile(package, "w") as archive:
+            archive.writestr("March7th Assistant.exe", f"engine {version}")
+            archive.writestr("assets/config/version.txt", version)
+        packages[version] = package
+    installer.apply_package(
+        packages["1.0"],
+        root,
+        engine="M7A",
+        from_version=None,
+        to_version="v1.0",
+        seven_zip=None,
+    )
+    client = httpx.AsyncClient
+    release = {
+        "code": 0,
+        "data": {
+            "version_name": "v2.0",
+            "url": "https://example.invalid/M7A.zip",
+            "sha256": hashlib.sha256(packages["2.0"].read_bytes()).hexdigest(),
+        },
+    }
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: client(
+            **kwargs,
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json=release)
+            ),
+        ),
+    )
+
+    async def download(_url, destination, **_kwargs):
+        shutil.copyfile(packages["2.0"], destination)
+
+    monkeypatch.setattr(transport, "download_script_package", download)
+    return root, packages, tmp_path / "downloads"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "changed,prefetch",
+    [
+        ("installation", True),
+        ("package", True),
+        ("missing_package", True),
+        ("native_running", True),
+        ("native_running", False),
+        ("native_during_version_probe", True),
+    ],
+)
+async def test_installation_rechecks_after_archive_inspection(
+    m7a_update_release, monkeypatch, changed, prefetch
+):
+    """最终安装边界复核版本、归档和进程，覆盖消费中的异步读取。"""
+    import os
+    import shutil
+    import subprocess
+
+    root, packages, downloads = m7a_update_release
+    prepared = (
+        await update.prepare_engine_update(
+            "M7A",
+            root,
+            source="MirrorChyan",
+            channel="stable",
+            cdk="test-cdk",
+            proxy=None,
+            download_dir=downloads,
+        )
+        if prefetch
+        else None
+    )
+    if prefetch:
+        assert prepared is not None
+    inspect = update.expanded_size_of_zip
+    native = None
+
+    def start_native():
+        nonlocal native
+        program = shutil.which("ping" if os.name == "nt" else "sleep")
+        assert program is not None
+        executable = root / (
+            "native-runtime.exe" if os.name == "nt" else "native-runtime"
+        )
+        shutil.copy2(program, executable)
+        args = ["127.0.0.1", "-n", "30"] if os.name == "nt" else ["30"]
+        native = subprocess.Popen(
+            [str(executable), *args],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        assert update.check_no_process_running(root) is not None
+
+    def inspect_after_change(package):
+        size = inspect(package)
+        if changed == "installation":
+            # 原生更新不持 MAS 的锁；用真实安装器安装另一个完整发行包，
+            # 保证变化来自有效安装而非手写一个版本标记。
+            installer.apply_package(
+                packages["3.0"],
+                root,
+                engine="M7A",
+                from_version="v1.0",
+                to_version="v3.0",
+                seven_zip=None,
+            )
+        elif changed == "package":
+            shutil.copyfile(packages["3.0"], package)
+        elif changed == "missing_package":
+            package.unlink()
+        elif changed == "native_running":
+            start_native()
+        return size
+
+    monkeypatch.setattr(update, "expanded_size_of_zip", inspect_after_change)
+    if changed == "native_during_version_probe":
+        read_version = update.read_installed_version
+
+        def read_version_then_start(*args):
+            current = read_version(*args)
+            if native is None:
+                start_native()
+            return current
+
+        monkeypatch.setattr(update, "read_installed_version", read_version_then_start)
+    try:
+        result = await update.update_engine_if_needed(
+            "M7A",
+            root,
+            source="MirrorChyan",
+            channel="stable",
+            cdk="test-cdk",
+            download_dir=downloads,
+            prepared=prepared,
+        )
+        assert not result.updated
+        assert not result.blocking
+        expected = "3.0" if changed == "installation" else "1.0"
+        assert (
+            update.read_installed_version(update.get_spec("M7A"), root)
+            == f"v{expected}"
+        )
+        assert (root / "March7th Assistant.exe").read_text() == f"engine {expected}"
+        assert not installer.has_pending_journal(root)
+        if native is not None:
+            assert native.poll() is None
+    finally:
+        if native is not None:
+            native.terminate()
+            native.wait(timeout=5)
+        if prepared is not None:
+            update.discard_prepared_update(prepared)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel_method", ["task", "token"])
+async def test_cancel_during_candidate_validation_never_installs_and_can_retry(
+    m7a_update_release, monkeypatch, cancel_method
+):
+    root, _, downloads = m7a_update_release
+    prepared = await update.prepare_engine_update(
+        "M7A",
+        root,
+        source="MirrorChyan",
+        channel="stable",
+        cdk="test-cdk",
+        proxy=None,
+        download_dir=downloads,
+    )
+    assert prepared is not None
+    started, release = threading.Event(), threading.Event()
+    original_digest = update._package_digest
+
+    def slow_digest(path):
+        with path.open("rb"):
+            started.set()
+            assert release.wait(5)
+            return original_digest(path)
+
+    monkeypatch.setattr(update, "_package_digest", slow_digest)
+    abort = threading.Event()
+    task = asyncio.create_task(
+        update.update_engine_if_needed(
+            "M7A",
+            root,
+            source="MirrorChyan",
+            download_dir=downloads,
+            prepared=prepared,
+            should_abort=abort.is_set,
+        )
+    )
+    try:
+        assert await asyncio.to_thread(started.wait, 3)
+        if cancel_method == "task":
+            task.cancel()
+            await asyncio.sleep(0)
+            task.cancel()
+        else:
+            abort.set()
+        done, _ = await asyncio.wait({task}, timeout=0.05)
+        assert not done
+        assert prepared.package.exists()
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+        update.discard_prepared_update(prepared)
+    assert task.cancelled()
+    assert update.read_installed_version(update.get_spec("M7A"), root) == "v1.0"
+    assert (root / "March7th Assistant.exe").read_bytes() == b"engine 1.0"
+    assert not installer.has_pending_journal(root)
+
+    monkeypatch.setattr(update, "_package_digest", original_digest)
+    retry = await update.prepare_engine_update(
+        "M7A",
+        root,
+        source="MirrorChyan",
+        channel="stable",
+        cdk="test-cdk",
+        proxy=None,
+        download_dir=downloads,
+    )
+    try:
+        result = await update.update_engine_if_needed(
+            "M7A",
+            root,
+            source="MirrorChyan",
+            download_dir=downloads,
+            prepared=retry,
+        )
+        assert result.updated
+        assert update.read_installed_version(update.get_spec("M7A"), root) == "v2.0"
+    finally:
+        update.discard_prepared_update(retry)
+
+
 @pytest.mark.parametrize(
     "unsafe_path",
     [

@@ -106,7 +106,7 @@ def test_private_cli_failure_does_not_spawn_agent(tmp_path, monkeypatch):
     assert cli.fluxdown_server_ensure(tmp_path / "fluxdown.exe") is None
     spawn.assert_not_called()
     code, message = cli._run_cli(tmp_path / "fluxdown.exe", {}, ["ping"])
-    assert code == 1
+    assert code is None
     assert "server 不可用" in message
 
 
@@ -1215,25 +1215,47 @@ def test_legacy_pending_add_cannot_be_recovered_from_a_snapshot(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("downloader", ["builtin", "fluxdown"])
-async def test_missing_cli_does_not_bypass_a_persisted_writer(
-    server_fixture, monkeypatch, downloader
+@pytest.mark.parametrize("access", ["missing", "denied"])
+@pytest.mark.parametrize("old_writer", [False, True])
+async def test_unavailable_cli_checks_persisted_writer_before_fallback(
+    server_fixture, monkeypatch, downloader, access, old_writer
 ):
     exe, target, url = server_fixture
-    cli._map_put(exe, cli._map_key(url, target), "still-running", url, target)
+    if old_writer:
+        cli._map_put(exe, cli._map_key(url, target), "still-running", url, target)
     target.write_bytes(b"owned by daemon")
-    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda *_a, **_kw: None)
+    monkeypatch.setattr(cli.shutil, "which", lambda *_a: None)
+    if access == "denied":
+        is_file = Path.is_file
+
+        def inaccessible(path):
+            if path == exe:
+                raise PermissionError("CLI directory is inaccessible")
+            return is_file(path)
+
+        monkeypatch.setattr(Path, "is_file", inaccessible)
     monkeypatch.setattr(cli, "fluxdown_server_ensure", lambda *_a: None)
-    backend = AsyncMock(return_value=1)
-    with pytest.raises(cli.FluxdownCancelUnconfirmed):
-        await transport.download_file(
-            url,
-            target,
-            timeout=1,
-            options=transport.FluxdownOptions(downloader, "GitHub", str(exe), 8, True),
-            http_download=backend,
-        )
-    backend.assert_not_awaited()
-    assert target.read_bytes() == b"owned by daemon"
+
+    async def builtin(_url, destination, **kwargs):
+        destination.write_bytes(b"new")
+        return 3
+
+    backend = AsyncMock(side_effect=builtin)
+    download = transport.download_file(
+        url,
+        target,
+        timeout=1,
+        options=transport.FluxdownOptions(downloader, "GitHub", str(exe), 8, True),
+        http_download=backend,
+    )
+    if old_writer:
+        with pytest.raises(cli.FluxdownCancelUnconfirmed):
+            await download
+        backend.assert_not_awaited()
+        assert target.read_bytes() == b"owned by daemon"
+    else:
+        assert await download == 3
+        assert target.read_bytes() == b"new"
 
 
 def test_exited_agent_does_not_hide_a_live_daemon_child(server_fixture, monkeypatch):
@@ -1781,3 +1803,211 @@ async def test_cancel_during_local_error_cleanup_takes_precedence(
     finally:
         release.set()
         await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "history", ["none", "old_writer", "cli_unreadable", "no_writer_cli_unreadable"]
+)
+async def test_cancel_waiting_for_server_admission_preserves_writer_ownership(
+    server_fixture, monkeypatch, history
+):
+    """A same-source retry may be cancelled before the download body starts."""
+    import asyncio
+    import threading
+
+    exe, target, url = server_fixture
+    exe = exe.with_name(cli._FLUXDOWN_EXE_NAMES[0])
+    exe.touch()
+    old_writer = history in ("old_writer", "cli_unreadable")
+    target.write_bytes(b"retained archive")
+    if old_writer:
+        cli._map_put(exe, cli._map_key(url, target), "previous", url, target)
+    admission, competitor_entered = asyncio.Event(), asyncio.Event()
+    probing, release_probe = threading.Event(), threading.Event()
+    builtin = AsyncMock(side_effect=AssertionError("unexpected HTTP fallback"))
+    monkeypatch.setattr(transport, "_httpx_download", builtin)
+
+    def available(*args, **kwargs):
+        admission.set()
+        return True
+
+    def command(_exe, _env, args, timeout=30):
+        assert args == ["pause", "previous"]
+        probing.set()
+        assert release_probe.wait(5)
+        return 124, "timeout"
+
+    monkeypatch.setattr(cli, "fluxdown_server_available", available)
+    monkeypatch.setattr(cli, "_run_cli", command)
+    monkeypatch.setattr(cli, "_active_downloads", 1)
+    monkeypatch.setattr(cli._server, "spawned_by_us", False)
+    options = transport.FluxdownOptions("fluxdown", "GitHub", str(exe), 8, True)
+
+    async def competitor():
+        async with cli.fluxdown_destination_lock(exe, target):
+            competitor_entered.set()
+
+    # Emergency stop closes admission before waiting for the server lock. It
+    # may subsequently decline the stop, leaving an older retry's writer alive.
+    cli._server.lock.acquire()
+    shutdown = asyncio.create_task(
+        asyncio.to_thread(
+            cli.fluxdown_server_emergency_stop_if_exclusive,
+            exe,
+            "https://example.invalid/another",
+            target.with_name("another"),
+        )
+    )
+    active = queued = None
+    try:
+        async with asyncio.timeout(3):
+            while not cli._server_emergency_stopping:
+                await asyncio.sleep(0.001)
+        active = asyncio.create_task(
+            transport.download_file(url, target, timeout=30, options=options)
+        )
+        await asyncio.wait_for(admission.wait(), 3)
+        if history.endswith("cli_unreadable"):
+            is_file = Path.is_file
+
+            def inaccessible(path):
+                if path == exe:
+                    raise PermissionError("CLI directory became inaccessible")
+                return is_file(path)
+
+            monkeypatch.setattr(Path, "is_file", inaccessible)
+        active.cancel()
+        if old_writer:
+            async with asyncio.timeout(3):
+                while not probing.is_set() and not active.done():
+                    await asyncio.sleep(0.001)
+            if probing.is_set():
+                queued = asyncio.create_task(competitor())
+                active.cancel()
+                await asyncio.sleep(0.02)
+                assert not active.done()
+                assert not competitor_entered.is_set()
+            release_probe.set()
+            with pytest.raises(cli.FluxdownCancelUnconfirmed):
+                await active
+            assert cli._load_task_map(exe)[cli._map_key(url, target)]["task_id"] == (
+                "previous"
+            )
+        else:
+            with pytest.raises(asyncio.CancelledError):
+                await active
+        assert target.read_bytes() == b"retained archive"
+        builtin.assert_not_called()
+    finally:
+        release_probe.set()
+        cli._server.lock.release()
+        await asyncio.gather(
+            *(task for task in (shutdown, active, queued) if task is not None),
+            return_exceptions=True,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_add_spawn_failure_releases_pending_identity_for_retry(
+    server_fixture, monkeypatch, cancelled
+):
+    """Failure before OS process creation cannot have submitted an add RPC."""
+    import asyncio
+    import sys
+    import threading
+
+    exe, target, url = server_fixture
+    real_popen = cli.subprocess.Popen
+    starting, release = threading.Event(), threading.Event()
+    refused = False
+    output = target
+    monkeypatch.setattr(cli, "_local_cli_exe", lambda path: Path(sys.executable))
+
+    def spawn(argv, **kwargs):
+        nonlocal refused, output
+        args = argv[1:]
+        if args[0] == "add":
+            if not refused:
+                refused = True
+                starting.set()
+                assert release.wait(5)
+                raise PermissionError("OS refused process creation")
+            output = Path(args[args.index("-d") + 1]) / args[args.index("-o") + 1]
+            program = (
+                f"from pathlib import Path; Path({str(output)!r}).write_bytes(b'data');"
+                " print('[\"created\"]')"
+            )
+        elif args[0] == "list":
+            program = "print('[]')"
+        elif args[0] == "status":
+            payload = json.dumps(
+                {
+                    "status": 3,
+                    "downloadedBytes": 4,
+                    "totalBytes": 4,
+                    "saveDir": str(output.parent),
+                    "fileName": output.name,
+                }
+            )
+            program = f"print({payload!r})"
+        else:
+            raise AssertionError(args)
+        return real_popen([sys.executable, "-c", program], **kwargs)
+
+    monkeypatch.setattr(cli.subprocess, "Popen", spawn)
+    active = asyncio.create_task(cli.fluxdown_server_download(url, target, cli_exe=exe))
+    try:
+        async with asyncio.timeout(3):
+            while not starting.is_set():
+                await asyncio.sleep(0.001)
+        if cancelled:
+            active.cancel()
+            await asyncio.sleep(0)
+            active.cancel()
+            await asyncio.sleep(0)
+        release.set()
+        expected = asyncio.CancelledError if cancelled else RuntimeError
+        with pytest.raises(expected) as caught:
+            await active
+        assert not isinstance(caught.value, cli.FluxdownCancelUnconfirmed)
+        assert cli._map_key(url, target) not in cli._load_task_map(exe)
+        size, _ = await cli.fluxdown_server_download(url, target, cli_exe=exe)
+        assert size == 4
+        assert target.read_bytes() == b"data"
+    finally:
+        release.set()
+        await asyncio.gather(active, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_add_communication_failure_after_spawn_keeps_pending_identity(
+    server_fixture, monkeypatch
+):
+    """A post-spawn pipe error cannot prove that the command was not submitted."""
+    import sys
+
+    exe, target, url = server_fixture
+    real_popen = cli.subprocess.Popen
+    children = []
+    monkeypatch.setattr(cli, "_local_cli_exe", lambda path: Path(sys.executable))
+
+    def spawn(argv, **kwargs):
+        process = real_popen([sys.executable, "-c", "print('[]')"], **kwargs)
+        children.append(process)
+        if argv[1] == "add":
+            communicate = process.communicate
+
+            def fail_after_execution(*args, **kwargs):
+                communicate(*args, **kwargs)
+                raise OSError("pipe read failed after command execution")
+
+            process.communicate = fail_after_execution
+        return process
+
+    monkeypatch.setattr(cli.subprocess, "Popen", spawn)
+    with pytest.raises(cli.FluxdownCancelUnconfirmed):
+        await cli.fluxdown_server_download(url, target, cli_exe=exe)
+    assert cli._load_task_map(exe)[cli._map_key(url, target)]["pending_add"]
+    assert all(process.poll() is not None for process in children)

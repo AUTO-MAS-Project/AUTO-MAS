@@ -298,9 +298,10 @@ async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
         candidate.repairing,
     )
     marker = pending_marker(root)
-    current = None if marker.exists() else await installed_version(root)
     hashes = await _run_package_worker(_package_hashes, packages)
     hashes["../" + wheel.name] = await _run_package_worker(_wheel_digest, wheel)
+    # 大依赖的校验期间原生 pip 可能已完成升级；此时再读取安装版本。
+    current = None if marker.exists() else await installed_version(root)
     if (
         root.resolve() != candidate.root
         or current != candidate.current

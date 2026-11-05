@@ -96,10 +96,26 @@ def installation(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_official_package_installs_and_preserves_native_interface(installation):
     root, config = installation
+    old_pipeline = root / "resource/pipeline/old.json"
+    old_pipeline.parent.mkdir(parents=True)
+    old_pipeline.write_bytes(b'{"OldNode": {}}')
+    archive = root.parent / "official.zip"
+    with zipfile.ZipFile(archive, "a") as package:
+        package.writestr("resource/pipeline/nodes.json", '{"NewNode": {}}')
+    asset = update.request_release.return_value["assets"][0]
+    asset["size"] = archive.stat().st_size
+    asset["digest"] = "sha256:" + hashlib.sha256(archive.read_bytes()).hexdigest()
     await update.update_before_run(root, config)
     assert update.read_install(root) == (Version("2.2.0"), "x86_64")
     assert not list((root.parent / "data/maaend_update").glob("download-*"))
     assert (root / "data/AutoDelivery/catalog.json").is_file()
+    assert not old_pipeline.exists()
+    assert (root / "resource/pipeline/nodes.json").read_bytes() == b'{"NewNode": {}}'
+    backups = list(
+        (script_install.workspace(root) / "retired-pipelines").rglob("old.json")
+    )
+    assert len(backups) == 1
+    assert backups[0].read_bytes() == b'{"OldNode": {}}'
     assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
     assert update.download_file.await_args.kwargs["downloader"] == "fluxdown"
     assert (
@@ -300,6 +316,54 @@ async def test_prefetched_candidate_rejects_native_upgrade(installation):
 
 
 @pytest.mark.asyncio
+async def test_prefetched_candidate_preserves_native_upgrade_during_archive_verify(
+    installation, monkeypatch
+):
+    root, config = installation
+    candidate = await update.prepare_update(root, config)
+    native = root.parent / "native.zip"
+    with zipfile.ZipFile(root.parent / "official.zip") as original:
+        with zipfile.ZipFile(native, "w") as archive:
+            for name in original.namelist():
+                content = original.read(name)
+                if name == "interface.json":
+                    payload = json.loads(content)
+                    payload["version"] = "v2.3.0"
+                    content = json.dumps(payload).encode()
+                archive.writestr(name, content)
+    size = native.stat().st_size
+    digest = hashlib.sha256(native.read_bytes()).hexdigest()
+    verify = script_install.verify_archive
+
+    def native_upgrade_after_verify(path, *args):
+        verify(path, *args)
+        if path == candidate.destination:
+            # 另一个完整发行包经真实目录切换安装，不伪造私有回执或版本标记。
+            script_install.install_package(
+                root,
+                native,
+                size,
+                digest,
+                update.PROTECTED,
+                lambda path: update.read_install(path),
+                lambda: update.assert_idle(root),
+                threading.Event(),
+            )
+            assert update.read_install(root)[0] == Version("2.3.0")
+
+    monkeypatch.setattr(script_install, "verify_archive", native_upgrade_after_verify)
+    try:
+        with pytest.raises(ValueError):
+            await update.apply_update(root, candidate)
+        assert update.read_install(root)[0] == Version("2.3.0")
+        assert script_install.verify_installed_files(root, threading.Event())
+        assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
+        assert not (script_install.workspace(root) / "transaction.json").exists()
+    finally:
+        update.discard_update(candidate)
+
+
+@pytest.mark.asyncio
 async def test_preparation_failure_preserves_native_update_configuration(
     scheduler, installation, monkeypatch
 ):
@@ -495,7 +559,6 @@ async def test_cancel_install_waits_for_worker_before_deleting_archive(
         *,
         prepare_ready=None,
     ):
-        assert prepare_ready is update.refresh_merged_pipelines
         started.set()
         assert cancelled.wait(3)
         assert archive.is_file()

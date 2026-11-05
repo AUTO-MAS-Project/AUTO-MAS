@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import re
 import shutil
+import threading
 import time
 import uuid
 from collections.abc import Callable
@@ -30,6 +31,7 @@ from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from ...task_mapping import engine_label
 from .apply import (
+    ApplyResult,
     HSRUpdateApplyError,
     apply_package,
     has_pending_journal,
@@ -56,12 +58,16 @@ LogFn = Callable[[str], None]
 T = TypeVar("T")
 
 
-async def _run_install_worker(operation: Callable[[], T]) -> T:
+async def _run_install_worker(
+    operation: Callable[[], T], *, cancel_event: threading.Event | None = None
+) -> T:
     """安装和回滚一旦开始，取消也要等写入结束，才能释放目录锁。"""
     worker = asyncio.create_task(asyncio.to_thread(operation))
     try:
         return await asyncio.shield(worker)
     except asyncio.CancelledError:
+        if cancel_event is not None:
+            cancel_event.set()
         while not worker.done():
             try:
                 await asyncio.shield(worker)
@@ -165,16 +171,6 @@ async def update_engine_if_needed(
 
     try:
         if prepared is not None:
-            current = await asyncio.to_thread(
-                read_installed_version, spec, install_root
-            )
-            if (
-                prepared.root != install_root.resolve()
-                or current != prepared.result.current_version
-                or await _run_install_worker(partial(_package_digest, prepared.package))
-                != prepared.digest
-            ):
-                raise HSRUpdateError("预下载后安装或包体已变化，请重新运行更新")
             result = prepared.result
         else:
             result = await check_engine_update(
@@ -272,17 +268,44 @@ async def update_engine_if_needed(
     if should_abort and should_abort():
         raise asyncio.CancelledError
     log(f"{label}下载完成，开始校验安装更新")
+    validation_cancelled = threading.Event()
+
+    def apply_verified_package() -> ApplyResult:
+        # 候选必须在最后一次异步读取之后复核；不能拿体积检查之前的快照
+        # 覆盖此期间由原生更新器安装的新版本，或消费被替换的归档。
+        try:
+            if prepared is not None and (
+                prepared.root != install_root.resolve()
+                or _package_digest(package) != prepared.digest
+            ):
+                raise HSRUpdateError("预下载后安装或包体已变化，请重新运行更新")
+            if prepared is not None and (
+                read_installed_version(spec, install_root)
+                != prepared.result.current_version
+            ):
+                raise HSRUpdateError("预下载后安装或包体已变化，请重新运行更新")
+            # SRA 的版本探针会启动 --version 子进程；要在探针结束后查占用。
+            failure = check_no_process_running(install_root)
+            if failure:
+                raise HSRUpdateError(failure.reason)
+        except OSError as exc:
+            raise HSRUpdateError(f"无法复核预下载候选：{exc}") from exc
+        # 摘要/进程/版本复核仍是只读准备，取消后不能进入安装。
+        # 一旦开始 apply_package，继续复用原安装事务的完整等待语义。
+        if validation_cancelled.is_set() or (should_abort and should_abort()):
+            raise asyncio.CancelledError
+        return apply_package(
+            package,
+            install_root,
+            engine=engine,
+            from_version=candidate.current_version,
+            to_version=candidate.latest_version,
+            seven_zip=find_seven_zip(install_root),
+        )
+
     try:
         applied = await _run_install_worker(
-            partial(
-                apply_package,
-                package,
-                install_root,
-                engine=engine,
-                from_version=candidate.current_version,
-                to_version=candidate.latest_version,
-                seven_zip=find_seven_zip(install_root),
-            )
+            apply_verified_package, cancel_event=validation_cancelled
         )
     except HSRUpdateApplyError as exc:
         log(f"{label}更新失败：{exc}")

@@ -191,6 +191,70 @@ async def test_prefetched_maa_package_preserves_new_native_update_state(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "change,same_name", [("pending", False), ("pending", True), ("failure", False)]
+)
+@pytest.mark.parametrize("prefetched", [False, True])
+async def test_maa_package_handoff_preserves_native_state_created_during_io(
+    installation, monkeypatch, change, same_name, prefetched
+):
+    root, _, downloader = installation
+    monkeypatch.chdir(root.parent)
+    config = script_config()
+    candidate = (
+        await update.prepare_maa_fluxdown_update(
+            root, config=config, config_dir=root / "config", download_only=True
+        )
+        if prefetched
+        else None
+    )
+    native = root / ("MAA-v6.1.0-win-x64.zip" if same_name else "native-update.zip")
+    native_version = "v6.1.0" if same_name else "v6.2.0"
+
+    def native_update_finished():
+        if change == "pending":
+            native.write_bytes(b"native update")
+            update.write_pending_update(
+                root, version=native_version, package=str(native)
+            )
+        else:
+            (root / "pending-update-failure.txt").write_text("native install failed")
+
+    if prefetched:
+        copy = update.shutil.copyfile
+
+        def changed_copy(source, target):
+            result = copy(source, target)
+            native_update_finished()
+            return result
+
+        monkeypatch.setattr(update.shutil, "copyfile", changed_copy)
+    else:
+        download = downloader.side_effect
+
+        async def changed_download(*args, **kwargs):
+            result = await download(*args, **kwargs)
+            native_update_finished()
+            return result
+
+        downloader.side_effect = changed_download
+    try:
+        with pytest.raises(RuntimeError):
+            await update.prepare_maa_fluxdown_update(
+                root, config=config, config_dir=root / "config", prepared=candidate
+            )
+        if change == "pending":
+            assert update.read_pending_update(root) == (native_version, str(native))
+            assert native.read_bytes() == b"native update"
+        else:
+            assert update.read_pending_update(root) == ("", "")
+            assert update.has_delegated_update_failure(root)
+    finally:
+        if candidate is not None:
+            update.discard_prepared_update(candidate)
+
+
+@pytest.mark.asyncio
 async def test_prefetched_maa_package_rechecks_source_after_copy(
     installation, monkeypatch
 ):
@@ -200,6 +264,8 @@ async def test_prefetched_maa_package_rechecks_source_after_copy(
     candidate = await update.prepare_maa_fluxdown_update(
         root, config=config, config_dir=root / "config", download_only=True
     )
+    destination = root / candidate.package.name
+    destination.write_bytes(b"native archive")
     copy = update.shutil.copyfile
 
     def changed_copy(source, target):
@@ -216,6 +282,8 @@ async def test_prefetched_maa_package_rechecks_source_after_copy(
             is None
         )
         assert update.read_pending_update(root) == ("", "")
+        assert destination.read_bytes() == b"native archive"
+        assert not list(root.glob(".mas-update-*"))
     finally:
         update.discard_prepared_update(candidate)
 
@@ -353,6 +421,8 @@ async def test_changed_installation_cannot_receive_old_ota(installation, monkeyp
     release.return_value["details"]["assets"] = [
         {"name": "MAAComponent-OTA-v6.0.0_v6.1.0-win-x64.zip"}
     ]
+    destination = root / "MAAComponent-OTA-v6.0.0_v6.1.0-win-x64.zip"
+    destination.write_bytes(b"native archive")
     original = downloader.side_effect
 
     async def changed(url, path, **kwargs):
@@ -368,6 +438,7 @@ async def test_changed_installation_cannot_receive_old_ota(installation, monkeyp
             root, config=script_config(), config_dir=root / "config"
         )
     assert update.read_pending_update(root) == ("", "")
+    assert destination.read_bytes() == b"native archive"
 
 
 @pytest.fixture

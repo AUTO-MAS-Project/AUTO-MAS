@@ -65,6 +65,9 @@ from app.task.MaaFW.tools.backup_archive import (
     read_overlay_values,
 )
 from app.task.MaaFW.tools.core.file_lockers import describe_lockers_async
+from app.task.MaaFW.tools.core.project_update.payloads import (
+    lineage_info_from_interface,
+)
 from app.task.MaaFW.tools.embedded.default_snapshot import (
     fill_default_task_snapshots,
 )
@@ -471,9 +474,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 # 编辑页的「执行更新」整段持本视图预约（下载可能几十分钟）：放行的话每个
                 # 用户都拿不到预约、各自跳过，脚本却记成「完成」。
                 return SKIP_UPDATING
-            if not resolve_maafw_project_root(script_id, script_config).is_dir():
-                return SKIP_OCCUPIED
-            rebuilt = None
+            return SKIP_OCCUPIED
         else:
             # 导入 / 组同步 / 投影补齐都在工作线程里改视图：用户这时点停止，
             # ``await asyncio.to_thread`` 会立刻抛出，线程却还在写 staging、换入视图。
@@ -481,12 +482,45 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             # 预约，同时动同一棵视图。与 ``_ensure_project_environment`` 同一套：shield +
             # 有限宽限，等不到就把释放交给任务完成回调；令牌让后面的步骤不再开始。
             stop = threading.Event()
-            work = asyncio.create_task(
-                self._prepare_view_for_run(script_id, script_config, stop)
-            )
+            project_root = resolve_maafw_project_root(script_id, script_config)
+
+            async def prepare_before_lock() -> str | None:
+                rebuilt = await self._prepare_view_for_run(
+                    script_id, script_config, stop
+                )
+                if rebuilt is not None:
+                    # 视图已变，取消时也先把导入报告写完，再交回项目预约。
+                    await Config.update_script(
+                        script_id,
+                        {
+                            "Embedded": {
+                                "Report": json.dumps(
+                                    rebuilt["report"], ensure_ascii=False
+                                ),
+                                "SourceVersion": rebuilt["sourceVersion"],
+                                "ImportedAt": rebuilt["importedAt"],
+                            }
+                        },
+                    )
+                if stop.is_set():
+                    return None
+                if not project_root.resolve().is_dir():
+                    return "请设置包含 interface.json 的 MFW 项目目录"
+                # 新账号的默认队列也会在线程里读取视图，继续持预约直到取到 X。
+                await fill_default_task_snapshots(script_id, script_config)
+                return None
+
+            work = asyncio.create_task(prepare_before_lock())
             handed_off = False
             try:
-                rebuilt = await asyncio.shield(work)
+                if problem := await asyncio.shield(work):
+                    return problem
+                # X 票留在管理器任务上下文；取得后才释放项目预约，两者连续交接。
+                ticket = await script_config.try_lock_x()
+                if ticket is None:
+                    return SKIP_OCCUPIED
+                self.config_locks[script_config.uid] = ticket
+                self._script_locked = True
             except asyncio.CancelledError:
                 stop.set()
                 with suppress(BaseException):
@@ -510,28 +544,6 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             finally:
                 if not handed_off:
                     await release_project_path(import_key)
-        if rebuilt is not None:
-            await Config.update_script(
-                script_id,
-                {
-                    "Embedded": {
-                        "Report": json.dumps(rebuilt["report"], ensure_ascii=False),
-                        "SourceVersion": rebuilt["sourceVersion"],
-                        "ImportedAt": rebuilt["importedAt"],
-                    }
-                },
-            )
-        project_root = resolve_maafw_project_root(script_id, script_config)
-        if not project_root.resolve().is_dir():
-            return "请设置包含 interface.json 的 MFW 项目目录"
-
-        # 任务队列还是空的账号（从没打开过账号页）先按项目默认写成实打实的队列，与账号页
-        # 读到的同一份，跑的东西不变。要在上锁之前：锁住后配置写不进去。
-        await fill_default_task_snapshots(script_id, script_config)
-
-        # X 锁阻止外部编辑；任务及其子任务直接更新原账号集合。
-        self.config_locks[script_config.uid] = await script_config.lock_x()
-        self._script_locked = True
         user_config = script_config.UserData
         self.user_config = user_config
 
@@ -728,6 +740,11 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             # No trustworthy lineage: leave update discovery to the normal
             # startup path, which can recover and revalidate project metadata.
             return
+        identity = (
+            project,
+            str(marker["lineage"]),
+            lineage_info_from_interface(interface),
+        )
         gate = build_precheck_gate(
             memo_path_factory(str(marker["lineage"])),
             project_name=getattr(interface, "name", None),
@@ -757,8 +774,9 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             expected_size=candidate.size,
             alternates=github_release_mirror_urls(candidate.download_url),
         )
-        # 完整包留在核心的共享缓存，启动前按相同基线重新发现、校验并消费。
+        # 完整包留在核心的共享缓存，启动前按来源身份与版本基线复核后消费。
         self._prefetched_full_package = True
+        self._prefetched_project_identity = identity
         self._prefetched_project_update = (str(interface.version or ""), discovery)
 
     def _take_project_update_logs(self) -> list[str]:
@@ -1022,6 +1040,19 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             interface_model = await asyncio.to_thread(
                 self._load_interface_model, view_path, force_reload=True
             )
+            prefetched = getattr(self, "_prefetched_project_update", None)
+            if prefetched is not None and getattr(
+                self, "_prefetched_project_identity", None
+            ) != (
+                view_path.resolve(),
+                target.lineage,
+                lineage_info_from_interface(interface_model),
+            ):
+                # 同版重新导入可以保持 Report 不变却换了项目来源；在谱系锁内
+                # 丢掉旧候选，按当前项目正常发现，不能把旧包登记到新谱系。
+                prefetched = None
+                self._prefetched_project_update = None
+                self._prefetched_full_package = False
             memo_path_for = memo_path_factory(target.lineage)
             # 登记前在 staging 上真建运行环境：建不出来就丢掉新版本、继续跑当前版本。
             # isolated_venv 的 agent 建在池根下的预检目录，不写环境缓存（D6）。
@@ -1045,7 +1076,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 view_path,
                 interface_model,
                 prefetch_full_package=getattr(self, "_prefetched_full_package", False),
-                prefetched=getattr(self, "_prefetched_project_update", None),
+                prefetched=prefetched,
                 mirror_cdk=credentials.cdk,
                 channel=credentials.channel,
                 proxy=session.proxy.client,

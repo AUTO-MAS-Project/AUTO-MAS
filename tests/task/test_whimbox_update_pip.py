@@ -203,6 +203,134 @@ async def test_real_build_failure_never_starts_installation(real_update):
 
 
 @pytest.mark.asyncio
+async def test_prefetched_wheel_preserves_native_pip_upgrade_during_hash(
+    tmp_path, monkeypatch, pip_runtime
+):
+    """真实 pip 升级与真实版本探针，防止依赖校验后沿用旧安装快照降级。"""
+    import venv
+
+    monkeypatch.chdir(tmp_path)
+    root = tmp_path / "Whimbox"
+    await asyncio.to_thread(
+        venv.EnvBuilder(with_pip=False).create, root / "python-embedded"
+    )
+    monkeypatch.setattr(
+        update,
+        "REL_PYTHON_EXE",
+        Path("python-embedded")
+        / ("Scripts/python.exe" if os.name == "nt" else "bin/python"),
+    )
+    (root / update.APP_EXE_NAME).touch()
+    wheels = tmp_path / "wheels"
+    wheels.mkdir()
+    packages = {
+        version: wheels / write_wheel(wheels, "whimbox", version)
+        for version in ("3.1.0", "3.1.1", "3.2.0")
+    }
+    for package in packages.values():
+        with zipfile.ZipFile(package, "a") as archive:
+            archive.writestr("whimbox/main.py", "")
+    run = update.run_python
+
+    async def offline_run(root, *args, timeout=30, env=None):
+        if args[:2] != ("-m", "pip"):
+            return await run(root, *args, timeout=timeout, env=env)
+        command = list(args[2:])
+        if "--index-url" in command:
+            position = command.index("--index-url")
+            command[position : position + 2] = ["--no-index"]
+        return await run(
+            root,
+            "-c",
+            PIP_BOOTSTRAP,
+            str(pip_runtime),
+            "--no-cache-dir",
+            *command,
+            timeout=timeout,
+            env=env,
+        )
+
+    monkeypatch.setattr(update, "run_python", offline_run)
+    monkeypatch.setattr(update, "Config", SimpleNamespace(proxy=None))
+    payload = packages["3.1.1"].read_bytes()
+    monkeypatch.setattr(
+        update,
+        "request_release",
+        AsyncMock(
+            return_value={
+                "tag_name": "3.1.1",
+                "assets": [
+                    {
+                        "name": packages["3.1.1"].name,
+                        "digest": "sha256:" + hashlib.sha256(payload).hexdigest(),
+                    }
+                ],
+            }
+        ),
+    )
+
+    async def download(_url, destination, **_kwargs):
+        destination.write_bytes(payload)
+
+    monkeypatch.setattr(update, "download_file", download)
+    await update.run_python(
+        root,
+        "-m",
+        "pip",
+        "--isolated",
+        "install",
+        "--no-index",
+        "--disable-pip-version-check",
+        str(packages["3.1.0"]),
+    )
+    assert await update.installed_version(root) == Version("3.1.0")
+    candidate = await update.prepare_update(root)
+    assert isinstance(candidate, update.PreparedUpdate)
+    started, release = threading.Event(), threading.Event()
+    file_digest = hashlib.file_digest
+
+    def slow_digest(handle, *args, **kwargs):
+        if (
+            Path(handle.name).is_relative_to(candidate.packages)
+            and not started.is_set()
+        ):
+            started.set()
+            assert release.wait(15)
+        return file_digest(handle, *args, **kwargs)
+
+    monkeypatch.setattr(hashlib, "file_digest", slow_digest)
+    task = None
+    try:
+        with update.installation_access(root):
+            task = asyncio.create_task(update.apply_update(root, candidate))
+            assert await asyncio.to_thread(started.wait, 5)
+            # 原生 pip 不持 MAS 锁，安装完成且进程退出后再让候选校验继续。
+            await update.run_python(
+                root,
+                "-m",
+                "pip",
+                "--isolated",
+                "install",
+                "--no-index",
+                "--upgrade",
+                "--disable-pip-version-check",
+                str(packages["3.2.0"]),
+            )
+            assert await update.installed_version(root) == Version("3.2.0")
+            assert not await asyncio.to_thread(update.find_upstream_pids, root)
+            release.set()
+            with pytest.raises(RuntimeError):
+                await task
+        assert await update.installed_version(root) == Version("3.2.0")
+        assert not update.pending_marker(root).exists()
+    finally:
+        release.set()
+        if task is not None:
+            await asyncio.gather(task, return_exceptions=True)
+        update.discard_update(candidate)
+
+
+@pytest.mark.asyncio
 async def test_real_isolated_pip_uses_authenticated_proxy(pip_runtime, tmp_path):
     seen = []
 

@@ -63,6 +63,18 @@ class FluxdownOptions:
 HistoryWriter = Callable[[_utils_fluxdown_cli.FluxdownDownloadRecord], Awaitable[None]]
 
 
+def _find_download_cli(options: FluxdownOptions) -> Path | None:
+    """CLI 路径不可访问按不可用处理，后续仍须核对持久写入者记录。"""
+    try:
+        return _utils_fluxdown_cli.fluxdown_find_cli(
+            options.cli_path, search_dirs=options.cli_search_dirs
+        )
+    except OSError:
+        # 私有映射根与 CLI 位置无关。不能因定位失败直接返回普通错误，
+        # 让调用方误清仍由 daemon 持有的目标；也不能阻断没有旧记录的回退。
+        return None
+
+
 async def download_file(
     url: str,
     destination: Path,
@@ -83,18 +95,31 @@ async def download_file(
             Path(options.cli_path), destination
         ):
             entered = True
-            return await _download_file(
-                url,
-                destination,
-                timeout=timeout,
-                options=options,
-                write_history=write_history,
-                proxy=proxy,
-                progress=progress,
-                downloader=downloader,
-                source=source,
-                http_download=http_download,
-            )
+            try:
+                return await _download_file(
+                    url,
+                    destination,
+                    timeout=timeout,
+                    options=options,
+                    write_history=write_history,
+                    proxy=proxy,
+                    progress=progress,
+                    downloader=downloader,
+                    source=source,
+                    http_download=http_download,
+                )
+            except asyncio.CancelledError:
+                # 续传预检跳过同源旧任务；等待下载准入时可能尚未进入底层
+                # 取消处理。保持目标锁直到完整停写探测结束，重复取消也不能
+                # 让调用方误删仍由旧 daemon 持有的文件。
+                cli = _find_download_cli(options)
+                if not await _can_downgrade(
+                    cli or Path(options.cli_path), url, destination
+                ):
+                    raise FluxdownWriterUnconfirmed(
+                        "取消下载时，FluxDown 旧任务仍未确认停止"
+                    ) from None
+                raise
     except (asyncio.CancelledError, Exception) as error:
         if not entered:
             raise FluxdownWriterUnconfirmed(
@@ -153,9 +178,7 @@ async def _download_file(
         # 无论是显式选内置还是配置默认走内置，只要此前可能经 FluxDown 下载过
         # 同一 (url, destination)，都需先确认旧 server 任务已停止再覆写；
         # 显式内置成功后再清理映射，避免残留任务在下次同 url 下载时被无谓 resume
-        cli = _utils_fluxdown_cli.fluxdown_find_cli(
-            options.cli_path, search_dirs=options.cli_search_dirs
-        )
+        cli = _find_download_cli(options)
         # CLI 被移动或删除不代表后台服务已经停止，仍须检查私有持久映射。
         await _ensure_can_downgrade(
             cli or Path(options.cli_path),
@@ -186,9 +209,7 @@ async def _download_file(
         return size
 
     # ---- FluxDown 路径 ----
-    cli_path = _utils_fluxdown_cli.fluxdown_find_cli(
-        options.cli_path, search_dirs=options.cli_search_dirs
-    )
+    cli_path = _find_download_cli(options)
     if cli_path is None:
         # CLI 不存在 → 回退 httpx
         logger.warning("未找到 FluxDown CLI,回退内置 httpx 下载")

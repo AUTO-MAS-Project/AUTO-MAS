@@ -181,7 +181,8 @@ class ProcessRunner:
         breakaway 只给模拟器控制台这类会拉起不该随后端退出的进程的调用点，
         其余（taskkill/schtasks/adb 等工具）保持默认 False，留在监督器的 Job 里。
         deadline 可选，使用 time.monotonic() 的绝对时间，覆盖创建和执行；超时或
-        取消后立即清理，最多再等 1 秒释放句柄。不传时保留原有超时与回收行为。
+        取消后立即清理，最多再等 1 秒释放管道。要求回收进程树时，先等创建落定
+        取得句柄，再回收已启动的子进程。不传时保留原有超时与回收行为。
         """
 
         command = [str(program), *args]
@@ -198,7 +199,7 @@ class ProcessRunner:
         process = None
         try:
             async with asyncio.timeout_at(expires_at):
-                process = await create_subprocess(
+                creation = create_subprocess(
                     program,
                     *args,
                     breakaway=breakaway,
@@ -213,6 +214,26 @@ class ProcessRunner:
                         else asyncio.subprocess.PIPE
                     ),
                 )
+                if kill_tree_on_cancel:
+                    # OS 已启动进程时，异步管道仍可能没有连好。直接取消
+                    # create_subprocess 只会由 asyncio 杀根进程，失去构建子进程
+                    # 的父子关系。等待句柄交还，再交由统一进程树清理回收。
+                    pending = asyncio.create_task(creation)
+                    try:
+                        process = await asyncio.shield(pending)
+                    except asyncio.CancelledError as cancelled:
+                        try:
+                            while not pending.done():
+                                try:
+                                    await asyncio.shield(pending)
+                                except asyncio.CancelledError:
+                                    continue
+                            process = pending.result()
+                        except Exception as error:
+                            raise cancelled from error
+                        raise
+                else:
+                    process = await creation
                 stdout, stderr = await asyncio.wait_for(
                     process.communicate(), timeout=timeout
                 )

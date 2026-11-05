@@ -26,7 +26,7 @@ from app.models.config import MaaConfig
 from app.services.common.update import fluxdown as _service_update_fluxdown
 from app.services.common.update import transport as _service_update_transport
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
-from app.utils import get_logger
+from app.utils import get_logger, update_files
 
 from .resource_package import _copy_if_changed
 from .resource_update import _run_write_thread
@@ -146,7 +146,7 @@ async def prepare_maa_fluxdown_update(
     """
     if not use_maa_github_update(config, config_dirs=[config_dir, maa_root / "config"]):
         return None
-    # Only new download-only directories belong to this attempt. An ordinary
+    # Only new staging directories belong to this attempt. An ordinary
     # failure or confirmed cancellation can remove them; a resumable or
     # unconfirmed daemon writer retains ownership of its partial package.
     temporary_directory: Path | None = None
@@ -156,7 +156,8 @@ async def prepare_maa_fluxdown_update(
         if release is None or has_delegated_update_failure(maa_root):
             raise RuntimeError("无法确认 MAA 安装状态，请先在 MAA 内完成修复")
         # 预取期间原生更新也可能留下登记或失败状态，消费候选同样要复核。
-        _, pending = read_pending_update(maa_root)
+        pending_update = read_pending_update(maa_root)
+        _, pending = pending_update
         if pending and (maa_root / pending).is_file():
             logger.info("MAA 已有待安装包，保留原生更新登记")
             raise RuntimeError("MAA 仍有未安装的更新包，请先完成安装")
@@ -164,22 +165,30 @@ async def prepare_maa_fluxdown_update(
             if release != prepared.release:
                 raise RuntimeError("MAA 安装已变化，请重新检查更新")
             destination = maa_root / prepared.package.name
-            # 校验实际复制结果再原子发布；失败不覆盖既有归档，也不登记半包。
+            # 先复制到本次独占的同卷目录；复制期间原生更新可能发布同名包，
+            # 必须在复核安装状态之后才替换最终归档。
+            temporary_directory = Path(
+                tempfile.mkdtemp(prefix=".mas-update-", dir=maa_root)
+            )
+            staged = temporary_directory / prepared.package.name
             await _run_write_thread(
                 _copy_if_changed,
                 prepared.package,
-                destination,
+                staged,
                 expected_sha256=prepared.digest,
             )
             if not use_maa_github_update(
                 config, config_dirs=[config_dir, maa_root / "config"]
             ):
-                logger.info("复制期间更新来源已变更，保留文件但不登记安装")
+                logger.info("复制期间更新来源已变更，停止交接预下载包")
                 return None
-            if read_installed_release(
-                maa_root
-            ) != release or has_delegated_update_failure(maa_root):
+            if (
+                read_installed_release(maa_root) != release
+                or has_delegated_update_failure(maa_root)
+                or read_pending_update(maa_root) != pending_update
+            ):
                 raise RuntimeError("复制期间 MAA 安装状态发生变化，请重新运行")
+            update_files.replace_file(staged, destination, clear_readonly=True)
             write_pending_update(
                 maa_root, version=prepared.version, package=str(destination.resolve())
             )
@@ -209,7 +218,10 @@ async def prepare_maa_fluxdown_update(
         else:
             directory = maa_root
         destination = directory / filename
-        part = directory / f"{filename}.part"
+        # 普通启动下载也不复用上游的同名 .part，避免接触原生下载器的输出。
+        part = directory / (
+            f"{filename}.part" if download_only else f".mas-{filename}.part"
+        )
         url = f"https://github.com/MaaAssistantArknights/MaaAssistantArknights/releases/download/{tag}/{filename}"
         logger.info(f"开始下载 MAA {latest}，完成后交给官方更新器安装")
         for attempt in range(3):
@@ -239,8 +251,8 @@ async def prepare_maa_fluxdown_update(
         ):
             logger.info("下载期间更新来源已变更，保留文件但不登记安装")
             return None
-        part.replace(destination)
         if download_only:
+            part.replace(destination)
             digest = await _run_write_thread(_digest, destination)
             candidate = PreparedUpdate(release, latest, destination, digest)
             # The candidate manager now owns this verified directory.
@@ -249,6 +261,12 @@ async def prepare_maa_fluxdown_update(
         # 启动应用路径不再核对 OTA 的基线；登记前由持安装锁的调用方复核。
         if read_installed_release(maa_root) != release:
             raise RuntimeError("下载期间 MAA 安装版本发生变化，请重新运行")
+        if (
+            has_delegated_update_failure(maa_root)
+            or read_pending_update(maa_root) != pending_update
+        ):
+            raise RuntimeError("下载期间 MAA 安装状态发生变化，请重新运行")
+        update_files.replace_file(part, destination, clear_readonly=True)
         write_pending_update(
             maa_root, version=latest, package=str(destination.resolve())
         )

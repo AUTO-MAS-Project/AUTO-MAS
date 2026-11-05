@@ -938,24 +938,37 @@ def _cli_env(gateway_port: int, token: str) -> dict[str, str]:
 
 def _run_cli(
     cli_exe: Path, env: dict[str, str], args: list[str], timeout: float = 30.0
-) -> tuple[int, str]:
-    """同步跑一条 CLI 命令，返回 (exit_code, stdout+stderr)。"""
+) -> tuple[int | None, str]:
+    """同步跑 CLI；exit_code 为 None 仅表示进程未能启动、命令未提交。"""
     try:
         # 管理命令也会初始化 CLI 的便携日志，不能写进用户自己的安装目录。
         private_cli = _local_cli_exe(cli_exe)
-        out = subprocess.run(
+        process = subprocess.Popen(
             [str(private_cli), *args],
             env=env,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=timeout,
             creationflags=process_platform.platform_process.creation_flags,
         )
-        return out.returncode, (out.stdout or "") + (out.stderr or "")
-    except subprocess.TimeoutExpired:
-        return 124, "timeout"
+    except (OSError, RuntimeError) as e:
+        return None, f"server 不可用: {e}"
+
+    # 启动后的通信异常或超时仍可能已提交 RPC，不能与进程创建失败混淆。
+    try:
+        with process:
+            try:
+                stdout, stderr = process.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()
+                return 124, "timeout"
+            except BaseException:
+                process.kill()
+                raise
+        return process.returncode, (stdout or "") + (stderr or "")
     except (OSError, RuntimeError) as e:
         return 1, f"server 不可用: {e}"
 
@@ -1964,6 +1977,12 @@ async def _fluxdown_server_download(
             )
             code, out = await asyncio.shield(inflight_cli)
             inflight_cli = None
+            if code is None:
+                # CLI 没有启动，不能留下永远无法从 daemon 恢复的 pending。
+                # 先改变内存所有权，再强等待清映射；取消也走同一安全分支。
+                add_unconfirmed = False
+                await _to_thread_strong(_map_pop, cli_exe, key, propagate_cancel=True)
+                raise RuntimeError(out)
             new_id: str | None = _extract_task_id(out)
             if not new_id:
                 new_id = await _to_thread_strong(
@@ -2125,8 +2144,10 @@ async def _fluxdown_server_download(
         # 任务时要把 id 落映射，否则重试时无从续传
         if inflight_cli is not None:
             try:
-                _, out = await _wait_thread_done(inflight_cli)
-                salvaged = _extract_task_id(out or "")
+                code, out = await _wait_thread_done(inflight_cli)
+                if code is None and task_id is None:
+                    add_unconfirmed = False
+                salvaged = _extract_task_id(out or "") if code is not None else None
                 if salvaged and task_id is None:
                     task_id = salvaged
                     await _to_thread_strong(

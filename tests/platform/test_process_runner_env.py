@@ -285,3 +285,65 @@ async def test_deadline_reaps_wrapper_and_child_holding_pipes(
         task.cancel()
         with suppress(asyncio.CancelledError, TimeoutError):
             await task
+
+
+@pytest.mark.asyncio
+async def test_repeated_cancel_during_creation_reaps_dependency_builder(
+    monkeypatch, tmp_path
+):
+    """OS spawn precedes async pipe setup; cancellation still owns its children."""
+    pid_path = tmp_path / "spawned-child.pid"
+    program = (
+        "import subprocess, sys, time; from pathlib import Path; "
+        "child = subprocess.Popen([sys.executable, '-I', '-c', "
+        "'import time; time.sleep(30)'], "
+        "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); "
+        "Path(sys.argv[1]).write_text(str(child.pid)); time.sleep(30)"
+    )
+    loop = asyncio.get_running_loop()
+    connect = loop.connect_read_pipe
+    connecting, release = asyncio.Event(), asyncio.Event()
+
+    async def delayed_pipe(*args, **kwargs):
+        if not connecting.is_set():
+            connecting.set()
+            await release.wait()
+        return await connect(*args, **kwargs)
+
+    monkeypatch.setattr(loop, "connect_read_pipe", delayed_pipe)
+    child = None
+    task = asyncio.create_task(
+        process_runner.ProcessRunner.run_process(
+            sys.executable,
+            "-I",
+            "-c",
+            program,
+            str(pid_path),
+            kill_tree_on_cancel=True,
+        )
+    )
+    try:
+        await asyncio.wait_for(connecting.wait(), 3)
+        async with asyncio.timeout(3):
+            while child is None:
+                try:
+                    child = psutil.Process(int(pid_path.read_text()))
+                except (OSError, ValueError):
+                    await asyncio.sleep(0.005)
+        task.cancel()
+        await asyncio.sleep(0)
+        task.cancel()
+        await asyncio.sleep(0.02)
+        assert not task.done(), "进程创建尚未交还句柄，取消不能遗失已启动的构建进程"
+        release.set()
+        async with asyncio.timeout(10):
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        with suppress(psutil.NoSuchProcess):
+            assert child.status() == psutil.STATUS_ZOMBIE
+    finally:
+        release.set()
+        if child is not None:
+            with suppress(psutil.NoSuchProcess):
+                child.kill()
+        await asyncio.gather(task, return_exceptions=True)

@@ -312,12 +312,24 @@ async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
         await confirm_current_install(root)
         return candidate
     target, arch = candidate.target, candidate.arch
-    try:
-        current = await asyncio.to_thread(read_install, root)
-    except (OSError, ValueError):
-        current = None
-    if root.resolve() != candidate.root or current != candidate.current:
-        raise ValueError("MaaEnd 安装已变化，预下载候选已失效，请重新检查更新")
+
+    def recheck_install() -> None:
+        try:
+            current = read_install(root)
+        except (OSError, ValueError):
+            current = None
+        if root.resolve() != candidate.root or current != candidate.current:
+            raise ValueError("MaaEnd 安装已变化，预下载候选已失效，请重新检查更新")
+
+    await asyncio.to_thread(recheck_install)
+
+    def prepare_ready(
+        ready: Path, package: Path, directory: Path, cancelled: threading.Event
+    ) -> None:
+        # 安装器已经记录原目录树并复制到 ready；此前的原生升级在这里拒绝，
+        # 此后的修改由安装器既有的目录树复核阻止切换。
+        recheck_install()
+        refresh_merged_pipelines(ready, package, directory, cancelled)
 
     def validate(path: Path) -> None:
         version, actual_arch = read_install(path)
@@ -335,7 +347,7 @@ async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
             PROTECTED,
             validate,
             lambda: assert_idle(root),
-            prepare_ready=refresh_merged_pipelines,
+            prepare_ready=prepare_ready,
         )
         _utils_io.write_file(
             script_install.workspace(root) / "program-identity.json",
