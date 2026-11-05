@@ -108,3 +108,74 @@ async def test_prefetch_discovery_forwards_precheck_gate_before_url(monkeypatch)
     )
     assert result is discovered
     assert detailed.await_args.kwargs["precheck_gate"] is gate
+
+
+@pytest.mark.asyncio
+async def test_cancelled_cache_hash_keeps_artifact_locked_until_worker_stops(
+    tmp_path, monkeypatch
+):
+    import asyncio
+    import json
+    import threading
+
+    from app.task.MaaFW.tools.core.project_update import transport
+
+    stable_id = transport.artifact_id_for(
+        "github", "2", "https://example.com/asset.zip", explicit="asset"
+    )
+    directory = tmp_path / stable_id
+    directory.mkdir()
+    archive = directory / "complete.zip"
+    archive.write_bytes(b"cached package")
+    (directory / "artifact.json").write_text(
+        json.dumps(
+            {
+                "complete": True,
+                "completePath": str(archive),
+                "sha256": "a" * 64,
+            }
+        )
+    )
+    started, release = threading.Event(), threading.Event()
+
+    def hash_with_open_file(path):
+        with path.open("rb") as handle:
+            started.set()
+            assert release.wait(5)
+            assert handle.read() == b"cached package"
+        return "a" * 64
+
+    monkeypatch.setattr(transport, "_calculate_sha256", hash_with_open_file)
+    task = asyncio.create_task(
+        transport.download_resumable(
+            source="github",
+            version="2",
+            download_url="https://example.com/asset.zip",
+            artifact_id="asset",
+            cache_root=tmp_path,
+        )
+    )
+    successor = None
+    entered = asyncio.Event()
+
+    async def next_owner():
+        async with transport._artifact_download_access(tmp_path, stable_id):
+            entered.set()
+
+    try:
+        assert await asyncio.to_thread(started.wait, 2)
+        task.cancel()
+        await asyncio.sleep(0)
+        task.cancel()
+        successor = asyncio.create_task(next_owner())
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert not task.done()
+        assert not entered.is_set()
+    finally:
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        if successor is not None:
+            await asyncio.wait_for(successor, 2)
+    assert entered.is_set()

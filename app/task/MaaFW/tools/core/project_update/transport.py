@@ -56,6 +56,22 @@ async def _artifact_download_access(root: Path, stable_id: str) -> AsyncIterator
             yield
 
 
+async def _run_cache_worker[T](operation: Callable[..., T], *args: Any) -> T:
+    """Keep artifact ownership until an offloaded file operation actually exits."""
+    worker = asyncio.create_task(asyncio.to_thread(operation, *args))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                continue
+        # Retrieve a worker failure before propagating cancellation.
+        worker.result()
+        raise
+
+
 CHUNK_SIZE = 64 * 1024
 MAX_REDIRECTS = 10
 # 直连的尝试次数与退避。GitHub CDN 在国内抽风是成片的，3 次 × 1s 常常整片
@@ -425,7 +441,7 @@ async def download_resumable(
             expected_total = None
         complete_path = _existing_complete_path(directory, metadata, expected)
         if complete_path is not None:
-            actual = await asyncio.to_thread(_calculate_sha256, complete_path)
+            actual = await _run_cache_worker(_calculate_sha256, complete_path)
             if expected and actual != expected:
                 complete_path.unlink(missing_ok=True)
                 metadata.update({"complete": False, "completePath": None})
@@ -907,7 +923,7 @@ async def _download_attempt(
                             # 每 1MB 落一次断点：fsync 与元数据原子改写都是同步
                             # IO，放到线程里，别每兆一次卡住事件循环。
                             await handle.flush()
-                            await asyncio.to_thread(
+                            await _run_cache_worker(
                                 _write_checkpoint,
                                 partial_path,
                                 metadata_path,
@@ -930,7 +946,7 @@ async def _download_attempt(
                             # 的 Range 就从错误的位置要起。
                             await handle.flush()
                             metadata["downloadedBytes"] = downloaded
-                            await asyncio.to_thread(
+                            await _run_cache_worker(
                                 _write_checkpoint,
                                 partial_path,
                                 metadata_path,
@@ -968,7 +984,7 @@ async def _finalize_partial(
 ) -> DownloadOutcome:
     if not partial_path.is_file() or partial_path.stat().st_size == 0:
         raise RuntimeError("update package is empty")
-    actual = await asyncio.to_thread(_calculate_sha256, partial_path)
+    actual = await _run_cache_worker(_calculate_sha256, partial_path)
     if expected_sha256 and actual != expected_sha256:
         # 坏断点必须删：留着的话下一次请求带 ``Range: bytes=<全长>-``，服务端回 416，
         # 上面的 416 分支又把同一个坏文件交回来校验，之后每次运行都失败（缓存的 7 天回收

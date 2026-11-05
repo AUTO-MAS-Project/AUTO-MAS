@@ -77,12 +77,12 @@ import psutil
 from app.core import Config
 from app.core.script_update import download_script_package
 from app.core.update import download_file
-from app.services.common.update.fluxdown import FluxdownResumableError
-from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.models.config import MaaConfig
 from app.services.common.update import transport as _service_update_transport
+from app.services.common.update.fluxdown import FluxdownResumableError
 from app.utils import get_logger
 from app.utils import io as _utils_io
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .resource_package import (
     count_zip_entries,
@@ -1052,9 +1052,11 @@ async def prepare_install_resources(
                     # A daemon whose writer is unconfirmed, or whose task is
                     # retained for FluxDown resume, still owns its output:
                     # never remove that file until it is safe to do so.
-                    can_cleanup = True
+                    can_cleanup = False
                     try:
                         await _report(progress, "启动前下载 GitHub 全量资源包…")
+                        # 下载入口尚未接管前，不能清理上次留下的共享归档。
+                        can_cleanup = True
                         try:
                             await download_script_package(
                                 "https://github.com/MaaAssistantArknights/MaaResource/"

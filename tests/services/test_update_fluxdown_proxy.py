@@ -785,6 +785,8 @@ async def test_add_failure_with_task_id_requires_confirmed_pause(
     def command(_exe, _env, args, timeout=30):
         nonlocal paused
         commands.append(args[0])
+        if args[0] == "list":
+            return 0, "[]"
         if args[0] == "add":
             return 1, '["created"]'
         if args[0] == "pause":
@@ -864,8 +866,9 @@ async def test_emergency_shutdown_does_not_block_main_event_loop(tmp_path, monke
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["builtin", "server_error"])
 async def test_unconfirmed_writer_survives_history_cancellation_via_public_download(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, stage
 ):
     """A cancelled history transaction must not release an active daemon file."""
     import asyncio
@@ -881,19 +884,32 @@ async def test_unconfirmed_writer_survives_history_cancellation_via_public_downl
         entered.set()
         await asyncio.Event().wait()
 
-    async def unsafe_stop_check(*_args, **_kwargs):
-        return False
+    def unsafe_stop_check(*_args, other_only=False, **_kwargs):
+        return other_only
 
     monkeypatch.setattr(cli, "fluxdown_find_cli", lambda *_a, **_kw: exe)
-    monkeypatch.setattr(cli, "_to_thread_strong", unsafe_stop_check)
+    monkeypatch.setattr(
+        cli, "fluxdown_server_task_safe_to_overwrite", unsafe_stop_check
+    )
+    monkeypatch.setattr(cli, "fluxdown_server_available", lambda *_a, **_kw: True)
+    monkeypatch.setattr(
+        cli,
+        "fluxdown_server_download",
+        AsyncMock(side_effect=OSError("map write failed after add")),
+    )
     monkeypatch.setattr(cli, "fluxdown_server_mark_failure", lambda *_a: 1)
     task = asyncio.create_task(
         transport.download_file(
             "https://example.invalid/payload",
             destination,
             timeout=10,
-            options=transport.FluxdownOptions("builtin", "AutoSite", str(exe), 8, True),
-            downloader="builtin",
+            options=transport.FluxdownOptions(
+                "builtin" if stage == "builtin" else "fluxdown",
+                "AutoSite",
+                str(exe),
+                8,
+                True,
+            ),
             write_history=blocked_history,
             http_download=backend,
         )
@@ -920,18 +936,16 @@ async def test_lost_add_response_blocks_retry_until_task_can_be_recovered(
             target.write_bytes(b"data")
             return 124, "request timed out"
         if args[0] == "list":
-            return 0, json.dumps(
-                [
-                    {
-                        "taskId": "late-task",
-                        "url": url,
-                        "saveDir": str(target.parent),
-                        "fileName": target.name,
-                    }
-                ]
-                if visible
-                else []
-            )
+            old_task = {
+                "taskId": "historical-task",
+                "url": url,
+                "saveDir": str(target.parent),
+                "fileName": target.name,
+            }
+            tasks = [old_task]
+            if visible:
+                tasks.append({**old_task, "taskId": "late-task"})
+            return 0, json.dumps(tasks)
         if args[0] == "resume":
             assert args[1] == "late-task"
             return 0, "resumed"
@@ -961,3 +975,86 @@ async def test_lost_add_response_blocks_retry_until_task_can_be_recovered(
     assert not entry["pending_add"]
     assert sum(args[0] == "add" for args in commands) == 1
     assert ["resume", "late-task"] in commands
+
+
+@pytest.mark.asyncio
+async def test_cancelled_destination_lock_wait_is_not_reported_as_stopped_writer(
+    tmp_path, monkeypatch
+):
+    import asyncio
+
+    monkeypatch.setattr(cli, "_server_data_dir", lambda _: tmp_path / "server")
+    exe, target = tmp_path / "fluxdown.exe", tmp_path / "package.zip"
+    target.write_bytes(b"another writer")
+    backend = AsyncMock()
+    async with cli.fluxdown_destination_lock(exe, target):
+        task = asyncio.create_task(
+            transport.download_file(
+                "https://example.invalid/pkg",
+                target,
+                timeout=10,
+                options=transport.FluxdownOptions(
+                    "builtin", "GitHub", str(exe), 8, True
+                ),
+                http_download=backend,
+            )
+        )
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(cli.FluxdownCancelUnconfirmed):
+            await task
+        assert target.read_bytes() == b"another writer"
+    backend.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pending_marker_write_failure_does_not_submit_add(
+    server_fixture, monkeypatch
+):
+    exe, target, url = server_fixture
+    commands = []
+
+    def command(_exe, _env, args, timeout=30):
+        commands.append(args[0])
+        if args[0] == "list":
+            return 0, "[]"
+        return 1, "request failed"
+
+    def fail_replace(*args):
+        raise PermissionError("map file is locked")
+
+    monkeypatch.setattr(cli, "_run_cli", command)
+    monkeypatch.setattr(cli.os, "replace", fail_replace)
+    with pytest.raises(PermissionError, match="map file is locked"):
+        await cli.fluxdown_server_download(url, target, cli_exe=exe)
+    assert "add" not in commands
+
+
+@pytest.mark.parametrize("contents", ["{broken", "[]"])
+def test_unreadable_task_map_cannot_prove_file_is_unowned(server_fixture, contents):
+    exe, target, url = server_fixture
+    cli._server_map_path(exe).write_text(contents, encoding="utf-8")
+    with pytest.raises(ValueError):
+        cli.fluxdown_server_task_safe_to_overwrite(exe, url, target)
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_writer_map_failure_preserves_ownership_error(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(transport, "_can_downgrade", AsyncMock(return_value=False))
+
+    def failed_save(*args):
+        raise PermissionError("map file locked")
+
+    monkeypatch.setattr(cli, "fluxdown_server_mark_failure", failed_save)
+    with pytest.raises(transport.FluxdownWriterUnconfirmed):
+        await transport._ensure_can_downgrade(
+            tmp_path / "exe",
+            "https://example.invalid/package",
+            tmp_path / "package",
+            segments=8,
+            proxy_str=None,
+            action="退出",
+            write_history=None,
+        )

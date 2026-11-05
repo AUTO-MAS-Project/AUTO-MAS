@@ -1153,13 +1153,13 @@ def _map_key(url: str, destination: Path) -> str:
 def _load_task_map(cli_exe: Path) -> dict:
     p = _server_map_path(cli_exe)
     try:
-        if p.is_file():
-            data = json.loads(p.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                return data
-    except (OSError, ValueError):
-        pass
-    return {}
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    # Unreadable or corrupt identity data cannot establish an unowned file.
+    if not isinstance(data, dict):
+        raise ValueError("FluxDown task map must be an object")
+    return data
 
 
 _TASK_MAP_LOCK = threading.Lock()  # 映射读-改-写全程持锁，防并发丢条目
@@ -1171,13 +1171,11 @@ def _save_task_map(cli_exe: Path, m: dict) -> None:
     仅限已持有 _TASK_MAP_LOCK 的调用方使用（配合 _load_task_map 做读改写）。
     """
     p = _server_map_path(cli_exe)
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_name(p.name + ".tmp")
-        tmp.write_text(json.dumps(m, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, p)
-    except OSError:
-        pass
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(p.name + ".tmp")
+    tmp.write_text(json.dumps(m, ensure_ascii=False, indent=1), encoding="utf-8")
+    # Pending-add identity must be durable before submitting a request.
+    os.replace(tmp, p)
 
 
 def _map_pop(cli_exe: Path, key: str) -> None:
@@ -1195,6 +1193,7 @@ def _map_put(
     url: str,
     destination: Path,
     proxy: str | None = None,
+    add_baseline: set[str] | None = None,
 ) -> None:
     """带锁写入/更新一个映射条目（重读全表，fail_count 跨写入保留）。"""
     with _TASK_MAP_LOCK:
@@ -1202,6 +1201,7 @@ def _map_put(
         m[key] = {
             "task_id": task_id,
             "pending_add": task_id is None,
+            "add_baseline": sorted(add_baseline) if add_baseline is not None else None,
             "url": url,
             "save_path": str(destination),
             "updated": time.time(),
@@ -1226,12 +1226,8 @@ def fluxdown_server_forget(cli_exe: Path, url: str, destination: Path) -> None:
     _map_pop(cli_exe, _map_key(url, Path(destination)))
 
 
-def _recover_pending_add(cli_exe: Path, url: str, destination: Path) -> str | None:
-    """通过公开任务列表恢复丢失的 add 响应；空列表也不能证明请求未被接受。"""
-    key = _map_key(url, destination)
-    entry = _load_task_map(cli_exe).get(key) or {}
-    if entry.get("task_id"):
-        return str(entry["task_id"])
+def _matching_task_ids(cli_exe: Path, url: str, destination: Path) -> set[str] | None:
+    """读取同一来源、同一目标的任务身份，用于区分历史任务与本次 add。"""
     handle = fluxdown_server_ensure(cli_exe)
     if handle is None:
         return None
@@ -1252,6 +1248,22 @@ def _recover_pending_add(cli_exe: Path, url: str, destination: Path) -> str | No
         path = Path(task["saveDir"]) / task["fileName"]
         if task["url"] == url and os.path.normcase(str(path.resolve())) == target:
             matches.add(task["taskId"])
+    return matches
+
+
+def _recover_pending_add(cli_exe: Path, url: str, destination: Path) -> str | None:
+    """只恢复请求发出后新增的任务；历史任务不能证明本次请求已停止。"""
+    key = _map_key(url, destination)
+    entry = _load_task_map(cli_exe).get(key) or {}
+    if entry.get("task_id"):
+        return str(entry["task_id"])
+    baseline = entry.get("add_baseline")
+    if not isinstance(baseline, list):
+        return None  # 未能读取创建前快照，或是旧版本的不明记录，不能猜测身份。
+    matches = _matching_task_ids(cli_exe, url, destination)
+    if matches is None:
+        return None
+    matches.difference_update(baseline)
     if len(matches) != 1:
         return None
     task_id = matches.pop()
@@ -1765,6 +1777,10 @@ async def _fluxdown_server_download(
                         )
 
         if task_id is None:
+            # 先保存已存在的同名历史任务，防止丢失 add 响应后把它误认成新任务。
+            add_baseline = await _to_thread_strong(
+                _matching_task_ids, cli_exe, url, destination, propagate_cancel=True
+            )
             # 新建任务前把已存在的 destination 改名隔离：FluxDown 默认
             # FileExistsBehavior::Rename，目标重名时会把新包改名（如
             # "download (1).temp"）并回写数据库 fileName，完成时很难对回约定
@@ -1803,6 +1819,7 @@ async def _fluxdown_server_download(
                 url,
                 destination,
                 proxy,
+                add_baseline,
                 propagate_cancel=True,
             )
             add_unconfirmed = True

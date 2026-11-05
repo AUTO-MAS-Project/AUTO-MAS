@@ -61,6 +61,18 @@ async def test_unsafe_install_stops_before_second_engine(scheduler):
 
 
 @pytest.mark.asyncio
+async def test_unconfirmed_writer_remains_fatal_before_second_engine(scheduler):
+    from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+    error = FluxdownCancelUnconfirmed("daemon still writing")
+    update.update_engine_if_needed.side_effect = error
+    with pytest.raises(FluxdownCancelUnconfirmed) as caught:
+        await scheduler._update_external_scripts()
+    assert caught.value is error
+    assert update.update_engine_if_needed.await_count == 1
+
+
+@pytest.mark.asyncio
 async def test_pending_journal_that_cannot_roll_back_blocks_start(
     tmp_path, monkeypatch
 ):

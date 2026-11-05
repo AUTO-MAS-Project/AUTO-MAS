@@ -475,6 +475,12 @@ class TaskExecuteBase(ABC):
             raise
         except Exception as e:
             await self.on_crash(e)
+            # 普通脚本错误可留给上层继续调度；写入者所有权不明必须中止
+            # 整个 TaskGroup，不能在 on_crash 记录后继续启动下一脚本。
+            from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+            if isinstance(e, FluxdownCancelUnconfirmed):
+                raise
         finally:
             self._task_group = None
             try:

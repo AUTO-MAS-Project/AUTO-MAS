@@ -770,3 +770,91 @@ async def test_update_install_setting_still_invalidates_prefetch():
     update_settings.FluxdownTakeoverAll = True
     assert await session.take(0) is None
     assert discarded == [True]
+
+
+@pytest.mark.asyncio
+async def test_changed_reservation_resources_invalidate_prefetched_manager():
+    from app.core import script_update
+    from app.models.config import GlobalConfig, MaaConfig
+
+    uid = uuid.uuid4()
+    resource_key = ["emulator-a:0"]
+    manager = SimpleNamespace(
+        prefetch_script_update=AsyncMock(), discard_prefetched_update=AsyncMock()
+    )
+    info = SimpleNamespace(
+        mode="AutoProxy",
+        is_cycle=False,
+        script_list=[ScriptItem(str(uid), "", "等待")],
+        task_id="test",
+        script_user_scope=lambda _: None,
+    )
+    session = script_update.ScriptUpdateSession(
+        info,
+        make_manager=lambda *_a, **_k: manager,
+        resources=lambda _: ((), resource_key[0]),
+        scheduled=lambda _: True,
+        config=SimpleNamespace(ScriptConfig={uid: MaaConfig()}, setting=GlobalConfig()),
+    )
+    await session._prefetch(0)
+    resource_key[0] = "emulator-b:1"
+    assert await session.take(0) is None
+    manager.discard_prefetched_update.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_unsafe_child_failure_stops_real_task_lifecycle_before_next_script(
+    monkeypatch,
+):
+    from app.core.task_manager import manager as scheduler
+    from app.models.task import TaskExecuteBase
+
+    ids = [uuid.uuid4(), uuid.uuid4()]
+    configs = {
+        uid: SimpleNamespace(is_locked=False, model_dump=lambda **_: {}) for uid in ids
+    }
+    monkeypatch.setattr(
+        scheduler,
+        "Config",
+        SimpleNamespace(
+            ScriptConfig=configs,
+            setting=SimpleNamespace(
+                Update=SimpleNamespace(model_dump=lambda **_: {}),
+                Replay=SimpleNamespace(Enabled=False),
+            ),
+        ),
+    )
+    monkeypatch.setattr(scheduler, "_exclusive_resources", lambda _: ((), None))
+    info = scheduler.TaskInfo("AutoProxy", "test", "queue", None, None)
+    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
+    info.script_list = [ScriptItem(str(uid), "", "等待") for uid in ids]
+    started, finalized = [], []
+
+    class Manager(TaskExecuteBase):
+        def __init__(self, item):
+            super().__init__()
+            self.item = item
+
+        async def main_task(self):
+            started.append(self.item.script_id)
+            raise FluxdownCancelUnconfirmed("writer not stopped")
+
+        async def on_crash(self, error):
+            self.item.status = "异常"
+
+        async def final_task(self):
+            finalized.append(self.item.script_id)
+
+    task = scheduler.Task(
+        info, [], manager_factories={SimpleNamespace: lambda item, _: Manager(item)}
+    )
+    monkeypatch.setattr(task, "_observe_script_run", lambda *_: nullcontext())
+    with pytest.raises(ExceptionGroup) as caught:
+        async with asyncio.TaskGroup() as group:
+            task._task_group = group
+            await task._run_script_list(0)
+    assert any(
+        isinstance(e, FluxdownCancelUnconfirmed) for e in caught.value.exceptions
+    )
+    assert started == [str(ids[0])]
+    assert finalized == [str(ids[0])]

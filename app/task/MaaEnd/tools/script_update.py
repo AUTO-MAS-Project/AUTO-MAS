@@ -267,11 +267,6 @@ async def prepare_update(
     cache = Path.cwd() / "data" / "maaend_update"
     cache.mkdir(parents=True, exist_ok=True)
     destination = Path(tempfile.mkdtemp(dir=cache, prefix="download-")) / name
-    builtin_transport = (
-        downloader == "builtin"
-        or source == "MirrorChyan"
-        or (proxy is not None and proxy.auth is not None)
-    )
     try:
         await download_file(
             url,
@@ -283,12 +278,10 @@ async def prepare_update(
             progress=progress,
         )
     except asyncio.CancelledError:
-        # 内置 httpx 取消后已退出网络与文件上下文，可以回收部分下载。
-        # FluxDown 可能仍有后台写入者；无法确认停止时必须保留其目标。
-        if builtin_transport:
-            with suppress(OSError):
-                destination.unlink(missing_ok=True)
-                destination.parent.rmdir()
+        # 公共入口只在确认写入已收敛后传播普通取消，所有下载器同样回收。
+        with suppress(OSError):
+            destination.unlink(missing_ok=True)
+            destination.parent.rmdir()
         raise
     except (
         _fluxdown_cli.FluxdownCancelUnconfirmed,
@@ -296,13 +289,11 @@ async def prepare_update(
     ):
         # FluxDown 未确认停止或保留了续传任务，不能删除其输出目标。
         raise
-    except Exception as error:
-        # 内置 httpx 的异常返回时流和文件已经关闭，可回收本轮部分包。
-        # 其余 FluxDown 异常不保证写入者退出，仍保留独立下载目标。
-        if builtin_transport or isinstance(error, httpx.HTTPError):
-            with suppress(OSError):
-                destination.unlink(missing_ok=True)
-                destination.parent.rmdir()
+    except Exception:
+        # 不明写入与可续传错误已由上面的专用异常分支保留。
+        with suppress(OSError):
+            destination.unlink(missing_ok=True)
+            destination.parent.rmdir()
         raise
 
     try:

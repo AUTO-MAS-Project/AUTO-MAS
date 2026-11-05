@@ -38,6 +38,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.utils import TASK_MODE_ZH, get_logger, is_admin
 from app.utils import io as _utils_io
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import HSRAutoProxyTask, _server_day_clock, resolve_daily_native_modes
 from .history import save_hsr_user_history
@@ -417,6 +418,8 @@ class HSRManager(NotificationTaskBase):
                     should_abort=self._update_aborted,
                     prepared=getattr(self, "_prefetched_updates", {}).get(engine),
                 )
+            except FluxdownCancelUnconfirmed:
+                raise
             except Exception as e:  # noqa: BLE001 - 未知安装状态不能沿用旧版运行
                 name = engine_label(engine, left=False)
                 logger.opt(exception=True).warning(f"HSR 更新：{name}更新时出错")

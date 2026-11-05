@@ -536,7 +536,7 @@ async def test_unconfirmed_downloader_keeps_its_private_destination(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("source", ["GitHub", "MirrorChyan"])
+@pytest.mark.parametrize("source", ["GitHub", "MirrorChyan", "FluxDown-confirmed"])
 async def test_cancel_builtin_download_cleans_partial_zip(
     installation, monkeypatch, source
 ):
@@ -557,7 +557,9 @@ async def test_cancel_builtin_download_cleans_partial_zip(
             ),
         )
     else:
-        update.Config.setting.Update.FluxdownTakeoverAll = False
+        update.Config.setting.Update.FluxdownTakeoverAll = (
+            source == "FluxDown-confirmed"
+        )
 
     started, stopped = asyncio.Event(), asyncio.Event()
 

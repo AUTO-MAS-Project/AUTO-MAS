@@ -123,6 +123,7 @@ class ScriptUpdateSession:
             item.script_id,
             type(config),
             selected,
+            self._resources(config),
             self._config.setting.Update.model_dump(
                 mode="python",
                 include={

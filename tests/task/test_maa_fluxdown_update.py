@@ -1093,6 +1093,8 @@ async def test_cancelled_add_without_response_recovers_or_preserves_writer(
             assert release_add.wait(5)
             return 124, "request timed out without task ID"
         if args[0] == "list":
+            if not accepted.is_set():
+                return 0, "[]"
             querying.set()
             assert release_query.wait(5)
             if identity == "unavailable":
@@ -1169,3 +1171,26 @@ async def test_cancelled_add_without_response_recovers_or_preserves_writer(
     assert sum(args[0] == "add" for args in commands) == 1
     backend.assert_not_awaited()
     local.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cancellation_before_resource_download_does_not_delete_previous_archive(
+    resource_install,
+):
+    install, _, downloader = resource_install
+    resource._WORK_DIR.mkdir(parents=True)
+    resource._STAGE_ZIP.write_bytes(b"previous unconfirmed writer")
+    reports = 0
+
+    async def progress(_line):
+        nonlocal reports
+        reports += 1
+        if reports == 2:
+            raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await resource.prepare_install_resources(
+            install, github=True, cdk=None, progress=progress
+        )
+    assert resource._STAGE_ZIP.read_bytes() == b"previous unconfirmed writer"
+    downloader.assert_not_awaited()
