@@ -13,7 +13,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
 
-"""MFW 用户任务更新：特调整理、全局选项兼容与密码准备。"""
+"""MFW 账号任务更新：特调整理、全局选项兼容与密码准备。"""
 
 import asyncio
 from typing import Any

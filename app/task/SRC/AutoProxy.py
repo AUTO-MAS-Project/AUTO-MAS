@@ -117,8 +117,9 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         self.process_cleanup_success = True
         self.prepared = False
         self._src_injected_config: dict | None = None
-        # 配置来源三态与独立的快速配置开关：来源决定是否下发 MAS 托管配置，
-        # 快速配置决定是否把面板值写进 SRC 原生配置（两段互不替代）。
+        self._src_injected_deploy: dict | None = None
+        # 配置来源三态与独立的覆写常规配置开关：来源决定是否下发 MAS 托管配置，
+        # 覆写常规配置决定是否把面板值写进 SRC 原生配置（两段互不替代）。
         self.config_base, self.native_base = resolve_config_base(
             self.cur_user_config, CONFIG_BASE_SHARED
         )
@@ -135,7 +136,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
             )
         ):
             self.cur_user_item.status = "跳过"
-            return "今日代理次数已达上限, 跳过该用户"
+            return "今日代理次数已达上限, 跳过该账号"
 
         if self.cur_user_config.Info.Base == CONFIG_BASE_INDEPENDENT:
             config_path = (
@@ -146,7 +147,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
             if not config_path.exists():
                 self.cur_user_item.status = "异常"
                 return (
-                    "未找到用户的 SRC 配置文件，请先在用户配置页完成 「SRC配置」 步骤"
+                    "未找到用户的 SRC 配置文件，请先在账号配置页完成 「SRC配置」 步骤"
                 )
         return "Pass"
 
@@ -196,23 +197,23 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                     type=protocol.TASK_NOTICE,
                     data=WSTaskNoticeData(
                         level="error",
-                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                        message=f"账号 {self.cur_user_item.name} 检查未通过: {self.check_result}",
                     ),
                 )
             return
 
         await self.prepare()
-        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
-        logger.info(f"开始代理用户: {self.cur_user_uid}")
+        logger.info(f"开始代理账号: {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
 
         for i in range(self.script_config.Run.RunTimesLimit):
             if self.run_book:
                 break
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
+                f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
             )
             self.log_start_time = datetime.now().astimezone()
             self.cur_user_log = LogRecord()
@@ -254,7 +255,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                 get_adb_tasker=lambda device: core.MaaFWManager.get_adb_tasker(device),
                 do_job=lambda job: core.MaaFWManager.do_job(job),
             ):
-                logger.info(f"用户 {self.cur_user_item.user_id} 登录成功")
+                logger.info(f"账号 {self.cur_user_item.user_id} 登录成功")
             else:
                 if not await self.handle_pre_src_error("「崩坏·星穹铁道」登录失败"):
                     return
@@ -326,7 +327,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
 
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
-                logger.info(f"用户: {self.cur_user_uid} - SRC 脚本进程完成代理任务")
+                logger.info(f"账号: {self.cur_user_uid} - SRC 脚本进程完成代理任务")
                 self.script_info.log = (
                     "检测到 SRC 脚本进程完成代理任务\n正在等待相关程序结束"
                 )
@@ -346,7 +347,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
 
             else:
                 logger.warning(
-                    f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
+                    f"账号: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
 
@@ -358,8 +359,8 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                 try:
                     await Notify.send_notice(
                         LocalNotice(
-                            title="用户自动代理出现异常！",
-                            message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                            title="账号自动代理出现异常！",
+                            message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
                             ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                             duration_seconds=3,
                         )
@@ -370,7 +371,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                     return
 
             await asyncio.sleep(10)
-            # 更新脚本配置文件
+            # 回写 MAS 基础配置
             if self.cur_user_config.Info.Base == CONFIG_BASE_INDEPENDENT:
                 save_src_user_config(
                     self.src_set_path,
@@ -378,6 +379,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                     / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
                     expected_installation_id=self.src_installation_id,
                     runtime_baseline=self._src_injected_config,
+                    runtime_deploy_baseline=self._src_injected_deploy,
                 )
                 logger.success("SRC 脚本配置文件已更新")
 
@@ -395,7 +397,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         """
 
         if e is None:
-            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
+            logger.warning(f"账号: {self.cur_user_uid} - {error_message}")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -403,7 +405,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
             )
         else:
             logger.opt(exception=True).warning(
-                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+                f"账号: {self.cur_user_uid} - {error_message}: {e}"
             )
             await Publisher.send(
                 id=self.task_info.task_id,
@@ -420,8 +422,8 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         try:
             await Notify.send_notice(
                 LocalNotice(
-                    title="用户自动代理出现异常！",
-                    message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                    title="账号自动代理出现异常！",
+                    message=f"账号 {self.cur_user_item.name} 自动代理时{error_message}",
                     ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                     duration_seconds=3,
                 )
@@ -543,7 +545,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                 overlay_path = native
         if overlay_path is not None:
             recover_src_user_config(overlay_path)
-            # 下发前归档下发源到用户池（运行回写会覆盖它；带页面核心字段
+            # 下发前归档下发源到账号池（运行回写会覆盖它；带页面核心字段
             # 侧车，指纹去重，失败不阻断运行）。native 池由 manager.prepare
             # 在任务级一次性归档。原生来源无 MAS 配置目录：Temp 是安装 config/
             # 快照、不属于 mas 池内容，跳过归档——归进 mas 池会在切到independent 来源
@@ -568,6 +570,16 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
 
         src_set = _utils_io.read_file(staging_path / "src.json")
         deploy_set = poor_yaml_read(staging_path / "deploy.yaml")
+
+        # 运行期更新覆盖与 Run 一同处于现有配置快照范围，最终恢复原生配置。
+        self._src_injected_deploy = None
+        if self.script_config.Update.TakeoverEnabled:
+            self._src_injected_deploy = {
+                key: False
+                for key in ("AutoUpdate", "EnableReload", "AppAsarUpdate")
+                if key in deploy_set
+            }
+            deploy_set.update(self._src_injected_deploy)
 
         # 直接运行任务
         deploy_set["Run"] = ["src"]
@@ -739,7 +751,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         if not cleanup_success:
             await self._handle_process_cleanup_failure()
         if self.script_config.Run.TaskTransitionMethod == "ExitEmulator":
-            logger.info("用户任务结束, 关闭模拟器")
+            logger.info("账号任务结束, 关闭模拟器")
             await close_emulator(self, timeout=_FINAL_CLEANUP_TIMEOUT_SECONDS)
 
         del self.src_process_manager
@@ -759,9 +771,9 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
             )
             await self.cur_user_config.commit()
             self.cur_user_item.status = "完成"
-            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
+            logger.success(f"账号 {self.cur_user_uid} 的自动代理任务已完成")
         else:
-            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            logger.warning(f"账号 {self.cur_user_uid} 的自动代理任务未完成")
             self.cur_user_item.status = "异常"
 
         await self.run_user_scripts_after()
@@ -816,7 +828,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                     Notify.send_notice(
                         LocalNotice(
                             title="成功完成一个自动代理任务！",
-                            message=f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
+                            message=f"已完成账号 {self.cur_user_item.name} 的自动代理任务",
                             ticker=f"已完成 {self.cur_user_item.name} 的自动代理任务",
                             duration_seconds=3,
                         )
@@ -886,7 +898,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         if not self.cur_user_log.content:
             self.cur_user_log.content = ["未能完全中止 SRC 进程"]
 
-        logger.warning(f"用户 {self.cur_user_uid} 的 SRC 进程未能完全中止")
+        logger.warning(f"账号 {self.cur_user_uid} 的 SRC 进程未能完全中止")
         if self._process_cleanup_failure_reported:
             return
 

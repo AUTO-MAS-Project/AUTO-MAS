@@ -10,6 +10,7 @@ import { Service } from '@/api'
 import { managesBackendProcess } from '@/utils/environment'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 import type { AnalyticsEventProps } from '@/types/analytics'
+import type { FrontendCloseRequest } from '@/types/appLifecycle'
 import { useAppClosing } from '@/composables/useAppClosing'
 import { cancelAppClose, prepareAppClose } from '@/composables/appCloseGuards'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
@@ -152,7 +153,7 @@ const handleShutdownReady = (): void => {
   logger.info('收到 backend.shutdown.ready，后端清理完成')
 }
 
-const handleCloseRequested = (restart = false): void => {
+const handleCloseRequested = (restart = false, request: FrontendCloseRequest = {}): void => {
   logger.info(
     restart
       ? '收到后端重启请求 frontend.restart.requested，收尾后重启应用'
@@ -164,7 +165,7 @@ const handleCloseRequested = (restart = false): void => {
     if (restart) void window.electronAPI?.appRestartOnQuit?.()
     return
   }
-  closePromise = runBackendRequestedClose(restart).catch(error => {
+  closePromise = runBackendRequestedClose(restart, request).catch(error => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`后端请求关闭流程异常: ${errorMsg}`)
     stopReconnect()
@@ -409,8 +410,11 @@ const runCloseFlow = async (): Promise<void> => {
   await runRuntimeSupervisedClose()
 }
 
-const runBackendRequestedClose = async (restart = false): Promise<void> => {
-  window.electronAPI?.appObserveBackendClose?.()
+const runBackendRequestedClose = async (
+  restart: boolean,
+  request: FrontendCloseRequest
+): Promise<void> => {
+  window.electronAPI?.appObserveBackendClose?.(request)
   backendClosing = true
   // 后端主动要求前端关闭：后端自行退出中，前端不再发 /close、不重启、不 taskkill
   const { showClosingOverlay } = useAppClosing()
@@ -853,9 +857,11 @@ export function initializeAppLifecycle(): void {
   // 先注册所有应用级常驻订阅，再允许建立连接；所有监听器都有明确释放函数。
   residentSubscriptionIds = [
     subscribe({ id: WS_ID_MAIN, type: WS_BACKEND_SHUTDOWN_READY }, () => handleShutdownReady()),
-    subscribe({ id: WS_ID_MAIN, type: WS_FRONTEND_CLOSE_REQUESTED }, () => handleCloseRequested()),
-    subscribe({ id: WS_ID_MAIN, type: WS_FRONTEND_RESTART_REQUESTED }, () =>
-      handleCloseRequested(true)
+    subscribe({ id: WS_ID_MAIN, type: WS_FRONTEND_CLOSE_REQUESTED }, message =>
+      handleCloseRequested(false, message.data)
+    ),
+    subscribe({ id: WS_ID_MAIN, type: WS_FRONTEND_RESTART_REQUESTED }, message =>
+      handleCloseRequested(true, message.data)
     ),
     subscribe({ id: WS_ID_MAIN, type: WS_POWER_COUNTDOWN_UPDATED }, message =>
       handlePowerCountdownUpdated(message.data)

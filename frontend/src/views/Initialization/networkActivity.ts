@@ -63,6 +63,11 @@ export const EMPTY_NETWORK_ACTIVITY: NetworkActivity = Object.freeze({
 
 /** 进度载荷里与网络细节有关的字段，全部可选。 */
 export interface NetworkActivityPayload {
+  /** Electron 更新器提供的目标版本与当前下载尝试；旧事件可缺省。 */
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
   runtimeStage?: string
   runtimeStatus?: string
   message?: string
@@ -138,12 +143,13 @@ export function reduceNetworkActivity(
   return state
 }
 
-/** 格式化时需要的两句词表文案，由调用方用 i18n 提供。 */
+/** 格式化时需要的词表文案，由调用方用 i18n 提供。 */
 export interface NetworkDetailLabels {
   /** 「来源 aliyun」 */
   transferSource: (source: string) => string
   /** 「github 不可用」 */
   probeUnavailable: (source: string) => string
+  sourceOrder: (kind: string, sources: string) => string
 }
 
 function formatProbeEntry(entry: NetworkProbeEntry, labels: NetworkDetailLabels): string {
@@ -184,7 +190,15 @@ export function formatNetworkDetails(
     if (probe.entries.length > 0) {
       lines.push(probe.entries.map(entry => formatProbeEntry(entry, labels)).join(' · '))
     }
-    if (probe.summary) lines.push(probe.summary)
+    if (probe.summary) {
+      // protocol v1 只在摘要中提供最终排序，不能用探测到达顺序推断。
+      // 仅识别 Runtime probeRanked 的完整格式；未知 kind/格式保留原文。
+      const ranked =
+        /^(uv|git|python|package-index) 源顺序：([a-z0-9_-]+(?: → [a-z0-9_-]+)*)$/.exec(
+          probe.summary
+        )
+      lines.push(ranked ? labels.sourceOrder(ranked[1], ranked[2]) : probe.summary)
+    }
     return lines
   }
 

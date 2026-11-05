@@ -18,17 +18,17 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""BetterGI 配置恢复服务：MAS 用户配置池 / BetterGI 原生配置池（声明式池）。
+"""BetterGI 配置恢复服务：MAS 账号配置池 / BetterGI 原生配置池（声明式池）。
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底全部由基座
 （``app.utils.common.config.restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
-mas 池 = 「MAS 为该用户维护的全部配置」：per-user 副本目录（OneDragon /
+mas 池 = 「MAS 为该账号维护的全部配置」：per-user 副本目录（OneDragon /
 ScriptGroup / GlobalDomain，前端端点直接读写）+ 页面字段侧车（OneDragon
 段 + Task.OneDragonConfigName + Switch.Resource + Info.Base 仅预览）。池
-恒按用户分桶（per-user 副本与来源无关、原生来源同样编辑落盘），恢复目标就是
+恒按账号分桶（per-user 副本与来源无关、原生来源同样编辑落盘），恢复目标就是
 per-user 副本目录，无 owner 解耦（对齐 General）。
 
 native 池 = BetterGI 全局主配置 ``{RootPath}/User/config.json``（单文件，
@@ -62,10 +62,10 @@ logger = get_logger("BetterGI 配置恢复")
 
 
 def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
-    """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
+    """恢复守卫：目标账号必须存在，避免把配置恢复进孤儿目录。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
-        raise ValueError("BetterGI 用户不存在，请刷新后重试")
+        raise ValueError("BetterGI 账号不存在，请刷新后重试")
 
 
 def _root_path(ctx: _utils_config_restore.RestoreContext) -> Path | None:

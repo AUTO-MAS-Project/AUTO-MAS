@@ -81,7 +81,7 @@ class OkwwManager(ScriptManagerBase):
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if not isinstance(script_config, OkwwConfig):
-            return "脚本配置类型错误, 不是 OK-WW 类型"
+            return "托管配置类型错误, 不是 OK-WW 类型"
 
         if self.task_info.mode == "ScriptConfig":
             root_path = script_config.Info.RootPath
@@ -100,18 +100,18 @@ class OkwwManager(ScriptManagerBase):
                 try:
                     target_user_uid = uuid.UUID(target_user_id)
                 except ValueError:
-                    return "OK-WW 用户不存在，请刷新后重试"
+                    return "OK-WW 账号不存在，请刷新后重试"
                 if target_user_uid not in script_config.UserData:
-                    return "OK-WW 用户不存在，请刷新后重试"
+                    return "OK-WW 账号不存在，请刷新后重试"
 
         if self.task_info.mode == "Update":
             if not script_config.Game.Enabled:
-                return "请先在脚本配置中启用游戏配置"
+                return "请先在托管配置中启用游戏配置"
             launcher = Path(str(script_config.Game.Path or "").strip())
             if not launcher.is_file():
-                return "请先在脚本配置中导入有效的鸣潮官方启动器"
+                return "请先在托管配置中导入有效的鸣潮官方启动器"
 
-        # AutoProxy 模式只做用户列表可用性校验；逐用户配置文件检查放到 AutoProxyTask.check()
+        # AutoProxy 模式只做账号列表可用性校验；逐账号配置文件检查放到 AutoProxyTask.check()
         if self.task_info.mode == "AutoProxy":
             script_uid = uuid.UUID(self.script_info.script_id)
             if not self.script_info.user_list:
@@ -119,7 +119,7 @@ class OkwwManager(ScriptManagerBase):
                     Config.ScriptConfig[script_uid].UserData.items()
                 )
             if not self.script_info.user_list:
-                return "当前没有可执行的用户，请先添加并启用用户"
+                return "当前没有可执行的账号，请先添加并启用账号"
 
         return "Pass"
 
@@ -130,11 +130,11 @@ class OkwwManager(ScriptManagerBase):
         ] = await Config.ScriptConfig[script_uid].lock_x()
         self.script_config = Config.ScriptConfig[script_uid]
         if not isinstance(self.script_config, OkwwConfig):
-            raise TypeError("脚本配置类型错误")
+            raise TypeError("托管配置类型错误")
 
-        # X 锁覆盖用户集合，运行时直接修改原配置。
+        # X 锁覆盖账号集合，运行时直接修改原配置。
         self.user_config = self.script_config.UserData
-        logger.success(f"{self.script_info.script_id} 已锁定，OK-WW 用户配置已提取")
+        logger.success(f"{self.script_info.script_id} 已锁定，OK-WW 账号配置已提取")
 
         if self.task_info.mode == "Update":
             target_user_id = self.task_info.user_id or "Default"
@@ -193,8 +193,8 @@ class OkwwManager(ScriptManagerBase):
                 self.had_original_script_config = True
 
             # 任务级一次性归档 ok-ww 原生配置（项目级池，指纹去重，失败不
-            # 阻断任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」
-            # 的脚本原生状态——下发/覆盖处按用户归档会把上一轮下发的 MAS
+            # 阻断任务）：原生配置物理上跨账号共享，只代表「本轮任务动手前」
+            # 的脚本原生状态——下发/覆盖处按账号归档会把上一轮下发的 MAS
             # 配置误当原生内容挤进保留池，必须在任何下发前归档这一次
             with suppress(Exception):
                 archive_native_backup(self.script_config_path)
@@ -292,7 +292,7 @@ class OkwwManager(ScriptManagerBase):
             current_config = self.user_config[uuid.UUID(current_user.user_id)]
             config_base = _okww_config_base(current_config.Info.Base)
             logger.info(
-                f"用户 {current_user.user_id} 配置来源: "
+                f"账号 {current_user.user_id} 配置来源: "
                 f"{BASE_SOURCE_LABELS.get(config_base, config_base)}"
             )
             if config_base == BASE_NATIVE:
@@ -318,7 +318,7 @@ class OkwwManager(ScriptManagerBase):
             try:
                 await self.run_user_task(current_user, method)
             finally:
-                # 每个用户任务结束后立即恢复快照，overlay 不得残留到脚本原配置。
+                # 每个账号任务结束后立即恢复快照，overlay 不得残留到脚本原配置。
                 await self._restore_script_config_from_temp()
 
     async def final_task(self):
@@ -355,9 +355,9 @@ class OkwwManager(ScriptManagerBase):
                     f"{datetime.now().strftime('%m-%d')} | "
                     f"{self.script_info.name or '空白'}的{task_mode}任务报告"
                 )
-                # 按用户交错组装「用户结果行 + 该用户节点详情」：
-                # 多账号任务时各用户节点归属清晰，不再全部平铺。
-                # 「失败」类型仅在本次任务存在未完成用户时纳入报告，
+                # 按账号交错组装「账号结果行 + 该账号节点详情」：
+                # 多账号任务时各账号节点归属清晰，不再全部平铺。
+                # 「失败」类型仅在本次任务存在未完成账号时纳入报告，
                 # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合（对齐通用脚本）。
                 # 关闭「是否采集节点详情」的用户在 AutoProxy 侧未启 log_box，
                 # push_log 为空，自然只有结果行。
@@ -435,7 +435,7 @@ class OkwwManager(ScriptManagerBase):
                 if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                     await config_manager.flush()
             except Exception:
-                logger.opt(exception=True).warning("on_crash 保存用户配置失败")
+                logger.opt(exception=True).warning("on_crash 保存账号配置失败")
 
         with suppress(Exception):
             await Publisher.send(

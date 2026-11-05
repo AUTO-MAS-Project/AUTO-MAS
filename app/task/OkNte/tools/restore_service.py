@@ -16,14 +16,14 @@
 #   You should have received a copy of the GNU Affero General Public
 #   License along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""OK-NTE 配置恢复服务：MAS 用户配置池 / ok-nte 原生配置池（声明式池）。
+"""OK-NTE 配置恢复服务：MAS 账号配置池 / ok-nte 原生配置池（声明式池）。
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底预览全部由基座
 （``app.utils.common.config.restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
-mas 池 = MAS 用户 ConfigFile 目录副本（恒按用户分桶）。native 池 =
+mas 池 = MAS 账号 ConfigFile 目录副本（恒按账号分桶）。native 池 =
 ok-nte 原生配置（Folder 整目录 / File 单文件，随 ``Script.ConfigPathMode``
 两种取值），按物理配置根指纹分桶。
 """
@@ -53,10 +53,10 @@ from .backup_archive import (
 
 
 def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
-    """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
+    """恢复守卫：目标账号必须存在，避免把配置恢复进孤儿目录。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
-        raise ValueError("OK-NTE 用户不存在，请刷新后重试")
+        raise ValueError("OK-NTE 账号不存在，请刷新后重试")
 
 
 def _native_config_path(
@@ -75,7 +75,7 @@ def _native_config_path(
 async def _mas_files(
     ctx: _utils_config_restore.RestoreContext,
 ) -> dict[str, Path] | None:
-    """归档内容 = MAS 用户 ConfigFile 副本（缺失/为空返回 ``None``）。"""
+    """归档内容 = MAS 账号 ConfigFile 副本（缺失/为空返回 ``None``）。"""
 
     _user_guard(ctx)
     return collect_mas_files(mas_config_dir(ctx.script_id, ctx.user_id)) or None

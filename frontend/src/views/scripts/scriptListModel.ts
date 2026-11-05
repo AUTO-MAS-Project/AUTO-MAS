@@ -73,7 +73,7 @@ export function toScriptListUser(
 ): ScriptListUser | null {
   if (!config || !USER_CONFIG_TYPES.has(index.type)) return null
   const info = config.Info
-  const fallbackName = `用户${index.uid}`
+  const fallbackName = `账号${index.uid}`
   const isMaaFW = maafwUserConfigTypes().has(index.type)
   const hasAccount = ACCOUNT_CONFIG_TYPES.has(index.type)
   const baseDefault = BASE_DEFAULTS[index.type]

@@ -4,15 +4,15 @@
 /* eslint-disable */
 export type HSRUserConfig_InfoInput = {
     /**
-     * base 来源（shared/independent/native）：shared = 共用脚本级计划； independent = 本用户自己的计划；native = 原样运行 SRA / 三月七 当前的原生配置
+     * base 来源（shared/independent/native）：shared = 共用托管级计划； independent = 本账号自己的计划；native = 原样运行 SRA / 三月七 当前的原生配置
      */
     Base?: ('shared' | 'independent' | 'native' | null);
     /**
-     * 用户 ID（账号）
+     * 账号
      */
     Id?: (string | null);
     /**
-     * 是否启用快速配置（与配置来源独立，按用户保存）
+     * 兼容字段；HSR 运行不消费此开关，不提供覆写常规配置
      */
     IfQuickConfig?: (boolean | null);
     /**
@@ -24,7 +24,7 @@ export type HSRUserConfig_InfoInput = {
      */
     IfScriptBeforeTask?: (boolean | null);
     /**
-     * 用户名称
+     * 账号名称
      */
     Name?: (string | null);
     /**
@@ -56,7 +56,7 @@ export type HSRUserConfig_InfoInput = {
      */
     Status?: (boolean | null);
     /**
-     * 用户标签信息（虚拟字段，供前端显示）
+     * 账号标签信息（虚拟字段，供前端显示）
      */
     readonly Tag?: (string | null);
 };

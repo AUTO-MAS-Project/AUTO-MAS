@@ -31,7 +31,7 @@ def read_native_stage(
     field: str,
     engine: str | None = None,
 ) -> dict[str, Any] | None:
-    """读取用户配置中保存的脚本原生副本字段。"""
+    """读取账号配置中保存的脚本原生副本字段。"""
 
     raw = getattr(user_config.Stage, field)
     if raw is None:
@@ -68,7 +68,7 @@ def read_native_stage_for_channel(
     channel: str,
     engine: str | None = None,
 ) -> dict[str, Any] | None:
-    """读取用户配置中指定体力类型保存的脚本原生副本字段。"""
+    """读取账号配置中指定体力类型保存的脚本原生副本字段。"""
 
     data = read_native_stage(user_config, "ScriptStage", engine)
     if data is None:

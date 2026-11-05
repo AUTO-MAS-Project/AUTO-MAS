@@ -66,7 +66,7 @@ async def download_package(
             )
             break
         except FluxdownCancelUnconfirmed:
-            # 后台可能仍在写入，不能重试、删包或放行用户任务。
+            # 后台可能仍在写入，不能重试、删包或放行账号任务。
             raise
         except HSRUpdateAborted:
             # 半截文件留着：下次 Range 续传能接上，用户不必从头下。

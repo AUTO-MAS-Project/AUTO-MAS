@@ -83,7 +83,7 @@
               v-model:form-data="formData"
               :loading="loading"
               :resource-options="resourceOptions"
-              :show-resource="controllerProtocol === 'Adb' && controllerType !== 'CloudADB'"
+              :show-resource="resourceOptions.length > 0 && controllerType !== 'CloudADB'"
               @save="handleFieldSave"
             />
           </a-card>
@@ -275,6 +275,7 @@ const {
   maaEndOptionsLoaded,
   controllerProtocol,
   presetSupported,
+  resourceOptions,
   crisisDrillsOptions,
   essenceLocationOptions,
   essenceMenuOptions,
@@ -289,7 +290,6 @@ const {
 )
 
 const maaEndImportLoading = ref(false)
-const resourceOptions = [{ label: '官服', value: '官服' }]
 
 interface FieldChange {
   key: string
@@ -473,17 +473,17 @@ const loadUserData = async () => {
   try {
     const userResponse = await getUsers(scriptId, userId)
     if (!userResponse || userResponse.code !== 200) {
-      throw new Error('加载用户失败')
+      throw new Error('加载账号失败')
     }
 
     const userIndex = userResponse.index.find((index: any) => index.uid === userId)
     if (!userIndex || !userResponse.data[userId]) {
-      throw new Error('用户不存在')
+      throw new Error('账号不存在')
     }
 
     const userData = userResponse.data[userId] as any
     if (userIndex.type !== 'MaaEndUserConfig') {
-      throw new Error('用户类型不匹配')
+      throw new Error('账号类型不匹配')
     }
 
     Object.assign(formData, {

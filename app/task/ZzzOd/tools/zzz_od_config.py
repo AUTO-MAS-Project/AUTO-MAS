@@ -25,9 +25,9 @@ zzz-od 的 YAML 是唯一事实源，本模块只做最小封装（读-改-写 +
 - ``config/{idx:02d}/`` — 实例目录：game_account.yml（区服/路径/账密）、
   game.yml、one_dragon/_group.yml（任务编排）、app_run_record/*.yml（运行记录）
 
-MAS 用户配置（MaaEnd 式字段化）：账号/区服/任务编排存于
+MAS 账号配置（MaaEnd 式字段化）：账号/区服/任务编排存于
 ``ZzzOdUserConfig`` 的 ConfigItem 字段（web 直接编辑），运行时由字段生成
-game_account.yml 与 one_dragon/_group.yml 写入各用户绑定槽（备份 →
+game_account.yml 与 one_dragon/_group.yml 写入各账号绑定槽（备份 →
 写入并清运行记录 → 恢复；保留类应用的周期进度与计划进度属运行产物，
 不参与清空，整目录还原后按快照原样回写，见
 :data:`PERSISTENT_RUN_RECORD_APPS`）；「原生」模式全程不写槽。
@@ -258,7 +258,7 @@ def write_instance_run(root: Path, value: str) -> None:
 
 
 MAS_SLOT_BASE = 1001
-"""MAS 用户槽的起始槽号（``config/1001`` 起）。
+"""MAS 账号槽的起始槽号（``config/1001`` 起）。
 
 一条龙的「新增实例」（``create_new_instance``）只在自己的注册表里找最小空号，
 **不扫盘上的 ``config/NN``**；而 MAS 槽刻意不进原生注册表（只在运行/会话窗口
@@ -271,7 +271,7 @@ MAS_SLOT_BASE = 1001
 """
 
 MAS_SLOT_MAX = 9999
-"""MAS 用户槽的槽号上限（与用户配置 ``Info.SlotIdx`` 的 ``RangeValidator`` 一致）。
+"""MAS 账号槽的槽号上限（与账号配置 ``Info.SlotIdx`` 的 ``RangeValidator`` 一致）。
 
 越过上限的号会与绑定号校验范围脱节：``SlotIdx`` 被静默夹到上限、槽目录名却是
 原值，读写错位。回收池恢复的 ``targetSlot`` 同样受此约束。
@@ -290,11 +290,11 @@ def find_free_instance_idx(
     占位集合（按以下顺序合并，确保新槽不与任何已有槽冲突）：
     1. 原生 ``instance_list`` 的 idx
     2. 盘上 ``config/NN`` 目录（覆盖 finalize 失败导致 deepcopy 未回写、
-       但实例目录已创建的情况——保证后续用户不会分配到同一槽）
-    3. ``used_idxs``（本次会话内已分配 / 跨脚本 MAS 用户已绑定的槽）
+       但实例目录已创建的情况——保证后续账号不会分配到同一槽）
+    3. ``used_idxs``（本次会话内已分配 / 跨脚本 MAS 账号已绑定的槽）
 
     ``base=1`` 对齐 zzz-od ``create_new_instance`` 的最小正整数规则（原生实例
-    用）；MAS 用户槽传 :data:`MAS_SLOT_BASE`，退到高位段避开一条龙的找号范围。
+    用）；MAS 账号槽传 :data:`MAS_SLOT_BASE`，退到高位段避开一条龙的找号范围。
 
     ``limit`` 给出上限时，超出即报错而不是返回越界号：MAS 槽号要写进
     ``Info.SlotIdx``，越过 :data:`MAS_SLOT_MAX` 会被 ``RangeValidator`` 静默
@@ -447,11 +447,11 @@ def remove_instance(
 ) -> None:
     """删除实例：先从注册表移除，再删除实例目录（幂等）。
 
-    保护：至少保留一个实例；``protected_idxs``（MAS 用户已绑定槽）不可删；
+    保护：至少保留一个实例；``protected_idxs``（MAS 账号已绑定槽）不可删；
     被删实例为当前活跃时把剩余首个实例设为 active。
 
     Raises:
-        ValueError: 目标实例不存在 / 是最后一个实例 / 被 MAS 用户绑定。
+        ValueError: 目标实例不存在 / 是最后一个实例 / 被 MAS 账号绑定。
     """
 
     protected = {int(i) for i in (protected_idxs or set())}
@@ -463,7 +463,7 @@ def remove_instance(
         if entry is None:
             raise ValueError(f"实例 {int(idx):02d} 不存在")
         if idx in protected:
-            raise ValueError(f"实例 {int(idx):02d} 已被 MAS 用户绑定，不能删除")
+            raise ValueError(f"实例 {int(idx):02d} 已被 MAS 账号绑定，不能删除")
         remaining = [e for e in entries if int(e.get("idx", -1)) != idx]
         if entry.get("active") and remaining:
             remaining[0]["active"] = True
@@ -477,7 +477,7 @@ def remove_instance(
 #
 # zzz-od 的实例注册表是安装级全局命名空间：持久注册会让 MAS 实例混进原生
 # 世界（GUI 混排、原生「仅运行当前」可能误跑、跨脚本槽串号）。改为视图：
-# 运行/会话窗口内把 one_dragon.yml 替换为「仅本脚本用户槽」的合成内容，
+# 运行/会话窗口内把 one_dragon.yml 替换为「仅本托管账号槽」的合成内容，
 # 窗口结束恢复原生内容——原生 zzz-od 任何时候（窗口外）看到的都是自己的
 # 实例。one_dragon.yml 进程启动读一次、之后纯内存（one_dragon_app 仅
 # switch_instance 时落盘 active 标志），替换窗口对启动器安全。
@@ -575,7 +575,7 @@ def write_game_account(config_dir: Path, patch: dict) -> dict:
 
 
 def user_field_patch(user_config) -> dict[str, Any]:
-    """MAS 用户字段 → ``game_account.yml`` patch（仅非空字段，其余保留槽值）。
+    """MAS 账号字段 → ``game_account.yml`` patch（仅非空字段，其余保留槽值）。
 
     与 :func:`write_game_account` 配套：注入/物化共用同一份「本页配置为事实源」
     的转换，字段缺省不落盘、槽内既有值保持。
@@ -668,7 +668,7 @@ def write_game(config_dir: Path, patch: dict) -> dict:
 
 
 def launch_args_patch(user_config) -> dict[str, Any]:
-    """MAS 用户字段 → ``game.yml`` 启动参数 patch（整组下发）。
+    """MAS 账号字段 → ``game.yml`` 启动参数 patch（整组下发）。
 
     与 :func:`user_field_patch` 的「留空沿用槽值」不同：启动参数整组都是
     本页字段的事实源，用户清空/关闭也要覆盖槽值（bool False 同样下发）。
@@ -902,9 +902,9 @@ def _preserved_run_record_paths(root: Path, idx: int) -> list[Path]:
 
 
 def clear_run_records(root: Path, idx: int) -> None:
-    """清空实例运行记录，让 zzz-od 把任务视为未完成（每用户独立跑）。
+    """清空实例运行记录，让 zzz-od 把任务视为未完成（每账号独立跑）。
 
-    注入用户配置后调用：清空后快照即为全零基准，跑完 diff 出的即本用户
+    注入账号配置后调用：清空后快照即为全零基准，跑完 diff 出的即本账号
     本次结果。带周期进度的内置记录、插件及未知记录原样保留；后者只做
     文件透传，避免插件更新失效后被误当作无进度记录清空。
     """

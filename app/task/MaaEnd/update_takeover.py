@@ -115,7 +115,7 @@ def _prepare_session_config(config_path: Path, *, keep_logs: bool) -> Iterator[N
     自动执行必须关掉，否则更新会话会顺手把任务跑一遍。``keep_logs`` 用于失败日志包
     没能保存的情况：新会话一启动就会清空 ``debug/``，而那里是唯一一份现场，所以这时
     还要把「启动时清理日志」也关掉。两处写入都落在外层任务前的整目录快照里，任务
-    结束一并换回，不写回脚本或用户配置来源。
+    结束一并换回，不写回脚本或账号配置来源。
     """
 
     config = _utils_io.read_dict_file(config_path, format=".json5")

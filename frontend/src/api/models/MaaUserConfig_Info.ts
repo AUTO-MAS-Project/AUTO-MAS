@@ -8,11 +8,11 @@ export type MaaUserConfig_Info = {
      */
     Base?: ('shared' | 'independent' | 'native' | null);
     /**
-     * 用户 ID
+     * 账号 ID
      */
     Id?: (string | null);
     /**
-     * 是否启用快速配置（与配置来源独立，按用户保存）
+     * 是否启用覆写常规配置（与配置来源独立，按账号保存）
      */
     IfQuickConfig?: (boolean | null);
     /**
@@ -24,7 +24,7 @@ export type MaaUserConfig_Info = {
      */
     IfScriptBeforeTask?: (boolean | null);
     /**
-     * 用户名称
+     * 账号名称
      */
     Name?: (string | null);
     /**
@@ -56,7 +56,7 @@ export type MaaUserConfig_Info = {
      */
     Status?: (boolean | null);
     /**
-     * 用户标签信息（虚拟字段，供前端显示）
+     * 账号标签信息（虚拟字段，供前端显示）
      */
     readonly Tag?: (string | null);
 };

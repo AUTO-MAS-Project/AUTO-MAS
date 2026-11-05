@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type OkwwUserConfig_NotifyInput = {
     /**
-     * 是否启用用户通知
+     * 是否启用账号通知
      */
     Enabled?: (boolean | null);
     /**
@@ -12,7 +12,7 @@ export type OkwwUserConfig_NotifyInput = {
      */
     IfSendMail?: (boolean | null);
     /**
-     * 是否发送用户统计信息
+     * 是否发送账号统计信息
      */
     IfSendStatistic?: (boolean | null);
     /**
@@ -28,7 +28,7 @@ export type OkwwUserConfig_NotifyInput = {
      */
     ServerChanKey?: (string | null);
     /**
-     * 用户收件地址
+     * 账号通知收件地址
      */
     ToAddress?: (string | null);
 };

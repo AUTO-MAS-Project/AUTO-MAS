@@ -557,7 +557,7 @@ const createUserImmediately = async (): Promise<boolean> => {
 
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
-    const errorMessage = userApiError.value || '创建用户失败'
+    const errorMessage = userApiError.value || '创建账号失败'
     if (addUserErrorCode.value === 409) {
       Modal.warning({
         title: t('core.edit.noOkWwSettings'),

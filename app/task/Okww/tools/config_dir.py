@@ -16,10 +16,10 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""OK-WW 用户配置目录初始化：上游脚本默认配置 → MAS 用户配置目录。
+"""OK-WW 账号配置目录初始化：上游脚本默认配置 → MAS 账号配置目录。
 
-MAS 用户配置目录的 owner 由 ``Info.Base`` 三态决定（shared=共享 Default、
-independent=当前用户独立目录、native=不建 MAS 平行全量配置），统一经
+MAS 账号配置目录的 owner 由 ``Info.Base`` 三态决定（shared=共享 Default、
+independent=当前账号独立目录、native=不建 MAS 平行全量配置），统一经
 :func:`~app.task.Okww.tools.backup_archive.owner_for_mode` 解析；上游默认
 配置取自脚本共享目录内的 ok-ww 原生 working 配置。目录初始化原属
 app/core/config.py，迁入本模块由 OK-WW 专项自己维护。
@@ -74,22 +74,22 @@ async def initialize_user(
 async def ensure_user_config_dir(
     script_config: OkwwConfig, user_id: str, base: str
 ) -> Path:
-    """从 OK-WW 脚本当前配置初始化 MAS 用户配置目录。
+    """从 OK-WW 脚本当前配置初始化 MAS 账号配置目录。
 
-    已存在配置文件时保留用户配置；仅当目标目录为空时复制脚本目录中的默认配置。
-    shared 来源使用脚本共享目录，independent 来源使用当前用户独立目录。
+    已存在配置文件时保留账号配置；仅当目标目录为空时复制外部脚本目录中的默认配置。
+    shared 来源使用脚本共享目录，independent 来源使用当前账号独立目录。
     本函数只服务 shared/independent 来源的 MAS 目录初始化；native 来源不调用
     ——原生来源直接使用脚本原生配置，MAS 不建平行全量配置。
 
     Args:
         script_config: 已解析的 OK-WW 脚本配置。
-        user_id: OK-WW 用户 ID。
+        user_id: OK-WW 账号 ID。
         base: base 来源（shared/independent/native 三态）；本函数只接受 shared /
             independent，旧字面量「简洁」/「详细」仅兼容存量数据，误传 native
             会抛 ValueError。
 
     Returns:
-        MAS 用户配置目录路径。
+        MAS 账号配置目录路径。
 
     Raises:
         TypeError: 脚本不是 OK-WW 类型。
@@ -99,13 +99,13 @@ async def ensure_user_config_dir(
 
     script_id = str(script_config.uid)
     if not isinstance(script_config, OkwwConfig):
-        raise TypeError(f"脚本配置类型错误: {script_id} 不是 OK-WW 类型")
+        raise TypeError(f"托管配置类型错误: {script_id} 不是 OK-WW 类型")
     base = _okww_config_base(base)
     if base not in (BASE_SHARED, BASE_INDEPENDENT):
         raise ValueError(f"不支持的 OK-WW 配置来源: {base}")
     target_config_dir = _okww_mas_config_dir(script_id, user_id, base)
     if target_config_dir.exists() and not target_config_dir.is_dir():
-        raise ValueError(f"OK-WW 用户配置路径不是目录: {target_config_dir}")
+        raise ValueError(f"OK-WW 账号配置路径不是目录: {target_config_dir}")
     if target_config_dir.is_dir() and any(
         item.is_file() for item in target_config_dir.rglob("*")
     ):
@@ -133,7 +133,7 @@ async def ensure_user_config_dir(
         _utils_io.force_rmtree(temporary_path)
 
     logger.info(
-        f"已从 OK-WW 脚本默认配置初始化用户配置: {script_id} - {target_config_dir.parent.name}"
+        f"已从 OK-WW 脚本默认配置初始化账号配置: {script_id} - {target_config_dir.parent.name}"
     )
     return target_config_dir
 
@@ -144,16 +144,16 @@ async def import_config(
     *,
     user_id: str | None = None,
 ) -> None:
-    """从 OK-WW 脚本目录导入当前配置，覆盖 MAS 用户配置目录。
+    """从 OK-WW 脚本目录导入当前配置，覆盖 MAS 账号配置目录。
 
-    导入是显式覆盖：覆盖前先把现有 MAS 配置存底（进该用户的备份池，「配置
+    导入是显式覆盖：覆盖前先把现有 MAS 配置存底（进该账号的备份池，「配置
     恢复」里可手工找回），替换失败时按存底自动回滚并显式报错——导入失败
     不能只给用户留下一个空目录。
 
     Args:
         script: 已解析的 OK-WW 脚本配置。
         target_directory: 公共入口的默认目标；本专项按账号来源解析实际 owner。
-        user_id: 目标用户 ID；共享来源仍写入 Default 目录，但备份归该用户。
+        user_id: 目标账号 ID；共享来源仍写入 Default 目录，但备份归该账号。
 
     Raises:
         TypeError: 脚本不是 OK-WW 类型。
@@ -165,7 +165,7 @@ async def import_config(
     script_config = cast(OkwwConfig, script)
     script_id = str(script.uid)
     if not isinstance(script_config, OkwwConfig):
-        raise TypeError(f"脚本配置类型错误: {script_id} 不是 OK-WW 类型")
+        raise TypeError(f"托管配置类型错误: {script_id} 不是 OK-WW 类型")
 
     if not user_id:
         raise ValueError("OK-WW 导入配置必须指定账号")

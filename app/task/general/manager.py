@@ -72,11 +72,11 @@ class GeneralManager(ScriptManagerBase):
         if not isinstance(
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], GeneralConfig
         ):
-            return "脚本配置类型错误, 不是通用脚本类型"
+            return "托管配置类型错误, 不是通用托管类型"
         if not Config.ScriptConfig[
             uuid.UUID(self.script_info.script_id)
         ].Script.ScriptPath:
-            return "未填写脚本路径, 请检查脚本配置中的脚本路径设置！"
+            return "未填写脚本路径, 请检查托管配置中的脚本路径设置！"
         if (
             Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
@@ -103,13 +103,13 @@ class GeneralManager(ScriptManagerBase):
         if not Config.ScriptConfig[
             uuid.UUID(self.script_info.script_id)
         ].Script.ConfigPath:
-            return "未填写配置路径, 请检查脚本配置中的配置路径设置！"
+            return "未填写配置路径, 请检查托管配置中的配置路径设置！"
         # 日志路径未填时每轮尝试都会白等 60 秒日志文件再失败, 属于确定性配置错误,
         # 在任务开始前拦下; 目录不存在不在这里拦, 有的脚本首次运行才创建日志目录
         if not Config.ScriptConfig[
             uuid.UUID(self.script_info.script_id)
         ].Script.LogPath:
-            return "未填写日志路径, 请检查脚本配置中的日志路径设置！"
+            return "未填写日志路径, 请检查托管配置中的日志路径设置！"
         if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.Enabled:
             game_path = Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
@@ -126,11 +126,11 @@ class GeneralManager(ScriptManagerBase):
                 ].Game.EmulatorIndex
                 in ["", "-"]
             ):
-                return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
+                return "未完成模拟器配置, 请检查托管配置中的模拟器设置！"
             elif Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].Game.Type == "Client" and (game_path is None or not game_path.exists()):
-                return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
+                return "未完成游戏配置, 请检查托管配置中的游戏设置！"
             elif Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].Game.Type == "URL" and (
@@ -139,7 +139,7 @@ class GeneralManager(ScriptManagerBase):
                     uuid.UUID(self.script_info.script_id)
                 ].Game.ProcessName
             ):
-                return "未完成URL配置, 请检查脚本配置中的URL和进程名称设置！"
+                return "未完成URL配置, 请检查托管配置中的URL和进程名称设置！"
 
         return "Pass"
 
@@ -180,7 +180,7 @@ class GeneralManager(ScriptManagerBase):
             )
 
     def _snapshot_external_config(self) -> None:
-        """保存脚本原生来源配置，作为用户切换和任务结束时的恢复基线。"""
+        """保存脚本原生来源配置，作为账号切换和任务结束时的恢复基线。"""
         self.external_config_exists = self.script_config_path.exists()
 
         if self.external_config_exists:
@@ -197,14 +197,14 @@ class GeneralManager(ScriptManagerBase):
         self.external_config_snapshot_ready = True
 
     def _restore_external_config(self) -> None:
-        """恢复脚本原生来源配置，隔离 MAS 用户配置的运行结果。"""
+        """恢复脚本原生来源配置，隔离 MAS 账号配置的运行结果。"""
         if not self.external_config_snapshot_ready:
             return
 
         if not self.external_config_exists:
             # 任务前原生配置不存在: 现场内容只可能是本任务注入的 MAS 配置
-            # (查看会话恢复的备份 / 非原生来源用户的下发), 删除即恢复「不存在」
-            # 原状——混合用户时原生来源用户也因此拿到干净的原始现场
+            # (查看会话恢复的备份 / 非原生来源账号的下发), 删除即恢复「不存在」
+            # 原状——混合账号时原生来源账号也因此拿到干净的原始现场
             self._remove_script_config()
             logger.info("脚本任务前原生配置不存在, 已清理任务注入的配置")
             return
@@ -239,13 +239,13 @@ class GeneralManager(ScriptManagerBase):
     async def prepare(self):
         """运行前准备"""
 
-        # 锁定脚本配置并加载用户配置
+        # 锁定脚本配置并加载账号配置
         self.config_locks[
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].uid
         ] = await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock_x()
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         self.user_config = self.script_config.UserData
-        logger.success(f"{self.script_info.script_id}已锁定, 通用脚本配置提取完成")
+        logger.success(f"{self.script_info.script_id}已锁定, 通用托管配置提取完成")
 
         script_config_path = self.script_config.Script.ConfigPath
         if script_config_path is None:
@@ -270,7 +270,7 @@ class GeneralManager(ScriptManagerBase):
             ].Game.Type in ["Client", "URL"]:
                 self.game_process_manager = ProcessManager()
 
-        # 构建用户列表
+        # 构建账号列表
         if self.task_info.mode == "ScriptConfig":
             self.script_info.user_list = [
                 UserItem(
@@ -282,14 +282,14 @@ class GeneralManager(ScriptManagerBase):
                 self.user_config.items()
             )
         logger.info(
-            f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
+            f"账号列表加载完成, 已筛选账号数: {len(self.script_info.user_list)}"
         )
 
         logger.info(f"记录脚本原生来源配置: {self.script_config_path}")
         self._recover_previous_run()
         self._snapshot_external_config()
 
-        # 任务级一次性归档脚本原生配置（脚本级池，指纹去重，失败不阻断
+        # 任务级一次性归档脚本原生配置（托管级池，指纹去重，失败不阻断
         # 任务）：此刻 ConfigPath 仍是任务动手前的完整现场，必须在任何
         # 换入/写入前归档
         from .tools.backup_archive import archive_native_backup
@@ -317,7 +317,7 @@ class GeneralManager(ScriptManagerBase):
         await self.prepare()
 
         if not isinstance(self.script_config, GeneralConfig):
-            raise RuntimeError("脚本配置类型错误, 不是通用脚本类型")
+            raise RuntimeError("托管配置类型错误, 不是通用托管类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             current_user = self.script_info.user_list[self.script_info.current_index]
@@ -331,7 +331,7 @@ class GeneralManager(ScriptManagerBase):
             use_mas_config = self._user_uses_mas_config()
             user_id = self.script_info.user_list[self.script_info.current_index].user_id
             logger.info(
-                f"用户 {user_id} 配置来源: "
+                f"账号 {user_id} 配置来源: "
                 f"{'MAS 独立配置' if use_mas_config else '脚本原生来源配置'}"
             )
             if not use_mas_config:
@@ -353,7 +353,7 @@ class GeneralManager(ScriptManagerBase):
             try:
                 await self.run_user_task(current_user, task)
             finally:
-                # 查看会话（viewOnly）不重拍快照：用户级查看会把该用户
+                # 查看会话（viewOnly）不重拍快照：账号级查看会把该账号
                 # ConfigFile 下发进原生配置（GUI 所见即备份），重拍会把被
                 # 污染的原生存成新快照、覆盖 prepare 时的真实原状，收尾
                 # 还原时原生就被固定成备份内容
@@ -378,9 +378,9 @@ class GeneralManager(ScriptManagerBase):
                 summary = self.collect_user_results()
 
                 title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
-                # 按用户交错组装「用户结果行 + 该用户进程信息」：
-                # 多账号任务时各用户信息归属清晰，不再全部平铺。
-                # 「失败」类型条目仅在本次任务存在未完成用户时纳入报告，
+                # 按账号交错组装「账号结果行 + 该账号进程信息」：
+                # 多账号任务时各账号信息归属清晰，不再全部平铺。
+                # 「失败」类型条目仅在本次任务存在未完成账号时纳入报告，
                 # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合
                 has_uncompleted = summary.uncompleted_count > 0
                 user_result_text = self._render_user_results(

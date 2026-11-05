@@ -2,7 +2,7 @@
 
 露出哪些键、按什么顺序与分组，由 ``managed_fields`` 的显式字段表决定（它同时是
 运行时白名单的来源）；值来自用户当前安装的 ``config.json``/``config.yaml``，
-``Managed.Options`` 只保存用户覆盖值。原生配置里不存在的键不显示，因此老版本
+``Managed.Options`` 只保存显式覆盖值，所属计划可以是托管共享计划或账号独立计划。原生配置里不存在的键不显示，因此老版本
 引擎缺字段时表单相应变短，已有旧配置执行路径不受影响。
 """
 
@@ -235,7 +235,7 @@ _SRA_DESCRIPTIONS = {
     "currencyWars.strategyIndex": "由 SRA 维护的策略序号，一般无需修改；格式见 SRA 内的同名设置。",
     "currencyWars.username": (
         "游戏内显示的开拓者名称，SRA 用它在货币战争里识别自己的角色。"
-        "留空时使用该用户在 MAS 中的用户名。"
+        "留空时使用该账号在 MAS 中的账号名称。"
     ),
 }
 _SRA_USERNAME_KEY = "currencyWars.username"
@@ -348,8 +348,8 @@ def list_sra_managed_modules(
             native = values[key]
             value = effective.get(key, native)
             if key == _SRA_USERNAME_KEY:
-                # 运行时没填覆盖值就用 MAS 用户名，不用原生 profile 里的名字；
-                # 表单显示为空，与说明「留空时使用 MAS 用户名」一致。单项恢复后
+                # 运行时没填覆盖值就用 MAS 账号名，不用原生 profile 里的名字；
+                # 表单显示为空，与说明「留空时使用 MAS 账号名」一致。单项恢复后
                 # 前端显示 native_value，所以它也按空串给。
                 native = ""
                 if not overrides.get(key):

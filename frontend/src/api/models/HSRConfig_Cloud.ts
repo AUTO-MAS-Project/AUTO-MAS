@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type HSRConfig_Cloud = {
     /**
-     * 各用户最近一次确认已登录的时间（user_id → ISO 时间），只读展示用， 由运行结束后的写回与「登录云游戏」接口维护
+     * 各账号最近一次确认已登录的时间（user_id → ISO 时间），只读展示用， 由运行结束后的写回与「登录云游戏」接口维护
      */
     LastLogin?: (string | null);
     /**

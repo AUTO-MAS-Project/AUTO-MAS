@@ -45,7 +45,7 @@ class CycleEntry:
     queue_item_id: str
     script_id: str
     script_name: str
-    index: int  # 在任务脚本列表中的下标
+    index: int  # 在任务托管列表中的下标
     next_run_at: datetime
     is_due: bool
 
@@ -196,7 +196,7 @@ def next_after_finish(queue_item, finished_at: datetime) -> datetime | None:
 def collect_cycle_entries(queue, script_config, now: datetime) -> list[CycleEntry]:
     """收集队列中已启用循环的条目。
 
-    ``index`` 必须与任务脚本列表对齐，所以过滤条件要和建任务时完全一致：
+    ``index`` 必须与任务托管列表对齐，所以过滤条件要和建任务时完全一致：
     先按 ``_TaskManager._queue_script_ids`` 去掉未选脚本，再按 ``Task.prepare``
     去掉已被删除的脚本；两步都会推进下标，之后才轮到「是否启用循环」。
     """
@@ -254,7 +254,7 @@ def sort_for_preview(entries: list[CycleEntry]) -> list[CycleEntry]:
     return due_entries(entries) + waiting
 
 
-# 计入成功的用户状态：BetterGI 执行层「部分失败」（有步骤失败但已跳过继续、不重试）
+# 计入成功的账号状态：BetterGI 执行层「部分失败」（有步骤失败但已跳过继续、不重试）
 # 按既有决策仍算跑成功，故显式放行，避免它被判成失败而触发重跑。
 SUCCESS_USER_STATUSES = ("完成", "部分失败")
 
@@ -262,7 +262,7 @@ SUCCESS_USER_STATUSES = ("完成", "部分失败")
 def is_script_success(script_status: str, user_statuses: Iterable[str]) -> bool:
     """判断这一轮脚本是否算跑成功。
 
-    脚本级状态是「完成」直接算成功；否则要求所有用户都完成——用户全部完成而
+    托管级状态是「完成」直接算成功；否则要求所有账号都完成——账号全部完成而
     脚本状态没来得及更新时，不该判成失败。「部分失败」按成功计（见上方常量）。
     """
 

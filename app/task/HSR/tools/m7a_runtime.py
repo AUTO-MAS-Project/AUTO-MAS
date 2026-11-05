@@ -172,7 +172,7 @@ class M7ARunner:
     def set_output_line_callback(
         self, callback: Callable[[str], Awaitable[None] | None] | None
     ) -> None:
-        """换成当前用户的逐行输出回调（运行器在同一轮的用户之间复用）。"""
+        """换成当前账号的逐行输出回调（运行器在同一轮的账号之间复用）。"""
 
         self._output_line_callback = callback
 

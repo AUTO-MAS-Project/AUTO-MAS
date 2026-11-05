@@ -135,7 +135,7 @@ def _log_preview_failure(script_id: str | None, project: Any, reason: str) -> No
     logger.warning(
         mask_home_path(
             redact_text(
-                f"MFW interface 预览失败（脚本 {script_id or '未指定'}，"
+                f"MFW interface 预览失败（托管 {script_id or '未指定'}，"
                 f"项目 {project or '未设置'}）：{reason}"
             )
         )
@@ -168,7 +168,7 @@ def _clear_no_fallback_defaults(
 ) -> None:
     """特调声明不回落的字符串字段（``no_default_fallback_inputs``），预览里的 ``default`` 置空。
 
-    运行器对它们没填时下发空串、不回落 default；用户页把没填的字段显示成 default（与运行器回落
+    运行器对它们没填时下发空串、不回落 default；账号页把没填的字段显示成 default（与运行器回落
     同口径），不置空的话 M9A 的自定义兑换码框里会显示「占位」，运行时实际却是空串。default 在
     前端只用于显示与数字字段的空值校验，这几个都是字符串字段，置空只影响显示。
     """
@@ -239,9 +239,9 @@ def maafw_asset_file_path(root: str, asset_path: str) -> Path:
 
 
 async def maafw_script_icon_file(script_id: str) -> Path:
-    """``/maafw/icon``：脚本列表头像用的项目图标，即 interface 顶层 ``icon`` 指的图片。
+    """``/maafw/icon``：托管列表头像用的项目图标，即 interface 顶层 ``icon`` 指的图片。
 
-    只读已经导入的副本，不触发导入：脚本列表每次渲染都会来取。取不到（脚本不对、
+    只读已经导入的副本，不触发导入：托管列表每次渲染都会来取。取不到（脚本不对、
     副本还没建、interface 读不了、没写 icon、路径不合法或文件不在）一律
     ``FileNotFoundError``，端点映射成 404，前端回退到类型图标。
     """

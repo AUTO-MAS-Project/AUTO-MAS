@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type SrcConfig_Info = {
     /**
-     * SRC 脚本名称
+     * SRC 托管名称
      */
     Name?: (string | null);
     /**

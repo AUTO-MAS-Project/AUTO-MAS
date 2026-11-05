@@ -38,11 +38,15 @@ export interface InitializationProgress {
   runtimeMode?: RuntimeLaunchMode
   /** 当前阶段没有可靠总量，界面应展示持续活动状态而不是精确百分比。 */
   indeterminate?: boolean
-  /** 以下七项只有 Runtime 链路产生，原样透传 `BootstrapProgressUpdate` 的同名字段。 */
+  /** 以下字段只有 Runtime 链路产生，原样透传 `BootstrapProgressUpdate` 的同名字段。 */
   runtimeStage?: string
   runtimeStatus?: string
   item?: string
   source?: string
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
   bytesPerSecond?: number
   current?: number
   total?: number
@@ -272,6 +276,10 @@ export class InitializationService {
         runtimeStatus: update.runtimeStatus,
         item: update.item,
         source: update.source,
+        targetVersion: update.targetVersion,
+        sourceName: update.sourceName,
+        sourceIndex: update.sourceIndex,
+        sourceCount: update.sourceCount,
         bytesPerSecond: update.bytesPerSecond,
         current: update.current,
         total: update.total,

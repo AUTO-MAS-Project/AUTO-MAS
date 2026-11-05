@@ -2,6 +2,14 @@ import { detachPromptVirtualDisplay } from './services/virtualDisplayPromptActio
 import { observeDiagnosticExport, observeDataBackup } from './services/diagnosticAnalytics'
 import { beginMainFeature } from './services/featureAnalytics'
 import { analyticsDuration } from './services/analyticsPolicy'
+import {
+  isScheduledWakeupLaunch,
+  keepAwakeForScheduledWakeup,
+  observeScheduledWakeupQuit,
+  cancelScheduledWakeupQuit,
+  finishScheduledWakeupQuit,
+  prepareSystemResumeRecovery,
+} from './services/scheduledWakeup'
 import { readBackendDocument } from './services/backendConfig'
 import {
   app,
@@ -297,7 +305,8 @@ let saveWindowStateTimeout: NodeJS.Timeout | null = null
 let mainRendererRecovery: ReturnType<typeof attachRendererRecovery> | null = null
 const rendererCrashes: number[] = []
 let isInitialStartup = true // 标记是否为初次启动
-const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
+const isScheduledWakeup = isScheduledWakeupLaunch(process.argv)
+const isAutoStart = process.argv.includes('--auto-start') || isScheduledWakeup
 
 // 配置接口
 interface AppConfig extends DesktopMascotHostPreferences {
@@ -620,6 +629,7 @@ function cancelQuitRequest(token?: number): void {
   quitPreparationExpired = false
   quitRequestInFlight = false
   relaunchAfterQuit = false
+  cancelScheduledWakeupQuit()
   showMainWindow()
 }
 
@@ -638,7 +648,6 @@ function finishCoordinatedQuit(): void {
     saveWindowStateTimeout = null
   }
   destroyTray()
-  if (relaunchAfterQuit) app.relaunch()
   app.quit()
 }
 
@@ -667,6 +676,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
     forceQuitInProgress = retryableState.forceQuitInProgress
     quitRequestInFlight = retryableState.quitRequestInFlight
     relaunchAfterQuit = retryableState.relaunchAfterQuit
+    cancelScheduledWakeupQuit()
     if (mainWindow && !mainWindow.isDestroyed()) {
       showMainWindow()
     } else if (app.isReady()) {
@@ -688,6 +698,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
 function requestRendererClose(reason: string, confirmRunningTasks = false): void {
   if (!canRequestRendererClose({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight }))
     return
+  observeScheduledWakeupQuit({ automatic: false })
   closeTelemetry ??= beginMainFeature('app_close_finished')
   const win = mainWindow
   if (!win || win.isDestroyed()) {
@@ -931,6 +942,9 @@ function createWindow() {
   nativeCloseHandlerReady = false
   desktopMascot.attachMainWindow(win)
   lastWindowActivity = null
+
+  // 页面拒绝关闭时撤销唤醒重启义务，不忽略 beforeunload 的阻止。
+  win.webContents.on('will-prevent-unload', cancelScheduledWakeupQuit)
 
   win.webContents.on('did-start-loading', () => {
     nativeCloseHandlerReady = false
@@ -1980,8 +1994,9 @@ ipcMain.handle('app-restart-on-quit', () => {
 })
 
 // renderer 仅在后端优雅关闭或超时兜底完成后调用，作为最终退出确认。
-ipcMain.on('app-backend-close-observed', event => {
+ipcMain.on('app-backend-close-observed', (event, request: unknown) => {
   if (!isAnalyticsSender(event)) return
+  observeScheduledWakeupQuit(request)
   closeTelemetry ??= beginMainFeature('app_close_finished')
   closeTelemetryKind = 'backend'
 })
@@ -2007,6 +2022,7 @@ ipcMain.handle('app-wait-for-quit-confirmation', () => {
 ipcMain.handle('app-prepare-quit', () => {
   if (coordinatedQuit || forceQuitInProgress) return null
   if (activeQuitPreparation !== null) return activeQuitPreparation
+  observeScheduledWakeupQuit({ automatic: false })
   closeTelemetry ??= beginMainFeature('app_close_finished')
   clearQuitFallback()
   quitConfirmationPending = false
@@ -2449,7 +2465,8 @@ ipcMain.handle('set-runtime-launch-mode', async (_event, mode: unknown) => {
 // 在沙箱环境下运行会导致无法启动子进程，强制禁用沙箱
 app.commandLine.appendSwitch('no-sandbox')
 
-app.on('second-instance', () => {
+app.on('second-instance', (_event, argv) => {
+  if (keepAwakeForScheduledWakeup(argv)) return
   if (mainWindow) {
     showMainWindow()
   }
@@ -2464,6 +2481,7 @@ app.on('child-process-gone', (_event, details) => {
 })
 
 app.on('will-quit', () => {
+  finishScheduledWakeupQuit({ restart: relaunchAfterQuit })
   disposeAnalytics()
   desktopMascot.dispose()
   globalShortcut.unregisterAll()
@@ -2483,6 +2501,7 @@ app.on('before-quit', event => {
 })
 
 app.whenReady().then(async () => {
+  keepAwakeForScheduledWakeup(process.argv)
   recordDesktopStartup('Electron 就绪')
   const startupConfig = loadConfig()
   void startDesktopStartup({
@@ -2500,7 +2519,7 @@ app.whenReady().then(async () => {
   registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
   refreshAnalyticsPreference()
   analyticsService.recordAppStarted({
-    launch_kind: isAutoStart ? 'auto_start' : 'manual',
+    launch_kind: isScheduledWakeup ? 'scheduled_wakeup' : isAutoStart ? 'auto_start' : 'manual',
     runtime_mode:
       getBackendOwnership() === 'owned'
         ? resolveRuntimeLaunchModeDetail(getAppRoot()).mode
@@ -2537,6 +2556,7 @@ app.whenReady().then(async () => {
   }
 
   powerMonitor.on('resume', () => {
+    prepareSystemResumeRecovery()
     logger.info('主进程检测到系统恢复，通知 renderer 检查后端连接')
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('system-resumed')

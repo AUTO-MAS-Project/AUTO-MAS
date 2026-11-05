@@ -59,6 +59,23 @@
 
         <!-- 模拟器管理 -->
         <div class="form-section">
+          <a-form-item>
+            <template #label>
+              <FieldLabelWithHint
+                :text="t('core.edit.updateTakeoverSwitch')"
+                :hint="t('core.edit.srcProgramUpdateHint')"
+                variant="form"
+              />
+            </template>
+            <a-switch
+              v-model:checked="srcConfig.Update.TakeoverEnabled"
+              :disabled="isInitializing"
+              @change="(value: boolean) => handleChange('Update', 'TakeoverEnabled', value)"
+            />
+          </a-form-item>
+        </div>
+
+        <div class="form-section">
           <div class="section-header">
             <h3>{{ t('core.edit.emulators') }}</h3>
           </div>

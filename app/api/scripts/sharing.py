@@ -37,12 +37,12 @@ from app.utils import get_logger
 
 
 class ScriptShareInspectIn(BaseModel):
-    scriptId: str = Field(..., description="脚本ID")
+    scriptId: str = Field(..., description="托管ID")
     config_name: str = Field(..., min_length=1, max_length=64, description="配置名称")
 
 
 class ScriptTemplateImportIn(BaseModel):
-    scriptId: str = Field(..., description="脚本ID")
+    scriptId: str = Field(..., description="托管ID")
     configKey: str = Field(..., description="配置中心配置标识")
     versionNo: Optional[int] = Field(
         default=None, ge=1, description="版本号, 为空表示已发布的最新版本"
@@ -50,7 +50,7 @@ class ScriptTemplateImportIn(BaseModel):
 
 
 class ScriptUploadIn(BaseModel):
-    scriptId: str = Field(..., description="脚本ID")
+    scriptId: str = Field(..., description="托管ID")
     config_name: str = Field(..., min_length=1, max_length=64, description="配置名称")
     description: str = Field(..., min_length=1, max_length=500, description="描述")
     acknowledged: bool = Field(
@@ -70,13 +70,13 @@ class ShareInspectOut(OutBase):
 
 
 router = APIRouter()
-logger = get_logger("脚本管理 API")
+logger = get_logger("托管管理 API")
 
 
 @router.post(
     "/import/web",
     tags=["Update"],
-    summary="从配置中心导入脚本配置",
+    summary="从配置中心导入托管配置",
     response_model=OutBase,
     status_code=200,
 )
@@ -101,7 +101,7 @@ async def import_script_from_web(script: ScriptTemplateImportIn = Body(...)) -> 
 @router.post(
     "/share/inspect",
     tags=["Get"],
-    summary="分享前检查脚本配置中的隐私风险",
+    summary="分享前检查托管配置中的隐私风险",
     response_model=ShareInspectOut,
     status_code=200,
 )
@@ -123,7 +123,7 @@ async def inspect_script_share(
 @router.post(
     "/Upload/web",
     tags=["Action"],
-    summary="分享脚本配置到配置中心",
+    summary="分享托管配置到配置中心",
     response_model=OutBase,
     status_code=200,
 )

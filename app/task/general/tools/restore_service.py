@@ -18,17 +18,17 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""通用脚本配置恢复服务：MAS 用户配置副本池 / 脚本原生配置池（声明式池）。
+"""通用脚本配置恢复服务：MAS 账号配置副本池 / 脚本原生配置池（声明式池）。
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底全部由基座
 （``app.utils.common.config.restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
-- ``mas`` 池（用户级）：该用户的 ``ConfigFile`` 目录副本（General 恒按
-  用户隔离，无 MAA 式 owner 解耦），恢复 = 整目录回写；MAS 编辑页字段
+- ``mas`` 池（账号级）：该账号的 ``ConfigFile`` 目录副本（General 恒按
+  账号隔离，无 MAA 式 owner 解耦），恢复 = 整目录回写；MAS 编辑页字段
   不注入原生配置，无侧车、无字段回填。
-- ``native`` 池（脚本级）：用户自填的 ``Script.ConfigPath``（Folder 整
+- ``native`` 池（托管级）：用户自填的 ``Script.ConfigPath``（Folder 整
   目录 / File 单文件两态），按物理配置根指纹分桶，恢复前强制存底当前。
 
 两池均无定制 preview：通用脚本配置格式任意（透传），MAS 不解析内容，
@@ -61,10 +61,10 @@ logger = get_logger("通用脚本配置恢复")
 
 
 def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
-    """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
+    """恢复守卫：目标账号必须存在，避免把配置恢复进孤儿目录。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
-        raise ValueError("通用脚本用户不存在，请刷新后重试")
+        raise ValueError("通用脚本账号不存在，请刷新后重试")
 
 
 def _native_config_path(ctx: _utils_config_restore.RestoreContext) -> Path | None:
@@ -83,7 +83,7 @@ def _native_config_mode(ctx: _utils_config_restore.RestoreContext) -> str:
 async def _mas_files(
     ctx: _utils_config_restore.RestoreContext,
 ) -> dict[str, Path] | None:
-    """归档内容 = 用户 ConfigFile 目录（恒按用户，无侧车；空目录返回 ``None``）。"""
+    """归档内容 = 账号 ConfigFile 目录（恒按账号，无侧车；空目录返回 ``None``）。"""
 
     _user_guard(ctx)
     return collect_mas_files(mas_config_dir(ctx.script_id, ctx.user_id)) or None

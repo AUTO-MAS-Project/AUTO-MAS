@@ -20,11 +20,11 @@ export type MaaUserConfig_Data = {
      */
     LastResVersion?: (string | null);
     /**
-     * 理智流程升级前完整用户配置 JSON
+     * 理智流程升级前完整账号配置 JSON
      */
     StaminaPipelineBackup?: (string | null);
     /**
-     * 理智流程配置迁移版本与升级前完整用户配置（关闭的旧计划仍可找回）
+     * 理智流程配置迁移版本与升级前完整账号配置（关闭的旧计划仍可找回）
      */
     StaminaPipelineVersion?: (number | null);
 };

@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type OkNteConfig_Script = {
     /**
-     * OkNte 运行参数建议由用户配置（-t / -e 由用户配置 Task 决定），但仍保留高级参数入口
+     * OkNte 运行参数建议由账号配置（-t / -e 由账号配置 Task 决定），但仍保留高级参数入口
      */
     Arguments?: (string | null);
     /**

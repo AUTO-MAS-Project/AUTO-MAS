@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type GeneralConfig_Info = {
     /**
-     * 脚本名称
+     * 托管名称
      */
     Name?: (string | null);
     /**

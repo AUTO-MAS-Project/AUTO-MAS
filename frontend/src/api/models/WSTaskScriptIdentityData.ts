@@ -3,15 +3,15 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 任务关联的脚本静态标识。
+ * 任务关联的托管静态标识。
  */
 export type WSTaskScriptIdentityData = {
     /**
-     * 脚本 ID
+     * 托管 ID
      */
     scriptId: string;
     /**
-     * 脚本类型键
+     * 托管类型键
      */
     scriptType: string;
 };

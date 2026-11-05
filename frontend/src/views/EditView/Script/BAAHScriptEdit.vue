@@ -39,6 +39,12 @@
           </a-row>
         </div>
 
+        <BAAHProgramUpdateSettings
+          v-model:update="baahConfig.Update"
+          :ready="!pageLoading && !isSaving"
+          @save="(key, value) => handleChange('Update', key, value)"
+        />
+
         <!-- 脚本配置 -->
         <div class="form-section">
           <div class="section-header">
@@ -229,6 +235,8 @@
 </template>
 
 <script setup lang="ts">
+import BAAHProgramUpdateSettings from './components/BAAHProgramUpdateSettings.vue'
+import type { BAAHConfig_Update } from '@/api'
 import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
@@ -290,6 +298,7 @@ interface BAAHEmulatorForm {
 }
 
 interface BAAHScriptConfigForm {
+  Update: BAAHConfig_Update
   Info: BAAHInfoForm
   Script: BAAHScriptForm
   Run: BAAHRunForm
@@ -297,6 +306,7 @@ interface BAAHScriptConfigForm {
 }
 
 const getDefaultBAAHConfig = (): BAAHScriptConfigForm => ({
+  Update: { TakeoverEnabled: false, Channel: 'stable', MirrorChyanCDK: '' },
   Info: {
     Name: '',
   },
@@ -353,6 +363,7 @@ const loadScript = async () => {
       return
     }
     const config = detail.config as Partial<BAAHScriptConfigForm>
+    Object.assign(baahConfig.Update, config.Update || {})
     Object.assign(baahConfig.Info, config.Info || {})
     Object.assign(baahConfig.Script, config.Script || {})
     Object.assign(baahConfig.Run, config.Run || {})

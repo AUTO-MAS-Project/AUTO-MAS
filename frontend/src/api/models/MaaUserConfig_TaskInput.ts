@@ -68,7 +68,7 @@ export type MaaUserConfig_TaskInput = {
      */
     CultivateTargets?: (string | null);
     /**
-     * 库存保持计划（快速配置面板维护；MAA 侧同名 PlanList 为透传载体）
+     * 库存保持计划（覆写常规配置面板维护；MAA 侧同名 PlanList 为透传载体）
      */
     DepotMaintainPlans?: (string | null);
     /**

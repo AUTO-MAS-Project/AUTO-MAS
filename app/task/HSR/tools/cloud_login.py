@@ -19,7 +19,7 @@
 #   Contact: DLmaster_361@163.com
 
 
-"""「登录云游戏」：为一个 MAS 用户起云浏览器，用三月七的 ``game`` 任务登录。
+"""「登录云游戏」：为一个 MAS 账号起云浏览器，用三月七的 ``game`` 任务登录。
 
 三月七的 ``game`` 任务只调 ``game.start()``：云模式下就是「连浏览器 → 等用户
 在窗口里登录 → 进云游戏 → 退出」，是现成的登录探针，MAS 不自己判断页面状态。
@@ -68,7 +68,7 @@ _LOGGED_IN_EVIDENCE = "正在检测云游戏剩余时长"
 
 
 class HSRCloudLoginBusyError(RuntimeError):
-    """脚本正在运行，或三月七目录被其他任务占用。"""
+    """托管正在运行，或三月七目录被其他任务占用。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,18 +86,18 @@ async def run_cloud_login(
     user_name: str,
     log: Callable[[str], None] | None = None,
 ) -> CloudLoginOutcome:
-    """为指定用户登录云·星穹铁道，成功后写 ``Cloud.LastLogin``。
+    """为指定账号登录云·星穹铁道，成功后写 ``Cloud.LastLogin``。
 
     Raises:
         ValueError: 脚本不是云平台，或云前置不满足。
-        HSRCloudLoginBusyError: 脚本正在运行或三月七目录被占用。
+        HSRCloudLoginBusyError: 托管正在运行或三月七目录被占用。
     """
 
     append_log = log or (lambda message: logger.info(message))
     if not is_cloud_platform(script_config):
         raise ValueError("该脚本的游戏平台不是云·星穹铁道")
     if getattr(script_config, "is_locked", False):
-        raise HSRCloudLoginBusyError("该 HSR 脚本正在运行，请结束任务后再登录云游戏")
+        raise HSRCloudLoginBusyError("该 HSR 托管正在运行，请结束任务后再登录云游戏")
     error = check_cloud_prerequisites(script_config)
     if error:
         raise ValueError(error)
@@ -148,7 +148,7 @@ async def run_cloud_login(
         def watch(line: str) -> None:
             nonlocal logged_in, self_browser
             if is_m7a_self_browser_start(line):
-                # 窗口被关掉后三月七重试时会自建浏览器，登录态不会进该用户的
+                # 窗口被关掉后三月七重试时会自建浏览器，登录态不会进该账号的
                 # profile：立刻终止，这次不算登录成功。
                 if not self_browser and runner is not None:
                     self_browser = True
@@ -165,7 +165,7 @@ async def run_cloud_login(
             output_line_callback=watch,
         )
         configure_m7a_runner(runner, script_config)
-        append_log(f"用户「{user_name}」：请在弹出的云·星穹铁道窗口里登录米哈游通行证")
+        append_log(f"账号「{user_name}」：请在弹出的云·星穹铁道窗口里登录米哈游通行证")
         timeout_minutes = (
             cloud_login_timeout_minutes(script_config)
             + cloud_max_queue_minutes(script_config)
