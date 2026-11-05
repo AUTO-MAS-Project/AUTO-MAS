@@ -169,11 +169,24 @@ class NotificationManager:
         return self._transport.channel_sender(key)
 
     async def push_system_notice(
-        self, *, level: str, title: str, lines: list[str]
+        self,
+        *,
+        level: str,
+        title: str,
+        lines: list[str],
+        title_key: str | None = None,
+        line_keys: list[str] | None = None,
     ) -> None:
         from app.core.notify.system_notices import push
 
-        await push(Config, level=level, title=title, lines=lines)
+        await push(
+            Config,
+            level=level,
+            title=title,
+            lines=lines,
+            title_key=title_key,
+            line_keys=line_keys,
+        )
 
     async def flush_startup_notices(self) -> None:
         from app.core.notify.system_notices import flush

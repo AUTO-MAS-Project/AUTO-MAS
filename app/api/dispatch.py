@@ -243,12 +243,12 @@ async def get_power() -> PowerOut:
 async def set_power(task: PowerIn = Body(...)) -> OutBase:
 
     try:
+        # 已在等待的电源任务持有旧操作, 延时期间又没有倒计时窗口提示,
+        # 先等旧任务撤销，再写新选择，避免交接中的完成后操作提前消费它。
+        await System.cancel_pending_power_task()
         Config.power_sign = task.signal
         # 手动选择的电源操作不带延时, 同时清掉队列可能残留的延时
         Config.power_delay = 0
-        # 已在等待的电源任务持有旧操作, 延时期间又没有倒计时窗口提示,
-        # 因此手动改选一律撤销它, 新选择留给下一次任务结束时生效
-        await System.cancel_pending_power_task()
     except Exception as e:
         logger.opt(exception=True).warning(f"set_power失败: {type(e).__name__}: {e}")
         return OutBase(

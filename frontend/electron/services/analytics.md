@@ -16,6 +16,8 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 
 ## 当前采集范围
 
+定时唤醒复用 `app_started.launch_kind=scheduled_wakeup` 区分启动来源，复用设置保存事件记录开关变更。两者分别表示进入 ready 和配置保存，不代表硬件唤醒成功；后台计划任务对账不额外采集。
+
 | 事件 | 含义 | 自定义字段 | 频率 |
 | --- | --- | --- | --- |
 | `app_started` | 主进程进入 ready | `launch_kind`、`runtime_mode`、`release_channel` | 每进程最多一次 |

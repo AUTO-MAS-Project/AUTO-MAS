@@ -27,6 +27,32 @@ const backgroundColor = (page: Page) =>
   })
 
 test.describe('@settings user preferences', () => {
+  test('saves scheduled wake-up independently of login startup', async ({ app, page }) => {
+    await app.goto('/settings')
+    const wakeup = page.getByRole('switch', { name: 'Scheduled wake-up', exact: true })
+    const autoStart = page.getByRole('checkbox', { name: 'Start with the system', exact: true })
+    const loginEnabled = await autoStart.isChecked()
+    for (const enabled of [true, false]) {
+      const saved = settingsResponse(page, 'update')
+      await wakeup.click()
+      const response = await saved
+      expect(response.request().postDataJSON()).toMatchObject({
+        data: { Start: { IfScheduledWakeUp: enabled } },
+      })
+      expect((await response.json()).code).toBe(200)
+      await page.reload()
+      await expect(wakeup).toBeChecked({ checked: enabled })
+      await expect(autoStart).toBeChecked({ checked: loginEnabled })
+      await app.evidence(`scheduled-wakeup-${enabled ? 'enabled' : 'disabled'}`)
+      if (enabled) {
+        await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click()
+        await expect(page.locator('html')).toHaveClass(/dark/)
+        await app.evidence('scheduled-wakeup-dark')
+        await page.getByRole('button', { name: 'Switch to light mode', exact: true }).click()
+      }
+    }
+  })
+
   test('restores the persisted Runtime choice and allows switching back to auto', async ({
     app,
     page,
