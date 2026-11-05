@@ -33,6 +33,7 @@ def _first_script_success(script: ScriptItem) -> float | None:
         default=None,
     )
 
+
 async def _cancel_and_wait(task: asyncio.Task) -> None:
     if not task.done():
         task.cancel()

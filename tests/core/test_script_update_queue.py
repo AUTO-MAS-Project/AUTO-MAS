@@ -240,6 +240,7 @@ async def test_three_scripts_download_then_install_in_queue_order(
     assert events.count(("download", 1)) == (2 if change_config else 1)
     assert task._script_updates._pending is None
 
+
 @pytest.mark.asyncio
 async def test_account_switch_keeps_prefetch_and_avoids_second_download(running):
     script, user, clock = running
@@ -299,9 +300,7 @@ def test_script_success_signal_resets_on_retry_without_account_switch(monkeypatc
     script = ScriptItem("script", "", "运行", user_list=[user])
     task_info = SimpleNamespace(script_list=[script])
     user._task_item_ref = lambda: task_info
-    monkeypatch.setattr(
-        task_models, "time", SimpleNamespace(monotonic=lambda: 123.0)
-    )
+    monkeypatch.setattr(task_models, "time", SimpleNamespace(monotonic=lambda: 123.0))
     user.mark_task_completed()
     assert script.first_task_completed_at == 123.0
     user.add_log_record(datetime.now(), LogRecord())

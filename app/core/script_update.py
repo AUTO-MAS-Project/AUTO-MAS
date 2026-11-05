@@ -50,6 +50,7 @@ async def run_script_update(
     logger.debug(f"开始脚本更新：{request.script_type} {request.engine or ''}")
     return await operation(*args, **kwargs)
 
+
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
 
 
@@ -123,7 +124,10 @@ class ScriptUpdateSession:
         if next_index is None:
             return
         index = self._next_target(next_index)
-        if index is None or self._task.script_list[index].script_id == current.script_id:
+        if (
+            index is None
+            or self._task.script_list[index].script_id == current.script_id
+        ):
             # 当前脚本的不同账号及紧邻的同一脚本不重复预下载。
             return
         self._queue.watch(current, lambda: self._prefetch(index))
