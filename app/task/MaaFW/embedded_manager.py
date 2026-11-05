@@ -695,9 +695,11 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         from app.task.MaaFW.tools.core.project_update.updater import (
             discover_maafw_project_update,
         )
+        from app.task.MaaFW.tools.embedded.precheck_gate import build_precheck_gate
         from app.task.MaaFW.tools.embedded.update_mirrors import (
             github_release_mirror_urls,
         )
+        from app.task.MaaFW.tools.embedded.view_update import memo_path_factory
 
         config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if resolve_auto_update_mode(config) == "Off" or follow_source_enabled(config):
@@ -718,8 +720,22 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             resolve_update_proxy_url(config) or None, warn=logger.warning
         ).client
         interface = await asyncio.to_thread(self._load_interface_model, project)
+        marker = await asyncio.to_thread(read_view_marker, project)
+        if marker is None or not marker.get("lineage"):
+            # No trustworthy lineage: leave update discovery to the normal
+            # startup path, which can recover and revalidate project metadata.
+            return
+        gate = build_precheck_gate(
+            memo_path_factory(str(marker["lineage"])),
+            project_name=getattr(interface, "name", None),
+            proxy=proxy,
+        )
         discovery = await discover_maafw_project_update(
-            interface, source_config=source, proxy=proxy, prefer_full_package=True
+            interface,
+            source_config=source,
+            proxy=proxy,
+            prefer_full_package=True,
+            precheck_gate=gate,
         )
         if (
             discovery is None

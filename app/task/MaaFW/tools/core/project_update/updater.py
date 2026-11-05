@@ -912,6 +912,7 @@ async def discover_maafw_project_update(
     prefer_full_package: bool = False,
     version_only: bool = False,
     on_skipped: Callable[[str], None] | None = None,
+    precheck_gate: Callable[[str], Awaitable[str | None]] | None = None,
     allow_misnumbered_rollback: bool = False,
 ) -> MaaFWProjectUpdateDiscovery | None:
     """Discover a newer project version and pick where to download it from.
@@ -960,6 +961,7 @@ async def discover_maafw_project_update(
         send_log=send_log,
         prefer_full_package=prefer_full_package,
         version_only=version_only,
+        precheck_gate=precheck_gate,
         allow_misnumbered_rollback=allow_misnumbered_rollback,
     )
     if discovery is None and version_check is None and on_skipped is not None:
