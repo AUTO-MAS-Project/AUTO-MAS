@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import re
+import shutil
 import time
 import uuid
 from collections.abc import Callable
@@ -24,6 +25,8 @@ from typing import TypeVar
 import httpx
 
 from app.core.script_update import script_downloader
+from app.services.common.update.fluxdown import FluxdownResumableError
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.utils import get_logger
 
 from ...task_mapping import engine_label
@@ -335,24 +338,43 @@ async def prepare_engine_update(
     )
     if not result.update_available or result.blocked_reason or result.candidate is None:
         return None
+    # Every prefetch gets a private, randomly named directory. Until a
+    # verified PreparedUpdate is returned there is no manager-owned candidate
+    # to discard, so this entry point must own partial-file cleanup.
     directory = download_dir / uuid.uuid4().hex
-    package = _cache_package_path(directory, get_spec(engine), result.candidate, proxy)
-    package = await _download_with_space_check(
-        result.candidate,
-        package,
-        install_root=install_root,
-        download_dir=directory,
-        proxy=proxy,
-        log=_noop,
-    )
-    if package is None:
-        return None
-    return PreparedUpdate(
-        install_root.resolve(),
-        result,
-        package,
-        await asyncio.to_thread(_package_digest, package),
-    )
+    handed_off = False
+    keep_for_fluxdown = False
+    try:
+        path = _cache_package_path(directory, get_spec(engine), result.candidate, proxy)
+        try:
+            package = await _download_with_space_check(
+                result.candidate,
+                path,
+                install_root=install_root,
+                download_dir=directory,
+                proxy=proxy,
+                log=_noop,
+            )
+        except (FluxdownCancelUnconfirmed, FluxdownResumableError):
+            # A daemon may still own the output, or may need this file for
+            # resume. Never delete a destination with uncertain ownership.
+            keep_for_fluxdown = True
+            raise
+        if package is None:
+            return None
+        # Hashing runs in a worker; cancellation must wait for the file handle
+        # to close before the private directory can be removed on Windows.
+        digest = await _run_install_worker(partial(_package_digest, package))
+        candidate = PreparedUpdate(install_root.resolve(), result, package, digest)
+        handed_off = True
+        return candidate
+    finally:
+        if not handed_off and not keep_for_fluxdown:
+            # _run_install_worker waits for the deletion thread to finish
+            # even when a second cancellation arrives during cleanup.
+            await _run_install_worker(
+                partial(shutil.rmtree, directory, ignore_errors=True)
+            )
 
 
 def discard_prepared_update(prepared: PreparedUpdate) -> None:
