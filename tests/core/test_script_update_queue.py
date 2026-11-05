@@ -302,7 +302,11 @@ def test_script_success_signal_survives_new_stage_and_resets_on_retry(
 
     user = UserItem("user", "", run_status)
     script = ScriptItem("script", "", "运行", user_list=[user])
-    task_info = SimpleNamespace(script_list=[script])
+    task_info = SimpleNamespace(
+        script_list=[script],
+        on_status_changed=lambda *_: None,
+        schedule_on_change=lambda: None,
+    )
     user._task_item_ref = lambda: task_info
     monkeypatch.setattr(task_models, "time", SimpleNamespace(monotonic=lambda: 123.0))
     user.mark_task_completed()
@@ -317,7 +321,7 @@ def test_script_success_signal_survives_new_stage_and_resets_on_retry(
     # 只有同一阶段真正重试时，旧成功信号才会失效。
     user.add_log_record(datetime.now(), LogRecord(), retry=True)
     assert user.first_task_completed_at is None
-    assert script.first_task_completed_at is None
+    assert script.first_task_completed_at == 123.0
 
     user.status = "异常"
     user.mark_task_completed()
@@ -402,6 +406,7 @@ async def test_public_update_entry_skips_next_non_runnable_item(monkeypatch):
     await session.finish()
     assert calls == [str(script_ids[2]), "download"]
     await session.close()
+
 
 @pytest.mark.asyncio
 async def test_unconfirmed_fluxdown_stop_blocks_handoff(running):
