@@ -590,3 +590,96 @@ def test_external_install_refuses_to_overwrite_empty_component(tmp_path):
         install._install_missing_to_existing(extracted, external)
     assert not (external / "fluxdown.exe").exists()
     assert (external / "fluxdownd.exe").stat().st_size == 0
+
+
+def test_protected_desktop_directory_uses_managed_install(tmp_path, monkeypatch):
+    external = tmp_path / "protected"
+    external.mkdir()
+    (external / "fluxdown-desktop.exe").write_bytes(b"desktop")
+    (external / "fluxdown-agent.exe").write_bytes(b"agent")
+    (external / "fluxdownd.exe").write_bytes(b"daemon")
+    monkeypatch.setattr(
+        install, "Config", SimpleNamespace(data_path=tmp_path / "data")
+    )
+    monkeypatch.setattr(install, "_can_write_directory", lambda _: False)
+    managed, external_install = install._choose_install_target(str(external))
+    assert managed == tmp_path / "data" / "fluxdown" / "bin"
+    assert not external_install
+
+    monkeypatch.setattr(
+        install._fluxdown_cli,
+        "fluxdown_detect",
+        lambda *args, **kwargs: {"candidates": [{"path": str(external)}]},
+    )
+    managed, external_install = install._choose_install_target("")
+    assert managed == tmp_path / "data" / "fluxdown" / "bin"
+    assert not external_install
+    assert (external / "fluxdown-agent.exe").read_bytes() == b"agent"
+
+
+@pytest.mark.asyncio
+async def test_permission_changed_after_probe_retries_in_managed_directory(
+    release, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    external = tmp_path / "protected"
+    external.mkdir()
+    (external / "fluxdown-desktop.exe").write_bytes(b"desktop")
+    (external / "fluxdown-agent.exe").write_bytes(b"original agent")
+    (external / "fluxdownd.exe").write_bytes(b"original daemon")
+
+    config = GlobalConfig.build()
+    await activate_config(config)
+    await config.update(
+        type(config).model_validate(
+            {"Update": {"FluxdownPath": str(external)}}
+        ),
+        check_visibility=False,
+    )
+    flush = AsyncMock()
+    monkeypatch.setattr(
+        install,
+        "Config",
+        SimpleNamespace(setting=config, flush=flush, data_path=tmp_path / "data"),
+    )
+    monkeypatch.setattr(install, "_can_write_directory", lambda _: True)
+    monkeypatch.setattr(
+        install, "fetch_latest_release", AsyncMock(return_value=release)
+    )
+    downloaded = []
+
+    async def download(release, name, *args):
+        downloaded.append(name)
+        folder = args[2]
+        with zipfile.ZipFile(folder / name, "w") as bundle:
+            names = (
+                ("fluxdown.exe",)
+                if name == release.cli_name
+                else ("fluxdown-agent.exe", "fluxdownd.exe")
+            )
+            for binary in names:
+                bundle.writestr("package/" + binary, b"new binary")
+        return 100
+
+    monkeypatch.setattr(install, "_download_asset", download)
+    monkeypatch.setattr(cli, "fluxdown_server_shutdown", lambda: None)
+    original_copy = install._install_missing_to_existing
+
+    def access_denied(extracted, target):
+        if target == external:
+            raise PermissionError("protected folder")
+        return original_copy(extracted, target)
+
+    monkeypatch.setattr(install, "_install_missing_to_existing", access_denied)
+    result = await install._install_locked("auto", None)
+    managed = tmp_path / "data" / "fluxdown" / "bin"
+    assert result["path"] == str(managed)
+    assert Path(config.Update.FluxdownPath) == managed
+    assert (managed / "fluxdown.exe").is_file()
+    assert (managed / "fluxdown-agent.exe").is_file()
+    assert (managed / "fluxdownd.exe").is_file()
+    assert (external / "fluxdown-agent.exe").read_bytes() == b"original agent"
+    assert (external / "fluxdownd.exe").read_bytes() == b"original daemon"
+    assert not (external / "fluxdown.exe").exists()
+    assert downloaded == [release.cli_name, release.cli_name, release.server_name]
+    flush.assert_awaited_once()
