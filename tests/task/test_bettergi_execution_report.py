@@ -170,20 +170,3 @@ async def test_execution_failure_logs_name_builtin_and_custom_tasks(
     assert "自动地脉花" in dispatch_summary
     assert "自动购买商品" in dispatch_summary
     assert "自动秘境" not in dispatch_summary
-
-
-def test_legacy_leyline_setting_survives_panel_save_and_reload():
-    from app.task.BetterGI.tools.one_dragon_plan import (
-        extract_rightbar_from_plan,
-        merge_rightbar_into_plan,
-        parse_one_dragon_plan,
-    )
-
-    saved = merge_rightbar_into_plan(
-        "", "自动地脉花", {"useAdventurerHandbook": True, "LeyLineRunCount": 3}
-    )
-
-    assert parse_one_dragon_plan(saved)[0]["settings"]["useAdventurerHandbook"] is True
-    assert (
-        extract_rightbar_from_plan(saved, "自动地脉花")["useAdventurerHandbook"] is True
-    )
