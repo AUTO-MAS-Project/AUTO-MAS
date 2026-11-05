@@ -456,7 +456,9 @@ async def install_fluxdown(
         # to_thread 不会随请求取消而退出；等待整个安装收尾后才释放锁。
         task = asyncio.create_task(_install_locked(selected, proxy))
         try:
-            return await asyncio.shield(task)
+            result = await asyncio.shield(task)
+            await _report_install_progress("done")
+            return result
         except asyncio.CancelledError:
             while not task.done():
                 try:
@@ -467,49 +469,97 @@ async def install_fluxdown(
                     break
             if not task.cancelled():
                 task.exception()
+            await _report_install_progress("failed")
+            raise
+        except Exception:
+            await _report_install_progress("failed")
             raise
 
 
-async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, Any]:
-    initial_path = Config.setting.Update.FluxdownPath
-    release = await fetch_latest_release(proxy=proxy)
-    if not release.cli_sha256 or not release.server_sha256:
-        raise RuntimeError("CLI/Server 缺少可信的 SHA-256 摘要，拒绝安装")
-    tmp_root = Config.data_path / "fluxdown_install_tmp"
-    work = tmp_root / "download"
-    extracted = tmp_root / "extract"
-    shutil.rmtree(tmp_root, ignore_errors=True)
-    work.mkdir(parents=True, exist_ok=True)
-    extracted.mkdir(parents=True, exist_ok=True)
+def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
+    """优先补齐已有的用户安装目录；历史 MAS 目录迁移到统一数据目录。"""
+    managed = _install_dir()
+    legacy = Config.data_path / "fluxdown-cli"
 
+    def available(directory: Path) -> bool:
+        if directory == legacy:
+            return False
+        return any((directory / name).is_file() for name in (
+            *update_native.FLUXDOWN_EXE_NAMES, "fluxdown-desktop.exe",
+        ))
+
+    if configured_path:
+        configured = Path(configured_path)
+        directory = configured if configured.is_dir() else configured.parent
+        if available(directory):
+            return directory, directory != managed
+
+    # 没配置时也应尽量复用桌面版目录，避免另建一套 Agent/Daemon。
+    detected = _fluxdown_cli.fluxdown_detect(
+        configured_path=None, scan_budget=8.0
+    )
+    for candidate in detected["candidates"]:
+        directory = Path(candidate["path"])
+        if (directory / "fluxdown-desktop.exe").is_file():
+            return directory, True
+
+    return managed, False
+
+
+def _install_missing_to_existing(extracted: Path, target: Path) -> None:
+    """只添加缺少的程序，不覆盖用户桌面版、Agent 或 CLI 的现有版本。"""
+    if not any((target / name).is_file() for name in (
+        *update_native.FLUXDOWN_EXE_NAMES, "fluxdown-desktop.exe",
+    )):
+        raise RuntimeError("原有 FluxDown 目录已变化，请重新检测路径")
+
+    missing: list[str] = []
+    existing_cli = any(
+        (target / name).is_file() for name in update_native.FLUXDOWN_EXE_NAMES
+    )
+    if not existing_cli:
+        missing.append("fluxdown.exe")
+    for name in ("fluxdown-agent.exe", "fluxdownd.exe"):
+        if not (target / name).is_file():
+            missing.append(name)
+
+    staged: list[tuple[Path, Path]] = []
+    installed: list[Path] = []
     try:
-        cli_size = await _download_asset(
-            release, release.cli_name, release.cli_sha256, mirror, work, proxy
-        )
-        server_size = await _download_asset(
-            release,
-            release.server_name,
-            release.server_sha256,
-            mirror,
-            work,
-            proxy,
-        )
-        await asyncio.to_thread(_extract_zip, work / release.cli_name, extracted)
-        await asyncio.to_thread(_extract_zip, work / release.server_name, extracted)
-
-        # 与所有 FluxDown 下载共用占用边界；替换期间不能启动新下载。
-        def replace_installation() -> Path:
-            with _fluxdown_cli.fluxdown_install_guard():
-                return _install_from(extracted)
-
-        target = await asyncio.to_thread(replace_installation)
+        for name in missing:
+            source = extracted / name
+            if not source.is_file() or source.stat().st_size <= 0:
+                raise RuntimeError(f"解压后的 FluxDown 安装包缺少 {name}")
+            temporary = target / f".{name}.mas-install"
+            if temporary.exists():
+                raise RuntimeError(f"上次 FluxDown 安装暂存文件尚未清理: {temporary}")
+            shutil.copy2(source, temporary)
+            staged.append((temporary, target / name))
+        for temporary, destination in staged:
+            if destination.exists():
+                raise RuntimeError(f"安装过程中出现同名文件: {destination.name}")
+            os.rename(temporary, destination)
+            installed.append(destination)
+        _assert_complete_install(target)
+    except Exception:
+        for destination in installed:
+            destination.unlink(missing_ok=True)
+        raise
     finally:
-        shutil.rmtree(tmp_root, ignore_errors=True)
+        for temporary, _ in staged:
+            temporary.unlink(missing_ok=True)
 
-    # 配置失败不能报告全流程成功；比较与提交共用事务，保留下载期间的新选择。
+
+async def _save_path(
+    original_path: str, target: Path, *,
+    version: str, cli_size: int, server_size: int,
+) -> dict[str, Any]:
+    """安装结果可用才保存路径；保留下载期间用户手动改的设置。"""
+    _assert_complete_install(target)
+    await _report_install_progress("save")
     try:
         async with config_manager.transaction():
-            if Config.setting.Update.FluxdownPath != initial_path:
+            if Config.setting.Update.FluxdownPath != original_path:
                 raise RuntimeError("安装期间路径设置已变化，已保留新选择")
             await Config.setting.update(
                 type(Config.setting).model_validate(
@@ -520,13 +570,98 @@ async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, A
         await Config.flush()
     except Exception as error:
         raise RuntimeError(f"文件已安装到 {target}，但路径未保存: {error}") from error
-    logger.info(f"FluxDown {release.version} 已安装到 {target}")
+    logger.info(f"FluxDown {version} 已就绪: {target}")
     return {
-        "version": release.version,
+        "version": version,
         "path": str(target),
         "cli_size": cli_size,
         "server_size": server_size,
     }
+
+
+async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, Any]:
+    original_path = str(Config.setting.Update.FluxdownPath or "")
+    await _report_install_progress("check")
+    target, external = await asyncio.to_thread(_choose_install_target, original_path)
+    current = _fluxdown_cli.fluxdown_components(target)
+    need_cli = not current["cli"]
+    need_server = not current["server"]
+    if not need_cli and not need_server:
+        return await _save_path(
+            original_path, target, version="existing", cli_size=0, server_size=0
+        )
+
+    release = await fetch_latest_release(proxy=proxy)
+    if need_cli and not release.cli_sha256:
+        raise RuntimeError("CLI 包缺少可信 SHA-256 摘要")
+    if need_server and not release.server_sha256:
+        raise RuntimeError("Server 包缺少可信 SHA-256 摘要")
+
+    temp = Config.data_path / "fluxdown" / "install_tmp"
+    work, extracted = temp / "download", temp / "extract"
+    shutil.rmtree(temp, ignore_errors=True)
+    work.mkdir(parents=True, exist_ok=True)
+    extracted.mkdir(parents=True, exist_ok=True)
+
+    cli_size = server_size = 0
+    try:
+        if need_cli:
+            cli_size = await _download_asset(
+                release, release.cli_name, release.cli_sha256, mirror, work, proxy
+            )
+            await asyncio.to_thread(
+                _check_package, work / release.cli_name,
+                {"fluxdown.exe"},
+                {"fluxdown-agent.exe", "fluxdownd.exe", "fluxdown-desktop.exe"},
+            )
+            await _report_install_progress("extract", name=release.cli_name)
+            await asyncio.to_thread(
+                _extract_zip, work / release.cli_name, extracted
+            )
+        if need_server:
+            server_size = await _download_asset(
+                release, release.server_name, release.server_sha256,
+                mirror, work, proxy,
+            )
+            await asyncio.to_thread(
+                _check_package, work / release.server_name,
+                {"fluxdown-agent.exe", "fluxdownd.exe"},
+                {"fluxdown.exe", "fluxdown-desktop.exe"},
+            )
+            await _report_install_progress("extract", name=release.server_name)
+            await asyncio.to_thread(
+                _extract_zip, work / release.server_name, extracted
+            )
+
+        await _report_install_progress("install")
+
+        def publish() -> None:
+            with _fluxdown_cli.fluxdown_install_guard():
+                if external:
+                    _install_missing_to_existing(extracted, target)
+                    return
+                if not need_cli:
+                    current_cli = next(
+                        (target / n for n in update_native.FLUXDOWN_EXE_NAMES
+                         if (target / n).is_file()), None
+                    )
+                    if current_cli is not None:
+                        shutil.copy2(current_cli, extracted / current_cli.name)
+                if not need_server:
+                    for name in ("fluxdown-agent.exe", "fluxdownd.exe"):
+                        shutil.copy2(target / name, extracted / name)
+                _assert_complete_install(extracted)
+                _install_from(extracted)
+
+        await asyncio.to_thread(publish)
+        _assert_complete_install(target)
+    finally:
+        shutil.rmtree(temp, ignore_errors=True)
+
+    return await _save_path(
+        original_path, target, version=release.version,
+        cli_size=cli_size, server_size=server_size,
+    )
 
 
 __all__ = [
