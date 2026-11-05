@@ -95,8 +95,13 @@ async def download_package(
         _unlink(partial)
         raise HSRUpdateError(f"下载失败：{last_error}")
 
+    # This first verification also runs in a worker thread. Await the real
+    # worker's completion when cancelled before the parent prefetch removes
+    # the private directory (Windows cannot unlink an open input file).
+    from . import _run_install_worker
+
     try:
-        await asyncio.to_thread(_verify, partial, candidate)
+        await _run_install_worker(lambda: _verify(partial, candidate))
     except Exception:
         _unlink(partial)
         raise

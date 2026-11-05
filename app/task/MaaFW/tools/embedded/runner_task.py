@@ -3448,7 +3448,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         start_time = datetime.now().astimezone()
         self.cur_user_log_started_at = start_time
         self.cur_user_log = LogRecord()
-        self.cur_user_item.add_log_record(start_time, self.cur_user_log)
+        self.cur_user_item.add_log_record(start_time, self.cur_user_log, retry=True)
         # 这份日志从零开始，行号也要回到 1，否则会接着上一个账号的行号往下数
         self.script_info.log_first_line = 1
 
@@ -3494,6 +3494,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """worker 推来的阶段 / 任务起止：归进本次尝试的记录，任务开始时刷新调度台进度。"""
 
         progress = self._run_record_call(lambda: self._run_record.apply(data))
+        record = self._run_record.current
+        if record is not None and any(
+            task.outcome == "succeeded" for task in record.tasks
+        ):
+            self.cur_user_item.mark_task_completed()
         if progress is not None:
             self.cur_user_item.progress = progress
 

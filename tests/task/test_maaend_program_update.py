@@ -96,10 +96,26 @@ def installation(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_official_package_installs_and_preserves_native_interface(installation):
     root, config = installation
+    old_pipeline = root / "resource/pipeline/old.json"
+    old_pipeline.parent.mkdir(parents=True)
+    old_pipeline.write_bytes(b'{"OldNode": {}}')
+    archive = root.parent / "official.zip"
+    with zipfile.ZipFile(archive, "a") as package:
+        package.writestr("resource/pipeline/nodes.json", '{"NewNode": {}}')
+    asset = update.request_release.return_value["assets"][0]
+    asset["size"] = archive.stat().st_size
+    asset["digest"] = "sha256:" + hashlib.sha256(archive.read_bytes()).hexdigest()
     await update.update_before_run(root, config)
     assert update.read_install(root) == (Version("2.2.0"), "x86_64")
     assert not list((root.parent / "data/maaend_update").glob("download-*"))
     assert (root / "data/AutoDelivery/catalog.json").is_file()
+    assert not old_pipeline.exists()
+    assert (root / "resource/pipeline/nodes.json").read_bytes() == b'{"NewNode": {}}'
+    backups = list(
+        (script_install.workspace(root) / "retired-pipelines").rglob("old.json")
+    )
+    assert len(backups) == 1
+    assert backups[0].read_bytes() == b'{"OldNode": {}}'
     assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
     assert update.download_file.await_args.kwargs["downloader"] == "fluxdown"
     assert (
@@ -249,9 +265,10 @@ def scheduler(installation, monkeypatch):
     root, config = installation
     instance = object.__new__(manager.MaaEndManager)
     instance.script_config = config
-    instance.script_info = SimpleNamespace(log="")
+    instance.script_info = SimpleNamespace(script_id="test-script", log="")
     instance.task_info = SimpleNamespace(mode="AutoProxy", task_id="test")
     instance._program_update_prepared = False
+    instance._update_candidate = None
     monkeypatch.setattr(manager.MaaEndResourceLoader, "get_cached", Mock())
     monkeypatch.setattr(
         manager, "load_maaend_controller_protocol", lambda *args: "Win32"
@@ -259,6 +276,91 @@ def scheduler(installation, monkeypatch):
     monkeypatch.setattr(manager, "push_dispatch_log", AsyncMock())
     monkeypatch.setattr(manager.Publisher, "send", AsyncMock())
     return instance
+
+
+@pytest.mark.asyncio
+async def test_prefetch_does_not_require_idle_or_change_install(
+    installation, monkeypatch
+):
+    root, config = installation
+    original = (root / "interface.json").read_bytes()
+    monkeypatch.setattr(
+        update, "assert_idle", Mock(side_effect=RuntimeError("running"))
+    )
+    candidate = await update.prepare_update(root, config)
+    assert isinstance(candidate, update.PreparedUpdate)
+    assert (root / "interface.json").read_bytes() == original
+    assert candidate.destination.is_file()
+    assert not (script_install.workspace(root) / "transaction.json").exists()
+    with pytest.raises(RuntimeError, match="running"):
+        await update.apply_update(root, candidate)
+    monkeypatch.setattr(update, "assert_idle", Mock())
+    await update.apply_update(root, candidate)
+    assert json.loads((root / "interface.json").read_text())["version"] == "v2.2.0"
+    assert not candidate.destination.exists()
+
+
+@pytest.mark.asyncio
+async def test_prefetched_candidate_rejects_native_upgrade(installation):
+    root, config = installation
+    candidate = await update.prepare_update(root, config)
+    (root / "interface.json").write_text(
+        json.dumps({"name": "MaaEnd", "version": "v2.3.0"})
+    )
+    try:
+        with pytest.raises(ValueError):
+            await update.apply_update(root, candidate)
+        assert json.loads((root / "interface.json").read_text())["version"] == "v2.3.0"
+    finally:
+        update.discard_update(candidate)
+
+
+@pytest.mark.asyncio
+async def test_prefetched_candidate_preserves_native_upgrade_during_archive_verify(
+    installation, monkeypatch
+):
+    root, config = installation
+    candidate = await update.prepare_update(root, config)
+    native = root.parent / "native.zip"
+    with zipfile.ZipFile(root.parent / "official.zip") as original:
+        with zipfile.ZipFile(native, "w") as archive:
+            for name in original.namelist():
+                content = original.read(name)
+                if name == "interface.json":
+                    payload = json.loads(content)
+                    payload["version"] = "v2.3.0"
+                    content = json.dumps(payload).encode()
+                archive.writestr(name, content)
+    size = native.stat().st_size
+    digest = hashlib.sha256(native.read_bytes()).hexdigest()
+    verify = script_install.verify_archive
+
+    def native_upgrade_after_verify(path, *args):
+        verify(path, *args)
+        if path == candidate.destination:
+            # 另一个完整发行包经真实目录切换安装，不伪造私有回执或版本标记。
+            script_install.install_package(
+                root,
+                native,
+                size,
+                digest,
+                update.PROTECTED,
+                lambda path: update.read_install(path),
+                lambda: update.assert_idle(root),
+                threading.Event(),
+            )
+            assert update.read_install(root)[0] == Version("2.3.0")
+
+    monkeypatch.setattr(script_install, "verify_archive", native_upgrade_after_verify)
+    try:
+        with pytest.raises(ValueError):
+            await update.apply_update(root, candidate)
+        assert update.read_install(root)[0] == Version("2.3.0")
+        assert script_install.verify_installed_files(root, threading.Event())
+        assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
+        assert not (script_install.workspace(root) / "transaction.json").exists()
+    finally:
+        update.discard_update(candidate)
 
 
 @pytest.mark.asyncio
@@ -457,7 +559,6 @@ async def test_cancel_install_waits_for_worker_before_deleting_archive(
         *,
         prepare_ready=None,
     ):
-        assert prepare_ready is update.refresh_merged_pipelines
         started.set()
         assert cancelled.wait(3)
         assert archive.is_file()
@@ -477,13 +578,19 @@ async def test_cancel_install_waits_for_worker_before_deleting_archive(
 @pytest.mark.parametrize(
     "error_type", [FluxdownCancelUnconfirmed, FluxdownResumableError]
 )
+@pytest.mark.parametrize("download_path", ["destination", "request"])
 async def test_unconfirmed_downloader_keeps_its_private_destination(
-    installation, monkeypatch, error_type
+    installation, monkeypatch, error_type, download_path
 ):
     root, config = installation
 
     async def interrupted_download(_url, destination, **_kwargs):
-        destination.write_bytes(b"partial download")
+        output = (
+            destination.parent / ".mas-fluxdown-test.zip"
+            if download_path == "request"
+            else destination
+        )
+        output.write_bytes(b"partial download")
         raise error_type("下载器未确认停止")
 
     monkeypatch.setattr(
@@ -492,13 +599,16 @@ async def test_unconfirmed_downloader_keeps_its_private_destination(
     with pytest.raises(error_type):
         await update.update_before_run(root, config)
     downloads = list((root.parent / "data/maaend_update").glob("download-*"))
-    assert len(downloads) == 1
-    assert next(downloads[0].iterdir()).read_bytes() == b"partial download"
+    if error_type is FluxdownCancelUnconfirmed:
+        assert len(downloads) == 1
+        assert next(downloads[0].iterdir()).read_bytes() == b"partial download"
+    else:
+        assert not downloads
     assert update.read_install(root)[0] == Version("2.1.0")
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("source", ["GitHub", "MirrorChyan"])
+@pytest.mark.parametrize("source", ["GitHub", "MirrorChyan", "FluxDown-confirmed"])
 async def test_cancel_builtin_download_cleans_partial_zip(
     installation, monkeypatch, source
 ):
@@ -519,12 +629,19 @@ async def test_cancel_builtin_download_cleans_partial_zip(
             ),
         )
     else:
-        update.Config.setting.Update.FluxdownTakeoverAll = False
+        update.Config.setting.Update.FluxdownTakeoverAll = (
+            source == "FluxDown-confirmed"
+        )
 
     started, stopped = asyncio.Event(), asyncio.Event()
 
     async def partial_download(_url, destination, **_kwargs):
-        destination.write_bytes(b"partial ZIP")
+        output = (
+            destination.parent / ".mas-fluxdown-test.zip"
+            if source == "FluxDown-confirmed"
+            else destination
+        )
+        output.write_bytes(b"partial ZIP")
         started.set()
         try:
             await asyncio.Event().wait()
@@ -555,9 +672,14 @@ async def test_cancel_fluxdown_download_preserves_unconfirmed_partial_zip(
     started = asyncio.Event()
 
     async def partial_fluxdown_download(_url, destination, **_kwargs):
-        destination.write_bytes(b"unconfirmed FluxDown part")
+        (destination.parent / ".mas-fluxdown-test.zip").write_bytes(
+            b"unconfirmed FluxDown part"
+        )
         started.set()
-        await asyncio.Event().wait()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            raise FluxdownCancelUnconfirmed("daemon still writing") from None
 
     monkeypatch.setattr(
         update, "download_file", AsyncMock(side_effect=partial_fluxdown_download)
@@ -565,7 +687,7 @@ async def test_cancel_fluxdown_download_preserves_unconfirmed_partial_zip(
     pending = asyncio.create_task(update.update_before_run(root, config))
     await asyncio.wait_for(started.wait(), timeout=5)
     pending.cancel()
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(FluxdownCancelUnconfirmed):
         await asyncio.wait_for(pending, timeout=5)
     downloads = list((root.parent / "data/maaend_update").glob("download-*"))
     assert len(downloads) == 1
@@ -729,3 +851,18 @@ async def test_exact_release_lookup_checks_official_tag_and_draft(
     release["draft"] = True
     with pytest.raises(ValueError, match="公开发行"):
         await update.request_release_for_version(Version("2.3.0b1"), "v2.3.0-beta.1")
+
+
+@pytest.mark.asyncio
+async def test_no_update_prefetch_is_rechecked_at_script_start(
+    scheduler, installation, monkeypatch
+):
+    root, _ = installation
+    scheduler._update_candidate = "MaaEnd 当前版本无需更新"
+    check = AsyncMock(return_value="MaaEnd 当前版本无需更新")
+    apply = AsyncMock()
+    monkeypatch.setattr(update, "update_before_run", check)
+    monkeypatch.setattr(update, "apply_update", apply)
+    await scheduler._prepare_program_update(root)
+    check.assert_awaited_once()
+    apply.assert_not_awaited()

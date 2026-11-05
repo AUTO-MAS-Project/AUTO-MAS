@@ -278,7 +278,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self._current_user_item = user_item
         self._current_log_start_time = datetime.now().astimezone()
         self._current_user_log = LogRecord(status="HSR 正常运行中")
-        user_item.add_log_record(self._current_log_start_time, self._current_user_log)
+        user_item.add_log_record(
+            self._current_log_start_time, self._current_user_log, retry=attempt > 1
+        )
         user_item.status = "运行"
         if attempt <= 1:
             self._append_log(f"开始处理账号「{user_name}」")
@@ -1718,6 +1720,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             status="completed",
                             reason="外部脚本返回成功",
                         )
+                    # 周常/周本回调可能判为未完成；预取只接受最终确认成功的节点。
+                    if item.module_key == "StartGame" or any(
+                        recorded.user_id == item.user_id
+                        and recorded.module_key == item.module_key
+                        and recorded.status == "completed"
+                        for recorded in self.runtime.module_results
+                    ):
+                        self.cur_user_item.mark_task_completed()
                     self._append_log(
                         f"账号「{item.user_name}」模块「{item.module_name}」执行完成"
                     )

@@ -12,9 +12,11 @@ import asyncio
 import hashlib
 import os
 import re
+import shutil
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
 
@@ -25,6 +27,7 @@ from app.core import Config
 from app.core.script_update import download_script_package as download_file
 from app.services.script_release import request_github_release
 from app.utils import ProcessRunner
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.utils.common.proxy_env import proxy_environment
 
 from .launcher import find_upstream_pids
@@ -132,14 +135,18 @@ async def run_python(
     timeout: float = 30,
     env: Mapping[str, str] | None = None,
 ) -> str:
+    # -I 会忽略 PYTHON* 环境变量，本进程另传 -B；构建子进程通过环境继承。
+    child_env = dict(os.environ if env is None else env)
+    child_env["PYTHONDONTWRITEBYTECODE"] = "1"
     result = await ProcessRunner.run_process(
         root / REL_PYTHON_EXE,
         "-I",
+        "-B",  # 预取的只读探测/构建导入不能向当前安装补写字节码缓存。
         *args,
         cwd=root,
         timeout=timeout,
         kill_tree_on_cancel=True,
-        env=env,
+        env=child_env,
     )
     if result.returncode != 0:
         if pending_marker(root).exists():
@@ -158,6 +165,23 @@ async def installed_version(root: Path) -> Version:
     )
 
 
+async def _run_package_worker[T](operation: Callable[..., T], *args: object) -> T:
+    """取消时等校验线程释放文件，再由外层回收下载目录。"""
+    worker = asyncio.create_task(asyncio.to_thread(operation, *args))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except (asyncio.CancelledError, Exception):
+                if worker.done():
+                    break
+        if not worker.cancelled():
+            worker.exception()
+        raise
+
+
 def verify_digest(path: Path, expected: str) -> None:
     with path.open("rb") as handle:
         actual = hashlib.file_digest(handle, "sha256").hexdigest()
@@ -165,16 +189,41 @@ def verify_digest(path: Path, expected: str) -> None:
         raise ValueError("奇想盒更新包校验失败，请重新运行下载")
 
 
-async def ensure_backend_updated(root: Path) -> str:
-    """调用方持安装锁；每批用户一次，成功返回可展示的版本状态。"""
+@dataclass(frozen=True)
+class PreparedUpdate:
+    root: Path
+    target: Version
+    current: Version | None
+    repairing: bool
+    wheel: Path
+    packages: Path
+    hashes: dict[str, str]
+
+
+def _package_hashes(directory: Path) -> dict[str, str]:
+    result = {}
+    for path in directory.iterdir():
+        if path.is_file():
+            with path.open("rb") as handle:
+                result[path.name] = hashlib.file_digest(handle, "sha256").hexdigest()
+    return result
+
+
+def discard_update(candidate: PreparedUpdate | str) -> None:
+    if isinstance(candidate, PreparedUpdate):
+        shutil.rmtree(candidate.packages.parent, ignore_errors=True)
+
+
+async def prepare_update(root: Path) -> PreparedUpdate | str:
+    """下载 wheel 及隔离构建依赖，只写独立缓存。"""
+    proxy = Config.proxy
     if not (root / APP_EXE_NAME).is_file() or not (root / REL_PYTHON_EXE).is_file():
         raise RuntimeError("奇想盒安装不完整，请先在 app 内完成初始化")
-    if await asyncio.to_thread(find_upstream_pids, root):
-        raise RuntimeError("请先退出奇想盒 app 和后端，再运行更新")
     marker = pending_marker(root)
     target, name, url, digest = select_wheel(await request_release())
     # 上次安装失败时，元数据也可能损坏：强制重装，不按残留版本跳过。
     repairing = marker.exists()
+    current = None
     if not repairing:
         current = await installed_version(root)
         if current >= target:
@@ -182,19 +231,21 @@ async def ensure_backend_updated(root: Path) -> str:
     key = hashlib.sha256(os.path.normcase(str(root.resolve())).encode()).hexdigest()
     stage = Path.cwd() / "data" / "whimbox_update" / key
     stage.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix="download-", dir=stage))
     wheel = stage / name
-    await download_file(
-        url,
-        wheel,
-        timeout=30 * 60,
-        proxy=Config.proxy,
-        source="GitHub",
-    )
-    await asyncio.to_thread(verify_digest, wheel, digest)
-    # 源码依赖在准备阶段隔离构建成 wheel，不往现有后端安装构建工具。
-    # 每轮使用独立目录，避免旧缓存的源码包或版本参与离线安装。
-    with tempfile.TemporaryDirectory(prefix="packages-") as directory:
-        packages = Path(directory)
+    try:
+        await download_file(
+            url,
+            wheel,
+            timeout=30 * 60,
+            proxy=proxy,
+            source="GitHub",
+        )
+        await _run_package_worker(verify_digest, wheel, digest)
+        # Download-only preparation may build dependencies, but it never
+        # modifies the installed backend.
+        packages = stage / "packages"
+        packages.mkdir()
         await run_python(
             root,
             "-m",
@@ -209,8 +260,56 @@ async def ensure_backend_updated(root: Path) -> str:
             str(packages),
             str(wheel),
             timeout=10 * 60,
-            env=proxy_environment(Config.proxy),
+            env=proxy_environment(proxy),
         )
+        hashes = await _run_package_worker(_package_hashes, packages)
+        hashes["../" + wheel.name] = await _run_package_worker(_wheel_digest, wheel)
+        return PreparedUpdate(
+            root.resolve(), target, current, repairing, wheel, packages, hashes
+        )
+    except FluxdownCancelUnconfirmed:
+        # The daemon might still own this isolated destination. Do not
+        # delete a file that an external writer may continue to update.
+        raise
+    except BaseException:
+        # Failures and confirmed cancellations before a candidate is returned
+        # otherwise have no manager-owned object to discard.
+        await _run_package_worker(lambda: shutil.rmtree(stage, ignore_errors=True))
+        raise
+
+
+def _wheel_digest(path: Path) -> str:
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
+    """持安装锁后复核原安装和全部依赖，再离线安装。"""
+    if isinstance(candidate, str):
+        # The no-update result may be stale after a parallel native repair.
+        # Check the pending marker, package health and installed version again
+        # before allowing the following script to start.
+        await confirm_usable_installation(root)
+        return candidate
+    target, wheel, packages, repairing = (
+        candidate.target,
+        candidate.wheel,
+        candidate.packages,
+        candidate.repairing,
+    )
+    marker = pending_marker(root)
+    hashes = await _run_package_worker(_package_hashes, packages)
+    hashes["../" + wheel.name] = await _run_package_worker(_wheel_digest, wheel)
+    # 大依赖的校验期间原生 pip 可能已完成升级；此时再读取安装版本。
+    current = None if marker.exists() else await installed_version(root)
+    if (
+        root.resolve() != candidate.root
+        or current != candidate.current
+        or marker.exists() != repairing
+        or hashes != candidate.hashes
+    ):
+        raise RuntimeError("奇想盒安装或预下载包已变化，请重新检查更新")
+    try:
         if await asyncio.to_thread(find_upstream_pids, root):
             raise RuntimeError("依赖准备期间奇想盒已启动，请退出后重试")
         # 只有准备完成才进入写盘阶段；安装失败或取消仍保留标记。
@@ -233,6 +332,8 @@ async def ensure_backend_updated(root: Path) -> str:
             str(wheel),
             timeout=10 * 60,
         )
+    finally:
+        discard_update(candidate)
     if await installed_version(root) != target:
         raise WhimboxUpdateUnsafeError(RECOVERY_HINT)
     await run_python(root, "-m", "pip", "check")
@@ -241,3 +342,14 @@ async def ensure_backend_updated(root: Path) -> str:
     )
     marker.unlink()
     return f"奇想盒后端已更新至 {target}，准备启动任务"
+
+
+async def ensure_backend_updated(root: Path) -> str:
+    """调用方持安装锁；完整等待下载、安装与校验。"""
+    if await asyncio.to_thread(find_upstream_pids, root):
+        raise RuntimeError("请先退出奇想盒 app 和后端，再运行更新")
+    candidate = await prepare_update(root)
+    try:
+        return await apply_update(root, candidate)
+    finally:
+        discard_update(candidate)

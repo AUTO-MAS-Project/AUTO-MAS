@@ -1588,7 +1588,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self.cur_user_log = LogRecord(
                 phase=self.mode if if_quick_config else "Source"
             )
-            self.cur_user_item.add_log_record(self.log_start_time, self.cur_user_log)
+            self.cur_user_item.add_log_record(
+                self.log_start_time, self.cur_user_log, retry=i > 1
+            )
 
             self.script_info.log = "正在启动游戏..."
             account_switch_method = self._account_switch_method()
@@ -2836,6 +2838,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         log = "".join(log_content)
         self.cur_user_log.content = log_content
+        if any(re.search(r"任务完成:\s*[^\r\n]+", line) for line in log_content):
+            self.cur_user_item.mark_task_completed()
         self.script_info.log = log
         if "资源加载失败" in log:
             # 资源文件损坏/缺失，重启脚本也不会好：不再重试

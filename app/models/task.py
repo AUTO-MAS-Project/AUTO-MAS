@@ -95,10 +95,14 @@ class UserItem:
     maintenance_skipped: bool = field(default=False, repr=False)
     # 正在跑的任务进度（见 UserTaskProgress），随任务快照推给调度台；不落盘。
     progress: Optional[UserTaskProgress] = None
+    # 只由专项已有的成功结果面置位；单调时间不落盘、不推送。
+    first_task_completed_at: float | None = field(default=None, repr=False)
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
         previous = getattr(self, name, None)
+        if name == "status" and value == "运行" and previous != value:
+            object.__setattr__(self, "first_task_completed_at", None)
         super().__setattr__(name, value)
         # 监听所有字段变化
         if (
@@ -115,10 +119,42 @@ class UserItem:
         default_factory=list, repr=False
     )
 
-    def add_log_record(self, started_at: datetime, record: LogRecord) -> None:
-        """每次尝试保留实际开始时刻，同一时刻也不能覆盖此前一轮。"""
+    def add_log_record(
+        self, started_at: datetime, record: LogRecord, *, retry: bool = False
+    ) -> None:
+        """追加本轮日志；重试只清理当前账号尝试的成功时间。
+
+        同一账号的正常阶段变更不算重试；整个脚本的首个成功时间跨账号
+        保留，以允许后台下载下一脚本。脚本级失败/停止由调度器撤销预取。
+        """
+        if retry:
+            # A retry only resets this account's attempt. The script-level
+            # success clock spans accounts and must survive a normal retry:
+            # the following script can still be downloaded in the background.
+            self.first_task_completed_at = None
         self._history_log_records.append((started_at, record))
         self.log_record[started_at] = record
+
+    def mark_task_completed(self) -> None:
+        """首个成功节点同时写入脚本级单调时间，切换账号不能丢失 60 秒基准。"""
+        if (
+            not (self.status == "运行" or self.status.startswith("运行 - "))
+            or self.first_task_completed_at is not None
+        ):
+            return
+        completed_at = time.monotonic()
+        self.first_task_completed_at = completed_at
+        task = self._task_item_ref() if self._task_item_ref is not None else None
+        if task is not None:
+            for script in task.script_list:
+                if script.status == "运行" and any(
+                    user is self for user in script.user_list
+                ):
+                    if script.first_task_completed_at is None:
+                        object.__setattr__(
+                            script, "first_task_completed_at", completed_at
+                        )
+                    break
 
     def iter_history_logs(self) -> list[tuple[datetime, LogRecord]]:
         """返回本轮各次尝试；未使用追加入口的现有日志仍可正常读取。"""
@@ -144,6 +180,10 @@ class ScriptItem:
     status: str  # 脚本执行状态
     user_list: List[UserItem] = field(default_factory=list)  # 账号信息列表
     current_index: int = -1  # 当前执行的账号索引，-1 表示未开始
+    # 本轮首个成功节点，不进入构造参数、API、磁盘或遥测。
+    first_task_completed_at: float | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
     log: str = ""  # 脚本执行日志
     # log 第一行在完整日志里的行号。**截断日志的生产者要一起维护它**（如 MaaFW 只留
     # 最近 80 条），界面才能显示真实行号而不是每次都从 1 重数；不截断就保持 1。
@@ -152,6 +192,8 @@ class ScriptItem:
 
     def __setattr__(self, name, value):
         previous = getattr(self, name, None)
+        if name == "status" and value == "运行" and previous != value:
+            object.__setattr__(self, "first_task_completed_at", None)
         super().__setattr__(name, value)
 
         # 如果 user_list 被整体替换，重新绑定
@@ -374,6 +416,16 @@ class TaskExecuteBase(ABC):
     # 不加类型注解，避免被 @dataclass 收作字段。
     _log_progress = None
 
+    async def prefetch_script_update(self) -> None:
+        """调度器确认前一脚本稳定运行后调用；仅允许写 MAS 下载缓存。
+
+        未接入两阶段更新的专项不预取，仍在自己的启动前更新。
+        BetterGI / SRC / BAAH 的独立更新 PR 合入后在此接入同一契约。
+        """
+
+    async def discard_prefetched_update(self) -> None:
+        """预取已停止后回收本对象持有的候选，不触碰原安装。"""
+
     def is_log_stalled(
         self, latest_time: datetime, minutes: float, key: str = "default"
     ) -> bool:
@@ -423,6 +475,12 @@ class TaskExecuteBase(ABC):
             raise
         except Exception as e:
             await self.on_crash(e)
+            # 普通脚本错误可留给上层继续调度；写入者所有权不明必须中止
+            # 整个 TaskGroup，不能在 on_crash 记录后继续启动下一脚本。
+            from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+            if isinstance(e, FluxdownCancelUnconfirmed):
+                raise
         finally:
             self._task_group = None
             try:

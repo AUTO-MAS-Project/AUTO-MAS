@@ -49,6 +49,7 @@ from app.core import (
     RuntimeTasks,
 )
 from app.core.desktop_guard import ensure_desktop_available
+from app.core.script_update import ScriptUpdateSession
 from app.core.task_manager.cycle import (
     SUCCESS_USER_STATUSES,
     CycleEntry,
@@ -95,6 +96,7 @@ from app.services import execute_script_task
 from app.task.history_core import UserHistoryDependencies, save_user_history
 from app.task.registration import ManagerBuildContext, ManagerFactory
 from app.utils import LOG_TYPE_ERROR, LazyProxy, get_logger
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.utils.common.log_box.results import LogEntry
 
 System = LazyProxy("app.services", "System")
@@ -636,6 +638,14 @@ class Task(TaskExecuteBase):
         self._queue_before_script_ran = False
         self._queue_after_script_ran = False
         self._queue_script_task: asyncio.Task | None = None
+        self._script_updates = ScriptUpdateSession(
+            self.task_info,
+            make_manager=self._build_task_item,
+            resources=_exclusive_resources,
+            scheduled=self._is_script_scheduled_today,
+            config=Config,
+        )
+        self._cycle_next_update_index: int | None = None
 
     def _record_error(self, error: str) -> None:
         """保留任务遇到的首个错误，供完成事件提供机器可读结果。"""
@@ -921,14 +931,28 @@ class Task(TaskExecuteBase):
         """
 
         results: list[str] = []
-        for stale in pending:
+        for pending_index, stale in enumerate(pending):
             entries = self._collect_entries(queue_uid)
             entry = next(
                 (e for e in entries if e.queue_item_id == stale.queue_item_id), None
             )
             if entry is None or not entry.is_due:
                 continue
+            next_ids = {item.queue_item_id for item in pending[pending_index + 1 :]}
+            next_entry = next(
+                (
+                    item
+                    for item in entries
+                    if item.queue_item_id in next_ids and item.is_due
+                ),
+                None,
+            )
+            self._cycle_next_update_index = (
+                next_entry.index if next_entry is not None else None
+            )
             results.append(await self._run_cycle_entry(queue_uid, entry, entries))
+        self._cycle_next_update_index = None
+        await self._script_updates.discard()
 
         if results and not any(result in ("success", "skipped") for result in results):
             await asyncio.sleep(CYCLE_RETRY_SLEEP_SECONDS)
@@ -1055,14 +1079,16 @@ class Task(TaskExecuteBase):
                     check_visibility=False,
                 )
 
-            task_item = self._build_task_item(
-                script_item,
-                script_config,
-                script_uid=script_uid,
-                reservation_owner=reservation_owner,
-                root_paths=root_paths,
-                emulator_key=emulator_key,
-            )
+            task_item = await self._script_updates.take(entry.index)
+            if task_item is None:
+                task_item = self._build_task_item(
+                    script_item,
+                    script_config,
+                    script_uid=script_uid,
+                    reservation_owner=reservation_owner,
+                    root_paths=root_paths,
+                    emulator_key=emulator_key,
+                )
             if task_item is None:
                 script_item.status = "异常"
                 logger.error(f"不支持的托管类型: {type(script_config).__name__}")
@@ -1080,6 +1106,18 @@ class Task(TaskExecuteBase):
                     script_item.status,
                     (user.status for user in script_item.user_list),
                 )
+        except FluxdownCancelUnconfirmed as e:
+            # Unconfirmed daemon shutdown is not a retryable cycle failure:
+            # the next script must not start while a downloader may still write.
+            script_item.status = "异常"
+            detail = "无法确认预下载已停止；后台可能仍在写入，循环队列已中止"
+            if self.stopped_manually:
+                self._exit_result = "cancelled"
+                self._exit_error = detail
+            else:
+                self._record_error(detail)
+            logger.error(f"{detail}: {entry.script_name}: {e}")
+            raise
         except Exception as e:
             script_item.status = "异常"
             logger.exception(f"循环任务出现异常: {entry.script_name}: {e}")
@@ -1153,15 +1191,25 @@ class Task(TaskExecuteBase):
         """
 
         child = self.spawn(task_item)
+        self._script_updates.watch(
+            self.task_info.script_list[entry.index], self._cycle_next_update_index
+        )
         refresher = RuntimeTasks.spawn(
             self._refresh_preview_while_running(queue_uid, entry),
             name=f"cycle-preview:{self.task_info.task_id}",
         )
         try:
             await child
+        except BaseException:
+            await self._script_updates.finish(cancelled=True)
+            raise
         finally:
+            await task_item.discard_prefetched_update()
             if refresher is not None:
                 refresher.cancel()
+        await self._script_updates.finish(
+            cancelled=self.task_info.script_list[entry.index].status in ("异常", "跳过")
+        )
 
     async def _refresh_preview_while_running(
         self, queue_uid: uuid.UUID, running: CycleEntry
@@ -1331,6 +1379,12 @@ class Task(TaskExecuteBase):
         return self.run_weekday in self.script_run_days[index]
 
     async def _run_script_list(self, start_index: int) -> None:
+        try:
+            await self._run_script_list_items(start_index)
+        finally:
+            await self._script_updates.close()
+
+    async def _run_script_list_items(self, start_index: int) -> None:
         for self.task_info.current_index in range(
             start_index, len(self.task_info.script_list)
         ):
@@ -1417,14 +1471,18 @@ class Task(TaskExecuteBase):
                 script_item.status = "运行"
                 logger.info(f"任务开始: {current_script_uid}")
 
-                task_item = self._build_task_item(
-                    script_item,
-                    script_config,
-                    script_uid=current_script_uid,
-                    reservation_owner=reservation_owner,
-                    root_paths=root_paths,
-                    emulator_key=emulator_key,
+                task_item = await self._script_updates.take(
+                    self.task_info.current_index
                 )
+                if task_item is None:
+                    task_item = self._build_task_item(
+                        script_item,
+                        script_config,
+                        script_uid=current_script_uid,
+                        reservation_owner=reservation_owner,
+                        root_paths=root_paths,
+                        emulator_key=emulator_key,
+                    )
                 if task_item is None:
                     script_item.status = "异常"
                     self._record_error(
@@ -1439,12 +1497,27 @@ class Task(TaskExecuteBase):
                     continue
 
                 # 运行任务
-                with self._observe_script_run(script_item, script_config):
-                    await self.spawn(task_item)
+                if self.task_info.mode == "AutoProxy":
+                    self._script_updates.watch(
+                        script_item, self.task_info.current_index + 1
+                    )
+                try:
+                    with self._observe_script_run(script_item, script_config):
+                        await self.spawn(task_item)
+                except BaseException:
+                    await self._script_updates.finish(cancelled=True)
+                    raise
+                finally:
+                    await task_item.discard_prefetched_update()
+                await self._script_updates.finish(
+                    cancelled=script_item.status in ("异常", "跳过")
+                )
             finally:
                 self.script_reservations.release(current_script_uid, reservation_owner)
 
     async def final_task(self) -> None:
+        await self._script_updates.finish(cancelled=True)
+        await self._script_updates.discard()
         await self.task_info.discard_history_captures()
 
         # 收尾脚本完成后才发布终态，期间队列仍可被停止。
