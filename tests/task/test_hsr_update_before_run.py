@@ -622,3 +622,62 @@ async def test_prefetch_cancel_during_first_verify_waits_for_open_file(
         await asyncio.wait_for(task, 5)
     assert finished.is_set()
     assert not list(download_dir.iterdir())
+
+
+@pytest.mark.asyncio
+async def test_prefetch_preserves_daemon_owned_stage_when_history_is_cancelled(
+    hsr_prefetch_case, monkeypatch
+):
+    """Exercise HSR -> public downloader -> interrupted history -> HSR cleanup."""
+    from app.services.common.update import fluxdown as transport
+    from app.task.HSR.tools.update import download as hsr_download
+    from app.utils.common import fluxdown_cli as cli
+
+    install, download_dir, _ = hsr_prefetch_case
+    entered = asyncio.Event()
+    cli_exe = download_dir / "fluxdown.exe"
+
+    async def unsafe_probe(*_args, **_kwargs):
+        return False
+
+    async def blocked_history(_record):
+        entered.set()
+        await asyncio.Event().wait()
+
+    async def shared_download(url, destination, **kwargs):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"daemon may still own this")
+        return await transport.download_file(
+            url,
+            destination,
+            timeout=10,
+            options=transport.FluxdownOptions(
+                "builtin", kwargs["source"], str(cli_exe), 8, True
+            ),
+            downloader="builtin",
+            write_history=blocked_history,
+            http_download=AsyncMock(return_value=10),
+        )
+
+    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda *_a, **_kw: cli_exe)
+    monkeypatch.setattr(cli, "_to_thread_strong", unsafe_probe)
+    monkeypatch.setattr(cli, "fluxdown_server_mark_failure", lambda *_a: 1)
+    monkeypatch.setattr(hsr_download, "download_script_package", shared_download)
+    task = asyncio.create_task(
+        update.prepare_engine_update(
+            "SRA",
+            install,
+            source="AutoSite",
+            channel="stable",
+            cdk="",
+            proxy=None,
+            download_dir=download_dir,
+        )
+    )
+    await asyncio.wait_for(entered.wait(), 3)
+    task.cancel()
+    with pytest.raises(cli.FluxdownCancelUnconfirmed):
+        await asyncio.wait_for(task, 3)
+    stages = [stage for stage in download_dir.iterdir() if stage.is_dir()]
+    assert len(stages) == 1
+    assert list(stages[0].rglob("*.part"))
