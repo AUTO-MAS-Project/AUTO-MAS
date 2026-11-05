@@ -598,9 +598,7 @@ def test_protected_desktop_directory_uses_managed_install(tmp_path, monkeypatch)
     (external / "fluxdown-desktop.exe").write_bytes(b"desktop")
     (external / "fluxdown-agent.exe").write_bytes(b"agent")
     (external / "fluxdownd.exe").write_bytes(b"daemon")
-    monkeypatch.setattr(
-        install, "Config", SimpleNamespace(data_path=tmp_path / "data")
-    )
+    monkeypatch.setattr(install, "Config", SimpleNamespace(data_path=tmp_path / "data"))
     monkeypatch.setattr(install, "_can_write_directory", lambda _: False)
     managed, external_install = install._choose_install_target(str(external))
     assert managed == tmp_path / "data" / "fluxdown" / "bin"
@@ -631,9 +629,7 @@ async def test_permission_changed_after_probe_retries_in_managed_directory(
     config = GlobalConfig.build()
     await activate_config(config)
     await config.update(
-        type(config).model_validate(
-            {"Update": {"FluxdownPath": str(external)}}
-        ),
+        type(config).model_validate({"Update": {"FluxdownPath": str(external)}}),
         check_visibility=False,
     )
     flush = AsyncMock()
