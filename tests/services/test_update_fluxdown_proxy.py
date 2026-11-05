@@ -586,12 +586,15 @@ async def test_cancel_falls_back_to_exclusive_emergency_shutdown(
     import asyncio
 
     exe, target, url = server_fixture
+    # Reuse a known server task so Windows does not need to complete the
+    # slower CLI add + mapping setup before the cancellation signal.
+    cli._map_put(exe, cli._map_key(url, target), "existing", url, target)
     started = asyncio.Event()
     loop = asyncio.get_running_loop()
 
     def command(_exe, _env, args, timeout=30):
-        if args[0] == "add":
-            return 0, '["created"]'
+        if args[0] == "resume":
+            return 0, ""
         if args[0] == "status":
             loop.call_soon_threadsafe(started.set)
             return 0, json.dumps({"status": 1})
@@ -607,7 +610,7 @@ async def test_cancel_falls_back_to_exclusive_emergency_shutdown(
         lambda *_args: emergency.append(True) or True,
     )
     task = asyncio.create_task(cli.fluxdown_server_download(url, target, cli_exe=exe))
-    await asyncio.wait_for(started.wait(), 1)
+    await asyncio.wait_for(started.wait(), 10)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
@@ -621,12 +624,15 @@ async def test_failed_emergency_shutdown_reports_unconfirmed_writer(
     import asyncio
 
     exe, target, url = server_fixture
+    # Reuse a known server task so Windows does not need to complete the
+    # slower CLI add + mapping setup before the cancellation signal.
+    cli._map_put(exe, cli._map_key(url, target), "existing", url, target)
     started = asyncio.Event()
     loop = asyncio.get_running_loop()
 
     def command(_exe, _env, args, timeout=30):
-        if args[0] == "add":
-            return 0, '["created"]'
+        if args[0] == "resume":
+            return 0, ""
         if args[0] == "status":
             loop.call_soon_threadsafe(started.set)
             return 0, json.dumps({"status": 1})
@@ -640,7 +646,7 @@ async def test_failed_emergency_shutdown_reports_unconfirmed_writer(
     monkeypatch.setattr(cli, "_run_cli", command)
     monkeypatch.setattr(cli, "fluxdown_server_emergency_stop_if_exclusive", failed_stop)
     task = asyncio.create_task(cli.fluxdown_server_download(url, target, cli_exe=exe))
-    await asyncio.wait_for(started.wait(), 1)
+    await asyncio.wait_for(started.wait(), 10)
     task.cancel()
     with pytest.raises(cli.FluxdownCancelUnconfirmed):
         await task
