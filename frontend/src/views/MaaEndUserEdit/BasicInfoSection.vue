@@ -116,11 +116,16 @@
             </span>
           </template>
           <a-select
-            v-model:value="formData.Info.Resource"
+            :value="
+              formData.Info.Resource === '官服' &&
+              resourceOptions.some(option => option.value === 'CN')
+                ? 'CN'
+                : formData.Info.Resource
+            "
             :placeholder="t('core.edit.pickResource')"
             :disabled="loading"
             :options="resourceOptions"
-            @change="emitSave('Info.Resource', formData.Info.Resource)"
+            @change="handleResourceChange"
           />
         </a-form-item>
       </a-col>
@@ -163,6 +168,11 @@ const pushLogModeOptions = [
   { label: t('core.edit.pushLogModeList'), value: '逐条' },
   { label: t('core.edit.pushLogModeSummary'), value: '汇总' },
 ]
+
+const handleResourceChange = (value: string) => {
+  formData.value.Info.Resource = value
+  emitSave('Info.Resource', value)
+}
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)

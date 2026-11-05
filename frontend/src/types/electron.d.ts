@@ -83,6 +83,14 @@ export interface RuntimeBinaryUpdateCheck {
 }
 
 export interface RuntimeBinaryProgress {
+  /** Electron 更新器提供的目标版本与当前下载尝试；旧事件可缺省。 */
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
+  source?: string
+  /** Electron 更新器的正常阶段；旧事件缺失时保留原文。 */
+  phase?: 'check' | 'download' | 'complete'
   progress: number
   message: string
 }
@@ -608,6 +616,11 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
       item?: string
       /** 当前字节来自哪个源的 key。 */
       source?: string
+      /** Runtime 下载的目标版本与当前源尝试；旧事件可缺省。 */
+      targetVersion?: string
+      sourceName?: string
+      sourceIndex?: number
+      sourceCount?: number
       /** 最近 1 秒窗口的吞吐（字节/秒）。 */
       bytesPerSecond?: number
       /** 已下载字节数。 */

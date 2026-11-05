@@ -758,8 +758,9 @@ class MaaEndUserConfig(DomainEntry):
             default_factory=lambda: -1, description="剩余天数"
         )
 
-        Resource: Literal["官服"] = Field(
-            default_factory=lambda: "官服", description="资源名称"
+        Resource: str = Field(
+            default_factory=lambda: "官服",
+            description="MaaEnd 启动服务器选项原值，官服为旧配置兼容值",
         )
 
         SanityStrategy: Literal["MAS", "Native", "Inventory"] = Field(
