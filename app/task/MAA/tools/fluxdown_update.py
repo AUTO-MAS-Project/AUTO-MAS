@@ -145,6 +145,11 @@ async def prepare_maa_fluxdown_update(
     """
     if not use_maa_github_update(config, config_dirs=[config_dir, maa_root / "config"]):
         return None
+    # Only new download-only directories belong to this attempt. An ordinary
+    # failure or confirmed cancellation can remove them; a resumable or
+    # unconfirmed daemon writer retains ownership of its partial package.
+    temporary_directory: Path | None = None
+    retain_download = False
     try:
         if prepared is not None:
             if (
@@ -187,6 +192,7 @@ async def prepare_maa_fluxdown_update(
             cache = Path.cwd() / "data" / "maa_github_update"
             cache.mkdir(parents=True, exist_ok=True)
             directory = Path(tempfile.mkdtemp(prefix="download-", dir=cache))
+            temporary_directory = directory
         else:
             directory = maa_root
         destination = directory / filename
@@ -222,12 +228,11 @@ async def prepare_maa_fluxdown_update(
             return None
         part.replace(destination)
         if download_only:
-            return PreparedUpdate(
-                release,
-                latest,
-                destination,
-                await asyncio.to_thread(_digest, destination),
-            )
+            digest = await asyncio.to_thread(_digest, destination)
+            candidate = PreparedUpdate(release, latest, destination, digest)
+            # The candidate manager now owns this verified directory.
+            retain_download = True
+            return candidate
         # 启动应用路径不再核对 OTA 的基线；登记前由持安装锁的调用方复核。
         if read_installed_release(maa_root) != release:
             raise RuntimeError("下载期间 MAA 安装版本发生变化，请重新运行")
@@ -238,7 +243,19 @@ async def prepare_maa_fluxdown_update(
         return latest
     except asyncio.CancelledError:
         raise
-    except _utils_fluxdown_cli.FluxdownCancelUnconfirmed:
-        raise  # 用户已取消但 daemon 尚未确认停止，不能继续启动脚本。
+    except (
+        _utils_fluxdown_cli.FluxdownCancelUnconfirmed,
+        _service_update_fluxdown.FluxdownResumableError,
+    ):
+        # Keep a resumable or unconfirmed server task's destination intact.
+        retain_download = True
+        raise
     except Exception as error:
         raise RuntimeError(f"MAA 更新准备失败: {error}") from error
+    finally:
+        if temporary_directory is not None and not retain_download:
+            # Do not remove a shared install directory or a consumed candidate.
+            # Failed built-in downloads have released their file handle here.
+            await asyncio.to_thread(
+                shutil.rmtree, temporary_directory, ignore_errors=True
+            )
