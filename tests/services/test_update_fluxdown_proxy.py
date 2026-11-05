@@ -537,3 +537,80 @@ async def test_confirmed_server_stop_allows_safe_builtin_handoff(
     )
     assert [a[0] for a in calls] == ["status", "pause", "status"]
     builtin.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "owned,other_download,expected",
+    [(True, False, True), (False, False, False), (True, True, False)],
+)
+def test_emergency_shutdown_only_for_exclusive_owned_agent(
+    tmp_path, monkeypatch, owned, other_download, expected
+):
+    exe = tmp_path / "fluxdown.exe"
+    agent = tmp_path / "fluxdown-agent.exe"
+    target = tmp_path / "package.zip"
+    url = "https://example.invalid/package.zip"
+    key = cli._map_key(url, target)
+    mapping = {key: {"task_id": "own", "save_path": str(target)}}
+    if other_download:
+        mapping["another"] = {"task_id": "other", "save_path": "other.zip"}
+    monkeypatch.setattr(cli, "_active_downloads", 1)
+    monkeypatch.setattr(cli, "_installing", False)
+    monkeypatch.setattr(cli, "_load_task_map", lambda _exe: mapping)
+    monkeypatch.setattr(cli, "_server_binaries", lambda _exe: (agent, tmp_path / "daemon"))
+    monkeypatch.setattr(
+        cli._server,
+        "handle",
+        SimpleNamespace(cli_exe=exe, agent_pid=34567),
+    )
+    monkeypatch.setattr(cli._server, "spawned_by_us", owned)
+    process = SimpleNamespace(
+        exe=lambda: str(agent),
+        children=lambda recursive: [],
+        is_running=lambda: False,
+    )
+    monkeypatch.setattr(cli.psutil, "Process", lambda _pid: process)
+    killed = []
+    monkeypatch.setattr(cli, "_kill_pid", killed.append)
+    assert (
+        cli.fluxdown_server_emergency_stop_if_exclusive(exe, url, target)
+        is expected
+    )
+    assert killed == ([34567] if expected else [])
+
+
+@pytest.mark.asyncio
+async def test_cancel_falls_back_to_exclusive_emergency_shutdown(
+    server_fixture, monkeypatch
+):
+    """When pause cannot be confirmed, stop only our exclusive private agent."""
+    import asyncio
+
+    exe, target, url = server_fixture
+    started = asyncio.Event()
+
+    def command(_exe, _env, args, timeout=30):
+        if args[0] == "add":
+            return 0, '["created"]'
+        if args[0] == "status":
+            started.set()
+            return 0, json.dumps({"status": 1})
+        if args[0] == "pause":
+            return 124, "timeout"
+        return 0, ""
+
+    monkeypatch.setattr(cli, "_run_cli", command)
+    emergency = []
+    monkeypatch.setattr(
+        cli,
+        "fluxdown_server_emergency_stop_if_exclusive",
+        lambda *_args: emergency.append(True) or True,
+    )
+    task = asyncio.create_task(
+        cli.fluxdown_server_download(url, target, cli_exe=exe)
+    )
+    await asyncio.wait_for(started.wait(), 1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert emergency == [True]
