@@ -637,9 +637,10 @@ async def test_interrupted_resource_merge_blocks_next_run_until_repaired(
     scheduler._remember_pending_update.assert_called_once()
 
 
-
 @pytest.mark.asyncio
-async def test_cancelled_mirror_prefetch_does_not_use_daily_attempt(tmp_path, monkeypatch):
+async def test_cancelled_mirror_prefetch_does_not_use_daily_attempt(
+    tmp_path, monkeypatch
+):
     """Explicit queue cancellation permits the same version later that day."""
     state = {}
     writes = []
@@ -656,17 +657,14 @@ async def test_cancelled_mirror_prefetch_does_not_use_daily_attempt(tmp_path, mo
     monkeypatch.setattr(mirror, "_state_lock", asyncio.Lock())
     monkeypatch.setattr(mirror, "load_state", load)
     monkeypatch.setattr(mirror._utils_io, "write_file", save)
-    monkeypatch.setattr(
-        mirror, "read_installed_release", lambda _: ("v6.0.0", "x64")
-    )
-    monkeypatch.setattr(
-        mirror, "software_cache_dir", lambda **_: tmp_path
-    )
+    monkeypatch.setattr(mirror, "read_installed_release", lambda _: ("v6.0.0", "x64"))
+    monkeypatch.setattr(mirror, "software_cache_dir", lambda **_: tmp_path)
     monkeypatch.setattr(mirror, "load_cache_manifest", lambda _: None)
     monkeypatch.setattr(mirror, "backoff_active", lambda *_: False)
     monkeypatch.setattr(mirror, "attempted_today", lambda *_: False)
     monkeypatch.setattr(
-        mirror, "_fetch_latest",
+        mirror,
+        "_fetch_latest",
         AsyncMock(return_value=mirror._Latest("v6.1.0", "https://example.invalid/pkg")),
     )
     cancelled = AsyncMock(side_effect=asyncio.CancelledError)
