@@ -676,9 +676,7 @@ async def test_stalled_download_checks_pause_before_queue_handoff(
                 return 0, ""
             return 124, "timeout"
         if args[0] == "status":
-            return 0, json.dumps(
-                {"status": 2 if paused else 1, "downloadedBytes": 0}
-            )
+            return 0, json.dumps({"status": 2 if paused else 1, "downloadedBytes": 0})
         raise AssertionError(args)
 
     monkeypatch.setattr(cli, "_run_cli", command)
@@ -728,9 +726,7 @@ def test_exclusive_shutdown_blocks_new_download_admission(tmp_path, monkeypatch)
 
     monkeypatch.setattr(cli, "_kill_pid", slow_kill)
     shutdown = threading.Thread(
-        target=lambda: cli.fluxdown_server_emergency_stop_if_exclusive(
-            exe, url, target
-        )
+        target=lambda: cli.fluxdown_server_emergency_stop_if_exclusive(exe, url, target)
     )
 
     @cli._using_fluxdown
