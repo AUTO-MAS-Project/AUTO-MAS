@@ -1651,7 +1651,9 @@ class AppConfig:
             if item["create_type"] == script
         )
         if plan_class is UniversalPlanConfig:
-            owner = self.ScriptConfig[uuid.UUID(script_id or "")]
+            if not script_id:
+                raise ValueError("通用计划必须指定所属脚本")
+            owner = self.ScriptConfig[uuid.UUID(script_id)]
             if not isinstance(owner, GeneralConfig):
                 raise ValueError("初版通用计划仅支持通用脚本")
             if owner.is_locked:
@@ -1772,8 +1774,29 @@ class AppConfig:
                 check_visibility=False,
             )
 
+        # 移除后 Entry 已失效，先把计划数据目录的归属读出来
+        plan_script_id = (
+            plan_config.Info.ScriptId
+            if isinstance(plan_config, UniversalPlanConfig)
+            else None
+        )
+
         self.PlanConfig.remove(plan_uid)
         await self.PlanConfig.commit()
+
+        if plan_script_id is not None:
+            await self._remove_universal_plan_data(plan_uid, plan_script_id)
+
+    async def _remove_universal_plan_data(
+        self, plan_uid: uuid.UUID, script_id: uuid.UUID
+    ) -> None:
+        """删除通用计划留在脚本数据目录下的模板、运行副本与备份。"""
+
+        plan_data_dir = self.data_path / str(script_id) / "Plans" / str(plan_uid)
+        try:
+            await asyncio.to_thread(_utils_io.force_rmtree, plan_data_dir)
+        except Exception as e:
+            logger.opt(exception=True).warning(f"清理通用计划数据失败: {e}")
 
     async def reorder_plan(self, index_list: list[str]) -> None:
         """重新排序计划表"""

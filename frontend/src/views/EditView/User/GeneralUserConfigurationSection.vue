@@ -11,21 +11,27 @@
     v-if="owner.userId"
     :script-id="owner.scriptId"
     :user-id="owner.userId"
+    :plan-mode="planMode"
     :disabled="disabled || saving"
+    @change="emit('plan-change', $event)"
   />
 </template>
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
-import UniversalPlanSelector from '@/views/plan/components/UniversalPlanSelector.vue'
+import UniversalPlanSelector from './UniversalPlanSelector.vue'
 const { t } = useI18n()
 defineProps<{
   modelValue: string
+  planMode?: string | null
   owner: { scriptId: string; userId: string }
   disabled?: boolean
   saving?: boolean
 }>()
-const emit = defineEmits<{ change: [value: string | boolean] }>()
+const emit = defineEmits<{
+  change: [value: string | boolean]
+  'plan-change': [value: string]
+}>()
 // 「共享」置灰：通用脚本运行/配置始终按 per-user 目录（AutoProxy/ScriptConfig 均不区分共享来源），
 // 选了也不生效——禁用并悬停说明原因
 const generalConfigModeOptions: Array<{

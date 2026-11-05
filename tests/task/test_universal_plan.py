@@ -125,6 +125,8 @@ async def test_runtime_and_edit_session_use_selected_day(
     )
     run = AutoProxyTask(info, script, {user_id: user}, None)
     assert await run.check() != "Pass"
+    # 当天未配置按「跳过」处理：否则报告会停留在「等待」
+    assert item.status == "跳过"
     run.script_config_path = native
     save_plan_config(source=native, destination=run.plan_template_dir, mode="File")
     await run.update_config()
@@ -142,24 +144,22 @@ async def test_runtime_and_edit_session_use_selected_day(
     second_user = GeneralUserConfig.model_validate({"Info": {"PlanMode": plan.uid}})
     second = AutoProxyTask(second_info, script, {second_id: second_user}, None)
     second.script_config_path = native
-    native.write_text("second user")
-    await second.update_config()
     assert second.plan_template_dir == run.plan_template_dir
     assert second.mas_config_dir != run.mas_config_dir
-    assert (monday / native.name).read_text() == "base"
-    assert (second.mas_config_dir / native.name).read_text() == "second user"
     session = ScriptConfigTask(info, script, {user_id: user}, None)
     assert session.mas_config_dir != monday
     assert session.mas_config_dir.parent.name == "Tuesday"
     monkeypatch.setattr(
         UniversalPlanConfig, "current_group", lambda self, now: "Tuesday"
     )
+    # 计划模式只从当天模板下发，运行结果不回写模板，也不改写运行副本
     native.write_text("after reset")
     await run.update_config()
-    assert run.mas_config_dir == monday
-    assert (monday / native.name).read_text() == "after reset"
-    assert not session.mas_config_dir.exists()
+    await second.update_config()
     assert (run.plan_template_dir / native.name).read_text() == "base"
+    assert not run.mas_config_dir.exists()
+    assert not second.mas_config_dir.exists()
+    assert not session.mas_config_dir.exists()
     assert user.Data.ProxyTimes == 0
 
 

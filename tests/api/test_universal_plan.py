@@ -115,3 +115,10 @@ async def test_create_and_query_saved_dates(isolated_app_paths, monkeypatch):
             assert plan.Info.ResetHour == 6
         finally:
             await plan.unlock(ticket)
+
+        # 删除计划时同时清掉按计划 ID 归档在脚本数据目录下的模板与备份
+        deleted = (
+            await client.post("/api/plan/delete", json={"planId": plan_id})
+        ).json()
+        assert deleted["code"] == 200
+        assert not (config.data_path / str(script.uid) / "Plans" / plan_id).exists()

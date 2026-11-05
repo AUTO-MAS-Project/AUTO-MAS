@@ -107,10 +107,12 @@
             <a-col :span="24">
               <GeneralUserConfigurationSection
                 :model-value="formData.Info.Base ?? 'independent'"
+                :plan-mode="formData.Info.PlanMode"
                 :owner="{ scriptId, userId }"
                 :disabled="loading"
                 :saving="configModeSaving"
                 @change="handleConfigModeChange"
+                @plan-change="formData.Info.PlanMode = $event"
               />
             </a-col>
           </a-row>
@@ -237,6 +239,8 @@ const getDefaultGeneralUserData = () => ({
     RemainedDay: -1,
     // 配置来源三态（shared/independent/native）
     Base: 'independent',
+    // 固定配置，或按日轮换的通用计划 ID
+    PlanMode: 'Fixed',
     IfUseMasConfig: true,
     IfScriptBeforeTask: false,
     IfScriptAfterTask: false,

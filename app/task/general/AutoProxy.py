@@ -165,6 +165,12 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             if self.script_config.Script.ConfigPathMode == "File":
                 source = source / self.script_config.Script.ConfigPath.name
             if not source.exists():
+                # 未配置的日期按「跳过」处理：按日轮换的计划本就允许某些天不运行，
+                # 不置状态会让报告停在「等待」，看不出该用户已被处理过
+                self.cur_user_item.status = "跳过"
+                logger.warning(
+                    f"用户: {self.cur_user_uid} - 当天的通用计划尚未配置, 跳过本次运行"
+                )
                 return "当天的通用计划尚未配置，请先编辑并保存该日期的配置"
 
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
@@ -610,13 +616,9 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             return
 
         if self.plan_active:
-            from app.core.config.universal_plan import save_plan_config
-
-            save_plan_config(
-                source=self.script_config_path,
-                destination=self.mas_config_dir,
-                mode=self.script_config.Script.ConfigPathMode,
-            )
+            # 当天模板是计划模式的唯一来源：本轮的运行副本每次都会由 prepare
+            # 从模板重新复制，回写既没有消费方，还会额外产生归档
+            logger.info("通用计划模式：运行结果不回写计划配置")
             return
 
         config_path_mode = self.script_config.Script.ConfigPathMode
