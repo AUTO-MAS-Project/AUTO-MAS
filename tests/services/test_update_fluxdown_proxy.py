@@ -469,3 +469,63 @@ async def test_cancelled_write_owner_probe_holds_target_lock_until_thread_exits(
     assert follower is not None
     await asyncio.wait_for(follower, timeout=5)
     assert acquired.is_set()
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_server_writer_propagates_as_unsafe_handoff(
+    server_fixture, monkeypatch
+):
+    """A real server download failure must not be an ordinary resumable error."""
+    exe, target, url = server_fixture
+    cli._map_put(exe, cli._map_key(url, target), "inflight", url, target)
+    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda *_args, **_kw: exe)
+    monkeypatch.setattr(cli, "fluxdown_server_available", lambda *_args, **_kw: True)
+    calls = []
+
+    def command(_exe, _env, args, timeout=30):
+        calls.append(args)
+        # Both the status query and attempted pause are unavailable, so the
+        # daemon cannot be assumed to have stopped writing.
+        return 124, "timeout"
+
+    monkeypatch.setattr(cli, "_run_cli", command)
+    options = transport.FluxdownOptions("fluxdown", "GitHub", str(exe), 8, True)
+    with pytest.raises(transport.FluxdownWriterUnconfirmed):
+        await transport.download_file(
+            url, target, timeout=30, options=options, source="GitHub"
+        )
+    assert any(args[0] == "status" for args in calls)
+    assert any(args[0] == "pause" for args in calls)
+    assert cli._load_task_map(exe)[cli._map_key(url, target)]["task_id"] == "inflight"
+
+
+@pytest.mark.asyncio
+async def test_confirmed_server_stop_does_not_raise_unsafe_writer(
+    server_fixture, monkeypatch
+):
+    """A confirmed pause remains eligible for a safe local fallback."""
+    exe, target, url = server_fixture
+    cli._map_put(exe, cli._map_key(url, target), "inflight", url, target)
+    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda *_args, **_kw: exe)
+    monkeypatch.setattr(cli, "fluxdown_server_available", lambda *_args, **_kw: True)
+    seen = []
+
+    def command(_exe, _env, args, timeout=30):
+        seen.append(args)
+        if args[0] == "status":
+            return 0, json.dumps({"status": 2})
+        if args[0] == "resume":
+            return 1, "server unavailable"
+        return 0, ""
+
+    monkeypatch.setattr(cli, "_run_cli", command)
+    local = AsyncMock(return_value=(10, cli.FluxdownDownloadRecord()))
+    monkeypatch.setattr(cli, "fluxdown_download", local)
+    options = transport.FluxdownOptions("fluxdown", "GitHub", str(exe), 8, True)
+    assert (
+        await transport.download_file(
+            url, target, timeout=30, options=options, source="GitHub"
+        )
+        == 10
+    )
+    local.assert_awaited_once()
