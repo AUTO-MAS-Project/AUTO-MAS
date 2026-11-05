@@ -212,6 +212,7 @@ async def get_maaend_options(
     try:
         data = await service.get_options(options.scriptId)
         return MaaEndOptionsOut(
+            servers=[ComboBoxItem(**item) for item in data.get("servers", [])],
             crisisDrills=[ComboBoxItem(**item) for item in data["crisisDrills"]],
             launchGameControllers=data["launchGameControllers"],
             gameSettingControllers=data["gameSettingControllers"],
