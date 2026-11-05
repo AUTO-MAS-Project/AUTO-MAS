@@ -1,6 +1,7 @@
 import type { SRCScriptConfig } from '@/types/script'
 
 export const createSrcScriptDraft = (): SRCScriptConfig => ({
+  Update: { TakeoverEnabled: false },
   Info: {
     Name: '',
     Path: '.',

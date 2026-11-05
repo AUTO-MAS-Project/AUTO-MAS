@@ -86,6 +86,13 @@ MaaEndInstallPath = Annotated[
 """保留更新中断时暂缺的安装路径，供恢复入口定位相邻的原安装备份。"""
 
 
+BAAHInstallPath = Annotated[
+    NativePath | None,
+    path_policy(kind="file", extensions=(".exe",), blocked_dirs=STANDARD_BLOCKED_DIRS),
+]
+"""保留目录切换中断时暂缺的主程序路径，供安装恢复定位原目录。"""
+
+
 class MaaUserConfig(DomainEntry):
     "MAA用户配置"
 
@@ -1587,6 +1594,14 @@ class SrcUserConfig(DomainEntry):
 
 class SrcConfig(DomainEntry):
     "SRC配置"
+
+    class UpdateFields(ConfigGroup):
+        TakeoverEnabled: bool = Field(
+            default=False,
+            description="运行前由 MAS 预取 SRC 原生代码源并调用官方安装器完成更新，普通下载失败后沿用当前安装；运行期暂停原生更新并在任务结束后恢复",
+        )
+
+    Update: UpdateFields = Field(default_factory=UpdateFields)
 
     related_config: ClassVar = {}
 
@@ -3946,6 +3961,21 @@ class OkNteConfig(DomainEntry):
 class BetterGIConfig(DomainEntry):
     "BetterGI 配置（更好的原神，原生 GUI 原生来源 + 仅一条龙任务）"
 
+    class UpdateFields(ConfigGroup):
+        TakeoverEnabled: bool = Field(
+            default=False,
+            description="运行前由 MAS 下载校验 BetterGI 官方安装包并静默更新，普通检查下载失败后沿用当前安装；运行期暂时屏蔽本体更新提示，结束恢复",
+        )
+        Channel: Literal["stable", "beta"] = Field(
+            default="stable", description="BetterGI 正式版或公测版（上游 alpha）"
+        )
+        MirrorChyanCDK: Annotated[str, encrypted()] = Field(
+            default="",
+            description="BetterGI Mirror 酱 CDK，留空使用全局 CDK，无 CDK 使用 GitHub",
+        )
+
+    Update: UpdateFields = Field(default_factory=UpdateFields)
+
     class GameFields(ConfigGroup):
         CloseOnFinish: bool = Field(
             default_factory=lambda: True, description="任务结束后关闭游戏"
@@ -4518,6 +4548,21 @@ class BAAHUserConfig(DomainEntry):
 class BAAHConfig(DomainEntry):
     "BAAH 配置"
 
+    class UpdateFields(ConfigGroup):
+        TakeoverEnabled: bool = Field(
+            default=False,
+            description="运行前由 MAS 下载校验并安装 BAAH 官方更新包，普通下载失败后沿用当前安装",
+        )
+        Channel: Literal["stable", "beta"] = Field(
+            default="stable", description="BAAH 更新通道"
+        )
+        MirrorChyanCDK: Annotated[str, encrypted()] = Field(
+            default="",
+            description="BAAH Mirror 酱 CDK，留空使用全局 CDK，无 CDK 使用 GitHub",
+        )
+
+    Update: UpdateFields = Field(default_factory=UpdateFields)
+
     related_config: ClassVar = {}
 
     class EmulatorFields(ConfigGroup):
@@ -4559,7 +4604,7 @@ class BAAHConfig(DomainEntry):
     Run: RunFields = Field(default_factory=RunFields)
 
     class ScriptFields(ConfigGroup):
-        BAAHPath: FilePath = Field(
+        BAAHPath: BAAHInstallPath = Field(
             default_factory=lambda: None,
             description="BAAH 主程序路径；程序目录、配置目录与日志目录都从它派生",
         )
