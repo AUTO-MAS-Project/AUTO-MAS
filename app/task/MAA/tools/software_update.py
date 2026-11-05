@@ -552,13 +552,17 @@ def _query_key(arch: str, channel: str, cdk: str) -> str:
     return f"{_cache_key(arch, channel)}/{credential_key}"
 
 
-async def _precheck_flow(maa_root: Path, channel: str, arch: str, cdk: str) -> None:
+async def _precheck_flow(
+    maa_root: Path, channel: str, arch: str, cdk: str, *, prefetch: bool = False
+) -> None:
     """预检查主体：查询 → 版本判断 → 取包入缓存。失败语义见各调用。"""
     # 不同安装分别判断当前版本，同一缓存的查询/下载串行，后来的旧安装
     # 可以复用已查到的目标，不能复用首个新版安装的「无需更新」结论。
     async with _cache_locks.setdefault(_cache_key(arch, channel), asyncio.Lock()):
         try:
-            await _precheck_inner(maa_root, channel, arch, cdk)
+            await _precheck_inner(
+                maa_root, channel, arch, cdk, refund_cancelled=prefetch
+            )
         except asyncio.CancelledError:
             raise
         except _UpdateError as e:
@@ -582,6 +586,7 @@ async def _precheck_inner(
     cdk: str,
     *,
     target_version: str | None = None,
+    refund_cancelled: bool = False,
 ) -> str | None:
     """持缓存锁检查目标与额度，必要时取包，返回确认的版本供启动入口登记。"""
     release = read_installed_release(maa_root)
@@ -651,6 +656,8 @@ async def _precheck_inner(
             raise _UpdateError("MAA 本体包未达到已确认的目标版本，请稍后重试")
         await _ensure_cache(latest=latest, channel=channel, arch=arch)
     except asyncio.CancelledError:
+        if not refund_cancelled:
+            raise
         # Do not undo a newer attempt's accounting; both fields must still
         # belong to this prefetch. The cache lock serializes same-asset work.
         async with _state_lock:
@@ -672,7 +679,7 @@ async def prefetch_maa_software_update(maa_root: Path, config: MaaConfig) -> Non
     release = read_installed_release(maa_root)
     channel = config.Update.Channel
     if enabled and cdk is not None and release is not None and channel is not None:
-        await _precheck_flow(maa_root, channel, release[1], cdk)
+        await _precheck_flow(maa_root, channel, release[1], cdk, prefetch=True)
 
 
 def start_maa_software_update_precheck(
