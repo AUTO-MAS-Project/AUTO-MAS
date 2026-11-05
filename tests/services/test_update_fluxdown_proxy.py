@@ -843,3 +843,48 @@ async def test_emergency_shutdown_does_not_block_main_event_loop(tmp_path, monke
     assert await asyncio.wait_for(stop, 5)
     await asyncio.wait_for(other, 5)
     assert downloaded.is_set()
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_writer_survives_history_cancellation_via_public_download(
+    tmp_path, monkeypatch
+):
+    """A cancelled history transaction must not release an active daemon file."""
+    import asyncio
+
+    exe = tmp_path / "fluxdown.exe"
+    destination = tmp_path / "private" / "payload.part"
+    destination.parent.mkdir()
+    destination.write_bytes(b"still daemon-owned")
+    entered = asyncio.Event()
+    backend = AsyncMock(return_value=12)
+
+    async def blocked_history(_record):
+        entered.set()
+        await asyncio.Event().wait()
+
+    async def unsafe_stop_check(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(cli, "fluxdown_find_cli", lambda *_a, **_kw: exe)
+    monkeypatch.setattr(cli, "_to_thread_strong", unsafe_stop_check)
+    monkeypatch.setattr(cli, "fluxdown_server_mark_failure", lambda *_a: 1)
+    task = asyncio.create_task(
+        transport.download_file(
+            "https://example.invalid/payload",
+            destination,
+            timeout=10,
+            options=transport.FluxdownOptions(
+                "builtin", "AutoSite", str(exe), 8, True
+            ),
+            downloader="builtin",
+            write_history=blocked_history,
+            http_download=backend,
+        )
+    )
+    await asyncio.wait_for(entered.wait(), 3)
+    task.cancel()
+    with pytest.raises(transport.FluxdownWriterUnconfirmed):
+        await asyncio.wait_for(task, 3)
+    assert destination.read_bytes() == b"still daemon-owned"
+    backend.assert_not_awaited()
