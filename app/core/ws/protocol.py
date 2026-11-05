@@ -79,6 +79,7 @@ POWER_SIGN_UPDATED = "power.sign.updated"
 
 # 更新下载（id=Update）
 UPDATE_PROGRESS = "update.progress"
+FLUXDOWN_INSTALL_PROGRESS = "fluxdown.install.progress"
 
 # MFW 运行环境准备（下载 MaaFramework、建 agent 环境），id 用托管 ID
 MAAFW_ENV_PREPARE_PROGRESS = "maafw.env-prepare.progress"
