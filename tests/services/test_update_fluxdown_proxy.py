@@ -557,7 +557,9 @@ def test_emergency_shutdown_only_for_exclusive_owned_agent(
     monkeypatch.setattr(cli, "_active_downloads", 1)
     monkeypatch.setattr(cli, "_installing", False)
     monkeypatch.setattr(cli, "_load_task_map", lambda _exe: mapping)
-    monkeypatch.setattr(cli, "_server_binaries", lambda _exe: (agent, tmp_path / "daemon"))
+    monkeypatch.setattr(
+        cli, "_server_binaries", lambda _exe: (agent, tmp_path / "daemon")
+    )
     monkeypatch.setattr(
         cli._server,
         "handle",
@@ -572,10 +574,7 @@ def test_emergency_shutdown_only_for_exclusive_owned_agent(
     monkeypatch.setattr(cli.psutil, "Process", lambda _pid: process)
     killed = []
     monkeypatch.setattr(cli, "_kill_pid", killed.append)
-    assert (
-        cli.fluxdown_server_emergency_stop_if_exclusive(exe, url, target)
-        is expected
-    )
+    assert cli.fluxdown_server_emergency_stop_if_exclusive(exe, url, target) is expected
     assert killed == ([34567] if expected else [])
 
 
@@ -607,9 +606,7 @@ async def test_cancel_falls_back_to_exclusive_emergency_shutdown(
         "fluxdown_server_emergency_stop_if_exclusive",
         lambda *_args: emergency.append(True) or True,
     )
-    task = asyncio.create_task(
-        cli.fluxdown_server_download(url, target, cli_exe=exe)
-    )
+    task = asyncio.create_task(cli.fluxdown_server_download(url, target, cli_exe=exe))
     await asyncio.wait_for(started.wait(), 1)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
