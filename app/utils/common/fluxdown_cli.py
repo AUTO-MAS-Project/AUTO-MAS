@@ -562,6 +562,7 @@ def _common_prefix_len(a: Path, b: Path) -> int:
 
 def fluxdown_components(directory: Path) -> dict[str, bool]:
     """按当前系统只认同目录 CLI + Agent + Daemon，Desktop 不可充当 CLI。"""
+
     def valid(name: str | None) -> bool:
         if not name:
             return False
@@ -631,32 +632,43 @@ def fluxdown_detect(
             mtime = directory.stat().st_mtime
         except OSError:
             mtime = 0.0
-        candidates.append({
-            "path": str(directory),
-            "is_portable_cli": state["cli"] and (directory / "portable").is_file(),
-            "complete": state["cli"] and state["server"],
-            "missing": (
-                ("CLI" if not state["cli"] else "")
-                + ("、" if not state["cli"] and not state["server"] else "")
-                + ("Server" if not state["server"] else "")
-            ),
-            "_mtime": mtime,
-            "_desktop": state["desktop"],
-        })
+        candidates.append(
+            {
+                "path": str(directory),
+                "is_portable_cli": state["cli"] and (directory / "portable").is_file(),
+                "complete": state["cli"] and state["server"],
+                "missing": (
+                    ("CLI" if not state["cli"] else "")
+                    + ("、" if not state["cli"] and not state["server"] else "")
+                    + ("Server" if not state["server"] else "")
+                ),
+                "_mtime": mtime,
+                "_desktop": state["desktop"],
+            }
+        )
 
     mas_root = Path.cwd()
-    preferred = str(configured if configured is not None and configured.is_dir()
-                    else configured.parent if configured is not None else "").lower()
-    candidates.sort(key=lambda c: (
-        0 if preferred and c["path"].lower() == preferred else 1,
-        0 if c["complete"] else 1,
-        0 if c["is_portable_cli"] else 1,
-        0 if Path(c["path"]).drive.lower() == mas_root.drive.lower() else 1,
-        -_common_prefix_len(Path(c["path"]), mas_root),
-        -c["_mtime"],
-    ))
+    preferred = str(
+        configured
+        if configured is not None and configured.is_dir()
+        else configured.parent
+        if configured is not None
+        else ""
+    ).lower()
+    candidates.sort(
+        key=lambda c: (
+            0 if preferred and c["path"].lower() == preferred else 1,
+            0 if c["complete"] else 1,
+            0 if c["is_portable_cli"] else 1,
+            0 if Path(c["path"]).drive.lower() == mas_root.drive.lower() else 1,
+            -_common_prefix_len(Path(c["path"]), mas_root),
+            -c["_mtime"],
+        )
+    )
     ready = next((candidate for candidate in candidates if candidate["complete"]), None)
-    partial = next((candidate for candidate in candidates if not candidate["complete"]), None)
+    partial = next(
+        (candidate for candidate in candidates if not candidate["complete"]), None
+    )
     if ready is not None:
         has_portable = any(c["complete"] and c["is_portable_cli"] for c in candidates)
         path = ready["path"]
@@ -668,7 +680,8 @@ def fluxdown_detect(
         message = (
             f"发现不完整的 FluxDown：{partial['path']}；缺少 {partial['missing']}，"
             "请使用「由 MAS 代为下载」补齐。"
-            if partial else "未找到同时包含 CLI 和 Server 的 FluxDown 文件夹"
+            if partial
+            else "未找到同时包含 CLI 和 Server 的 FluxDown 文件夹"
         )
     return {
         "path": path,
@@ -676,8 +689,11 @@ def fluxdown_detect(
         "only_full_warning": warning,
         "scanned_drives": drives,
         "candidates": [
-            {key: value for key, value in c.items()
-             if key in ("path", "is_portable_cli")}
+            {
+                key: value
+                for key, value in c.items()
+                if key in ("path", "is_portable_cli")
+            }
             for c in candidates[:8]
         ],
         "message": message,
