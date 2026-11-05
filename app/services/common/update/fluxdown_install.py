@@ -578,7 +578,7 @@ async def install_fluxdown(
     """下载并安装 FluxDown CLI + Server，返回版本、路径与两个包的大小。"""
 
     if not update_native.supports_fluxdown_install:
-        raise RuntimeError("代为下载 FluxDown 仅支持 Windows")
+        raise RuntimeError("MAS 代为安装 FluxDown 仅支持 Windows、Linux 与 macOS")
     selected = (mirror or "auto").strip().lower()
     if selected not in SUPPORTED_MIRRORS:
         raise RuntimeError(f"未知的下载镜像: {mirror}")
