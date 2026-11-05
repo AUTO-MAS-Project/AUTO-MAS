@@ -517,7 +517,10 @@ async def test_cycle_unconfirmed_stop_never_starts_next_entry(monkeypatch):
                 )
             },
             ScriptConfig={script_a: MaaConfig(), script_b: MaaConfig()},
-            setting=SimpleNamespace(Update=SimpleNamespace(model_dump=lambda **_: {})),
+            setting=SimpleNamespace(
+                Update=SimpleNamespace(model_dump=lambda **_: {}),
+                Replay=SimpleNamespace(Enabled=False),
+            ),
         ),
     )
     monkeypatch.setattr(scheduler, "_exclusive_resources", lambda _: ((), None))
