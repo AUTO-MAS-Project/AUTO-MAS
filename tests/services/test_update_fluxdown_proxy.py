@@ -500,32 +500,40 @@ async def test_unconfirmed_server_writer_propagates_as_unsafe_handoff(
 
 
 @pytest.mark.asyncio
-async def test_confirmed_server_stop_does_not_raise_unsafe_writer(
+async def test_confirmed_server_stop_allows_safe_builtin_handoff(
     server_fixture, monkeypatch
 ):
-    """A confirmed pause remains eligible for a safe local fallback."""
+    """Status ACTIVE -> pause success -> status PAUSED can switch to httpx."""
     exe, target, url = server_fixture
     cli._map_put(exe, cli._map_key(url, target), "inflight", url, target)
     monkeypatch.setattr(cli, "fluxdown_find_cli", lambda *_args, **_kw: exe)
-    monkeypatch.setattr(cli, "fluxdown_server_available", lambda *_args, **_kw: True)
-    seen = []
+    calls = []
+    stopped = False
 
     def command(_exe, _env, args, timeout=30):
-        seen.append(args)
+        nonlocal stopped
+        calls.append(args)
+        if args[0] == "pause":
+            stopped = True
+            return 0, ""
         if args[0] == "status":
-            return 0, json.dumps({"status": 2})
-        if args[0] == "resume":
-            return 1, "server unavailable"
-        return 0, ""
+            return 0, json.dumps({"status": 2 if stopped else 1})
+        raise AssertionError("No new daemon download should be started")
 
     monkeypatch.setattr(cli, "_run_cli", command)
-    local = AsyncMock(return_value=(10, cli.FluxdownDownloadRecord()))
-    monkeypatch.setattr(cli, "fluxdown_download", local)
-    options = transport.FluxdownOptions("fluxdown", "GitHub", str(exe), 8, True)
+    builtin = AsyncMock(return_value=10)
+    options = transport.FluxdownOptions("builtin", "GitHub", str(exe), 8, True)
     assert (
         await transport.download_file(
-            url, target, timeout=30, options=options, source="GitHub"
+            url,
+            target,
+            timeout=30,
+            options=options,
+            downloader="builtin",
+            source="GitHub",
+            http_download=builtin,
         )
         == 10
     )
-    local.assert_awaited_once()
+    assert [a[0] for a in calls] == ["status", "pause", "status"]
+    builtin.assert_awaited_once()
