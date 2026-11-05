@@ -97,6 +97,7 @@ vi.mock('ant-design-vue', () => ({
 vi.mock('@/utils/environment', () => ({
   isDevelopmentEnvironment: false,
   isBrowserDevelopment: () => false,
+  managesBackendProcess: () => true,
 }))
 vi.mock('@/utils/analytics', () => ({ beginAnalyticsOperation: () => ({ finish: vi.fn() }) }))
 vi.mock('@/views/Initialization/finishInitializationEntry', () => ({
@@ -146,14 +147,18 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
     async entry => {
       let emit!: (progress: RuntimeBinarySyncProgress) => void
       let finish!: () => void
+      // 预先建立释放句柄，操作尚未进入回调时，finally 也能结束模拟操作。
+      const completion = new Promise<void>(resolve => {
+        finish = resolve
+      })
       const runtime = new RuntimeInitializationService({
         launchConfig: bridge.config,
         mirrorService: { getMirrors: () => [] },
-        alignRuntimeBinary: options =>
-          new Promise(resolve => {
-            emit = progress => options.onProgress?.(progress)
-            finish = () => resolve({ status: 'cancelled' })
-          }),
+        alignRuntimeBinary: async options => {
+          emit = progress => options.onProgress?.(progress)
+          await completion
+          return { status: 'cancelled' }
+        },
         createClient: () => {
           throw new Error('The test must not launch a Runtime process')
         },
@@ -187,7 +192,7 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
           })
         )
       try {
-        expect(emit).toBeTypeOf('function')
+        await vi.waitFor(() => expect(emit).toBeTypeOf('function'))
         for (const source of [
           { key: 'cnb', name: 'CNB', index: 1, en: 'CNB', ja: 'CNB' },
           {
@@ -270,6 +275,10 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
       ) => void
       let ready!: () => void
       let finish!: () => void
+      // 预先建立释放句柄，操作尚未进入回调时，finally 也能结束模拟操作。
+      const completion = new Promise<void>(resolve => {
+        finish = resolve
+      })
       const runtime = new RuntimeInitializationService({
         launchConfig: bridge.config,
         mirrorService: { getMirrors: () => [] },
@@ -301,9 +310,7 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
                   message: '运行环境已就绪',
                   details: {},
                 })
-              await new Promise<void>(resolve => {
-                finish = resolve
-              })
+              await completion
               throw new Error('Controlled Runtime process stopped after assertions')
             },
           }) as never,

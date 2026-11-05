@@ -21,6 +21,7 @@ vi.mock('ant-design-vue', () => ({
 vi.mock('@/utils/environment', () => ({
   isDevelopmentEnvironment: false,
   isBrowserDevelopment: () => false,
+  managesBackendProcess: () => true,
 }))
 vi.mock('@/utils/analytics', () => ({ beginAnalyticsOperation: () => ({ finish: vi.fn() }) }))
 vi.mock('./finishInitializationEntry', () => ({ finishInitializationEntry: vi.fn() }))
