@@ -647,7 +647,9 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
             return managed, False
 
     # 没配置时也应尽量复用桌面版目录，避免另建一套 Agent/Daemon。
-    detected = _fluxdown_cli.fluxdown_detect(configured_path=None, scan_budget=8.0)
+    detected = _fluxdown_cli.fluxdown_detect(
+        configured_path=None, scan_budget=8.0, managed_dir=managed
+    )
     for candidate in detected["candidates"]:
         directory = Path(candidate["path"])
         if (directory / "fluxdown-desktop.exe").is_file() and not damaged(directory):
@@ -722,7 +724,12 @@ async def _save_path(
     """安装结果可用才保存路径；保留下载期间用户手动改的设置。"""
     _assert_complete_install(target)
     # 安装结束后自动复用设置页的目录检测规则；拒绝仅有 GUI 或部分组件的目录。
-    detected = await asyncio.to_thread(_fluxdown_cli.fluxdown_detect, str(target), 0.0)
+    detected = await asyncio.to_thread(
+        _fluxdown_cli.fluxdown_detect,
+        str(target),
+        0.0,
+        managed_dir=_install_dir(),
+    )
     if not detected["path"] or Path(detected["path"]).resolve() != target.resolve():
         raise RuntimeError("安装后 FluxDown 自动检测未通过，未保存路径")
     await _report_install_progress("save")
