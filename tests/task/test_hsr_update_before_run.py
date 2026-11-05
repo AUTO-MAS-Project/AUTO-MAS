@@ -282,17 +282,19 @@ async def test_installation_rechecks_after_archive_inspection(
         nonlocal native
         program = shutil.which("ping" if os.name == "nt" else "sleep")
         assert program is not None
-        executable = root / (
-            "native-runtime.exe" if os.name == "nt" else "native-runtime"
-        )
+        # uutils 等多调用程序按文件名选择命令，复制时保留 sleep/ping 的名称。
+        executable = root / os.path.basename(program)
         shutil.copy2(program, executable)
         args = ["127.0.0.1", "-n", "30"] if os.name == "nt" else ["30"]
         native = subprocess.Popen(
             [str(executable), *args],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
         )
-        assert update.check_no_process_running(root) is not None
+        failure = update.check_no_process_running(root)
+        returncode = native.poll()
+        assert returncode is None, (returncode, native.communicate(timeout=5)[0])
+        assert failure is not None
 
     def inspect_after_change(package):
         size = inspect(package)
@@ -336,6 +338,9 @@ async def test_installation_rechecks_after_archive_inspection(
             download_dir=downloads,
             prepared=prepared,
         )
+        if native is not None:
+            returncode = native.poll()
+            assert returncode is None, (returncode, native.communicate(timeout=5)[0])
         assert not result.updated
         assert not result.blocking
         expected = "3.0" if changed == "installation" else "1.0"
@@ -345,12 +350,10 @@ async def test_installation_rechecks_after_archive_inspection(
         )
         assert (root / "March7th Assistant.exe").read_text() == f"engine {expected}"
         assert not installer.has_pending_journal(root)
-        if native is not None:
-            assert native.poll() is None
     finally:
         if native is not None:
             native.terminate()
-            native.wait(timeout=5)
+            native.communicate(timeout=5)
         if prepared is not None:
             update.discard_prepared_update(prepared)
 
