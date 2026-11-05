@@ -191,6 +191,28 @@ def test_reservations_keep_task_owner_roots_and_emulator(tmp_path):
     )
 
 
+def test_okww_shared_installation_is_reserved_across_scripts(tmp_path, monkeypatch):
+    from app.core.task_manager.manager import _ScriptTaskReservations
+    from app.models.config import OkwwConfig
+    from app.task.Okww.registration import build_config_handler
+
+    work = tmp_path / "mas"
+    work.mkdir()
+    root = tmp_path / "okww"
+    root.mkdir()
+    monkeypatch.chdir(work)
+    script = OkwwConfig.model_validate({"Info": {"RootPath": str(root)}})
+    resources = build_config_handler().task_resources(script)
+    reservations = _ScriptTaskReservations()
+    first, second = uuid4(), uuid4()
+    assert reservations.try_acquire(first, "first", root_paths=resources.root_paths)
+    assert not reservations.try_acquire(
+        second, "second", root_paths=resources.root_paths
+    )
+    assert reservations.release(first, "first")
+    assert reservations.try_acquire(second, "second", root_paths=resources.root_paths)
+
+
 @pytest.mark.asyncio
 async def test_test_adapter_three_lines_and_two_hosts_share_no_dependencies(
     tmp_path, monkeypatch
