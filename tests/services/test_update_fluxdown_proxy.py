@@ -612,3 +612,37 @@ async def test_cancel_falls_back_to_exclusive_emergency_shutdown(
     with pytest.raises(asyncio.CancelledError):
         await task
     assert emergency == [True]
+
+
+@pytest.mark.asyncio
+async def test_failed_emergency_shutdown_reports_unconfirmed_writer(
+    server_fixture, monkeypatch
+):
+    import asyncio
+
+    exe, target, url = server_fixture
+    started = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def command(_exe, _env, args, timeout=30):
+        if args[0] == "add":
+            return 0, '["created"]'
+        if args[0] == "status":
+            loop.call_soon_threadsafe(started.set)
+            return 0, json.dumps({"status": 1})
+        if args[0] == "pause":
+            return 124, "timeout"
+        return 0, ""
+
+    def failed_stop(*_args):
+        raise OSError("denied")
+
+    monkeypatch.setattr(cli, "_run_cli", command)
+    monkeypatch.setattr(
+        cli, "fluxdown_server_emergency_stop_if_exclusive", failed_stop
+    )
+    task = asyncio.create_task(cli.fluxdown_server_download(url, target, cli_exe=exe))
+    await asyncio.wait_for(started.wait(), 1)
+    task.cancel()
+    with pytest.raises(cli.FluxdownCancelUnconfirmed):
+        await task
