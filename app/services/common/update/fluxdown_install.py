@@ -585,7 +585,7 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
         if directory == legacy:
             return False
         return any((directory / name).is_file() for name in (
-            *_CLI_BINARIES, "fluxdown-desktop.exe",
+            *_cli_names(), "fluxdown-desktop.exe",
         ))
 
     if configured_path:
@@ -609,17 +609,17 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
 def _install_missing_to_existing(extracted: Path, target: Path) -> None:
     """只添加缺少的程序，不覆盖用户桌面版、Agent 或 CLI 的现有版本。"""
     if not any((target / name).is_file() for name in (
-        *_CLI_BINARIES, "fluxdown-desktop.exe",
+        *_cli_names(), "fluxdown-desktop.exe",
     )):
         raise RuntimeError("原有 FluxDown 目录已变化，请重新检测路径")
 
     missing: list[str] = []
     existing_cli = any(
-        (target / name).is_file() for name in _CLI_BINARIES
+        (target / name).is_file() for name in _cli_names()
     )
     if not existing_cli:
-        missing.append("fluxdown.exe")
-    for name in ("fluxdown-agent.exe", "fluxdownd.exe"):
+        missing.append(_cli_names()[0])
+    for name in _server_names():
         if not (target / name).is_file():
             missing.append(name)
 
@@ -656,6 +656,12 @@ async def _save_path(
 ) -> dict[str, Any]:
     """安装结果可用才保存路径；保留下载期间用户手动改的设置。"""
     _assert_complete_install(target)
+    # 安装结束后自动复用设置页的目录检测规则；拒绝仅有 GUI 或部分组件的目录。
+    detected = await asyncio.to_thread(
+        _fluxdown_cli.fluxdown_detect, str(target), 0.0
+    )
+    if not detected["path"] or Path(detected["path"]).resolve() != target.resolve():
+        raise RuntimeError("安装后 FluxDown 自动检测未通过，未保存路径")
     await _report_install_progress("save")
     try:
         async with config_manager.transaction():
@@ -711,12 +717,12 @@ async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, A
             )
             await asyncio.to_thread(
                 _check_package, work / release.cli_name,
-                {"fluxdown.exe"},
-                {"fluxdown-agent.exe", "fluxdownd.exe", "fluxdown-desktop.exe"},
+                {_cli_names()[0]},
+                {*_server_names(), "fluxdown-desktop.exe"},
             )
             await _report_install_progress("extract", name=release.cli_name)
             await asyncio.to_thread(
-                _extract_zip, work / release.cli_name, extracted
+                _extract_package, work / release.cli_name, extracted
             )
         if need_server:
             server_size = await _download_asset(
@@ -725,12 +731,12 @@ async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, A
             )
             await asyncio.to_thread(
                 _check_package, work / release.server_name,
-                {"fluxdown-agent.exe", "fluxdownd.exe"},
-                {"fluxdown.exe", "fluxdown-desktop.exe"},
+                set(_server_names()),
+                {*_cli_names(), "fluxdown-desktop.exe"},
             )
             await _report_install_progress("extract", name=release.server_name)
             await asyncio.to_thread(
-                _extract_zip, work / release.server_name, extracted
+                _extract_package, work / release.server_name, extracted
             )
 
         await _report_install_progress("install")
@@ -742,13 +748,13 @@ async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, A
                     return
                 if not need_cli:
                     current_cli = next(
-                        (target / n for n in _CLI_BINARIES
+                        (target / n for n in _cli_names()
                          if (target / n).is_file()), None
                     )
                     if current_cli is not None:
                         shutil.copy2(current_cli, extracted / current_cli.name)
                 if not need_server:
-                    for name in ("fluxdown-agent.exe", "fluxdownd.exe"):
+                    for name in _server_names():
                         shutil.copy2(target / name, extracted / name)
                 _assert_complete_install(extracted)
                 _install_from(extracted)
