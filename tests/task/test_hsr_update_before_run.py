@@ -378,3 +378,193 @@ async def test_hsr_prefetch_digest_failure_cleans_package(tmp_path, monkeypatch)
             download_dir=downloads,
         )
     assert not list(downloads.iterdir())
+
+
+@pytest.fixture
+def hsr_prefetch_case(tmp_path, monkeypatch):
+    from app.task.HSR.tools.update.discover import DiscoveryResult, UpdateCandidate
+
+    install = tmp_path / "installed"
+    install.mkdir()
+    download_dir = tmp_path / "prefetch"
+    candidate = UpdateCandidate(
+        "SRA",
+        "1.0",
+        "2.0",
+        "AutoSite",
+        "zip",
+        "https://example.invalid/SRA-2.0.zip",
+    )
+    discovered = DiscoveryResult("SRA", "1.0", "2.0", True, candidate)
+    monkeypatch.setattr(
+        update, "check_engine_update", AsyncMock(return_value=discovered)
+    )
+    monkeypatch.setattr(update, "_remote_size", AsyncMock(return_value=0))
+    return install, download_dir, candidate
+
+
+@pytest.mark.asyncio
+async def test_prefetch_cancel_after_partial_builtin_download_removes_private_directory(
+    hsr_prefetch_case, monkeypatch
+):
+    """Cancellation through prepare_engine_update must reclaim the UUID stage."""
+    from app.task.HSR.tools.update import download as hsr_download
+
+    install, download_dir, _ = hsr_prefetch_case
+    started = asyncio.Event()
+
+    async def partial_download(_url, destination, **_kwargs):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        # Keep a real OS handle open until the coroutine receives cancellation.
+        with destination.open("wb") as handle:
+            handle.write(b"downloaded-but-not-verified")
+            handle.flush()
+            started.set()
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        hsr_download, "download_script_package", partial_download
+    )
+    task = asyncio.create_task(
+        update.prepare_engine_update(
+            "SRA",
+            install,
+            source="AutoSite",
+            channel="stable",
+            cdk="",
+            proxy=None,
+            download_dir=download_dir,
+        )
+    )
+    await asyncio.wait_for(started.wait(), 3)
+    assert list(download_dir.rglob("*.part"))
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, 3)
+    assert not list(download_dir.iterdir())
+    assert install.is_dir()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["ordinary", "resumable", "writer-unconfirmed"])
+async def test_prefetch_failure_cleans_only_when_downloader_releases_ownership(
+    hsr_prefetch_case, monkeypatch, failure
+):
+    from app.services.common.update.fluxdown import FluxdownResumableError
+    from app.task.HSR.tools.update import download as hsr_download
+    from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+    install, download_dir, _ = hsr_prefetch_case
+    monkeypatch.setattr(hsr_download, "_RETRIES", 1)
+
+    async def partial_download(_url, destination, **_kwargs):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"partial")
+        if failure == "resumable":
+            raise FluxdownResumableError("server task can resume")
+        if failure == "writer-unconfirmed":
+            raise FluxdownCancelUnconfirmed("server writer may be active")
+        raise OSError("network lost")
+
+    monkeypatch.setattr(
+        hsr_download, "download_script_package", partial_download
+    )
+    exception = (
+        FluxdownResumableError
+        if failure == "resumable"
+        else (
+            FluxdownCancelUnconfirmed
+            if failure == "writer-unconfirmed"
+            else update.HSRUpdateError
+        )
+    )
+    with pytest.raises(exception):
+        await update.prepare_engine_update(
+            "SRA",
+            install,
+            source="AutoSite",
+            channel="stable",
+            cdk="",
+            proxy=None,
+            download_dir=download_dir,
+        )
+    stages = list(download_dir.iterdir()) if download_dir.exists() else []
+    if failure == "ordinary":
+        assert not stages
+    else:
+        assert len(stages) == 1
+        assert list(stages[0].glob("*.part"))[0].read_bytes() == b"partial"
+
+
+@pytest.mark.asyncio
+async def test_prefetch_verified_package_transfers_ownership_to_candidate(
+    hsr_prefetch_case, monkeypatch
+):
+    import hashlib
+
+    from app.task.HSR.tools.update import download as hsr_download
+    from app.task.HSR.tools.update.discover import DiscoveryResult, UpdateCandidate
+
+    install, download_dir, old = hsr_prefetch_case
+    payload = b"verified script package"
+    candidate = UpdateCandidate(
+        old.engine, old.current_version, old.latest_version,
+        old.source, old.asset_kind, old.download_url, hashlib.sha256(payload).hexdigest()
+    )
+    monkeypatch.setattr(
+        update,
+        "check_engine_update",
+        AsyncMock(
+            return_value=DiscoveryResult("SRA", "1.0", "2.0", True, candidate)
+        ),
+    )
+
+    async def download(_url, destination, **_kwargs):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+        return len(payload)
+
+    monkeypatch.setattr(hsr_download, "download_script_package", download)
+    prepared = await update.prepare_engine_update(
+        "SRA",
+        install,
+        source="AutoSite",
+        channel="stable",
+        cdk="",
+        proxy=None,
+        download_dir=download_dir,
+    )
+    assert isinstance(prepared, update.PreparedUpdate)
+    assert prepared.package.is_file()
+    assert prepared.digest == hashlib.sha256(payload).hexdigest()
+    assert len(list(download_dir.iterdir())) == 1
+    update.discard_prepared_update(prepared)
+    assert not list(download_dir.iterdir())
+
+
+@pytest.mark.asyncio
+async def test_prefetch_digest_failure_reclaims_private_directory(
+    hsr_prefetch_case, monkeypatch
+):
+    install, download_dir, _ = hsr_prefetch_case
+
+    async def download(_candidate, package, **_kwargs):
+        package.parent.mkdir(parents=True, exist_ok=True)
+        package.write_bytes(b"bad file")
+        return package
+
+    monkeypatch.setattr(update, "_download_with_space_check", download)
+    monkeypatch.setattr(
+        update, "_package_digest", Mock(side_effect=OSError("hash failure"))
+    )
+    with pytest.raises(OSError, match="hash failure"):
+        await update.prepare_engine_update(
+            "SRA",
+            install,
+            source="AutoSite",
+            channel="stable",
+            cdk="",
+            proxy=None,
+            download_dir=download_dir,
+        )
+    assert not list(download_dir.iterdir())
