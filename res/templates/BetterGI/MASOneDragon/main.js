@@ -342,8 +342,7 @@ async function dispatchCombat(step) {
       );
       if (s.isResinExhaustionMode != null) p.isResinExhaustionMode = !!s.isResinExhaustionMode;
       if (s.openModeCountMin != null) p.openModeCountMin = !!s.openModeCountMin;
-      // 旧版 BGI 保留此设置，新版已移除；复用安全赋值，缺少属性时跳过。
-      if (s.useAdventurerHandbook != null) setProp(p, "useAdventurerHandbook", !!s.useAdventurerHandbook);
+      // 新版 BGI 已移除此参数，存量 Plan 中的残留值不再传入。
       // 「跳过准备流程」(LeyLineOneDragonMode) 因 BGI 未向 JS 暴露注入点，在 MAS 接管路径
       // 下无效，已从右栏移除；此处不再消费该键（如将来 BGI 提供注入点可在此补回）。
       // 地脉花无原生超时，不兜底（前端默认 0=不限制）；仅当显式 >0 时透传。
