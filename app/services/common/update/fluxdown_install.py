@@ -40,6 +40,7 @@ import re
 import shutil
 import stat
 import tarfile
+import tempfile
 import time
 import zipfile
 from dataclasses import dataclass
@@ -609,6 +610,18 @@ async def install_fluxdown(
             raise
 
 
+def _can_write_directory(directory: Path) -> bool:
+    """用实际创建文件检测安装目录是否可写，兼容 Windows ACL/UAC。"""
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=".mas-fluxdown-write-", dir=directory
+        ):
+            pass
+    except OSError:
+        return False
+    return True
+
+
 def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
     """优先补齐已有的用户安装目录；历史 MAS 目录迁移到统一数据目录。"""
     managed = _install_dir()
@@ -636,15 +649,22 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
         except OSError:
             return True
 
+    def usable_external(directory: Path) -> bool:
+        if damaged(directory):
+            logger.warning(f"FluxDown 外部目录存在空文件，改用 MAS 托管安装: {directory}")
+            return False
+        state = _fluxdown_cli.fluxdown_components(directory)
+        if not (state["cli"] and state["server"]) and not _can_write_directory(directory):
+            logger.warning(f"FluxDown 外部安装目录不可写，改用 MAS 托管安装: {directory}")
+            return False
+        return True
+
     if configured_path:
         configured = Path(configured_path)
         directory = configured if configured.is_dir() else configured.parent
-        if available(directory) and not (directory != managed and damaged(directory)):
-            return directory, directory != managed
-        if available(directory) and directory != managed:
-            logger.warning(
-                f"FluxDown 外部目录存在空文件，改在 MAS 托管目录补装: {directory}"
-            )
+        if available(directory):
+            if directory == managed or usable_external(directory):
+                return directory, directory != managed
             return managed, False
 
     # 没配置时也应尽量复用桌面版目录，避免另建一套 Agent/Daemon。
@@ -653,7 +673,7 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
     )
     for candidate in detected["candidates"]:
         directory = Path(candidate["path"])
-        if (directory / "fluxdown-desktop.exe").is_file() and not damaged(directory):
+        if (directory / "fluxdown-desktop.exe").is_file() and usable_external(directory):
             return directory, True
 
     return managed, False
