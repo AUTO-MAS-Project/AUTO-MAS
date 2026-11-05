@@ -28,6 +28,7 @@ from app.services.common.update import transport as _service_update_transport
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
 from app.utils import get_logger
 
+from .resource_package import _copy_if_changed
 from .resource_update import _run_write_thread
 from .software_package import (
     has_delegated_update_failure,
@@ -151,28 +152,40 @@ async def prepare_maa_fluxdown_update(
     temporary_directory: Path | None = None
     retain_download = False
     try:
-        if prepared is not None:
-            if (
-                read_installed_release(maa_root) != prepared.release
-                or await _run_write_thread(_digest, prepared.package) != prepared.digest
-            ):
-                raise RuntimeError("MAA 安装或预下载包已变化，请重新检查更新")
-            destination = maa_root / prepared.package.name
-            await _run_write_thread(shutil.copyfile, prepared.package, destination)
-            write_pending_update(
-                maa_root, version=prepared.version, package=str(destination.resolve())
-            )
-            return prepared.version
         release = read_installed_release(maa_root)
         if release is None or has_delegated_update_failure(maa_root):
             raise RuntimeError("无法确认 MAA 安装状态，请先在 MAA 内完成修复")
-        current, arch = release
-        channel = config.Update.Channel
-        # 原生下载或上次中断留下的包仍走已有交接流程，不覆盖它的登记。
+        # 预取期间原生更新也可能留下登记或失败状态，消费候选同样要复核。
         _, pending = read_pending_update(maa_root)
         if pending and (maa_root / pending).is_file():
             logger.info("MAA 已有待安装包，保留原生更新登记")
             raise RuntimeError("MAA 仍有未安装的更新包，请先完成安装")
+        if prepared is not None:
+            if release != prepared.release:
+                raise RuntimeError("MAA 安装已变化，请重新检查更新")
+            destination = maa_root / prepared.package.name
+            # 校验实际复制结果再原子发布；失败不覆盖既有归档，也不登记半包。
+            await _run_write_thread(
+                _copy_if_changed,
+                prepared.package,
+                destination,
+                expected_sha256=prepared.digest,
+            )
+            if not use_maa_github_update(
+                config, config_dirs=[config_dir, maa_root / "config"]
+            ):
+                logger.info("复制期间更新来源已变更，保留文件但不登记安装")
+                return None
+            if read_installed_release(
+                maa_root
+            ) != release or has_delegated_update_failure(maa_root):
+                raise RuntimeError("复制期间 MAA 安装状态发生变化，请重新运行")
+            write_pending_update(
+                maa_root, version=prepared.version, package=str(destination.resolve())
+            )
+            return prepared.version
+        current, arch = release
+        channel = config.Update.Channel
         latest = await query_latest_maa_version(arch, channel, github=True)
         target_version, current_version = parse_version(latest), parse_version(current)
         if target_version is None or current_version is None:
@@ -256,6 +269,6 @@ async def prepare_maa_fluxdown_update(
         if temporary_directory is not None and not retain_download:
             # Do not remove a shared install directory or a consumed candidate.
             # Failed built-in downloads have released their file handle here.
-            await asyncio.to_thread(
+            await _run_write_thread(
                 shutil.rmtree, temporary_directory, ignore_errors=True
             )

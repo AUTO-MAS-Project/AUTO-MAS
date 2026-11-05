@@ -135,14 +135,18 @@ async def run_python(
     timeout: float = 30,
     env: Mapping[str, str] | None = None,
 ) -> str:
+    # -I 会忽略 PYTHON* 环境变量，本进程另传 -B；构建子进程通过环境继承。
+    child_env = dict(os.environ if env is None else env)
+    child_env["PYTHONDONTWRITEBYTECODE"] = "1"
     result = await ProcessRunner.run_process(
         root / REL_PYTHON_EXE,
         "-I",
+        "-B",  # 预取的只读探测/构建导入不能向当前安装补写字节码缓存。
         *args,
         cwd=root,
         timeout=timeout,
         kill_tree_on_cancel=True,
-        env=env,
+        env=child_env,
     )
     if result.returncode != 0:
         if pending_marker(root).exists():
@@ -270,7 +274,7 @@ async def prepare_update(root: Path) -> PreparedUpdate | str:
     except BaseException:
         # Failures and confirmed cancellations before a candidate is returned
         # otherwise have no manager-owned object to discard.
-        await asyncio.to_thread(shutil.rmtree, stage, ignore_errors=True)
+        await _run_package_worker(lambda: shutil.rmtree(stage, ignore_errors=True))
         raise
 
 

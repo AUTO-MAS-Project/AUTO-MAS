@@ -696,8 +696,9 @@ async def test_prefetch_preserves_daemon_owned_stage_when_history_is_cancelled(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("reader", ["digest", "expanded-size"])
 async def test_consumption_cancel_waits_for_reader_before_discard(
-    hsr_prefetch_case, monkeypatch
+    hsr_prefetch_case, monkeypatch, reader
 ):
     install, downloads, _ = hsr_prefetch_case
     downloads.mkdir()
@@ -707,6 +708,8 @@ async def test_consumption_cancel_waits_for_reader_before_discard(
     candidate = update.PreparedUpdate(install.resolve(), result, package, "digest")
     started, release = threading.Event(), threading.Event()
     monkeypatch.setattr(update, "read_installed_version", lambda *_: "1.0")
+    monkeypatch.setattr(update, "check_no_process_running", lambda *_: None)
+    monkeypatch.setattr(update, "check_writable", lambda *_: None)
 
     def digest(path):
         with path.open("rb") as reader:
@@ -715,7 +718,11 @@ async def test_consumption_cancel_waits_for_reader_before_discard(
             assert reader.read() == b"verified package"
         return "digest"
 
-    monkeypatch.setattr(update, "_package_digest", digest)
+    if reader == "digest":
+        monkeypatch.setattr(update, "_package_digest", digest)
+    else:
+        monkeypatch.setattr(update, "_package_digest", lambda *_: "digest")
+        monkeypatch.setattr(update, "expanded_size_of_zip", digest)
 
     async def consume():
         try:
@@ -741,3 +748,81 @@ async def test_consumption_cancel_waits_for_reader_before_discard(
         await asyncio.gather(task, return_exceptions=True)
     assert task.cancelled()
     assert not package.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "module_key,output,completed",
+    [
+        ("DivergentUniverse", "停止运行", False),
+        ("DivergentUniverse", "Mission accomplished", True),
+        ("Daily", "", True),
+        ("StartGame", "", True),
+    ],
+)
+async def test_prefetch_success_follows_final_module_verdict(
+    monkeypatch, module_key, output, completed
+):
+    """进程成功结束但周常未完成，不能启动下一脚本的预取宽限期。"""
+    from functools import partial
+
+    from app.config import ConfigCollection
+    from app.core.task_manager.manager import TaskInfo
+    from app.models.config import HSRConfig, HSRUserConfig
+    from app.models.task import ScriptItem, UserItem
+    from app.task.HSR.AutoProxy import HSRAutoProxyTask
+    from app.task.HSR.tools.run_model import HSRRunItem, HSRRuntimeState
+    from app.task.HSR.tools.sra_control import _on_sra_weekly_success
+    from app.task.HSR.tools.sra_runtime import SRACommandResult
+
+    users = ConfigCollection.build([HSRUserConfig])
+    await users.activate()
+    uid = users.add(HSRUserConfig)
+    await users.commit()
+    user = UserItem(str(uid), "test", "运行")
+    script = ScriptItem(str(uuid.uuid4()), "HSR", "运行", user_list=[user])
+    task_info = TaskInfo("AutoProxy", "test", "queue", None, None)
+    monkeypatch.setattr(task_info, "schedule_on_change", lambda: None)
+    task_info.script_list = [script]
+    runtime = HSRRuntimeState(log_lines=[], completion_writebacks=[])
+    proxy = HSRAutoProxyTask(
+        script, HSRConfig(Game={"Enabled": False}), users, user, runtime
+    )
+    result = SRACommandResult(
+        "DivergentUniverseTask", "unused.json", success=True, output=output
+    )
+
+    async def run():
+        return result
+
+    on_success = (
+        partial(
+            _on_sra_weekly_success,
+            uid=str(uid),
+            user_name=user.name,
+            module_name="差分宇宙",
+            module_key=module_key,
+            queue_weekly_completion=proxy._queue_weekly_completion,
+            record_module_result=proxy._record_module_result,
+        )
+        if module_key == "DivergentUniverse"
+        else None
+    )
+    item = HSRRunItem(
+        user.name,
+        str(uid),
+        "daily",
+        module_key,
+        module_key,
+        "SRA",
+        "",
+        run,
+        on_success=on_success,
+    )
+    assert await proxy._run_queue_items([item]) == []
+    if module_key == "DivergentUniverse":
+        assert runtime.module_results[0].status == (
+            "completed" if completed else "incomplete"
+        )
+    assert (user.first_task_completed_at is not None) is completed
+    assert (script.first_task_completed_at is not None) is completed

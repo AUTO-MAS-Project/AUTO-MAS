@@ -515,13 +515,19 @@ async def test_cancel_install_waits_for_worker_before_deleting_archive(
 @pytest.mark.parametrize(
     "error_type", [FluxdownCancelUnconfirmed, FluxdownResumableError]
 )
+@pytest.mark.parametrize("download_path", ["destination", "request"])
 async def test_unconfirmed_downloader_keeps_its_private_destination(
-    installation, monkeypatch, error_type
+    installation, monkeypatch, error_type, download_path
 ):
     root, config = installation
 
     async def interrupted_download(_url, destination, **_kwargs):
-        destination.write_bytes(b"partial download")
+        output = (
+            destination.parent / ".mas-fluxdown-test.zip"
+            if download_path == "request"
+            else destination
+        )
+        output.write_bytes(b"partial download")
         raise error_type("下载器未确认停止")
 
     monkeypatch.setattr(
@@ -567,7 +573,12 @@ async def test_cancel_builtin_download_cleans_partial_zip(
     started, stopped = asyncio.Event(), asyncio.Event()
 
     async def partial_download(_url, destination, **_kwargs):
-        destination.write_bytes(b"partial ZIP")
+        output = (
+            destination.parent / ".mas-fluxdown-test.zip"
+            if source == "FluxDown-confirmed"
+            else destination
+        )
+        output.write_bytes(b"partial ZIP")
         started.set()
         try:
             await asyncio.Event().wait()
@@ -598,7 +609,9 @@ async def test_cancel_fluxdown_download_preserves_unconfirmed_partial_zip(
     started = asyncio.Event()
 
     async def partial_fluxdown_download(_url, destination, **_kwargs):
-        destination.write_bytes(b"unconfirmed FluxDown part")
+        (destination.parent / ".mas-fluxdown-test.zip").write_bytes(
+            b"unconfirmed FluxDown part"
+        )
         started.set()
         try:
             await asyncio.Event().wait()

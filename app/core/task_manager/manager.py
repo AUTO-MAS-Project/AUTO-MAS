@@ -96,8 +96,8 @@ from app.services import execute_script_task
 from app.task.history_core import UserHistoryDependencies, save_user_history
 from app.task.registration import ManagerBuildContext, ManagerFactory
 from app.utils import LOG_TYPE_ERROR, LazyProxy, get_logger
-from app.utils.common.log_box.results import LogEntry
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from app.utils.common.log_box.results import LogEntry
 
 System = LazyProxy("app.services", "System")
 

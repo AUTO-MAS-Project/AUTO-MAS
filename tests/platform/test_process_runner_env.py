@@ -3,6 +3,7 @@
 import asyncio
 import os
 import sys
+import threading
 import time
 from contextlib import suppress
 from unittest.mock import AsyncMock, Mock
@@ -66,6 +67,117 @@ async def test_environment_preserves_timeout_and_cancel_cleanup(monkeypatch, can
     with pytest.raises(asyncio.CancelledError if cancelled else TimeoutError):
         await task
     assert created and created[0].returncode is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("initial_stop", ["cancel", "timeout"])
+async def test_repeated_cancel_waits_for_process_tree_cleanup(
+    monkeypatch, initial_stop
+):
+    """依赖构建/安装取消后，清理线程未停进程之前不能交还目录。"""
+    created = []
+    ready = asyncio.Event()
+    stopping, release = threading.Event(), threading.Event()
+    create = process_runner.create_subprocess
+    terminate = process_runner._terminate_process_tree
+
+    async def record(*args, **kwargs):
+        process = await create(*args, **kwargs)
+        created.append(process)
+        ready.set()
+        return process
+
+    def stop_tree(pid, *, grace_period):
+        stopping.set()
+        assert release.wait(5)
+        terminate(pid, grace_period=grace_period)
+
+    monkeypatch.setattr(process_runner, "create_subprocess", record)
+    monkeypatch.setattr(process_runner, "_terminate_process_tree", stop_tree)
+    task = asyncio.create_task(
+        process_runner.ProcessRunner.run_process(
+            sys.executable,
+            "-I",
+            "-c",
+            "import time; time.sleep(30)",
+            timeout=30 if initial_stop == "cancel" else 0.05,
+            kill_tree_on_cancel=True,
+        )
+    )
+    try:
+        await asyncio.wait_for(ready.wait(), 3)
+        if initial_stop == "cancel":
+            task.cancel()
+        assert await asyncio.to_thread(stopping.wait, 3)
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=0.05)
+        assert not done, "进程清理仍在执行，重复取消不能提前结束等待"
+        assert created[0].returncode is None
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+        for process in created:
+            if process.returncode is None:
+                with suppress(ProcessLookupError):
+                    process.kill()
+            await process.wait()
+    assert task.cancelled()
+    assert created[0].returncode is not None
+
+
+@pytest.mark.asyncio
+async def test_cancel_with_full_output_pipe_finishes_cleanup(monkeypatch):
+    """communicate 被取消后，必须排空并释放已填满的管道。"""
+    created = []
+    ready = asyncio.Event()
+    stopping, release = threading.Event(), threading.Event()
+    create = process_runner.create_subprocess
+    terminate = process_runner._terminate_process_tree
+
+    async def record(*args, **kwargs):
+        process = await create(*args, **kwargs)
+        created.append(process)
+        ready.set()
+        return process
+
+    def stop_tree(pid, *, grace_period):
+        stopping.set()
+        assert release.wait(5)
+        terminate(pid, grace_period=grace_period)
+
+    monkeypatch.setattr(process_runner, "create_subprocess", record)
+    monkeypatch.setattr(process_runner, "_terminate_process_tree", stop_tree)
+    task = asyncio.create_task(
+        process_runner.ProcessRunner.run_process(
+            sys.executable,
+            "-I",
+            "-c",
+            "import os\nwhile True: os.write(1, b'x' * 65536)\n",
+            timeout=30,
+            kill_tree_on_cancel=True,
+        )
+    )
+    try:
+        await asyncio.wait_for(ready.wait(), 3)
+        task.cancel()
+        assert await asyncio.to_thread(stopping.wait, 3)
+        async with asyncio.timeout(3):
+            while not created[0].stdout._paused:
+                await asyncio.sleep(0.005)
+        release.set()
+        done, _ = await asyncio.wait({task}, timeout=1)
+        assert done, "进程已经终止，但未排空 stdout 导致回收一直不结束"
+        assert created[0]._transport.get_pipe_transport(1).is_closing()
+    finally:
+        release.set()
+        if created and (
+            not task.done()
+            or not created[0]._transport.get_pipe_transport(1).is_closing()
+        ):
+            await created[0].communicate()
+        await asyncio.gather(task, return_exceptions=True)
+    assert task.cancelled()
+    assert created[0].returncode is not None
 
 
 @pytest.mark.asyncio

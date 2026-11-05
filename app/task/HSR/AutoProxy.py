@@ -1700,7 +1700,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     continue
 
                 if bool(getattr(result, "success", False)):
-                    self.cur_user_item.mark_task_completed()
                     if item.on_success is not None:
                         item.on_success(result)
                     # 历战余响、差分宇宙、货币战争的最终结果由 on_success 按日志判定
@@ -1721,6 +1720,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             status="completed",
                             reason="外部脚本返回成功",
                         )
+                    # 周常/周本回调可能判为未完成；预取只接受最终确认成功的节点。
+                    if item.module_key == "StartGame" or any(
+                        recorded.user_id == item.user_id
+                        and recorded.module_key == item.module_key
+                        and recorded.status == "completed"
+                        for recorded in self.runtime.module_results
+                    ):
+                        self.cur_user_item.mark_task_completed()
                     self._append_log(
                         f"账号「{item.user_name}」模块「{item.module_name}」执行完成"
                     )

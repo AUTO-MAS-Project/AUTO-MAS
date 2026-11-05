@@ -1,6 +1,7 @@
 """MAA 启动前更新的隔离验证，不启动 MAA 或访问生产网络。"""
 
 import asyncio
+import hashlib
 import json
 import threading
 import zipfile
@@ -17,6 +18,7 @@ from app.task.MAA import manager
 from app.task.MAA.AutoProxy import AutoProxyTask, _without_maa_update_changes
 from app.task.MAA.tools import fluxdown_update as update
 from app.task.MAA.tools import resource_update as resource
+from app.task.MAA.tools import software_package
 from app.task.MAA.tools import software_update as mirror
 
 
@@ -119,6 +121,148 @@ async def test_prefetch_is_outside_install_and_registers_only_when_consumed(
     assert update.Path(package).is_relative_to(root)
     update.discard_prepared_update(candidate)
     assert update.Path(package).is_file()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["changed-source", "interrupted-copy"])
+async def test_prefetched_package_handoff_preserves_verified_destination(
+    installation, monkeypatch, failure
+):
+    root, _, _ = installation
+    monkeypatch.chdir(root.parent)
+    config = script_config()
+    candidate = await update.prepare_maa_fluxdown_update(
+        root, config=config, config_dir=root / "config", download_only=True
+    )
+    destination = root / candidate.package.name
+    destination.write_bytes(b"previous archive")
+    copy = update.shutil.copyfile
+
+    def changed_copy(source, target):
+        if source == candidate.package:
+            if failure == "interrupted-copy":
+                update.Path(target).write_bytes(b"partial copy")
+                raise OSError("copy interrupted")
+            candidate.package.write_bytes(b"changed after verification")
+        return copy(source, target)
+
+    monkeypatch.setattr(update.shutil, "copyfile", changed_copy)
+    try:
+        with pytest.raises(RuntimeError):
+            await update.prepare_maa_fluxdown_update(
+                root, config=config, config_dir=root / "config", prepared=candidate
+            )
+        assert update.read_pending_update(root) == ("", "")
+        assert destination.read_bytes() == b"previous archive"
+        assert not list(root.glob("*.tmp"))
+    finally:
+        update.discard_prepared_update(candidate)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["pending", "failure"])
+async def test_prefetched_maa_package_preserves_new_native_update_state(
+    installation, monkeypatch, change
+):
+    root, _, _ = installation
+    monkeypatch.chdir(root.parent)
+    config = script_config()
+    candidate = await update.prepare_maa_fluxdown_update(
+        root, config=config, config_dir=root / "config", download_only=True
+    )
+    native = root / "native-update.zip"
+    if change == "pending":
+        native.write_bytes(b"native update")
+        update.write_pending_update(root, version="v6.2.0", package=str(native))
+    else:
+        (root / "pending-update-failure.txt").write_text("native install failed")
+    before = update.read_pending_update(root)
+    try:
+        with pytest.raises(RuntimeError):
+            await update.prepare_maa_fluxdown_update(
+                root, config=config, config_dir=root / "config", prepared=candidate
+            )
+        assert update.read_pending_update(root) == before
+        assert not (root / candidate.package.name).exists()
+        if change == "pending":
+            assert native.read_bytes() == b"native update"
+    finally:
+        update.discard_prepared_update(candidate)
+
+
+@pytest.mark.asyncio
+async def test_prefetched_maa_package_rechecks_source_after_copy(
+    installation, monkeypatch
+):
+    root, _, _ = installation
+    monkeypatch.chdir(root.parent)
+    config = script_config()
+    candidate = await update.prepare_maa_fluxdown_update(
+        root, config=config, config_dir=root / "config", download_only=True
+    )
+    copy = update.shutil.copyfile
+
+    def changed_copy(source, target):
+        copied = copy(source, target)
+        update.Config.setting.Update.MirrorChyanCDK = "new-global-cdk"
+        return copied
+
+    monkeypatch.setattr(update.shutil, "copyfile", changed_copy)
+    try:
+        assert (
+            await update.prepare_maa_fluxdown_update(
+                root, config=config, config_dir=root / "config", prepared=candidate
+            )
+            is None
+        )
+        assert update.read_pending_update(root) == ("", "")
+    finally:
+        update.discard_prepared_update(candidate)
+
+
+@pytest.mark.asyncio
+async def test_prefetched_maa_package_is_consumed_once_when_release_advances(
+    installation, monkeypatch
+):
+    root, release, downloader = installation
+    monkeypatch.chdir(root.parent)
+    config = script_config()
+    installed = "v6.0.0"
+    monkeypatch.setattr(update, "read_installed_release", lambda _: (installed, "x64"))
+    monkeypatch.setattr(manager, "read_installed_release", lambda _: (installed, "x64"))
+    candidate = await update.prepare_maa_fluxdown_update(
+        root, config=config, config_dir=root / "config", download_only=True
+    )
+    scheduler = object.__new__(manager.MaaManager)
+    scheduler.script_config = config
+    scheduler.script_info = SimpleNamespace(log="", script_id="test-script")
+    scheduler.maa_set_path = root / "config"
+    scheduler.temp_path = root / "Temp"
+    scheduler._updater_running = False
+    scheduler._github_update_candidate = candidate
+    clock = datetime(2026, 10, 28, tzinfo=timezone.utc)
+    monkeypatch.setattr(manager, "read_resource_clock", lambda _: clock)
+    monkeypatch.setattr(manager, "latest_resource_clock", AsyncMock(return_value=clock))
+    monkeypatch.setattr(manager, "prepare_install_resources", AsyncMock())
+
+    async def install_pending(install, **_kwargs):
+        nonlocal installed
+        installed, archive = update.read_pending_update(install)
+        update.Path(archive).unlink()
+        update.write_pending_update(install, version="", package="")
+        # 下载完成与安装后核对之间，上游又发布了一版。
+        release.return_value["version"] = "v6.2.0"
+
+    monkeypatch.setattr(manager, "update_maa", AsyncMock(side_effect=install_pending))
+    try:
+        assert await scheduler._prepare_software_update_strict(
+            SimpleNamespace(update_config_dir=root / "config")
+        )
+        assert installed == "v6.2.0"
+        assert downloader.await_count == 2
+        assert not candidate.package.exists()
+    finally:
+        await scheduler.discard_prefetched_update()
 
 
 @pytest.mark.asyncio
@@ -684,16 +828,158 @@ async def test_cancelled_mirror_prefetch_does_not_use_daily_attempt(
 
 
 @pytest.mark.asyncio
+async def test_cancelled_mirror_prefetch_keeps_cache_lock_until_hash_closes(
+    installation, monkeypatch
+):
+    root, _, _ = installation
+    cache = root / "cache"
+    cache.mkdir()
+    package = cache / "package.zip"
+    package.write_bytes(b"verified cached archive")
+    (cache / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": "v6.1.0",
+                "channel": "stable",
+                "os": "win",
+                "arch": "x64",
+                "package_type": "full",
+                "sha256": hashlib.sha256(package.read_bytes()).hexdigest(),
+            }
+        )
+    )
+    monkeypatch.setattr(mirror, "software_cache_dir", lambda **_: cache)
+    monkeypatch.setattr(mirror, "read_installed_release", lambda _: ("v6.0.0", "x64"))
+    monkeypatch.setattr(mirror, "_cache_locks", {})
+    hashing, resume = threading.Event(), threading.Event()
+    checksum = software_package._file_sha256
+
+    def slow_checksum(path):
+        with path.open("rb"):
+            hashing.set()
+            assert resume.wait(5)
+            return checksum(path)
+
+    monkeypatch.setattr(software_package, "_file_sha256", slow_checksum)
+    pending = asyncio.create_task(
+        mirror.prefetch_maa_software_update(root, script_config(cdk="test-cdk"))
+    )
+    try:
+        assert await asyncio.to_thread(hashing.wait, 3)
+        pending.cancel()
+        done, _ = await asyncio.wait({pending}, timeout=0.05)
+        assert not done, "共享缓存仍有读句柄时不得释放锁"
+        assert mirror._cache_locks["win/x64/stable"].locked()
+        pending.cancel()
+        done, _ = await asyncio.wait({pending}, timeout=0.05)
+        assert not done
+    finally:
+        resume.set()
+        await asyncio.gather(pending, return_exceptions=True)
+    assert pending.cancelled()
+    assert not mirror._cache_locks["win/x64/stable"].locked()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_resource_prefetch_can_retry_mirror_on_same_day(
+    resource_install, monkeypatch
+):
+    install, target, github_download = resource_install
+    request = AsyncMock(return_value=("https://example.invalid/resource", target))
+    monkeypatch.setattr(resource, "_request_resource_package", request)
+    started = asyncio.Event()
+
+    async def download(_url, path, **kwargs):
+        if not started.is_set():
+            started.set()
+            path.write_bytes(b"partial archive")
+            await asyncio.Event().wait()
+        return await github_download(
+            "https://github.com/MaaAssistantArknights/MaaResource/archive/refs/heads/main.zip",
+            path,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(resource, "download_file", AsyncMock(side_effect=download))
+    pending = asyncio.create_task(
+        resource.prefetch_resources(install, github=False, cdk="test-cdk")
+    )
+    await asyncio.wait_for(started.wait(), timeout=3)
+    pending.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+
+    await resource.prefetch_resources(install, github=False, cdk="test-cdk")
+    assert request.await_count == 2
+    assert resource.read_resource_clock(resource._STAGE_DIR) == target
+    assert resource.read_resource_clock(install) < target
+
+
+@pytest.mark.asyncio
+async def test_resource_prefetch_cancel_waits_for_cache_invalidation(
+    resource_install, monkeypatch
+):
+    install, target, downloader = resource_install
+    await resource.prefetch_resources(install, github=True, cdk=None)
+    (resource._STAGE_DIR / "resource/tasks/test.json").write_text("changed")
+    hashing, resume = threading.Event(), threading.Event()
+    tree_hashes = resource.resource_tree_hashes
+    paused = False
+
+    def slow_hash(path):
+        nonlocal paused
+        hashes = tree_hashes(path)
+        if not paused:
+            paused = True
+            hashing.set()
+            assert resume.wait(5)
+        return hashes
+
+    monkeypatch.setattr(resource, "resource_tree_hashes", slow_hash)
+    pending = asyncio.create_task(
+        resource.prefetch_resources(install, github=True, cdk=None)
+    )
+    try:
+        assert await asyncio.to_thread(hashing.wait, 3)
+        pending.cancel()
+        done, _ = await asyncio.wait({pending}, timeout=0.05)
+        assert not done, "清单作废线程结束前不得释放资源缓存锁"
+        assert resource._prepare_install_lock.locked()
+        pending.cancel()
+        done, _ = await asyncio.wait({pending}, timeout=0.05)
+        assert not done
+    finally:
+        resume.set()
+        await asyncio.gather(pending, return_exceptions=True)
+    assert pending.cancelled()
+    await resource.prefetch_resources(install, github=True, cdk=None)
+    assert resource._MANIFEST_FILE.is_file()
+    assert resource.read_resource_clock(resource._STAGE_DIR) == target
+    assert downloader.await_count == 2
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "failure", ["offline", "cancelled", "writer-unknown", "resumable"]
 )
+@pytest.mark.parametrize("download_path", ["destination", "request"])
 async def test_resource_prefetch_failed_download_cleanup(
-    resource_install, monkeypatch, failure
+    resource_install, monkeypatch, failure, download_path
 ):
     install, _, downloader = resource_install
+    resource._WORK_DIR.mkdir(parents=True, exist_ok=True)
+    unrelated = resource._WORK_DIR / "another-download.zip"
+    unrelated.write_bytes(b"other task")
+    outputs = []
 
     async def fail(_url, path, **_kwargs):
-        path.write_bytes(b"partial resource zip")
+        output = (
+            path.parent / ".mas-fluxdown-test.zip"
+            if download_path == "request"
+            else path
+        )
+        output.write_bytes(b"partial resource zip")
+        outputs.append(output)
         if failure == "cancelled":
             raise asyncio.CancelledError
         if failure == "writer-unknown":
@@ -717,8 +1003,10 @@ async def test_resource_prefetch_failed_download_cleanup(
         )
     ):
         await resource.prefetch_resources(install, github=True, cdk=None)
-    archives = list(resource._WORK_DIR.glob("prefetch-*.zip"))
-    assert len(archives) == (1 if failure == "writer-unknown" else 0)
+    assert outputs[0].exists() is (failure == "writer-unknown")
+    assert unrelated.read_bytes() == b"other task"
+    if failure != "writer-unknown":
+        assert not list(resource._WORK_DIR.glob("prefetch-*"))
 
 
 @pytest.mark.asyncio
@@ -767,21 +1055,45 @@ async def test_maa_software_prefetch_failed_directory_cleanup(
 
 
 @pytest.mark.asyncio
-async def test_prefetch_cancel_waits_for_digest_before_removing_package(
-    installation, monkeypatch
+@pytest.mark.parametrize("operation", ["digest", "cleanup"])
+async def test_prefetch_cancel_waits_for_file_worker_before_directory_release(
+    installation, monkeypatch, operation
 ):
-    root, _, _ = installation
+    root, _, downloader = installation
     monkeypatch.chdir(root)
-    started, release = threading.Event(), threading.Event()
-    original = update._digest
+    started, release, finished = (threading.Event() for _ in range(3))
 
-    def digest(path):
-        with path.open("rb"):
+    if operation == "digest":
+        original = update._digest
+
+        def digest(path):
+            try:
+                with path.open("rb"):
+                    started.set()
+                    assert release.wait(5)
+                    return original(path)
+            finally:
+                finished.set()
+
+        monkeypatch.setattr(update, "_digest", digest)
+    else:
+        original = update.shutil.rmtree
+
+        def cleanup(path, *args, **kwargs):
             started.set()
-            assert release.wait(5)
-            return original(path)
+            try:
+                assert release.wait(5)
+                return original(path, *args, **kwargs)
+            finally:
+                finished.set()
 
-    monkeypatch.setattr(update, "_digest", digest)
+        async def cancelled_download(_url, path, **_kwargs):
+            path.write_bytes(b"partial package")
+            raise asyncio.CancelledError
+
+        monkeypatch.setattr(update.shutil, "rmtree", cleanup)
+        downloader.side_effect = cancelled_download
+
     task = asyncio.create_task(
         update.prepare_maa_fluxdown_update(
             root, config=script_config(), config_dir=root / "config", download_only=True
@@ -792,13 +1104,14 @@ async def test_prefetch_cancel_waits_for_digest_before_removing_package(
         task.cancel()
         done, _ = await asyncio.wait({task}, timeout=0.05)
         assert not done
-        assert list((root / "data/maa_github_update").rglob("*.zip"))
-        task.cancel()  # A repeated stop must also wait for the real reader.
+        assert list((root / "data/maa_github_update").glob("download-*"))
+        task.cancel()  # A repeated stop must also wait for the real file worker.
         done, _ = await asyncio.wait({task}, timeout=0.05)
         assert not done
     finally:
         release.set()
         await asyncio.gather(task, return_exceptions=True)
+        assert await asyncio.to_thread(finished.wait, 3)
     assert task.cancelled()
     assert not list((root / "data/maa_github_update").glob("download-*"))
 
@@ -811,7 +1124,7 @@ async def test_resource_prefetch_cleans_archive_and_reuses_stage_on_consumption(
     current = resource.read_resource_clock(install)
     await resource.prefetch_resources(install, github=True, cdk=None)
     assert resource.read_resource_clock(install) == current
-    assert not list(resource._WORK_DIR.glob("prefetch-*.zip"))
+    assert not list(resource._WORK_DIR.glob("prefetch-*"))
     assert resource.read_resource_clock(resource._STAGE_DIR) == target
     await resource.prepare_install_resources(install, github=True, cdk=None)
     assert resource.read_resource_clock(install) == target
@@ -879,9 +1192,11 @@ async def test_cancelled_stop_probe_preserves_shared_resource_archive(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stopped", [True, False])
+@pytest.mark.parametrize(
+    "stop_state", ["completed", "not-found", "paused", "unavailable"]
+)
 async def test_cancelled_fluxdown_resume_checks_current_writer_before_archive_cleanup(
-    resource_install, monkeypatch, stopped
+    resource_install, monkeypatch, stop_state
 ):
     from app.core.script_update import download_script_package
     from app.models.config.setting import GlobalConfig
@@ -916,15 +1231,27 @@ async def test_cancelled_fluxdown_resume_checks_current_writer_before_archive_cl
             assert release_first.wait(5)
         return original_load(path)
 
+    commands = []
+
     def command(_exe, _env, args, **_kwargs):
-        assert args == ["status", "current-task", "--json"]
+        commands.append(args)
+        assert args in (["pause", "current-task"], ["status", "current-task", "--json"])
         current_probe.set()
         assert release_current.wait(5)
-        return (
-            (0, json.dumps({"status": cli._TASK_STATUS_PAUSED}))
-            if stopped
-            else (124, "status unavailable")
+        if args[0] == "pause":
+            if stop_state == "not-found":
+                return 3, "task not found"
+            return (
+                (124, "pause unavailable")
+                if stop_state == "unavailable"
+                else (0, "cancel requested")
+            )
+        status = (
+            cli._TASK_STATUS_DONE
+            if stop_state == "completed"
+            else cli._TASK_STATUS_PAUSED
         )
+        return 0, json.dumps({"status": status})
 
     monkeypatch.setattr(cli, "_load_task_map", load_mapping)
     monkeypatch.setattr(cli, "_run_cli", command)
@@ -951,20 +1278,26 @@ async def test_cancelled_fluxdown_resume_checks_current_writer_before_archive_cl
         release_first.set()
         release_current.set()
         await asyncio.gather(task, return_exceptions=True)
-    if stopped:
+    if stop_state in {"completed", "not-found"}:
         assert task.cancelled()
         assert not archive.exists()
     else:
         assert isinstance(task.exception(), transport.FluxdownWriterUnconfirmed)
         assert archive.read_bytes() == payload
+        assert archive.parent.is_dir()
+    if stop_state == "paused":
+        assert ["status", "current-task", "--json"] in commands
     assert original_load(exe)[key]["task_id"] == "current-task"
+    assert ["pause", "current-task"] in commands
     backend.assert_not_awaited()
     server_download.assert_not_awaited()
     local_download.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stop_state", ["paused", "unconfirmed", "unavailable"])
+@pytest.mark.parametrize(
+    "stop_state", ["completed", "not-found", "paused", "unconfirmed", "unavailable"]
+)
 async def test_server_initialization_cancel_preserves_archive_until_writer_stops(
     resource_install, monkeypatch, stop_state
 ):
@@ -1010,8 +1343,20 @@ async def test_server_initialization_cancel_preserves_archive_until_writer_stops
         checking.set()
         assert release_check.wait(5)
         if args[0] == "pause":
-            return 124, "pause unconfirmed"
-        status = cli._TASK_STATUS_PAUSED if stop_state == "paused" else 1
+            if stop_state == "not-found":
+                return 3, "task not found"
+            return (
+                (0, "cancel requested")
+                if stop_state in {"completed", "paused"}
+                else (124, "pause unconfirmed")
+            )
+        status = (
+            cli._TASK_STATUS_DONE
+            if stop_state == "completed"
+            else cli._TASK_STATUS_PAUSED
+            if stop_state == "paused"
+            else cli._TASK_STATUS_DOWNLOADING
+        )
         return 0, json.dumps({"status": status})
 
     monkeypatch.setattr(cli, "fluxdown_server_ensure", ensure)
@@ -1041,19 +1386,34 @@ async def test_server_initialization_cancel_preserves_archive_until_writer_stops
         release_init.set()
         release_check.set()
         await asyncio.gather(task, return_exceptions=True)
-    if stop_state == "paused":
+    if stop_state in {"completed", "not-found"}:
         assert task.cancelled()
         assert not archive.exists()
+        assert ["pause", "old-task"] in commands
     else:
         assert isinstance(task.exception(), cli.FluxdownCancelUnconfirmed)
         assert archive.read_bytes() == payload
+        assert archive.parent.is_dir()
+    if stop_state == "paused":
+        assert ["pause", "old-task"] in commands
+        assert ["status", "old-task", "--json"] in commands
     assert cli._load_task_map(exe)[key]["task_id"] == "old-task"
     backend.assert_not_awaited()
     local.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("identity", ["recovered", "unavailable", "ambiguous", "empty"])
+@pytest.mark.parametrize(
+    "identity",
+    [
+        "recovered-completed",
+        "recovered-missing",
+        "recovered-paused",
+        "unavailable",
+        "ambiguous",
+        "empty",
+    ],
+)
 async def test_cancelled_add_without_response_recovers_or_preserves_writer(
     resource_install, monkeypatch, identity
 ):
@@ -1083,12 +1443,16 @@ async def test_cancelled_add_without_response_recovers_or_preserves_writer(
     accepted, release_add = threading.Event(), threading.Event()
     querying, release_query = threading.Event(), threading.Event()
     commands, paused = [], False
+    request_path = None
 
     def command(_exe, _env, args, *_, **_kwargs):
-        nonlocal paused
+        nonlocal paused, request_path
         commands.append(args)
         if args[0] == "add":
-            archive.write_bytes(payload)
+            request_path = (
+                update.Path(args[args.index("-d") + 1]) / args[args.index("-o") + 1]
+            )
+            request_path.write_bytes(payload)
             accepted.set()
             assert release_add.wait(5)
             return 124, "request timed out without task ID"
@@ -1102,12 +1466,12 @@ async def test_cancelled_add_without_response_recovers_or_preserves_writer(
             task = {
                 "taskId": "accepted-task",
                 "url": url,
-                "saveDir": str(archive.parent),
-                "fileName": archive.name,
+                "saveDir": str(request_path.parent),
+                "fileName": request_path.name,
             }
             tasks = (
                 [task]
-                if identity == "recovered"
+                if identity.startswith("recovered-")
                 else [task, {**task, "taskId": "other-task"}]
             )
             if identity == "empty":
@@ -1116,10 +1480,19 @@ async def test_cancelled_add_without_response_recovers_or_preserves_writer(
         if args[0] == "pause":
             assert args[1] == "accepted-task"
             paused = True
+            if identity == "recovered-missing":
+                return 3, "task not found"
             return 0, "paused"
         if args[0] == "status":
             assert args[1] == "accepted-task"
-            return 0, json.dumps({"status": 2 if paused else 1})
+            status = (
+                cli._TASK_STATUS_DONE
+                if identity == "recovered-completed"
+                else cli._TASK_STATUS_PAUSED
+                if paused
+                else cli._TASK_STATUS_DOWNLOADING
+            )
+            return 0, json.dumps({"status": status})
         raise AssertionError(f"unexpected command {args}")
 
     monkeypatch.setattr(cli, "_run_cli", command)
@@ -1135,7 +1508,7 @@ async def test_cancelled_add_without_response_recovers_or_preserves_writer(
         task.cancel()
         done, _ = await asyncio.wait({task}, timeout=0.05)
         assert not done
-        assert archive.read_bytes() == payload
+        assert request_path.read_bytes() == payload
         task.cancel()
         release_add.set()
         assert await asyncio.to_thread(querying.wait, 3), (
@@ -1144,21 +1517,28 @@ async def test_cancelled_add_without_response_recovers_or_preserves_writer(
         task.cancel()
         done, _ = await asyncio.wait({task}, timeout=0.05)
         assert not done
-        assert archive.read_bytes() == payload
+        assert request_path.read_bytes() == payload
     finally:
         release_add.set()
         release_query.set()
         await asyncio.gather(task, return_exceptions=True)
     key = cli._map_key(url, archive)
     entry = cli._load_task_map(exe)[key]
-    if identity == "recovered":
+    assert not archive.exists()
+    assert request_path.read_bytes() == payload
+    assert entry["request_path"] == str(request_path)
+    if identity.startswith("recovered-"):
         assert paused
-        assert task.cancelled()
-        assert not archive.exists()
         assert entry["task_id"] == "accepted-task"
+        if identity == "recovered-paused":
+            assert isinstance(task.exception(), cli.FluxdownCancelUnconfirmed)
+            assert request_path.parent.is_dir()
+            assert ["status", "accepted-task", "--json"] in commands
+            assert not cli.fluxdown_server_task_safe_to_overwrite(exe, url, archive)
+        else:
+            assert task.cancelled()
     else:
         assert isinstance(task.exception(), cli.FluxdownCancelUnconfirmed)
-        assert archive.read_bytes() == payload
         assert entry["pending_add"] is True
         with pytest.raises(cli.FluxdownCancelUnconfirmed):
             await cli.fluxdown_server_download(url, archive, cli_exe=exe)

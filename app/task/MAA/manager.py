@@ -64,7 +64,11 @@ from .tools.backup_archive import (
     collect_native_files,
     native_backup_root,
 )
-from .tools.fluxdown_update import prepare_maa_fluxdown_update, query_latest_maa_version
+from .tools.fluxdown_update import (
+    discard_prepared_update,
+    prepare_maa_fluxdown_update,
+    query_latest_maa_version,
+)
 from .tools.game_update import ensure_game_updated
 from .tools.resource_update import (
     _run_write_thread,
@@ -598,8 +602,6 @@ class MaaManager(ScriptManagerBase):
                 await prefetch_resources(root, github=False, cdk=cdk)
 
     async def discard_prefetched_update(self) -> None:
-        from .tools.fluxdown_update import discard_prepared_update
-
         candidate = getattr(self, "_github_update_candidate", None)
         self._github_update_candidate = None
         if candidate is not None:
@@ -762,13 +764,20 @@ class MaaManager(ScriptManagerBase):
                 last_log = time.monotonic()
 
         if github:
-            target = await prepare_maa_fluxdown_update(
-                self.maa_set_path.parent,
-                config=self.script_config,
-                config_dir=task.update_config_dir,
-                progress=report,
-                prepared=getattr(self, "_github_update_candidate", None),
-            )
+            candidate = getattr(self, "_github_update_candidate", None)
+            self._github_update_candidate = None
+            try:
+                target = await prepare_maa_fluxdown_update(
+                    self.maa_set_path.parent,
+                    config=self.script_config,
+                    config_dir=task.update_config_dir,
+                    progress=report,
+                    prepared=candidate,
+                )
+            finally:
+                # 候选只交接一次；安装后若又发现新版，下一轮必须重新查询下载。
+                if candidate is not None:
+                    discard_prepared_update(candidate)
         else:
             target = await prepare_maa_software_before_run(
                 self.maa_set_path.parent,

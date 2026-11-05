@@ -136,7 +136,8 @@ async def test_failed_prefetch_does_not_fail_current_script(running):
 
 
 @pytest.mark.asyncio
-async def test_stop_during_timer_cleanup_is_not_swallowed():
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_stop_during_timer_cleanup_is_not_swallowed(cancelled):
     cleaning, release = asyncio.Event(), asyncio.Event()
 
     async def timer():
@@ -149,7 +150,7 @@ async def test_stop_during_timer_cleanup_is_not_swallowed():
     pipeline = queue.ScriptUpdateQueue()
     pipeline._watcher = asyncio.create_task(timer())
     await asyncio.sleep(0)
-    finishing = asyncio.create_task(pipeline.finish())
+    finishing = asyncio.create_task(pipeline.finish(cancelled=cancelled))
     await cleaning.wait()
     finishing.cancel()
     await asyncio.sleep(0)
@@ -157,6 +158,85 @@ async def test_stop_during_timer_cleanup_is_not_swallowed():
     release.set()
     with pytest.raises(asyncio.CancelledError):
         await finishing
+
+
+@pytest.mark.asyncio
+async def test_user_stop_during_failed_script_cleanup_never_starts_next_script(
+    monkeypatch,
+):
+    """失败已触发预取收尾时，用户停止仍须等待收尾并终止队列。"""
+    from app.core.task_manager import manager as scheduler
+    from app.models.task import TaskExecuteBase
+
+    monkeypatch.setattr(queue, "PREFETCH_GRACE_SECONDS", 0)
+    monkeypatch.setattr(queue, "PREFETCH_POLL_SECONDS", 0.001)
+    ids = [uuid.uuid4(), uuid.uuid4()]
+    configs = {
+        uid: SimpleNamespace(is_locked=False, model_dump=lambda **_: {}) for uid in ids
+    }
+    monkeypatch.setattr(
+        scheduler,
+        "Config",
+        SimpleNamespace(
+            ScriptConfig=configs,
+            setting=SimpleNamespace(
+                Update=SimpleNamespace(model_dump=lambda **_: {}),
+                Replay=SimpleNamespace(Enabled=False),
+            ),
+        ),
+    )
+    monkeypatch.setattr(scheduler, "_exclusive_resources", lambda _: ((), None))
+    info = scheduler.TaskInfo("AutoProxy", "test", "queue", None, None)
+    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
+    info.script_list = [ScriptItem(str(uid), "", "等待") for uid in ids]
+    downloading, cleaning, release = (
+        asyncio.Event(),
+        asyncio.Event(),
+        asyncio.Event(),
+    )
+    started = []
+
+    class Manager(TaskExecuteBase):
+        def __init__(self, item):
+            super().__init__()
+            self.item = item
+
+        async def prefetch_script_update(self):
+            try:
+                downloading.set()
+                await asyncio.Event().wait()
+            finally:
+                cleaning.set()
+                await release.wait()
+
+        async def main_task(self):
+            started.append(self.item.script_id)
+            if self.item.script_id == str(ids[0]):
+                user = UserItem("first", "", "运行")
+                self.item.user_list = [user]
+                user.mark_task_completed()
+                await downloading.wait()
+                self.item.status = "异常"
+            else:
+                self.item.status = "完成"
+
+        async def final_task(self): ...
+        async def on_crash(self, error): ...
+
+    task = scheduler.Task(
+        info, [], manager_factories={SimpleNamespace: lambda item, _: Manager(item)}
+    )
+    monkeypatch.setattr(task, "spawn", lambda child: child.main_task())
+    monkeypatch.setattr(task, "_observe_script_run", lambda *_: nullcontext())
+    running = asyncio.create_task(task._run_script_list(0))
+    await asyncio.wait_for(cleaning.wait(), 1)
+    running.cancel()
+    await asyncio.sleep(0)
+    assert not running.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(running, 1)
+    assert started == [str(ids[0])]
 
 
 @pytest.mark.asyncio

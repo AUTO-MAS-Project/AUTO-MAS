@@ -12,6 +12,7 @@ import asyncio
 import base64
 import json
 import os
+import shutil
 import threading
 import zipfile
 from contextlib import suppress
@@ -278,18 +279,14 @@ async def prepare_update(
         )
     except asyncio.CancelledError:
         # 公共入口只在确认写入已收敛后传播普通取消，所有下载器同样回收。
-        with suppress(OSError):
-            destination.unlink(missing_ok=True)
-            destination.parent.rmdir()
+        shutil.rmtree(destination.parent, ignore_errors=True)
         raise
     except _fluxdown_cli.FluxdownCancelUnconfirmed:
         # FluxDown 未确认停止，不能删除其输出目标。
         raise
     except Exception:
         # 不明写入由上面的专用异常保留；停写后的独立路径不再复用。
-        with suppress(OSError):
-            destination.unlink(missing_ok=True)
-            destination.parent.rmdir()
+        shutil.rmtree(destination.parent, ignore_errors=True)
         raise
 
     try:

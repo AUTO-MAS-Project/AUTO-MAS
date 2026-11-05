@@ -40,21 +40,35 @@ async def _stop_process(
     kill_tree: bool,
     deadline: float | None,
 ) -> None:
-    if kill_tree and process.pid is not None:
-        await asyncio.to_thread(
-            _terminate_process_tree,
-            process.pid,
-            grace_period=0 if deadline is not None else 3,
-        )
-    else:
-        with suppress(ProcessLookupError):
-            process.kill()
-    # 有截止时间的短命令不再为每个超时追加两轮 3 秒等待；仍给句柄释放留 1 秒余量。
-    try:
-        async with asyncio.timeout(1 if deadline is not None else None):
-            await process.wait()
-    except TimeoutError:
-        logger.warning("子进程已发送终止信号，等待句柄释放超时")
+    async def stop_and_wait() -> None:
+        if kill_tree and process.pid is not None:
+            await asyncio.to_thread(
+                _terminate_process_tree,
+                process.pid,
+                grace_period=0 if deadline is not None else 3,
+            )
+        else:
+            with suppress(ProcessLookupError):
+                process.kill()
+        # 有截止时间的短命令不再为每个超时追加两轮 3 秒等待；仍给句柄释放留 1 秒余量。
+        try:
+            async with asyncio.timeout(1 if deadline is not None else None):
+                # communicate 的读协程已被取消；仅 wait 会留下暂停读取的满管道。
+                await process.communicate()
+        except TimeoutError:
+            logger.warning("子进程已发送终止信号，等待句柄释放超时")
+
+    # 停进程树在线程里执行；重复停止不能只取消等待，让 pip 等写入者继续运行。
+    cleanup = asyncio.create_task(stop_and_wait())
+    cancellation: asyncio.CancelledError | None = None
+    while not cleanup.done():
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError as exc:
+            cancellation = exc
+    cleanup.result()
+    if cancellation is not None:
+        raise cancellation
 
 
 @dataclass

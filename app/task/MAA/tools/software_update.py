@@ -478,7 +478,7 @@ async def _ensure_cache(latest: _Latest, channel: str, arch: str) -> None:
     if (
         manifest is not None
         and manifest["version"] == latest.version
-        and await asyncio.to_thread(cache_zip_matches, cache_dir, manifest)
+        and await _run_write_thread(cache_zip_matches, cache_dir, manifest)
     ):
         logger.info(f"MAA 本体更新: 目标版本 {latest.version} 已在缓存，跳过下载")
         return
@@ -610,7 +610,7 @@ async def _precheck_inner(
         manifest is not None
         and cached is not None
         and compare_versions(cached, target) >= 0
-        and await asyncio.to_thread(cache_zip_matches, cache_dir, manifest)
+        and await _run_write_thread(cache_zip_matches, cache_dir, manifest)
     ):
         return manifest["version"]
 
@@ -852,7 +852,7 @@ async def has_cached_maa_software_update(
             and current
             and target
             and compare_versions(target, current) > 0
-            and await asyncio.to_thread(cache_zip_matches, cache_dir, manifest)
+            and await _run_write_thread(cache_zip_matches, cache_dir, manifest)
         )
 
 

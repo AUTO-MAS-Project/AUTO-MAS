@@ -156,16 +156,16 @@ async def _download_file(
         cli = _utils_fluxdown_cli.fluxdown_find_cli(
             options.cli_path, search_dirs=options.cli_search_dirs
         )
-        if cli is not None:
-            await _ensure_can_downgrade(
-                cli,
-                url,
-                destination,
-                segments=segments,
-                proxy_str=proxy_str,
-                action="改用内置 httpx 下载",
-                write_history=write_history,
-            )
+        # CLI 被移动或删除不代表后台服务已经停止，仍须检查私有持久映射。
+        await _ensure_can_downgrade(
+            cli or Path(options.cli_path),
+            url,
+            destination,
+            segments=segments,
+            proxy_str=proxy_str,
+            action="改用内置 httpx 下载",
+            write_history=write_history,
+        )
         size = await builtin_download(
             url, destination, timeout=timeout, proxy=proxy, progress=progress
         )
@@ -173,7 +173,13 @@ async def _download_file(
             # 用户多次失败后显式选择 httpx 并下载成功：清掉 FluxDown 任务映射,
             # 避免残留任务在下次同 url 下载时被无谓 resume
             if cli is not None:
-                _utils_fluxdown_cli.fluxdown_server_forget(cli, url, destination)
+                await _utils_fluxdown_cli._to_thread_strong(
+                    _utils_fluxdown_cli.fluxdown_server_forget,
+                    cli,
+                    url,
+                    destination,
+                    propagate_cancel=True,
+                )
                 logger.info(
                     "已按用户选择使用内置 httpx 完成下载,清理 FluxDown 任务映射"
                 )
@@ -186,6 +192,15 @@ async def _download_file(
     if cli_path is None:
         # CLI 不存在 → 回退 httpx
         logger.warning("未找到 FluxDown CLI,回退内置 httpx 下载")
+        await _ensure_can_downgrade(
+            Path(options.cli_path),
+            url,
+            destination,
+            segments=segments,
+            proxy_str=proxy_str,
+            action="未找到 CLI，回退内置 httpx",
+            write_history=write_history,
+        )
         return await builtin_download(
             url, destination, timeout=timeout, proxy=proxy, progress=progress
         )
@@ -289,9 +304,15 @@ async def _download_via_fluxdown(
                 timeout=timeout,
                 progress=progress,
             )
-            await _append_history(record, write_history=write_history)
             # 下载成功 → 清映射（MAS 后续哈希校验如失败会重下，重新 add）
-            _utils_fluxdown_cli.fluxdown_server_forget(cli_path, url, destination)
+            await _utils_fluxdown_cli._to_thread_strong(
+                _utils_fluxdown_cli.fluxdown_server_forget,
+                cli_path,
+                url,
+                destination,
+                propagate_cancel=True,
+            )
+            await _append_history(record, write_history=write_history)
             return size
         except _utils_fluxdown_cli.FluxdownCancelUnconfirmed:
             # 不能按"普通进程异常"降级 --local：daemon 可能仍在写目标文件
@@ -342,8 +363,12 @@ async def _download_via_fluxdown(
                     action="记录下载中断并退出",
                     write_history=write_history,
                 )
-                count = _utils_fluxdown_cli.fluxdown_server_mark_failure(
-                    cli_path, url, destination
+                count = await _utils_fluxdown_cli._to_thread_strong(
+                    _utils_fluxdown_cli.fluxdown_server_mark_failure,
+                    cli_path,
+                    url,
+                    destination,
+                    propagate_cancel=True,
                 )
                 hint = (
                     "；已多次重试仍失败，可在设置中将下载器改为内置（httpx）后重试"
@@ -457,8 +482,8 @@ async def _block_downgrade(
 ) -> None:
     """任务未确认停止：记一次失败、留中断记录并抛可续传错误，禁止启动新写入者。"""
     try:
-        count = _utils_fluxdown_cli.fluxdown_server_mark_failure(
-            cli_path, url, destination
+        count = await _utils_fluxdown_cli._to_thread_strong(
+            _utils_fluxdown_cli.fluxdown_server_mark_failure, cli_path, url, destination
         )
     except (OSError, ValueError) as error:
         raise FluxdownWriterUnconfirmed(detail) from error

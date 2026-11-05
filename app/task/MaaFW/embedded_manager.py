@@ -422,6 +422,9 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         「任务开始」紧接「任务结束」，事后没法排查。
         """
 
+        # 预取会提前构造管理器；报告与本轮日志清理从真正开始运行前检查时计时。
+        self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self._round_started_at = time.time()
         result = await self._check()
         if result != "Pass":
             logger.info(

@@ -115,9 +115,7 @@ class ScriptUpdateQueue:
                 await _cancel_and_wait(watcher)
                 raise
         self._download = None
-        if (
-            not cancelled
-            and owner is not None
-            and owner.cancelling() > cancelling_before
-        ):
+        # cancelled 也用于脚本失败后的普通收尾；等待停写期间新到的用户
+        # 停止请求必须继续传播，不能因已在撤销预取而继续启动下一脚本。
+        if owner is not None and owner.cancelling() > cancelling_before:
             raise asyncio.CancelledError

@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import sys
 import threading
 import uuid
 from types import SimpleNamespace
@@ -339,3 +340,63 @@ async def test_prefetch_cancel_waits_for_readers_before_removing_package(
         await asyncio.gather(task, return_exceptions=True)
     assert task.cancelled()
     assert not list((installation.parent / "data/whimbox_update").rglob("download-*"))
+
+
+@pytest.mark.asyncio
+async def test_repeated_prefetch_cancel_waits_for_stage_removal(
+    installation, monkeypatch
+):
+    started, release = threading.Event(), threading.Event()
+    remove = update.shutil.rmtree
+
+    def remove_stage(path, *args, **kwargs):
+        if path.name.startswith("download-"):
+            started.set()
+            assert release.wait(5)
+        return remove(path, *args, **kwargs)
+
+    monkeypatch.setattr(update.shutil, "rmtree", remove_stage)
+    update.download_file.side_effect = asyncio.CancelledError()
+    task = asyncio.create_task(update.prepare_update(installation))
+    try:
+        assert await asyncio.to_thread(started.wait, 3)
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=0.05)
+        assert not done, "清理目录的线程仍在执行，预取还不能交还所有权"
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+    assert task.cancelled()
+    assert not list((installation.parent / "data/whimbox_update").rglob("download-*"))
+
+
+@pytest.mark.asyncio
+async def test_python_probes_leave_cold_installation_modules_unchanged(
+    tmp_path, monkeypatch
+):
+    """预取的版本探测/构建导入不能给正在运行的安装补写 pyc 文件。"""
+    root = tmp_path / "Whimbox"
+    modules = root / "python-embedded" / "Lib" / "site-packages"
+    modules.mkdir(parents=True)
+    (modules / "mas_prefetch_probe.py").write_text("value = 'read-only'\n")
+    run = update.ProcessRunner.run_process
+
+    async def run_test_python(program, *args, **kwargs):
+        assert program == root / update.REL_PYTHON_EXE
+        return await run(sys.executable, *args, **kwargs)
+
+    monkeypatch.setattr(update.ProcessRunner, "run_process", run_test_python)
+    probe = (
+        "import sys; sys.path.insert(0, sys.argv[1]); "
+        "import mas_prefetch_probe; print(mas_prefetch_probe.value, flush=True)"
+    )
+    result = await update.run_python(
+        root,
+        "-c",
+        probe + "; import subprocess; subprocess.run("
+        "[sys.executable, '-c', sys.argv[2], sys.argv[1]], check=True)",
+        str(modules),
+        probe,
+    )
+    assert result.splitlines() == ["read-only", "read-only"]
+    assert sorted(path.name for path in modules.iterdir()) == ["mas_prefetch_probe.py"]

@@ -255,7 +255,7 @@ async def update_engine_if_needed(
     # 下载完才知道解压后的确切体积，装之前再核一次安装卷。
     if candidate.asset_kind == "zip":
         try:
-            expanded = await asyncio.to_thread(expanded_size_of_zip, package)
+            expanded = await _run_install_worker(partial(expanded_size_of_zip, package))
         except Exception:  # noqa: BLE001 - 读不出就沿用粗估
             expanded = None
         if expanded is not None:

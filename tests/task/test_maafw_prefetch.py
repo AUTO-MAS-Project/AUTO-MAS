@@ -53,21 +53,22 @@ async def test_prefetched_candidate_consumption_checks_baseline_and_gate(
 
 
 @pytest.mark.asyncio
-async def test_shared_artifact_cache_serializes_coroutines(tmp_path, monkeypatch):
+async def test_shared_artifact_cache_serializes_coroutines(tmp_path):
     """Prefetch and regular updating the same asset must not write concurrently."""
     import asyncio
-    from contextlib import nullcontext
 
     from app.task.MaaFW.tools.core.project_update import transport
 
-    monkeypatch.setattr(transport, "artifact_lock", lambda *args: nullcontext())
+    stable_id = transport.artifact_id_for(
+        "github", "2", "https://example.com/asset.zip", explicit="asset"
+    )
     active = 0
     maximum = 0
     first_started, release_first = asyncio.Event(), asyncio.Event()
 
     async def writer(name):
         nonlocal active, maximum
-        async with transport._artifact_download_access(tmp_path, "same-asset"):
+        async with transport._artifact_download_access(tmp_path, stable_id):
             active += 1
             maximum = max(maximum, active)
             try:
@@ -111,8 +112,9 @@ async def test_prefetch_discovery_forwards_precheck_gate_before_url(monkeypatch)
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("hash_failure", [False, True])
 async def test_cancelled_cache_hash_keeps_artifact_locked_until_worker_stops(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, hash_failure
 ):
     import asyncio
     import json
@@ -143,6 +145,8 @@ async def test_cancelled_cache_hash_keeps_artifact_locked_until_worker_stops(
             started.set()
             assert release.wait(5)
             assert handle.read() == b"cached package"
+        if hash_failure:
+            raise OSError("disk read failed during cancellation")
         return "a" * 64
 
     monkeypatch.setattr(transport, "_calculate_sha256", hash_with_open_file)
@@ -179,3 +183,184 @@ async def test_cancelled_cache_hash_keeps_artifact_locked_until_worker_stops(
         if successor is not None:
             await asyncio.wait_for(successor, 2)
     assert entered.is_set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("close_failure", [False, True])
+async def test_cancelled_download_waits_for_file_write_before_unlocking(
+    tmp_path, monkeypatch, close_failure
+):
+    """重复停止不能让后继下载在前一写线程结束前取得同一个缓存。"""
+    import asyncio
+    import io
+    import threading
+    from pathlib import Path
+
+    import aiofiles.threadpool
+    import httpx
+
+    from app.task.MaaFW.tools.core.project_update import transport
+
+    started, release, finished = (
+        threading.Event(),
+        threading.Event(),
+        threading.Event(),
+    )
+    original_open = io.open
+
+    class SlowWriter(io.BufferedWriter):
+        def write(self, data):
+            started.set()
+            try:
+                assert release.wait(5)
+                return super().write(data)
+            finally:
+                finished.set()
+
+        def close(self):
+            if self.closed:
+                return
+            super().close()
+            if close_failure:
+                raise OSError("disk full while closing buffered download")
+
+    def open_file(path, mode="r", *args, **kwargs):
+        if Path(path).name == "payload.part" and mode in {"wb", "ab"}:
+            return SlowWriter(original_open(path, mode, buffering=0))
+        return original_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(io, "open", open_file)
+    monkeypatch.setattr(aiofiles.threadpool, "sync_open", open_file)
+    monkeypatch.setattr(transport, "RETRY_COUNT", 2)
+    monkeypatch.setattr(transport, "RETRY_DELAYS", (0,))
+    client = httpx.AsyncClient
+    request_count = 0
+
+    def response(_request):
+        nonlocal request_count
+        request_count += 1
+        return httpx.Response(200, content=b"package data")
+
+    monkeypatch.setattr(
+        transport.httpx,
+        "AsyncClient",
+        lambda **kwargs: client(**kwargs, transport=httpx.MockTransport(response)),
+    )
+    task = asyncio.create_task(
+        transport.download_resumable(
+            source="github",
+            version="2",
+            download_url="https://example.com/asset.zip",
+            artifact_id="asset",
+            cache_root=tmp_path,
+        )
+    )
+    successor = None
+    entered = asyncio.Event()
+    stable_id = transport.artifact_id_for(
+        "github", "2", "https://example.com/asset.zip", explicit="asset"
+    )
+
+    async def next_owner():
+        async with transport._artifact_download_access(tmp_path, stable_id):
+            entered.set()
+
+    try:
+        assert await asyncio.to_thread(started.wait, 3)
+        task.cancel()
+        await asyncio.sleep(0)
+        task.cancel()
+        successor = asyncio.create_task(next_owner())
+        done, _ = await asyncio.wait({task, successor}, timeout=0.05)
+        assert not done
+        assert not entered.is_set()
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+        if successor is not None:
+            await asyncio.wait_for(successor, 3)
+        assert await asyncio.to_thread(finished.wait, 3)
+    assert task.cancelled()
+    assert entered.is_set()
+    assert request_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("owner_kind", ["thread", "coroutine"])
+@pytest.mark.parametrize("cancel_method", ["task", "token"])
+async def test_waiting_for_busy_artifact_cache_observes_stop(
+    tmp_path, owner_kind, cancel_method
+):
+    """另一线程或进程占着缓存时，下载等锁仍须能够接收停止。"""
+    import asyncio
+    import hashlib
+    import json
+    import threading
+
+    from app.task.MaaFW.tools.core.project_update import transport
+
+    locked, release, expired = threading.Event(), threading.Event(), threading.Event()
+    stable_id = transport.artifact_id_for(
+        "github", "2", "https://example.com/asset.zip", explicit="asset"
+    )
+    directory = tmp_path / stable_id
+    directory.mkdir()
+    package = directory / "complete.zip"
+    package.write_bytes(b"cached package")
+    (directory / "artifact.json").write_text(
+        json.dumps(
+            {
+                "complete": True,
+                "completePath": str(package),
+                "sha256": hashlib.sha256(b"cached package").hexdigest(),
+            }
+        )
+    )
+
+    def other_owner():
+        with transport.artifact_lock(tmp_path, stable_id):
+            locked.set()
+            if not release.wait(3):
+                expired.set()
+
+    async def coroutine_owner():
+        async with transport._artifact_download_access(tmp_path, stable_id):
+            locked.set()
+            if not await asyncio.to_thread(release.wait, 3):
+                expired.set()
+
+    owner = asyncio.create_task(
+        asyncio.to_thread(other_owner) if owner_kind == "thread" else coroutine_owner()
+    )
+    cancel_event = threading.Event()
+    download = None
+    try:
+        assert await asyncio.to_thread(locked.wait, 3)
+        download = asyncio.create_task(
+            transport.download_resumable(
+                source="github",
+                version="2",
+                download_url="https://example.com/asset.zip",
+                artifact_id="asset",
+                cache_root=tmp_path,
+                cancel_event=cancel_event,
+            )
+        )
+        await asyncio.sleep(0)
+        if cancel_method == "task":
+            download.cancel()
+        else:
+            cancel_event.set()
+        with pytest.raises(
+            asyncio.CancelledError
+            if cancel_method == "task"
+            else transport.UpdateDownloadCancelled
+        ):
+            await asyncio.wait_for(download, 1)
+        assert not expired.is_set(), "同步等文件锁阻塞了事件循环，停止无法处理"
+    finally:
+        release.set()
+        await owner
+        if download is not None:
+            download.cancel()
+            await asyncio.gather(download, return_exceptions=True)
