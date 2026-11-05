@@ -122,9 +122,10 @@ class UserItem:
     def add_log_record(
         self, started_at: datetime, record: LogRecord, *, retry: bool = False
     ) -> None:
-        """追加本轮日志；只有真正重试才使成功信号失效。
+        """追加本轮日志；重试只清理当前账号尝试的成功时间。
 
-        同一账号可有多个正常运行阶段和独立更新日志，不能将其视为重试。
+        同一账号的正常阶段变更不算重试；整个脚本的首个成功时间跨账号
+        保留，以允许后台下载下一脚本。脚本级失败/停止由调度器撤销预取。
         """
         if retry:
             # A retry only resets this account's attempt. The script-level
