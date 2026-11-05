@@ -50,3 +50,38 @@ async def test_prefetched_candidate_consumption_checks_baseline_and_gate(
             assert result.updated
             apply.assert_awaited_once()
             assert apply.await_args.kwargs["range_delta"] is False
+
+@pytest.mark.asyncio
+async def test_shared_artifact_cache_serializes_coroutines(tmp_path, monkeypatch):
+    """Prefetch and regular updating the same asset must not write concurrently."""
+    import asyncio
+    from contextlib import nullcontext
+
+    from app.task.MaaFW.tools.core.project_update import transport
+
+    monkeypatch.setattr(transport, "artifact_lock", lambda *args: nullcontext())
+    active = 0
+    maximum = 0
+    first_started, release_first = asyncio.Event(), asyncio.Event()
+
+    async def writer(name):
+        nonlocal active, maximum
+        async with transport._artifact_download_access(tmp_path, "same-asset"):
+            active += 1
+            maximum = max(maximum, active)
+            try:
+                if name == "first":
+                    first_started.set()
+                    await release_first.wait()
+            finally:
+                active -= 1
+
+    first = asyncio.create_task(writer("first"))
+    await asyncio.wait_for(first_started.wait(), 1)
+    second = asyncio.create_task(writer("second"))
+    await asyncio.sleep(0)
+    assert active == 1
+    assert not second.done()
+    release_first.set()
+    await asyncio.wait_for(asyncio.gather(first, second), 1)
+    assert maximum == 1

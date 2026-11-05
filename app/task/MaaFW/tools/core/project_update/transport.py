@@ -10,10 +10,12 @@ import os
 import re
 import threading
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, AsyncIterator, Callable, Sequence
 from urllib.parse import urljoin, urlsplit
+from weakref import WeakValueDictionary
 
 import aiofiles
 import httpx
@@ -26,6 +28,35 @@ from .state import (
     redact_text,
     redact_url,
 )
+
+# An asyncio.Lock must be held in addition to the thread-reentrant process lock:
+# two download coroutines share one thread and must not write the same .partial.
+# Weak values avoid retaining old pytest/event loops or unused artifact locks.
+_ASYNC_ARTIFACT_LOCKS: WeakValueDictionary[
+    tuple[int, str, str], asyncio.Lock
+] = WeakValueDictionary()
+_ASYNC_ARTIFACT_LOCK_GUARD = threading.Lock()
+
+
+def _artifact_async_lock(root: Path, stable_id: str) -> asyncio.Lock:
+    key = (id(asyncio.get_running_loop()), str(root.resolve()), stable_id)
+    with _ASYNC_ARTIFACT_LOCK_GUARD:
+        lock = _ASYNC_ARTIFACT_LOCKS.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _ASYNC_ARTIFACT_LOCKS[key] = lock
+        return lock
+
+
+@asynccontextmanager
+async def _artifact_download_access(
+    root: Path, stable_id: str
+) -> AsyncIterator[None]:
+    async with _artifact_async_lock(root, stable_id):
+        # Retain the original cross-process lock and its cache checkpoint rules.
+        with artifact_lock(root, stable_id):
+            yield
+
 
 CHUNK_SIZE = 64 * 1024
 MAX_REDIRECTS = 10
@@ -371,7 +402,7 @@ async def download_resumable(
     send_update_log = send_log or (lambda _message: None)
     emit = progress or (lambda _event: None)
 
-    with artifact_lock(root, stable_id):
+    async with _artifact_download_access(root, stable_id):
         metadata = _read_json(metadata_path)
         metadata.update(
             {
