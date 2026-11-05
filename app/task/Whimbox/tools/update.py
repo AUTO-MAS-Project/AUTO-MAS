@@ -25,7 +25,9 @@ from packaging.version import Version
 
 from app.core import Config
 from app.core.script_update import download_script_package as download_file
+from app.services.common.update.fluxdown import FluxdownResumableError
 from app.services.script_release import request_github_release
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.utils import ProcessRunner
 from app.utils.common.proxy_env import proxy_environment
 
@@ -211,19 +213,19 @@ async def prepare_update(root: Path) -> PreparedUpdate | str:
     stage.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix="download-", dir=stage))
     wheel = stage / name
-    await download_file(
-        url,
-        wheel,
-        timeout=30 * 60,
-        proxy=proxy,
-        source="GitHub",
-    )
-    await asyncio.to_thread(verify_digest, wheel, digest)
-    # 源码依赖在准备阶段隔离构建成 wheel，不往现有后端安装构建工具。
-    # 每轮使用独立目录，避免旧缓存的源码包或版本参与离线安装。
-    packages = stage / "packages"
-    packages.mkdir()
     try:
+        await download_file(
+            url,
+            wheel,
+            timeout=30 * 60,
+            proxy=proxy,
+            source="GitHub",
+        )
+        await asyncio.to_thread(verify_digest, wheel, digest)
+        # Download-only preparation may build dependencies, but it never
+        # modifies the installed backend.
+        packages = stage / "packages"
+        packages.mkdir()
         await run_python(
             root,
             "-m",
@@ -240,15 +242,20 @@ async def prepare_update(root: Path) -> PreparedUpdate | str:
             timeout=10 * 60,
             env=proxy_environment(proxy),
         )
-    except BaseException:
-        shutil.rmtree(stage, ignore_errors=True)
+        hashes = await asyncio.to_thread(_package_hashes, packages)
+        hashes["../" + wheel.name] = await asyncio.to_thread(_wheel_digest, wheel)
+        return PreparedUpdate(
+            root.resolve(), target, current, repairing, wheel, packages, hashes
+        )
+    except (FluxdownCancelUnconfirmed, FluxdownResumableError):
+        # The daemon might still own this isolated destination. Do not
+        # delete a file that an external writer may continue to update.
         raise
-    hashes = await asyncio.to_thread(_package_hashes, packages)
-    hashes["../" + wheel.name] = await asyncio.to_thread(_wheel_digest, wheel)
-    return PreparedUpdate(
-        root.resolve(), target, current, repairing, wheel, packages, hashes
-    )
-
+    except BaseException:
+        # Failures and confirmed cancellations before a candidate is returned
+        # otherwise have no manager-owned object to discard.
+        await asyncio.to_thread(shutil.rmtree, stage, ignore_errors=True)
+        raise
 
 def _wheel_digest(path: Path) -> str:
     with path.open("rb") as handle:
