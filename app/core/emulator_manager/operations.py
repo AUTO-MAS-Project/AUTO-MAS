@@ -751,7 +751,9 @@ class EmulatorOperations:
             if record.state != "active":
                 continue
             try:
-                await manager.write_settings(record.slot, cleaned, expected=None)
+                applied = await manager.write_settings(
+                    record.slot, cleaned, expected=None
+                )
             except Exception as e:  # noqa: BLE001 - 逐台上报, 一台失败不拖垮整批
                 logger.warning(f"设备 #{record.slot} 应用批量设置失败: {e}")
                 results.append(
@@ -762,7 +764,7 @@ class EmulatorOperations:
                     }
                 )
                 continue
-            await self._record_baseline(emulator_id, record.slot, cleaned)
+            await self._record_baseline(emulator_id, record.slot, applied)
             results.append({"slot": record.slot, "ok": True, "message": ""})
 
         return {
