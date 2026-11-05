@@ -713,7 +713,9 @@ async def test_resource_prefetch_failed_download_cleanup(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["offline", "cancelled", "resumable", "writer-unknown"])
+@pytest.mark.parametrize(
+    "failure", ["offline", "cancelled", "resumable", "writer-unknown"]
+)
 async def test_maa_software_prefetch_failed_directory_cleanup(
     installation, monkeypatch, failure
 ):
@@ -752,6 +754,4 @@ async def test_maa_software_prefetch_failed_directory_cleanup(
             download_only=True,
         )
     directories = list((root.parent / "data/maa_github_update").glob("download-*"))
-    assert len(directories) == (
-        1 if failure in ("resumable", "writer-unknown") else 0
-    )
+    assert len(directories) == (1 if failure in ("resumable", "writer-unknown") else 0)
