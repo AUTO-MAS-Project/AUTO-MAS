@@ -133,9 +133,7 @@ class UserItem:
                 for script in task.script_list:
                     if any(user is self for user in script.user_list):
                         if script.first_task_completed_at == previous:
-                            object.__setattr__(
-                                script, "first_task_completed_at", None
-                            )
+                            object.__setattr__(script, "first_task_completed_at", None)
                         break
             self.first_task_completed_at = None
         self._history_log_records.append((started_at, record))

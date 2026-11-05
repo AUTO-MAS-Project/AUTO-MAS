@@ -10,6 +10,7 @@ from contextlib import suppress
 
 from app.models.task import ScriptItem
 from app.utils import get_logger
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 logger = get_logger("脚本更新调度")
 PREFETCH_GRACE_SECONDS = 60
@@ -42,7 +43,11 @@ async def _cancel_and_wait(task: asyncio.Task) -> None:
         with suppress(asyncio.CancelledError, Exception):
             await asyncio.shield(task)
     if not task.cancelled():
-        task.exception()
+        error = task.exception()
+        # FluxDown daemon may still write to its output; never treat this as a
+        # harmless cancelled prefetch and start the next script.
+        if isinstance(error, FluxdownCancelUnconfirmed):
+            raise error
 
 
 class ScriptUpdateQueue:
@@ -86,6 +91,9 @@ class ScriptUpdateQueue:
             await self._download
         except asyncio.CancelledError:
             await _cancel_and_wait(self._download)
+            raise
+        except FluxdownCancelUnconfirmed:
+            # Unknown daemon writer ownership: block the handoff, not fallback.
             raise
         except Exception:
             # 预下载失败不影响当前任务，后项仍使用自身的启动前更新逻辑。

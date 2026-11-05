@@ -10,6 +10,7 @@ import pytest
 
 from app.core import script_update_queue as queue
 from app.models.task import ScriptItem, UserItem
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 
 @pytest.fixture
@@ -401,3 +402,37 @@ async def test_public_update_entry_skips_next_non_runnable_item(monkeypatch):
     await session.finish()
     assert calls == [str(script_ids[2]), "download"]
     await session.close()
+
+@pytest.mark.asyncio
+async def test_unconfirmed_fluxdown_stop_blocks_handoff(running):
+    script, user, clock = running
+    user.first_task_completed_at = 100
+    clock.now = 200
+    started = asyncio.Event()
+
+    async def download():
+        started.set()
+        raise FluxdownCancelUnconfirmed("daemon might still write")
+
+    pipeline = queue.ScriptUpdateQueue()
+    pipeline.watch(script, download)
+    await asyncio.wait_for(started.wait(), 1)
+    with pytest.raises(FluxdownCancelUnconfirmed):
+        await pipeline.finish()
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_fluxdown_cancel_remains_visible():
+    started = asyncio.Event()
+
+    async def download():
+        try:
+            started.set()
+            await asyncio.Event().wait()
+        finally:
+            raise FluxdownCancelUnconfirmed("daemon cannot confirm stop")
+
+    task = asyncio.create_task(download())
+    await started.wait()
+    with pytest.raises(FluxdownCancelUnconfirmed):
+        await queue._cancel_and_wait(task)
