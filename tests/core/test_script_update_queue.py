@@ -290,21 +290,64 @@ async def test_first_success_clock_survives_account_switch_before_sixty(running)
     await pipeline.finish()
 
 
-def test_script_success_signal_resets_on_retry_without_account_switch(monkeypatch):
+@pytest.mark.parametrize("run_status", ["运行", "运行 - 日常", "运行 - 剿灭"])
+def test_script_success_signal_survives_new_stage_and_resets_on_retry(
+    monkeypatch, run_status
+):
     from datetime import datetime
 
     from app.models import task as task_models
     from app.models.task import LogRecord
 
-    user = UserItem("user", "", "运行")
+    user = UserItem("user", "", run_status)
     script = ScriptItem("script", "", "运行", user_list=[user])
     task_info = SimpleNamespace(script_list=[script])
     user._task_item_ref = lambda: task_info
     monkeypatch.setattr(task_models, "time", SimpleNamespace(monotonic=lambda: 123.0))
     user.mark_task_completed()
+    assert user.first_task_completed_at == 123.0
     assert script.first_task_completed_at == 123.0
-    user.add_log_record(datetime.now(), LogRecord())
+
+    # MaaEnd / MAA 正常切换到下一阶段并添加日志，不应取消下一脚本下载。
+    user.add_log_record(datetime.now(), LogRecord(phase="NextStage"))
+    assert user.first_task_completed_at == 123.0
+    assert script.first_task_completed_at == 123.0
+
+    # 只有同一阶段真正重试时，旧成功信号才会失效。
+    user.add_log_record(datetime.now(), LogRecord(), retry=True)
+    assert user.first_task_completed_at is None
     assert script.first_task_completed_at is None
+
+    user.status = "异常"
+    user.mark_task_completed()
+    assert user.first_task_completed_at is None
+
+
+@pytest.mark.asyncio
+async def test_new_stage_log_does_not_cancel_inflight_prefetch(running):
+    from datetime import datetime
+
+    from app.models.task import LogRecord
+
+    script, user, clock = running
+    user.first_task_completed_at = script.first_task_completed_at = 100
+    clock.now = 200
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def download():
+        started.set()
+        await release.wait()
+
+    pipeline = queue.ScriptUpdateQueue()
+    pipeline.watch(script, download)
+    await asyncio.wait_for(started.wait(), 1)
+    user.add_log_record(datetime.now(), LogRecord(phase="SecondStage"))
+    await settle()
+    assert pipeline._download is not None
+    assert not pipeline._download.done()
+    assert script.first_task_completed_at == 100
+    release.set()
+    await pipeline.finish()
 
 
 @pytest.mark.asyncio

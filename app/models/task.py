@@ -119,24 +119,34 @@ class UserItem:
         default_factory=list, repr=False
     )
 
-    def add_log_record(self, started_at: datetime, record: LogRecord) -> None:
-        """每次尝试保留实际开始时刻，同一时刻也不能覆盖此前一轮。"""
-        # 同一账号重试时，仅作废它贡献的首次成功信号；正常切号不清空脚本时钟。
-        previous = self.first_task_completed_at
-        task = self._task_item_ref() if self._task_item_ref is not None else None
-        if previous is not None and task is not None:
-            for script in task.script_list:
-                if any(user is self for user in script.user_list):
-                    if script.first_task_completed_at == previous:
-                        object.__setattr__(script, "first_task_completed_at", None)
-                    break
-        self.first_task_completed_at = None
+    def add_log_record(
+        self, started_at: datetime, record: LogRecord, *, retry: bool = False
+    ) -> None:
+        """追加本轮日志；只有真正重试才使成功信号失效。
+
+        同一账号可有多个正常运行阶段和独立更新日志，不能将其视为重试。
+        """
+        if retry:
+            previous = self.first_task_completed_at
+            task = self._task_item_ref() if self._task_item_ref is not None else None
+            if previous is not None and task is not None:
+                for script in task.script_list:
+                    if any(user is self for user in script.user_list):
+                        if script.first_task_completed_at == previous:
+                            object.__setattr__(
+                                script, "first_task_completed_at", None
+                            )
+                        break
+            self.first_task_completed_at = None
         self._history_log_records.append((started_at, record))
         self.log_record[started_at] = record
 
     def mark_task_completed(self) -> None:
         """首个成功节点同时写入脚本级单调时间，切换账号不能丢失 60 秒基准。"""
-        if self.status != "运行" or self.first_task_completed_at is not None:
+        if (
+            not (self.status == "运行" or self.status.startswith("运行 - "))
+            or self.first_task_completed_at is not None
+        ):
             return
         completed_at = time.monotonic()
         self.first_task_completed_at = completed_at
