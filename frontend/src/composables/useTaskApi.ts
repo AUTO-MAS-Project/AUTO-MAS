@@ -202,11 +202,3 @@ export function useTaskApi() {
 
   return { startTask, stopTask }
 }
-
-export async function readTaskStatus(taskId: string) {
-  try {
-    return await Service.getTaskStatusApiDispatchTaskTaskIdGet(taskId)
-  } catch (error) {
-    throw taskRequestError(error)
-  }
-}
