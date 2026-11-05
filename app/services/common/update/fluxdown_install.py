@@ -625,17 +625,32 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
             )
         )
 
+    def damaged(directory: Path) -> bool:
+        # 外部安装目录的空文件可能是其他进程写入中的程序，不能擅自覆盖。
+        # 在 MAS 托管目录重新安装完整套件，可保留用户原目录不受影响。
+        try:
+            return any(
+                (directory / name).is_file()
+                and (directory / name).stat().st_size == 0
+                for name in (*_cli_names(), *_server_names())
+            )
+        except OSError:
+            return True
+
     if configured_path:
         configured = Path(configured_path)
         directory = configured if configured.is_dir() else configured.parent
-        if available(directory):
+        if available(directory) and not (directory != managed and damaged(directory)):
             return directory, directory != managed
+        if available(directory) and directory != managed:
+            logger.warning(f"FluxDown 外部目录存在空文件，改在 MAS 托管目录补装: {directory}")
+            return managed, False
 
     # 没配置时也应尽量复用桌面版目录，避免另建一套 Agent/Daemon。
     detected = _fluxdown_cli.fluxdown_detect(configured_path=None, scan_budget=8.0)
     for candidate in detected["candidates"]:
         directory = Path(candidate["path"])
-        if (directory / "fluxdown-desktop.exe").is_file():
+        if (directory / "fluxdown-desktop.exe").is_file() and not damaged(directory):
             return directory, True
 
     return managed, False
@@ -651,6 +666,14 @@ def _install_missing_to_existing(extracted: Path, target: Path) -> None:
         )
     ):
         raise RuntimeError("原有 FluxDown 目录已变化，请重新检测路径")
+
+    # 两种逻辑使用一致的判定：零字节组件是损坏，不可视为已安装。
+    # 外部目录若在下载安装期间变坏，应拒绝修改而非覆盖用户文件。
+    if any(
+        (target / name).is_file() and (target / name).stat().st_size == 0
+        for name in (*_cli_names(), *_server_names())
+    ):
+        raise RuntimeError("外部 FluxDown 目录包含空文件，拒绝覆盖；请改用 MAS 托管安装")
 
     missing: list[str] = []
     existing_cli = any((target / name).is_file() for name in _cli_names())
@@ -670,8 +693,9 @@ def _install_missing_to_existing(extracted: Path, target: Path) -> None:
             temporary = target / f".{name}.mas-install"
             if temporary.exists():
                 raise RuntimeError(f"上次 FluxDown 安装暂存文件尚未清理: {temporary}")
-            shutil.copy2(source, temporary)
+            # copy2 可能先创建部分文件再抛异常，必须在复制前登记清理责任。
             staged.append((temporary, target / name))
+            shutil.copy2(source, temporary)
         for temporary, destination in staged:
             if destination.exists():
                 raise RuntimeError(f"安装过程中出现同名文件: {destination.name}")
