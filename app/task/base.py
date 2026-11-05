@@ -27,8 +27,8 @@ from app.utils import get_logger
 logger = get_logger("脚本运行")
 
 # 进程级在途维护检测句柄：``asyncio.to_thread`` 的底层调用无法被取消，句柄
-# 必须由跨 AutoProxy 实例（跨用户、跨重新运行）有效的 owner 持有——调度会
-# 逐用户新建 AutoProxy，实例级句柄随实例失效，卡住的截图/OCR 便会在同一个
+# 必须由跨 AutoProxy 实例（跨账号、跨重新运行）有效的 owner 持有——调度会
+# 逐账号新建 AutoProxy，实例级句柄随实例失效，卡住的截图/OCR 便会在同一个
 # 默认执行器里继续累积。按脚本条目（script_id）分槽：ok-nte 与 ok-ww 是不同的
 # 检测资源，互不阻塞。只有底层真正结束才释放。
 _INFLIGHT_DETECTIONS: dict[str, asyncio.Task] = {}
@@ -84,7 +84,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
     cur_user_config: U
     # 当前尝试的日志记录用于维护跳过等运行期记账。
     cur_user_log: LogRecord
-    # 用户级前/后脚本成对标记：前置跑过才收尾后置，且每用户只收尾一次。
+    # 账号级前/后脚本成对标记：前置跑过才收尾后置，且每账号只收尾一次。
     _user_scripts_started: bool = False
     # 运行期维护弹窗监视的命中结论（含原文），未命中为 None；由
     # watch_game_maintenance 写入、main_task 出等待循环后消费。
@@ -101,7 +101,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
         return self.script_config.Run.HardTimeLimit * 60
 
     async def run_user_scripts_before(self) -> None:
-        """执行用户级任务前脚本；每用户一次，先于全部重试。"""
+        """执行账号级任务前脚本；每账号一次，先于全部重试。"""
 
         self._user_scripts_started = True
         if getattr(self.cur_user_config.Info, "IfScriptBeforeTask", False):
@@ -111,7 +111,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
             )
 
     async def run_user_scripts_after(self) -> None:
-        """执行用户级任务后脚本；前置未执行过时跳过，保证成对且只一次。"""
+        """执行账号级任务后脚本；前置未执行过时跳过，保证成对且只一次。"""
 
         if not self._user_scripts_started:
             return
@@ -123,14 +123,14 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
                     "脚本后任务",
                 )
             except Exception as error:
-                message = f"用户任务后脚本执行失败：{error}"
+                message = f"账号任务后脚本执行失败：{error}"
                 logger.opt(exception=True).warning(message)
                 logs = self.cur_user_item.iter_history_logs()
                 if logs:
                     logs[-1][1].content.append(message + "\n")
 
     async def skip_on_game_maintenance(self, detect: Callable[[], str | None]) -> bool:
-        """游戏画面维护检测：命中维护弹窗文本则把当前用户记为维护跳过。
+        """游戏画面维护检测：命中维护弹窗文本则把当前账号记为维护跳过。
 
         公告通道（ScriptManagerBase.skip_maintenance_user）在启动前完成跳过；
         这里兜底「公告未覆盖但弹窗已出现」的场景，只覆盖游戏窗口已存在的
@@ -149,7 +149,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
         self.cur_user_item.maintenance_skipped = True
         self.cur_user_log.status = reason
         self.cur_user_log.content = [reason]
-        logger.info(f"用户 {self.cur_user_item.name} - {reason}")
+        logger.info(f"账号 {self.cur_user_item.name} - {reason}")
         await self.notify_maintenance_skip(reason)
         return True
 
@@ -160,7 +160,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
 
         ``asyncio.to_thread`` 已开始的调用无法被取消（Python 3.12 语义），
         故超时只放弃异步等待、不取消实际检测任务。在途句柄由进程级 registry
-        按 script_id 持有，跨用户与重新运行都有效；其真正结束前不再投递新的
+        按 script_id 持有，跨账号与重新运行都有效；其真正结束前不再投递新的
         检测，避免卡住的截图/OCR 在执行器里叠加。
         """
 
@@ -229,7 +229,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
                 self.cur_user_item.status = "跳过"
                 self.cur_user_item.maintenance_skipped = True
                 logger.info(
-                    f"用户 {self.cur_user_item.name} - {self._maintenance_reason}"
+                    f"账号 {self.cur_user_item.name} - {self._maintenance_reason}"
                 )
             finally:
                 # 通知由 main_task 在最终判定处推送；这里必须让等待循环退出

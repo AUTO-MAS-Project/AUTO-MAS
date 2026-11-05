@@ -126,7 +126,7 @@ def build_maa_connect_settings(
     )
     extras[MAA_CONNECT_CONFIG] = mumu
     if not str(settings.get("AdbPath") or "").strip():
-        # 用户的 MAA 从没配过 adb（只装了魔改 AVD 的新用户）时才补 SDK 自带的 adb；
+        # 用户的 MAA 从没配过 adb（只装了魔改 AVD 的新账号）时才补 SDK 自带的 adb；
         # 已经配了的不动——换 adb 可能和雷电 / MuMu 自带的 adb 抢 5037
         settings["AdbPath"] = str(_utils_emulator2.avd.components.adb_exe(root))
     settings.update(

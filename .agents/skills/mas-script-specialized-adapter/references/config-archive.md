@@ -31,7 +31,7 @@
 | --- | --- | --- |
 | 进入编辑页 | 脚本**原生配置**原始态（MAS 触碰前） | 前端 `onMounted` → ensure(native) |
 | 退出编辑页 | **MAS 侧配置终态**（编辑会话包络） | 前端 `onUnmounted` → ensure(mas) |
-| 运行/会话下发前 | 双池（mas 下发源 + native 原生现状） | OkNte：native 在 `manager.prepare` 任务级一次、mas 在专项 `set_<script>` 最前面（按用户）；ZzzOd：`_prepare_injection` 单处双归档（后端钩子） |
+| 运行/会话下发前 | 双池（mas 下发源 + native 原生现状） | OkNte：native 在 `manager.prepare` 任务级一次、mas 在专项 `set_<script>` 最前面（按账号）；ZzzOd：`_prepare_injection` 单处双归档（后端钩子） |
 | 导入/恢复等覆盖性操作前 | 将被覆盖的目标配置 | 专项操作函数内，`force=True` |
 
 - 全部**指纹去重**：与最近一份一致则跳过（读档列表里不重复出现）。
@@ -51,32 +51,32 @@
 
 ### 1.3 目录布局（专项独立，互不干扰）
 
-mas（MAS 侧用户配置）池按脚本、按用户分目录；native（脚本原生配置）池分两级：
+mas（MAS 侧账号配置）池按托管、按账号分目录；native（脚本原生配置）池分两级：
 
 ```
-data/OkNteBackups/                    ← 原生池「项目级根」（跨脚本共享、不随脚本删除）
-└── native/{fingerprint}/…            ← 脚本原生配置池（script 级，物理根指纹分桶）
+data/OkNteBackups/                    ← 原生池「项目级根」（跨托管共享、不随托管删除）
+└── native/{fingerprint}/…            ← 脚本原生配置池（`script` 池，物理根指纹分桶）
     └── 20260910-215808/…             ← 单份时间戳归档
 data/{script_id}/OkNteBackups/
-└── mas/<user_id>/…                   ← MAS 侧用户配置池（user 级，按用户分）
+└── mas/<user_id>/…                   ← MAS 侧账号配置池（`user` 池，按账号分）
     └── 20260910-215808/…             ← 单份时间戳归档
 ```
 
 - **项目级（特定软件适配器默认）**：native 挂到
   项目级根（`data/{Script}Backups`，脚本目录之外）并按**物理配置根指纹分桶**——
   `config_root_key(路径)` = 规范化绝对路径的短哈希：同一份物理配置无论被哪
-  个脚本引用都归同一个池，跨脚本共享、不随脚本删除（同一路径必然同格式，
+  个托管引用都归同一个池，跨托管共享、不随托管删除（同一路径必然同格式，
   不会混池）。现有采用者：MAA / MaaEnd / OkNte / Okww / SRC / BAAH /
-  HSR / ZzzOd / BetterGI（BAAH 额外按用户 `ConfigName` 三级分桶：
-  `native/{fingerprint}/{user_id}`，因其原生配置目标按用户动态解析；ZzzOd
+  HSR / ZzzOd / BetterGI（BAAH 额外按账号 `ConfigName` 三级分桶：
+  `native/{fingerprint}/{user_id}`，因其原生配置目标按账号动态解析；ZzzOd
   的 onedragon 池挂项目级根；BetterGI 走 `data/BetterGIBackups/native/{key}`）。
-- **脚本级（通用性专项强制，General/MaaFW 原生池，M9A 特调随 MaaFW）**：native 挂在自己脚本
+- **托管级（通用性专项强制，General/MaaFW 原生池，M9A 特调随 MaaFW）**：native 挂在自己托管
   目录下 `data/{script_id}/{Script}Backups/native/{key}`——通用性专项（接入
   任意第三方项目/脚本，不是特定软件适配）的「项目」本质属于绑定它的单个
-  脚本实例，跨脚本共享备份没有意义；`key` 二级分桶防脚本内换绑路径混淆。
+  托管实例，跨托管共享备份没有意义；`key` 二级分桶防托管内换绑路径混淆。
   详见 config-restore.md §1.1.1b。
 - **判定标准**：专项类型优先——**通用性专项（General/MaaFW 及后续同类）
-  一律脚本级**；特定软件适配器（多实例可能指向同一安装，如 OkNte/ZzzOd/
+  一律托管级**；特定软件适配器（多实例可能指向同一安装，如 OkNte/ZzzOd/
   BetterGI）才允许项目级共享。
 
 布局函数（`project_backup_root` / `mas_backup_root` / `native_backup_root(config_path)`
@@ -113,7 +113,7 @@ data/{script_id}/OkNteBackups/
 
 ### 3.1 「MAS 侧终态」陷阱（ZzzOd 案例，必读）
 
-目录副本类专项（OkNte：MAS 目录里就是用户配置，天然终态）直接存档即可。
+目录副本类专项可直接归档其真实文件终态。OkNte 的账号 MAS 归档包含账号 `ConfigFile` 和单独的 `QuickConfig` 面板；共享基础来源仍可读取 `Default/ConfigFile`，不能由按账号归档反推运行只支持独立来源。
 
 字段化 + 物化副本类专项（ZzzOd）：**账号字段与 AppList 编排都只存在
 UserData 字段**，备份池物化的是绑定槽目录，而槽只有「在一条龙内配置」
@@ -135,7 +135,7 @@ UserData 字段**，备份池物化的是绑定槽目录，而槽只有「在一
 ```python
 # app/task/OkNte/tools/backup_archive.py（节选，签名与实装一致）
 def native_backup_root(config_path: Path) -> Path:
-    """项目级原生池：data/OkNteBackups/native/{物理根指纹}，跨脚本共享。"""
+    """项目级原生池：data/OkNteBackups/native/{物理根指纹}，跨托管共享。"""
     return project_backup_root() / "native" / config_root_key(config_path)
 
 
@@ -177,10 +177,10 @@ def archive_mas_runtime_backup(script_id, user_id) -> None:
 ```
 
 挂点分两处：`manager.prepare`（任务级、任何下发之前）调 `archive_native_backup(...)`
-**一次**——原生配置物理上跨用户共享，只在任务级归档一次代表「本轮动手前的原生
-状态」，放到按用户/重试的 `set_<script>` 里会把上一轮下发的 MAS 配置误当原生
+**一次**——原生配置物理上跨账号共享，只在任务级归档一次代表「本轮动手前的原生
+状态」，放到按账号/重试的 `set_<script>` 里会把上一轮下发的 MAS 配置误当原生
 内容挤进保留池；`ScriptConfigTask.set_<script>` 最前面（kill 进程之后、任何
-覆盖动作之前）调 `archive_mas_runtime_backup(...)` 归档按用户的 mas 下发源。
+覆盖动作之前）调 `archive_mas_runtime_backup(...)` 归档按账号的 mas 下发源。
 前端 `onMounted / onUnmounted` 走 `/backup/ensure`（见读档文档 §2）。
 
 ### 4.2 ZzzOd（整目录 / 文件集两视角）
@@ -207,14 +207,14 @@ def archive_mas_runtime_backup(script_id, user_id) -> None:
 | `read_overlay_sidecar(backup_dir, *, file_name=…)` | 读归档内字段侧车；不存在/损坏返回 None |
 | `mask_account(value)` | 账号脱敏（11 位手机号保前 3 后 4，其余原样） |
 | `restore_files(backup_dir, target_root, rel_keys=None, *, dir_map=None)` | 按相对键写回（**replace 语义**）：先删「备份内出现的受管键/子树」再写，备份外的用户数据保留；`dir_map` 用于 rel 键前缀映射到外部共享根（此时只删备份内出现的相对路径，绝不整根删） |
-| `write_backup_mode(backup_dir, mode)` / `read_backup_mode(backup_dir)` | 写 / 读备份时点的三态来源标注 `_mas_mode`（`MODE_FILE_NAME`）；**不参与指纹**（`_archive` 写入阶段排除），`restore_dir` 回写时也不落目标目录——备份列表标签与跨来源校验的元数据，由基座（config_restore）统一消费，专项不要自行读写 |
+| `write_backup_base(backup_dir, base)` / `read_backup_base(backup_dir)` | 写 / 读备份时点的来源标注 `_mas_base`（`BASE_FILE_NAME`）；**不参与指纹**（`_archive` 写入阶段排除），`restore_dir` 回写时也不落目标目录——备份列表标签与跨来源校验的元数据，由基座（config_restore）统一消费；兼容标注不等于运行支持该来源 |
 | `read_backup_text(backup_dir, rel_path, *, max_bytes=1MiB)` | 只读读取归档内一个文本文件（防穿越 + 大小上限；utf-8 兼容 BOM）；「备份文件」预览的底层实现 |
 
 ### 5.2 专项必须提供 / 可自定义的接口（放专项模块）
 
 | 接口 | 可自定义内容 | 必须满足的约束 |
 | --- | --- | --- |
-| 布局函数 | 目录名、池分法、是否按用户分目录 | 统一 `<Script>Backups/{pool}` 命名 |
+| 布局函数 | 目录名、池分法、是否按账号分目录 | 统一 `<Script>Backups/{pool}` 命名 |
 | 收集函数 | 什么算配置、排除规则、多路径合并 | 空名守卫；不存在 → None；可单测 |
 | 归档时机 | 在「动手前」编排挂点 | 三时机 + 覆盖性操作前，suppress |
 | 归档强度 | `keep`、是否 `force` | 恢复前必 force |
@@ -263,7 +263,7 @@ helper。
 
 1. **备份对象模糊**：哪些目录/文件算「配置」？哪些要排除（运行时产物、账号
    缓存、凭据）？
-2. **配置路径模式**由用户配置决定（Folder/File/多路径），收集逻辑拿不准时。
+2. **配置路径模式**由账号配置决定（Folder/File/多路径），收集逻辑拿不准时。
 3. **预览放什么、不放什么**：超出 §6.1/§6.2 通用原则的业务取舍（如“某个文件
    摘要很重要，要不要进预览”）。
 4. **恢复后语义**：恢复需不需要字段回填到 MAS 表单 / 重建合成视图 / 清 sidecar。

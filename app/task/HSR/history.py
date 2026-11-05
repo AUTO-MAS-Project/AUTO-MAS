@@ -1,4 +1,4 @@
-"""HSR 托管和原生用户的单轮历史结论。"""
+"""HSR 托管和原生账号的单轮历史结论。"""
 
 from app.models.schema import HistoryWrite
 from app.utils import UTC4, get_logger
@@ -16,11 +16,11 @@ async def save_hsr_user_history(
             "HSR 脚本原生来源运行中",
             "未开始监看日志",
         }:
-            log_item.status = "任务被用户手动中止" if cancelled else "HSR 用户未完成"
+            log_item.status = "任务被用户手动中止" if cancelled else "HSR 账号未完成"
         status = (
             "success"
             if log_item.status
-            in {"HSR 用户任务完成", "HSR 失败任务补跑完成", "HSR 脚本原生来源完成"}
+            in {"HSR 账号任务完成", "HSR 失败任务补跑完成", "HSR 脚本原生来源完成"}
             else "skipped"
             if log_item.status == "HSR 本轮无需执行，已跳过"
             else "cancelled"

@@ -445,7 +445,7 @@ def _migrate_oknte_launch_mode_default(data: dict) -> tuple[dict, bool]:
     用户从「能跑」变「启动失败」。故 load 前缺键注入升级前的 ``LauncherUi``；
     Game 段缺失（手工编辑/截断文件）同样按存量处理；Game 段损坏（非 dict）
     时跳过注入交给 load 的纠错路径重建，不在此崩掉启动。显式保存过该键的
-    配置原样保留；新建脚本由类默认落盘 ``Autoplay``，不走此路径。
+    配置原样保留；新建托管由类默认落盘 ``Autoplay``，不走此路径。
 
     Returns:
         (迁移后的配置字典, 是否发生了注入)

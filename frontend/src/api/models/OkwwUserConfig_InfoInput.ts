@@ -12,7 +12,7 @@ export type OkwwUserConfig_InfoInput = {
      */
     Id?: (string | null);
     /**
-     * 是否启用 MAS 快速配置覆盖高频任务字段
+     * 是否启用 MAS 覆写常规配置覆盖高频任务字段
      */
     IfQuickConfig?: (boolean | null);
     /**
@@ -24,7 +24,7 @@ export type OkwwUserConfig_InfoInput = {
      */
     IfScriptBeforeTask?: (boolean | null);
     /**
-     * 用户名
+     * 账号名称
      */
     Name?: (string | null);
     /**
@@ -48,11 +48,11 @@ export type OkwwUserConfig_InfoInput = {
      */
     ScriptBeforeTask?: (string | null);
     /**
-     * 用户状态
+     * 账号状态
      */
     Status?: (boolean | null);
     /**
-     * 用户标签列表（JSON字符串，TagItem的dict列表）
+     * 账号标签列表（JSON字符串，TagItem的dict列表）
      */
     readonly Tag?: (string | null);
 };

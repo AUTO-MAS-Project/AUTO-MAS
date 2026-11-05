@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""通用配置恢复服务：双目标（MAS 用户配置 / 脚本原生配置）的列表、预览、恢复。
+"""通用配置恢复服务：双目标（MAS 账号配置 / 脚本原生配置）的列表、预览、恢复。
 
 供各专项直接传参套用，避免重复实现「时间戳列表 → 预览摘要 → 恢复」这套
 前端弹窗所需的统一后端能力。文件级快照/回写原语在 ``app.utils.common.config.archive``，
@@ -58,10 +58,10 @@ class RestoreContext:
     """专项脚本配置对象（UserData / 专项字段从这里取）。"""
 
     script_id: str
-    """脚本 ID。"""
+    """托管 ID。"""
 
     user_id: str
-    """目标用户 ID。"""
+    """目标账号 ID。"""
 
     force: bool = False
     """损坏时跳过保护步骤的强制恢复（仅消费它的专项池读取，其余忽略）。"""
@@ -69,10 +69,10 @@ class RestoreContext:
 
 @dataclass
 class ConfigRestorePool:
-    """一个可恢复目标池的专项声明（如「MAS 用户配置」「脚本原生配置」）。
+    """一个可恢复目标池的专项声明（如「MAS 账号配置」「脚本原生配置」）。
 
     全部函数第一个参数收 :class:`RestoreContext`，其余参数见各字段；
-    ``kind`` 供前端分段器渲染（``user``=MAS 用户配置、``script``=脚本原生），
+    ``kind`` 供前端分段器渲染（``user``=MAS 账号配置、``script``=脚本原生），
     池表顺序即前端展示顺序（MAS 在前、脚本在后）。
 
     两种声明形态（可混用）：
@@ -181,7 +181,7 @@ class ConfigRestorePool:
 
 @dataclass
 class ConfigRestoreTarget:
-    """一个可恢复目标池（如「MAS 用户配置」「脚本原生配置」）。"""
+    """一个可恢复目标池（如「MAS 账号配置」「脚本原生配置」）。"""
 
     key: str
     """目标标识（如 ``mas`` / ``onedragon``），前端 segmented 与后端路由共用。"""
@@ -269,7 +269,7 @@ class ConfigRestoreService:
         """该池当前的配置来源 base（``shared`` / ``independent`` / ``native``）。
 
         只有 ``tri_state`` 池有「跨来源」概念：``user_only`` / ``sidecar_only``
-        与脚本级池返回 ``None``（备份标注的实际 base 只作展示，不参与比对）。
+        与托管级池返回 ``None``（备份标注的实际 base 只作展示，不参与比对）。
         """
 
         target = self.get_target(key)
@@ -378,7 +378,7 @@ def _bind_context(
 async def _default_current_base(ctx: RestoreContext) -> str | None:
     """基座默认读取当前配置来源 base（统一字段 ``UserData.Info.Base``）。
 
-    读不到（UserData 结构不匹配 / 用户不存在）返回 ``None``（不标注不校验，
+    读不到（UserData 结构不匹配 / 账号不存在）返回 ``None``（不标注不校验，
     降级为现状）。专项 UserData 结构特殊时可用 :attr:`ConfigRestorePool.current_base`
     覆盖。
     """

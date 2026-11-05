@@ -104,7 +104,7 @@ if TYPE_CHECKING:
         TaskReportCoordinator as TaskReportCoordinator,
     )
 
-# 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
+# 脚本配置类名 → 托管类型键（与 ScriptCreateIn.type 词表一致）
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
 _script_observation_tasks: set[asyncio.Task[bool]] = set()
 
@@ -343,7 +343,7 @@ class TaskInfo(TaskItem):
     def on_status_changed(
         self, item: UserItem | ScriptItem, previous: str | None, status: str
     ) -> None:
-        # 已执行用户在自己的收尾中显式采集；预检与共享故障没有用户历史归属。
+        # 已执行用户在自己的收尾中显式采集；预检与共享故障没有账号历史归属。
         if status != "异常" or self.mode != "AutoProxy" or self.replay_cancelled:
             return
         script = (
@@ -367,7 +367,7 @@ class TaskInfo(TaskItem):
             key[0] == run and key[1] != "diagnostic" for key in self._replay_seen
         ):
             return
-        self._request_unassigned_replay(script, reason="无对应用户执行轮次的任务异常")
+        self._request_unassigned_replay(script, reason="无对应账号执行轮次的任务异常")
 
     def begin_user_history_capture(
         self, script: ScriptItem, user: UserItem, *, failed: bool
@@ -403,7 +403,7 @@ class TaskInfo(TaskItem):
         user: UserItem,
         log_warning: Callable[[str], None] | None = None,
     ) -> None:
-        """为本次用户历史装配能力，专项只交出已判定的条目与诊断入口。"""
+        """为本次账号历史装配能力，专项只交出已判定的条目与诊断入口。"""
 
         await save_user_history(
             records,
@@ -432,7 +432,7 @@ class TaskInfo(TaskItem):
     async def collect_user_history_attachments(
         self, script: ScriptItem, user: UserItem
     ) -> list[HistoryAttachmentInput]:
-        """保存前等待该用户已有采集，捕获故障不影响执行结论和其余记录。"""
+        """保存前等待该账号已有采集，捕获故障不影响执行结论和其余记录。"""
         run = self._replay_runs.setdefault(script.script_id, uuid.uuid4().hex)
         key = (run, user.user_id)
         if key in self._replay_seen:
@@ -454,7 +454,7 @@ class TaskInfo(TaskItem):
                 )
             ]
         except Exception as error:
-            logger.opt(exception=True).warning(f"用户失败回放未采集：{error}")
+            logger.opt(exception=True).warning(f"账号失败回放未采集：{error}")
             with suppress(Exception):
                 await Publisher.send(
                     id=self.task_id,
@@ -487,7 +487,7 @@ class TaskInfo(TaskItem):
     async def discard_user_history_capture(
         self, script: ScriptItem, user: UserItem
     ) -> None:
-        """归档返回后释放本用户的采集副本，包括配额拒收与复制回退留下的源。"""
+        """归档返回后释放本账号的采集副本，包括配额拒收与复制回退留下的源。"""
         run = self._replay_runs.get(script.script_id)
         if run is None:
             return
@@ -497,7 +497,7 @@ class TaskInfo(TaskItem):
             self._history_capture_files.pop(key, None)
 
     async def discard_history_captures(self) -> None:
-        """异常中断未交给用户历史的采集只能丢弃，不能在队列末尾补挂。"""
+        """异常中断未交给账号历史的采集只能丢弃，不能在队列末尾补挂。"""
         captures = list(self._history_capture_tasks.values())
         self._history_capture_tasks.clear()
         for capture in captures:
@@ -514,7 +514,7 @@ class TaskInfo(TaskItem):
     def _request_unassigned_replay(
         self, script: ScriptItem | None, *, reason: str
     ) -> None:
-        """无用户归属的诊断只请求 OBS 原件，不创建 MAS 回放档案。"""
+        """无账号归属的诊断只请求 OBS 原件，不创建 MAS 回放档案。"""
         if (
             self.mode != "AutoProxy"
             or self.replay_cancelled
@@ -681,7 +681,7 @@ class Task(TaskExecuteBase):
         self.task_info.schedule_on_change()
 
         logger.success(
-            f"任务 {self.task_info.task_id} 检索完成，包含 {len(self.task_info.script_list)} 个脚本项"
+            f"任务 {self.task_info.task_id} 检索完成，包含 {len(self.task_info.script_list)} 个托管项"
         )
 
     async def main_task(self):
@@ -727,7 +727,7 @@ class Task(TaskExecuteBase):
     ) -> Iterator[None]:
         """按专项记一次脚本运行；顺序执行与循环运行共用。
 
-        结果只看用户状态：MAA、通用脚本等专项无论成败都把脚本状态收成「完成」，
+        结果只看账号状态：MAA、通用脚本等专项无论成败都把脚本状态收成「完成」，
         拿脚本状态判会把全员失败也记成成功，各专项之间没法比。
         """
 
@@ -810,7 +810,7 @@ class Task(TaskExecuteBase):
         root_paths: tuple[Path, ...],
         emulator_key: str | None,
     ):
-        """按脚本类型构造对应的脚本调度器，类型不支持时返回 None。
+        """按托管类型构造对应的脚本调度器，类型不支持时返回 None。
 
         顺序执行与循环运行共用宿主注入的工厂，按 type 精确查表。
         """
@@ -934,7 +934,7 @@ class Task(TaskExecuteBase):
             await asyncio.sleep(CYCLE_RETRY_SLEEP_SECONDS)
 
     def _scope_skipped_script_ids(self) -> set[str]:
-        """本次运行范围内被整项排除的托管（勾选后一个用户都没选）。"""
+        """本次运行范围内被整项排除的托管（勾选后一个账号都没选）。"""
 
         scope = self.task_info.user_ids_by_script
         if not scope:
@@ -942,7 +942,7 @@ class Task(TaskExecuteBase):
         return {script_id for script_id, user_ids in scope.items() if not user_ids}
 
     async def _notice_scope_skipped_scripts(self) -> None:
-        """循环运行前把本次未选择任何用户的托管标记为跳过，并只提示一次。"""
+        """循环运行前把本次未选择任何账号的托管标记为跳过，并只提示一次。"""
 
         skipped = self._scope_skipped_script_ids()
         if not skipped:
@@ -951,18 +951,18 @@ class Task(TaskExecuteBase):
             if script_item.script_id not in skipped:
                 continue
             script_item.status = "跳过"
-            logger.info(f"跳过任务: {script_item.script_id}, 本次未选择任何用户")
+            logger.info(f"跳过任务: {script_item.script_id}, 本次未选择任何账号")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(
                     level="warning",
-                    message=f"任务 {script_item.name} 本次未选择任何用户, 已跳过",
+                    message=f"任务 {script_item.name} 本次未选择任何账号, 已跳过",
                 ),
             )
 
     def _collect_entries(self, queue_uid: uuid.UUID) -> list[CycleEntry]:
-        """收集队列的待运行条目，并剔除本次一个用户都没选的托管。"""
+        """收集队列的待运行条目，并剔除本次一个账号都没选的托管。"""
 
         entries = collect_cycle_entries(
             Config.QueueConfig[queue_uid], Config.ScriptConfig, datetime.now()
@@ -985,7 +985,7 @@ class Task(TaskExecuteBase):
             ``skipped`` 表示维护跳过，按原周期排下一轮，不立即重试。
         """
 
-        # 脚本列表是建任务时冻结的，靠下标回写状态。队列结构在运行中被改过
+        # 托管列表是建任务时冻结的，靠下标回写状态。队列结构在运行中被改过
         # （队列项没了、下标对不上脚本）就不能再信任，宁可停下也不能跑错脚本。
         try:
             queue_item = Config.QueueConfig[queue_uid].QueueItem[
@@ -1065,7 +1065,7 @@ class Task(TaskExecuteBase):
             )
             if task_item is None:
                 script_item.status = "异常"
-                logger.error(f"不支持的脚本类型: {type(script_config).__name__}")
+                logger.error(f"不支持的托管类型: {type(script_config).__name__}")
             else:
                 self.task_info.current_index = entry.index
                 script_item.status = "运行"
@@ -1341,7 +1341,7 @@ class Task(TaskExecuteBase):
             # 检查任务对应脚本是否仍存在
             if current_script_uid not in Config.ScriptConfig:
                 script_item.status = "异常"
-                self._record_error(f"脚本 {current_script_uid} 已被删除")
+                self._record_error(f"托管 {current_script_uid} 已被删除")
                 logger.info(f"跳过任务: {current_script_uid}, 该任务对应脚本已被删除")
                 await Publisher.send(
                     id=self.task_info.task_id,
@@ -1353,17 +1353,17 @@ class Task(TaskExecuteBase):
                 )
                 continue
 
-            # 队列任务按托管勾选了本次运行范围时，一个用户都没选的托管整项跳过
+            # 队列任务按托管勾选了本次运行范围时，一个账号都没选的托管整项跳过
             script_scope = self.task_info.script_user_scope(script_item.script_id)
             if script_scope is not None and not script_scope:
                 script_item.status = "跳过"
-                logger.info(f"跳过任务: {current_script_uid}, 本次未选择任何用户")
+                logger.info(f"跳过任务: {current_script_uid}, 本次未选择任何账号")
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
                     data=WSTaskNoticeData(
                         level="warning",
-                        message=f"任务 {script_item.name} 本次未选择任何用户, 已跳过",
+                        message=f"任务 {script_item.name} 本次未选择任何账号, 已跳过",
                     ),
                 )
                 continue
@@ -1428,13 +1428,13 @@ class Task(TaskExecuteBase):
                 if task_item is None:
                     script_item.status = "异常"
                     self._record_error(
-                        f"不支持的脚本类型: {type(script_config).__name__}"
+                        f"不支持的托管类型: {type(script_config).__name__}"
                     )
-                    logger.error(f"不支持的脚本类型: {type(script_config).__name__}")
+                    logger.error(f"不支持的托管类型: {type(script_config).__name__}")
                     await Publisher.send(
                         id=self.task_info.task_id,
                         type=protocol.TASK_NOTICE,
-                        data=WSTaskNoticeData(level="error", message="脚本类型不支持"),
+                        data=WSTaskNoticeData(level="error", message="托管类型不支持"),
                     )
                     continue
 
@@ -1580,7 +1580,7 @@ class _TaskManager:
     def _queue_script_entries(
         queue_id: uuid.UUID,
     ) -> list[tuple[uuid.UUID, list[str]]]:
-        """返回队列中实际引用的脚本 ID 及该队列项限定的运行周几。"""
+        """返回队列中实际引用的托管 ID 及该队列项限定的运行周几。"""
 
         return [
             (uuid.UUID(script_id), list(queue_item.Schedule.Days))
@@ -1591,7 +1591,7 @@ class _TaskManager:
 
     @classmethod
     def _queue_script_ids(cls, queue_id: uuid.UUID) -> list[uuid.UUID]:
-        """返回队列中实际引用的脚本 ID。"""
+        """返回队列中实际引用的托管 ID。"""
 
         return [script_id for script_id, _ in cls._queue_script_entries(queue_id)]
 
@@ -1729,17 +1729,17 @@ class _TaskManager:
     def _resolve_target_user(
         script_uid: uuid.UUID, user_id: str | None
     ) -> uuid.UUID | None:
-        """校验单独运行所指定的用户
+        """校验单独运行所指定的账号
 
         Args:
-            script_uid (uuid.UUID): 目标脚本 UID。
-            user_id (str | None): 指定的用户 ID; 为 None 时表示运行全部用户。
+            script_uid (uuid.UUID): 目标托管 UID。
+            user_id (str | None): 指定的账号 ID; 为 None 时表示运行全部用户。
 
         Returns:
-            uuid.UUID | None: 指定用户的 UID; 未指定时为 None。
+            uuid.UUID | None: 指定账号的 UID; 未指定时为 None。
 
         Raises:
-            ValueError: 用户不属于该脚本, 或该用户当前不可运行。
+            ValueError: 账号不属于该脚本, 或该账号当前不可运行。
         """
 
         if user_id is None:
@@ -1750,24 +1750,24 @@ class _TaskManager:
         try:
             user_uid = uuid.UUID(user_id)
         except ValueError as e:
-            raise ValueError(f"用户 {user_id} 不属于脚本 {script_name}") from e
+            raise ValueError(f"账号 {user_id} 不属于托管 {script_name}") from e
         if user_uid not in script_config.UserData:
-            raise ValueError(f"用户 {user_id} 不属于脚本 {script_name}")
+            raise ValueError(f"账号 {user_id} 不属于托管 {script_name}")
 
-        # 与各脚本适配器构建用户列表时的筛选口径保持一致，否则会静默跑出一个空用户列表
+        # 与各脚本适配器构建账号列表时的筛选口径保持一致，否则会静默跑出一个空账号列表
         user_config = script_config.UserData[user_uid]
         if not user_config.Info.Status or user_config.Info.RemainedDay == 0:
-            raise ValueError(f"用户 {user_config.Info.Name} 未启用或代理天数已耗尽")
+            raise ValueError(f"账号 {user_config.Info.Name} 未启用或代理天数已耗尽")
         return user_uid
 
     def _resolve_target_users(
         self, script_uid: uuid.UUID, user_ids: list[str] | None
     ) -> frozenset[str] | None:
-        # 校验多选运行所指定的用户集合。
+        # 校验多选运行所指定的账号集合。
         if user_ids is None:
             return None
         if not user_ids:
-            raise ValueError("至少选择一个用户")
+            raise ValueError("至少选择一个账号")
 
         selected: set[str] = set()
         for user_id in user_ids:
@@ -1780,7 +1780,7 @@ class _TaskManager:
     def _resolve_queue_user_scope(
         self, queue_id: uuid.UUID, queue_user_ids: dict[str, list[str]]
     ) -> dict[str, frozenset[str]]:
-        # 校验队列任务按脚本指定的本次运行用户，口径与脚本任务的多选一致。
+        # 校验队列任务按脚本指定的本次运行账号，口径与脚本任务的多选一致。
         queue_script_ids = {
             str(script_id) for script_id in self._queue_script_ids(queue_id)
         }
@@ -1788,9 +1788,9 @@ class _TaskManager:
         for script_id, user_ids in queue_user_ids.items():
             if script_id not in queue_script_ids:
                 queue_name = Config.QueueConfig[queue_id].Info.Name
-                raise ValueError(f"脚本 {script_id} 不属于队列 {queue_name}")
+                raise ValueError(f"托管 {script_id} 不属于队列 {queue_name}")
             if not user_ids:
-                # 空集合是有意义的取值：该托管本次一个用户都不跑。
+                # 空集合是有意义的取值：该托管本次一个账号都不跑。
                 scope[script_id] = frozenset()
                 continue
             scope[script_id] = (
@@ -1819,9 +1819,9 @@ class _TaskManager:
             mode (str): 任务模式; CycleRun 只接受循环队列
             id (str): 任务项对应的配置 ID
             new_task_info (dict): 新任务项信息. Defaults to {}.
-            user_id (str): 单独运行的用户 ID; 仅脚本的自动代理任务可用。
-            user_ids (list[str]): 多选运行的用户 ID; 仅脚本的自动代理任务可用。
-            queue_user_ids (dict[str, list[str]]): 按脚本ID指定本次运行的用户 ID;
+            user_id (str): 单独运行的账号 ID; 仅脚本的自动代理任务可用。
+            user_ids (list[str]): 多选运行的账号 ID; 仅脚本的自动代理任务可用。
+            queue_user_ids (dict[str, list[str]]): 按托管ID指定本次运行的账号 ID;
                 仅队列任务可用, 未列出的脚本不限, 空列表表示该脚本本次整项跳过。
             trigger_source: MAS 任务触发来源，API 手动启动默认 manual_task。
             view_only: 配置查看会话（ScriptConfig 专用）：只读打开原生界面，
@@ -1842,21 +1842,21 @@ class _TaskManager:
         if self._stopping_all:
             raise RuntimeError("正在停止全部任务，暂不接受新任务")
 
-        # 用户范围只对「脚本 + 自动代理」成立；队列到不了用户粒度，设置类任务
+        # 账号范围只对「脚本 + 自动代理」成立；队列到不了账号粒度，设置类任务
         # 的用户由 uid 自身表达。放在循环队列占用标记之前，避免拒绝时留下脏标记。
         if user_id is not None and user_ids is not None:
-            raise ValueError("多选用户不能与单独运行用户同时使用")
+            raise ValueError("多选账号不能与单独运行账号同时使用")
 
         if (user_id is not None or user_ids is not None) and (
             mode != "AutoProxy" or uid not in Config.ScriptConfig
         ):
-            raise ValueError("指定运行用户仅支持脚本的自动代理任务")
+            raise ValueError("指定运行账号仅支持脚本的自动代理任务")
 
-        # 队列的用户范围是按托管分别收窄，与脚本任务的整任务用户范围是两套入参。
+        # 队列的账号范围是按托管分别收窄，与脚本任务的整任务账号范围是两套入参。
         if queue_user_ids is not None and (
             mode not in ("AutoProxy", "CycleRun") or uid not in Config.QueueConfig
         ):
-            raise ValueError("按脚本指定运行用户仅支持队列任务")
+            raise ValueError("按脚本指定运行账号仅支持队列任务")
 
         # CycleRun 只是「怎么排」的差别，脚本仍按自动代理执行；各脚本适配器
         # 只认 AutoProxy，所以模式在这里就翻译掉，循环与否记在 is_cycle 上。
@@ -1897,7 +1897,7 @@ class _TaskManager:
                         user_uid = uid
                         break
                 else:
-                    raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
+                    raise ValueError(f"任务 {uid} 无法找到对应托管配置")
         elif uid in Config.QueueConfig:
             task_uid = uuid.uuid4()
             queue_id = uid
@@ -1910,7 +1910,7 @@ class _TaskManager:
             user_uid = self._resolve_target_user(uid, user_id)
             selected_user_ids = self._resolve_target_users(uid, user_ids)
         else:
-            raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
+            raise ValueError(f"任务 {uid} 无法找到对应托管配置")
 
         # 创建时冻结任务脚本身份，供 task.created 通知与运行时快照复用；
         # 队列项限定的运行周几随身份一起冻结，顺序执行时据此跳过
@@ -2252,6 +2252,6 @@ def build_task_result_text(scripts: Iterable) -> str:
         )
         blocks.append(
             f"{script.name}：\n\n"
-            f"    已完成用户数：{completed}；未完成用户数：{uncompleted}\n\n{indented}"
+            f"    已完成账号数：{completed}；未完成账号数：{uncompleted}\n\n{indented}"
         )
     return "\n\n\n".join(blocks)

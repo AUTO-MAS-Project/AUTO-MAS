@@ -1,40 +1,44 @@
 # 案例：BetterGI（better-genshin-impact 线，原神一条龙）
 
 BetterGI 基于 BetterGI 程序（`BetterGI.exe`）跑原神一条龙，与 ZzzOd 同属
-一条龙家族但物理形态不同：**无持久槽位**——用户独立配置模式下运行时把
+一条龙家族但物理形态不同：**无持久槽位**——独立配置模式下运行时把
 字段物化到临时槽位 `User/OneDragon/MAS独立配置.json` + 前缀配置组，运行
 结束删除/还原；MAS 前端是唯一编辑入口。本文件只记读代码推不出来的部分，
 文件与字段现场读 `app/task/BetterGI/` 与 `views/BetterGIUserEdit/` 确认。
+
+## 有效配置来源
+
+账号页可选独立配置与原生配置；共享卡片禁用。历史 `shared` 与 `independent` 在运行时都使用当前账号的 MAS 字段与 per-account 副本，没有托管级共享配置树。原生来源使用 BetterGI 自己选择的配置，不加载账号副本。独立覆写开关已隐藏，原生来源的旧 `IfQuickConfig` 值归一为关；不能把保留的原生覆写函数当作当前可用操作。
 
 ## 配置分层（决定备份对象）
 
 | 层 | 位置 | 性质 |
 | --- | --- | --- |
-| 用户字段 | `UserData`（Info/OneDragon/Switch/Data/Notify） | 前端编辑，事实源之一 |
-| per-user 副本 | `data/{script_id}/{user_id}/` 的 `OneDragon/`（一条龙副本）、`ScriptGroup/`（配置组）、`GlobalDomain/`（秘境刷取） | **前端端点直接读写**（`/scripts` 的 read/write_user_script_group、read/write_global_domain_settings 等）——就是页面编辑对象 |
+| 账号字段 | `UserData`（Info/OneDragon/Switch/Data/Notify） | 前端编辑，事实源之一 |
+| per-account 副本 | `data/{script_id}/{user_id}/` 的 `OneDragon/`（一条龙副本）、`ScriptGroup/`（配置组）、`GlobalDomain/`（秘境刷取） | **前端端点直接读写**（`/scripts` 的 read/write_user_script_group、read/write_global_domain_settings 等）——就是页面编辑对象 |
 | BGI 全局主配置 | `{RootPath}/User/config.json` | **MAS 每次运行临时补写队伍/策略叶子、结束还原**（`apply_global_battle_*` + `snapshot/restore_global_battle_config`）——唯一被触碰的持久原生文件 |
-| BGI 一条龙实配 | `{RootPath}/User/OneDragon/*.json`（含「默认配置」） | 直控+关闭时直接跑；用户独立配置模式 MAS **零接触** |
+| BGI 一条龙实配 | `{RootPath}/User/OneDragon/*.json`（含「默认配置」） | 原生来源直接跑；独立配置模式 MAS **零接触** |
 | 临时槽位 | `{RootPath}/User/OneDragon/MAS独立配置.json` + 前缀配置组 | 运行时物化、结束删除（`_restore_one_dragon_config`） |
 
-## 配置恢复接入要求（mas=per-user 副本 + 字段侧车；native=全局 config.json）
+## 配置恢复接入要求（mas=per-account 副本 + 字段侧车；native=全局 config.json）
 
 BetterGI 已接入通用配置恢复（mas/native 双池 + 字段侧车 + viewOnly 查看
 会话），后续改动必须符合 [config-restore.md](config-restore.md) 通用要求，
 另守以下 BetterGI 特有项：
 
-- **mas 池 = per-user 副本目录 + 页面字段侧车**：副本是前端端点直接读写的
-  编辑对象（对齐 OkNte「ConfigFile 即页面编辑对象」），字段侧车承载 UserData
+- **mas 池 = per-account 副本目录 + 页面字段侧车**：副本是前端端点直接读写的
+  编辑对象（OkNte 对应的是账号 `QuickConfig` 面板目录，不能混作共享基础配置），字段侧车承载 UserData
   里会物化/注入的字段（OneDragon 段全部 + Task.OneDragonConfigName +
-  Switch.Resource + Info.Mode 仅预览）；Id/Password/前后置脚本/通知/Data
+  Switch.Resource + Info.Base 仅预览）；Id/Password/前后置脚本/通知/Data
   由 MAS 自己消费（登录与执行域）**不进侧车**。恢复 = 副本目录回滚 +
   字段回填 UserData。
-- **per-user 副本与来源无关、恒按用户分桶，无 owner 解耦**（对齐 General）：
-  直控用户前端同样编辑副本落盘，mas 池对三态都存在——不要按 MAA/MaaEnd
-  「直控无 mas 池」套 BetterGI。
+- **per-account 副本与来源无关、恒按账号分桶，无 owner 解耦**（对齐 General）：
+  原生配置账号也可保有 MAS 副本，mas 池不随运行来源消失；这不表示运行读取它，也不表示 `shared` 实现了托管级共享。不要按 MAA/MaaEnd
+  「原生来源无 mas 池」套 BetterGI。
 - **native 池 = 全局 config.json + BGI 一条龙实配**（``{RootPath}/User/config.json``
   + ``{RootPath}/User/OneDragon/*.json``，按物理根指纹分桶）。一条龙实配在
-  用户独立配置模式下 MAS 零接触，但它是**用户在 BGI GUI 里的直接编辑对象**
-  （直控/手工编辑场景，改坏无 MAS 侧找回点——用户实测「改了一条龙配置重进
+  独立配置模式下 MAS 零接触，但它是**用户在 BGI GUI 里的直接编辑对象**
+  （原生来源/手工编辑场景，改坏无 MAS 侧找回点——用户实测「改了一条龙配置重进
   编辑页无备份」后纳入）；归档排除 MAS 运行时临时槽位「MAS独立配置.json」
   （运行物化、结束删除，不是用户实配）。
 - **native 预览只收 mas 侧有对应概念的字段**（§3.3「两池同字段同口径」）：
@@ -76,8 +80,8 @@ BetterGI 已接入通用配置恢复（mas/native 双池 + 字段侧车 + viewOn
   会话不重读日志，也不重建逐行规则；`steps_to_push_log` 保留给统计通知复用，
   避免节点侧与判态侧形成两份上下文语义。需要复杂解析或账号路由的专项
   仍可通过 `LogBinding.read` / `deliver` 自适配。
-- **开关与聚合**：开关 = 用户级 `Notify.PushLogMode`（关闭/逐条/汇总，前端在
-  用户编辑页基本信息区直接内联下拉，与 MaaEnd/ZzzOd 同型；共享组件
+- **开关与聚合**：开关 = 账号级 `Notify.PushLogMode`（关闭/逐条/汇总，前端在
+  账号编辑页基本信息区直接内联下拉，与 MaaEnd/ZzzOd 同型；共享组件
   `UserNotifyConfig.vue` 保留 `showPushLogMode` 门控的呈现块，默认关闭、
   按需传 prop 启用），关闭即不注入
   （push_log 保持为空）；注入点在 `AutoProxy.final_task`（on_crash 后

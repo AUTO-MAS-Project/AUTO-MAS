@@ -197,13 +197,13 @@ def _build_mcp(
         schema_app,
         name="AUTO-MAS MCP",
         description=(
-            "配置已安装的 AUTO-MAS 脚本：创建脚本并设置安装路径，"
-            "查询专项动态选项后创建并配置用户，按专项支持情况创建计划，"
+            "配置 AUTO-MAS 托管：创建托管并设置外部脚本安装路径，"
+            "查询专项动态选项后创建并配置账号，按专项支持情况创建计划，"
             "建立队列、队列项和定时项，最后按需试运行。"
             "创建接口返回新 ID 和默认配置；修改时只提交需要变更的字段，"
             "并使用查询接口返回的真实 ID 与可选值。"
             "MFW/M9A/MSS 的安装目录通过 embedded/reimport 导入，"
-            "用 preview 查询项目 controller/resource/task 后再配置用户。"
+            "用 preview 查询项目 controller/resource/task 后再配置账号。"
             "HSR 先查询 capabilities 和 managed-config；"
             "BetterGI、ZZZ-OD、奇想盒先查询任务目录与选项；"
             "OK-NTE 先查询配置 schema，BAAH 先查询已有配置文件名。"
@@ -240,8 +240,8 @@ def _validate_mcp(mcp: FastApiMCP) -> None:
     for tool in mcp.tools:
         if tool.name == "get_maaend_options_api_scripts_maaend_options_post":
             tool.description += (
-                "\n\n先创建 MaaEnd 脚本并设置 Info.Path 为已安装的 MaaEnd 目录，"
-                "再用该脚本的 scriptId 查询动态选项。"
+                "\n\n先创建 MaaEnd 托管并设置 Info.Path 为已安装的 MaaEnd 目录，"
+                "再用该托管的 scriptId 查询动态选项。"
                 "根据 controllerTypes 判断控制器协议：Adb 需配置模拟器与实例，"
                 "Win32 需配置游戏路径。控制器、基质与采集选项使用返回的真实值；"
                 "检查返回的 code，查询失败时先处理错误，不要猜测选项。"
@@ -256,7 +256,7 @@ def _validate_mcp(mcp: FastApiMCP) -> None:
         elif tool.name == "search_history_api_history_search_post":
             tool.description += (
                 "\n\n用于查询已结束运行的结果，建议按运行日期使用 DAILY 模式。"
-                "按用户、托管名称、记录编号及带偏移的时间核对 index 中的 status 与 message。"
+                "按账号、托管名称、记录编号及带偏移的时间核对 index 中的 status 与 message。"
                 "success 表示成功，error 表示执行失败，skipped/cancelled 分别表示跳过/取消；存储错误不改变执行结论。可用 recordId 获取详情；该接口不按 taskId 精确检索，按 taskId 取终态请用任务状态查询；"
                 "记录缺失或无法唯一对应时，结果仍未知，"
                 "不能把任务从运行快照消失视为成功。"

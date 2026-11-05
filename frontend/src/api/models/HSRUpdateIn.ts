@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type HSRUpdateIn = {
     /**
-     * HSR 脚本配置 ID
+     * HSR 托管配置 ID
      */
     scriptId: string;
     /**

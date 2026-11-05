@@ -47,7 +47,7 @@
 | MXU（MaaEnd） | `mxu-*.json` 可设 autoRun 类字段；必要时对照壳 CLI | 常 ScriptConfig 拉起本体会话；日常字段走 Section |
 | MAA | 依 MAA 文档，常见 ScriptConfig 路径 | ScriptConfig 调本体 + 关卡/plan Section |
 | SRC | 依 SRC.exe / Alas 文档 | 多为大表单 + Section 写映射配置 |
-| HSR（多引擎） | 按模块先定引擎再分别调用；切号统一走 SRA | **无** ScriptConfig；托管字段后端下发前端动态渲染；三态只换计划 owner（脚本态 = `HSRConfig` 同名组共享计划），直控原样跑脚本当前配置 |
+| HSR（多引擎） | 按模块先定引擎再分别调用；切号统一走 SRA | **无** ScriptConfig；托管字段后端下发前端动态渲染；三态只换计划 owner（共享来源 = `HSRConfig` 同名组共享计划），原生来源原样跑脚本当前配置 |
 | General | 先最小 `open_process` + 日志，再按上游补 argv | 通用路径与简单字段 |
 
 **实施顺序建议**：先用 `General` 验证对接可行 → 再新增专项 `ScriptType` 承载默认值与 UI → 最后删掉 General 页的临时预设入口。
@@ -64,19 +64,19 @@
 | 维度 | MAA | SRC | MaaEnd | Okww | OkNte | HSR |
 | --- | --- | --- | --- | --- | --- | --- |
 | 外部程序数 | 1 | 1 | 1 | 1 | 1 | **2** |
-| ScriptConfig 遮罩 | 有 | 视需求 | 有 | 有（脚本级+用户级+直控） | **有，且另有 REST 动态表单** | **无** |
+| ScriptConfig 遮罩 | 有 | 视需求 | 有 | 有（托管级+账号级+原生来源） | **有，且另有 REST 动态表单** | **无** |
 | 计划表 | 有 | 无 | 有 | 无 | 无 | 无 |
-| 任务/队列 UI | 关卡理智 Section | Stage Section | TaskConfig + Skyland | 高频字段（固定 -t 1 日常） | 动态表单（后端下发字段） | 后端下发托管字段动态渲染（脚本 / 用户来源各写各的 owner） |
+| 任务/队列 UI | 关卡理智 Section | Stage Section | TaskConfig + Skyland | 高频字段（固定 -t 1 日常） | 动态表单（后端下发字段） | 后端下发托管字段动态渲染（共享 / 独立来源各写各的 owner） |
 | 后端侧重 | 进程与实例 | 任务栈、模拟器、Stage | runtime_bridge、MXU 路径、切号 | 三态来源、working 备份恢复 | 半自动 schema、双通道配置 | 模块→引擎分配、双份配置备份、路径锁 |
 
 M9A 不在此表：它是 MaaFW 的特调类型，前端用 MaaFW 的组件（见 `app/task/M9A/AGENTS.md`）。
 
 ## 前端表面通用约定
 
-- **Hub 分支必须补全所有入口**（编辑脚本、加用户、编辑用户、创建脚本及复制）。漏一处即"列表能点、创建不能进"。路由片段字面量集中在创建流的 `EDIT_SEGMENT_BY_TYPE`。
+- **Hub 分支必须补全所有入口**（编辑托管、加账号、编辑账号、创建托管及复制）。漏一处即"列表能点、创建不能进"。路由片段字面量集中在创建流的 `EDIT_SEGMENT_BY_TYPE`。
 - 延续既有 `if (script.type === …)` 链，**不抽 `routeByScriptType` 这类抽象**除非已有先例。
 - 编排页只接线：`formData` + `handleFieldSave(group, key, value)` 局部更新；Section 收 `props` 发 `emit('save')`，**不直接调 API**。表单自然分块再拆，编排页不写数百行表单项。
-- 用户 **add** 流程：先 `addUser` 再 `router.replace` 到带 `userId` 的路由。
+- 账号 **add** 流程：先 `addUser` 再 `router.replace` 到带 `userId` 的路由。
 - `useScriptApi` 要改**两处**分支（脚本类型 + UserConfig→users[]），漏后者列表 NO DATA。
 - WebSocket 用既有 composable，不另造客户端。
 - 展示文案与技术标识分离：文案可写 `ok-ww`，`ScriptType` / 路由 / OpenAPI 名保持 `Okww`。

@@ -504,7 +504,7 @@ const createUserImmediately = async () => {
 
   const resp = await addUser(scriptId)
   if (!resp?.userId) {
-    throw new Error(resp?.message || '创建用户失败')
+    throw new Error(resp?.message || '创建账号失败')
   }
   userId = resp.userId
   activeUserId.value = userId

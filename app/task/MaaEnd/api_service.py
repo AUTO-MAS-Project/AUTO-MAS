@@ -59,7 +59,7 @@ class MaaEndConfigService:
     def _get_script(self, script_id: str) -> RuntimeMaaEndConfig:
         script = self._scripts[uuid.UUID(script_id)]
         if not isinstance(script, RuntimeMaaEndConfig):
-            raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
+            raise TypeError("托管配置类型错误, 不是 MaaEnd 类型")
         return script
 
     async def initialize(self, script: ConfigEntry) -> None:
@@ -137,7 +137,7 @@ class MaaEndConfigService:
     ) -> None:
         """按原目录完整透传上游配置，不解释私有格式。"""
         if not isinstance(script, RuntimeMaaEndConfig):
-            raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
+            raise TypeError("托管配置类型错误, 不是 MaaEnd 类型")
         if script.Info.Path is None:
             raise ValueError("Path未配置，请检查路径设置")
         source_directory = script.Info.Path / "config"

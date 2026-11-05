@@ -1,6 +1,6 @@
 # 案例：OkNte（异环 / OK-NTE）
 
-OkNte 与 [Okww](./examples-okww.md) 同属 `ok-script` 家族、同用 `-t N -e` 启动，但字段来源和配置通道仍可不同；二者都遵循统一的脚本 / 用户 / 直控三态来源，以及独立用户级快速配置开关。维护 OkNte 时不要套用 Okww 的固定 schema 或「仅 GUI 遮罩」约束。
+OkNte 与 [Okww](./examples-okww.md) 同属 `ok-script` 家族、同用 `-t N -e` 启动，但字段来源和配置通道仍可不同；二者都遵循统一的共享 / 独立 / 原生三态来源，以及独立账号级覆写常规配置开关。维护 OkNte 时不要套用 Okww 的固定 schema 或「仅 GUI 遮罩」约束。
 
 具体文件、字段、端点签名现场读 `app/task/OkNte/` 与 `app/api/scripts/` 确认。本文件只记推不出来的部分。
 
@@ -20,8 +20,8 @@ Okww 的字段可静态声明；**OkNte 上游打包后源码不可读**，配�
 
 OkNte 同时有：
 
-1. **动态表单 + REST 端点**：前端按后端下发的 `field.type` 渲染，经 `/api/scripts/oknte/configs*` 直接读写 per-user JSON。
-2. **ScriptConfig GUI 遮罩会话**：无参启动本体 GUI，会话结束回存 MAS 目录。
+1. **动态表单 + REST 端点**：前端按后端下发的 `field.type` 渲染，经 `/api/scripts/oknte/configs*` 读写账号 `QuickConfig` 中的面板 JSON，切换基础来源不重置它。
+2. **ScriptConfig GUI 遮罩会话**：无参启动本体 GUI；启用覆写或查看会话时使用账号 `QuickConfig`，否则按基础来源选择共享 `Default/ConfigFile`、账号 `ConfigFile` 或原生配置。结束是否回写依会话语义处理。
 
 **审查 OkNte 时不得按 Okww「无配置 REST API / 无动态表单」的标准判其违规**——`config_schema.py`、配置端点、`OkNteConfigEditor.vue` 都是 OkNte 的正常组成部分。反过来也不要给 Okww 加这套。
 
@@ -31,14 +31,15 @@ OkNte 同时有：
 
 - **`ConfigPathMode`（`Folder` / `File`）两分支必须在三处一致处理**：AutoProxy 下发、ScriptConfig 回写、Manager 恢复。漏一处即配置错位。
 - **旧版 → 新版迁移只在目标文件不存在时用旧值初始化，绝不覆盖用户现值**（旧 `DailyTask.json` → 新 `DailyRoutineTask.json`）。
-- per-user 配置目录是事实来源；旧版共享目录仅作升级初始化来源，不是运行时读取位置。
+- 基础来源与面板副本分开：共享基础配置读取 `Default/ConfigFile`，独立读取账号 `ConfigFile`，原生读取脚本配置。账号 `QuickConfig` 是动态面板的事实来源，开启覆写时临时叠加；首次初始化可从旧账号目录、共享目录或原生配置播种，之后切来源不覆盖面板。共享目录仍有真实运行消费者，不能把它一概当作升级残留。
+- `mas_base="user_only"` 描述的是 MAS 备份按账号保存及恢复账号目录的策略，不是运行来源声明；它不能证明 `Info.Base` 无效，也不能证明共享目录不参与运行。
 - JSON 写入走临时文件 + `replace`，并在模块写锁内；目录同步用 `.tmp` + `rename`。
-- `Info.Mode` 提供脚本 / 用户 / 直控三态；快速配置开关独立于来源，直控下同样可开启。
+- `Info.Base` 提供共享 / 独立 / 原生三态；覆写常规配置开关独立于来源，原生来源下同样可开启。
 
 ## 判态陷阱
 
 - **日常任务（`-t 2`）命中 `SuccessLog` 还不够**，必须再过专项校验（DailyRoutine 需完成日常领取 / 旧版需完成每日活跃度）才算成功。只看 `SuccessLog` 会把没做完日常的运行误报为成功。
-- 内置 fatal 片段优先于用户配置的 `ErrorLog`；`ErrorLog` 清洗后为空要回退内置默认，不能留空放过所有错误。
+- 内置 fatal 片段优先于账号配置的 `ErrorLog`；`ErrorLog` 清洗后为空要回退内置默认，不能留空放过所有错误。
 - 进程在成功标记前退出视为异常，不是正常结束。
 - **启动器按固定相对路径校验，解析不出有效路径时跳过清理而非误杀**——异环启动器路径写错会杀掉无关进程。
 - 客户端进程已在运行时只接管、不重复拉起。
@@ -46,13 +47,13 @@ OkNte 同时有：
 ## 审查清单
 
 - [ ] 三部分职责清晰：类型推断 / 标签加载 / `SELECT_OPTIONS` 手工候选，无越界
-- [ ] 两条配置通道读写同一 per-user 目录，未各自维护一份
+- [ ] 面板 REST 与 GUI 会话按覆写状态使用同一账号 `QuickConfig`；未启用覆写的 GUI 会话与运行按同一基础来源选目录，没有把面板副本混作共享基础配置
 - [ ] `ConfigPathMode` 两分支在下发、回写、恢复三处一致
 - [ ] 迁移逻辑不覆盖用户现值
 - [ ] `-t 2` 成功过专项校验，不只看 `SuccessLog`
 - [ ] 进程清理每步独立捕获；启动器路径无效时跳过
 - [ ] working 配置在成功、失败、取消、异常四条路径都恢复；先解锁再写回 UserData
-- [ ] `Info.Mode` 三态映射到正确 owner；旧两态值加载时归一且不改变用户实际生效的来源
-- [ ] 快速配置开关独立于来源，直控下同样可开关
-- [ ] 直控 + 关闭只读脚本原生配置；直控 + 开启在任务前注入、任务后按快照策略恢复
+- [ ] `Info.Base` 三态映射到正确 owner；旧两态值加载时归一且不改变用户实际生效的来源
+- [ ] 覆写常规配置开关独立于来源，原生来源下同样可开关
+- [ ] 原生 + 关闭只读脚本原生配置；原生 + 开启在任务前注入、任务后按快照策略恢复
 - [ ] schema、动态表单、运行时三者无虚假功能分支

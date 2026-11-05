@@ -16,13 +16,13 @@
 #   You should have received a copy of the GNU Affero General Public
 #   License along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""MAA 配置备份归档：MAS 用户配置 / 脚本原生配置，两类独立快照。
+"""MAA 配置备份归档：MAS 账号配置 / 脚本原生配置，两类独立快照。
 
 备份时机（MAS「动手前」，此时 MAA 配置尚未被触碰）：
 
 - 任务 / 配置会话启动（manager ``prepare``）：``native`` 归档 MAA 安装
-  目录 ``config/`` 当前状态（整目录）——安装配置物理上跨用户共享，只在
-  任务级归档一次；下发处按用户归档会把上一轮下发的 MAS 配置误当原生
+  目录 ``config/`` 当前状态（整目录）——安装配置物理上跨账号共享，只在
+  任务级归档一次；下发处按账号归档会把上一轮下发的 MAS 配置误当原生
   内容挤进保留池；
 - 运行 / 配置会话下发前（AutoProxy / ScriptConfig 的 ``set_maa``）：
   ``mas`` 归档本轮下发源（shared 来源共享 Default 目录、independent 来源当前用户目录，
@@ -32,9 +32,9 @@
 
 ``mas`` 池的内容 = ConfigFile 整目录 + **页面核心字段侧车**（Info / Task
 两段，覆盖 MAS 编辑页全部可配置核心内容）：这些字段运行时注入 gui.new.json、
-  不落盘在 ConfigFile——侧车让「MAS 用户配置备份」与页面认知一致，恢复时
+  不落盘在 ConfigFile——侧车让「MAS 账号配置备份」与页面认知一致，恢复时
   随文件一起回滚并按段分组回填表单（对齐 ZzzOd / ok-ww 字段回填模式）。
-  池恒按用户分桶（``mas/{user_id}``），多用户共享同一份 Default 目录时各自
+  池恒按账号分桶（``mas/{user_id}``），多账号共享同一份 Default 目录时各自
   持有快照、互不混淆（教训见 config-restore.md §1.1.1）。时间戳快照、指纹
   去重、保留清理与整目录恢复的通用逻辑由公共模块
   ``app.utils.common.config.archive`` 提供（默认每池保留 10 份），本模块只保留
@@ -59,7 +59,7 @@ _MAA_CONFIG_FILES = ("gui.json", "gui.new.json")
 
 
 def backup_root(script_id: str) -> Path:
-    """某脚本的备份归档根目录（MAS 用户池用）：``data/{script_id}/MaaBackups``。"""
+    """某脚本的备份归档根目录（MAS 账号池用）：``data/{script_id}/MaaBackups``。"""
 
     return Path.cwd() / "data" / script_id / "MaaBackups"
 
@@ -69,7 +69,7 @@ def project_backup_root() -> Path:
 
     native（脚本原生配置）池挂在这里而不是脚本目录下——同一份物理安装
     可被多个脚本实例引用，原生备份按物理配置根指纹分桶、跨脚本共享、
-    不随脚本删除（mas 用户池仍按脚本，见 :func:`mas_backup_root`）。
+    不随脚本删除（mas 账号池仍按脚本，见 :func:`mas_backup_root`）。
     """
 
     return Path.cwd() / "data" / "MaaBackups"
@@ -78,7 +78,7 @@ def project_backup_root() -> Path:
 def mas_backup_root(script_id: str, user_id: str) -> Path:
     """MAS 池归档根：``data/{script_id}/MaaBackups/mas/{user_id}``。
 
-    **恒按用户分桶**——shared 来源多用户共享 Default 下发源，但每个用户要
+    **恒按账号分桶**——shared 来源多账号共享 Default 下发源，但每个账号要
     看到、恢复自己的备份；池与恢复目标解耦（目标路径见
     :func:`mas_config_dir`，由 Info.Base 决定 Default 或用户目录）。
     """
@@ -106,7 +106,7 @@ def mas_config_dir(script_id: str, owner: str) -> Path:
     return Path.cwd() / "data" / script_id / owner / "ConfigFile"
 
 
-# ══════════════════ MAS 配置（池按用户，目标路径按 owner） ══════════════════
+# ══════════════════ MAS 配置（池按账号，目标路径按 owner） ══════════════════
 
 _OVERLAY_INFO_KEYS = (
     "Server",
@@ -344,7 +344,7 @@ def collect_mas_files(
     """收集 MAS 配置目录文件集 + 页面核心字段侧车（相对键 → 路径/内存内容）。
 
     侧车为内存 JSON（:func:`archive_files` 支持内存内容），免临时文件；
-    目录缺失或为空时仅归档侧车——用户级目录要等首次运行/播种物化，页面
+    目录缺失或为空时仅归档侧车——账号级目录要等首次运行/播种物化，页面
     字段不能因目录未建而一起丢（否则从未运行的用户切来源、改配置后退出，
     mas 池永远为空）。
     """
@@ -371,9 +371,9 @@ def archive_mas_backup(
     force: bool = False,
     base: str | None = None,
 ) -> Path | None:
-    """归档 MAS 配置整份 + 页面核心字段侧车到用户池（指纹去重，无变化跳过）。
+    """归档 MAS 配置整份 + 页面核心字段侧车到账号池（指纹去重，无变化跳过）。
 
-    ``user_id`` 是池归属（恒按用户分桶，见 :func:`mas_backup_root`）；
+    ``user_id`` 是池归属（恒按账号分桶，见 :func:`mas_backup_root`）；
     ``mas_dir`` 是归档/恢复目标路径，由调用方按两态 owner 解析（共享来源
     共享 Default 目录、独立来源独立目录）——池与目标解耦。
     侧车参与指纹：只改页面配置、未动 ConfigFile 时同样新建归档（内存
@@ -397,18 +397,18 @@ def archive_mas_backup(
         return None
     if base:
         _utils_config_archive.write_backup_base(dest, base)
-    logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
-    """用户池的全部归档时间戳（倒序，最新在前）。"""
+    """账号池的全部归档时间戳（倒序，最新在前）。"""
 
     return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
-    """取用户池指定时间戳的归档目录；不存在返回 None。"""
+    """取账号池指定时间戳的归档目录；不存在返回 None。"""
 
     return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
@@ -421,12 +421,12 @@ def restore_mas_backup(
     overlay: dict | None = None,
     base: str | None = None,
 ) -> dict | None:
-    """把用户池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
+    """把账号池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
 
-    ``user_id`` 是池归属（与归档一致按用户分桶）；``mas_dir`` 是恢复目标
+    ``user_id`` 是池归属（与归档一致按账号分桶）；``mas_dir`` 是恢复目标
     路径，由调用方按两态 owner 解析（共享来源共享 Default 目录、独立来源
-    独立目录）。``overlay`` 为当前用户的页面核心字段，随恢复前存底一起归档。
-    返回该备份的侧车（供调用方回填 MAS 用户配置；旧版备份无侧车返回
+    独立目录）。``overlay`` 为当前账号的页面核心字段，随恢复前存底一起归档。
+    返回该备份的侧车（供调用方回填 MAS 账号配置；旧版备份无侧车返回
     ``None``），侧车文件随即从目录中分离删除，不留在 ConfigFile 里。
     """
 
@@ -465,7 +465,7 @@ def restore_mas_backup(
         (mas_dir / "_mas_stamina_before_upgrade.json").unlink(missing_ok=True)
     else:
         restored_overlay = read_overlay_sidecar(backup_dir)
-    logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 
 
@@ -476,13 +476,13 @@ def archive_mas_runtime_backup(
     overlay: dict | None = None,
     base: str | None = None,
 ) -> None:
-    """运行 / 配置会话下发前归档 MAS 配置（下发源）到用户池。
+    """运行 / 配置会话下发前归档 MAS 配置（下发源）到账号池。
 
     运行回写与会话保存会覆盖它，下发前存底；指纹去重，失败只记日志，
     绝不中止随后的运行或会话（归档是现场保护，不是前置条件）。
-    ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前用户
+    ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前账号
     两态解析（共享来源=Default 共享目录、独立来源=独立目录）。``overlay``
-    为当前用户的页面核心字段。native 池与此处无关：原生配置跨用户共享，
+    为当前账号的页面核心字段。native 池与此处无关：原生配置跨账号共享，
     由 manager ``prepare`` 在任务级一次性归档（见
     :func:`archive_native_backup`）。
     """

@@ -205,13 +205,7 @@
 
           <a-row :gutter="24">
             <a-col :span="24">
-              <GeneralConfigModeSelector
-                :model-value="formData.Info.Base"
-                :options="baahConfigModeOptions"
-                :disabled="loading"
-                :alert-message="t('core.edit.configSourceHintBase')"
-                @change="handleConfigModeChange"
-              />
+              <a-alert type="info" show-icon :message="t('core.edit.baahConfigSourceHint')" />
             </a-col>
           </a-row>
         </div>
@@ -324,7 +318,6 @@ import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { parseStatusTagList } from '@/composables/useStatusTag.ts'
 import { Service } from '@/api'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
-import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { BaahService, type ComboBoxItem } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn'
@@ -465,50 +458,6 @@ watch(
     }
   }
 )
-
-// 配置来源两态卡片（value 为后端 Info.Base 取值，驱动逻辑需保持原样；文案走词表）
-// 「共享」置灰：BAAH 运行始终按用户独立配置注入（任务模块不消费 Info.Base），
-// 选了也不生效——禁用并悬停说明原因
-const baahConfigModeOptions: Array<{
-  label: string
-  value: 'shared' | 'independent' | 'native'
-  title: string
-  description: string
-  icon: 'database' | 'setting'
-  disabled?: boolean
-  disabledReason?: string
-}> = [
-  {
-    label: t('core.edit.script'),
-    value: 'shared',
-    title: t('core.edit.script'),
-    description: t('core.edit.useScriptS'),
-    icon: 'database',
-    disabled: true,
-    disabledReason: t('core.edit.scriptModeDisabled'),
-  },
-  {
-    label: t('core.edit.user'),
-    value: 'independent',
-    title: t('core.edit.user'),
-    description: t('core.edit.useThisUserS'),
-    icon: 'database',
-  },
-  {
-    label: t('core.edit.directControl'),
-    value: 'native',
-    title: t('core.edit.directControl'),
-    description: t('core.edit.nativeConfigSourceDescription'),
-    icon: 'setting',
-  },
-]
-
-// 配置来源切换：校验 value ∈ options → 赋值 Info.Base → 保存
-const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
-  formData.Info.Base = value as 'shared' | 'independent' | 'native'
-  await handleFieldSave('Info.Base', formData.Info.Base)
-}
 
 // 直接跳到当前选中的关卡计划表，省去在计划管理里再找一遍
 const handleGoToPlans = () => {

@@ -16,20 +16,20 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""新用户的空任务队列写成实打实的默认队列。
+"""新账号的空任务队列写成实打实的默认队列。
 
-``Task.TaskSnapshot`` 的默认值是空的 ``{ }``：用户页显示空队列，运行时却按
+``Task.TaskSnapshot`` 的默认值是空的 ``{ }``：账号页显示空队列，运行时却按
 ``run_plan.resolve_default_snapshot`` 回落到预设（选了的那个，否则第一个）或各任务的
-default_check，界面和实际运行对不上。这里用同一个函数把它算出来写回快照，之后用户页上
+default_check，界面和实际运行对不上。这里用同一个函数把它算出来写回快照，之后账号页上
 看到的就是要跑的；规则不变，所有人实际跑的东西也不变。代价是默认队列定格在写回那一刻，
 项目以后改了第一个预设不再自动跟。
 
-建用户时脚本可能还没导入项目，所以三处都调：建用户（``Config.add_user``）、读用户
-（``Config.get_user``，用户页走它）、运行前检查（``embedded_manager._check``，上锁建副本
+建用户时脚本可能还没导入项目，所以三处都调：建账号（``Config.add_user``）、读用户
+（``Config.get_user``，账号页走它）、运行前检查（``embedded_manager._check``，上锁建副本
 之前）。只认真正为空的快照，判据与 ``runner_task`` 建计划的 ``task_snapshot or None`` 相同；
 项目还没导入、interface 读不出来、选的预设已经不在时什么都不写，留给下一次。脚本运行中
-（配置已锁）不写。写入走 ``Config.update_user``，与用户页保存同一条路（特调整理、全局选项
-降级双写、密码加密）。存的形状与用户页保存的一致：只列勾选的任务。
+（配置已锁）不写。写入走 ``Config.update_user``，与账号页保存同一条路（特调整理、全局选项
+降级双写、密码加密）。存的形状与账号页保存的一致：只列勾选的任务。
 """
 
 from __future__ import annotations
@@ -90,7 +90,7 @@ def _build_default_snapshots(
     script_config: Any,
     targets: list[tuple[str, str, str | None]],
 ) -> dict[str, tuple[str, str]]:
-    """``targets`` 是 ``(用户 id, 用户名, 选的预设)``；返回 ``{用户 id: (要写进的快照 JSON,
+    """``targets`` 是 ``(账号 id, 账号名称, 选的预设)``；返回 ``{账号 id: (要写进的快照 JSON,
     给日志的来源说明)}``。"""
 
     root = Path(resolve_maafw_project_root(script_id, script_config))
@@ -110,7 +110,7 @@ def _build_default_snapshots(
             )
         except MaaFWRunPlanError as exc:
             # 运行时同样会报这一句，这里不替用户换预设
-            logger.warning(f"MFW 用户 {user_name} 的任务队列为空，没有写入：{exc}")
+            logger.warning(f"MFW 账号 {user_name} 的任务队列为空，没有写入：{exc}")
             continue
         queued = [
             task_id
@@ -192,7 +192,7 @@ async def fill_default_task_snapshots(
         def unchanged(
             user: Any = user, selected_preset: str | None = selected_preset
         ) -> bool:
-            # 算的这段时间里、以及 update_user 写入前的预处理期间，用户页存过队列、换过预设，
+            # 算的这段时间里、以及 update_user 写入前的预处理期间，账号页存过队列、换过预设，
             # 或脚本开始运行了：不覆盖、不硬写
             return (
                 not script_config.is_locked
@@ -215,9 +215,9 @@ async def fill_default_task_snapshots(
                 continue
             # 任务数按落盘的算：特调写入前会整理（M9A 的启动 / 关闭游戏不进队列）
             logger.info(
-                f"MFW 用户 {user.Info.Name or user_id} 的任务队列为空，按{origin}写入默认队列（{_queued_count(user.Task.TaskSnapshot)} 个任务）"
+                f"MFW 账号 {user.Info.Name or user_id} 的任务队列为空，按{origin}写入默认队列（{_queued_count(user.Task.TaskSnapshot)} 个任务）"
             )
         except Exception as exc:  # noqa: BLE001 - 这一位写不进去不影响其他人
             logger.opt(exception=True).warning(
-                f"写入 MFW 用户 {user_id} 的默认任务队列失败：{exc}"
+                f"写入 MFW 账号 {user_id} 的默认任务队列失败：{exc}"
             )

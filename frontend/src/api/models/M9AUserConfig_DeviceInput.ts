@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type M9AUserConfig_DeviceInput = {
     /**
-     * 当前用户覆盖 ADB 地址，留空时使用脚本级模拟器配置
+     * 当前账号覆盖 ADB 地址，留空时使用托管级模拟器配置
      */
     AdbAddress?: (string | null);
     /**

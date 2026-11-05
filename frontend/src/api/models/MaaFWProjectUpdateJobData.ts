@@ -5,7 +5,7 @@
 import type { MaaFWProjectUpdateJobResult } from './MaaFWProjectUpdateJobResult';
 import type { WSMaaFWProjectUpdateProgressData } from './WSMaaFWProjectUpdateProgressData';
 /**
- * 该脚本当前或最近一次手动更新（apply）。只在后端进程内保留：下一次手动更新开始
+ * 该托管当前或最近一次手动更新（apply）。只在后端进程内保留：下一次手动更新开始
  * 或后端重启即被替换 / 清空。
  */
 export type MaaFWProjectUpdateJobData = {

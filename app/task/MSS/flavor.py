@@ -33,7 +33,7 @@
    仅使用引擎收集的 ``completedTasks``，不额外解析上游日志或判断游戏状态。
 
 按 entry 找任务、按 interface 里真实的选项名与 case 名写值（取自 MaaStellaSora v1.4.4 的
-``resource/tasks/{activity,fight,climb_tower}.json``）；找不到就写一行用户日志跳过那一项。
+``resource/tasks/{activity,fight,climb_tower}.json``）；找不到就写一行账号日志跳过那一项。
 """
 
 from __future__ import annotations
@@ -131,7 +131,7 @@ def is_mss_project(interface_model: MaaFWInterface | dict[str, Any]) -> bool:
     后两条共用 ``_is_mss_project_key``：**等于 ``MaaStellaSora`` 或以 ``MaaStellaSora-`` 开头**。
     只给 ``https://github.com/MaaStellaSora`` 这种组织主页时仓库名取不到，不会认领。
 
-    认领只决定**脚本类型**（都用 ``MSSConfig`` 与同一套运行期装饰）；更新谱系仍按
+    认领只决定**托管类型**（都用 ``MSSConfig`` 与同一套运行期装饰）；更新谱系仍按
     ``mirrorchyan_rid`` / ``github`` / ``name`` 各自分开，衍生版不会被官方版的更新包覆盖。
     """
 
@@ -215,7 +215,7 @@ class MSSFlavor:
         resource_name: str | None,
         send_log: Callable[[str], None] | None,
     ) -> tuple[list[str], dict[str, Any]]:
-        del script_config, resource_name  # MSS 的装饰只看用户配置与活动排期
+        del script_config, resource_name  # MSS 的装饰只看账号配置与活动排期
 
         def log(message: str) -> None:
             if send_log is not None:
@@ -254,7 +254,7 @@ class MSSFlavor:
         climb = task_name_for_entry(interface_model, CLIMB_ENTRY)
 
         ## 一个任务都没勾、也没选计划表：手上没有任何可执行任务，交给引擎按原有语义报错。
-        ## 选了计划表就不算空队列——下面 _apply_plan 会把悬赏试炼补上，和用户页那句
+        ## 选了计划表就不算空队列——下面 _apply_plan 会把悬赏试炼补上，和账号页那句
         ## 「队列里没有它时会自动加入」保持一致（这条以前被空队列提前返回挡住了）。
         ## 顺序是「活动 → 日常 → 周常」：先补好悬赏试炼，活动才有锚点插在它前面；爬塔最后归位。
         plan_key = _current_plan_key(user_config, log)

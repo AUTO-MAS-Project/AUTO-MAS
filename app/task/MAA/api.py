@@ -14,7 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
-"""脚本管理：MAA 路由与端点专用模型。"""
+"""托管管理：MAA 路由与端点专用模型。"""
 
 from typing import (
     Annotated,
@@ -42,8 +42,8 @@ from app.utils import get_logger
 
 
 class CultivatePreviewIn(BaseModel):
-    scriptId: str = Field(..., description="脚本ID")
-    userId: str = Field(..., description="用户ID")
+    scriptId: str = Field(..., description="托管ID")
+    userId: str = Field(..., description="账号ID")
     targets: str = Field(
         ..., description="养成目标 JSON（与 Task.CultivateTargets 同构）"
     )
@@ -249,7 +249,7 @@ class MaaCultivateOperatorsOut(OutBase):
 
 
 class MaaCultivateImportIn(BaseModel):
-    scriptId: str = Field(..., description="脚本ID")
+    scriptId: str = Field(..., description="托管ID")
     content: str = Field(..., description="明日方舟工具箱导出至 MAA 的养成目标 JSON")
 
 
@@ -292,13 +292,13 @@ class MaaDepotStageCandidatesBatchOut(OutBase):
 
 
 class UserSetIn(UserInBase):
-    userId: str = Field(..., description="用户ID")
+    userId: str = Field(..., description="账号ID")
     jsonFile: str = Field(..., description="JSON文件路径, 用于导入自定义基建文件")
 
 
 class UserInfrastPlanSelectIn(BaseModel):
-    scriptId: str = Field(..., description="脚本ID")
-    userId: str = Field(..., description="用户ID")
+    scriptId: str = Field(..., description="托管ID")
+    userId: str = Field(..., description="账号ID")
     index: int = Field(default=-1, ge=-1, description="基建班次索引（-1=按时段自动）")
 
 
@@ -320,7 +320,7 @@ class UserInfrastPlanComboxOut(OutBase):
 
 
 class ScriptMirrorCdkIn(BaseModel):
-    type: Literal["MAA"] = Field(..., description="脚本类型，决定凭据回退规则")
+    type: Literal["MAA"] = Field(..., description="托管类型，决定凭据回退规则")
     cdk: str = Field(
         default="", repr=False, description="待校验的 CDK；留空回退全局 CDK"
     )
@@ -337,7 +337,7 @@ class ScriptMirrorCdkOut(OutBase):
 
 
 router = APIRouter()
-logger = get_logger("脚本管理 API")
+logger = get_logger("托管管理 API")
 
 
 @router.post(
@@ -519,7 +519,7 @@ async def get_maa_depot_stage_candidates_batch(
 @router.post(
     "/maa/depot/inventory",
     tags=["Get"],
-    summary="MAA 仓库库存（当前用户档案；label=数量字符串，value=物品ID）",
+    summary="MAA 仓库库存（当前账号档案；label=数量字符串，value=物品ID）",
     response_model=MaaDepotInventoryOut,
     status_code=200,
 )

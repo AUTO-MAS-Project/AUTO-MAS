@@ -24,7 +24,7 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class AddService {
     /**
-     * 添加脚本
+     * 添加托管
      * @param requestBody
      * @returns ScriptCreateOut Successful Response
      * @throws ApiError
@@ -43,7 +43,7 @@ export class AddService {
         });
     }
     /**
-     * 添加用户
+     * 添加账号
      * @param requestBody
      * @returns UserCreateOut Successful Response
      * @throws ApiError

@@ -102,7 +102,7 @@ def _round(value: float) -> float:
 
 
 class MaaFWRunRecorder:
-    """一个用户本次运行的全部尝试。宿主在事件循环线程里调用，不加锁。"""
+    """一个账号本次运行的全部尝试。宿主在事件循环线程里调用，不加锁。"""
 
     def __init__(self) -> None:
         self._attempts: dict[int, MaaFWAttemptRecord] = {}

@@ -18,14 +18,14 @@
 
 """旧版 HSR 直控快照（``Direct.*``）停用前的留档，在 ``ScriptConfig.connect()`` 之前读原始 JSON。
 
-v5.5.0 及更早的 HSR 用户配置带一组 ``Direct``：``SRAConfig`` / ``M7AConfig`` 是导入进来的
+v5.5.0 及更早的 HSR 账号配置带一组 ``Direct``：``SRAConfig`` / ``M7AConfig`` 是导入进来的
 原生配置快照（DPAPI 密文），直控时跑它而不是脚本当前的活配置。三态收敛删掉了这组字段，
 而 ``ConfigEntry.load`` 只认类里声明的条目，按新类加载的那一刻快照就被丢掉并写回盘；字段
 侧车备份从不收快照内容，丢了就找不回来。
 
 所以启动时在连接之前扫一遍：HSR 脚本下快照非空的用户，把整组 ``Direct`` 原样（密文不解）
-另存为 ``data/<脚本 uid>/HSRBackups/direct/<用户 uid>-<时间>.json``，结果交给启动流程发一条
-系统通知。某个用户另存失败时退一步，把整份 ``ScriptConfig.json`` 复制成同目录下的
+另存为 ``data/<脚本 uid>/HSRBackups/direct/<账号 uid>-<时间>.json``，结果交给启动流程发一条
+系统通知。某个账号另存失败时退一步，把整份 ``ScriptConfig.json`` 复制成同目录下的
 ``ScriptConfig.json.hsr-direct-<时间>.bak``：它和随后要写回的文件在同一目录，连它都写不进去
 时写回大概率也会失败，快照就还留在盘上，下次启动再试。
 
@@ -66,7 +66,7 @@ def direct_snapshot_root(script_id: str) -> Path:
 
 @dataclass
 class LegacyDirectSnapshot:
-    """一个用户的旧直控快照（原始 ``Direct`` 组）与它的留档结果。"""
+    """一个账号的旧直控快照（原始 ``Direct`` 组）与它的留档结果。"""
 
     script_id: str
     script_name: str
@@ -78,7 +78,7 @@ class LegacyDirectSnapshot:
 
     @property
     def label(self) -> str:
-        return f"脚本「{self.script_name}」用户「{self.user_name}」"
+        return f"脚本「{self.script_name}」账号「{self.user_name}」"
 
 
 @dataclass

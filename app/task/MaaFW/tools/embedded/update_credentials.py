@@ -22,7 +22,7 @@
 参数的翻译只在这里做一次；API 侧直接复用本函数，保证手动更新与运行时自动更新
 的行为一致。
 
-三项全部只看脚本级，**不做全局兜底**：
+三项全部只看托管级，**不做全局兜底**：
 
 - ``source``：``Update.Source``，``MirrorChyan`` / ``GitHub``（默认 GitHub）
 - ``cdk``：``Update.MirrorChyanCDK`` 明文，用户自己填，空就是空
@@ -67,7 +67,7 @@ PACKAGE_SOURCE_BY_UPDATE_SOURCE: dict[str, str] = {
 
 @dataclass(frozen=True)
 class MaaFWUpdateCredentials:
-    """脚本级更新凭据。不做全局兜底，所见即所得。"""
+    """托管级更新凭据。不做全局兜底，所见即所得。"""
 
     source: UpdateSource
     cdk: str
@@ -90,7 +90,7 @@ def _read_text(config: Any, group: str, name: str) -> str:
 
 
 def resolve_update_credentials(script_config: Any) -> MaaFWUpdateCredentials:
-    """只读脚本级配置，得到传给核心更新包的下载源、明文 CDK 与渠道。"""
+    """只读托管级配置，得到传给核心更新包的下载源、明文 CDK 与渠道。"""
 
     source = _read_text(script_config, "Update", "Source")
     if source not in UPDATE_SOURCES:
@@ -122,7 +122,7 @@ def _script_proxy_url(script_config: Any) -> str | None:
 
 
 def resolve_update_proxy_url(script_config: Any) -> str | None:
-    """这个脚本更新时要用的代理地址：脚本级优先，留空跟随全局，都空回 None。
+    """这个脚本更新时要用的代理地址：托管级优先，留空跟随全局，都空回 None。
 
     返回的是带协议、保留 ``user:pw@`` 的字符串（``httpx.Proxy`` 会把凭据剥到
     ``.auth``，``str(proxy.url)`` 会丢），调用方自己按需要造 ``httpx.Proxy``
@@ -143,7 +143,7 @@ def describe_proxy(script_config: Any) -> str:
     from app.core import Config
 
     if _script_proxy_url(script_config):
-        return "脚本级"
+        return "托管级"
     return "全局" if Config.proxy_url else "未配置"
 
 

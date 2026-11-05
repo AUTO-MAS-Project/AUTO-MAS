@@ -64,7 +64,7 @@ class HSRGameResolutionOverride:
                 paths = [path for path in HSR_REGISTRY_PATHS if self._key_exists(path)]
                 if not paths:
                     raise RuntimeError(
-                        "未找到星穹铁道当前用户注册表，无法临时设置分辨率"
+                        "未找到星穹铁道当前账号注册表，无法临时设置分辨率"
                     )
                 for path in paths:
                     self._snapshots[path] = self._snapshot_key(registry, path)

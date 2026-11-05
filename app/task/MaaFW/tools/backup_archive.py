@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""MaaFW 配置备份归档：MAS 用户字段侧车 / MaaFW 项目 config/。
+"""MaaFW 配置备份归档：MAS 账号字段侧车 / MaaFW 项目 config/。
 
 备份时机（MAS「动手前」）：
 
@@ -28,8 +28,8 @@
 - 编辑界面退出（前端 ensure）：``mas`` 归档 MAS 编辑页核心字段终态。
 
 MaaFW 与 M9A 同属 MaaFramework 线：没有 per-user ConfigFile 目录，MAS
-用户配置是字段（Info / Task.SelectedPreset / Task.TaskSnapshot / Device 段，
-存共享 ScriptConfig.json），运行时物化进项目配置。因此 ``mas`` 池是**纯
+账号配置是字段（Info / Task.SelectedPreset / Task.TaskSnapshot / Device 段，
+随托管保存于 scripts.yaml）；任务队列和设备字段用于构建运行计划，交给 worker 执行。因此 ``mas`` 池是**纯
 字段侧车**（无目录部分），恢复即字段回填 MaaFWUserConfig。``native`` 池 =
 项目 ``config/`` 目录（maa_option.json 等 Toolkit 配置），按视图路径指纹分桶。
 
@@ -60,10 +60,10 @@ read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 
 logger = get_logger("MaaFW 配置备份")
 
-# ══════════════════ MAS 用户字段侧车（纯侧车，无目录） ══════════════════
+# ══════════════════ MAS 账号字段侧车（纯侧车，无目录） ══════════════════
 
 _OVERLAY_INFO_KEYS = ("Base", "IfQuickConfig", "Account", "Controller", "Resource")
-"""MAS 编辑页核心字段（UserData.Info，运行时物化进项目配置）"""
+"""MAS 账号元信息与运行选项；Base / IfQuickConfig 仅为兼容保留，MFW 运行不消费"""
 
 _OVERLAY_TASK_KEYS = ("SelectedPreset", "TaskSnapshot")
 """任务快照（UserData.Task：当前 preset 名 + taskOrder/taskChecked/taskOptions JSON）"""
@@ -88,11 +88,11 @@ _OVERLAY_KEY_GROUP = {
 }
 
 _OVERLAY_PREVIEW_ONLY_KEYS = {"Base"}
-"""仅预览不回填的字段：配置来源决定运行下发方式，恢复时以当前值为准"""
+"""历史 Base 仅供预览、不回填；MFW 运行不消费 Base / IfQuickConfig"""
 
 _OVERLAY_FIELD_LABELS = {
-    "Base": "配置来源",
-    "IfQuickConfig": "启用快速配置",
+    "Base": "历史配置来源（不参与运行）",
+    "IfQuickConfig": "历史覆写开关（不参与运行）",
     "Account": "账号",
     "Controller": "Controller",
     "Resource": "Resource",
@@ -123,7 +123,7 @@ def read_overlay_values(config) -> dict:
 def group_overlay(overlay: dict) -> dict[str, dict]:
     """把平铺的侧车字段按配置段分组（恢复回填 MaaFWUserConfig 用）。
 
-    仅预览字段（配置来源）不回填：回填旧来源会静默翻转 shared/independent/native。
+    保留既有兼容规则：Base 仅预览不回填，IfQuickConfig 随侧车回填；二者均不参与 MFW 运行。
     """
 
     grouped: dict[str, dict] = {}
@@ -135,7 +135,7 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
 
 
 def mas_backup_root(script_id: str, user_id: str) -> Path:
-    """MAS 池归档根：``data/{script_id}/MaaFWBackups/mas/{user_id}``（恒按用户）。"""
+    """MAS 池归档根：``data/{script_id}/MaaFWBackups/mas/{user_id}``（恒按账号）。"""
 
     return Path.cwd() / "data" / script_id / "MaaFWBackups" / "mas" / user_id
 
@@ -143,7 +143,7 @@ def mas_backup_root(script_id: str, user_id: str) -> Path:
 def archive_mas_backup(
     script_id: str, user_id: str, overlay: dict | None, force: bool = False
 ) -> Path | None:
-    """归档页面核心字段侧车到用户池（指纹去重，无变化跳过）。
+    """归档页面核心字段侧车到账号池（指纹去重，无变化跳过）。
 
     纯侧车：归档内唯一文件是 ``_mas_overlay.json``（无目录部分）；以内存
     JSON 直接入档（:func:`archive_files` 支持内存内容），免临时文件。
@@ -159,24 +159,24 @@ def archive_mas_backup(
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
-    logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
-    """用户池的全部归档时间戳（倒序，最新在前）。"""
+    """账号池的全部归档时间戳（倒序，最新在前）。"""
 
     return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
-    """取用户池指定时间戳的归档目录；不存在返回 None。"""
+    """取账号池指定时间戳的归档目录；不存在返回 None。"""
 
     return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(script_id: str, user_id: str, ts: str) -> dict | None:
-    """读取用户池归档的侧车（供调用方回填 MaaFWUserConfig）；无目录目标。"""
+    """读取账号池归档的侧车（供调用方回填 MaaFWUserConfig）；无目录目标。"""
 
     backup_dir = get_mas_backup_dir(script_id, user_id, ts)
     if backup_dir is None:
@@ -185,7 +185,7 @@ def restore_mas_backup(script_id: str, user_id: str, ts: str) -> dict | None:
 
 
 def archive_mas_runtime_backup(script_id: str, user_id: str, overlay: dict) -> None:
-    """运行物化前归档本用户字段侧车（物化会覆盖项目配置，字段本身先存底）。"""
+    """运行前归档本账号字段侧车；队列与设备字段用于构建运行计划。"""
 
     archive_mas_backup(script_id, user_id, overlay)
 
@@ -199,10 +199,10 @@ _CONFIG_PREFIX = "config/"
 
 
 def native_backup_root(script_id: str, project_path: str | Path) -> Path:
-    """MaaFW 项目配置的**脚本级**归档根：``data/{script_id}/MaaFWBackups/native/{key}``。
+    """MaaFW 项目配置的**托管级**归档根：``data/{script_id}/MaaFWBackups/native/{key}``。
 
-    MaaFW 是通用性专项（接入任意 MaaFW 项目，项目属于单个脚本实例）：
-    归档生命周期随脚本。``key`` 取视图路径指纹，而视图路径由脚本 ID 推出、永不变，
+    MaaFW 是通用性专项（接入任意 MaaFW 项目，项目由单个托管持有）：
+    归档生命周期随托管。``key`` 取视图路径指纹，而视图路径由托管 ID 推出、永不变，
     所以换版本、重新导入另一个项目后仍是同一个桶——这正是 interface.json 不进这个池的原因。
     """
 
@@ -237,7 +237,7 @@ def archive_native_backup(
 ) -> Path | None:
     """归档 MaaFW 项目 ``config/`` 目录（指纹去重）。
 
-    归档落到**脚本级池**（``data/{script_id}/``，生命周期随脚本实例）。
+    归档落到**托管级池**（``data/{script_id}/``，生命周期随托管）。
     项目缺 ``config/`` 时无可归档内容，返回 ``None``。
     """
 

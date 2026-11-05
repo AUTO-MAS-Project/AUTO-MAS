@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type MaaFWEmbeddedCloneIn = {
     /**
-     * 要建副本的 MFW 脚本 ID（新脚本）
+     * 要建副本的 MFW 托管 ID（新托管）
      */
     scriptId: string;
     /**

@@ -8,11 +8,11 @@ export type MaaEndUserConfig_InfoInput = {
      */
     Base?: ('shared' | 'independent' | 'native' | null);
     /**
-     * 用户ID
+     * 账号ID
      */
     Id?: (string | null);
     /**
-     * 是否启用快速配置
+     * 是否启用覆写常规配置
      */
     IfQuickConfig?: (boolean | null);
     /**
@@ -24,7 +24,7 @@ export type MaaEndUserConfig_InfoInput = {
      */
     IfScriptBeforeTask?: (boolean | null);
     /**
-     * 用户名称
+     * 账号名称
      */
     Name?: (string | null);
     /**
@@ -40,7 +40,7 @@ export type MaaEndUserConfig_InfoInput = {
      */
     RemainedDay?: (number | null);
     /**
-     * 资源名称
+     * MaaEnd 启动服务器选项原值，官服为旧配置兼容值
      */
     Resource?: (string | null);
     /**
@@ -64,7 +64,7 @@ export type MaaEndUserConfig_InfoInput = {
      */
     Status?: (boolean | null);
     /**
-     * 用户标签信息
+     * 账号标签信息
      */
     readonly Tag?: (string | null);
 };

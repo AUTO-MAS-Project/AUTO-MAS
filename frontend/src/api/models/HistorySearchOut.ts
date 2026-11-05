@@ -17,7 +17,7 @@ export type HistorySearchOut = {
      */
     message?: string;
     /**
-     * 日期 → 用户名 → 记录与统计
+     * 日期 → 账号名 → 记录与统计
      */
     data: Record<string, Record<string, HistoryBucket>>;
 };
