@@ -613,9 +613,7 @@ async def install_fluxdown(
 def _can_write_directory(directory: Path) -> bool:
     """用实际创建文件检测安装目录是否可写，兼容 Windows ACL/UAC。"""
     try:
-        with tempfile.NamedTemporaryFile(
-            prefix=".mas-fluxdown-write-", dir=directory
-        ):
+        with tempfile.NamedTemporaryFile(prefix=".mas-fluxdown-write-", dir=directory):
             pass
     except OSError:
         return False
@@ -651,11 +649,17 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
 
     def usable_external(directory: Path) -> bool:
         if damaged(directory):
-            logger.warning(f"FluxDown 外部目录存在空文件，改用 MAS 托管安装: {directory}")
+            logger.warning(
+                f"FluxDown 外部目录存在空文件，改用 MAS 托管安装: {directory}"
+            )
             return False
         state = _fluxdown_cli.fluxdown_components(directory)
-        if not (state["cli"] and state["server"]) and not _can_write_directory(directory):
-            logger.warning(f"FluxDown 外部安装目录不可写，改用 MAS 托管安装: {directory}")
+        if not (state["cli"] and state["server"]) and not _can_write_directory(
+            directory
+        ):
+            logger.warning(
+                f"FluxDown 外部安装目录不可写，改用 MAS 托管安装: {directory}"
+            )
             return False
         return True
 
@@ -673,7 +677,9 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
     )
     for candidate in detected["candidates"]:
         directory = Path(candidate["path"])
-        if (directory / "fluxdown-desktop.exe").is_file() and usable_external(directory):
+        if (directory / "fluxdown-desktop.exe").is_file() and usable_external(
+            directory
+        ):
             return directory, True
 
     return managed, False
