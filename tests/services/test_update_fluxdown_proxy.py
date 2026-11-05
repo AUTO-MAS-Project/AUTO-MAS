@@ -700,6 +700,7 @@ def test_exclusive_shutdown_blocks_new_download_admission(tmp_path, monkeypatch)
 
     exe, agent = tmp_path / "fluxdown.exe", tmp_path / "fluxdown-agent.exe"
     target, url = tmp_path / "asset.zip", "https://example.invalid/asset"
+    monkeypatch.setattr(cli, "_server_data_dir", lambda _exe: tmp_path)
     cli._map_put(exe, cli._map_key(url, target), "own", url, target)
     monkeypatch.setattr(cli, "_active_downloads", 1)
     monkeypatch.setattr(cli, "_installing", False)
