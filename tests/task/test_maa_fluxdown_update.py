@@ -720,7 +720,7 @@ async def test_maa_software_prefetch_failed_directory_cleanup(
     installation, monkeypatch, failure
 ):
     root, _, downloader = installation
-    monkeypatch.chdir(root.parent)
+    monkeypatch.chdir(root)
 
     async def fail(_url, path, **_kwargs):
         path.write_bytes(b"partial software zip")
@@ -753,5 +753,5 @@ async def test_maa_software_prefetch_failed_directory_cleanup(
             config_dir=root / "config",
             download_only=True,
         )
-    directories = list((root.parent / "data/maa_github_update").glob("download-*"))
+    directories = list((root / "data/maa_github_update").glob("download-*"))
     assert len(directories) == (1 if failure in ("resumable", "writer-unknown") else 0)
