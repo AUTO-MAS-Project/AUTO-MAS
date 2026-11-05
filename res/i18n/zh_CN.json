@@ -2168,6 +2168,7 @@
   "core.edit.sraProfileAuto": "自动（{name}）",
   "core.edit.sraProfileLoadFailed": "读取 SRA 配置档案失败：{reason}",
   "core.edit.sraProfileTooltip": "SRA 里保存了多套配置（沿用你在 SRA 里起的名字）；这里选的那份决定 MAS 面板显示什么、运行时按哪份执行、导入快照抄哪份。「自动」优先取 Default，没有则取文件名排序的第一份",
+  "core.edit.srcProgramUpdateHint": "运行前按原生代码源与分支预取 Git 更新，再调用 SRC 官方安装器准备依赖。普通下载失败后继续当前安装；运行时暂停原生更新，结束恢复。cn/global 使用官方 Git 源；依赖仍在启动前安装，暂不支持提前下载依赖。",
   "core.edit.srcAccountSwitchTipIntro": "用于切换账号，无需切换则留空。",
   "core.edit.srcConfigRestoreScriptDesc": "SRC 安装目录 config 文件夹的备份，恢复会直接覆盖 SRC 本体配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份",
   "core.edit.srcConfigRestoreUserDesc": "MAS 配置的备份（关卡配置等页面字段与账号配置目录），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份",

@@ -1588,6 +1588,14 @@ class SrcUserConfig(DomainEntry):
 class SrcConfig(DomainEntry):
     "SRC配置"
 
+    class UpdateFields(ConfigGroup):
+        TakeoverEnabled: bool = Field(
+            default=False,
+            description="运行前由 MAS 预取 SRC 原生代码源并调用官方安装器完成更新，普通下载失败后沿用当前安装；运行期暂停原生更新并在任务结束后恢复",
+        )
+
+    Update: UpdateFields = Field(default_factory=UpdateFields)
+
     related_config: ClassVar = {}
 
     class EmulatorFields(ConfigGroup):

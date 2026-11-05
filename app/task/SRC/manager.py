@@ -16,19 +16,21 @@
 import asyncio
 import shutil
 import uuid
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
 from app.config import config_manager
 from app.core import Config, EmulatorManager, Notify, Publisher
+from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.core.ws import protocol
 from app.models.config import SrcConfig
 from app.models.emulator import DeviceProvider
 from app.models.notification.report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
+from app.services import script_install
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import (
@@ -37,6 +39,7 @@ from app.task.proxy_helpers import (
     read_config_base,
 )
 from app.utils import TASK_MODE_ZH, ProcessManager, get_logger
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -47,6 +50,7 @@ from .tools import (
     has_committed_src_user_config_transaction,
     is_src_config_available,
     kill_src_processes,
+    program_update,
     read_src_config_snapshot_state,
     read_src_installation_id,
     read_src_process_state,
@@ -111,6 +115,8 @@ class SrcManager(ScriptManagerBase):
         self._reserve_src_root = reserve_src_root
         self._device_provider = device_provider
         self.check_result = "-"
+        self._install_access = ExitStack()
+        self._program_update_prepared = False
         self.process_cleanup_success = True
         self.prepared = False
         self.config_lock_acquired = False
@@ -235,6 +241,9 @@ class SrcManager(ScriptManagerBase):
         ):
             raise RuntimeError("SRC 路径在任务启动期间发生变化，请重试")
 
+        self._install_access.enter_context(
+            script_install.installation_access(locked_root_path)
+        )
         self.src_root_path = locked_root_path
         self.src_exe_path = self.src_root_path / "src.exe"
         self.src_set_path = self.src_root_path / "config"
@@ -772,6 +781,40 @@ class SrcManager(ScriptManagerBase):
         self.src_process_state_path.unlink(missing_ok=True)
         shutil.rmtree(discarded_path, ignore_errors=True)
 
+    async def _prepare_program_update(self) -> None:
+        if self.task_info.mode != "AutoProxy" or self._program_update_prepared:
+            return
+        program_update.recover_deploy(self.src_root_path)
+        self.check_result = "SRC 更新准备未完成"
+        if self.script_config.Update.TakeoverEnabled:
+            try:
+                self.script_info.log = await run_script_update(
+                    ScriptUpdateRequest(self.script_info.script_id, "SRC"),
+                    program_update.update_before_run,
+                    self.src_root_path,
+                )
+            except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
+                raise
+            except Exception as error:
+                await program_update.confirm_current_install(self.src_root_path)
+                message = f"SRC 更新准备失败，沿用当前安装继续任务：{error}"
+                logger.warning(message)
+                self.script_info.log = message
+                with suppress(Exception):
+                    await Publisher.send(
+                        id=self.task_info.task_id,
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(level="warning", message=message),
+                    )
+        elif (
+            script_install.workspace(self.src_root_path) / "src-install.json"
+        ).exists():
+            raise script_install.InstallUnsafeError(
+                "SRC 上次安装未确认，请开启更新托管重试或手动修复"
+            )
+        self._program_update_prepared = True
+        self.check_result = "Pass"
+
     async def main_task(self):
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -788,6 +831,11 @@ class SrcManager(ScriptManagerBase):
             )
             return
 
+        if self.task_info.mode == "AutoProxy":
+            await self._cleanup_current_src_root()
+        if self.task_info.mode != "AutoProxy":
+            program_update.assert_safe_to_launch(self.src_root_path)
+        await self._prepare_program_update()
         await self.prepare()
 
         if not isinstance(self.script_config, SrcConfig):
@@ -875,6 +923,7 @@ class SrcManager(ScriptManagerBase):
             if should_notify:
                 await self._send_final_notification()
         finally:
+            self._install_access.close()
             script_config = getattr(self, "script_config", None)
             if script_config is not None:
                 ticket = self.config_locks.pop(script_config.uid, None)
@@ -884,8 +933,11 @@ class SrcManager(ScriptManagerBase):
     async def _complete_locked_final_task(self) -> bool:
         """在脚本仍锁定时写回任务结果。"""
 
-        if not self.process_cleanup_success or any(
-            user.status == "异常" for user in self.script_info.user_list
+        if (
+            self.check_result != "Pass"
+            or self.script_info.status == "异常"
+            or not self.process_cleanup_success
+            or any(user.status == "异常" for user in self.script_info.user_list)
         ):
             self.script_info.status = "异常"
         else:

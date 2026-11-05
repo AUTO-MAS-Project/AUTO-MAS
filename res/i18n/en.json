@@ -2168,6 +2168,7 @@
   "core.edit.sraProfileAuto": "Auto ({name})",
   "core.edit.sraProfileLoadFailed": "Could not read the SRA config profiles: {reason}",
   "core.edit.sraProfileTooltip": "SRA keeps several configurations (using the names you gave them there). The one selected here decides what the MAS form shows, which one runs, and which one a snapshot import copies. Auto prefers Default, otherwise the first name in file order",
+  "core.edit.srcProgramUpdateHint": "Prefetch Git updates from the native repository and branch, then use the official SRC installer for dependencies. Continue after ordinary download failures and restore native update settings afterwards. cn/global use the official Git repository; dependencies are prepared before launch, not prefetched.",
   "core.edit.srcAccountSwitchTipIntro": "Used to switch accounts. Leave it empty if no switching is needed.",
   "core.edit.srcConfigRestoreScriptDesc": "Backups of the config folder in the SRC installation; restoring overwrites the native SRC config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept",
   "core.edit.srcConfigRestoreUserDesc": "Backups of the MAS config (stage fields and the account config directory); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept",
