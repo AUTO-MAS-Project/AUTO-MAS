@@ -60,14 +60,15 @@ const handleFluxdownDetect = async () => {
     } else {
       fluxdownOnlyFull.value = false
       const incomplete = result.candidates?.find(candidate => !candidate.complete)
-      const missingKey = incomplete
-        ? incomplete.has_server && !incomplete.has_cli
-          ? 'fluxdownInstallMissingCli'
-          : incomplete.has_cli && !incomplete.has_server
-            ? 'fluxdownInstallMissingServer'
-            : 'fluxdownInstallMissing'
-        : 'fluxdownDetectNotFound'
-      message.warning(t(`core.setting.others.${missingKey}`))
+      if (!incomplete) {
+        message.warning(t('core.setting.others.fluxdownDetectNotFound'))
+      } else if (incomplete.has_server && !incomplete.has_cli) {
+        message.warning(t('core.setting.others.fluxdownInstallMissingCli'))
+      } else if (incomplete.has_cli && !incomplete.has_server) {
+        message.warning(t('core.setting.others.fluxdownInstallMissingServer'))
+      } else {
+        message.warning(t('core.setting.others.fluxdownInstallMissing'))
+      }
     }
   } catch (error) {
     const errorMsg =
@@ -144,19 +145,24 @@ const progressPercent = computed(() => {
 })
 
 const progressDescription = computed(() => {
-  const progress = installProgress.value
-  if (!progress) return ''
-  const stages: Record<WSFluxdownInstallProgressData['stage'], string> = {
-    check: 'fluxdownInstallChecking',
-    download: 'fluxdownInstallDownloading',
-    verify: 'fluxdownInstallVerifying',
-    extract: 'fluxdownInstallExtracting',
-    install: 'fluxdownInstallApplying',
-    save: 'fluxdownInstallSaving',
-    done: 'fluxdownInstallDownloading',
-    failed: 'fluxdownInstallFailed',
+  switch (installProgress.value?.stage) {
+    case 'check':
+      return t('core.setting.others.fluxdownInstallChecking')
+    case 'download':
+      return t('core.setting.others.fluxdownInstallDownloading')
+    case 'verify':
+      return t('core.setting.others.fluxdownInstallVerifying')
+    case 'extract':
+      return t('core.setting.others.fluxdownInstallExtracting')
+    case 'install':
+      return t('core.setting.others.fluxdownInstallApplying')
+    case 'save':
+      return t('core.setting.others.fluxdownInstallSaving')
+    case 'failed':
+      return t('core.setting.others.fluxdownInstallFailed')
+    default:
+      return ''
   }
-  return t(`core.setting.others.${stages[progress.stage]}`)
 })
 const installState = ref<{
   type: 'secondary' | 'success' | 'warning'
