@@ -39,6 +39,7 @@ import platform
 import re
 import shutil
 import stat
+import tarfile
 import time
 import zipfile
 from dataclasses import dataclass
@@ -82,6 +83,19 @@ SUPPORTED_MIRRORS: tuple[str, ...] = (
 
 _REQUIRED_BINARIES = ("fluxdown.exe", "fluxdown-agent.exe", "fluxdownd.exe")
 _CLI_BINARIES = ("fluxdown.exe", "fluxdown-cli.exe")
+
+
+def _cli_names() -> tuple[str, ...]:
+    return update_native.FLUXDOWN_EXE_NAMES
+
+
+def _server_names() -> tuple[str, str]:
+    agent = update_native.FLUXDOWN_AGENT_NAME
+    daemon = update_native.FLUXDOWN_DAEMON_NAME
+    if agent is None or daemon is None:
+        raise RuntimeError("当前操作系统不支持 FluxDown Server")
+    return agent, daemon
+
 _RELEASE_CACHE_TTL = 600.0
 _MAX_ARCHIVE_BYTES = 256 * 1024**2
 _MAX_MEMBER_BYTES = 512 * 1024**2
@@ -379,47 +393,103 @@ def _extract_zip(archive: Path, target: Path) -> None:
 
 
 
-def _check_package(archive: Path, expected: set[str], forbidden: set[str]) -> None:
-    """在解压前确认下载到的是目标类型的官方组件包，不接受错包或嵌套可执行文件。"""
-    try:
-        with zipfile.ZipFile(archive) as bundle:
-            infos = bundle.infolist()
-            if len(infos) > _MAX_MEMBERS or sum(i.file_size for i in infos) > _MAX_EXTRACTED_BYTES:
-                raise RuntimeError("FluxDown 安装包超出大小或文件数量限制")
-            entries = [
-                (info, _safe_parts(info.filename))
-                for info in infos if not info.is_dir()
-            ]
-            strip = _common_root(parts for _, parts in entries if parts)
-            binaries: set[str] = set()
-            for info, parts in entries:
-                if not parts:
-                    continue
-                rel = parts[1:] if strip and parts[0] == strip else parts
-                if not rel:
-                    continue
-                name = rel[-1].lower()
-                if name in expected | forbidden:
-                    if len(rel) != 1 or info.file_size <= 0 or name in binaries:
-                        raise RuntimeError(f"安装包中 {name} 不在唯一的根目录位置")
-                    binaries.add(name)
-            if binaries != expected:
-                raise RuntimeError(
-                    f"FluxDown 下载到错误的发布包：需要 {sorted(expected)}，"
-                    f"实际存在 {sorted(binaries)}"
-                )
-    except (zipfile.BadZipFile, zipfile.LargeZipFile) as error:
-        raise RuntimeError(f"FluxDown 安装包 ZIP 损坏: {archive.name}") from error
+def _read_tar_members(archive: Path) -> list[tarfile.TarInfo]:
+    """只读 tar.gz 目录，任何链接、特殊文件、异常路径均拒绝。"""
+    with tarfile.open(archive, "r:gz") as bundle:
+        members = bundle.getmembers()
+    if len(members) > _MAX_MEMBERS or sum(i.size for i in members) > _MAX_EXTRACTED_BYTES:
+        raise RuntimeError("FluxDown 安装包超出大小或文件数量限制")
+    for member in members:
+        _safe_parts(member.name)
+        if member.size > _MAX_MEMBER_BYTES or not (member.isfile() or member.isdir()):
+            raise RuntimeError(f"FluxDown 安装包含非法文件类型或过大文件: {member.name}")
+    return members
 
+
+def _extract_tar(archive: Path, target: Path) -> None:
+    """安全按流解压 tar.gz，去掉唯一的版本号外层目录。"""
+    members = _read_tar_members(archive)
+    entries = [(m, _safe_parts(m.name)) for m in members]
+    strip = _common_root(parts for _, parts in entries if parts)
+    with tarfile.open(archive, "r:gz") as bundle:
+        for member, parts in entries:
+            relative = parts[1:] if strip and parts[0] == strip else parts
+            if not relative:
+                continue
+            output = target.joinpath(*relative)
+            if not output.resolve().is_relative_to(target.resolve()):
+                raise RuntimeError(f"安装包路径越界: {member.name}")
+            if member.isdir():
+                output.mkdir(parents=True, exist_ok=True)
+                continue
+            output.parent.mkdir(parents=True, exist_ok=True)
+            stream = bundle.extractfile(member)
+            if stream is None:
+                raise RuntimeError(f"安装包无法读取文件: {member.name}")
+            with stream, open(output, "wb") as sink:
+                shutil.copyfileobj(stream, sink)
+            output.chmod(member.mode & 0o777)
+
+
+def _extract_package(archive: Path, target: Path) -> None:
+    if archive.name.endswith(".tar.gz"):
+        _extract_tar(archive, target)
+    elif archive.name.endswith(".zip"):
+        _extract_zip(archive, target)
+    else:
+        raise RuntimeError(f"不支持的 FluxDown 安装包格式: {archive.name}")
+
+
+def _check_package(archive: Path, expected: set[str], forbidden: set[str]) -> None:
+    """SHA-256 通过后再次校验资产类型与压缩包内的组件布局。"""
+    entries: list[tuple[str, tuple[str, ...], int]]
+    try:
+        if archive.name.endswith(".zip"):
+            with zipfile.ZipFile(archive) as bundle:
+                infos = bundle.infolist()
+                if len(infos) > _MAX_MEMBERS or sum(i.file_size for i in infos) > _MAX_EXTRACTED_BYTES:
+                    raise RuntimeError("FluxDown 安装包超出大小或文件数量限制")
+                entries = [
+                    (info.filename, _safe_parts(info.filename), info.file_size)
+                    for info in infos if not info.is_dir()
+                ]
+        elif archive.name.endswith(".tar.gz"):
+            entries = [
+                (m.name, _safe_parts(m.name), m.size)
+                for m in _read_tar_members(archive) if m.isfile()
+            ]
+        else:
+            raise RuntimeError(f"不支持的 FluxDown 安装包格式: {archive.name}")
+
+        strip = _common_root(parts for _, parts, _ in entries if parts)
+        binaries: set[str] = set()
+        for name, parts, size in entries:
+            if not parts:
+                continue
+            rel = parts[1:] if strip and parts[0] == strip else parts
+            if not rel:
+                continue
+            binary = rel[-1].lower()
+            if binary in expected | forbidden:
+                if len(rel) != 1 or size <= 0 or binary in binaries:
+                    raise RuntimeError(f"安装包中 {binary} 不在唯一的根目录位置")
+                binaries.add(binary)
+        if binaries != expected:
+            raise RuntimeError(
+                f"FluxDown 下载到错误的发布包：需要 {sorted(expected)}，"
+                f"实际存在 {sorted(binaries)}"
+            )
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, tarfile.TarError) as error:
+        raise RuntimeError(f"FluxDown 安装包损坏: {archive.name}") from error
 
 def _assert_complete_install(directory: Path) -> None:
-    """必须同目录包含独立 CLI、Agent 和 Daemon，且不是空文件。"""
+    """校验当前 OS 的三个组件同目录齐全，且不能是空文件。"""
     if not any(
         (directory / name).is_file() and (directory / name).stat().st_size > 0
-        for name in _CLI_BINARIES
+        for name in _cli_names()
     ):
         raise RuntimeError("安装目录缺少有效的 FluxDown CLI")
-    for name in ("fluxdown-agent.exe", "fluxdownd.exe"):
+    for name in _server_names():
         if not (directory / name).is_file():
             raise RuntimeError(f"安装目录缺少 FluxDown Server 组件: {name}")
         if (directory / name).stat().st_size <= 0:
