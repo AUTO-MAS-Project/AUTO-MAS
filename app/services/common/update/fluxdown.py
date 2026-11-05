@@ -432,7 +432,9 @@ async def _block_downgrade(
         ),
         write_history=write_history,
     )
-    raise FluxdownResumableError(f"{detail}{hint}")
+    # Resume metadata stays intact, but the old writer may still be active.
+    # This must not become an ordinary retryable failure in the scheduler.
+    raise FluxdownWriterUnconfirmed(f"{detail}{hint}")
 
 
 async def _ensure_can_downgrade(
@@ -467,6 +469,14 @@ class FluxdownResumableError(RuntimeError):
     不要落 --local（会删掉已下载的分段文件）。
     """
 
+
+
+class FluxdownWriterUnconfirmed(_utils_fluxdown_cli.FluxdownCancelUnconfirmed):
+    """The server writer may still be active despite a failed stop probe.
+
+    Keep the resumable task mapping, but never let a scheduler treat this as
+    an ordinary download failure or start the next script.
+    """
 
 def _proxy_to_str(proxy: httpx.Proxy | None) -> str | None:
     """仅返回不含凭据的代理端点，认证保留在 httpx.Proxy 中。"""
