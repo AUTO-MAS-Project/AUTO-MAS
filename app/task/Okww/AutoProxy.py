@@ -239,6 +239,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self._log_failed = False
         self._log_close_task: asyncio.Task[None] | None = None
         self.script_config_path: Path | None = None
+        # prepare() 失败时收尾仍会读取该属性，必须在任何可失败步骤前初始化
+        self.run_book = False
 
     async def check(self) -> str:
         root = self.script_config.Info.RootPath
@@ -423,8 +425,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self.okww_args = ["-t", str(self.task_index), "-e"]
 
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
-
-        self.run_book = False
 
     def _resolve_log_file_path(self) -> Path:
         return self.script_log_path
