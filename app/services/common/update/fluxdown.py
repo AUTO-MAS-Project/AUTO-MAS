@@ -29,6 +29,7 @@ Mirror 酱源（临时授权 URL + 短期 token）在本文件里一律跳过 Fl
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import partial
@@ -418,23 +419,31 @@ async def _block_downgrade(
         else ""
     )
     logger.warning(f"server 任务未确认停止（第 {count} 次）, 保留映射待续传: {detail}")
-    await _append_history(
-        _utils_fluxdown_cli.FluxdownDownloadRecord(
-            url=url,
-            destination=str(destination),
-            size=0,
-            duration_ms=0,
-            segments=segments,
-            proxy=proxy_str,
-            checksum=None,
-            status="interrupted",
-            error=f"server 任务未确认停止（第 {count} 次）: {detail}",
-        ),
-        write_history=write_history,
-    )
-    # Resume metadata stays intact, but the old writer may still be active.
-    # This must not become an ordinary retryable failure in the scheduler.
-    raise FluxdownWriterUnconfirmed(f"{detail}{hint}")
+    # Once a daemon writer is unconfirmed, cancellation of the optional
+    # history transaction must never turn this into a normal task cancellation:
+    # callers need the ownership error to preserve the destination and stop
+    # the next-script handoff.
+    unsafe_writer = FluxdownWriterUnconfirmed(f"{detail}{hint}")
+    try:
+        await _append_history(
+            _utils_fluxdown_cli.FluxdownDownloadRecord(
+                url=url,
+                destination=str(destination),
+                size=0,
+                duration_ms=0,
+                segments=segments,
+                proxy=proxy_str,
+                checksum=None,
+                status="interrupted",
+                error=f"server 任务未确认停止（第 {count} 次）: {detail}",
+            ),
+            write_history=write_history,
+        )
+    except asyncio.CancelledError:
+        # The history write can wait on an unrelated config transaction.
+        # Keep unsafe ownership authoritative even if that wait is cancelled.
+        raise unsafe_writer from None
+    raise unsafe_writer
 
 
 async def _ensure_can_downgrade(
