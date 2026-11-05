@@ -51,14 +51,29 @@
           />
         </div>
         <div v-if="!showCycleConfig" class="row-cell days-cell">
-          <QueueWeekdaySelect
+          <a-select
             v-model:value="record.schedule.Days"
+            mode="multiple"
+            size="small"
             style="width: 100%"
             class="days-select"
+            :placeholder="t('core.queue.time.selectDays')"
             :disabled="locked"
+            :max-tag-count="isEveryDay(record.schedule.Days) ? 0 : 7"
+            :max-tag-placeholder="maxTagPlaceholder"
             :bordered="false"
             @change="saveDays(record)"
-          />
+          >
+            <a-select-option value="Monday">{{ t('core.queue.time.Monday') }}</a-select-option>
+            <a-select-option value="Tuesday">{{ t('core.queue.time.Tuesday') }}</a-select-option>
+            <a-select-option value="Wednesday">{{
+              t('core.queue.time.Wednesday')
+            }}</a-select-option>
+            <a-select-option value="Thursday">{{ t('core.queue.time.Thursday') }}</a-select-option>
+            <a-select-option value="Friday">{{ t('core.queue.time.Friday') }}</a-select-option>
+            <a-select-option value="Saturday">{{ t('core.queue.time.Saturday') }}</a-select-option>
+            <a-select-option value="Sunday">{{ t('core.queue.time.Sunday') }}</a-select-option>
+          </a-select>
         </div>
         <div v-if="showCycleConfig" class="row-cell cycle-cell">
           <div class="cycle-panel">
@@ -121,12 +136,39 @@
                   :allow-clear="false"
                   @change="saveScheduleTime(record)"
                 />
-                <QueueWeekdaySelect
+                <a-select
                   v-model:value="record.schedule.Days"
+                  mode="multiple"
+                  size="small"
                   style="min-width: 168px"
+                  :placeholder="t('core.queue.time.selectDays')"
                   :disabled="!record.schedule.Enabled"
+                  :max-tag-count="isEveryDay(record.schedule.Days) ? 0 : 3"
+                  :max-tag-placeholder="maxTagPlaceholder"
                   @change="saveDays(record)"
-                />
+                >
+                  <a-select-option value="Monday">{{
+                    t('core.queue.time.Monday')
+                  }}</a-select-option>
+                  <a-select-option value="Tuesday">
+                    {{ t('core.queue.time.Tuesday') }}
+                  </a-select-option>
+                  <a-select-option value="Wednesday">
+                    {{ t('core.queue.time.Wednesday') }}
+                  </a-select-option>
+                  <a-select-option value="Thursday">
+                    {{ t('core.queue.time.Thursday') }}
+                  </a-select-option>
+                  <a-select-option value="Friday">{{
+                    t('core.queue.time.Friday')
+                  }}</a-select-option>
+                  <a-select-option value="Saturday">
+                    {{ t('core.queue.time.Saturday') }}
+                  </a-select-option>
+                  <a-select-option value="Sunday">{{
+                    t('core.queue.time.Sunday')
+                  }}</a-select-option>
+                </a-select>
               </template>
             </div>
 
@@ -169,8 +211,6 @@
 <script setup lang="ts">
 import DragHandle from '@/components/DragHandle.vue'
 import DraggableTableShell from './DraggableTableShell.vue'
-import QueueWeekdaySelect from './QueueWeekdaySelect.vue'
-import { QUEUE_WEEKDAYS } from './queueWeekdays'
 import { useI18n } from 'vue-i18n'
 import { onMounted, ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
@@ -182,6 +222,14 @@ import { Service } from '@/api'
 import { queueApi } from '@/composables/useQueueApi'
 
 const { t } = useI18n()
+
+// 七天全选时仅简化显示，不改变实际星期数组。
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const isEveryDay = (days: string[] = []) => WEEKDAYS.every(day => days.includes(day))
+const maxTagPlaceholder = (omittedValues: unknown[]) =>
+  omittedValues.length === WEEKDAYS.length
+    ? t('core.plan.week.ALL')
+    : `+${omittedValues.length}`
 const logger = window.electronAPI.getLogger('队列项管理')
 
 // Props
@@ -315,9 +363,11 @@ const saveInterval = async (record: any) => {
 }
 
 // 周几按星期顺序存盘，和定时列表保持一致
+const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
 const saveDays = async (record: any) => {
   const days = [...(record.schedule.Days || [])].sort(
-    (a: string, b: string) => QUEUE_WEEKDAYS.indexOf(a) - QUEUE_WEEKDAYS.indexOf(b)
+    (a: string, b: string) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b)
   )
   record.schedule.Days = days
   await saveSchedule(record, { Days: days })
