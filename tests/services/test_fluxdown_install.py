@@ -520,3 +520,73 @@ def test_add_missing_cli_to_existing_desktop_never_overwrites_server(tmp_path):
     assert (target / "fluxdown.exe").read_bytes() == b"downloaded cli"
     assert (target / "fluxdown-agent.exe").read_bytes() == b"original"
     assert (target / "fluxdownd.exe").read_bytes() == b"original"
+
+
+def test_existing_desktop_copy_failure_does_not_poison_retry(tmp_path, monkeypatch):
+    target = tmp_path / "desktop"
+    target.mkdir()
+    (target / "fluxdown-desktop.exe").write_bytes(b"gui")
+    (target / "fluxdown-agent.exe").write_bytes(b"original agent")
+    (target / "fluxdownd.exe").write_bytes(b"original daemon")
+    extracted = tmp_path / "extracted"
+    extracted.mkdir()
+    (extracted / "fluxdown.exe").write_bytes(b"new CLI")
+    original = install.shutil.copy2
+    failed = False
+
+    def partial_copy(source, destination, *args, **kwargs):
+        nonlocal failed
+        if not failed and str(destination).endswith(".mas-install"):
+            failed = True
+            Path(destination).write_bytes(b"partial")
+            raise OSError("disk full")
+        return original(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(install.shutil, "copy2", partial_copy)
+    with pytest.raises(OSError, match="disk full"):
+        install._install_missing_to_existing(extracted, target)
+    assert not list(target.glob(".*.mas-install"))
+    assert not (target / "fluxdown.exe").exists()
+    assert (target / "fluxdown-agent.exe").read_bytes() == b"original agent"
+    assert (target / "fluxdownd.exe").read_bytes() == b"original daemon"
+
+    install._install_missing_to_existing(extracted, target)
+    assert (target / "fluxdown.exe").read_bytes() == b"new CLI"
+    assert not list(target.glob(".*.mas-install"))
+
+
+def test_empty_server_binary_routes_to_managed_install(tmp_path, monkeypatch):
+    external = tmp_path / "desktop"
+    external.mkdir()
+    (external / "fluxdown-desktop.exe").write_bytes(b"desktop")
+    (external / "fluxdown.exe").write_bytes(b"cli")
+    (external / "fluxdown-agent.exe").write_bytes(b"agent")
+    (external / "fluxdownd.exe").touch()
+    managed = tmp_path / "data" / "fluxdown" / "bin"
+
+    monkeypatch.setattr(
+        install,
+        "Config",
+        SimpleNamespace(data_path=tmp_path / "data"),
+    )
+    selected, is_external = install._choose_install_target(str(external))
+    assert selected == managed
+    assert not is_external
+    assert (external / "fluxdownd.exe").stat().st_size == 0
+
+
+def test_external_install_refuses_to_overwrite_empty_component(tmp_path):
+    external = tmp_path / "desktop"
+    external.mkdir()
+    (external / "fluxdown-desktop.exe").write_bytes(b"desktop")
+    (external / "fluxdown-agent.exe").write_bytes(b"agent")
+    (external / "fluxdownd.exe").touch()
+    extracted = tmp_path / "extracted"
+    extracted.mkdir()
+    (extracted / "fluxdown.exe").write_bytes(b"cli")
+    (extracted / "fluxdownd.exe").write_bytes(b"good daemon")
+
+    with pytest.raises(RuntimeError, match="空文件"):
+        install._install_missing_to_existing(extracted, external)
+    assert not (external / "fluxdown.exe").exists()
+    assert (external / "fluxdownd.exe").stat().st_size == 0
