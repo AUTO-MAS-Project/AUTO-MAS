@@ -1870,6 +1870,17 @@ async def _fluxdown_server_download(
         if await _confirm_paused(propagate_cancel=False):
             record.error = "用户取消"
             raise
+        # A private server can be killed only when it is ours and this is
+        # its sole known download. Never kill an independently managed or
+        # shared server, even on explicit user cancellation.
+        if await _to_thread_strong(
+            fluxdown_server_emergency_stop_if_exclusive,
+            cli_exe,
+            url,
+            destination,
+        ):
+            record.error = "用户取消，私有 FluxDown 服务已强制结束"
+            raise
         # 无法确认已停止：daemon 可能仍在写目标文件，不能谎报"取消成功"，
         # 改为显式失败，让上层按失败上报并提示用户检查 FluxDown 状态
         record.error = (
