@@ -1733,12 +1733,14 @@ async def _fluxdown_server_download(
                     await _to_thread_strong(
                         _map_put, cli_exe, key, task_id, url, destination, proxy
                     )
-                    try:
-                        await _to_thread_strong(
-                            _run_cli, cli_exe, env, ["pause", task_id], 10
+                    if not await _confirm_paused():
+                        record.status = "failed"
+                        record.error = (
+                            f"add 失败 exit={code} 且无法确认任务已停止，"
+                            "后台仍可能写入目标文件"
                         )
-                    except Exception:
-                        pass
+                        record.duration_ms = int((time.monotonic() - t0) * 1000)
+                        raise FluxdownCancelUnconfirmed(record.error)
                 record.status = "failed"
                 record.error = f"add 失败 exit={code}: {out[:200]}"
                 record.duration_ms = int((time.monotonic() - t0) * 1000)
