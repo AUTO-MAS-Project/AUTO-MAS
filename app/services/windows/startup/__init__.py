@@ -1,4 +1,3 @@
-import base64
 import hashlib
 import os
 from collections import defaultdict
@@ -12,6 +11,14 @@ from .scheduled_task import (
     task_definition,
     task_exists,
 )
+
+
+def _powershell_path(path: Path) -> str:
+    """保留 PowerShell 引号及任务计划会展开的百分号。"""
+    literal = str(path)
+    for quote in "'\u2018\u2019\u201a\u201b":
+        literal = literal.replace(quote, quote * 2)
+    return "('" + literal.replace("%", "' + [char]37 + '") + "')"
 
 
 class WindowsStartupManager:
@@ -79,20 +86,18 @@ class WindowsStartupManager:
             triggers.append(trigger)
 
         # 通过短暂启动器拉起 GUI；等待定时期间由 GUI 自己申请保活。
-        escaped_executable = str(executable).replace("'", "''")
-        escaped_directory = str(executable.parent).replace("'", "''")
         script = (
             "$ErrorActionPreference = 'Stop'; "
-            f"Start-Process -FilePath '{escaped_executable}' "
-            f"-WorkingDirectory '{escaped_directory}' "
+            f"Start-Process -FilePath {_powershell_path(executable)} "
+            f"-WorkingDirectory {_powershell_path(executable.parent)} "
             "-ArgumentList '--scheduled-wakeup' -WindowStyle Hidden"
         )
-        encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
         powershell = (
             Path(os.environ.get("SystemRoot", "C:/Windows"))
             / "System32/WindowsPowerShell/v1.0/powershell.exe"
         )
         desired = set()
+        # 隐藏窗口与编码命令组合可能被拒绝；保留可读命令和隐藏启动。
         # Windows 每条任务最多 48 个触发器；时间项较多时继续分组，不丢失定时。
         for index in range(0, len(triggers), 48):
             name = f"{prefix}{index // 48}"
@@ -102,7 +107,7 @@ class WindowsStartupManager:
                     name=name,
                     description="AUTO-MAS 定时前五分钟唤醒并启动",
                     executable=powershell,
-                    arguments=f"-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand {encoded}",
+                    arguments=f'-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -Command "{script}"',
                     triggers=triggers[index : index + 48],
                     wake_to_run=True,
                 ),

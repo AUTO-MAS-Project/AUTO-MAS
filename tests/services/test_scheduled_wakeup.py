@@ -1,7 +1,11 @@
 """以任务计划程序收到的定义验证自启和唤醒，不操作用户的系统任务。"""
 
 import asyncio
+import base64
+import json
+import os
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -56,6 +60,68 @@ async def test_login_task_preserves_install_path_and_normal_startup(
     assert (
         task.findtext("t:Actions/t:Exec/t:Arguments", namespaces=NS) == "--auto-start"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    sys.platform != "win32", reason="Requires Windows PowerShell parser"
+)
+async def test_wakeup_launcher_preserves_literal_install_paths(tmp_path, scheduler):
+    executable = (
+        tmp_path / "安装 %USERNAME% & O'Neil ‘左’ ‚低‛ $(Arg0)" / "AUTO-MAS.exe"
+    )
+    await WindowsStartupManager().sync_wakeup(
+        executable=executable, times=((0, 7, 55),)
+    )
+    task = next(iter(scheduler.values()))
+    arguments = task.findtext("t:Actions/t:Exec/t:Arguments", namespaces=NS)
+    # 解析实际任务动作，兼容旧格式以便同一场景对照修复前后。
+    if "-EncodedCommand " in arguments:
+        source = base64.b64decode(arguments.split("-EncodedCommand ", 1)[1]).decode(
+            "utf-16-le"
+        )
+    else:
+        source = arguments.split('-Command "', 1)[1][:-1]
+    encoded = base64.b64encode(source.encode("utf-8")).decode("ascii")
+    check = f"""
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+$source=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded}'))
+$tokens=$null; $errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)
+if($errors.Count) {{ throw ($errors | Out-String) }}
+$command=$ast.Find({{param($node) $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Start-Process'}},$true)
+$values=@()
+for($i=0; $i -lt $command.CommandElements.Count; $i++) {{
+    $element=$command.CommandElements[$i]
+    if($element -is [Management.Automation.Language.CommandParameterAst] -and $element.ParameterName -in @('FilePath','WorkingDirectory')) {{
+        $expression=$command.CommandElements[$i+1].Extent.Text
+        $values+=& ([ScriptBlock]::Create($expression))
+    }}
+}}
+[Console]::Out.Write((ConvertTo-Json -InputObject $values -Compress))
+"""
+    # 只求值自有路径表达式，不执行生成的 Start-Process 或注册真实任务。
+    result = subprocess.run(
+        [
+            str(
+                Path(os.environ["SystemRoot"])
+                / "System32/WindowsPowerShell/v1.0/powershell.exe"
+            ),
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            check,
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=subprocess.CREATE_NO_WINDOW,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == [str(executable), str(executable.parent)]
 
 
 @pytest.mark.asyncio
