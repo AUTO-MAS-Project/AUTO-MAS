@@ -635,3 +635,45 @@ async def test_interrupted_resource_merge_blocks_next_run_until_repaired(
     # 已完整修复后，后续单纯断网可重新沿用当前安装。
     assert await scheduler._prepare_software_update(task) is False
     scheduler._remember_pending_update.assert_called_once()
+
+
+
+@pytest.mark.asyncio
+async def test_cancelled_mirror_prefetch_does_not_use_daily_attempt(tmp_path, monkeypatch):
+    """Explicit queue cancellation permits the same version later that day."""
+    state = {}
+    writes = []
+
+    def load(_path):
+        return dict(state)
+
+    def save(_path, data):
+        state.clear()
+        state.update(data)
+        writes.append(dict(data))
+
+    monkeypatch.setattr(mirror, "_STATE_FILE", tmp_path / "mirror-state.json")
+    monkeypatch.setattr(mirror, "_state_lock", asyncio.Lock())
+    monkeypatch.setattr(mirror, "load_state", load)
+    monkeypatch.setattr(mirror._utils_io, "write_file", save)
+    monkeypatch.setattr(
+        mirror, "read_installed_release", lambda _: ("v6.0.0", "x64")
+    )
+    monkeypatch.setattr(
+        mirror, "software_cache_dir", lambda **_: tmp_path
+    )
+    monkeypatch.setattr(mirror, "load_cache_manifest", lambda _: None)
+    monkeypatch.setattr(mirror, "backoff_active", lambda *_: False)
+    monkeypatch.setattr(mirror, "attempted_today", lambda *_: False)
+    monkeypatch.setattr(
+        mirror, "_fetch_latest",
+        AsyncMock(return_value=mirror._Latest("v6.1.0", "https://example.invalid/pkg")),
+    )
+    cancelled = AsyncMock(side_effect=asyncio.CancelledError)
+    monkeypatch.setattr(mirror, "_ensure_cache", cancelled)
+    with pytest.raises(asyncio.CancelledError):
+        await mirror._precheck_inner(
+            tmp_path, "stable", "x64", "test-cdk", target_version="v6.1.0"
+        )
+    assert not any(k.startswith("last_download_attempt_") for k in state)
+    assert writes
