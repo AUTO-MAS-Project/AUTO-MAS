@@ -25,12 +25,10 @@
 CheckAndDownloadResourceUpdate 只在 UpdateSource==MirrorChyan 且 CDK 非空时
 下载），GitHub 源只保留 GUI 手动入口（设置页按钮 / 主窗口拖拽导入），且没有
 任何程序化触发方式（Bootstrapper.ParseArgs 无相关 flag）。本模块在 MAS 侧
-补位：MAA 自动代理任务运行前（MaaManager._run_main_task 锁定配置之前；配置会话
-不触发）按需更新启用「更新接管」脚本的 MAA 实例的资源。
+补位：MAA 自动代理任务运行前经 prepare_install_resources 更新本次安装的资源。
 由触发脚本的接管开关与生效 CDK 驱动：脚本 CDK 优先、空则回退 MAS 全局
-配置；未开接管时完全不创建更新任务，检查与分发也只覆盖开了接管的安装。
-启动前入口 prepare_install_resources 也支持 GitHub 全量资源包，无 CDK 时由
-脚本更新开关启用；下载器独立跟随全局 FluxDown 接管开关。
+配置。GitHub 全量资源包无 CDK 时由脚本更新开关启用；下载器独立跟随全局
+FluxDown 接管开关。
 Mirror 酱路径按本地日期对同一资源版本每天最多尝试一次，新版本可再次取包；
 失败和取消也保留当天记账；
 免费版本查询与有效缓存分发不受每日限额影响。
@@ -49,9 +47,9 @@ GetResourceVersionByClientType——外服分支读 defaultJsonPath）与镜像�
 MaaResource/latest 的 version_name；包文件只整体覆盖不解析；不判断资源与
 本体版本的兼容性。
 
-失败语义：旧的跨安装扫描失败只写日志；启动前入口失败则停止本轮启动。
+失败语义：启动前入口失败则停止本轮启动。
 主动取消正常传播。阶段级进度经可选的
-progress 回调上报，回调异常被忽略。重文件 I/O（进程扫描、解压、合并、逐安装复读
+progress 回调上报，回调异常被忽略。重文件 I/O（解压、合并、复读
 时钟）一律运行在 asyncio.to_thread 内、下载写盘用 aiofiles——MAS 后端是
 单事件循环 uvicorn，阻塞 I/O 会冻结整个后端；KB 级状态/清单文件是唯一
 例外（与仓库现状一致）。
@@ -72,12 +70,10 @@ from pathlib import Path
 from typing import cast
 
 import httpx
-import psutil
 
 from app.core import Config
 from app.core.script_update import download_script_package
 from app.core.update import download_file
-from app.models.config import MaaConfig
 from app.services.common.update import transport as _service_update_transport
 from app.utils import get_logger
 from app.utils import io as _utils_io
@@ -88,7 +84,6 @@ from .resource_package import (
     merge_package_tree,
     resource_tree_hashes,
 )
-from .update_credentials import resolve_takeover_credentials
 from .update_errors import MaaUpdateUnsafeError
 from .update_state import attempted_today, backoff_active, load_state, parse_iso
 
@@ -100,7 +95,6 @@ _CLOCK_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 _QUERY_TIMEOUT = 10  # 秒
 _DOWNLOAD_TIMEOUT = 10 * 60  # 秒，单次网络操作上限（无下载总时限，停滞由操作超时兜底）
 _RESOURCE_LOCK_TIMEOUT = 60
-_QUERY_FLOOR = 10 * 60  # 秒，两次成功查询最小间隔（只作用于刷新检查）
 _RETRY_INTERVAL = 60 * 60  # 秒，更新失败后的重试间隔
 _MB = 1024 * 1024
 
@@ -218,95 +212,6 @@ _install_write_locks: dict[str, asyncio.Lock] = {}
 def get_resource_write_lock(install: Path) -> asyncio.Lock:
     """同一安装的资源写入与配置会话加锁互斥，不阻塞会话等待网络下载。"""
     return _install_write_locks.setdefault(_path_key(install), asyncio.Lock())
-
-
-def _snapshot_maa_configs() -> list[tuple[str, bool]]:
-    """在事件循环采集路径和占用状态；无法确认时拒绝继续写入。
-
-    只收集开启「更新接管」且有生效 CDK 的脚本，未满足接管条件的安装
-    不参与检查与分发。
-    """
-    try:
-        entries = list(Config.ScriptConfig.items())
-        result: list[tuple[str, bool]] = []
-        for _, config in entries:
-            if isinstance(config, MaaConfig):
-                enabled, _ = resolve_takeover_credentials(config)
-                if not enabled:
-                    continue
-                raw = str(config.Info.Path or "")
-                if raw:
-                    result.append((raw, bool(config.is_locked)))
-        return result
-    except Exception as e:
-        raise RuntimeError("无法读取 MAA 安装配置或占用状态，跳过资源写入") from e
-
-
-def _locked_install_keys(configs: list[tuple[str, bool]]) -> set[str]:
-    return {_path_key(raw) for raw, locked in configs if locked}
-
-
-def _running_maa_exe_paths() -> set[str]:
-    """正在运行的 MAA.exe / MAA.Updater.exe 的可执行文件路径（归一化）。
-    覆盖 MAS 看不见的手动 GUI 与 OTA 更新器。"""
-    wanted = {"maa.exe", "maa.updater.exe"}
-    result: set[str] = set()
-    for proc in psutil.process_iter(["name", "exe"]):
-        try:
-            name = (proc.info.get("name") or "").lower()
-            exe = proc.info.get("exe")
-            if name in wanted and exe:
-                result.add(_path_key(exe))
-        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-            continue
-    return result
-
-
-def _snapshot_installs(configs: list[tuple[str, bool]]) -> list[tuple[Path, datetime]]:
-    """枚举 MAA 安装及其时钟；内容损坏上抛，瞬态不可读逐项跳过。
-
-    跳过被占用的安装、缺少版本文件的安装及瞬态读取错误；版本文件损坏时
-    抛 ConfigCorruptedError，由编排入口明确报告并停止本轮资源更新。
-    先收集安装路径再做进程/锁定扫描，零 MAA 安装时不做全进程扫描。
-    """
-    installs: dict[str, Path] = {}
-    for raw, _ in configs:
-        installs.setdefault(_path_key(raw), Path(raw))
-    if not installs:
-        return []
-    locked = _locked_install_keys(configs)
-    running = _running_maa_exe_paths()
-    result: list[tuple[Path, datetime]] = []
-    for key, install in installs.items():
-        if key in locked:
-            logger.info(f"MAA 资源更新: 跳过被占用的安装 {install}")
-            continue
-        if any(exe.startswith(key + os.sep) for exe in running):
-            logger.info(f"MAA 资源更新: 跳过 MAA 正在运行的安装 {install}")
-            continue
-        version_file = install / "resource" / "version.json"
-        if not version_file.is_file():
-            logger.info(
-                f"MAA 资源更新: 跳过缺少 resource/version.json 的安装 {install}"
-            )
-            continue
-        try:
-            clock = _read_clock_file(version_file)
-        except OSError:
-            logger.warning(f"MAA 资源更新: {version_file} 暂不可读，本轮跳过该安装")
-            continue
-        result.append((install, clock))
-    return result
-
-
-def _install_busy_now(install: Path, configs: list[tuple[str, bool]]) -> bool:
-    """合并前复查接管条件、配置锁和运行进程。"""
-    key = _path_key(install)
-    return (
-        key not in {_path_key(raw) for raw, _ in configs}
-        or key in _locked_install_keys(configs)
-        or any(exe.startswith(key + os.sep) for exe in _running_maa_exe_paths())
-    )
 
 
 # --------------------------------------------------------------------------
@@ -651,8 +556,6 @@ def _apply_stage(install: Path, stage_clock: datetime, cdk: str) -> bool:
 
 
 _Progress = Callable[[str], Awaitable[None]]
-_update_task: asyncio.Task[None] | None = None
-_update_waiters: dict[object, _Progress | None] = {}
 
 
 async def _wait_for_cleanup(task: asyncio.Task[object]) -> None:
@@ -680,12 +583,6 @@ async def _run_write_thread[T](
         raise
 
 
-async def _broadcast_progress(line: str) -> None:
-    await asyncio.gather(
-        *(_report(progress, line) for progress in list(_update_waiters.values()))
-    )
-
-
 async def _report(progress: _Progress | None, line: str) -> None:
     """阶段级进度上报：回调异常只影响展示，绝不影响更新流程。"""
     if progress is None:
@@ -694,36 +591,6 @@ async def _report(progress: _Progress | None, line: str) -> None:
         await progress(line)
     except Exception:
         logger.debug("MAA 资源更新: 进度回调失败（不影响更新流程）")
-
-
-async def _query_resource_version(
-    *,
-    clocks: dict[Path, datetime],
-    stage: dict[str, object] | None,
-    state: dict[str, object],
-) -> datetime | None:
-    """免费查询版本并更新查询状态；地板或退避命中时不查询。"""
-    now = datetime.now(timezone.utc)
-    last_query = parse_iso(state.get("last_query_at"))
-    if backoff_active(state, "query_fail_until", now) or (
-        last_query is not None and now - last_query < timedelta(seconds=_QUERY_FLOOR)
-    ):
-        return None
-    stage_target = parse_iso(stage.get("target")) if stage else None
-    # 无缓存时报告最旧实例的真实时钟，不使用未实测的极旧版本哨兵。
-    current = _format_clock(stage_target or min(clocks.values()))
-    try:
-        target = await _fetch_latest_version(current)
-        state["last_query_at"] = datetime.now(timezone.utc).isoformat()
-        _utils_io.write_file(_STATE_FILE, state)
-        return target
-    except _QueryError as e:
-        state["query_fail_until"] = (
-            datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
-        ).isoformat()
-        _utils_io.write_file(_STATE_FILE, state)
-        logger.warning(f"MAA 资源更新: 版本查询失败（1 小时内不再尝试）: {e}")
-        return None
 
 
 async def _refresh_resource_stage(
@@ -780,190 +647,6 @@ async def _refresh_resource_stage(
         await _report(progress, "资源包下载失败；至少 1 小时后且有当日额度时重试")
         # 换位失败可能已经作废清单，按盘上现状决定是否继续分发旧缓存。
         return _load_manifest()
-
-
-async def _distribute_resource_stage(
-    *,
-    clocks: dict[Path, datetime],
-    stage: dict[str, object] | None,
-    progress: _Progress | None,
-    cdk: str,
-) -> None:
-    """以有效缓存的实际时钟分发，查询地板、退避与日限额不阻止分发。"""
-    if stage is None:
-        return
-    try:
-        stage_clock = read_resource_clock(_STAGE_DIR)
-    except ValueError:
-        # 真损坏（ConfigCorruptedError）：作废暂存，下轮重建
-        logger.warning("MAA 资源更新: 暂存 version.json 损坏，作废暂存等待下轮重建")
-        _MANIFEST_FILE.unlink(missing_ok=True)
-        return
-    except OSError:
-        # 瞬态不可读（AV 共享冲突等）：暂存大概率完好，只跳过本轮分发
-        logger.warning("MAA 资源更新: 暂存 version.json 暂不可读，本轮跳过分发")
-        return
-    if stage_clock is None:
-        logger.warning("MAA 资源更新: 暂存资源目录缺失，作废暂存等待下轮重建")
-        _MANIFEST_FILE.unlink(missing_ok=True)
-        return
-
-    candidates = [
-        install
-        for install, clock in clocks.items()
-        if clock < stage_clock or has_incomplete_resource_update(install)
-    ]
-
-    if not candidates:
-        return
-    await _report(progress, f"分发资源更新到 {len(candidates)} 个实例…")
-    done = failed = 0
-    for install in candidates:
-        try:
-            # 与配置会话加锁互斥；持锁复查占用，直至写线程收尾完成才放行。
-            async with get_resource_write_lock(install):
-                with _resource_access_lock(install) as access:
-                    if access is None:
-                        logger.info(f"MAA 资源更新: 安装访问锁未取得，跳过 {install}")
-                        continue
-                    configs = _snapshot_maa_configs()
-                    if await asyncio.to_thread(_install_busy_now, install, configs):
-                        logger.info(
-                            f"MAA 资源更新: 安装被占用或未满足接管条件，跳过 {install}"
-                        )
-                        continue
-                    # 进程扫描让出事件循环，期间开关/CDK 可能变化；派发写线程
-                    # 前再采集一次配置，已经关闭接管的安装不能沿用下载前的目标。
-                    configs = _snapshot_maa_configs()
-                    install_key = _path_key(install)
-                    if install_key not in {
-                        _path_key(raw) for raw, _ in configs
-                    } or install_key in _locked_install_keys(configs):
-                        logger.info(
-                            f"MAA 资源更新: 接管条件或配置占用发生变化，跳过 {install}"
-                        )
-                        continue
-                    applied = await _run_write_thread(
-                        _apply_stage, install, stage_clock, cdk
-                    )
-            if not applied:
-                logger.info(f"MAA 资源更新: 合并前版本已变化，跳过 {install}")
-                continue
-            done += 1
-            logger.info(
-                f"MAA 资源更新: {install} 已更新至 {_format_clock(stage_clock)}"
-            )
-            await _report(progress, f"资源分发进度 {done}/{len(candidates)}…")
-        except Exception as e:
-            failed += 1
-            logger.warning(
-                f"MAA 资源更新: {install} 更新失败（不影响其他实例与任务）: {e}"
-            )
-    if failed:
-        await _report(
-            progress,
-            f"资源更新完成 {done}/{len(candidates)}，失败实例下轮自愈"
-            if done
-            else "资源更新失败，将在下轮任务前重试",
-        )
-    elif done:
-        await _report(progress, f"资源已更新至 {_format_clock(stage_clock)}")
-    else:
-        await _report(progress, "本轮未完成分发，剩余实例下轮自愈")
-
-
-async def _sweep(progress: _Progress | None = None, cdk: str = "") -> None:
-    pairs = await asyncio.to_thread(_snapshot_installs, _snapshot_maa_configs())
-    if not pairs:
-        return
-    clocks = dict(pairs)
-    await _report(progress, "检查 MAA 资源更新…")
-    state = load_state(_STATE_FILE)
-    # 旧版把不同 CDK 的失败共用为一天的禁用状态；保留资源缓存，清除这两项旧记账。
-    if "last_download_attempt_at" in state or "download_fail_until" in state:
-        state.pop("last_download_attempt_at", None)
-        state.pop("download_fail_until", None)
-        state.pop("last_query_at", None)
-        _utils_io.write_file(_STATE_FILE, state)
-    stage = await _run_write_thread(_load_valid_manifest)
-    target = await _query_resource_version(clocks=clocks, stage=stage, state=state)
-    stage = await _refresh_resource_stage(
-        clocks=clocks,
-        stage=stage,
-        target=target,
-        state=state,
-        progress=progress,
-        cdk=cdk,
-    )
-    await _distribute_resource_stage(
-        clocks=clocks, stage=stage, progress=progress, cdk=cdk
-    )
-
-
-async def _run_update(cdk: str) -> None:
-    try:
-        with _MachineLock() as lock:
-            if lock is None:
-                # 仍须经过 MaaManager 的安装访问锁：允许跳过重复下载，
-                # 不允许在另一个 MAS 正在写本安装时启动 MAA。
-                return
-            await _sweep(_broadcast_progress, cdk)
-    except _utils_io.ConfigCorruptedError as e:
-        logger.opt(exception=True).error(
-            f"MAA 资源更新已停止：资源版本文件损坏：{e.path}"
-        )
-        await _broadcast_progress(f"MAA 资源更新已停止：请检查损坏的版本文件 {e.path}")
-    except Exception:
-        logger.exception("MAA 资源自动更新异常（已忽略，不影响本轮任务）")
-
-
-async def prepare_queue_resources(
-    progress: _Progress | None = None, *, cdk: str | None = None
-) -> None:
-    """MAA 任务运行前按需更新全部启用接管脚本的 MAA 实例资源。
-
-    由 MaaManager._run_main_task 在维护判断与锁定配置之前调用：lock() 之后本安装会被
-    占用过滤跳过，更新不到它自己。
-
-    Args:
-        progress: 可选的阶段级进度回调，入参为单行文本（如「检查 MAA 资源
-            更新…」「分发资源更新到 3 个实例…」），可直接写进调度台日志；
-            回调异常只影响展示，不影响更新流程。同一 MAS 的并行任务共享
-            更新与进度，更新结束后才各自启动 MAA。
-        cdk: 触发脚本解析出的生效 Mirror 酱 CDK（脚本优先、空回退全局）；
-            为 None 表示该脚本未开启更新接管，不创建更新任务。
-
-    更新失败不阻断任务；主动取消正常传播。最后一个等待者取消时中止更新，
-    正在写入的线程结束后才释放机器锁。
-    只有开启「更新接管」的脚本触发时才更新，且只分发到同样开启接管的
-    安装；已开始的更新仍需等待收尾，避免 MAA 启动与尚未结束的写入交错。
-    """
-    global _update_task
-
-    if cdk is None:
-        return
-    task = _update_task
-    token = object()
-    _update_waiters[token] = progress
-    # 注册与建任务之间没有 await，并行 prepare 只会创建一轮更新。
-    try:
-        # 上一轮最后一个等待者刚中止时，新任务先等写入收尾，再开新一轮；
-        # 不能加入那轮已取消的任务，也不能在它仍占锁时直接跳过更新。
-        while task is not None and task.cancelling() and not task.done():
-            await asyncio.wait({task})
-            task = _update_task
-        if task is None or task.done():
-            task = asyncio.create_task(_run_update(cdk), name="maa-resource-update")
-            _update_task = task
-        await asyncio.shield(task)
-    except asyncio.CancelledError:
-        _update_waiters.pop(token, None)
-        if not _update_waiters and task is not None and not task.done():
-            task.cancel()
-            await _wait_for_cleanup(task)
-        raise
-    finally:
-        _update_waiters.pop(token, None)
 
 
 _prepare_install_lock = asyncio.Lock()

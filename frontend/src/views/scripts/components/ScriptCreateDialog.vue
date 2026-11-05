@@ -304,7 +304,6 @@ import {
   type MaaFWCreateSlotContext,
 } from '@/composables/useMaaFWFlavor'
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
-import { openExternalUrl } from '@/utils/openExternal'
 import SelectableOptionCard from '@/components/SelectableOptionCard.vue'
 import SelectableOptionList from '@/components/SelectableOptionList.vue'
 import MaaFWSourceStep from './MaaFWSourceStep.vue'

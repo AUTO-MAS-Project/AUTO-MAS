@@ -241,8 +241,3 @@ export class Logger {
 export function getLogger(moduleName: string, moduleColor?: string): Logger {
   return new Logger(moduleName, moduleColor)
 }
-
-/**
- * 默认导出 electron-log 实例供直接使用
- */
-export default log

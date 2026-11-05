@@ -261,29 +261,6 @@ class NotificationManager:
     ) -> AbstractContextManager[None]:
         return self.tasks.task_notification_batch(task_id=task_id)
 
-    async def send_global(
-        self,
-        payload: NotifyPayload,
-        *,
-        include_system: bool = False,
-        empty_policy: EmptyPolicy = "send",
-        system_timeout_seconds: int | None = None,
-        attempts: int = 1,
-        retry_delay: float = 0,
-    ) -> DispatchResult:
-        return await self.dispatch(
-            payload,
-            [
-                self.global_target(
-                    include_system=include_system,
-                    empty_policy=empty_policy,
-                    system_timeout_seconds=system_timeout_seconds,
-                )
-            ],
-            attempts=attempts,
-            retry_delay=retry_delay,
-        )
-
     async def send_user(
         self,
         payload: NotifyPayload,

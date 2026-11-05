@@ -41,7 +41,6 @@ WiFi + fastpath、客体日志落盘、客体 Vulkan 驱动补丁。启动器里
 from __future__ import annotations
 
 import asyncio
-import tempfile
 import time
 from contextlib import suppress
 from datetime import datetime
@@ -935,32 +934,6 @@ class _AvdCore(DeviceBase):
             manager_path=str(self.emulator_path),
             native_index=str(idx),
         )
-
-    def grpc_endpoint(self, idx: str) -> dict[str, Any] | None:
-        """实例的 gRPC 地址与 token，给以后的画面查看窗口用（段 C）。没在跑返回 ``None``。
-
-        模拟器带 ``-grpc-use-token`` 启动，token 写在它自己的运行时文件
-        ``%TEMP%\\avd\\running\\pid_<qemu pid>.ini`` 的 ``grpc.token=`` 行里，只听 127.0.0.1。
-        """
-        process = host.find_qemu_process(avd_name(idx), console_port(idx))
-        if process is None:
-            return None
-        token = ""
-        candidate = (
-            Path(tempfile.gettempdir()) / "avd" / "running" / f"pid_{process.pid}.ini"
-        )
-        with suppress(OSError):
-            for line in candidate.read_text(
-                encoding="utf-8", errors="replace"
-            ).splitlines():
-                if line.startswith("grpc.token="):
-                    token = line.split("=", 1)[1].strip()
-        return {
-            "host": "127.0.0.1",
-            "port": grpc_port(idx),
-            "token": token,
-            "pid": process.pid,
-        }
 
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
         """显示 / 隐藏带窗口开机的实例（主窗口和侧边工具栏），照雷电用 ``SW_HIDE`` / ``SW_SHOW``。

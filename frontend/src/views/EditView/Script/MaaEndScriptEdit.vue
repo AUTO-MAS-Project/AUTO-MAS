@@ -511,7 +511,6 @@ import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message, Modal } from 'ant-design-vue'
 import type { ComboBoxItem } from '@/api'
-import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -523,7 +522,6 @@ import {
   WS_TASK_NOTICE,
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 import { QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'

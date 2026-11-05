@@ -899,14 +899,6 @@ export function addLatestMasHistoryLog(
   return addReportHistoryLog(state, latest.root, latest.record, archivePath)
 }
 
-export function addRecentFailedMaaEndHistoryLogs(
-  state: CollectorState,
-  dataRoots: string[],
-  limit = 3
-): string[] {
-  return addRecentAdapterHistoryLogs(state, dataRoots, { adapter: 'maaend', limit })
-}
-
 /** 按名称快照匹配当前专项；同名、重命名或删除后的归属限制不由导出端猜测补齐。 */
 export function addRecentAdapterHistoryLogs(
   state: CollectorState,

@@ -26,8 +26,6 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
-import os
-import shlex
 import shutil
 import uuid
 from abc import ABC, abstractmethod
@@ -39,8 +37,6 @@ from typing import Any, Callable, Coroutine, Generic, Type, TypeVar
 
 from app.utils import (
     DEFAULT_DATETIME,
-    FORBIDDEN_PATH_EXACT,
-    FORBIDDEN_PATH_PREFIXES,
     dpapi_decrypt,
     dpapi_encrypt,
     get_logger,
@@ -103,120 +99,6 @@ class StringValidator(ValidatorBase):
         return value if self.validate(value) else ""
 
 
-class RangeValidator(ValidatorBase):
-    """范围验证器"""
-
-    def __init__(self, min: int | float, max: int | float):
-        self.min = min
-        self.max = max
-
-    def validate(self, value):
-        if not isinstance(value, (int, float)):
-            return False
-        return self.min <= value <= self.max
-
-    def correct(self, value):
-        if not isinstance(value, (int, float)):
-            try:
-                value = float(value)
-            except TypeError:
-                return self.min
-        return min(max(self.min, value), self.max)
-
-
-class OptionsValidator(ValidatorBase):
-    """选项验证器"""
-
-    def __init__(self, options: list):
-        if not options:
-            raise ValueError("可选项不能为空")
-
-        self.options = options
-
-    def validate(self, value):
-        return value in self.options
-
-    def correct(self, value):
-        return value if self.validate(value) else self.options[0]
-
-
-class MultipleOptionsValidator(ValidatorBase):
-    """多选选项验证器"""
-
-    def __init__(self, options: list):
-        if not options:
-            raise ValueError("可选项不能为空")
-
-        self.options = options
-
-    def validate(self, value):
-        if not isinstance(value, list):
-            return False
-
-        return all(item in self.options for item in value)
-
-    def correct(self, value):
-        return value if self.validate(value) else []
-
-
-class MultipleUIDValidator(ValidatorBase):
-    """多配置管理类UID验证器"""
-
-    def __init__(
-        self,
-        default: Any,
-        related_config: dict[str, MultipleConfig],
-        config_name: str,
-    ):
-        self.default = default
-        self.related_config = related_config
-        self.config_name = config_name
-
-    def validate(self, value):
-        if value == self.default:
-            return True
-        if not isinstance(value, str):
-            return False
-        try:
-            uid = uuid.UUID(value)
-        except (TypeError, ValueError):
-            return False
-        config = self.related_config.get(self.config_name, {})
-        return uid in config
-
-    def correct(self, value):
-        if self.validate(value):
-            return value
-        return self.default
-
-
-class TypedMultipleUIDValidator(MultipleUIDValidator):
-    """多配置管理类UID验证器（额外校验引用配置的类型）
-
-    用于 MultipleConfig 中同一定位键下存在多种配置类型（如 PlanConfig
-    同时存放 MaaPlanConfig 与 MaaEndPlanConfig）的场景，保证配置层
-    invariant：UID 不仅存在，且指向的配置类型符合预期。
-    """
-
-    def __init__(
-        self,
-        default: Any,
-        related_config: dict[str, MultipleConfig],
-        config_name: str,
-        expected_type: type,
-    ):
-        super().__init__(default, related_config, config_name)
-        self.expected_type = expected_type
-
-    def validate(self, value):
-        if value == self.default:
-            return True
-        if not super().validate(value):
-            return False
-        config = self.related_config.get(self.config_name, {})
-        return isinstance(config[uuid.UUID(value)], self.expected_type)
-
-
 class DateTimeValidator(ValidatorBase):
     """日期时间验证器"""
 
@@ -244,28 +126,6 @@ class DateTimeValidator(ValidatorBase):
             return DEFAULT_DATETIME.strftime(self.date_format)
 
 
-class JSONValidator(ValidatorBase):
-    def __init__(self, tpye: type[dict] | type[list] = dict) -> None:
-        self.type = tpye
-
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-        try:
-            data = json.loads(value)
-            if isinstance(data, self.type):
-                return True
-            else:
-                return False
-        except json.JSONDecodeError:
-            return False
-
-    def correct(self, value):
-        return (
-            value if self.validate(value) else ("{ }" if self.type is dict else "[ ]")
-        )
-
-
 # 密文读不出来时对外给出的占位值。界面据此提示用户重新设置，
 # 存量密文本身不会被它覆盖。
 UNREADABLE_SECRET_PLACEHOLDER = "数据损坏, 请重新设置"
@@ -288,156 +148,6 @@ class EncryptValidator(ValidatorBase):
             return value
         logger.warning("加密配置项无法解密, 已替换为占位值, 请重新设置")
         return dpapi_encrypt(UNREADABLE_SECRET_PLACEHOLDER)
-
-
-class BoolValidator(ValidatorBase):
-    """布尔值验证器"""
-
-    def validate(self, value):
-        if not isinstance(value, bool):
-            return False
-        return True
-
-    def correct(self, value):
-        return value if self.validate(value) else False
-
-
-class FileValidator(ValidatorBase):
-    """文件路径验证器"""
-
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-        # 允许空字符串(表示未设置路径)
-        if value == "":
-            return True
-        if not Path(value).is_absolute():
-            return False
-        if Path(value).suffix == ".lnk":
-            return False
-        try:
-            resolved = Path(value).resolve()
-        except (OSError, ValueError):
-            return False
-        if len(resolved.parts) == 1:
-            return False
-        for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
-            if (
-                resolved == forbidden
-                or resolved.is_relative_to(forbidden)
-                or forbidden.is_relative_to(resolved)
-            ):
-                return False
-        if resolved in FORBIDDEN_PATH_EXACT:
-            return False
-        return True
-
-    def correct(self, value):
-        if not isinstance(value, str):
-            value = ""
-        # 空字符串直接返回
-        if value == "":
-            return ""
-        if "%APPDATA%" in value:
-            value = value.replace("%APPDATA%", os.getenv("APPDATA") or "")
-        if not Path(value).is_absolute():
-            value = Path(value).resolve().as_posix()
-        if Path(value).suffix == ".lnk":
-            try:
-                import win32com.client
-
-                shell = win32com.client.Dispatch("WScript.Shell")
-                shortcut = shell.CreateShortcut(value)
-                value = shortcut.TargetPath
-            except Exception:
-                pass
-        try:
-            resolved = Path(value).resolve()
-        except (OSError, ValueError):
-            return ""
-        if len(resolved.parts) == 1:
-            raise ValueError("不允许将驱动器根目录作为配置路径")
-        for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
-            if (
-                resolved == forbidden
-                or resolved.is_relative_to(forbidden)
-                or forbidden.is_relative_to(resolved)
-            ):
-                raise ValueError(f"不允许将系统目录或项目根目录作为配置路径: {value}")
-        if resolved in FORBIDDEN_PATH_EXACT:
-            raise ValueError(f"不允许将系统程序目录作为配置路径: {value}")
-        return resolved.as_posix()
-
-
-class FolderValidator(ValidatorBase):
-    """文件夹路径验证器"""
-
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-        if value == "":
-            return True
-        if not Path(value).is_absolute():
-            return False
-        if not Path(value).is_dir():
-            return False
-        try:
-            resolved = Path(value).resolve()
-        except (OSError, ValueError):
-            return False
-        if len(resolved.parts) == 1:
-            return False
-        for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
-            if (
-                resolved == forbidden
-                or resolved.is_relative_to(forbidden)
-                or forbidden.is_relative_to(resolved)
-            ):
-                return False
-        if resolved in FORBIDDEN_PATH_EXACT:
-            return False
-        return True
-
-    def correct(self, value):
-        if not isinstance(value, str):
-            value = ""
-        if value == "":
-            return ""
-        if "%APPDATA%" in value:
-            value = value.replace("%APPDATA%", os.getenv("APPDATA") or "")
-        if not Path(value).is_dir():
-            value = Path(value).with_suffix("")
-        try:
-            resolved = Path(value).resolve()
-        except (OSError, ValueError):
-            return ""
-        if len(resolved.parts) == 1:
-            raise ValueError("不允许将驱动器根目录作为配置路径")
-        for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
-            if (
-                resolved == forbidden
-                or resolved.is_relative_to(forbidden)
-                or forbidden.is_relative_to(resolved)
-            ):
-                raise ValueError(f"不允许将系统目录或项目根目录作为配置路径: {value}")
-        if resolved in FORBIDDEN_PATH_EXACT:
-            raise ValueError(f"不允许将系统程序目录作为配置路径: {value}")
-        return resolved.as_posix()
-
-
-class ArgumentValidator(ValidatorBase):
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-        try:
-            shlex.split(value.strip())
-            return True
-        except ValueError:
-            return False
-
-    def correct(self, value):
-
-        return value if self.validate(value) else ""
 
 
 class ConfigItem:
@@ -1292,26 +1002,6 @@ class MultipleConfig(Generic[T]):
 
         self.data.pop(uid)
         self.order.remove(uid)
-
-        await self._commit_changes()
-
-    async def setOrder(self, order: list[uuid.UUID]):
-        """
-        设置配置项的顺序
-
-        Parameters
-        ----------
-        order: List[uuid.UUID]
-            新的配置项顺序
-        """
-
-        if set(order) != set(self.data.keys()):
-            raise ValueError("顺序与当前配置项不匹配")
-
-        if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
-
-        self.order = order
 
         await self._commit_changes()
 

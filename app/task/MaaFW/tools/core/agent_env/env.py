@@ -1184,16 +1184,6 @@ def _load_project_agent_requirements(
     return pinned
 
 
-def _project_agent_requirements_hash(
-    project_path: Path, *, runner_maafw_version: str | None = None
-) -> str:
-    return _requirements_hash(
-        _load_project_agent_requirements(
-            project_path, runner_maafw_version=runner_maafw_version
-        )
-    )
-
-
 def _requirements_hash(requirements: list[str]) -> str:
     payload = json.dumps(requirements, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

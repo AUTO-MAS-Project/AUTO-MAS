@@ -52,10 +52,6 @@ export const precheckLevel = (item: Emulator2AvdPrecheckItem): PrecheckLevel => 
   return 'unknown'
 }
 
-/** 有没有会拒绝开机的项。 */
-export const hasBlockingFailure = (items: Emulator2AvdPrecheckItem[] | undefined) =>
-  (items ?? []).some(item => precheckLevel(item) === 'error')
-
 // ---- 组件 ----
 
 /** 根目录比较：Windows 路径不分大小写，斜杠方向与结尾斜杠不算区别。 */

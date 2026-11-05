@@ -81,11 +81,6 @@ const FLAVOR_REGISTRY = {
 /** 全部 MaaFW 类型，MaaFW 本身在第一个（未知类型的兜底） */
 export const MAAFW_FLAVORS: readonly MaaFWFlavor[] = Object.values(FLAVOR_REGISTRY)
 
-/** 只有特调（不含 MaaFW 本身） */
-export const MAAFW_SPECIAL_FLAVORS: readonly MaaFWFlavor[] = MAAFW_FLAVORS.filter(
-  flavor => flavor !== MAAFW_FLAVOR
-)
-
 const FLAVOR_BY_TYPE = new Map<string, MaaFWFlavor>(
   MAAFW_FLAVORS.map(flavor => [flavor.type, flavor])
 )

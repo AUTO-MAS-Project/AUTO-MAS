@@ -17,15 +17,6 @@ import {
 const HOME_LAYOUT_STORAGE_KEY = 'auto-mas.home.layout'
 const MANAGED_ACTIVITY_RETRY_DELAY_MS = 30_000
 
-export {
-  HOME_ACTIVITY_CAROUSEL_KEY,
-  HOME_ACTIVITY_MODULE_KEYS,
-  HOME_ACTIVITY_NOTE_KEYS,
-  defaultHomeModuleOrder,
-  isHomeActivityModuleKey,
-  normalizeHomeLayoutConfig,
-} from '@/views/home/homeLayoutConfig'
-
 /** 配置里是一条扁平顺序，界面上却是两级：顶层模块 + 轮播内部的游戏卡 */
 const splitModuleOrder = (order: HomeModuleKey[]) => ({
   topLevel: order.filter(key => !isHomeActivityModuleKey(key)),

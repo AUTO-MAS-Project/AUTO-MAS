@@ -316,12 +316,6 @@ let inFlight: {
   promise: Promise<LatestRuntimeVersionLookup>
 } | null = null
 
-/** 仅供测试清场。 */
-export function resetLatestRuntimeVersionCache(): void {
-  cache = null
-  inFlight = null
-}
-
 /**
  * 与 {@link resolveLatestRuntimeVersion} 相同，但结果在进程内缓存 {@link RUNTIME_RELEASE_CACHE_TTL_MS}；
  * 同一通道的并发调用共用一次请求。

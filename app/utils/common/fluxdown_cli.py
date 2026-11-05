@@ -199,11 +199,6 @@ def fluxdown_find_cli(
     return Path(found) if found else None
 
 
-def fluxdown_check_portable(cli_exe: Path) -> bool:
-    """判断 CLI 是否运行在便携模式（同目录有 portable 标记文件）。"""
-    return (cli_exe.parent / "portable").is_file()
-
-
 # ---------------------------------------------------------------------------
 
 

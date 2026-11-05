@@ -15,21 +15,7 @@ SE_FILE_OBJECT = 1
 LABEL_SECURITY_INFORMATION = 0x00000010
 SYSTEM_MANDATORY_LABEL_ACE_TYPE = 0x11
 
-INTEGRITY_UNTRUSTED = 0x0000
 INTEGRITY_LOW = 0x1000
-INTEGRITY_MEDIUM = 0x2000
-INTEGRITY_HIGH = 0x3000
-INTEGRITY_SYSTEM = 0x4000
-INTEGRITY_PROTECTED = 0x5000
-
-_LEVEL_NAMES = {
-    INTEGRITY_UNTRUSTED: "Untrusted",
-    INTEGRITY_LOW: "Low",
-    INTEGRITY_MEDIUM: "Medium",
-    INTEGRITY_HIGH: "High",
-    INTEGRITY_SYSTEM: "System",
-    INTEGRITY_PROTECTED: "Protected",
-}
 
 
 class _AceHeader(ctypes.Structure):
@@ -133,9 +119,3 @@ def _label_rid(advapi32, sid: int) -> int | None:
     if not sub_authority:
         return None
     return int(sub_authority.contents.value)
-
-
-def integrity_level_name(rid: int | None) -> str:
-    """把 RID 翻成 icacls 习惯的叫法，读不到时返回 Unknown。"""
-
-    return _LEVEL_NAMES.get(rid if rid is not None else -1, "Unknown")

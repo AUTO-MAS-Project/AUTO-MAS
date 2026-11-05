@@ -197,7 +197,6 @@ import {
 } from '@/composables/useTemplateApi'
 import { useMaaFWEmbeddedApi } from '@/composables/useMaaFWEmbeddedApi'
 import type { MaaFWEmbeddedSourceItem } from '@/api'
-import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import DocLink from '@/components/DocLink.vue'
 import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'

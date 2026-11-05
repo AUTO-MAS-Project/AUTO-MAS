@@ -1,8 +1,5 @@
 /**
- * 版本服务 - 统一管理前端和后端版本信息获取与定时检查
- * 包含两个独立的定时器：
- * 1. 标题栏版本信息检查（10分钟一次）
- * 2. 版本更新检查（4小时一次）
+ * 标题栏版本服务：每 10 分钟获取前端、后端与 Runtime 更新信息。
  */
 
 import { ref } from 'vue'
@@ -134,7 +131,3 @@ export const startTitlebarVersionCheck = async () => {
   // 启动定时器
   titlebarPollTimer = window.setInterval(pollTitlebarVersionOnce, TITLEBAR_POLL_MS)
 }
-
-// ========== 版本更新检查相关（4小时）==========
-// 这部分直接从 useUpdateChecker 导入，保持原有逻辑
-export { useUpdateChecker, useUpdateModal } from './useUpdateChecker'

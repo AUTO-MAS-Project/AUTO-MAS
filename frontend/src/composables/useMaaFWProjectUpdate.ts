@@ -66,9 +66,4 @@ export const resolveCdkWarning = (
   return { status, message }
 }
 
-export {
-  resolveCdkHint,
-  CDK_EXPIRY_WARNING_DAYS,
-  type MirrorCdkHint as MaaFWCdkHint,
-  type MirrorCdkHintKind as MaaFWCdkHintKind,
-} from '@/utils/mirrorCdk'
+export { resolveCdkHint } from '@/utils/mirrorCdk'

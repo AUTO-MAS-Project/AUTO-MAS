@@ -889,12 +889,6 @@ def _read_interface_version(project_path: Path, *, strict: bool = False) -> str:
     return ""
 
 
-def _validate_project_interface(project_path: Path) -> None:
-    if not _has_interface_file(project_path):
-        raise UpdateApplyError("updated MaaFW project has no interface.json")
-    _read_interface_version(project_path, strict=True)
-
-
 def _project_target(project_path: Path, relative: str) -> Path:
     normalized = safe_relative_path(relative)
     target = (project_path / normalized).resolve(strict=False)

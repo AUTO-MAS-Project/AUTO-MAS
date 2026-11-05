@@ -18,26 +18,3 @@ export interface MirrorConfig extends MirrorSource {
   speed?: number | null
   recommended?: boolean
 }
-
-/**
- * 云端镜像源配置
- */
-export interface CloudMirrorConfig {
-  version: string
-  lastUpdated: string
-  mirrors: {
-    python: MirrorSource[]
-    get_pip: MirrorSource[]
-    git: MirrorSource[]
-    repo: MirrorSource[]
-    pip_mirror: MirrorSource[]
-  }
-  apiEndpoints?: {
-    local: string
-    websocket: string
-  }
-  downloadLinks?: {
-    getPip: string
-    git: string
-  }
-}

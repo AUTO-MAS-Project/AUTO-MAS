@@ -462,13 +462,6 @@ class Emulator2Manager(DeviceBase):
         manager, native_index = await self._dispatch(slot)
         return await manager.read_stable_mode(native_index)
 
-    async def read_overview(
-        self, slot: str
-    ) -> tuple[InstanceSettings, bool, list[str]]:
-        """四项设置 + 稳定模式，一次读完。设备表每行都要，分开读等于把同一份配置读两遍。"""
-        manager, native_index = await self._dispatch(slot)
-        return await manager.read_instance_overview(native_index)
-
     async def apply_stable_mode(self, slot: str) -> list[str]:
         """把这台设备切进稳定模式，返回实际改动的字段名。"""
         manager, native_index = await self._dispatch(slot)

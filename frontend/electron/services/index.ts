@@ -66,7 +66,6 @@ export {
   buildRuntimeReleaseSources,
   isNewerRuntimeVersion,
   parseRuntimeReleaseList,
-  resetLatestRuntimeVersionCache,
   resolveLatestRuntimeVersion,
   resolveLatestRuntimeVersionCached,
   resolveRuntimeReleaseChannel,

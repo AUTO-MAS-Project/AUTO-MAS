@@ -794,35 +794,6 @@ async def prepare_maa_software_update(
     return None
 
 
-async def has_cached_maa_software_update(
-    maa_root: Path, *, config_dir: Path, config: MaaConfig
-) -> bool:
-    """只有可用的新版本完整包已缓存，才压制本轮 MAA 自身下载。"""
-    enabled, _ = resolve_takeover_credentials(config)
-    release = read_installed_release(maa_root) if enabled else None
-    if release is None:
-        return False
-    version, arch = release
-    channel = config.Update.Channel
-    if channel is None:
-        return False
-    lock = _cache_locks.setdefault(_cache_key(arch, channel), asyncio.Lock())
-    if lock.locked():
-        return False
-    async with lock:
-        cache_dir = software_cache_dir("win", arch, channel)
-        manifest = load_cache_manifest(cache_dir)
-        current = parse_version(version)
-        target = parse_version(manifest["version"]) if manifest else None
-        return bool(
-            manifest
-            and current
-            and target
-            and compare_versions(target, current) > 0
-            and await asyncio.to_thread(cache_zip_matches, cache_dir, manifest)
-        )
-
-
 async def prepare_maa_software_before_run(
     maa_root: Path, *, config_dir: Path, config: MaaConfig
 ) -> str | None:

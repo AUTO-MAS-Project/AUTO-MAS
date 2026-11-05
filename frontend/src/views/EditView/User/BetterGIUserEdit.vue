@@ -815,21 +815,18 @@ import { useBettergiCatalogs } from './BetterGIUserEdit/useBettergiCatalogs'
 
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
-import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import {
   ArrowLeftOutlined,
   CloseOutlined,
-  CopyOutlined,
-  EditOutlined,
   DownOutlined,
   EyeOutlined,
   FolderOpenOutlined,
   HistoryOutlined,
   QuestionCircleOutlined,
-  SaveOutlined,
   SettingOutlined,
 } from '@ant-design/icons-vue'
 import { BetterGiService, type ComboBoxItem, type BetterGIUserConfig } from '@/api'
@@ -1016,7 +1013,7 @@ const createUserImmediately = async (): Promise<boolean> => {
 // 保存串行化队列：以 promise 链取代布尔 isSaving 互斥。布尔守卫会在「上一次保存尚未返回」时
 // 丢弃紧随其后的保存（自定义配置组连续勾选/删除即可触发），造成前后端状态失步；队列则逐条按序
 // 写回，不再丢保存。
-const { enqueue, isSaving } = useSaveQueue()
+const { enqueue } = useSaveQueue()
 
 const saveField = (key: string, value: unknown): Promise<boolean> => {
   if (isInitializing.value || !userId.value) return Promise.resolve(false)
@@ -1201,7 +1198,6 @@ const groupLabel = (item: ConfigGroupIdentity): string => {
 const {
   currentGroupSettingSections,
   MAS_ONE_DRAGON_SLOT_NAME,
-  dragonConfigName,
   domainCatalog,
   domainCatalogError,
   loadDomainCatalog,

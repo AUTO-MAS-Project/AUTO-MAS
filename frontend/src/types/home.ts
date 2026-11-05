@@ -162,7 +162,6 @@ export interface SraActivityOverview {
   activities: SraActivityItem[]
 }
 
-export type Reverse1999ActivityOverview = SraActivityOverview
 export type BlueArchiveActivityOverview = SraActivityOverview
 
 /** 碧蓝档案的三个服务器；与数据源的 line_type 一一对应 */

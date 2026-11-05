@@ -330,7 +330,6 @@ const store = new AssetPackageStore<AppearanceManifest>({
 })
 
 export const getAppearanceRoot = (userDataPath: string): string => store.root(userDataPath)
-export const validateAppearanceManifest = normalizeManifest
 export const readAppearancePackage = (zipPath: string) => store.readArchive(zipPath)
 
 /** 与安装共用校验，只读预览，不写用户目录。 */

@@ -83,5 +83,3 @@ export function createCoverLoader(options: { limit: number; concurrency: number 
 
   return { covers, get, load, request, reset }
 }
-
-export type CoverLoader = ReturnType<typeof createCoverLoader>

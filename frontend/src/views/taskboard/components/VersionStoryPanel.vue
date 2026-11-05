@@ -92,7 +92,6 @@ import type {
   TaskboardVersionStoryRecord,
 } from '@/types/taskboard'
 import { beijingNowText, parseActivityTime } from '@/utils/activityTime'
-import { safeCoverUrl } from '@/utils/safeUrl'
 import VersionStoryTimeline from './VersionStoryTimeline.vue'
 
 interface Props {

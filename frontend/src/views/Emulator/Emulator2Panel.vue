@@ -801,8 +801,6 @@ const onOperationFinished = async (data: WSEmulatorOperationData) => {
   if (pending.value.get(data.index)?.op === data.operate) clearPending(data.index)
 }
 
-const isReachable = (device: Emulator2DeviceItem) => device.availability === 'ok'
-
 // ---- 稳定模式 ----
 //
 // 开关本身在上层的配置栏里（它是配置级设置，不该在设备表每行重复一遍）。

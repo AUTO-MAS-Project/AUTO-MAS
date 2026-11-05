@@ -259,17 +259,6 @@ def _exclusive_resources(
     return resources.root_paths, f"{emulator_id}:{index}"
 
 
-@dataclass(eq=False)
-class _ReplayRequest:
-    """本轮已发起保存的回放，失败日志写完后据此补齐原因与历史关联。"""
-
-    script: ScriptItem
-    user: UserItem | None
-    explicit_reason: bool
-    reason: str
-    history_paths: list[str]
-
-
 @dataclass
 class TaskInfo(TaskItem):
     _change_task: asyncio.Task[None] | None = field(

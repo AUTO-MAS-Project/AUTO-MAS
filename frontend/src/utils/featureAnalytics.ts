@@ -58,14 +58,3 @@ export const apiOutcome = (result: { code?: number }) =>
     : result.code === 409
       ? ('blocked' as const)
       : ('failure' as const)
-
-export const commandOutcome = (result: {
-  success: boolean
-  cancelled?: boolean
-  canceled?: boolean
-}) =>
-  result.cancelled || result.canceled
-    ? ('cancelled' as const)
-    : result.success
-      ? ('success' as const)
-      : ('failure' as const)

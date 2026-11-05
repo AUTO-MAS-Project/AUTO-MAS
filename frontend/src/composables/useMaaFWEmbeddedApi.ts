@@ -141,11 +141,3 @@ export function useMaaFWEmbeddedApi() {
     cloneEmbedded,
   }
 }
-
-/** 把字节数变成给人看的 MB / GB；报告里的数值都是整数字节。 */
-export const formatEmbeddedBytes = (bytes: number | undefined | null): string => {
-  const value = Number(bytes ?? 0)
-  if (!Number.isFinite(value) || value <= 0) return '0 MB'
-  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(2)} GB`
-  return `${(value / 1024 ** 2).toFixed(1)} MB`
-}
