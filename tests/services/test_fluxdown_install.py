@@ -480,7 +480,8 @@ def test_tar_packages_and_reject_links(tmp_path):
     out = tmp_path / "out"
     install._extract_package(package, out)
     assert (out / "fluxdown").read_bytes() == b"binary"
-    assert (out / "fluxdown").stat().st_mode & 0o111
+    if os.name != "nt":
+        assert (out / "fluxdown").stat().st_mode & 0o111
 
     invalid = tmp_path / "wrong.tar.gz"
     with tarfile.open(invalid, "w:gz") as archive:
