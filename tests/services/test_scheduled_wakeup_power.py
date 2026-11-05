@@ -248,7 +248,7 @@ async def test_finished_queue_hands_over_a_retiring_power_task(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("action", ["cancel", "select"])
+@pytest.mark.parametrize("action", ["cancel", "cancel_after_old_done", "select"])
 async def test_user_choice_during_power_handoff(
     isolated_app_paths, monkeypatch, action
 ):
@@ -286,11 +286,27 @@ async def test_user_choice_during_power_handoff(
     monkeypatch.setattr(dispatch, "System", handler)
     await handler.start_power_task()
     await asyncio.wait_for(started.wait(), timeout=1)
+    old_task = handler.power_task
+
+    async def cancel_after_old_done():
+        try:
+            await old_task
+        except asyncio.CancelledError:
+            pass
+        # 先登记在旧任务上，让用户请求在交接协程恢复之前到达。
+        return await dispatch.cancel_power_task()
+
+    late_cancel = (
+        asyncio.create_task(cancel_after_old_done())
+        if action == "cancel_after_old_done"
+        else None
+    )
+    await asyncio.sleep(0)
     isolated_app_paths.power_sign = "Hibernate"
     handoff = asyncio.create_task(handler.start_power_task())
     await asyncio.wait_for(cancellation_started.wait(), timeout=1)
     # 经真实 API 入口取消或改选。相同操作的改选也必须留给下次队列完成。
-    request = asyncio.create_task(
+    request = late_cancel or asyncio.create_task(
         dispatch.cancel_power_task()
         if action == "cancel"
         else dispatch.set_power(dispatch.PowerIn(signal="Hibernate"))
@@ -303,7 +319,7 @@ async def test_user_choice_during_power_handoff(
         assert result.status == "success"
         assert operations == []
         assert isolated_app_paths.power_sign == (
-            "NoAction" if action == "cancel" else "Hibernate"
+            "Hibernate" if action == "select" else "NoAction"
         )
         assert not handler.get_power_countdown_snapshot().active
     finally:

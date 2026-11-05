@@ -492,14 +492,17 @@ class _SystemHandler:
         """取消电源任务"""
 
         power_task = self.power_task
-        if power_task is None or power_task.done():
+        if not self._power_task_lock.locked() and (
+            power_task is None or power_task.done()
+        ):
             logger.warning("当前无电源任务在运行")
             raise RuntimeError("当前无电源任务在运行")
         # 在等待交接锁之前清除意图，避免取消期间又启动同一个完成后操作。
         Config.power_sign = "NoAction"
         Config.power_delay = 0
         async with self._power_task_lock:
-            if not power_task.done():
+            power_task = self.power_task
+            if power_task is not None and not power_task.done():
                 await self._cancel_power_task(power_task)
 
     async def _cancel_power_task(self, power_task: asyncio.Task) -> None:
