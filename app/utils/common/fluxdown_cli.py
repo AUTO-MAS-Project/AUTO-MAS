@@ -159,6 +159,20 @@ class FluxdownDownloadRecord:
 # ---------------------------------------------------------------------------
 
 
+def fluxdown_inspect_dir(path: Path) -> dict[str, bool]:
+    """检测一个目录的真实能力，不把桌面 GUI 当作命令行执行文件。"""
+    directory = Path(path)
+    cli = any((directory / name).is_file() for name in _FLUXDOWN_EXE_NAMES)
+    desktop = (directory / "fluxdown-desktop.exe").is_file()
+    server = _server_binaries(directory / "fluxdown.exe") is not None
+    return {
+        "has_cli": cli,
+        "has_desktop": desktop,
+        "has_server": server,
+        "ready": cli and server,
+    }
+
+
 def fluxdown_find_cli(
     configured_path: str | None = None, *, search_dirs: tuple[Path, ...] = ()
 ) -> Path | None:
@@ -196,7 +210,9 @@ def fluxdown_find_cli(
 
     # 4. 系统 PATH 兜底（不要求 portable 标记，纯兜底）
     found = shutil.which("fluxdown") or shutil.which("fluxdown-cli")
-    return Path(found) if found else None
+    if found and Path(found).name.lower() in _FLUXDOWN_EXE_NAMES:
+        return Path(found)
+    return None
 
 
 def fluxdown_check_portable(cli_exe: Path) -> bool:
@@ -526,7 +542,7 @@ def _scan_drives(
             name = entry.name.lower()
             try:
                 if entry.is_file(follow_symlinks=False):
-                    if name in _FLUXDOWN_EXE_NAMES:
+                    if name in (*_FLUXDOWN_EXE_NAMES, "fluxdown-desktop.exe"):
                         found.append(Path(entry.path))
                 elif entry.is_dir(follow_symlinks=False):
                     if name in _SCAN_PRUNE_DIRS or name.startswith("$"):
@@ -580,78 +596,83 @@ def fluxdown_detect(
     """
     raw: list[Path] = []
 
-    # 快速候选：用户配置目录 / MAS 便携包 / PATH（不需要全盘扫描就能命中的位置）
+    # 收集目录而非某个 EXE：桌面版与 CLI 可同时存在，Server 必须完整。
     known_dirs: list[Path] = []
     if configured_path:
-        p = Path(configured_path)
-        if p.is_dir():
-            known_dirs.append(p)
+        configured = Path(configured_path)
+        known_dirs.append(configured if configured.is_dir() else configured.parent)
     if getattr(sys, "frozen", False):
         base = Path(sys.executable).parent
     else:
         base = Path.cwd()
-    known_dirs.append(base / "res" / "fluxdown-cli")
-    known_dirs.append(Path.cwd() / "res" / "fluxdown-cli")
-    for dir_path in known_dirs:
-        if dir_path.is_dir():
-            for name in _FLUXDOWN_EXE_NAMES:
-                exe = dir_path / name
-                if exe.is_file():
-                    raw.append(exe)
+    known_dirs.extend((
+        base / "res" / "fluxdown-cli",
+        Path.cwd() / "res" / "fluxdown-cli",
+    ))
+    for directory in known_dirs:
+        if directory.is_dir():
+            raw.extend(
+                directory / name
+                for name in (*_FLUXDOWN_EXE_NAMES, "fluxdown-desktop.exe")
+                if (directory / name).is_file()
+            )
     for name in ("fluxdown", "fluxdown-cli"):
         found = shutil.which(name)
         if found:
             raw.append(Path(found))
 
-    # 全盘扫描（时限内尽量找全，用户配置目录即使没有 portable 标记也会被扫出来）
     drives = _candidate_drives()
     mas_drive = str(Path.cwd().drive)
     raw.extend(_scan_drives(drives, scan_budget, mas_drive + "\\"))
-
-    # 去重（Windows 大小写不敏感）
-    unique: dict[str, Path] = {}
-    for exe in raw:
-        unique.setdefault(str(exe).lower(), exe)
-
-    candidates: list[FluxdownCandidate] = []
-    for exe in unique.values():
-        is_cli = (exe.parent / "portable").is_file()
+    folders = {str(item.parent).lower(): item.parent for item in raw}
+    candidates: list[dict] = []
+    for directory in folders.values():
+        state = fluxdown_inspect_dir(directory)
+        if not state["has_cli"] and not state["has_desktop"]:
+            continue
         try:
-            mtime = exe.parent.stat().st_mtime
+            mtime = directory.stat().st_mtime
         except OSError:
             mtime = 0.0
-        candidates.append(FluxdownCandidate(exe, is_cli, mtime))
-
+        candidates.append({
+            "path": str(directory),
+            "is_portable_cli": state["has_cli"] and (directory / "portable").is_file(),
+            **state,
+            "_mtime": mtime,
+        })
     if not candidates:
         return {
-            "path": None,
-            "is_portable_cli": False,
-            "only_full_warning": False,
-            "scanned_drives": drives,
-            "candidates": [],
+            "path": None, "is_portable_cli": False, "only_full_warning": False,
+            "scanned_drives": drives, "candidates": [],
+            "has_cli": False, "has_desktop": False, "has_server": False, "ready": False,
         }
 
+    # 首选可实际执行下载的完整套件，缺组件时优先桌面目录以便补装。
     mas_root = Path.cwd()
-    candidates.sort(
-        key=lambda c: (
-            0 if c.is_portable_cli else 1,
-            0 if c.path.drive.lower() == mas_root.drive.lower() else 1,
-            -_common_prefix_len(c.path.parent, mas_root),
-            -c.dir_mtime,
-        )
-    )
-
+    candidates.sort(key=lambda c: (
+        0 if c["ready"] else 1,
+        0 if c["has_desktop"] and c["has_server"] else 1,
+        0 if c["has_desktop"] else 1,
+        0 if c["is_portable_cli"] else 1,
+        0 if Path(c["path"]).drive.lower() == mas_root.drive.lower() else 1,
+        -_common_prefix_len(Path(c["path"]), mas_root),
+        -c["_mtime"],
+    ))
     best = candidates[0]
-    has_cli = any(c.is_portable_cli for c in candidates)
+    has_portable_cli = any(c["is_portable_cli"] for c in candidates)
     return {
-        "path": str(best.path),
-        "is_portable_cli": best.is_portable_cli,
-        "only_full_warning": not best.is_portable_cli and not has_cli,
+        "path": best["path"],
+        "is_portable_cli": best["is_portable_cli"],
+        "only_full_warning": best["has_cli"] and not best["is_portable_cli"] and not has_portable_cli,
         "scanned_drives": drives,
         "candidates": [
-            {"path": str(c.path), "is_portable_cli": c.is_portable_cli}
-            for c in candidates[:8]
+            {key: value for key, value in candidate.items() if key != "_mtime"}
+            for candidate in candidates[:8]
         ],
+        "has_cli": best["has_cli"],
+        "has_desktop": best["has_desktop"],
+        "has_server": best["has_server"],
+        "ready": best["ready"],
     }
 
 
@@ -759,7 +780,11 @@ def _server_data_dir(cli_exe: Path) -> Path:
 
     ``cli_exe`` 仅为保持调用方签名稳定而保留，数据根与 CLI 位置无关。
     """
-    return Path.cwd() / "data" / "fluxdown_server"
+    from app.core import Config
+
+    # 旧目录中有断点续传映射和访问 token，不能在热更新时直接迁走。
+    legacy = Config.data_path / "fluxdown_server"
+    return legacy if legacy.exists() else Config.data_path / "fluxdown" / "server"
 
 
 def _local_cli_exe(cli_exe: Path) -> Path:
@@ -775,7 +800,9 @@ def _local_cli_exe(cli_exe: Path) -> Path:
     复制失败（磁盘/权限）抛 :class:`RuntimeError`，由上层回退 httpx；绝不退回
     使用用户 CLI，以免污染用户数据。
     """
-    root = Path.cwd() / "data" / "fluxdown_local"
+    from app.core import Config
+
+    root = Config.data_path / "fluxdown" / "local"
     try:
         with _LOCAL_CLI_LOCK:
             root.mkdir(parents=True, exist_ok=True)
