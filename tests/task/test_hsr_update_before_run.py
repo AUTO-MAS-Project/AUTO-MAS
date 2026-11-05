@@ -567,3 +567,58 @@ async def test_prefetch_digest_failure_reclaims_private_directory(
             download_dir=download_dir,
         )
     assert not list(download_dir.iterdir())
+
+
+@pytest.mark.asyncio
+async def test_prefetch_cancel_during_first_verify_waits_for_open_file(
+    hsr_prefetch_case, monkeypatch
+):
+    """Verification must release its file handle before Windows stage removal."""
+    from app.task.HSR.tools.update import download as hsr_download
+
+    install, download_dir, _ = hsr_prefetch_case
+    started, release, finished = (
+        threading.Event(),
+        threading.Event(),
+        threading.Event(),
+    )
+
+    async def fetch(_url, destination, **_kwargs):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"completed package")
+        return 17
+
+    def verify(path, _candidate):
+        with path.open("rb") as reader:
+            started.set()
+            try:
+                assert release.wait(5)
+                assert reader.read() == b"completed package"
+            finally:
+                finished.set()
+
+    monkeypatch.setattr(hsr_download, "download_script_package", fetch)
+    monkeypatch.setattr(hsr_download, "_verify", verify)
+    task = asyncio.create_task(
+        update.prepare_engine_update(
+            "SRA",
+            install,
+            source="AutoSite",
+            channel="stable",
+            cdk="",
+            proxy=None,
+            download_dir=download_dir,
+        )
+    )
+    try:
+        assert await asyncio.to_thread(started.wait, 3)
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done(), "file cleanup must wait for first verification"
+        assert list(download_dir.rglob("*.part"))
+    finally:
+        release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, 5)
+    assert finished.is_set()
+    assert not list(download_dir.iterdir())
