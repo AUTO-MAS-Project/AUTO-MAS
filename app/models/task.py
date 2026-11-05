@@ -127,14 +127,9 @@ class UserItem:
         同一账号可有多个正常运行阶段和独立更新日志，不能将其视为重试。
         """
         if retry:
-            previous = self.first_task_completed_at
-            task = self._task_item_ref() if self._task_item_ref is not None else None
-            if previous is not None and task is not None:
-                for script in task.script_list:
-                    if any(user is self for user in script.user_list):
-                        if script.first_task_completed_at == previous:
-                            object.__setattr__(script, "first_task_completed_at", None)
-                        break
+            # A retry only resets this account's attempt. The script-level
+            # success clock spans accounts and must survive a normal retry:
+            # the following script can still be downloaded in the background.
             self.first_task_completed_at = None
         self._history_log_records.append((started_at, record))
         self.log_record[started_at] = record
