@@ -346,12 +346,6 @@ export const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection
       title: '刷取设置',
       fields: [
         {
-          key: 'useAdventurerHandbook',
-          label: '不使用冒险之证寻路',
-          type: 'bool',
-          help: '旧版 BetterGI 勾选后改用内置路线，新版会忽略此设置。',
-        },
-        {
           key: 'LeyLineTimeout',
           label: '战斗超时(秒)',
           type: 'number',

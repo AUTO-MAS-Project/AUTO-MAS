@@ -8,13 +8,8 @@ const bridgeSource = readFileSync(
 )
 
 describe('BetterGI 地脉花执行层', () => {
-  it.each([
-    [false, false],
-    [false, true],
-    [true, false],
-    [true, true],
-  ])('宿主支持旧参数=%s，计划开关=%s 时仍执行地脉花', async (supportsHandbook, legacyValue) => {
-    // BGI 0.64.0 有此属性，0.65.0 已无此属性；旧宿主默认值故意与计划相反。
+  it.each([false, true])('旧计划中的冒险之证开关为 %s 时仍执行地脉花', async legacyValue => {
+    // 新版 BGI 的公开任务参数不再提供 useAdventurerHandbook。
     class LeyLineParam {
       isResinExhaustionMode = false
       openModeCountMin = false
@@ -26,13 +21,6 @@ describe('BetterGI 地脉花执行层', () => {
         public country: string,
         public leyLineOutcropType: string
       ) {
-        if (supportsHandbook) {
-          Object.defineProperty(this, 'useAdventurerHandbook', {
-            value: !legacyValue,
-            writable: true,
-            enumerable: true,
-          })
-        }
         Object.seal(this)
       }
     }
@@ -69,11 +57,7 @@ describe('BetterGI 地脉花执行层', () => {
     expect(runLeyLine.mock.calls.map(([param]) => param)).toEqual([
       expect.objectContaining({ count: 3, country: '蒙德', leyLineOutcropType: '启示之花' }),
     ])
-    if (supportsHandbook) {
-      expect(runLeyLine.mock.calls[0]?.[0]).toHaveProperty('useAdventurerHandbook', legacyValue)
-    } else {
-      expect(runLeyLine.mock.calls[0]?.[0]).not.toHaveProperty('useAdventurerHandbook')
-    }
+    expect(runLeyLine.mock.calls[0]?.[0]).not.toHaveProperty('useAdventurerHandbook')
     expect(messages.at(-1)).toBe('MAS_PLAN_DONE')
   })
 })
