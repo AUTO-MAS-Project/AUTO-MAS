@@ -70,10 +70,10 @@ class MaaEndManager(ScriptManagerBase):
     maintenance_message = "终末地正在维护"
 
     def maintenance_game(self, user_config: UserConfigType) -> str | None:
-        if (
-            isinstance(user_config, MaaEndUserConfig)
-            and user_config.Info.Resource == "官服"
-        ):
+        if isinstance(user_config, MaaEndUserConfig) and user_config.Info.Resource in {
+            "官服",
+            "CN",
+        }:
             return "endfield"
         return None
 

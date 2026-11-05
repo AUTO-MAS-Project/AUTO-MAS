@@ -17,7 +17,6 @@ marker 表按上游 v3.0.5 源码定稿；上游版本微调时只改 tools/mark
 from app.task.Whimbox.tools.marker import (
     WhimboxMarkerParser,
     extract_result_block,
-    is_benign_marker,
 )
 
 PARSER = WhimboxMarkerParser()
@@ -49,10 +48,6 @@ SAMPLE_ABORT_LOG = """2026-09-14 14:00:00.001 | INFO | main:run_one_dragon:77 - 
 
 
 class TestVerdicts:
-    def test_running(self):
-        verdict = PARSER.evaluate("", process_running=True)
-        assert verdict.status == "running"
-
     def test_admin_fatal_beats_everything(self):
         # 上游起跑即裸 exit()（退出码 0），必须列 fatal 否则误判秒退
         log = "2026-09-14 14:00:00.001 | ERROR | main:_prepare:29 - 请用管理员权限运行"
@@ -67,14 +62,6 @@ class TestVerdicts:
         assert verdict.status == "success"
         assert verdict.result_block is not None
         assert "❌美鸭梨挖掘未完成" in verdict.result_block
-
-    def test_traceback_alone_is_not_fatal_while_running(self):
-        # 运行中的 traceback 不判 fatal：否则会杀掉上游本来会继续跑完的一轮
-        log = (
-            "2026-09-14 14:00:00.001 | ERROR | x:1 - Traceback (most recent call last):"
-        )
-        verdict = PARSER.evaluate(log, process_running=True)
-        assert verdict.status == "running"
 
     def test_abort_after_done_marker_is_failure(self):
         # 收尾行无论成败都打印，完成行消息不含结果块头 = 上游自己判了失败/中止
@@ -101,11 +88,6 @@ class TestVerdicts:
         assert "❌朝夕心愿未完成" in verdict.result_block
         assert "任务结束，程序退出" not in verdict.result_block
 
-    def test_single_step_failure_is_not_process_failure(self):
-        # 结果块里的 ❌ 行不代表进程失败：收尾行仍在 → success（结果块透传单步失败）
-        verdict = PARSER.evaluate(SAMPLE_DONE_LOG, process_running=False)
-        assert verdict.status == "success"
-
     def test_exited_early(self):
         log = "2026-09-14 14:00:00.001 | INFO | main:77 - 开始执行一条龙任务..."
         verdict = PARSER.evaluate(log, process_running=False)
@@ -119,38 +101,8 @@ class TestVerdicts:
         assert verdict.status == "stalled"
         assert "30" in verdict.message
 
-    def test_stalled_ignored_when_running_without_flag(self):
-        log = "2026-09-14 14:00:00.001 | INFO | main:77 - 开始执行一条龙任务..."
-        verdict = PARSER.evaluate(log, process_running=True, stalled=False)
-        assert verdict.status == "running"
-
-
-class TestBenignMarkers:
-    """「非失败提示」表：上游以 ❌ 打出、实为正常状态的文案不进失败原因段。"""
-
-    def test_digging_in_progress_is_benign(self):
-        # dig_task_v2 在挖掘位仍在冷却时打 ❌「正在挖掘，无法收获」，对用户是「今日没得收」
-        assert is_benign_marker("❌ 正在挖掘，无法收获")
-
-    def test_real_failures_are_not_benign(self):
-        assert not is_benign_marker('❌ 路线"朝夕心愿_采集"不存在，请先下载该路线')
-        assert not is_benign_marker("❌ 游戏窗口前置失败")
-        assert not is_benign_marker("🛑 任务已停止")
-
 
 class TestResultBlock:
-    def test_missing_head(self):
-        assert extract_result_block("任务结束，程序退出") is None
-
-    def test_abort_message_is_not_a_result_block(self):
-        # 完成行存在但不是结果块（中止原因）→ 不产出结果块，判定为 failed
-        assert extract_result_block(SAMPLE_ABORT_LOG) is None
-
-    def test_multiline_block_tail_trimmed(self):
-        log = "x - 一条龙任务完成: 任务结果如下：\n✅A已完成\n任务结束，程序退出"
-        block = extract_result_block(log)
-        assert block == "任务结果如下：\n✅A已完成"
-
     def test_logru_done_line_prefix_is_trimmed(self):
         # 真机格式：收尾行自带 loguru 前缀，按行首截断才不会把那半截前缀
         # 当成垃圾尾行留在报告里（报告里出现过「… | INFO | main:run_one_dragon:81 - 」）

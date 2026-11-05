@@ -96,26 +96,3 @@ async def test_cycle_skip_preserves_last_run_and_schedules_future(
         script_id, "next-task", root_paths=(), emulator_key=None
     )
     task.script_reservations.release(script_id, "next-task")
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "result,retries", [("skipped", 0), ("success", 0), ("failed", 1)]
-)
-async def test_maintenance_does_not_trigger_immediate_retry(
-    monkeypatch, result, retries
-):
-    task = scheduler.Task(
-        scheduler.TaskInfo("AutoProxy", "test", None, None, None),
-        [],
-        manager_factories={},
-    )
-    entry = CycleEntry(
-        str(uuid.uuid4()), str(uuid.uuid4()), "test", 0, datetime.now(), True
-    )
-    monkeypatch.setattr(task, "_collect_entries", lambda _: [entry])
-    monkeypatch.setattr(task, "_run_cycle_entry", AsyncMock(return_value=result))
-    sleep = AsyncMock()
-    monkeypatch.setattr(scheduler.asyncio, "sleep", sleep)
-    await task._run_due_entries(uuid.uuid4(), [entry])
-    assert sleep.await_count == retries

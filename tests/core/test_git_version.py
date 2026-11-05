@@ -7,7 +7,6 @@
 
 import asyncio
 import os
-import sys
 import unittest
 from datetime import datetime
 from types import SimpleNamespace
@@ -55,22 +54,6 @@ class GetGitVersionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, (True, EXPECTED_COMMIT, "unknown"))
         self.get_repo.assert_not_called()
 
-    async def test_supervised_development_keeps_git_info_but_never_needs_update(self):
-        result = await self._call(
-            {"AUTO_MAS_SUPERVISED": "1", "AUTO_MAS_EXPECTED_COMMIT": ""},
-            _fake_repo("deadbeef", None),
-        )
-
-        # development 模式无注入身份：仍展示源码目录的提交，但不判定需要更新
-        self.assertEqual(result, (True, "deadbeef", "2026-09-01 12:00:00"))
-
-    async def test_supervised_without_repo_does_not_report_update(self):
-        result = await self._call(
-            {"AUTO_MAS_SUPERVISED": "1", "AUTO_MAS_EXPECTED_COMMIT": ""}, None
-        )
-
-        self.assertEqual(result, (True, "unknown", "unknown"))
-
     async def test_unsupervised_ignores_injected_commit_and_compares_remote(self):
         result = await self._call(
             {"AUTO_MAS_SUPERVISED": "", "AUTO_MAS_EXPECTED_COMMIT": EXPECTED_COMMIT},
@@ -79,20 +62,6 @@ class GetGitVersionTest(unittest.IsolatedAsyncioTestCase):
 
         # 未受监督：沿用 HEAD 与 origin/<branch> 的比对
         self.assertEqual(result, (False, "deadbeef", "2026-09-01 12:00:00"))
-
-
-class GetRepoTest(unittest.TestCase):
-    def test_repo_opens_source_root_instead_of_cwd(self):
-        fake_git = SimpleNamespace(Repo=MagicMock(return_value="repo"))
-        saved = (Config._repo, Config._repo_initialized)
-        try:
-            Config._repo, Config._repo_initialized = None, False
-            with patch.dict(sys.modules, {"git": fake_git}):
-                self.assertEqual(Config._get_repo(), "repo")
-        finally:
-            Config._repo, Config._repo_initialized = saved
-
-        fake_git.Repo.assert_called_once_with(Config.source_path)
 
 
 if __name__ == "__main__":

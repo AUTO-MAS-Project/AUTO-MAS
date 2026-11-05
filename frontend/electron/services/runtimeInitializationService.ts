@@ -245,6 +245,11 @@ export function resolveRuntimeTargetVersion(): string {
 // ==================== 进度桥接 ====================
 
 export interface BootstrapProgressUpdate {
+  /** Electron 更新器提供的目标版本与当前下载尝试；旧事件可缺省。 */
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
   stage: InitializationRunStage
   status: InitializationStageStatus
   progress: number
@@ -259,7 +264,7 @@ export interface BootstrapProgressUpdate {
    * （接管段、段收口、失败）没有这个字段。
    */
   runtimeStage?: string
-  /** 产生本条更新的 `progress.status` 原文；state 事件与桥接合成的更新没有。 */
+  /** 产生本条更新的 progress / state status 原文；桥接合成的更新没有。 */
   runtimeStatus?: string
   /** 当前条目：正在下载的文件名，或测速时的源 key。 */
   item?: string
@@ -275,6 +280,11 @@ export interface BootstrapProgressUpdate {
 
 /** `observe` 的第四个参数：progress 事件上除 stage / message / percent 之外的可选字段。 */
 interface BootstrapProgressDetail {
+  /** Electron 更新器提供的目标版本与当前下载尝试；旧事件可缺省。 */
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
   status?: string
   current?: number
   total?: number
@@ -385,6 +395,10 @@ export class BootstrapProgressBridge {
         ? undefined
         : resolveProgressPercent(rawPercent, detail)
     const extra: Partial<BootstrapProgressUpdate> = {
+      targetVersion: detail.targetVersion,
+      sourceName: detail.sourceName,
+      sourceIndex: detail.sourceIndex,
+      sourceCount: detail.sourceCount,
       runtimeStage: stage,
       runtimeStatus: detail.status,
       item: detail.item,
@@ -1113,9 +1127,13 @@ export class RuntimeInitializationService {
             progress.message,
             undefined,
             {
-              status: 'running',
+              status: progress.phase === 'complete' ? 'succeeded' : 'running',
               item: progress.item,
               source: progress.source,
+              targetVersion: progress.targetVersion,
+              sourceName: progress.sourceName,
+              sourceIndex: progress.sourceIndex,
+              sourceCount: progress.sourceCount,
               bytesPerSecond: progress.bytesPerSecond,
               current: progress.current,
               total: progress.total,
@@ -1242,7 +1260,8 @@ export class RuntimeInitializationService {
             source: event.source,
             bytesPerSecond: event.bytesPerSecond,
           }),
-        onState: event => bridge.observe(event.stage, event.message),
+        onState: event =>
+          bridge.observe(event.stage, event.message, undefined, { status: event.status }),
         onLog: event => {
           if (event.stream === 'stderr') {
             stderrLines.push(event.message)

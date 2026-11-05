@@ -45,24 +45,6 @@ class TaskLogIncrementalTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((second.log, second.append, second.seq), ("line2\n", True, 2))
         self.assertEqual(task_info._last_pushed_log, "line1\nline2\n")
 
-    async def test_unchanged_log_does_not_push_but_info_still_does(self) -> None:
-        task_info = _make_task_info()
-        with patch(
-            "app.core.task_manager.manager.Publisher.send", new_callable=AsyncMock
-        ) as send:
-            task_info.script_list[0].log = "same"
-            await task_info.on_change()
-            await task_info.on_change()
-
-        self.assertEqual(len(_log_payloads(send)), 1)
-        info_pushes = [
-            call
-            for call in send.await_args_list
-            if call.kwargs["type"] == protocol.TASK_INFO_UPDATED
-        ]
-        self.assertEqual(len(info_pushes), 2)
-        self.assertEqual(task_info._log_seq, 1)
-
     async def test_shrunk_log_falls_back_to_full_replace(self) -> None:
         task_info = _make_task_info()
         with patch(

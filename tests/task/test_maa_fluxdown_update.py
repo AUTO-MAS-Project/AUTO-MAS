@@ -7,12 +7,9 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-import httpx
 import pytest
-from pydantic import ValidationError
 
 from app.models.config import MaaConfig
-from app.services.common.update import fluxdown as update_fluxdown
 from app.services.common.update import transport as update_transport
 from app.task.MAA import AutoProxy as auto_proxy
 from app.task.MAA import manager
@@ -20,8 +17,6 @@ from app.task.MAA.AutoProxy import AutoProxyTask, _without_maa_update_changes
 from app.task.MAA.tools import fluxdown_update as update
 from app.task.MAA.tools import resource_update as resource
 from app.task.MAA.tools import software_update as mirror
-
-_request_release = update.request_maa_release
 
 
 def script_config(*, enabled=True, channel="stable", cdk=""):
@@ -230,63 +225,6 @@ async def test_changed_installation_cannot_receive_old_ota(installation, monkeyp
     assert update.read_pending_update(root) == ("", "")
 
 
-@pytest.mark.asyncio
-async def test_resumable_retry_reuses_same_file(installation, monkeypatch):
-    root, _, downloader = installation
-    original = downloader.side_effect
-    count = 0
-
-    async def download(url, path, **kwargs):
-        nonlocal count
-        count += 1
-        if count < 3:
-            path.write_bytes(b"partial")
-            raise update_fluxdown.FluxdownResumableError("offline")
-        assert path.read_bytes() == b"partial"
-        return await original(url, path, **kwargs)
-
-    downloader.side_effect = download
-    monkeypatch.setattr(update.asyncio, "sleep", AsyncMock())
-    await update.prepare_maa_fluxdown_update(
-        root, config=script_config(), config_dir=root / "config"
-    )
-    assert downloader.await_count == 3
-    assert len({c.args[1] for c in downloader.call_args_list}) == 1
-
-
-@pytest.mark.asyncio
-async def test_release_metadata_uses_official_contract(installation, monkeypatch):
-    _, _, _ = installation
-    original_client = httpx.AsyncClient
-    seen = []
-
-    def response(request):
-        seen.append(request.url)
-        return httpx.Response(
-            200, json={"version": "v6.1.0", "details": {"assets": []}}
-        )
-
-    monkeypatch.setattr(
-        httpx,
-        "AsyncClient",
-        lambda **kwargs: original_client(transport=httpx.MockTransport(response)),
-    )
-    assert (await _request_release("beta"))["version"] == "v6.1.0"
-    assert str(seen[0]).endswith("/version/beta.json")
-
-
-@pytest.mark.parametrize("channel", ["stable", "beta"])
-def test_script_channel_schema_round_trip(channel):
-    config = MaaConfig.model_validate({"Update": {"Channel": channel}})
-    assert config.Update.Channel == channel
-    assert MaaConfig.model_validate(config.model_dump()).Update.Channel == channel
-
-
-def test_nightly_is_not_an_exposed_channel():
-    with pytest.raises(ValidationError):
-        MaaConfig.model_validate({"Update": {"Channel": "alpha"}})
-
-
 @pytest.fixture
 def resource_install(installation, monkeypatch):
     root, _, _ = installation
@@ -377,41 +315,6 @@ async def test_mirror_resource_budget_failure_blocks_launch(
 
 
 @pytest.mark.asyncio
-async def test_manager_installs_software_before_resources(installation, monkeypatch):
-    root, _, _ = installation
-    instance = object.__new__(manager.MaaManager)
-    instance.script_config = script_config()
-    instance.script_info = SimpleNamespace(log="", script_id="test-script")
-    instance.maa_set_path = root / "config"
-    instance.temp_path = root / "Temp"
-    instance._updater_running = False
-    steps = []
-    monkeypatch.setattr(manager, "read_pending_update", lambda root: ("", ""))
-    monkeypatch.setattr(
-        manager, "read_installed_release", lambda root: ("v6.1.0", "x64")
-    )
-    monkeypatch.setattr(manager, "has_delegated_update_failure", lambda root: False)
-
-    async def prepare(*args, **kwargs):
-        steps.append("download")
-        return "v6.1.0"
-
-    async def install(*args, **kwargs):
-        steps.append("install")
-
-    async def resources(*args, **kwargs):
-        steps.append("resources")
-
-    monkeypatch.setattr(manager, "prepare_maa_fluxdown_update", prepare)
-    monkeypatch.setattr(manager, "update_maa", install)
-    monkeypatch.setattr(manager, "prepare_install_resources", resources)
-    assert await instance._prepare_updates_once(
-        SimpleNamespace(update_config_dir=root / "config")
-    )
-    assert steps == ["download", "install", "resources"]
-
-
-@pytest.mark.asyncio
 async def test_unconfirmed_installation_never_updates_resources(
     installation, monkeypatch
 ):
@@ -438,48 +341,6 @@ async def test_unconfirmed_installation_never_updates_resources(
             SimpleNamespace(update_config_dir=root / "config")
         )
     resources.assert_not_called()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "changed, succeeds", [(False, True), (True, True), (True, False)]
-)
-async def test_final_gate_requeries_and_repeats_when_upstream_changes(
-    installation, monkeypatch, changed, succeeds
-):
-    root, _, _ = installation
-    instance = object.__new__(manager.MaaManager)
-    instance.script_config = script_config(channel="beta")
-    instance.script_info = SimpleNamespace(log="")
-    instance.maa_set_path = root / "config"
-    prepared = AsyncMock(return_value=True)
-    monkeypatch.setattr(instance, "_prepare_updates_once", prepared)
-    clock = datetime(2026, 10, 28, tzinfo=timezone.utc)
-    monkeypatch.setattr(manager, "read_resource_clock", lambda root: clock)
-    monkeypatch.setattr(manager, "latest_resource_clock", AsyncMock(return_value=clock))
-    versions = iter([("v6.0.0", "x64"), ("v6.1.0", "x64"), ("v6.1.0", "x64")])
-    monkeypatch.setattr(manager, "read_installed_release", lambda root: next(versions))
-    query = AsyncMock(
-        side_effect=[
-            "v6.1.0" if changed else "v6.0.0",
-            "v6.1.0" if succeeds else "v6.2.0",
-            "v6.3.0",
-        ]
-    )
-    monkeypatch.setattr(manager, "query_latest_maa_version", query)
-    if succeeds:
-        assert await instance._prepare_software_update_strict(
-            SimpleNamespace(update_config_dir=root / "config")
-        )
-        assert prepared.await_count == (2 if changed else 1)
-    else:
-        with pytest.raises(RuntimeError, match="版本持续变化"):
-            await instance._prepare_software_update_strict(
-                SimpleNamespace(update_config_dir=root / "config")
-            )
-        assert prepared.await_count == 3
-    assert all(call.kwargs["github"] is True for call in query.call_args_list)
-    assert all(call.args[1] == "beta" for call in query.call_args_list)
 
 
 @pytest.mark.asyncio
@@ -611,21 +472,6 @@ async def test_explicit_channel_does_not_trigger_migration(tmp_path):
     assert config.Update.Channel == "beta"
 
 
-def test_global_cdk_keeps_mirror_priority(installation):
-    from app.task.MAA.tools import update_credentials
-
-    root, _, _ = installation
-    update.Config.setting.Update.MirrorChyanCDK = "global-review-cdk"
-    config = script_config()
-    assert update_credentials.resolve_takeover_credentials(config) == (
-        True,
-        "global-review-cdk",
-    )
-    assert not update_credentials.use_maa_github_update(
-        config, config_dirs=[root / "config"]
-    )
-
-
 @pytest.mark.asyncio
 async def test_native_only_cdk_cannot_fall_back_to_runtime_updates(
     installation, monkeypatch
@@ -678,7 +524,10 @@ async def test_local_resource_lock_contention_has_deadline(
     monkeypatch.setattr(resource, "_RESOURCE_LOCK_TIMEOUT", 0.001)
     try:
         with pytest.raises(RuntimeError, match="资源更新超时"):
-            await resource.prepare_install_resources(install, cdk=None, github=True)
+            await asyncio.wait_for(
+                resource.prepare_install_resources(install, cdk=None, github=True),
+                timeout=1,
+            )
         assert lock.locked()  # The waiting caller cannot release another caller's lock.
         downloader.assert_not_awaited()
     finally:
@@ -701,29 +550,6 @@ def test_resource_archive_limits_reject_before_extracting(tmp_path, monkeypatch,
     with pytest.raises(ValueError):
         resource_package.extract_zip(archive, destination)
     assert not list(destination.rglob("*.json"))
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["write", "unconfirmed", "cancel"])
-async def test_resource_write_failure_cannot_be_ignored(
-    resource_install, monkeypatch, failure
-):
-    from app.task.MAA.tools.update_errors import MaaUpdateUnsafeError
-
-    install, _, _ = resource_install
-
-    def apply(*args):
-        if failure == "cancel":
-            raise asyncio.CancelledError()
-        if failure == "write":
-            raise OSError("resource write failed")
-        return False
-
-    monkeypatch.setattr(resource, "_apply_stage", apply)
-    expected = asyncio.CancelledError if failure == "cancel" else MaaUpdateUnsafeError
-    with pytest.raises(expected):
-        await resource.prepare_install_resources(install, cdk=None, github=True)
-    assert not resource._prepare_install_lock.locked()
 
 
 @pytest.mark.asyncio

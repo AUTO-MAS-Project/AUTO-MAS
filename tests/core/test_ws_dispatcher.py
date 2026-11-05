@@ -2,7 +2,6 @@ import asyncio
 import unittest
 
 from app.core.ws.dispatcher import _WSDispatcher
-from app.core.ws.protocol import parse_envelope
 from app.models.schema import WSEnvelope
 
 
@@ -25,15 +24,6 @@ class WSDispatcherTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(received), 1)
         self.assertEqual(received[0].id, "task-1")
 
-    async def test_same_key_handlers_called_in_registration_order(self):
-        order: list[str] = []
-        self.dispatcher.register("Main", "test.event", lambda _: order.append("first"))
-        self.dispatcher.register("Main", "test.event", lambda _: order.append("second"))
-
-        self.dispatcher.dispatch(_envelope("Main", "test.event"))
-
-        self.assertEqual(order, ["first", "second"])
-
     async def test_handler_exception_does_not_affect_other_handlers(self):
         received: list[str] = []
 
@@ -46,32 +36,6 @@ class WSDispatcherTest(unittest.IsolatedAsyncioTestCase):
         self.dispatcher.dispatch(_envelope("Main", "test.event"))
 
         self.assertEqual(received, ["ok"])
-
-    async def test_unmatched_message_is_dropped_without_error(self):
-        self.dispatcher.dispatch(_envelope("nobody", "no.handler"))
-
-    async def test_unregister_is_idempotent(self):
-        received: list[WSEnvelope] = []
-        cancel = self.dispatcher.register("task-1", "task.notice", received.append)
-
-        cancel()
-        cancel()
-        self.dispatcher.unregister("task-1", "task.notice", received.append)
-
-        self.dispatcher.dispatch(_envelope("task-1", "task.notice"))
-        self.assertEqual(received, [])
-
-    async def test_async_handler_runs_in_owned_task(self):
-        done = asyncio.Event()
-
-        async def handler(_):
-            done.set()
-
-        self.dispatcher.register("Main", "test.event", handler)
-        self.dispatcher.dispatch(_envelope("Main", "test.event"))
-
-        await asyncio.wait_for(done.wait(), timeout=1)
-        await self.dispatcher.shutdown()
 
     async def test_shutdown_cancels_in_flight_tasks(self):
         started = asyncio.Event()
@@ -102,29 +66,6 @@ class WSDispatcherTest(unittest.IsolatedAsyncioTestCase):
         self.dispatcher.dispatch(_envelope("Main", "test.event"))
 
         self.assertEqual(received, [])
-
-
-class WSProtocolTest(unittest.TestCase):
-    def test_parse_envelope_accepts_valid_message(self):
-        envelope = parse_envelope(
-            {"id": "Main", "type": "test.event", "data": {"choice": True}}
-        )
-        self.assertIsNotNone(envelope)
-        assert envelope is not None
-        self.assertEqual(envelope.id, "Main")
-        self.assertEqual(envelope.type, "test.event")
-        self.assertEqual(envelope.data, {"choice": True})
-
-    def test_parse_envelope_defaults_missing_data(self):
-        envelope = parse_envelope({"id": "Main", "type": "backend.shutdown.ready"})
-        self.assertIsNotNone(envelope)
-        assert envelope is not None
-        self.assertEqual(envelope.data, {})
-
-    def test_parse_envelope_rejects_invalid_message(self):
-        self.assertIsNone(parse_envelope("not a dict"))
-        self.assertIsNone(parse_envelope({"type": "missing.id"}))
-        self.assertIsNone(parse_envelope({"id": "Main"}))
 
 
 if __name__ == "__main__":

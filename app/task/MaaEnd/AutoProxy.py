@@ -631,6 +631,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     "type": "input",
                     "values": {"LauncherExe": str(launcher_path)},
                 }
+        if task_name == _MAAEND_LAUNCH_GAME_PRETASK:
+            server = self.cur_user_config.Info.Resource
+            setting_options["LaunchGamePCRegion"] = {
+                "type": "select",
+                "value": "CN" if server == "官服" else server,
+            }
         values = _mxu_option_values(
             setting_options,
             build_task_option_maps(interface)[task_name],

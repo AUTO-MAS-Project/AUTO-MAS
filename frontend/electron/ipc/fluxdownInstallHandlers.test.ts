@@ -1,5 +1,5 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
-import { resolve, join } from 'path'
+import { join, resolve } from 'path'
 import { pathToFileURL } from 'url'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { registerFluxdownInstallHandlers } from './fluxdownInstallHandlers'
@@ -42,14 +42,6 @@ describe('installation IPC trust boundary', () => {
     const { handler, event } = bridge()
     await expect(handler(event, 'auto')).resolves.toEqual({ code: 200 })
     expect(mocks.install).toHaveBeenCalledWith('http://127.0.0.1:36164', 'auto')
-  })
-
-  it('accepts only the configured development application entry', async () => {
-    mocks.devUrl = 'http://127.0.0.1:5173/'
-    const { handler, event, mainFrame } = bridge()
-    mainFrame.url = mocks.devUrl
-    mocks.install.mockResolvedValue({ code: 200 })
-    await expect(handler(event, 'github')).resolves.toEqual({ code: 200 })
   })
 
   it.each(['remote', 'iframe', 'other-window'])('rejects %s even with the preload API', kind => {

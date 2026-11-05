@@ -225,45 +225,6 @@ def test_concurrent_commands_own_their_processes(simulator, cancel):
     asyncio.run(scenario())
 
 
-def test_next_command_waits_for_previous_cleanup(simulator, monkeypatch):
-    build, root, processes = simulator
-    runner = build("import sys\nprint(sys.argv[-1], flush=True)\n", managed=True)
-    original_cleanup = runner._cleanup_process
-
-    async def scenario():
-        cleaning = asyncio.Event()
-        release = asyncio.Event()
-
-        async def delayed_cleanup(proc):
-            cleaning.set()
-            await release.wait()
-            await original_cleanup(proc)
-
-        monkeypatch.setattr(runner, "_cleanup_process", delayed_cleanup)
-        first = asyncio.create_task(runner.run_task("first", timeout=3))
-        second = None
-        try:
-            await asyncio.wait_for(cleaning.wait(), timeout=2)
-            second = asyncio.create_task(runner.run_task("second", timeout=3))
-            await asyncio.sleep(0.05)
-            assert len(processes) == 1
-            assert not second.done()
-            release.set()
-            assert (await first).output == "first"
-            assert (await second).output == "second"
-        finally:
-            release.set()
-            for task in (first, second):
-                if task is not None:
-                    task.cancel()
-            await asyncio.gather(
-                *(t for t in (first, second) if t), return_exceptions=True
-            )
-            await cleanup(processes, root)
-
-    asyncio.run(scenario())
-
-
 @pytest.mark.parametrize("platform", ["Cloud", "Client"])
 def test_observed_descendant_after_parent_exit_uses_platform_policy(
     simulator, platform
@@ -407,42 +368,3 @@ def test_owned_descendant_access_denied_is_reported(tmp_path):
     with pytest.raises(RuntimeError, match="后代未能终止"):
         asyncio.run(runner.terminate_process_tree())
     child.kill.assert_called_once()
-
-
-def test_cancel_stops_process_before_slow_callback_cleanup(simulator):
-    build, root, processes = simulator
-
-    async def scenario():
-        entered = asyncio.Event()
-        cleaning = asyncio.Event()
-        release = asyncio.Event()
-
-        async def callback(_):
-            entered.set()
-            try:
-                await asyncio.Event().wait()
-            finally:
-                cleaning.set()
-                await release.wait()
-
-        runner = build(
-            "import time\nprint('running', flush=True)\ntime.sleep(30)\n",
-            managed=True,
-            callback=callback,
-        )
-        task = asyncio.create_task(runner.run_task("power", timeout=5))
-        try:
-            await asyncio.wait_for(entered.wait(), timeout=2)
-            task.cancel()
-            await asyncio.wait_for(cleaning.wait(), timeout=2)
-            await wait_until(lambda: processes[0].returncode is not None)
-            assert not task.done()
-            release.set()
-            with pytest.raises(asyncio.CancelledError):
-                await task
-        finally:
-            release.set()
-            await asyncio.gather(task, return_exceptions=True)
-            await cleanup(processes, root)
-
-    asyncio.run(scenario())

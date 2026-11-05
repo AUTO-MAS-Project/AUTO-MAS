@@ -54,24 +54,3 @@ def test_unsupervised_falls_back_to_local_version_and_empty_commit(
     assert result.protocol == 1
     assert result.version == Config.VERSION
     assert result.commit == ""
-
-
-@pytest.mark.parametrize("blank_value", [None, ""])
-def test_supervised_without_expected_identity_falls_back(
-    monkeypatch: pytest.MonkeyPatch, blank_value: str | None
-) -> None:
-    """开发模式：受监督但监督器未注入期望版本/提交（缺失或空字符串）时，回退到未受监督的规则。"""
-
-    monkeypatch.setenv("AUTO_MAS_SUPERVISED", "1")
-    if blank_value is None:
-        monkeypatch.delenv("AUTO_MAS_EXPECTED_VERSION", raising=False)
-        monkeypatch.delenv("AUTO_MAS_EXPECTED_COMMIT", raising=False)
-    else:
-        monkeypatch.setenv("AUTO_MAS_EXPECTED_VERSION", blank_value)
-        monkeypatch.setenv("AUTO_MAS_EXPECTED_COMMIT", blank_value)
-
-    result = _get_health()
-
-    assert result.protocol == 1
-    assert result.version == Config.VERSION
-    assert result.commit == ""

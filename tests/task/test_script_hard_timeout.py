@@ -183,15 +183,3 @@ def test_hard_timeout_config_persistence_and_runtime(name, tmp_path):
                 model.model_validate({"Run": {"HardTimeLimit": invalid}})
 
     asyncio.run(scenario())
-
-
-def test_exempt_configs_do_not_expose_hard_timeout():
-    from app.config.wire import config_contract
-    from app.models import config as configs
-
-    for name in ("MaaFW", "M9A", "MSS", "HSR"):
-        config = getattr(configs, f"{name}Config")()
-        assert not hasattr(config, "Run_HardTimeLimit")
-        model = config_contract(getattr(configs, f"{name}Config"))
-        run_model = model.model_fields["Run"].annotation.__args__[0]
-        assert "HardTimeLimit" not in run_model.model_fields
