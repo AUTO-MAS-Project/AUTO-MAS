@@ -752,3 +752,94 @@ def test_exclusive_shutdown_blocks_new_download_admission(tmp_path, monkeypatch)
             competitor.join(timeout=5)
     assert not shutdown.is_alive()
     assert downloaded.is_set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("confirmed", [False, True])
+async def test_add_failure_with_task_id_requires_confirmed_pause(
+    server_fixture, monkeypatch, confirmed
+):
+    """A failed add may still leave a live daemon task; do not hand off."""
+    exe, target, url = server_fixture
+    paused = False
+    commands = []
+
+    def command(_exe, _env, args, timeout=30):
+        nonlocal paused
+        commands.append(args[0])
+        if args[0] == "add":
+            return 1, '["created"]'
+        if args[0] == "pause":
+            if confirmed:
+                paused = True
+                return 0, ""
+            return 124, "timeout"
+        if args[0] == "status":
+            return 0, json.dumps({"status": 2 if paused else 1})
+        raise AssertionError(args)
+
+    monkeypatch.setattr(cli, "_run_cli", command)
+    expected = RuntimeError if confirmed else cli.FluxdownCancelUnconfirmed
+    with pytest.raises(expected) as caught:
+        await cli.fluxdown_server_download(url, target, cli_exe=exe)
+    assert ("无法确认" in str(caught.value)) is (not confirmed)
+    assert "pause" in commands
+    assert cli._load_task_map(exe)[cli._map_key(url, target)]["task_id"] == "created"
+
+
+@pytest.mark.asyncio
+async def test_emergency_shutdown_does_not_block_main_event_loop(tmp_path, monkeypatch):
+    """A newly admitted download awaits emergency stop without freezing UI."""
+    import asyncio
+    import threading
+
+    exe, agent = tmp_path / "fluxdown.exe", tmp_path / "fluxdown-agent.exe"
+    target, url = tmp_path / "asset.zip", "https://example.invalid/asset"
+    monkeypatch.setattr(cli, "_server_data_dir", lambda _exe: tmp_path)
+    cli._map_put(exe, cli._map_key(url, target), "own", url, target)
+    monkeypatch.setattr(cli, "_active_downloads", 1)
+    monkeypatch.setattr(cli, "_installing", False)
+    monkeypatch.setattr(cli, "_server_emergency_stopping", False)
+    monkeypatch.setattr(cli, "_server_binaries", lambda _: (agent, tmp_path / "daemon"))
+    monkeypatch.setattr(
+        cli._server, "handle", SimpleNamespace(cli_exe=exe, agent_pid=24680)
+    )
+    monkeypatch.setattr(cli._server, "spawned_by_us", True)
+    process = SimpleNamespace(
+        exe=lambda: str(agent),
+        children=lambda recursive: [],
+        is_running=lambda: False,
+    )
+    monkeypatch.setattr(cli.psutil, "Process", lambda _: process)
+    entered, release = threading.Event(), threading.Event()
+
+    def slow_kill(_pid):
+        entered.set()
+        assert release.wait(5)
+
+    monkeypatch.setattr(cli, "_kill_pid", slow_kill)
+    stop = asyncio.create_task(
+        asyncio.to_thread(
+            cli.fluxdown_server_emergency_stop_if_exclusive, exe, url, target
+        )
+    )
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        downloaded = asyncio.Event()
+
+        @cli._using_fluxdown
+        async def competitor():
+            downloaded.set()
+
+        other = asyncio.create_task(competitor())
+        await asyncio.sleep(0.02)
+        assert not downloaded.is_set()
+        # A heartbeat must still run while the stop worker waits.
+        beat = asyncio.Event()
+        asyncio.get_running_loop().call_soon(beat.set)
+        await asyncio.wait_for(beat.wait(), 1)
+    finally:
+        release.set()
+    assert await asyncio.wait_for(stop, 5)
+    await asyncio.wait_for(other, 5)
+    assert downloaded.is_set()
