@@ -22,6 +22,25 @@ from app.utils import fluxdown_cli as cli
 from tests.config_support import activate_config
 
 
+@pytest.fixture(autouse=True)
+def windows_fluxdown_layout(monkeypatch):
+    """平台无关 CI 模拟 Windows 组件名，跨平台分发另有专门用例。"""
+    monkeypatch.setattr(
+        install.update_native,
+        "FLUXDOWN_EXE_NAMES",
+        ("fluxdown.exe", "fluxdown-cli.exe"),
+    )
+    monkeypatch.setattr(
+        install.update_native, "FLUXDOWN_AGENT_NAME", "fluxdown-agent.exe"
+    )
+    monkeypatch.setattr(
+        install.update_native, "FLUXDOWN_DAEMON_NAME", "fluxdownd.exe"
+    )
+    monkeypatch.setattr(
+        cli, "_FLUXDOWN_EXE_NAMES", ("fluxdown.exe", "fluxdown-cli.exe")
+    )
+
+
 @pytest.fixture
 def release():
     return install.FluxdownRelease(
@@ -89,7 +108,7 @@ def test_install_preserves_data(packages):
     assert (target / "fluxdown.exe").read_bytes() == b"new binary"
     assert (target / "portable_data/db").read_bytes() == b"user data"
     assert (target / "portable").is_file()
-    assert not target.with_name("fluxdown-cli.old").exists()
+    assert not target.with_name("bin.old").exists()
 
 
 def test_replace_failure_rolls_back(packages, monkeypatch):
@@ -120,7 +139,7 @@ def test_rollback_failure_survives_retry(packages, monkeypatch):
     monkeypatch.setattr(install.os, "replace", fail)
     with pytest.raises(RuntimeError):
         install._install_from(extracted)
-    backup = target.with_name("fluxdown-cli.old")
+    backup = target.with_name("bin.old")
     assert (backup / "fluxdown.exe").read_bytes() == b"old binary"
     with pytest.raises(OSError):
         install._install_from(extracted)
@@ -315,7 +334,7 @@ async def test_full_install_and_config(
         assert Path(config.Update.FluxdownPath) == install._install_dir()
         flush.assert_awaited_once()
     assert (install._install_dir() / "portable").is_file()
-    assert not (tmp_path / "data/fluxdown_install_tmp").exists()
+    assert not (tmp_path / "data/fluxdown/install_tmp").exists()
     if change_path:
         assert str(config.Update.FluxdownPath) == "user-choice"
 
@@ -367,3 +386,134 @@ async def test_install_fails_closed_when_not_started_by_desktop(monkeypatch):
         )
     assert response.status_code == 403
     installer.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "system,machine,expected",
+    [
+        ("Windows", "AMD64", ("windows", "x64", "zip")),
+        ("Windows", "ARM64", ("windows", "arm64", "zip")),
+        ("Linux", "x86_64", ("linux", "x64", "tar.gz")),
+        ("Linux", "aarch64", ("linux", "arm64", "tar.gz")),
+        ("Darwin", "x86_64", ("macos", "x64", "tar.gz")),
+        ("Darwin", "arm64", ("macos", "arm64", "tar.gz")),
+    ],
+)
+def test_platform_asset_names(system, machine, expected, monkeypatch):
+    monkeypatch.setattr(install.platform, "system", lambda: system)
+    monkeypatch.setattr(install.platform, "machine", lambda: machine)
+    assert install._platform_asset() == expected
+    platform_name, arch, extension = expected
+    payload = {
+        "tag_name": "v0.6.6",
+        "assets": [
+            {
+                "name": f"FluxDown-{part}-0.6.6-{platform_name}-{arch}.{extension}",
+                "browser_download_url": f"https://github.com/zerx-lab/FluxDown/releases/download/v0.6.6/FluxDown-{part}-0.6.6-{platform_name}-{arch}.{extension}",
+                "digest": "sha256:" + "a" * 64,
+            }
+            for part in ("CLI", "Server")
+        ],
+    }
+    result = install._parse_release(payload)
+    assert result.cli_name in {a["name"] for a in payload["assets"]}
+    assert result.server_name in {a["name"] for a in payload["assets"]}
+
+
+@pytest.mark.parametrize("system,machine", [("Windows", "x86"), ("FreeBSD", "amd64")])
+def test_unknown_platform_never_downloads_other_arch(system, machine, monkeypatch):
+    monkeypatch.setattr(install.platform, "system", lambda: system)
+    monkeypatch.setattr(install.platform, "machine", lambda: machine)
+    with pytest.raises(RuntimeError, match="不支持"):
+        install._platform_asset()
+
+
+def test_wrong_zip_asset_fails_before_extraction(tmp_path):
+    archive = tmp_path / "FluxDown-CLI.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("fluxdown/fluxdown-desktop.exe", b"desktop")
+        bundle.writestr("fluxdown/fluxdown-agent.exe", b"agent")
+    with pytest.raises(RuntimeError, match="错误的发布包"):
+        install._check_package(
+            archive,
+            {"fluxdown.exe"},
+            {"fluxdown-agent.exe", "fluxdownd.exe", "fluxdown-desktop.exe"},
+        )
+
+
+def test_valid_zip_asset_and_co_located_extraction(tmp_path):
+    first = tmp_path / "FluxDown-CLI.zip"
+    second = tmp_path / "FluxDown-Server.zip"
+    for archive, names in (
+        (first, ("fluxdown.exe",)),
+        (second, ("fluxdown-agent.exe", "fluxdownd.exe")),
+    ):
+        with zipfile.ZipFile(archive, "w") as bundle:
+            for name in names:
+                bundle.writestr("release/" + name, name.encode())
+    install._check_package(
+        first, {"fluxdown.exe"}, {"fluxdown-agent.exe", "fluxdownd.exe"}
+    )
+    install._check_package(
+        second, {"fluxdown-agent.exe", "fluxdownd.exe"}, {"fluxdown.exe"}
+    )
+    directory = tmp_path / "combined"
+    install._extract_package(first, directory)
+    install._extract_package(second, directory)
+    install._assert_complete_install(directory)
+
+
+def test_tar_packages_and_reject_links(tmp_path):
+    import io
+    import tarfile
+
+    package = tmp_path / "FluxDown-CLI.tar.gz"
+    with tarfile.open(package, "w:gz") as archive:
+        member = tarfile.TarInfo("release/fluxdown")
+        member.size = len(b"binary")
+        member.mode = 0o755
+        archive.addfile(member, io.BytesIO(b"binary"))
+
+    install._check_package(package, {"fluxdown"}, {"fluxdown-agent"})
+    out = tmp_path / "out"
+    install._extract_package(package, out)
+    assert (out / "fluxdown").read_bytes() == b"binary"
+    assert (out / "fluxdown").stat().st_mode & 0o111
+
+    invalid = tmp_path / "wrong.tar.gz"
+    with tarfile.open(invalid, "w:gz") as archive:
+        member = tarfile.TarInfo("../outside")
+        member.size = 1
+        archive.addfile(member, io.BytesIO(b"X"))
+    with pytest.raises(RuntimeError):
+        install._extract_package(invalid, tmp_path / "bad")
+
+
+def test_components_requires_cli_and_both_server_programs(tmp_path):
+    desktop = tmp_path / "desktop"
+    desktop.mkdir()
+    (desktop / "fluxdown-desktop.exe").write_bytes(b"gui")
+    (desktop / "fluxdown-agent.exe").write_bytes(b"agent")
+    (desktop / "fluxdownd.exe").write_bytes(b"daemon")
+    state = cli.fluxdown_components(desktop)
+    assert not state["cli"]
+    assert state["server"]
+    (desktop / "fluxdown.exe").write_bytes(b"cli")
+    assert cli.fluxdown_components(desktop)["cli"]
+    (desktop / "fluxdownd.exe").unlink()
+    assert not cli.fluxdown_components(desktop)["server"]
+
+
+def test_add_missing_cli_to_existing_desktop_never_overwrites_server(tmp_path):
+    target = tmp_path / "desktop"
+    target.mkdir()
+    (target / "fluxdown-desktop.exe").write_bytes(b"gui")
+    (target / "fluxdown-agent.exe").write_bytes(b"original")
+    (target / "fluxdownd.exe").write_bytes(b"original")
+    archive = tmp_path / "extract"
+    archive.mkdir()
+    (archive / "fluxdown.exe").write_bytes(b"downloaded cli")
+    install._install_missing_to_existing(archive, target)
+    assert (target / "fluxdown.exe").read_bytes() == b"downloaded cli"
+    assert (target / "fluxdown-agent.exe").read_bytes() == b"original"
+    assert (target / "fluxdownd.exe").read_bytes() == b"original"
