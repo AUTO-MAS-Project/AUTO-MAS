@@ -66,6 +66,10 @@ class FluxdownCandidateOut(BaseModel):
     is_portable_cli: bool = Field(
         ..., description="是否为带 portable 标记的 CLI 便携版"
     )
+    has_cli: bool = False
+    has_desktop: bool = False
+    has_server: bool = False
+    ready: bool = False
 
 
 class FluxdownDetectOut(OutBase):
@@ -80,6 +84,10 @@ class FluxdownDetectOut(OutBase):
         description="设备上没有任何 CLI 便携版、选中项是全量版时为 True（前端显示污染风险警告）",
     )
     scanned_drives: List[str] = Field(default_factory=list, description="扫描过的盘符")
+    has_cli: bool = False
+    has_desktop: bool = False
+    has_server: bool = False
+    ready: bool = False
     candidates: List[FluxdownCandidateOut] = Field(
         default_factory=list, description="全部候选，按择优顺序，最多 8 条"
     )
@@ -112,6 +120,17 @@ class FluxdownInstallOut(OutBase):
     path: str = Field("", description="安装目录，已写入 Update.FluxdownPath")
     cli_size: int = Field(0, description="CLI 包字节数")
     server_size: int = Field(0, description="Server 包字节数")
+
+
+class FluxdownInstallProgressOut(OutBase):
+    """安装作业最新进度快照；不包含来源 URL、安装路径和凭据。"""
+
+    active: bool = False
+    stage: str = "idle"
+    name: str = ""
+    downloaded: int = 0
+    total: int = 0
+    speed: float = 0.0
 
 
 router = APIRouter(prefix="/api/update", tags=["软件更新"])
@@ -290,6 +309,16 @@ async def detect_fluxdown() -> FluxdownDetectOut:
         return FluxdownDetectOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
+
+
+@router.get(
+    "/fluxdown/install/progress",
+    tags=["Get"],
+    summary="获取 FluxDown 安装实时进度",
+    response_model=FluxdownInstallProgressOut,
+)
+async def get_fluxdown_install_progress() -> FluxdownInstallProgressOut:
+    return FluxdownInstallProgressOut(**_fluxdown_install.get_install_progress())
 
 
 @router.get(
