@@ -332,3 +332,84 @@ async def test_user_choice_during_power_handoff(
         await asyncio.gather(
             handoff, request, handler.power_task, return_exceptions=True
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("queue_completed", [False, True])
+async def test_manual_selection_and_cancel_during_power_handoff(
+    isolated_app_paths, monkeypatch, queue_completed
+):
+    from app.api import dispatch
+    from app.core import Publisher
+    from app.core.ws import protocol
+    from app.services.common import system
+    from app.services.windows.power import WindowsPowerController
+
+    setting = await activate_config(GlobalConfig())
+    monkeypatch.setattr(isolated_app_paths, "setting", setting)
+    monkeypatch.setattr(isolated_app_paths, "power_sign", "Sleep")
+    monkeypatch.setattr(isolated_app_paths, "power_delay", 0)
+    monkeypatch.setattr(system, "power", WindowsPowerController())
+    started = asyncio.Event()
+    cancellation_started = asyncio.Event()
+    release_cancellation = asyncio.Event()
+    operations = []
+
+    async def send(**kwargs):
+        if kwargs["type"] == protocol.POWER_COUNTDOWN_UPDATED:
+            started.set()
+            await asyncio.Event().wait()
+        elif kwargs["type"] == protocol.POWER_COUNTDOWN_CANCELLED:
+            cancellation_started.set()
+            await release_cancellation.wait()
+        return True
+
+    async def execute(operation):
+        operations.append(operation)
+
+    monkeypatch.setattr(Publisher, "send", send)
+    monkeypatch.setattr(system.power, "execute", execute)
+    handler = system._SystemHandler()
+    monkeypatch.setattr(dispatch, "System", handler)
+    await handler.start_power_task()
+    await asyncio.wait_for(started.wait(), timeout=1)
+    selection = asyncio.create_task(
+        dispatch.set_power(dispatch.PowerIn(signal="Hibernate"))
+    )
+    await asyncio.wait_for(cancellation_started.wait(), timeout=1)
+    handoff = None
+    if queue_completed:
+        # 手动改选持锁撤销旧任务，队列完成请求在它后面等待交接。
+        isolated_app_paths.power_sign = "Hibernate"
+        handoff = asyncio.create_task(handler.start_power_task())
+        await asyncio.sleep(0)
+
+    async def user_cancel():
+        if queue_completed:
+            # 锁释放后等待者尚未恢复，仍须取消已登记的意图。
+            await release_cancellation.wait()
+            await asyncio.sleep(0)
+        return await dispatch.cancel_power_task()
+
+    request = asyncio.create_task(user_cancel())
+    try:
+        await asyncio.sleep(0)
+        release_cancellation.set()
+        pending = [selection, request] + ([handoff] if handoff is not None else [])
+        results = await asyncio.wait_for(asyncio.gather(*pending), timeout=1)
+        assert results[0].status == "success"
+        assert results[1].status == "success"
+        assert operations == []
+        assert isolated_app_paths.power_sign == "NoAction"
+        assert not handler.get_power_countdown_snapshot().active
+        # 没有活动任务时重复取消也是完成，不能把用户带回旧状态。
+        assert (await dispatch.cancel_power_task()).status == "success"
+    finally:
+        release_cancellation.set()
+        pending = [selection, request, handler.power_task]
+        if handoff is not None:
+            pending.append(handoff)
+        for task in pending:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)

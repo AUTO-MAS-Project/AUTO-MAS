@@ -489,18 +489,15 @@ class _SystemHandler:
                 await self._cancel_power_task(power_task)
 
     async def cancel_power_task(self):
-        """取消电源任务"""
+        """幂等取消当前电源任务及待接续意图。"""
 
-        power_task = self.power_task
-        if not self._power_task_lock.locked() and (
-            power_task is None or power_task.done()
-        ):
-            logger.warning("当前无电源任务在运行")
-            raise RuntimeError("当前无电源任务在运行")
         # 在等待交接锁之前清除意图，避免取消期间又启动同一个完成后操作。
         Config.power_sign = "NoAction"
         Config.power_delay = 0
         async with self._power_task_lock:
+            # 手动改选可能刚完成旧任务撤销；本次取消仍应清除等待期间写入的意图。
+            Config.power_sign = "NoAction"
+            Config.power_delay = 0
             power_task = self.power_task
             if power_task is not None and not power_task.done():
                 await self._cancel_power_task(power_task)
