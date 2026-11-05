@@ -637,9 +637,7 @@ async def test_download_history_does_not_invalidate_prefetched_candidate(monkeyp
             self.discarded = False
 
         async def prefetch_script_update(self):
-            update_settings.LastUpdateHistory.append(
-                FluxdownRecord(status="success")
-            )
+            update_settings.LastUpdateHistory.append(FluxdownRecord(status="success"))
 
         async def main_task(self): ...
         async def final_task(self): ...
