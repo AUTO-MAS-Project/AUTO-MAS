@@ -633,19 +633,36 @@ async def _precheck_inner(
     # 每次获准取包都现查一次性地址，不复用上轮已使用或已过期的 URL。
     latest = await _fetch_latest(channel=channel, arch=arch, cdk=cdk)
     actual = parse_version(latest.version)
+    attempt_stamp = datetime.now(timezone.utc).isoformat()
+    attempt_version = (
+        latest.version
+        if actual is not None and compare_versions(actual, target) > 0
+        else target_version
+    )
     async with _state_lock:
         state = load_state(_STATE_FILE)
-        state[attempt_field] = datetime.now(timezone.utc).isoformat()
-        # 查询期间可能发布新版；响应滞后时也记住已尝试的查询目标，避免重复取包。
-        state[version_field] = (
-            latest.version
-            if actual is not None and compare_versions(actual, target) > 0
-            else target_version
-        )
+        state[attempt_field] = attempt_stamp
+        # Record ordinary failed attempts as before; an explicitly cancelled
+        # queue prefetch must not exhaust the same-day allowance.
+        state[version_field] = attempt_version
         _utils_io.write_file(_STATE_FILE, state)
-    if actual is None or compare_versions(actual, target) < 0:
-        raise _UpdateError("MAA 本体包未达到已确认的目标版本，请稍后重试")
-    await _ensure_cache(latest=latest, channel=channel, arch=arch)
+    try:
+        if actual is None or compare_versions(actual, target) < 0:
+            raise _UpdateError("MAA 本体包未达到已确认的目标版本，请稍后重试")
+        await _ensure_cache(latest=latest, channel=channel, arch=arch)
+    except asyncio.CancelledError:
+        # Do not undo a newer attempt's accounting; both fields must still
+        # belong to this prefetch. The cache lock serializes same-asset work.
+        async with _state_lock:
+            state = load_state(_STATE_FILE)
+            if (
+                state.get(attempt_field) == attempt_stamp
+                and state.get(version_field) == attempt_version
+            ):
+                state.pop(attempt_field, None)
+                state.pop(version_field, None)
+                _utils_io.write_file(_STATE_FILE, state)
+        raise
     return latest.version
 
 
