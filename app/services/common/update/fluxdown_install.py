@@ -413,7 +413,6 @@ def _extract_zip(archive: Path, target: Path) -> None:
                 shutil.copyfileobj(source, sink)
 
 
-
 def _read_tar_members(archive: Path) -> list[tarfile.TarInfo]:
     """只读 tar.gz 目录，任何链接、特殊文件、异常路径均拒绝。"""
     with tarfile.open(archive, "r:gz") as bundle:
