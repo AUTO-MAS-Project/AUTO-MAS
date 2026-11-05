@@ -99,11 +99,18 @@ class ScriptUpdateSession:
             return None
         item = self._task.script_list[index]
         config = self._config.ScriptConfig[UUID(item.script_id)]
-        # 仅保存在内存里，配置及凭据不会写入缓存文件名、日志或遥测。
+        # Only settings that can affect a package or its installation belong
+        # in the candidate identity. LastUpdateHistory is operational output:
+        # FluxDown appends to it *during* a successful prefetch, so including
+        # it would make that same download invalidate its own candidate.
+        # Keep the remaining update settings in the snapshot: changing the
+        # source, downloader, credentials or install policy still invalidates.
         return (
             item.script_id,
             config.model_dump(mode="python"),
-            self._config.setting.Update.model_dump(mode="python"),
+            self._config.setting.Update.model_dump(
+                mode="python", exclude={"LastUpdateHistory"}
+            ),
         )
 
     def _next_target(self, start_index: int) -> int | None:
