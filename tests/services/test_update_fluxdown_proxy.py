@@ -696,6 +696,7 @@ async def test_stalled_download_checks_pause_before_queue_handoff(
 
 def test_exclusive_shutdown_blocks_new_download_admission(tmp_path, monkeypatch):
     """A cannot kill a daemon after B starts joining it during shutdown."""
+    import asyncio
     import threading
 
     exe, agent = tmp_path / "fluxdown.exe", tmp_path / "fluxdown-agent.exe"
