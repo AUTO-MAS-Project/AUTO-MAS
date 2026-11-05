@@ -78,7 +78,12 @@ from app.utils import (
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
 
-from .inventory_report import INVENTORY_REPORT_RULE, InventoryReport, inventory_resolve
+from .inventory_report import (
+    INVENTORY_REPORT_RULE,
+    InventoryReport,
+    inventory_resolve,
+    merge_gain_entries,
+)
 from .push_log import MAAEND_PUSH_RULES, maaend_plain_text, maaend_resolve
 from .resource_loader import (
     MaaEndResourceLoader,
@@ -3255,35 +3260,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         inventory_lines: list[str] = []
         if inventory_notify and stage_log_paths:
             try:
-                report = InventoryReport(
-                    task_names={
-                        name
-                        for name, task_name in self.task_name_map.items()
-                        if task_name == "ProtocolSpace"
-                    },
-                    status_messages=self.inventory_status_messages,
-                )
-
-                def append_inventory(log_type: str, text: str, ts: float) -> None:
-                    inventory_lines.append(
-                        f"[{datetime.fromtimestamp(ts):%H:%M:%S}] {text}"
-                    )
-                    if self.push_log_enabled:
-                        append_push_log(self.cur_user_item, log_type, text, ts)
-
-                pipeline = log_box.LogPipeline()
-                pipeline.preprocessors.append(report.select)
-                pipeline.add_rule(*INVENTORY_REPORT_RULE)
-                pipeline.postprocessors.append(inventory_resolve)
-                for path in stage_log_paths:
-                    source = log_source.LogSource(path, start_from_end=False)
-                    source.open()
-                    for line in source.read_new():
-                        pipeline.feed(line, timestamp=time())
-                for entry in pipeline.finish():
-                    if entry.timestamp is None:
-                        raise ValueError("材料状态报告缺少时间戳")
-                    append_inventory(entry.log_type, entry.text, entry.timestamp)
+                inventory_lines = self._collect_inventory_report(stage_log_paths)
             except Exception as e:
                 logger.opt(exception=True).warning(f"MaaEnd 材料状态采集失败: {e}")
 
@@ -3391,6 +3368,39 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             type=protocol.TASK_NOTICE,
             data=WSTaskNoticeData(level="error", message=f"自动代理任务出现异常: {e}"),
         )
+
+    def _collect_inventory_report(self, paths: list[Path]) -> list[str]:
+        """采集协议空间材料记录，返回带时间的展示行，并同步写入推送日志。"""
+
+        report = InventoryReport(
+            task_names={
+                name
+                for name, task_name in self.task_name_map.items()
+                if task_name == "ProtocolSpace"
+            },
+            status_messages=self.inventory_status_messages,
+        )
+        lines: list[str] = []
+
+        def append_inventory(log_type: str, text: str, ts: float) -> None:
+            lines.append(f"[{datetime.fromtimestamp(ts):%H:%M:%S}] {text}")
+            if self.push_log_enabled:
+                append_push_log(self.cur_user_item, log_type, text, ts)
+
+        pipeline = log_box.LogPipeline()
+        pipeline.preprocessors.append(report.select)
+        pipeline.add_rule(*INVENTORY_REPORT_RULE)
+        pipeline.postprocessors.append(inventory_resolve)
+        for path in paths:
+            source = log_source.LogSource(path, start_from_end=False)
+            source.open()
+            for line in source.read_new():
+                pipeline.feed(line, timestamp=time())
+        for entry in merge_gain_entries(pipeline.finish()):
+            if entry.timestamp is None:
+                raise ValueError("材料状态报告缺少时间戳")
+            append_inventory(entry.log_type, entry.text, entry.timestamp)
+        return lines
 
     async def _append_stage_log_details(self, paths: list[Path]) -> None:
         """阶段日志的读取、后台处理和用户交付归 MaaEnd 收尾流程。"""

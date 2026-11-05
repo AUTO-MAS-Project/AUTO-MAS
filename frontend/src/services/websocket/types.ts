@@ -59,6 +59,7 @@ export const WS_POWER_SIGN_UPDATED = 'power.sign.updated'
 
 // 更新下载（id=Update）
 export const WS_UPDATE_PROGRESS = 'update.progress'
+export const WS_FLUXDOWN_INSTALL_PROGRESS = 'fluxdown.install.progress'
 export const WS_UPDATE_COMPLETED = 'update.completed'
 export const WS_UPDATE_FAILED = 'update.failed'
 export const WS_UPDATE_CANCELLED = 'update.cancelled'
@@ -253,6 +254,14 @@ export interface WSUpdateProgressData {
   source: string
 }
 
+export interface WSFluxdownInstallProgressData {
+  stage: 'check' | 'download' | 'verify' | 'extract' | 'install' | 'save' | 'done' | 'failed'
+  name: string
+  downloaded: number
+  total: number
+  speed: number
+}
+
 interface WSUpdateCompletedData {
   file: string
 }
@@ -351,6 +360,7 @@ interface WSMessageDataMap {
   [WS_POWER_COUNTDOWN_CANCELLED]: WSEmptyData
   [WS_POWER_SIGN_UPDATED]: WSPowerSignData
   [WS_UPDATE_PROGRESS]: WSUpdateProgressData
+  [WS_FLUXDOWN_INSTALL_PROGRESS]: WSFluxdownInstallProgressData
   [WS_UPDATE_COMPLETED]: WSUpdateCompletedData
   [WS_UPDATE_FAILED]: WSUpdateFailedData
   [WS_UPDATE_CANCELLED]: WSEmptyData
