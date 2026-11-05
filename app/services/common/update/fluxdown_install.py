@@ -81,6 +81,7 @@ SUPPORTED_MIRRORS: tuple[str, ...] = (
 )
 
 _REQUIRED_BINARIES = ("fluxdown.exe", "fluxdown-agent.exe", "fluxdownd.exe")
+_CLI_BINARIES = ("fluxdown.exe", "fluxdown-cli.exe")
 _RELEASE_CACHE_TTL = 600.0
 _MAX_ARCHIVE_BYTES = 256 * 1024**2
 _MAX_MEMBER_BYTES = 512 * 1024**2
@@ -386,11 +387,11 @@ def _assert_complete_install(directory: Path) -> None:
     """必须同目录包含独立 CLI、Agent 和 Daemon，且不是空文件。"""
     if not any(
         (directory / name).is_file() and (directory / name).stat().st_size > 0
-        for name in update_native.FLUXDOWN_EXE_NAMES
+        for name in _CLI_BINARIES
     ):
         raise RuntimeError("安装目录缺少有效的 FluxDown CLI")
-    for name in (update_native.FLUXDOWN_AGENT_NAME, update_native.FLUXDOWN_DAEMON_NAME):
-        if name is None or not (directory / name).is_file():
+    for name in ("fluxdown-agent.exe", "fluxdownd.exe"):
+        if not (directory / name).is_file():
             raise RuntimeError(f"安装目录缺少 FluxDown Server 组件: {name}")
         if (directory / name).stat().st_size <= 0:
             raise RuntimeError(f"安装目录中的 {name} 为空文件")
@@ -485,7 +486,7 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
         if directory == legacy:
             return False
         return any((directory / name).is_file() for name in (
-            *update_native.FLUXDOWN_EXE_NAMES, "fluxdown-desktop.exe",
+            *_CLI_BINARIES, "fluxdown-desktop.exe",
         ))
 
     if configured_path:
@@ -509,13 +510,13 @@ def _choose_install_target(configured_path: str) -> tuple[Path, bool]:
 def _install_missing_to_existing(extracted: Path, target: Path) -> None:
     """只添加缺少的程序，不覆盖用户桌面版、Agent 或 CLI 的现有版本。"""
     if not any((target / name).is_file() for name in (
-        *update_native.FLUXDOWN_EXE_NAMES, "fluxdown-desktop.exe",
+        *_CLI_BINARIES, "fluxdown-desktop.exe",
     )):
         raise RuntimeError("原有 FluxDown 目录已变化，请重新检测路径")
 
     missing: list[str] = []
     existing_cli = any(
-        (target / name).is_file() for name in update_native.FLUXDOWN_EXE_NAMES
+        (target / name).is_file() for name in _CLI_BINARIES
     )
     if not existing_cli:
         missing.append("fluxdown.exe")
@@ -642,7 +643,7 @@ async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, A
                     return
                 if not need_cli:
                     current_cli = next(
-                        (target / n for n in update_native.FLUXDOWN_EXE_NAMES
+                        (target / n for n in _CLI_BINARIES
                          if (target / n).is_file()), None
                     )
                     if current_cli is not None:
