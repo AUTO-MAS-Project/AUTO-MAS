@@ -588,12 +588,13 @@ async def test_cancel_falls_back_to_exclusive_emergency_shutdown(
 
     exe, target, url = server_fixture
     started = asyncio.Event()
+    loop = asyncio.get_running_loop()
 
     def command(_exe, _env, args, timeout=30):
         if args[0] == "add":
             return 0, '["created"]'
         if args[0] == "status":
-            started.set()
+            loop.call_soon_threadsafe(started.set)
             return 0, json.dumps({"status": 1})
         if args[0] == "pause":
             return 124, "timeout"
