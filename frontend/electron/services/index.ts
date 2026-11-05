@@ -21,31 +21,36 @@
  */
 
 // 镜像源服务
-export { MirrorService, MirrorSource, MirrorConfig, CloudMirrorConfig } from './mirrorService'
+export {
+  MirrorService,
+  type MirrorSource,
+  type MirrorConfig,
+  type CloudMirrorConfig,
+} from './mirrorService'
 
 // 下载服务
-export { SmartDownloader, DownloadProgress, ProgressCallback } from './downloadService'
+export { SmartDownloader, type DownloadProgress, type ProgressCallback } from './downloadService'
 
 // 初始化总流程服务
 export {
   InitializationService,
-  InitializationProgress,
-  InitializationProgressCallback,
-  InitializationResult,
+  type InitializationProgress,
+  type InitializationProgressCallback,
+  type InitializationResult,
 } from './initializationService'
 
 // Runtime 初始化与失败恢复
 export {
   BootstrapProgressBridge,
-  BootstrapProgressUpdate,
-  CriticalFilesCheck,
-  InitializationRunStage,
-  InitializationStage,
-  InitializationStageStatus,
-  RuntimeDoctorCheck,
+  type BootstrapProgressUpdate,
+  type CriticalFilesCheck,
+  type InitializationRunStage,
+  type InitializationStage,
+  type InitializationStageStatus,
+  type RuntimeDoctorCheck,
   RuntimeInitializationService,
-  RuntimeRetryMode,
-  RuntimeStageOutcome,
+  type RuntimeRetryMode,
+  type RuntimeStageOutcome,
   mapDoctorChecksToCriticalFiles,
   mapMirrorSelection,
   mapRuntimeStage,
@@ -58,11 +63,11 @@ export {
   RUNTIME_RELEASE_FETCH_TIMEOUT_MS,
   RUNTIME_RELEASE_REPO,
   RUNTIME_VERSION_PATTERN,
-  LatestRuntimeVersionLookup,
-  ResolveLatestRuntimeVersionOptions,
-  RuntimeReleaseChannel,
-  RuntimeReleaseFetcher,
-  RuntimeReleaseSource,
+  type LatestRuntimeVersionLookup,
+  type ResolveLatestRuntimeVersionOptions,
+  type RuntimeReleaseChannel,
+  type RuntimeReleaseFetcher,
+  type RuntimeReleaseSource,
   buildRuntimeReleaseSources,
   isNewerRuntimeVersion,
   parseRuntimeReleaseList,
@@ -81,18 +86,18 @@ export {
   RUNTIME_BINARY_REPLACE_FAILED,
   RUNTIME_LATEST_UNAVAILABLE,
   RUNTIME_TEXT_FETCH_TIMEOUT_MS,
-  LatestRuntimeVersionResolver,
-  RuntimeBinaryAlignOptions,
-  RuntimeBinaryAlignResult,
-  RuntimeBinaryAlignStatus,
-  RuntimeBinarySource,
-  RuntimeBinarySyncOptions,
-  RuntimeBinarySyncProgress,
-  RuntimeBinarySyncResult,
-  RuntimeBinarySyncStatus,
-  RuntimeBinaryTarget,
-  RuntimeTextSource,
-  TrustedRuntimeHashLookup,
+  type LatestRuntimeVersionResolver,
+  type RuntimeBinaryAlignOptions,
+  type RuntimeBinaryAlignResult,
+  type RuntimeBinaryAlignStatus,
+  type RuntimeBinarySource,
+  type RuntimeBinarySyncOptions,
+  type RuntimeBinarySyncProgress,
+  type RuntimeBinarySyncResult,
+  type RuntimeBinarySyncStatus,
+  type RuntimeBinaryTarget,
+  type RuntimeTextSource,
+  type TrustedRuntimeHashLookup,
   alignRuntimeBinaryWithLatest,
   buildRuntimeBinarySources,
   buildRuntimeSumsSources,
@@ -103,13 +108,13 @@ export {
 
 // Runtime 后端更新链路（停机 → bootstrap → 重新监督）
 export {
-  BackendUpdateController,
-  RuntimeUpdateDependencies,
-  RuntimeUpdateOutcome,
-  RuntimeUpdatePhase,
-  RuntimeUpdateProgress,
-  RuntimeUpdateRetryAction,
-  RuntimeUpdateStage,
+  type BackendUpdateController,
+  type RuntimeUpdateDependencies,
+  type RuntimeUpdateOutcome,
+  type RuntimeUpdatePhase,
+  type RuntimeUpdateProgress,
+  type RuntimeUpdateRetryAction,
+  type RuntimeUpdateStage,
   cancelBackendUpdate,
   describeRetryAction,
   normalizeRuntimeUpdateVersion,
@@ -122,27 +127,27 @@ export {
 // 后端服务
 export {
   BackendService,
-  BackendStatus,
-  BackendStartOptions,
-  BackendStatusCallback,
+  type BackendStatus,
+  type BackendStartOptions,
+  type BackendStatusCallback,
 } from './backendService'
 
 // AUTO-MAS Runtime 客户端（NDJSON 协议 v1）
 export {
   RuntimeClient,
   RuntimeClientError,
-  RuntimeClientErrorCode,
-  RuntimeClientOptions,
-  RuntimeEvent,
-  RuntimeHelloEvent,
-  RuntimeLogsByOperation,
-  RuntimeProgressEvent,
-  RuntimeResultEvent,
-  RuntimeRunOptions,
-  RuntimeRunResult,
-  RuntimeStateEvent,
-  RuntimeSuperviseHandle,
-  RuntimeSuperviseOptions,
+  type RuntimeClientErrorCode,
+  type RuntimeClientOptions,
+  type RuntimeEvent,
+  type RuntimeHelloEvent,
+  type RuntimeLogsByOperation,
+  type RuntimeProgressEvent,
+  type RuntimeResultEvent,
+  type RuntimeRunOptions,
+  type RuntimeRunResult,
+  type RuntimeStateEvent,
+  type RuntimeSuperviseHandle,
+  type RuntimeSuperviseOptions,
   formatStartupLogs,
   isRuntimeClientError,
 } from './runtime'
