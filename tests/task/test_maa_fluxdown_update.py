@@ -671,7 +671,12 @@ async def test_cancelled_mirror_prefetch_does_not_use_daily_attempt(
     monkeypatch.setattr(mirror, "_ensure_cache", cancelled)
     with pytest.raises(asyncio.CancelledError):
         await mirror._precheck_inner(
-            tmp_path, "stable", "x64", "test-cdk", target_version="v6.1.0"
+            tmp_path,
+            "stable",
+            "x64",
+            "test-cdk",
+            target_version="v6.1.0",
+            refund_cancelled=True,
         )
     assert not any(k.startswith("last_download_attempt_") for k in state)
     assert writes
