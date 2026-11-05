@@ -480,3 +480,78 @@ async def test_second_account_retry_keeps_running_prefetch(running):
     assert pipeline._download is not None and not pipeline._download.done()
     release.set()
     await pipeline.finish()
+
+
+
+@pytest.mark.asyncio
+async def test_cycle_unconfirmed_stop_never_starts_next_entry(monkeypatch):
+    """Exercise the cycle dispatcher: unsafe cancellation aborts the round."""
+    from datetime import datetime
+
+    from app.core.task_manager import manager as scheduler
+    from app.core.task_manager.cycle import CycleEntry
+    from app.models.config import MaaConfig
+
+    queue_id, item_a, item_b = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    script_a, script_b = uuid.uuid4(), uuid.uuid4()
+
+    class QueueItemStub:
+        Data = SimpleNamespace(LastCycleStartedAt=None)
+        Schedule = SimpleNamespace(IntervalAnchor="finish")
+
+        @classmethod
+        def model_validate(cls, value):
+            return value
+
+        async def update(self, *_args, **_kwargs):
+            pass
+
+    monkeypatch.setattr(
+        scheduler,
+        "Config",
+        SimpleNamespace(
+            QueueConfig={
+                queue_id: SimpleNamespace(
+                    QueueItem={item_a: QueueItemStub(), item_b: QueueItemStub()}
+                )
+            },
+            ScriptConfig={script_a: MaaConfig(), script_b: MaaConfig()},
+        ),
+    )
+    monkeypatch.setattr(scheduler, "_exclusive_resources", lambda _: ((), None))
+    info = scheduler.TaskInfo(
+        "AutoProxy", "test", str(queue_id), None, None, is_cycle=True
+    )
+    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
+    info.script_list = [
+        ScriptItem(str(script_a), "first", "等待"),
+        ScriptItem(str(script_b), "next", "等待"),
+    ]
+    task = scheduler.Task(info, [], manager_factories={})
+    task.stopped_manually = True
+    task._exit_result = "cancelled"
+    task._exit_error = "任务执行被取消"
+    monkeypatch.setattr(task, "_build_task_item", lambda *_a, **_k: object())
+    monkeypatch.setattr(task, "_observe_script_run", lambda *_a: nullcontext())
+    monkeypatch.setattr(task, "_publish_cycle_preview", AsyncMock())
+    monkeypatch.setattr(task._script_updates, "take", AsyncMock(return_value=None))
+    entries = [
+        CycleEntry(str(item_a), str(script_a), "first", 0, datetime.now(), True),
+        CycleEntry(str(item_b), str(script_b), "next", 1, datetime.now(), True),
+    ]
+    monkeypatch.setattr(task, "_collect_entries", lambda *_: entries)
+    started = []
+
+    async def simulate_spawn(*_args):
+        started.append(info.current_index)
+        raise FluxdownCancelUnconfirmed("daemon still writing")
+
+    monkeypatch.setattr(task, "_spawn_with_preview", simulate_spawn)
+    with pytest.raises(FluxdownCancelUnconfirmed):
+        await task._run_due_entries(queue_id, entries)
+    assert started == [0]
+    assert task._exit_result == "cancelled"
+    assert "未停止" in task._exit_error
+    assert task.script_reservations.try_acquire(
+        script_a, "another", root_paths=(), emulator_key=None
+    )
