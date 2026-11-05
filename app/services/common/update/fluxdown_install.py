@@ -785,9 +785,18 @@ async def _save_path(
 
 
 async def _install_locked(
-    mirror: str, proxy: httpx.Proxy | None, *, force_managed: bool = False
+    mirror: str,
+    proxy: httpx.Proxy | None,
+    *,
+    force_managed: bool = False,
+    initial_path: str | None = None,
 ) -> dict[str, Any]:
-    original_path = str(Config.setting.Update.FluxdownPath or "")
+    # 首次调用保存配置基准；权限回退必须沿用，不能把用户的新选择当作原值。
+    original_path = (
+        str(Config.setting.Update.FluxdownPath or "")
+        if initial_path is None
+        else initial_path
+    )
     await _report_install_progress("check")
     if force_managed:
         target, external = _install_dir(), False
@@ -887,7 +896,9 @@ async def _install_locked(
         shutil.rmtree(temp, ignore_errors=True)
 
     if retry_managed:
-        return await _install_locked(mirror, proxy, force_managed=True)
+        return await _install_locked(
+            mirror, proxy, force_managed=True, initial_path=original_path
+        )
 
     return await _save_path(
         original_path,
