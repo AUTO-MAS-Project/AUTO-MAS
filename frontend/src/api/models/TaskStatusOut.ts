@@ -43,11 +43,11 @@ export type TaskStatusOut = {
      */
     queueId?: (string | null);
     /**
-     * 脚本 ID
+     * 托管 ID
      */
     scriptId?: (string | null);
     /**
-     * 用户 ID
+     * 账号 ID
      */
     userId?: (string | null);
     /**

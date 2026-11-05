@@ -79,10 +79,11 @@ POWER_SIGN_UPDATED = "power.sign.updated"
 
 # 更新下载（id=Update）
 UPDATE_PROGRESS = "update.progress"
+FLUXDOWN_INSTALL_PROGRESS = "fluxdown.install.progress"
 
-# MFW 运行环境准备（下载 MaaFramework、建 agent 环境），id 用脚本 ID
+# MFW 运行环境准备（下载 MaaFramework、建 agent 环境），id 用托管 ID
 MAAFW_ENV_PREPARE_PROGRESS = "maafw.env-prepare.progress"
-# MFW 项目手动更新过程（检查 / 下载 / 覆盖 / 校验与逐行日志），id 用脚本 ID
+# MFW 项目手动更新过程（检查 / 下载 / 覆盖 / 校验与逐行日志），id 用托管 ID
 MAAFW_PROJECT_UPDATE_PROGRESS = "maafw.project-update.progress"
 UPDATE_COMPLETED = "update.completed"
 UPDATE_FAILED = "update.failed"

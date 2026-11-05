@@ -748,7 +748,7 @@ def build_fields_for_config(
     default_data = DEFAULT_CONFIG_DATA.get(filename, {})
 
     def _is_internal(name: str) -> bool:
-        """OK-NTE 框架内部字段（_enabled 等），不暴露给 MAS 用户编辑。"""
+        """OK-NTE 框架内部字段（_enabled 等），不暴露给 MAS 账号编辑。"""
         return name.startswith("_")
 
     def make_field(name: str, raw_value: Any) -> dict[str, Any]:

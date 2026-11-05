@@ -551,7 +551,7 @@ export class Service {
         });
     }
     /**
-     * 获取脚本下拉框信息
+     * 获取托管下拉框信息
      * @returns ComboBoxOut Successful Response
      * @throws ApiError
      */
@@ -807,7 +807,7 @@ export class Service {
         });
     }
     /**
-     * 添加脚本
+     * 添加托管
      * @param requestBody
      * @returns ScriptCreateOut Successful Response
      * @throws ApiError
@@ -826,7 +826,7 @@ export class Service {
         });
     }
     /**
-     * 查询脚本配置信息
+     * 查询托管配置信息
      * @param requestBody
      * @returns ScriptGetOut Successful Response
      * @throws ApiError
@@ -845,7 +845,7 @@ export class Service {
         });
     }
     /**
-     * 更新脚本配置信息
+     * 更新托管配置信息
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -864,7 +864,7 @@ export class Service {
         });
     }
     /**
-     * 删除脚本
+     * 删除托管
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -883,7 +883,7 @@ export class Service {
         });
     }
     /**
-     * 重新排序脚本
+     * 重新排序托管
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -921,7 +921,7 @@ export class Service {
         });
     }
     /**
-     * 查询用户
+     * 查询账号
      * @param requestBody
      * @returns UserGetOut Successful Response
      * @throws ApiError
@@ -940,7 +940,7 @@ export class Service {
         });
     }
     /**
-     * 获取用户配置目录
+     * 获取账号配置目录
      * @param requestBody
      * @returns UserConfigDirOut Successful Response
      * @throws ApiError
@@ -959,7 +959,7 @@ export class Service {
         });
     }
     /**
-     * 添加用户
+     * 添加账号
      * @param requestBody
      * @returns UserCreateOut Successful Response
      * @throws ApiError
@@ -978,7 +978,7 @@ export class Service {
         });
     }
     /**
-     * 更新用户配置信息
+     * 更新账号配置信息
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -997,7 +997,7 @@ export class Service {
         });
     }
     /**
-     * 删除用户
+     * 删除账号
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -1016,7 +1016,7 @@ export class Service {
         });
     }
     /**
-     * 重新排序用户
+     * 重新排序账号
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -1111,7 +1111,7 @@ export class Service {
         });
     }
     /**
-     * 从配置中心导入脚本配置
+     * 从配置中心导入托管配置
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -1130,7 +1130,7 @@ export class Service {
         });
     }
     /**
-     * 分享前检查脚本配置中的隐私风险
+     * 分享前检查托管配置中的隐私风险
      * @param requestBody
      * @returns ShareInspectOut Successful Response
      * @throws ApiError
@@ -1149,7 +1149,7 @@ export class Service {
         });
     }
     /**
-     * 分享脚本配置到配置中心
+     * 分享托管配置到配置中心
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -1385,7 +1385,7 @@ export class Service {
         });
     }
     /**
-     * MAA 仓库库存（当前用户档案；label=数量字符串，value=物品ID）
+     * MAA 仓库库存（当前账号档案；label=数量字符串，value=物品ID）
      * @param requestBody
      * @returns MaaDepotInventoryOut Successful Response
      * @throws ApiError
@@ -1588,7 +1588,7 @@ export class Service {
     }
     /**
      * 按来源目录导入（或重新导入）副本
-     * 脚本页选目录就是走这里：第一次是导入，之后是换来源或按当前来源重导。
+     * 托管页选目录就是走这里：第一次是导入，之后是换来源或按当前来源重导。
      *
      * 导入成功才把来源写进 Info.Path；失败时旧副本与旧来源都原样不动。
      * @param requestBody
@@ -1610,7 +1610,7 @@ export class Service {
     }
     /**
      * 立即从来源目录同步（跟随来源目录 / 源码形态）
-     * 脚本页「立即同步」：按当前来源目录强制重导进脚本的私有渠道，不看签名。
+     * 托管页「立即同步」：按当前来源目录强制重导进脚本的私有渠道，不看签名。
      *
      * 只在跟随来源目录（开发者模式或源码形态）时可用；脚本运行中、项目正在更新或被占用时拒绝。
      * ``message`` 是给用户看的结果：变了哪些文件 / 内容未变化。
@@ -1633,7 +1633,7 @@ export class Service {
     }
     /**
      * 列出可作为克隆来源的其它 MFW 脚本
-     * 新建脚本对话框里「复用已有脚本的项目」的候选：有健康副本的 MFW / M9A 脚本。
+     * 新建托管对话框里「复用已有托管的项目」的候选：有健康副本的 MFW / M9A 托管。
      *
      * 新建时脚本还没建出来，所以不要求 ``scriptId``；传了就把它自己排除掉。
      * @param requestBody
@@ -1658,9 +1658,9 @@ export class Service {
      * 同一个项目要开第二、第三个脚本（不同模拟器并行跑）时走这里，不用再选目录
      * 重新投影，来源目录已经删了也能建。
      *
-     * 副本从源脚本的副本硬链接克隆（运行时、模型与其它副本共用，只多小文件），
-     * ``Info.Path`` 与 ``Embedded.*`` 沿用源脚本的记录；类型随项目（M9A 项目 → M9A）。
-     * 用户、任务队列与运行设置不带——那是「复制脚本」的事。
+     * 副本从源托管的副本硬链接克隆（运行时、模型与其它副本共用，只多小文件），
+     * ``Info.Path`` 与 ``Embedded.*`` 沿用源托管的记录；类型随项目（M9A 项目 → M9A）。
+     * 用户、任务队列与运行设置不带——那是「复制托管」的事。
      * @param requestBody
      * @returns MaaFWEmbeddedStatusOut Successful Response
      * @throws ApiError
@@ -1680,7 +1680,7 @@ export class Service {
     }
     /**
      * 列出项目目录里外壳（MFAAvalonia / MXU / MFW-PyQt6）保存的配置实例
-     * 新建脚本引导最后一步用：外壳里配好的每份实例都可以导入成一个用户。只读外壳文件。
+     * 新建托管引导最后一步用：外壳里配好的每份实例都可以导入成一个账号。只读外壳文件。
      * @param requestBody
      * @returns MaaFWShellInstancesOut Successful Response
      * @throws ApiError
@@ -1700,7 +1700,7 @@ export class Service {
     }
     /**
      * 把选中的外壳配置实例导入成用户
-     * 每个实例建一个用户：用户名取实例名，任务队列与任务选项一起导入。
+     * 每个实例建一个账号：账号名称取实例名，任务队列与任务选项一起导入。
      *
      * 逐个实例独立处理，失败原因与当前项目里对不上而跳过的任务 / 选项写在各项结果里。
      * @param requestBody
@@ -1721,11 +1721,11 @@ export class Service {
         });
     }
     /**
-     * 把一份外壳配置的任务队列覆盖到已有用户
-     * 脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个用户。
+     * 把一份外壳配置的任务队列覆盖到已有账号
+     * 脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个账号。
      *
      * 与「导入成用户」共用同一套换算，所以当前项目里对不上的任务 / 选项同样会被跳过并列在结果里。
-     * 覆盖的是任务队列与任务选项，用户名不动。
+     * 覆盖的是任务队列与任务选项，账号名称不动。
      * @param requestBody
      * @returns MaaFWShellInstanceApplyOut Successful Response
      * @throws ApiError
@@ -1745,9 +1745,9 @@ export class Service {
     }
     /**
      * 按所选 resource 推断 MFW 项目的安卓游戏包名
-     * 脚本编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
+     * 托管编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
      *
-     * 只看 resource 的 pipeline，不带用户任务的 pipeline_override（编辑脚本时还没有
+     * 只看 resource 的 pipeline，不带账号任务的 pipeline_override（编辑脚本时还没有
      * 运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
      * @param requestBody
      * @returns MaaFWGamePackageOut Successful Response
@@ -1836,7 +1836,7 @@ export class Service {
     }
     /**
      * 查询 MFW 项目的 Mirror 酱 CDK 状态
-     * 脚本编辑页 CDK 输入框下那行小字：CDK 还剩多久到期，或者为什么不能用。
+     * 托管编辑页 CDK 输入框下那行小字：CDK 还剩多久到期，或者为什么不能用。
      *
      * 带着 CDK 按「当前版本 = 最新版本」查一次 Mirror 酱，服务端只校验 CDK、不签发下载地址，
      * 不占当日下载额度。CDK 只放在请求体里。项目不支持或查询失败也按成功返回对应状态。
@@ -1917,13 +1917,13 @@ export class Service {
     }
     /**
      * 读取 MFW 脚本的项目图标
-     * 脚本列表的头像：项目 interface 顶层 ``icon`` 指的图片。
+     * 托管列表的头像：项目 interface 顶层 ``icon`` 指的图片。
      *
      * 取不到（项目还没导入、没写 icon、文件不在）一律 404，前端回退到类型图标；
      * 具体原因只写日志，不放进响应。
      * 项目更新可能原地换掉图标而地址不变，所以带 ``no-cache``，不让浏览器拿缓存的旧图；
      * FileResponse 不处理 If-None-Match，每次都完整返回。
-     * @param scriptId MFW 脚本 ID
+     * @param scriptId MFW 托管 ID
      * @returns any Successful Response
      * @throws ApiError
      */
@@ -1945,7 +1945,7 @@ export class Service {
      * 获取 HSR 体力副本动态选项
      * 返回 M7A/SRA 原生副本字段。
      *
-     * ``userId`` 仅用于校验用户归属；``slot`` 是兼容参数，动态选项当前
+     * ``userId`` 仅用于校验账号归属；``slot`` 是兼容参数，动态选项当前
      * 按引擎统一返回，不按 slot 生成不同结果。
      * @param scriptId
      * @param engine
@@ -2019,8 +2019,8 @@ export class Service {
         });
     }
     /**
-     * 为 HSR 用户登录云·星穹铁道
-     * 起该用户的云浏览器并用三月七的 ``game`` 任务等用户在窗口里登录。
+     * 为 HSR 账号登录云·星穹铁道
+     * 起该账号的云浏览器并用三月七的 ``game`` 任务等用户在窗口里登录。
      *
      * 阻塞到三月七退出为止（最长为登录等待 + 最长排队 + 余量），与正在运行的
      * 任务互斥：脚本运行中或三月七目录被占用时返回 409。成功后写
@@ -2046,9 +2046,9 @@ export class Service {
      * 获取 HSR 托管配置字段
      * 返回原生动态托管字段。
      *
-     * 传了用户 ID 时先做归属校验，再按该用户的配置来源决定表单读哪份计划：
-     * 「脚本」读脚本共享计划，「用户」读该用户自己的计划；不传用户 ID 时读
-     * 脚本共享计划。响应的 ``plan_owner`` 指明保存目标。
+     * 传了账号 ID 时先做归属校验，再按该账号的配置来源决定表单读哪份计划：
+     * 「脚本」读托管共享计划，「用户」读该用户自己的计划；不传账号 ID 时读
+     * 托管共享计划。响应的 ``plan_owner`` 指明保存目标。
      * @param scriptId
      * @param userId
      * @returns HSRManagedConfigOut Successful Response
@@ -2116,8 +2116,8 @@ export class Service {
      * 获取 BetterGI 一条龙自定义配置组
      * 返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。
      *
-     * ``useMasConfig=True``（用户独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
-     * 槽位名，副本缺失按内置模板），返回该用户将写入槽位的自定义组；``userId`` 必填。
+     * ``useMasConfig=True``（独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
+     * 槽位名，副本缺失按内置模板），返回该账号将写入槽位的自定义组；``userId`` 必填。
      * 否则（非独立模式用 BGI 原生配置）读取 BGI ``{configName}`` 实配的自定义组。
      * @param scriptId
      * @param userId
@@ -2219,13 +2219,13 @@ export class Service {
     }
     /**
      * 获取 BetterGI 可用配置组列表
-     * 返回 BetterGI 配置组候选：BGI ``User/ScriptGroup*.json`` 文件名；带 userId 时并集该用户 per-user 副本名。
+     * 返回 BetterGI 配置组候选：BGI ``User/ScriptGroup*.json`` 文件名；带 userId 时并集该账号 per-user 副本名。
      *
      * BetterGI 的「配置组」（GUI 中可加入一条龙的自定义任务组）以独立 json 保存于
      * ``User/ScriptGroup``，文件名（不含 ``.json``）即组名，与一条龙 TaskDefinitions
      * 的引用名一致。每次调用实时扫描，供「添加配置组」弹窗「配置组」标签页展示。
      *
-     * ``userId`` 非空时把该用户的 per-user ScriptGroup 副本名一并并入（副本是 MAS
+     * ``userId`` 非空时把该账号的 per-user ScriptGroup 副本名一并并入（副本是 MAS
      * 独立配置的权威内容源，复制自 JS/路径等来源的新组也只存在于副本目录，需要能被
      * 识别/展示为配置组）。
      * @param scriptId
@@ -2251,7 +2251,7 @@ export class Service {
     }
     /**
      * 获取 BetterGI 配置组 json 详情（per-user 副本优先）
-     * 返回某用户的配置组 json（per-user 副本 → BGI 实配的种子顺序）。
+     * 返回某账号的配置组 json（per-user 副本 → BGI 实配的种子顺序）。
      *
      * 右栏「配置组」标签页选中 scriptgroup 时，据此列出其 json 内 ``projects`` 的
      * 每个项目；也供 JS/路径等单项目组展示（项目名=组名）。
@@ -2378,7 +2378,7 @@ export class Service {
     }
     /**
      * 获取 BetterGI 一条龙设置项（右栏按任务分组展示）
-     * 返回某用户一条龙配置的设置项（per-user 副本 → BGI 实配 → 内置模板的种子顺序）。
+     * 返回某账号一条龙配置的设置项（per-user 副本 → BGI 实配 → 内置模板的种子顺序）。
      *
      * 供右栏按任务分组渲染并回显该任务在 BGI 一条龙里的可设置字段。
      * ``groupName`` 为右栏当前编辑的内置组名，战斗 4 项 Plan 回显按其查映射，
@@ -2412,7 +2412,7 @@ export class Service {
     }
     /**
      * 保存 BetterGI 一条龙设置项到 per-user 副本
-     * 把右栏编辑的设置项写回该用户一条龙配置副本（不触碰 BGI 同名实配）。
+     * 把右栏编辑的设置项写回该账号一条龙配置副本（不触碰 BGI 同名实配）。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -2473,8 +2473,8 @@ export class Service {
      * 获取 BetterGI 全局 config.json 的秘境刷取配置段
      * 返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
      *
-     * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-     * 使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（原生来源模式）读
+     * ``userId`` 非空时以该账号 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
+     * 使独立配置下每个账号的秘境刷取设置互不影响；``userId`` 为空（原生来源模式）读
      * BGI 全局 config.json（autoDomainConfig/autoArtifactSalvageConfig，camelCase）。
      * @param scriptId
      * @param userId
@@ -2524,8 +2524,8 @@ export class Service {
      * 获取 BetterGI 全局 config.json 的自动幽境危战设置段
      * 返回自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
      *
-     * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-     * 使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（原生来源模式）读
+     * ``userId`` 非空时以该账号 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
+     * 使独立配置下每个账号的幽境设置互不影响；``userId`` 为空（原生来源模式）读
      * BGI 全局 config.json（autoStygianOnslaughtConfig 段，camelCase）。
      * @param scriptId
      * @param userId
@@ -2599,7 +2599,7 @@ export class Service {
     /**
      * 保存 BetterGI 配置组 json 到 per-user 副本
      * 把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
-     * 该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
+     * 该账号的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
      *
      * 「路径」类引用（名字含 ``/``）不能作文件名，落盘到 ``per_user_copy_name`` 的确定性别名
      * （右栏把路径项加成多项目配置组后需要载体）。不触碰 BetterGI 全局
@@ -2622,11 +2622,11 @@ export class Service {
         });
     }
     /**
-     * 获取游戏客户端信息（路径 + 渠道，用户页透传展示）
+     * 获取游戏客户端信息（路径 + 渠道，账号页透传展示）
      * 读取 BetterGI 配置的游戏路径并识别客户端渠道（官服/B服/国际服）。
      *
      * ``detectPath`` 非空时对该路径做渠道识别（用户自填路径的即时标注），
-     * 为空时返回生效路径（用户级优先，否则 BGI 全局配置）及其渠道。
+     * 为空时返回生效路径（账号级优先，否则 BGI 全局配置）及其渠道。
      * @param scriptId
      * @param detectPath
      * @returns BetterGIGameInfoOut Successful Response
@@ -2834,7 +2834,7 @@ export class Service {
      * 获取实例槽总览（原生实例 / MAS 绑定槽 / 无主残留）
      * 槽目录是 MAS 分配在一条龙安装目录里的，注册表与 GUI 都看不到。
      *
-     * 这份对照表用于诊断「槽目录数与用户数对不上」（绑定但没跑过的槽没有目录）
+     * 这份对照表用于诊断「槽目录数与账号数对不上」（绑定但没跑过的槽没有目录）
      * 与定位无主残留。
      * @param scriptId
      * @returns ZzzOdSlotsOut Successful Response
@@ -2916,10 +2916,10 @@ export class Service {
         });
     }
     /**
-     * 把回收池里的槽快照恢复给某个 MAS 用户（现有用户或新建用户，先存底）
+     * 把回收池里的槽快照恢复给某个 MAS 账号（现有用户或新建账号，先存底）
      * 恢复的落点是**用户的绑定槽**（``targetUser`` 指定现有用户，或
-     * ``newUserName`` 新建一个用户）——只物化内容而不建立绑定的恢复没有出口，
-     * MAS 下次运行不会认领它。目标用户已有绑定槽时覆盖其内容，恢复前先存底。
+     * ``newUserName`` 新建一个账号）——只物化内容而不建立绑定的恢复没有出口，
+     * MAS 下次运行不会认领它。目标账号已有绑定槽时覆盖其内容，恢复前先存底。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -2986,7 +2986,7 @@ export class Service {
     }
     /**
      * 获取一条龙任务目录
-     * 静态解析安装目录下的应用注册信息，供用户配置渲染任务卡片中文名。
+     * 静态解析安装目录下的应用注册信息，供账号配置渲染任务卡片中文名。
      * @param scriptId
      * @returns ZzzOdCatalogOut Successful Response
      * @throws ApiError
@@ -3145,8 +3145,8 @@ export class Service {
         });
     }
     /**
-     * 基于一条龙已有实例快速生成当前用户配置（覆盖前自动归档当前配置）
-     * 把来源实例的账号信息与已启用任务编排写入本用户；覆盖前强制归档当前 MAS 槽配置，
+     * 基于一条龙已有实例快速生成当前账号配置（覆盖前自动归档当前配置）
+     * 把来源实例的账号信息与已启用任务编排写入本账号；覆盖前强制归档当前 MAS 槽配置，
      * 导入前状态可在「配置恢复」中找回。
      * @param requestBody
      * @returns ZzzOdImportOut Successful Response
@@ -3192,11 +3192,11 @@ export class Service {
     /**
      * 获取 OK-NTE 配置文件列表及 schema
      * 获取 OK-NTE 配置文件列表及 schema 定义。
-     * 读写用户快速配置目录，首次从已有来源初始化，不修改来源文件。
+     * 读写用户覆写常规配置目录，首次从已有来源初始化，不修改来源文件。
      *
      * Args:
-     * script_id: OK-NTE 脚本 ID
-     * user_id: 用户 ID
+     * script_id: OK-NTE 托管 ID
+     * user_id: 账号 ID
      *
      * Returns:
      * dict: 包含配置文件列表和 schema 的响应
@@ -3226,8 +3226,8 @@ export class Service {
      * 批量更新 OK-NTE 配置文件
      *
      * Args:
-     * script_id: OK-NTE 脚本 ID
-     * user_id: 用户 ID
+     * script_id: OK-NTE 托管 ID
+     * user_id: 账号 ID
      * configs: { filename: data } 格式的配置数据
      *
      * Returns:
@@ -3299,8 +3299,8 @@ export class Service {
     }
     /**
      * 把指定备份恢复到目标位置（恢复前自动存底当前配置，误恢复可找回）
-     * 恢复语义由专项池定义：脚本原生池恢复到脚本本体，MAS 用户池恢复到
-     * 用户配置并按需回填前端表单。备份来自其他配置来源（脚本级/用户级）时
+     * 恢复语义由专项池定义：脚本原生池恢复到脚本本体，MAS 账号池恢复到
+     * 账号配置并按需回填前端表单。备份来自其他配置来源（托管级/账号级）时
      * 由服务层把配置来源切回备份时点再恢复；提示由前端据备份列表与当前
      * 来源比对给出。
      * @param requestBody
@@ -3479,7 +3479,7 @@ export class Service {
         });
     }
     /**
-     * 查询通用计划已配置的日期
+     * 查询通用脚本计划表已配置的日期
      * @param requestBody
      * @returns UniversalPlanStateOut Successful Response
      * @throws ApiError

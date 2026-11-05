@@ -418,7 +418,7 @@ class AppConfig:
                 ) and await script.migrate_update_takeover(
                     global_cdk=str(self.setting.Update.MirrorChyanCDK or "")
                 ):
-                    logger.info("MAA 更新接管迁移：已为配置 CDK 的旧脚本开启接管")
+                    logger.info("MAA 更新接管迁移：已为配置 CDK 的既有托管开启接管")
                 if (
                     isinstance(script, MaaConfig)
                     and not script.Update.ChannelMigrationVersion
@@ -1085,9 +1085,9 @@ class AppConfig:
         | WhimboxConfig
         | MSSConfig,
     ]:
-        """添加脚本配置"""
+        """添加托管配置"""
 
-        logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
+        logger.info(f"添加托管配置: {script}, 从 {script_id} 复制")
 
         if script_id is None:
             async with config_manager.transaction():
@@ -1100,7 +1100,7 @@ class AppConfig:
             script_uid = uuid.UUID(script_id)
 
             if not isinstance(self.ScriptConfig[script_uid], CLASS_BOOK[script]):
-                raise TypeError(f"脚本配置类型不匹配: {script_id} {script}")
+                raise TypeError(f"托管配置类型不匹配: {script_id} {script}")
 
             document = self.ScriptConfig[script_uid].model_dump(
                 context={"audience": "persist"}
@@ -1123,12 +1123,12 @@ class AppConfig:
                 )
             }
 
-            # 专项副本在配置事务成功后、通用用户数据复制前准备。
+            # 专项副本在配置事务成功后、通用账号数据复制前准备。
             handler = self._get_script_config_handler(new_config)
             if handler is not None and handler.clone_script is not None:
                 await handler.clone_script(self.ScriptConfig[script_uid], new_config)
 
-            # 复制用户数据
+            # 复制账号数据
             if (self.data_path / f"{script_id}").exists():
                 shutil.copytree(
                     self.data_path / f"{script_id}",
@@ -1144,12 +1144,12 @@ class AppConfig:
             return new_uid, new_config
 
     async def get_script(self, script_id: str | None) -> tuple[list, dict]:
-        """获取脚本配置"""
+        """获取托管配置"""
 
-        logger.info(f"获取脚本配置: {script_id}")
+        logger.info(f"获取托管配置: {script_id}")
 
         if script_id is None:
-            # 获取所有脚本配置
+            # 获取所有托管配置
             data = self.ScriptConfig.model_dump(context={"audience": "api"})
         else:
             # 获取指定脚本配置
@@ -1183,14 +1183,14 @@ class AppConfig:
     async def update_script(
         self, script_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
-        """更新脚本配置"""
+        """更新托管配置"""
 
-        logger.info(f"更新脚本配置: {script_id}")
+        logger.info(f"更新托管配置: {script_id}")
 
         uid = uuid.UUID(script_id)
 
         if self.ScriptConfig[uid].is_locked:
-            raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
+            raise RuntimeError(f"托管 {script_id} 正在运行, 无法更新配置项")
 
         handler = self._get_script_config_handler(self.ScriptConfig[uid])
         if handler is not None and handler.validate_update is not None:
@@ -1201,22 +1201,22 @@ class AppConfig:
         )
 
     async def del_script(self, script_id: str) -> None:
-        """删除脚本配置"""
+        """删除托管配置"""
 
-        logger.info(f"删除脚本配置: {script_id}")
+        logger.info(f"删除托管配置: {script_id}")
 
         uid = uuid.UUID(script_id)
 
         if self.ScriptConfig[uid].is_locked:
-            raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
+            raise RuntimeError(f"托管 {script_id} 正在运行, 无法删除")
 
-        # 删脚本会顺带删掉引用它的队列项；正在循环运行的队列靠下标回写状态，
-        # 结构一变就会跑错脚本，两轮之间脚本没锁也要拦住。
+        # 删托管会顺带删掉引用它的队列项；正在循环运行的队列靠下标回写状态，
+        # 结构一变就会跑错托管，两轮之间托管没锁也要拦住。
         for queue_uid, queue in self.QueueConfig.items():
             if any((item.Info.ScriptId == uid for item in queue.QueueItem.values())):
-                self._ensure_cycle_safe(queue_uid, "删除它引用的脚本")
+                self._ensure_cycle_safe(queue_uid, "删除它引用的托管")
 
-        # 删除脚本相关的队列项
+        # 删除托管相关的队列项
         for queue in self.QueueConfig.values():
             for key, value in queue.QueueItem.items():
                 if value.Info.ScriptId == uid:
@@ -1234,7 +1234,7 @@ class AppConfig:
             handler.after_script_removal()
         # 数据目录里可能有只读文件（如脚本配置目录快照带进来的 .git 对象）：裸
         # rmtree 删到它们会抛 PermissionError，而此时配置已经移除，目录残留在磁盘上、
-        # 再点这个脚本还会报「配置项不存在」。目录删除是阻塞 IO（force_rmtree 内部
+        # 再点这个托管还会报「配置项不存在」。目录删除是阻塞 IO（force_rmtree 内部
         # 还有 sleep 重试），放线程里跑，别让事件循环跟着等。
         script_data_dir = self.data_path / f"{uid}"
         if script_data_dir.exists():
@@ -1243,9 +1243,9 @@ class AppConfig:
             await handler.cleanup_script_files(str(uid))
 
     async def reorder_script(self, index_list: list[str]) -> None:
-        """重新排序脚本"""
+        """重新排序托管"""
 
-        logger.info(f"重新排序脚本: {index_list}")
+        logger.info(f"重新排序托管: {index_list}")
 
         self.ScriptConfig.set_order([uuid.UUID(_) for _ in index_list])
         await self.ScriptConfig.commit()
@@ -1253,9 +1253,9 @@ class AppConfig:
     async def get_user(
         self, script_id: str, user_id: Optional[str]
     ) -> tuple[list, dict]:
-        """获取用户配置"""
+        """获取账号配置"""
 
-        logger.info(f"获取用户配置: {script_id} - {user_id}")
+        logger.info(f"获取账号配置: {script_id} - {user_id}")
 
         uid = uuid.UUID(script_id)
 
@@ -1268,12 +1268,12 @@ class AppConfig:
             )
 
         if user_id is None:
-            # 获取全部用户配置
+            # 获取全部账号配置
             data = self.ScriptConfig[uid].UserData.model_dump(
                 context={"audience": "api"}
             )
         else:
-            # 获取指定用户配置
+            # 获取指定账号配置
             entry = self.ScriptConfig[uid].UserData[uuid.UUID(user_id)]
             return (
                 [{"uid": str(entry.uid), "type": type(entry).__name__}],
@@ -1302,19 +1302,19 @@ class AppConfig:
         | WhimboxUserConfig
         | MSSUserConfig,
     ]:
-        """添加用户配置"""
+        """添加账号配置"""
 
-        logger.info(f"{script_id} 添加用户配置")
+        logger.info(f"{script_id} 添加账号配置")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
 
         handler = self._get_script_config_handler(script_config)
-        # 特调脚本自行声明的用户类优先，不能被 MaaFW 父类型处理器覆盖。
+        # 特调托管自行声明的账号类优先，不能被 MaaFW 父类型处理器覆盖。
         user_class = getattr(script_config, "USER_CONFIG_CLASS", None)
         if user_class is None and handler is not None:
             user_class = handler.user_config_class
         if user_class is None:
-            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
+            raise TypeError(f"不支持的托管配置类型: {type(script_config)}")
 
         uid = script_config.UserData.add(user_class, payload=payload)
         await script_config.UserData.commit()
@@ -1405,7 +1405,7 @@ class AppConfig:
     ) -> dict:
         """把指定备份恢复到目标位置（恢复前存底、跨来源切换由服务层自理）。
 
-        恢复是覆盖性写配置操作：脚本锁着（任务/配置会话运行中）时拒绝，
+        恢复是覆盖性写配置操作：托管锁着（任务/配置会话运行中）时拒绝，
         否则 mas 池「先换目录再回填 UserData」会在 update 处撞锁，留下
         目录已换、字段未回填的半恢复现场。
 
@@ -1417,7 +1417,7 @@ class AppConfig:
 
         uid = uuid.UUID(script_id)
         if self.ScriptConfig[uid].is_locked:
-            raise RuntimeError(f"脚本 {script_id} 正在运行, 无法恢复配置")
+            raise RuntimeError(f"托管 {script_id} 正在运行, 无法恢复配置")
 
         await self.restore_service(script_id, user_id, force=force).restore(target, ts)
         return {"target": target}
@@ -1452,13 +1452,13 @@ class AppConfig:
         *,
         precondition: Callable[[], bool] | None = None,
     ) -> bool:
-        """更新用户配置，返回是否写入
+        """更新账号配置，返回是否写入
 
         ``precondition``：预处理（特调整理、密码加密等，要让出事件循环）做完、真正写入
         之前再判一次，不成立就不写。判断与写入之间不让出，期间插不进别的写入。
         """
 
-        logger.info(f"{script_id} 更新用户配置: {user_id}")
+        logger.info(f"{script_id} 更新账号配置: {user_id}")
 
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
@@ -1499,18 +1499,18 @@ class AppConfig:
     async def import_script_config_file(
         self, script_id: str, user_id: Optional[str]
     ) -> None:
-        """从目标脚本目录导入配置文件"""
+        """从外部脚本目录导入配置文件"""
 
         logger.info(f"{script_id} - {user_id or 'Default'} 导入脚本配置文件")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
 
         if script_config.is_locked:
-            raise RuntimeError(f"脚本 {script_id} 正在运行，无法导入配置文件")
+            raise RuntimeError(f"托管 {script_id} 正在运行，无法导入配置文件")
 
         handler = self._get_script_config_handler(script_config)
         if handler is None or handler.import_config is None:
-            raise TypeError("当前脚本类型暂不支持导入配置文件")
+            raise TypeError("当前托管类型暂不支持导入配置文件")
 
         config_owner = user_id or "Default"
         target_config_dir = self.data_path / f"{script_id}/{config_owner}/ConfigFile"
@@ -1567,9 +1567,9 @@ class AppConfig:
             await handler.initialize(script)
 
     async def del_user(self, script_id: str, user_id: str) -> None:
-        """删除用户配置"""
+        """删除账号配置"""
 
-        logger.info(f"{script_id} 删除用户配置: {user_id}")
+        logger.info(f"{script_id} 删除账号配置: {user_id}")
 
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
@@ -1585,21 +1585,21 @@ class AppConfig:
         if cleanup is not None:
             await cleanup()
 
-        # 与 del_script 同理：用户数据目录里可能有只读文件，裸 rmtree 删不干净还抛异常。
+        # 与 del_script 同理：账号数据目录里可能有只读文件，裸 rmtree 删不干净还抛异常。
         user_data_dir = self.data_path / f"{script_id}/{user_id}"
         if user_data_dir.exists():
             await asyncio.to_thread(_utils_io.force_rmtree, user_data_dir)
 
     async def get_user_config_dir(self, script_id: str, user_id: str) -> Path:
-        """获取专项声明的生效配置目录，未声明时沿用用户数据目录。"""
+        """获取专项声明的生效配置目录，未声明时沿用账号数据目录。"""
 
-        logger.info(f"{script_id} 获取用户配置目录: {user_id}")
+        logger.info(f"{script_id} 获取账号配置目录: {user_id}")
 
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
         script_config = self.ScriptConfig[script_uid]
         if user_uid not in script_config.UserData:
-            raise ValueError("用户不存在")
+            raise ValueError("账号不存在")
 
         user_config_dir = self.data_path / f"{script_id}/{user_id}"
         handler = self._get_script_config_handler(script_config)
@@ -1614,9 +1614,9 @@ class AppConfig:
         return user_config_dir
 
     async def reorder_user(self, script_id: str, index_list: list[str]) -> None:
-        """重新排序用户"""
+        """重新排序账号"""
 
-        logger.info(f"{script_id} 重新排序用户: {index_list}")
+        logger.info(f"{script_id} 重新排序账号: {index_list}")
 
         script_uid = uuid.UUID(script_id)
 
@@ -1761,7 +1761,7 @@ class AppConfig:
                     continue
                 if user.is_locked:
                     raise RuntimeError(
-                        f"用户 {user.Info.Name} 正在使用此计划表且被锁定, 无法完成删除"
+                        f"账号 {user.Info.Name} 正在使用此计划表且被锁定, 无法完成删除"
                     )
                 user_list.append(user)
 
@@ -1862,7 +1862,7 @@ class AppConfig:
                 if binding is not None and str(binding[0]) == str(emulator_uid):
                     if script.is_locked:
                         raise RuntimeError(
-                            f"脚本 {script.Info.Name} 正在使用此模拟器且被锁定, 无法完成删除"
+                            f"托管 {script.Info.Name} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
 
             # 关联绑定由删除信号统一清理，任一运行锁拒绝时随删除一起回退。
@@ -2057,10 +2057,10 @@ class AppConfig:
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
-        # 循环调度参数每轮都会重读，运行中改没问题；换脚本会让任务的脚本列表
+        # 循环调度参数每轮都会重读，运行中改没问题；换托管会让任务的托管列表
         # 与队列对不上号，必须拦住。
         if "Info" in data:
-            self._ensure_cycle_safe(queue_uid, "更换队列项的脚本")
+            self._ensure_cycle_safe(queue_uid, "更换队列项的托管")
 
         await (
             self.QueueConfig[queue_uid]
@@ -2100,8 +2100,8 @@ class AppConfig:
     def _ensure_cycle_safe(self, queue_uid: uuid.UUID, action: str) -> None:
         """拦住会打乱正在运行的循环的改动。
 
-        任务的脚本列表在创建时就冻结了，循环靠下标回写状态；队列项的增删、
-        排序、换脚本都会让下标对不上号。只拦这些，改名、改完成后操作、改循环
+        任务的托管列表在创建时就冻结了，循环靠下标回写状态；队列项的增删、
+        排序、换托管都会让下标对不上号。只拦这些，改名、改完成后操作、改循环
         周期都不受影响。
         """
 
@@ -2553,9 +2553,9 @@ class AppConfig:
         }
 
     async def get_script_combox(self):
-        """获取脚本下拉框信息"""
+        """获取托管下拉框信息"""
 
-        logger.info("开始获取脚本下拉框信息")
+        logger.info("开始获取托管下拉框信息")
         data = [{"label": "未选择", "value": "-"}]
         for uid, script in self.ScriptConfig.items():
             data.append(
@@ -2564,7 +2564,7 @@ class AppConfig:
                     "value": str(uid),
                 }
             )
-        logger.success("脚本下拉框信息获取成功")
+        logger.success("托管下拉框信息获取成功")
 
         return data
 
@@ -2579,7 +2579,7 @@ class AppConfig:
             if not script.is_locked:
                 data.append(
                     {
-                        "label": f"脚本 - {_utils_constants.TYPE_BOOK[type(script).__name__]} - {script.Info.Name}",
+                        "label": f"托管 - {_utils_constants.TYPE_BOOK[type(script).__name__]} - {script.Info.Name}",
                         "value": str(uid),
                     }
                 )
@@ -2720,7 +2720,7 @@ class AppConfig:
         )
 
     async def _settle_m9a_migration(self, report: Any) -> None:
-        """旧 M9A 配置迁完之后的两件收尾：原先有归档的脚本用 MaaFW 池归档一次；结果攒成系统通知。
+        """旧 M9A 配置迁完之后的两件收尾：原先有归档的托管用 MaaFW 池归档一次；结果攒成系统通知。
 
         旧 M9A 池（``data/<sid>/M9ABackups/``）不再被列出也不支持恢复，目录原地保留。此时
         副本还没建，native 池按来源目录归档；引擎首次运行前还会按有效根再归档一次，指纹去重。
@@ -2761,12 +2761,12 @@ class AppConfig:
         if report.failure:
             lines.insert(
                 0,
-                "旧 M9A 配置迁移失败，旧脚本的任务队列与周期记录可能已被重置；"
+                "旧 M9A 配置迁移失败，既有托管的任务队列与周期记录可能已被重置；"
                 f"迁移前的原文件已备份为 {report.backup_path.name if report.backup_path else '（备份也失败）'}，"
                 f"原因：{report.failure}",
             )
         if archived:
-            lines.append("原先有归档的脚本已按新格式归档一次：" + "、".join(archived))
+            lines.append("原先有归档的托管已按新格式归档一次：" + "、".join(archived))
         # 失败行已经带了备份文件名（或「备份也失败」），不再重复一遍
         if report.backup_path is not None and not report.failure:
             lines.append(f"迁移前的配置已备份为 {report.backup_path.name}")
@@ -2774,12 +2774,12 @@ class AppConfig:
             {
                 "level": "warning" if report.needs_attention else "info",
                 "title": (
-                    "M9A 脚本迁移失败"
+                    "M9A 托管迁移失败"
                     if report.failure
                     else (
-                        "M9A 脚本已并入 MFW 引擎"
+                        "M9A 托管已并入 MFW 引擎"
                         if report.migrated_scripts
-                        else "已按项目识别出 M9A 脚本"
+                        else "已按项目识别出 M9A 托管"
                     )
                 ),
                 "lines": lines,
@@ -2787,7 +2787,7 @@ class AppConfig:
         )
 
     def script_config_loaded_intact(self) -> bool:
-        """确认脚本集合加载成功；空表再核对持久文件，避免把损坏配置当成无引用。"""
+        """确认托管集合加载成功；空表再核对持久文件，避免把损坏配置当成无引用。"""
 
         if not self._script_configs_loaded:
             return False

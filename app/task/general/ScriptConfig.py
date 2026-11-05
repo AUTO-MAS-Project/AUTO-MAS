@@ -195,7 +195,7 @@ class ScriptConfigTask(TaskExecuteBase):
 
         await System.kill_process(self.script_set_exe_path)
 
-        # 查看会话的脚本级入口：原生配置即所选备份，跳过下发（用户级为目录
+        # 查看会话的托管级入口：原生配置即所选备份，跳过下发（账号级为目录
         # 副本型，强制照常下发——GUI 所见即备份，不受原生来源门控影响）
         if self.task_info.view_only and self.cur_user_item.user_id == "Default":
             logger.info("通用脚本查看会话跳过配置下发: 原生配置即所选备份")
@@ -205,8 +205,8 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.info("脚本原生配置：跳过写入脚本配置")
             return
 
-        # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；指纹去重，
-        # 失败不阻断会话）。General 的 ConfigFile 恒按用户，无 owner 解耦；
+        # 下发前归档 MAS 配置到账号池（下发源，会话保存会覆盖它；指纹去重，
+        # 失败不阻断会话）。General 的 ConfigFile 恒按账号，无 owner 解耦；
         # 查看会话的 ConfigFile 即刚恢复的备份，无需再归档
         if not self.task_info.view_only and not self.plan_active:
             from .tools.backup_archive import archive_mas_runtime_backup
@@ -239,7 +239,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.script_config_path,
             )
 
-        logger.success(f"MAA运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}")
+        logger.success(f"MAA运行参数配置完成: 设置账号 {self.cur_user_item.user_id}")
 
     async def final_task(self):
 
@@ -255,7 +255,7 @@ class ScriptConfigTask(TaskExecuteBase):
             return
 
         if not self.use_mas_config:
-            logger.info("脚本原生来源配置：跳过回写用户独立配置")
+            logger.info("脚本原生来源配置：跳过回写独立配置")
             return
 
         if self.plan_active:

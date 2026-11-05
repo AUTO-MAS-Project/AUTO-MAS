@@ -18,7 +18,7 @@
 
 """``/maafw/embedded/*`` 端点背后的业务：副本状态、导入 / 重导、克隆、候选来源。
 
-导入与克隆之后的两步也在这里：按项目换脚本类型（``_apply_project_flavor``），
+导入与克隆之后的两步也在这里：按项目换托管类型（``_apply_project_flavor``），
 把同项目同渠道的空闲脚本切到组当前版本（``_propagate_view_to_group``）。
 """
 
@@ -89,7 +89,7 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_proxy_url,
 )
 
-EMBEDDED_SCRIPT_BUSY = "脚本正在运行，请等运行结束后再导入项目"
+EMBEDDED_SCRIPT_BUSY = "托管正在运行，请等运行结束后再导入项目"
 EMBEDDED_COPY_BUSY = "该 MFW 项目正在更新或准备环境，请稍后重试"
 
 
@@ -134,7 +134,7 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
 
     try:
         script_config = maafw_script_config(script_id)
-        # 开发者模式：导入到本脚本的私有渠道（不比版本、这份就是它的 latest）。只看开关：
+        # 开发者模式：导入到本托管的私有渠道（不比版本、这份就是它的 latest）。只看开关：
         # 源码形态由导入按这次的布局自己认，旧报告的 sourceForm 不作数（源码仓改选成发行包
         # 目录时它还是上一次的结果）
         follow = follow_source_switch_on(script_config)
@@ -155,7 +155,7 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
     def log_failure(reason: str, *, exception: bool = False) -> None:
         line = mask_home_path(
             redact_text(
-                f"MFW 脚本 {script_id}（{script_name}）从 {source_path} 导入失败"
+                f"MFW 托管 {script_id}（{script_name}）从 {source_path} 导入失败"
                 f"（渠道 {channel}）：{reason}"
             )
         )
@@ -241,7 +241,7 @@ async def _propagate_view_to_group(script_id: str, channel: str) -> None:
         return
     if result.switched or result.skipped or result.failed:
         logger.info(
-            f"MFW 脚本 {script_id} 导入后同步同项目脚本：已切换 {result.switched}，"
+            f"MFW 托管 {script_id} 导入后同步同项目脚本：已切换 {result.switched}，"
             f"跳过 {result.skipped}，失败 {result.failed}"
         )
 
@@ -250,7 +250,7 @@ _EmbeddedImportPublish = Callable[[str, str, str, float | None], None]
 
 
 def _embedded_import_publisher(script_id: str) -> _EmbeddedImportPublish:
-    """导入进度走运行环境准备那条 WS 通道（同一个脚本 id）：页面早就订着它，
+    """导入进度走运行环境准备那条 WS 通道（同一个托管 id）：页面早就订着它，
     两件事不会同时发生，用 ``stage=importing / imported`` 区分。"""
 
     from app.core import Publisher
@@ -301,7 +301,7 @@ def _embedded_import_progress(
 
 
 async def _apply_project_flavor(script_id: str) -> None:
-    """导入完成后按项目决定脚本类型：特调项目 → 特调类型，否则通用 MaaFW；uid 不变。
+    """导入完成后按项目决定托管类型：特调项目 → 特调类型，否则通用 MaaFW；uid 不变。
 
     类型由项目决定、双向自动：M9A 目录导进通用 MaaFW 脚本会变成 M9A，M9A 脚本换成别的项目
     会变回 MaaFW。保留脚本身份与共有配置，用户类型及专项默认值沿用既有转换规则。
@@ -334,9 +334,9 @@ async def _apply_project_flavor(script_id: str) -> None:
         await Config.ScriptConfig.commit()
         script_config = Config.ScriptConfig[script_uid]
     except Exception as exc:  # noqa: BLE001 - 换类型失败不该让导入失败
-        logger.warning(f"按项目切换脚本类型失败，保持原类型：{exc}")
+        logger.warning(f"按项目切换托管类型失败，保持原类型：{exc}")
         return
-    logger.info(f"脚本 {script_id} 按项目识别为 {target.__name__}，已原地切换类型")
+    logger.info(f"托管 {script_id} 按项目识别为 {target.__name__}，已原地切换类型")
     script_name = str(script_config.Info.Name or str(script_id)[:8])
     has_users = len(script_config.UserData) > 0
     # 各特调的行为说明由特调自己给（retype_notice_lines），引擎不写专项语义
@@ -458,7 +458,7 @@ async def sync_embedded(script_id: str) -> MaaFWApiReply:
     except EmbeddedProjectError as exc:
         logger.warning(
             mask_home_path(
-                redact_text(f"MFW 脚本 {script_id} 从 {source} 立即同步失败：{exc}")
+                redact_text(f"MFW 托管 {script_id} 从 {source} 立即同步失败：{exc}")
             )
         )
         publish("imported", "failed", str(exc), None)
@@ -466,7 +466,7 @@ async def sync_embedded(script_id: str) -> MaaFWApiReply:
     except Exception as exc:  # noqa: BLE001 - 文件系统异常也要原样给用户
         logger.opt(exception=True).warning(
             mask_home_path(
-                redact_text(f"MFW 脚本 {script_id} 从 {source} 立即同步失败：{exc}")
+                redact_text(f"MFW 托管 {script_id} 从 {source} 立即同步失败：{exc}")
             )
         )
         publish("imported", "failed", str(exc), None)
@@ -478,7 +478,7 @@ async def sync_embedded(script_id: str) -> MaaFWApiReply:
         manual=True,
         source_form=bool(imported["report"].get("sourceForm")),
     )
-    logger.info(f"MFW 脚本 {script_id} 立即同步：{message}")
+    logger.info(f"MFW 托管 {script_id} 立即同步：{message}")
     try:
         await Config.update_script(
             script_id,
@@ -492,7 +492,7 @@ async def sync_embedded(script_id: str) -> MaaFWApiReply:
         )
     except RuntimeError as exc:
         # 同步完、写回之前脚本刚好开跑（配置锁住）：视图已经是新的，报告下次运行前写回。
-        logger.warning(f"MFW 脚本 {script_id} 立即同步后写回导入记录失败：{exc}")
+        logger.warning(f"MFW 托管 {script_id} 立即同步后写回导入记录失败：{exc}")
     data = await embedded_status_data(script_id, maafw_script_config(script_id))
     return MaaFWApiReply(message=message, data=data)
 
@@ -760,11 +760,11 @@ async def list_embedded_sources(excluded_script_id: str | None) -> MaaFWApiReply
 
 
 async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply:
-    """``/maafw/embedded/clone``：从源脚本挂着的载荷物化本脚本的视图。
+    """``/maafw/embedded/clone``：从源托管挂着的载荷物化本托管的视图。
 
-    载荷 + 视图口径：新视图从源脚本挂着的载荷物化（大文件与载荷共用，源的运行期状态
-    不带），源脚本运行中也能建，只预约目标。``Info.Path``、``Embedded.*`` 与
-    ``Update.Channel`` 沿用源脚本的记录（复用就是用源那一版：渠道不跟着走的话，新脚本留在
+    载荷 + 视图口径：新视图从源托管挂着的载荷物化（大文件与载荷共用，源的运行期状态
+    不带），源托管运行中也能建，只预约目标。``Info.Path``、``Embedded.*`` 与
+    ``Update.Channel`` 沿用源托管的记录（复用就是用源那一版：渠道不跟着走的话，新托管留在
     默认渠道，第一次运行前的组同步会把它切到那个渠道的版本）；类型随项目（M9A 项目 → M9A）。
 
     失败时的 ``message`` 只给原因：前端把它接在「复用项目失败：」后面、再告诉用户去引导页选目录。
@@ -784,7 +784,7 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
     target_dir = embedded_project_dir(script_id)
     # 老脚本换项目：目标原有副本钉定的版本在克隆后可能就没人用了
     previous_version = await _previous_maafw_version(target_dir)
-    # 只预约目标：源脚本挂的是不可变载荷（正在切换就取 journal 的目标），物化不读源视图，
+    # 只预约目标：源托管挂的是不可变载荷（正在切换就取 journal 的目标），物化不读源视图，
     # 源在运行 / 更新 / 准备环境都不影响。目标正被别的入口导入时不能同时写。
     target_reservation = await try_reserve_project_path(target_dir)
     if target_reservation is None:
@@ -804,7 +804,7 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
                 )
             )
         except FollowSourceCloneUnavailable as exc:
-            # 组里还没有正式版本：与关掉开发者模式时同一条退路，按源脚本的来源目录正常导入
+            # 组里还没有正式版本：与关掉开发者模式时同一条退路，按源托管的来源目录正常导入
             # （进源原渠道的组，目标随后也记成这个渠道）；来源目录也不在就拒绝，不拿开发者载荷顶替。
             if not source_path or not await asyncio.to_thread(
                 lambda: Path(source_path).is_dir()
@@ -830,7 +830,7 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
         logger.warning(
             mask_home_path(
                 redact_text(
-                    f"MFW 脚本 {script_id} 从脚本 {source_script_id} 克隆项目失败：{exc}"
+                    f"MFW 托管 {script_id} 从脚本 {source_script_id} 克隆项目失败：{exc}"
                 )
             )
         )
@@ -839,7 +839,7 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
         logger.opt(exception=True).warning(
             mask_home_path(
                 redact_text(
-                    f"MFW 脚本 {script_id} 从脚本 {source_script_id} 克隆项目失败："
+                    f"MFW 托管 {script_id} 从脚本 {source_script_id} 克隆项目失败："
                     f"{type(exc).__name__}: {exc}"
                 )
             )
@@ -864,7 +864,7 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
         },
     )
     await _apply_project_flavor(script_id)
-    # 放在 retype 之后：权威集合在调用线程上按当前脚本表算，要看到换过类型的配置
+    # 放在 retype 之后：权威集合在调用线程上按当前托管表算，要看到换过类型的配置
     _reconcile_pool_after_copy_change("clone", target_dir, previous_version)
     data = await embedded_status_data(script_id, maafw_script_config(script_id))
     source_name = str(source_config.Info.Name or source_script_id[:8])

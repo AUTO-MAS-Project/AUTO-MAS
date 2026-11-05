@@ -7,11 +7,11 @@
  */
 export type BetterGIScriptGroupSaveIn = {
     /**
-     * 所属脚本ID
+     * 所属托管ID
      */
     scriptId: string;
     /**
-     * 所属用户ID
+     * 所属账号ID
      */
     userId: string;
     /**

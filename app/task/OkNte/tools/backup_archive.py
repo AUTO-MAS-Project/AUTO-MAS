@@ -16,17 +16,17 @@
 #   You should have received a copy of the GNU Affero General Public
 #   License along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""OK-NTE 配置备份归档：MAS 用户配置 / 脚本原生配置，两类独立快照。
+"""OK-NTE 配置备份归档：MAS 账号配置 / 脚本原生配置，两类独立快照。
 
 备份时机（MAS「动手前」，此时 ok-nte 尚未被触碰）：
 
 - 任务 / 配置会话启动（manager ``prepare``）：``native`` 归档脚本原生配置
-  当前状态（Folder 整目录 / File 单文件）——原生配置物理上跨用户共享，
-  只在任务级归档一次；``set_oknte`` 里按用户/重试归档会把上一轮下发的
+  当前状态（Folder 整目录 / File 单文件）——原生配置物理上跨账号共享，
+  只在任务级归档一次；``set_oknte`` 里按账号/重试归档会把上一轮下发的
   MAS 配置误当原生内容挤进保留池；
 - 运行 / 配置会话下发前（AutoProxy / ScriptConfig 的 ``set_oknte``）：
-  ``mas`` 归档 MAS 用户 ConfigFile（下发源，运行回写与会话保存会覆盖它，
-  按用户各归各的）；
+  ``mas`` 归档 MAS 账号 ConfigFile（下发源，运行回写与会话保存会覆盖它，
+  按账号各归各的）；
 - 编辑界面进入 / 退出（前端 ensure）：进入时归档 ``native``（MAS 触碰前
   原始态）、退出时归档 ``mas``（编辑会话包络的 MAS 侧终态）。
 
@@ -64,7 +64,7 @@ _SUMMARY_VALUE_LIMIT = 50
 
 
 def backup_root(script_id: str) -> Path:
-    """某脚本的备份归档根目录（MAS 用户池用）：``data/{script_id}/OkNteBackups``。"""
+    """某脚本的备份归档根目录（MAS 账号池用）：``data/{script_id}/OkNteBackups``。"""
 
     return Path.cwd() / "data" / script_id / "OkNteBackups"
 
@@ -73,14 +73,14 @@ def project_backup_root() -> Path:
     """ok-nte 备份的项目级根目录：``data/OkNteBackups``。
 
     native（脚本原生配置）池挂在这里而不是脚本目录下——物理配置跨脚本共享、
-    不随脚本删除（mas 用户池仍按脚本，见 :func:`mas_backup_root`）。
+    不随脚本删除（mas 账号池仍按脚本，见 :func:`mas_backup_root`）。
     """
 
     return Path.cwd() / "data" / "OkNteBackups"
 
 
 def mas_backup_root(script_id: str, user_id: str) -> Path:
-    """MAS 用户配置的归档目录：``data/{script_id}/OkNteBackups/mas/{user_id}``。"""
+    """MAS 账号配置的归档目录：``data/{script_id}/OkNteBackups/mas/{user_id}``。"""
 
     return backup_root(script_id) / "mas" / user_id
 
@@ -100,7 +100,7 @@ def native_backup_root(config_path: str | Path) -> Path:
 
 
 def mas_config_dir(script_id: str, user_id: str) -> Path:
-    """MAS 用户配置目录：``data/{script_id}/{user_id}/ConfigFile``。"""
+    """MAS 账号配置目录：``data/{script_id}/{user_id}/ConfigFile``。"""
 
     return Path.cwd() / "data" / script_id / user_id / "ConfigFile"
 
@@ -110,7 +110,7 @@ def quick_config_dir(script_id: str, user_id: str) -> Path:
 
 
 def ensure_quick_config_dir(script_id: str, user_id: str, script_config) -> Path:
-    """仅首次从旧用户配置或来源初始化面板；后续切来源不覆盖已保存值。"""
+    """仅首次从旧账号配置或来源初始化面板；后续切来源不覆盖已保存值。"""
 
     target = quick_config_dir(script_id, user_id)
     if not target.exists() or not any(target.iterdir()):
@@ -152,13 +152,13 @@ def collect_config_files(config_path: Path, mode: str) -> dict[str, Path] | None
     return _utils_config_archive.dir_files(config_path)
 
 
-# ══════════════════ MAS 用户配置 ══════════════════
+# ══════════════════ MAS 账号配置 ══════════════════
 
 
 def collect_mas_files(mas_dir: str | Path) -> dict[str, Path]:
-    """收集 MAS 用户配置：ConfigFile 整目录 + 快速配置面板目录（相对键 → 路径）。
+    """收集 MAS 账号配置：ConfigFile 整目录 + 覆写常规配置面板目录（相对键 → 路径）。
 
-    快速配置面板与 ConfigFile 同级分离存放（``<user>/QuickConfig``），是 MAS
+    覆写常规配置面板与 ConfigFile 同级分离存放（``<user>/QuickConfig``），是 MAS
     用户配置的一半，恢复时要一并写回，故按 ``QuickConfig/<name>`` 前缀并入
     同一份归档。两者都为空时返回空 dict（无可归档内容）。
     """
@@ -182,7 +182,7 @@ def archive_mas_backup(
     mas_dir: Path,
     force: bool = False,
 ) -> Path | None:
-    """归档 MAS 用户 ConfigFile 整份（指纹去重，无变化跳过）。
+    """归档 MAS 账号 ConfigFile 整份（指纹去重，无变化跳过）。
 
     目录不存在或为空时无可恢复内容，返回 ``None``；``force=True`` 恢复前
     存底（不清理历史条目；内容与最新份一致时同样跳过——当前配置已存放在
@@ -196,26 +196,26 @@ def archive_mas_backup(
         files, mas_backup_root(script_id, user_id), force=force
     )
     if dest is None:
-        logger.info("用户 MAS 配置无变化，跳过归档")
+        logger.info("账号 MAS 配置无变化，跳过归档")
         return None
-    logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
-    """MAS 用户配置全部归档时间戳（倒序，最新在前）。"""
+    """MAS 账号配置全部归档时间戳（倒序，最新在前）。"""
 
     return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
-    """取指定时间戳的 MAS 用户归档目录；不存在返回 None。"""
+    """取指定时间戳的 MAS 账号归档目录；不存在返回 None。"""
 
     return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(script_id: str, user_id: str, ts: str, mas_dir: Path) -> None:
-    """把归档恢复到 MAS 用户 ConfigFile（恢复前自动归档当前，误恢复可找回）。"""
+    """把归档恢复到 MAS 账号 ConfigFile（恢复前自动归档当前，误恢复可找回）。"""
 
     mas_dir = Path(mas_dir)
     archive_mas_backup(script_id, user_id, mas_dir, force=True)
@@ -228,7 +228,7 @@ def restore_mas_backup(script_id: str, user_id: str, ts: str, mas_dir: Path) -> 
     else:
         # 旧备份没有分开的面板目录，以旧配置恢复面板，避免残留较新的覆盖值。
         _utils_io.swap_in_dir(mas_dir, quick_dir)
-    logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已恢复备份 {ts}")
 
 
 # ══════════════════ 脚本原生配置 ══════════════════
@@ -295,11 +295,11 @@ def restore_native_backup(config_path: Path, ts: str, mode: str) -> None:
 
 
 def archive_mas_runtime_backup(script_id: str, user_id: str) -> None:
-    """运行 / 配置会话下发前归档 MAS 用户 ConfigFile（下发源）。
+    """运行 / 配置会话下发前归档 MAS 账号 ConfigFile（下发源）。
 
     运行回写与会话保存会覆盖它，下发前存底；指纹去重，失败只记日志，
     绝不中止随后的运行或会话（归档是现场保护，不是前置条件）。
-    native 池与此处无关：原生配置跨用户共享，由 manager ``prepare`` 在
+    native 池与此处无关：原生配置跨账号共享，由 manager ``prepare`` 在
     任务级一次性归档（见 :func:`archive_native_backup`）。
     """
 

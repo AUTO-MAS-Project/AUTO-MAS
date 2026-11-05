@@ -76,7 +76,7 @@ class OkNteManager(ScriptManagerBase):
         script_uid = uuid.UUID(self.script_info.script_id)
         script_config = Config.ScriptConfig[script_uid]
         if not isinstance(script_config, OkNteConfig):
-            return "脚本配置类型错误, 不是 OK-NTE 类型"
+            return "托管配置类型错误, 不是 OK-NTE 类型"
 
         if self.task_info.mode == "ScriptConfig":
             if (
@@ -95,18 +95,18 @@ class OkNteManager(ScriptManagerBase):
                 try:
                     user_uid = uuid.UUID(self.task_info.user_id)
                 except ValueError:
-                    return "OK-NTE 用户不存在，请刷新后重试"
+                    return "OK-NTE 账号不存在，请刷新后重试"
                 if user_uid not in script_config.UserData:
-                    return "OK-NTE 用户不存在，请刷新后重试"
+                    return "OK-NTE 账号不存在，请刷新后重试"
 
-        # AutoProxy 模式只做用户列表可用性校验；逐用户配置文件检查放到 AutoProxyTask.check()
+        # AutoProxy 模式只做账号列表可用性校验；逐账号配置文件检查放到 AutoProxyTask.check()
         if self.task_info.mode == "AutoProxy":
             if not self.script_info.user_list:
                 self.script_info.user_list = self.build_proxy_user_list(
                     Config.ScriptConfig[script_uid].UserData.items()
                 )
             if not self.script_info.user_list:
-                return "当前没有可执行的用户，请先添加并启用用户"
+                return "当前没有可执行的账号，请先添加并启用账号"
 
         return "Pass"
 
@@ -119,12 +119,12 @@ class OkNteManager(ScriptManagerBase):
         ] = await Config.ScriptConfig[script_uid].lock_x()
         script_config = Config.ScriptConfig[script_uid]
         if not isinstance(script_config, OkNteConfig):
-            raise TypeError("脚本配置类型错误")
+            raise TypeError("托管配置类型错误")
 
         self.script_config = script_config
-        # X 锁覆盖用户集合，运行时直接修改原配置。
+        # X 锁覆盖账号集合，运行时直接修改原配置。
         self.user_config = self.script_config.UserData
-        logger.success(f"{self.script_info.script_id} 已锁定，OK-NTE 用户配置已提取")
+        logger.success(f"{self.script_info.script_id} 已锁定，OK-NTE 账号配置已提取")
 
         if self.task_info.mode == "ScriptConfig":
             target_user_id = self.task_info.user_id or "Default"
@@ -137,8 +137,8 @@ class OkNteManager(ScriptManagerBase):
                 UserItem(user_id=target_user_id, name=target_user_name, status="等待")
             ]
         else:
-            # 构建用户列表：遍历脚本用户，筛选启用且剩余天数不为 0 的；
-            # 单独运行指定了用户时只保留该用户
+            # 构建账号列表：遍历脚本账号，筛选启用且剩余天数不为 0 的；
+            # 单独运行指定了用户时只保留该账号
             self.script_info.user_list = self.build_proxy_user_list(
                 self.user_config.items()
             )
@@ -171,8 +171,8 @@ class OkNteManager(ScriptManagerBase):
                     shutil.copy(self.script_config_path, self.temp_path / "config.temp")
 
             # 任务级一次性归档 ok-nte 原生配置（项目级池，指纹去重，失败不
-            # 阻断任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」
-            # 的脚本原生状态——set_oknte 里按用户/重试归档会把上一轮下发的
+            # 阻断任务）：原生配置物理上跨账号共享，只代表「本轮任务动手前」
+            # 的脚本原生状态——set_oknte 里按账号/重试归档会把上一轮下发的
             # MAS 配置误当原生内容挤进保留池，必须在任何下发前归档这一次
             with suppress(Exception):
                 archive_native_backup(
@@ -254,7 +254,7 @@ class OkNteManager(ScriptManagerBase):
 
         await self.prepare()
         if self.script_config is None or self.user_config is None:
-            raise RuntimeError("OK-NTE 用户配置未完成初始化")
+            raise RuntimeError("OK-NTE 账号配置未完成初始化")
 
         method_cls = METHOD_BOOK[self.task_info.mode]
         for self.script_info.current_index in range(len(self.script_info.user_list)):
@@ -321,9 +321,9 @@ class OkNteManager(ScriptManagerBase):
                 summary = self.collect_user_results()
 
                 title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
-                # 按用户交错组装「用户结果行 + 该用户节点详情」：
-                # 多账号任务时各用户节点归属清晰，不再全部平铺。
-                # 「失败」类型仅在本次任务存在未完成用户时纳入报告，
+                # 按账号交错组装「账号结果行 + 该账号节点详情」：
+                # 多账号任务时各账号节点归属清晰，不再全部平铺。
+                # 「失败」类型仅在本次任务存在未完成账号时纳入报告，
                 # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合（对齐 ok-ww/通用脚本）。
                 # 关闭「是否采集节点详情」的用户在 AutoProxy 侧未启 log_box，push_log
                 # 为空，自然只有结果行。
@@ -378,7 +378,7 @@ class OkNteManager(ScriptManagerBase):
             if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                 await config_manager.flush()
         except Exception:
-            logger.opt(exception=True).warning("on_crash 保存用户配置失败")
+            logger.opt(exception=True).warning("on_crash 保存账号配置失败")
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,

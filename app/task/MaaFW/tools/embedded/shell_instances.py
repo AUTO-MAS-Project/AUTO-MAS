@@ -16,10 +16,10 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""读外壳程序（MFAAvalonia / MXU）在项目目录里保存的配置实例，换成 MAS 用户的任务快照。
+"""读外壳程序（MFAAvalonia / MXU）在项目目录里保存的配置实例，换成 MAS 账号的任务快照。
 
 新建 MFW 脚本的引导最后一步用它：用户在外壳里已经配好了几份任务队列，勾选哪几份就建
-哪几个用户，不用在 MAS 里再排一遍。**只读**：外壳文件一个字节不改。
+哪几个账号，不用在 MAS 里再排一遍。**只读**：外壳文件一个字节不改。
 
 两种格式都照真实发行包里的文件写（2026-09 实测），不认识的文件跳过并记日志：
 
@@ -134,13 +134,13 @@ class ShellInstance:
 
 @dataclass
 class ShellImportPlan:
-    """一份实例换算出来的用户配置：任务快照形状与用户页保存的一致（只有队列里的任务）。"""
+    """一份实例换算出来的账号配置：任务快照形状与账号页保存的一致（只有队列里的任务）。"""
 
     snapshot: dict[str, Any]
     task_count: int
     skipped: list[str] = field(default_factory=list)
     #: 外壳实际记着的全局选项值（没补默认值）。``snapshot["globalOptions"]`` 按项目默认值补齐了，
-    #: 只适合新建用户；覆盖到已有用户时拿它叠在用户现有的全局表上，外壳没记的不动
+    #: 只适合新建账号；覆盖到已有账号时拿它叠在用户现有的全局表上，外壳没记的不动
     recorded_global_options: dict[str, MaaFWTaskOptionValue] = field(
         default_factory=dict
     )
@@ -411,14 +411,14 @@ def _scan_mfw(config_dir: Path) -> list[ShellInstance]:
 
 
 # ---------------------------------------------------------------------------
-# 用户名
+# 账号名称
 # ---------------------------------------------------------------------------
 
 
 def assign_user_names(names: Sequence[str], existing: Iterable[str]) -> list[str]:
-    """按实例顺序给每份实例定用户名：与已有用户、与前面的实例重名时加「 (2)」「 (3)」。
+    """按实例顺序给每份实例确定账号名称：与已有账号、与前面的实例重名时加「 (2)」「 (3)」。
 
-    实例名先按用户名规则修正（去掉文件名非法字符等），比较不分大小写。
+    实例名先按账号名规则修正（去掉文件名非法字符等），比较不分大小写。
     """
 
     names_adapter = TypeAdapter(WindowsNameString)
@@ -524,11 +524,11 @@ def plan_instance_import(
 
     选项值先换成 interface 预设的形状（case 名、case 名列表、``{输入名: 值}``），再交给
     ``build_interface_preset_snapshot``——与「应用预设」同一条路：未导入的选项按项目默认值
-    补齐，同一任务在队列里多次出现展开成重复实例。结果只留队列里的任务，与用户页保存的
+    补齐，同一任务在队列里多次出现展开成重复实例。结果只留队列里的任务，与账号页保存的
     快照同形。
 
     ``script_controller`` / ``script_resource`` 是脚本当前的控制方式与资源（interface 里的
-    名字，空串表示不限）：用户页只显示这两者下可用的任务，限定在别处的任务在这里就跳过并
+    名字，空串表示不限）：账号页只显示这两者下可用的任务，限定在别处的任务在这里就跳过并
     记下来，不让它们进了快照又在页面上悄悄消失。``translate`` 把 ``$键`` 翻成字，跳过项里
     写给人看的名字（与预览同一口径）；不给就用 interface 里的原文。
     """
@@ -683,7 +683,7 @@ def plan_instance_import(
         task_id: snapshot.taskOptions.get(task_id, {}) for task_id in queued
     }
     if pretask_values:
-        # 前置任务排在队列最前（与用户页一致）；选项按项目默认值补齐
+        # 前置任务排在队列最前（与账号页一致）；选项按项目默认值补齐
         task_options.update(
             normalize_task_options_by_task(
                 pretask_values, list(pretask_values), interface
@@ -711,7 +711,7 @@ def plan_instance_import(
 def collect_instance_hotkeys(
     instance: ShellInstance, interface: MaaFWInterface
 ) -> dict[str, dict[str, str]]:
-    """一份实例里记着的键位：``{hotkey 选项名: {字段名: 组合键}}``，给脚本级 ``Game.Hotkeys`` 用。
+    """一份实例里记着的键位：``{hotkey 选项名: {字段名: 组合键}}``，给托管级 ``Game.Hotkeys`` 用。
 
     选项换算与 ``plan_instance_import`` 同一套：MXU 读 ``globalOptionValues`` 与各任务的
     ``optionValues``，MFAAvalonia 读当前资源的 ``ResourceOptionItems`` 与各任务的选项，MFW-PyQt6
@@ -823,8 +823,8 @@ def _drop_password_fields(
     """interface 声明为 password 的 input 字段不从外壳导入（原地去掉），有值的记一条跳过。
 
     外壳存密码各有各的办法（MFW-PyQt6 用自己的 Fernet 密钥加密），MAS 解不了也不该解：照抄进来
-    就是把外壳的密文当明文用，覆盖到已有用户时还会盖掉用户在 MAS 里存好的密码。字段整个不带，
-    新建用户留空，覆盖时保留用户现有的值。
+    就是把外壳的密文当明文用，覆盖到已有账号时还会盖掉用户在 MAS 里存好的密码。字段整个不带，
+    新建账号留空，覆盖时保留用户现有的值。
     """
 
     for name in list(values):

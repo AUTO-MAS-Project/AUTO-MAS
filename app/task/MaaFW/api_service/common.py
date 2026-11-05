@@ -48,8 +48,8 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
 )
 from app.utils import get_logger
 
-# 这些日志原先由 API 层记录，模块名沿用「脚本管理 API」：搬家不改日志上的模块名。
-logger = get_logger("脚本管理 API")
+# 这些日志原先由 API 层记录，模块名沿用「托管管理 API」：搬家不改日志上的模块名。
+logger = get_logger("托管管理 API")
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +89,7 @@ def maafw_script_config(script_id: str) -> RuntimeMaaFWConfig:
 
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     if not isinstance(script_config, RuntimeMaaFWConfig):
-        raise TypeError("脚本配置类型错误, 不是 MFW 类型")
+        raise TypeError("托管配置类型错误, 不是 MFW 类型")
     return script_config
 
 
@@ -142,7 +142,7 @@ async def maafw_effective_root(
             copy_dir = resolve_maafw_project_root(script_id, script_config)
             if copy_dir.is_dir():
                 return copy_dir.resolve(), ""
-            return None, "该 MFW 脚本正在运行或更新，稍后再试"
+            return None, "该 MFW 托管正在运行或更新，稍后再试"
         try:
             rebuilt = await asyncio.to_thread(
                 ensure_embedded_copy,
@@ -154,7 +154,7 @@ async def maafw_effective_root(
             logger.warning(
                 mask_home_path(
                     redact_text(
-                        f"MFW 脚本 {script_id} 准备副本失败（来源 {script_config.Info.Path or '未设置'}）：{exc}"
+                        f"MFW 托管 {script_id} 准备副本失败（来源 {script_config.Info.Path or '未设置'}）：{exc}"
                     )
                 )
             )

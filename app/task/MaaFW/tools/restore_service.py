@@ -18,18 +18,19 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""MaaFW 配置恢复服务：MAS 用户字段池 / MaaFW 项目配置池（声明式池）。
+"""MaaFW 配置恢复服务：MAS 账号字段池 / MaaFW 项目配置池（声明式池）。
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底全部由基座
 （``app.utils.common.config.restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
-mas 池 = **纯字段侧车**（MaaFW 无 per-user 目录，用户配置是字段）：
-Info（Mode 仅预览 / IfQuickConfig / Account / Controller / Resource）+
+mas 池 = **纯字段侧车**（MaaFW 无 per-user 目录，账号配置是字段）：
+Info（Base 仅预览 / IfQuickConfig / Account / Controller / Resource）+
 Task（SelectedPreset / TaskSnapshot）+ Device 段。恢复 = 回填 UserData。
-池恒按用户分桶。native 池 = MaaFW 项目 ``config/``（interface.json 随项目版本走，
-不归档、不恢复，见 ``backup_archive``），按视图路径指纹分桶（脚本级）。
+Base / IfQuickConfig 仅兼容保留，不决定运行来源或是否使用任务队列。
+池恒按账号分桶。native 池 = MaaFW 项目 ``config/``（interface.json 随项目版本走，
+不归档、不恢复，见 ``backup_archive``），按视图路径指纹分桶（托管级）。
 """
 
 import asyncio
@@ -76,16 +77,16 @@ logger = get_logger("MaaFW 配置恢复")
 
 
 def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
-    """恢复守卫：目标用户必须存在，避免把字段回填进孤儿配置。"""
+    """恢复守卫：目标账号必须存在，避免把字段回填进孤儿配置。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
-        raise ValueError("MaaFW 用户不存在，请刷新后重试")
+        raise ValueError("MaaFW 账号不存在，请刷新后重试")
 
 
 def _project_path(ctx: _utils_config_restore.RestoreContext) -> Path | None:
     """MaaFW 项目根目录（含 interface.json）；未配置脚本路径返回 ``None``。
 
-    内嵌脚本的有效根是副本：运行时物化写在副本里，恢复也只能写回副本——来源目录
+    托管项目的有效根是副本：项目运行期文件写在副本里，恢复也只能写回副本——来源目录
     一个字节不动。
     """
 
@@ -208,7 +209,7 @@ async def _restore_native(ctx: _utils_config_restore.RestoreContext, ts: str) ->
     if project_path is None:
         raise ValueError("请先设置 MaaFW 项目路径")
     # 运行、更新、准备环境、兄弟脚本导入触发的切换都持着视图的项目预约；is_locked 只管
-    # 本脚本运行，挡不住后几种
+    # 本托管运行，挡不住后几种
     reservation = await try_reserve_project_path(project_path)
     if reservation is None:
         raise ValueError("该项目正在运行、更新或准备运行环境，请稍后再恢复")

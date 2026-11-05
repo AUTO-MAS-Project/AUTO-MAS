@@ -14,7 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
-"""脚本管理：ZZZ-OD 路由与端点专用模型。"""
+"""托管管理：ZZZ-OD 路由与端点专用模型。"""
 
 from typing import (
     Any,
@@ -59,14 +59,14 @@ class ZzzOdInstancesOut(OutBase):
 class ZzzOdInstanceAddIn(BaseModel):
     """直控：新建一条龙实例（分配最小空闲槽并注册）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
+    scriptId: str = Field(..., description="所属托管ID")
     name: str = Field(..., description="实例名称（必填，创建后可在重命名中修改）")
 
 
 class ZzzOdInstanceRenameIn(BaseModel):
     """直控：重命名实例（只改注册表 name，实例目录不变）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
+    scriptId: str = Field(..., description="所属托管ID")
     instanceIdx: int = Field(..., description="目标实例下标")
     name: str = Field(..., description="新实例名称")
 
@@ -74,7 +74,7 @@ class ZzzOdInstanceRenameIn(BaseModel):
 class ZzzOdInstanceFlagIn(BaseModel):
     """直控：切换实例是否参与「全部实例」运行模式（active_in_od）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
+    scriptId: str = Field(..., description="所属托管ID")
     instanceIdx: int = Field(..., description="目标实例下标")
     activeInOd: bool = Field(..., description="是否参与「全部实例」模式")
 
@@ -82,14 +82,14 @@ class ZzzOdInstanceFlagIn(BaseModel):
 class ZzzOdInstanceActiveIn(BaseModel):
     """直控：把所选实例设为当前活跃（「仅运行当前」运行的就是它）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
+    scriptId: str = Field(..., description="所属托管ID")
     instanceIdx: int = Field(..., description="目标实例下标")
 
 
 class ZzzOdInstanceForceLoginIn(BaseModel):
     """直控：切换实例「运行前切换账号」（一条龙原生能力，MAS 不干涉）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
+    scriptId: str = Field(..., description="所属托管ID")
     instanceIdx: int = Field(..., description="目标实例下标")
     forceLogin: bool = Field(..., description="是否开启运行前切换账号")
 
@@ -97,7 +97,7 @@ class ZzzOdInstanceForceLoginIn(BaseModel):
 class ZzzOdInstanceRunModeIn(BaseModel):
     """直控：设置运行实例（one_dragon.yml 全局 instance_run，与编辑所选实例无关）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
+    scriptId: str = Field(..., description="所属托管ID")
     instanceRun: str = Field(
         ...,
         description="运行实例取值（仅运行当前/全部实例；后端白名单校验，非法取值拒绝）",
@@ -107,19 +107,19 @@ class ZzzOdInstanceRunModeIn(BaseModel):
 class ZzzOdInstanceDeleteIn(BaseModel):
     """直控：删除实例（注册表条目 + 实例目录，受 MAS 绑定槽保护）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
+    scriptId: str = Field(..., description="所属托管ID")
     instanceIdx: int = Field(..., description="目标实例下标")
 
 
 class ZzzOdSlotOwnerOut(BaseModel):
-    """实例槽的 MAS 归属（哪个脚本的哪个用户占着这个号）"""
+    """实例槽的 MAS 归属（哪个脚本的哪个账号占着这个号）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
-    userId: str = Field(..., description="用户ID（恢复槽时用它指认目标用户）")
-    scriptName: str = Field(..., description="所属脚本名称")
-    userName: str = Field(..., description="用户名称")
+    scriptId: str = Field(..., description="所属托管ID")
+    userId: str = Field(..., description="账号ID（恢复槽时用它指认目标账号）")
+    scriptName: str = Field(..., description="所属托管名称")
+    userName: str = Field(..., description="账号名称")
     base: str = Field(
-        ..., description="该用户的 base 来源（shared/independent/native）"
+        ..., description="该账号的 base 来源（shared/independent/native）"
     )
 
 
@@ -129,14 +129,14 @@ class ZzzOdSlotOut(BaseModel):
     idx: int = Field(..., description="槽下标（config/{idx:02d}）")
     kind: Literal["native", "mas", "orphan"] = Field(
         ...,
-        description="槽类别（native=一条龙原生实例 / mas=有 MAS 用户绑定 / orphan=无主残留）",
+        description="槽类别（native=一条龙原生实例 / mas=有 MAS 账号绑定 / orphan=无主残留）",
     )
     has_dir: bool = Field(
         ..., description="盘上是否已有该槽目录（只配了用户没跑过的槽没有目录）"
     )
     size: int = Field(default=0, description="槽目录占用字节数（无目录为 0）")
     owners: List[ZzzOdSlotOwnerOut] = Field(
-        default_factory=list, description="绑定该槽的 MAS 用户（可为多个脚本）"
+        default_factory=list, description="绑定该槽的 MAS 账号（可为多个脚本）"
     )
 
 
@@ -147,7 +147,7 @@ class ZzzOdSlotsOut(OutBase):
 class ZzzOdSlotCleanIn(BaseModel):
     """手动清理无主实例槽（先归档进回收池再删目录）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
+    scriptId: str = Field(..., description="所属托管ID")
 
 
 class ZzzOdSlotCleanOut(OutBase):
@@ -174,7 +174,7 @@ class ZzzOdRecycleOut(OutBase):
 class ZzzOdRecycleClearIn(BaseModel):
     """清空实例槽回收池（只清 recycle 池，不碰配置恢复池）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
+    scriptId: str = Field(..., description="所属托管ID")
 
 
 class ZzzOdRecycleClearOut(OutBase):
@@ -182,16 +182,16 @@ class ZzzOdRecycleClearOut(OutBase):
 
 
 class ZzzOdRecycleRestoreIn(BaseModel):
-    """把回收池里的一条槽快照恢复给某个 MAS 用户（现有用户或新建用户）"""
+    """把回收池里的一条槽快照恢复给某个 MAS 账号（现有用户或新建账号）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
+    scriptId: str = Field(..., description="所属托管ID")
     slot: int = Field(..., description="快照所属槽下标（回收条目的槽号）")
     ts: str = Field(..., description="快照时间戳")
     targetUser: str | None = Field(
-        default=None, description="恢复给该用户的绑定槽（现有用户 uid）"
+        default=None, description="恢复给该账号的绑定槽（现有账号 uid）"
     )
     newUserName: str | None = Field(
-        default=None, description="新建一个用户并把内容恢复到它的槽（用户名称）"
+        default=None, description="新建一个账号并把内容恢复到它的槽（账号名称）"
     )
 
 
@@ -293,8 +293,8 @@ class ZzzOdTaskOptionsOut(OutBase):
 class ZzzOdAppConfigSaveIn(BaseModel):
     """保存任务级配置（字段白名单校验后写入绑定槽；直控可指定原生实例）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
-    userId: str = Field(..., description="目标用户ID")
+    scriptId: str = Field(..., description="所属托管ID")
+    userId: str = Field(..., description="目标账号ID")
     appId: str = Field(..., description="应用ID")
     values: Dict[str, Any] = Field(
         ..., description="字段名 → 值（plan_list 为计划列表）"
@@ -327,8 +327,8 @@ class ZzzOdTeamsOut(OutBase):
 class ZzzOdTeamsSaveIn(BaseModel):
     """整表保存预备编队（名称 + 绑定配队方案 + 成员 agent_id_list）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
-    userId: str = Field(..., description="目标用户ID")
+    scriptId: str = Field(..., description="所属托管ID")
+    userId: str = Field(..., description="目标账号ID")
     teams: List[Dict[str, Any]] = Field(
         ..., description="编队列表（name/autoBattle/agent_id_list）"
     )
@@ -426,7 +426,7 @@ class ZzzOdNativeTaskIn(BaseModel):
 class ZzzOdNativeConfigIn(BaseModel):
     """直控模式：保存所选实例的原生配置（可选增量，缺省字段不写回）。"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
+    scriptId: str = Field(..., description="所属托管ID")
     instanceIdx: int = Field(..., description="目标实例下标（写入其原生配置）")
     account: Optional[Dict[str, str]] = Field(
         default=None, description="账号字段名 → 值（白名单过滤；缺省不写回）"
@@ -460,17 +460,17 @@ class ZzzOdLauncherOut(OutBase):
 
 
 class ZzzOdImportIn(BaseModel):
-    """基于一条龙已有实例快速生成当前用户配置（覆盖本用户账号与任务编排）。"""
+    """基于一条龙已有实例快速生成当前账号配置（覆盖本账号账号与任务编排）。"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
-    userId: str = Field(..., description="目标用户ID（独立的用户级配置）")
+    scriptId: str = Field(..., description="所属托管ID")
+    userId: str = Field(..., description="目标账号ID（独立的账号级配置）")
     instanceIdx: int = Field(
         ..., description="来源母版实例下标（读取该实例的账号信息与已启用任务编排）"
     )
 
 
 class ZzzOdImportOut(OutBase):
-    """导入结果：来源实例的账号字段与已启用任务编排已写入本用户，前端随后重新拉取用户数据。"""
+    """导入结果：来源实例的账号字段与已启用任务编排已写入本账号，前端随后重新拉取用户数据。"""
 
     instanceIdx: int = Field(..., description="来源实例下标（失败为 -1）")
     instanceName: str = Field(..., description="来源实例名称")
@@ -496,7 +496,7 @@ def _zzzod_instances_response(instances: list[dict]) -> ZzzOdInstancesOut:
 
 
 router = APIRouter()
-logger = get_logger("脚本管理 API")
+logger = get_logger("托管管理 API")
 
 
 @router.get(
@@ -748,7 +748,7 @@ async def delete_zzzod_instance_api(
 async def get_zzzod_slots_api(scriptId: str) -> ZzzOdSlotsOut:
     """槽目录是 MAS 分配在一条龙安装目录里的，注册表与 GUI 都看不到。
 
-    这份对照表用于诊断「槽目录数与用户数对不上」（绑定但没跑过的槽没有目录）
+    这份对照表用于诊断「槽目录数与账号数对不上」（绑定但没跑过的槽没有目录）
     与定位无主残留。
     """
 
@@ -876,7 +876,7 @@ async def clear_zzzod_recycle_api(
 @router.post(
     "/zzzod/recycle/restore",
     tags=["Delete"],
-    summary="把回收池里的槽快照恢复给某个 MAS 用户（现有用户或新建用户，先存底）",
+    summary="把回收池里的槽快照恢复给某个 MAS 账号（现有用户或新建账号，先存底）",
     response_model=OutBase,
     status_code=200,
 )
@@ -884,8 +884,8 @@ async def restore_zzzod_recycle_api(
     body: ZzzOdRecycleRestoreIn = Body(...),
 ) -> OutBase:
     """恢复的落点是**用户的绑定槽**（``targetUser`` 指定现有用户，或
-    ``newUserName`` 新建一个用户）——只物化内容而不建立绑定的恢复没有出口，
-    MAS 下次运行不会认领它。目标用户已有绑定槽时覆盖其内容，恢复前先存底。
+    ``newUserName`` 新建一个账号）——只物化内容而不建立绑定的恢复没有出口，
+    MAS 下次运行不会认领它。目标账号已有绑定槽时覆盖其内容，恢复前先存底。
     """
 
     try:
@@ -899,7 +899,7 @@ async def restore_zzzod_recycle_api(
         return OutBase(
             code=200,
             status="success",
-            message=f"已恢复到用户「{user_name}」的槽 {slot:02d}（快照 {body.ts}）",
+            message=f"已恢复到账号「{user_name}」的槽 {slot:02d}（快照 {body.ts}）",
         )
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -1004,7 +1004,7 @@ async def save_zzzod_teams_api(
     status_code=200,
 )
 async def get_zzzod_catalog_api(scriptId: str) -> ZzzOdCatalogOut:
-    """静态解析安装目录下的应用注册信息，供用户配置渲染任务卡片中文名。"""
+    """静态解析安装目录下的应用注册信息，供账号配置渲染任务卡片中文名。"""
 
     try:
         data = [
@@ -1274,14 +1274,14 @@ async def get_zzzod_launchers_api(scriptId: str) -> ZzzOdLauncherOut:
 @router.post(
     "/zzzod/import",
     tags=["ZZZ-OD"],
-    summary="基于一条龙已有实例快速生成当前用户配置（覆盖前自动归档当前配置）",
+    summary="基于一条龙已有实例快速生成当前账号配置（覆盖前自动归档当前配置）",
     response_model=ZzzOdImportOut,
     status_code=200,
 )
 async def import_zzzod_config_api(
     script: ZzzOdImportIn = Body(...),
 ) -> ZzzOdImportOut:
-    """把来源实例的账号信息与已启用任务编排写入本用户；覆盖前强制归档当前 MAS 槽配置，
+    """把来源实例的账号信息与已启用任务编排写入本账号；覆盖前强制归档当前 MAS 槽配置，
     导入前状态可在「配置恢复」中找回。"""
 
     try:
@@ -1291,7 +1291,7 @@ async def import_zzzod_config_api(
         return ZzzOdImportOut(
             code=200,
             status="success",
-            message="已基于所选实例生成用户配置",
+            message="已基于所选实例生成账号配置",
             **data,
         )
     except Exception as e:

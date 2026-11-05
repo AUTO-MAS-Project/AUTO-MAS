@@ -28,7 +28,7 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class UpdateService {
     /**
-     * 更新脚本配置信息
+     * 更新托管配置信息
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -47,7 +47,7 @@ export class UpdateService {
         });
     }
     /**
-     * 重新排序脚本
+     * 重新排序托管
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -66,7 +66,7 @@ export class UpdateService {
         });
     }
     /**
-     * 更新用户配置信息
+     * 更新账号配置信息
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -85,7 +85,7 @@ export class UpdateService {
         });
     }
     /**
-     * 重新排序用户
+     * 重新排序账号
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -123,7 +123,7 @@ export class UpdateService {
         });
     }
     /**
-     * 从配置中心导入脚本配置
+     * 从配置中心导入托管配置
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError

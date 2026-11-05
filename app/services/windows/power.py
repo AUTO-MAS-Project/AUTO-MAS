@@ -77,6 +77,38 @@ class WindowsDisplayHold:
         self._on_release(self)
 
 
+def _sleep_with_wakeup_events() -> None:
+    """按 Win32 的 BOOLEAN 签名进入睡眠，保留定时唤醒事件。"""
+    import win32api
+    import win32con
+    import win32security
+    import winerror
+
+    token = win32security.OpenProcessToken(
+        win32api.GetCurrentProcess(),
+        win32con.TOKEN_ADJUST_PRIVILEGES | win32con.TOKEN_QUERY,
+    )
+    try:
+        privilege = win32security.LookupPrivilegeValue(
+            None, win32security.SE_SHUTDOWN_NAME
+        )
+        previous = win32security.AdjustTokenPrivileges(
+            token, False, [(privilege, win32con.SE_PRIVILEGE_ENABLED)]
+        )
+        try:
+            if win32api.GetLastError() == winerror.ERROR_NOT_ALL_ASSIGNED:
+                raise PermissionError("当前进程没有系统睡眠权限")
+            suspend = ctypes.WinDLL("powrprof", use_last_error=True).SetSuspendState
+            suspend.argtypes = [ctypes.c_ubyte, ctypes.c_ubyte, ctypes.c_ubyte]
+            suspend.restype = ctypes.c_ubyte
+            if not suspend(False, False, False):
+                raise ctypes.WinError(ctypes.get_last_error())
+        finally:
+            win32security.AdjustTokenPrivileges(token, False, previous)
+    finally:
+        token.Close()
+
+
 class WindowsPowerController:
     supported = True
     supported_actions = frozenset(
@@ -93,11 +125,13 @@ class WindowsPowerController:
             "ShutdownForce": ["shutdown", "/s", "/t", "0", "/f"],
             "Reboot": ["shutdown", "/r", "/t", "0"],
             "Hibernate": ["shutdown", "/h"],
-            "Sleep": ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"],
             "Logoff": ["shutdown", "/l"],
         }
         # MAS 自己执行电源操作之前先撤掉「保持显示开启」，恢复系统原本的熄屏规则。
         self.release_display_holds()
+        if action == "Sleep":
+            _sleep_with_wakeup_events()
+            return
         subprocess.run(commands[action])
 
     async def set_sleep_prevention(self, enabled: bool) -> None:

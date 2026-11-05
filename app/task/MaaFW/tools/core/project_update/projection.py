@@ -6,7 +6,7 @@ interface.json 及其 ``import``、resource 声明的目录、controller 的附�
 文件、agent 与 pretask 引用的文件所在目录、依赖清单（requirements.txt 之类），以及
 **项目自带的运行时原样带走**——MaaFramework 原生库目录（``maafw/`` 或
 ``runtimes/<rid>/native``）与 agent 自带的 Python 解释器目录（``python/``）。另外带上
-interface 里各层级的 ``icon``（用户页展示项目 / 任务图标）与顶层 ``welcome`` 及其
+interface 里各层级的 ``icon``（账号页展示项目 / 任务图标）与顶层 ``welcome`` 及其
 正文引用的图片（给说明页备着）——小文件，找不到就静默跳过。
 
 **白名单之外的顶层条目，小的留下、大的不要。** 五个真实发行包量下来，agent 在运行时读的

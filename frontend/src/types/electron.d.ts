@@ -1,5 +1,6 @@
 import type { FluxdownInstallOut, GlobalConfig_UI, GlobalConfig_Update } from '@/api'
 import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
+import type { FrontendCloseRequest } from '@/types/appLifecycle'
 import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
 import type {
   DesktopMascotHostAPI,
@@ -82,6 +83,14 @@ export interface RuntimeBinaryUpdateCheck {
 }
 
 export interface RuntimeBinaryProgress {
+  /** Electron 更新器提供的目标版本与当前下载尝试；旧事件可缺省。 */
+  targetVersion?: string
+  sourceName?: string
+  sourceIndex?: number
+  sourceCount?: number
+  source?: string
+  /** Electron 更新器的正常阶段；旧事件缺失时保留原文。 */
+  phase?: 'check' | 'download' | 'complete'
   progress: number
   message: string
 }
@@ -265,7 +274,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   /** 倒计时结束或取消：撤回置顶 */
   powerWarningEnd?: () => Promise<void>
   appQuit: () => Promise<void>
-  appObserveBackendClose?: () => void
+  appObserveBackendClose?: (request?: FrontendCloseRequest) => void
   /** 等待用户确认期间暂停退出兜底，保留关闭请求锁。 */
   appWaitForQuitConfirmation?: () => Promise<boolean>
   /** 保存前领取退出凭证；准备超时不会强制关闭后端。 */
@@ -607,6 +616,11 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
       item?: string
       /** 当前字节来自哪个源的 key。 */
       source?: string
+      /** Runtime 下载的目标版本与当前源尝试；旧事件可缺省。 */
+      targetVersion?: string
+      sourceName?: string
+      sourceIndex?: number
+      sourceCount?: number
       /** 最近 1 秒窗口的吞吐（字节/秒）。 */
       bytesPerSecond?: number
       /** 已下载字节数。 */

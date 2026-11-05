@@ -1,8 +1,8 @@
 """MFW 任务选项里密码字段（PI v2.10.0 ``password: true``）的加密存储。
 
-用户配置 ``Task.TaskSnapshot`` 是一整份 JSON，密码字段的值在
+账号配置 ``Task.TaskSnapshot`` 是一整份 JSON，密码字段的值在
 ``taskOptions[任务实例][option][字段]``，全局选项的在 ``globalOptions[option][字段]``（两处
-一起处理，``_SECRET_SECTIONS``）。写入用户配置前加密（``prepare_user_task_snapshot``，
+一起处理，``_SECRET_SECTIONS``）。写入账号配置前加密（``prepare_user_task_snapshot``，
 ``Config.update_user`` 调），建运行计划前在内存里解密（``open_task_snapshot``，
 ``runner_task`` 调）；前端读到的永远是密文，只据此显示「已设置」，不回显原文。
 
@@ -11,7 +11,7 @@
 
 - 带前缀：是密文。解不开（换了 Windows 账户 / 电脑、配置从别处恢复）就报错请用户重填，
   不能把密文当密码发出去。
-- 不带前缀：旧版本存下的明文，照常使用，下次保存该用户的任务配置时加密。
+- 不带前缀：旧版本存下的明文，照常使用，下次保存该账号的任务配置时加密。
 
 运行时解密出来的原文会随 ``pipeline_override`` 进 MaaFramework 的原生调试日志
 （``MaaTaskerPostTask`` 按 DBG 级别记下整份 override）；``runner_task`` 复制原生日志、
@@ -69,7 +69,7 @@ def _open_value(value: str, option_name: str, field_name: str) -> str:
         raise MaaFWSecretError(
             f"选项 {option_name} 的密码字段 {field_name} 无法解密"
             "（可能换了电脑或 Windows 账户，或配置是从别处恢复的），"
-            "请在用户配置的任务队列里重新填写"
+            "请在账号配置的任务队列里重新填写"
         ) from exc
 
 
@@ -87,7 +87,7 @@ def _has_plaintext_secret(task_options: Any, fields: dict[str, frozenset[str]]) 
 
 
 #: 快照里存选项值的两处：``taskOptions`` 是 ``{任务实例: {option: 值}}``，``globalOptions``
-#: 是 ``{option: 值}``（全局选项每个用户一份）；后者套一层 ``{"_": …}`` 后与前者同形。
+#: 是 ``{option: 值}``（全局选项每个账号一份）；后者套一层 ``{"_": …}`` 后与前者同形。
 _SECRET_SECTIONS = ("taskOptions", "globalOptions")
 
 
@@ -173,7 +173,7 @@ def open_task_snapshot(
     if fields:
         if _snapshot_has_plaintext_secret(snapshot, fields):
             logger.info(
-                "该用户的任务配置里有旧版本存下的未加密密码字段，本次照常使用；"
+                "该账号的任务配置里有旧版本存下的未加密密码字段，本次照常使用；"
                 "下次保存任务配置时会自动加密"
             )
         opened = _map_snapshot_secrets(snapshot, fields, _open_value)
@@ -233,15 +233,15 @@ def _open_orphan_secrets(snapshot: dict[str, Any]) -> dict[str, Any]:
     if secret_inputs:
         opened[SECRET_INPUTS_SNAPSHOT_KEY] = [list(pair) for pair in secret_inputs]
         logger.info(
-            "该用户的任务配置里有项目已不再标为密码的字段仍是密文"
+            "该账号的任务配置里有项目已不再标为密码的字段仍是密文"
             f"（{'、'.join(f'{option}.{field}' for option, field in secret_inputs)}），"
             "本次运行按解密后的值使用"
         )
     if dropped:
         logger.warning(
-            "该用户的任务配置里有项目已不再标为密码、本机又解不开的密文"
+            "该账号的任务配置里有项目已不再标为密码、本机又解不开的密文"
             f"（{'、'.join(dict.fromkeys(dropped))}），本次按默认值运行；"
-            "需要的话在用户配置的任务队列里重新填写"
+            "需要的话在账号配置的任务队列里重新填写"
         )
     return opened
 
@@ -251,7 +251,7 @@ REDACTED_SECRET_TEXT = "<已隐藏>"
 #: 短于这个长度的密码不做全文替换：一两个字符的值会把日志里所有同样的字符都换掉，
 #: 日志就没法看了；这么短的密码本身也谈不上保密。
 MIN_REDACTED_SECRET_LENGTH = 4
-#: 项目有 password 输入框、或本次有要打码的值（用户快照里留着项目已撤掉标记的密文）时，每次运行的
+#: 项目有 password 输入框、或本次有要打码的值（账号快照里留着项目已撤掉标记的密文）时，每次运行的
 #: ``.worker.log`` 第一行以它开头（``log_redaction_notice``）。
 #: 问题包导出（frontend/electron/services/maafwIssueReportService.ts）凭这一行认定这次的
 #: ``.worker.log`` / ``.maafw.log`` 是写的时候就打过码的，没有这一行的旧副本不往包里放。两边一起改。
@@ -287,7 +287,7 @@ def collect_plan_password_values(plan: Any, interface: MaaFWInterface) -> list[s
 
 
 def _user_sealed_values(user_config: Any) -> list[str]:
-    """用户任务快照两处选项值里全部带 ``SECRET_PREFIX`` 的值，解开后去重；解不开的跳过。"""
+    """账号任务快照两处选项值里全部带 ``SECRET_PREFIX`` 的值，解开后去重；解不开的跳过。"""
 
     try:
         raw = user_config.Task.TaskSnapshot
@@ -312,7 +312,7 @@ def collect_run_password_values(
     plan: Any, interface: MaaFWInterface, user_config: Any | None
 ) -> list[str]:
     """本次运行要打码的密码值：计划里 password 字段的值（``collect_plan_password_values``），
-    再并上该用户快照里所有密文解开的值。
+    再并上该账号快照里所有密文解开的值。
 
     后者兜住项目更新撤掉了 password 标记的字段：``open_task_snapshot`` 照样把它们解开交给
     计划，只看当前声明的话这些原文会不打码地进 ``.worker.log`` / ``.maafw.log``。
@@ -339,9 +339,9 @@ def _sealed_leaves(value: Any) -> list[str]:
 def collect_script_password_values(
     script_config: Any, interface: MaaFWInterface | None
 ) -> list[str]:
-    """脚本下全部用户任务配置里 password 字段的值（已解密），去重。
+    """脚本下全部账号任务配置里 password 字段的值（已解密），去重。
 
-    给不在某次运行里的日志打码用（问题包收项目自己写的日志）：那些日志可能是任何一个用户
+    给不在某次运行里的日志打码用（问题包收项目自己写的日志）：那些日志可能是任何一个账号
     跑出来的。``interface`` 读不出来（None）时只认带 ``SECRET_PREFIX`` 的密文——它们一定是
     密码；旧版本存下的明文要靠 interface 才认得出。解不开的密文跳过（本机本来也跑不了它）。
     """
@@ -362,8 +362,8 @@ def collect_script_password_values(
 
     try:
         users = list(script_config.UserData.items())
-    except Exception as exc:  # noqa: BLE001 - 读不出用户列表就没有可打码的值
-        logger.debug(f"读取脚本用户列表失败，没有可打码的密码值：{exc}")
+    except Exception as exc:  # noqa: BLE001 - 读不出账号列表就没有可打码的值
+        logger.debug(f"读取脚本账号列表失败，没有可打码的密码值：{exc}")
         return values
     for _, user in users:
         try:
@@ -448,7 +448,7 @@ def log_redaction_notice(interface: MaaFWInterface, values: list[str]) -> str | 
     都没有就是 None。
 
     ``values`` 是本次运行要打码的密码值（``collect_run_password_values``）：项目把 password
-    标记全撤掉之后，用户快照里留着的密文解开照样会进日志，那时也要打码、也要写这一行。
+    标记全撤掉之后，账号快照里留着的密文解开照样会进日志，那时也要打码、也要写这一行。
     """
 
     if not password_input_names(interface) and not values:

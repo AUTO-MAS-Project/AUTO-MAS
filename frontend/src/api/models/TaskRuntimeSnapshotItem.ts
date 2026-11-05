@@ -14,7 +14,7 @@ export type TaskRuntimeSnapshotItem = {
      */
     taskId: string;
     /**
-     * 脚本执行模式; 循环运行的脚本同样按 AutoProxy 执行
+     * 托管执行模式; 循环运行的托管同样按 AutoProxy 执行
      */
     mode: TaskRuntimeSnapshotItem.mode;
     /**
@@ -26,11 +26,11 @@ export type TaskRuntimeSnapshotItem = {
      */
     queueId?: (string | null);
     /**
-     * 脚本 ID
+     * 托管 ID
      */
     scriptId?: (string | null);
     /**
-     * 用户 ID
+     * 账号 ID
      */
     userId?: (string | null);
     /**
@@ -38,11 +38,11 @@ export type TaskRuntimeSnapshotItem = {
      */
     stopping?: boolean;
     /**
-     * 任务关联的脚本静态标识
+     * 任务关联的托管静态标识
      */
     scripts?: Array<WSTaskScriptIdentityData>;
     /**
-     * 任务脚本与用户状态
+     * 任务托管与账号状态
      */
     task_info?: Array<WSTaskScriptInfoData>;
     /**
@@ -50,7 +50,7 @@ export type TaskRuntimeSnapshotItem = {
      */
     cycleNextList?: Array<WSTaskCyclePreviewData>;
     /**
-     * 已推送的脚本日志, 与下一条增量推送衔接
+     * 已推送的托管日志, 与下一条增量推送衔接
      */
     log?: string;
     /**
@@ -64,7 +64,7 @@ export type TaskRuntimeSnapshotItem = {
 };
 export namespace TaskRuntimeSnapshotItem {
     /**
-     * 脚本执行模式; 循环运行的脚本同样按 AutoProxy 执行
+     * 托管执行模式; 循环运行的托管同样按 AutoProxy 执行
      */
     export enum mode {
         AUTO_PROXY = 'AutoProxy',

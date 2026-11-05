@@ -61,7 +61,9 @@ yarn dev
 
 Runtime 可使用官方发行版，或按 [本地构建说明](../scripts/README.md) 构建。首次启动会准备 Runtime
 自身所需的 uv；Runtime 的状态目录位于开发版 userData 下，源码和配置仍使用当前检出。
-`yarn dev` 会先完成 Electron 主进程编译，再启动开发服务器和持续编译。
+`yarn dev` 使用 Rolldown 转译 Electron，随后并行启动 Electron 与 Vite；页面会等本次 Vite
+就绪后再加载。Electron 类型检查在后台持续运行，不阻塞启动，也不输出编译产物。
+修改主进程后会重新编译，需重启 Electron 才会执行新代码；renderer 继续使用 Vite HMR。
 `yarn dev:fullstack` 与 `yarn dev` 使用同一入口，不会再额外启动一个独立后端。
 开发时可用 `AUTO_MAS_HTTP_PORT` 指定 1024–65535 范围内的端口，Electron 会将它传给 Runtime。
 低端口调试继续使用独立后端与 `yarn web`。

@@ -4,7 +4,7 @@
     :options="generalConfigModeOptions"
     :disabled="disabled"
     :saving="saving"
-    :alert-message="t('core.edit.configSourceHintBase')"
+    :alert-message="t('core.edit.generalConfigSourceHint')"
     @change="emit('change', $event)"
   />
   <UniversalPlanSelector

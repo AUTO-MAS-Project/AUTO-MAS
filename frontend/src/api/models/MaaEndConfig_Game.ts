@@ -56,6 +56,14 @@ export type MaaEndConfig_Game = {
      */
     RestoreResolutionWidth?: (number | null);
     /**
+     * 关闭游戏时的自动 HDR 设置
+     */
+    RestoreAutoHDR?: ('Unchanged' | 'Disable' | 'Enable' | null);
+    /**
+     * MaaEnd 启动时的自动 HDR 设置
+     */
+    AutoHDR?: ('Unchanged' | 'Disable' | 'Enable' | null);
+    /**
      * 是否在启动游戏时执行 MaaEnd 分辨率设置预任务
      */
     SetResolution?: (boolean | null);

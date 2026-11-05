@@ -56,7 +56,7 @@ def test_user_groups_and_dispatch_use_same_report():
         name="脚本", user_list=[first, second], log="原始日志", result="旧摘要"
     )
     assert build_task_result_text([script]) == (
-        "脚本：\n\n    已完成用户数：1；未完成用户数：1\n\n"
+        "脚本：\n\n    已完成账号数：1；未完成账号数：1\n\n"
         "    账号 A: 全部完成\n    ✅ 成功: 邮件\n\n"
         "    账号 B: 未完成\n    ❌ 失败: 刷本"
     )

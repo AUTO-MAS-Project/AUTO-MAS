@@ -126,7 +126,7 @@ def _restore_path_from_backup(label: str, source: Path, backup: Path) -> None:
 
 
 class _DirectUserFinalizer(TaskExecuteBase):
-    """原生运行复用任务基座的取消保护，收尾结束后才允许下一用户。"""
+    """原生运行复用任务基座的取消保护，收尾结束后才允许下一账号。"""
 
     def __init__(self, *, manager, user_item, user_config):
         super().__init__()
@@ -135,7 +135,7 @@ class _DirectUserFinalizer(TaskExecuteBase):
         self.user_config = user_config
 
     async def main_task(self):
-        raise RuntimeError("原生用户收尾不支持独立运行")
+        raise RuntimeError("原生账号收尾不支持独立运行")
 
     async def final_task(self):
         try:
@@ -156,7 +156,7 @@ class _DirectUserFinalizer(TaskExecuteBase):
             )
 
     async def on_crash(self, error):
-        logger.opt(exception=True).warning(f"HSR 原生用户收尾失败: {error}")
+        logger.opt(exception=True).warning(f"HSR 原生账号收尾失败: {error}")
 
 
 class HSRManager(NotificationTaskBase):
@@ -320,7 +320,7 @@ class HSRManager(NotificationTaskBase):
         """用户是否已经要求停止——下载途中每收一块问一次。
 
         同时覆盖基类的停止标记与根任务取消状态，确保取消下载后不进入安装或
-        后续用户任务。安装已开始时由安装入口等待写入结束后再交还取消。
+        后续账号任务。安装已开始时由安装入口等待写入结束后再交还取消。
         """
 
         if self.stopped_manually:
@@ -448,11 +448,11 @@ class HSRManager(NotificationTaskBase):
 
         script_id = uuid.UUID(self.script_info.script_id)
         if script_id not in Config.ScriptConfig:
-            return "脚本配置不存在，可能已被删除"
+            return "托管配置不存在，可能已被删除"
 
         script_config = Config.ScriptConfig[script_id]
         if not isinstance(script_config, HSRConfig):
-            return "脚本配置类型错误，不是 HSR 脚本类型"
+            return "托管配置类型错误，不是 HSR 托管类型"
 
         cloud = is_cloud_platform(script_config)
         # 云平台没有本地客户端，「MAS 管理游戏」只对客户端有意义。
@@ -501,10 +501,10 @@ class HSRManager(NotificationTaskBase):
         sra_needed = False
         managed_user_count = 0
         managed_users_with_credentials = 0
-        # 原生来源用户共用同一份三月七 config.yaml，原生云模式的提示只说一次。
+        # 原生来源账号共用同一份三月七 config.yaml，原生云模式的提示只说一次。
         m7a_native_cloud_warned = False
         enabled_module_keys: set[str] = set()
-        # (计划, 用户配置, 用户名, 体力模块实际执行引擎)；关卡预检放到原生配置
+        # (计划, 账号配置, 账号名称, 体力模块实际执行引擎)；关卡预检放到原生配置
         # 可用性确认之后再做，免得把「配置文件不存在」这种更根本的问题盖住。
         daily_stage_checks: list[tuple[Any, HSRUserConfig, str, str]] = []
 
@@ -513,8 +513,8 @@ class HSRManager(NotificationTaskBase):
                 continue
             if user_config.Info.RemainedDay == 0:
                 continue
-            # 预检结论要和本轮真正会跑的用户对齐：单独运行指定用户时，别让其他
-            # 用户的原生来源前置条件、引擎需求与托管账号数把这一个用户拦下来。
+            # 预检结论要和本轮真正会跑的用户对齐：单独运行指定账号时，别让其他
+            # 账号的原生来源前置条件、引擎需求与托管账号数把这一个账号拦下来。
             if not self.task_info.is_target_user(str(uid)):
                 continue
             has_executable_user = True
@@ -524,20 +524,20 @@ class HSRManager(NotificationTaskBase):
             if control.mode == "direct":
                 has_direct_user = True
                 if self.task_info.mode != "AutoProxy":
-                    return f"用户「{user_name}」启用了脚本原生模式，但原生模式仅支持自动代理"
+                    return f"账号「{user_name}」启用了脚本原生模式，但原生模式仅支持自动代理"
                 if cloud and "SRA" in control.engines:
                     return (
-                        f"用户「{user_name}」启用了 SRA 原生模式，"
+                        f"账号「{user_name}」启用了 SRA 原生模式，"
                         "云·星穹铁道不支持 SRA 原生模式，请改用三月七原生模式"
                     )
                 if not control.engines:
-                    return f"用户「{user_name}」尚未启用任何原生模式引擎"
+                    return f"账号「{user_name}」尚未启用任何原生模式引擎"
                 for engine in control.engines:
                     # 原生来源直接跑脚本当前的原生配置：CLI/Assistant 可执行与
                     # 原生配置文件都是硬条件。
                     script_root = resolve_script_path(script_config, engine)
                     label = engine_label(engine, left=False)
-                    unavailable = f"用户「{user_name}」{label}原生模式不可用："
+                    unavailable = f"账号「{user_name}」{label}原生模式不可用："
                     if not script_root:
                         return f"{unavailable}未配置原生脚本路径"
                     executable = Path(script_root) / (
@@ -562,11 +562,11 @@ class HSRManager(NotificationTaskBase):
                         script_config
                     )
                 if cloud:
-                    # 原生来源不改用户配置：云浏览器必须开在三月七自己配置的调试端口上。
+                    # 原生来源不改账号配置：云浏览器必须开在三月七自己配置的调试端口上。
                     port = self._m7a_direct_debug_port(script_config)
                     if not is_port_free(port):
                         return (
-                            f"用户「{user_name}」三月七原生模式不可用：三月七配置的浏览器"
+                            f"账号「{user_name}」三月七原生模式不可用：三月七配置的浏览器"
                             f"调试端口 {port} 已被占用，请在三月七设置中修改"
                         )
                 # 原生来源由脚本原生配置承载完整计划，跳过 MAS 模块队列和凭证检查。
@@ -577,7 +577,7 @@ class HSRManager(NotificationTaskBase):
                 managed_users_with_credentials += 1
 
             # 任务开关、副本与引擎分配读计划（shared 来源 = 脚本配置上的共享计划），
-            # 账号与完成态仍读用户配置。
+            # 账号与完成态仍读账号配置。
             plan = resolve_plan(user_config, script_config)
             assert plan is not None
             for module in HSR_TASK_MODULES:
@@ -598,12 +598,12 @@ class HSRManager(NotificationTaskBase):
                     if assigned == "M7A":
                         m7a_needed = True
                     if assigned == "M7A" and not m7a_available:
-                        return f"用户「{user_name}」模块「{module.name}」分配给了三月七，但三月七路径不可用"
+                        return f"账号「{user_name}」模块「{module.name}」分配给了三月七，但三月七路径不可用"
                     if assigned == "SRA" and not sra_available:
-                        return f"用户「{user_name}」模块「{module.name}」分配给了 SRA，但 SRA 路径不可用"
+                        return f"账号「{user_name}」模块「{module.name}」分配给了 SRA，但 SRA 路径不可用"
 
         if not has_executable_user:
-            return "未找到任何可执行用户，请确保至少有一个启用且剩余天数不为 0 的用户"
+            return "未找到任何可执行账号，请确保至少有一个启用且剩余天数不为 0 的账号"
 
         # 后端未提权时：MAS 起游戏会 WinError 740，直接拦下；不管游戏时只提示，
         # SRA 带 --no-admin 原地继续，三月七会另起提权进程并被判为失败。
@@ -631,17 +631,17 @@ class HSRManager(NotificationTaskBase):
         # 切号只能通过 SRA StartGame 完成（M7A 原生配置里不写账号密码）。
         # 缺少 SRA 路径时 _build_login_plan 会直接回落到 m7a_fallback，队列里
         # 不再插入 StartGame，而游戏已在运行时启动环节又会跳过——于是切号被
-        # 静默跳过，多个用户全跑在同一个已登录账号上，还各自写回完成态。
+        # 静默跳过，多个账号全跑在同一个已登录账号上，还各自写回完成态。
         # 只在确实配了账密时才管：没配账密的用户本来就依赖当前登录态，
         # 有没有 SRA 都是同一个账号，不该被这条拦住。
-        # 云平台按用户分浏览器 profile，切号不经 SRA，不适用。
+        # 云平台按账号分浏览器 profile，切号不经 SRA，不适用。
         if not cloud and not sra_available and managed_users_with_credentials:
             if managed_user_count > 1:
                 return (
-                    f"有 {managed_users_with_credentials} 个启用的托管用户配置了账号密码，"
+                    f"有 {managed_users_with_credentials} 个启用的托管账号配置了账号密码，"
                     "但未配置 SRA 路径。切换账号只能通过 SRA 完成，"
-                    "否则所有用户都会跑在同一个已登录账号上。"
-                    "请填写 SRA 路径，或只保留一个启用的托管用户"
+                    "否则所有账号都会跑在同一个已登录账号上。"
+                    "请填写 SRA 路径，或只保留一个启用的托管账号"
                 )
             self._append_log(
                 "未配置 SRA 路径，本轮不会登录到所填账号，"
@@ -679,7 +679,7 @@ class HSRManager(NotificationTaskBase):
                     f"（三月七已保存账号：{accounts_dir}）"
                 )
 
-        # shared 来源用户共用一份计划，同一条「未选择副本」提示只记一次。
+        # shared 来源账号共用一份计划，同一条「未选择副本」提示只记一次。
         precheck_seen: set[str] = set()
         for plan, user_config, user_name, assigned in daily_stage_checks:
             self._precheck_daily_stages(
@@ -698,7 +698,7 @@ class HSRManager(NotificationTaskBase):
 
     @staticmethod
     def _check_cloud_prerequisites(script_config: HSRConfig) -> str:
-        """云·星穹铁道的脚本级前置；通过返回空串。"""
+        """云·星穹铁道的托管级前置；通过返回空串。"""
 
         return check_cloud_prerequisites(script_config)
 
@@ -706,7 +706,7 @@ class HSRManager(NotificationTaskBase):
         """客户端平台 + 三月七原生来源，而三月七自己开了云游戏：只提示，不报错。
 
         原生来源不钉云开关、尊重三月七的配置，这是上游一直支持的用法；这里建议改用
-        云·星穹铁道平台，由 MAS 托管浏览器并按用户隔离登录。返回是否提示过。
+        云·星穹铁道平台，由 MAS 托管浏览器并按账号隔离登录。返回是否提示过。
         """
 
         try:
@@ -717,7 +717,7 @@ class HSRManager(NotificationTaskBase):
             return False
         message = (
             "三月七设置里开了云游戏，本轮按三月七自己的云模式运行；"
-            "建议把游戏平台改为云·星穹铁道，由 MAS 托管浏览器并按用户隔离登录"
+            "建议把游戏平台改为云·星穹铁道，由 MAS 托管浏览器并按账号隔离登录"
             "（首次需重新登录一次）"
         )
         if is_game_management_enabled(script_config):
@@ -751,20 +751,18 @@ class HSRManager(NotificationTaskBase):
         SRA 开了「使用培养目标」或活动双倍、M7A 开了培养目标或任一活动时，副本由
         脚本自己决定，缺主关卡是正常的，不提示。
 
-        这里刻意只写日志、不返回错误：``TaskSwitch.Daily`` 默认开启，新建用户在配
+        这里刻意只写日志、不返回错误：``TaskSwitch.Daily`` 默认开启，新建账号在配
         好副本之前天然处于「该引擎下一个关卡都没选」的状态，若据此中止整个任务，
-        一个还没配完的用户会连带让同脚本下其他用户全部跑不了。用户在编辑页已经
+        一个还没配完的用户会连带让同托管下其他账号全部跑不了。用户在编辑页已经
         能看到「当前引擎下未选择副本」的提示，这里再在开跑前复述一次即可。
 
         副本、托管值与历战余响开始日读 ``plan``，本周是否已完成读 ``user_config``。
-        脚本来源用户共用一份计划，提示以「脚本共享任务配置」为主语、经 ``seen``
-        去重，免得 N 个用户把同一句话刷 N 遍。
+        脚本来源账号共用一份计划，提示以「共享任务配置」为主语、经 ``seen``
+        去重，免得 N 个账号把同一句话刷 N 遍。
         """
 
         engine_name = engine_label(assigned)
-        subject = (
-            "脚本共享任务配置：" if plan is script_config else f"用户「{user_name}」"
-        )
+        subject = "共享任务配置：" if plan is script_config else f"账号「{user_name}」"
 
         def log_once(message: str) -> None:
             if seen is not None:
@@ -819,7 +817,7 @@ class HSRManager(NotificationTaskBase):
         return bool(user_config.Info.Status) and user_config.Info.RemainedDay != 0
 
     def _proxy_times_limit_reached(self, user_config) -> bool:
-        """今日代理次数是否已达脚本页设定的上限（0 = 不限）。
+        """今日代理次数是否已达托管页设定的上限（0 = 不限）。
 
         ``Data.ProxyTimes`` 按服务器日期累计，写回逻辑换日时会重新从 1 起算，
         所以这里只在 ``LastProxyDate`` 是今天时才算数。
@@ -835,7 +833,7 @@ class HSRManager(NotificationTaskBase):
         return int(user_config.Data.ProxyTimes or 0) >= limit
 
     def _validate_sra_user_credentials(self, script_config: HSRConfig) -> str:
-        """校验启用用户的 SRA 登录/切号凭证。"""
+        """校验启用账号的 SRA 登录/切号凭证。"""
 
         for uid, user_config in script_config.UserData.items():
             if not self._is_executable_user(user_config):
@@ -858,7 +856,7 @@ class HSRManager(NotificationTaskBase):
         return "Pass"
 
     async def _apply_completion_writebacks(self) -> None:
-        """持有 X 锁时，把真实成功的完成态写入用户 Data。"""
+        """持有 X 锁时，把真实成功的完成态写入账号 Data。"""
 
         pending = list(self._completion_writebacks)
         if not pending:
@@ -872,7 +870,7 @@ class HSRManager(NotificationTaskBase):
             for group, key, value in item.fields:
                 setattr(getattr(user_config, group), key, value)
             await user_config.commit()
-            logger.success(f"用户「{item.user_name}」HSR 完成态已写回：{item.reason}")
+            logger.success(f"账号「{item.user_name}」HSR 完成态已写回：{item.reason}")
 
         self._completion_writebacks.clear()
 
@@ -898,7 +896,7 @@ class HSRManager(NotificationTaskBase):
         logger.info(f"云·星穹铁道登录时间已写回：{sorted(pending)}")
 
     async def prepare(self):
-        """锁定配置、加载用户列表（不启动外部程序）"""
+        """锁定配置、加载账号列表（不启动外部程序）"""
 
         script_id = uuid.UUID(self.script_info.script_id)
         self.config_locks[
@@ -906,7 +904,7 @@ class HSRManager(NotificationTaskBase):
         ] = await Config.ScriptConfig[script_id].lock_x()
         self.script_config = Config.ScriptConfig[script_id]
         if not isinstance(self.script_config, HSRConfig):
-            raise TypeError("脚本配置类型错误")
+            raise TypeError("托管配置类型错误")
         self.user_config = self.script_config.UserData
 
         logger.success(f"{self.script_info.script_id} 已锁定，HSR 配置提取完成")
@@ -964,10 +962,10 @@ class HSRManager(NotificationTaskBase):
             and self.task_info.is_target_user(str(uid))
         ]
         logger.info(
-            f"HSR 用户列表加载完成，已筛选用户数：{len(self.script_info.user_list)}"
+            f"HSR 账号列表加载完成，已筛选账号数：{len(self.script_info.user_list)}"
         )
         self._append_log(
-            f"HSR 配置已加载，可执行用户数：{len(self.script_info.user_list)}"
+            f"HSR 配置已加载，可执行账号数：{len(self.script_info.user_list)}"
         )
 
     async def main_task(self):
@@ -989,11 +987,11 @@ class HSRManager(NotificationTaskBase):
         await self.prepare()
 
         if not isinstance(self.script_config, HSRConfig) or self.user_config is None:
-            raise RuntimeError("脚本配置类型错误，不是 HSR 脚本类型")
+            raise RuntimeError("托管配置类型错误，不是 HSR 托管类型")
 
         if not self.script_info.user_list:
-            logger.warning("HSR 无可用用户，跳过执行")
-            self._append_log("HSR 无可用用户，跳过执行")
+            logger.warning("HSR 无可用账号，跳过执行")
+            self._append_log("HSR 无可用账号，跳过执行")
             self.script_info.status = "完成"
             return
 
@@ -1026,13 +1024,13 @@ class HSRManager(NotificationTaskBase):
                             user_item.status = "跳过"
                             # 结果与通知是按 log_record 读的，只设 status 会被读成
                             # 「未开始运行」；补一条带原因的日志记录，界面才说得清
-                            # 这个用户为什么没跑。
+                            # 这个账号为什么没跑。
                             user_item.add_log_record(
                                 datetime.now().astimezone(),
                                 LogRecord(status="今日代理次数已达上限，跳过"),
                             )
                             self._append_log(
-                                f"用户「{user_item.name}」今日代理次数已达上限, 跳过"
+                                f"账号「{user_item.name}」今日代理次数已达上限, 跳过"
                             )
                             continue
                         self._reset_m7a_config_for_managed(user_item.name)
@@ -1057,26 +1055,26 @@ class HSRManager(NotificationTaskBase):
                         user_item.add_log_record(datetime.now().astimezone(), user_log)
                     user_log.status = f"HSR 执行异常: {e}"
                     user_log.content.append(str(e))
-                    user_errors.append(f"用户「{user_item.name}」执行异常：{e}")
+                    user_errors.append(f"账号「{user_item.name}」执行异常：{e}")
                     logger.opt(exception=True).warning(
-                        f"HSR 用户「{user_item.name}」执行异常，继续后续用户：{e}"
+                        f"HSR 账号「{user_item.name}」执行异常，继续后续账号：{e}"
                     )
                     self._append_log(
-                        f"用户「{user_item.name}」执行异常，继续处理后续用户：{e}"
+                        f"账号「{user_item.name}」执行异常，继续处理后续账号：{e}"
                     )
                     continue
 
                 if proxy is not None and proxy.crashed:
-                    error_message = proxy.error_message or "HSR 用户任务异常"
+                    error_message = proxy.error_message or "HSR 账号任务异常"
                     user_errors.append(
-                        f"用户「{user_item.name}」执行异常：{error_message}"
+                        f"账号「{user_item.name}」执行异常：{error_message}"
                     )
                     logger.warning(
-                        f"HSR 用户「{user_item.name}」执行异常，继续后续用户："
+                        f"HSR 账号「{user_item.name}」执行异常，继续后续账号："
                         f"{error_message}"
                     )
                     self._append_log(
-                        f"用户「{user_item.name}」执行异常，继续处理后续用户："
+                        f"账号「{user_item.name}」执行异常，继续处理后续账号："
                         f"{error_message}"
                     )
         except asyncio.CancelledError:
@@ -1087,27 +1085,27 @@ class HSRManager(NotificationTaskBase):
 
         if user_errors:
             self._append_log(
-                "HSR 部分用户执行异常，已继续处理后续用户：" + "；".join(user_errors)
+                "HSR 部分账号执行异常，已继续处理后续账号：" + "；".join(user_errors)
             )
 
         if self.task_info.mode == "AutoProxy" and steps_count == 0 and not user_errors:
-            logger.info("HSR 无模块需要执行，所有用户跳过")
-            self._append_log("HSR 无模块需要执行，所有用户跳过")
+            logger.info("HSR 无模块需要执行，所有账号跳过")
+            self._append_log("HSR 无模块需要执行，所有账号跳过")
             self.script_info.status = "完成"
             return
 
         logger.info(
             "HSR 执行计划处理完毕，"
-            f"共 {len(self.script_info.user_list)} 个用户，"
+            f"共 {len(self.script_info.user_list)} 个账号，"
             f"共 {steps_count} 个步骤"
         )
         self._append_log(
-            f"HSR 执行计划处理完成：{len(self.script_info.user_list)} 个用户，"
+            f"HSR 执行计划处理完成：{len(self.script_info.user_list)} 个账号，"
             f"{steps_count} 个步骤"
         )
 
     async def _run_direct_user(self, user_item: UserItem, user_config: Any) -> int:
-        """按脚本原生来源运行一个用户。
+        """按脚本原生来源运行一个账号。
 
         直接执行 SRA/M7A 当前的原生配置（见 ``native_control`` 模块说明）。
         原生来源只把外部配置交给对应 CLI；MAS 是否管理游戏启停由脚本开关决定，
@@ -1115,7 +1113,7 @@ class HSRManager(NotificationTaskBase):
         """
 
         if self.script_config is None:
-            raise RuntimeError("HSR 脚本配置尚未加载")
+            raise RuntimeError("HSR 托管配置尚未加载")
         control = resolve_user_control(user_config, script_config=self.script_config)
         user_name = str(user_config.Info.Name or user_item.name)
         started_at = datetime.now().astimezone()
@@ -1131,7 +1129,7 @@ class HSRManager(NotificationTaskBase):
                 # 正是任务前脚本，还原放后面会把它的改动整份盖掉。
                 self._reset_m7a_config_for_direct(user_name)
 
-            # 执行任务前脚本（每用户仅一次）
+            # 执行任务前脚本（每账号仅一次）
             await run_script_before_task(user_config)
 
             switcher = HSRAccountSwitcher(
@@ -1144,8 +1142,8 @@ class HSRManager(NotificationTaskBase):
             self._runtime.game_launch_checked = False
             cloud = is_cloud_platform(self.script_config)
             if cloud:
-                # 原生来源 + 云：MAS 照样托管本用户的浏览器，但端口用三月七自己配置的
-                # browser_debug_port（原生来源不写用户配置）。
+                # 原生来源 + 云：MAS 照样托管本账号的浏览器，但端口用三月七自己配置的
+                # browser_debug_port（原生来源不写账号配置）。
                 await switcher.ensure_cloud_browser(
                     fixed_port=self._m7a_direct_debug_port(self.script_config)
                 )
@@ -1153,17 +1151,17 @@ class HSRManager(NotificationTaskBase):
                 await switcher.ensure_game_started_by_mas()
             if cloud:
                 self._append_log(
-                    f"用户「{user_name}」进入脚本原生来源；MAS 托管该用户的云浏览器，"
+                    f"账号「{user_name}」进入脚本原生来源；MAS 托管该账号的云浏览器，"
                     f"三月七按原生配置连接并执行：{engine_list(control.engines)}"
                 )
             elif is_game_management_enabled(self.script_config):
                 self._append_log(
-                    f"用户「{user_name}」进入脚本原生来源；MAS 负责先启动游戏并跟踪脚本进程，"
+                    f"账号「{user_name}」进入脚本原生来源；MAS 负责先启动游戏并跟踪脚本进程，"
                     f"原生配置原样执行：{engine_list(control.engines)}"
                 )
             else:
                 self._append_log(
-                    f"用户「{user_name}」进入脚本原生来源；MAS 不管理游戏，"
+                    f"账号「{user_name}」进入脚本原生来源；MAS 不管理游戏，"
                     f"仅运行原生配置并跟踪脚本进程：{engine_list(control.engines)}"
                 )
             timeout_seconds = control.timeout_seconds
@@ -1218,7 +1216,7 @@ class HSRManager(NotificationTaskBase):
                             or f"{engine_label(engine, left=False)}原生来源执行完成"
                         )
                         summaries.append(summary)
-                        self._append_log(f"用户「{user_name}」{summary}")
+                        self._append_log(f"账号「{user_name}」{summary}")
                     except asyncio.CancelledError:
                         await session.cancel()
                         raise
@@ -1265,7 +1263,7 @@ class HSRManager(NotificationTaskBase):
         托管三月七模块把 MAS 模板字段（副本、奖励开关、关通知、云平台端口等）
         直接写进真实 config.yaml，整轮结束才按运行期备份还原；三月七自己也会
         把运行状态（各任务时间戳等）写回同一个文件。同一轮里排在别的用户之后的
-        原生来源用户不还原，跑的就是上一个用户留下的配置，而不是「原样跑原生配置」。
+        原生来源账号不还原，跑的就是上一个账号留下的配置，而不是「原样跑原生配置」。
         备份在 ``prepare`` 里取，还原不动备份，收尾照常再还原一次。
         """
 
@@ -1277,21 +1275,21 @@ class HSRManager(NotificationTaskBase):
             except Exception as e:  # noqa: BLE001
                 logger.opt(exception=True).warning(f"原生来源前还原三月七配置失败：{e}")
                 self._append_log(
-                    f"用户「{user_name}」原生来源前还原三月七 config.yaml 失败，"
+                    f"账号「{user_name}」原生来源前还原三月七 config.yaml 失败，"
                     f"将按当前文件运行：{e}"
                 )
                 return
             self._append_log(
-                f"用户「{user_name}」原生来源前已把三月七 config.yaml 还原为本轮开始前的原生配置"
+                f"账号「{user_name}」原生来源前已把三月七 config.yaml 还原为本轮开始前的原生配置"
             )
             return
 
     def _reset_m7a_config_for_managed(self, user_name: str) -> None:
-        """托管用户开跑前把三月七 config.yaml 还原成本轮运行期备份。
+        """托管账号开跑前把三月七 config.yaml 还原成本轮运行期备份。
 
-        托管模块的 patch 直接写进真实 config.yaml，而下一个托管用户没在 MAS 里
+        托管模块的 patch 直接写进真实 config.yaml，而下一个托管账号没在 MAS 里
         覆盖的字段、活动子开关等「原生值」又从这份文件读——不还原就会继承上一个
-        用户的覆盖值。文件已与备份一致（本轮第一个用户、上一个用户没跑三月七）时
+        用户的覆盖值。文件已与备份一致（本轮第一个账号、上一个账号没跑三月七）时
         不动它。必须在任务前脚本之前（它在托管队列里跑），按账号换整份配置的
         任务前脚本才不会被这里盖掉。还原失败只记日志，按当前文件继续。
         """
@@ -1307,13 +1305,13 @@ class HSRManager(NotificationTaskBase):
                 return
             _restore_path_from_backup(label, source, backup)
         except Exception as e:  # noqa: BLE001
-            logger.opt(exception=True).warning(f"托管用户开跑前还原三月七配置失败：{e}")
+            logger.opt(exception=True).warning(f"托管账号开跑前还原三月七配置失败：{e}")
             self._append_log(
-                f"用户「{user_name}」开跑前还原三月七 config.yaml 失败，"
+                f"账号「{user_name}」开跑前还原三月七 config.yaml 失败，"
                 f"将在当前文件上继续：{e}"
             )
             return
-        logger.info(f"用户「{user_name}」开跑前已把{label}还原为本轮运行期备份")
+        logger.info(f"账号「{user_name}」开跑前已把{label}还原为本轮运行期备份")
 
     def _m7a_backup_target(self) -> tuple[str, Path, Path, bool] | None:
         """外部配置备份表里三月七 config.yaml 那一项；本轮没备份它时为 None。"""
@@ -1342,13 +1340,13 @@ class HSRManager(NotificationTaskBase):
         原生来源前 :meth:`_reset_m7a_config_for_direct` 已把文件还原成本轮开始前的原生
         配置，跑完的文件就是「原生配置 + 三月七自己写回的状态」（周常时间戳、
         体力计划余量、每日实训记录等）。``final_task`` / ``on_crash`` 按备份整轮还原，
-        不刷新的话这些状态每轮都被抹掉，原生来源用户的周常每轮重进。同一轮后面的托管
-        用户仍在刷新后的文件上打 patch，整轮结束还原回刷新后的备份；后面的原生来源用户
+        不刷新的话这些状态每轮都被抹掉，原生来源账号的周常每轮重进。同一轮后面的托管
+        用户仍在刷新后的文件上打 patch，整轮结束还原回刷新后的备份；后面的原生来源账号
         原生来源前也还原成它。
 
         只在开跑前的文件与备份逐字节一致时刷新：不一致说明任务前脚本改过它（按账号
         切换整份配置的用法）或原生来源前还原失败，这时跑完的文件不是「原生 + 三月七状态」，
-        保持原先的整轮还原语义。刷新失败只记日志，不影响后续用户与收尾。
+        保持原先的整轮还原语义。刷新失败只记日志，不影响后续账号与收尾。
         """
 
         target = self._m7a_backup_target()
@@ -1360,7 +1358,7 @@ class HSRManager(NotificationTaskBase):
         try:
             if before_run is None or before_run != backup.read_bytes():
                 self._append_log(
-                    f"用户「{user_name}」原生来源前三月七 config.yaml 与本轮开始前的原生配置"
+                    f"账号「{user_name}」原生来源前三月七 config.yaml 与本轮开始前的原生配置"
                     "不一致（任务前脚本改过或原生来源前还原失败），不刷新运行期备份，"
                     "整轮结束仍按本轮开始前的配置还原"
                 )
@@ -1374,7 +1372,7 @@ class HSRManager(NotificationTaskBase):
                 parsed = None
             if not isinstance(parsed, dict) or not parsed:
                 self._append_log(
-                    f"用户「{user_name}」原生来源后三月七 config.yaml 不是有效配置，"
+                    f"账号「{user_name}」原生来源后三月七 config.yaml 不是有效配置，"
                     "不刷新运行期备份，整轮结束按本轮开始前的配置还原"
                 )
                 return
@@ -1384,13 +1382,13 @@ class HSRManager(NotificationTaskBase):
                 f"原生来源后刷新{label}运行期备份失败：{e}"
             )
             self._append_log(
-                f"用户「{user_name}」原生来源后刷新三月七 config.yaml 备份失败，"
+                f"账号「{user_name}」原生来源后刷新三月七 config.yaml 备份失败，"
                 f"整轮结束将按本轮开始前的配置还原：{e}"
             )
             return
         logger.info(f"{label} 运行期备份已刷新为原生来源后的文件：{source} -> {backup}")
         self._append_log(
-            f"用户「{user_name}」原生来源结束，三月七 config.yaml 的运行期备份已刷新，"
+            f"账号「{user_name}」原生来源结束，三月七 config.yaml 的运行期备份已刷新，"
             "整轮结束保留三月七自己写回的运行状态"
         )
 
@@ -1426,12 +1424,12 @@ class HSRManager(NotificationTaskBase):
             return f"HSR 外部脚本配置恢复失败：{e}"
 
     async def _unlock_script_config(self) -> bool:
-        """解锁当前 HSR 脚本配置；配置已不存在时跳过。"""
+        """解锁当前 HSR 托管配置；配置已不存在时跳过。"""
 
         script_id = uuid.UUID(self.script_info.script_id)
         if script_id not in Config.ScriptConfig:
             logger.warning(
-                f"HSR 脚本配置不存在，跳过解锁：{self.script_info.script_id}"
+                f"HSR 托管配置不存在，跳过解锁：{self.script_info.script_id}"
             )
             return False
 
@@ -1441,7 +1439,7 @@ class HSRManager(NotificationTaskBase):
         return True
 
     async def _push_result_notification(self) -> None:
-        """推送 HSR 脚本级任务结果。"""
+        """推送 HSR 托管级任务结果。"""
 
         if not self.script_info.user_list:
             return
@@ -1567,9 +1565,9 @@ class HSRManager(NotificationTaskBase):
                     await self._apply_completion_writebacks()
             except Exception as e:
                 self.script_info.status = "异常"
-                logger.opt(exception=True).warning(f"HSR 用户数据写回失败：{e}")
-                self._append_log(f"HSR 用户数据写回失败：{e}")
-                return f"HSR 用户数据写回失败：{e}"
+                logger.opt(exception=True).warning(f"HSR 账号数据写回失败：{e}")
+                self._append_log(f"HSR 账号数据写回失败：{e}")
+                return f"HSR 账号数据写回失败：{e}"
 
             if any(user.status == "异常" for user in self.script_info.user_list):
                 self.script_info.status = "异常"

@@ -24,9 +24,9 @@
 
 ## 用户目标与脚本类别
 
-OK-WW 更新的任务目标是用户 UID，但类型缓存按脚本 UID 登记。把任务 target 当缓存键会令已知 Okww 变成 unknown。
+OK-WW 更新的任务目标是账号 UID，但类型缓存按托管 UID 登记。把任务 target 当缓存键会令已知 Okww 变成 unknown。
 
-当前 `requestScriptUpdateStart(targetId, scriptType)` 要求入口明确传固定脚本类型；保留原来的用户目标。其他脚本/用户/队列混合入口也要分开传业务标识和分析类别。新专项需检查类型归一化及 flavor 映射，不为统计改请求目标或额外查配置。
+当前 `requestScriptUpdateStart(targetId, scriptType)` 要求入口明确传固定托管类型；保留原来的账号目标。其他托管/账号/队列混合入口也要分开传业务标识和分析类别。新专项需检查类型归一化及 flavor 映射，不为统计改请求目标或额外查配置。
 
 ## 已持久化后发生附带失败
 

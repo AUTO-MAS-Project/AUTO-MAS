@@ -34,7 +34,7 @@ def _whimbox_script_config(script_id: str) -> RuntimeWhimboxConfig:
 
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     if not isinstance(script_config, RuntimeWhimboxConfig):
-        raise TypeError("脚本配置类型错误, 不是奇想盒类型")
+        raise TypeError("托管配置类型错误, 不是奇想盒类型")
     return script_config
 
 

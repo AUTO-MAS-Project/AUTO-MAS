@@ -273,7 +273,7 @@ async def reorder_plan(plan: PlanReorderIn = Body(...)) -> OutBase:
 @router.post(
     "/universal-state",
     tags=["Get"],
-    summary="查询通用计划已配置的日期",
+    summary="查询通用脚本计划表已配置的日期",
     response_model=UniversalPlanStateOut,
 )
 async def get_universal_plan_state(

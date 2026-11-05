@@ -11,12 +11,24 @@ class NoticeOwner(Protocol):
     startup_notices: list[dict[str, Any]]
 
 
-async def push(owner: NoticeOwner, *, level: str, title: str, lines: list[str]) -> None:
+async def push(
+    owner: NoticeOwner,
+    *,
+    level: str,
+    title: str,
+    lines: list[str],
+    title_key: str | None = None,
+    line_keys: list[str] | None = None,
+) -> None:
     from app.core import Publisher
     from app.core.ws import protocol
     from app.models.schema import WSSystemNoticeData
 
     notice = {"level": level, "title": title, "lines": list(lines)}
+    if title_key is not None:
+        notice["titleKey"] = title_key
+    if line_keys is not None:
+        notice["lineKeys"] = list(line_keys)
     try:
         sent = await Publisher.send(
             id=protocol.ID_MAIN,

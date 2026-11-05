@@ -317,7 +317,7 @@ async def manual_game_sign() -> OutBase:
             if isawaitable(result_update):
                 await result_update
 
-            # 标记今天已签到（仅当所有启用的用户都已签到时标记全局）
+            # 标记今天已签到（仅当所有启用的账号都已签到时标记全局）
             today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
             all_signed = True
             for uid, account in Config.ToolsConfig.GameSign_Accounts.items():

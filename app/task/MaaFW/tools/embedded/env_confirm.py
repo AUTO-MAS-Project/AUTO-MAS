@@ -71,7 +71,7 @@ def resolve_prepare_environment() -> PrepareEnvironment:
 
     ``options`` 只认这些关键字参数（没给的按那边的缺省）：
 
-    - ``proxy_url``：脚本级解析出的代理，``None`` 表示没解析过、沿用全局，``""`` 表示直连；
+    - ``proxy_url``：托管级解析出的代理，``None`` 表示没解析过、沿用全局，``""`` 表示直连；
     - ``agent_env_root`` / ``store_cache``：预检用（isolated_venv 建到池根下的预检目录、
       不写环境缓存），平时不传；
     - ``lenient_health_check`` / ``health_warnings_out``：只有运行前 / 运行后确认传。
@@ -88,7 +88,7 @@ def bind_proxy(
     prepare: PrepareEnvironment, proxy_url: str | None
 ) -> PrepareEnvironment:
     """把代理绑进已解析的 ``prepare``（:func:`resolve_prepare_environment` 的返回值），签名与
-    ``precheck.PrepareProjectEnvironment`` 一致（预检里的 uv / pip 子进程也走脚本级代理）。
+    ``precheck.PrepareProjectEnvironment`` 一致（预检里的 uv / pip 子进程也走托管级代理）。
     不导入任何东西。"""
 
     return functools.partial(prepare, proxy_url=proxy_url)

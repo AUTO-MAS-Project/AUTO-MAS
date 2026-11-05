@@ -51,7 +51,7 @@
 （pending-update-*.txt 标志文件、安装目录实际版本），不自建判定。
 
 失败语义：旧缓存预检查失败只写日志；启动前入口会复核登记并在失败时停止
-用户任务。主动取消正常
+账号任务。主动取消正常
 传播。同一目标版本按本地日期每天最多尝试一次，出现新版可再次取包，失败
 退避仍生效；先免费查版本与复用有效缓存，再申请带 CDK 的一次性下载地址。
 
@@ -547,7 +547,7 @@ _cache_locks: dict[str, asyncio.Lock] = {}
 
 
 def _query_key(arch: str, channel: str, cdk: str) -> str:
-    """同通道架构的不同 CDK 独立查询，失败的凭据不阻止其他脚本。"""
+    """同通道架构的不同 CDK 独立查询，失败的凭据不阻止其他托管。"""
     credential_key = hashlib.sha256(cdk.encode("utf-8")).hexdigest()[:16]
     return f"{_cache_key(arch, channel)}/{credential_key}"
 
@@ -661,7 +661,7 @@ def start_maa_software_update_precheck(
 
     Args:
         maa_root: MAA 安装目录。
-        config_dir: 当前用户实际使用的配置来源目录；原生来源传任务前快照，
+        config_dir: 当前账号实际使用的配置来源目录；原生来源传任务前快照，
             缺省时读安装目录 config。
         config: 脚本配置（MaaConfig），按 get(段, 键) 读取接管开关与 CDK。
     """

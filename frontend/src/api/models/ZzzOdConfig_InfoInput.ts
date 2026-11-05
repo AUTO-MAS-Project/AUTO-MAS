@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type ZzzOdConfig_InfoInput = {
     /**
-     * 脚本名称
+     * 托管名称
      */
     Name?: (string | null);
     /**
