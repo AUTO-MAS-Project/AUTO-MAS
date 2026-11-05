@@ -82,7 +82,7 @@
           :model-value="formData.Info.Base"
           :options="whimboxConfigModeOptions"
           :disabled="loading"
-          :quick-config="formData.Info.IfQuickConfig"
+          :quick-config="formData.Info.Base === 'native' ? formData.Info.IfQuickConfig : undefined"
           :alert-message="t('core.edit.whimboxConfigSourceHint')"
           @change="(value: boolean | string) => emit('modeChange', value)"
           @quick-config-change="(value: boolean) => emit('quickConfigChange', value)"
@@ -135,7 +135,7 @@ const userTags = computed(() => parseStatusTagList(formData.Info.Tag))
 
 // 配置来源三态卡片（#879 语义：base 来源=共享/独立/原生）：shared/independent base 是
 // 本页面板值（当前运行行为一致、为后续特殊功能预留），native base 即奇想盒自带配置
-//（MAS 零写入）。
+//（未启用覆写层时不写入；覆写层只对原生来源生效）。
 // 值域来自共享表（同时被页面的切换校验消费），新增状态会在本表漏写时报类型错。
 const modeMeta: Record<
   WhimboxConfigMode,

@@ -10,11 +10,11 @@ export class OknteService {
     /**
      * 获取 OK-NTE 配置文件列表及 schema
      * 获取 OK-NTE 配置文件列表及 schema 定义。
-     * 读写用户快速配置目录，首次从已有来源初始化，不修改来源文件。
+     * 读写用户覆写常规配置目录，首次从已有来源初始化，不修改来源文件。
      *
      * Args:
-     * script_id: OK-NTE 脚本 ID
-     * user_id: 用户 ID
+     * script_id: OK-NTE 托管 ID
+     * user_id: 账号 ID
      *
      * Returns:
      * dict: 包含配置文件列表和 schema 的响应
@@ -44,8 +44,8 @@ export class OknteService {
      * 批量更新 OK-NTE 配置文件
      *
      * Args:
-     * script_id: OK-NTE 脚本 ID
-     * user_id: 用户 ID
+     * script_id: OK-NTE 托管 ID
+     * user_id: 账号 ID
      * configs: { filename: data } 格式的配置数据
      *
      * Returns:

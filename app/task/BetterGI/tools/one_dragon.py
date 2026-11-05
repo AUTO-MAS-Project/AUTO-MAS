@@ -22,7 +22,7 @@ BetterGI 一条龙配置以独立 JSON 文件保存于 ``{RootPath}/User/OneDrag
 （``Name`` 字段 == 文件名）。每个配置组以「组名」标识（``TaskDefinitions`` 的 value），
 UUID 是每实例随机生成的临时标识，因此本模块按组名识别与切换，新组用 ``uuid.uuid4()`` 生成。
 
-「用户独立配置」模式下（``Info.IfUseMasConfig=True``）：
+「独立配置」模式下（``Info.IfUseMasConfig=True``）：
 - 配置名固定为 MAS 专属槽位「MAS独立配置」，per-user 副本路径固定
   ``data/{script_id}/{user_id}/OneDragon/MAS独立配置.json``，BGI 同名实配全程零接触。
 - 种子顺序为 per-user 副本 → 内置模板（不回退 BGI 实配，实配不是权威源）。
@@ -69,9 +69,9 @@ _SEED_TEMPLATE = _RES_TEMPLATE_DIR / "OneDragon" / "默认配置.json"
 
 # 空配置名的显式兜底配置名
 _DEFAULT_CONFIG_NAME = "默认配置"
-# MAS 运行时专属槽位配置名：开启「用户独立配置」时，把 per-user 配置落地到这个独立文件并据此启动，
+# MAS 运行时专属槽位配置名：开启「独立配置」时，把 per-user 配置落地到这个独立文件并据此启动，
 # 绝不覆盖 BGI 同名的用户实配（{RootPath}/User/OneDragon/{用户所选名}.json 全程零接触）。
-# 该槽位由 MAS 独占、运行后删除；名称避免与常见用户配置名冲突。
+# 该槽位由 MAS 独占、运行后删除；名称避免与常见账号配置名冲突。
 _MAS_ONE_DRAGON_SLOT_NAME = "MAS独立配置"
 
 # BetterGI 内置自动战斗策略名（跨版本始终存在；AutoBossParam.BuildCombatStrategyPath 将其映射到 User\AutoFight\ 目录）
@@ -276,7 +276,7 @@ def list_js_scripts(root: Path) -> list[tuple[str, str]]:
     ``manifest.json`` 的 ``name`` 才是玩家可读的中文显示名（如「AAA狗粮批发」）。
     候选列表应展示显示名、落库用目录名，故两者都返回。
 
-    每个脚本目录须含 ``manifest.json`` 才视为可执行脚本（BetterGI 脚本目录语义），
+    每个 JS 脚本目录须含 ``manifest.json`` 才视为可执行脚本（BetterGI 脚本目录语义），
     每次调用实时扫描以反映玩家手工放置/订阅更新的脚本。
     """
     items: list[tuple[str, str]] = []
@@ -547,7 +547,7 @@ def read_script_readme(root: Path, folder: str) -> str:
 
 
 def _validate_script_id(script_id: str) -> str:
-    """校验脚本 ID 可安全拼入 ``data/`` 相对路径：必须是合法 UUID。
+    """校验托管 ID 可安全拼入 ``data/`` 相对路径：必须是合法 UUID。
 
     返回 strip 后的 ``script_id``；不合法抛 ``ValueError``（防目录穿越/越权读写）。
     """
@@ -555,21 +555,21 @@ def _validate_script_id(script_id: str) -> str:
     try:
         uuid.UUID(value)
     except ValueError as e:
-        raise ValueError(f"非法的脚本 ID: {script_id!r}") from e
+        raise ValueError(f"非法的托管 ID: {script_id!r}") from e
     return value
 
 
 def _validate_user_id(user_id: str) -> str:
-    """校验用户 ID 可安全拼入 ``data/`` 相对路径：必须是合法 UUID。
+    """校验账号 ID 可安全拼入 ``data/`` 相对路径：必须是合法 UUID。
 
-    MAS 的 BetterGI 用户 id 恒为 UUID；不合法抛 ``ValueError``
-    （防目录穿越/越权读写其他用户或脚本目录）。
+    MAS 的 BetterGI 账号 id 恒为 UUID；不合法抛 ``ValueError``
+    （防目录穿越/越权读写其他账号或脚本目录）。
     """
     value = str(user_id or "").strip()
     try:
         uuid.UUID(value)
     except ValueError as e:
-        raise ValueError(f"非法的用户 ID: {user_id!r}") from e
+        raise ValueError(f"非法的账号 ID: {user_id!r}") from e
     return value
 
 
@@ -586,10 +586,10 @@ def _validate_file_stem(name: str) -> str:
 
 
 def per_user_script_group_path(script_id: str, user_id: str, name: str) -> Path:
-    """某用户的配置组 json 副本路径 ``data/{script_id}/{user_id}/ScriptGroup/{name}.json``。
+    """某账号的配置组 json 副本路径 ``data/{script_id}/{user_id}/ScriptGroup/{name}.json``。
 
-    BetterGI 的配置组（``User/ScriptGroup/*.json``）是 BGI 全局共享文件；在「用户独立
-    配置」语义下，MAS 把该用户对配置组的编辑（项目顺序 / 各项目 jsScriptSettingsObject）
+    BetterGI 的配置组（``User/ScriptGroup/*.json``）是 BGI 全局共享文件；在「独立
+    配置」语义下，MAS 把该账号对配置组的编辑（项目顺序 / 各项目 jsScriptSettingsObject）
     落在 per-user 副本，BGI 同名实配全程零接触（种子：per-user 副本 → BGI 实配）。
     """
     return (
@@ -633,10 +633,10 @@ def _read_per_user_copy(script_id: str, user_id: str, name: str) -> Any:
 
 
 def list_user_script_group_names(script_id: str, user_id: str) -> list[str]:
-    """列出某用户 per-user ScriptGroup 副本的文件名（不含 ``.json``）。
+    """列出某账号 per-user ScriptGroup 副本的文件名（不含 ``.json``）。
 
-    副本是 MAS 在「用户独立配置」语义下保存的用户编辑内容，与 BGI 实配目录
-    （``User/ScriptGroup/*.json``）相对独立；前端把两者并集视为「该用户可编辑的
+    副本是 MAS 在「独立配置」语义下保存的用户编辑内容，与 BGI 实配目录
+    （``User/ScriptGroup/*.json``）相对独立；前端把两者并集视为「该账号可编辑的
     配置组」，据此把复制自 JS/路径等来源的自建副本识别为 scriptgroup 行。
     """
     names: list[str] = []
@@ -674,7 +674,7 @@ def _instance_base_name(name: str) -> str:
 def read_user_script_group(
     root: Path, script_id: str, user_id: str, name: str
 ) -> dict[str, Any]:
-    """读取某用户的配置组 json（per-user 副本 → BGI 实配的种子顺序）。
+    """读取某账号的配置组 json（per-user 副本 → BGI 实配的种子顺序）。
 
     供右栏「配置组项目编辑」渲染与编辑：副本缺失/未生成时回退 BGI 实配，
     保证展示的是用户当前可编辑的内容（首次编辑时即以实配为底稿）。
@@ -907,7 +907,7 @@ def resolve_config_name(name: str) -> str:
 
 
 def launch_slot_name() -> str:
-    """MAS 运行时专属槽位配置名（开启「用户独立配置」时据此启动一条龙）。"""
+    """MAS 运行时专属槽位配置名（开启「独立配置」时据此启动一条龙）。"""
     return _MAS_ONE_DRAGON_SLOT_NAME
 
 
@@ -921,7 +921,7 @@ def _slot_owner_path(script_id: str) -> Path:
     当前由 MAS 写入（运行时槽位），而非用户自己的同名配置。
 
     ⚠️ 前提：同一脚本同一时刻至多一个 BetterGI 任务在运行（调度与使用方式保证），
-    owner/backup 因此只按脚本维度记录；若未来允许同脚本并发任务，槽位/备份/
+    owner/backup 因此只按脚本维度记录；若未来允许同托管并发任务，槽位/备份/
     前缀物化/全局叶子快照会产生竞态，需按任务维度隔离。
     """
     return Path.cwd() / "data" / _validate_script_id(script_id) / ".mas_slot_owner"
@@ -1098,7 +1098,7 @@ def list_custom_groups(root: Path, config_name: str) -> list[dict[str, Any]]:
 def list_user_custom_groups(
     root: Path, script_id: str, user_id: str, config_name: str
 ) -> list[dict[str, Any]]:
-    """列出某用户 per-user 一条龙副本里的自定义配置组（独立模式权威源）。
+    """列出某账号 per-user 一条龙副本里的自定义配置组（独立模式权威源）。
 
     读取源与 ``read_user_one_dragon_settings`` 一致（副本 → 内置模板），
     保证表格展示的是将写入槽位的组（含自定义组开关状态）。
@@ -1159,7 +1159,7 @@ def _minimal_config() -> dict[str, Any]:
 
 
 def per_user_one_dragon_path(script_id: str, user_id: str, config_name: str) -> Path:
-    """某用户的一条龙配置副本路径 ``data/{script_id}/{user_id}/OneDragon/{name}.json``。"""
+    """某账号的一条龙配置副本路径 ``data/{script_id}/{user_id}/OneDragon/{name}.json``。"""
     return (
         Path.cwd()
         / "data"
@@ -1171,7 +1171,7 @@ def per_user_one_dragon_path(script_id: str, user_id: str, config_name: str) -> 
 
 
 def _mas_user_short_id(user_id: str) -> str:
-    """用户短标识：取 UUID 十六进制前 8 位，供物化文件名前缀隔离（按用户冗余，避免误删他用户组）。"""
+    """账号短标识：取 UUID 十六进制前 8 位，供物化文件名前缀隔离（按账号冗余，避免误删其他账号的配置组）。"""
     short = (user_id or "").replace("-", "")[:8]
     return short or "user"
 
@@ -1522,7 +1522,7 @@ def materialize_user_script_groups(
     config: dict[str, Any],
     instance_base: dict[str, str] | None = None,
 ) -> list[Path]:
-    """把用户独立配置的自定义配置组物化到 BGI User/ScriptGroup（统一编号，彻底去耦合）。
+    """把独立配置的自定义配置组物化到 BGI User/ScriptGroup（统一编号，彻底去耦合）。
 
     四类自定义项（配置组 scriptgroup / 录制 keymouse / 脚本 js / 路径 pathing）一律物化，
     与「是否引用 BGI 已有组」无关。物化文件统一命名为 ``MAS-{短id}-自定义配置组{N}.json``（N 为
@@ -1587,10 +1587,10 @@ def remove_materialized_script_groups(root: Path, created: list[Path]) -> None:
 
 
 def cleanup_leftover_mas_groups(root: Path, script_id: str, user_id: str) -> int:
-    """清理该用户历史残留的 MAS 物化配置组文件（``User/ScriptGroup/MAS-{短id}-自定义配置组*.json``）。
+    """清理该账号历史残留的 MAS 物化配置组文件（``User/ScriptGroup/MAS-{短id}-自定义配置组*.json``）。
 
-    进程被强杀等异常场景会留下前缀物化文件（无 owner 标记可循），此函数按用户短 id
-    前缀扫描删除，只命中该用户专属前缀，绝不触碰 BGI 本体文件。返回删除数量。
+    进程被强杀等异常场景会留下前缀物化文件（无 owner 标记可循），此函数按账号短 id
+    前缀扫描删除，只命中该账号专属前缀，绝不触碰 BGI 本体文件。返回删除数量。
 
     ⚠️ 前提：同一脚本同一时刻至多一个 BetterGI 任务在运行；并发任务下此清理会删掉
     其他运行实例正在使用的物化文件（见 ``_slot_owner_path`` 的说明）。
@@ -1678,7 +1678,7 @@ def write_native_one_dragon(
     exclude_task_names: list[str] | None = None,
     native_step_settings: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
-    """把面板值写入 **BGI 原生一条龙配置**（原生来源 + 快速配置开启时使用）。
+    """把面板值写入 **BGI 原生一条龙配置**（原生来源 + 覆写常规配置开启时使用）。
 
     与 ``write_user_one_dragon`` 的区别：
     - 种子是**该原生配置自身**（保留用户的一条龙结构与自定义组定义，不回退内置模板）；
@@ -1692,7 +1692,7 @@ def write_native_one_dragon(
     ``groups`` 为空表示「调用方不提供组开关」（原生来源下 MAS 不接管一条龙启停，面板 Groups
     也不参与）：此时**沿用配置自身启用的内置组**，绝不能把空表直接交给 ``apply_groups``
     ——它把空表理解成「全部关掉」，会让用户在运行期间一条龙任务一个都不跑（2026-09-18/19
-    实机：原生来源 + 快速配置的用户只剩自定义配置组任务在跑，内置任务全被写成关闭）。
+    实机：原生来源 + 覆写常规配置的用户只剩自定义配置组任务在跑，内置任务全被写成关闭）。
 
     Returns:
         写入后的配置 dict；原生配置不存在或非法时返回 None（不凭空造一份）。
@@ -1736,7 +1736,7 @@ def write_native_one_dragon(
     # 全局段叶子（秘境刷取配置 / 幽境刷取策略）落 config.json 各自段。
     # 秘境同样要落本文件：DomainName / PartyName / WeeklyDomainEnabled 与周表键都是一条龙
     # 顶层键，只送去全局写入器会被它的白名单挡掉（那里只管「秘境刷取配置」那几个叶子），
-    # 表现为原生来源 + 快速配置下「面板改了秘境/周表却不生效」（2026-09-19 检查）。
+    # 表现为原生来源 + 覆写常规配置下「面板改了秘境/周表却不生效」（2026-09-19 检查）。
     if native_step_settings:
         for _group in ("自动秘境", "自动首领讨伐", "自动地脉花"):
             for _key, _value in (native_step_settings.get(_group) or {}).items():
@@ -1772,9 +1772,9 @@ def write_user_one_dragon(
 
     ⚠️ 前提：同一脚本同一时刻至多一个 BetterGI 任务在运行（调度与使用方式保证）；
     槽位/owner/backup/前缀物化组/全局 config.json 叶子快照均按脚本维度共享，
-    若未来允许同脚本并发任务，需先按任务维度隔离（见 ``_slot_owner_path``）。
+    若未来允许同托管并发任务，需先按任务维度隔离（见 ``_slot_owner_path``）。
 
-    仅「用户独立配置」模式（``IfUseMasConfig=True``）调用；配置名固定为
+    仅「独立配置」模式（``IfUseMasConfig=True``）调用；配置名固定为
     「MAS独立配置」：
     - per-user 副本固定 ``data/{script}/{user}/OneDragon/MAS独立配置.json``；
     - 种子优先级：per-user 副本 → 内置模板（**不回退 BGI 实配**，BGI 同名实配零接触，
@@ -2136,7 +2136,7 @@ _GLOBAL_DOMAIN_LEAF_SEGMENT: dict[str, str] = {
     for segment, leaves in _GLOBAL_DOMAIN_SETTING_LEAVES.items()
     for leaf in leaves
 }
-# domain 白名单叶子（段名, 键）二元组：运行时按用户物化后需随队伍/策略一起快照还原
+# domain 白名单叶子（段名, 键）二元组：运行时按账号物化后需随队伍/策略一起快照还原
 _GLOBAL_DOMAIN_LEAVES: tuple[tuple[str, str], ...] = tuple(
     (segment, key)
     for segment, keys in _GLOBAL_DOMAIN_SETTING_LEAVES.items()
@@ -2346,12 +2346,12 @@ def write_global_domain_settings(root: Path, settings: dict[str, Any]) -> None:
 
 
 def per_user_global_domain_path(script_id: str, user_id: str) -> Path:
-    """某用户的秘境刷取配置副本路径 ``data/{script_id}/{user_id}/GlobalDomain/settings.json``。
+    """某账号的秘境刷取配置副本路径 ``data/{script_id}/{user_id}/GlobalDomain/settings.json``。
 
     BGI 的秘境刷取段（``autoDomainConfig`` / ``autoArtifactSalvageConfig``）存在于全局
-    ``config.json``，本身是脚本级共享；在「用户独立配置」语义下，MAS 把该用户编辑的
+    ``config.json``，同一 BetterGI 安装内共享；在「独立配置」语义下，MAS 把该账号编辑的
     白名单值落在 per-user 副本，运行时才物化到 BGI 全局 config.json（运行结束还原），
-    使不同用户的秘境刷取设置互不覆盖。
+    使不同账号的秘境刷取设置互不覆盖。
     """
     return (
         Path.cwd()
@@ -2366,9 +2366,9 @@ def per_user_global_domain_path(script_id: str, user_id: str) -> Path:
 def read_user_global_domain_settings(
     root: Path, script_id: str, user_id: str
 ) -> dict[str, Any]:
-    """读取某用户的秘境刷取配置（per-user 副本为权威源，缺失键兜底 BGI 全局/默认）。
+    """读取某账号的秘境刷取配置（per-user 副本为权威源，缺失键兜底 BGI 全局/默认）。
 
-    以 BGI 全局实配（含默认值兜底）为底稿，再用该用户副本覆盖其上：副本缺失/为空时
+    以 BGI 全局实配（含默认值兜底）为底稿，再用该账号副本覆盖其上：副本缺失/为空时
     结果即 BGI 现状（首次展示反映实配）；副本键值优先（用户保存后的隔离值），新增白名单
     键在未保存前仍回退全局，避免旧副本缺键导致前端 undefined。
     """
@@ -2397,7 +2397,7 @@ def write_user_global_domain_settings(
 
 
 def apply_user_global_domain_settings(root: Path, script_id: str, user_id: str) -> bool:
-    """把某用户 per-user 副本的秘境刷取配置物化到 BGI 全局 config.json。
+    """把某账号 per-user 副本的秘境刷取配置物化到 BGI 全局 config.json。
 
     仅在副本存在且非空时写入；写入前调用方应已快照（``snapshot_global_battle_config``
     现在覆盖 domain 白名单叶子），运行结束后由 ``restore_global_battle_config`` 还原。
@@ -2413,7 +2413,7 @@ def apply_user_global_domain_settings(root: Path, script_id: str, user_id: str) 
 # ---- 自动幽境危战（autoStygianOnslaughtConfig 段）读写 ----
 # 段默认值（与 BGI AutoStygianOnslaughtConfig.cs 一致）：刷取战场默认 1、次数均为 0、
 # 开关均为 false、队伍留空（空值不覆盖 BGI 现有/顶部通用值）、策略为 BGI 默认选项
-# 「根据队伍自动选择」。此默认同时是新用户（无 per-user 副本）右栏的标准状态。
+# 「根据队伍自动选择」。此默认同时是新账号（无 per-user 副本）右栏的标准状态。
 def _default_stygian_settings() -> dict[str, Any]:
     return {
         "bossNum": 1,
@@ -2518,11 +2518,11 @@ def write_global_stygian_settings(root: Path, settings: dict[str, Any]) -> None:
 
 
 def per_user_global_stygian_path(script_id: str, user_id: str) -> Path:
-    """某用户的幽境危战配置副本路径 ``data/{script_id}/{user_id}/GlobalStygian/settings.json``。
+    """某账号的幽境危战配置副本路径 ``data/{script_id}/{user_id}/GlobalStygian/settings.json``。
 
-    语义同 ``per_user_global_domain_path``：BGI 的幽境段存于全局 config.json（脚本级共享），
-    「用户独立配置」下 MAS 把该用户编辑的白名单值落在 per-user 副本，运行时才物化到 BGI
-    （运行结束还原），使不同用户的幽境设置互不覆盖。
+    语义同 ``per_user_global_domain_path``：BGI 的幽境段存于同一 BetterGI 安装的全局 config.json，
+    「独立配置」下 MAS 把该账号编辑的白名单值落在 per-user 副本，运行时才物化到 BGI
+    （运行结束还原），使不同账号的幽境设置互不覆盖。
     """
     return (
         Path.cwd()
@@ -2537,11 +2537,11 @@ def per_user_global_stygian_path(script_id: str, user_id: str) -> Path:
 def read_user_global_stygian_settings(
     root: Path, script_id: str, user_id: str
 ) -> dict[str, Any]:
-    """读取某用户的幽境危战设置（per-user 副本为权威源）。
+    """读取某账号的幽境危战设置（per-user 副本为权威源）。
 
     副本缺失/为空时返回固定标准默认（``_default_stygian_settings``），**不回退 BGI
-    config.json 现状**——现状可能被其他用户/历史运行污染（如 fightTeamName 残留脏值），
-    新用户右栏必须始终呈现标准空白状态；用户首次保存后副本即固化其视图值。
+    config.json 现状**——现状可能被其他账号/历史运行污染（如 fightTeamName 残留脏值），
+    新账号右栏必须始终呈现标准空白状态；用户首次保存后副本即固化其视图值。
     """
     out = _default_stygian_settings()
     copy = read_file(per_user_global_stygian_path(script_id, user_id))
@@ -2572,7 +2572,7 @@ def write_user_global_stygian_settings(
 def apply_user_global_stygian_settings(
     root: Path, script_id: str, user_id: str
 ) -> bool:
-    """把某用户 per-user 副本的幽境危战设置物化到 BGI 全局 config.json。
+    """把某账号 per-user 副本的幽境危战设置物化到 BGI 全局 config.json。
 
     仅在副本存在且非空时写入；写入前调用方应已快照（``snapshot_global_battle_config``
     现在覆盖幽境白名单叶子），运行结束后由 ``restore_global_battle_config`` 还原。
@@ -2692,8 +2692,8 @@ def _seed_user_one_dragon_config(
 ) -> dict[str, Any]:
     """读取用户一条龙配置的种子：per-user 副本优先。
 
-    - 固定槽位名（MAS独立配置，用户独立模式）：副本缺失时以纯内置模板开始，
-      不回退 BGI 实配（实配不是权威源，避免把 BGI 同名用户配置当底稿）。
+    - 固定槽位名（MAS独立配置，账号独立模式）：副本缺失时以纯内置模板开始，
+      不回退 BGI 实配（实配不是权威源，避免把 BGI 同名账号配置当底稿）。
     - 其它配置名（非独立模式原生来源）：副本缺失时回退 BGI 实配 → 内置模板（旧行为）。
     """
     config_name = resolve_config_name(config_name)
@@ -2716,7 +2716,7 @@ def read_user_one_dragon_settings(
     user_id: str,
     config_name: str,
 ) -> dict[str, Any]:
-    """读取某用户一条龙配置的设置项（右栏渲染）。
+    """读取某账号一条龙配置的设置项（右栏渲染）。
 
     种子顺序与 ``write_user_one_dragon`` 一致（见 ``_seed_user_one_dragon_config``）；
     独立模式固定名副本缺失时以内置模板为准，保证右栏显示的是将生效的值。

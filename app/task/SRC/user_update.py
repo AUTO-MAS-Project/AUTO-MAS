@@ -13,7 +13,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
 
-"""SRC 用户配置更新策略。"""
+"""SRC 账号配置更新策略。"""
 
 from typing import Any, cast
 
@@ -49,5 +49,5 @@ def prepare_user_update(
         )
     ):
         raise ValueError(
-            "每个脚本仅允许一个原生来源用户, 多账号请在该用户的实例管理中配置"
+            "每个托管仅允许一个原生来源账号, 多账号请在该账号的实例管理中配置"
         )

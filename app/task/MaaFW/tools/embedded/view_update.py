@@ -252,7 +252,7 @@ async def sync_view_to_group(
     """§3.1 第 9 步：视图挂的载荷 ≠ ``latest[channel]`` 就切过去（升级、被动 pending、
     改渠道后的降级都是这一条）。该渠道还没有载荷就留在原地。返回切换结果，没切为 None。
 
-    ``switched_by``：不是本脚本自己的运行切的（启动期迁移）时记进标记，见
+    ``switched_by``：不是本托管自己的运行切的（启动期迁移）时记进标记，见
     :func:`embedded_project.switch_or_confirm_in_progress`。
     """
 
@@ -360,7 +360,7 @@ def confirm_environments_in_background(
             if key is None:
                 return
             try:
-                # 每个脚本一条专用后台线程（不进线程池），宿主实现在这里取。
+                # 每个托管一条专用后台线程（不进线程池），宿主实现在这里取。
                 prepare = env_confirm.resolve_prepare_environment()
                 prepare(
                     view,
@@ -491,7 +491,7 @@ async def run_view_update(
     )
     _LINEAGE_HOLDERS[lineage] = script_name or script_id[:8]
     # 持谱系锁这段把 S 的视图登记为「正在更新」：手动更新拿不到预约时据此说「正在更新」，
-    # 而不是「脚本正在运行」（运行前自动更新也走这里）。
+    # 而不是「托管正在运行」（运行前自动更新也走这里）。
     updating_key = begin_project_updating(view)
     try:
         # 等锁期间被停止、锁恰好同时空出来：不再往下做。
@@ -502,7 +502,7 @@ async def run_view_update(
         )
         if synced is not None:
             outcome.group_synced = True
-            log(f"已切换到 {synced.version}，与同项目、同更新通道的其他脚本一致")
+            log(f"已切换到 {synced.version}，与同项目、同更新通道的其他托管一致")
             marker = await asyncio.to_thread(read_view_marker, view) or marker
         base_marker = marker
         entry = await asyncio.to_thread(latest_entry, lineage, channel, base)
@@ -522,7 +522,7 @@ async def run_view_update(
             }
             newer = entry.get("version") or entry["id"]
             log(
-                f"本脚本当前是 {marker.get('version') or '旧版本'}，同项目其他脚本已更新到 "
+                f"本托管当前是 {marker.get('version') or '旧版本'}，同项目其他托管已更新到 "
                 f"{newer}，以 {newer} 为准检查更新"
             )
         target = await asyncio.to_thread(
@@ -615,7 +615,7 @@ def _normalize_result(
                 if getattr(result, "updated", False)
                 else (
                     f"已切换到 {outcome.version_after}"
-                    "（同项目其他脚本已下载过这一版本）"
+                    "（同项目其他托管已下载过这一版本）"
                 )
             ),
         )
@@ -623,7 +623,7 @@ def _normalize_result(
         return dataclasses.replace(
             result,
             updated=False,
-            message=f"新版本已准备好；{outcome.s_skipped_reason or '本脚本尚未切换'}",
+            message=f"新版本已准备好；{outcome.s_skipped_reason or '本托管尚未切换'}",
         )
     return result
 

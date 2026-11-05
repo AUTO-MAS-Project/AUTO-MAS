@@ -154,7 +154,7 @@ async def prepare_maa_fluxdown_update(
         if prepared is not None:
             if (
                 read_installed_release(maa_root) != prepared.release
-                or await asyncio.to_thread(_digest, prepared.package) != prepared.digest
+                or await _run_write_thread(_digest, prepared.package) != prepared.digest
             ):
                 raise RuntimeError("MAA 安装或预下载包已变化，请重新检查更新")
             destination = maa_root / prepared.package.name
@@ -228,7 +228,7 @@ async def prepare_maa_fluxdown_update(
             return None
         part.replace(destination)
         if download_only:
-            digest = await asyncio.to_thread(_digest, destination)
+            digest = await _run_write_thread(_digest, destination)
             candidate = PreparedUpdate(release, latest, destination, digest)
             # The candidate manager now owns this verified directory.
             retain_download = True

@@ -21,7 +21,7 @@
 
 """MAS 托管的云·星穹铁道浏览器。
 
-浏览器用三月七发行包自带的 Chrome for Testing，由 MAS 拉起并按用户分
+浏览器用三月七发行包自带的 Chrome for Testing，由 MAS 拉起并按账号分
 ``--user-data-dir``；命令行带三月七的识别标记，三月七每个模块进程走它自己的
 「连接已有浏览器」路径接上来，不会自己再开浏览器。三月七只在「新建浏览器」
 路径做的三件事（剪贴板/keyboard_lock 权限、去引导弹窗的 localStorage、
@@ -505,7 +505,7 @@ class CdpSession:
 
 
 class CloudBrowser:
-    """一个 MAS 用户的云浏览器会话。
+    """一个 MAS 账号的云浏览器会话。
 
     调用方负责串行：任一时刻只应有一个 MAS 云浏览器在跑（三月七只认标记不认
     账号）。``start()`` 会先关掉同一 profile 的残留实例，否则 Chrome 会把新
@@ -567,7 +567,7 @@ class CloudBrowser:
         args = build_browser_arguments(self.port, self.profile_dir)
         logger.info(
             f"启动云浏览器（Chrome {self.browser.version}，端口 {self.port}，"
-            f"用户 {self.user_id or '-'}）"
+            f"账号 {self.user_id or '-'}）"
         )
         try:
             await self.process.open_process(

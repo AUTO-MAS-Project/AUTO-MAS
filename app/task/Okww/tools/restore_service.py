@@ -16,18 +16,18 @@
 #   You should have received a copy of the GNU Affero General Public
 #   License along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""OK-WW 配置恢复服务：MAS 用户配置池 / ok-ww 原生配置池（声明式池）。
+"""OK-WW 配置恢复服务：MAS 账号配置池 / ok-ww 原生配置池（声明式池）。
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底预览全部由基座
 （``app.utils.common.config.restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
-mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 + 侧车
-（Info.Id 账号 + 快速配置覆盖层字段）。页面任务配置卡片的字段存在 MAS
-用户配置里、运行时才覆盖进 DailyTask.json——备份/恢复两端都带上侧车字段
+mas 池 = 「MAS 为该账号维护的全部配置」：ConfigFile 目录副本 + 侧车
+（Info.Id 账号 + 覆写常规配置覆盖层字段）。页面任务配置卡片的字段存在 MAS
+账号配置里、运行时才覆盖进 DailyTask.json——备份/恢复两端都带上侧车字段
 （恢复后按段回填表单，对齐 ZzzOd / MAA 字段回填模式），预览与页面认知
-才一致。**池恒按用户分桶**（侧车是用户级的，shared 来源多用户若共享一个
+才一致。**池恒按账号分桶**（侧车是账号级的，shared 来源多账号若共享一个
 Default 池会互相污染）；owner（shared=Default 共享目录、independent=独立
 目录、native=无）只决定归档/恢复目标路径，与运行下发
 （``_okww_mas_config_dir``）同一套来源规则。
@@ -59,10 +59,10 @@ from .backup_archive import (
 
 
 def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
-    """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
+    """恢复守卫：目标账号必须存在，避免把配置恢复进孤儿目录。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
-        raise ValueError("OK-WW 用户不存在，请刷新后重试")
+        raise ValueError("OK-WW 账号不存在，请刷新后重试")
 
 
 async def _set_base(ctx: _utils_config_restore.RestoreContext, base: str) -> None:
@@ -78,15 +78,15 @@ async def _set_base(ctx: _utils_config_restore.RestoreContext, base: str) -> Non
 
 
 def _mas_owner(ctx: _utils_config_restore.RestoreContext) -> str | None:
-    """当前用户的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
+    """当前账号的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
 
     shared 来源共享 ``Default``、independent 来源用当前用户目录，与
-    ``_okww_mas_config_dir``（运行下发）同一套来源规则；用户不存在时
+    ``_okww_mas_config_dir``（运行下发）同一套来源规则；账号不存在时
     无法判态，返回 ``None`` 让列表/预览为空（恢复/归档另有用户守卫）。
 
     注意：owner 只决定**归档/恢复目标路径**（shared=Default 共享目录、
     independent=独立目录）；mas 池本身恒按 ``ctx.user_id`` 分桶——侧车字段是
-    用户级的，shared 来源多用户若共享同一个 Default 池会把各自的覆盖层字段
+    账号级的，shared 来源多账号若共享同一个 Default 池会把各自的覆盖层字段
     混在一起、互相污染，见 :func:`~app.task.Okww.tools.backup_archive.mas_backup_root`。
     """
 
@@ -145,7 +145,7 @@ def _overlay_preview_payload(backup: Path | None, ts: str) -> dict:
 
     ConfigFile 副本（含 DailyTask.json）恢复时会完整写回，预览范围必须与
     恢复范围一致——两池同等存在的文件共用渲染
-    （:func:`build_backup_file_summary`）。覆盖层字段（快速配置）展示的是
+    （:func:`build_backup_file_summary`）。覆盖层字段（覆写常规配置）展示的是
     备份时点的 MAS 页面表单值，运行时才覆盖进 DailyTask.json；来源配置本体
     经「查看详细配置」在 ok-ww GUI 查看。旧版备份无侧车，只剩文件摘要。
     """
@@ -178,7 +178,7 @@ async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> No
     _user_guard(ctx)
     owner = _mas_owner(ctx)
     if owner is None:
-        raise ValueError("原生来源用户不使用 MAS 独立配置，无可恢复内容")
+        raise ValueError("原生来源账号不使用 MAS 独立配置，无可恢复内容")
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     restored_overlay = restore_mas_backup(
         ctx.script_id,

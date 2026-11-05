@@ -17,9 +17,9 @@
 | 必做 | 位置 |
 |------|------|
 | Hub 片段、`ScriptTable` 卡片图标与文案 | `Scripts.vue`、`ScriptTable.vue` |
-| 脚本编辑三段 + 用户编辑三段 | `EditView/Script/`、`EditView/User/` |
+| 托管编辑三段 + 账号编辑三段 | `EditView/Script/`、`EditView/User/` |
 | `useScriptApi`：**脚本类型**与 **UserConfig→users[]** 两处分支 | 漏后者则列表 NO DATA |
-| 用户 **add**：先 `addUser` 再 `router.replace` 到带 `userId` 路由 | 参考 `GeneralUserEdit` |
+| 账号 **add**：先 `addUser` 再 `router.replace` 到带 `userId` 路由 | 参考 `GeneralUserEdit` |
 | WebSocket | `@/composables/useWebSocket`（勿造 `@/utils/websocketClient`） |
 | 展示文案 vs 技术标识分离 | 文案如 `ok-ww`；`ScriptType`/路由/OpenAPI 名保持 `Okww` 等 |
 | 自动发现与手动选择 | 使用同一组哨兵文件；保存失败恢复旧值并显示原因 |
@@ -40,7 +40,7 @@
 | `LogMonitor` 构造 | 必须传 `time_stamp_range`、`time_format`、`check_log`（对齐 `general/AutoProxy.py`） |
 | 任务结果 | 每轮 `log_record[start_time] = LogRecord()`，只写 **`log_record.status`** |
 | 禁止 | 对 `UserItem.result` 赋值（只读 property） |
-| 用户配置索引 | `cur_user_uid = uuid.UUID(user_id)`，再 `user_config[cur_user_uid]` |
+| 账号配置索引 | `cur_user_uid = uuid.UUID(user_id)`，再 `user_config[cur_user_uid]` |
 
 ### AutoProxy 进程（有 `IfTrackProcess` 时）
 
@@ -50,23 +50,23 @@
 
 ## 4. 配置来源（架构线选型决定）
 
-所有专项统一采用脚本 / 用户 / 直控三态来源；架构差异只决定三态各自的真实落盘与运行入口，不改变产品语义。
+`Info.Base` 的公共取值为 `shared` / `independent` / `native`；各适配器实际支持哪些来源，须结合界面选项及运行、会话、恢复消费者确认，见 [主 Skill 的有效语义表](../SKILL.md#配置来源与覆写常规配置)。MFW 及其风味只使用账号任务快照，BAAH 按 `ConfigName` 引用 BAAH 配置，均不消费来源或覆写开关。
 
 | 架构线 | 模式区分 | 配置落盘 |
 |--------|----------|----------|
-| Okww（ok-script） | 脚本/用户/直控 | 脚本→`Default/`；用户→`{userId}/`；直控直接读取脚本原配置 |
-| General | 脚本/用户/直控 | 按专项真实配置 owner 落盘；直控读取脚本原配置 |
-| MaaEnd | 脚本/用户/直控 | 按专项真实配置 owner 落盘 |
+| Okww（ok-script） | 共享/独立/原生 | 共享→`Default/`；独立→`{userId}/`；原生直接读取脚本原配置 |
+| General | 原生 / 按账号保存；`shared` 仅为兼容值 | 原生来源读取脚本原配置；`shared` 与 `independent` 恒使用账号 `ConfigFile`，不读取共享 `Default` |
+| MaaEnd | 共享/独立/原生 | 按专项真实配置 owner 落盘 |
 | M9A | 不适用（MaaFW 的特调类型，不是专项） | 同 MaaFW，见 `app/task/M9A/AGENTS.md` |
 
 **规则**：
-- 来源三态只决定配置 owner；快速配置是**独立于来源的用户级布尔开关**，三种来源下均可启用。开启时 MAS 尝试用该用户快速配置覆盖原生便捷配置；关闭时不覆盖来源配置。
-- 直控 + 关闭：只使用外侧脚本原生配置，MAS 仅保留必要的模拟器、启动参数或命令行注入，以及运行时必需的启动器默认值补齐（缺省才补、无事零写入）。直控 + 开启：任务前注入快速配置，任务结束后按快照策略恢复任务前原生配置。
+- 对支持覆写的专项，基础来源与覆写常规配置是两条独立轴：基础来源决定读取哪份配置，账号级覆写只临时影响本次运行。MFW、General、HSR、BAAH 不消费覆写开关，BetterGI 与 ZzzOd 不提供独立覆写开关；BAAH 的运行托管项和关卡计划表另有自己的开关，不能按兼容 Base 值推断零写入。
+- 对提供来源与覆写开关的专项，原生 + 关闭时使用外侧脚本原生配置，保留必要的模拟器、启动参数、命令行及启动器默认值补齐；原生 + 开启时任务前注入覆写、任务结束还原。BAAH 等引用型配置按各自业务开关处理，不套用这组来源判定。
 - 凡触碰原生配置一律沿用现有快照策略，覆盖成功、失败、取消、超时、异常和崩溃；发现外侧新修改时保护该修改，不予覆盖。
-- 脚本=脚本级共享配置，用户=当前用户独立配置，直控=直接使用外侧脚本原生配置且由原生 GUI 或上游入口维护；不得为对齐界面复制上游全量配置。
-- 配置初始化、AutoProxy 和 ScriptConfig 必须使用同一来源规则；直控不得为了“字段齐全”复制脚本全量配置。
-- 脚本级共享配置可提供脚本级入口，用户独立配置可提供用户级入口；先核对真实调用链，不机械隐藏按钮。
-- 新专项一律实现三态；不再新增两态来源。
+- 对真正实现三态的适配器，共享=托管级共享配置，独立=当前账号独立配置，原生=外侧脚本原生配置；兼容 `shared`、禁用卡片和引用型配置按主 Skill 的专项语义处理，不为对齐标签复制上游全量配置。
+- 配置初始化、AutoProxy 和 ScriptConfig 必须使用同一来源规则；原生来源不得为了“字段齐全”复制脚本全量配置。
+- 托管级共享配置可提供托管级入口，账号独立配置可提供账号级入口；先核对真实调用链，不机械隐藏按钮。
+- 新适配先确认可用的基础来源，再复用公共字段；仅保存兼容值不算实现了该来源，不提供没有运行消费者的来源选项。
 
 **历史输入兼容**：来源旧值的含义由对应配置字段和专项升级规则确定；位置兼容及可选值转换统一声明在 `legacy(group=..., name=..., convert=...)`，文档结构预处理位于一次性升级流程。具体映射按当前字段和历史样本核对。配置加载后的正常修改遵循事务提交及防抖保存，不在专项中恢复一套外置配置校验器。见[配置框架参考](../../mas-data-model/references/config-framework.md)。
 
@@ -189,16 +189,16 @@ finally:
 
 信号关联修改在同 Task 内直接 await；独立子任务申请自己的事务，父事务内等待它提交可能形成循环等待。外部脚本原生文件的 Temp 快照/恢复属于文件业务，继续遵守该文件的 owner 和冲突保护规则，区别于 MAS 配置工作区回退。
 
-### 7.2 多用户迭代
+### 7.2 多账号迭代
 
-`main_task()` 遍历所有用户；每个用户的 `check()` 失败单独标记，`continue` 到下一个：
+`main_task()` 遍历所有账号；每个账号的 `check()` 失败单独标记，`continue` 到下一个：
 
 ```python
 for self.script_info.current_index in range(len(self.script_info.user_list)):
     method = method_cls(...)
     sub_check = await method.check()
     if sub_check != "Pass":
-        # 标记当前用户失败，继续下一个
+        # 标记当前账号失败，继续下一个
         current_user = self.script_info.user_list[self.script_info.current_index]
         if current_user.status == "等待":
             current_user.status = "异常"
@@ -208,10 +208,10 @@ for self.script_info.current_index in range(len(self.script_info.user_list)):
 
 ### 7.3 状态聚合
 
-`final_task()` 聚合所有用户状态：
+`final_task()` 聚合所有账号状态：
 ```python
 if any(user.status == "完成" for user in self.script_info.user_list):
-    ...  # 有成功用户
+    ...  # 有成功账号
 if any(user.status == "异常" for user in self.script_info.user_list):
     self.script_info.status = "异常"
 else:
@@ -239,8 +239,8 @@ else:
 | `配置文件不存在` | `请先在脚本页完成「配置 XX」步骤` |
 
 跳过类消息设为 `"跳过"` 状态（非 `"异常"`）：
-- `今日代理次数已达上限, 跳过该用户`
-- `用户剩余天数为 0, 跳过该用户`
+- `今日代理次数已达上限, 跳过该账号`
+- `账号剩余天数为 0, 跳过该账号`
 
 ---
 
@@ -272,6 +272,6 @@ else:
 - [ ] try/except：进程清理每操作独立
 - [ ] X 票据覆盖任务所需配置，live 字段修改经 commit，收尾释放原票据，无副本整份回写
 - [ ] check() 消息：用户可操作
-- [ ] Manager 多用户迭代
+- [ ] Manager 多账号迭代
 - [ ] 参数拆分 `_split_args` 已提取为模块级函数
 - [ ] 对齐 General：勿 fork 配置模型，用 task 代码处理差异

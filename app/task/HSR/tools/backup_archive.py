@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""HSR 配置备份归档：MAS 用户字段侧车 / M7A+SRA 两引擎原生配置。
+"""HSR 配置备份归档：MAS 账号字段侧车 / M7A+SRA 两引擎原生配置。
 
 HSR 是唯一一对多专项（一个 ScriptType 编排 M7A 与 SRA 两个上游程序）。
 备份时机（MAS「动手前」）：
@@ -30,19 +30,19 @@ HSR 是唯一一对多专项（一个 ScriptType 编排 M7A 与 SRA 两个上游
 - 编辑界面进入 / 退出（前端 ensure）：进入时归档 ``native``、退出时归档
   ``mas``（编辑会话包络的 MAS 侧终态）。
 
-``mas`` 池是**纯字段侧车**（HSR 无 per-user 目录，用户配置即字段），
-收录 **MAS 用户配置全量**（对齐 MAA「MAS 独有配置全量进侧车」口径），分两表：
+``mas`` 池是**纯字段侧车**（HSR 无 per-user 目录，账号配置即字段），
+收录 **MAS 账号配置全量**（对齐 MAA「MAS 独有配置全量进侧车」口径），分两表：
 
-- 用户表（恒读写用户配置）：Info（名称/状态/服务器/剩余天数/前后脚本/
+- 账号表（恒读写账号配置）：Info（名称/状态/服务器/剩余天数/前后脚本/
   备注）、Notify 通知、Control 原生来源引擎开关；
 - 计划表（按配置来源读写）：TaskSwitch 任务开关、Stage 副本配置（含原生
   关卡 JSON）、TaskOpt、Managed.TaskMapping/Options（托管覆盖值，运行时
-  物化进原生）。「脚本」来源读写脚本配置上的共享计划（不含惰性的
+  物化进原生）。共享来源读写托管配置上的共享计划（不含惰性的
   Managed.TaskMapping），其余来源读写用户自己的计划。侧车另带
   ``_plan_owner``（script / user）标注备份时的计划来源。
 
 侧车内平铺键为 ``组.键``（如 ``TaskSwitch.Daily``）。**不收录**：
-Info.Id/Password（加密凭据）、IfQuickConfig（HSR 不支持快速配置，死开关）、
+Info.Id/Password（加密凭据）、IfQuickConfig（HSR 不支持覆写常规配置，死开关）、
 Info.Tag（虚拟字段）、Data.*（运行统计与完成态，恢复配置不恢复统计）、
 Notify.CustomWebhooks（子表结构）。Info.Base 仅预览不回填（回填旧来源会
 翻转 shared/independent/native）。恢复即字段回填，计划表写回**当前** owner；旧版
@@ -76,7 +76,7 @@ read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 
 logger = get_logger("HSR 配置备份")
 
-# ══════════════════ MAS 用户字段侧车（纯侧车，无目录） ══════════════════
+# ══════════════════ MAS 账号字段侧车（纯侧车，无目录） ══════════════════
 
 _USER_KEY_GROUPS: dict[str, tuple[str, ...]] = {
     "Info": (
@@ -101,7 +101,7 @@ _USER_KEY_GROUPS: dict[str, tuple[str, ...]] = {
     ),
     "Control": ("SRA", "M7A"),
 }
-"""恒按用户读写的侧车段与键（只存在于 HSRUserConfig 上）。"""
+"""恒按账号读写的侧车段与键（只存在于 HSRUserConfig 上）。"""
 
 _PLAN_KEY_GROUPS: dict[str, tuple[str, ...]] = {
     "TaskSwitch": ("Daily", "ReceiveRewards", "DivergentUniverse", "CurrencyWars"),
@@ -109,32 +109,32 @@ _PLAN_KEY_GROUPS: dict[str, tuple[str, ...]] = {
     "TaskOpt": ("EchoOfWarWeekday",),
     "Managed": ("TaskMapping", "Options"),
 }
-"""任务计划段与键：按配置来源从脚本配置（共享计划）或用户配置读写。
+"""任务计划段与键：按配置来源从托管配置（共享计划）或账号配置读写。
 
 两表分开是硬约束：配置属性读取对不存在的项直接抛 ``AttributeError``，
-脚本配置上没有 Notify / Control，``Info.Name`` 又是脚本名——绝不能拿脚本
-配置读用户表。侧车内平铺键为 ``组.键``，便于 group_overlay 按段解析。
+托管配置上没有 Notify / Control，``Info.Name`` 又是托管名——绝不能拿托管
+配置读账号表。侧车内平铺键为 ``组.键``，便于 group_overlay 按段解析。
 """
 
 _SCRIPT_PLAN_KEY_GROUPS: dict[str, tuple[str, ...]] = {
     **_PLAN_KEY_GROUPS,
     "Managed": ("Options",),
 }
-"""脚本共享计划实际读写的键：脚本级 ``Managed.TaskMapping`` 是恒为空的惰性
+"""托管共享计划实际读写的键：托管级 ``Managed.TaskMapping`` 是恒为空的惰性
 字段（shared 来源引擎分配在脚本 ``TaskMapping`` 组），既不备份也不回填，免得把
-某个用户的旧覆盖写成全体共享的隐藏覆盖。"""
+某个账号的旧覆盖写成全体共享的隐藏覆盖。"""
 
 _PLAN_OWNER_KEY = "_plan_owner"
 """侧车里标注任务计划来源的键（``script`` / ``user``）；只预览，不回填。"""
 
-_PLAN_OWNER_LABELS = {"script": "脚本共享", "user": "用户独立"}
+_PLAN_OWNER_LABELS = {"script": "共享配置", "user": "独立配置"}
 
 _OVERLAY_PREVIEW_ONLY_KEYS = {"Info.Base"}
 """仅预览不回填的字段：配置来源决定运行方式，恢复时以当前值为准"""
 
 _OVERLAY_FIELD_LABELS: dict[tuple[str, str], str] = {
     ("Info", "Base"): "配置来源",
-    ("Info", "Name"): "用户名",
+    ("Info", "Name"): "账号名",
     ("Info", "Status"): "启用状态",
     ("Info", "Server"): "服务器",
     ("Info", "RemainedDay"): "剩余天数",
@@ -203,7 +203,7 @@ def read_overlay_values(
 ) -> dict:
     """按配置分组的 JSON 导出规则读取侧车字段，路径导出为字符串。
 
-    ``groups`` 必须与 ``config`` 的类型对应（用户表只配用户配置），否则
+    ``groups`` 必须与 ``config`` 的类型对应（账号表只配账号配置），否则
     属性读取会对不存在的分组抛 ``AttributeError``。值为 ``None`` 的
     键不纳入侧车；平铺键为 ``组.键``。
     """
@@ -220,7 +220,7 @@ def read_overlay_values(
 
 
 def _plan_target(user_config, script_config):
-    """当前生效的任务计划对象与 owner 标注（原生来源按用户处理：没有共享计划）。"""
+    """当前生效的任务计划对象与 owner 标注（原生来源按账号处理：没有共享计划）。"""
 
     from .native_control import resolve_plan_owner
 
@@ -230,9 +230,9 @@ def _plan_target(user_config, script_config):
 
 
 def read_mas_overlay(user_config, script_config) -> dict:
-    """按当前配置来源读取一个用户的 MAS 字段侧车。
+    """按当前配置来源读取一个账号的 MAS 字段侧车。
 
-    用户表恒从 ``user_config`` 读；计划表在「脚本」来源下从 ``script_config``
+    账号表恒从 ``user_config`` 读；计划表在共享来源下从 ``script_config``
     读共享计划，其余来源从 ``user_config`` 读。侧车带 ``_plan_owner`` 标注。
     """
 
@@ -273,7 +273,7 @@ def split_overlay_for_restore(
     """把侧车拆成 (用户段, 计划段) 两份待回填数据，丢弃不该回填的键。
 
     旧版侧车里的 ``Direct.*``、``Control.Mode`` 等已删除字段不回填——直接
-    ``update`` 会因配置项不存在抛错；写回脚本共享计划时也不回填惰性的
+    ``update`` 会因配置项不存在抛错；写回托管共享计划时也不回填惰性的
     ``Managed.TaskMapping``。
     """
 
@@ -299,7 +299,7 @@ def _migrate_legacy_stage_values(stage: dict | None) -> None:
     """把旧版侧车里误存的 SRA 副本编号就地迁成真实关卡编号。
 
     升级前归档的侧车仍是旧载荷（label 为字典 repr、level 为数组位置）。回填走
-    ``update`` 不经 启动期旧配置转换的迁移，脚本共享计划更是从不迁移；
+    ``update`` 不经 启动期旧配置转换的迁移，托管共享计划更是从不迁移；
     不在这里改，恢复一次旧备份就会让历战余响 / 饰品提取重新刷错关卡。
     """
 
@@ -310,10 +310,10 @@ def _migrate_legacy_stage_values(stage: dict | None) -> None:
 
 
 async def restore_mas_overlay(user_config, script_config, overlay: dict) -> None:
-    """把侧车回填到用户配置与**当前** owner 的任务计划上。
+    """把侧车回填到账号配置与**当前** owner 的任务计划上。
 
-    备份时是用户独立、当前是脚本共享（或反之）也照样写回当前 owner，不另做
-    校验——写回共享计划会影响本脚本下其他「脚本」来源用户，预览里已标注。
+    备份时是账号独立、当前是脚本共享（或反之）也照样写回当前 owner，不另做
+    校验——写回共享计划会影响本托管下其他共享来源账号，预览里已标注。
     """
 
     plan, owner = _plan_target(user_config, script_config)
@@ -329,7 +329,7 @@ async def restore_mas_overlay(user_config, script_config, overlay: dict) -> None
 
 
 def mas_backup_root(script_id: str, user_id: str) -> Path:
-    """MAS 池归档根：``data/{script_id}/HSRBackups/mas/{user_id}``（恒按用户）。"""
+    """MAS 池归档根：``data/{script_id}/HSRBackups/mas/{user_id}``（恒按账号）。"""
 
     return Path.cwd() / "data" / script_id / "HSRBackups" / "mas" / user_id
 
@@ -337,7 +337,7 @@ def mas_backup_root(script_id: str, user_id: str) -> Path:
 def archive_mas_backup(
     script_id: str, user_id: str, overlay: dict | None, force: bool = False
 ) -> Path | None:
-    """归档页面核心字段侧车到用户池（指纹去重，无变化跳过）。
+    """归档页面核心字段侧车到账号池（指纹去重，无变化跳过）。
 
     侧车以内存 JSON 直接入档（:func:`archive_files` 支持内存内容），免临时
     文件。
@@ -353,24 +353,24 @@ def archive_mas_backup(
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
-    logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
-    """用户池的全部归档时间戳（倒序，最新在前）。"""
+    """账号池的全部归档时间戳（倒序，最新在前）。"""
 
     return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
-    """取用户池指定时间戳的归档目录；不存在返回 None。"""
+    """取账号池指定时间戳的归档目录；不存在返回 None。"""
 
     return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(script_id: str, user_id: str, ts: str) -> dict | None:
-    """读取用户池归档的侧车（供调用方回填 HSRUserConfig）；无目录目标。"""
+    """读取账号池归档的侧车（供调用方回填 HSRUserConfig）；无目录目标。"""
 
     backup_dir = get_mas_backup_dir(script_id, user_id, ts)
     if backup_dir is None:
@@ -379,7 +379,7 @@ def restore_mas_backup(script_id: str, user_id: str, ts: str) -> dict | None:
 
 
 def archive_mas_runtime_backup(script_id: str, user_id: str, overlay: dict) -> None:
-    """运行物化前归档本用户字段侧车（物化会写原生配置，字段本身先存底）。
+    """运行物化前归档本账号字段侧车（物化会写原生配置，字段本身先存底）。
 
     指纹去重，失败只记日志，绝不中止随后的运行或会话（归档是现场保护，
     不是前置条件）。
@@ -579,14 +579,14 @@ def _overlay_row(flat_key: str, value) -> dict:
 
 
 def build_overlay_preview(overlay: dict, current_owner: str | None = None) -> dict:
-    """mas 池预览：MAS 用户配置全量分区（侧车收录什么就展示什么）。
+    """mas 池预览：MAS 账号配置全量分区（侧车收录什么就展示什么）。
 
-    分区：MAS 独有配置（来源/用户名/启用状态/服务器/脚本/原生来源引擎/备注）
+    分区：MAS 独有配置（来源/账号名称/启用状态/服务器/前后置脚本/原生来源引擎/备注）
     → 任务配置（来源/任务开关/副本）→ 通知 → 托管配置（映射/覆盖）。
 
-    ``current_owner`` 是该用户**当前**的计划 owner（``script`` / ``user``）：
+    ``current_owner`` 是该账号**当前**的计划 owner（``script`` / ``user``）：
     恢复总是写回当前 owner，当前为脚本共享时加一行提示影响范围。没有
-    ``_plan_owner`` 标注的旧侧车按用户独立展示（旧版只有用户计划）。
+    ``_plan_owner`` 标注的旧侧车按账号独立展示（旧版只有用户计划）。
     """
 
     sections: list[dict] = []
@@ -659,7 +659,7 @@ def build_overlay_preview(overlay: dict, current_owner: str | None = None) -> di
         task_rows.append(
             {
                 "key": "恢复写回",
-                "value": "脚本共享任务配置，会影响本脚本下所有「脚本」来源用户",
+                "value": "共享任务配置，会影响本托管下所有共享来源账号",
             }
         )
     if any(has("TaskSwitch", key) for key in _TASKSWITCH_MODULE_LABELS):

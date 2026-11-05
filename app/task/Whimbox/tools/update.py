@@ -14,7 +14,7 @@ import os
 import re
 import shutil
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,8 +27,8 @@ from app.core import Config
 from app.core.script_update import download_script_package as download_file
 from app.services.common.update.fluxdown import FluxdownResumableError
 from app.services.script_release import request_github_release
-from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.utils import ProcessRunner
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.utils.common.proxy_env import proxy_environment
 
 from .launcher import find_upstream_pids
@@ -162,6 +162,23 @@ async def installed_version(root: Path) -> Version:
     )
 
 
+async def _run_package_worker[T](operation: Callable[..., T], *args: object) -> T:
+    """取消时等校验线程释放文件，再由外层回收下载目录。"""
+    worker = asyncio.create_task(asyncio.to_thread(operation, *args))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except (asyncio.CancelledError, Exception):
+                if worker.done():
+                    break
+        if not worker.cancelled():
+            worker.exception()
+        raise
+
+
 def verify_digest(path: Path, expected: str) -> None:
     with path.open("rb") as handle:
         actual = hashlib.file_digest(handle, "sha256").hexdigest()
@@ -221,7 +238,7 @@ async def prepare_update(root: Path) -> PreparedUpdate | str:
             proxy=proxy,
             source="GitHub",
         )
-        await asyncio.to_thread(verify_digest, wheel, digest)
+        await _run_package_worker(verify_digest, wheel, digest)
         # Download-only preparation may build dependencies, but it never
         # modifies the installed backend.
         packages = stage / "packages"
@@ -242,8 +259,8 @@ async def prepare_update(root: Path) -> PreparedUpdate | str:
             timeout=10 * 60,
             env=proxy_environment(proxy),
         )
-        hashes = await asyncio.to_thread(_package_hashes, packages)
-        hashes["../" + wheel.name] = await asyncio.to_thread(_wheel_digest, wheel)
+        hashes = await _run_package_worker(_package_hashes, packages)
+        hashes["../" + wheel.name] = await _run_package_worker(_wheel_digest, wheel)
         return PreparedUpdate(
             root.resolve(), target, current, repairing, wheel, packages, hashes
         )
@@ -279,8 +296,8 @@ async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
     )
     marker = pending_marker(root)
     current = None if marker.exists() else await installed_version(root)
-    hashes = await asyncio.to_thread(_package_hashes, packages)
-    hashes["../" + wheel.name] = await asyncio.to_thread(_wheel_digest, wheel)
+    hashes = await _run_package_worker(_package_hashes, packages)
+    hashes["../" + wheel.name] = await _run_package_worker(_wheel_digest, wheel)
     if (
         root.resolve() != candidate.root
         or current != candidate.current

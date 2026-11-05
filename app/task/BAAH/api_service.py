@@ -33,7 +33,7 @@ class BAAHConfigService:
         """读取安装目录下已有的配置文件名，不含 .json 后缀。"""
         script_config = self._get_script(uuid.UUID(script_id))
         if not isinstance(script_config, BAAHConfig):
-            raise TypeError("脚本配置类型错误, 不是 BAAH 类型")
+            raise TypeError("托管配置类型错误, 不是 BAAH 类型")
 
         baah_path = script_config.Script.BAAHPath
         if baah_path is None:

@@ -681,3 +681,51 @@ async def test_prefetch_preserves_daemon_owned_stage_when_history_is_cancelled(
     stages = [stage for stage in download_dir.iterdir() if stage.is_dir()]
     assert len(stages) == 1
     assert list(stages[0].rglob("*.part"))
+
+
+@pytest.mark.asyncio
+async def test_consumption_cancel_waits_for_reader_before_discard(
+    hsr_prefetch_case, monkeypatch
+):
+    install, downloads, _ = hsr_prefetch_case
+    downloads.mkdir()
+    package = downloads / "candidate.zip"
+    package.write_bytes(b"verified package")
+    result = await update.check_engine_update()
+    candidate = update.PreparedUpdate(install.resolve(), result, package, "digest")
+    started, release = threading.Event(), threading.Event()
+    monkeypatch.setattr(update, "read_installed_version", lambda *_: "1.0")
+
+    def digest(path):
+        with path.open("rb") as reader:
+            started.set()
+            assert release.wait(5)
+            assert reader.read() == b"verified package"
+        return "digest"
+
+    monkeypatch.setattr(update, "_package_digest", digest)
+
+    async def consume():
+        try:
+            await update.update_engine_if_needed(
+                "SRA",
+                install,
+                source="AutoSite",
+                download_dir=downloads,
+                prepared=candidate,
+            )
+        finally:
+            update.discard_prepared_update(candidate)
+
+    task = asyncio.create_task(consume())
+    try:
+        assert await asyncio.to_thread(started.wait, 3)
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=0.05)
+        assert not done
+        assert package.exists()
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+    assert task.cancelled()
+    assert not package.exists()

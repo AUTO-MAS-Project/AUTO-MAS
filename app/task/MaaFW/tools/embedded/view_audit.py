@@ -117,7 +117,7 @@ def audit_view(view: Path, base: Path | None = None) -> AuditReport:
             except payloads.PayloadError as exc:
                 logger.warning(f"记录写穿失败：{rel} - {exc}")
             message = (
-                f"检测到项目运行时改写了共用文件 {rel}（与同项目其它脚本共享同一份），"
+                f"检测到项目运行时改写了共用文件 {rel}（与同项目其它托管共享同一份），"
                 "已隔离共用库里的那份并记为私有文件；下次更新会整版重建"
             )
             logger.warning(f"[{view.name}] {message}")

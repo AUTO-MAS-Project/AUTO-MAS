@@ -8,7 +8,7 @@ export type MaaFWInterfacePreviewIn = {
      */
     path?: string;
     /**
-     * 给了脚本 ID 就按脚本解析有效根（内嵌副本优先），忽略 path
+     * 给了托管 ID 就按托管解析有效根（内嵌副本优先），忽略 path
      */
     scriptId?: (string | null);
 };

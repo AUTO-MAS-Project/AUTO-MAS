@@ -86,7 +86,7 @@ class MaaFWRunPlan(BaseModel):
     piEnv: dict[str, str] = Field(default_factory=dict)
     tasks: list[MaaFWTaskRunPlan] = Field(default_factory=list)
     skippedTasks: list[MaaFWSkippedTaskPlan] = Field(default_factory=list)
-    # 用户的全局选项表（已解密、叠过脚本级键位），各任务覆盖里全局那一层的取值。任务的
+    # 用户的全局选项表（已解密、叠过托管级键位），各任务覆盖里全局那一层的取值。任务的
     # options 是给人看的合并结果，同一选项任务自己也有值时看不到这一层，宿主给日志打码时两处都收。
     globalOptions: dict[str, Any] = Field(default_factory=dict)
     # 建计划时降级处理的项（例如没设的快捷键被跳过），宿主写进用户可见的运行日志。

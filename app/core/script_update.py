@@ -99,17 +99,43 @@ class ScriptUpdateSession:
             return None
         item = self._task.script_list[index]
         config = self._config.ScriptConfig[UUID(item.script_id)]
-        # Only settings that can affect a package or its installation belong
-        # in the candidate identity. LastUpdateHistory is operational output:
-        # FluxDown appends to it *during* a successful prefetch, so including
-        # it would make that same download invalidate its own candidate.
-        # Keep the remaining update settings in the snapshot: changing the
-        # source, downloader, credentials or install policy still invalidates.
+        # 仅冻结更新策略与安装身份；下载历史、账号运行记录和展示字段
+        # 都是可变输出，不能让刚下载好的候选自行失效。
+        # ConfigEntry 的自定义导出器不传递 include，显式从导出值筛选。
+        snapshot = config.model_dump(mode="python")
+        selected = {}
+        for group, fields in {
+            "Info": {"Path", "RootPath", "M7APath", "SRAPath"},
+            "Update": None,
+            "Embedded": {"FollowSource", "Report"},
+        }.items():
+            if group in snapshot:
+                selected[group] = (
+                    snapshot[group]
+                    if fields is None
+                    else {
+                        key: value
+                        for key, value in snapshot[group].items()
+                        if key in fields
+                    }
+                )
         return (
             item.script_id,
-            config.model_dump(mode="python"),
+            type(config),
+            selected,
             self._config.setting.Update.model_dump(
-                mode="python", exclude={"LastUpdateHistory"}
+                mode="python",
+                include={
+                    "Downloader",
+                    "FluxdownPath",
+                    "FluxdownSegments",
+                    "FluxdownServerMode",
+                    "FluxdownTakeoverAll",
+                    "GitHubMirror",
+                    "MirrorChyanCDK",
+                    "ProxyAddress",
+                    "Source",
+                },
             ),
         )
 

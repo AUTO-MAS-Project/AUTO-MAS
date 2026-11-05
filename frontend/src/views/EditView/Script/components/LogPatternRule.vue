@@ -56,7 +56,7 @@ const onLogTypeChange = (logType: string) => {
 
 const getLogTypeHint = (logType: string | undefined): string => {
   if (logType === '失败') {
-    return '仅在本次任务存在未完成用户时纳入推送报告'
+    return '仅在本次任务存在未完成账号时纳入推送报告'
   }
   return '始终纳入推送报告'
 }

@@ -103,9 +103,9 @@ _LAUNCH_MODE_LABELS = {
     "LauncherUi": "启动器界面启动",
 }
 
-# 多用户切换时等待旧游戏完全退出的上限（秒）：
+# 多账号切换时等待旧游戏完全退出的上限（秒）：
 # 异环客户端「自退」不是瞬时的（ok-nte `-e` 退出约 70 秒），若不等待完全退出，
-# 下个用户会把「正在退出的残影窗口」误判为可用游戏而复用，导致窗口句柄失效。
+# 下个账号会把「正在退出的残影窗口」误判为可用游戏而复用，导致窗口句柄失效。
 _GAME_EXIT_WAIT_SECONDS = 90
 # 结束常驻启动器后等它退出（单实例互斥释放）的上限
 _LAUNCHER_EXIT_WAIT_SECONDS = 15
@@ -151,7 +151,7 @@ def _yes_no(value: bool) -> str:
     return "是" if value else "否"
 
 
-# 对齐 MaaEnd：专项内置致命日志片段（非用户 Success/Error 配置）；`Script.ErrorLog` 仅追加补充子串
+# 对齐 MaaEnd：专项内置致命日志片段（非账号 Success/Error 配置）；`Script.ErrorLog` 仅追加补充子串
 _OKNTE_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("connected:False", "OK-NTE 未连接游戏客户端"),
     ("Resolution Error", "OK-NTE 游戏分辨率不符合要求"),
@@ -346,10 +346,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             )
         ):
             self.cur_user_item.status = "跳过"
-            return "今日代理次数已达上限, 跳过该用户"
+            return "今日代理次数已达上限, 跳过该账号"
         if self.cur_user_config.Info.RemainedDay == 0:
             self.cur_user_item.status = "跳过"
-            return "用户剩余天数为 0, 跳过该用户"
+            return "账号剩余天数为 0, 跳过该账号"
 
         # 原生来源不做任何下发，脚本原生配置就是本次运行的全部配置来源：缺失时
         # 必须提前报错，否则会静默启动一个未配置的 ok-nte（对齐 Okww）。
@@ -436,8 +436,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             )
 
         # ── log_box：按声明绑定用户节点采集会话 ──
-        # 受用户级「节点详情推送模式」开关控制：关闭时不创建采集器（不读日志、不匹配、
-        # 不处理），该用户 push_log 保持为空，报告聚合时自然不含其节点详情。
+        # 受账号级「节点详情推送模式」开关控制：关闭时不创建采集器（不读日志、不匹配、
+        # 不处理），该账号 push_log 保持为空，报告聚合时自然不含其节点详情。
         # ok-nte 日志文本已是中文，无需前置翻译；open() 记录起始偏移，只采会话内新增。
         self._prepare_log_details(
             self._resolve_log_file_path(),
@@ -446,7 +446,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             rotated_name=f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}",
         )
 
-        # 当前用户配置
+        # 当前账号配置
 
         self.task_index = int(self.cur_user_config.Task.TaskIndex)
         self.exit_on_finish = bool(self.cur_user_config.Task.ExitOnFinish)
@@ -550,7 +550,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             archive_mas_runtime_backup(
                 self.script_info.script_id, str(self.cur_user_uid)
             )
-        # 每用户先还原任务级原生基线，避免原生来源沿用上一用户的注入值。
+        # 每账号先还原任务级原生基线，避免原生来源沿用上一账号的注入值。
         if self.native_base:
             if folder_mode and temp.is_dir():
                 _utils_io.swap_in_dir(temp, self.script_config_path)
@@ -598,13 +598,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             tmp = self.script_config_path.with_suffix(".tmp")
             shutil.copyfile(src, tmp)
             tmp.replace(self.script_config_path)
-        logger.info("OK-NTE 快速配置已应用")
+        logger.info("OK-NTE 覆写常规配置已应用")
 
     async def update_config(self) -> None:
         """将脚本侧配置回写 MAS ConfigFile（对齐 General.update_config）。"""
 
         # 原生来源：原生配置不属于 MAS，不得把它抄回 MAS 侧 ConfigFile——否则
-        # 下一次切回「用户」来源会把这个原生来源用户的原生配置当成他的独立配置。
+        # 下一次切回独立来源会把这个原生来源账号的原生配置当成他的独立配置。
         quick = user_uses_quick_config(self.cur_user_config)
         if self.native_base and not quick:
             logger.info("OK-NTE 原生来源配置：跳过配置回写 MAS")
@@ -631,7 +631,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         game_args = str(self.script_config.Game.Arguments or "").strip()
         launch_mode = str(self.script_config.Game.LaunchMode or "Autoplay").strip()
         return [
-            f"[游戏配置] 用户: {self.cur_user_item.name}",
+            f"[游戏配置] 账号: {self.cur_user_item.name}",
             f"  启用游戏配置: {_yes_no(bool(self.script_config.Game.Enabled))}",
             f"  任务前启动游戏: {_yes_no(bool(self.script_config.Game.LaunchBeforeTask))}",
             f"  任务后关闭游戏: {_yes_no(bool(self.script_config.Game.CloseOnFinish))}",
@@ -645,7 +645,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         await push_dispatch_log(self.script_info, line)
 
     async def _log_game_config_summary(self) -> None:
-        """在调度台开头输出当前脚本的游戏相关配置，便于用户确认与问题排查。"""
+        """在调度台开头输出当前托管的游戏相关配置，便于用户确认与问题排查。"""
 
         self.script_info.log = "\n".join(self._game_config_summary_lines())
         await asyncio.sleep(0)
@@ -836,7 +836,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         """游戏启动 / 账号切换等前置步骤失败的统一处理（对齐 OK-WW）。"""
 
         if e is None:
-            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
+            logger.warning(f"账号: {self.cur_user_uid} - {error_message}")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -844,7 +844,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             )
         else:
             logger.opt(exception=True).warning(
-                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+                f"账号: {self.cur_user_uid} - {error_message}: {e}"
             )
             await Publisher.send(
                 id=self.task_info.task_id,
@@ -862,7 +862,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             await Notify.send_notice(
                 LocalNotice(
                     title="OK-NTE 自动代理出现异常！",
-                    message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                    message=f"账号 {self.cur_user_item.name} 自动代理时{error_message}",
                     ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                     duration_seconds=3,
                 )
@@ -875,7 +875,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         await self._reset_daily_proxy_count()
 
         self.cur_user_item.status = "运行"
-        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
         run_limit = int(self.script_config.Run.RunTimesLimit)
@@ -883,7 +883,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             if self.run_book:
                 break
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
+                f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
             )
             self.cur_user_item.status = "运行"
             self.log_start_time = datetime.now().astimezone()
@@ -918,7 +918,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                         await Notify.send_notice(
                             LocalNotice(
                                 title="OK-NTE 自动代理出现异常！",
-                                message=f"用户 {self.cur_user_item.name} 游戏启动失败",
+                                message=f"账号 {self.cur_user_item.name} 游戏启动失败",
                                 ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                                 duration_seconds=3,
                             )
@@ -935,7 +935,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                     continue
 
             # 游戏窗口已就绪时先做画面维护检测（公告通道覆盖启动前，这里兜底
-            # 「公告未覆盖但维护弹窗已出现」的场景）：命中即跳过当前用户；
+            # 「公告未覆盖但维护弹窗已出现」的场景）：命中即跳过当前账号；
             # 维护不会在重试间隔内结束，不再消耗剩余尝试次数
             if await self.skip_on_game_maintenance(detect_game_maintenance_text):
                 break
@@ -1046,7 +1046,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 break
 
             logger.warning(
-                f"用户 {self.cur_user_item.name} - OK-NTE 代理异常: {self.cur_user_log.status}"
+                f"账号 {self.cur_user_item.name} - OK-NTE 代理异常: {self.cur_user_log.status}"
             )
             self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
             await self.kill_managed_process(
@@ -1056,7 +1056,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 await Notify.send_notice(
                     LocalNotice(
                         title="OK-NTE 自动代理出现异常！",
-                        message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
                         ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                         duration_seconds=3,
                     )
@@ -1304,7 +1304,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             await self.cur_user_config.commit()
             if self.cur_user_item.status != "异常":
                 self.cur_user_item.status = "完成"
-            logger.success(f"用户 {self.cur_user_uid} 的 OK-NTE 自动代理任务已完成")
+            logger.success(f"账号 {self.cur_user_uid} 的 OK-NTE 自动代理任务已完成")
         else:
             maintenance_skipped = self.cur_user_item.maintenance_skipped
             # 维护跳过不是失败：保留「跳过」状态并记录维护结果。
@@ -1347,7 +1347,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 await Notify.send_notice(
                     LocalNotice(
                         title="OK-NTE 运行异常",
-                        message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
+                        message=f"账号 {self.cur_user_item.name}：{self.cur_user_log.status}",
                         ticker="异常",
                         duration_seconds=3,
                     )
@@ -1405,13 +1405,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             await self._kill_game_process()
 
     async def _wait_game_exit_before_next_user(self) -> None:
-        """多用户切换：等上一用户的游戏完全退出后再进下个用户。
+        """多账号切换：等上一账号的游戏完全退出后再进下个账号。
 
         异环客户端进程退出不是瞬时的（ok-nte `-e` 自退约 70 秒）。若不等其完全
-        退出，下个用户会把「正在退出的残影窗口」误判为可用游戏而复用，导致
-        PostMessage 无效句柄后任务被中止。仅在还有下一个用户、且本次运行预期会
+        退出，下个账号会把「正在退出的残影窗口」误判为可用游戏而复用，导致
+        PostMessage 无效句柄后任务被中止。仅在还有下一个账号、且本次运行预期会
         关闭游戏（`-e` 自退，或按 final_task 的实际 kill 决策结束游戏）时等待；
-        最后一个用户与单用户任务不等待。
+        最后一个账号与单账号任务不等待。
         """
         if self.script_info.current_index >= len(self.script_info.user_list) - 1:
             return
@@ -1436,17 +1436,17 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             # 按进程存活判断（不依赖窗口）：窗口销毁后进程可能仍存活片刻。
             # 全进程扫描是同步 IO，放到线程里免得每秒卡一次事件循环
             if not await asyncio.to_thread(is_process_alive, process_name):
-                logger.info(f"游戏进程已完全退出，继续下一用户: {process_name}")
+                logger.info(f"游戏进程已完全退出，继续下一账号: {process_name}")
                 return
             await asyncio.sleep(1)
         logger.warning(
-            f"等待游戏进程退出超时（{_GAME_EXIT_WAIT_SECONDS}s），继续下一用户: {process_name}"
+            f"等待游戏进程退出超时（{_GAME_EXIT_WAIT_SECONDS}s），继续下一账号: {process_name}"
         )
 
     def _prepare_log_details(
         self, path: Path, *, mode: str, enabled: bool, rotated_name: str | None
     ) -> None:
-        """本专项固定来源与用户；读取和交付时机由自身生命周期控制。"""
+        """本专项固定来源与账号；读取和交付时机由自身生命周期控制。"""
         self._log_user = self.cur_user_item
         self._log_user.push_log_mode = mode
         self._log_source = None

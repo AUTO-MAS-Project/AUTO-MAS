@@ -18,15 +18,15 @@ import type { WhimboxUserConfigInput } from './WhimboxUserConfigInput';
 import type { ZzzOdUserConfigInput } from './ZzzOdUserConfigInput';
 export type UserUpdateIn = {
     /**
-     * 所属脚本ID
+     * 所属托管ID
      */
     scriptId: string;
     /**
-     * 用户ID
+     * 账号ID
      */
     userId: string;
     /**
-     * 用户更新数据
+     * 账号更新数据
      */
     data: (MaaUserConfigInput | SrcUserConfigInput | GeneralUserConfigInput | OkwwUserConfigInput | OkNteUserConfigInput | MaaEndUserConfigInput | M9AUserConfigInput | MaaFWUserConfigInput | HSRUserConfigInput | BetterGIUserConfigInput | ZzzOdUserConfigInput | BAAHUserConfigInput | WhimboxUserConfigInput | MSSUserConfigInput);
 };

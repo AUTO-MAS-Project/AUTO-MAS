@@ -10,7 +10,7 @@ import type { WSTaskScriptIdentityData } from './WSTaskScriptIdentityData';
 export type TaskRuntimeSnapshot = {
     tasks?: Array<TaskRuntimeSnapshotItem>;
     /**
-     * 已启用定时队列关联的脚本静态标识
+     * 已启用定时队列关联的托管静态标识
      */
     scheduledScripts?: Array<WSTaskScriptIdentityData>;
 };

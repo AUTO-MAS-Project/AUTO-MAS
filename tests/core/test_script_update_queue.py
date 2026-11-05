@@ -173,7 +173,9 @@ async def test_three_scripts_download_then_install_in_queue_order(
     configs = {}
     for uid in ids:
         config = SimpleNamespace(revision=0, is_locked=False)
-        config.model_dump = lambda *, mode, config=config: {"revision": config.revision}
+        config.model_dump = lambda *, mode, config=config: {
+            "Update": {"revision": config.revision}
+        }
         configs[uid] = config
     monkeypatch.setattr(
         scheduler,
@@ -611,17 +613,25 @@ async def test_unconfirmed_daemon_from_real_service_blocks_next_script(
 
 
 @pytest.mark.asyncio
-async def test_download_history_does_not_invalidate_prefetched_candidate(monkeypatch):
+async def test_download_history_does_not_invalidate_prefetched_candidate(
+    monkeypatch, tmp_path
+):
     """A FluxDown history write during a successful prefetch is not a config edit."""
     from app.core import script_update
-    from app.models.config.setting import FluxdownRecord, GlobalConfig
+    from app.core import update as host
+    from app.models.config import MaaConfig
+    from app.models.config.setting import GlobalConfig
     from app.models.task import TaskExecuteBase
+    from app.utils.common.fluxdown_cli import FluxdownDownloadRecord
+    from tests.config_support import activate_config
 
     uid = uuid.uuid4()
     script = ScriptItem(str(uid), "test", "等待")
-    config = SimpleNamespace(is_locked=False, revision=0)
-    config.model_dump = lambda **_: {"revision": config.revision}
-    update_settings = GlobalConfig.UpdateFields()
+    config = MaaConfig.model_validate({"Info": {"Path": tmp_path}})
+    setting = GlobalConfig.build()
+    await activate_config(setting)
+    monkeypatch.setattr(host.Config, "setting", setting)
+    update_settings = setting.Update
     info = SimpleNamespace(
         mode="AutoProxy",
         is_cycle=False,
@@ -637,7 +647,7 @@ async def test_download_history_does_not_invalidate_prefetched_candidate(monkeyp
             self.discarded = False
 
         async def prefetch_script_update(self):
-            update_settings.LastUpdateHistory.append(FluxdownRecord(status="success"))
+            await host._write_history(FluxdownDownloadRecord(status="success"))
 
         async def main_task(self): ...
         async def final_task(self): ...
@@ -664,11 +674,57 @@ async def test_download_history_does_not_invalidate_prefetched_candidate(monkeyp
     await session._prefetch(0)
     assert await session.take(0) is instances[0]
     assert not instances[0].discarded
+    assert len(update_settings.LastUpdateHistory) == 1
 
     await session._prefetch(0)
-    update_settings.Source = "MirrorChyan"
+    await setting.update(
+        GlobalConfig.model_validate({"Update": {"Source": "MirrorChyan"}})
+    )
     assert await session.take(0) is None
     assert instances[1].discarded
+
+
+@pytest.mark.asyncio
+async def test_runtime_records_do_not_invalidate_but_install_path_does(
+    monkeypatch, tmp_path
+):
+    from app.core import script_update
+    from app.models.config import MaaConfig, MaaUserConfig
+    from app.models.config.setting import GlobalConfig
+    from tests.config_support import activate_config
+
+    uid = uuid.uuid4()
+    config = MaaConfig.build()
+    await activate_config(config)
+    user_id = config.UserData.add(MaaUserConfig, payload={})
+    await config.UserData.commit()
+    user = config.UserData[user_id]
+    manager = SimpleNamespace(
+        prefetch_script_update=AsyncMock(), discard_prefetched_update=AsyncMock()
+    )
+    info = SimpleNamespace(
+        mode="AutoProxy",
+        is_cycle=False,
+        script_list=[ScriptItem(str(uid), "test", "等待")],
+        task_id="test",
+        script_user_scope=lambda _: None,
+    )
+    session = script_update.ScriptUpdateSession(
+        info,
+        make_manager=lambda *_a, **_kw: manager,
+        resources=lambda _: ((), None),
+        scheduled=lambda _: True,
+        config=SimpleNamespace(ScriptConfig={uid: config}, setting=GlobalConfig()),
+    )
+    await session._prefetch(0)
+    await user.update(MaaUserConfig.model_validate({"Data": {"ProxyTimes": 1}}))
+    await config.update(MaaConfig.model_validate({"Info": {"Name": "renamed"}}))
+    assert await session.take(0) is manager
+    manager.discard_prefetched_update.assert_not_awaited()
+    await session._prefetch(0)
+    await config.update(MaaConfig.model_validate({"Info": {"Path": tmp_path}}))
+    assert await session.take(0) is None
+    manager.discard_prefetched_update.assert_awaited_once()
 
 
 @pytest.mark.asyncio

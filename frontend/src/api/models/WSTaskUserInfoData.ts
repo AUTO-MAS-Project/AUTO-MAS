@@ -4,19 +4,19 @@
 /* eslint-disable */
 import type { WSTaskUserProgressData } from './WSTaskUserProgressData';
 /**
- * 任务快照中的用户状态。
+ * 任务快照中的账号状态。
  */
 export type WSTaskUserInfoData = {
     /**
-     * 用户 ID
+     * 账号 ID
      */
     user_id: string;
     /**
-     * 用户名称
+     * 账号名称
      */
     name: string;
     /**
-     * 用户执行状态
+     * 账号执行状态
      */
     status: string;
     /**

@@ -18,10 +18,10 @@
 
 """ZZZ-OD 原生 GUI 配置会话（「在一条龙内配置」入口，与 MAS 字段双向联动）。
 
-用户配置界面只覆盖高频字段，配队等复杂配置由用户在 zzz-od 原生界面完成。
-会话以 MAS 用户字段为基线：打开前把字段注入绑定槽（GUI 所见即本页配置），
+账号配置界面只覆盖高频字段，配队等复杂配置由用户在 zzz-od 原生界面完成。
+会话以 MAS 账号字段为基线：打开前把字段注入绑定槽（GUI 所见即本页配置），
 关闭时把 GUI 内的任务编排与账号改动回读到 MAS 字段——两侧始终一致；
-配队等 MAS 不管的内容持久留在槽里。目标为 Default（脚本级）时直接无参数
+配队等 MAS 不管的内容持久留在槽里。目标为 Default（托管级）时直接无参数
 拉起 GUI 编辑当前原生配置。
 """
 
@@ -71,7 +71,7 @@ class ScriptConfigTask(TaskExecuteBase):
     view_only=True 时为查看会话：只读预览（槽内即恢复的历史备份），
     不注入基线、不回读字段，用于「查看配置」等预览场景。
 
-    instance_idx 仅脚本级会话（原生来源）生效：会话窗口把原生注册表的活跃
+    instance_idx 仅托管级会话（原生来源）生效：会话窗口把原生注册表的活跃
     实例临时切到正在编辑的实例（GUI 打开即所见实例），结束还原原活跃，
     全程只动 one_dragon.yml 的 active 标志（纯配置操作）。
     """
@@ -93,12 +93,12 @@ class ScriptConfigTask(TaskExecuteBase):
         self.user_config = user_config
         # 查看会话：只读预览（如「查看历史备份」），不注入基线也不回读字段
         self.view_only = view_only
-        # 直控指定的会话实例（用户会话忽略；脚本级会话临时切活跃）
+        # 直控指定的会话实例（用户会话忽略；托管级会话临时切活跃）
         self._session_native_idx = instance_idx
         # 会话前的原生活跃实例（有临时切换时结束后还原）
         self._original_active_idx: int | None = None
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
-        # 目标用户（user_id 可解析且在 UserData 中）；Default 等伪用户为 None
+        # 目标账号（user_id 可解析且在 UserData 中）；Default 等伪用户为 None
         self._target_uid: uuid.UUID | None = None
         self.cur_user_config: ZzzOdUserConfig | None = None
         with suppress(ValueError):
@@ -114,7 +114,7 @@ class ScriptConfigTask(TaskExecuteBase):
             raise ValueError("RootPath未配置，请检查路径设置")
         self.root_path = root_path
         self.exe_path = find_launcher_exe(self.root_path)
-        # 用户会话使用的绑定槽（回读用；脚本级会话为 None）
+        # 用户会话使用的绑定槽（回读用；托管级会话为 None）
         self._session_slot: int | None = None
 
     async def main_task(self) -> None:
@@ -168,7 +168,7 @@ class ScriptConfigTask(TaskExecuteBase):
                     f"只读预览，不注入不回读)"
                 )
             else:
-                # MAS 用户槽快照（含配队等全部内容），供配置恢复——统一入口
+                # MAS 账号槽快照（含配队等全部内容），供配置恢复——统一入口
                 # 会先物化本页账号+编排进槽（它们只存在 UserData，槽要会话
                 # 注入才带上；直接快照会漏掉，恢复会把本页字段清空）
                 if instance_dir(self.root_path, slot).is_dir():
@@ -190,7 +190,7 @@ class ScriptConfigTask(TaskExecuteBase):
                     f"以 MAS 配置为基线)"
                 )
         else:
-            # 脚本级会话（直控「在一条龙内配置」入口）：先自愈崩溃残留的
+            # 托管级会话（直控「在一条龙内配置」入口）：先自愈崩溃残留的
             # 合成视图，保证拉起的是完整原生实例列表，不做隔离与注入。
             # 指定了会话实例时把原生活跃临时切过去（GUI 打开即正在编辑的
             # 实例），原活跃在会话结束还原；目标不存在则跳过不切换
@@ -222,7 +222,7 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.wait_event.wait()
 
     async def _readback_user_fields(self, slot: int) -> None:
-        """把 GUI 会话落盘的账号字段、启动参数与任务编排回读到 MAS 用户字段。
+        """把 GUI 会话落盘的账号字段、启动参数与任务编排回读到 MAS 账号字段。
 
         - 区服/路径/语言/B服名：无条件回读（客观字段，槽值即真相）；
         - 账号/密码：槽值非空才回读（留空=沿用登录态语义，避免清空被读回）；
@@ -290,7 +290,7 @@ class ScriptConfigTask(TaskExecuteBase):
         )
         await cfg.commit()
         logger.info(
-            f"绑定槽 {slot:02d} 会话改动已回读用户配置 (任务 {len(all_apps)} 项)"
+            f"绑定槽 {slot:02d} 会话改动已回读账号配置 (任务 {len(all_apps)} 项)"
         )
 
     def _restore_native_active(self) -> None:
@@ -333,7 +333,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(
                     level="error",
-                    message="zzz-od 会话改动回读失败，MAS 用户字段未更新，请重新打开配置检查",
+                    message="zzz-od 会话改动回读失败，MAS 账号字段未更新，请重新打开配置检查",
                 ),
             )
             return

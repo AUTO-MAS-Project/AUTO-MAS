@@ -1093,19 +1093,19 @@ def describe_runtime_architecture_mismatch(
         return (
             f"项目副本里只带了 {found} 架构的 MaaFramework，本机是 {expected}"
             "（旧版 MAS 在来源目录同时带多种架构时选错了）。来源目录里有 "
-            f"{expected} 版，请在脚本页重新导入项目"
+            f"{expected} 版，请在托管页重新导入项目"
         )
     if source_loadable is False:
         return (
             f"项目自带的 MaaFramework 是 {found} 架构，本机是 {expected}，来源目录里"
-            f"也只有 {found} 版——请换成 {expected} 的发行包，再在脚本页重新导入"
+            f"也只有 {found} 版——请换成 {expected} 的发行包，再在托管页重新导入"
         )
     if project_path is not None and _is_relative_to(
         runtime_path, project_path / "runtimes"
     ):
         return (
             f"项目副本里只带了 {found} 架构的 MaaFramework，本机是 {expected}"
-            "（旧版 MAS 在来源目录同时带多种架构时会选错），请在脚本页重新导入项目；"
+            "（旧版 MAS 在来源目录同时带多种架构时会选错），请在托管页重新导入项目；"
             f"若来源目录本身只有 {found} 版，请换成 {expected} 的发行包"
         )
     return (

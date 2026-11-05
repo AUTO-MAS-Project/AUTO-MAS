@@ -7,11 +7,11 @@
  */
 export type BetterGIGlobalStygianSettingsIn = {
     /**
-     * 所属脚本ID
+     * 所属托管ID
      */
     scriptId: string;
     /**
-     * 所属用户ID（空=写 BGI 全局实配）
+     * 所属账号ID（空=写 BGI 全局实配）
      */
     userId?: (string | null);
     /**

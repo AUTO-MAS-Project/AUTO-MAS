@@ -4,7 +4,7 @@
 :func:`update_engine_if_needed` 查完就装。可预期失败收敛为结果；无法确认
 安装安全的异常向上传播。目录无法恢复时见 ``UpdateOutcome.blocking``。
 
-调用时机见 ``manager.py``：持有安装目录锁后，在备份配置、启动用户任务前
+调用时机见 ``manager.py``：持有安装目录锁后，在备份配置、启动账号任务前
 先恢复上次中断的安装，再检查和安装更新。手动更新复用相同入口。
 """
 
@@ -26,8 +26,8 @@ import httpx
 
 from app.core.script_update import script_downloader
 from app.services.common.update.fluxdown import FluxdownResumableError
-from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.utils import get_logger
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from ...task_mapping import engine_label
 from .apply import (
@@ -172,7 +172,7 @@ async def update_engine_if_needed(
             if (
                 prepared.root != install_root.resolve()
                 or current != prepared.result.current_version
-                or await asyncio.to_thread(_package_digest, prepared.package)
+                or await _run_install_worker(partial(_package_digest, prepared.package))
                 != prepared.digest
             ):
                 raise HSRUpdateError("预下载后安装或包体已变化，请重新运行更新")

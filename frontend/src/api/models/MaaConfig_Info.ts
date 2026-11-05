@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type MaaConfig_Info = {
     /**
-     * MAA 脚本名称
+     * MAA 托管名称
      */
     Name?: (string | null);
     /**

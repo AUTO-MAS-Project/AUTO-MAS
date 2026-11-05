@@ -5,10 +5,10 @@
 - `from app.utils import log_box`：纯文本规则处理及结果类型。
 - `from app.utils.common.log import sources`：独立增量文件读取，不读配置或环境变量。
 - `from app.utils import i18n`：既有 `PoTranslator`，由调用方选择词表并管理资源。
-- `from app.core.notify import report`：逐条、汇总和用户报告的纯文本排版。
+- `from app.core.notify import report`：逐条、汇总和账号报告的纯文本排版。
 
 不再提供 `LogCollect`、`LogBox`、`LogSpec`、`EntrySpec`、`LogBinding`、
-`TranslationSpec`、`SessionResult` 或用户托管会话。旧 `app.log_box` 路径已删除，
+`TranslationSpec`、`SessionResult` 或账号会话。旧 `app.log_box` 路径已删除，
 没有兼容转发。结构化来源直接由专项转换、校验和交付，不经过文本处理器。
 
 ## 文本内核
@@ -30,7 +30,7 @@ entries = pipeline.finish()
 时间戳由调用方传入；省略为 None，内核不调用时钟。多行窗口收尾保留最后输入的时间戳。
 结果 `LogEntry` 只保存类型、文本和时间，不解释成功失败标记。`finish()` 重复调用返回
 同一批不可变结果的列表副本，不重复执行后处理；完成后不能继续 `feed()`。
-非法规则、处理器错误和结果形状错误向调用方抛出，不写兜底文案、用户状态或通知。
+非法规则、处理器错误和结果形状错误向调用方抛出，不写兜底文案、账号状态或通知。
 
 ## 文件来源和翻译
 
@@ -52,7 +52,7 @@ for line in source.read_new():
 
 ## 专项职责
 
-调用方固定用户/账号快照，选择读取和处理的线程，在宿主事件循环写入结果。
+调用方固定账号快照，选择读取和处理的线程，在宿主事件循环写入结果。
 同一次运行收尾必须幂等，重复或并发收尾不能重复交付；取消时先等待已启动的后台处理
 及交付结束，再传播取消。异常是否影响专项、是否追加旧兜底文案，均由专项决定。
 不能把这套策略重新放进公共的“采集会话”。
@@ -67,7 +67,7 @@ for line in source.read_new():
 业务层选择关闭/逐条/汇总，按任务状态筛选失败类型，计算完成数并选择通知目标。
 `report.render_scatter_push_log()` 和
 `render_aggregate_push_log()` 只排版传入条目；`render_user_result_text()` 只接收
-`models.notification.report.UserReportText` 中已经确定的用户名、结果和详情行。
+`models.notification.report.UserReportText` 中已经确定的账号名、结果和详情行。
 节点状态标记模型 `Node` 位于报告模型中，不能再通过通用 `LogEntry.node` 解释业务状态。
 调度台日志更新由持有脚本对象的 manager 直接完成；任务完成页统计由 core/task_manager 负责。
 

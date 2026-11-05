@@ -51,6 +51,20 @@ const { t } = useI18n()
       </a-checkbox>
     </SettingRow>
 
+    <SettingRow
+      :label="t('core.setting.func.scheduledWakeup')"
+      :hint="t('core.setting.func.scheduledWakeupTip')"
+    >
+      <a-switch
+        :checked="settings.Start?.IfScheduledWakeUp === true"
+        :aria-label="t('core.setting.func.scheduledWakeup')"
+        @change="
+          (checked: boolean | string | number) =>
+            handleSettingChange('Start', 'IfScheduledWakeUp', !!checked)
+        "
+      />
+    </SettingRow>
+
     <SettingRow :label="t('core.setting.basic.minimizeBehavior')">
       <a-segmented
         :value="settings.UI?.IfToTray === true ? 'tray' : 'taskbar'"

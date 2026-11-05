@@ -294,7 +294,7 @@ AGENT_CONNECT_GRACE_SECONDS = 30.0
 # 不写 agent.timeout 或写 -1 / 0：MFAA / MXU 是进程活着就一直等（MaaGumballs、
 # MaaStarResonance 首启要 pip 装依赖，36 s 不够）。MAS 不无限等，封顶 10 分钟。
 AGENT_CONNECT_UNBOUNDED_CAP_SECONDS = 600.0
-# 超过 baseline 还没连上时，每隔这么久往用户日志报一次还在等。
+# 超过 baseline 还没连上时，每隔这么久往账号日志报一次还在等。
 AGENT_CONNECT_PROGRESS_LOG_SECONDS = 30.0
 
 
@@ -598,7 +598,7 @@ def _agent_spawn_error_hint(exc: OSError) -> str | None:
     if code == 2:
         return f"找不到 Agent 程序文件，{AGENT_PROGRAM_MISSING_HINT}"
     if code == 3:
-        return "Agent 程序所在的路径不存在，项目文件可能不完整；请在脚本页重新导入项目"
+        return "Agent 程序所在的路径不存在，项目文件可能不完整；请在托管页重新导入项目"
     if code == _WINDOWS_ERROR_APPLICATION_CONTROL_BLOCKED:
         return (
             "Agent 程序被 Windows 的应用控制策略（智能应用控制）拦截；请在"
@@ -2258,7 +2258,7 @@ class MaaFWRunner:
         协议要求「应向用户发出警告，但不应阻止继续使用」；大小写不敏感（MFAA 同）。
         但这个 hash 只由文件大小按遍历顺序算出，项目 CI 在打包目录上算、和最终发行包的
         文件集合不同就会对不上（MaaEnd 正式版每次都是，MXU 里同样告警），用户既判断不了
-        也做不了什么，所以不一致只进 ``.worker.log``，不上界面与用户日志。
+        也做不了什么，所以不一致只进 ``.worker.log``，不上界面与账号日志。
         取不到实际值（老 binding、原生层报错）时不记，免得把环境问题说成资源被改。
         """
 

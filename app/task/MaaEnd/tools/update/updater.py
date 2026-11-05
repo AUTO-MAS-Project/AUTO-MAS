@@ -102,7 +102,7 @@ async def ensure_game_updated(
     """对外入口：跑一轮判定，并把开始、过程与结论都写进 `debug/app.log`。
 
     时限包住「核对基线 + 退出客户端 + 下载差量 + 落地」四段；进度行只往调度台推，同一行
-    由本函数写进 `debug/app.log`；`entry` 只进日志，用来区分自动门与脚本页手动按钮。
+    由本函数写进 `debug/app.log`；`entry` 只进日志，用来区分自动门与托管页手动按钮。
     """
 
     logger.info(

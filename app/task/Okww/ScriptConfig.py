@@ -56,8 +56,8 @@ logger = get_logger("OK-WW 脚本设置")
 class ScriptConfigTask(TaskExecuteBase):
     """无参数启动 OK-WW 本体，供用户修改程序设置。
 
-    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——用户级
-    会话下发的 MAS 目录即刚恢复的备份（所见即备份），脚本级会话跳过下发
+    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——账号级
+    会话下发的 MAS 目录即刚恢复的备份（所见即备份），托管级会话跳过下发
     （原生目录即备份）；结束不回写 MAS 配置，原生目录由 manager 的任务前
     快照还原（临时注入，看完还原）。
     """
@@ -98,7 +98,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self.mas_owner = (
             owner_for_mode(mode, target_user_id) if self.use_mas_config else None
         )
-        # 本会话涉及用户的覆盖层字段（脚本级 Default 入口无单一用户，不带侧车）
+        # 本会话涉及用户的覆盖层字段（托管级 Default 入口无单一用户，不带侧车）
         self.mas_overlay = (
             read_overlay_values(self.user_config[uuid.UUID(target_user_id)])
             if self.use_mas_config and target_user_id != "Default"
@@ -114,7 +114,7 @@ class ScriptConfigTask(TaskExecuteBase):
         await self._kill_processes()
         _configure_okww_launcher(self.root_path)
 
-        # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；指纹去重，
+        # 下发前归档 MAS 配置到账号池（下发源，会话保存会覆盖它；指纹去重，
         # 失败不阻断会话）。native 池由 manager.prepare 在任务级一次性归档
         if self.use_mas_config and self.mas_owner and self.mas_config_dir:
             archive_mas_runtime_backup(
@@ -130,7 +130,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 ),
             )
 
-        # 查看会话的脚本级入口：原生目录即所选备份，跳过下发
+        # 查看会话的托管级入口：原生目录即所选备份，跳过下发
         if self.view_only and self.cur_user_item.user_id == "Default":
             logger.info("OK-WW 查看会话跳过配置下发: 原生目录即所选备份")
         elif (

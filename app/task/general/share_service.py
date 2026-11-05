@@ -49,21 +49,21 @@ class GeneralShareService:
         script = self._scripts.get_script(UUID(script_id))
         if script is None:
             logger.error(f"{script_id} 不存在")
-            raise KeyError(f"脚本 {script_id} 不存在")
+            raise KeyError(f"托管 {script_id} 不存在")
         if not isinstance(script, GeneralConfig):
-            logger.error(f"{script_id} 不是通用脚本配置")
-            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
+            logger.error(f"{script_id} 不是通用托管配置")
+            raise TypeError(f"托管 {script_id} 不是通用托管配置")
         return script
 
     async def import_script_from_share(
         self, script_id: str, config_key: str, version_no: int | None
     ) -> None:
-        """下载模板并更新已提供字段，保留本地用户、Webhook 和历史格式兼容。"""
-        logger.info(f"从配置中心加载脚本配置: {script_id} - {config_key}")
+        """下载模板并更新已提供字段，保留本地账号、Webhook 和历史格式兼容。"""
+        logger.info(f"从配置中心加载托管配置: {script_id} - {config_key}")
         self._get_script(script_id)
         data = await self._config_center.download_template(config_key, version_no)
         if not isinstance(data, dict) or not isinstance(data.get("Script"), dict):
-            raise ConfigCenterError("配置文件不是通用脚本配置, 无法导入")
+            raise ConfigCenterError("配置文件不是通用托管配置, 无法导入")
 
         # 网页端手工上传的模板也可能携带账号数据；这些内容不参与导入。
         data = {
@@ -72,7 +72,7 @@ class GeneralShareService:
             if key not in {"SubConfigsInfo", "UserData", "Notify_CustomWebhooks", "ui"}
         }
         config = GeneralConfig.model_validate(GeneralConfig.normalize_payload(data))
-        # 只更新 MAS 面板字段，不覆盖原生文件或用户 ConfigFile，归档池保持原职责。
+        # 只更新 MAS 面板字段，不覆盖原生文件或账号 ConfigFile，归档池保持原职责。
         await self._scripts.update_script(UUID(script_id), config)
         logger.success(f"{script_id} 配置加载成功")
 

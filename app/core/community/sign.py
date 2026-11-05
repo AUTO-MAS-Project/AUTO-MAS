@@ -178,11 +178,11 @@ class CommunitySignOperations:
             account_enabled = account.GameSignAccount.Enabled
             account_uid = str(uid)
 
-            # 跳过已禁用的用户。
+            # 跳过已禁用的账号。
             if not account_enabled:
                 continue
 
-            # 非强制模式：跳过今日已签到的用户。
+            # 非强制模式：跳过今日已签到的账号。
             if not force:
                 user_last_sign = account.GameSignAccount.LastSignDate.strftime(
                     "%Y-%m-%d"

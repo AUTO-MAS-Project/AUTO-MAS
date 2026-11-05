@@ -8,7 +8,7 @@ export type BAAHUserConfig_InfoInput = {
      */
     ActivityLineType?: ('JP' | 'Globle' | 'CN' | null);
     /**
-     * base 来源（shared=共享/independent=独立/native=原生）
+     * 兼容字段；BAAH 运行不消费此来源值，始终使用 Info.ConfigName 绑定的 BAAH 配置文件
      */
     Base?: ('shared' | 'independent' | 'native' | null);
     /**
@@ -20,11 +20,11 @@ export type BAAHUserConfig_InfoInput = {
      */
     IfEventFirst?: (boolean | null);
     /**
-     * 是否启用快速配置（与配置来源独立，按用户保存）
+     * 兼容字段；BAAH 运行不消费此开关，运行期写入由配置托管、计划表及活动优先等实际选项决定
      */
     IfQuickConfig?: (boolean | null);
     /**
-     * 用户名称
+     * 账号名称
      */
     Name?: (string | null);
     /**
@@ -36,7 +36,7 @@ export type BAAHUserConfig_InfoInput = {
      */
     RemainedDay?: (number | null);
     /**
-     * 关卡计划表；Fixed 表示按脚本配置
+     * 关卡计划表；Fixed 表示沿用 BAAH 中的关卡配置
      */
     StageMode?: (string | null);
     /**
@@ -44,7 +44,7 @@ export type BAAHUserConfig_InfoInput = {
      */
     Status?: (boolean | null);
     /**
-     * 用户标签信息
+     * 账号标签信息
      */
     readonly Tag?: (string | null);
 };

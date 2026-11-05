@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import threading
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -297,3 +298,40 @@ async def test_app_repair_does_not_bypass_pending_marker(installation):
     assert str(error.value) == update.RECOVERY_HINT
     assert marker.exists()
     update.installed_version.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "operation", ["verify_digest", "_package_hashes", "_wheel_digest"]
+)
+async def test_prefetch_cancel_waits_for_readers_before_removing_package(
+    installation, monkeypatch, operation
+):
+    started, release = threading.Event(), threading.Event()
+    original = getattr(update, operation)
+
+    def read(path, *args):
+        package = path if path.is_file() else path / "dependency.whl"
+        if not package.exists():
+            package.write_bytes(b"dependency")
+        with package.open("rb"):
+            started.set()
+            assert release.wait(5)
+            return original(path, *args)
+
+    monkeypatch.setattr(update, operation, read)
+    task = asyncio.create_task(update.prepare_update(installation))
+    try:
+        assert await asyncio.to_thread(started.wait, 3)
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=0.05)
+        assert not done
+        assert list((installation.parent / "data/whimbox_update").rglob("*.whl"))
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=0.05)
+        assert not done
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+    assert task.cancelled()
+    assert not list((installation.parent / "data/whimbox_update").rglob("download-*"))

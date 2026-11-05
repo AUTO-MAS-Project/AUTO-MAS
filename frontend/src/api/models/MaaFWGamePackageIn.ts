@@ -12,7 +12,7 @@ export type MaaFWGamePackageIn = {
      */
     resource: string;
     /**
-     * MaaFW 脚本 ID；给出时按脚本解析有效根（内嵌脚本读副本），path 只兜底
+     * MaaFW 托管 ID；给出时按托管解析有效根（托管项目读取副本），path 只兜底
      */
     scriptId?: (string | null);
 };

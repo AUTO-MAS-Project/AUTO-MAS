@@ -12,7 +12,7 @@ export type OkNteUserConfig_Info = {
      */
     Id?: (string | null);
     /**
-     * 是否启用快速配置（与配置来源独立）
+     * 是否启用覆写常规配置（与配置来源独立）
      */
     IfQuickConfig?: (boolean | null);
     /**
@@ -24,7 +24,7 @@ export type OkNteUserConfig_Info = {
      */
     IfScriptBeforeTask?: (boolean | null);
     /**
-     * 用户名
+     * 账号名称
      */
     Name?: (string | null);
     /**
@@ -52,11 +52,11 @@ export type OkNteUserConfig_Info = {
      */
     ScriptBeforeTask?: (string | null);
     /**
-     * 用户状态
+     * 账号状态
      */
     Status?: (boolean | null);
     /**
-     * 用户标签列表（JSON字符串，TagItem的dict列表）
+     * 账号标签列表（JSON字符串，TagItem的dict列表）
      */
     readonly Tag?: (string | null);
 };

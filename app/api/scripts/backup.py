@@ -14,7 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
-"""脚本管理：配置备份恢复 路由与端点专用模型。"""
+"""托管管理：配置备份恢复 路由与端点专用模型。"""
 
 from typing import (
     List,
@@ -56,8 +56,8 @@ class ConfigBackupListOut(OutBase):
 class ConfigBackupRestoreIn(BaseModel):
     """把指定备份恢复到目标位置（target 取值由专项池定义）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
-    userId: str = Field(..., description="目标用户ID")
+    scriptId: str = Field(..., description="所属托管ID")
+    userId: str = Field(..., description="目标账号ID")
     time: str = Field(..., description="备份时间戳")
     target: str = Field(
         ...,
@@ -76,8 +76,8 @@ class ConfigBackupRestoreOut(OutBase):
 class ConfigBackupEnsureIn(BaseModel):
     """按需归档目标池当前配置（编辑界面进入/退出时机，指纹去重）"""
 
-    scriptId: str = Field(..., description="所属脚本ID")
-    userId: str = Field(..., description="目标用户ID")
+    scriptId: str = Field(..., description="所属托管ID")
+    userId: str = Field(..., description="目标账号ID")
     target: str = Field(..., description="归档目标（取值由专项池定义）")
 
 
@@ -113,7 +113,7 @@ class ConfigBackupFileOut(OutBase):
 
 
 router = APIRouter()
-logger = get_logger("脚本管理 API")
+logger = get_logger("托管管理 API")
 
 
 @router.get(
@@ -201,8 +201,8 @@ async def ensure_config_backup_api(
 async def restore_config_backup_api(
     script: ConfigBackupRestoreIn = Body(...),
 ) -> ConfigBackupRestoreOut:
-    """恢复语义由专项池定义：脚本原生池恢复到脚本本体，MAS 用户池恢复到
-    用户配置并按需回填前端表单。备份来自其他配置来源（脚本级/用户级）时
+    """恢复语义由专项池定义：脚本原生池恢复到脚本本体，MAS 账号池恢复到
+    账号配置并按需回填前端表单。备份来自其他配置来源（托管级/账号级）时
     由服务层把配置来源切回备份时点再恢复；提示由前端据备份列表与当前
     来源比对给出。"""
 

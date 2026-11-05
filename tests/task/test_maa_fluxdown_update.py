@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import threading
 import zipfile
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -683,7 +684,9 @@ async def test_cancelled_mirror_prefetch_does_not_use_daily_attempt(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["offline", "cancelled", "writer-unknown"])
+@pytest.mark.parametrize(
+    "failure", ["offline", "cancelled", "writer-unknown", "resumable"]
+)
 async def test_resource_prefetch_failed_download_cleanup(
     resource_install, monkeypatch, failure
 ):
@@ -695,6 +698,8 @@ async def test_resource_prefetch_failed_download_cleanup(
             raise asyncio.CancelledError
         if failure == "writer-unknown":
             raise update._utils_fluxdown_cli.FluxdownCancelUnconfirmed("busy")
+        if failure == "resumable":
+            raise update._service_update_fluxdown.FluxdownResumableError("resume")
         raise RuntimeError("offline")
 
     downloader.side_effect = fail
@@ -704,12 +709,16 @@ async def test_resource_prefetch_failed_download_cleanup(
         else (
             update._utils_fluxdown_cli.FluxdownCancelUnconfirmed
             if failure == "writer-unknown"
-            else RuntimeError
+            else (
+                update._service_update_fluxdown.FluxdownResumableError
+                if failure == "resumable"
+                else RuntimeError
+            )
         )
     ):
         await resource.prefetch_resources(install, github=True, cdk=None)
     archives = list(resource._WORK_DIR.glob("prefetch-*.zip"))
-    assert len(archives) == (1 if failure == "writer-unknown" else 0)
+    assert len(archives) == (1 if failure in ("writer-unknown", "resumable") else 0)
 
 
 @pytest.mark.asyncio
@@ -755,3 +764,55 @@ async def test_maa_software_prefetch_failed_directory_cleanup(
         )
     directories = list((root / "data/maa_github_update").glob("download-*"))
     assert len(directories) == (1 if failure in ("resumable", "writer-unknown") else 0)
+
+
+@pytest.mark.asyncio
+async def test_prefetch_cancel_waits_for_digest_before_removing_package(
+    installation, monkeypatch
+):
+    root, _, _ = installation
+    monkeypatch.chdir(root)
+    started, release = threading.Event(), threading.Event()
+    original = update._digest
+
+    def digest(path):
+        with path.open("rb"):
+            started.set()
+            assert release.wait(5)
+            return original(path)
+
+    monkeypatch.setattr(update, "_digest", digest)
+    task = asyncio.create_task(
+        update.prepare_maa_fluxdown_update(
+            root, config=script_config(), config_dir=root / "config", download_only=True
+        )
+    )
+    try:
+        assert await asyncio.to_thread(started.wait, 3)
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=0.05)
+        assert not done
+        assert list((root / "data/maa_github_update").rglob("*.zip"))
+        task.cancel()  # A repeated stop must also wait for the real reader.
+        done, _ = await asyncio.wait({task}, timeout=0.05)
+        assert not done
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+    assert task.cancelled()
+    assert not list((root / "data/maa_github_update").glob("download-*"))
+
+
+@pytest.mark.asyncio
+async def test_resource_prefetch_cleans_archive_and_reuses_stage_on_consumption(
+    resource_install,
+):
+    install, target, downloader = resource_install
+    current = resource.read_resource_clock(install)
+    await resource.prefetch_resources(install, github=True, cdk=None)
+    assert resource.read_resource_clock(install) == current
+    assert not list(resource._WORK_DIR.glob("prefetch-*.zip"))
+    assert resource.read_resource_clock(resource._STAGE_DIR) == target
+    await resource.prepare_install_resources(install, github=True, cdk=None)
+    assert resource.read_resource_clock(install) == target
+    downloader.assert_awaited_once()

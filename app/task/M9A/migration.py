@@ -25,7 +25,7 @@
 一趟做两件事：
 
 1. ``type == "M9AConfig"`` 且带旧形状键的脚本 → 按 §3 / §4 逐字段翻译成 MaaFW 形状
-   （类型标签不变，用户标签不变，只有数据变）；
+   （类型标签不变，账号标签不变，只有数据变）；
 2. ``type == "MaaFWConfig"`` 的脚本若项目被识别为 M9A（``flavor.is_m9a_project``）→ 只把
    ``instances[].type`` 换成 ``M9AConfig`` / ``M9AUserConfig``，数据一个字段不动（两类同形）。
 
@@ -37,7 +37,7 @@ v5.6.0-beta.1 的迁移把所有等于 interface default 的输入值都清空�
 关卡号 6 也在内），还丢了实例文件里勾选的「切换账号」。已经按那版迁过的配置由
 ``repair_m9a_migration_losses`` 按上面的备份补回一次。
 
-「启动游戏」「切换账号」「关闭游戏」由 MAS 控制、不留在用户队列里（规则见 ``managed.py``）：
+「启动游戏」「切换账号」「关闭游戏」由 MAS 控制、不留在账号队列里（规则见 ``managed.py``）：
 迁移与补救按同一规则落地，另有 ``normalize_m9a_managed_entries`` 在每次启动时对全部 M9A 用户
 整理一遍（beta.1 迁移留下的、#1012 补回的、手加的、通用 MaaFW 脚本换成 M9A 带过来的），幂等。
 这几段都在文件末尾。
@@ -117,13 +117,13 @@ class MigrationReport:
     degraded_scripts: list[str] = field(default_factory=list)
     #: 关了快速配置、但找不到 MFAA 实例文件，退回任务队列的用户。
     instance_file_fallbacks: list[str] = field(default_factory=list)
-    #: 关了快速配置的用户：旧版不读「账号」，迁移后特调会拿它切号。
+    #: 关了快速配置的账号：旧版不读「账号」，迁移后特调会拿它切号。
     account_switch_users: list[str] = field(default_factory=list)
-    #: 实例文件里恰好一个切号：目标账号进了「账号」（``用户（账号 a）``）。
+    #: 实例文件里恰好一个切号：目标账号进了「账号」（``账号（账号 a）``）。
     imported_accounts: list[str] = field(default_factory=list)
-    #: 上一项里原「账号」非空且不同、被切号账号取代的（``用户（原 c → 现 a）``）。
+    #: 上一项里原「账号」非空且不同、被切号账号取代的（``账号（原 c → 现 a）``）。
     replaced_accounts: list[str] = field(default_factory=list)
-    #: 实例文件里有多个切号、照搬进队列等用户拆分的（``用户：拆分提示``）。
+    #: 实例文件里有多个切号、照搬进队列等用户拆分的（``账号：拆分提示``）。
     split_users: list[str] = field(default_factory=list)
     backup_path: Path | None = None
     #: 迁移函数自己抛了异常：原文件已另存，后续 connect() 会按新类加载。
@@ -164,7 +164,7 @@ class MigrationReport:
             )
         if self.disabled_users:
             lines.append(
-                "服务器与脚本资源不一致、已停用的用户："
+                "服务器与脚本资源不一致、已停用的账号："
                 + "、".join(self.disabled_users)
             )
         if self.account_switch_users:
@@ -174,7 +174,7 @@ class MigrationReport:
             )
         if self.instance_file_fallbacks:
             lines.append(
-                "关闭了快速配置但找不到 MFAA 实例文件、已改用任务队列的用户："
+                "关闭了快速配置但找不到 MFAA 实例文件、已改用任务队列的账号："
                 + "、".join(self.instance_file_fallbacks)
             )
         lines.extend(
@@ -336,7 +336,7 @@ def _project_is_m9a(payload: dict[str, Any], uid: str) -> bool:
 def _project_root_for_detection(
     payload: dict[str, Any], uid: str, *, prefer_source: bool = False
 ) -> Path | None:
-    """识别用的项目根：副本在就读副本（路径由脚本 ID 推出），否则读来源目录。
+    """识别用的项目根：副本在就读副本（路径由托管 ID 推出），否则读来源目录。
 
     ``prefer_source`` 反过来先读来源目录：补救要用迁移当时读的那份 interface 重算。
     """
@@ -367,7 +367,7 @@ def _script_label(payload: dict[str, Any], uid: str) -> str:
 
 
 def _user_data_of(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """脚本数据块里的用户表：``ConfigEntry.toDict`` 把子配置放在 ``SubConfigsInfo`` 下。"""
+    """脚本数据块里的账号表：``ConfigEntry.toDict`` 把子配置放在 ``SubConfigsInfo`` 下。"""
 
     if isinstance(payload.get("UserData"), dict):
         return payload["UserData"]
@@ -568,7 +568,7 @@ def migrate_legacy_script(
 
 
 def _choose_script_resource(users: list[dict[str, Any]], index: _InterfaceIndex) -> str:
-    """启用用户里出现最多的服务器；没有启用用户取全部；并列取先出现的。"""
+    """启用账号里出现最多的服务器；没有启用账号取全部；并列取先出现的。"""
 
     def resource_of(user: dict[str, Any]) -> str:
         info = user.get("Info")
@@ -644,7 +644,7 @@ def _migrate_user(
     info = user.get("Info") if isinstance(user.get("Info"), dict) else {}
     data = user.get("Data") if isinstance(user.get("Data"), dict) else {}
     notify = user.get("Notify") if isinstance(user.get("Notify"), dict) else {}
-    name = str(info.get("Name") or "新用户")
+    name = str(info.get("Name") or "新账号")
     status = _truthy(info.get("Status", True))
     notes = str(info.get("Notes") or "无")
 
@@ -658,7 +658,7 @@ def _migrate_user(
         status = False
         notes = (
             f"[迁移] 原服务器「{raw_resource}」与脚本资源「{script_resource}」不一致，已停用；"
-            f"请新建 M9A 脚本（资源选 {raw_resource}）后重建该用户。"
+            f"请新建 M9A 脚本（资源选 {raw_resource}）后重建该账号。"
             + ("" if notes in ("", "无") else f" {notes}")
         )
         report.disabled_users.append(f"{script_label} / {name}")
@@ -1221,13 +1221,13 @@ class RepairReport:
     """一次补救的结果，给启动通知与日志用。"""
 
     restored_inputs: list[str] = field(default_factory=list)
-    #: 实例文件里恰好一个切号：目标账号找回进了「账号」（``用户（账号 a）``）。
+    #: 实例文件里恰好一个切号：目标账号找回进了「账号」（``账号（账号 a）``）。
     restored_accounts: list[str] = field(default_factory=list)
-    #: 上一项里原「账号」非空且不同、被切号账号取代的（``用户（原 c → 现 a）``）。
+    #: 上一项里原「账号」非空且不同、被切号账号取代的（``账号（原 c → 现 a）``）。
     replaced_accounts: list[str] = field(default_factory=list)
     #: 实例文件里有多个切号：原样补回任务队列，等用户拆分（拆分提示由启动整理写）。
     restored_switches: list[str] = field(default_factory=list)
-    #: 升级后改过任务列表或「账号」、切号不自动找回的用户（带原来的目标账号）。
+    #: 升级后改过任务列表或「账号」、切号不自动找回的账号（带原来的目标账号）。
     manual_switches: list[str] = field(default_factory=list)
     account_switch_users: list[str] = field(default_factory=list)
     #: 来源目录与内嵌副本都读不到 interface、没法按备份核对的脚本。
@@ -1264,7 +1264,7 @@ class RepairReport:
         )
         if self.restored_switches:
             lines.append(
-                "升级时丢掉的多个「切换账号」已原样补回任务队列，需要拆成多个用户才能运行"
+                "升级时丢掉的多个「切换账号」已原样补回任务队列，需要拆成多个账号才能运行"
                 "（见「M9A 任务队列已按新规则整理」通知）："
                 + "、".join(self.restored_switches)
             )
@@ -1418,7 +1418,7 @@ def repair_script_config_payload(
 ) -> bool:
     """按迁移前的旧数据块就地补 ``data``，返回有没有改动。
 
-    用修好的迁移把旧数据块重算一遍当答案，逐个用户与现状比，只动两类地方：
+    用修好的迁移把旧数据块重算一遍当答案，逐个账号与现状比，只动两类地方：
 
     1. input 字段：答案里的值等于 interface default（beta.1 就是清的这种）、现状是空的 → 填回；
        用户升级后自己填过的不动。
@@ -1507,7 +1507,7 @@ def _repair_user_snapshot(
     label: str,
     report: RepairReport,
 ) -> bool:
-    """单个用户的两类补救；队列有改动就写回 ``user`` 的 ``Task.TaskSnapshot``，账号写 ``Info``。
+    """单个账号的两类补救；队列有改动就写回 ``user`` 的 ``Task.TaskSnapshot``，账号写 ``Info``。
 
     ``keep_account`` 为真（用户升级后自己改了「账号」）时切号不自动找回，只提醒。
     """
@@ -1630,7 +1630,7 @@ def _load_snapshot(raw: Any) -> dict[str, Any] | None:
 
 
 # ---------------------------------------------------------------------------
-# 每次启动：受管任务整理（启动游戏 / 切换账号 / 关闭游戏不留在用户队列里）
+# 每次启动：受管任务整理（启动游戏 / 切换账号 / 关闭游戏不留在账号队列里）
 # ---------------------------------------------------------------------------
 
 MANAGED_BACKUP_SUFFIX = ".m9a-managed-"
@@ -1645,7 +1645,7 @@ class ManagedEntriesReport:
     cleaned_users: list[str] = field(default_factory=list)
     imported_accounts: list[str] = field(default_factory=list)
     replaced_accounts: list[str] = field(default_factory=list)
-    #: 新写了拆分提示的用户（整行文案）。
+    #: 新写了拆分提示的账号（整行文案）。
     split_users: list[str] = field(default_factory=list)
     backup_path: Path | None = None
 
@@ -1771,7 +1771,7 @@ def normalize_script_config_payload(
             _load_snapshot((user.get("Task") or {}).get("TaskSnapshot"))
             for user in _iter_users(payload)
         ):
-            continue  # 没有一个用户有队列：不必读 interface
+            continue  # 没有一个账号有队列：不必读 interface
         root = _project_root_for_detection(payload, uid)
         model = _read_interface_model(root) if root else None
         index = _InterfaceIndex(_dump_interface(model))

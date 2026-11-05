@@ -277,7 +277,7 @@ def apply_teams_to_steps(
     """就地为一组 Plan 战斗步骤写入选队结果，返回命中步骤数。
 
     只写 ``masTeamOverride`` / ``masStrategyOverride`` 两个新增字段，不改动任何既有
-    字段，用户配置零改写（override 随运行时 Plan 副本一起丢弃）。
+    字段，账号配置零改写（override 随运行时 Plan 副本一起丢弃）。
     """
     if not steps or not teams:
         return 0

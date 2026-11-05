@@ -6,7 +6,7 @@ description: Use when adding, refactoring, or reviewing AUTO-MAS plan schedule t
 # MAS Plan Schedule
 
 ## Objective
-Keep AUTO-MAS plan schedules easy to extend without turning them into a generic field engine. Each schedule type owns its data model, config class, table UI, and user consumption path. Shared code should only cover type registration, API dispatch, list selection, and CRUD orchestration.
+Keep AUTO-MAS plan schedules easy to extend without turning them into a generic field engine. Each schedule type owns its data model, config class, table UI, and account consumption path. Shared code should only cover type registration, API dispatch, list selection, and CRUD orchestration.
 
 ## Current Architecture
 Backend has one shared multi-config collection and one lightweight registration table.
@@ -57,8 +57,8 @@ Follow this order.
 4. Register in `PLAN_BOOK`
    Add `create_type`, `config_class`, `consumer`, `script_class`, `field_group`, and `field_name`. API contracts derive from `config_class`; the registry stores config classes and business relationships.
    This is the backend source of truth for plan CRUD, deletion reference cleanup, and combobox filtering.
-5. Wire the user consumer
-   Add or extend the user config field that stores the selected plan ID.
+5. Wire the account consumer
+   Add or extend the account config field that stores the selected plan ID.
    Use a typed `ref(...)` when appropriate, plus consumer-specific runtime checks before dereferencing a concrete plan. Reference targets are registered before dependent activation.
    When deleting a plan, `field_name` should be reset only for the bound consumer type.
 6. Add frontend descriptor
@@ -82,7 +82,7 @@ Use this checklist for plan schedule PRs.
 3. `PLAN_CONSUMER_VALUES` in `app/utils/common/constants.py` and the `PlanComboxConsumer` literal agree in both content and order, and existing `PLAN_BOOK` positional indexes still point at their original consumers.
 4. Plan CRUD does not default unknown types to `MaaPlan`.
 5. Consumer comboboxes only return plans of the matching config class.
-6. Deleting a plan only clears the matching user reference field.
+6. Deleting a plan only clears the matching account reference field.
 7. Frontend type labels, default names, create types, and table components come from `planTypeRegistry.ts`.
 8. Unknown plan types fail clearly instead of rendering as a different known type.
 9. Type-specific table behavior stays in the type-specific table or nearby type-specific utility.
@@ -90,7 +90,7 @@ Use this checklist for plan schedule PRs.
 11. New fallback paths are justified by production compatibility needs, not by non-production leftovers.
 
 ## Avoid
-1. Do not add `GeneralPlan`, `CustomPlan`, or placeholder mappings without a complete backend, frontend, and user consumption path.
+1. Do not add `GeneralPlan`, `CustomPlan`, or placeholder mappings without a complete backend, frontend, and account consumption path.
 2. Do not add a shared schedule field engine for one or two unrelated tables.
 3. Do not create a new wrapper/helper that is only called once if the current flow stays clearer inline.
 4. Do not preserve deleted compatibility routes unless the feature has shipped and needs migration support.

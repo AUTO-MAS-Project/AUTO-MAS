@@ -50,7 +50,7 @@ class MaaFWTaskPresetSnapshot(BaseModel):
     taskOrder: list[str] = Field(default_factory=list)
     taskChecked: dict[str, bool] = Field(default_factory=dict)
     taskOptions: MaaFWTaskOptionsByTask = Field(default_factory=dict)
-    # 全局选项（interface 的 global_option 及其 case 下挂的子选项）每个用户只存一份，
+    # 全局选项（interface 的 global_option 及其 case 下挂的子选项）每个账号只存一份，
     # 所有任务共用；taskOptions 里不再有它们。
     globalOptions: dict[str, MaaFWTaskOptionValue] = Field(default_factory=dict)
     # 用户在队列里给某一份实例起的显示名 ``{实例 id: 名字}``：只影响界面显示，
@@ -60,7 +60,7 @@ class MaaFWTaskPresetSnapshot(BaseModel):
     # 升序去重）。七天全选就是不限制、不写这一项；空表、非法值、超范围同样当不限制丢掉，
     # 绝不变成「永远不跑」。运行时按本机今天的星期判，见 ``excluded_task_ids_for_weekday``。
     taskSchedules: dict[str, dict[str, list[int]]] = Field(default_factory=dict)
-    # ``true`` 表示快照来自新用户队列语义：队列中显式保留的 false 实例是
+    # ``true`` 表示快照来自新账号队列语义：队列中显式保留的 false 实例是
     # 用户本轮主动跳过的任务。旧快照缺少此键，前端继续隐藏 false 实例。
     keepUnchecked: bool = False
 
@@ -364,14 +364,14 @@ def mirror_global_options_to_tasks(
 ) -> Any:
     """保存前的降级兼容双写：只属于全局的选项把全局表的值抄一份到每个任务实例上。
 
-    旧版本（全局选项按任务存）读这份快照时，运行期直接用任务上的副本；旧版用户页保存一次
+    旧版本（全局选项按任务存）读这份快照时，运行期直接用任务上的副本；旧版账号页保存一次
     会把 ``globalOptions`` 丢掉，再升级回来时 ``_migrate_global_option_values`` 从副本把值
-    找回。新版运行期与用户页对这类选项只看全局表，副本不生效、不显示（归一时丢掉）。
+    找回。新版运行期与账号页对这类选项只看全局表，副本不生效、不显示（归一时丢掉）。
 
     只在快照带 ``globalOptions`` 时做（没有全局表的是旧形状，任务上的值本来就是迁移的来源，
     原样不动）。对 ``taskOrder`` 里每个 interface 认得的非前置任务实例：对它只属于全局的
     选项，全局表里有合法值就写成那个值，没有就去掉副本——副本永远与全局表一致（从别的用户
-    导入的队列带来的副本，保存一次就换成本用户的值）。任务 / 资源 / 控制器自己也引用的选项
+    导入的队列带来的副本，保存一次就换成本账号的值）。任务 / 资源 / 控制器自己也引用的选项
     是任务自己的值，不碰。密码字段原样抄（之后的加密一并处理任务上的副本）。
 
     接受 JSON 字符串或 dict，返回同一种；没有改动时原样返回入参。
@@ -439,7 +439,7 @@ def extract_task_global_overrides(
 ) -> MaaFWTaskOptionsByTask:
     """各任务实例的选项里写着的、对它来说「只属于全局」的选项值（合法的、已归一）。
 
-    ``{实例: {选项: 值}}``，只收这一实例的选项表里没有、全局表里有的选项。用户快照归一后的
+    ``{实例: {选项: 值}}``，只收这一实例的选项表里没有、全局表里有的选项。账号快照归一后的
     任务选项里不会有这种值（``normalize_task_options_by_task`` 把它们丢掉了），出现了就是
     特调在 ``decorate_selection`` 里写进去的：建计划时这一实例用它盖过用户的全局表，不让
     特调的改写被全局表静默顶掉。
@@ -489,7 +489,7 @@ def find_missing_task_names(
     snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
     interface_model: MaaFWInterface,
 ) -> list[str]:
-    """用户快照里勾选了、但当前 interface 已没有的任务名（按队列顺序，每份实例一项）。
+    """账号快照里勾选了、但当前 interface 已没有的任务名（按队列顺序，每份实例一项）。
 
     项目更新改了任务 ``name`` 时旧 id 就对不上了。归一化会把它从执行列表里滤掉，
     界面把它留成虚影；这里把它找出来，建计划时记成跳过，运行日志里才看得到。
@@ -522,7 +522,7 @@ def build_interface_preset_snapshot(
 
     ``include_pretasks``：预设声明了 ``pretask``（PI v2.10.3）时，把 interface 的全部前置
     任务按顶层顺序排在队列最前，列出的按 ``enabled`` 勾选、带预设给的选项值，未列出的不勾选；
-    预设没声明时不带前置任务。只有用户手动「应用预设」那条路（``/maafw/preview`` 给用户页的
+    预设没声明时不带前置任务。只有用户手动「应用预设」那条路（``/maafw/preview`` 给账号页的
     预设快照）要它；空队列回落成的默认队列与外壳配置导入不带，前置任务（多是拉起游戏的启动器）
     不在用户没点过的情况下替他勾上。
     """
@@ -950,7 +950,7 @@ def build_task_option_maps(
 def build_global_option_map(interface_model: MaaFWInterface) -> dict[str, MaaFWOption]:
     """全局选项表 ``{选项名: 定义}``：``global_option`` 加上各 case 下挂的子选项，逐层展开。
 
-    这些选项的值每个用户只存一份（快照的 ``globalOptions``），参与所有任务的覆盖；不按当前
+    这些选项的值每个账号只存一份（快照的 ``globalOptions``），参与所有任务的覆盖；不按当前
     controller / resource 过滤（换了控制方式值也还在），适用性在建覆盖时判断。
     """
 

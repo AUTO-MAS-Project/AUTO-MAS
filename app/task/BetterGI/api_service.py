@@ -31,7 +31,7 @@ def _bettergi_script_config(script_id: str) -> RuntimeBetterGIConfig:
 
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     if not isinstance(script_config, RuntimeBetterGIConfig):
-        raise TypeError("脚本配置类型错误, 不是 BetterGI 类型")
+        raise TypeError("托管配置类型错误, 不是 BetterGI 类型")
     return script_config
 
 
@@ -41,7 +41,7 @@ def _bettergi_user_id(script_config: RuntimeBetterGIConfig, user_id: str) -> Non
     try:
         script_config.UserData[uuid.UUID(user_id)]
     except KeyError:
-        raise ValueError("用户不存在或无权访问该配置")
+        raise ValueError("账号不存在或无权访问该配置")
 
 
 def _bettergi_root(script_config: RuntimeBetterGIConfig) -> Path:
@@ -91,7 +91,7 @@ def _read_combat_from_plan(
                 target_group, target.get("settings") or {}
             )
         )
-    # 「开启每日地脉花」未配置（Plan 无该键，如新用户）时默认开启：与种子模板的
+    # 「开启每日地脉花」未配置（Plan 无该键，如新账号）时默认开启：与种子模板的
     # 「每日耗尽模式」标准状态一致；用户选过每周模式则 Plan 已有显式 false，不受影响。
     if target_group == "自动地脉花":
         data.setdefault("leyLineDailyEnabled", True)
@@ -194,7 +194,7 @@ def list_custom_groups(
 
     if use_mas_config:
         if not user_id:
-            raise ValueError("用户独立配置下必须提供 userId")
+            raise ValueError("独立配置下必须提供 userId")
         _bettergi_user_id(script_config, user_id)
         items = one_dragon.list_user_custom_groups(
             root, script_id, user_id, one_dragon.launch_slot_name()
@@ -340,7 +340,7 @@ async def save_one_dragon_settings(
 async def set_plan_step_enabled(
     script_id: str, user_id: str, *, name: str, enabled: bool
 ) -> None:
-    """按实例名创建或修改步骤，再提交用户 Plan。"""
+    """按实例名创建或修改步骤，再提交账号 Plan。"""
 
     from app.task.BetterGI.tools import one_dragon_plan
 
@@ -394,7 +394,7 @@ def read_global_domain_settings(
 async def save_global_domain_settings(
     script_id: str, user_id: str | None, *, group_name: str, settings: dict
 ) -> None:
-    """保存秘境设置，保留用户副本与原生来源的分流顺序。"""
+    """保存秘境设置，保留账号副本与原生来源的分流顺序。"""
 
     script_config = _bettergi_script_config(script_id)
     root = _bettergi_root(script_config)
@@ -443,7 +443,7 @@ def read_global_stygian_settings(
 async def save_global_stygian_settings(
     script_id: str, user_id: str | None, *, group_name: str, settings: dict
 ) -> None:
-    """保存幽境设置，保留用户副本与原生来源的分流顺序。"""
+    """保存幽境设置，保留账号副本与原生来源的分流顺序。"""
 
     script_config = _bettergi_script_config(script_id)
     root = _bettergi_root(script_config)

@@ -16,7 +16,7 @@ export type UserConfigDirOut = {
      */
     message?: string;
     /**
-     * 用户配置目录绝对路径
+     * 账号配置目录绝对路径
      */
     path?: (string | null);
 };

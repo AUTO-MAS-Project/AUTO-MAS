@@ -90,7 +90,7 @@ class WhimboxManager(ScriptManagerBase):
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if not isinstance(script_config, WhimboxConfig):
-            return "脚本配置类型错误, 不是奇想盒类型"
+            return "托管配置类型错误, 不是奇想盒类型"
 
         if self.task_info.mode == "ScriptConfig":
             if not script_config.Info.RootPath:
@@ -106,11 +106,11 @@ class WhimboxManager(ScriptManagerBase):
                 try:
                     target_user_uid = uuid.UUID(target_user_id)
                 except ValueError:
-                    return "奇想盒用户不存在，请刷新后重试"
+                    return "奇想盒账号不存在，请刷新后重试"
                 if target_user_uid not in script_config.UserData:
-                    return "奇想盒用户不存在，请刷新后重试"
+                    return "奇想盒账号不存在，请刷新后重试"
 
-        # AutoProxy 模式只做用户列表可用性校验；安装哨兵放到 AutoProxyTask.check()
+        # AutoProxy 模式只做账号列表可用性校验；安装哨兵放到 AutoProxyTask.check()
         if self.task_info.mode == "AutoProxy":
             script_uid = uuid.UUID(self.script_info.script_id)
             if not self.script_info.user_list:
@@ -118,7 +118,7 @@ class WhimboxManager(ScriptManagerBase):
                     Config.ScriptConfig[script_uid].UserData.items()
                 )
             if not self.script_info.user_list:
-                return "当前没有可执行的用户，请先添加并启用用户"
+                return "当前没有可执行的账号，请先添加并启用账号"
 
         return "Pass"
 
@@ -129,11 +129,11 @@ class WhimboxManager(ScriptManagerBase):
         ] = await Config.ScriptConfig[script_uid].lock_x()
         self.script_config = Config.ScriptConfig[script_uid]
         if not isinstance(self.script_config, WhimboxConfig):
-            raise TypeError("脚本配置类型错误")
+            raise TypeError("托管配置类型错误")
 
-        # X 锁覆盖用户集合，运行时直接修改原配置。
+        # X 锁覆盖账号集合，运行时直接修改原配置。
         self.user_config = self.script_config.UserData
-        logger.success(f"{self.script_info.script_id} 已锁定，奇想盒用户配置已提取")
+        logger.success(f"{self.script_info.script_id} 已锁定，奇想盒账号配置已提取")
 
         if self.task_info.mode == "ScriptConfig":
             target_user_id = self.task_info.user_id or "Default"
@@ -314,7 +314,7 @@ class WhimboxManager(ScriptManagerBase):
                 if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                     await config_manager.flush()
             except Exception:
-                logger.opt(exception=True).warning("on_crash 保存用户配置失败")
+                logger.opt(exception=True).warning("on_crash 保存账号配置失败")
 
         with suppress(Exception):
             await Publisher.send(

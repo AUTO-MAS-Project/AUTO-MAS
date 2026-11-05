@@ -8,7 +8,7 @@ export type MSSConfig_Info = {
      */
     Controller?: (string | null);
     /**
-     * MaaFW 脚本名称
+     * MaaFW 托管名称
      */
     Name?: (string | null);
     /**
