@@ -121,7 +121,7 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.set_oknte()
 
         logger.info(f"启动 OK-NTE GUI 配置进程: {self.script_exe_path}")
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         self.wait_event.clear()
         # 配置 GUI 无参启动，不套用自动任务的 -t/-e 等自定义追踪条件。
         await self.oknte_process_manager.open_oknte(
@@ -186,12 +186,12 @@ class ScriptConfigTask(TaskExecuteBase):
         # 的任务前快照还原）；GUI 内的改动一律丢弃
         if self.view_only:
             logger.success("OK-NTE 查看结束（只读，不回写配置）")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         if self.mas_config_dir is None:
             # 原生来源 GUI 的保存属于原生来源，不能被 manager 的任务快照撤销。
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         self.mas_config_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -217,10 +217,10 @@ class ScriptConfigTask(TaskExecuteBase):
                 f"OK-NTE 配置已保存到: {self.mas_config_dir / self.script_config_path.name}"
             )
 
-        self.cur_user_item.status = "完成"
+        await self.cur_user_item.set_state(status="完成")
 
     async def on_crash(self, e: Exception) -> None:
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"OK-NTE GUI 配置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_oknte_process()

@@ -881,7 +881,7 @@ const {
   loadPathingTree,
 } = catalogs
 const gameClientSection = ref<InstanceType<typeof BettergiGameClientSection> | null>(null)
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId: userId.value }))
 const scriptName = ref(t('core.edit.bettergiScriptFallbackName'))
 
 const pageLoading = ref(true)

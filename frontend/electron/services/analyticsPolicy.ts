@@ -23,7 +23,7 @@ const script = [
 ]
 const runtime = ['off', 'managed', 'development', 'unknown']
 const updateSource = ['cnb', 'github', 'mirrorchyan', 'autosite', 'unknown']
-const mode = ['AutoProxy', 'ScriptConfig', 'Update', 'CycleRun', 'unknown']
+const mode = ['AutoProxy', 'ScriptConfig', 'ScriptView', 'Update', 'CycleRun', 'unknown']
 const screens = [
   'initialization',
   'home',
@@ -218,7 +218,17 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
   },
   queue_schedule_changed: {
     schedule_kind: ['fixed_time', 'interval', 'queue_time', 'cycle', 'startup', 'unknown'],
-    action: ['enable', 'disable', 'mode', 'interval', 'time', 'days', 'run_once', 'configure'],
+    action: [
+      'enable',
+      'disable',
+      'mode',
+      'interval',
+      'time',
+      'days',
+      'run_once',
+      'reset',
+      'configure',
+    ],
     outcome: ['success', 'failure'],
     duration_bucket: duration,
   },

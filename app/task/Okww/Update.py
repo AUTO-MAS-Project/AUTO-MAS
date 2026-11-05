@@ -62,7 +62,7 @@ class WuwaUpdateTask(TaskExecuteBase):
         await push_dispatch_log(self.script_info, line)
 
     async def main_task(self) -> None:
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         launcher = Path(str(self.script_config.Game.Path or "").strip())
         if not launcher.is_file():
             raise RuntimeError("请先在脚本配置中导入有效的鸣潮官方启动器")
@@ -79,7 +79,7 @@ class WuwaUpdateTask(TaskExecuteBase):
             await self._push_dispatch_log(
                 f"鸣潮已是最新版本: {update_info.release_version}"
             )
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         await self._push_dispatch_log(
@@ -94,13 +94,13 @@ class WuwaUpdateTask(TaskExecuteBase):
             on_progress=self._push_dispatch_log,
             full_sync_limit=max(limit_gb, 1) * 1024**3,
         )
-        self.cur_user_item.status = "完成"
+        await self.cur_user_item.set_state(status="完成")
 
     async def final_task(self) -> None:
         """一次性更新任务不持有需要释放的资源，结果状态由 main_task / on_crash 落定。"""
 
     async def on_crash(self, e: Exception) -> None:
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"鸣潮更新任务出现异常: {e}")
         with suppress(Exception):
             await Publisher.send(

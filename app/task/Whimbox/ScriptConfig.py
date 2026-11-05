@@ -69,7 +69,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self.config_surface = WheelAssetsConfigSurface(self.root_path)
 
     async def main_task(self) -> None:
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         # 会话进入时归档（捕捉「用户在 app 内修改前」的原生配置态）
         with suppress(Exception):
             self.config_surface.snapshot_entry()
@@ -90,11 +90,11 @@ class ScriptConfigTask(TaskExecuteBase):
             self.config_surface.snapshot_entry()
         if not self.crashed:
             logger.success("奇想盒原生来源配置会话已结束")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
 
     async def on_crash(self, e: Exception) -> None:
         self.crashed = True
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"奇想盒设置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_processes()

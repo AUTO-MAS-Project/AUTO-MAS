@@ -26,11 +26,11 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import replace
-from functools import cached_property, partial
+from functools import cached_property
 from typing import TYPE_CHECKING, Any
 
 from app.config import config_manager
-from app.core import Config, RuntimeTasks
+from app.core import Config
 from app.core.notify import community_content as _community_content
 from app.core.notify import dispatch as _notification_dispatch
 from app.core.notify import rendering as _notification_rendering
@@ -92,7 +92,7 @@ class NotificationManager:
                 render=_community_content.build_community_notification_payload,
                 enabled=lambda: Config.ToolsConfig.GameSign.NotifyEnabled,
                 report_failure=self.report_community_failure,
-                spawn=partial(RuntimeTasks.spawn, name="community-notification"),
+                background_group=lambda: self.tasks.community_group,
                 fast_path_seconds=NOTIFICATION_FAST_PATH_WAIT_SECONDS,
             )
         )
@@ -153,6 +153,7 @@ class NotificationManager:
 
     async def close(self) -> None:
         """宿主先回收通知任务，再释放已经使用的渲染、渠道和配置订阅。"""
+        await self.tasks.close()
         renderer = self.__dict__.pop("_renderer", None)
         if renderer is not None:
             renderer.close()
@@ -257,9 +258,11 @@ class NotificationManager:
         )
 
     def task_notification_batch(
-        self, *, task_id: str | None
+        self, *, task_id: str | None, coordinator: TaskReportCoordinator | None = None
     ) -> AbstractContextManager[None]:
-        return self.tasks.task_notification_batch(task_id=task_id)
+        return self.tasks.task_notification_batch(
+            task_id=task_id, coordinator=coordinator
+        )
 
     async def send_global(
         self,

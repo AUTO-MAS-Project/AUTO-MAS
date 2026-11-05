@@ -676,7 +676,11 @@ class MSSPlanConfig(WeeklyKeyPlan):
         return normalized_data
 
 
+type PlanConfigType = MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConfig
+
+
 __all__ = [
+    "PlanConfigType",
     "WeeklyKeyPlan",
     "MaaPlanConfig",
     "MaaEndPlanConfig",

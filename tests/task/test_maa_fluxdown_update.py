@@ -4,7 +4,6 @@ import asyncio
 import json
 import zipfile
 from datetime import datetime, timezone
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import httpx
@@ -20,6 +19,7 @@ from app.task.MAA.AutoProxy import AutoProxyTask, _without_maa_update_changes
 from app.task.MAA.tools import fluxdown_update as update
 from app.task.MAA.tools import resource_update as resource
 from app.task.MAA.tools import software_update as mirror
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 _request_release = update.request_maa_release
 

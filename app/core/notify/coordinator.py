@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from app.core.background_tasks import BackgroundTaskHandle
 from app.models.notification import NotifyPayload
 from app.models.notification.channel import DispatchResult, NotifyTarget
 from app.models.notification.community import CommunityNotificationResult
@@ -35,11 +36,13 @@ COMMUNITY_SIGN_EMPTY_RESULT_TEXT = "本次社区签到已结束，没有新的�
 def schedule_notification_feedback[T](
     feedback: Callable[[], Awaitable[None]],
     *,
-    spawn: Callable[[Coroutine[Any, Any, T]], asyncio.Task[T] | None],
+    spawn: Callable[
+        [Callable[[], Coroutine[Any, Any, T]]], BackgroundTaskHandle[T] | None
+    ],
     result: T,
     logger: Any,
     label: str,
-) -> asyncio.Task[T] | None:
+) -> BackgroundTaskHandle[T] | None:
     """统一注册与隔离反馈；后台返回值和任务所有权沿用调用方契约。"""
 
     async def report() -> T:
@@ -49,11 +52,9 @@ def schedule_notification_feedback[T](
             logger.warning(f"{label}反馈失败: {type(exc).__name__}")
         return result
 
-    coroutine = report()
     try:
-        return spawn(coroutine)
+        return spawn(report)
     except Exception as exc:
-        coroutine.close()
         logger.warning(f"{label}反馈注册失败: {type(exc).__name__}")
         return None
 
@@ -72,7 +73,9 @@ class TaskReportDependencies:
     prepare_targets: Callable[[], tuple[NotifyTarget, ...]]
     report_failure: Callable[[DispatchResult], Awaitable[None]]
     report_supplement_failure: CommunityFailureReporter
-    spawn: Callable[[Coroutine[Any, Any, None]], asyncio.Task[None] | None]
+    spawn: Callable[
+        [Callable[[], Coroutine[Any, Any, None]]], BackgroundTaskHandle[None] | None
+    ]
 
 
 class TaskReportCoordinator:
@@ -95,7 +98,7 @@ class TaskReportCoordinator:
         self.wait_expired = False
         self.result_unavailable = False
         self.task_finished = False
-        self.delivery_task: asyncio.Task[None] | None = None
+        self.delivery_task: BackgroundTaskHandle[None] | None = None
         self.reports_pending = 0
 
     def receive(self, results: tuple[CommunityNotificationResult, ...] | None) -> None:
@@ -158,7 +161,7 @@ class TaskReportCoordinator:
             return
         if self.delivery_task is not None and not self.delivery_task.done():
             return
-        self.delivery_task = self.dependencies.spawn(self._send_supplement())
+        self.delivery_task = self.dependencies.spawn(self._send_supplement)
 
     async def _send_supplement(self) -> None:
         # 与报告共用锁，即使签到在报告发送中到达，也只补发未收到摘要的渠道。

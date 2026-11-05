@@ -199,7 +199,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # 现场由 manager 的任务前快照还原）
         if self.task_info.view_only:
             logger.success("通用脚本查看结束（只读，不回写配置）")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         if not self.use_mas_config:
@@ -246,7 +246,7 @@ class ScriptConfigTask(TaskExecuteBase):
             )
 
     async def on_crash(self, e: Exception):
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         await Publisher.send(
             id=self.task_info.task_id,

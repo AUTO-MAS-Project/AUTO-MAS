@@ -68,6 +68,8 @@ description: >-
 
 前端任务同时加载 `mas-frontend-standards`；涉及 UI、表单、遮罩、反馈时再加 `mas-frontend-ui`。
 
+涉及调度接入、配置／查看会话、锁与取消时，同时加载 [mas-task-scheduler](../mas-task-scheduler/SKILL.md)。插件采用四级分发，旧 task 在 L2 交原 manager；接入时确认唯一锁所有者，不能让上层锁与 manager 自取锁未经适配便叠加。旧执行器的用户重建和粗粒度锁属于兼容例外，不是新增插件的设计模板。
+
 ## 落点自查
 
 新增 / 维护 `ScriptType` 时按需核对下列切面（**具体文件现场 grep 确认，不要照文档抄路径**）：配置与 schema、注册与 API（含 `TYPE_BOOK` 展示文案，漏则调度 KeyError）、任务模块、前端入口（Hub 分支 + 路由 + 创建流片段 + 类型 + 编辑页）、Electron 能力（仅当需注册表/文件系统/进程发现）、OpenAPI 生成代码（**禁止手改**）。

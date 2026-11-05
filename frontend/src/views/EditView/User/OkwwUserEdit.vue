@@ -397,7 +397,7 @@ const okwwImportLoading = ref(false)
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId: userId.value }))
 const scriptName = ref('ok-ww脚本')
 
 const pageLoading = ref(true)

@@ -57,8 +57,6 @@ logger = get_logger("SRC 脚本设置")
 class ScriptConfigTask(TaskExecuteBase):
     """脚本设置模式"""
 
-    wait_for_finalizer_on_cancel = True
-
     def __init__(
         self,
         script_info: ScriptItem,
@@ -304,14 +302,14 @@ class ScriptConfigTask(TaskExecuteBase):
         # manager 的任务前快照还原）；webui 内的改动一律丢弃
         if self.view_only:
             logger.success("SRC 查看结束（只读，不回写配置）")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         # 原生来源会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
         owner = self._mas_owner()
         if owner is None:
             logger.success("SRC 原生来源会话: 配置由脚本原生 GUI 保存")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         config_path = mas_config_dir(self.script_info.script_id, owner)
@@ -334,7 +332,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self.process_cleanup_success = True
 
     async def on_crash(self, e: Exception):
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         try:
             await asyncio.wait_for(

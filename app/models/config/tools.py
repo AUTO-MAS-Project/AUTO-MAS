@@ -133,12 +133,14 @@ class ToolsConfig(DomainEntry):
         )
 
     GameSign: GameSignFields = Field(default_factory=GameSignFields)
-    _game_sign_accounts: ConfigCollection = PrivateAttr(
-        default_factory=lambda: ConfigCollection.build([GameSignAccountGroup])
+    _game_sign_accounts: ConfigCollection[GameSignAccountGroup] = PrivateAttr(
+        default_factory=lambda: ConfigCollection[GameSignAccountGroup].build(
+            [GameSignAccountGroup]
+        )
     )
 
     @property
-    def GameSign_Accounts(self) -> ConfigCollection:
+    def GameSign_Accounts(self) -> ConfigCollection[GameSignAccountGroup]:
         return self._game_sign_accounts
 
     _game_sign_result_data: dict = PrivateAttr(default_factory=dict)

@@ -2,13 +2,13 @@
 
 import asyncio
 from datetime import datetime, timezone
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from app.task.MAA import manager
 from app.task.MAA.tools.update_errors import MaaUpdateUnsafeError
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 @pytest.fixture

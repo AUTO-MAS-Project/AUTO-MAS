@@ -514,7 +514,7 @@ const sharedPlan = reactive<HSRPlanData>(createDefaultPlan())
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 
 const scriptName = ref('')
 const scriptConfig = ref<HSRScriptConfig | null>(null)

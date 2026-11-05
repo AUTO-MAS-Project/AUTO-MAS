@@ -341,11 +341,11 @@ def main():
         await _service_obs_replay.ObsReplay.cleanup_temporary()
 
         from app.config import config_manager
-        from app.core import RuntimeTasks
+        from app.core import BackgroundTaskManager
 
-        RuntimeTasks.spawn(
-            maaend_config_service.preload_resources(), name="maaend-resource-preload"
-        )
+        BackgroundTaskManager.register_group(
+            "maaend-resource-preload", max_running=1, max_retained=1
+        ).spawn(maaend_config_service.preload_resources, retain_result=False)
         background_task: asyncio.Task | None = None
 
         async def initialize_background_services() -> None:
@@ -489,7 +489,12 @@ def main():
         async def shutdown_services() -> None:
             """完整的非 WS teardown，供 /close 与 lifespan 收尾共用（幂等）。"""
 
-            from app.core import Dispatcher, MainConnection, RuntimeTasks, Updater
+            from app.core import (
+                BackgroundTaskManager,
+                Dispatcher,
+                MainConnection,
+                Updater,
+            )
             from app.services import System
 
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
@@ -537,7 +542,7 @@ def main():
 
             await _service_obs_replay.ObsReplay.stop()
             # 已托管通知随运行时任务一起回收，完成后再关闭渲染器和渠道。
-            await RuntimeTasks.shutdown()
+            await BackgroundTaskManager.shutdown()
             await Notify.close()
 
             await config_manager.flush()

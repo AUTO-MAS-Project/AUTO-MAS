@@ -4,7 +4,6 @@ import asyncio
 import importlib
 import json
 from datetime import datetime, timezone
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -19,6 +18,7 @@ from app.task.MAA.tools.cultivate.types import (
     Progression,
     ProgressionSnapshot,
 )
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 @pytest.mark.parametrize(("level", "expected"), [(7, 0), (6, 7), (None, None)])
@@ -81,7 +81,7 @@ def finalizer(monkeypatch, tmp_path):
             Data=SimpleNamespace(ProxyTimes=0),
             commit=AsyncMock(),
         ),
-        task_info=SimpleNamespace(
+        history=SimpleNamespace(
             begin_user_history_capture=Mock(),
             save_user_history=AsyncMock(),
         ),

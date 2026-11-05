@@ -12,7 +12,7 @@ export type QueueConfig_Info = {
      */
     AfterAccomplishDelay?: (number | null);
     /**
-     * 是否为循环队列: 定时与循环互斥, 循环队列按队列项各自的周期持续运行
+     * 是否启用队列循环触发，可与定时和软件启动触发同时启用
      */
     CycleEnabled?: (boolean | null);
     /**
@@ -20,7 +20,7 @@ export type QueueConfig_Info = {
      */
     IfScriptAfterTask?: (boolean | null);
     /**
-     * 队列级运行前脚本: 一次运行只执行一次, 循环队列在整个运行期间不重复执行
+     * 队列级运行前脚本: 每次任务快照开始时执行一次
      */
     IfScriptBeforeTask?: (boolean | null);
     /**

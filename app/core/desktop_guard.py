@@ -198,9 +198,7 @@ def _task_running() -> bool:
     try:
         from app.core import TaskManager
 
-        return any(
-            info.mode != "ScriptConfig" for info in TaskManager.task_info.values()
-        )
+        return any(info.mode == "AutoProxy" for info in TaskManager.task_info.values())
     except Exception as exc:
         _warn_once(f"查询任务状态失败，按有任务在跑处理: {exc}")
         return True

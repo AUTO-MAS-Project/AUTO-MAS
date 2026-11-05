@@ -19,6 +19,8 @@
 #   Contact: DLmaster_361@163.com
 
 
+from typing import TypedDict
+
 from app.utils import PLAN_CONSUMER_VALUES
 
 from .emulator import *
@@ -32,7 +34,7 @@ from .shared import (
 )
 from .tools import *
 
-CLASS_BOOK = {
+CLASS_BOOK: dict[str, type[ScriptConfigType]] = {
     "MAA": MaaConfig,
     "MaaEnd": MaaEndConfig,
     "SRC": SrcConfig,
@@ -49,7 +51,17 @@ CLASS_BOOK = {
     "MSS": MSSConfig,
 }
 
-PLAN_BOOK = {
+
+class _PlanRegistration(TypedDict):
+    create_type: str
+    config_class: type[PlanConfigType]
+    consumer: str
+    script_class: type[ScriptConfigType]
+    field_group: str
+    field_name: str
+
+
+PLAN_BOOK: dict[str, _PlanRegistration] = {
     "MaaPlanConfig": {
         "create_type": "MaaPlan",
         "config_class": MaaPlanConfig,

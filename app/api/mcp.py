@@ -71,6 +71,7 @@ MCP_INCLUDED_OPERATIONS = (
     "update_time_set_api_queue_time_update_post",
     "reorder_time_set_api_queue_time_order_post",
     "get_task_runtime_snapshot_api_dispatch_runtime_snapshot_get",
+    "get_tasks_api_dispatch_get_post",
     "get_task_status_api_dispatch_task__task_id__get",
     "add_task_api_dispatch_start_post",
     "stop_task_api_dispatch_stop_post",

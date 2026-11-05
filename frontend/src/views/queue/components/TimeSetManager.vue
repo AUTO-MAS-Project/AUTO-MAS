@@ -1,11 +1,15 @@
 <template>
-  <a-card :title="t('core.queue.time.cardTitle')" class="queue-manager-card time-set-card">
+  <a-card
+    :title="t('core.queue.time.cardTitle')"
+    class="queue-manager-card time-set-card"
+    :class="{ 'time-set-disabled': props.disabled }"
+  >
     <template #extra>
       <a-space>
         <a-button
           type="primary"
           :loading="loading"
-          :disabled="!props.queueId || props.queueId.trim() === ''"
+          :disabled="props.disabled || !props.queueId || props.queueId.trim() === ''"
           @click="addTimeSet"
         >
           <template #icon>
@@ -20,7 +24,7 @@
       v-model="timeSets"
       group="timeSets"
       item-key="id"
-      :disabled="loading"
+      :disabled="loading || props.disabled"
       :busy="loading"
       @end="onDragEnd"
     >
@@ -38,79 +42,37 @@
           <DragHandle :title="t('core.queue.item.dragSort')" />
         </div>
         <div class="row-cell index-cell">{{ index + 1 }}</div>
-        <div class="row-cell status-cell">
-          <a-select
-            v-model:value="record.enabled"
-            size="small"
-            style="width: 80px"
-            class="status-select"
-            @change="updateTimeSetStatus(record)"
-          >
-            <a-select-option :value="true">{{ t('core.queue.time.enabled') }}</a-select-option>
-            <a-select-option :value="false">{{ t('core.queue.time.disabled') }}</a-select-option>
-          </a-select>
-        </div>
-        <div class="row-cell days-cell">
-          <a-select
-            v-model:value="record.days"
-            mode="multiple"
-            size="small"
-            style="width: 100%"
-            :placeholder="t('core.queue.time.selectDays')"
-            :disabled="loading"
-            :max-tag-count="7"
-            :bordered="false"
-            class="days-select"
-            @change="updateTimeSetDays(record)"
-          >
-            <a-select-option value="Monday">{{ t('core.queue.time.Monday') }}</a-select-option>
-            <a-select-option value="Tuesday">{{ t('core.queue.time.Tuesday') }}</a-select-option>
-            <a-select-option value="Wednesday">{{
-              t('core.queue.time.Wednesday')
-            }}</a-select-option>
-            <a-select-option value="Thursday">{{ t('core.queue.time.Thursday') }}</a-select-option>
-            <a-select-option value="Friday">{{ t('core.queue.time.Friday') }}</a-select-option>
-            <a-select-option value="Saturday">{{ t('core.queue.time.Saturday') }}</a-select-option>
-            <a-select-option value="Sunday">{{ t('core.queue.time.Sunday') }}</a-select-option>
-          </a-select>
-        </div>
-        <div class="row-cell time-cell">
-          <a-time-picker
-            :value="record.timeValue"
-            format="HH:mm"
-            :placeholder="t('core.queue.time.selectTime')"
-            size="small"
-            :disabled="loading"
-            @change="updateTimeSetTime(record, $event)"
-          />
-        </div>
-        <div class="row-cell actions-cell">
-          <a-space>
-            <a-popconfirm
-              :title="t('core.queue.time.deleteConfirm')"
-              :ok-text="t('core.queue.ok')"
-              :cancel-text="t('core.queue.cancel')"
-              @confirm="deleteTimeSet(record.id)"
-            >
-              <a-button size="middle" danger>
-                <DeleteOutlined />
-                {{ t('core.queue.del') }}
-              </a-button>
-            </a-popconfirm>
-          </a-space>
-        </div>
+        <TimeSetRow
+          :record="record"
+          :disabled="loading || props.disabled"
+          @enabled="
+            value => {
+              record.enabled = value
+              updateTimeSetStatus(record)
+            }
+          "
+          @days="
+            value => {
+              record.days = value
+              updateTimeSetDays(record)
+            }
+          "
+          @time="value => updateTimeSetTime(record, value)"
+          @remove="deleteTimeSet(record.id)"
+        />
       </template>
     </DraggableTableShell>
   </a-card>
 </template>
 
 <script setup lang="ts">
+import TimeSetRow from './TimeSetRow.vue'
 import DragHandle from '@/components/DragHandle.vue'
 import DraggableTableShell from './DraggableTableShell.vue'
 import { useI18n } from 'vue-i18n'
 import { ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import { Service } from '@/composables/useTimeSetApi'
 import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
@@ -122,6 +84,7 @@ const logger = window.electronAPI.getLogger('定时项管理')
 interface Props {
   queueId: string
   timeSets: any[]
+  disabled?: boolean
 }
 
 const props = defineProps<Props>()
@@ -407,6 +370,14 @@ const onDragEnd = async (evt: any) => {
 <style scoped src="./queueManager.css"></style>
 
 <style scoped>
+.time-set-disabled :deep(.drag-handle) {
+  cursor: not-allowed;
+  color: var(--ant-color-text-disabled);
+}
+
+.time-set-disabled :deep(.ant-picker-input > input) {
+  color: var(--ant-color-text-disabled) !important;
+}
 .time-set-card :deep(.ant-btn) {
   padding: 0 12px;
 }
@@ -595,23 +566,12 @@ const onDragEnd = async (evt: any) => {
 
 .days-cell {
   flex: 4;
-  min-width: 240px;
+  min-width: 0;
 }
 
 .time-cell {
   flex: 1;
   min-width: 120px;
   max-width: 200px;
-}
-
-/* 执行周期选择器样式优化 */
-.days-select :deep(.ant-select-selection-item) {
-  background: transparent !important;
-  border: none !important;
-  padding-right: 4px !important;
-}
-
-.days-select :deep(.ant-select-selection-item-remove) {
-  display: none !important;
 }
 </style>

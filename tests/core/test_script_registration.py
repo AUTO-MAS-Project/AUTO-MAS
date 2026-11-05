@@ -3,20 +3,21 @@
 import asyncio
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
-from uuid import uuid4
 
 import pytest
 
 from app.config import ConfigCollection
 from app.core.config.manager import AppConfig
-from app.core.task_manager.manager import Task, TaskInfo, _TaskManager
-from app.models.config import GeneralConfig, GeneralUserConfig
+from app.core.task_manager import _TaskManager
+from app.models.config import GeneralConfig, GeneralUserConfig, ScriptConfigType
 from app.models.script_contracts import ScriptConfigHandler
-from app.models.task import ScriptItem
+from app.models.task import ScriptItem, TaskItem, TaskTriggerReason
 from app.task.registration import ScriptRegistration, build_script_capabilities
 from app.task.restore_registry import RestorePoolResolver
+from app.task.script_expander import ScriptExpander
 from app.utils.common.config.restore import ConfigRestorePool
+from tests.core.test_task_tree_dispatch import Builtin
+from tests.core.test_task_tree_dispatch import scheduler as scheduler
 
 
 class AdapterConfig(GeneralConfig):
@@ -32,7 +33,7 @@ def declaration(entry_type=AdapterConfig, **changes):
         ScriptRegistration(
             config_type=entry_type,
             run_types=(entry_type,),
-            manager_factory=lambda item, context: (item, context),
+            manager_factory=lambda item: item,
             create_config_handler=lambda: ScriptConfigHandler(
                 user_config_class=GeneralUserConfig
             ),
@@ -52,7 +53,7 @@ def host(capabilities):
     config.config_path = config.work_path / "config"
     config._script_config_handlers = {}
     config._restore_pool_resolver = None
-    config.ScriptConfig = ConfigCollection.build(
+    config.ScriptConfig = ConfigCollection[ScriptConfigType].build(
         [AdapterConfig, DerivedAdapterConfig, GeneralConfig]
     )
     config.QueueConfig = {}
@@ -63,21 +64,17 @@ def host(capabilities):
 
 
 def task(factories):
-    return Task(
-        TaskInfo("AutoProxy", "test", None, None, None), [], manager_factories=factories
-    )
+    dispatcher = _TaskManager()
+    dispatcher.bind_manager_factories(factories)
+    return ScriptExpander(TaskItem(), dispatcher)
 
 
-def build(
-    task, config, *, root_paths=(), emulator_key=None, owner="owner", script_uid=None
-):
-    return task._build_task_item(
-        ScriptItem(script_id="adapter", name="adapter", status="等待"),
-        config,
-        script_uid=script_uid or uuid4(),
-        reservation_owner=owner,
-        root_paths=root_paths,
-        emulator_key=emulator_key,
+def build(task, config):
+    factory = task.dispatcher.manager_factories.get(type(config))
+    return (
+        factory(ScriptItem(script_id="adapter", name="adapter", status="等待"))
+        if factory is not None
+        else None
     )
 
 
@@ -104,7 +101,7 @@ def test_independent_matching_orders_and_exact_runtime():
             is dict(caps.config_handlers)[AdapterConfig]
         )
         assert caps.resolve_restore_pools(derived) is child_pool
-        assert build(task(caps.manager_factories), derived)[0].script_id == "adapter"
+        assert build(task(caps.manager_factories), derived).script_id == "adapter"
     caps = build_script_capabilities([parent], expected_types=[AdapterConfig])
     assert build(task(caps.manager_factories), DerivedAdapterConfig()) is None
     assert caps.resolve_restore_pools(DerivedAdapterConfig()) is parent_pool
@@ -159,38 +156,6 @@ def test_explicit_unsupported_is_distinct_from_missing():
         caps.manager_factories[GeneralConfig] = None
 
 
-def test_reservations_keep_task_owner_roots_and_emulator(tmp_path):
-    caps = build_script_capabilities([declaration()], expected_types=[AdapterConfig])
-    runner = task(caps.manager_factories)
-    root = tmp_path / "initial"
-    extra = tmp_path / "extra"
-    sid = uuid4()
-    other = uuid4()
-    assert runner.script_reservations.try_acquire(
-        sid, "owner", root_paths=(root,), emulator_key="emulator"
-    )
-    item, context = build(
-        runner,
-        AdapterConfig(),
-        root_paths=(root,),
-        emulator_key="emulator",
-        script_uid=sid,
-    )
-    assert context.root_paths == (root,)
-    assert context.reserve_root(extra)
-    assert not runner.script_reservations.try_acquire(
-        other, "other", root_paths=(extra,)
-    )
-    assert not runner.script_reservations.try_acquire(
-        other, "other", emulator_key="emulator"
-    )
-    assert not runner.script_reservations.release(sid, "other")
-    assert runner.script_reservations.release(sid, "owner")
-    assert runner.script_reservations.try_acquire(
-        other, "other", root_paths=(root, extra), emulator_key="emulator"
-    )
-
-
 @pytest.mark.asyncio
 async def test_test_adapter_three_lines_and_two_hosts_share_no_dependencies(
     tmp_path, monkeypatch
@@ -220,7 +185,7 @@ async def test_test_adapter_three_lines_and_two_hosts_share_no_dependencies(
         return build_script_capabilities(
             [
                 declaration(
-                    manager_factory=lambda item, context: label,
+                    manager_factory=lambda item: label,
                     create_config_handler=lambda: ScriptConfigHandler(
                         user_config_class=GeneralUserConfig,
                         prepare_user_update=prepare,
@@ -293,53 +258,41 @@ async def test_associated_hook_commits_and_failure_stay_in_same_transaction(erro
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["AutoProxy", "CycleRun"])
-async def test_public_task_creation_passes_current_host_factories(mode, monkeypatch):
-    from unittest.mock import AsyncMock, Mock
+@pytest.mark.parametrize("source", [TaskTriggerReason.MANUAL, TaskTriggerReason.TIMED])
+async def test_public_task_creation_passes_current_host_factories(scheduler, source):
+    _, _, _, sid = scheduler
+    constructed = []
 
-    import app.core.task_manager.manager as scheduler
-    from app.models.config import QueueItem
-    from app.models.schema import WSTaskScriptIdentityData
+    def build_builtin(item):
+        constructed.append(item)
+        return Builtin(item)
 
-    caps = build_script_capabilities([declaration()], expected_types=[AdapterConfig])
+    caps = build_script_capabilities(
+        [declaration(GeneralConfig, manager_factory=build_builtin)],
+        expected_types=[GeneralConfig],
+    )
     manager = _TaskManager()
     manager.bind_manager_factories(caps.manager_factories)
-    script_uid, queue_uid, item_uid = uuid4(), uuid4(), uuid4()
-    item = QueueItem()
-    item.Info.ScriptId = script_uid
-    queue = SimpleNamespace(
-        Info=SimpleNamespace(CycleEnabled=True), QueueItem={item_uid: item}
+    uid = await manager.start(
+        "AutoProxy",
+        {
+            0: {
+                "uid": "-",
+                "children": {0: {"uid": str(sid)}},
+            }
+        },
+        trigger=source,
     )
-    config = SimpleNamespace(
-        ScriptConfig={script_uid: AdapterConfig()},
-        QueueConfig={queue_uid: queue},
-        running_cycle_queue_ids=set(),
-        get_script_task_resources=lambda script: SimpleNamespace(
-            root_paths=(), emulator=None
-        ),
-    )
-    monkeypatch.setattr(scheduler, "Config", config)
-    monkeypatch.setattr(
-        manager,
-        "_script_identity",
-        lambda uid: WSTaskScriptIdentityData(scriptId=str(uid), scriptType="test"),
-    )
-    monkeypatch.setattr(
-        manager, "_queue_script_entries", lambda uid: [(script_uid, [])]
-    )
-    monkeypatch.setattr(Task, "execute", Mock())
-    monkeypatch.setattr(manager, "_schedule_clean_task", Mock())
-    monkeypatch.setattr(scheduler.Publisher, "send", AsyncMock())
-    uid = await manager.add_task(mode, str(queue_uid))
     runner = manager.task_handler[uid]
-    assert runner.task_info.is_cycle is (mode == "CycleRun")
-    assert build(runner, config.ScriptConfig[script_uid])[0].script_id == "adapter"
-    assert runner._manager_factories is caps.manager_factories
+    await asyncio.wait_for(runner.accomplish.wait(), 3)
+    assert runner.task_info.status == "success"
+    assert constructed[0] is runner.task_info.script_list[0]
+    assert runner.dispatcher.manager_factories == caps.manager_factories
 
 
 @pytest.mark.asyncio
 async def test_unbound_task_manager_fails_before_mutating_task_state():
     manager = _TaskManager()
     with pytest.raises(RuntimeError):
-        await manager.add_task("AutoProxy", str(uuid4()))
+        await manager.start("AutoProxy", {})
     assert manager.task_info == {} and manager.task_handler == {}

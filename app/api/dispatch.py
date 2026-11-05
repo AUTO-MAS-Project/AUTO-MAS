@@ -28,7 +28,9 @@ from typing import (
 from fastapi import APIRouter, Body
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
+    field_validator,
 )
 
 from app.core import Config, TaskManager
@@ -36,8 +38,11 @@ from app.models.schema import (
     OutBase,
     PowerCountdownSnapshot,
     TaskRuntimeSnapshot,
+    TaskSelectionNode,
     TaskStatusOut,
+    TaskTreeData,
 )
+from app.models.task import TaskMode
 from app.services import System
 from app.utils import get_logger
 
@@ -49,35 +54,34 @@ class DispatchIn(BaseModel):
     )
 
 
-class TaskCreateIn(DispatchIn):
-    mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"] = Field(
+class TaskCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: TaskMode
+    tasks: dict[int, TaskSelectionNode] = Field(
         ...,
-        description="任务模式; CycleRun 为循环运行, 仅接受循环队列, 其脚本按 AutoProxy 执行",
+        min_length=1,
+        max_length=1,
+        description="单入口任务要求树，顶层仅包含索引 0",
     )
-    resumeFromScriptId: str | None = Field(
-        default=None,
-        description="可选：仅对队列任务生效；从指定脚本ID开始执行（之前的脚本将被标记为跳过）",
-    )
-    userId: str | None = Field(
-        default=None,
-        description="可选：仅对脚本的自动代理任务生效；只运行该脚本下的这一个用户",
-    )
-    userIds: list[str] | None = Field(
-        default=None,
-        description="可选：仅对脚本的自动代理任务生效；只运行指定的多个用户",
-    )
-    queueUserIds: dict[str, list[str]] | None = Field(
-        default=None,
-        description="可选：仅对队列任务生效；按脚本ID指定本次要运行的用户；未列出的脚本不限, 空列表表示该脚本本次整项跳过",
-    )
-    viewOnly: bool = Field(
-        default=False,
-        description="可选：仅 ScriptConfig 生效；只读查看会话（不注入基线、不回读字段），用于预览历史备份",
-    )
-    instanceIdx: int | None = Field(
-        default=None,
-        description="可选：仅 ScriptConfig 生效；直控指定会话窗口打开的原生实例（临时切换活跃，会话结束还原）",
-    )
+
+    @field_validator("tasks", mode="before")
+    @classmethod
+    def validate_indices(cls, value):
+        return TaskSelectionNode.validate_indices(value)
+
+
+class TaskGetIn(BaseModel):
+    taskId: str | None = None
+
+
+class TaskIndexItem(BaseModel):
+    uid: str
+
+
+class TaskGetOut(OutBase):
+    index: list[TaskIndexItem] = Field(default_factory=list)
+    # Config 框架在运行时生成完整树的契约类，静态检查器无法把工厂结果作为类型。
+    data: dict[str, TaskTreeData] = Field(default_factory=dict)  # type: ignore[valid-type]  # pyright: ignore[reportInvalidTypeForm]
 
 
 class TaskCreateOut(OutBase):
@@ -150,6 +154,20 @@ async def get_task_status(task_id: str) -> TaskStatusOut:
     return result
 
 
+@router.post("/get", tags=["Get"], response_model=TaskGetOut)
+async def get_tasks(body: TaskGetIn = Body(...)) -> TaskGetOut:
+    ids = [body.taskId] if body.taskId else [str(uid) for uid in TaskManager.task_info]
+    try:
+        data = {
+            uid: tree for uid in ids if (tree := TaskManager.get_task(uid)) is not None
+        }
+    except ValueError:
+        return TaskGetOut(code=400, status="error", message="任务 ID 格式错误")
+    if body.taskId and not data:
+        return TaskGetOut(code=404, status="error", message="任务不存在")
+    return TaskGetOut(index=[TaskIndexItem(uid=uid) for uid in data], data=data)
+
+
 @router.get(
     "/power/countdown-snapshot",
     tags=["Get"],
@@ -173,16 +191,7 @@ async def get_power_countdown_snapshot() -> PowerCountdownSnapshot:
 async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
 
     try:
-        task_id = await TaskManager.add_task(
-            mode=task.mode,
-            id=task.taskId,
-            resume_from_script_id=task.resumeFromScriptId,
-            user_id=task.userId,
-            user_ids=task.userIds,
-            queue_user_ids=task.queueUserIds,
-            view_only=task.viewOnly,
-            instance_idx=task.instanceIdx,
-        )
+        task_id = await TaskManager.start(task.mode, task.tasks)
     except Exception as e:
         logger.opt(exception=True).warning(f"add_task失败: {type(e).__name__}: {e}")
         return TaskCreateOut(
@@ -230,7 +239,7 @@ async def get_power() -> PowerOut:
             message=f"{type(e).__name__}: {str(e)}",
             signal="NoAction",
         )
-    return PowerOut(signal=signal)
+    return PowerOut.model_validate({"signal": signal})
 
 
 @router.post(

@@ -1,7 +1,6 @@
 """NTE 托管采集与原有同步交付的输出对照，仅使用本地日志样例。"""
 
 import asyncio
-from types import SimpleNamespace
 
 import pytest
 
@@ -9,6 +8,7 @@ from app.task.general.manager import GeneralManager
 from app.task.OkNte.AutoProxy import AutoProxyTask
 from app.task.OkNte.push_log import OKNTE_PUSH_RULES, oknte_resolve
 from app.utils import log_box
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 def build_user_result_text(users, has_uncompleted):
@@ -43,6 +43,8 @@ def test_nte_reports_match_existing_collect(tmp_path, monkeypatch, mode, lines):
         for _ in range(2)
     ]
     proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.user_state = lambda user: user
+    proxy.callbacks = SimpleNamespace()
     proxy.cur_user_item = current
     proxy._prepare_log_details(
         path, mode=mode, enabled=mode != "关闭", rotated_name=None

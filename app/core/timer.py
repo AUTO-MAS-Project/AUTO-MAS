@@ -27,6 +27,7 @@ from typing import Any
 
 from app.core import Community, Notify
 from app.models.notification.community import community_notification_results
+from app.models.task import TaskMode, TaskTriggerReason
 from app.services import telemetry as _service_telemetry
 from app.utils import UTC4, UTC8, get_logger
 
@@ -83,6 +84,8 @@ def _timed_slots_in_window(
 class _MainTimer:
     def __init__(self):
         self.started = False
+        self.startup_task: asyncio.Task[None] | None = None
+        self._startup_dispatched = False
         self.second_timer: asyncio.Task[None] | None = None
         self.hour_timer: asyncio.Task[None] | None = None
         self.calendar_timer: asyncio.Task[None] | None = None
@@ -104,6 +107,13 @@ class _MainTimer:
             logger.warning("主业务定时器仅能启动一次，无法重复启动")
             return
 
+        if not self._startup_dispatched:
+            self._startup_dispatched = True
+            self.startup_task = asyncio.create_task(
+                self._run_loop_step(
+                    "启动队列检查", partial(self.timed_start, startup=True)
+                )
+            )
         self.second_timer = asyncio.create_task(self.second_task())
         self.hour_timer = asyncio.create_task(self.hour_task())
         self.calendar_timer = asyncio.create_task(self.calendar_task())
@@ -123,6 +133,7 @@ class _MainTimer:
         tasks = [
             task
             for task in (
+                self.startup_task,
                 self.second_timer,
                 self.hour_timer,
                 self.calendar_timer,
@@ -144,6 +155,8 @@ class _MainTimer:
         """每秒定期任务"""
         logger.info("每秒定期任务启动")
 
+        if self.startup_task is not None:
+            await self.startup_task
         while True:
             await self._run_loop_step("定时启动检查", self.timed_start)
             await self._run_loop_step(
@@ -243,7 +256,7 @@ class _MainTimer:
                 logger.info(f"{name}已恢复正常")
 
     @logger.catch()
-    async def timed_start(self):
+    async def timed_start(self, *, startup: bool = False):
         """定时启动代理任务
 
         以「上次检查 → 本次检查」的本地墙钟区间判定到点：计划时刻落在
@@ -275,47 +288,47 @@ class _MainTimer:
             if key[2].date() >= now_wall.date() - timedelta(days=1)
         }
 
-        for uid, queue in Config.QueueConfig.items():
-            # 检查区间已前移，一个队列的配置读不出来不能连带丢掉其余队列的到点
+        for uid, queue in list(Config.QueueConfig.items()):
             try:
                 due = self._due_timed_slots(
                     uid, queue, prev_wall, now_wall, real_elapsed
                 )
-            except Exception as e:
-                logger.opt(exception=e).error(f"读取队列定时设置失败：{uid}")
-                continue
-
-            if not due:
-                continue
-
-            # 同一队列一次检查内只唤起一次，多个到点的时间槽一并记为已触发
-            for time_set_id, planned in due:
-                self._timed_fired.add((str(uid), time_set_id, planned))
-            planned = max(planned for _, planned in due)
-
-            if now_wall - planned >= timedelta(minutes=1):
-                logger.info(f"补跑错过的定时 {planned:%Y-%m-%d %H:%M}：{uid}")
-            logger.info(f"定时唤起任务：{uid}")
-            # 检查区间已前移，一个队列唤起失败不能连带跳过其余队列
-            try:
-                await TaskManager.add_task(
-                    "AutoProxy",
-                    str(uid),
-                    new_task_info={
-                        "queueId": str(uid),
-                        "taskName": f"队列 - {queue.Info.Name}",
-                        "taskType": "定时代理",
-                    },
-                    trigger_source="scheduled_task",
+                startup_due = startup and (
+                    queue.Info.StartUpMode == "Always"
+                    or (
+                        queue.Info.StartUpMode == "DailyFirst"
+                        and queue.Data.LastStartupTime.astimezone(now.tzinfo).date()
+                        != now.date()
+                    )
                 )
-                await queue.update(
-                    type(queue).model_validate(
-                        {"Data": {"LastTimedStart": planned.replace(tzinfo=now.tzinfo)}}
-                    ),
-                    check_visibility=False,
+                next_cycle = queue.Cycle.NextRunAt
+                cycle_due = queue.Info.CycleEnabled and (
+                    next_cycle is None or next_cycle <= now
                 )
-            except Exception as e:
-                logger.opt(exception=e).error(f"定时唤起任务失败：{uid}")
+                # 各触发条件独立创建普通任务；每项任务只有一个原因，不合并派发。
+                for reason, matched in (
+                    (TaskTriggerReason.STARTUP, startup_due),
+                    (TaskTriggerReason.TIMED, bool(due)),
+                    (TaskTriggerReason.CYCLE, cycle_due),
+                ):
+                    if not matched:
+                        continue
+                    try:
+                        await TaskManager.start(
+                            TaskMode.AUTO_PROXY,
+                            {0: {"uid": str(uid)}},
+                            trigger=reason,
+                        )
+                    except Exception as error:
+                        logger.opt(exception=error).error(
+                            f"队列 {reason.value} 触发失败：{uid}"
+                        )
+                        continue
+                    if reason == TaskTriggerReason.TIMED:
+                        for time_set_id, planned in due:
+                            self._timed_fired.add((str(uid), time_set_id, planned))
+            except Exception as error:
+                logger.opt(exception=error).error(f"队列触发失败：{uid}")
 
     def _due_timed_slots(
         self,
@@ -327,14 +340,10 @@ class _MainTimer:
     ) -> list[tuple[str, datetime]]:
         """列出队列在本次检查区间内到点、且仍在补跑窗口内的 (时间槽, 计划时刻)。"""
 
-        # 循环队列由队列项各自的周期驱动，定时设置对它不生效
-        if queue.Info.CycleEnabled:
-            return []
-
         if not queue.Info.TimeEnabled:
             return []
 
-        last_timed_start = queue.Data.LastTimedStart.replace(tzinfo=None)
+        last_timed_start = queue.Data.LastStartTime.replace(tzinfo=None)
         due: list[tuple[str, datetime]] = []
 
         for time_set_id, time_set in queue.TimeSet.items():
@@ -349,8 +358,8 @@ class _MainTimer:
 
                 key = (str(uid), str(time_set_id), planned)
                 # 避免重复调起任务：本次运行内按时间槽与计划时刻去重（当天改了时间的
-                # 槽按新时刻照常触发），重启后靠持久化的 LastTimedStart 兜住同一分钟
-                if key in self._timed_fired or (planned == last_timed_start):
+                # 槽按新时刻照常触发），重启后靠持久化的 LastStartTime 兜住已提交的时间点
+                if key in self._timed_fired or planned <= last_timed_start:
                     continue
 
                 # 迟到时长按真实流逝时间封顶：春季跳表时墙钟跨过一小时，真实只过了一瞬

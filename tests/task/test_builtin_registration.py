@@ -17,7 +17,6 @@ from app.core.config.manager import AppConfig
 from app.models import config as models
 from app.models.task import ScriptItem
 from app.task.builtin_registration import build_builtin_script_capabilities
-from app.task.registration import ManagerBuildContext
 
 # 固定迁移前的能力契约；可选钩子缺省是明确不支持，不要求各专项长成同一形状。
 EXPECTED = [
@@ -29,7 +28,6 @@ EXPECTED = [
             "initialize",
             "validate_update",
             "import_config",
-            "task_resources",
             "emulator_binding",
         },
     ),
@@ -38,13 +36,13 @@ EXPECTED = [
         "Maa",
         "MAA",
         "MaaManager",
-        {"prepare_user_update", "task_resources", "emulator_binding"},
+        {"prepare_user_update", "emulator_binding"},
     ),
     (
         "Src",
         "SRC",
         "SrcManager",
-        {"prepare_user_update", "task_resources", "emulator_binding"},
+        {"prepare_user_update", "emulator_binding"},
     ),
     (
         "ZzzOd",
@@ -62,15 +60,14 @@ EXPECTED = [
             "prepare_user_update",
             "prepare_user_read",
             "initialize_user",
-            "task_resources",
             "emulator_binding",
         },
     ),
     ("Okww", "Okww", "OkwwManager", {"initialize_user", "import_config"}),
-    ("General", "general", "GeneralManager", {"task_resources", "emulator_binding"}),
+    ("General", "general", "GeneralManager", {"emulator_binding"}),
     ("OkNte", "OkNte", "OkNteManager", set()),
     ("HSR", "HSR", "HSRManager", set()),
-    ("BAAH", "BAAH", "BAAHManager", {"task_resources", "emulator_binding"}),
+    ("BAAH", "BAAH", "BAAHManager", {"emulator_binding"}),
     ("Whimbox", "Whimbox", "WhimboxManager", set()),
 ]
 
@@ -117,8 +114,6 @@ def test_all_builtin_capabilities_and_lazy_factory_selection(monkeypatch):
         assert handler.supports_mod_avd is (name in {"Maa", "MaaFW"})
         if handler.emulator_binding is not None:
             assert len(handler.emulator_binding.read(entry)) == 2
-        resources = handler_host.get_script_task_resources(entry)
-        assert isinstance(resources.root_paths, tuple)
         assert handler_host.get_script_emulator_binding(entry) == (
             handler.emulator_binding.read(entry) if handler.emulator_binding else None
         )
@@ -127,9 +122,7 @@ def test_all_builtin_capabilities_and_lazy_factory_selection(monkeypatch):
         )
         module = ModuleType(module_name)
         constructor = Mock(return_value=object())
-        setattr(
-            module, "build_src_manager" if name == "Src" else manager_name, constructor
-        )
+        setattr(module, manager_name, constructor)
         monkeypatch.setitem(sys.modules, module_name, module)
         run_types = (
             (entry_type, models.M9AConfig, models.MSSConfig)
@@ -139,21 +132,8 @@ def test_all_builtin_capabilities_and_lazy_factory_selection(monkeypatch):
         for run_type in run_types:
             expected_run_types.add(run_type)
             item = ScriptItem(script_id="test", name="test", status="等待")
-            context = ManagerBuildContext(
-                root_paths=(Path("initial"),), reserve_root=lambda p: True
-            )
-            assert (
-                caps.manager_factories[run_type](item, context)
-                is constructor.return_value
-            )
-            if name == "Src":
-                constructor.assert_called_with(
-                    item,
-                    root_paths=context.root_paths,
-                    reserve_root=context.reserve_root,
-                )
-            else:
-                constructor.assert_called_with(item)
+            assert caps.manager_factories[run_type](item) is constructor.return_value
+            constructor.assert_called_with(item)
             pools = importlib.import_module(
                 f"app.task.{folder}.tools.restore_service"
             ).RESTORE_POOLS
@@ -196,7 +176,7 @@ async def test_family_uses_specific_user_class_before_handler(entry_type):
         ),
     )
     config = config_host(caps)
-    config.ScriptConfig = ConfigCollection.build([entry_type])
+    config.ScriptConfig = ConfigCollection[models.ScriptConfigType].build([entry_type])
     await config.ScriptConfig.activate()
     sid = config.ScriptConfig.add(entry_type)
     await config.ScriptConfig.commit()
@@ -251,7 +231,7 @@ async def test_mfw_cleanup_applies_to_every_builtin_but_reconcile_only_family(
     )
     config = config_host(capabilities())
     entry_type = getattr(models, name + "Config")
-    config.ScriptConfig = ConfigCollection.build([entry_type])
+    config.ScriptConfig = ConfigCollection[models.ScriptConfigType].build([entry_type])
     config.QueueConfig = {}
     await config.ScriptConfig.activate()
     sid = config.ScriptConfig.add(entry_type)
@@ -277,7 +257,7 @@ folders = ["MAA","SRC","general","MaaEnd","MaaFW","Okww","OkNte","HSR","BetterGI
 with patch("asyncio.create_task",side_effect=AssertionError("spawn")):
     for folder in folders:
         importlib.import_module("app.task."+folder+".registration")
-forbidden = [n for n in sys.modules if n in {"app.core.config.manager","app.core.task_manager.manager"} or (n.startswith("app.task.") and (n.endswith((".manager",".embedded_manager",".restore_service",".AutoProxy")) or ".tools.core.runner" in n))]
+forbidden = [n for n in sys.modules if n in {"app.core.config.manager","app.core.task_manager"} or (n.startswith("app.task.") and (n.endswith((".manager",".embedded_manager",".restore_service",".AutoProxy")) or ".tools.core.runner" in n))]
 assert not forbidden, forbidden
 assert not __import__("pathlib").Path("config").exists()
 assert not __import__("pathlib").Path("data").exists()

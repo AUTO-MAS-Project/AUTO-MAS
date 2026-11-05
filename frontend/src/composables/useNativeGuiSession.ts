@@ -1,5 +1,6 @@
+import type { TaskParams } from '@/api'
 import {
-  requestTaskStart,
+  requestScriptConfigStart,
   stopNativeConfig,
   type NativeConfigStopAction,
   type TaskTargetKind,
@@ -8,7 +9,6 @@ import {
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'
 import {
@@ -142,7 +142,7 @@ export function useNativeGuiSession(options: {
     startTaskId: string,
     viewOnly = false,
     targetKind: TaskTargetKind = 'unknown',
-    startOptions: Pick<TaskCreateIn, 'instanceIdx'> = {}
+    startOptions: { params?: TaskParams } = {}
   ): Promise<boolean> => {
     // 同一页面只持有一条会话；收尾帧窗口结束前也不覆盖旧订阅。
     if (startingPromise || taskId.value || stoppingPromise || savingPromise) {
@@ -154,14 +154,11 @@ export function useNativeGuiSession(options: {
       try {
         discardedReason = null
         keepDiscardFrames = false
-        const response = await requestTaskStart(
-          {
-            ...startOptions,
-            taskId: startTaskId,
-            mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-            viewOnly,
-          },
-          { source: 'script_config', target_kind: targetKind }
+        const response = await requestScriptConfigStart(
+          startTaskId,
+          viewOnly,
+          targetKind,
+          startOptions.params
         )
         if (response.code !== 200 || !response.taskId) {
           throw new Error(response.message || t(keys.startFailed))

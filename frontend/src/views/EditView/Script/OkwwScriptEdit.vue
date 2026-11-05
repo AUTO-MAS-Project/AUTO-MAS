@@ -451,7 +451,6 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
 import {
   WS_TASK_COMPLETED,
   WS_TASK_LOG_UPDATED,
@@ -653,7 +652,6 @@ const handleCheckUpdate = async () => {
     updateModal.users = users
     updateModal.selectedUserId = users[0].uid
     updateModal.log = ''
-    updateLogSeq = null
     updateModal.open = true
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
@@ -661,42 +659,10 @@ const handleCheckUpdate = async () => {
   }
 }
 
-// 任务日志增量协议：append 为假 → 整体替换并记 seq；append 为真且 seq 连续 → 追加；
-// 否则视为失步（订阅登记前已经错过首条整体替换、或漏了消息）：丢弃本条，拉一次运行
-// 快照用它的 log/logSeq 重建，重建期间到达的增量一并丢弃。缓冲上限 200,000 字符。
+// 当前日志每次全文替换，本地只保留显示所需的尾部。
 const UPDATE_LOG_MAX_CHARS = 200_000
-let updateLogSeq: number | null = null
-let updateLogResyncing = false
-const resyncUpdateLog = async () => {
-  if (updateLogResyncing || !updateSession.taskId) return
-  updateLogResyncing = true
-  try {
-    const snapshot = await realtimeSnapshotApi.getRuntimeTasks()
-    const item = (snapshot.tasks ?? []).find(task => task.taskId === updateSession.taskId)
-    if (!item) return
-    updateModal.log = item.log ?? ''
-    updateLogSeq = item.logSeq ?? null
-  } catch (e) {
-    logger.warn(`重建鸣潮更新日志失败: ${e instanceof Error ? e.message : String(e)}`)
-  } finally {
-    updateLogResyncing = false
-  }
-}
-const applyUpdateLog = (data: { log: string; seq?: number; append?: boolean }) => {
-  if (!data.append) {
-    updateModal.log = data.log
-    updateLogSeq = data.seq ?? null
-  } else if (updateLogSeq !== null && data.seq === updateLogSeq + 1) {
-    updateModal.log += data.log
-    updateLogSeq = data.seq
-  } else {
-    updateLogSeq = null
-    void resyncUpdateLog()
-    return
-  }
-  if (updateModal.log.length > UPDATE_LOG_MAX_CHARS) {
-    updateModal.log = updateModal.log.slice(-UPDATE_LOG_MAX_CHARS)
-  }
+const applyUpdateLog = (data: WSTaskLogUpdatedData) => {
+  updateModal.log = data.log.slice(-UPDATE_LOG_MAX_CHARS)
 }
 
 const startUpdate = async () => {
@@ -711,9 +677,7 @@ const startUpdate = async () => {
     updateSession.taskId = response.taskId
     updateSession.subscriptionIds = [
       subscribe({ id: response.taskId, type: WS_TASK_LOG_UPDATED }, wsMessage => {
-        applyUpdateLog(
-          wsMessage.data as unknown as WSTaskLogUpdatedData & { seq?: number; append?: boolean }
-        )
+        applyUpdateLog(wsMessage.data)
       }),
       subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
         const data = wsMessage.data as unknown as WSTaskNoticeData

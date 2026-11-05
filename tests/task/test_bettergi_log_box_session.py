@@ -4,13 +4,13 @@ import asyncio
 import threading
 from copy import deepcopy
 from datetime import datetime
-from types import SimpleNamespace
 
 import pytest
 
 from app.task.BetterGI.AutoProxy import AutoProxyTask
 from app.task.BetterGI.tools import push_log
 from app.task.general.manager import GeneralManager
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 def build_user_result_text(users, has_uncompleted):

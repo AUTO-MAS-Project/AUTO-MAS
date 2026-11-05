@@ -49,6 +49,7 @@ from pydantic import (
 )
 
 from app.core import Config, GameCalendar, Taskboard
+from app.core.history import HistoryStorageError
 from app.models.schema import (
     BlueArchiveActivityIn,
     ComboBoxItem,
@@ -56,6 +57,7 @@ from app.models.schema import (
     EmulatorDeleteIn,
     OutBase,
     PlanComboxConsumer,
+    ScriptStatusOverviewItem,
 )
 from app.models.taskboard import (
     TaskboardArchivedActivity,
@@ -118,6 +120,10 @@ class GameCalendarActivitiesOut(OutBase):
     data: list[GameCalendarActivityInfo] = Field(
         default_factory=list, description="用户已完成且未过期的活动"
     )
+
+
+class ScriptStatusOverviewOut(OutBase):
+    data: list[ScriptStatusOverviewItem] = Field(default_factory=list)
 
 
 class InfoOut(OutBase):
@@ -490,28 +496,6 @@ async def get_script_combox() -> ComboBoxOut:
 
 
 @router.post(
-    "/combox/task",
-    tags=["Get"],
-    summary="获取可选任务下拉框信息",
-    response_model=ComboBoxOut,
-    status_code=200,
-)
-async def get_task_combox() -> ComboBoxOut:
-
-    try:
-        raw_data = await Config.get_task_combox()
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_task_combox失败: {type(e).__name__}: {e}"
-        )
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
-        )
-    return ComboBoxOut(data=data)
-
-
-@router.post(
     "/combox/plan",
     tags=["Get"],
     summary="获取可选计划下拉框信息",
@@ -639,6 +623,21 @@ async def confirm_notice() -> OutBase:
 #             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
 #         )
 #     return InfoOut(data=data)
+
+
+@router.get(
+    "/scripts/status",
+    tags=["Get"],
+    summary="查询托管排期配置与最近历史结果",
+    operation_id="get_script_status_overview_api_info_scripts_status_get",
+    response_model=ScriptStatusOverviewOut,
+)
+async def get_script_status_overview() -> ScriptStatusOverviewOut:
+    try:
+        return ScriptStatusOverviewOut(data=await Config.get_script_status_overview())
+    except HistoryStorageError as error:
+        logger.opt(exception=error).warning("托管配置概览的历史查询失败")
+        return ScriptStatusOverviewOut(code=503, status="error", message=str(error))
 
 
 @router.post(

@@ -1,11 +1,17 @@
+import { configSessionRequest } from './useTaskOptions'
+import { TaskMode } from '@/api'
 import { observeFeature } from '@/utils/featureAnalytics'
-import { ApiError, Service, TaskCreateIn, type TaskCreateOut } from '@/api'
+import { ApiError, Service, type TaskCreateIn, type TaskCreateOut, type TaskParams } from '@/api'
 import {
   analyticsScriptType,
   beginAnalyticsOperation,
   getAnalyticsScriptType,
 } from '@/utils/analytics'
-import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
+import {
+  getTaskRuntimeStates,
+  registerAcceptedTask,
+  reconcileStoppedTask,
+} from '@/composables/useTaskRuntimeState'
 import type { AnalyticsEventProps } from '@/types/analytics'
 
 function taskRequestError(error: unknown): Error {
@@ -60,39 +66,39 @@ export async function requestTaskStart(
   request: TaskCreateIn,
   metadata: TaskStartMetadata = {}
 ): Promise<TaskCreateOut> {
+  const root = Object.values(request.tasks)[0]
+  const children = Object.values(root?.children ?? {})
+  const executable = request.mode === TaskMode.AUTO_PROXY
+  const queue = executable && root?.uid !== '-'
+  const targetId = executable
+    ? queue
+      ? (root?.uid ?? '')
+      : (children[0]?.uid ?? '')
+    : (root?.uid ?? '')
   const operation = beginAnalyticsOperation('task_start_result')
-  const nativeOperation =
-    request.mode === TaskCreateIn.mode.SCRIPT_CONFIG
-      ? beginAnalyticsOperation('native_config_action_finished')
-      : null
-  const nativeAction = request.viewOnly ? 'view' : 'open'
-  const executable =
-    request.mode === TaskCreateIn.mode.AUTO_PROXY || request.mode === TaskCreateIn.mode.CYCLE_RUN
-  const fromScript =
-    request.mode === TaskCreateIn.mode.AUTO_PROXY && Boolean(request.resumeFromScriptId)
-  const scopeKind =
-    request.queueUserIds && Object.keys(request.queueUserIds).length
+  const nativeOperation = executable
+    ? null
+    : beginAnalyticsOperation('native_config_action_finished')
+  const nativeAction = request.mode === TaskMode.SCRIPT_VIEW ? 'view' : 'open'
+  const scoped =
+    executable &&
+    (queue
+      ? children.length > 0
+      : children.some(node => Object.keys(node.children ?? {}).length > 0))
+  const scopeKind = scoped
+    ? queue
       ? ('queue_users' as const)
-      : request.userId || request.userIds != null
-        ? ('script_users' as const)
-        : ('all' as const)
-  const resumeOperation =
-    executable && (fromScript || scopeKind !== 'all')
-      ? beginAnalyticsOperation('task_resume_requested')
-      : null
+      : ('script_users' as const)
+    : ('all' as const)
+  const resumeOperation = scoped ? beginAnalyticsOperation('task_resume_requested') : null
   const resumeDimensions = {
     source: metadata.source ?? 'unknown',
-    resume_kind: fromScript
-      ? scopeKind === 'all'
-        ? ('from_script' as const)
-        : ('from_script_scoped_users' as const)
-      : ('scoped_users' as const),
+    resume_kind: 'scoped_users' as const,
     scope_kind: scopeKind,
   }
   const dimensions = {
     source: metadata.source ?? 'unknown',
-    target_kind:
-      metadata.target_kind ?? (request.userId ? ('user' as const) : ('unknown' as const)),
+    target_kind: metadata.target_kind ?? (queue ? ('queue' as const) : ('script' as const)),
     mode: request.mode,
   }
   let response: TaskCreateOut
@@ -101,7 +107,7 @@ export async function requestTaskStart(
   } catch (error) {
     resumeOperation?.finish({ ...resumeDimensions, request_outcome: 'failure' })
     nativeOperation?.finish({
-      script_type: getAnalyticsScriptType(request.taskId),
+      script_type: getAnalyticsScriptType(targetId),
       operation: nativeAction,
       outcome: 'failure',
     })
@@ -113,7 +119,7 @@ export async function requestTaskStart(
     request_outcome: response.code === 200 && response.taskId ? 'accepted' : 'failure',
   })
   nativeOperation?.finish({
-    script_type: nativeScriptType(response.taskId ?? '', request.taskId),
+    script_type: nativeScriptType(response.taskId ?? '', targetId),
     operation: nativeAction,
     outcome: response.code === 200 && response.taskId ? 'accepted' : 'failure',
   })
@@ -121,23 +127,20 @@ export async function requestTaskStart(
     ...dimensions,
     outcome: response.code === 200 && response.taskId ? 'accepted' : 'failure',
   })
+  if (response.code === 200 && response.taskId) registerAcceptedTask(response.taskId, request.mode)
   return response
 }
 
-/** 配置会话明确使用独立任务模式，保留后端原始响应。 */
-export function requestScriptConfigStart(
+/** [兼容旧专项] 存量配置按钮按目标 UUID 接入；新插件直接提供标准要求树。 */
+export async function requestScriptConfigStart(
   taskId: string,
-  viewOnly?: boolean,
-  targetKind: TaskTargetKind = 'unknown'
+  viewOnly = false,
+  targetKind: TaskTargetKind = 'unknown',
+  params: TaskParams = {}
 ): Promise<TaskCreateOut> {
-  return requestTaskStart(
-    {
-      taskId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-      ...(viewOnly === undefined ? {} : { viewOnly }),
-    },
-    { source: 'script_config', target_kind: targetKind }
-  )
+  const mode = viewOnly ? TaskMode.SCRIPT_VIEW : TaskMode.SCRIPT_CONFIG
+  const request = await configSessionRequest(taskId, mode, targetKind, params)
+  return requestTaskStart(request, { source: 'script_config', target_kind: targetKind })
 }
 
 export function requestUserUpdateStart(
@@ -151,13 +154,33 @@ export function requestUserUpdateStart(
       operation_kind: 'update',
       engine_kind: 'unknown',
     },
-    () =>
-      requestTaskStart(
-        { taskId: userId, mode: TaskCreateIn.mode.UPDATE },
-        { source: 'script_update', target_kind: 'user' }
-      ),
+    () => requestMaintenanceStart(userId),
     result => (result.code === 200 && result.taskId ? 'accepted' : 'rejected')
   )
+}
+
+export async function requestMaintenanceStart(
+  targetId: string,
+  metadata: TaskStartMetadata = {}
+): Promise<TaskCreateOut> {
+  // 维护已移出调度模式，沿用既有统计类别以保持请求受理口径。
+  const operation = beginAnalyticsOperation('task_start_result')
+  const dimensions = {
+    source: metadata.source ?? ('script_update' as const),
+    target_kind: metadata.target_kind ?? ('unknown' as const),
+    mode: 'Update' as const,
+  }
+  try {
+    const response = await Service.startOperationApiScriptsOperationsStartPost({ targetId })
+    operation.finish({
+      ...dimensions,
+      outcome: response.code === 200 && response.taskId ? 'accepted' : 'failure',
+    })
+    return { ...response, taskId: response.taskId ?? '' }
+  } catch (error) {
+    operation.finish({ ...dimensions, outcome: 'failure' })
+    throw error
+  }
 }
 
 /** 共用任务操作只处理请求结果；缺少后端说明时，提示文案由入口负责。 */
@@ -194,6 +217,7 @@ export function useTaskApi() {
         throw new Error(response.message)
       }
       operation.finish({ ...dimensions, request_outcome: 'accepted' })
+      void reconcileStoppedTask(taskId)
     } catch (error) {
       operation.finish({ ...dimensions, request_outcome: 'failure' })
       throw taskRequestError(error)

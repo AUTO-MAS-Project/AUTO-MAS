@@ -65,7 +65,13 @@ export type AnalyticsNotificationChannel =
   | 'cmcc'
   | 'koishi'
   | 'openclaw_qq'
-export type AnalyticsTaskMode = 'AutoProxy' | 'ScriptConfig' | 'Update' | 'CycleRun' | 'unknown'
+export type AnalyticsTaskMode =
+  | 'AutoProxy'
+  | 'ScriptConfig'
+  | 'ScriptView'
+  | 'Update'
+  | 'CycleRun'
+  | 'unknown'
 export type AnalyticsTaskSource =
   | 'home'
   | 'scheduler'
@@ -237,7 +243,16 @@ export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
   }
   queue_schedule_changed: {
     schedule_kind: 'fixed_time' | 'interval' | 'queue_time' | 'cycle' | 'startup' | 'unknown'
-    action: 'enable' | 'disable' | 'mode' | 'interval' | 'time' | 'days' | 'run_once' | 'configure'
+    action:
+      | 'enable'
+      | 'disable'
+      | 'mode'
+      | 'interval'
+      | 'time'
+      | 'days'
+      | 'run_once'
+      | 'reset'
+      | 'configure'
     outcome: 'success' | 'failure'
     duration_bucket: AnalyticsDurationBucket
   }

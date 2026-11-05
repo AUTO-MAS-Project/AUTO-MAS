@@ -1,5 +1,6 @@
 import type { APIRequestContext } from '@playwright/test'
 import type { WSTaskCompletedData } from '../src/services/websocket/types'
+import { projectTaskTree } from '../src/composables/taskTreeProjection'
 import { expect, test } from './fixtures'
 
 const backend = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? 36174}`
@@ -93,12 +94,19 @@ test.describe('@maa-update configuration and dispatch', () => {
     // This isolated profile has no MAA or emulator. It must not claim an upgrade or run succeeded.
     await expect
       .poll(
-        () =>
-          completed.get(accepted.taskId)?.task_info.find(script => script.script_id === scriptId)
-            ?.status,
+        () => {
+          const task = completed.get(accepted.taskId)?.task
+          return task
+            ? projectTaskTree(task).find(script => script.config_id === scriptId)?.status
+            : undefined
+        },
         { timeout: 30_000 }
       )
       .toBe('异常')
+    await expect(page.locator('.ant-tabs-tab')).toHaveCount(1)
+    await expect(
+      page.locator('.overview-panel').getByText('PR1730 MAA', { exact: true })
+    ).toBeVisible()
     const saved = await post(page.request, '/api/scripts/get', { scriptId })
     expect(saved.data[scriptId].Update.Channel).toBe('beta')
     expect(saved.data[scriptId].Update.TakeoverEnabled).toBe(true)

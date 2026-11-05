@@ -1,12 +1,12 @@
 """各调用方拥有过滤和展示模式，公共服务只排版已选定的数据。"""
 
 import importlib
-from types import SimpleNamespace
 
 import pytest
 
 import app.core.notify.report as notification_report
 from app.models.notification.report import UserReportText
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 @pytest.mark.parametrize(

@@ -70,7 +70,7 @@ class OkNteManager(ScriptManagerBase):
         self.crashed = False
 
     async def check(self) -> str:
-        if self.task_info.mode not in METHOD_BOOK:
+        if self.execution_mode not in METHOD_BOOK:
             return "不支持的任务模式, 请检查任务配置！"
 
         script_uid = uuid.UUID(self.script_info.script_id)
@@ -78,7 +78,7 @@ class OkNteManager(ScriptManagerBase):
         if not isinstance(script_config, OkNteConfig):
             return "脚本配置类型错误, 不是 OK-NTE 类型"
 
-        if self.task_info.mode == "ScriptConfig":
+        if self.execution_mode == "ScriptConfig":
             if (
                 not script_config.Info.RootPath
                 or not script_config.Info.RootPath.is_dir()
@@ -100,10 +100,12 @@ class OkNteManager(ScriptManagerBase):
                     return "OK-NTE 用户不存在，请刷新后重试"
 
         # AutoProxy 模式只做用户列表可用性校验；逐用户配置文件检查放到 AutoProxyTask.check()
-        if self.task_info.mode == "AutoProxy":
+        if self.execution_mode == "AutoProxy":
             if not self.script_info.user_list:
-                self.script_info.user_list = self.build_proxy_user_list(
-                    Config.ScriptConfig[script_uid].UserData.items()
+                await self.script_info.set_users(
+                    self.build_proxy_user_list(
+                        Config.ScriptConfig[script_uid].UserData.items()
+                    )
                 )
             if not self.script_info.user_list:
                 return "当前没有可执行的用户，请先添加并启用用户"
@@ -116,7 +118,7 @@ class OkNteManager(ScriptManagerBase):
         script_uid = uuid.UUID(self.script_info.script_id)
         self.config_locks[
             Config.ScriptConfig[script_uid].uid
-        ] = await Config.ScriptConfig[script_uid].lock_x()
+        ] = await self.lock_script_config(Config.ScriptConfig[script_uid])
         script_config = Config.ScriptConfig[script_uid]
         if not isinstance(script_config, OkNteConfig):
             raise TypeError("脚本配置类型错误")
@@ -126,21 +128,21 @@ class OkNteManager(ScriptManagerBase):
         self.user_config = self.script_config.UserData
         logger.success(f"{self.script_info.script_id} 已锁定，OK-NTE 用户配置已提取")
 
-        if self.task_info.mode == "ScriptConfig":
+        if self.execution_mode == "ScriptConfig":
             target_user_id = self.task_info.user_id or "Default"
             target_user_name = ""
             with suppress(ValueError):
                 target_user_uid = uuid.UUID(target_user_id)
                 if target_user_uid in self.user_config:
                     target_user_name = self.user_config[target_user_uid].Info.Name
-            self.script_info.user_list = [
-                UserItem(user_id=target_user_id, name=target_user_name, status="等待")
-            ]
+            await self.script_info.set_users(
+                [UserItem(user_id=target_user_id, name=target_user_name, status="等待")]
+            )
         else:
             # 构建用户列表：遍历脚本用户，筛选启用且剩余天数不为 0 的；
             # 单独运行指定了用户时只保留该用户
-            self.script_info.user_list = self.build_proxy_user_list(
-                self.user_config.items()
+            await self.script_info.set_users(
+                self.build_proxy_user_list(self.user_config.items())
             )
 
         # Enabled=游戏管理总开关；LaunchBeforeTask/CloseOnFinish=启动与收尾子项（可单独开启）
@@ -151,7 +153,7 @@ class OkNteManager(ScriptManagerBase):
         ):
             self.game_manager = ProcessManager()
 
-        if self.task_info.mode in ("AutoProxy", "ScriptConfig"):
+        if self.execution_mode in ("AutoProxy", "ScriptConfig"):
             script_config_path = self.script_config.Script.ConfigPath
             if script_config_path is None:
                 raise ValueError("ConfigPath未配置，请检查路径设置")
@@ -200,7 +202,7 @@ class OkNteManager(ScriptManagerBase):
 
     async def _restore_script_config_from_temp(self) -> None:
         if not (
-            self.task_info.mode in ("AutoProxy", "ScriptConfig")
+            self.execution_mode in ("AutoProxy", "ScriptConfig")
             and self.temp_path
             and self.temp_path.exists()
             and self.script_config_path
@@ -209,7 +211,7 @@ class OkNteManager(ScriptManagerBase):
             return
         # 复原属于收尾清理, 失败不应掩盖任务本身的异常, 也不应中断后续解锁与回写
         try:
-            if self.task_info.mode == "ScriptConfig" and not self.task_info.view_only:
+            if self.execution_mode == "ScriptConfig" and not self.task_info.view_only:
                 user_id = self.task_info.user_id
                 if user_id and user_id != "Default":
                     cfg = self.user_config[uuid.UUID(user_id)]
@@ -244,7 +246,7 @@ class OkNteManager(ScriptManagerBase):
     async def main_task(self):
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            self.script_info.status = "异常"
+            await self.script_info.set_state(status="异常")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -256,12 +258,13 @@ class OkNteManager(ScriptManagerBase):
         if self.script_config is None or self.user_config is None:
             raise RuntimeError("OK-NTE 用户配置未完成初始化")
 
-        method_cls = METHOD_BOOK[self.task_info.mode]
-        for self.script_info.current_index in range(len(self.script_info.user_list)):
+        method_cls = METHOD_BOOK[self.execution_mode]
+        for _runtime_user_index in range(len(self.script_info.user_list)):
             # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
+            await self.script_info.set_current_index(_runtime_user_index)
             current_user = self.script_info.user_list[self.script_info.current_index]
             if (
-                self.task_info.mode == "AutoProxy"
+                self.execution_mode == "AutoProxy"
                 and not await self.check_user_before_run(
                     current_user, self.user_config[uuid.UUID(current_user.user_id)]
                 )
@@ -273,7 +276,7 @@ class OkNteManager(ScriptManagerBase):
                 user_config=self.user_config,  # type: ignore[arg-type]
                 game_manager=self.game_manager,
             )
-            if self.task_info.mode == "ScriptConfig":
+            if self.execution_mode == "ScriptConfig":
                 kwargs["view_only"] = self.task_info.view_only
             method = method_cls(**kwargs)
 
@@ -295,32 +298,32 @@ class OkNteManager(ScriptManagerBase):
         try:
             await self._restore_script_config_from_temp()
 
-            if self.task_info.mode == "AutoProxy" and self.user_config is not None:
+            if self.execution_mode == "AutoProxy" and self.user_config is not None:
                 await config_manager.flush()
 
             if self.crashed:
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
                 return
 
             if self.check_result != "Pass" and not any(
                 user.status == "完成" for user in self.script_info.user_list
             ):
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
                 return
 
             if any(user.status == "异常" for user in self.script_info.user_list):
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
             elif self.all_users_maintenance_skipped:
                 # 画面检测把全部用户判为维护跳过时（公告通道未覆盖的场景），
                 # 整体状态记「跳过」而非「完成」
-                self.script_info.status = "跳过"
+                await self.script_info.set_state(status="跳过")
             else:
-                self.script_info.status = "完成"
+                await self.script_info.set_state(status="完成")
 
-            if self.task_info.mode == "AutoProxy":
+            if self.execution_mode == "AutoProxy":
                 summary = self.collect_user_results()
 
-                title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+                title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.execution_mode]}任务报告"
                 # 按用户交错组装「用户结果行 + 该用户节点详情」：
                 # 多账号任务时各用户节点归属清晰，不再全部平铺。
                 # 「失败」类型仅在本次任务存在未完成用户时纳入报告，
@@ -333,7 +336,7 @@ class OkNteManager(ScriptManagerBase):
                 )
                 # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
                 if user_result_text:
-                    self.script_info.log = (
+                    await self.script_info.set_log(
                         f"{self.script_info.log}\n{user_result_text}"
                         if self.script_info.log
                         else user_result_text
@@ -369,13 +372,13 @@ class OkNteManager(ScriptManagerBase):
 
     async def on_crash(self, e: Exception):
         self.crashed = True
-        self.script_info.status = "异常"
+        await self.script_info.set_state(status="异常")
         logger.opt(exception=True).warning(f"OK-NTE任务出现异常: {e}")
 
         await self._restore_script_config_from_temp()
 
         try:
-            if self.task_info.mode == "AutoProxy" and self.user_config is not None:
+            if self.execution_mode == "AutoProxy" and self.user_config is not None:
                 await config_manager.flush()
         except Exception:
             logger.opt(exception=True).warning("on_crash 保存用户配置失败")
@@ -393,12 +396,12 @@ class OkNteManager(ScriptManagerBase):
                 item
                 if isinstance(item, log_box.LogEntry)
                 else log_box.LogEntry.from_legacy(item)
-                for item in _report_user.push_log
+                for item in self.user_state(_report_user).push_log
                 if (item.log_type if isinstance(item, log_box.LogEntry) else item[0])
                 != LOG_TYPE_ERROR
                 or has_uncompleted
             ]
-            _mode = getattr(_report_user, "push_log_mode", "逐条")
+            _mode = self.user_state(_report_user).push_log_mode
             if _mode == "关闭":
                 _details = []
             elif _mode == "汇总":

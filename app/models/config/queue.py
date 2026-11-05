@@ -22,7 +22,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, ClassVar, Literal
 from uuid import UUID
 
@@ -31,11 +31,16 @@ from pydantic import Field
 from app.config import (
     ConfigCollection,
     ConfigGroup,
+    Trigger,
     UiVisibility,
+    Virtual,
     collection,
+    legacy,
     ref,
+    trigger_field,
     tz,
     ui,
+    virtual_field,
 )
 from app.config.types import (
     FilePath,
@@ -45,6 +50,19 @@ from app.config.types import (
 
 from .base import DomainEntry
 from .shared import local_timezone
+
+Weekday = Literal[
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+]
+_DEFAULT_DAYS: tuple[Weekday, ...] = (
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+)
 
 
 class Webhook(DomainEntry):
@@ -80,28 +98,7 @@ class Webhook(DomainEntry):
 class QueueItem(DomainEntry):
     "队列项配置"
 
-    related_config: ClassVar = {}
-
-    class DataFields(ConfigGroup):
-        LastCycleFinishedAt: Annotated[
-            datetime, tz(local_timezone), ui(format="hms")
-        ] = Field(
-            default_factory=lambda: datetime.fromisoformat(
-                "2000-01-01 00:00:00"
-            ).replace(tzinfo=local_timezone()),
-            description="上次循环结束时间",
-        )
-
-        LastCycleStartedAt: Annotated[
-            datetime, tz(local_timezone), ui(format="hms")
-        ] = Field(
-            default_factory=lambda: datetime.fromisoformat(
-                "2000-01-01 00:00:00"
-            ).replace(tzinfo=local_timezone()),
-            description="上次循环开始时间",
-        )
-
-    Data: DataFields = Field(default_factory=DataFields)
+    related_config: ClassVar[dict[str, object]] = {}
 
     class InfoFields(ConfigGroup):
         ScriptId: Annotated[
@@ -117,58 +114,9 @@ class QueueItem(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class ScheduleFields(ConfigGroup):
-        Days: list[
-            Literal[
-                "Monday",
-                "Tuesday",
-                "Wednesday",
-                "Thursday",
-                "Friday",
-                "Saturday",
-                "Sunday",
-            ]
-        ] = Field(
-            default_factory=lambda: [
-                "Monday",
-                "Tuesday",
-                "Wednesday",
-                "Thursday",
-                "Friday",
-                "Saturday",
-                "Sunday",
-            ],
-            description="固定时间模式的执行周期",
-        )
-
-        Enabled: bool = Field(
-            default_factory=lambda: True, description="是否参与循环调度"
-        )
-
-        IntervalAnchor: Literal["start", "finish"] = Field(
-            default_factory=lambda: "start",
-            description="间隔模式的计时基准: start 为上次开始, finish 为上次结束",
-        )
-
-        IntervalMinutes: Annotated[int, Field(ge=1, le=10080)] = Field(
-            default_factory=lambda: 480,
-            description="间隔模式的间隔分钟数",
-        )
-
-        Mode: Literal["fixed_time", "interval"] = Field(
-            default_factory=lambda: "fixed_time",
-            description="循环调度模式: fixed_time 为固定时间, interval 为间隔",
-        )
-
-        NextRunAt: Annotated[datetime, tz(local_timezone), ui(format="hms")] = Field(
-            default_factory=lambda: datetime.fromisoformat(
-                "2000-01-01 00:00:00"
-            ).replace(tzinfo=local_timezone()),
-            description="下次运行时间, 空值哨兵表示由调度器按模式推算",
-        )
-
-        Time: Annotated[datetime, tz(local_timezone), ui(format="hm")] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=local_timezone()),
-            description="固定时间模式的执行时间",
+        Days: list[Weekday] = Field(
+            default_factory=lambda: list(_DEFAULT_DAYS),
+            description="该队列项允许执行的星期，由 L2 判断是否跳过",
         )
 
     Schedule: ScheduleFields = Field(default_factory=ScheduleFields)
@@ -178,26 +126,8 @@ class TimeSet(DomainEntry):
     "时间设置配置"
 
     class InfoFields(ConfigGroup):
-        Days: list[
-            Literal[
-                "Monday",
-                "Tuesday",
-                "Wednesday",
-                "Thursday",
-                "Friday",
-                "Saturday",
-                "Sunday",
-            ]
-        ] = Field(
-            default_factory=lambda: [
-                "Monday",
-                "Tuesday",
-                "Wednesday",
-                "Thursday",
-                "Friday",
-                "Saturday",
-                "Sunday",
-            ],
+        Days: list[Weekday] = Field(
+            default_factory=lambda: list(_DEFAULT_DAYS),
             description="执行周期",
         )
 
@@ -208,7 +138,17 @@ class TimeSet(DomainEntry):
             description="执行时间",
         )
 
-    Info: InfoFields = Field(default_factory=InfoFields)
+    Info: Annotated[
+        InfoFields, ui(visibility=lambda entry: entry.time_visibility())
+    ] = Field(default_factory=InfoFields)
+
+    def time_visibility(self) -> UiVisibility:
+        queue = self.parent.parent if self.parent is not None else None
+        return (
+            UiVisibility.DISABLE
+            if isinstance(queue, QueueConfig) and not queue.Info.TimeEnabled
+            else UiVisibility.SHOW
+        )
 
 
 _TimeSetEntry = TimeSet
@@ -226,13 +166,16 @@ class QueueConfig(DomainEntry):
             )
         )
 
-        LastTimedStart: Annotated[datetime, tz(local_timezone), ui(format="hm")] = (
-            Field(
-                default_factory=lambda: datetime.fromisoformat(
-                    "2000-01-01 00:00"
-                ).replace(tzinfo=local_timezone()),
-                description="上次定时启动时间",
-            )
+        LastStartTime: Annotated[
+            datetime,
+            tz(local_timezone),
+            ui(format="hms"),
+            legacy(group="Data", name="LastTimedStart"),
+        ] = Field(
+            default_factory=lambda: datetime.fromisoformat("2000-01-01 00:00").replace(
+                tzinfo=local_timezone()
+            ),
+            description="L1 上次成功创建该队列任务的时间",
         )
 
     Data: Annotated[DataFields, ui(visibility=UiVisibility.HIDE)] = Field(
@@ -259,7 +202,7 @@ class QueueConfig(DomainEntry):
 
         CycleEnabled: bool = Field(
             default_factory=lambda: False,
-            description="是否为循环队列: 定时与循环互斥, 循环队列按队列项各自的周期持续运行",
+            description="是否启用队列循环触发，可与定时和软件启动触发同时启用",
         )
 
         IfScriptAfterTask: bool = Field(
@@ -269,7 +212,7 @@ class QueueConfig(DomainEntry):
 
         IfScriptBeforeTask: bool = Field(
             default_factory=lambda: False,
-            description="队列级运行前脚本: 一次运行只执行一次, 循环队列在整个运行期间不重复执行",
+            description="队列级运行前脚本: 每次任务快照开始时执行一次",
         )
 
         Name: str = Field(default_factory=lambda: "新队列", description="队列名称")
@@ -291,6 +234,52 @@ class QueueConfig(DomainEntry):
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
+
+    class CycleFields(ConfigGroup):
+        IntervalMinutes: Annotated[int, Field(ge=1, le=10080)] = Field(
+            default=480, description="队列循环触发间隔，单位分钟"
+        )
+        LastRunAt: Annotated[
+            datetime | None,
+            tz(local_timezone),
+            ui(format="hms", visibility=UiVisibility.DISABLE),
+        ] = Field(
+            default=None,
+            description="上次循环成功提交时间；为空时启用循环立即到期",
+        )
+        NextRunAt: Annotated[
+            Virtual[datetime | None], tz(local_timezone), ui(format="hm")
+        ] = Field(
+            default=None, description="下次循环触发时间，由上次触发时间和间隔计算"
+        )
+        ResetTimer: Trigger = Field(
+            default=False, description="重置循环计时，将上次循环触发时间设为现在"
+        )
+
+    Cycle: Annotated[
+        CycleFields, ui(visibility=lambda entry: entry.cycle_visibility())
+    ] = Field(default_factory=CycleFields)
+
+    @virtual_field("Cycle.NextRunAt")
+    def next_cycle_run(self) -> datetime | None:
+        """循环到期按本地分钟判定，不沿用上次触发的秒和微秒。"""
+        last = self.Cycle.LastRunAt
+        return (
+            (last + timedelta(minutes=self.Cycle.IntervalMinutes)).replace(
+                second=0, microsecond=0
+            )
+            if last is not None
+            else None
+        )
+
+    def cycle_visibility(self) -> UiVisibility:
+        return UiVisibility.SHOW if self.Info.CycleEnabled else UiVisibility.DISABLE
+
+    @trigger_field("Cycle.ResetTimer")
+    async def reset_cycle_timer(self) -> None:
+        self.Cycle.LastRunAt = datetime.now().astimezone()
+        await self.commit()
+
     TimeSet: ConfigCollection[_TimeSetEntry] = collection(TimeSet)
     QueueItem: ConfigCollection[_QueueItemEntry] = collection(QueueItem)
 
@@ -303,6 +292,22 @@ class QueueConfig(DomainEntry):
             if isinstance(StartUpEnabled, bool):
                 info_data["StartUpMode"] = "Always" if StartUpEnabled else "Never"
         return data
+
+
+@TimeSet.connect(group="Info")
+@ConfigCollection.connect()
+def reject_disabled_time_writes(
+    sender: ConfigCollection[TimeSet] | TimeSet, _event: object
+) -> None:
+    """只拦截运行时写入；禁用队列的历史时间项仍可正常初始化。"""
+    collection = sender.parent if isinstance(sender, TimeSet) else sender
+    queue = collection.parent if collection is not None else None
+    if (
+        isinstance(queue, QueueConfig)
+        and collection is queue.TimeSet
+        and not queue.Info.TimeEnabled
+    ):
+        raise ValueError("请先启用队列定时设置")
 
 
 __all__ = ["Webhook", "QueueItem", "TimeSet", "QueueConfig"]

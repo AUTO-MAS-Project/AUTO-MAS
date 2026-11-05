@@ -63,7 +63,6 @@ for name, instance in instances.items():
 assert "_transport" not in instances["Notify"].__dict__
 old_instance_locations = {{
     "app.core.config.manager": "Config",
-    "app.core.task_manager.manager": "TaskManager",
     "app.core.emulator_manager.manager": "EmulatorManager",
     "app.core.community.manager": "Community",
     "app.core.notify.manager": "Notify",
@@ -77,7 +76,7 @@ for name, module in {{
     "DesktopGuard": "desktop_guard", "History": "history", "I18n": "i18n",
     "Taskboard": "taskboard", "Dispatcher": "ws", "MainConnection": "ws",
     "Publisher": "ws",
-    "MainTimer": "timer", "RuntimeTasks": "runtime_tasks",
+    "MainTimer": "timer", "BackgroundTaskManager": "background_tasks",
     "GameCalendar": "game_calendar", "GameMaintenance": "game_maintenance",
     "Updater": "update", "ShutdownCoordinator": "lifecycle",
 }}.items():

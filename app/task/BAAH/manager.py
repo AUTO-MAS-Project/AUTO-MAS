@@ -71,7 +71,7 @@ class BAAHManager(ScriptManagerBase):
     async def check(self) -> str:
         """校验 BAAH 脚本配置是否可用"""
 
-        if self.task_info.mode not in METHOD_BOOK:
+        if self.execution_mode not in METHOD_BOOK:
             return "不支持的任务模式, 请检查任务配置！"
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
@@ -95,13 +95,15 @@ class BAAHManager(ScriptManagerBase):
 
         self.config_locks[
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].uid
-        ] = await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock_x()
+        ] = await self.lock_script_config(
+            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        )
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         self.user_config = self.script_config.UserData
         logger.success(f"{self.script_info.script_id} 已锁定, BAAH 脚本配置提取完成")
 
-        self.script_info.user_list = self.build_proxy_user_list(
-            self.user_config.items()
+        await self.script_info.set_users(
+            self.build_proxy_user_list(self.user_config.items())
         )
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
@@ -132,16 +134,17 @@ class BAAHManager(ScriptManagerBase):
         if not isinstance(self.script_config, BAAHConfig):
             raise RuntimeError("脚本配置类型错误, 不是 BAAH 脚本类型")
 
-        for self.script_info.current_index in range(len(self.script_info.user_list)):
+        for _runtime_user_index in range(len(self.script_info.user_list)):
+            await self.script_info.set_current_index(_runtime_user_index)
             current_user = self.script_info.user_list[self.script_info.current_index]
             if (
-                self.task_info.mode == "AutoProxy"
+                self.execution_mode == "AutoProxy"
                 and not await self.check_user_before_run(
                     current_user, self.user_config[uuid.UUID(current_user.user_id)]
                 )
             ):
                 continue
-            task = METHOD_BOOK[self.task_info.mode](
+            task = METHOD_BOOK[self.execution_mode](
                 self.script_info,
                 self.script_config,
                 self.user_config,
@@ -153,12 +156,12 @@ class BAAHManager(ScriptManagerBase):
         """运行结束后的收尾工作"""
         try:
             if self.check_result != "Pass":
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
                 return self.check_result
 
             logger.info("BAAH 任务已结束, 开始执行后续操作")
 
-            if self.task_info.mode == "AutoProxy":
+            if self.execution_mode == "AutoProxy":
                 await close_emulator(self)
                 await config_manager.flush()
 
@@ -167,7 +170,7 @@ class BAAHManager(ScriptManagerBase):
                 title = (
                     f"{datetime.now().strftime('%m-%d')} | "
                     f"{self.script_info.name or '空白'}的"
-                    f"{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+                    f"{TASK_MODE_ZH[self.execution_mode]}任务报告"
                 )
                 ## 按用户交错组装「用户结果行 + 该用户节点详情」，
                 ## 失败类型条目仅在本次任务存在未完成用户时纳入报告
@@ -177,7 +180,7 @@ class BAAHManager(ScriptManagerBase):
                 )
                 # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
                 if user_result_text:
-                    self.script_info.log = (
+                    await self.script_info.set_log(
                         f"{self.script_info.log}\n{user_result_text}"
                         if self.script_info.log
                         else user_result_text
@@ -200,7 +203,7 @@ class BAAHManager(ScriptManagerBase):
                         ),
                     )
 
-            self.script_info.status = "完成"
+            await self.script_info.set_state(status="完成")
         finally:
             script_config = getattr(self, "script_config", None)
             if script_config is not None:
@@ -210,7 +213,7 @@ class BAAHManager(ScriptManagerBase):
 
     async def on_crash(self, e: Exception):
 
-        self.script_info.status = "异常"
+        await self.script_info.set_state(status="异常")
         logger.opt(exception=True).warning(f"BAAH 任务出现异常: {e}")
         await Publisher.send(
             id=self.task_info.task_id,
@@ -226,12 +229,12 @@ class BAAHManager(ScriptManagerBase):
                 item
                 if isinstance(item, log_box.LogEntry)
                 else log_box.LogEntry.from_legacy(item)
-                for item in _report_user.push_log
+                for item in self.user_state(_report_user).push_log
                 if (item.log_type if isinstance(item, log_box.LogEntry) else item[0])
                 != LOG_TYPE_ERROR
                 or has_uncompleted
             ]
-            _mode = getattr(_report_user, "push_log_mode", "逐条")
+            _mode = self.user_state(_report_user).push_log_mode
             if _mode == "关闭":
                 _details = []
             elif _mode == "汇总":

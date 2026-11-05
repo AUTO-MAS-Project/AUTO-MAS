@@ -15,25 +15,19 @@ CONTRACT: dict[str, frozenset[str]] = {
     "WSTaskNoticeData": frozenset({"level", "message", "messageKey"}),
     "WSTaskConfigDiscardedData": frozenset({"reason"}),
     "WSSystemNoticeData": frozenset({"level", "title", "lines"}),
+    "WSTaskInfoUpdatedData": frozenset({"info", "current", "scripts"}),
     "WSEmulatorOperationData": frozenset(
         {"emulatorId", "index", "operate", "ok", "message"}
     ),
-    "WSTaskUserProgressData": frozenset({"current", "total", "task"}),
-    "WSTaskUserInfoData": frozenset({"user_id", "name", "status", "progress"}),
-    "WSTaskScriptInfoData": frozenset({"script_id", "name", "status", "userList"}),
-    "WSTaskCyclePreviewData": frozenset(
-        {"queueItemId", "scriptId", "scriptName", "nextRunAt", "isDue", "isRunning"}
-    ),
-    "WSTaskInfoUpdatedData": frozenset({"task_info", "cycleNextList"}),
     "WSTaskLogUpdatedData": frozenset({"log", "seq", "append", "firstLine"}),
     "WSTaskScriptIdentityData": frozenset({"scriptId", "scriptType"}),
     "WSTaskScriptStartedData": frozenset({"taskId", "runId", "scriptType", "mode"}),
     "WSTaskScriptFinishedData": frozenset(
         {"taskId", "runId", "scriptType", "mode", "outcome", "partialFailure"}
     ),
-    "WSTaskCompletedData": frozenset({"result", "outcome", "error", "task_info"}),
+    "WSTaskCompletedData": frozenset({"result", "outcome", "error", "task"}),
     "WSTaskCreatedData": frozenset(
-        {"taskId", "mode", "scripts", "queueId", "taskName", "taskType"}
+        {"taskId", "mode", "trigger", "scripts", "taskName", "taskType"}
     ),
     "WSPowerCountdownData": frozenset({"operation", "remaining"}),
     "WSPowerSignData": frozenset({"signal"}),

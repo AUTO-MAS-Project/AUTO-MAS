@@ -140,15 +140,15 @@ class _DirectUserFinalizer(TaskExecuteBase):
         try:
             await run_script_after_task(self.user_config)
         except Exception as error:
-            self.user_item.status = "异常"
+            await self.user_item.set_state(status="异常")
             if self.user_item.log_record:
                 log_item = self.user_item.log_record[max(self.user_item.log_record)]
-                log_item.status = f"HSR 任务后脚本失败: {error}"
-                log_item.content.append(f"\nHSR 任务后脚本失败: {error}\n")
+                await log_item.set_state(status=f"HSR 任务后脚本失败: {error}")
+                await log_item.append_content(f"\nHSR 任务后脚本失败: {error}\n")
             raise
         finally:
             await save_hsr_user_history(
-                task_info=self.manager.task_info,
+                history=self.manager.history,
                 script_info=self.manager.script_info,
                 user_item=self.user_item,
                 cancelled=self.manager.stopped_manually,
@@ -160,8 +160,6 @@ class _DirectUserFinalizer(TaskExecuteBase):
 
 class HSRManager(NotificationTaskBase):
     """HSR 调度器，管理星穹铁道 M7A/SRA 双脚本任务。"""
-
-    wait_for_finalizer_on_cancel = True
 
     def __init__(self, script_info: ScriptItem):
         super().__init__()
@@ -387,7 +385,7 @@ class HSRManager(NotificationTaskBase):
 
         return "；".join(blocking) if blocking else None
 
-    def _append_log(self, message: str, *, max_lines: int = 500) -> None:
+    def _append_log(self, message: str) -> None:
         """向调度台日志追加一行 HSR 运行信息。"""
 
         text = str(message).strip()
@@ -404,12 +402,10 @@ class HSRManager(NotificationTaskBase):
                 formatted = f"[{now_text}] {line}"
                 self._log_lines.append(formatted)
                 if self._direct_user_log is not None:
-                    self._direct_user_log.content.append(f"{formatted}\n")
-        if len(self._log_lines) > max_lines:
-            dropped_lines = len(self._log_lines) - max_lines
-            del self._log_lines[:-max_lines]
-            self.script_info.log_first_line += dropped_lines
-        self.script_info.log = "\n".join(self._log_lines)
+                    self.callbacks.submit(
+                        self._direct_user_log.append_content(f"{formatted}\n")
+                    )
+        self.callbacks.submit(self.script_info.set_log("\n".join(self._log_lines)))
 
     async def _stop_external_processes(self) -> None:
         """停止当前仍在运行的 SRA/M7A 子进程。"""
@@ -444,7 +440,7 @@ class HSRManager(NotificationTaskBase):
     async def check(self) -> str:
         """校验 HSR 配置是否可用，返回 'Pass' 或错误描述"""
 
-        if self.task_info.mode not in METHOD_BOOK:
+        if self.execution_mode not in METHOD_BOOK:
             return "HSR 暂不支持该任务模式，请检查任务配置"
 
         script_id = uuid.UUID(self.script_info.script_id)
@@ -524,7 +520,7 @@ class HSRManager(NotificationTaskBase):
             user_name = str(user_config.Info.Name or uid)
             if control.mode == "direct":
                 has_direct_user = True
-                if self.task_info.mode != "AutoProxy":
+                if self.execution_mode != "AutoProxy":
                     return f"用户「{user_name}」启用了脚本原生模式，但原生模式仅支持自动代理"
                 if cloud and "SRA" in control.engines:
                     return (
@@ -904,7 +900,7 @@ class HSRManager(NotificationTaskBase):
         script_id = uuid.UUID(self.script_info.script_id)
         self.config_locks[
             Config.ScriptConfig[script_id].uid
-        ] = await Config.ScriptConfig[script_id].lock_x()
+        ] = await self.lock_script_config(Config.ScriptConfig[script_id])
         self.script_config = Config.ScriptConfig[script_id]
         if not isinstance(self.script_config, HSRConfig):
             raise TypeError("脚本配置类型错误")
@@ -953,13 +949,15 @@ class HSRManager(NotificationTaskBase):
                 self._release_external_path_lock()
             raise
 
-        self.script_info.user_list = [
-            UserItem(user_id=str(uid), name=config.Info.Name, status="等待")
-            for uid, config in self.user_config.items()
-            if config.Info.Status
-            and config.Info.RemainedDay != 0
-            and self.task_info.is_target_user(str(uid))
-        ]
+        await self.script_info.set_users(
+            [
+                UserItem(user_id=str(uid), name=config.Info.Name, status="等待")
+                for uid, config in self.user_config.items()
+                if config.Info.Status
+                and config.Info.RemainedDay != 0
+                and self.task_info.is_target_user(str(uid))
+            ]
+        )
         logger.info(
             f"HSR 用户列表加载完成，已筛选用户数：{len(self.script_info.user_list)}"
         )
@@ -991,15 +989,15 @@ class HSRManager(NotificationTaskBase):
         if not self.script_info.user_list:
             logger.warning("HSR 无可用用户，跳过执行")
             self._append_log("HSR 无可用用户，跳过执行")
-            self.script_info.status = "完成"
+            await self.script_info.set_state(status="完成")
             return
 
-        task_cls = METHOD_BOOK[self.task_info.mode]
+        task_cls = METHOD_BOOK[self.execution_mode]
         steps_count = 0
         user_errors: list[str] = []
         try:
             for user_index, user_item in enumerate(self.script_info.user_list):
-                self.script_info.current_index = user_index
+                await self.script_info.set_current_index(user_index)
                 proxy = None
                 try:
                     user_config = self.user_config[uuid.UUID(user_item.user_id)]
@@ -1020,11 +1018,11 @@ class HSRManager(NotificationTaskBase):
                             self.task_info.is_queue_task
                             and self._proxy_times_limit_reached(user_config)
                         ):
-                            user_item.status = "跳过"
+                            await user_item.set_state(status="跳过")
                             # 结果与通知是按 log_record 读的，只设 status 会被读成
                             # 「未开始运行」；补一条带原因的日志记录，界面才说得清
                             # 这个用户为什么没跑。
-                            user_item.add_log_record(
+                            await user_item.add_log_record(
                                 datetime.now().astimezone(),
                                 LogRecord(status="今日代理次数已达上限，跳过"),
                             )
@@ -1045,15 +1043,17 @@ class HSRManager(NotificationTaskBase):
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:  # noqa: BLE001
-                    user_item.status = "异常"
+                    await user_item.set_state(status="异常")
                     if user_item.log_record:
                         latest_time = max(user_item.log_record)
                         user_log = user_item.log_record[latest_time]
                     else:
                         user_log = LogRecord()
-                        user_item.add_log_record(datetime.now().astimezone(), user_log)
-                    user_log.status = f"HSR 执行异常: {e}"
-                    user_log.content.append(str(e))
+                        user_log = await user_item.add_log_record(
+                            datetime.now().astimezone(), user_log
+                        )
+                    await user_log.set_state(status=f"HSR 执行异常: {e}")
+                    await user_log.append_content(str(e))
                     user_errors.append(f"用户「{user_item.name}」执行异常：{e}")
                     logger.opt(exception=True).warning(
                         f"HSR 用户「{user_item.name}」执行异常，继续后续用户：{e}"
@@ -1087,10 +1087,10 @@ class HSRManager(NotificationTaskBase):
                 "HSR 部分用户执行异常，已继续处理后续用户：" + "；".join(user_errors)
             )
 
-        if self.task_info.mode == "AutoProxy" and steps_count == 0 and not user_errors:
+        if self.execution_mode == "AutoProxy" and steps_count == 0 and not user_errors:
             logger.info("HSR 无模块需要执行，所有用户跳过")
             self._append_log("HSR 无模块需要执行，所有用户跳过")
-            self.script_info.status = "完成"
+            await self.script_info.set_state(status="完成")
             return
 
         logger.info(
@@ -1117,8 +1117,8 @@ class HSRManager(NotificationTaskBase):
         user_name = str(user_config.Info.Name or user_item.name)
         started_at = datetime.now().astimezone()
         log_item = LogRecord(status="HSR 脚本原生来源运行中")
-        user_item.add_log_record(started_at, log_item)
-        user_item.status = "运行"
+        log_item = await user_item.add_log_record(started_at, log_item)
+        await user_item.set_state(status="运行")
         self._direct_user_log = log_item
 
         try:
@@ -1226,24 +1226,24 @@ class HSRManager(NotificationTaskBase):
                             if self._direct_sessions.get(engine) is session:
                                 self._direct_sessions.pop(engine, None)
             except Exception:
-                user_item.status = "异常"
-                log_item.status = "HSR 脚本原生来源异常"
+                await user_item.set_state(status="异常")
+                await log_item.set_state(status="HSR 脚本原生来源异常")
                 raise
 
-            user_item.status = "完成"
-            log_item.status = "HSR 脚本原生来源完成"
+            await user_item.set_state(status="完成")
+            await log_item.set_state(status="HSR 脚本原生来源完成")
             return len(control.engines)
         except asyncio.CancelledError:
             self.stopped_manually = True
-            user_item.status = "异常"
-            log_item.status = "任务被用户手动中止"
+            await user_item.set_state(status="异常")
+            await log_item.set_state(status="任务被用户手动中止")
             raise
         except Exception as error:
-            user_item.status = "异常"
-            log_item.status = f"HSR 脚本原生来源异常: {error}"
+            await user_item.set_state(status="异常")
+            await log_item.set_state(status=f"HSR 脚本原生来源异常: {error}")
             raise
         finally:
-            self.task_info.begin_user_history_capture(
+            self.history.begin_user_history_capture(
                 self.script_info,
                 user_item,
                 failed=user_item.status == "异常" and not self.stopped_manually,
@@ -1450,7 +1450,7 @@ class HSRManager(NotificationTaskBase):
         uncompleted_count = sum(
             1 for u in self.script_info.user_list if u.status not in ("完成", "跳过")
         )
-        task_mode = TASK_MODE_ZH.get(self.task_info.mode, self.task_info.mode)
+        task_mode = TASK_MODE_ZH.get(self.execution_mode, self.execution_mode)
         title = (
             f"{datetime.now().strftime('%m-%d')} | "
             f"{self.script_info.name or '空白'}的{task_mode}任务报告"
@@ -1547,11 +1547,11 @@ class HSRManager(NotificationTaskBase):
                 self.crashed = True
 
             if self.check_result != "Pass" or self.crashed:
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
                 self._append_log("HSR 异常或中止结束，开始收尾")
                 logger.info("HSR 异常结束，开始收尾")
                 try:
-                    if self.task_info.mode == "AutoProxy":
+                    if self.execution_mode == "AutoProxy":
                         await self._apply_completion_writebacks()
                 except Exception as e:  # noqa: BLE001
                     msg = f"HSR 已完成模块状态写回失败：{e}"
@@ -1567,18 +1567,18 @@ class HSRManager(NotificationTaskBase):
 
             await self._apply_cloud_login_writebacks()
             try:
-                if self.task_info.mode == "AutoProxy":
+                if self.execution_mode == "AutoProxy":
                     await self._apply_completion_writebacks()
             except Exception as e:
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
                 logger.opt(exception=True).warning(f"HSR 用户数据写回失败：{e}")
                 self._append_log(f"HSR 用户数据写回失败：{e}")
                 return f"HSR 用户数据写回失败：{e}"
 
             if any(user.status == "异常" for user in self.script_info.user_list):
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
             else:
-                self.script_info.status = "完成"
+                await self.script_info.set_state(status="完成")
             self._append_log("HSR 任务完成")
             await self._push_result_notification()
         finally:
@@ -1588,7 +1588,7 @@ class HSRManager(NotificationTaskBase):
         """任务异常处理"""
 
         self.crashed = True
-        self.script_info.status = "异常"
+        await self.script_info.set_state(status="异常")
         logger.opt(exception=True).warning(f"HSR 任务出现异常：{e}")
         self._append_log(f"HSR 任务出现异常：{e}")
         await Publisher.send(

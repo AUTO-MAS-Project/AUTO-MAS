@@ -25,6 +25,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .background_tasks import BackgroundTaskManager as BackgroundTaskManager
     from .community import Community as Community
     from .config import Config as Config
     from .desktop_guard import DesktopGuard as DesktopGuard
@@ -36,7 +37,6 @@ if TYPE_CHECKING:
     from .lifecycle import ShutdownCoordinator as ShutdownCoordinator
     from .maa_manager import MaaFWManager as MaaFWManager
     from .notify import Notify as Notify
-    from .runtime_tasks import RuntimeTasks as RuntimeTasks
     from .task_manager import TaskManager as TaskManager
     from .taskboard import Taskboard as Taskboard
     from .timer import MainTimer as MainTimer
@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 _LAZY_EXPORTS = {
     "Config": (".config", "Config"),
     "Notify": (".notify", "Notify"),
-    "RuntimeTasks": (".runtime_tasks", "RuntimeTasks"),
+    "BackgroundTaskManager": (".background_tasks", "BackgroundTaskManager"),
     "TaskManager": (".task_manager", "TaskManager"),
     "MainTimer": (".timer", "MainTimer"),
     "EmulatorManager": (".emulator_manager", "EmulatorManager"),
@@ -82,7 +82,7 @@ def __getattr__(name: str):
 __all__ = [
     "Config",
     "Notify",
-    "RuntimeTasks",
+    "BackgroundTaskManager",
     "TaskManager",
     "MainTimer",
     "EmulatorManager",

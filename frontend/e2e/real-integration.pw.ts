@@ -1,5 +1,7 @@
 import { writeFile } from 'node:fs/promises'
 import type { Page, WebSocket } from '@playwright/test'
+import type { TaskItemDocument } from '../src/api'
+import { projectTaskTree } from '../src/composables/taskTreeProjection'
 import { expect, test } from './fixtures'
 
 const backendBaseUrl = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? '36174'}`
@@ -55,6 +57,11 @@ const readBody = async (response: {
   return body
 }
 
+const objectScriptData = (value: unknown, uid: string): JsonObject => {
+  if (!isRecord(value) || !isRecord(value[uid])) throw new Error('脚本配置不存在')
+  return value[uid]
+}
+
 const readString = (value: unknown): string | undefined =>
   typeof value === 'string' && value ? value : undefined
 
@@ -70,15 +77,26 @@ const getRealConfig = (): RealConfig => ({
     : {}),
 })
 
-const isAllowedStart = (body: unknown, config: RealConfig): boolean =>
-  isRecord(body) &&
-  body.mode === 'AutoProxy' &&
-  body.taskId === config.scriptId &&
-  body.userId == null &&
-  body.queueUserIds == null &&
-  body.resumeFromScriptId == null &&
-  (body.userIds == null ||
-    (Array.isArray(body.userIds) && body.userIds.length === 1 && body.userIds[0] === config.userId))
+const singleSelection = (nodes: unknown): JsonObject | undefined => {
+  if (!isRecord(nodes) || Object.keys(nodes).length !== 1 || !isRecord(nodes['0'])) return
+  return nodes['0']
+}
+
+const isAllowedStart = (body: unknown, config: RealConfig): boolean => {
+  if (!isRecord(body) || body.mode !== 'AutoProxy') return false
+  const queue = singleSelection(body.tasks)
+  if (queue?.uid !== '-') return false
+  const script = singleSelection(queue.children)
+  if (script?.uid !== config.scriptId) return false
+  // 空子树只在下方已确认隔离配置恰有一个目标账号时允许。
+  if (
+    script.children == null ||
+    (isRecord(script.children) && !Object.keys(script.children).length)
+  )
+    return true
+  const user = singleSelection(script.children)
+  return user?.uid === config.userId
+}
 
 const createOperationObserver = (page: Page, config: RealConfig) => {
   const sockets = new Set<WebSocket>()
@@ -121,12 +139,12 @@ const createOperationObserver = (page: Page, config: RealConfig) => {
     }
 
     if (message.type === 'task.completed' && typeof message.id === 'string') {
-      const scripts = Array.isArray(data.task_info) ? data.task_info : []
+      const scripts = isRecord(data.task) ? projectTaskTree(data.task as TaskItemDocument) : []
       const script = scripts.find(
-        (item: unknown) => isRecord(item) && item.script_id === config.scriptId
+        (item: unknown) => isRecord(item) && item.config_id === config.scriptId
       )
       const users = Array.isArray(script?.userList) ? script.userList : []
-      const user = users.find((item: unknown) => isRecord(item) && item.user_id === config.userId)
+      const user = users.find((item: unknown) => isRecord(item) && item.config_id === config.userId)
       const outcome = readString(data.outcome)
       const scriptStatus = readString(script?.status)
       const userStatus = readString(user?.status)
@@ -359,7 +377,7 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
       const users = isRecord(usersBody.data) ? usersBody.data : {}
       const user = users[config.userId]
       const info = isRecord(user) && isRecord(user.Info) ? user.Info : {}
-      // 全选时 UI 省略 userIds；只接受已隔离为唯一目标账号的配置。
+      // 全选时要求树保留空用户子树；只接受已隔离为唯一目标账号的配置。
       expect(Object.keys(users).length === 1 && isRecord(user)).toBe(true)
       expect(info.Status === true && info.RemainedDay !== 0).toBe(true)
       expect((readString(info.Name) ?? config.userId) === config.accountName).toBe(true)
@@ -394,23 +412,19 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
           .toBe(true)
       }
 
-      const taskOptionsResponse = await page.request.post(apiUrl('/api/info/combox/task'))
+      const taskOptionsResponse = await page.request.post(apiUrl('/api/scripts/get'), { data: {} })
       stage = 'selection'
       const taskOptionsBody = await readBody(taskOptionsResponse)
       expect(taskOptionsBody.code).toBe(200)
-      const taskOptions = Array.isArray(taskOptionsBody.data) ? taskOptionsBody.data : []
-      const scriptOption = taskOptions.find(
-        item => isRecord(item) && item.value === config.scriptId
-      )
-      expect(isRecord(scriptOption)).toBeTruthy()
-      const scriptLabel = readString(isRecord(scriptOption) ? scriptOption.label : undefined)
+      const data = objectScriptData(taskOptionsBody.data, config.scriptId)
+      const scriptLabel = readString(isRecord(data.Info) ? data.Info.Name : undefined)
       expect(scriptLabel).toBeTruthy()
 
       await page.locator('.task-control .ant-select').nth(0).click()
       const options = page.locator('.ant-select-dropdown:visible .ant-select-item-option-content')
       await expect(options.first()).toBeVisible()
       const optionLabels = await options.allTextContents()
-      const scriptIndex = optionLabels.findIndex(label => label.trim() === scriptLabel)
+      const scriptIndex = optionLabels.findIndex(label => label.trim().endsWith(`· ${scriptLabel}`))
       expect(scriptIndex >= 0).toBe(true)
       await options.nth(scriptIndex).click()
 
@@ -420,7 +434,7 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
       await scopeTrigger.click()
       const scopePanel = page.locator('.ant-popover:visible .queue-scope')
       await expect(scopePanel).toBeVisible()
-      const accountRows = scopePanel.locator('.queue-scope-group label.ant-checkbox-wrapper')
+      const accountRows = scopePanel.locator('.scope-users label.ant-checkbox-wrapper')
       await expect(accountRows).toHaveCount(1)
       expect((await accountRows.first().innerText()).trim() === config.accountName).toBe(true)
       await accountRows.first().getByRole('checkbox').check()

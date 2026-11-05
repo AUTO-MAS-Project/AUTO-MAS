@@ -6,12 +6,12 @@ from unittest.mock import AsyncMock, patch
 
 import app.core.notify.rendering as _notification_rendering
 from app.core import Config
+from app.core.background_tasks import BackgroundTaskRegistry
 from app.core.notify.bootstrap import (
     get_notify_channel_failures as get_notify_channel_failures,
 )
 from app.core.notify.bootstrap import get_notify_channels as get_notify_channels
 from app.core.notify.manager import NotificationManager as NotificationManager
-from app.core.runtime_tasks import OwnedTaskRegistry
 from app.models.notification import NotificationSummary, NotifyPayload
 from app.models.notification.channel import Notifier
 from app.models.notification.community import CommunityNotificationResult
@@ -233,7 +233,7 @@ def _service(config=None, *, notifier=None):
     # 各用例隔离全局实例的资源，实际调用仍经过所有调用方共享的 Notify。
     with (
         patch.object(manager, "Config", environment),
-        patch.object(tasks, "RuntimeTasks", OwnedTaskRegistry()),
+        patch.object(tasks, "BackgroundTaskManager", BackgroundTaskRegistry()),
         patch.dict(
             Notify.__dict__,
             {
@@ -652,7 +652,6 @@ def test_prepared_task_report_zero_targets_keeps_summary() -> None:
 def test_prepared_task_report_publishes_failure_notice() -> None:
     config = _Config({"IfSendMail": True, "ToAddress": "user@example.com"})
     task = _Task()
-    task.task_id = "task-1"
 
     with _service(notifier=_Notify({"send_mail": ["false"]})) as notifications:
         with patch(

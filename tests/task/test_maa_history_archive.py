@@ -2,7 +2,6 @@
 
 import importlib
 from datetime import datetime, timezone
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -11,6 +10,7 @@ from PIL import Image
 from app.core.history import HistoryStore
 from app.models.task import LogRecord
 from app.task.history_core import UserHistoryDependencies, save_user_history
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 @pytest.mark.asyncio
@@ -66,7 +66,7 @@ async def test_maa_finalizer_archives_original_without_system_temp(
 
     task = SimpleNamespace(
         check_result="Pass",
-        task_info=SimpleNamespace(
+        history=SimpleNamespace(
             begin_user_history_capture=Mock(),
             save_user_history=save,
         ),

@@ -1,7 +1,6 @@
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { TaskMode } from '@/api'
 import { PowerIn } from '@/api/models/PowerIn'
-import type { WSTaskCyclePreviewData, WSTaskUserProgressData } from '@/services/websocket/types'
-import type { QueueScopeDisabledUser, QueueScopeGroup, QueueUserScope } from './schedulerQueueScope'
+import type { TaskScopeDraft } from '@/composables/taskSelection'
 
 // 调度台状态
 export type SchedulerStatus = '空闲' | '运行' | '结束' | '异常'
@@ -11,8 +10,6 @@ export interface User {
   user_id: string
   status: string
   name: string
-  // 面板回放快照时要带上，否则签名对不上、进度被清掉
-  progress?: WSTaskUserProgressData | null
 }
 
 export interface Script {
@@ -32,9 +29,14 @@ export const TAB_STATUS_COLOR: Record<SchedulerStatus, string> = {
 }
 
 // 运行模式标签（直接复用后端枚举值）
+export const TASK_MODE_LABEL_KEYS: Record<TaskMode, string> = {
+  [TaskMode.AUTO_PROXY]: 'core.scheduler.mode.autoProxy',
+  [TaskMode.SCRIPT_CONFIG]: 'core.scheduler.mode.scriptConfig',
+  [TaskMode.SCRIPT_VIEW]: 'core.scheduler.mode.scriptView',
+}
+
 export const TASK_MODE_OPTIONS = [
-  { labelKey: 'core.scheduler.mode.autoProxy', value: TaskCreateIn.mode.AUTO_PROXY },
-  { labelKey: 'core.scheduler.mode.cycleRun', value: TaskCreateIn.mode.CYCLE_RUN },
+  { labelKey: 'core.scheduler.mode.autoProxy', value: TaskMode.AUTO_PROXY },
 ]
 
 // 电源操作 -> 词表 key（信号值本身是后端枚举，不动）
@@ -49,58 +51,17 @@ export const POWER_ACTION_LABEL_KEY: Record<PowerIn.signal, string> = {
   [PowerIn.signal.RESTART_SELF]: 'core.scheduler.power.restartSelf',
   [PowerIn.signal.LOGOFF]: 'core.scheduler.power.logoff',
 }
+/** 调度台只保存界面与启动草稿，运行数据由 taskId 引用。 */
 export interface SchedulerTab {
   key: string
   title: string
-  /** 自动标题保留编号，词表就绪或切语后再生成文案。 */
   titleNumber?: number
   closable: boolean
-  status: SchedulerStatus
   selectedTaskId: string | null
-  selectedMode: TaskCreateIn.mode | null
-  resumeFromScriptId?: string | null
-  resumeScriptOptions?: Array<{ label: string; value: string }>
-  resumeScriptLoading?: boolean
-  // 脚本自动代理的用户范围；undefined 表示动态全选，数组表示显式子集（[] 为取消全选）
-  selectedUserIds?: string[]
-  userOptions?: Array<{ label: string; value: string }>
-  // 托管里未启用/天数耗尽的账号，只在「本次运行范围」面板展示，不可勾选
-  userDisabledOptions?: QueueScopeDisabledUser[]
-  userOptionsLoading?: boolean
-  userOptionsLoaded?: boolean
+  selectedMode: TaskMode | null
+  scope?: TaskScopeDraft
+  scopeLoading?: boolean
+  scopeError?: string
+  starting?: boolean
   taskId: string | null
-  subscriptionIds?: string[]
-  // 日志增量协议的 buffer 与 seq，语义见 schedulerLogBuffer.ts
-  logBuffer: string
-  logSeq?: number
-  // buffer 第一行在完整日志里的行号，界面据此显示真实行号
-  logFirstLine?: number
-  // 裁剪并添加提示行后的首行号，和当前显示内容对应
-  displayLogFirstLine?: number
-  // 送给日志面板渲染的内容（logBuffer 再裁到 120,000）
-  lastLogContent: string
-  /** 词表变化时仅重绘运行日志，不能覆盖已显示的最终结果。 */
-  logContentIsBuffer?: boolean
-  // 新增：任务总览快照（用于路由返回时快速恢复显示）
-  overviewData?: Script[]
-  // 新增：消息去重相关字段
-  lastMessageHash?: string
-  lastMessageTime?: number
-  // 新增：运行时任务/模式文本快照（用于持久化显示）
-  runningTaskLabel?: string
-  runningModeLabel?: string
-  /** 后端未给任务类型文案时，保存本地模式的语义 key。 */
-  runningModeLabelKey?: string
-  // 新增：日志显示模式
-  logMode?: 'follow' | 'browse'
-  // 所选任务是否为循环队列，循环队列固定按「循环运行」启动
-  isCycleQueue?: boolean
-  // 循环运行的待运行条目预览
-  cycleNextList?: WSTaskCyclePreviewData[]
-  // 队列任务本次运行的托管/账号范围，语义见 schedulerQueueScope.ts（缺键为默认全选）
-  queueUserScope?: QueueUserScope
-  // 该队列的托管及其可运行账号，供「本次运行范围」面板渲染
-  queueScopeGroups?: QueueScopeGroup[]
-  queueScopeLoading?: boolean
-  queueScopeFailed?: boolean
 }

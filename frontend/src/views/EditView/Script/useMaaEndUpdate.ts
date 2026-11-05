@@ -1,8 +1,8 @@
-import { requestTaskStart } from '@/composables/useTaskApi'
+import { requestMaintenanceStart } from '@/composables/useTaskApi'
 import { onScopeDispose, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Modal, message } from 'ant-design-vue'
-import { Service, TaskCreateIn } from '@/api'
+import { Service } from '@/api'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
 import {
@@ -50,10 +50,6 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     retries: [] as number[],
   })
 
-  // 任务日志增量协议：append 为假 → 整体替换并记 seq；append 为真且 seq 连续 → 追加；
-  // 否则视为失步（订阅登记前已经错过首条整体替换、或漏了消息）：丢弃本条，拉一次运行
-  // 快照用它的 log/logSeq 重建，重建期间到达的增量一并丢弃。
-  let logSeq: number | null = null
   let logResyncing = false
   // 连续拉失败的对账次数，拉到一次成功就归零
   let resyncRetries = 0
@@ -159,7 +155,6 @@ export function useMaaEndUpdate(getScriptId: () => string) {
       // 期间已有更新的日志就不拿这份旧的覆盖
       if (revision === logRevision) {
         updateModal.log = item.log ?? ''
-        logSeq = item.logSeq ?? null
       }
     } catch (e) {
       logger.warn(`重建终末地更新日志失败: ${e instanceof Error ? e.message : String(e)}`)
@@ -193,33 +188,16 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     if ((await settleIfFinished()) && updateModal.running) armIdleTimer()
   }
 
-  const applyLog = (data: { log: string; seq?: number; append?: boolean }) => {
-    if (!data.append) {
-      updateModal.log = data.log
-      logSeq = data.seq ?? null
-    } else if (logSeq !== null && data.seq === logSeq + 1) {
-      updateModal.log += data.log
-      logSeq = data.seq
-    } else {
-      // 序号对不上（丢包或重连）就整段重扫，期间不追加半截行。表必须先续上：重扫一旦
-      // 失败，这一段就没有下一次对账了
-      logSeq = null
-      armIdleTimer()
-      void settleIfFinished()
-      return
-    }
+  const applyLog = (data: WSTaskLogUpdatedData) => {
+    updateModal.log = data.log.slice(-UPDATE_LOG_MAX_CHARS)
     logRevision += 1
     armIdleTimer()
-    if (updateModal.log.length > UPDATE_LOG_MAX_CHARS) {
-      updateModal.log = updateModal.log.slice(-UPDATE_LOG_MAX_CHARS)
-    }
   }
 
   const handleCheckUpdate = () => {
     if (updateModal.running || !getScriptId()) return
     updateModal.log = ''
     updateModal.done = false
-    logSeq = null
     updateModal.open = true
   }
 
@@ -228,13 +206,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     if (!scriptId) return
     updateModal.starting = true
     try {
-      const response = await requestTaskStart(
-        {
-          taskId: scriptId,
-          mode: TaskCreateIn.mode.UPDATE,
-        },
-        { source: 'script_update', target_kind: 'script' }
-      )
+      const response = await requestMaintenanceStart(scriptId)
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t('core.edit.endfieldUpdateStartFailed'))
       }
@@ -255,9 +227,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
       aborted = false
       updateSession.subscriptionIds = [
         subscribe({ id: response.taskId, type: WS_TASK_LOG_UPDATED }, wsMessage => {
-          applyLog(
-            wsMessage.data as unknown as WSTaskLogUpdatedData & { seq?: number; append?: boolean }
-          )
+          applyLog(wsMessage.data)
         }),
         subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
           const data = wsMessage.data as unknown as WSTaskNoticeData

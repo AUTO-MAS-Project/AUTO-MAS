@@ -81,7 +81,9 @@ async def test_global_manager_prepares_channels_once_and_close_does_not_recreate
     channels = SimpleNamespace(start=AsyncMock(), stop=AsyncMock())
     registry = SimpleNamespace(by_id={}, bind=Mock(return_value=channels))
     monkeypatch.setattr(manager, "_get_registry", lambda: registry)
-    with patch.dict(Notify.__dict__, clear=True):
+    with patch.dict(
+        Notify.__dict__, manager.NotificationManager().__dict__, clear=True
+    ):
         await Notify.start()
         await Notify.start()
         registry.bind.assert_called_once()

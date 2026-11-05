@@ -3,9 +3,10 @@
 import asyncio
 import importlib
 import threading
-from types import SimpleNamespace
 
 import pytest
+
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 @pytest.fixture(params=["Okww", "OkNte", "BAAH", "ZzzOd"])
@@ -13,6 +14,8 @@ def capture(request, tmp_path, monkeypatch):
     adapter = request.param
     module = importlib.import_module(f"app.task.{adapter}.AutoProxy")
     proxy = module.AutoProxyTask.__new__(module.AutoProxyTask)
+    proxy.user_state = lambda user: user
+    proxy.callbacks = SimpleNamespace()
     user = SimpleNamespace(push_log=[], push_log_mode="汇总", status="完成")
     proxy.cur_user_item = user
     proxy.script_root_path = tmp_path
@@ -178,6 +181,8 @@ def test_okww_translation_cleanup_failure_preserves_delivered_nodes(
     supplement.write_text("", encoding="utf-8")
     monkeypatch.setattr(module._push_log, "_okww_supplement_po", lambda: supplement)
     proxy = module.AutoProxyTask.__new__(module.AutoProxyTask)
+    proxy.user_state = lambda user: user
+    proxy.callbacks = SimpleNamespace()
     user = SimpleNamespace(push_log=[], push_log_mode="汇总", status="完成")
     proxy.cur_user_item, proxy.script_root_path = user, tmp_path
     path = tmp_path / "run.log"

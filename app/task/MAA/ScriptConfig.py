@@ -394,13 +394,13 @@ class ScriptConfigTask(TaskExecuteBase):
         # manager 的任务前快照还原）；GUI 内的改动一律丢弃
         if self.view_only:
             logger.success("MAA 查看结束（只读，不回写配置）")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         # 原生来源会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
         if self._mas_owner() is None:
             logger.success("MAA 原生来源配置已由脚本原生 GUI 保存")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         mas_dir = mas_config_dir(self.script_info.script_id, self._mas_owner())
@@ -447,7 +447,7 @@ class ScriptConfigTask(TaskExecuteBase):
             _utils_io.write_file(mas_dir / name, current)
 
     async def on_crash(self, e: Exception):
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         await Publisher.send(
             id=self.task_info.task_id,

@@ -17,7 +17,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-from app.models.task import UserTaskProgress
 from app.task.MaaFW.tools.core.runner.run_events import (
     CATEGORY_INIT_FAILED,
     CATEGORY_LOOP_GUARD,
@@ -84,7 +83,7 @@ class MaaFWAttemptRecord(BaseModel):
     # 没走到任务就失败时，失败在哪一步（run_events 的 STAGE_*）
     failedStage: str | None = None
     signal: str | None = None
-    # 本次计划之前已被重试跳过的任务数（前面的尝试完成过的），调度台进度据此补齐总数
+    # 本次计划之前已被重试跳过的任务数（前面的尝试完成过的）。
     retrySkipped: int = 0
     stages: list[MaaFWStageRecord] = Field(default_factory=list)
     tasks: list[MaaFWTaskRecord] = Field(default_factory=list)
@@ -196,9 +195,8 @@ class MaaFWRunRecorder:
                 item.ok = ok
                 return
 
-    def apply(self, data: Any) -> UserTaskProgress | None:
-        """收一条 worker 事件；任务开始时返回调度台要显示的进度（「3/12 · 当前任务」），
-        其余返回 None。认不出的事件丢掉。"""
+    def apply(self, data: Any) -> None:
+        """将 worker 阶段、任务起止事件归入专项运行记录；忽略未知事件。"""
 
         record = self.current
         event = parse_run_record_event(data)
@@ -215,11 +213,6 @@ class MaaFWRunRecorder:
             if event.label and not task.label:
                 task.label = event.label
             task.startedAt = _round(event.at)
-            return UserTaskProgress(
-                current=record.retrySkipped + event.index + 1,
-                total=record.retrySkipped + max(event.total, len(record.tasks)),
-                task=task.label or task.name,
-            )
         if isinstance(event, MaaFWTaskEndEvent):
             task.endedAt = _round(event.at)
             task.outcome = event.outcome

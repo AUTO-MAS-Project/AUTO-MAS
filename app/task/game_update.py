@@ -24,8 +24,6 @@ logger = get_logger("游戏更新任务")
 
 
 class EmulatorGameUpdateTask(TaskExecuteBase):
-    wait_for_finalizer_on_cancel = True
-
     def __init__(
         self,
         *,
@@ -54,7 +52,7 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
         self.owns_emulator = False
 
     async def _report(self, message: str) -> None:
-        self.script_info.log = message
+        await self.script_info.set_log(message)
         logger.info(message)
 
     async def main_task(self) -> None:
@@ -97,4 +95,4 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
 
     async def on_crash(self, error: Exception) -> None:
         logger.opt(exception=True).warning(f"游戏更新检查异常，沿用原代理流程: {error}")
-        self.script_info.log = f"游戏更新检查异常: {error}"
+        await self.script_info.set_log(f"游戏更新检查异常: {error}")

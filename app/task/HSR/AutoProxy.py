@@ -167,8 +167,6 @@ def _has_enabled_phase_module(plan, phase: HSRPhase) -> bool:
 class HSRAutoProxyTask(TaskExecuteBase):
     """HSR 单用户自动代理任务。"""
 
-    wait_for_finalizer_on_cancel = True
-
     def __init__(
         self,
         script_info: ScriptItem,
@@ -237,7 +235,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         # 队列中途因模块失败重启游戏后，下一个 SRA 模块前要先用它登录一次。
         self._restart_login_item_factory: Callable[[HSRPhase], HSRRunItem] | None = None
 
-    def _append_log(self, message: str, *, max_lines: int = 500) -> None:
+    def _append_log(self, message: str) -> None:
         text = str(message).strip()
         if not text:
             return
@@ -254,19 +252,19 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 formatted = f"[{now_text}] {line}"
                 self._log_lines.append(formatted)
                 appended_lines.append(formatted)
-        if len(self._log_lines) > max_lines:
-            dropped_lines = len(self._log_lines) - max_lines
-            del self._log_lines[:-max_lines]
-            self.script_info.log_first_line += dropped_lines
-        self.script_info.log = "\n".join(self._log_lines)
+        self.callbacks.submit(self.script_info.set_log("\n".join(self._log_lines)))
         if self._current_user_log is not None:
             if self._current_user_log.status in ("未开始监看日志", ""):
-                self._current_user_log.status = "HSR 正常运行中"
-            self._current_user_log.content.extend(
-                f"{line}\n" for line in appended_lines
+                self.callbacks.submit(
+                    self._current_user_log.set_state(status="HSR 正常运行中")
+                )
+            self.callbacks.submit(
+                self._current_user_log.append_content(
+                    *(f"{line}\n" for line in appended_lines)
+                )
             )
 
-    def _start_user_log(
+    async def _start_user_log(
         self,
         user_item: UserItem,
         user_name: str,
@@ -278,8 +276,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self._current_user_item = user_item
         self._current_log_start_time = datetime.now().astimezone()
         self._current_user_log = LogRecord(status="HSR 正常运行中")
-        user_item.add_log_record(self._current_log_start_time, self._current_user_log)
-        user_item.status = "运行"
+        self._current_user_log = await user_item.add_log_record(
+            self._current_log_start_time, self._current_user_log
+        )
+        await user_item.set_state(status="运行")
         if attempt <= 1:
             self._append_log(f"开始处理用户「{user_name}」")
         else:
@@ -287,7 +287,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 f"开始处理用户「{user_name}」第 {attempt}/{retry_limit} 次尝试"
             )
 
-    def _finish_current_user_log(
+    async def _finish_current_user_log(
         self,
         log_status: str,
         user_status: str = "完成",
@@ -295,14 +295,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
         """结束当前用户日志记录，并清空当前用户上下文。"""
 
         if self._current_user_log is not None:
-            self._current_user_log.status = log_status
+            await self._current_user_log.set_state(status=log_status)
         if self._current_user_item is not None:
-            self._current_user_item.status = user_status
+            await self._current_user_item.set_state(status=user_status)
         self._current_user_item = None
         self._current_user_log = None
         self._current_log_start_time = None
 
-    def _mark_current_user_abnormal(
+    async def _mark_current_user_abnormal(
         self,
         log_status: str,
         user_status: str = "异常",
@@ -310,9 +310,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
         """异常或中止时给当前用户补充明确结果。"""
 
         if self._current_user_log is not None:
-            self._current_user_log.status = log_status
+            await self._current_user_log.set_state(status=log_status)
         if self._current_user_item is not None:
-            self._current_user_item.status = user_status
+            await self._current_user_item.set_state(status=user_status)
 
     async def _stop_external_processes(self) -> None:
         """停止当前仍在运行的 SRA/M7A 子进程。"""
@@ -1926,9 +1926,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self.steps_count = len(full_queue)
 
         if not full_queue:
-            self._start_user_log(user_item, user_name)
+            await self._start_user_log(user_item, user_name)
             self._append_log(f"用户「{user_name}」本轮没有需要执行的 HSR 任务")
-            self._finish_current_user_log("HSR 本轮无需执行，已跳过")
+            await self._finish_current_user_log("HSR 本轮无需执行，已跳过")
             return
 
         # 执行任务前脚本（每用户仅一次，补跑不重复执行）
@@ -1942,7 +1942,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             if not current_items:
                 break
 
-            self._start_user_log(
+            await self._start_user_log(
                 user_item,
                 user_name,
                 attempt=attempt,
@@ -1959,10 +1959,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
                 failed_items = await self._run_queue_items(current_items)
             except asyncio.CancelledError:
-                self._mark_current_user_abnormal("任务被用户手动中止")
+                await self._mark_current_user_abnormal("任务被用户手动中止")
                 raise
             except Exception as e:  # noqa: BLE001
-                self._mark_current_user_abnormal(f"HSR 运行异常: {e}")
+                await self._mark_current_user_abnormal(f"HSR 运行异常: {e}")
                 raise
 
             if not failed_items:
@@ -1990,7 +1990,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             # 结束当前用户日志会清空用户上下文，每轮只能调用一次；
             # 用户状态必须在这一次里定好，否则后续补写全部失效。
             if not failed_items:
-                self._finish_current_user_log(status)
+                await self._finish_current_user_log(status)
                 return
 
             # 不可重试的失败（配置或代码错误）只记结果, 不进补跑队列
@@ -2007,7 +2007,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     f"用户「{user_name}」第 {attempt}/{retry_limit} 次尝试后，"
                     f"仍有 {len(retryable_failures)} 个失败任务，{retry_action}"
                 )
-                self._finish_current_user_log(status, user_status="运行")
+                await self._finish_current_user_log(status, user_status="运行")
                 current_items = self._build_retry_queue_items(
                     retryable_failures,
                     user_item=user_item,
@@ -2019,7 +2019,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     temp_files=self.temp_files,
                 )
             else:
-                self._finish_current_user_log(status, user_status="异常")
+                await self._finish_current_user_log(status, user_status="异常")
                 failed_items = permanent_failures + retryable_failures
                 for failed_item in failed_items:
                     if failed_item.module_key == "StartGame":
@@ -2040,7 +2040,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     async def final_task(self):
         """用户任务结束后清理临时配置；异常时停止外部脚本。"""
 
-        self.task_info.begin_user_history_capture(
+        self.history.begin_user_history_capture(
             self.script_info,
             self.cur_user_item,
             failed=(self.crashed or self.cur_user_item.status == "异常")
@@ -2063,11 +2063,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         logger.warning(diagnostic)
                         logs = self.cur_user_item.iter_history_logs()
                         if logs:
-                            logs[-1][1].content.append(f"\n{diagnostic}\n")
+                            await logs[-1][1].append_content(f"\n{diagnostic}\n")
                         raise
             finally:
                 await save_hsr_user_history(
-                    task_info=self.task_info,
+                    history=self.history,
                     script_info=self.script_info,
                     user_item=self.cur_user_item,
                     cancelled=self.stopped_manually,
@@ -2077,7 +2077,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.crashed = True
         self.error_message = str(e)
-        self._mark_current_user_abnormal(f"HSR 用户任务异常: {e}")
+        await self._mark_current_user_abnormal(f"HSR 用户任务异常: {e}")
         logger.opt(exception=True).warning(
             f"HSR 用户「{self.cur_user_item.name}」任务出现异常：{e}"
         )

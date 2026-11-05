@@ -21,8 +21,8 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 from app.models.config import MaaEndConfig
-from app.models.script_contracts import ScriptConfigHandler
-from app.task.registration import ManagerBuildContext, ScriptRegistration
+from app.models.script_contracts import ScriptConfigHandler, ScriptEmulatorBinding
+from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
     from app.models.task import ScriptItem, TaskExecuteBase
@@ -31,9 +31,7 @@ if TYPE_CHECKING:
     from .api_service import MaaEndConfigService
 
 
-def build_manager(
-    script_item: ScriptItem, context: ManagerBuildContext
-) -> TaskExecuteBase:
+def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
     from .manager import MaaEndManager
 
     return MaaEndManager(script_item)
@@ -41,18 +39,15 @@ def build_manager(
 
 def build_config_handler(*, maaend: MaaEndConfigService) -> ScriptConfigHandler:
     from app.models.config import MaaEndUserConfig
-    from app.task.MaaEnd.resources import EMULATOR_BINDING as maaend_emulator_binding
-    from app.task.MaaEnd.resources import (
-        declare_task_resources as maaend_task_resources,
-    )
 
     return ScriptConfigHandler(
         user_config_class=MaaEndUserConfig,
         initialize=maaend.initialize,
         validate_update=maaend.validate_update,
         import_config=maaend.import_config,
-        task_resources=maaend_task_resources,
-        emulator_binding=maaend_emulator_binding,
+        emulator_binding=ScriptEmulatorBinding(
+            group="Game", id_field="EmulatorId", index_field="EmulatorIndex"
+        ),
     )
 
 

@@ -2,9 +2,10 @@
 
 import asyncio
 import importlib
-from types import SimpleNamespace
 
 import pytest
+
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 @pytest.mark.parametrize("mode", ["逐条", "汇总", "关闭"])
@@ -12,6 +13,8 @@ import pytest
 def test_adapter_keeps_frozen_node_outputs(tmp_path, monkeypatch, mode, adapter):
     module = importlib.import_module(f"app.task.{adapter}.AutoProxy")
     proxy = module.AutoProxyTask.__new__(module.AutoProxyTask)
+    proxy.user_state = lambda user: user
+    proxy.callbacks = SimpleNamespace()
     user = SimpleNamespace(push_log=[], push_log_mode=mode)
     proxy.cur_user_item = user
     if adapter == "Okww":
@@ -55,6 +58,8 @@ def test_baah_retry_keeps_only_latest_run_and_closes_once(tmp_path):
     from app.task.BAAH.AutoProxy import AutoProxyTask
 
     proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.user_state = lambda user: user
+    proxy.callbacks = SimpleNamespace()
     user = SimpleNamespace(push_log=[], push_log_mode="汇总")
     proxy.cur_user_item = user
     proxy.push_log_enabled = True

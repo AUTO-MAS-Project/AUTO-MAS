@@ -545,7 +545,7 @@ import {
   WS_TASK_NOTICE,
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { type TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 import { QuestionCircleOutlined, SettingOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'

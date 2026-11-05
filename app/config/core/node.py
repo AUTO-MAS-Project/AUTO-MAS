@@ -258,9 +258,20 @@ async def _dispatch(
     signal: Signal, sender: ConfigNode | None, event: ConfigEvent
 ) -> None:
     """派发信号：blinker 同步 invoke 各 wrapper；返回的 awaitable 逐个 await。"""
-    for _receiver, result in signal.send(sender, event=event):
-        if inspect.isawaitable(result):
-            await result
+    if signal.is_muted:
+        return
+    results: list[object] = []
+    try:
+        for receiver in signal.receivers_for(sender):
+            results.append(receiver(sender, event=event))
+        for result in results:
+            if inspect.isawaitable(result):
+                await result
+    finally:
+        # 任一订阅拒绝或取消时，其余已创建协程不再执行，须关闭以免遗失。
+        for result in results:
+            if inspect.iscoroutine(result):
+                result.close()
 
 
 class ConfigNode(BaseModel):
@@ -541,7 +552,7 @@ class ConfigNode(BaseModel):
         routes = source._by_sender.copy()
         for sender_id, receiver_ids in routes.items():
             if sender_id == ANY_ID:
-                sender = ANY
+                sender: object = ANY
             elif sender_id in senders:
                 sender = senders[sender_id]()
                 if sender is None:

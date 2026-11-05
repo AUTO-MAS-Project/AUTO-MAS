@@ -465,6 +465,20 @@ async function main() {
       }
       // 其他配置由隔离根按默认值新建，不复制本机工具、签到账号或启动队列。
       await mkdir(path.join(dataRoot, 'config'), { recursive: true })
+      if (!real) {
+        // 非真实流程使用有效的空公告缓存，避免当天线上维护把失败验证改成跳过。
+        await writeFile(
+          // 空数据根从 v1.11 初始化，交给正常升级流程生成 setting.yaml。
+          path.join(dataRoot, 'config', 'Config.json'),
+          JSON.stringify({
+            Data: {
+              Maintenance: JSON.stringify({ schema_version: 1, games: {} }),
+              LastMaintenanceUpdated: new Date().toISOString(),
+            },
+          }),
+          'utf8'
+        )
+      }
       console.warn(`[e2e] 隔离数据根 ${dataRoot}${keepRoot ? '（跑完保留）' : '（跑完删除）'}`)
     }
     // 真实模式以所选配置为准，清空未使用的模拟器变量，避免沿用上次运行的目标。

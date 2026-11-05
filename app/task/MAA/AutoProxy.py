@@ -1259,7 +1259,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
             ).exists()
         ):
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             return "未找到用户的 MAA 配置文件，请先在用户配置页完成 「MAA配置」 步骤"
         return "Pass"
 
@@ -1369,7 +1369,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         await self.prepare()
 
         logger.info(f"开始代理用户: {self.cur_user_uid}")
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
 
         # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
@@ -1382,7 +1382,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
             self._event_depot_completed = False
             self._stock_depot_completed = False
-            self.cur_user_item.status = f"运行 - {MAA_RUN_MOOD_BOOK[self.mode]}"
+            await self.cur_user_item.set_state(
+                status=f"运行 - {MAA_RUN_MOOD_BOOK[self.mode]}"
+            )
 
             if not self.cur_user_config.Info.IfQuickConfig:
                 # 来源队列整体交给 MAA 执行，不从隐藏面板推导任务或拆分阶段。
@@ -1413,12 +1415,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 self._cultivate_archive_positions.clear()
                 self._cultivate_archive_versions.clear()
                 self.cur_user_log = LogRecord()
-                self.cur_user_item.add_log_record(
+                self.cur_user_log = await self.cur_user_item.add_log_record(
                     self.log_start_time, self.cur_user_log
                 )
 
                 try:
-                    self.script_info.log = "正在启动模拟器"
+                    await self.script_info.set_log("正在启动模拟器")
                     emulator_info = await self.emulator_manager.open(
                         self.script_config.Emulator.Index,
                         ARKNIGHTS_PACKAGE_NAME[self.cur_user_config.Info.Server],
@@ -1437,10 +1439,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                             message=f"启动模拟器时出现异常: {e}",
                         ),
                     )
-                    self.cur_user_log.content = [
-                        "模拟器启动失败, MAA 未实际运行, 无日志记录"
-                    ]
-                    self.cur_user_log.status = "模拟器启动失败"
+                    await self.cur_user_log.set_state(
+                        content=["模拟器启动失败, MAA 未实际运行, 无日志记录"]
+                    )
+                    await self.cur_user_log.set_state(status="模拟器启动失败")
 
                     await close_emulator(self)
 
@@ -1502,7 +1504,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 if self.cur_user_log.status == "Success!":
                     self.run_book[self.mode] = True
                     logger.info(f"用户: {self.cur_user_uid} - MAA进程完成代理任务")
-                    self.script_info.log = (
+                    await self.script_info.set_log(
                         "检测到 MAA 完成代理任务\n正在等待相关程序结束"
                     )
                     if self.pending_res_version:
@@ -1516,7 +1518,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     logger.warning(
                         f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                     )
-                    self.script_info.log = (
+                    await self.script_info.set_log(
                         f"{self.cur_user_log.status}\n正在中止相关程序"
                     )
 
@@ -2859,8 +2861,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         """日志回调"""
 
         log = "".join(log_content)
-        self.cur_user_log.content = log_content
-        self.script_info.log = log
+        await self.cur_user_log.set_state(content=log_content)
+        await self.script_info.set_log(log)
 
         if self.mode == "Annihilation":
             progress = _parse_annihilation_weekly_progress(log)
@@ -2929,11 +2931,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         completed_log = "任务已全部完成！" in log
         failed_log = _has_maa_task_failure(log)
         if avd_fallback is not None:
-            self.cur_user_log.status = avd_fallback
+            await self.cur_user_log.set_state(status=avd_fallback)
         elif "未选择任务" in log:
-            self.cur_user_log.status = "MAA 未选择任何任务"
+            await self.cur_user_log.set_state(status="MAA 未选择任何任务")
         elif "任务出错: 开始唤醒" in log:
-            self.cur_user_log.status = "MAA 未能正确登录 PRTS"
+            await self.cur_user_log.set_state(status="MAA 未能正确登录 PRTS")
         elif completed_log or failed_log:
             # 常规任务的完成状态取自 MAA 本轮输出。
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
@@ -2998,23 +3000,25 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     for name in re.findall(r"任务出错: ([^\r\n]+)", log)
                 )
             ):
-                self.cur_user_log.status = "MAA 部分任务执行失败"
+                await self.cur_user_log.set_state(status="MAA 部分任务执行失败")
             else:
-                self.cur_user_log.status = "Success!"
+                await self.cur_user_log.set_state(status="Success!")
 
         elif "请 ｢检查连接设置｣ → ｢尝试重启模拟器与 ADB｣ → ｢重启电脑｣" in log:
-            self.cur_user_log.status = "MAA 的 ADB 连接异常"
+            await self.cur_user_log.set_state(status="MAA 的 ADB 连接异常")
         elif "未检测到任何模拟器" in log:
-            self.cur_user_log.status = "MAA 未检测到任何模拟器"
+            await self.cur_user_log.set_state(status="MAA 未检测到任何模拟器")
         elif _MAA_OUT_OF_MEMORY_MARKER in log:
-            self.cur_user_log.status = "MAA 因内存不足停止，请关闭部分程序后重试"
+            await self.cur_user_log.set_state(
+                status="MAA 因内存不足停止，请关闭部分程序后重试"
+            )
         elif "已停止" in log:
-            self.cur_user_log.status = "MAA 在完成任务前中止"
+            await self.cur_user_log.set_state(status="MAA 在完成任务前中止")
         elif (
             "MaaAssistantArknights GUI exited" in log
             or not await self.maa_process_manager.is_running()
         ):
-            self.cur_user_log.status = "MAA 在完成任务前退出"
+            await self.cur_user_log.set_state(status="MAA 在完成任务前退出")
         elif self.is_log_stalled(
             latest_time,
             minutes=max(
@@ -3024,9 +3028,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             if self.if_game_hot_update
             else getattr(self.script_config.Run, MAA_MODE_TIME_LIMIT_BOOK[self.mode]),
         ):
-            self.cur_user_log.status = "MAA 进程超时"
+            await self.cur_user_log.set_state(status="MAA 进程超时")
         else:
-            self.cur_user_log.status = "MAA 正常运行中"
+            await self.cur_user_log.set_state(status="MAA 正常运行中")
 
         logger.debug(f"MAA 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "MAA 正常运行中":
@@ -3070,7 +3074,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             logger.info(f"MAA 检查未通过，跳过任务收尾: {self.check_result}")
             return
 
-        self.task_info.begin_user_history_capture(
+        self.history.begin_user_history_capture(
             self.script_info,
             self.cur_user_item,
             failed=bool(self.cur_user_item.log_record)
@@ -3132,7 +3136,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 and log_item is self.cur_user_log
                 and log_item.status == "未开始监看日志"
             ):
-                log_item.status = "任务被用户手动中止"
+                await log_item.set_state(status="任务被用户手动中止")
             data = {}
             try:
                 parsed, six_star = log_statistics.parse_maa_statistics(log_item.content)
@@ -3151,7 +3155,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             except Exception as error:
                 diagnostic = f"MAA 统计解析失败：{error}"
                 logger.opt(exception=True).warning(diagnostic)
-                log_item.content.append(f"\n{diagnostic}\n")
+                await log_item.append_content(f"\n{diagnostic}\n")
             history_records.append(
                 HistoryWrite(
                     time=t.astimezone(_utils_constants.UTC4),
@@ -3257,11 +3261,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             )
             await self.cur_user_config.commit()
 
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
         else:
             logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
 
         if failure_shot is not None and history_records:
             # 原图还供上游诊断与问题包使用，归档只复制，不接管源文件。
@@ -3274,7 +3278,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     archive_mode="copy",
                 )
             )
-        await self.task_info.save_user_history(
+        await self.history.save_user_history(
             history_records,
             script=self.script_info,
             user=self.cur_user_item,
@@ -3347,7 +3351,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         logger.info(f"MAA 任务收尾完成 - 用时: {time.monotonic() - started_at:.3f}秒")
 
     async def on_crash(self, e: Exception):
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         await Publisher.send(
             id=self.task_info.task_id,

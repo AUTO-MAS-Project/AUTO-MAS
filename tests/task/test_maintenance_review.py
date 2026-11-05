@@ -2,13 +2,11 @@
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from app.core import Config
-from app.core.task_manager.manager import TaskInfo
 from app.models.config import (
     BetterGIConfig,
     GeneralUserConfig,
@@ -25,6 +23,8 @@ from app.task.MAA.manager import MaaManager
 from app.task.MaaEnd.manager import MaaEndManager
 from app.utils import IS_WINDOWS
 from tests.config_support import activate_config
+from tests.runtime_support import RuntimeStub as SimpleNamespace
+from tests.runtime_support import create_runtime_tree
 
 
 class TestManager(base.ScriptManagerBase):
@@ -48,10 +48,9 @@ def manager(mode="AutoProxy"):
     result.task_info = SimpleNamespace(
         mode=mode,
         task_id="test",
-        get_active_maintenance=AsyncMock(return_value=None),
-        send_notice=AsyncMock(),
     )
     result.script_info = ScriptItem(str(uuid.uuid4()), "test", "等待")
+    result.send_notice = AsyncMock()
     return result
 
 
@@ -74,12 +73,7 @@ async def test_server_matching(monkeypatch, adapter, cls, field, value, game):
             type(user).model_validate({"Info": {field: value}}), check_visibility=False
         )
     lookup = AsyncMock(return_value=object())
-    info = TaskInfo(
-        mode="AutoProxy", task_id="test", queue_id=None, script_id=None, user_id=None
-    )
-    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
-    script = ScriptItem(script_id=str(uuid.uuid4()), name="test", status="等待")
-    info.script_list = [script]
+    info, script, _ = await create_runtime_tree(script_id=str(uuid.uuid4()))
     instance = adapter(script)
     result = await maintenance.get_user_maintenance(
         instance.maintenance_game(user), lookup=lookup
@@ -94,39 +88,44 @@ async def test_server_matching(monkeypatch, adapter, cls, field, value, game):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("active", [False, True])
-async def test_precheck_marks_only_maintenance_users(active):
+async def test_precheck_marks_only_maintenance_users(active, monkeypatch):
+    lookup = AsyncMock()
+    monkeypatch.setattr(base.GameMaintenance, "get_active", lookup)
     window = MaintenanceWindow(
         datetime.now(timezone.utc), datetime.now(timezone.utc) + timedelta(hours=1)
     )
     instance = manager()
-    instance.task_info.get_active_maintenance.return_value = window if active else None
+    lookup.return_value = window if active else None
     user = UserItem("u", "test", "等待")
     assert await instance.check_user_before_run(user, MaaUserConfig()) is (not active)
-    assert user.maintenance_skipped is active
+    assert instance.user_state(user).maintenance_skipped is active
     assert user.status == ("跳过" if active else "等待")
     assert bool(user.log_record) is active
     assert not instance.has_proxy_run
-    instance.task_info.get_active_maintenance.assert_awaited_once_with("arknights")
-    assert instance.task_info.send_notice.await_count == int(active)
+    lookup.assert_awaited_once_with("arknights", proxy=Config.proxy)
+    assert instance.send_notice.await_count == int(active)
     if active:
-        notice = instance.task_info.send_notice.await_args.kwargs
+        notice = instance.send_notice.await_args.kwargs
         assert notice["level"] == "info"
         assert window.reason in notice["message"]
 
 
 @pytest.mark.asyncio
-async def test_config_session_does_not_check_maintenance():
+async def test_config_session_does_not_check_maintenance(monkeypatch):
+    lookup = AsyncMock()
+    monkeypatch.setattr(base.GameMaintenance, "get_active", lookup)
     instance = manager("ScriptConfig")
     assert await instance.check_user_before_run(
         UserItem("u", "test", "等待"), MaaUserConfig()
     )
-    instance.task_info.get_active_maintenance.assert_not_awaited()
+    lookup.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("all_maintenance", [False, True])
 async def test_update_runs_before_maintenance_and_all_skip_bypasses_proxy(
     all_maintenance,
+    monkeypatch,
 ):
     instance = manager()
     selected = [(uuid.uuid4(), MaaUserConfig()), (uuid.uuid4(), MaaUserConfig())]
@@ -139,17 +138,18 @@ async def test_update_runs_before_maintenance_and_all_skip_bypasses_proxy(
 
     windows = iter([window, window if all_maintenance else None])
 
-    async def lookup(game):
+    async def lookup(game, *, proxy):
         assert game == "arknights"
         instance.update_game_before_run.assert_awaited_once()
         return next(windows)
 
-    instance.task_info.get_active_maintenance = AsyncMock(side_effect=lookup)
+    query = AsyncMock(side_effect=lookup)
+    monkeypatch.setattr(base.GameMaintenance, "get_active", query)
     instance.main_task = AsyncMock()
     await instance._run_main_task()
     assert instance.maintenance_only is all_maintenance
     assert instance.main_task.await_count == int(not all_maintenance)
-    assert instance.task_info.get_active_maintenance.await_count == len(selected)
+    assert query.await_count == len(selected)
     assert instance.notify_maintenance.await_count == int(all_maintenance)
     if all_maintenance:
         assert instance.all_users_maintenance_skipped
@@ -176,10 +176,7 @@ async def test_maa_resource_update_keeps_takeover_credentials(
         type(config).model_validate({"Update": {"MirrorChyanCDK": cdk}})
     )
     monkeypatch.setattr(Config, "ScriptConfig", {script_id: config})
-    info = TaskInfo("AutoProxy", "test", None, str(script_id), None)
-    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
-    script = ScriptItem(str(script_id), "test", "等待")
-    info.script_list = [script]
+    info, script, _ = await create_runtime_tree(script_id=str(script_id))
     instance = maa.MaaManager(script)
     instance.script_config = config
     instance.maa_set_path = tmp_path / "config"
@@ -214,15 +211,12 @@ async def test_bettergi_report_keeps_nodes_and_summary(monkeypatch):
     config = BetterGIConfig()
     await activate_config(config)
     monkeypatch.setattr(Config, "ScriptConfig", {script_id: config})
-    info = TaskInfo("AutoProxy", "test", None, str(script_id), None)
-    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
-    script = ScriptItem(str(script_id), "test", "运行")
-    info.script_list = [script]
+    info, script, _ = await create_runtime_tree(script_id=str(script_id))
     instance = bgi.BetterGIManager(script)
     instance.check_result = "Pass"
-    script.user_list = [UserItem("a", "A", "部分失败"), UserItem("b", "B", "异常")]
-    script.user_list[0].push_log = [("info", "node-A", 0.0)]
-    script.user_list[1].push_log = [("info", "node-B", 0.0)]
+    await script.set_users([UserItem("a", "A", "部分失败"), UserItem("b", "B", "异常")])
+    instance.user_state(script.user_list[0]).push_log = [("info", "node-A", 0.0)]
+    instance.user_state(script.user_list[1]).push_log = [("info", "node-B", 0.0)]
     push = AsyncMock()
     monkeypatch.setattr(bgi.Notify, "push_proxy_result", push)
     await instance.final_task()

@@ -264,7 +264,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # manager 的任务前快照还原）；GUI 内的改动一律丢弃
         if self.view_only:
             logger.success("MaaEnd 查看结束（只读，不回写配置）")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         # 配置会话没有自然结束点: main_task 里的 wait_event 没有任何设置方,
@@ -281,14 +281,14 @@ class ScriptConfigTask(TaskExecuteBase):
             )
             _utils_io.write_file(config_path, maaend_set)
             logger.success(f"MaaEnd 配置已保存到: {self.config_file_path}")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
         elif not self.crashed:
             logger.success("MaaEnd 原生来源配置已由脚本原生 GUI 保存")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
 
     async def on_crash(self, e: Exception):
         self.crashed = True
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         await Publisher.send(
             id=self.task_info.task_id,

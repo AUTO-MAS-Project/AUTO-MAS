@@ -34,6 +34,7 @@ from app.models.schema import (
     HistoryRecordQuery,
     HistorySnapshotStatistic,
     HistoryStatistic,
+    HistoryStatus,
     HistoryStorageIssue,
     HistoryUserOverview,
     HistoryWrite,
@@ -958,6 +959,32 @@ class HistoryStore:
                             aggregate_errors=aggregate.errors,
                         )
                 return result
+
+        return await self._run(read)
+
+    async def get_latest_script_results(
+        self, *, script_names: Sequence[str]
+    ) -> dict[str, tuple[datetime, HistoryStatus]]:
+        """按历史库已有的托管名称索引读取最近结果，不读取正文或附件。"""
+        names = tuple(dict.fromkeys(script_names))
+        if not names:
+            return {}
+
+        def read(cancel: threading.Event) -> dict[str, tuple[datetime, HistoryStatus]]:
+            result: dict[str, tuple[datetime, HistoryStatus]] = {}
+            with closing(self._connect(cancel)) as connection:
+                for name in names:
+                    rows = self._select(
+                        connection,
+                        HistoryRecordQuery(script_name=name, limit=1),
+                        columns=("time", "status"),
+                    )
+                    if rows:
+                        result[name] = (
+                            datetime.fromisoformat(cast(str, rows[0]["time"])),
+                            cast(HistoryStatus, rows[0]["status"]),
+                        )
+            return result
 
         return await self._run(read)
 

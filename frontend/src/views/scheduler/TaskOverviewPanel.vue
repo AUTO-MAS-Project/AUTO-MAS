@@ -5,87 +5,26 @@
       <!--      <a-badge :count="totalTaskCount" :overflow-count="99" />-->
     </div>
     <div class="overview-content">
-      <TaskTree ref="taskTreeRef" :task-data="taskData" />
+      <TaskTree :task-data="taskData" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ref, shallowRef } from 'vue'
 import TaskTree from '@/components/TaskTree.vue'
-import {
-  buildTaskInfoSignature,
-  type TaskTreeUserProgress,
-} from '@/components/taskTreePresentation'
+import type { WSTaskScriptInfoData } from '@/services/websocket/types'
 
+const props = defineProps<{ taskInfo: WSTaskScriptInfoData[] }>()
 const { t } = useI18n()
-const logger = window.electronAPI.getLogger('任务总览面板')
-
-interface User {
-  user_id: string
-  status: string
-  name: string
-  progress?: TaskTreeUserProgress | null
-}
-
-interface Script {
-  script_id: string
-  status: string
-  name: string
-  user_list: User[]
-}
-
-// 任务数据只在 WebSocket 快照实际变化时整体替换，避免深层响应式递归开销。
-const taskData = shallowRef<Script[]>([])
-const taskTreeRef = ref()
-const lastTaskSignature = ref('')
-
-const getTaskInfoStats = (taskInfo: any[]) => {
-  const scriptCount = taskInfo.length
-  const userCount = taskInfo.reduce((total, task) => total + (task.userList?.length || 0), 0)
-  return { scriptCount, userCount }
-}
-
-const getScriptStats = (scripts: Script[]) => {
-  const scriptCount = scripts.length
-  const userCount = scripts.reduce((total, script) => total + (script.user_list?.length || 0), 0)
-  return { scriptCount, userCount }
-}
-
-// 应用任务信息快照（来自 task.info.updated / task.completed 消息）
-const applyTaskInfo = (taskInfo: any[] | undefined) => {
-  if (!taskInfo || !Array.isArray(taskInfo)) return
-
-  const signature = buildTaskInfoSignature(taskInfo)
-  if (signature === lastTaskSignature.value) {
-    return
-  }
-  lastTaskSignature.value = signature
-
-  const { scriptCount, userCount } = getTaskInfoStats(taskInfo)
-  logger.debug(`更新任务数据 : 脚本数=${scriptCount}, 用户数=${userCount}`)
-
-  // 转换后端的 task_info 格式到前端的 Script 格式
-  const newTaskData = taskInfo.map((task: any, index: number) => ({
-    script_id: task.script_id || `script_${index}`,
-    name: task.name || t('core.scheduler.overview.unknownScript'),
-    status: task.status || '等待',
-    user_list: task.userList ? [...task.userList] : [], // 注意：后端使用 userList，前端使用 user_list
+const taskData = computed(() =>
+  props.taskInfo.map(script => ({
+    ...script,
+    name: script.name || t('core.scheduler.overview.unknownScript'),
+    user_list: script.userList,
   }))
-
-  logger.debug('数据发生实际变化，更新组件')
-  taskData.value = newTaskData
-  const stats = getScriptStats(taskData.value)
-  logger.debug(`设置后的 taskData: 脚本数=${stats.scriptCount}, 用户数=${stats.userCount}`)
-}
-
-// 暴露方法供父组件调用
-defineExpose({
-  applyTaskInfo,
-  expandAll: () => taskTreeRef.value?.expandAll(),
-  collapseAll: () => taskTreeRef.value?.collapseAll(),
-})
+)
 </script>
 
 <style scoped src="./schedulerPanel.css"></style>

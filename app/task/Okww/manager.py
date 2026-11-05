@@ -76,14 +76,14 @@ class OkwwManager(ScriptManagerBase):
         self.script_config_base = BASE_SHARED
 
     async def check(self) -> str:
-        if self.task_info.mode not in ("AutoProxy", "ScriptConfig", "Update"):
+        if self.execution_mode not in ("AutoProxy", "ScriptConfig", "Update"):
             return "不支持的任务模式, 请检查任务配置！"
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if not isinstance(script_config, OkwwConfig):
             return "脚本配置类型错误, 不是 OK-WW 类型"
 
-        if self.task_info.mode == "ScriptConfig":
+        if self.execution_mode == "ScriptConfig":
             root_path = script_config.Info.RootPath
             if root_path is None:
                 return "请先设置有效的 OK-WW 脚本路径"
@@ -94,7 +94,7 @@ class OkwwManager(ScriptManagerBase):
             ):
                 return "请先设置有效的 OK-WW 脚本路径"
 
-        if self.task_info.mode in ("ScriptConfig", "Update"):
+        if self.execution_mode in ("ScriptConfig", "Update"):
             target_user_id = self.task_info.user_id or "Default"
             if target_user_id != "Default":
                 try:
@@ -104,7 +104,7 @@ class OkwwManager(ScriptManagerBase):
                 if target_user_uid not in script_config.UserData:
                     return "OK-WW 用户不存在，请刷新后重试"
 
-        if self.task_info.mode == "Update":
+        if self.execution_mode == "Update":
             if not script_config.Game.Enabled:
                 return "请先在脚本配置中启用游戏配置"
             launcher = Path(str(script_config.Game.Path or "").strip())
@@ -112,11 +112,13 @@ class OkwwManager(ScriptManagerBase):
                 return "请先在脚本配置中导入有效的鸣潮官方启动器"
 
         # AutoProxy 模式只做用户列表可用性校验；逐用户配置文件检查放到 AutoProxyTask.check()
-        if self.task_info.mode == "AutoProxy":
+        if self.execution_mode == "AutoProxy":
             script_uid = uuid.UUID(self.script_info.script_id)
             if not self.script_info.user_list:
-                self.script_info.user_list = self.build_proxy_user_list(
-                    Config.ScriptConfig[script_uid].UserData.items()
+                await self.script_info.set_users(
+                    self.build_proxy_user_list(
+                        Config.ScriptConfig[script_uid].UserData.items()
+                    )
                 )
             if not self.script_info.user_list:
                 return "当前没有可执行的用户，请先添加并启用用户"
@@ -127,7 +129,7 @@ class OkwwManager(ScriptManagerBase):
         script_uid = uuid.UUID(self.script_info.script_id)
         self.config_locks[
             Config.ScriptConfig[script_uid].uid
-        ] = await Config.ScriptConfig[script_uid].lock_x()
+        ] = await self.lock_script_config(Config.ScriptConfig[script_uid])
         self.script_config = Config.ScriptConfig[script_uid]
         if not isinstance(self.script_config, OkwwConfig):
             raise TypeError("脚本配置类型错误")
@@ -136,49 +138,53 @@ class OkwwManager(ScriptManagerBase):
         self.user_config = self.script_config.UserData
         logger.success(f"{self.script_info.script_id} 已锁定，OK-WW 用户配置已提取")
 
-        if self.task_info.mode == "Update":
+        if self.execution_mode == "Update":
             target_user_id = self.task_info.user_id or "Default"
             target_user_name = "OK-WW 更新"
             with suppress(ValueError):
                 target_user_uid = uuid.UUID(target_user_id)
                 if target_user_uid in self.user_config:
                     target_user_name = self.user_config[target_user_uid].Info.Name
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=target_user_id,
-                    name=target_user_name,
-                    status="等待",
-                )
-            ]
-        elif self.task_info.mode == "ScriptConfig":
+            await self.script_info.set_users(
+                [
+                    UserItem(
+                        user_id=target_user_id,
+                        name=target_user_name,
+                        status="等待",
+                    )
+                ]
+            )
+        elif self.execution_mode == "ScriptConfig":
             target_user_id = self.task_info.user_id or "Default"
             target_user_name = "OK-WW 设置"
             with suppress(ValueError):
                 target_user_uid = uuid.UUID(target_user_id)
                 if target_user_uid in self.user_config:
                     target_user_name = self.user_config[target_user_uid].Info.Name
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=target_user_id,
-                    name=target_user_name,
-                    status="等待",
-                )
-            ]
+            await self.script_info.set_users(
+                [
+                    UserItem(
+                        user_id=target_user_id,
+                        name=target_user_name,
+                        status="等待",
+                    )
+                ]
+            )
             if target_user_id != "Default":
                 self.script_config_base = _okww_config_base(
                     self.user_config[uuid.UUID(target_user_id)].Info.Base
                 )
         else:
-            self.script_info.user_list = self.build_proxy_user_list(
-                self.user_config.items()
+            await self.script_info.set_users(
+                self.build_proxy_user_list(self.user_config.items())
             )
 
         # Enabled=游戏管理总开关；开启后任务前始终启动游戏，任务结束/失败时始终关闭游戏
         self.game_manager: ProcessManager | None = None
-        if self.task_info.mode == "AutoProxy" and self.script_config.Game.Enabled:
+        if self.execution_mode == "AutoProxy" and self.script_config.Game.Enabled:
             self.game_manager = ProcessManager()
 
-        if self.task_info.mode in ("AutoProxy", "ScriptConfig"):
+        if self.execution_mode in ("AutoProxy", "ScriptConfig"):
             root_path = self.script_config.Info.RootPath
             if root_path is None:
                 raise ValueError("RootPath未配置，请检查路径设置")
@@ -201,7 +207,7 @@ class OkwwManager(ScriptManagerBase):
 
     async def _restore_script_config_from_temp(self) -> None:
         if not (
-            self.task_info.mode in ("AutoProxy", "ScriptConfig")
+            self.execution_mode in ("AutoProxy", "ScriptConfig")
             and self.temp_path
             and self.temp_path.exists()
             and self.script_config_path
@@ -242,7 +248,7 @@ class OkwwManager(ScriptManagerBase):
     async def main_task(self):
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            self.script_info.status = "异常"
+            await self.script_info.set_state(status="异常")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -254,8 +260,8 @@ class OkwwManager(ScriptManagerBase):
         await self.prepare()
         assert self.user_config is not None
 
-        if self.task_info.mode == "Update":
-            self.script_info.current_index = 0
+        if self.execution_mode == "Update":
+            await self.script_info.set_current_index(0)
             target_user_id = self.task_info.user_id or "Default"
             resource = str(self.user_config[uuid.UUID(target_user_id)].Info.Resource)
             await self.spawn(
@@ -267,8 +273,8 @@ class OkwwManager(ScriptManagerBase):
             )
             return
 
-        if self.task_info.mode == "ScriptConfig":
-            self.script_info.current_index = 0
+        if self.execution_mode == "ScriptConfig":
+            await self.script_info.set_current_index(0)
             await self.spawn(
                 ScriptConfigTask(
                     self.script_info,
@@ -280,10 +286,11 @@ class OkwwManager(ScriptManagerBase):
             )
             return
 
-        for self.script_info.current_index in range(len(self.script_info.user_list)):
+        for _runtime_user_index in range(len(self.script_info.user_list)):
+            await self.script_info.set_current_index(_runtime_user_index)
             current_user = self.script_info.user_list[self.script_info.current_index]
             if (
-                self.task_info.mode == "AutoProxy"
+                self.execution_mode == "AutoProxy"
                 and not await self.check_user_before_run(
                     current_user, self.user_config[uuid.UUID(current_user.user_id)]
                 )
@@ -332,25 +339,25 @@ class OkwwManager(ScriptManagerBase):
             if self.check_result != "Pass" and not any(
                 user.status in ("完成", "跳过") for user in self.script_info.user_list
             ):
-                if self.task_info.mode == "AutoProxy" and self.user_config is not None:
+                if self.execution_mode == "AutoProxy" and self.user_config is not None:
                     await config_manager.flush()
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
                 return
 
-            if self.task_info.mode == "AutoProxy" and self.user_config is not None:
+            if self.execution_mode == "AutoProxy" and self.user_config is not None:
                 await config_manager.flush()
 
             if any(user.status == "异常" for user in self.script_info.user_list):
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
             elif self.all_users_maintenance_skipped:
                 # 画面检测把全部用户判为维护跳过时，整体状态记「跳过」而非「完成」
-                self.script_info.status = "跳过"
+                await self.script_info.set_state(status="跳过")
             else:
-                self.script_info.status = "完成"
+                await self.script_info.set_state(status="完成")
 
-            if self.task_info.mode == "AutoProxy":
+            if self.execution_mode == "AutoProxy":
                 summary = self.collect_user_results()
-                task_mode = TASK_MODE_ZH[self.task_info.mode]
+                task_mode = TASK_MODE_ZH[self.execution_mode]
                 title = (
                     f"{datetime.now().strftime('%m-%d')} | "
                     f"{self.script_info.name or '空白'}的{task_mode}任务报告"
@@ -367,7 +374,7 @@ class OkwwManager(ScriptManagerBase):
                 )
                 # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
                 if user_result_text:
-                    self.script_info.log = (
+                    await self.script_info.set_log(
                         f"{self.script_info.log}\n{user_result_text}"
                         if self.script_info.log
                         else user_result_text
@@ -409,7 +416,7 @@ class OkwwManager(ScriptManagerBase):
         """
 
         return (
-            self.task_info.mode == "ScriptConfig"
+            self.execution_mode == "ScriptConfig"
             and not self.task_info.view_only
             and self.script_config_base == BASE_NATIVE
             and bool(self.script_info.user_list)
@@ -417,7 +424,7 @@ class OkwwManager(ScriptManagerBase):
         )
 
     async def on_crash(self, e: Exception):
-        self.script_info.status = "异常"
+        await self.script_info.set_state(status="异常")
         logger.opt(exception=True).warning(f"OK-WW任务出现异常: {e}")
         script_uid = uuid.UUID(self.script_info.script_id)
 
@@ -432,7 +439,7 @@ class OkwwManager(ScriptManagerBase):
 
         if script_cfg is not None:
             try:
-                if self.task_info.mode == "AutoProxy" and self.user_config is not None:
+                if self.execution_mode == "AutoProxy" and self.user_config is not None:
                     await config_manager.flush()
             except Exception:
                 logger.opt(exception=True).warning("on_crash 保存用户配置失败")
@@ -452,12 +459,12 @@ class OkwwManager(ScriptManagerBase):
                 item
                 if isinstance(item, log_box.LogEntry)
                 else log_box.LogEntry.from_legacy(item)
-                for item in _report_user.push_log
+                for item in self.user_state(_report_user).push_log
                 if (item.log_type if isinstance(item, log_box.LogEntry) else item[0])
                 != LOG_TYPE_ERROR
                 or has_uncompleted
             ]
-            _mode = getattr(_report_user, "push_log_mode", "逐条")
+            _mode = self.user_state(_report_user).push_log_mode
             if _mode == "关闭":
                 _details = []
             elif _mode == "汇总":

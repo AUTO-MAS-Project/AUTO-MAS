@@ -345,10 +345,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 >= self.script_config.Run.ProxyTimesLimit
             )
         ):
-            self.cur_user_item.status = "跳过"
+            await self.cur_user_item.set_state(status="跳过")
             return "今日代理次数已达上限, 跳过该用户"
         if self.cur_user_config.Info.RemainedDay == 0:
-            self.cur_user_item.status = "跳过"
+            await self.cur_user_item.set_state(status="跳过")
             return "用户剩余天数为 0, 跳过该用户"
 
         # 原生来源不做任何下发，脚本原生配置就是本次运行的全部配置来源：缺失时
@@ -647,7 +647,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
     async def _log_game_config_summary(self) -> None:
         """在调度台开头输出当前脚本的游戏相关配置，便于用户确认与问题排查。"""
 
-        self.script_info.log = "\n".join(self._game_config_summary_lines())
+        await self.script_info.set_log("\n".join(self._game_config_summary_lines()))
         await asyncio.sleep(0)
 
     def _resolve_launcher_path(self) -> Path | None:
@@ -851,8 +851,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
             )
-        self.cur_user_log.content = [f"{error_message}, 无日志记录"]
-        self.cur_user_log.status = error_message
+        await self.cur_user_log.set_state(content=[f"{error_message}, 无日志记录"])
+        await self.cur_user_log.set_state(status=error_message)
 
         await self.kill_managed_process(
             kill_game=self._mas_should_close_game_on_retry()
@@ -874,7 +874,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         await self.prepare()
         await self._reset_daily_proxy_count()
 
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
@@ -885,9 +885,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             logger.info(
                 f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
             )
-            self.cur_user_item.status = "运行"
+            await self.cur_user_item.set_state(status="运行")
             self.log_start_time = datetime.now().astimezone()
-            self.cur_user_item.add_log_record(self.log_start_time, LogRecord())
+            await self.cur_user_item.add_log_record(self.log_start_time, LogRecord())
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
 
             await self._log_game_config_summary()
@@ -902,8 +902,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                     await self._mas_launch_game_before_task()
                 except Exception as e:
                     await self._push_dispatch_log(f"游戏启动失败: {e}")
-                    self.cur_user_log.status = f"游戏启动失败: {e}"
-                    self.cur_user_log.content = [f"游戏启动失败: {e}"]
+                    await self.cur_user_log.set_state(status=f"游戏启动失败: {e}")
+                    await self.cur_user_log.set_state(content=[f"游戏启动失败: {e}"])
                     await Publisher.send(
                         id=self.task_info.task_id,
                         type=protocol.TASK_NOTICE,
@@ -931,7 +931,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                         )
                         await asyncio.sleep(10)
                     else:
-                        self.cur_user_item.status = "异常"
+                        await self.cur_user_item.set_state(status="异常")
                     continue
 
             # 游戏窗口已就绪时先做画面维护检测（公告通道覆盖启动前，这里兜底
@@ -977,7 +977,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                             )
                             await asyncio.sleep(10)
                         else:
-                            self.cur_user_item.status = "异常"
+                            await self.cur_user_item.set_state(status="异常")
                         continue
 
             await self.set_oknte()
@@ -1018,14 +1018,16 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             # 运行期间命中维护弹窗：按维护跳过收尾，不再重试；结论与内容
             # 在日志监控停止后落笔，避免被 check_log 的末次轮询覆盖
             if (
-                self.cur_user_item.maintenance_skipped
+                self.user_state(self.cur_user_item).maintenance_skipped
                 and self._maintenance_reason
                 and self.cur_user_log.status != "Success!"
             ):
-                self.cur_user_log.status = self._maintenance_reason
-                self.cur_user_log.content.append(self._maintenance_reason)
-                self.cur_user_item.status = "跳过"
-                self.script_info.log = f"{self._maintenance_reason}\n正在中止相关程序"
+                await self.cur_user_log.set_state(status=self._maintenance_reason)
+                await self.cur_user_log.append_content(self._maintenance_reason)
+                await self.cur_user_item.set_state(status="跳过")
+                await self.script_info.set_log(
+                    f"{self._maintenance_reason}\n正在中止相关程序"
+                )
                 # 通知放在最终判定处推送，避免与随后的成功结论互相矛盾
                 await self.notify_maintenance_skip(self._maintenance_reason)
                 await self.kill_managed_process(
@@ -1036,8 +1038,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
                 # 成功结论晚于维护命中时优先成功，清除标记避免误报维护跳过
-                self.clear_maintenance_hit()
-                self.script_info.log = "检测到 OK-NTE 已完成任务\n正在等待相关进程结束"
+                await self.clear_maintenance_hit()
+                await self.script_info.set_log(
+                    "检测到 OK-NTE 已完成任务\n正在等待相关进程结束"
+                )
                 # 对齐 MaaEnd：成功时先只结束 OK-NTE；是否关游戏由 Game.CloseOnFinish 在 final_task 决定
                 await self._kill_oknte_process()
                 if self.script_config.Script.UpdateConfigMode in ("Success", "Always"):
@@ -1048,7 +1052,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             logger.warning(
                 f"用户 {self.cur_user_item.name} - OK-NTE 代理异常: {self.cur_user_log.status}"
             )
-            self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
+            await self.script_info.set_log(
+                f"{self.cur_user_log.status}\n正在中止相关程序"
+            )
             await self.kill_managed_process(
                 kill_game=self._mas_should_close_game_on_retry()
             )
@@ -1066,7 +1072,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             if self.script_config.Script.UpdateConfigMode in ("Failure", "Always"):
                 await self.update_config()
             if i + 1 < run_limit:
-                self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
+                await self.script_info.append_log(
+                    f"\n将在稍后重试 ({i + 1}/{run_limit})"
+                )
                 await asyncio.sleep(10)
 
     def _game_management_enabled(self) -> bool:
@@ -1101,9 +1109,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         避免「配置一套、代码另一套」的分裂；内置项保证未改配置时也有基线行为。
         """
         log = "".join(log_content)
-        self.cur_user_log.content = log_content
-        self.script_info.log_first_line = log[:-4000].count("\n") + 1
-        self.script_info.log = log[-4000:]
+        await self.cur_user_log.set_state(content=log_content)
+        await self.script_info.set_log(log)
 
         log_status = "OK-NTE 正常运行中"
         user_item_status: str | None = None
@@ -1142,9 +1149,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 log_status = "OK-NTE 运行超时"
                 user_item_status = "异常"
 
-        self.cur_user_log.status = log_status
+        await self.cur_user_log.set_state(status=log_status)
         if user_item_status is not None:
-            self.cur_user_item.status = user_item_status
+            await self.cur_user_item.set_state(status=user_item_status)
 
         logger.debug(f"OK-NTE 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "OK-NTE 正常运行中":
@@ -1152,12 +1159,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             self.wait_event.set()
 
     async def final_task(self):
-        self.task_info.begin_user_history_capture(
+        self.history.begin_user_history_capture(
             self.script_info,
             self.cur_user_item,
             failed=bool(self.cur_user_item.log_record)
             and not self.run_book
-            and not self.cur_user_item.maintenance_skipped
+            and not self.user_state(self.cur_user_item).maintenance_skipped
             and not self.stopped_manually,
         )
 
@@ -1191,7 +1198,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 and log_item is self.cur_user_log
                 and log_item.status == "未开始监看日志"
             ):
-                log_item.status = "任务被用户手动中止"
+                await log_item.set_state(status="任务被用户手动中止")
 
             was_cancelled = (
                 self.stopped_manually
@@ -1199,9 +1206,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 and log_item.status == "任务被用户手动中止"
             )
             if len(log_item.content) == 0:
-                log_item.content = ["未捕获到任何日志内容"]
+                await log_item.set_state(content=["未捕获到任何日志内容"])
                 if not was_cancelled:
-                    log_item.status = "未捕获到日志"
+                    await log_item.set_state(status="未捕获到日志")
 
             history_records.append(
                 HistoryWrite(
@@ -1214,7 +1221,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                         else "skipped"
                         if (
                             log_item is self.cur_user_log
-                            and self.cur_user_item.maintenance_skipped
+                            and self.user_state(self.cur_user_item).maintenance_skipped
                         )
                         else "cancelled"
                         if was_cancelled
@@ -1226,7 +1233,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             )
 
         if history_records:
-            await self.task_info.save_user_history(
+            await self.history.save_user_history(
                 history_records,
                 script=self.script_info,
                 user=self.cur_user_item,
@@ -1256,7 +1263,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 "√"
                 if self.run_book
                 else "-"
-                if self.cur_user_item.maintenance_skipped
+                if self.user_state(self.cur_user_item).maintenance_skipped
                 else "X"
             )
 
@@ -1303,10 +1310,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             self.cur_user_config.Data.LastProxyStatus = "成功"
             await self.cur_user_config.commit()
             if self.cur_user_item.status != "异常":
-                self.cur_user_item.status = "完成"
+                await self.cur_user_item.set_state(status="完成")
             logger.success(f"用户 {self.cur_user_uid} 的 OK-NTE 自动代理任务已完成")
         else:
-            maintenance_skipped = self.cur_user_item.maintenance_skipped
+            maintenance_skipped = self.user_state(
+                self.cur_user_item
+            ).maintenance_skipped
             # 维护跳过不是失败：保留「跳过」状态并记录维护结果。
             self.cur_user_config.Data.LastProxyStatus = (
                 "维护中" if maintenance_skipped else "失败"
@@ -1314,14 +1323,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             await self.cur_user_config.commit()
             if maintenance_skipped:
                 if self.cur_user_item.status not in ("完成", "跳过"):
-                    self.cur_user_item.status = "异常"
+                    await self.cur_user_item.set_state(status="异常")
             elif self.cur_user_item.status != "完成":
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
 
     async def on_crash(self, e: Exception):
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         if hasattr(self, "cur_user_log"):
-            self.cur_user_log.status = f"OK-NTE 运行异常: {e}"
+            await self.cur_user_log.set_state(status=f"OK-NTE 运行异常: {e}")
         logger.opt(exception=True).warning(f"OK-NTE 自动代理任务出现异常: {e}")
         if hasattr(self, "wait_event"):
             self.wait_event.set()
@@ -1448,7 +1457,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
     ) -> None:
         """本专项固定来源与用户；读取和交付时机由自身生命周期控制。"""
         self._log_user = self.cur_user_item
-        self._log_user.push_log_mode = mode
+        self.user_state(self._log_user).push_log_mode = mode
         self._log_source = None
         self._log_pipeline = None
         self._log_close_task = None
@@ -1504,13 +1513,17 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
                 entries = await asyncio.to_thread(read)
                 for entry in entries:
-                    user.push_log.append((entry.log_type, entry.text, entry.timestamp))
+                    await self.user_state(user).append_push_log(
+                        (entry.log_type, entry.text, entry.timestamp)
+                    )
             except Exception:
                 self._log_failed = True
                 logger.opt(exception=True).warning("节点采集或交付失败")
 
         if self._log_failed:
             try:
-                user.push_log.append((LOG_TYPE_NORMAL, "⚠️ 节点采集失败", time.time()))
+                await self.user_state(user).append_push_log(
+                    (LOG_TYPE_NORMAL, "⚠️ 节点采集失败", time.time())
+                )
             except Exception:
                 logger.opt(exception=True).warning("节点采集失败提示无法交付")
