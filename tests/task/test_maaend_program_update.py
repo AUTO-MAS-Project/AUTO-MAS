@@ -767,3 +767,18 @@ async def test_exact_release_lookup_checks_official_tag_and_draft(
     release["draft"] = True
     with pytest.raises(ValueError, match="公开发行"):
         await update.request_release_for_version(Version("2.3.0b1"), "v2.3.0-beta.1")
+
+
+@pytest.mark.asyncio
+async def test_no_update_prefetch_is_rechecked_at_script_start(
+    scheduler, installation, monkeypatch
+):
+    root, _ = installation
+    scheduler._update_candidate = "MaaEnd 当前版本无需更新"
+    check = AsyncMock(return_value="MaaEnd 当前版本无需更新")
+    apply = AsyncMock()
+    monkeypatch.setattr(update, "update_before_run", check)
+    monkeypatch.setattr(update, "apply_update", apply)
+    await scheduler._prepare_program_update(root)
+    check.assert_awaited_once()
+    apply.assert_not_awaited()
