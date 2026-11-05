@@ -637,6 +637,9 @@ def fluxdown_detect(
                 "path": str(directory),
                 "is_portable_cli": state["cli"] and (directory / "portable").is_file(),
                 "complete": state["cli"] and state["server"],
+                "has_cli": state["cli"],
+                "has_server": state["server"],
+                "has_desktop": state["desktop"],
                 "missing": (
                     ("CLI" if not state["cli"] else "")
                     + ("、" if not state["cli"] and not state["server"] else "")
@@ -692,7 +695,15 @@ def fluxdown_detect(
             {
                 key: value
                 for key, value in c.items()
-                if key in ("path", "is_portable_cli")
+                if key in (
+                    "path",
+                    "is_portable_cli",
+                    "complete",
+                    "has_cli",
+                    "has_server",
+                    "has_desktop",
+                    "missing",
+                )
             }
             for c in candidates[:8]
         ],
