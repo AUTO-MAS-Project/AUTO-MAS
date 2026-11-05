@@ -1,4 +1,4 @@
-import { powerSaveBlocker } from 'electron'
+import { app, powerSaveBlocker } from 'electron'
 
 const WAKEUP_ARGUMENT = '--scheduled-wakeup'
 const KEEP_AWAKE_MS = 10 * 60 * 1000
@@ -44,38 +44,24 @@ export function cancelScheduledWakeupQuit(): void {
 }
 
 /** 只在 will-quit 调用：此时窗口未取消关闭，Runtime 也已完成收尾。 */
-export function finishScheduledWakeupQuit(options: {
-  argv: readonly string[]
-  restart: boolean
-  releaseLock: () => void
-  relaunch: (args: string[]) => void
-}): void {
+export function finishScheduledWakeupQuit({ restart }: { restart: boolean }): void {
   if (quitFinished) return
   quitFinished = true
   // 先释放锁，之后到达的启动直接交给新实例；已被旧锁转发的启动由时间边界兜住。
-  options.releaseLock()
+  app.releaseSingleInstanceLock()
   const wakeup =
     quitContext?.kind === 'automatic' &&
     (quitContext.wakeReceived ||
       (quitContext.nextWakeAt !== undefined && Date.now() >= quitContext.nextWakeAt))
-  if (options.restart || wakeup) {
-    const args = normalRelaunchArgs(options.argv)
+  if (restart || wakeup) {
+    const args = process.argv.slice(1).filter(arg => arg !== WAKEUP_ARGUMENT)
     if (wakeup) args.push(WAKEUP_ARGUMENT)
-    options.relaunch(args)
+    app.relaunch({ args })
   }
 }
 
 export function isScheduledWakeupLaunch(argv: readonly string[]): boolean {
   return argv.includes(WAKEUP_ARGUMENT)
-}
-
-/** 已有实例接到唤醒后，新启动或恢复的后端也应等待定时队列。 */
-export function shouldSkipStartupQueues(): boolean {
-  return wakeupBackendPending || blocker !== undefined
-}
-
-export function getSystemResumeTime(): string | undefined {
-  return systemResumeTime
 }
 
 /** 客户端准备开始后，保留来源供失败重试，直到后端真正就绪。 */
@@ -85,7 +71,7 @@ export function captureScheduledWakeupContext(): {
 } {
   wakeupBackendPending ||= blocker !== undefined
   resumeBackendPending ||= systemResumeTime !== undefined
-  return { scheduledWakeup: shouldSkipStartupQueues(), resumedAt: getSystemResumeTime() }
+  return { scheduledWakeup: wakeupBackendPending, resumedAt: systemResumeTime }
 }
 
 export function scheduledWakeupBackendReady(): void {
@@ -98,10 +84,6 @@ export function scheduledWakeupBackendReady(): void {
 export function prepareSystemResumeRecovery(): void {
   systemResumeTime = new Date().toISOString()
   renewWakeupWindow()
-}
-
-export function normalRelaunchArgs(argv: readonly string[]): string[] {
-  return argv.filter(arg => arg !== WAKEUP_ARGUMENT)
 }
 
 /** 冷启动或已运行实例收到唤醒启动时，保活十分钟等待定时调度接管。 */

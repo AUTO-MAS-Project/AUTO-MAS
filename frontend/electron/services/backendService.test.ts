@@ -13,7 +13,7 @@ import { getFluxdownInstallEnvironment } from './fluxdownInstallService'
 import { InitializationService } from './initializationService'
 import { createRuntimeClient, RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'
 import {
-  getSystemResumeTime,
+  captureScheduledWakeupContext,
   prepareSystemResumeRecovery,
   scheduledWakeupBackendReady,
 } from './scheduledWakeup'
@@ -284,7 +284,7 @@ it('metadata-only Runtime clients do not retain a healthy resume source', async 
     createRuntimeClient({ runtimePath: EXISTING_EXE, appRoot })
     // 更新检查与 doctor 也创建客户端，但不启动后端，不应锁存来源。
     await vi.advanceTimersByTimeAsync(11 * 60 * 1000)
-    expect(getSystemResumeTime()).toBeUndefined()
+    expect(captureScheduledWakeupContext().resumedAt).toBeUndefined()
   } finally {
     scheduledWakeupBackendReady()
     vi.useRealTimers()

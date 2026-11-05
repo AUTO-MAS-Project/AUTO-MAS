@@ -65,6 +65,7 @@ class _SystemHandler:
         # 应用生命周期注入，仅提供 AVD 关闭能力，不把宿主配置带进系统服务。
         self.avd_instance_closer: Callable[[], Awaitable[object]] | None = None
         self.power_task: Optional[asyncio.Task] = None
+        self._power_task_lock = asyncio.Lock()
         self._power_cancelled_event_task: Optional[asyncio.Task] = None
         self.current_power_operation: Optional[str] = None
         self.current_power_remaining = 0
@@ -430,7 +431,16 @@ class _SystemHandler:
     ):
         """开始电源任务"""
 
-        if self.power_task is None or self.power_task.done():
+        # 替换与取消共用一个交接入口，旧任务收尾后才发布新倒计时。
+        async with self._power_task_lock:
+            if Config.power_sign == "NoAction":
+                return
+            power_task = self.power_task
+            if power_task is not None and not power_task.done():
+                await self._cancel_power_task(power_task)
+            # 用户可在等待收尾时取消尚未接手的完成后操作。
+            if Config.power_sign == "NoAction":
+                return
             power_sign = Config.power_sign
             delay = Config.power_delay
             self._power_cancelled_event_task = None
@@ -457,8 +467,6 @@ class _SystemHandler:
             )
             Config.power_sign = "NoAction"
             Config.power_delay = 0
-        else:
-            logger.warning("已有电源任务在运行, 请勿重复启动")
 
     async def _publish_power_cancelled(
         self, power_task: Optional[asyncio.Task]
@@ -473,27 +481,36 @@ class _SystemHandler:
         )
 
     async def cancel_pending_power_task(self) -> None:
-        """存在待执行的电源任务时取消它，没有则跳过。"""
+        """撤销旧任务，不清除留给下次完成时执行的电源意图。"""
 
-        if self.power_task is not None and not self.power_task.done():
-            await self.cancel_power_task()
+        async with self._power_task_lock:
+            power_task = self.power_task
+            if power_task is not None and not power_task.done():
+                await self._cancel_power_task(power_task)
 
     async def cancel_power_task(self):
         """取消电源任务"""
 
         power_task = self.power_task
-        if power_task is not None and not power_task.done():
-            power_task.cancel()
-            try:
-                await power_task
-            except asyncio.CancelledError:
-                logger.info("电源任务已取消")
-            self.current_power_operation = None
-            self.current_power_remaining = 0
-            await self._publish_power_cancelled(power_task)
-        else:
+        if power_task is None or power_task.done():
             logger.warning("当前无电源任务在运行")
             raise RuntimeError("当前无电源任务在运行")
+        # 在等待交接锁之前清除意图，避免取消期间又启动同一个完成后操作。
+        Config.power_sign = "NoAction"
+        Config.power_delay = 0
+        async with self._power_task_lock:
+            if not power_task.done():
+                await self._cancel_power_task(power_task)
+
+    async def _cancel_power_task(self, power_task: asyncio.Task) -> None:
+        power_task.cancel()
+        try:
+            await power_task
+        except asyncio.CancelledError:
+            logger.info("电源任务已取消")
+        self.current_power_operation = None
+        self.current_power_remaining = 0
+        await self._publish_power_cancelled(power_task)
 
     async def close_avd_instances(self) -> None:
         """按进程名强杀之前，先把在跑的魔改 AVD 实例正常关掉（安卓正常关机，不成再 sync + 关）。

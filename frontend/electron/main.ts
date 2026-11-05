@@ -2481,12 +2481,7 @@ app.on('child-process-gone', (_event, details) => {
 })
 
 app.on('will-quit', () => {
-  finishScheduledWakeupQuit({
-    argv: process.argv.slice(1),
-    restart: relaunchAfterQuit,
-    releaseLock: () => app.releaseSingleInstanceLock(),
-    relaunch: args => app.relaunch({ args }),
-  })
+  finishScheduledWakeupQuit({ restart: relaunchAfterQuit })
   disposeAnalytics()
   desktopMascot.dispose()
   globalShortcut.unregisterAll()
