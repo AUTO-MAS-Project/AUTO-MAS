@@ -578,12 +578,31 @@ async def get_depot_inventory(
 
 
 async def refresh_cultivate_data(script_id: str) -> None:
-    """校验脚本入口后强制刷新共享养成数据，不修改用户目标或库存。"""
+    """刷新共享养成数据与托管内已绑定角色的练度，练度失败沿用旧快照。"""
 
+    from app.task.MAA.tools.cultivate.skland import (
+        SklandAccountRef,
+        fetch_skland_progression,
+    )
     from app.task.MAA.tools.cultivate.yituliu import refresh_data
 
-    _maa_script_config(script_id)
+    script_config = _maa_script_config(script_id)
     await refresh_data(Config.config_path, Config.proxy)
+    bindings = {
+        binding
+        for user_id in script_config.UserData.keys()
+        if (binding := _cultivate_skland_ref(script_config, str(user_id))) is not None
+    }
+    load_credential, save_credential = _cultivate_skland_callbacks()
+    for account_uid, game_uid in bindings:
+        await fetch_skland_progression(
+            SklandAccountRef(account_uid=account_uid, game_uid=game_uid),
+            load_credential=load_credential,
+            save_credential=save_credential,
+            proxy=Config.proxy,
+            force=True,
+            fallback_to_cached=True,
+        )
 
 
 async def get_cultivate_operators(
