@@ -18,13 +18,6 @@ def capture(request, tmp_path, monkeypatch):
     proxy._push_user_book = {}
     proxy._idx_names = {}
     proxy._app_name_book = {}
-    if adapter == "Okww":
-        native = tmp_path / module._push_log.OKWW_REL_I18N_PO
-        native.parent.mkdir(parents=True)
-        native.write_text("", encoding="utf-8")
-        supplement = tmp_path / "extra.po"
-        supplement.write_text("", encoding="utf-8")
-        monkeypatch.setattr(module._push_log, "_okww_supplement_po", lambda: supplement)
     if adapter == "ZzzOd":
         monkeypatch.setattr(
             module._push_log,
@@ -95,37 +88,4 @@ def test_initialization_failure_keeps_failure_policy_with_caller(capture, monkey
     asyncio.run(proxy._close_log_details())
     expected = [] if module.__name__.split(".")[2] == "ZzzOd" else ["⚠️ 节点采集失败"]
     assert [entry[1] for entry in user.push_log] == expected
-    assert user.status == "完成"
-
-
-def test_okww_translation_cleanup_failure_preserves_delivered_nodes(
-    tmp_path, monkeypatch
-):
-    from app.task.Okww import AutoProxy as module
-
-    native = tmp_path / module._push_log.OKWW_REL_I18N_PO
-    native.parent.mkdir(parents=True)
-    native.write_text('msgid "Mail"\nmsgstr "领取邮件"\n', encoding="utf-8")
-    supplement = tmp_path / "extra.po"
-    supplement.write_text("", encoding="utf-8")
-    monkeypatch.setattr(module._push_log, "_okww_supplement_po", lambda: supplement)
-    proxy = module.AutoProxyTask.__new__(module.AutoProxyTask)
-    user = SimpleNamespace(push_log=[], push_log_mode="汇总", status="完成")
-    proxy.cur_user_item, proxy.script_root_path = user, tmp_path
-    path = tmp_path / "run.log"
-    path.write_text("", encoding="utf-8")
-    proxy._prepare_log_details(path, mode="汇总", enabled=True, rotated_name=None)
-    path.write_text("Mail\n", encoding="utf-8")
-
-    def fail():
-        raise RuntimeError("cleanup failed")
-
-    monkeypatch.setattr(proxy._log_translator, "clear", fail)
-
-    async def run():
-        await proxy._close_log_details()
-        await proxy._close_log_details()
-
-    asyncio.run(run())
-    assert [entry[1] for entry in user.push_log] == ["✅ 成功: 邮件", "⚠️ 节点采集失败"]
     assert user.status == "完成"

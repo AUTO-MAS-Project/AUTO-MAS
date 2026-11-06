@@ -56,7 +56,6 @@ from app.utils import (
     log_box,
 )
 from app.utils import constants as _utils_constants
-from app.utils import i18n as _utils_i18n
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
 
@@ -235,10 +234,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self._log_source: log_source.LogSource | None = None
         self._log_pipeline: log_box.LogPipeline | None = None
         self._log_user: UserItem | None = None
-        self._log_translator: _utils_i18n.PoTranslator | None = None
         self._log_failed = False
         self._log_close_task: asyncio.Task[None] | None = None
         self.script_config_path: Path | None = None
+        # prepare() 失败时收尾仍会读取该属性，必须在任何可失败步骤前初始化
+        self.run_book = False
 
     async def check(self) -> str:
         root = self.script_config.Info.RootPath
@@ -409,8 +409,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         )
 
         # ── log_box：日志采集推送（MAS 进程宿主，注入 sink 到 push_log）──
-        # 受账号级「节点详情推送模式」开关控制：关闭时不创建（不读日志、不翻译、
-        # 不匹配、不处理），既省采集开销也符合「不记录」语义；该账号 push_log 保持
+        # 受账号级「节点详情推送模式」开关控制：关闭时不创建（不读日志、不匹配、
+        # 不处理），既省采集开销也符合「不记录」语义；该账号 push_log 保持
         # 为空，报告聚合时自然不含其节点详情。
         self._prepare_log_details(
             self.script_log_path,
@@ -423,8 +423,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self.okww_args = ["-t", str(self.task_index), "-e"]
 
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
-
-        self.run_book = False
 
     def _resolve_log_file_path(self) -> Path:
         return self.script_log_path
@@ -1046,7 +1044,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 await self.log_monitor.stop()
         await self.kill_managed_process(kill_game=self._game_management_enabled())
 
-        # box 归并并交付节点后释放翻译资源，报告仍使用原有文本与兜底提示。
+        # box 归并并交付节点后进入后续收尾。
         await self._close_log_details()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
@@ -1377,18 +1375,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self._log_source = None
         self._log_pipeline = None
         self._log_close_task = None
-        self._log_translator = None
         self._log_failed = False
         if not enabled:
             return
         try:
             pipeline = log_box.LogPipeline()
-            self._log_translator = _utils_i18n.PoTranslator()
-            self._log_translator.load(
-                (_push_log.OKWW_REL_I18N_PO,), base=self.script_root_path
-            )
-            self._log_translator.load_supplement((_push_log._okww_supplement_po(),))
-            pipeline.preprocessors.append(self._log_translator.translate)
             for rule in _push_log.OKWW_PUSH_RULES:
                 pipeline.add_rule(*rule)
             pipeline.postprocessors.append(_push_log.okww_resolve)
@@ -1439,13 +1430,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             except Exception:
                 self._log_failed = True
                 logger.opt(exception=True).warning("节点采集或交付失败")
-
-        if self._log_translator is not None:
-            try:
-                self._log_translator.clear()
-            except Exception:
-                self._log_failed = True
-                logger.opt(exception=True).warning("OK-WW 翻译资源清理失败")
 
         if self._log_failed:
             try:
