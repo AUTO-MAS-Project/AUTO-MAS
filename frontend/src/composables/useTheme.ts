@@ -522,9 +522,15 @@ function getThemeConfig() {
   const primaryColor = activeAppearance.value?.tokens.colorPrimary ?? themeColors[themeColor.value]
   const token = {
     colorPrimary: primaryColor,
-    // 中性灰白降低大面积表面的亮度；外观包仍可覆盖自己的背景。
+    // 中灰底 + 纯白卡片：页面底压暗保住整体亮度，卡片留白才有层次；外观包仍可覆盖。
     ...(!isDark.value
-      ? { colorBgLayout: '#e9e9e9', colorBgContainer: '#f2f2f2', colorBgElevated: '#f7f7f7' }
+      ? {
+          colorBgLayout: '#e9e9e9',
+          colorBgContainer: '#ffffff',
+          colorBgElevated: '#ffffff',
+          // 发丝线默认 #f0f0f0，压在纯白卡片上基本看不见，卡片内的行/列分隔会消失
+          colorBorderSecondary: '#e0e0e0',
+        }
       : {}),
     ...(activeAppearance.value?.tokens.colorBgLayout
       ? { colorBgLayout: activeAppearance.value.tokens.colorBgLayout }
