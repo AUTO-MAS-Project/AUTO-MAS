@@ -323,29 +323,42 @@ WATCHDOG_PROBE_TIMEOUT_SECONDS = 10.0
 WATCHDOG_STRIKES = 2
 
 #: 关机各步的上限。调用方（``app/task/emulator_core.close_emulator``）整体只给 30 秒，超时后连强杀
-#: 都执行不到，所以最坏情况要压在 28 秒以内。三条路径（见 ``AvdManager.close``）：
+#: 都执行不到，所以最坏情况要压在 :data:`CLOSE_BUDGET_SECONDS` 以内。三条路径（见 ``AvdManager.close``）：
 #:
-#: - 正常关机（默认）：私有 server 没在跑时起它并替实例登记 4 + 安卓正常关机（发命令连同等 qemu
-#:   自己退出）15 = 19；超时或失败就退回：sync 2 + 控制台 kill 连同等 qemu 退出 5 + 强杀后等 2，
-#:   最坏 4 + 15 + 2 + 5 + 2 = 28。
+#: - 正常关机（默认）：私有 server 没在跑时起它并替实例登记 4 + 这次拉起过游戏时按 HOME 2、等游戏
+#:   退到后台 2 + 关机前 sync 2，然后发 ``svc power shutdown`` 等 qemu 自己退出，最晚等到开始关机后
+#:   第 :data:`GRACEFUL_SHUTDOWN_DEADLINE_SECONDS` 秒（22）；没退出就退回：sync 1 + 控制台 kill 连同等
+#:   qemu 退出 3 + 强杀后等 2，最坏 22 + 1 + 3 + 2 = 28。前面几步用得少，等安卓关机的时间就多：
+#:   起 server 不用等、按 HOME 0.5 秒时约 19 秒，这次没拉起游戏时约 22 秒。
 #: - 私有 adb 用不了（发不了关机命令，也发不了 sync）：4 + 控制台 kill 3 + 等 qemu 退出 12 + 强杀后
 #:   等 5 = 24。
 #: - 强制关闭（``ForceKillOnClose``）：4 + sync 3 + 强杀后等 5 = 12。
 #:
 #: SDK adb 的 ``start-server`` 客户端要 2.08–2.12 秒才返回，所以起 server 只等端口开始监听、不等客户端
 #: 退出（第三轮复核：给 2 秒时 server 起来了 sync 却被跳过）。sync 正常几十毫秒（实测 46–93 ms），
-#: qemu 收到控制台 kill 后 2–3 秒退出；安卓正常关机实测 7.4 秒 qemu 自己退出（游戏正在下载时）。
+#: qemu 收到控制台 kill 后 2–3 秒退出。``svc power shutdown`` 到 qemu 自己退出平时约 6.5 秒，宿主负载
+#: 高时实测到过 14.5 秒；安卓的 ShutdownThread 最坏要等关机广播 10 秒、停 Activity 10 秒。
+CLOSE_BUDGET_SECONDS = 28.0
 ADB_SERVER_START_TIMEOUT_ON_CLOSE_SECONDS = 4.0
-GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS = 15.0
+GO_HOME_TIMEOUT_SECONDS = 2.0
+GO_HOME_SETTLE_SECONDS = 2.0
 SYNC_TIMEOUT_SECONDS = 3.0
+PRE_SHUTDOWN_SYNC_TIMEOUT_SECONDS = 2.0
 CONSOLE_KILL_TIMEOUT_SECONDS = 3.0
 CLOSE_TIMEOUT_SECONDS = 12.0
 FORCE_KILL_WAIT_SECONDS = 5.0
-#: 正常关机没成、退回 sync + kill 时各步的上限（前面已经花掉最多 4 + 15 秒，只剩 9 秒）。
-#: 控制台 kill 那一步是「发 kill 连同等 qemu 退出」合计 5 秒，发命令本身仍最多 3 秒。
-FALLBACK_SYNC_TIMEOUT_SECONDS = 2.0
-FALLBACK_KILL_TIMEOUT_SECONDS = 5.0
+#: 正常关机没成、退回 sync + kill 时各步的上限。这时安卓多半已经关到一半，adbd 和控制台都没了，
+#: sync、控制台 kill 会马上失败，用不满各自的上限。
+#: 控制台 kill 那一步是「发 kill 连同等 qemu 退出」合计 3 秒，发命令本身也最多 3 秒。
+FALLBACK_SYNC_TIMEOUT_SECONDS = 1.0
+FALLBACK_KILL_TIMEOUT_SECONDS = 3.0
 FALLBACK_FORCE_KILL_WAIT_SECONDS = 2.0
+#: 等安卓自己关机最晚等到开始关机后的第几秒：给退回那三步留够时间，整次关机不超过预算。
+GRACEFUL_SHUTDOWN_DEADLINE_SECONDS = CLOSE_BUDGET_SECONDS - (
+    FALLBACK_SYNC_TIMEOUT_SECONDS
+    + FALLBACK_KILL_TIMEOUT_SECONDS
+    + FALLBACK_FORCE_KILL_WAIT_SECONDS
+)
 #: 关机 / 重启 / 注销前并发关魔改 AVD 实例的总时限（单台 28 秒以内，留一点余量）；到点不等，
 #: 电源流程照常按进程名强杀。
 POWER_CLOSE_TIMEOUT_SECONDS = 30.0
