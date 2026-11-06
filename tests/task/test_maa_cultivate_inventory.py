@@ -87,7 +87,10 @@ def test_skill_levels_share_inventory_without_double_counting(scenario):
     }
 
 
-def test_incomplete_recipe_leaves_ingredients_for_the_skill_prerequisite(scenario):
+@pytest.mark.parametrize(
+    "complete", [False, True], ids=["missing-ingredient", "complete"]
+)
+def test_recipe_crafting_updates_shared_inventory_only_on_success(scenario, complete):
     scenario["targets"] = [
         OperatorTarget("one", (Goal(kind="mastery", target_id="skill", to_level=1),))
     ]
@@ -121,10 +124,14 @@ def test_incomplete_recipe_leaves_ingredients_for_the_skill_prerequisite(scenari
         ],
         data_version="test",
     )
-    # 糖聚块合成缺锰矿，试算用过的糖组仍须留给普通技能7级的前置消耗。
-    plan = build_plan(**scenario, inventory={"30023": 2, "30043": 1})
-    assert [(item.item_id, item.amount) for item in plan.entries] == [("30024", 1)]
-    assert {item.item_id: item.amount for item in plan.reservations} == {
-        "30024": 1,
-        "30023": 2,
-    }
+    # 缺锰矿时糖组留给技能前置；合成成功时糖组已耗尽，技能前置须补刷。
+    inventory = {"30023": 2, "30043": 1, "30083": int(complete)}
+    plan = build_plan(**scenario, inventory=inventory)
+    assert [(item.item_id, item.amount) for item in plan.entries] == (
+        [("30023", 2)] if complete else [("30024", 1)]
+    )
+    assert {item.item_id: item.amount for item in plan.reservations} == (
+        {"30024": 1, "30023": 4, "30043": 1, "30083": 1}
+        if complete
+        else {"30024": 1, "30023": 2}
+    )
