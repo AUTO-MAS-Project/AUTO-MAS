@@ -4259,7 +4259,7 @@
   "core.setting.func.silentTip": "启用后将各代理窗口置于后台运行，减少对前台的干扰。反馈问题、故障排查时，请关闭此功能以便检查相关窗口情况。",
   "core.setting.func.startMinimized": "启动后直接最小化",
   "core.setting.func.telemetry": "匿名遥测",
-  "core.setting.func.telemetryTip": "发送经脱敏的错误与性能诊断及功能使用统计，不含账号、路径与配置内容；正式版按比例随机采样，关闭后不再上报。",
+  "core.setting.func.telemetryTip": "发送经脱敏的错误与性能诊断及功能使用统计，不含账号、路径与配置内容；正式版对部分事件随机采样，关闭后不再上报。",
   "core.setting.func.voiceEnable": "启用语音提示",
   "core.setting.func.voiceEnableTip": "开启后将在特定时刻播放语音提示",
   "core.setting.func.voiceSection": "语音配置",

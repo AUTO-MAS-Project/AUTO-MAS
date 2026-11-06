@@ -4259,7 +4259,7 @@
   "core.setting.func.silentTip": "代行ウィンドウをバックグラウンドで動かし、作業の妨げを減らします。不具合の報告や原因調査の際は、ウィンドウの状態を確認できるようオフにしてください。",
   "core.setting.func.startMinimized": "起動後すぐ最小化",
   "core.setting.func.telemetry": "匿名テレメトリ",
-  "core.setting.func.telemetryTip": "匿名化したエラー・パフォーマンス診断と機能利用統計を送信します。アカウント、パス、設定内容は含みません。正式版では一部を抽出して送信し、オフにすると送信しません。",
+  "core.setting.func.telemetryTip": "匿名化したエラー・パフォーマンス診断と機能利用統計を送信します。アカウント、パス、設定内容は含みません。正式版では一部のイベントを抽出して送信し、オフにすると送信しません。",
   "core.setting.func.voiceEnable": "音声ガイドを有効にする",
   "core.setting.func.voiceEnableTip": "特定のタイミングで音声ガイドを再生します",
   "core.setting.func.voiceSection": "音声",
