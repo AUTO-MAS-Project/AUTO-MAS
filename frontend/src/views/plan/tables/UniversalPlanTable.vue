@@ -113,6 +113,7 @@ const {
     timeoutWarn: 'core.plan.universal.sessionTimeoutWarn',
     saved: 'core.plan.universal.sessionSaved',
     saveFailed: 'core.plan.universal.saveFailed',
+    saveUnknown: 'core.plan.universal.saveUnknown',
   },
 })
 

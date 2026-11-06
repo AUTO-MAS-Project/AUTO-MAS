@@ -1487,6 +1487,7 @@ class Task(TaskExecuteBase):
                     queueId=self.task_info.queue_id,
                     scriptId=self.task_info.script_id,
                     userId=self.task_info.user_id,
+                    planSaveResult=self.task_info.plan_save_result,
                     finishedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 )
             )
@@ -1656,6 +1657,11 @@ class _TaskManager:
         except ValueError:
             return None
 
+        self._prune_recent_results()
+        remembered = self._recent_results.get(task_id)
+        if remembered is not None:
+            return remembered[1]
+
         task_info = self.task_info.get(task_uid)
         if task_info is not None:
             handler = self.task_handler.get(task_uid)
@@ -1670,9 +1676,7 @@ class _TaskManager:
                 stopping=bool(handler and handler.is_closing),
             )
 
-        self._prune_recent_results()
-        remembered = self._recent_results.get(task_id)
-        return remembered[1] if remembered is not None else None
+        return None
 
     def get_runtime_snapshot(self) -> TaskRuntimeSnapshot:
         """返回任务运行状态与定时队列的 HTTP 初始快照。"""

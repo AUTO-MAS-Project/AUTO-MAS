@@ -9,6 +9,7 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { Service } from '@/api/services/Service'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'
 import {
@@ -41,6 +42,7 @@ export function useNativeGuiSession(options: {
     timeoutWarn: string
     saved: string
     saveFailed: string
+    saveUnknown?: string
   }
 }) {
   const { t } = useI18n()
@@ -66,6 +68,7 @@ export function useNativeGuiSession(options: {
   // 会话期间后端报错（含保存收尾失败）：停止受理成功不代表保存成功，
   // 错误帧到达后不能再提示「已保存」
   let sessionErrorNotice: string | null = null
+  let planSession = false
 
   // 原生设置会话超时自动保存的时长与提前提醒的提前量（避免无预告直接中断会话）
   const SESSION_TIMEOUT_MS = 30 * 60 * 1000
@@ -155,6 +158,7 @@ export function useNativeGuiSession(options: {
     currentSessionViewOnly.value = viewOnly
     startingPromise = Promise.resolve().then(async () => {
       try {
+        planSession = Boolean(startOptions.planId)
         discardedReason = null
         sessionErrorNotice = null
         keepDiscardFrames = false
@@ -229,12 +233,30 @@ export function useNativeGuiSession(options: {
       // 查看会话只有关闭语义，不发送保存动作，也不提示已保存。
       return stopSession().then(() => {})
     }
+    const savedTaskId = taskId.value
     savingPromise = (async () => {
       if (!(await stopSession(true, true, action))) {
         message.error(t(keys.saveFailed))
         return
       }
       await new Promise(resolve => window.setTimeout(resolve, DISCARD_FRAME_GRACE_MS))
+      if (planSession) {
+        try {
+          const result = await Service.getTaskStatusApiDispatchTaskTaskIdGet(savedTaskId)
+          if (result.code !== 200 || !result.planSaveResult) {
+            message.warning(t(keys.saveUnknown!))
+            return
+          }
+          if (result.planSaveResult === 'failed') {
+            if (!sessionErrorNotice) message.error(t(keys.saveFailed))
+            return
+          }
+        } catch (error) {
+          logger.error(error instanceof Error ? error.message : String(error))
+          message.warning(t(keys.saveUnknown!))
+          return
+        }
+      }
       // 改动已被丢弃或后端保存收尾报错时不再提示「已保存」——错误说明已经
       // 展示，两条提示互相矛盾。
       if (!discardedReason && !sessionErrorNotice) message.success(t(keys.saved))

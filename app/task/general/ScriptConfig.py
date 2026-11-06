@@ -279,6 +279,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 destination=self.mas_config_dir,
                 mode=self.script_config.Script.ConfigPathMode,
             )
+            self.task_info.plan_save_result = "saved"
             return
 
         # 源是用户自己填的脚本配置位置，可能压根不存在（路径填错、脚本还没生成过
@@ -314,6 +315,8 @@ class ScriptConfigTask(TaskExecuteBase):
             )
 
     async def on_crash(self, e: Exception):
+        if self.plan_active:
+            self.task_info.plan_save_result = "failed"
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         await Publisher.send(

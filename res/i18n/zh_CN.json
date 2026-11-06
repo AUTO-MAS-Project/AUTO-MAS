@@ -20,6 +20,7 @@
   "core.plan.universal.stopFailed": "结束配置会话失败",
   "core.plan.universal.setupFailed": "脚本配置异常：{p0}",
   "core.plan.universal.saveFailed": "保存配置失败",
+  "core.plan.universal.saveUnknown": "无法确认配置是否保存，请检查计划表",
   "core.plan.universal.sessionOpened": "脚本配置界面已打开",
   "core.plan.universal.sessionSaved": "配置已保存",
   "core.plan.universal.sessionTimeoutWarn": "30 秒后自动保存并结束配置",

@@ -254,8 +254,25 @@ async def test_native_edit_session_saves_only_its_day(
     await session.main_task()
     await session.final_task()
     assert (session.mas_config_dir / "settings.json").read_text() == "Tuesday edited"
+    assert task_info.plan_save_result == "saved"
     assert (base / "settings.json").read_text() == "base"
     assert not (session.mas_config_dir.parent.parent / "Monday" / "ConfigFile").exists()
+
+    # 模拟保存时复制失败：即使通知无法送达，也须留下可查询的失败结果。
+    import app.core.config.universal_plan as plan_module
+
+    def fail_save(**kwargs):
+        raise OSError("save failed")
+
+    async def drop_notice(**kwargs):
+        pass
+
+    session.general_process_manager = FakeProcess()
+    task_info.task_id = str(uuid4())
+    monkeypatch.setattr(plan_module, "save_plan_config", fail_save)
+    monkeypatch.setattr(module.Publisher, "send", drop_notice)
+    await session._run_final_task()
+    assert task_info.plan_save_result == "failed"
 
 
 @pytest.mark.asyncio

@@ -20,6 +20,7 @@
   "core.plan.universal.stopFailed": "設定セッションを終了できませんでした",
   "core.plan.universal.setupFailed": "スクリプト設定エラー：{p0}",
   "core.plan.universal.saveFailed": "設定を保存できませんでした",
+  "core.plan.universal.saveUnknown": "設定が保存されたか確認できません。計画表を確認してください。",
   "core.plan.universal.sessionOpened": "スクリプト設定画面を開きました",
   "core.plan.universal.sessionSaved": "設定を保存しました",
   "core.plan.universal.sessionTimeoutWarn": "30 秒後に自動保存して設定を終了します",

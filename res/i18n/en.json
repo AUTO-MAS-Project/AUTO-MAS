@@ -20,6 +20,7 @@
   "core.plan.universal.stopFailed": "Could not end the configuration session",
   "core.plan.universal.setupFailed": "Script configuration error: {p0}",
   "core.plan.universal.saveFailed": "Could not save the configuration",
+  "core.plan.universal.saveUnknown": "Could not confirm whether the configuration was saved. Please check the plan.",
   "core.plan.universal.sessionOpened": "The script configuration window is open",
   "core.plan.universal.sessionSaved": "Configuration saved",
   "core.plan.universal.sessionTimeoutWarn": "The configuration will be saved and closed in 30 seconds",

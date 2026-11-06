@@ -201,6 +201,7 @@ class TaskItem(ABC):
     is_cycle: bool = False  # 是否为循环运行任务（按队列项各自的周期持续运行）
     plan_id: str | None = None
     plan_day: str | None = None
+    plan_save_result: Literal["saved", "failed"] | None = None
     view_only: bool = False  # 配置查看会话：只读打开原生界面，不注入基线也不回读字段
     instance_idx: int | None = (
         None  # 配置会话（原生来源）：会话窗口临时切换到的原生实例
