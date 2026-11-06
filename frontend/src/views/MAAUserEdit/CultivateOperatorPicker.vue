@@ -102,9 +102,11 @@ const pickerOptions = computed(() => {
   })
 })
 const operatorPlaceholder = computed(() =>
-  availableOperatorOptions.value.length
-    ? t('core.maaCopilot.pickerSearchHint')
-    : t('core.edit.maaCultivateNoOperators')
+  props.loading
+    ? t('core.edit.maaCultivateCatalogLoading')
+    : availableOperatorOptions.value.length
+      ? t('core.maaCopilot.pickerSearchHint')
+      : t('core.edit.maaCultivateNoOperators')
 )
 // 空输入引导输入，输入后无匹配才报"没有匹配的干员"
 const pickerEmptyText = computed(() =>

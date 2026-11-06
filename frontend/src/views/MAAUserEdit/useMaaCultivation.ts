@@ -251,9 +251,9 @@ export function useMaaCultivation(options: CultivationOptions) {
       if (refreshing.value || !userId || disposed) return 'cancelled'
       refreshing.value = true
       // 作废刷新前的响应；失败仍保留已经显示的目录和预览。
-      cultivateOperatorCatalogSeq++
+      const catalogSeq = ++cultivateOperatorCatalogSeq
       cultivatePreviewSeq++
-      cultivateOperatorOptionsLoading.value = false
+      cultivateOperatorOptionsLoading.value = true
       cultivatePreviewLoading.value = false
       try {
         await dataApi.refresh(scriptId)
@@ -267,6 +267,9 @@ export function useMaaCultivation(options: CultivationOptions) {
           ? 'partial'
           : 'success'
       } finally {
+        if (catalogSeq === cultivateOperatorCatalogSeq) {
+          cultivateOperatorOptionsLoading.value = false
+        }
         refreshing.value = false
       }
     },
