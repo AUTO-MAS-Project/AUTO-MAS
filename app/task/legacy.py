@@ -182,6 +182,8 @@ class _LegacyExecution(TaskBase):
 
     async def on_crash(self, exc):
         """[兼容旧专项] 仅桥接旧异常处理；新执行器直接实现 TaskBase.on_crash。"""
+        # TODO(插件迁移，#1845)：存量更新的停写未确认异常仍沿旧错误路径处理；
+        # 维护结果与终止整轮语义暂不改造，不把这条兼容链视为未来后台维护标准。
         try:
             await self.owner.on_crash(exc)
         except Exception as error:

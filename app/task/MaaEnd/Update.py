@@ -44,6 +44,8 @@ logger = get_logger("终末地客户端更新")
 class EndfieldUpdateTask(TaskExecuteBase):
     """手动触发的一次客户端更新，不持有需要跨轮保留的资源。
 
+    TODO(插件迁移，#1845)：存量维护执行、结果、日志与取消暂不改造，待插件统一迁移。
+
     Args:
         script_info: 已绑定 `task_info` 的托管项；结论写进它的调度台日志。
         script_config: 该脚本的 MaaEnd 配置，只用 `Game.Path` 与

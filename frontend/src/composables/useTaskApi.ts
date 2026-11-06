@@ -159,6 +159,7 @@ export function requestUserUpdateStart(
   )
 }
 
+// TODO(插件迁移，#1845)：存量维护继续使用兼容入口，操作标识、查询和停止待插件统一适配。
 export async function requestMaintenanceStart(
   targetId: string,
   metadata: TaskStartMetadata = {}

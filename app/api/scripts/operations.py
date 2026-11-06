@@ -19,6 +19,7 @@ router = APIRouter(prefix="/operations")
 
 
 # [兼容旧专项] 现有手动更新入口；新专项维护能力在专项业务层定义。
+# TODO(插件迁移，#1845)：全部存量专项维护保持原路径，统一迁移时再替换入口与任务结果契约。
 @router.post("/start", response_model=ScriptOperationOut)
 async def start_operation(body: ScriptOperationIn):
     try:

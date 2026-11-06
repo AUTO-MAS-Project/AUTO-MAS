@@ -133,6 +133,9 @@ class _TaskManager:
 
         目标由旧适配层解析，以 ScriptConfig 信息树承载隐藏的 Update 分支；
         共用创建与停止流程，不创建普通调度面板。
+
+        TODO(插件迁移，#1845)：全部存量专项维护暂不改造；隐藏模式、查询、
+        日志和停写未确认的处理留待插件统一迁移，不接入新的后台维护标准。
         """
         from app.task.legacy import maintenance_requirements
 
@@ -492,6 +495,8 @@ class _TaskManager:
             TaskTreeData.model_validate(info.model_dump()).model_dump(mode="json"),
         )
         self._prune_recent()
+        # TODO(插件迁移，#1845)：此兼容视图排除隐藏维护，仍不能阻止更新期间的电源动作；
+        # 存量专项维护整体暂缓，新后台任务的电源衔接不代表已修复本路径。
         if (
             not self.task_info
             and not self._stopping_all

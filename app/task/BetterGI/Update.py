@@ -36,6 +36,8 @@ logger = get_logger("原神更新 BetterGI")
 class BetterGIUpdateTask(TaskExecuteBase):
     """脚本配置页「检查更新」手动触发的一次原神客户端增量更新。
 
+    TODO(插件迁移，#1845)：存量维护执行、结果、日志与取消暂不改造，待插件统一迁移。
+
     与代理任务启动前的自动更新共用 :func:`ensure_game_updated` 的检查与落盘
     逻辑；手动入口下无法自动完成的情况一律抛错（用户主动发起，不应像自动
     流程那样静默放行）。

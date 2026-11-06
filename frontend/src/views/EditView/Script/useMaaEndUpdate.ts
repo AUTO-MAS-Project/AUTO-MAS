@@ -136,6 +136,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
   }
 
   /** 重扫一次日志快照；返回这个任务是否还在运行列表里 */
+  // TODO(插件迁移，#1845)：普通快照排除维护任务，当前可能提前判定结束；本轮暂不改造对账。
   const resyncLog = async (): Promise<boolean> => {
     if (logResyncing || !updateSession.taskId) return true
     // 快照属于「发起请求那一刻」的世界：把当时的口径先记下，回来对不上就整条丢弃，
