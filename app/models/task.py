@@ -261,6 +261,8 @@ class TaskItem(ABC):
         default=1, init=False, repr=False, compare=False
     )
     _log_seq: int = field(default=0, init=False, repr=False, compare=False)
+    # 仅用于实时日志末尾展示，不写入脚本原始日志、历史或对外任务字段。
+    _prefetch_log: str = field(default="", init=False, repr=False, compare=False)
 
     def get_script_user_configs(
         self, script_id: str

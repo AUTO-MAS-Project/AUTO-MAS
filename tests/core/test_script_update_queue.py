@@ -458,6 +458,8 @@ async def test_public_update_entry_skips_next_non_runnable_item(monkeypatch):
         for uid in script_ids
     }
     info = SimpleNamespace(
+        _prefetch_log="",
+        schedule_on_change=lambda: None,
         mode="AutoProxy",
         is_cycle=False,
         script_list=scripts,
@@ -713,6 +715,8 @@ async def test_download_history_does_not_invalidate_prefetched_candidate(
     monkeypatch.setattr(host.Config, "setting", setting)
     update_settings = setting.Update
     info = SimpleNamespace(
+        _prefetch_log="",
+        schedule_on_change=lambda: None,
         mode="AutoProxy",
         is_cycle=False,
         script_list=[script],
@@ -783,6 +787,8 @@ async def test_runtime_records_do_not_invalidate_but_install_path_does(
         prefetch_script_update=AsyncMock(), discard_prefetched_update=AsyncMock()
     )
     info = SimpleNamespace(
+        _prefetch_log="",
+        schedule_on_change=lambda: None,
         mode="AutoProxy",
         is_cycle=False,
         script_list=[ScriptItem(str(uid), "test", "等待")],
@@ -819,6 +825,8 @@ async def test_update_install_setting_still_invalidates_prefetch():
     script_config = SimpleNamespace(is_locked=False, model_dump=lambda **_: {})
     update_settings = GlobalConfig.UpdateFields()
     info = SimpleNamespace(
+        _prefetch_log="",
+        schedule_on_change=lambda: None,
         mode="AutoProxy",
         is_cycle=False,
         script_list=[script],
@@ -863,6 +871,8 @@ async def test_changed_reservation_resources_invalidate_prefetched_manager():
         prefetch_script_update=AsyncMock(), discard_prefetched_update=AsyncMock()
     )
     info = SimpleNamespace(
+        _prefetch_log="",
+        schedule_on_change=lambda: None,
         mode="AutoProxy",
         is_cycle=False,
         script_list=[ScriptItem(str(uid), "", "等待")],

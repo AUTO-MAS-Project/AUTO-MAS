@@ -4,6 +4,8 @@
 
 """装配更新器与下载入口，连接宿主配置和下载历史，后续转交给前端，后端仅抽象出下载逻辑"""
 
+from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from pathlib import Path
 
 import httpx
@@ -15,6 +17,12 @@ from app.services import update as _service_update
 from app.services.common.update import fluxdown as _service_update_fluxdown
 from app.services.common.update import transport as _service_update_transport
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
+
+DownloadObserver = Callable[[Path, int, int, float], Awaitable[None]]
+# 只由预下载作用域设置；各下载任务继承自己的观察者，不影响其他队列或手动更新。
+download_observer: ContextVar[DownloadObserver | None] = ContextVar(
+    "download_observer", default=None
+)
 
 
 async def _write_history(record: _utils_fluxdown_cli.FluxdownDownloadRecord) -> None:
@@ -51,6 +59,17 @@ async def download_file(
     http_download: _service_update_transport.BuiltinDownload | None = None,
 ) -> int:
     """每次尝试读取默认选项，保留任务冻结的来源与显式下载器覆盖。"""
+    observer = download_observer.get()
+    if observer is not None:
+        original_progress = progress
+
+        async def report(downloaded: int, total: int, speed: float) -> None:
+            if original_progress is not None:
+                await original_progress(downloaded, total, speed)
+            await observer(destination, downloaded, total, speed)
+
+        progress = report
+        await observer(destination, 0, 0, 0.0)
     update = Config.setting.Update
     return await _service_update_fluxdown.download_file(
         url,
