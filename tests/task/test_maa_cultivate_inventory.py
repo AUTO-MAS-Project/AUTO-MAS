@@ -140,13 +140,29 @@ def test_multi_ingredient_crafting_commits_only_complete_sets(
     scenario["data"] = replace(
         scenario["data"],
         demands={
-            "one": (DemandEntry("mastery", "skill", 1, {"30024": 1}),),
-            "two": (DemandEntry("skill", "", 7, {"30023": 2}),),
+            "one": (
+                DemandEntry(
+                    kind="mastery", target_id="skill", level=1, items={"30024": 1}
+                ),
+            ),
+            "two": (
+                DemandEntry(kind="skill", target_id="", level=7, items={"30023": 2}),
+            ),
         },
         recipes=(Recipe("30024", {"30023": 2, "30043": 1, "30083": 1}),),
-        stages={"stage": StageMeta("stage", "3-4", 18, None)},
+        stages={
+            "stage": StageMeta(
+                stage_id="stage", stage_code="3-4", ap_cost=18, open_weekdays=None
+            )
+        },
         drops=tuple(
-            DropEntry("stage", item_id, 1.0, 0, None)
+            DropEntry(
+                stage_id="stage",
+                item_id=item_id,
+                expected_per_run=1.0,
+                start_ms=0,
+                end_ms=None,
+            )
             for item_id in ("30024", "30023", "30043", "30083")
         ),
         material_class={
@@ -154,8 +170,8 @@ def test_multi_ingredient_crafting_commits_only_complete_sets(
         },
     )
     scenario["targets"] = [
-        OperatorTarget("one", (Goal("mastery", "skill", 1),)),
-        OperatorTarget("two", (Goal("skill", "", 7),)),
+        OperatorTarget("one", (Goal(kind="mastery", target_id="skill", to_level=1),)),
+        OperatorTarget("two", (Goal(kind="skill", target_id="", to_level=7),)),
     ]
     scenario["snapshots"]["one"] = replace(
         scenario["snapshots"]["one"],
