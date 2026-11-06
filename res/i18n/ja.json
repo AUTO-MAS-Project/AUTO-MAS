@@ -1390,6 +1390,7 @@
   "core.edit.maaConfigurationProgress": "MAA の設定中です",
   "core.edit.maaConfigurationThisUser": "このアカウントの MAA を設定しています。MAA の画面で設定を完了してください。",
   "core.edit.maaCultivate": "オペレーター育成",
+  "core.edit.maaCultivateCatalogLoading": "オペレーター一覧を読み込み中",
   "core.edit.maaCultivateAutoRaise": "オペレーターを自動育成",
   "core.edit.maaCultivateAutoRaiseDataUnavailable": "育成データを取得できないため、自動育成をスキップしました。オペレーター一覧を更新して再試行してください。素材周回は継続します。",
   "core.edit.maaCultivateAutoRaiseHint": "現在の育成目標に沿って昇進、スキル強化、特化を実行します。モジュールの自動強化は未対応です。無効にしても素材周回は継続します。",

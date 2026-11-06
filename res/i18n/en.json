@@ -1390,6 +1390,7 @@
   "core.edit.maaConfigurationProgress": "MAA configuration in progress",
   "core.edit.maaConfigurationThisUser": "The MAA configuration for this account is open — finish the setup in the MAA window.",
   "core.edit.maaCultivate": "Operator cultivation",
+  "core.edit.maaCultivateCatalogLoading": "Loading operator catalog",
   "core.edit.maaCultivateAutoRaise": "Automatically train operators",
   "core.edit.maaCultivateAutoRaiseDataUnavailable": "Automatic training was skipped because training data is unavailable. Refresh the operator catalog and try again. Material farming continues.",
   "core.edit.maaCultivateAutoRaiseHint": "Executes promotion, skill upgrades, and mastery from your cultivation targets. Automatic module upgrades are not supported. Material farming continues when disabled.",

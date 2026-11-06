@@ -2,18 +2,20 @@ import { expect, test } from './fixtures'
 
 const backend = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? 36174}`
 
-test.describe('@maa-cultivate-data manual refresh', () => {
-  test('reloads the catalog and preview, keeps existing data on failure, and prevents duplicate clicks', async ({
+test.describe('@maa-cultivate-data catalog loading and manual refresh', () => {
+  test('waits for names on entry, preserves existing data during refresh and failure, and prevents duplicate clicks', async ({
     app,
     page,
   }) => {
-    let version = 0
+    let catalogLabel = 'Existing operator'
     let failureCode = 0
     let failCatalog = false
     let refreshRequests = 0
     let catalogRequests = 0
     let previewRequests = 0
     let complete: (() => void) | undefined
+    let deferCatalog = true
+    let completeCatalog: (() => void) | undefined
     await page.route('**/api/scripts/maa/cultivate/refresh', async route => {
       refreshRequests++
       if (refreshRequests === 1)
@@ -21,26 +23,31 @@ test.describe('@maa-cultivate-data manual refresh', () => {
           complete = resolve
         })
       if (failureCode === -1) return route.abort('failed')
-      if (!failureCode) version++
       await route.fulfill({
         json: { code: failureCode || 200, status: failureCode ? 'error' : 'success' },
       })
     })
-    await page.route('**/api/scripts/maa/cultivate/operators', route => {
+    await page.route('**/api/scripts/maa/cultivate/operators', async route => {
       catalogRequests++
+      if (deferCatalog)
+        await new Promise<void>(resolve => {
+          completeCatalog = resolve
+        })
       return route.fulfill({
         json: {
           code: failCatalog ? 500 : 200,
           data: [
             {
-              value: 'operator',
-              label: version ? 'Updated operator' : 'Existing operator',
+              value: 'char_flash_test',
+              label: catalogLabel,
               rarity: 6,
               profession: 'WARRIOR',
               maxElite: 2,
               maxSkillLevel: 7,
               dataMissing: false,
-              skills: [],
+              skills: [
+                { value: 'skchr_flash_3', label: 'Named mastery', maxLevel: 3, skillIndex: 2 },
+              ],
               modules: [],
             },
           ],
@@ -84,7 +91,13 @@ test.describe('@maa-cultivate-data manual refresh', () => {
           Info: { Name: 'isolated cultivation refresh' },
           Task: {
             CultivateTargets: JSON.stringify([
-              { operator_id: 'operator', goals: [{ kind: 'elite', target_id: '', to_level: 1 }] },
+              {
+                operator_id: 'char_flash_test',
+                goals: [
+                  { kind: 'elite', target_id: '', to_level: 1 },
+                  { kind: 'mastery', target_id: 'skchr_flash_3', to_level: 3 },
+                ],
+              },
             ]),
           },
         },
@@ -94,21 +107,71 @@ test.describe('@maa-cultivate-data manual refresh', () => {
     await app.goto(`/scripts/${script.scriptId}/users/${user.userId}/cultivate/maa`)
     const root = page.locator('.cultivation-page')
     const refresh = page.getByRole('button', { name: 'Refresh data', exact: true })
+    await expect.poll(() => catalogRequests).toBe(1)
+    await expect(root.locator('.operator-card')).toHaveCount(0)
+    await expect(root).not.toContainText('char_flash_test')
+    await expect(root).not.toContainText('skchr_flash_3')
+    const catalogLoading = root.getByRole('status', { name: 'Loading operator catalog' })
+    await expect(catalogLoading).toBeVisible()
+    await catalogLoading.scrollIntoViewIfNeeded()
+    await app.evidence('cultivation-catalog-loading-light')
+    await page.evaluate(async () => {
+      const modulePath = '/src/composables/useTheme.ts'
+      const { useTheme } = await import(modulePath)
+      await useTheme().setThemeMode('dark')
+    })
+    await expect(page.locator('html')).toHaveClass(/dark/)
+    await app.evidence('cultivation-catalog-loading-dark')
+    await page.evaluate(async () => {
+      const modulePath = '/src/composables/useTheme.ts'
+      const { useTheme } = await import(modulePath)
+      await useTheme().setThemeMode('light')
+    })
+    const initialCatalog = completeCatalog
+    await refresh.click()
+    await expect.poll(() => refreshRequests).toBe(1)
+    await expect(catalogLoading).toBeVisible()
+    await expect(root.locator('.operator-card')).toHaveCount(0)
+    await expect(root).not.toContainText('char_flash_test')
+    await expect(root).not.toContainText('skchr_flash_3')
+    deferCatalog = false
+    initialCatalog?.()
+    complete?.()
     await expect(root.getByText('Existing operator', { exact: true }).first()).toBeVisible()
+    await expect(root.getByText('Named mastery', { exact: false }).first()).toBeVisible()
+    await expect(catalogLoading).toBeHidden()
+    const card = root.locator('.operator-card')
+    await card.locator('.operator-toggle').click()
+    await expect(card.locator('.operator-toggle')).toHaveAttribute('aria-expanded', 'false')
+    await card.locator('.operator-toggle').click()
+    await expect(card.locator('.operator-toggle')).toHaveAttribute('aria-expanded', 'true')
+    await card.locator('.operator-select input').check()
+    await expect(root.getByRole('button', { name: /Delete selected/ })).toBeEnabled()
+    await card.locator('.operator-select input').uncheck()
+    await expect(root.getByRole('button', { name: /Delete selected/ })).toBeDisabled()
     await expect(refresh).toBeEnabled()
     const beforeCatalog = catalogRequests
     const beforePreview = previewRequests
+    const beforeRefresh = refreshRequests
+    deferCatalog = true
+    catalogLabel = 'Updated operator'
     await refresh.click()
     await expect(refresh).toBeDisabled()
-    await expect.poll(() => refreshRequests).toBe(1)
+    await expect.poll(() => refreshRequests).toBe(beforeRefresh + 1)
     complete?.()
+    await expect.poll(() => catalogRequests).toBeGreaterThan(beforeCatalog)
+    await expect(root.getByText('Existing operator', { exact: true }).first()).toBeVisible()
+    await expect(catalogLoading).toBeHidden()
+    deferCatalog = false
+    completeCatalog?.()
     await expect(
-      page.getByText('Development data and operator catalog refreshed', { exact: true })
+      page.getByText('Development data and operator catalog refreshed', { exact: true }).last()
     ).toBeVisible()
     await expect(root.getByText('Updated operator', { exact: true }).first()).toBeVisible()
     expect(catalogRequests).toBeGreaterThan(beforeCatalog)
     expect(previewRequests).toBeGreaterThan(beforePreview)
     await expect(refresh).toBeEnabled()
+    await card.scrollIntoViewIfNeeded()
     await app.evidence('cultivation-data-refresh-light')
 
     const catalogAfterSuccess = catalogRequests
@@ -160,6 +223,24 @@ test.describe('@maa-cultivate-data manual refresh', () => {
       await useTheme().setThemeMode('dark')
     })
     await expect(page.locator('html')).toHaveClass(/dark/)
+    await card.scrollIntoViewIfNeeded()
     await app.evidence('cultivation-data-refresh-dark')
+    await page.reload()
+    await expect(root.locator('.operator-name')).toHaveText('char_flash_test')
+    await expect(root.getByText('skchr_flash_3', { exact: true })).toBeVisible()
+    await expect(catalogLoading).toBeHidden()
+    await expect(
+      root.locator('.operator-card').getByRole('button', { name: 'Remove' })
+    ).toBeEnabled()
+    await card.scrollIntoViewIfNeeded()
+    await app.evidence('cultivation-catalog-unavailable-dark')
+    const savedRemoval = page.waitForResponse(
+      response =>
+        response.url().endsWith('/api/scripts/user/update') &&
+        response.request().postDataJSON()?.data?.Task?.CultivateTargets === '[]'
+    )
+    await card.getByRole('button', { name: 'Remove' }).click()
+    expect((await (await savedRemoval).json()).code).toBe(200)
+    await expect(card).toHaveCount(0)
   })
 })

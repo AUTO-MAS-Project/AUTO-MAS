@@ -1390,6 +1390,7 @@
   "core.edit.maaConfigurationProgress": "正在进行MAA配置",
   "core.edit.maaConfigurationThisUser": "当前正在配置该账号的 MAA，请在 MAA 配置界面完成相关设置。",
   "core.edit.maaCultivate": "干员养成",
+  "core.edit.maaCultivateCatalogLoading": "正在加载干员目录",
   "core.edit.maaCultivateAutoRaise": "自动培养干员",
   "core.edit.maaCultivateAutoRaiseDataUnavailable": "自动培养未注入：培养数据暂时不可用，请刷新干员目录后重试；材料刷取照常执行",
   "core.edit.maaCultivateAutoRaiseHint": "按当前养成目标执行精英化、技能升级和专精；模组暂不支持自动培养。关闭后仍会刷取养成材料。",
