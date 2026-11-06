@@ -30,7 +30,7 @@ from app.models.emulator import (
 )
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import emulator as _utils_emulator
-from app.utils import process as _utils_process
+from app.utils.common.process import manager as _utils_process
 
 logger = get_logger("通用模拟器管理")
 

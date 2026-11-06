@@ -72,7 +72,6 @@ from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
@@ -93,6 +92,7 @@ from app.utils import (
     get_logger,
     is_process_running,
     log_box,
+    process,
 )
 from app.utils.common.log import sources as log_source
 
@@ -1816,7 +1816,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         fallback_path = exe_path if exe_path is not None else self.launcher_exe_path
         if fallback_path is not None:
             try:
-                await System.kill_process(fallback_path)
+                await process.kill_process(fallback_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 ZZZ-OD 主进程失败: {e}")
         if kill_game:

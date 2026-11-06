@@ -42,7 +42,7 @@ from app.models.schema import (
     WSTaskNoticeData,
 )
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
-from app.services import execute_script_task, power
+from app.services import execute_script_task
 from app.task.emulator_core import close_emulator, resolve_host_adb
 from app.task.MaaFW.tools.core.controller_win32.service import (
     MaaFWWin32ControllerService,
@@ -119,7 +119,7 @@ from app.task.MaaFW.tools.core.worker_protocol import (
     forwards_to_ui,
     strip_ansi,
 )
-from app.utils import UTC4, ProcessInfo, ProcessManager, get_logger
+from app.utils import UTC4, ProcessInfo, ProcessManager, get_logger, power
 from app.utils import game_apk as _utils_game_apk
 from app.utils import io as _utils_io
 

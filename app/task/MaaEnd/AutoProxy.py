@@ -36,7 +36,6 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
-from app.services import System
 from app.services import endfield_launcher as _service_endfield_launcher
 from app.services.common.maa_capture import AdbCapture, Win32Capture
 from app.task.base import ScriptAutoProxyBase
@@ -74,6 +73,7 @@ from app.utils import (
     get_logger,
     is_process_running,
     log_box,
+    process,
 )
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
@@ -1738,7 +1738,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
                 # 中止相关程序
                 await self.maaend_process_manager.kill()
-                await System.kill_process(self.maaend_exe_path)
+                await process.kill_process(self.maaend_exe_path)
                 mode_index += 1
                 i = 0
                 self.task_dict = None
@@ -1825,7 +1825,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         try:
             logger.info(f"中止 MaaEnd 进程: {self.maaend_exe_path}")
             await self.maaend_process_manager.kill()
-            await System.kill_process(self.maaend_exe_path)
+            await process.kill_process(self.maaend_exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
         if not kill_game:
@@ -1862,7 +1862,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             except Exception as error:
                 logger.opt(exception=True).warning(f"终末地进程管理器清理失败: {error}")
             try:
-                await System.kill_process(self.script_config.Game.Path)
+                await process.kill_process(self.script_config.Game.Path)
             except Exception as error:
                 logger.opt(exception=True).warning(f"关闭终末地客户端失败: {error}")
             await self._kill_launcher_process()
@@ -2236,7 +2236,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         # 配置前关闭可能未正常退出的脚本进程
         await self.maaend_process_manager.kill()
-        await System.kill_process(self.maaend_exe_path)
+        await process.kill_process(self.maaend_exe_path)
 
         maaend_local_config = None
         if (self.maaend_set_path / "mxu-MaaEnd.json").exists():
@@ -3162,7 +3162,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             try:
                 logger.info(f"中止 MaaEnd 进程: {self.maaend_exe_path}")
                 await self.maaend_process_manager.kill()
-                await System.kill_process(self.maaend_exe_path)
+                await process.kill_process(self.maaend_exe_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
         else:

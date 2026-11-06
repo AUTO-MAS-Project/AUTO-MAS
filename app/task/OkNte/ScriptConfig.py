@@ -27,14 +27,13 @@ from app.core.ws import protocol
 from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
     read_config_base,
     user_uses_quick_config,
 )
-from app.utils import ProcessManager, get_logger
+from app.utils import ProcessManager, get_logger, process
 from app.utils import io as _utils_io
 
 from .tools.backup_archive import (
@@ -242,6 +241,6 @@ class ScriptConfigTask(TaskExecuteBase):
 
         for exe in self.oknte_process_manager.cleanup_executables():
             try:
-                await System.kill_process(exe)
+                await process.kill_process(exe)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-NTE 进程失败: {exe} ({e})")

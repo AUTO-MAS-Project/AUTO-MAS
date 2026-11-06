@@ -132,7 +132,7 @@ class WindowsPowerController:
         if action == "Sleep":
             _sleep_with_wakeup_events()
             return
-        subprocess.run(commands[action])
+        subprocess.run(commands[action], check=True)
 
     async def set_sleep_prevention(self, enabled: bool) -> None:
         state = 0x80000000 | (0x00000001 if enabled else 0)

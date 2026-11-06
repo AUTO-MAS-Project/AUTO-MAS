@@ -43,7 +43,7 @@ def installation(tmp_path, monkeypatch):
     io_utils.write_file(config / "gui.new.json", original)
     snapshot = tmp_path / "Temp"
     io_utils.commit_native_config_snapshot(snapshot, config, script_id="test-script")
-    monkeypatch.setattr(installer.System, "kill_process", AsyncMock(return_value=True))
+    monkeypatch.setattr(installer.process, "kill_process", AsyncMock(return_value=True))
     monkeypatch.setattr(installer.ProcessRunner, "run_process", AsyncMock())
     monkeypatch.setattr(installer, "_wait_for_updater", AsyncMock())
     scheduler = object.__new__(manager.MaaManager)
@@ -199,7 +199,7 @@ async def test_unknown_updater_process_state_does_not_restore_config(
     root, snapshot, _, _ = installation
     monkeypatch.setattr(installer, "_wait_for_updater", _wait_for_updater)
     monkeypatch.setattr(
-        installer.System,
+        installer.process,
         "is_process_running",
         AsyncMock(side_effect=OSError("process query failed")),
     )

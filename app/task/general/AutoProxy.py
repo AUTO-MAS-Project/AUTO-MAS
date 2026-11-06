@@ -36,7 +36,6 @@ from app.models.emulator import DeviceBase
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
-from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import (
@@ -51,6 +50,7 @@ from app.utils import (
     get_logger,
     is_process_running,
     load_patterns,
+    process,
     strptime,
 )
 from app.utils import io as _utils_io
@@ -629,7 +629,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         try:
             logger.info(f"中止通用脚本进程: {self.script_exe_path}")
             await self.general_process_manager.kill()
-            await System.kill_process(self.script_exe_path)
+            await process.kill_process(self.script_exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止通用脚本进程失败: {e}")
         if self.game_manager is not None:
@@ -642,7 +642,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                         and self.script_config.Game.IfForceClose
                     ):
                         if self.game_path is not None:
-                            await System.kill_process(self.game_path)
+                            await process.kill_process(self.game_path)
                 elif isinstance(self.game_manager, DeviceBase):
                     await self.game_manager.close(self.script_config.Game.EmulatorIndex)
             except Exception as e:
@@ -653,7 +653,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         logger.info("开始配置脚本运行参数: 自动代理")
 
         # 配置前关闭可能未正常退出的脚本进程
-        await System.kill_process(self.script_exe_path)
+        await process.kill_process(self.script_exe_path)
 
         if not self.use_mas_config:
             logger.info("脚本原生来源配置：跳过写入脚本配置")

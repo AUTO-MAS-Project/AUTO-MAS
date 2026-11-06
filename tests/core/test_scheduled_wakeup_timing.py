@@ -25,9 +25,8 @@ from tests.config_support import activate_config
 async def test_first_timed_check_after_cold_start(
     isolated_app_paths, monkeypatch, launch_kind, delay, expected
 ):
-    import app.services as services
     from app.core import timer
-    from app.services.common.system import _SystemHandler
+    from app.core.timer import _MainTimer
 
     planned = datetime(2026, 11, 2, 0, 3).astimezone()
     now = planned + timedelta(minutes=delay)
@@ -50,8 +49,7 @@ async def test_first_timed_check_after_cold_start(
         # 定时恢复发生在周日，计划属于周一；后端准备时间不改变恢复来源。
         resumed_at = planned - timedelta(minutes=5) if launch_kind == "resume" else now
         monkeypatch.setenv("AUTO_MAS_SYSTEM_RESUME", resumed_at.isoformat())
-    handler = _SystemHandler()
-    monkeypatch.setattr(services, "System", handler)
+    handler = _MainTimer()
     monkeypatch.setattr(timer, "_local_now", lambda: now)
     dispatched = []
 
@@ -63,7 +61,7 @@ async def test_first_timed_check_after_cold_start(
 
     # 调度器的结果是向任务管理器派发；不在这个边界启动脚本或游戏。
     monkeypatch.setattr(timer.TaskManager, "start", receive_task)
-    main_timer = timer._MainTimer()
+    main_timer = handler
     await main_timer.timed_start()
     await main_timer.timed_start()
     await timer._MainTimer().timed_start()

@@ -46,7 +46,6 @@ from app.models.emulator import DeviceBase
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.tools.common.game_calendar import bluearchive as _tool_bluearchive_activity
 from app.utils import (
@@ -57,6 +56,7 @@ from app.utils import (
     compile_log_signs,
     get_logger,
     log_box,
+    process,
 )
 from app.utils import update_files as _utils_update_files
 from app.utils.common.log import sources as log_source
@@ -857,7 +857,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         try:
             logger.info(f"中止 BAAH 进程: {self.baah_path}")
             await self.process_manager.kill()
-            await System.kill_process(self.baah_path)
+            await process.kill_process(self.baah_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 BAAH 进程失败: {e}")
 

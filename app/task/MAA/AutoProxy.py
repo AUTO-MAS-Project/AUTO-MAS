@@ -47,7 +47,6 @@ from app.models.schema import (
     WSTaskNoticeData,
 )
 from app.models.task import LogRecord, ScriptItem
-from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import (
     close_emulator,
@@ -64,7 +63,7 @@ from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     resolve_config_base,
 )
-from app.utils import LogMonitor, ProcessManager, get_logger
+from app.utils import LogMonitor, ProcessManager, get_logger, process
 from app.utils import constants as _utils_constants
 from app.utils import emulator2 as _utils_emulator2
 from app.utils import game_update as _utils_game_update
@@ -1529,7 +1528,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     # 每次失败尝试都刷新，最后一次失败的画面才是最终现场。
                     self._failure_shot = await self._take_failure_shot()
                     await close_emulator(self)
-                    await System.kill_process(self.maa_exe_path)
+                    await process.kill_process(self.maa_exe_path)
 
                     # 绿票商店每月顺手买一次，失败不重试也不惊动用户，月份没写回下次调度自会再来
                     if self.mode == "GreenTicketStore":
@@ -2161,7 +2160,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         logger.info(f"开始配置MAA运行参数: {self.mode}")
 
         await self.maa_process_manager.kill()
-        await System.kill_process(self.maa_exe_path)
+        await process.kill_process(self.maa_exe_path)
         self._remember_pending_update()
 
         # 哔哩哔哩用户协议
@@ -3116,7 +3115,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 任务收尾时 MAA 多半还在跑任务, 发关闭消息会弹「确定要退出吗」把收尾卡住;
         # 需要等 MAA 自己退出去落盘的只有配置会话 (ScriptConfig)。
         await self.maa_process_manager.kill()
-        await System.kill_process(self.maa_exe_path)
+        await process.kill_process(self.maa_exe_path)
         self._remember_pending_update()
         logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
 

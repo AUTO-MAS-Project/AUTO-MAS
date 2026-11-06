@@ -37,7 +37,6 @@ from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
@@ -62,6 +61,7 @@ from app.utils import (
     is_process_alive,
     is_process_running,
     log_box,
+    process,
 )
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
@@ -542,7 +542,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         """将 MAS 侧 OK-NTE 任务配置下发到脚本 working 目录（对齐 General.set_general）。"""
 
         logger.info("开始配置 OK-NTE 运行参数: 自动代理")
-        await System.kill_process(self.script_exe_path)
+        await process.kill_process(self.script_exe_path)
 
         temp = Path.cwd() / "data" / self.script_info.script_id / "Temp"
         folder_mode = self.script_config.Script.ConfigPathMode == "Folder"
@@ -737,12 +737,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                     logger.info(message)
                     await self._push_dispatch_log(message)
                     await self.game_manager.kill()
-                    # 结束也按进程名（与结束异环客户端同款）：System.kill_process 按 exe
+                    # 结束也按进程名（与结束异环客户端同款）：process.kill_process 按 exe
                     # 路径精确匹配，读不到路径的同名进程既杀不掉、又会被单实例守卫
                     # 留着吃掉 /autoplay，白等 180s。
                     for pid in await asyncio.to_thread(find_pids_by_name, launcher_exe):
                         try:
-                            await System.kill_process_by_pid(pid, kill_tree=False)
+                            await process.kill_process_by_pid(pid, kill_tree=False)
                         except Exception as e:
                             logger.opt(exception=True).warning(
                                 f"结束常驻启动器进程失败 PID: {pid}, {e}"
@@ -1374,7 +1374,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         # 更新前后的两种本体都清理，防止冻结 EXE 脱离启动器后继续占用配置。
         for exe in self.oknte_process_manager.cleanup_executables():
             try:
-                await System.kill_process(exe)
+                await process.kill_process(exe)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-NTE 进程失败: {exe} ({e})")
         try:
@@ -1382,7 +1382,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             if launcher_path is None:
                 logger.warning("未找到有效的异环启动器路径，跳过进程清理")
             else:
-                await System.kill_process(launcher_path, kill_tree=False)
+                await process.kill_process(launcher_path, kill_tree=False)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止异环启动器进程失败: {e}")
 

@@ -20,7 +20,7 @@ async def test_maa_finalizer_archives_original_without_system_temp(
     monkeypatch.chdir(tmp_path)
     module = importlib.import_module("app.task.MAA.AutoProxy")
     monkeypatch.setattr(module.Notify, "push_statistics_report", AsyncMock())
-    monkeypatch.setattr(module.System, "kill_process", AsyncMock())
+    monkeypatch.setattr(module.process, "kill_process", AsyncMock())
     monkeypatch.setattr(module, "agree_bilibili", AsyncMock())
     monkeypatch.setattr(
         module.log_statistics, "parse_maa_statistics", lambda lines: ({}, False)

@@ -35,7 +35,6 @@ from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
@@ -51,6 +50,7 @@ from app.utils import (
     ProcessManager,
     ProcessRunner,
     get_logger,
+    process,
 )
 
 from .tools import (
@@ -177,7 +177,7 @@ async def _wait_bgi_exit(
     """按进程名轮询等待 BetterGI 完全退出，返回仍未退出的 PID 列表（空列表=已退干净）。
 
     两条都必须按进程名复核：``taskkill`` 返回成功不代表进程已经消失；
-    ``System.kill_process`` 还会把「读不到 exe 路径」的提权实例归入 uncertain_pids 而漏判成功。
+    ``process.kill_process`` 还会把「读不到 exe 路径」的提权实例归入 uncertain_pids 而漏判成功。
     """
     remaining: list[int] = []
     for _ in range(attempts):
@@ -2372,7 +2372,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             bool: 已确认无 BetterGI 残留时返回 True；仍有实例存活（MAS 无权终止它）时返回
                 False——BGI 单实例，带参启动会被已有实例吞掉（任务卡住、游戏不启动），
                 调用方必须据此中止而不是继续启动。
-                注意 ``System.kill_process`` 对「读不到 exe 路径」的提权进程会归入
+                注意 ``process.kill_process`` 对「读不到 exe 路径」的提权进程会归入
                 uncertain_pids 而漏判为成功，故末尾必须按进程名复核一遍。
         """
         if self.bettergi_process_manager is not None:
@@ -2384,7 +2384,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 )
         if self.script_exe_path is not None:
             try:
-                await System.kill_process(self.script_exe_path)
+                await process.kill_process(self.script_exe_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 BetterGI 主进程失败: {e}")
 

@@ -11,13 +11,7 @@ from app.core.notify.manager import NotificationManager as NotificationManager
 from app.core.notify.native.contracts import NotificationAPI, NotificationSender
 from app.services.common.custom_script import native as common_script
 from app.services.contracts.custom_script import ScriptCommandAPI
-from app.services.contracts.power import PowerController
-from app.services.contracts.startup import StartupManager
-from app.services.unsupported.power import CommonPowerController
-from app.services.unsupported.startup import CommonStartupManager
 from app.services.windows import custom_script_native as windows_script
-from app.services.windows.power import WindowsPowerController
-from app.services.windows.startup import WindowsStartupManager
 from app.task.BAAH.tools.push_log import baah_resolve
 from app.task.MaaEnd.inventory_report import inventory_resolve
 from app.task.MaaEnd.push_log import maaend_resolve
@@ -26,18 +20,22 @@ from app.task.Okww.push_log import okww_resolve
 from app.task.ZzzOd.push_log import make_zzzod_resolve
 from app.utils.common import emulator_native as common_emulator
 from app.utils.common import host as common_host
+from app.utils.common import startup as common_startup
 from app.utils.common import update_native as common_update
 from app.utils.common.log_box.pipeline import PostProcessor
 from app.utils.common.log_box.results import LogEntry
+from app.utils.common.power import CommonPowerController
 from app.utils.common.process import platform as common_process
 from app.utils.contracts.audio import AudioAPI
 from app.utils.contracts.display import DisplayAPI, MonitorInfo
 from app.utils.contracts.emulator_native import EmulatorNativeAPI
 from app.utils.contracts.file_lock import FileLockAPI
 from app.utils.contracts.host import HostAPI
+from app.utils.contracts.power import PowerController
 from app.utils.contracts.process import ProcessAPI, ProcessPlatform
 from app.utils.contracts.registry import RegistryAPI
 from app.utils.contracts.secret import SecretAPI
+from app.utils.contracts.startup import StartupManager
 from app.utils.contracts.update_native import UpdateNativeAPI
 from app.utils.contracts.vdd import VddAPI
 from app.utils.contracts.window import WindowAPI
@@ -57,9 +55,11 @@ from app.utils.windows import host as windows_host
 from app.utils.windows import process as windows_process
 from app.utils.windows import registry as windows_registry
 from app.utils.windows import secret as windows_secret
+from app.utils.windows import startup as windows_startup
 from app.utils.windows import update_native as windows_update
 from app.utils.windows import vdd as windows_vdd
 from app.utils.windows import window as windows_window
+from app.utils.windows.power import WindowsPowerController
 
 # 必须是实际实现的赋值；不要用 cast、Any 或 ignore 绕过签名核对。
 okww_processor: PostProcessor = okww_resolve
@@ -95,8 +95,8 @@ window_windows: WindowAPI = windows_window
 window_unsupported: WindowAPI = unsupported_window
 power_windows: PowerController = WindowsPowerController()
 power_unsupported: PowerController = CommonPowerController()
-startup_windows: StartupManager = WindowsStartupManager()
-startup_unsupported: StartupManager = CommonStartupManager()
+startup_windows: StartupManager = windows_startup
+startup_unsupported: StartupManager = common_startup
 script_common: ScriptCommandAPI = common_script
 script_windows: ScriptCommandAPI = windows_script
 
@@ -115,8 +115,8 @@ assert_type(utils.window.get_window_handles(123), list[int])
 assert_type(utils.display.list_monitors(), list[MonitorInfo])
 assert_type(utils.secret.looks_like_dpapi_blob("value"), bool)
 assert_type(utils.process_platform.platform_process, ProcessPlatform)
-assert_type(services.power, PowerController)
-assert_type(services.startup, StartupManager)
+assert_type(utils.power, PowerController)
+assert_type(utils.startup, StartupManager)
 assert_type(services.custom_script_native, ScriptCommandAPI)
 assert_type(tools.community.has_community_credentials({}), bool)
 assert_type(utils.log_box.LogPipeline().finish(), list[LogEntry])

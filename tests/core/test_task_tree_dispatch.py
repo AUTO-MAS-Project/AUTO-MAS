@@ -64,8 +64,12 @@ async def scheduler():
     notify = MagicMock()
     notify.task_notification_batch.side_effect = lambda **kwargs: nullcontext()
     background = BackgroundTaskRegistry()
+    from app.core.power import _PowerManager
+
+    power = _PowerManager()
     with (
         patch("app.core.task_manager.TaskManager", manager),
+        patch("app.core.Power", power),
         patch("app.core.BackgroundTaskManager", background),
         patch.object(Config, "ScriptConfig", scripts),
         patch.object(Config, "QueueConfig", queues),
@@ -78,6 +82,7 @@ async def scheduler():
         yield manager, scripts, queues, sid
         for run in list(manager._running.values()):
             await asyncio.wait_for(run.stop(), 3)
+        await power.cancel_power_task()
         assert await background.shutdown(timeout=3)
 
 
@@ -284,7 +289,7 @@ async def test_maintenance_uses_shared_lifecycle_without_normal_panel(
     assert all(
         call.kwargs["type"] != protocol.TASK_CREATED for call in sent.await_args_list
     )
-    with patch("app.services.System.cancel_pending_power_task", AsyncMock()):
+    with patch("app.core.Power.cancel_power_task", AsyncMock()):
         await manager.stop("ALL")
     assert not manager._running
     assert manager.get_task_status(str(uid)).status == "cancelled"
@@ -902,7 +907,7 @@ async def test_stop_all_blocks_new_requests_and_waits_for_inflight_creation(sche
 
     with (
         patch.object(TaskItem, "activate", delayed_activate),
-        patch("app.services.System.cancel_pending_power_task", AsyncMock()),
+        patch("app.core.Power.cancel_power_task", AsyncMock()),
     ):
         creating = asyncio.create_task(
             manager.start(

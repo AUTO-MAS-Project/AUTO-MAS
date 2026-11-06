@@ -28,14 +28,13 @@ from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskConfigDiscardedData, WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
     read_config_base,
 )
-from app.utils import ProcessManager, get_logger
+from app.utils import ProcessManager, get_logger, process
 from app.utils import io as _utils_io
 
 from .AutoProxy import (
@@ -253,7 +252,7 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.info(f"开始配置MAA运行参数: 设置账号 {self.cur_user_item.user_id}")
 
         await self.maa_process_manager.close()
-        await System.kill_process(self.maa_exe_path)
+        await process.kill_process(self.maa_exe_path)
 
         # 查看会话的托管级入口：原生目录即所选备份，跳过下发与注入
         if self.view_only and self.cur_user_item.user_id == "Default":
@@ -394,7 +393,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # MAA 的改动只堆在内存里，退出时才批量落盘；先把关闭请求发出去等它
         # 自己走完保存流程，直接强杀会让本次设置丢失、下次启动恢复原样
         await self.maa_process_manager.close()
-        await System.kill_process(self.maa_exe_path)
+        await process.kill_process(self.maa_exe_path)
 
         # 查看会话：只读预览，不把安装 config/ 回写用户目录（安装现场由
         # manager 的任务前快照还原）；GUI 内的改动一律丢弃

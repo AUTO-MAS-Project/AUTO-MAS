@@ -12,8 +12,8 @@ import uvicorn
 import app.core as core
 import app.core.mcp as mcp
 import main
-from app.core.lifecycle import _ShutdownCoordinator
 from app.core.background_tasks import BackgroundTaskRegistry
+from app.core.lifecycle import _ShutdownCoordinator
 
 
 @pytest.mark.parametrize(
@@ -30,7 +30,8 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
     monkeypatch, isolated_app_paths, failure, cleanup_failure, desktop
 ):
     from app.config import config_manager
-    from app.services import System, obs_replay
+    from app.core import Power
+    from app.services import obs_replay
     from app.task.MAA.stage import maa_stage_service
 
     registry = BackgroundTaskRegistry()
@@ -45,7 +46,6 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
     monkeypatch.setattr(core_api, "MCP", service)
     monkeypatch.setattr(main, "is_admin", lambda: True)
     monkeypatch.setattr(core.Config, "server", None)
-    monkeypatch.setattr(System, "avd_instance_closer", None)
     monkeypatch.setattr(main, "configure_temporary_directory", lambda _: None)
     entered = threading.Event()
     release = threading.Event()
@@ -84,7 +84,7 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
         (core.MainConnection, ["begin_shutdown", "cancel_hook_tasks"]),
         (core.Dispatcher, ["shutdown"]),
         (core.Updater, ["cancel_download"]),
-        (System, ["cancel_power_task"]),
+        (Power, ["cancel_power_task"]),
         (obs_replay.ObsReplay, ["cleanup_temporary", "stop"]),
         (maa_stage_service, ["get_stage"]),
         (config_manager, ["flush"]),

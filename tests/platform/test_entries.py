@@ -2,9 +2,9 @@ import sys
 
 import pytest
 
-from app.services import power
 from app.utils import (
     IS_WINDOWS,
+    power,
     process_platform,
     secret,
 )

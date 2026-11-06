@@ -26,13 +26,12 @@ from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
     read_config_base,
 )
-from app.utils import ProcessManager, get_logger
+from app.utils import ProcessManager, get_logger, process
 from app.utils import io as _utils_io
 
 logger = get_logger("通用脚本设置")
@@ -130,7 +129,7 @@ class ScriptConfigTask(TaskExecuteBase):
 
         logger.info(f"开始配置脚本运行参数: 脚本设置 {self.cur_user_item.user_id}")
 
-        await System.kill_process(self.script_set_exe_path)
+        await process.kill_process(self.script_set_exe_path)
 
         # 查看会话的托管级入口：原生配置即所选备份，跳过下发（账号级为目录
         # 副本型，强制照常下发——GUI 所见即备份，不受原生来源门控影响）
@@ -192,7 +191,7 @@ class ScriptConfigTask(TaskExecuteBase):
     async def final_task(self):
 
         await self.general_process_manager.kill()
-        await System.kill_process(self.script_set_exe_path)
+        await process.kill_process(self.script_set_exe_path)
         del self.general_process_manager
 
         # 查看会话：只读预览，不把 GUI 内的改动回写 MAS 配置副本（原生配置

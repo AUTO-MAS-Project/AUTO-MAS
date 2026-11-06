@@ -25,9 +25,8 @@ from app.core.ws import protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
-from app.utils import IS_ELEVATED, ProcessManager, get_logger
+from app.utils import IS_ELEVATED, ProcessManager, get_logger, process
 
 from .AutoProxy import _BGI_REL_EXE, _BGI_UNKILLABLE_HINT, _wait_bgi_exit
 from .tools import one_dragon
@@ -148,7 +147,7 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.opt(exception=True).warning(f"通过进程管理器中止 BetterGI 失败: {e}")
 
         try:
-            await System.kill_process(self.exe_path)
+            await process.kill_process(self.exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 BetterGI 进程失败: {e}")
 

@@ -39,9 +39,9 @@ from collections.abc import Callable, Iterable
 
 import psutil
 
-from app.services import System
 from app.utils import constants as _utils_constants
 from app.utils import get_logger
+from app.utils import process as process_tools
 
 logger = get_logger("专项进程清理")
 
@@ -99,7 +99,7 @@ async def kill_pids(pids: Iterable[int]) -> int:
     failed = 0
     for pid in pids:
         try:
-            if not await System.kill_process_by_pid(pid):
+            if not await process_tools.kill_process_by_pid(pid):
                 failed += 1
         except Exception as exc:
             failed += 1

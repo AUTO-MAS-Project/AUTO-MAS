@@ -62,7 +62,7 @@ def test_mastery_plan_only_requests_missing_skill_prerequisite(level, expected):
 @pytest.fixture
 def finalizer(monkeypatch, tmp_path):
     module = importlib.import_module("app.task.MAA.AutoProxy")
-    monkeypatch.setattr(module.System, "kill_process", AsyncMock())
+    monkeypatch.setattr(module.process, "kill_process", AsyncMock())
     monkeypatch.setattr(module, "agree_bilibili", AsyncMock())
     now = datetime.now(timezone.utc)
     monkeypatch.setattr(module.Notify, "push_statistics_report", AsyncMock())

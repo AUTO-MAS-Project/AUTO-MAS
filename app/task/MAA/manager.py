@@ -34,7 +34,7 @@ from app.models.notification import NotificationImage
 from app.models.notification.report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
-from app.services import System, capture_adb
+from app.services import capture_adb
 from app.task.emulator_core import close_emulator
 from app.task.game_update import EmulatorGameUpdateTask
 from app.task.MAA.stage import maa_stage_service
@@ -47,7 +47,7 @@ from app.task.proxy_helpers import (
 from app.utils import constants as _utils_constants
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
 from app.utils import game_update as _utils_game_update
-from app.utils import get_logger
+from app.utils import get_logger, process
 from app.utils import io as _utils_io
 from app.utils.common.config import archive as _utils_config_archive
 
@@ -358,11 +358,11 @@ class MaaManager(ScriptManagerBase):
                 if script_config.Info.Path != install:
                     self._resource_access.close()
                     continue
-                if await System.is_process_running(install / "MAA.Updater.exe"):
+                if await process.is_process_running(install / "MAA.Updater.exe"):
                     raise MaaUpdaterRunningError(
                         "MAA 官方更新器仍在运行，请等待更新结束后重试"
                     )
-                if not await System.kill_process(install / "MAA.exe"):
+                if not await process.kill_process(install / "MAA.exe"):
                     raise RuntimeError("无法关闭 MAA，暂不恢复或覆盖原生配置")
                 self.config_locks[script_config.uid] = await self.lock_script_config(
                     script_config
@@ -601,7 +601,7 @@ class MaaManager(ScriptManagerBase):
     async def _check_software_update_safety(self) -> None:
         """后续账号只检查本地安装是否安全，避免重复更新请求。"""
         root = self.maa_set_path.parent
-        if self._updater_running or await System.is_process_running(
+        if self._updater_running or await process.is_process_running(
             root / "MAA.Updater.exe"
         ):
             self._updater_running = True
@@ -644,7 +644,7 @@ class MaaManager(ScriptManagerBase):
         except Exception as error:
             # 用户主动取消由 CancelledError 向上传播，不当作普通更新失败。
             root = self.maa_set_path.parent
-            if self._updater_running or await System.is_process_running(
+            if self._updater_running or await process.is_process_running(
                 root / "MAA.Updater.exe"
             ):
                 self._updater_running = True

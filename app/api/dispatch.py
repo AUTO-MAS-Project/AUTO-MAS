@@ -33,7 +33,7 @@ from pydantic import (
     field_validator,
 )
 
-from app.core import Config, TaskManager
+from app.core import Power, TaskManager
 from app.models.schema import (
     OutBase,
     PowerCountdownSnapshot,
@@ -43,7 +43,6 @@ from app.models.schema import (
     TaskTreeData,
 )
 from app.models.task import TaskMode
-from app.services import System
 from app.utils import get_logger
 
 
@@ -178,7 +177,7 @@ async def get_tasks(body: TaskGetIn = Body(...)) -> TaskGetOut:
 async def get_power_countdown_snapshot() -> PowerCountdownSnapshot:
     """返回当前倒计时；WS 只承载后续逐秒更新与取消事件。"""
 
-    return System.get_power_countdown_snapshot()
+    return Power.get_power_countdown_snapshot()
 
 
 @router.post(
@@ -230,7 +229,7 @@ async def get_power() -> PowerOut:
 
     try:
         # 电源任务启动后标志已清空, 等待期间要回报任务实际待执行的操作
-        signal = System.current_power_operation or Config.power_sign
+        signal = Power.current_power_operation or Power.signal
     except Exception as e:
         logger.opt(exception=True).warning(f"get_power失败: {type(e).__name__}: {e}")
         return PowerOut(
@@ -252,12 +251,10 @@ async def get_power() -> PowerOut:
 async def set_power(task: PowerIn = Body(...)) -> OutBase:
 
     try:
-        # 已在等待的电源任务持有旧操作, 延时期间又没有倒计时窗口提示,
-        # 先等旧任务撤销，再写新选择，避免交接中的完成后操作提前消费它。
-        await System.cancel_pending_power_task()
-        Config.power_sign = task.signal
-        # 手动选择的电源操作不带延时, 同时清掉队列可能残留的延时
-        Config.power_delay = 0
+        if not await Power.set_signal(task.signal, overwrite=True):
+            return OutBase(
+                code=409, status="error", message="已有电源任务，未覆盖当前操作"
+            )
     except Exception as e:
         logger.opt(exception=True).warning(f"set_power失败: {type(e).__name__}: {e}")
         return OutBase(
@@ -276,7 +273,10 @@ async def set_power(task: PowerIn = Body(...)) -> OutBase:
 async def cancel_power_task() -> OutBase:
 
     try:
-        await System.cancel_power_task()
+        if not await Power.cancel_power_task():
+            return OutBase(
+                code=409, status="error", message="电源操作已进入执行阶段，无法撤销"
+            )
     except Exception as e:
         logger.opt(exception=True).warning(
             f"cancel_power_task失败: {type(e).__name__}: {e}"

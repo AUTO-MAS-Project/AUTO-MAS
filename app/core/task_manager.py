@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 from weakref import ref
 
+from blinker import Signal
 from pydantic import TypeAdapter
 
 from app.config import ConfigEntry, ConfigNode, config_manager
@@ -52,6 +53,13 @@ type PluginExpander = Callable[[TaskScriptItem, ScriptConfigType], UserExpander 
 
 
 class _TaskManager:
+    task_ended: Signal = Signal()
+
+    @property
+    def idle(self) -> bool:
+        """真实执行器与受理流程均已结束，且不处于停止全部阶段。"""
+        return not self._running and not self._creating and not self._stopping_all
+
     def __init__(self, *, plugin_expander: PluginExpander | None = None) -> None:
         """初始化执行能力、运行登记、终态缓存，以及创建与停止全部的同步状态。"""
         self.plugin_expander = plugin_expander
@@ -361,11 +369,9 @@ class _TaskManager:
         async with self._stop_lock:
             self._stopping_all = True
             try:
-                from app.services import System
+                from app.core import Power
 
-                Config.power_sign = "NoAction"
-                Config.power_delay = 0
-                await System.cancel_pending_power_task()
+                await Power.cancel_power_task()
                 await self._idle.wait()
                 await asyncio.gather(
                     *(run.stop() for run in list(self._running.values()))
@@ -482,7 +488,7 @@ class _TaskManager:
         """顶层 ended 后注销同一执行器、清理日志游标并缓存完整终态。
 
         重复或过期结束通知直接忽略；缓存随即按容量和年龄清理。
-        最后一个普通任务结束且满足设置时，先结清社区工作，再执行全局电源动作。
+        注销及终态缓存完成后发出 task_ended，由 Power 等订阅者处理后续动作。
         """
         info = run.task_info
         registered = self._running.get(info.uid) is run
@@ -495,21 +501,9 @@ class _TaskManager:
             TaskTreeData.model_validate(info.model_dump()).model_dump(mode="json"),
         )
         self._prune_recent()
-        # TODO(插件迁移，#1845)：此兼容视图排除隐藏维护，仍不能阻止更新期间的电源动作；
-        # 存量专项维护整体暂缓，新后台任务的电源衔接不代表已修复本路径。
-        if (
-            not self.task_info
-            and not self._stopping_all
-            and info.mode == TaskMode.AUTO_PROXY
-            and Config.power_sign != "NoAction"
-        ):
-            from app.core import MainTimer
-            from app.services import System
-
-            await System.start_power_task(before_power=MainTimer.drain_community_tasks)
+        await self.task_ended.send_async(self, task=info)
 
 
 TaskManager = _TaskManager()
-
 
 __all__ = ["TaskManager"]

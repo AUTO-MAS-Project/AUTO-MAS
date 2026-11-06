@@ -585,7 +585,7 @@ async def test_interrupted_resource_merge_blocks_next_run_until_repaired(
     )
     monkeypatch.setattr(manager, "has_delegated_update_failure", lambda root: False)
     monkeypatch.setattr(
-        manager.System, "is_process_running", AsyncMock(return_value=False)
+        manager.process, "is_process_running", AsyncMock(return_value=False)
     )
     monkeypatch.setattr(manager.Publisher, "send", AsyncMock())
     task = SimpleNamespace(update_config_dir=install / "config")

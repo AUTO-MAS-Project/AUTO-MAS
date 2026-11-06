@@ -22,6 +22,7 @@
 
 
 import asyncio
+from datetime import datetime
 from typing import Awaitable, Callable, Optional
 
 from app.utils import get_logger
@@ -45,6 +46,51 @@ class _ShutdownCoordinator:
         self._teardown: Optional[Teardown] = None
         self._lock = asyncio.Lock()
         self._done = False
+        self._exit_task: asyncio.Task[None] | None = None
+
+    def request_exit(
+        self,
+        *,
+        restart: bool = False,
+        automatic: bool = False,
+        next_wake_at: datetime | None = None,
+        notify_frontend: bool = True,
+    ) -> None:
+        """独立持有退出流程；发起者不等待它，避免收尾反向取消发起者形成等待环。"""
+        if self._exit_task is not None and not self._exit_task.done():
+            return
+
+        async def exit_application() -> None:
+            from app.core import Config, Publisher
+            from app.core.ws import protocol
+            from app.models.schema import WSFrontendCloseRequestedData
+
+            if notify_frontend:
+                await Publisher.send(
+                    id=protocol.ID_MAIN,
+                    type=protocol.FRONTEND_RESTART_REQUESTED
+                    if restart
+                    else protocol.FRONTEND_CLOSE_REQUESTED,
+                    data=WSFrontendCloseRequestedData(
+                        automatic=automatic, nextWakeAt=next_wake_at
+                    ),
+                )
+            await self.run_teardown()
+            await Publisher.send(
+                id=protocol.ID_MAIN, type=protocol.BACKEND_SHUTDOWN_READY
+            )
+            if Config.server is not None:
+                Config.server.should_exit = True
+
+        self._exit_task = asyncio.create_task(
+            exit_application(), name="application-exit"
+        )
+
+        def finished(task: asyncio.Task) -> None:
+            if not task.cancelled() and (error := task.exception()) is not None:
+                logger.opt(exception=error).error("应用退出收尾失败")
+
+        self._exit_task.add_done_callback(finished)
 
     def set_teardown(self, teardown: Teardown) -> None:
         """注册完整 teardown 步骤（应用启动时调用一次）。"""

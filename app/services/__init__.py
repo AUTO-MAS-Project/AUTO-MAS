@@ -17,7 +17,6 @@ if TYPE_CHECKING:
     from .common import maa_capture as maa_capture
     from .common import maa_copilot as maa_copilot
     from .common import obs_replay as obs_replay
-    from .common import system as system
     from .common import telemetry as telemetry
     from .common import update as update
     from .common import wuthering_waves as wuthering_waves
@@ -25,13 +24,8 @@ if TYPE_CHECKING:
     from .common.custom_script import execute_script_task as execute_script_task
     from .common.maa_capture import capture_adb as capture_adb
     from .common.maa_capture import capture_win32 as capture_win32
-    from .common.system import System as System
     from .contracts.custom_script import ScriptCommandAPI
-    from .contracts.power import PowerController
-    from .contracts.startup import StartupManager
 
-    power: PowerController
-    startup: StartupManager
     custom_script_native: ScriptCommandAPI
 
 _LAZY_EXPORTS = {
@@ -40,7 +34,6 @@ _LAZY_EXPORTS = {
     "execute_script_task": (".common.custom_script", "execute_script_task"),
     "ConfigCenter": (".common.config_center", "ConfigCenter"),
     "ConfigCenterError": (".common.config_center.errors", "ConfigCenterError"),
-    "System": (".common.system", "System"),
 }
 _COMMON_MODULES = {
     "maa_capture": ".common.maa_capture",
@@ -51,18 +44,13 @@ _COMMON_MODULES = {
     "game_maintenance": ".common.game_maintenance",
     "maa_copilot": ".common.maa_copilot",
     "obs_replay": ".common.obs_replay",
-    "system": ".common.system",
     "telemetry": ".common.telemetry",
     "update": ".common.update",
     "wuthering_waves": ".common.wuthering_waves",
     "gi_updater": ".common.gi_updater",
-    "power": ".unsupported.power",
-    "startup": ".unsupported.startup",
 }
 _PLATFORM_MODULES: dict[str, dict[str, str]] = {
     "win32": {
-        "power": ".windows.power",
-        "startup": ".windows.startup",
         "custom_script_native": ".windows.custom_script_native",
     },
     "darwin": {},
@@ -81,8 +69,7 @@ def __getattr__(name: str):
         if module_name is None:
             raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
         value = import_module(module_name, __name__)
-        if name in {"power", "startup"}:
-            value = getattr(value, name)
+
     globals()[name] = value
     return value
 
@@ -99,18 +86,14 @@ __all__ = [
     "custom_script_native",
     "ConfigCenter",
     "ConfigCenterError",
-    "System",
     "config_center",
     "custom_script",
     "endfield_launcher",
     "game_maintenance",
     "maa_copilot",
     "obs_replay",
-    "system",
     "telemetry",
     "update",
     "wuthering_waves",
     "gi_updater",
-    "power",
-    "startup",
 ]

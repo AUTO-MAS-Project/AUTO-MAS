@@ -354,10 +354,8 @@ def main():
 
         with startup_stage("后端/任务与定时器组件导入"):
             from app.core import Config, MainTimer, TaskManager
-            from app.services import System
 
         TaskManager.bind_manager_factories(script_capabilities.manager_factories)
-        System.avd_instance_closer = EmulatorManager.close_running_avd_instances
 
         async def warm_ssl() -> None:
             with startup_stage("后端/SSL 上下文预热（后台）"):
@@ -392,7 +390,7 @@ def main():
 
         with startup_stage("后端/后台服务组件导入"):
             from app.config import config_manager
-            from app.core import BackgroundTaskManager, MCP
+            from app.core import MCP, BackgroundTaskManager
 
         async def preload_maaend_resources() -> None:
             with startup_stage("后端/MaaEnd 资源预热（后台）"):
@@ -555,9 +553,9 @@ def main():
                 BackgroundTaskManager,
                 Dispatcher,
                 MainConnection,
+                Power,
                 Updater,
             )
-            from app.services import System
 
             # 同步封禁新加载，独立回收 MCP；不能让不可取消线程挡住停止主业务。
             mcp_shutdown = asyncio.create_task(MCP.shutdown(), name="mcp-shutdown")
@@ -582,7 +580,7 @@ def main():
 
             # 取消待执行的电源操作（无任务在跑属正常）
             with suppress(RuntimeError):
-                await System.cancel_power_task()
+                await Power.cancel_power_task()
 
             stop_timer = asyncio.create_task(MainTimer.stop())
             stop_tasks = asyncio.create_task(TaskManager.stop_task("ALL"))
@@ -598,7 +596,7 @@ def main():
             await DesktopGuard.stop()
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
-                await System.cancel_power_task()
+                await Power.cancel_power_task()
             # 取消时若无法确认 FluxDown 任务已停止会抛 FluxdownCancelUnconfirmed，
             # 关停流程不因此中断后续清理
             with suppress(RuntimeError):

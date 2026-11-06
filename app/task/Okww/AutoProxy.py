@@ -34,7 +34,6 @@ from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import System
 from app.services import wuthering_waves as _service_wuthering_waves
 from app.services.common.wuthering_waves import (
     updater as _service_wuthering_waves_updater,
@@ -54,6 +53,7 @@ from app.utils import (
     is_process_alive,
     is_process_running,
     log_box,
+    process,
 )
 from app.utils import constants as _utils_constants
 from app.utils import i18n as _utils_i18n
@@ -464,7 +464,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         """将 MAS 侧 OK-WW 任务配置下发到脚本 working 目录（对齐 General.set_general）。"""
 
         logger.info("开始配置 OK-WW 运行参数: 自动代理")
-        await System.kill_process(self.script_exe_path)
+        await process.kill_process(self.script_exe_path)
         _configure_okww_launcher(self.script_root_path)
 
         config_base = _okww_config_base(self.cur_user_config.Info.Base)
@@ -1239,14 +1239,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 )
         if self.script_exe_path is not None:
             try:
-                if not await System.kill_process(self.script_exe_path):
+                if not await process.kill_process(self.script_exe_path):
                     logger.warning("未能完整清理 OK-WW 主进程，将复核退出状态")
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-WW 主进程失败: {e}")
         if self.script_root_path is not None:
             track_exe = self.script_root_path / _OKWW_REL_PYTHONW
             try:
-                if not await System.kill_process(track_exe):
+                if not await process.kill_process(track_exe):
                     logger.warning("未能完整清理 OK-WW 追踪进程，将复核退出状态")
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-WW 追踪进程失败: {e}")
@@ -1260,7 +1260,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         stopped = True
         for path in paths:
             try:
-                if not await System.is_process_stopped(path):
+                if not await process.is_process_stopped(path):
                     stopped = False
                     logger.warning(f"无法确认进程已退出: {path}")
             except Exception as e:
@@ -1290,7 +1290,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 )
         if self.game_process_path is not None:
             try:
-                await System.kill_process(self.game_process_path)
+                await process.kill_process(self.game_process_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"兜底强杀鸣潮客户端失败: {e}")
         if (
@@ -1330,7 +1330,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 for pid in pids:
                     # 游戏清理在先，启动器进程树里只剩 webview 等子进程，
                     # 连树一并带走避免残留；游戏若意外仍在树内也属应关范围
-                    await System.kill_process_by_pid(pid, kill_tree=True)
+                    await process.kill_process_by_pid(pid, kill_tree=True)
                 # 清理后复核：exe 不可读（提权）的启动器进程不在上面的结果内，
                 # 用窗口定位口径再查一次，避免静默残留
                 if await asyncio.to_thread(has_launcher_window, self.launcher_path):

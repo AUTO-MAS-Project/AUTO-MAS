@@ -8,7 +8,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.services.windows import power
+from app.utils.windows import power
 
 
 @pytest.mark.asyncio

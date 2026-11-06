@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from .maa_manager import MaaFWManager as MaaFWManager
     from .mcp import MCP as MCP
     from .notify import Notify as Notify
+    from .power import Power as Power
     from .task_manager import TaskManager as TaskManager
     from .taskboard import Taskboard as Taskboard
     from .timer import MainTimer as MainTimer
@@ -48,6 +49,7 @@ if TYPE_CHECKING:
     from .ws import Publisher as Publisher
 
 _LAZY_EXPORTS = {
+    "Power": (".power", "Power"),
     "Config": (".config", "Config"),
     "Notify": (".notify", "Notify"),
     "BackgroundTaskManager": (".background_tasks", "BackgroundTaskManager"),
@@ -82,6 +84,7 @@ def __getattr__(name: str):
 
 
 __all__ = [
+    "Power",
     "Config",
     "Notify",
     "BackgroundTaskManager",

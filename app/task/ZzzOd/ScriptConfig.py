@@ -36,8 +36,7 @@ from app.core.ws import protocol
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
-from app.utils import ProcessInfo, ProcessManager, get_logger
+from app.utils import ProcessInfo, ProcessManager, get_logger, process
 
 from .AutoProxy import (
     inject_user_fields,
@@ -367,6 +366,6 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.opt(exception=True).warning(f"通过进程管理器中止 zzz-od 失败: {e}")
 
         try:
-            await System.kill_process(self.exe_path)
+            await process.kill_process(self.exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 zzz-od 进程失败: {e}")

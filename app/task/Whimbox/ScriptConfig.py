@@ -34,9 +34,8 @@ from app.core.ws import protocol
 from app.models.config import WhimboxConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
 from app.task.proxy_helpers import push_dispatch_log
-from app.utils import IS_ELEVATED, ProcessInfo, ProcessManager, get_logger
+from app.utils import IS_ELEVATED, ProcessInfo, ProcessManager, get_logger, process
 
 from .tools.upstream import APP_EXE_NAME, WheelAssetsConfigSurface
 
@@ -116,6 +115,6 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.opt(exception=True).warning(f"通过进程管理器中止奇想盒失败: {e}")
 
         try:
-            await System.kill_process(self.exe_path)
+            await process.kill_process(self.exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止奇想盒进程失败: {e}")

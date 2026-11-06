@@ -17,19 +17,20 @@ from unittest.mock import AsyncMock, Mock, patch
 from app.config import NodeState
 from app.core import Community, Config
 from app.models.config import ToolsConfig
-from app.services import System, telemetry
+from app.utils import power, startup as startup_tool
+from app.services import telemetry
 
 async def run():
     with (
-        patch.object(System, 'set_SelfStart', new_callable=AsyncMock) as startup,
-        patch.object(System, 'set_Sleep', new_callable=AsyncMock) as sleep,
+        patch.object(startup_tool, 'set_enabled', new_callable=AsyncMock) as startup,
+        patch.object(power, 'set_sleep_prevention', new_callable=AsyncMock) as sleep,
         patch.object(telemetry, 'set_telemetry_enabled', new_callable=Mock),
     ):
         await Config.init_config()
         if Config.temp_task:
             await asyncio.gather(*tuple(Config.temp_task))
         await Config.flush()
-        startup.assert_awaited_once_with(Config.setting.Start.IfSelfStart)
+        startup.assert_not_awaited()
         sleep.assert_awaited_once_with(Config.setting.Function.IfAllowSleep)
         assert Config.setting.activation_state == NodeState.ACTIVE
         assert Config.ToolsConfig.activation_state == NodeState.ACTIVE

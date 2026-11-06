@@ -631,7 +631,7 @@ class _DesktopGuard:
         亮屏 5 秒即过）。挂着虚拟屏说明没有真实显示器亮着，保持开启不会点亮任何东西。
         """
 
-        from app.services import power
+        from app.utils import power
 
         hold = self._display_hold
         if self._display is not None:

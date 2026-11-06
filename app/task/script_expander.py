@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from app.config import LockTicket
 from app.core import Config, Notify, Publisher
 from app.core.ws import protocol
-from app.models.schema import WSPowerSignData, WSTaskCompletedData, WSTaskNoticeData
+from app.models.schema import WSTaskCompletedData, WSTaskNoticeData
 from app.models.task import TaskItem, TaskMode, TaskScriptItem, TaskTriggerReason
 from app.services import execute_script_task
 from app.task.context import TaskContext
@@ -280,6 +280,20 @@ class ScriptExpander(TaskBase):
         await self.history.close()
         if self.report_coordinator is not None:
             self.report_coordinator.finish()
+        if (
+            not self.cancelled
+            and self.error is None
+            and info.mode == TaskMode.AUTO_PROXY
+            and info.execution.after_accomplish != "NoAction"
+        ):
+            from app.core import Power
+
+            await Power.set_signal(
+                info.execution.after_accomplish,
+                overwrite=False,
+                delay=info.execution.after_accomplish_delay * 60,
+            )
+
         await Publisher.send(
             id=info.task_id,
             type=protocol.TASK_COMPLETED,
@@ -306,18 +320,3 @@ class ScriptExpander(TaskBase):
             unit="millisecond",
             attributes=attrs,
         )
-        if (
-            not self.cancelled
-            and self.error is None
-            and info.mode == TaskMode.AUTO_PROXY
-            and info.execution.after_accomplish != "NoAction"
-            and Config.power_sign == "NoAction"
-        ):
-            # 本轮及收尾完成后交接现有电源意图；维护任务与电源等待机制另行统一。
-            Config.power_sign = info.execution.after_accomplish
-            Config.power_delay = info.execution.after_accomplish_delay * 60
-            await Publisher.send(
-                id=protocol.ID_MAIN,
-                type=protocol.POWER_SIGN_UPDATED,
-                data=WSPowerSignData(signal=Config.power_sign),
-            )

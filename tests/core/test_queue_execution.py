@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.core import Config
 from app.models.task import TaskMode
 from tests.core.test_maintenance_cycle_review import make_queue
 from tests.core.test_task_tree_dispatch import Builtin
@@ -18,6 +17,8 @@ from tests.core.test_task_tree_dispatch import scheduler as scheduler
 async def test_queue_actions_use_accepted_snapshot_after_queue_is_deleted(
     scheduler, tmp_path, monkeypatch, existing_power
 ):
+    from app.core import Power
+
     manager, _, queues, sid = scheduler
     qid, queue = await make_queue(
         queues, sid, now=datetime.now().astimezone(), cycle=False
@@ -30,8 +31,8 @@ async def test_queue_actions_use_accepted_snapshot_after_queue_is_deleted(
     queue.Info.AfterAccomplish = "Shutdown"
     queue.Info.AfterAccomplishDelay = 2
     await queue.commit()
-    monkeypatch.setattr(Config, "power_sign", existing_power)
-    monkeypatch.setattr(Config, "power_delay", 0)
+    monkeypatch.setattr(Power, "signal", existing_power)
+    monkeypatch.setattr(Power, "delay", 0)
     events = []
     entered, release = asyncio.Event(), asyncio.Event()
 
@@ -53,7 +54,7 @@ async def test_queue_actions_use_accepted_snapshot_after_queue_is_deleted(
     manager.manager_factories = {type(scheduler[1][sid]): Running}
     with (
         patch("app.task.script_expander.execute_script_task", new=execute, create=True),
-        patch("app.services.System.start_power_task", new=AsyncMock()) as power,
+        patch("app.core.Power.start_power_task", new=AsyncMock()) as power,
     ):
         uid = await manager.start(TaskMode.AUTO_PROXY, {0: {"uid": str(qid)}})
         task = manager.task_handler[uid]
@@ -70,17 +71,17 @@ async def test_queue_actions_use_accepted_snapshot_after_queue_is_deleted(
             release.set()
             await asyncio.wait_for(task.accomplish.wait(), 2)
             assert events == ["before.cmd", "script", "after.cmd"]
-            assert Config.power_sign == (
+            assert Power.signal == (
                 "Shutdown" if existing_power == "NoAction" else existing_power
             )
-            assert Config.power_delay == (120 if existing_power == "NoAction" else 0)
+            assert Power.delay == (120 if existing_power == "NoAction" else 0)
             power.assert_awaited_once()
             assert task.task_info.status == "success"
             assert qid not in queues
         finally:
             release.set()
             await manager.stop(uid)
-            Config.power_sign = "NoAction"
+            Power.signal = "NoAction"
 
 
 @pytest.mark.asyncio
@@ -122,6 +123,8 @@ async def test_extra_script_failure_warns_and_continues_normal_task(
 async def test_stop_cancels_queue_script_without_scheduling_power(
     scheduler, tmp_path, monkeypatch, stage
 ):
+    from app.core import Power
+
     manager, _, queues, sid = scheduler
     qid, queue = await make_queue(
         queues, sid, now=datetime.now().astimezone(), cycle=False
@@ -133,7 +136,7 @@ async def test_stop_cancels_queue_script_without_scheduling_power(
     queue.Info.ScriptBeforeTask = queue.Info.ScriptAfterTask = script
     queue.Info.AfterAccomplish = "Shutdown"
     await queue.commit()
-    monkeypatch.setattr(Config, "power_sign", "NoAction")
+    monkeypatch.setattr(Power, "signal", "NoAction")
     entered, cancelled = asyncio.Event(), asyncio.Event()
 
     async def execute(path, label):
@@ -145,7 +148,7 @@ async def test_stop_cancels_queue_script_without_scheduling_power(
 
     with (
         patch("app.task.script_expander.execute_script_task", new=execute, create=True),
-        patch("app.services.System.start_power_task", new=AsyncMock()) as power,
+        patch("app.core.Power.start_power_task", new=AsyncMock()) as power,
     ):
         uid = await manager.start(TaskMode.AUTO_PROXY, {0: {"uid": str(qid)}})
         try:
@@ -153,7 +156,7 @@ async def test_stop_cancels_queue_script_without_scheduling_power(
             await asyncio.wait_for(manager.stop(uid), 2)
             assert cancelled.is_set()
             assert manager.get_task_status(str(uid)).status == "cancelled"
-            assert Config.power_sign == "NoAction"
+            assert Power.signal == "NoAction"
             power.assert_not_awaited()
         finally:
             await manager.stop(uid)

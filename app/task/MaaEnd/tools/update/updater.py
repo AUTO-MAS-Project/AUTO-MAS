@@ -43,9 +43,9 @@ from pathlib import Path
 import httpx
 import pyzipper
 
-from app.services import System
 from app.utils import game_update as _utils_game_update
 from app.utils import hpatchz as _utils_hpatchz
+from app.utils import process
 from app.utils import update_files as _utils_update_files
 
 from .checks import (
@@ -356,7 +356,7 @@ async def _ensure_game_updated(
             # 下载要花几分钟，期间用户完全可能自己把游戏开回去；UE 客户端锁着
             # .ucas/.pak，这时候开写就是 PermissionError。只检测不强杀：那是用户在
             # MAS 不知情下自己开的窗口，没被授权关掉它
-            if await System.is_process_running(game_exe):
+            if await process.is_process_running(game_exe):
                 raise EndfieldUpdateError(
                     "下载期间游戏被重新启动，本轮不再覆盖，请退出游戏后重试"
                 )

@@ -20,16 +20,20 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
-from collections.abc import Awaitable, Callable
+import os
+import time as monotonic_time
+from collections.abc import Awaitable, Callable, Iterator
 from datetime import date, datetime, time, timedelta, timezone
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 from app.core import Community, Notify
 from app.models.notification.community import community_notification_results
 from app.models.task import TaskMode, TaskTriggerReason
 from app.services import telemetry as _service_telemetry
-from app.utils import UTC4, UTC8, get_logger
+from app.utils import UTC4, UTC8, get_logger, startup
+from app.utils import environment as _utils_environment
 
 from .community.scheduling import (
     TASK_COMMUNITY_SOURCES,
@@ -84,6 +88,15 @@ def _timed_slots_in_window(
 class _MainTimer:
     def __init__(self):
         self.started = False
+        self._wakeup_signature: tuple[Path, tuple[tuple[int, int, int], ...]] | None = (
+            None
+        )
+        self._wakeup_attempt: tuple[Path, tuple[tuple[int, int, int], ...]] | None = (
+            None
+        )
+        self._wakeup_retry_at = 0.0
+        self._wakeup_notice_sent = False
+        self._resume_wakeup: bool | None = None
         self.startup_task: asyncio.Task[None] | None = None
         self._startup_dispatched = False
         self.wakeup_timer: asyncio.Task[None] | None = None
@@ -100,6 +113,139 @@ class _MainTimer:
         self._timed_fired: set[tuple[str, str, datetime]] = set()
         # 定时循环里各步骤最近一次的异常摘要，用于同一错误只记一次日志
         self._loop_errors: dict[str, str] = {}
+
+    def is_scheduled_wakeup(self) -> bool:
+        """明确的唤醒启动，或恢复时仍有前五分钟至补跑宽限内的有效定时。"""
+        if os.getenv("AUTO_MAS_SCHEDULED_WAKEUP") == "1":
+            return True
+        resumed_at = os.getenv("AUTO_MAS_SYSTEM_RESUME")
+        if not resumed_at:
+            return False
+        # 两个消费者共享启动时的判定，不能因初始化耗时、派发或重连而改变。
+        if self._resume_wakeup is not None:
+            return self._resume_wakeup
+        self._resume_wakeup = self.has_pending_wakeup_schedule(
+            datetime.fromisoformat(resumed_at).astimezone()
+        )
+        return self._resume_wakeup
+
+    def has_pending_wakeup_schedule(self, at: datetime) -> bool:
+        """是否有已进入提前唤醒或补跑窗口、且尚未派发的队列定时。"""
+        now_wall = at.replace(tzinfo=None)
+        return any(
+            planned.replace(second=0, microsecond=0) - timedelta(minutes=5)
+            <= now_wall
+            <= planned + timedelta(minutes=10)
+            for planned in self._pending_wakeup_slots(at)
+        )
+
+    def next_scheduled_wakeup(self, at: datetime) -> datetime | None:
+        """退出前交接最近的未来唤醒时刻，避免单实例锁吞掉收尾期间的启动。"""
+        now_wall = at.replace(tzinfo=None)
+        wakes = (
+            planned.replace(second=0, microsecond=0) - timedelta(minutes=5)
+            for planned in self._pending_wakeup_slots(at)
+        )
+        wake = min((wake for wake in wakes if wake > now_wall), default=None)
+        return wake.astimezone() if wake is not None else None
+
+    def _pending_wakeup_slots(self, at: datetime) -> Iterator[datetime]:
+        """枚举补跑窗口及未来一周内尚未派发的有效定时。"""
+        if not Config.setting.Start.IfScheduledWakeUp:
+            return
+        now_wall = at.replace(tzinfo=None)
+        for queue in Config.QueueConfig.values():
+            if not queue.Info.TimeEnabled:
+                continue
+            last_run = queue.Data.LastTimedStart.replace(tzinfo=None)
+            for slot in queue.TimeSet.values():
+                if not slot.Info.Enabled:
+                    continue
+                for day_offset in range(-1, 8):
+                    day = now_wall.date() + timedelta(days=day_offset)
+                    planned = datetime.combine(day, slot.Info.Time.time())
+                    if planned > last_run and planned.strftime("%A") in slot.Info.Days:
+                        yield planned
+
+    async def sync_scheduled_wakeup(self, *, force: bool = False) -> None:
+        """把已提交的队列定时同步到系统；开发环境不改系统任务。"""
+        if _utils_environment.is_development_environment() or not startup.supported:
+            return
+        times: set[tuple[int, int, int]] = set()
+        weekdays = (
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        )
+        if Config.setting.Start.IfScheduledWakeUp:
+            for queue in Config.QueueConfig.values():
+                if not queue.Info.TimeEnabled:
+                    continue
+                for slot in queue.TimeSet.values():
+                    if not slot.Info.Enabled:
+                        continue
+                    for day in slot.Info.Days:
+                        planned = datetime(2000, 1, 3) + timedelta(
+                            days=weekdays.index(day),
+                            hours=slot.Info.Time.hour,
+                            minutes=slot.Info.Time.minute,
+                        )
+                        wake = planned - timedelta(minutes=5)
+                        times.add((wake.weekday(), wake.hour, wake.minute))
+        executable = Config.work_path / "AUTO-MAS.exe"
+        signature = (executable, tuple(sorted(times)))
+        if signature == self._wakeup_signature:
+            return
+        if (
+            not force
+            and signature == self._wakeup_attempt
+            and monotonic_time.monotonic() < self._wakeup_retry_at
+        ):
+            return
+        if signature != self._wakeup_attempt:
+            self._wakeup_notice_sent = False
+        report_failure = Config.setting.Start.IfScheduledWakeUp or bool(
+            self._wakeup_attempt and self._wakeup_attempt[1]
+        )
+        self._wakeup_attempt = signature
+        self._wakeup_retry_at = monotonic_time.monotonic() + 60
+        # 注册可能只完成一部分后被取消；此后不能再把旧缓存当作系统现状。
+        self._wakeup_signature = None
+        # 冷启动会重读磁盘；配置未落盘时不能先更新系统任务。
+        try:
+            await Config.flush()
+            if times and not executable.is_file():
+                raise FileNotFoundError(f"找不到定时唤醒启动程序：{executable}")
+            await startup.sync_wakeup(
+                executable=executable,
+                times=signature[1],
+                name_prefix="AUTO-MAS_Wakeup",
+                description="AUTO-MAS 定时前五分钟唤醒并启动",
+                arguments="--scheduled-wakeup",
+            )
+        except Exception as exc:
+            if not report_failure:
+                # 首次关闭状态仍尝试清理旧任务；系统服务不可用时安静地等待重试。
+                logger.debug(f"定时唤醒未启用，清理旧任务失败，稍后重试: {exc}")
+                return
+            if not self._wakeup_notice_sent:
+                from app.core import Notify
+
+                await Notify.push_system_notice(
+                    level="warning",
+                    title="定时唤醒同步失败",
+                    lines=["请检查日志和 Windows 任务计划程序，修正后将自动重试。"],
+                    title_key="core.setting.func.scheduledWakeupFailure",
+                    line_keys=["core.setting.func.scheduledWakeupFailureTip"],
+                )
+                self._wakeup_notice_sent = True
+            raise
+        self._wakeup_signature = signature
+        logger.info(f"定时唤醒已同步：{len(times)} 个每周触发时间")
 
     async def start(self):
         """启动定时器"""
@@ -153,10 +299,9 @@ class _MainTimer:
                 logger.info("主业务定时器已关闭")
             if self.started:
                 # 最后一次修改后立即退出时，也要把新计划或取消结果同步完。
-                from app.services import System
 
                 async def final_wakeup_sync() -> None:
-                    await System.sync_scheduled_wakeup(force=True)
+                    await self.sync_scheduled_wakeup(force=True)
 
                 await self._run_loop_step("定时唤醒同步", final_wakeup_sync)
         finally:
@@ -177,10 +322,9 @@ class _MainTimer:
 
     async def wakeup_task(self) -> None:
         """独立对账，不让系统任务注册阻塞原有定时启动检查。"""
-        from app.services import System
 
         while True:
-            await self._run_loop_step("定时唤醒同步", System.sync_scheduled_wakeup)
+            await self._run_loop_step("定时唤醒同步", self.sync_scheduled_wakeup)
             await asyncio.sleep(1)
 
     async def hour_task(self):
@@ -286,15 +430,13 @@ class _MainTimer:
         时进行，超出的记日志放弃。星期按计划时刻所在的本地日期判定。
         """
 
-        from app.services import System
-
         now = _local_now()
         now_wall = now.replace(tzinfo=None)
         minute_floor = now_wall.replace(second=0, microsecond=0) - timedelta(
             microseconds=1
         )
         prev = self._last_timed_check
-        first_wakeup_check = prev is None and System.is_scheduled_wakeup()
+        first_wakeup_check = prev is None and self.is_scheduled_wakeup()
         if prev is None:
             # 唤醒后的初始化可能超过五分钟；只为该启动来源补跑宽限内的定时。
             prev_wall = (
@@ -328,7 +470,7 @@ class _MainTimer:
                 )
                 startup_due = (
                     startup
-                    and not System.is_scheduled_wakeup()
+                    and not self.is_scheduled_wakeup()
                     and (
                         queue.Info.StartUpMode == "Always"
                         or (

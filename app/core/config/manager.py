@@ -41,6 +41,8 @@ from typing import (
 import httpx
 import truststore
 
+from app.utils import environment as _utils_environment
+
 # 仅用于类型标注的顶层依赖移到 TYPE_CHECKING，避免启动导入开销
 if TYPE_CHECKING:
     import uvicorn
@@ -326,19 +328,6 @@ class AppConfig:
         self._repo_initialized = False
 
         self.server: Optional["uvicorn.Server"] = None
-        self.power_sign: Literal[
-            "NoAction",
-            "Shutdown",
-            "ShutdownForce",
-            "Reboot",
-            "Hibernate",
-            "Sleep",
-            "KillSelf",
-            "RestartSelf",
-            "Logoff",
-        ] = "NoAction"
-        # 电源操作前的静默延时秒数, 与 power_sign 一同由队列配置写入
-        self.power_delay: int = 0
         self.temp_task: List[asyncio.Task] = []
         self._game_sign_result_date = ""
         self._community_account_add_lock = asyncio.Lock()
@@ -449,14 +438,30 @@ class AppConfig:
             self._game_sign_result_date = today
 
         with startup_stage("后端/配置/系统服务导入"):
-            from app.services import System
             from app.services import telemetry as _service_telemetry
+            from app.utils import power, startup
+
+        async def set_self_start(enabled: bool) -> None:
+            if _utils_environment.is_development_environment():
+                return
+            if startup.supported:
+                await startup.set_enabled(
+                    enabled,
+                    executable=self.work_path / "AUTO-MAS.exe",
+                    name="AUTO-MAS_AutoStart",
+                    description="AUTO-MAS自启动服务",
+                    arguments="--auto-start",
+                )
+
+        async def set_sleep_prevention(enabled: bool) -> None:
+            if power.supported:
+                await power.set_sleep_prevention(enabled)
 
         async def on_self_start(sender, event):
-            await System.set_SelfStart(event.value)
+            await set_self_start(event.value)
 
         async def on_allow_sleep(sender, event):
-            await System.set_Sleep(event.value)
+            await set_sleep_prevention(event.value)
 
         def on_telemetry(sender, event):
             _service_telemetry.set_telemetry_enabled(event.value)
@@ -504,7 +509,7 @@ class AppConfig:
             )
         # 注册自启动会读写注册表, 不阻塞初始化; 持有引用避免被 GC 且异常不被静默吞掉
         self_start_task = asyncio.create_task(
-            System.set_SelfStart(self.setting.Start.IfSelfStart)
+            set_self_start(self.setting.Start.IfSelfStart)
         )
         self.temp_task.append(self_start_task)
 
@@ -516,7 +521,7 @@ class AppConfig:
 
         self_start_task.add_done_callback(_self_start_done)
         with startup_stage("后端/配置/系统休眠设置"):
-            await System.set_Sleep(self.setting.Function.IfAllowSleep)
+            await set_sleep_prevention(self.setting.Function.IfAllowSleep)
         _service_telemetry.set_telemetry_enabled(
             self.setting.Function.IfEnableTelemetry
         )

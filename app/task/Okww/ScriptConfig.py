@@ -26,13 +26,13 @@ from app.core.ws import protocol
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
 from app.utils import (
     BASE_INDEPENDENT,
     BASE_NATIVE,
     BASE_SHARED,
     ProcessManager,
     get_logger,
+    process,
 )
 from app.utils import io as _utils_io
 
@@ -201,6 +201,6 @@ class ScriptConfigTask(TaskExecuteBase):
 
         for path in (self.exe_path, self.root_path / _OKWW_REL_PYTHONW):
             try:
-                await System.kill_process(path)
+                await process.kill_process(path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-WW 进程失败 ({path}): {e}")
