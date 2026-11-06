@@ -131,6 +131,12 @@ _VOUCHER_RECIPES: tuple[Recipe, ...] = (
     Recipe(result_item_id=_CHIP_CATALYST_ITEM_ID, ingredients={"4006": 90}),
 )
 
+# 一图流合成表未收录技巧概要，每 3 本低一级概要可合成 1 本高一级概要。
+_SKILL_SUMMARY_RECIPES: tuple[Recipe, ...] = (
+    Recipe(result_item_id="3302", ingredients={"3301": 3}),
+    Recipe(result_item_id="3303", ingredients={"3302": 3}),
+)
+
 # 实测 matrix 0 条直掉关且不在 MAA 排除表（2026-09-11）：模组凭证类属
 # "不可获取"，绝不进 PlanList，否则 MaxTimes=∞ 无限刷。龙门币（4001）与
 # 采购凭证（4006）不在其中——它们有确定的资源关产出（见 _FIXED_SOURCE_STAGES）。
@@ -356,12 +362,12 @@ def parse_recipes(raw: Any) -> tuple[Recipe, ...]:
 
 
 def _with_local_recipes(recipes: tuple[Recipe, ...]) -> tuple[Recipe, ...]:
-    """合并本地补充配方（一图流未收录的芯片链/凭证兑换）；表中已有同结果条目时以表为准。"""
+    """补齐芯片链、凭证兑换与技巧概要配方；已有同结果条目时以源表为准。"""
 
     existing = {recipe.result_item_id for recipe in recipes}
     local = tuple(
         recipe
-        for recipe in (*_CHIP_RECIPES, *_VOUCHER_RECIPES)
+        for recipe in (*_CHIP_RECIPES, *_VOUCHER_RECIPES, *_SKILL_SUMMARY_RECIPES)
         if recipe.result_item_id not in existing
     )
     return recipes + local
@@ -983,7 +989,8 @@ async def _load_published_snapshot(
         raise YituliuDataError("下载站养成快照已过期")
     dataset = dataset_from_json(raw)
     local_recipe_ids = {
-        recipe.result_item_id for recipe in _CHIP_RECIPES + _VOUCHER_RECIPES
+        recipe.result_item_id
+        for recipe in _CHIP_RECIPES + _VOUCHER_RECIPES + _SKILL_SUMMARY_RECIPES
     }
     if (
         not dataset.demands

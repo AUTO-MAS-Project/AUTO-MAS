@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""M9A 受管任务：「启动游戏」「切换账号」「关闭游戏」由 MAS 全权控制，不在用户队列里。
+"""M9A 受管任务：「启动游戏」「切换账号」「关闭游戏」由 MAS 全权控制，不在账号队列里。
 
 运行期由特调按固定顺序补（启动 → 切号 → …… → 关闭），账号取用户的 ``Info.Account``。
 队列里残留的这三类任务（beta.1 迁移留下的、#1012 补回的、预设带进来的、手加的、通用 MaaFW
@@ -25,7 +25,7 @@
 - 运行前装饰（``flavor.decorate_selection``）；
 - 每次启动对全部 M9A 用户的整理（``migration.normalize_m9a_managed_entries``）；
 - 旧版专项迁移与 beta.1 补救（``migration.py``）；
-- 保存用户配置、导入外壳配置、恢复备份时写 ``Task.TaskSnapshot`` 的入口（经引擎的可选钩子
+- 保存账号配置、导入外壳配置、恢复备份时写 ``Task.TaskSnapshot`` 的入口（经引擎的可选钩子
   ``sanitize_task_snapshot``，见 ``flavor.py``）。
 
 规则（按 entry 判，不按任务名）：
@@ -37,7 +37,7 @@
      队列里的为准（旧版与之前的运行实际切的都是它），原值记进备注。
    - 0 个（未勾选或账号为空）：直接移除，不动 ``Info.Account``。
    - 2 个及以上、脚本资源是官服：队列原样保留（切号连同选项一个不动），备注与通知里写明要拆成
-     几个用户；运行期拒绝运行该用户。M9A 一个用户对应一个账号，这种队列 MAS 没法替用户拆。
+     几个账号；运行期拒绝运行该账号。M9A 一个账号对应一个账号，这种队列 MAS 没法替用户拆。
    - 2 个及以上、资源不是官服：切号任务只在官服生效，它们从来没跑过，直接移除。
 
 这份保留状态的判据是**队列内容本身**（有效切号 ≥ 2 且官服），不是某个标记：普通保存把同一份
@@ -53,7 +53,7 @@ from typing import Any
 STARTUP_ENTRY = "StartUp"
 SWITCH_ACCOUNT_ENTRY = "SwitchAccount"
 CLOSE_ENTRY = "Close1999"
-#: 由 MAS 控制、不许留在用户队列里的三类任务（按 entry）。
+#: 由 MAS 控制、不许留在账号队列里的三类任务（按 entry）。
 MANAGED_ENTRIES = frozenset({STARTUP_ENTRY, SWITCH_ACCOUNT_ENTRY, CLOSE_ENTRY})
 OFFICIAL_RESOURCE_NAME = "官服"
 #: 写进用户备注的前缀，备注里有同一句就不再追加（启动整理幂等靠它）。
@@ -62,7 +62,7 @@ _EMPTY_NOTES = ("", "无")
 
 
 class M9ASplitRequiredError(ValueError):
-    """用户队列里有多个有效切号：M9A 一个用户对应一个账号，要先拆成多个用户。"""
+    """账号队列里有多个有效切号：M9A 一个账号对应一个账号，要先拆成多个账号。"""
 
 
 def split_message(accounts: list[str]) -> str:
@@ -70,9 +70,9 @@ def split_message(accounts: list[str]) -> str:
 
     count = len(accounts)
     return (
-        f"该用户队列里有 {count} 个切换账号（账号 {'、'.join(accounts)}），"
-        f"M9A 一个用户对应一个账号，请拆成 {count} 个用户"
-        "（每个用户在上方「账号」填一个）后才能正常运行"
+        f"该账号队列里有 {count} 个切换账号（账号 {'、'.join(accounts)}），"
+        f"M9A 一个账号对应一个账号，请拆成 {count} 个账号"
+        "（每个账号在上方「账号」填一个）后才能正常运行"
     )
 
 
@@ -197,7 +197,7 @@ def settle_snapshot(
 
 @dataclass
 class InfoChange:
-    """整理结果落到用户 ``Info`` 上的改动。"""
+    """整理结果落到账号 ``Info`` 上的改动。"""
 
     account: str | None = None
     notes: str | None = None

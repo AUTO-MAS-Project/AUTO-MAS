@@ -60,7 +60,7 @@ def find_launchers(root: Path) -> dict[str, Path]:
 
 
 def resolve_launcher(root: Path, mode: str, last_good: str = "") -> tuple[Path, str]:
-    """按用户选择返回 (启动器 exe, 标签)。
+    """按启动器选择设置返回 (启动器 exe, 标签)。
 
     - 自动：优先「上次成功」的启动器（``last_good``），否则按默认顺序（集成优先）；
     - 原始/集成：固定用对应 exe，所选项未安装时回退默认顺序可用项并告警。

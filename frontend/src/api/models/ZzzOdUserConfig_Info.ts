@@ -8,7 +8,7 @@ export type ZzzOdUserConfig_Info = {
      */
     Base?: ('shared' | 'independent' | 'native' | null);
     /**
-     * 是否启用快速配置（已封锁，仅保留字段兼容存量数据：原生来源在 load/update 归一为关，共享/独立来源不消费本开关）
+     * 是否启用覆写常规配置（已封锁，仅保留字段兼容存量数据：原生来源在 load/update 归一为关，共享/独立来源不消费本开关）
      */
     IfQuickConfig?: (boolean | null);
     /**
@@ -24,7 +24,7 @@ export type ZzzOdUserConfig_Info = {
      */
     LauncherMode?: ('自动' | '原始' | '集成' | null);
     /**
-     * 用户名
+     * 账号名称
      */
     Name?: (string | null);
     /**
@@ -48,11 +48,11 @@ export type ZzzOdUserConfig_Info = {
      */
     SlotIdx?: (number | null);
     /**
-     * 用户状态
+     * 账号状态
      */
     Status?: (boolean | null);
     /**
-     * 用户标签列表（JSON字符串，TagItem的dict列表）
+     * 账号标签列表（JSON字符串，TagItem的dict列表）
      */
     readonly Tag?: (string | null);
 };

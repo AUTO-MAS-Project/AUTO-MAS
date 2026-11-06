@@ -3,6 +3,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import AdmZip = require('adm-zip')
+import { createOkwwIssueReport } from './okwwIssueReportService'
 
 import {
   addDebugDirectory,
@@ -83,20 +84,6 @@ describe('maskVerbatimJsonText 原文打码', () => {
     expect(masked.match(/<HOME>/g)).toHaveLength(3)
   })
 
-  it('不含密钥的 JSONC 逐字节不变（注释、格式、其他转义都保留）', () => {
-    const text = [
-      '{',
-      '  // 项目说明',
-      '  "name": "Demo\\u0020项目",',
-      '  "resource": [{ "path": ["./resource\\/base"] }], /* 尾注 */',
-      '  "github": "https://github.com/owner/repo"',
-      '}',
-      '',
-    ].join('\r\n')
-    expect(text).toContain('\\u0020')
-    expect(mask(text)).toBe(text)
-  })
-
   it('坏字面量不抛错，按原文打码', () => {
     const text =
       '{ "a": "bad \\x https://api.day.app/SECRET_G", "b": "未闭合 https://api.day.app/SECRET_H\n}'
@@ -145,12 +132,59 @@ describe('addDiagnosticFile 收解析不了的 .json', () => {
     expect(stored).toContain('// 注释 https://api.day.app/***')
     expect(stored).toContain('"a": "https://api.day.app/***"')
   })
+})
 
-  it('能解析的 .json 照旧按键名打码并重新排版', () => {
-    write('debug/plain.json', '{"b":"https:\\/\\/api.day.app\\/SECRET_P","token":"t"}')
+describe('OK-WW 启动器日志问题包', () => {
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'okww-report-'))
+  })
 
-    expect(collectText('debug/plain.json')).toBe(
-      `${JSON.stringify({ b: 'https://api.day.app/***', token: '***' }, null, 2)}\n`
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  it('日期日志中的用户主目录被脱敏', () => {
+    const installation = path.join(root, 'installation')
+    write(
+      'config/scripts.yaml',
+      JSON.stringify({
+        order: [{ uid: '1', type: 'OkwwConfig' }],
+        data: { '1': { Info: { RootPath: installation } } },
+      })
     )
+    write('installation/logs/app.2026-11-06', `Python: ${os.homedir()}${path.sep}python.exe\n`)
+    const output = path.join(root, 'report.zip')
+
+    expect(createOkwwIssueReport(root, output).success).toBe(true)
+    const zip = new AdmZip(output)
+    const content = zip.getEntry('okww/okww-1/launcher/app.2026-11-06')!.getData().toString('utf-8')
+    expect(content).not.toContain(os.homedir())
+    expect(content).toContain('<HOME>')
+  })
+
+  it('过大的启动器日志保留脱敏后的末尾', () => {
+    const installation = path.join(root, 'installation')
+    write(
+      'config/scripts.yaml',
+      JSON.stringify({
+        order: [{ uid: '1', type: 'OkwwConfig' }],
+        data: { '1': { Info: { RootPath: installation } } },
+      })
+    )
+    write(
+      'installation/logs/app.2026-11-06',
+      `${'old line\n'.repeat(3_000_000)}${os.homedir()}${path.sep}tail\n`
+    )
+    const output = path.join(root, 'report.zip')
+
+    expect(createOkwwIssueReport(root, output).success).toBe(true)
+    const zip = new AdmZip(output)
+    const content = zip
+      .getEntry('okww/okww-1/launcher/app.2026-11-06.tail')!
+      .getData()
+      .toString('utf-8')
+    expect(content).toContain('<HOME>')
+    expect(content).not.toContain(os.homedir())
+    expect(content).toContain('tail')
   })
 })

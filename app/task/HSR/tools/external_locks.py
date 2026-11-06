@@ -1,6 +1,6 @@
 """HSR 外部脚本安装目录的进程内互斥锁。
 
-M7A 的 ``config.yaml`` 与 SRA 的用户目录都可能被多个 HSR 脚本配置
+M7A 的 ``config.yaml`` 与 SRA 的用户目录都可能被多个 HSR 托管配置
 共享。旧 dev 没有插件 registry，因此用同一事件循环中的规范化路径锁
 保护配置备份、外部运行和恢复，也供原生配置器 API 在 session 生命周期内
 复用。
@@ -43,7 +43,7 @@ def resolve_external_lock_paths(
     script_config: Any,
     engines: Iterable[str] = ("SRA", "M7A"),
 ) -> tuple[str, ...]:
-    """返回指定引擎会读写的安装根和用户配置根。
+    """返回指定引擎会读写的安装根和账号配置根。
 
     SRA 同时修改安装目录进程以及 ``%APPDATA%/SRA`` 下的 settings/cache/
     configs；M7A 修改安装目录下的 ``config.yaml``。空路径不会出现在结果中。

@@ -484,7 +484,7 @@ def _check_limits(missing: list[str], sizes: Mapping[str, int]) -> None:
     if len(missing) > MAX_HEAL_FILES or total > MAX_HEAL_BYTES:
         raise HealSkip(
             f"缺 {len(missing)} 个文件、共 {format_size(total)}，超过自动补齐上限，"
-            "请在脚本页重新导入或更新一次",
+            "请在托管页重新导入或更新一次",
             permanent=True,
             notify=True,
         )
@@ -1361,7 +1361,7 @@ async def heal_payload(
                 logger.warning("MaaFW 补齐文件直接放进视图也失败：%s", fallback_error)
         log(
             f"{found}，但生成补齐后的版本失败（{reason}）"
-            + ("，已直接放进本脚本的项目目录" if written else "")
+            + ("，已直接放进本托管的项目目录" if written else "")
             + f"，本次照常运行，用时 {format_duration(time.monotonic() - started)}"
         )
         return HealOutcome(

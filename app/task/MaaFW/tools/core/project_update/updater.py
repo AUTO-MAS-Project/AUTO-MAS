@@ -476,6 +476,8 @@ async def update_maafw_project_if_needed(
     payload: PayloadTarget | None = None,
     after_register: Callable[[RegisterResult], Awaitable[Any]] | None = None,
     allow_misnumbered_rollback: bool = False,
+    prefetch_full_package: bool = False,
+    prefetched: tuple[str, MaaFWProjectUpdateDiscovery] | None = None,
 ) -> MaaFWProjectUpdateResult:
     """检查并按需更新项目：发现 → 下载一次 → 在 staging 里从当前载荷 + 包建新载荷 →
     预检 → 并入共用库 → 登记。项目视图在这里一个字节都不动。
@@ -548,7 +550,7 @@ async def update_maafw_project_if_needed(
     if not configured_cdk and inherited_cdk:
         # 调用方既可以用 ``mirror_cdk=`` 参数给 CDK，也可以塞进 source_config；
         # 前者为准只在后者为空时生效。不能用 ``setdefault``：schema 会把未填的
-        # CDK 序列化成空串而不是缺键。（这里说的不是全局兜底——凭据只看脚本级，
+        # CDK 序列化成空串而不是缺键。（这里说的不是全局兜底——凭据只看托管级，
         # 合并发生在调用方，见 tools/embedded/update_credentials.py。）
         merged_source_config["mirror_cdk"] = inherited_cdk
     if not str(merged_source_config.get("channel") or "").strip():
@@ -577,7 +579,7 @@ async def update_maafw_project_if_needed(
                 base_manifest = {}
                 base_missing = str(exc)
             source_kind = str((base_manifest.get("source") or {}).get("kind") or "")
-            prefer_full = source_kind != "update"
+            prefer_full = source_kind != "update" or prefetch_full_package
             # 按旧投影规则建、漏装的文件又没补上的载荷：差量包只动包里那几个文件，套上去
             # 新版本照样缺；全量包的条目全部按当前规则投影。
             stale_projection = (
@@ -650,21 +652,35 @@ async def update_maafw_project_if_needed(
             async def gate(_version: str) -> str:
                 return missing_reason
 
-        (
-            discovery,
-            version_check,
-            skipped_reason,
-        ) = await _discover_project_update_detailed(
-            interface_model,
-            current_version=current_version,
-            source_config=merged_source_config,
-            proxy=proxy,
-            send_log=send_update_log,
-            prefer_full_package=prefer_full,
-            precheck_gate=gate,
-            cancel_event=cancel_event,
-            allow_misnumbered_rollback=allow_misnumbered_rollback,
-        )
+        if (
+            prefetched is not None
+            and prefetched[0] == current_version
+            and not base_missing
+        ):
+            # 同一配置代次、同一基准下复用已下载候选，避免重签 Mirror 一次性地址。
+            discovery = prefetched[1]
+            version_check = None
+            skipped_reason = ""
+            blocked = await gate(discovery.version) if gate is not None else None
+            if blocked:
+                discovery.candidate = None
+                discovery.unavailable_reason = blocked
+        else:
+            (
+                discovery,
+                version_check,
+                skipped_reason,
+            ) = await _discover_project_update_detailed(
+                interface_model,
+                current_version=current_version,
+                source_config=merged_source_config,
+                proxy=proxy,
+                send_log=send_update_log,
+                prefer_full_package=prefer_full,
+                precheck_gate=gate,
+                cancel_event=cancel_event,
+                allow_misnumbered_rollback=allow_misnumbered_rollback,
+            )
     except Exception as exc:
         if getattr(exc, "cancelled", False):
             # 检查阶段被用户停下（没再联网）：与下载 / 构建阶段的停止同一口径。
@@ -793,6 +809,7 @@ async def update_maafw_project_if_needed(
     if (
         payload is not None
         and not force_full
+        and not prefetch_full_package
         and str(candidate.source or "").strip().casefold().startswith("github")
         and candidate.package_type in {None, "", "full"}
     ):
@@ -895,6 +912,7 @@ async def discover_maafw_project_update(
     prefer_full_package: bool = False,
     version_only: bool = False,
     on_skipped: Callable[[str], None] | None = None,
+    precheck_gate: Callable[[str], Awaitable[str | None]] | None = None,
     allow_misnumbered_rollback: bool = False,
 ) -> MaaFWProjectUpdateDiscovery | None:
     """Discover a newer project version and pick where to download it from.
@@ -943,6 +961,7 @@ async def discover_maafw_project_update(
         send_log=send_log,
         prefer_full_package=prefer_full_package,
         version_only=version_only,
+        precheck_gate=precheck_gate,
         allow_misnumbered_rollback=allow_misnumbered_rollback,
     )
     if discovery is None and version_check is None and on_skipped is not None:
@@ -1160,7 +1179,7 @@ async def _discover_project_update_detailed(
             return (
                 None,
                 version_check,
-                f"自动更新不回退发错的版本号，可在脚本编辑页点「更新」回到 {latest}",
+                f"自动更新不回退发错的版本号，可在托管编辑页点「更新」回到 {latest}",
             )
         misnumbered = True
         send_update_log(

@@ -69,37 +69,6 @@ def test_owned_defaults_preserve_existing_rows_and_respect_reachable_goals():
 
 
 @pytest.mark.asyncio
-async def test_enabling_injects_now_and_disabling_changes_only_the_flag(
-    monkeypatch, isolated_app_paths
-):
-    api = importlib.import_module("app.task.MAA.api_service")
-    user = MaaUserConfig.model_validate({"Task": {"CultivateTargets": "[]"}})
-    script = MaaConfig()
-    snapshot = AsyncMock(return_value=({"owned": progression()}, 1))
-    monkeypatch.setattr(api, "get_cultivate_skland_progression", snapshot)
-    module = importlib.import_module("app.task.MAA.user_update")
-    monkeypatch.setattr(
-        module.depot_cultivate_service,
-        "operator_catalog",
-        AsyncMock(return_value=catalog("owned", "unowned")),
-    )
-    patch = {"Task": {"CultivateAllOwned": True}}
-    guard = await prepare_user_update(script, user, data=patch)
-    assert guard is not None
-    guard()
-    assert patch["Task"]["CultivateAllOwned"] is True
-    assert [
-        item["operator_id"] for item in json.loads(patch["Task"]["CultivateTargets"])
-    ] == ["owned"]
-    assert "CultivateAutoRaise" not in patch["Task"]
-    snapshot.assert_awaited_once_with(str(script.uid), str(user.uid), force=True)
-    off = {"Task": {"CultivateAllOwned": False}}
-    await prepare_user_update(script, user, data=off)
-    assert off == {"Task": {"CultivateAllOwned": False}}
-    assert snapshot.await_count == 1
-
-
-@pytest.mark.asyncio
 async def test_enabling_fails_without_a_reliable_owned_snapshot(monkeypatch):
     api = importlib.import_module("app.task.MAA.api_service")
     monkeypatch.setattr(

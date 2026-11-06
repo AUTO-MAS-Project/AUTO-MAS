@@ -45,30 +45,36 @@ from app.utils import get_logger
 class DispatchIn(BaseModel):
     taskId: str = Field(
         ...,
-        description="目标任务ID, 设置类任务可选对应脚本ID或用户ID, 代理类任务可选对应队列ID或脚本ID",
+        description="目标任务ID, 设置类任务可选对应托管ID或账号ID, 代理类任务可选对应队列ID或托管ID",
     )
 
 
 class TaskCreateIn(DispatchIn):
+    planId: str | None = Field(
+        default=None, description="通用脚本计划表配置会话的计划 ID"
+    )
+    planDay: str | None = Field(
+        default=None, description="通用脚本计划表配置会话的日期分组"
+    )
     mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"] = Field(
         ...,
-        description="任务模式; CycleRun 为循环运行, 仅接受循环队列, 其脚本按 AutoProxy 执行",
+        description="任务模式; CycleRun 为循环运行, 仅接受循环队列, 其托管按 AutoProxy 执行",
     )
     resumeFromScriptId: str | None = Field(
         default=None,
-        description="可选：仅对队列任务生效；从指定脚本ID开始执行（之前的脚本将被标记为跳过）",
+        description="可选：仅对队列任务生效；从指定托管ID开始执行（之前的托管将被标记为跳过）",
     )
     userId: str | None = Field(
         default=None,
-        description="可选：仅对脚本的自动代理任务生效；只运行该脚本下的这一个用户",
+        description="可选：仅对托管的自动代理任务生效；只运行该托管下的这一个账号",
     )
     userIds: list[str] | None = Field(
         default=None,
-        description="可选：仅对脚本的自动代理任务生效；只运行指定的多个用户",
+        description="可选：仅对托管的自动代理任务生效；只运行指定的多个账号",
     )
     queueUserIds: dict[str, list[str]] | None = Field(
         default=None,
-        description="可选：仅对队列任务生效；按脚本ID指定本次要运行的用户；未列出的脚本不限, 空列表表示该脚本本次整项跳过",
+        description="可选：仅对队列任务生效；按托管ID指定本次要运行的账号；未列出的托管不限, 空列表表示该托管本次整项跳过",
     )
     viewOnly: bool = Field(
         default=False,
@@ -182,6 +188,8 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
             queue_user_ids=task.queueUserIds,
             view_only=task.viewOnly,
             instance_idx=task.instanceIdx,
+            plan_id=task.planId,
+            plan_day=task.planDay,
         )
     except Exception as e:
         logger.opt(exception=True).warning(f"add_task失败: {type(e).__name__}: {e}")
@@ -243,12 +251,12 @@ async def get_power() -> PowerOut:
 async def set_power(task: PowerIn = Body(...)) -> OutBase:
 
     try:
+        # 已在等待的电源任务持有旧操作, 延时期间又没有倒计时窗口提示,
+        # 先等旧任务撤销，再写新选择，避免交接中的完成后操作提前消费它。
+        await System.cancel_pending_power_task()
         Config.power_sign = task.signal
         # 手动选择的电源操作不带延时, 同时清掉队列可能残留的延时
         Config.power_delay = 0
-        # 已在等待的电源任务持有旧操作, 延时期间又没有倒计时窗口提示,
-        # 因此手动改选一律撤销它, 新选择留给下一次任务结束时生效
-        await System.cancel_pending_power_task()
     except Exception as e:
         logger.opt(exception=True).warning(f"set_power失败: {type(e).__name__}: {e}")
         return OutBase(

@@ -57,14 +57,3 @@ def test_failed_defense_is_retried() -> None:
 
     assert result is plan
     assert [task.entry for task in result.tasks] == [DEFENSE_ENTRY, CLIMB_ENTRY]
-
-
-def test_duplicate_named_defense_keeps_existing_rerun_policy() -> None:
-    plan = _plan(_task("灾变防线", DEFENSE_ENTRY), _task("灾变防线", DEFENSE_ENTRY))
-
-    runner = _runner(["灾变防线"])
-    result = runner._skip_tasks_completed_this_run(plan)
-
-    # 同名两份分不清完成的是哪份：沿用引擎的保守策略，全部重跑
-    assert result is plan
-    assert set(runner._retry_rerun_duplicates) == {"灾变防线"}

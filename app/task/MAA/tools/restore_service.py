@@ -16,18 +16,18 @@
 #   You should have received a copy of the GNU Affero General Public
 #   License along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""MAA 配置恢复服务：MAS 用户配置池 / MAA 原生配置池（声明式池）。
+"""MAA 配置恢复服务：MAS 账号配置池 / MAA 原生配置池（声明式池）。
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底预览全部由基座
 （``app.utils.common.config.restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
-mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 + 页面核心
+mas 池 = 「MAS 为该账号维护的全部配置」：ConfigFile 目录副本 + 页面核心
 字段侧车（Info/Task 两段，覆盖 MAS 编辑页全部可配置核心内容）。这些字段
 运行时注入 gui.new.json、不落盘在 ConfigFile——备份/恢复两端都带上侧车（恢复
 后按段分组回填表单，对齐 ZzzOd / ok-ww 字段回填模式），预览与页面认知才
-一致。池恒按用户分桶（侧车是用户级的，shared 来源多用户共享 Default 目录时
+一致。池恒按账号分桶（侧车是账号级的，shared 来源多账号共享 Default 目录时
 各自快照仍需隔离）；两态 owner（脚本=Default 共享目录、用户=独立目录）
 只决定归档/恢复目标路径，与运行下发（AutoProxy ``set_maa``）同一套来源
 规则。
@@ -68,10 +68,10 @@ logger = get_logger("MAA 配置恢复")
 
 
 def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
-    """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
+    """恢复守卫：目标账号必须存在，避免把配置恢复进孤儿目录。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
-        raise ValueError("MAA 用户不存在，请刷新后重试")
+        raise ValueError("MAA 账号不存在，请刷新后重试")
 
 
 async def _set_base(ctx: _utils_config_restore.RestoreContext, base: str) -> None:
@@ -87,11 +87,11 @@ async def _set_base(ctx: _utils_config_restore.RestoreContext, base: str) -> Non
 
 
 def _mas_owner(ctx: _utils_config_restore.RestoreContext) -> str | None:
-    """当前用户的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
+    """当前账号的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
 
     共享来源共享 ``Default``、独立来源用当前用户目录，与 AutoProxy ``set_maa``
-    的下发源同一套来源规则；原生来源用户没有 MAS 托管配置目录（对齐 MaaEnd
-    的「原生来源无 mas 池」），mas 池列表/预览为空；用户不存在时无法判态，
+    的下发源同一套来源规则；原生来源账号没有 MAS 托管配置目录（对齐 MaaEnd
+    的「原生来源无 mas 池」），mas 池列表/预览为空；账号不存在时无法判态，
     同样返回 ``None``（恢复/归档另有用户守卫）。
     """
 
@@ -125,7 +125,7 @@ def _seed_mas_dir(ctx: _utils_config_restore.RestoreContext, mas_dir: Path) -> N
     上只在老版本迁移或一次完成的配置会话后才存在，缺失时退出归档会静默
     跳过（mas 池永远为空，「改了配置也不生产备份」）。播种让「进入编辑页
     → 退出」的包络自第一次退出起就有现场可归档。不在 add_user 时播种：
-    MAA 路径可以晚于用户配置，播种失败不该挡建用户。
+    MAA 路径可以晚于账号配置，播种失败不该挡建用户。
     """
 
     if mas_dir.is_dir() and any(mas_dir.iterdir()):
@@ -203,7 +203,7 @@ async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> No
     _user_guard(ctx)
     owner = _mas_owner(ctx)
     if owner is None:
-        raise ValueError("无法确定该用户的 MAS 配置目录，请刷新后重试")
+        raise ValueError("无法确定该账号的 MAS 配置目录，请刷新后重试")
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     restored_overlay = restore_mas_backup(
         ctx.script_id,

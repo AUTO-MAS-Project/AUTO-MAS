@@ -97,6 +97,8 @@ import type { TaskStatusOut } from '../models/TaskStatusOut';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
 import type { TimeSetGetOut } from '../models/TimeSetGetOut';
 import type { ToolsGetOut } from '../models/ToolsGetOut';
+import type { UniversalPlanStateIn } from '../models/UniversalPlanStateIn';
+import type { UniversalPlanStateOut } from '../models/UniversalPlanStateOut';
 import type { UpdateCheckIn } from '../models/UpdateCheckIn';
 import type { UpdateCheckOut } from '../models/UpdateCheckOut';
 import type { UpdateDownloadSnapshot } from '../models/UpdateDownloadSnapshot';
@@ -180,7 +182,7 @@ export class GetService {
         });
     }
     /**
-     * 获取脚本下拉框信息
+     * 获取托管下拉框信息
      * @returns ComboBoxOut Successful Response
      * @throws ApiError
      */
@@ -425,7 +427,7 @@ export class GetService {
         });
     }
     /**
-     * 查询脚本配置信息
+     * 查询托管配置信息
      * @param requestBody
      * @returns ScriptGetOut Successful Response
      * @throws ApiError
@@ -444,7 +446,7 @@ export class GetService {
         });
     }
     /**
-     * 查询用户
+     * 查询账号
      * @param requestBody
      * @returns UserGetOut Successful Response
      * @throws ApiError
@@ -463,7 +465,7 @@ export class GetService {
         });
     }
     /**
-     * 获取用户配置目录
+     * 获取账号配置目录
      * @param requestBody
      * @returns UserConfigDirOut Successful Response
      * @throws ApiError
@@ -501,7 +503,7 @@ export class GetService {
         });
     }
     /**
-     * 分享前检查脚本配置中的隐私风险
+     * 分享前检查托管配置中的隐私风险
      * @param requestBody
      * @returns ShareInspectOut Successful Response
      * @throws ApiError
@@ -680,7 +682,7 @@ export class GetService {
         });
     }
     /**
-     * MAA 仓库库存（当前用户档案；label=数量字符串，value=物品ID）
+     * MAA 仓库库存（当前账号档案；label=数量字符串，value=物品ID）
      * @param requestBody
      * @returns MaaDepotInventoryOut Successful Response
      * @throws ApiError
@@ -855,6 +857,25 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plan/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询通用脚本计划表已配置的日期
+     * @param requestBody
+     * @returns UniversalPlanStateOut Successful Response
+     * @throws ApiError
+     */
+    public static getUniversalPlanStateApiPlanUniversalStatePost(
+        requestBody: UniversalPlanStateIn,
+    ): CancelablePromise<UniversalPlanStateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/universal-state',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

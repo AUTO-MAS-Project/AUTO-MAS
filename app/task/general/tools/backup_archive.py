@@ -18,22 +18,22 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""通用脚本配置备份归档：MAS 用户配置副本 / 脚本原生配置（File/Folder 两态）。
+"""通用脚本配置备份归档：MAS 账号配置副本 / 脚本原生配置（File/Folder 两态）。
 
 备份时机（MAS「动手前」）：
 
 - 任务启动（manager ``prepare``）：``native`` 归档 ``ConfigPath`` 当前状态
   （Folder 整目录 / File 单文件）——随后非原生来源运行会换入 MAS 配置、任务
-  结束恢复原状，原生来源+快速配置会直接写入，归档必须在任何写入前；
+  结束恢复原状，原生来源+覆写常规配置会直接写入，归档必须在任何写入前；
 - 运行 / 配置会话下发前（AutoProxy / ScriptConfig 的 ``set_general``）：
-  ``mas`` 归档该用户的 ``ConfigFile`` 目录（下发源，运行回写与会话保存会
+  ``mas`` 归档该账号的 ``ConfigFile`` 目录（下发源，运行回写与会话保存会
   覆盖它）；
 - 编辑界面进入（前端 ensure）：``native`` 捕捉「MAS 操作前原始态」；
 - 编辑界面退出（前端 ensure）：``mas`` 归档 MAS 配置副本终态。
 
-General 的目录模型与 MAA 不同：``ConfigFile`` **恒按用户**（每个用户持有
-自己的目录，shared 来源用户也不例外），三态只决定 MAS 是否读写它——因此 mas
-池按用户分桶即恢复目标，无 owner 解耦、无侧车（MAS 编辑页字段不注入原生
+General 的目录模型与 MAA 不同：``ConfigFile`` **恒按账号**（每个账号持有
+自己的目录，shared 来源账号也不例外），三态只决定 MAS 是否读写它——因此 mas
+池按账号分桶即恢复目标，无 owner 解耦、无侧车（MAS 编辑页字段不注入原生
 配置，不属于配置内容）。配置格式任意（透传），预览为**文件清单粒度**
 （文件名 + 大小），详细内容经「查看详细配置」在脚本 GUI 里查看。
 
@@ -52,7 +52,7 @@ logger = get_logger("通用脚本配置备份")
 
 
 def backup_root(script_id: str) -> Path:
-    """某脚本的备份归档根目录（MAS 用户池用）：``data/{script_id}/GeneralBackups``。"""
+    """某脚本的备份归档根目录（MAS 账号池用）：``data/{script_id}/GeneralBackups``。"""
 
     return Path.cwd() / "data" / script_id / "GeneralBackups"
 
@@ -60,7 +60,7 @@ def backup_root(script_id: str) -> Path:
 def mas_backup_root(script_id: str, user_id: str) -> Path:
     """MAS 池归档根：``data/{script_id}/GeneralBackups/mas/{user_id}``。
 
-    恒按用户分桶——General 的 ConfigFile 目录本来就按用户隔离（无 MAA 式
+    恒按账号分桶——General 的 ConfigFile 目录本来就按账号隔离（无 MAA 式
     shared 来源共享 Default），池与恢复目标一一对应。
     """
 
@@ -68,15 +68,15 @@ def mas_backup_root(script_id: str, user_id: str) -> Path:
 
 
 def mas_config_dir(script_id: str, user_id: str) -> Path:
-    """MAS 配置目录：``data/{script_id}/{user_id}/ConfigFile``（恒按用户）。"""
+    """MAS 配置目录：``data/{script_id}/{user_id}/ConfigFile``（恒按账号）。"""
 
     return Path.cwd() / "data" / script_id / user_id / "ConfigFile"
 
 
 def native_backup_root(script_id: str, config_path: str | Path) -> Path:
-    """脚本原生配置的**脚本级**归档目录：``data/{script_id}/GeneralBackups/native/{key}``。
+    """脚本原生配置的**托管级**归档目录：``data/{script_id}/GeneralBackups/native/{key}``。
 
-    通用脚本（脚本级 owner）：归档生命周期随脚本实例；``key`` 仍取物理
+    通用脚本（托管级 owner）：归档生命周期随脚本实例；``key`` 仍取物理
     配置根指纹（File 态取文件自身路径、Folder 态取目录路径），脚本内换绑
     配置路径后旧备份不与新配置混淆。
     """
@@ -91,11 +91,11 @@ def native_backup_root(script_id: str, config_path: str | Path) -> Path:
     )
 
 
-# ══════════════════ MAS 配置副本（目录型，恒按用户） ══════════════════
+# ══════════════════ MAS 配置副本（目录型，恒按账号） ══════════════════
 
 
 def collect_mas_files(mas_dir: Path) -> dict[str, Path]:
-    """收集用户 ConfigFile 目录文件集（目录缺失或为空返回空 dict）。
+    """收集账号 ConfigFile 目录文件集（目录缺失或为空返回空 dict）。
 
     供声明式池声明归档内容（``files`` 回调）；:func:`archive_mas_backup`
     亦复用本函数。
@@ -110,7 +110,7 @@ def collect_mas_files(mas_dir: Path) -> dict[str, Path]:
 def archive_mas_backup(
     script_id: str, user_id: str, mas_dir: Path, force: bool = False
 ) -> Path | None:
-    """归档用户 ConfigFile 目录到用户池（指纹去重，无变化跳过）。
+    """归档账号 ConfigFile 目录到账号池（指纹去重，无变化跳过）。
 
     ``force=True`` 恢复前存底（不清理历史条目；内容与最新份一致时同样
     跳过——当前配置已存放在该份备份中）。目录不存在或为空时无可归档
@@ -125,26 +125,26 @@ def archive_mas_backup(
         files, mas_backup_root(script_id, user_id), force=force
     )
     if dest is None:
-        logger.info("用户 {} 的 MAS 配置无变化，跳过归档", user_id)
+        logger.info("账号 {} 的 MAS 配置无变化，跳过归档", user_id)
         return None
-    logger.info("用户 {} 的 MAS 配置已归档: {}", user_id, dest.name)
+    logger.info("账号 {} 的 MAS 配置已归档: {}", user_id, dest.name)
     return dest
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
-    """用户池的全部归档时间戳（倒序，最新在前）。"""
+    """账号池的全部归档时间戳（倒序，最新在前）。"""
 
     return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
-    """取用户池指定时间戳的归档目录；不存在返回 None。"""
+    """取账号池指定时间戳的归档目录；不存在返回 None。"""
 
     return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(script_id: str, user_id: str, ts: str, mas_dir: Path) -> None:
-    """把用户池归档恢复到该用户的 ConfigFile 目录（恢复前强制存底当前）。"""
+    """把账号池归档恢复到该账号的 ConfigFile 目录（恢复前强制存底当前）。"""
 
     backup_dir = get_mas_backup_dir(script_id, user_id, ts)
     if backup_dir is None:
@@ -153,11 +153,11 @@ def restore_mas_backup(script_id: str, user_id: str, ts: str, mas_dir: Path) -> 
     # 恢复前存底不设目录条件：目标缺失/为空时无可存底内容由 archive 自判
     archive_mas_backup(script_id, user_id, mas_dir, force=True)
     _utils_config_archive.restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
-    logger.info("用户 {} 的 MAS 配置已恢复备份 {}", user_id, ts)
+    logger.info("账号 {} 的 MAS 配置已恢复备份 {}", user_id, ts)
 
 
 def archive_mas_runtime_backup(script_id: str, user_id: str, mas_dir: Path) -> None:
-    """运行 / 配置会话下发前归档 MAS 配置（下发源）到用户池。
+    """运行 / 配置会话下发前归档 MAS 配置（下发源）到账号池。
 
     运行回写与会话保存会覆盖它，下发前存底；指纹去重，失败只记日志，
     绝不中止随后的运行或会话（归档是现场保护，不是前置条件）。
@@ -198,7 +198,7 @@ def archive_native_backup(
 ) -> Path | None:
     """归档脚本原生配置当前状态（Folder 整目录 / File 单文件）。
 
-    归档落到**脚本级池**（``data/{script_id}/``，生命周期随脚本实例；
+    归档落到**托管级池**（``data/{script_id}/``，生命周期随脚本实例；
     池内按物理配置根指纹二级分桶）。路径不存在时无可归档内容，返回
     ``None``；``config_mode`` 取 ``Script.ConfigPathMode``（``Folder`` /
     ``File``）。

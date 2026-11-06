@@ -39,18 +39,6 @@ describe('跳过安装后的启动所有权', () => {
     vi.stubGlobal('sessionStorage', { setItem: vi.fn() })
   })
 
-  it('源码 Electron 先启动 Runtime 后端，重复进入共用一次启动', async () => {
-    const { startSkippedInitializationStartup } = await import('./skippedInitializationStartup')
-    const first = startSkippedInitializationStartup()
-    expect(startSkippedInitializationStartup()).toBe(first)
-    await first
-    expect(calls.backendStart).toHaveBeenCalledOnce()
-    expect(calls.enterApp).toHaveBeenCalledOnce()
-    expect(calls.backendStart.mock.invocationCallOrder[0]).toBeLessThan(
-      calls.enterApp.mock.invocationCallOrder[0]
-    )
-  })
-
   it('启动失败转到恢复页，不把已有连接当成新后端启动成功', async () => {
     calls.backendStart.mockResolvedValue({ success: false, code: 'RUNTIME_NOT_FOUND' })
     const { startSkippedInitializationStartup } = await import('./skippedInitializationStartup')

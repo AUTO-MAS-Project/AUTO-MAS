@@ -26,7 +26,7 @@ logger = get_logger("脚本调度")
 
 @dataclass(frozen=True)
 class UserRunSummary:
-    """MAS 已有用户状态的分组；不替专项判断脚本任务成败。"""
+    """MAS 已有账号状态的分组；不替专项判断脚本任务成败。"""
 
     completed: tuple[UserItem, ...]
     failed: tuple[UserItem, ...]
@@ -137,7 +137,7 @@ class ScriptManagerBase(NotificationTaskBase):
         *,
         result_text: str | None = None,
     ) -> TaskResultData:
-        """按专项的用户状态口径组织已有报告字段。"""
+        """按专项的账号状态口径组织已有报告字段。"""
         summary = self.collect_user_results()
         mode = TASK_MODE_ZH.get(self.task_info.mode, self.task_info.mode)
         return {

@@ -178,7 +178,7 @@ class WheelAssetsConfigSurface:
         self.assets_dir = self.root_path / REL_SITE_PACKAGES / REL_ASSETS_DIR
         self.config_path = self.root_path / REL_CONFIG_FILE
         # 目录缓存：同一实例内重复读取命中（三件套共几十 KB）；surface 由调用方
-        # 逐次新建（API 每次请求、每用户轮次），跨请求不共享此缓存
+        # 逐次新建（API 每次请求、每账号轮次），跨请求不共享此缓存
         self._catalog_cache: tuple[tuple, WhimboxCatalog] | None = None
 
     # ── 安装哨兵 ───────────────────────────────────────────────────────
@@ -394,7 +394,7 @@ class WheelAssetsConfigSurface:
         *,
         run_all_accounts: bool,
     ) -> None:
-        """把用户覆盖集按当前模板键集过滤后原子合并写入上游 config.json。
+        """把账号覆盖集按当前模板键集过滤后原子合并写入上游 config.json。
 
         Args:
             tasks: 步骤开关覆盖集 {步骤键: bool}（未知键被模板键集过滤）。

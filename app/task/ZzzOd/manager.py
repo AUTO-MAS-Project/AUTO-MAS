@@ -57,7 +57,7 @@ class ZzzOdManager(ScriptManagerBase):
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if not isinstance(script_config, ZzzOdConfig):
-            return "脚本配置类型错误, 不是 ZZZ-OD 类型"
+            return "托管配置类型错误, 不是 ZZZ-OD 类型"
 
         if not script_config.Info.RootPath:
             return "请先设置有效的绝区零一条龙安装目录"
@@ -75,11 +75,11 @@ class ZzzOdManager(ScriptManagerBase):
                 try:
                     target_user_uid = uuid.UUID(target_user_id)
                 except ValueError:
-                    return "ZZZ-OD 用户不存在，请刷新后重试"
+                    return "ZZZ-OD 账号不存在，请刷新后重试"
                 if target_user_uid not in script_config.UserData:
-                    return "ZZZ-OD 用户不存在，请刷新后重试"
+                    return "ZZZ-OD 账号不存在，请刷新后重试"
 
-        # AutoProxy 模式只做用户列表可用性校验；逐用户实例绑定检查放到 AutoProxyTask.check()
+        # AutoProxy 模式只做账号列表可用性校验；逐账号实例绑定检查放到 AutoProxyTask.check()
         if self.task_info.mode == "AutoProxy":
             script_uid = uuid.UUID(self.script_info.script_id)
             if not self.script_info.user_list:
@@ -87,7 +87,7 @@ class ZzzOdManager(ScriptManagerBase):
                     Config.ScriptConfig[script_uid].UserData.items()
                 )
             if not self.script_info.user_list:
-                return "当前没有可执行的用户，请先添加并启用用户"
+                return "当前没有可执行的账号，请先添加并启用账号"
 
         return "Pass"
 
@@ -98,11 +98,11 @@ class ZzzOdManager(ScriptManagerBase):
         ] = await Config.ScriptConfig[script_uid].lock_x()
         self.script_config = Config.ScriptConfig[script_uid]
         if not isinstance(self.script_config, ZzzOdConfig):
-            raise TypeError("脚本配置类型错误")
+            raise TypeError("托管配置类型错误")
 
-        # X 锁覆盖用户集合，运行时直接修改原配置。
+        # X 锁覆盖账号集合，运行时直接修改原配置。
         self.user_config = self.script_config.UserData
-        logger.success(f"{self.script_info.script_id} 已锁定，ZZZ-OD 用户配置已提取")
+        logger.success(f"{self.script_info.script_id} 已锁定，ZZZ-OD 账号配置已提取")
 
         if self.task_info.mode == "ScriptConfig":
             target_user_id = self.task_info.user_id or "Default"
@@ -152,7 +152,7 @@ class ZzzOdManager(ScriptManagerBase):
             return
 
         # 按 base 来源分派：shared/independent → 注入运行；native → 原生裸跑。
-        # 原生来源用户绝不进入注入名单（原生来源=MAS 零注入零干涉）
+        # 原生来源账号绝不进入注入名单（原生来源=MAS 零注入零干涉）
         inject_users = [
             user
             for user in self.script_info.user_list
@@ -166,7 +166,7 @@ class ZzzOdManager(ScriptManagerBase):
         account_switch = str(self.script_config.Game.AccountSwitch or "单实例切换")
 
         # 「多实例切换」（不推荐）：注入模式用户合并为一轮多账号注入运行
-        # （一条龙内部切换账号），原生来源用户在其后逐个原生裸跑。
+        # （一条龙内部切换账号），原生来源账号在其后逐个原生裸跑。
         # 失败域耦合：单槽失败/切换失败会终止整轮并全量重走（已完成任务按
         # 运行记录跳过，不重复执行，但会话重启与重新登录的代价仍在）
         if self.script_config.Game.AccountSwitch == "多实例切换":
@@ -223,7 +223,7 @@ class ZzzOdManager(ScriptManagerBase):
                 ran_any = True
                 await self.run_user_task(direct_user, method)
             if not ran_any:
-                self.check_result = "当前没有可执行的用户"
+                self.check_result = "当前没有可执行的账号"
                 self.script_info.status = "异常"
                 await Publisher.send(
                     id=self.task_info.task_id,
@@ -243,9 +243,9 @@ class ZzzOdManager(ScriptManagerBase):
             )
             return
 
-        # 「单实例切换」（默认，推荐）：逐用户独立会话——注入该用户配置 →
-        # 单实例运行（仅运行当前，无槽间切换）→ 跑完关闭 → 下一个用户。
-        # 失败域隔离：某用户失败只重启该用户，不影响已完成的用户
+        # 「单实例切换」（默认，推荐）：逐账号独立会话——注入该账号配置 →
+        # 单实例运行（仅运行当前，无槽间切换）→ 跑完关闭 → 下一个账号。
+        # 失败域隔离：某账号失败只重启该账号，不影响已完成的用户
         ran_any = False
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             current_user = self.script_info.user_list[self.script_info.current_index]
@@ -272,7 +272,7 @@ class ZzzOdManager(ScriptManagerBase):
             await self.run_user_task(current_user, method)
 
         if not ran_any:
-            self.check_result = "当前没有可执行的用户"
+            self.check_result = "当前没有可执行的账号"
             self.script_info.status = "异常"
             await Publisher.send(
                 id=self.task_info.task_id,
@@ -306,7 +306,7 @@ class ZzzOdManager(ScriptManagerBase):
                     f"{datetime.now().strftime('%m-%d')} | "
                     f"{self.script_info.name or '空白'}的{task_mode}任务报告"
                 )
-                # 按用户交错组装「用户结果行 + 任务节点详情」进报告正文
+                # 按账号交错组装「账号结果行 + 任务节点详情」进报告正文
                 # （ScriptItem.result 是只读计算属性，报告正文用局部变量承载）
                 user_result_text = self._render_user_results(
                     has_uncompleted=summary.uncompleted_count > 0
@@ -360,7 +360,7 @@ class ZzzOdManager(ScriptManagerBase):
                 if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                     await config_manager.flush()
             except Exception:
-                logger.opt(exception=True).warning("on_crash 保存用户配置失败")
+                logger.opt(exception=True).warning("on_crash 保存账号配置失败")
 
         with suppress(Exception):
             await Publisher.send(

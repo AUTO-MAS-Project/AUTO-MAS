@@ -136,7 +136,6 @@ BUILTIN_STEP_SETTING_KEYS: dict[str, frozenset[str]] = {
             "team",
             "timeout",
             "weeklyLeyLine",
-            "useAdventurerHandbook",
             "useFragileResin",
             "useTransientResin",
             "leyLineDailyEnabled",
@@ -333,7 +332,6 @@ RIGHTBAR_TO_PLAN: dict[str, dict[str, str]] = {
         "LeyLineOpenModeCountMin": "openModeCountMin",
         "LeyLineRunCount": "count",
         "LeyLineTimeout": "timeout",
-        "useAdventurerHandbook": "useAdventurerHandbook",
         "useFragileResin": "useFragileResin",
         "useTransientResin": "useTransientResin",
         "country": "country",
@@ -351,7 +349,7 @@ def plan_steps_to_native_settings(
 ) -> dict[str, dict[str, Any]]:
     """把 Plan 战斗步骤的 settings 反转成「右栏/原生键」字典，按组基名归集。
 
-    用途：原生来源 + 快速配置开启时把面板值写进 BGI 原生配置——与执行层方向相反
+    用途：原生来源 + 覆写常规配置开启时把面板值写进 BGI 原生配置——与执行层方向相反
     （执行层是原生键 → Plan settings）。落点由调用方按存储归属分派：
     首领讨伐/地脉花 → 一条龙文件；秘境 → 全局 ``autoDomainConfig`` 段；
     幽境危战 → 全局 ``autoStygianOnslaughtConfig`` 段。
@@ -363,7 +361,7 @@ def plan_steps_to_native_settings(
     - ``maxArtifactStar`` 虽在 ``RIGHTBAR_TO_PLAN`` 内，但它是全局
       ``autoArtifactSalvageConfig`` 段的叶子，调用方写一条龙时会按全局段落叶过滤掉。
 
-    2026-09-19：原先每周表整体不参与对齐，原生来源 + 快速配置下面板改了周表也不生效
+    2026-09-19：原先每周表整体不参与对齐，原生来源 + 覆写常规配置下面板改了周表也不生效
     （BGI 仍按自己那份旧周表跑），现补上展平键，与执行层 main.js 的取值链对齐。
 
     Returns:

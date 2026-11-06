@@ -56,7 +56,6 @@ from app.utils import (
     log_box,
 )
 from app.utils import constants as _utils_constants
-from app.utils import i18n as _utils_i18n
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
 
@@ -76,6 +75,7 @@ from .tools.launcher_start import (
     find_launcher_pids,
     has_launcher_window,
 )
+from .tools.startup import start_okww
 
 logger = get_logger("OK-WW 自动代理")
 
@@ -86,9 +86,9 @@ _WUWA_CLIENT_PROCESS = "Client-Win64-Shipping.exe"
 # 与用户自配的 Game.Arguments 并存不冲突
 _WUWA_DIRECT_LAUNCH_ARG = "-krqlv=hd"
 
-# 多用户切换时等待旧游戏完全退出的上限（秒）：
+# 多账号切换时等待旧游戏完全退出的上限（秒）：
 # ok-ww 恒带 `-e` 自退游戏，客户端进程退出不是瞬时的；若不等待完全退出，
-# 下个用户会把「正在退出的残影窗口」误判为可用游戏而复用，导致窗口句柄失效。
+# 下个账号会把「正在退出的残影窗口」误判为可用游戏而复用，导致窗口句柄失效。
 _GAME_EXIT_WAIT_SECONDS = 90
 
 
@@ -231,14 +231,15 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self.script_target_process_info: ProcessInfo | None = None
         self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
-        # log_box：用户级「是否采集节点详情」关闭时不创建（prepare 按配置启停）
+        # log_box：账号级「是否采集节点详情」关闭时不创建（prepare 按配置启停）
         self._log_source: log_source.LogSource | None = None
         self._log_pipeline: log_box.LogPipeline | None = None
         self._log_user: UserItem | None = None
-        self._log_translator: _utils_i18n.PoTranslator | None = None
         self._log_failed = False
         self._log_close_task: asyncio.Task[None] | None = None
         self.script_config_path: Path | None = None
+        # prepare() 失败时收尾仍会读取该属性，必须在任何可失败步骤前初始化
+        self.run_book = False
 
     async def check(self) -> str:
         root = self.script_config.Info.RootPath
@@ -262,10 +263,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             and proxy_times >= self.script_config.Run.ProxyTimesLimit
         ):
             self.cur_user_item.status = "跳过"
-            return "今日代理次数已达上限, 跳过该用户"
+            return "今日代理次数已达上限, 跳过该账号"
         if self.cur_user_config.Info.RemainedDay == 0:
             self.cur_user_item.status = "跳过"
-            return "用户剩余天数为 0, 跳过该用户"
+            return "账号剩余天数为 0, 跳过该账号"
 
         if self.script_config.Game.Enabled:
             launcher_path = Path(str(self.script_config.Game.Path or "").strip())
@@ -307,7 +308,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     self._fallback_notice = (
                         f"已按注册表找回鸣潮启动器"
                         f"（{launcher_path.as_posix()}），"
-                        "请更新脚本配置中的启动器路径"
+                        "请更新托管配置中的启动器路径"
                     )
                 elif (
                     fallback.process_path is not None
@@ -371,10 +372,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     base=config_base,
                 )
             except FileNotFoundError as e:
-                logger.warning(f"初始化 OK-WW 用户默认配置失败: {e}")
+                logger.warning(f"初始化 OK-WW 账号默认配置失败: {e}")
                 return str(e)
             except (OSError, TypeError, ValueError) as e:
-                logger.warning(f"初始化 OK-WW 用户默认配置失败: {e}")
+                logger.warning(f"初始化 OK-WW 账号默认配置失败: {e}")
                 return "无法读取 OK-WW 默认配置，请检查 OK-WW 脚本路径"
         return "Pass"
 
@@ -409,8 +410,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         )
 
         # ── log_box：日志采集推送（MAS 进程宿主，注入 sink 到 push_log）──
-        # 受用户级「节点详情推送模式」开关控制：关闭时不创建（不读日志、不翻译、
-        # 不匹配、不处理），既省采集开销也符合「不记录」语义；该用户 push_log 保持
+        # 受账号级「节点详情推送模式」开关控制：关闭时不创建（不读日志、不匹配、
+        # 不处理），既省采集开销也符合「不记录」语义；该账号 push_log 保持
         # 为空，报告聚合时自然不含其节点详情。
         self._prepare_log_details(
             self.script_log_path,
@@ -423,8 +424,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self.okww_args = ["-t", str(self.task_index), "-e"]
 
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
-
-        self.run_book = False
 
     def _resolve_log_file_path(self) -> Path:
         return self.script_log_path
@@ -469,7 +468,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
         config_base = _okww_config_base(self.cur_user_config.Info.Base)
         if config_base != _utils_constants.BASE_NATIVE:
-            # 下发前归档 MAS 配置到用户池（下发源，运行回写与快速配置覆盖会
+            # 下发前归档 MAS 配置到账号池（下发源，运行回写与覆写常规配置覆盖会
             # 改它；指纹去重，失败不阻断运行）。目标路径按三态 owner（shared 来源
             # 共享 Default 目录）。native 池由 manager prepare 在任务级一次
             # 性归档，此处不重复
@@ -514,7 +513,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         """处理前置步骤失败，返回是否已确认旧 OK-WW 进程退出。"""
 
         if e is None:
-            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
+            logger.warning(f"账号: {self.cur_user_uid} - {error_message}")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -522,7 +521,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             )
         else:
             logger.opt(exception=True).warning(
-                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+                f"账号: {self.cur_user_uid} - {error_message}: {e}"
             )
             await Publisher.send(
                 id=self.task_info.task_id,
@@ -541,7 +540,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             await Notify.send_notice(
                 LocalNotice(
                     title="OK-WW 自动代理出现异常！",
-                    message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                    message=f"账号 {self.cur_user_item.name} 自动代理时{error_message}",
                     ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                     duration_seconds=3,
                 )
@@ -770,7 +769,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             await self.cur_user_config.commit()
 
         self.cur_user_item.status = "运行"
-        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
         run_limit = int(self.script_config.Run.RunTimesLimit)
@@ -780,7 +779,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         while attempt < run_limit and not self.run_book:
             attempt += 1
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {attempt}/{run_limit}"
+                f"账号 {self.cur_user_item.name} - 尝试次数: {attempt}/{run_limit}"
             )
             self.cur_user_item.status = "运行"
             self.log_start_time = datetime.now().astimezone()
@@ -810,7 +809,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                         await Notify.send_notice(
                             LocalNotice(
                                 title="OK-WW 自动代理出现异常！",
-                                message=f"用户 {self.cur_user_item.name} 游戏启动失败",
+                                message=f"账号 {self.cur_user_item.name} 游戏启动失败",
                                 ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                                 duration_seconds=3,
                             )
@@ -827,7 +826,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     continue
 
             # 游戏窗口已就绪时先做画面维护检测（公告通道覆盖启动前，这里兜底
-            # 「公告未覆盖但维护弹窗已出现」的场景）：命中即跳过当前用户；
+            # 「公告未覆盖但维护弹窗已出现」的场景）：命中即跳过当前账号；
             # 维护不会在重试间隔内结束，不再消耗剩余尝试次数
             if await self.skip_on_game_maintenance(self._maintenance_detect):
                 break
@@ -878,10 +877,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             )
 
             try:
-                await self.okww_process_manager.open_process(
+                await start_okww(
+                    self.okww_process_manager,
                     self.script_exe_path,
-                    *self.okww_args,
-                    target_process=self.script_target_process_info,
+                    args=self.okww_args,
+                    target=self.script_target_process_info,
+                    on_log=self._push_dispatch_log,
                 )
             except (OSError, RuntimeError) as e:
                 # 启动器可能已拉起进程；清理后再重试，避免下一轮重复启动。
@@ -954,7 +955,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 break
 
             logger.warning(
-                f"用户 {self.cur_user_item.name} - OK-WW 代理异常: {self.cur_user_log.status}"
+                f"账号 {self.cur_user_item.name} - OK-WW 代理异常: {self.cur_user_log.status}"
             )
             self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
             await self.kill_managed_process(kill_game=self._game_management_enabled())
@@ -962,7 +963,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 await Notify.send_notice(
                     LocalNotice(
                         title="OK-WW 自动代理出现异常！",
-                        message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        message=f"账号 {self.cur_user_item.name} 的自动代理出现一次异常",
                         ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                         duration_seconds=3,
                     )
@@ -1046,7 +1047,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 await self.log_monitor.stop()
         await self.kill_managed_process(kill_game=self._game_management_enabled())
 
-        # box 归并并交付节点后释放翻译资源，报告仍使用原有文本与兜底提示。
+        # box 归并并交付节点后进入后续收尾。
         await self._close_log_details()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
@@ -1134,7 +1135,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(
-                    f"推送 OK-WW 用户统计通知时出现异常: {e}"
+                    f"推送 OK-WW 账号统计通知时出现异常: {e}"
                 )
 
     async def _persist_user_run_result(self) -> None:
@@ -1159,7 +1160,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             self.cur_user_config.Data.LastProxyStatus = "成功"
             await self.cur_user_config.commit()
             self.cur_user_item.status = "完成"
-            logger.success(f"用户 {self.cur_user_uid} 的 OK-WW 自动代理任务已完成")
+            logger.success(f"账号 {self.cur_user_uid} 的 OK-WW 自动代理任务已完成")
         else:
             maintenance_skipped = self.cur_user_item.maintenance_skipped
             # 维护跳过不是失败：保留「跳过」状态并记录维护结果。
@@ -1203,7 +1204,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 await Notify.send_notice(
                     LocalNotice(
                         title="OK-WW 运行异常",
-                        message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
+                        message=f"账号 {self.cur_user_item.name}：{self.cur_user_log.status}",
                         ticker="异常",
                         duration_seconds=3,
                     )
@@ -1347,11 +1348,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         return okww_stopped
 
     async def _wait_game_exit_before_next_user(self) -> None:
-        """多用户切换：等上一用户的游戏完全退出后再进下个用户。
+        """多账号切换：等上一账号的游戏完全退出后再进下个账号。
 
         鸣潮客户端进程退出不是瞬时的（ok-ww 恒带 `-e` 自退）。若不等其完全退出，
-        下个用户会把「正在退出的残影窗口」误判为可用游戏而复用，导致窗口句柄
-        失效后任务被中止。仅在还有下一个用户时等待；最后一个用户不等待。
+        下个账号会把「正在退出的残影窗口」误判为可用游戏而复用，导致窗口句柄
+        失效后任务被中止。仅在还有下一个账号时等待；最后一个账号不等待。
         游戏管理开启时 MAS 已同步 taskkill，本方法即为 no-op。
         """
         if self.script_info.current_index >= len(self.script_info.user_list) - 1:
@@ -1361,34 +1362,27 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             # 按进程存活判断（不依赖窗口）：窗口销毁后进程可能仍存活片刻。
             # 全进程扫描是同步 IO，放到线程里免得每秒卡一次事件循环
             if not await asyncio.to_thread(is_process_alive, _WUWA_CLIENT_PROCESS):
-                logger.info("鸣潮客户端进程已完全退出，继续下一用户")
+                logger.info("鸣潮客户端进程已完全退出，继续下一账号")
                 return
             await asyncio.sleep(1)
         logger.warning(
-            f"等待鸣潮客户端进程退出超时（{_GAME_EXIT_WAIT_SECONDS}s），继续下一用户"
+            f"等待鸣潮客户端进程退出超时（{_GAME_EXIT_WAIT_SECONDS}s），继续下一账号"
         )
 
     def _prepare_log_details(
         self, path: Path, *, mode: str, enabled: bool, rotated_name: str | None
     ) -> None:
-        """本专项固定来源与用户；读取和交付时机由自身生命周期控制。"""
+        """本专项固定来源与账号；读取和交付时机由自身生命周期控制。"""
         self._log_user = self.cur_user_item
         self._log_user.push_log_mode = mode
         self._log_source = None
         self._log_pipeline = None
         self._log_close_task = None
-        self._log_translator = None
         self._log_failed = False
         if not enabled:
             return
         try:
             pipeline = log_box.LogPipeline()
-            self._log_translator = _utils_i18n.PoTranslator()
-            self._log_translator.load(
-                (_push_log.OKWW_REL_I18N_PO,), base=self.script_root_path
-            )
-            self._log_translator.load_supplement((_push_log._okww_supplement_po(),))
-            pipeline.preprocessors.append(self._log_translator.translate)
             for rule in _push_log.OKWW_PUSH_RULES:
                 pipeline.add_rule(*rule)
             pipeline.postprocessors.append(_push_log.okww_resolve)
@@ -1439,13 +1433,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             except Exception:
                 self._log_failed = True
                 logger.opt(exception=True).warning("节点采集或交付失败")
-
-        if self._log_translator is not None:
-            try:
-                self._log_translator.clear()
-            except Exception:
-                self._log_failed = True
-                logger.opt(exception=True).warning("OK-WW 翻译资源清理失败")
 
         if self._log_failed:
             try:

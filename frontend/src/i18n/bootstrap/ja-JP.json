@@ -99,6 +99,30 @@
       "dependency": "依存関係",
       "environment": "実行環境",
       "repository": "プログラムファイル"
+    },
+    "progress": {
+      "runtimeCheck": "Runtime の更新とローカル実行環境を確認中",
+      "networkProbe": "ダウンロード元を測定中",
+      "uvCheck": "uv を確認中",
+      "uvDownload": "uv をダウンロード中",
+      "uvVerify": "uv を検証中",
+      "workspaceCheck": "プログラムファイルを確認中",
+      "workspaceClone": "バックエンドリポジトリのデータを受信中",
+      "workspaceVerify": "プログラムファイルを検証中",
+      "workspaceSwap": "プログラムファイルを置換中",
+      "workspaceCleanup": "プログラムファイルを整理中",
+      "pythonCheck": "Python を確認中",
+      "pythonInstall": "Python をインストール中",
+      "dependenciesCheck": "依存関係を確認中",
+      "dependenciesSync": "依存関係を同期中",
+      "dependenciesRebuild": "依存環境を再構築中",
+      "finished": "現在の段階が完了しました",
+      "skipped": "現在の段階はスキップされました",
+      "bootstrapReady": "実行環境の準備が完了しました",
+      "runtimeRepair": "実行環境を確認・修復中",
+      "runtimeDownloadDetails": "{source}（{index}/{count}）から Runtime {version} をダウンロード中",
+      "runtimeCheckVersion": "Runtime {version} の検証情報を取得中",
+      "runtimeGithubSource": "GitHub 公式"
     }
   },
   "launch": {
@@ -111,7 +135,8 @@
     "starting": "起動しています",
     "transferSource": "{source} から",
     "updating": "更新しています",
-    "viewLog": "ログを見る"
+    "viewLog": "ログを見る",
+    "sourceOrder": "{kind} ソースの順序：{sources}"
   },
   "locale": {
     "en-US": "English",

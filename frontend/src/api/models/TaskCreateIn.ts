@@ -4,27 +4,35 @@
 /* eslint-disable */
 export type TaskCreateIn = {
     /**
-     * 目标任务ID, 设置类任务可选对应脚本ID或用户ID, 代理类任务可选对应队列ID或脚本ID
+     * 目标任务ID, 设置类任务可选对应托管ID或账号ID, 代理类任务可选对应队列ID或托管ID
      */
     taskId: string;
     /**
-     * 任务模式; CycleRun 为循环运行, 仅接受循环队列, 其脚本按 AutoProxy 执行
+     * 通用脚本计划表配置会话的计划 ID
+     */
+    planId?: (string | null);
+    /**
+     * 通用脚本计划表配置会话的日期分组
+     */
+    planDay?: (string | null);
+    /**
+     * 任务模式; CycleRun 为循环运行, 仅接受循环队列, 其托管按 AutoProxy 执行
      */
     mode: TaskCreateIn.mode;
     /**
-     * 可选：仅对队列任务生效；从指定脚本ID开始执行（之前的脚本将被标记为跳过）
+     * 可选：仅对队列任务生效；从指定托管ID开始执行（之前的托管将被标记为跳过）
      */
     resumeFromScriptId?: (string | null);
     /**
-     * 可选：仅对脚本的自动代理任务生效；只运行该脚本下的这一个用户
+     * 可选：仅对托管的自动代理任务生效；只运行该托管下的这一个账号
      */
     userId?: (string | null);
     /**
-     * 可选：仅对脚本的自动代理任务生效；只运行指定的多个用户
+     * 可选：仅对托管的自动代理任务生效；只运行指定的多个账号
      */
     userIds?: (Array<string> | null);
     /**
-     * 可选：仅对队列任务生效；按脚本ID指定本次要运行的用户；未列出的脚本不限, 空列表表示该脚本本次整项跳过
+     * 可选：仅对队列任务生效；按托管ID指定本次要运行的账号；未列出的托管不限, 空列表表示该托管本次整项跳过
      */
     queueUserIds?: (Record<string, Array<string>> | null);
     /**
@@ -38,7 +46,7 @@ export type TaskCreateIn = {
 };
 export namespace TaskCreateIn {
     /**
-     * 任务模式; CycleRun 为循环运行, 仅接受循环队列, 其脚本按 AutoProxy 执行
+     * 任务模式; CycleRun 为循环运行, 仅接受循环队列, 其托管按 AutoProxy 执行
      */
     export enum mode {
         AUTO_PROXY = 'AutoProxy',

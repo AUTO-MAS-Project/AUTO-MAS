@@ -62,6 +62,12 @@
           </a-row>
         </div>
 
+        <BetterGIProgramUpdateSettings
+          v-model:update="bettergiConfig.Update"
+          :ready="!pageLoading && !isSaving"
+          @save="(key, value) => handleChange('Update', key, value)"
+        />
+
         <div class="form-section">
           <div class="section-header">
             <h3>{{ t('core.edit.gameConfiguration') }}</h3>
@@ -209,6 +215,8 @@
 </template>
 
 <script setup lang="ts">
+import BetterGIProgramUpdateSettings from './components/BetterGIProgramUpdateSettings.vue'
+import type { BetterGIConfig_Update } from '@/api'
 import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
@@ -266,6 +274,7 @@ interface BetterGIScriptConfigForm {
   Info: BetterGIInfoForm
   Run: BetterGIRunForm
   Game: BetterGIGameForm
+  Update: BetterGIConfig_Update
 }
 
 const formData = reactive({
@@ -280,6 +289,7 @@ const formData = reactive({
 
 const bettergiConfig = reactive<BetterGIScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
+  Update: { TakeoverEnabled: false, Channel: 'stable', MirrorChyanCDK: '' },
   Run: {
     HardTimeLimit: 120,
     ProxyTimesLimit: 0,
@@ -355,6 +365,7 @@ const loadScript = async () => {
     Object.assign(bettergiConfig.Info, config.Info || {})
     Object.assign(bettergiConfig.Run, config.Run || {})
     Object.assign(bettergiConfig.Game, config.Game || {})
+    Object.assign(bettergiConfig.Update, config.Update || {})
   } catch {
     if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript'))
   } finally {

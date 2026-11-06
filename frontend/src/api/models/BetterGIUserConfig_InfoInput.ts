@@ -12,7 +12,7 @@ export type BetterGIUserConfig_InfoInput = {
      */
     Id?: (string | null);
     /**
-     * 是否启用快速配置（与配置来源独立，按用户保存）
+     * 是否启用覆写常规配置（与配置来源独立，按账号保存）
      */
     IfQuickConfig?: (boolean | null);
     /**
@@ -24,11 +24,11 @@ export type BetterGIUserConfig_InfoInput = {
      */
     IfScriptBeforeTask?: (boolean | null);
     /**
-     * 兼容旧版用户独立一条龙配置
+     * 兼容旧版账号一条龙独立配置开关
      */
     IfUseMasConfig?: (boolean | null);
     /**
-     * 用户名
+     * 账号名称
      */
     Name?: (string | null);
     /**
@@ -52,11 +52,11 @@ export type BetterGIUserConfig_InfoInput = {
      */
     ScriptBeforeTask?: (string | null);
     /**
-     * 用户状态
+     * 账号状态
      */
     Status?: (boolean | null);
     /**
-     * 用户标签列表（JSON字符串，TagItem的dict列表）
+     * 账号标签列表（JSON字符串，TagItem的dict列表）
      */
     readonly Tag?: (string | null);
 };

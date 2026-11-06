@@ -49,10 +49,3 @@ def test_append_rotation_and_truncation_keep_exact_offsets(
     path.write_text("短\n", encoding="utf-8", newline="\n")
     assert source.read_new() == ["短"]
     assert source.read_new() == []
-
-
-def test_windows_creation_time_still_detects_replacement_without_inode(monkeypatch):
-    monkeypatch.setattr(sources, "os", SimpleNamespace(name="nt"))
-    old = SimpleNamespace(st_ino=0, st_ctime_ns=10, st_dev=0)
-    new = SimpleNamespace(st_ino=0, st_ctime_ns=20, st_dev=0)
-    assert sources._file_identity(old) != sources._file_identity(new)

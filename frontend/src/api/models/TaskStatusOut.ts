@@ -43,13 +43,17 @@ export type TaskStatusOut = {
      */
     queueId?: (string | null);
     /**
-     * 脚本 ID
+     * 托管 ID
      */
     scriptId?: (string | null);
     /**
-     * 用户 ID
+     * 账号 ID
      */
     userId?: (string | null);
+    /**
+     * 通用计划配置实际保存结果；空表示未确认
+     */
+    planSaveResult?: ('saved' | 'failed' | null);
     /**
      * 任务是否正在停止
      */

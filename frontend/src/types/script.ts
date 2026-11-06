@@ -45,6 +45,7 @@ export interface GeneralScriptConfig {
 }
 
 export interface SRCScriptConfig {
+  Update: DraftGroup<NonNullable<SrcConfig['Update']>>
   Info: DraftGroup<NonNullable<SrcConfig['Info']>, 'Path'>
   Run: DraftGroup<NonNullable<SrcConfig['Run']>>
   Emulator: DraftGroup<NonNullable<SrcConfig['Emulator']>>

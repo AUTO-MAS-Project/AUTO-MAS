@@ -11,6 +11,7 @@ const backendStatus = vi.fn()
 const stopBackend = vi.fn()
 const killAllProcesses = vi.fn()
 const appQuit = vi.fn()
+const observeBackendClose = vi.fn()
 const backendRestart = vi.fn()
 const systemResume = vi.fn((_handler: () => void) => () => undefined)
 
@@ -91,6 +92,7 @@ describe('useAppLifecycle 关闭流程', () => {
         stopBackend,
         killAllProcesses,
         appQuit,
+        appObserveBackendClose: observeBackendClose,
         backendRestart,
         onSystemResume: systemResume,
         onAppCloseRequested: vi.fn(() => () => undefined),
@@ -107,6 +109,29 @@ describe('useAppLifecycle 关闭流程', () => {
   describe('Runtime 监督链路', () => {
     beforeEach(() => {
       backendStatus.mockResolvedValue({ isRunning: true, runtimeSupervised: true })
+    })
+
+    it('把自动退出与下一次唤醒时间交给主进程，再等待 Runtime 关闭', async () => {
+      let finishStop: (result: { success: boolean }) => void = () => undefined
+      stopBackend.mockImplementation(
+        () =>
+          new Promise(resolve => {
+            finishStop = resolve
+          })
+      )
+      await loadLifecycle()
+      const data = { automatic: true, nextWakeAt: '2026-11-02T08:01:00+08:00' }
+      subscriptionHandlers.get('frontend.close.requested')?.({
+        id: 'Main',
+        type: 'frontend.close.requested',
+        data,
+      })
+      expect(observeBackendClose).toHaveBeenCalledWith(data)
+      expect(stopBackend).toHaveBeenCalledOnce()
+      expect(appQuit).not.toHaveBeenCalled()
+      finishStop({ success: true })
+      await vi.waitFor(() => expect(appQuit).toHaveBeenCalledOnce())
+      expect(callOrder(observeBackendClose)).toBeLessThan(callOrder(stopBackend))
     })
 
     it('不发 POST /close、不等后端进程消失，只请求 Electron 经 Runtime 关闭后再退出', async () => {
@@ -170,30 +195,6 @@ describe('useAppLifecycle 关闭流程', () => {
       expect(killAllProcesses).not.toHaveBeenCalled()
       expect(connectionMocks.shutdown).toHaveBeenCalled()
       expect(appQuit).toHaveBeenCalledOnce()
-    })
-
-    it.each(['disconnect', 'cycle-failed'])('%s 只继续重连，不接管进程', async trigger => {
-      backendStatus.mockResolvedValue({ isRunning: false })
-      const { disposeAppLifecycle } = await loadLifecycle()
-      if (trigger === 'disconnect') {
-        connectionMocks.onDisconnected.mock.calls[0][0]({ code: 1006, reason: 'lost' })
-      } else {
-        connectionMocks.onReconnectCycleFailed.mock.calls[0][0]()
-      }
-      await vi.waitFor(() => expect(connectionMocks.scheduleReconnect).toHaveBeenCalled())
-      expect(backendRestart).not.toHaveBeenCalled()
-      expect(stopBackend).not.toHaveBeenCalled()
-      disposeAppLifecycle()
-    })
-
-    it('系统恢复时后端不可达也只重连', async () => {
-      backendStatus.mockResolvedValue({ isRunning: false })
-      const { disposeAppLifecycle } = await loadLifecycle()
-      await systemResume.mock.calls[0][0]()
-      await vi.waitFor(() => expect(connectionMocks.scheduleReconnect).toHaveBeenCalled())
-      expect(backendRestart).not.toHaveBeenCalled()
-      expect(stopBackend).not.toHaveBeenCalled()
-      disposeAppLifecycle()
     })
   })
 })

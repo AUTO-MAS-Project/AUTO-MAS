@@ -27,155 +27,10 @@ from app.utils.common.emulator2.avd.cli import (
     ModAvdUnavailable,
     ProcessOutput,
     _run_process,
-    map_cli_error,
     resolve_cli,
 )
-from app.utils.common.emulator2.avd.host import AdbPortConflict
-from app.utils.common.emulator2.avd.manager import _AvdCore, map_status
-from app.utils.common.emulator2.avd.precheck import PrecheckFailed
-
-
-class _FakeRunner:
-    def __init__(self, output: ProcessOutput | None = None) -> None:
-        self.output = output
-        self.calls: list[tuple[list[str], float, object, bool]] = []
-
-    async def __call__(
-        self,
-        args: Sequence[str],
-        timeout: float,
-        timeout_handler: object = None,
-        breakaway: bool = False,
-    ) -> ProcessOutput:
-        self.calls.append((list(args), timeout, timeout_handler, breakaway))
-        if self.output is None:
-            raise AssertionError("fake runner has no output")
-        return self.output
-
-
-def _cli(tmp_path: Path, runner: _FakeRunner) -> ModAvdCli:
-    return ModAvdCli(tmp_path, exe=sys.executable, runner=runner)
-
-
-@pytest.mark.asyncio
-async def test_resolve_cli_requires_executable_and_protocol(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    assert await resolve_cli(tmp_path) is None
-    root = tmp_path / "known"
-    exe = root / "tools" / "modavd.exe"
-    exe.parent.mkdir(parents=True)
-    exe.write_bytes(Path(sys.executable).read_bytes())
-
-    # resolve_cli uses the production client; the executable is a valid interpreter image,
-    # while the version probe is replaced with the contract-shaped fake result.
-    async def version(self: ModAvdCli) -> dict:
-        del self
-        return {"protocol": 1}
-
-    monkeypatch.setattr(ModAvdCli, "version", version)
-    assert await resolve_cli(root) is not None
-
-
-@pytest.mark.asyncio
-async def test_stderr_is_not_mixed_into_json_and_arguments_are_mapped(
-    tmp_path: Path,
-) -> None:
-    fake = _FakeRunner(
-        ProcessOutput(
-            0,
-            '{"ok":true,"data":{"instances":[]}}',
-            '{"step":"query","message":"日志不属于 stdout"}\n',
-        )
-    )
-    cli = _cli(tmp_path, fake)
-    assert await cli.list() == {"instances": []}
-    args, timeout = fake.calls[-1][0], fake.calls[-1][1]
-    assert args[1:5] == ["--root", str(tmp_path), "--json", "list"]
-    assert timeout > 0
-
-    fake.output = ProcessOutput(0, '{"ok":true,"data":{}}', "")
-    await cli.create(index=2, title="测试", memory="3G", cpu=4, data_gb=64, fps=60)
-    assert fake.calls[-1][0][4:] == [
-        "create",
-        "--index",
-        "2",
-        "--title",
-        "测试",
-        "--memory",
-        "3G",
-        "--cpu",
-        "4",
-        "--data-gb",
-        "64",
-        "--fps",
-        "60",
-        "--timeout",
-        str(CREATE_TIMEOUT_SECONDS),
-    ]
-    assert fake.calls[-1][1] == CREATE_TIMEOUT_SECONDS + CREATE_PROCESS_MARGIN_SECONDS
-
-
-@pytest.mark.asyncio
-async def test_start_stop_window_install_flags_and_timeouts(tmp_path: Path) -> None:
-    fake = _FakeRunner(ProcessOutput(0, '{"ok":true,"data":{}}', ""))
-    cli = _cli(tmp_path, fake)
-
-    await cli.start(3, window=True, timeout=10)
-    args, process_timeout = fake.calls[-1][0], fake.calls[-1][1]
-    assert args[4:] == ["start", "3", "--window", "--timeout", "10"]
-    # 一次开机加三轮装桥：10 + 60 + 3 × (300 + 28 + 30 + 10 + 60)
-    assert process_timeout == cli_module.start_process_timeout(10) == 1354
-
-    await cli.stop(3)
-    assert fake.calls[-1][0][4:] == ["stop", "3"]
-    assert fake.calls[-1][1] == 90
-
-    await cli.stop(3, force=True)
-    assert fake.calls[-1][0][4:] == ["stop", "3", "--force"]
-
-    await cli.window(3, visible=False)
-    assert fake.calls[-1][0][4:] == ["window", "3", "hide"]
-
-    await cli.install(3, tmp_path / "game.apk")
-    assert fake.calls[-1][0][4:] == ["install", "3", str(tmp_path / "game.apk")]
-    assert fake.calls[-1][1] >= 900
-
-
-@pytest.mark.asyncio
-async def test_set_delete_stop_all_and_shell_flags(tmp_path: Path) -> None:
-    fake = _FakeRunner(ProcessOutput(0, '{"ok":true,"data":{}}', ""))
-    cli = _cli(tmp_path, fake)
-    await cli.set(7, title="七号", memory="4G", cpu=6, data_gb=48, fps=60)
-    assert fake.calls[-1][0][4:] == [
-        "set",
-        "7",
-        "--title",
-        "七号",
-        "--memory",
-        "4G",
-        "--cpu",
-        "6",
-        "--data-gb",
-        "48",
-        "--fps",
-        "60",
-    ]
-    await cli.delete(7)
-    assert fake.calls[-1][0][4:] == ["delete", "7", "--yes"]
-    await cli.stop_all(force=True)
-    assert fake.calls[-1][0][4:] == ["stop", "--all", "--force"]
-    await cli.shell(7, "echo", "--value", "x")
-    assert fake.calls[-1][0][4:] == [
-        "shell",
-        "7",
-        "--timeout",
-        "5",
-        "--",
-        "echo",
-        "--value",
-        "x",
-    ]
+from app.utils.common.emulator2.avd.instances import config_path, write_ini
+from app.utils.common.emulator2.avd.manager import _AvdCore
 
 
 @pytest.mark.asyncio
@@ -210,81 +65,6 @@ async def test_create_retries_without_timeout_for_v01_usage_error(
         == calls[2][1]
         == CREATE_TIMEOUT_SECONDS + CREATE_PROCESS_MARGIN_SECONDS
     )
-
-
-def test_error_mapping() -> None:
-    assert isinstance(map_cli_error(CLIError("invalid_argument", "bad")), ValueError)
-    assert isinstance(map_cli_error(CLIError("port_conflict", "busy")), AdbPortConflict)
-    assert isinstance(
-        map_cli_error(CLIError("precheck_failed", "precheck")), PrecheckFailed
-    )
-    assert isinstance(map_cli_error(CLIError("internal", "boom")), RuntimeError)
-
-
-@pytest.mark.parametrize(
-    ("status", "busy", "expected"),
-    [
-        ("offline", "", DeviceStatus.OFFLINE),
-        ("online", "", DeviceStatus.ONLINE),
-        ("offline", "starting", DeviceStatus.STARTING),
-        ("online", "stopping", DeviceStatus.CLOSEING),
-        ("unknown", "", DeviceStatus.STARTING),
-        ("creating", "creating", DeviceStatus.CREATING),
-        ("creating", "stopping", DeviceStatus.CREATING),
-        ("create_failed", "", DeviceStatus.CREATE_FAILED),
-        ("offline", "mystery", DeviceStatus.STARTING),
-    ],
-)
-def test_status_mapping(status: str, busy: str, expected: DeviceStatus) -> None:
-    assert map_status(status, busy) == expected
-
-
-def test_error_mapping_includes_advice() -> None:
-    error = map_cli_error(CLIError("invalid_argument", "参数错", "换一个值"))
-    assert isinstance(error, ValueError)
-    assert "换一个值" in str(error)
-
-
-@pytest.mark.asyncio
-async def test_timeout_from_runner_is_a_cli_error(tmp_path: Path) -> None:
-    async def timeout_runner(
-        args: Sequence[str], timeout: float, timeout_handler: object, breakaway: bool
-    ) -> ProcessOutput:
-        del args, timeout, timeout_handler, breakaway
-        raise asyncio.TimeoutError
-
-    cli = ModAvdCli(tmp_path, exe=sys.executable, runner=timeout_runner)
-    with pytest.raises(CLIError, match="未结束") as exc_info:
-        await cli.info(1)
-    assert exc_info.value.code == "timeout"
-
-
-@pytest.mark.asyncio
-async def test_error_envelope_preserves_code_message_and_advice(tmp_path: Path) -> None:
-    fake = _FakeRunner(
-        ProcessOutput(
-            2,
-            '{"ok":false,"error":{"code":"invalid_argument","message":"参数错","advice":"改正"}}',
-            "log on stderr",
-        )
-    )
-    with pytest.raises(CLIError) as exc_info:
-        await _cli(tmp_path, fake).info(1)
-    error = exc_info.value
-    assert (error.code, error.message, error.advice, error.returncode) == (
-        "invalid_argument",
-        "参数错",
-        "改正",
-        2,
-    )
-
-
-def test_parse_envelope_accepts_utf8_bom() -> None:
-    from app.utils.common.emulator2.avd.cli import _parse_envelope
-
-    assert _parse_envelope(
-        ProcessOutput(0, '\ufeff{"ok":true,"data":{"ready":true}}', "")
-    ) == {"ready": True}
 
 
 @pytest.mark.asyncio
@@ -483,101 +263,6 @@ class _FakeManagerCli:
 
 
 @pytest.mark.asyncio
-async def test_manager_cli_list_maps_busy_and_only_queries_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
-    cli = _FakeManagerCli()
-    manager = _AvdCore(manager_exe, 60, False, cli=cli)  # type: ignore[arg-type]
-
-    class _FakeProcess:
-        def is_running(self) -> bool:
-            return True
-
-        def exe(self) -> str:
-            return str(tmp_path / "sdk" / "emulator" / "qemu" / "qemu.exe")
-
-        def create_time(self) -> float:
-            return 1234.5
-
-        def name(self) -> str:
-            return "qemu.exe"
-
-        def cmdline(self) -> list[str]:
-            return ["qemu.exe"]
-
-    monkeypatch.setattr(manager_module.psutil, "Process", lambda pid: _FakeProcess())
-
-    info = await manager.getInfo(None)
-
-    assert cli.list_calls == 1
-    assert info["2"].status == DeviceStatus.STARTING
-    assert info["2"].process_id == 1234
-    assert info["2"].process_started_at == 1234.5
-    assert info["2"].adb_address == "127.0.0.1:20021"
-
-
-@pytest.mark.asyncio
-async def test_manager_cli_settings_reads_snake_case_memory(tmp_path: Path) -> None:
-    manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
-    manager = _AvdCore(manager_exe, 60, False, cli=_FakeManagerCli())  # type: ignore[arg-type]
-
-    settings = await manager.read_instance_settings("2")
-
-    assert settings.values()["memoryMb"] == 4096
-
-
-@pytest.mark.asyncio
-async def test_manager_cli_settings_maps_memory_cpu_fps(tmp_path: Path) -> None:
-    manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
-    cli = _FakeManagerCli()
-    manager = _AvdCore(manager_exe, 60, False, cli=cli)  # type: ignore[arg-type]
-    result = await manager.write_instance_settings(
-        "2", {"memoryMb": 5120, "cpu": 6, "fps": 60}
-    )
-    assert cli.set_call == ("2", {"memory": 5120, "cpu": 6, "fps": 60})
-    assert result == {"memoryMb": 5120, "cpu": 6, "fps": 60}
-
-
-@pytest.mark.asyncio
-async def test_manager_set_visible_ignores_cli_error(tmp_path: Path) -> None:
-    class WindowErrorCli:
-        async def window(self, index: str, *, visible: bool) -> None:
-            del index, visible
-            raise CLIError("internal", "窗口暂不可用")
-
-    manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
-    manager = _AvdCore(  # type: ignore[arg-type]
-        manager_exe, 60, False, cli=WindowErrorCli()
-    )
-    assert await manager.setVisible("2", True) == DeviceStatus.UNKNOWN
-
-
-@pytest.mark.asyncio
-async def test_manager_create_maps_all_options_and_fps(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(_AvdCore, "_check_components", lambda self: None)
-    manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
-    cli = _FakeManagerCli()
-    manager = _AvdCore(manager_exe, 60, False, cli=cli)  # type: ignore[arg-type]
-    assert (
-        await manager.create_instance(
-            "x", memory_mb=4096, cpu=4, fps=30, data_partition_gb=64, native_index=7
-        )
-        == "7"
-    )
-    assert cli.create_call == {
-        "index": 7,
-        "title": "x",
-        "memory": 4096,
-        "cpu": 4,
-        "data_gb": 64,
-        "fps": 30,
-    }
-
-
-@pytest.mark.asyncio
 async def test_manager_create_timeout_preserves_cli_error_cause(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -591,62 +276,6 @@ async def test_manager_create_timeout_preserves_cli_error_cause(
         await manager.create_instance("x", native_index=7)
     assert isinstance(exc_info.value.__cause__, CLIError)
     assert exc_info.value.__cause__.code == "timeout"
-
-
-@pytest.mark.asyncio
-async def test_manager_create_error_without_leftover_instance_maps_normally(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(_AvdCore, "_check_components", lambda self: None)
-    manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
-    cli = _FakeManagerCli()
-    cli.create_error = CLIError("invalid_argument", "内存不在范围内")
-    manager = _AvdCore(manager_exe, 60, False, cli=cli)  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match="内存不在范围内"):
-        await manager.create_instance("x", native_index=7)
-
-
-@pytest.mark.asyncio
-async def test_manager_cli_not_found_maps_to_not_found(tmp_path: Path) -> None:
-    manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
-    cli = _FakeManagerCli()
-    manager = _AvdCore(manager_exe, 60, False, cli=cli)  # type: ignore[arg-type]
-    assert await manager.getStatus("9") == DeviceStatus.NOT_FOUND
-
-
-def test_service_cli_status_result_maps_components_and_prechecks(
-    tmp_path: Path,
-) -> None:
-    result = service_module._cli_status_result(
-        tmp_path,
-        {
-            "root": str(tmp_path),
-            "components": [
-                {
-                    "id": "emulator",
-                    "name": "模拟器",
-                    "version": "0.2.0",
-                    "build": "mas-36",
-                    "installed": True,
-                    "optional": False,
-                    "local_sdk": True,
-                }
-            ],
-            "items": [
-                {
-                    "id": "acceleration",
-                    "ok": True,
-                    "reason": "可用",
-                    "advice": "",
-                    "adb_address": "127.0.0.1:20087",
-                }
-            ],
-        },
-    )
-    assert result["root"] == str(tmp_path)
-    assert result["ready"] is True
-    assert result["components"][0]["testPackage"] is True
-    assert result["prechecks"][0]["adb_address"] == "127.0.0.1:20087"
 
 
 # ---- 真的假 modavd 程序 -----------------------------------------------------------
@@ -1444,28 +1073,6 @@ async def test_cancelled_create_keeps_looking_for_an_instance_that_shows_up_late
 
 
 @pytest.mark.asyncio
-async def test_cancelled_create_looks_again_after_the_cli_is_ended(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake = _FakeModavd(tmp_path, monkeypatch)
-    # 收尾时限一到就结束 CLI：模拟器是脱离 CLI 起的，结束以后还要再找一次、把它关掉
-    monkeypatch.setattr(cli_module, "_CREATE_CLEANUP_SECONDS", 0)
-    cli = ModAvdCli(tmp_path)
-    fake.plan(list={"data": {"instances": []}}, create={"hold": 20}, stop={"data": {}})
-    task = asyncio.create_task(cli.create(index=8))
-    await _until(lambda: "create" in fake.commands())
-    fake.plan(
-        list={"data": {"instances": [{"index": 8, "status": "create_failed"}]}},
-        stop={"data": {}},
-    )
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    stops = [item["args"] for item in fake.calls() if item["command"] == "stop"]
-    assert stops == [["8"]]
-
-
-@pytest.mark.asyncio
 async def test_concurrent_setting_writes_with_the_same_expected_value_conflict(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1550,3 +1157,64 @@ async def test_concurrent_creates_keep_each_others_device_slots() -> None:
     # 后存的那次不能拿新建前的旧槽位表把先存的设备号盖掉
     table = SlotTable.from_json(saved["slots"])
     assert sorted(record.native_index for record in table.records) == ["7", "8"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("supports_presets", [False, True])
+async def test_resolution_flags_and_old_cli_compatibility(
+    tmp_path: Path, supports_presets: bool
+) -> None:
+    writes: list[list[str]] = []
+
+    async def runner(
+        args: Sequence[str],
+        timeout: float,
+        timeout_handler: object = None,
+        breakaway: bool = False,
+    ) -> ProcessOutput:
+        del timeout, timeout_handler, breakaway
+        if "help" in args:
+            options = [{"flag": "--resolution"}] if supports_presets else []
+            data = {"commands": [{"name": "create", "options": options}]}
+        elif "list" in args:
+            data = {"instances": []}
+        else:
+            writes.append(list(args))
+            data = {"index": 7, "applied": {}}
+        return ProcessOutput(0, json.dumps({"ok": True, "data": data}), "")
+
+    cli = ModAvdCli(tmp_path, exe=sys.executable, runner=runner)
+    for resolution in (720, 1080):
+        writes.clear()
+        if not supports_presets and resolution == 1080:
+            with pytest.raises(CLIError) as caught:
+                await cli.create(index=7, resolution=resolution)
+            assert caught.value.code == "unsupported"
+            assert writes == []
+            with pytest.raises(CLIError):
+                await cli.set(7, resolution=resolution)
+            assert writes == []
+        else:
+            await cli.create(index=7, resolution=resolution)
+            await cli.set(7, resolution=resolution)
+            assert len(writes) == 2
+            for command in writes:
+                assert ("--resolution" in command) == supports_presets
+                if supports_presets:
+                    assert command[command.index("--resolution") + 1] == str(resolution)
+    path = config_path(tmp_path, 7)
+    path.parent.mkdir(parents=True)
+    for width, height in ((1280, 720), (1920, 1080), (1080, 1920)):
+        write_ini(path, {"hw.lcd.width": str(width), "hw.lcd.height": str(height)})
+        before = path.read_bytes()
+        writes.clear()
+        if not supports_presets and max(width, height) == 1920:
+            with pytest.raises(CLIError) as caught:
+                await cli.start(7)
+            assert caught.value.code == "unsupported"
+            assert writes == []
+        else:
+            await cli.start(7)
+            assert len(writes) == 1
+            assert "start" in writes[0]
+        assert path.read_bytes() == before

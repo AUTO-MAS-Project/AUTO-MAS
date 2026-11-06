@@ -16,23 +16,27 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 import uuid
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from datetime import datetime
+from pathlib import Path
 
 import app.core.notify.report as _node_report
 from app.config import ConfigCollection, config_manager
 from app.core import Config, Notify, Publisher
+from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.core.ws import protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.notification.report import TaskResultReport, UserReportText
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
+from app.services import script_install
 from app.task.manager_base import ScriptManagerBase
 from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import _BGI_REL_EXE, AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-from .tools import archive_native_backup
+from .tools import archive_native_backup, program_update
 from .Update import BetterGIUpdateTask
 
 logger = get_logger("BetterGI 调度器")
@@ -40,6 +44,9 @@ logger = get_logger("BetterGI 调度器")
 
 class BetterGIManager(ScriptManagerBase):
     """BetterGI 控制器（better-genshin-impact 线）"""
+
+    # 重复停止也要等待配置还原与安装目录锁释放。
+    wait_for_finalizer_on_cancel = True
 
     # 子任务失败不覆盖上游整条流程的完成结果，详情与警告在节点中展示。
     completed_user_statuses = frozenset({"完成", "部分失败"})
@@ -53,6 +60,9 @@ class BetterGIManager(ScriptManagerBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self._install_access = ExitStack()
+        self._program_update_prepared = False
+        self._update_root: Path | None = None
         self.user_config: ConfigCollection[BetterGIUserConfig] | None = None
 
     async def check(self) -> str:
@@ -61,7 +71,7 @@ class BetterGIManager(ScriptManagerBase):
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if not isinstance(script_config, BetterGIConfig):
-            return "脚本配置类型错误, 不是 BetterGI 类型"
+            return "托管配置类型错误, 不是 BetterGI 类型"
 
         if self.task_info.mode == "ScriptConfig":
             if not script_config.Info.RootPath:
@@ -74,20 +84,20 @@ class BetterGIManager(ScriptManagerBase):
                 try:
                     target_user_uid = uuid.UUID(target_user_id)
                 except ValueError:
-                    return "BetterGI 用户不存在，请刷新后重试"
+                    return "BetterGI 账号不存在，请刷新后重试"
                 if target_user_uid not in script_config.UserData:
-                    return "BetterGI 用户不存在，请刷新后重试"
+                    return "BetterGI 账号不存在，请刷新后重试"
 
-        # 「检查更新」必须落到具体用户：游戏客户端路径可能是用户级覆盖
+        # 「检查更新」必须落到具体账号：游戏客户端路径可能是账号级覆盖
         if self.task_info.mode == "Update":
             try:
                 target_user_uid = uuid.UUID(self.task_info.user_id or "")
             except ValueError:
-                return "更新任务需要指定用户，请刷新后重试"
+                return "更新任务需要指定账号，请刷新后重试"
             if target_user_uid not in script_config.UserData:
-                return "BetterGI 用户不存在，请刷新后重试"
+                return "BetterGI 账号不存在，请刷新后重试"
 
-        # AutoProxy 模式只做用户列表可用性校验；逐用户配置文件检查放到 AutoProxyTask.check()
+        # AutoProxy 模式只做账号列表可用性校验；逐账号配置文件检查放到 AutoProxyTask.check()
         if self.task_info.mode == "AutoProxy":
             script_uid = uuid.UUID(self.script_info.script_id)
             if not self.script_info.user_list:
@@ -95,7 +105,7 @@ class BetterGIManager(ScriptManagerBase):
                     Config.ScriptConfig[script_uid].UserData.items()
                 )
             if not self.script_info.user_list:
-                return "当前没有可执行的用户，请先添加并启用用户"
+                return "当前没有可执行的账号，请先添加并启用账号"
 
         return "Pass"
 
@@ -106,11 +116,17 @@ class BetterGIManager(ScriptManagerBase):
         ] = await Config.ScriptConfig[script_uid].lock_x()
         self.script_config = Config.ScriptConfig[script_uid]
         if not isinstance(self.script_config, BetterGIConfig):
-            raise TypeError("脚本配置类型错误")
+            raise TypeError("托管配置类型错误")
 
-        # X 锁覆盖用户集合，运行时直接修改原配置。
+        root = self.script_config.Info.RootPath
+        if root is not None:
+            self._install_access.enter_context(script_install.installation_access(root))
+            self._update_root = root
+            program_update.recover_update_notice(root)
+
+        # X 锁覆盖账号集合，运行时直接修改原配置。
         self.user_config = self.script_config.UserData
-        logger.success(f"{self.script_info.script_id} 已锁定，BetterGI 用户配置已提取")
+        logger.success(f"{self.script_info.script_id} 已锁定，BetterGI 账号配置已提取")
 
         if self.task_info.mode == "Update":
             target_user_id = self.task_info.user_id or "Default"
@@ -145,6 +161,54 @@ class BetterGIManager(ScriptManagerBase):
                 self.user_config.items()
             )
 
+    async def _prepare_program_update(self) -> None:
+        root = self._update_root
+        if root is None:
+            return
+        self.check_result = "BetterGI 更新准备未完成"
+        if self._program_update_prepared:
+            if self.script_config.Update.TakeoverEnabled:
+                await program_update.confirm_current_install(root)
+            self.check_result = "Pass"
+            return
+        if self.script_config.Update.TakeoverEnabled:
+            self.script_info.log = "正在检查 BetterGI 本体更新…"
+
+            async def progress(downloaded: int, total: int, speed: float) -> None:
+                self.script_info.log = f"BetterGI 更新下载：{downloaded / 1024**2:.1f} / {total / 1024**2:.1f} MB"
+
+            try:
+                result = await run_script_update(
+                    ScriptUpdateRequest(self.script_info.script_id, "BetterGI"),
+                    program_update.update_before_run,
+                    root,
+                    self.script_config,
+                    progress=progress,
+                )
+            except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
+                raise
+            except Exception as error:
+                await program_update.confirm_current_install(root)
+                result = f"BetterGI 更新准备失败，沿用当前安装继续任务：{error}"
+                logger.warning(result)
+                with suppress(Exception):
+                    await Publisher.send(
+                        id=self.task_info.task_id,
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(level="warning", message=result),
+                    )
+            self.script_info.log = result
+            program_update.suppress_update_notice(root)
+        else:
+            # 关闭接管仍不能启动上轮未确认安装；不发远程请求。
+            marker = script_install.workspace(root) / "bgi-install.json"
+            if marker.exists():
+                raise script_install.InstallUnsafeError(
+                    "BetterGI 上次安装未确认，请开启更新托管重试或手动修复"
+                )
+        self._program_update_prepared = True
+        self.check_result = "Pass"
+
     async def main_task(self):
         self.check_result = await self.check()
         if self.check_result != "Pass":
@@ -162,6 +226,14 @@ class BetterGIManager(ScriptManagerBase):
 
         self.script_info.user_config = self.user_config
 
+        # Update 只更新原神客户端，不启动 BetterGI；运行中的正常 BGI
+        # 不应该阻断游戏更新，但未完成的本体安装必须阻断。
+        root = self._update_root
+        if root is not None and self.task_info.mode == "Update":
+            await program_update.confirm_safe_game_update(root)
+        elif root is not None and self.task_info.mode == "ScriptConfig":
+            await program_update.confirm_current_install(root)
+
         # 「检查更新」不动 BetterGI 配置，不必归档，直接进更新任务
         if self.task_info.mode == "Update":
             self.script_info.current_index = 0
@@ -178,7 +250,7 @@ class BetterGIManager(ScriptManagerBase):
         # 任务级归档 BetterGI 全局主配置（config.json）——运行会临时补写
         # 队伍/策略叶子、结束还原，崩溃残留会污染全局配置；持久归档提供
         # 跨会话找回（指纹去重，失败不阻断任务）。mas 池由 AutoProxy
-        # 物化前按用户归档
+        # 物化前按账号归档
         with suppress(Exception):
             root_path = self.script_config.Info.RootPath
             if root_path is not None:
@@ -207,6 +279,8 @@ class BetterGIManager(ScriptManagerBase):
             ):
                 continue
 
+            await self._prepare_program_update()
+
             method = AutoProxyTask(
                 script_info=self.script_info,
                 script_config=self.script_config,
@@ -222,7 +296,7 @@ class BetterGIManager(ScriptManagerBase):
                 await self.notify_user_check_failure(current_user, sub_check)
                 continue
 
-            # 下一用户通过检查才等待上一用户的游戏退出，尾部全部跳过时不空等。
+            # 下一账号通过检查才等待上一账号的游戏退出，尾部全部跳过时不空等。
             if has_run_user:
                 await method.wait_game_exit_before_next_user()
             await self.run_user_task(current_user, method)
@@ -241,7 +315,9 @@ class BetterGIManager(ScriptManagerBase):
             if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                 await config_manager.flush()
 
-            if any(user.status == "异常" for user in self.script_info.user_list):
+            if self.script_info.status == "异常" or any(
+                user.status == "异常" for user in self.script_info.user_list
+            ):
                 self.script_info.status = "异常"
             else:
                 self.script_info.status = "完成"
@@ -252,7 +328,7 @@ class BetterGIManager(ScriptManagerBase):
                     f"{datetime.now().strftime('%m-%d')} | "
                     f"{self.script_info.name or '空白'}的{task_mode}任务报告"
                 )
-                # 按用户交错组装「用户结果行 + 一条龙/执行层节点详情」进报告正文
+                # 按账号交错组装「账号结果行 + 一条龙/执行层节点详情」进报告正文
                 # （ScriptItem.result 是只读计算属性，报告正文用局部变量承载）
                 user_result_text = self._render_user_results(
                     has_uncompleted=bool(self.collect_user_results().uncompleted_count)
@@ -283,11 +359,19 @@ class BetterGIManager(ScriptManagerBase):
                         ),
                     )
         finally:
-            script_config = getattr(self, "script_config", None)
-            if script_config is not None:
-                ticket = self.config_locks.pop(script_config.uid, None)
-                if ticket is not None:
-                    await script_config.unlock(ticket)
+            try:
+                if self._update_root is not None:
+                    program_update.recover_update_notice(self._update_root)
+            except Exception:
+                self.script_info.status = "异常"
+                raise
+            finally:
+                self._install_access.close()
+                script_config = getattr(self, "script_config", None)
+                if script_config is not None:
+                    ticket = self.config_locks.pop(script_config.uid, None)
+                    if ticket is not None:
+                        await script_config.unlock(ticket)
 
     async def on_crash(self, e: Exception):
         self.script_info.status = "异常"
@@ -304,7 +388,7 @@ class BetterGIManager(ScriptManagerBase):
                 if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                     await config_manager.flush()
             except Exception:
-                logger.opt(exception=True).warning("on_crash 保存用户配置失败")
+                logger.opt(exception=True).warning("on_crash 保存账号配置失败")
 
         with suppress(Exception):
             await Publisher.send(

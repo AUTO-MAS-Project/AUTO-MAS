@@ -48,7 +48,7 @@ const screens = [
 const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
   ...featureAnalyticsSchemas,
   app_started: {
-    launch_kind: ['manual', 'auto_start', 'unknown'],
+    launch_kind: ['manual', 'auto_start', 'scheduled_wakeup', 'unknown'],
     runtime_mode: runtime,
     release_channel: ['stable', 'beta', 'unknown'],
   },
@@ -239,6 +239,7 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
       'MaaEndPlanConfig',
       'BAAHPlanConfig',
       'MSSPlanConfig',
+      'UniversalPlanConfig',
       'multi',
       'unknown',
     ],

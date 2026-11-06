@@ -147,7 +147,7 @@ def build_interface_preview_data(
             task_order=task_order,
             task_option_maps=task_option_maps,
             include_default_options=False,
-            # 预设声明的前置任务（PI v2.10.3）随快照给用户页：队列里的 pretask 伪任务 id 打头，
+            # 预设声明的前置任务（PI v2.10.3）随快照给账号页：队列里的 pretask 伪任务 id 打头，
             # 声明了就带上全部前置任务（未列出的不勾选），没声明就一个不带
             include_pretasks=True,
         )
@@ -164,7 +164,7 @@ def build_interface_preview_data(
                 "taskCount": len(preset.task or []),
                 "checkedCount": checked_count,
                 # 实例显示名与运行日只属于用户自己的队列，项目预设没有；宿主 schema 也不声明它们
-                # 项目预设没有用户队列的跳过标记；不要把内部默认 false
+                # 项目预设没有账号队列的跳过标记；不要把内部默认 false
                 # 暴露成预设快照的可选键。
                 "snapshot": snapshot.model_dump(
                     mode="json",
@@ -308,7 +308,7 @@ def build_interface_preview_data(
                         "label": tr_text(hotkey_item.label),
                         "description": tr_description(hotkey_item.description),
                         "default": hotkey_item.default,
-                        # 项目 pipeline 只按得出这么多修饰键：脚本页录制时据此限制组合键
+                        # 项目 pipeline 只按得出这么多修饰键：托管页录制时据此限制组合键
                         "modifierCount": hotkey_modifier_count(
                             option, hotkey_item.name
                         ),

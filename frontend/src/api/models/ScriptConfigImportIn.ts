@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type ScriptConfigImportIn = {
     /**
-     * 所属脚本ID
+     * 所属托管ID
      */
     scriptId: string;
     /**
-     * 用户ID, 未携带时导入到脚本级配置文件
+     * 账号ID, 未携带时导入到托管级配置文件
      */
     userId?: (string | null);
 };

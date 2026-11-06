@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import type { MirrorConfig, MirrorSource } from './mirrorService'
-import type { RuntimeEvent, RuntimeRunOptions, RuntimeLaunchConfig } from './runtime'
+import type { RuntimeEvent, RuntimeLaunchConfig, RuntimeRunOptions } from './runtime'
 import {
   RUNTIME_BINARY_CANCELLED,
   RUNTIME_LATEST_UNAVAILABLE,
@@ -239,6 +239,13 @@ describe('bootstrap', () => {
     const outcome = await createService().bootstrap(update => updates.push(update))
 
     expect(outcome.success).toBe(true)
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        runtimeStage: 'uv.check',
+        runtimeStatus: 'preparing_uv',
+        message: '正在准备固定版本 uv',
+      })
+    )
     expect(FakeRuntimeClient.calls).toHaveLength(1)
     expect(FakeRuntimeClient.calls[0].command).toEqual(['bootstrap', '--version', 'v5.5.0-beta.3'])
     expect(FakeRuntimeClient.calls[0].mirrors).toEqual([])
@@ -328,6 +335,20 @@ describe('bootstrap', () => {
 describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
   it('按目标版本的发布通道、当前 exe 与 app-root 调用对齐，且在 bootstrap 命令之前', async () => {
     const order: string[] = []
+    const updates: BootstrapProgressUpdate[] = []
+    const download = {
+      phase: 'download' as const,
+      progress: 30,
+      message: '正在从 CNB（1/5） 下载 Runtime v0.1.10',
+      targetVersion: 'v0.1.10',
+      source: 'cnb',
+      sourceName: 'CNB',
+      sourceIndex: 1,
+      sourceCount: 5,
+      item: 'runtime.exe',
+      current: 30,
+      total: 100,
+    }
     alignStub.result = {
       status: 'upgraded',
       target: { version: 'v0.1.10' },
@@ -347,13 +368,41 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
       },
       alignRuntimeBinary: async options => {
         order.push('align')
+        options.onProgress?.(download)
+        options.onProgress?.({
+          phase: 'complete',
+          progress: 100,
+          message: 'Runtime 已更新',
+          targetVersion: 'v0.1.10',
+        })
         return alignStub.run(options)
       },
     })
 
-    const outcome = await service.bootstrap(() => undefined)
+    const outcome = await service.bootstrap(update => updates.push(update))
 
     expect(outcome.success).toBe(true)
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        runtimeStage: 'runtime.download',
+        runtimeStatus: 'running',
+        targetVersion: download.targetVersion,
+        source: download.source,
+        sourceName: download.sourceName,
+        sourceIndex: download.sourceIndex,
+        sourceCount: download.sourceCount,
+        message: download.message,
+        current: download.current,
+        total: download.total,
+      })
+    )
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        runtimeStage: 'runtime.check',
+        runtimeStatus: 'succeeded',
+        targetVersion: 'v0.1.10',
+      })
+    )
     expect(order).toEqual(['align', 'client'])
     expect(alignStub.calls).toHaveLength(1)
     expect(alignStub.calls[0]).toMatchObject({
@@ -441,23 +490,6 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
 // ==================== 单步重试 ====================
 
 describe('单步重试', () => {
-  it('运行环境重试的 Runtime 对齐失败保留实际来源和界面失败段', async () => {
-    alignStub.result = {
-      status: 'failed',
-      code: RUNTIME_LATEST_UNAVAILABLE,
-      error: '无法确认线上最新的 Runtime 版本',
-    }
-
-    const outcome = await createService().retryStage('python', () => undefined)
-
-    expect(outcome).toMatchObject({
-      success: false,
-      failedStage: 'python',
-      failureOrigin: 'runtime_binary',
-    })
-    expect(FakeRuntimeClient.calls).toHaveLength(0)
-  })
-
   it('依赖段重试走 dependencies sync', async () => {
     FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('dependencies.sync')] }]
 

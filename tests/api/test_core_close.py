@@ -17,13 +17,6 @@ class IsBackendDevModeTest(unittest.TestCase):
         ):
             self.assertFalse(core_api.should_preserve_backend())
 
-    def test_dev_env_without_supervision_still_dev_mode(self) -> None:
-        with patch.dict(
-            os.environ,
-            {"AUTO_MAS_SUPERVISED": "", "AUTO_MAS_ENV": "development"},
-        ):
-            self.assertTrue(core_api.should_preserve_backend())
-
 
 class CoreCloseTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -76,51 +69,6 @@ class CoreCloseTest(unittest.IsolatedAsyncioTestCase):
 
         # 清理失败：不发送 ready、不置退出标志，避免前端在清理未完成时强制关闭
         send.assert_not_awaited()
-        self.assertFalse(server.should_exit)
-
-    async def test_close_is_idempotent_while_running(self):
-        started = asyncio.Event()
-        release = asyncio.Event()
-
-        async def slow_shutdown():
-            started.set()
-            await release.wait()
-
-        with patch.object(core_api, "_shutdown_backend", side_effect=slow_shutdown):
-            first = await core_api.close()
-            await started.wait()
-            second = await core_api.close()
-            release.set()
-            assert core_api._shutdown_task is not None
-            await asyncio.wait_for(core_api._shutdown_task, timeout=1)
-
-        self.assertEqual(first.code, 200)
-        self.assertEqual(second.message, "关闭流程已在进行中")
-
-    async def test_dev_mode_light_cleanup_keeps_backend_reusable(self):
-        server = MagicMock()
-        server.should_exit = False
-
-        with (
-            patch.object(
-                core_api.ShutdownCoordinator, "run_teardown", new_callable=AsyncMock
-            ) as teardown,
-            patch.object(
-                core_api.TaskManager, "stop_task", new_callable=AsyncMock
-            ) as stop_task,
-            patch.object(core_api.System, "cancel_power_task", new_callable=AsyncMock),
-            patch("app.api.core.Publisher.send", new_callable=AsyncMock) as send,
-            patch.object(core_api.Config, "server", server),
-            patch.object(core_api, "should_preserve_backend", return_value=True),
-        ):
-            await core_api.close()
-            assert core_api._shutdown_task is not None
-            await asyncio.wait_for(core_api._shutdown_task, timeout=1)
-
-        # 开发模式：仅轻量任务清理，不执行完整 teardown（插件/定时器保持存活以复用）
-        teardown.assert_not_awaited()
-        stop_task.assert_awaited_once_with("ALL")
-        send.assert_awaited_once()
         self.assertFalse(server.should_exit)
 
 

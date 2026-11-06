@@ -48,7 +48,7 @@ def resolve_takeover_credentials(config: MaaConfig) -> tuple[bool, str | None]:
 def use_maa_github_update(config: MaaConfig, *, config_dirs: Sequence[Path]) -> bool:
     """无 CDK 时使用 GitHub；下载器由全局 FluxDown 接管开关独立决定。
 
-    按用户要求，MAA 专项、MAS 全局或原生配置存在 CDK 均保留 Mirror 酱路径，
+    按账号要求，MAA 专项、MAS 全局或原生配置存在 CDK 均保留 Mirror 酱路径，
     由专项更新接管开关控制。配置损坏时也不绕过其下载来源选择。
     """
     if not config.Update.TakeoverEnabled:

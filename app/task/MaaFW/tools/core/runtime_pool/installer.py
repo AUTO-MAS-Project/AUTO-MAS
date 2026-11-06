@@ -108,7 +108,7 @@ def _resolve_injected_pool_directory(
     relative_default: Path,
     label: str,
 ) -> tuple[Path, bool]:
-    """解析一个可能被 Runtime 注入覆盖的池托管目录。
+    """解析一个可能被 Runtime 注入覆盖的池脚本目录。
 
     非空且为绝对路径、父目录存在时采用注入值（返回的 ``injected`` 为
     ``True``）；未设置该变量时按池本地默认目录静默回退（未受监督的今天没有
@@ -1450,7 +1450,7 @@ def _install_requirements_with_uv(
             "install",
             "--python",
             str(python_executable),
-            # 用户级 / 项目级 uv.toml（额外 [[index]]、offline、exclude-newer …）
+            # 账号级 / 项目级 uv.toml（额外 [[index]]、offline、exclude-newer …）
             # 不得参与池的解析，索引与镜像只由本文件的候选逻辑决定。
             "--no-config",
             "--cache-dir",

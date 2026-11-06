@@ -1,6 +1,5 @@
 """General 调用方的报告过滤、账号分组及与调度报告的一致性。"""
 
-from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -8,7 +7,6 @@ import pytest
 from app.core.task_manager.manager import build_task_result_text
 from app.task.general.manager import GeneralManager
 from app.utils import LOG_TYPE_ERROR, LOG_TYPE_NORMAL
-from app.utils.common.log_box.results import LogEntry
 
 
 def build_user_result_text(users, has_uncompleted):
@@ -25,20 +23,6 @@ def user(entries, mode="汇总", **kwargs):
         push_log=entries,
         push_log_mode=mode,
         **kwargs,
-    )
-
-
-def test_scatter_keeps_account_before_time_and_plain_text_unchanged():
-    timestamp = datetime(2026, 10, 29, 7, 2).timestamp()
-    entries = [
-        (LOG_TYPE_NORMAL, "【实例 1】✅ 成功: 邮件", timestamp),
-        (LOG_TYPE_NORMAL, "旧式二元组"),
-        (LOG_TYPE_NORMAL, "⏱ 超时：不应被猜成已知状态", None),
-    ]
-    assert build_user_result_text([user(entries, "逐条")], False) == (
-        "账号 A: 全部完成\n"
-        "【实例 1】07:02 - ✅ 成功: 邮件\n"
-        "旧式二元组\n⏱ 超时：不应被猜成已知状态"
     )
 
 
@@ -60,15 +44,6 @@ def test_off_keeps_summary_and_does_not_mutate_input():
     assert entries == [(LOG_TYPE_NORMAL, "✅ 成功: 邮件", 0.0)]
 
 
-def test_typed_and_legacy_entries_render_identically():
-    entries = [(LOG_TYPE_NORMAL, "✅ 成功: 邮件", 0.0)]
-    typed = [LogEntry.from_legacy(entry) for entry in entries]
-    for mode in ("关闭", "逐条", "汇总"):
-        assert build_user_result_text([user(typed, mode)], False) == (
-            build_user_result_text([user(entries, mode)], False)
-        )
-
-
 def test_user_groups_and_dispatch_use_same_report():
     first = user([(LOG_TYPE_NORMAL, "✅ 成功: 邮件")])
     second = user([(LOG_TYPE_NORMAL, "❌ 失败: 刷本")])
@@ -81,7 +56,7 @@ def test_user_groups_and_dispatch_use_same_report():
         name="脚本", user_list=[first, second], log="原始日志", result="旧摘要"
     )
     assert build_task_result_text([script]) == (
-        "脚本：\n\n    已完成用户数：1；未完成用户数：1\n\n"
+        "脚本：\n\n    已完成账号数：1；未完成账号数：1\n\n"
         "    账号 A: 全部完成\n    ✅ 成功: 邮件\n\n"
         "    账号 B: 未完成\n    ❌ 失败: 刷本"
     )

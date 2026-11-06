@@ -2,7 +2,7 @@
 /**
  * 实例设置的四个档位下拉：分辨率、帧率、CPU 核数、内存。单台设置与批量设置共用，外层负责提交。
  *
- * 魔改 AVD 的分辨率固定：单台设置里显示并禁用（``showFixed``），批量设置里不出现。
+ * 魔改 AVD 的分辨率和 DPI 使用自己的两档。
  * ``snapped`` 里有值的项是打开时被对齐过的，在该项下面用一行小字标出实际值。
  */
 import { computed } from 'vue'
@@ -24,18 +24,15 @@ const props = withDefaults(
   defineProps<{
     kind: TierKind
     snapped?: SnappedActual | null
-    /** 魔改 AVD 固定的分辨率要不要显示出来（禁用） */
-    showFixed?: boolean
     /** 允许清空回「保持原样」（批量设置用） */
     clearable?: boolean
   }>(),
-  { snapped: null, showFixed: false, clearable: false }
+  { snapped: null, clearable: false }
 )
 
 const { t } = useI18n()
 
 const isAvd = computed(() => props.kind === 'avd')
-const showResolution = computed(() => !isAvd.value || props.showFixed)
 
 const resolutionOptions = computed(() =>
   RESOLUTION_TIERS.map(tier => ({ value: tier, label: resolutionText(tier) }))
@@ -71,11 +68,10 @@ const update = <K extends keyof TierForm>(key: K, value: TierForm[K] | undefined
 
 <template>
   <div class="settings-tier-fields">
-    <a-form-item v-if="showResolution" :label="t('core.emulator2.fieldResolution')">
+    <a-form-item :label="t('core.emulator2.fieldResolution')">
       <a-select
         :value="model.resolution ?? undefined"
         :options="resolutionOptions"
-        :disabled="isAvd"
         :allow-clear="clearable"
         :placeholder="t('core.emulator2.keepCurrent')"
         size="large"

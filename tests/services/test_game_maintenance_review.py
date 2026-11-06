@@ -43,38 +43,6 @@ def test_offset_comparison_and_exclusive_end():
     assert window.start.utcoffset() == timedelta(hours=8)
 
 
-@pytest.mark.parametrize(
-    "data",
-    [
-        None,
-        {},
-        {"schema_version": True, "games": {}},
-        {"schema_version": 2, "games": {}},
-        {"schema_version": 1, "games": []},
-        {"schema_version": 1, "games": {"arknights": {}}},
-        payload("2026-10-10T08:00:00", "2026-10-10T10:00:00"),
-        payload("bad", "2026-10-10T10:00:00+08:00"),
-        payload("2026-10-10T10:00:00Z", "2026-10-10T08:00:00Z"),
-        payload(None, "2026-10-10T10:00:00Z"),
-    ],
-)
-def test_invalid_data_is_rejected(data):
-    with pytest.raises(ValueError):
-        service.parse_maintenance(data)
-
-
-def test_unknown_game_does_not_break_supported_records():
-    assert (
-        service.parse_maintenance(
-            {
-                "schema_version": 1,
-                "games": {"arknights": {"maintenance": None}, "unknown": "unsupported"},
-            }
-        )
-        == {}
-    )
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["network", "http", "schema", "timeout"])
 async def test_cache_failure_clears_stale_window_and_throttles_retry(

@@ -20,7 +20,7 @@
 
 """BAAH 配置文件读写与关键项托管。
 
-BAAH 的用户配置是 ``BAAH_CONFIGS/<名字>.json`` 的**扁平 JSON**（没有嵌套分组），
+BAAH 的账号配置是 ``BAAH_CONFIGS/<名字>.json`` 的**扁平 JSON**（没有嵌套分组），
 软件配置单独放在 ``DATA/CONFIGS/software_config.json``。运行前必须把若干关键项
 改成托管取值，运行结束后恢复用户原值。
 
@@ -39,7 +39,7 @@ from app.utils import get_logger
 
 logger = get_logger("BAAH 配置托管")
 
-## 用户配置中需要托管的项
+## 账号配置中需要托管的项
 ##
 ## 运行结束后自动退出：BAAH 默认停在 input() 等待回车，进程永不结束，会让本软件
 ## 误判为脚本卡死并反复重启；失败重试与通知同样收归本软件统一负责。
@@ -75,7 +75,7 @@ MANAGED_SOFTWARE_VALUES: dict[str, Any] = {
     "SAVE_LOG_TO_FILE": True,
 }
 
-## 用户配置目录名（BAAH 程序目录下）
+## 账号配置目录名（BAAH 程序目录下）
 CONFIG_DIR_NAME = "BAAH_CONFIGS"
 ## 软件配置相对路径（BAAH 程序目录下）
 SOFTWARE_CONFIG_RELATIVE = Path("DATA") / "CONFIGS" / "software_config.json"
@@ -87,11 +87,11 @@ LOG_DIR_RELATIVE = Path("DATA") / "LOGS"
 class ManagedConfigBackup:
     """托管前的配置快照，用于运行结束后恢复原值。"""
 
-    ## 用户配置文件路径
+    ## 账号配置文件路径
     user_config_path: Path
-    ## 用户配置在托管前的完整内容
+    ## 账号配置在托管前的完整内容
     user_config: dict[str, Any] = field(default_factory=dict)
-    ## 用户配置在托管前是否存在（不存在时恢复阶段应删除）
+    ## 账号配置在托管前是否存在（不存在时恢复阶段应删除）
     user_config_existed: bool = False
     ## 软件配置文件路径，未托管时为 None
     software_config_path: Path | None = None
@@ -184,7 +184,7 @@ def resolve_config_name(config_name: str) -> str:
 
 
 def resolve_user_config_path(config_dir: Path, config_name: str) -> Path:
-    """把配置名解析为 BAAH 用户配置文件路径。
+    """把配置名解析为 BAAH 账号配置文件路径。
 
     Args:
         config_dir: BAAH 配置目录。
@@ -224,7 +224,7 @@ def apply_managed_config(
     """写入托管项并返回恢复所需的快照。
 
     Args:
-        user_config_path: BAAH 用户配置文件路径。
+        user_config_path: BAAH 账号配置文件路径。
         software_config_path: BAAH 软件配置文件路径，None 表示不托管软件配置。
         runtime_values: 本次运行才确定的托管项，会覆盖同名静态托管项，
             例如模拟器调度解析出的 ADB 地址。
@@ -243,7 +243,7 @@ def apply_managed_config(
     backup = ManagedConfigBackup(user_config_path=user_config_path)
 
     ## 先把两份配置全部读完再开始写：读取阶段不改动任何文件，中途失败也就不会
-    ## 留下「用户配置已改、软件配置没改」的半托管状态
+    ## 留下「账号配置已改、软件配置没改」的半托管状态
     user_config = read_json(user_config_path)
     backup.user_config_existed = user_config_path.exists()
     backup.user_config = dict(user_config)
@@ -315,8 +315,8 @@ def _restore_files(backup: ManagedConfigBackup) -> list[str]:
             ## 配置文件是本次运行期间新建的，恢复阶段删除
             backup.user_config_path.unlink()
     except Exception as e:
-        logger.opt(exception=True).warning(f"恢复 BAAH 用户配置失败: {e}")
-        failures.append(f"用户配置 {backup.user_config_path.name}({e})")
+        logger.opt(exception=True).warning(f"恢复 BAAH 账号配置失败: {e}")
+        failures.append(f"账号配置 {backup.user_config_path.name}({e})")
 
     software_config_path = backup.software_config_path
     if software_config_path is not None:

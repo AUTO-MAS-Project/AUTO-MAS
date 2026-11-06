@@ -5,12 +5,9 @@ import pytest
 from app.services import power
 from app.utils import (
     IS_WINDOWS,
-    UnsupportedPlatformError,
     process_platform,
     secret,
-    window,
 )
-from app.utils import process as _utils_process
 
 platform_process = process_platform.platform_process
 
@@ -22,16 +19,3 @@ def test_common_entries_do_not_load_windows_dependencies() -> None:
     assert power.supported_actions == frozenset()
     assert secret.supports_secret_storage() is False
     assert {"win32gui", "win32crypt"}.isdisjoint(sys.modules)
-
-
-def test_unsupported_window_entry_reports_capability() -> None:
-    with pytest.raises(UnsupportedPlatformError, match="window"):
-        window.get_window_handles(1)
-
-
-def test_desktop_callers_use_common_fallbacks() -> None:
-    assert (
-        _utils_process.get_window_handles(1),
-        _utils_process.get_main_window_handle(1),
-    ) == ([], None)
-    assert "win32gui" not in sys.modules

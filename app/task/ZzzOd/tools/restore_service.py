@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""ZZZ-OD 配置恢复服务：MAS 用户槽池 / 一条龙原生配置池（声明式池）。
+"""ZZZ-OD 配置恢复服务：MAS 账号槽池 / 一条龙原生配置池（声明式池）。
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底预览全部由基座
@@ -42,11 +42,11 @@ from ..api_service import get_service
 
 
 def _mas_user(ctx: _utils_config_restore.RestoreContext):
-    """守卫 + 用户配置对象（恢复/归档前的「用户不存在」守卫）。"""
+    """守卫 + 账号配置对象（恢复/归档前的「账号不存在」守卫）。"""
 
     uid = uuid.UUID(ctx.user_id)
     if uid not in ctx.script_config.UserData:
-        raise ValueError("用户不存在")
+        raise ValueError("账号不存在")
     return uid, ctx.script_config.UserData[uid]
 
 
@@ -58,7 +58,7 @@ def _script_root(ctx: _utils_config_restore.RestoreContext) -> Path | None:
 
 
 def _mas_slot(ctx: _utils_config_restore.RestoreContext) -> int | None:
-    """当前用户绑定的槽 idx；未绑定（<=0）返回 ``None``。"""
+    """当前账号绑定的槽 idx；未绑定（<=0）返回 ``None``。"""
 
     _, user_cfg = _mas_user(ctx)
     slot = int(user_cfg.Info.SlotIdx or -1)

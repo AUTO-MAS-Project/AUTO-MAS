@@ -45,7 +45,7 @@ export function usePlanApi() {
   }
 
   // 创建计划
-  const createPlan = async (type: PlanConfigType) => {
+  const createPlan = async (type: PlanConfigType, owner?: { scriptId: string }) => {
     const operation = beginAnalyticsOperation('plan_manage_finished')
     const dimensions = {
       action: 'create' as const,
@@ -59,7 +59,7 @@ export function usePlanApi() {
         throw new Error(t('core.misc.unsupportedPlanTypeP0', { p0: type }))
       }
 
-      const params: PlanCreateIn = { type: createType }
+      const params: PlanCreateIn = { type: createType, ...owner }
       const response = await Service.addPlanApiPlanAddPost(params)
       operation.finish({
         ...dimensions,
@@ -202,4 +202,11 @@ export function usePlanApi() {
     deletePlan,
     reorderPlans,
   }
+}
+
+export async function readUniversalPlanState(planId: string): Promise<string[]> {
+  const response = await Service.getUniversalPlanStateApiPlanUniversalStatePost({ planId })
+  if (response.code !== 200)
+    throw new Error(response.message || t('core.plan.universal.stateFailed'))
+  return response.configuredDays ?? []
 }

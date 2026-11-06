@@ -4,7 +4,7 @@
 :func:`update_engine_if_needed` 查完就装。可预期失败收敛为结果；无法确认
 安装安全的异常向上传播。目录无法恢复时见 ``UpdateOutcome.blocking``。
 
-调用时机见 ``manager.py``：持有安装目录锁后，在备份配置、启动用户任务前
+调用时机见 ``manager.py``：持有安装目录锁后，在备份配置、启动账号任务前
 先恢复上次中断的安装，再检查和安装更新。手动更新复用相同入口。
 """
 
@@ -13,7 +13,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import re
+import shutil
+import threading
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
@@ -24,9 +27,11 @@ import httpx
 
 from app.core.script_update import script_downloader
 from app.utils import get_logger
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from ...task_mapping import engine_label
 from .apply import (
+    ApplyResult,
     HSRUpdateApplyError,
     apply_package,
     has_pending_journal,
@@ -53,12 +58,16 @@ LogFn = Callable[[str], None]
 T = TypeVar("T")
 
 
-async def _run_install_worker(operation: Callable[[], T]) -> T:
+async def _run_install_worker(
+    operation: Callable[[], T], *, cancel_event: threading.Event | None = None
+) -> T:
     """安装和回滚一旦开始，取消也要等写入结束，才能释放目录锁。"""
     worker = asyncio.create_task(asyncio.to_thread(operation))
     try:
         return await asyncio.shield(worker)
     except asyncio.CancelledError:
+        if cancel_event is not None:
+            cancel_event.set()
         while not worker.done():
             try:
                 await asyncio.shield(worker)
@@ -145,6 +154,7 @@ async def update_engine_if_needed(
     download_dir: Path,
     send_log: LogFn | None = None,
     should_abort: AbortFn | None = None,
+    prepared: PreparedUpdate | None = None,
 ) -> UpdateOutcome:
     """查、下、装。任何可预期失败都收敛成 ``UpdateOutcome``，不向上抛。
 
@@ -160,14 +170,17 @@ async def update_engine_if_needed(
         return UpdateOutcome(engine, checked=False, updated=False)
 
     try:
-        result = await check_engine_update(
-            engine,
-            install_root,
-            source=source,
-            channel=channel,
-            cdk=cdk,
-            proxy=proxy,
-        )
+        if prepared is not None:
+            result = prepared.result
+        else:
+            result = await check_engine_update(
+                engine,
+                install_root,
+                source=source,
+                channel=channel,
+                cdk=cdk,
+                proxy=proxy,
+            )
     except HSRUpdateError as exc:
         log(f"{label}更新检查失败，按现有版本继续：{exc}")
         return UpdateOutcome(engine, checked=False, updated=False, message=str(exc))
@@ -212,14 +225,18 @@ async def update_engine_if_needed(
 
     package = _cache_package_path(download_dir, spec, candidate, proxy)
     try:
-        package = await _download_with_space_check(
-            candidate,
-            package,
-            install_root=install_root,
-            download_dir=download_dir,
-            proxy=proxy,
-            log=log,
-            should_abort=should_abort,
+        package = (
+            prepared.package
+            if prepared is not None
+            else await _download_with_space_check(
+                candidate,
+                package,
+                install_root=install_root,
+                download_dir=download_dir,
+                proxy=proxy,
+                log=log,
+                should_abort=should_abort,
+            )
         )
     except HSRUpdateAborted as exc:
         log(f"{label}{exc}")
@@ -234,7 +251,7 @@ async def update_engine_if_needed(
     # 下载完才知道解压后的确切体积，装之前再核一次安装卷。
     if candidate.asset_kind == "zip":
         try:
-            expanded = await asyncio.to_thread(expanded_size_of_zip, package)
+            expanded = await _run_install_worker(partial(expanded_size_of_zip, package))
         except Exception:  # noqa: BLE001 - 读不出就沿用粗估
             expanded = None
         if expanded is not None:
@@ -251,17 +268,44 @@ async def update_engine_if_needed(
     if should_abort and should_abort():
         raise asyncio.CancelledError
     log(f"{label}下载完成，开始校验安装更新")
+    validation_cancelled = threading.Event()
+
+    def apply_verified_package() -> ApplyResult:
+        # 候选必须在最后一次异步读取之后复核；不能拿体积检查之前的快照
+        # 覆盖此期间由原生更新器安装的新版本，或消费被替换的归档。
+        try:
+            if prepared is not None and (
+                prepared.root != install_root.resolve()
+                or _package_digest(package) != prepared.digest
+            ):
+                raise HSRUpdateError("预下载后安装或包体已变化，请重新运行更新")
+            if prepared is not None and (
+                read_installed_version(spec, install_root)
+                != prepared.result.current_version
+            ):
+                raise HSRUpdateError("预下载后安装或包体已变化，请重新运行更新")
+            # SRA 的版本探针会启动 --version 子进程；要在探针结束后查占用。
+            failure = check_no_process_running(install_root)
+            if failure:
+                raise HSRUpdateError(failure.reason)
+        except OSError as exc:
+            raise HSRUpdateError(f"无法复核预下载候选：{exc}") from exc
+        # 摘要/进程/版本复核仍是只读准备，取消后不能进入安装。
+        # 一旦开始 apply_package，继续复用原安装事务的完整等待语义。
+        if validation_cancelled.is_set() or (should_abort and should_abort()):
+            raise asyncio.CancelledError
+        return apply_package(
+            package,
+            install_root,
+            engine=engine,
+            from_version=candidate.current_version,
+            to_version=candidate.latest_version,
+            seven_zip=find_seven_zip(install_root),
+        )
+
     try:
         applied = await _run_install_worker(
-            partial(
-                apply_package,
-                package,
-                install_root,
-                engine=engine,
-                from_version=candidate.current_version,
-                to_version=candidate.latest_version,
-                seven_zip=find_seven_zip(install_root),
-            )
+            apply_verified_package, cancel_event=validation_cancelled
         )
     except HSRUpdateApplyError as exc:
         log(f"{label}更新失败：{exc}")
@@ -285,6 +329,82 @@ async def update_engine_if_needed(
         updated=True,
         message=message,
     )
+
+
+@dataclass(frozen=True)
+class PreparedUpdate:
+    root: Path
+    result: DiscoveryResult
+    package: Path
+    digest: str
+
+
+def _package_digest(path: Path) -> str:
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+async def prepare_engine_update(
+    engine: str,
+    install_root: Path,
+    *,
+    source: str,
+    channel: str,
+    cdk: str,
+    proxy: httpx.Proxy | None,
+    download_dir: Path,
+) -> PreparedUpdate | None:
+    """仅发现与下载；不停止运行中的程序，不写安装目录。"""
+    result = await check_engine_update(
+        engine, install_root, source=source, channel=channel, cdk=cdk, proxy=proxy
+    )
+    if not result.update_available or result.blocked_reason or result.candidate is None:
+        return None
+    # Every prefetch gets a private, randomly named directory. Until a
+    # verified PreparedUpdate is returned there is no manager-owned candidate
+    # to discard, so this entry point must own partial-file cleanup.
+    directory = download_dir / uuid.uuid4().hex
+    handed_off = False
+    keep_for_fluxdown = False
+    try:
+        path = _cache_package_path(directory, get_spec(engine), result.candidate, proxy)
+        try:
+            package = await _download_with_space_check(
+                result.candidate,
+                path,
+                install_root=install_root,
+                download_dir=directory,
+                proxy=proxy,
+                log=_noop,
+            )
+        except FluxdownCancelUnconfirmed:
+            # Only an unconfirmed daemon retains this private destination.
+            # Confirmed failures cannot reuse a randomly named prefetch path.
+            keep_for_fluxdown = True
+            raise
+        if package is None:
+            return None
+        # Hashing runs in a worker; cancellation must wait for the file handle
+        # to close before the private directory can be removed on Windows.
+        digest = await _run_install_worker(partial(_package_digest, package))
+        candidate = PreparedUpdate(install_root.resolve(), result, package, digest)
+        handed_off = True
+        return candidate
+    finally:
+        if not handed_off and not keep_for_fluxdown:
+            # _run_install_worker waits for the deletion thread to finish
+            # even when a second cancellation arrives during cleanup.
+            await _run_install_worker(
+                partial(shutil.rmtree, directory, ignore_errors=True)
+            )
+
+
+def discard_prepared_update(prepared: PreparedUpdate) -> None:
+    _discard(prepared.package)
+    try:
+        prepared.package.parent.rmdir()
+    except OSError:
+        pass
 
 
 async def rollback_pending(

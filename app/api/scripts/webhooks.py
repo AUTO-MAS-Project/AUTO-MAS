@@ -15,7 +15,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
 
-"""用户 webhook 管理路由与端点专用模型。"""
+"""账号 Webhook 管理路由与端点专用模型。"""
 
 from fastapi import APIRouter, Body
 
@@ -56,7 +56,7 @@ WebhookUpdateIn = SharedWebhookUpdateIn[WebhookInput]
 
 
 router = APIRouter()
-logger = get_logger("脚本管理 API")
+logger = get_logger("托管管理 API")
 
 
 @router.post(

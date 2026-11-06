@@ -27,6 +27,7 @@
 from typing import (
     Dict,
     List,
+    Literal,
     Optional,
 )
 
@@ -114,8 +115,8 @@ class Emulator2PathRemoveIn(BaseModel):
 
 
 class Emulator2AffectedScript(BaseModel):
-    scriptId: str = Field(..., description="脚本ID")
-    name: str = Field(..., description="脚本名称")
+    scriptId: str = Field(..., description="托管ID")
+    name: str = Field(..., description="托管名称")
     slot: str = Field(..., description="绑定的设备号")
     running: bool = Field(default=False, description="是否正在运行")
 
@@ -154,6 +155,10 @@ class Emulator2InstanceCreateIn(BaseModel):
     fps: Optional[int] = Field(
         default=None,
         description="仅魔改 AVD: 帧率 (hw.lcd.vsync), 可选 30 / 60, 留空为 60",
+    )
+    resolution: Optional[Literal[1080, 720]] = Field(
+        default=None,
+        description="仅魔改 AVD: 分辨率档位，1080 为 1920×1080 / DPI 280（默认），720 为 1280×720 / DPI 240",
     )
     dataPartitionGb: Optional[int] = Field(
         default=None,
@@ -708,6 +713,7 @@ async def create_instance(
                 "cpu": payload.cpu,
                 "fps": payload.fps,
                 "data_partition_gb": payload.dataPartitionGb,
+                "resolution": payload.resolution,
             },
         )
     except Exception as e:

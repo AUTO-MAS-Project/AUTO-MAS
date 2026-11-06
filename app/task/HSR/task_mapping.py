@@ -143,13 +143,13 @@ def resolve_script_assignment(
     user_config=None,
     effective_engines: tuple[ScriptType, ...] | None = None,
 ) -> ScriptType:
-    """解析模块的执行引擎：用户覆盖 → 脚本 TaskMapping → 模块默认值。
+    """解析模块的执行引擎：账号覆盖 → 脚本 TaskMapping → 模块默认值。
 
     解析出的引擎没有配置路径时改用 ``supported_scripts`` 里第一个已配置的引擎。
     没配路径的引擎在界面上本就选不了，这种改用是常态（例如只装了三月七），
     不算异常，调用方不必提示。
 
-    云·星穹铁道只用三月七（SRA 接不上 MAS 托管的浏览器）：平台为云时用户覆盖
+    云·星穹铁道只用三月七（SRA 接不上 MAS 托管的浏览器）：平台为云时账号覆盖
     与脚本 TaskMapping 一律忽略。纯函数，不写日志。
     """
 

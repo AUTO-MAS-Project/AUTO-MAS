@@ -58,8 +58,8 @@ M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
         # 这里挡住 _apply_managed_patch 用 native config.yaml 的值把它们覆盖回去。
         "weekly_divergent_timestamp",
         "currencywars_timestamp",
-        # 差分宇宙低性能模式以脚本级 Run.LowPerformanceMode 为准，不让原生值或
-        # 残留的用户覆盖把 build_divergent_universe_patch 写的值盖回去。
+        # 差分宇宙低性能模式以托管级 Run.LowPerformanceMode 为准，不让原生值或
+        # 残留的账号覆盖把 build_divergent_universe_patch 写的值盖回去。
         "weekly_divergent_stable_mode",
     }
 )
@@ -537,7 +537,7 @@ def load_m7a_yaml(text: str) -> dict[str, Any]:
     return yaml.load(text, Loader=_M7AYamlLoader) or {}
 
 
-# config.yaml 解析缓存: 路径 -> (mtime_ns, 解析结果); 每用户一轮会读同一份十余次
+# config.yaml 解析缓存: 路径 -> (mtime_ns, 解析结果); 每账号一轮会读同一份十余次
 _NATIVE_CONFIG_CACHE: dict[Path, tuple[int, dict[str, Any]]] = {}
 
 
@@ -548,7 +548,7 @@ def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
     """
 
     if script_config is None:
-        raise ValueError("缺少 HSR 脚本配置")
+        raise ValueError("缺少 HSR 托管配置")
     try:
         raw_root = script_config.Info.M7APath
     except (AttributeError, KeyError, TypeError):
@@ -745,9 +745,9 @@ def build_divergent_universe_patch(
             )
         ),
         "weekly_divergent_stable_mode": low_perf_mode,
-        # M7A 的周常时间戳按安装目录存、不按游戏账号存：上一个用户打满后写进共享的
-        # config.yaml，下一个用户的 patch 以这份文件为底合并，M7A 就跳过积分复核、
-        # 不再打印 MAS 唯一认的完成 marker，于是第二个用户起永远记不到完成、天天重跑。
+        # M7A 的周常时间戳按安装目录存、不按游戏账号存：上一个账号打满后写进共享的
+        # config.yaml，下一个账号的 patch 以这份文件为底合并，M7A 就跳过积分复核、
+        # 不再打印 MAS 唯一认的完成 marker，于是第二个账号起永远记不到完成、天天重跑。
         # 与日常 patch 归零 echo_of_war_timestamp 是同一口径。
         "weekly_divergent_timestamp": 0,
     }
@@ -773,7 +773,7 @@ def build_currency_wars_patch(
 ) -> dict[str, Any]:
     """构建 M7A 货币战争 patch。
 
-    托管覆盖读 ``plan``（该用户生效的任务计划，缺省即 ``user_config``），
+    托管覆盖读 ``plan``（该账号生效的任务计划，缺省即 ``user_config``），
     开拓者名称读 ``user_config``。
     """
     if plan is None:
@@ -811,7 +811,7 @@ def build_currency_wars_patch(
             )
         ),
         # 同 weekly_divergent_timestamp：按安装目录存的时间戳会让共用一套 M7A 的
-        # 第二个用户起永远记不到完成。
+        # 第二个账号起永远记不到完成。
         "currencywars_timestamp": 0,
     }
     if patch["currencywars_bonus_enable"] and ornament_stage_name:

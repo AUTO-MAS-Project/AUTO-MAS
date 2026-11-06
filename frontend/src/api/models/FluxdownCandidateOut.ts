@@ -14,5 +14,10 @@ export type FluxdownCandidateOut = {
      * 是否为带 portable 标记的 CLI 便携版
      */
     is_portable_cli: boolean;
+    has_cli?: boolean;
+    has_server?: boolean;
+    has_desktop?: boolean;
+    complete?: boolean;
+    missing?: string;
 };
 

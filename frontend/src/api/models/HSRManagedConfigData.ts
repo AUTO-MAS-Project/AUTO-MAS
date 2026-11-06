@@ -9,7 +9,7 @@ export type HSRManagedConfigData = {
      */
     revision?: string;
     /**
-     * 任务计划的归属：script=脚本共享计划（保存到脚本配置），user=该用户自己的计划（保存到用户配置）
+     * 任务计划的归属：script=托管共享计划（保存到托管配置），user=该账号自己的独立计划（保存到账号配置）
      */
     plan_owner?: HSRManagedConfigData.plan_owner;
     /**
@@ -27,7 +27,7 @@ export type HSRManagedConfigData = {
 };
 export namespace HSRManagedConfigData {
     /**
-     * 任务计划的归属：script=脚本共享计划（保存到脚本配置），user=该用户自己的计划（保存到用户配置）
+     * 任务计划的归属：script=托管共享计划（保存到托管配置），user=该账号自己的独立计划（保存到账号配置）
      */
     export enum plan_owner {
         SCRIPT = 'script',

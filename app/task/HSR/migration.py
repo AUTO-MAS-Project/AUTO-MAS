@@ -14,7 +14,7 @@ logger = get_logger("HSR 兼容迁移")
 
 
 def migrate_legacy_user_payload(source: dict[str, Any]) -> None:
-    """在通用字段兼容之后、冷态校验之前，就地迁移 HSR 用户旧载荷。"""
+    """在通用字段兼容之后、冷态校验之前，就地迁移 HSR 账号旧载荷。"""
     control = source.get("Control", {})
     # 旧直控模式优先于 Info.Base，迁移后仍按原生模式运行。
     if (

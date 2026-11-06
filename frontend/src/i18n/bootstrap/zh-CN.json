@@ -99,6 +99,30 @@
       "dependency": "依赖",
       "environment": "运行环境",
       "repository": "程序文件"
+    },
+    "progress": {
+      "runtimeCheck": "正在检查 Runtime 更新与本地运行环境",
+      "networkProbe": "正在检测下载源",
+      "uvCheck": "正在检查 uv",
+      "uvDownload": "正在下载 uv",
+      "uvVerify": "正在校验 uv",
+      "workspaceCheck": "正在检查程序文件",
+      "workspaceClone": "正在接收后端仓库数据",
+      "workspaceVerify": "正在校验程序文件",
+      "workspaceSwap": "正在替换程序文件",
+      "workspaceCleanup": "正在清理程序文件",
+      "pythonCheck": "正在检查 Python",
+      "pythonInstall": "正在安装 Python",
+      "dependenciesCheck": "正在检查依赖",
+      "dependenciesSync": "正在同步依赖",
+      "dependenciesRebuild": "正在重建依赖环境",
+      "finished": "当前阶段已完成",
+      "skipped": "当前阶段已跳过",
+      "bootstrapReady": "当前运行环境已就绪",
+      "runtimeRepair": "正在检查并修复运行环境",
+      "runtimeDownloadDetails": "正在从 {source}（{index}/{count}）下载 Runtime {version}",
+      "runtimeCheckVersion": "正在获取 Runtime {version} 的校验信息",
+      "runtimeGithubSource": "GitHub 官方"
     }
   },
   "launch": {
@@ -111,7 +135,8 @@
     "starting": "正在启动",
     "transferSource": "来源 {source}",
     "updating": "正在更新",
-    "viewLog": "查看日志"
+    "viewLog": "查看日志",
+    "sourceOrder": "{kind} 源顺序：{sources}"
   },
   "locale": {
     "en-US": "English",

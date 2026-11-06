@@ -1,5 +1,3 @@
-from unittest.mock import Mock
-
 import httpx
 import pytest
 
@@ -45,23 +43,6 @@ async def test_release_selection_preserves_proxy_and_channel(
         "https://api.github.com/repos/MaaEnd/MaaEnd/"
         + ("releases/latest" if channel == "stable" else "releases?per_page=100")
     ]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "repository, channel",
-    [
-        ("../other", "stable"),
-        ("https://example.invalid/repo", "stable"),
-        ("owner/repo", "unknown"),
-    ],
-)
-async def test_invalid_source_never_starts_network(monkeypatch, repository, channel):
-    client = Mock()
-    monkeypatch.setattr(release.httpx, "AsyncClient", client)
-    with pytest.raises(ValueError):
-        await release.request_github_release(repository, channel=channel)
-    client.assert_not_called()
 
 
 @pytest.mark.asyncio

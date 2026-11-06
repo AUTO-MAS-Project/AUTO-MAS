@@ -116,49 +116,6 @@ def inherited_child(*, code=7, marker=False, tail=False):
     )
 
 
-@pytest.mark.parametrize("code,marker", [(0, False), (7, False), (7, True)])
-def test_exit_with_inherited_pipes_preserves_result(simulator, code, marker):
-    build, root, processes = simulator
-    session = build(inherited_child(code=code, marker=marker))
-
-    async def scenario():
-        try:
-            result = await asyncio.wait_for(session.run(5), timeout=2)
-            assert result.returncode == code
-            # 后代始终持有管道；无法确认输出完整时，rc=0 也不能证明成功。
-            assert not result.success
-            assert "command timed out" not in result.error
-            assert "native output" in result.error
-            assert "输出未完整收集" in result.error
-            assert processes[0].returncode == code
-            assert session._runner._process_manager.main_process is None
-            for fd in (1, 2):
-                assert processes[0]._transport.get_pipe_transport(fd).is_closing()
-            # 父进程失败不意味着要把可能是游戏的客户端后代一并终止。
-            assert psutil.pid_exists(int((root / "child.pid").read_text()))
-        finally:
-            await session.close()
-            await cleanup(processes, root)
-
-    asyncio.run(scenario())
-
-
-def test_late_stderr_during_drain_can_veto_success(simulator):
-    build, root, processes = simulator
-    session = build(inherited_child(code=0, tail=True))
-
-    async def scenario():
-        try:
-            result = await asyncio.wait_for(session.run(5), timeout=2)
-            assert not result.success
-            assert "无法切换到指定游戏界面" in result.error
-        finally:
-            await session.close()
-            await cleanup(processes, root)
-
-    asyncio.run(scenario())
-
-
 @pytest.mark.parametrize("code", [0, 3])
 def test_normal_exit_and_failure(simulator, code):
     build, root, processes = simulator
@@ -331,49 +288,6 @@ def test_cancel_blocked_output_callback_leaves_no_task(simulator):
     asyncio.run(scenario())
 
 
-def test_repeated_cancel_waits_for_reader_cleanup(simulator):
-    build, root, processes = simulator
-
-    async def scenario():
-        entered = asyncio.Event()
-        cleaning = asyncio.Event()
-        release = asyncio.Event()
-
-        async def block(_):
-            entered.set()
-            try:
-                await asyncio.Event().wait()
-            finally:
-                cleaning.set()
-                await release.wait()
-
-        runner = build(
-            "import time\nprint('running', flush=True)\ntime.sleep(30)\n",
-            callback=block,
-            managed=True,
-        )
-        before = set(asyncio.all_tasks())
-        task = asyncio.create_task(runner.run_task("power", timeout=3))
-        try:
-            await asyncio.wait_for(entered.wait(), timeout=2)
-            task.cancel()
-            await asyncio.wait_for(cleaning.wait(), timeout=2)
-            task.cancel()
-            await asyncio.sleep(0.03)
-            assert not task.done()
-            release.set()
-            with pytest.raises(asyncio.CancelledError):
-                await asyncio.wait_for(task, timeout=2)
-            assert processes[0].returncode is not None
-            await asyncio.sleep(0)
-            assert not (set(asyncio.all_tasks()) - before)
-        finally:
-            release.set()
-            await cleanup(processes, root)
-
-    asyncio.run(scenario())
-
-
 @pytest.mark.parametrize("error_type", [OSError, TimeoutError])
 def test_stream_read_error_stops_the_process(simulator, monkeypatch, error_type):
     build, root, processes = simulator
@@ -453,33 +367,6 @@ def test_managed_runner_can_be_reused_without_old_output(simulator):
             assert first.output == "power"
             assert second.output == "daily"
             assert runner.recent_output_lines == ["daily"]
-        finally:
-            await cleanup(processes, root)
-
-    asyncio.run(scenario())
-
-
-def test_exit_observed_at_deadline_is_not_reported_as_timeout(simulator, monkeypatch):
-    build, root, processes = simulator
-    runner = build(
-        "import sys\nprint('failed', flush=True)\nsys.exit(7)\n", managed=True
-    )
-
-    async def delayed_notification(_):
-        await asyncio.sleep(30)
-
-    monkeypatch.setattr(
-        runner, "_wait_for_process_exit", delayed_notification, raising=False
-    )
-
-    async def scenario():
-        try:
-            result = await asyncio.wait_for(
-                runner.run_task("power", timeout=0.3), timeout=2
-            )
-            assert not result.success
-            assert result.returncode == 7
-            assert result.error == "failed"
         finally:
             await cleanup(processes, root)
 

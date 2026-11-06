@@ -41,6 +41,7 @@ const plan = [
   'MaaEndPlanConfig',
   'BAAHPlanConfig',
   'MSSPlanConfig',
+  'UniversalPlanConfig',
   'multi',
   'unknown',
 ] as const
@@ -158,6 +159,7 @@ export const featureAnalyticsSchemas = {
   settings_change_finished: finished({
     setting_key: [
       'auto_start',
+      'scheduled_wakeup',
       'start_minimized',
       'show_tray',
       'close_to_tray',

@@ -26,9 +26,9 @@
   ``channel=14 / cps=bilibili``，官服 ``channel=1``；国际服客户端主程序为
   ``GenshinImpact.exe`` 与官服/B服的 ``YuanShen.exe`` 天然可分），标记来自
   社区长期沿用的事实标准（1.6→5.x 多版本稳定）。
-- 生效路径解析：用户级 ``Switch.GamePath``（留空跟随 BGI 全局配置）。
+- 生效路径解析：账号级 ``Switch.GamePath``（留空跟随 BGI 全局配置）。
 
-⚠️ 用户级路径是「临时覆盖」：MAS 按生效路径自行拉起游戏、BGI 启动后 attach
+⚠️ 账号级路径是「临时覆盖」：MAS 按生效路径自行拉起游戏、BGI 启动后 attach
 运行中的客户端（按进程名识别），**绝不写回 BetterGI 的全局配置**——
 ``installPath`` 是全局单值，写入会污染其他「跟随全局」的用户与 BGI 本体
 （2026-09-23 实机：B服用户的推送把官服用户的生效客户端顶掉）。
@@ -49,7 +49,7 @@ logger = get_logger("BetterGI 游戏信息")
 # BetterGI 主配置相对路径（与 account_switch._BGI_CONFIG_REL_PATH 一致）
 _BGI_CONFIG_REL_PATH = Path("User") / "config.json"
 
-# 渠道常量（与用户配置 Switch.Resource 的取值口径对齐）
+# 渠道常量（与账号配置 Switch.Resource 的取值口径对齐）
 CHANNEL_OFFICIAL = "官服"
 CHANNEL_BILIBILI = "B服"
 CHANNEL_GLOBAL = "国际服"
@@ -96,14 +96,14 @@ def detect_channel(game_exe: Path) -> str | None:
 
 
 def read_game_info(root_path: Path, user_game_path: str = "") -> dict[str, str | None]:
-    """读取 BetterGI 游戏客户端信息（供用户页透传展示）。
+    """读取 BetterGI 游戏客户端信息（供账号页透传展示）。
 
     Args:
         root_path: BetterGI 根目录。
-        user_game_path: 用户级路径（非空时展示该路径的渠道标注）。
+        user_game_path: 账号级路径（非空时展示该路径的渠道标注）。
 
     Returns:
-        dict: ``installPath``（生效路径：用户级优先，否则 BGI 全局）、
+        dict: ``installPath``（生效路径：账号级优先，否则 BGI 全局）、
         ``globalPath``（BGI 全局原值）、``channel``（识别结果或 None）、
         ``source``（"用户" / "全局"）。
     """
@@ -127,7 +127,7 @@ def read_game_info(root_path: Path, user_game_path: str = "") -> dict[str, str |
 
 
 def resolve_game_exe(root_path: Path, user_game_path: str = "") -> Path:
-    """解析任务运行使用的游戏主程序路径（用户级覆盖优先，临时生效）。
+    """解析任务运行使用的游戏主程序路径（账号级覆盖优先，临时生效）。
 
     用户填写了 ``Switch.GamePath`` 时直接返回该路径（MAS 自行拉起游戏、BGI
     attach 运行中的客户端，**不写 BetterGI 全局配置**）；未填写时透传返回
@@ -157,7 +157,7 @@ def resolve_game_exe(root_path: Path, user_game_path: str = "") -> Path:
         game_exe = Path(install_path)
     if not game_exe.is_file():
         raise RuntimeError(
-            f"游戏路径不存在: {game_exe}，请检查 BetterGI 设置或该用户的游戏客户端配置"
+            f"游戏路径不存在: {game_exe}，请检查 BetterGI 设置或该账号的游戏客户端配置"
         )
     return game_exe
 

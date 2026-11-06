@@ -4,6 +4,7 @@
 /* eslint-disable */
 export type PlanCreateIn = {
     type: PlanCreateIn.type;
+    scriptId?: (string | null);
 };
 export namespace PlanCreateIn {
     export enum type {
@@ -11,6 +12,7 @@ export namespace PlanCreateIn {
         MAA_END_PLAN = 'MaaEndPlan',
         BAAHPLAN = 'BAAHPlan',
         MSSPLAN = 'MSSPlan',
+        UNIVERSAL_PLAN = 'UniversalPlan',
     }
 }
 

@@ -14,7 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
-"""脚本管理：HSR 路由与端点专用模型。"""
+"""托管管理：HSR 路由与端点专用模型。"""
 
 from typing import (
     Literal,
@@ -50,7 +50,7 @@ class HSRCapabilitiesOut(OutBase):
 
 
 class HSRUpdateIn(BaseModel):
-    scriptId: str = Field(..., description="HSR 脚本配置 ID")
+    scriptId: str = Field(..., description="HSR 托管配置 ID")
     engine: Literal["M7A", "SRA"] = Field(..., description="要操作的外部脚本引擎")
     action: Literal["check", "apply"] = Field(
         default="check", description="check 只查版本；apply 查完就装"
@@ -62,8 +62,8 @@ class HSRUpdateOut(OutBase):
 
 
 class HSRCloudLoginIn(BaseModel):
-    scriptId: str = Field(..., description="HSR 脚本配置 ID")
-    userId: str = Field(..., description="要登录云·星穹铁道的用户 ID")
+    scriptId: str = Field(..., description="HSR 托管配置 ID")
+    userId: str = Field(..., description="要登录云·星穹铁道的账号 ID")
 
 
 class HSRCloudLoginOut(OutBase):
@@ -81,7 +81,7 @@ class HSRSRAProfilesOut(OutBase):
 
 
 router = APIRouter()
-logger = get_logger("脚本管理 API")
+logger = get_logger("托管管理 API")
 
 
 @router.get(
@@ -99,7 +99,7 @@ async def get_hsr_stage_options_api(
 ) -> HSRStageOptionsOut:
     """返回 M7A/SRA 原生副本字段。
 
-    ``userId`` 仅用于校验用户归属；``slot`` 是兼容参数，动态选项当前
+    ``userId`` 仅用于校验账号归属；``slot`` 是兼容参数，动态选项当前
     按引擎统一返回，不按 slot 生成不同结果。
     """
 
@@ -148,12 +148,12 @@ async def post_hsr_update_api(data: HSRUpdateIn) -> HSRUpdateOut:
 @router.post(
     "/hsr/cloud-login",
     tags=["HSR"],
-    summary="为 HSR 用户登录云·星穹铁道",
+    summary="为 HSR 账号登录云·星穹铁道",
     response_model=HSRCloudLoginOut,
     status_code=200,
 )
 async def post_hsr_cloud_login_api(data: HSRCloudLoginIn) -> HSRCloudLoginOut:
-    """起该用户的云浏览器并用三月七的 ``game`` 任务等用户在窗口里登录。
+    """起该账号的云浏览器并用三月七的 ``game`` 任务等用户在窗口里登录。
 
     阻塞到三月七退出为止（最长为登录等待 + 最长排队 + 余量），与正在运行的
     任务互斥：脚本运行中或三月七目录被占用时返回 409。成功后写
@@ -178,9 +178,9 @@ async def get_hsr_managed_config_api(
 ) -> HSRManagedConfigOut:
     """返回原生动态托管字段。
 
-    传了用户 ID 时先做归属校验，再按该用户的配置来源决定表单读哪份计划：
-    「脚本」读脚本共享计划，「用户」读该用户自己的计划；不传用户 ID 时读
-    脚本共享计划。响应的 ``plan_owner`` 指明保存目标。
+    传了账号 ID 时先做归属校验，再按该账号的配置来源决定表单读哪份计划：
+    「脚本」读托管共享计划，「用户」读该用户自己的计划；不传账号 ID 时读
+    托管共享计划。响应的 ``plan_owner`` 指明保存目标。
     """
 
     from app.task.HSR import api_service as hsr_api

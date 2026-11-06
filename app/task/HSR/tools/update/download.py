@@ -66,7 +66,7 @@ async def download_package(
             )
             break
         except FluxdownCancelUnconfirmed:
-            # 后台可能仍在写入，不能重试、删包或放行用户任务。
+            # 后台可能仍在写入，不能重试、删包或放行账号任务。
             raise
         except HSRUpdateAborted:
             # 半截文件留着：下次 Range 续传能接上，用户不必从头下。
@@ -95,8 +95,13 @@ async def download_package(
         _unlink(partial)
         raise HSRUpdateError(f"下载失败：{last_error}")
 
+    # This first verification also runs in a worker thread. Await the real
+    # worker's completion when cancelled before the parent prefetch removes
+    # the private directory (Windows cannot unlink an open input file).
+    from . import _run_install_worker
+
     try:
-        await asyncio.to_thread(_verify, partial, candidate)
+        await _run_install_worker(lambda: _verify(partial, candidate))
     except Exception:
         _unlink(partial)
         raise

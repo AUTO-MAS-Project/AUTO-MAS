@@ -28,6 +28,10 @@ export type Emulator2InstanceCreateIn = {
      */
     fps?: (number | null);
     /**
+     * 仅魔改 AVD: 分辨率档位，1080 为 1920×1080 / DPI 280（默认），720 为 1280×720 / DPI 240
+     */
+    resolution?: (1080 | 720 | null);
+    /**
      * 仅魔改 AVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64
      */
     dataPartitionGb?: (number | null);

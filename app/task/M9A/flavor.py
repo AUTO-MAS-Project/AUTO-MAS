@@ -25,7 +25,7 @@ input 选项；关闭放队尾。用户排的顺序不影响这三项。队列�
 
 按 entry 而不是按任务名找：任务名会随 M9A 的版本与语言变，entry 是它的 pipeline 入口，稳定。
 
-另实现了引擎的三个可选钩子：``sanitize_task_snapshot``（写用户任务快照前按同一规则整理）、
+另实现了引擎的三个可选钩子：``sanitize_task_snapshot``（写账号任务快照前按同一规则整理）、
 ``ensure_game_updated``（脚本开了游戏更新时，模拟器启动后比对官服客户端版本，落后就提示或
 下载安装，``game_update.py``）与 ``retype_notice_lines``（按项目换成 / 换出 M9A 时通知里说明
 启停与切号）；并给了引擎的五项可选声明：``abort_round_entries``（切号失败结束本轮）、
@@ -158,7 +158,7 @@ class M9AFlavor:
         }
     )
     # 五个小游戏：M9A 资源里没有导航，要用户先手动停在对应页面才能跑，MAS 无人值守放进队列只会
-    # 出错。用户页不让选，运行时剔掉（优先于上面的声明，skip_on_retry_entries 里留着无妨）。
+    # 出错。账号页不让选，运行时剔掉（优先于上面的声明，skip_on_retry_entries 里留着无妨）。
     unselectable_entries = dict.fromkeys(
         (
             "8bit",
@@ -186,7 +186,7 @@ class M9AFlavor:
                 "运行时会自动补上启动 / 关闭游戏；官服用户的「账号」用于自动切换账号"
             ]
             if has_users:
-                lines.append("已有用户的「账号」栏如果原来只是备注，请改掉或清空")
+                lines.append("已有账号的「账号」栏如果原来只是备注，请改掉或清空")
             return lines
         return ["不再自动补启动 / 关闭游戏、不再自动切换账号"] if has_users else []
 
@@ -213,7 +213,7 @@ class M9AFlavor:
             task_ids, task_options, entry_of=entry_of, account_of=account_of
         )
         if official and len(queued_accounts) >= 2:
-            # 一个用户对应一个账号：MAS 没法替用户决定这一轮切到哪个号，整个用户不跑
+            # 一个账号对应一个账号：MAS 没法替用户决定这一轮切到哪个号，整个账号不跑
             message = split_message(queued_accounts)
             log(f"[M9A] {message}")
             raise M9ASplitRequiredError(message)
@@ -298,7 +298,7 @@ class M9AFlavor:
         """引擎的可选钩子：写 ``Task.TaskSnapshot`` 前按 ``managed.py`` 的规则整理。
 
         返回（整理后的快照, 要写进 ``Info`` 的字段）。多个有效切号的保留态原样放行，
-        备注只由启动整理写，这里不写（用户页上有常驻提示）。
+        备注只由启动整理写，这里不写（账号页上有常驻提示）。
         """
 
         del script_config  # 资源由引擎按建运行计划的同一口径解析后传入

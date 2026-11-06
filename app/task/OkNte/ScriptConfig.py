@@ -50,8 +50,8 @@ logger = get_logger("OK-NTE 脚本设置")
 class ScriptConfigTask(TaskExecuteBase):
     """拉起 OK-NTE 原生 GUI；用户会话把 MAS 侧配置下发到读取目录，关闭回写。
 
-    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——用户级
-    会话下发的 MAS 目录即刚恢复的备份（所见即备份），脚本级会话跳过下发
+    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——账号级
+    会话下发的 MAS 目录即刚恢复的备份（所见即备份），托管级会话跳过下发
     （原生目录即备份）；结束不回写 MAS 配置，原生目录由 manager 的任务前
     快照还原（临时注入，看完还原）。
     """
@@ -130,24 +130,24 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.wait_event.wait()
 
     async def set_oknte(self) -> None:
-        """将 AUTO-MAS 侧用户配置下发到 OK-NTE GUI 读取目录。
+        """将 AUTO-MAS 侧账号配置下发到 OK-NTE GUI 读取目录。
 
-        查看会话（view_only）的脚本级入口跳过下发——原生目录就是刚恢复的
-        备份；用户级入口照常下发（MAS 目录即备份内容，下发是查看的必经
+        查看会话（view_only）的托管级入口跳过下发——原生目录就是刚恢复的
+        备份；账号级入口照常下发（MAS 目录即备份内容，下发是查看的必经
         复制，GUI 所见即备份）。
         """
 
-        logger.info(f"开始配置 OK-NTE GUI: 设置脚本 {self.cur_user_item.user_id}")
+        logger.info(f"开始配置 OK-NTE GUI: 设置账号 {self.cur_user_item.user_id}")
         await self._kill_oknte_process()
 
-        # 下发前归档 MAS 用户配置（下发源；指纹去重，失败不阻断会话）——
+        # 下发前归档 MAS 账号配置（下发源；指纹去重，失败不阻断会话）——
         # MAS 目录缺失时 GUI 会直接改原生配置、final_task 还会回写覆盖 MAS 目录。
         # native 池由 manager.prepare 在任务级一次性归档，此处不重复
         archive_mas_runtime_backup(
             self.script_info.script_id, self.cur_user_item.user_id
         )
 
-        # 查看会话的脚本级入口：原生目录即所选备份，跳过下发
+        # 查看会话的托管级入口：原生目录即所选备份，跳过下发
         if self.view_only and self.cur_user_item.user_id == "Default":
             logger.info("OK-NTE 查看会话跳过配置下发: 原生目录即所选备份")
             return
@@ -157,7 +157,7 @@ class ScriptConfigTask(TaskExecuteBase):
             or not self.mas_config_dir.exists()
             or not any(self.mas_config_dir.iterdir())
         ):
-            logger.info("未找到用户级 OK-NTE 配置，使用脚本当前配置启动 GUI")
+            logger.info("未找到账号级 OK-NTE 配置，使用脚本当前配置启动 GUI")
             return
 
         if self.script_config.Script.ConfigPathMode == "Folder":

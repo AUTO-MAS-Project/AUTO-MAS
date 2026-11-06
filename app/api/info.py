@@ -394,6 +394,29 @@ async def set_taskboard_version_story_done(payload: TaskboardDoneAtIn) -> OutBas
 BLUEARCHIVE_IMAGE_HOSTS = ("cdnimg-v2.gamekee.com", "resource.starrailassistant.top")
 ## 中转是原样转发（不缩放），给个上限免得被当成流量代理
 BLUEARCHIVE_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+## GameKee 的 CDN 常把 webp 标成 binary/octet-stream 这类通用类型，这时要看内容本身判断是不是图
+BLUEARCHIVE_GENERIC_MEDIA_TYPES = (
+    "",
+    "binary/octet-stream",
+    "application/octet-stream",
+)
+
+
+def _sniff_image_media_type(payload: bytes) -> str | None:
+    """用 Pillow 识别字节内容的图片格式，返回对应 MIME；不是可识别的图片则返回 None。"""
+
+    try:
+        with Image.open(io.BytesIO(payload)) as image:
+            image_format = image.format
+    except Exception:
+        return None
+    if not image_format:
+        return None
+    media_type = Image.MIME.get(image_format.upper())
+    if not media_type or not media_type.startswith("image/"):
+        return None
+    return media_type
+
 
 ## 明日方舟的活动一览取自 PRTS wiki。那个站对「声称自己是 Chrome」的请求一律 403，
 ## 换个朴素 UA 反而畅通；页面是服务端渲染的表格，每行带
@@ -470,7 +493,7 @@ async def get_stage_combox(
 @router.post(
     "/combox/script",
     tags=["Get"],
-    summary="获取脚本下拉框信息",
+    summary="获取托管下拉框信息",
     response_model=ComboBoxOut,
     status_code=200,
 )
@@ -745,10 +768,20 @@ async def get_bluearchive_image(
         ## 这个接口带着自定义头去白名单域名取东西再原样吐给前端，所以要确认拿回来的确实是图片：
         ## 上游报错时可能返回一坨 200 的 HTML，直接转发会让前端拿着垃圾当图；大小也设个上限
         media_type = response.headers.get("content-type", "").split(";")[0].strip()
-        if not media_type.startswith("image/"):
-            raise ValueError(f"来源不是图片: {media_type or '未给类型'}")
         if len(response.content) > BLUEARCHIVE_IMAGE_MAX_BYTES:
             raise ValueError(f"图片过大: {len(response.content)} 字节")
+        if not media_type.startswith("image/"):
+            ## 通用类型（octet-stream / 没给）时按内容识别；HTML 等其他类型照旧拒绝
+            sniffed = (
+                _sniff_image_media_type(response.content)
+                if media_type.lower() in BLUEARCHIVE_GENERIC_MEDIA_TYPES
+                else None
+            )
+            if sniffed is None:
+                raise ValueError(
+                    f"来源不是图片: {media_type or '未给类型'} (url={url})"
+                )
+            media_type = sniffed
     except Exception as e:
         logger.opt(exception=True).warning(
             f"获取碧蓝档案活动图片失败: {type(e).__name__}: {e}"

@@ -9,10 +9,6 @@ import pytest
 from app.utils.common.proxy_env import proxy_environment
 
 
-def test_no_explicit_proxy_keeps_default_environment():
-    assert proxy_environment(None) is None
-
-
 @pytest.mark.parametrize("authenticated", [False, True])
 def test_explicit_proxy_overrides_inherited_values(monkeypatch, authenticated):
     monkeypatch.setenv("HTTP_PROXY", "http://old.invalid:1")

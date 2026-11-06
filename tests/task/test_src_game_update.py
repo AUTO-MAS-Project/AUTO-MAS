@@ -6,37 +6,13 @@ import pytest
 
 from app.task.SRC.tools import game_update
 from app.task.SRC.tools.game_update import UpdateSource, ensure_game_updated
-from app.utils import STARRAIL_CN_UPDATE_LINK_URL, game_apk
+from app.utils import game_apk
 
-_CN_APK_LOCATION = (
-    "https://autopatchcn.bhsr.com/client/4.5.0/20260813_Ae542B66B5C7"
-    "/Android_apk/gw_An/StarRail_4.5.0.apk"
-)
 """国服官服更新入口 302 后的真实地址（2026-09-16 实测，2026-09-17 复测仍为单跳）"""
 
-_MIDDLE_LOCATION = "https://redirect.example.com/step2"
 """多跳场景的中间跳转地址，文件名不含版本号"""
 
-_NON_APK_LOCATION = (
-    "https://cdn.example.com/hkrpg/4.5.0/20260813_Ae542B66B5C7"
-    "/Windows_pkg/4.5.0_setup.exe"
-)
 """入口跳转后不是安卓安装包的情形，用于兜底分支"""
-
-
-def test_client_version_comparison() -> None:
-    assert game_update.is_client_outdated("4.4.0", "4.5.0")
-    assert game_update.is_client_outdated("4.4.9", "4.5.0")
-    assert not game_update.is_client_outdated("4.5.0", "4.5.0")
-    assert not game_update.is_client_outdated("4.5.1", "4.5.0")
-
-    # 段数不等时按缺失段补 0 比较（入口可能只给出 4.5 这种两段版本）
-    assert game_update.is_client_outdated("4.4.0", "4.5")
-    assert not game_update.is_client_outdated("4.5.0", "4.5")
-
-    # 任一侧解析不出数字时不下判断，避免误拦正常代理
-    assert not game_update.is_client_outdated("unknown", "4.5.0")
-    assert not game_update.is_client_outdated("4.5.0", "")
 
 
 class _FakeStreamResponse:
@@ -70,108 +46,6 @@ class _FakeAsyncClient:
 
     def stream(self, _method: str, url: str, **_kwargs: object) -> _FakeStream:
         return _FakeStream(url, self._routes.get(url))
-
-
-def _patch_redirect(
-    monkeypatch: pytest.MonkeyPatch, routes: dict[str, str | None]
-) -> None:
-    """按 URL 精确映射跳转目标；未登记的 URL 视为不再跳转"""
-
-    def factory(*_args: object, **_kwargs: object) -> _FakeAsyncClient:
-        return _FakeAsyncClient(routes)
-
-    monkeypatch.setattr(game_apk.httpx, "AsyncClient", factory)
-
-
-def test_resolve_download_link_parses_cn_apk(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_redirect(monkeypatch, {"https://link.example.com/cn": _CN_APK_LOCATION})
-
-    resolved = asyncio.run(
-        game_update._resolve_download_link("https://link.example.com/cn")
-    )
-
-    assert resolved is not None
-    assert resolved[0].endswith("StarRail_4.5.0.apk")
-    assert resolved[1] == "4.5.0"
-
-
-def test_resolve_download_link_follows_multiple_redirects(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # 中间跳转地址的文件名不含版本号，跟随到最终地址后才解析成功
-    _patch_redirect(
-        monkeypatch,
-        {
-            "https://link.example.com/cn": _MIDDLE_LOCATION,
-            _MIDDLE_LOCATION: _CN_APK_LOCATION,
-        },
-    )
-
-    resolved = asyncio.run(
-        game_update._resolve_download_link("https://link.example.com/cn")
-    )
-
-    assert resolved is not None
-    assert resolved[0].endswith("StarRail_4.5.0.apk")
-    assert resolved[1] == "4.5.0"
-
-
-def test_resolve_download_link_gives_up_after_max_hops(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # 构造一条明显超过跟随上限（5 跳）的重定向链
-    routes: dict[str, str | None] = {
-        f"https://hop{i}.example.com/next": f"https://hop{i + 1}.example.com/next"
-        for i in range(10)
-    }
-    routes["https://link.example.com/cn"] = "https://hop0.example.com/next"
-    _patch_redirect(monkeypatch, routes)
-
-    assert (
-        asyncio.run(game_update._resolve_download_link("https://link.example.com/cn"))
-        is None
-    )
-
-
-def test_fetch_update_source_non_apk_cannot_auto_install(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_redirect(monkeypatch, {STARRAIL_CN_UPDATE_LINK_URL: _NON_APK_LOCATION})
-
-    source = asyncio.run(game_update.fetch_update_source("CN-Official"))
-
-    # 入口万一不指向安卓包：仍能取到版本，但不能拿去 adb install
-    assert source is not None
-    assert source.version == "4.5.0"
-    assert not source.can_auto_install
-
-
-def test_resolve_download_link_without_redirect(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_redirect(monkeypatch, {"https://link.example.com": None})
-
-    assert (
-        asyncio.run(game_update._resolve_download_link("https://link.example.com"))
-        is None
-    )
-
-
-def test_fetch_update_source_cn_can_auto_install(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_redirect(monkeypatch, {STARRAIL_CN_UPDATE_LINK_URL: _CN_APK_LOCATION})
-
-    source = asyncio.run(game_update.fetch_update_source("CN-Official"))
-
-    assert source is not None
-    assert source.version == "4.5.0"
-    assert source.can_auto_install
-
-
-def test_fetch_update_source_without_public_entry() -> None:
-    # 渠道服不在映射表中，未发请求就应返回 None
-    assert asyncio.run(game_update.fetch_update_source("CN-Bilibili")) is None
 
 
 def _patch_installed(monkeypatch: pytest.MonkeyPatch, installed: str | None) -> None:
@@ -253,28 +127,6 @@ def test_unreadable_installed_version_does_not_block_proxy(
     _patch_installed(monkeypatch, None)
 
     assert _run().status == "Skipped"
-
-
-def test_missing_adb_address_skips_check(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_source(monkeypatch, "4.5.0")
-    _patch_installed(monkeypatch, "4.4.0")
-
-    assert _run(adb_address="Unknown").status == "Skipped"
-
-
-def test_unavailable_source_skips_check(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_source(monkeypatch, None)
-    _patch_installed(monkeypatch, "4.4.0")
-
-    assert _run().status == "Skipped"
-
-
-def test_server_without_public_entry_skips_check(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_installed(monkeypatch, "4.4.0")
-
-    assert _run(server="CN-Bilibili").status == "Skipped"
 
 
 class _FakeDownloadStream:

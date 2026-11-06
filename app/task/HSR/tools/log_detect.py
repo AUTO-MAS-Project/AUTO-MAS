@@ -225,7 +225,7 @@ def _m7a_log_message(line: str) -> str:
 
 # cloud.py:311 `self.log_info(f"正在启动 {browser_type} 浏览器")`：三月七找不到 MAS
 # 的浏览器、准备自建时打这行（它的启动重试先 stop_game() 杀掉了所有带标记的
-# 浏览器）。自建的浏览器不在 MAS 的按用户 profile 里，必须立刻拦下。
+# 浏览器）。自建的浏览器不在 MAS 的按账号 profile 里，必须立刻拦下。
 HSR_CLOUD_SELF_BROWSER_PREFIX = "正在启动 "
 HSR_CLOUD_SELF_BROWSER_SUFFIX = " 浏览器"
 

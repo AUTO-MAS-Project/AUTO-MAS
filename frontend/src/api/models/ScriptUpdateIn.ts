@@ -18,11 +18,11 @@ import type { WhimboxConfigInput } from './WhimboxConfigInput';
 import type { ZzzOdConfigInput } from './ZzzOdConfigInput';
 export type ScriptUpdateIn = {
     /**
-     * 脚本ID
+     * 托管ID
      */
     scriptId: string;
     /**
-     * 脚本更新数据
+     * 托管更新数据
      */
     data: (MaaConfigInput | SrcConfigInput | GeneralConfigInput | OkwwConfigInput | OkNteConfigInput | MaaEndConfigInput | M9AConfigInput | MaaFWConfigInput | HSRConfigInput | BetterGIConfigInput | ZzzOdConfigInput | BAAHConfigInput | WhimboxConfigInput | MSSConfigInput);
 };

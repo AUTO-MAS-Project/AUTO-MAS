@@ -12,9 +12,11 @@ import asyncio
 import base64
 import json
 import os
+import shutil
 import threading
 import zipfile
 from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
@@ -26,7 +28,6 @@ from app.core import Config
 from app.core.update import download_file
 from app.models.config import MaaEndConfig
 from app.services import script_install
-from app.services.common.update.fluxdown import FluxdownResumableError
 from app.services.common.update.transport import (
     DownloadProgress,
     request_mirror_resource,
@@ -152,13 +153,39 @@ def select_package(release: dict, arch: str) -> tuple[Version, str, str, int, st
     raise ValueError("MaaEnd 官方发行版没有当前安装架构的完整包")
 
 
-async def update_before_run(
+@dataclass(frozen=True)
+class PreparedUpdate:
+    root: Path
+    current: tuple[Version, str] | None
+    target: Version
+    arch: str
+    destination: Path
+    size: int
+    digest: str
+
+
+def discard_update(candidate: PreparedUpdate | str) -> None:
+    if isinstance(candidate, PreparedUpdate):
+        with suppress(OSError):
+            candidate.destination.unlink(missing_ok=True)
+            candidate.destination.parent.rmdir()
+
+
+async def prepare_update(
     root: Path, config: MaaEndConfig, *, progress: DownloadProgress | None = None
-) -> str:
-    """调用方持安装锁；所有下载失败都发生在原安装尚未改动时。"""
-    await asyncio.to_thread(assert_idle, root)
+) -> PreparedUpdate | str:
+    """只读安装身份并下载到独立 MAS 缓存；不要求原安装空闲。"""
+    channel = config.Update.Channel
+    effective_cdk = (
+        config.Update.MirrorChyanCDK.strip()
+        or Config.setting.Update.MirrorChyanCDK.strip()
+    )
+    proxy = Config.proxy
+    downloader = "fluxdown" if Config.setting.Update.FluxdownTakeoverAll else "builtin"
+    original = None
     try:
         current, arch = await asyncio.to_thread(read_install, root)
+        original = (current, arch)
     except (OSError, ValueError):
         # 曾经成功安装过的目录可按原架构修复损坏的 exe/interface；不按主机架构猜测。
         identity = _utils_io.read_dict_file(
@@ -171,7 +198,7 @@ async def update_before_run(
             )
         current = Version("0")
     target, name, url, size, digest = select_package(
-        await request_release(config.Update.Channel), arch
+        await request_release(channel), arch
     )
     verified = await script_install.run_worker(
         script_install.verify_installed_files, root
@@ -205,14 +232,7 @@ async def update_before_run(
         target = verified_target
     # 当前版本高于所选通道时只用精确匹配的 GitHub 官方包恢复可信回执；
     # Mirror 酱提供的是通道最新包，不能假定其中含有该历史版本。
-    cdk = (
-        ""
-        if recover_native
-        else (
-            config.Update.MirrorChyanCDK.strip()
-            or Config.setting.Update.MirrorChyanCDK.strip()
-        )
-    )
+    cdk = "" if recover_native else (effective_cdk)
     source = "GitHub"
     if cdk:
         payload = await request_mirror_resource(
@@ -221,9 +241,9 @@ async def update_before_run(
                 "cdk": cdk,
                 "os": "win",
                 "arch": "x64" if arch == "x86_64" else "arm64",
-                "channel": config.Update.Channel,
+                "channel": channel,
             },
-            proxy=Config.proxy,
+            proxy=proxy,
         )
         data = payload.get("data", {})
         if (
@@ -247,13 +267,6 @@ async def update_before_run(
     cache = Path.cwd() / "data" / "maaend_update"
     cache.mkdir(parents=True, exist_ok=True)
     destination = Path(tempfile.mkdtemp(dir=cache, prefix="download-")) / name
-    downloader = "fluxdown" if Config.setting.Update.FluxdownTakeoverAll else "builtin"
-    proxy = Config.proxy
-    builtin_transport = (
-        downloader == "builtin"
-        or source == "MirrorChyan"
-        or (proxy is not None and proxy.auth is not None)
-    )
     try:
         await download_file(
             url,
@@ -265,27 +278,58 @@ async def update_before_run(
             progress=progress,
         )
     except asyncio.CancelledError:
-        # 内置 httpx 取消后已退出网络与文件上下文，可以回收部分下载。
-        # FluxDown 可能仍有后台写入者；无法确认停止时必须保留其目标。
-        if builtin_transport:
-            with suppress(OSError):
-                destination.unlink(missing_ok=True)
-                destination.parent.rmdir()
+        # 公共入口只在确认写入已收敛后传播普通取消，所有下载器同样回收。
+        shutil.rmtree(destination.parent, ignore_errors=True)
         raise
-    except (
-        _fluxdown_cli.FluxdownCancelUnconfirmed,
-        FluxdownResumableError,
-    ):
-        # FluxDown 未确认停止或保留了续传任务，不能删除其输出目标。
+    except _fluxdown_cli.FluxdownCancelUnconfirmed:
+        # FluxDown 未确认停止，不能删除其输出目标。
         raise
-    except Exception as error:
-        # 内置 httpx 的异常返回时流和文件已经关闭，可回收本轮部分包。
-        # 其余 FluxDown 异常不保证写入者退出，仍保留独立下载目标。
-        if builtin_transport or isinstance(error, httpx.HTTPError):
-            with suppress(OSError):
-                destination.unlink(missing_ok=True)
-                destination.parent.rmdir()
+    except Exception:
+        # 不明写入由上面的专用异常保留；停写后的独立路径不再复用。
+        shutil.rmtree(destination.parent, ignore_errors=True)
         raise
+
+    try:
+        await script_install.run_worker(
+            script_install.verify_archive, destination, size, digest
+        )
+    except BaseException:
+        discard_update(
+            PreparedUpdate(root, original, target, arch, destination, size, digest)
+        )
+        raise
+    return PreparedUpdate(
+        root.resolve(), original, target, arch, destination, size, digest
+    )
+
+
+async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
+    """调用方持安装锁；候选复核后才允许切换目录。"""
+    await asyncio.to_thread(assert_idle, root)
+    if isinstance(candidate, str):
+        # A no-update decision is only a snapshot taken during prefetch.
+        # Another updater may have modified the install while waiting.
+        await confirm_current_install(root)
+        return candidate
+    target, arch = candidate.target, candidate.arch
+
+    def recheck_install() -> None:
+        try:
+            current = read_install(root)
+        except (OSError, ValueError):
+            current = None
+        if root.resolve() != candidate.root or current != candidate.current:
+            raise ValueError("MaaEnd 安装已变化，预下载候选已失效，请重新检查更新")
+
+    await asyncio.to_thread(recheck_install)
+
+    def prepare_ready(
+        ready: Path, package: Path, directory: Path, cancelled: threading.Event
+    ) -> None:
+        # 安装器已经记录原目录树并复制到 ready；此前的原生升级在这里拒绝，
+        # 此后的修改由安装器既有的目录树复核阻止切换。
+        recheck_install()
+        refresh_merged_pipelines(ready, package, directory, cancelled)
 
     def validate(path: Path) -> None:
         version, actual_arch = read_install(path)
@@ -297,13 +341,13 @@ async def update_before_run(
         await script_install.run_worker(
             script_install.install_package,
             root,
-            destination,
-            size,
-            digest,
+            candidate.destination,
+            candidate.size,
+            candidate.digest,
             PROTECTED,
             validate,
             lambda: assert_idle(root),
-            prepare_ready=refresh_merged_pipelines,
+            prepare_ready=prepare_ready,
         )
         _utils_io.write_file(
             script_install.workspace(root) / "program-identity.json",
@@ -312,9 +356,19 @@ async def update_before_run(
         return f"MaaEnd 已更新至 {target}，完整性校验通过"
     finally:
         # run_worker 在取消时等待安装线程结束，避免删掉仍在使用的压缩包。
-        with suppress(OSError):
-            destination.unlink(missing_ok=True)
-            destination.parent.rmdir()
+        discard_update(candidate)
+
+
+async def update_before_run(
+    root: Path, config: MaaEndConfig, *, progress: DownloadProgress | None = None
+) -> str:
+    """手动与无预取路径仍在安装锁下完整等待更新。"""
+    await asyncio.to_thread(assert_idle, root)
+    candidate = await prepare_update(root, config, progress=progress)
+    try:
+        return await apply_update(root, candidate)
+    finally:
+        discard_update(candidate)
 
 
 async def confirm_current_install(root: Path, *, verify_receipt: bool = True) -> None:
