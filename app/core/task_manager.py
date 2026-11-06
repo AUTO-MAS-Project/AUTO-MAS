@@ -137,13 +137,13 @@ class _TaskManager:
         return await self._launch(ScriptExpander(info, self), tasks)
 
     async def start_maintenance(self, target_id: str) -> UUID:
-        """[兼容旧专项] 旧手动更新入口；普通任务使用 start()，新专项维护能力放在专项业务入口。
+        """[兼容旧专项] 旧手动更新入口；普通任务使用 start()。
 
         目标由旧适配层解析，以 ScriptConfig 信息树承载隐藏的 Update 分支；
         共用创建与停止流程，不创建普通调度面板。
 
-        TODO(插件迁移，#1845)：全部存量专项维护暂不改造；隐藏模式、查询、
-        日志和停写未确认的处理留待插件统一迁移，不接入新的后台维护标准。
+        TODO(插件迁移，#1845)：存量专项适配与未来维护任务标准均已推迟；
+        操作归属、查询/日志、结果消费及取消停写契约尚未确认，不按草案改造此兼容链。
         """
         from app.task.legacy import maintenance_requirements
 
