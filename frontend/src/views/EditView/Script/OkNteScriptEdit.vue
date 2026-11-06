@@ -172,16 +172,11 @@
                     </a-radio-group>
                   </div>
                 </template>
-                <PathPickerField
-                  v-model="oknteConfig.Game.Path"
-                  mode="folder"
-                  :placeholder="t('core.edit.pickGameLauncherDirectory')"
-                  :pick-label="t('core.edit.pickDirectory')"
+                <OkNteLauncherPicker
+                  :path="oknteConfig.Game.Path"
                   :disabled="!oknteConfig.Game.Enabled"
-                  :pick-disabled="!oknteConfig.Game.Enabled"
-                  @pick="selectGameRootPath"
+                  @select="saveGameLauncher"
                 />
-                <span class="control-hint">{{ t('core.edit.okntePickDirHint') }}</span>
                 <span v-if="showLaunchModeHint" class="control-hint">
                   {{ t('core.edit.oknteLaunchModeNeedsLaunchBeforeTask') }}
                 </span>
@@ -276,6 +271,7 @@
 
 <script setup lang="ts">
 import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import OkNteLauncherPicker from './components/OkNteLauncherPicker.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
@@ -377,7 +373,6 @@ const rules = {
 }
 
 // 异环游戏路径预设锚点与启动器相对路径（直启 HTGame.exe 会卡界面，必须经启动器）
-const NTE_GAME_ANCHOR = 'Neverness To Everness'
 const NTE_LAUNCHER_DIR = 'NTELauncher'
 const NTE_LAUNCHER_EXES = ['NTEGame.exe', 'NTEGlobalGame.exe', 'NTETWGame.exe']
 const NTE_CLIENT_EXE = 'htgame.exe'
@@ -513,8 +508,11 @@ const loadScript = async () => {
       const clientIdx = gamePath.toLowerCase().lastIndexOf('/client/')
       if (clientIdx !== -1) {
         const installRoot = gamePath.substring(0, clientIdx)
-        for (const exe of NTE_LAUNCHER_EXES) {
-          const candidate = `${installRoot}/${NTE_LAUNCHER_DIR}/${exe}`
+        const candidates = [
+          `${installRoot}/NTEGlobalLauncher.exe`,
+          ...NTE_LAUNCHER_EXES.map(exe => `${installRoot}/${NTE_LAUNCHER_DIR}/${exe}`),
+        ]
+        for (const candidate of candidates) {
           if (await window.electronAPI.fileExists(candidate)) {
             oknteConfig.Game.Path = candidate
             break
@@ -545,54 +543,13 @@ const selectRootPath = async () => {
   await applyRootPathDefaults(normalized)
 }
 
-const selectGameRootPath = async () => {
-  if (!oknteConfig.Game.Enabled) return
-  const picked = await window.electronAPI.selectFolder()
-  if (!picked) return
-
-  const normalized = picked.replace(/\\/g, '/')
-
-  // 在路径中查找锚点 "Neverness To Everness"（大小写不敏感），取锚点之前的 prefix
-  const idx = normalized.toLowerCase().indexOf(NTE_GAME_ANCHOR.toLowerCase())
-  if (idx === -1) {
-    showPathRejectModal(
-      '所选目录无效',
-      '当前选择的路径不在异环游戏目录内，无法自动匹配。\n\n请选择包含 Neverness To Everness 的目录（如游戏根目录本身，或其下的 Client、WindowsNoEditor、Win64 等子目录）。'
-    )
-    return
-  }
-
-  // 截断锚点之后的内容，拼接启动器候选相对路径（国服/国际/台服）
-  const prefix = normalized.substring(0, idx)
-  const launcherCandidates = NTE_LAUNCHER_EXES.map(
-    exe => `${prefix}${NTE_GAME_ANCHOR}/${NTE_LAUNCHER_DIR}/${exe}`
-  )
-
-  let candidateLauncher: string | null = null
-  for (const candidate of launcherCandidates) {
-    if (await window.electronAPI.fileExists(candidate)) {
-      candidateLauncher = candidate
-      break
-    }
-  }
-  if (!candidateLauncher) {
-    showPathRejectModal(
-      '所选目录无效',
-      '检测到异环目录但未找到 NTELauncher 启动器（NTEGame.exe），请验证游戏完整性。'
-    )
-    return
-  }
-
-  oknteConfig.Game.Path = candidateLauncher
-  oknteConfig.Game.Type = 'Client'
+const saveGameLauncher = async (path: string) => {
   await enqueue(async () => {
-    await updateScript(scriptId, {
-      Game: {
-        Path: oknteConfig.Game.Path,
-        Type: 'Client',
-      },
-    })
-    message.success(t('core.edit.gamePathMatchedHtgame'))
+    if (await updateScript(scriptId, { Game: { Path: path, Type: 'Client' } })) {
+      oknteConfig.Game.Path = path
+      oknteConfig.Game.Type = 'Client'
+      message.success(t('core.edit.gamePathMatchedHtgame'))
+    }
   })
 }
 

@@ -41,7 +41,6 @@ from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
-    find_pids_by_name,
     kill_pids_by_name,
     push_dispatch_log,
     quick_config_takeover,
@@ -84,6 +83,7 @@ from .tools.launcher_start import (
     async_start_game_via_launcher,
     async_wait_autoplay_game,
     detect_game_maintenance_text,
+    launcher_process_paths,
 )
 from .tools.runtime import OkNteProcessManager, runtime_dir
 
@@ -109,19 +109,6 @@ _LAUNCH_MODE_LABELS = {
 _GAME_EXIT_WAIT_SECONDS = 90
 # 结束常驻启动器后等它退出（单实例互斥释放）的上限
 _LAUNCHER_EXIT_WAIT_SECONDS = 15
-
-
-def _launcher_process_name(launcher_path: Path) -> str:
-    """进程名比较区分大小写（psutil），而 Game.Path 里的大小写不受约束。
-
-    检测与结束都走这个规范名：配置写成 ntegame.exe 时按原样比较会全都漏掉，
-    常驻启动器就会把 /autoplay 吃掉，白等 180s。
-    """
-
-    for exe in _NTE_LAUNCHER_EXES:
-        if exe.casefold() == launcher_path.name.casefold():
-            return exe
-    return launcher_path.name
 
 
 def _load_nte_launcher_path(config_path: Path) -> Path | None:
@@ -650,7 +637,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         self.script_info.log = "\n".join(self._game_config_summary_lines())
         await asyncio.sleep(0)
 
-    def _resolve_launcher_path(self) -> Path | None:
+    def _resolve_launcher_path(
+        self, *, use_script_fallback: bool = True
+    ) -> Path | None:
         """解析异环启动器路径（异环直启 HTGame.exe 会卡界面，必须经启动器）。
 
         Game.Path 优先：新语义直接选启动器 exe；旧值是 HTGame.exe 时按
@@ -659,16 +648,24 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         """
         game_path = self.script_config.Game.Path
         if game_path is not None and game_path.is_file():
-            if game_path.name.casefold() in _NTE_LAUNCHER_EXES_CASEFOLD:
+            if (
+                game_path.suffix.casefold() == ".exe"
+                and game_path.name.casefold() != "htgame.exe"
+            ):
                 return game_path
             for ancestor in game_path.parents:
                 if ancestor.name.casefold() == "client":
+                    global_launcher = ancestor.parent / "NTEGlobalLauncher.exe"
+                    if global_launcher.is_file():
+                        return global_launcher
                     for exe in _NTE_LAUNCHER_EXES:
                         candidate = ancestor.parent / "NTELauncher" / exe
                         if candidate.is_file():
                             return candidate
                     break
-        return _load_nte_launcher_path(self.script_config_path)
+        if use_script_fallback:
+            return _load_nte_launcher_path(self.script_config_path)
+        return None
 
     async def _mas_launch_game_before_task(self) -> None:
         """MAS 接管启动游戏，并将各步骤写入调度台日志。"""
@@ -729,25 +726,19 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 # 启动器是严格单实例（Global\CoreClient_StartEvent）：它已在运行时，新进程
                 # 只会把旧实例窗口调出来后立即退出，/autoplay 既传不进去、也等不到游戏窗口。
                 # 故先结束常驻启动器（收尾流程本就会结束它），再按「全新启动」静默拉起。
-                launcher_exe = _launcher_process_name(launcher_path)
-                if await asyncio.to_thread(is_process_alive, launcher_exe):
-                    message = (
-                        f"检测到启动器 {launcher_exe} 已在运行，重新拉起以静默启动"
-                    )
+                launcher_paths = launcher_process_paths(launcher_path)
+                if not all(
+                    [await System.is_process_stopped(path) for path in launcher_paths]
+                ):
+                    message = f"检测到启动器 {launcher_path.name} 已在运行，重新拉起以静默启动"
                     logger.info(message)
                     await self._push_dispatch_log(message)
                     await self.game_manager.kill()
-                    # 结束也按进程名（与结束异环客户端同款）：System.kill_process 按 exe
-                    # 路径精确匹配，读不到路径的同名进程既杀不掉、又会被单实例守卫
-                    # 留着吃掉 /autoplay，白等 180s。
-                    for pid in await asyncio.to_thread(find_pids_by_name, launcher_exe):
-                        try:
-                            await System.kill_process_by_pid(pid, kill_tree=False)
-                        except Exception as e:
-                            logger.opt(exception=True).warning(
-                                f"结束常驻启动器进程失败 PID: {pid}, {e}"
-                            )
-                    await self._wait_launcher_exit(launcher_path)
+                    for path in launcher_paths:
+                        if not await System.kill_process(path, kill_tree=False):
+                            raise RuntimeError(f"无法关闭启动器: {path.name}")
+                    if not await self._wait_launcher_exit(launcher_path):
+                        raise RuntimeError("无法确认启动器已退出，请手动关闭后重试")
                 # 优先带 /autoplay 静默拉起：启动器自行进游戏，省掉 OCR 找按钮点击
                 # 「开始游戏」这一整段交互（含更新/弹窗等分支）。
                 await self.game_manager.open_process(launcher_path, AUTOPLAY_ARG)
@@ -808,16 +799,16 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
     async def _wait_launcher_exit(self, launcher_path: Path) -> bool:
         """等常驻启动器退出：单实例互斥释放后 /autoplay 才能重新静默拉起。"""
 
-        launcher_exe = _launcher_process_name(launcher_path)
+        launcher_paths = launcher_process_paths(launcher_path)
         deadline = time.monotonic() + _LAUNCHER_EXIT_WAIT_SECONDS
         while time.monotonic() < deadline:
             # 按进程存活判断（不依赖窗口）：静默启动的启动器本就没有可见窗口
-            if not await asyncio.to_thread(is_process_alive, launcher_exe):
+            if all([await System.is_process_stopped(path) for path in launcher_paths]):
                 return True
             await asyncio.sleep(1)
         logger.warning(
-            f"等待启动器退出超时（{_LAUNCHER_EXIT_WAIT_SECONDS}s），仍尝试静默拉起: "
-            f"{launcher_exe}"
+            f"等待启动器退出超时（{_LAUNCHER_EXIT_WAIT_SECONDS}s）: "
+            f"{launcher_path.name}"
         )
         return False
 
@@ -1368,14 +1359,18 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 await System.kill_process(exe)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-NTE 进程失败: {exe} ({e})")
-        try:
-            launcher_path = _load_nte_launcher_path(self.script_config_path)
-            if launcher_path is None:
-                logger.warning("未找到有效的异环启动器路径，跳过进程清理")
-            else:
-                await System.kill_process(launcher_path, kill_tree=False)
-        except Exception as e:
-            logger.opt(exception=True).warning(f"中止异环启动器进程失败: {e}")
+        if self.script_config.Game.Enabled and self.script_config.Game.Type == "Client":
+            try:
+                launcher_path = self._resolve_launcher_path(use_script_fallback=False)
+                if launcher_path is not None:
+                    await System.kill_process(launcher_path, kill_tree=False)
+                    if launcher_path.name.casefold() == "ntegloballauncher.exe":
+                        # 国际服入口会退出，实际窗口由安装目录中的独立进程承载。
+                        window_process = launcher_process_paths(launcher_path)[1]
+                        # 不结束子进程：游戏可能仍属于此进程树，由游戏关闭策略单独处理。
+                        await System.kill_process(window_process, kill_tree=False)
+            except Exception as e:
+                logger.opt(exception=True).warning(f"中止异环启动器进程失败: {e}")
 
     async def _kill_game_process(self) -> None:
         """结束游戏：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
