@@ -5,13 +5,15 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.config import LockTicket
 from app.core import Config, Notify, Publisher
 from app.core.ws import protocol
-from app.models.schema import WSTaskCompletedData, WSTaskNoticeData
+from app.models.schema import WSPowerSignData, WSTaskCompletedData, WSTaskNoticeData
 from app.models.task import TaskItem, TaskMode, TaskScriptItem, TaskTriggerReason
+from app.services import execute_script_task
 from app.task.context import TaskContext
 from app.task.history_core import TaskHistorySession
 from app.task.lifecycle import TaskBase
@@ -94,7 +96,10 @@ class ScriptExpander(TaskBase):
         # TODO(插件迁移，#1845)：dev 的下一托管预下载尚未接线，本轮不生效；
         # 同步时保持旧预下载接线禁用，首个成功节点计时、候选交接与取消清理待重新设计。
         # 专项自身的运行前更新仍沿现有 manager 执行。
+        await self._run_extra_script(info.execution.script_before, "队列运行前脚本")
         for index, script in enumerate(info.script_list):
+            if self.cancelled:
+                raise asyncio.CancelledError
             await info.set_current_index(index)
             if (
                 script._run_days is not None
@@ -106,11 +111,38 @@ class ScriptExpander(TaskBase):
                 task_id=info.task_id, coordinator=self.report_coordinator
             ):
                 await self._run_script(script)
+        # 附加脚本属于可中止的业务流程，直接 await，停止时不启动后续动作。
+        await self._run_extra_script(info.execution.script_after, "队列运行后脚本")
+        if self.cancelled:
+            raise asyncio.CancelledError
         await info.set_state(
             status="error"
             if self._callback_failed
             or any(s.status == "异常" for s in info.scripts.values())
             else "success"
+        )
+
+    async def _run_extra_script(self, path: Path | None, label: str) -> None:
+        """按受理快照复用基础脚本执行器；普通失败提示后继续，取消向上传播。"""
+        if self.cancelled:
+            raise asyncio.CancelledError
+        if path is None:
+            return
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="info", message=f"开始执行{label}"),
+        )
+        if self.cancelled:
+            raise asyncio.CancelledError
+        succeeded = await execute_script_task(path, label)
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="info" if succeeded else "warning",
+                message=f"{label}执行{'成功' if succeeded else '失败'}",
+            ),
         )
 
     async def _run_script(self, script: TaskScriptItem) -> None:
@@ -274,3 +306,18 @@ class ScriptExpander(TaskBase):
             unit="millisecond",
             attributes=attrs,
         )
+        if (
+            not self.cancelled
+            and self.error is None
+            and info.mode == TaskMode.AUTO_PROXY
+            and info.execution.after_accomplish != "NoAction"
+            and Config.power_sign == "NoAction"
+        ):
+            # 本轮及收尾完成后交接现有电源意图；维护任务与电源等待机制另行统一。
+            Config.power_sign = info.execution.after_accomplish
+            Config.power_delay = info.execution.after_accomplish_delay * 60
+            await Publisher.send(
+                id=protocol.ID_MAIN,
+                type=protocol.POWER_SIGN_UPDATED,
+                data=WSPowerSignData(signal=Config.power_sign),
+            )

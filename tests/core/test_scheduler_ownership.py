@@ -1,7 +1,7 @@
 """L1 统一记账及上层持锁覆盖下层恢复的回归。"""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -10,7 +10,7 @@ from app.config.errors import ConfigAggregateError
 from app.core import Publisher
 from app.core.timer import _MainTimer
 from app.core.ws import protocol
-from app.models.config import QueueConfig
+from app.models.config import QueueConfig, TimeSet
 from app.models.task import TaskMode, TaskTriggerReason
 from app.task.mode_worker import AutoProxyWorker
 from app.task.user_expander import UserExpander
@@ -56,6 +56,7 @@ async def test_manual_creation_records_only_common_clock_and_ignores_forged_para
     now = datetime.now().astimezone()
     qid, queue = await make_queue(queues, sid, now=now)
     previous_cycle, previous_startup = queue.Cycle.LastRunAt, queue.Data.LastStartupTime
+    previous_timed = queue.Data.LastTimedStart
     with creation_time(now):
         uid = await manager.start(
             TaskMode.AUTO_PROXY,
@@ -73,6 +74,7 @@ async def test_manual_creation_records_only_common_clock_and_ignores_forged_para
     assert queue.Data.LastStartTime == now
     assert queue.Cycle.LastRunAt == previous_cycle
     assert queue.Data.LastStartupTime == previous_startup
+    assert queue.Data.LastTimedStart == previous_timed
     assert run.task_info.info.trigger is TaskTriggerReason.MANUAL
     assert "is_cycle" not in run.task_info.info.model_dump()
     assert "trigger_source" not in run.task_info.info.model_dump()
@@ -137,7 +139,10 @@ async def test_trigger_survives_queries_and_push_without_derived_fields(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reason", [TaskTriggerReason.STARTUP, TaskTriggerReason.CYCLE])
+@pytest.mark.parametrize(
+    "reason",
+    [TaskTriggerReason.STARTUP, TaskTriggerReason.TIMED, TaskTriggerReason.CYCLE],
+)
 async def test_late_clock_commit_failure_rolls_back_all_clocks_and_publishes_no_task(
     scheduler, monkeypatch, reason
 ):
@@ -145,11 +150,11 @@ async def test_late_clock_commit_failure_rolls_back_all_clocks_and_publishes_no_
     now = datetime.now().astimezone()
     qid, queue = await make_queue(queues, sid, now=now)
     previous = queue.model_dump(context={"audience": "persist"})
-    group, field = (
-        ("Data", "LastStartupTime")
-        if reason is TaskTriggerReason.STARTUP
-        else ("Cycle", "LastRunAt")
-    )
+    group, field = {
+        TaskTriggerReason.STARTUP: ("Data", "LastStartupTime"),
+        TaskTriggerReason.TIMED: ("Data", "LastTimedStart"),
+        TaskTriggerReason.CYCLE: ("Cycle", "LastRunAt"),
+    }[reason]
 
     def reject(sender, event):
         if sender is queue:
@@ -203,6 +208,7 @@ async def test_l1_records_only_the_single_creation_reason(scheduler, reason):
     now = datetime.now().astimezone()
     qid, queue = await make_queue(queues, sid, now=now, startup="Always", timed=True)
     previous_startup, previous_cycle = queue.Data.LastStartupTime, queue.Cycle.LastRunAt
+    previous_timed = queue.Data.LastTimedStart
     with creation_time(now):
         uid = await manager.start(
             TaskMode.AUTO_PROXY, {0: {"uid": str(qid)}}, trigger=reason
@@ -216,7 +222,76 @@ async def test_l1_records_only_the_single_creation_reason(scheduler, reason):
     assert queue.Cycle.LastRunAt == (
         now if reason is TaskTriggerReason.CYCLE else previous_cycle
     )
+    assert queue.Data.LastTimedStart == (
+        now if reason is TaskTriggerReason.TIMED else previous_timed
+    )
     await run.accomplish.wait()
+
+
+@pytest.mark.asyncio
+async def test_manual_run_does_not_consume_a_new_schedule_in_the_same_minute(scheduler):
+    manager, _, queues, sid = scheduler
+    now = datetime.now().astimezone().replace(second=5, microsecond=0)
+    qid, queue = await make_queue(queues, sid, now=now, timed=False, cycle=False)
+    with creation_time(now):
+        uid = await manager.start(TaskMode.AUTO_PROXY, {0: {"uid": str(qid)}})
+    await manager.task_handler[uid].accomplish.wait()
+    queue.Info.TimeEnabled = True
+    await queue.commit()
+    queue.TimeSet.add(
+        TimeSet,
+        payload={"Info": {"Time": now, "Days": [now.strftime("%A")]}},
+    )
+    await queue.TimeSet.commit()
+    later = now + timedelta(seconds=15)
+    with (
+        creation_time(later),
+        patch("app.core.timer._local_now", return_value=later),
+        patch("app.core.timer.TaskManager", manager),
+        patch.object(manager, "start", AsyncMock(wraps=manager.start)) as start,
+    ):
+        timer = _MainTimer()
+        await timer.timed_start()
+        await timer.timed_start()
+        await _MainTimer().timed_start()
+    assert [call.kwargs["trigger"] for call in start.await_args_list] == [
+        TaskTriggerReason.TIMED
+    ]
+    assert queue.Data.LastTimedStart == later
+    await asyncio.gather(*(run.accomplish.wait() for run in manager._running.values()))
+
+
+@pytest.mark.asyncio
+async def test_cycle_acceptance_does_not_consume_a_rejected_timed_trigger(scheduler):
+    manager, _, queues, sid = scheduler
+    now = datetime.now().astimezone().replace(second=5, microsecond=0)
+    _, queue = await make_queue(queues, sid, now=now, timed=True)
+    create = manager.start
+    reject_timed = True
+
+    async def submit(mode, tasks, *, trigger):
+        nonlocal reject_timed
+        if trigger is TaskTriggerReason.TIMED and reject_timed:
+            reject_timed = False
+            raise RuntimeError("timed rejected")
+        return await create(mode, tasks, trigger=trigger)
+
+    with (
+        creation_time(now),
+        patch("app.core.timer._local_now", return_value=now),
+        patch("app.core.timer.TaskManager", manager),
+        patch.object(manager, "start", AsyncMock(side_effect=submit)) as start,
+    ):
+        timer = _MainTimer()
+        await timer.timed_start()
+        await timer.timed_start()
+    assert [call.kwargs["trigger"] for call in start.await_args_list] == [
+        TaskTriggerReason.TIMED,
+        TaskTriggerReason.CYCLE,
+        TaskTriggerReason.TIMED,
+    ]
+    assert queue.Data.LastTimedStart == queue.Cycle.LastRunAt == now
+    await asyncio.gather(*(run.accomplish.wait() for run in manager._running.values()))
 
 
 @pytest.mark.asyncio

@@ -1049,6 +1049,7 @@ export type { TaskGetIn } from './models/TaskGetIn';
 export type { TaskGetOut } from './models/TaskGetOut';
 export type { TaskIndexItem } from './models/TaskIndexItem';
 export type { TaskItem_current } from './models/TaskItem_current';
+export type { TaskItem_execution } from './models/TaskItem_execution';
 export type { TaskItem_info } from './models/TaskItem_info';
 export type { TaskItem_scriptsCollection } from './models/TaskItem_scriptsCollection';
 export type { TaskItemDocument } from './models/TaskItemDocument';

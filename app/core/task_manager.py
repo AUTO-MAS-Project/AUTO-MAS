@@ -272,6 +272,22 @@ class _TaskManager:
                     if queue is not None
                     else "、".join(script.info.name for script in info.scripts.values())
                 )
+                if queue is not None:
+                    # 队列只在 L1 读取；删改原配置不改变本轮附加动作。
+                    info.execution.script_before = (
+                        queue.Info.ScriptBeforeTask
+                        if queue.Info.IfScriptBeforeTask
+                        else None
+                    )
+                    info.execution.script_after = (
+                        queue.Info.ScriptAfterTask
+                        if queue.Info.IfScriptAfterTask
+                        else None
+                    )
+                    info.execution.after_accomplish = queue.Info.AfterAccomplish
+                    info.execution.after_accomplish_delay = (
+                        queue.Info.AfterAccomplishDelay
+                    )
                 await info.commit()
                 # 时间表示成功受理，不等执行开始或完成；与完整建树共用原子边界。
                 now = datetime.now().astimezone()
@@ -281,6 +297,8 @@ class _TaskManager:
                     queue.Data.LastStartTime = now
                     if info.info.trigger == TaskTriggerReason.STARTUP:
                         queue.Data.LastStartupTime = now
+                    if info.info.trigger == TaskTriggerReason.TIMED:
+                        queue.Data.LastTimedStart = now
                     if info.info.trigger == TaskTriggerReason.CYCLE:
                         queue.Cycle.LastRunAt = now
                     await queue.commit()

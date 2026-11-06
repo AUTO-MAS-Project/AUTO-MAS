@@ -321,7 +321,7 @@ class _MainTimer:
                 if first_wakeup_check:
                     # 冷启动不保留本轮去重集合，不能重跑持久化记录之前的旧槽。
                     check_start = max(
-                        check_start, queue.Data.LastStartTime.replace(tzinfo=None)
+                        check_start, queue.Data.LastTimedStart.replace(tzinfo=None)
                     )
                 due = self._due_timed_slots(
                     uid, queue, check_start, now_wall, real_elapsed
@@ -380,7 +380,7 @@ class _MainTimer:
         if not queue.Info.TimeEnabled:
             return []
 
-        last_timed_start = queue.Data.LastStartTime.replace(tzinfo=None)
+        last_timed_start = queue.Data.LastTimedStart.replace(tzinfo=None)
         due: list[tuple[str, datetime]] = []
 
         for time_set_id, time_set in queue.TimeSet.items():
@@ -395,7 +395,7 @@ class _MainTimer:
 
                 key = (str(uid), str(time_set_id), planned)
                 # 避免重复调起任务：本次运行内按时间槽与计划时刻去重（当天改了时间的
-                # 槽按新时刻照常触发），重启后靠持久化的 LastStartTime 兜住已提交的时间点
+                # 槽按新时刻照常触发），重启后由专属 LastTimedStart 去重，其他原因不占用定时槽。
                 if key in self._timed_fired or planned <= last_timed_start:
                     continue
 

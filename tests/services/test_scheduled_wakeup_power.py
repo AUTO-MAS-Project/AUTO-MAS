@@ -99,6 +99,7 @@ async def test_finished_queue_preserves_next_woken_schedule(
     async def receive_task(mode, tasks, **kwargs):
         dispatched.append((tasks[0]["uid"], kwargs["trigger"].value))
         queue.Data.LastStartTime = now
+        queue.Data.LastTimedStart = now
         await queue.commit()
 
     monkeypatch.setattr(timer.TaskManager, "start", receive_task)

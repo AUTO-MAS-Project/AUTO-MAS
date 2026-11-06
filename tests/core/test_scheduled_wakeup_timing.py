@@ -58,6 +58,7 @@ async def test_first_timed_check_after_cold_start(
     async def receive_task(mode, tasks, **kwargs):
         dispatched.append((mode, tasks[0]["uid"], kwargs["trigger"].value))
         queue.Data.LastStartTime = now
+        queue.Data.LastTimedStart = now
         await queue.commit()
 
     # 调度器的结果是向任务管理器派发；不在这个边界启动脚本或游戏。
@@ -81,7 +82,7 @@ async def test_cold_wakeup_does_not_replay_slots_before_last_dispatch(
     queues = await activate_config(ConfigCollection.build([QueueConfig]))
     uid = queues.add(
         QueueConfig,
-        payload={"Info": {"TimeEnabled": True}, "Data": {"LastStartTime": last_run}},
+        payload={"Info": {"TimeEnabled": True}, "Data": {"LastTimedStart": last_run}},
     )
     await queues.commit()
     queue = queues[uid]
@@ -105,13 +106,14 @@ async def test_cold_wakeup_does_not_replay_slots_before_last_dispatch(
     async def receive_task(mode, tasks, **kwargs):
         dispatched.append((mode, tasks[0]["uid"], kwargs["trigger"].value))
         queue.Data.LastStartTime = now
+        queue.Data.LastTimedStart = now
         await queue.commit()
 
     monkeypatch.setattr(timer.TaskManager, "start", receive_task)
     main_timer = timer._MainTimer()
     await main_timer.timed_start()
     assert dispatched == []
-    assert queue.Data.LastStartTime == last_run
+    assert queue.Data.LastTimedStart == last_run
     now = last_run + timedelta(minutes=10)
     await main_timer.timed_start()
     assert dispatched == [("AutoProxy", str(uid), "timed")]

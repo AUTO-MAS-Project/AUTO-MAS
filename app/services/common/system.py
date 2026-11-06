@@ -122,7 +122,7 @@ class _SystemHandler:
         for queue in Config.QueueConfig.values():
             if not queue.Info.TimeEnabled:
                 continue
-            last_run = queue.Data.LastStartTime.replace(tzinfo=None)
+            last_run = queue.Data.LastTimedStart.replace(tzinfo=None)
             for slot in queue.TimeSet.values():
                 if not slot.Info.Enabled:
                     continue

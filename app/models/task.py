@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from uuid import UUID
 from weakref import ReferenceType
@@ -336,11 +337,32 @@ class TaskItem(RuntimeEntry):
         trigger: TaskTriggerReason = TaskTriggerReason.MANUAL
         result: Virtual[str] = None
 
+    class Execution(ConfigGroup):
+        """L1 保存的本轮附加动作；不保留原队列身份或结束时重读配置。"""
+
+        script_before: Path | None = Field(default=None, description="本轮运行前脚本")
+        script_after: Path | None = Field(default=None, description="本轮运行后脚本")
+        after_accomplish: Literal[
+            "NoAction",
+            "Shutdown",
+            "ShutdownForce",
+            "Reboot",
+            "Hibernate",
+            "Sleep",
+            "KillSelf",
+            "RestartSelf",
+            "Logoff",
+        ] = Field(default="NoAction", description="本轮完成后操作")
+        after_accomplish_delay: int = Field(
+            default=0, ge=0, le=1440, description="完成后操作延时，单位分钟"
+        )
+
     class Current(ConfigGroup):
         index: UUID | None = None
         log: Virtual[str] = None
 
     info: Info = Field(default_factory=Info)
+    execution: Execution = Field(default_factory=Execution)
     current: Current = Field(default_factory=Current)
     scripts: ConfigCollection[TaskScriptItem] = collection(TaskScriptItem)
     _notification_state: TaskNotificationState = PrivateAttr(
@@ -392,6 +414,8 @@ class TaskItem(RuntimeEntry):
                     exclude={"content"} if isinstance(node, LogRecord) else None,
                 )
             }
+            if isinstance(node, TaskItem):
+                data["execution"] = node.execution.model_dump(mode="json")
             if isinstance(node, LogRecord):
                 return data
             children: (

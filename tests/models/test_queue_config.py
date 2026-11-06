@@ -1,5 +1,6 @@
 import json
 import unittest
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -52,3 +53,19 @@ class QueueConfigStartupModeMigrationTest(unittest.IsolatedAsyncioTestCase):
         persisted_info = self.read_config()["Info"]
         self.assertEqual(persisted_info["StartUpMode"], "DailyFirst")
         self.assertNotIn("StartUpEnabled", persisted_info)
+
+    async def test_load_preserves_independent_timed_and_common_clocks(self) -> None:
+        common = "2026-11-06T10:05:00+08:00"
+        timed = "2026-11-06T10:00:00+08:00"
+        self.write_config({"Data": {"LastStartTime": common, "LastTimedStart": timed}})
+        config = QueueConfig()
+        await activate_config(config, self.config_path)
+        self.assertEqual(config.Data.LastStartTime, datetime.fromisoformat(common))
+        self.assertEqual(config.Data.LastTimedStart, datetime.fromisoformat(timed))
+        self.assertIn("LastTimedStart", self.read_config()["Data"])
+
+    async def test_load_does_not_infer_timed_success_from_common_clock(self) -> None:
+        self.write_config({"Data": {"LastStartTime": "2026-11-06T10:05:00+08:00"}})
+        config = QueueConfig()
+        await activate_config(config, self.config_path)
+        self.assertEqual(config.Data.LastTimedStart.year, 2000)
