@@ -45,18 +45,17 @@ from .constants import (
     DEFAULT_DATA_PARTITION_GB,
     DEFAULT_FPS,
     DEFAULT_MEMORY_MB,
+    DEFAULT_RESOLUTION,
+    DISPLAY_PRESETS,
     FPS_CHOICES,
     MEMORY_CHOICES_MB,
-    SCREEN_DENSITY,
-    SCREEN_HEIGHT,
-    SCREEN_WIDTH,
     SYSTEM_IMAGE_SYSDIR,
     avd_name,
     valid_native_index,
 )
 
 #: 实例配置模板，取自预研里调好的 ``mas_p0``（``pixel_tablet`` 模板改横屏 / 显卡直通），去掉了
-#: 设备外框与设备型号——型号只影响窗口外框，外框也关了。显示固定 720p（1280×720 / DPI 240），
+#: 设备外框与设备型号——型号只影响窗口外框，外框也关了。显示使用 1080p / 720p 两档，
 #: 每次开机前再核对一次。客体不带声卡（用户 10-04 定），声卡两项都写 no；真正去掉声卡的是启动参数
 #: ``-feature -VirtioSndCard``（本镜像的客体声卡是 virtio-snd，模拟器不看这两项，10-04 实测）。
 #: ``hw.mainKeys=yes`` 不显示屏幕导航栏，返回、回桌面用侧边工具栏：手势横条的上滑和最近任务由
@@ -239,26 +238,44 @@ def remove_instance_meta(root: str | Path, native_index: int | str) -> None:
         write_metadata(root, data)
 
 
-def display_changes(config: dict[str, str]) -> dict[str, str]:
-    """固定 720p 的 ``hw.lcd.*``，保持现有横竖屏（照启动器 ``-Resolution`` 的写法）；
-    不显示屏幕导航栏（``hw.mainKeys=yes``，见 :data:`_CONFIG_TEMPLATE`）。"""
-    width = _int_or_none(config.get("hw.lcd.width")) or 0
-    height = _int_or_none(config.get("hw.lcd.height")) or 0
-    if height > width:
-        width, height = SCREEN_HEIGHT, SCREEN_WIDTH
-    else:
-        width, height = SCREEN_WIDTH, SCREEN_HEIGHT
+def resolution_for(config: dict[str, str]) -> int:
+    """按已有宽高识别档位，非 1080p 的旧配置保持 720p。"""
+    width = _int_or_none(config.get("hw.lcd.width"))
+    height = _int_or_none(config.get("hw.lcd.height"))
+    return 1080 if (width, height) in ((1920, 1080), (1080, 1920)) else 720
+
+
+def validate_resolution(resolution: int | None) -> int:
+    value = DEFAULT_RESOLUTION if resolution is None else resolution
+    if value not in DISPLAY_PRESETS:
+        raise ValueError("魔改 AVD 的分辨率只能选 1080 或 720")
+    return value
+
+
+def display_changes(
+    config: dict[str, str], resolution: int | None = None
+) -> dict[str, str]:
+    """按所选档位写宽、高、DPI，保持方向并关闭导航栏。省略档位时识别现有宽高。"""
+    preset = (
+        resolution_for(config)
+        if resolution is None
+        else validate_resolution(resolution)
+    )
+    width, height, density = DISPLAY_PRESETS[preset]
+    old_width = _int_or_none(config.get("hw.lcd.width")) or 0
+    old_height = _int_or_none(config.get("hw.lcd.height")) or 0
+    if old_height > old_width:
+        width, height = height, width
     return {
         "hw.lcd.width": str(width),
         "hw.lcd.height": str(height),
-        "hw.lcd.density": str(SCREEN_DENSITY),
+        "hw.lcd.density": str(density),
         "hw.mainKeys": "yes",
     }
 
 
 def apply_display(root: str | Path, native_index: int | str) -> bool:
-    """开机前把显示改回固定的 720p（以前选过 1080p 的旧实例）、关掉屏幕导航栏（以前建的实例），
-    返回是否改了文件。只在停机时调用。"""
+    """停机时规范化当前档位的宽高和 DPI，返回是否改了文件。"""
     path = config_path(root, native_index)
     config = read_ini(path)
     if not config:
@@ -327,6 +344,7 @@ def create_instance_files(
     cpu: int,
     data_partition_gb: int,
     fps: int = DEFAULT_FPS,
+    resolution: int = DEFAULT_RESOLUTION,
 ) -> AvdInstance:
     """写 ``mas_<i>.ini`` 与 ``mas_<i>.avd\\config.ini``。实例已存在时拒绝。
 
@@ -338,6 +356,7 @@ def create_instance_files(
     if ini_path(root, native_index).exists() or avd_dir(root, native_index).exists():
         raise RuntimeError(f"实例 {avd_name(native_index)} 已存在")
 
+    display = display_changes({}, validate_resolution(resolution))
     name = avd_name(native_index)
     directory = avd_dir(root, native_index)
     config = dict(_CONFIG_TEMPLATE)
@@ -349,9 +368,9 @@ def create_instance_files(
             "disk.dataPartition.size": f"{data_partition_gb}G",
             "hw.cpu.ncore": str(cpu),
             "hw.ramSize": f"{memory_mb}M",
-            "hw.lcd.width": str(SCREEN_WIDTH),
-            "hw.lcd.height": str(SCREEN_HEIGHT),
-            "hw.lcd.density": str(SCREEN_DENSITY),
+            "hw.lcd.width": display["hw.lcd.width"],
+            "hw.lcd.height": display["hw.lcd.height"],
+            "hw.lcd.density": display["hw.lcd.density"],
             "hw.lcd.vsync": str(fps),
             "image.sysdir.1": SYSTEM_IMAGE_SYSDIR,
         }

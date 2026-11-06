@@ -43,6 +43,7 @@ from app.utils import get_logger
 from app.utils.common.process import runner as _utils_process_runner
 
 from .host import AdbPortConflict
+from .instances import config_path, read_ini, resolution_for
 
 logger = get_logger("魔改 AVD CLI")
 
@@ -449,6 +450,25 @@ class ModAvdCli:
     async def status(self, index: str | int) -> Any:
         return await self._call("status", str(index))
 
+    async def _resolution_args(self, resolution: int | None) -> list[str]:
+        if resolution is None:
+            return []
+        help_data = await self._call("help", "create", include_root=False)
+        commands = help_data.get("commands", []) if isinstance(help_data, dict) else []
+        if any(
+            str(option.get("flag", "")).split(" ", 1)[0] == "--resolution"
+            for command in commands
+            for option in command.get("options", [])
+        ):
+            return ["--resolution", str(resolution)]
+        if resolution == 720:
+            return []  # Old packaged CLIs only support 720p.
+        raise CLIError(
+            "unsupported",
+            "当前 ModAVD 命令行不支持 1080p 分辨率档位",
+            "请更新 ModAVD 包内管理器后重试",
+        )
+
     async def create(
         self,
         *,
@@ -458,6 +478,7 @@ class ModAvdCli:
         cpu: int | None = None,
         data_gb: int | None = None,
         fps: int | None = None,
+        resolution: int | None = None,
     ) -> Any:
         args: list[str] = []
         if index is not None:
@@ -472,6 +493,7 @@ class ModAvdCli:
             args.extend(("--data-gb", str(data_gb)))
         if fps is not None:
             args.extend(("--fps", str(fps)))
+        args.extend(await self._resolution_args(resolution))
         create_timeout = CREATE_TIMEOUT_SECONDS
         legacy_args = list(args)
         args.extend(("--timeout", str(create_timeout)))
@@ -592,6 +614,7 @@ class ModAvdCli:
         cpu: int | None = None,
         data_gb: int | None = None,
         fps: int | None = None,
+        resolution: int | None = None,
     ) -> Any:
         args = [str(index)]
         if title is not None:
@@ -604,6 +627,7 @@ class ModAvdCli:
             args.extend(("--data-gb", str(data_gb)))
         if fps is not None:
             args.extend(("--fps", str(fps)))
+        args.extend(await self._resolution_args(resolution))
         return await self._call("set", *args, timeout=COMMAND_TIMEOUT_SECONDS)
 
     async def delete(self, index: str | int) -> Any:
@@ -618,6 +642,9 @@ class ModAvdCli:
         window: bool = False,
         timeout: int | float | None = None,
     ) -> Any:
+        if resolution_for(read_ini(config_path(self.root, index))) == 1080:
+            # Old CLIs rewrite 1080p to 720p on start. Refuse before they can write.
+            await self._resolution_args(1080)
         boot_timeout = int(timeout or DEFAULT_START_TIMEOUT_SECONDS)
         args = [str(index)]
         if window:
