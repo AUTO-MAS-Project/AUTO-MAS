@@ -86,6 +86,8 @@ _AUTOPLAY_PROGRESS_SECONDS = 15.0
 # 截图基准分辨率（16:9），OCR 与点击均在此坐标空间计算后再映射回真实窗口
 _FRAME_WIDTH = 1920
 _FRAME_HEIGHT = 1080
+# 主按钮位于右下角；左侧新闻可能含「更新」等文字。
+_ACTION_ROI = (1240, 820, 1920, 1080)
 
 # 首次找到按钮的等待；点击「开始游戏」后等游戏起窗；点「更新」后等更新完成
 _FIND_BUTTON_TIMEOUT = 120
@@ -147,7 +149,9 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
-def _find_process_hwnd(process_name: str) -> int | None:
+def _find_process_hwnd(
+    process_name: str, *, exe_path: Path | None = None
+) -> int | None:
     """按所属进程名找最大可见窗口；不存在返回 None（区别于切号的必存抛错）。"""
     candidates: list[int] = []
 
@@ -158,7 +162,18 @@ def _find_process_hwnd(process_name: str) -> int | None:
         except Exception:
             return True
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        if pid and _process_name(pid) == process_name:
+        name = _process_name(pid) if pid else None
+        if name is not None and name.casefold() == process_name.casefold():
+            if exe_path is not None:
+                try:
+                    if Path(psutil.Process(pid).exe()) != exe_path:
+                        return True
+                except (
+                    psutil.NoSuchProcess,
+                    psutil.AccessDenied,
+                    psutil.ZombieProcess,
+                ):
+                    return True
             candidates.append(hwnd)
         return True
 
@@ -168,6 +183,22 @@ def _find_process_hwnd(process_name: str) -> int | None:
 
 def _find_game_hwnd() -> int | None:
     return _find_process_hwnd(_GAME_PROCESS)
+
+
+def launcher_process_paths(launcher_path: Path) -> tuple[Path, ...]:
+    """返回所选安装内可能承载启动器窗口的程序路径。"""
+    if launcher_path.name.casefold() == "ntegloballauncher.exe":
+        return (launcher_path, launcher_path.parent / "NTEGlobal" / "NTEGlobalGame.exe")
+    if launcher_path.name.casefold() in {name.casefold() for name in LAUNCHER_EXES}:
+        return (
+            launcher_path,
+            *(
+                launcher_path.parent / name
+                for name in LAUNCHER_EXES
+                if name.casefold() != launcher_path.name.casefold()
+            ),
+        )
+    return (launcher_path,)
 
 
 def _wait_launcher_hwnd(
@@ -180,12 +211,11 @@ def _wait_launcher_hwnd(
     """
     deadline = time.monotonic() + (timeout or _LAUNCHER_WINDOW_TIMEOUT)
     while True:
-        hwnd = _find_process_hwnd(launcher_path.name)
-        if hwnd is None:
-            for exe in LAUNCHER_EXES:
-                hwnd = _find_process_hwnd(exe)
-                if hwnd is not None:
-                    break
+        hwnd = None
+        for path in launcher_process_paths(launcher_path):
+            hwnd = _find_process_hwnd(path.name, exe_path=path)
+            if hwnd is not None:
+                break
         if hwnd is not None or time.monotonic() >= deadline:
             return hwnd
         time.sleep(2)
@@ -301,6 +331,16 @@ def _find_text(
         if any(keyword in text for keyword in keywords):
             return box
     return None
+
+
+def _action_items(items: list[_tool_ocr.OCRItem]) -> list[_tool_ocr.OCRItem]:
+    """只保留文字框中心在启动器主按钮区域内的识别结果。"""
+    left, top, right, bottom = _ACTION_ROI
+    return [
+        (text, (x, y, width, height))
+        for text, (x, y, width, height) in items
+        if left <= x + width / 2 <= right and top <= y + height / 2 <= bottom
+    ]
 
 
 # ── 游戏画面维护检测（公告通道的兜底）────────────────────────────────────
@@ -715,8 +755,9 @@ def start_game_via_launcher(
             # 不重置停滞计时与 went_busy，见上）
             busy_since = None
 
-            start_box = _find_text(items, ("开始游戏",))
-            update_box = None if start_box else _find_text(items, ("更新",))
+            action_items = _action_items(items)
+            start_box = _find_text(action_items, ("开始游戏",))
+            update_box = None if start_box else _find_text(action_items, ("更新",))
             if update_clicked and start_box is not None:
                 # 「开始游戏」已取代「更新」：停止补点，进入启动流程。
                 start_button_gone = True
