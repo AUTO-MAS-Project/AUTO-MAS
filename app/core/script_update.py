@@ -194,14 +194,19 @@ class ScriptUpdateSession:
         label = f"[预下载 {item.name}]"
         self._set_progress(f"{label} 检查／准备中")
         last_report = float("-inf")
+        last_path: Path | None = None
+        last_bytes = 0
         active = True
 
-        async def report(path: Path, downloaded: int, total: int, speed: float) -> None:
-            nonlocal last_report
+        def report(path: Path, downloaded: int, total: int, speed: float) -> None:
+            nonlocal last_report, last_path, last_bytes
             now = time.monotonic()
             if not active or now - last_report < 1:
                 return
+            if speed <= 0 and last_path == path and now > last_report:
+                speed = max(0, downloaded - last_bytes) / (now - last_report)
             last_report = now
+            last_path, last_bytes = path, downloaded
             size = f"{downloaded / 1024**2:.1f} MiB"
             if total > 0:
                 size = (

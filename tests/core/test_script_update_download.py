@@ -4,7 +4,7 @@ import asyncio
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -109,18 +109,21 @@ async def test_common_download_reports_progress_without_adapter_changes(
         first = info._prefetch_log
         assert "one.zip" in first
         clock.now += 1
-        await retained_observer(tmp_path / "one.zip", 1024**2, 2 * 1024**2, 1024**2)
+        retained_observer(tmp_path / "one.zip", 1024**2, 2 * 1024**2, 1024**2)
         assert "50.0%" in info._prefetch_log
         assert "1.0/2.0 MiB" in info._prefetch_log
         assert "1.0 MiB/s" in info._prefetch_log
         latest = info._prefetch_log
-        await retained_observer(tmp_path / "one.zip", 2 * 1024**2, 2 * 1024**2, 0)
+        retained_observer(tmp_path / "one.zip", 2 * 1024**2, 2 * 1024**2, 0)
         assert info._prefetch_log == latest
         clock.now += 1
-        await retained_observer(tmp_path / "two.zip", 1024**2, 0, 0)
+        retained_observer(tmp_path / "two.zip", 1024**2, 0, 0)
         assert "two.zip" in info._prefetch_log
         assert "1.0 MiB" in info._prefetch_log
         assert "%" not in info._prefetch_log
+        clock.now += 1
+        retained_observer(tmp_path / "two.zip", 2 * 1024**2, 0, 0)
+        assert "1.0 MiB/s" in info._prefetch_log
 
     manager.prefetch_script_update.side_effect = prepare
     await session._prefetch(0)
@@ -129,7 +132,7 @@ async def test_common_download_reports_progress_without_adapter_changes(
     assert host.download_observer.get() is None
     # 子任务保留的旧观察者不能在预下载结束后重新写回下载状态。
     clock.now += 1
-    await retained_observer(tmp_path / "one.zip", 0, 1, 0)
+    retained_observer(tmp_path / "one.zip", 0, 1, 0)
     assert "准备完成" in info._prefetch_log
     assert await session.take(0) is manager
     assert info._prefetch_log == ""
@@ -146,7 +149,7 @@ async def test_prefetch_failure_and_cancel_release_observer(prefetch_setup, erro
     async def cleanup():
         terminal = info._prefetch_log
         observer = host.download_observer.get()
-        await observer(Path("late.zip"), 1, 2, 3)
+        observer(Path("late.zip"), 1, 2, 3)
         assert info._prefetch_log == terminal
 
     manager.discard_prefetched_update.side_effect = cleanup
@@ -163,7 +166,7 @@ async def test_prefetch_failure_and_cancel_release_observer(prefetch_setup, erro
 async def test_download_observers_are_isolated_between_concurrent_tasks(
     monkeypatch, tmp_path
 ):
-    observers = [AsyncMock(), AsyncMock()]
+    observers = [Mock(), Mock()]
 
     async def transport(url, destination, *, progress, **kwargs):
         await asyncio.sleep(0)
@@ -194,10 +197,10 @@ async def test_download_observers_are_isolated_between_concurrent_tasks(
     await asyncio.gather(download(0), download(1))
     for index, observer in enumerate(observers):
         assert all(
-            call.args[0] == tmp_path / str(index) for call in observer.await_args_list
+            call.args[0] == tmp_path / str(index) for call in observer.call_args_list
         )
-        observer.assert_any_await(tmp_path / str(index), 1, 2, 3)
+        observer.assert_any_call(tmp_path / str(index), 1, 2, 3)
     await host.download_file(
         "https://example.invalid/manual", tmp_path / "manual", timeout=20
     )
-    assert all(len(observer.await_args_list) == 2 for observer in observers)
+    assert all(len(observer.call_args_list) == 2 for observer in observers)
