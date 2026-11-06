@@ -134,7 +134,7 @@ test.describe('@settings user preferences', () => {
     })
     await app.goto('/settings')
     await page.getByRole('tab', { name: 'Advanced', exact: true }).click()
-    const control = page.locator('[aria-label="Backend launch mode"]')
+    const control = page.locator('.ant-segmented[aria-label="Backend launch mode"]')
     await expect(control).toBeVisible()
     await expect(control.getByRole('radio')).toHaveCount(2)
     await expect(

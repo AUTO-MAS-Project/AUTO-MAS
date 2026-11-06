@@ -1,5 +1,10 @@
 <template>
-  <span class="field-label" :class="{ 'field-label-form': variant === 'form' }">
+  <span
+    class="field-label"
+    :class="{ 'field-label-form': variant === 'form' }"
+    role="group"
+    :aria-label="text"
+  >
     {{ text }}
     <!-- 只以问号定位；保留 focus，让键盘用户也能读取提示。 -->
     <a-tooltip v-if="hint" :title="hint" :trigger="['hover', 'focus']">
