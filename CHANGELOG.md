@@ -30,6 +30,16 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 变更
+
+- 【MAA】刷新养成数据时同步更新已绑定的森空岛练度，失败时沿用旧练度（仅公测） (#1856) by @jinghero
+
+### 修复
+
+- 【MAA】修复进入养成页面时干员与技能名称短暂显示为编号的问题（仅公测） (#1858) by @jinghero
+
 ## [v5.8.0-beta.4] - 2026-11-06
 
 ### 新增
@@ -806,6 +816,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0-beta.4...dev
 [v5.8.0-beta.4]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0-beta.3...v5.8.0-beta.4
 [v5.8.0-beta.3]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0-beta.2...v5.8.0-beta.3
 [v5.8.0-beta.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0-beta.1...v5.8.0-beta.2
