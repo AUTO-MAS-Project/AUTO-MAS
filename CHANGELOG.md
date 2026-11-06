@@ -30,7 +30,7 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
-## [未发布]
+## [v5.8.0-beta.4] - 2026-11-06
 
 ### 新增
 
@@ -40,11 +40,16 @@
 - 【SRC】支持运行前托管代码更新并恢复原生设置，分离预下载与安装以支持后续并行调度。 (#1822) by @youngslin
 - 【调度】开启更新托管后，在前一脚本首项任务完成60秒后预下载下一脚本更新。 (#1826) by @youngslin
 - 【调度】支持定时前五分钟唤醒电脑并自动同步定时变更 (#1832) by @jinghero
+- 【调度】新增通用脚本计划表，可为同一脚本的每天保存独立配置并自定义换日时间 (#1847) by @AthenaHibou
 - 【模拟器】魔改 AVD 实例支持更稳的开机、关机与更新 (#1794) by @qiyinxi
+- 【模拟器】魔改 AVD 新建和设置支持 1080p 与 720p，重启保留所选档位 (#1837) by @jinghero
 
 ### 变更
 
+- 【MAA】养成计算补充技巧概要合成配方，并优先用现有原料抵扣缺口 (#1848) by @jinghero
 - 【end】材料收获通知与任务报告将同一材料的多轮获得合并为一行合计（仅公测） (#1843) by @he0119
+- 【end】整理游戏启动与结束设置，补充恢复原状所需的游戏路径提示。 (#1828) by @HarcoChen
+- 【调度】定时项和任务项的星期选择器在一周七天全选时显示为“每天”，保留原有编辑与调度行为。 (#1838) by @anlan1027
 - 【工具】MCP 改为主程序就绪后加载，工具页可查看状态并重试失败的加载 (#1795) by @jinghero
 - 【工具】桌面端优先显示首页，再在后台加载 MCP。 (#1804) by @jinghero
 - 【设置】更新设置页卡片布局与工具栏，支持单双列切换并优化明暗主题。 (#1800) by @1w1w11w1
@@ -57,8 +62,16 @@
 
 - 【MAA】修复活动均衡取消后仍刷取旧关卡的问题，保存新选择时清理对应旧项。 (#1797) by @jinghero
 - 【MAA】修复更新后启动时反复显示新手引导的问题。 (#1810) by @1w1w11w1
+- 【bgi】修复直连执行层地脉花启动即失败的问题，并在失败日志中列出任务名称 (#1830) by @jinghero
 - 【ok-ww】修复中文界面下 OK-WW 日常任务成功后被误判为断连并反复重试的问题 (#1815) by @AthenaHibou
+- 【ok-ww】修复自更新耗时较长时启动被提前中止的问题 (#1813) by @AthenaHibou
+- 【ok-ww】修复 OK-WW 节点详情缺失、状态误判及异常时收尾未清理的问题 (#1839) by @AthenaHibou
+- 【ok-nte】修复运行中调整屏幕缩放后启动游戏或切换账号时点击错位的问题 (#1849) by @AthenaHibou
+- 【ok-nte】支持选择国际服启动器，修复误点更新和误关启动器的问题。 (#1850) by @AthenaHibou
+- 【主页】修复碧蓝档案部分活动图片无法显示的问题 (#1840) by @sentry[bot]
 - 【模拟器】修复魔改 AVD 元数据文件读不出时，新建实例或改设置会把它整份覆盖的问题 (#1799) by @qiyinxi
+- 【模拟器】旧版魔改 AVD 关实例时先让游戏退到后台、写回数据，再走安卓的正常关机 (#1805) by @qiyinxi
+- 【模拟器】修复开机自启时模拟器已经起来却一直显示启动中超时的问题 (#1825) by @miaojiuqing
 - 【设置】修复下载历史弹窗标题遮挡首条记录的问题（仅公测） (#1818) by @youngslin
 - 【设置】修正托管与账号旧称呼及配置来源提示，避免按无效选项配置 (#1836) by @1w1w11w1
 - 【更新】修复 FluxDown 下载包匹配、安装完整性检测及进度显示（仅公测） by @youngslin
@@ -793,7 +806,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
-[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0-beta.3...dev
+[v5.8.0-beta.4]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0-beta.3...v5.8.0-beta.4
 [v5.8.0-beta.3]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0-beta.2...v5.8.0-beta.3
 [v5.8.0-beta.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0-beta.1...v5.8.0-beta.2
 [v5.8.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0...v5.8.0-beta.1
