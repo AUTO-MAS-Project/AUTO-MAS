@@ -1367,7 +1367,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                     if launcher_path.name.casefold() == "ntegloballauncher.exe":
                         # 国际服入口会退出，实际窗口由安装目录中的独立进程承载。
                         window_process = launcher_process_paths(launcher_path)[1]
-                        await System.kill_process(window_process, kill_tree=True)
+                        # 不结束子进程：游戏可能仍属于此进程树，由游戏关闭策略单独处理。
+                        await System.kill_process(window_process, kill_tree=False)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止异环启动器进程失败: {e}")
 

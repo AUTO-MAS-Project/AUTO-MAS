@@ -128,7 +128,7 @@ async def test_cleanup_uses_mas_launcher_not_script_config(
     if has_mas_launcher:
         assert kill_process.await_args_list == [
             call(launcher, kill_tree=False),
-            call(window_process, kill_tree=True),
+            call(window_process, kill_tree=False),
         ]
     else:
         kill_process.assert_not_awaited()
