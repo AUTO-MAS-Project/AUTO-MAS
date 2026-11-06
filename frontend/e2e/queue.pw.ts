@@ -87,9 +87,17 @@ test.describe('@queue @scheduler user queue', () => {
         await expect(rows).toHaveCount(index + 1)
         await rows.nth(index).locator('.script-select').click()
         const saved = responseFor('/api/queue/item/update')
-        await page
-          .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
-          .filter({ hasText: script.name })
+        const input = rows.nth(index).locator('.script-select').getByRole('combobox')
+        const listId = await input.getAttribute('aria-controls')
+        expect(listId).toBeTruthy()
+
+        const popup = page.locator('.ant-select-dropdown').filter({
+          has: page.locator(`[id="${listId}"]`),
+        })
+
+        await popup
+          .locator('.ant-select-item-option-content')
+          .getByText(`MAA - ${script.name}`, { exact: true })
           .click()
         expect((await (await saved).json()).code).toBe(200)
         await expect(selectedScripts.nth(index)).toHaveText(`MAA - ${script.name}`)
