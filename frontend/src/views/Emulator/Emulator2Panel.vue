@@ -1291,7 +1291,6 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
           v-model="settingsForm"
           :kind="settingsKind"
           :snapped="settingsSnapped"
-          show-fixed
         />
       </a-form>
       <a-alert

@@ -27,7 +27,7 @@
 启动 = 冷启动（``-no-snapshot``，与 MAS 对雷电 / MuMu 每轮开关一致），默认无头
 （= 静默模式）。启动参数与开机后的调优逐项对照
 <https://github.com/ModAVD/ModAVDManager> 的公开实现
-（每个开关都真机验证过，原因写在对应函数里）：磁盘 write-through、静音且不带声卡、固定 720p、
+（每个开关都真机验证过，原因写在对应函数里）：磁盘 write-through、静音且不带声卡、1080p / 720p 两档显示、
 实例内存、空闲页上报、Vulkan 描述符批量更新、宿主调度、截图共享内存、cpuinfo、
 WiFi + fastpath、客体日志落盘、客体 Vulkan 驱动补丁。启动器里没有的一项：数据盘请求密集时不让 vCPU 停机
 （``res/avd/guest/mas-idlepoll.sh``）。
@@ -86,6 +86,7 @@ from .constants import (
     CLOSE_TIMEOUT_SECONDS,
     CONSOLE_KILL_TIMEOUT_SECONDS,
     DEBLOAT_PACKAGES,
+    DISPLAY_PRESETS,
     FALLBACK_FORCE_KILL_WAIT_SECONDS,
     FALLBACK_KILL_TIMEOUT_SECONDS,
     FALLBACK_SYNC_TIMEOUT_SECONDS,
@@ -112,9 +113,6 @@ from .constants import (
     PRE_SHUTDOWN_SYNC_TIMEOUT_SECONDS,
     RECOMMENDED_MEMORY_MB,
     REQUIRED_COMPONENTS,
-    SCREEN_DENSITY,
-    SCREEN_HEIGHT,
-    SCREEN_WIDTH,
     SYNC_TIMEOUT_SECONDS,
     VULKAN_ENC_GUEST_PATH,
     VULKAN_FIX_UPLOAD_PATH,
@@ -136,9 +134,11 @@ from .instances import (
     instance_meta,
     list_instances,
     memory_for,
+    resolution_for,
     update_instance_meta,
     validate_fps,
     validate_options,
+    validate_resolution,
     write_instance_config,
 )
 from .vulkanfix import (
@@ -268,7 +268,7 @@ def build_launch_args(
 
     有没有窗口不是实例选项（用户 10-04 定），开机那一刻按启动入口定，见 :meth:`AvdManager.open`。
     旧 ``mas-avd.json`` 里留下的 ``headless`` / ``resolution`` / ``guestAngle`` / ``audio`` /
-    ``balloon`` 一律不读：显示固定 720p、不带声卡、不开 GuestAngle、气球固定开。
+    ``balloon`` 一律不读：显示按 config.ini 的两档宽高识别、不带声卡、不开 GuestAngle、气球固定开。
 
     - 冷启动（``-no-snapshot``），与 MAS 对雷电 / MuMu 每轮开关一致；
     - 开机动画只在无头时关（``-no-boot-anim``）：带窗口开机时窗口里有东西看，不再黑屏到出桌面
@@ -1254,7 +1254,9 @@ class _AvdCore(DeviceBase):
 
         await host.ensure_adb_server(self.root)
         if await asyncio.to_thread(apply_display, self.root, idx):
-            logger.info(f"实例 {idx} 显示改回 720p、不显示导航栏（已写入 config.ini）")
+            logger.info(
+                f"实例 {idx} 显示设为 {resolution_for(instance.config)}p、不显示导航栏（已写入 config.ini）"
+            )
         headless = not self._open_window
         args = build_launch_args(
             instance.name,
@@ -1267,7 +1269,7 @@ class _AvdCore(DeviceBase):
         self._log_path = self._log_dir() / f"{instance.name}-{stamp}.log"
         logger.info(
             f"启动魔改 AVD 实例 {idx}（{'无头' if headless else '带窗口'}，"
-            f"720p {instance.fps} Hz，{memory_mb} MB / {instance.cpu} 核，"
+            f"{resolution_for(instance.config)}p {instance.fps} Hz，{memory_mb} MB / {instance.cpu} 核，"
             "气球开，不带声卡，ANDROID_EMU_VK_HIDE_REBAR=1）: "
             f"emulator {' '.join(args)}"
         )
@@ -2161,7 +2163,7 @@ class _AvdCore(DeviceBase):
                     for name in ("width", "height", "dpi", "cpu", "memoryMb", "fps")
                 }
             )
-        # 显示固定 720p（开机前核对一次写进 config.ini）
+        # 读取当前档位，下次开机前按相同档位写回。
         meta = instance_meta(self.root, idx)
         display = display_changes(instance.config)
         # 报开机实际传的 -memory（实例元数据里的值；以前「按游戏自动」的旧实例按默认 6 GB）
@@ -2186,7 +2188,7 @@ class _AvdCore(DeviceBase):
     async def write_instance_settings(
         self, idx: str, changes: dict, expected: dict | None = None
     ) -> dict[str, int]:
-        """可改 CPU、内存与帧率（30 / 60，写 ``hw.lcd.vsync``），都是下次启动生效；显示固定 720p。
+        """可改 CPU、内存与帧率（30 / 60，写 ``hw.lcd.vsync``），分辨率两档联动 DPI，保留方向，都是下次启动生效。
 
         同一台实例的改设置排队做：两个请求拿着同一份 ``expected`` 同时来时，后一个会看到前一个写的值、
         报冲突，不会两个都说成功、互相覆盖。"""
@@ -2232,14 +2234,7 @@ class _AvdCore(DeviceBase):
                 raise ValueError(
                     f"数据盘只能改大（当前 {current_data} GB，收到 {data_gb} GB）"
                 )
-            fixed = {
-                "width": SCREEN_WIDTH,
-                "height": SCREEN_HEIGHT,
-                "dpi": SCREEN_DENSITY,
-            }
-            for name, value in fixed.items():
-                if name in cleaned and cleaned[name] != value:
-                    raise ValueError("0.36.0 的 modavd 固定使用 1280×720 / DPI 240")
+            display = _display_settings(current, cleaned)
             kwargs: dict[str, Any] = {}
             if "memoryMb" in cleaned:
                 kwargs["memory"] = cleaned["memoryMb"]
@@ -2247,14 +2242,16 @@ class _AvdCore(DeviceBase):
                 kwargs["cpu"] = cleaned["cpu"]
             if "fps" in cleaned:
                 kwargs["fps"] = cleaned["fps"]
+            if display and any(
+                current.get(key) != value for key, value in display.items()
+            ):
+                kwargs["resolution"] = (
+                    1080 if max(display["width"], display["height"]) == 1920 else 720
+                )
             if data_gb is not None:
                 kwargs["data_gb"] = data_gb
             if not kwargs:
-                return {
-                    name: value
-                    for name, value in cleaned.items()
-                    if name in ("width", "height", "dpi")
-                }
+                return display
             try:
                 result = await self._cli.set(str(idx), **kwargs)
             except modavd_cli.CLIError as error:
@@ -2276,17 +2273,14 @@ class _AvdCore(DeviceBase):
             }
             if data_gb is not None and "dataPartitionGb" not in result_values:
                 result_values["dataPartitionGb"] = data_gb
+            result_values.update(display)
             return result_values
         cleaned = validate_setting_changes(changes)
         instance = self._instance(idx)
         # 只在这次要改帧率时校验：只改 CPU / 内存不该被手改过的 hw.lcd.vsync 挡住
         fps = validate_fps(cleaned["fps"]) if "fps" in cleaned else None
-        if {"width", "height", "dpi"} & cleaned.keys():
-            _check_display(
-                cleaned.get("width", SCREEN_WIDTH),
-                cleaned.get("height", SCREEN_HEIGHT),
-                cleaned.get("dpi", SCREEN_DENSITY),
-            )
+        current = (await self.read_instance_settings(idx)).values()
+        display = _display_settings(current, cleaned)
         memory, cpu, _ = validate_options(
             cleaned.get("memoryMb", memory_for(instance_meta(self.root, idx))),
             cleaned.get("cpu", instance.cpu),
@@ -2304,6 +2298,15 @@ class _AvdCore(DeviceBase):
         config_changes = {"hw.ramSize": f"{memory}M", "hw.cpu.ncore": str(cpu)}
         if fps is not None:
             config_changes["hw.lcd.vsync"] = str(fps)
+        if display:
+            config_changes.update(
+                {
+                    f"hw.lcd.{key}": str(value)
+                    for key, value in display.items()
+                    if key != "dpi"
+                }
+            )
+            config_changes["hw.lcd.density"] = str(display["dpi"])
         write_instance_config(self.root, idx, config_changes)
         # 内存每次都记进元数据：开机按它传 -memory，以前「按游戏自动」的旧实例从此有了固定值
         update_instance_meta(self.root, idx, memoryMb=memory)
@@ -2312,6 +2315,7 @@ class _AvdCore(DeviceBase):
             for k, v in cleaned.items()
             if k in ("cpu", "memoryMb", "fps", "width", "height", "dpi")
         }
+        applied.update(display)
         logger.info(f"已写入魔改 AVD 实例 {idx} 的设置: {applied}")
         return applied
 
@@ -2333,14 +2337,16 @@ class _AvdCore(DeviceBase):
         data_partition_gb: int | None = None,
         native_index: int | None = None,
         fps: int | None = None,
+        resolution: int | None = None,
     ) -> str:
         """新建实例，返回原生索引。不给索引就取最小的、端口也空着的那个。
 
         内存、核数、帧率不给就用默认 6 GB / 6 核 / 60（:data:`~.constants.DEFAULT_MEMORY_MB` /
-        ``DEFAULT_CPU`` / ``DEFAULT_FPS``）。
+        ``DEFAULT_CPU`` / ``DEFAULT_FPS``）；分辨率默认 1080p / DPI 280。
         """
         memory, cores, data_gb = validate_options(memory_mb, cpu, data_partition_gb)
         refresh = validate_fps(fps)
+        preset = validate_resolution(resolution)
         if self._cli is not None:
             if updater.update_in_progress(self.root):
                 raise RuntimeError("魔改 AVD 正在更新，更新完再新建实例")
@@ -2376,6 +2382,7 @@ class _AvdCore(DeviceBase):
                     cpu=cores,
                     data_gb=data_gb,
                     fps=refresh,
+                    resolution=preset,
                 )
             except modavd_cli.CLIError as error:
                 await self._raise_cli_create_error(error, native_index)
@@ -2398,6 +2405,7 @@ class _AvdCore(DeviceBase):
             cpu=cores,
             data_partition_gb=data_gb,
             fps=refresh,
+            resolution=preset,
         )
         logger.info(
             f"已新建魔改 AVD 实例 {native_index}（内存 "
@@ -2504,15 +2512,39 @@ def _int(raw: object) -> int | None:
         return None
 
 
-def _check_display(width: int | None, height: int | None, dpi: int | None) -> None:
-    """魔改 AVD 的显示固定 720p（横竖屏都认）；改成别的就拒绝，不做静默吸附。"""
-    if sorted((width or 0, height or 0), reverse=True) != [
-        SCREEN_WIDTH,
-        SCREEN_HEIGHT,
-    ] or (dpi != SCREEN_DENSITY):
-        raise ValueError(
-            f"魔改 AVD 的显示固定 720p（{SCREEN_WIDTH}×{SCREEN_HEIGHT}、DPI {SCREEN_DENSITY}），不能修改"
-        )
+def _display_settings(current: dict, changes: dict[str, int]) -> dict[str, int]:
+    """分辨率是宽、高、DPI 的整体档位；方向沿用实例，混合批量设置也按 AVD 的 DPI 写入。"""
+    if not {"width", "height", "dpi"} & changes.keys():
+        return {}
+    width = changes.get("width", current.get("width"))
+    height = changes.get("height", current.get("height"))
+    preset = next(
+        (
+            key
+            for key, (w, h, _) in DISPLAY_PRESETS.items()
+            if (width, height) in ((w, h), (h, w))
+        ),
+        None,
+    )
+    if preset is None:
+        raise ValueError("魔改 AVD 的分辨率只能选 1920×1080 或 1280×720")
+    if (
+        not {"width", "height"} & changes.keys()
+        and changes.get("dpi") != DISPLAY_PRESETS[preset][2]
+    ):
+        raise ValueError("魔改 AVD 的 DPI 随分辨率档位切换，不能单独修改")
+    display = display_changes(
+        {
+            "hw.lcd.width": str(current.get("width") or 0),
+            "hw.lcd.height": str(current.get("height") or 0),
+        },
+        preset,
+    )
+    return {
+        "width": int(display["hw.lcd.width"]),
+        "height": int(display["hw.lcd.height"]),
+        "dpi": int(display["hw.lcd.density"]),
+    }
 
 
 class AvdHostAdb:

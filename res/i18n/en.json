@@ -2788,6 +2788,7 @@
   "core.emulator2.avd.fieldMemory": "Memory",
   "core.emulator2.avd.localSdk": "Local SDK",
   "core.emulator2.avd.manage": "Components & checks",
+  "core.emulator2.avd.resolutionHint": "720p uses fewer resources. DPI follows the resolution preset.",
   "core.emulator2.avd.memoryRecommend": "Recommended: 1999 {reverse1999} GB",
   "core.emulator2.avd.needsTestPackage": "Test package required",
   "core.emulator2.avd.optional": "Optional",

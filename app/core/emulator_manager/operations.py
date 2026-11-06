@@ -446,7 +446,7 @@ class EmulatorOperations:
     ) -> dict:
         """在某条模拟器安装下新建一个实例，并给它分配设备号。
 
-        ``options`` 只对魔改 AVD 生效（``memory_mb`` / ``cpu`` / ``fps`` / ``data_partition_gb`` /
+        ``options`` 只对魔改 AVD 生效（``memory_mb`` / ``cpu`` / ``fps`` / ``resolution`` / ``data_partition_gb`` /
         ``native_index``）：
         雷电 / MuMu 新建时用的是模拟器自己的默认配置。
         """
@@ -751,7 +751,9 @@ class EmulatorOperations:
             if record.state != "active":
                 continue
             try:
-                await manager.write_settings(record.slot, cleaned, expected=None)
+                applied = await manager.write_settings(
+                    record.slot, cleaned, expected=None
+                )
             except Exception as e:  # noqa: BLE001 - 逐台上报, 一台失败不拖垮整批
                 logger.warning(f"设备 #{record.slot} 应用批量设置失败: {e}")
                 results.append(
@@ -762,7 +764,7 @@ class EmulatorOperations:
                     }
                 )
                 continue
-            await self._record_baseline(emulator_id, record.slot, cleaned)
+            await self._record_baseline(emulator_id, record.slot, applied)
             results.append({"slot": record.slot, "ok": True, "message": ""})
 
         return {

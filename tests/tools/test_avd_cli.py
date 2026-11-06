@@ -29,6 +29,7 @@ from app.utils.common.emulator2.avd.cli import (
     _run_process,
     resolve_cli,
 )
+from app.utils.common.emulator2.avd.instances import config_path, write_ini
 from app.utils.common.emulator2.avd.manager import _AvdCore
 
 
@@ -1156,3 +1157,64 @@ async def test_concurrent_creates_keep_each_others_device_slots() -> None:
     # 后存的那次不能拿新建前的旧槽位表把先存的设备号盖掉
     table = SlotTable.from_json(saved["slots"])
     assert sorted(record.native_index for record in table.records) == ["7", "8"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("supports_presets", [False, True])
+async def test_resolution_flags_and_old_cli_compatibility(
+    tmp_path: Path, supports_presets: bool
+) -> None:
+    writes: list[list[str]] = []
+
+    async def runner(
+        args: Sequence[str],
+        timeout: float,
+        timeout_handler: object = None,
+        breakaway: bool = False,
+    ) -> ProcessOutput:
+        del timeout, timeout_handler, breakaway
+        if "help" in args:
+            options = [{"flag": "--resolution"}] if supports_presets else []
+            data = {"commands": [{"name": "create", "options": options}]}
+        elif "list" in args:
+            data = {"instances": []}
+        else:
+            writes.append(list(args))
+            data = {"index": 7, "applied": {}}
+        return ProcessOutput(0, json.dumps({"ok": True, "data": data}), "")
+
+    cli = ModAvdCli(tmp_path, exe=sys.executable, runner=runner)
+    for resolution in (720, 1080):
+        writes.clear()
+        if not supports_presets and resolution == 1080:
+            with pytest.raises(CLIError) as caught:
+                await cli.create(index=7, resolution=resolution)
+            assert caught.value.code == "unsupported"
+            assert writes == []
+            with pytest.raises(CLIError):
+                await cli.set(7, resolution=resolution)
+            assert writes == []
+        else:
+            await cli.create(index=7, resolution=resolution)
+            await cli.set(7, resolution=resolution)
+            assert len(writes) == 2
+            for command in writes:
+                assert ("--resolution" in command) == supports_presets
+                if supports_presets:
+                    assert command[command.index("--resolution") + 1] == str(resolution)
+    path = config_path(tmp_path, 7)
+    path.parent.mkdir(parents=True)
+    for width, height in ((1280, 720), (1920, 1080), (1080, 1920)):
+        write_ini(path, {"hw.lcd.width": str(width), "hw.lcd.height": str(height)})
+        before = path.read_bytes()
+        writes.clear()
+        if not supports_presets and max(width, height) == 1920:
+            with pytest.raises(CLIError) as caught:
+                await cli.start(7)
+            assert caught.value.code == "unsupported"
+            assert writes == []
+        else:
+            await cli.start(7)
+            assert len(writes) == 1
+            assert "start" in writes[0]
+        assert path.read_bytes() == before

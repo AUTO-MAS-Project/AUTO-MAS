@@ -2788,6 +2788,7 @@
   "core.emulator2.avd.fieldMemory": "内存",
   "core.emulator2.avd.localSdk": "本地 SDK",
   "core.emulator2.avd.manage": "管理与更新",
+  "core.emulator2.avd.resolutionHint": "720p 更省资源，DPI 随分辨率切换",
   "core.emulator2.avd.memoryRecommend": "推荐：1999 {reverse1999} GB",
   "core.emulator2.avd.needsTestPackage": "需要内测包",
   "core.emulator2.avd.optional": "可选",
