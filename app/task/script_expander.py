@@ -91,6 +91,9 @@ class ScriptExpander(TaskBase):
                     coordinator, results
                 ),
             )
+        # TODO(插件迁移，#1845)：dev 的下一托管预下载尚未接线，本轮不生效；
+        # 同步时保持旧预下载接线禁用，首个成功节点计时、候选交接与取消清理待重新设计。
+        # 专项自身的运行前更新仍沿现有 manager 执行。
         for index, script in enumerate(info.script_list):
             await info.set_current_index(index)
             if (

@@ -67,6 +67,9 @@ class GeneralManager(ScriptManagerBase):
 
     async def check(self) -> str:
         """校验通用脚本配置是否可用"""
+        # TODO(插件迁移，#1845)：dev 新增的通用计划日期编辑会话暂不接入；
+        # params 传递、计划归属/日期校验、计划锁及模板换入后的保存结果待统一讨论。
+        # 同步时不能直接带入依赖 task_info.plan_id/plan_day 的旧执行分支。
         if self.execution_mode not in METHOD_BOOK:
             return "不支持的任务模式, 请检查任务配置！"
         if not isinstance(

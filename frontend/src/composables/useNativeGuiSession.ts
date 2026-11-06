@@ -138,6 +138,8 @@ export function useNativeGuiSession(options: {
     return stoppingPromise
   }
 
+  // TODO(插件迁移，#1845)：通用计划日期编辑暂不接入；dev 的 planId/planDay 不能原样传入此入口。
+  // 后续统一讨论要求节点 params、专项消费及真实保存结果查询，停止成功不能证明模板已保存。
   const startSession = (
     startTaskId: string,
     viewOnly = false,

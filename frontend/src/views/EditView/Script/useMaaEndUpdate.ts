@@ -189,6 +189,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
   }
 
   const applyLog = (data: WSTaskLogUpdatedData) => {
+    // TODO(插件迁移，#1845)：当前全文覆盖会丢失增量前文；迁入后统一适配 append/seq 与快照恢复。
     updateModal.log = data.log.slice(-UPDATE_LOG_MAX_CHARS)
     logRevision += 1
     armIdleTimer()

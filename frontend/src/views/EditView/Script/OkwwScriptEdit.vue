@@ -659,7 +659,7 @@ const handleCheckUpdate = async () => {
   }
 }
 
-// 当前日志每次全文替换，本地只保留显示所需的尾部。
+// TODO(插件迁移，#1845)：当前全文覆盖会丢失增量前文；迁入后统一适配 append/seq 与快照恢复。
 const UPDATE_LOG_MAX_CHARS = 200_000
 const applyUpdateLog = (data: WSTaskLogUpdatedData) => {
   updateModal.log = data.log.slice(-UPDATE_LOG_MAX_CHARS)

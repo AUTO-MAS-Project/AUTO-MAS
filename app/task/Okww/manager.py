@@ -127,6 +127,8 @@ class OkwwManager(ScriptManagerBase):
 
     async def prepare(self):
         script_uid = uuid.UUID(self.script_info.script_id)
+        # TODO(插件迁移，#1845)：这里只互斥当前托管；不同托管仍可指向同一 RootPath，
+        # 换入、恢复配置及清理进程可能相互干扰。同目录完整使用期互斥留待插件迁移处理。
         self.config_locks[
             Config.ScriptConfig[script_uid].uid
         ] = await self.lock_script_config(Config.ScriptConfig[script_uid])
