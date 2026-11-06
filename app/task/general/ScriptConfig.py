@@ -68,6 +68,10 @@ class ScriptConfigTask(TaskExecuteBase):
             / "ConfigFile"
         )
         self.plan_active = bool(self.task_info.plan_id)
+        # 当天模板是否已换入原生配置：只有换入过的会话才允许收尾把原生配置
+        # 写回模板。换入前停止（如进程清理等待期间取消）时原生配置还是用户
+        # 现场，写回会把非模板内容覆盖进已有模板。
+        self.plan_staged = False
         if self.plan_active:
             from app.core.config.universal_plan import plan_directory
 
@@ -230,6 +234,8 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.script_config_path,
                 script_id=self.script_info.script_id,
             )
+            if self.plan_active:
+                self.plan_staged = True
         elif (
             self.script_config.Script.ConfigPathMode == "File"
             and (self.mas_config_dir / self.script_config_path.name).exists()
@@ -238,6 +244,8 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.mas_config_dir / self.script_config_path.name,
                 self.script_config_path,
             )
+            if self.plan_active:
+                self.plan_staged = True
 
         logger.success(f"MAA运行参数配置完成: 设置账号 {self.cur_user_item.user_id}")
 
@@ -259,6 +267,11 @@ class ScriptConfigTask(TaskExecuteBase):
             return
 
         if self.plan_active:
+            if not self.plan_staged:
+                # 模板还没换入原生配置就结束（如启动等待期间被取消）：原生配置
+                # 不是当天模板的现场，写回会把用户现场覆盖进模板
+                logger.info("通用脚本计划表会话未换入模板，跳过计划写回")
+                return
             from app.core.config.universal_plan import save_plan_config
 
             save_plan_config(

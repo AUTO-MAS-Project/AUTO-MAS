@@ -196,6 +196,20 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             )
         return "Pass"
 
+    async def _record_check_skip(self, reason: str) -> None:
+        """检查阶段跳过时写入账号结果与脚本日志，口径与 ManagerBase.skip_user 一致。"""
+
+        user = self.cur_user_item
+        user.add_log_record(
+            datetime.now().astimezone(), LogRecord(status=reason, content=[reason])
+        )
+        line = f"{self.script_info.name} - {user.name}: {reason}"
+        self.script_info.log = (
+            f"{self.script_info.log}\n{line}" if self.script_info.log else line
+        )
+        logger.info(line)
+        await self.task_info.send_notice(level="info", message=line)
+
     async def prepare(self):
 
         if self.plan_active:
@@ -362,6 +376,10 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                         message=f"账号 {self.cur_user_item.name} 检查未通过: {self.check_result}",
                     ),
                 )
+            elif self.cur_user_item.status == "跳过":
+                # 检查阶段跳过也必须留下结果记录：报告从 log_record 读取，
+                # 不写会显示成「未开始运行」，用户看不出该账号为何没跑
+                await self._record_check_skip(self.check_result)
             return
 
         await self.prepare()

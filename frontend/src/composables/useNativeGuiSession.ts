@@ -63,6 +63,9 @@ export function useNativeGuiSession(options: {
   let keepDiscardFrames = false
   // 本次会话的改动是否已被后端丢弃（原因见后端 WSTaskConfigDiscardedData）
   let discardedReason: string | null = null
+  // 会话期间后端报错（含保存收尾失败）：停止受理成功不代表保存成功，
+  // 错误帧到达后不能再提示「已保存」
+  let sessionErrorNotice: string | null = null
 
   // 原生设置会话超时自动保存的时长与提前提醒的提前量（避免无预告直接中断会话）
   const SESSION_TIMEOUT_MS = 30 * 60 * 1000
@@ -153,6 +156,7 @@ export function useNativeGuiSession(options: {
     startingPromise = Promise.resolve().then(async () => {
       try {
         discardedReason = null
+        sessionErrorNotice = null
         keepDiscardFrames = false
         const response = await requestTaskStart(
           {
@@ -174,6 +178,7 @@ export function useNativeGuiSession(options: {
           subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
             if (wsMessage.data.level !== 'error') return
 
+            sessionErrorNotice = wsMessage.data.message
             message.error(t(keys.setupFailed, { p0: wsMessage.data.message }))
             void stopSession()
           }),
@@ -230,8 +235,9 @@ export function useNativeGuiSession(options: {
         return
       }
       await new Promise(resolve => window.setTimeout(resolve, DISCARD_FRAME_GRACE_MS))
-      // 改动已被丢弃时不再提示「已保存」——弹窗已经说明去向，两条提示互相矛盾。
-      if (!discardedReason) message.success(t(keys.saved))
+      // 改动已被丢弃或后端保存收尾报错时不再提示「已保存」——错误说明已经
+      // 展示，两条提示互相矛盾。
+      if (!discardedReason && !sessionErrorNotice) message.success(t(keys.saved))
     })().finally(() => {
       keepDiscardFrames = false
       if (!taskId.value) clearSession()

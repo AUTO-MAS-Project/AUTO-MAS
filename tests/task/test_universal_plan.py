@@ -9,8 +9,10 @@ from pydantic import ValidationError
 from app.config import ConfigCollection
 from app.core.config.universal_plan import plan_directory, save_plan_config
 from app.models.config import GeneralUserConfig, MaaPlanConfig, UniversalPlanConfig
+from app.models.task import UserItem
 from app.task.general.AutoProxy import AutoProxyTask
 from app.task.general.ScriptConfig import ScriptConfigTask
+from app.utils import UTC4
 
 
 def make_plan(script_id, user_id, **info):
@@ -91,6 +93,18 @@ def test_failed_save_preserves_previous_configuration(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         save_plan_config(source=source, destination=target, mode="File")
     assert (target / source.name).read_text() == "old"
+
+
+def test_first_save_from_empty_template_succeeds(tmp_path):
+    """空模板目录（原生配置目录为空的首次会话换入结果）保存不再报错。"""
+
+    native = tmp_path / "native"
+    native.mkdir()
+    (native / "config.json").write_text("first", encoding="utf-8")
+    template = tmp_path / "Monday" / "ConfigFile"
+    template.mkdir(parents=True)
+    save_plan_config(source=native, destination=template, mode="Folder")
+    assert (template / "config.json").read_text(encoding="utf-8") == "first"
 
 
 def test_universal_plan_general_only():
@@ -242,6 +256,117 @@ async def test_native_edit_session_saves_only_its_day(
     assert (session.mas_config_dir / "settings.json").read_text() == "Tuesday edited"
     assert (base / "settings.json").read_text() == "base"
     assert not (session.mas_config_dir.parent.parent / "Monday" / "ConfigFile").exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["File", "Folder"])
+async def test_stop_before_template_swap_keeps_template(
+    isolated_app_paths, monkeypatch, mode
+):
+    """模板换入前停止会话（如启动等待期间取消）：不把用户现场写回模板。"""
+
+    import app.task.general.ScriptConfig as module
+
+    config = isolated_app_paths
+    script_id, user_id = uuid4(), uuid4()
+    plans = ConfigCollection.build([UniversalPlanConfig])
+    await plans.activate()
+    plan_id = plans.add(
+        UniversalPlanConfig,
+        payload={"Info": {"ScriptId": str(script_id)}},
+    )
+    await plans.commit()
+    monkeypatch.setattr(config, "PlanConfig", plans)
+    native = config.data_path / "native"
+    native.mkdir()
+    native_file = native / "settings.json"
+    native_file.write_text("user current")
+    executable = config.data_path / "script.exe"
+    executable.touch()
+    script = SimpleNamespace(
+        Script=SimpleNamespace(
+            ScriptPath=executable,
+            Arguments="",
+            ConfigPathMode=mode,
+            ConfigPath=native if mode == "Folder" else native_file,
+        )
+    )
+    task_info = SimpleNamespace(
+        plan_id=str(plan_id), plan_day="Tuesday", view_only=False
+    )
+    item = SimpleNamespace(user_id="Default", name="Script", status="waiting")
+    info = SimpleNamespace(
+        task_info=task_info, script_id=str(script_id), user_list=[item], current_index=0
+    )
+    session = ScriptConfigTask(info, script, {user_id: GeneralUserConfig()}, None)
+    # 上一次会话保存过的当天模板：内容与用户现场不同，写回即覆盖
+    template = session.mas_config_dir
+    template.mkdir(parents=True)
+    template_file = (
+        template / "settings.json" if mode == "Folder" else template / native_file.name
+    )
+    template_file.write_text("existing")
+
+    async def kill(*args):
+        pass
+
+    monkeypatch.setattr(module.System, "kill_process", kill)
+    await session.prepare()
+    await session.final_task()
+    assert template_file.read_text() == "existing"
+    assert native_file.read_text() == "user current"
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_day_skip_records_reason(isolated_app_paths, monkeypatch):
+    """当天未配置跳过：原因写入账号结果，报告不再显示「未开始运行」。"""
+
+    config = isolated_app_paths
+    script_id, user_id = uuid4(), uuid4()
+    plan = make_plan(script_id, user_id)
+    plans = ConfigCollection.build([UniversalPlanConfig])
+    await plans.activate()
+    plan_id = plans.add(UniversalPlanConfig, payload=plan.model_dump())
+    await plans.commit()
+    plan = plans[plan_id]
+    monkeypatch.setattr(config, "PlanConfig", plans)
+    monkeypatch.setattr(
+        UniversalPlanConfig, "current_group", lambda self, now: "Monday"
+    )
+    user = GeneralUserConfig.model_validate({"Info": {"PlanMode": plan.uid}})
+    # 当天已重置过：跳过每日代理状态分支，与本测试无关
+    user.Data.LastProxyDate = datetime.now(tz=UTC4)
+    notices: list[tuple[str, str]] = []
+
+    async def send_notice(*, level, message):
+        notices.append((level, message))
+
+    native = config.data_path / "native.json"
+    script = SimpleNamespace(
+        Script=SimpleNamespace(ConfigPath=native, ConfigPathMode="File"),
+        Run=SimpleNamespace(ProxyTimesLimit=0),
+    )
+    item = UserItem(user_id=str(user_id), name="User", status="等待")
+    info = SimpleNamespace(
+        task_info=SimpleNamespace(
+            is_queue_task=False,
+            plan_id=str(plan.uid),
+            plan_day="Tuesday",
+            send_notice=send_notice,
+        ),
+        script_id=str(script_id),
+        name="Script",
+        log="",
+        user_list=[item],
+        current_index=0,
+    )
+    run = AutoProxyTask(info, script, {user_id: user}, None)
+    await run.main_task()
+    reason = "当天的通用脚本计划表尚未配置，请先编辑并保存该日期的配置"
+    assert item.status == "跳过"
+    assert reason in item.result
+    assert reason in info.log
+    assert notices == [("info", f"Script - User: {reason}")]
 
 
 @pytest.mark.parametrize(

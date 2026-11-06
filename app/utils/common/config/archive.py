@@ -307,6 +307,8 @@ def _archive(
         # 先全量写到暂存目录，全部成功后再改名转正：中途失败（磁盘满、
         # 文件被占用、路径超长……）时清掉暂存目录，盘上不会留下任何命名
         # 符合 _TS_PATTERN 的目录，列表/去重/恢复都看不到半截归档。
+        # 空文件集（如首次保存前的空模板目录）也要先建暂存目录，改名才有的改。
+        staging.mkdir(parents=True, exist_ok=True)
         for rel, source in files.items():
             target = staging / rel
             _ensure_path_length(target)
