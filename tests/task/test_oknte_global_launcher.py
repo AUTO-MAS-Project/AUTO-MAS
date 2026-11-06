@@ -52,6 +52,16 @@ def test_manually_selected_launcher_is_used(tmp_path: Path):
     assert AutoProxyTask._resolve_launcher_path(proxy) == launcher
 
 
+@pytest.mark.parametrize("nested", [False, True])
+def test_global_launcher_window_path_for_installation(tmp_path: Path, nested: bool):
+    global_dir = tmp_path / "NTEGlobal"
+    launcher = (global_dir if nested else tmp_path) / "NTEGlobalLauncher.exe"
+    assert launcher_start.launcher_process_paths(launcher) == (
+        launcher,
+        global_dir / "NTEGlobalGame.exe",
+    )
+
+
 @pytest.mark.skipif(
     not launcher_start.IS_WINDOWS, reason="启动器窗口枚举仅支持 Windows"
 )

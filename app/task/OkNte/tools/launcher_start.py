@@ -188,7 +188,10 @@ def _find_game_hwnd() -> int | None:
 def launcher_process_paths(launcher_path: Path) -> tuple[Path, ...]:
     """返回所选安装内可能承载启动器窗口的程序路径。"""
     if launcher_path.name.casefold() == "ntegloballauncher.exe":
-        return (launcher_path, launcher_path.parent / "NTEGlobal" / "NTEGlobalGame.exe")
+        window_dir = launcher_path.parent
+        if window_dir.name.casefold() != "nteglobal":
+            window_dir = window_dir / "NTEGlobal"
+        return (launcher_path, window_dir / "NTEGlobalGame.exe")
     if launcher_path.name.casefold() in {name.casefold() for name in LAUNCHER_EXES}:
         return (
             launcher_path,
