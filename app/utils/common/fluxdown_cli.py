@@ -1943,8 +1943,9 @@ async def _fluxdown_server_download(
         if task_id is None:
             # 每次 add 使用全新的请求路径。即使网关启动时只返回空快照，
             # 历史同源同名任务也不可能匹配本次身份；原目标保留到下载完成。
+            # FluxDown 会移除文件名前导点，使用普通文件名以保持任务路径一致。
             request_path = destination.with_name(
-                f".mas-fluxdown-{secrets.token_hex(16)}{destination.suffix}"
+                f"mas-fluxdown-{secrets.token_hex(16)}{destination.suffix}"
             )
             args = [
                 "add",

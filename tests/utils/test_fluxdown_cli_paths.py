@@ -1,5 +1,9 @@
 """工具只使用调用方提供的程序目录，并保留 portable 安全要求。"""
 
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 
 from app.utils import fluxdown_cli as cli
@@ -70,3 +74,65 @@ def test_auto_detect_rejects_empty_server_binary(tmp_path, monkeypatch):
     (directory / "fluxdown-agent.exe").write_bytes(b"agent")
     (directory / "fluxdownd.exe").touch()
     assert cli.fluxdown_detect(str(directory), scan_budget=0.0)["path"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("different_output", [False, True])
+async def test_server_download_handoff_after_filename_sanitization(
+    tmp_path, monkeypatch, different_output
+):
+    """FluxDown 去掉文件名前导点后仍能交接，并拒绝不属于请求的文件。"""
+    monkeypatch.chdir(tmp_path)
+    executable = tmp_path / "fluxdown-cli.exe"
+    destination = tmp_path / "更新" / "package.zip"
+    destination.parent.mkdir()
+    destination.write_bytes(b"previous package")
+    payload = b"downloaded package"
+    task_id = "01a1b282-604d-7049-a9d0-5de2ec85c99b"
+    output = None
+
+    monkeypatch.setattr(
+        cli,
+        "fluxdown_server_ensure",
+        lambda _: SimpleNamespace(gateway_port=27896, token="test-token"),
+    )
+
+    def run_cli(cli_exe, env, args, timeout):
+        nonlocal output
+        if args[0] == "add":
+            directory = Path(args[args.index("-d") + 1])
+            # 已核实的 FluxDown 行为：保存时去掉文件名前导点。
+            name = args[args.index("-o") + 1].lstrip(".")
+            if different_output:
+                name = "unrelated.zip"
+            output = directory / name
+            output.write_bytes(payload)
+            return 0, json.dumps({"taskId": task_id})
+        assert args[0] == "status"
+        assert output is not None
+        return 0, json.dumps(
+            {
+                "taskId": task_id,
+                "status": 3,
+                "saveDir": str(output.parent),
+                "fileName": output.name,
+                "totalBytes": len(payload),
+                "downloadedBytes": len(payload),
+            }
+        )
+
+    monkeypatch.setattr(cli, "_run_cli", run_cli)
+    download = cli.fluxdown_server_download(
+        "https://example.test/package.zip", destination, cli_exe=executable
+    )
+    if different_output:
+        with pytest.raises(RuntimeError):
+            await download
+        assert destination.read_bytes() == b"previous package"
+        assert output.read_bytes() == payload
+    else:
+        size, record = await download
+        assert size == len(payload)
+        assert record.status == "success"
+        assert destination.read_bytes() == payload
+        assert not output.exists()
