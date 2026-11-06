@@ -915,6 +915,14 @@ class MumuManager(DeviceBase):
         if data.get("is_android_started"):
             return DeviceStatus.ONLINE
         if data.get("is_process_started"):
+            # 非管理员运行时 MuMu 打不开自己的内部管道，is_android_started 会一直是 false，
+            # 此时用实例状态兜底，避免明明起来了还一直等下去；
+            # 但启动本身报错时（如 -32218 VERR_VIRTUALBOX_ACCESSDENIED）player_state 同样会是
+            # start_finished，这时不能当在线，否则会把没起来的实例报成已就绪
+            if data.get("player_state") == "start_finished" and not data.get(
+                "launch_err_code"
+            ):
+                return DeviceStatus.ONLINE
             return DeviceStatus.STARTING
         if "is_android_started" in data or "is_process_started" in data:
             return DeviceStatus.OFFLINE
