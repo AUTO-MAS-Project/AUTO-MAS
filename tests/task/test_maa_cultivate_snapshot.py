@@ -104,32 +104,23 @@ def compressed(snapshot):
     return gzip.compress(json.dumps(snapshot).encode(), mtime=0)
 
 
-@pytest.mark.parametrize("load_from", ["source", "snapshot"])
-def test_skill_summary_recipes_are_added_to_source_and_old_snapshot(
-    sources, snapshot, load_from
-):
-    if load_from == "source":
-        dataset = yituliu.normalize_dataset(
-            demand_raw=sources[yituliu._DEMAND_URL],
-            matrix_raw=sources[yituliu._MATRIX_URL],
-            stage_raw=sources[yituliu._STAGE_INFO_URL],
-            recipe_raw=sources[yituliu._RECIPE_URL],
-            data_version="source",
-        )
-    else:
-        raw = snapshot["dataset"]
-        raw["recipes"] = [
-            recipe
-            for recipe in raw["recipes"]
-            if recipe["result"] not in {"3302", "3303"}
-        ]
-        dataset = yituliu.dataset_from_json(raw)
-
-    recipes = {
-        recipe.result_item_id: dict(recipe.ingredients) for recipe in dataset.recipes
-    }
-    assert recipes.get("3302") == {"3301": 3}
-    assert recipes.get("3303") == {"3302": 3}
+def test_skill_summary_recipes_are_added_to_source_and_old_snapshot(snapshot):
+    expected = {"3302": {"3301": 3}, "3303": {"3302": 3}}
+    raw = snapshot["dataset"]  # 夹具经真实源站规范化入口构建。
+    assert {
+        recipe["result"]: recipe["ingredients"]
+        for recipe in raw["recipes"]
+        if recipe["result"] in expected
+    } == expected
+    raw["recipes"] = [
+        recipe for recipe in raw["recipes"] if recipe["result"] not in expected
+    ]
+    restored = yituliu.dataset_from_json(raw)
+    assert {
+        recipe.result_item_id: dict(recipe.ingredients)
+        for recipe in restored.recipes
+        if recipe.result_item_id in expected
+    } == expected
 
 
 @pytest.mark.asyncio

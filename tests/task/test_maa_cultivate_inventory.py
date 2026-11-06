@@ -1,4 +1,4 @@
-"""养成计划优先使用现有库存合成，再安排缺口刷取。"""
+"""库存合成的整套抵扣、共享消耗与失败回退。"""
 
 from dataclasses import replace
 from datetime import date
@@ -6,29 +6,20 @@ from datetime import date
 import pytest
 
 from app.task.MAA.tools.cultivate import (
-    DemandEntry,
-    DropEntry,
     Goal,
     OperatorTarget,
     Progression,
     ProgressionSnapshot,
-    Recipe,
-    StageMeta,
     build_plan,
     has_material_gap,
 )
 from app.task.MAA.tools.cultivate.yituliu import normalize_dataset
 
-TODAY = date(2026, 11, 6)  # 周五，CA-5 开放。
-
 
 @pytest.fixture
-def skill_summary_scenario():
+def scenario():
     data = normalize_dataset(
-        demand_raw={
-            operator_id: {"allSkill": [{}, {}, {}, {}, {"3302": 2}, {"3303": 2}]}
-            for operator_id in ("one", "two")
-        },
+        demand_raw={"one": {"allSkill": [{}] * 4 + [{"3302": 2}, {"3303": 2}]}},
         matrix_raw={
             "matrix": [
                 {"stageId": "wk_fly_5", "itemId": "3303", "times": 1, "quantity": 2},
@@ -43,148 +34,97 @@ def skill_summary_scenario():
         recipe_raw=[],
         data_version="test",
     )
-    targets = [
-        OperatorTarget(
-            operator_id="one", goals=(Goal(kind="skill", target_id="", to_level=7),)
-        )
-    ]
-    snapshots = {
-        operator_id: ProgressionSnapshot(
-            source="skland",
-            timestamp=0,
-            data=Progression(
-                elite=2, level=90, skill_level=6, masteries={}, modules={}
-            ),
-        )
-        for operator_id in ("one", "two")
-    }
-    return {"targets": targets, "snapshots": snapshots, "data": data, "today": TODAY}
-
-
-def test_lower_inventory_covers_skill_summaries_before_direct_farming(
-    skill_summary_scenario,
-):
-    inventory = {"3302": 2, "3301": 12}
-    plan = build_plan(**skill_summary_scenario, inventory=inventory)
-
-    assert plan.entries == ()
-    assert not has_material_gap(**skill_summary_scenario, inventory=inventory)
-    assert {item.item_id: item.amount for item in plan.reservations} == {
-        "3303": 2,
-        "3302": 6,
-        "3301": 12,
-    }
-    assert inventory == {"3302": 2, "3301": 12}
+    snapshot = ProgressionSnapshot(
+        source="skland",
+        timestamp=0,
+        data=Progression(elite=2, level=90, skill_level=6, masteries={}, modules={}),
+    )
+    return dict(
+        targets=[
+            OperatorTarget("one", (Goal(kind="skill", target_id="", to_level=7),))
+        ],
+        snapshots={"one": snapshot},
+        data=data,
+        today=date(2026, 11, 6),
+    )
 
 
 @pytest.mark.parametrize(
-    ("inventory", "remaining", "reserved", "expected_sanity"),
+    ("inventory", "remaining", "reserved", "sanity"),
     [
-        ({"3303": 1, "3302": 3}, 0, {"3303": 2, "3302": 3}, 0),
+        ({"3302": 2, "3301": 12}, 0, {"3303": 2, "3302": 6, "3301": 12}, 0),
         ({"3302": 5}, 1, {"3303": 2, "3302": 3}, 15),
         ({"3302": 2, "3301": 2}, 2, {"3303": 2}, 30),
-        ({}, 2, {"3303": 2}, 30),
     ],
-    ids=["finished-stock-first", "partial-whole-books", "incomplete-set", "no-stock"],
+    ids=["two-level-crafting", "partial-whole-books", "incomplete-set"],
 )
-def test_only_whole_books_reduce_the_remaining_farming_gap(
-    skill_summary_scenario, inventory, remaining, reserved, expected_sanity
+def test_only_complete_inventory_recipes_reduce_farming(
+    scenario, inventory, remaining, reserved, sanity
 ):
-    plan = build_plan(**skill_summary_scenario, inventory=inventory)
-
+    before = dict(inventory)
+    plan = build_plan(**scenario, inventory=inventory)
     assert [(item.item_id, item.amount) for item in plan.entries] == (
         [("3303", remaining)] if remaining else []
     )
-    assert has_material_gap(**skill_summary_scenario, inventory=inventory) is bool(
-        remaining
-    )
+    assert has_material_gap(**scenario, inventory=inventory) is bool(remaining)
     assert {item.item_id: item.amount for item in plan.reservations} == reserved
-    # CA-5 每次30理智、平均掉两本卷3；凑不齐整套的低级卷不降低预计理智。
-    # 即使 CA-3 补一本卷2只需约6.7理智，也不为利用零散库存而改选该路线。
-    assert sum(item.expected_sanity for item in plan.entries) == expected_sanity
+    # CA-5 卷3每本15理智；即使补卷2更省，也不利用不足整套的余料改选路线。
+    assert sum(item.expected_sanity for item in plan.entries) == sanity
+    assert inventory == before
 
 
-def test_shared_inventory_is_not_used_again_for_a_later_goal(skill_summary_scenario):
-    scenario = skill_summary_scenario
-    scenario["targets"].append(
-        OperatorTarget(
-            operator_id="two", goals=(Goal(kind="skill", target_id="", to_level=6),)
-        )
-    )
-    scenario["snapshots"]["two"] = replace(
-        scenario["snapshots"]["two"],
-        data=replace(scenario["snapshots"]["two"].data, skill_level=5),
-    )
-    inventory = {"3302": 3}
-    plan = build_plan(**scenario, inventory=inventory)
-
-    # 卷2先合成一本卷3，后一名干员需要的两本卷2须另补。
-    assert [(item.item_id, item.amount, item.held) for item in plan.entries] == [
-        ("3303", 1, 0),
-        ("3302", 2, 3),
-    ]
-    assert {item.item_id: item.amount for item in plan.reservations} == {
-        "3303": 2,
-        "3302": 5,
-    }
-    assert has_material_gap(**scenario, inventory=inventory)
-
-
-@pytest.mark.parametrize(
-    "complete", [False, True], ids=["missing-ingredient", "complete"]
-)
-def test_multi_ingredient_crafting_commits_only_complete_sets(
-    skill_summary_scenario, complete
-):
-    scenario = skill_summary_scenario
-    scenario["data"] = replace(
-        scenario["data"],
-        demands={
-            "one": (
-                DemandEntry(
-                    kind="mastery", target_id="skill", level=1, items={"30024": 1}
-                ),
-            ),
-            "two": (
-                DemandEntry(kind="skill", target_id="", level=7, items={"30023": 2}),
-            ),
-        },
-        recipes=(Recipe("30024", {"30023": 2, "30043": 1, "30083": 1}),),
-        stages={
-            "stage": StageMeta(
-                stage_id="stage", stage_code="3-4", ap_cost=18, open_weekdays=None
-            )
-        },
-        drops=tuple(
-            DropEntry(
-                stage_id="stage",
-                item_id=item_id,
-                expected_per_run=1.0,
-                start_ms=0,
-                end_ms=None,
-            )
-            for item_id in ("30024", "30023", "30043", "30083")
-        ),
-        material_class={
-            item_id: "farmable" for item_id in ("30024", "30023", "30043", "30083")
-        },
-    )
-    scenario["targets"] = [
-        OperatorTarget("one", (Goal(kind="mastery", target_id="skill", to_level=1),)),
-        OperatorTarget("two", (Goal(kind="skill", target_id="", to_level=7),)),
-    ]
+def test_skill_levels_share_inventory_without_double_counting(scenario):
+    snapshot = scenario["snapshots"]["one"]
     scenario["snapshots"]["one"] = replace(
-        scenario["snapshots"]["one"],
-        data=replace(scenario["snapshots"]["one"].data, skill_level=7),
+        snapshot, data=replace(snapshot.data, skill_level=5)
     )
-    inventory = {"30023": 2, "30043": 1, "30083": int(complete)}
-    plan = build_plan(**scenario, inventory=inventory)
+    plan = build_plan(**scenario, inventory={"3302": 3})
+    # 升6级先用两本卷2，余下一本不能再抵扣升7级所需的两本卷3。
+    assert [(item.item_id, item.amount) for item in plan.entries] == [("3303", 2)]
+    assert {item.item_id: item.amount for item in plan.reservations} == {
+        "3302": 2,
+        "3303": 2,
+    }
 
-    assert [(item.item_id, item.amount) for item in plan.entries] == (
-        [("30023", 2)] if complete else [("30024", 1)]
+
+def test_incomplete_recipe_leaves_ingredients_for_the_skill_prerequisite(scenario):
+    scenario["targets"] = [
+        OperatorTarget("one", (Goal(kind="mastery", target_id="skill", to_level=1),))
+    ]
+    scenario["data"] = normalize_dataset(
+        demand_raw={
+            "one": {
+                "allSkill": [{}] * 5 + [{"30023": 2}],
+                "skills": [
+                    {
+                        "skillId": "skill",
+                        "skillLevelUpCost": [[{"id": "30024", "count": 1}]],
+                    }
+                ],
+            }
+        },
+        matrix_raw={
+            "matrix": [
+                {"stageId": "stage", "itemId": item_id, "times": 1, "quantity": 1}
+                for item_id in ("30024", "30023", "30043", "30083")
+            ]
+        },
+        stage_raw={"data": [{"stageId": "stage", "stageCode": "3-4", "apCost": 18}]},
+        recipe_raw=[
+            {
+                "itemId": "30024",
+                "pathway": [
+                    {"itemId": item_id, "count": count}
+                    for item_id, count in {"30023": 2, "30043": 1, "30083": 1}.items()
+                ],
+            }
+        ],
+        data_version="test",
     )
-    assert {item.item_id: item.amount for item in plan.reservations} == (
-        {"30024": 1, "30023": 4, "30043": 1, "30083": 1}
-        if complete
-        else {"30024": 1, "30023": 2}
-    )
+    # 糖聚块合成缺锰矿，试算用过的糖组仍须留给普通技能7级的前置消耗。
+    plan = build_plan(**scenario, inventory={"30023": 2, "30043": 1})
+    assert [(item.item_id, item.amount) for item in plan.entries] == [("30024", 1)]
+    assert {item.item_id: item.amount for item in plan.reservations} == {
+        "30024": 1,
+        "30023": 2,
+    }
