@@ -94,12 +94,7 @@ _NTE_CLIENT_PROCESS = "HTGame.exe"
 # 异环必须经启动器拉起（直启 HTGame.exe 会卡界面）：启动器相对目录与候选 exe
 # （国服/国际/台服，对齐 ok-nte 上游）
 _NTE_LAUNCHER_DIR = Path("Neverness To Everness/NTELauncher")
-_NTE_LAUNCHER_EXES = (
-    "NTEGame.exe",
-    "NTEGlobalGame.exe",
-    "NTETWGame.exe",
-    "NTEGlobalLauncher.exe",
-)
+_NTE_LAUNCHER_EXES = ("NTEGame.exe", "NTEGlobalGame.exe", "NTETWGame.exe")
 _NTE_LAUNCHER_EXES_CASEFOLD = {exe.casefold() for exe in _NTE_LAUNCHER_EXES}
 
 # 启动方式（Game.LaunchMode）在调度台摘要里的展示文案；未知值按默认的 Autoplay 显示
@@ -144,11 +139,7 @@ def _load_nte_launcher_path(config_path: Path) -> Path | None:
     actual_dirs = tuple(
         part.casefold() for part in launcher_path.parts[-len(expected_dirs) - 1 : -1]
     )
-    global_root_launcher = (
-        launcher_path.name.casefold() == "ntegloballauncher.exe"
-        and launcher_path.parent.name.casefold() == "neverness to everness"
-    )
-    if not global_root_launcher and (
+    if (
         actual_dirs != expected_dirs
         or launcher_path.name.casefold() not in _NTE_LAUNCHER_EXES_CASEFOLD
     ):
@@ -373,12 +364,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 or not self.script_config.Game.Path.is_file()
             )
         ):
-            config_path = self.script_config.Script.ConfigPath
-            launcher_path = (
-                _load_nte_launcher_path(config_path) if config_path else None
-            )
-            if not launcher_path or not launcher_path.is_file():
-                return "请设置异环启动器路径"
+            return "请设置异环启动器路径"
         if (
             self.script_config.Game.Enabled
             and self.script_config.Game.Type == "URL"
