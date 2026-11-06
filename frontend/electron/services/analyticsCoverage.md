@@ -1,5 +1,9 @@
 # 匿名统计场景覆盖台账
 
+- 定时唤醒开关复用设置保存事件的 `scheduled_wakeup` 类别，唤醒启动复用
+  `app_started` 的同名来源。只记录配置保存和应用 ready，不推断硬件唤醒结果，
+  不发送定时时刻、星期、队列或安装路径。
+
 - MCP 工具页沿用 `screen_view` 的有限页面/来源分类 `tools`；手动重新加载由
   `useMcpApi` 唯一记录 `mcp_retry_requested` 的 accepted/rejected/unknown 与耗时桶。
   accepted 只表示后端受理，不计作加载完成；快照恢复、WS 阶段更新和自动加载不逐次采集，
@@ -41,19 +45,19 @@
 | T018 | screen_view：用户实际访问哪些功能 | 已接入，持续复核 |
 | T019 | connection_incident_finished：断线后多少能自动恢复 | 已接入，持续复核 |
 | T020 | system_resume_recovery_finished：电脑唤醒后能否继续使用 | 已接入，持续复核 |
-| T021 | script_create_finished：新增脚本漏斗和导入失败率 | 已接入，持续复核 |
+| T021 | script_create_finished：新增托管漏斗和导入失败率 | 已接入，持续复核 |
 | T022 | script_manage_finished：复制、删除、重排入口的使用 | 已接入，持续复核 |
 | T023 | user_create_finished：第一次建托管账号是否顺利 | 已接入，持续复核 |
 | T024 | user_manage_finished：删除、启停和批量账号管理 | 已接入，持续复核 |
 | T025 | config_write_finished：配置保存失败是否普遍 | 已接入，持续复核 |
-| T026 | user_config_write_finished：用户配置草稿与联动保存是否可靠 | 已接入，持续复核 |
+| T026 | user_config_write_finished：账号配置草稿与联动保存是否可靠 | 已接入，持续复核 |
 | T027 | config_mode_changed：托管、原生、查看模式的使用 | 已接入，持续复核 |
 | T028 | native_config_session_finished：原生配置窗口能否打开与保存 | 已接入，持续复核 |
 | T029 | config_restore_finished：配置恢复实际完成率 | 已接入，持续复核 |
 | T030 | task_start_result：从哪个入口开始任务、请求是否受理 | 已接入，持续复核 |
 | T031 | task_observed_finished：前端观察到的任务结局 | 已接入，持续复核 |
 | T032 | task_stop_result：中止请求是否被接受 | 已接入，持续复核 |
-| T033 | task_resume_requested：从指定脚本继续、失败范围重试的需求 | 已接入，持续复核 |
+| T033 | task_resume_requested：从指定托管继续、失败范围重试的需求 | 已接入，持续复核 |
 | T034 | queue_manage_finished：队列新增、删除、配置是否顺利 | 已接入，持续复核 |
 | T035 | queue_schedule_changed：定时、间隔、日期集合的使用 | 已接入，持续复核 |
 | T036 | queue_time_set_changed：时间集合管理使用情况 | 已接入，持续复核 |
@@ -95,7 +99,7 @@
 | T072 | adapter_setup_finished：SRC 配置与会话是否顺利 | 已接入现有引导入口，详见下文 |
 | T073 | adapter_setup_finished：MaaEnd 启动器、配置与更新是否完成 | 已接入现有引导入口，详见下文 |
 | T074 | adapter_setup_finished：HSR 的不同执行方式配置是否顺利 | 已接入现有引导入口，详见下文 |
-| T075 | adapter_setup_finished：通用脚本模板导入与配置是否顺利 | 已接入现有引导入口，详见下文 |
+| T075 | adapter_setup_finished：通用托管模板导入与配置是否顺利 | 已接入现有引导入口，详见下文 |
 | T076 | adapter_setup_finished：BAAH 配置是否顺利 | 已接入现有引导入口，详见下文 |
 | T077 | adapter_setup_finished：通用 MaaFW 首次引导、导入与环境准备 | 已接入现有引导入口，详见下文 |
 | T078 | adapter_setup_finished：M9A flavor 配置入口使用 | 已接入现有引导入口，详见下文 |
@@ -108,7 +112,7 @@
 
 ## 当前批次边界
 
-- T031 与逐脚本运行：整任务 success 是执行器正常收尾，不代表所有账号成功；逐脚本 success 沿用调度口径，另以有限类别区分已知部分失败，旧后端缺字段时记 unknown。
+- T031 与逐托管运行：整任务 success 是执行器正常收尾，不代表所有账号成功；逐托管 success 沿用调度口径，另以有限类别区分已知部分失败，旧后端缺字段时记 unknown。
 - 恢复：后端重启在共享执行位置记录，热更新首轮与重试分别记录真实返回；取消后重启旧后端仍归取消。唤醒以主连接状态为观察结果，不把启动受理算连接恢复。
 - 模拟器：显式业务 API 记录搜索、路径管理、实例管理、单台及批量设置、守卫与 AVD 根目录添加。操作受理和完成消息分开；应用常驻订阅只关联本窗口发起的操作。重复帧、未发起的帧、被拒绝请求不制造完成。同设备同动作并发在缺少操作 ID 时放弃归因；两分钟后的终态不作为耗时样本；未决键不按时间过期或被逐出。同键重叠或响应不明后，该键本窗口内持续放弃完成归因；128 个未决/歧义键耗尽预算后本窗口停止新关联。请求统计仍继续。
 - 退出：只记录观察到的协调结束、取消或强制清理失败，不等待遥测网络，也不保证退出末刻事件送达。
@@ -120,7 +124,7 @@
 
 ## 管理与诊断批次补充
 
-- T022/T024/T027：脚本与账号的删除、排序、账号启停、MAS 配置来源保存，以真实接口结果为准；整表重复保存不制造状态切换。T026 沿用 config_write_finished 的 user 口径，不再复制一份保存计数。
+- T022/T024/T027：托管与账号的删除、排序、账号启停、MAS 配置来源保存，以真实接口结果为准；整表重复保存不制造状态切换。T026 沿用 config_write_finished 的 user 口径，不再复制一份保存计数。
 - T036/T038：时间集合按实际写入记录；计划表格按保存批次记录，MAA 整行操作与自定义项改名仍逐日串行保存，但汇总为一条 success/partial/failure。只保留计划类型与简化/复杂视图，不发送单元格内容。
 - T044：旧版模拟器的创建记录与后续写配置合为一个导入结果；配置失败但记录已创建为 partial。保留原有界面刷新和缓存失效顺序。
 - T050/T051/T053：手动签到区分 busy、部分完成和总体完成；社区账号普通保存不假装启停。空模板账号创建不表示已经登录，社区查询只记录类别和结果。
@@ -136,12 +140,12 @@
 - 全部已有干员托管的开启与关闭复用 `useUserApi.updateUser` 的配置写入结果；开启同步失败仍走保存失败，关闭不改目标。运行前增量补入目标沿用现有任务终态，不新增名单、目标内容或自动重算事件。
 - 养成月卡设置经现有字段保存队列进入 `useUserApi.updateUser`，复用配置写入结果；不采集月卡值、理智或预计天数，本地重算不另发事件。
 - 专项检查更新与应用更新分开；检查发现新版不能当作安装完成。已有任务式更新只记录 accepted/rejected，实际运行终态仍由任务观察事件报告；原生保存/安装没有可靠完成信号时同样不猜测成功。
-- T081：OK-WW 更新以用户 UID 发起原业务请求，入口显式传入 Okww 分类；不拿用户 UID 查询脚本 UID 缓存，也不上报任何 UID。
+- T081：OK-WW 更新以账号 UID 发起原业务请求，入口显式传入 Okww 分类；不拿账号 UID 查询托管 UID 缓存，也不上报任何 UID。
 - PR 复审 P3（6369303497/6369397213）：旧模拟器请求超过 120 秒仍可能返回，不能覆盖为新请求；已按未决/歧义键保留并在本地验证 A=0s、B=200s、A终态=300s 的顺序，禁止把 A 终态记到 B。
 
 ## 设置、外观和首页批次补充
 
-- T058：脚本更新下载器开关经 `useSettingsApi.updateSettings` 复用保存终态，固定键 `script_update_takeover`；专项更新流程由各专项接入，沿用脚本任务终态，不推断上游安装成功。
+- T058：脚本更新下载器开关经 `useSettingsApi.updateSettings` 复用保存终态，固定键 `script_update_takeover`；专项更新流程由各专项接入，沿用托管任务终态，不推断上游安装成功。
 
 - T058/T059：固定设置键只保留内置分类与 enabled/disabled/default/custom，不读取凭据或发送地址、日期等原值，遥测开关本身不发事件。主题、语言和性能只在显式修改时记录，初始化回填不记采用。语言选择在所需词表就绪、Electron 偏好保存后完成；后台词表刷新不新增事件。
 - T003：后端已启动但业务词表不可用时，本次初始化结果为 failure、failed_stage 为 unknown；仅词表就绪并进入应用才记录完成。初始化页主动重试词表是新的进入尝试，断线自动恢复不补发已结束尝试的成功结果。
@@ -162,14 +166,15 @@
 `app_started`。关闭前后、旧代次和额外字段未增加生产请求。原始 ASAR/配置已恢复。
 仅证明该传输与开关边界，未把契约样本当成真实游戏、扫码、升级、硬件或真实混合/循环队列验收。
 
-QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队列复用 `TaskManager.add_task` 的 `task.created`、脚本开始与完成通知，
+QQ 官方机器人私聊和群内提及重试托管、启动普通或循环队列复用 `TaskManager.add_task` 的 `task.created`、托管开始与完成通知，
 由 `taskAnalytics.ts` 原有观察者记录 `task_observed_finished`、`script_run_started` /
 `script_run_finished`，不增加第二层完成统计。QQ 命令受理、拒绝及回复不单独采集，
-不上传聊天正文、脚本名称或 QQ 标识；没有 Renderer 观察者时不补报。
+不上传聊天正文、托管名称或 QQ 标识；没有 Renderer 观察者时不补报。
 
 群成员白名单编辑与“我的ID”查询不单独采集；成员标识属于访问控制信息，不进入遥测。
 
 - 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。
+- 队列托管更新预下载：复用 `taskAnalytics.ts` 的脚本运行及任务终态观察者；首节点计时、缓存命中与下载完成属于内部调度，不新增完成事件，不将预下载成功当作安装成功。
 
 - SRC 本体托管更新：设置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`，更新失败继续、安装阻断沿用 `task_observed_finished`；Git 预取不等同于依赖安装完成，不采集仓库、提交、代理或路径。
 

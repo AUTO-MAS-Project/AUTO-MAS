@@ -16,13 +16,13 @@
 #   You should have received a copy of the GNU Affero General Public
 #   License along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""OK-WW 配置备份归档：MAS 用户配置 / 脚本原生配置，两类独立快照。
+"""OK-WW 配置备份归档：MAS 账号配置 / 脚本原生配置，两类独立快照。
 
 备份时机（MAS「动手前」，此时 ok-ww 尚未被触碰）：
 
 - 任务 / 配置会话启动（manager ``prepare``）：``native`` 归档脚本原生
-  working 配置当前状态（整目录）——原生配置物理上跨用户共享，只在任务级
-  归档一次；下发/覆盖类操作按用户归档会把上一轮下发的 MAS 配置误当原生
+  working 配置当前状态（整目录）——原生配置物理上跨账号共享，只在任务级
+  归档一次；下发/覆盖类操作按账号归档会把上一轮下发的 MAS 配置误当原生
   内容挤进保留池；
 - 运行 / 配置会话下发前（AutoProxy / ScriptConfig 下发处）：``mas`` 归档
   本轮下发源（shared 来源共享 Default 目录、independent 来源当前用户目录，按 owner 各归
@@ -31,8 +31,8 @@
   原始态）、退出时归档 ``mas``（编辑会话包络的 MAS 侧终态）。
 
 ``mas`` 池的内容 = ConfigFile 整目录 + **侧车字段**：Info.Id（账号，运行
-时被 AutoProxy 消费）+ 快速配置覆盖层字段（页面任务配置卡片，运行时才覆盖
-进 DailyTask.json，不在 ConfigFile 中）——侧车让「MAS 用户配置备份」真正
+时被 AutoProxy 消费）+ 覆写常规配置覆盖层字段（页面任务配置卡片，运行时才覆盖
+进 DailyTask.json，不在 ConfigFile 中）——侧车让「MAS 账号配置备份」真正
 覆盖用户在 MAS 页面配的东西，恢复时随文件一起回滚并回填表单（对齐
 ZzzOd / MAA 字段回填模式）。
 MAS 配置目录 owner 由用户当前的 ``Info.Base`` 三态决定（shared=Default 共
@@ -56,7 +56,7 @@ logger = get_logger("OK-WW 配置备份")
 
 
 def backup_root(script_id: str) -> Path:
-    """某脚本的备份归档根目录（MAS 用户池用）：``data/{script_id}/OkwwBackups``。"""
+    """某脚本的备份归档根目录（MAS 账号池用）：``data/{script_id}/OkwwBackups``。"""
 
     return Path.cwd() / "data" / script_id / "OkwwBackups"
 
@@ -66,7 +66,7 @@ def project_backup_root() -> Path:
 
     native（脚本原生配置）池挂在这里而不是脚本目录下——同一份物理安装
     可被多个脚本实例引用，原生备份按物理配置根指纹分桶、跨脚本共享、
-    不随脚本删除（mas 用户池仍按脚本，见 :func:`mas_backup_root`）。
+    不随脚本删除（mas 账号池仍按脚本，见 :func:`mas_backup_root`）。
     """
 
     return Path.cwd() / "data" / "OkwwBackups"
@@ -75,10 +75,10 @@ def project_backup_root() -> Path:
 def mas_backup_root(script_id: str, user_id: str) -> Path:
     """MAS 池归档根：``data/{script_id}/OkwwBackups/mas/{user_id}``。
 
-    **恒按用户分桶**——备份内容（ConfigFile 快照 + 覆盖层字段侧车）的
-    侧车是用户级的，按用户分桶才能保证每个用户只看到、只恢复自己的备份。
-    注意池与恢复目标解耦：shared 来源用户的下发源是共享 Default 目录，但其
-    池仍是 ``mas/{user_id}``（多用户各自持有该共享目录的快照，侧车互不
+    **恒按账号分桶**——备份内容（ConfigFile 快照 + 覆盖层字段侧车）的
+    侧车是账号级的，按账号分桶才能保证每个账号只看到、只恢复自己的备份。
+    注意池与恢复目标解耦：shared 来源账号的下发源是共享 Default 目录，但其
+    池仍是 ``mas/{user_id}``（多账号各自持有该共享目录的快照，侧车互不
     混淆）。
     """
 
@@ -102,7 +102,7 @@ def native_backup_root(config_path: str | Path) -> Path:
 def owner_for_mode(base: str, user_id: str) -> str | None:
     """base 来源三态 → MAS 配置目录 owner（单一事实来源）。
 
-    shared=共享 ``Default`` 目录、independent=当前用户独立目录、native=无
+    shared=共享 ``Default`` 目录、independent=当前账号独立目录、native=无
     MAS 配置（返回 ``None``）。运行下发（``_okww_mas_config_dir``）、归档/
     恢复（``restore_service``）都必须经此解析，禁止各自内联映射。
     """
@@ -118,10 +118,10 @@ def mas_config_dir(script_id: str, owner: str) -> Path:
     return Path.cwd() / "data" / script_id / owner / "ConfigFile"
 
 
-# ══════════════════ MAS 配置（池按用户，目标路径按 owner） ══════════════════
+# ══════════════════ MAS 配置（池按账号，目标路径按 owner） ══════════════════
 
 _OVERLAY_INFO_KEYS = ("Id", "Base")
-"""侧车收录的 MAS 用户 Info 段字段：账号 Id（运行时被 AutoProxy 消费，
+"""侧车收录的 MAS 账号 Info 段字段：账号 Id（运行时被 AutoProxy 消费，
 页面认知的一部分，进侧车随备份走、恢复回填；对齐 MAA 收账号先例）
 与 Base（配置文件来源，仅预览不回填）"""
 
@@ -137,7 +137,7 @@ _OVERLAY_TASK_KEYS = (
     "FarmNightmareNestForDailyEcho",
     "AdditionalTasks",
 )
-"""快速配置覆盖层字段（MAS 用户配置 Task 段，运行时覆盖进 DailyTask.json）"""
+"""覆写常规配置覆盖层字段（MAS 账号配置 Task 段，运行时覆盖进 DailyTask.json）"""
 
 _OVERLAY_KEY_GROUPS = {"Info": _OVERLAY_INFO_KEYS, "Task": _OVERLAY_TASK_KEYS}
 """侧车字段的配置段归属（两组键名无交集，侧车内平铺存储）"""
@@ -150,7 +150,7 @@ _OVERLAY_KEY_GROUP = {
 
 def read_overlay_values(config) -> dict:
     """读取配置对象的侧车字段：Info.Id/Base（账号 + 配置文件来源）+ Task
-    快速配置覆盖层字段。
+    覆写常规配置覆盖层字段。
 
     鸭子类型，仅需 ``get(group, key)``；值为 ``None``（配置项不存在）的键
     不纳入侧车。
@@ -186,7 +186,7 @@ def collect_mas_files(
     """收集 MAS 配置目录文件集 + 覆盖层字段侧车（相对键 → 路径/内存内容）。
 
     侧车为内存 JSON（:func:`archive_files` 支持内存内容），免临时文件；
-    目录缺失或为空时仅归档侧车——用户级目录要等首次运行物化，页面字段
+    目录缺失或为空时仅归档侧车——账号级目录要等首次运行物化，页面字段
     （Info/Task 侧车）不能因目录未建而一起丢（否则从未运行的用户切来源、
     改配置后退出，mas 池永远为空）。
     """
@@ -210,9 +210,9 @@ def archive_mas_backup(
     force: bool = False,
     base: str | None = None,
 ) -> Path | None:
-    """归档 MAS 配置整份 + 覆盖层字段侧车到用户池（指纹去重，无变化跳过）。
+    """归档 MAS 配置整份 + 覆盖层字段侧车到账号池（指纹去重，无变化跳过）。
 
-    ``user_id`` 是池归属（恒按用户分桶，见 :func:`mas_backup_root`）；
+    ``user_id`` 是池归属（恒按账号分桶，见 :func:`mas_backup_root`）；
     ``mas_dir`` 是归档/恢复目标路径，由调用方按三态 owner 解析（shared 来源
     共享 Default 目录、independent 来源用独立目录）——池与目标解耦。
     侧车参与指纹：只改表单覆盖层字段、未动 ConfigFile 时同样新建归档
@@ -236,7 +236,7 @@ def archive_mas_backup(
         return None
     if base:
         _utils_config_archive.write_backup_base(dest, base)
-    logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
 
@@ -249,7 +249,7 @@ def mas_rollback_point(
 ) -> str | None:
     """覆盖（导入）前存底：返回内容等于当前现场、可供回滚的归档时间戳。
 
-    存底与 :func:`archive_mas_backup` 同源（进用户池，可在「配置恢复」里
+    存底与 :func:`archive_mas_backup` 同源（进账号池，可在「配置恢复」里
     手工找回）。内容与来源都一致时复用既有归档，否则新建快照，
     避免改写历史归档的来源标记。
     目录与侧车皆空时无可存底内容，返回 ``None``（同样没有可回滚的东西）。
@@ -281,13 +281,13 @@ def mas_rollback_point(
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
-    """用户池的全部归档时间戳（倒序，最新在前）。"""
+    """账号池的全部归档时间戳（倒序，最新在前）。"""
 
     return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
-    """取用户池指定时间戳的归档目录；不存在返回 None。"""
+    """取账号池指定时间戳的归档目录；不存在返回 None。"""
 
     return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
@@ -300,12 +300,12 @@ def restore_mas_backup(
     overlay: dict | None = None,
     base: str | None = None,
 ) -> dict | None:
-    """把用户池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
+    """把账号池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
 
-    ``user_id`` 是池归属（与归档一致按用户分桶）；``mas_dir`` 是恢复目标
+    ``user_id`` 是池归属（与归档一致按账号分桶）；``mas_dir`` 是恢复目标
     路径，由调用方按三态 owner 解析（shared 来源共享 Default 目录、independent 来源独立
-    目录）。``overlay`` 为当前用户的覆盖层字段，随恢复前存底一起归档。
-    返回该备份的覆盖层字段（供调用方回填 MAS 用户配置；旧版备份无侧车
+    目录）。``overlay`` 为当前账号的覆盖层字段，随恢复前存底一起归档。
+    返回该备份的覆盖层字段（供调用方回填 MAS 账号配置；旧版备份无侧车
     返回 ``None``），侧车文件随即从目录中分离删除，不留在 ConfigFile 里。
     """
 
@@ -345,7 +345,7 @@ def restore_mas_backup(
         if mas_dir.exists():
             raise OSError(f"配置目录无法清空: {mas_dir}")
         mas_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
+    logger.info(f"账号 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 
 
@@ -356,13 +356,13 @@ def archive_mas_runtime_backup(
     overlay: dict | None = None,
     base: str | None = None,
 ) -> None:
-    """运行 / 配置会话下发前归档 MAS 配置（下发源）到用户池。
+    """运行 / 配置会话下发前归档 MAS 配置（下发源）到账号池。
 
     运行回写与会话保存会覆盖它，下发前存底；指纹去重，失败只记日志，
     绝不中止随后的运行或会话（归档是现场保护，不是前置条件）。
-    ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前用户
-    三态解析（shared 来源=Default 共享目录、independent 来源=独立目录；原生来源用户无 MAS
-    配置，调用方不调用本函数）。native 池与此处无关：原生配置跨用户
+    ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前账号
+    三态解析（shared 来源=Default 共享目录、independent 来源=独立目录；原生来源账号无 MAS
+    配置，调用方不调用本函数）。native 池与此处无关：原生配置跨账号
     共享，由 manager ``prepare`` 在任务级一次性归档
     （见 :func:`archive_native_backup`）。
     """
@@ -459,7 +459,7 @@ _FIELD_LABELS = {
     "Farm Nightmare Nest for Daily Echo": "需要时使用梦魇巢穴完成日常声骸",
     "Additional Tasks to Run After Daily Task": "每日任务后运行的附加任务",
 }
-"""MAS 快速配置覆盖层管理的字段中文标签（对齐编辑页词表）"""
+"""MAS 覆写常规配置覆盖层管理的字段中文标签（对齐编辑页词表）"""
 
 _ENUM_VALUE_LABELS = {
     "Which to Farm": {
@@ -493,7 +493,7 @@ _FILE_TO_OVERLAY_KEY = {
     "Farm Nightmare Nest for Daily Echo": "FarmNightmareNestForDailyEcho",
     "Additional Tasks to Run After Daily Task": "AdditionalTasks",
 }
-"""DailyTask.json 文件字段名 → MAS 用户配置 Task 键名（同一概念的两种 owner）"""
+"""DailyTask.json 文件字段名 → MAS 账号配置 Task 键名（同一概念的两种 owner）"""
 
 _OVERLAY_FIELD_LABELS = {
     "Id": "账号",
@@ -531,7 +531,7 @@ def _summary_value(key: str, value) -> str:
 def _file_summary_rows(name: str, data: dict) -> list[dict]:
     """单个 JSON 配置文件的摘要行（仅 MAS 管理的字段，附加任务列表特殊展开）。
 
-    预览的语义是「这个备份里 MAS 任务配置是什么样」，只展示 MAS 快速配置
+    预览的语义是「这个备份里 MAS 任务配置是什么样」，只展示 MAS 覆写常规配置
     覆盖层管理的字段：ok-ww GUI 自有的其他字段（无中文词表）不进预览，
     经「查看详细配置」恢复后在 ok-ww GUI 里查看。
     """
@@ -609,7 +609,7 @@ def _overlay_value(key: str, value) -> str:
 def build_overlay_summary(overlay: dict) -> list[dict]:
     """侧车字段的摘要行（mas 池预览用，纯读）。
 
-    展示的是备份时点的 MAS 页面表单值（账号 + 快速配置覆盖层字段），与
+    展示的是备份时点的 MAS 页面表单值（账号 + 覆写常规配置覆盖层字段），与
     用户在任务配置卡片所见同源，运行时才会覆盖进 DailyTask.json。
     """
 

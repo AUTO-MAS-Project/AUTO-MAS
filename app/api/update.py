@@ -66,6 +66,11 @@ class FluxdownCandidateOut(BaseModel):
     is_portable_cli: bool = Field(
         ..., description="是否为带 portable 标记的 CLI 便携版"
     )
+    has_cli: bool = False
+    has_server: bool = False
+    has_desktop: bool = False
+    complete: bool = False
+    missing: str = ""
 
 
 class FluxdownDetectOut(OutBase):
@@ -280,7 +285,9 @@ async def detect_fluxdown() -> FluxdownDetectOut:
     try:
         configured = str(Config.setting.Update.FluxdownPath or "")
         result = await asyncio.to_thread(
-            _utils_fluxdown_cli.fluxdown_detect, configured
+            _utils_fluxdown_cli.fluxdown_detect,
+            configured,
+            managed_dir=Config.data_path / "fluxdown" / "bin",
         )
         return FluxdownDetectOut(**result)
     except Exception as e:

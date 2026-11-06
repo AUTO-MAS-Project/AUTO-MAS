@@ -150,13 +150,13 @@ def verify_package(
                 )
                 or name == "data/configs/software_config.json"
             ):
-                raise ValueError("BAAH 更新包试图覆盖用户配置或运行数据")
+                raise ValueError("BAAH 更新包试图覆盖 BAAH 原生配置或运行数据")
 
 
 async def prepare_update(
     root: Path, config, *, progress: DownloadProgress | None = None
 ) -> PreparedUpdate | None:
-    """只读当前版本，在 MAS 数据目录下载并校验；允许与上一脚本运行并行。"""
+    """只读当前版本，在 MAS 数据目录下载并校验；允许与上一轮 BAAH 运行并行。"""
     channel = config.Update.Channel
     cdk = (
         config.Update.MirrorChyanCDK.strip()

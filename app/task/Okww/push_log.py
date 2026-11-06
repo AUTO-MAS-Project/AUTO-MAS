@@ -50,7 +50,7 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
     (r"正在返回登录界面|Switching back to login screen", r'"切换账号"'),
     # ── 失败标记（源码 log_error 专属失败日志）──
     # 节点级失败始终展示（类型保持普通，状态由文本「❌ 失败:」体现，不被
-    # 未完成用户过滤；推送时机由 SendTaskResultTime 全局控制，与逐条类型无关）
+    # 未完成账号过滤；推送时机由 SendTaskResultTime 全局控制，与逐条类型无关）
     # 战令失败与开始标记同节点（「已结束」只是原因），收尾按 _REASON_MARKS
     # 呈现为「⏭ 跳过: 先约电台（已结束）」，不再另起一个「先约电台已结束」节点
     (

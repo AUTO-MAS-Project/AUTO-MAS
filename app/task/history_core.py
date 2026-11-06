@@ -1,4 +1,4 @@
-"""用户历史收尾管线；存储、附件采集与任务反馈由宿主注入。"""
+"""账号历史收尾管线；存储、附件采集与任务反馈由宿主注入。"""
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -11,7 +11,7 @@ logger = get_logger("任务历史")
 
 @dataclass(frozen=True)
 class UserHistoryDependencies:
-    """绑定到本次用户执行的副作用，不持有任务或配置对象。"""
+    """绑定到本次账号执行的副作用，不持有任务或配置对象。"""
 
     record: Callable[[HistoryWrite], Awaitable[HistoryRecord]]
     collect_attachments: Callable[[], Awaitable[list[HistoryAttachmentInput]]]
@@ -38,7 +38,7 @@ async def save_user_history(
             records[-1].attachments.extend(attachments)
         except Exception as error:
             dependencies.log_warning(
-                f"收集用户历史附件失败，继续保存日志与执行结果：{error}"
+                f"收集账号历史附件失败，继续保存日志与执行结果：{error}"
             )
 
         for record in records:

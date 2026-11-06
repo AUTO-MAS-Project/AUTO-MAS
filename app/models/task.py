@@ -67,7 +67,7 @@ class LogRecord:
 
 @dataclass(frozen=True)
 class UserTaskProgress:
-    """调度台用户行上的任务进度：第几个任务（从 1 数）、共几个、当前任务名。
+    """调度台账号行上的任务进度：第几个任务（从 1 数）、共几个、当前任务名。
 
     目前只有 MFW 给（worker 推的任务开始事件），其余专项一直是 None。
     """
@@ -79,26 +79,30 @@ class UserTaskProgress:
 
 @dataclass
 class UserItem:
-    user_id: str  # 用户ID
-    name: str  # 用户名称
-    status: str  # 用户执行状态
+    user_id: str  # 账号ID
+    name: str  # 账号名称
+    status: str  # 账号执行状态
     log_record: dict[datetime, LogRecord] = field(
         default_factory=dict
-    )  # 用户本次代理的全部日志记录
+    )  # 账号本次代理的全部日志记录
     push_log: list[tuple[str, str] | tuple[str, str, float | None]] = field(
         default_factory=list
-    )  # 用户本次代理采集的推送日志；兼容二元组及时间戳为空的三元组
+    )  # 账号本次代理采集的推送日志；兼容二元组及时间戳为空的三元组
     push_log_mode: str = field(
         default="汇总"
-    )  # 节点详情推送模式（关闭/逐条/汇总），由 AutoProxy 从用户配置注入
+    )  # 节点详情推送模式（关闭/逐条/汇总），由 AutoProxy 从账号配置注入
     # 本次由 MAS 维护检查跳过，供通知与循环排期使用；不落盘、不进入 API。
     maintenance_skipped: bool = field(default=False, repr=False)
     # 正在跑的任务进度（见 UserTaskProgress），随任务快照推给调度台；不落盘。
     progress: Optional[UserTaskProgress] = None
+    # 只由专项已有的成功结果面置位；单调时间不落盘、不推送。
+    first_task_completed_at: float | None = field(default=None, repr=False)
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
         previous = getattr(self, name, None)
+        if name == "status" and value == "运行" and previous != value:
+            object.__setattr__(self, "first_task_completed_at", None)
         super().__setattr__(name, value)
         # 监听所有字段变化
         if (
@@ -115,10 +119,42 @@ class UserItem:
         default_factory=list, repr=False
     )
 
-    def add_log_record(self, started_at: datetime, record: LogRecord) -> None:
-        """每次尝试保留实际开始时刻，同一时刻也不能覆盖此前一轮。"""
+    def add_log_record(
+        self, started_at: datetime, record: LogRecord, *, retry: bool = False
+    ) -> None:
+        """追加本轮日志；重试只清理当前账号尝试的成功时间。
+
+        同一账号的正常阶段变更不算重试；整个脚本的首个成功时间跨账号
+        保留，以允许后台下载下一脚本。脚本级失败/停止由调度器撤销预取。
+        """
+        if retry:
+            # A retry only resets this account's attempt. The script-level
+            # success clock spans accounts and must survive a normal retry:
+            # the following script can still be downloaded in the background.
+            self.first_task_completed_at = None
         self._history_log_records.append((started_at, record))
         self.log_record[started_at] = record
+
+    def mark_task_completed(self) -> None:
+        """首个成功节点同时写入脚本级单调时间，切换账号不能丢失 60 秒基准。"""
+        if (
+            not (self.status == "运行" or self.status.startswith("运行 - "))
+            or self.first_task_completed_at is not None
+        ):
+            return
+        completed_at = time.monotonic()
+        self.first_task_completed_at = completed_at
+        task = self._task_item_ref() if self._task_item_ref is not None else None
+        if task is not None:
+            for script in task.script_list:
+                if script.status == "运行" and any(
+                    user is self for user in script.user_list
+                ):
+                    if script.first_task_completed_at is None:
+                        object.__setattr__(
+                            script, "first_task_completed_at", completed_at
+                        )
+                    break
 
     def iter_history_logs(self) -> list[tuple[datetime, LogRecord]]:
         """返回本轮各次尝试；未使用追加入口的现有日志仍可正常读取。"""
@@ -126,7 +162,7 @@ class UserItem:
 
     @property
     def result(self) -> str:
-        """用户代理情况的简要结果"""
+        """账号代理情况的简要结果"""
         if not self.log_record:
             return "未开始运行"
         return " | ".join(
@@ -139,11 +175,15 @@ class UserItem:
 
 @dataclass
 class ScriptItem:
-    script_id: str  # 脚本ID
-    name: str  # 脚本名称
+    script_id: str  # 托管ID
+    name: str  # 托管名称
     status: str  # 脚本执行状态
-    user_list: List[UserItem] = field(default_factory=list)  # 用户信息列表
-    current_index: int = -1  # 当前执行的用户索引，-1 表示未开始
+    user_list: List[UserItem] = field(default_factory=list)  # 账号信息列表
+    current_index: int = -1  # 当前执行的账号索引，-1 表示未开始
+    # 本轮首个成功节点，不进入构造参数、API、磁盘或遥测。
+    first_task_completed_at: float | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
     log: str = ""  # 脚本执行日志
     # log 第一行在完整日志里的行号。**截断日志的生产者要一起维护它**（如 MaaFW 只留
     # 最近 80 条），界面才能显示真实行号而不是每次都从 1 重数；不截断就保持 1。
@@ -152,6 +192,8 @@ class ScriptItem:
 
     def __setattr__(self, name, value):
         previous = getattr(self, name, None)
+        if name == "status" and value == "运行" and previous != value:
+            object.__setattr__(self, "first_task_completed_at", None)
         super().__setattr__(name, value)
 
         # 如果 user_list 被整体替换，重新绑定
@@ -176,13 +218,13 @@ class ScriptItem:
         """脚本代理情况的简要结果"""
 
         if not self.user_list:
-            return "用户未加载"
+            return "账号未加载"
         return "\n".join([f"{user.name}: {user.result}" for user in self.user_list])
 
 
 @dataclass
 class TaskItem(ABC):
-    """任务信息基类，管理任务的信息和脚本列表"""
+    """任务信息基类，管理任务的信息和托管列表"""
 
     # 脚本执行模式。循环运行不占用这个字段：各脚本适配器都按 mode 分派任务类
     # （METHOD_BOOK）并有近百处 == "AutoProxy" 的分支，循环里的每一轮本就是自动
@@ -190,14 +232,14 @@ class TaskItem(ABC):
     mode: Literal["AutoProxy", "ScriptConfig", "Update"]  # 任务模式
     task_id: str  # 任务唯一标识符
     queue_id: str | None  # 执行的队列ID
-    script_id: str | None  # 执行的脚本ID
-    user_id: str | None  # 执行的用户ID
-    user_ids: frozenset[str] | None = None  # 自动代理时指定的多个用户；None 表示不限制
-    # 队列任务按脚本限定的本次运行用户；未列出的脚本不限，空集合表示该脚本本次整项跳过
+    script_id: str | None  # 执行的托管ID
+    user_id: str | None  # 执行的账号ID
+    user_ids: frozenset[str] | None = None  # 自动代理时指定的多个账号；None 表示不限制
+    # 队列任务按脚本限定的本次运行账号；未列出的脚本不限，空集合表示该脚本本次整项跳过
     user_ids_by_script: dict[str, frozenset[str]] | None = None
     script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
-    resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
+    resume_from_script_id: str | None = None  # 可选：从指定托管ID开始执行（仅队列任务）
     is_cycle: bool = False  # 是否为循环运行任务（按队列项各自的周期持续运行）
     view_only: bool = False  # 配置查看会话：只读打开原生界面，不注入基线也不回读字段
     instance_idx: int | None = (
@@ -241,7 +283,7 @@ class TaskItem(ABC):
         user: UserItem,
         log_warning: Callable[[str], None] | None = None,
     ) -> None:
-        """保存专项已判定的用户历史；具体能力由宿主实现。"""
+        """保存专项已判定的账号历史；具体能力由宿主实现。"""
         raise NotImplementedError
 
     def __setattr__(self, name, value):
@@ -282,45 +324,45 @@ class TaskItem(ABC):
 
     @property
     def current_script_id(self) -> str | None:
-        """当前正在执行的脚本ID；未开始或下标越界时为 None"""
+        """当前正在执行的托管ID；未开始或下标越界时为 None"""
         if 0 <= self.current_index < len(self.script_list):
             return self.script_list[self.current_index].script_id
         return None
 
     def script_user_scope(self, script_id: str) -> frozenset[str] | None:
-        """队列任务中该脚本本次要运行的用户；None 表示该脚本不限"""
+        """队列任务中该脚本本次要运行的账号；None 表示该脚本不限"""
         if self.user_ids_by_script is None:
             return None
         return self.user_ids_by_script.get(script_id)
 
     @property
     def target_user_id(self) -> str | None:
-        """单独运行时指定的用户ID；未指定或非自动代理时为 None。
+        """单独运行时指定的账号ID；未指定或非自动代理时为 None。
 
         必须带上模式判断：ScriptConfig 与 Update 模式会把 user_id 写成
-        "Default" 或被编辑的用户，那是「配置谁」而不是「只代理谁」。
+        "Default" 或被编辑的账号，那是「配置谁」而不是「只代理谁」。
         """
         return self.user_id if self.mode == "AutoProxy" else None
 
     def is_target_user(self, user_id: str) -> bool:
-        """用户是否属于本次运行范围。
+        """账号是否属于本次运行范围。
 
-        只用于收窄展示与执行用的 user_list，各脚本适配器持有的用户配置副本必须
-        保持完整——它们在收尾时会整表写回，裁剪副本会抹掉同脚本其它用户的配置。
+        只用于收窄展示与执行用的 user_list，各脚本适配器持有的账号配置副本必须
+        保持完整——它们在收尾时会整表写回，裁剪副本会抹掉同托管其它账号的配置。
 
         Args:
-            user_id (str): 待判定的用户ID。
+            user_id (str): 待判定的账号ID。
 
         Returns:
-            bool: AutoProxy 指定 user_ids 时仅匹配集合内用户，队列任务指定了本次
-            运行范围时仅匹配当前脚本范围内的用户，指定 user_id 时仅匹配该用户；
+            bool: AutoProxy 指定 user_ids 时仅匹配集合内账号，队列任务指定了本次
+            运行范围时仅匹配当前托管范围内的账号，指定 user_id 时仅匹配该账号；
             均未指定或非 AutoProxy 模式时恒为 True。
         """
 
         if self.mode == "AutoProxy":
             scope = self.user_ids
             if self.user_ids_by_script is not None:
-                # 队列任务按当前脚本取范围；未列入的脚本不受本次勾选影响
+                # 队列任务按当前托管取范围；未列入的脚本不受本次勾选影响
                 scope = self.script_user_scope(self.current_script_id or "")
             if scope is not None:
                 return user_id in scope
@@ -374,6 +416,16 @@ class TaskExecuteBase(ABC):
     # 不加类型注解，避免被 @dataclass 收作字段。
     _log_progress = None
 
+    async def prefetch_script_update(self) -> None:
+        """调度器确认前一脚本稳定运行后调用；仅允许写 MAS 下载缓存。
+
+        未接入两阶段更新的专项不预取，仍在自己的启动前更新。
+        BetterGI / SRC / BAAH 的独立更新 PR 合入后在此接入同一契约。
+        """
+
+    async def discard_prefetched_update(self) -> None:
+        """预取已停止后回收本对象持有的候选，不触碰原安装。"""
+
     def is_log_stalled(
         self, latest_time: datetime, minutes: float, key: str = "default"
     ) -> bool:
@@ -423,6 +475,12 @@ class TaskExecuteBase(ABC):
             raise
         except Exception as e:
             await self.on_crash(e)
+            # 普通脚本错误可留给上层继续调度；写入者所有权不明必须中止
+            # 整个 TaskGroup，不能在 on_crash 记录后继续启动下一脚本。
+            from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+            if isinstance(e, FluxdownCancelUnconfirmed):
+                raise
         finally:
             self._task_group = None
             try:

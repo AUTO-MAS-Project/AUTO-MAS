@@ -15,7 +15,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
 
-"""用户管理路由与端点专用模型。"""
+"""账号管理路由与端点专用模型。"""
 
 import uuid
 from typing import (
@@ -148,21 +148,21 @@ class UserIndexItem(BaseModel):
 
 
 class UserConfigDirIn(UserInBase):
-    userId: str = Field(..., description="用户ID")
+    userId: str = Field(..., description="账号ID")
 
 
 class UserConfigDirOut(OutBase):
-    path: Optional[str] = Field(default=None, description="用户配置目录绝对路径")
+    path: Optional[str] = Field(default=None, description="账号配置目录绝对路径")
 
 
 class UserGetIn(UserInBase):
     userId: Optional[str] = Field(
-        default=None, description="用户ID, 未携带时表示获取所有用户数据"
+        default=None, description="账号ID, 未携带时表示获取所有账号数据"
     )
 
 
 class UserGetOut(OutBase):
-    index: List[UserIndexItem] = Field(..., description="用户索引列表")
+    index: List[UserIndexItem] = Field(..., description="账号索引列表")
     data: Dict[
         str,
         Union[
@@ -181,11 +181,11 @@ class UserGetOut(OutBase):
             WhimboxUserConfig,
             MSSUserConfig,
         ],
-    ] = Field(..., description="用户数据字典, key来自于index列表的uid")
+    ] = Field(..., description="账号数据字典, key来自于index列表的uid")
 
 
 class UserCreateOut(OutBase):
-    userId: str = Field(..., description="新创建的用户ID")
+    userId: str = Field(..., description="新创建的账号ID")
     data: Union[
         MaaUserConfig,
         SrcUserConfig,
@@ -201,11 +201,11 @@ class UserCreateOut(OutBase):
         BAAHUserConfig,
         WhimboxUserConfig,
         MSSUserConfig,
-    ] = Field(..., description="用户配置数据")
+    ] = Field(..., description="账号配置数据")
 
 
 class UserUpdateIn(UserInBase):
-    userId: str = Field(..., description="用户ID")
+    userId: str = Field(..., description="账号ID")
     data: Union[
         MaaUserConfigInput,
         SrcUserConfigInput,
@@ -221,7 +221,7 @@ class UserUpdateIn(UserInBase):
         BAAHUserConfigInput,
         WhimboxUserConfigInput,
         MSSUserConfigInput,
-    ] = Field(..., description="用户更新数据")
+    ] = Field(..., description="账号更新数据")
 
     @model_validator(mode="before")
     @classmethod
@@ -240,17 +240,17 @@ class UserUpdateIn(UserInBase):
 
 
 class UserReorderIn(UserInBase):
-    indexList: List[str] = Field(..., description="用户ID列表, 按新顺序排列")
+    indexList: List[str] = Field(..., description="账号ID列表, 按新顺序排列")
 
 
 router = APIRouter()
-logger = get_logger("脚本管理 API")
+logger = get_logger("托管管理 API")
 
 
 @router.post(
     "/user/get",
     tags=["Get"],
-    summary="查询用户",
+    summary="查询账号",
     response_model=UserGetOut,
     status_code=200,
 )
@@ -279,7 +279,7 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
 @router.post(
     "/user/config-dir",
     tags=["Get"],
-    summary="获取用户配置目录",
+    summary="获取账号配置目录",
     response_model=UserConfigDirOut,
     status_code=200,
 )
@@ -297,13 +297,13 @@ async def get_user_config_dir(user: UserConfigDirIn = Body(...)) -> UserConfigDi
             message=f"{type(e).__name__}: {str(e)}",
             path="",
         )
-    return UserConfigDirOut(message="用户配置目录获取成功", path=str(user_config_dir))
+    return UserConfigDirOut(message="账号配置目录获取成功", path=str(user_config_dir))
 
 
 @router.post(
     "/user/add",
     tags=["Add"],
-    summary="添加用户",
+    summary="添加账号",
     response_model=UserCreateOut,
     status_code=200,
 )
@@ -337,7 +337,7 @@ async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
 @router.post(
     "/user/update",
     tags=["Update"],
-    summary="更新用户配置信息",
+    summary="更新账号配置信息",
     response_model=OutBase,
     status_code=200,
 )
@@ -359,7 +359,7 @@ async def update_user(
 @router.post(
     "/user/delete",
     tags=["Delete"],
-    summary="删除用户",
+    summary="删除账号",
     response_model=OutBase,
     status_code=200,
 )
@@ -378,7 +378,7 @@ async def delete_user(user: UserDeleteIn = Body(...)) -> OutBase:
 @router.post(
     "/user/order",
     tags=["Update"],
-    summary="重新排序用户",
+    summary="重新排序账号",
     response_model=OutBase,
     status_code=200,
 )

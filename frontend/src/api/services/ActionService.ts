@@ -73,7 +73,7 @@ export class ActionService {
         });
     }
     /**
-     * 分享脚本配置到配置中心
+     * 分享托管配置到配置中心
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError

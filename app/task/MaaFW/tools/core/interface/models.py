@@ -191,7 +191,7 @@ class MaaFWTask(BaseModel):
 
 #: repeat_count 展开的上限（前端 ``maafwTaskInstance.ts`` 的
 #: ``MAAFW_MAX_TASK_REPEAT_COUNT`` 同值）。真实项目最多写到 10（MaaYuan）；每份都是
-#: 队列里一个独立实例，写成几万会把用户配置撑爆，超过的按上限展开并由加载器告警。
+#: 队列里一个独立实例，写成几万会把账号配置撑爆，超过的按上限展开并由加载器告警。
 MAX_TASK_REPEAT_COUNT = 99
 
 

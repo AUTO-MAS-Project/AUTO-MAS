@@ -97,7 +97,7 @@ _WARNED_LANGUAGE_FILES: set[str] = set()
 # - v2.10.1：checkbox 的 min_count / max_count——界面限制勾选数，运行前不满足就报错。
 # - v2.10.2：welcome 字符串数组——能解析、投影带上每一条；「按数组顺序展示」是「应」级
 #   的界面行为，与 v2.8.0 那条一样不妨碍声明（单字符串的 welcome 也从未展示）。
-# - v2.10.3：preset.pretask——用户页应用预设时按它设前置任务的勾选与选项值，未列出的
+# - v2.10.3：preset.pretask——账号页应用预设时按它设前置任务的勾选与选项值，未列出的
 #   不勾选；预设没声明时保持用户当前的前置任务不变（task_config._apply_preset_pretasks、
 #   前端 maafwPresetQueue.ts）。
 # 所以声明 v2.10.3。之后的 v2.10.4（preset.controller）、v2.10.5（inputs[].input_type）
@@ -181,7 +181,7 @@ def build_maafw_run_plan(
     no_default_fallback_inputs: Any = None,
     excluded_task_reasons: dict[str, str] | None = None,
 ) -> MaaFWRunPlan:
-    """``script_hotkeys``：脚本级键位 ``{option 名: {字段名: 组合键}}``（``Game.Hotkeys``）。
+    """``script_hotkeys``：托管级键位 ``{option 名: {字段名: 组合键}}``（``Game.Hotkeys``）。
 
     ``excluded_task_reasons``：``{实例 id: 跳过原因}``，宿主判定这次不跑的实例（如今天不在运行日）。
     与红灯一样在建覆盖之前排除、不校验它们的选项，按原因记进 ``skippedTasks``；勾选的普通任务
@@ -198,7 +198,7 @@ def build_maafw_run_plan(
     的值；叠加的是副本，``selected_task_options`` 不动。interface 未声明的 option / 字段
     静默忽略；映射不了的值告警后丢弃，回落到快照 / 默认值。
 
-    全局选项（``global_option`` 及其子选项）的值每个用户一份：走快照 / 预设时取其中的
+    全局选项（``global_option`` 及其子选项）的值每个账号一份：走快照 / 预设时取其中的
     ``globalOptions``，给了 ``task_ids`` 时取 ``global_options``（不给按默认值）。建覆盖时
     全局组按全局表、资源 / 控制器 / 任务组按任务自己的值（PI 顺序，任务的盖住全局的）。
     ``task_ids`` 路径上任务选项里出现的「只属于全局」的选项是特调写的，这一实例以它为准
@@ -286,14 +286,14 @@ def build_maafw_run_plan(
     )
     input_warnings: list[str] = []
     hotkey_warnings: list[str] = []
-    # 脚本级键位只对 Win32 生效；按 option 名缓存校验后的字段，告警每个 option 只出一次。
+    # 托管级键位只对 Win32 生效；按 option 名缓存校验后的字段，告警每个 option 只出一次。
     apply_script_hotkeys = (
         isinstance(script_hotkeys, dict)
         and bool(script_hotkeys)
         and controller.type == "Win32"
     )
     script_hotkey_cache: dict[str, dict[str, str]] = {}
-    # 全局表叠上脚本级键位只做一次（全局组的取值与任务无关）
+    # 全局表叠上托管级键位只做一次（全局组的取值与任务无关）
     global_values = selected_global_options
     if apply_script_hotkeys and script_hotkeys:
         global_values = _overlay_script_hotkeys(
@@ -332,7 +332,7 @@ def build_maafw_run_plan(
             )
             continue
 
-        # 全局组按用户的全局表（特调给这个实例写了只属于全局的选项时，这一实例以它为准），
+        # 全局组按账号的全局表（特调给这个实例写了只属于全局的选项时，这一实例以它为准），
         # 资源 / 控制器 / 任务组按任务自己的值；同一选项两边都有时按 PI 顺序任务的盖住全局的
         task_global_options = {
             **global_values,
@@ -598,7 +598,7 @@ def _describe_checkbox_count_error(
         requirement = f"需要选择 {exc.min_count}~{exc.max_count} 项"
     return (
         f"任务「{task_label}」的选项「{option_label}」{requirement}，"
-        f"当前选了 {exc.selected} 项，请在用户配置的任务队列里调整后再运行"
+        f"当前选了 {exc.selected} 项，请在账号配置的任务队列里调整后再运行"
     )
 
 
@@ -643,7 +643,7 @@ def _describe_input_value_error(
         # default 是空串）：只跳过这一个选项，说清去哪填。
         return (
             f"任务「{task_label}」的选项「{option_label}」需要填一个{kind}，"
-            f"但没有填写、项目也没有给默认值，{skipped}；请在用户配置的任务队列里填写"
+            f"但没有填写、项目也没有给默认值，{skipped}；请在账号配置的任务队列里填写"
         )
     if getattr(exc, "secret", False):
         # password 字段：原值不进日志（PI v2.10.0），只说哪一项填得不对。
@@ -722,7 +722,7 @@ def _overlay_script_hotkeys(
     warnings: list[str],
     i18n_mapping: dict[str, Any],
 ) -> dict[str, Any]:
-    """把脚本级键位叠到实际生效的 hotkey 选项上，返回新的选项字典（不改入参）。
+    """把托管级键位叠到实际生效的 hotkey 选项上，返回新的选项字典（不改入参）。
 
     ``options`` 是一组取值（用户的全局表，或一个任务自己的值），``active_option_names``
     是按这组取值实际生效的选项（``active_global_option_names`` /
@@ -759,7 +759,7 @@ def _overlay_script_hotkeys(
                         warnings.append(warning)
                     continue
                 # 修饰键比项目 pipeline 用到的多：值照常下发，多出的修饰键不会按下，说一声。
-                # 脚本页录制时已按同一口径拦住，这里兜住导入或手改的值。
+                # 托管页录制时已按同一口径拦住，这里兜住导入或手改的值。
                 needed = hotkey_modifier_count(option, field_name)
                 if len(resolve_hotkey(value, "Win32").modifiers) > needed:
                     target = _hotkey_labels(
@@ -904,7 +904,7 @@ def resolve_run_selection(
     """运行时用哪个 controller / resource：``(交给建计划的 controller 名, 实际生效的 resource 名)``。
 
     这是「脚本资源留空时到底跑哪个资源」的唯一口径：运行前检查、特调装饰，以及特调在
-    保存与启动期整理用户配置时都按它判断，别再各自回落到 ``interface.resource[0]``。
+    保存与启动期整理账号配置时都按它判断，别再各自回落到 ``interface.resource[0]``。
 
     - controller：脚本上选的且 interface 里有 → 它；否则配了模拟器 → 第一个 Adb；否则原值
       （可能是 None，建计划时回落到第一个 Adb / Win32）。
@@ -954,7 +954,7 @@ def select_snapshot_tasks(
     selected_preset: str | None,
     task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
 ) -> tuple[list[str], dict[str, Any], dict[str, MaaFWTaskOptionValue]]:
-    """把用户快照（或预设）归一化成「勾选的任务实例 id 列表 + 各自选项 + 全局选项表」。
+    """把账号快照（或预设）归一化成「勾选的任务实例 id 列表 + 各自选项 + 全局选项表」。
 
     与 ``build_maafw_run_plan`` 走快照时的第一步完全相同；特调钩子在这一步之后、
     建计划之前装饰列表，再以 ``task_ids`` / ``task_options`` / ``global_options`` 建计划。
@@ -981,11 +981,11 @@ def resolve_default_snapshot(
     *,
     selected_preset: str | None,
 ) -> MaaFWTaskPresetSnapshot:
-    """用户快照为空时运行会跑的队列：选了预设就是那个预设，否则项目第一个预设，没有预设
+    """账号快照为空时运行会跑的队列：选了预设就是那个预设，否则项目第一个预设，没有预设
     才按各任务的 default_check。
 
-    与建计划时快照为空走的是同一个函数（``_resolve_snapshot``）。宿主据此把新用户的空快照
-    写成实打实的队列，用户页上看到的就是要跑的。预设名找不到时抛 ``MaaFWRunPlanError``。
+    与建计划时快照为空走的是同一个函数（``_resolve_snapshot``）。宿主据此把新账号的空快照
+    写成实打实的队列，账号页上看到的就是要跑的。预设名找不到时抛 ``MaaFWRunPlanError``。
     """
 
     return _resolve_snapshot(
@@ -998,7 +998,7 @@ def describe_stale_option_values(
     interface_model: MaaFWInterface | dict[str, Any],
     task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
 ) -> list[str]:
-    """用户快照里保存的 select / switch / checkbox 取值在当前 interface 里已没有对应 case 时，
+    """账号快照里保存的 select / switch / checkbox 取值在当前 interface 里已没有对应 case 时，
     给运行日志的提示（每条一句）。
 
     项目改了 case 名（开发者模式下改 interface 尤其常见）后，归一化会把这样的值静默换回默认

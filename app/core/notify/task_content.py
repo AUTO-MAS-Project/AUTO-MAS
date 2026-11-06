@@ -48,10 +48,10 @@ logger = get_logger("任务通知核心")
 
 
 def user_statistics_text(message: dict) -> str:
-    """构造用户统计的四字段正文，也供复杂报告作为紧凑摘要。"""
+    """构造账号统计的四字段正文，也供复杂报告作为紧凑摘要。"""
 
     return (
-        f"用户: {message['user_info']}\n"
+        f"账号: {message['user_info']}\n"
         f"开始时间: {message['start_time']}\n"
         f"结束时间: {message['end_time']}\n"
         f"执行结果: {message['user_result']}"
@@ -59,7 +59,7 @@ def user_statistics_text(message: dict) -> str:
 
 
 def build_user_statistics_payload(*, title: str, message: dict) -> NotifyPayload:
-    """构造含用户信息的简单统计通知。"""
+    """构造含账号信息的简单统计通知。"""
 
     message_html = _notification_template.deferred_notification_template(
         "general_statistics.html", message

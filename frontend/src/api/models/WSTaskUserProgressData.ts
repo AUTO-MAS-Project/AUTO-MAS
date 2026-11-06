@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 用户正在跑的任务进度（目前只有 MFW 给）。
+ * 账号正在执行的任务进度（目前只有 MFW 给）。
  */
 export type WSTaskUserProgressData = {
     /**

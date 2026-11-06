@@ -366,7 +366,7 @@ def _is_bare_python_command(child_exec: str) -> bool:
     启动器，真正的进程是基解释器；``CreateProcess`` 找可执行文件先看「父进程
     所在目录」再看 PATH，且看的是父进程自己的 PATH，不是传给子进程的 ``env``。
     于是裸 ``python`` 永远落到运行池的基解释器上——那里没有 ``maa``，agent 一起
-    就 ``ModuleNotFoundError``，用户 PATH 里有没有 Python 都一样。项目自带解释器
+    就 ``ModuleNotFoundError``，账号 PATH 里有没有 Python 都一样。项目自带解释器
     走 ``project_python``；这种没带的按隔离 venv 处理，和「声明了自带 Python 但
     文件不存在」同一条路。
     """

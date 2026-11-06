@@ -47,7 +47,7 @@ description: Implement and verify AUTO-MAS anonymous telemetry whenever adding o
 - Renderer 使用 `observeFeature`、`beginAnalyticsOperation`；主进程使用 `beginMainFeature`。只有已有语义适用时才选通用 outcome 映射。
 - 不把统计发送加入保存、任务、更新、退出的网络等待链。保留原请求、取消能力、响应对象、异常语义和清理顺序。
 - 一次终态保护属于逻辑操作，不属于每条响应、每次轮询或每个 Vue 实例。快照恢复、相同批次、跳过的刷新不制造新结果。
-- ID 只在有界本机关联中使用；用户 UID、脚本 UID、队列 UID、任务 UID 不可互换。能从实际入口传固定类型时不要用错误 ID 查询缓存，也不要为分类新增查询。
+- ID 只在有界本机关联中使用；账号 UID、托管 UID、队列 UID、任务 UID 不可互换。能从实际入口传固定类型时不要用错误 ID 查询缓存，也不要为分类新增查询。
 
 ### 默认不允许的数据
 

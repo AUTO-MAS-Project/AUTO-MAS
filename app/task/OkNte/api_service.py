@@ -14,7 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
-"""OK-NTE 快速配置目录、字段枚举与文件保存业务。"""
+"""OK-NTE 覆写常规配置目录、字段枚举与文件保存业务。"""
 
 import uuid
 from pathlib import Path
@@ -24,14 +24,14 @@ from app.core import Config
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.utils import get_logger
 
-logger = get_logger("脚本管理 API")
+logger = get_logger("托管管理 API")
 
 
 def _oknte_script_config(script_id: str) -> tuple[uuid.UUID, RuntimeOkNteConfig]:
     script_uid = uuid.UUID(script_id)
     script_config = Config.ScriptConfig[script_uid]
     if not isinstance(script_config, RuntimeOkNteConfig):
-        raise ValueError("脚本配置类型错误, 不是 OK-NTE 类型")
+        raise ValueError("托管配置类型错误, 不是 OK-NTE 类型")
     return script_uid, script_config
 
 
@@ -41,7 +41,7 @@ def _oknte_mas_config_dir(script_id: str, user_id: str) -> Path:
     script_uid, script_config = _oknte_script_config(script_id)
     user_uid = uuid.UUID(user_id)
     if user_uid not in script_config.UserData:
-        raise ValueError("OK-NTE 用户不存在，请刷新后重试")
+        raise ValueError("OK-NTE 账号不存在，请刷新后重试")
     if script_config.is_locked:
         raise ValueError("OK-NTE 正在运行，请结束任务后编辑")
     return ensure_quick_config_dir(str(script_uid), str(user_uid), script_config)
@@ -116,7 +116,7 @@ def list_configs(
 def save_configs(script_id: str, user_id: str, *, configs: dict) -> list[str]:
     from app.task.OkNte.config_schema import update_oknte_config_data
 
-    # 写入用户配置目录
+    # 写入账号配置目录
     mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
     mas_config_dir.mkdir(parents=True, exist_ok=True)
     _, script_config = _oknte_script_config(script_id)

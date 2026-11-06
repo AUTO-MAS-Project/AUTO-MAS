@@ -96,9 +96,9 @@ def read_src_config_snapshot_state(
 
     script_id = state.get("script_id")
     if not isinstance(script_id, str) or not script_id.strip():
-        raise ValueError(f"SRC 配置快照所属脚本无效: {script_id}")
+        raise ValueError(f"SRC 配置快照所属托管无效: {script_id}")
     if expected_script_id is not None and script_id != expected_script_id:
-        raise ValueError(f"SRC 配置快照所属脚本无效: {script_id}")
+        raise ValueError(f"SRC 配置快照所属托管无效: {script_id}")
 
     src_root_path = state.get("src_root_path")
     if not isinstance(src_root_path, str) or not src_root_path.strip():
@@ -136,7 +136,7 @@ def write_src_config_snapshot_state(
     """原子记录 SRC 配置快照的根目录和设置会话归属。"""
 
     if not isinstance(script_id, str) or not script_id.strip():
-        raise ValueError(f"SRC 配置快照所属脚本无效: {script_id}")
+        raise ValueError(f"SRC 配置快照所属托管无效: {script_id}")
     if config_user_id is not None and (
         not isinstance(config_user_id, str) or not config_user_id.strip()
     ):
@@ -195,7 +195,7 @@ def is_src_config_available(path: Path) -> bool:
 def _quarantine_directory(path: Path) -> None:
     quarantine_path = path.with_name(f"{path.name}.untrusted-{uuid.uuid4().hex}")
     path.rename(quarantine_path)
-    logger.warning(f"已隔离不完整的 SRC 用户配置: {quarantine_path}")
+    logger.warning(f"已隔离不完整的 SRC 账号配置: {quarantine_path}")
 
 
 def _remove_directory(path: Path) -> None:
@@ -204,7 +204,7 @@ def _remove_directory(path: Path) -> None:
 
 
 def has_committed_src_user_config_transaction(config_path: Path) -> bool:
-    """判断用户配置替换事务是否已有可恢复的提交副本。"""
+    """判断账号配置替换事务是否已有可恢复的提交副本。"""
 
     staging_path, staging_ready_path, _ = _transaction_paths(config_path)
     if staging_ready_path.exists():
@@ -219,7 +219,7 @@ def recover_src_user_config(
     *,
     preserve_commit_marker: bool = False,
 ) -> None:
-    """恢复上一次用户配置目录替换留下的中间状态。"""
+    """恢复上一次账号配置目录替换留下的中间状态。"""
 
     staging_path, staging_ready_path, backup_path = _transaction_paths(config_path)
 
@@ -259,7 +259,7 @@ def recover_src_user_config(
             backup_path.rename(config_path)
             staging_ready_path.unlink(missing_ok=True)
             return
-        raise RuntimeError(f"SRC 用户配置事务无可恢复副本: {config_path}")
+        raise RuntimeError(f"SRC 账号配置事务无可恢复副本: {config_path}")
 
     if config_path.exists():
         if is_src_config_available(config_path):
@@ -269,11 +269,11 @@ def recover_src_user_config(
             _quarantine_directory(config_path)
             backup_path.rename(config_path)
             return
-        raise RuntimeError(f"SRC 新旧用户配置均不完整: {config_path}, {backup_path}")
+        raise RuntimeError(f"SRC 新旧账号配置均不完整: {config_path}, {backup_path}")
 
     if backup_path.exists():
         if not is_src_config_available(backup_path):
-            raise RuntimeError(f"SRC 用户配置备份不完整: {backup_path}")
+            raise RuntimeError(f"SRC 账号配置备份不完整: {backup_path}")
         backup_path.rename(config_path)
 
 
@@ -307,7 +307,7 @@ def save_src_user_config(
     runtime_baseline: dict | None = None,
     runtime_deploy_baseline: dict | None = None,
 ) -> None:
-    """以可恢复的目录替换事务保存一次 SRC 用户配置。"""
+    """以可恢复的目录替换事务保存一次 SRC 账号配置。"""
 
     recover_src_user_config(config_path)
     staging_path, staging_ready_path, backup_path = _transaction_paths(config_path)
@@ -320,14 +320,14 @@ def save_src_user_config(
     config_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src_set_path, staging_path)
     if not is_src_config_available(staging_path):
-        raise RuntimeError(f"SRC 用户配置内容不完整: {staging_path}")
+        raise RuntimeError(f"SRC 账号配置内容不完整: {staging_path}")
     if runtime_baseline is not None:
         current = _utils_io.read_file(staging_path / "src.json")
         source = _utils_io.read_file(config_path / "src.json")
         _restore_unchanged_source_values(current, runtime_baseline, source)
         _utils_io.write_file(staging_path / "src.json", current)
     if runtime_deploy_baseline:
-        # 在拷贝回独立用户前剔除 MAS 暂时关闭的原生更新开关。
+        # 在拷贝回账号独立配置前剔除 MAS 暂时关闭的原生更新开关。
         # 只恢复仍等于注入值的键，避免覆盖用户在原生 GUI 中主动修改的设置。
         from .poor_yaml import poor_yaml_read, poor_yaml_write
 

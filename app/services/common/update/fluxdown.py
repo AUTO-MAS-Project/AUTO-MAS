@@ -29,6 +29,7 @@ Mirror 酱源（临时授权 URL + 短期 token）在本文件里一律跳过 Fl
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import partial
@@ -62,6 +63,18 @@ class FluxdownOptions:
 HistoryWriter = Callable[[_utils_fluxdown_cli.FluxdownDownloadRecord], Awaitable[None]]
 
 
+def _find_download_cli(options: FluxdownOptions) -> Path | None:
+    """CLI 路径不可访问按不可用处理，后续仍须核对持久写入者记录。"""
+    try:
+        return _utils_fluxdown_cli.fluxdown_find_cli(
+            options.cli_path, search_dirs=options.cli_search_dirs
+        )
+    except OSError:
+        # 私有映射根与 CLI 位置无关。不能因定位失败直接返回普通错误，
+        # 让调用方误清仍由 daemon 持有的目标；也不能阻断没有旧记录的回退。
+        return None
+
+
 async def download_file(
     url: str,
     destination: Path,
@@ -76,21 +89,43 @@ async def download_file(
     http_download: BuiltinDownload | None = None,
 ) -> int:
     """同一输出文件的下载、回退和清映射共用跨进程锁。"""
-    async with _utils_fluxdown_cli.fluxdown_destination_lock(
-        Path(options.cli_path), destination
-    ):
-        return await _download_file(
-            url,
-            destination,
-            timeout=timeout,
-            options=options,
-            write_history=write_history,
-            proxy=proxy,
-            progress=progress,
-            downloader=downloader,
-            source=source,
-            http_download=http_download,
-        )
+    entered = False
+    try:
+        async with _utils_fluxdown_cli.fluxdown_destination_lock(
+            Path(options.cli_path), destination
+        ):
+            entered = True
+            try:
+                return await _download_file(
+                    url,
+                    destination,
+                    timeout=timeout,
+                    options=options,
+                    write_history=write_history,
+                    proxy=proxy,
+                    progress=progress,
+                    downloader=downloader,
+                    source=source,
+                    http_download=http_download,
+                )
+            except asyncio.CancelledError:
+                # 续传预检跳过同源旧任务；等待下载准入时可能尚未进入底层
+                # 取消处理。保持目标锁直到完整停写探测结束，重复取消也不能
+                # 让调用方误删仍由旧 daemon 持有的文件。
+                cli = _find_download_cli(options)
+                if not await _can_downgrade(
+                    cli or Path(options.cli_path), url, destination
+                ):
+                    raise FluxdownWriterUnconfirmed(
+                        "取消下载时，FluxDown 旧任务仍未确认停止"
+                    ) from None
+                raise
+    except (asyncio.CancelledError, Exception) as error:
+        if not entered:
+            raise FluxdownWriterUnconfirmed(
+                "未取得下载文件锁，其他写入者尚未确认停止"
+            ) from error
+        raise
 
 
 async def _download_file(
@@ -143,19 +178,17 @@ async def _download_file(
         # 无论是显式选内置还是配置默认走内置，只要此前可能经 FluxDown 下载过
         # 同一 (url, destination)，都需先确认旧 server 任务已停止再覆写；
         # 显式内置成功后再清理映射，避免残留任务在下次同 url 下载时被无谓 resume
-        cli = _utils_fluxdown_cli.fluxdown_find_cli(
-            options.cli_path, search_dirs=options.cli_search_dirs
+        cli = _find_download_cli(options)
+        # CLI 被移动或删除不代表后台服务已经停止，仍须检查私有持久映射。
+        await _ensure_can_downgrade(
+            cli or Path(options.cli_path),
+            url,
+            destination,
+            segments=segments,
+            proxy_str=proxy_str,
+            action="改用内置 httpx 下载",
+            write_history=write_history,
         )
-        if cli is not None:
-            await _ensure_can_downgrade(
-                cli,
-                url,
-                destination,
-                segments=segments,
-                proxy_str=proxy_str,
-                action="改用内置 httpx 下载",
-                write_history=write_history,
-            )
         size = await builtin_download(
             url, destination, timeout=timeout, proxy=proxy, progress=progress
         )
@@ -163,19 +196,32 @@ async def _download_file(
             # 用户多次失败后显式选择 httpx 并下载成功：清掉 FluxDown 任务映射,
             # 避免残留任务在下次同 url 下载时被无谓 resume
             if cli is not None:
-                _utils_fluxdown_cli.fluxdown_server_forget(cli, url, destination)
+                await _utils_fluxdown_cli._to_thread_strong(
+                    _utils_fluxdown_cli.fluxdown_server_forget,
+                    cli,
+                    url,
+                    destination,
+                    propagate_cancel=True,
+                )
                 logger.info(
                     "已按用户选择使用内置 httpx 完成下载,清理 FluxDown 任务映射"
                 )
         return size
 
     # ---- FluxDown 路径 ----
-    cli_path = _utils_fluxdown_cli.fluxdown_find_cli(
-        options.cli_path, search_dirs=options.cli_search_dirs
-    )
+    cli_path = _find_download_cli(options)
     if cli_path is None:
         # CLI 不存在 → 回退 httpx
         logger.warning("未找到 FluxDown CLI,回退内置 httpx 下载")
+        await _ensure_can_downgrade(
+            Path(options.cli_path),
+            url,
+            destination,
+            segments=segments,
+            proxy_str=proxy_str,
+            action="未找到 CLI，回退内置 httpx",
+            write_history=write_history,
+        )
         return await builtin_download(
             url, destination, timeout=timeout, proxy=proxy, progress=progress
         )
@@ -255,16 +301,7 @@ async def _download_via_fluxdown(
     server_on = options.server_mode
 
     # 无论选择 FluxDown 还是 httpx，同一路径的其他 URL 任务都不得继续写盘。
-    if not await _utils_fluxdown_cli._to_thread_strong(
-        partial(
-            _utils_fluxdown_cli.fluxdown_server_task_safe_to_overwrite,
-            cli_path,
-            url,
-            destination,
-            other_only=True,
-        ),
-        propagate_cancel=True,
-    ):
+    if not await _can_downgrade(cli_path, url, destination, other_only=True):
         await _block_downgrade(
             cli_path,
             url,
@@ -288,9 +325,15 @@ async def _download_via_fluxdown(
                 timeout=timeout,
                 progress=progress,
             )
-            await _append_history(record, write_history=write_history)
             # 下载成功 → 清映射（MAS 后续哈希校验如失败会重下，重新 add）
-            _utils_fluxdown_cli.fluxdown_server_forget(cli_path, url, destination)
+            await _utils_fluxdown_cli._to_thread_strong(
+                _utils_fluxdown_cli.fluxdown_server_forget,
+                cli_path,
+                url,
+                destination,
+                propagate_cancel=True,
+            )
+            await _append_history(record, write_history=write_history)
             return size
         except _utils_fluxdown_cli.FluxdownCancelUnconfirmed:
             # 不能按"普通进程异常"降级 --local：daemon 可能仍在写目标文件
@@ -330,8 +373,23 @@ async def _download_via_fluxdown(
             else:
                 # 任务级失败（超时/断网/任务 failed/add probe 失败）→ 保留映射，抛可续传错误；
                 # 累计中断次数，达到阈值后在错误信息里建议改用内置 httpx
-                count = _utils_fluxdown_cli.fluxdown_server_mark_failure(
-                    cli_path, url, destination
+                # Arbitrary CLI/storage errors can occur after add was accepted.
+                # Establish ownership before an optional, cancellable history write.
+                await _ensure_can_downgrade(
+                    cli_path,
+                    url,
+                    destination,
+                    segments=segments,
+                    proxy_str=proxy_str,
+                    action="记录下载中断并退出",
+                    write_history=write_history,
+                )
+                count = await _utils_fluxdown_cli._to_thread_strong(
+                    _utils_fluxdown_cli.fluxdown_server_mark_failure,
+                    cli_path,
+                    url,
+                    destination,
+                    propagate_cancel=True,
                 )
                 hint = (
                     "；已多次重试仍失败，可在设置中将下载器改为内置（httpx）后重试"
@@ -385,19 +443,52 @@ async def _download_via_fluxdown(
     return size
 
 
-async def _can_downgrade(cli_path: Path, url: str, destination: Path) -> bool:
-    """是否可安全降级改写目标文件：旧 FluxDown 任务已确认停止/不存在。
+async def _can_downgrade(
+    cli_path: Path, url: str, destination: Path, *, other_only: bool = False
+) -> bool:
+    """统一 --local 和 httpx 的停写门槛，避免新旧写入者同时改写目标。
 
-    统一 ``--local`` 与内置 httpx 两条降级路径的门槛，避免旧 daemon 仍在写
-    同一目标时启动第二个写入者。
+    取消时先确认文件所有权，只有确认安全后才能传播普通取消。
     """
-    return await _utils_fluxdown_cli._to_thread_strong(
-        _utils_fluxdown_cli.fluxdown_server_task_safe_to_overwrite,
-        cli_path,
-        url,
-        destination,
-        propagate_cancel=True,
+    probe = asyncio.create_task(
+        _utils_fluxdown_cli._to_thread_strong(
+            partial(
+                _utils_fluxdown_cli.fluxdown_server_task_safe_to_overwrite,
+                cli_path,
+                url,
+                destination,
+                other_only=other_only,
+            )
+        )
     )
+    cancelled: asyncio.CancelledError | None = None
+    try:
+        try:
+            safe = await asyncio.shield(probe)
+        except asyncio.CancelledError as error:
+            cancelled = error
+            # 重复取消也要等待结果；不能让通用等待器先丢掉不安全结果。
+            safe = await _utils_fluxdown_cli._wait_thread_done(probe)
+        if cancelled is not None and safe and other_only:
+            # 续传预检跳过当前来源的旧任务；取消后必须连它一起确认停写。
+            # 此时已在收尾，重复取消也不能跳过这次完整探测。
+            safe = await _utils_fluxdown_cli._to_thread_strong(
+                _utils_fluxdown_cli.fluxdown_server_task_safe_to_overwrite,
+                cli_path,
+                url,
+                destination,
+            )
+    except Exception as error:
+        raise FluxdownWriterUnconfirmed(
+            "FluxDown 停写探测失败，文件仍可能被写入"
+        ) from error
+    if cancelled is not None:
+        if not safe:
+            raise FluxdownWriterUnconfirmed(
+                "取消停写探测后，FluxDown 任务仍未确认停止"
+            ) from None
+        raise cancelled
+    return safe
 
 
 async def _block_downgrade(
@@ -411,28 +502,43 @@ async def _block_downgrade(
     write_history: HistoryWriter | None,
 ) -> None:
     """任务未确认停止：记一次失败、留中断记录并抛可续传错误，禁止启动新写入者。"""
-    count = _utils_fluxdown_cli.fluxdown_server_mark_failure(cli_path, url, destination)
+    try:
+        count = await _utils_fluxdown_cli._to_thread_strong(
+            _utils_fluxdown_cli.fluxdown_server_mark_failure, cli_path, url, destination
+        )
+    except (OSError, ValueError) as error:
+        raise FluxdownWriterUnconfirmed(detail) from error
     hint = (
         "；已多次重试仍失败，可在设置中将下载器改为内置（httpx）后重试"
         if count >= _RESUMABLE_HINT_THRESHOLD
         else ""
     )
     logger.warning(f"server 任务未确认停止（第 {count} 次）, 保留映射待续传: {detail}")
-    await _append_history(
-        _utils_fluxdown_cli.FluxdownDownloadRecord(
-            url=url,
-            destination=str(destination),
-            size=0,
-            duration_ms=0,
-            segments=segments,
-            proxy=proxy_str,
-            checksum=None,
-            status="interrupted",
-            error=f"server 任务未确认停止（第 {count} 次）: {detail}",
-        ),
-        write_history=write_history,
-    )
-    raise FluxdownResumableError(f"{detail}{hint}")
+    # Once a daemon writer is unconfirmed, cancellation of the optional
+    # history transaction must never turn this into a normal task cancellation:
+    # callers need the ownership error to preserve the destination and stop
+    # the next-script handoff.
+    unsafe_writer = FluxdownWriterUnconfirmed(f"{detail}{hint}")
+    try:
+        await _append_history(
+            _utils_fluxdown_cli.FluxdownDownloadRecord(
+                url=url,
+                destination=str(destination),
+                size=0,
+                duration_ms=0,
+                segments=segments,
+                proxy=proxy_str,
+                checksum=None,
+                status="interrupted",
+                error=f"server 任务未确认停止（第 {count} 次）: {detail}",
+            ),
+            write_history=write_history,
+        )
+    except asyncio.CancelledError:
+        # The history write can wait on an unrelated config transaction.
+        # Keep unsafe ownership authoritative even if that wait is cancelled.
+        raise unsafe_writer from None
+    raise unsafe_writer
 
 
 async def _ensure_can_downgrade(
@@ -462,9 +568,18 @@ async def _ensure_can_downgrade(
 class FluxdownResumableError(RuntimeError):
     """FluxDown server 任务级失败（网络中断/超时/任务 failed），task 已保留可续传。
 
+    抛出前已确认任务停写；未确认停写使用 FluxdownWriterUnconfirmed。
     上层应原地重试（同一 url+destination 会走 resume）；连续重试仍失败时
     在最终失败提示中建议改用内置 httpx 重新下载（downloader="builtin"），
     不要落 --local（会删掉已下载的分段文件）。
+    """
+
+
+class FluxdownWriterUnconfirmed(_utils_fluxdown_cli.FluxdownCancelUnconfirmed):
+    """The server writer may still be active despite a failed stop probe.
+
+    Keep the resumable task mapping, but never let a scheduler treat this as
+    an ordinary download failure or start the next script.
     """
 
 

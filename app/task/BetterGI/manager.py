@@ -71,7 +71,7 @@ class BetterGIManager(ScriptManagerBase):
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if not isinstance(script_config, BetterGIConfig):
-            return "脚本配置类型错误, 不是 BetterGI 类型"
+            return "托管配置类型错误, 不是 BetterGI 类型"
 
         if self.task_info.mode == "ScriptConfig":
             if not script_config.Info.RootPath:
@@ -84,20 +84,20 @@ class BetterGIManager(ScriptManagerBase):
                 try:
                     target_user_uid = uuid.UUID(target_user_id)
                 except ValueError:
-                    return "BetterGI 用户不存在，请刷新后重试"
+                    return "BetterGI 账号不存在，请刷新后重试"
                 if target_user_uid not in script_config.UserData:
-                    return "BetterGI 用户不存在，请刷新后重试"
+                    return "BetterGI 账号不存在，请刷新后重试"
 
-        # 「检查更新」必须落到具体用户：游戏客户端路径可能是用户级覆盖
+        # 「检查更新」必须落到具体账号：游戏客户端路径可能是账号级覆盖
         if self.task_info.mode == "Update":
             try:
                 target_user_uid = uuid.UUID(self.task_info.user_id or "")
             except ValueError:
-                return "更新任务需要指定用户，请刷新后重试"
+                return "更新任务需要指定账号，请刷新后重试"
             if target_user_uid not in script_config.UserData:
-                return "BetterGI 用户不存在，请刷新后重试"
+                return "BetterGI 账号不存在，请刷新后重试"
 
-        # AutoProxy 模式只做用户列表可用性校验；逐用户配置文件检查放到 AutoProxyTask.check()
+        # AutoProxy 模式只做账号列表可用性校验；逐账号配置文件检查放到 AutoProxyTask.check()
         if self.task_info.mode == "AutoProxy":
             script_uid = uuid.UUID(self.script_info.script_id)
             if not self.script_info.user_list:
@@ -105,7 +105,7 @@ class BetterGIManager(ScriptManagerBase):
                     Config.ScriptConfig[script_uid].UserData.items()
                 )
             if not self.script_info.user_list:
-                return "当前没有可执行的用户，请先添加并启用用户"
+                return "当前没有可执行的账号，请先添加并启用账号"
 
         return "Pass"
 
@@ -116,7 +116,7 @@ class BetterGIManager(ScriptManagerBase):
         ] = await Config.ScriptConfig[script_uid].lock_x()
         self.script_config = Config.ScriptConfig[script_uid]
         if not isinstance(self.script_config, BetterGIConfig):
-            raise TypeError("脚本配置类型错误")
+            raise TypeError("托管配置类型错误")
 
         root = self.script_config.Info.RootPath
         if root is not None:
@@ -124,9 +124,9 @@ class BetterGIManager(ScriptManagerBase):
             self._update_root = root
             program_update.recover_update_notice(root)
 
-        # X 锁覆盖用户集合，运行时直接修改原配置。
+        # X 锁覆盖账号集合，运行时直接修改原配置。
         self.user_config = self.script_config.UserData
-        logger.success(f"{self.script_info.script_id} 已锁定，BetterGI 用户配置已提取")
+        logger.success(f"{self.script_info.script_id} 已锁定，BetterGI 账号配置已提取")
 
         if self.task_info.mode == "Update":
             target_user_id = self.task_info.user_id or "Default"
@@ -250,7 +250,7 @@ class BetterGIManager(ScriptManagerBase):
         # 任务级归档 BetterGI 全局主配置（config.json）——运行会临时补写
         # 队伍/策略叶子、结束还原，崩溃残留会污染全局配置；持久归档提供
         # 跨会话找回（指纹去重，失败不阻断任务）。mas 池由 AutoProxy
-        # 物化前按用户归档
+        # 物化前按账号归档
         with suppress(Exception):
             root_path = self.script_config.Info.RootPath
             if root_path is not None:
@@ -296,7 +296,7 @@ class BetterGIManager(ScriptManagerBase):
                 await self.notify_user_check_failure(current_user, sub_check)
                 continue
 
-            # 下一用户通过检查才等待上一用户的游戏退出，尾部全部跳过时不空等。
+            # 下一账号通过检查才等待上一账号的游戏退出，尾部全部跳过时不空等。
             if has_run_user:
                 await method.wait_game_exit_before_next_user()
             await self.run_user_task(current_user, method)
@@ -328,7 +328,7 @@ class BetterGIManager(ScriptManagerBase):
                     f"{datetime.now().strftime('%m-%d')} | "
                     f"{self.script_info.name or '空白'}的{task_mode}任务报告"
                 )
-                # 按用户交错组装「用户结果行 + 一条龙/执行层节点详情」进报告正文
+                # 按账号交错组装「账号结果行 + 一条龙/执行层节点详情」进报告正文
                 # （ScriptItem.result 是只读计算属性，报告正文用局部变量承载）
                 user_result_text = self._render_user_results(
                     has_uncompleted=bool(self.collect_user_results().uncompleted_count)
@@ -388,7 +388,7 @@ class BetterGIManager(ScriptManagerBase):
                 if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                     await config_manager.flush()
             except Exception:
-                logger.opt(exception=True).warning("on_crash 保存用户配置失败")
+                logger.opt(exception=True).warning("on_crash 保存账号配置失败")
 
         with suppress(Exception):
             await Publisher.send(

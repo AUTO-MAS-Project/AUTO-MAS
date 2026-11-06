@@ -1,16 +1,16 @@
 # `app/task/MaaFW` 说明
 
 MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFramework 项目都由它运行。
-专项适配那一套（原生编辑器会话、base 三态（shared/independent/native）、配置备份恢复）不适用，见末节。
+MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配置备份恢复分别覆盖 MAS 账号字段侧车和项目 config/，见末节。
 本文件只记录代码里读不出来、但改错了会出事的约束。
 
 ## 布局与边界
 
-- `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、运行环境确认、用户配置副本与写回。
-- `tools/embedded/maintenance.py`：宿主资源维护入口；公共 Config 注入脚本快照、完整加载状态与保留天数，`migration.py` 承接老副本采纳、组版本统一和旧更新状态清理。main 编排迁移后的启动清理，timer 触发每日原生日志清理。
-- `api_service/`：`/api/scripts/maafw/*` 端点背后的全部业务（`common` 脚本解析 / 有效项目根 /
+- `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、运行环境确认、账号配置副本与写回。
+- `tools/embedded/maintenance.py`：宿主资源维护入口；公共 Config 注入托管快照、完整加载状态与保留天数，`migration.py` 承接老副本采纳、组版本统一和旧更新状态清理。main 编排迁移后的启动清理，timer 触发每日原生日志清理。
+- `api_service/`：`/api/scripts/maafw/*` 端点背后的全部业务（`common` 托管解析 / 有效项目根 /
   同组候选，`embedded` 副本状态 / 导入 / 克隆 / 候选来源，`interface` 预览 / 包名 / 图片资源 / 项目图标，
-  `update` 手动更新，`agent_env` 预备运行环境，`shell_instances` 外壳配置实例导入成用户）。
+  `update` 手动更新，`agent_env` 预备运行环境，`shell_instances` 外壳配置实例导入成账号）。
   **MFW 的 API 业务一律在这里实现，
   本目录的 `api.py` 只放端点模型与薄端点**：取参数 → 调这里的一个函数 → `XxxOut(**reply.out_fields())`
   （`MaaFWApiReply`）或把异常映射成 HTTP 错误；不在 API 层定义 MFW 私有辅助函数、常量或锁。
@@ -65,7 +65,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 ## 项目目录与运行
 
 - **有效项目根只从一处取**：`tools/embedded/embedded_project.resolve_maafw_project_root`
-  ——**永远是** `data/mfw/<脚本 uuid 前 12 位>/` 的视图，没有"路径模式"。`Info.Path` 只是
+  ——**永远是** `data/mfw/<托管 uuid 前 12 位>/` 的视图，没有"路径模式"。`Info.Path` 只是
   导入的来源，运行时不读它（开发者模式下运行前检查会扫一遍它决定要不要重导，跑的仍是视图）；
   导入完成后用户删掉来源也无妨。源码形态的视图同样以 interface 所在目录为根（`assets/` 平铺到视图根，
   见「源码形态」），所以项目根永远等于视图根、永远有 `interface.json`。manager 三处、`runner_task`、
@@ -86,7 +86,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `register` 允许同版本新登记顶替）。
 - **载荷 + 视图**：项目内容按「谱系 + 版本 + 内容哈希」登记成不可变**载荷**
   （`data/mfw/.payloads/<谱系>/<版本>-<hash8>/` + 同名 `.json` 清单，`project_update/payloads.py`），
-  全局一份；每个脚本一棵**视图**（`data/mfw/<12hex>/`，路径永不变，所有按路径键的缓存 /
+  全局一份；每个托管一棵**视图**（`data/mfw/<12hex>/`，路径永不变，所有按路径键的缓存 /
   备份桶都不用改键；隔离 venv 不按路径，按依赖跨视图共用），满足共用谓词的文件是载荷 / 共用库的硬链接，小文件拷贝，运行期产物私有。
   视图根上的 `.auto_mas_view.json`（谱系、载荷、版本、物化时刻、`switchedBy`、`envConfirmedFor`、
   开发者模式的 `followSource`）是物化事实的唯一来源，不进指纹、不进任何清单，只随目录原子换入、
@@ -118,7 +118,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - **跟随来源目录（开发者模式，`Embedded.FollowSource`，默认关）**：给在本地发行包里改东西修 bug
   的开发者用（视图 + 组 latest 让「改来源不生效、改视图被换版本冲掉」）。仍然在视图上跑，只是：
   - **组换成私有渠道** `dev:<视图名>`（`embedded_project.effective_channel`）：组同步、同组传播
-    （`GroupMember.channel`）、导入登记、启动期统一到组版本都按它，所以同项目的其它脚本与官方更新
+    （`GroupMember.channel`）、导入登记、启动期统一到组版本都按它，所以同项目的其它托管与官方更新
     碰不到它，它的导入也推不动普通渠道。登记用 `payloads.register(always_advance=True)`：私有渠道
     每次导入都前进、不比版本；普通渠道不传，语义一字不改（传了照旧前进，`register` 记一行告警）。
     私有渠道建出的载荷（清单 `channel` 是
@@ -146,7 +146,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     判断（`is_follow_source_manifest`），不看是哪条代码路径进来的——开发者导入、关掉开关、克隆后第一次
     组同步、关掉后被兄弟导入 / 同组传播换走，只要切换的一端是开发者载荷，就既不按同版本「只补缺」也不
     把视图与旧载荷的差异当本地修改留档（那些差异就是从来源同步来的）。
-  - **立即同步**（脚本页状态行旁的按钮，`/maafw/embedded/sync` → `api_service.embedded.sync_embedded`）：
+  - **立即同步**（托管页状态行旁的按钮，`/maafw/embedded/sync` → `api_service.embedded.sync_embedded`）：
     按当前 `Info.Path` 强制重导进私有渠道，**不看签名**（补上修改时间没变而漏检的改动）；内容与视图相同
     时不重建视图、只刷新同步时间。返回的 `message` 就是结果（N 个文件变化 / 内容未变化）。脚本运行中
     （`is_locked`）、项目正在更新、视图预约被占用、来源目录不在都直接拒绝，不排队、不打断。
@@ -157,11 +157,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   - **关掉**（标记还带 `followSource` 时，`_leave_follow_source`）：回到 `Update.Channel` 组的 latest
     （私有文件照常带，不留本地改过档，见上一条）；视图已在 latest 上就只摘掉 `followSource`；组里还
     没有载荷就按来源正常导入一次；来源也不在就留在当前版本。
-  - **复制 / 克隆不继承**：「复制脚本」把新脚本的 `Embedded.FollowSource` 写成关；`/maafw/embedded/clone`
-    本来就不抄这个开关。源脚本挂的是开发者载荷时，目标挂源原渠道（`Update.Channel`）组的 latest，
+  - **复制 / 克隆不继承**：「复制托管」把新托管的 `Embedded.FollowSource` 写成关；`/maafw/embedded/clone`
+    本来就不抄这个开关。源托管挂的是开发者载荷时，目标挂源原渠道（`Update.Channel`）组的 latest，
     不复用本地改过的那份（`clone_embedded_copy(group_channel=…)`）；组里还没有正式版本就抛
     `FollowSourceCloneUnavailable`：克隆接口改按源的来源目录正常导入（目标自己的组，消息里说明），
-    来源也不在就拒绝并让用户直接选目录；「复制脚本」先不建视图，第一次运行前按继承的 `Info.Path` 导入。
+    来源也不在就拒绝并让用户直接选目录；「复制托管」先不建视图，第一次运行前按继承的 `Info.Path` 导入。
     源码形态没有正式渠道，克隆一律走按来源导入，目标继承 `sourceForm` 报告，照样处在开发者模式。
     缺视图重建（复制后第一次运行、来源也不在）同样不继承：`_rebuild_from_group` 与视图不完整的重建
     走 `_formal_group_target`，普通渠道组里没有正式版本时不退到兄弟挂的开发者载荷，按重建失败报错。
@@ -222,8 +222,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   声明的 `python312.dll`，Maa_bbb 的 MFW.exe 就是），它散在根目录的二进制依赖包（带 `.pyd`，或
   `*.libs` / `*.dist-info`）也不带：agent 子进程的 `PYTHONPATH` 是项目根，`backports/zstd/`
   这种没有 `__init__.py` 的半截包会变成命名空间包盖住真正的模块——副本上 pip 就是这样崩的。
-  视图路径由脚本 ID 推出（`embedded_copy_dir_name`：uuid 去连字符取前 12 位，短是为了 pyc 前缀树
-  与深层 site-packages 不撞 MAX_PATH）、不进配置、不可手改；来源目录一个字节不动、也不由 MAS 删。脚本页
+  视图路径由托管 ID 推出（`embedded_copy_dir_name`：uuid 去连字符取前 12 位，短是为了 pyc 前缀树
+  与深层 site-packages 不撞 MAX_PATH）、不进配置、不可手改；来源目录一个字节不动、也不由 MAS 删。托管页
   「选择本地目录」就是 `/maafw/embedded/reimport`：投影成载荷、登记进脚本所在渠道的组，视图切到组的
   latest——导入的比组新、或同版本而投影规则版本比组的 latest 高（组的载荷是旧规则建的）、或同版本
   已与官方发行包核对过而组的 latest 是没核对过的导入（见下面「旧版本残留与发行包核对」；latest 是
@@ -273,7 +273,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `excludedReasons`（原因 `not-in-release`）；运行时建「旧载荷减残留」的同版本载荷、顶替 latest（只顶
   没核对过的导入，更新得来的原版视同核对过）、切视图，然后不重启游戏 / 模拟器立刻再跑一次（不占重试
   次数，日志里这一次不编号）。运行时看的是**本视图自己挂的**载荷：视图不在组 latest 上（同组兄弟已清理
-  过、传播时本脚本正在跑）就经组同步切过去再核对，视图换了就重跑——只看组 latest 会对着残留还在的
+  过、传播时本托管正在跑）就经组同步切过去再核对，视图换了就重跑——只看组 latest 会对着残留还在的
   视图说「没有多余的文件」。**只在同一版本内切**：组 latest 已是另一个版本时运行中不切（interface、运行
   计划、运行环境确认都是按本视图的版本做的），留给下次运行前的组同步；等锁时被推到新版本、视图跟着换了
   （`CleanOutcome.version_changed`）也不重跑。发行包过不了 `range_delta._check_layout`（解压时会改名的
@@ -302,15 +302,15 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   删不掉的是它的最后一个链接，与进程经由哪个名字加载无关——视图里的名字（含正被经由加载的
   那个）都能删，只要库里的 blob 还在（见 `blob_store.py` 模块说明）。
 - **同一项目再建一个脚本**走 `/maafw/embedded/sources`（候选）+ `/maafw/embedded/clone`
-  （`embedded_project.clone_embedded_copy`）：从源脚本挂着的载荷物化目标视图（源正在切换就取 journal
+  （`embedded_project.clone_embedded_copy`）：从源托管挂着的载荷物化目标视图（源正在切换就取 journal
   的目标），不读源视图、不要源空闲、源的运行期状态不带；只预约目标（源还是没采纳的老副本、只能按目录
   克隆时才预约源，源被占用就拒绝）；`Info.Path` 与
   `Embedded.*`（开发者模式开关除外）沿用源（两者必须成对继承），`Update.Channel` 也沿用源——
   复用的就是源那一版，渠道不跟着走的话第一次运行前的组同步会把它切到默认渠道的版本；类型随项目。
-  「复制脚本」（`Config.add_script`）复用同一个函数。
+  「复制托管」（`Config.add_script`）复用同一个函数。
   源挂的是开发者载荷时不复用它，见「跟随来源目录」里的「复制 / 克隆不继承」。
   视图与来源都没了时，`ensure_embedded_copy` 从同来源兄弟的谱系（没有兄弟就按载荷清单记的导入来源
-  反查）按本脚本渠道的 latest 重建——来源可删这句承诺靠它兜底。更新包下载缓存
+  反查）按本托管渠道的 latest 重建——来源可删这句承诺靠它兜底。更新包下载缓存
   `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中（Mirror 酱按包的 sha256：它的一次性下载地址每次都变），启动期 `MaaFWMaintenanceService.clean_update_cache`
   删 7 天没碰过的（`transport.prune_update_cache`）。
 - **启动期一次性迁移**（`MaaFWMaintenanceService.migrate_embedded_copies_to_payloads`，排在各项回收之前，整段
@@ -460,7 +460,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   日志——worker 转发（worker 发事件时据此定 `audience`）、`embedded_manager._append_update_log`、编辑页准备环境（`api_service/agent_env.py`）
   与手动更新（`api_service/update.py`）四处都按这个前缀拦在界面外，新增的日志出口也要拦。子进程输出进日志一律按结尾截（`runtime_pool/_shared.output_tail`），
   截开头会正好丢掉异常那一行——那次现场所有日志都断在 `File "D:\douy`。
-- `Run.RunTimeLimit` 是套在单个用户整次 MaaFW 运行上的**硬超时**，与其他专项的"日志停滞超时"
+- `Run.RunTimeLimit` 是套在单个账号整次 MaaFW 运行上的**硬超时**，与其他专项的"日志停滞超时"
   不同义。截止时刻随 job 交给 worker（`runDeadlineAt`）：到点 worker 自己 post_stop 当前任务、
   截一张 `timeout` 图、把已完成的任务连同 `timedOut=True` 正常回传；宿主的 `asyncio.wait_for`
   只在其后加一段宽限（`_RUN_DEADLINE_GRACE_SECONDS`）兜底，worker 没停下才强杀，那时才没有截图
@@ -470,9 +470,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   框架以 task_id=0 拒掉。例外是特调声明的收尾任务（`nonfatal_entries` → `nonFatalMessage`，如 M9A 的关闭游戏）：它失败、
   超时、打转或被脚本侧强停都只截图记一行、不计入本轮失败（超时同样先等停下；停下时恰好又被脚本侧强停就跳过本轮剩余任务），且优先于上面两条；契约见 `tools/embedded/flavor.py`。
   特调声明的不可选任务（`unselectable_entries`，如 M9A 的小游戏）更早一步：`/maafw/preview` 给它们填
-  `unselectableReason`（核心包的预览不认识特调，在 `api_service/interface.py` 补），用户页不让选；
+  `unselectableReason`（核心包的预览不认识特调，在 `api_service/interface.py` 补），账号页不让选；
   运行时在 `decorate_selection` 之前剔掉、按原因合并记一行，不进计划，所以上面几项声明对它不起作用。
-- **原地打转检测**（`Run.LoopGuard`，脚本级开关，**实验性、默认关**；纯逻辑在
+- **原地打转检测**（`Run.LoopGuard`，托管级开关，**实验性、默认关**；纯逻辑在
   `tools/core/runner/loop_guard.py`）：只看 `Node.Recognition.*` 与 `Node.PipelineNode.*`，按节点名
   找周期 ≤ 8 步的循环，连续各轮都有物理动作（Click / Swipe / 按键…，Custom 与 DoNothing 不算，等待型
   轮询本来就该一直等；没有物理动作的一轮让轮数与时长从头数，否则空等很久后第一次点击会被当场判卡死）、≥ 200 轮、持续 ≥ 10 分钟、最近 30 轮识别结果指纹 ≤ 4 种、单轮中位 ≤ 20 秒
@@ -506,7 +506,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `GraphicsSettings_PCResolution`、终末地的 `video_resolution_*`），效果要实机验证。
   这个通用选项**不做逐游戏适配**（2026-10-04 定，理由见 `game_resolution.py` 文件头），
   游戏自有层由该游戏的特调或专项自己调。
-- **项目的运行前设置（interface `pretask`）在每次尝试里跑**，不像用户级「脚本前任务」只跑一次：
+- **项目的运行前设置（interface `pretask`）在每次尝试里跑**，不像账号级「脚本前任务」只跑一次：
   MaaEnd 的「🚀启动游戏（PC）」就是它，此时 `Game.LaunchMode` 是 AttachOnly、`opened_game` 为假，
   MAS 既不拉起也不关游戏。第一次尝试照常跑；它自己失败按普通失败重试；成功过之后的重试只在客户端
   已经不在时重跑（`_pretasks_need_rerun`：MAS 刚关掉自己起的游戏 / 模拟器——关的时候报错也算，
@@ -587,11 +587,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   任务 Starting 时就读这两个值（M9A v4.10.0 的 `aspect_ratio` sink 读到 0 直接 `post_stop`，
   ADB 路径第一个任务一开始就被停掉）。MFAAvalonia 连上后同样先截一次
   （`MaaProcessor.MeasureScreencapPerformanceAsync`）。截图失败只记日志、不拦运行。
-- 用户配置在 `check()` 时深拷贝成副本跑，`final_task` 解锁后**整表写回**（#720 / #737）。
-  改任何运行期写用户字段的逻辑，都要用落盘探针验证，只看内存会误判成已生效。
+- 账号配置在 `check()` 时深拷贝成副本跑，`final_task` 解锁后**整表写回**（#720 / #737）。
+  改任何运行期写账号字段的逻辑，都要用落盘探针验证，只看内存会误判成已生效。
 - **空任务队列不留着**（`tools/embedded/default_snapshot.py`）：`Task.TaskSnapshot` 为空时运行会回落到
-  预设或默认勾选（`run_plan.resolve_default_snapshot`），所以建用户、读用户（`Config.get_user`）与运行前
-  检查（上锁之前）都按这同一个函数把它写成实打实的队列，用户页上看到的就是要跑的。项目还没导入时
+  预设或默认勾选（`run_plan.resolve_default_snapshot`），所以建用户、读账号（`Config.get_user`）与运行前
+  检查（上锁之前）都按这同一个函数把它写成实打实的队列，账号页上看到的就是要跑的。项目还没导入时
   什么都不写、留给下一次；默认队列定格在写入那一刻，项目以后改了预设不再自动跟。别在前端另写一份规则。
 
 ## interface.json
@@ -609,11 +609,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   default 原样用、不 strip，default 为空串或没写就不回落（`pipeline_override._string_input_fallback`）；
   数字 / 布尔 strip 后为空才算没填（`_coerce_input_value`）。password 字段不回落。特调可以声明例外
   （`flavor.no_default_fallback_inputs`，两条建计划的路都传；`/maafw/preview` 把这些字段的 `default`
-  置成 null，用户页就不会把它显示成「没填时的值」）：M9A 的自定义兑换码 default 是字面量
+  置成 null，账号页就不会把它显示成「没填时的值」）：M9A 的自定义兑换码 default 是字面量
   「占位」，旧版迁移专门把预填的它清成空串，agent 遇到交不过去的码会中断整个兑换。以前「default 只当
   占位提示、没填就下发空串」的取舍（#478）已撤销：语料里 11 个项目因此拿到坏 override（MaaEnd 表达式缺
   右操作数、MRA 的 `expected: [""]`、MaaStellaSora agent 里的 `float("")`）。
-- **全局选项每个用户只存一份**：`global_option` 连同各 case 下挂的子选项
+- **全局选项每个账号只存一份**：`global_option` 连同各 case 下挂的子选项
   （`task_config.build_global_option_map`）的值在 `Task.TaskSnapshot.globalOptions`。覆盖顺序
   照 PI / MXU / MaaPiCli：全局组按全局表，资源 / 控制器 / 任务组按任务自己的值，后叠的盖前面
   （`MaaFWPipelineOverrideBuilder.build_task_pipeline_override(..., global_options=)`）。所以同一
@@ -633,7 +633,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `setting_options` 为准）。
   **降级兼容双写**：保存时（`option_secrets.prepare_user_task_snapshot` →
   `mirror_global_options_to_tasks`）把只属于全局的选项的全局值抄到每个任务实例上——旧版运行期按任务
-  读它们，旧版用户页保存会丢掉 `globalOptions`，升级回来靠这些副本迁移找回。新版运行期与前端
+  读它们，旧版账号页保存会丢掉 `globalOptions`，升级回来靠这些副本迁移找回。新版运行期与前端
   都不看副本（归一 / `withoutMaaFWGlobalOnlyOptions` 丢掉），去掉双写前要先确认没人会降级。
 - **保存的值对不上当前 interface 不静默**：项目改了 case 名后，归一会把 select / switch 的旧值换回
   默认、checkbox 里对不上的项丢掉（值本身不改）。`runner_task` 建计划前按原始快照
@@ -695,15 +695,15 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 - 开着开发者模式（`Embedded.FollowSource`）的脚本**不更新**：自动更新跳过、手动检查与应用都拒绝，
   以来源目录为准（见「跟随来源目录」）。下面说的都是普通模式。
-- 下载源 / CDK / 渠道 / 时机**只看脚本级 `Update.*`，不做全局兜底**
+- 下载源 / CDK / 渠道 / 时机**只看托管级 `Update.*`，不做全局兜底**
   （`tools/embedded/update_credentials.py`）；全局的 `Update.MirrorChyanCDK` / `Update.Channel`
   服务的是 MAS 自身更新。
-- **唯一带全局兜底的是代理**：脚本级 `Update.ProxyAddress` 留空跟随全局（设置 → 其他 →
+- **唯一带全局兜底的是代理**：托管级 `Update.ProxyAddress` 留空跟随全局（设置 → 其他 →
   网络代理），填了只走自己的，同时管更新包下载与运行环境安装（池的 uv / pip、agent venv）。
-  解析走 `resolve_update_proxy_url`，日志里只能出现 `describe_proxy` 的「脚本级 / 全局 /
+  解析走 `resolve_update_proxy_url`，日志里只能出现 `describe_proxy` 的「托管级 / 全局 /
   未配置」——地址可能带 `user:pw@`。别改用 `Config.proxy`：那个属性每次访问都往日志写一行
   「使用代理: <地址>」。
-- GitHub 加速镜像是**只有全局**的一项：`Update.GitHubMirror`（`Auto` / `Off`），脚本级没有
+- GitHub 加速镜像是**只有全局**的一项：`Update.GitHubMirror`（`Auto` / `Off`），托管级没有
   对应字段。清单在 `tools/embedded/update_mirrors.py`，与前端 `mirrorService.ts` 的 gh-proxy
   组同源，改一处要同步另一处。只对 `github.com/<owner>/<repo>/releases/download/...` 生效，
   Mirror 酱的一次性签名地址套前缀会把签名打坏，所以按源分流而不是按地址。
@@ -713,11 +713,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （取消令牌、GitHub 镜像、按触发脚本解析的代理、进度全部透传）→ 在 `.staging/payload-*` 里从当前
   载荷 + 包建新载荷（`payloads.build_from_package`）→ 在 staging 上预检一次（钉回 binding 也在这里，
   写的是 staging）→ `finalize` 并入共用库 → `register` 登记 → 切触发脚本的视图 → 同组空闲脚本立即切
-  （运行中的跑完再切：`_check` 的组同步与 `final_task` 的收尾同步——收尾同步只在用户全部正常跑完时做，
+  （运行中的跑完再切：`_check` 的组同步与 `final_task` 的收尾同步——收尾同步只在账号全部正常跑完时做，
   停止 / 崩溃留给下一次 `_check`；pending 是派生状态，不落字段）。切过的兄弟连同预约交给后台环境确认
   线程（`view_update.propagate_and_confirm`）。运行环境「确认过哪个载荷」记在视图标记的
   `envConfirmedFor`（确认成功才写，同谱系切换带旧值）：`_check` 看到 `payload ≠ envConfirmedFor` 就由
-  `main_task` 在用户任务前补确认，拿不到预约时据此说「正在切换版本」。
+  `main_task` 在账号任务前补确认，拿不到预约时据此说「正在切换版本」。
   视图与旧载荷全程一个字节不动：失败 / 预检不过 / 取消都只是丢 staging，没有回滚与中断恢复。
   下载完成之后到登记之前取消 = 丢 staging（「正在中止更新（丢弃未完成的新版本），请稍候」，60 s
   宽限）；登记之后不再响应取消。手动 `/maafw/update` 运行中照旧拒绝（`api_service/update.py` 的 `UPDATE_SCRIPT_BUSY`），整段
@@ -816,8 +816,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 - 没有 `ScriptConfig.py`，没有原生编辑器会话；已接入通用配置备份恢复
   （mas 池为纯字段侧车 + native 项目池，见 `tools/restore_service.py`）。
-- 用户配置上的 `Info.Base`（shared/independent/native）和 `Info.IfQuickConfig` **都没有 MaaFW 运行代码消费**：
-  用户页上的任务队列就是唯一的任务来源（`runner_task.py` 建计划处有说明），这两个字段只在
+- 账号配置上的 `Info.Base`（shared/independent/native）和 `Info.IfQuickConfig` **都没有 MaaFW 运行代码消费**：
+  账号页上的任务队列就是唯一的任务来源（`runner_task.py` 建计划处有说明），这两个字段只在
   配置备份恢复里原样带着。不要在 MaaFW 上按三态写逻辑。
 - 新的 `interface.json` 项目默认用 MaaFW 类型即可运行；需要更精细的控制时（原生编辑器会话、
   登录/切号、按游戏语义组织的专属界面、对上游资源文件的动态读取等）可以立专项，MaaEnd 就是

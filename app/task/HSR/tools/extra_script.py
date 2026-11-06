@@ -30,7 +30,7 @@ async def run_script_before_task(user_config: HSRUserConfig) -> None:
     内联同样的两行。
 
     Args:
-        user_config (HSRUserConfig): 当前用户配置。
+        user_config (HSRUserConfig): 当前账号配置。
     """
 
     if not user_config.Info.IfScriptBeforeTask:
@@ -43,7 +43,7 @@ async def run_script_after_task(user_config: HSRUserConfig) -> None:
     """执行用户配置的任务后脚本，未开启时直接返回。
 
     Args:
-        user_config (HSRUserConfig): 当前用户配置。
+        user_config (HSRUserConfig): 当前账号配置。
     """
 
     if not user_config.Info.IfScriptAfterTask:

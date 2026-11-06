@@ -13,7 +13,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
 
-"""MAA 用户配置来源与更新策略。"""
+"""MAA 账号配置来源与更新策略。"""
 
 import json
 from collections.abc import Callable
@@ -78,7 +78,7 @@ async def prepare_user_update(
         )
     ):
         raise ValueError(
-            "每个脚本仅允许一个原生来源用户, 多账号请在该用户的实例管理中配置"
+            "每个托管仅允许一个原生来源账号, 多账号请在该账号的实例管理中配置"
         )
 
     guard: Callable[[], None] | None = None

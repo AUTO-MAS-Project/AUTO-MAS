@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type ScriptShareInspectIn = {
     /**
-     * 脚本ID
+     * 托管ID
      */
     scriptId: string;
     /**

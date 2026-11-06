@@ -58,7 +58,7 @@ def _allocated_ledger_path(root: Path) -> Path:
 
 
 def _allocated_slots(root: Path) -> dict[int, str | None]:
-    """MAS 在本安装分配/绑定过的实例槽 → 归属用户 uid（台账）。
+    """MAS 在本安装分配/绑定过的实例槽 → 归属账号 uid（台账）。
 
     台账是「这个号是 MAS 分的、归谁」的凭据，自动回收只收台账内 owner 已
     不存在的号：一条龙原生流程是「先建目录后写注册表」，用户在原生 GUI 新建
@@ -66,7 +66,7 @@ def _allocated_slots(root: Path) -> dict[int, str | None]:
     台账缺失或损坏时返回空字典——自动回收退化为不收（残留由手动清理兜底），
     不会反向误删原生目录。
 
-    owner 为 ``None`` 表示归属未知（旧格式台账，或调用方没给用户 uid）；
+    owner 为 ``None`` 表示归属未知（旧格式台账，或调用方没给账号 uid）；
     这类号同样按「保留」处理，理由见 :func:`_recyclable_allocated_idxs`。
     """
 
@@ -143,8 +143,8 @@ def _record_allocated_slot(root: Path, slot_idx: int, owner: str | None = None) 
 def forget_allocated_slot(root: Path, slot_idx: int) -> None:
     """把槽号移出台账（该号不再参与自动回收；幂等）。
 
-    删除用户/脚本回收掉槽目录后调用：台账只记「MAS 手上还在用」的号，目录都
-    没了就不该再占着。恢复快照走的是另一条路——它把内容恢复给某个用户并记上
+    删除账号/脚本回收掉槽目录后调用：台账只记「MAS 手上还在用」的号，目录都
+    没了就不该再占着。恢复快照走的是另一条路——它把内容恢复给某个账号并记上
     归属（见 :func:`app.task.ZzzOd.recovery.ZzzOdRecovery.restore_recycle`），不用
     本函数。手动清理不受台账限制。
     """
@@ -181,7 +181,7 @@ def _recyclable_allocated_idxs(
 ) -> set[int]:
     """自动回收可收的台账号：归属用户已不存在的号。
 
-    归属仍存在的号一律保留。运行/会话期用的是独立用户配置副本、绑定号要到
+    归属仍存在的号一律保留。运行/会话期用的是独立账号配置副本、绑定号要到
     ``final_task`` 才回写，崩溃或强杀会让槽呈「有目录、有台账、持久绑定查不到」
     的形态——只按持久绑定判定会把它当残留收走，而槽里还有用户在原生 GUI 里
     维护的配队。归属未知（``None``）同样保留：无法证明它无主时宁可不收。
@@ -225,12 +225,12 @@ def _reclaim_own_slot(
     native_idxs: set[int],
     used_idxs: set[int],
 ) -> int | None:
-    """绑定号缺失时，认领回台账里属于本用户的高位段槽（中断现场恢复）。
+    """绑定号缺失时，认领回台账里属于本账号的高位段槽（中断现场恢复）。
 
     上次运行/会话被崩溃、断电或强杀打断时，绑定号只写在运行期副本里、没回写
     持久配置，用户下次运行会被当成「未分配」另拿一个新号——上一个槽里他在原生
-    GUI 维护的配队就再也回不来了。这里优先认领台账里归本用户、且当前没被原生
-    实例或其他用户占用的号（盘上有目录的优先，那里才有上次的配队），让配队
+    GUI 维护的配队就再也回不来了。这里优先认领台账里归本账号、且当前没被原生
+    实例或其他账号占用的号（盘上有目录的优先，那里才有上次的配队），让配队
     跟着人走。没有任何候选时返回 ``None``，由调用方按常规分配新号。
     """
 
@@ -260,10 +260,10 @@ async def ensure_user_slot(
 ) -> int:
     """解析/分配用户的绑定实例槽（纯分配，不触碰注册表——注册表由合成视图提供）。
 
-    绑定下标存于用户配置 ``Info.SlotIdx``：有效 = 不与原生实例、其他 MAS
-    用户已绑定槽冲突；无效则优先认领台账里属于本用户的高位段槽（见
+    绑定下标存于账号配置 ``Info.SlotIdx``：有效 = 不与原生实例、其他 MAS
+    用户已绑定槽冲突；无效则优先认领台账里属于本账号的高位段槽（见
     :func:`_reclaim_own_slot`，用于上次没跑完的中断现场），没有则分配最小
-    空闲 idx（全局查重）并把绑定落回用户配置。槽目录持久保留（配队等复杂
+    空闲 idx（全局查重）并把绑定落回账号配置。槽目录持久保留（配队等复杂
     配置），注册表只在运行/会话窗口内以合成视图出现。分配结果连同归属用户
     记进槽分配台账（含沿用旧绑定——一次运行即可把存量用户的绑定补进台账），
     供自动回收判定「这个号是 MAS 分的、还归不归活着的用户」。
@@ -276,10 +276,10 @@ async def ensure_user_slot(
 
     Args:
         root: 一条龙安装目录。
-        user_config: 用户配置对象（绑定号读写在 ``Info.SlotIdx``）。
+        user_config: 账号配置对象（绑定号读写在 ``Info.SlotIdx``）。
         used_idxs: 本次批量已分配的槽号集合，就地更新。
-        script_id: 所属脚本 ID，仅用于搬迁该脚本的 MAS 备份池；缺省跳过。
-        owner_uid: 用户 uid，写进台账作为该槽的归属；缺省则归属未知。
+        script_id: 所属托管 ID，仅用于搬迁该脚本的 MAS 备份池；缺省跳过。
+        owner_uid: 账号 uid，写进台账作为该槽的归属；缺省则归属未知。
     """
 
     bound = int(user_config.Info.SlotIdx or -1)
@@ -311,7 +311,7 @@ async def ensure_user_slot(
             archive_taken_slot(
                 root,
                 bound,
-                reason=f"槽号已被原生实例占用，用户「{user_name}」改绑高位段",
+                reason=f"槽号已被原生实例占用，账号「{user_name}」改绑高位段",
             )
             if script_id:
                 _follow_mas_backups(script_id, bound, slot)
@@ -329,11 +329,11 @@ def collect_used_slot_idxs(
     *,
     scripts: ConfigCollection[ConfigEntry],
 ) -> set[int]:
-    """收集指向同一份安装的 ZzzOd 脚本用户已绑定的实例槽 idx（分配查重用）。
+    """收集指向同一份安装的 ZzzOd 脚本账号已绑定的实例槽 idx（分配查重用）。
 
     槽目录挂在某一份安装的 ``config/`` 下，占用判定必须按安装分桶：指向别的
-    安装的脚本用户不该挤占本安装的号（旧口径跨全部 ZzzOd 脚本一起去重，
-    多脚本各指一份安装时会把号白白占掉，新用户只能被挤到更大的 idx）。
+    安装的脚本账号不该挤占本安装的号（旧口径跨全部 ZzzOd 脚本一起去重，
+    多脚本各指一份安装时会把号白白占掉，新账号只能被挤到更大的 idx）。
     ``root`` 用 :func:`_utils_config_archive.config_root_key` 归一比对。本次要注入/会话的用户经
     ``exclude_uids`` 排除——它们通过自身 SlotIdx 重认领绑定。
     """
@@ -362,8 +362,8 @@ def collect_slot_owners(
     """按安装根分桶收集槽的 MAS 归属（idx → 归属列表）。
 
     与 :func:`collect_used_slot_idxs` 同口径（只算指向同一份安装的脚本），
-    但带出脚本/用户名与配置来源，供实例槽总览展示「这个号被谁占着」。
-    **绑定但盘上无目录的槽也要能列出来**——那正是「槽目录数与用户数对不上」
+    但带出托管名称、账号名称与配置来源，供实例槽总览展示「这个号被谁占着」。
+    **绑定但盘上无目录的槽也要能列出来**——那正是「槽目录数与账号数对不上」
     时最需要看到的一行（没跑过的用户只有绑定号、没有目录）。
     """
 
@@ -398,9 +398,9 @@ def running_zzzod_scripts(
     *,
     scripts: ConfigCollection[ConfigEntry],
 ) -> list[str]:
-    """指向同一份安装、且正在运行/开会话的 ZzzOd 脚本名（``exclude_script_id`` 排除自己）。
+    """指向同一份安装、且正在运行/开会话的 ZzzOd 托管名（``exclude_script_id`` 排除自己）。
 
-    槽目录跨脚本共享同一份安装，而运行/会话期用的是**独立用户配置副本**
+    槽目录跨脚本共享同一份安装，而运行/会话期用的是**独立账号配置副本**
     （manager ``prepare`` 提取、``final_task`` 才回写），在跑脚本的在用槽在
     持久配置里查不到绑定——别的脚本此时回收孤儿槽会把它们当残留收走，拆掉
     正在跑的现场。自动回收据此跳过本轮（见 :func:`recycle_unbound_slots`）。
@@ -429,7 +429,7 @@ def recycle_unbound_slots(
 ) -> list[int]:
     """回收盘上无人绑定的实例槽（运行/会话前自动回收与手动清理共用）。
 
-    绑定集合取全部 ZzzOd 用户（**不排除**本次要注入/会话的用户）：排除会把
+    绑定集合取全部 ZzzOd 账号（**不排除**本次要注入/会话的用户）：排除会把
     它们正在用的槽当孤儿回收，槽里的配队等随即丢失。在 ``ensure_user_slot``
     之前调用时，腾出的号本轮即可复用。原生态不自动调用——原生态是纯原生裸跑，
     MAS 不往安装目录里删东西；手动清理是用户显式发起的动作，不受此限。
@@ -443,7 +443,7 @@ def recycle_unbound_slots(
             不明的残留一起收。
         swallow: 默认失败只告警，不阻断运行/会话；手动清理传 ``False``，
             让注册表缺失/损坏等原因抛到界面。
-        exclude_script_id: 调用方自己的脚本 ID——自动路径的调用方本身处于
+        exclude_script_id: 调用方自己的托管 ID——自动路径的调用方本身处于
             锁定态，判定同安装在跑脚本时必须排除自己。
 
     Returns:

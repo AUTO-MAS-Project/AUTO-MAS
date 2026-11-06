@@ -180,7 +180,7 @@ export class GetService {
         });
     }
     /**
-     * 获取脚本下拉框信息
+     * 获取托管下拉框信息
      * @returns ComboBoxOut Successful Response
      * @throws ApiError
      */
@@ -425,7 +425,7 @@ export class GetService {
         });
     }
     /**
-     * 查询脚本配置信息
+     * 查询托管配置信息
      * @param requestBody
      * @returns ScriptGetOut Successful Response
      * @throws ApiError
@@ -444,7 +444,7 @@ export class GetService {
         });
     }
     /**
-     * 查询用户
+     * 查询账号
      * @param requestBody
      * @returns UserGetOut Successful Response
      * @throws ApiError
@@ -463,7 +463,7 @@ export class GetService {
         });
     }
     /**
-     * 获取用户配置目录
+     * 获取账号配置目录
      * @param requestBody
      * @returns UserConfigDirOut Successful Response
      * @throws ApiError
@@ -501,7 +501,7 @@ export class GetService {
         });
     }
     /**
-     * 分享前检查脚本配置中的隐私风险
+     * 分享前检查托管配置中的隐私风险
      * @param requestBody
      * @returns ShareInspectOut Successful Response
      * @throws ApiError
@@ -680,7 +680,7 @@ export class GetService {
         });
     }
     /**
-     * MAA 仓库库存（当前用户档案；label=数量字符串，value=物品ID）
+     * MAA 仓库库存（当前账号档案；label=数量字符串，value=物品ID）
      * @param requestBody
      * @returns MaaDepotInventoryOut Successful Response
      * @throws ApiError

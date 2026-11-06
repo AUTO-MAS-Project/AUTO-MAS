@@ -11,7 +11,12 @@ import { analyticsService } from './analyticsService'
 import { BackendService } from './backendService'
 import { getFluxdownInstallEnvironment } from './fluxdownInstallService'
 import { InitializationService } from './initializationService'
-import { RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'
+import { createRuntimeClient, RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'
+import {
+  captureScheduledWakeupContext,
+  prepareSystemResumeRecovery,
+  scheduledWakeupBackendReady,
+} from './scheduledWakeup'
 
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
 vi.mock('https', () => ({
@@ -64,17 +69,11 @@ vi.mock('./sentry', () => ({
   recordMainCount: vi.fn(),
   recordMainDuration: vi.fn(),
 }))
-vi.mock('./instanceConfig', async importOriginal => ({
-  ...(await importOriginal<typeof import('./instanceConfig')>()),
-  resolveHttpPort: vi.fn(() => 36164),
-}))
-
 const { killAllRelatedProcesses } = await import('../utils/processManager')
-const { resolveHttpPort, getRendererEnvironmentArguments } = await import('./instanceConfig')
+const { getRendererEnvironmentArguments } = await import('./instanceConfig')
 
 const spawnMock = vi.mocked(spawn)
 const killAllMock = vi.mocked(killAllRelatedProcesses)
-const resolveHttpPortMock = vi.mocked(resolveHttpPort)
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), 'runtime', '__fixtures__')
 
@@ -244,7 +243,7 @@ beforeEach(() => {
   runtimeRoot = join(dirname(appRoot), `${basename(appRoot)}-runtime`)
   spawnMock.mockReset()
   killAllMock.mockClear()
-  resolveHttpPortMock.mockClear()
+  vi.stubEnv('AUTO_MAS_HTTP_PORT', undefined)
   fetchMock.mockReset()
   // 各用例显式构造宿主环境，验证应用环境不会被继承值覆盖。
   delete process.env.AUTO_MAS_ENV
@@ -262,6 +261,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.unstubAllEnvs()
   vi.unstubAllGlobals()
   process.argv = process.argv.filter(arg => arg !== '--connect-existing-backend')
   delete process.env[RUNTIME_MODE_ENV]
@@ -272,13 +272,28 @@ afterEach(() => {
 
 // ==================== Runtime 监督链路 ====================
 
+it('metadata-only Runtime clients do not retain a healthy resume source', async () => {
+  vi.useFakeTimers()
+  try {
+    prepareSystemResumeRecovery()
+    createRuntimeClient({ runtimePath: EXISTING_EXE, appRoot })
+    // 更新检查与 doctor 也创建客户端，但不启动后端，不应锁存来源。
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000)
+    expect(captureScheduledWakeupContext().resumedAt).toBeUndefined()
+  } finally {
+    scheduledWakeupBackendReady()
+    vi.useRealTimers()
+  }
+})
+
 describe('development 模式', () => {
   beforeEach(() => {
     process.env[RUNTIME_MODE_ENV] = 'development'
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
   })
 
-  it('就绪事件到达后 resolve，端点取自 Runtime 下发的 baseUrl', async () => {
+  it.each([false, true])('应用环境决定端口，端点采纳就绪事件：%s', async isPackaged => {
+    appState.isPackaged = isPackaged
     const service = createService()
     mockSpawn()
 
@@ -317,6 +332,8 @@ describe('development 模式', () => {
       'development',
       '--repo',
       appRoot,
+      '--port',
+      isPackaged ? '36163' : '36164',
       '--shutdown-timeout',
       '30',
     ])
@@ -329,13 +346,11 @@ describe('development 模式', () => {
     expect(service.getStatus()).toMatchObject({ isRunning: true, pid: 4242 })
     expect(service.getStatus().runtimeSupervised).toBe(true)
 
-    // 端口与身份归 Runtime 注入，Electron 不再注入这两个变量；开发标记则两次 spawn 都带上，
-    // 让受监督的开发版后端仍按开发环境关闭遥测上报。
-    expect(resolveHttpPortMock).not.toHaveBeenCalled()
+    // 端口与身份由 Runtime 注入，应用环境随两次 spawn 传入，保持开发态遥测隔离。
     for (const index of [0, 1]) {
       expect(spawnedEnv(index).AUTO_MAS_HTTP_PORT).toBeUndefined()
       expect(spawnedEnv(index).AUTO_MAS_DEV).toBeUndefined()
-      expect(spawnedEnv(index).AUTO_MAS_ENV).toBe('development')
+      expect(spawnedEnv(index).AUTO_MAS_ENV).toBe(isPackaged ? 'production' : 'development')
       expect(spawnedEnv(index).AUTO_MAS_INSTALL_TOKEN).toBe(
         getFluxdownInstallEnvironment().AUTO_MAS_INSTALL_TOKEN
       )
@@ -345,28 +360,38 @@ describe('development 模式', () => {
     child.close(0)
   })
 
-  it('源码的自定义端口通过 Runtime 参数传递，端点仍采纳就绪事件', async () => {
-    vi.stubEnv('AUTO_MAS_HTTP_PORT', '36184')
-    resolveHttpPortMock.mockReturnValueOnce(36184)
-    try {
-      mockSpawn()
-      const service = createService()
-      const pending = service.startBackend()
-      const child = await passEnvironmentEnsure()
-      child.stdout.feed(helloLine + runningStateLine)
-      expect(await pending).toEqual({ success: true })
-      expect(spawnedArgs(1).slice(-4)).toEqual(['--port', '36184', '--shutdown-timeout', '30'])
-      expect(service.getRuntimeApiEndpoints()?.local).toBe('http://127.0.0.1:36163')
-      child.stdout.feed(stoppedResultLine)
-      child.close(0)
-    } finally {
-      vi.unstubAllEnvs()
+  it.each(['development', 'managed'] as const)(
+    '自定义端口透传，端点采纳就绪事件：%s',
+    async mode => {
+      appState.isPackaged = true
+      process.env[RUNTIME_MODE_ENV] = mode
+      vi.stubEnv('AUTO_MAS_HTTP_PORT', '36184')
+      try {
+        mockSpawn()
+        const service = createService()
+        const pending = service.startBackend()
+        const child = await (mode === 'managed'
+          ? passManagedPreparation()
+          : passEnvironmentEnsure())
+        child.stdout.feed(helloLine + runningStateLine)
+        expect(await pending).toEqual({ success: true })
+        expect(spawnedArgs(mode === 'managed' ? 2 : 1).slice(-4)).toEqual([
+          '--port',
+          '36184',
+          '--shutdown-timeout',
+          '30',
+        ])
+        expect(service.getRuntimeApiEndpoints()?.local).toBe('http://127.0.0.1:36163')
+        child.stdout.feed(stoppedResultLine)
+        child.close(0)
+      } finally {
+        vi.unstubAllEnvs()
+      }
     }
-  })
+  )
 
   it.each([1, 80, 1023])('Runtime 开发启动在准备前明确拒绝低端口 %s', async port => {
     vi.stubEnv('AUTO_MAS_HTTP_PORT', String(port))
-    resolveHttpPortMock.mockReturnValueOnce(port)
     try {
       mockSpawn()
       const result = await createService().startBackend()
@@ -853,8 +878,8 @@ describe('managed 模式', () => {
     expect(spawnMock).toHaveBeenCalledTimes(1)
   })
 
-  it('不传 --repo、不先跑 environment ensure，--app-root 就是用户数据根', async () => {
-    appState.isPackaged = true
+  it.each([false, true])('应用环境决定端口，受管目录不变：%s', async isPackaged => {
+    appState.isPackaged = isPackaged
     process.env.AUTO_MAS_ENV = 'development'
     process.env[RUNTIME_MODE_ENV] = 'managed'
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
@@ -872,16 +897,18 @@ describe('managed 模式', () => {
     expect(spawnMock).toHaveBeenCalledTimes(3)
     // managed 模式 --app-root 就是用户数据根（与 dataRoot 相同），不是仓外的 runtime 目录。
     expect(spawnedArgs(2).slice(0, 2)).toEqual(['--app-root', appRoot])
-    expect(spawnedArgs(2).slice(-6)).toEqual([
+    expect(spawnedArgs(2).slice(-8)).toEqual([
       'backend',
       'supervise',
       '--mode',
       'managed',
+      '--port',
+      isPackaged ? '36163' : '36164',
       '--shutdown-timeout',
       '30',
     ])
     expect(spawnedArgs(2)).not.toContain('--repo')
-    expect(spawnedEnv(2).AUTO_MAS_ENV).toBe('production')
+    expect(spawnedEnv(2).AUTO_MAS_ENV).toBe(isPackaged ? 'production' : 'development')
     expect(spawnedEnv(2).AUTO_MAS_INSTALL_TOKEN).toBe(
       getFluxdownInstallEnvironment().AUTO_MAS_INSTALL_TOKEN
     )

@@ -1,5 +1,6 @@
 import { beginMainFeature } from './featureAnalytics'
 import { getFluxdownInstallEnvironment } from './fluxdownInstallService'
+import { captureScheduledWakeupContext, scheduledWakeupBackendReady } from './scheduledWakeup'
 /**
  * 后端服务管理
  * 重构版本 - 只负责后端进程的启动、停止和管理
@@ -273,15 +274,12 @@ export class BackendService {
       }
     }
 
-    const developmentPort =
-      config.mode === 'development' && process.env.AUTO_MAS_HTTP_PORT
-        ? resolveHttpPort()
-        : undefined
-    if (developmentPort !== undefined && developmentPort < 1024) {
+    const port = resolveHttpPort()
+    if (port < 1024) {
       return {
         success: false,
         error:
-          'Runtime 开发模式要求 AUTO_MAS_HTTP_PORT 为 1024–65535；' +
+          'Runtime 要求 AUTO_MAS_HTTP_PORT 为 1024–65535；' +
           '请改用此范围内的端口，低端口调试请独立运行后端与 yarn web。',
         code: 'INVALID_ARGUMENT',
         retryable: true,
@@ -296,11 +294,17 @@ export class BackendService {
 
     // 遥测开关（AUTO_MAS_TELEMETRY）与应用环境（AUTO_MAS_ENV）由 createRuntimeClient 统一注入，
     // 见 runtimeEnv.ts；配置从用户数据根 dataRoot 读，development 模式下它不是 --app-root。
+    const wakeup = captureScheduledWakeupContext()
     const client = createRuntimeClient({
       runtimePath,
       appRoot: config.appRoot,
       dataRoot: config.dataRoot,
-      env: getFluxdownInstallEnvironment(),
+      env: {
+        ...getFluxdownInstallEnvironment(),
+        AUTO_MAS_SCHEDULED_WAKEUP: wakeup.scheduledWakeup ? '1' : undefined,
+        // resume 先于第二实例事件，是否有待运行定时由后端配置判定。
+        AUTO_MAS_SYSTEM_RESUME: wakeup.resumedAt,
+      },
     })
 
     if (config.mode === 'development') {
@@ -365,8 +369,8 @@ export class BackendService {
       handle = await client.supervise({
         mode: config.mode,
         repo: config.repo,
-        // 保留源码开发的自定义端口；最终端点仍只采纳 Runtime 的 running 事件。
-        port: developmentPort,
+        // 端口按应用环境隔离，不随 Runtime 托管模式改变；端点仍采纳 running 事件。
+        port,
         shutdownTimeoutSeconds: BACKEND_SHUTDOWN_SECONDS,
         onLog: event => {
           const lines = event.stream === 'stderr' ? stderrLines : stdoutLines
@@ -384,6 +388,7 @@ export class BackendService {
           logger.info(
             `[启动计时] 桌面/Runtime 报告后端就绪，阶段 ${(performance.now() - superviseStartedAt).toFixed(1)} ms`
           )
+          scheduledWakeupBackendReady()
           resolveReady(baseUrl)
         },
       })

@@ -5,6 +5,7 @@ import { beginAnalyticsOperation } from './analytics'
 type Setting = AnalyticsEventProps['settings_change_finished']
 const entries = [
   ['Start', 'IfSelfStart', 'startup', 'auto_start'],
+  ['Start', 'IfScheduledWakeUp', 'scheduler', 'scheduled_wakeup'],
   ['Start', 'IfMinimizeDirectly', 'startup', 'start_minimized'],
   ['UI', 'IfShowTray', 'close', 'show_tray'],
   ['UI', 'IfToTray', 'close', 'close_to_tray'],

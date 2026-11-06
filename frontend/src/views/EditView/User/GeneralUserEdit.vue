@@ -110,7 +110,7 @@
                 :options="generalConfigModeOptions"
                 :disabled="loading"
                 :saving="configModeSaving"
-                :alert-message="t('core.edit.configSourceHintBase')"
+                :alert-message="t('core.edit.generalConfigSourceHint')"
                 @change="handleConfigModeChange"
               />
             </a-col>

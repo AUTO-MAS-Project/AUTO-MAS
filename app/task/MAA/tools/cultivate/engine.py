@@ -581,7 +581,7 @@ def build_plan(
         for entry in recommend_stages(net, data, today, blacklist)
     )
 
-    # 排序不变量：精英化条目最前（专精/模组的前置）→ 按用户添加目标顺序
+    # 排序不变量：精英化条目最前（专精/模组的前置）→ 按账号添加目标顺序
     # → 折算原料条目紧随其目标材料（按最早来源目标排序即自然满足）
     sort_keys: dict[tuple[str, int], tuple[int, int, int]] = {
         (target.operator_id, goal_index): (

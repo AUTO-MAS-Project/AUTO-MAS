@@ -2,10 +2,16 @@
 import { useI18n } from 'vue-i18n'
 import { FolderOpenOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ApiError, GetService } from '@/api'
 import type { GlobalConfig, FluxdownReleaseOut } from '@/api'
 import { useFluxdownInstallApi } from '@/composables/useFluxdownInstallApi'
+import { subscribe, unsubscribe } from '@/composables/useWebSocket'
+import {
+  WS_FLUXDOWN_INSTALL_PROGRESS,
+  WS_ID_UPDATE,
+  type WSFluxdownInstallProgressData,
+} from '@/services/websocket/types'
 import SettingRow from '@/components/ui/SettingRow.vue'
 import DownloadHistorySettings from './components/DownloadHistorySettings.vue'
 import { handleExternalLink } from '@/utils/openExternal'
@@ -22,7 +28,7 @@ const props = defineProps<{
   handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<boolean>
 }>()
 
-// FluxDown 路径：文件夹选择 + 全盘自动检测（CLI 便携版优先，无 CLI 只有全量版时警告）
+// FluxDown 路径：只自动选中 CLI + Agent/Daemon 均在同一目录的安装。
 const fluxdownDetecting = ref(false)
 const fluxdownOnlyFull = ref(false)
 
@@ -53,7 +59,16 @@ const handleFluxdownDetect = async () => {
       }
     } else {
       fluxdownOnlyFull.value = false
-      message.warning(t('core.setting.others.fluxdownDetectNotFound'))
+      const incomplete = result.candidates?.find(candidate => !candidate.complete)
+      if (!incomplete) {
+        message.warning(t('core.setting.others.fluxdownDetectNotFound'))
+      } else if (incomplete.has_server && !incomplete.has_cli) {
+        message.warning(t('core.setting.others.fluxdownInstallMissingCli'))
+      } else if (incomplete.has_cli && !incomplete.has_server) {
+        message.warning(t('core.setting.others.fluxdownInstallMissingServer'))
+      } else {
+        message.warning(t('core.setting.others.fluxdownInstallMissing'))
+      }
     }
   } catch (error) {
     const errorMsg =
@@ -85,7 +100,18 @@ const loadFluxdownRelease = async () => {
     logger.warn(`获取 FluxDown Release 信息失败: ${String(error)}`)
   }
 }
-onMounted(loadFluxdownRelease)
+onMounted(() => {
+  void loadFluxdownRelease()
+  progressSubscription = subscribe(
+    { id: WS_ID_UPDATE, type: WS_FLUXDOWN_INSTALL_PROGRESS },
+    ({ data }) => {
+      if (installing.value) installProgress.value = data
+    }
+  )
+})
+onBeforeUnmount(() => {
+  if (progressSubscription) unsubscribe(progressSubscription)
+})
 
 // 镜像只作用于本次下载，不落配置；下载失败时用户可直接换一个再试
 const installMirror = ref('auto')
@@ -103,6 +129,39 @@ const downloaderOptions = computed(() => [
 ])
 
 const installing = ref(false)
+const installProgress = ref<WSFluxdownInstallProgressData | null>(null)
+let progressSubscription: string | null = null
+
+const formatBytes = (size: number) =>
+  size >= 1024 * 1024 ? `${(size / (1024 * 1024)).toFixed(1)} MB` : `${(size / 1024).toFixed(1)} KB`
+
+const progressPercent = computed(() => {
+  const progress = installProgress.value
+  return progress?.total
+    ? Math.min(100, Math.round((progress.downloaded / progress.total) * 100))
+    : 0
+})
+
+const progressDescription = computed(() => {
+  switch (installProgress.value?.stage) {
+    case 'check':
+      return t('core.setting.others.fluxdownInstallChecking')
+    case 'download':
+      return t('core.setting.others.fluxdownInstallDownloading')
+    case 'verify':
+      return t('core.setting.others.fluxdownInstallVerifying')
+    case 'extract':
+      return t('core.setting.others.fluxdownInstallExtracting')
+    case 'install':
+      return t('core.setting.others.fluxdownInstallApplying')
+    case 'save':
+      return t('core.setting.others.fluxdownInstallSaving')
+    case 'failed':
+      return t('core.setting.others.fluxdownInstallFailed')
+    default:
+      return ''
+  }
+})
 const installState = ref<{
   type: 'secondary' | 'success' | 'warning'
   text: string
@@ -110,6 +169,7 @@ const installState = ref<{
 
 const handleMasInstall = async () => {
   installing.value = true
+  installProgress.value = null
   installState.value = {
     type: 'secondary',
     text: t('core.setting.others.fluxdownInstallDownloading'),
@@ -118,6 +178,15 @@ const handleMasInstall = async () => {
     const result = await installFluxdown(installMirror.value)
     if (!isDetectSuccess(result) || !result.path) {
       throw new Error(result.message || t('core.setting.others.fluxdownInstallFailed'))
+    }
+    // 下载与安装成功不等于可用：自动走与「自动检测」按钮相同的后端入口。
+    const detection = await GetService.detectFluxdownApiUpdateFluxdownDetectGet()
+    if (
+      !isDetectSuccess(detection) ||
+      !detection.path ||
+      detection.path.toLowerCase() !== result.path.toLowerCase()
+    ) {
+      throw new Error(t('core.setting.others.fluxdownInstallVerifyFailed'))
     }
     emit('installed')
     fluxdownOnlyFull.value = false
@@ -142,6 +211,7 @@ const handleMasInstall = async () => {
     }
   } finally {
     installing.value = false
+    installProgress.value = null
   }
 }
 </script>
@@ -221,6 +291,30 @@ const handleMasInstall = async () => {
           <a-typography-text v-if="installState.text" :type="installState.type">
             {{ installState.text }}
           </a-typography-text>
+        </div>
+        <div v-if="installing && installProgress" class="fluxdown-progress" role="status">
+          <div class="fluxdown-progress-info">
+            {{ progressDescription }}
+            <span v-if="installProgress.name">{{ installProgress.name }}</span>
+          </div>
+          <template v-if="installProgress.stage === 'download'">
+            <a-progress
+              v-if="installProgress.total > 0"
+              :percent="progressPercent"
+              size="small"
+              :stroke-width="6"
+              :show-info="true"
+            />
+            <div class="fluxdown-progress-info">
+              {{ formatBytes(installProgress.downloaded) }}
+              <template v-if="installProgress.total > 0">
+                / {{ formatBytes(installProgress.total) }}
+              </template>
+              <template v-if="installProgress.speed > 0">
+                · {{ formatBytes(installProgress.speed) }}/s
+              </template>
+            </div>
+          </template>
         </div>
       </div>
     </div>
@@ -327,6 +421,19 @@ const handleMasInstall = async () => {
 
 .fluxdown-install-links a:hover {
   color: var(--ant-color-primary-hover);
+}
+
+.fluxdown-progress {
+  margin-top: 8px;
+  width: 100%;
+  max-width: 400px;
+  text-align: left;
+}
+
+.fluxdown-progress-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .fluxdown-install-actions {

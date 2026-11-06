@@ -48,8 +48,8 @@ export class BetterGiService {
      * 获取 BetterGI 一条龙自定义配置组
      * 返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。
      *
-     * ``useMasConfig=True``（用户独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
-     * 槽位名，副本缺失按内置模板），返回该用户将写入槽位的自定义组；``userId`` 必填。
+     * ``useMasConfig=True``（独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
+     * 槽位名，副本缺失按内置模板），返回该账号将写入槽位的自定义组；``userId`` 必填。
      * 否则（非独立模式用 BGI 原生配置）读取 BGI ``{configName}`` 实配的自定义组。
      * @param scriptId
      * @param userId
@@ -151,13 +151,13 @@ export class BetterGiService {
     }
     /**
      * 获取 BetterGI 可用配置组列表
-     * 返回 BetterGI 配置组候选：BGI ``User/ScriptGroup*.json`` 文件名；带 userId 时并集该用户 per-user 副本名。
+     * 返回 BetterGI 配置组候选：BGI ``User/ScriptGroup*.json`` 文件名；带 userId 时并集该账号 per-user 副本名。
      *
      * BetterGI 的「配置组」（GUI 中可加入一条龙的自定义任务组）以独立 json 保存于
      * ``User/ScriptGroup``，文件名（不含 ``.json``）即组名，与一条龙 TaskDefinitions
      * 的引用名一致。每次调用实时扫描，供「添加配置组」弹窗「配置组」标签页展示。
      *
-     * ``userId`` 非空时把该用户的 per-user ScriptGroup 副本名一并并入（副本是 MAS
+     * ``userId`` 非空时把该账号的 per-user ScriptGroup 副本名一并并入（副本是 MAS
      * 独立配置的权威内容源，复制自 JS/路径等来源的新组也只存在于副本目录，需要能被
      * 识别/展示为配置组）。
      * @param scriptId
@@ -183,7 +183,7 @@ export class BetterGiService {
     }
     /**
      * 获取 BetterGI 配置组 json 详情（per-user 副本优先）
-     * 返回某用户的配置组 json（per-user 副本 → BGI 实配的种子顺序）。
+     * 返回某账号的配置组 json（per-user 副本 → BGI 实配的种子顺序）。
      *
      * 右栏「配置组」标签页选中 scriptgroup 时，据此列出其 json 内 ``projects`` 的
      * 每个项目；也供 JS/路径等单项目组展示（项目名=组名）。
@@ -310,7 +310,7 @@ export class BetterGiService {
     }
     /**
      * 获取 BetterGI 一条龙设置项（右栏按任务分组展示）
-     * 返回某用户一条龙配置的设置项（per-user 副本 → BGI 实配 → 内置模板的种子顺序）。
+     * 返回某账号一条龙配置的设置项（per-user 副本 → BGI 实配 → 内置模板的种子顺序）。
      *
      * 供右栏按任务分组渲染并回显该任务在 BGI 一条龙里的可设置字段。
      * ``groupName`` 为右栏当前编辑的内置组名，战斗 4 项 Plan 回显按其查映射，
@@ -344,7 +344,7 @@ export class BetterGiService {
     }
     /**
      * 保存 BetterGI 一条龙设置项到 per-user 副本
-     * 把右栏编辑的设置项写回该用户一条龙配置副本（不触碰 BGI 同名实配）。
+     * 把右栏编辑的设置项写回该账号一条龙配置副本（不触碰 BGI 同名实配）。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -405,8 +405,8 @@ export class BetterGiService {
      * 获取 BetterGI 全局 config.json 的秘境刷取配置段
      * 返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
      *
-     * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-     * 使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（原生来源模式）读
+     * ``userId`` 非空时以该账号 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
+     * 使独立配置下每个账号的秘境刷取设置互不影响；``userId`` 为空（原生来源模式）读
      * BGI 全局 config.json（autoDomainConfig/autoArtifactSalvageConfig，camelCase）。
      * @param scriptId
      * @param userId
@@ -456,8 +456,8 @@ export class BetterGiService {
      * 获取 BetterGI 全局 config.json 的自动幽境危战设置段
      * 返回自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
      *
-     * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-     * 使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（原生来源模式）读
+     * ``userId`` 非空时以该账号 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
+     * 使独立配置下每个账号的幽境设置互不影响；``userId`` 为空（原生来源模式）读
      * BGI 全局 config.json（autoStygianOnslaughtConfig 段，camelCase）。
      * @param scriptId
      * @param userId
@@ -531,7 +531,7 @@ export class BetterGiService {
     /**
      * 保存 BetterGI 配置组 json 到 per-user 副本
      * 把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
-     * 该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
+     * 该账号的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
      *
      * 「路径」类引用（名字含 ``/``）不能作文件名，落盘到 ``per_user_copy_name`` 的确定性别名
      * （右栏把路径项加成多项目配置组后需要载体）。不触碰 BetterGI 全局
@@ -554,11 +554,11 @@ export class BetterGiService {
         });
     }
     /**
-     * 获取游戏客户端信息（路径 + 渠道，用户页透传展示）
+     * 获取游戏客户端信息（路径 + 渠道，账号页透传展示）
      * 读取 BetterGI 配置的游戏路径并识别客户端渠道（官服/B服/国际服）。
      *
      * ``detectPath`` 非空时对该路径做渠道识别（用户自填路径的即时标注），
-     * 为空时返回生效路径（用户级优先，否则 BGI 全局配置）及其渠道。
+     * 为空时返回生效路径（账号级优先，否则 BGI 全局配置）及其渠道。
      * @param scriptId
      * @param detectPath
      * @returns BetterGIGameInfoOut Successful Response

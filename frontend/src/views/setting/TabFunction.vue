@@ -302,8 +302,13 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
 
     <!-- 个人版编排的「并非神秘入口」已移入神秘入口，这里只留群友的「神秘入口」一个入口 -->
     <div class="flavor-entries">
-      <a-button type="text" size="small" @click="navigateTo('/settings/mystery')">
-        {{ t('core.mystery.entry') }}
+      <a-button
+        type="text"
+        size="small"
+        class="mystery-entry"
+        @click="navigateTo('/settings/mystery')"
+      >
+        <span class="mystery-entry-label">{{ t('core.mystery.entry') }}</span>
       </a-button>
     </div>
   </div>
@@ -415,5 +420,55 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
 .flavor-entries :deep(.ant-btn) {
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
+}
+
+.mystery-entry {
+  opacity: 0;
+}
+
+.mystery-entry:hover,
+.mystery-entry:focus {
+  opacity: 1;
+}
+
+.mystery-entry-label {
+  background-image: linear-gradient(
+    90deg,
+    var(--ant-color-primary),
+    var(--ant-color-error),
+    var(--ant-color-warning),
+    var(--ant-color-success),
+    var(--ant-color-primary)
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: mystery-entry-flow 3s linear infinite paused;
+}
+
+.mystery-entry:hover .mystery-entry-label,
+.mystery-entry:focus .mystery-entry-label {
+  animation-play-state: running;
+}
+
+@keyframes mystery-entry-flow {
+  to {
+    background-position: 200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mystery-entry-label {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .mystery-entry-label {
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    animation: none;
+  }
 }
 </style>

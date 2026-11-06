@@ -14,7 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
-"""脚本管理：MaaFW 路由与端点专用模型。"""
+"""托管管理：MaaFW 路由与端点专用模型。"""
 
 from typing import (
     Any,
@@ -57,7 +57,7 @@ class MaaFWInterfacePreviewIn(BaseModel):
     path: str = Field(default="", description="MaaFW 项目根目录，应包含 interface.json")
     scriptId: Optional[str] = Field(
         default=None,
-        description="给了脚本 ID 就按脚本解析有效根（内嵌副本优先），忽略 path",
+        description="给了托管 ID 就按托管解析有效根（内嵌副本优先），忽略 path",
     )
 
 
@@ -66,7 +66,7 @@ class MaaFWGamePackageIn(BaseModel):
     resource: str = Field(..., description="要按哪个 resource 的 pipeline 推断包名")
     scriptId: Optional[str] = Field(
         default=None,
-        description="MaaFW 脚本 ID；给出时按脚本解析有效根（内嵌脚本读副本），path 只兜底",
+        description="MaaFW 托管 ID；给出时按托管解析有效根（托管项目读取副本），path 只兜底",
     )
 
 
@@ -83,11 +83,11 @@ class MaaFWInterfacePreviewOut(OutBase):
 
 
 class MaaFWEmbeddedIn(BaseModel):
-    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    scriptId: str = Field(..., min_length=1, description="MFW 托管 ID")
 
 
 class MaaFWEmbeddedReimportIn(BaseModel):
-    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    scriptId: str = Field(..., min_length=1, description="MFW 托管 ID")
     sourcePath: str = Field(
         ..., min_length=1, description="新的来源目录，会写入 Info.Path"
     )
@@ -95,7 +95,7 @@ class MaaFWEmbeddedReimportIn(BaseModel):
 
 class MaaFWEmbeddedCloneIn(BaseModel):
     scriptId: str = Field(
-        ..., min_length=1, description="要建副本的 MFW 脚本 ID（新脚本）"
+        ..., min_length=1, description="要建副本的 MFW 托管 ID（新托管）"
     )
     sourceScriptId: str = Field(
         ...,
@@ -107,7 +107,7 @@ class MaaFWEmbeddedCloneIn(BaseModel):
 class MaaFWEmbeddedSourcesIn(BaseModel):
     scriptId: Optional[str] = Field(
         default=None,
-        description="要排除的脚本 ID（给已有脚本列候选时传；新建脚本对话框里还没有脚本，不传）",
+        description="要排除的托管 ID（给已有托管列候选时传；新建托管对话框里还没有托管，不传）",
     )
 
 
@@ -124,7 +124,7 @@ class MaaFWEmbeddedStatusOut(OutBase):
 
 
 class MaaFWShellInstancesIn(BaseModel):
-    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    scriptId: str = Field(..., min_length=1, description="MFW 托管 ID")
     path: Optional[str] = Field(
         default=None,
         description="只扫这个目录（键位弹窗「选择其他目录」用，不写回脚本配置）；不传时先扫来源目录再扫内嵌副本",
@@ -138,15 +138,15 @@ class MaaFWShellInstancesOut(OutBase):
 
 
 class MaaFWShellInstanceImportIn(BaseModel):
-    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    scriptId: str = Field(..., min_length=1, description="MFW 托管 ID")
     instanceIds: List[str] = Field(
-        ..., min_length=1, description="要导入的实例 ID，每个建一个用户"
+        ..., min_length=1, description="要导入的实例 ID，每个建一个账号"
     )
 
 
 class MaaFWShellInstanceApplyIn(BaseModel):
-    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
-    userId: str = Field(..., min_length=1, description="要覆盖任务队列的用户 ID")
+    scriptId: str = Field(..., min_length=1, description="MFW 托管 ID")
+    userId: str = Field(..., min_length=1, description="要覆盖任务队列的账号 ID")
     instanceId: str = Field(..., min_length=1, description="从哪份外壳实例导入")
     path: Optional[str] = Field(
         default=None,
@@ -161,24 +161,24 @@ class MaaFWShellInstanceImportOut(OutBase):
 
 
 class MaaFWShellInstanceApplyData(BaseModel):
-    """覆盖到已有用户的结果：除了逐项成败与跳过项，还带实际写进用户配置的任务快照。
+    """覆盖到已有账号的结果：除了逐项成败与跳过项，还带实际写进账号配置的任务快照。
 
-    界面直接拿它刷新本地状态，不用再回头拉一次用户配置——那样会把用户还没保存的其它改动
-    一起冲掉。快照与 ``info`` 都是写入漏斗处理之后的样子（特调整理、密码加密），与读用户配置
+    界面直接拿它刷新本地状态，不用再回头拉一次账号配置——那样会把用户还没保存的其它改动
+    一起冲掉。快照与 ``info`` 都是写入漏斗处理之后的样子（特调整理、密码加密），与读账号配置
     拿到的一致。
     """
 
     result: Optional[MaaFWShellInstanceImportItem] = Field(
         default=None,
-        description="这次覆盖的结果；失败原因在 result.error 里，连结果是空的（找不到用户 / 实例）时为 null",
+        description="这次覆盖的结果；失败原因在 result.error 里，连结果是空的（找不到账号 / 实例）时为 null",
     )
     snapshot: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="实际写进用户配置的任务快照；失败时为空",
+        description="实际写进账号配置的任务快照；失败时为空",
     )
     info: Dict[str, Any] = Field(
         default_factory=dict,
-        description="写入时特调一并改掉的用户信息字段（如 M9A 把切换账号收进 Account）；没有为空",
+        description="写入时特调一并改掉的账号信息字段（如 M9A 把切换账号收进 Account）；没有为空",
     )
 
 
@@ -190,7 +190,7 @@ class MaaFWShellInstanceApplyOut(OutBase):
 
 
 class MaaFWProjectUpdateIn(BaseModel):
-    scriptId: str = Field(..., min_length=1, description="MaaFW 脚本 ID")
+    scriptId: str = Field(..., min_length=1, description="MaaFW 托管 ID")
     action: Literal["check", "apply"] = Field(
         default="check",
         description="check 仅检查是否有新版本；apply 触发实际更新",
@@ -207,7 +207,7 @@ class MaaFWProjectUpdateOut(OutBase):
 
 
 class MaaFWProjectUpdateJobIn(BaseModel):
-    scriptId: str = Field(..., min_length=1, description="MaaFW 脚本 ID")
+    scriptId: str = Field(..., min_length=1, description="MaaFW 托管 ID")
     wait: bool = Field(
         default=False,
         description="为真且正在更新时，等更新结束再返回；否则立即返回当前快照",
@@ -222,7 +222,7 @@ class MaaFWProjectUpdateJobOut(OutBase):
 
 
 class MaaFWMirrorCdkIn(BaseModel):
-    scriptId: str = Field(..., min_length=1, description="MaaFW 脚本 ID")
+    scriptId: str = Field(..., min_length=1, description="MaaFW 托管 ID")
     cdk: str = Field(
         default="",
         description="要查询的 Mirror 酱 CDK（编辑页输入框当前值，可能还没落盘）；只走请求体，不进日志",
@@ -239,7 +239,7 @@ class MaaFWAgentEnvPrepareIn(BaseModel):
     path: str = Field(default="", description="MFW 项目根目录，应包含 interface.json")
     scriptId: Optional[str] = Field(
         default=None,
-        description="脚本 ID；内嵌脚本按它解析副本目录，此时 path 可留空",
+        description="托管 ID；托管项目按它解析副本目录，此时 path 可留空",
     )
     force: bool = Field(
         default=False,
@@ -254,7 +254,7 @@ class MaaFWAgentEnvPrepareOut(OutBase):
 
 
 router = APIRouter()
-logger = get_logger("脚本管理 API")
+logger = get_logger("托管管理 API")
 
 
 @router.post(
@@ -281,7 +281,7 @@ async def get_maafw_embedded_status(
 async def reimport_maafw_embedded(
     payload: MaaFWEmbeddedReimportIn = Body(...),
 ) -> MaaFWEmbeddedStatusOut:
-    """脚本页选目录就是走这里：第一次是导入，之后是换来源或按当前来源重导。
+    """托管页选目录就是走这里：第一次是导入，之后是换来源或按当前来源重导。
 
     导入成功才把来源写进 Info.Path；失败时旧副本与旧来源都原样不动。
     """
@@ -302,7 +302,7 @@ async def reimport_maafw_embedded(
 async def sync_maafw_embedded(
     payload: MaaFWEmbeddedIn = Body(...),
 ) -> MaaFWEmbeddedStatusOut:
-    """脚本页「立即同步」：按当前来源目录强制重导进脚本的私有渠道，不看签名。
+    """托管页「立即同步」：按当前来源目录强制重导进脚本的私有渠道，不看签名。
 
     只在跟随来源目录（开发者模式或源码形态）时可用；脚本运行中、项目正在更新或被占用时拒绝。
     ``message`` 是给用户看的结果：变了哪些文件 / 内容未变化。
@@ -322,7 +322,7 @@ async def sync_maafw_embedded(
 async def list_maafw_embedded_sources(
     payload: MaaFWEmbeddedSourcesIn = Body(default_factory=MaaFWEmbeddedSourcesIn),
 ) -> MaaFWEmbeddedSourcesOut:
-    """新建脚本对话框里「复用已有脚本的项目」的候选：有健康副本的 MFW / M9A 脚本。
+    """新建托管对话框里「复用已有托管的项目」的候选：有健康副本的 MFW / M9A 托管。
 
     新建时脚本还没建出来，所以不要求 ``scriptId``；传了就把它自己排除掉。
     """
@@ -344,9 +344,9 @@ async def clone_maafw_embedded(
     """同一个项目要开第二、第三个脚本（不同模拟器并行跑）时走这里，不用再选目录
     重新投影，来源目录已经删了也能建。
 
-    副本从源脚本的副本硬链接克隆（运行时、模型与其它副本共用，只多小文件），
-    ``Info.Path`` 与 ``Embedded.*`` 沿用源脚本的记录；类型随项目（M9A 项目 → M9A）。
-    用户、任务队列与运行设置不带——那是「复制脚本」的事。
+    副本从源托管的副本硬链接克隆（运行时、模型与其它副本共用，只多小文件），
+    ``Info.Path`` 与 ``Embedded.*`` 沿用源托管的记录；类型随项目（M9A 项目 → M9A）。
+    用户、任务队列与运行设置不带——那是「复制托管」的事。
     """
     # docstring 会进 OpenAPI 生成物，保持原文；现行的载荷 + 视图口径见 clone_embedded。
 
@@ -366,7 +366,7 @@ async def clone_maafw_embedded(
 async def list_maafw_shell_instances(
     payload: MaaFWShellInstancesIn = Body(...),
 ) -> MaaFWShellInstancesOut:
-    """新建脚本引导最后一步用：外壳里配好的每份实例都可以导入成一个用户。只读外壳文件。"""
+    """新建托管引导最后一步用：外壳里配好的每份实例都可以导入成一个账号。只读外壳文件。"""
 
     reply = await maafw_shell_instances_api.list_shell_instances(
         payload.scriptId, payload.path
@@ -384,7 +384,7 @@ async def list_maafw_shell_instances(
 async def import_maafw_shell_instances(
     payload: MaaFWShellInstanceImportIn = Body(...),
 ) -> MaaFWShellInstanceImportOut:
-    """每个实例建一个用户：用户名取实例名，任务队列与任务选项一起导入。
+    """每个实例建一个账号：账号名称取实例名，任务队列与任务选项一起导入。
 
     逐个实例独立处理，失败原因与当前项目里对不上而跳过的任务 / 选项写在各项结果里。
     """
@@ -398,17 +398,17 @@ async def import_maafw_shell_instances(
 @router.post(
     "/maafw/shell-instances/apply",
     tags=["MaaFW"],
-    summary="把一份外壳配置的任务队列覆盖到已有用户",
+    summary="把一份外壳配置的任务队列覆盖到已有账号",
     response_model=MaaFWShellInstanceApplyOut,
     status_code=200,
 )
 async def apply_maafw_shell_instance(
     payload: MaaFWShellInstanceApplyIn = Body(...),
 ) -> MaaFWShellInstanceApplyOut:
-    """脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个用户。
+    """脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个账号。
 
     与「导入成用户」共用同一套换算，所以当前项目里对不上的任务 / 选项同样会被跳过并列在结果里。
-    覆盖的是任务队列与任务选项，用户名不动。
+    覆盖的是任务队列与任务选项，账号名称不动。
     """
 
     reply = await maafw_shell_instances_api.apply_shell_instance_to_user(
@@ -427,9 +427,9 @@ async def apply_maafw_shell_instance(
 async def resolve_maafw_game_package(
     payload: MaaFWGamePackageIn = Body(...),
 ) -> MaaFWGamePackageOut:
-    """脚本编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
+    """托管编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
 
-    只看 resource 的 pipeline，不带用户任务的 pipeline_override（编辑脚本时还没有
+    只看 resource 的 pipeline，不带账号任务的 pipeline_override（编辑脚本时还没有
     运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
     """
 
@@ -513,7 +513,7 @@ async def get_maafw_project_update_job(
 async def query_maafw_mirror_cdk(
     payload: MaaFWMirrorCdkIn = Body(...),
 ) -> MaaFWMirrorCdkOut:
-    """脚本编辑页 CDK 输入框下那行小字：CDK 还剩多久到期，或者为什么不能用。
+    """托管编辑页 CDK 输入框下那行小字：CDK 还剩多久到期，或者为什么不能用。
 
     带着 CDK 按「当前版本 = 最新版本」查一次 Mirror 酱，服务端只校验 CDK、不签发下载地址，
     不占当日下载额度。CDK 只放在请求体里。项目不支持或查询失败也按成功返回对应状态。
@@ -585,9 +585,9 @@ async def get_maafw_asset(
     response_class=FileResponse,
 )
 async def get_maafw_script_icon(
-    scriptId: str = Query(..., description="MFW 脚本 ID"),
+    scriptId: str = Query(..., description="MFW 托管 ID"),
 ) -> FileResponse:
-    """脚本列表的头像：项目 interface 顶层 ``icon`` 指的图片。
+    """托管列表的头像：项目 interface 顶层 ``icon`` 指的图片。
 
     取不到（项目还没导入、没写 icon、文件不在）一律 404，前端回退到类型图标；
     具体原因只写日志，不放进响应。

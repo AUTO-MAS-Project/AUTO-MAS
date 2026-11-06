@@ -80,7 +80,7 @@ def _now() -> datetime:
 
 
 # 当前上下文属于哪一次后台手动更新：只在 _run_apply 里设。同一脚本应用期间别的客户端发起的
-# 「检查更新」也推同一种进度事件，不能按脚本 ID 认领，否则检查的终态被存进应用的过程、重放时
+# 「检查更新」也推同一种进度事件，不能按托管 ID 认领，否则检查的终态被存进应用的过程、重放时
 # 让后面应用的进度全被忽略。
 _current_job: ContextVar[_ManualUpdateJob | None] = ContextVar(
     "maafw_manual_update_job", default=None

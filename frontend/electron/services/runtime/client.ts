@@ -170,7 +170,7 @@ export interface RuntimeSuperviseOptions extends RuntimeRunOptions {
   mode: 'managed' | 'development'
   /** development 模式的源码目录。 */
   repo?: string
-  /** 显式开发端口；未提供时由 Runtime 按模式决定。 */
+  /** 受监督后端端口；未提供时由 Runtime 按模式决定。 */
   port?: number
   /** 后端清理预算（秒），未提供时沿用 Runtime 默认值。 */
   shutdownTimeoutSeconds?: number

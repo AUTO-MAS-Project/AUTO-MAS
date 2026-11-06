@@ -6,6 +6,7 @@
 
 import { h } from 'vue'
 import { notification } from 'ant-design-vue'
+import { translate as t } from '@/i18n'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
   WS_EMULATOR_NOTICE,
@@ -52,14 +53,20 @@ const showNotice = (title: string, data: WSTaskNoticeData): void => {
 // 迁移结果这类通知一条里有好几行（迁了哪些脚本、停用了谁、丢了什么），
 // 用户要能读完才关，所以不自动消失；行数多时给个滚动条而不是撑满屏
 const showSystemNotice = (data: WSSystemNoticeData): void => {
-  const lines = (data.lines ?? []).filter(line => typeof line === 'string' && line.trim())
+  const lines = (
+    data.lineKeys?.length ? data.lineKeys.map(key => t(key)) : (data.lines ?? [])
+  ).filter(line => typeof line === 'string' && line.trim())
   const description = () =>
     h(
       'div',
       { style: { maxHeight: '60vh', overflowY: 'auto', whiteSpace: 'pre-wrap' } },
       lines.map((line, index) => h('div', { key: index }, line))
     )
-  const args = { message: data.title, description, duration: null }
+  const args = {
+    message: data.titleKey ? t(data.titleKey) : data.title,
+    description,
+    duration: null,
+  }
   if (data.level === 'error') {
     notification.error(args)
   } else if (data.level === 'warning') {

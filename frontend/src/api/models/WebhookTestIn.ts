@@ -5,11 +5,11 @@
 import type { WebhookInput } from './WebhookInput';
 export type WebhookTestIn = {
     /**
-     * 所属脚本ID, 获取全局设置的Webhook数据时无需携带
+     * 所属托管ID, 获取全局设置的Webhook数据时无需携带
      */
     scriptId?: (string | null);
     /**
-     * 所属用户ID, 获取全局设置的Webhook数据时无需携带
+     * 所属账号ID, 获取全局设置的Webhook数据时无需携带
      */
     userId?: (string | null);
     /**

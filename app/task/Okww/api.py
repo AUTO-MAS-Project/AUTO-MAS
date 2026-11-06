@@ -14,7 +14,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
-"""脚本管理：OK-WW 路由与端点专用模型。"""
+"""托管管理：OK-WW 路由与端点专用模型。"""
 
 from fastapi import APIRouter
 from pydantic import (
@@ -34,7 +34,7 @@ class OkwwClientPathOut(OutBase):
 
 
 router = APIRouter()
-logger = get_logger("脚本管理 API")
+logger = get_logger("托管管理 API")
 
 
 @router.get(

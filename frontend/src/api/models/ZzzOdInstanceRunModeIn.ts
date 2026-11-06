@@ -7,7 +7,7 @@
  */
 export type ZzzOdInstanceRunModeIn = {
     /**
-     * 所属脚本ID
+     * 所属托管ID
      */
     scriptId: string;
     /**

@@ -8,7 +8,7 @@ export type MaaConfig_UpdateInput = {
      */
     TakeoverMigrationVersion?: (number | null);
     /**
-     * 本脚本的 Mirror 酱 CDK（加密存储，留空回退 MAS 全局配置）
+     * 本托管的 Mirror 酱 CDK（加密存储，留空回退 MAS 全局配置）
      */
     MirrorChyanCDK?: (string | null);
     /**

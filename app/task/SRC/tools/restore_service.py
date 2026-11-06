@@ -18,18 +18,18 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""SRC 配置恢复服务：MAS 用户配置池 / SRC 原生配置池（声明式池）。
+"""SRC 配置恢复服务：MAS 账号配置池 / SRC 原生配置池（声明式池）。
 
 池声明只提供**专项知识**（归档什么 + 放哪里 + 恢复语义 + 定制预览），
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底全部由基座
 （``app.utils.common.config.restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
-mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 整目录 + 页面核心
+mas 池 = 「MAS 为该账号维护的全部配置」：ConfigFile 整目录 + 页面核心
 字段侧车（Stage 段 + Info 的 Server/Base，运行时才注入 src.json）。池恒
-按用户分桶（侧车是用户级的）；owner（shared=Default 共享目录、independent=独立
+按账号分桶（侧车是账号级的）；owner（shared=Default 共享目录、independent=独立
 目录）只决定归档/恢复目标路径，与运行下发（AutoProxy ``set_src``）和
-会话（ScriptConfigTask）同一套来源规则；native 来源用户无 MAS 配置目录，mas 池
+会话（ScriptConfigTask）同一套来源规则；native 来源账号无 MAS 配置目录，mas 池
 对其为空（``files`` 回调返回 ``None``，快照报无变化）。
 """
 
@@ -68,10 +68,10 @@ logger = get_logger("SRC 配置恢复")
 
 
 def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
-    """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
+    """恢复守卫：目标账号必须存在，避免把配置恢复进孤儿目录。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
-        raise ValueError("SRC 用户不存在，请刷新后重试")
+        raise ValueError("SRC 账号不存在，请刷新后重试")
 
 
 async def _set_base(ctx: _utils_config_restore.RestoreContext, base: str) -> None:
@@ -87,10 +87,10 @@ async def _set_base(ctx: _utils_config_restore.RestoreContext, base: str) -> Non
 
 
 def _mas_owner(ctx: _utils_config_restore.RestoreContext) -> str | None:
-    """当前用户的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
+    """当前账号的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
 
     与运行下发（AutoProxy ``set_src``）和会话（ScriptConfigTask）同一套
-    来源规则：shared 来源共享 ``Default``、independent 来源用当前用户目录；用户不存在时
+    来源规则：shared 来源共享 ``Default``、independent 来源用当前用户目录；账号不存在时
     无法判态，返回 ``None`` 让列表/预览为空（恢复/归档另有用户守卫）。
     """
 
@@ -123,7 +123,7 @@ def _seed_mas_dir(ctx: _utils_config_restore.RestoreContext, mas_dir: Path) -> N
     会话（ScriptConfigTask ``set_src``）本就会在目录缺配置文件时回灌，
     但那只发生在用户打开配置会话之后——播种让「进入编辑页 → 退出」的
     包络自第一次退出起就有现场可归档。不在 add_user 时播种：SRC 路径
-    可晚于用户配置，播种失败不该挡建用户。
+    可晚于账号配置，播种失败不该挡建用户。
     """
 
     if mas_dir.is_dir() and any(mas_dir.iterdir()):
@@ -144,8 +144,8 @@ async def _mas_files(
 ) -> dict[str, Path | str] | None:
     """归档内容 = ConfigFile 整目录 + 页面核心字段侧车（内存 JSON）。
 
-    守卫与 owner 解析沿用原快照语义：用户不存在时抛 ``ValueError``；
-    原生来源用户无 MAS 配置目录，返回 ``None``（快照报无变化）；目录缺失时
+    守卫与 owner 解析沿用原快照语义：账号不存在时抛 ``ValueError``；
+    原生来源账号无 MAS 配置目录，返回 ``None``（快照报无变化）；目录缺失时
     从 SRC 安装目录 config/ 播种。
     """
 
@@ -180,7 +180,7 @@ async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> No
     _user_guard(ctx)
     owner = _mas_owner(ctx)
     if owner is None:
-        raise ValueError("原生来源用户不使用 MAS 独立配置，无可恢复内容")
+        raise ValueError("原生来源账号不使用 MAS 独立配置，无可恢复内容")
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     restored_overlay = restore_mas_backup(
         ctx.script_id,

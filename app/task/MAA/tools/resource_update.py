@@ -79,8 +79,10 @@ from app.core.script_update import download_script_package
 from app.core.update import download_file
 from app.models.config import MaaConfig
 from app.services.common.update import transport as _service_update_transport
+from app.services.common.update.fluxdown import FluxdownResumableError
 from app.utils import get_logger
 from app.utils import io as _utils_io
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .resource_package import (
     count_zip_entries,
@@ -734,6 +736,7 @@ async def _refresh_resource_stage(
     state: dict[str, object],
     progress: _Progress | None,
     cdk: str,
+    refund_cancelled: bool = False,
 ) -> dict[str, object] | None:
     """按版本每日限额与失败退避刷新缓存；state 由编排器持有并在此记账。"""
     if (
@@ -761,16 +764,33 @@ async def _refresh_resource_stage(
         )
         return stage
     await _report(progress, f"发现新版本 {_format_clock(target)}，下载资源包…")
+    attempt_stamp: str | None = None
+    attempt_version: str | None = None
     try:
         # 凭据被拒、尚未取得下载地址时不消耗当天取包次数；不同 CDK 独立退避。
         url, actual = await _request_resource_package(cdk)
-        state[attempt_field] = datetime.now(timezone.utc).isoformat()
-        state[version_field] = max(target, actual or target).isoformat()
+        attempt_stamp = datetime.now(timezone.utc).isoformat()
+        attempt_version = max(target, actual or target).isoformat()
+        state[attempt_field] = attempt_stamp
+        state[version_field] = attempt_version
         _utils_io.write_file(_STATE_FILE, state)
         if actual is None or actual < target:
             raise _DownloadError("镜像酱资源包未达到已确认的目标版本，请稍后重试")
         await _refresh_stage(target=actual, url=url, progress=progress)
         return _load_manifest()
+    except asyncio.CancelledError:
+        # 队列撤销预取不应耗尽当日额度；普通下载失败仍按原规则记账。
+        # 调用方一直持有资源机器锁，只撤销本次已经落盘的取包记录。
+        if (
+            refund_cancelled
+            and attempt_stamp is not None
+            and state.get(attempt_field) == attempt_stamp
+            and state.get(version_field) == attempt_version
+        ):
+            state.pop(attempt_field, None)
+            state.pop(version_field, None)
+            _utils_io.write_file(_STATE_FILE, state)
+        raise
     except _DownloadError as e:
         state[failure_field] = (
             datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
@@ -900,6 +920,11 @@ async def _sweep(progress: _Progress | None = None, cdk: str = "") -> None:
     )
 
 
+async def prefetch_resources(install: Path, *, github: bool, cdk: str | None) -> None:
+    """共享 staging 的只下载边界，绝不分发到任何安装目录。"""
+    await prepare_install_resources(install, github=github, cdk=cdk, download_only=True)
+
+
 async def _run_update(cdk: str) -> None:
     try:
         with _MachineLock() as lock:
@@ -988,6 +1013,7 @@ async def prepare_install_resources(
     cdk: str | None,
     github: bool,
     progress: _Progress | None = None,
+    download_only: bool = False,
 ) -> None:
     """本体安装之后、账号启动之前补齐资源；调用方已持有安装访问锁。
 
@@ -1028,26 +1054,66 @@ async def prepare_install_resources(
             target = await latest_resource_clock(github=github, current=current)
             if current >= target and not has_incomplete_resource_update(install):
                 return
-            stage = await asyncio.to_thread(_load_valid_manifest)
+            # 复核失败会删除清单，取消时必须等线程退出后才能交出缓存锁。
+            stage = await _run_write_thread(_load_valid_manifest)
             if not _stage_reusable(stage, target):
                 if github:
+                    import tempfile
+
                     _WORK_DIR.mkdir(parents=True, exist_ok=True)
-                    await _report(progress, "启动前下载 GitHub 全量资源包…")
-                    await download_script_package(
-                        "https://github.com/MaaAssistantArknights/MaaResource/"
-                        "archive/refs/heads/main.zip",
-                        _STAGE_ZIP,
-                        proxy=Config.proxy,
-                        timeout=_DOWNLOAD_TIMEOUT,
-                        source="GitHub",
+                    prefetch_directory = (
+                        Path(tempfile.mkdtemp(prefix="prefetch-", dir=_WORK_DIR))
+                        if download_only
+                        else None
                     )
+                    archive = (
+                        prefetch_directory / "MaaResource-main.zip"
+                        if prefetch_directory is not None
+                        else _STAGE_ZIP
+                    )
+                    # Own the archive from its allocation onward, including
+                    # incomplete httpx downloads and unsuccessful ZIP builds.
+                    # A daemon whose writer is unconfirmed, or whose task is
+                    # retained for FluxDown resume, still owns its output:
+                    # never remove that file until it is safe to do so.
+                    can_cleanup = prefetch_directory is not None
                     try:
+                        await _report(progress, "启动前下载 GitHub 全量资源包…")
+                        # 下载入口尚未接管前，不能清理上次留下的共享归档。
+                        can_cleanup = True
+                        try:
+                            await download_script_package(
+                                "https://github.com/MaaAssistantArknights/MaaResource/"
+                                "archive/refs/heads/main.zip",
+                                archive,
+                                proxy=Config.proxy,
+                                timeout=_DOWNLOAD_TIMEOUT,
+                                source="GitHub",
+                            )
+                        except FluxdownCancelUnconfirmed:
+                            can_cleanup = False
+                            raise
+                        except FluxdownResumableError:
+                            # Keep the shared retry path, but reclaim random
+                            # prefetch archives after confirmed stop.
+                            can_cleanup = download_only
+                            raise
                         await _run_write_thread(
-                            _build_stage, _STAGE_ZIP, target, github=True
+                            _build_stage, archive, target, github=True
                         )
                     finally:
-                        # _run_write_thread 在取消时也会等写盘结束，之后才可删除归档。
-                        _STAGE_ZIP.unlink(missing_ok=True)
+                        # The download/write awaitables have settled here.
+                        # Preserve only files still owned by FluxDown.
+                        if can_cleanup:
+                            if prefetch_directory is not None:
+                                # FluxDown 未完成时写入请求独占路径，清理整个本次目录。
+                                await _run_write_thread(
+                                    shutil.rmtree,
+                                    prefetch_directory,
+                                    ignore_errors=True,
+                                )
+                            else:
+                                archive.unlink(missing_ok=True)
                 else:
                     _WORK_DIR.mkdir(parents=True, exist_ok=True)
                     stage = await _refresh_resource_stage(
@@ -1057,11 +1123,14 @@ async def prepare_install_resources(
                         state=load_state(_STATE_FILE),
                         progress=progress,
                         cdk=cdk,
+                        refund_cancelled=download_only,
                     )
                     if not _stage_reusable(stage, target):
                         raise RuntimeError(
                             "MAA 资源包未准备完成，请检查 CDK、额度或网络后重试"
                         )
+            if download_only:
+                return
             await _report(progress, "启动前安装 MAA 资源更新…")
             stage_clock = await asyncio.to_thread(read_resource_clock, _STAGE_DIR)
             if stage_clock is None or stage_clock < target:

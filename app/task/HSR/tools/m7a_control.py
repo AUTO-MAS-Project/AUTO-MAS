@@ -105,7 +105,7 @@ class HSRM7AControl:
     async def ensure_platform_ready(self) -> dict[str, Any]:
         """每个三月七模块进程前准备平台，返回本模块要叠加的平台 patch。
 
-        云平台：确认本用户的云浏览器还活着，死了重起（三月七启动失败路径会按
+        云平台：确认本账号的云浏览器还活着，死了重起（三月七启动失败路径会按
         标记杀掉浏览器，重起后它会重新做登录态检查与排队），再把浏览器端口
         写进 patch——所以 patch 必须在这一步之后写。客户端平台只钉
         ``cloud_game_enable: False``，游戏由既有的守卫负责。
@@ -128,7 +128,7 @@ class HSRM7AControl:
         """执行一条 M7A 命令并同步调度台日志。"""
 
         await self._account_switcher.wait_before_external_script("M7A", user_name)
-        self._append_log(f"用户「{user_name}」开始执行三月七{module_name}（{command}）")
+        self._append_log(f"账号「{user_name}」开始执行三月七{module_name}（{command}）")
         runtime = getattr(self._account_switcher, "runtime", None)
         if runtime is not None:
             runtime.cloud_self_browser_detected = False
@@ -137,20 +137,20 @@ class HSRM7AControl:
             # 输出回调已终止了三月七；这不是云本身的问题，按普通失败补跑，
             # 补跑前 ensure_cloud_browser 会先清掉三月七自建的浏览器、重起 MAS 的。
             self._append_log(
-                f"用户「{user_name}」三月七{module_name}（{command}）已终止：三月七试图自建浏览器"
+                f"账号「{user_name}」三月七{module_name}（{command}）已终止：三月七试图自建浏览器"
             )
             raise HSRRetryableTaskError(
-                f"用户「{user_name}」模块「{module_name}」三月七命令「{command}」："
+                f"账号「{user_name}」模块「{module_name}」三月七命令「{command}」："
                 "三月七没找到 MAS 托管的云浏览器、试图自己新建，已终止，补跑前重新启动",
                 result=result,
             )
         if getattr(result, "success", False):
             self._append_log(
-                f"用户「{user_name}」三月七{module_name}（{command}）执行完成"
+                f"账号「{user_name}」三月七{module_name}（{command}）执行完成"
             )
         else:
             self._append_log(
-                f"用户「{user_name}」三月七{module_name}（{command}）执行失败"
+                f"账号「{user_name}」三月七{module_name}（{command}）执行失败"
             )
             self._raise_if_cloud_non_retryable(result, user_name, module_name, command)
         return result
@@ -169,7 +169,7 @@ class HSRM7AControl:
         if marker is None:
             return
         raise HSRNonRetryableTaskError(
-            f"用户「{user_name}」模块「{module_name}」三月七命令「{command}」"
+            f"账号「{user_name}」模块「{module_name}」三月七命令「{command}」"
             f"云·星穹铁道失败（{marker}），不再补跑："
             f"{external_result_failure_summary(result)}",
             result=result,
@@ -254,7 +254,7 @@ class HSRM7AControl:
             last_result = result
             if not result.success:
                 raise HSRRetryableTaskError(
-                    f"用户「{user_name}」模块「{module.name}」"
+                    f"账号「{user_name}」模块「{module.name}」"
                     f"三月七命令「{command}」执行失败："
                     f"{external_result_failure_summary(result)}",
                     result=result,
