@@ -104,6 +104,25 @@ def compressed(snapshot):
     return gzip.compress(json.dumps(snapshot).encode(), mtime=0)
 
 
+def test_skill_summary_recipes_are_added_to_source_and_old_snapshot(snapshot):
+    expected = {"3302": {"3301": 3}, "3303": {"3302": 3}}
+    raw = snapshot["dataset"]  # 夹具经真实源站规范化入口构建。
+    assert {
+        recipe["result"]: recipe["ingredients"]
+        for recipe in raw["recipes"]
+        if recipe["result"] in expected
+    } == expected
+    raw["recipes"] = [
+        recipe for recipe in raw["recipes"] if recipe["result"] not in expected
+    ]
+    restored = yituliu.dataset_from_json(raw)
+    assert {
+        recipe.result_item_id: dict(recipe.ingredients)
+        for recipe in restored.recipes
+        if recipe.result_item_id in expected
+    } == expected
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("first", ["dataset", "operators"])
 async def test_gzip_populates_both_caches_once(tmp_path, snapshot, network, first):
@@ -157,7 +176,11 @@ async def test_bad_snapshot_falls_back_to_source(
     elif failure == "padded_recipes":
         local_ids = {
             recipe.result_item_id
-            for recipe in yituliu._CHIP_RECIPES + yituliu._VOUCHER_RECIPES
+            for recipe in (
+                yituliu._CHIP_RECIPES
+                + yituliu._VOUCHER_RECIPES
+                + yituliu._SKILL_SUMMARY_RECIPES
+            )
         }
         snapshot["dataset"]["recipes"] = [
             recipe
