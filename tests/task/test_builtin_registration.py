@@ -63,7 +63,12 @@ EXPECTED = [
             "emulator_binding",
         },
     ),
-    ("Okww", "Okww", "OkwwManager", {"initialize_user", "import_config"}),
+    (
+        "Okww",
+        "Okww",
+        "OkwwManager",
+        {"initialize_user", "import_config", "task_resources"},
+    ),
     ("General", "general", "GeneralManager", {"task_resources", "emulator_binding"}),
     ("OkNte", "OkNte", "OkNteManager", set()),
     ("HSR", "HSR", "HSRManager", set()),
