@@ -1,14 +1,11 @@
 <template>
-  <!-- focus 也能触发：只挂 hover 的话键盘用户拿不到提示（WCAG 1.4.13） -->
-  <a-tooltip v-if="hint" :title="hint" :trigger="['hover', 'focus']">
-    <span class="field-label" :class="{ 'field-label-form': variant === 'form' }" tabindex="0">
-      {{ text }}
-      <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-    </span>
-  </a-tooltip>
-  <span v-else class="field-label" :class="{ 'field-label-form': variant === 'form' }">{{
-    text
-  }}</span>
+  <span class="field-label" :class="{ 'field-label-form': variant === 'form' }">
+    {{ text }}
+    <!-- 只以问号定位；保留 focus，让键盘用户也能读取提示。 -->
+    <a-tooltip v-if="hint" :title="hint" :trigger="['hover', 'focus']">
+      <QuestionCircleOutlined class="help-icon" tabindex="0" :aria-label="hint" />
+    </a-tooltip>
+  </span>
 </template>
 
 <script setup lang="ts">
@@ -32,7 +29,7 @@ defineProps<{
   font-weight: 500;
 }
 
-.field-label:focus-visible {
+.help-icon:focus-visible {
   border-radius: 3px;
   outline: 2px solid var(--ant-color-primary);
   outline-offset: 2px;

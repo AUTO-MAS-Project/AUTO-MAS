@@ -116,27 +116,31 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
       <!-- 拦广告的支持范围带列表，ⓘ 里放富文本，其余说明仍走 SettingRow 的 hint -->
       <SettingRow>
         <template #label>
-          <a-tooltip>
-            <template #title>
-              <div style="max-width: 300px">
-                <p>{{ t('core.setting.func.blockAdsIntro') }}</p>
-                <ul style="margin: 8px 0; padding-left: 16px">
-                  <li>
-                    <strong>{{ t('core.emulator.type.mumu') }}</strong
-                    >: {{ t('core.setting.func.blockAdsMumu') }}
-                  </li>
-                  <li>
-                    <strong>{{ t('core.emulator.type.ldplayer') }}</strong
-                    >: {{ t('core.setting.func.blockAdsLd') }}
-                  </li>
-                </ul>
-              </div>
-            </template>
-            <span class="row-label" tabindex="0">
-              {{ t('core.setting.func.blockAds') }}
-              <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-            </span>
-          </a-tooltip>
+          <span class="row-label">
+            {{ t('core.setting.func.blockAds') }}
+            <a-tooltip :trigger="['hover', 'focus']">
+              <template #title>
+                <div style="max-width: 300px">
+                  <p>{{ t('core.setting.func.blockAdsIntro') }}</p>
+                  <ul style="margin: 8px 0; padding-left: 16px">
+                    <li>
+                      <strong>{{ t('core.emulator.type.mumu') }}</strong
+                      >: {{ t('core.setting.func.blockAdsMumu') }}
+                    </li>
+                    <li>
+                      <strong>{{ t('core.emulator.type.ldplayer') }}</strong
+                      >: {{ t('core.setting.func.blockAdsLd') }}
+                    </li>
+                  </ul>
+                </div>
+              </template>
+              <QuestionCircleOutlined
+                class="help-icon"
+                tabindex="0"
+                :aria-label="t('core.setting.func.blockAds')"
+              />
+            </a-tooltip>
+          </span>
         </template>
         <a-switch
           :checked="settings.Function?.IfBlockAd === true"
@@ -191,17 +195,21 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
 
       <!-- 原 intro 是一整段告警，正文只留驱动这一句，来龙去脉收进 ⓘ -->
       <p class="card-note">
-        <a-tooltip>
-          <template #title>
-            <i18n-t keypath="core.setting.display.intro" tag="span" scope="global">
-              <template #driverLink>{{ t('core.setting.display.introDriverLink') }}</template>
-            </i18n-t>
-          </template>
-          <span class="card-note-hint" tabindex="0">
-            {{ t('core.setting.display.introDriverLink') }}
-            <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-          </span>
-        </a-tooltip>
+        <span class="card-note-hint">
+          {{ t('core.setting.display.introDriverLink') }}
+          <a-tooltip :trigger="['hover', 'focus']">
+            <template #title>
+              <i18n-t keypath="core.setting.display.intro" tag="span" scope="global">
+                <template #driverLink>{{ t('core.setting.display.introDriverLink') }}</template>
+              </i18n-t>
+            </template>
+            <QuestionCircleOutlined
+              class="help-icon"
+              tabindex="0"
+              :aria-label="t('core.setting.display.introDriverLink')"
+            />
+          </a-tooltip>
+        </span>
       </p>
 
       <SettingRow
@@ -327,10 +335,9 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
   color: var(--ant-color-text);
   font-size: 14px;
   font-weight: 600;
-  cursor: help;
 }
 
-.row-label:focus-visible {
+.help-icon:focus-visible {
   border-radius: 3px;
   outline: 2px solid var(--ant-color-primary);
   outline-offset: 2px;
@@ -340,6 +347,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
   flex: 0 0 auto;
   color: var(--ant-color-text-tertiary);
   font-size: 14px;
+  cursor: help;
 }
 
 .card-note {
@@ -353,13 +361,6 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  cursor: help;
-}
-
-.card-note-hint:focus-visible {
-  border-radius: 3px;
-  outline: 2px solid var(--ant-color-primary);
-  outline-offset: 2px;
 }
 
 .header-link {

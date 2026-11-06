@@ -30,6 +30,7 @@ const { t } = useI18n()
     >
       <a-checkbox
         :checked="settings.Start?.IfSelfStart === true"
+        :aria-label="t('core.setting.func.autoStart')"
         @change="
           (event: CheckboxChangeEvent) =>
             handleSettingChange('Start', 'IfSelfStart', event.target.checked)
