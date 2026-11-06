@@ -99,7 +99,7 @@ async def test_repeated_progress_does_not_extend_stall_deadline(launch):
     )
     with pytest.raises(RuntimeError, match="5 分钟"):
         await launch.run()
-    assert launch.clock.now == 310
+    assert launch.clock.now == 320
 
 
 @pytest.mark.asyncio
@@ -137,7 +137,7 @@ async def test_alternating_retries_do_not_extend_stall_deadline(launch):
     )
     with pytest.raises(RuntimeError, match="5 分钟"):
         await launch.run()
-    assert launch.clock.now == 320
+    assert launch.clock.now == 330
 
 
 @pytest.mark.asyncio
@@ -162,6 +162,19 @@ async def test_single_repeat_then_silence_survives(launch):
         [
             (30, lambda: launch.emit("Downloading large-package")),
             (40, lambda: launch.emit("Downloading large-package")),
+            (400, launch.found.set),
+        ]
+    )
+    await launch.run()
+    assert launch.clock.now >= 400
+
+
+@pytest.mark.asyncio
+async def test_late_single_repeat_then_silence_survives(launch):
+    launch.schedule.extend(
+        [
+            (30, lambda: launch.emit("Downloading large-package")),
+            (300, lambda: launch.emit("Downloading large-package")),
             (400, launch.found.set),
         ]
     )

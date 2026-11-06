@@ -15,8 +15,7 @@ _START_TIMEOUT = 60.0
 # 大包慢速下载期可长时间无完整新行，窗口须覆盖（量级对齐启动器交互的
 # 下载顺延等待，launcher_start._UPDATE_ACTIVE_GRACE_SECONDS 为 600 秒）。
 _UPDATE_STALL_TIMEOUT = 900.0
-# 重复进展刷屏上限：依赖下载失败后重试会交替刷同一组消息，5 分钟内没有
-# 任何新消息即可判卡死，避免无限续时（总上限之外的第二道兜底）。
+# 重复进展持续刷屏的上限，静默阶段不计入刷屏时长。
 _REPEAT_STALL_TIMEOUT = 300.0
 # 重试循环仍在进行时旧进展会在一分钟内再次出现；更久远的单次重复不构成
 # 持续刷屏，不得让刷屏判定在静默下载期保持武装。
@@ -80,8 +79,8 @@ async def start_okww(
     started = time.monotonic()
     deadline = started + _START_TIMEOUT
     updating = False
-    last_new = started
     last_repeat: float | None = None
+    repeat_started: float | None = None
     # 会话内去重，避免依赖下载重试交替刷同一组消息而不断续时。
     progress: set[str] = set()
     await manager.open_process(program, *args)
@@ -132,10 +131,13 @@ async def start_okww(
                     continue
                 if message in progress:
                     # 重复进展行：疑似下载失败重试刷屏，只记时刻、不刷新静默窗口。
+                    if last_repeat is None or now - last_repeat > _REPEAT_ACTIVE_WINDOW:
+                        repeat_started = now
                     last_repeat = now
                     continue
                 progress.add(message)
-                last_new = now
+                last_repeat = None
+                repeat_started = None
                 deadline = now + _UPDATE_STALL_TIMEOUT
                 if not updating:
                     updating = True
@@ -149,9 +151,9 @@ async def start_okww(
                 )
             if (
                 last_repeat is not None
-                and last_repeat > last_new
+                and repeat_started is not None
                 and now - last_repeat <= _REPEAT_ACTIVE_WINDOW
-                and now - last_new >= _REPEAT_STALL_TIMEOUT
+                and now - repeat_started >= _REPEAT_STALL_TIMEOUT
             ):
                 raise RuntimeError(
                     f"OK-WW 更新连续 {_REPEAT_STALL_TIMEOUT / 60:g} 分钟"

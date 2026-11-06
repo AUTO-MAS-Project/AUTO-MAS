@@ -3,6 +3,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import AdmZip = require('adm-zip')
+import { createOkwwIssueReport } from './okwwIssueReportService'
 
 import {
   addDebugDirectory,
@@ -152,5 +153,60 @@ describe('addDiagnosticFile 收解析不了的 .json', () => {
     expect(collectText('debug/plain.json')).toBe(
       `${JSON.stringify({ b: 'https://api.day.app/***', token: '***' }, null, 2)}\n`
     )
+  })
+})
+
+describe('OK-WW 启动器日志问题包', () => {
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'okww-report-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  it('日期日志中的用户主目录被脱敏', () => {
+    const installation = path.join(root, 'installation')
+    write(
+      'config/scripts.yaml',
+      JSON.stringify({
+        order: [{ uid: '1', type: 'OkwwConfig' }],
+        data: { '1': { Info: { RootPath: installation } } },
+      })
+    )
+    write('installation/logs/app.2026-11-06', `Python: ${os.homedir()}${path.sep}python.exe\n`)
+    const output = path.join(root, 'report.zip')
+
+    expect(createOkwwIssueReport(root, output).success).toBe(true)
+    const zip = new AdmZip(output)
+    const content = zip.getEntry('okww/okww-1/launcher/app.2026-11-06')!.getData().toString('utf-8')
+    expect(content).not.toContain(os.homedir())
+    expect(content).toContain('<HOME>')
+  })
+
+  it('过大的启动器日志保留脱敏后的末尾', () => {
+    const installation = path.join(root, 'installation')
+    write(
+      'config/scripts.yaml',
+      JSON.stringify({
+        order: [{ uid: '1', type: 'OkwwConfig' }],
+        data: { '1': { Info: { RootPath: installation } } },
+      })
+    )
+    write(
+      'installation/logs/app.2026-11-06',
+      `${'old line\n'.repeat(3_000_000)}${os.homedir()}${path.sep}tail\n`
+    )
+    const output = path.join(root, 'report.zip')
+
+    expect(createOkwwIssueReport(root, output).success).toBe(true)
+    const zip = new AdmZip(output)
+    const content = zip
+      .getEntry('okww/okww-1/launcher/app.2026-11-06.tail')!
+      .getData()
+      .toString('utf-8')
+    expect(content).toContain('<HOME>')
+    expect(content).not.toContain(os.homedir())
+    expect(content).toContain('tail')
   })
 })

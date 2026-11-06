@@ -84,7 +84,8 @@ export function createOkwwIssueReport(appRoot: string, zipPath: string): OkwwIss
       addDiagnosticFile(
         state,
         path.join(logDir, name),
-        path.posix.join('okww', installation.label, 'launcher', name)
+        path.posix.join('okww', installation.label, 'launcher', name),
+        { text: true }
       )
     }
   }
