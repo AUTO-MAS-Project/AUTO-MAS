@@ -37,12 +37,24 @@
       </a-space>
     </div>
   </div>
+  <UniversalPlanCreateDialog
+    ref="universalDialog"
+    :active-plan-id="activePlanId"
+    :creating="creating"
+    @create="emit('add-plan', PLAN_CONFIG_TYPES.UNIVERSAL, { scriptId: $event })"
+  />
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
+import UniversalPlanCreateDialog from './UniversalPlanCreateDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { DeleteOutlined, DownOutlined } from '@ant-design/icons-vue'
-import { PLAN_TYPE_DESCRIPTORS, type PlanConfigType } from '@/utils/planTypeRegistry'
+import {
+  PLAN_CONFIG_TYPES,
+  PLAN_TYPE_DESCRIPTORS,
+  type PlanConfigType,
+} from '@/utils/planTypeRegistry'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 
@@ -57,15 +69,21 @@ interface Plan {
 interface Props {
   planList: Plan[]
   activePlanId: string
+  creating?: boolean
 }
 
 defineProps<Props>()
 const emit = defineEmits<{
-  'add-plan': [planType: PlanConfigType]
+  'add-plan': [planType: PlanConfigType, owner?: { scriptId: string }]
   'remove-plan': [planId: string]
 }>()
 
+const universalDialog = ref<InstanceType<typeof UniversalPlanCreateDialog> | null>(null)
 const onAddPlanMenu = ({ key }: { key: string }) => {
+  if (key === PLAN_CONFIG_TYPES.UNIVERSAL) {
+    void universalDialog.value?.show()
+    return
+  }
   emit('add-plan', key as PlanConfigType)
 }
 </script>

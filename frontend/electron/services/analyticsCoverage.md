@@ -190,3 +190,5 @@ QQ 官方机器人私聊和群内提及重试托管、启动普通或循环队�
 - BAAH 本体托管更新：设置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`，更新失败继续与安装阻断沿用 `task_observed_finished`；预下载不单独上报安装成功，不采集版本、CDK 或路径。
 
 - BetterGI 本体托管更新：设置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；每批更新准备、普通失败后继续及安装未确认拦截沿用 `task_observed_finished`。安装阶段不另建事件，不采集版本、CDK 或路径。
+
+通用脚本计划表复用 `plan_manage_finished` 与原生配置会话事件（`task_start_result`、`native_config_action_finished` 的打开与保存）；计划类型新增有限值 `UniversalPlanConfig`，不采集计划、账号、脚本 ID 或配置内容。

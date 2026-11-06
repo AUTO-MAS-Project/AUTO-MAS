@@ -22,13 +22,16 @@
 from __future__ import annotations
 
 import calendar
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import Field
 
 from app.config import (
     ConfigGroup,
+    UiVisibility,
+    ui,
 )
 from app.utils import constants as _utils_constants
 
@@ -676,7 +679,38 @@ class MSSPlanConfig(WeeklyKeyPlan):
         return normalized_data
 
 
+class UniversalPlanConfig(PlanDaysConfig):
+    """完整原生配置的按日轮换；初版由通用脚本消费。"""
+
+    class InfoFields(ConfigGroup):
+        Name: str = Field(default="新通用脚本计划表", description="计划表名称")
+        Mode: Literal["ALL", "Weekly", "Rotate"] = Field(
+            default="Weekly", description="计划表模式"
+        )
+        RotateDays: Annotated[int, Field(ge=1, le=31)] = Field(
+            default=7, description="多天轮换天数"
+        )
+        ResetHour: Annotated[int, Field(ge=0, le=23)] = Field(
+            default=4, description="本地换日小时"
+        )
+        ResetMinute: Annotated[int, Field(ge=0, le=59)] = Field(
+            default=0, description="本地换日分钟"
+        )
+        ScriptId: Annotated[UUID | None, ui(visibility=UiVisibility.DISABLE)] = Field(
+            default=None, description="所属脚本"
+        )
+
+    Info: InfoFields = Field(default_factory=InfoFields)
+
+    def current_group(self, now: datetime) -> str:
+        shifted = now - timedelta(
+            hours=self.Info.ResetHour, minutes=self.Info.ResetMinute
+        )
+        return super().current_group(shifted)
+
+
 __all__ = [
+    "UniversalPlanConfig",
     "WeeklyKeyPlan",
     "MaaPlanConfig",
     "MaaEndPlanConfig",

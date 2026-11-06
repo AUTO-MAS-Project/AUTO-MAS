@@ -201,6 +201,8 @@ import type { TimeSetReorderIn } from '../models/TimeSetReorderIn';
 import type { TimeSetUpdateIn } from '../models/TimeSetUpdateIn';
 import type { ToolsGetOut } from '../models/ToolsGetOut';
 import type { ToolsUpdateIn } from '../models/ToolsUpdateIn';
+import type { UniversalPlanStateIn } from '../models/UniversalPlanStateIn';
+import type { UniversalPlanStateOut } from '../models/UniversalPlanStateOut';
 import type { UpdateCheckIn } from '../models/UpdateCheckIn';
 import type { UpdateCheckOut } from '../models/UpdateCheckOut';
 import type { UpdateDownloadSnapshot } from '../models/UpdateDownloadSnapshot';
@@ -3469,6 +3471,25 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plan/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询通用脚本计划表已配置的日期
+     * @param requestBody
+     * @returns UniversalPlanStateOut Successful Response
+     * @throws ApiError
+     */
+    public static getUniversalPlanStateApiPlanUniversalStatePost(
+        requestBody: UniversalPlanStateIn,
+    ): CancelablePromise<UniversalPlanStateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/universal-state',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

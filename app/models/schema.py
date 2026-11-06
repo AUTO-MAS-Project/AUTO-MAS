@@ -339,7 +339,7 @@ class EmulatorDeleteIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
 
 
-PlanComboxConsumer = Literal["maa", "maaend", "baah", "mss"]
+PlanComboxConsumer = Literal["maa", "maaend", "baah", "mss", "universal"]
 
 
 class MaaEndAutoEssencePlanKey(BaseModel):
@@ -789,6 +789,9 @@ class TaskStatusOut(OutBase):
     queueId: Optional[str] = Field(default=None, description="调度队列 ID")
     scriptId: Optional[str] = Field(default=None, description="托管 ID")
     userId: Optional[str] = Field(default=None, description="账号 ID")
+    planSaveResult: Optional[Literal["saved", "failed"]] = Field(
+        default=None, description="通用计划配置实际保存结果；空表示未确认"
+    )
     stopping: bool = Field(default=False, description="任务是否正在停止")
     finishedAt: Optional[str] = Field(
         default=None,

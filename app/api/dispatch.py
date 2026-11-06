@@ -50,6 +50,12 @@ class DispatchIn(BaseModel):
 
 
 class TaskCreateIn(DispatchIn):
+    planId: str | None = Field(
+        default=None, description="通用脚本计划表配置会话的计划 ID"
+    )
+    planDay: str | None = Field(
+        default=None, description="通用脚本计划表配置会话的日期分组"
+    )
     mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"] = Field(
         ...,
         description="任务模式; CycleRun 为循环运行, 仅接受循环队列, 其托管按 AutoProxy 执行",
@@ -182,6 +188,8 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
             queue_user_ids=task.queueUserIds,
             view_only=task.viewOnly,
             instance_idx=task.instanceIdx,
+            plan_id=task.planId,
+            plan_day=task.planDay,
         )
     except Exception as e:
         logger.opt(exception=True).warning(f"add_task失败: {type(e).__name__}: {e}")

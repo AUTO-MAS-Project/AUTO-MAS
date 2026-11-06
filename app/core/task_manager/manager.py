@@ -1560,6 +1560,7 @@ class Task(TaskExecuteBase):
                     queueId=self.task_info.queue_id,
                     scriptId=self.task_info.script_id,
                     userId=self.task_info.user_id,
+                    planSaveResult=self.task_info.plan_save_result,
                     finishedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 )
             )
@@ -1729,6 +1730,11 @@ class _TaskManager:
         except ValueError:
             return None
 
+        self._prune_recent_results()
+        remembered = self._recent_results.get(task_id)
+        if remembered is not None:
+            return remembered[1]
+
         task_info = self.task_info.get(task_uid)
         if task_info is not None:
             handler = self.task_handler.get(task_uid)
@@ -1743,9 +1749,7 @@ class _TaskManager:
                 stopping=bool(handler and handler.is_closing),
             )
 
-        self._prune_recent_results()
-        remembered = self._recent_results.get(task_id)
-        return remembered[1] if remembered is not None else None
+        return None
 
     def get_runtime_snapshot(self) -> TaskRuntimeSnapshot:
         """返回任务运行状态与定时队列的 HTTP 初始快照。"""
@@ -1884,6 +1888,8 @@ class _TaskManager:
         trigger_source: TaskTriggerSource = "manual_task",
         view_only: bool = False,
         instance_idx: int | None = None,
+        plan_id: str | None = None,
+        plan_day: str | None = None,
     ) -> uuid.UUID:
         """
         添加任务, 根据 id 值搜索实际指向的任务配置
@@ -1985,6 +1991,27 @@ class _TaskManager:
         else:
             raise ValueError(f"任务 {uid} 无法找到对应托管配置")
 
+        if plan_id is not None or plan_day is not None:
+            if mode != "ScriptConfig" or view_only or not plan_id or not plan_day:
+                raise ValueError("计划日期仅用于通用脚本计划表的编辑会话")
+            from app.core.config.universal_plan import plan_directory
+            from app.models.config import GeneralConfig, UniversalPlanConfig
+
+            plan = Config.PlanConfig[uuid.UUID(plan_id)]
+            if not isinstance(plan, UniversalPlanConfig) or not isinstance(
+                Config.ScriptConfig[script_uid], GeneralConfig
+            ):
+                raise ValueError("此脚本不支持通用脚本计划表配置会话")
+            plan_directory(
+                data_path=Config.data_path,
+                plan=plan,
+                script_id=str(script_uid),
+                user_id=str(user_uid),
+                day=plan_day,
+            )
+            if plan.is_locked:
+                raise RuntimeError("计划正在使用中")
+
         # 创建时冻结任务脚本身份，供 task.created 通知与运行时快照复用；
         # 队列项限定的运行周几随身份一起冻结，顺序执行时据此跳过
         script_run_days: list[list[str]] | None = None
@@ -2039,6 +2066,8 @@ class _TaskManager:
                 resume_from_script_id=resume_from_script_id,
                 trigger_source=trigger_source,
                 is_cycle=is_cycle,
+                plan_id=plan_id,
+                plan_day=plan_day,
                 view_only=view_only and exec_mode == "ScriptConfig",
                 instance_idx=instance_idx if exec_mode == "ScriptConfig" else None,
             )

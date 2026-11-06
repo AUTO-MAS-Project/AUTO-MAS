@@ -11,19 +11,12 @@
       <PlanHeader
         :plan-list="planList"
         :active-plan-id="activePlanId"
+        :creating="planOperationPending"
         @add-plan="handleAddPlan"
         @remove-plan="handleRemovePlan"
       />
 
-      <!-- 空状态 -->
-      <div v-if="!planList.length || !currentPlanData" class="empty-state">
-        <NoData :image-style="{ height: '200px' }">
-          <template #description>
-            <div class="empty-title">{{ t('core.plan.emptyTitle') }}</div>
-            <div class="empty-description">{{ t('core.plan.emptyDesc') }}</div>
-          </template>
-        </NoData>
-      </div>
+      <PlanEmptyState v-if="!planList.length || !currentPlanData" />
 
       <!-- 计划内容 -->
       <div v-else class="plans-content">
@@ -99,6 +92,7 @@ import {
 } from '@/utils/planTypeRegistry'
 import { PLAN_ROTATE_DAYS_DEFAULT, clampRotateDays, type PlanMode } from '@/utils/planDays'
 import PlanHeader from './components/PlanHeader.vue'
+import PlanEmptyState from './components/PlanEmptyState.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
 
@@ -207,11 +201,15 @@ const applyLocalPlanChange = (planId: string, path: string, value: any) => {
   }
 }
 
-const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE) => {
+const handleAddPlan = async (
+  planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE,
+  owner?: { scriptId: string }
+) => {
   if (planOperationPending.value || !canLeaveTable()) return
   planOperationPending.value = true
   try {
-    const response = await createPlan(planType)
+    const response = await createPlan(planType, owner)
+    if (response.code !== 200) throw new Error(response.message)
     const uniqueName = getDefaultPlanName(planType)
     const newPlan: PlanListItem = { id: response.planId, name: uniqueName, type: planType }
     planDataMap.value = {
@@ -624,30 +622,9 @@ onMounted(() => {
 }
 
 /* 空状态样式 */
-.empty-state {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 500px;
-  padding: 60px 20px;
-  background: var(--ant-color-fill-quaternary);
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
-  margin: 20px 0;
-}
-
 .plans-content {
   display: flex;
   flex-direction: column;
   gap: 24px;
-}
-.empty-title {
-  color: var(--ant-color-text);
-  font-size: 18px;
-  font-weight: 500;
-  margin-bottom: 8px;
-}
-.empty-description {
-  color: var(--ant-color-text-secondary);
 }
 </style>

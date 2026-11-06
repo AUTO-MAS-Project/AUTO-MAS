@@ -51,6 +51,10 @@ export type TaskStatusOut = {
      */
     userId?: (string | null);
     /**
+     * 通用计划配置实际保存结果；空表示未确认
+     */
+    planSaveResult?: ('saved' | 'failed' | null);
+    /**
      * 任务是否正在停止
      */
     stopping?: boolean;
