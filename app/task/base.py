@@ -23,6 +23,7 @@ from app.services import execute_script_task
 from app.task.failure_capture_core import FailureCapture
 from app.task.proxy_helpers import push_dispatch_log
 from app.utils import get_logger
+from app.utils.common.process.scope import detached_process_context
 
 logger = get_logger("脚本运行")
 
@@ -48,7 +49,7 @@ def _running_inflight_detection(script_id: str) -> asyncio.Task | None:
         return task
     _INFLIGHT_DETECTIONS.pop(script_id, None)
     # 取回异常，避免「Task exception was never retrieved」告警
-    with suppress(Exception):
+    with suppress(asyncio.CancelledError, Exception):
         task.exception()
     return None
 
@@ -168,7 +169,9 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
         if _running_inflight_detection(script_id) is not None:
             # 上一轮底层检测仍未结束：跳过本轮采样（按未命中处理）
             return None
-        task = asyncio.ensure_future(asyncio.to_thread(detect))
+        task = asyncio.create_task(
+            asyncio.to_thread(detect), context=detached_process_context()
+        )
         _INFLIGHT_DETECTIONS[script_id] = task
         try:
             text = await asyncio.wait_for(

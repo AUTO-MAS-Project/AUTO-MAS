@@ -95,6 +95,7 @@ from app.utils import (
     log_box,
 )
 from app.utils.common.log import sources as log_source
+from app.utils.common.process.runner import create_subprocess
 
 from . import push_log as _push_log
 from .launchers import (
@@ -1717,9 +1718,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         if self._shutdown_after_success and self.run_book:
             shutdown_error = ""
             try:
-                process = await asyncio.create_subprocess_exec(
-                    "shutdown", "/s", "/t", "60"
-                )
+                process = await create_subprocess("shutdown", "/s", "/t", "60")
                 if await process.wait() != 0:
                     shutdown_error = "任务已完成，但未能安排自动关机，请检查系统权限"
             except OSError as e:

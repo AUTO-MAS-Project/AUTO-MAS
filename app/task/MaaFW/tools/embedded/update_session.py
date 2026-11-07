@@ -31,9 +31,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import threading
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -44,6 +46,7 @@ from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.task.MaaFW.tools.core.project_update.progress import UpdateProgressEvent
 from app.task.MaaFW.tools.embedded import env_confirm, view_update
 from app.task.MaaFW.tools.embedded.embedded_project import GroupMember
+from app.utils.common.process.scope import current_process_scope
 
 ProgressSink = Callable[[UpdateProgressEvent], None]
 Members = Sequence[GroupMember] | Callable[[], Sequence[GroupMember]]
@@ -198,21 +201,37 @@ class UpdateSession:
         锁超时 / 停止是带 ``project_lock_busy`` / ``cancelled`` 的 ``MaaFWProjectUpdateError``。
         """
 
-        return await run_script_update(
-            ScriptUpdateRequest(self.script_id, "MaaFW"),
-            view_update.run_view_update,
-            self.script_id,
-            channel=self.channel,
-            members=self.members,
-            reservation_held=self.reservation_held,
-            send_log=self.send_log,
-            core_call=core_call,
-            script_name=self.script_name,
-            lock_timeout=self.lock_timeout,
-            base=self.base,
-            switch_label=switch_label,
-            cancel_event=self.cancel_event,
-        )
+        scope = current_process_scope.get()
+
+        async def transaction():
+            try:
+                return await view_update.run_view_update(
+                    self.script_id,
+                    channel=self.channel,
+                    members=self.members,
+                    reservation_held=self.reservation_held,
+                    send_log=self.send_log,
+                    core_call=core_call,
+                    script_name=self.script_name,
+                    lock_timeout=self.lock_timeout,
+                    base=self.base,
+                    switch_label=switch_label,
+                    cancel_event=self.cancel_event,
+                )
+            except view_update.MaaFWProjectUpdateError as error:
+                if scope is not None and scope.requested and error.cancelled:
+                    raise asyncio.CancelledError from error
+                raise
+
+        # 文件事务只能通过已有令牌停止；确认超时后仍保留其真实完成者清理目录。
+        with (
+            scope.updating(cancel=self.cancel_event.set)
+            if scope is not None and self.cancel_event is not None
+            else nullcontext()
+        ):
+            return await run_script_update(
+                ScriptUpdateRequest(self.script_id, "MaaFW"), transaction
+            )
 
 
 __all__ = ["Members", "ProgressSink", "UpdateProxy", "UpdateSession"]
