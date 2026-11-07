@@ -189,7 +189,7 @@ async def prepare_update(
     except (OSError, ValueError):
         # 曾经成功安装过的目录可按原架构修复损坏的 exe/interface；不按主机架构猜测。
         identity = _utils_io.read_dict_file(
-            script_install.workspace(root) / "program-identity.json"
+            script_install.record_path(root, "program-identity.json")
         )
         arch = identity.get("arch")
         if arch not in ("x86_64", "aarch64"):
@@ -200,6 +200,10 @@ async def prepare_update(
     target, name, url, size, digest = select_package(
         await request_release(channel), arch
     )
+    receipt = script_install.record_path(root, "installed.json")
+    if target == current and not receipt.exists():
+        # 首次接管时没有 MAS 校验记录，不因此重装同版本，也不伪造校验记录。
+        return f"MaaEnd 当前版本 {current} 无需更新"
     verified = await script_install.run_worker(
         script_install.verify_installed_files, root
     )
@@ -350,7 +354,7 @@ async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
             prepare_ready=prepare_ready,
         )
         _utils_io.write_file(
-            script_install.workspace(root) / "program-identity.json",
+            script_install.record_directory(root) / "program-identity.json",
             {"arch": arch, "version": str(target)},
         )
         return f"MaaEnd 已更新至 {target}，完整性校验通过"
@@ -383,7 +387,7 @@ async def confirm_current_install(root: Path, *, verify_receipt: bool = True) ->
         raise script_install.InstallUnsafeError(
             "MaaEnd 当前安装不可识别，请开启更新接管修复"
         ) from error
-    receipt = script_install.workspace(root) / "installed.json"
+    receipt = script_install.record_path(root, "installed.json")
     if (
         verify_receipt
         and receipt.exists()
