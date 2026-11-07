@@ -522,9 +522,14 @@ function getThemeConfig() {
   const primaryColor = activeAppearance.value?.tokens.colorPrimary ?? themeColors[themeColor.value]
   const token = {
     colorPrimary: primaryColor,
-    // 中性灰白降低大面积表面的亮度；外观包仍可覆盖自己的背景。
+    // 保留柔和灰白表面，内容分隔线使用一致的层次；外观包仍可覆盖。
     ...(!isDark.value
-      ? { colorBgLayout: '#e9e9e9', colorBgContainer: '#f2f2f2', colorBgElevated: '#f7f7f7' }
+      ? {
+          colorBgLayout: '#e9e9e9',
+          colorBgContainer: '#f2f2f2',
+          colorBgElevated: '#f7f7f7',
+          colorBorderSecondary: '#e0e0e0',
+        }
       : {}),
     ...(activeAppearance.value?.tokens.colorBgLayout
       ? { colorBgLayout: activeAppearance.value.tokens.colorBgLayout }
