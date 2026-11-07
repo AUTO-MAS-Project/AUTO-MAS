@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import json
 import threading
 import zipfile
 from pathlib import Path
@@ -14,7 +15,7 @@ from app.task.MaaEnd.tools.pipeline_migration import refresh_merged_pipelines
 
 
 @pytest.fixture
-def package(tmp_path):
+def package(tmp_path, isolated_app_paths):
     root = tmp_path / "installation"
     root.mkdir()
     (root / "app.exe").write_bytes(b"old")
@@ -41,14 +42,104 @@ def apply(package, **kwargs):
     )
 
 
-def test_switch_preserves_user_data_and_confirms_complete_tree(package):
+def test_switch_preserves_user_data_and_confirms_complete_tree(
+    package, isolated_app_paths
+):
     root, _ = package
     apply(package)
     assert (root / "app.exe").read_bytes() == b"new"
     assert (root / "resource/new.json").read_bytes() == b"resource"
     assert (root / "config/user.json").read_bytes() == b"user-owned"
-    assert not (install.workspace(root) / "transaction.json").exists()
-    assert not (install.workspace(root) / "previous").exists()
+    receipts = list(
+        (isolated_app_paths.data_path / "script_update").glob("*/installed.json")
+    )
+    assert len(receipts) == 1
+    assert install.verify_installed_files(root, threading.Event())
+    assert not install.workspace(root).exists()
+
+
+def test_legacy_receipt_is_deleted_without_migration(package):
+    root, _ = package
+    legacy = install.workspace(root)
+    legacy.mkdir()
+    (legacy / "installed.json").write_text(
+        json.dumps({"files": {"app.exe": hashlib.sha256(b"old").hexdigest()}})
+    )
+    assert not install.verify_installed_files(root, threading.Event())
+
+    install.recover_install(root, lambda: None, threading.Event())
+
+    assert not legacy.exists()
+    assert not install.record_directory(root).exists()
+    assert (root / "app.exe").read_bytes() == b"old"
+    assert not install.verify_installed_files(root, threading.Event())
+
+
+def test_legacy_cleanup_keeps_user_backups_and_unknown_files(package):
+    root, _ = package
+    directory = install.workspace(root)
+    directory.mkdir()
+    for name in ("installed.json", "program-identity.json", "baah-version.json"):
+        (directory / name).write_bytes(b"old record")
+    backup = directory / "retired-pipelines/custom.json"
+    backup.parent.mkdir()
+    backup.write_bytes(b"user resource")
+    note = directory / "notes.txt"
+    note.write_bytes(b"user note")
+
+    install.recover_install(root, lambda: None, threading.Event())
+
+    assert not (directory / "installed.json").exists()
+    assert not (directory / "program-identity.json").exists()
+    assert not (directory / "baah-version.json").exists()
+    assert not install.record_directory(root).exists()
+    assert backup.read_bytes() == b"user resource"
+    assert note.read_bytes() == b"user note"
+
+
+def test_legacy_receipt_is_deleted_without_overwriting_current_record(package):
+    root, _ = package
+    apply(package)
+    receipt = install.record_directory(root) / "installed.json"
+    confirmed = receipt.read_bytes()
+    legacy = install.workspace(root)
+    legacy.mkdir()
+    old_record = legacy / "installed.json"
+    old_content = json.dumps(
+        {"files": {"app.exe": hashlib.sha256(b"old").hexdigest()}}
+    ).encode()
+    old_record.write_bytes(old_content)
+
+    install.recover_install(root, lambda: None, threading.Event())
+
+    assert receipt.read_bytes() == confirmed
+    assert not legacy.exists()
+    assert install.verify_installed_files(root, threading.Event())
+
+
+def test_receipt_write_failure_keeps_installation_recoverable(package, monkeypatch):
+    root, _ = package
+    replace = Path.replace
+
+    def fail_receipt(path, target):
+        if Path(target).name == "installed.json":
+            raise OSError("receipt disk full")
+        return replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_receipt)
+    with pytest.raises(install.InstallUnsafeError):
+        apply(package)
+    directory = install.workspace(root)
+    assert (directory / "previous/app.exe").read_bytes() == b"old"
+    assert (directory / "transaction.json").is_file()
+    assert (root / "app.exe").read_bytes() == b"new"
+
+    monkeypatch.setattr(Path, "replace", replace)
+    install.recover_install(root, lambda: None, threading.Event())
+    assert install.verify_installed_files(root, threading.Event())
+    assert (install.record_directory(root) / "installed.json").is_file()
+    assert not (directory / "previous").exists()
+    assert not (directory / "transaction.json").exists()
 
 
 @pytest.mark.parametrize(
@@ -400,7 +491,10 @@ def test_missing_install_root_rejects_damaged_previous_backup(package, monkeypat
     assert (install.workspace(root) / "transaction.json").exists()
 
 
-def test_interrupted_backup_cleanup_can_safely_finish_on_next_run(package, monkeypatch):
+@pytest.mark.parametrize("legacy_receipt", [False, True])
+def test_interrupted_backup_cleanup_can_safely_finish_on_next_run(
+    package, monkeypatch, legacy_receipt
+):
     root, _ = package
     old_rmtree = install.shutil.rmtree
     previous = install.workspace(root) / "previous"
@@ -417,7 +511,14 @@ def test_interrupted_backup_cleanup_can_safely_finish_on_next_run(package, monke
     monkeypatch.setattr(install.shutil, "rmtree", old_rmtree)
     assert (root / "app.exe").read_bytes() == b"new"
     assert previous.exists()
+    if legacy_receipt:
+        (install.record_directory(root) / "installed.json").replace(
+            install.workspace(root) / "installed.json"
+        )
     install.recover_install(root, lambda: None, threading.Event())
+    assert install.record_path(root, "installed.json").is_file()
+    assert install.verify_installed_files(root, threading.Event())
+    assert not (install.workspace(root) / "installed.json").exists()
     assert (root / "app.exe").read_bytes() == b"new"
     assert not previous.exists()
     assert not (install.workspace(root) / "transaction.json").exists()

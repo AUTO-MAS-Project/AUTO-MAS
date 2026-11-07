@@ -91,10 +91,10 @@ test.describe('@settings user preferences', () => {
       await expect(autoStart).toBeChecked({ checked: loginEnabled })
       await app.evidence(`scheduled-wakeup-${enabled ? 'enabled' : 'disabled'}`)
       if (enabled) {
-        await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click()
+        await chooseSegment(page.locator('.theme-mode-control'), 'Dark')
         await expect(page.locator('html')).toHaveClass(/dark/)
         await app.evidence('scheduled-wakeup-dark')
-        await page.getByRole('button', { name: 'Switch to light mode', exact: true }).click()
+        await chooseSegment(page.locator('.theme-mode-control'), 'Light')
       }
     }
   })
@@ -278,7 +278,7 @@ test.describe('@settings user preferences', () => {
     }
   })
 
-  test('preserves startup and appearance preferences with the shared header controls', async ({
+  test('preserves startup and appearance preferences through their settings', async ({
     app,
     page,
   }) => {
@@ -288,7 +288,7 @@ test.describe('@settings user preferences', () => {
     await app.goto('/settings')
     const originalMinimize = (await (await loaded).json()).data.UI.IfToTray === true
     const minimize = page.locator('[aria-label="When minimizing"]')
-    const toolbar = page.locator('.settings-page-toolbar')
+    const header = page.locator('.settings-shell-header')
     const sider = page.locator('.app-sider')
     const theme = page.locator('.theme-mode-control')
     const originalTheme = await theme.locator('.ant-segmented-item-selected').innerText()
@@ -310,7 +310,7 @@ test.describe('@settings user preferences', () => {
       await page.getByRole('button', { name: 'Purple', exact: true }).click()
       await expect(sider).toHaveCSS('background-color', 'rgb(242, 242, 242)')
       await expect(sider).toHaveCSS('border-right-color', 'rgb(224, 224, 224)')
-      await toolbar.getByRole('button', { name: 'Switch to dark mode', exact: true }).click()
+      await chooseSegment(theme, 'Dark')
       await expect(page.locator('html')).toHaveClass(/dark/)
       await expect(sider).toHaveCSS('background-color', 'rgb(20, 20, 20)')
       await expect(sider).toHaveCSS('border-right-color', 'rgb(48, 48, 48)')
@@ -321,19 +321,16 @@ test.describe('@settings user preferences', () => {
       )
       for (const tab of ['Features', 'Notifications', 'Advanced', 'About']) {
         await page.getByRole('tab', { name: tab, exact: true }).click()
-        await expect(
-          toolbar.getByRole('button', { name: 'Switch to light mode', exact: true })
-        ).toBeVisible()
+        await expect(header.getByRole('button')).toHaveCount(0)
+        await expect(page.locator('html')).toHaveClass(/dark/)
       }
-      await toolbar.getByRole('button', { name: 'Switch to light mode', exact: true }).click()
+      await page.getByRole('tab', { name: 'Interface', exact: true }).click()
+      await chooseSegment(theme, 'Light')
       await expect(page.locator('html')).not.toHaveClass(/dark/)
       await expect(sider).toHaveCSS('background-color', 'rgb(242, 242, 242)')
-      await page.getByRole('tab', { name: 'Interface', exact: true }).click()
       await expect(theme.getByRole('radio', { name: 'Light', exact: true })).toBeChecked()
       await page.setViewportSize({ width: 1040, height: 900 })
-      await expect(
-        toolbar.getByRole('button', { name: 'Switch to dark mode', exact: true })
-      ).toBeVisible()
+      await expect(header.getByRole('button')).toHaveCount(0)
       // 目录显隐是持久化偏好，窄窗口不会把它自动收起
       await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible()
       await page.reload()
@@ -428,6 +425,7 @@ test.describe('@settings user preferences', () => {
 
     await page.getByRole('tab', { name: 'About', exact: true }).click()
     await expect(navigation).toHaveCount(0)
+    await expect(page.locator('.settings-navigation-toggle')).toHaveCount(0)
     await app.evidence('settings-layout-about')
   })
 
@@ -440,12 +438,21 @@ test.describe('@settings user preferences', () => {
     await app.goto('/settings')
     const layout = page.locator('.settings-section-layout')
     const navigation = page.getByRole('navigation', { name: 'Settings sections' })
+    const panel = page.locator('.settings-navigation-panel')
     const toggle = page.locator('.settings-navigation-toggle')
     const restore = async () => {
-      if ((await toggle.getAttribute('aria-pressed')) === 'false') await toggle.click()
+      await expect(toggle).toHaveAttribute('aria-busy', 'false')
+      if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
     }
     await expect(navigation).toBeVisible()
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(panel.getByRole('button', { name: 'Hide section navigation' })).toBeVisible()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    const expanded = (await toggle.boundingBox())!
+    const links = (await navigation.boundingBox())!
+    expect(links.y - expanded.y - expanded.height).toBeGreaterThanOrEqual(0)
+    expect(links.y - expanded.y - expanded.height).toBeLessThanOrEqual(16)
+    await expect(page.locator('.settings-shell-header').getByRole('button')).toHaveCount(0)
+    await app.evidence('settings-navigation-expanded')
     try {
       // 缩放窗口只改列数，目录始终在
       for (const width of [1600, 1280, 1040, 960]) {
@@ -457,27 +464,42 @@ test.describe('@settings user preferences', () => {
       // 关掉目录后，窄窗口不再有目录，宽窗口仍可两列
       await page.setViewportSize({ width: 1920, height: 1080 })
       await toggle.click()
-      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
       await expect(navigation).toHaveCount(0)
       await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
+      await expect(toggle).toBeFocused()
+      const collapsed = (await toggle.boundingBox())!
+      expect(collapsed.x).toBeCloseTo(expanded.x, 0)
+      expect(collapsed.y).toBeCloseTo(expanded.y, 0)
+      const content = (await layout.locator('.ant-tabs-content-holder').boundingBox())!
+      expect(content.x + content.width).toBeLessThanOrEqual(collapsed.x)
+      await app.evidence('settings-navigation-collapsed')
       await page.setViewportSize({ width: 1040, height: 900 })
       await expect(navigation).toHaveCount(0)
       await expect(layout).toHaveAttribute('data-effective-layout', 'single')
 
       // 偏好跨重载保留
       await page.reload()
-      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
       await expect(navigation).toHaveCount(0)
       await page.setViewportSize({ width: 1920, height: 1080 })
-      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
       await expect(navigation).toHaveCount(0)
       await app.evidence('settings-navigation-hidden')
 
       await restore()
       await expect(navigation).toBeVisible()
       await page.reload()
-      await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true')
       await expect(navigation).toBeVisible()
+      await toggle.focus()
+      await page.keyboard.press('Enter')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(toggle).toHaveAttribute('aria-busy', 'false')
+      await page.keyboard.press('Enter')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+      await expect(navigation).toBeVisible()
+      await expect(toggle).toHaveAttribute('aria-busy', 'false')
       await app.evidence('settings-navigation-restored')
     } finally {
       await restore()

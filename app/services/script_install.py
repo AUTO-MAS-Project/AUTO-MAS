@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from app.core import Config
 from app.utils import update_files
 
 
@@ -30,7 +31,18 @@ def _key(root: Path) -> str:
 
 
 def workspace(root: Path) -> Path:
+    """与安装同盘的目录切换、恢复和资源备份工作区。"""
     return root.parent / f".mas-update-{_key(root)[:24]}"
+
+
+def record_directory(root: Path) -> Path:
+    """安装记录归 MAS 数据目录，不随脚本安装目录切换。"""
+    return Config.data_path / "script_update" / _key(root)[:24]
+
+
+def record_path(root: Path, filename: str) -> Path:
+    """长期安装记录只保存在 MAS 数据目录。"""
+    return record_directory(root) / filename
 
 
 @contextmanager
@@ -222,9 +234,36 @@ def _write_state(
     temporary.replace(directory / filename)
 
 
+def _write_receipt(root: Path, files: dict[str, str]) -> None:
+    directory = record_directory(root)
+    directory.mkdir(parents=True, exist_ok=True)
+    _reject_link(directory)
+    _write_state(directory, {"files": files}, "installed.json")
+
+
+def _remove_empty_workspace(root: Path) -> None:
+    directory = workspace(root)
+    if directory.is_dir() and not any(directory.iterdir()):
+        directory.rmdir()
+
+
+def _discard_legacy_records(root: Path) -> None:
+    """只删除旧位置的长期记录，保留未清理的安装文件和用户资源备份。"""
+    directory = workspace(root)
+    if not directory.exists():
+        return
+    _reject_link(directory)
+    for filename in ("installed.json", "program-identity.json", "baah-version.json"):
+        path = directory / filename
+        if path.exists():
+            _reject_link(path)
+            path.unlink()
+    _remove_empty_workspace(root)
+
+
 def verify_installed_files(root: Path, cancelled: threading.Event) -> bool:
     """校验上次经可信包安装的分发文件；配置与新增运行数据不参与比较。"""
-    receipt = workspace(root) / "installed.json"
+    receipt = record_path(root, "installed.json")
     if not receipt.exists():
         return False
     try:
@@ -254,6 +293,7 @@ def recover_install(
     if not journal.exists():
         if (directory / "previous").exists():
             raise InstallUnsafeError("安装备份存在但恢复记录缺失，请保留现场并手动恢复")
+        _discard_legacy_records(root)
         return
     assert_idle()
     _reject_link(directory)
@@ -285,7 +325,9 @@ def recover_install(
                     raise InstallUnsafeError("原安装文件清单无效，不能自动清理备份")
                 remaining = tree_hashes(previous, cancelled)
                 if state.get("phase") == "installed":
-                    receipt = directory / "installed.json"
+                    receipt = record_path(root, "installed.json")
+                    if not receipt.exists():
+                        _write_receipt(root, state["package_files"])
                     _reject_link(receipt)
                     recorded = json.loads(receipt.read_text(encoding="utf-8"))
                     if not isinstance(recorded, dict) or recorded.get(
@@ -306,9 +348,7 @@ def recover_install(
                         raise InstallUnsafeError(
                             "原安装备份发生外部修改，已保留现场，不能自动删除备份"
                         )
-                    _write_state(
-                        directory, {"files": state["package_files"]}, "installed.json"
-                    )
+                    _write_receipt(root, state["package_files"])
                     _write_state(directory, {**state, "phase": "installed"})
                 shutil.rmtree(previous)
             else:
@@ -320,8 +360,9 @@ def recover_install(
         elif not ready.exists() and tree_hashes(root, cancelled) != state["files"]:
             raise InstallUnsafeError("更新恢复校验未通过，不能启动")
         elif not ready.exists():
-            _write_state(directory, {"files": state["package_files"]}, "installed.json")
+            _write_receipt(root, state["package_files"])
         journal.unlink()
+        _discard_legacy_records(root)
     except InstallUnsafeError:
         raise
     except Exception as error:
@@ -362,7 +403,7 @@ def install_package(
     if shutil.disk_usage(directory).free < required + 256 * 1024**2:
         raise OSError("磁盘空间不足，无法保留原安装并准备更新")
     shutil.copytree(root, ready)
-    receipt = directory / "installed.json"
+    receipt = record_path(root, "installed.json")
     if receipt.exists():
         old_files = json.loads(receipt.read_text(encoding="utf-8"))["files"]
         for name, digest in old_files.items():
@@ -425,7 +466,7 @@ def install_package(
             raise InstallUnsafeError(
                 "切换期间原安装备份被外部修改，已保留备份，请手动处理"
             )
-        _write_state(directory, {"files": package_files}, "installed.json")
+        _write_receipt(root, package_files)
         # 从此阶段起，新安装与收据均已验证；旧备份清理可安全续做。
         _write_state(directory, {**transaction_state, "phase": "installed"})
         shutil.rmtree(previous)
@@ -435,6 +476,7 @@ def install_package(
             "安装切换未完成确认，请重试恢复；原安装备份已保留"
         ) from error
     shutil.rmtree(package)
+    _remove_empty_workspace(root)
 
 
 def read_pe_architecture(executable: Path) -> str:

@@ -26,6 +26,8 @@ const SECTION_OFFSET = 24
 const DUAL_MIN_CONTENT_WIDTH = 1080
 // 右侧目录占位：160px 目录 + 24px 间距，与 .settings-shell--with-nav 的 margin-right 一致。
 const NAVIGATION_WIDTH = 184
+// 收起时保留 32px 入口和 24px 间距。
+const COLLAPSED_NAVIGATION_WIDTH = 56
 
 /**
  * 同一组卡片的响应式排布、阅读位置与目录；不移动或重建子组件。
@@ -42,12 +44,17 @@ export function useSettingsSectionLayout(activeKey: Ref<string>, navigationVisib
   const isAbout = computed(() => activeKey.value === 'others')
   // 目录显隐只跟随用户偏好，不跟随窗口宽度：缩放窗口只改变列数，
   // 不会出现「窗口变窄后目录消失、卡片反而变成两列」这种反向跳变。
-  const hasNavigation = computed(
-    () => !isAbout.value && navigationVisible.value && sections.value.length > 1
-  )
+  const navigationAvailable = computed(() => !isAbout.value && sections.value.length > 1)
+  const hasNavigation = computed(() => navigationAvailable.value && navigationVisible.value)
   // 列数只由扣除目录占位后的内容列宽度决定，因此随窗口宽度单调变化。
   const contentWidth = computed(
-    () => layoutWidth.value - (hasNavigation.value ? NAVIGATION_WIDTH : 0)
+    () =>
+      layoutWidth.value -
+      (navigationAvailable.value
+        ? hasNavigation.value
+          ? NAVIGATION_WIDTH
+          : COLLAPSED_NAVIGATION_WIDTH
+        : 0)
   )
   const effectiveDual = computed(
     () => !isAbout.value && contentWidth.value >= DUAL_MIN_CONTENT_WIDTH
@@ -290,6 +297,7 @@ export function useSettingsSectionLayout(activeKey: Ref<string>, navigationVisib
     activeSection,
     navigationTop,
     effectiveDual,
+    navigationAvailable,
     hasNavigation,
     scrollToSection,
   }

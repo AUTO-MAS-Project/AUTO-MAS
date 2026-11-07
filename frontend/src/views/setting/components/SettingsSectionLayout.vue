@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ProfileOutlined, RightOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useSettingsSectionLayout } from './useSettingsSectionLayout'
-import SettingsPageToolbar from './SettingsPageToolbar.vue'
 import { getConfig, saveConfig } from '@/utils/config'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 
@@ -21,9 +21,13 @@ const {
   activeSection,
   navigationTop,
   effectiveDual,
+  navigationAvailable,
   hasNavigation,
   scrollToSection,
 } = useSettingsSectionLayout(activeKey, navigationVisible)
+const navigationLabel = computed(() =>
+  t(hasNavigation.value ? 'core.setting.navigation.hide' : 'core.setting.navigation.show')
+)
 const tabs = computed(() => [
   { key: 'basic', title: t('core.setting.tab.basic') },
   { key: 'function', title: t('core.setting.tab.function') },
@@ -86,6 +90,7 @@ async function toggleNavigation() {
       ref="shell"
       class="settings-shell"
       :class="{
+        'settings-shell--navigation-available': navigationAvailable,
         'settings-shell--with-nav': hasNavigation,
         'settings-shell--dual': effectiveDual,
         'settings-shell--about': activeKey === 'others',
@@ -95,13 +100,6 @@ async function toggleNavigation() {
         <!-- 页面标题跟卡片列同一个容器，居中后标题、页签、卡片三者左边缘始终对齐 -->
         <div class="settings-shell-header">
           <div class="settings-title"><slot name="header" /></div>
-          <SettingsPageToolbar
-            :disabled="!layoutReady"
-            :navigation-visible="hasNavigation"
-            :navigation-available="activeKey !== 'others' && sections.length > 1"
-            :saving-navigation="savingNavigation"
-            @toggle-navigation="toggleNavigation"
-          />
         </div>
         <a-tabs v-model:active-key="activeKey" :animated="false" class="settings-tabs">
           <a-tab-pane v-for="tab in tabs" :key="tab.key" :tab="tab.title">
@@ -112,33 +110,59 @@ async function toggleNavigation() {
         </a-tabs>
       </div>
 
-      <nav
-        v-if="hasNavigation"
-        id="settings-section-navigation"
-        class="settings-section-navigation"
-        :aria-label="t('core.setting.navigation.ariaLabel')"
+      <aside
+        v-if="navigationAvailable"
+        class="settings-navigation-panel"
+        :class="{ 'settings-navigation-panel--collapsed': !hasNavigation }"
         :style="{ top: `${navigationTop}px` }"
       >
-        <div class="navigation-title">
-          {{ t('core.setting.navigation.title') }}
-        </div>
-        <ul class="navigation-list">
-          <li v-for="section in sections" :key="section.id">
-            <button
-              type="button"
-              class="navigation-link"
-              :class="{
-                'navigation-link--active': activeSection === section.id,
-              }"
-              :aria-current="activeSection === section.id ? 'location' : undefined"
-              :aria-controls="section.id"
-              @click="scrollToSection(section)"
+        <div class="navigation-header">
+          <span v-if="hasNavigation" class="navigation-title">
+            {{ t('core.setting.navigation.title') }}
+          </span>
+          <a-tooltip :title="navigationLabel" :trigger="['hover', 'focus']" placement="left">
+            <a-button
+              type="text"
+              class="settings-navigation-toggle"
+              :aria-label="navigationLabel"
+              :aria-expanded="hasNavigation"
+              aria-controls="settings-section-navigation"
+              :aria-busy="savingNavigation"
+              :loading="savingNavigation"
+              :disabled="!layoutReady"
+              @click="toggleNavigation"
             >
-              {{ section.title }}
-            </button>
-          </li>
-        </ul>
-      </nav>
+              <template #icon>
+                <RightOutlined v-if="hasNavigation" aria-hidden="true" />
+                <ProfileOutlined v-else aria-hidden="true" />
+              </template>
+            </a-button>
+          </a-tooltip>
+        </div>
+        <nav
+          v-show="hasNavigation"
+          id="settings-section-navigation"
+          class="settings-section-navigation"
+          :aria-label="t('core.setting.navigation.ariaLabel')"
+        >
+          <ul class="navigation-list">
+            <li v-for="section in sections" :key="section.id">
+              <button
+                type="button"
+                class="navigation-link"
+                :class="{
+                  'navigation-link--active': activeSection === section.id,
+                }"
+                :aria-current="activeSection === section.id ? 'location' : undefined"
+                :aria-controls="section.id"
+                @click="scrollToSection(section)"
+              >
+                {{ section.title }}
+              </button>
+            </li>
+          </ul>
+        </nav>
+      </aside>
     </div>
   </div>
 </template>
@@ -166,10 +190,7 @@ async function toggleNavigation() {
   margin: 0 auto;
 }
 
-.settings-shell--with-nav {
-  max-width: 1240px;
-}
-
+.settings-shell--navigation-available,
 .settings-shell--dual {
   max-width: 1440px;
 }
@@ -187,12 +208,7 @@ async function toggleNavigation() {
 }
 
 .settings-shell-header {
-  display: flex;
   flex: 0 0 auto;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 24px;
   margin-bottom: 16px;
 }
 
@@ -224,7 +240,12 @@ async function toggleNavigation() {
   overflow-anchor: none;
 }
 
-/* 标题和页签占满整体限宽，只有滚动卡片列为右侧目录留位。 */
+/* 收起时仍为右侧入口留位，避免它覆盖设置控件。 */
+.settings-shell--navigation-available .settings-tabs :deep(.ant-tabs-content-holder) {
+  margin-right: 56px;
+}
+
+/* 标题和页签占满整体限宽，只有滚动卡片列为展开的目录留位。 */
 .settings-shell--with-nav .settings-tabs :deep(.ant-tabs-content-holder) {
   margin-right: 184px;
 }
@@ -274,21 +295,58 @@ async function toggleNavigation() {
   outline-offset: 4px;
 }
 
-.settings-section-navigation {
+.settings-navigation-panel {
   position: absolute;
   right: 0;
-  display: block;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
   width: 160px;
-  max-height: calc(100% - 160px);
   padding: 12px 0;
-  overflow-y: auto;
+}
+
+.settings-navigation-panel--collapsed {
+  width: 32px;
+}
+
+.navigation-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-left: 12px;
+}
+
+.settings-navigation-panel--collapsed .navigation-header {
+  padding-left: 0;
 }
 
 .navigation-title {
-  margin-bottom: 12px;
-  padding-left: 12px;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
+}
+
+.settings-navigation-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--ant-color-text-secondary);
+}
+
+.settings-navigation-toggle:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+}
+
+.settings-section-navigation {
+  min-height: 0;
+  margin-top: 8px;
+  overflow-y: auto;
 }
 
 .navigation-list {
