@@ -102,9 +102,11 @@ async def test_prefetched_candidate_consumption_checks_baseline_and_gate(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("changed", [False, True])
+@pytest.mark.parametrize(
+    "changed,stop_build", [(False, False), (True, False), (False, True)]
+)
 async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
-    tmp_path, monkeypatch, isolated_app_paths, changed
+    tmp_path, monkeypatch, isolated_app_paths, changed, stop_build
 ):
     """同版重新导入改变来源时，旧下载不能登记到新谱系；未变化的来源继续复用。"""
     import asyncio
@@ -266,6 +268,57 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         "_prepare_project_environment_sync",
         lambda *_args, **_kwargs: True,
     )
+    if stop_build:
+        from app.core.task_manager.manager import Task
+
+        entered, release = threading.Event(), threading.Event()
+        building = []
+        build = updater.build_from_package
+
+        def blocked_build(*args, **kwargs):
+            result = build(*args, **kwargs)
+            building.append((Path(args[3]), Path(args[4])))
+            entered.set()
+            assert release.wait(5)
+            return result
+
+        from pathlib import Path
+
+        monkeypatch.setattr(updater, "build_from_package", blocked_build)
+
+        class AutoUpdateTask(Task):
+            async def _run_main_task(self):
+                await manager._run_project_update("BeforeRun")
+
+        task = AutoUpdateTask(info, [], manager_factories={})
+        task._stop_scope.checks[0].timeout = 0.03
+        task.execute()
+        try:
+            async with asyncio.timeout(3):
+                while not entered.is_set():
+                    await asyncio.sleep(0.01)
+            task.cancel()
+            await asyncio.wait_for(task.accomplish.wait(), 2)
+            unpacked, staging = building[0]
+            assert unpacked.is_dir(), "构建线程尚未结束时，解压输入不能被清理"
+            assert staging.is_dir()
+            release.set()
+            await asyncio.wait_for(task._stop_scope._updates_idle.wait(), 3)
+            assert not staging.exists()
+            assert not unpacked.exists()
+            states = [
+                json.loads(path.read_text())
+                for path in (tmp_path / "operations").glob("*/state.json")
+            ]
+            assert states and states[-1]["status"] == "cancelled"
+            assert json.loads((view / "interface.json").read_text())["version"] == "1.0"
+        finally:
+            release.set()
+            task.cancel()
+            await asyncio.gather(task._execution_root, return_exceptions=True)
+            async with asyncio.timeout(3):
+                await task._stop_scope._updates_idle.wait()
+        return
     outcome = await manager._invoke_project_update(
         view,
         resolve_update_credentials(config),

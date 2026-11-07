@@ -1398,8 +1398,10 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             update_task.add_done_callback(
                 lambda task: None if task.cancelled() else task.exception()
             )
-            with suppress(BaseException):
-                await asyncio.wait_for(asyncio.shield(update_task), timeout=grace)
+            process_scope = current_process_scope.get()
+            if process_scope is None or not process_scope.closed:
+                with suppress(BaseException):
+                    await asyncio.wait_for(asyncio.shield(update_task), timeout=grace)
 
         try:
             finished = await self._await_or_stop(update_task)

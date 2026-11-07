@@ -36,6 +36,7 @@ class TaskProcessScope:
         self._finalizers: dict[asyncio.Task, float] = {}
         self.finished = asyncio.Event()
         self._updates: dict[asyncio.Task, int] = {}
+        self._update_stoppers: dict[asyncio.Task, Callable[[], None]] = {}
         self._updates_idle = asyncio.Event()
         self._updates_idle.set()
         self._update_stop_error: Exception | None = None
@@ -64,7 +65,7 @@ class TaskProcessScope:
             task.add_done_callback(lambda done: timer.cancel())
 
     @contextmanager
-    def updating(self) -> Iterator[None]:
+    def updating(self, *, cancel: Callable[[], None] | None = None) -> Iterator[None]:
         task = asyncio.current_task()
         if task is None:
             raise RuntimeError("更新必须在异步任务中执行")
@@ -72,6 +73,10 @@ class TaskProcessScope:
             raise asyncio.CancelledError
         token = current_update_scope.set(self)
         self._updates[task] = self._updates.get(task, 0) + 1
+        previous_stop = self._update_stoppers.get(task)
+        if cancel is not None:
+            self._update_stoppers[task] = cancel
+            self.retain_worker(task)
         self._updates_idle.clear()
         try:
             yield
@@ -81,6 +86,11 @@ class TaskProcessScope:
             raise
         finally:
             current_update_scope.reset(token)
+            if cancel is not None:
+                if previous_stop is None:
+                    self._update_stoppers.pop(task, None)
+                else:
+                    self._update_stoppers[task] = previous_stop
             count = self._updates[task] - 1
             if count:
                 self._updates[task] = count
@@ -91,7 +101,11 @@ class TaskProcessScope:
 
     async def stop_updates(self) -> None:
         for task in tuple(self._updates):
-            task.cancel()
+            stop = self._update_stoppers.get(task)
+            if stop is None:
+                task.cancel()
+            else:
+                stop()
         await self._updates_idle.wait()
         # 协程结束不等于安装子进程退出；仍在运行的写入者必须等到退出或检查超时。
         while any(
@@ -109,9 +123,13 @@ class TaskProcessScope:
             ) from self._update_stop_error
 
     async def run_update_worker[T](
-        self, operation: Callable[[], T], *, cancel: Callable[[], None]
+        self,
+        operation: Callable[[], T],
+        *,
+        cancel: Callable[[], None],
+        release_cancelled: Callable[[T], Any] | None = None,
     ) -> T:
-        """安装线程先收到停止令牌；线程结束前更新确认保持未完成。"""
+        """线程结束前更新确认保持未完成；取消后的成功资源交给 release_cancelled。"""
         with self.updating():
             worker = asyncio.create_task(asyncio.to_thread(operation))
             self.retain_worker(worker)
@@ -128,7 +146,19 @@ class TaskProcessScope:
                     except (asyncio.CancelledError, Exception):
                         if worker.done():
                             break
-                _consume_result(worker)
+                if (
+                    release_cancelled is not None
+                    and not worker.cancelled()
+                    and worker.exception() is None
+                ):
+                    # 取消仍向上传播，但迟到的成功资源必须交回既有释放入口。
+                    cleanup = asyncio.create_task(
+                        asyncio.to_thread(release_cancelled, worker.result())
+                    )
+                    self.retain_worker(cleanup)
+                    cleanup.add_done_callback(_consume_result)
+                else:
+                    _consume_result(worker)
                 raise
 
     async def run_checks(self) -> None:

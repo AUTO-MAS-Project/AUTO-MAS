@@ -197,6 +197,8 @@ async def test_stop_deadline_keeps_late_creation_reapable(monkeypatch):
         assert all(not item.done() for item in pending)
         release.set()
         await asyncio.wait_for(asyncio.gather(*pending, return_exceptions=True), 2)
+        # 句柄交回后完成回调才继续回收；必须核对真实退出，不能抢读退出通知。
+        await asyncio.wait_for(created[0].wait(), 2)
         assert created[0].returncode is not None
     finally:
         release.set()
@@ -564,3 +566,103 @@ async def test_started_account_finalizer_saves_history_once_with_bounded_confirm
         task.cancel()
         await asyncio.gather(task._execution_root, return_exceptions=True)
         await store.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("late_success", [False, True])
+async def test_cancelled_runner_preparation_releases_successful_resource_once(
+    monkeypatch, tmp_path, late_success
+):
+    from app.task.MaaFW.tools.core.runner import environment
+    from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
+    from app.task.MaaFW.tools.core.runtime_pool import binding
+    from app.task.MaaFW.tools.embedded.runner_task import (
+        _abandon_environment_preparation,
+    )
+
+    entered, release, released = threading.Event(), threading.Event(), threading.Event()
+    cancelled = threading.Event()
+    active_leases, release_calls = set(), []
+
+    class Pool:
+        root = tmp_path
+
+        def release_lease(self, runtime_id, lease_id):
+            active_leases.remove(lease_id)
+            release_calls.append((runtime_id, lease_id))
+            released.set()
+
+    monkeypatch.setattr(environment, "MaaFWRuntimePool", lambda root: Pool())
+    service = MaaFWRunnerService()
+    # 一个引用属于本次准备，另一个属于无关使用者，用来核对没有重复释放。
+    binding.retain_binding(tmp_path, "1.0")
+
+    def prepare():
+        active_leases.add("lease")
+        binding.retain_binding(tmp_path, "1.0")
+        entered.set()
+        if late_success:
+            assert release.wait(5)
+        return environment.MaaFWRunnerEnvironment(
+            python_executable=tmp_path / "python",
+            venv_path=tmp_path,
+            env={},
+            packages=(),
+            maafw_version="1.0",
+            runtime_id="runtime",
+            lease_id="lease",
+            runtime_pool_root=tmp_path,
+            binding_version="1.0",
+        )
+
+    async def run(task):
+        task._stop_scope.checks[0].timeout = 0.03
+        preparation = asyncio.create_task(
+            task._stop_scope.run_update_worker(
+                prepare,
+                cancel=cancelled.set,
+                release_cancelled=service.release_environment,
+            )
+        )
+        try:
+            await asyncio.shield(preparation)
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            await _abandon_environment_preparation(
+                preparation,
+                release=service.release_environment,
+                grace_seconds=0,
+            )
+            raise
+
+    task = start_task(run)
+    try:
+        async with asyncio.timeout(3):
+            while not entered.is_set():
+                await asyncio.sleep(0.01)
+            if not late_success:
+                await task._stop_scope._updates_idle.wait()
+        task.cancel()
+        await asyncio.wait_for(task.accomplish.wait(), 2)
+        if late_success:
+            assert cancelled.is_set()
+            assert active_leases == {"lease"}
+        release.set()
+        async with asyncio.timeout(3):
+            while not released.is_set():
+                await asyncio.sleep(0.01)
+        await asyncio.wait_for(
+            asyncio.gather(
+                *tuple(task._stop_scope.retained_workers), return_exceptions=True
+            ),
+            3,
+        )
+        assert not active_leases
+        assert release_calls == [("runtime", "lease")]
+        assert binding.retained_versions(tmp_path) == {"1.0"}
+        binding.release_binding(tmp_path, "1.0")
+        assert not binding.retained_versions(tmp_path)
+    finally:
+        release.set()
+        task.cancel()
+        await asyncio.gather(task._execution_root, return_exceptions=True)

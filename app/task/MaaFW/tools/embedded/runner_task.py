@@ -382,6 +382,11 @@ async def _abandon_environment_preparation(
             await asyncio.to_thread(release, prepared_after_cancel)
 
     cleanup_task = asyncio.create_task(release_after_prepare())
+    scope = current_process_scope.get()
+    if scope is not None:
+        scope.retain_worker(cleanup_task)
+        if scope.closed:
+            grace_seconds = 0
     try:
         await asyncio.wait_for(asyncio.shield(cleanup_task), timeout=grace_seconds)
     except asyncio.TimeoutError:
@@ -2103,7 +2108,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         prepare_environment_task = asyncio.create_task(
             process_scope.run_update_worker(
-                _prepare_environment_with_proxy, cancel=prepare_cancel_event.set
+                _prepare_environment_with_proxy,
+                cancel=prepare_cancel_event.set,
+                release_cancelled=service.release_environment,
             )
             if process_scope is not None
             else asyncio.to_thread(_prepare_environment_with_proxy)
