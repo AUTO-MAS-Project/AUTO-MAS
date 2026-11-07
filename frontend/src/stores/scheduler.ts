@@ -207,7 +207,7 @@ export const useSchedulerStore = defineStore('scheduler', () => {
   }
   function pruneAutomaticTabs() {
     const completed = tabs.value.filter(
-      tab => tab.automatic && tab.closable && runFor(tab)?.phase === 'completed'
+      tab => tab.automatic && tab.closable && !tab.starting && runFor(tab)?.phase === 'completed'
     )
     let excess = completed.length - MAX_AUTOMATIC_COMPLETED_TABS
     for (const tab of completed) {

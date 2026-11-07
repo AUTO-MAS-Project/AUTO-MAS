@@ -70,6 +70,40 @@ afterEach(() => {
 })
 
 describe('调度台只绑定运行身份', () => {
+  it('自动清理保留切到后台的启动页，响应返回后只绑定一个可见标签', () => {
+    store.bootstrap()
+    for (let index = 0; index < 20; index++) {
+      const task = state(`completed-${index}`)
+      runtime.states.set(task.taskId, task)
+      runtime.listener!({ type: 'created', state: task })
+      task.phase = 'completed'
+      runtime.listener!({ type: 'completed', state: task })
+    }
+    const other = state('other-running')
+    runtime.states.set(other.taskId, other)
+    runtime.listener!({ type: 'created', state: other })
+
+    const startingTab = store.tabs.find(tab => tab.taskId === 'completed-0')!
+    store.activeTab = startingTab.key
+    startingTab.starting = true
+    store.activeTab = 'main'
+    other.phase = 'completed'
+    runtime.listener!({ type: 'completed', state: other })
+    expect(store.tabs.some(tab => tab.key === startingTab.key)).toBe(true)
+    expect(runtime.release).not.toHaveBeenCalledWith('completed-0')
+
+    // 模拟创建消息早于 HTTP 响应，再将新运行绑定回原来的启动页。
+    const accepted = state('accepted-run')
+    runtime.states.set(accepted.taskId, accepted)
+    runtime.listener!({ type: 'created', state: accepted })
+    store.bindRun(startingTab, accepted.taskId)
+    startingTab.starting = false
+
+    expect(store.tabs.filter(tab => tab.taskId === accepted.taskId)).toHaveLength(1)
+    expect(store.tabs.find(tab => tab.key === store.activeTab)).toBe(startingTab)
+    expect(store.panels.find(panel => panel.tab.key === startingTab.key)?.runtime).toBe(accepted)
+  })
+
   it('限制自动完成标签，并释放缓存引用，保留手动页与仍在运行的任务', () => {
     store.bootstrap()
     const manual = state('manual')
