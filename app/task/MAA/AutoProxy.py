@@ -2110,7 +2110,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
         if skip_farming:
             # 不把预留量合并进普通库存目标，避免间接刷取养成材料。
-            logger.info(f"账号 {self.cur_user_item.name} 活动期间跳过养成材料刷取")
+            logger.info(f"账号 {self.cur_user_item.name} 本轮跳过养成材料刷取")
             return None, True, None
 
         cultivate_task = None
