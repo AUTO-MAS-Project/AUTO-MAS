@@ -1,12 +1,17 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-defineProps<{ modelValue: string[]; disabled?: boolean }>()
+const props = defineProps<{ modelValue: string[]; disabled?: boolean }>()
 const emit = defineEmits<{
   'update:modelValue': [value: string[]]
   change: [value: string[]]
 }>()
 const { t } = useI18n()
+const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const everyDay = computed(() => weekdays.every(day => props.modelValue.includes(day)))
+const maxTagPlaceholder = (omitted: unknown[]) =>
+  omitted.length === weekdays.length ? t('core.plan.week.ALL') : `+${omitted.length}`
 
 function change(value: unknown) {
   const days = value as string[]
@@ -24,7 +29,8 @@ function change(value: unknown) {
     :placeholder="t('core.queue.time.selectDays')"
     :aria-label="t('core.queue.time.colDays')"
     :disabled="disabled"
-    :max-tag-count="7"
+    :max-tag-count="everyDay ? 0 : 7"
+    :max-tag-placeholder="maxTagPlaceholder"
     :bordered="false"
     class="days-select"
     @change="change"

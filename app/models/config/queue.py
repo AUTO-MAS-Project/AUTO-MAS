@@ -274,6 +274,25 @@ class QueueConfig(DomainEntry):
     def normalize_payload(cls, data):
         data = deepcopy(data)
         info_data = data.get("Info")
+        if isinstance(info_data, dict) and info_data.get("CycleEnabled") is True:
+            items = data.get("QueueItem")
+            if isinstance(items, dict) and isinstance(items.get("data"), dict):
+                # 旧循环项的 Enabled 已移除；按确认迁移为删除禁用项，不能变成默认全跑。
+                disabled = {
+                    uid
+                    for uid, item in items["data"].items()
+                    if (item.get("Schedule") or {}).get("Enabled") is False
+                }
+                items["data"] = {
+                    uid: item
+                    for uid, item in items["data"].items()
+                    if uid not in disabled
+                }
+                items["order"] = [
+                    item
+                    for item in items.get("order", [])
+                    if item["uid"] not in disabled
+                ]
         if isinstance(info_data, dict) and info_data.get("AfterAccomplishDelay") == 0:
             # 旧值 0 原本进入固定一分钟倒计时；迁为 1 保留该实际等待时间。
             info_data["AfterAccomplishDelay"] = 1

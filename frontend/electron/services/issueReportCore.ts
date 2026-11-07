@@ -371,7 +371,8 @@ function addRotatedLogArchive(
 export function addDiagnosticFile(
   state: CollectorState,
   sourcePath: string,
-  archivePath: string
+  archivePath: string,
+  options: { text?: boolean } = {}
 ): void {
   let stat: fs.Stats
   try {
@@ -392,7 +393,7 @@ export function addDiagnosticFile(
     return
   }
 
-  if (isTextFile(sourcePath)) {
+  if (options.text || isTextFile(sourcePath)) {
     const storedSize = Math.min(maxEntryBytes, remainingBytes)
     const header = Buffer.from('[文件过大，仅保留文件末尾内容。]\n', 'utf-8')
     const keptBytes = storedSize - header.byteLength

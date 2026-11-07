@@ -27,6 +27,55 @@ const backgroundColor = (page: Page) =>
   })
 
 test.describe('@settings user preferences', () => {
+  test('anchors question hints to the icon for hover and keyboard focus', async ({ app, page }) => {
+    await app.goto('/settings')
+    const popup = page.locator('.ant-tooltip:visible')
+    const checkHint = async (icon: Locator) => {
+      for (const keyboard of [false, true]) {
+        if (keyboard) {
+          await icon.focus()
+          await page.keyboard.press('Shift+Tab')
+          await page.keyboard.press('Tab')
+          await expect(icon).toBeFocused()
+        } else {
+          await icon.hover()
+        }
+        await expect(popup).toBeVisible()
+        await expect
+          .poll(async () => {
+            const target = await icon.boundingBox()
+            const arrow = await popup.locator('.ant-tooltip-arrow').boundingBox()
+            if (!target || !arrow) return Number.POSITIVE_INFINITY
+            return Math.abs(arrow.x + arrow.width / 2 - target.x - target.width / 2)
+          })
+          .toBeLessThan(3)
+        await icon.blur()
+        await page.mouse.move(0, 0)
+        await expect(popup).toHaveCount(0)
+      }
+    }
+
+    for (const layout of [
+      { width: 1511, label: 'Single column' },
+      { width: 1920, label: 'Two columns' },
+    ]) {
+      await page.setViewportSize({ width: layout.width, height: 891 })
+      await chooseSegment(page.locator('[aria-label="Settings layout"]'), layout.label)
+      await checkHint(page.locator('.startup-options-row .ui-row-label .help-icon'))
+      const autoStart = page.getByRole('checkbox', { name: 'Start with the system', exact: true })
+      const checked = await autoStart.isChecked()
+      await checkHint(page.locator('.startup-options-row .ant-checkbox-wrapper .help-icon'))
+      await expect(autoStart).toBeChecked({ checked })
+    }
+    await checkHint(page.locator('.row-label .help-icon:visible'))
+    await page.getByRole('tab', { name: 'Features', exact: true }).click()
+    await checkHint(page.locator('.row-label .help-icon:visible'))
+    await checkHint(page.locator('.card-note-hint .help-icon'))
+    await page.getByRole('tab', { name: 'About', exact: true }).click()
+    await checkHint(page.locator('.cdk-label .help-icon'))
+    await app.evidence('settings-question-hints')
+  })
+
   test('saves scheduled wake-up independently of login startup', async ({ app, page }) => {
     await app.goto('/settings')
     const wakeup = page.getByRole('switch', { name: 'Scheduled wake-up', exact: true })
@@ -85,7 +134,7 @@ test.describe('@settings user preferences', () => {
     })
     await app.goto('/settings')
     await page.getByRole('tab', { name: 'Advanced', exact: true }).click()
-    const control = page.locator('[aria-label="Backend launch mode"]')
+    const control = page.locator('.ant-segmented[aria-label="Backend launch mode"]')
     await expect(control).toBeVisible()
     await expect(control.getByRole('radio')).toHaveCount(2)
     await expect(

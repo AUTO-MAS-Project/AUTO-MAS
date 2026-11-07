@@ -1717,6 +1717,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             status="completed",
                             reason="外部脚本返回成功",
                         )
+                    # TODO(插件迁移，#1845)：预下载暂停接线，不记录公共成功计时。
                     self._append_log(
                         f"账号「{item.user_name}」模块「{item.module_name}」执行完成"
                     )

@@ -1,0 +1,24 @@
+/* 用户编辑页共有的表单壳样式；由各页以 scoped 样式引入。 */
+.user-edit-content {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.config-card {
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.config-card :deep(.ant-card-body) {
+  padding: 32px;
+}
+
+.config-form {
+  max-width: none;
+}
+
+@media (max-width: 768px) {
+  .user-edit-content {
+    max-width: 100%;
+  }
+}

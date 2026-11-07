@@ -12,6 +12,59 @@ from tests.runtime_support import create_runtime_tree
 
 
 @pytest.mark.asyncio
+async def test_stop_reaches_child_finalizer_and_still_waits_for_cleanup():
+    from blinker import Signal
+
+    root, _, _ = await create_runtime_tree()
+    finalizing, cancel_capture, allow_cleanup, cleaned = (
+        asyncio.Event(),
+        asyncio.Event(),
+        asyncio.Event(),
+        asyncio.Event(),
+    )
+
+    class Child(legacy.TaskExecuteBase):
+        async def main_task(self):
+            pass
+
+        async def final_task(self):
+            finalizing.set()
+            await cancel_capture.wait()
+            await allow_cleanup.wait()
+            cleaned.set()
+
+        def _on_finalize_cancel_requested(self):
+            cancel_capture.set()
+
+        on_crash = AsyncMock()
+
+    child = Child()
+
+    class Parent(legacy.TaskExecuteBase):
+        async def main_task(self):
+            await self.spawn(child)
+
+        final_task = AsyncMock()
+        on_crash = AsyncMock()
+
+    parent = Parent()
+    # 独立验收旧执行桥，结束通知不发给只登记 ScriptExpander 的全局调度器。
+    parent.execution.ended = Signal()
+    parent.task_info, parent.history = root, AsyncMock()
+    parent.execute()
+    await asyncio.wait_for(finalizing.wait(), 2)
+    stopping = asyncio.create_task(parent.stop())
+    try:
+        await asyncio.wait_for(cancel_capture.wait(), 2)
+        assert child.stopped_manually
+        assert not stopping.done()
+    finally:
+        allow_cleanup.set()
+        await asyncio.wait_for(stopping, 2)
+    assert cleaned.is_set()
+
+
+@pytest.mark.asyncio
 async def test_specialized_state_is_shared_by_execution_without_entering_tree():
     root, script, user = await create_runtime_tree()
 

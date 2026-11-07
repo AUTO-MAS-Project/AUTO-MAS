@@ -206,6 +206,7 @@ class TaskExecuteBase(ABC):
         self.callbacks = LegacyCallbacks()
         self.maintenance = False
         self._user_states: dict[UUID, LegacyUserState] = {}
+        self._active_child: TaskExecuteBase | None = None
 
     def user_state(self, user: TaskUserItem) -> LegacyUserState:
         """[兼容旧专项] 只读取旧专项私有素材；新代码不依赖此状态容器。"""
@@ -252,6 +253,9 @@ class TaskExecuteBase(ABC):
     def stopped_manually(self, value):
         """[兼容旧专项] 旧停止标记写入；新代码通过 TaskBase.stop() 请求中止。"""
         self._stopped_manually = value
+        if value and self._active_child is not None:
+            self._active_child.stopped_manually = True
+            self._active_child._on_finalize_cancel_requested()
 
     @abstractmethod
     async def main_task(self):
@@ -303,7 +307,12 @@ class TaskExecuteBase(ABC):
         script = getattr(self, "script_info", None)
         if script is not None and script.status == "等待":
             await script.set_state(status="运行")
-        await self.execution.spawn(child.execution)
+        # shield 中的账号收尾仍属于当前子任务，停止通知要覆盖到它真正结束。
+        self._active_child = child
+        try:
+            await self.execution.spawn(child.execution)
+        finally:
+            self._active_child = None
 
     def execute(self):
         """[兼容旧专项] 旧启动方法名；新顶层执行器使用 TaskBase.start()。"""

@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type GeneralUserConfig_Info = {
     /**
+     * 固定配置或通用脚本计划表
+     */
+    PlanMode?: (string | null);
+    /**
      * 配置来源：independent 使用当前账号配置；兼容值 shared 当前仍使用该账号配置；native 使用外部脚本现有配置
      */
     Base?: ('shared' | 'independent' | 'native' | null);
@@ -48,4 +52,3 @@ export type GeneralUserConfig_Info = {
      */
     readonly Tag?: (string | null);
 };
-

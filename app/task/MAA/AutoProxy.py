@@ -2953,6 +2953,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             else None
         )
         # 整份脚本日志可达数 MB，check_log 又每秒轮询一次，收尾判定只扫一遍。
+        # TODO(插件迁移，#1845)：预下载暂停接线，不向公共任务树写首节点计时。
         completed_log = "任务已全部完成！" in log
         failed_log = _has_maa_task_failure(log)
         if avd_fallback is not None:

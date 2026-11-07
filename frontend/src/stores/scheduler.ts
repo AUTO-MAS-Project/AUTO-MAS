@@ -20,6 +20,7 @@ import {
 } from '@/views/scheduler/schedulerConstants'
 
 const STORAGE_KEY = 'scheduler-tabs-session'
+const MAX_AUTOMATIC_COMPLETED_TABS = 20
 const logger = window.electronAPI.getLogger('调度台')
 
 function draft(tab: SchedulerTab): SchedulerTab {
@@ -32,6 +33,7 @@ function draft(tab: SchedulerTab): SchedulerTab {
     selectedMode: tab.selectedMode,
     scope: tab.scope && Array.isArray(tab.scope.entries) ? persistScope(tab.scope) : undefined,
     taskId: tab.taskId,
+    automatic: tab.automatic === true,
   }
 }
 
@@ -200,15 +202,33 @@ export const useSchedulerStore = defineStore('scheduler', () => {
   function ensureRun(state: TaskRuntimeState) {
     if (tabs.value.some(tab => tab.taskId === state.taskId)) return
     const tab = addTab()
+    tab.automatic = true
     bindRun(tab, state.taskId)
+  }
+  function pruneAutomaticTabs() {
+    const completed = tabs.value.filter(
+      tab => tab.automatic && tab.closable && runFor(tab)?.phase === 'completed'
+    )
+    let excess = completed.length - MAX_AUTOMATIC_COMPLETED_TABS
+    for (const tab of completed) {
+      if (excess <= 0) break
+      if (tab.key === activeTab.value) continue
+      removeTab(tab.key)
+      excess--
+    }
   }
   function bootstrap() {
     if (disposeRuntime) return
     getTaskRuntimeStates()
       .filter(state => state.phase !== 'completed')
       .forEach(ensureRun)
+    pruneAutomaticTabs()
     disposeRuntime = onTaskRuntimeEvent(event => {
-      if (event.type === 'created') ensureRun(event.state)
+      if (event.type === 'created') {
+        ensureRun(event.state)
+        pruneAutomaticTabs()
+      }
+      if (event.type === 'completed') pruneAutomaticTabs()
       if (event.type === 'snapshot') {
         event.states.forEach(ensureRun)
         tabs.value.forEach(tab => {
@@ -219,6 +239,7 @@ export const useSchedulerStore = defineStore('scheduler', () => {
           )
             tab.taskId = null
         })
+        pruneAutomaticTabs()
       }
     })
   }

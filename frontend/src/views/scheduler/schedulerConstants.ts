@@ -62,5 +62,6 @@ export interface SchedulerTab {
   scopeLoading?: boolean
   scopeError?: string
   starting?: boolean
+  automatic?: boolean
   taskId: string | null
 }

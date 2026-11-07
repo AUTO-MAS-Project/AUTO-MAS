@@ -105,13 +105,14 @@
               />
             </a-col>
             <a-col :span="24">
-              <GeneralConfigModeSelector
+              <GeneralUserConfigurationSection
                 :model-value="formData.Info.Base ?? 'independent'"
-                :options="generalConfigModeOptions"
+                :plan-mode="formData.Info.PlanMode"
+                :owner="{ scriptId, userId }"
                 :disabled="loading"
                 :saving="configModeSaving"
-                :alert-message="t('core.edit.generalConfigSourceHint')"
                 @change="handleConfigModeChange"
+                @plan-change="formData.Info.PlanMode = $event"
               />
             </a-col>
           </a-row>
@@ -188,7 +189,7 @@ import {
 import { Service } from '@/api'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
-import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
+import GeneralUserConfigurationSection from './GeneralUserConfigurationSection.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
@@ -237,6 +238,8 @@ const getDefaultGeneralUserData = () => ({
     RemainedDay: -1,
     // 配置来源三态（shared/independent/native）
     Base: 'independent',
+    // 固定配置，或按日轮换的通用计划 ID
+    PlanMode: 'Fixed',
     IfUseMasConfig: true,
     IfScriptBeforeTask: false,
     IfScriptAfterTask: false,
@@ -334,41 +337,6 @@ const handleFieldSave = async (key: string, value: any) => {
 }
 
 // 配置来源三态卡片（value 为后端 Info.Base 取值，驱动逻辑需保持原样；文案走词表）
-// 「共享」置灰：通用脚本运行/配置始终按 per-user 目录（AutoProxy/ScriptConfig 均不区分共享来源），
-// 选了也不生效——禁用并悬停说明原因
-const generalConfigModeOptions: Array<{
-  label: string
-  value: 'shared' | 'independent' | 'native'
-  title: string
-  description: string
-  icon: 'database' | 'setting'
-  disabled?: boolean
-  disabledReason?: string
-}> = [
-  {
-    label: t('core.edit.script'),
-    value: 'shared',
-    title: t('core.edit.script'),
-    description: t('core.edit.useScriptS'),
-    icon: 'database',
-    disabled: true,
-    disabledReason: t('core.edit.scriptModeDisabled'),
-  },
-  {
-    label: t('core.edit.user'),
-    value: 'independent',
-    title: t('core.edit.user'),
-    description: t('core.edit.useThisUserS'),
-    icon: 'database',
-  },
-  {
-    label: t('core.edit.directControl'),
-    value: 'native',
-    title: t('core.edit.directControl'),
-    description: t('core.edit.useScriptSCurrent'),
-    icon: 'setting',
-  },
-]
 
 // 配置来源切换：校验 value ∈ 三态 → 赋值 Info.Base → 真实保存
 // 注意：IfUseMasConfig 是旧的两态字段，仍被 BetterGI 槽位逻辑消费，故保留并与之对齐写入。
@@ -814,25 +782,9 @@ onUnmounted(() => {
 })
 </script>
 
+<style scoped src="@/styles/userEditForm.css"></style>
+
 <style scoped>
-.user-edit-content {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.config-card {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
-.config-form {
-  max-width: none;
-}
-
 .form-section {
   margin-bottom: 12px;
 }
@@ -875,13 +827,6 @@ onUnmounted(() => {
 .float-button {
   width: 60px;
   height: 60px;
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .user-edit-content {
-    max-width: 100%;
-  }
 }
 
 /* 通用/MAA 配置遮罩样式（用于全局覆盖） */

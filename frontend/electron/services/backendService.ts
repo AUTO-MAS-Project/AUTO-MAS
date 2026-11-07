@@ -274,15 +274,12 @@ export class BackendService {
       }
     }
 
-    const developmentPort =
-      config.mode === 'development' && process.env.AUTO_MAS_HTTP_PORT
-        ? resolveHttpPort()
-        : undefined
-    if (developmentPort !== undefined && developmentPort < 1024) {
+    const port = resolveHttpPort()
+    if (port < 1024) {
       return {
         success: false,
         error:
-          'Runtime 开发模式要求 AUTO_MAS_HTTP_PORT 为 1024–65535；' +
+          'Runtime 要求 AUTO_MAS_HTTP_PORT 为 1024–65535；' +
           '请改用此范围内的端口，低端口调试请独立运行后端与 yarn web。',
         code: 'INVALID_ARGUMENT',
         retryable: true,
@@ -372,8 +369,8 @@ export class BackendService {
       handle = await client.supervise({
         mode: config.mode,
         repo: config.repo,
-        // 保留源码开发的自定义端口；最终端点仍只采纳 Runtime 的 running 事件。
-        port: developmentPort,
+        // 端口按应用环境隔离，不随 Runtime 托管模式改变；端点仍采纳 running 事件。
+        port,
         shutdownTimeoutSeconds: BACKEND_SHUTDOWN_SECONDS,
         onLog: event => {
           const lines = event.stream === 'stderr' ? stderrLines : stdoutLines

@@ -65,6 +65,9 @@ from app.task.MaaFW.tools.backup_archive import (
     read_overlay_values,
 )
 from app.task.MaaFW.tools.core.file_lockers import describe_lockers_async
+from app.task.MaaFW.tools.core.project_update.payloads import (
+    lineage_info_from_interface,
+)
 from app.task.MaaFW.tools.embedded.default_snapshot import (
     fill_default_task_snapshots,
 )
@@ -420,6 +423,9 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         「任务开始」紧接「任务结束」，事后没法排查。
         """
 
+        # 预取会提前构造管理器；报告与本轮日志清理从真正开始运行前检查时计时。
+        self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self._round_started_at = time.time()
         result = await self._check()
         if result != "Pass":
             logger.info(
@@ -466,9 +472,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 # 编辑页的「执行更新」整段持本视图预约（下载可能几十分钟）：放行的话每个
                 # 用户都拿不到预约、各自跳过，脚本却记成「完成」。
                 return SKIP_UPDATING
-            if not resolve_maafw_project_root(script_id, script_config).is_dir():
-                return SKIP_OCCUPIED
-            rebuilt = None
+            return SKIP_OCCUPIED
         else:
             # 导入 / 组同步 / 投影补齐都在工作线程里改视图：用户这时点停止，
             # ``await asyncio.to_thread`` 会立刻抛出，线程却还在写 staging、换入视图。
@@ -476,12 +480,45 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             # 预约，同时动同一棵视图。与 ``_ensure_project_environment`` 同一套：shield +
             # 有限宽限，等不到就把释放交给任务完成回调；令牌让后面的步骤不再开始。
             stop = threading.Event()
-            work = asyncio.create_task(
-                self._prepare_view_for_run(script_id, script_config, stop)
-            )
+            project_root = resolve_maafw_project_root(script_id, script_config)
+
+            async def prepare_before_lock() -> str | None:
+                rebuilt = await self._prepare_view_for_run(
+                    script_id, script_config, stop
+                )
+                if rebuilt is not None:
+                    # 视图已变，取消时也先把导入报告写完，再交回项目预约。
+                    await Config.update_script(
+                        script_id,
+                        {
+                            "Embedded": {
+                                "Report": json.dumps(
+                                    rebuilt["report"], ensure_ascii=False
+                                ),
+                                "SourceVersion": rebuilt["sourceVersion"],
+                                "ImportedAt": rebuilt["importedAt"],
+                            }
+                        },
+                    )
+                if stop.is_set():
+                    return None
+                if not project_root.resolve().is_dir():
+                    return "请设置包含 interface.json 的 MFW 项目目录"
+                # 新账号的默认队列也会在线程里读取视图，继续持预约直到取到 X。
+                await fill_default_task_snapshots(script_id, script_config)
+                return None
+
+            work = asyncio.create_task(prepare_before_lock())
             handed_off = False
             try:
-                rebuilt = await asyncio.shield(work)
+                if problem := await asyncio.shield(work):
+                    return problem
+                # X 票留在管理器任务上下文；取得后才释放项目预约，两者连续交接。
+                ticket = await script_config.try_lock_x()
+                if ticket is None:
+                    return SKIP_OCCUPIED
+                self.config_locks[script_config.uid] = ticket
+                self._script_locked = True
             except asyncio.CancelledError:
                 stop.set()
                 with suppress(BaseException):
@@ -505,30 +542,6 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             finally:
                 if not handed_off:
                     await release_project_path(import_key)
-        if rebuilt is not None:
-            await Config.update_script(
-                script_id,
-                {
-                    "Embedded": {
-                        "Report": json.dumps(rebuilt["report"], ensure_ascii=False),
-                        "SourceVersion": rebuilt["sourceVersion"],
-                        "ImportedAt": rebuilt["importedAt"],
-                    }
-                },
-            )
-        project_root = resolve_maafw_project_root(script_id, script_config)
-        if not project_root.resolve().is_dir():
-            return "请设置包含 interface.json 的 MFW 项目目录"
-
-        # 任务队列还是空的账号（从没打开过账号页）先按项目默认写成实打实的队列，与账号页
-        # 读到的同一份，跑的东西不变。要在上锁之前：锁住后配置写不进去。
-        await fill_default_task_snapshots(script_id, script_config)
-
-        # X 锁阻止外部编辑；任务及其子任务直接更新原账号集合。
-        self.config_locks[script_config.uid] = await self.lock_script_config(
-            script_config
-        )
-        self._script_locked = True
         user_config = script_config.UserData
         self.user_config = user_config
 
@@ -688,6 +701,82 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
     # 项目自动更新
     # ------------------------------------------------------------------
 
+    async def prefetch_script_update(self) -> None:
+        from app.task.MaaFW.tools.core.project_update.transport import (
+            download_resumable,
+        )
+        from app.task.MaaFW.tools.core.project_update.updater import (
+            discover_maafw_project_update,
+        )
+        from app.task.MaaFW.tools.embedded.precheck_gate import build_precheck_gate
+        from app.task.MaaFW.tools.embedded.update_mirrors import (
+            github_release_mirror_urls,
+        )
+        from app.task.MaaFW.tools.embedded.view_update import memo_path_factory
+
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if resolve_auto_update_mode(config) == "Off" or follow_source_enabled(config):
+            return
+        credentials = resolve_update_credentials(config)
+        project = resolve_maafw_project_root(
+            str(self.script_info.script_id), config
+        ).resolve()
+        source = {
+            "package_source": credentials.package_source,
+            "mirror_cdk": credentials.cdk,
+            "channel": credentials.channel,
+            "project_shell_hint": shell_hint_from_report(config),
+        }
+        from app.task.MaaFW.tools.embedded.update_session import UpdateProxy
+
+        proxy = UpdateProxy.parse(
+            resolve_update_proxy_url(config) or None, warn=logger.warning
+        ).client
+        interface = await asyncio.to_thread(self._load_interface_model, project)
+        marker = await asyncio.to_thread(read_view_marker, project)
+        if marker is None or not marker.get("lineage"):
+            # No trustworthy lineage: leave update discovery to the normal
+            # startup path, which can recover and revalidate project metadata.
+            return
+        identity = (
+            project,
+            str(marker["lineage"]),
+            lineage_info_from_interface(interface),
+        )
+        gate = build_precheck_gate(
+            memo_path_factory(str(marker["lineage"])),
+            project_name=getattr(interface, "name", None),
+            proxy=proxy,
+        )
+        discovery = await discover_maafw_project_update(
+            interface,
+            source_config=source,
+            proxy=proxy,
+            prefer_full_package=True,
+            precheck_gate=gate,
+        )
+        if (
+            discovery is None
+            or discovery.candidate is None
+            or not discovery.candidate.download_url
+        ):
+            return
+        candidate = discovery.candidate
+        await download_resumable(
+            source=candidate.source,
+            version=candidate.to_version or candidate.version,
+            download_url=candidate.download_url,
+            expected_sha256=candidate.sha256,
+            artifact_id=candidate.artifact_id,
+            proxy=proxy,
+            expected_size=candidate.size,
+            alternates=github_release_mirror_urls(candidate.download_url),
+        )
+        # 完整包留在核心的共享缓存，启动前按来源身份与版本基线复核后消费。
+        self._prefetched_full_package = True
+        self._prefetched_project_identity = identity
+        self._prefetched_project_update = (str(interface.version or ""), discovery)
+
     def _take_project_update_logs(self) -> list[str]:
         logs, self.project_update_logs = self.project_update_logs, []
         return logs
@@ -819,6 +908,9 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         """收尾期间用户点了停止：让运行后更新 / 环境确认按停止处理（见 ``_await_or_stop``）。"""
 
         self._stop_requested.set()
+        if self.inner_task is not None and not self._inner_finalized:
+            self.inner_task.stopped_manually = True
+            self.inner_task._on_finalize_cancel_requested()
 
     def _stop_seen(self) -> bool:
         """用户已经要求停止（停在主任务里，或收尾进行中又点了停止）。"""
@@ -951,6 +1043,19 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             interface_model = await asyncio.to_thread(
                 self._load_interface_model, view_path, force_reload=True
             )
+            prefetched = getattr(self, "_prefetched_project_update", None)
+            if prefetched is not None and getattr(
+                self, "_prefetched_project_identity", None
+            ) != (
+                view_path.resolve(),
+                target.lineage,
+                lineage_info_from_interface(interface_model),
+            ):
+                # 同版重新导入可以保持 Report 不变却换了项目来源；在谱系锁内
+                # 丢掉旧候选，按当前项目正常发现，不能把旧包登记到新谱系。
+                prefetched = None
+                self._prefetched_project_update = None
+                self._prefetched_full_package = False
             memo_path_for = memo_path_factory(target.lineage)
             # 登记前在 staging 上真建运行环境：建不出来就丢掉新版本、继续跑当前版本。
             # isolated_venv 的 agent 建在池根下的预检目录，不写环境缓存（D6）。
@@ -973,6 +1078,8 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             return await update_maafw_project_if_needed(
                 view_path,
                 interface_model,
+                prefetch_full_package=getattr(self, "_prefetched_full_package", False),
+                prefetched=prefetched,
                 mirror_cdk=credentials.cdk,
                 channel=credentials.channel,
                 proxy=session.proxy.client,

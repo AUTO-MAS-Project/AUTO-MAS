@@ -88,25 +88,29 @@ const handleBlur = async () => {
   <!-- 行内控件：标签与 ⓘ 提示由 SettingRow 承担，这里只放输入、状态与续期入口 -->
   <SettingRow>
     <template #label>
-      <a-tooltip>
-        <template #title>
-          <div>
-            {{ t('core.setting.others.cdkIntro') }}
-            <a
-              href="https://mirrorchyan.com/zh/get-start?source=auto-mas-setting"
-              class="tooltip-link"
-              @click="handleExternalLink"
-              >{{ t('core.setting.others.cdkSite') }}</a
-            >
-            {{ t('core.setting.others.cdkGet') }}
-          </div>
-          <div>{{ t('core.setting.others.cdkHint') }}</div>
-        </template>
-        <span class="cdk-label" tabindex="0">
-          {{ t('core.setting.others.cdk') }}
-          <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-        </span>
-      </a-tooltip>
+      <span class="cdk-label">
+        {{ t('core.setting.others.cdk') }}
+        <a-tooltip :trigger="['hover', 'focus']">
+          <template #title>
+            <div>
+              {{ t('core.setting.others.cdkIntro') }}
+              <a
+                href="https://mirrorchyan.com/zh/get-start?source=auto-mas-setting"
+                class="tooltip-link"
+                @click="handleExternalLink"
+                >{{ t('core.setting.others.cdkSite') }}</a
+              >
+              {{ t('core.setting.others.cdkGet') }}
+            </div>
+            <div>{{ t('core.setting.others.cdkHint') }}</div>
+          </template>
+          <QuestionCircleOutlined
+            class="help-icon"
+            tabindex="0"
+            :aria-label="t('core.setting.others.cdk')"
+          />
+        </a-tooltip>
+      </span>
     </template>
     <div class="cdk-control">
       <div class="cdk-control-main">
@@ -143,7 +147,7 @@ const handleBlur = async () => {
   cursor: help;
 }
 
-.cdk-label:focus-visible {
+.help-icon:focus-visible {
   border-radius: 3px;
   outline: 2px solid var(--ant-color-primary);
   outline-offset: 2px;

@@ -18,6 +18,28 @@ if (process.env.AUTO_MAS_E2E_CHROMIUM_PATH) {
 }
 
 test.describe('@maa-update configuration and dispatch', () => {
+  test('keeps form labels separate from focusable hints', async ({ app, page }) => {
+    const created = await post(page.request, '/api/scripts/add', { type: 'MAA' })
+    await app.goto(`/scripts/${created.scriptId}/edit/maa`)
+
+    const name = page.getByPlaceholder('Enter a managed script name', { exact: true })
+    await expect(name).toHaveAccessibleName('* Managed script name')
+    await expect(
+      page.getByPlaceholder('Pick the folder holding MAA.exe', { exact: true })
+    ).toHaveAccessibleName('* MAA path')
+
+    const hint = 'Give the managed script a name you will recognize'
+    const icon = page.getByRole('img', { name: hint, exact: true })
+    await name.focus()
+    await page.keyboard.press('Shift+Tab')
+    await expect(icon).toBeFocused()
+    await expect(page.getByRole('tooltip')).toHaveText(hint)
+    await page.keyboard.press('Tab')
+    await expect(name).toBeFocused()
+    await expect(page.getByRole('tooltip')).toBeHidden()
+    await app.evidence('maa-form-label-accessible-name')
+  })
+
   test('persists beta selection and reports an unconfigured MAA task as failed', async ({
     app,
     page,

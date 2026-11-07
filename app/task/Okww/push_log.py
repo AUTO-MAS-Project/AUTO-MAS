@@ -1,111 +1,105 @@
 """OK-WW 推送日志采集参数（log_box 实例的喂参方）
 
-OK-WW 专项作为 log_box 的一个实例：本模块只提供参数（i18n 翻译文件、补充
-翻译 .po、规则、后置处理器），文本内核只执行前置处理、规则匹配与后置处理；
-文件读取、词表资源、账号归属和交付由 AutoProxy 负责。
+OK-WW 专项作为 log_box 的一个实例：本模块只提供规则与后置处理器，文本内核
+只执行规则匹配与后处理；文件读取、用户归属和交付由 AutoProxy 负责。
+
+上游日志在运行时按界面语言翻译（`self.tr`），`info_set` 行则始终输出英文键，
+因此规则直接匹配「当前用户实际写出的日志」：同一节点同时给出英文源文案与
+中文界面文案，不再读取上游 ok.po 做前置翻译。节点名与状态由规则提取表达式
+统一输出中文，与界面语言无关。
 
 规则说明：
-- 翻译器在 open() 前置处理器逐行执行；此后匹配与提取均作用于翻译后的行。
-- 匹配正则对应翻译后的节点内容（英文标识未翻译则保留，翻译了则匹配中文），
-  与 ok.po / 补充 .po 的译文耦合，改译文时需同步核对规则。
+- 匹配正则直接作用于原始日志行；同一节点可能以英文或中文出现，规则须同时
+  覆盖两种形态。上游改动源文案或中文译文时需同步核对规则。
 - 规则产出「状态标记」，最终状态由 okww_resolve 后处理解析：
   - 裸节点名 = 开始/动作标记，默认成功，除非存在失败/跳过标记
   - "❌ 失败: 节点" = 失败（匹配源码 log_error 的专属失败日志，排除战斗噪音）
   - "⏭ 跳过: 节点" = 跳过（如每周乐园已完成）
   - "NO_DISCARDED_ECHO" / "BATTLE_PASS_ENDED" = 该节点这一次没做（已弃置声骸不足
-    1000、战令已结束，上游分别走提示行与 log_error），收尾按「⏭ 跳过: 节点（原因）」
-    呈现，真正的异常仍判失败，且标记只作用于当次尝试（跨会话或重试不延续）
+    1000、战令已结束），收尾按「⏭ 跳过: 节点（原因）」呈现；真正的异常仍判失败，
+    且标记只作用于当次尝试（跨会话或重试不延续）
   - "✅ 成功: 节点" = 明确成功（源码有成功/完成日志的节点）
-  - "⚡ 剩余体力: N" = 刷完后的剩余体力（取最后一条 `体力当前:`；上游是领奖时
+  - "⚡ 剩余体力: N" = 刷完后的剩余体力（取最后一条 `current stamina:`；上游是领奖时
     才扣体力，故最后一次领奖的 `current stamina: N` 优先于开刷前的
     `info_set current_stamina N`，独立成行不参与状态聚合）；"体力刷本" 保留为
     成功节点
   后处理按节点聚合，状态优先级 失败 > 跳过 > 成功。
-- 补充翻译为 AutoMAS 项目自带的 .po 文件（res/i18n/ 内置资源），与 ok-ww 自带
-  的 ok.po 一同加载，补充优先；.po 为可读源码，可直接维护。
+- 不再读取上游 ok.po、不做前置翻译：上游资源文件属私有布局，且译文变化会让
+  规则静默失效；节点展示统一由规则提取表达式输出中文。
 """
 
 import re
-from pathlib import Path
 
-from app.core import Config
 from app.utils import LOG_TYPE_NORMAL
 
-# ok-ww 自带翻译文件相对路径（从 RootPath 派生，不硬编码绝对路径）
-OKWW_REL_I18N_PO = "data/apps/ok-ww/repo/i18n/zh_CN/LC_MESSAGES/ok.po"
-
-
-def _okww_supplement_po() -> Path:
-    """AutoMAS 项目自带的补充翻译 .po（res/ 内置资源，按源码位置解析，不随
-    工作目录变化；.po 为可读源码，可直接维护）。
-    """
-    return Config.resource_path / "i18n" / "okww.po"
-
-
-# 推送规则：(匹配正则, 提取表达式)；匹配与提取均在翻译后行。
+# 推送规则：(匹配正则, 提取表达式)；匹配与提取均在原始日志行。
 # 提取表达式输出状态标记（裸节点名 / "状态: 节点"），由 okww_resolve 解析。
 # 顺序敏感：先约电台失败须在成功前（"先约电台已结束" 含 "先约电台"）。
 OKWW_PUSH_RULES: list[tuple[str, str]] = [
     # ── 开始/动作标记（后处理默认解析为成功）──
     (r"ok:OK start", r'"启动"'),
-    (r"opened gray_book_boss", r'"梦魇巢穴"'),
-    # 活跃奖励：领取动作（info_set 开始行不含 "reward"，仅此领取行命中）
-    (r"领取每日奖励 reward", r'"活跃奖励"'),
-    # 邮件：源码无成功日志，仅 info_set 开始标记（无失败即成功）
-    (r"领取邮件", r'"邮件"'),
+    (r"opened gray_book_boss|已打开残象探寻", r'"梦魇巢穴"'),
+    # 活跃奖励：领取动作（log_info 的领取行；info_set 行只有任务名，不单独匹配）
+    (r"领取每日奖励|claim daily reward", r'"活跃奖励"'),
+    # 邮件：源码仅 info_set 任务名，无成功日志（无失败即成功）
+    (r"领取邮件|claim mail", r'"邮件"'),
     # 每周乐园 / 合并声骸：开始标记，最终状态由跳过/成功/失败标记决定
-    (r"检查每周乐园", r'"每周乐园"'),
-    (r"检查已弃置声骸", r'"合并声骸"'),
+    (r"检查每周乐园|check weekly garden", r'"每周乐园"'),
+    (r"检查已弃置声骸|check discarded echo", r'"合并声骸"'),
     # 多账号：切换账号开始
-    (r"正在返回登录界面", r'"切换账号"'),
+    (r"正在返回登录界面|Switching back to login screen", r'"切换账号"'),
     # ── 失败标记（源码 log_error 专属失败日志）──
     # 节点级失败始终展示（类型保持普通，状态由文本「❌ 失败:」体现，不被
     # 未完成账号过滤；推送时机由 SendTaskResultTime 全局控制，与逐条类型无关）
-    # 注意：ok.po 是「长键优先」的子串替换，会把类名里的裸 token 一并译掉，
-    # 如 Echo→声骸 使 `MergeEchoTask` 变 `Merge声骸Task`。因此含类名的英文规则
-    # 须写成「译文形式|英文原形式」，只写英文原形式在译文生效时永不命中
-    # 战令失败与开始标记同节点（「先约电台已结束」只是原因），收尾按 _REASON_MARKS
+    # 战令失败与开始标记同节点（「已结束」只是原因），收尾按 _REASON_MARKS
     # 呈现为「⏭ 跳过: 先约电台（已结束）」，不再另起一个「先约电台已结束」节点
-    (r"先约电台已结束", r'"BATTLE_PASS_ENDED"'),  # 须在成功前
-    (r"NightmareNestTask Failed", r'"❌ 失败: 梦魇巢穴"'),
-    (r"GardenTask Failed", r'"❌ 失败: 每周乐园"'),
-    (r"Merge声骸Task Failed|MergeEchoTask Failed", r'"❌ 失败: 合并声骸"'),
-    # 合并声骸「不足 1000」不是异常：源码用 `if self.click_dialog_left_button():`
-    # 判断融合弹窗是否出现，意图是没弹窗就走 else 提示 `Must have 1000 discarded
-    # Echo to Run` 后返回。该 else 可达时日志直接给出提示行；若该 helper 找不到按钮
-    # 时抛 CannotFindException，else 便成死代码，「没到 1000 个」改以异常形式落进
-    # `MergeEchoTask Failed`——后者只能靠 traceback 回显的调用点源码行识别（该行
-    # 文本只在 MergeEchoTask.py 出现，融合流程内部报错回显的是别的行）。
-    # 两种签名统一产出 NO_DISCARDED_ECHO（不直接产出带后缀的节点名，否则会与开始
-    # 标记的「合并声骸」并存成两个节点），由 okww_resolve 把该节点按跳过呈现
     (
-        r"Must have 1000 discarded 声骸 to Run|Must have 1000 discarded Echo to Run",
+        r"(?:先约电台|battle pass).*(?:已结束|maybe ended)",
+        r'"BATTLE_PASS_ENDED"',
+    ),  # 须在成功前
+    (r"NightmareNestTask Failed|梦魇巢穴任务失败", r'"❌ 失败: 梦魇巢穴"'),
+    (r"GardenTask Failed|乐园任务失败", r'"❌ 失败: 每周乐园"'),
+    (r"MergeEchoTask Failed|声骸合成任务失败", r'"❌ 失败: 合并声骸"'),
+    # 合并声骸开包失败：上游只打 log_error 后直接 return，不会抛进 DailyTask 的
+    # `MergeEchoTask Failed` 分支；不认这条会把本次合并误报为成功
+    (
+        r"can not open bag with hotkey|无法使用快捷键",
+        r'"❌ 失败: 合并声骸"',
+    ),
+    # 合并声骸「不足 1000」不是异常：上游在融合弹窗未出现时直接打印
+    # `Must have 1000 discarded Echo to Run`，中文界面输出其译文。该标记不直接
+    # 产出带后缀的节点名（否则会与开始标记的「合并声骸」并存成两个节点），由
+    # okww_resolve 把该节点按跳过呈现。异常路径不读 traceback 回显的源码行——
+    # 那会依赖上游内部写法；没有这条公开日志时按失败呈现
+    (
+        r"Must have 1000 discarded Echo to Run|需要至少 1000 个已弃置声骸才能运行",
         r'"NO_DISCARDED_ECHO"',
     ),
-    (r"if self\.click_dialog_left_button\(\):", r'"NO_DISCARDED_ECHO"'),
-    # 多账号：切换账号环节失败（源码 _select_and_login_account 内 log_error/抛异常）
-    (r"click drop down no effect", r'"❌ 失败: 切换账号"'),
-    (r"账号选择失败", r'"❌ 失败: 切换账号"'),
-    (r"切换账号失败", r'"❌ 失败: 切换账号"'),
+    # 多账号：切换账号环节失败（源码 log_error/抛异常）
+    (r"click drop down no effect|点击下拉列表无效", r'"❌ 失败: 切换账号"'),
+    (r"账号选择失败|Account selection failed", r'"❌ 失败: 切换账号"'),
+    (r"切换账号失败|Failed to switch account", r'"❌ 失败: 切换账号"'),
     # 多账号每日任务整体异常：MultiAccountDailyTask 任一账号轮次抛异常，日志统一
-    # 收尾为 `TaskExecutor:👥 多账号每日任务 exception stopped`（翻译后 `多账号
-    # 每日任务` + `exception stopped`）。该信号表示「多账号每日任务」整体失败
-    # （如游戏未进入主世界），不是单一"切换账号"环节失败。注意不能光凭裸露的
-    # `exception stopped` 匹配——普通每日任务异常终止是 `TaskExecutor:📅 每日任务
-    # exception stopped`，会误判；必须用 `多账号每日任务` 作前缀锚点
-    (r"多账号每日任务 exception stopped", r'"❌ 失败: 多账号每日任务"'),
-    # 英文原行经 ok.po 译作 `多账号一条龙`（`Multi Account Daily Task` 的译文），
-    # 故兜底规则同样写成「译文形式|英文原形式」
+    # 收尾为 `TaskExecutor:👥 多账号每日任务 exception stopped`（英文界面为
+    # `👥 Multi Account Daily Task exception stopped`）。该信号表示「多账号每日
+    # 任务」整体失败（如游戏未进入主世界），不是单一"切换账号"环节失败。注意不能
+    # 光凭裸露的 `exception stopped` 匹配——普通每日任务异常终止会误判；必须用
+    # 任务名作前缀锚点
     (
-        r"多账号一条龙 exception stopped|Multi Account Daily Task exception stopped",
+        r"多账号每日任务 exception stopped|Multi Account Daily Task exception stopped",
         r'"❌ 失败: 多账号每日任务"',
     ),
     # ── 跳过标记 ──
-    (r"每周乐园已完成", r'"⏭ 跳过: 每周乐园"'),
+    # 上游当前中文译文是「每周乐园任务已完成」（旧译文为「每周乐园已完成」），
+    # 两种都要认；该行表示本轮不再跑乐园，按跳过呈现
+    (
+        r"每周乐园(?:任务)?已完成|weekly garden already completed",
+        r'"⏭ 跳过: 每周乐园"',
+    ),
     # ── 明确成功标记 ──
     # 战令成功无日志（battle pass 为开始），靠无失败判定；此规则置于失败规则后
-    (r"先约电台", r'"先约电台"'),
-    (r"乐园任务完成", r'"✅ 成功: 每周乐园"'),
+    (r"先约电台|battle pass", r'"先约电台"'),
+    (r"乐园任务完成|Garden task completed", r'"✅ 成功: 每周乐园"'),
     # 体力刷本：must_use completed = 一次刷本完成（保留成功节点）。同一行的 N 是
     # 上游 use_stamina 领奖扣体力后算出的真实剩余（`current -= used`，单把消耗随
     # 任务不同：无音区 60、铸潮/模拟 40，双倍按两把计），故一并产出最终剩余体力；
@@ -114,22 +108,19 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
         r"must_use completed",
         r'"体力刷本"; "体力当前:" + $((?:current stamina: )(\d+))',
     ),
-    # 另一条终止分支「体力不足以继续」（补充 .po 的译文）同样在领奖后打印，
-    # N 也是扣完后的真实剩余，只补剩余体力、不做节点标记；前缀锚定同时兼容
-    # 英文原行（补充译文缺失时生效）
-    (
-        r"current stamina: (\d+)",
-        r'"体力当前:" + $((?:current stamina: )(\d+))',
-    ),
+    # 另一条终止分支「体力不足以继续」同样在领奖后打印，N 也是扣完后的真实剩余，
+    # 只补剩余体力、不做节点标记
+    (r"current stamina: (\d+)", r'"体力当前:" + $((?:current stamina: )(\d+))'),
     # 开刷前读数：`info_set current_stamina N` 是进入 F2 图鉴时读到的值，仅作兜底
-    # （本把之后若发生领奖，终值由上面的领奖行覆盖）。
-    # 上游 ok.po 把 current_stamina 译作「当前体力」，翻译后行须匹配译文；
-    # 英文原行规则保留兜底（翻译文件缺失或上游回退时生效）。
-    (r"当前体力 (\d+)", r'"体力当前:" + $((?:当前体力 )(\d+))'),
+    # （本把之后若发生领奖，终值由上面的领奖行覆盖）。info_set 行始终输出英文键，
+    # 中文界面也不例外
     (r"current_stamina (\d+)", r'"体力当前:" + $((?:current_stamina )(\d+))'),
-    (r"每日任务已完成", r'"✅ 成功: 每日完成"'),
+    # 每日完成：行尾锚定——上游 farm 4C 追加阶段会先打预告行「每日任务已完成，
+    # 开始传送并刷取4C声骸」（含该子串），无锚定会提前产出「每日完成」节点；
+    # 真正的完成行（中英文）都以该文案结尾
+    (r"每日任务已完成$|Daily Task Completed$", r'"✅ 成功: 每日完成"'),
     # 多账号：登录成功
-    (r"登录成功", r'"✅ 成功: 登录"'),
+    (r"登录成功|Login successful", r'"✅ 成功: 登录"'),
 ]
 
 # 状态优先级：失败 > 跳过 > 成功

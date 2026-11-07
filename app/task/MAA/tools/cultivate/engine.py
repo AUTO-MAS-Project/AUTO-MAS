@@ -628,12 +628,12 @@ def _farm_demand_net(
     *,
     reservations: dict[str, float] | None = None,
 ) -> tuple[list[Requirement], list[Requirement]]:
-    """按库存抵扣后的净需求，折算到可刷取材料（与 synthesize 同分支同选路）。
+    """先抵扣成品和可合成的原料库存，再把净缺口折算到可刷取材料。
 
-    每层先扣库存：本体 → 配方原料逐级往下（等价于立即合成消耗），只有真正
-    要刷的叶子材料留下数量，因此返回值就是"还需要刷多少"。路径选择仍按每
-    理智成本择优、只看今天开放的直刷关，与 synthesize 完全同源；唯一区别
-    是这里接收库存做抵扣（synthesize 产出路径总量）。
+    库存合成只消耗凑齐整套配方的材料，支持逐级合成；未凑齐的原料保留给
+    后续需求，不参与选路成本比较。技巧概要低级卷可由每日任务补充，不因
+    零散库存改选刷低级卷。剩余缺口沿用 synthesize 的理智成本选路与当天
+    关卡开放规则。
 
     贪心按需求顺序消耗、不求解最优分配：缺口判定与计划数量都建立在这一份
     结果上，两者不会互相打架。
@@ -662,10 +662,44 @@ def _farm_demand_net(
         totals[item_id] = totals.get(item_id, 0.0) + amount
         sources_by_item[item_id] = sources_by_item.get(item_id, ()) + sources
 
+    def consume_stock(
+        item_id: str,
+        amount: int,
+        available: dict[str, int],
+        consumed: dict[str, int],
+        depth: int,
+    ) -> bool:
+        """在试算副本中扣库存并逐级合成，返回能否凑齐完整需求。"""
+
+        use = min(amount, available.get(item_id, 0))
+        if use:
+            available[item_id] -= use
+        remaining = amount - use
+        if remaining:
+            recipe = recipe_map.get(item_id)
+            if (
+                depth > _MAX_PATH_DEPTH
+                or recipe is None
+                or data.material_class.get(item_id) == "unobtainable"
+                or item_id in data.fixed_source_stages
+            ):
+                return False
+            for ingredient_id, count in recipe.ingredients.items():
+                if not consume_stock(
+                    item_id=ingredient_id,
+                    amount=remaining * count,
+                    available=available,
+                    consumed=consumed,
+                    depth=depth + 1,
+                ):
+                    return False
+        consumed[item_id] = consumed.get(item_id, 0) + amount
+        return True
+
     def acquire(
         item_id: str, amount: float, sources: tuple[GoalRef, ...], depth: int
     ) -> None:
-        """获得 amount 个 item：先扣库存，余量按最优路径生产或留作刷取需求。"""
+        """先用成品和原料库存合成，余量按最优路径生产或留作刷取需求。"""
 
         if amount <= 0:
             return
@@ -688,6 +722,41 @@ def _farm_demand_net(
             else:
                 record(farm_totals, item_id, amount, sources)
             return
+        recipe = recipe_map.get(item_id)
+        if recipe is not None and depth <= _MAX_PATH_DEPTH:
+            # 二分可合成的整件数，只提交成功试算，避免占用不够一套的原料。
+            lower, upper = 0, int(amount)
+            remaining_stock = stock
+            consumed_stock: dict[str, int] = {}
+            while lower < upper:
+                batches = (lower + upper + 1) // 2
+                available = stock.copy()
+                consumed: dict[str, int] = {}
+                if all(
+                    consume_stock(
+                        item_id=ingredient_id,
+                        amount=batches * count,
+                        available=available,
+                        consumed=consumed,
+                        depth=depth + 1,
+                    )
+                    for ingredient_id, count in recipe.ingredients.items()
+                ):
+                    lower = batches
+                    remaining_stock, consumed_stock = available, consumed
+                else:
+                    upper = batches - 1
+            if lower:
+                stock.clear()
+                stock.update(remaining_stock)
+                if reservations is not None:
+                    for ingredient_id, count in consumed_stock.items():
+                        reservations[ingredient_id] = (
+                            reservations.get(ingredient_id, 0.0) + count
+                        )
+                amount -= lower
+                if amount <= 0:
+                    return
         structural = _best_path(item_id, data, recipe_map, structural_memo)
         if structural is None:
             record(unobtainable_totals, item_id, amount, sources)

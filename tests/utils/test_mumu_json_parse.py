@@ -6,11 +6,12 @@ MuMu 会把埋点与 C++ 日志混进同一份 stdout，对整段裸调 ``json.l
 
 import json
 
-
+from app.models.emulator import DeviceStatus
 from app.utils import emulator as _utils_emulator
 
 decode = _utils_emulator.mumu.MumuManager._decode_polluted_json
 has_devices = _utils_emulator.mumu.MumuManager._has_device_entries
+status_of = _utils_emulator.mumu.MumuManager._get_status_from_data
 
 DEVICE_JSON = """{
     "0": {"index": 0, "name": "MuMu模拟器12", "is_android_started": true},
@@ -35,3 +36,60 @@ def test_device_payload_wins_over_telemetry():
     result = decode(polluted, has_devices)
     assert result == json.loads(DEVICE_JSON)
     assert "_track_id" not in result
+
+
+def test_status_falls_back_to_player_state_when_android_flag_is_missing():
+    """非管理员运行时 MuMu 打不开自己的内部管道，``is_android_started`` 恒为 false，
+    只能靠实例状态判断，否则实例已经起来了还在一直等。"""
+    assert (
+        status_of(
+            {
+                "is_android_started": False,
+                "is_process_started": True,
+                "player_state": "start_finished",
+            }
+        )
+        == DeviceStatus.ONLINE
+    )
+
+
+def test_status_starting_when_launch_reports_error():
+    """启动命令自己报错（如 -32218 VERR_VIRTUALBOX_ACCESSDENIED）时实例状态同样是
+    start_finished，这时不能当在线，否则会把没起来的实例报成已就绪。"""
+    assert (
+        status_of(
+            {
+                "is_android_started": False,
+                "is_process_started": True,
+                "player_state": "start_finished",
+                "launch_err_code": -32218,
+            }
+        )
+        == DeviceStatus.STARTING
+    )
+
+
+def test_status_starting_before_player_state_finishes():
+    assert (
+        status_of(
+            {
+                "is_android_started": False,
+                "is_process_started": True,
+                "player_state": "starting_rom",
+            }
+        )
+        == DeviceStatus.STARTING
+    )
+
+
+def test_status_offline_ignores_leftover_player_state():
+    assert (
+        status_of(
+            {
+                "is_android_started": False,
+                "is_process_started": False,
+                "player_state": "start_finished",
+            }
+        )
+        == DeviceStatus.OFFLINE
+    )

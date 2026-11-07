@@ -478,7 +478,7 @@ async def _ensure_cache(latest: _Latest, channel: str, arch: str) -> None:
     if (
         manifest is not None
         and manifest["version"] == latest.version
-        and await asyncio.to_thread(cache_zip_matches, cache_dir, manifest)
+        and await _run_write_thread(cache_zip_matches, cache_dir, manifest)
     ):
         logger.info(f"MAA 本体更新: 目标版本 {latest.version} 已在缓存，跳过下载")
         return
@@ -552,13 +552,17 @@ def _query_key(arch: str, channel: str, cdk: str) -> str:
     return f"{_cache_key(arch, channel)}/{credential_key}"
 
 
-async def _precheck_flow(maa_root: Path, channel: str, arch: str, cdk: str) -> None:
+async def _precheck_flow(
+    maa_root: Path, channel: str, arch: str, cdk: str, *, prefetch: bool = False
+) -> None:
     """预检查主体：查询 → 版本判断 → 取包入缓存。失败语义见各调用。"""
     # 不同安装分别判断当前版本，同一缓存的查询/下载串行，后来的旧安装
     # 可以复用已查到的目标，不能复用首个新版安装的「无需更新」结论。
     async with _cache_locks.setdefault(_cache_key(arch, channel), asyncio.Lock()):
         try:
-            await _precheck_inner(maa_root, channel, arch, cdk)
+            await _precheck_inner(
+                maa_root, channel, arch, cdk, refund_cancelled=prefetch
+            )
         except asyncio.CancelledError:
             raise
         except _UpdateError as e:
@@ -582,6 +586,7 @@ async def _precheck_inner(
     cdk: str,
     *,
     target_version: str | None = None,
+    refund_cancelled: bool = False,
 ) -> str | None:
     """持缓存锁检查目标与额度，必要时取包，返回确认的版本供启动入口登记。"""
     release = read_installed_release(maa_root)
@@ -605,7 +610,7 @@ async def _precheck_inner(
         manifest is not None
         and cached is not None
         and compare_versions(cached, target) >= 0
-        and await asyncio.to_thread(cache_zip_matches, cache_dir, manifest)
+        and await _run_write_thread(cache_zip_matches, cache_dir, manifest)
     ):
         return manifest["version"]
 
@@ -633,20 +638,48 @@ async def _precheck_inner(
     # 每次获准取包都现查一次性地址，不复用上轮已使用或已过期的 URL。
     latest = await _fetch_latest(channel=channel, arch=arch, cdk=cdk)
     actual = parse_version(latest.version)
+    attempt_stamp = datetime.now(timezone.utc).isoformat()
+    attempt_version = (
+        latest.version
+        if actual is not None and compare_versions(actual, target) > 0
+        else target_version
+    )
     async with _state_lock:
         state = load_state(_STATE_FILE)
-        state[attempt_field] = datetime.now(timezone.utc).isoformat()
-        # 查询期间可能发布新版；响应滞后时也记住已尝试的查询目标，避免重复取包。
-        state[version_field] = (
-            latest.version
-            if actual is not None and compare_versions(actual, target) > 0
-            else target_version
-        )
+        state[attempt_field] = attempt_stamp
+        # Record ordinary failed attempts as before; an explicitly cancelled
+        # queue prefetch must not exhaust the same-day allowance.
+        state[version_field] = attempt_version
         _utils_io.write_file(_STATE_FILE, state)
-    if actual is None or compare_versions(actual, target) < 0:
-        raise _UpdateError("MAA 本体包未达到已确认的目标版本，请稍后重试")
-    await _ensure_cache(latest=latest, channel=channel, arch=arch)
+    try:
+        if actual is None or compare_versions(actual, target) < 0:
+            raise _UpdateError("MAA 本体包未达到已确认的目标版本，请稍后重试")
+        await _ensure_cache(latest=latest, channel=channel, arch=arch)
+    except asyncio.CancelledError:
+        if not refund_cancelled:
+            raise
+        # Do not undo a newer attempt's accounting; both fields must still
+        # belong to this prefetch. The cache lock serializes same-asset work.
+        async with _state_lock:
+            state = load_state(_STATE_FILE)
+            if (
+                state.get(attempt_field) == attempt_stamp
+                and state.get(version_field) == attempt_version
+            ):
+                state.pop(attempt_field, None)
+                state.pop(version_field, None)
+                _utils_io.write_file(_STATE_FILE, state)
+        raise
     return latest.version
+
+
+async def prefetch_maa_software_update(maa_root: Path, config: MaaConfig) -> None:
+    """由队列拥有生命周期的只下载入口，不创建专项后台任务。"""
+    enabled, cdk = resolve_takeover_credentials(config)
+    release = read_installed_release(maa_root)
+    channel = config.Update.Channel
+    if enabled and cdk is not None and release is not None and channel is not None:
+        await _precheck_flow(maa_root, channel, release[1], cdk, prefetch=True)
 
 
 def start_maa_software_update_precheck(
@@ -819,7 +852,7 @@ async def has_cached_maa_software_update(
             and current
             and target
             and compare_versions(target, current) > 0
-            and await asyncio.to_thread(cache_zip_matches, cache_dir, manifest)
+            and await _run_write_thread(cache_zip_matches, cache_dir, manifest)
         )
 
 

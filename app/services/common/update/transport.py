@@ -25,12 +25,11 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
-from contextlib import aclosing
+from contextlib import aclosing, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-import aiofiles
 import httpx
 
 from app.utils import MIRROR_ERROR_INFO
@@ -51,6 +50,42 @@ class BuiltinDownload(Protocol):
         proxy: httpx.Proxy | None = None,
         progress: DownloadProgress | None = None,
     ) -> int: ...
+
+
+async def _run_file_worker(function, /, *args):
+    """文件操作结束后才传播取消；磁盘异常不能使已取消的下载转入重试。"""
+    task = asyncio.create_task(asyncio.to_thread(function, *args))
+    cancelled = None
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError as error:
+            cancelled = error
+        except Exception:
+            break
+    if cancelled is not None:
+        if not task.cancelled():
+            task.exception()
+        raise cancelled
+    return task.result()
+
+
+@asynccontextmanager
+async def _download_sink(destination: Path, mode: str):
+    # 同步取得句柄，避免取消 aiofiles.open 时丢失后台刚打开的文件。
+    handle = open(_utils_update_files.native_path(destination), mode)
+    cancelled = False
+    try:
+        yield handle
+    except asyncio.CancelledError:
+        cancelled = True
+        raise
+    finally:
+        try:
+            await _run_file_worker(handle.close)
+        except Exception:
+            if not cancelled:
+                raise
 
 
 MIRROR_RESOURCE_API = "https://mirrorchyan.com/api/resources"
@@ -202,11 +237,11 @@ async def download_file(
                 await progress(0, total, 0.0)
             downloaded = window_bytes = 0
             window_start = time.monotonic()
-            async with aiofiles.open(destination, "wb") as handle:
+            async with _download_sink(destination, "wb") as handle:
                 async for chunk in response.aiter_bytes(chunk_size=8192):
                     if max_bytes is not None and downloaded + len(chunk) > max_bytes:
                         raise ValueError("下载大小超过上限")
-                    await handle.write(chunk)
+                    await _run_file_worker(handle.write, chunk)
                     downloaded += len(chunk)
                     window_bytes += len(chunk)
                     elapsed = time.monotonic() - window_start
@@ -269,11 +304,9 @@ async def download_resumable(
                 await on_bytes(-done)
             done = 0
         if digest is not None and append:
-            await asyncio.to_thread(_hash_prefix, digest, destination, done)
+            await _run_file_worker(_hash_prefix, digest, destination, done)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(
-            _utils_update_files.native_path(destination), "ab" if append else "wb"
-        ) as sink:
+        async with _download_sink(destination, "ab" if append else "wb") as sink:
             async for block in response.aiter_bytes(_DOWNLOAD_CHUNK):
                 if not block:
                     continue
@@ -282,7 +315,7 @@ async def download_resumable(
                         f"实收超过声明长度: 期望 {expected_size}，已收 {done}，"
                         f"这一片 {len(block)}"
                     )
-                await sink.write(block)
+                await _run_file_worker(sink.write, block)
                 done += len(block)
                 if digest is not None:
                     digest.update(block)
@@ -360,14 +393,12 @@ async def download_range(
 ) -> int:
     """将指定字节范围流式写到文件，返回接收量；不负责解压与校验。"""
     received = 0
-    async with aiofiles.open(
-        _utils_update_files.native_path(destination), "wb"
-    ) as sink:
+    async with _download_sink(destination, "wb") as sink:
         async with aclosing(
             _range_blocks(client, url, offset, length, timeout)
         ) as blocks:
             async for block in blocks:
-                await sink.write(block)
+                await _run_file_worker(sink.write, block)
                 received += len(block)
                 if on_bytes is not None:
                     await on_bytes(len(block))

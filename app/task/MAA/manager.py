@@ -64,7 +64,11 @@ from .tools.backup_archive import (
     collect_native_files,
     native_backup_root,
 )
-from .tools.fluxdown_update import prepare_maa_fluxdown_update, query_latest_maa_version
+from .tools.fluxdown_update import (
+    discard_prepared_update,
+    prepare_maa_fluxdown_update,
+    query_latest_maa_version,
+)
 from .tools.game_update import ensure_game_updated
 from .tools.resource_update import (
     _run_write_thread,
@@ -584,6 +588,35 @@ class MaaManager(ScriptManagerBase):
             if getattr(task, "report_image_pairs", None):
                 self._rollup_image_pairs.extend(task.report_image_pairs)
 
+    async def prefetch_script_update(self) -> None:
+        from .tools.fluxdown_update import PreparedUpdate
+        from .tools.resource_update import prefetch_resources
+        from .tools.software_update import prefetch_maa_software_update
+
+        config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        root = config.Info.Path
+        if not config.Update.TakeoverEnabled or root is None:
+            return
+        # Info.Path 是 MAA 可执行文件所在目录，配置目录为其 config/。
+        if use_maa_github_update(config, config_dirs=[root / "config"]):
+            candidate = await prepare_maa_fluxdown_update(
+                root, config=config, config_dir=root / "config", download_only=True
+            )
+            if isinstance(candidate, PreparedUpdate):
+                self._github_update_candidate = candidate
+            await prefetch_resources(root, github=True, cdk=None)
+        else:
+            enabled, cdk = resolve_takeover_credentials(config)
+            if enabled and cdk is not None:
+                await prefetch_maa_software_update(root, config)
+                await prefetch_resources(root, github=False, cdk=cdk)
+
+    async def discard_prefetched_update(self) -> None:
+        candidate = getattr(self, "_github_update_candidate", None)
+        self._github_update_candidate = None
+        if candidate is not None:
+            discard_prepared_update(candidate)
+
     async def _prepare_software_update_once(self, task: AutoProxyTask) -> None:
         """首位实际运行账号做更新准备；同批后续账号仅执行本地安全检查。"""
         self._update_config_dir = task.update_config_dir
@@ -741,12 +774,20 @@ class MaaManager(ScriptManagerBase):
                 last_log = time.monotonic()
 
         if github:
-            target = await prepare_maa_fluxdown_update(
-                self.maa_set_path.parent,
-                config=self.script_config,
-                config_dir=task.update_config_dir,
-                progress=report,
-            )
+            candidate = getattr(self, "_github_update_candidate", None)
+            self._github_update_candidate = None
+            try:
+                target = await prepare_maa_fluxdown_update(
+                    self.maa_set_path.parent,
+                    config=self.script_config,
+                    config_dir=task.update_config_dir,
+                    progress=report,
+                    prepared=candidate,
+                )
+            finally:
+                # 候选只交接一次；安装后若又发现新版，下一轮必须重新查询下载。
+                if candidate is not None:
+                    discard_prepared_update(candidate)
         else:
             target = await prepare_maa_software_before_run(
                 self.maa_set_path.parent,

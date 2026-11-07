@@ -1068,12 +1068,17 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 与执行层无依赖，仍由随后的一条龙承接，避免执行层异常连坐吞掉日常收益
         # （2026-09-08 用户决策：记录警告但继续）。
         exec_ok = True
+        execution_failure_summary = ""
         if self.exec_group_names:
             exec_ok = await self._run_execution_layer()
             if not exec_ok:
-                await self.script_info.set_log("执行层失败，继续执行一条龙日常")
+                execution_failure_summary = self.cur_user_log.status
+                await self.script_info.set_log(
+                    f"{execution_failure_summary}\n执行层失败，继续执行一条龙日常"
+                )
                 logger.warning(
-                    f"账号 {self.cur_user_item.name} 执行层失败，记录警告并继续一条龙日常"
+                    f"账号 {self.cur_user_item.name} {execution_failure_summary}，"
+                    f"记录警告并继续一条龙日常"
                 )
 
         # 原生一条龙（阶段2）无启用任务：不再启动 BetterGI，避免空一条龙进程不退出导致任务挂死。
@@ -1086,7 +1091,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                     "执行层已完成；原生一条龙无启用任务，跳过阶段2"
                 )
             else:
-                await self.script_info.set_log("一条龙无启用任务，跳过")
+                await self.script_info.set_log(
+                    f"{execution_failure_summary}\n一条龙无启用任务，跳过"
+                )
             logger.info(
                 f"账号 {self.cur_user_item.name} 原生一条龙无启用任务，跳过 BetterGI 启动"
             )
@@ -1097,7 +1104,11 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 都没有时会无限等下去（2026-09-15 实机排障）。
         if not await self.kill_managed_process():
             await self.cur_user_item.set_state(status="异常")
-            await self.script_info.set_log(_BGI_UNKILLABLE_HINT)
+            await self.script_info.set_log(
+                f"{execution_failure_summary}\n{_BGI_UNKILLABLE_HINT}"
+                if execution_failure_summary
+                else _BGI_UNKILLABLE_HINT
+            )
             logger.error(
                 f"账号 {self.cur_user_item.name} 无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}"
             )
@@ -1124,7 +1135,11 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             if not await self.kill_managed_process():
                 await self.cur_user_item.set_state(status="异常")
                 await self.cur_user_log.set_state(status=_BGI_UNKILLABLE_HINT)
-                await self.script_info.set_log(_BGI_UNKILLABLE_HINT)
+                await self.script_info.set_log(
+                    f"{execution_failure_summary}\n{_BGI_UNKILLABLE_HINT}"
+                    if execution_failure_summary
+                    else _BGI_UNKILLABLE_HINT
+                )
                 logger.error(
                     f"账号 {self.cur_user_item.name} 无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}"
                 )
@@ -1192,6 +1207,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                     f"\n将在稍后重试 ({i + 1}/{run_limit})"
                 )
                 await asyncio.sleep(10)
+
+        # 原生日志和等待退出提示会替换调度正文，结束后补回执行层失败摘要。
+        if execution_failure_summary:
+            await self._push_dispatch_log(execution_failure_summary)
 
     def _sanitize_plan_strategies(self) -> None:
         """失效 Plan 策略回退通用策略；显式填值也覆盖原生配置中的旧名称。"""
@@ -1486,24 +1505,32 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 失败而判本次执行层失败（配置组照样走到「执行结束」），所以只能按 BGI 项目行自己补计；
         # 否则这类失败会静默消失（2026-09-19 实机：自定义项失败仍报「成功」）。
         exec_steps = parse_execution_layer_report("".join(exec_log.content)) or []
-        custom_failed = sum(
-            not step["ok"] for step in exec_steps if step.get("bgi_project")
-        )
+        custom_failed_names = [
+            step["task"]
+            for step in exec_steps
+            if step.get("bgi_project") and not step["ok"]
+        ]
+        custom_failed = len(custom_failed_names)
         # JS 收尾不覆盖 BGI 明确报出的任务失败；同一步只计一次，自定义项另行累加。
         parsed_failed = sum(
             not step["ok"] for step in exec_steps if not step.get("bgi_project")
         )
         failed_steps = max(partial_failed, step_failed, parsed_failed) + custom_failed
+        failed_names = "、".join(step["task"] for step in exec_steps if not step["ok"])
+        failure_detail = f"：{failed_names}" if failed_names else ""
         if custom_failed:
             logger.warning(
-                f"账号 {self.cur_user_item.name} 执行层有 {custom_failed} 个自定义项失败"
+                f"账号 {self.cur_user_item.name} 执行层有 {custom_failed} 个自定义项失败："
+                f"{'、'.join(custom_failed_names)}"
                 f"（配置组/脚本/路径/录制，已跳过并继续后续项目）"
             )
 
         # 收尾状态：成功必须用 "Success!"（final_task 的成功轮筛选与 on_crash 的
         # 「非 Success! 即弹运行异常通知」都依赖这个契约串）
         await exec_log.set_state(
-            status="Success!" if result["success"] else failure_reason
+            status="Success!"
+            if result["success"]
+            else f"{failure_reason}{failure_detail}"
         )
         # 执行层整体失败后仍可能继续原生一条龙，已失败的步骤也必须进入最终汇总。
         self.partial_failed_steps = failed_steps
@@ -1518,15 +1545,16 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             if failed_steps:
                 logger.warning(
                     f"账号 {self.cur_user_item.name} 执行层完成，"
-                    f"但 {failed_steps} 个步骤失败（已跳过并继续后续步骤）"
+                    f"但 {failed_steps} 个步骤失败{failure_detail}（已跳过并继续后续步骤）"
                 )
                 await self._push_dispatch_log(
-                    f"执行层完成，{failed_steps} 个步骤失败已跳过（结果记为部分失败）"
+                    f"执行层完成，{failed_steps} 个步骤失败已跳过{failure_detail}"
+                    f"（结果记为部分失败）"
                 )
             else:
                 await self._push_dispatch_log("执行层完成")
         else:
-            await self._push_dispatch_log("执行层失败")
+            await self._push_dispatch_log(f"执行层失败{failure_detail}")
         return result["success"]
 
     def _account_switch_method(self) -> str:

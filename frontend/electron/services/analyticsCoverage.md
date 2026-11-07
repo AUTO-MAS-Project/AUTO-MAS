@@ -71,7 +71,7 @@
 | T044 | emulator_discovery_finished：搜索、导入模拟器是否顺利 | 已接入，持续复核 |
 | T045 | emulator_operation_result：启停、显示等操作是否被接受 | 已接入，持续复核 |
 | T046 | emulator_operation_observed_finished：前端观察到的模拟器操作结局 | 已接入，持续复核 |
-| T047 | emulator_instance_manage_finished：实例创建、删除与批量设置 | 已接入，持续复核 |
+| T047 | emulator_instance_manage_finished：实例创建、删除与设置（含 AVD 分辨率档位） | 已接入，持续复核 |
 | T048 | emulator_guard_changed：稳定模式和配置守卫是否解决使用障碍 | 已接入，持续复核 |
 | T049 | avd_root_added：自定义 AVD 安装导入完成率 | 已接入，持续复核 |
 | T050 | game_sign_requested：手动签到的使用与被占用拒绝 | 已接入，持续复核 |
@@ -174,6 +174,7 @@ QQ 官方机器人私聊和群内提及重试托管、启动普通或循环队�
 群成员白名单编辑与“我的ID”查询不单独采集；成员标识属于访问控制信息，不进入遥测。
 
 - 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。
+- 队列托管更新预下载：复用 `taskAnalytics.ts` 的脚本运行及任务终态观察者；首节点计时、缓存命中与下载完成属于内部调度，不新增完成事件，不将预下载成功当作安装成功。
 
 - SRC 本体托管更新：设置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`，更新失败继续、安装阻断沿用 `task_observed_finished`；Git 预取不等同于依赖安装完成，不采集仓库、提交、代理或路径。
 
@@ -201,3 +202,5 @@ started 未送达时不发送对应 finished。运行 UUID 只留在本机消息
 - BAAH 本体托管更新：设置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`，更新失败继续与安装阻断沿用 `task_observed_finished`；预下载不单独上报安装成功，不采集版本、CDK 或路径。
 
 - BetterGI 本体托管更新：设置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；每批更新准备、普通失败后继续及安装未确认拦截沿用 `task_observed_finished`。安装阶段不另建事件，不采集版本、CDK 或路径。
+
+通用脚本计划表复用 `plan_manage_finished` 与原生配置会话事件（`task_start_result`、`native_config_action_finished` 的打开与保存）；计划类型新增有限值 `UniversalPlanConfig`，不采集计划、账号、脚本 ID 或配置内容。

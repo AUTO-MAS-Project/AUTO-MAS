@@ -27,7 +27,7 @@
 启动 = 冷启动（``-no-snapshot``，与 MAS 对雷电 / MuMu 每轮开关一致），默认无头
 （= 静默模式）。启动参数与开机后的调优逐项对照
 <https://github.com/ModAVD/ModAVDManager> 的公开实现
-（每个开关都真机验证过，原因写在对应函数里）：磁盘 write-through、静音且不带声卡、固定 720p、
+（每个开关都真机验证过，原因写在对应函数里）：磁盘 write-through、静音且不带声卡、1080p / 720p 两档显示、
 实例内存、空闲页上报、Vulkan 描述符批量更新、宿主调度、截图共享内存、cpuinfo、
 WiFi + fastpath、客体日志落盘、客体 Vulkan 驱动补丁。启动器里没有的一项：数据盘请求密集时不让 vCPU 停机
 （``res/avd/guest/mas-idlepoll.sh``）。
@@ -86,11 +86,14 @@ from .constants import (
     CLOSE_TIMEOUT_SECONDS,
     CONSOLE_KILL_TIMEOUT_SECONDS,
     DEBLOAT_PACKAGES,
+    DISPLAY_PRESETS,
     FALLBACK_FORCE_KILL_WAIT_SECONDS,
     FALLBACK_KILL_TIMEOUT_SECONDS,
     FALLBACK_SYNC_TIMEOUT_SECONDS,
     FORCE_KILL_WAIT_SECONDS,
-    GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
+    GO_HOME_SETTLE_SECONDS,
+    GO_HOME_TIMEOUT_SECONDS,
+    GRACEFUL_SHUTDOWN_DEADLINE_SECONDS,
     GUEST_DIRTY_EXPIRE_CENTISECS,
     GUEST_DIRTY_WRITEBACK_CENTISECS,
     GUEST_PATCH_DIR,
@@ -107,11 +110,9 @@ from .constants import (
     PIXEL_LAUNCHER_PACKAGE,
     PORT_BASE,
     PORT_STEP,
+    PRE_SHUTDOWN_SYNC_TIMEOUT_SECONDS,
     RECOMMENDED_MEMORY_MB,
     REQUIRED_COMPONENTS,
-    SCREEN_DENSITY,
-    SCREEN_HEIGHT,
-    SCREEN_WIDTH,
     SYNC_TIMEOUT_SECONDS,
     VULKAN_ENC_GUEST_PATH,
     VULKAN_FIX_UPLOAD_PATH,
@@ -133,9 +134,11 @@ from .instances import (
     instance_meta,
     list_instances,
     memory_for,
+    resolution_for,
     update_instance_meta,
     validate_fps,
     validate_options,
+    validate_resolution,
     write_instance_config,
 )
 from .vulkanfix import (
@@ -265,7 +268,7 @@ def build_launch_args(
 
     有没有窗口不是实例选项（用户 10-04 定），开机那一刻按启动入口定，见 :meth:`AvdManager.open`。
     旧 ``mas-avd.json`` 里留下的 ``headless`` / ``resolution`` / ``guestAngle`` / ``audio`` /
-    ``balloon`` 一律不读：显示固定 720p、不带声卡、不开 GuestAngle、气球固定开。
+    ``balloon`` 一律不读：显示按 config.ini 的两档宽高识别、不带声卡、不开 GuestAngle、气球固定开。
 
     - 冷启动（``-no-snapshot``），与 MAS 对雷电 / MuMu 每轮开关一致；
     - 开机动画只在无头时关（``-no-boot-anim``）：带窗口开机时窗口里有东西看，不再黑屏到出桌面
@@ -399,6 +402,9 @@ async def _wait_closing(key: str, label: str) -> None:
 
 #: 被看门狗判冻结并强杀过的实例 → 原因。``getStatus`` 据此报 ERROR，直到下次 open / close。
 _FROZEN: dict[str, str] = {}
+
+#: MAS 在这台实例上拉起过的游戏 → 包名，关机时取走：关机前先按 HOME 让它退到后台（见 ``_close``）。
+_LAUNCHED: dict[str, str] = {}
 
 
 def _instance_key(root: Path, native_index: str) -> str:
@@ -1248,7 +1254,9 @@ class _AvdCore(DeviceBase):
 
         await host.ensure_adb_server(self.root)
         if await asyncio.to_thread(apply_display, self.root, idx):
-            logger.info(f"实例 {idx} 显示改回 720p、不显示导航栏（已写入 config.ini）")
+            logger.info(
+                f"实例 {idx} 显示设为 {resolution_for(instance.config)}p、不显示导航栏（已写入 config.ini）"
+            )
         headless = not self._open_window
         args = build_launch_args(
             instance.name,
@@ -1261,7 +1269,7 @@ class _AvdCore(DeviceBase):
         self._log_path = self._log_dir() / f"{instance.name}-{stamp}.log"
         logger.info(
             f"启动魔改 AVD 实例 {idx}（{'无头' if headless else '带窗口'}，"
-            f"720p {instance.fps} Hz，{memory_mb} MB / {instance.cpu} 核，"
+            f"{resolution_for(instance.config)}p {instance.fps} Hz，{memory_mb} MB / {instance.cpu} 核，"
             "气球开，不带声卡，ANDROID_EMU_VK_HIDE_REBAR=1）: "
             f"emulator {' '.join(args)}"
         )
@@ -1927,6 +1935,7 @@ class _AvdCore(DeviceBase):
         port = console_port(idx)
         _stop_watchdog(self.root, idx)
         _FROZEN.pop(key, None)
+        game = _LAUNCHED.pop(key, None)
         if updater.update_in_progress(self.root):
             return DeviceStatus.OFFLINE
         if self._cli is not None:
@@ -1949,12 +1958,14 @@ class _AvdCore(DeviceBase):
         if process is None:
             return DeviceStatus.OFFLINE
 
-        # 默认让安卓自己正常关机（``sys.powerctl shutdown``），等 qemu 自己退出；不成再退回
+        # 默认让安卓走框架的正常关机（``svc power shutdown``），等 qemu 自己退出；不成再退回
         # 「sync + 控制台 kill + 强杀」。控制台 kill / 强杀都直接结束 qemu，客体不走关机流程：
         # 页缓存里没写回的数据会丢（星铁热更新清单因此变成过 0 字节，表现成「网络请求超时」和黑屏），
         # 而且 sync 之后到 qemu 真正退出之间还有 2–3 秒，这段时间里游戏写的东西 sync 也管不到。
-        # 正常关机时客体 init 依次结束各个服务和应用、把页缓存写回、卸载分区，最后断电让 qemu 自己
-        # 退出，和手机关机、MuMu / 雷电关机一样。
+        # 正常关机时安卓先让前台应用停到 onPause / onStop，再由 init 依次结束各个服务和应用、把页缓存
+        # 写回、卸载分区，最后断电让 qemu 自己退出，和手机关机、MuMu / 雷电关机一样。
+        # 关机前：这次拉起过游戏就先按 HOME 让它退到后台、等几秒收尾，再 sync。退回那条路发生时 adbd
+        # 多半已经没了，那时的 sync 做不成，发关机命令前写下的数据要靠这一次 sync 落盘。
         # 磁盘 write-through 只保证已经写到虚拟盘的数据，管不到还在客体内存里的。
         # 强制关闭（ForceKillOnClose）不走正常关机，只先 sync 再强杀。
         # 时限：调用方（任务收尾 close_emulator）整体只给 30 秒，超了连强杀都执行不到。各步上限与
@@ -1974,7 +1985,14 @@ class _AvdCore(DeviceBase):
             return DeviceStatus.OFFLINE
 
         if problem is None:
-            reason = await self._graceful_shutdown(port, process)
+            if game:
+                await self._send_to_background(idx, port, game)
+            await self._sync_before_kill(
+                idx, port, None, PRE_SHUTDOWN_SYNC_TIMEOUT_SECONDS
+            )
+            reason = await self._graceful_shutdown(
+                port, process, started + GRACEFUL_SHUTDOWN_DEADLINE_SECONDS
+            )
             if reason is None:
                 logger.info(
                     f"魔改 AVD 实例 {idx} 正常关机完成"
@@ -2004,38 +2022,68 @@ class _AvdCore(DeviceBase):
         logger.info(f"魔改 AVD 实例 {idx} 已关闭")
         return DeviceStatus.OFFLINE
 
-    async def _graceful_shutdown(
-        self, port: int, process: psutil.Process
-    ) -> str | None:
-        """让安卓正常关机，等 qemu 自己退出，发命令连同等待最多
-        :data:`~.constants.GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS` 秒。退出了返回 ``None``，否则返回原因。
-
-        ``sys.powerctl`` 只有 root 能写，这些 userdebug 镜像上用 ``su 0``（同 :meth:`_su`）。
-        """
-        started = time.monotonic()
+    async def _send_to_background(self, idx: str, port: int, game: str) -> None:
+        """按 HOME 让 MAS 拉起的游戏退到后台，再等 :data:`~.constants.GO_HOME_SETTLE_SECONDS` 秒，
+        让它在 onPause 之后把手上的写入做完。关机流程里留给应用的只有约 2 秒。失败只记警告。"""
         code, output = await host.run_adb(
             self.root,
             "shell",
-            "su 0 setprop sys.powerctl shutdown",
+            "input keyevent KEYCODE_HOME",
             serial=host.serial_of(port),
-            timeout=GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
+            timeout=GO_HOME_TIMEOUT_SECONDS,
             reregister=False,
             total_timeout=True,
         )
         if code != 0:
-            return f"关机命令没有成功返回（返回码 {code}）: {output}"
-        remaining = GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS - (time.monotonic() - started)
+            logger.warning(
+                f"魔改 AVD 实例 {idx} 关机前按 HOME 失败，照常关机: {output}"
+            )
+            return
+        logger.info(
+            f"魔改 AVD 实例 {idx} 关机前已把 {game} 切到后台，等 "
+            f"{GO_HOME_SETTLE_SECONDS:.0f} 秒再关机"
+        )
+        await asyncio.sleep(GO_HOME_SETTLE_SECONDS)
+
+    async def _graceful_shutdown(
+        self, port: int, process: psutil.Process, deadline: float
+    ) -> str | None:
+        """让安卓走框架的正常关机，等 qemu 自己退出，最晚等到 ``deadline``（``time.monotonic()``
+        的时刻）。退出了返回 ``None``，否则返回原因。
+
+        ``svc power shutdown`` 经安卓的 ShutdownThread：发关机广播、把前台应用停到 onPause /
+        onStop，再交给 init 结束服务、卸载分区；shell 身份就能发，不用 su。
+        ``setprop sys.powerctl shutdown`` 直接让 init 关机，前台应用收不到任何通知就被结束。
+
+        这条命令不会正常返回：关机途中 adbd 被结束，adb 约 2.4 秒后报返回码 255。所以返回码不是 0
+        照样等 qemu 退出；返回 0 说明命令跑完了却没关机（比如只打出了用法），马上退回。
+        """
+        code, output = await host.run_adb(
+            self.root,
+            "shell",
+            "svc power shutdown",
+            serial=host.serial_of(port),
+            timeout=max(deadline - time.monotonic(), 0.1),
+            reregister=False,
+            total_timeout=True,
+        )
+        if code == 0:
+            return f"关机命令返回了却没有关机: {output.strip()[-200:]}"
+        remaining = deadline - time.monotonic()
         if remaining > 0:
             with suppress(psutil.TimeoutExpired):
                 await asyncio.to_thread(process.wait, remaining)
         if process.is_running():
-            return f"{GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS:.0f} 秒内没有自己退出"
+            return (
+                f"开始关机后 {GRACEFUL_SHUTDOWN_DEADLINE_SECONDS:.0f} 秒内没有自己退出"
+                f"（关机命令返回码 {code}）"
+            )
         return None
 
     async def _sync_before_kill(
         self, idx: str, port: int, problem: str | None, timeout: float
     ) -> None:
-        """控制台 kill / 强杀前先 ``sync``，把客体页缓存写回虚拟盘。失败只记警告。"""
+        """发关机命令、控制台 kill、强杀之前先 ``sync``，把客体页缓存写回虚拟盘。失败只记警告。"""
         started = time.monotonic()
         if problem is None:
             code, output = await host.run_adb(
@@ -2115,7 +2163,7 @@ class _AvdCore(DeviceBase):
                     for name in ("width", "height", "dpi", "cpu", "memoryMb", "fps")
                 }
             )
-        # 显示固定 720p（开机前核对一次写进 config.ini）
+        # 读取当前档位，下次开机前按相同档位写回。
         meta = instance_meta(self.root, idx)
         display = display_changes(instance.config)
         # 报开机实际传的 -memory（实例元数据里的值；以前「按游戏自动」的旧实例按默认 6 GB）
@@ -2140,7 +2188,7 @@ class _AvdCore(DeviceBase):
     async def write_instance_settings(
         self, idx: str, changes: dict, expected: dict | None = None
     ) -> dict[str, int]:
-        """可改 CPU、内存与帧率（30 / 60，写 ``hw.lcd.vsync``），都是下次启动生效；显示固定 720p。
+        """可改 CPU、内存与帧率（30 / 60，写 ``hw.lcd.vsync``），分辨率两档联动 DPI，保留方向，都是下次启动生效。
 
         同一台实例的改设置排队做：两个请求拿着同一份 ``expected`` 同时来时，后一个会看到前一个写的值、
         报冲突，不会两个都说成功、互相覆盖。"""
@@ -2186,14 +2234,7 @@ class _AvdCore(DeviceBase):
                 raise ValueError(
                     f"数据盘只能改大（当前 {current_data} GB，收到 {data_gb} GB）"
                 )
-            fixed = {
-                "width": SCREEN_WIDTH,
-                "height": SCREEN_HEIGHT,
-                "dpi": SCREEN_DENSITY,
-            }
-            for name, value in fixed.items():
-                if name in cleaned and cleaned[name] != value:
-                    raise ValueError("0.36.0 的 modavd 固定使用 1280×720 / DPI 240")
+            display = _display_settings(current, cleaned)
             kwargs: dict[str, Any] = {}
             if "memoryMb" in cleaned:
                 kwargs["memory"] = cleaned["memoryMb"]
@@ -2201,14 +2242,16 @@ class _AvdCore(DeviceBase):
                 kwargs["cpu"] = cleaned["cpu"]
             if "fps" in cleaned:
                 kwargs["fps"] = cleaned["fps"]
+            if display and any(
+                current.get(key) != value for key, value in display.items()
+            ):
+                kwargs["resolution"] = (
+                    1080 if max(display["width"], display["height"]) == 1920 else 720
+                )
             if data_gb is not None:
                 kwargs["data_gb"] = data_gb
             if not kwargs:
-                return {
-                    name: value
-                    for name, value in cleaned.items()
-                    if name in ("width", "height", "dpi")
-                }
+                return display
             try:
                 result = await self._cli.set(str(idx), **kwargs)
             except modavd_cli.CLIError as error:
@@ -2230,17 +2273,14 @@ class _AvdCore(DeviceBase):
             }
             if data_gb is not None and "dataPartitionGb" not in result_values:
                 result_values["dataPartitionGb"] = data_gb
+            result_values.update(display)
             return result_values
         cleaned = validate_setting_changes(changes)
         instance = self._instance(idx)
         # 只在这次要改帧率时校验：只改 CPU / 内存不该被手改过的 hw.lcd.vsync 挡住
         fps = validate_fps(cleaned["fps"]) if "fps" in cleaned else None
-        if {"width", "height", "dpi"} & cleaned.keys():
-            _check_display(
-                cleaned.get("width", SCREEN_WIDTH),
-                cleaned.get("height", SCREEN_HEIGHT),
-                cleaned.get("dpi", SCREEN_DENSITY),
-            )
+        current = (await self.read_instance_settings(idx)).values()
+        display = _display_settings(current, cleaned)
         memory, cpu, _ = validate_options(
             cleaned.get("memoryMb", memory_for(instance_meta(self.root, idx))),
             cleaned.get("cpu", instance.cpu),
@@ -2258,6 +2298,15 @@ class _AvdCore(DeviceBase):
         config_changes = {"hw.ramSize": f"{memory}M", "hw.cpu.ncore": str(cpu)}
         if fps is not None:
             config_changes["hw.lcd.vsync"] = str(fps)
+        if display:
+            config_changes.update(
+                {
+                    f"hw.lcd.{key}": str(value)
+                    for key, value in display.items()
+                    if key != "dpi"
+                }
+            )
+            config_changes["hw.lcd.density"] = str(display["dpi"])
         write_instance_config(self.root, idx, config_changes)
         # 内存每次都记进元数据：开机按它传 -memory，以前「按游戏自动」的旧实例从此有了固定值
         update_instance_meta(self.root, idx, memoryMb=memory)
@@ -2266,6 +2315,7 @@ class _AvdCore(DeviceBase):
             for k, v in cleaned.items()
             if k in ("cpu", "memoryMb", "fps", "width", "height", "dpi")
         }
+        applied.update(display)
         logger.info(f"已写入魔改 AVD 实例 {idx} 的设置: {applied}")
         return applied
 
@@ -2287,14 +2337,16 @@ class _AvdCore(DeviceBase):
         data_partition_gb: int | None = None,
         native_index: int | None = None,
         fps: int | None = None,
+        resolution: int | None = None,
     ) -> str:
         """新建实例，返回原生索引。不给索引就取最小的、端口也空着的那个。
 
         内存、核数、帧率不给就用默认 6 GB / 6 核 / 60（:data:`~.constants.DEFAULT_MEMORY_MB` /
-        ``DEFAULT_CPU`` / ``DEFAULT_FPS``）。
+        ``DEFAULT_CPU`` / ``DEFAULT_FPS``）；分辨率默认 1080p / DPI 280。
         """
         memory, cores, data_gb = validate_options(memory_mb, cpu, data_partition_gb)
         refresh = validate_fps(fps)
+        preset = validate_resolution(resolution)
         if self._cli is not None:
             if updater.update_in_progress(self.root):
                 raise RuntimeError("魔改 AVD 正在更新，更新完再新建实例")
@@ -2330,6 +2382,7 @@ class _AvdCore(DeviceBase):
                     cpu=cores,
                     data_gb=data_gb,
                     fps=refresh,
+                    resolution=preset,
                 )
             except modavd_cli.CLIError as error:
                 await self._raise_cli_create_error(error, native_index)
@@ -2352,6 +2405,7 @@ class _AvdCore(DeviceBase):
             cpu=cores,
             data_partition_gb=data_gb,
             fps=refresh,
+            resolution=preset,
         )
         logger.info(
             f"已新建魔改 AVD 实例 {native_index}（内存 "
@@ -2458,15 +2512,39 @@ def _int(raw: object) -> int | None:
         return None
 
 
-def _check_display(width: int | None, height: int | None, dpi: int | None) -> None:
-    """魔改 AVD 的显示固定 720p（横竖屏都认）；改成别的就拒绝，不做静默吸附。"""
-    if sorted((width or 0, height or 0), reverse=True) != [
-        SCREEN_WIDTH,
-        SCREEN_HEIGHT,
-    ] or (dpi != SCREEN_DENSITY):
-        raise ValueError(
-            f"魔改 AVD 的显示固定 720p（{SCREEN_WIDTH}×{SCREEN_HEIGHT}、DPI {SCREEN_DENSITY}），不能修改"
-        )
+def _display_settings(current: dict, changes: dict[str, int]) -> dict[str, int]:
+    """分辨率是宽、高、DPI 的整体档位；方向沿用实例，混合批量设置也按 AVD 的 DPI 写入。"""
+    if not {"width", "height", "dpi"} & changes.keys():
+        return {}
+    width = changes.get("width", current.get("width"))
+    height = changes.get("height", current.get("height"))
+    preset = next(
+        (
+            key
+            for key, (w, h, _) in DISPLAY_PRESETS.items()
+            if (width, height) in ((w, h), (h, w))
+        ),
+        None,
+    )
+    if preset is None:
+        raise ValueError("魔改 AVD 的分辨率只能选 1920×1080 或 1280×720")
+    if (
+        not {"width", "height"} & changes.keys()
+        and changes.get("dpi") != DISPLAY_PRESETS[preset][2]
+    ):
+        raise ValueError("魔改 AVD 的 DPI 随分辨率档位切换，不能单独修改")
+    display = display_changes(
+        {
+            "hw.lcd.width": str(current.get("width") or 0),
+            "hw.lcd.height": str(current.get("height") or 0),
+        },
+        preset,
+    )
+    return {
+        "width": int(display["hw.lcd.width"]),
+        "height": int(display["hw.lcd.height"]),
+        "dpi": int(display["hw.lcd.density"]),
+    }
 
 
 class AvdHostAdb:
@@ -2606,13 +2684,16 @@ class AvdManager(AppLaunchMixin, _AvdCore):
                     f"实例 {idx} 的 /sdcard/Android/data 未在 30 秒内挂好，继续拉起 {package_name}"
                 )
         max_wait = float(self.config.Info.MaxWaitTime)
-        return await ensure_app_running(
+        result = await ensure_app_running(
             run_adb,
             package_name,
             boot_timeout=min(max_wait, _BOOT_TIMEOUT_CAP),
             launch_timeout=launch_timeout or min(max_wait, _LAUNCH_TIMEOUT_CAP),
             label=str(idx),
         )
+        if result.ok:
+            _LAUNCHED[_instance_key(self.root, str(idx))] = package_name
+        return result
 
     async def stop_background_games(self, idx: str, keep: str) -> list[str]:
         """前台只留要跑的那个游戏，其余第三方应用直接结束（用户 09-26 定）。

@@ -6,5 +6,5 @@ import type { BAAHPlanConfig } from './BAAHPlanConfig';
 import type { MaaEndPlanConfig } from './MaaEndPlanConfig';
 import type { MaaPlanConfig } from './MaaPlanConfig';
 import type { MSSPlanConfig } from './MSSPlanConfig';
-export type PlanConfigData = (MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConfig);
-
+import type { UniversalPlanConfig } from './UniversalPlanConfig';
+export type PlanConfigData = (MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConfig | UniversalPlanConfig);

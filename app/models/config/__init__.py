@@ -62,6 +62,15 @@ class _PlanRegistration(TypedDict):
 
 
 PLAN_BOOK: dict[str, _PlanRegistration] = {
+    "UniversalPlanConfig": {
+        "create_type": "UniversalPlan",
+        "config_class": UniversalPlanConfig,
+        "consumer": PLAN_CONSUMER_VALUES[4],
+        # 只服务通用脚本：专项各自的整份配置由各自计划承载
+        "script_class": GeneralConfig,
+        "field_group": "Info",
+        "field_name": "PlanMode",
+    },
     "MaaPlanConfig": {
         "create_type": "MaaPlan",
         "config_class": MaaPlanConfig,

@@ -408,15 +408,15 @@ def _click_box(
         client_y = round((y + box_height / 2) * height / _FRAME_HEIGHT)
         screen_x, screen_y = win32gui.ClientToScreen(hwnd, (client_x, client_y))
 
-    original_position = pyautogui.position()
-    try:
-        _pause(0, stop_event)
-        pyautogui.moveTo(screen_x, screen_y)
-        _pause(0.3, stop_event)
-        pyautogui.click()
-        _pause(after_sleep, stop_event)
-    finally:
-        pyautogui.moveTo(*original_position)
+        original_position = pyautogui.position()
+        try:
+            _pause(0, stop_event)
+            pyautogui.moveTo(screen_x, screen_y)
+            _pause(0.3, stop_event)
+            pyautogui.click()
+            _pause(after_sleep, stop_event)
+        finally:
+            pyautogui.moveTo(*original_position)
 
 
 # ── OCR 文本判定辅助 ─────────────────────────────────────────────────────

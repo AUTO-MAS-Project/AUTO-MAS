@@ -3,10 +3,13 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
+from uuid import uuid4
 
 from pydantic import ValidationError
 
-from app.models.config import QueueConfig
+from app.config import ConfigCollection, config_manager
+from app.models.config import GeneralConfig, QueueConfig
 from app.utils import io as _utils_io
 from app.utils.contracts.power import PowerSignal
 from tests.config_support import activate_config
@@ -27,6 +30,52 @@ class QueueConfigStartupModeMigrationTest(unittest.IsolatedAsyncioTestCase):
 
     def read_config(self) -> dict:
         return _utils_io.read_dict_file(self.config_path)
+
+    async def test_legacy_disabled_items_are_removed_only_from_cycle_queues(
+        self,
+    ) -> None:
+        ids = [str(uuid4()) for _ in range(4)]
+        scripts = ConfigCollection[GeneralConfig].build([GeneralConfig])
+        await scripts.activate()
+        references = patch.dict(config_manager._collections, {"ScriptConfig": scripts})
+        references.start()
+        self.addCleanup(references.stop)
+        payload = {
+            "QueueItem": {
+                "order": [{"uid": uid, "type": "QueueItem"} for uid in ids],
+                "data": {
+                    ids[0]: {"Info": {"ScriptId": "-"}, "Schedule": {"Enabled": True}},
+                    ids[1]: {"Info": {"ScriptId": "-"}, "Schedule": {"Enabled": False}},
+                    ids[2]: {
+                        "Info": {"ScriptId": "-"},
+                        "Schedule": {"Days": ["Monday"]},
+                    },
+                    ids[3]: {"Info": {"ScriptId": "-"}, "Schedule": {"Enabled": False}},
+                },
+            }
+        }
+        for cycle in (True, False):
+            with self.subTest(cycle=cycle):
+                self.config_path = (
+                    Path(self.temporary_directory.name) / f"QueueConfig-{cycle}.yaml"
+                )
+                self.write_config({**payload, "Info": {"CycleEnabled": cycle}})
+                config = QueueConfig()
+                await activate_config(config, self.config_path)
+                expected = [ids[0], ids[2]] if cycle else ids
+                self.assertEqual(
+                    [str(uid) for uid in config.QueueItem.keys()], expected
+                )
+                self.assertEqual(config.Info.CycleEnabled, cycle)
+                persisted = self.read_config()["QueueItem"]
+                self.assertEqual([item["uid"] for item in persisted["order"]], expected)
+                self.assertEqual(set(persisted["data"]), set(expected))
+                # 再加载已迁移文件不应继续删除条目。
+                reloaded = QueueConfig()
+                await activate_config(reloaded, self.config_path)
+                self.assertEqual(
+                    [str(uid) for uid in reloaded.QueueItem.keys()], expected
+                )
 
     async def test_load_migrates_enabled_legacy_startup_setting(self) -> None:
         self.write_config({"Info": {"StartUpEnabled": True}})

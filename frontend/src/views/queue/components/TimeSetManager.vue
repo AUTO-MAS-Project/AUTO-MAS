@@ -69,6 +69,7 @@
 import TimeSetRow from './TimeSetRow.vue'
 import DragHandle from '@/components/DragHandle.vue'
 import DraggableTableShell from './DraggableTableShell.vue'
+import QueueWeekdaySelect from './QueueWeekdaySelect.vue'
 import { useI18n } from 'vue-i18n'
 import { ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
@@ -78,6 +79,7 @@ import { Service } from '@/composables/useTimeSetApi'
 import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
 
 const { t } = useI18n()
+
 const logger = window.electronAPI.getLogger('定时项管理')
 
 // Props

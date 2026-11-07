@@ -132,23 +132,8 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
     环境准备进行到一半时换树，两边都会坏。
     """
 
-    try:
-        script_config = maafw_script_config(script_id)
-        # 开发者模式：导入到本托管的私有渠道（不比版本、这份就是它的 latest）。只看开关：
-        # 源码形态由导入按这次的布局自己认，旧报告的 sourceForm 不作数（源码仓改选成发行包
-        # 目录时它还是上一次的结果）
-        follow = follow_source_switch_on(script_config)
-        channel = import_channel(script_id, script_config)
-        # 导入时与官方发行包核对资源文件走脚本的更新代理（与项目更新同一份解析）
-        proxy_url = resolve_update_proxy_url(script_config)
-    except (KeyError, ValueError, TypeError):
-        follow = False
-        channel = "stable"
-        proxy_url = None
-    try:
-        script_name = str(maafw_script_config(script_id).Info.Name or script_id[:8])
-    except (KeyError, ValueError, TypeError):
-        script_name = script_id[:8]
+    channel = "stable"
+    script_name = script_id[:8]
 
     # 失败原因只回给页面的话，用户发来的日志包里什么都看不到：每种失败都进 app.log。
     # 来源目录与异常原文里常有用户目录 / URL：用户目录换成 <HOME>、URL 去掉查询串。
@@ -165,20 +150,75 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
     if reservation is None:
         log_failure(EMBEDDED_COPY_BUSY)
         return None, EMBEDDED_COPY_BUSY
-    publish = _embedded_import_publisher(script_id)
-    try:
-        # 扫目录、建计划这一段没有进度，先把阶段告诉页面，别让进度条一直是 0
-        publish("importing", "running", "正在扫描项目目录", None)
-        imported = await asyncio.to_thread(
-            import_embedded_project,
-            script_id,
-            source_path,
-            progress=_embedded_import_progress(publish),
-            channel=channel,
-            follow_source=follow,
-            proxy_url=proxy_url,
-        )
+
+    async def complete_import() -> str:
+        nonlocal channel, script_name
+        # 路径校验会让出事件循环，运行可能已在此期间取得 X 锁。拿到项目预约后
+        # 重读配置并取同一把 X 票，直到视图与来源/报告都写完才允许脚本启动。
+        script_config = maafw_script_config(script_id)
+        config_ticket = await script_config.try_lock_x()
+        if config_ticket is None:
+            log_failure(EMBEDDED_SCRIPT_BUSY)
+            return EMBEDDED_SCRIPT_BUSY
+        try:
+            script_name = str(script_config.Info.Name or script_id[:8])
+            # 源码形态由本次导入识别；只看开发者模式开关，不沿用旧报告的 sourceForm。
+            follow = follow_source_switch_on(script_config)
+            channel = import_channel(script_id, script_config)
+            proxy_url = resolve_update_proxy_url(script_config)
+            publish = _embedded_import_publisher(script_id)
+            # 扫目录、建计划尚无进度，先让页面显示正在导入。
+            publish("importing", "running", "正在扫描项目目录", None)
+            imported = await asyncio.to_thread(
+                import_embedded_project,
+                script_id,
+                source_path,
+                progress=_embedded_import_progress(publish),
+                channel=channel,
+                follow_source=follow,
+                proxy_url=proxy_url,
+            )
+            # 当前任务持有 X token，直接提交原节点；Config.update_script 的外部
+            # 编辑入口会拒绝一切已锁节点，不能用于持票的内部写回。
+            await script_config.update(
+                type(script_config).model_validate(
+                    {
+                        "Info": {"Path": source_path},
+                        "Embedded": {
+                            "Report": json.dumps(
+                                imported["report"], ensure_ascii=False
+                            ),
+                            "SourceVersion": imported["sourceVersion"],
+                            "ImportedAt": imported["importedAt"],
+                        },
+                    }
+                )
+            )
+        finally:
+            await script_config.unlock(config_ticket)
+        # 类型替换不能持原配置的 X 票；此时仍持项目预约，启动检查须等这段结束。
+        await _apply_project_flavor(script_id)
+        # 源码形态由新报告决定，按导入后的实际渠道传播。
+        channel = effective_channel(script_id, maafw_script_config(script_id))
+        await _propagate_view_to_group(script_id, channel)
         publish("imported", "success", "导入完成", 100.0)
+        return ""
+
+    try:
+        work = asyncio.create_task(complete_import())
+        try:
+            error = await asyncio.shield(work)
+        except asyncio.CancelledError:
+            # 线程不能中断；视图、配置写回与特调切换须做完，重复取消也不能提前放预约。
+            while not work.done():
+                try:
+                    await asyncio.shield(work)
+                except (asyncio.CancelledError, Exception):
+                    if work.done():
+                        break
+            if not work.cancelled():
+                work.exception()
+            raise
     except EmbeddedProjectError as exc:
         log_failure(str(exc))
         return None, str(exc)
@@ -187,25 +227,7 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
         return None, f"{type(exc).__name__}: {exc}"
     finally:
         await release_project_path(reservation)
-    await Config.update_script(
-        script_id,
-        {
-            "Embedded": {
-                "Report": json.dumps(imported["report"], ensure_ascii=False),
-                "SourceVersion": imported["sourceVersion"],
-                "ImportedAt": imported["importedAt"],
-            }
-        },
-    )
-    await _apply_project_flavor(script_id)
-    # 导入时才认出源码形态的（报告刚写回 sourceForm），组已经换成私有渠道：按导入后的实际
-    # 渠道传播，别用导入前缓存的普通渠道
-    try:
-        channel = effective_channel(script_id, maafw_script_config(script_id))
-    except (KeyError, ValueError, TypeError):
-        pass
-    await _propagate_view_to_group(script_id, channel)
-    return None, ""
+    return None, error
 
 
 async def _propagate_view_to_group(script_id: str, channel: str) -> None:
@@ -402,8 +424,7 @@ async def reimport_embedded(script_id: str, source_path: str | None) -> MaaFWApi
         return MaaFWApiReply.error(
             400, f"{failure_prefix}{_import_failure_reason(error)}"
         )
-    # 导入成功才把来源写进 Info.Path：失败时旧副本与旧来源都原样不动。
-    await Config.update_script(script_id, {"Info": {"Path": source}})
+    # 来源与导入报告已在同一段受保护的导入操作中提交。
     _reconcile_pool_after_copy_change("reimport", copy_dir, previous_version)
     data = await embedded_status_data(script_id, maafw_script_config(script_id))
     # 副本、来源、省了多少这些细节只进运行环境日志（见 embedded_summary_lines），

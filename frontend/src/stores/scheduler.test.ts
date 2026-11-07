@@ -70,6 +70,33 @@ afterEach(() => {
 })
 
 describe('调度台只绑定运行身份', () => {
+  it('限制自动完成标签，并释放缓存引用，保留手动页与仍在运行的任务', () => {
+    store.bootstrap()
+    const manual = state('manual')
+    manual.phase = 'completed'
+    runtime.states.set(manual.taskId, manual)
+    store.bindRun(store.addTab(), manual.taskId)
+    const active = state('still-running')
+    runtime.states.set(active.taskId, active)
+    runtime.listener!({ type: 'created', state: active })
+    for (let index = 0; index < 23; index++) {
+      const task = state(`auto-${index}`)
+      task.trigger = TaskTriggerReason.CYCLE
+      runtime.states.set(task.taskId, task)
+      runtime.listener!({ type: 'created', state: task })
+      task.phase = 'completed'
+      runtime.listener!({ type: 'completed', state: task })
+    }
+    expect(store.tabs.filter(tab => tab.automatic)).toHaveLength(21)
+    expect(store.tabs.some(tab => tab.taskId === 'still-running')).toBe(true)
+    expect(store.tabs.some(tab => tab.taskId === 'manual')).toBe(true)
+    expect(store.tabs.find(tab => tab.key === store.activeTab)?.taskId).toBe('auto-22')
+    for (const id of ['auto-0', 'auto-1', 'auto-2']) {
+      expect(store.tabs.some(tab => tab.taskId === id)).toBe(false)
+      expect(runtime.release).toHaveBeenCalledWith(id)
+    }
+  })
+
   it('立即保存手动绑定与活动页，合并自动页不修改早到的日志', () => {
     const task = state('run-1')
     runtime.states.set(task.taskId, task)

@@ -19,13 +19,8 @@ def test_adapter_keeps_frozen_node_outputs(tmp_path, monkeypatch, mode, adapter)
     proxy.cur_user_item = user
     if adapter == "Okww":
         proxy.script_root_path = tmp_path
-        native = tmp_path / module._push_log.OKWW_REL_I18N_PO
-        native.parent.mkdir(parents=True)
-        native.write_text('msgid "Mail"\nmsgstr "领取邮件"\n', encoding="utf-8")
-        supplement = tmp_path / "extra.po"
-        supplement.write_text("", encoding="utf-8")
-        monkeypatch.setattr(module._push_log, "_okww_supplement_po", lambda: supplement)
-        text = "Mail\n先约电台\n切换账号失败\n乐园任务完成\n"
+        # dev 已改为直接匹配上游公开日志，不再读取私有词典翻译。
+        text = "领取邮件\n先约电台\n切换账号失败\n乐园任务完成\n"
         expected = [
             "✅ 成功: 邮件",
             "✅ 成功: 先约电台",

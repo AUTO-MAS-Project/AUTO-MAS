@@ -744,6 +744,8 @@ onUnmounted(() => {
 })
 </script>
 
+<style scoped src="@/styles/userEditForm.css"></style>
+
 <style scoped>
 .user-edit-container {
   padding: 32px;
@@ -751,32 +753,10 @@ onUnmounted(() => {
   background: var(--ant-color-bg-layout);
 }
 
-.user-edit-content {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.config-card {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
-.config-form {
-  max-width: none;
-}
-
 /* 响应式设计 */
 @media (max-width: 768px) {
   .user-edit-container {
     padding: 16px;
-  }
-
-  .user-edit-content {
-    max-width: 100%;
   }
 }
 

@@ -326,14 +326,14 @@ def _click_box(
         client_y = round((y + box_height / 2) * height / _FRAME_HEIGHT)
         screen_x, screen_y = win32gui.ClientToScreen(hwnd, (client_x, client_y))
 
-    original_position = pyautogui.position()
-    try:
-        pyautogui.moveTo(screen_x, screen_y)
-        time.sleep(0.3)
-        pyautogui.click()
-        time.sleep(after_sleep)
-    finally:
-        pyautogui.moveTo(*original_position)
+        original_position = pyautogui.position()
+        try:
+            pyautogui.moveTo(screen_x, screen_y)
+            time.sleep(0.3)
+            pyautogui.click()
+            time.sleep(after_sleep)
+        finally:
+            pyautogui.moveTo(*original_position)
 
 
 def _click_point(hwnd: int, px: int, py: int, *, after_sleep: float = 0.3) -> None:
@@ -570,10 +570,10 @@ def _scroll_list(hwnd: int) -> None:
         client_x = round(px * width / _FRAME_WIDTH)
         client_y = round(py * height / _FRAME_HEIGHT)
         screen_x, screen_y = win32gui.ClientToScreen(hwnd, (client_x, client_y))
-    pyautogui.moveTo(screen_x, screen_y)
-    time.sleep(0.2)
-    pyautogui.scroll(-3)
-    time.sleep(0.5)
+        pyautogui.moveTo(screen_x, screen_y)
+        time.sleep(0.2)
+        pyautogui.scroll(-3)
+        time.sleep(0.5)
 
 
 def _click_masked_account(

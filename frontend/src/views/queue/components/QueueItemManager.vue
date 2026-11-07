@@ -73,6 +73,7 @@ import DragHandle from '@/components/DragHandle.vue'
 import QueueDeleteButton from './QueueDeleteButton.vue'
 import QueueWeekdaysSelect from './QueueWeekdaysSelect.vue'
 import DraggableTableShell from './DraggableTableShell.vue'
+import QueueWeekdaySelect from './QueueWeekdaySelect.vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
@@ -81,6 +82,7 @@ import { Service } from '@/api'
 import { queueApi } from '@/composables/useQueueApi'
 
 const { t } = useI18n()
+
 const logger = window.electronAPI.getLogger('队列项管理')
 
 // Props
