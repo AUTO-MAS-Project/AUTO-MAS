@@ -41,37 +41,6 @@
         size="small"
       />
 
-      <div v-if="showMirrorSelection && mirrors.length > 0" class="failure-mirrors">
-        <p class="mirrors-title">{{ t('bootstrap.init.failure.mirrorTitle') }}</p>
-        <a-radio-group
-          :value="selectedMirror"
-          :name="mirrorGroupName"
-          :disabled="updating"
-          class="mirror-options"
-          role="radiogroup"
-          :aria-label="t('bootstrap.init.failure.mirrorTitle')"
-          @change="emit('update:selected-mirror', $event.target.value)"
-        >
-          <a-radio
-            v-for="mirror in mirrors"
-            :key="mirror.key"
-            :value="mirror.key"
-            class="mirror-option"
-          >
-            <span class="mirror-content">
-              <span class="mirror-name">{{ mirror.name }}</span>
-              <span class="mirror-note">
-                {{
-                  mirror.recommended
-                    ? t('bootstrap.init.failure.mirrorRecommended')
-                    : mirror.description
-                }}
-              </span>
-            </span>
-          </a-radio>
-        </a-radio-group>
-      </div>
-
       <details
         v-if="hasDetails"
         class="failure-details"
@@ -121,14 +90,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, useId, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message as feedback } from 'ant-design-vue'
 import { FileZipOutlined, TeamOutlined } from '@ant-design/icons-vue'
 import { useLogExport } from '@/composables/useLogExport'
 import type { RuntimeDoctorCheck, RuntimeInitMode } from '@/types/electron'
 import { useRuntimeBinaryUpdate } from '../useRuntimeBinaryUpdate'
-import type { MirrorConfig } from '@/types/mirror'
 import type {
   FailureAction,
   FailureActionKind,
@@ -145,9 +113,6 @@ interface Props {
   failureActions?: FailureAction[]
   failureNotice?: FailureNoticeKind | null
   failureLogs?: string
-  showMirrorSelection?: boolean
-  mirrors?: MirrorConfig[]
-  selectedMirror?: string
   doctorChecks?: RuntimeDoctorCheck[] | null
   doctorRunning?: boolean
   runtimeMode?: RuntimeInitMode
@@ -161,9 +126,6 @@ const props = withDefaults(defineProps<Props>(), {
   failureActions: () => [],
   failureNotice: null,
   failureLogs: '',
-  showMirrorSelection: false,
-  mirrors: () => [],
-  selectedMirror: '',
   doctorChecks: null,
   doctorRunning: false,
   runtimeMode: 'managed',
@@ -173,14 +135,12 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   action: [kind: FailureActionKind]
-  'update:selected-mirror': [value: string]
   skip: []
   'open-docs': []
   'runtime-updated': []
 }>()
 
 const { t } = useI18n()
-const mirrorGroupName = useId()
 const { exportingLogs, packageLogs } = useLogExport()
 const {
   updating,
@@ -327,69 +287,9 @@ watch(
   border-color: var(--ant-color-primary);
 }
 
-.failure-mirrors {
-  margin-top: 18px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.mirrors-title {
-  margin: 0;
-  padding: 9px 14px;
-  background: var(--ant-color-fill-quaternary);
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-}
-
-.mirror-options {
-  display: block;
-}
-
-.mirror-option {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 10px;
-  margin-inline-end: 0;
-  padding: 9px 14px;
-  border: 0;
-  border-top: 1px solid var(--ant-color-border-secondary);
-  background: var(--ant-color-bg-container);
-  font-size: 13px;
-}
-
-.mirror-option:hover:not(.ant-radio-wrapper-disabled) {
-  background: var(--ant-color-fill-quaternary);
-}
-
 .failure-skip button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.failure-mirrors .mirror-option :deep(.ant-radio + span) {
-  flex: 1;
-  min-width: 0;
-}
-
-.mirror-content {
-  display: flex;
-  align-items: center;
-}
-
-.mirror-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mirror-note {
-  margin-left: auto;
-  padding-left: 12px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-  white-space: nowrap;
 }
 
 .failure-details {

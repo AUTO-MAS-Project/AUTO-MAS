@@ -62,13 +62,10 @@
       "exportLogsHint": "解決しない場合は、debug フォルダーを ZIP にまとめて QQ グループで共有し、調査を依頼できます。",
       "internalErrorNotice": "これはプログラム内部の問題で、再試行しても解決しません。ログを添えて報告してください",
       "joinGroup": "QQ グループで相談",
-      "mirrorRecommended": "推奨",
-      "mirrorTitle": "別のダウンロード元で再試行",
       "openLogFailed": "ログを開けませんでした: {error}",
       "rebuildEnvironment": "実行環境を再構築",
       "restoreWorkspace": "プログラムファイルを復元して再試行",
       "restoringWorkspace": "プログラムファイルを復元し、実行環境を準備しています...",
-      "retryOtherMirror": "別のダウンロード元で再試行",
       "runDoctor": "実行環境を確認",
       "runtimeCurrent": "Runtime {version} はすでに最新バージョンです。再試行するかログを確認してください。",
       "runtimeRestarting": "Runtime の更新が完了しました。最初から再初期化しています...",
@@ -90,7 +87,6 @@
     "step": {
       "failed": "{title}に失敗しました",
       "retry": "再試行",
-      "retryWithMirror": "別のダウンロード元で再試行",
       "skip": "このステップをスキップ",
       "skipConsequence": "（アプリが正常に動作しない可能性があります）"
     },

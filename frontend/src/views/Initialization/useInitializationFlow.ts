@@ -7,11 +7,7 @@ import { finishInitializationEntry } from './finishInitializationEntry'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 import type { AnalyticsEventProps } from '@/types/analytics'
 import { getBackendVersion } from '@/composables/useVersionService'
-import {
-  canRestoreWorkspace,
-  decideFailureActions,
-  filterRuntimeMirrors,
-} from '@/utils/initializationDecision'
+import { canRestoreWorkspace, decideFailureActions } from '@/utils/initializationDecision'
 import {
   getInitializationStageKey,
   getInitializationStageStatus,
@@ -23,14 +19,12 @@ import {
   reduceNetworkActivity,
 } from './networkActivity'
 import type {
-  ElectronMirrorSource,
   InstallStageResult,
   RuntimeDoctorCheck,
   RuntimeFailureFields,
   RuntimeInitMode,
 } from '@/types/electron'
 import type { LaunchStep } from '@/types/launch'
-import type { MirrorConfig } from '@/types/mirror'
 import type {
   FailureAction,
   FailureActionKind,
@@ -59,9 +53,6 @@ export function useInitializationFlow() {
     messageKey?: string
     progress: number
     progressIndeterminate: boolean
-    showMirrorSelection: boolean
-    mirrors: MirrorConfig[]
-    selectedMirror: string
     failureActions: FailureAction[]
     failureNotice: FailureNoticeKind | null
     failureLogs: string
@@ -93,9 +84,6 @@ export function useInitializationFlow() {
       message: '',
       progress: 0,
       progressIndeterminate: true,
-      showMirrorSelection: false,
-      mirrors: [],
-      selectedMirror: '',
       failureActions: [],
       failureNotice: null,
       failureLogs: '',
@@ -119,7 +107,6 @@ export function useInitializationFlow() {
   const runtimeMode = ref<RuntimeInitMode>(isDev ? 'development' : 'managed')
   /** Runtime 报上来的测速结果与当前下载文件，只在 Runtime 链路有内容；页面级，不分段。 */
   const networkActivity = ref<NetworkActivity>(EMPTY_NETWORK_ACTIVITY)
-  const runtimeMirrorKeys = ref<Record<string, string[]>>({})
   const runtimeFallbackLogPath = ref('')
   const flowKind = ref<'first-run' | 'update' | 'startup'>('first-run')
   let analyticsAttempt: ReturnType<
@@ -240,14 +227,6 @@ export function useInitializationFlow() {
       failureActions: state.failureActions,
       failureNotice: state.failureNotice,
       failureLogs: state.failureLogs,
-      showMirrorSelection: state.showMirrorSelection,
-      mirrors: filterRuntimeMirrors(
-        state.mirrors,
-        step.key,
-        runtimeMode.value,
-        runtimeMirrorKeys.value
-      ),
-      selectedMirror: state.selectedMirror,
       doctorChecks: state.doctorChecks,
       doctorRunning: state.doctorRunning,
       runtimeMode: runtimeMode.value,
@@ -335,7 +314,6 @@ export function useInitializationFlow() {
 
     state.failureActions = plan.actions
     state.failureNotice = plan.notice
-    state.showMirrorSelection = plan.showMirrorSelection
     state.failureLogs = failure.logs ?? ''
     state.failureLogPath = failure.logPath ?? ''
     state.doctorChecks = null
@@ -353,7 +331,6 @@ export function useInitializationFlow() {
     state.message = ''
     state.progress = 100
     state.progressIndeterminate = false
-    state.showMirrorSelection = false
     state.failureActions = []
     state.failureNotice = null
   }
@@ -393,6 +370,7 @@ export function useInitializationFlow() {
   }
 
   async function executeRuntimeInitialization(): Promise<boolean> {
+    if (flowKind.value === 'startup') flowKind.value = 'update'
     ensureAnalyticsAttempt()
     try {
       const result = await window.electronAPI.initialize(targetBranch.value, false)
@@ -442,7 +420,6 @@ export function useInitializationFlow() {
     state.progress = 0
     state.progressIndeterminate = true
     networkActivity.value = EMPTY_NETWORK_ACTIVITY
-    let failure: RuntimeFailureFields = {}
 
     try {
       const api = window.electronAPI
@@ -450,27 +427,30 @@ export function useInitializationFlow() {
 
       switch (stepKey) {
         case 'python':
-          result = await api.installPython(state.selectedMirror, rebuild)
+          if (!rebuild) return executeRuntimeInitialization()
+          result = await api.installPython(true)
           break
         case 'pip':
-          result = await api.installPip(state.selectedMirror, rebuild)
-          break
         case 'git':
-          result = await api.installGit(state.selectedMirror, rebuild)
-          break
+          return true
         case 'repository':
-          result = await api.pullRepository(targetBranch.value, state.selectedMirror, rebuild)
+          result = await api.pullRepository(rebuild)
           break
         case 'dependency':
-          result = await api.installDependencies(state.selectedMirror, rebuild)
+          result = await api.installDependencies(rebuild)
           break
         case 'backend':
           return true
       }
 
       if (!result.success) {
-        failure = result
-        throw new Error(result.error || '')
+        const failedStep =
+          steps.find(
+            step => step.key === result.failedStage && !RUNTIME_TAKEOVER_STEPS.has(step.key)
+          )?.key ?? stepKey
+        currentStepIndex.value = steps.findIndex(step => step.key === failedStep)
+        markStepFailed(failedStep, result.error || '', result)
+        return false
       }
 
       state.status = 'success'
@@ -479,7 +459,7 @@ export function useInitializationFlow() {
       return true
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
-      markStepFailed(stepKey, errorMessage, failure)
+      markStepFailed(stepKey, errorMessage, {})
       return false
     }
   }
@@ -510,24 +490,13 @@ export function useInitializationFlow() {
     }
   }
 
-  function handleMirrorSelect(mirrorKey: string) {
-    currentState.value.selectedMirror = mirrorKey
-    recordRecoveryAction('select-mirror')
-  }
-
   function recordRecoveryAction(
     action: AnalyticsEventProps['initialization_recovery_selected']['action']
   ) {
-    const state = currentState.value
-    const type = state.mirrors.find(mirror => mirror.key === state.selectedMirror)?.type
     beginAnalyticsOperation('initialization_recovery_selected').finish({
       action,
       stage: currentStep.value.key,
-      mirror_kind: !state.selectedMirror
-        ? 'default'
-        : type === 'official' || type === 'mirror'
-          ? type
-          : 'unknown',
+      mirror_kind: 'default',
     })
   }
 
@@ -539,7 +508,6 @@ export function useInitializationFlow() {
   function resetFailureState(state: StepState) {
     state.messageKey = undefined
     state.runtimeProgress = undefined
-    state.showMirrorSelection = false
     state.failureActions = []
     state.failureNotice = null
     state.failureLogs = ''
@@ -588,18 +556,30 @@ export function useInitializationFlow() {
     if (await executeStep(step.key, rebuild)) await continueAfterCurrentStep()
   }
 
-  async function handleRuntimeUpdated() {
-    ensureAnalyticsAttempt()
-    // 新 Runtime 从完整 bootstrap 开始，不能沿用失败前的步骤完成标记。
+  function resetRuntimeInitializationState() {
+    // 补装或更新 Runtime 后重新完整准备，不能沿用之前的步骤完成标记。
     currentStepIndex.value = 0
-    if (flowKind.value === 'startup') flowKind.value = 'update'
     for (const step of steps) stepStates.value[step.key] = createStepState()
     for (const stepKey of RUNTIME_TAKEOVER_STEPS) markStepTakenOver(stepStates.value[stepKey])
     networkActivity.value = EMPTY_NETWORK_ACTIVITY
+  }
+
+  function handleMissingRuntimeFailure(
+    errorMessage: string,
+    failure: RuntimeFailureFields
+  ): boolean {
+    if (runtimeMode.value !== 'managed' || failure.code !== 'RUNTIME_NOT_FOUND') return false
+    resetRuntimeInitializationState()
+    markStepFailed('python', errorMessage, { ...failure, failureOrigin: 'runtime_binary' })
+    return true
+  }
+
+  async function handleRuntimeUpdated() {
+    ensureAnalyticsAttempt()
+    resetRuntimeInitializationState()
     stepStates.value.python.status = 'processing'
     stepStates.value.python.messageKey = 'bootstrap.init.failure.runtimeRestarting'
     stepStates.value.python.message = t('bootstrap.init.failure.runtimeRestarting')
-    await loadMirrorConfigs()
     await startInitialization(0)
   }
 
@@ -622,6 +602,7 @@ export function useInitializationFlow() {
   }
 
   async function handleBackendError(errorMessage: string, failure: RuntimeFailureFields = {}) {
+    if (handleMissingRuntimeFailure(errorMessage, failure)) return
     const state = stepStates.value.backend
     state.status = 'failed'
     state.messageKey = undefined
@@ -636,7 +617,6 @@ export function useInitializationFlow() {
       state.status = 'waiting'
       currentStepIndex.value = steps.findIndex(step => step.key === 'dependency')
       markStepFailed('dependency', errorMessage, failure)
-      await loadMirrorConfigs()
     }
     failAnalyticsAttempt(
       'backend',
@@ -664,7 +644,6 @@ export function useInitializationFlow() {
         await runRuntimeDoctor(state)
         return
       case 'retry':
-      case 'retry-other-mirror':
         await handleRetry(false)
         return
       case 'rebuild-environment':
@@ -724,42 +703,6 @@ export function useInitializationFlow() {
     })
   }
 
-  function convertMirror(mirror: ElectronMirrorSource): MirrorConfig {
-    return {
-      key: mirror.name,
-      name: mirror.name,
-      url: mirror.url,
-      type: mirror.type,
-      description: mirror.description,
-      recommended: mirror.type === 'mirror',
-    }
-  }
-
-  async function loadMirrorConfigs(initialize = true) {
-    const api = window.electronAPI
-    try {
-      if (initialize) await api.initMirrors()
-      const [pythonMirrors, getPipMirrors, gitMirrors, repoMirrors, pipMirrors] = await Promise.all(
-        [
-          api.getMirrors('python'),
-          api.getMirrors('get_pip'),
-          api.getMirrors('git'),
-          api.getMirrors('repo'),
-          api.getMirrors('pip_mirror'),
-        ]
-      )
-
-      stepStates.value.python.mirrors = pythonMirrors.map(convertMirror)
-      stepStates.value.pip.mirrors = getPipMirrors.map(convertMirror)
-      stepStates.value.git.mirrors = gitMirrors.map(convertMirror)
-      stepStates.value.repository.mirrors = repoMirrors.map(convertMirror)
-      stepStates.value.dependency.mirrors = pipMirrors.map(convertMirror)
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      logger.warn(`加载镜像源配置失败，将使用默认配置: ${errorMessage}`)
-    }
-  }
-
   function markStepsBefore(startIndex: number) {
     for (let index = 0; index < startIndex; index += 1) {
       markStepTakenOver(stepStates.value[steps[index].key])
@@ -811,11 +754,6 @@ export function useInitializationFlow() {
 
     const api = window.electronAPI
     // 先接事件再补快照；首次启动和同页恢复共用这些监听。
-    api.onPythonProgress?.(progress => handleProgress('python', progress))
-    api.onPipProgress?.(progress => handleProgress('pip', progress))
-    api.onGitProgress?.(progress => handleProgress('git', progress))
-    api.onRepositoryProgress?.(progress => handleProgress('repository', progress))
-    api.onDependencyProgress?.(progress => handleProgress('dependency', progress))
     api.onInitializationProgress?.(handleRuntimeInitializationProgress)
     api.onBackendStatus?.(backendStatus => {
       if (backendStatus.isRunning) stepStates.value.backend.status = 'processing'
@@ -824,7 +762,6 @@ export function useInitializationFlow() {
       const context = await api.getRuntimeInitContext()
       if (context) {
         runtimeMode.value = context.mode
-        runtimeMirrorKeys.value = context.mirrorKeys ?? {}
         runtimeFallbackLogPath.value = context.fallbackLogPath ?? ''
       }
     } catch (error) {
@@ -843,8 +780,8 @@ export function useInitializationFlow() {
       const result = await api.waitDesktopStartup()
       if (disposed) return
       if (result && !result.success) {
-        if (startup.fullInitialization) await loadMirrorConfigs(false)
-        if (disposed) return
+        if (handleMissingRuntimeFailure(result.error || t('bootstrap.init.msg.initFailed'), result))
+          return
         const failedStep = steps.find(step => step.key === result.failedStage)?.key ?? 'backend'
         currentStepIndex.value = steps.findIndex(step => step.key === failedStep)
         markStepFailed(failedStep, result.error || t('bootstrap.init.msg.initFailed'), result)
@@ -866,9 +803,6 @@ export function useInitializationFlow() {
     const startIndex = await resolveStartIndex()
     currentStepIndex.value = startIndex
 
-    // 已完成过同版本初始化时只启动后端，不再为不会执行的安装步骤加载镜像配置。
-    if (startIndex < steps.length - 1) await loadMirrorConfigs()
-
     if (startIndex < steps.length - 1) {
       initializationTimer = setTimeout(() => {
         void startInitialization(startIndex)
@@ -882,11 +816,6 @@ export function useInitializationFlow() {
     if (initializationTimer) clearTimeout(initializationTimer)
 
     const api = window.electronAPI
-    api.removePythonProgressListener?.()
-    api.removePipProgressListener?.()
-    api.removeGitProgressListener?.()
-    api.removeRepositoryProgressListener?.()
-    api.removeDependencyProgressListener?.()
     api.removeInitializationProgressListener?.()
     api.removeBackendStatusListener?.()
   })
@@ -900,7 +829,6 @@ export function useInitializationFlow() {
     handleBackendRecoveryAction,
     handleBackendStatusChange,
     handleFailureAction,
-    handleMirrorSelect,
     handleRuntimeUpdated,
     handleSkip,
     handleLocalEnterApp,

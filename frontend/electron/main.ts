@@ -105,11 +105,7 @@ import {
   getRendererEnvironmentArguments,
   getBackendOwnership,
 } from './services/instanceConfig'
-import {
-  PersistedRuntimeLaunchMode,
-  isPersistedRuntimeLaunchMode,
-  resolveRuntimeLaunchModeDetail,
-} from './services/runtime'
+import { resolveRuntimeLaunchModeDetail } from './services/runtime'
 import AdmZip = require('adm-zip')
 import { migrateUserData, selectUserDataLock } from './services/userDataMigration'
 import { recordDesktopStartup } from './services/startupTiming'
@@ -331,10 +327,6 @@ interface AppConfig extends DesktopMascotHostPreferences {
   Function: {
     IfEnableTelemetry: boolean
   }
-  // Runtime 启动模式的持久化设置，见 services/runtime/launchConfig.ts 的三级优先级说明。
-  Runtime: {
-    LaunchMode: PersistedRuntimeLaunchMode
-  }
 
   [key: string]: unknown
 }
@@ -360,9 +352,6 @@ const defaultConfig: AppConfig = {
   },
   Function: {
     IfEnableTelemetry: true,
-  },
-  Runtime: {
-    LaunchMode: 'auto',
   },
   customBackgroundPath: '',
   customSurfaceOpacity: 1,
@@ -2179,7 +2168,7 @@ ipcMain.handle('show-item-in-folder', async (_event, filePath: string) => {
   }
 })
 
-// Runtime 上下文 - 初始化界面开局问一次：走没走 Runtime、回退日志文件、可用镜像键
+// Runtime 上下文 - 初始化界面的运行模式与回退日志文件
 ipcMain.handle('get-runtime-init-context', async () => resolveRuntimeInitContext())
 
 // 关键文件检查 - 每次都重新检查exe文件是否存在
@@ -2427,39 +2416,8 @@ ipcMain.handle('set-initialized-version', async (_event, version: string) => {
   }
 })
 
-// Runtime 启动模式：持久化设置 + 当前生效值（供设置界面展示来源与效果，重启后生效）
-ipcMain.handle('get-runtime-launch-mode', async () => {
-  try {
-    const config = loadConfig()
-    const persisted = isPersistedRuntimeLaunchMode(config.Runtime?.LaunchMode)
-      ? config.Runtime.LaunchMode
-      : 'auto'
-    const resolution = resolveRuntimeLaunchModeDetail(getAppRoot())
-    return { persisted, mode: resolution.mode, source: resolution.source }
-  } catch (error) {
-    logger.error('读取 Runtime 启动方式失败', error)
-    throw error
-  }
-})
-
-ipcMain.handle('set-runtime-launch-mode', async (_event, mode: unknown) => {
-  if (!isPersistedRuntimeLaunchMode(mode)) {
-    throw new TypeError(`不支持的 Runtime 启动方式: ${String(mode)}`)
-  }
-
-  try {
-    const config = loadConfig()
-    config.Runtime = { ...config.Runtime, LaunchMode: mode }
-    saveConfig(config)
-    logger.info(`Runtime 启动方式已设置为: ${mode}`)
-
-    const resolution = resolveRuntimeLaunchModeDetail(getAppRoot())
-    return { persisted: mode, mode: resolution.mode, source: resolution.source }
-  } catch (error) {
-    logger.error('保存 Runtime 启动方式失败', error)
-    throw error
-  }
-})
+// 只读运行模式供后端更新和诊断页面使用。
+ipcMain.handle('get-runtime-launch-mode', () => resolveRuntimeLaunchModeDetail())
 
 // 应用生命周期
 // 在沙箱环境下运行会导致无法启动子进程，强制禁用沙箱
@@ -2521,9 +2479,7 @@ app.whenReady().then(async () => {
   analyticsService.recordAppStarted({
     launch_kind: isScheduledWakeup ? 'scheduled_wakeup' : isAutoStart ? 'auto_start' : 'manual',
     runtime_mode:
-      getBackendOwnership() === 'owned'
-        ? resolveRuntimeLaunchModeDetail(getAppRoot()).mode
-        : 'unknown',
+      getBackendOwnership() === 'owned' ? resolveRuntimeLaunchModeDetail().mode : 'unknown',
     release_channel: app.getVersion().includes('-beta.') ? 'beta' : 'stable',
   })
   logger.info(`应用版本: ${app.getVersion()}`)

@@ -14,6 +14,10 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 
 桌面启动由主进程提前编排；`backend_start_finished` 和 Runtime 阶段事件仍由原服务确认结果，窗口接入已有启动任务不重复上报。完整初始化结果仍在界面词表与应用入口就绪后记录。
 
+初始化恢复继续复用 `initialization_recovery_selected` 与命令结果事件。镜像由 Runtime 自动选择，新客户端不再产生手选镜像动作，`mirror_kind` 固定为 `default`；旧动作枚举仅为历史口径保留。设置页不再提供后端运行方式选择，不新增采集。
+
+日常启动缺失 Runtime 时转入运行环境失败页，补装复用完整初始化的 Runtime 对齐与 bootstrap。恢复选择仍记录 `retry`，补装和命令结果由原有主进程阶段事件确认；转入完整准备后 `flow_kind` 为 `update`，不把下载完成视为应用初始化成功。
+
 ## 当前采集范围
 
 定时唤醒复用 `app_started.launch_kind=scheduled_wakeup` 区分启动来源，复用设置保存事件记录开关变更。两者分别表示进入 ready 和配置保存，不代表硬件唤醒成功；后台计划任务对账不额外采集。

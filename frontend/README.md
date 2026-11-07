@@ -48,6 +48,9 @@ yarn cross-env ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" yarn in
 ### 开发模式
 
 源码 Electron 使用 Runtime 的 `development` 模式监督当前检出，安装版默认使用 `managed`。
+启动模式不再由设置页保存，存量选择不再生效；开发排障仍可通过 `AUTO_MAS_RUNTIME_MODE` 显式覆盖。
+安装与恢复中的测速和换源由 Runtime 自动完成，桌面端不再读取旧镜像配置或提供手动选源。
+已初始化的安装版若丢失 Runtime，失败页的重试会先补装并完整准备环境，再继续启动后端。
 旧的 `off` 值按构建默认值处理，不再直接启动 Python。应用环境仍独立判断，源码默认为开发环境。
 
 在仓库根目录准备虚拟环境，再从 `frontend/` 启动。Runtime 开发模式不会创建或同步项目 `.venv`：

@@ -3,7 +3,6 @@
  * 协调 Runtime 准备与后端启动
  */
 
-import { MirrorService } from './mirrorService'
 import { BackendService } from './backendService'
 import { getBackendOwnership } from './instanceConfig'
 import { RUNTIME_KILL_WAIT_MS, RUNTIME_STOP_TIMEOUT_MS, waitForSettle } from './runtime/shutdown'
@@ -81,14 +80,12 @@ export interface InitializationResult {
 export class InitializationService {
   readonly ownsBackend = getBackendOwnership() === 'owned'
   private appRoot: string
-  private mirrorService: MirrorService
   private backendService: BackendService
   /** 同一初始化生命周期复用编排器，保留失败后的处置动作。 */
   private runtimeService: RuntimeInitializationService | null = null
 
   constructor(appRoot: string) {
     this.appRoot = appRoot
-    this.mirrorService = new MirrorService(appRoot)
     this.backendService = new BackendService(appRoot)
   }
 
@@ -138,11 +135,7 @@ export class InitializationService {
     this.desktopStartup = Promise.resolve()
       .then(async () => {
         if (this.closing) return this.cancelledStartup()
-        if (fullInitialization) {
-          await this.mirrorService.initialize()
-          if (this.closing) return this.cancelledStartup()
-          return this.initialize(publish)
-        }
+        if (fullInitialization) return this.initialize(publish)
         return this.startBackendStage(publish, 7, [])
       })
       .catch((error: unknown): InitializationResult => ({
@@ -196,7 +189,7 @@ export class InitializationService {
     return { success: false, completedStages: [], code: 'OPERATION_CANCELLED', error: '启动已取消' }
   }
 
-  /** 取消覆盖镜像准备、Runtime 对齐、bootstrap 和尚未就绪的 supervise。 */
+  /** 取消覆盖 Runtime 对齐、bootstrap 和尚未就绪的 supervise。 */
   stopDesktopStartup(shutdown = false): Promise<void> {
     if (!this.ownsBackend) return Promise.resolve()
     this.shutdownRequested ||= shutdown
@@ -236,7 +229,6 @@ export class InitializationService {
     if (!this.runtimeService || this.runtimeService.launchConfig.mode !== launchConfig.mode) {
       this.runtimeService = new RuntimeInitializationService({
         launchConfig,
-        mirrorService: this.mirrorService,
       })
     }
     return this.runtimeService
@@ -439,24 +431,11 @@ export class InitializationService {
   async retryStageViaRuntime(
     stage: InitializationRunStage,
     onProgress?: InitializationProgressCallback,
-    mirrorKey?: string,
     mode: RuntimeRetryMode = 'auto'
   ): Promise<RuntimeStageOutcome> {
     const runtimeService = this.getRuntimeService()
 
-    return runtimeService.retryStage(
-      stage,
-      this.forwardRuntimeProgress(onProgress, 7),
-      mirrorKey,
-      mode
-    )
-  }
-
-  /**
-   * 获取镜像源服务实例（用于外部访问）
-   */
-  getMirrorService(): MirrorService {
-    return this.mirrorService
+    return runtimeService.retryStage(stage, this.forwardRuntimeProgress(onProgress, 7), mode)
   }
 
   /**

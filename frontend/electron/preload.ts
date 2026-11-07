@@ -183,9 +183,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setInitializedVersion: (version: string) =>
     ipcRenderer.invoke('set-initialized-version', version),
 
-  // Runtime 启动模式：持久化设置 + 当前生效值与来源
+  // Runtime 当前生效模式与来源（只读）
   getRuntimeLaunchMode: () => ipcRenderer.invoke('get-runtime-launch-mode'),
-  setRuntimeLaunchMode: (mode: string) => ipcRenderer.invoke('set-runtime-launch-mode', mode),
 
   // 托盘设置实时更新
   updateTraySettings: (uiSettings: unknown) =>
@@ -330,18 +329,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 单步初始化API
   // rebuild 对应界面「重建环境」按钮，只在 Runtime 链路下有意义（走 repair / dependencies rebuild）
-  initMirrors: () => ipcRenderer.invoke('init-mirrors'),
-  installPython: (selectedMirror?: string, rebuild?: boolean) =>
-    ipcRenderer.invoke('install-python', selectedMirror, rebuild),
-  installPip: (selectedMirror?: string, rebuild?: boolean) =>
-    ipcRenderer.invoke('install-pip', selectedMirror, rebuild),
-  installGit: (selectedMirror?: string, rebuild?: boolean) =>
-    ipcRenderer.invoke('install-git', selectedMirror, rebuild),
-  pullRepository: (targetBranch?: string, selectedMirror?: string, rebuild?: boolean) =>
-    ipcRenderer.invoke('pull-repository', targetBranch, selectedMirror, rebuild),
-  installDependencies: (selectedMirror?: string, rebuild?: boolean) =>
-    ipcRenderer.invoke('install-dependencies', selectedMirror, rebuild),
-  getMirrors: (type: string) => ipcRenderer.invoke('get-mirrors', type),
+  installPython: (rebuild?: boolean) => ipcRenderer.invoke('install-python', rebuild),
+  pullRepository: (rebuild?: boolean) => ipcRenderer.invoke('pull-repository', rebuild),
+  installDependencies: (rebuild?: boolean) => ipcRenderer.invoke('install-dependencies', rebuild),
   getRuntimeInitContext: () => ipcRenderer.invoke('get-runtime-init-context'),
   checkRuntimeBinaryUpdate: () => ipcRenderer.invoke('check-runtime-binary-update'),
   updateRuntimeBinary: () => ipcRenderer.invoke('update-runtime-binary'),
@@ -375,42 +365,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   removeBackendUpdateProgressListener: () => {
     ipcRenderer.removeAllListeners('backend-update-progress')
-  },
-
-  // 监听单步进度
-  onPythonProgress: (callback: (progress: unknown) => void) => {
-    ipcRenderer.on('python-progress', (_, progress) => callback(progress))
-  },
-  removePythonProgressListener: () => {
-    ipcRenderer.removeAllListeners('python-progress')
-  },
-
-  onPipProgress: (callback: (progress: unknown) => void) => {
-    ipcRenderer.on('pip-progress', (_, progress) => callback(progress))
-  },
-  removePipProgressListener: () => {
-    ipcRenderer.removeAllListeners('pip-progress')
-  },
-
-  onGitProgress: (callback: (progress: unknown) => void) => {
-    ipcRenderer.on('git-progress', (_, progress) => callback(progress))
-  },
-  removeGitProgressListener: () => {
-    ipcRenderer.removeAllListeners('git-progress')
-  },
-
-  onRepositoryProgress: (callback: (progress: unknown) => void) => {
-    ipcRenderer.on('repository-progress', (_, progress) => callback(progress))
-  },
-  removeRepositoryProgressListener: () => {
-    ipcRenderer.removeAllListeners('repository-progress')
-  },
-
-  onDependencyProgress: (callback: (progress: unknown) => void) => {
-    ipcRenderer.on('dependency-progress', (_, progress) => callback(progress))
-  },
-  removeDependencyProgressListener: () => {
-    ipcRenderer.removeAllListeners('dependency-progress')
   },
 
   // 监听完整初始化进度
