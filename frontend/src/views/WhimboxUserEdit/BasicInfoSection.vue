@@ -139,11 +139,12 @@ const userTags = computed(() => parseStatusTagList(formData.Info.Tag))
 // 值域来自共享表（同时被页面的切换校验消费），新增状态会在本表漏写时报类型错。
 const modeMeta: Record<
   WhimboxConfigMode,
-  { title: string; description: string; icon: 'database' | 'file' | 'setting' }
+  { title: string; description: string; summary?: string; icon: 'database' | 'file' | 'setting' }
 > = {
   shared: {
     title: t('core.edit.script'),
     description: t('core.edit.whimboxModeScriptDesc'),
+    summary: t('core.edit.configModeSummaryIndependent'),
     icon: 'database',
   },
   independent: {
