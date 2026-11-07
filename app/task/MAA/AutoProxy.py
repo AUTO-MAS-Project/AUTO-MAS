@@ -1290,6 +1290,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self.pending_update: tuple[str, str] | None = None
         self._annihilation_weekly_completion_recorded = False
         self._failed_sanity_tasks: set[str] = set()
+        self._failed_extra_tasks: set[str] = set()
         # 无时段排班表本轮注入的班次：同一账号的多次重试都注入这一个值，
         # 基建换班完成后只把账号配置里的指针推进一次
         self._infrast_plan_index: int | None = None
@@ -1431,6 +1432,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             self._event_depot_completed = False
             self._stock_depot_completed = False
             self._failed_sanity_tasks.clear()
+            self._failed_extra_tasks.clear()
             self.cur_user_item.status = f"运行 - {MAA_RUN_MOOD_BOOK[self.mode]}"
 
             if not self.cur_user_config.Info.IfQuickConfig:
@@ -2346,6 +2348,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
     async def _apply_maa_quick_config(self, gui_new_set: dict) -> None:
         """仅开启覆写常规配置时构造面板任务，来源导入与启动设置留在外层。"""
 
+        # 运行异常只说明曾经入队，重新规划时移除本次未再下发的旧等待标记；
+        # MAA 已明确判失败的附加任务仍需保留，不能被空队列成功覆盖。
+        for name in (_MAA_AUTO_CULTIVATE_TASK_NAME, _MAA_DATA_UPDATE_TASK_NAME):
+            if self.task_dict.get(name) and name not in self._failed_extra_tasks:
+                del self.task_dict[name]
+
         task_set = {}
         source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
         if not isinstance(source_queue, list):
@@ -3067,10 +3075,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     failed == name or failed.startswith((f"{name} (", f"{name} #"))
                     for failed in failed_names
                 )
-                if not task_failed and (
-                    f"完成任务: {name}" in log or f"{name} 任务跳过" in log
-                ):
+                if task_failed:
+                    self._failed_extra_tasks.add(name)
+                elif f"完成任务: {name}" in log or f"{name} 任务跳过" in log:
                     self.task_dict[name] = False
+                    self._failed_extra_tasks.discard(name)
 
             if self.task_dict.get("EventDepotMaintain"):
                 event_names = ("活动关均衡理智", "活动库存保持")

@@ -110,6 +110,7 @@ async def test_activity_skip_only_suppresses_cultivation_farming(
         _stock_depot_completed=False,
         _event_depot_completed=False,
         _failed_sanity_tasks=frozenset(),
+        _failed_extra_tasks=set(),
         _missing_task_source_warned=set(),
         _cultivate_archive_dir=lambda: tmp_path,
         _set_cultivate_notice=AsyncMock(),

@@ -174,34 +174,52 @@ async def test_task_failure_retry_scope(
             assert not set(failures).intersection(enabled - {"基建换班"})
 
 
+@pytest.fixture
+def extra_proxy(monkeypatch, isolated_app_paths):
+    async def make(name):
+        root = isolated_app_paths.work_path / "maa"
+        root.mkdir()
+        config = await activate_config(MaaConfig(Info={"Path": root}))
+        users = ConfigCollection.build([MaaUserConfig])
+        await users.activate()
+        uid = users.add(
+            MaaUserConfig,
+            payload={
+                "Task": {
+                    "IfDepotMaintain": False,
+                    "IfEventDepotMaintain": False,
+                    "IfCultivate": True,
+                    "CultivateAutoRaise": True,
+                    "CultivateTargets": "[]",
+                }
+            },
+        )
+        await users.commit()
+        user = UserItem(str(uid), "test", "运行")
+        script = ScriptItem(
+            str(uuid.uuid4()), "MAA", "运行", user_list=[user], current_index=0
+        )
+        task_info = TaskInfo("AutoProxy", "test", "queue", None, None)
+        monkeypatch.setattr(task_info, "schedule_on_change", lambda: None)
+        task_info.script_list = [script]
+        proxy = AutoProxyTask(
+            script, config, users, SimpleNamespace(), capture_adb=AsyncMock()
+        )
+        await proxy.prepare()
+        proxy.mode = "Routine"
+        # 与真实队列下发一致：常规任务已结束，只有附加任务等待 MAA 结果。
+        proxy.task_dict = {task: False for task in MAA_TASKS}
+        proxy.task_dict[name] = True
+        proxy.cur_user_log = LogRecord()
+        return proxy, task_info
+
+    return make
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("name", ["干员培养", "更新数据"])
-async def test_extra_non_sanity_task_can_retry_then_complete(
-    monkeypatch, isolated_app_paths, name
-):
-    root = isolated_app_paths.work_path / "maa"
-    root.mkdir()
-    config = await activate_config(MaaConfig(Info={"Path": root}))
-    users = ConfigCollection.build([MaaUserConfig])
-    await users.activate()
-    uid = users.add(MaaUserConfig)
-    await users.commit()
-    user = UserItem(str(uid), "test", "运行")
-    script = ScriptItem(
-        str(uuid.uuid4()), "MAA", "运行", user_list=[user], current_index=0
-    )
-    task_info = TaskInfo("AutoProxy", "test", "queue", None, None)
-    monkeypatch.setattr(task_info, "schedule_on_change", lambda: None)
-    task_info.script_list = [script]
-    proxy = AutoProxyTask(
-        script, config, users, SimpleNamespace(), capture_adb=AsyncMock()
-    )
-    await proxy.prepare()
-    proxy.mode = "Routine"
-    # 与真实队列下发一致：常规任务已结束，只有附加任务等待 MAA 结果。
-    proxy.task_dict = {task: False for task in MAA_TASKS}
-    proxy.task_dict[name] = True
-    proxy.cur_user_log = LogRecord()
+async def test_extra_non_sanity_task_can_retry_then_complete(extra_proxy, name):
+    proxy, task_info = await extra_proxy(name)
     failure_name = f"{name} #2" if name == "干员培养" else name
     failed_log = (
         f"完成任务: {name} #1\n任务出错: {failure_name}\n"
@@ -225,3 +243,40 @@ async def test_extra_non_sanity_task_can_retry_then_complete(
 
     assert proxy.cur_user_log.status == "Success!"
     assert proxy.task_dict[name] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ["干员培养", "更新数据"])
+@pytest.mark.parametrize("explicit_failure", [False, True])
+async def test_extra_task_rebuild_distinguishes_runtime_and_task_failure(
+    extra_proxy, monkeypatch, name, explicit_failure
+):
+    proxy, task_info = await extra_proxy(name)
+    log = (
+        f"任务出错: {name}\n任务已结束，以下任务出现错误: {name}"
+        if explicit_failure
+        else "请 ｢检查连接设置｣ → ｢尝试重启模拟器与 ADB｣ → ｢重启电脑｣"
+    )
+    await proxy.check_log([log], datetime.now().astimezone())
+    module = importlib.import_module("app.task.MAA.AutoProxy")
+    monkeypatch.setattr(
+        module.maa_stage_service,
+        "get_stage_info",
+        AsyncMock(return_value={"Activity": []}),
+    )
+    monkeypatch.setattr(module.Publisher, "send", AsyncMock())
+    monkeypatch.setattr(
+        module.maa_api, "get_cultivate_skland_progression", AsyncMock(return_value=None)
+    )
+
+    # 当前目标为空，真实规划不会再次下发附加任务。
+    await proxy._apply_maa_quick_config(get_maa_base_preset())
+
+    assert proxy.task_dict.get(name, False) is explicit_failure
+    proxy.cur_user_log = LogRecord()
+    await proxy.check_log(
+        ["完成任务: 开始唤醒\n任务已全部完成！"], datetime.now().astimezone()
+    )
+    assert proxy.cur_user_log.status == (
+        "MAA 部分任务执行失败" if explicit_failure else "Success!"
+    )
