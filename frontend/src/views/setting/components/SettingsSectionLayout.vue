@@ -1,19 +1,19 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { InfoCircleOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { beginAnalyticsOperation } from '@/utils/analytics'
-import { getConfig, saveConfig } from '@/utils/config'
-import { useSettingsSectionLayout, type SettingsLayoutMode } from './useSettingsSectionLayout'
+import { useSettingsSectionLayout } from './useSettingsSectionLayout'
 import SettingsPageToolbar from './SettingsPageToolbar.vue'
+import { getConfig, saveConfig } from '@/utils/config'
+import { beginAnalyticsOperation } from '@/utils/analytics'
 
 defineProps<{ loading: boolean }>()
 const activeKey = defineModel<string>('activeKey', { required: true })
 const { t } = useI18n()
-const layoutMode = ref<SettingsLayoutMode>('single')
 const layoutReady = ref(false)
-const savingLayout = ref(false)
+// 目录显隐是持久化偏好，窗口宽度只决定列数，不决定目录。
+const navigationVisible = ref(true)
+const savingNavigation = ref(false)
 const {
   layout,
   shell,
@@ -23,7 +23,7 @@ const {
   effectiveDual,
   hasNavigation,
   scrollToSection,
-} = useSettingsSectionLayout(activeKey, layoutMode)
+} = useSettingsSectionLayout(activeKey, navigationVisible)
 const tabs = computed(() => [
   { key: 'basic', title: t('core.setting.tab.basic') },
   { key: 'function', title: t('core.setting.tab.function') },
@@ -36,9 +36,9 @@ let disposed = false
 onMounted(async () => {
   try {
     const config = await getConfig()
-    if (!disposed) layoutMode.value = config.settingsLayoutMode === 'dual' ? 'dual' : 'single'
+    if (!disposed) navigationVisible.value = config.settingsShowNavigation !== false
   } catch {
-    if (!disposed) message.error(t('core.setting.layout.loadFailed'))
+    if (!disposed) message.error(t('core.setting.navigation.loadFailed'))
   } finally {
     if (!disposed) layoutReady.value = true
   }
@@ -48,29 +48,29 @@ onBeforeUnmount(() => {
   disposed = true
 })
 
-async function changeLayout(value: unknown) {
-  if ((value !== 'single' && value !== 'dual') || value === layoutMode.value || savingLayout.value)
-    return
-  const previous = layoutMode.value
+async function toggleNavigation() {
+  if (savingNavigation.value) return
+  const previous = navigationVisible.value
+  const next = !previous
   const operation = beginAnalyticsOperation('settings_change_finished')
   const fields = {
     setting_kind: 'other',
-    setting_key: 'settings_layout',
-    value_kind: value === 'single' ? 'default' : 'custom',
+    setting_key: 'settings_navigation',
+    value_kind: next ? 'enabled' : 'disabled',
   } as const
-  savingLayout.value = true
-  layoutMode.value = value
+  savingNavigation.value = true
+  navigationVisible.value = next
   try {
-    await saveConfig({ settingsLayoutMode: value })
+    await saveConfig({ settingsShowNavigation: next })
     operation.finish({ ...fields, outcome: 'success' })
   } catch {
     operation.finish({ ...fields, outcome: 'failure' })
     if (!disposed) {
-      layoutMode.value = previous
-      message.error(t('core.setting.layout.saveFailed'))
+      navigationVisible.value = previous
+      message.error(t('core.setting.navigation.saveFailed'))
     }
   } finally {
-    if (!disposed) savingLayout.value = false
+    if (!disposed) savingNavigation.value = false
   }
 }
 </script>
@@ -79,7 +79,6 @@ async function changeLayout(value: unknown) {
   <div
     ref="layout"
     class="settings-content settings-section-layout"
-    :data-layout-mode="layoutMode"
     :data-effective-layout="effectiveDual ? 'dual' : 'single'"
     :aria-busy="loading"
   >
@@ -97,11 +96,11 @@ async function changeLayout(value: unknown) {
         <div class="settings-shell-header">
           <div class="settings-title"><slot name="header" /></div>
           <SettingsPageToolbar
-            :mode="layoutMode"
-            :show-layout="activeKey !== 'others'"
             :disabled="!layoutReady"
-            :saving-layout="savingLayout"
-            @layout-change="changeLayout"
+            :navigation-visible="hasNavigation"
+            :navigation-available="activeKey !== 'others' && sections.length > 1"
+            :saving-navigation="savingNavigation"
+            @toggle-navigation="toggleNavigation"
           />
         </div>
         <a-tabs v-model:active-key="activeKey" :animated="false" class="settings-tabs">
@@ -115,6 +114,7 @@ async function changeLayout(value: unknown) {
 
       <nav
         v-if="hasNavigation"
+        id="settings-section-navigation"
         class="settings-section-navigation"
         :aria-label="t('core.setting.navigation.ariaLabel')"
         :style="{ top: `${navigationTop}px` }"
@@ -138,10 +138,6 @@ async function changeLayout(value: unknown) {
             </button>
           </li>
         </ul>
-        <div class="navigation-save-note">
-          <InfoCircleOutlined aria-hidden="true" />
-          <span>{{ t('core.setting.toolbar.autoSave') }}</span>
-        </div>
       </nav>
     </div>
   </div>
@@ -345,16 +341,5 @@ async function changeLayout(value: unknown) {
 .navigation-link:focus-visible {
   outline: 2px solid var(--ant-color-primary);
   outline-offset: 2px;
-}
-
-.navigation-save-note {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 24px 0 0 12px;
-  padding-top: 16px;
-  border-top: 1px solid var(--ant-color-border);
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
 }
 </style>

@@ -1,18 +1,17 @@
 <script setup lang="ts">
-import { computed, h, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { BulbOutlined, CheckOutlined } from '@ant-design/icons-vue'
+import { BulbOutlined, ProfileOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useTheme } from '@/composables/useTheme'
-import type { SettingsLayoutMode } from './useSettingsSectionLayout'
 
 const props = defineProps<{
-  mode: SettingsLayoutMode
-  showLayout: boolean
   disabled: boolean
-  savingLayout: boolean
+  navigationVisible: boolean
+  navigationAvailable: boolean
+  savingNavigation: boolean
 }>()
-const emit = defineEmits<{ layoutChange: [value: SettingsLayoutMode] }>()
+const emit = defineEmits<{ 'toggle-navigation': [] }>()
 const { t } = useI18n()
 const { isDark, activeAppearance, setThemeMode } = useTheme()
 const changingTheme = ref(false)
@@ -22,51 +21,14 @@ const themeToggleLabel = computed(() =>
 const themeTooltip = computed(() =>
   activeAppearance.value ? t('core.setting.toolbar.appearanceThemeLocked') : themeToggleLabel.value
 )
-const layoutOptions = computed(() => [
-  {
-    value: 'single',
-    label: () => [layoutIcon('single'), t('core.setting.layout.single')],
-  },
-  {
-    value: 'dual',
-    label: () => [layoutIcon('dual'), t('core.setting.layout.dual')],
-  },
-])
+const navigationLabel = computed(() =>
+  t(props.navigationVisible ? 'core.setting.navigation.hide' : 'core.setting.navigation.show')
+)
 let disposed = false
 
 onBeforeUnmount(() => {
   disposed = true
 })
-
-function changeLayout(value: unknown) {
-  if (props.disabled || props.savingLayout) return
-  if (value === 'single' || value === 'dual') emit('layoutChange', value)
-}
-
-function layoutIcon(mode: SettingsLayoutMode) {
-  const rectangles =
-    mode === 'single'
-      ? [
-          { x: 2, y: 2, width: 12, height: 4 },
-          { x: 2, y: 10, width: 12, height: 4 },
-        ]
-      : [
-          { x: 2, y: 2, width: 4, height: 12 },
-          { x: 10, y: 2, width: 4, height: 12 },
-        ]
-  return h(
-    'svg',
-    {
-      class: 'settings-layout-icon',
-      viewBox: '0 0 16 16',
-      fill: 'none',
-      stroke: 'currentColor',
-      'stroke-width': 1.2,
-      'aria-hidden': true,
-    },
-    rectangles.map(rectangle => h('rect', { ...rectangle, rx: 1 }))
-  )
-}
 
 async function toggleTheme() {
   if (props.disabled || changingTheme.value || activeAppearance.value) return
@@ -84,24 +46,25 @@ async function toggleTheme() {
 
 <template>
   <div class="settings-page-toolbar">
-    <span class="settings-save-note">
-      <CheckOutlined aria-hidden="true" />
-      {{ t('core.setting.toolbar.autoSave') }}
-    </span>
-    <div v-if="showLayout" class="settings-layout-control">
-      <span class="settings-layout-label" aria-hidden="true">
-        {{ t('core.setting.layout.label') }}
-      </span>
-      <a-segmented
-        class="settings-layout-selector"
-        :value="mode"
-        :options="layoutOptions"
-        :aria-label="t('core.setting.layout.ariaLabel')"
-        :aria-busy="savingLayout"
-        :disabled="disabled || savingLayout"
-        @change="changeLayout"
-      />
-    </div>
+    <a-tooltip
+      v-if="navigationAvailable"
+      :title="navigationLabel"
+      :trigger="['hover', 'focus']"
+      placement="bottomRight"
+    >
+      <a-button
+        class="settings-navigation-toggle"
+        :aria-label="navigationLabel"
+        :aria-pressed="navigationVisible"
+        :aria-controls="navigationVisible ? 'settings-section-navigation' : undefined"
+        :aria-busy="savingNavigation"
+        :loading="savingNavigation"
+        :disabled="disabled || savingNavigation"
+        @click="emit('toggle-navigation')"
+      >
+        <template #icon><ProfileOutlined aria-hidden="true" /></template>
+      </a-button>
+    </a-tooltip>
     <a-tooltip :title="themeTooltip" :trigger="['hover', 'focus']" placement="bottomRight">
       <span
         class="settings-theme-toggle-wrapper"
@@ -134,61 +97,36 @@ async function toggleTheme() {
   max-width: 100%;
 }
 
-.settings-save-note {
+.settings-navigation-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.settings-save-note :deep(.anticon) {
-  font-size: 14px;
-}
-
-.settings-layout-control {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-right: 16px;
-  border-right: 1px solid var(--ant-color-border);
-}
-
-.settings-layout-label {
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.settings-layout-selector {
-  flex-shrink: 0;
-  padding: 3px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
-}
-
-.settings-layout-selector :deep(.ant-segmented-item-label) {
-  display: flex;
-  align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 27px;
-  padding-inline: 10px;
-  font-size: 12px;
-  line-height: 27px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-color: var(--ant-color-border);
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text-secondary);
 }
 
-.settings-layout-selector :deep(.ant-segmented-item:has(input:focus-visible)) {
+.settings-navigation-toggle[aria-pressed='true'] {
+  border-color: var(--ant-color-primary);
+  color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+}
+
+.settings-navigation-toggle:focus-visible {
   outline: 2px solid var(--ant-color-primary);
   outline-offset: 2px;
 }
 
-.settings-layout-selector :deep(.settings-layout-icon) {
-  flex-shrink: 0;
-  width: 15px;
-  height: 15px;
+.settings-navigation-toggle:hover:not(:disabled) {
+  border-color: var(--ant-color-primary);
+  color: var(--ant-color-primary);
+}
+
+.settings-navigation-toggle:disabled {
+  color: var(--ant-color-text-disabled);
 }
 
 .settings-theme-toggle-wrapper {
@@ -223,15 +161,6 @@ async function toggleTheme() {
   color: var(--ant-color-text-disabled);
 }
 
-html:not(.dark) .settings-layout-selector {
-  border-color: color-mix(in srgb, var(--ant-color-border) 92%, var(--ant-color-text) 8%);
-}
-
-html:not(.dark) .settings-layout-selector :deep(.ant-segmented-item-selected) {
-  color: var(--ant-color-link);
-  box-shadow: inset 0 0 0 1px var(--ant-color-text-tertiary);
-}
-
 html:not(.dark) .settings-theme-toggle {
   border-color: color-mix(in srgb, var(--ant-color-border) 55%, var(--ant-color-text) 45%);
 }
@@ -241,26 +170,10 @@ html:not(.dark) .settings-theme-toggle {
     justify-content: flex-start;
     gap: 10px;
   }
-
-  .settings-layout-label {
-    display: none;
-  }
-
-  .settings-layout-control {
-    gap: 0;
-    padding-right: 10px;
-  }
-
-  .settings-layout-selector :deep(.ant-segmented-item-label) {
-    padding-inline: 8px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .settings-theme-toggle,
-  .settings-layout-selector,
-  .settings-layout-selector :deep(.ant-segmented-item),
-  .settings-layout-selector :deep(.ant-segmented-thumb) {
+  .settings-theme-toggle {
     animation: none;
     transition: none;
   }

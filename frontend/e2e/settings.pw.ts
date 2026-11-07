@@ -55,12 +55,9 @@ test.describe('@settings user preferences', () => {
       }
     }
 
-    for (const layout of [
-      { width: 1511, label: 'Single column' },
-      { width: 1920, label: 'Two columns' },
-    ]) {
+    // 列数由宽度决定：窄屏单列、宽屏两列，都检查问号提示。
+    for (const layout of [{ width: 1440 }, { width: 1920 }]) {
       await page.setViewportSize({ width: layout.width, height: 891 })
-      await chooseSegment(page.locator('[aria-label="Settings layout"]'), layout.label)
       await checkHint(page.locator('.startup-options-row .ui-row-label .help-icon'))
       const autoStart = page.getByRole('checkbox', { name: 'Start with the system', exact: true })
       const checked = await autoStart.isChecked()
@@ -292,7 +289,7 @@ test.describe('@settings user preferences', () => {
     const originalMinimize = (await (await loaded).json()).data.UI.IfToTray === true
     const minimize = page.locator('[aria-label="When minimizing"]')
     const toolbar = page.locator('.settings-page-toolbar')
-    const selector = page.locator('[aria-label="Settings layout"]')
+    const sider = page.locator('.app-sider')
     const theme = page.locator('.theme-mode-control')
     const originalTheme = await theme.locator('.ant-segmented-item-selected').innerText()
     const originalAccent = await page
@@ -309,11 +306,14 @@ test.describe('@settings user preferences', () => {
         expect((await response.json()).code).toBe(200)
       }
       await expect(theme.getByRole('radio', { name: 'Follow system', exact: true })).toBeChecked()
-      await expect(toolbar.locator('.settings-save-note')).toBeVisible()
+      await expect(sider).toHaveCSS('background-color', 'rgb(242, 242, 242)')
       await page.getByRole('button', { name: 'Purple', exact: true }).click()
-      await chooseSegment(selector, 'Two columns')
+      await expect(sider).toHaveCSS('background-color', 'rgb(242, 242, 242)')
+      await expect(sider).toHaveCSS('border-right-color', 'rgb(224, 224, 224)')
       await toolbar.getByRole('button', { name: 'Switch to dark mode', exact: true }).click()
       await expect(page.locator('html')).toHaveClass(/dark/)
+      await expect(sider).toHaveCSS('background-color', 'rgb(20, 20, 20)')
+      await expect(sider).toHaveCSS('border-right-color', 'rgb(48, 48, 48)')
       await expect(theme.getByRole('radio', { name: 'Dark', exact: true })).toBeChecked()
       await expect(page.getByRole('button', { name: 'Purple', exact: true })).toHaveAttribute(
         'aria-pressed',
@@ -324,24 +324,20 @@ test.describe('@settings user preferences', () => {
         await expect(
           toolbar.getByRole('button', { name: 'Switch to light mode', exact: true })
         ).toBeVisible()
-        if (tab === 'About') await expect(selector).toHaveCount(0)
-        else
-          await expect(
-            selector.getByRole('radio', { name: 'Two columns', exact: true })
-          ).toBeChecked()
       }
       await toolbar.getByRole('button', { name: 'Switch to light mode', exact: true }).click()
       await expect(page.locator('html')).not.toHaveClass(/dark/)
+      await expect(sider).toHaveCSS('background-color', 'rgb(242, 242, 242)')
       await page.getByRole('tab', { name: 'Interface', exact: true }).click()
       await expect(theme.getByRole('radio', { name: 'Light', exact: true })).toBeChecked()
       await page.setViewportSize({ width: 1040, height: 900 })
       await expect(
         toolbar.getByRole('button', { name: 'Switch to dark mode', exact: true })
       ).toBeVisible()
-      await expect(page.getByRole('navigation', { name: 'Settings sections' })).toHaveCount(0)
+      // 目录显隐是持久化偏好，窄窗口不会把它自动收起
+      await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible()
       await page.reload()
       await expect(theme.getByRole('radio', { name: 'Light', exact: true })).toBeChecked()
-      await expect(selector.getByRole('radio', { name: 'Two columns', exact: true })).toBeChecked()
       await expect(page.locator('.settings-section-layout')).toHaveAttribute(
         'data-effective-layout',
         'single'
@@ -364,13 +360,12 @@ test.describe('@settings user preferences', () => {
         expect((await (await restored).json()).code).toBe(200)
       }
       await chooseSegment(theme, originalTheme)
-      await chooseSegment(selector, 'Single column')
       if (originalAccent)
         await page.getByRole('button', { name: originalAccent, exact: true }).click()
     }
   })
 
-  test('keeps section order, controls and layout preference across responsive changes', async ({
+  test('keeps section order and reflows columns by width without a layout switch', async ({
     app,
     page,
   }) => {
@@ -378,84 +373,114 @@ test.describe('@settings user preferences', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await app.goto('/settings')
     const layout = page.locator('.settings-section-layout')
-    const selector = page.locator('[aria-label="Settings layout"]')
     const navigation = page.getByRole('navigation', { name: 'Settings sections' })
     const pane = page.locator('.ant-tabs-tabpane-active')
     const headings = pane.locator('.form-section > .section-header > h3')
     const cards = pane.locator('.tab-content > .form-section')
+
+    // 布局开关已移除：只剩宽度决定列数。
+    await expect(page.locator('[aria-label="Settings layout"]')).toHaveCount(0)
+    await expect(page.locator('.settings-save-note')).toHaveCount(0)
+
+    await expect(navigation).toBeVisible()
+    await expect.poll(() => headings.count()).toBeGreaterThan(1)
+    const order = (await headings.allTextContents()).map(title => title.trim())
+    await expect(navigation.getByRole('button')).toHaveText(order)
+
+    // 宽屏：目录在右侧，卡片两列
+    await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
+    expect((await cards.nth(0).boundingBox())!.x).toBeLessThan(
+      (await cards.nth(1).boundingBox())!.x
+    )
+
+    // 目录跳转仍可用
+    const lastLink = navigation.getByRole('button').last()
+    await lastLink.click()
+    await expect(lastLink).toHaveAttribute('aria-current', 'location')
+    await expect
+      .poll(() => layout.locator('.ant-tabs-content-holder').evaluate(node => node.scrollTop))
+      .toBeGreaterThan(0)
+    await expect(headings.last()).toBeInViewport()
+
+    // 切到功能页签，确认顺序不变、未保存输入保留
+    await page.getByRole('tab', { name: 'Features', exact: true }).click()
+    const featureOrder = (await headings.allTextContents()).map(title => title.trim())
+    const draft = pane.locator('.number-input input').nth(1)
+    const draftElement = await draft.elementHandle()
+    const originalDraft = await draft.inputValue()
+    await draft.fill('4096')
+
+    // 窄屏：目录保留，卡片退回单列（目录不随宽度消失）
+    await page.setViewportSize({ width: 1040, height: 900 })
+    await expect(navigation).toBeVisible()
+    await expect(page.getByText('On this page', { exact: true })).toBeVisible()
+    await expect(layout).toHaveAttribute('data-effective-layout', 'single')
+    await expect(headings).toHaveText(featureOrder)
+    expect((await cards.nth(0).boundingBox())!.x).toBe((await cards.nth(1).boundingBox())!.x)
+    await expect(draft).toHaveValue('4096')
+    expect(await draftElement!.evaluate(node => node.isConnected)).toBe(true)
+    await draft.fill(originalDraft)
+
+    // 拉回宽屏：目录与两列自动恢复，无需任何开关操作
+    await page.setViewportSize({ width: 1920, height: 1080 })
+    await expect(navigation).toBeVisible()
+    await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
+
+    await page.getByRole('tab', { name: 'About', exact: true }).click()
+    await expect(navigation).toHaveCount(0)
+    await app.evidence('settings-layout-about')
+  })
+
+  test('keeps the section navigation under user control instead of window width', async ({
+    app,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await app.goto('/settings')
+    const layout = page.locator('.settings-section-layout')
+    const navigation = page.getByRole('navigation', { name: 'Settings sections' })
+    const toggle = page.locator('.settings-navigation-toggle')
+    const restore = async () => {
+      if ((await toggle.getAttribute('aria-pressed')) === 'false') await toggle.click()
+    }
+    await expect(navigation).toBeVisible()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
     try {
-      await expect(layout).toHaveAttribute('data-layout-mode', 'single')
-      await expect(layout).toHaveAttribute('data-effective-layout', 'single')
-      await expect(
-        selector.getByRole('radio', { name: 'Single column', exact: true })
-      ).toBeChecked()
-      await expect(navigation).toBeVisible()
-      await expect.poll(() => headings.count()).toBeGreaterThan(1)
-      const order = (await headings.allTextContents()).map(title => title.trim())
-      await expect(navigation.getByRole('button')).toHaveText(order)
-      expect((await cards.nth(0).boundingBox())!.x).toBe((await cards.nth(1).boundingBox())!.x)
-
-      const lastLink = navigation.getByRole('button').last()
-      await lastLink.click()
-      await expect(lastLink).toHaveAttribute('aria-current', 'location')
-      await expect
-        .poll(() => layout.locator('.ant-tabs-content-holder').evaluate(node => node.scrollTop))
-        .toBeGreaterThan(0)
-      await expect(headings.last()).toBeInViewport()
-
-      await page.getByRole('tab', { name: 'Features', exact: true }).click()
-      const featureOrder = (await headings.allTextContents()).map(title => title.trim())
-      // 录像存储上限由独立的保存按钮提交，适合验证切换布局时保留未保存的输入。
-      const draft = pane.locator('.number-input input').nth(1)
-      const draftElement = await draft.elementHandle()
-      const originalDraft = await draft.inputValue()
-      await draft.fill('4096')
-      await page.setViewportSize({ width: 1040, height: 900 })
-      await expect(navigation).toHaveCount(0)
-      await expect(page.getByText('On this page', { exact: true })).toHaveCount(0)
-      await expect(draft).toHaveValue('4096')
-      expect(await draftElement!.evaluate(node => node.isConnected)).toBe(true)
-
-      await page.setViewportSize({ width: 1920, height: 1080 })
-      await chooseSegment(selector, 'Two columns')
-      await expect(layout).toHaveAttribute('data-layout-mode', 'dual')
-      await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
-      await expect(navigation).toHaveCount(0)
-      await expect(headings).toHaveText(featureOrder)
-      expect((await cards.nth(0).boundingBox())!.x).toBeLessThan(
-        (await cards.nth(1).boundingBox())!.x
-      )
-      await expect(draft).toHaveValue('4096')
-      expect(await draftElement!.evaluate(node => node.isConnected)).toBe(true)
-      await draft.fill(originalDraft)
-
-      await page.setViewportSize({ width: 1040, height: 900 })
-      await expect(layout).toHaveAttribute('data-layout-mode', 'dual')
-      await expect(layout).toHaveAttribute('data-effective-layout', 'single')
-      await expect(navigation).toHaveCount(0)
-      await expect(page.getByText('On this page', { exact: true })).toHaveCount(0)
-      await expect(headings).toHaveText(featureOrder)
-      expect((await cards.nth(0).boundingBox())!.x).toBe((await cards.nth(1).boundingBox())!.x)
-
-      await page.setViewportSize({ width: 1920, height: 1080 })
-      await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
-      await page.reload()
-      await expect(selector.getByRole('radio', { name: 'Two columns', exact: true })).toBeChecked()
-      await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
-      for (const tab of ['Features', 'Notifications', 'Advanced']) {
-        await page.getByRole('tab', { name: tab, exact: true }).click()
-        await expect(
-          selector.getByRole('radio', { name: 'Two columns', exact: true })
-        ).toBeChecked()
-        await expect(navigation).toHaveCount(0)
+      // 缩放窗口只改列数，目录始终在
+      for (const width of [1600, 1280, 1040, 960]) {
+        await page.setViewportSize({ width, height: 900 })
+        await expect(navigation).toBeVisible()
       }
-      await page.getByRole('tab', { name: 'About', exact: true }).click()
-      await expect(selector).toHaveCount(0)
+      await expect(layout).toHaveAttribute('data-effective-layout', 'single')
+
+      // 关掉目录后，窄窗口不再有目录，宽窗口仍可两列
+      await page.setViewportSize({ width: 1920, height: 1080 })
+      await toggle.click()
+      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
       await expect(navigation).toHaveCount(0)
-      await app.evidence('settings-layout-about')
+      await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
+      await page.setViewportSize({ width: 1040, height: 900 })
+      await expect(navigation).toHaveCount(0)
+      await expect(layout).toHaveAttribute('data-effective-layout', 'single')
+
+      // 偏好跨重载保留
+      await page.reload()
+      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+      await expect(navigation).toHaveCount(0)
+      await page.setViewportSize({ width: 1920, height: 1080 })
+      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+      await expect(navigation).toHaveCount(0)
+      await app.evidence('settings-navigation-hidden')
+
+      await restore()
+      await expect(navigation).toBeVisible()
+      await page.reload()
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+      await expect(navigation).toBeVisible()
+      await app.evidence('settings-navigation-restored')
     } finally {
-      await page.getByRole('tab', { name: 'Interface', exact: true }).click()
-      await chooseSegment(selector, 'Single column')
+      await restore()
     }
   })
 
