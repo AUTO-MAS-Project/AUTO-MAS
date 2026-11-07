@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { QueueConfig_Info, QueueUpdateIn } from '@/api'
+import { PowerSignal } from '@/api'
 import { queueApi } from '@/composables/useQueueApi'
 import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
@@ -18,21 +19,21 @@ type StartupMode = NonNullable<NonNullable<QueuePatch['Info']>['StartUpMode']>
 const startup = ref<StartupMode>('Never')
 const timed = ref(false)
 const cyclic = ref(false)
-const after = ref<NonNullable<QueueConfig_Info['AfterAccomplish']>>('NoAction')
-const delay = ref<number | null>(0)
+const after = ref(PowerSignal.NO_ACTION)
+const delay = ref<number | null>(1)
 const saving = ref(false)
 
 // 完成后操作选项。label 随语言变，必须是 computed
 const afterOptions = computed(() => [
-  { label: t('core.queue.action.NoAction'), value: 'NoAction' },
-  { label: t('core.queue.action.Shutdown'), value: 'Shutdown' },
-  { label: t('core.queue.action.ShutdownForce'), value: 'ShutdownForce' },
-  { label: t('core.queue.action.Reboot'), value: 'Reboot' },
-  { label: t('core.queue.action.Hibernate'), value: 'Hibernate' },
-  { label: t('core.queue.action.Sleep'), value: 'Sleep' },
-  { label: t('core.queue.action.KillSelf'), value: 'KillSelf' },
-  { label: t('core.queue.action.RestartSelf'), value: 'RestartSelf' },
-  { label: t('core.queue.action.Logoff'), value: 'Logoff' },
+  { label: t('core.queue.action.NoAction'), value: PowerSignal.NO_ACTION },
+  { label: t('core.queue.action.Shutdown'), value: PowerSignal.SHUTDOWN },
+  { label: t('core.queue.action.ShutdownForce'), value: PowerSignal.SHUTDOWN_FORCE },
+  { label: t('core.queue.action.Reboot'), value: PowerSignal.REBOOT },
+  { label: t('core.queue.action.Hibernate'), value: PowerSignal.HIBERNATE },
+  { label: t('core.queue.action.Sleep'), value: PowerSignal.SLEEP },
+  { label: t('core.queue.action.KillSelf'), value: PowerSignal.KILL_SELF },
+  { label: t('core.queue.action.RestartSelf'), value: PowerSignal.RESTART_SELF },
+  { label: t('core.queue.action.Logoff'), value: PowerSignal.LOGOFF },
 ])
 
 watch(
@@ -41,8 +42,8 @@ watch(
     startup.value = props.info?.StartUpMode ?? 'Never'
     timed.value = props.info?.TimeEnabled ?? false
     cyclic.value = props.info?.CycleEnabled ?? false
-    after.value = props.info?.AfterAccomplish ?? 'NoAction'
-    delay.value = props.info?.AfterAccomplishDelay ?? 0
+    after.value = props.info?.AfterAccomplish ?? PowerSignal.NO_ACTION
+    delay.value = props.info?.AfterAccomplishDelay ?? 1
   },
   { immediate: true }
 )
@@ -61,9 +62,9 @@ async function save(data: QueuePatch) {
 }
 
 function saveDelay() {
-  const value = delay.value ?? 0
+  const value = delay.value ?? 1
   delay.value = value
-  if (value !== (props.info?.AfterAccomplishDelay ?? 0))
+  if (value !== (props.info?.AfterAccomplishDelay ?? 1))
     void save({ Info: { AfterAccomplishDelay: value } })
 }
 </script>
@@ -107,7 +108,7 @@ function saveDelay() {
       <!-- 两项始终共用原来的 9 列；隐藏延迟时由完成后操作占满。 -->
       <a-col :xs="24" :sm="24" :xl="9" class="after-action-group">
         <a-row :gutter="[16, 0]">
-          <a-col :span="after === 'NoAction' ? 24 : 14">
+          <a-col :span="after === PowerSignal.NO_ACTION ? 24 : 14">
             <a-form-item>
               <template #label>
                 <FieldLabelWithHint
@@ -126,7 +127,7 @@ function saveDelay() {
               />
             </a-form-item>
           </a-col>
-          <a-col v-if="after !== 'NoAction'" :span="10">
+          <a-col v-if="after !== PowerSignal.NO_ACTION" :span="10">
             <a-form-item>
               <template #label>
                 <FieldLabelWithHint
@@ -138,7 +139,7 @@ function saveDelay() {
               <a-input-number
                 v-model:value="delay"
                 size="large"
-                :min="0"
+                :min="1"
                 :max="1440"
                 :precision="0"
                 :disabled="saving"

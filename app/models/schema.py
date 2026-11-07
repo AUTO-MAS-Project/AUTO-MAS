@@ -33,6 +33,7 @@ from pydantic import (
 from app.config.wire import config_contract
 from app.models.task import TaskItem, TaskMode, TaskParams, TaskTriggerReason
 from app.utils import MSS_DEFAULT_TRIBULATION_STAGE, MSS_TRIBULATION_STAGES
+from app.utils.contracts.power import PowerSignal
 
 
 class TaskSelectionNode(BaseModel):
@@ -829,7 +830,7 @@ class WSFrontendCloseRequestedData(BaseModel):
 class WSPowerCountdownData(BaseModel):
     """电源倒计时更新数据 (id=Main, type=power.countdown.updated)"""
 
-    operation: str = Field(..., description="待执行的电源操作")
+    operation: PowerSignal = Field(..., description="待执行的电源操作")
     remaining: int = Field(..., description="剩余秒数")
 
 
@@ -837,14 +838,14 @@ class PowerCountdownSnapshot(BaseModel):
     """当前电源倒计时 HTTP 初始快照。"""
 
     active: bool = Field(default=False, description="是否正在倒计时")
-    operation: Optional[str] = Field(default=None, description="待执行电源操作")
+    operation: Optional[PowerSignal] = Field(default=None, description="待执行电源操作")
     remaining: int = Field(default=0, ge=0, description="剩余秒数")
 
 
 class WSPowerSignData(BaseModel):
     """电源标志更新数据 (id=Main, type=power.sign.updated)"""
 
-    signal: str = Field(..., description="电源操作信号")
+    signal: PowerSignal = Field(..., description="电源操作信号")
 
 
 class WSDisplayMonitorRectData(BaseModel):

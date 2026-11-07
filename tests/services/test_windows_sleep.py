@@ -8,6 +8,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from app.utils.contracts.power import PowerSignal
 from app.utils.windows import power
 
 
@@ -66,12 +67,12 @@ async def test_sleep_keeps_wake_events_and_restores_shutdown_privilege(
     controller = power.WindowsPowerController()
     if privilege_error:
         with pytest.raises(PermissionError):
-            await controller.execute("Sleep")
+            await controller.execute(PowerSignal.SLEEP)
     elif success:
-        await controller.execute("Sleep")
+        await controller.execute(PowerSignal.SLEEP)
     else:
         with pytest.raises(OSError):
-            await controller.execute("Sleep")
+            await controller.execute(PowerSignal.SLEEP)
     if privilege_error:
         suspend.assert_not_called()
     else:

@@ -21,10 +21,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-from typing import (
-    Literal,
-)
-
 from fastapi import APIRouter, Body
 from pydantic import (
     BaseModel,
@@ -44,6 +40,7 @@ from app.models.schema import (
 )
 from app.models.task import TaskMode
 from app.utils import get_logger
+from app.utils.contracts.power import PowerSignal
 
 
 class DispatchIn(BaseModel):
@@ -88,31 +85,11 @@ class TaskCreateOut(OutBase):
 
 
 class PowerIn(BaseModel):
-    signal: Literal[
-        "NoAction",
-        "Shutdown",
-        "ShutdownForce",
-        "Reboot",
-        "Hibernate",
-        "Sleep",
-        "KillSelf",
-        "RestartSelf",
-        "Logoff",
-    ] = Field(..., description="电源操作信号")
+    signal: PowerSignal = Field(..., description="电源操作信号")
 
 
 class PowerOut(OutBase):
-    signal: Literal[
-        "NoAction",
-        "Shutdown",
-        "ShutdownForce",
-        "Reboot",
-        "Hibernate",
-        "Sleep",
-        "KillSelf",
-        "RestartSelf",
-        "Logoff",
-    ] = Field(..., description="电源操作信号")
+    signal: PowerSignal = Field(..., description="电源操作信号")
 
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
@@ -191,6 +168,8 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
 
     try:
         task_id = await TaskManager.start(task.mode, task.tasks)
+    except RuntimeError as error:
+        return TaskCreateOut(code=409, status="error", message=str(error), taskId="")
     except Exception as e:
         logger.opt(exception=True).warning(f"add_task失败: {type(e).__name__}: {e}")
         return TaskCreateOut(
@@ -236,7 +215,7 @@ async def get_power() -> PowerOut:
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            signal="NoAction",
+            signal=PowerSignal.NO_ACTION,
         )
     return PowerOut.model_validate({"signal": signal})
 
@@ -273,10 +252,7 @@ async def set_power(task: PowerIn = Body(...)) -> OutBase:
 async def cancel_power_task() -> OutBase:
 
     try:
-        if not await Power.cancel_power_task():
-            return OutBase(
-                code=409, status="error", message="电源操作已进入执行阶段，无法撤销"
-            )
+        await Power.cancel_power_task()
     except Exception as e:
         logger.opt(exception=True).warning(
             f"cancel_power_task失败: {type(e).__name__}: {e}"

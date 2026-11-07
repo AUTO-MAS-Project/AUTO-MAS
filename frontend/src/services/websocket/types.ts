@@ -1,4 +1,4 @@
-import type { TaskItemDocument, TaskTriggerReason } from '@/api'
+import type { PowerSignal, TaskItemDocument, TaskTriggerReason } from '@/api'
 // WebSocket 统一消息协议类型
 import type { McpStatusData } from '../../api'
 import type { FrontendCloseRequest } from '../../types/appLifecycle'
@@ -171,13 +171,13 @@ export interface WSTaskCreatedData {
 
 /** 电源倒计时更新数据 (id=Main, type=power.countdown.updated) */
 export interface WSPowerCountdownData {
-  operation: string
+  operation: PowerSignal
   remaining: number
 }
 
 /** 电源标志更新数据 (id=Main, type=power.sign.updated) */
 interface WSPowerSignData {
-  signal: string
+  signal: PowerSignal
 }
 
 /** MFW 运行环境准备进度 (id=<scriptId>, type=maafw.env-prepare.progress) */

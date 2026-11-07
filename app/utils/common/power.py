@@ -1,4 +1,5 @@
 from app.utils import UnsupportedPlatformError
+from app.utils.contracts.power import PowerSignal
 
 
 class CommonDisplayHold:
@@ -14,9 +15,9 @@ class CommonDisplayHold:
 
 class CommonPowerController:
     supported = False
-    supported_actions = frozenset()
+    supported_actions: frozenset[PowerSignal] = frozenset()
 
-    async def execute(self, action: str) -> None:
+    async def execute(self, action: PowerSignal) -> None:
         raise UnsupportedPlatformError("power")
 
     async def set_sleep_prevention(self, enabled: bool) -> None:

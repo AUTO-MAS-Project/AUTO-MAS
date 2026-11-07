@@ -46,6 +46,7 @@ from app.config.types import (
     JsonDictString,
     UrlString,
 )
+from app.utils.contracts.power import PowerSignal
 
 from .base import DomainEntry
 from .shared import local_timezone
@@ -177,21 +178,13 @@ class QueueConfig(DomainEntry):
     )
 
     class InfoFields(ConfigGroup):
-        AfterAccomplish: Literal[
-            "NoAction",
-            "Shutdown",
-            "ShutdownForce",
-            "Reboot",
-            "Hibernate",
-            "Sleep",
-            "KillSelf",
-            "RestartSelf",
-            "Logoff",
-        ] = Field(default_factory=lambda: "NoAction", description="完成后操作")
+        AfterAccomplish: PowerSignal = Field(
+            default=PowerSignal.NO_ACTION, description="完成后操作"
+        )
 
-        AfterAccomplishDelay: Annotated[int, Field(ge=0, le=1440)] = Field(
-            default_factory=lambda: 0,
-            description="完成后操作的延时时长, 单位分钟, 0 表示队列结束后直接进入倒计时",
+        AfterAccomplishDelay: Annotated[int, Field(ge=1, le=1440)] = Field(
+            default=1,
+            description="完成后操作倒计时，单位分钟，最少 1 分钟，不叠加其他等待",
         )
 
         CycleEnabled: bool = Field(
@@ -281,6 +274,9 @@ class QueueConfig(DomainEntry):
     def normalize_payload(cls, data):
         data = deepcopy(data)
         info_data = data.get("Info")
+        if isinstance(info_data, dict) and info_data.get("AfterAccomplishDelay") == 0:
+            # 旧值 0 原本进入固定一分钟倒计时；迁为 1 保留该实际等待时间。
+            info_data["AfterAccomplishDelay"] = 1
         if isinstance(info_data, dict) and "StartUpMode" not in info_data:
             StartUpEnabled = info_data.get("StartUpEnabled")
             if isinstance(StartUpEnabled, bool):

@@ -2,13 +2,14 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { PowerSignal } from './PowerSignal';
 export type QueueConfig_Info = {
     /**
      * 完成后操作
      */
-    AfterAccomplish?: ('NoAction' | 'Shutdown' | 'ShutdownForce' | 'Reboot' | 'Hibernate' | 'Sleep' | 'KillSelf' | 'RestartSelf' | 'Logoff' | null);
+    AfterAccomplish?: (PowerSignal | null);
     /**
-     * 完成后操作的延时时长, 单位分钟, 0 表示队列结束后直接进入倒计时
+     * 完成后操作倒计时，单位分钟，最少 1 分钟，不叠加其他等待
      */
     AfterAccomplishDelay?: (number | null);
     /**
@@ -44,4 +45,3 @@ export type QueueConfig_Info = {
      */
     TimeEnabled?: (boolean | null);
 };
-

@@ -139,16 +139,6 @@ class _MainTimer:
             for planned in self._pending_wakeup_slots(at)
         )
 
-    def next_scheduled_wakeup(self, at: datetime) -> datetime | None:
-        """退出前交接最近的未来唤醒时刻，避免单实例锁吞掉收尾期间的启动。"""
-        now_wall = at.replace(tzinfo=None)
-        wakes = (
-            planned.replace(second=0, microsecond=0) - timedelta(minutes=5)
-            for planned in self._pending_wakeup_slots(at)
-        )
-        wake = min((wake for wake in wakes if wake > now_wall), default=None)
-        return wake.astimezone() if wake is not None else None
-
     def _pending_wakeup_slots(self, at: datetime) -> Iterator[datetime]:
         """枚举补跑窗口及未来一周内尚未派发的有效定时。"""
         if not Config.setting.Start.IfScheduledWakeUp:

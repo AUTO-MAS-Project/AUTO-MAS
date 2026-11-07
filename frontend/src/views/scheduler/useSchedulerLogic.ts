@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { message, Modal } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
-import { Service, PowerIn } from '@/api'
+import { Service, PowerSignal } from '@/api'
 import { useSchedulerStore } from '@/stores/scheduler'
 import { useTaskApi } from '@/composables/useTaskApi'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
@@ -24,7 +24,7 @@ export function useSchedulerLogic() {
   const taskApi = useTaskApi()
   const taskOptions = ref<TaskTarget[]>([])
   const taskOptionsLoading = ref(false)
-  const powerAction = ref(PowerIn.signal.NO_ACTION)
+  const powerAction = ref(PowerSignal.NO_ACTION)
   const latestScopeRequest = new WeakMap<SchedulerTab, object>()
   let optionsRequest: object | undefined
   let viewActive = true
@@ -168,13 +168,12 @@ export function useSchedulerLogic() {
   async function getPowerState() {
     try {
       const response = await Service.getPowerApiDispatchGetPowerPost()
-      if (response.code === 200 && response.signal)
-        powerAction.value = response.signal as PowerIn.signal
+      if (response.code === 200 && response.signal) powerAction.value = response.signal
     } catch (error) {
       window.electronAPI.getLogger('调度台').warn('读取电源操作失败', error)
     }
   }
-  async function onPowerActionChange(signal: PowerIn.signal) {
+  async function onPowerActionChange(signal: PowerSignal) {
     try {
       const response = await Service.setPowerApiDispatchSetPowerPost({ signal })
       if (response.code !== 200) throw new Error(response.message)

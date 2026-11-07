@@ -27,6 +27,7 @@ from app.config import (
 )
 from app.config.signals import ConfigEvent, FieldChangeEvent
 from app.models.notification.report import TaskNotificationState
+from app.utils.contracts.power import PowerSignal
 
 if TYPE_CHECKING:
     # [兼容旧专项] 旧类型导出；新执行器直接使用 app.task.lifecycle.TaskBase。
@@ -342,19 +343,11 @@ class TaskItem(RuntimeEntry):
 
         script_before: Path | None = Field(default=None, description="本轮运行前脚本")
         script_after: Path | None = Field(default=None, description="本轮运行后脚本")
-        after_accomplish: Literal[
-            "NoAction",
-            "Shutdown",
-            "ShutdownForce",
-            "Reboot",
-            "Hibernate",
-            "Sleep",
-            "KillSelf",
-            "RestartSelf",
-            "Logoff",
-        ] = Field(default="NoAction", description="本轮完成后操作")
+        after_accomplish: PowerSignal = Field(
+            default=PowerSignal.NO_ACTION, description="本轮完成后操作"
+        )
         after_accomplish_delay: int = Field(
-            default=0, ge=0, le=1440, description="完成后操作延时，单位分钟"
+            default=1, ge=1, le=1440, description="完成后操作倒计时，单位分钟"
         )
 
     class Current(ConfigGroup):

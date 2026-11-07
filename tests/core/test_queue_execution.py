@@ -7,13 +7,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.models.task import TaskMode
+from app.utils.contracts.power import PowerSignal
 from tests.core.test_maintenance_cycle_review import make_queue
 from tests.core.test_task_tree_dispatch import Builtin
 from tests.core.test_task_tree_dispatch import scheduler as scheduler
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("existing_power", ["NoAction", "Sleep"])
+@pytest.mark.parametrize("existing_power", [PowerSignal.NO_ACTION, PowerSignal.SLEEP])
 async def test_queue_actions_use_accepted_snapshot_after_queue_is_deleted(
     scheduler, tmp_path, monkeypatch, existing_power
 ):
@@ -28,7 +29,7 @@ async def test_queue_actions_use_accepted_snapshot_after_queue_is_deleted(
     after.touch()
     queue.Info.IfScriptBeforeTask = queue.Info.IfScriptAfterTask = True
     queue.Info.ScriptBeforeTask, queue.Info.ScriptAfterTask = before, after
-    queue.Info.AfterAccomplish = "Shutdown"
+    queue.Info.AfterAccomplish = PowerSignal.SHUTDOWN
     queue.Info.AfterAccomplishDelay = 2
     await queue.commit()
     monkeypatch.setattr(Power, "signal", existing_power)
@@ -64,7 +65,7 @@ async def test_queue_actions_use_accepted_snapshot_after_queue_is_deleted(
             assert tree["execution"]["script_before"] == str(before)
             assert task.task_info.get_update()["execution"] == tree["execution"]
             queue.Info.ScriptAfterTask = before
-            queue.Info.AfterAccomplish = "Reboot"
+            queue.Info.AfterAccomplish = PowerSignal.REBOOT
             await queue.commit()
             queues.remove(qid)
             await queues.commit()
@@ -72,16 +73,20 @@ async def test_queue_actions_use_accepted_snapshot_after_queue_is_deleted(
             await asyncio.wait_for(task.accomplish.wait(), 2)
             assert events == ["before.cmd", "script", "after.cmd"]
             assert Power.signal == (
-                "Shutdown" if existing_power == "NoAction" else existing_power
+                PowerSignal.SHUTDOWN
+                if existing_power == PowerSignal.NO_ACTION
+                else existing_power
             )
-            assert Power.delay == (120 if existing_power == "NoAction" else 0)
+            assert Power.delay == (
+                120 if existing_power == PowerSignal.NO_ACTION else 0
+            )
             power.assert_awaited_once()
             assert task.task_info.status == "success"
             assert qid not in queues
         finally:
             release.set()
             await manager.stop(uid)
-            Power.signal = "NoAction"
+            Power.signal = PowerSignal.NO_ACTION
 
 
 @pytest.mark.asyncio
@@ -134,9 +139,9 @@ async def test_stop_cancels_queue_script_without_scheduling_power(
     queue.Info.IfScriptBeforeTask = stage == "before"
     queue.Info.IfScriptAfterTask = stage == "after"
     queue.Info.ScriptBeforeTask = queue.Info.ScriptAfterTask = script
-    queue.Info.AfterAccomplish = "Shutdown"
+    queue.Info.AfterAccomplish = PowerSignal.SHUTDOWN
     await queue.commit()
-    monkeypatch.setattr(Power, "signal", "NoAction")
+    monkeypatch.setattr(Power, "signal", PowerSignal.NO_ACTION)
     entered, cancelled = asyncio.Event(), asyncio.Event()
 
     async def execute(path, label):
@@ -156,7 +161,7 @@ async def test_stop_cancels_queue_script_without_scheduling_power(
             await asyncio.wait_for(manager.stop(uid), 2)
             assert cancelled.is_set()
             assert manager.get_task_status(str(uid)).status == "cancelled"
-            assert Power.signal == "NoAction"
+            assert Power.signal == PowerSignal.NO_ACTION
             power.assert_not_awaited()
         finally:
             await manager.stop(uid)

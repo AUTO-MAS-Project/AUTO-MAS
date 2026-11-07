@@ -22,7 +22,6 @@
 
 
 import asyncio
-from datetime import datetime
 from typing import Awaitable, Callable, Optional
 
 from app.utils import get_logger
@@ -52,9 +51,6 @@ class _ShutdownCoordinator:
         self,
         *,
         restart: bool = False,
-        automatic: bool = False,
-        next_wake_at: datetime | None = None,
-        notify_frontend: bool = True,
     ) -> None:
         """独立持有退出流程；发起者不等待它，避免收尾反向取消发起者形成等待环。"""
         if self._exit_task is not None and not self._exit_task.done():
@@ -65,16 +61,13 @@ class _ShutdownCoordinator:
             from app.core.ws import protocol
             from app.models.schema import WSFrontendCloseRequestedData
 
-            if notify_frontend:
-                await Publisher.send(
-                    id=protocol.ID_MAIN,
-                    type=protocol.FRONTEND_RESTART_REQUESTED
-                    if restart
-                    else protocol.FRONTEND_CLOSE_REQUESTED,
-                    data=WSFrontendCloseRequestedData(
-                        automatic=automatic, nextWakeAt=next_wake_at
-                    ),
-                )
+            await Publisher.send(
+                id=protocol.ID_MAIN,
+                type=protocol.FRONTEND_RESTART_REQUESTED
+                if restart
+                else protocol.FRONTEND_CLOSE_REQUESTED,
+                data=WSFrontendCloseRequestedData(),
+            )
             await self.run_teardown()
             await Publisher.send(
                 id=protocol.ID_MAIN, type=protocol.BACKEND_SHUTDOWN_READY

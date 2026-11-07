@@ -111,9 +111,13 @@ class _TaskManager:
         return {uid: run for uid, run in self._running.items() if not run.maintenance}
 
     def _check_accepting(self) -> None:
-        """创建前检查停止全部屏障，并确认宿主已提供旧工厂或插件解析能力。"""
+        """创建前检查停止全部、电源倒计时，并确认宿主已提供执行能力。"""
+        from app.core import Power
+
         if self._stopping_all:
             raise RuntimeError("正在停止全部任务，暂不接受新任务")
+        if Power.power_task is not None:
+            raise RuntimeError("电源任务已进入倒计时，本次任务不再创建")
         if not self._factories_bound and self.plugin_expander is None:
             raise RuntimeError("宿主尚未绑定专项执行工厂")
 

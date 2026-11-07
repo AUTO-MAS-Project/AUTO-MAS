@@ -17,6 +17,7 @@ from app.services import execute_script_task
 from app.task.context import TaskContext
 from app.task.history_core import TaskHistorySession
 from app.task.lifecycle import TaskBase
+from app.utils.contracts.power import PowerSignal
 
 if TYPE_CHECKING:
     from app.core.community.scheduling import CommunityTriggerSource
@@ -284,7 +285,7 @@ class ScriptExpander(TaskBase):
             not self.cancelled
             and self.error is None
             and info.mode == TaskMode.AUTO_PROXY
-            and info.execution.after_accomplish != "NoAction"
+            and info.execution.after_accomplish != PowerSignal.NO_ACTION
         ):
             from app.core import Power
 

@@ -4,8 +4,11 @@ from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from pydantic import ValidationError
+
 from app.models.config import QueueConfig
 from app.utils import io as _utils_io
+from app.utils.contracts.power import PowerSignal
 from tests.config_support import activate_config
 
 
@@ -73,3 +76,28 @@ class QueueConfigStartupModeMigrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(config.Data.LastTimedStart.year, 2000)
         self.assertEqual(config.Data.LastStartupTime.year, 2000)
         self.assertIsNone(config.Cycle.LastRunAt)
+
+    async def test_load_power_action_as_enum_and_persists_original_value(self) -> None:
+        self.write_config({"Info": {"AfterAccomplish": "ShutdownForce"}})
+        config = QueueConfig()
+        await activate_config(config, self.config_path)
+        self.assertIs(config.Info.AfterAccomplish, PowerSignal.SHUTDOWN_FORCE)
+        self.assertEqual(self.read_config()["Info"]["AfterAccomplish"], "ShutdownForce")
+
+    async def test_zero_queue_countdown_migrates_to_one_minute_but_updates_reject_zero(
+        self,
+    ) -> None:
+        from app.api.queue import QueueUpdateIn
+
+        self.write_config({"Info": {"AfterAccomplishDelay": 0}})
+        config = QueueConfig()
+        await activate_config(config, self.config_path)
+        self.assertEqual(config.Info.AfterAccomplishDelay, 1)
+        self.assertEqual(self.read_config()["Info"]["AfterAccomplishDelay"], 1)
+        with self.assertRaises(ValidationError):
+            QueueUpdateIn.model_validate(
+                {
+                    "queueId": "queue",
+                    "data": {"Info": {"AfterAccomplishDelay": 0}},
+                }
+            )

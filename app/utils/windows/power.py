@@ -4,6 +4,7 @@ import threading
 from collections.abc import Callable
 
 from app.utils import get_logger
+from app.utils.contracts.power import PowerSignal
 
 logger = get_logger("电源管理")
 
@@ -112,24 +113,31 @@ def _sleep_with_wakeup_events() -> None:
 class WindowsPowerController:
     supported = True
     supported_actions = frozenset(
-        {"Shutdown", "ShutdownForce", "Reboot", "Hibernate", "Sleep", "Logoff"}
+        {
+            PowerSignal.SHUTDOWN,
+            PowerSignal.SHUTDOWN_FORCE,
+            PowerSignal.REBOOT,
+            PowerSignal.HIBERNATE,
+            PowerSignal.SLEEP,
+            PowerSignal.LOGOFF,
+        }
     )
 
     def __init__(self) -> None:
         self._display_holds: set[WindowsDisplayHold] = set()
         self._display_holds_lock = threading.Lock()
 
-    async def execute(self, action: str) -> None:
+    async def execute(self, action: PowerSignal) -> None:
         commands = {
-            "Shutdown": ["shutdown", "/s", "/t", "0"],
-            "ShutdownForce": ["shutdown", "/s", "/t", "0", "/f"],
-            "Reboot": ["shutdown", "/r", "/t", "0"],
-            "Hibernate": ["shutdown", "/h"],
-            "Logoff": ["shutdown", "/l"],
+            PowerSignal.SHUTDOWN: ["shutdown", "/s", "/t", "0"],
+            PowerSignal.SHUTDOWN_FORCE: ["shutdown", "/s", "/t", "0", "/f"],
+            PowerSignal.REBOOT: ["shutdown", "/r", "/t", "0"],
+            PowerSignal.HIBERNATE: ["shutdown", "/h"],
+            PowerSignal.LOGOFF: ["shutdown", "/l"],
         }
         # MAS 自己执行电源操作之前先撤掉「保持显示开启」，恢复系统原本的熄屏规则。
         self.release_display_holds()
-        if action == "Sleep":
+        if action == PowerSignal.SLEEP:
             _sleep_with_wakeup_events()
             return
         subprocess.run(commands[action], check=True)

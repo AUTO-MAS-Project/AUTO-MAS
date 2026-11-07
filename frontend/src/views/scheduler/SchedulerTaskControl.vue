@@ -39,18 +39,6 @@
         </a-space>
         <div class="control-spacer"></div>
         <a-space size="middle">
-          <a-select
-            v-if="!isRunning && scope?.kind === 'queue' && scope.entries.length"
-            :value="resumeFromUid"
-            :placeholder="t('core.scheduler.control.resumePlaceholder')"
-            style="width: 260px"
-            :loading="scopeLoading"
-            :options="resumeOptions"
-            :disabled="disabled || starting"
-            allow-clear
-            size="large"
-            @change="onResumeChange"
-          />
           <a-button
             :type="isRunning ? 'default' : 'primary'"
             :danger="isRunning"
@@ -103,37 +91,6 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const onTargetChange = (value: unknown) =>
   emit('task-changed', typeof value === 'string' ? value : null)
-// 继续起点只是同一要求树的视图，不单独保存托管 ID 或用户名单。
-const resumeOptions = computed(
-  () =>
-    props.scope?.entries.map((entry, index) => ({
-      value: entry.uid,
-      label: `${index + 1}. ${entry.name || entry.scriptId}`,
-    })) ?? []
-)
-const resumeFromUid = computed(() => {
-  if (!props.scope || props.scope.selection !== 'explicit') return undefined
-  const first = props.scope.entries.findIndex(entry => entry.selection !== 'none')
-  if (first < 0 || props.scope.entries.slice(first).some(entry => entry.selection === 'none'))
-    return undefined
-  return props.scope.entries[first].uid
-})
-const onResumeChange = (value: unknown) => {
-  const scope = props.scope
-  if (!scope) return
-  const index =
-    typeof value === 'string' ? scope.entries.findIndex(entry => entry.uid === value) : -1
-  if (typeof value === 'string' && index < 0) return
-  emit('update:scope', {
-    ...scope,
-    selection: index < 0 ? 'all' : 'explicit',
-    entries: scope.entries.map((entry, position) => ({
-      ...entry,
-      selection: position < index ? 'none' : 'all',
-      selected: [],
-    })),
-  })
-}
 const onDropdown = (visible: boolean) => {
   if (visible) emit('refresh-tasks')
 }

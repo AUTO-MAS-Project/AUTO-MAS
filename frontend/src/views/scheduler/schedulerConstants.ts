@@ -1,5 +1,4 @@
-import { TaskMode } from '@/api'
-import { PowerIn } from '@/api/models/PowerIn'
+import { PowerSignal, TaskMode } from '@/api'
 import type { TaskScopeDraft } from '@/composables/taskSelection'
 
 // 调度台状态
@@ -40,16 +39,16 @@ export const TASK_MODE_OPTIONS = [
 ]
 
 // 电源操作 -> 词表 key（信号值本身是后端枚举，不动）
-export const POWER_ACTION_LABEL_KEY: Record<PowerIn.signal, string> = {
-  [PowerIn.signal.NO_ACTION]: 'core.scheduler.power.noAction',
-  [PowerIn.signal.SHUTDOWN]: 'core.scheduler.power.shutdown',
-  [PowerIn.signal.SHUTDOWN_FORCE]: 'core.scheduler.power.shutdownForce',
-  [PowerIn.signal.REBOOT]: 'core.scheduler.power.reboot',
-  [PowerIn.signal.HIBERNATE]: 'core.scheduler.power.hibernate',
-  [PowerIn.signal.SLEEP]: 'core.scheduler.power.sleep',
-  [PowerIn.signal.KILL_SELF]: 'core.scheduler.power.killSelf',
-  [PowerIn.signal.RESTART_SELF]: 'core.scheduler.power.restartSelf',
-  [PowerIn.signal.LOGOFF]: 'core.scheduler.power.logoff',
+export const POWER_ACTION_LABEL_KEY: Record<PowerSignal, string> = {
+  [PowerSignal.NO_ACTION]: 'core.scheduler.power.noAction',
+  [PowerSignal.SHUTDOWN]: 'core.scheduler.power.shutdown',
+  [PowerSignal.SHUTDOWN_FORCE]: 'core.scheduler.power.shutdownForce',
+  [PowerSignal.REBOOT]: 'core.scheduler.power.reboot',
+  [PowerSignal.HIBERNATE]: 'core.scheduler.power.hibernate',
+  [PowerSignal.SLEEP]: 'core.scheduler.power.sleep',
+  [PowerSignal.KILL_SELF]: 'core.scheduler.power.killSelf',
+  [PowerSignal.RESTART_SELF]: 'core.scheduler.power.restartSelf',
+  [PowerSignal.LOGOFF]: 'core.scheduler.power.logoff',
 }
 /** 调度台只保存界面与启动草稿，运行数据由 taskId 引用。 */
 export interface SchedulerTab {
