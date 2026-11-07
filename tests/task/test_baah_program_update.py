@@ -102,8 +102,7 @@ async def test_prepare_can_run_while_installation_is_reserved_then_apply_preserv
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("damaged", [False, True])
-async def test_legacy_records_keep_version_and_integrity_checks(installation, damaged):
+async def test_legacy_records_are_deleted_before_next_update(installation):
     root, config, _, _ = installation
     prepared = await update.prepare_update(root, config)
     await update.apply_update(root, prepared)
@@ -112,26 +111,17 @@ async def test_legacy_records_keep_version_and_integrity_checks(installation, da
     legacy.mkdir()
     for name in ("installed.json", "baah-version.json"):
         (directory / name).replace(legacy / name)
-    if damaged:
-        (root / "DATA/icons/icon.png").write_bytes(b"damaged resource")
-    update.download_script_package.reset_mock()
-
-    candidate = await update.prepare_update(root, config)
-    assert (candidate is not None) is damaged
-    assert update.download_script_package.await_count == int(damaged)
-    assert (legacy / "installed.json").is_file()
-    assert (legacy / "baah-version.json").is_file()
-    assert not list(directory.iterdir())
 
     with script_install.installation_access(root):
         script_install.recover_install(root, lambda: None, threading.Event())
-    assert not legacy.exists()
+        assert not legacy.exists()
+        assert not list(directory.iterdir())
+        await update.update_before_run(root, config)
+
     assert update.read_version(root) == Version("2.5.7")
-    if damaged:
-        with pytest.raises(script_install.InstallUnsafeError):
-            await update.confirm_current_install(root)
-    else:
-        await update.confirm_current_install(root)
+    assert (directory / "installed.json").is_file()
+    assert (directory / "baah-version.json").is_file()
+    assert await update.prepare_update(root, config) is None
 
 
 @pytest.mark.asyncio

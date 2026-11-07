@@ -163,7 +163,7 @@ async def test_same_version_with_receipt_repairs_damaged_resources(installation)
 
 
 @pytest.mark.asyncio
-async def test_legacy_records_remain_readable_during_prefetch_then_migrate(
+async def test_legacy_records_are_ignored_during_prefetch_and_deleted_on_recovery(
     installation,
 ):
     root, config = installation
@@ -188,9 +188,8 @@ async def test_legacy_records_remain_readable_during_prefetch_then_migrate(
     with script_install.installation_access(root):
         script_install.recover_install(root, lambda: None, threading.Event())
     assert not legacy.exists()
-    assert all(
-        (directory / name).read_bytes() == value for name, value in original.items()
-    )
+    assert not list(directory.iterdir())
+    assert not script_install.verify_installed_files(root, threading.Event())
     assert isinstance(await update.prepare_update(root, config), str)
     update.download_file.assert_not_awaited()
     assert update.read_install(root) == (Version("2.2.0"), "x86_64")

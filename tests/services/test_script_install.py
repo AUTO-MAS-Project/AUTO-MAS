@@ -58,85 +58,46 @@ def test_switch_preserves_user_data_and_confirms_complete_tree(
     assert not install.workspace(root).exists()
 
 
-def test_legacy_receipt_migrates_without_changing_installation(
-    package, isolated_app_paths
-):
-    root, _ = package
-    legacy = install.workspace(root)
-    legacy.mkdir()
-    receipt = legacy / "installed.json"
-    original = json.dumps(
-        {"files": {"app.exe": hashlib.sha256(b"old").hexdigest()}}
-    ).encode()
-    receipt.write_bytes(original)
-    assert install.verify_installed_files(root, threading.Event())
-
-    install.recover_install(root, lambda: None, threading.Event())
-
-    migrated = list(
-        (isolated_app_paths.data_path / "script_update").glob("*/installed.json")
-    )
-    assert len(migrated) == 1
-    assert migrated[0].read_bytes() == original
-    assert not legacy.exists()
-    assert (root / "app.exe").read_bytes() == b"old"
-    assert install.verify_installed_files(root, threading.Event())
-    (root / "app.exe").write_bytes(b"damaged")
-    assert not install.verify_installed_files(root, threading.Event())
-
-
-def test_failed_receipt_migration_keeps_old_record(
-    package, isolated_app_paths, monkeypatch
-):
-    root, _ = package
-    legacy = install.workspace(root)
-    legacy.mkdir()
-    receipt = legacy / "installed.json"
-    original = json.dumps(
-        {"files": {"app.exe": hashlib.sha256(b"old").hexdigest()}}
-    ).encode()
-    receipt.write_bytes(original)
-    replace = Path.replace
-
-    def fail_publish(path, target):
-        if Path(target).is_relative_to(isolated_app_paths.data_path):
-            raise OSError("record publication failed")
-        return replace(path, target)
-
-    monkeypatch.setattr(Path, "replace", fail_publish)
-    with pytest.raises(OSError, match="record publication failed"):
-        install.recover_install(root, lambda: None, threading.Event())
-    assert receipt.read_bytes() == original
-    assert install.verify_installed_files(root, threading.Event())
-    assert (root / "app.exe").read_bytes() == b"old"
-    monkeypatch.setattr(Path, "replace", replace)
-    install.recover_install(root, lambda: None, threading.Event())
-    assert not legacy.exists()
-    assert install.verify_installed_files(root, threading.Event())
-
-
-def test_legacy_record_migration_preserves_recovery_and_user_backups(package):
+def test_legacy_receipt_is_deleted_without_migration(package):
     root, _ = package
     legacy = install.workspace(root)
     legacy.mkdir()
     (legacy / "installed.json").write_text(
         json.dumps({"files": {"app.exe": hashlib.sha256(b"old").hexdigest()}})
     )
-    recovery = legacy / "runtime-interface.json"
-    recovery.write_bytes(b"pending recovery")
-    backup = legacy / "retired-pipelines/custom.json"
-    backup.parent.mkdir()
-    backup.write_bytes(b"user resource")
+    assert not install.verify_installed_files(root, threading.Event())
 
     install.recover_install(root, lambda: None, threading.Event())
 
-    assert not (legacy / "installed.json").exists()
-    assert recovery.read_bytes() == b"pending recovery"
+    assert not legacy.exists()
+    assert not install.record_directory(root).exists()
+    assert (root / "app.exe").read_bytes() == b"old"
+    assert not install.verify_installed_files(root, threading.Event())
+
+
+def test_legacy_cleanup_keeps_user_backups_and_unknown_files(package):
+    root, _ = package
+    directory = install.workspace(root)
+    directory.mkdir()
+    for name in ("installed.json", "program-identity.json", "baah-version.json"):
+        (directory / name).write_bytes(b"old record")
+    backup = directory / "retired-pipelines/custom.json"
+    backup.parent.mkdir()
+    backup.write_bytes(b"user resource")
+    note = directory / "notes.txt"
+    note.write_bytes(b"user note")
+
+    install.recover_install(root, lambda: None, threading.Event())
+
+    assert not (directory / "installed.json").exists()
+    assert not (directory / "program-identity.json").exists()
+    assert not (directory / "baah-version.json").exists()
+    assert not install.record_directory(root).exists()
     assert backup.read_bytes() == b"user resource"
-    assert install.verify_installed_files(root, threading.Event())
+    assert note.read_bytes() == b"user note"
 
 
-def test_conflicting_legacy_receipt_does_not_overwrite_new_record(package):
+def test_legacy_receipt_is_deleted_without_overwriting_current_record(package):
     root, _ = package
     apply(package)
     receipt = install.record_directory(root) / "installed.json"
@@ -152,7 +113,7 @@ def test_conflicting_legacy_receipt_does_not_overwrite_new_record(package):
     install.recover_install(root, lambda: None, threading.Event())
 
     assert receipt.read_bytes() == confirmed
-    assert old_record.read_bytes() == old_content
+    assert not legacy.exists()
     assert install.verify_installed_files(root, threading.Event())
 
 
@@ -555,7 +516,7 @@ def test_interrupted_backup_cleanup_can_safely_finish_on_next_run(
             install.workspace(root) / "installed.json"
         )
     install.recover_install(root, lambda: None, threading.Event())
-    assert (install.record_directory(root) / "installed.json").is_file()
+    assert install.record_path(root, "installed.json").is_file()
     assert install.verify_installed_files(root, threading.Event())
     assert not (install.workspace(root) / "installed.json").exists()
     assert (root / "app.exe").read_bytes() == b"new"

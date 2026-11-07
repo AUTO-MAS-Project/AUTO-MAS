@@ -19,12 +19,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from app.core import Config
-from app.utils import get_logger, update_files
-
-logger = get_logger("脚本安装")
-
-# 只迁移安装器长期保存的记录；未完成事务和用户资源备份仍由原工作区恢复。
-_INSTALL_RECORDS = ("installed.json", "program-identity.json", "baah-version.json")
+from app.utils import update_files
 
 
 class InstallUnsafeError(RuntimeError):
@@ -46,11 +41,8 @@ def record_directory(root: Path) -> Path:
 
 
 def record_path(root: Path, filename: str) -> Path:
-    """只读兼容旧位置，真正迁移留到持安装锁的恢复阶段。"""
-    path = record_directory(root) / filename
-    if path.exists():
-        return path
-    return workspace(root) / filename
+    """长期安装记录只保存在 MAS 数据目录。"""
+    return record_directory(root) / filename
 
 
 @contextmanager
@@ -255,42 +247,17 @@ def _remove_empty_workspace(root: Path) -> None:
         directory.rmdir()
 
 
-def _migrate_records(root: Path, cancelled: threading.Event) -> None:
-    """调用方持安装锁；发布新记录成功后才移除旧文件，支持两目录跨盘。"""
-    legacy = workspace(root)
-    if not legacy.exists():
+def _discard_legacy_records(root: Path) -> None:
+    """只删除旧位置的长期记录，保留未清理的安装文件和用户资源备份。"""
+    directory = workspace(root)
+    if not directory.exists():
         return
-    _reject_link(legacy)
-    for filename in _INSTALL_RECORDS:
-        _check_cancel(cancelled)
-        source = legacy / filename
-        if not source.exists():
-            continue
-        _reject_link(source)
-        content = source.read_bytes()
-        directory = record_directory(root)
-        destination = directory / filename
-        if destination.exists():
-            _reject_link(destination)
-            if destination.read_bytes() != content:
-                logger.warning(f"新旧安装记录不同，已保留旧记录: {source}")
-                continue
-        else:
-            directory.mkdir(parents=True, exist_ok=True)
-            _reject_link(directory)
-            handle = tempfile.NamedTemporaryFile(
-                dir=directory, prefix=f".{filename}-", suffix=".tmp", delete=False
-            )
-            temporary = Path(handle.name)
-            try:
-                with handle:
-                    handle.write(content)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                temporary.replace(destination)
-            finally:
-                temporary.unlink(missing_ok=True)
-        source.unlink()
+    _reject_link(directory)
+    for filename in ("installed.json", "program-identity.json", "baah-version.json"):
+        path = directory / filename
+        if path.exists():
+            _reject_link(path)
+            path.unlink()
     _remove_empty_workspace(root)
 
 
@@ -326,7 +293,7 @@ def recover_install(
     if not journal.exists():
         if (directory / "previous").exists():
             raise InstallUnsafeError("安装备份存在但恢复记录缺失，请保留现场并手动恢复")
-        _migrate_records(root, cancelled)
+        _discard_legacy_records(root)
         return
     assert_idle()
     _reject_link(directory)
@@ -359,6 +326,8 @@ def recover_install(
                 remaining = tree_hashes(previous, cancelled)
                 if state.get("phase") == "installed":
                     receipt = record_path(root, "installed.json")
+                    if not receipt.exists():
+                        _write_receipt(root, state["package_files"])
                     _reject_link(receipt)
                     recorded = json.loads(receipt.read_text(encoding="utf-8"))
                     if not isinstance(recorded, dict) or recorded.get(
@@ -393,7 +362,7 @@ def recover_install(
         elif not ready.exists():
             _write_receipt(root, state["package_files"])
         journal.unlink()
-        _migrate_records(root, cancelled)
+        _discard_legacy_records(root)
     except InstallUnsafeError:
         raise
     except Exception as error:
@@ -507,7 +476,7 @@ def install_package(
             "安装切换未完成确认，请重试恢复；原安装备份已保留"
         ) from error
     shutil.rmtree(package)
-    _migrate_records(root, threading.Event())
+    _remove_empty_workspace(root)
 
 
 def read_pe_architecture(executable: Path) -> str:
