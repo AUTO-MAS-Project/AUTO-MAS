@@ -125,6 +125,44 @@ async def test_official_package_installs_and_preserves_native_interface(installa
 
 
 @pytest.mark.asyncio
+async def test_same_version_without_receipt_does_not_download(
+    installation, tmp_path, monkeypatch
+):
+    root, config = installation
+    archive, release = _official_release_for_test(tmp_path, "v2.1.0")
+    monkeypatch.setattr(update, "request_release", AsyncMock(return_value=release))
+
+    async def download(_url, destination, **_kwargs):
+        shutil.copyfile(archive, destination)
+
+    downloader = AsyncMock(side_effect=download)
+    monkeypatch.setattr(update, "download_file", downloader)
+    original_interface = (root / "interface.json").read_bytes()
+    assert not script_install.record_path(root, "installed.json").exists()
+
+    for _ in range(2):
+        assert "无需更新" in await update.update_before_run(root, config)
+    downloader.assert_not_awaited()
+    assert not script_install.record_directory(root).exists()
+    assert not script_install.workspace(root).exists()
+    assert (root / "interface.json").read_bytes() == original_interface
+    assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
+
+
+@pytest.mark.asyncio
+async def test_same_version_with_receipt_repairs_damaged_resources(installation):
+    root, config = installation
+    await update.update_before_run(root, config)
+    (root / "resource/data.json").write_bytes(b"damaged resource")
+    update.download_file.reset_mock()
+
+    assert "已更新" in await update.update_before_run(root, config)
+    update.download_file.assert_awaited_once()
+    assert (root / "resource/data.json").read_bytes() == b"{}"
+    assert script_install.verify_installed_files(root, threading.Event())
+
+
+@pytest.mark.asyncio
 async def test_legacy_records_remain_readable_during_prefetch_then_migrate(
     installation,
 ):

@@ -200,6 +200,10 @@ async def prepare_update(
     target, name, url, size, digest = select_package(
         await request_release(channel), arch
     )
+    receipt = script_install.record_path(root, "installed.json")
+    if target == current and not receipt.exists():
+        # 首次接管时没有 MAS 校验记录，不因此重装同版本，也不伪造校验记录。
+        return f"MaaEnd 当前版本 {current} 无需更新"
     verified = await script_install.run_worker(
         script_install.verify_installed_files, root
     )
