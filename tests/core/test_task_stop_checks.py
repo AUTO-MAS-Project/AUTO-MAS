@@ -1,9 +1,14 @@
 """任务停止先等待更新确认，确认结束后只清理本任务进程。"""
 
 import asyncio
+import json
 import sys
+import threading
 import uuid
+import weakref
 from contextlib import suppress
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import psutil
 import pytest
@@ -12,8 +17,181 @@ from app.core.runtime_tasks import OwnedTaskRegistry
 from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.core.task_manager.manager import Task, TaskInfo, _TaskManager
 from app.core.timer import _MainTimer
+from app.models.config import MaaConfig, MaaUserConfig
+from app.models.task import ScriptItem, UserItem
 from app.utils.common.process.runner import ProcessRunner, create_subprocess
 from app.utils.common.process.scope import TaskProcessScope, current_process_scope
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unresponsive", [False, True])
+@pytest.mark.parametrize("base", ["native", "shared"])
+async def test_maa_config_stop_saves_before_kill_or_reports_timeout(
+    monkeypatch, tmp_path, unresponsive, base
+):
+    import importlib
+
+    module = importlib.import_module("app.task.MAA.ScriptConfig")
+    host = tmp_path / "mas"
+    host.mkdir()
+    monkeypatch.chdir(host)
+    ready = asyncio.Event()
+    install = tmp_path / "maa"
+    output = install / "config" / "gui.new.json"
+    output.parent.mkdir(parents=True)
+    output.write_text('{"Gui":{"custom":"original"}}', encoding="utf-8")
+
+    class GuiProcess:
+        async def open_process(self, path):
+            self.process = await create_subprocess(
+                sys.executable,
+                "-I",
+                "-c",
+                "import sys,time,json; from pathlib import Path; sys.stdin.readline(); "
+                + (
+                    "time.sleep(30)"
+                    if unresponsive
+                    else "p=Path(sys.argv[1]); d=json.loads(p.read_text(encoding='utf-8-sig')); "
+                    "d.setdefault('Gui', {})['custom']='saved'; "
+                    "p.write_text(json.dumps(d), encoding='utf-8')"
+                ),
+                str(output),
+                stdin=asyncio.subprocess.PIPE,
+            )
+            ready.set()
+
+        async def close(self):
+            if not hasattr(self, "process"):
+                return
+            self.process.stdin.write(b"close\n")
+            await self.process.stdin.drain()
+            # ProcessManager.close 同样等待窗口退出。
+            await self.process.wait()
+
+        async def is_running(self):
+            return self.process.returncode is None
+
+    monkeypatch.setattr(module, "ProcessManager", GuiProcess)
+    monkeypatch.setattr(module.System, "kill_process", AsyncMock())
+    monkeypatch.setattr(
+        module.ScriptConfigTask,
+        "GUI_CLOSE_TIMEOUT",
+        0.15 if unresponsive else 2,
+        raising=False,
+    )
+    user_id = uuid.uuid4()
+    script = ScriptItem(
+        str(uuid.uuid4()), "test", "运行", [UserItem(str(user_id), "test", "运行")], 0
+    )
+    info = TaskInfo(
+        "ScriptConfig", str(uuid.uuid4()), None, script.script_id, str(user_id)
+    )
+    object.__setattr__(script, "_task_item_ref", weakref.ref(info))
+    config = MaaConfig.build(payload={"Info": {"Path": str(install)}})
+    user = MaaUserConfig.build(payload={"Info": {"Base": base}})
+    await config.activate()
+    await user.activate()
+    session = module.ScriptConfigTask(script, config, {user_id: user}, None)
+    discarded = AsyncMock()
+    monkeypatch.setattr(session, "_notify_config_discarded", discarded)
+
+    class ConfigTask(Task):
+        async def _run_main_task(self):
+            await self.spawn(session)
+
+    task = ConfigTask(info, [], manager_factories={})
+    task.execute()
+    try:
+        await asyncio.wait_for(ready.wait(), 3)
+        task.cancel()
+        await asyncio.wait_for(task.accomplish.wait(), 3)
+        await asyncio.wait_for(session.accomplish.wait(), 3)
+        await asyncio.wait_for(session.maa_process_manager.process.wait(), 3)
+        saved = (
+            output
+            if base == "native"
+            else (
+                host
+                / "data"
+                / script.script_id
+                / "Default"
+                / "ConfigFile"
+                / "gui.new.json"
+            )
+        )
+        document = json.loads(saved.read_text(encoding="utf-8-sig"))
+        if unresponsive:
+            assert document.get("Gui", {}).get("custom") != "saved"
+            discarded.assert_awaited_once_with("not_written")
+        else:
+            assert document["Gui"]["custom"] == "saved"
+            discarded.assert_not_awaited()
+        check = next(c for c in task._stop_scope.checks if c.name == "maa_config_save")
+        assert check.status == ("timed_out" if unresponsive else "passed")
+    finally:
+        task.cancel()
+        await asyncio.gather(task._execution_root, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_task_stop_during_display_insert_preserves_guard_ownership(monkeypatch):
+    import importlib
+
+    module = importlib.import_module("app.core.desktop_guard")
+    from app.utils import vdd
+
+    entered, release = threading.Event(), threading.Event()
+    recorded, removed = [], []
+
+    class Display:
+        index = 7
+        applied_mode = (1920, 1080, 60)
+
+        def __init__(self, *, mode):
+            pass
+
+        def __enter__(self):
+            entered.set()
+            assert release.wait(5)
+            return self
+
+        def close(self):
+            removed.append(self.index)
+
+    monkeypatch.setattr(vdd, "VirtualDisplay", Display)
+    monkeypatch.setattr(vdd, "probe", lambda: SimpleNamespace(status=vdd.VddStatus.OK))
+    monkeypatch.setattr(module, "_describe", lambda: "test")
+    monkeypatch.setattr(module, "_has_real_output", lambda: True)
+    monkeypatch.setattr(module, "_desktop_has_room", lambda: True)
+    monkeypatch.setattr(module, "_write_state", recorded.append)
+    monkeypatch.setattr(module, "_clear_state", lambda: None)
+    guard = module._DesktopGuard()
+    monkeypatch.setattr(guard, "_sync_display_hold", lambda: None)
+
+    class DisplayTask(Task):
+        async def _run_main_task(self):
+            await guard._attach("test")
+
+    info = TaskInfo("AutoProxy", str(uuid.uuid4()), None, None, None)
+    task = DisplayTask(info, [], manager_factories={})
+    task.execute()
+    try:
+        async with asyncio.timeout(3):
+            while not entered.is_set():
+                await asyncio.sleep(0.01)
+        task.cancel()
+        await asyncio.wait_for(task.accomplish.wait(), 2)
+        release.set()
+        await asyncio.wait_for(guard._attaching, 2)
+        assert recorded == [7]
+        assert guard._display is not None
+        await guard._teardown("test")
+        assert removed == [7]
+    finally:
+        release.set()
+        await asyncio.gather(task._execution_root, return_exceptions=True)
+        if guard._attaching is not None:
+            await asyncio.gather(guard._attaching, return_exceptions=True)
 
 
 @pytest.mark.asyncio
@@ -264,31 +442,37 @@ async def test_task_stop_waits_for_update_then_force_closes_owned_processes(
 @pytest.mark.asyncio
 async def test_application_background_tasks_are_not_owned_by_stopped_task():
     registry = OwnedTaskRegistry()
-    scope = TaskProcessScope()
     entered = asyncio.Event()
     release = asyncio.Event()
+    background = []
 
     async def shared_work():
         entered.set()
         await release.wait()
         return current_process_scope.get()
 
-    token = current_process_scope.set(scope)
-    try:
-        work = registry.spawn(shared_work(), name="test-shared-work")
-    finally:
-        current_process_scope.reset(token)
-    assert work is not None
+    class BackgroundTask(Task):
+        async def _run_main_task(self):
+            background.append(registry.spawn(shared_work(), name="test-shared-work"))
+            await asyncio.Event().wait()
+
+    info = TaskInfo("AutoProxy", str(uuid.uuid4()), None, None, None)
+    task = BackgroundTask(info, [], manager_factories={})
+    task.execute()
 
     try:
         await asyncio.wait_for(entered.wait(), 1)
-        assert work.get_context().get(current_process_scope) is None
-        await scope.force_close()
+        work = background[0]
+        assert work is not None
+        task.cancel()
+        await asyncio.wait_for(task.accomplish.wait(), 2)
         assert not work.done()
         release.set()
         assert await work is None
     finally:
         release.set()
+        task.cancel()
+        await asyncio.gather(task._execution_root, return_exceptions=True)
         await registry.shutdown()
 
 
