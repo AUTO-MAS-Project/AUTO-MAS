@@ -52,7 +52,7 @@ defineProps<{
 
 /* 主表单标签保留现有层级，二级配置仍使用默认样式。 */
 .field-label-form {
-  gap: 8px;
+  gap: 4px;
   color: var(--ant-color-text);
   font-size: 14px;
   font-weight: 600;

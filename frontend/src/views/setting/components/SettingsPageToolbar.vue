@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, h, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { BulbOutlined, CheckOutlined } from '@ant-design/icons-vue'
+import { CheckOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useTheme } from '@/composables/useTheme'
 import type { SettingsLayoutMode } from './useSettingsSectionLayout'
@@ -116,7 +116,18 @@ async function toggleTheme() {
           :disabled="disabled || changingTheme || Boolean(activeAppearance)"
           @click="toggleTheme"
         >
-          <template #icon><BulbOutlined aria-hidden="true" /></template>
+          <template #icon>
+            <!-- 用内联图形而不是图标字体：图标库里没有日/月，emoji 在不同系统上字形还各不相同 -->
+            <svg v-if="!isDark" class="settings-theme-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="4.6" />
+              <path
+                d="M12 2.4v2.3M12 19.3v2.3M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.4 12h2.3M19.3 12h2.3M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"
+              />
+            </svg>
+            <svg v-else class="settings-theme-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+            </svg>
+          </template>
         </a-button>
       </span>
     </a-tooltip>
@@ -212,6 +223,17 @@ async function toggleTheme() {
 .settings-theme-toggle:focus-visible {
   outline: 2px solid var(--ant-color-primary);
   outline-offset: 2px;
+}
+
+/* 日/月图形跟按钮字号走（1em），描边重量对齐图标字体的观感 */
+.settings-theme-icon {
+  width: 1em;
+  height: 1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
 }
 
 .settings-theme-toggle:hover:not(:disabled) {
