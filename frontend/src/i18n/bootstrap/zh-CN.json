@@ -45,7 +45,20 @@
     "restoreWindow": "还原",
     "updateAvailableHint": "检测到更新 {version} 请尽快更新",
     "confirmExit": "确认关闭",
-    "queueStillRunningClose": "队列正在运行中，确认关闭AUTO-MAS吗？"
+    "queueStillRunningClose": "队列正在运行中，确认关闭AUTO-MAS吗？",
+    "downloadReady": "下载完成，点击安装",
+    "downloadSwitching": "正在切换至 CNB 源",
+    "downloadCancelling": "正在取消下载",
+    "downloadFailed": "下载失败，点击查看",
+    "downloading": "正在{source}下载 {progress}%",
+    "versionUnavailable": "获取版本失败！",
+    "downloadSource": "从 {source} ",
+    "sourceGithub": "GitHub 源",
+    "sourceCnb": "CNB 源",
+    "sourceMirror": "Mirror 酱源",
+    "sourceCustom": "自建源",
+    "currentSource": "当前来源",
+    "downloadSlow": "{source}下载速度较慢"
   },
   "init": {
     "backend": {
@@ -62,13 +75,10 @@
       "exportLogsHint": "仍然无法解决？可将 debug 文件夹打包为 ZIP，发到 QQ 群帮助排查。",
       "internalErrorNotice": "这是程序内部的问题，重试也不会有帮助，请带上日志反馈给开发者",
       "joinGroup": "加群寻求帮助",
-      "mirrorRecommended": "推荐",
-      "mirrorTitle": "换一个源重试",
       "openLogFailed": "打开日志失败：{error}",
       "rebuildEnvironment": "重建运行环境",
       "restoreWorkspace": "恢复程序文件并重试",
       "restoringWorkspace": "正在恢复程序文件并准备运行环境...",
-      "retryOtherMirror": "换个下载源重试",
       "runDoctor": "检查运行环境",
       "runtimeCurrent": "Runtime {version} 已是线上最新版本，请重试或查看日志。",
       "runtimeRestarting": "Runtime 更新完成，正在从头重新初始化...",
@@ -90,7 +100,6 @@
     "step": {
       "failed": "{title}失败",
       "retry": "重试",
-      "retryWithMirror": "换个下载源重试",
       "skip": "跳过此步骤",
       "skipConsequence": "（程序可能无法正常运行）"
     },

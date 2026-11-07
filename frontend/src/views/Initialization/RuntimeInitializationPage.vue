@@ -27,7 +27,6 @@
       v-bind="failureProps"
       @action="handleFailureAction"
       @runtime-updated="handleRuntimeUpdated"
-      @update:selected-mirror="handleMirrorSelect"
       @skip="handleSkip"
     />
     <LaunchStatus
@@ -74,7 +73,6 @@ const {
   handleBackendRecoveryAction,
   handleBackendStatusChange,
   handleFailureAction,
-  handleMirrorSelect,
   handleRuntimeUpdated,
   handleSkip,
   handleLocalEnterApp,

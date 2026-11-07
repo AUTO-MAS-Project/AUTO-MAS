@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 import type { InstalledAppearance } from '../src/types/appearance'
-import type { ElectronAPI, RuntimeLaunchModeState } from '../src/types/electron'
+import type { ElectronAPI } from '../src/types/electron'
 import { expect, test } from './fixtures'
 
 const chooseOption = async (page: Page, select: Locator, label: string) => {
@@ -55,12 +55,9 @@ test.describe('@settings user preferences', () => {
       }
     }
 
-    for (const layout of [
-      { width: 1511, label: 'Single column' },
-      { width: 1920, label: 'Two columns' },
-    ]) {
+    // 列数由宽度决定：窄屏单列、宽屏两列，都检查问号提示。
+    for (const layout of [{ width: 1440 }, { width: 1920 }]) {
       await page.setViewportSize({ width: layout.width, height: 891 })
-      await chooseSegment(page.locator('[aria-label="Settings layout"]'), layout.label)
       await checkHint(page.locator('.startup-options-row .ui-row-label .help-icon'))
       const autoStart = page.getByRole('checkbox', { name: 'Start with the system', exact: true })
       const checked = await autoStart.isChecked()
@@ -94,71 +91,23 @@ test.describe('@settings user preferences', () => {
       await expect(autoStart).toBeChecked({ checked: loginEnabled })
       await app.evidence(`scheduled-wakeup-${enabled ? 'enabled' : 'disabled'}`)
       if (enabled) {
-        await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click()
+        await chooseSegment(page.locator('.theme-mode-control'), 'Dark')
         await expect(page.locator('html')).toHaveClass(/dark/)
         await app.evidence('scheduled-wakeup-dark')
-        await page.getByRole('button', { name: 'Switch to light mode', exact: true }).click()
+        await chooseSegment(page.locator('.theme-mode-control'), 'Light')
       }
     }
   })
 
-  test('restores the persisted Runtime choice and allows switching back to auto', async ({
+  test('advanced settings keeps developer tools without a backend mode selector', async ({
     app,
     page,
   }) => {
-    await page.addInitScript(() => {
-      const key = 'auto-mas.e2e.runtime-launch-mode'
-      const readState = (): RuntimeLaunchModeState => {
-        const persisted = localStorage.getItem(key) === 'auto' ? 'auto' : 'managed'
-        return {
-          persisted,
-          mode: persisted === 'auto' ? 'development' : 'managed',
-          source: persisted === 'auto' ? 'default' : 'setting',
-        }
-      }
-      let bridge: ElectronAPI | undefined
-      Object.defineProperty(window, 'electronAPI', {
-        configurable: true,
-        get: () => bridge,
-        set: (base: ElectronAPI) => {
-          bridge = {
-            ...base,
-            getRuntimeLaunchMode: async () => readState(),
-            setRuntimeLaunchMode: async mode => {
-              localStorage.setItem(key, mode)
-              return readState()
-            },
-          }
-        },
-      })
-    })
     await app.goto('/settings')
     await page.getByRole('tab', { name: 'Advanced', exact: true }).click()
-    const control = page.locator('.ant-segmented[aria-label="Backend launch mode"]')
-    await expect(control).toBeVisible()
-    await expect(control.getByRole('radio')).toHaveCount(2)
-    await expect(
-      control.getByRole('radio', { name: 'Supervised by Runtime (managed)', exact: true })
-    ).toBeChecked()
-    await expect(page.locator('.mode-effective')).toContainText('Supervised by Runtime (managed)')
-    await chooseSegment(control, 'Auto')
-    await expect
-      .poll(() => page.evaluate(() => localStorage.getItem('auto-mas.e2e.runtime-launch-mode')))
-      .toBe('auto')
-    await page.reload()
-    await page.getByRole('tab', { name: 'Advanced', exact: true }).click()
-    await expect(control.getByRole('radio', { name: 'Auto', exact: true })).toBeChecked()
-    await expect(page.locator('.mode-effective')).toContainText(
-      'Supervised by Runtime (development)'
-    )
-    await expect(page.locator('.mode-effective')).toContainText(
-      'Takes effect after restarting the app'
-    )
-    await chooseSegment(control, 'Supervised by Runtime (managed)')
-    await expect
-      .poll(() => page.evaluate(() => localStorage.getItem('auto-mas.e2e.runtime-launch-mode')))
-      .toBe('managed')
-    await app.evidence('runtime-launch-mode-restored')
+    await expect(page.getByRole('button', { name: 'Open DevTools', exact: true })).toBeVisible()
+    await expect(page.getByText('Backend launch mode', { exact: true })).toHaveCount(0)
+    await app.evidence('advanced-runtime-settings')
   })
 
   test('preserves appearance sidebar and title colors and restores the built-in theme', async ({
@@ -281,7 +230,7 @@ test.describe('@settings user preferences', () => {
     }
   })
 
-  test('preserves startup and appearance preferences with the shared header controls', async ({
+  test('preserves startup and appearance preferences through their settings', async ({
     app,
     page,
   }) => {
@@ -291,8 +240,8 @@ test.describe('@settings user preferences', () => {
     await app.goto('/settings')
     const originalMinimize = (await (await loaded).json()).data.UI.IfToTray === true
     const minimize = page.locator('[aria-label="When minimizing"]')
-    const toolbar = page.locator('.settings-page-toolbar')
-    const selector = page.locator('[aria-label="Settings layout"]')
+    const header = page.locator('.settings-shell-header')
+    const sider = page.locator('.app-sider')
     const theme = page.locator('.theme-mode-control')
     const originalTheme = await theme.locator('.ant-segmented-item-selected').innerText()
     const originalAccent = await page
@@ -309,11 +258,14 @@ test.describe('@settings user preferences', () => {
         expect((await response.json()).code).toBe(200)
       }
       await expect(theme.getByRole('radio', { name: 'Follow system', exact: true })).toBeChecked()
-      await expect(toolbar.locator('.settings-save-note')).toBeVisible()
+      await expect(sider).toHaveCSS('background-color', 'rgb(242, 242, 242)')
       await page.getByRole('button', { name: 'Purple', exact: true }).click()
-      await chooseSegment(selector, 'Two columns')
-      await toolbar.getByRole('button', { name: 'Switch to dark mode', exact: true }).click()
+      await expect(sider).toHaveCSS('background-color', 'rgb(242, 242, 242)')
+      await expect(sider).toHaveCSS('border-right-color', 'rgb(224, 224, 224)')
+      await chooseSegment(theme, 'Dark')
       await expect(page.locator('html')).toHaveClass(/dark/)
+      await expect(sider).toHaveCSS('background-color', 'rgb(20, 20, 20)')
+      await expect(sider).toHaveCSS('border-right-color', 'rgb(48, 48, 48)')
       await expect(theme.getByRole('radio', { name: 'Dark', exact: true })).toBeChecked()
       await expect(page.getByRole('button', { name: 'Purple', exact: true })).toHaveAttribute(
         'aria-pressed',
@@ -321,27 +273,20 @@ test.describe('@settings user preferences', () => {
       )
       for (const tab of ['Features', 'Notifications', 'Advanced', 'About']) {
         await page.getByRole('tab', { name: tab, exact: true }).click()
-        await expect(
-          toolbar.getByRole('button', { name: 'Switch to light mode', exact: true })
-        ).toBeVisible()
-        if (tab === 'About') await expect(selector).toHaveCount(0)
-        else
-          await expect(
-            selector.getByRole('radio', { name: 'Two columns', exact: true })
-          ).toBeChecked()
+        await expect(header.getByRole('button')).toHaveCount(0)
+        await expect(page.locator('html')).toHaveClass(/dark/)
       }
-      await toolbar.getByRole('button', { name: 'Switch to light mode', exact: true }).click()
-      await expect(page.locator('html')).not.toHaveClass(/dark/)
       await page.getByRole('tab', { name: 'Interface', exact: true }).click()
+      await chooseSegment(theme, 'Light')
+      await expect(page.locator('html')).not.toHaveClass(/dark/)
+      await expect(sider).toHaveCSS('background-color', 'rgb(242, 242, 242)')
       await expect(theme.getByRole('radio', { name: 'Light', exact: true })).toBeChecked()
       await page.setViewportSize({ width: 1040, height: 900 })
-      await expect(
-        toolbar.getByRole('button', { name: 'Switch to dark mode', exact: true })
-      ).toBeVisible()
-      await expect(page.getByRole('navigation', { name: 'Settings sections' })).toHaveCount(0)
+      await expect(header.getByRole('button')).toHaveCount(0)
+      // 目录显隐是持久化偏好，窄窗口不会把它自动收起
+      await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible()
       await page.reload()
       await expect(theme.getByRole('radio', { name: 'Light', exact: true })).toBeChecked()
-      await expect(selector.getByRole('radio', { name: 'Two columns', exact: true })).toBeChecked()
       await expect(page.locator('.settings-section-layout')).toHaveAttribute(
         'data-effective-layout',
         'single'
@@ -364,13 +309,12 @@ test.describe('@settings user preferences', () => {
         expect((await (await restored).json()).code).toBe(200)
       }
       await chooseSegment(theme, originalTheme)
-      await chooseSegment(selector, 'Single column')
       if (originalAccent)
         await page.getByRole('button', { name: originalAccent, exact: true }).click()
     }
   })
 
-  test('keeps section order, controls and layout preference across responsive changes', async ({
+  test('keeps section order and reflows columns by width without a layout switch', async ({
     app,
     page,
   }) => {
@@ -378,84 +322,139 @@ test.describe('@settings user preferences', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await app.goto('/settings')
     const layout = page.locator('.settings-section-layout')
-    const selector = page.locator('[aria-label="Settings layout"]')
     const navigation = page.getByRole('navigation', { name: 'Settings sections' })
     const pane = page.locator('.ant-tabs-tabpane-active')
     const headings = pane.locator('.form-section > .section-header > h3')
     const cards = pane.locator('.tab-content > .form-section')
+
+    // 布局开关已移除：只剩宽度决定列数。
+    await expect(page.locator('[aria-label="Settings layout"]')).toHaveCount(0)
+    await expect(page.locator('.settings-save-note')).toHaveCount(0)
+
+    await expect(navigation).toBeVisible()
+    await expect.poll(() => headings.count()).toBeGreaterThan(1)
+    const order = (await headings.allTextContents()).map(title => title.trim())
+    await expect(navigation.getByRole('button')).toHaveText(order)
+
+    // 宽屏：目录在右侧，卡片两列
+    await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
+    expect((await cards.nth(0).boundingBox())!.x).toBeLessThan(
+      (await cards.nth(1).boundingBox())!.x
+    )
+
+    // 目录跳转仍可用
+    const lastLink = navigation.getByRole('button').last()
+    await lastLink.click()
+    await expect(lastLink).toHaveAttribute('aria-current', 'location')
+    await expect
+      .poll(() => layout.locator('.ant-tabs-content-holder').evaluate(node => node.scrollTop))
+      .toBeGreaterThan(0)
+    await expect(headings.last()).toBeInViewport()
+
+    // 切到功能页签，确认顺序不变、未保存输入保留
+    await page.getByRole('tab', { name: 'Features', exact: true }).click()
+    const featureOrder = (await headings.allTextContents()).map(title => title.trim())
+    const draft = pane.locator('.number-input input').nth(1)
+    const draftElement = await draft.elementHandle()
+    const originalDraft = await draft.inputValue()
+    await draft.fill('4096')
+
+    // 窄屏：目录保留，卡片退回单列（目录不随宽度消失）
+    await page.setViewportSize({ width: 1040, height: 900 })
+    await expect(navigation).toBeVisible()
+    await expect(page.getByText('On this page', { exact: true })).toBeVisible()
+    await expect(layout).toHaveAttribute('data-effective-layout', 'single')
+    await expect(headings).toHaveText(featureOrder)
+    expect((await cards.nth(0).boundingBox())!.x).toBe((await cards.nth(1).boundingBox())!.x)
+    await expect(draft).toHaveValue('4096')
+    expect(await draftElement!.evaluate(node => node.isConnected)).toBe(true)
+    await draft.fill(originalDraft)
+
+    // 拉回宽屏：目录与两列自动恢复，无需任何开关操作
+    await page.setViewportSize({ width: 1920, height: 1080 })
+    await expect(navigation).toBeVisible()
+    await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
+
+    await page.getByRole('tab', { name: 'About', exact: true }).click()
+    await expect(navigation).toHaveCount(0)
+    await expect(page.locator('.settings-navigation-toggle')).toHaveCount(0)
+    await app.evidence('settings-layout-about')
+  })
+
+  test('keeps the section navigation under user control instead of window width', async ({
+    app,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await app.goto('/settings')
+    const layout = page.locator('.settings-section-layout')
+    const navigation = page.getByRole('navigation', { name: 'Settings sections' })
+    const panel = page.locator('.settings-navigation-panel')
+    const toggle = page.locator('.settings-navigation-toggle')
+    const restore = async () => {
+      await expect(toggle).toHaveAttribute('aria-busy', 'false')
+      if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+    }
+    await expect(navigation).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Hide section navigation' })).toBeVisible()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    const expanded = (await toggle.boundingBox())!
+    const links = (await navigation.boundingBox())!
+    expect(links.y - expanded.y - expanded.height).toBeGreaterThanOrEqual(0)
+    expect(links.y - expanded.y - expanded.height).toBeLessThanOrEqual(16)
+    await expect(page.locator('.settings-shell-header').getByRole('button')).toHaveCount(0)
+    await app.evidence('settings-navigation-expanded')
     try {
-      await expect(layout).toHaveAttribute('data-layout-mode', 'single')
-      await expect(layout).toHaveAttribute('data-effective-layout', 'single')
-      await expect(
-        selector.getByRole('radio', { name: 'Single column', exact: true })
-      ).toBeChecked()
-      await expect(navigation).toBeVisible()
-      await expect.poll(() => headings.count()).toBeGreaterThan(1)
-      const order = (await headings.allTextContents()).map(title => title.trim())
-      await expect(navigation.getByRole('button')).toHaveText(order)
-      expect((await cards.nth(0).boundingBox())!.x).toBe((await cards.nth(1).boundingBox())!.x)
-
-      const lastLink = navigation.getByRole('button').last()
-      await lastLink.click()
-      await expect(lastLink).toHaveAttribute('aria-current', 'location')
-      await expect
-        .poll(() => layout.locator('.ant-tabs-content-holder').evaluate(node => node.scrollTop))
-        .toBeGreaterThan(0)
-      await expect(headings.last()).toBeInViewport()
-
-      await page.getByRole('tab', { name: 'Features', exact: true }).click()
-      const featureOrder = (await headings.allTextContents()).map(title => title.trim())
-      // 录像存储上限由独立的保存按钮提交，适合验证切换布局时保留未保存的输入。
-      const draft = pane.locator('.number-input input').nth(1)
-      const draftElement = await draft.elementHandle()
-      const originalDraft = await draft.inputValue()
-      await draft.fill('4096')
-      await page.setViewportSize({ width: 1040, height: 900 })
-      await expect(navigation).toHaveCount(0)
-      await expect(page.getByText('On this page', { exact: true })).toHaveCount(0)
-      await expect(draft).toHaveValue('4096')
-      expect(await draftElement!.evaluate(node => node.isConnected)).toBe(true)
-
-      await page.setViewportSize({ width: 1920, height: 1080 })
-      await chooseSegment(selector, 'Two columns')
-      await expect(layout).toHaveAttribute('data-layout-mode', 'dual')
-      await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
-      await expect(navigation).toHaveCount(0)
-      await expect(headings).toHaveText(featureOrder)
-      expect((await cards.nth(0).boundingBox())!.x).toBeLessThan(
-        (await cards.nth(1).boundingBox())!.x
-      )
-      await expect(draft).toHaveValue('4096')
-      expect(await draftElement!.evaluate(node => node.isConnected)).toBe(true)
-      await draft.fill(originalDraft)
-
-      await page.setViewportSize({ width: 1040, height: 900 })
-      await expect(layout).toHaveAttribute('data-layout-mode', 'dual')
-      await expect(layout).toHaveAttribute('data-effective-layout', 'single')
-      await expect(navigation).toHaveCount(0)
-      await expect(page.getByText('On this page', { exact: true })).toHaveCount(0)
-      await expect(headings).toHaveText(featureOrder)
-      expect((await cards.nth(0).boundingBox())!.x).toBe((await cards.nth(1).boundingBox())!.x)
-
-      await page.setViewportSize({ width: 1920, height: 1080 })
-      await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
-      await page.reload()
-      await expect(selector.getByRole('radio', { name: 'Two columns', exact: true })).toBeChecked()
-      await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
-      for (const tab of ['Features', 'Notifications', 'Advanced']) {
-        await page.getByRole('tab', { name: tab, exact: true }).click()
-        await expect(
-          selector.getByRole('radio', { name: 'Two columns', exact: true })
-        ).toBeChecked()
-        await expect(navigation).toHaveCount(0)
+      // 缩放窗口只改列数，目录始终在
+      for (const width of [1600, 1280, 1040, 960]) {
+        await page.setViewportSize({ width, height: 900 })
+        await expect(navigation).toBeVisible()
       }
-      await page.getByRole('tab', { name: 'About', exact: true }).click()
-      await expect(selector).toHaveCount(0)
+      await expect(layout).toHaveAttribute('data-effective-layout', 'single')
+
+      // 关掉目录后，窄窗口不再有目录，宽窗口仍可两列
+      await page.setViewportSize({ width: 1920, height: 1080 })
+      await toggle.click()
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
       await expect(navigation).toHaveCount(0)
-      await app.evidence('settings-layout-about')
+      await expect(layout).toHaveAttribute('data-effective-layout', 'dual')
+      await expect(toggle).toBeFocused()
+      const collapsed = (await toggle.boundingBox())!
+      expect(collapsed.x).toBeCloseTo(expanded.x, 0)
+      expect(collapsed.y).toBeCloseTo(expanded.y, 0)
+      const content = (await layout.locator('.ant-tabs-content-holder').boundingBox())!
+      expect(content.x + content.width).toBeLessThanOrEqual(collapsed.x)
+      await app.evidence('settings-navigation-collapsed')
+      await page.setViewportSize({ width: 1040, height: 900 })
+      await expect(navigation).toHaveCount(0)
+      await expect(layout).toHaveAttribute('data-effective-layout', 'single')
+
+      // 偏好跨重载保留
+      await page.reload()
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(navigation).toHaveCount(0)
+      await page.setViewportSize({ width: 1920, height: 1080 })
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(navigation).toHaveCount(0)
+      await app.evidence('settings-navigation-hidden')
+
+      await restore()
+      await expect(navigation).toBeVisible()
+      await page.reload()
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+      await expect(navigation).toBeVisible()
+      await toggle.focus()
+      await page.keyboard.press('Enter')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(toggle).toHaveAttribute('aria-busy', 'false')
+      await page.keyboard.press('Enter')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+      await expect(navigation).toBeVisible()
+      await expect(toggle).toHaveAttribute('aria-busy', 'false')
+      await app.evidence('settings-navigation-restored')
     } finally {
-      await page.getByRole('tab', { name: 'Interface', exact: true }).click()
-      await chooseSegment(selector, 'Single column')
+      await restore()
     }
   })
 
