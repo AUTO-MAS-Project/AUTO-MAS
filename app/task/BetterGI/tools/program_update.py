@@ -255,7 +255,7 @@ async def run_installer(installer: Path, root: Path) -> None:
             ) from cleanup_error
         if isinstance(error, TimeoutError):
             raise script_install.InstallUnsafeError(
-                "BetterGI 官方安装已超时，已保留安装现场，请手动确认"
+                "BetterGI 官方安装器超时时尚未退出，现已结束；已保留安装现场，请手动确认"
             ) from error
         raise
     if code != 0:

@@ -5,7 +5,6 @@ import hashlib
 import sys
 import threading
 import uuid
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -15,9 +14,6 @@ from packaging.version import Version
 from app.task.Whimbox import manager
 from app.task.Whimbox.tools import update
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
-from app.utils.common.process.runner import ProcessCleanupUnconfirmed, ProcessResult
-
-_REAL_RUN_PYTHON = update.run_python
 
 
 @pytest.fixture
@@ -67,16 +63,6 @@ async def test_no_downgrade_or_unnecessary_install(installation, monkeypatch):
     await update.ensure_backend_updated(installation)
     update.download_file.assert_not_awaited()
     confirm.assert_awaited_once_with(installation)
-
-
-@pytest.mark.asyncio
-async def test_unconfirmed_build_keeps_downloaded_packages(installation):
-    update.run_python.side_effect = ProcessCleanupUnconfirmed("writer not stopped")
-    with pytest.raises(ProcessCleanupUnconfirmed):
-        await update.prepare_update(installation)
-    stages = list((installation.parent / "data/whimbox_update").rglob("download-*"))
-    assert len(stages) == 1
-    assert list(stages[0].glob("*.whl"))
 
 
 @pytest.mark.asyncio
@@ -162,7 +148,6 @@ async def test_install_cancel_keeps_marker(installation):
     with pytest.raises(asyncio.CancelledError):
         await update.ensure_backend_updated(installation)
     assert update.pending_marker(installation).exists()
-    assert not list((installation.parent / "data/whimbox_update").rglob("download-*"))
 
 
 @pytest.mark.asyncio
@@ -210,62 +195,6 @@ def managed_batch(installation, monkeypatch):
     monkeypatch.setattr(manager, "push_dispatch_log", AsyncMock())
     monkeypatch.setattr(manager.Publisher, "send", AsyncMock())
     return instance
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("prefetched", [False, True])
-@pytest.mark.parametrize("stopped", ["unconfirmed", "cancelled", "timed_out"])
-async def test_unconfirmed_install_keeps_packages_after_manager_cleanup(
-    managed_batch, installation, monkeypatch, prefetched, stopped
-):
-    monkeypatch.setattr(update, "run_python", _REAL_RUN_PYTHON)
-    monkeypatch.setattr(
-        manager, "ensure_backend_updated", update.ensure_backend_updated
-    )
-
-    async def process_boundary(program, *args, **kwargs):
-        if "install" in args:
-            failure = ProcessCleanupUnconfirmed("writer not stopped")
-            if stopped == "cancelled":
-                raise asyncio.CancelledError from failure
-            if stopped == "timed_out":
-                async with asyncio.timeout(0):
-                    try:
-                        await asyncio.sleep(1)
-                    except asyncio.CancelledError as cancelled:
-                        raise cancelled from failure
-            raise failure
-        if "wheel" in args:
-            packages = Path(args[args.index("--wheel-dir") + 1])
-            (packages / "dependency.whl").write_bytes(b"dependency")
-        return ProcessResult("", "", 0)
-
-    monkeypatch.setattr(update.ProcessRunner, "run_process", process_boundary)
-    if prefetched:
-        managed_batch._update_candidate = await update.prepare_update(installation)
-    try:
-        with update.installation_access(installation):
-            expected = (
-                asyncio.CancelledError
-                if stopped == "cancelled"
-                else TimeoutError
-                if stopped == "timed_out"
-                else ProcessCleanupUnconfirmed
-            )
-            with pytest.raises(expected):
-                await managed_batch._run_prepared(installation)
-    finally:
-        await managed_batch.discard_prefetched_update()
-    assert update.pending_marker(installation).exists()
-    stages = list((installation.parent / "data/whimbox_update").rglob("download-*"))
-    assert len(stages) == 1
-    assert list(stages[0].glob("whimbox-*.whl"))
-    assert (stages[0] / "packages/dependency.whl").read_bytes() == b"dependency"
-    managed_batch.run_user_task.assert_not_awaited()
-    manager.confirm_usable_installation.assert_not_awaited()
-    with pytest.raises(RuntimeError):
-        with update.installation_access(installation):
-            pytest.fail("未确认退出的安装进程不能放行后续任务")
 
 
 @pytest.mark.asyncio

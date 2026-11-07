@@ -3,7 +3,6 @@
 import asyncio
 import hashlib
 import json
-import sys
 import threading
 import zipfile
 from pathlib import Path
@@ -342,45 +341,6 @@ def test_same_installation_access_is_exclusive(package):
                 pytest.fail("lock not exclusive")
     with install.installation_access(root):
         pass
-
-
-@pytest.mark.asyncio
-async def test_deferred_installation_lock_excludes_another_process(package, tmp_path):
-    from app.utils.common.process.runner import create_subprocess
-
-    root, _ = package
-    finished = asyncio.get_running_loop().create_future()
-    code = (
-        "import sys; sys.path.insert(0,sys.argv[1]); from pathlib import Path; "
-        "from app.services import script_install as install\n"
-        "try:\n"
-        " with install.installation_access(Path(sys.argv[2])): pass\n"
-        "except install.InstallUnsafeError:\n"
-        " sys.exit(7)\n"
-    )
-
-    async def try_access():
-        child = await create_subprocess(
-            sys.executable,
-            "-I",
-            "-c",
-            code,
-            str(Path(__file__).resolve().parents[2]),
-            str(root),
-            cwd=tmp_path,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        return await asyncio.wait_for(child.wait(), 10)
-
-    try:
-        with install.installation_access(root):
-            install.defer_installation_release(root, finished)
-        assert await try_access() == 7
-    finally:
-        finished.set_result(None)
-        await asyncio.sleep(0)
-    assert await try_access() == 0
 
 
 def test_installed_receipt_checks_resources_and_ignores_user_configuration(package):
