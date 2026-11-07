@@ -18,7 +18,13 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from app.utils import update_files
+from app.core import Config
+from app.utils import get_logger, update_files
+
+logger = get_logger("脚本安装")
+
+# 只迁移安装器长期保存的记录；未完成事务和用户资源备份仍由原工作区恢复。
+_INSTALL_RECORDS = ("installed.json", "program-identity.json", "baah-version.json")
 
 
 class InstallUnsafeError(RuntimeError):
@@ -30,7 +36,21 @@ def _key(root: Path) -> str:
 
 
 def workspace(root: Path) -> Path:
+    """与安装同盘的目录切换、恢复和资源备份工作区。"""
     return root.parent / f".mas-update-{_key(root)[:24]}"
+
+
+def record_directory(root: Path) -> Path:
+    """安装记录归 MAS 数据目录，不随脚本安装目录切换。"""
+    return Config.data_path / "script_update" / _key(root)[:24]
+
+
+def record_path(root: Path, filename: str) -> Path:
+    """只读兼容旧位置，真正迁移留到持安装锁的恢复阶段。"""
+    path = record_directory(root) / filename
+    if path.exists():
+        return path
+    return workspace(root) / filename
 
 
 @contextmanager
@@ -222,9 +242,61 @@ def _write_state(
     temporary.replace(directory / filename)
 
 
+def _write_receipt(root: Path, files: dict[str, str]) -> None:
+    directory = record_directory(root)
+    directory.mkdir(parents=True, exist_ok=True)
+    _reject_link(directory)
+    _write_state(directory, {"files": files}, "installed.json")
+
+
+def _remove_empty_workspace(root: Path) -> None:
+    directory = workspace(root)
+    if directory.is_dir() and not any(directory.iterdir()):
+        directory.rmdir()
+
+
+def _migrate_records(root: Path, cancelled: threading.Event) -> None:
+    """调用方持安装锁；发布新记录成功后才移除旧文件，支持两目录跨盘。"""
+    legacy = workspace(root)
+    if not legacy.exists():
+        return
+    _reject_link(legacy)
+    for filename in _INSTALL_RECORDS:
+        _check_cancel(cancelled)
+        source = legacy / filename
+        if not source.exists():
+            continue
+        _reject_link(source)
+        content = source.read_bytes()
+        directory = record_directory(root)
+        destination = directory / filename
+        if destination.exists():
+            _reject_link(destination)
+            if destination.read_bytes() != content:
+                logger.warning(f"新旧安装记录不同，已保留旧记录: {source}")
+                continue
+        else:
+            directory.mkdir(parents=True, exist_ok=True)
+            _reject_link(directory)
+            handle = tempfile.NamedTemporaryFile(
+                dir=directory, prefix=f".{filename}-", suffix=".tmp", delete=False
+            )
+            temporary = Path(handle.name)
+            try:
+                with handle:
+                    handle.write(content)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                temporary.replace(destination)
+            finally:
+                temporary.unlink(missing_ok=True)
+        source.unlink()
+    _remove_empty_workspace(root)
+
+
 def verify_installed_files(root: Path, cancelled: threading.Event) -> bool:
     """校验上次经可信包安装的分发文件；配置与新增运行数据不参与比较。"""
-    receipt = workspace(root) / "installed.json"
+    receipt = record_path(root, "installed.json")
     if not receipt.exists():
         return False
     try:
@@ -254,6 +326,7 @@ def recover_install(
     if not journal.exists():
         if (directory / "previous").exists():
             raise InstallUnsafeError("安装备份存在但恢复记录缺失，请保留现场并手动恢复")
+        _migrate_records(root, cancelled)
         return
     assert_idle()
     _reject_link(directory)
@@ -285,7 +358,7 @@ def recover_install(
                     raise InstallUnsafeError("原安装文件清单无效，不能自动清理备份")
                 remaining = tree_hashes(previous, cancelled)
                 if state.get("phase") == "installed":
-                    receipt = directory / "installed.json"
+                    receipt = record_path(root, "installed.json")
                     _reject_link(receipt)
                     recorded = json.loads(receipt.read_text(encoding="utf-8"))
                     if not isinstance(recorded, dict) or recorded.get(
@@ -306,9 +379,7 @@ def recover_install(
                         raise InstallUnsafeError(
                             "原安装备份发生外部修改，已保留现场，不能自动删除备份"
                         )
-                    _write_state(
-                        directory, {"files": state["package_files"]}, "installed.json"
-                    )
+                    _write_receipt(root, state["package_files"])
                     _write_state(directory, {**state, "phase": "installed"})
                 shutil.rmtree(previous)
             else:
@@ -320,8 +391,9 @@ def recover_install(
         elif not ready.exists() and tree_hashes(root, cancelled) != state["files"]:
             raise InstallUnsafeError("更新恢复校验未通过，不能启动")
         elif not ready.exists():
-            _write_state(directory, {"files": state["package_files"]}, "installed.json")
+            _write_receipt(root, state["package_files"])
         journal.unlink()
+        _migrate_records(root, cancelled)
     except InstallUnsafeError:
         raise
     except Exception as error:
@@ -362,7 +434,7 @@ def install_package(
     if shutil.disk_usage(directory).free < required + 256 * 1024**2:
         raise OSError("磁盘空间不足，无法保留原安装并准备更新")
     shutil.copytree(root, ready)
-    receipt = directory / "installed.json"
+    receipt = record_path(root, "installed.json")
     if receipt.exists():
         old_files = json.loads(receipt.read_text(encoding="utf-8"))["files"]
         for name, digest in old_files.items():
@@ -425,7 +497,7 @@ def install_package(
             raise InstallUnsafeError(
                 "切换期间原安装备份被外部修改，已保留备份，请手动处理"
             )
-        _write_state(directory, {"files": package_files}, "installed.json")
+        _write_receipt(root, package_files)
         # 从此阶段起，新安装与收据均已验证；旧备份清理可安全续做。
         _write_state(directory, {**transaction_state, "phase": "installed"})
         shutil.rmtree(previous)
@@ -435,6 +507,7 @@ def install_package(
             "安装切换未完成确认，请重试恢复；原安装备份已保留"
         ) from error
     shutil.rmtree(package)
+    _migrate_records(root, threading.Event())
 
 
 def read_pe_architecture(executable: Path) -> str:

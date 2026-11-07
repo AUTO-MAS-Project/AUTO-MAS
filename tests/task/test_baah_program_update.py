@@ -1,11 +1,12 @@
 """BAAH 下载/安装分离及配置保护；网络与真实程序进程在边界隔离。"""
 
 import hashlib
-import uuid
-from contextlib import ExitStack
 import json
 import shutil
+import threading
+import uuid
 import zipfile
+from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -13,9 +14,8 @@ import pytest
 from packaging.version import Version
 
 from app.services import script_install
-from app.task.BAAH.tools import program_update as update
 from app.task.BAAH import manager
-
+from app.task.BAAH.tools import program_update as update
 
 REAL_ASSERT_IDLE = update.assert_idle
 
@@ -30,7 +30,7 @@ def pe(extra=b""):
 
 
 @pytest.fixture
-def installation(tmp_path, monkeypatch):
+def installation(tmp_path, monkeypatch, isolated_app_paths):
     root = tmp_path / "BAAH"
     (root / "DATA/CONFIGS").mkdir(parents=True)
     (root / "DATA/CONFIGS/software_config.json").write_text(
@@ -94,8 +94,44 @@ async def test_prepare_can_run_while_installation_is_reserved_then_apply_preserv
     )
     assert (root / "BAAH_CONFIGS/account.json").read_text() == '{"opaque": true}'
     assert update.read_version(root) == Version("2.5.7")
+    assert (script_install.record_directory(root) / "installed.json").is_file()
+    assert (script_install.record_directory(root) / "baah-version.json").is_file()
+    assert not script_install.workspace(root).exists()
     await update.confirm_current_install(root)
     assert await update.prepare_update(root, config) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("damaged", [False, True])
+async def test_legacy_records_keep_version_and_integrity_checks(installation, damaged):
+    root, config, _, _ = installation
+    prepared = await update.prepare_update(root, config)
+    await update.apply_update(root, prepared)
+    directory = script_install.record_directory(root)
+    legacy = script_install.workspace(root)
+    legacy.mkdir()
+    for name in ("installed.json", "baah-version.json"):
+        (directory / name).replace(legacy / name)
+    if damaged:
+        (root / "DATA/icons/icon.png").write_bytes(b"damaged resource")
+    update.download_script_package.reset_mock()
+
+    candidate = await update.prepare_update(root, config)
+    assert (candidate is not None) is damaged
+    assert update.download_script_package.await_count == int(damaged)
+    assert (legacy / "installed.json").is_file()
+    assert (legacy / "baah-version.json").is_file()
+    assert not list(directory.iterdir())
+
+    with script_install.installation_access(root):
+        script_install.recover_install(root, lambda: None, threading.Event())
+    assert not legacy.exists()
+    assert update.read_version(root) == Version("2.5.7")
+    if damaged:
+        with pytest.raises(script_install.InstallUnsafeError):
+            await update.confirm_current_install(root)
+    else:
+        await update.confirm_current_install(root)
 
 
 @pytest.mark.asyncio
@@ -202,6 +238,7 @@ async def test_install_lock_conflict_never_marks_unrun_task_complete(
 @pytest.mark.asyncio
 async def test_second_baah_config_waits_for_same_directory(installation, monkeypatch):
     import asyncio
+
     from app.utils import update_files
 
     root, config, _, _ = installation
