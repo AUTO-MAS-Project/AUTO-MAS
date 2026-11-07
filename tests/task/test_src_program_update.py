@@ -148,6 +148,33 @@ async def test_cancelled_write_waits_until_process_finishes(tmp_path, monkeypatc
 async def test_stalled_write_ends_task_but_keeps_installation_reserved(
     tmp_path, monkeypatch
 ):
+    from app.models.config import SrcConfig
+    from app.task.SRC.tools.config import is_src_config_available
+    from app.task.SRC.tools.restore_service import RESTORE_POOLS
+    from app.utils.common.config.restore import RestoreContext, build_restore_service
+    from tests.config_support import activate_config
+
+    root = tmp_path / "SRC"
+    config_path = root / "config"
+    config_path.mkdir(parents=True)
+    work = tmp_path / "MAS"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    (config_path / "deploy.yaml").write_text("AutoUpdate: true\n")
+    (config_path / "src.json").write_text('{"state": "backup"}')
+    config = await activate_config(
+        SrcConfig.model_validate({"Info": {"Path": str(root)}})
+    )
+    assert config.Info.Path == root
+    assert is_src_config_available(config_path)
+    service = build_restore_service(
+        RestoreContext(None, config, "src-script", "Default"), RESTORE_POOLS
+    )
+    backup = await service.ensure("native")
+    assert backup["created"]
+    (config_path / "deploy.yaml").write_text("AutoUpdate: false\n")
+    (config_path / "src.json").write_text('{"state": "installing"}')
+    before_restore = {path.name: path.read_bytes() for path in config_path.iterdir()}
     finished = asyncio.Event()
 
     async def communicate():
@@ -164,9 +191,9 @@ async def test_stalled_write_ends_task_but_keeps_installation_reserved(
     )
     operation = None
     try:
-        with script_install.installation_access(tmp_path):
+        with script_install.installation_access(root):
             operation = asyncio.create_task(
-                update.command("installer", cwd=tmp_path, writing=True)
+                update.command("installer", cwd=root, writing=True)
             )
             await asyncio.sleep(0)
             await asyncio.sleep(0)
@@ -176,18 +203,26 @@ async def test_stalled_write_ends_task_but_keeps_installation_reserved(
             with pytest.raises(script_install.InstallUnsafeError):
                 await operation
             with pytest.raises(script_install.InstallUnsafeError):
-                update.recover_deploy(tmp_path)
+                update.recover_deploy(root)
         with pytest.raises(script_install.InstallUnsafeError):
-            with script_install.installation_access(tmp_path):
+            with script_install.installation_access(root):
                 pass
+        with pytest.raises(script_install.InstallUnsafeError):
+            await service.restore("native", backup["time"])
+        assert before_restore == {
+            path.name: path.read_bytes() for path in config_path.iterdir()
+        }
     finally:
         finished.set()
         if operation is not None:
             await asyncio.gather(operation, return_exceptions=True)
         for _ in range(4):
             await asyncio.sleep(0)
-    with script_install.installation_access(tmp_path):
+    with script_install.installation_access(root):
         pass
+    await service.restore("native", backup["time"])
+    assert (config_path / "deploy.yaml").read_text() == "AutoUpdate: true\n"
+    assert (config_path / "src.json").read_text() == '{"state": "backup"}'
 
 
 def test_cached_git_objects_windows_readonly_cleanup(tmp_path):
