@@ -76,7 +76,7 @@ const hintText = computed(() =>
   text-align: left;
   border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius-lg);
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
@@ -107,7 +107,7 @@ const hintText = computed(() =>
   width: 28px;
   height: 28px;
   flex: 0 0 28px;
-  border-radius: 7px;
+  border-radius: var(--ant-border-radius-sm);
   display: grid;
   place-items: center;
   font-size: 16px;
@@ -118,7 +118,7 @@ const hintText = computed(() =>
   width: 26px;
   height: 26px;
   flex: 0 0 26px;
-  border-radius: 7px;
+  border-radius: var(--ant-border-radius-sm);
   font-size: 15px;
 }
 
@@ -189,7 +189,7 @@ const hintText = computed(() =>
   gap: 10px;
   border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius-lg);
   padding: 8px 12px;
   min-height: 44px;
   cursor: pointer;

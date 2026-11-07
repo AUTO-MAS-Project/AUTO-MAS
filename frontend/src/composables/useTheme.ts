@@ -159,6 +159,7 @@ const restorePersistedThemeSnapshot = () => {
 // 更新CSS变量
 const updateCSSVariables = () => {
   const root = document.documentElement
+  root.classList.toggle('appearance-custom', Boolean(activeAppearance.value))
   const cursorUrls = activeAppearance.value?.cursorUrls
   const cursors = activeAppearance.value?.cursors
   if (cursors && Object.keys(cursors).length > 0) {
@@ -263,6 +264,9 @@ const updateCSSVariables = () => {
   root.style.setProperty('--ant-box-shadow-tertiary', antTokens.boxShadowTertiary)
   root.style.setProperty('--ant-color-border', antTokens.colorBorder)
   root.style.setProperty('--ant-color-border-secondary', antTokens.colorBorderSecondary)
+  root.style.setProperty('--ant-border-radius', `${antTokens.borderRadius}px`)
+  root.style.setProperty('--ant-border-radius-sm', `${antTokens.borderRadiusSM}px`)
+  root.style.setProperty('--ant-border-radius-lg', `${antTokens.borderRadiusLG}px`)
   root.style.setProperty('--ant-color-bg-container-disabled', antTokens.colorBgContainerDisabled)
   root.style.setProperty('--ant-color-bg-mask', antTokens.colorBgMask)
   root.style.setProperty('--ant-color-split', antTokens.colorSplit)
