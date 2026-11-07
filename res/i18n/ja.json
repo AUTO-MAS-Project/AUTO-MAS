@@ -4493,7 +4493,7 @@
   "core.setting.others.sourceSection": "更新元",
   "core.setting.others.sourceGithubDesc": "公式リリース",
   "core.setting.others.sourceMirrorDesc": "CDN で高速化",
-  "core.setting.others.sourceAutoSiteDesc": "自前ミラー",
+  "core.setting.others.sourceAutoSiteDesc": "AUTO-MASプロジェクトチーム提供",
   "core.setting.others.sourceCnbDesc": "cnb.cool ミラー",
   "core.setting.others.githubMirrorAutoShort": "自動",
   "core.setting.others.githubMirrorOffShort": "オフ",
