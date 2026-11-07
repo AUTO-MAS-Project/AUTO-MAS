@@ -10,43 +10,13 @@
       </span>
     </template>
 
-    <a-radio-group
-      :value="modelValue"
+    <ConfigModeOptions
+      :model-value="modelValue"
       :disabled="disabled || saving"
-      class="config-mode-options"
-      :style="{ gridTemplateColumns: `repeat(${Math.min(options.length, 3)}, minmax(0, 1fr))` }"
-      :aria-label="t('core.edit.configurationManagement')"
+      :options="sourceOptions"
+      :label="t('core.edit.configurationManagement')"
       @change="handleChange"
-    >
-      <a-tooltip
-        v-for="option in options"
-        :key="String(option.value)"
-        :title="option.disabled ? option.disabledReason : undefined"
-      >
-        <label
-          :class="[
-            'config-mode-option',
-            { selected: modelValue === option.value, disabled: isOptionDisabled(option) },
-          ]"
-          :aria-disabled="option.disabled || undefined"
-        >
-          <a-radio
-            :value="option.value"
-            class="config-mode-radio"
-            :disabled="isOptionDisabled(option)"
-          />
-          <span class="config-mode-icon">
-            <DatabaseOutlined v-if="option.icon === 'database'" />
-            <SettingOutlined v-else-if="option.icon === 'setting'" />
-            <FileTextOutlined v-else />
-          </span>
-          <span class="config-mode-copy">
-            <span class="config-mode-title">{{ option.title }}</span>
-            <span class="config-mode-description">{{ option.description }}</span>
-          </span>
-        </label>
-      </a-tooltip>
-    </a-radio-group>
+    />
 
     <!-- 调用方显式传空串表示卡片描述已够用、不挂来源提示（HSR）；不传仍用默认文案 -->
     <a-alert
@@ -75,34 +45,13 @@
           </span>
         </span>
       </template>
-      <a-radio-group
-        :value="quickConfig"
+      <ConfigModeOptions
+        :model-value="quickConfig"
         :disabled="overlayDisabled"
-        class="config-mode-options"
-        :style="{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }"
-        :aria-label="t('core.edit.enableQuickConfiguration')"
+        :options="overlayOptions"
+        :label="t('core.edit.enableQuickConfiguration')"
         @change="handleOverlayChange"
-      >
-        <label
-          v-for="option in overlayOptions"
-          :key="String(option.value)"
-          :class="[
-            'config-mode-option',
-            { selected: quickConfig === option.value, disabled: overlayDisabled },
-          ]"
-          :aria-disabled="overlayDisabled || undefined"
-        >
-          <a-radio :value="option.value" class="config-mode-radio" :disabled="overlayDisabled" />
-          <span class="config-mode-icon">
-            <SettingOutlined v-if="option.icon === 'setting'" />
-            <FileTextOutlined v-else />
-          </span>
-          <span class="config-mode-copy">
-            <span class="config-mode-title">{{ option.title }}</span>
-            <span class="config-mode-description">{{ option.description }}</span>
-          </span>
-        </label>
-      </a-radio-group>
+      />
     </a-form-item>
 
     <!--
@@ -122,28 +71,13 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
-import {
-  DatabaseOutlined,
-  FileTextOutlined,
-  LoadingOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { LoadingOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { RadioChangeEvent } from 'ant-design-vue/es/radio/interface'
 import { composeConfigSemantics } from './configSemantics'
+import ConfigModeOptions from './ConfigModeOptions.vue'
+import type { ConfigModeOption } from './configModeOptions'
 
 const { t } = useI18n()
-
-type ConfigModeOption = {
-  value: boolean | string
-  title: string
-  description: string
-  icon?: 'database' | 'file' | 'setting'
-  /** 该选项不可选（如该专项运行时不存在脚本级共享配置）：置灰且不可勾选 */
-  disabled?: boolean
-  /** 不可选原因（悬停该选项时的提示文案） */
-  disabledReason?: string
-}
 
 const props = withDefaults(
   defineProps<{
@@ -201,21 +135,35 @@ const defaultOptions = computed<ConfigModeOption[]>(() => [
 const options = computed(() => props.options ?? defaultOptions.value)
 const alertMessage = computed(() => props.alertMessage ?? t('core.edit.configSourceHint'))
 
-/** 整组禁用（页面加载/保存中）或该选项声明 disabled 时，选项置灰不可勾选 */
-const isOptionDisabled = (option: ConfigModeOption): boolean =>
-  props.disabled === true || props.saving === true || option.disabled === true
+const sourceOptions = computed(() => {
+  const independent = t('core.edit.configModeSummaryIndependent')
+  const native = t('core.edit.configModeSummaryNative')
+  const summaries: Record<string, string> = {
+    shared: t('core.edit.configModeSummaryShared'),
+    independent,
+    native,
+    true: independent,
+    false: native,
+  }
+  return options.value.map(option => ({
+    ...option,
+    summary: option.summary ?? summaries[String(option.value)],
+  }))
+})
 
 /** overlay 的两态卡片，与 base 的三态卡片同构（同一套样式类） */
 const overlayOptions = computed(() => [
   {
     value: true,
     title: t('core.edit.overlayConfigEnabled'),
+    summary: t('core.edit.configModeSummaryOverlayEnabled'),
     description: t('core.edit.overlayConfigEnabledDesc'),
     icon: 'setting' as const,
   },
   {
     value: false,
     title: t('core.edit.overlayConfigDisabled'),
+    summary: t('core.edit.configModeSummaryOverlayDisabled'),
     description: t('core.edit.overlayConfigDisabledDesc'),
     icon: 'file' as const,
   },
@@ -253,6 +201,7 @@ const handleOverlayChange = (event: RadioChangeEvent) => {
 
 .config-mode-label {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   font-weight: 600;
@@ -271,88 +220,6 @@ const handleOverlayChange = (event: RadioChangeEvent) => {
   color: var(--ant-color-text-secondary);
   font-size: 12px;
   font-weight: 400;
-}
-
-.config-mode-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  width: 100%;
-}
-
-.config-mode-option {
-  display: grid;
-  grid-template-columns: auto 32px minmax(0, 1fr);
-  align-items: start;
-  gap: 12px;
-  min-width: 0;
-  min-height: 96px;
-  padding: 16px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
-  cursor: pointer;
-  transition:
-    border-color 0.2s ease,
-    background 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.config-mode-option:hover:not(.disabled) {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.config-mode-option.selected {
-  border-color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-  box-shadow: 0 0 0 1px var(--ant-color-primary);
-}
-
-.config-mode-option.disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.config-mode-radio {
-  margin-top: 5px;
-}
-
-.config-mode-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  background: var(--ant-color-bg-layout);
-  color: var(--ant-color-text-secondary);
-  font-size: 17px;
-}
-
-.config-mode-option.selected .config-mode-icon {
-  color: var(--ant-color-primary);
-}
-
-.config-mode-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.config-mode-title {
-  color: var(--ant-color-text);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.5;
-}
-
-.config-mode-description {
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
-  /* 描述文案可能含 \n 换行（如 ZZZ-OD 原生来源的约束说明），按原文换行渲染 */
-  white-space: pre-line;
 }
 
 .config-mode-alert {
@@ -412,11 +279,5 @@ const handleOverlayChange = (event: RadioChangeEvent) => {
   color: var(--ant-color-text-secondary);
   font-size: 13px;
   line-height: 1.5;
-}
-
-@media (max-width: 760px) {
-  .config-mode-options {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

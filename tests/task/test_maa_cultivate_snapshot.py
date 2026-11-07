@@ -5,11 +5,20 @@ import gzip
 import json
 import time
 from copy import deepcopy
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+import pytest_asyncio
+from fastapi import FastAPI
 
-from app.task.MAA.tools.cultivate import yituliu
+from app.config import ConfigCollection
+from app.models.config import MaaConfig, MaaUserConfig
+from app.task.MAA import api as maa_api
+from app.task.MAA import api_service
+from app.task.MAA.tools.cultivate import skland, yituliu
+from app.tools.common.community.providers import skland as skland_provider
 
 SNAPSHOT_URL = (
     "https://data.auto-mas.top/api/v1/files/auto-mas/Client/"
@@ -246,6 +255,238 @@ async def test_cache_write_failure_keeps_download_usable(
     catalog = await yituliu.load_operator_catalog(tmp_path)
     assert catalog == snapshot["operators"]
     assert requests == [SNAPSHOT_URL, SNAPSHOT_URL]
+
+
+@pytest_asyncio.fixture
+async def refresh_host(monkeypatch, tmp_path, snapshot, network):
+    config = SimpleNamespace(
+        ScriptConfig=ConfigCollection.build([MaaConfig]),
+        config_path=tmp_path,
+        proxy=None,
+    )
+    await config.ScriptConfig.activate()
+    script_id = config.ScriptConfig.add(MaaConfig)
+    await config.ScriptConfig.commit()
+    script = config.ScriptConfig[script_id]
+    user_id = script.UserData.add(
+        MaaUserConfig,
+        payload={
+            "Task": {
+                "CultivateSklandAccount": "account",
+                "CultivateSklandUid": "role",
+            }
+        },
+    )
+    await script.UserData.commit()
+    monkeypatch.setattr(api_service, "Config", config)
+    credential = {"raw": json.dumps({"cred": "test", "token": "test"})}
+
+    async def load_credential(_account_uid):
+        return credential["raw"]
+
+    async def save_credential(_account_uid, raw):
+        credential["raw"] = raw
+
+    monkeypatch.setattr(
+        api_service,
+        "_cultivate_skland_callbacks",
+        lambda: (load_credential, save_credential),
+    )
+    state = SimpleNamespace(level=1, failed=False, player_requests=[])
+
+    def respond(request):
+        if request.method == "HEAD":
+            return httpx.Response(200)
+        if request.url.path == "/web/v1/auth/refresh":
+            return httpx.Response(200, json={"code": 0, "data": {"token": "test"}})
+        assert request.url.path == "/api/v1/game/player/info"
+        state.player_requests.append(request.url.params["uid"])
+        if state.failed == "payload":
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {"chars": [{"charId": "operator", "skills": 7}]},
+                },
+            )
+        if state.failed:
+            return httpx.Response(503, json={"code": 503})
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "chars": [
+                        {"charId": "operator", "evolvePhase": 0, "level": state.level}
+                    ]
+                },
+            },
+        )
+
+    client_type = httpx.AsyncClient
+    monkeypatch.setattr(
+        skland_provider,
+        "create_skland_client",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(respond)),
+    )
+    monkeypatch.setattr(
+        skland_provider, "get_cached_device_id", AsyncMock(return_value="device")
+    )
+    monkeypatch.setattr(skland_provider, "_server_clock", None)
+    network(compressed(snapshot))
+    skland.clear_skland_progression_cache()
+    app = FastAPI()
+    app.include_router(maa_api.router)
+    try:
+        async with client_type(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            yield SimpleNamespace(
+                client=client,
+                config=config,
+                script=script,
+                user=script.UserData[user_id],
+                state=state,
+                load_credential=load_credential,
+                save_credential=save_credential,
+            )
+    finally:
+        skland.clear_skland_progression_cache()
+
+
+@pytest.mark.asyncio
+async def test_refresh_endpoint_updates_cached_progression_and_deduplicates_bindings(
+    refresh_host,
+):
+    host = refresh_host
+    script_id, user_id = str(host.script.uid), str(host.user.uid)
+    previous = await api_service.get_cultivate_skland_progression(script_id, user_id)
+    assert previous[0]["operator"].level == 1
+    host.state.level = 50
+    assert (
+        await api_service.get_cultivate_skland_progression(script_id, user_id)
+        == previous
+    )
+    host.script.UserData.add(
+        MaaUserConfig,
+        payload={
+            "Task": {"CultivateSklandAccount": "account", "CultivateSklandUid": "role"}
+        },
+    )
+    await host.script.UserData.commit()
+    response = await host.client.post(
+        "/maa/cultivate/refresh", json={"scriptId": script_id}
+    )
+    assert response.json()["code"] == 200, response.json()
+    refreshed = await api_service.get_cultivate_skland_progression(script_id, user_id)
+    assert refreshed[0]["operator"].level == 50
+    assert host.state.player_requests == ["role", "role"]
+    assert (
+        yituliu.read_snapshot(host.config.config_path)["operators"][0]["label"]
+        == "Published operator"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("previous_age", "failure"),
+    [(0, True), (301, True), (None, True), (301, "payload")],
+)
+async def test_refresh_failure_preserves_old_progression_but_execution_requires_fresh(
+    refresh_host, previous_age, failure
+):
+    host = refresh_host
+    script_id, user_id = str(host.script.uid), str(host.user.uid)
+    previous = None
+    if previous_age is not None:
+        previous = await skland.fetch_skland_progression(
+            skland.SklandAccountRef(account_uid="account", game_uid="role"),
+            load_credential=host.load_credential,
+            save_credential=host.save_credential,
+            now=time.time() - previous_age,
+        )
+    host.state.failed = failure
+    response = await host.client.post(
+        "/maa/cultivate/refresh", json={"scriptId": script_id}
+    )
+    assert response.json()["code"] == 200, response.json()
+    assert (
+        await api_service.get_cultivate_skland_progression(script_id, user_id)
+        == previous
+    )
+    host.state.failed = False
+    host.state.level = 50
+    response = await host.client.post(
+        "/maa/cultivate/refresh", json={"scriptId": script_id}
+    )
+    assert response.json()["code"] == 200, response.json()
+    refreshed = await api_service.get_cultivate_skland_progression(script_id, user_id)
+    assert refreshed[0]["operator"].level == 50
+    host.state.failed = True
+    assert (
+        await api_service.get_cultivate_skland_progression(
+            script_id, user_id, force=True
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_refresh_without_skland_binding_only_updates_shared_data(refresh_host):
+    host = refresh_host
+    host.user.Task.CultivateSklandUid = ""
+    await host.user.commit()
+    host.state.failed = True
+    response = await host.client.post(
+        "/maa/cultivate/refresh", json={"scriptId": str(host.script.uid)}
+    )
+    assert response.json()["code"] == 200, response.json()
+    assert host.state.player_requests == []
+    assert yituliu.read_snapshot(host.config.config_path) is not None
+
+
+@pytest.mark.asyncio
+async def test_slow_batch_refresh_keeps_old_progression_for_preview_reads(
+    refresh_host, monkeypatch
+):
+    host = refresh_host
+    second_id = host.script.UserData.add(
+        MaaUserConfig,
+        payload={
+            "Task": {
+                "CultivateSklandAccount": "account",
+                "CultivateSklandUid": "second",
+            }
+        },
+    )
+    await host.script.UserData.commit()
+    script_id = str(host.script.uid)
+    user_ids = [str(host.user.uid), str(second_id)]
+    previous = [
+        await api_service.get_cultivate_skland_progression(script_id, user_id)
+        for user_id in user_ids
+    ]
+    clock = SimpleNamespace(now=time.time())
+    monkeypatch.setattr(skland.time, "time", lambda: clock.now)
+
+    async def slow_credential(account_uid):
+        clock.now += 61
+        return await host.load_credential(account_uid)
+
+    monkeypatch.setattr(
+        api_service,
+        "_cultivate_skland_callbacks",
+        lambda: (slow_credential, host.save_credential),
+    )
+    host.state.failed = True
+    response = await host.client.post(
+        "/maa/cultivate/refresh", json={"scriptId": script_id}
+    )
+    assert response.json()["code"] == 200, response.json()
+    assert [
+        await api_service.get_cultivate_skland_progression(script_id, user_id)
+        for user_id in user_ids
+    ] == previous
 
 
 @pytest.mark.asyncio

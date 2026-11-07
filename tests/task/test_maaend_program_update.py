@@ -33,7 +33,7 @@ def pe(machine=0x8664):
 
 
 @pytest.fixture
-def installation(tmp_path, monkeypatch):
+def installation(tmp_path, monkeypatch, isolated_app_paths):
     monkeypatch.chdir(tmp_path)
     root = tmp_path / "MaaEnd"
     root.mkdir()
@@ -122,6 +122,77 @@ async def test_official_package_installs_and_preserves_native_interface(installa
         json.loads((root / "interface.json").read_bytes())["mirrorchyan_rid"]
         == "MaaEnd"
     )
+
+
+@pytest.mark.asyncio
+async def test_same_version_without_receipt_does_not_download(
+    installation, tmp_path, monkeypatch
+):
+    root, config = installation
+    archive, release = _official_release_for_test(tmp_path, "v2.1.0")
+    monkeypatch.setattr(update, "request_release", AsyncMock(return_value=release))
+
+    async def download(_url, destination, **_kwargs):
+        shutil.copyfile(archive, destination)
+
+    downloader = AsyncMock(side_effect=download)
+    monkeypatch.setattr(update, "download_file", downloader)
+    original_interface = (root / "interface.json").read_bytes()
+    assert not script_install.record_path(root, "installed.json").exists()
+
+    for _ in range(2):
+        assert "无需更新" in await update.update_before_run(root, config)
+    downloader.assert_not_awaited()
+    assert not script_install.record_directory(root).exists()
+    assert not script_install.workspace(root).exists()
+    assert (root / "interface.json").read_bytes() == original_interface
+    assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
+
+
+@pytest.mark.asyncio
+async def test_same_version_with_receipt_repairs_damaged_resources(installation):
+    root, config = installation
+    await update.update_before_run(root, config)
+    (root / "resource/data.json").write_bytes(b"damaged resource")
+    update.download_file.reset_mock()
+
+    assert "已更新" in await update.update_before_run(root, config)
+    update.download_file.assert_awaited_once()
+    assert (root / "resource/data.json").read_bytes() == b"{}"
+    assert script_install.verify_installed_files(root, threading.Event())
+
+
+@pytest.mark.asyncio
+async def test_legacy_records_are_ignored_during_prefetch_and_deleted_on_recovery(
+    installation,
+):
+    root, config = installation
+    await update.update_before_run(root, config)
+    directory = script_install.record_directory(root)
+    legacy = script_install.workspace(root)
+    legacy.mkdir()
+    original = {}
+    for name in ("installed.json", "program-identity.json"):
+        original[name] = (directory / name).read_bytes()
+        (directory / name).replace(legacy / name)
+    update.download_file.reset_mock()
+
+    candidate = await update.prepare_update(root, config)
+    assert isinstance(candidate, str)
+    update.download_file.assert_not_awaited()
+    assert all(
+        (legacy / name).read_bytes() == value for name, value in original.items()
+    )
+    assert not list(directory.iterdir())
+
+    with script_install.installation_access(root):
+        script_install.recover_install(root, lambda: None, threading.Event())
+    assert not legacy.exists()
+    assert not list(directory.iterdir())
+    assert not script_install.verify_installed_files(root, threading.Event())
+    assert isinstance(await update.prepare_update(root, config), str)
+    update.download_file.assert_not_awaited()
+    assert update.read_install(root) == (Version("2.2.0"), "x86_64")
 
 
 @pytest.mark.asyncio
@@ -535,7 +606,7 @@ async def test_identity_write_failure_cleans_download_but_keeps_installed_receip
     with pytest.raises(OSError, match="身份记录写入失败"):
         await update.update_before_run(root, config)
     assert update.read_install(root)[0] == Version("2.2.0")
-    assert (script_install.workspace(root) / "installed.json").exists()
+    assert (script_install.record_directory(root) / "installed.json").exists()
     assert not list((root.parent / "data/maaend_update").glob("download-*"))
 
 
@@ -759,7 +830,7 @@ async def test_native_beta_newer_than_stable_uses_exact_official_package(
     )
     mirror.assert_not_awaited()
     identity = json.loads(
-        (script_install.workspace(root) / "program-identity.json").read_text()
+        (script_install.record_directory(root) / "program-identity.json").read_text()
     )
     assert identity == {"arch": "x86_64", "version": str(Version(native_tag))}
     assert (root / "config/mxu-MaaEnd.json").read_bytes() == b'{"user-data": true}'
@@ -780,7 +851,7 @@ async def test_native_upgrade_cannot_be_blindly_trusted_or_downgraded(
 ):
     root, config = installation
     await update.update_before_run(root, config)
-    receipt = script_install.workspace(root) / "installed.json"
+    receipt = script_install.record_directory(root) / "installed.json"
     original_receipt = receipt.read_bytes()
     (root / "interface.json").write_text(
         json.dumps({"name": "MaaEnd", "version": "v2.3.0"})

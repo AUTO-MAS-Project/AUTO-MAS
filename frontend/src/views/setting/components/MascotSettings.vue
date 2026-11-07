@@ -102,18 +102,22 @@ const fpsOptions = [8, 16, 24, 30, 60, 120].map(value => ({ label: `${value} FPS
 
     <SettingRow :label="t('core.setting.basic.desktopMascot')">
       <template #label>
-        <a-tooltip>
-          <template #title>
-            <div>{{ t('core.setting.basic.desktopMascotTip') }}</div>
-            <div v-if="!available && !loading && !loadFailed">
-              {{ t('core.setting.basic.mascotUnavailable') }}
-            </div>
-          </template>
-          <span class="row-label" tabindex="0">
-            {{ t('core.setting.basic.desktopMascot') }}
-            <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-          </span>
-        </a-tooltip>
+        <span class="row-label">
+          {{ t('core.setting.basic.desktopMascot') }}
+          <a-tooltip :trigger="['hover', 'focus']">
+            <template #title>
+              <div>{{ t('core.setting.basic.desktopMascotTip') }}</div>
+              <div v-if="!available && !loading && !loadFailed">
+                {{ t('core.setting.basic.mascotUnavailable') }}
+              </div>
+            </template>
+            <QuestionCircleOutlined
+              class="help-icon"
+              tabindex="0"
+              :aria-label="t('core.setting.basic.desktopMascot')"
+            />
+          </a-tooltip>
+        </span>
       </template>
       <a-switch
         :checked="enabled"
@@ -188,10 +192,9 @@ const fpsOptions = [8, 16, 24, 30, 60, 120].map(value => ({ label: `${value} FPS
   color: var(--ant-color-text);
   font-size: 14px;
   font-weight: 600;
-  cursor: help;
 }
 
-.row-label:focus-visible {
+.help-icon:focus-visible {
   border-radius: 3px;
   outline: 2px solid var(--ant-color-primary);
   outline-offset: 2px;
@@ -200,5 +203,6 @@ const fpsOptions = [8, 16, 24, 30, 60, 120].map(value => ({ label: `${value} FPS
 .help-icon {
   color: var(--ant-color-text-tertiary);
   font-size: 14px;
+  cursor: help;
 }
 </style>

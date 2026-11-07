@@ -86,48 +86,22 @@
 
     <!-- 双栏：左为目标卡片列表，右为材料需求预览（sticky 跟随滚动） -->
     <div class="cultivate-body">
-      <div class="cultivate-main">
-        <a-pagination
-          v-if="filteredViews.length > OPERATOR_PAGE_SIZE"
-          v-model:current="operatorPage"
-          class="cultivate-pagination"
-          size="small"
-          :page-size="OPERATOR_PAGE_SIZE"
-          :total="filteredViews.length"
-          :show-size-changer="false"
-          :disabled="editorLoading"
-        />
-        <div v-if="filteredViews.length" class="cultivate-rows">
-          <CultivateOperatorGroup
-            v-for="view in visibleViews"
-            :key="view.operatorId"
-            :view="view"
-            :selected="operatorSelection.has(view.operatorId)"
-            :collapsed="isGroupCollapsed(view.operatorId)"
-            :busy="editorLoading"
-            :skland-bound="sklandBound"
-            @toggle-selection="toggleOperatorSelection"
-            @toggle-collapse="toggleGroup"
-            @remove="handleRemoveOperator"
-            @goal-change="handleGoalChange"
-          />
-          <!-- 已绑定但快照缺专精/模组观测：目标保留、暂停刷取，须明确提示 -->
-          <div v-if="sklandDegraded" class="cultivate-hint cultivate-hint-block">
-            {{ t('core.edit.maaCultivateSklandDegradedHint') }}
-          </div>
-        </div>
-        <NoData
-          v-else
-          :description="
-            t(
-              operatorFilter.trim()
-                ? 'core.edit.maaCultivateSearchEmpty'
-                : 'core.edit.maaCultivateEmpty'
-            )
-          "
-          :image-style="{ height: '48px' }"
-        />
-      </div>
+      <CultivateOperatorList
+        v-model:page="operatorPage"
+        :views="filteredViews"
+        :page-size="OPERATOR_PAGE_SIZE"
+        :loading="operatorOptionsLoading && !operatorCatalog.length"
+        :busy="editorLoading"
+        :selected="operatorSelection"
+        :collapsed="collapsedGroups"
+        :skland-bound="sklandBound"
+        :skland-degraded="sklandDegraded"
+        :filter-active="!!operatorFilter.trim()"
+        @toggle-selection="toggleOperatorSelection"
+        @toggle-collapse="toggleGroup"
+        @remove="handleRemoveOperator"
+        @goal-change="handleGoalChange"
+      />
       <aside class="cultivate-side">
         <CultivatePreviewPanel
           v-if="rows.length"
@@ -156,7 +130,7 @@ import { Modal } from 'ant-design-vue'
 import type { CultivatePreviewOut } from '@/api'
 import { handleExternalLink } from '@/utils/openExternal'
 import { computed, onMounted, ref, shallowRef, watch } from 'vue'
-import CultivateOperatorGroup from './CultivateOperatorGroup.vue'
+import CultivateOperatorList from './CultivateOperatorList.vue'
 import CultivatePreviewPanel from './CultivatePreviewPanel.vue'
 import CultivateClipboardImport from './CultivateClipboardImport.vue'
 import CultivateOperatorPicker from './CultivateOperatorPicker.vue'
@@ -276,13 +250,6 @@ const allOperatorsSelected = computed(
   () => filteredViews.value.length > 0 && selectedVisibleCount.value === filteredViews.value.length
 )
 
-const visibleViews = computed(() =>
-  filteredViews.value.slice(
-    (operatorPage.value - 1) * OPERATOR_PAGE_SIZE,
-    operatorPage.value * OPERATOR_PAGE_SIZE
-  )
-)
-
 const handleAddOperator = (operatorId: string) => {
   if (!operatorId) return
   operatorFilter.value = ''
@@ -325,7 +292,6 @@ const removeSelectedOperators = () => {
 
 // ── 折叠与定位（导入后展开并翻到对应页） ──
 const collapsedGroups = ref(new Set<string>())
-const isGroupCollapsed = (operatorId: string) => collapsedGroups.value.has(operatorId)
 const toggleGroup = (operatorId: string) => {
   const next = new Set(collapsedGroups.value)
   if (next.has(operatorId)) {
@@ -432,10 +398,6 @@ onMounted(() => {
   margin: 0 0 6px;
 }
 
-.cultivate-hint-block {
-  margin-top: 4px;
-}
-
 /* 行尾 ? 说明按钮（可聚焦，对齐 PipelineRow 的 row-help 口径） */
 .hint-help {
   display: inline-flex;
@@ -505,11 +467,6 @@ onMounted(() => {
   align-items: flex-start;
 }
 
-.cultivate-main {
-  flex: 1 1 460px;
-  min-width: 0;
-}
-
 .cultivate-side {
   flex: 1 1 340px;
   min-width: 0;
@@ -521,18 +478,6 @@ onMounted(() => {
     position: sticky;
     top: 16px;
   }
-}
-
-.cultivate-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.cultivate-pagination {
-  display: flex;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
 }
 
 /* 一图流数据署名（CC BY-NC 4.0 授权条件，方案 §5.4/决策 3）；链接走系统浏览器 */

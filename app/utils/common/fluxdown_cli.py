@@ -1371,6 +1371,14 @@ def fluxdown_server_forget(cli_exe: Path, url: str, destination: Path) -> None:
     _map_pop(cli_exe, _map_key(url, Path(destination)))
 
 
+def _request_output_paths(request_path: Path) -> tuple[Path, ...]:
+    """兼容 FluxDown 保留或移除 MAS 随机临时文件名前导点。"""
+    name = request_path.name.removeprefix(".")
+    if re.fullmatch(r"mas-fluxdown-[0-9a-f]{32}(?:\.[^/\\]+)?", name):
+        return (request_path.with_name(name), request_path.with_name(f".{name}"))
+    return (request_path,)
+
+
 def _matching_task_ids(cli_exe: Path, url: str, destination: Path) -> set[str] | None:
     """查询请求独占路径；列表尚未包含该任务时返回空集，不推断它不存在。"""
     handle = fluxdown_server_ensure(cli_exe)
@@ -1382,7 +1390,10 @@ def _matching_task_ids(cli_exe: Path, url: str, destination: Path) -> set[str] |
     tasks = _parse_cli_json(out) if code == 0 else None
     if not isinstance(tasks, list):
         return None
-    target = os.path.normcase(str(destination.resolve()))
+    targets = {
+        os.path.normcase(str(path.resolve()))
+        for path in _request_output_paths(destination)
+    }
     matches = set()
     for task in tasks:
         if not isinstance(task, dict) or not all(
@@ -1391,7 +1402,7 @@ def _matching_task_ids(cli_exe: Path, url: str, destination: Path) -> set[str] |
         ):
             return None
         path = Path(task["saveDir"]) / task["fileName"]
-        if task["url"] == url and os.path.normcase(str(path.resolve())) == target:
+        if task["url"] == url and os.path.normcase(str(path.resolve())) in targets:
             matches.add(task["taskId"])
     return matches
 
@@ -1815,7 +1826,9 @@ async def _fluxdown_server_download(
                 st0 is not None
                 and st0.get("status") == _TASK_STATUS_DONE
                 and request_path
-                and not Path(request_path).is_file()
+                and not any(
+                    path.is_file() for path in _request_output_paths(Path(request_path))
+                )
             ):
                 # 文件归位后、清映射前崩溃，或调用方已经清掉完整包：重新取包，
                 # 不把可能已被更改的 destination 盲认成上次完整下载结果。
@@ -1943,8 +1956,9 @@ async def _fluxdown_server_download(
         if task_id is None:
             # 每次 add 使用全新的请求路径。即使网关启动时只返回空快照，
             # 历史同源同名任务也不可能匹配本次身份；原目标保留到下载完成。
+            # FluxDown 会移除文件名前导点，使用普通文件名以保持任务路径一致。
             request_path = destination.with_name(
-                f".mas-fluxdown-{secrets.token_hex(16)}{destination.suffix}"
+                f"mas-fluxdown-{secrets.token_hex(16)}{destination.suffix}"
             )
             args = [
                 "add",
@@ -2221,9 +2235,10 @@ async def _fluxdown_server_download(
 
     actual = Path(str(save_dir)) / str(file_name)
     request_path = (_load_task_map(cli_exe).get(key) or {}).get("request_path")
-    if request_path and os.path.normcase(str(actual.resolve())) != os.path.normcase(
-        str(Path(request_path).resolve())
-    ):
+    if request_path and os.path.normcase(str(actual.resolve())) not in {
+        os.path.normcase(str(path.resolve()))
+        for path in _request_output_paths(Path(request_path))
+    }:
         raise RuntimeError("FluxDown 返回的输出路径与本次请求不符，拒绝使用该文件")
     if not actual.is_file():
         record.status = "failed"
