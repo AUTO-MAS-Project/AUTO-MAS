@@ -232,19 +232,31 @@ def test_merge_keeps_closed_group_quota_closed(gate: str, count_key: str):
         "任务已结束，以下任务出现错误:\n理智作战",
     ],
 )
-def test_maa_final_task_failure_is_not_retried(failure_summary: str):
+@pytest.mark.parametrize(
+    ("mode", "retry"), [("Annihilation", False), ("Routine", True)]
+)
+def test_maa_final_task_failure_retry_depends_on_mode(
+    failure_summary: str, mode: str, retry: bool
+):
     log = f"干员培养完成：成功 0，失败 6，跳过 0\n{failure_summary}"
 
-    assert not _should_retry_maa("MAA 部分任务执行失败", log)
+    assert _should_retry_maa(mode, "MAA 部分任务执行失败", log) is retry
 
 
 @pytest.mark.parametrize(
     "status",
     ["MAA 的 ADB 连接异常", "MAA 进程超时", "MAA 在完成任务前退出"],
 )
-def test_maa_runtime_failures_remain_retryable(status: str):
-    assert _should_retry_maa(status, "连接异常")
+@pytest.mark.parametrize("mode", ["Annihilation", "Routine"])
+def test_maa_runtime_failures_remain_retryable(status: str, mode: str):
+    assert _should_retry_maa(mode, status, "连接异常")
 
 
-def test_maa_partial_result_without_final_failure_marker_remains_retryable():
-    assert _should_retry_maa("MAA 部分任务执行失败", "任务出错: 理智作战")
+@pytest.mark.parametrize("mode", ["Annihilation", "Routine"])
+def test_maa_partial_result_without_final_failure_marker_remains_retryable(mode: str):
+    assert _should_retry_maa(mode, "MAA 部分任务执行失败", "任务出错: 理智作战")
+
+
+@pytest.mark.parametrize("mode", ["Annihilation", "Routine"])
+def test_maa_success_is_not_retried(mode: str):
+    assert not _should_retry_maa(mode, "Success!", "任务已全部完成！")
