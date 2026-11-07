@@ -1291,6 +1291,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self._annihilation_weekly_completion_recorded = False
         self._failed_sanity_tasks: set[str] = set()
         self._failed_extra_tasks: set[str] = set()
+        self._non_sanity_retry = False
         # 无时段排班表本轮注入的班次：同一账号的多次重试都注入这一个值，
         # 基建换班完成后只把账号配置里的指针推进一次
         self._infrast_plan_index: int | None = None
@@ -1433,6 +1434,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             self._stock_depot_completed = False
             self._failed_sanity_tasks.clear()
             self._failed_extra_tasks.clear()
+            self._non_sanity_retry = False
             self.cur_user_item.status = f"运行 - {MAA_RUN_MOOD_BOOK[self.mode]}"
 
             if not self.cur_user_config.Info.IfQuickConfig:
@@ -1559,6 +1561,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     and self.cur_user_log.status == "MAA 部分任务执行失败"
                     and _has_maa_task_failure(maa_log)
                 ):
+                    # MAA 已结束本轮队列，后续只补跑非体力任务，不重新授予药石额度。
+                    self._non_sanity_retry = True
                     failed_sanity = _failed_maa_sanity_tasks(maa_log)
                     self._failed_sanity_tasks.update(failed_sanity)
                     for task in failed_sanity:
@@ -2354,6 +2358,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             if self.task_dict.get(name) and name not in self._failed_extra_tasks:
                 del self.task_dict[name]
 
+        if self._non_sanity_retry:
+            self.task_dict["Fight"] = False
+
         task_set = {}
         source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
         if not isinstance(source_queue, list):
@@ -2365,10 +2372,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self.task_dict["EventDepotMaintain"] = False
         activity_stages = []
         if self.mode == "Routine":
-            # 普通库存每次尝试都重新参与，养成消耗与常备目标按当轮数据合并。
+            # 运行异常可按当轮数据重建；MAA 已收尾后只补跑非体力任务。
             self.task_dict["DepotMaintain"] = (
                 self.cur_user_config.Task.IfDepotMaintain
                 and "DepotMaintain" not in self._failed_sanity_tasks
+                and not self._non_sanity_retry
             )
             # 活动关卡信息已在 MaaManager.prepare 里刷新过一次, 这里直接用缓存
             stage_info = await maa_stage_service.get_stage_info(
@@ -2404,7 +2412,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     activity_open
                     and self.cur_user_config.Task.CultivateSkipDuringActivity
                 )
-                or "DepotMaintain" in self._failed_sanity_tasks,
+                or "DepotMaintain" in self._failed_sanity_tasks
+                or self._non_sanity_retry,
                 skip_this_round=(
                     resource_collection_open
                     and self.cur_user_config.Task.CultivateSkipDuringResourceCollection
@@ -2658,6 +2667,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             self.mode == "Routine"
             and (not self._event_depot_completed)
             and "EventDepotMaintain" not in self._failed_sanity_tasks
+            and not self._non_sanity_retry
             and self.cur_user_config.Task.IfEventDepotMaintain
         ):
             event_depot_source = _find_task_source(

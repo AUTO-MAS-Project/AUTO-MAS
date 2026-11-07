@@ -1,6 +1,7 @@
 """真实日志判态、队列下发与主循环共同守护体力/非体力任务的重试边界。"""
 
 import importlib
+import json
 import uuid
 from copy import deepcopy
 from datetime import datetime
@@ -17,6 +18,15 @@ from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.MAA.AutoProxy import AutoProxyTask, _should_retry_maa
 from app.task.MAA.base_preset import get_maa_base_preset
 from app.task.MAA.constants import MAA_TASKS
+from app.task.MAA.tools.cultivate.types import (
+    CultivatePlan,
+    FarmEntry,
+    Goal,
+    OperatorTarget,
+    Progression,
+    ProgressionSnapshot,
+    Requirement,
+)
 from tests.config_support import activate_config
 
 
@@ -25,6 +35,7 @@ from tests.config_support import activate_config
     ("failures", "source", "recover", "expected_modes", "routine_success"),
     [
         (("基建换班",), "managed", True, ["Routine"] * 2, True),
+        (("基建换班",), "cultivate", True, ["Routine"] * 2, True),
         (("基建换班",), "managed", False, ["Routine"] * 3, False),
         (("理智任务",), "managed", True, ["Routine"], False),
         (("理智任务", "基建换班"), "managed", True, ["Routine"] * 2, False),
@@ -36,6 +47,7 @@ from tests.config_support import activate_config
     ],
     ids=[
         "daily-recovery",
+        "completed-cultivation-budget",
         "daily-limit",
         "sanity-only",
         "mixed-fight",
@@ -60,6 +72,7 @@ async def test_task_failure_retry_scope(
     root.mkdir()
     config = await activate_config(MaaConfig(Info={"Path": root}))
     annihilation = "剿灭作战" in failures
+    cultivate = source == "cultivate"
     users = ConfigCollection.build([MaaUserConfig])
     await users.activate()
     uid = users.add(
@@ -75,6 +88,23 @@ async def test_task_failure_retry_scope(
                 "IfFight": True,
                 "IfInfrast": True,
                 "IfRecruit": True,
+                "IfCultivate": cultivate,
+                "CultivateAllOwned": False,
+                "CultivateAutoRaise": False,
+                "CultivateSkipDuringActivity": False,
+                "CultivateSkipDuringResourceCollection": False,
+                "CultivateTargets": json.dumps(
+                    [
+                        {
+                            "operator_id": "one",
+                            "goals": [{"kind": "skill", "to_level": 7}],
+                        }
+                    ]
+                )
+                if cultivate
+                else "[]",
+                "CultivateMedicineNumb": 2 if cultivate else None,
+                "CultivateStoneNumb": 1 if cultivate else None,
                 "IfDepotMaintain": "库存保持与干员养成" in failures,
                 "IfEventDepotMaintain": "活动关均衡理智" in failures,
                 "EventDepotMaintainPlans": '[{"StageType":"material","StageIndex":1,"DropCount":1}]',
@@ -102,7 +132,7 @@ async def test_task_failure_retry_scope(
     async def set_maa(device):
         nonlocal queue
         gui = get_maa_base_preset()
-        if source == "managed":
+        if source in ("managed", "cultivate"):
             await proxy._apply_maa_quick_config(gui)
         queue = gui["Configurations"]["Default"]["TaskQueue"]
 
@@ -156,6 +186,39 @@ async def test_task_failure_retry_scope(
     monkeypatch.setattr(module.System, "kill_process", AsyncMock())
     monkeypatch.setattr(module.Notify, "send_notice", AsyncMock())
     monkeypatch.setattr(module.Publisher, "send", AsyncMock())
+    if cultivate:
+        # 练度与材料缺口在两次尝试间保持不变，模拟药石额度用尽后仍未达目标。
+        target = OperatorTarget("one", (Goal("skill", "", 7),))
+        snapshot = ProgressionSnapshot(
+            source="manual",
+            timestamp=datetime.now().timestamp(),
+            data=Progression(
+                elite=1, level=50, masteries={}, modules={}, skill_level=6
+            ),
+        )
+        monkeypatch.setattr(module, "resolve_progression", lambda **kwargs: snapshot)
+        monkeypatch.setattr(
+            module.maa_api,
+            "get_cultivate_skland_progression",
+            AsyncMock(return_value=None),
+        )
+        monkeypatch.setattr(
+            module.depot_cultivate_service,
+            "prepare_cultivate",
+            AsyncMock(
+                return_value=(
+                    [target],
+                    CultivatePlan(
+                        entries=(
+                            FarmEntry(item_id="30012", amount=100, stage_code="1-7"),
+                        ),
+                        reservations=(Requirement(item_id="30012", amount=100),),
+                    ),
+                    True,
+                    (target,),
+                )
+            ),
+        )
 
     await proxy.main_task()
 
@@ -172,6 +235,25 @@ async def test_task_failure_retry_scope(
         if not annihilation:
             assert "自动公招" not in enabled
             assert not set(failures).intersection(enabled - {"基建换班"})
+    if cultivate:
+        assert proxy.cur_user_config.Task.IfCultivate
+        assert json.loads(proxy.cur_user_config.Task.CultivateTargets)
+        assert any(task["Name"] == "库存保持与干员养成" for task in attempts[0][1]), (
+            attempts[0][1]
+        )
+        first_farm = next(
+            task
+            for task in attempts[0][1]
+            if task["TaskType"] == "DepotMaintain"
+            and task["Name"] == "库存保持与干员养成"
+        )
+        assert first_farm["PlanList"][0].get("MedicineCount") == 2, first_farm
+        assert first_farm["PlanList"][0]["StoneCount"] == 1
+        assert not any(
+            task["TaskType"] in ("Fight", "DepotMaintain") and task.get("IsEnable")
+            for task in attempts[1][1]
+        )
+        assert json.loads(proxy.cur_user_config.Task.CultivateTargets)
 
 
 @pytest.fixture
