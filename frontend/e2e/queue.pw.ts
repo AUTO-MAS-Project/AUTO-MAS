@@ -109,6 +109,7 @@ test.describe('@queue @scheduler user queue', () => {
       await post('/api/queue/update', { queueId, data: { Info: { TimeEnabled: true } } })
       await post('/api/queue/time/add', { queueId })
       await page.reload()
+      await page.locator('.queue-button').filter({ hasText: name }).click()
       await expect(page.locator('.time-set-card .days-select')).toHaveText('Every day')
       await expect(rows.locator('.days-select')).toHaveText(['Every day', 'Every day'])
 
@@ -273,7 +274,10 @@ test.describe('@queue @scheduler user queue', () => {
     try {
       scriptId = (await post('/api/scripts/add', { type: 'MAA' })).scriptId
       queueId = (await post('/api/queue/add')).queueId
-      await post('/api/queue/update', { queueId, data: { Info: { TimeEnabled: true } } })
+      await post('/api/queue/update', {
+        queueId,
+        data: { Info: { Name: 'E2E weekday queue', TimeEnabled: true } },
+      })
       const { queueItemId } = await post('/api/queue/item/add', { queueId })
       await post('/api/queue/item/update', {
         queueId,
@@ -282,6 +286,7 @@ test.describe('@queue @scheduler user queue', () => {
       })
 
       await app.goto('/queue')
+      await page.locator('.queue-button').filter({ hasText: 'E2E weekday queue' }).click()
       const timeRows = page.locator('.time-set-card .draggable-row')
       const timeIds: string[] = []
       for (const time of ['08:00', '10:00']) {
@@ -303,6 +308,7 @@ test.describe('@queue @scheduler user queue', () => {
         })
       }
       await page.reload()
+      await page.locator('.queue-button').filter({ hasText: 'E2E weekday queue' }).click()
       const timeDays = timeRows.locator('.days-select')
       const taskDays = page.locator('.queue-item-card .days-select')
       await expect(timeDays).toHaveText(['Every day', 'Every day'])
@@ -364,6 +370,7 @@ test.describe('@queue @scheduler user queue', () => {
       await toggleDays(taskDays, ['Mon', 'Wed', 'Fri'], '/api/queue/item/update')
 
       await page.reload()
+      await page.locator('.queue-button').filter({ hasText: 'E2E weekday queue' }).click()
       await expect(timeRows.first().locator('.ant-picker input')).toHaveValue('08:00')
       await expect(timeRows.last().locator('.ant-picker input')).toHaveValue('10:00')
       await expect(timeDays.first().locator('.ant-select-selection-item')).toHaveText([
