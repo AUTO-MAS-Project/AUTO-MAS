@@ -1,4 +1,4 @@
-"""MAA 明确失败时，只有剿灭停止重试，日常仍可恢复或耗尽次数。"""
+"""MAA 日常失败后可恢复或耗尽重试次数，剿灭明确失败停止重试。"""
 
 import importlib
 import uuid
@@ -56,6 +56,7 @@ async def test_task_failure_retry_scope(
                 **{f"If{task}": False for task in MAA_TASKS},
                 "IfStartUp": True,
                 "IfInfrast": True,
+                "IfRecruit": True,
                 "Annihilation": "Annihilation" if annihilation else "Close",
                 "AnnihilationStartWeekday": "Monday",
             },
@@ -95,12 +96,16 @@ async def test_task_failure_retry_scope(
                 proxy.mode == "Routine" and (annihilation or len(attempts) > 1)
             )
             if succeeded:
-                log = "完成任务: 开始唤醒\n完成任务: 基建换班\n任务已全部完成！"
+                log = (
+                    "完成任务: 开始唤醒\n完成任务: 基建换班\n"
+                    "完成任务: 自动公招\n任务已全部完成！"
+                )
             else:
                 failed_task = "理智作战" if proxy.mode == "Annihilation" else "基建换班"
+                completed = "完成任务: 自动公招\n" if proxy.mode == "Routine" else ""
                 log = (
                     f"完成任务: 开始唤醒\n任务出错: {failed_task}\n"
-                    f"任务已结束，以下任务出现错误: {failed_task}"
+                    f"{completed}任务已结束，以下任务出现错误: {failed_task}"
                 )
             await self.callback([log], datetime.now().astimezone())
 
@@ -126,6 +131,6 @@ async def test_task_failure_retry_scope(
     assert records[0].status == "MAA 部分任务执行失败"
     assert records[-1].status == ("Success!" if recover else "MAA 部分任务执行失败")
     if quick_config and not annihilation:
-        assert attempts[0][1]["StartUp"] is True
-        assert attempts[1][1]["StartUp"] is False
+        assert attempts[0][1]["Recruit"] is True
+        assert attempts[1][1]["Recruit"] is False
         assert attempts[1][1]["Infrast"] is True
