@@ -74,7 +74,6 @@ from .components import (
     component_installed,
     emulator_exe,
     launcher_apk,
-    manager_key_exe,
     missing_components_message,
     root_from_manager_exe,
     root_key,
@@ -2832,14 +2831,29 @@ def opening_instances(root: Path) -> list[str]:
 def running_instances(root: Path) -> list[str]:
     """这个根目录下开着的实例（原生索引）。
 
-    实例按 AVD 名 + 控制台端口认，各根目录的名字和端口是同一套；只算 qemu 可执行文件就在
-    这个根目录 ``sdk\\emulator`` 下的，免得把另一个根目录的同名实例算进来。
+    只算 qemu 可执行文件就在这个根目录 ``sdk\\emulator`` 下的，免得把另一个根目录的同名实例算进来；
+    限定了根目录，实例就只按命令行里的 ``-avd mas_<i>`` 认，不比端口：根目录可以设 ``portBase``
+    换一段端口（由 modavd 决定）。
     """
     ours = {item["pid"] for item in update_stage.processes_using(root)}
-    running = _AvdCore(
-        manager_key_exe(root), max_wait_time=60, force_kill_on_close=False
-    )._scan_processes()
-    return sorted(idx for idx, process in running.items() if process.pid in ours)
+    wanted = {avd_name(idx): idx for idx in list_instances(root)}
+    found: set[str] = set()
+    for process in psutil.process_iter(["pid", "name", "cmdline"]):
+        try:
+            if process.info.get("pid") not in ours:
+                continue
+            name = (process.info.get("name") or "").lower()
+            cmdline = process.info.get("cmdline") or []
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+        if not name.startswith("qemu-system"):
+            continue
+        found.update(
+            wanted[avd]
+            for flag, avd in zip(cmdline, cmdline[1:])
+            if flag == "-avd" and avd in wanted
+        )
+    return sorted(found)
 
 
 async def build_manager(
