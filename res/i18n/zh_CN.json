@@ -4493,7 +4493,7 @@
   "core.setting.others.sourceSection": "更新来源",
   "core.setting.others.sourceGithubDesc": "官方发布源",
   "core.setting.others.sourceMirrorDesc": "CDN 加速下载",
-  "core.setting.others.sourceAutoSiteDesc": "AUTO-MAS项目组自建线路",
+  "core.setting.others.sourceAutoSiteDesc": "项目自建线路",
   "core.setting.others.sourceCnbDesc": "cnb.cool 镜像",
   "core.setting.others.githubMirrorAutoShort": "自动",
   "core.setting.others.githubMirrorOffShort": "关闭",

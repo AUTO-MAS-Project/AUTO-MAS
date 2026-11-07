@@ -4493,7 +4493,7 @@
   "core.setting.others.sourceSection": "Update source",
   "core.setting.others.sourceGithubDesc": "Official source",
   "core.setting.others.sourceMirrorDesc": "Accelerated CDN",
-  "core.setting.others.sourceAutoSiteDesc": "Hosted by the AUTO-MAS Team",
+  "core.setting.others.sourceAutoSiteDesc": "Project-hosted",
   "core.setting.others.sourceCnbDesc": "cnb.cool mirror",
   "core.setting.others.githubMirrorAutoShort": "Auto",
   "core.setting.others.githubMirrorOffShort": "Off",
