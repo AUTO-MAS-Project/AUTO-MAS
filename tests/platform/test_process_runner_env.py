@@ -181,6 +181,74 @@ async def test_cancel_with_full_output_pipe_finishes_cleanup(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_stop_releases_pipes_inherited_by_a_background_service(
+    monkeypatch, tmp_path, cancelled
+):
+    """命令退出后，后台服务持有管道不能阻止超时或取消完成。"""
+    pid_path = tmp_path / "service.pid"
+    service_code = "import time; time.sleep(30)"
+    code = (
+        "import subprocess, sys; from pathlib import Path; "
+        f"child = subprocess.Popen([sys.executable, '-I', '-c', {service_code!r}], "
+        "stdin=subprocess.DEVNULL, stdout=sys.stdout, stderr=sys.stderr, "
+        "close_fds=True); Path(sys.argv[1]).write_text(str(child.pid)); sys.exit(127)"
+    )
+    create = process_runner.create_subprocess
+    created = []
+    ready = asyncio.Event()
+    service = None
+
+    async def record(*args, **kwargs):
+        nonlocal service
+        process = await create(*args, **kwargs)
+        created.append(process)
+        async with asyncio.timeout(5):
+            while not pid_path.exists() or process.returncode is None:
+                await asyncio.sleep(0.01)
+        service = psutil.Process(int(pid_path.read_text()))
+        ready.set()
+        return process
+
+    monkeypatch.setattr(process_runner, "create_subprocess", record)
+    task = asyncio.create_task(
+        process_runner.ProcessRunner.run_process(
+            sys.executable,
+            "-I",
+            "-c",
+            code,
+            str(pid_path),
+            timeout=30 if cancelled else 0.05,
+        )
+    )
+    try:
+        await asyncio.wait_for(ready.wait(), 5)
+        assert created[0].returncode == 127
+        if cancelled:
+            task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=3)
+        assert done, "命令已退出，后台服务持有输出管道不应阻止任务结束"
+        with pytest.raises(asyncio.CancelledError if cancelled else TimeoutError):
+            await task
+        assert service is not None and service.is_running()
+        for fd in (1, 2):
+            assert created[0]._transport.get_pipe_transport(fd).is_closing()
+    finally:
+        if service is None and pid_path.exists():
+            with suppress(psutil.NoSuchProcess):
+                service = psutil.Process(int(pid_path.read_text()))
+        if service is not None:
+            with suppress(psutil.NoSuchProcess):
+                service.kill()
+            await asyncio.to_thread(service.wait, timeout=5)
+        for process in created:
+            if process.returncode is None:
+                with suppress(ProcessLookupError):
+                    process.kill()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
 async def test_expired_deadline_does_not_launch_a_command(monkeypatch):
     create = AsyncMock()
     monkeypatch.setattr(process_runner, "create_subprocess", create)
