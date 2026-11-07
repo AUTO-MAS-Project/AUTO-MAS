@@ -154,23 +154,6 @@ watch(
 let editorInstance: import('monaco-editor').editor.IStandaloneCodeEditor | null = null
 let downloadDecorations: import('monaco-editor').editor.IEditorDecorationsCollection | null = null
 let contentListener: import('monaco-editor').IDisposable | null = null
-let gradientFrame: number | undefined
-
-// Monaco 更新尾行时会重建 span；将新动画对齐到文档时钟，避免每秒刷新进度就从头变色。
-const syncDownloadGradient = () => {
-  if (gradientFrame !== undefined) cancelAnimationFrame(gradientFrame)
-  gradientFrame = requestAnimationFrame(() => {
-    gradientFrame = requestAnimationFrame(() => {
-      gradientFrame = undefined
-      for (const element of logContentRef.value?.querySelectorAll(
-        '.download-log-animated span[class*="download-log-"]'
-      ) ?? []) {
-        for (const animation of element.getAnimations()) animation.startTime = 0
-      }
-    })
-  })
-}
-
 const decorateDownload = () => {
   const model = editorInstance?.getModel()
   if (!model || !downloadDecorations || !downloadText.value) {
@@ -192,13 +175,7 @@ const decorateDownload = () => {
       return { range, options: { inlineClassName: `download-log-${part.field}` } }
     })
   )
-  if (styles.value.downloadGradient) syncDownloadGradient()
 }
-
-watch(
-  () => styles.value.downloadGradient,
-  () => void nextTick(syncDownloadGradient)
-)
 
 // Monaco Editor 配置
 const editorOptions = computed(() => ({
@@ -285,7 +262,6 @@ watch(
 )
 
 onUnmounted(() => {
-  if (gradientFrame !== undefined) cancelAnimationFrame(gradientFrame)
   contentListener?.dispose()
   downloadDecorations?.clear()
   editorInstance = null

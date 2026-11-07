@@ -1,4 +1,10 @@
 /* 下载信息独立配色，不影响普通日志或 Monaco 的其他 token。 */
+@property --download-log-position {
+  syntax: '<percentage>';
+  inherits: true;
+  initial-value: 0%;
+}
+
 .download-log-styled {
   --download-period: 2s;
   --download-target: currentColor;
@@ -45,6 +51,10 @@
   --download-gradient: var(--download-rate-gradient);
 }
 
+.download-log-styled.download-log-animated {
+  animation: download-log-flow var(--download-period) linear infinite;
+}
+
 .download-log-styled.download-log-animated [class*='download-log-']:not(.download-log-line) {
   background-image: var(--download-gradient);
   background-size: 200% 100%;
@@ -52,20 +62,20 @@
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: download-log-flow var(--download-period) linear infinite;
+  background-position: var(--download-log-position) 50%;
 }
 
 @keyframes download-log-flow {
   from {
-    background-position: 0% 50%;
+    --download-log-position: 0%;
   }
   to {
-    background-position: -200% 50%;
+    --download-log-position: -200%;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .download-log-styled.download-log-animated [class*='download-log-'] {
+  .download-log-styled.download-log-animated {
     animation: none;
   }
 }
