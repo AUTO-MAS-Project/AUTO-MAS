@@ -40,6 +40,7 @@ from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import push_dispatch_log
 from app.utils import TASK_MODE_ZH, get_logger
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from app.utils.common.process.runner import ProcessCleanupUnconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -206,7 +207,11 @@ class WhimboxManager(ScriptManagerBase):
                         else []
                     ),
                 )
-            except (WhimboxUpdateUnsafeError, FluxdownCancelUnconfirmed):
+            except (
+                WhimboxUpdateUnsafeError,
+                FluxdownCancelUnconfirmed,
+                ProcessCleanupUnconfirmed,
+            ):
                 raise
             except Exception as error:
                 await confirm_usable_installation(root)

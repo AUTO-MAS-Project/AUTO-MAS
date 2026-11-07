@@ -14,6 +14,7 @@ from packaging.version import Version
 from app.task.Whimbox import manager
 from app.task.Whimbox.tools import update
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from app.utils.common.process.runner import ProcessCleanupUnconfirmed
 
 
 @pytest.fixture
@@ -63,6 +64,26 @@ async def test_no_downgrade_or_unnecessary_install(installation, monkeypatch):
     await update.ensure_backend_updated(installation)
     update.download_file.assert_not_awaited()
     confirm.assert_awaited_once_with(installation)
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_build_keeps_downloaded_packages(installation):
+    update.run_python.side_effect = ProcessCleanupUnconfirmed("writer not stopped")
+    with pytest.raises(ProcessCleanupUnconfirmed):
+        await update.prepare_update(installation)
+    stages = list((installation.parent / "data/whimbox_update").rglob("download-*"))
+    assert len(stages) == 1
+    assert list(stages[0].glob("*.whl"))
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_install_keeps_marker_and_packages(installation):
+    candidate = await update.prepare_update(installation)
+    update.run_python.side_effect = ProcessCleanupUnconfirmed("writer not stopped")
+    with pytest.raises(ProcessCleanupUnconfirmed):
+        await update.apply_update(installation, candidate)
+    assert update.pending_marker(installation).exists()
+    assert candidate.packages.exists() and candidate.wheel.exists()
 
 
 @pytest.mark.asyncio

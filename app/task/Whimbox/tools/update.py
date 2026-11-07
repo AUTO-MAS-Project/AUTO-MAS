@@ -25,9 +25,11 @@ from packaging.version import Version
 
 from app.core import Config
 from app.core.script_update import download_script_package as download_file
+from app.services import script_install
 from app.services.script_release import request_github_release
 from app.utils import ProcessRunner
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from app.utils.common.process.runner import ProcessCleanupUnconfirmed
 from app.utils.common.proxy_env import proxy_environment
 
 from .launcher import find_upstream_pids
@@ -46,6 +48,7 @@ class WhimboxUpdateUnsafeError(RuntimeError):
 
 
 async def confirm_usable_installation(root: Path) -> None:
+    script_install.assert_no_pending_process(root)
     if pending_marker(root).exists():
         raise WhimboxUpdateUnsafeError(RECOVERY_HINT)
     if await asyncio.to_thread(find_upstream_pids, root):
@@ -72,6 +75,13 @@ def pending_marker(root: Path) -> Path:
 @contextmanager
 def installation_access(root: Path):
     """同一安装的更新、运行和设置会话互斥；进程退出由操作系统释放。"""
+    with script_install.installation_access(root), _legacy_installation_access(root):
+        yield
+
+
+@contextmanager
+def _legacy_installation_access(root: Path):
+    """保留与旧版 MAS 共用的奇想盒安装锁。"""
     key = hashlib.sha256(os.path.normcase(str(root.resolve())).encode()).hexdigest()
     directory = Path(tempfile.gettempdir()) / "auto-mas-whimbox-locks"
     directory.mkdir(parents=True, exist_ok=True)
@@ -135,19 +145,24 @@ async def run_python(
     timeout: float = 30,
     env: Mapping[str, str] | None = None,
 ) -> str:
+    script_install.assert_no_pending_process(root)
     # -I 会忽略 PYTHON* 环境变量，本进程另传 -B；构建子进程通过环境继承。
     child_env = dict(os.environ if env is None else env)
     child_env["PYTHONDONTWRITEBYTECODE"] = "1"
-    result = await ProcessRunner.run_process(
-        root / REL_PYTHON_EXE,
-        "-I",
-        "-B",  # 预取的只读探测/构建导入不能向当前安装补写字节码缓存。
-        *args,
-        cwd=root,
-        timeout=timeout,
-        kill_tree_on_cancel=True,
-        env=child_env,
-    )
+    try:
+        result = await ProcessRunner.run_process(
+            root / REL_PYTHON_EXE,
+            "-I",
+            "-B",  # 预取的只读探测/构建导入不能向当前安装补写字节码缓存。
+            *args,
+            cwd=root,
+            timeout=timeout,
+            kill_tree_on_cancel=True,
+            env=child_env,
+        )
+    except ProcessCleanupUnconfirmed:
+        script_install.defer_installation_release(root)
+        raise
     if result.returncode != 0:
         if pending_marker(root).exists():
             raise WhimboxUpdateUnsafeError(RECOVERY_HINT)
@@ -267,7 +282,7 @@ async def prepare_update(root: Path) -> PreparedUpdate | str:
         return PreparedUpdate(
             root.resolve(), target, current, repairing, wheel, packages, hashes
         )
-    except FluxdownCancelUnconfirmed:
+    except (FluxdownCancelUnconfirmed, ProcessCleanupUnconfirmed):
         # The daemon might still own this isolated destination. Do not
         # delete a file that an external writer may continue to update.
         raise
@@ -309,6 +324,7 @@ async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
         or hashes != candidate.hashes
     ):
         raise RuntimeError("奇想盒安装或预下载包已变化，请重新检查更新")
+    cleanup_confirmed = True
     try:
         if await asyncio.to_thread(find_upstream_pids, root):
             raise RuntimeError("依赖准备期间奇想盒已启动，请退出后重试")
@@ -332,8 +348,12 @@ async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
             str(wheel),
             timeout=10 * 60,
         )
+    except ProcessCleanupUnconfirmed:
+        cleanup_confirmed = False
+        raise
     finally:
-        discard_update(candidate)
+        if cleanup_confirmed:
+            discard_update(candidate)
     if await installed_version(root) != target:
         raise WhimboxUpdateUnsafeError(RECOVERY_HINT)
     await run_python(root, "-m", "pip", "check")

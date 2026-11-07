@@ -9,6 +9,7 @@ import stat
 import tempfile
 import warnings
 import zipfile
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -19,8 +20,15 @@ import psutil
 from app.core import Config
 from app.services import script_install
 from app.utils import io as io_utils
+from app.utils.common.process.runner import (
+    ProcessCleanupUnconfirmed,
+    stop_process,
+    wait_for_process_cleanup,
+)
 
 from .poor_yaml import poor_yaml_read, poor_yaml_write
+
+_WRITE_CLEANUP_SECONDS = 5
 
 
 @dataclass(frozen=True)
@@ -36,6 +44,7 @@ class PreparedUpdate:
 
 
 def assert_idle(root: Path, *, allow_background_adb: bool = False) -> None:
+    script_install.assert_no_pending_process(root)
     root = root.resolve()
     for process in psutil.process_iter(["exe", "name"]):
         try:
@@ -62,7 +71,7 @@ def assert_idle(root: Path, *, allow_background_adb: bool = False) -> None:
 async def command(
     *args: str, cwd: Path, writing: bool = False, timeout: float = 1800
 ) -> str:
-    """下载取消可停止子进程；写盘阶段取消时等待原生操作退出，不放行安装目录。"""
+    """下载可回收进程树；写盘取消有界等待，未退出时继续保留目录锁。"""
     process = await asyncio.create_subprocess_exec(
         *args,
         cwd=str(cwd),
@@ -73,14 +82,23 @@ async def command(
     try:
         output, _ = await asyncio.wait_for(asyncio.shield(work), timeout)
     except (asyncio.CancelledError, TimeoutError):
-        if not writing and process.returncode is None:
-            process.kill()
-        # 安装器会写代码/依赖，不在它仍运行时释放目录锁。
-        while not work.done():
+        if not writing:
+            work.cancel()
+            with suppress(asyncio.CancelledError):
+                await work
             try:
-                await asyncio.shield(work)
-            except asyncio.CancelledError:
-                continue
+                await stop_process(process, kill_tree=True)
+            except ProcessCleanupUnconfirmed:
+                script_install.defer_installation_release(cwd)
+                raise
+            raise
+        try:
+            await wait_for_process_cleanup(work, timeout=_WRITE_CLEANUP_SECONDS)
+        except TimeoutError as error:
+            script_install.defer_installation_release(cwd, work)
+            raise script_install.InstallUnsafeError(
+                "SRC 更新进程尚未退出，任务已停止等待，安装目录将保持占用直至进程结束"
+            ) from error
         raise
     if process.returncode:
         if writing:
@@ -287,6 +305,7 @@ def assert_safe_to_launch(root: Path) -> None:
 
 
 def recover_deploy(root: Path) -> None:
+    script_install.assert_no_pending_process(root)
     journal = script_install.workspace(root) / "src-deploy.json"
     if not journal.exists():
         return

@@ -182,8 +182,9 @@ async def test_cancel_with_full_output_pipe_finishes_cleanup(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cancelled", [False, True])
+@pytest.mark.parametrize("kill_tree", [False, True])
 async def test_stop_releases_pipes_inherited_by_a_background_service(
-    monkeypatch, tmp_path, cancelled
+    monkeypatch, tmp_path, cancelled, kill_tree
 ):
     """命令退出后，后台服务持有管道不能阻止超时或取消完成。"""
     pid_path = tmp_path / "service.pid"
@@ -219,6 +220,7 @@ async def test_stop_releases_pipes_inherited_by_a_background_service(
             code,
             str(pid_path),
             timeout=30 if cancelled else 0.05,
+            kill_tree_on_cancel=kill_tree,
         )
     )
     try:
@@ -228,7 +230,14 @@ async def test_stop_releases_pipes_inherited_by_a_background_service(
             task.cancel()
         done, _ = await asyncio.wait({task}, timeout=3)
         assert done, "命令已退出，后台服务持有输出管道不应阻止任务结束"
-        with pytest.raises(asyncio.CancelledError if cancelled else TimeoutError):
+        expected = (
+            process_runner.ProcessCleanupUnconfirmed
+            if kill_tree
+            else asyncio.CancelledError
+            if cancelled
+            else TimeoutError
+        )
+        with pytest.raises(expected):
             await task
         assert service is not None and service.is_running()
         for fd in (1, 2):
@@ -356,8 +365,9 @@ async def test_deadline_reaps_wrapper_and_child_holding_pipes(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("stalled_creation", [False, True])
 async def test_repeated_cancel_during_creation_reaps_dependency_builder(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, stalled_creation
 ):
     """OS spawn precedes async pipe setup; cancellation still owns its children."""
     pid_path = tmp_path / "spawned-child.pid"
@@ -379,6 +389,10 @@ async def test_repeated_cancel_during_creation_reaps_dependency_builder(
         return await connect(*args, **kwargs)
 
     monkeypatch.setattr(loop, "connect_read_pipe", delayed_pipe)
+    if stalled_creation:
+        monkeypatch.setattr(
+            process_runner, "_PROCESS_CLEANUP_SECONDS", 0.1, raising=False
+        )
     child = None
     task = asyncio.create_task(
         process_runner.ProcessRunner.run_process(
@@ -403,10 +417,19 @@ async def test_repeated_cancel_during_creation_reaps_dependency_builder(
         task.cancel()
         await asyncio.sleep(0.02)
         assert not task.done(), "进程创建尚未交还句柄，取消不能遗失已启动的构建进程"
+        if stalled_creation:
+            done, _ = await asyncio.wait({task}, timeout=1)
+            assert done, "进程创建停滞不能让用户任务一直等待"
+            with pytest.raises(process_runner.ProcessCleanupUnconfirmed):
+                await task
         release.set()
         async with asyncio.timeout(10):
-            with pytest.raises(asyncio.CancelledError):
-                await task
+            if not stalled_creation:
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            with suppress(psutil.NoSuchProcess):
+                while child.is_running() and child.status() != psutil.STATUS_ZOMBIE:
+                    await asyncio.sleep(0.01)
         with suppress(psutil.NoSuchProcess):
             assert child.status() == psutil.STATUS_ZOMBIE
     finally:

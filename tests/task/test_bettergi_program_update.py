@@ -264,6 +264,43 @@ async def test_installer_cancellation_waits_for_exit_before_returning(
 
 
 @pytest.mark.asyncio
+async def test_stalled_installer_ends_task_but_keeps_installation_reserved(
+    tmp_path, monkeypatch
+):
+    exited = asyncio.Event()
+    monkeypatch.setattr(update, "_INSTALLER_CLEANUP_SECONDS", 0.05, raising=False)
+    monkeypatch.setattr(
+        update.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=SimpleNamespace(wait=exited.wait)),
+    )
+    operation = None
+    try:
+        with script_install.installation_access(tmp_path):
+            operation = asyncio.create_task(
+                update.run_installer(tmp_path / "installer.exe", tmp_path)
+            )
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            operation.cancel()
+            done, _ = await asyncio.wait({operation}, timeout=1)
+            assert done, "安装器停滞时，用户任务不能无限等待"
+            with pytest.raises(script_install.InstallUnsafeError):
+                await operation
+        with pytest.raises(script_install.InstallUnsafeError):
+            with script_install.installation_access(tmp_path):
+                pass
+    finally:
+        exited.set()
+        if operation is not None:
+            await asyncio.gather(operation, return_exceptions=True)
+        for _ in range(4):
+            await asyncio.sleep(0)
+    with script_install.installation_access(tmp_path):
+        pass
+
+
+@pytest.mark.asyncio
 async def test_success_exit_without_target_version_keeps_install_blocked(installation):
     root, config, _ = installation
     update.run_installer.side_effect = None
@@ -374,7 +411,7 @@ async def test_installer_timeout_waits_for_exit_before_releasing_lock(
     await asyncio.sleep(0)
     assert not running.done()
     finished.set()
-    with pytest.raises(script_install.InstallUnsafeError, match="尚未退出"):
+    with pytest.raises(script_install.InstallUnsafeError):
         await running
     monkeypatch.setattr(update.asyncio, "wait_for", original_wait_for)
 

@@ -6,10 +6,12 @@ import asyncio
 import json
 import sys
 import time
+from contextlib import suppress
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Sequence
 
+import psutil
 import pytest
 
 from app.core.emulator_manager.operations import EmulatorOperations
@@ -141,6 +143,83 @@ async def test_run_process_timeout_calls_cleanup_before_kill(tmp_path: Path) -> 
     # 收尾时 CLI 进程还活着：先收尾、后结束进程
     assert alive_at_cleanup == [True]
     assert exc_info.value.code == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_stalled_cli_cleanup_handler_has_a_deadline(monkeypatch):
+    monkeypatch.setattr(cli_module, "STOP_PROCESS_TIMEOUT_SECONDS", 0.05)
+    entered, stopped = asyncio.Event(), asyncio.Event()
+
+    async def cleanup(process):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+
+    operation = asyncio.create_task(
+        _run_process(
+            [sys.executable, "-I", "-c", "import time; time.sleep(30)"],
+            timeout=0.05,
+            timeout_handler=cleanup,
+        )
+    )
+    async with asyncio.timeout(3):
+        with pytest.raises(CLIError):
+            await operation
+    assert entered.is_set() and stopped.is_set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_cli_cleanup_releases_inherited_pipes(tmp_path, monkeypatch, cancelled):
+    pid_path = tmp_path / "service.pid"
+    code = (
+        "import subprocess,sys; from pathlib import Path; "
+        "p=subprocess.Popen([sys.executable,'-I','-c','import time; time.sleep(30)'], "
+        "stdin=subprocess.DEVNULL,stdout=sys.stdout,stderr=sys.stderr,close_fds=True); "
+        "Path(sys.argv[1]).write_text(str(p.pid))"
+    )
+    original = cli_module._utils_process_runner.create_subprocess
+    processes = []
+    ready = asyncio.Event()
+    service = None
+
+    async def create(*args, **kwargs):
+        nonlocal service
+        process = await original(*args, **kwargs)
+        processes.append(process)
+        async with asyncio.timeout(5):
+            while not pid_path.exists() or process.returncode is None:
+                await asyncio.sleep(0.01)
+        service = psutil.Process(int(pid_path.read_text()))
+        ready.set()
+        return process
+
+    monkeypatch.setattr(cli_module._utils_process_runner, "create_subprocess", create)
+    operation = asyncio.create_task(
+        _run_process(
+            [sys.executable, "-I", "-c", code, str(pid_path)],
+            timeout=30 if cancelled else 0.05,
+        )
+    )
+    try:
+        await asyncio.wait_for(ready.wait(), 5)
+        if cancelled:
+            operation.cancel()
+        done, _ = await asyncio.wait({operation}, timeout=3)
+        assert done, "CLI 已退出，持管道的后台服务不能阻止超时或取消完成"
+        with pytest.raises(asyncio.CancelledError if cancelled else CLIError):
+            await operation
+        assert service is not None and service.is_running()
+        for fd in (1, 2):
+            assert processes[0]._transport.get_pipe_transport(fd).is_closing()
+    finally:
+        if service is not None:
+            with suppress(psutil.NoSuchProcess):
+                service.kill()
+            await asyncio.to_thread(service.wait, timeout=5)
+        await asyncio.gather(operation, return_exceptions=True)
 
 
 @pytest.mark.asyncio

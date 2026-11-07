@@ -13,7 +13,6 @@ import hashlib
 import re
 import tempfile
 import zipfile
-from contextlib import suppress
 from copy import deepcopy
 from pathlib import Path
 from urllib.parse import quote, urlsplit
@@ -31,14 +30,17 @@ from app.services.common.update.transport import (
     request_mirror_resource,
 )
 from app.utils import io as _utils_io
+from app.utils.common.process.runner import wait_for_process_cleanup
 
 REPOSITORY = "babalae/better-genshin-impact"
 NOTICE_KEY = "notShowNewVersionNoticeEndVersion"
 # BetterGI 使用严格 SemVer 比较，不能填通配符或空的版本号。
 IGNORED_VERSION = "2147483647.0.0"
+_INSTALLER_CLEANUP_SECONDS = 5
 
 
 def assert_idle(root: Path) -> None:
+    script_install.assert_no_pending_process(root)
     for process in psutil.process_iter(["exe", "name"]):
         try:
             executable = process.info["exe"]
@@ -242,23 +244,20 @@ async def run_installer(installer: Path, root: Path) -> None:
     waiter = asyncio.create_task(process.wait())
     try:
         code = await asyncio.wait_for(asyncio.shield(waiter), timeout=30 * 60)
-    except asyncio.CancelledError:
-        # 不强杀正在写盘的官方安装器，等待退出后才释放目录锁；取消仍阻断启动。
-        while not waiter.done():
-            with suppress(asyncio.CancelledError):
-                await asyncio.shield(waiter)
+    except (asyncio.CancelledError, TimeoutError) as error:
+        # 不强杀写盘中的官方安装器；任务结束后，目录锁由退出等待者接管。
+        try:
+            await wait_for_process_cleanup(waiter, timeout=_INSTALLER_CLEANUP_SECONDS)
+        except TimeoutError as cleanup_error:
+            script_install.defer_installation_release(root, waiter)
+            raise script_install.InstallUnsafeError(
+                "BetterGI 安装器尚未退出，任务已停止等待，安装目录将保持占用直至进程结束"
+            ) from cleanup_error
+        if isinstance(error, TimeoutError):
+            raise script_install.InstallUnsafeError(
+                "BetterGI 官方安装已超时，已保留安装现场，请手动确认"
+            ) from error
         raise
-    except TimeoutError as error:
-        # 超时不是安装结束。持有目录锁直到安装器真正退出，否则下一任务
-        # 可能在同一目录仍被原生安装器修改时启动。
-        while not waiter.done():
-            try:
-                await asyncio.shield(waiter)
-            except asyncio.CancelledError:
-                continue
-        raise script_install.InstallUnsafeError(
-            "BetterGI 官方安装器尚未退出，已保留安装现场，请手动确认"
-        ) from error
     if code != 0:
         raise script_install.InstallUnsafeError(
             "BetterGI 官方安装器失败，已保留安装标记，请重试更新或手动修复"

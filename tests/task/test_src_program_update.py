@@ -144,6 +144,52 @@ async def test_cancelled_write_waits_until_process_finishes(tmp_path, monkeypatc
         await operation
 
 
+@pytest.mark.asyncio
+async def test_stalled_write_ends_task_but_keeps_installation_reserved(
+    tmp_path, monkeypatch
+):
+    finished = asyncio.Event()
+
+    async def communicate():
+        await finished.wait()
+        return b"", b""
+
+    monkeypatch.setattr(update, "_WRITE_CLEANUP_SECONDS", 0.05, raising=False)
+    monkeypatch.setattr(
+        update.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(
+            return_value=SimpleNamespace(communicate=communicate, returncode=None)
+        ),
+    )
+    operation = None
+    try:
+        with script_install.installation_access(tmp_path):
+            operation = asyncio.create_task(
+                update.command("installer", cwd=tmp_path, writing=True)
+            )
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            operation.cancel()
+            done, _ = await asyncio.wait({operation}, timeout=1)
+            assert done, "安装器停滞时，用户任务不能无限等待"
+            with pytest.raises(script_install.InstallUnsafeError):
+                await operation
+            with pytest.raises(script_install.InstallUnsafeError):
+                update.recover_deploy(tmp_path)
+        with pytest.raises(script_install.InstallUnsafeError):
+            with script_install.installation_access(tmp_path):
+                pass
+    finally:
+        finished.set()
+        if operation is not None:
+            await asyncio.gather(operation, return_exceptions=True)
+        for _ in range(4):
+            await asyncio.sleep(0)
+    with script_install.installation_access(tmp_path):
+        pass
+
+
 def test_cached_git_objects_windows_readonly_cleanup(tmp_path):
     import stat
 

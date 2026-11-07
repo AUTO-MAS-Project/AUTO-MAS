@@ -164,28 +164,36 @@ async def _run_process(
 
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
-    except asyncio.CancelledError:
-        try:
-            if timeout_handler is not None:
-                await asyncio.shield(timeout_handler(process))
-        except Exception as exc:  # noqa: BLE001 - kill/wait 仍必须执行
-            logger.warning(f"modavd 取消收尾失败: {exc}")
-        finally:
-            if process.returncode is None:
-                process.kill()
-            with suppress(Exception):
-                await process.wait()
-        raise
-    except asyncio.TimeoutError as exc:
-        try:
-            if timeout_handler is not None:
-                await timeout_handler(process)
-        except Exception as handler_error:  # noqa: BLE001 - timeout 本身优先返回
-            logger.warning(f"modavd 超时收尾失败: {handler_error}")
-        finally:
-            if process.returncode is None:
-                process.kill()
-            await process.communicate()
+    except (asyncio.CancelledError, TimeoutError) as exc:
+
+        async def cleanup() -> None:
+            try:
+                if timeout_handler is not None:
+                    handler = asyncio.create_task(timeout_handler(process))
+                    try:
+                        await _utils_process_runner.wait_for_process_cleanup(
+                            handler, timeout=STOP_PROCESS_TIMEOUT_SECONDS
+                        )
+                    except TimeoutError:
+                        handler.cancel()
+                        handler.add_done_callback(
+                            lambda task: None if task.cancelled() else task.exception()
+                        )
+                        logger.warning("modavd 实例收尾超时，将结束 CLI 并保留模拟器")
+            except Exception as error:  # noqa: BLE001 - CLI 仍须回收
+                logger.warning(f"modavd 收尾失败: {error}")
+            finally:
+                await _utils_process_runner.stop_process(process)
+
+        closing = asyncio.create_task(cleanup())
+        closing.add_done_callback(
+            lambda task: None if task.cancelled() else task.exception()
+        )
+        await _utils_process_runner.wait_for_process_cleanup(
+            closing, timeout=STOP_PROCESS_TIMEOUT_SECONDS + 10
+        )
+        if isinstance(exc, asyncio.CancelledError):
+            raise
         raise CLIError("timeout", f"modavd 命令超过 {timeout:.0f} 秒未结束") from exc
 
     return ProcessOutput(
