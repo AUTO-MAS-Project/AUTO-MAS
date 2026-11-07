@@ -1,7 +1,8 @@
-"""MAA 日常失败后可恢复或耗尽重试次数，剿灭明确失败停止重试。"""
+"""真实日志判态、队列下发与主循环共同守护体力/非体力任务的重试边界。"""
 
 import importlib
 import uuid
+from copy import deepcopy
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -14,49 +15,69 @@ from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceStatus
 from app.models.task import ScriptItem, UserItem
 from app.task.MAA.AutoProxy import AutoProxyTask
+from app.task.MAA.base_preset import get_maa_base_preset
 from app.task.MAA.constants import MAA_TASKS
 from tests.config_support import activate_config
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("annihilation", "quick_config", "recover", "expected_modes"),
+    ("failures", "source", "recover", "expected_modes", "routine_success"),
     [
-        (False, True, True, ["Routine", "Routine"]),
-        (False, True, False, ["Routine"] * 3),
-        (True, True, True, ["Annihilation", "Routine"]),
-        (False, False, True, ["Routine", "Routine"]),
+        (("基建换班",), "managed", True, ["Routine"] * 2, True),
+        (("基建换班",), "managed", False, ["Routine"] * 3, False),
+        (("理智任务",), "managed", True, ["Routine"], False),
+        (("理智任务", "基建换班"), "managed", True, ["Routine"] * 2, False),
+        (("库存保持与干员养成", "基建换班"), "managed", True, ["Routine"] * 2, False),
+        (("活动关均衡理智", "基建换班"), "managed", True, ["Routine"] * 2, False),
+        (("剿灭作战",), "managed", True, ["Annihilation", "Routine"], True),
+        (("基建换班",), "source", True, ["Routine"], False),
+        (("基建换班",), "native", True, ["Routine"], False),
     ],
     ids=[
         "daily-recovery",
         "daily-limit",
+        "sanity-only",
+        "mixed-fight",
+        "mixed-depot",
+        "mixed-event-depot",
         "annihilation-stops",
-        "source-queue-recovery",
+        "source-queue",
+        "native-queue",
     ],
 )
 async def test_task_failure_retry_scope(
     monkeypatch,
     isolated_app_paths,
-    annihilation,
-    quick_config,
+    failures,
+    source,
     recover,
     expected_modes,
+    routine_success,
 ):
     module = importlib.import_module("app.task.MAA.AutoProxy")
     root = isolated_app_paths.work_path / "maa"
     root.mkdir()
     config = await activate_config(MaaConfig(Info={"Path": root}))
+    annihilation = "剿灭作战" in failures
     users = ConfigCollection.build([MaaUserConfig])
     await users.activate()
     uid = users.add(
         MaaUserConfig,
         payload={
-            "Info": {"IfQuickConfig": quick_config},
+            "Info": {
+                "IfQuickConfig": source != "source",
+                "Base": "native" if source == "native" else "shared",
+            },
             "Task": {
                 **{f"If{task}": False for task in MAA_TASKS},
                 "IfStartUp": True,
+                "IfFight": True,
                 "IfInfrast": True,
                 "IfRecruit": True,
+                "IfDepotMaintain": "库存保持与干员养成" in failures,
+                "IfEventDepotMaintain": "活动关均衡理智" in failures,
+                "EventDepotMaintainPlans": '[{"StageType":"material","StageIndex":1,"DropCount":1}]',
                 "Annihilation": "Annihilation" if annihilation else "Close",
                 "AnnihilationStartWeekday": "Monday",
             },
@@ -76,9 +97,17 @@ async def test_task_failure_retry_scope(
     )
     proxy = AutoProxyTask(script, config, users, emulator, capture_adb=AsyncMock())
     attempts = []
+    queue = []
+
+    async def set_maa(device):
+        nonlocal queue
+        gui = get_maa_base_preset()
+        if source == "managed":
+            await proxy._apply_maa_quick_config(gui)
+        queue = gui["Configurations"]["Default"]["TaskQueue"]
 
     async def open_process(*args, **kwargs):
-        attempts.append((proxy.mode, dict(proxy.task_dict)))
+        attempts.append((proxy.mode, deepcopy(queue)))
 
     process = SimpleNamespace(
         open_process=open_process,
@@ -95,28 +124,35 @@ async def test_task_failure_retry_scope(
             succeeded = recover and (
                 proxy.mode == "Routine" and (annihilation or len(attempts) > 1)
             )
-            if succeeded:
-                log = (
-                    "完成任务: 开始唤醒\n完成任务: 基建换班\n"
-                    "完成任务: 自动公招\n任务已全部完成！"
-                )
-            else:
-                failed_task = "理智作战" if proxy.mode == "Annihilation" else "基建换班"
-                completed = "完成任务: 自动公招\n" if proxy.mode == "Routine" else ""
-                log = (
-                    f"完成任务: 开始唤醒\n任务出错: {failed_task}\n"
-                    f"{completed}任务已结束，以下任务出现错误: {failed_task}"
-                )
-            await self.callback([log], datetime.now().astimezone())
+            errors, lines = [], []
+            for task in queue:
+                if not task.get("IsEnable"):
+                    continue
+                name = task["Name"]
+                failed = not succeeded and name in failures
+                lines.append(f"{'任务出错' if failed else '完成任务'}: {name}\n")
+                if failed:
+                    errors.append(name)
+            lines.append(
+                "任务已结束，以下任务出现错误: " + ", ".join(errors)
+                if errors
+                else "任务已全部完成！"
+            )
+            await self.callback(lines, datetime.now().astimezone())
 
         async def stop(self):
             pass
 
     monkeypatch.setattr(module, "ProcessManager", lambda: process)
     monkeypatch.setattr(module, "LogMonitor", LogMonitor)
-    # 隔离 MAA 配置下发、进程/截图和通知边界，保留真实初始化、日志判定与重试循环。
-    monkeypatch.setattr(proxy, "set_maa", AsyncMock())
+    # 隔离文件落盘、进程/截图、通知和外部关卡查询，保留真实队列构造与重试决策。
+    monkeypatch.setattr(proxy, "set_maa", set_maa)
     monkeypatch.setattr(proxy, "_take_failure_shot", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        module.maa_stage_service,
+        "get_stage_info",
+        AsyncMock(return_value={"Activity": [{"Value": "ACT-1", "Drop": "30013"}]}),
+    )
     monkeypatch.setattr(module.System, "kill_process", AsyncMock())
     monkeypatch.setattr(module.Notify, "send_notice", AsyncMock())
     monkeypatch.setattr(module.Publisher, "send", AsyncMock())
@@ -125,12 +161,14 @@ async def test_task_failure_retry_scope(
 
     assert [mode for mode, _ in attempts] == expected_modes
     assert proxy.run_book["Annihilation"] is (not annihilation)
-    assert proxy.run_book["Routine"] is recover
+    assert proxy.run_book["Routine"] is routine_success
     records = [record for _, record in user.iter_history_logs()]
     assert len(records) == len(expected_modes)
     assert records[0].status == "MAA 部分任务执行失败"
-    assert records[-1].status == ("Success!" if recover else "MAA 部分任务执行失败")
-    if quick_config and not annihilation:
-        assert attempts[0][1]["Recruit"] is True
-        assert attempts[1][1]["Recruit"] is False
-        assert attempts[1][1]["Infrast"] is True
+    if len(attempts) > 1 and recover:
+        assert records[-1].status == "Success!"
+        enabled = {task["Name"] for task in attempts[-1][1] if task.get("IsEnable")}
+        assert "基建换班" in enabled
+        if not annihilation:
+            assert "自动公招" not in enabled
+            assert not set(failures).intersection(enabled - {"基建换班"})
