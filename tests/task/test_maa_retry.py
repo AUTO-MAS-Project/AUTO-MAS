@@ -13,8 +13,8 @@ from app.config import ConfigCollection
 from app.core.task_manager.manager import TaskInfo
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceStatus
-from app.models.task import ScriptItem, UserItem
-from app.task.MAA.AutoProxy import AutoProxyTask
+from app.models.task import LogRecord, ScriptItem, UserItem
+from app.task.MAA.AutoProxy import AutoProxyTask, _should_retry_maa
 from app.task.MAA.base_preset import get_maa_base_preset
 from app.task.MAA.constants import MAA_TASKS
 from tests.config_support import activate_config
@@ -172,3 +172,56 @@ async def test_task_failure_retry_scope(
         if not annihilation:
             assert "自动公招" not in enabled
             assert not set(failures).intersection(enabled - {"基建换班"})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ["干员培养", "更新数据"])
+async def test_extra_non_sanity_task_can_retry_then_complete(
+    monkeypatch, isolated_app_paths, name
+):
+    root = isolated_app_paths.work_path / "maa"
+    root.mkdir()
+    config = await activate_config(MaaConfig(Info={"Path": root}))
+    users = ConfigCollection.build([MaaUserConfig])
+    await users.activate()
+    uid = users.add(MaaUserConfig)
+    await users.commit()
+    user = UserItem(str(uid), "test", "运行")
+    script = ScriptItem(
+        str(uuid.uuid4()), "MAA", "运行", user_list=[user], current_index=0
+    )
+    task_info = TaskInfo("AutoProxy", "test", "queue", None, None)
+    monkeypatch.setattr(task_info, "schedule_on_change", lambda: None)
+    task_info.script_list = [script]
+    proxy = AutoProxyTask(
+        script, config, users, SimpleNamespace(), capture_adb=AsyncMock()
+    )
+    await proxy.prepare()
+    proxy.mode = "Routine"
+    # 与真实队列下发一致：常规任务已结束，只有附加任务等待 MAA 结果。
+    proxy.task_dict = {task: False for task in MAA_TASKS}
+    proxy.task_dict[name] = True
+    proxy.cur_user_log = LogRecord()
+    failure_name = f"{name} #2" if name == "干员培养" else name
+    failed_log = (
+        f"完成任务: {name} #1\n任务出错: {failure_name}\n"
+        f"任务已结束，以下任务出现错误: {failure_name}"
+    )
+
+    await proxy.check_log([failed_log], datetime.now().astimezone())
+
+    assert proxy.cur_user_log.status == "MAA 部分任务执行失败"
+    assert _should_retry_maa(
+        proxy.cur_user_log.status,
+        failed_log,
+        managed=True,
+        pending_tasks=proxy.task_dict,
+    )
+
+    proxy.cur_user_log = LogRecord()
+    await proxy.check_log(
+        [f"完成任务: {name}\n任务已全部完成！"], datetime.now().astimezone()
+    )
+
+    assert proxy.cur_user_log.status == "Success!"
+    assert proxy.task_dict[name] is False

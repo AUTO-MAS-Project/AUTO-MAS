@@ -174,6 +174,7 @@ _MAA_SANITY_COMPLETION_MARKERS = (
 )
 # 养成注入的任务名（语言无关，日志锚定与来源查找都用它，方案决策 27/30）
 _MAA_CULTIVATE_TASK_NAME = "养成计划"
+_MAA_AUTO_CULTIVATE_TASK_NAME = "干员培养"
 _MAA_DATA_UPDATE_TASK_NAME = "更新数据"
 # 识别数据档案文件名（MAA 原生格式透传）。方案决策 31 管的是归属：档案按写入时的
 # cur_user_uid 归属，安装目录那份 DepotData 是 MAA 自己的工作缓存，不属于查询链——
@@ -209,21 +210,25 @@ def _has_maa_task_failure(log: str) -> bool:
     return any(marker in log for marker in _MAA_TASK_FAILURE_MARKERS)
 
 
-def _failed_maa_sanity_tasks(log: str) -> set[str]:
-    """从 MAA 公开失败清单取体力任务；旧版沿用未被后续完成覆盖的错误行。"""
+def _failed_maa_task_names(log: str) -> set[str]:
+    """读取 MAA 公开失败清单；旧版只保留未被后续完成覆盖的错误行。"""
 
     summaries = re.findall(r"任务已结束，以下任务出现错误[:：]\s*([^\r\n]+)", log)
     if summaries:
-        failed_names = {
-            name.strip() for summary in summaries for name in summary.split(",")
-        }
-    else:
-        failed_names = set()
-        for error in re.finditer(r"任务出错:\s*([^\r\n]+)", log):
-            name = error.group(1).strip()
-            completions = re.finditer(rf"完成任务:\s*{re.escape(name)}\s*$", log, re.M)
-            if not any(done.start() > error.start() for done in completions):
-                failed_names.add(name)
+        return {name.strip() for summary in summaries for name in summary.split(",")}
+    failed_names = set()
+    for error in re.finditer(r"任务出错:\s*([^\r\n]+)", log):
+        name = error.group(1).strip()
+        completions = re.finditer(rf"完成任务:\s*{re.escape(name)}\s*$", log, re.M)
+        if not any(done.start() > error.start() for done in completions):
+            failed_names.add(name)
+    return failed_names
+
+
+def _failed_maa_sanity_tasks(log: str) -> set[str]:
+    """按 MAA 明确报错的任务名屏蔽体力任务，不反推游戏内消耗。"""
+
+    failed_names = _failed_maa_task_names(log)
     return {
         task
         for task, names in _MAA_SANITY_TASK_NAMES.items()
@@ -935,7 +940,7 @@ def _build_auto_cultivate_task(
         {
             **deepcopy(source_task or {}),
             "$type": "OperProgressTask",
-            "Name": "干员培养",
+            "Name": _MAA_AUTO_CULTIVATE_TASK_NAME,
             "IsEnable": True,
             "TaskType": "OperProgress",
             "Plans": plans,
@@ -2122,6 +2127,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
     ) -> dict | None:
         """自动培养独立门控；关闭或森空岛同步失败时不查询目录。"""
 
+        # 附加任务只在实际下发时登记；False 表示本轮已由 MAA 确认完成。
+        if self.task_dict.get(_MAA_AUTO_CULTIVATE_TASK_NAME) is False:
+            return None
         if self._cultivate_round_paused or not (
             self.cur_user_config.Task.IfCultivate
             and self.cur_user_config.Task.CultivateAutoRaise
@@ -2135,7 +2143,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         ):
             return None
 
-        source = _find_task_source(source_queue, "干员培养", "OperProgress")
+        source = _find_task_source(
+            source_queue, _MAA_AUTO_CULTIVATE_TASK_NAME, "OperProgress"
+        )
         release = read_installed_release(self.maa_root_path)
         installed_version = parse_version(release[0]) if release else None
         minimum_version = parse_version("v6.19.0-beta.1")
@@ -2395,7 +2405,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             auto_cultivate_task = await self._prepare_auto_cultivate_injection(
                 source_queue
             )
-            if has_targets:
+            if (
+                has_targets or self.task_dict.get(_MAA_DATA_UPDATE_TASK_NAME)
+            ) and self.task_dict.get(_MAA_DATA_UPDATE_TASK_NAME) is not False:
                 # 更新数据紧跟养成/库存保持注入（方案决策 30），为下一轮
                 # 提供归属正确的识别数据
                 skland_bound = bool(
@@ -2686,10 +2698,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 # 养成刷取或库存保持结束后立即培养、更新数据，再执行日常任务。
                 if auto_cultivate_task is not None:
                     task_queue.append(auto_cultivate_task)
+                    self.task_dict[_MAA_AUTO_CULTIVATE_TASK_NAME] = True
                     self._cultivate_auto_raise_injected = True
                     self._cultivate_progress_synced = False
                 if update_task is not None:
                     task_queue.append(update_task)
+                    self.task_dict[_MAA_DATA_UPDATE_TASK_NAME] = True
                     if not skland_bound:
                         self._cultivate_progress_synced = False
             task_queue.append(task_set[task_type])
@@ -3044,6 +3058,19 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     ):
                         self._stock_depot_completed = True
                     self.task_dict[en_task] = False
+
+            failed_names = _failed_maa_task_names(log)
+            for name in (_MAA_AUTO_CULTIVATE_TASK_NAME, _MAA_DATA_UPDATE_TASK_NAME):
+                if name not in self.task_dict:
+                    continue
+                task_failed = any(
+                    failed == name or failed.startswith((f"{name} (", f"{name} #"))
+                    for failed in failed_names
+                )
+                if not task_failed and (
+                    f"完成任务: {name}" in log or f"{name} 任务跳过" in log
+                ):
+                    self.task_dict[name] = False
 
             if self.task_dict.get("EventDepotMaintain"):
                 event_names = ("活动关均衡理智", "活动库存保持")

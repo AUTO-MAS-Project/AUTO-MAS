@@ -186,3 +186,14 @@ async def test_activity_skip_only_suppresses_cultivation_farming(
         assert task_types.index("OperProgress") < task_types.index("UserDataUpdate")
         assert task_types.index("UserDataUpdate") < task_types.index("Fight")
         assert proxy._cultivate_auto_raise_injected is True
+        assert proxy.task_dict["干员培养"] is True
+        assert proxy.task_dict["更新数据"] is True
+
+        # 日志已确认完成的非体力附加任务，不随其他任务的重试再次下发。
+        proxy.task_dict.update({"干员培养": False, "更新数据": False})
+        retried_gui = deepcopy(module.get_maa_base_preset())
+        await AutoProxyTask._apply_maa_quick_config(proxy, retried_gui)
+        assert not any(
+            item["TaskType"] in ("OperProgress", "UserDataUpdate")
+            for item in retried_gui["Configurations"]["Default"]["TaskQueue"]
+        )
