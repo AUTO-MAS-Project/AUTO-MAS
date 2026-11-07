@@ -22,8 +22,9 @@
 
 MaaCore（v6.18.0 实测）对魔改 AVD 没有截图增强，走 adb 单次约 250 ms。它的 MuMu 通道
 只是在配置的 MuMu 目录下 ``LoadLibrary`` ``shell\\sdk\\external_renderer_ipc.dll`` 再按名字
-取四个函数，所以放一个自己写的同名 DLL（``res/avdshim``，读模拟器的截图共享内存
-``SHM_videmulator<控制台端口>``）就能让 MaaCore 选中 MumuExtras，稳态 3 ms（预研 §5）。
+取四个函数，所以放一个同名 DLL（``res/avdshim``：ModAVDExtras 发布的兼容外壳，读模拟器的
+截图共享内存 ``SHM_videmulator<控制台端口>``，来源和版本见同目录的 ``README.md``）就能让
+MaaCore 选中 MumuExtras，稳态 2–3 ms。
 
 MAA 侧的连接配置按 MAA 6.18.0 源码写（``MaaWpfGui/Configuration/Single/Settings/
 ConnectSettings.cs``、``ConnectionExtra/Mumu12Extra.cs``、``Models/EmulatorConnectionExtra/
