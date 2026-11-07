@@ -268,8 +268,7 @@ export function runtimeAssetName(version: string): string {
  *
  * CNB 在最前：它是维护者要求的首选（国内直连、Release 资产已同步过去），实测下载走
  * `asset.cnb.cool` 的 302；随后是这批用户实测能连上的 gh-proxy 家族，官方源永远兜底在最后。
- * 这份表刻意写死在代码里而不进 `mirror_config.json`：云端配置是整体替换 `mirrors` 对象的，
- * 新增一类会在云端还没跟上时变成 undefined。
+ * Runtime 尚未安装时也必须能下载它，因此候选地址由桌面端提供，不依赖 Runtime 选源。
  */
 export function buildRuntimeBinarySources(version: string): RuntimeBinarySource[] {
   const asset = runtimeAssetName(version)

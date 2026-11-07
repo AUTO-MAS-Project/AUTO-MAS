@@ -62,13 +62,10 @@
       "exportLogsHint": "Still stuck? Package the debug folder as a ZIP and share it in the QQ group for help.",
       "internalErrorNotice": "This is an internal problem; retrying will not help. Please report it with the log.",
       "joinGroup": "Join the QQ group for help",
-      "mirrorRecommended": "Recommended",
-      "mirrorTitle": "Retry with a different source",
       "openLogFailed": "Could not open the log: {error}",
       "rebuildEnvironment": "Rebuild the environment",
       "restoreWorkspace": "Restore program files and retry",
       "restoringWorkspace": "Restoring program files and preparing the runtime environment...",
-      "retryOtherMirror": "Retry with another source",
       "runDoctor": "Check the environment",
       "runtimeCurrent": "Runtime {version} is already the latest release. Please retry or check the logs.",
       "runtimeRestarting": "Runtime update complete; reinitializing from scratch...",
@@ -90,7 +87,6 @@
     "step": {
       "failed": "{title} failed",
       "retry": "Retry",
-      "retryWithMirror": "Retry with another source",
       "skip": "Skip this step",
       "skipConsequence": "(the app may not work properly)"
     },

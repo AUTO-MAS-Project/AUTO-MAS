@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 import type { InstalledAppearance } from '../src/types/appearance'
-import type { ElectronAPI, RuntimeLaunchModeState } from '../src/types/electron'
+import type { ElectronAPI } from '../src/types/electron'
 import { expect, test } from './fixtures'
 
 const chooseOption = async (page: Page, select: Locator, label: string) => {
@@ -102,63 +102,15 @@ test.describe('@settings user preferences', () => {
     }
   })
 
-  test('restores the persisted Runtime choice and allows switching back to auto', async ({
+  test('advanced settings keeps developer tools without a backend mode selector', async ({
     app,
     page,
   }) => {
-    await page.addInitScript(() => {
-      const key = 'auto-mas.e2e.runtime-launch-mode'
-      const readState = (): RuntimeLaunchModeState => {
-        const persisted = localStorage.getItem(key) === 'auto' ? 'auto' : 'managed'
-        return {
-          persisted,
-          mode: persisted === 'auto' ? 'development' : 'managed',
-          source: persisted === 'auto' ? 'default' : 'setting',
-        }
-      }
-      let bridge: ElectronAPI | undefined
-      Object.defineProperty(window, 'electronAPI', {
-        configurable: true,
-        get: () => bridge,
-        set: (base: ElectronAPI) => {
-          bridge = {
-            ...base,
-            getRuntimeLaunchMode: async () => readState(),
-            setRuntimeLaunchMode: async mode => {
-              localStorage.setItem(key, mode)
-              return readState()
-            },
-          }
-        },
-      })
-    })
     await app.goto('/settings')
     await page.getByRole('tab', { name: 'Advanced', exact: true }).click()
-    const control = page.locator('.ant-segmented[aria-label="Backend launch mode"]')
-    await expect(control).toBeVisible()
-    await expect(control.getByRole('radio')).toHaveCount(2)
-    await expect(
-      control.getByRole('radio', { name: 'Supervised by Runtime (managed)', exact: true })
-    ).toBeChecked()
-    await expect(page.locator('.mode-effective')).toContainText('Supervised by Runtime (managed)')
-    await chooseSegment(control, 'Auto')
-    await expect
-      .poll(() => page.evaluate(() => localStorage.getItem('auto-mas.e2e.runtime-launch-mode')))
-      .toBe('auto')
-    await page.reload()
-    await page.getByRole('tab', { name: 'Advanced', exact: true }).click()
-    await expect(control.getByRole('radio', { name: 'Auto', exact: true })).toBeChecked()
-    await expect(page.locator('.mode-effective')).toContainText(
-      'Supervised by Runtime (development)'
-    )
-    await expect(page.locator('.mode-effective')).toContainText(
-      'Takes effect after restarting the app'
-    )
-    await chooseSegment(control, 'Supervised by Runtime (managed)')
-    await expect
-      .poll(() => page.evaluate(() => localStorage.getItem('auto-mas.e2e.runtime-launch-mode')))
-      .toBe('managed')
-    await app.evidence('runtime-launch-mode-restored')
+    await expect(page.getByRole('button', { name: 'Open DevTools', exact: true })).toBeVisible()
+    await expect(page.getByText('Backend launch mode', { exact: true })).toHaveCount(0)
+    await app.evidence('advanced-runtime-settings')
   })
 
   test('preserves appearance sidebar and title colors and restores the built-in theme', async ({

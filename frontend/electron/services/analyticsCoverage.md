@@ -29,7 +29,7 @@
 | T002 | initialization_decided：多少启动需要初始化或直接进入 | 已接入，持续复核 |
 | T003 | initialization_finished_v2：初始化走完、失败、跳过分别多少 | 已接入，持续复核 |
 | T004 | initialization_stage_finished_v2：Python、依赖、仓库等阶段哪里卡住 | 已接入，持续复核 |
-| T005 | initialization_recovery_selected：重试、重建、换镜像、跳过是否有效 | 已接入，持续复核 |
+| T005 | initialization_recovery_selected：重试、重建、源码恢复与跳过是否有效 | 已接入，持续复核 |
 | T006 | backend_start_finished：后端启动成功率和等待时间 | 已接入，持续复核 |
 | T007 | backend_restart_finished：主动更新和故障重启能否恢复 | 已接入，持续复核 |
 | T008 | runtime_alignment_finished：Runtime 升级、校验、回退是否完成 | 已接入，持续复核 |
