@@ -10,6 +10,8 @@ import psutil
 
 from app.utils import get_logger
 
+from .scope import current_process_scope, current_update_scope
+
 logger = get_logger("进程管理")
 
 
@@ -19,7 +21,7 @@ def _terminate_process_tree(pid: int, *, grace_period: float = 3) -> None:
     try:
         root = psutil.Process(pid)
         processes = [*root.children(recursive=True), root]
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
+    except psutil.NoSuchProcess:
         return
 
     for process in reversed(processes):
@@ -30,8 +32,10 @@ def _terminate_process_tree(pid: int, *, grace_period: float = 3) -> None:
     for process in alive:
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
             process.kill()
-    if alive and grace_period > 0:
-        psutil.wait_procs(alive, timeout=grace_period)
+    if alive:
+        _, alive = psutil.wait_procs(alive, timeout=max(1, grace_period))
+        if alive:
+            raise RuntimeError("无法确认子进程树已停止，不能释放更新目录")
 
 
 async def _stop_process(
@@ -50,22 +54,22 @@ async def _stop_process(
         else:
             with suppress(ProcessLookupError):
                 process.kill()
-        # 不回收进程树的命令可能拉起 ADB 服务，不能等后台服务关闭管道。
-        # 依赖安装等写入者仍沿用原有等待策略，避免提前交还正在写入的目录。
+
+        # 退出确认边界：安装进程树已回收，主进程也必须已经退出。
+        # 这里不使用 process.wait()，它可能被尚未关闭的输出管道拖住。
         try:
-            async with asyncio.timeout(
-                1 if deadline is not None or not kill_tree else None
-            ):
-                # communicate 的读协程已被取消；仅 wait 会留下暂停读取的满管道。
-                await process.communicate()
-        except TimeoutError:
-            # StreamReader 没有公开的 close；只释放本地读端，保留后台服务。
-            # 项目固定 Python 3.12，升级时需核对 transport 接口。
-            for fd in (1, 2):
-                pipe = process._transport.get_pipe_transport(fd)
-                if pipe is not None:
-                    pipe.close()
-            logger.warning("子进程已发送终止信号，等待输出管道关闭超时，已关闭本地读端")
+            async with asyncio.timeout(1):
+                while process.returncode is None:
+                    await asyncio.sleep(0.01)
+        except TimeoutError as error:
+            raise RuntimeError("无法确认进程已停止，不能释放更新目录") from error
+
+        # 确认之后统一强制清理；后续新增的例外判断放在此边界之后。
+        # 项目固定 Python 3.12，不排空输出、不等待 EOF，直接关闭本命令全部管道。
+        for fd in (0, 1, 2):
+            pipe = process._transport.get_pipe_transport(fd)
+            if pipe is not None:
+                pipe.close()
 
     # 停进程树在线程里执行；重复停止不能只取消等待，让 pip 等写入者继续运行。
     cleanup = asyncio.create_task(stop_and_wait())
@@ -147,10 +151,16 @@ async def create_subprocess(
 
     platform_process = process_platform.platform_process
 
-    base_flags = platform_process.creation_flags
+    scope = current_process_scope.get()
+    if scope is not None:
+        scope.ensure_can_start()
+
+    base_flags = platform_process.creation_flags | kwargs.pop("creationflags", 0)
+    if scope is not None:
+        base_flags |= scope.creation_flags
     breakaway_flags = platform_process.breakaway_flags if breakaway else 0
     try:
-        return await asyncio.create_subprocess_exec(
+        process = await asyncio.create_subprocess_exec(
             program,
             *args,
             creationflags=base_flags | breakaway_flags,
@@ -164,12 +174,32 @@ async def create_subprocess(
             f"带 CREATE_BREAKAWAY_FROM_JOB 启动子进程被拒绝(WinError 5)，"
             f"父进程所在 Job 不允许脱离，去掉该标志重试: {program}"
         )
-        return await asyncio.create_subprocess_exec(
+        process = await asyncio.create_subprocess_exec(
             program,
             *args,
             creationflags=base_flags,
             **kwargs,
         )
+    if scope is not None:
+        if scope.closed:
+            with suppress(ProcessLookupError):
+                process.kill()
+            for fd in (0, 1, 2):
+                pipe = process._transport.get_pipe_transport(fd)
+                if pipe is not None:
+                    pipe.close()
+            raise asyncio.CancelledError
+        try:
+            scope.track(
+                process,
+                suspended=bool(scope.creation_flags),
+                writer=current_update_scope.get() is scope,
+            )
+        except Exception:
+            with suppress(ProcessLookupError):
+                process.kill()
+            raise
+    return process
 
 
 class ProcessRunner:
@@ -191,8 +221,8 @@ class ProcessRunner:
         其余（taskkill/schtasks/adb 等工具）保持默认 False，留在监督器的 Job 里。
         deadline 可选，使用 time.monotonic() 的绝对时间，覆盖创建和执行；超时或
         取消后立即清理，最多再等 1 秒释放管道。要求回收进程树时，先等创建落定
-        取得句柄，再回收已启动的子进程。不回收进程树时，输出管道收尾也只等 1 秒；
-        未传 deadline 的进程树回收保留原有等待策略。
+        取得句柄，再回收已启动的子进程并直接关闭本命令的标准管道。
+        各命令取消后的输出统一直接关闭，不再等待 EOF。
         """
 
         command = [str(program), *args]
@@ -270,6 +300,9 @@ class ProcessRunner:
         logger.info(
             f"子进程已退出: {command} - 用时: {time.monotonic() - started_at:.3f}秒"
         )
+        scope = current_process_scope.get()
+        if scope is not None:
+            scope.forget(process)
 
         return ProcessResult(
             stdout=decode_bytes(stdout),

@@ -19,6 +19,7 @@ import psutil
 from app.core import Config
 from app.services import script_install
 from app.utils import io as io_utils
+from app.utils.common.process.runner import create_subprocess
 
 from .poor_yaml import poor_yaml_read, poor_yaml_write
 
@@ -63,7 +64,7 @@ async def command(
     *args: str, cwd: Path, writing: bool = False, timeout: float = 1800
 ) -> str:
     """下载取消可停止子进程；写盘阶段取消时等待原生操作退出，不放行安装目录。"""
-    process = await asyncio.create_subprocess_exec(
+    process = await create_subprocess(
         *args,
         cwd=str(cwd),
         stdout=asyncio.subprocess.PIPE,

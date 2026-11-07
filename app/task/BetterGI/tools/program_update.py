@@ -31,6 +31,7 @@ from app.services.common.update.transport import (
     request_mirror_resource,
 )
 from app.utils import io as _utils_io
+from app.utils.common.process.runner import create_subprocess
 
 REPOSITORY = "babalae/better-genshin-impact"
 NOTICE_KEY = "notShowNewVersionNoticeEndVersion"
@@ -236,7 +237,7 @@ def unpack_mirror_installer(
 
 async def run_installer(installer: Path, root: Path) -> None:
     # Kachina -S 静默安装，-D 显式指定现有安装目录；不用 -O，避免离线包再联网取包。
-    process = await asyncio.create_subprocess_exec(
+    process = await create_subprocess(
         str(installer), "-S", "-D", str(root.resolve()), cwd=str(installer.parent)
     )
     waiter = asyncio.create_task(process.wait())

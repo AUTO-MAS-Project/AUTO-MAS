@@ -9,6 +9,55 @@ from app.task.MaaFW.tools.core.project_update import updater
 
 
 @pytest.mark.asyncio
+async def test_task_force_stop_kills_installation_thread_process(tmp_path):
+    import asyncio
+    import sys
+    from contextlib import suppress
+
+    import psutil
+
+    from app.task.MaaFW.tools.core.runtime_pool import installer
+    from app.utils.common.process.scope import TaskProcessScope
+
+    scope = TaskProcessScope()
+    marker = tmp_path / "installer.pid"
+    code = (
+        "import os,sys,time; from pathlib import Path; "
+        "Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)"
+    )
+
+    def install():
+        with installer.install_process_factory_scope(scope.popen):
+            return installer._run_subprocess(
+                [sys.executable, "-I", "-c", code, str(marker)],
+                cwd=tmp_path,
+                env=None,
+                timeout=60,
+            )
+
+    worker = asyncio.create_task(asyncio.to_thread(install))
+    try:
+        async with asyncio.timeout(5):
+            while not marker.exists():
+                await asyncio.sleep(0.01)
+        process = psutil.Process(int(marker.read_text()))
+        scope.add_check("update", scope.stop_updates, timeout=0.05)
+        await scope.run_checks()
+        assert scope.checks[0].status == "timed_out"
+        await scope.force_close()
+        result = await asyncio.wait_for(worker, 3)
+        assert result.returncode != 0
+        with suppress(psutil.NoSuchProcess):
+            assert process.status() == psutil.STATUS_ZOMBIE
+        with pytest.raises(asyncio.CancelledError):
+            scope.popen([sys.executable, "-c", "pass"])
+    finally:
+        if not scope.closed:
+            await scope.force_close()
+        await asyncio.gather(worker, return_exceptions=True)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "changed,blocked", [(False, False), (True, False), (False, True)]
 )

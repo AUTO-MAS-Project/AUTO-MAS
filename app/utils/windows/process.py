@@ -4,12 +4,59 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Unpack
 
+import psutil
+import win32api
+import win32con
+import win32job
+import win32process
+
 from app.utils.common.process.runner import ProcessRunner
 
 from ..contracts.process import ElevatedProcess, EmulatorPopenOptions
 
 
+class WindowsTaskProcessJob:
+    # 先挂起创建，加入任务 Job 后再恢复，避免短命包装器抢先派生并退出。
+    creation_flags = 0x00000004  # CREATE_SUSPENDED
+
+    def __init__(self) -> None:
+        self._handle = win32job.CreateJobObject(None, "")
+
+    def assign(self, pid: int, *, suspended: bool) -> None:
+        process = win32api.OpenProcess(
+            win32con.PROCESS_SET_QUOTA
+            | win32con.PROCESS_TERMINATE
+            | win32con.PROCESS_QUERY_INFORMATION,
+            False,
+            pid,
+        )
+        try:
+            if not win32job.IsProcessInJob(process, self._handle):
+                win32job.AssignProcessToJobObject(self._handle, process)
+        finally:
+            process.Close()
+        if suspended:
+            for thread in psutil.Process(pid).threads():
+                handle = win32api.OpenThread(
+                    win32con.THREAD_SUSPEND_RESUME, False, thread.id
+                )
+                try:
+                    win32process.ResumeThread(handle)
+                finally:
+                    handle.Close()
+
+    def kill(self) -> None:
+        win32job.TerminateJobObject(self._handle, 1)
+
+    def close(self) -> None:
+        self._handle.Close()
+
+
 class WindowsProcessPlatform:
+    @staticmethod
+    def create_task_job() -> WindowsTaskProcessJob:
+        return WindowsTaskProcessJob()
+
     supports_elevation = True
     # 后端被 AUTO-MAS-Runtime 用 Job Object 监督（KILL_ON_JOB_CLOSE，且允许
     # breakaway）时，子进程默认都留在 Job 里：MAA.exe、各专项脚本进程、MaaFW

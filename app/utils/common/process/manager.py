@@ -31,6 +31,7 @@ import psutil
 from app.utils import UnsupportedPlatformError, get_logger, process_platform, window
 
 from .runner import create_subprocess
+from .scope import current_process_scope
 
 logger = get_logger("进程管理")
 
@@ -350,6 +351,9 @@ class ProcessManager:
             if found is not None:
                 proc, create_time = found
                 self.target_process = proc
+                scope = current_process_scope.get()
+                if scope is not None:
+                    scope.track(proc)
                 # 记录目标信息与创建时间, 供 reseek_target 改绑后继进程。
                 # 创建时间取扫描阶段已读到的值, 不重新查询: 进程可能在扫描后
                 # 退出而抛异常, 受保护进程的创建时间也可能读不到
