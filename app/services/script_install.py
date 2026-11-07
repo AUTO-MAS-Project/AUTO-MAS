@@ -16,8 +16,12 @@ import threading
 import zipfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import BinaryIO
 
+from app.core import Config
 from app.utils import update_files
 
 
@@ -25,12 +29,149 @@ class InstallUnsafeError(RuntimeError):
     """不能确认安装完整或仍有进程访问，必须停止启动。"""
 
 
+@dataclass
+class _InstallationWork:
+    active: bool = True
+    workers: set[asyncio.Task] = field(default_factory=set)
+
+
+_installation_work: ContextVar[tuple[_InstallationWork, ...]] = ContextVar(
+    "installation_work", default=()
+)
+
+
+def _workers_finished(workers: set[asyncio.Task]) -> asyncio.Task:
+    from app.utils.common.process.scope import detached_process_context
+
+    async def finished() -> None:
+        # 文件线程抛错也表示已停写；错误现场仍由安装事务标记保护。
+        await asyncio.gather(*workers, return_exceptions=True)
+
+    return asyncio.create_task(finished(), context=detached_process_context())
+
+
+_pending_processes: dict[str, asyncio.Future | None] = {}
+_deferred_locks: dict[str, list[BinaryIO]] = {}
+_process_lock = threading.Lock()
+
+
+def assert_no_pending_process(root: Path) -> None:
+    """后台安装仍在收尾时，禁止同一安装的恢复、启动与再次写入。"""
+    with _process_lock:
+        key = _key(root)
+        if key in _pending_processes:
+            message = (
+                "进程退出状态未确认，请先关闭相关程序并重启 MAS 后重试"
+                if _pending_processes[key] is None
+                else "更新进程尚未退出，已保留安装现场，请稍后重试"
+            )
+            raise InstallUnsafeError(message)
+
+
+def _release_access(handle: BinaryIO) -> None:
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle, fcntl.LOCK_UN)
+    finally:
+        handle.close()
+
+
+def defer_installation_release(
+    root: Path, completion: asyncio.Future | None = None
+) -> None:
+    """任务可结束，但跨进程目录锁要等原生安装真正完成才释放。"""
+    if completion is None:
+        from app.utils.common.process.scope import (
+            current_process_scope,
+            detached_process_context,
+        )
+
+        scope = current_process_scope.get()
+        if scope is not None:
+
+            async def confirmed_force_cleanup() -> None:
+                await scope.finished.wait()
+                if scope.cleanup_failed:
+                    raise InstallUnsafeError("任务强制清理失败，保留安装占用")
+                # 创建句柄晚到时，业务任务可先结束，目录仍须等它被回收。
+                results = await asyncio.gather(
+                    *tuple(scope.pending_creations), return_exceptions=True
+                )
+                from app.utils.common.process.runner import (
+                    is_process_cleanup_unconfirmed,
+                )
+
+                for result in results:
+                    if isinstance(
+                        result, BaseException
+                    ) and is_process_cleanup_unconfirmed(result):
+                        raise InstallUnsafeError(
+                            "晚到进程未确认退出，保留安装占用"
+                        ) from result
+
+            completion = asyncio.create_task(
+                confirmed_force_cleanup(), context=detached_process_context()
+            )
+    key = _key(root)
+    with _process_lock:
+        if key in _pending_processes:
+            previous = _pending_processes[key]
+            if previous is None:
+                completion = None
+            elif completion is not None and previous is not completion:
+                from app.utils.common.process.scope import detached_process_context
+
+                async def both(prior=previous, later=completion) -> None:
+                    await asyncio.gather(prior, later)
+
+                completion = asyncio.create_task(
+                    both(), context=detached_process_context()
+                )
+        _pending_processes[key] = completion
+
+    # 进程树已失去归属、无法再证明停写时保留占用到宿主退出，不能猜测安全。
+    if completion is None:
+        return
+
+    def finished(task: asyncio.Future) -> None:
+        # 取消等待或读取失败不能证明安装器已退出；此时锁保留到宿主退出。
+        if task.cancelled() or task.exception() is not None:
+            return
+        with _process_lock:
+            if _pending_processes.get(key) is not task:
+                return
+            _pending_processes.pop(key)
+            handles = _deferred_locks.pop(key, [])
+        for handle in handles:
+            _release_access(handle)
+
+    completion.add_done_callback(finished)
+
+
 def _key(root: Path) -> str:
     return hashlib.sha256(os.path.normcase(str(root.resolve())).encode()).hexdigest()
 
 
 def workspace(root: Path) -> Path:
+    """与安装同盘的目录切换、恢复和资源备份工作区。"""
     return root.parent / f".mas-update-{_key(root)[:24]}"
+
+
+def record_directory(root: Path) -> Path:
+    """安装记录归 MAS 数据目录，不随脚本安装目录切换。"""
+    return Config.data_path / "script_update" / _key(root)[:24]
+
+
+def record_path(root: Path, filename: str) -> Path:
+    """长期安装记录只保存在 MAS 数据目录。"""
+    return record_directory(root) / filename
 
 
 @contextmanager
@@ -38,7 +179,12 @@ def installation_access(root: Path) -> Iterator[None]:
     """跨 MAS 进程互斥；调用方须持有到任务/配置恢复结束。"""
     directory = Path(tempfile.gettempdir()) / "auto-mas-install-locks"
     directory.mkdir(parents=True, exist_ok=True)
-    with (directory / f"{_key(root)}.lock").open("a+b") as handle:
+    key = _key(root)
+    assert_no_pending_process(root)
+    handle = (directory / f"{key}.lock").open("a+b")
+    acquired = False
+    work = _InstallationWork()
+    try:
         if handle.seek(0, 2) == 0:
             handle.write(b"\0")
             handle.flush()
@@ -56,33 +202,60 @@ def installation_access(root: Path) -> Iterator[None]:
             raise InstallUnsafeError(
                 "脚本安装正被另一个任务使用，请稍后重试"
             ) from error
-        try:
-            yield
-        finally:
-            if os.name == "nt":
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        acquired = True
+        _installation_work.set(
+            tuple(item for item in _installation_work.get() if item.active) + (work,)
+        )
+        yield
+    finally:
+        work.active = False
+        remaining = {task for task in work.workers if not task.done()}
+        if acquired and remaining:
+            defer_installation_release(root, _workers_finished(remaining))
+        with _process_lock:
+            deferred = acquired and key in _pending_processes
+            if deferred:
+                _deferred_locks.setdefault(key, []).append(handle)
+        if not deferred:
+            if acquired:
+                _release_access(handle)
             else:
-                fcntl.flock(handle, fcntl.LOCK_UN)
+                handle.close()
 
 
 async def run_worker(function: Callable, *args, **kwargs):
     """取消后等待文件操作确实停止，线程不能在任务退出后继续写入。"""
     cancelled = threading.Event()
     work = asyncio.create_task(asyncio.to_thread(function, *args, cancelled, **kwargs))
+    from app.utils.common.process.scope import current_process_scope
+
+    scope = current_process_scope.get()
+    if scope is not None:
+        scope.retain_worker(work)
+    for access in _installation_work.get():
+        if access.active:
+            access.workers.add(work)
+            work.add_done_callback(access.workers.discard)
     try:
         return await asyncio.shield(work)
     except asyncio.CancelledError:
         cancelled.set()
         while not work.done():
+            if scope is not None and scope.closed:
+                # 确认已到期：不再等线程，锁由 installation_access 交给真实完成者。
+                break
             try:
                 await asyncio.shield(work)
             except (asyncio.CancelledError, Exception):
                 if work.done():
                     break
         # 取出异常，取消的任务仍以 CancelledError 收口。
-        if not work.cancelled():
+        if work.done() and not work.cancelled():
             work.exception()
+        elif not work.done():
+            work.add_done_callback(
+                lambda done: None if done.cancelled() else done.exception()
+            )
         raise
 
 
@@ -222,9 +395,36 @@ def _write_state(
     temporary.replace(directory / filename)
 
 
+def _write_receipt(root: Path, files: dict[str, str]) -> None:
+    directory = record_directory(root)
+    directory.mkdir(parents=True, exist_ok=True)
+    _reject_link(directory)
+    _write_state(directory, {"files": files}, "installed.json")
+
+
+def _remove_empty_workspace(root: Path) -> None:
+    directory = workspace(root)
+    if directory.is_dir() and not any(directory.iterdir()):
+        directory.rmdir()
+
+
+def _discard_legacy_records(root: Path) -> None:
+    """只删除旧位置的长期记录，保留未清理的安装文件和用户资源备份。"""
+    directory = workspace(root)
+    if not directory.exists():
+        return
+    _reject_link(directory)
+    for filename in ("installed.json", "program-identity.json", "baah-version.json"):
+        path = directory / filename
+        if path.exists():
+            _reject_link(path)
+            path.unlink()
+    _remove_empty_workspace(root)
+
+
 def verify_installed_files(root: Path, cancelled: threading.Event) -> bool:
     """校验上次经可信包安装的分发文件；配置与新增运行数据不参与比较。"""
-    receipt = workspace(root) / "installed.json"
+    receipt = record_path(root, "installed.json")
     if not receipt.exists():
         return False
     try:
@@ -254,6 +454,7 @@ def recover_install(
     if not journal.exists():
         if (directory / "previous").exists():
             raise InstallUnsafeError("安装备份存在但恢复记录缺失，请保留现场并手动恢复")
+        _discard_legacy_records(root)
         return
     assert_idle()
     _reject_link(directory)
@@ -285,7 +486,9 @@ def recover_install(
                     raise InstallUnsafeError("原安装文件清单无效，不能自动清理备份")
                 remaining = tree_hashes(previous, cancelled)
                 if state.get("phase") == "installed":
-                    receipt = directory / "installed.json"
+                    receipt = record_path(root, "installed.json")
+                    if not receipt.exists():
+                        _write_receipt(root, state["package_files"])
                     _reject_link(receipt)
                     recorded = json.loads(receipt.read_text(encoding="utf-8"))
                     if not isinstance(recorded, dict) or recorded.get(
@@ -306,9 +509,7 @@ def recover_install(
                         raise InstallUnsafeError(
                             "原安装备份发生外部修改，已保留现场，不能自动删除备份"
                         )
-                    _write_state(
-                        directory, {"files": state["package_files"]}, "installed.json"
-                    )
+                    _write_receipt(root, state["package_files"])
                     _write_state(directory, {**state, "phase": "installed"})
                 shutil.rmtree(previous)
             else:
@@ -320,8 +521,9 @@ def recover_install(
         elif not ready.exists() and tree_hashes(root, cancelled) != state["files"]:
             raise InstallUnsafeError("更新恢复校验未通过，不能启动")
         elif not ready.exists():
-            _write_state(directory, {"files": state["package_files"]}, "installed.json")
+            _write_receipt(root, state["package_files"])
         journal.unlink()
+        _discard_legacy_records(root)
     except InstallUnsafeError:
         raise
     except Exception as error:
@@ -362,7 +564,7 @@ def install_package(
     if shutil.disk_usage(directory).free < required + 256 * 1024**2:
         raise OSError("磁盘空间不足，无法保留原安装并准备更新")
     shutil.copytree(root, ready)
-    receipt = directory / "installed.json"
+    receipt = record_path(root, "installed.json")
     if receipt.exists():
         old_files = json.loads(receipt.read_text(encoding="utf-8"))["files"]
         for name, digest in old_files.items():
@@ -425,7 +627,7 @@ def install_package(
             raise InstallUnsafeError(
                 "切换期间原安装备份被外部修改，已保留备份，请手动处理"
             )
-        _write_state(directory, {"files": package_files}, "installed.json")
+        _write_receipt(root, package_files)
         # 从此阶段起，新安装与收据均已验证；旧备份清理可安全续做。
         _write_state(directory, {**transaction_state, "phase": "installed"})
         shutil.rmtree(previous)
@@ -435,6 +637,7 @@ def install_package(
             "安装切换未完成确认，请重试恢复；原安装备份已保留"
         ) from error
     shutil.rmtree(package)
+    _remove_empty_workspace(root)
 
 
 def read_pe_architecture(executable: Path) -> str:

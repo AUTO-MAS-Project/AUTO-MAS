@@ -21,6 +21,7 @@ from app.models.config import CLASS_BOOK
 from app.models.task import ScriptItem, TaskExecuteBase, TaskItem
 from app.services.common.update.transport import BuiltinDownload, DownloadProgress
 from app.utils import get_logger
+from app.utils.common.process.scope import current_process_scope
 
 logger = get_logger("脚本更新")
 P = ParamSpec("P")
@@ -50,6 +51,10 @@ async def run_script_update(
     队列持有并等待收尾，不在此提前释放安装目录的使用权。
     """
     logger.debug(f"开始脚本更新：{request.script_type} {request.engine or ''}")
+    scope = current_process_scope.get()
+    if scope is not None:
+        with scope.updating():
+            return await operation(*args, **kwargs)
     return await operation(*args, **kwargs)
 
 

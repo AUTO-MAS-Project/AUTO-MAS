@@ -81,7 +81,7 @@ export function bootstrapSystemNotices(): void {
   if (subscriptionIds.length > 0) return
   subscriptionIds = [
     subscribe({ id: WS_ID_EMULATOR_MANAGER, type: WS_EMULATOR_NOTICE }, message =>
-      showNotice('模拟器管理', message.data)
+      showNotice(t('core.emulator2.noticeTitle'), message.data)
     ),
     subscribe({ id: WS_ID_MAIN, type: WS_SYSTEM_NOTICE }, message =>
       showSystemNotice(message.data)

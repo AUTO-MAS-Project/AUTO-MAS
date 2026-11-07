@@ -174,12 +174,12 @@ export function useShareApi() {
     try {
       const response = await call()
       if (response.code !== 200) {
-        error.value = response.message || '配置中心授权失败'
+        error.value = response.message || t('core.edit.share.startFailed')
         return null
       }
       return toAuthState(response)
     } catch (err) {
-      error.value = err instanceof Error ? err.message : '配置中心授权失败'
+      error.value = err instanceof Error ? err.message : t('core.edit.share.startFailed')
       return null
     }
   }
@@ -218,12 +218,12 @@ export function useShareApi() {
         config_name: configName,
       })
       if (response.code !== 200) {
-        error.value = response.message || '分享前检查失败'
+        error.value = response.message || t('core.edit.share.preflightFailed')
         return null
       }
       return response.risks ?? []
     } catch (err) {
-      error.value = err instanceof Error ? err.message : '分享前检查失败'
+      error.value = err instanceof Error ? err.message : t('core.edit.share.preflightFailed')
       return null
     }
   }
@@ -244,12 +244,12 @@ export function useShareApi() {
         acknowledged: payload.acknowledged,
       })
       if (response.code !== 200) {
-        error.value = response.message || '上传失败'
+        error.value = response.message || t('core.edit.uploadFailedCheckYour')
         return false
       }
       return true
     } catch (err) {
-      error.value = err instanceof Error ? err.message : '上传失败'
+      error.value = err instanceof Error ? err.message : t('core.edit.uploadFailedCheckYour')
       return false
     } finally {
       loading.value = false

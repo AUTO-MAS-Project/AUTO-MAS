@@ -184,7 +184,7 @@ export const featureAnalyticsSchemas = {
       'update_pause',
       'proxy',
       'performance_effects',
-      'settings_layout',
+      'settings_navigation',
       'other',
     ] as const,
     value_kind: ['enabled', 'disabled', 'default', 'custom'] as const,

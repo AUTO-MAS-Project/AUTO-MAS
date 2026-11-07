@@ -10,7 +10,71 @@ import psutil
 
 from app.utils import get_logger
 
+from .scope import current_process_scope, current_update_scope, detached_process_context
+
 logger = get_logger("进程管理")
+_PROCESS_CLEANUP_SECONDS = 8
+
+
+class ProcessCleanupUnconfirmed(RuntimeError):
+    """进程未确认停止，调用方须保留可能仍被写入的文件。"""
+
+
+def is_process_cleanup_unconfirmed(error: BaseException) -> bool:
+    while isinstance(error, (asyncio.CancelledError, TimeoutError)):
+        if error.__cause__ is None:
+            return False
+        error = error.__cause__
+    return isinstance(error, ProcessCleanupUnconfirmed)
+
+
+def close_process_pipes(process: asyncio.subprocess.Process) -> None:
+    """直接关闭本命令全部本地管道，不再等待输出 EOF。"""
+    for fd in (0, 1, 2):
+        pipe = process._transport.get_pipe_transport(fd)
+        if pipe is not None:
+            pipe.close()
+
+
+async def wait_for_process_cleanup[T](task: asyncio.Task[T], *, timeout: float) -> T:
+    """固定收尾预算；重复取消不延长期限，也不丢掉资源持有者。"""
+    expires = asyncio.get_running_loop().time() + timeout
+    cancellation: asyncio.CancelledError | None = None
+    while not task.done():
+        remaining = expires - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            raise TimeoutError
+        try:
+            done, _ = await asyncio.wait({task}, timeout=remaining)
+            if not done:
+                raise TimeoutError
+        except asyncio.CancelledError as error:
+            cancellation = error
+            scope = current_process_scope.get()
+            if scope is not None and scope.closed:
+                raise TimeoutError from error
+    result = task.result()
+    if cancellation is not None:
+        raise cancellation
+    return result
+
+
+def observe_process_exit(
+    process: asyncio.subprocess.Process, *, after_task_cleanup: bool = False
+) -> asyncio.Task[int]:
+    """锁的退出观察者只记账；任务强制停止时须先等统一清理结束。"""
+    scope = current_process_scope.get()
+
+    async def observe() -> int:
+        while process.returncode is None:
+            await asyncio.sleep(0.01)
+        if after_task_cleanup and scope is not None and scope.requested:
+            await scope.finished.wait()
+            if scope.cleanup_failed:
+                raise ProcessCleanupUnconfirmed("任务强制清理失败，安装目录仍保持占用")
+        return process.returncode
+
+    return asyncio.create_task(observe(), context=detached_process_context())
 
 
 def _terminate_process_tree(pid: int, *, grace_period: float = 3) -> None:
@@ -19,7 +83,7 @@ def _terminate_process_tree(pid: int, *, grace_period: float = 3) -> None:
     try:
         root = psutil.Process(pid)
         processes = [*root.children(recursive=True), root]
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
+    except psutil.NoSuchProcess:
         return
 
     for process in reversed(processes):
@@ -30,15 +94,17 @@ def _terminate_process_tree(pid: int, *, grace_period: float = 3) -> None:
     for process in alive:
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
             process.kill()
-    if alive and grace_period > 0:
-        psutil.wait_procs(alive, timeout=grace_period)
+    if alive:
+        _, alive = psutil.wait_procs(alive, timeout=max(1, grace_period))
+        if alive:
+            raise ProcessCleanupUnconfirmed("无法确认子进程树已停止，不能释放更新目录")
 
 
-async def _stop_process(
+async def stop_process(
     process: asyncio.subprocess.Process,
     *,
-    kill_tree: bool,
-    deadline: float | None,
+    kill_tree: bool = False,
+    deadline: float | None = None,
 ) -> None:
     async def stop_and_wait() -> None:
         if kill_tree and process.pid is not None:
@@ -50,25 +116,47 @@ async def _stop_process(
         else:
             with suppress(ProcessLookupError):
                 process.kill()
-        # 有截止时间的短命令不再为每个超时追加两轮 3 秒等待；仍给句柄释放留 1 秒余量。
+
+        # 退出确认边界：安装进程树已回收，主进程也必须已经退出。
+        # 这里不使用 process.wait()，它可能被尚未关闭的输出管道拖住。
         try:
-            async with asyncio.timeout(1 if deadline is not None else None):
-                # communicate 的读协程已被取消；仅 wait 会留下暂停读取的满管道。
-                await process.communicate()
-        except TimeoutError:
-            logger.warning("子进程已发送终止信号，等待句柄释放超时")
+            async with asyncio.timeout(1):
+                while process.returncode is None:
+                    await asyncio.sleep(0.01)
+        except TimeoutError as error:
+            raise ProcessCleanupUnconfirmed(
+                "无法确认进程已停止，不能释放更新目录"
+            ) from error
+
+        # 确认之后统一强制清理；后续新增的例外判断放在此边界之后。
+        # 项目固定 Python 3.12，不排空输出、不等待 EOF，直接关闭本命令全部管道。
+        close_process_pipes(process)
 
     # 停进程树在线程里执行；重复停止不能只取消等待，让 pip 等写入者继续运行。
-    cleanup = asyncio.create_task(stop_and_wait())
-    cancellation: asyncio.CancelledError | None = None
-    while not cleanup.done():
-        try:
-            await asyncio.shield(cleanup)
-        except asyncio.CancelledError as exc:
-            cancellation = exc
-    cleanup.result()
-    if cancellation is not None:
-        raise cancellation
+    cleanup = asyncio.create_task(stop_and_wait(), context=detached_process_context())
+    try:
+        await wait_for_process_cleanup(cleanup, timeout=_PROCESS_CLEANUP_SECONDS)
+    except (TimeoutError, ProcessCleanupUnconfirmed, psutil.Error, OSError) as error:
+        cleanup.add_done_callback(_consume_result)
+        close_process_pipes(process)
+        if isinstance(error, TimeoutError):
+            failure = ProcessCleanupUnconfirmed(
+                "进程回收超时，已保留安装现场并转入任务统一清理"
+            )
+        elif isinstance(error, ProcessCleanupUnconfirmed):
+            failure = error
+        else:
+            failure = ProcessCleanupUnconfirmed("进程未确认退出，安装现场仍保持占用")
+        if (current := asyncio.current_task()) is not None and current.cancelling():
+            raise asyncio.CancelledError from failure
+        if failure is error:
+            raise
+        raise failure from error
+
+
+def _consume_result(task: asyncio.Future) -> None:
+    if not task.cancelled():
+        task.exception()
 
 
 @dataclass
@@ -120,6 +208,7 @@ async def create_subprocess(
     program: Path | str,
     *args: str,
     breakaway: bool = False,
+    cleanup: bool = False,
     **kwargs,
 ) -> asyncio.subprocess.Process:
     """按平台标志启动子进程；``breakaway=True`` 时额外脱离监督器的 Job Object。
@@ -138,10 +227,17 @@ async def create_subprocess(
 
     platform_process = process_platform.platform_process
 
-    base_flags = platform_process.creation_flags
+    # 仅由明确的收尾命令使用；不加入已关闭的业务任务 Job。
+    scope = None if cleanup else current_process_scope.get()
+    if scope is not None:
+        scope.ensure_can_start()
+
+    base_flags = platform_process.creation_flags | kwargs.pop("creationflags", 0)
+    if scope is not None:
+        base_flags |= scope.creation_flags
     breakaway_flags = platform_process.breakaway_flags if breakaway else 0
     try:
-        return await asyncio.create_subprocess_exec(
+        process = await asyncio.create_subprocess_exec(
             program,
             *args,
             creationflags=base_flags | breakaway_flags,
@@ -155,12 +251,30 @@ async def create_subprocess(
             f"带 CREATE_BREAKAWAY_FROM_JOB 启动子进程被拒绝(WinError 5)，"
             f"父进程所在 Job 不允许脱离，去掉该标志重试: {program}"
         )
-        return await asyncio.create_subprocess_exec(
+        process = await asyncio.create_subprocess_exec(
             program,
             *args,
             creationflags=base_flags,
             **kwargs,
         )
+    if scope is not None:
+        if scope.closed:
+            try:
+                await stop_process(process, kill_tree=True, deadline=time.monotonic())
+            except Exception as error:
+                raise asyncio.CancelledError from error
+            raise asyncio.CancelledError
+        try:
+            scope.track(
+                process,
+                suspended=bool(scope.creation_flags),
+                writer=current_update_scope.get() is scope,
+            )
+        except Exception:
+            with suppress(ProcessLookupError):
+                process.kill()
+            raise
+    return process
 
 
 class ProcessRunner:
@@ -175,6 +289,7 @@ class ProcessRunner:
         kill_tree_on_cancel: bool = False,
         env: Mapping[str, str] | None = None,
         deadline: float | None = None,
+        cleanup: bool = False,
     ) -> ProcessResult:
         """运行子进程并等待其结束，返回解码后的输出。
 
@@ -182,7 +297,10 @@ class ProcessRunner:
         其余（taskkill/schtasks/adb 等工具）保持默认 False，留在监督器的 Job 里。
         deadline 可选，使用 time.monotonic() 的绝对时间，覆盖创建和执行；超时或
         取消后立即清理，最多再等 1 秒释放管道。要求回收进程树时，先等创建落定
-        取得句柄，再回收已启动的子进程。不传时保留原有超时与回收行为。
+        取得句柄；创建及回收各自最多等 8 秒，句柄晚到仍继续回收。
+        未确认退出时保留原因，取消仍以 CancelledError 传播。
+        各命令取消后的输出统一直接关闭，不再等待 EOF。
+        cleanup 只用于明确的进程清理命令（如 taskkill），允许任务作用域关闭后执行。
         """
 
         command = [str(program), *args]
@@ -203,6 +321,7 @@ class ProcessRunner:
                     program,
                     *args,
                     breakaway=breakaway,
+                    cleanup=cleanup,
                     cwd=cwd
                     or (Path(program).parent if Path(program).is_file() else None),
                     env=env,
@@ -219,16 +338,43 @@ class ProcessRunner:
                     # create_subprocess 只会由 asyncio 杀根进程，失去构建子进程
                     # 的父子关系。等待句柄交还，再交由统一进程树清理回收。
                     pending = asyncio.create_task(creation)
+                    scope = current_process_scope.get()
+                    if scope is not None:
+                        # OS 创建不可被强行打断；晚到句柄仍须交回已关闭的 scope 杀掉。
+                        scope.pending_creations.add(pending)
+                        pending.add_done_callback(scope.pending_creations.discard)
                     try:
                         process = await asyncio.shield(pending)
                     except asyncio.CancelledError as cancelled:
                         try:
-                            while not pending.done():
-                                try:
-                                    await asyncio.shield(pending)
-                                except asyncio.CancelledError:
-                                    continue
+                            if scope is not None and scope.closed:
+                                raise TimeoutError
+                            with suppress(asyncio.CancelledError):
+                                await wait_for_process_cleanup(
+                                    pending, timeout=_PROCESS_CLEANUP_SECONDS
+                                )
                             process = pending.result()
+                        except TimeoutError:
+
+                            def reap_created(task: asyncio.Task) -> None:
+                                if task.cancelled():
+                                    return
+                                try:
+                                    created = task.result()
+                                except (asyncio.CancelledError, Exception):
+                                    return
+                                closing = asyncio.create_task(
+                                    stop_process(
+                                        created, kill_tree=True, deadline=deadline
+                                    ),
+                                    context=detached_process_context(),
+                                )
+                                closing.add_done_callback(_consume_result)
+
+                            pending.add_done_callback(reap_created)
+                            raise cancelled from ProcessCleanupUnconfirmed(
+                                "进程创建超时，停止等待；句柄返回后继续强制回收"
+                            )
                         except Exception as error:
                             raise cancelled from error
                         raise
@@ -241,14 +387,13 @@ class ProcessRunner:
             # 取消运行脚本的任务时，communicate() 不会替调用方回收子进程；
             # 先结束进程并等待句柄释放，避免停止队列后留下孤儿脚本进程。
             if process is not None:
-                with suppress(asyncio.CancelledError):
-                    await _stop_process(
-                        process, kill_tree=kill_tree_on_cancel, deadline=deadline
-                    )
+                await stop_process(
+                    process, kill_tree=kill_tree_on_cancel, deadline=deadline
+                )
             raise
         except asyncio.TimeoutError:
             if process is not None:
-                await _stop_process(
+                await stop_process(
                     process, kill_tree=kill_tree_on_cancel, deadline=deadline
                 )
             logger.warning(
@@ -260,6 +405,9 @@ class ProcessRunner:
         logger.info(
             f"子进程已退出: {command} - 用时: {time.monotonic() - started_at:.3f}秒"
         )
+        scope = current_process_scope.get()
+        if scope is not None and not cleanup:
+            scope.forget(process)
 
         return ProcessResult(
             stdout=decode_bytes(stdout),
@@ -272,4 +420,15 @@ class ProcessRunner:
         )
 
 
-__all__ = ["ProcessResult", "ProcessRunner", "create_subprocess", "decode_bytes"]
+__all__ = [
+    "ProcessCleanupUnconfirmed",
+    "ProcessResult",
+    "ProcessRunner",
+    "close_process_pipes",
+    "create_subprocess",
+    "decode_bytes",
+    "is_process_cleanup_unconfirmed",
+    "observe_process_exit",
+    "stop_process",
+    "wait_for_process_cleanup",
+]

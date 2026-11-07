@@ -107,7 +107,7 @@
       :z-index="compact ? 1050 : undefined"
       :centered="compact"
       :body-style="compact ? { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } : undefined"
-      :ok-text="isEditing ? '更新' : '添加'"
+      :ok-text="isEditing ? t('core.comp.webhookUpdate') : t('core.comp.webhookAdd')"
       :confirm-loading="submitting"
       @ok="handleSubmit"
       @cancel="handleCancel"
@@ -137,7 +137,7 @@
             <a-form-item
               :label="t('core.comp.webhookName')"
               name="name"
-              :rules="[{ required: true, message: '请输入 Webhook 名称' }]"
+              :rules="[{ required: true, message: t('core.comp.enterWebhookName') }]"
             >
               <a-input
                 v-model:value="formData.name"
@@ -158,7 +158,7 @@
         <a-form-item
           label="Webhook URL"
           name="url"
-          :rules="[{ required: true, message: '请输入 Webhook URL' }]"
+          :rules="[{ required: true, message: t('core.comp.webhookUrlRequired') }]"
         >
           <a-input
             v-model:value="formData.url"
@@ -445,6 +445,7 @@ const editWebhook = (webhook: WebhookItem) => {
 // 切换 Webhook 启用状态
 const toggleWebhookEnabled = async (webhook: WebhookItem) => {
   const newEnabled = webhook.enabled
+  const action = t(newEnabled ? 'core.comp.webhookEnabled' : 'core.comp.webhookDisabled')
 
   if (props.mode === 'global' || (props.scriptId && props.userId)) {
     // API模式：调用更新接口
@@ -485,15 +486,13 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
 
       // 重新加载最新数据
       await loadWebhooks()
-      message.success(
-        t('core.comp.webhookP0P1', { p0: webhook.name, p1: newEnabled ? '启用' : '禁用' })
-      )
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新Webhook状态失败: ${errorMsg}`)
       message.error(t('core.comp.couldNotUpdateWebhook'))
       // 恢复原状态
       webhook.enabled = !newEnabled
+      return
     }
   } else {
     // 本地模式：更新本地数据
@@ -502,10 +501,8 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
     )
     webhooks.value = newWebhooks
     emit('change')
-    message.success(
-      t('core.comp.webhookP0P1', { p0: webhook.name, p1: newEnabled ? '启用' : '禁用' })
-    )
   }
+  message.success(t('core.comp.webhookP0P1', { p0: webhook.name, p1: action }))
 }
 
 // 删除 Webhook
@@ -513,7 +510,7 @@ const deleteWebhook = (webhook: WebhookItem) => {
   // 添加二次确认
   Modal.confirm({
     title: t('core.comp.confirmDeletion'),
-    content: `确定要删除 Webhook "${webhook.name}" 吗？此操作不可撤销。`,
+    content: t('core.comp.webhookDeleteConfirm', { name: webhook.name }),
     okText: t('core.comp.confirmDeletion'),
     okType: 'danger',
     cancelText: t('core.comp.cancel'),

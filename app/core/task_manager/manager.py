@@ -98,6 +98,7 @@ from app.task.registration import ManagerBuildContext, ManagerFactory
 from app.utils import LOG_TYPE_ERROR, LazyProxy, get_logger
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.utils.common.log_box.results import LogEntry
+from app.utils.common.process.scope import TaskProcessScope, current_process_scope
 
 System = LazyProxy("app.services", "System")
 
@@ -612,6 +613,9 @@ class TaskInfo(TaskItem):
 
 class Task(TaskExecuteBase):
     wait_for_finalizer_on_cancel = True
+    # 每个确认项目独立配置等待时间；超时后标记结束，统一进入强制清理。
+    STOP_CHECK_TIMEOUTS = {"update": 30.0}
+    stop_finalizer_timeout = None  # 顶层收尾等待确认点，不可反过来加入确认点。
 
     def __init__(
         self,
@@ -624,6 +628,16 @@ class Task(TaskExecuteBase):
         manager_factories: Mapping[type[ConfigEntry], ManagerFactory | None],
     ):
         super().__init__()
+        self._stop_scope = TaskProcessScope()
+        self._stop_scope.add_check(
+            "update",
+            self._stop_scope.stop_updates,
+            timeout=self.STOP_CHECK_TIMEOUTS["update"],
+        )
+        self._stop_request: asyncio.Task | None = None
+        self._execution_root: asyncio.Task | None = None
+        self._execution_task: asyncio.Task | None = None
+        self._finalizer_task: asyncio.Task | None = None
         self._manager_factories = manager_factories
         self.task_info = task_info
         self.script_identities = script_identities
@@ -656,8 +670,59 @@ class Task(TaskExecuteBase):
             self._exit_result = "error"
             self._exit_error = error
 
+    def execute(self):
+        token = current_process_scope.set(self._stop_scope)
+        try:
+            super().execute()
+            self._execution_root = self.task
+        finally:
+            current_process_scope.reset(token)
+
+    async def _execute_task(self, parent_tg: asyncio.TaskGroup):
+        self._execution_task = asyncio.current_task()
+        await super()._execute_task(parent_tg)
+
+    async def _finalize_task(self) -> None:
+        self._finalizer_task = asyncio.current_task()
+        await super()._finalize_task()
+
+    async def _stop_after_checks(self) -> None:
+        try:
+            await self._stop_scope.run_checks()
+            for check in self._stop_scope.checks:
+                if check.status == "timed_out":
+                    logger.warning(f"停止检查 {check.name} 超时，转入强制清理")
+                elif check.status == "failed":
+                    logger.warning(f"停止检查 {check.name} 未确认，转入强制清理")
+            # 统一确认边界：后续需要保护的新项目在 run_checks 前注册。
+            await self._stop_scope.force_close()
+        except Exception as error:
+            self._stop_scope.cleanup_failed = True
+            self._exit_result = "error"
+            self._exit_error = str(error)
+            logger.opt(exception=True).error("任务强制清理失败")
+        finally:
+            keep = {
+                self._execution_root,
+                self._execution_task,
+                self._finalizer_task,
+                asyncio.current_task(),
+                *self._stop_scope.pending_creations,
+                *self._stop_scope.retained_workers,
+            }
+            for task in asyncio.all_tasks():
+                if (
+                    task not in keep
+                    and task.get_context().get(current_process_scope)
+                    is self._stop_scope
+                ):
+                    task.cancel()
+            self._stop_scope.finished.set()
+            if self.task is not None:
+                self.task.cancel()
+
     def cancel(self) -> bool:
-        """记录显式取消结果，覆盖尚未进入脚本执行阶段的任务。"""
+        """请求停止：先执行独立限时检查，再统一强制清理任务所属资源。"""
         self.task_info.replay_cancelled = True
         self.stopped_manually = True
         # 运行前脚本随主任务取消；运行后脚本在独立的收尾协程里，需要主动取消。
@@ -667,7 +732,10 @@ class Task(TaskExecuteBase):
             and not self._queue_script_task.done()
         ):
             self._queue_script_task.cancel()
-        cancelled = super().cancel()
+        cancelled = self.task is not None and not self.task.done()
+        if cancelled and self._stop_request is None:
+            self._stop_scope.requested = True
+            self._stop_request = asyncio.create_task(self._stop_after_checks())
         if cancelled and self._exit_result == "success":
             self._exit_result = "cancelled"
             self._exit_error = "任务执行被取消"
@@ -1519,12 +1587,19 @@ class Task(TaskExecuteBase):
                 self.script_reservations.release(current_script_uid, reservation_owner)
 
     async def final_task(self) -> None:
-        await self._script_updates.finish(cancelled=True)
-        await self._script_updates.discard()
-        await self.task_info.discard_history_captures()
+        if self._stop_scope.requested:
+            await self._stop_scope.finished.wait()
+        else:
+            await self._script_updates.finish(cancelled=True)
+            await self._script_updates.discard()
+            await self.task_info.discard_history_captures()
 
         # 收尾脚本完成后才发布终态，期间队列仍可被停止。
-        if self._queue_run_started and self.task_info.queue_id is not None:
+        if (
+            self._queue_run_started
+            and self.task_info.queue_id is not None
+            and not self.stopped_manually
+        ):
             await self._run_queue_extra_script(
                 self.task_info.queue_id,
                 "IfScriptAfterTask",

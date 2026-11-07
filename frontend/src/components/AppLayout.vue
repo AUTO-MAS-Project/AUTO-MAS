@@ -247,10 +247,10 @@ const onMenuClick: MenuProps['onClick'] = info => {
 </script>
 
 <style scoped>
-/* 内置侧栏使用轻染色背景；外观包和自定义背景保留各自的表面色。 */
+/* 侧栏与卡片同为表面层，不跟随主题色；外观包和自定义背景保留各自的表面色。 */
 .app-sider {
-  background: var(--app-sider-bg, var(--ant-color-bg-elevated));
-  border-right: 1px solid var(--app-sider-border-color, var(--ant-color-border));
+  background: var(--app-sider-bg, var(--ant-color-bg-container));
+  border-right: 1px solid var(--app-sider-border-color, var(--ant-color-border-secondary));
 }
 
 .app-sider--appearance {

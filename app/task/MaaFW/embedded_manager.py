@@ -107,6 +107,7 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
 )
 from app.task.MaaFW.tools.embedded.view_heal import heal_projection
 from app.utils import TASK_MODE_ZH, get_logger, sanitize_log_message
+from app.utils.common.process.scope import current_process_scope
 
 if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查，运行期不导入 maa
     from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
@@ -511,6 +512,9 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 return None
 
             work = asyncio.create_task(prepare_before_lock())
+            process_scope = current_process_scope.get()
+            if process_scope is not None:
+                process_scope.retain_worker(work)
             handed_off = False
             try:
                 if problem := await asyncio.shield(work):
@@ -523,11 +527,12 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 self._script_locked = True
             except asyncio.CancelledError:
                 stop.set()
-                with suppress(BaseException):
-                    await asyncio.wait_for(
-                        asyncio.shield(work),
-                        timeout=_ENV_PREPARE_CANCEL_GRACE_SECONDS,
-                    )
+                if process_scope is None or not process_scope.closed:
+                    with suppress(BaseException):
+                        await asyncio.wait_for(
+                            asyncio.shield(work),
+                            timeout=_ENV_PREPARE_CANCEL_GRACE_SECONDS,
+                        )
                 if not work.done():
                     handed_off = True
                     work.add_done_callback(
@@ -1407,8 +1412,10 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             update_task.add_done_callback(
                 lambda task: None if task.cancelled() else task.exception()
             )
-            with suppress(BaseException):
-                await asyncio.wait_for(asyncio.shield(update_task), timeout=grace)
+            process_scope = current_process_scope.get()
+            if process_scope is None or not process_scope.closed:
+                with suppress(BaseException):
+                    await asyncio.wait_for(asyncio.shield(update_task), timeout=grace)
 
         try:
             finished = await self._await_or_stop(update_task)
@@ -1650,9 +1657,14 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         # 装依赖走的代理与更新下载同一份：托管级优先，留空跟随全局。
         proxy_url, _proxy = self._resolve_update_proxy()
         health_warnings: list[str] = []
+        from app.task.MaaFW.tools.embedded.env_confirm import (
+            resolve_prepare_environment,
+        )
+
+        prepare_environment = resolve_prepare_environment()
         prepare_task = asyncio.create_task(
             asyncio.to_thread(
-                self._prepare_project_environment_sync,
+                prepare_environment,
                 project_path,
                 cancel_event,
                 self._threadsafe_update_log(),
@@ -1663,6 +1675,10 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             )
         )
 
+        process_scope = current_process_scope.get()
+        if process_scope is not None:
+            process_scope.retain_worker(prepare_task)
+
         handed_off = False
 
         async def abort_prepare() -> None:
@@ -1670,11 +1686,12 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             # 项目锁之前收干净，等不到也不再拖着关机。
             nonlocal handed_off
             cancel_event.set()
-            with suppress(BaseException):
-                await asyncio.wait_for(
-                    asyncio.shield(prepare_task),
-                    timeout=_ENV_PREPARE_CANCEL_GRACE_SECONDS,
-                )
+            if process_scope is None or not process_scope.closed:
+                with suppress(BaseException):
+                    await asyncio.wait_for(
+                        asyncio.shield(prepare_task),
+                        timeout=_ENV_PREPARE_CANCEL_GRACE_SECONDS,
+                    )
             if prepare_task.done():
                 # 异常在这里取走，免得事件循环报「Task exception was never retrieved」。
                 if not prepare_task.cancelled():

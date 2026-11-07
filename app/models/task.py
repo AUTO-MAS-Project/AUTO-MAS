@@ -29,7 +29,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Literal, Optional
+from typing import TYPE_CHECKING, ClassVar, List, Literal, Optional
 from uuid import UUID
 
 from app.models.game_maintenance import MaintenanceWindow
@@ -408,6 +408,7 @@ class TaskItem(ABC):
 @dataclass
 class TaskExecuteBase(ABC):
     wait_for_finalizer_on_cancel = False
+    stop_finalizer_timeout: ClassVar[float | None] = 10.0
 
     # 外部手动停止（TaskManager 中止）时置位，供收尾逻辑区分自然结束与手动中止
     stopped_manually: bool = False
@@ -495,7 +496,7 @@ class TaskExecuteBase(ABC):
                     await self._run_final_task()
                 else:
                     try:
-                        await asyncio.shield(self.final_task())
+                        await asyncio.shield(self._start_finalizer(self.final_task()))
                     except Exception as e:
                         await self.on_crash(e)
             finally:
@@ -510,6 +511,17 @@ class TaskExecuteBase(ABC):
 
         await self.final_task()
 
+    def _start_finalizer(self, operation) -> asyncio.Task:
+        from app.utils.common.process.scope import current_process_scope
+
+        finalizer = asyncio.create_task(
+            operation, name=f"{type(self).__name__}.finalize"
+        )
+        scope = current_process_scope.get()
+        if scope is not None and self.stop_finalizer_timeout is not None:
+            scope.watch_finalizer(finalizer, timeout=self.stop_finalizer_timeout)
+        return finalizer
+
     def _on_finalize_cancel_requested(self) -> None:
         """收尾进行中又收到取消（用户点了停止）时调一次；收尾本身不会被取消。
 
@@ -520,7 +532,7 @@ class TaskExecuteBase(ABC):
     async def _run_final_task(self) -> None:
         """推迟外层取消，直到收尾协程真正结束。"""
 
-        finalizer = asyncio.create_task(self._finalize_task())
+        finalizer = self._start_finalizer(self._finalize_task())
         current_task = asyncio.current_task()
         if current_task is None:
             raise RuntimeError("无法获取当前任务")

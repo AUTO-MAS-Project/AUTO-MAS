@@ -7,10 +7,18 @@ from typing import Unpack
 import psutil
 
 from app.utils.common.errors import UnsupportedPlatformError
-from app.utils.contracts.process import ElevatedProcess, EmulatorPopenOptions
+from app.utils.contracts.process import (
+    ElevatedProcess,
+    EmulatorPopenOptions,
+    TaskProcessJob,
+)
 
 
 class CommonProcessPlatform:
+    @staticmethod
+    def create_task_job() -> TaskProcessJob | None:
+        return None
+
     supports_elevation = False
     agent_flags = 0
     emulator_flags = 0

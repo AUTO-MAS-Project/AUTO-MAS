@@ -29,6 +29,7 @@ from app.core import Community, Notify
 from app.models.notification.community import community_notification_results
 from app.services import telemetry as _service_telemetry
 from app.utils import UTC4, UTC8, get_logger
+from app.utils.common.process.scope import detached_process_context
 
 from .community.scheduling import (
     TASK_COMMUNITY_SOURCES,
@@ -413,7 +414,10 @@ class _MainTimer:
             logger.debug("游戏社区签到后台任务正在执行，跳过重复派发")
             return
 
-        task = asyncio.create_task(self.try_community_for_task(source="startup"))
+        task = asyncio.create_task(
+            self.try_community_for_task(source="startup"),
+            context=detached_process_context(),
+        )
         self.community_sign_task = task
         task.add_done_callback(self._on_community_sign_done)
 
@@ -446,7 +450,10 @@ class _MainTimer:
             on_completed([])
             return
 
-        task = asyncio.create_task(self.try_community_for_task(source=source))
+        task = asyncio.create_task(
+            self.try_community_for_task(source=source),
+            context=detached_process_context(),
+        )
         self.community_sign_task = task
         task.add_done_callback(self._on_community_sign_done)
 

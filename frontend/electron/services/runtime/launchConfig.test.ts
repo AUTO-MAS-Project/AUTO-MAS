@@ -122,37 +122,34 @@ describe('resolveRuntimeLaunchConfig', () => {
 
 describe('启动模式默认值与存量配置', () => {
   it('源码与安装版分别默认使用 development 和 managed', () => {
-    expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({
+    expect(resolveRuntimeLaunchModeDetail()).toEqual({
       mode: 'development',
       source: 'default',
     })
     setPackaged(true)
-    expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({ mode: 'managed', source: 'default' })
+    expect(resolveRuntimeLaunchModeDetail()).toEqual({ mode: 'managed', source: 'default' })
   })
 
-  it('存量 off 设置按构建默认值处理，不能绕过 Runtime', () => {
+  it.each(['off', 'managed', 'development'])('存量 %s 设置不再覆盖构建默认值', savedMode => {
     fs.mkdirSync(path.join(appRoot, 'config'))
     fs.writeFileSync(
       path.join(appRoot, 'config', 'frontend_config.json'),
-      JSON.stringify({ Runtime: { LaunchMode: 'off' } })
+      JSON.stringify({ Runtime: { LaunchMode: savedMode } })
     )
-    expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({
-      mode: 'development',
-      source: 'default',
-    })
+    expect(resolveRuntimeLaunchConfig(appRoot).mode).toBe('development')
     setPackaged(true)
-    expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({ mode: 'managed', source: 'default' })
+    expect(resolveRuntimeLaunchConfig(appRoot).mode).toBe('managed')
   })
 
-  it('旧 off 环境变量不覆盖合法设置，合法环境变量仍有最高优先级', () => {
+  it('非法环境变量使用构建默认值，合法环境变量仍可覆盖', () => {
     fs.mkdirSync(path.join(appRoot, 'config'))
     fs.writeFileSync(
       path.join(appRoot, 'config', 'frontend_config.json'),
       JSON.stringify({ Runtime: { LaunchMode: 'managed' } })
     )
     process.env[RUNTIME_MODE_ENV] = 'off'
-    expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({ mode: 'managed', source: 'setting' })
+    expect(resolveRuntimeLaunchModeDetail()).toEqual({ mode: 'development', source: 'default' })
     process.env[RUNTIME_MODE_ENV] = 'development'
-    expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({ mode: 'development', source: 'env' })
+    expect(resolveRuntimeLaunchModeDetail()).toEqual({ mode: 'development', source: 'env' })
   })
 })
