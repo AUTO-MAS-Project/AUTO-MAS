@@ -29,7 +29,7 @@ from app.services import script_install
 from app.services.script_release import request_github_release
 from app.utils import ProcessRunner
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
-from app.utils.common.process.runner import ProcessCleanupUnconfirmed
+from app.utils.common.process.runner import is_process_cleanup_unconfirmed
 from app.utils.common.proxy_env import proxy_environment
 
 from .launcher import find_upstream_pids
@@ -160,8 +160,9 @@ async def run_python(
             kill_tree_on_cancel=True,
             env=child_env,
         )
-    except ProcessCleanupUnconfirmed:
-        script_install.defer_installation_release(root)
+    except BaseException as error:
+        if is_process_cleanup_unconfirmed(error):
+            script_install.defer_installation_release(root)
         raise
     if result.returncode != 0:
         if pending_marker(root).exists():
@@ -215,6 +216,9 @@ class PreparedUpdate:
     hashes: dict[str, str]
 
 
+_UNCONFIRMED_STAGES: set[Path] = set()
+
+
 def _package_hashes(directory: Path) -> dict[str, str]:
     result = {}
     for path in directory.iterdir():
@@ -225,7 +229,10 @@ def _package_hashes(directory: Path) -> dict[str, str]:
 
 
 def discard_update(candidate: PreparedUpdate | str) -> None:
-    if isinstance(candidate, PreparedUpdate):
+    if (
+        isinstance(candidate, PreparedUpdate)
+        and candidate.packages.parent.resolve() not in _UNCONFIRMED_STAGES
+    ):
         shutil.rmtree(candidate.packages.parent, ignore_errors=True)
 
 
@@ -282,11 +289,12 @@ async def prepare_update(root: Path) -> PreparedUpdate | str:
         return PreparedUpdate(
             root.resolve(), target, current, repairing, wheel, packages, hashes
         )
-    except (FluxdownCancelUnconfirmed, ProcessCleanupUnconfirmed):
-        # The daemon might still own this isolated destination. Do not
-        # delete a file that an external writer may continue to update.
-        raise
-    except BaseException:
+    except BaseException as error:
+        if isinstance(
+            error, FluxdownCancelUnconfirmed
+        ) or is_process_cleanup_unconfirmed(error):
+            # 外部写入尚未确认停止，不能删除仍在使用的文件。
+            raise
         # Failures and confirmed cancellations before a candidate is returned
         # otherwise have no manager-owned object to discard.
         await _run_package_worker(lambda: shutil.rmtree(stage, ignore_errors=True))
@@ -324,7 +332,6 @@ async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
         or hashes != candidate.hashes
     ):
         raise RuntimeError("奇想盒安装或预下载包已变化，请重新检查更新")
-    cleanup_confirmed = True
     try:
         if await asyncio.to_thread(find_upstream_pids, root):
             raise RuntimeError("依赖准备期间奇想盒已启动，请退出后重试")
@@ -348,12 +355,13 @@ async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
             str(wheel),
             timeout=10 * 60,
         )
-    except ProcessCleanupUnconfirmed:
-        cleanup_confirmed = False
+    except BaseException as error:
+        if is_process_cleanup_unconfirmed(error):
+            # 调度器和未预下载入口还会再次清理，保留状态必须由统一删包入口消费。
+            _UNCONFIRMED_STAGES.add(candidate.packages.parent.resolve())
         raise
     finally:
-        if cleanup_confirmed:
-            discard_update(candidate)
+        discard_update(candidate)
     if await installed_version(root) != target:
         raise WhimboxUpdateUnsafeError(RECOVERY_HINT)
     await run_python(root, "-m", "pip", "check")

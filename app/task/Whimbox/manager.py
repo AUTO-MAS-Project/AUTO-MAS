@@ -40,7 +40,7 @@ from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import push_dispatch_log
 from app.utils import TASK_MODE_ZH, get_logger
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
-from app.utils.common.process.runner import ProcessCleanupUnconfirmed
+from app.utils.common.process.runner import is_process_cleanup_unconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -210,10 +210,11 @@ class WhimboxManager(ScriptManagerBase):
             except (
                 WhimboxUpdateUnsafeError,
                 FluxdownCancelUnconfirmed,
-                ProcessCleanupUnconfirmed,
             ):
                 raise
             except Exception as error:
+                if is_process_cleanup_unconfirmed(error):
+                    raise
                 await confirm_usable_installation(root)
                 result = f"奇想盒更新未完成，沿用当前后端继续任务。原因：{error}"
                 self.script_info.log = result

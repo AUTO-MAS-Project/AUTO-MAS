@@ -18,6 +18,15 @@ class ProcessCleanupUnconfirmed(RuntimeError):
     """进程树未确认停止，调用方必须保留可能仍被写入的文件。"""
 
 
+def is_process_cleanup_unconfirmed(error: BaseException) -> bool:
+    """识别取消和 asyncio 超时包装中保留的未确认退出原因。"""
+    while isinstance(error, (asyncio.CancelledError, TimeoutError)):
+        if error.__cause__ is None:
+            return False
+        error = error.__cause__
+    return isinstance(error, ProcessCleanupUnconfirmed)
+
+
 def close_process_pipes(process: asyncio.subprocess.Process) -> None:
     """释放本地读端，不终止继承了写端的后台服务。"""
     # StreamReader 没有公开的 close；项目固定 Python 3.12，升级时需核对接口。
@@ -103,14 +112,22 @@ async def stop_process(
     cleanup = asyncio.create_task(stop_and_wait())
     try:
         await wait_for_process_cleanup(cleanup, timeout=_PROCESS_CLEANUP_SECONDS)
-    except TimeoutError as error:
-        close_process_pipes(process)
-        cleanup.add_done_callback(
-            lambda task: None if task.cancelled() else task.exception()
-        )
-        raise ProcessCleanupUnconfirmed(
-            "进程回收超过等待上限，已保留可能仍被写入的文件"
-        ) from error
+    except (TimeoutError, ProcessCleanupUnconfirmed) as error:
+        failure = error
+        if isinstance(error, TimeoutError):
+            close_process_pipes(process)
+            cleanup.add_done_callback(
+                lambda task: None if task.cancelled() else task.exception()
+            )
+            failure = ProcessCleanupUnconfirmed(
+                "进程回收超过等待上限，已保留可能仍被写入的文件"
+            )
+        # 保留标准取消类型，避免普通失败处理吞掉停止，也兼容 asyncio.timeout。
+        if (current := asyncio.current_task()) is not None and current.cancelling():
+            raise asyncio.CancelledError from failure
+        if failure is error:
+            raise
+        raise failure from error
 
 
 @dataclass
@@ -225,7 +242,8 @@ class ProcessRunner:
         deadline 可选，使用 time.monotonic() 的绝对时间，覆盖创建和执行；超时或
         取消后立即清理，最多再等 1 秒释放管道。要求回收进程树时，先等创建落定
         取得句柄，最多等待 8 秒；句柄晚到时仍继续回收。输出管道收尾最多等待 1 秒，进程树
-        未确认停止时抛出 ProcessCleanupUnconfirmed，调用方不得删除写入目标。
+        未确认停止时保留 ProcessCleanupUnconfirmed 原因，取消仍向上抛出
+        CancelledError。写入方须检查该原因，不得删除仍可能被使用的文件。
         """
 
         command = [str(program), *args]
@@ -271,7 +289,7 @@ class ProcessRunner:
                                     pending, timeout=_PROCESS_CLEANUP_SECONDS
                                 )
                             process = pending.result()
-                        except TimeoutError as error:
+                        except TimeoutError:
 
                             def reap_created(task: asyncio.Task) -> None:
                                 if task.cancelled():
@@ -295,9 +313,10 @@ class ProcessRunner:
                                 )
 
                             pending.add_done_callback(reap_created)
-                            raise ProcessCleanupUnconfirmed(
+                            failure = ProcessCleanupUnconfirmed(
                                 "进程创建尚未结束，已停止等待；句柄返回后将继续回收，请保留相关文件"
-                            ) from error
+                            )
+                            raise cancelled from failure
                         except Exception as error:
                             raise cancelled from error
                         raise
@@ -310,10 +329,9 @@ class ProcessRunner:
             # 取消运行脚本的任务时，communicate() 不会替调用方回收子进程；
             # 先结束进程并等待句柄释放，避免停止队列后留下孤儿脚本进程。
             if process is not None:
-                with suppress(asyncio.CancelledError):
-                    await stop_process(
-                        process, kill_tree=kill_tree_on_cancel, deadline=deadline
-                    )
+                await stop_process(
+                    process, kill_tree=kill_tree_on_cancel, deadline=deadline
+                )
             raise
         except asyncio.TimeoutError:
             if process is not None:
@@ -348,6 +366,7 @@ __all__ = [
     "close_process_pipes",
     "create_subprocess",
     "decode_bytes",
+    "is_process_cleanup_unconfirmed",
     "stop_process",
     "wait_for_process_cleanup",
 ]

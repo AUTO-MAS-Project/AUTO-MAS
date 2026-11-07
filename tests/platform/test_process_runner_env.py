@@ -231,14 +231,15 @@ async def test_stop_releases_pipes_inherited_by_a_background_service(
         done, _ = await asyncio.wait({task}, timeout=3)
         assert done, "命令已退出，后台服务持有输出管道不应阻止任务结束"
         expected = (
-            process_runner.ProcessCleanupUnconfirmed
-            if kill_tree
-            else asyncio.CancelledError
+            asyncio.CancelledError
             if cancelled
+            else process_runner.ProcessCleanupUnconfirmed
+            if kill_tree
             else TimeoutError
         )
-        with pytest.raises(expected):
+        with pytest.raises(expected) as stopped:
             await task
+        assert process_runner.is_process_cleanup_unconfirmed(stopped.value) == kill_tree
         assert service is not None and service.is_running()
         for fd in (1, 2):
             assert created[0]._transport.get_pipe_transport(fd).is_closing()
@@ -420,8 +421,9 @@ async def test_repeated_cancel_during_creation_reaps_dependency_builder(
         if stalled_creation:
             done, _ = await asyncio.wait({task}, timeout=1)
             assert done, "进程创建停滞不能让用户任务一直等待"
-            with pytest.raises(process_runner.ProcessCleanupUnconfirmed):
+            with pytest.raises(asyncio.CancelledError) as stopped:
                 await task
+            assert process_runner.is_process_cleanup_unconfirmed(stopped.value)
         release.set()
         async with asyncio.timeout(10):
             if not stalled_creation:

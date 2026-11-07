@@ -1,7 +1,10 @@
 import asyncio
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import AsyncMock
 
+import psutil
 import pytest
 
 from app.models.task import LogRecord, ScriptItem, UserItem
@@ -36,6 +39,62 @@ class Proxy(ScriptAutoProxyBase):
 async def _run(proxy):
     async with asyncio.TaskGroup() as group:
         await proxy._execute_task(group)
+
+
+@pytest.mark.asyncio
+async def test_cancelled_account_before_script_never_opens_emulator(tmp_path):
+    """真实前置脚本的后台服务持管道时，停止仍阻断后续账号动作并完成收尾。"""
+    from app.models.config import SrcUserConfig
+
+    pid_file = tmp_path / "pids.txt"
+    before = tmp_path / "before.py"
+    before.write_text(
+        "import os, subprocess, sys\nfrom pathlib import Path\n"
+        "child = subprocess.Popen([sys.executable, '-I', '-c', "
+        "'import time; time.sleep(30)'], stdin=subprocess.DEVNULL, "
+        "stdout=sys.stdout, stderr=sys.stderr, close_fds=True)\n"
+        f"Path({str(pid_file)!r}).write_text(f'{{os.getpid()}} {{child.pid}}')\n",
+        encoding="utf-8",
+    )
+    open_emulator = AsyncMock()
+
+    class AccountProxy(Proxy):
+        async def main_task(self):
+            await self.run_user_scripts_before()
+            await open_emulator()
+
+    config = SrcUserConfig()
+    await config.activate()
+    config.Info.IfScriptBeforeTask = True
+    await config.commit()
+    config.Info.ScriptBeforeTask = str(before)
+    await config.commit()
+    proxy = AccountProxy(config)
+    running = asyncio.create_task(_run(proxy))
+    child = None
+    try:
+        async with asyncio.timeout(5):
+            while not pid_file.exists():
+                await asyncio.sleep(0.01)
+            parent_pid, child_pid = map(int, pid_file.read_text().split())
+            child = psutil.Process(child_pid)
+            while psutil.pid_exists(parent_pid):
+                await asyncio.sleep(0.01)
+        running.cancel()
+        done, _ = await asyncio.wait({running}, timeout=3)
+        assert done, "前置脚本的后台服务不能让停止一直等待"
+        open_emulator.assert_not_awaited()
+        with pytest.raises(asyncio.CancelledError):
+            await running
+        assert proxy.stopped_manually and proxy.finalized and not proxy.crashed
+    finally:
+        if child is not None:
+            with suppress(psutil.NoSuchProcess):
+                child.kill()
+            await asyncio.to_thread(child.wait, timeout=5)
+        if not running.done():
+            running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
 
 
 def _record_scripts(monkeypatch, module="app.task.base"):

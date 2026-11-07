@@ -21,7 +21,7 @@ from app.core import Config
 from app.services import script_install
 from app.utils import io as io_utils
 from app.utils.common.process.runner import (
-    ProcessCleanupUnconfirmed,
+    is_process_cleanup_unconfirmed,
     stop_process,
     wait_for_process_cleanup,
 )
@@ -88,8 +88,9 @@ async def command(
                 await work
             try:
                 await stop_process(process, kill_tree=True)
-            except ProcessCleanupUnconfirmed:
-                script_install.defer_installation_release(cwd)
+            except BaseException as error:
+                if is_process_cleanup_unconfirmed(error):
+                    script_install.defer_installation_release(cwd)
                 raise
             raise
         try:
