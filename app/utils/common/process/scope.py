@@ -6,7 +6,7 @@ import asyncio
 import subprocess
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager, suppress
-from contextvars import ContextVar
+from contextvars import Context, ContextVar, copy_context
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -238,7 +238,6 @@ class TaskProcessScope:
             if errors:
                 raise RuntimeError("部分任务进程未能强制终止") from errors[0]
         finally:
-            file_closers = []
             for handle, _ in owned:
                 transport = getattr(handle, "_transport", None)
                 if transport is not None:
@@ -246,24 +245,13 @@ class TaskProcessScope:
                         pipe = transport.get_pipe_transport(fd)
                         if pipe is not None:
                             pipe.close()
-                elif isinstance(handle, subprocess.Popen):
-                    for name in ("stdin", "stdout", "stderr"):
-                        stream = getattr(handle, name, None)
-                        if stream is not None:
-                            file_closers.append(
-                                asyncio.create_task(asyncio.to_thread(stream.close))
-                            )
+            # 同步 Popen 的管道由正在 communicate() 的安装线程自行关闭。
+            # 从事件循环线程抢先 close 会使该线程的 select/read 触发 EBADF。
             self._processes.clear()
             self._writers.clear()
             self._external_processes.clear()
             if self._job is not None:
                 self._job.close()
-            if file_closers:
-                done, pending = await asyncio.wait(file_closers, timeout=1)
-                for task in done:
-                    _consume_result(task)
-                for task in pending:
-                    task.cancel()
 
 
 def _consume_result(task: asyncio.Future) -> None:
@@ -280,3 +268,11 @@ current_update_scope: ContextVar[TaskProcessScope | None] = ContextVar(
 current_stop_check: ContextVar[TaskProcessScope | None] = ContextVar(
     "current_stop_check", default=None
 )
+
+
+def detached_process_context() -> Context:
+    """应用级后台任务不继承调用方的任务停止/进程归属，保留其余上下文。"""
+    context = copy_context()
+    for variable in (current_process_scope, current_update_scope, current_stop_check):
+        context.run(variable.set, None)
+    return context

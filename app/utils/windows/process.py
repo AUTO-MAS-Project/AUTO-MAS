@@ -98,7 +98,7 @@ class WindowsProcessPlatform:
             args.append("/T")
         args.extend(["/PID", str(pid)])
 
-        result = await ProcessRunner.run_process(*args)
+        result = await ProcessRunner.run_process(*args, timeout=10, cleanup=True)
         if result.returncode != 0:
             output = result.stderr.strip() or result.stdout.strip() or "无错误信息"
             return False, f"返回码: {result.returncode}, 原因: {output}"

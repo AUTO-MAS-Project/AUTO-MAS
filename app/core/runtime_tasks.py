@@ -11,6 +11,8 @@ import logging
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
+from app.utils.common.process.scope import detached_process_context
+
 logger = logging.getLogger("AUTO-MAS运行时后台任务")
 T = TypeVar("T")
 
@@ -32,7 +34,9 @@ class OwnedTaskRegistry:
             logger.debug("后台任务注册表已关闭，拒绝新任务: %s", name)
             return None
 
-        task = asyncio.create_task(coroutine, name=name)
+        task = asyncio.create_task(
+            coroutine, name=name, context=detached_process_context()
+        )
         self._tasks.add(task)
 
         def _on_done(done_task: asyncio.Task[Any]) -> None:

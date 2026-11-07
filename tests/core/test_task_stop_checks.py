@@ -8,9 +8,11 @@ from contextlib import suppress
 import psutil
 import pytest
 
+from app.core.runtime_tasks import OwnedTaskRegistry
 from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.core.task_manager.manager import Task, TaskInfo, _TaskManager
-from app.utils.common.process.runner import create_subprocess
+from app.core.timer import _MainTimer
+from app.utils.common.process.runner import ProcessRunner, create_subprocess
 from app.utils.common.process.scope import TaskProcessScope, current_process_scope
 
 
@@ -257,3 +259,97 @@ async def test_task_stop_waits_for_update_then_force_closes_owned_processes(
                 with suppress(ProcessLookupError):
                     process.kill()
             await process.wait()
+
+
+@pytest.mark.asyncio
+async def test_application_background_tasks_are_not_owned_by_stopped_task():
+    registry = OwnedTaskRegistry()
+    scope = TaskProcessScope()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def shared_work():
+        entered.set()
+        await release.wait()
+        return current_process_scope.get()
+
+    token = current_process_scope.set(scope)
+    try:
+        work = registry.spawn(shared_work(), name="test-shared-work")
+    finally:
+        current_process_scope.reset(token)
+    assert work is not None
+
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        assert work.get_context().get(current_process_scope) is None
+        await scope.force_close()
+        assert not work.done()
+        release.set()
+        assert await work is None
+    finally:
+        release.set()
+        await registry.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_community_sign_is_independent_of_task_stop(monkeypatch):
+    timer = _MainTimer()
+    scope = TaskProcessScope()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    delivered = []
+
+    async def shared_sign(*, source):
+        assert source == "task_manual"
+        assert current_process_scope.get() is None
+        entered.set()
+        await release.wait()
+        return [{"ok": True}]
+
+    monkeypatch.setattr(timer, "_has_pending_community_sign", lambda *, source: True)
+    monkeypatch.setattr(timer, "try_community_for_task", shared_sign)
+    token = current_process_scope.set(scope)
+    try:
+        timer.schedule_community_for_task(
+            source="task_manual", on_completed=delivered.append
+        )
+    finally:
+        current_process_scope.reset(token)
+
+    work = timer.community_sign_task
+    assert work is not None
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        assert work.get_context().get(current_process_scope) is None
+        await scope.force_close()
+        assert not work.done()
+        release.set()
+        await work
+        await asyncio.sleep(0)
+        assert delivered == [[{"ok": True}]]
+    finally:
+        release.set()
+        if not work.done():
+            work.cancel()
+            await asyncio.gather(work, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_explicit_cleanup_subprocess_is_allowed_after_task_scope_closes():
+    scope = TaskProcessScope()
+    token = current_process_scope.set(scope)
+    try:
+        await scope.force_close()
+        with pytest.raises(asyncio.CancelledError):
+            await ProcessRunner.run_process(
+                sys.executable, "-I", "-c", "print('blocked')", timeout=3
+            )
+        result = await ProcessRunner.run_process(
+            sys.executable, "-I", "-c", "print('cleanup')", timeout=3, cleanup=True
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == "cleanup"
+        assert not scope._processes
+    finally:
+        current_process_scope.reset(token)

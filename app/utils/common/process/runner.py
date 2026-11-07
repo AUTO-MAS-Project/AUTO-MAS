@@ -133,6 +133,7 @@ async def create_subprocess(
     program: Path | str,
     *args: str,
     breakaway: bool = False,
+    cleanup: bool = False,
     **kwargs,
 ) -> asyncio.subprocess.Process:
     """按平台标志启动子进程；``breakaway=True`` 时额外脱离监督器的 Job Object。
@@ -151,7 +152,8 @@ async def create_subprocess(
 
     platform_process = process_platform.platform_process
 
-    scope = current_process_scope.get()
+    # 仅由明确的收尾命令使用；不加入已关闭的业务任务 Job。
+    scope = None if cleanup else current_process_scope.get()
     if scope is not None:
         scope.ensure_can_start()
 
@@ -214,6 +216,7 @@ class ProcessRunner:
         kill_tree_on_cancel: bool = False,
         env: Mapping[str, str] | None = None,
         deadline: float | None = None,
+        cleanup: bool = False,
     ) -> ProcessResult:
         """运行子进程并等待其结束，返回解码后的输出。
 
@@ -223,6 +226,7 @@ class ProcessRunner:
         取消后立即清理，最多再等 1 秒释放管道。要求回收进程树时，先等创建落定
         取得句柄，再回收已启动的子进程并直接关闭本命令的标准管道。
         各命令取消后的输出统一直接关闭，不再等待 EOF。
+        cleanup 只用于明确的进程清理命令（如 taskkill），允许任务作用域关闭后执行。
         """
 
         command = [str(program), *args]
@@ -243,6 +247,7 @@ class ProcessRunner:
                     program,
                     *args,
                     breakaway=breakaway,
+                    cleanup=cleanup,
                     cwd=cwd
                     or (Path(program).parent if Path(program).is_file() else None),
                     env=env,
@@ -301,7 +306,7 @@ class ProcessRunner:
             f"子进程已退出: {command} - 用时: {time.monotonic() - started_at:.3f}秒"
         )
         scope = current_process_scope.get()
-        if scope is not None:
+        if scope is not None and not cleanup:
             scope.forget(process)
 
         return ProcessResult(
