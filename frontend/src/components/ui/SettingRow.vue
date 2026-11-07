@@ -50,10 +50,6 @@ withDefaults(
   border-bottom: 0;
 }
 
-html:not(.dark) .ui-row {
-  border-bottom-color: var(--ant-color-border);
-}
-
 .ui-row-label {
   min-width: 0;
 }
