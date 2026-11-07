@@ -165,17 +165,6 @@ class QueueConfig(DomainEntry):
             )
         )
 
-        LastStartTime: Annotated[
-            datetime,
-            tz(local_timezone),
-            ui(format="hms"),
-        ] = Field(
-            default_factory=lambda: datetime.fromisoformat("2000-01-01 00:00").replace(
-                tzinfo=local_timezone()
-            ),
-            description="L1 上次成功创建该队列任务的时间",
-        )
-
         LastTimedStart: Annotated[datetime, tz(local_timezone), ui(format="hms")] = (
             Field(
                 default_factory=lambda: datetime(2000, 1, 1, tzinfo=local_timezone()),

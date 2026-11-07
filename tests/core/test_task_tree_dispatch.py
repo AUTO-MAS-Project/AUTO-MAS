@@ -21,7 +21,7 @@ from app.models.config import (
     QueueItem,
     ScriptConfigType,
 )
-from app.models.task import TaskMode
+from app.models.task import TaskMode, TaskTriggerReason
 from app.task.legacy import TaskExecuteBase
 from app.task.mode_worker import AutoProxyWorker, ScriptViewWorker
 from app.task.user_expander import UserExpander
@@ -441,7 +441,7 @@ async def test_multiple_roots_are_rejected_before_registration_or_clock_changes(
     manager, _, queues, sid = scheduler
     qids = [queues.add(QueueConfig) for _ in range(2)]
     await queues.commit()
-    previous = [queues[qid].Data.LastStartTime for qid in qids]
+    previous = [queues[qid].model_dump(context={"audience": "persist"}) for qid in qids]
     second = (
         {"uid": str(qids[1])}
         if second_kind == "queue"
@@ -452,7 +452,9 @@ async def test_multiple_roots_are_rejected_before_registration_or_clock_changes(
     with pytest.raises(ValueError):
         await manager.start(TaskMode.AUTO_PROXY, {0: {"uid": str(qids[0])}, 1: second})
     assert not manager.task_handler
-    assert [queues[qid].Data.LastStartTime for qid in qids] == previous
+    assert [
+        queues[qid].model_dump(context={"audience": "persist"}) for qid in qids
+    ] == previous
     sent.assert_not_awaited()
 
 
@@ -494,11 +496,13 @@ async def test_empty_queue_records_acceptance_without_runtime_queue(scheduler):
     manager, _, queues, _ = scheduler
     qid = queues.add(QueueConfig)
     await queues.commit()
-    previous = queues[qid].Data.LastStartTime
-    uid = await manager.start(TaskMode.AUTO_PROXY, {0: {"uid": str(qid)}})
+    previous = queues[qid].Data.LastTimedStart
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY, {0: {"uid": str(qid)}}, trigger=TaskTriggerReason.TIMED
+    )
     run = manager.task_handler[uid]
     await asyncio.wait_for(run.accomplish.wait(), 4)
-    assert queues[qid].Data.LastStartTime != previous
+    assert queues[qid].Data.LastTimedStart != previous
     assert not run.task_info.scripts
     assert run.task_info.status == "success"
 

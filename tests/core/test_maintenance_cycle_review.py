@@ -81,7 +81,7 @@ async def test_timer_dispatches_each_reason_independently_and_records_on_accepta
         mode, tasks = call.args
         assert mode is TaskMode.AUTO_PROXY
         assert tasks == {0: {"uid": str(qid)}}
-    assert queue.Data.LastStartTime == queue.Cycle.LastRunAt == now
+    assert queue.Data.LastTimedStart == queue.Cycle.LastRunAt == now
     assert queue.Data.LastStartupTime.date() == now.date()
     assert queue.Cycle.NextRunAt == now.replace(second=0, microsecond=0) + timedelta(
         hours=1

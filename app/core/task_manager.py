@@ -305,7 +305,6 @@ class _TaskManager:
                 if queue is not None:
                     if Config.QueueConfig.get(queue.uid) is not queue:
                         raise ValueError("队列已删除或替换")
-                    queue.Data.LastStartTime = now
                     if info.info.trigger == TaskTriggerReason.STARTUP:
                         queue.Data.LastStartupTime = now
                     if info.info.trigger == TaskTriggerReason.TIMED:

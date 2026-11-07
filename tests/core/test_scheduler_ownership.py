@@ -49,7 +49,7 @@ async def test_lock_query_reads_actual_configuration_and_missing_targets(schedul
 
 
 @pytest.mark.asyncio
-async def test_manual_creation_records_only_common_clock_and_ignores_forged_parameter_reason(
+async def test_manual_creation_preserves_trigger_clocks_and_ignores_forged_parameter_reason(
     scheduler,
 ):
     manager, _, queues, sid = scheduler
@@ -71,7 +71,6 @@ async def test_manual_creation_records_only_common_clock_and_ignores_forged_para
             },
         )
     run = manager.task_handler[uid]
-    assert queue.Data.LastStartTime == now
     assert queue.Cycle.LastRunAt == previous_cycle
     assert queue.Data.LastStartupTime == previous_startup
     assert queue.Data.LastTimedStart == previous_timed
@@ -215,7 +214,6 @@ async def test_l1_records_only_the_single_creation_reason(scheduler, reason):
         )
     run = manager.task_handler[uid]
     assert run.task_info.info.trigger is reason
-    assert queue.Data.LastStartTime == now
     assert queue.Data.LastStartupTime == (
         now if reason is TaskTriggerReason.STARTUP else previous_startup
     )

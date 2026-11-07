@@ -55,7 +55,6 @@ async def test_first_timed_check_after_cold_start(
 
     async def receive_task(mode, tasks, **kwargs):
         dispatched.append((mode, tasks[0]["uid"], kwargs["trigger"].value))
-        queue.Data.LastStartTime = now
         queue.Data.LastTimedStart = now
         await queue.commit()
 
@@ -67,7 +66,7 @@ async def test_first_timed_check_after_cold_start(
     await timer._MainTimer().timed_start()
     assert dispatched == [("AutoProxy", str(uid), "timed")] * expected
     if expected:
-        assert queue.Data.LastStartTime == now
+        assert queue.Data.LastTimedStart == now
 
 
 @pytest.mark.asyncio
@@ -103,7 +102,6 @@ async def test_cold_wakeup_does_not_replay_slots_before_last_dispatch(
 
     async def receive_task(mode, tasks, **kwargs):
         dispatched.append((mode, tasks[0]["uid"], kwargs["trigger"].value))
-        queue.Data.LastStartTime = now
         queue.Data.LastTimedStart = now
         await queue.commit()
 
@@ -115,4 +113,4 @@ async def test_cold_wakeup_does_not_replay_slots_before_last_dispatch(
     now = last_run + timedelta(minutes=10)
     await main_timer.timed_start()
     assert dispatched == [("AutoProxy", str(uid), "timed")]
-    assert queue.Data.LastStartTime == now
+    assert queue.Data.LastTimedStart == now
