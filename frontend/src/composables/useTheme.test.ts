@@ -29,7 +29,7 @@ beforeEach(() => {
   const properties = new Map<string, string>()
   vi.stubGlobal('document', {
     documentElement: {
-      classList: { add: vi.fn(), remove: vi.fn() },
+      classList: { add: vi.fn(), remove: vi.fn(), toggle: vi.fn() },
       style: {
         setProperty: (name: string, value: string) => properties.set(name, value),
         getPropertyValue: (name: string) => properties.get(name) ?? '',
