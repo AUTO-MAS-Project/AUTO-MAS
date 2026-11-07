@@ -45,7 +45,20 @@
     "restoreWindow": "还原",
     "updateAvailableHint": "检测到更新 {version} 请尽快更新",
     "confirmExit": "确认关闭",
-    "queueStillRunningClose": "队列正在运行中，确认关闭AUTO-MAS吗？"
+    "queueStillRunningClose": "队列正在运行中，确认关闭AUTO-MAS吗？",
+    "downloadReady": "下载完成，点击安装",
+    "downloadSwitching": "正在切换至 CNB 源",
+    "downloadCancelling": "正在取消下载",
+    "downloadFailed": "下载失败，点击查看",
+    "downloading": "正在{source}下载 {progress}%",
+    "versionUnavailable": "获取版本失败！",
+    "downloadSource": "从 {source} ",
+    "sourceGithub": "GitHub 源",
+    "sourceCnb": "CNB 源",
+    "sourceMirror": "Mirror 酱源",
+    "sourceCustom": "自建源",
+    "currentSource": "当前来源",
+    "downloadSlow": "{source}下载速度较慢"
   },
   "init": {
     "backend": {

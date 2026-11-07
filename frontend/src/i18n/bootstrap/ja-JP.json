@@ -45,7 +45,20 @@
     "restoreWindow": "元に戻す",
     "updateAvailableHint": "アップデート {version} があります。できるだけ早く更新してください。",
     "confirmExit": "終了の確認",
-    "queueStillRunningClose": "キューが実行中です。AUTO-MAS を終了しますか？"
+    "queueStillRunningClose": "キューが実行中です。AUTO-MAS を終了しますか？",
+    "downloadReady": "ダウンロード完了。クリックしてインストール",
+    "downloadSwitching": "CNB に切り替えています",
+    "downloadCancelling": "ダウンロードをキャンセルしています",
+    "downloadFailed": "ダウンロード失敗。クリックして詳細を表示",
+    "downloading": "{source}ダウンロード中：{progress}%",
+    "versionUnavailable": "バージョンを取得できません",
+    "downloadSource": "{source} から",
+    "sourceGithub": "GitHub",
+    "sourceCnb": "CNB",
+    "sourceMirror": "MirrorChyan",
+    "sourceCustom": "カスタムソース",
+    "currentSource": "現在のソース",
+    "downloadSlow": "{source} からのダウンロードが低速です"
   },
   "init": {
     "backend": {

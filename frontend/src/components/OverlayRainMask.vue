@@ -130,16 +130,7 @@ let shakeMagnitude = 0
 let emergencyStopped = false
 let isUnmounted = false
 const GOLD_BLOCK_PROBABILITY = 0.01
-const FLOATING_TEXT_POOL = [
-  '愚人节快乐',
-  '自动化也会做梦',
-  '今天允许离谱',
-  '别眨眼',
-  '就离谱一下',
-  '今天没有 BUG',
-  '物理引擎已失控',
-  '随机就是艺术',
-]
+const FLOATING_TEXT_COUNT = 8
 const DEFAULT_VARIANT: VisualVariant = {
   effect: 'normal',
   drawScale: 1,
@@ -212,7 +203,7 @@ const generateFloatingTexts = () => {
   const items: FloatingTextItem[] = []
   const now = Date.now()
   for (let i = 0; i < count; i += 1) {
-    const text = FLOATING_TEXT_POOL[Math.floor(Math.random() * FLOATING_TEXT_POOL.length)]
+    const text = t(`core.comp.april.floating${Math.floor(Math.random() * FLOATING_TEXT_COUNT) + 1}`)
     items.push({
       id: `${now}-${i}-${Math.random().toString(36).slice(2, 8)}`,
       text,
@@ -305,13 +296,13 @@ const triggerComboText = () => {
   const comboCount = collisionHistory.length
   if (comboCount < 2) return
 
-  let level = '不错！'
+  let level = t('core.comp.april.good')
   if (comboCount >= 8) {
-    level = '太离谱了！'
+    level = t('core.comp.april.wild')
   } else if (comboCount >= 6) {
-    level = '疯狂连击！'
+    level = t('core.comp.april.combo')
   } else if (comboCount >= 4) {
-    level = '太棒了！'
+    level = t('core.comp.april.great')
   }
 
   comboLabel.value = `x${comboCount} ${level}`

@@ -157,12 +157,7 @@ const { isBootstrapping } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 let removeTrayActionListener: (() => void) | undefined
 
-const {
-  status: downloadStatus,
-  sourceLabel,
-  progressPercent,
-  open: openDownloadModal,
-} = useUpdateDownload()
+const { downloadHint, open: openDownloadModal } = useUpdateDownload()
 
 const {
   ensureLaunchMode,
@@ -218,22 +213,12 @@ const retryActionLabels = computed<Record<RuntimeUpdateRetryAction, string>>(() 
 const retryActionLabel = (action: RuntimeUpdateRetryAction): string =>
   retryActionLabels.value[action]
 
-const downloadHint = computed(() => {
-  if (downloadStatus.value === 'completed') return '下载完成，点击安装'
-  if (downloadStatus.value === 'switchingSource') return '正在切换至 CNB 源'
-  if (downloadStatus.value === 'cancelling') return '正在取消下载'
-  if (downloadStatus.value === 'failed') return '下载失败，点击查看'
-  if (downloadStatus.value === 'downloading') {
-    const sourceText = sourceLabel.value ? `从 ${sourceLabel.value}` : ''
-    return `正在${sourceText}下载 ${progressPercent.value.toFixed(1)}%`
-  }
-  return ''
-})
-
 const { isDark } = useTheme()
 
 // 使用 import.meta.env 或直接定义版本号，确保打包后可用
-const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
+const version = computed(
+  () => import.meta.env.VITE_APP_VERSION || t('bootstrap.comp.versionUnavailable')
+)
 
 // 处理版本更新点击
 const handleAppUpdateClick = () => {
@@ -248,7 +233,7 @@ const handleAppUpdateClick = () => {
  * `/api/update/check` 返回的 `latest_version` 就是发布标签；还没查到时退回应用自身版本，
  * 主进程会再做一次规范化与合法性校验。
  */
-const resolveRuntimeUpdateVersion = (): string => updateInfo.value?.latest_version || version
+const resolveRuntimeUpdateVersion = (): string => updateInfo.value?.latest_version || version.value
 
 // 处理后端更新点击
 const handleBackendUpdateClick = () => {

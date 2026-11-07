@@ -45,7 +45,20 @@
     "restoreWindow": "Restore",
     "updateAvailableHint": "Update {version} is available. Please update as soon as possible.",
     "confirmExit": "Confirm exit",
-    "queueStillRunningClose": "A queue is still running. Close AUTO-MAS anyway?"
+    "queueStillRunningClose": "A queue is still running. Close AUTO-MAS anyway?",
+    "downloadReady": "Download complete. Click to install",
+    "downloadSwitching": "Switching to the CNB source",
+    "downloadCancelling": "Cancelling download",
+    "downloadFailed": "Download failed. Click for details",
+    "downloading": "Downloading{source}: {progress}%",
+    "versionUnavailable": "Version unavailable",
+    "downloadSource": " from {source}",
+    "sourceGithub": "GitHub",
+    "sourceCnb": "CNB",
+    "sourceMirror": "MirrorChyan",
+    "sourceCustom": "Custom source",
+    "currentSource": "Current source",
+    "downloadSlow": "Download from {source} is slow"
   },
   "init": {
     "backend": {
