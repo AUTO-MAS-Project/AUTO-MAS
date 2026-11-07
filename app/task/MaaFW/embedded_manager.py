@@ -774,11 +774,14 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
 
         def report(event: dict[str, Any]) -> None:
             # 只转接下载器的公开进度，不改独立核心的传输和缓存逻辑。
-            if observer is not None and event.get("stage") == "downloading":
+            from .tools.core.project_update.progress import UpdateProgressEvent
+
+            parsed = UpdateProgressEvent.of(event)
+            if observer is not None and parsed.stage == "downloading":
                 observer(
                     Path("项目更新包"),
-                    int(event.get("downloaded_bytes") or 0),
-                    int(event.get("total_bytes") or 0),
+                    parsed.downloaded_bytes or 0,
+                    parsed.total_bytes or 0,
                     0.0,
                 )
 

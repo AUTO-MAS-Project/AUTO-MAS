@@ -10,6 +10,7 @@ import {
   type WSTaskCompletedData,
   type WSTaskCreatedData,
   type WSTaskCyclePreviewData,
+  type WSTaskPrefetchData,
   type WSTaskMode,
   type WSTaskScriptIdentityData,
   type WSTaskScriptInfoData,
@@ -30,6 +31,7 @@ const WAITING_STATUSES = new Set(['等待', '等待中'])
 const RUNNING_STATUSES = new Set(['运行', '运行中'])
 
 export interface TaskRuntimeState {
+  prefetch?: WSTaskPrefetchData | null
   taskId: string
   mode: WSTaskMode | null
   queueId: string | null
@@ -164,6 +166,7 @@ const ensureTaskSubscriptions = (taskId: string): void => {
         phase: 'active',
         taskInfo: cloneTaskInfo(message.data.task_info),
         cycleNextList: message.data.cycleNextList ?? [],
+        prefetch: message.data.prefetch ?? null,
       }
       setTaskState(state)
       emitRuntimeEvent({ type: 'info', state })
@@ -230,6 +233,7 @@ const stateFromSnapshot = (
   scripts: cloneScripts(item.scripts),
   taskInfo: cloneTaskInfo(item.task_info),
   cycleNextList: item.cycleNextList ?? [],
+  prefetch: item.prefetch ?? null,
   log: item.log,
   logSeq: item.logSeq,
   logFirstLine: item.logFirstLine,

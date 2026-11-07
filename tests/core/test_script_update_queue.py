@@ -459,6 +459,7 @@ async def test_public_update_entry_skips_next_non_runnable_item(monkeypatch):
     }
     info = SimpleNamespace(
         _prefetch_log="",
+        _prefetch=None,
         schedule_on_change=lambda: None,
         mode="AutoProxy",
         is_cycle=False,
@@ -716,6 +717,7 @@ async def test_download_history_does_not_invalidate_prefetched_candidate(
     update_settings = setting.Update
     info = SimpleNamespace(
         _prefetch_log="",
+        _prefetch=None,
         schedule_on_change=lambda: None,
         mode="AutoProxy",
         is_cycle=False,
@@ -788,6 +790,7 @@ async def test_runtime_records_do_not_invalidate_but_install_path_does(
     )
     info = SimpleNamespace(
         _prefetch_log="",
+        _prefetch=None,
         schedule_on_change=lambda: None,
         mode="AutoProxy",
         is_cycle=False,
@@ -826,6 +829,7 @@ async def test_update_install_setting_still_invalidates_prefetch():
     update_settings = GlobalConfig.UpdateFields()
     info = SimpleNamespace(
         _prefetch_log="",
+        _prefetch=None,
         schedule_on_change=lambda: None,
         mode="AutoProxy",
         is_cycle=False,
@@ -872,6 +876,7 @@ async def test_changed_reservation_resources_invalidate_prefetched_manager():
     )
     info = SimpleNamespace(
         _prefetch_log="",
+        _prefetch=None,
         schedule_on_change=lambda: None,
         mode="AutoProxy",
         is_cycle=False,

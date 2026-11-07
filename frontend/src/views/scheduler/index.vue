@@ -27,7 +27,6 @@
         </a-space>
       </div>
     </div>
-
     <!-- 调度台标签页 -->
     <div class="scheduler-tabs">
       <a-tabs
@@ -74,7 +73,6 @@
               </a-tag>
             </div>
           </template>
-
           <!-- 任务控制与状态内容 -->
           <div class="task-unified-card" :class="`status-${tab.status}`">
             <!-- 任务控制栏 -->
@@ -116,6 +114,7 @@
               <div class="log-panel-container">
                 <SchedulerLogPanel
                   :log-content="tab.lastLogContent"
+                  :prefetch="tab.prefetch"
                   :external-log-mode="tab.logMode"
                   :first-line="tab.displayLogFirstLine ?? tab.logFirstLine ?? 1"
                 />

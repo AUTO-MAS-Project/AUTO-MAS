@@ -25,6 +25,9 @@ download_observer: ContextVar[DownloadObserver | None] = ContextVar(
 )
 
 
+download_method: ContextVar[str] = ContextVar("download_method", default="httpx")
+
+
 async def _write_history(record: _utils_fluxdown_cli.FluxdownDownloadRecord) -> None:
     """串行追加历史并保留最近 50 条，复制列表后整体提交。"""
     # 读、改、提交共用配置事务，避免并发下载覆盖历史，也不持线程锁等待异步提交。
@@ -60,16 +63,39 @@ async def download_file(
 ) -> int:
     """每次尝试读取默认选项，保留任务冻结的来源与显式下载器覆盖。"""
     observer = download_observer.get()
+    actual_method = "FluxDown"
     if observer is not None:
         original_progress = progress
 
         async def report(downloaded: int, total: int, speed: float) -> None:
             if original_progress is not None:
                 await original_progress(downloaded, total, speed)
-            observer(destination, downloaded, total, speed)
+            token = download_method.set(actual_method)
+            try:
+                observer(destination, downloaded, total, speed)
+            finally:
+                download_method.reset(token)
 
         progress = report
-        observer(destination, 0, 0, 0.0)
+        original_http_download = (
+            http_download or _service_update_transport.download_file
+        )
+
+        async def observed_http_download(
+            url, destination, *, timeout, proxy=None, progress=None
+        ):
+            nonlocal actual_method
+            actual_method = "httpx"
+            token = download_method.set(actual_method)
+            try:
+                observer(destination, 0, 0, 0.0)
+            finally:
+                download_method.reset(token)
+            return await original_http_download(
+                url, destination, timeout=timeout, proxy=proxy, progress=progress
+            )
+
+        http_download = observed_http_download
     update = Config.setting.Update
     return await _service_update_fluxdown.download_file(
         url,

@@ -1,3 +1,4 @@
+import type { WSTaskPrefetchData } from '@/api/models/WSTaskPrefetchData'
 // WebSocket 统一消息协议类型
 import type { McpStatusData } from '../../api'
 import type { FrontendCloseRequest } from '../../types/appLifecycle'
@@ -143,7 +144,10 @@ export interface WSTaskCyclePreviewData {
 }
 
 /** 任务信息快照 (type=task.info.updated) */
+export type { WSTaskPrefetchData } from '@/api/models/WSTaskPrefetchData'
+
 export interface WSTaskInfoUpdatedData {
+  prefetch?: WSTaskPrefetchData | null
   task_info: WSTaskScriptInfoData[]
   /** 循环运行的待运行条目，仅循环任务非空 */
   cycleNextList?: WSTaskCyclePreviewData[]

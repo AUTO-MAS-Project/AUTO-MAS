@@ -31,15 +31,15 @@
     <div
       ref="logContentRef"
       class="log-content"
-      :class="{ 'log-locked': logMode === 'follow', 'log-dark': logIsDark }"
-      :style="{ backgroundColor: logBackground, color: logForeground }"
+      :class="{ ...downloadClasses, 'log-locked': logMode === 'follow', 'log-dark': logIsDark }"
+      :style="{ ...downloadVariables, backgroundColor: logBackground, color: logForeground }"
     >
-      <div v-if="!logContent" class="empty-state">
+      <div v-if="!displayLog" class="empty-state">
         <NoData :image-style="{ height: '80px' }" :description="false" />
       </div>
       <div v-else class="monaco-container">
         <vue-monaco-editor
-          :value="logContent"
+          :value="displayLog"
           language="logfile"
           :theme="editorTheme"
           :options="editorOptions"
@@ -55,15 +55,18 @@
 import { useI18n } from 'vue-i18n'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { useTheme } from '@/composables/useTheme'
+import { getDownloadParts, useDownloadLogStyle } from '@/composables/useDownloadLogStyle'
+import type { WSTaskPrefetchData } from '@/services/websocket/types'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { useLocalStorage } from '@vueuse/core'
 import { message, theme } from 'ant-design-vue'
-import { computed, nextTick, onUnmounted, ref, toRefs, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 
 const { t } = useI18n()
 
 interface Props {
   logContent: string
+  prefetch?: WSTaskPrefetchData | null
   externalLogMode?: 'follow' | 'browse' // 外部控制的日志模式
   // 日志首行在完整日志里的行号。后端只推最近一段日志，行号得接着完整日志排。
   // 调用方（scheduler/index.vue）保证一定给值，这里不再做第二层兜底。
@@ -75,9 +78,6 @@ type LogMode = 'follow' | 'browse'
 type LogThemeMode = 'theme' | 'dark' | 'light'
 
 const props = defineProps<Props>()
-
-// 解构 props 以便在模板中直接使用（保持响应性）
-const { logContent } = toRefs(props)
 
 const { isDark } = useTheme()
 const { token } = theme.useToken()
@@ -109,6 +109,15 @@ const editorColors = computed(() => ({
   'editor.foreground': logForeground.value,
   'editorGutter.background': logBackground.value,
 }))
+
+const { downloadClasses, downloadVariables } = useDownloadLogStyle(logIsDark)
+const downloadParts = computed(() => getDownloadParts(props.prefetch))
+const downloadText = computed(() => downloadParts.value.map(part => part.text).join(' · '))
+const displayLog = computed(() => {
+  if (!downloadText.value) return props.logContent
+  const separator = props.logContent && !props.logContent.endsWith('\n') ? '\n' : ''
+  return `${props.logContent}${separator}${downloadText.value}`
+})
 
 // 使用独立主题名，保留其他日志页面的配色。
 const { registerLogLanguage, editorTheme, editorConfig, lightColors, darkColors, styles } =
@@ -142,7 +151,54 @@ watch(
 )
 
 // Monaco Editor 实例
-let editorInstance: any = null
+let editorInstance: import('monaco-editor').editor.IStandaloneCodeEditor | null = null
+let downloadDecorations: import('monaco-editor').editor.IEditorDecorationsCollection | null = null
+let contentListener: import('monaco-editor').IDisposable | null = null
+let gradientFrame: number | undefined
+
+// Monaco 更新尾行时会重建 span；将新动画对齐到文档时钟，避免每秒刷新进度就从头变色。
+const syncDownloadGradient = () => {
+  if (gradientFrame !== undefined) cancelAnimationFrame(gradientFrame)
+  gradientFrame = requestAnimationFrame(() => {
+    gradientFrame = requestAnimationFrame(() => {
+      gradientFrame = undefined
+      for (const element of logContentRef.value?.querySelectorAll(
+        '.download-log-animated span[class*="download-log-"]'
+      ) ?? []) {
+        for (const animation of element.getAnimations()) animation.startTime = 0
+      }
+    })
+  })
+}
+
+const decorateDownload = () => {
+  const model = editorInstance?.getModel()
+  if (!model || !downloadDecorations || !downloadText.value) {
+    downloadDecorations?.clear()
+    return
+  }
+  const offset = displayLog.value.length - downloadText.value.length
+  let column = model.getPositionAt(offset).column
+  const line = model.getPositionAt(offset).lineNumber
+  downloadDecorations.set(
+    downloadParts.value.map(part => {
+      const range = {
+        startLineNumber: line,
+        startColumn: column,
+        endLineNumber: line,
+        endColumn: column + part.text.length,
+      }
+      column += part.text.length + 3
+      return { range, options: { inlineClassName: `download-log-${part.field}` } }
+    })
+  )
+  if (styles.value.downloadGradient) syncDownloadGradient()
+}
+
+watch(
+  () => styles.value.downloadGradient,
+  () => void nextTick(syncDownloadGradient)
+)
 
 // Monaco Editor 配置
 const editorOptions = computed(() => ({
@@ -179,8 +235,12 @@ const editorOptions = computed(() => ({
 }))
 
 // 处理编辑器挂载
-const handleEditorMount = (editor: any) => {
+const handleEditorMount = (editor: import('monaco-editor').editor.IStandaloneCodeEditor) => {
   editorInstance = editor
+  contentListener?.dispose()
+  downloadDecorations = editor.createDecorationsCollection()
+  contentListener = editor.onDidChangeModelContent(decorateDownload)
+  decorateDownload()
   // 初始滚动到底部
   if (logMode.value === 'follow' && props.logContent) {
     nextTick(() => scrollToBottom())
@@ -214,8 +274,9 @@ const scrollToBottom = () => {
 
 // 只监听日志内容变化
 watch(
-  () => props.logContent,
+  () => displayLog.value,
   () => {
+    void nextTick(decorateDownload)
     if (logMode.value === 'follow') {
       // 使用简单的延迟，避免nextTick可能导致的递归
       setTimeout(scrollToBottom, 10)
@@ -224,11 +285,15 @@ watch(
 )
 
 onUnmounted(() => {
+  if (gradientFrame !== undefined) cancelAnimationFrame(gradientFrame)
+  contentListener?.dispose()
+  downloadDecorations?.clear()
   editorInstance = null
   monacoInstance = null
 })
 </script>
 
+<style src="@/components/downloadLog.css"></style>
 <style scoped src="./schedulerPanel.css"></style>
 
 <style scoped>

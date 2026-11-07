@@ -4,6 +4,8 @@ import { ref, computed } from 'vue'
 import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { useLogHighlight, type LogHighlightColors } from '@/composables/useLogHighlight'
 import SettingRow from '@/components/ui/SettingRow.vue'
+import LogHighlightPreview from './LogHighlightPreview.vue'
+import DownloadLogStyleSettings from './DownloadLogStyleSettings.vue'
 import { useTheme } from '@/composables/useTheme'
 import { message } from 'ant-design-vue'
 
@@ -268,6 +270,8 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
             </div>
           </div>
 
+          <DownloadLogStyleSettings :editing-theme="editingTheme" />
+
           <div v-for="group in colorGroups" :key="group.title" class="color-group">
             <div class="group-title">{{ group.title }}</div>
             <div class="color-grid">
@@ -307,143 +311,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
         <!-- 预览 -->
         <div class="config-section">
           <div class="section-title">{{ t('core.comp.preview') }}</div>
-          <div
-            class="preview-content"
-            :class="editingTheme === 'dark' ? 'preview-dark' : 'preview-light'"
-            :style="{
-              fontSize: editorConfig.fontSize + 'px',
-              lineHeight: editorConfig.lineHeight,
-            }"
-          >
-            <div class="preview-line">
-              <span
-                :style="{
-                  color: '#' + currentColors.timestamp,
-                  fontWeight: styles.timestampBold ? 'bold' : 'normal',
-                }"
-                >2024-12-09 10:30:45.123</span
-              >
-              <span
-                :style="{
-                  color: '#' + currentColors.info,
-                  fontWeight: styles.levelBold ? 'bold' : 'normal',
-                }"
-              >
-                INFO
-              </span>
-              <span :style="{ color: '#' + currentColors.module }">[MainModule]</span>
-              <span>{{ t('core.comp.appStartedPort') }}</span>
-              <span :style="{ color: '#' + currentColors.port }">:8080</span>
-            </div>
-            <div class="preview-line">
-              <span
-                :style="{
-                  color: '#' + currentColors.timestamp,
-                  fontWeight: styles.timestampBold ? 'bold' : 'normal',
-                }"
-                >2024-12-09 10:30:46.456</span
-              >
-              <span
-                :style="{
-                  color: '#' + currentColors.warning,
-                  fontWeight: styles.levelBold ? 'bold' : 'normal',
-                }"
-              >
-                WARN
-              </span>
-              <span :style="{ color: '#' + currentColors.module }">[Network]</span>
-              <span>{{ t('core.comp.connectionTimedOutIp') }}</span>
-              <span :style="{ color: '#' + currentColors.ip }">192.168.1.100</span>
-              <span :style="{ color: '#' + currentColors.variable }"> retries</span>
-              <span :style="{ color: '#' + currentColors.operator }">=</span>
-              <span :style="{ color: '#' + currentColors.number }">3</span>
-            </div>
-            <div class="preview-line">
-              <span
-                :style="{
-                  color: '#' + currentColors.timestamp,
-                  fontWeight: styles.timestampBold ? 'bold' : 'normal',
-                }"
-                >2024-12-09 10:30:47.789</span
-              >
-              <span
-                :style="{
-                  color: '#' + currentColors.error,
-                  fontWeight: styles.levelBold ? 'bold' : 'normal',
-                }"
-              >
-                ERROR
-              </span>
-              <span :style="{ color: '#' + currentColors.module }">[Database]</span>
-              <span
-                :style="{
-                  color: '#' + currentColors.errorKeyword,
-                  fontWeight: styles.keywordBold ? 'bold' : 'normal',
-                }"
-              >
-                Exception</span
-              >
-              <span>{{ t('core.comp.connectionFailed') }}</span>
-              <span :style="{ color: '#' + currentColors.string }">"Connection refused"</span>
-            </div>
-            <div class="preview-line">
-              <span :style="{ color: '#' + currentColors.stackTrace }">
-                at com.example.Database.connect(Database.java:42)</span
-              >
-            </div>
-            <div class="preview-line">
-              <span
-                :style="{
-                  color: '#' + currentColors.timestamp,
-                  fontWeight: styles.timestampBold ? 'bold' : 'normal',
-                }"
-                >2024-12-09 10:30:48.000</span
-              >
-              <span :style="{ color: '#' + currentColors.debug }"> DEBUG </span>
-              <span :style="{ color: '#' + currentColors.module }">[Task]</span>
-              <span> UUID: </span>
-              <span :style="{ color: '#' + currentColors.uuid }"
-                >550e8400-e29b-41d4-a716-446655440000</span
-              >
-            </div>
-            <div class="preview-line">
-              <span
-                :style="{
-                  color: '#' + currentColors.timestamp,
-                  fontWeight: styles.timestampBold ? 'bold' : 'normal',
-                }"
-                >2024-12-09 10:30:49.123</span
-              >
-              <span :style="{ color: '#' + currentColors.trace }"> TRACE </span>
-              <span :style="{ color: '#' + currentColors.module }">[HTTP]</span>
-              <span>{{ t('core.comp.request') }}</span>
-              <span
-                :style="{
-                  color: '#' + currentColors.url,
-                  textDecoration: styles.urlUnderline ? 'underline' : 'none',
-                }"
-                >https://api.example.com/data</span
-              >
-              <span
-                :style="{
-                  color: '#' + currentColors.success,
-                  fontWeight: styles.keywordBold ? 'bold' : 'normal',
-                }"
-              >
-                Success</span
-              >
-            </div>
-            <div class="preview-line">
-              <span :style="{ color: '#' + currentColors.trace }"> TRACE </span>
-              <span>{{ t('core.comp.response') }}</span>
-              <span :style="{ color: '#' + currentColors.json }"
-                >{"status": "ok", "count": 42}</span
-              >
-              <span> enabled</span>
-              <span :style="{ color: '#' + currentColors.operator }">=</span>
-              <span :style="{ color: '#' + currentColors.boolean }">true</span>
-            </div>
-          </div>
+          <LogHighlightPreview :editing-theme="editingTheme" />
         </div>
       </a-collapse-panel>
     </a-collapse>
@@ -549,108 +417,6 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
   font-size: 14px;
   margin-inline-start: 0;
 }
-
-.color-group {
-  margin-bottom: 16px;
-}
-
-.color-group:last-child {
-  margin-bottom: 0;
-}
-
-.group-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
-  margin-bottom: 8px;
-  padding-left: 4px;
-}
-
-.color-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 8px;
-}
-
-.color-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 10px;
-  background: var(--ant-color-fill-quaternary);
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 6px;
-}
-
-.color-info {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.color-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ant-color-text);
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 11px;
-}
-
-.color-controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.color-picker {
-  width: 28px;
-  height: 20px;
-  padding: 0;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 3px;
-  cursor: pointer;
-  background: transparent;
-}
-
-.color-picker::-webkit-color-swatch-wrapper {
-  padding: 1px;
-}
-
-.color-picker::-webkit-color-swatch {
-  border: none;
-  border-radius: 2px;
-}
-
-.color-value {
-  font-family: monospace;
-  font-size: 11px;
-  color: var(--ant-color-text-secondary);
-  min-width: 55px;
-}
-
-.preview-content {
-  padding: 12px;
-  border-radius: 6px;
-  overflow-x: auto;
-  font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, Courier, monospace;
-}
-
-.preview-light {
-  background: #ffffff;
-  color: #333333;
-  border: 1px solid #d9d9d9;
-}
-
-.preview-dark {
-  background: #1e1e1e;
-  color: #d4d4d4;
-  border: 1px solid #424242;
-}
-
-.preview-line {
-  white-space: nowrap;
-}
 </style>
+
+<style scoped src="./logHighlightColors.css"></style>

@@ -1127,6 +1127,7 @@ export type { WhimboxUserConfig_TaskInput } from './models/WhimboxUserConfig_Tas
 export type { WhimboxUserConfigInput } from './models/WhimboxUserConfigInput';
 export type { WSMaaFWProjectUpdateProgressData } from './models/WSMaaFWProjectUpdateProgressData';
 export type { WSTaskCyclePreviewData } from './models/WSTaskCyclePreviewData';
+export type { WSTaskPrefetchData } from './models/WSTaskPrefetchData';
 export type { WSTaskScriptIdentityData } from './models/WSTaskScriptIdentityData';
 export type { WSTaskScriptInfoData } from './models/WSTaskScriptInfoData';
 export type { WSTaskUserInfoData } from './models/WSTaskUserInfoData';

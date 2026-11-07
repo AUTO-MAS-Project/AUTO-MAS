@@ -163,6 +163,46 @@ async def test_prefetch_failure_and_cancel_release_observer(prefetch_setup, erro
 
 
 @pytest.mark.asyncio
+async def test_actual_downloader_changes_on_http_fallback_without_extra_user_callbacks(
+    monkeypatch, tmp_path
+):
+    methods = []
+    original = AsyncMock()
+
+    async def transport(url, destination, *, progress, http_download, **kwargs):
+        await progress(1, 2, 3)
+        return await http_download(url, destination, timeout=10, progress=progress)
+
+    async def builtin(url, destination, *, progress, **kwargs):
+        await progress(2, 2, 0)
+        return 2
+
+    monkeypatch.setattr(host._service_update_fluxdown, "download_file", transport)
+    monkeypatch.setattr(
+        host,
+        "Config",
+        SimpleNamespace(
+            setting=GlobalConfig.build(), install_path=tmp_path, resource_path=tmp_path
+        ),
+    )
+    token = host.download_observer.set(
+        lambda *args: methods.append(host.download_method.get())
+    )
+    try:
+        await host.download_file(
+            "https://example.invalid/package",
+            tmp_path / "package.zip",
+            timeout=10,
+            progress=original,
+            http_download=builtin,
+        )
+    finally:
+        host.download_observer.reset(token)
+    assert methods == ["FluxDown", "httpx", "httpx"]
+    assert [call.args for call in original.await_args_list] == [(1, 2, 3), (2, 2, 0)]
+
+
+@pytest.mark.asyncio
 async def test_download_observers_are_isolated_between_concurrent_tasks(
     monkeypatch, tmp_path
 ):
@@ -203,4 +243,4 @@ async def test_download_observers_are_isolated_between_concurrent_tasks(
     await host.download_file(
         "https://example.invalid/manual", tmp_path / "manual", timeout=20
     )
-    assert all(len(observer.call_args_list) == 2 for observer in observers)
+    assert all(len(observer.call_args_list) == 1 for observer in observers)

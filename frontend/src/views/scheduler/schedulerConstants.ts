@@ -1,6 +1,10 @@
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
-import type { WSTaskCyclePreviewData, WSTaskUserProgressData } from '@/services/websocket/types'
+import type {
+  WSTaskCyclePreviewData,
+  WSTaskUserProgressData,
+  WSTaskPrefetchData,
+} from '@/services/websocket/types'
 import type { QueueScopeDisabledUser, QueueScopeGroup, QueueUserScope } from './schedulerQueueScope'
 
 // 调度台状态
@@ -50,6 +54,7 @@ export const POWER_ACTION_LABEL_KEY: Record<PowerIn.signal, string> = {
   [PowerIn.signal.LOGOFF]: 'core.scheduler.power.logoff',
 }
 export interface SchedulerTab {
+  prefetch?: WSTaskPrefetchData | null
   key: string
   title: string
   /** 自动标题保留编号，词表就绪或切语后再生成文案。 */

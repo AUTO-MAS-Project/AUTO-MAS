@@ -2,6 +2,7 @@ import { OpenAPI } from '@/api/core/OpenAPI'
 import { request } from '@/api/core/request'
 import type {
   WSTaskCyclePreviewData,
+  WSTaskPrefetchData,
   WSTaskMode,
   WSTaskScriptIdentityData,
   WSTaskScriptInfoData,
@@ -14,6 +15,7 @@ export interface PowerCountdownSnapshot {
 }
 
 export interface TaskRuntimeSnapshotItem {
+  prefetch?: WSTaskPrefetchData | null
   taskId: string
   mode: WSTaskMode
   queueId: string | null

@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { WSTaskCyclePreviewData } from './WSTaskCyclePreviewData';
+import type { WSTaskPrefetchData } from './WSTaskPrefetchData';
 import type { WSTaskScriptIdentityData } from './WSTaskScriptIdentityData';
 import type { WSTaskScriptInfoData } from './WSTaskScriptInfoData';
 /**
@@ -45,6 +46,10 @@ export type TaskRuntimeSnapshotItem = {
      * 任务托管与账号状态
      */
     task_info?: Array<WSTaskScriptInfoData>;
+    /**
+     * 临时预下载状态
+     */
+    prefetch?: (WSTaskPrefetchData | null);
     /**
      * 循环运行的待运行条目, 仅循环任务非空
      */

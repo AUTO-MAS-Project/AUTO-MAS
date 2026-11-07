@@ -558,6 +558,7 @@ class TaskInfo(TaskItem):
             type=protocol.TASK_INFO_UPDATED,
             data=WSTaskInfoUpdatedData(
                 task_info=self.asdict,
+                prefetch=self._prefetch,
                 cycleNextList=[
                     WSTaskCyclePreviewData(**item) for item in self.cycle_next_list
                 ],
@@ -566,9 +567,6 @@ class TaskInfo(TaskItem):
         if self.current_index != -1:
             script = self.script_list[self.current_index]
             log = script.log
-            if self._prefetch_log:
-                separator = "" if not log or log.endswith("\n") else "\n"
-                log = f"{log}{separator}{self._prefetch_log}\n"
             if (
                 log == self._last_pushed_log
                 and script.log_first_line == self._last_pushed_log_first_line
@@ -1851,6 +1849,7 @@ class _TaskManager:
                         for item in task_info.cycle_next_list
                     ],
                     # 返回上次推送的日志而非当前日志, 保证与下一条增量推送衔接
+                    prefetch=task_info._prefetch,
                     log=task_info._last_pushed_log[-200_000:],
                     logSeq=task_info._log_seq,
                     logFirstLine=task_info._last_pushed_log_first_line

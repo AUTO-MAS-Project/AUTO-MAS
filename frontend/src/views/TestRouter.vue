@@ -1,5 +1,6 @@
 <template>
   <div class="test-container">
+    <PrefetchLogDev />
     <h2>测试路由页面</h2>
 
     <div class="test-section">
@@ -45,6 +46,7 @@
 </template>
 
 <script setup lang="ts">
+import PrefetchLogDev from './PrefetchLogDev.vue'
 import { ref } from 'vue'
 import { Modal, Button } from 'ant-design-vue'
 

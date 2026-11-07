@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.core.task_manager.manager import TaskInfo, _TaskManager
 from app.core.ws import protocol
+from app.models.schema import WSTaskPrefetchData
 from app.models.task import ScriptItem
 
 
@@ -30,42 +31,45 @@ def _log_payloads(send: AsyncMock) -> list:
 
 
 class TaskLogIncrementalTest(unittest.IsolatedAsyncioTestCase):
-    async def test_prefetch_stays_last_without_modifying_script_log(self) -> None:
+    async def test_prefetch_does_not_break_large_log_deltas_or_snapshot(self) -> None:
         task_info = _make_task_info()
         manager = _TaskManager()
         manager.task_info[__import__("uuid").uuid4()] = task_info
-        with (
-            patch(
-                "app.core.task_manager.manager.Publisher.send", new_callable=AsyncMock
-            ) as send,
-            patch.object(TaskInfo, "schedule_on_change"),
-        ):
+        with patch(
+            "app.core.task_manager.manager.Publisher.send", new_callable=AsyncMock
+        ) as send:
             script = task_info.script_list[0]
-            script.log = "first\n"
+            script.log = "first\n" * 40_000
             await task_info.on_change()
-            task_info._prefetch_log = "[预下载 next] 50%"
+            task_info._prefetch = WSTaskPrefetchData(
+                target="MaaEnd", progress="50%", method="FluxDown"
+            )
+            task_info._prefetch_log = "[预下载 MaaEnd] 50%"
             await task_info.on_change()
             script.log += "second\n"
             await task_info.on_change()
             snapshot = manager.get_runtime_snapshot().tasks[0]
-            task_info._prefetch_log = "[预下载 next] 75%"
-            await task_info.on_change()
-            task_info._prefetch_log = ""
+            task_info._prefetch = WSTaskPrefetchData(target="MaaEnd", status="准备完成")
+            task_info._prefetch_log = "[预下载 MaaEnd] 准备完成"
             await task_info.on_change()
             script.log += "third\n"
             await task_info.on_change()
-
+            task_info._prefetch = None
+            task_info._prefetch_log = ""
+            await task_info.on_change()
         payloads = _log_payloads(send)
-        self.assertEqual(payloads[2].log, "first\nsecond\n[预下载 next] 50%\n")
-        self.assertEqual(
-            (snapshot.log, snapshot.logSeq), (payloads[2].log, payloads[2].seq)
-        )
-        self.assertEqual(payloads[3].log, "first\nsecond\n[预下载 next] 75%\n")
-        self.assertEqual(
-            (payloads[4].log, payloads[4].append), ("first\nsecond\n", False)
-        )
-        self.assertEqual((payloads[5].log, payloads[5].append), ("third\n", True))
-        self.assertEqual(script.log, "first\nsecond\nthird\n")
+        self.assertEqual(len(payloads), 3)
+        self.assertEqual((payloads[1].log, payloads[1].append), ("second\n", True))
+        self.assertEqual((payloads[2].log, payloads[2].append), ("third\n", True))
+        self.assertEqual(snapshot.log, script.log[: -len("third\n")][-200_000:])
+        self.assertEqual(snapshot.prefetch.progress, "50%")
+        info_payloads = [
+            call.kwargs["data"]
+            for call in send.await_args_list
+            if call.kwargs["type"] == protocol.TASK_INFO_UPDATED
+        ]
+        self.assertEqual(info_payloads[-2].prefetch.status, "准备完成")
+        self.assertIsNone(info_payloads[-1].prefetch)
 
     async def test_first_push_replaces_and_appends_send_only_delta(self) -> None:
         task_info = _make_task_info()

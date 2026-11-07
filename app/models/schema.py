@@ -708,11 +708,26 @@ class WSTaskCyclePreviewData(BaseModel):
     isRunning: bool = Field(default=False, description="是否正在运行")
 
 
+class WSTaskPrefetchData(BaseModel):
+    """独立于脚本日志的临时预下载展示状态。"""
+
+    target: str = Field(default="", description="下一托管名称")
+    status: str = Field(default="", description="检查、下载或准备状态")
+    package: str = Field(default="", description="当前包名")
+    method: str = Field(default="", description="实际下载方式 httpx 或 FluxDown")
+    progress: str = Field(default="", description="当前文件进度，总大小未知时为空")
+    size: str = Field(default="", description="已下载量与总大小")
+    rate: str = Field(default="", description="当前下载速率")
+
+
 class WSTaskInfoUpdatedData(BaseModel):
     """任务信息全量快照 (type=task.info.updated)。"""
 
     task_info: List[WSTaskScriptInfoData] = Field(
         default_factory=list, description="任务托管与账号状态"
+    )
+    prefetch: Optional[WSTaskPrefetchData] = Field(
+        default=None, description="临时预下载状态"
     )
     cycleNextList: List[WSTaskCyclePreviewData] = Field(
         default_factory=list, description="循环运行的待运行条目, 仅循环任务非空"
@@ -755,6 +770,9 @@ class TaskRuntimeSnapshotItem(BaseModel):
     )
     task_info: List[WSTaskScriptInfoData] = Field(
         default_factory=list, description="任务托管与账号状态"
+    )
+    prefetch: Optional[WSTaskPrefetchData] = Field(
+        default=None, description="临时预下载状态"
     )
     cycleNextList: List[WSTaskCyclePreviewData] = Field(
         default_factory=list, description="循环运行的待运行条目, 仅循环任务非空"

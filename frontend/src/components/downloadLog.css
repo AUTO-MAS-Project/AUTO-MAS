@@ -1,0 +1,71 @@
+/* 下载信息独立配色，不影响普通日志或 Monaco 的其他 token。 */
+.download-log-styled {
+  --download-period: 2s;
+  --download-target: currentColor;
+  --download-package: currentColor;
+  --download-method: currentColor;
+  --download-status: currentColor;
+  --download-progress: currentColor;
+  --download-size: currentColor;
+  --download-rate: currentColor;
+  --download-target-gradient: linear-gradient(currentColor, currentColor);
+  --download-package-gradient: linear-gradient(currentColor, currentColor);
+  --download-method-gradient: linear-gradient(currentColor, currentColor);
+  --download-status-gradient: linear-gradient(currentColor, currentColor);
+  --download-progress-gradient: linear-gradient(currentColor, currentColor);
+  --download-size-gradient: linear-gradient(currentColor, currentColor);
+  --download-rate-gradient: linear-gradient(currentColor, currentColor);
+}
+.download-log-styled .download-log-target {
+  color: var(--download-target) !important;
+  --download-gradient: var(--download-target-gradient);
+}
+.download-log-styled .download-log-package {
+  color: var(--download-package) !important;
+  --download-gradient: var(--download-package-gradient);
+}
+.download-log-styled .download-log-method {
+  color: var(--download-method) !important;
+  --download-gradient: var(--download-method-gradient);
+}
+.download-log-styled .download-log-status {
+  color: var(--download-status) !important;
+  --download-gradient: var(--download-status-gradient);
+}
+.download-log-styled .download-log-progress {
+  color: var(--download-progress) !important;
+  --download-gradient: var(--download-progress-gradient);
+}
+.download-log-styled .download-log-size {
+  color: var(--download-size) !important;
+  --download-gradient: var(--download-size-gradient);
+}
+.download-log-styled .download-log-rate {
+  color: var(--download-rate) !important;
+  --download-gradient: var(--download-rate-gradient);
+}
+
+.download-log-styled.download-log-animated [class*='download-log-']:not(.download-log-line) {
+  background-image: var(--download-gradient);
+  background-size: 200% 100%;
+  background-repeat: repeat;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: download-log-flow var(--download-period) linear infinite;
+}
+
+@keyframes download-log-flow {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: -200% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .download-log-styled.download-log-animated [class*='download-log-'] {
+    animation: none;
+  }
+}

@@ -16,8 +16,9 @@ import httpx
 
 from app.core import Config
 from app.core.script_update_queue import ScriptUpdateQueue
-from app.core.update import download_file, download_observer
+from app.core.update import download_file, download_method, download_observer
 from app.models.config import CLASS_BOOK
+from app.models.schema import WSTaskPrefetchData
 from app.models.task import ScriptItem, TaskExecuteBase, TaskItem
 from app.services.common.update.transport import BuiltinDownload, DownloadProgress
 from app.utils import get_logger
@@ -84,9 +85,13 @@ class ScriptUpdateSession:
         self._queue = ScriptUpdateQueue()
         self._pending: tuple[int, object, TaskExecuteBase] | None = None
 
-    def _set_progress(self, text: str) -> None:
-        if self._task._prefetch_log != text:
+    def _set_progress(
+        self, text: str, details: WSTaskPrefetchData | None = None
+    ) -> None:
+        details = details or (WSTaskPrefetchData(status=text) if text else None)
+        if self._task._prefetch != details:
             self._task._prefetch_log = text
+            self._task._prefetch = details
             self._task.schedule_on_change()
 
     def _eligible(self, index: int) -> bool:
@@ -201,16 +206,19 @@ class ScriptUpdateSession:
         last_report = float("-inf")
         last_path: Path | None = None
         last_bytes = 0
+        last_method = ""
         active = True
 
         def report(path: Path, downloaded: int, total: int, speed: float) -> None:
-            nonlocal last_report, last_path, last_bytes
+            nonlocal last_report, last_path, last_bytes, last_method
+            method = download_method.get()
             now = time.monotonic()
-            if not active or now - last_report < 1:
+            if not active or (now - last_report < 1 and method == last_method):
                 return
             if speed <= 0 and last_path == path and now > last_report:
                 speed = max(0, downloaded - last_bytes) / (now - last_report)
             last_report = now
+            last_method = method
             last_path, last_bytes = path, downloaded
             size = f"{downloaded / 1024**2:.1f} MiB"
             if total > 0:
@@ -219,7 +227,18 @@ class ScriptUpdateSession:
                     f"{downloaded / 1024**2:.1f}/{total / 1024**2:.1f} MiB"
                 )
             self._set_progress(
-                f"{label} 当前包 {path.name} · {size} · {speed / 1024**2:.1f} MiB/s"
+                f"{label} [{method}] 当前包 {path.name} · {size} · {speed / 1024**2:.1f} MiB/s",
+                WSTaskPrefetchData(
+                    target=item.name,
+                    status="下载中",
+                    package=path.name,
+                    method=method,
+                    progress=f"{min(downloaded / total, 1):.1%}" if total > 0 else "",
+                    size=f"{downloaded / 1024**2:.1f}/{total / 1024**2:.1f} MiB"
+                    if total > 0
+                    else f"{downloaded / 1024**2:.1f} MiB",
+                    rate=f"{speed / 1024**2:.1f} MiB/s",
+                ),
             )
 
         token = download_observer.set(report)

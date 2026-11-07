@@ -475,6 +475,7 @@ export function useSchedulerLogic() {
     pendingLogResyncs.delete(tab.key)
     tab.status = '运行'
     tab.taskId = taskId
+    tab.prefetch = null
     tab.logBuffer = ''
     tab.logSeq = undefined
     tab.logFirstLine = 1
@@ -1014,6 +1015,7 @@ export function useSchedulerLogic() {
       unsubscribeTab(tab)
 
       // 清空之前的状态
+      tab.prefetch = null
       tab.logBuffer = ''
       tab.logSeq = undefined
       tab.logFirstLine = 1
@@ -1189,6 +1191,7 @@ export function useSchedulerLogic() {
 
   const applyTaskInfoSnapshot = (tab: SchedulerTab, data: WSTaskInfoUpdatedData): boolean => {
     tab.cycleNextList = data.cycleNextList ?? []
+    tab.prefetch = data.prefetch ?? null
     if (!data.task_info || !Array.isArray(data.task_info)) {
       logger.debug('没有task_info数据，保持现有overviewData')
       return false
@@ -1369,6 +1372,7 @@ export function useSchedulerLogic() {
   }
 
   const handleTaskCompleted = async (tab: SchedulerTab, data: WSTaskCompletedData) => {
+    tab.prefetch = null
     const feedbackGeneration = taskFeedbackGeneration
     // 收到任务完成消息才将任务标记为结束状态
     // 这确保了调度台状态与实际任务执行状态严格同步
@@ -1725,6 +1729,7 @@ export function useSchedulerLogic() {
     if (selectedTaskId) tab.selectedTaskId = selectedTaskId
     applyTaskInfoSnapshot(tab, {
       task_info: state.taskInfo,
+      prefetch: state.prefetch,
       cycleNextList: state.cycleNextList,
     })
     // 这里只同步状态，不订阅：任务运行期每秒都会推送状态，在这里调用 subscribeToTask
@@ -1758,6 +1763,7 @@ export function useSchedulerLogic() {
     tab.status = '结束'
     tab.taskId = null
     tab.logMode = 'browse'
+    tab.prefetch = null
     schedulerTabs.value = [...schedulerTabs.value]
     // 完成消息缺失时，快照确认结束也要校正资源并准备下一轮的用户选择。
     void loadTaskOptions()
