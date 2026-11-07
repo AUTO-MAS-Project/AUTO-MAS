@@ -693,6 +693,7 @@ class Task(TaskExecuteBase):
             # 统一确认边界：后续需要保护的新项目在 run_checks 前注册。
             await self._stop_scope.force_close()
         except Exception as error:
+            self._stop_scope.cleanup_failed = True
             self._exit_result = "error"
             self._exit_error = str(error)
             logger.opt(exception=True).error("任务强制清理失败")
@@ -702,6 +703,7 @@ class Task(TaskExecuteBase):
                 self._execution_task,
                 self._finalizer_task,
                 asyncio.current_task(),
+                *self._stop_scope.pending_creations,
             }
             for task in asyncio.all_tasks():
                 if (

@@ -30,6 +30,8 @@ class TaskProcessScope:
         self.checks: list[StopCheck] = []
         self.requested = False
         self.closed = False
+        self.cleanup_failed = False
+        self.pending_creations: set[asyncio.Task] = set()
         self.finished = asyncio.Event()
         self._updates: dict[asyncio.Task, int] = {}
         self._updates_idle = asyncio.Event()
@@ -237,6 +239,9 @@ class TaskProcessScope:
             errors = [result for result in results if isinstance(result, BaseException)]
             if errors:
                 raise RuntimeError("部分任务进程未能强制终止") from errors[0]
+        except BaseException:
+            self.cleanup_failed = True
+            raise
         finally:
             for handle, _ in owned:
                 transport = getattr(handle, "_transport", None)

@@ -41,6 +41,7 @@ import psutil
 
 from app.utils import get_logger
 from app.utils.common.process import runner as _utils_process_runner
+from app.utils.common.process.scope import current_process_scope
 
 from .host import AdbPortConflict
 from .instances import config_path, read_ini, resolution_for
@@ -147,7 +148,7 @@ async def _run_process(
     timeout_handler: ProcessTimeoutHandler | None = None,
     breakaway: bool = False,
 ) -> ProcessOutput:
-    """启动一次 modavd；超时处理只针对 CLI 进程，不碰它脱离出来的模拟器。
+    """启动一次 modavd；命令超时回收 CLI，任务停止仍由任务进程组统一清理。
 
     参数按 :data:`Runner` 的位置约定收：``ModAvdCli._call`` 按位置传四个参数。"""
 
@@ -164,28 +165,46 @@ async def _run_process(
 
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
-    except asyncio.CancelledError:
+    except (asyncio.CancelledError, TimeoutError) as exc:
+
+        async def cleanup() -> None:
+            try:
+                scope = current_process_scope.get()
+                if timeout_handler is not None and not (
+                    scope is not None and scope.closed
+                ):
+                    handler = asyncio.create_task(timeout_handler(process))
+                    try:
+                        await _utils_process_runner.wait_for_process_cleanup(
+                            handler, timeout=STOP_PROCESS_TIMEOUT_SECONDS
+                        )
+                    except TimeoutError:
+                        handler.cancel()
+                        handler.add_done_callback(
+                            lambda task: None if task.cancelled() else task.exception()
+                        )
+                        logger.warning("modavd 实例收尾超时，转入 CLI 强制清理")
+            except Exception as error:  # noqa: BLE001 - CLI 仍须回收
+                logger.warning(f"modavd 收尾失败: {error}")
+            finally:
+                await _utils_process_runner.stop_process(process)
+
+        closing = asyncio.create_task(cleanup())
+        closing.add_done_callback(
+            lambda task: None if task.cancelled() else task.exception()
+        )
         try:
-            if timeout_handler is not None:
-                await asyncio.shield(timeout_handler(process))
-        except Exception as exc:  # noqa: BLE001 - kill/wait 仍必须执行
-            logger.warning(f"modavd 取消收尾失败: {exc}")
-        finally:
-            if process.returncode is None:
-                process.kill()
-            with suppress(Exception):
-                await process.wait()
-        raise
-    except asyncio.TimeoutError as exc:
-        try:
-            if timeout_handler is not None:
-                await timeout_handler(process)
-        except Exception as handler_error:  # noqa: BLE001 - timeout 本身优先返回
-            logger.warning(f"modavd 超时收尾失败: {handler_error}")
-        finally:
-            if process.returncode is None:
-                process.kill()
-            await process.communicate()
+            await _utils_process_runner.wait_for_process_cleanup(
+                closing, timeout=STOP_PROCESS_TIMEOUT_SECONDS + 10
+            )
+        except Exception as error:
+            if isinstance(exc, asyncio.CancelledError):
+                raise exc from error
+            raise CLIError(
+                "timeout", f"modavd 命令超过 {timeout:.0f} 秒未结束"
+            ) from error
+        if isinstance(exc, asyncio.CancelledError):
+            raise
         raise CLIError("timeout", f"modavd 命令超过 {timeout:.0f} 秒未结束") from exc
 
     return ProcessOutput(
