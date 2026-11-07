@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import SchedulerLogPanel from './scheduler/SchedulerLogPanel.vue'
+import SchedulerLogPanel from '../scheduler/SchedulerLogPanel.vue'
 import type { WSTaskPrefetchData } from '@/services/websocket/types'
 
 const method = ref('FluxDown')

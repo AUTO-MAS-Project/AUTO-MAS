@@ -46,7 +46,7 @@
 </template>
 
 <script setup lang="ts">
-import PrefetchLogDev from './PrefetchLogDev.vue'
+import PrefetchLogDev from './devtools/PrefetchLogDev.vue'
 import { ref } from 'vue'
 import { Modal, Button } from 'ant-design-vue'
 
