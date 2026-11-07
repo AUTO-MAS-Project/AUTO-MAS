@@ -45,7 +45,7 @@ def exe_digest(root: Path) -> str:
 
 
 def read_version(root: Path) -> Version:
-    identity = script_install.workspace(root) / "baah-version.json"
+    identity = script_install.record_path(root, "baah-version.json")
     if identity.exists():
         state = io_utils.read_dict_file(identity)
         if state["exe_sha256"] == exe_digest(root):
@@ -93,7 +93,7 @@ async def confirm_current_install(root: Path) -> None:
         raise script_install.InstallUnsafeError(
             "BAAH 安装架构不可识别，请使用官方包修复"
         )
-    receipt = script_install.workspace(root) / "installed.json"
+    receipt = script_install.record_path(root, "installed.json")
     if receipt.exists() and not await script_install.run_worker(
         script_install.verify_installed_files, root
     ):
@@ -168,7 +168,7 @@ async def prepare_update(
     current = await asyncio.to_thread(read_version, root)
     release = await request_release(channel)
     target = Version(release["tag_name"].removeprefix("BAAH"))
-    receipt = script_install.workspace(root) / "installed.json"
+    receipt = script_install.record_path(root, "installed.json")
     verified = not receipt.exists() or await script_install.run_worker(
         script_install.verify_installed_files, root
     )
@@ -260,7 +260,7 @@ async def apply_update(root: Path, prepared: PreparedUpdate) -> None:
         lambda: assert_idle(root),
     )
     io_utils.write_file(
-        script_install.workspace(root) / "baah-version.json",
+        script_install.record_directory(root) / "baah-version.json",
         {"version": str(prepared.version), "exe_sha256": exe_digest(root)},
     )
     shutil.rmtree(prepared.archive.parent)
