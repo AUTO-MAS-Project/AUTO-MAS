@@ -4,6 +4,8 @@
 
 """脚本更新的统一异步入口与下载策略；适配器负责版本判断和安装。"""
 
+import asyncio
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,7 +16,7 @@ import httpx
 
 from app.core import Config
 from app.core.script_update_queue import ScriptUpdateQueue
-from app.core.update import download_file
+from app.core.update import download_file, download_observer
 from app.models.config import CLASS_BOOK
 from app.models.task import ScriptItem, TaskExecuteBase, TaskItem
 from app.services.common.update.transport import BuiltinDownload, DownloadProgress
@@ -76,6 +78,11 @@ class ScriptUpdateSession:
         self._config = config
         self._queue = ScriptUpdateQueue()
         self._pending: tuple[int, object, TaskExecuteBase] | None = None
+
+    def _set_progress(self, text: str) -> None:
+        if self._task._prefetch_log != text:
+            self._task._prefetch_log = text
+            self._task.schedule_on_change()
 
     def _eligible(self, index: int) -> bool:
         if self._task.mode != "AutoProxy" or not 0 <= index < len(
@@ -184,6 +191,33 @@ class ScriptUpdateSession:
         )
         if manager is None:
             return
+        label = f"[预下载 {item.name}]"
+        self._set_progress(f"{label} 检查／准备中")
+        last_report = float("-inf")
+        last_path: Path | None = None
+        last_bytes = 0
+        active = True
+
+        def report(path: Path, downloaded: int, total: int, speed: float) -> None:
+            nonlocal last_report, last_path, last_bytes
+            now = time.monotonic()
+            if not active or now - last_report < 1:
+                return
+            if speed <= 0 and last_path == path and now > last_report:
+                speed = max(0, downloaded - last_bytes) / (now - last_report)
+            last_report = now
+            last_path, last_bytes = path, downloaded
+            size = f"{downloaded / 1024**2:.1f} MiB"
+            if total > 0:
+                size = (
+                    f"{min(downloaded / total, 1):.1%} · "
+                    f"{downloaded / 1024**2:.1f}/{total / 1024**2:.1f} MiB"
+                )
+            self._set_progress(
+                f"{label} 当前包 {path.name} · {size} · {speed / 1024**2:.1f} MiB/s"
+            )
+
+        token = download_observer.set(report)
         try:
             await run_script_update(
                 ScriptUpdateRequest(
@@ -192,17 +226,28 @@ class ScriptUpdateSession:
                 ),
                 manager.prefetch_script_update,
             )
-        except BaseException:
+        except BaseException as error:
+            active = False
+            state = (
+                "已取消" if isinstance(error, asyncio.CancelledError) else "准备失败"
+            )
+            self._set_progress(f"{label} {state}")
             await manager.discard_prefetched_update()
             raise
+        finally:
+            active = False
+            download_observer.reset(token)
         if self._identity(index) != identity:
             # 下载期间配置或安装身份变化，不允许旧候选被应用。
             await manager.discard_prefetched_update()
+            self._set_progress(f"{label} 配置已变化，已丢弃")
             return
         await self.discard()
         self._pending = (index, identity, manager)
+        self._set_progress(f"{label} 检查／准备完成")
 
     async def take(self, index: int) -> TaskExecuteBase | None:
+        self._set_progress("")
         pending, self._pending = self._pending, None
         if pending is None:
             return None
@@ -212,6 +257,7 @@ class ScriptUpdateSession:
         return None
 
     async def discard(self) -> None:
+        self._set_progress("")
         pending, self._pending = self._pending, None
         if pending is not None:
             await pending[2].discard_prefetched_update()

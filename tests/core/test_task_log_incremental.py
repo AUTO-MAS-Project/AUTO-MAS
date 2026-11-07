@@ -30,6 +30,43 @@ def _log_payloads(send: AsyncMock) -> list:
 
 
 class TaskLogIncrementalTest(unittest.IsolatedAsyncioTestCase):
+    async def test_prefetch_stays_last_without_modifying_script_log(self) -> None:
+        task_info = _make_task_info()
+        manager = _TaskManager()
+        manager.task_info[__import__("uuid").uuid4()] = task_info
+        with (
+            patch(
+                "app.core.task_manager.manager.Publisher.send", new_callable=AsyncMock
+            ) as send,
+            patch.object(TaskInfo, "schedule_on_change"),
+        ):
+            script = task_info.script_list[0]
+            script.log = "first\n"
+            await task_info.on_change()
+            task_info._prefetch_log = "[预下载 next] 50%"
+            await task_info.on_change()
+            script.log += "second\n"
+            await task_info.on_change()
+            snapshot = manager.get_runtime_snapshot().tasks[0]
+            task_info._prefetch_log = "[预下载 next] 75%"
+            await task_info.on_change()
+            task_info._prefetch_log = ""
+            await task_info.on_change()
+            script.log += "third\n"
+            await task_info.on_change()
+
+        payloads = _log_payloads(send)
+        self.assertEqual(payloads[2].log, "first\nsecond\n[预下载 next] 50%\n")
+        self.assertEqual(
+            (snapshot.log, snapshot.logSeq), (payloads[2].log, payloads[2].seq)
+        )
+        self.assertEqual(payloads[3].log, "first\nsecond\n[预下载 next] 75%\n")
+        self.assertEqual(
+            (payloads[4].log, payloads[4].append), ("first\nsecond\n", False)
+        )
+        self.assertEqual((payloads[5].log, payloads[5].append), ("third\n", True))
+        self.assertEqual(script.log, "first\nsecond\nthird\n")
+
     async def test_first_push_replaces_and_appends_send_only_delta(self) -> None:
         task_info = _make_task_info()
         with patch(

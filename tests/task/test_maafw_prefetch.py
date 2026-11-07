@@ -61,6 +61,7 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
     import asyncio
     import hashlib
     import io
+    import itertools
     import json
     import threading
     import uuid
@@ -177,7 +178,14 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
     view = embedded_project.embedded_project_dir(script_id)
     item = ScriptItem(script_id, "audit", "等待")
     info = TaskInfo("AutoProxy", "audit", "queue", None, None)
-    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
+    progress_lines = []
+    monkeypatch.setattr(
+        info, "schedule_on_change", lambda: progress_lines.append(info._prefetch_log)
+    )
+    clock = itertools.count()
+    monkeypatch.setattr(
+        script_update, "time", SimpleNamespace(monotonic=lambda: next(clock))
+    )
     info.script_list = [item]
     session = script_update.ScriptUpdateSession(
         info,
@@ -190,6 +198,8 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
     )
     before = session._identity(0)
     await session._prefetch(0)
+    assert any("100.0%" in line and "audit" in line for line in progress_lines)
+    assert item.log == ""
     (source / "interface.json").write_text(json.dumps(replacement))
     second = await asyncio.to_thread(
         embedded_project.import_embedded_project, script_id, source

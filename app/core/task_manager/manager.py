@@ -565,6 +565,9 @@ class TaskInfo(TaskItem):
         if self.current_index != -1:
             script = self.script_list[self.current_index]
             log = script.log
+            if self._prefetch_log:
+                separator = "" if not log or log.endswith("\n") else "\n"
+                log = f"{log}{separator}{self._prefetch_log}\n"
             if (
                 log == self._last_pushed_log
                 and script.log_first_line == self._last_pushed_log_first_line
