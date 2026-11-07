@@ -6,12 +6,13 @@ import threading
 import time
 import uuid
 from contextlib import suppress
+from datetime import date, datetime, timezone
 
 import pytest
 
 from app.core.script_update import ScriptUpdateRequest, run_script_update
 from app.core.task_manager.manager import Task, TaskInfo
-from app.models.task import LogRecord, ScriptItem, UserItem
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import script_install
 from app.task.base import ScriptAutoProxyBase
 from app.utils.common.process import runner
@@ -366,3 +367,200 @@ def test_src_config_restore_respects_installation_access(tmp_path):
     with script_install.installation_access(tmp_path):
         with pytest.raises(script_install.InstallUnsafeError):
             restore_native_backup(config, "missing", "s")
+
+
+@pytest.mark.asyncio
+async def test_file_worker_retains_lock_after_task_stop_until_thread_really_exits(
+    tmp_path,
+):
+    entered, release, stopped = threading.Event(), threading.Event(), threading.Event()
+
+    def copy_files(cancelled):
+        entered.set()
+        try:
+            assert release.wait(5)
+            (tmp_path / "copied").write_text("complete")
+            raise InterruptedError("stopped after blocking file operation")
+        finally:
+            stopped.set()
+
+    async def run(task):
+        task._stop_scope.checks[0].timeout = 0.02
+
+        async def install():
+            with script_install.installation_access(tmp_path):
+                await script_install.run_worker(copy_files)
+
+        await run_script_update(ScriptUpdateRequest("s", "BAAH"), install)
+
+    task = start_task(run)
+    try:
+        async with asyncio.timeout(2):
+            while not entered.is_set():
+                await asyncio.sleep(0.01)
+        task.cancel()
+        await asyncio.wait_for(task.accomplish.wait(), 2)
+        assert not stopped.is_set()
+        with pytest.raises(script_install.InstallUnsafeError):
+            with script_install.installation_access(tmp_path):
+                pytest.fail("file writer lost its lock while still writing")
+        release.set()
+        async with asyncio.timeout(2):
+            while True:
+                try:
+                    script_install.assert_no_pending_process(tmp_path)
+                    break
+                except script_install.InstallUnsafeError:
+                    await asyncio.sleep(0.01)
+        with script_install.installation_access(tmp_path):
+            assert (tmp_path / "copied").read_text() == "complete"
+    finally:
+        release.set()
+        task.cancel()
+        await asyncio.gather(task._execution_root, return_exceptions=True)
+        assert await asyncio.to_thread(stopped.wait, 2)
+
+
+@pytest.mark.asyncio
+async def test_maafw_prepare_retains_reservation_after_forced_stop(
+    monkeypatch, tmp_path
+):
+    from app.models.config import MaaFWConfig
+    from app.task.MaaFW import embedded_manager as module
+    from app.task.MaaFW.tools.embedded.project_path import (
+        release_project_path,
+        try_reserve_project_path,
+    )
+
+    entered, release, stopped = threading.Event(), threading.Event(), threading.Event()
+
+    def prepare(*args, **kwargs):
+        entered.set()
+        try:
+            assert release.wait(5)
+            return False
+        finally:
+            stopped.set()
+
+    monkeypatch.setattr(
+        module.MaaFWEmbeddedManager,
+        "_prepare_project_environment_sync",
+        staticmethod(prepare),
+    )
+    monkeypatch.setattr(module, "resolve_maafw_project_root", lambda *args: tmp_path)
+    monkeypatch.setattr(
+        module.MaaFWEmbeddedManager, "_resolve_update_proxy", lambda self: (None, None)
+    )
+    config = MaaFWConfig()
+
+    async def run(task):
+        item = ScriptItem(str(uuid.uuid4()), "test", "运行")
+        task.task_info.script_list = [item]
+        manager = module.MaaFWEmbeddedManager(item)
+        manager.script_config = config
+        await manager._ensure_project_environment("BeforeRun")
+
+    task = start_task(run)
+    try:
+        async with asyncio.timeout(2):
+            while not entered.is_set():
+                await asyncio.sleep(0.01)
+        task.cancel()
+        await asyncio.wait_for(task.accomplish.wait(), 2)
+        assert not stopped.is_set()
+        key = await try_reserve_project_path(tmp_path)
+        if key is not None:
+            await release_project_path(key)
+        assert key is None
+        release.set()
+        async with asyncio.timeout(2):
+            while (key := await try_reserve_project_path(tmp_path)) is None:
+                await asyncio.sleep(0.01)
+        await release_project_path(key)
+    finally:
+        release.set()
+        task.cancel()
+        await asyncio.gather(task._execution_root, return_exceptions=True)
+        assert await asyncio.to_thread(stopped.wait, 2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("times_out", [False, True])
+async def test_started_account_finalizer_saves_history_once_with_bounded_confirmation(
+    monkeypatch, isolated_app_paths, times_out
+):
+    import app.core.history as history_module
+    import app.core.task_manager.manager as manager_module
+    from app.models.schema import HistoryWrite
+
+    store = history_module.HistoryStore()
+    await store.initialize(video_limit_bytes=1024 * 1024)
+    monkeypatch.setattr(manager_module, "History", store)
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    class Account(TaskExecuteBase):
+        wait_for_finalizer_on_cancel = True
+        stop_finalizer_timeout = 0.02 if times_out else 2
+
+        async def main_task(self):
+            pass
+
+        async def final_task(self):
+            entered.set()
+            await release.wait()
+            await self.info.save_user_history(
+                [
+                    HistoryWrite(
+                        time=datetime(2026, 1, 2, tzinfo=timezone.utc),
+                        username="u",
+                        script_name="s",
+                        status="success",
+                        message="completed",
+                        logs="done",
+                    )
+                ],
+                script=self.script,
+                user=self.user,
+            )
+
+        async def on_crash(self, error):
+            raise error
+
+    account = Account()
+
+    async def run(task):
+        account.info = task.task_info
+        account.user = UserItem("u", "u", "完成")
+        account.script = ScriptItem("s", "s", "完成", [account.user])
+        await task.spawn(account)
+
+    task = start_task(run)
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        task.cancel()
+        if not times_out:
+            # 让停止驱动真正开始，再完成账号本地收尾。
+            await asyncio.sleep(0.02)
+            release.set()
+        await asyncio.wait_for(task.accomplish.wait(), 3)
+        release.set()
+        await asyncio.gather(task._execution_root, return_exceptions=True)
+        result = await store.search(
+            start_date=date(2026, 1, 1), end_date=date(2026, 1, 3), mode="DAILY"
+        )
+        entries = [
+            entry
+            for scripts in result.values()
+            for bucket in scripts.values()
+            for entry in bucket.index
+        ]
+        assert len(entries) == (0 if times_out else 1)
+        check = next(
+            c for c in task._stop_scope.checks if c.name.startswith("finalize:")
+        )
+        assert check.status == ("timed_out" if times_out else "passed")
+    finally:
+        release.set()
+        task.cancel()
+        await asyncio.gather(task._execution_root, return_exceptions=True)
+        await store.close()

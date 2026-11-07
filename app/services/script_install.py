@@ -16,6 +16,8 @@ import threading
 import zipfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO
 
@@ -25,6 +27,27 @@ from app.utils import update_files
 
 class InstallUnsafeError(RuntimeError):
     """不能确认安装完整或仍有进程访问，必须停止启动。"""
+
+
+@dataclass
+class _InstallationWork:
+    active: bool = True
+    workers: set[asyncio.Task] = field(default_factory=set)
+
+
+_installation_work: ContextVar[tuple[_InstallationWork, ...]] = ContextVar(
+    "installation_work", default=()
+)
+
+
+def _workers_finished(workers: set[asyncio.Task]) -> asyncio.Task:
+    from app.utils.common.process.scope import detached_process_context
+
+    async def finished() -> None:
+        # 文件线程抛错也表示已停写；错误现场仍由安装事务标记保护。
+        await asyncio.gather(*workers, return_exceptions=True)
+
+    return asyncio.create_task(finished(), context=detached_process_context())
 
 
 _pending_processes: dict[str, asyncio.Future | None] = {}
@@ -98,6 +121,19 @@ def defer_installation_release(
             )
     key = _key(root)
     with _process_lock:
+        if key in _pending_processes:
+            previous = _pending_processes[key]
+            if previous is None:
+                completion = None
+            elif completion is not None and previous is not completion:
+                from app.utils.common.process.scope import detached_process_context
+
+                async def both(prior=previous, later=completion) -> None:
+                    await asyncio.gather(prior, later)
+
+                completion = asyncio.create_task(
+                    both(), context=detached_process_context()
+                )
         _pending_processes[key] = completion
 
     # 进程树已失去归属、无法再证明停写时保留占用到宿主退出，不能猜测安全。
@@ -147,6 +183,7 @@ def installation_access(root: Path) -> Iterator[None]:
     assert_no_pending_process(root)
     handle = (directory / f"{key}.lock").open("a+b")
     acquired = False
+    work = _InstallationWork()
     try:
         if handle.seek(0, 2) == 0:
             handle.write(b"\0")
@@ -166,8 +203,15 @@ def installation_access(root: Path) -> Iterator[None]:
                 "脚本安装正被另一个任务使用，请稍后重试"
             ) from error
         acquired = True
+        _installation_work.set(
+            tuple(item for item in _installation_work.get() if item.active) + (work,)
+        )
         yield
     finally:
+        work.active = False
+        remaining = {task for task in work.workers if not task.done()}
+        if acquired and remaining:
+            defer_installation_release(root, _workers_finished(remaining))
         with _process_lock:
             deferred = acquired and key in _pending_processes
             if deferred:
@@ -183,19 +227,35 @@ async def run_worker(function: Callable, *args, **kwargs):
     """取消后等待文件操作确实停止，线程不能在任务退出后继续写入。"""
     cancelled = threading.Event()
     work = asyncio.create_task(asyncio.to_thread(function, *args, cancelled, **kwargs))
+    from app.utils.common.process.scope import current_process_scope
+
+    scope = current_process_scope.get()
+    if scope is not None:
+        scope.retain_worker(work)
+    for access in _installation_work.get():
+        if access.active:
+            access.workers.add(work)
+            work.add_done_callback(access.workers.discard)
     try:
         return await asyncio.shield(work)
     except asyncio.CancelledError:
         cancelled.set()
         while not work.done():
+            if scope is not None and scope.closed:
+                # 确认已到期：不再等线程，锁由 installation_access 交给真实完成者。
+                break
             try:
                 await asyncio.shield(work)
             except (asyncio.CancelledError, Exception):
                 if work.done():
                     break
         # 取出异常，取消的任务仍以 CancelledError 收口。
-        if not work.cancelled():
+        if work.done() and not work.cancelled():
             work.exception()
+        elif not work.done():
+            work.add_done_callback(
+                lambda done: None if done.cancelled() else done.exception()
+            )
         raise
 
 

@@ -612,6 +612,7 @@ class Task(TaskExecuteBase):
     wait_for_finalizer_on_cancel = True
     # 每个确认项目独立配置等待时间；超时后标记结束，统一进入强制清理。
     STOP_CHECK_TIMEOUTS = {"update": 30.0}
+    stop_finalizer_timeout = None  # 顶层收尾等待确认点，不可反过来加入确认点。
 
     def __init__(
         self,
@@ -704,6 +705,7 @@ class Task(TaskExecuteBase):
                 self._finalizer_task,
                 asyncio.current_task(),
                 *self._stop_scope.pending_creations,
+                *self._stop_scope.retained_workers,
             }
             for task in asyncio.all_tasks():
                 if (

@@ -32,6 +32,8 @@ class TaskProcessScope:
         self.closed = False
         self.cleanup_failed = False
         self.pending_creations: set[asyncio.Task] = set()
+        self.retained_workers: set[asyncio.Task] = set()
+        self._finalizers: dict[asyncio.Task, float] = {}
         self.finished = asyncio.Event()
         self._updates: dict[asyncio.Task, int] = {}
         self._updates_idle = asyncio.Event()
@@ -47,6 +49,19 @@ class TaskProcessScope:
         if timeout <= 0:
             raise ValueError("停止检查超时必须大于 0")
         self.checks.append(StopCheck(name, run, timeout))
+
+    def retain_worker(self, task: asyncio.Task) -> None:
+        """保留反映底层真实完成的句柄，不让统一取消制造假完成。"""
+        self.retained_workers.add(task)
+        task.add_done_callback(self.retained_workers.discard)
+
+    def watch_finalizer(self, task: asyncio.Task, *, timeout: float) -> None:
+        self._finalizers[task] = timeout
+        task.add_done_callback(lambda done: self._finalizers.pop(done, None))
+        if self.closed:
+            # 强杀后新开始的本地收尾也只能有限等待，不能再次卡住任务结束。
+            timer = asyncio.get_running_loop().call_later(timeout, task.cancel)
+            task.add_done_callback(lambda done: timer.cancel())
 
     @contextmanager
     def updating(self) -> Iterator[None]:
@@ -99,6 +114,10 @@ class TaskProcessScope:
         """安装线程先收到停止令牌；线程结束前更新确认保持未完成。"""
         with self.updating():
             worker = asyncio.create_task(asyncio.to_thread(operation))
+            self.retain_worker(worker)
+            owner = asyncio.current_task()
+            if owner is not None:
+                self.retain_worker(owner)
             try:
                 return await asyncio.shield(worker)
             except asyncio.CancelledError:
@@ -114,6 +133,15 @@ class TaskProcessScope:
 
     async def run_checks(self) -> None:
         self.requested = True
+        # 只确认停止时已经开始的收尾；每项独立限时，到期后仍执行强制清理。
+        for finalizer, timeout in tuple(self._finalizers.items()):
+            if finalizer.done():
+                continue
+
+            async def finish(task=finalizer) -> None:
+                await asyncio.shield(task)
+
+            self.add_check(f"finalize:{finalizer.get_name()}", finish, timeout=timeout)
 
         async def run(check: StopCheck) -> None:
             scope_token = current_process_scope.set(self)
