@@ -56,6 +56,7 @@ SRC 特有的目录布局、侧车、恢复语义（恢复前强制归档当前�
 import json
 from pathlib import Path
 
+from app.services import script_install
 from app.task.SRC.tools.config import is_src_config_available
 from app.utils import BASE_SOURCE_LABELS, STARRAIL_STAGE_BOOK, get_logger
 from app.utils.common.config import archive as _utils_config_archive
@@ -376,19 +377,23 @@ def restore_native_backup(config_path: Path, ts: str, script_id: str) -> None:
     快照回滚覆盖 config/——此时拒绝恢复，避免恢复结果被冲掉。
     """
 
-    backup_dir = get_native_backup_dir(config_path, ts)
-    if backup_dir is None:
-        raise ValueError(f"备份不存在: {ts}")
-    temp_ready_path = Path.cwd() / "data" / script_id / "Temp.ready"
-    if temp_ready_path.exists():
-        raise ValueError(
-            "检测到 SRC 待恢复的配置快照，请先完成一次 SRC 任务后再恢复配置"
-        )
     config_path = Path(config_path)
-    # 恢复前强制归档当前——「恢复前的配置」在列表里有明确的时间戳条目
-    archive_native_backup(config_path, force=True)
-    _utils_config_archive.restore_dir(native_backup_root(config_path), ts, config_path)
-    logger.info(f"SRC 原生配置已恢复备份 {ts}")
+    # 任务已收尾时，原生安装器仍可能持有目录；恢复全过程共用安装锁。
+    with script_install.installation_access(config_path.parent):
+        backup_dir = get_native_backup_dir(config_path, ts)
+        if backup_dir is None:
+            raise ValueError(f"备份不存在: {ts}")
+        temp_ready_path = Path.cwd() / "data" / script_id / "Temp.ready"
+        if temp_ready_path.exists():
+            raise ValueError(
+                "检测到 SRC 待恢复的配置快照，请先完成一次 SRC 任务后再恢复配置"
+            )
+        # 恢复前强制归档当前——「恢复前的配置」在列表里有明确的时间戳条目
+        archive_native_backup(config_path, force=True)
+        _utils_config_archive.restore_dir(
+            native_backup_root(config_path), ts, config_path
+        )
+        logger.info(f"SRC 原生配置已恢复备份 {ts}")
 
 
 # ══════════════════ 备份预览摘要 ══════════════════
