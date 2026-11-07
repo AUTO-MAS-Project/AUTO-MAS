@@ -2240,6 +2240,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self._configure_maa_runtime(
             gui_new_set=gui_new_set,
             emulator_info=emulator_info,
+            avd=await self._resolve_avd_device(),
         )
         # 待更新包已保留；本次任务启动不再触发安装，结束后恢复登记。
         gui_new_set.setdefault("Update", {})["UpdatePackage"] = ""
@@ -2640,18 +2641,21 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 生息演算、用户自定义任务等)不透传带回——用户自定义任务队列只在原生
         # 来源存在(MAS 零写入, 安装目录原生配置即现场)。
 
-    def _resolve_avd_device(self) -> tuple[Path, int] | None:
-        """这次用的设备是魔改 AVD 实例时返回 ``(根目录, 控制台端口)``，否则 ``None``。"""
-        device_ref = resolve_device_ref(
-            self.emulator_manager, self.script_config.Emulator.Index
-        )
+    async def _resolve_avd_device(self) -> tuple[Path, int] | None:
+        """这次用的设备是魔改 AVD 实例时返回 ``(根目录, 控制台端口)``，否则 ``None``。
+
+        控制台端口问 modavd（根目录可以设 ``portBase`` 换一段端口），假 MuMu 截图组件按它找共享内存。
+        """
+        index = self.script_config.Emulator.Index
+        device_ref = resolve_device_ref(self.emulator_manager, index)
         if device_ref is None or device_ref.emulator_type != "avd":
             return None
+        ports = await self.emulator_manager.instance_ports(index)
         return (
             _utils_emulator2.avd.components.root_from_manager_exe(
                 device_ref.manager_path
             ),
-            _utils_emulator2.avd.constants.console_port(device_ref.native_index),
+            ports.console,
         )
 
     async def _maa_process_env(self) -> dict[str, str] | None:
@@ -2666,8 +2670,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self,
         gui_new_set: dict,
         emulator_info: DeviceInfo,
+        avd: tuple[Path, int] | None = None,
     ) -> None:
-        """两种覆写常规配置状态均需的启动、模拟器和账号设置，不改任务选择。"""
+        """两种覆写常规配置状态均需的启动、模拟器和账号设置，不改任务选择。
+
+        ``avd`` 是 :meth:`_resolve_avd_device` 的结果：魔改 AVD 实例的 ``(根目录, 控制台端口)``。
+        """
 
         current_gui = gui_new_set["Configurations"]["Default"]["Gui"]
 
@@ -2681,7 +2689,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
         # 魔改 AVD 实例：MAA 走假 MuMu 截图通道（MuMu 12 预设 + 桥接 + 实例号 = 控制台端口），
         # 雷电 / MuMu 实例不经过这里。这些键和上面的地址一样，由原生配置快照在任务结束后还原。
-        avd = self._resolve_avd_device()
         self._avd_screencap_guard = avd is not None
         if avd is not None:
             avd_root, avd_console = avd

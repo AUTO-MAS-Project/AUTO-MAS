@@ -59,14 +59,14 @@ from .components import (
 )
 from .constants import (
     ADB_NO_LOCAL_SCAN_ENV,
+    AVD_NAME_PREFIX,
     LOG_KEEP_PER_INSTANCE,
     LOGS_DIR,
     LOGS_DIR_MAX_BYTES,
     METADATA_FILE,
-    PORT_BASE,
-    PORT_STEP,
     SHADER_CACHE_DIR,
     avd_name,
+    valid_native_index,
 )
 
 logger = get_logger("魔改 AVD 宿主")
@@ -342,12 +342,14 @@ _REREGISTER_LOCKS: dict[str, asyncio.Lock] = {}
 
 
 def _console_port_of(serial: str) -> int | None:
-    """``emulator-<控制台端口>`` → 控制台端口；不是这种序列号返回 ``None``。"""
+    """``emulator-<控制台端口>`` → 控制台端口；不是这种序列号返回 ``None``。
+
+    不按端口段筛：根目录可以用 ``portBase`` 换一段端口（由 modavd 决定），端口上是不是这里的实例
+    交给 :func:`instance_qemu_on_adb_port` 按在听的 qemu 认。"""
     prefix = "emulator-"
     if not serial.startswith(prefix) or not serial[len(prefix) :].isdecimal():
         return None
-    port = int(serial[len(prefix) :])
-    return port if port >= PORT_BASE and (port - PORT_BASE) % PORT_STEP == 0 else None
+    return int(serial[len(prefix) :])
 
 
 def device_missing(serial: str, output: str) -> bool:
@@ -361,11 +363,9 @@ def instance_qemu_on_adb_port(console: int) -> psutil.Process | None:
 
     只看「有人在听」不够：端口可能被别的程序占着；往那里登记等于把别人的端口塞给私有 server。
     要求监听进程是 ``qemu-system*``，命令行里 ``-ports`` 是 ``<控制台>,<控制台 + 1>``，
-    且 ``-avd`` 是这个端口段对应的实例名 ``mas_<i>``。
+    且 ``-avd`` 是魔改 AVD 的实例名 ``mas_<i>``。不按端口反推 ``i``：端口段由 modavd 定
+    （``portBase``），实例名和端口的对应以 modavd 起 qemu 时给的命令行为准。
     """
-    if (console - PORT_BASE) % PORT_STEP:
-        return None
-    expected_avd = avd_name((console - PORT_BASE) // PORT_STEP)
     pid = None
     for conn in psutil.net_connections(kind="tcp"):
         if (
@@ -385,11 +385,17 @@ def instance_qemu_on_adb_port(console: int) -> psutil.Process | None:
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         return None
     pairs = set(zip(cmdline, cmdline[1:]))
-    if ("-ports", f"{console},{console + 1}") in pairs and (
-        "-avd",
-        expected_avd,
-    ) in pairs:
-        return process
+    if ("-ports", f"{console},{console + 1}") not in pairs:
+        return None
+    for flag, avd in pairs:
+        index = avd.removeprefix(AVD_NAME_PREFIX)
+        if (
+            flag == "-avd"
+            and avd.startswith(AVD_NAME_PREFIX)
+            and index.isdecimal()
+            and valid_native_index(int(index))
+        ):
+            return process
     return None
 
 

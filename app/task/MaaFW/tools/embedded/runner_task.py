@@ -1681,7 +1681,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             resolve_device = getattr(self.emulator_manager, "resolve_device", None)
             avd_ref = resolve_device(emulator_index) if resolve_device else None
         if avd_ref is not None and avd_ref.emulator_type == "avd":
-            self._cached_adb_profile = self._build_avd_adb_profile(avd_ref)
+            self._cached_adb_profile = await self._build_avd_adb_profile(
+                avd_ref, emulator_index
+            )
             return self._cached_adb_profile
 
         try:
@@ -1757,8 +1759,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return {"allow_mod_avd": True}
         return {}
 
-    def _build_avd_adb_profile(self, device_ref: Any) -> MaaFWAdbControlProfile:
-        """魔改 AVD：只给 AVDExtras 截图，推流开关走私有 adb server。任何一步不成立都抛错。"""
+    async def _build_avd_adb_profile(
+        self, device_ref: Any, emulator_index: str
+    ) -> MaaFWAdbControlProfile:
+        """魔改 AVD：只给 AVDExtras 截图，推流开关走私有 adb server。任何一步不成立都抛错。
+
+        控制台端口问 modavd（根目录可以设 ``portBase`` 换一段端口），截图共享内存按它命名。
+        """
         from app.utils import emulator2 as _utils_emulator2
 
         capability = build_adb_emulator_extra_capabilities().get("avd", {})
@@ -1773,7 +1780,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         root = _utils_emulator2.avd.components.root_from_manager_exe(
             device_ref.manager_path
         )
-        console = _utils_emulator2.avd.constants.console_port(device_ref.native_index)
+        console = (await self.emulator_manager.instance_ports(emulator_index)).console
         config = _utils_emulator2.avd.maafw_extras.build_maafw_avd_config(
             adb_path, _utils_emulator2.avd.components.adb_server_port(root), console
         )
