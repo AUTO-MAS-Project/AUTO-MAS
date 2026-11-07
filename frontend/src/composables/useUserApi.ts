@@ -15,8 +15,6 @@ import type {
   UserConfigDirIn,
 } from '@/api'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
-import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
-import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
 import {
   analyticsConfigSection,
   analyticsCountBucket,
@@ -42,14 +40,6 @@ export function useUserApi() {
   ): Promise<UserCreateOut | null> => {
     const operation = beginAnalyticsOperation('user_create_finished')
     const script_type = getAnalyticsScriptType(scriptId)
-    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
-      operation.finish({ script_type, outcome: 'blocked' })
-      const errorMsg = t('core.edit.configLocked')
-      error.value = errorMsg
-      addUserErrorCode.value = null
-      if (options.showError ?? true) message.warning(errorMsg)
-      return null
-    }
 
     loading.value = true
     error.value = null
@@ -106,14 +96,6 @@ export function useUserApi() {
       owner_kind: 'user' as const,
       section_kind: analyticsConfigSection(userData),
       script_type: getAnalyticsScriptType(scriptId),
-    }
-    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
-      finishChanges('blocked')
-      operation.finish({ ...dimensions, outcome: 'blocked' })
-      const errorMsg = t('core.edit.configLocked')
-      error.value = errorMsg
-      message.warning(errorMsg)
-      return false
     }
 
     loading.value = true
@@ -184,13 +166,6 @@ export function useUserApi() {
 
   // 删除用户
   const deleteUser = async (scriptId: string, userId: string): Promise<boolean> => {
-    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
-      const errorMsg = t('core.edit.configLocked')
-      error.value = errorMsg
-      message.warning(errorMsg)
-      return false
-    }
-
     loading.value = true
     error.value = null
 
@@ -229,13 +204,6 @@ export function useUserApi() {
 
   // 重新排序用户
   const reorderUser = async (scriptId: string, userIds: string[]): Promise<boolean> => {
-    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
-      const errorMsg = t('core.edit.configLocked')
-      error.value = errorMsg
-      message.warning(errorMsg)
-      return false
-    }
-
     // loading.value = true
     error.value = null
 

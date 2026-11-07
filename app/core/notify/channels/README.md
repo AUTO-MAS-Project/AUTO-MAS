@@ -92,7 +92,7 @@ M9A 统计随 MaaFW 使用 `MaaFW_statistics.html`，旧 `m9a_statistics.html` �
 渠道目录可以缓存不可变声明，发送器、渲染器和待投递状态则由全局管理器持有。
 
 通知渠道仍在后台可选初始化步骤启动。退出先停止入口和业务任务，再由
-`RuntimeTasks.shutdown()` 回收已托管任务，随后关闭服务的渲染器、渠道与配置订阅，
+`BackgroundTaskManager.shutdown()` 回收已托管任务，随后关闭服务的渲染器、渠道与配置订阅，
 最后统一保存配置；停用未来某个插件不应关闭应用共享的通知资源。
 `DeliveryChannel` 只保留稳定 key 和发送适配器，投递流程不携带完整渠道声明、
 表单元数据、目标构造器、传输工厂或启停入口。
@@ -177,7 +177,7 @@ MAA 喜报 / HSR 云登录提醒 -> NotifyPayload -> dispatch_task_notification
 `TaskReportCoordinator` 只持有 `TaskNotificationState`，与任务共享结果、消费标记和
 已送达 ID；失败渠道通过每次投递的 `DispatchResult` 返回。
 协调器不持有完整任务对象，自身不读取全局配置，也不直接访问 Publisher
-或 RuntimeTasks。投递、策略读取、默认目标准备、后台任务注册和失败反馈通过
+或 BackgroundTaskManager。投递、策略读取、默认目标准备、后台任务注册和失败反馈通过
 `TaskReportDependencies` 注入，配置与任务页面反馈留在 core 入口装配。内容实现
 由通知模块装配为 `DefaultReportRenderer`；协调器自身不导入内容模块，且导入
 `app.core` 不再急切加载 Config，因此可以在没有模板、Pillow 或配置实例时运行。
@@ -216,7 +216,7 @@ get/set；渠道仅通过宿主的 `TargetConfigView` 获取字段。
 
 手动签到 API 和非任务定时签到直接使用 `Notify.community`。协调器由
 全局 Notify 创建；开关、默认目标、内容生成、失败反馈和任务注册
-均通过依赖提供。短暂等待超时或 HTTP 请求取消后，通知继续由 `RuntimeTasks`
+均通过依赖提供。短暂等待超时或 HTTP 请求取消后，通知继续由 `BackgroundTaskManager`
 持有；电源动作等待使用统一剩余时限，退出先回收通知再关闭渠道。
 独立社区通知只发送本次结果；目标去重和完成提示由任务报告协调器处理，不另设通用覆盖入口。
 

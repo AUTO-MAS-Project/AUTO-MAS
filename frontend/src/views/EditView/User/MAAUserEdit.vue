@@ -322,7 +322,7 @@ const loading = computed(
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 
 // 脚本信息
 const scriptName = ref('')

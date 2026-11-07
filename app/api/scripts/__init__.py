@@ -29,12 +29,13 @@ from app.task.Okww.api import router as okww_router
 from app.task.Whimbox.api import router as whimbox_router
 from app.task.ZzzOd.api import router as zzzod_router
 
-from . import backup, management, sharing, users, webhooks
+from . import backup, management, operations, sharing, users, webhooks
 from .users import UserUpdateIn as UserUpdateIn
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
 router.include_router(management.router)
+router.include_router(operations.router)
 router.include_router(users.router)
 router.include_router(webhooks.router)
 router.include_router(sharing.router)

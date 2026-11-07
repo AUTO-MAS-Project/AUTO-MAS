@@ -1,579 +1,733 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2025-2026 AUTO-MAS Team
-
-#   This file is part of AUTO-MAS.
-
-#   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of
-#   the License, or (at your option) any later version.
-
-#   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty
-#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU Affero General Public License for more details.
-
-#   You should have received a copy of the GNU Affero General Public License
-#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
-#   Contact: DLmaster_361@163.com
-
+"""任务运行树：独立运行 UUID、原配置身份和提交驱动的状态变更。"""
 
 from __future__ import annotations
 
-import asyncio
-import time
-import weakref
-from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Sequence
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Literal, Optional
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 from uuid import UUID
+from weakref import ReferenceType
 
-from app.models.game_maintenance import MaintenanceWindow
+from pydantic import (
+    Field,
+    PrivateAttr,
+    WithJsonSchema,
+)
+
+from app.config import (
+    ConfigCollection,
+    ConfigEntry,
+    ConfigGroup,
+    Virtual,
+    collection,
+    config_manager,
+    virtual_field,
+)
+from app.config.signals import ConfigEvent, FieldChangeEvent
 from app.models.notification.report import TaskNotificationState
-from app.utils import get_logger
+from app.utils.contracts.power import PowerSignal
 
 if TYPE_CHECKING:
-    from app.models.config import UserConfigType
-    from app.models.schema import HistoryWrite
+    # [兼容旧专项] 旧类型导出；新执行器直接使用 app.task.lifecycle.TaskBase。
+    from app.task.legacy import TaskExecuteBase as TaskExecuteBase
 
-logger = get_logger("任务执行")
+# 数组保留递归类型；对象的文档投影展开为开放字典，避开生成器的循环 Record 别名。
+# 实际参数仍递归校验全部 JSON 值。
+type TaskParamValue = (
+    str
+    | int
+    | float
+    | bool
+    | None
+    | list[TaskParamValue]
+    | Annotated[
+        dict[str, TaskParamValue],
+        WithJsonSchema({"type": "object", "additionalProperties": {}}),
+    ]
+)
+type TaskParams = dict[str, TaskParamValue]
 
-TaskTriggerSource = Literal[
-    "scheduled_task",
-    "manual_task",
-    "startup_task",
-]
-
-
-@dataclass(frozen=True, kw_only=True)
-class ScriptTaskResources:
-    """专项声明原始资源，规范化与占用管理由公共调度器负责。"""
-
-    root_paths: tuple[Path, ...] = ()
-    emulator: tuple[str | UUID, str] | None = None
-
-
-@dataclass
-class LogRecord:
-    content: list[str] = field(default_factory=list)
-    status: str = "未开始监看日志"
-    # 所属运行阶段（如 MaaEnd 的送货/日常/自动采集），用于历史记录结果前缀
-    phase: str = ""
+# 仅限制 WS 替换包；不裁剪运行树或查询正文。
+_LOG_PUSH_MAX_CHARS = 200_000
 
 
-@dataclass(frozen=True)
-class UserTaskProgress:
-    """调度台账号行上的任务进度：第几个任务（从 1 数）、共几个、当前任务名。
-
-    目前只有 MFW 给（worker 推的任务开始事件），其余专项一直是 None。
-    """
-
-    current: int
-    total: int
-    task: str
+class TaskMode(StrEnum):
+    AUTO_PROXY = "AutoProxy"
+    SCRIPT_CONFIG = "ScriptConfig"
+    SCRIPT_VIEW = "ScriptView"
 
 
-@dataclass
-class UserItem:
-    user_id: str  # 账号ID
-    name: str  # 账号名称
-    status: str  # 账号执行状态
-    log_record: dict[datetime, LogRecord] = field(
-        default_factory=dict
-    )  # 账号本次代理的全部日志记录
-    push_log: list[tuple[str, str] | tuple[str, str, float | None]] = field(
-        default_factory=list
-    )  # 账号本次代理采集的推送日志；兼容二元组及时间戳为空的三元组
-    push_log_mode: str = field(
-        default="汇总"
-    )  # 节点详情推送模式（关闭/逐条/汇总），由 AutoProxy 从账号配置注入
-    # 本次由 MAS 维护检查跳过，供通知与循环排期使用；不落盘、不进入 API。
-    maintenance_skipped: bool = field(default=False, repr=False)
-    # 正在跑的任务进度（见 UserTaskProgress），随任务快照推给调度台；不落盘。
-    progress: Optional[UserTaskProgress] = None
-    # 只由专项已有的成功结果面置位；单调时间不落盘、不推送。
-    first_task_completed_at: float | None = field(default=None, repr=False)
-    _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
+class TaskTriggerReason(StrEnum):
+    """一次创建对应一个独立触发原因。"""
 
-    def __setattr__(self, name, value):
-        previous = getattr(self, name, None)
-        if name == "status" and value == "运行" and previous != value:
-            object.__setattr__(self, "first_task_completed_at", None)
-        super().__setattr__(name, value)
-        # 监听所有字段变化
-        if (
-            name in ("user_id", "name", "status", "progress")
-            and self._task_item_ref is not None
-        ):
-            ti = self._task_item_ref()
-            if ti is not None:
-                if name == "status" and previous != value:
-                    ti.on_status_changed(self, previous, value)
-                ti.schedule_on_change()
+    MANUAL = "manual"
+    STARTUP = "startup"
+    TIMED = "timed"
+    CYCLE = "cycle"
 
-    _history_log_records: list[tuple[datetime, LogRecord]] = field(
-        default_factory=list, repr=False
-    )
 
-    def add_log_record(
-        self, started_at: datetime, record: LogRecord, *, retry: bool = False
-    ) -> None:
-        """追加本轮日志；重试只清理当前账号尝试的成功时间。
+class RuntimeEntry(ConfigEntry):
+    if TYPE_CHECKING:
+        # 各具体节点声明自己的 info；保留 ConfigEntry 的开放字段构造签名。
+        def __init__(self, **field_values: object) -> None: ...
 
-        同一账号的正常阶段变更不算重试；整个脚本的首个成功时间跨账号
-        保留，以允许后台下载下一脚本。脚本级失败/停止由调度器撤销预取。
-        """
-        if retry:
-            # A retry only resets this account's attempt. The script-level
-            # success clock spans accounts and must survive a normal retry:
-            # the following script can still be downloaded in the background.
-            self.first_task_completed_at = None
-        self._history_log_records.append((started_at, record))
-        self.log_record[started_at] = record
+    async def set_state(self, **fields: object) -> None:
+        if self.activation_state.value == "inactive":
+            await self.activate()
+        for name, value in fields.items():
+            # ConfigEntry 不固定分组类型；按公开分组名执行通用字段提交。
+            setattr(getattr(self, "info"), name, value)
+        await self.commit()
 
-    def mark_task_completed(self) -> None:
-        """首个成功节点同时写入脚本级单调时间，切换账号不能丢失 60 秒基准。"""
-        if (
-            not (self.status == "运行" or self.status.startswith("运行 - "))
-            or self.first_task_completed_at is not None
-        ):
-            return
-        completed_at = time.monotonic()
-        self.first_task_completed_at = completed_at
-        task = self._task_item_ref() if self._task_item_ref is not None else None
-        if task is not None:
-            for script in task.script_list:
-                if script.status == "运行" and any(
-                    user is self for user in script.user_list
-                ):
-                    if script.first_task_completed_at is None:
-                        object.__setattr__(
-                            script, "first_task_completed_at", completed_at
-                        )
-                    break
+    @property
+    def task_info(self) -> TaskItem | None:
+        """[兼容旧专项] 旧任务根别名；新代码通过 root 或执行层显式上下文获取任务根。"""
+        return self.root if isinstance(self.root, TaskItem) else None
 
-    def iter_history_logs(self) -> list[tuple[datetime, LogRecord]]:
-        """返回本轮各次尝试；未使用追加入口的现有日志仍可正常读取。"""
-        return list(self._history_log_records or self.log_record.items())
+    @property
+    def name(self) -> str:
+        """[兼容旧专项] 旧平铺名称；新代码读取具体节点的 info.name。"""
+        # 旧专项平铺属性兼容；日志 info 无此字段，待旧专项移除后一并删除别名。
+        return self.info.name  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
+
+    @property
+    def status(self) -> str:
+        """[兼容旧专项] 旧平铺状态；新代码读取具体节点的 info.status。"""
+        # 旧专项状态别名；各节点的具体 info 分组由子类声明。
+        return self.info.status  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
 
     @property
     def result(self) -> str:
-        """账号代理情况的简要结果"""
-        if not self.log_record:
-            return "未开始运行"
-        return " | ".join(
-            [
-                f"{t.strftime('%H:%M')} - {log.status}"
-                for t, log in self.iter_history_logs()
-            ]
+        """[兼容旧专项] 旧平铺结果；新代码读取具体节点的 info.result。"""
+        # 旧专项兼容：具体任务节点才声明虚拟 result，基础日志节点不提供。
+        return self.info.result  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
+
+
+class LogRecord(RuntimeEntry):
+    class Info(ConfigGroup):
+        content: list[str] = Field(default_factory=list, description="按行存储的日志")
+        status: str = "未开始监看日志"
+        phase: str = ""
+        start_time: datetime = Field(
+            default_factory=lambda: datetime.now().astimezone()
         )
 
+    info: Info = Field(default_factory=Info)
 
-@dataclass
-class ScriptItem:
-    script_id: str  # 托管ID
-    name: str  # 托管名称
-    status: str  # 脚本执行状态
-    user_list: List[UserItem] = field(default_factory=list)  # 账号信息列表
-    current_index: int = -1  # 当前执行的账号索引，-1 表示未开始
-    # 本轮首个成功节点，不进入构造参数、API、磁盘或遥测。
-    first_task_completed_at: float | None = field(
-        default=None, init=False, repr=False, compare=False
-    )
-    log: str = ""  # 脚本执行日志
-    # log 第一行在完整日志里的行号。**截断日志的生产者要一起维护它**（如 MaaFW 只留
-    # 最近 80 条），界面才能显示真实行号而不是每次都从 1 重数；不截断就保持 1。
-    log_first_line: int = 1
-    _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
+    def __init__(self, content=None, status=None, phase=None, **values):
+        """[兼容旧专项] 旧平铺日志构造参数；新代码使用 info 分组载荷或 logs.add()。"""
+        info = dict(values.pop("info", {}) or {})
+        info.update(
+            {
+                key: value
+                for key, value in {
+                    "content": content,
+                    "status": status,
+                    "phase": phase,
+                }.items()
+                if value is not None
+            }
+        )
+        super().__init__(info=info, **values)
 
-    def __setattr__(self, name, value):
-        previous = getattr(self, name, None)
-        if name == "status" and value == "运行" and previous != value:
-            object.__setattr__(self, "first_task_completed_at", None)
-        super().__setattr__(name, value)
-
-        # 如果 user_list 被整体替换，重新绑定
-        if name == "user_list" and self.task_info is not None:
-            for user in self.user_list:
-                object.__setattr__(user, "_task_item_ref", self._task_item_ref)
-
-        if name not in ("_task_item_ref",) and self.task_info is not None:
-            if name == "status" and previous != value:
-                self.task_info.on_status_changed(self, previous, value)
-            self.task_info.schedule_on_change()
+    async def append_content(self, *lines):
+        async with config_manager.transaction():
+            await self.set_state(content=[*self.info.content, *lines])
 
     @property
-    def task_info(self) -> Optional[TaskItem]:
-        """返回绑定到此 ScriptItem 的父 TaskItem"""
-        if self._task_item_ref is None:
+    def content(self) -> list[str]:
+        """[兼容旧专项] 旧正文别名；新代码读取 info.content，追加使用 append_content()。"""
+        return self.info.content
+
+    @property
+    def phase(self) -> str:
+        """[兼容旧专项] 旧阶段别名；新代码读取 info.phase。"""
+        return self.info.phase
+
+
+class TaskUserItem(RuntimeEntry):
+    class Info(ConfigGroup):
+        user_id: str = Field(
+            default="", description="原用户 UUID，default 表示共享配置"
+        )
+        name: str = ""
+        status: str = "等待"
+        params: TaskParams = Field(default_factory=dict)
+        result: Virtual[str] = None
+
+    info: Info = Field(default_factory=Info)
+    logs: ConfigCollection[LogRecord] = collection(LogRecord)
+    _config_ref: ReferenceType | None = PrivateAttr(default=None)
+
+    def __init__(self, user_id=None, name=None, status=None, **values):
+        """[兼容旧专项] 旧平铺用户构造及 Default 归一；新代码使用 info 载荷和 default。"""
+        info = dict(values.pop("info", {}) or {})
+        info.update(
+            {
+                key: value
+                for key, value in {
+                    "user_id": user_id,
+                    "name": name,
+                    "status": status,
+                }.items()
+                if value is not None
+            }
+        )
+        if info.get("user_id") == "Default":
+            info["user_id"] = "default"
+        super().__init__(info=info, **values)
+
+    def iter_history_logs(self) -> list[tuple[datetime, LogRecord]]:
+        """[兼容旧专项] 旧按本地时间读取日志的投影；新代码遍历 logs 并读取各记录的 info。"""
+        return [
+            (entry.info.start_time.astimezone(), entry) for entry in self.logs.values()
+        ]
+
+    async def add_log_record(self, started_at, record):
+        """[兼容旧专项] 旧时间加记录的登记签名；新代码使用 logs.add(LogRecord, payload=...) 后提交。"""
+        if self.activation_state.value == "inactive":
+            await self.activate()
+        payload = record.model_dump(context={"audience": "persist"})
+        payload["info"]["start_time"] = started_at
+        uid = self.logs.add(LogRecord, payload=payload)
+        await self.logs.commit()
+        return self.logs[uid]
+
+    @virtual_field("info.result")
+    def compute_result(self):
+        return (
+            " | ".join(
+                f"{at:%H:%M} - {entry.status}" for at, entry in self.iter_history_logs()
+            )
+            or "未开始运行"
+        )
+
+    @property
+    def user_id(self) -> str:
+        """[兼容旧专项] 旧用户标识及 Default 大小写；新代码读取 info.user_id，使用 default。"""
+        return "Default" if self.info.user_id == "default" else self.info.user_id
+
+    @property
+    def log_record(self):
+        """[兼容旧专项] 旧按时间索引的日志字典；新代码使用有序 logs 集合和运行 UUID。"""
+        return dict(self.iter_history_logs())
+
+
+class TaskScriptItem(RuntimeEntry):
+    class Info(ConfigGroup):
+        script_id: str = ""
+        script_type: str = ""
+        name: str = ""
+        status: str = "等待"
+        params: TaskParams = Field(default_factory=dict)
+        result: Virtual[str] = None
+
+    class Current(ConfigGroup):
+        index: UUID | None = None
+        log: str = ""
+
+    info: Info = Field(default_factory=Info)
+    current: Current = Field(default_factory=Current)
+    users: ConfigCollection[TaskUserItem] = collection(TaskUserItem)
+    _config_ref: ReferenceType | None = PrivateAttr(default=None)
+    _run_days: tuple[str, ...] | None = PrivateAttr(default=None)
+    # [兼容旧专项] 只允许旧 manager 重建用户；新 L3/L4 不使用此权限。
+    _manager_controls_users: bool = PrivateAttr(default=False)
+
+    def __init__(self, script_id=None, name=None, status=None, **values):
+        """[兼容旧专项] 旧平铺托管构造参数；新代码使用 info 分组载荷。"""
+        details = dict(values.pop("info", {}) or {})
+        details.update(
+            {
+                key: value
+                for key, value in {
+                    "script_id": script_id,
+                    "name": name,
+                    "status": status,
+                }.items()
+                if value is not None
+            }
+        )
+        super().__init__(info=details, **values)
+
+    async def set_current_index(self, index):
+        """[兼容旧专项] 旧整数位置转运行 UUID；新代码设置 current.index 为用户运行 UUID 后提交。"""
+        self.current.index = self.user_list[index].uid if index >= 0 else None
+        await self.commit()
+
+    async def set_users(self, users: Sequence[TaskUserItem]):
+        """[兼容旧专项] 仅旧 manager 可重建用户列表；新执行链消费 L1 固定的 users 快照。"""
+        if self.activation_state.value == "inactive":
+            await self.activate()
+        if (
+            self.task_info
+            and self.task_info.info.status != "pending"
+            and not self._manager_controls_users
+        ):
+            raise RuntimeError("发布后的插件用户快照不可替换")
+        params = {u.user_id: u.info.params for u in self.users.values()}
+        async with config_manager.transaction():
+            for uid in list(self.users.keys()):
+                self.users.remove(uid)
+            await self.users.commit()
+            for user in users:
+                payload = user.model_dump(context={"audience": "persist"})
+                payload["info"]["params"] = params.get(user.user_id, user.info.params)
+                self.users.add(TaskUserItem, payload=payload)
+            await self.users.commit()
+            self.current.index = None
+            await self.commit()
+
+    async def set_log(self, value):
+        """[兼容旧专项] 旧托管字符串日志写法；新代码写当前 LogRecord，流程日志按 current.log 提交。"""
+        self.current.log = value
+        await self.commit()
+
+    async def append_log(self, value):
+        """[兼容旧专项] 旧托管字符串日志追加；新代码追加当前 LogRecord 的按行正文。"""
+        await self.set_log(self.log + value)
+
+    @virtual_field("info.result")
+    def compute_result(self) -> str:
+        if not self.users:
+            return "用户未加载"
+        return "\n".join(
+            f"{user.info.name or uid}: {user.info.result}"
+            for uid, user in self.users.items()
+        )
+
+    @property
+    def script_id(self) -> str:
+        """[兼容旧专项] 旧平铺配置 ID；新代码读取 info.script_id，运行身份使用 uid。"""
+        return self.info.script_id
+
+    @property
+    def script_type(self) -> str:
+        """[兼容旧专项] 旧平铺类型；新代码读取 info.script_type。"""
+        return self.info.script_type
+
+    @property
+    def user_list(self) -> list[TaskUserItem]:
+        """[兼容旧专项] 旧列表投影；新代码使用 users 有序集合。"""
+        return list(self.users.values())
+
+    @property
+    def current_index(self) -> int:
+        """[兼容旧专项] 旧整数进度位置；新代码使用 current.index 的用户运行 UUID。"""
+        return next(
+            (i for i, uid in enumerate(self.users.keys()) if uid == self.current.index),
+            -1,
+        )
+
+    @property
+    def log(self):
+        """[兼容旧专项] 旧字符串日志别名；新代码根据当前来源读取日志记录或 current.log。"""
+        return self.current.log
+
+
+class TaskItem(RuntimeEntry):
+    class Info(ConfigGroup):
+        # L1 受理时生成的名称快照；查询与推送统一从这里读取。
+        name: str = ""
+        mode: TaskMode = TaskMode.AUTO_PROXY
+        status: Literal["pending", "running", "success", "error", "cancelled"] = (
+            "pending"
+        )
+        trigger: TaskTriggerReason = TaskTriggerReason.MANUAL
+        result: Virtual[str] = None
+
+    class Execution(ConfigGroup):
+        """L1 保存的本轮附加动作；不保留原队列身份或结束时重读配置。"""
+
+        script_before: Path | None = Field(default=None, description="本轮运行前脚本")
+        script_after: Path | None = Field(default=None, description="本轮运行后脚本")
+        after_accomplish: PowerSignal = Field(
+            default=PowerSignal.NO_ACTION, description="本轮完成后操作"
+        )
+        after_accomplish_delay: int = Field(
+            default=1, ge=1, le=1440, description="完成后操作倒计时，单位分钟"
+        )
+
+    class Current(ConfigGroup):
+        index: UUID | None = None
+        log: Virtual[str] = None
+
+    info: Info = Field(default_factory=Info)
+    execution: Execution = Field(default_factory=Execution)
+    current: Current = Field(default_factory=Current)
+    scripts: ConfigCollection[TaskScriptItem] = collection(TaskScriptItem)
+    _notification_state: TaskNotificationState = PrivateAttr(
+        default_factory=TaskNotificationState
+    )
+
+    # 传输记录仅写 live 节点，不参与配置字段提交与回滚。
+    _log_source: UUID | None = PrivateAttr(default=None)
+    _log_content: str | list[str] | None = PrivateAttr(default=None)
+    _log_seq: int = PrivateAttr(default=0)
+
+    def clear_log_cursor(self) -> None:
+        """清理已发送日志的私有基线，运行树正文继续保留。"""
+        self._log_source = self._log_content = None
+        self._log_seq = 0
+
+    def get_log_snapshot(self) -> dict[str, Any]:
+        source = self.current_log_source()
+        content = (
+            source.info.content
+            if isinstance(source, LogRecord)
+            else source.current.log
+            if source is not None
+            else ""
+        )
+        matches = (
+            self._log_source == (source.uid if source is not None else None)
+            and self._log_content == content
+        )
+        # 事务过程态可能回滚；只有正文与发送基线匹配才能继续追加。
+        seq = self._log_seq if matches else 0 if self._log_content is None else None
+        return {
+            "log": "".join(content) if isinstance(content, list) else content,
+            "logSeq": seq,
+            "logFirstLine": 1,
+        }
+
+    def get_update(self) -> dict[str, Any]:
+        """只导出元数据，避免先复制、校验整棵树的日志正文。"""
+
+        def metadata(
+            node: TaskItem | TaskScriptItem | TaskUserItem | LogRecord,
+        ) -> dict[str, Any]:
+            # 信号在提交前触发；读取基类工作区视图，让元数据独立携带本次过程态。
+            node = node.effective
+            data: dict[str, Any] = {
+                "info": node.info.model_dump(
+                    mode="json",
+                    exclude={"content"} if isinstance(node, LogRecord) else None,
+                )
+            }
+            if isinstance(node, TaskItem):
+                data["execution"] = node.execution.model_dump(mode="json")
+            if isinstance(node, LogRecord):
+                return data
+            children: (
+                ConfigCollection[LogRecord]
+                | ConfigCollection[TaskUserItem]
+                | ConfigCollection[TaskScriptItem]
+            )
+            if isinstance(node, TaskUserItem):
+                name, children = "logs", node.logs
+            else:
+                data["current"] = node.current.model_dump(exclude={"log"})
+                name, children = (
+                    ("scripts", node.scripts)
+                    if isinstance(node, TaskItem)
+                    else ("users", node.users)
+                )
+            data[name] = {
+                "order": [
+                    item.model_dump()
+                    for item in children.order
+                    if (child := children.get(item.uid)) is not None
+                    and not child.deleted
+                ],
+                "data": {
+                    str(uid): metadata(child)
+                    for uid, child in children.items()
+                    if not child.deleted
+                },
+            }
+            return data
+
+        return metadata(self)
+
+    async def set_current_index(self, index):
+        """[兼容旧专项] 旧整数位置转运行 UUID；新代码设置 current.index 为托管运行 UUID 后提交。"""
+        self.current.index = self.script_list[index].uid if index >= 0 else None
+        await self.commit()
+
+    @property
+    def instance_idx(self) -> int | None:
+        """[兼容旧专项] 旧平铺启动参数；新代码从对应托管 info.params 或执行上下文读取。"""
+        value = (
+            self.script_list[self.current_index].info.params.get("instance_idx")
+            if self.current_index >= 0
+            else None
+        )
+        if value is not None and (type(value) is not int or value < 0):
+            raise ValueError("instance_idx 必须为非负整数")
+        return value
+
+    def is_target_user(self, user_id):
+        """[兼容旧专项] 供旧 manager 再展开时筛选；新 L3 直接派发 L1 已选定的用户运行节点。"""
+        return (
+            self.mode != TaskMode.AUTO_PROXY
+            or self.current_index < 0
+            or any(
+                u.user_id == user_id
+                for u in self.script_list[self.current_index].users.values()
+            )
+        )
+
+    @virtual_field("info.result")
+    def compute_result(self) -> str:
+        if not self.scripts:
+            return "任务未加载"
+        # 来源的托管摘要在任务根动态聚合，不在任务完成时另算一份结果。
+        blocks: list[str] = []
+        for uid, script in self.scripts.items():
+            users = list(script.users.values())
+            name = script.info.name or str(uid)
+            body = (script.info.result or "").replace("\n", "\n    ")
+            completed = sum(user.info.status == "完成" for user in users)
+            uncompleted = sum(user.info.status != "完成" for user in users)
+            blocks.append(
+                f"{name}：\n\n"
+                f"    已完成用户数：{completed}；未完成用户数：{uncompleted}\n\n"
+                f"    {body}"
+            )
+        return "\n\n\n".join(blocks)
+
+    def current_log_source(self) -> LogRecord | TaskScriptItem | None:
+        script = self.scripts.get(self.current.index) if self.current.index else None
+        if script is None:
             return None
-        return self._task_item_ref()
+        # [兼容旧专项] manager 的 set_log 同时承接流程提示和原生日志镜像；
+        # 不能被提前建立的用户日志记录遮住。插件仍直接使用当前 LogRecord。
+        if script._manager_controls_users:
+            return script
+        user = script.users.get(script.current.index) if script.current.index else None
+        if user is not None and user.logs:
+            return max(user.logs.values(), key=lambda record: record.info.start_time)
+        return script
+
+    @virtual_field("current.log")
+    def compute_log(self) -> str:
+        source = self.current_log_source()
+        if isinstance(source, LogRecord):
+            return "".join(source.info.content)
+        return source.current.log if source is not None else ""
 
     @property
-    def result(self) -> str:
-        """脚本代理情况的简要结果"""
+    def mode(self) -> TaskMode:
+        """[兼容旧专项] 旧平铺模式别名；新代码使用 info.mode 的 TaskMode 枚举。"""
+        return self.info.mode
 
-        if not self.user_list:
-            return "账号未加载"
-        return "\n".join([f"{user.name}: {user.result}" for user in self.user_list])
+    @property
+    def task_id(self) -> str:
+        """[兼容旧调用方] 旧字符串任务 ID 投影；新代码以 uid 保存身份，在接口边界转字符串。"""
+        return str(self.uid)
 
+    @property
+    def view_only(self) -> bool:
+        """[兼容旧专项] 旧查看开关；新代码比较 info.mode 与 TaskMode.SCRIPT_VIEW。"""
+        return self.mode == TaskMode.SCRIPT_VIEW
 
-@dataclass
-class TaskItem(ABC):
-    """任务信息基类，管理任务的信息和托管列表"""
+    @property
+    def script_list(self) -> list[TaskScriptItem]:
+        """[兼容旧专项] 旧托管列表投影；新代码使用 scripts 有序集合。"""
+        return list(self.scripts.values())
 
-    # 脚本执行模式。循环运行不占用这个字段：各脚本适配器都按 mode 分派任务类
-    # （METHOD_BOOK）并有近百处 == "AutoProxy" 的分支，循环里的每一轮本就是自动
-    # 代理，写成 "CycleRun" 会让所有适配器 KeyError 或走错分支。循环与否见 is_cycle。
-    mode: Literal["AutoProxy", "ScriptConfig", "Update"]  # 任务模式
-    task_id: str  # 任务唯一标识符
-    queue_id: str | None  # 执行的队列ID
-    script_id: str | None  # 执行的托管ID
-    user_id: str | None  # 执行的账号ID
-    user_ids: frozenset[str] | None = None  # 自动代理时指定的多个账号；None 表示不限制
-    # 队列任务按脚本限定的本次运行账号；未列出的脚本不限，空集合表示该脚本本次整项跳过
-    user_ids_by_script: dict[str, frozenset[str]] | None = None
-    script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
-    current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
-    resume_from_script_id: str | None = None  # 可选：从指定托管ID开始执行（仅队列任务）
-    is_cycle: bool = False  # 是否为循环运行任务（按队列项各自的周期持续运行）
-    plan_id: str | None = None
-    plan_day: str | None = None
-    plan_save_result: Literal["saved", "failed"] | None = None
-    view_only: bool = False  # 配置查看会话：只读打开原生界面，不注入基线也不回读字段
-    instance_idx: int | None = (
-        None  # 配置会话（原生来源）：会话窗口临时切换到的原生实例
-    )
-    cycle_next_list: List[dict] = field(
-        default_factory=list, repr=False
-    )  # 循环运行的待运行条目预览
-    trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
-    notification_state: TaskNotificationState = field(
-        default_factory=TaskNotificationState, init=False, repr=False
-    )
-    # 日志增量推送状态：上次推送的完整日志（不截断）、首行基准与推送序号
-    _last_pushed_log: str = field(default="", init=False, repr=False, compare=False)
-    _last_pushed_log_first_line: int = field(
-        default=1, init=False, repr=False, compare=False
-    )
-    _log_seq: int = field(default=0, init=False, repr=False, compare=False)
+    @property
+    def current_index(self) -> int:
+        """[兼容旧专项] 旧整数进度位置；新代码使用 current.index 的托管运行 UUID。"""
+        return next(
+            (
+                i
+                for i, uid in enumerate(self.scripts.keys())
+                if uid == self.current.index
+            ),
+            -1,
+        )
 
-    def get_script_user_configs(
-        self, script_id: str
-    ) -> Iterable[tuple[UUID, UserConfigType]]:
-        """在预检尚未加载配置时查询当前账号，具体来源由宿主提供。"""
-        raise NotImplementedError
+    @property
+    def script_id(self) -> str | None:
+        """[兼容旧调用方] 首个托管的旧平铺 ID；新代码按 scripts 各运行节点读取 info.script_id。"""
+        return self.script_list[0].script_id if self.script_list else None
 
-    async def get_active_maintenance(self, game: str) -> MaintenanceWindow | None:
-        """查询专项声明的维护对象，代理与公告客户端由宿主装配。"""
-        raise NotImplementedError
+    @property
+    def current_script_id(self):
+        """[兼容旧专项] 旧当前配置 ID 投影；新代码用 current.index 定位运行节点后读取 info。"""
+        return (
+            self.script_list[self.current_index].script_id
+            if self.current_index >= 0
+            else None
+        )
 
-    async def send_notice(
-        self, *, level: Literal["info", "warning", "error"], message: str
-    ) -> None:
-        """发送任务提示，具体传输由宿主提供。"""
-        raise NotImplementedError
+    @property
+    def user_id(self) -> str | None:
+        """[兼容旧调用方] 单目标会话的旧平铺用户 ID；新代码从目标用户运行节点读取 info.user_id。"""
+        return (
+            self.script_list[0].user_list[0].user_id
+            if self.mode != TaskMode.AUTO_PROXY
+            and self.script_list
+            and len(self.script_list[0].user_list) == 1
+            else None
+        )
 
-    async def save_user_history(
-        self,
-        records: Sequence[HistoryWrite],
-        *,
-        script: ScriptItem,
-        user: UserItem,
-        log_warning: Callable[[str], None] | None = None,
-    ) -> None:
-        """保存专项已判定的账号历史；具体能力由宿主实现。"""
-        raise NotImplementedError
-
-    def __setattr__(self, name, value):
-        super().__setattr__(name, value)
-
-        # 如果 script_list 被整体替换，重新绑定
-        if name == "script_list":
-            for item in self.script_list:
-                self._bind_task_item(item)
-
-    def _bind_task_item(self, item: ScriptItem):
-        """绑定 TaskItem 及其内部所有 UserItem 到当前 TaskItem"""
-        ti_ref = weakref.ref(self)
-        object.__setattr__(item, "_task_item_ref", ti_ref)
-        # 绑定 user_list 中的每个 UserItem
-        for user in item.user_list:
-            object.__setattr__(user, "_task_item_ref", ti_ref)
-
-    @abstractmethod
-    async def on_change(self):
-        """统一回调入口"""
-        raise NotImplementedError("子类必须实现 on_change")
-
-    def on_status_changed(
-        self, item: UserItem | ScriptItem, previous: str | None, status: str
-    ) -> None:
-        """同步报告状态变化；副作用由宿主调度层实现。"""
-
-    @abstractmethod
-    def schedule_on_change(self) -> None:
-        """报告状态变化；合并、发布和任务生命周期由宿主实现。"""
-        raise NotImplementedError("子类必须实现 schedule_on_change")
+    @property
+    def notification_state(self) -> TaskNotificationState:
+        return self._notification_state
 
     @property
     def is_queue_task(self) -> bool:
-        """任务是否由计划队列发起；否则为用户单独运行的脚本任务"""
-        return self.queue_id is not None
-
-    @property
-    def current_script_id(self) -> str | None:
-        """当前正在执行的托管ID；未开始或下标越界时为 None"""
-        if 0 <= self.current_index < len(self.script_list):
-            return self.script_list[self.current_index].script_id
-        return None
-
-    def script_user_scope(self, script_id: str) -> frozenset[str] | None:
-        """队列任务中该脚本本次要运行的账号；None 表示该脚本不限"""
-        if self.user_ids_by_script is None:
-            return None
-        return self.user_ids_by_script.get(script_id)
-
-    @property
-    def target_user_id(self) -> str | None:
-        """单独运行时指定的账号ID；未指定或非自动代理时为 None。
-
-        必须带上模式判断：ScriptConfig 与 Update 模式会把 user_id 写成
-        "Default" 或被编辑的账号，那是「配置谁」而不是「只代理谁」。
-        """
-        return self.user_id if self.mode == "AutoProxy" else None
-
-    def is_target_user(self, user_id: str) -> bool:
-        """账号是否属于本次运行范围。
-
-        只用于收窄展示与执行用的 user_list，各脚本适配器持有的账号配置副本必须
-        保持完整——它们在收尾时会整表写回，裁剪副本会抹掉同托管其它账号的配置。
-
-        Args:
-            user_id (str): 待判定的账号ID。
-
-        Returns:
-            bool: AutoProxy 指定 user_ids 时仅匹配集合内账号，队列任务指定了本次
-            运行范围时仅匹配当前托管范围内的账号，指定 user_id 时仅匹配该账号；
-            均未指定或非 AutoProxy 模式时恒为 True。
-        """
-
-        if self.mode == "AutoProxy":
-            scope = self.user_ids
-            if self.user_ids_by_script is not None:
-                # 队列任务按当前托管取范围；未列入的脚本不受本次勾选影响
-                scope = self.script_user_scope(self.current_script_id or "")
-            if scope is not None:
-                return user_id in scope
-
-        target = self.target_user_id
-        return target is None or user_id == target
-
-    @property
-    def asdict(self) -> list:
-        """将 TaskItem 转换为字典形式"""
-        return [
-            {
-                "script_id": script_item.script_id,
-                "name": script_item.name,
-                "status": script_item.status,
-                "userList": [
-                    {
-                        "user_id": user_item.user_id,
-                        "name": user_item.name,
-                        "status": user_item.status,
-                        "progress": (
-                            {
-                                "current": user_item.progress.current,
-                                "total": user_item.progress.total,
-                                "task": user_item.progress.task,
-                            }
-                            if user_item.progress is not None
-                            else None
-                        ),
-                    }
-                    for user_item in script_item.user_list
-                ],
-            }
-            for script_item in self.script_list
-        ]
+        """[兼容旧专项] 仅供旧专项次数策略识别队列项；新框架在所属层处理准入和执行条件。"""
+        # 旧专项的次数上限仍区分队列与直接运行；复用已有执行条件，不保存队列身份。
+        script = self.scripts.get(self.current.index) if self.current.index else None
+        return (
+            script._run_days is not None
+            if script is not None
+            else any(s._run_days is not None for s in self.scripts.values())
+        )
 
 
-@dataclass
-class TaskExecuteBase(ABC):
-    wait_for_finalizer_on_cancel = False
+# 模型定义完成即声明推送业务订阅；不依赖管理器实例或任务启动路径绑定。
+@TaskItem.connect(phase="runtime")
+@TaskScriptItem.connect(phase="runtime")
+@TaskUserItem.connect(phase="runtime")
+@LogRecord.connect(phase="runtime")
+@ConfigCollection.connect(phase="runtime")
+async def _info_changed(sender: object, event: ConfigEvent) -> None:
+    node = event.node if isinstance(event, FieldChangeEvent) else event.collection
+    root = node.root
+    if not isinstance(root, TaskItem):
+        return
+    # 绑定随模型导入完成；仅执行回调时访问宿主，避免 WS 契约反向导入模型形成循环。
+    from app.core import Publisher
+    from app.core.task_manager import TaskManager
+    from app.core.ws import protocol
+    from app.models.schema import TaskTreeData
 
-    # 外部手动停止（TaskManager 中止）时置位，供收尾逻辑区分自然结束与手动中止
-    stopped_manually: bool = False
+    if root.uid not in TaskManager._running:
+        return
+    if isinstance(event, FieldChangeEvent) and (
+        (
+            isinstance(node, LogRecord)
+            and event.group == "info"
+            and event.field == "content"
+        )
+        or (
+            isinstance(node, (TaskItem, TaskScriptItem))
+            and event.group == "current"
+            and event.field == "log"
+        )
+        or event.value == event.old_value
+    ):
+        return
+    await Publisher.send(
+        id=root.task_id,
+        type=protocol.TASK_INFO_UPDATED,
+        data=TaskTreeData.model_validate(root.get_update()).model_dump(mode="json"),
+    )
 
-    task: asyncio.Task | None = None
-    _task_group: asyncio.TaskGroup | None = None
-    accomplish: asyncio.Event = field(default_factory=asyncio.Event)
-    config_locks: dict = field(default_factory=dict)
 
-    # 日志停滞判定的内部状态，按阶段分桶：{key: (上次推进的 latest_time, 单调读数)}
-    # 不加类型注解，避免被 @dataclass 收作字段。
-    _log_progress = None
+@TaskItem.connect(phase="runtime")
+@TaskScriptItem.connect(phase="runtime")
+@TaskUserItem.connect(phase="runtime")
+@LogRecord.connect(phase="runtime")
+@ConfigCollection.connect(phase="runtime")
+async def _log_changed(sender: object, event: ConfigEvent) -> None:
+    """按配置信号发送日志增量，正常返回后推进模型私有游标。"""
+    node = event.node if isinstance(event, FieldChangeEvent) else event.collection
+    root = node.root
+    if not isinstance(root, TaskItem):
+        return
+    from app.core.task_manager import TaskManager
 
-    async def prefetch_script_update(self) -> None:
-        """调度器确认前一脚本稳定运行后调用；仅允许写 MAS 下载缓存。
+    if root.uid not in TaskManager._running:
+        return
+    script = root.scripts.get(root.current.index) if root.current.index else None
+    if not isinstance(event, FieldChangeEvent):
+        parent = node.parent
+        if isinstance(parent, TaskUserItem) and (
+            script is None or script.current.index != parent.uid
+        ):
+            return
+        if isinstance(parent, TaskScriptItem) and root.current.index != parent.uid:
+            return
+    elif not (
+        isinstance(node, LogRecord)
+        and event.group == "info"
+        and event.field in ("content", "start_time")
+        or isinstance(node, (TaskItem, TaskScriptItem))
+        and event.group == "current"
+        and event.field in ("index", "log")
+    ):
+        return
+    source = root.current_log_source()
+    if isinstance(event, FieldChangeEvent):
+        if (
+            isinstance(node, LogRecord)
+            and event.field == "content"
+            and node is not source
+        ):
+            return
+        if isinstance(node, TaskScriptItem) and node.uid != root.current.index:
+            return
+    # [兼容旧专项] 托管镜像日志仍可通知当前用户记录变化，正文始终取实际来源。
+    source_id = source.uid if source is not None else None
+    content = (
+        source.info.content
+        if isinstance(source, LogRecord)
+        else source.current.log
+        if source is not None
+        else ""
+    )
+    previous = root._log_content
+    if root._log_source == source_id and previous == content:
+        return
+    same_source = root._log_source == source_id
+    # 事件旧值与已发基线不符，说明中间有回滚或未发布变化，本次改发完整替换。
+    if (
+        isinstance(event, FieldChangeEvent)
+        and node is source
+        and event.field in ("content", "log")
+        and event.old_value != previous
+    ):
+        same_source = False
+    append = False
+    payload: str
+    if same_source and isinstance(content, list) and isinstance(previous, list):
+        append = content[: len(previous)] == previous and len(content) > len(previous)
+        payload = "".join(content[len(previous) :] if append else content)
+    elif same_source and isinstance(content, str) and isinstance(previous, str):
+        append = bool(content) and content.startswith(previous)
+        payload = content[len(previous) :] if append else content
+    else:
+        payload = "".join(content) if isinstance(content, list) else content
+    offset = 1
+    if len(payload) > _LOG_PUSH_MAX_CHARS:
+        append = False
+        text = "".join(content) if isinstance(content, list) else content
+        payload = text[-_LOG_PUSH_MAX_CHARS:]
+        offset += text.count("\n", 0, len(text) - len(payload))
+    seq = root._log_seq + 1
+    from app.core import Publisher
+    from app.core.ws import protocol
+    from app.models.schema import WSTaskLogUpdatedData
 
-        未接入两阶段更新的专项不预取，仍在自己的启动前更新。
-        BetterGI / SRC / BAAH 的独立更新 PR 合入后在此接入同一契约。
-        """
+    await Publisher.send(
+        id=root.task_id,
+        type=protocol.TASK_LOG_UPDATED,
+        data=WSTaskLogUpdatedData(
+            log=payload, seq=seq, append=append, firstLine=offset
+        ),
+    )
+    # 行列表只复制容器，不复制正文；兼容旧专项原地追加后用托管镜像触发通知。
+    root._log_content = list(content) if isinstance(content, list) else content
+    root._log_source, root._log_seq = source_id, seq
 
-    async def discard_prefetched_update(self) -> None:
-        """预取已停止后回收本对象持有的候选，不触碰原安装。"""
 
-    def is_log_stalled(
-        self, latest_time: datetime, minutes: float, key: str = "default"
-    ) -> bool:
-        """日志是否已停滞超过给定分钟数。
+# [兼容旧专项] 旧类型别名；新代码使用 TaskUserItem／TaskScriptItem。
+UserItem = TaskUserItem
+ScriptItem = TaskScriptItem
 
-        不能直接用 ``datetime.now() - latest_time``：两端都是墙钟，系统时钟
-        跳变（夏令时切换、NTP 校时）会让差值凭空增加一小时，把正常运行的
-        任务误判为超时。这里只用 ``latest_time`` 判断“是否有推进”，实际计时
-        交给单调时钟。
 
-        Args:
-            latest_time (datetime): 最近一条日志的时间戳。
-            minutes (float): 允许的最长无新日志时间，单位分钟。
-            key (str): 阶段标识。同一任务的不同阶段（如资源下载与正式运行）
-                各自独立计时，避免阶段切换时互相干扰。
+def __getattr__(name):
+    """[兼容旧专项] 仅保留 TaskExecuteBase 的旧导入路径；新执行器继承 app.task.lifecycle.TaskBase。"""
+    if name == "TaskExecuteBase":
+        from app.task.legacy import TaskExecuteBase
 
-        Returns:
-            bool: 超过阈值返回 True。
-        """
-
-        if self._log_progress is None:
-            self._log_progress = {}
-
-        now = time.monotonic()
-        previous = self._log_progress.get(key)
-        if previous is None or previous[0] != latest_time:
-            self._log_progress[key] = (latest_time, now)
-            return False
-        return now - previous[1] > minutes * 60
-
-    @abstractmethod
-    async def main_task(self): ...
-    @abstractmethod
-    async def final_task(self): ...
-    @abstractmethod
-    async def on_crash(self, e): ...
-
-    async def _run_main_task(self) -> None:
-        await self.main_task()
-
-    async def _execute_task(self, parent_tg: asyncio.TaskGroup):
-        self._task_group = parent_tg
-        try:
-            await self._run_main_task()
-        except asyncio.CancelledError:
-            self.stopped_manually = True
-            raise
-        except Exception as e:
-            await self.on_crash(e)
-            # 普通脚本错误可留给上层继续调度；写入者所有权不明必须中止
-            # 整个 TaskGroup，不能在 on_crash 记录后继续启动下一脚本。
-            from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
-
-            if isinstance(e, FluxdownCancelUnconfirmed):
-                raise
-        finally:
-            self._task_group = None
-            try:
-                started_at = time.monotonic()
-                logger.info(f"任务执行结束，开始收尾: {type(self).__name__}")
-                if self.wait_for_finalizer_on_cancel:
-                    await self._run_final_task()
-                else:
-                    try:
-                        await asyncio.shield(self.final_task())
-                    except Exception as e:
-                        await self.on_crash(e)
-            finally:
-                logger.info(
-                    f"任务收尾完成: {type(self).__name__} - 用时: "
-                    f"{time.monotonic() - started_at:.3f}秒"
-                )
-                self.accomplish.set()
-
-    async def _finalize_task(self) -> None:
-        """收尾主体；由 _run_final_task 放进屏蔽取消的独立任务里执行。"""
-
-        await self.final_task()
-
-    def _on_finalize_cancel_requested(self) -> None:
-        """收尾进行中又收到取消（用户点了停止）时调一次；收尾本身不会被取消。
-
-        默认什么都不做。收尾里有耗时步骤、需要提前停下的子类覆写它（置令牌），
-        不要在这里 await 或抛异常。
-        """
-
-    async def _run_final_task(self) -> None:
-        """推迟外层取消，直到收尾协程真正结束。"""
-
-        finalizer = asyncio.create_task(self._finalize_task())
-        current_task = asyncio.current_task()
-        if current_task is None:
-            raise RuntimeError("无法获取当前任务")
-
-        # main_task 的取消正在当前 finally 中传播；先清除计数，避免它反复
-        # 打断对独立 finalizer 的等待。原 CancelledError 会在 finally 后继续传播。
-        while current_task.cancelling():
-            current_task.uncancel()
-
-        cancellation: asyncio.CancelledError | None = None
-
-        while not finalizer.done():
-            try:
-                await asyncio.shield(finalizer)
-            except asyncio.CancelledError as e:
-                if finalizer.cancelled():
-                    raise
-                cancellation = e
-                while current_task.cancelling():
-                    current_task.uncancel()
-                self._on_finalize_cancel_requested()
-            except Exception:
-                break
-
-        try:
-            finalizer.result()
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            await self.on_crash(e)
-
-        if cancellation is not None:
-            raise cancellation
-
-    def spawn(self, child: TaskExecuteBase) -> asyncio.Task:
-        if self._task_group is None:
-            raise RuntimeError("子任务必须在主任务中启动")
-        return self._task_group.create_task(child._execute_task(self._task_group))
-
-    def execute(self):
-        if self.task is not None and not self.task.done():
-            raise RuntimeError("任务已在运行")
-
-        if self._task_group is not None:
-            raise RuntimeError("execute() 仅可由顶层任务调用，子任务请使用 spawn()")
-
-        async def _root_coro():
-            async with asyncio.TaskGroup() as tg:
-                self.task = tg.create_task(self._execute_task(tg))
-
-        root_task = asyncio.create_task(_root_coro())
-        root_task.add_done_callback(lambda _: self.accomplish.set())
-        self.task = root_task
-
-    def cancel(self) -> bool:
-        if self.task is None or self.task.done():
-            return False
-        return self.task.cancel()
+        return TaskExecuteBase
+    raise AttributeError(name)

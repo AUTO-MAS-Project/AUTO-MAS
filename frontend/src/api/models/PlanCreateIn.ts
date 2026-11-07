@@ -15,4 +15,3 @@ export namespace PlanCreateIn {
         UNIVERSAL_PLAN = 'UniversalPlan',
     }
 }
-

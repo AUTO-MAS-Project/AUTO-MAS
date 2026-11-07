@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
@@ -32,15 +31,8 @@ if TYPE_CHECKING:
     from app.utils.common.config.restore import ConfigRestorePool
 
 
-@dataclass(frozen=True)
-class ManagerBuildContext:
-    """任务构造时提供资源值与追加预约能力。"""
-
-    root_paths: tuple[Path, ...]
-    reserve_root: Callable[[Path], bool]
-
-
-ManagerFactory = Callable[["ScriptItem", ManagerBuildContext], "TaskExecuteBase"]
+# [兼容旧专项] 旧 manager 构造能力；新插件执行链接入 L3/L4。
+ManagerFactory = Callable[["ScriptItem"], "TaskExecuteBase"]
 RestorePoolLoader = Callable[[], list["ConfigRestorePool"]]
 
 
@@ -50,7 +42,9 @@ class ScriptRegistration:
 
     config_type: type[ConfigEntry]
     run_types: tuple[type[ConfigEntry], ...]
+    # [兼容旧专项] 只用于现有 task 运行器，不作为新插件执行接口。
     manager_factory: ManagerFactory | None
+    # [兼容旧专项] 存量配置回调工厂，迁至插件配置能力声明后移除此字段及装配。
     create_config_handler: Callable[[], ScriptConfigHandler] | None
     load_restore_pools: RestorePoolLoader | None
     # 配置与恢复沿用各自的有序 isinstance 规则，不是最近父类匹配。
@@ -63,6 +57,7 @@ class ScriptCapabilities:
     """装配结果只交给宿主；消费者分别获得自己的小接口。"""
 
     manager_factories: Mapping[type[ConfigEntry], ManagerFactory | None]
+    # [兼容旧专项] 供 Config 绑定的回调索引，随插件配置能力迁移一并移除。
     config_handlers: tuple[tuple[type[ConfigEntry], ScriptConfigHandler | None], ...]
     resolve_restore_pools: RestorePoolResolver
 

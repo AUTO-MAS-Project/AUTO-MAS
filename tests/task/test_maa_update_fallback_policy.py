@@ -2,13 +2,13 @@
 
 import asyncio
 from datetime import datetime, timezone
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from app.task.MAA import manager
 from app.task.MAA.tools.update_errors import MaaUpdateUnsafeError
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def managed_run(tmp_path, monkeypatch):
         instance, "_prepare_software_update_strict", AsyncMock(return_value=True)
     )
     monkeypatch.setattr(
-        manager.System, "is_process_running", AsyncMock(return_value=False)
+        manager.process, "is_process_running", AsyncMock(return_value=False)
     )
     monkeypatch.setattr(
         manager, "read_installed_release", lambda root: ("v6.0.0", "x64")
@@ -90,7 +90,7 @@ async def test_fallback_requires_an_identifiable_installation(
 @pytest.mark.asyncio
 async def test_fallback_never_starts_while_official_updater_is_running(managed_run):
     managed_run._prepare_software_update_strict.side_effect = TimeoutError()
-    manager.System.is_process_running.return_value = True
+    manager.process.is_process_running.return_value = True
     with pytest.raises(manager.MaaUpdaterRunningError):
         await managed_run._prepare_software_update(object())
     assert managed_run._updater_running is True
@@ -173,7 +173,9 @@ async def test_failed_update_injects_runtime_config_and_restores_pending_package
     task.emulator_manager = SimpleNamespace(get_adb_path=lambda: adb)
     monkeypatch.setattr(task, "_resolve_avd_device", lambda: None)
     monkeypatch.setattr(auto_proxy, "resolve_device_ref", lambda *args: None)
-    monkeypatch.setattr(auto_proxy.System, "kill_process", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        auto_proxy.process, "kill_process", AsyncMock(return_value=True)
+    )
     monkeypatch.setattr(auto_proxy, "agree_bilibili", AsyncMock())
     monkeypatch.setattr(
         auto_proxy.Config,
@@ -225,7 +227,7 @@ async def test_failed_update_injects_runtime_config_and_restores_pending_package
 @pytest.mark.asyncio
 async def test_batch_following_account_blocks_active_updater(managed_run):
     managed_run._maa_update_checked = True
-    manager.System.is_process_running.return_value = True
+    manager.process.is_process_running.return_value = True
     task = SimpleNamespace(update_config_dir=managed_run.maa_set_path)
 
     with pytest.raises(manager.MaaUpdaterRunningError):

@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { PowerSignal } from './PowerSignal';
 export type PowerOut = {
     /**
      * 状态码
@@ -18,22 +19,6 @@ export type PowerOut = {
     /**
      * 电源操作信号
      */
-    signal: PowerOut.signal;
+    signal: PowerSignal;
 };
-export namespace PowerOut {
-    /**
-     * 电源操作信号
-     */
-    export enum signal {
-        NO_ACTION = 'NoAction',
-        SHUTDOWN = 'Shutdown',
-        SHUTDOWN_FORCE = 'ShutdownForce',
-        REBOOT = 'Reboot',
-        HIBERNATE = 'Hibernate',
-        SLEEP = 'Sleep',
-        KILL_SELF = 'KillSelf',
-        RESTART_SELF = 'RestartSelf',
-        LOGOFF = 'Logoff',
-    }
-}
 

@@ -37,7 +37,6 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 
-from app.core.runtime_tasks import RuntimeTasks
 from app.models.schema import McpStatusData
 from app.utils import get_logger
 
@@ -337,7 +336,7 @@ class McpService:
         self._status.state = "running"
         self._status.stage = "importing"
         self._status.revision += 1
-        self._task = RuntimeTasks.spawn(self._load(), name="mcp-load")
+        self._task = asyncio.create_task(self._load(), name="mcp-load")
         if self._task is None:
             self._closing = True
             self._finish("cancelled")

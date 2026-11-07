@@ -358,7 +358,7 @@ const {
 const scriptId = route.params.scriptId as string
 let userId = (route.params.userId as string) || ''
 const isEdit = ref(!!userId)
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 const activeUserId = ref(userId)
 const scriptName = ref('OK-NTE脚本')
 

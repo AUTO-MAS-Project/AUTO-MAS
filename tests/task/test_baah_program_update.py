@@ -6,7 +6,7 @@ from contextlib import ExitStack
 import json
 import shutil
 import zipfile
-from types import SimpleNamespace
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -179,6 +179,7 @@ async def test_install_lock_conflict_never_marks_unrun_task_complete(
 ):
     root, config, _, _ = installation
     instance = object.__new__(manager.BAAHManager)
+    instance.maintenance = False
     instance._install_access = ExitStack()
     instance.check_result = "Pass"
     instance.script_config = SimpleNamespace(

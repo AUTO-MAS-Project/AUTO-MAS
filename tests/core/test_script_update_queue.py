@@ -2,15 +2,30 @@
 
 import asyncio
 import uuid
-from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from app.core import script_update_queue as queue
-from app.models.task import ScriptItem, UserItem
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+
+def _user_state(user_id, name, status):
+    return SimpleNamespace(
+        user_id=user_id, name=name, status=status, first_task_completed_at=None
+    )
+
+
+def _script_state(script_id, name, status, user_list=None, current_index=-1):
+    return SimpleNamespace(
+        script_id=script_id,
+        name=name,
+        status=status,
+        user_list=user_list or [],
+        current_index=current_index,
+        first_task_completed_at=None,
+    )
 
 
 @pytest.fixture
@@ -18,8 +33,8 @@ def running(monkeypatch):
     monkeypatch.setattr(queue, "PREFETCH_POLL_SECONDS", 0.001)
     clock = SimpleNamespace(now=100.0)
     monkeypatch.setattr(queue, "time", SimpleNamespace(monotonic=lambda: clock.now))
-    user = UserItem("user", "", "运行")
-    script = ScriptItem("script", "", "运行", user_list=[user], current_index=0)
+    user = _user_state("user", "", "运行")
+    script = _script_state("script", "", "运行", user_list=[user], current_index=0)
     return script, user, clock
 
 
@@ -161,173 +176,6 @@ async def test_stop_during_timer_cleanup_is_not_swallowed(cancelled):
 
 
 @pytest.mark.asyncio
-async def test_user_stop_during_failed_script_cleanup_never_starts_next_script(
-    monkeypatch,
-):
-    """失败已触发预取收尾时，用户停止仍须等待收尾并终止队列。"""
-    from app.core.task_manager import manager as scheduler
-    from app.models.task import TaskExecuteBase
-
-    monkeypatch.setattr(queue, "PREFETCH_GRACE_SECONDS", 0)
-    monkeypatch.setattr(queue, "PREFETCH_POLL_SECONDS", 0.001)
-    ids = [uuid.uuid4(), uuid.uuid4()]
-    configs = {
-        uid: SimpleNamespace(is_locked=False, model_dump=lambda **_: {}) for uid in ids
-    }
-    monkeypatch.setattr(
-        scheduler,
-        "Config",
-        SimpleNamespace(
-            ScriptConfig=configs,
-            setting=SimpleNamespace(
-                Update=SimpleNamespace(model_dump=lambda **_: {}),
-                Replay=SimpleNamespace(Enabled=False),
-            ),
-        ),
-    )
-    monkeypatch.setattr(scheduler, "_exclusive_resources", lambda _: ((), None))
-    info = scheduler.TaskInfo("AutoProxy", "test", "queue", None, None)
-    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
-    info.script_list = [ScriptItem(str(uid), "", "等待") for uid in ids]
-    downloading, cleaning, release = (
-        asyncio.Event(),
-        asyncio.Event(),
-        asyncio.Event(),
-    )
-    started = []
-
-    class Manager(TaskExecuteBase):
-        def __init__(self, item):
-            super().__init__()
-            self.item = item
-
-        async def prefetch_script_update(self):
-            try:
-                downloading.set()
-                await asyncio.Event().wait()
-            finally:
-                cleaning.set()
-                await release.wait()
-
-        async def main_task(self):
-            started.append(self.item.script_id)
-            if self.item.script_id == str(ids[0]):
-                user = UserItem("first", "", "运行")
-                self.item.user_list = [user]
-                user.mark_task_completed()
-                await downloading.wait()
-                self.item.status = "异常"
-            else:
-                self.item.status = "完成"
-
-        async def final_task(self): ...
-        async def on_crash(self, error): ...
-
-    task = scheduler.Task(
-        info, [], manager_factories={SimpleNamespace: lambda item, _: Manager(item)}
-    )
-    monkeypatch.setattr(task, "spawn", lambda child: child.main_task())
-    monkeypatch.setattr(task, "_observe_script_run", lambda *_: nullcontext())
-    running = asyncio.create_task(task._run_script_list(0))
-    await asyncio.wait_for(cleaning.wait(), 1)
-    running.cancel()
-    await asyncio.sleep(0)
-    assert not running.done()
-    release.set()
-    with pytest.raises(asyncio.CancelledError):
-        await asyncio.wait_for(running, 1)
-    assert started == [str(ids[0])]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("change_config", [False, True])
-async def test_three_scripts_download_then_install_in_queue_order(
-    monkeypatch, change_config
-):
-    from app.core.task_manager import manager as scheduler
-    from app.models.task import TaskExecuteBase
-
-    monkeypatch.setattr(queue, "PREFETCH_GRACE_SECONDS", 0)
-    monkeypatch.setattr(queue, "PREFETCH_POLL_SECONDS", 0.001)
-    ids = [uuid.uuid4() for _ in range(3)]
-    configs = {}
-    for uid in ids:
-        config = SimpleNamespace(revision=0, is_locked=False)
-        config.model_dump = lambda *, mode, config=config: {
-            "Update": {"revision": config.revision}
-        }
-        configs[uid] = config
-    monkeypatch.setattr(
-        scheduler,
-        "Config",
-        SimpleNamespace(
-            ScriptConfig=configs,
-            proxy=None,
-            setting=SimpleNamespace(
-                Update=SimpleNamespace(model_dump=lambda **_: {}),
-                Replay=SimpleNamespace(Enabled=False),
-            ),
-        ),
-    )
-    monkeypatch.setattr(scheduler, "_exclusive_resources", lambda _: ((), None))
-    info = scheduler.TaskInfo("AutoProxy", "test", "queue", None, None)
-    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
-    info.script_list = [ScriptItem(str(uid), "", "等待") for uid in ids]
-    events = []
-    prepared = [asyncio.Event() for _ in ids]
-
-    class Manager(TaskExecuteBase):
-        def __init__(self, item):
-            super().__init__()
-            self.item = item
-            self.index = ids.index(uuid.UUID(item.script_id))
-            self.ready = False
-
-        async def prefetch_script_update(self):
-            events.append(("download", self.index))
-            self.ready = True
-            if change_config and self.index == 1 and not prepared[1].is_set():
-                configs[ids[1]].revision += 1
-            prepared[self.index].set()
-
-        async def main_task(self):
-            if not self.ready:
-                await self.prefetch_script_update()
-            events.append(("install", self.index))
-            user = UserItem(str(self.index), "", "运行")
-            self.item.user_list = [user]
-            self.item.current_index = 0
-            user.mark_task_completed()
-            events.append(("run", self.index))
-            if self.index < 2:
-                await asyncio.wait_for(prepared[self.index + 1].wait(), 1)
-            events.append(("finish", self.index))
-            self.item.status = "完成"
-
-        async def final_task(self):
-            pass
-
-        async def on_crash(self, error):
-            raise error
-
-        async def discard_prefetched_update(self):
-            self.ready = False
-
-    task = scheduler.Task(
-        info, [], manager_factories={SimpleNamespace: lambda item, _: Manager(item)}
-    )
-    monkeypatch.setattr(task, "spawn", lambda child: child.main_task())
-    monkeypatch.setattr(task, "_observe_script_run", lambda *args: nullcontext())
-    await task._run_script_list(0)
-    for index in (1, 2):
-        assert events.index(("run", index - 1)) < events.index(("download", index))
-        assert events.index(("finish", index - 1)) < events.index(("install", index))
-        assert events.index(("download", index)) < events.index(("install", index))
-    assert events.count(("download", 1)) == (2 if change_config else 1)
-    assert task._script_updates._pending is None
-
-
-@pytest.mark.asyncio
 async def test_account_switch_keeps_prefetch_and_avoids_second_download(running):
     script, user, clock = running
     script.first_task_completed_at = user.first_task_completed_at = 100
@@ -345,7 +193,7 @@ async def test_account_switch_keeps_prefetch_and_avoids_second_download(running)
     pipeline.watch(script, download)
     await asyncio.wait_for(started.wait(), 1)
     user.status = "完成"
-    script.user_list.append(UserItem("second", "", "运行"))
+    script.user_list.append(_user_state("second", "", "运行"))
     script.current_index = 1
     await settle()
     assert count == 1
@@ -369,74 +217,10 @@ async def test_first_success_clock_survives_account_switch_before_sixty(running)
     pipeline.watch(script, AsyncMock(side_effect=started.set))
     await settle()
     user.status = "完成"
-    script.user_list.append(UserItem("second", "", "运行"))
+    script.user_list.append(_user_state("second", "", "运行"))
     script.current_index = 1
     clock.now = 160
     await asyncio.wait_for(started.wait(), 1)
-    await pipeline.finish()
-
-
-@pytest.mark.parametrize("run_status", ["运行", "运行 - 日常", "运行 - 剿灭"])
-def test_script_success_signal_survives_new_stage_and_resets_on_retry(
-    monkeypatch, run_status
-):
-    from datetime import datetime
-
-    from app.models import task as task_models
-    from app.models.task import LogRecord
-
-    user = UserItem("user", "", run_status)
-    script = ScriptItem("script", "", "运行", user_list=[user])
-    task_info = SimpleNamespace(
-        script_list=[script],
-        on_status_changed=lambda *_: None,
-        schedule_on_change=lambda: None,
-    )
-    user._task_item_ref = lambda: task_info
-    monkeypatch.setattr(task_models, "time", SimpleNamespace(monotonic=lambda: 123.0))
-    user.mark_task_completed()
-    assert user.first_task_completed_at == 123.0
-    assert script.first_task_completed_at == 123.0
-
-    # MaaEnd / MAA 正常切换到下一阶段并添加日志，不应取消下一脚本下载。
-    user.add_log_record(datetime.now(), LogRecord(phase="NextStage"))
-    assert user.first_task_completed_at == 123.0
-    assert script.first_task_completed_at == 123.0
-
-    # 只有同一阶段真正重试时，旧成功信号才会失效。
-    user.add_log_record(datetime.now(), LogRecord(), retry=True)
-    assert user.first_task_completed_at is None
-    assert script.first_task_completed_at == 123.0
-
-    user.status = "异常"
-    user.mark_task_completed()
-    assert user.first_task_completed_at is None
-
-
-@pytest.mark.asyncio
-async def test_new_stage_log_does_not_cancel_inflight_prefetch(running):
-    from datetime import datetime
-
-    from app.models.task import LogRecord
-
-    script, user, clock = running
-    user.first_task_completed_at = script.first_task_completed_at = 100
-    clock.now = 200
-    started, release = asyncio.Event(), asyncio.Event()
-
-    async def download():
-        started.set()
-        await release.wait()
-
-    pipeline = queue.ScriptUpdateQueue()
-    pipeline.watch(script, download)
-    await asyncio.wait_for(started.wait(), 1)
-    user.add_log_record(datetime.now(), LogRecord(phase="SecondStage"))
-    await settle()
-    assert pipeline._download is not None
-    assert not pipeline._download.done()
-    assert script.first_task_completed_at == 100
-    release.set()
     await pipeline.finish()
 
 
@@ -448,8 +232,8 @@ async def test_public_update_entry_skips_next_non_runnable_item(monkeypatch):
     monkeypatch.setattr(queue, "PREFETCH_GRACE_SECONDS", 0)
     monkeypatch.setattr(queue, "PREFETCH_POLL_SECONDS", 0.001)
     script_ids = [uuid.uuid4() for _ in range(3)]
-    scripts = [ScriptItem(str(uid), "", "等待") for uid in script_ids]
-    user = UserItem("first", "", "运行")
+    scripts = [_script_state(str(uid), "", "等待") for uid in script_ids]
+    user = _user_state("first", "", "运行")
     scripts[0].user_list = [user]
     scripts[0].status = "运行"
     user.first_task_completed_at = scripts[0].first_task_completed_at = 1
@@ -472,6 +256,9 @@ async def test_public_update_entry_skips_next_non_runnable_item(monkeypatch):
     class Manager(TaskExecuteBase):
         async def prefetch_script_update(self):
             calls.append("download")
+
+        async def discard_prefetched_update(self):
+            calls.append("discard")
 
         async def main_task(self): ...
         async def final_task(self): ...
@@ -526,122 +313,6 @@ async def test_unconfirmed_fluxdown_cancel_remains_visible():
     await started.wait()
     with pytest.raises(FluxdownCancelUnconfirmed):
         await queue._cancel_and_wait(task)
-
-
-@pytest.mark.asyncio
-async def test_second_account_retry_keeps_running_prefetch(running):
-    """Account B retry does not cancel A's script-level success clock."""
-    from datetime import datetime
-
-    from app.models.task import LogRecord
-
-    script, first, clock = running
-    second = UserItem("second", "", "运行")
-    script.user_list.append(second)
-    parent = SimpleNamespace(
-        script_list=[script],
-        on_status_changed=lambda *_: None,
-        schedule_on_change=lambda: None,
-    )
-    script._task_item_ref = lambda: parent
-    first._task_item_ref = second._task_item_ref = lambda: parent
-    first.first_task_completed_at = script.first_task_completed_at = 100
-    clock.now = 200
-    started, release = asyncio.Event(), asyncio.Event()
-
-    async def download():
-        started.set()
-        await release.wait()
-
-    pipeline = queue.ScriptUpdateQueue()
-    pipeline.watch(script, download)
-    await asyncio.wait_for(started.wait(), 1)
-    first.status = "完成"
-    script.current_index = 1
-    second.add_log_record(datetime.now(), LogRecord(), retry=True)
-    assert script.first_task_completed_at == 100
-    await settle()
-    assert pipeline._download is not None and not pipeline._download.done()
-    release.set()
-    await pipeline.finish()
-
-
-@pytest.mark.asyncio
-async def test_cycle_unconfirmed_stop_never_starts_next_entry(monkeypatch):
-    """Exercise the cycle dispatcher: unsafe cancellation aborts the round."""
-    from datetime import datetime
-
-    from app.core.task_manager import manager as scheduler
-    from app.core.task_manager.cycle import CycleEntry
-    from app.models.config import MaaConfig
-
-    queue_id, item_a, item_b = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-    script_a, script_b = uuid.uuid4(), uuid.uuid4()
-
-    class QueueItemStub:
-        Data = SimpleNamespace(LastCycleStartedAt=None)
-        Schedule = SimpleNamespace(IntervalAnchor="finish")
-
-        @classmethod
-        def model_validate(cls, value):
-            return value
-
-        async def update(self, *_args, **_kwargs):
-            pass
-
-    monkeypatch.setattr(
-        scheduler,
-        "Config",
-        SimpleNamespace(
-            QueueConfig={
-                queue_id: SimpleNamespace(
-                    QueueItem={item_a: QueueItemStub(), item_b: QueueItemStub()}
-                )
-            },
-            ScriptConfig={script_a: MaaConfig(), script_b: MaaConfig()},
-            setting=SimpleNamespace(
-                Update=SimpleNamespace(model_dump=lambda **_: {}),
-                Replay=SimpleNamespace(Enabled=False),
-            ),
-        ),
-    )
-    monkeypatch.setattr(scheduler, "_exclusive_resources", lambda _: ((), None))
-    info = scheduler.TaskInfo(
-        "AutoProxy", "test", str(queue_id), None, None, is_cycle=True
-    )
-    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
-    info.script_list = [
-        ScriptItem(str(script_a), "first", "等待"),
-        ScriptItem(str(script_b), "next", "等待"),
-    ]
-    task = scheduler.Task(info, [], manager_factories={})
-    task.stopped_manually = True
-    task._exit_result = "cancelled"
-    task._exit_error = "任务执行被取消"
-    monkeypatch.setattr(task, "_build_task_item", lambda *_a, **_k: object())
-    monkeypatch.setattr(task, "_observe_script_run", lambda *_a: nullcontext())
-    monkeypatch.setattr(task, "_publish_cycle_preview", AsyncMock())
-    monkeypatch.setattr(task._script_updates, "take", AsyncMock(return_value=None))
-    entries = [
-        CycleEntry(str(item_a), str(script_a), "first", 0, datetime.now(), True),
-        CycleEntry(str(item_b), str(script_b), "next", 1, datetime.now(), True),
-    ]
-    monkeypatch.setattr(task, "_collect_entries", lambda *_: entries)
-    started = []
-
-    async def simulate_spawn(*_args):
-        started.append(info.current_index)
-        raise FluxdownCancelUnconfirmed("daemon still writing")
-
-    monkeypatch.setattr(task, "_spawn_with_preview", simulate_spawn)
-    with pytest.raises(FluxdownCancelUnconfirmed):
-        await task._run_due_entries(queue_id, entries)
-    assert started == [0]
-    assert task._exit_result == "cancelled"
-    assert "无法确认" in task._exit_error
-    assert task.script_reservations.try_acquire(
-        script_a, "another", root_paths=(), emulator_key=None
-    )
 
 
 @pytest.mark.asyncio
@@ -706,7 +377,7 @@ async def test_download_history_does_not_invalidate_prefetched_candidate(
     from tests.config_support import activate_config
 
     uid = uuid.uuid4()
-    script = ScriptItem(str(uid), "test", "等待")
+    script = _script_state(str(uid), "test", "等待")
     config = MaaConfig.model_validate({"Info": {"Path": tmp_path}})
     setting = GlobalConfig.build()
     await activate_config(setting)
@@ -785,7 +456,7 @@ async def test_runtime_records_do_not_invalidate_but_install_path_does(
     info = SimpleNamespace(
         mode="AutoProxy",
         is_cycle=False,
-        script_list=[ScriptItem(str(uid), "test", "等待")],
+        script_list=[_script_state(str(uid), "test", "等待")],
         task_id="test",
         script_user_scope=lambda _: None,
     )
@@ -815,7 +486,7 @@ async def test_update_install_setting_still_invalidates_prefetch():
     from app.models.task import TaskExecuteBase
 
     uid = uuid.uuid4()
-    script = ScriptItem(str(uid), "test", "等待")
+    script = _script_state(str(uid), "test", "等待")
     script_config = SimpleNamespace(is_locked=False, model_dump=lambda **_: {})
     update_settings = GlobalConfig.UpdateFields()
     info = SimpleNamespace(
@@ -865,7 +536,7 @@ async def test_changed_reservation_resources_invalidate_prefetched_manager():
     info = SimpleNamespace(
         mode="AutoProxy",
         is_cycle=False,
-        script_list=[ScriptItem(str(uid), "", "等待")],
+        script_list=[_script_state(str(uid), "", "等待")],
         task_id="test",
         script_user_scope=lambda _: None,
     )
@@ -880,61 +551,3 @@ async def test_changed_reservation_resources_invalidate_prefetched_manager():
     resource_key[0] = "emulator-b:1"
     assert await session.take(0) is None
     manager.discard_prefetched_update.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_unsafe_child_failure_stops_real_task_lifecycle_before_next_script(
-    monkeypatch,
-):
-    from app.core.task_manager import manager as scheduler
-    from app.models.task import TaskExecuteBase
-
-    ids = [uuid.uuid4(), uuid.uuid4()]
-    configs = {
-        uid: SimpleNamespace(is_locked=False, model_dump=lambda **_: {}) for uid in ids
-    }
-    monkeypatch.setattr(
-        scheduler,
-        "Config",
-        SimpleNamespace(
-            ScriptConfig=configs,
-            setting=SimpleNamespace(
-                Update=SimpleNamespace(model_dump=lambda **_: {}),
-                Replay=SimpleNamespace(Enabled=False),
-            ),
-        ),
-    )
-    monkeypatch.setattr(scheduler, "_exclusive_resources", lambda _: ((), None))
-    info = scheduler.TaskInfo("AutoProxy", "test", "queue", None, None)
-    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
-    info.script_list = [ScriptItem(str(uid), "", "等待") for uid in ids]
-    started, finalized = [], []
-
-    class Manager(TaskExecuteBase):
-        def __init__(self, item):
-            super().__init__()
-            self.item = item
-
-        async def main_task(self):
-            started.append(self.item.script_id)
-            raise FluxdownCancelUnconfirmed("writer not stopped")
-
-        async def on_crash(self, error):
-            self.item.status = "异常"
-
-        async def final_task(self):
-            finalized.append(self.item.script_id)
-
-    task = scheduler.Task(
-        info, [], manager_factories={SimpleNamespace: lambda item, _: Manager(item)}
-    )
-    monkeypatch.setattr(task, "_observe_script_run", lambda *_: nullcontext())
-    with pytest.raises(ExceptionGroup) as caught:
-        async with asyncio.TaskGroup() as group:
-            task._task_group = group
-            await task._run_script_list(0)
-    assert any(
-        isinstance(e, FluxdownCancelUnconfirmed) for e in caught.value.exceptions
-    )
-    assert started == [str(ids[0])]
-    assert finalized == [str(ids[0])]

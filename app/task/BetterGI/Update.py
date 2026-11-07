@@ -36,6 +36,8 @@ logger = get_logger("原神更新 BetterGI")
 class BetterGIUpdateTask(TaskExecuteBase):
     """脚本配置页「检查更新」手动触发的一次原神客户端增量更新。
 
+    TODO(插件迁移，#1845)：存量维护执行、结果、日志与取消暂不改造，待插件统一迁移。
+
     与代理任务启动前的自动更新共用 :func:`ensure_game_updated` 的检查与落盘
     逻辑；手动入口下无法自动完成的情况一律抛错（用户主动发起，不应像自动
     流程那样静默放行）。
@@ -64,7 +66,7 @@ class BetterGIUpdateTask(TaskExecuteBase):
         await push_dispatch_log(self.script_info, line)
 
     async def main_task(self) -> None:
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         user_config = self.user_config[uuid.UUID(self.user_id)]
         await self._push_dispatch_log("正在检查原神客户端更新...")
         # manual=True 时凡不能自动完成的情况都会抛错，走到这里即已完成或无需更新
@@ -74,13 +76,13 @@ class BetterGIUpdateTask(TaskExecuteBase):
             on_log=self._push_dispatch_log,
             manual=True,
         )
-        self.cur_user_item.status = "完成"
+        await self.cur_user_item.set_state(status="完成")
 
     async def final_task(self) -> None:
         """一次性更新任务不持有需要释放的资源，结果状态由 main_task / on_crash 落定。"""
 
     async def on_crash(self, e: Exception) -> None:
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"原神更新任务出现异常: {e}")
         with suppress(Exception):
             await Publisher.send(

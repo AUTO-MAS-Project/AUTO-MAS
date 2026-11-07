@@ -1,7 +1,7 @@
 """MaaEnd 新旧日志格式均应进入当前用户的任务报告。"""
 
 import asyncio
-from types import SimpleNamespace
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 import pytest
 
@@ -21,6 +21,7 @@ from app.task.MaaEnd.AutoProxy import AutoProxyTask
 @pytest.mark.parametrize("mode", ["逐条", "汇总", "关闭"])
 def test_collection_failure_reaches_user_report(tmp_path, detail, mode):
     proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.user_state = lambda user: user
     proxy.cur_user_item = SimpleNamespace(push_log=[], push_log_mode=mode)
     proxy.push_log_enabled = mode != "关闭"
     path = tmp_path / "run.log"
@@ -42,6 +43,7 @@ def test_collection_failure_reaches_user_report(tmp_path, detail, mode):
 
 def test_details_do_not_cross_task_or_retry_boundaries(tmp_path):
     proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.user_state = lambda user: user
     proxy.cur_user_item = SimpleNamespace(push_log=[], push_log_mode="汇总")
     proxy.push_log_enabled = True
     path = tmp_path / "run.log"

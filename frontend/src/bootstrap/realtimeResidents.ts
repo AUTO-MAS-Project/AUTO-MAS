@@ -10,10 +10,8 @@ import {
   bootstrapTaskRuntimeState,
   disposeTaskRuntimeState,
 } from '@/composables/useTaskRuntimeState'
-import {
-  bootstrapSchedulerSubscriptions,
-  disposeSchedulerSubscriptions,
-} from '@/views/scheduler/useSchedulerLogic'
+import { bootstrapSchedulerTabs, disposeSchedulerTabs } from '@/stores/scheduler'
+import { bootstrapTaskFeedback, disposeTaskFeedback } from '@/composables/useTaskFeedback'
 import { bootstrapSystemNotices, disposeSystemNotices } from '@/services/systemNotices'
 import { bootstrapTaskAnalytics, disposeTaskAnalytics } from '@/services/taskAnalytics'
 import { useBackendI18nStore } from '@/stores/backendI18n'
@@ -53,9 +51,13 @@ export function bootstrapRealtimeResidents(): void {
       bootstrap: bootstrapTaskRuntimeState,
       dispose: disposeTaskRuntimeState,
     })
+    registerResidentResource('task-feedback', {
+      bootstrap: bootstrapTaskFeedback,
+      dispose: disposeTaskFeedback,
+    })
     registerResidentResource('scheduler', {
-      bootstrap: bootstrapSchedulerSubscriptions,
-      dispose: disposeSchedulerSubscriptions,
+      bootstrap: bootstrapSchedulerTabs,
+      dispose: disposeSchedulerTabs,
     })
     registerResidentResource('update-download', {
       bootstrap: bootstrapUpdateDownloadSubscriptions,

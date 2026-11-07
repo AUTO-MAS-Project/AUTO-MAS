@@ -4,7 +4,7 @@ test.describe('@scheduler safeguards', () => {
   test('keeps an empty dispatch safe and manages idle run panels', async ({ app, page }) => {
     const taskOptionsResponse = page.waitForResponse(
       response =>
-        response.url().includes('/api/info/combox/task') && response.request().method() === 'POST'
+        response.url().includes('/api/scripts/get') && response.request().method() === 'POST'
     )
 
     await app.goto('/scheduler')
@@ -13,7 +13,7 @@ test.describe('@scheduler safeguards', () => {
     expect(response.ok()).toBeTruthy()
     const payload = await response.json()
     expect(payload.code).toBe(200)
-    expect(payload.data?.[0]).toMatchObject({ label: '未选择', value: null })
+    expect(payload.index).toEqual([])
 
     await expect(page.getByText('Scheduler', { exact: true }).first()).toBeVisible()
     const runButtons = page.locator('.task-control .ant-btn')

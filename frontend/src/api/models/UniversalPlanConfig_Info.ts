@@ -28,4 +28,3 @@ export type UniversalPlanConfig_Info = {
      */
     readonly ScriptId?: (string | null);
 };
-

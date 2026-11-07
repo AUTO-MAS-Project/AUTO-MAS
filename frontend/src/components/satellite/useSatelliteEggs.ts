@@ -1,9 +1,7 @@
 import { useI18n } from 'vue-i18n'
-import type { SatelliteModuleStatus } from '@/composables/useSatelliteStatus'
 import type { ScriptType } from '@/types/script'
 import { createCenterPokeCounter } from './centerPoke'
 import {
-  consumeFirstLaunch,
   createCodeMatcher,
   createDizzyDetector,
   createKonamiMatcher,
@@ -56,7 +54,7 @@ const WISH_LINES = 4
 /**
  * 主页卫星的彩蛋。点卫星攒保底出金、MAA 点满 325 下周哥出场、BGI 连点 5 下原神启动、
  * 星铁连点 7 下三月七拍照、绝区零每点一下邦布回话、鼠标停在 MAA 上阿米娅催你干活、
- * 脚本开跑时喊一句启动、中心连点炫彩、点流星许愿、键盘口令（科乐美秘技、648、1999、
+ * 中心连点炫彩、点流星许愿、键盘口令（科乐美秘技、648、1999、
  * 666、520、404、233、mas）、来回猛搓转晕。长按星核放冲击波是指针手势的一部分，留在组件里。
  */
 export function useSatelliteEggs(options: SatelliteEggsOptions) {
@@ -72,8 +70,6 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
   const timers = new Set<number>()
   let amiyaTimer: number | null = null
   let lastAmiyaAt = -Infinity
-  /** 上一次看到在跑的卫星键 */
-  let runningKeys: Set<string> | null = null
 
   function later(callback: () => void, ms: number): number {
     const timer = window.setTimeout(() => {
@@ -215,31 +211,6 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
     }, AMIYA_HOVER_MS)
   }
 
-  /**
-   * 脚本开跑时在它的卫星旁喊一句「××，启动！」（BGI 是「原神，启动！」）；
-   * 每个脚本每次启动应用只喊一次。刚挂载时已经在跑的不算，只认看着它开跑的那一下。
-   */
-  function onStatusesChange(statuses: ReadonlyMap<string, SatelliteModuleStatus>): void {
-    const scene = getScene()
-    const running = new Set(
-      [...statuses].filter(([, status]) => status.running).map(([key]) => key)
-    )
-    const previous = runningKeys
-    runningKeys = running
-    if (!scene || !previous) return
-
-    for (const key of running) {
-      if (previous.has(key) || !consumeFirstLaunch(key)) continue
-      const index = scene.findSatellite(key)
-      if (index === null) continue
-      const text =
-        scene.satelliteType(index) === 'BetterGI'
-          ? t('core.home.satelliteEgg.genshinLaunch')
-          : t('core.home.satelliteEgg.launch', { name: scene.satelliteLabel(index) })
-      spawnNearSatellite(index, text, 'hint')
-    }
-  }
-
   // ==================== 键盘 ====================
 
   function isEditableTarget(target: EventTarget | null): boolean {
@@ -346,7 +317,6 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
     pokeSatellite,
     tryCatchMeteor,
     onHoverChange,
-    onStatusesChange,
     handleKeydown,
     checkDizzy,
     dispose,

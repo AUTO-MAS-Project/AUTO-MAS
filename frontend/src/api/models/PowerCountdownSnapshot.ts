@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { PowerSignal } from './PowerSignal';
 /**
  * 当前电源倒计时 HTTP 初始快照。
  */
@@ -13,7 +14,7 @@ export type PowerCountdownSnapshot = {
     /**
      * 待执行电源操作
      */
-    operation?: (string | null);
+    operation?: (PowerSignal | null);
     /**
      * 剩余秒数
      */

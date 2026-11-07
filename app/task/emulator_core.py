@@ -139,6 +139,9 @@ async def close_emulator(
         log_failure: 失败时是否记录警告日志。
     """
 
+    # TODO(游戏管理迁移，#1845)：不同托管的配置锁不能保护同一模拟器的完整使用期，
+    # 一方结束时仍可能关闭另一方正在使用的实例。待来源游戏管理接管占用与释放，
+    # 本轮不另补设备预约机制。
     emulator_manager = getattr(owner, "emulator_manager", None)
     if emulator_manager is None:
         return True

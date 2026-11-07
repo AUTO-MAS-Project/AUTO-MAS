@@ -22,6 +22,7 @@
 - `mas-frontend-ui`：用于约束 Ant Design Vue UI、桌面端业务布局、视觉 token、表单、表格、弹窗、反馈、拖拽与深色模式。
 - `mas-api-contract`：用于约束 FastAPI 接口与 WebSocket 的请求、响应和错误契约。
 - `mas-data-model`：用于规范后端数据模型及配置声明、调用点、事务、信号、锁、持久化和兼容性演进；配置任务加载其中的[配置框架参考](mas-data-model/references/config-framework.md)。
+- `mas-task-scheduler`：用于任务创建、要求树与运行身份、四级派发、上层持锁、取消收尾、信息推送及队列启动／定时／循环触发；记录已确认的目标设计，旧 manager 行为仅作兼容例外。
 - `mas-function-design`：用于规范后端函数的职责划分、参数设计、返回约定和副作用控制。
 - `mas-module-boundary`：用于约束后端模块分层、依赖方向和代码归属边界。
 - `mas-code-standards`：用于应用 AUTO-MAS 的代码规范，规范内容主要从当前 `dev` 的代表性提交和现有模块中提炼，尤其适用于 Electron 初始化与服务层代码。

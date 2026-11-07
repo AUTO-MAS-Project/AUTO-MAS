@@ -14,6 +14,8 @@ Apply to model definitions and configuration usage:
 2. Persisted/runtime config models (`app/models/config/`) and framework/callers (`app/config/`)
 3. task/runtime state models (`task`)
 
+For scheduling requirement trees, runtime UUIDs, Config-based task nodes, virtual results and lock ownership, also use [mas-task-scheduler](../mas-task-scheduler/SKILL.md). Its confirmed target tree has TaskItem directly containing script runs; migration-only queue wrappers and legacy aliases are not model-design precedents.
+
 ## Configuration Framework
 For config definitions, reads/writes, lifecycle, transactions, locks, signals, persistence, API projections or historical upgrades, read [config-framework.md](references/config-framework.md) before implementation. It records the framework invariants and points to current source and the developer manual. Ordinary schema/task-only work does not require this reference.
 
@@ -32,7 +34,7 @@ in [config-framework.md](references/config-framework.md).
 1. Shared `schema.py` and endpoint-local models define external API contracts; config projections derive from config classes through `app/config/wire.py`.
 2. `config` models define persisted configuration structure and validation behavior.
 3. `task` models define runtime execution state and orchestration-facing status.
-4. Do not mix transport, persistence, and runtime concerns in one model class.
+4. Keep transport contracts, persistence, and runtime state distinct. Task runtime status/log notifications are model business: declare Config class subscriptions directly after the task model definitions. Receivers may resolve the existing task registration, WS publisher and shared payload contracts at execution time; importing declarations alone must not initialize the host. Do not move L1 orchestration into models or add per-task sender injection.
 5. `ConfigEntry` subclasses contain `ConfigGroup` fields declared with typed Pydantic `Field` definitions and Chinese descriptions. Defaults and mutable values use suitable factories.
 6. `ConfigCollection[T]` records allowed concrete entry types; nested collections are declared through `collection(...)`. Runtime state belongs in `PrivateAttr`, class constants in `ClassVar`.
 

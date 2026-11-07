@@ -44,6 +44,8 @@ logger = get_logger("终末地客户端更新")
 class EndfieldUpdateTask(TaskExecuteBase):
     """手动触发的一次客户端更新，不持有需要跨轮保留的资源。
 
+    TODO(插件迁移，#1845)：存量维护执行、结果、日志与取消暂不改造，待插件统一迁移。
+
     Args:
         script_info: 已绑定 `task_info` 的托管项；结论写进它的调度台日志。
         script_config: 该脚本的 MaaEnd 配置，只用 `Game.Path` 与
@@ -65,7 +67,7 @@ class EndfieldUpdateTask(TaskExecuteBase):
         await push_dispatch_log(self.script_info, line)
 
     async def main_task(self) -> None:
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         game_exe = Path(str(self.script_config.Game.Path or "").strip())
 
         # 不看 Game.IfAutoUpdate：那是自动门的开关，用户当面点下按钮即为授权。
@@ -79,23 +81,23 @@ class EndfieldUpdateTask(TaskExecuteBase):
         except asyncio.CancelledError:
             # 取消不走 on_crash，也不落下面那三个状态：不收口这个账号就永远停在「运行」，
             # 已结束的快照里还显示他在跑
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             raise
         # 结论先落进日志再抛：toast 三秒就没了，弹窗里这一行才是留下的那份
         await self._push_dispatch_log(result.message)
         if result.status == "Skipped":
             # Skipped 是「本轮没做这件事」，不是失败
-            self.cur_user_item.status = "跳过"
+            await self.cur_user_item.set_state(status="跳过")
             return
         if result.status == "NeedManualUpdate":
             raise RuntimeError(result.message)
-        self.cur_user_item.status = "完成"
+        await self.cur_user_item.set_state(status="完成")
 
     async def final_task(self) -> None:
         """一次性更新任务不持有需要释放的资源；脚本配置锁归调度器。"""
 
     async def on_crash(self, e: Exception) -> None:
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"终末地客户端手动更新失败: {e}")
         with suppress(Exception):
             await Publisher.send(

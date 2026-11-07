@@ -153,7 +153,8 @@
 </template>
 
 <script setup lang="ts">
-import { requestTaskStart, stopNativeConfig } from '@/composables/useTaskApi'
+import { TaskMode } from '@/api'
+import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
@@ -198,7 +199,6 @@ import {
 import { useMaaFWEmbeddedApi } from '@/composables/useMaaFWEmbeddedApi'
 import type { MaaFWEmbeddedSourceItem } from '@/api'
 import { Service } from '@/api/services/Service'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import DocLink from '@/components/DocLink.vue'
 import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
@@ -633,13 +633,7 @@ const startConfigSession = async (
     return false
   }
 
-  const response = await requestTaskStart(
-    {
-      taskId: targetId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-    },
-    { source: 'script_config', target_kind: 'script' }
-  )
+  const response = await requestScriptConfigStart(targetId, false, 'script')
   if (response.code !== 200 || !response.taskId) {
     throw new Error(response.message || t('core.scripts.toast.startFailedRaw', { label }))
   }

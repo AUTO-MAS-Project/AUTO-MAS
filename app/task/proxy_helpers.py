@@ -39,9 +39,9 @@ from collections.abc import Callable, Iterable
 
 import psutil
 
-from app.services import System
 from app.utils import constants as _utils_constants
 from app.utils import get_logger
+from app.utils import process as process_tools
 
 logger = get_logger("专项进程清理")
 
@@ -99,7 +99,7 @@ async def kill_pids(pids: Iterable[int]) -> int:
     failed = 0
     for pid in pids:
         try:
-            if not await System.kill_process_by_pid(pid):
+            if not await process_tools.kill_process_by_pid(pid):
                 failed += 1
         except Exception as exc:
             failed += 1
@@ -114,18 +114,20 @@ async def kill_pids_by_name(process_name: str) -> int:
 
 
 async def push_dispatch_log(script_info: object, line: str) -> None:
-    """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
+    """[兼容旧专项] 旧托管流程日志入口；新代码写当前 LogRecord，流程日志通过 current.log 提交。"""
 
     prev = script_info.log
-    script_info.log = f"{prev}\n{line}" if prev else line
+    await script_info.set_log(f"{prev}\n{line}" if prev else line)
     # 让出事件循环：WebSocket 推送由赋值触发，不等待可能把多行攒成一次推送
     await asyncio.sleep(0)
 
 
-def append_push_log(cur_user_item: object, log_type: str, text: str, ts: float) -> None:
-    """sink：把 log_box 采集结果写入当前账号的推送日志（供调度器聚合到报告）"""
+def append_push_log(
+    callbacks, cur_user_item: object, log_type: str, text: str, ts: float
+) -> None:
+    """[兼容旧专项] 旧同步日志 sink 与通知素材桥；新代码按日志模型和通知业务各自的入口处理。"""
 
-    cur_user_item.push_log.append((log_type, text, ts))
+    callbacks.submit(cur_user_item.append_push_log((log_type, text, ts)))
 
 
 # ── base 来源三态（shared / independent / native）与覆写常规配置 ───────────────

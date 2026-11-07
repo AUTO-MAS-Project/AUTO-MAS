@@ -6,4 +6,3 @@ import type { UniversalPlanConfig_InfoInput } from './UniversalPlanConfig_InfoIn
 export type UniversalPlanConfigInput = {
     Info?: (UniversalPlanConfig_InfoInput | null);
 };
-

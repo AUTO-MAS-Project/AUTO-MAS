@@ -37,7 +37,7 @@
 
 import asyncio
 from datetime import datetime
-from types import SimpleNamespace
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 from app.task.Okww.AutoProxy import AutoProxyTask
 

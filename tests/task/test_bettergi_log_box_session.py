@@ -3,12 +3,18 @@
 import asyncio
 import threading
 from datetime import datetime
-from types import SimpleNamespace
 
 import pytest
 
 from app.task.BetterGI.AutoProxy import AutoProxyTask
 from app.task.BetterGI.tools import push_log
+from app.task.general.manager import GeneralManager
+from tests.runtime_support import RuntimeStub as SimpleNamespace
+
+
+def build_user_result_text(users, has_uncompleted):
+    manager = SimpleNamespace(script_info=SimpleNamespace(user_list=users))
+    return GeneralManager._render_user_results(manager, has_uncompleted=has_uncompleted)
 
 
 def step(**changes):

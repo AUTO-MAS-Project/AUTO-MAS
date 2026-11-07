@@ -710,7 +710,7 @@ const handleOpenFolder = async () => {
 }
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId: userId.value }))
 const scriptName = ref(t('core.edit.zzzodScriptFallbackName'))
 
 const pageLoading = ref(true)

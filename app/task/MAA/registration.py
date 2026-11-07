@@ -20,17 +20,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.models.config import MaaConfig
-from app.models.script_contracts import ScriptConfigHandler
-from app.task.registration import ManagerBuildContext, ScriptRegistration
+from app.models.script_contracts import ScriptConfigHandler, ScriptEmulatorBinding
+from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
     from app.models.task import ScriptItem, TaskExecuteBase
     from app.utils.common.config.restore import ConfigRestorePool
 
 
-def build_manager(
-    script_item: ScriptItem, context: ManagerBuildContext
-) -> TaskExecuteBase:
+def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
     from .manager import MaaManager
 
     return MaaManager(script_item)
@@ -38,9 +36,6 @@ def build_manager(
 
 def build_config_handler() -> ScriptConfigHandler:
     from app.models.config import MaaUserConfig
-    from app.task.MAA.resources import EMULATOR_BINDING as maa_emulator_binding
-    from app.task.MAA.resources import SUPPORTS_MOD_AVD as maa_supports_mod_avd
-    from app.task.MAA.resources import declare_task_resources as maa_task_resources
     from app.task.MAA.user_update import prepare_user_update as prepare_maa_user_update
     from app.task.MAA.user_update import resolve_user_config_dir
 
@@ -48,9 +43,10 @@ def build_config_handler() -> ScriptConfigHandler:
         user_config_class=MaaUserConfig,
         user_config_directory=resolve_user_config_dir,
         prepare_user_update=prepare_maa_user_update,
-        task_resources=maa_task_resources,
-        emulator_binding=maa_emulator_binding,
-        supports_mod_avd=maa_supports_mod_avd,
+        emulator_binding=ScriptEmulatorBinding(
+            group="Emulator", id_field="Id", index_field="Index"
+        ),
+        supports_mod_avd=True,
     )
 
 

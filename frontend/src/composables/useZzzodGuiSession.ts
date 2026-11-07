@@ -29,7 +29,9 @@ export function useZzzodGuiSession() {
       instanceIdx?: number | null,
       targetKind: TaskTargetKind = 'unknown'
     ) =>
-      session.startSession(taskId, viewOnly, targetKind, { instanceIdx: instanceIdx ?? undefined }),
+      session.startSession(taskId, viewOnly, targetKind, {
+        params: instanceIdx == null ? {} : { instance_idx: instanceIdx },
+      }),
     saveSession: session.saveSession,
     stopSession: (keepOnFailure = false, action: NativeConfigStopAction = 'close') =>
       session.stopSession(keepOnFailure, false, action),

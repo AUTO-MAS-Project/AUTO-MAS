@@ -20,17 +20,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.models.config import GeneralConfig
-from app.models.script_contracts import ScriptConfigHandler
-from app.task.registration import ManagerBuildContext, ScriptRegistration
+from app.models.script_contracts import ScriptConfigHandler, ScriptEmulatorBinding
+from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
     from app.models.task import ScriptItem, TaskExecuteBase
     from app.utils.common.config.restore import ConfigRestorePool
 
 
-def build_manager(
-    script_item: ScriptItem, context: ManagerBuildContext
-) -> TaskExecuteBase:
+def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
     from .manager import GeneralManager
 
     return GeneralManager(script_item)
@@ -38,15 +36,12 @@ def build_manager(
 
 def build_config_handler() -> ScriptConfigHandler:
     from app.models.config import GeneralUserConfig
-    from app.task.general.resources import EMULATOR_BINDING as general_emulator_binding
-    from app.task.general.resources import (
-        declare_task_resources as general_task_resources,
-    )
 
     return ScriptConfigHandler(
         user_config_class=GeneralUserConfig,
-        task_resources=general_task_resources,
-        emulator_binding=general_emulator_binding,
+        emulator_binding=ScriptEmulatorBinding(
+            group="Game", id_field="EmulatorId", index_field="EmulatorIndex"
+        ),
     )
 
 

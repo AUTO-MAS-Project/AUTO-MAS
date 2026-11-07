@@ -198,9 +198,7 @@ def _task_running() -> bool:
     try:
         from app.core import TaskManager
 
-        return any(
-            info.mode != "ScriptConfig" for info in TaskManager.task_info.values()
-        )
+        return any(info.mode == "AutoProxy" for info in TaskManager.task_info.values())
     except Exception as exc:
         _warn_once(f"查询任务状态失败，按有任务在跑处理: {exc}")
         return True
@@ -633,7 +631,7 @@ class _DesktopGuard:
         亮屏 5 秒即过）。挂着虚拟屏说明没有真实显示器亮着，保持开启不会点亮任何东西。
         """
 
-        from app.services import power
+        from app.utils import power
 
         hold = self._display_hold
         if self._display is not None:

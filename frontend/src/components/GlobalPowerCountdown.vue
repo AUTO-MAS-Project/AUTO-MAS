@@ -28,7 +28,7 @@
         <span class="countdown-unit">{{ t('core.comp.seconds') }}</span>
       </div>
       <a-progress
-        :percent="Math.max(0, Math.min(100, ((60 - remaining) / 60) * 100))"
+        :percent="progress"
         :show-info="false"
         :stroke-color="remaining <= 10 ? '#ff4d4f' : '#1890ff'"
         :stroke-width="8"
@@ -66,7 +66,17 @@ const POWER_OPERATION_LABEL: Record<string, string> = {
 const { powerCountdown, powerCountdownDisconnected, cancelPowerCountdown } = useAppLifecycle()
 
 const visible = ref(false)
+// 协议提供剩余秒数；以本次观察起点为基准，刷新后从当时的剩余时间继续展示。
+const initialRemaining = ref(0)
 const remaining = computed(() => powerCountdown.value?.remaining ?? 0)
+const progress = computed(() =>
+  initialRemaining.value > 0
+    ? Math.max(
+        0,
+        Math.min(100, ((initialRemaining.value - remaining.value) / initialRemaining.value) * 100)
+      )
+    : 0
+)
 const operationLabel = computed(() => {
   const operation = powerCountdown.value?.operation || ''
   return POWER_OPERATION_LABEL[operation] || operation || '电源操作'
@@ -79,6 +89,8 @@ const message = computed(() => `程序将在倒计时结束后执行 ${operation
 watch(
   () => powerCountdown.value,
   (current, previous) => {
+    if (current && (!previous || current.remaining > previous.remaining))
+      initialRemaining.value = current.remaining
     if (current && !previous) {
       logger.info(`收到电源倒计时: ${current.operation}, 剩余 ${current.remaining} 秒`)
       visible.value = true

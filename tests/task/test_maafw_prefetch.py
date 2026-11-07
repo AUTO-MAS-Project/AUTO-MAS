@@ -68,10 +68,8 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
 
     import httpx
 
-    from app.core import script_update
-    from app.core.task_manager.manager import TaskInfo
     from app.models.config import GlobalConfig, MaaFWConfig
-    from app.models.task import ScriptItem
+    from app.models.task import TaskItem, TaskScriptItem
     from app.task.MaaFW import embedded_manager
     from app.task.MaaFW.tools.core.project_update import transport
     from app.task.MaaFW.tools.embedded import embedded_project
@@ -175,21 +173,15 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         GlobalConfig.model_validate({"Update": {"GitHubMirror": "Off"}}),
     )
     view = embedded_project.embedded_project_dir(script_id)
-    item = ScriptItem(script_id, "audit", "等待")
-    info = TaskInfo("AutoProxy", "audit", "queue", None, None)
-    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
-    info.script_list = [item]
-    session = script_update.ScriptUpdateSession(
-        info,
-        make_manager=lambda item, *_args, **_kwargs: (
-            embedded_manager.MaaFWEmbeddedManager(item)
-        ),
-        resources=lambda _: ((view.resolve(),), None),
-        scheduled=lambda _: True,
-        config=isolated_app_paths,
+    info = TaskItem(mode="AutoProxy", name="audit")
+    await activate_config(info)
+    item_uid = info.scripts.add(
+        TaskScriptItem, payload={"info": {"script_id": script_id, "name": "audit"}}
     )
-    before = session._identity(0)
-    await session._prefetch(0)
+    await info.scripts.commit()
+    manager = embedded_manager.MaaFWEmbeddedManager(info.scripts[item_uid])
+    # 基础候选能力独立验证；新调度按确认仍不创建 ScriptUpdateSession。
+    await manager.prefetch_script_update()
     (source / "interface.json").write_text(json.dumps(replacement))
     second = await asyncio.to_thread(
         embedded_project.import_embedded_project, script_id, source
@@ -198,9 +190,6 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         MaaFWConfig.model_validate({"Embedded": imported_fields(second)})
     )
     assert first["report"] == second["report"]
-    assert session._identity(0) == before
-    manager = await session.take(0)
-    assert manager is not None
     assert json.loads((view / "interface.json").read_text()) == replacement
     marker_before = embedded_project.read_view_marker(view)
     before_consume = list(requests)

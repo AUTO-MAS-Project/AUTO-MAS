@@ -136,11 +136,13 @@ tmp_dst.rename(target)
 进程清理、文件操作的每个步骤独立 try/except，防止一个失败阻塞后续清理：
 
 ```python
+from app.utils import process
+
 # 反模式：一个 try 包多个操作
 try:
     await process_manager.kill()
-    await System.kill_process(main_exe)
-    await System.kill_process(track_exe)
+    await process.kill_process(main_exe)
+    await process.kill_process(track_exe)
 except Exception as e:
     logger.exception("失败")  # 不知道哪个失败了
 
@@ -150,11 +152,11 @@ try:
 except Exception as e:
     logger.exception(f"进程管理器中止失败: {e}")
 try:
-    await System.kill_process(main_exe)
+    await process.kill_process(main_exe)
 except Exception as e:
     logger.exception(f"主进程中止失败: {e}")
 try:
-    await System.kill_process(track_exe)
+    await process.kill_process(track_exe)
 except Exception as e:
     logger.exception(f"追踪进程中止失败: {e}")
 ```
@@ -251,7 +253,7 @@ else:
 | 对齐点 | 规则 |
 |--------|------|
 | 日志 | `get_logger("XX 自动代理")` 中文名，与 General 一致 |
-| 进程管理 | `ProcessManager`、`ProcessInfo`、`System.kill_process` |
+| 进程管理 | `ProcessManager`、`ProcessInfo`、`app.utils.process.kill_process` |
 | 日志监控 | `LogMonitor` 三参构造 |
 | 状态 | `log_record[start_time] = LogRecord()`，只写 `status` |
 | pre/post 脚本 | `from app.services import execute_script_task` |

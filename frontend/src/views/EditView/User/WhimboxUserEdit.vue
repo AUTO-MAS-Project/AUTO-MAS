@@ -120,7 +120,7 @@ const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 // 任务运行期锁定配置编辑（保存门禁在 useUserApi 内，这里只做界面提示与禁用）
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 
 // 脚本信息
 const scriptName = ref('')

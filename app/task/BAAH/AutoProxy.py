@@ -46,7 +46,6 @@ from app.models.emulator import DeviceBase
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.tools.common.game_calendar import bluearchive as _tool_bluearchive_activity
 from app.utils import (
@@ -57,6 +56,7 @@ from app.utils import (
     compile_log_signs,
     get_logger,
     log_box,
+    process,
 )
 from app.utils import update_files as _utils_update_files
 from app.utils.common.log import sources as log_source
@@ -312,17 +312,17 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         """校验 BAAH 运行所需的路径与账号配置"""
 
         if not self.baah_path.is_file():
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             return "未找到 BAAH 主程序, 请检查托管配置中的主程序路径设置！"
 
         try:
             config_name = await self._resolve_effective_config_name()
         except ValueError as e:
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             return f"{e}, 请在账号配置中填写 BAAH 配置文件名称！"
 
         if not resolve_user_config_path(self.config_dir, config_name).is_file():
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             return (
                 f"未找到 BAAH 配置文件 {config_name}.json, "
                 "请先在 BAAH 界面中创建同名配置！"
@@ -394,7 +394,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         await self.prepare()
 
         logger.info(f"开始代理账号: {self.cur_user_uid}")
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
 
         for i in range(self.script_config.Run.RunTimesLimit):
             if self.run_book:
@@ -406,17 +406,19 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             self.log_start_time = datetime.now().astimezone()
             self.log_start_at = time.monotonic()
             self.cur_user_log = LogRecord()
-            self.cur_user_item.add_log_record(self.log_start_time, self.cur_user_log)
+            self.cur_user_log = await self.cur_user_item.add_log_record(
+                self.log_start_time, self.cur_user_log
+            )
 
             await self.run_once()
 
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
-                self.cur_user_item.status = "完成"
+                await self.cur_user_item.set_state(status="完成")
                 logger.success(f"账号: {self.cur_user_uid} - BAAH 完成代理任务")
                 break
 
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             logger.warning(
                 f"账号: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
             )
@@ -432,10 +434,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         if self.emulator_manager is None:
             return True
 
-        self.script_info.log = "正在启动模拟器"
+        await self.script_info.set_log("正在启动模拟器")
         ## 状态必须落在后端既有枚举（等待/运行/完成/异常）里：调度台与前端
         ## 都用 `=== '运行'` 判断任务是否在跑，自造后缀会让这些比较全部失效
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
 
         try:
             device_info = await self.emulator_manager.open(
@@ -709,7 +711,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             await self.handle_pre_script_error("启动 BAAH 进程失败", e)
             return
 
-        self.script_info.log = "正在等待 BAAH 日志文件生成"
+        await self.script_info.set_log("正在等待 BAAH 日志文件生成")
         log_path: Path | None = None
         wait_started_at = time.monotonic()
         deadline = wait_started_at + _LOG_FILE_WAIT_SECONDS
@@ -719,7 +721,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
                 break
             ## 状态带上已等待秒数：否则界面在整个等待窗口里都是一句静止的
             ## 文案，用户无法区分「正在等」与「已经卡死」
-            self.script_info.log = (
+            await self.script_info.set_log(
                 f"正在等待 BAAH 日志文件生成（已等待 "
                 f"{int(time.monotonic() - wait_started_at)} 秒）"
             )
@@ -736,7 +738,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         self._start_log_collect()
         ## 定位成功后立刻改写状态：日志监控要等 BAAH 写出首批日志行才会回调，
         ## 不改写的话界面会继续停在「正在等待日志文件生成」，看起来像没进展
-        self.script_info.log = f"已定位 BAAH 日志文件 {log_path.name}, 正在读取日志"
+        await self.script_info.set_log(
+            f"已定位 BAAH 日志文件 {log_path.name}, 正在读取日志"
+        )
 
         ## 时间戳区间按首行实际排版推算；监控器也在这里才构造，让它补齐 %M:%S
         ## 缺失小时所用的基准落在日志真正出现之后，跨整点时不会把首行算成上个小时
@@ -799,13 +803,13 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         在报告里重复出现，而报告要呈现的是最终一次运行的流程。
         """
 
-        self.cur_user_item.push_log.clear()
+        self.user_state(self.cur_user_item).push_log.clear()
         if not self.push_log_enabled or self.script_log_path is None:
             return
 
         self._prepare_log_details(
             self.script_log_path,
-            mode=self.cur_user_item.push_log_mode,
+            mode=self.user_state(self.cur_user_item).push_log_mode,
             enabled=self.push_log_enabled,
             rotated_name=None,
         )
@@ -820,24 +824,24 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         log = "".join(log_content)
         ## 日志内容始终写入任务记录：结果判定与任务记录都是基础能力，
         ## 与「是否推送任务节点详情」无关，开关只决定要不要采集节点
-        self.cur_user_log.content = log_content
-        self.script_info.log = log
+        await self.cur_user_log.set_state(content=log_content)
+        await self.script_info.set_log(log)
 
         if self.success_log.search(log) is not None:
-            self.cur_user_log.status = "Success!"
+            await self.cur_user_log.set_state(status="Success!")
         elif self.is_log_stalled(
             latest_time, minutes=self.script_config.Run.RunTimeLimit
         ):
-            self.cur_user_log.status = "脚本进程超时"
+            await self.cur_user_log.set_state(status="脚本进程超时")
         elif self.error_log.search(log) is not None:
-            self.cur_user_log.status = "BAAH 运行出错"
+            await self.cur_user_log.set_state(status="BAAH 运行出错")
         elif (
             self.process_manager is not None and await self.process_manager.is_running()
         ):
-            self.cur_user_log.status = "BAAH 正常运行中"
+            await self.cur_user_log.set_state(status="BAAH 正常运行中")
         else:
             ## 进程已退出但未命中成功标记：不能确认任务完成
-            self.cur_user_log.status = "BAAH 在完成任务前退出"
+            await self.cur_user_log.set_state(status="BAAH 在完成任务前退出")
 
         logger.debug(f"BAAH 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "BAAH 正常运行中":
@@ -853,7 +857,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         try:
             logger.info(f"中止 BAAH 进程: {self.baah_path}")
             await self.process_manager.kill()
-            await System.kill_process(self.baah_path)
+            await process.kill_process(self.baah_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 BAAH 进程失败: {e}")
 
@@ -879,8 +883,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
                 data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
             )
 
-        self.cur_user_log.content = [f"{error_message}, 无日志记录"]
-        self.cur_user_log.status = error_message
+        await self.cur_user_log.set_state(content=[f"{error_message}, 无日志记录"])
+        await self.cur_user_log.set_state(status=error_message)
 
         await self.kill_managed_process()
 
@@ -897,10 +901,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         """运行结束后的收尾工作"""
 
         if self.check_result != "Pass":
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             return
 
-        self.task_info.begin_user_history_capture(
+        self.history.begin_user_history_capture(
             self.script_info,
             self.cur_user_item,
             failed=bool(self.cur_user_item.log_record)
@@ -940,7 +944,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
                 and log_item is self.cur_user_log
                 and log_item.status == "未开始监看日志"
             ):
-                log_item.status = "任务被用户手动中止"
+                await log_item.set_state(status="任务被用户手动中止")
 
             was_cancelled = (
                 self.stopped_manually
@@ -948,9 +952,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
                 and log_item.status == "任务被用户手动中止"
             )
             if len(log_item.content) == 0:
-                log_item.content = ["未捕获到任何日志内容"]
+                await log_item.set_state(content=["未捕获到任何日志内容"])
                 if not was_cancelled:
-                    log_item.status = "未捕获到日志"
+                    await log_item.set_state(status="未捕获到日志")
 
             history_records.append(
                 HistoryWrite(
@@ -970,7 +974,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             )
 
         if history_records:
-            await self.task_info.save_user_history(
+            await self.history.save_user_history(
                 history_records,
                 script=self.script_info,
                 user=self.cur_user_item,
@@ -1014,7 +1018,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
     async def on_crash(self, e: Exception):
         """任务异常时的清理"""
 
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"BAAH 任务出现异常: {e}")
 
         try:
@@ -1049,7 +1053,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
     ) -> None:
         """本专项固定来源与账号；读取和交付时机由自身生命周期控制。"""
         self._log_user = self.cur_user_item
-        self._log_user.push_log_mode = mode
+        self.user_state(self._log_user).push_log_mode = mode
         self._log_source = None
         self._log_pipeline = None
         self._log_close_task = None
@@ -1105,13 +1109,17 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
                 entries = await asyncio.to_thread(read)
                 for entry in entries:
-                    user.push_log.append((entry.log_type, entry.text, entry.timestamp))
+                    await self.user_state(user).append_push_log(
+                        (entry.log_type, entry.text, entry.timestamp)
+                    )
             except Exception:
                 self._log_failed = True
                 logger.opt(exception=True).warning("节点采集或交付失败")
 
         if self._log_failed:
             try:
-                user.push_log.append((LOG_TYPE_NORMAL, "⚠️ 节点采集失败", time.time()))
+                await self.user_state(user).append_push_log(
+                    (LOG_TYPE_NORMAL, "⚠️ 节点采集失败", time.time())
+                )
             except Exception:
                 logger.opt(exception=True).warning("节点采集失败提示无法交付")

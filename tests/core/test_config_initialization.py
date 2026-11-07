@@ -5,8 +5,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 
-def test_empty_profile_initializes_config_and_community_subscriptions(tmp_path):
+
+@pytest.mark.parametrize("power_supported", [True, False])
+def test_empty_profile_initializes_config_and_community_subscriptions(
+    tmp_path, power_supported
+):
     source_root = Path(__file__).resolve().parents[2]
     code = """
 import asyncio
@@ -17,20 +22,25 @@ from unittest.mock import AsyncMock, Mock, patch
 from app.config import NodeState
 from app.core import Community, Config
 from app.models.config import ToolsConfig
-from app.services import System, telemetry
+from app.utils import power, startup as startup_tool
+from app.services import telemetry
 
 async def run():
     with (
-        patch.object(System, 'set_SelfStart', new_callable=AsyncMock) as startup,
-        patch.object(System, 'set_Sleep', new_callable=AsyncMock) as sleep,
+        patch.object(startup_tool, 'set_enabled', new_callable=AsyncMock) as startup,
+        patch.object(power, 'supported', __POWER_SUPPORTED__),
+        patch.object(power, 'set_sleep_prevention', new_callable=AsyncMock) as sleep,
         patch.object(telemetry, 'set_telemetry_enabled', new_callable=Mock),
     ):
         await Config.init_config()
         if Config.temp_task:
             await asyncio.gather(*tuple(Config.temp_task))
         await Config.flush()
-        startup.assert_awaited_once_with(Config.setting.Start.IfSelfStart)
-        sleep.assert_awaited_once_with(Config.setting.Function.IfAllowSleep)
+        startup.assert_not_awaited()
+        if power.supported:
+            sleep.assert_awaited_once_with(Config.setting.Function.IfAllowSleep)
+        else:
+            sleep.assert_not_awaited()
         assert Config.setting.activation_state == NodeState.ACTIVE
         assert Config.ToolsConfig.activation_state == NodeState.ACTIVE
         assert Config.config_path == Path.cwd() / 'config'
@@ -51,6 +61,7 @@ async def run():
 
 asyncio.run(run())
 """
+    code = code.replace("__POWER_SUPPORTED__", repr(power_supported))
     result = subprocess.run(
         [sys.executable, "-c", code],
         cwd=tmp_path,

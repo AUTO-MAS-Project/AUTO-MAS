@@ -24,4 +24,3 @@ export type UniversalPlanConfig_InfoInput = {
      */
     ResetMinute?: (number | null);
 };
-

@@ -2,6 +2,7 @@
 
 import math
 import re
+from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
 from typing import (
@@ -29,7 +30,37 @@ from pydantic import (
     field_validator,
 )
 
+from app.config.wire import config_contract
+from app.models.task import TaskItem, TaskMode, TaskParams, TaskTriggerReason
 from app.utils import MSS_DEFAULT_TRIBULATION_STAGE, MSS_TRIBULATION_STAGES
+from app.utils.contracts.power import PowerSignal
+
+
+class TaskSelectionNode(BaseModel):
+    """有序要求节点；队列下 uid 指队列项，直接运行时指托管。"""
+
+    model_config = ConfigDict(extra="forbid")
+    uid: str
+    params: TaskParams = Field(default_factory=dict)
+    children: dict[int, "TaskSelectionNode"] = Field(default_factory=dict)
+
+    @field_validator("children", mode="before")
+    @classmethod
+    def validate_indices(cls, value):
+        if not isinstance(value, dict) or [str(k) for k in value] != [
+            str(i) for i in range(len(value))
+        ]:
+            raise ValueError("任务索引必须从 0 开始连续递增")
+        return value
+
+
+type TaskRequirements = (
+    Mapping[int, TaskSelectionNode | Mapping[str, object]]
+    | Mapping[str, TaskSelectionNode | Mapping[str, object]]
+)
+
+TaskTreeData = config_contract(TaskItem, include_collections=True)
+
 
 type HistoryCounterValue = int | float | dict[str, HistoryCounterValue]
 
@@ -667,68 +698,16 @@ class WSAvdUpdateProgressData(BaseModel):
     )
 
 
-class WSTaskUserProgressData(BaseModel):
-    """账号正在执行的任务进度（目前只有 MFW 给）。"""
-
-    current: int = Field(..., description="当前是第几个任务, 从 1 起")
-    total: int = Field(..., description="本次共几个任务")
-    task: str = Field(..., description="当前任务名")
-
-
-class WSTaskUserInfoData(BaseModel):
-    """任务快照中的账号状态。"""
-
-    user_id: str = Field(..., description="账号 ID")
-    name: str = Field(..., description="账号名称")
-    status: str = Field(..., description="账号执行状态")
-    progress: Optional[WSTaskUserProgressData] = Field(
-        default=None, description="正在跑的任务进度; 没有任务在跑或该专项不提供时为空"
-    )
-
-
-class WSTaskScriptInfoData(BaseModel):
-    """任务快照中的托管状态。"""
-
-    script_id: str = Field(..., description="托管 ID")
-    name: str = Field(..., description="托管名称")
-    status: str = Field(..., description="托管执行状态")
-    userList: List[WSTaskUserInfoData] = Field(
-        default_factory=list, description="托管下的账号状态"
-    )
-
-
-class WSTaskCyclePreviewData(BaseModel):
-    """循环运行的一个待运行条目。"""
-
-    queueItemId: str = Field(..., description="队列项 ID")
-    scriptId: str = Field(..., description="托管 ID")
-    scriptName: str = Field(..., description="托管名称")
-    nextRunAt: str = Field(..., description="下次运行时间, 格式为YYYY-MM-DD HH:MM:SS")
-    isDue: bool = Field(default=False, description="是否已到运行时间")
-    isRunning: bool = Field(default=False, description="是否正在运行")
-
-
-class WSTaskInfoUpdatedData(BaseModel):
-    """任务信息全量快照 (type=task.info.updated)。"""
-
-    task_info: List[WSTaskScriptInfoData] = Field(
-        default_factory=list, description="任务托管与账号状态"
-    )
-    cycleNextList: List[WSTaskCyclePreviewData] = Field(
-        default_factory=list, description="循环运行的待运行条目, 仅循环任务非空"
-    )
+WSTaskInfoUpdatedData = TaskTreeData
 
 
 class WSTaskLogUpdatedData(BaseModel):
-    """任务日志更新 (type=task.log.updated), 按序号增量推送。"""
+    """任务日志增量；序号不连续时通过完整快照重新建立基线。"""
 
-    log: str = Field(default="", description="append 为真时是新增片段, 否则是完整日志")
-    seq: int = Field(default=0, description="推送序号, 每个任务独立, 从 1 起单调递增")
-    append: bool = Field(default=False, description="是否追加到已有日志, 否则整体替换")
-    firstLine: int = Field(
-        default=1,
-        description="log 第一行在完整日志里的行号, 供界面显示真实行号; append 时忽略",
-    )
+    log: str = Field(default="", description="追加片段或替换日志")
+    seq: int = Field(default=0, description="任务内递增的日志消息序号")
+    append: bool = Field(default=False, description="是否追加，否则整体替换")
+    firstLine: int = Field(default=1, description="替换日志的原始首行号，追加时忽略")
 
 
 class WSTaskScriptIdentityData(BaseModel):
@@ -741,36 +720,40 @@ class WSTaskScriptIdentityData(BaseModel):
 class TaskRuntimeSnapshotItem(BaseModel):
     """一个运行中任务的 HTTP 初始快照。"""
 
+    task: TaskTreeData
     taskId: str = Field(..., description="任务 ID")
-    mode: Literal["AutoProxy", "ScriptConfig", "Update"] = Field(
-        ..., description="托管执行模式; 循环运行的托管同样按 AutoProxy 执行"
+    mode: TaskMode = Field(
+        ..., description="脚本执行模式; 循环运行的脚本同样按 AutoProxy 执行"
     )
-    isCycle: bool = Field(default=False, description="是否为循环运行任务")
-    queueId: Optional[str] = Field(default=None, description="调度队列 ID")
-    scriptId: Optional[str] = Field(default=None, description="托管 ID")
-    userId: Optional[str] = Field(default=None, description="账号 ID")
+    trigger: TaskTriggerReason = Field(
+        default=TaskTriggerReason.MANUAL, description="任务触发原因"
+    )
+    scriptId: Optional[str] = Field(default=None, description="脚本 ID")
+    userId: Optional[str] = Field(default=None, description="用户 ID")
     stopping: bool = Field(default=False, description="任务是否正在停止")
     scripts: List[WSTaskScriptIdentityData] = Field(
         default_factory=list, description="任务关联的托管静态标识"
     )
-    task_info: List[WSTaskScriptInfoData] = Field(
-        default_factory=list, description="任务托管与账号状态"
-    )
-    cycleNextList: List[WSTaskCyclePreviewData] = Field(
-        default_factory=list, description="循环运行的待运行条目, 仅循环任务非空"
-    )
-    log: str = Field(default="", description="已推送的托管日志, 与下一条增量推送衔接")
-    logSeq: int = Field(default=0, description="已推送日志对应的推送序号")
-    logFirstLine: int = Field(default=1, description="快照日志首行在完整日志里的行号")
+
+    log: str = Field(default="", description="任务当前日志")
+    logSeq: int | None = Field(default=None, description="日志基线序号，缺失时不能追加")
+    logFirstLine: int = Field(default=1, description="快照日志在来源中的起始行号")
+
+
+class ScriptStatusOverviewItem(BaseModel):
+    """托管配置与持久化历史的只读概览，不包含运行任务状态。"""
+
+    scriptId: str
+    scriptType: str
+    scheduled: bool = False
+    lastRunAt: AwareDatetime | None = None
+    lastFailed: bool = False
 
 
 class TaskRuntimeSnapshot(BaseModel):
-    """任务运行与定时队列 HTTP 初始快照。"""
+    """实际运行任务的 HTTP 初始快照。"""
 
     tasks: List[TaskRuntimeSnapshotItem] = Field(default_factory=list)
-    scheduledScripts: List[WSTaskScriptIdentityData] = Field(
-        default_factory=list, description="已启用定时队列关联的托管静态标识"
-    )
 
 
 class TaskStatusOut(OutBase):
@@ -782,16 +765,12 @@ class TaskStatusOut(OutBase):
     )
     detail: Optional[str] = Field(default=None, description="任务结果描述")
     error: Optional[str] = Field(default=None, description="任务错误信息")
-    mode: Optional[Literal["AutoProxy", "ScriptConfig", "Update"]] = Field(
-        default=None, description="任务模式"
+    mode: Optional[TaskMode] = Field(default=None, description="任务模式")
+    trigger: TaskTriggerReason = Field(
+        default=TaskTriggerReason.MANUAL, description="任务触发原因"
     )
-    isCycle: bool = Field(default=False, description="是否为循环运行任务")
-    queueId: Optional[str] = Field(default=None, description="调度队列 ID")
-    scriptId: Optional[str] = Field(default=None, description="托管 ID")
-    userId: Optional[str] = Field(default=None, description="账号 ID")
-    planSaveResult: Optional[Literal["saved", "failed"]] = Field(
-        default=None, description="通用计划配置实际保存结果；空表示未确认"
-    )
+    scriptId: Optional[str] = Field(default=None, description="脚本 ID")
+    userId: Optional[str] = Field(default=None, description="用户 ID")
     stopping: bool = Field(default=False, description="任务是否正在停止")
     finishedAt: Optional[str] = Field(
         default=None,
@@ -802,12 +781,12 @@ class TaskStatusOut(OutBase):
 class WSTaskCompletedData(BaseModel):
     """任务完成消息数据 (type=task.completed)"""
 
+    task: TaskTreeData
     result: str = Field(..., description="任务结果描述")
     outcome: Literal["success", "error", "cancelled"] = Field(
         ..., description="机器可读的任务结果"
     )
     error: Optional[str] = Field(default=None, description="任务错误信息")
-    task_info: List[WSTaskScriptInfoData] = Field(..., description="任务信息全量快照")
 
 
 class WSTaskScriptStartedData(BaseModel):
@@ -829,14 +808,12 @@ class WSTaskScriptFinishedData(WSTaskScriptStartedData):
 class WSTaskCreatedData(BaseModel):
     """新任务创建通知数据 (id=TaskManager, type=task.created)"""
 
+    trigger: TaskTriggerReason = TaskTriggerReason.MANUAL
     taskId: str = Field(..., description="新任务ID")
-    mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"] = Field(
-        ..., description="任务模式, 与创建请求一致"
-    )
+    mode: TaskMode = Field(..., description="任务模式, 与创建请求一致")
     scripts: List[WSTaskScriptIdentityData] = Field(
         default_factory=list, description="任务关联的托管静态标识"
     )
-    queueId: Optional[str] = Field(default=None, description="所属调度队列ID")
     taskName: Optional[str] = Field(default=None, description="任务名称")
     taskType: Optional[str] = Field(default=None, description="任务类型")
 
@@ -853,7 +830,7 @@ class WSFrontendCloseRequestedData(BaseModel):
 class WSPowerCountdownData(BaseModel):
     """电源倒计时更新数据 (id=Main, type=power.countdown.updated)"""
 
-    operation: str = Field(..., description="待执行的电源操作")
+    operation: PowerSignal = Field(..., description="待执行的电源操作")
     remaining: int = Field(..., description="剩余秒数")
 
 
@@ -861,14 +838,14 @@ class PowerCountdownSnapshot(BaseModel):
     """当前电源倒计时 HTTP 初始快照。"""
 
     active: bool = Field(default=False, description="是否正在倒计时")
-    operation: Optional[str] = Field(default=None, description="待执行电源操作")
+    operation: Optional[PowerSignal] = Field(default=None, description="待执行电源操作")
     remaining: int = Field(default=0, ge=0, description="剩余秒数")
 
 
 class WSPowerSignData(BaseModel):
     """电源标志更新数据 (id=Main, type=power.sign.updated)"""
 
-    signal: str = Field(..., description="电源操作信号")
+    signal: PowerSignal = Field(..., description="电源操作信号")
 
 
 class WSDisplayMonitorRectData(BaseModel):
@@ -1803,15 +1780,12 @@ __all__ = [
     "WSSystemNoticeData",
     "WSAvdUpdateProgressData",
     "WSEmulatorOperationData",
-    "WSTaskUserProgressData",
-    "WSTaskUserInfoData",
-    "WSTaskScriptInfoData",
-    "WSTaskCyclePreviewData",
     "WSTaskInfoUpdatedData",
     "WSTaskLogUpdatedData",
     "WSTaskScriptIdentityData",
     "TaskRuntimeSnapshotItem",
     "TaskRuntimeSnapshot",
+    "ScriptStatusOverviewItem",
     "TaskStatusOut",
     "WSTaskCompletedData",
     "WSTaskCreatedData",
