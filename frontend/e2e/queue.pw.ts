@@ -106,6 +106,7 @@ test.describe('@queue @scheduler user queue', () => {
       }
 
       // 七天全选只简化显示；原有星期选择器仍可编辑。
+      await post('/api/queue/update', { queueId, data: { Info: { TimeEnabled: true } } })
       await post('/api/queue/time/add', { queueId })
       await page.reload()
       await expect(page.locator('.time-set-card .days-select')).toHaveText('Every day')
@@ -272,6 +273,7 @@ test.describe('@queue @scheduler user queue', () => {
     try {
       scriptId = (await post('/api/scripts/add', { type: 'MAA' })).scriptId
       queueId = (await post('/api/queue/add')).queueId
+      await post('/api/queue/update', { queueId, data: { Info: { TimeEnabled: true } } })
       const { queueItemId } = await post('/api/queue/item/add', { queueId })
       await post('/api/queue/item/update', {
         queueId,

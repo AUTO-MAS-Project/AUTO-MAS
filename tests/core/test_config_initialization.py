@@ -5,8 +5,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 
-def test_empty_profile_initializes_config_and_community_subscriptions(tmp_path):
+
+@pytest.mark.parametrize("power_supported", [True, False])
+def test_empty_profile_initializes_config_and_community_subscriptions(
+    tmp_path, power_supported
+):
     source_root = Path(__file__).resolve().parents[2]
     code = """
 import asyncio
@@ -23,6 +28,7 @@ from app.services import telemetry
 async def run():
     with (
         patch.object(startup_tool, 'set_enabled', new_callable=AsyncMock) as startup,
+        patch.object(power, 'supported', __POWER_SUPPORTED__),
         patch.object(power, 'set_sleep_prevention', new_callable=AsyncMock) as sleep,
         patch.object(telemetry, 'set_telemetry_enabled', new_callable=Mock),
     ):
@@ -31,7 +37,10 @@ async def run():
             await asyncio.gather(*tuple(Config.temp_task))
         await Config.flush()
         startup.assert_not_awaited()
-        sleep.assert_awaited_once_with(Config.setting.Function.IfAllowSleep)
+        if power.supported:
+            sleep.assert_awaited_once_with(Config.setting.Function.IfAllowSleep)
+        else:
+            sleep.assert_not_awaited()
         assert Config.setting.activation_state == NodeState.ACTIVE
         assert Config.ToolsConfig.activation_state == NodeState.ACTIVE
         assert Config.config_path == Path.cwd() / 'config'
@@ -52,6 +61,7 @@ async def run():
 
 asyncio.run(run())
 """
+    code = code.replace("__POWER_SUPPORTED__", repr(power_supported))
     result = subprocess.run(
         [sys.executable, "-c", code],
         cwd=tmp_path,

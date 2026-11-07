@@ -5,7 +5,7 @@ test.describe('@queue boolean controls', () => {
     app,
     page,
   }) => {
-    const backend = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? '36184'}`
+    const backend = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? '36174'}`
     const post = async (url: string, data: unknown = {}) => {
       const response = await page.request.post(`${backend}${url}`, { data })
       const result = (await response.json()) as { code: number; queueId: string }
