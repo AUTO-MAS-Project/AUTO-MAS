@@ -323,11 +323,12 @@ async def test_full_install_and_config(
 
     monkeypatch.setattr(install, "_download_asset", download)
     monkeypatch.setattr(cli, "fluxdown_server_shutdown", lambda: None)
+    # 本用例验证全新托管安装；桌面版复用另有覆盖，不扫描开发机已有安装。
     if change_path or fail_save:
         with pytest.raises(RuntimeError, match="文件已安装"):
-            await install._install_locked("auto", None)
+            await install._install_locked("auto", None, force_managed=True)
     else:
-        result = await install._install_locked("auto", None)
+        result = await install._install_locked("auto", None, force_managed=True)
         assert Path(result["path"]) == install._install_dir()
         assert Path(config.Update.FluxdownPath) == install._install_dir()
         flush.assert_awaited_once()

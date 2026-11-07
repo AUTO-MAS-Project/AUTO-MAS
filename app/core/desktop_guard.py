@@ -54,6 +54,7 @@ from contextlib import suppress
 
 from app.core import Config
 from app.utils import IS_WINDOWS, get_logger
+from app.utils.common.process.scope import detached_process_context
 
 logger = get_logger("桌面保障")
 
@@ -355,7 +356,9 @@ class _DesktopGuard:
         # 巡检判据会一路放行。清理只动自己记账过、且记录进程已死的 index。
         with suppress(Exception):
             await asyncio.to_thread(cleanup_orphan_display)
-        self._task = asyncio.create_task(self._loop(), name="desktop-guard")
+        self._task = asyncio.create_task(
+            self._loop(), name="desktop-guard", context=detached_process_context()
+        )
         logger.info("桌面显示输出守卫已启动")
 
     async def stop(self) -> None:
@@ -580,7 +583,9 @@ class _DesktopGuard:
         # `__enter__` 照常把屏插上（光是 settle 就要 1.5 秒）。若让取消把 `_attach` 打断，
         # `self._display` 永远赋不上、记账也不写，桌面上就留下一块守卫不认、下次启动的
         # 孤儿清理也捡不到的屏，而且它本身算「真实输出」，此后每轮巡检都会放行。
-        self._attaching = asyncio.create_task(self._insert(display_mode=mode))
+        self._attaching = asyncio.create_task(
+            self._insert(display_mode=mode), context=detached_process_context()
+        )
         await asyncio.shield(self._attaching)
 
     async def _insert(self, *, display_mode: tuple[int, int, int]) -> None:
