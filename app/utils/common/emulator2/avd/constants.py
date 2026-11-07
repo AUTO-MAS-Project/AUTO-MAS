@@ -82,6 +82,29 @@ def grpc_port(native_index: int | str) -> int:
     return console_port(native_index) + 2
 
 
+@dataclass(frozen=True)
+class InstancePorts:
+    """一台实例的控制台 / adb / gRPC 端口与私有 server 上的序列号（``emulator-<控制台端口>``）。
+
+    根目录可以在 ``mas-avd.json`` 里用 ``portBase`` 换一段端口（ModAVD/ModAVD#75），合不合规、怎么算
+    由 modavd 决定，MAS 不重写这套规则：有 CLI 时取它 ``info`` / ``list`` 返回的 ``ports``、``serial``
+    （ModAVDManager v0.3.1 起才有，见 ``manager._ports_from_cli``）；没有 CLI 的旧根目录、或 CLI 太老
+    不带这两项时，按默认端口段 :func:`default_instance_ports` 算（那些版本本来就不支持 ``portBase``）。
+    截图共享内存 ``SHM_videmulator<控制台端口>`` 跟着控制台端口走。
+    """
+
+    console: int
+    adb: int
+    grpc: int
+    serial: str
+
+
+def default_instance_ports(native_index: int | str) -> InstancePorts:
+    """默认端口段（``PORT_BASE``）上这台实例的端口。"""
+    console = console_port(native_index)
+    return InstancePorts(console, console + 1, console + 2, f"emulator-{console}")
+
+
 def avd_name(native_index: int | str) -> str:
     return f"{AVD_NAME_PREFIX}{int(native_index)}"
 

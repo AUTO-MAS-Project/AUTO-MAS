@@ -332,7 +332,15 @@ class Emulator2Manager(DeviceBase):
         ``get_adb_path()`` 与设备地址。"""
         manager, native_index = await self._dispatch(idx)
         if isinstance(manager, AvdManager):
-            return manager.host_adb(native_index)
+            return await manager.host_adb(native_index)
+        return None
+
+    async def instance_ports(self, idx: str):
+        """设备是魔改 AVD 实例时，返回它的端口与序列号（:meth:`~.avd.manager.AvdManager.instance_ports`，
+        端口段由 modavd 定）；雷电 / MuMu 返回 ``None``。"""
+        manager, native_index = await self._dispatch(idx)
+        if isinstance(manager, AvdManager):
+            return await manager.instance_ports(native_index)
         return None
 
     async def open_store(self, idx: str) -> AppLaunchResult:
