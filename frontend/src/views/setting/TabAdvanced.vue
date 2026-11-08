@@ -341,7 +341,7 @@ const exportDataBackup = async () => {
   height: 48px;
   padding: 0 12px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 10px;
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-fill-quaternary);
   color: var(--ant-color-text);
   font-size: 14px;
@@ -371,7 +371,7 @@ const exportDataBackup = async () => {
   flex: 0 0 auto;
   width: 24px;
   height: 24px;
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-sm);
   object-fit: contain;
 }
 

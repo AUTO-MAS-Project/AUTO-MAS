@@ -117,7 +117,7 @@ test.describe('@notify @webhook UI channel', () => {
     await dialog.locator('textarea').fill(webhookTemplate)
     const added = webhookResponse(page, 'add')
     const updated = webhookResponse(page, 'update')
-    await dialog.getByRole('button', { name: /^添\s*加$/ }).click()
+    await dialog.getByRole('button', { name: 'Add', exact: true }).click()
     const result = await (await added).json()
     expect(result.code).toBe(200)
     expect(result.webhookId).toBeTruthy()
@@ -126,6 +126,88 @@ test.describe('@notify @webhook UI channel', () => {
     await expect(dialog).toBeHidden()
     await expect(webhookRow(page)).toContainText(receiver.url)
   }
+
+  test('keeps channel actions together across widths, themes and loading failures', async ({
+    app,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await app.goto('/settings')
+    const theme = page.locator('.theme-mode-control')
+    const originalTheme = await theme.locator('.ant-segmented-item-selected').innerText()
+    const channels = page.locator('.ui-section-card').filter({
+      has: page.getByRole('heading', { name: 'Notification channels', exact: true }),
+    })
+    const docs = channels.getByRole('link', { name: 'Usage docs', exact: true })
+    const send = channels.getByRole('button', { name: 'Send a test notification', exact: true })
+    const descriptions = '**/api/setting/notify/channels'
+    try {
+      for (const mode of ['Light', 'Dark']) {
+        await page.getByRole('tab', { name: 'Interface', exact: true }).click()
+        await theme.getByText(mode, { exact: true }).click()
+        await expect(theme.getByRole('radio', { name: mode, exact: true })).toBeChecked()
+        await page.getByRole('tab', { name: 'Notifications', exact: true }).click()
+        await expect(channels.locator('.chan-card').first()).toBeVisible()
+        // 768 DIP 覆盖 125% 缩放下的最小窗口宽度。
+        for (const width of [1920, 960, 768]) {
+          await page.setViewportSize({ width, height: 900 })
+          await expect(page.locator('.settings-section-layout')).toHaveAttribute(
+            'data-effective-layout',
+            width === 1920 ? 'dual' : 'single'
+          )
+          await expect(docs).toHaveAttribute(
+            'href',
+            'https://doc.auto-mas.top/docs/advanced-features/notification.html'
+          )
+          await expect(send).toBeEnabled()
+          await expect
+            .poll(async () => {
+              const header = await channels.locator('.section-header').boundingBox()
+              const documentation = await docs.boundingBox()
+              const notification = await send.boundingBox()
+              if (!header || !documentation || !notification) return false
+              return (
+                [documentation, notification].every(
+                  box =>
+                    box.x >= header.x - 1 &&
+                    box.x + box.width <= header.x + header.width + 1 &&
+                    box.y >= header.y - 1 &&
+                    box.y + box.height <= header.y + header.height + 1
+                ) && documentation.x + documentation.width <= notification.x + 1
+              )
+            })
+            .toBe(true)
+          if (width === 768) {
+            const heading = await channels.getByRole('heading').boundingBox()
+            expect((await docs.boundingBox())!.y).toBeGreaterThanOrEqual(
+              heading!.y + heading!.height
+            )
+          }
+          await app.evidence(`notify-actions-${mode.toLowerCase()}-${width}`)
+        }
+      }
+
+      await page.route(descriptions, route =>
+        route.fulfill({ json: { code: 500, message: 'E2E channel descriptions unavailable' } })
+      )
+      await page.reload()
+      await page.getByRole('tab', { name: 'Notifications', exact: true }).click()
+      await expect(channels.getByRole('alert')).toContainText(
+        'Failed to load notification channel descriptions'
+      )
+      await expect(docs).toBeVisible()
+      await expect(send).toBeEnabled()
+      await app.evidence('notify-actions-load-failed')
+      await page.unroute(descriptions)
+      await channels.getByRole('button', { name: 'Retry', exact: true }).click()
+      await expect(channels.locator('.chan-card').first()).toBeVisible()
+    } finally {
+      await page.unroute(descriptions)
+      await page.getByRole('tab', { name: 'Interface', exact: true }).click()
+      await theme.getByText(originalTheme, { exact: true }).click()
+      await expect(theme.getByRole('radio', { name: originalTheme, exact: true })).toBeChecked()
+    }
+  })
 
   test('creates and edits a webhook through the UI and delivers to the saved destination', async ({
     app,
@@ -150,7 +232,7 @@ test.describe('@notify @webhook UI channel', () => {
     const editedTemplate = '{"title":"{title}","content":"{content}","marker":"edited"}'
     await dialog.locator('textarea').fill(editedTemplate)
     const updated = webhookResponse(page, 'update')
-    await dialog.getByRole('button', { name: /^更\s*新$/ }).click()
+    await dialog.getByRole('button', { name: 'Update', exact: true }).click()
     expect((await (await updated).json()).code).toBe(200)
     await expect(dialog).toBeHidden()
 

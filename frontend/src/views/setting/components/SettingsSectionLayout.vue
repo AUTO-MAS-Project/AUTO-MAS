@@ -362,7 +362,7 @@ async function toggleNavigation() {
   width: 100%;
   padding: 8px 12px;
   border: 0;
-  border-radius: 0 5px 5px 0;
+  border-radius: 0 var(--ant-border-radius-sm) var(--ant-border-radius-sm) 0;
   background: transparent;
   color: var(--ant-color-text-secondary);
   font: inherit;
