@@ -60,3 +60,29 @@ def test_check_rejects_missing_paths(tmp_path, log_path, config_path, expected):
         tmp_path / config_path if config_path else None,
     )
     assert asyncio.run(proxy.check()) == expected
+
+
+def test_persist_result_after_prepare_failure_does_not_raise():
+    """prepare() 在设置 run_book 前抛错时，on_crash 的结果留存不应触发 AttributeError。"""
+    uid = uuid.uuid4()
+    user_item = SimpleNamespace(
+        user_id=str(uid), name="用户", status="运行", maintenance_skipped=False
+    )
+    user_cfg = SimpleNamespace(
+        Data=SimpleNamespace(LastTaskIndex=0, LastProxyStatus=""),
+        commit=AsyncMock(),
+    )
+    script_info = SimpleNamespace(
+        task_info=SimpleNamespace(), user_list=[user_item], current_index=0
+    )
+    proxy = AutoProxyTask(
+        script_info=script_info,
+        script_config=SimpleNamespace(),
+        user_config={uid: user_cfg},
+        game_manager=None,
+    )
+
+    asyncio.run(proxy._persist_user_run_result())
+
+    assert user_cfg.Data.LastProxyStatus == "失败"
+    assert user_item.status == "异常"
