@@ -166,35 +166,6 @@ const modalPopupContainer = () =>
 
 <template>
   <div class="tab-content notify-tab">
-    <div class="toolbar">
-      <div class="toolbar-right">
-        <a
-          href="https://doc.auto-mas.top/docs/advanced-features/notification.html"
-          class="toolbar-link"
-          @click="handleExternalLink"
-        >
-          {{ t('core.setting.notify.usageDoc') }}
-        </a>
-        <a-button type="primary" :loading="testingNotify" @click="testNotify">
-          {{ t('core.setting.notify.sendTest') }}
-        </a-button>
-      </div>
-    </div>
-
-    <a-alert
-      v-if="channelsError"
-      type="error"
-      show-icon
-      :message="t('core.setting.notify.loadFailed')"
-      class="channels-error"
-    >
-      <template #action>
-        <a-button size="small" :loading="channelsLoading" @click="loadChannels">
-          {{ t('core.setting.notify.retryLoad') }}
-        </a-button>
-      </template>
-    </a-alert>
-
     <!-- 通知内容：全局推送策略，非渠道段，不参与渠道分组；
          描述端点失败时用本地兜底字段，保证这里仍可改 -->
     <SectionCard v-if="policyFields.length" :title="policyTitle" :icon="FileTextOutlined">
@@ -210,53 +181,75 @@ const modalPopupContainer = () =>
       </div>
     </SectionCard>
 
-    <template v-if="!channelsError">
-      <SectionCard :title="t('core.setting.notify.channelsTitle')" :icon="BellOutlined">
-        <div v-if="channelsLoading" class="channels-loading"><a-spin /></div>
-        <div v-else-if="channelCards.length" class="channel-grid">
-          <NotifyChannelCard
-            v-for="channel in channelCards"
-            :key="channel.key"
-            :channel="channel"
-            variant="card"
-            :state-text="
-              t(
-                `core.setting.notify.${isChannelEnabled(channel, notifyValues) ? 'stateEnabled' : idleStateKey(channel, { clawConnected, webhookNames: [] })}`
-              )
-            "
-            :state-active="isChannelEnabled(channel, notifyValues)"
-            :summary="summaryOf(channel)"
-            @open="openChannel"
-          />
-        </div>
-        <NoData v-else :image-style="{ height: '48px' }" />
-      </SectionCard>
-
-      <SectionCard :icon="ApiOutlined">
-        <template #title>
-          <i class="dot" :class="{ off: !webhookNames.length }" />
-          {{ t('core.setting.notify.customSection') }}
-          <span class="card-count">{{ groups.custom.length }}</span>
+    <SectionCard :title="t('core.setting.notify.channelsTitle')" :icon="BellOutlined">
+      <template #actions>
+        <a-button
+          href="https://doc.auto-mas.top/docs/advanced-features/notification.html"
+          @click="handleExternalLink"
+        >
+          {{ t('core.setting.notify.usageDoc') }}
+        </a-button>
+        <a-button type="primary" :loading="testingNotify" @click="testNotify">
+          {{ t('core.setting.notify.sendTest') }}
+        </a-button>
+      </template>
+      <a-alert
+        v-if="channelsError"
+        type="error"
+        show-icon
+        :message="t('core.setting.notify.loadFailed')"
+        class="channels-error"
+      >
+        <template #action>
+          <a-button size="small" :loading="channelsLoading" @click="loadChannels">
+            {{ t('core.setting.notify.retryLoad') }}
+          </a-button>
         </template>
-        <div v-if="groups.custom.length" class="cards">
-          <NotifyChannelCard
-            v-for="channel in groups.custom"
-            :key="channel.key"
-            :channel="channel"
-            variant="card"
-            :state-text="t('core.setting.notify.webhookCount', { n: webhookNames.length })"
-            :state-active="webhookNames.length > 0"
-            :summary="summaryOf(channel)"
-            @open="openChannel"
-          />
-        </div>
-        <NoData
-          v-else
-          :description="t('core.setting.notify.customEmpty')"
-          :image-style="{ height: '48px' }"
+      </a-alert>
+      <div v-else-if="channelsLoading" class="channels-loading"><a-spin /></div>
+      <div v-else-if="channelCards.length" class="channel-grid">
+        <NotifyChannelCard
+          v-for="channel in channelCards"
+          :key="channel.key"
+          :channel="channel"
+          variant="card"
+          :state-text="
+            t(
+              `core.setting.notify.${isChannelEnabled(channel, notifyValues) ? 'stateEnabled' : idleStateKey(channel, { clawConnected, webhookNames: [] })}`
+            )
+          "
+          :state-active="isChannelEnabled(channel, notifyValues)"
+          :summary="summaryOf(channel)"
+          @open="openChannel"
         />
-      </SectionCard>
-    </template>
+      </div>
+      <NoData v-else :image-style="{ height: '48px' }" />
+    </SectionCard>
+
+    <SectionCard v-if="!channelsError" :icon="ApiOutlined">
+      <template #title>
+        <i class="dot" :class="{ off: !webhookNames.length }" />
+        {{ t('core.setting.notify.customSection') }}
+        <span class="card-count">{{ groups.custom.length }}</span>
+      </template>
+      <div v-if="groups.custom.length" class="cards">
+        <NotifyChannelCard
+          v-for="channel in groups.custom"
+          :key="channel.key"
+          :channel="channel"
+          variant="card"
+          :state-text="t('core.setting.notify.webhookCount', { n: webhookNames.length })"
+          :state-active="webhookNames.length > 0"
+          :summary="summaryOf(channel)"
+          @open="openChannel"
+        />
+      </div>
+      <NoData
+        v-else
+        :description="t('core.setting.notify.customEmpty')"
+        :image-style="{ height: '48px' }"
+      />
+    </SectionCard>
 
     <NotifyChannelModal
       :open="activeChannel != null"
@@ -272,31 +265,6 @@ const modalPopupContainer = () =>
 </template>
 
 <style scoped>
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-}
-
-.toolbar-right {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.toolbar-link {
-  color: var(--ant-color-primary);
-  text-decoration: none;
-  font-size: 14px;
-}
-
-.toolbar-link:hover {
-  color: var(--ant-color-primary-hover);
-}
-
 .channels-error {
   margin-bottom: 16px;
 }
