@@ -329,6 +329,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         self.curdate = ""
         self.user_run_result_persisted = False
         self.daily_activity_required = True
+        # final_task 第一行就读取 run_book；prepare() 中途抛错也会进入收尾，
+        # 因此必须在此初始化，否则收尾变成 AttributeError 并跳过进程清理。
+        self.run_book = False
         # log_box：prepare 绑定用户会话，关闭模式不创建底层采集器。
         self._log_source: log_source.LogSource | None = None
         self._log_pipeline: log_box.LogPipeline | None = None
@@ -355,6 +358,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             or not self.script_config.Script.ScriptPath.is_file()
         ):
             return "请设置 OK-NTE 脚本路径"
+        # prepare() 依赖以下路径，未配置时在启动前拦截，避免任务中途崩溃
+        if self.script_config.Script.LogPath is None:
+            return "请设置 OK-NTE 日志路径"
+        if self.script_config.Script.ConfigPath is None:
+            return "请设置 OK-NTE 配置文件路径"
 
         await self._reset_daily_proxy_count()
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
