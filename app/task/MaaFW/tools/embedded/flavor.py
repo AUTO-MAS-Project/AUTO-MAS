@@ -32,7 +32,8 @@
 - **可选**：不进 ``MaaFWFlavor`` 协议，``resolve_login_hook`` 按 ``getattr`` 探测；没实现的特调
   与通用 MaaFW 行为完全不变。
 - **何时调**：本次 controller 是 ADB、MAS 启动模拟器（连带拉起游戏）之后、第一个任务下发之前，
-  紧跟在 ``ensure_game_updated`` 之后；每个账号每次运行只调一次（重试重新开模拟器时不再调）。
+  紧跟在 ``ensure_game_updated`` 之后。登录**成功**后才记完成；失败时下一次尝试会重新调用，
+  重试关闭游戏 / 模拟器（客户端重启）后也会重新验证，不允许带着未登录状态下发任务。
   在事件循环里 ``await``。要不要真正做事由钩子自己按配置判断（返回空串表示没做事）。
 - **签名**：``async def ensure_logged_in(self, *, script_config, user_config, resource_name,
   package_name, adb_path, adb_address, progress) -> str``。``user_config`` 是本次运行的账号配置

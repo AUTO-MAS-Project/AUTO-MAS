@@ -261,3 +261,25 @@ def test_client_restart_resets_login_marker(monkeypatch) -> None:
     runner._close_game = close_game
     asyncio.run(runner._restart_client_before_retry(0))
     assert runner._login_checked is False
+
+
+def test_privacy_prompt_persists_until_timeout(monkeypatch) -> None:
+    """隐私提示一直存在、点了同意还回来时，受总时限约束而不是无限循环。"""
+    _fast(monkeypatch)
+    monkeypatch.setattr(login_mod, "_LOGIN_TIMEOUT", 2.5)
+    device = _install_fake_device(monkeypatch, [_PRIVACY_SCREEN])
+    monkeypatch.setattr(login_mod, "_if_agree_bilibili", lambda: True)
+    with pytest.raises(MaaFWLoginRequired, match="等待登录界面超时"):
+        asyncio.run(_run_login())
+    # 每轮都点到了「同意」，没有因为点不动就提前判成功
+    assert device.taps
+
+
+def test_alternating_title_and_empty_frames_do_not_succeed(monkeypatch) -> None:
+    """标题页与空帧交替时凑不出连续两帧，不能提前判完成。"""
+    _fast(monkeypatch)
+    device = _install_fake_device(
+        monkeypatch, [_TITLE_SCREEN, _UNKNOWN_SCREEN, _TITLE_SCREEN, _UNKNOWN_SCREEN]
+    )
+    with pytest.raises(MaaFWLoginRequired, match="未确认回到游戏标题页"):
+        asyncio.run(login_mod._wait_panel_closed(device, progress=None))
