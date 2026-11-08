@@ -14,8 +14,8 @@ from app.config import ConfigCollection
 from app.core.task_manager.manager import TaskInfo
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceStatus
-from app.models.task import LogRecord, ScriptItem, UserItem
-from app.task.MAA.AutoProxy import AutoProxyTask, _should_retry_maa
+from app.models.task import ScriptItem, UserItem
+from app.task.MAA.AutoProxy import AutoProxyTask
 from app.task.MAA.base_preset import get_maa_base_preset
 from app.task.MAA.constants import MAA_TASKS
 from app.task.MAA.tools.cultivate.types import (
@@ -32,21 +32,44 @@ from tests.config_support import activate_config
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("failures", "source", "recover", "expected_modes", "routine_success"),
+    (
+        "failures",
+        "source",
+        "recover",
+        "pause_on_retry",
+        "expected_modes",
+        "routine_success",
+    ),
     [
-        (("基建换班",), "managed", True, ["Routine"] * 2, True),
-        (("基建换班",), "cultivate", True, ["Routine"] * 2, True),
-        (("基建换班",), "managed", False, ["Routine"] * 3, False),
-        (("理智任务",), "managed", True, ["Routine"], False),
-        (("理智任务", "基建换班"), "managed", True, ["Routine"] * 2, False),
-        (("库存保持与干员养成", "基建换班"), "managed", True, ["Routine"] * 2, False),
-        (("活动关均衡理智", "基建换班"), "managed", True, ["Routine"] * 2, False),
-        (("剿灭作战",), "managed", True, ["Annihilation", "Routine"], True),
-        (("基建换班",), "source", True, ["Routine"], False),
-        (("基建换班",), "native", True, ["Routine"], False),
+        (("基建换班",), "cultivate", True, False, ["Routine"] * 2, True),
+        (("基建换班",), "managed", False, False, ["Routine"] * 3, False),
+        (("理智任务",), "managed", True, False, ["Routine"], False),
+        (("理智任务", "基建换班"), "managed", True, False, ["Routine"] * 2, False),
+        (
+            ("库存保持与干员养成", "基建换班"),
+            "managed",
+            True,
+            False,
+            ["Routine"] * 2,
+            False,
+        ),
+        (
+            ("活动关均衡理智", "基建换班"),
+            "managed",
+            True,
+            False,
+            ["Routine"] * 2,
+            False,
+        ),
+        (("剿灭作战",), "managed", True, False, ["Annihilation", "Routine"], True),
+        (("基建换班",), "source", True, False, ["Routine"], False),
+        (("基建换班",), "native", True, False, ["Routine"], False),
+        (("干员培养",), "cultivate", True, False, ["Routine"] * 2, True),
+        (("更新数据",), "cultivate", True, False, ["Routine"] * 2, True),
+        (("ADB",), "cultivate", True, True, ["Routine"] * 2, True),
+        (("干员培养",), "cultivate", True, True, ["Routine"] * 3, False),
     ],
     ids=[
-        "daily-recovery",
         "completed-cultivation-budget",
         "daily-limit",
         "sanity-only",
@@ -56,6 +79,10 @@ from tests.config_support import activate_config
         "annihilation-stops",
         "source-queue",
         "native-queue",
+        "cultivation-recovery",
+        "data-update-recovery",
+        "runtime-paused-cultivation",
+        "failed-paused-cultivation",
     ],
 )
 async def test_task_failure_retry_scope(
@@ -64,6 +91,7 @@ async def test_task_failure_retry_scope(
     failures,
     source,
     recover,
+    pause_on_retry,
     expected_modes,
     routine_success,
 ):
@@ -90,7 +118,9 @@ async def test_task_failure_retry_scope(
                 "IfRecruit": True,
                 "IfCultivate": cultivate,
                 "CultivateAllOwned": False,
-                "CultivateAutoRaise": False,
+                "CultivateAutoRaise": cultivate,
+                "CultivateSklandAccount": "bound" if pause_on_retry else "",
+                "CultivateSklandUid": "bound" if pause_on_retry else "",
                 "CultivateSkipDuringActivity": False,
                 "CultivateSkipDuringResourceCollection": False,
                 "CultivateTargets": json.dumps(
@@ -168,6 +198,8 @@ async def test_task_failure_retry_scope(
                 if errors
                 else "任务已全部完成！"
             )
+            if "ADB" in failures and len(attempts) == 1:
+                lines = ["请 ｢检查连接设置｣ → ｢尝试重启模拟器与 ADB｣ → ｢重启电脑｣"]
             await self.callback(lines, datetime.now().astimezone())
 
         async def stop(self):
@@ -198,9 +230,35 @@ async def test_task_failure_retry_scope(
         )
         monkeypatch.setattr(module, "resolve_progression", lambda **kwargs: snapshot)
         monkeypatch.setattr(
+            module, "read_installed_release", lambda _: ("v6.21.0", "x64")
+        )
+        monkeypatch.setattr(
+            module.depot_cultivate_service,
+            "operator_catalog",
+            AsyncMock(
+                return_value=[
+                    {
+                        "value": "one",
+                        "label": "干员",
+                        "profession": "warrior",
+                        "skills": [],
+                    }
+                ]
+            ),
+        )
+
+        async def skland_progression(*args, **kwargs):
+            # 首次同步成功，重试时外部查询失败，真实门控暂停培养。
+            return (
+                ({"one": snapshot.data}, snapshot.timestamp)
+                if pause_on_retry and not attempts
+                else None
+            )
+
+        monkeypatch.setattr(
             module.maa_api,
             "get_cultivate_skland_progression",
-            AsyncMock(return_value=None),
+            skland_progression,
         )
         monkeypatch.setattr(
             module.depot_cultivate_service,
@@ -227,19 +285,34 @@ async def test_task_failure_retry_scope(
     assert proxy.run_book["Routine"] is routine_success
     records = [record for _, record in user.iter_history_logs()]
     assert len(records) == len(expected_modes)
-    assert records[0].status == "MAA 部分任务执行失败"
+    assert records[0].status == (
+        "MAA 的 ADB 连接异常" if "ADB" in failures else "MAA 部分任务执行失败"
+    )
     if len(attempts) > 1 and recover:
-        assert records[-1].status == "Success!"
+        assert records[-1].status == (
+            "MAA 部分任务执行失败"
+            if pause_on_retry and not routine_success
+            else "Success!"
+        )
         enabled = {task["Name"] for task in attempts[-1][1] if task.get("IsEnable")}
-        assert "基建换班" in enabled
+        if "基建换班" in failures or annihilation or "ADB" in failures:
+            assert "基建换班" in enabled
         if not annihilation:
-            assert "自动公招" not in enabled
-            assert not set(failures).intersection(enabled - {"基建换班"})
+            if "ADB" not in failures:
+                assert "自动公招" not in enabled
+            assert not set(failures).intersection(
+                enabled - {"基建换班", "干员培养", "更新数据"}
+            )
     if cultivate:
-        assert proxy.cur_user_config.Task.IfCultivate
-        assert json.loads(proxy.cur_user_config.Task.CultivateTargets)
-        assert any(task["Name"] == "库存保持与干员养成" for task in attempts[0][1]), (
-            attempts[0][1]
+        first_enabled = {
+            task["Name"] for task in attempts[0][1] if task.get("IsEnable")
+        }
+        assert {"干员培养", "更新数据"} <= first_enabled
+        assert ("干员培养" in enabled) is (
+            "干员培养" in failures and not pause_on_retry
+        )
+        assert ("更新数据" in enabled) is bool(
+            {"ADB", "更新数据"}.intersection(failures)
         )
         first_farm = next(
             task
@@ -249,116 +322,9 @@ async def test_task_failure_retry_scope(
         )
         assert first_farm["PlanList"][0].get("MedicineCount") == 2, first_farm
         assert first_farm["PlanList"][0]["StoneCount"] == 1
-        assert not any(
-            task["TaskType"] in ("Fight", "DepotMaintain") and task.get("IsEnable")
-            for task in attempts[1][1]
-        )
+        if "ADB" not in failures:
+            assert not any(
+                task["TaskType"] in ("Fight", "DepotMaintain") and task.get("IsEnable")
+                for task in attempts[1][1]
+            )
         assert json.loads(proxy.cur_user_config.Task.CultivateTargets)
-
-
-@pytest.fixture
-def extra_proxy(monkeypatch, isolated_app_paths):
-    async def make(name):
-        root = isolated_app_paths.work_path / "maa"
-        root.mkdir()
-        config = await activate_config(MaaConfig(Info={"Path": root}))
-        users = ConfigCollection.build([MaaUserConfig])
-        await users.activate()
-        uid = users.add(
-            MaaUserConfig,
-            payload={
-                "Task": {
-                    "IfDepotMaintain": False,
-                    "IfEventDepotMaintain": False,
-                    "IfCultivate": True,
-                    "CultivateAutoRaise": True,
-                    "CultivateTargets": "[]",
-                }
-            },
-        )
-        await users.commit()
-        user = UserItem(str(uid), "test", "运行")
-        script = ScriptItem(
-            str(uuid.uuid4()), "MAA", "运行", user_list=[user], current_index=0
-        )
-        task_info = TaskInfo("AutoProxy", "test", "queue", None, None)
-        monkeypatch.setattr(task_info, "schedule_on_change", lambda: None)
-        task_info.script_list = [script]
-        proxy = AutoProxyTask(
-            script, config, users, SimpleNamespace(), capture_adb=AsyncMock()
-        )
-        await proxy.prepare()
-        proxy.mode = "Routine"
-        # 与真实队列下发一致：常规任务已结束，只有附加任务等待 MAA 结果。
-        proxy.task_dict = {task: False for task in MAA_TASKS}
-        proxy.task_dict[name] = True
-        proxy.cur_user_log = LogRecord()
-        return proxy, task_info
-
-    return make
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("name", ["干员培养", "更新数据"])
-async def test_extra_non_sanity_task_can_retry_then_complete(extra_proxy, name):
-    proxy, task_info = await extra_proxy(name)
-    failure_name = f"{name} #2" if name == "干员培养" else name
-    failed_log = (
-        f"完成任务: {name} #1\n任务出错: {failure_name}\n"
-        f"任务已结束，以下任务出现错误: {failure_name}"
-    )
-
-    await proxy.check_log([failed_log], datetime.now().astimezone())
-
-    assert proxy.cur_user_log.status == "MAA 部分任务执行失败"
-    assert _should_retry_maa(
-        proxy.cur_user_log.status,
-        failed_log,
-        managed=True,
-        pending_tasks=proxy.task_dict,
-    )
-
-    proxy.cur_user_log = LogRecord()
-    await proxy.check_log(
-        [f"完成任务: {name}\n任务已全部完成！"], datetime.now().astimezone()
-    )
-
-    assert proxy.cur_user_log.status == "Success!"
-    assert proxy.task_dict[name] is False
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("name", ["干员培养", "更新数据"])
-@pytest.mark.parametrize("explicit_failure", [False, True])
-async def test_extra_task_rebuild_distinguishes_runtime_and_task_failure(
-    extra_proxy, monkeypatch, name, explicit_failure
-):
-    proxy, task_info = await extra_proxy(name)
-    log = (
-        f"任务出错: {name}\n任务已结束，以下任务出现错误: {name}"
-        if explicit_failure
-        else "请 ｢检查连接设置｣ → ｢尝试重启模拟器与 ADB｣ → ｢重启电脑｣"
-    )
-    await proxy.check_log([log], datetime.now().astimezone())
-    module = importlib.import_module("app.task.MAA.AutoProxy")
-    monkeypatch.setattr(
-        module.maa_stage_service,
-        "get_stage_info",
-        AsyncMock(return_value={"Activity": []}),
-    )
-    monkeypatch.setattr(module.Publisher, "send", AsyncMock())
-    monkeypatch.setattr(
-        module.maa_api, "get_cultivate_skland_progression", AsyncMock(return_value=None)
-    )
-
-    # 当前目标为空，真实规划不会再次下发附加任务。
-    await proxy._apply_maa_quick_config(get_maa_base_preset())
-
-    assert proxy.task_dict.get(name, False) is explicit_failure
-    proxy.cur_user_log = LogRecord()
-    await proxy.check_log(
-        ["完成任务: 开始唤醒\n任务已全部完成！"], datetime.now().astimezone()
-    )
-    assert proxy.cur_user_log.status == (
-        "MAA 部分任务执行失败" if explicit_failure else "Success!"
-    )
