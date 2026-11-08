@@ -1,7 +1,9 @@
+import asyncio
 import os
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
+from threading import Lock
 from typing import Unpack
 
 import psutil
@@ -20,36 +22,73 @@ class WindowsTaskProcessJob:
     creation_flags = 0x00000004  # CREATE_SUSPENDED
 
     def __init__(self) -> None:
-        self._handle = win32job.CreateJobObject(None, "")
-
-    def assign(self, pid: int, *, suspended: bool) -> None:
-        process = win32api.OpenProcess(
-            win32con.PROCESS_SET_QUOTA
-            | win32con.PROCESS_TERMINATE
-            | win32con.PROCESS_QUERY_INFORMATION,
-            False,
-            pid,
-        )
+        self._lock = Lock()
+        self._closed = False
+        self._stopping = False
+        inherited = win32job.CreateJobObject(None, "")
         try:
-            if not win32job.IsProcessInJob(process, self._handle):
-                win32job.AssignProcessToJobObject(self._handle, process)
-        finally:
-            process.Close()
-        if suspended:
-            for thread in psutil.Process(pid).threads():
-                handle = win32api.OpenThread(
-                    win32con.THREAD_SUSPEND_RESUME, False, thread.id
-                )
-                try:
-                    win32process.ResumeThread(handle)
-                finally:
-                    handle.Close()
+            detached = win32job.CreateJobObject(None, "")
+        except Exception:
+            inherited.Close()
+            raise
+        # 脱离 Runtime 的进程不能与继承 Runtime 的进程共用同一个嵌套 Job。
+        self._handles = {False: inherited, True: detached}
+
+    def assign(self, pid: int, *, suspended: bool, breakaway: bool) -> None:
+        # 安装线程与任务停止共用这把锁，强杀开始后不得再分配或恢复新进程。
+        with self._lock:
+            if self._closed or self._stopping:
+                raise asyncio.CancelledError
+            process = win32api.OpenProcess(
+                win32con.PROCESS_SET_QUOTA
+                | win32con.PROCESS_TERMINATE
+                | win32con.PROCESS_QUERY_INFORMATION,
+                False,
+                pid,
+            )
+            try:
+                job = self._handles[breakaway]
+                if not win32job.IsProcessInJob(process, job):
+                    win32job.AssignProcessToJobObject(job, process)
+            finally:
+                process.Close()
+            if suspended:
+                for thread in psutil.Process(pid).threads():
+                    handle = win32api.OpenThread(
+                        win32con.THREAD_SUSPEND_RESUME, False, thread.id
+                    )
+                    try:
+                        win32process.ResumeThread(handle)
+                    finally:
+                        handle.Close()
 
     def kill(self) -> None:
-        win32job.TerminateJobObject(self._handle, 1)
+        with self._lock:
+            if self._closed:
+                return
+            self._stopping = True
+            errors = []
+            for job in self._handles.values():
+                try:
+                    win32job.TerminateJobObject(job, 1)
+                except Exception as error:
+                    errors.append(error)
+            if errors:
+                raise ExceptionGroup("部分任务进程组未能强制终止", errors)
 
     def close(self) -> None:
-        self._handle.Close()
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            errors = []
+            for job in self._handles.values():
+                try:
+                    job.Close()
+                except Exception as error:
+                    errors.append(error)
+            if errors:
+                raise ExceptionGroup("部分任务进程组句柄未能关闭", errors)
 
 
 class WindowsProcessPlatform:

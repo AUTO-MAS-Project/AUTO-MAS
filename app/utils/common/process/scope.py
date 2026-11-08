@@ -27,6 +27,7 @@ class TaskProcessScope:
 
         self._job = process_platform.platform_process.create_task_job()
         self._base_flags = process_platform.platform_process.creation_flags
+        self._breakaway_flags = process_platform.platform_process.breakaway_flags
         self.checks: list[StopCheck] = []
         self.requested = False
         self.closed = False
@@ -212,7 +213,12 @@ class TaskProcessScope:
         return self._job.creation_flags if self._job is not None else 0
 
     def track(
-        self, handle: Any, *, suspended: bool = False, writer: bool = False
+        self,
+        handle: Any,
+        *,
+        suspended: bool = False,
+        writer: bool = False,
+        breakaway: bool = False,
     ) -> None:
         if self.closed:
             raise asyncio.CancelledError
@@ -230,7 +236,7 @@ class TaskProcessScope:
         if writer:
             self._writers[id(handle)] = handle
         if self._job is not None and suspended:
-            self._job.assign(pid, suspended=suspended)
+            self._job.assign(pid, suspended=suspended, breakaway=breakaway)
         else:
             # 已存在的跟踪目标只登记归属，不改它原有的系统进程组。
             self._external_processes[id(handle)] = (handle, process)
@@ -247,12 +253,26 @@ class TaskProcessScope:
         kwargs["creationflags"] = (
             kwargs.get("creationflags", 0) | self._base_flags | self.creation_flags
         )
-        process = subprocess.Popen(*args, **kwargs)
+        try:
+            process = subprocess.Popen(*args, **kwargs)
+        except OSError as error:
+            if (
+                not kwargs["creationflags"] & self._breakaway_flags
+                or getattr(error, "winerror", None) != 5
+            ):
+                raise
+            kwargs["creationflags"] &= ~self._breakaway_flags
+            process = subprocess.Popen(*args, **kwargs)
         try:
             if self.closed:
                 process.kill()
                 raise asyncio.CancelledError
-            self.track(process, suspended=bool(self.creation_flags), writer=True)
+            self.track(
+                process,
+                suspended=bool(self.creation_flags),
+                writer=True,
+                breakaway=bool(kwargs["creationflags"] & self._breakaway_flags),
+            )
         except BaseException:
             with suppress(ProcessLookupError):
                 process.kill()
