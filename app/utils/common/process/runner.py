@@ -236,11 +236,12 @@ async def create_subprocess(
     if scope is not None:
         base_flags |= scope.creation_flags
     breakaway_flags = platform_process.breakaway_flags if breakaway else 0
+    creation_flags = base_flags | breakaway_flags
     try:
         process = await asyncio.create_subprocess_exec(
             program,
             *args,
-            creationflags=base_flags | breakaway_flags,
+            creationflags=creation_flags,
             **kwargs,
         )
     except OSError as exc:
@@ -251,10 +252,11 @@ async def create_subprocess(
             f"带 CREATE_BREAKAWAY_FROM_JOB 启动子进程被拒绝(WinError 5)，"
             f"父进程所在 Job 不允许脱离，去掉该标志重试: {program}"
         )
+        creation_flags &= ~platform_process.breakaway_flags
         process = await asyncio.create_subprocess_exec(
             program,
             *args,
-            creationflags=base_flags,
+            creationflags=creation_flags,
             **kwargs,
         )
     if scope is not None:
@@ -269,8 +271,9 @@ async def create_subprocess(
                 process,
                 suspended=bool(scope.creation_flags),
                 writer=current_update_scope.get() is scope,
+                breakaway=bool(creation_flags & platform_process.breakaway_flags),
             )
-        except Exception:
+        except BaseException:
             with suppress(ProcessLookupError):
                 process.kill()
             raise
