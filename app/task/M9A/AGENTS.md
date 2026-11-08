@@ -66,14 +66,20 @@
 - `login.py`：`Run.LoginMode == "Mas"` 时的 B 服原生登录（`ensure_logged_in` 钩子）。MAS 启动模拟器
   （连带拉起游戏）之后、第一个任务之前，用 `adb` 截图 + `app.tools.common.ocr` 识别哔哩哔哩登录面板：
   点「隐私政策提示」里唯一的「同意」，在「登录记录」里按 `Info.Account`（登录记录里显示的完整昵称）
-  精确匹配、唯一命中后选中并点「登录」，等面板消失回到标题页后返回；进游戏与跑任务交给 M9A 的
-  `StartUp` 与用户队列。游戏已登录停在标题页（OCR 到「START」）时，MAS 不知道当前是哪个号，为保证
-  切到目标账号，先点标题页右下角退出图标 → 唯一的「确认」→ 等「登录记录」出现再选号。坐标全按屏幕
-  宽高取比例（16:9 实测值），面板 / 标题页布局改版要跟着改。失败抛
+  精确匹配、唯一命中后选中并点「登录」，等面板消失、连续两帧认出标题页后才返回；进游戏与跑任务交给
+  M9A 的 `StartUp` 与用户队列。游戏已登录停在标题页（OCR 到「START」）时，MAS 不知道当前是哪个号，
+  为保证切到目标账号，先点标题页右下角退出图标 → 唯一的「确认」→ 等「登录记录」出现再选号。
+  **边界**：自动同意只复用全局 `Config.setting.Function.IfAgreeBilibili`（默认关），关着时不点、
+  提示手动处理并停止；既认不出登录记录也认不出标题页（例如停在别的账号的主界面）时明确停止，
+  不把"没认出登录页"当成功；所有循环先查总时限，`adb input tap` 失败直接抛错。
+  坐标全按屏幕宽高取比例（16:9 实测值），面板 / 标题页布局改版要跟着改。失败抛
   `MaaFWLoginRequired`（文案直接给用户看，本轮按普通失败重试）；`CancelledError` 照常上抛。
+  引擎侧只在登录成功后才记「已登录」，客户端被重试重启时会清掉标记、下一轮重新验证。
   依赖：ADB controller + `Game.PackageName` 填 B 服包名（`com.shenlan.m.reverse1999.bilibili`，
   没填时按这个包名拉起）。`Run.LoginMode` 默认 `Project`（M9A 项目自己登录），只在 M9A 脚本有。
-  这是**临时补位**：官方 M9A 只声明官服、没有 B 服登录入口；上游提供后按存量越界处理，改回复用上游。
+  这是**临时补位**：上游 M9A 的 interface 已声明 B 服资源（任务运行可用），但「切换账号」仍只声明
+  官服、没有按 B 站昵称选号的入口；上游补齐等价入口后删除本模块的选号逻辑（立项时未单独向上游提
+  PR：本实现属于 MAS 侧运行前编排，上游入口补齐前无法复用）。
 - `migration.py`：旧版 M9A 专项配置（`Run.IfPsychubeDailyOnce`、`Task.Queue`、`Data.LastPsychubeDate`…）
   → MaaFW 形状的一次性迁移，以及「通用 MaaFW 脚本指向 M9A 项目 → 换类型标签」。在
   `Config.init_config` 里 **`ScriptConfig.connect()` 之前**改原始 JSON（`ConfigBase.load` 只认类里

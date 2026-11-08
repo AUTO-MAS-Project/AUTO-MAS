@@ -40,6 +40,21 @@
 沿用的是哔哩哔哩 SDK 登录面板与标题页的 UI 锚点；布局改版后这里要跟着改。脚本能自己登录的
 项目照旧走 ``Run.LoginMode == "Project"``，本模块只在 MAS 原生登录模式下生效。
 
+协议与"完成"的判定边界（按评审要求收紧）：
+
+- 自动同意只复用全局 ``Config.setting.Function.IfAgreeBilibili``（默认关闭）：开关没开时
+  不点「同意」，提示手动处理并停止本次登录，不新增第二份协议开关；
+- 既认不出登录记录、也认不出标题页（例如游戏停在别的账号的主界面）时，**明确停止**并让用户
+  把游戏放到标题页——不能把"没认出登录页"当成"目标账号已登录"，否则任务会跑在错的账号上；
+- 登录后必须连续若干帧认出标题页才算完成；过渡黑屏 / 加载 / OCR 漏字只算未知画面，继续
+  有界等待，到点仍未确认就失败；
+- 所有循环都先检查总时限，``adb input tap`` 失败直接抛错，不让点击失败被静默吞掉。
+
+上游评估：当前上游 M9A 的 interface 已声明 B 服资源（运行任务可用），但「切换账号」任务仍只
+声明官服、也没有按 B 站昵称选号的入口，因此这里按**临时补位**处理并标注移除计划（上游提供等价
+入口后删除本模块的选号逻辑）。立项时未单独向上游提 PR，理由是本实现属于 MAS 侧的运行前编排，
+上游入口补齐前无法复用。
+
 失败一律抛 :class:`MaaFWLoginRequired`（文案直接给用户看，本轮按普通失败重试）；
 用户停止（``CancelledError``）照常向上抛，不在截图 / 等帧里吞掉。
 """
@@ -94,9 +109,11 @@ _POLL_SECONDS = 1.0
 _LAUNCH_TIMEOUT = 90.0
 #: 整个登录流程的上限（协议、选号、登录、回标题）。
 _LOGIN_TIMEOUT = 240.0
-#: 既没有登录界面、也认不出标题页时，持续多久按「已登录」继续（例如游戏已在主界面）。
-#: 冷启动的加载页（只有版本号）也算「认不出」，所以给足加载时间，别在半路就判成已登录。
-_ALREADY_LOGGED_SECONDS = 60.0
+#: 既没有登录界面、也认不出标题页时，持续多久就判「无法确认当前账号」并停止。
+#: 冷启动的加载页（只有版本号）也算认不出，所以给足加载时间，别在半路就判失败。
+_UNKNOWN_SCREEN_SECONDS = 60.0
+#: 连续多少帧都认出标题页才判「已回到标题页」，避免过渡帧 / OCR 漏字误判。
+_TITLE_CONFIRM_FRAMES = 2
 #: 连续多少帧都认成标题页才动手登出，避免偶发误识别点到别处。
 _TITLE_SETTLE_POLLS = 3
 #: 点退出图标后等「确认」弹窗的上限。
@@ -210,7 +227,13 @@ class _Device:
         self.tap_point(center_x, center_y)
 
     def tap_point(self, x: float, y: float) -> None:
-        self._run("shell", "input", "tap", str(int(x)), str(int(y)), timeout=15.0)
+        result = self._run(
+            "shell", "input", "tap", str(int(x)), str(int(y)), timeout=15.0
+        )
+        if result.returncode != 0:
+            detail = result.stderr.decode("utf-8", "ignore").strip()
+            suffix = f"（{detail}）" if detail else ""
+            raise MaaFWLoginRequired(f"B 服登录失败：ADB 点击失败{suffix}")
 
     def foreground(self, package: str) -> bool:
         result = self._run("shell", "dumpsys", "activity", "activities", timeout=20.0)
@@ -253,6 +276,17 @@ async def _progress(progress: Progress | None, text: str) -> None:
         await progress(text)
 
 
+def _if_agree_bilibili() -> bool:
+    """全局「同意哔哩哔哩用户协议」开关；读不到按默认关闭处理（不自动同意）。"""
+
+    try:
+        from app.core import Config
+
+        return bool(Config.setting.Function.IfAgreeBilibili)
+    except Exception:  # noqa: BLE001 - 配置不可用时按默认关闭，绝不擅自同意
+        return False
+
+
 async def _agree_privacy(
     device: _Device,
     frame: np.ndarray,
@@ -260,8 +294,17 @@ async def _agree_privacy(
     *,
     progress: Progress | None,
 ) -> tuple[np.ndarray, list[tuple[str, Box]]]:
-    """点掉隐私政策提示里的「同意」；返回点击后的新一帧。识别不明确时响亮失败。"""
+    """点掉隐私政策提示里的「同意」；返回点击后的新一帧。
 
+    自动同意必须复用全局「同意哔哩哔哩用户协议」开关（默认关闭）：开关没开时
+    不点、提示手动处理并停止本次登录，不新增另一份协议入口。识别不明确时响亮失败。
+    """
+
+    if not _if_agree_bilibili():
+        raise MaaFWLoginRequired(
+            "B 服登录失败：检测到 bilibili 隐私政策提示，但未开启「同意哔哩哔哩用户协议」；"
+            "请手动同意，或在设置里打开该开关后重试"
+        )
     buttons = _pick(
         items,
         lambda text: bool(_AGREE_RE.match(text)),
@@ -376,21 +419,35 @@ async def _wait_panel_closed(
     *,
     progress: Progress | None,
 ) -> str:
-    """登录后等哔哩哔哩面板消失（回到游戏标题页）；等不到就失败。"""
+    """登录后等哔哩哔哩面板消失，并用标题页的正向信号确认已回到标题页。
+
+    「一帧没有登录记录文字」不算完成：过渡黑屏、加载动画、OCR 漏字都可能满足；
+    只有连续 ``_TITLE_CONFIRM_FRAMES`` 帧认出标题页才算成功，其余画面继续有界等待，
+    等满总时限仍没确认就失败。
+    """
 
     deadline = time.monotonic() + _LOGIN_TIMEOUT
+    title_frames = 0
     while True:
+        if time.monotonic() > deadline:
+            raise MaaFWLoginRequired(
+                "B 服登录失败：点击登录后未确认回到游戏标题页（等待超时）"
+            )
         frame, items = await _ocr(device)
         if _privacy_prompt(items):
             await _agree_privacy(device, frame, items, progress=progress)
+            title_frames = 0
             continue
-        if not _has(items, _LOGIN_RECORD, _SWITCH_OTHER):
-            await asyncio.sleep(_TITLE_SETTLE_SECONDS)
-            return "B 服登录完成，已回到游戏标题页，交给 M9A 进游戏运行"
-        if time.monotonic() > deadline:
-            raise MaaFWLoginRequired(
-                "B 服登录失败：点击登录后未回到游戏标题页（哔哩哔哩面板仍在）"
-            )
+        if _has(items, _LOGIN_RECORD, _SWITCH_OTHER):
+            title_frames = 0
+        elif _title_like(items):
+            title_frames += 1
+            if title_frames >= _TITLE_CONFIRM_FRAMES:
+                await asyncio.sleep(_TITLE_SETTLE_SECONDS)
+                return "B 服登录完成，已确认回到游戏标题页，交给 M9A 进游戏运行"
+        else:
+            # 过渡帧（黑屏 / 加载 / OCR 漏字）：不提前判成功，继续有界等待
+            title_frames = 0
         await asyncio.sleep(_POLL_SECONDS)
 
 
@@ -474,13 +531,18 @@ async def ensure_logged_in(
     await _wait_foreground(device, package, progress=progress)
 
     deadline = time.monotonic() + _LOGIN_TIMEOUT
-    idle_since: float | None = None
+    unknown_since: float | None = None
     title_polls = 0
     logout_tried = False
     while True:
+        if time.monotonic() > deadline:
+            raise MaaFWLoginRequired(
+                "B 服登录失败：等待登录界面超时（游戏可能未启动或加载过慢）"
+            )
         frame, items = await _ocr(device)
         if _privacy_prompt(items):
             await _agree_privacy(device, frame, items, progress=progress)
+            unknown_since = None
             continue
         if _has(items, _LOGIN_RECORD):
             await _select_account(device, frame, items, account, progress=progress)
@@ -492,21 +554,20 @@ async def ensure_logged_in(
             if title_polls >= _TITLE_SETTLE_POLLS:
                 logout_tried = True
                 await _logout_to_login_panel(device, frame, progress=progress)
-                idle_since = None
+                unknown_since = None
+                title_polls = 0
                 continue
-        elif not _title_like(items):
+        else:
             title_polls = 0
 
-        # 既没有登录界面也不是标题页（例如游戏已在主界面）：等不到就按已登录继续。
-        if idle_since is None:
-            idle_since = time.monotonic()
-        elif time.monotonic() - idle_since >= _ALREADY_LOGGED_SECONDS:
-            logger.info("B 服未出现登录界面，按已登录继续")
-            return "B 服未出现登录界面（游戏可能已登录），直接交给 M9A 运行"
-
-        if time.monotonic() > deadline:
+        # 既不是登录界面、也认不出标题页（例如游戏停在别的账号的主界面）：
+        # 无法确认当前账号，明确停止，不能把「没认出来」当成「目标账号已登录」。
+        if unknown_since is None:
+            unknown_since = time.monotonic()
+        elif time.monotonic() - unknown_since >= _UNKNOWN_SCREEN_SECONDS:
             raise MaaFWLoginRequired(
-                "B 服登录失败：等待登录界面超时（游戏可能未启动或加载过慢）"
+                "B 服登录失败：无法确认当前账号（画面既不是登录记录也不是游戏标题页）；"
+                "请把游戏停在标题页或退出到登录界面后重试"
             )
         await asyncio.sleep(_POLL_SECONDS)
 

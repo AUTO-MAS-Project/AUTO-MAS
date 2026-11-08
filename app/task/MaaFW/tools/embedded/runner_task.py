@@ -1652,7 +1652,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         if self._login_checked:
             return
-        self._login_checked = True
         hook = resolve_login_hook(self.script_config)
         if hook is None or self.run_plan is None:
             return
@@ -1678,6 +1677,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         if message:
             self._append_log(str(message))
+        # 登录成功才记「已登录」：失败时保持未完成，外层重试会重新走这个钩子，
+        # 不允许带着没登录（或登录到别的账号）的状态下发任务。
+        self._login_checked = True
 
     def _derive_adb_path_from_emulator_config(self) -> Path | None:
         emulator_id = self.script_config.Emulator.Id
@@ -3506,6 +3508,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._append_log("本轮失败，关闭由 MAS 启动的游戏/模拟器，下一轮重新启动")
         emulator_closed = await self._close_emulator()
         game_closed = await self._close_game()
+        # 客户端被重启了：登录会话可能变化（也可能回到别的账号），下一轮必须重新验证登录。
+        self._login_checked = False
         return emulator_closed and game_closed
 
     def _start_attempt_log(self) -> None:

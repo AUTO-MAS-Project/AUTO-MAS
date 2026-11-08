@@ -44,7 +44,7 @@ export type M9AConfig_Run = {
      */
     WeeklyOnceTasks?: (string | null);
     /**
-     * B 服登录方式。Project：由 M9A 项目的启动任务自己登录（原版只声明官服）；Mas：由 MAS 完成 B 服登录——拉起 B 服客户端后处理隐私政策提示、在登录记录里选择已保存的账号，回到标题页后再交给 M9A 的启动任务进游戏并照常运行。Mas 需要 ADB controller 并在「游戏包名」里填写 B 服包名（com.shenlan.m.reverse1999.bilibili），账号填登录记录里显示的完整昵称，且不再向 M9A 下发「切换账号」。
+     * B 服登录方式。Project：由 M9A 项目的启动任务自己登录（上游「切换账号」仍只声明官服）；Mas：由 MAS 完成 B 服登录——拉起 B 服客户端后处理隐私政策提示、在登录记录里选择已保存的账号，回到标题页后再交给 M9A 的启动任务进游戏并照常运行。Mas 需要 ADB controller 并在「游戏包名」里填写 B 服包名（com.shenlan.m.reverse1999.bilibili），账号填登录记录里显示的完整昵称，且不再向 M9A 下发「切换账号」。自动同意隐私提示复用全局「同意哔哩哔哩用户协议」开关（默认关闭），未开启时登录会停下并提示手动处理。
      */
     LoginMode?: ('Project' | 'Mas' | null);
 };
