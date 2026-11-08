@@ -130,10 +130,12 @@ from app.utils.common.process.scope import current_process_scope
 
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
+    MaaFWLoginRequired,
     no_default_fallback_inputs,
     off_day_scope,
     resolve_flavor,
     resolve_game_update_hook,
+    resolve_login_hook,
     unselectable_entries,
 )
 from .game_package import resolve_game_package
@@ -585,6 +587,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._launched_package_name = ""
         # 游戏更新钩子每个账号每次运行只调一次，重试重新开模拟器时不再查
         self._game_update_checked = False
+        # 运行前登录钩子同样每个账号每次运行只调一次，重试重新开模拟器时不再登录
+        self._login_checked = False
         self.maafw_runtime_pool_root: Path | None = None
         self.maafw_runtime_pool_id: str | None = None
         # 本轮（整个脚本）的信号账：同一资源已确认维护时后续账号直接跳过，收尾时由
@@ -914,7 +918,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             except Exception as exc:
                 message = (
                     str(exc)
-                    if isinstance(exc, MaaFWPretaskError)
+                    if isinstance(exc, (MaaFWPretaskError, MaaFWLoginRequired))
                     else f"MaaFW 运行异常: {exc}"
                 )
                 self._append_log(message, warning=True)
@@ -1411,6 +1415,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             address, device_info = await self._resolve_adb_address()
             adb_path = await self._resolve_adb_path(address, device_info)
             await self._ensure_game_updated(address, adb_path)
+            await self._ensure_logged_in(address, adb_path)
             adb_profile = await self._build_adb_control_profile()
             return MaaFWDeviceConfig(
                 type="Adb",
@@ -1636,6 +1641,43 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._append_log(result.message)
         if result.status == "NeedManualUpdate":
             raise _MaaFWGameUpdateRequired(result.message)
+
+    async def _ensure_logged_in(self, address: str, adb_path: str | None) -> None:
+        """模拟器启动后、第一个任务下发前，调特调的运行前登录钩子（契约见 flavor.py）。
+
+        每个账号每次运行只调一次，紧跟游戏更新检查之后。钩子判定本次无法继续时抛
+        ``MaaFWLoginRequired``，按普通失败结算、照常重试；钩子实现里的其它异常同样按失败
+        处理，原因附在异常原文后面。没实现钩子（通用 MaaFW）时什么都不做。
+        """
+
+        if self._login_checked:
+            return
+        self._login_checked = True
+        hook = resolve_login_hook(self.script_config)
+        if hook is None or self.run_plan is None:
+            return
+
+        async def report(text: str) -> None:
+            self._append_log(text)
+
+        try:
+            message = await hook(
+                script_config=self.script_config,
+                user_config=self.cur_user_config,
+                resource_name=self.run_plan.resourceName,
+                package_name=self._launched_package_name,
+                adb_path=adb_path,
+                adb_address=address,
+                progress=report,
+            )
+        except MaaFWLoginRequired:
+            raise
+        except Exception as exc:
+            logger.opt(exception=True).warning(f"运行前登录钩子异常: {exc}")
+            raise MaaFWLoginRequired(f"运行前登录出错：{exc}") from exc
+
+        if message:
+            self._append_log(str(message))
 
     def _derive_adb_path_from_emulator_config(self) -> Path | None:
         emulator_id = self.script_config.Emulator.Id

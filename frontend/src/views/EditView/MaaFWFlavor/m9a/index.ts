@@ -1,5 +1,5 @@
 // M9A（重返未来：1999）特调：账号绑成切号任务；启动游戏、切换账号、关闭游戏由后端特调全权控制
-// （不能手动加）；脚本页控制方式里多一个「游戏更新」下拉（本目录 M9AGameUpdateField，按需加载）。
+// （不能手动加）；脚本页控制方式里多一个「游戏更新」下拉与「登录方式」下拉（本目录两个组件，按需加载）。
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
 import { defineMaaFWLazyComponent } from '@/composables/maafwFlavorTypes'
@@ -31,9 +31,12 @@ export const M9A_FLAVOR = defineMaaFWFlavor({
       sourceHintKey: 'core.edit.m9aFlavorSourceHint',
       sourcePlaceholderKey: 'core.edit.m9aFlavorSourcePlaceholder',
     },
-    // 游戏更新下拉：只有 M9A 的后端特调有游戏客户端更新钩子，与游戏包名并排
+    // 登录方式（MAS 原生完成 B 服登录）与游戏更新下拉：只有 M9A 的后端特调有这两个钩子，与游戏包名并排
     slots: {
-      besidePackageName: [defineMaaFWLazyComponent(() => import('./M9AGameUpdateField.vue'))],
+      besidePackageName: [
+        defineMaaFWLazyComponent(() => import('./M9ALoginModeField.vue')),
+        defineMaaFWLazyComponent(() => import('./M9AGameUpdateField.vue')),
+      ],
     },
   },
   userPage: {
@@ -45,7 +48,7 @@ export const M9A_FLAVOR = defineMaaFWFlavor({
     managed: {
       // 与后端 app/task/M9A/managed.py 的 MANAGED_ENTRIES 同一组
       entries: ['StartUp', 'SwitchAccount', 'Close1999'],
-      // 与 managed.py 同一判据：官服、有效切号 ≥ 2 才要拆用户
+      // 与 managed.py 同一判据：官服、有效切号 ≥ 2 才要拆用户（MAS 登录模式下切号不下发，由用户页按配置关掉）
       accountTask: { entry: 'SwitchAccount', resources: ['官服'] },
       warningKey: 'core.edit.m9aFlavorManagedTaskWarning',
       noticeKey: 'core.edit.m9aFlavorManagedTaskNotice',

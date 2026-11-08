@@ -27,6 +27,22 @@
 换类型说明发通知）、在模拟器启动后调一次可选的游戏更新钩子、在写账号任务快照前调一次可选的
 快照整理钩子。这里不出现任何具体专项的名字；专项自己的逻辑全在它自己的包里。
 
+可选钩子 ``ensure_logged_in``（运行前登录）的契约：
+
+- **可选**：不进 ``MaaFWFlavor`` 协议，``resolve_login_hook`` 按 ``getattr`` 探测；没实现的特调
+  与通用 MaaFW 行为完全不变。
+- **何时调**：本次 controller 是 ADB、MAS 启动模拟器（连带拉起游戏）之后、第一个任务下发之前，
+  紧跟在 ``ensure_game_updated`` 之后；每个账号每次运行只调一次（重试重新开模拟器时不再调）。
+  在事件循环里 ``await``。要不要真正做事由钩子自己按配置判断（返回空串表示没做事）。
+- **签名**：``async def ensure_logged_in(self, *, script_config, user_config, resource_name,
+  package_name, adb_path, adb_address, progress) -> str``。``user_config`` 是本次运行的账号配置
+  （账号字段在 ``Info.Account``）；``package_name`` 是这次随模拟器拉起的包名（空串表示没拉起，
+  钩子可自行按包名拉起）；``adb_path`` 为 ``None`` 时由钩子自己回退系统 adb；``progress`` 是写
+  用户运行日志的异步回调。返回值是写进运行日志的一句话，空串表示不写。
+- **失败**：抛 :class:`MaaFWLoginRequired`，文案直接给用户看；本账号本次尝试判失败，按普通失败
+  走重试（不特殊处理退出条件）。抛其它异常同样按失败处理，原因会附在异常原文后面。
+- **取消**：用户停止（``CancelledError``）必须照常向上抛，不能吞掉。
+
 可选钩子 ``sanitize_task_snapshot``（写账号任务快照前整理）的契约：
 
 - **可选**：同样不进协议，``resolve_snapshot_sanitizer`` 按 ``getattr`` 探测。
@@ -308,6 +324,22 @@ GameUpdateHook = Callable[..., Awaitable[_utils_game_update.GameUpdateResult]]
 """特调可选的游戏更新钩子，契约见模块说明"""
 
 
+class MaaFWLoginRequired(RuntimeError):
+    """特调的运行前登录钩子判定本次无法继续运行（如 B 服登录失败）；文案直接给用户看。"""
+
+
+LoginHook = Callable[..., Awaitable[str]]
+"""特调可选的运行前登录钩子，契约见模块说明"""
+
+
+def resolve_login_hook(script_config: Any) -> LoginHook | None:
+    """脚本对应特调的运行前登录钩子；通用 MaaFW 或特调没实现时返回 None。"""
+
+    flavor = resolve_flavor(script_config)
+    hook = getattr(flavor, "ensure_logged_in", None) if flavor is not None else None
+    return hook if callable(hook) else None
+
+
 def resolve_game_update_hook(script_config: Any) -> GameUpdateHook | None:
     """脚本对应特调的游戏更新钩子；通用 MaaFW 或特调没实现时返回 None。"""
 
@@ -491,7 +523,9 @@ def _is_empty_json_object(value: Any) -> bool:
 
 __all__ = [
     "GameUpdateHook",
+    "LoginHook",
     "MaaFWFlavor",
+    "MaaFWLoginRequired",
     "SnapshotSanitizer",
     "no_default_fallback_inputs",
     "off_day_scope",
@@ -501,6 +535,7 @@ __all__ = [
     "flavored_config_classes",
     "resolve_flavor",
     "resolve_game_update_hook",
+    "resolve_login_hook",
     "resolve_snapshot_sanitizer",
     "retype_notice_lines",
     "sanitize_user_task_update",
