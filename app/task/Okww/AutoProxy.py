@@ -67,6 +67,10 @@ from .tools.backup_archive import (
     owner_for_mode,
     read_overlay_values,
 )
+from .tools.batch_logs import (
+    NATIVE_SWITCH_UNSUPPORTED_MESSAGE,
+    NativeSwitchUnsupportedError,
+)
 from .tools.launcher_start import (
     async_start_game_via_launcher,
     detect_game_maintenance_text,
@@ -238,6 +242,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         # prepare() 失败时收尾仍会读取该属性，必须在任何可失败步骤前初始化
         self.run_book = False
         self.task_name = "DailyTask"
+        self.native_switch_unsupported = False
 
     async def check(self) -> str:
         root = self.script_config.Info.RootPath
@@ -885,6 +890,17 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     target=self.script_target_process_info,
                     on_log=self._push_dispatch_log,
                 )
+            except NativeSwitchUnsupportedError:
+                self.native_switch_unsupported = True
+                await self.cur_user_log.set_state(
+                    status=NATIVE_SWITCH_UNSUPPORTED_MESSAGE
+                )
+                await self.cur_user_log.append_content(
+                    NATIVE_SWITCH_UNSUPPORTED_MESSAGE
+                )
+                await self.cur_user_item.set_state(status="异常")
+                await self._push_dispatch_log(NATIVE_SWITCH_UNSUPPORTED_MESSAGE)
+                break
             except (OSError, RuntimeError) as e:
                 # 启动器可能已拉起进程；清理后再重试，避免下一轮重复启动。
                 if not await self.handle_pre_okww_error("OK-WW 启动失败", e=e):
@@ -924,6 +940,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 with suppress(asyncio.CancelledError):
                     await maintenance_watch
             await self.log_monitor.stop()
+
+            if self.native_switch_unsupported:
+                break
 
             # 运行期间命中维护弹窗：按维护跳过收尾，不再重试；结论与内容
             # 在日志监控停止后落笔，避免被 check_log 的末次轮询覆盖

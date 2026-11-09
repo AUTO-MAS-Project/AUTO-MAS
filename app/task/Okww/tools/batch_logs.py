@@ -2,6 +2,27 @@
 
 from collections.abc import Iterable, Iterator
 
+NATIVE_SWITCH_UNSUPPORTED_MESSAGE = (
+    "当前ok-ww版本不支持或已移除原生账号切换，请检查ok-ww版本，或改用 MAS 切换账号。"
+)
+
+
+class NativeSwitchUnsupportedError(RuntimeError):
+    """上游明确拒绝 MAS 使用的原生切号任务入口。"""
+
+
+def native_switch_unsupported(line: str) -> bool:
+    """只识别任务入口缺失和旧版 CLI 拒绝任务名称，不将执行失败判为不兼容。"""
+    return (
+        "Task not found: MultiAccountConfigTask" in line
+        or "No module named 'src.task.MultiAccountConfigTask'" in line
+        or (
+            "argument -t/--task:" in line
+            and "invalid int value:" in line
+            and "MultiAccountConfigTask" in line
+        )
+    )
+
 
 def account_log_context(lines: Iterable[str]) -> Iterator[tuple[str | None, str, str]]:
     current = None

@@ -17,7 +17,11 @@ from .tools.batch_config import (
     normalize_account_key,
     write_attempt,
 )
-from .tools.batch_logs import account_log_context
+from .tools.batch_logs import (
+    NATIVE_SWITCH_UNSUPPORTED_MESSAGE,
+    account_log_context,
+    native_switch_unsupported,
+)
 
 logger = get_logger("OK-WW 批次")
 
@@ -145,6 +149,17 @@ class BatchProxyTask(AutoProxyTask):
         self.pending = {account["account_key"] for account in accounts}
 
     async def check_log(self, log_content, latest_time):
+        if any(native_switch_unsupported(line) for line in log_content):
+            self.native_switch_unsupported = True
+            await self.cur_user_log.set_state(
+                status=NATIVE_SWITCH_UNSUPPORTED_MESSAGE, content=log_content
+            )
+            await self.cur_user_item.set_state(status="异常")
+            await self.script_info.set_log(
+                f"{''.join(log_content)}\n{NATIVE_SWITCH_UNSUPPORTED_MESSAGE}"
+            )
+            self.wait_event.set()
+            return
         await super().check_log(log_content, latest_time)
         # 失败原因独立于节点采集开关，关闭详情时仍须保留账号结论。
         for key, stage, line in account_log_context(log_content):
@@ -251,6 +266,8 @@ class BatchProxyTask(AutoProxyTask):
                 status = self._maintenance_reason or "鸣潮正在维护"
             elif self.stopped_manually:
                 status = "任务被用户手动中止"
+            elif self.native_switch_unsupported:
+                status = NATIVE_SWITCH_UNSUPPORTED_MESSAGE
             else:
                 key = normalize_account_key(self.cur_user_config.Info.Id)
                 status = self.account_failures.get(

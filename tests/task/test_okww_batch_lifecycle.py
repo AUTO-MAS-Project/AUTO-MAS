@@ -1,5 +1,6 @@
 """批次账号准入、跨日计数与异常收尾回归。"""
 
+import asyncio
 import json
 import uuid
 from datetime import datetime, timedelta
@@ -250,6 +251,47 @@ async def test_batch_keeps_raw_history_when_nodes_are_disabled(tmp_path, monkeyp
         line.rstrip() for line in lines
     ]
     assert task.user_state(user).push_log == []
+
+
+@pytest.mark.asyncio
+async def test_missing_native_switch_task_is_reported_for_each_account(
+    tmp_path, monkeypatch
+):
+    ids = [uuid.uuid4(), uuid.uuid4()]
+    users = [UserItem(user_id=str(uid), name="user", status="运行") for uid in ids]
+    info = RuntimeStub(
+        task_info=RuntimeStub(mode="AutoProxy"),
+        script_id=str(uuid.uuid4()),
+        user_list=users,
+        current_index=0,
+        log="",
+    )
+    configs = {
+        uid: OkwwUserConfig.model_validate({"Info": {"Id": phone}})
+        for uid, phone in zip(ids, ["13012346220", "13912347052"])
+    }
+    task = BatchProxyTask(info, OkwwConfig(), configs, None, participants=users)
+    task.script_config_path = tmp_path
+    task.wait_event = asyncio.Event()
+    task.cur_user_log = LogRecord()
+    task.okww_process_manager = SimpleNamespace(is_running=AsyncMock(return_value=True))
+    task.is_log_stalled = lambda *args, **kwargs: False
+    await task.check_log(
+        ["ValueError: Task not found: MultiAccountConfigTask\n"], datetime.now()
+    )
+    assert task.wait_event.is_set()
+    expected = "当前ok-ww版本不支持或已移除原生账号切换，请检查ok-ww版本，或改用 MAS 切换账号。"
+    assert task.cur_user_log.status == expected
+    assert task.native_switch_unsupported
+    task.kill_managed_process = AsyncMock(return_value=True)
+    monkeypatch.setattr(AutoProxyTask, "final_task", AsyncMock())
+
+    await task.final_task()
+
+    assert all(user.status == "异常" for user in users)
+    assert all(
+        next(iter(user.log_record.values())).status == expected for user in users
+    )
 
 
 @pytest.mark.asyncio
