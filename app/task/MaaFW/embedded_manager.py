@@ -707,7 +707,6 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
     # ------------------------------------------------------------------
 
     async def prefetch_script_update(self) -> None:
-        from app.core.update import download_observer
         from app.task.MaaFW.tools.core.project_update.transport import (
             download_resumable,
         )
@@ -768,21 +767,6 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         ):
             return
         candidate = discovery.candidate
-        observer = download_observer.get()
-
-        def report(event: dict[str, Any]) -> None:
-            # 只转接下载器的公开进度，不改独立核心的传输和缓存逻辑。
-            from .tools.core.project_update.progress import UpdateProgressEvent
-
-            parsed = UpdateProgressEvent.of(event)
-            if observer is not None and parsed.stage == "downloading":
-                observer(
-                    Path("项目更新包"),
-                    parsed.downloaded_bytes or 0,
-                    parsed.total_bytes or 0,
-                    0.0,
-                )
-
         await download_resumable(
             source=candidate.source,
             version=candidate.to_version or candidate.version,
@@ -791,7 +775,6 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             artifact_id=candidate.artifact_id,
             proxy=proxy,
             expected_size=candidate.size,
-            progress=report,
             alternates=github_release_mirror_urls(candidate.download_url),
         )
         # 完整包留在核心的共享缓存，启动前按来源身份与版本基线复核后消费。

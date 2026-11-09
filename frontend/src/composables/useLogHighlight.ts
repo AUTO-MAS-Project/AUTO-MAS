@@ -5,14 +5,6 @@ const logger = window.electronAPI.getLogger('日志高亮')
 
 // 日志高亮颜色配置接口
 export interface LogHighlightColors {
-  downloadTarget: string
-  downloadPackage: string
-  downloadMethod: string
-  downloadStatus: string
-  downloadProgress: string
-  downloadSize: string
-  downloadRate: string
-
   // 时间相关
   timestamp: string
   date: string
@@ -55,11 +47,7 @@ export interface LogHighlightColors {
 }
 
 // 字体样式配置接口
-export interface LogHighlightStyles {
-  downloadGradient: boolean
-  downloadGradientContrast: number
-  downloadGradientSeconds: number
-  downloadFamilies: Record<string, string>
+interface LogHighlightStyles {
   timestampBold: boolean
   levelBold: boolean
   keywordBold: boolean
@@ -80,14 +68,6 @@ interface LogEditorThemeOptions {
 
 // 默认浅色主题颜色
 const defaultLightColors: LogHighlightColors = {
-  downloadTarget: '8238ac',
-  downloadPackage: '175bbb',
-  downloadMethod: '007d8b',
-  downloadStatus: 'a65b00',
-  downloadProgress: '287a30',
-  downloadSize: '7450a2',
-  downloadRate: 'ab3463',
-
   // 时间相关
   timestamp: '0066cc',
   date: '0066cc',
@@ -131,14 +111,6 @@ const defaultLightColors: LogHighlightColors = {
 
 // 默认深色主题颜色
 const defaultDarkColors: LogHighlightColors = {
-  downloadTarget: 'ce93d8',
-  downloadPackage: '82b1ff',
-  downloadMethod: '4dd0e1',
-  downloadStatus: 'ffb74d',
-  downloadProgress: '81c784',
-  downloadSize: 'b39ddb',
-  downloadRate: 'f48fb1',
-
   // 时间相关
   timestamp: '4fc3f7',
   date: '4fc3f7',
@@ -182,18 +154,6 @@ const defaultDarkColors: LogHighlightColors = {
 
 // 默认字体样式
 const defaultStyles: LogHighlightStyles = {
-  downloadGradient: false,
-  downloadGradientContrast: 85,
-  downloadGradientSeconds: 1,
-  downloadFamilies: {
-    target: 'purple',
-    package: 'blue',
-    method: 'cyan',
-    status: 'orange',
-    progress: 'green',
-    size: 'purple',
-    rate: 'pink',
-  },
   timestampBold: true,
   levelBold: true,
   keywordBold: false,
@@ -233,12 +193,7 @@ const loadConfig = () => {
       darkColors.value = { ...defaultDarkColors, ...JSON.parse(savedDark) }
     }
     if (savedStyles) {
-      const saved = JSON.parse(savedStyles)
-      styles.value = {
-        ...defaultStyles,
-        ...saved,
-        downloadFamilies: { ...defaultStyles.downloadFamilies, ...saved.downloadFamilies },
-      }
+      styles.value = { ...defaultStyles, ...JSON.parse(savedStyles) }
     }
     if (savedEditor) {
       editorConfig.value = { ...defaultEditorConfig, ...JSON.parse(savedEditor) }

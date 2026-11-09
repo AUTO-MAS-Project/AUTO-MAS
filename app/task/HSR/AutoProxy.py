@@ -1717,17 +1717,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             status="completed",
                             reason="外部脚本返回成功",
                         )
-                    if any(
-                        recorded.user_id == item.user_id
-                        and recorded.module_key == item.module_key
-                        and recorded.status == "completed"
-                        for recorded in self.runtime.module_results
-                    ):
-                        from app.core.script_update_queue import (
-                            report_script_task_completed,
-                        )
-
-                        report_script_task_completed()
+                    # TODO(插件迁移，#1845)：预下载暂停接线，不记录公共成功计时。
                     self._append_log(
                         f"账号「{item.user_name}」模块「{item.module_name}」执行完成"
                     )

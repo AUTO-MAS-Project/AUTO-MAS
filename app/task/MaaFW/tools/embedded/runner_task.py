@@ -3455,12 +3455,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return False
         if not self.opened_game and not self.opened_emulator:
             return False
-        # 只在真正要重启 MAS 自己启动的客户端时撤销预下载资格。
-        # 等待 FluxDown/HTTPX 确认停止后才关闭游戏或模拟器；AttachOnly、
-        # 最后一次尝试和不重登的资源换载荷路径不需要重置成功计时。
-        from app.core.script_update_queue import report_script_task_retrying
-
-        await report_script_task_retrying()
         self._append_log("本轮失败，关闭由 MAS 启动的游戏/模拟器，下一轮重新启动")
         emulator_closed = await self._close_emulator()
         game_closed = await self._close_game()
@@ -3524,13 +3518,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """将 worker 推来的阶段、任务起止事件归入本次尝试的专项记录。"""
 
         self._run_record_call(lambda: self._run_record.apply(data))
-        record = self._run_record.current
-        if record is not None and any(
-            task.outcome == "succeeded" for task in record.tasks
-        ):
-            from app.core.script_update_queue import report_script_task_completed
-
-            report_script_task_completed()
 
     def run_incident_notice(self) -> str:
         """本次运行里被原地打转检测或单任务时限停下的任务：进用户与脚本两份报告。

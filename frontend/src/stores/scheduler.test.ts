@@ -33,7 +33,6 @@ const state = (taskId: string): TaskRuntimeState => ({
   stopping: false,
   scripts: [],
   taskInfo: [],
-  prefetch: null,
   log: `waiting-${taskId}`,
   logSeq: 2,
   phase: 'active',

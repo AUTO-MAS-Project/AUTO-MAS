@@ -17,7 +17,6 @@ from app.services import execute_script_task
 from app.task.context import TaskContext
 from app.task.history_core import TaskHistorySession
 from app.task.lifecycle import TaskBase
-from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.utils.contracts.power import PowerSignal
 
 if TYPE_CHECKING:
@@ -45,18 +44,6 @@ class ScriptExpander(TaskBase):
         self.history = TaskHistorySession(info)
         self.report_coordinator: TaskReportCoordinator | None = None
         self._callback_failed = False
-        from app.core.script_update import ScriptUpdateSession
-
-        self._updates = ScriptUpdateSession(
-            info,
-            make_manager=self._make_prefetch_manager,
-            # 预下载复用当前旧专项的更新确认点与限时强清理，不另建停止框架。
-            process_scope=lambda: (
-                self._manager.execution._process_scope
-                if self._manager is not None
-                else None
-            ),
-        )
 
     async def stop(self) -> None:
         self.history.cancelled = True
@@ -107,6 +94,9 @@ class ScriptExpander(TaskBase):
                     coordinator, results
                 ),
             )
+        # TODO(插件迁移，#1845)：dev 的下一托管预下载尚未接线，本轮不生效；
+        # 同步时保持旧预下载接线禁用，首个成功节点计时、候选交接与取消清理待重新设计。
+        # 专项自身的运行前更新仍沿现有 manager 执行。
         await self._run_extra_script(info.execution.script_before, "队列运行前脚本")
         for index, script in enumerate(info.script_list):
             if self.cancelled:
@@ -118,27 +108,10 @@ class ScriptExpander(TaskBase):
             ):
                 await script.set_state(status="跳过")
                 continue
-            from app.core.script_update_queue import (
-                script_task_completed,
-                script_task_retrying,
-            )
-
-            self._updates.watch(script, index + 1)
-            token = script_task_completed.set(self._updates.mark_completed)
-            retry_token = script_task_retrying.set(
-                lambda: self._updates.retry(script, index + 1)
-            )
-            try:
-                with Notify.task_notification_batch(
-                    task_id=info.task_id, coordinator=self.report_coordinator
-                ):
-                    await self._run_script(script)
-            finally:
-                script_task_retrying.reset(retry_token)
-                script_task_completed.reset(token)
-                await self._updates.finish(
-                    cancelled=self.cancelled or script.info.status in ("异常", "已取消")
-                )
+            with Notify.task_notification_batch(
+                task_id=info.task_id, coordinator=self.report_coordinator
+            ):
+                await self._run_script(script)
         # 附加脚本属于可中止的业务流程，直接 await，停止时不启动后续动作。
         await self._run_extra_script(info.execution.script_after, "队列运行后脚本")
         if self.cancelled:
@@ -149,19 +122,6 @@ class ScriptExpander(TaskBase):
             or any(s.status == "异常" for s in info.scripts.values())
             else "success"
         )
-
-    def _make_prefetch_manager(self, script: TaskScriptItem) -> TaskExecuteBase | None:
-        """只复用旧专项已提供的下载入口，不探测或构造插件执行器。"""
-        if self.maintenance or self.dispatcher.plugin_expander is not None:
-            return None
-        entry = Config.ScriptConfig.get(script.info.script_id)
-        if entry is None:
-            return None
-        factory = self.dispatcher.manager_factories.get(type(entry))
-        if factory is None:
-            return None
-        manager = factory(script)
-        return manager if hasattr(manager, "prefetch_script_update") else None
 
     async def _run_extra_script(self, path: Path | None, label: str) -> None:
         """按受理快照复用基础脚本执行器；普通失败提示后继续，取消向上传播。"""
@@ -256,9 +216,7 @@ class ScriptExpander(TaskBase):
                     if Config.ScriptConfig.get(script.script_id) is not entry:
                         raise ValueError("托管配置已删除或替换")
                     factory = self.dispatcher.manager_factories.get(type(entry))
-                    manager = await self._updates.take(script.uid)
-                    if manager is None:
-                        manager = factory(script) if factory is not None else None
+                    manager = factory(script) if factory is not None else None
                     if manager is None:
                         raise ValueError("该托管没有内建执行能力")
                     self._manager = manager
@@ -313,21 +271,9 @@ class ScriptExpander(TaskBase):
         await super().on_crash(exc)
 
     async def final_task(self) -> None:
-        try:
-            try:
-                await self._updates.close()
-            except FluxdownCancelUnconfirmed as error:
-                # 未确认停写必须保持为错误，但重复看到同一个失败不应
-                # 中断历史收尾和 TASK_COMPLETED 发布，也不重复发送通知。
-                if not isinstance(self.error, FluxdownCancelUnconfirmed):
-                    self.error = error
-                    await self.on_crash(error)
-        finally:
-            await self._release_script_lock()
+        await self._release_script_lock()
         info = self.task_info
-        if isinstance(self.error, FluxdownCancelUnconfirmed):
-            await info.set_state(status="error")
-        elif self.cancelled:
+        if self.cancelled:
             await info.set_state(status="cancelled")
         elif self.error:
             await info.set_state(status="error")

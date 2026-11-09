@@ -1157,7 +1157,6 @@ export type { WhimboxUserConfig_Task } from './models/WhimboxUserConfig_Task';
 export type { WhimboxUserConfig_TaskInput } from './models/WhimboxUserConfig_TaskInput';
 export type { WhimboxUserConfigInput } from './models/WhimboxUserConfigInput';
 export type { WSMaaFWProjectUpdateProgressData } from './models/WSMaaFWProjectUpdateProgressData';
-export type { WSTaskPrefetchData } from './models/WSTaskPrefetchData';
 export type { WSTaskScriptIdentityData } from './models/WSTaskScriptIdentityData';
 export type { ZzzOdAppConfigFieldOut } from './models/ZzzOdAppConfigFieldOut';
 export type { ZzzOdAppConfigOut } from './models/ZzzOdAppConfigOut';

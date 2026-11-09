@@ -1,4 +1,3 @@
-export type { WSTaskPrefetchData } from '@/api'
 import type { PowerSignal, TaskItemDocument, TaskTriggerReason } from '@/api'
 // WebSocket 统一消息协议类型
 import type { McpStatusData } from '../../api'
