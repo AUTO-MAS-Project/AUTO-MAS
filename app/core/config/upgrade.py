@@ -278,6 +278,19 @@ def upgrade_json_configs(
     if record and record.get("version") != 2:
         raise ValueError("配置迁移记录版本无效")
     record.setdefault("version", 2)
+    if record.get("complete") and all(
+        record.get("files", {}).get(old, {}).get("state") == "complete"
+        and (config_path / old).is_file()
+        for old, _new, _key in CONFIG_FILES
+    ):
+        # 调用方只在旧数据库版本进入迁移；整套 JSON 再现时以当前旧版配置为准。
+        # 先检查来源，再登记重迁，删除旧 YAML 中断后仍能继续，且不生成 YAML 备份。
+        for old, _new, _key in CONFIG_FILES:
+            source = config_path / old
+            if not is_blank_file(source):
+                _utils_io.read_dict_file(source)
+        record = {"version": 2, "files": {}, "reset_targets": True}
+        _utils_io.write_file(record_path, record)
     files = record.setdefault("files", {})
     backup_dir = config_path / "legacy-json"
     backup_dir.mkdir(exist_ok=True)
@@ -301,6 +314,11 @@ def upgrade_json_configs(
         target = config_path / new_name
         archived = backup_dir / old_name
         progress = files.get(old_name)
+        if record.get("reset_targets") and not progress:
+            if not source.is_file():
+                raise ValueError(f"重新迁移的原配置缺失：{old_name}")
+            target.unlink(missing_ok=True)
+            archived.unlink(missing_ok=True)
         if progress:
             if (
                 progress["state"] == "complete"
@@ -368,5 +386,6 @@ def upgrade_json_configs(
                 source.unlink()
         files[old_name]["state"] = "complete"
         _utils_io.write_file(record_path, record)
+    record.pop("reset_targets", None)
     record["complete"] = True
     _utils_io.write_file(record_path, record)
