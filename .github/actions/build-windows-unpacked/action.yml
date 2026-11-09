@@ -29,6 +29,7 @@ runs:
         SENTRY_AUTH_TOKEN: ${{ inputs.sentry-auth-token }}
         SENTRY_ORG: ${{ inputs.sentry-org }}
         SENTRY_PROJECT: ${{ inputs.sentry-project }}
+        GITHUB_TOKEN: ${{ github.token }}
       shell: pwsh
       run: |
         $env:CSC_IDENTITY_AUTO_DISCOVERY = 'false'
@@ -42,30 +43,36 @@ runs:
         if ($LASTEXITCODE -ne 0) { throw '前端打包失败' }
         yarn build:main
         if ($LASTEXITCODE -ne 0) { throw 'Electron 主进程编译失败' }
-        # electron-builder 需要从 GitHub Release 下载 Electron 本体及
-        # winCodeSign（编辑未签名 EXE 资源所需）。两者出现 429/5xx 才重试；
-        # 其它构建失败立即抛出，不能因为日志里有无关网络字样而掩盖错误。
-        # 其他失败立即抛出，不能让真实构建错误被重试掩盖。
+        # 官方 Electron 下载遇到暂时性故障时，从受校验的备用镜像获取同版归档。
+        # electronDist 只在 CI 解压包使用，正式发行构建不更改下载源。
         $maxAttempts = 3
+        $verifiedElectronDist = $null
         $PSNativeCommandUseErrorActionPreference = $false
         for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
           $logPath = Join-Path $env:RUNNER_TEMP "electron-build-attempt-$attempt.log"
+          $buildArgs = @('electron-builder', '--dir', '--publish', 'never')
+          if ($verifiedElectronDist) {
+            $buildArgs += "-c.electronDist=$verifiedElectronDist"
+          }
           Write-Host "Electron 构建尝试 $attempt/$maxAttempts"
-          yarn electron-builder --dir --publish never *>&1 | Tee-Object -FilePath $logPath
+          yarn @buildArgs *>&1 | Tee-Object -FilePath $logPath
           $exitCode = $LASTEXITCODE
           if ($exitCode -eq 0) {
             break
           }
 
-          $transientReleaseDownload = Select-String -LiteralPath $logPath `
-            -Pattern 'cannot resolve https://github\.com/(?:electron/electron/releases/download/[^/]+/electron-v[^/]+-win32-x64\.zip|electron-userland/electron-builder-binaries/releases/download/winCodeSign-[^/]+/winCodeSign-[^/]+\.7z): status code (?:429|5\d\d)' `
-            -Quiet
-          if (-not $transientReleaseDownload -or $attempt -eq $maxAttempts) {
+          $electronDownloadFailed = Select-String -LiteralPath $logPath -Pattern 'cannot resolve https://github\.com/electron/electron/releases/download/[^/]+/electron-v[^/]+-win32-x64\.zip: status code (?:429|5\d\d)' -Quiet
+          $codeSignDownloadFailed = Select-String -LiteralPath $logPath -Pattern 'cannot resolve https://github\.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-[^/]+/winCodeSign-[^/]+\.7z: status code (?:429|5\d\d)' -Quiet
+          if ((-not $electronDownloadFailed -and -not $codeSignDownloadFailed) -or $attempt -eq $maxAttempts) {
             throw "Electron 构建失败（exit=$exitCode，尝试 $attempt/$maxAttempts）"
           }
 
+          if ($electronDownloadFailed -and -not $verifiedElectronDist) {
+            $verifiedElectronDist = Join-Path $env:RUNNER_TEMP 'verified-electron'
+            & (Join-Path $env:GITHUB_WORKSPACE '.github/scripts/prepare-ci-electron.ps1') -PackageJson (Join-Path (Get-Location).Path 'package.json') -OutputDirectory $verifiedElectronDist
+          }
           $delaySeconds = 20 * $attempt
-          Write-Warning "Electron 构建依赖从 GitHub Release 下载暂时失败，$delaySeconds 秒后重试"
+          Write-Warning "Electron GitHub 依赖下载暂时失败，$delaySeconds 秒后重试"
           Start-Sleep -Seconds $delaySeconds
         }
         if (-not (Test-Path -LiteralPath 'dist/win-unpacked/AUTO-MAS.exe' -PathType Leaf)) {
