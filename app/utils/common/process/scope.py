@@ -198,7 +198,9 @@ class TaskProcessScope:
                 except (asyncio.CancelledError, Exception):
                     check.status = "failed"
 
-        await asyncio.gather(*(run(check) for check in self.checks))
+        await asyncio.gather(
+            *(run(check) for check in self.checks if check.status == "pending")
+        )
 
     def ensure_can_start(self) -> None:
         if self.closed or (

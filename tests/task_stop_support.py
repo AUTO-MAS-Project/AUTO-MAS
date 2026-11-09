@@ -30,6 +30,8 @@ async def add_script(info, script_id, user_id=None):
 
 
 class StopTask(TaskExecuteBase):
+    STOP_CHECK_TIMEOUTS = {"update": 30.0, "finalize": 1.0}
+
     def __init__(self, info=None):
         super().__init__()
         self.execution.ended = Signal()
