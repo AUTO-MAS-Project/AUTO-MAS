@@ -3702,9 +3702,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             async def release_after_confirmed_stop() -> None:
                 await scope.finished.wait()
                 if scope.cleanup_failed:
-                    logger.error(
-                        "MaaFW 任务进程未确认停止，保留项目占用，拒绝并发修改"
-                    )
+                    logger.error("MaaFW 任务进程未确认停止，保留项目占用，拒绝并发修改")
                     return
                 if cleanup is not None:
                     try:
