@@ -456,3 +456,91 @@ async def test_lookup_of_existing_process_does_not_take_stop_ownership():
         await existing.wait()
         if not scope.closed:
             await scope.force_close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("child_exits", [True, False])
+async def test_adoption_open_failure_distinguishes_exited_and_live_child(
+    tmp_path, monkeypatch, child_exits
+):
+    """A dead child must not block adoption; access denial for a live child must."""
+    import time
+
+    import psutil
+    import pywintypes
+    import win32api
+
+    from app.utils.common.process.scope import TaskProcessScope
+
+    ready, reaped = tmp_path / "ready", tmp_path / "reaped"
+    sleeper = "import time; time.sleep(30)"
+    launcher = (
+        "import json,os,subprocess,sys,time; from pathlib import Path; "
+        f"p=subprocess.Popen([sys.executable,'-I','-c',{sleeper!r}]); "
+        "Path(sys.argv[1]).write_text(json.dumps([os.getpid(),p.pid])); "
+        "time.sleep(30)"
+    )
+    parent_code = (
+        "import subprocess,sys,time; from pathlib import Path; "
+        "p=subprocess.Popen([sys.executable,'-I','-c',sys.argv[1],sys.argv[2]]); "
+        f"s=subprocess.Popen([sys.executable,'-I','-c',{sleeper!r}]); "
+        "\nwhile p.poll() is None: time.sleep(.01)"
+        "\np._handle.Close(); Path(sys.argv[3]).touch(); time.sleep(30)"
+    )
+    parent = await asyncio.create_subprocess_exec(
+        sys._base_executable, "-I", "-c", parent_code, launcher, str(ready), str(reaped)
+    )
+    unrelated = await asyncio.create_subprocess_exec(
+        sys._base_executable, "-I", "-c", sleeper
+    )
+    scope = TaskProcessScope()
+    known = []
+    try:
+        async with asyncio.timeout(3):
+            while not ready.exists() or not ready.read_text():
+                await asyncio.sleep(0.01)
+        child_pid, grandchild_pid = json.loads(ready.read_text())
+        known = psutil.Process(parent.pid).children(recursive=True)
+        assert {child_pid, grandchild_pid} <= {p.pid for p in known}
+        open_process = win32api.OpenProcess
+
+        def exit_or_deny_before_open(access, inherit, pid):
+            if pid == child_pid:
+                if not child_exits:
+                    raise pywintypes.error(5, "OpenProcess", "injected access denial")
+                child = psutil.Process(pid)
+                child.kill()
+                child.wait(timeout=3)
+                # Wait for the real parent to close its dead child's final handle.
+                deadline = time.monotonic() + 3
+                while not reaped.exists():
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("parent did not reap exited child")
+                    time.sleep(0.01)
+            return open_process(access, inherit, pid)
+
+        with monkeypatch.context() as native:
+            native.setattr(win32api, "OpenProcess", exit_or_deny_before_open)
+            if child_exits:
+                scope.track(parent)
+                assert not scope.cleanup_failed
+            else:
+                with pytest.raises(pywintypes.error):
+                    scope.track(parent)
+                assert scope.cleanup_failed
+        await asyncio.wait_for(scope.force_close(), 3)
+        await asyncio.wait_for(parent.wait(), 3)
+        _, alive = await asyncio.to_thread(psutil.wait_procs, known, timeout=1)
+        assert not alive, "remaining siblings and descendants must still be reaped"
+        assert unrelated.returncode is None
+    finally:
+        for target in known:
+            with suppress(psutil.NoSuchProcess):
+                target.kill()
+        with suppress(ProcessLookupError):
+            parent.kill()
+        await parent.wait()
+        unrelated.kill()
+        await unrelated.wait()
+        if not scope.closed:
+            await scope.force_close()

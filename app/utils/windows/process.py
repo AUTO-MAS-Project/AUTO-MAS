@@ -8,6 +8,7 @@ from threading import Lock
 from typing import Any, Unpack
 
 import psutil
+import pywintypes
 import win32api
 import win32con
 import win32job
@@ -79,36 +80,39 @@ class WindowsTaskProcessJob:
                     continue
                 seen.add(target.pid)
 
-                process = win32api.OpenProcess(
-                    win32con.PROCESS_SET_QUOTA
-                    | win32con.PROCESS_TERMINATE
-                    | win32con.PROCESS_QUERY_INFORMATION,
-                    False,
-                    target.pid,
-                )
                 try:
-                    # OpenProcess 的句柄固定目标；再用缓存的创建时间核对身份。
-                    if not target.is_running():
-                        raise psutil.NoSuchProcess(
-                            target.pid, msg="接管进程已退出或 PID 已复用"
-                        )
-                    jobs = (*self._handles.values(), *self._adopted)
-                    if any(win32job.IsProcessInJob(process, job) for job in jobs):
-                        continue
-                    # 先记已有孩子，再标记父进程；标记后新生的孩子自动继承。
-                    # 外部进程可能来自不同的系统 Job，不能共用一个嵌套 Job。
-                    children = target.children()
-                    job = win32job.CreateJobObject(None, "")
-                    try:
-                        win32job.AssignProcessToJobObject(job, process)
-                    except BaseException:
-                        job.Close()
-                        raise
-                    self._adopted.append(job)
-                    pending.extend(children)
+                    # 先保留已发现的孩子，父进程在接管期间退出也不能丢掉它们。
                     pending.extend(target.children())
-                finally:
-                    process.Close()
+                    process = win32api.OpenProcess(
+                        win32con.PROCESS_SET_QUOTA
+                        | win32con.PROCESS_TERMINATE
+                        | win32con.PROCESS_QUERY_INFORMATION,
+                        False,
+                        target.pid,
+                    )
+                    try:
+                        # OpenProcess 的句柄固定目标；再用缓存的创建时间核对身份。
+                        if not target.is_running():
+                            continue
+                        jobs = (*self._handles.values(), *self._adopted)
+                        if any(win32job.IsProcessInJob(process, job) for job in jobs):
+                            continue
+                        # 外部进程可能来自不同的系统 Job，不能共用一个嵌套 Job。
+                        job = win32job.CreateJobObject(None, "")
+                        try:
+                            win32job.AssignProcessToJobObject(job, process)
+                        except BaseException:
+                            job.Close()
+                            raise
+                        self._adopted.append(job)
+                        # 标记后新生的孩子自动继承，再补登记期间已有的孩子。
+                        pending.extend(target.children())
+                    finally:
+                        process.Close()
+                except (psutil.NoSuchProcess, pywintypes.error):
+                    # 只容忍已退出或 PID 已复用的旧目标；存活目标的权限等错误仍需上报。
+                    if target.is_running():
+                        raise
 
     def kill(self) -> None:
         with self._lock:
