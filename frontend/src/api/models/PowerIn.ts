@@ -2,26 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { PowerSignal } from './PowerSignal';
 export type PowerIn = {
     /**
      * 电源操作信号
      */
-    signal: PowerIn.signal;
+    signal: PowerSignal;
 };
-export namespace PowerIn {
-    /**
-     * 电源操作信号
-     */
-    export enum signal {
-        NO_ACTION = 'NoAction',
-        SHUTDOWN = 'Shutdown',
-        SHUTDOWN_FORCE = 'ShutdownForce',
-        REBOOT = 'Reboot',
-        HIBERNATE = 'Hibernate',
-        SLEEP = 'Sleep',
-        KILL_SELF = 'KillSelf',
-        RESTART_SELF = 'RestartSelf',
-        LOGOFF = 'Logoff',
-    }
-}
 

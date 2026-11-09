@@ -20,19 +20,18 @@ import uuid
 from pathlib import Path
 
 from app.config import ConfigCollection
-from app.core import Config, Publisher
+from app.core import Publisher
 from app.core.ws import protocol
 from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
     read_config_base,
 )
-from app.utils import ProcessManager, get_logger
+from app.utils import ProcessManager, get_logger, process
 from app.utils import io as _utils_io
 
 logger = get_logger("通用脚本设置")
@@ -61,34 +60,11 @@ class ScriptConfigTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.config_base = CONFIG_BASE_SHARED
         self.use_mas_config = True
-        self.mas_config_dir = (
-            Config.data_path
-            / self.script_info.script_id
-            / self.cur_user_item.user_id
-            / "ConfigFile"
-        )
-        self.plan_active = bool(self.task_info.plan_id)
-        # 当天模板是否已换入原生配置：只有换入过的会话才允许收尾把原生配置
-        # 写回模板。换入前停止（如进程清理等待期间取消）时原生配置还是用户
-        # 现场，写回会把非模板内容覆盖进已有模板。
-        self.plan_staged = False
-        if self.plan_active:
-            from app.core.config.universal_plan import plan_directory
-
-            self.mas_config_dir = plan_directory(
-                data_path=Config.data_path,
-                plan=Config.PlanConfig[uuid.UUID(self.task_info.plan_id)],
-                script_id=self.script_info.script_id,
-                user_id=self.cur_user_item.user_id,
-                day=self.task_info.plan_day,
-            )
         if self.cur_user_item.user_id != "Default":
             selected_user = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
             self.config_base = read_config_base(selected_user)
             # 原生来源=不写；shared/independent 来源都写面板值（见 AutoProxy 同款说明）
-            self.use_mas_config = (
-                self.plan_active or self.config_base != CONFIG_BASE_NATIVE
-            )
+            self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE
 
     async def prepare(self):
 
@@ -135,50 +111,6 @@ class ScriptConfigTask(TaskExecuteBase):
 
         await self.prepare()
 
-        if self.plan_active and not self.mas_config_dir.exists():
-            from tempfile import TemporaryDirectory
-
-            base = (
-                Config.data_path
-                / self.script_info.script_id
-                / self.cur_user_item.user_id
-                / "ConfigFile"
-            )
-            with TemporaryDirectory() as temporary:
-                staging = Path(temporary) / "ConfigFile"
-                if (
-                    self.cur_user_item.user_id != "Default"
-                    and self.config_base != CONFIG_BASE_NATIVE
-                    and base.is_dir()
-                    and (
-                        (
-                            self.script_config.Script.ConfigPathMode == "Folder"
-                            and any(base.iterdir())
-                        )
-                        or (
-                            self.script_config.Script.ConfigPathMode == "File"
-                            and (base / self.script_config_path.name).is_file()
-                        )
-                    )
-                ):
-                    shutil.copytree(base, staging)
-                elif (
-                    self.script_config.Script.ConfigPathMode == "Folder"
-                    and self.script_config_path.is_dir()
-                ):
-                    shutil.copytree(self.script_config_path, staging)
-                elif (
-                    self.script_config.Script.ConfigPathMode == "File"
-                    and self.script_config_path.is_file()
-                ):
-                    staging.mkdir()
-                    shutil.copy(
-                        self.script_config_path, staging / self.script_config_path.name
-                    )
-                else:
-                    raise ValueError("没有可复制的基础配置，请先完成账号的通用配置")
-                self.mas_config_dir.parent.mkdir(parents=True, exist_ok=True)
-                _utils_io.swap_in_dir(staging, self.mas_config_dir)
         await self.set_general()
         # 创建通用脚本任务
         logger.info(
@@ -197,7 +129,7 @@ class ScriptConfigTask(TaskExecuteBase):
 
         logger.info(f"开始配置脚本运行参数: 脚本设置 {self.cur_user_item.user_id}")
 
-        await System.kill_process(self.script_set_exe_path)
+        await process.kill_process(self.script_set_exe_path)
 
         # 查看会话的托管级入口：原生配置即所选备份，跳过下发（账号级为目录
         # 副本型，强制照常下发——GUI 所见即备份，不受原生来源门控影响）
@@ -212,21 +144,26 @@ class ScriptConfigTask(TaskExecuteBase):
         # 下发前归档 MAS 配置到账号池（下发源，会话保存会覆盖它；指纹去重，
         # 失败不阻断会话）。General 的 ConfigFile 恒按账号，无 owner 解耦；
         # 查看会话的 ConfigFile 即刚恢复的备份，无需再归档
-        if not self.task_info.view_only and not self.plan_active:
+        if not self.task_info.view_only:
             from .tools.backup_archive import archive_mas_runtime_backup
 
             archive_mas_runtime_backup(
                 self.script_info.script_id,
                 self.cur_user_item.user_id,
-                self.mas_config_dir,
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
             )
 
         if (
             self.script_config.Script.ConfigPathMode == "Folder"
-            and (self.mas_config_dir).exists()
+            and (
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
+            ).exists()
         ):
             _utils_io.swap_in_dir(
-                self.mas_config_dir,
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
                 self.script_config_path,
             )
             _utils_io.mark_native_config_injected(
@@ -234,52 +171,38 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.script_config_path,
                 script_id=self.script_info.script_id,
             )
-            if self.plan_active:
-                self.plan_staged = True
         elif (
             self.script_config.Script.ConfigPathMode == "File"
-            and (self.mas_config_dir / self.script_config_path.name).exists()
+            and (
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
+                / self.script_config_path.name
+            ).exists()
         ):
             shutil.copy(
-                self.mas_config_dir / self.script_config_path.name,
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
+                / self.script_config_path.name,
                 self.script_config_path,
             )
-            if self.plan_active:
-                self.plan_staged = True
 
         logger.success(f"MAA运行参数配置完成: 设置账号 {self.cur_user_item.user_id}")
 
     async def final_task(self):
 
         await self.general_process_manager.kill()
-        await System.kill_process(self.script_set_exe_path)
+        await process.kill_process(self.script_set_exe_path)
         del self.general_process_manager
 
         # 查看会话：只读预览，不把 GUI 内的改动回写 MAS 配置副本（原生配置
         # 现场由 manager 的任务前快照还原）
         if self.task_info.view_only:
             logger.success("通用脚本查看结束（只读，不回写配置）")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         if not self.use_mas_config:
             logger.info("脚本原生来源配置：跳过回写独立配置")
-            return
-
-        if self.plan_active:
-            if not self.plan_staged:
-                # 模板还没换入原生配置就结束（如启动等待期间被取消）：原生配置
-                # 不是当天模板的现场，写回会把用户现场覆盖进模板
-                logger.info("通用脚本计划表会话未换入模板，跳过计划写回")
-                return
-            from app.core.config.universal_plan import save_plan_config
-
-            save_plan_config(
-                source=self.script_config_path,
-                destination=self.mas_config_dir,
-                mode=self.script_config.Script.ConfigPathMode,
-            )
-            self.task_info.plan_save_result = "saved"
             return
 
         # 源是用户自己填的脚本配置位置，可能压根不存在（路径填错、脚本还没生成过
@@ -292,14 +215,19 @@ class ScriptConfigTask(TaskExecuteBase):
             return
 
         shutil.rmtree(
-            self.mas_config_dir,
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
             ignore_errors=True,
         )
-        (self.mas_config_dir).mkdir(parents=True, exist_ok=True)
+        (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
+        ).mkdir(parents=True, exist_ok=True)
         if self.script_config.Script.ConfigPathMode == "Folder":
             shutil.copytree(
                 self.script_config_path,
-                self.mas_config_dir,
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
                 dirs_exist_ok=True,
             )
             logger.success(
@@ -308,16 +236,16 @@ class ScriptConfigTask(TaskExecuteBase):
         elif self.script_config.Script.ConfigPathMode == "File":
             shutil.copy(
                 self.script_config_path,
-                self.mas_config_dir / self.script_config_path.name,
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
+                / self.script_config_path.name,
             )
             logger.success(
                 f"通用脚本配置已保存到: {Path.cwd() / f'data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile' / self.script_config_path.name}"
             )
 
     async def on_crash(self, e: Exception):
-        if self.plan_active:
-            self.task_info.plan_save_result = "failed"
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         await Publisher.send(
             id=self.task_info.task_id,

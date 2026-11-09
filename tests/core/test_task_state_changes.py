@@ -1,93 +1,89 @@
-"""宿主合并状态变化，并在关闭时回收发布任务。"""
+"""来源式即时信号推送：同协程执行，允许事务过程态，不维护发布任务。"""
 
 import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
 
-from app.core.runtime_tasks import OwnedTaskRegistry
-from app.core.task_manager import manager
-from app.models.task import ScriptItem, UserItem
+from app.config import config_manager
+from app.core import Publisher
+from app.core.task_manager import _TaskManager
+from app.core.ws import protocol
+from app.models.task import LogRecord
+from app.task.script_expander import ScriptExpander
+from tests.runtime_support import create_runtime_tree
 
 
-@pytest.fixture
-def runtime(monkeypatch):
-    registry = OwnedTaskRegistry()
-    monkeypatch.setattr(manager, "RuntimeTasks", registry)
-    return registry
-
-
-def task_info():
-    return manager.TaskInfo(
-        mode="AutoProxy",
-        task_id="state-change-test",
-        queue_id=None,
-        script_id=None,
-        user_id=None,
-    )
+async def runtime(monkeypatch):
+    root, script, user = await create_runtime_tree()
+    dispatcher = _TaskManager()
+    run = ScriptExpander(root, dispatcher)
+    dispatcher._running[root.uid] = run
+    monkeypatch.setattr("app.core.task_manager.TaskManager", dispatcher)
+    return dispatcher, run, script, user
 
 
 @pytest.mark.asyncio
-async def test_changes_merge_and_changes_during_publish_are_not_lost(runtime):
-    info = task_info()
-    user = UserItem(user_id="user", name="User", status="waiting")
-    script = ScriptItem(
-        script_id="script", name="Script", status="waiting", user_list=[user]
-    )
-    info.script_list = [script]
-    entered = asyncio.Event()
-    release = asyncio.Event()
-    snapshots = []
+async def test_field_signal_is_awaited_in_same_task_inside_transaction(monkeypatch):
+    _, run, _, user = await runtime(monkeypatch)
+    owner = asyncio.current_task()
+    observed = []
+    states = []
 
-    async def publish():
-        snapshots.append((script.status, user.status))
-        if len(snapshots) == 1:
-            entered.set()
-            await release.wait()
+    async def send(**message):
+        observed.append(
+            (asyncio.current_task(), config_manager.in_transaction, message["type"])
+        )
+        if message["type"] == protocol.TASK_INFO_UPDATED:
+            states.append(message["data"])
+        return True
 
-    info.on_change = publish
-    script.status = "running"
-    user.status = "running"
-    pending = info._change_task
-    try:
-        await asyncio.wait_for(entered.wait(), timeout=2)
-        user.status = "finished"
-        script.status = "finished"
-        assert info._change_task is pending
-        release.set()
-        await asyncio.wait_for(asyncio.shield(pending), timeout=2)
-        assert snapshots == [("running", "running"), ("finished", "finished")]
-        assert info._change_task is None
-        assert not info._change_dirty
-    finally:
-        await runtime.shutdown()
+    monkeypatch.setattr(Publisher, "send", send)
+    async with config_manager.transaction():
+        await user.set_state(status="运行")
+        assert observed == [
+            (owner, True, protocol.TASK_INFO_UPDATED),
+        ]
+        users = next(iter(states[0]["scripts"]["data"].values()))["users"]["data"]
+        assert next(iter(users.values()))["info"]["status"] == "运行"
+    assert run.task_info.script_list[0].user_list[0].status == "运行"
 
 
 @pytest.mark.asyncio
-async def test_shutdown_cancels_inflight_publish_and_rejects_new_changes(runtime):
-    info = task_info()
-    entered = asyncio.Event()
-    finalized = asyncio.Event()
+async def test_collection_signal_publishes_and_unregistered_tree_does_not(monkeypatch):
+    dispatcher, run, _, user = await runtime(monkeypatch)
+    sent = AsyncMock(return_value=True)
+    monkeypatch.setattr(Publisher, "send", sent)
+    user.logs.add(LogRecord)
+    await user.logs.commit()
+    assert [call.kwargs["type"] for call in sent.await_args_list] == [
+        protocol.TASK_INFO_UPDATED,
+    ]
+    await dispatcher.drop(run)
+    sent.reset_mock()
+    await user.set_state(status="完成")
+    sent.assert_not_awaited()
 
-    async def publish():
-        try:
-            entered.set()
-            await asyncio.Event().wait()
-        finally:
-            finalized.set()
 
-    info.on_change = publish
-    info.schedule_on_change()
-    pending = info._change_task
-    try:
-        await asyncio.wait_for(entered.wait(), timeout=2)
-    finally:
-        await runtime.shutdown()
-    assert pending.cancelled()
-    assert finalized.is_set()
-    assert info._change_task is None
-    info.on_change = AsyncMock()
-    info.schedule_on_change()
-    assert info._change_task is None
-    assert not info._change_dirty
-    info.on_change.assert_not_awaited()
+@pytest.mark.asyncio
+async def test_rollback_keeps_emitted_process_notice_but_query_reads_live_tree(
+    monkeypatch,
+):
+    dispatcher, run, script, user = await runtime(monkeypatch)
+    await script.set_current_index(0)
+    uid = user.logs.add(LogRecord, payload={"info": {"content": ["before\n"]}})
+    await user.logs.commit()
+    sent = AsyncMock(return_value=True)
+    monkeypatch.setattr(Publisher, "send", sent)
+    with pytest.raises(ValueError, match="rollback"):
+        async with config_manager.transaction():
+            await user.logs[uid].set_state(content=["after\n"])
+            raise ValueError("rollback")
+    messages = [
+        call.kwargs["data"].log
+        for call in sent.await_args_list
+        if call.kwargs["type"] == protocol.TASK_LOG_UPDATED
+    ]
+    assert messages == ["after\n"]
+    assert dispatcher.get_task(run.task_info.uid)["current"]["log"] == "before\n"
+    assert run.task_info.get_log_snapshot()["logSeq"] is None

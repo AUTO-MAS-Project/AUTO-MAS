@@ -25,9 +25,8 @@ from app.core.ws import protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
-from app.utils import IS_ELEVATED, ProcessManager, get_logger
+from app.utils import IS_ELEVATED, ProcessManager, get_logger, process
 
 from .AutoProxy import _BGI_REL_EXE, _BGI_UNKILLABLE_HINT, _wait_bgi_exit
 from .tools import one_dragon
@@ -93,7 +92,7 @@ class ScriptConfigTask(TaskExecuteBase):
     async def main_task(self) -> None:
         await self._kill_processes()
         logger.info(f"启动 BetterGI 设置: {self.exe_path}")
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         # 任务配置以 MAS 前端为准：GUI 原生来源只打开 BGI 供查看游戏/程序环境，
         # 不再预置一条龙槽位，也不在结束后回读（MAS 前端是唯一编辑入口）。
         self._cleanup_leftover_slot()
@@ -117,12 +116,12 @@ class ScriptConfigTask(TaskExecuteBase):
             )
         if not self.crashed:
             logger.success("BetterGI 原生来源配置已打开（任务配置请以 MAS 前端为准）")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
         self._cleanup_leftover_slot()
 
     async def on_crash(self, e: Exception) -> None:
         self.crashed = True
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"BetterGI 设置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_processes()
@@ -148,7 +147,7 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.opt(exception=True).warning(f"通过进程管理器中止 BetterGI 失败: {e}")
 
         try:
-            await System.kill_process(self.exe_path)
+            await process.kill_process(self.exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 BetterGI 进程失败: {e}")
 

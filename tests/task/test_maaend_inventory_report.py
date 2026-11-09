@@ -1,12 +1,14 @@
 """MaaEnd 协议空间材料记录按材料合并成一行合计，上游状态保持原样。"""
 
-from types import SimpleNamespace
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 from app.task.MaaEnd.AutoProxy import AutoProxyTask
 
 
 def _proxy(*, push_log_mode: str = "逐条") -> AutoProxyTask:
     proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.user_state = lambda user: user
+    proxy.callbacks = SimpleNamespace()
     proxy.cur_user_item = SimpleNamespace(push_log=[], push_log_mode=push_log_mode)
     proxy.push_log_enabled = push_log_mode != "关闭"
     proxy.task_name_map = {"协议空间": "ProtocolSpace"}

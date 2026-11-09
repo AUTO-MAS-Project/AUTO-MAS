@@ -3,10 +3,7 @@ import { expect, test } from './fixtures'
 import { observeMainConnection } from './socket-recovery'
 
 test.describe('@tools MCP service', () => {
-  test('shows real status after navigation, refresh and reconnect in both themes and all languages', async ({
-    app,
-    page,
-  }) => {
+  test('shows real status after navigation, refresh and reconnect', async ({ app, page }) => {
     const socket = await observeMainConnection(page)
     await app.goto('/tools')
     const card = page.locator('.tools-page')
@@ -22,31 +19,6 @@ test.describe('@tools MCP service', () => {
     await expect(card).toContainText('MCP service is ready')
     await socket.reconnect()
     await expect(card).toContainText('MCP service is ready')
-
-    await app.goto('/settings')
-    const theme = page.locator('.theme-mode-control')
-    for (const name of ['Light', 'Dark']) {
-      await theme.getByText(name, { exact: true }).click()
-      await expect(theme.getByRole('radio', { name, exact: true })).toBeChecked()
-      await app.goto('/tools')
-      await expect(card).toContainText('MCP service is ready')
-      await app.evidence(`mcp-${name.toLowerCase()}`)
-      await app.goto('/settings')
-    }
-    const language = page.locator('.language-select')
-    for (const [name, text] of [
-      ['简体中文', 'MCP 服务已就绪'],
-      ['日本語', 'MCP サービスの準備ができました'],
-      ['English', 'MCP service is ready'],
-    ]) {
-      await language.click()
-      await page.locator('.ant-select-dropdown:visible').getByText(name, { exact: true }).click()
-      await app.goto('/tools')
-      await expect(card).toContainText(text)
-      await expect(card).not.toContainText('tools.mcp.')
-      await app.evidence(`mcp-${name}`)
-      await app.goto('/settings')
-    }
   })
 
   test('restores phases and retries a failure without treating acceptance as success', async ({

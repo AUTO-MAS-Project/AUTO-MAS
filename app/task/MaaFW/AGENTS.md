@@ -491,8 +491,8 @@ MFW 不使用原生编辑器会话或 base 三态选择运行配置；已有配�
   结局与类别**只在** `tools/core/runner/run_events.py` 定义（换传输通道时只搬它）。runner 的各收尾分支用
   `_mark_task_outcome` 记结局，task_end 在下一个任务开始或本轮结束时才发——新增收尾分支要跟着记，漏记的
   按穿出的异常归类。宿主 `tools/embedded/run_record.py` 按尝试归并，存进该尝试 history 的
-  `data["maafw_run_record"]`（snapshot，读用 `read_run_record`，旧历史没有这个键），驱动调度台进度
-  （`UserItem.progress`）与推送（`tools/embedded/run_report.py`：最后一次尝试的逐任务时间线；最后没成功
+  `data["maafw_run_record"]`（snapshot，读用 `read_run_record`，旧历史没有这个键），用于专项报告
+  （`tools/embedded/run_report.py`：最后一次尝试的逐任务时间线；最后没成功
   时单列各次的原地打转 / 单任务超时）。推送里的失败原因只用 `userMessage`（宿主还没投递任务就抛的
   异常用异常原文，同样过 `human_reason` 过滤）与失败类别的固定说法；`errorMessage`（节点链、框架失败
   事件、原生栈）不进推送，仍照旧写进任务日志、history 状态与调度台完成面板。记录是旁路，

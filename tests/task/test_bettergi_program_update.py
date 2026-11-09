@@ -6,7 +6,7 @@ import json
 import shutil
 import uuid
 import zipfile
-from types import SimpleNamespace
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -175,6 +175,7 @@ async def test_batch_download_failure_continues_without_rechecking(
 ):
     root, config, _ = installation
     instance = object.__new__(manager.BetterGIManager)
+    instance.maintenance = False
     instance._update_root = root
     instance._program_update_prepared = False
     instance.script_config = config
@@ -207,6 +208,7 @@ async def test_unsafe_and_cancelled_preparation_never_runs_users(
 ):
     root, config, _ = installation
     instance = object.__new__(manager.BetterGIManager)
+    instance.maintenance = False
     instance._update_root = root
     instance._program_update_prepared = False
     instance.script_config = config
@@ -226,6 +228,7 @@ async def test_disabled_takeover_does_not_query_and_blocks_unfinished_install(
     root, config, _ = installation
     config.Update.TakeoverEnabled = False
     instance = object.__new__(manager.BetterGIManager)
+    instance.maintenance = False
     instance._update_root = root
     instance._program_update_prepared = False
     instance.script_config = config
@@ -281,6 +284,7 @@ async def test_notice_restore_failure_still_releases_all_locks(
 
     root, _, _ = installation
     instance = object.__new__(manager.BetterGIManager)
+    instance.maintenance = False
     instance._update_root = root
     instance.check_result = "failed"
     instance.script_info = SimpleNamespace(user_list=[], status="等待")
@@ -313,6 +317,7 @@ async def test_unsafe_update_is_not_reported_as_completed_during_finalization(
 
     root, config, _ = installation
     instance = object.__new__(manager.BetterGIManager)
+    instance.maintenance = False
     instance._update_root = root
     instance._program_update_prepared = False
     instance._install_access = ExitStack()

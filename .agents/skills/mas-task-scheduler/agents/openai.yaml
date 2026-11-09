@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAS Task Scheduler"
+  short_description: "规范任务要求树、四级执行、锁所有权、取消收尾和队列触发"
+  default_prompt: "使用 $mas-task-scheduler 设计、实现或审查 AUTO-MAS 调度，遵循任务要求树、L1 至 L4 分工、上层持锁和统一生命周期。"

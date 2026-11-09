@@ -20,11 +20,15 @@
 #   Contact: DLmaster_361@163.com
 
 
+from __future__ import annotations
+
+import asyncio
 import re
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.parse import urlsplit
 
 import sentry_sdk
@@ -33,6 +37,12 @@ from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
 from app.utils import get_logger
+
+if TYPE_CHECKING:
+    from sentry_sdk._types import EventProcessor, TransactionProcessor
+
+    from app.models.schema import WSTaskScriptStartedData
+    from app.models.task import ScriptItem, TaskItem, TaskMode, TaskTriggerReason
 
 logger = get_logger("遥测")
 
@@ -331,8 +341,9 @@ def _start_sentry(release: str, dist: str | None = None) -> None:
             LoguruIntegration(level=None, event_level=30, sentry_logs_level=None),
         ],
         traces_sampler=sample_trace,
-        before_send=sanitize_event,
-        before_send_transaction=sanitize_event,
+        # 脱敏原地处理 SDK 的 JSON 事件；TypedDict 回调与通用字典实现共用同一对象。
+        before_send=cast("EventProcessor", sanitize_event),
+        before_send_transaction=cast("TransactionProcessor", sanitize_event),
     )
     _sentry_started = True
 
@@ -511,6 +522,7 @@ __all__ = [
     "init_sentry",
     "is_telemetry_enabled",
     "observe_span",
+    "observe_script_run",
     "record_count",
     "record_daily_active",
     "record_distribution",
@@ -518,4 +530,147 @@ __all__ = [
     "sample_trace",
     "sanitize_event",
     "set_telemetry_enabled",
+    "task_trigger_category",
 ]
+
+
+# 专项运行观察：本地关联消息不进入匿名指标属性。
+# BetterGI 跳过失败步骤后的“部分失败”，沿用专项约定计为执行完成。
+_SUCCESS_USER_STATUSES = ("完成", "部分失败")
+
+
+@dataclass
+class _ScriptObservation:
+    sent: bool = False
+    completed: asyncio.Event = field(default_factory=asyncio.Event)
+
+
+def _publish_script_observation(
+    *,
+    message_type: str,
+    data: WSTaskScriptStartedData,
+    after: _ScriptObservation | None = None,
+) -> _ScriptObservation | None:
+    """有界、可丢弃的本地统计消息，不进入脚本的执行或收尾等待链。"""
+
+    observation = _ScriptObservation()
+
+    async def send() -> None:
+        try:
+            if after is not None:
+                await after.completed.wait()
+                if not after.sent:
+                    return
+            observation.sent = await Publisher.send(
+                id=protocol.ID_TASK_MANAGER, type=message_type, data=data
+            )
+        finally:
+            observation.completed.set()
+
+    from app.core import BackgroundTaskManager, Publisher
+    from app.core.ws import protocol
+
+    group = BackgroundTaskManager.get_group("script-run-observation")
+    if group is None:
+        group = BackgroundTaskManager.register_group(
+            "script-run-observation", max_running=32, max_retained=32
+        )
+    handle = group.spawn(send, retain_result=False)
+    return observation if handle is not None else None
+
+
+def task_trigger_category(
+    trigger: TaskTriggerReason,
+) -> Literal["manual_task", "startup_task", "scheduled_task"]:
+    """在统计边界将触发原因归入既有分类，保持统计口径。"""
+    from app.models.task import TaskTriggerReason
+
+    if trigger == TaskTriggerReason.MANUAL:
+        return "manual_task"
+    if trigger == TaskTriggerReason.STARTUP:
+        return "startup_task"
+    return "scheduled_task"
+
+
+@contextmanager
+def observe_script_run(
+    task: TaskItem,
+    script_item: ScriptItem,
+    *,
+    mode: TaskMode | Literal["Update"] | None = None,
+) -> Iterator[None]:
+    """按专项记一次脚本运行；顺序执行与循环运行共用。
+
+    结果只看用户状态：MAA、通用脚本等专项无论成败都把脚本状态收成「完成」，
+    拿脚本状态判会把全员失败也记成成功，各专项之间没法比。
+    """
+
+    from app.core.ws import protocol
+    from app.models.schema import WSTaskScriptFinishedData, WSTaskScriptStartedData
+
+    outcome: Literal[
+        "success",
+        "failed",
+        "skipped",
+        "no_user",
+        "incomplete",
+        "error",
+        "cancelled",
+    ] = "error"
+    partial_failure: Literal["yes", "no", "unknown"] = "unknown"
+    run = (
+        WSTaskScriptStartedData(
+            taskId=task.task_id,
+            runId=str(script_item.uid),
+            scriptType=script_item.script_type or "unknown",
+            mode="AutoProxy",
+        )
+        if task.mode == "AutoProxy"
+        else None
+    )
+    started = (
+        _publish_script_observation(message_type=protocol.TASK_SCRIPT_STARTED, data=run)
+        if run is not None
+        else None
+    )
+    try:
+        yield
+        user_statuses = [
+            user.status for user in script_item.user_list if user.status != "跳过"
+        ]
+        if script_item.status == "异常":
+            outcome = "failed"
+        elif script_item.user_list and not user_statuses:
+            outcome = "skipped"
+        elif not user_statuses:
+            # 运行前检查没过时还没加载用户，脚本状态是「异常」
+            outcome = "failed" if script_item.status == "异常" else "no_user"
+        elif all(status in _SUCCESS_USER_STATUSES for status in user_statuses):
+            outcome = "success"
+            partial_failure = "yes" if "部分失败" in user_statuses else "no"
+        elif "异常" in user_statuses:
+            outcome = "failed"
+        else:
+            outcome = "incomplete"
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+        raise
+    finally:
+        record_count(
+            "auto_mas.script.runs",
+            attributes={
+                "script_type": script_item.script_type or "unknown",
+                "mode": mode if mode is not None else task.mode,
+                "outcome": outcome,
+            },
+        )
+        if run is not None and started is not None:
+            _publish_script_observation(
+                message_type=protocol.TASK_SCRIPT_FINISHED,
+                data=WSTaskScriptFinishedData(
+                    **run.model_dump(),
+                    outcome=outcome,
+                    partialFailure=partial_failure,
+                ),
+                after=started,
+            )

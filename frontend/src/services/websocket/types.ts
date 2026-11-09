@@ -1,3 +1,5 @@
+export type { WSTaskPrefetchData } from '@/api'
+import type { PowerSignal, TaskItemDocument, TaskTriggerReason } from '@/api'
 // WebSocket 统一消息协议类型
 import type { McpStatusData } from '../../api'
 import type { FrontendCloseRequest } from '../../types/appLifecycle'
@@ -103,72 +105,46 @@ export interface WSTaskConfigDiscardedData {
 }
 
 /** 用户正在跑的任务进度（目前只有 MFW 给） */
-export interface WSTaskUserProgressData {
-  /** 第几个任务，从 1 起 */
-  current: number
-  total: number
-  task: string
-}
-
 export interface WSTaskUserInfoData {
+  config_id?: string
   user_id: string
   name: string
   status: string
-  /** 没有任务在跑或该专项不提供时为空 */
-  progress?: WSTaskUserProgressData | null
 }
 
+/** 任务树在前端的展示投影；不作为后端传输载荷。 */
 export interface WSTaskScriptInfoData {
+  config_id?: string
   script_id: string
   name: string
   status: string
   userList: WSTaskUserInfoData[]
 }
 
-export type WSTaskMode = 'AutoProxy' | 'ScriptConfig' | 'Update' | 'CycleRun'
+export type WSTaskMode = 'AutoProxy' | 'ScriptConfig' | 'ScriptView'
 
 export interface WSTaskScriptIdentityData {
   scriptId: string
   scriptType: string
 }
 
-/** 循环运行的一个待运行条目 */
-export interface WSTaskCyclePreviewData {
-  queueItemId: string
-  scriptId: string
-  scriptName: string
-  nextRunAt: string
-  isDue: boolean
-  isRunning: boolean
-}
-
 /** 任务信息快照 (type=task.info.updated) */
-export interface WSTaskInfoUpdatedData {
-  task_info: WSTaskScriptInfoData[]
-  /** 循环运行的待运行条目，仅循环任务非空 */
-  cycleNextList?: WSTaskCyclePreviewData[]
-}
+export type WSTaskInfoUpdatedData = TaskItemDocument
 
-/**
- * 当前任务日志 (type=task.log.updated)
- *
- * append 为 true 时 log 是相对上一次推送的差量；为 false 时 log 是尾部完整日志（≤200,000 字符）。
- * seq 每个任务独立、从 1 起单调递增，订阅方据此判断是否漏了消息。
- */
+/** 当前日志全文，每条消息整体替换。 */
 export interface WSTaskLogUpdatedData {
   log: string
   seq: number
   append: boolean
-  /** log 第一行在完整日志里的行号；append 为 true 时忽略，界面接着已有行号往后数 */
-  firstLine?: number
+  firstLine: number
 }
 
 /** 任务完成消息数据 (type=task.completed) */
 export interface WSTaskCompletedData {
+  task: TaskItemDocument
   result: string
   outcome: 'success' | 'error' | 'cancelled'
   error?: string | null
-  task_info: WSTaskScriptInfoData[]
 }
 
 /** 一次脚本执行边界，关联字段仅用于本机订阅 (id=TaskManager)。 */
@@ -186,23 +162,23 @@ export interface WSTaskScriptFinishedData extends WSTaskScriptStartedData {
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
 export interface WSTaskCreatedData {
+  trigger?: TaskTriggerReason
   taskId: string
   mode: WSTaskMode
   scripts: WSTaskScriptIdentityData[]
-  queueId?: string | null
   taskName?: string | null
   taskType?: string | null
 }
 
 /** 电源倒计时更新数据 (id=Main, type=power.countdown.updated) */
 export interface WSPowerCountdownData {
-  operation: string
+  operation: PowerSignal
   remaining: number
 }
 
 /** 电源标志更新数据 (id=Main, type=power.sign.updated) */
 interface WSPowerSignData {
-  signal: string
+  signal: PowerSignal
 }
 
 /** MFW 运行环境准备进度 (id=<scriptId>, type=maafw.env-prepare.progress) */

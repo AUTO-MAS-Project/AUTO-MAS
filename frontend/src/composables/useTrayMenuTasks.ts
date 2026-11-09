@@ -1,5 +1,5 @@
 import { onScopeDispose, ref } from 'vue'
-import { Service } from '@/api'
+import { fetchTaskTargets } from './useTaskOptions'
 import { translate as t } from '@/i18n'
 import { getApiErrorMessage } from '@/utils/apiError'
 
@@ -8,20 +8,16 @@ export function useTrayMenuTasks() {
   const options = ref<{ label: string; value: string }[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
-  let request: ReturnType<typeof Service.getTaskComboxApiInfoComboxTaskPost> | null = null
   let requestId = 0
 
   const load = async () => {
     const currentId = ++requestId
-    request?.cancel()
     loading.value = true
     error.value = null
-    request = Service.getTaskComboxApiInfoComboxTaskPost()
     try {
-      const response = await request
+      const response = await fetchTaskTargets()
       if (currentId !== requestId) return
-      if (response.code !== 200) throw new Error(response.message)
-      options.value = response.data.flatMap(item =>
+      options.value = response.flatMap(item =>
         item.value ? [{ label: item.label, value: item.value }] : []
       )
     } catch (cause) {
@@ -31,14 +27,12 @@ export function useTrayMenuTasks() {
     } finally {
       if (currentId === requestId) {
         loading.value = false
-        request = null
       }
     }
   }
 
   onScopeDispose(() => {
     ++requestId
-    request?.cancel()
   })
 
   return { options, loading, error, load }

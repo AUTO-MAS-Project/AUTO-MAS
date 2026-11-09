@@ -8,4 +8,3 @@ import type { MaaPlanConfigInput } from './MaaPlanConfigInput';
 import type { MSSPlanConfigInput } from './MSSPlanConfigInput';
 import type { UniversalPlanConfigInput } from './UniversalPlanConfigInput';
 export type PlanConfigDataInput = (MaaPlanConfigInput | MaaEndPlanConfigInput | BAAHPlanConfigInput | MSSPlanConfigInput | UniversalPlanConfigInput);
-

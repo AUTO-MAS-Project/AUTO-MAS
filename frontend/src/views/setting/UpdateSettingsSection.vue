@@ -2,6 +2,8 @@
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import type { GlobalConfig } from '@/api'
+import type { RadioChangeEvent } from 'ant-design-vue/es/radio/interface'
+import type { SettingChangeHandler } from './settingTypes'
 import FluxdownSection from '@/views/setting/FluxdownSection.vue'
 import MirrorCdkSettings from './components/MirrorCdkSettings.vue'
 import { CloudDownloadOutlined, DownloadOutlined, SyncOutlined } from '@ant-design/icons-vue'
@@ -16,18 +18,33 @@ const { t } = useI18n()
 const checkingUpdate = ref(false)
 const emit = defineEmits<{ fluxdownInstalled: [] }>()
 
-const { settings, updateSourceOptions, updateChannelOptions, handleSettingChange, checkUpdate } =
-  defineProps<{
-    settings: GlobalConfig
-    updateSourceOptions: { label: string; value: string }[]
-    updateChannelOptions: { label: string; value: string }[]
-    handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<boolean>
-    checkUpdate: () => Promise<void>
-  }>()
+const { settings, handleSettingChange, checkUpdate } = defineProps<{
+  settings: GlobalConfig
+  handleSettingChange: SettingChangeHandler
+  checkUpdate: () => Promise<void>
+}>()
+
+type UpdateConfig = NonNullable<GlobalConfig['Update']>
+const updateSourceOptions = computed<
+  { label: string; value: NonNullable<UpdateConfig['Source']> }[]
+>(() => [
+  { label: 'GitHub', value: 'GitHub' },
+  { label: t('core.setting.source.MirrorChyan'), value: 'MirrorChyan' },
+  { label: t('core.setting.source.AutoSite'), value: 'AutoSite' },
+  { label: t('core.setting.source.CNB'), value: 'CNB' },
+])
+const updateChannelOptions = computed<
+  { label: string; value: NonNullable<UpdateConfig['Channel']> }[]
+>(() => [
+  { label: t('core.setting.channel.stable'), value: 'stable' },
+  { label: t('core.setting.channel.beta'), value: 'beta' },
+])
 
 // MFW 项目包的 GitHub 加速镜像：与后端 Update.GitHubMirror 的 OptionsValidator 一致，
 // 多给一项用户选了就会被静默纠回
-const githubMirrorOptions = computed(() => [
+const githubMirrorOptions = computed<
+  { label: string; value: NonNullable<UpdateConfig['GitHubMirror']> }[]
+>(() => [
   { label: t('core.setting.others.githubMirrorAutoShort'), value: 'Auto' },
   { label: t('core.setting.others.githubMirrorOffShort'), value: 'Off' },
 ])
@@ -55,13 +72,26 @@ const handlePauseUntilChange = (value: string | null) => {
   )
 }
 
-// MirrorCdkSettings 只关心保存是否完成，这里吞掉布尔返回值
-const handleCdkSettingChange = async (
-  category: keyof GlobalConfig,
-  key: string,
-  value: unknown
-): Promise<void> => {
-  await handleSettingChange(category, key, value)
+const handleChannelChange = (value: unknown) => {
+  const option = updateChannelOptions.value.find(option => option.value === value)
+  if (option) void handleSettingChange('Update', 'Channel', option.value)
+}
+
+const handleSourceChange = (event: RadioChangeEvent) => {
+  const option = updateSourceOptions.value.find(option => option.value === event.target.value)
+  if (option) void handleSettingChange('Update', 'Source', option.value)
+}
+
+const handleGithubMirrorChange = (value: unknown) => {
+  const option = githubMirrorOptions.value.find(option => option.value === value)
+  if (option) void handleSettingChange('Update', 'GitHubMirror', option.value)
+}
+
+const handleProxyAddressBlur = (event: FocusEvent) => {
+  const input = event.target
+  if (input instanceof HTMLInputElement) {
+    void handleSettingChange('Update', 'ProxyAddress', input.value)
+  }
 }
 
 const handleCheckUpdate = async () => {
@@ -102,7 +132,7 @@ const handleCheckUpdate = async () => {
       <a-segmented
         :value="settings.Update?.Channel ?? 'stable'"
         :options="updateChannelOptions"
-        @change="(value: any) => handleSettingChange('Update', 'Channel', value)"
+        @change="handleChannelChange"
       />
     </SettingRow>
 
@@ -136,7 +166,7 @@ const handleCheckUpdate = async () => {
         :value="settings.Update?.Source"
         class="source-cards"
         :aria-label="t('core.setting.others.updateSource')"
-        @change="(event: any) => handleSettingChange('Update', 'Source', event.target.value)"
+        @change="handleSourceChange"
       >
         <SelectableOptionCard
           v-for="option in updateSourceOptions"
@@ -152,7 +182,7 @@ const handleCheckUpdate = async () => {
       </a-radio-group>
     </SettingRow>
 
-    <MirrorCdkSettings :settings="settings" :handle-setting-change="handleCdkSettingChange" />
+    <MirrorCdkSettings :settings="settings" :handle-setting-change="handleSettingChange" />
 
     <SettingRow :label="t('core.setting.others.proxy')" :hint="t('core.setting.others.proxyTip')">
       <a-input
@@ -160,7 +190,7 @@ const handleCheckUpdate = async () => {
         :placeholder="t('core.setting.others.proxyPlaceholder')"
         class="proxy-input"
         :aria-label="t('core.setting.others.proxy')"
-        @blur="(event: any) => handleSettingChange('Update', 'ProxyAddress', event.target.value)"
+        @blur="handleProxyAddressBlur"
       />
     </SettingRow>
 
@@ -171,7 +201,7 @@ const handleCheckUpdate = async () => {
       <a-segmented
         :value="settings.Update?.GitHubMirror ?? 'Auto'"
         :options="githubMirrorOptions"
-        @change="(value: any) => handleSettingChange('Update', 'GitHubMirror', value)"
+        @change="handleGithubMirrorChange"
       />
     </SettingRow>
   </SectionCard>

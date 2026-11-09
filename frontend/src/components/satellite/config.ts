@@ -68,8 +68,6 @@ export const SATELLITE_COLORS = {
   active: 0x6ce08a,
   /** 上次失败 */
   failed: 0xff5a5f,
-  /** 上次失败、这次又在跑 */
-  failedRunning: 0xffc247,
   explosionFlash: 0x8ce7ff,
   explosionRing: 0x6ce0ff,
   orbitDark: 0x6f8fb3,

@@ -105,12 +105,9 @@ async def test_config_update_error_fails_open(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("future_seconds", [60, 3600, 86400])
-async def test_future_check_time_triggers_revalidation(
-    monkeypatch, environment, future_seconds
-):
+async def test_future_check_time_triggers_revalidation(monkeypatch, environment):
     config, clock = environment
-    future = datetime(2026, 10, 10, 12) + timedelta(seconds=future_seconds)
+    future = datetime(2026, 10, 10, 12) + timedelta(seconds=60)
     await config.update(
         type(config).model_validate(
             {

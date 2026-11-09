@@ -35,7 +35,6 @@ from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
@@ -51,6 +50,7 @@ from app.utils import (
     ProcessManager,
     ProcessRunner,
     get_logger,
+    process,
 )
 
 from .tools import (
@@ -177,7 +177,7 @@ async def _wait_bgi_exit(
     """按进程名轮询等待 BetterGI 完全退出，返回仍未退出的 PID 列表（空列表=已退干净）。
 
     两条都必须按进程名复核：``taskkill`` 返回成功不代表进程已经消失；
-    ``System.kill_process`` 还会把「读不到 exe 路径」的提权实例归入 uncertain_pids 而漏判成功。
+    ``process.kill_process`` 还会把「读不到 exe 路径」的提权实例归入 uncertain_pids 而漏判成功。
     """
     remaining: list[int] = []
     for _ in range(attempts):
@@ -440,10 +440,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             and self.cur_user_config.Data.ProxyTimes
             >= self.script_config.Run.ProxyTimesLimit
         ):
-            self.cur_user_item.status = "跳过"
+            await self.cur_user_item.set_state(status="跳过")
             return "今日代理次数已达上限, 跳过该账号"
         if self.cur_user_config.Info.RemainedDay == 0:
-            self.cur_user_item.status = "跳过"
+            await self.cur_user_item.set_state(status="跳过")
             return "账号剩余天数为 0, 跳过该账号"
 
         # MAS 方式切号的前置校验（对齐 MaaEnd：不满足直接报错而非运行期失败）。
@@ -460,13 +460,13 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                     # 无密码走下拉列表匹配，要求账号能生成掩码锚点（手机号/邮箱）；
                     # 第三方登录账号没有打码锚点，无法在登录记录中定位
                     if "*" not in account_switch.mask_account(account):
-                        self.cur_user_item.status = "异常"
+                        await self.cur_user_item.set_state(status="异常")
                         return (
                             "MAS 方式下拉列表切换需要手机号或邮箱账号，"
                             "第三方登录账号请填写密码走账号+密码方式"
                         )
             elif resource != "B服":
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
                 return (
                     "MAS 方式账号切换暂仅支持官服/B服用户，"
                     "请改回 BetterGI 脚本切换方式或调整该账号的服务器"
@@ -485,7 +485,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                     root, str(self.cur_user_config.Switch.GamePath or "")
                 )
                 if info["channel"] and info["channel"] != expected:
-                    self.cur_user_item.status = "异常"
+                    await self.cur_user_item.set_state(status="异常")
                     return (
                         f"该账号服务器为 {resource}，但游戏客户端是"
                         f"{info['channel']}客户端（{info['installPath']}）；"
@@ -658,7 +658,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 报告聚合（build_user_result_text）自然只有结果行。写回 UserItem 供
         # final_task 收尾读取——prepare 在此之前崩溃时读到 UserItem 默认「汇总」，
         # 不会 AttributeError 掩盖原始错误。
-        self.cur_user_item.push_log_mode = str(
+        self.user_state(self.cur_user_item).push_log_mode = str(
             self.cur_user_config.Notify.PushLogMode or "汇总"
         )
 
@@ -1038,15 +1038,15 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             on_log=self._push_dispatch_log,
             should_abort=lambda: task_stopped(self),
         ):
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             return
 
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
 
         # 切换账号（单独执行 --startGroups，先于一条龙）
         if not await self._switch_account():
-            self.cur_user_item.status = "异常"
-            self.script_info.log = "切换账号失败，已中止任务"
+            await self.cur_user_item.set_state(status="异常")
+            await self.script_info.set_log("切换账号失败，已中止任务")
             logger.error(f"账号 {self.cur_user_item.name} 切换账号失败，中止任务")
             return
 
@@ -1073,7 +1073,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             exec_ok = await self._run_execution_layer()
             if not exec_ok:
                 execution_failure_summary = self.cur_user_log.status
-                self.script_info.log = (
+                await self.script_info.set_log(
                     f"{execution_failure_summary}\n执行层失败，继续执行一条龙日常"
                 )
                 logger.warning(
@@ -1087,9 +1087,11 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             if exec_ok:
                 # 执行层已完成，原生一条龙无活可干：整体视为成功，直接收尾
                 self.run_book = True
-                self.script_info.log = "执行层已完成；原生一条龙无启用任务，跳过阶段2"
+                await self.script_info.set_log(
+                    "执行层已完成；原生一条龙无启用任务，跳过阶段2"
+                )
             else:
-                self.script_info.log = (
+                await self.script_info.set_log(
                     f"{execution_failure_summary}\n一条龙无启用任务，跳过"
                 )
             logger.info(
@@ -1101,8 +1103,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 表现为「一直卡住、游戏不启动」；而 wait_event 只在收到日志时才会被唤醒，一行日志
         # 都没有时会无限等下去（2026-09-15 实机排障）。
         if not await self.kill_managed_process():
-            self.cur_user_item.status = "异常"
-            self.script_info.log = (
+            await self.cur_user_item.set_state(status="异常")
+            await self.script_info.set_log(
                 f"{execution_failure_summary}\n{_BGI_UNKILLABLE_HINT}"
                 if execution_failure_summary
                 else _BGI_UNKILLABLE_HINT
@@ -1120,20 +1122,20 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             logger.info(
                 f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
             )
-            self.cur_user_item.status = "运行"
+            await self.cur_user_item.set_state(status="运行")
             self.log_start_time = datetime.now().astimezone()
-            self.cur_user_item.add_log_record(
+            await self.cur_user_item.add_log_record(
                 self.log_start_time, LogRecord(phase="一条龙")
             )
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
-            self.script_info.log = ""
+            await self.script_info.set_log("")
 
             # 重试前同样确认没有杀不掉的旧实例：BGI 单实例下带参启动会被它吞掉，重试毫无意义
             # （2026-09-15 实机：3 次重试全打在同一个无法终止的实例上）
             if not await self.kill_managed_process():
-                self.cur_user_item.status = "异常"
-                self.cur_user_log.status = _BGI_UNKILLABLE_HINT
-                self.script_info.log = (
+                await self.cur_user_item.set_state(status="异常")
+                await self.cur_user_log.set_state(status=_BGI_UNKILLABLE_HINT)
+                await self.script_info.set_log(
                     f"{execution_failure_summary}\n{_BGI_UNKILLABLE_HINT}"
                     if execution_failure_summary
                     else _BGI_UNKILLABLE_HINT
@@ -1175,7 +1177,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
 
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
-                self.script_info.log = (
+                await self.script_info.set_log(
                     "检测到 BetterGI 已完成任务\n正在等待 BetterGI 自行退出"
                 )
                 await asyncio.sleep(3)
@@ -1185,7 +1187,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 f"账号 {self.cur_user_item.name} - BetterGI 代理异常: "
                 f"{self.cur_user_log.status}"
             )
-            self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
+            await self.script_info.set_log(
+                f"{self.cur_user_log.status}\n正在中止相关程序"
+            )
             await self.kill_managed_process()
             try:
                 await Notify.send_notice(
@@ -1199,7 +1203,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             except Exception:
                 pass
             if i + 1 < run_limit:
-                self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
+                await self.script_info.append_log(
+                    f"\n将在稍后重试 ({i + 1}/{run_limit})"
+                )
                 await asyncio.sleep(10)
 
         # 原生日志和等待退出提示会替换调度正文，结束后补回执行层失败摘要。
@@ -1345,7 +1351,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 掉落统计无数据可解析）。原生一条龙随后会另开一条记录，结果形如「执行层 | 一条龙」。
         exec_log = LogRecord(phase="执行层")
         self.log_start_time = datetime.now().astimezone()
-        self.cur_user_item.add_log_record(self.log_start_time, exec_log)
+        exec_log = await self.cur_user_item.add_log_record(
+            self.log_start_time, exec_log
+        )
         # 同步为「当前记录」：on_crash 与收尾的「运行异常」通知都读 self.cur_user_log
         self.cur_user_log = exec_log
 
@@ -1361,7 +1369,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 参数会被那个旧实例吞掉，执行层永远等不到结束标记，只能干等到空闲超时（2026-09-15 实机）
         if not await self.kill_managed_process():
             failure_reason = _BGI_UNKILLABLE_HINT
-            exec_log.status = failure_reason
+            await exec_log.set_state(status=failure_reason)
             logger.error(
                 f"账号 {self.cur_user_item.name} 执行层未启动：{failure_reason}"
             )
@@ -1402,7 +1410,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             log = "".join(log_content)
             # 与原生一条龙的 check_log 同构：把执行层日志写进本次运行记录，
             # 历史日志、统计通知与掉落统计都从这条记录取数据
-            exec_log.content = log_content
+            await exec_log.set_state(content=log_content)
             # 单步失败只统计（执行层会跳过继续），不据此判负；另外取 main.js 收尾的
             # 汇总标记（失败且已跳过的步数），用于把状态改成「部分失败」
             step_failed = log.count("MAS_STEP_FAIL")
@@ -1519,15 +1527,19 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
 
         # 收尾状态：成功必须用 "Success!"（final_task 的成功轮筛选与 on_crash 的
         # 「非 Success! 即弹运行异常通知」都依赖这个契约串）
-        exec_log.status = (
-            "Success!" if result["success"] else f"{failure_reason}{failure_detail}"
+        await exec_log.set_state(
+            status="Success!"
+            if result["success"]
+            else f"{failure_reason}{failure_detail}"
         )
         # 执行层整体失败后仍可能继续原生一条龙，已失败的步骤也必须进入最终汇总。
         self.partial_failed_steps = failed_steps
         if result["success"] and failed_steps:
             # 有步骤失败并已跳过：按 2026-09-09 决策不判负（不重试、计入成功），但状态不能再
             # 报「成功」——否则出现「任务没跑完却显示成功」（2026-09-15 实机：地脉花未打）。
-            exec_log.status = f"部分失败：{failed_steps} 个步骤未完成（已跳过继续）"
+            await exec_log.set_state(
+                status=f"部分失败：{failed_steps} 个步骤未完成（已跳过继续）"
+            )
 
         if result["success"]:
             if failed_steps:
@@ -1862,9 +1874,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """按内置日志判定结果，未见成功日志便退出则视为异常。"""
         log = "".join(log_content)
-        self.cur_user_log.content = log_content
-        self.script_info.log_first_line = log[:-4000].count("\n") + 1
-        self.script_info.log = log[-4000:]
+        await self.cur_user_log.set_state(content=log_content)
+        await self.script_info.set_log(log)
 
         log_status = "BetterGI 正常运行中"
         user_item_status: str | None = None
@@ -1926,9 +1937,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                     log_status = "BetterGI 运行超时"
                     user_item_status = "异常"
 
-        self.cur_user_log.status = log_status
+        await self.cur_user_log.set_state(status=log_status)
         if user_item_status is not None:
-            self.cur_user_item.status = user_item_status
+            await self.cur_user_item.set_state(status=user_item_status)
 
         logger.debug(f"BetterGI 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "BetterGI 正常运行中":
@@ -1936,7 +1947,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             self.wait_event.set()
 
     async def final_task(self):
-        self.task_info.begin_user_history_capture(
+        self.history.begin_user_history_capture(
             self.script_info,
             self.cur_user_item,
             failed=bool(self.cur_user_item.log_record)
@@ -1964,7 +1975,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 and log_item is self.cur_user_log
                 and log_item.status == "未开始监看日志"
             ):
-                log_item.status = "任务被用户手动中止"
+                await log_item.set_state(status="任务被用户手动中止")
 
             was_cancelled = (
                 self.stopped_manually
@@ -1972,9 +1983,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 and log_item.status == "任务被用户手动中止"
             )
             if len(log_item.content) == 0:
-                log_item.content = ["未捕获到任何日志内容"]
+                await log_item.set_state(content=["未捕获到任何日志内容"])
                 if not was_cancelled:
-                    log_item.status = "未捕获到日志"
+                    await log_item.set_state(status="未捕获到日志")
 
             # 警告只影响展示文案，历史状态与重试选轮仍使用原始运行结果。
             history_status = log_item.status
@@ -2000,7 +2011,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 except Exception as error:
                     diagnostic = f"BetterGI 掉落统计解析失败：{error}"
                     logger.opt(exception=True).warning(diagnostic)
-                    log_item.content.append(f"\n{diagnostic}\n")
+                    await log_item.append_content(f"\n{diagnostic}\n")
             history_records.append(
                 HistoryWrite(
                     time=t.astimezone(UTC4),
@@ -2092,7 +2103,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 合并分步表在专项内转换并交付，manager.final_task 选择条目并调用公共报告排版。
         # 开关关闭时不注入，push_log 保持为空；on_crash 后 final_task
         # 仍会执行，崩溃前能解析出的步骤同样进报告。
-        if self.cur_user_item.push_log_mode != "关闭" and one_dragon_report:
+        if (
+            self.user_state(self.cur_user_item).push_log_mode != "关闭"
+            and one_dragon_report
+        ):
             await self._append_step_details(one_dragon_report)
 
         # 掉落统计：解析各轮日志里的「本轮奖励识别结果」（BGI 奖励识别打印的行），
@@ -2111,7 +2125,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         self._restore_one_dragon_config()
 
         if history_records:
-            await self.task_info.save_user_history(
+            await self.history.save_user_history(
                 history_records,
                 script=self.script_info,
                 user=self.cur_user_item,
@@ -2193,8 +2207,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             self.cur_user_config.Data.LastProxyStatus = "成功"
             await self.cur_user_config.commit()
             # 与上游整体结果一致；分步问题不升级为整条失败，也不触发失败重试/推送。
-            self.cur_user_item.status = (
-                "部分失败" if self.partial_failed_steps else "完成"
+            await self.cur_user_item.set_state(
+                status="部分失败" if self.partial_failed_steps else "完成"
             )
             if self.partial_failed_steps or self.warning_steps:
                 logger.warning(
@@ -2209,12 +2223,12 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             self.cur_user_config.Data.LastProxyStatus = "失败"
             await self.cur_user_config.commit()
             if self.cur_user_item.status != "完成":
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
 
     async def on_crash(self, e: Exception):
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         if self.cur_user_log is not None:
-            self.cur_user_log.status = f"BetterGI 运行异常: {e}"
+            await self.cur_user_log.set_state(status=f"BetterGI 运行异常: {e}")
         logger.opt(exception=True).warning(f"BetterGI 自动代理任务出现异常: {e}")
         if self.wait_event is not None:
             self.wait_event.set()
@@ -2313,9 +2327,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         deadline = time.monotonic() + _GAME_EXIT_WAIT_SECONDS
         while time.monotonic() < deadline:
             # 账号间等待可被取消；调度器的停止标志同步置位，不再继续切换账号。
-            if self.stopped_manually or getattr(
-                self.task_info, "replay_cancelled", False
-            ):
+            if self.stopped_manually:
                 return
             # 按进程存活判断（不依赖窗口）：窗口销毁后进程可能仍存活片刻。
             # 全进程扫描是同步 IO，放到线程里免得每秒卡一次事件循环
@@ -2365,13 +2377,15 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                     self.wait_event.set()
                     return
                 if self.cur_user_log.status == "未开始监看日志":
-                    self.cur_user_log.status = (
-                        "BetterGI 启动后立即退出（可能有旧实例在运行）"
+                    await self.cur_user_log.set_state(
+                        status="BetterGI 启动后立即退出（可能有旧实例在运行）"
                     )
-                    self.cur_user_item.status = "异常"
+                    await self.cur_user_item.set_state(status="异常")
                 elif self.cur_user_log.status == "BetterGI 正常运行中":
-                    self.cur_user_log.status = "BetterGI 在完成任务前退出"
-                    self.cur_user_item.status = "异常"
+                    await self.cur_user_log.set_state(
+                        status="BetterGI 在完成任务前退出"
+                    )
+                    await self.cur_user_item.set_state(status="异常")
                 self.wait_event.set()
                 return
             try:
@@ -2386,7 +2400,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             bool: 已确认无 BetterGI 残留时返回 True；仍有实例存活（MAS 无权终止它）时返回
                 False——BGI 单实例，带参启动会被已有实例吞掉（任务卡住、游戏不启动），
                 调用方必须据此中止而不是继续启动。
-                注意 ``System.kill_process`` 对「读不到 exe 路径」的提权进程会归入
+                注意 ``process.kill_process`` 对「读不到 exe 路径」的提权进程会归入
                 uncertain_pids 而漏判为成功，故末尾必须按进程名复核一遍。
         """
         if self.bettergi_process_manager is not None:
@@ -2398,7 +2412,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 )
         if self.script_exe_path is not None:
             try:
-                await System.kill_process(self.script_exe_path)
+                await process.kill_process(self.script_exe_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 BetterGI 主进程失败: {e}")
 
@@ -2413,7 +2427,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
     async def _append_step_details(self, steps: list[dict]) -> None:
         """由专项固定分步快照、处理转换异常，并在宿主线程交付。"""
         user = self.cur_user_item
-        if user.push_log_mode == "关闭":
+        if self.user_state(user).push_log_mode == "关闭":
             return
         snapshot = [dict(step) for step in steps]
 
@@ -2421,7 +2435,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             try:
                 entries = await asyncio.to_thread(steps_to_push_log, snapshot)
                 for entry in entries:
-                    user.push_log.append(entry)
+                    await self.user_state(user).append_push_log(entry)
             except Exception:
                 logger.opt(exception=True).warning("BetterGI 节点结果交付失败")
 

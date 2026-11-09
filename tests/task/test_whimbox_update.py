@@ -5,7 +5,6 @@ import hashlib
 import sys
 import threading
 import uuid
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -14,6 +13,7 @@ from packaging.version import Version
 from app.task.Whimbox import manager
 from app.task.Whimbox.tools import update
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 from app.utils.common.process.runner import ProcessCleanupUnconfirmed
 
 
@@ -194,6 +194,7 @@ def test_access_lock_excludes_same_installation(installation):
 @pytest.fixture
 def managed_batch(installation, monkeypatch):
     instance = object.__new__(manager.WhimboxManager)
+    super(manager.WhimboxManager, instance).__init__()
     users = [
         SimpleNamespace(user_id=str(uuid.uuid4()), status="等待") for _ in range(2)
     ]

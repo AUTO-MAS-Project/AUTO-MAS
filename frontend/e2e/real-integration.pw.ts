@@ -1,7 +1,8 @@
 import { writeFile } from 'node:fs/promises'
 import dayjs from 'dayjs'
 import type { Page, WebSocketRoute } from '@playwright/test'
-import type { HistoryBucket, HistoryIndexItem } from '../src/api'
+import type { HistoryBucket, HistoryIndexItem, TaskItemDocument } from '../src/api'
+import { projectTaskTree } from '../src/composables/taskTreeProjection'
 import { expect, test } from './fixtures'
 import { cleanupRealRun } from './real-cleanup'
 import { observeMainConnection } from './socket-recovery'
@@ -74,23 +75,23 @@ const getRealConfig = (): RealConfig => ({
     : {}),
 })
 
+const singleSelection = (nodes: unknown): JsonObject | undefined => {
+  if (!isRecord(nodes) || Object.keys(nodes).length !== 1 || !isRecord(nodes['0'])) return
+  return nodes['0']
+}
+
 const isAllowedStart = (body: unknown, config: RealConfig, queueId: string): boolean => {
-  if (!isRecord(body)) return false
-  const scope = body.queueUserIds
-  const users = isRecord(scope) ? scope[config.scriptId] : undefined
-  return (
-    body.mode === 'AutoProxy' &&
-    body.taskId === queueId &&
-    body.userId == null &&
-    body.userIds == null &&
-    body.resumeFromScriptId == null &&
-    (scope == null ||
-      (isRecord(scope) &&
-        Object.keys(scope).length === 1 &&
-        Array.isArray(users) &&
-        users.length === 1 &&
-        users[0] === config.userId))
-  )
+  if (!isRecord(body) || body.mode !== 'AutoProxy') return false
+  const queue = singleSelection(body.tasks)
+  if (queue?.uid !== queueId) return false
+  // 此处队列由用例建立，只有一个托管；预检已确认它只有目标账号。
+  if (queue.children == null || (isRecord(queue.children) && !Object.keys(queue.children).length))
+    return true
+  const item = singleSelection(queue.children)
+  if (!item) return false
+  if (item.children == null || (isRecord(item.children) && !Object.keys(item.children).length))
+    return true
+  return singleSelection(item.children)?.uid === config.userId
 }
 
 const createOperationObserver = async (page: Page, config: RealConfig) => {
@@ -130,13 +131,22 @@ const createOperationObserver = async (page: Page, config: RealConfig) => {
       taskUpdates.set(message.id, route)
     }
     if (message.type === 'task.info.updated' && typeof message.id === 'string') {
-      const scripts = Array.isArray(data.task_info) ? data.task_info : []
+      const scripts =
+        isRecord(data.scripts) && isRecord(data.scripts.data)
+          ? Object.values(data.scripts.data)
+          : []
       const script = scripts.find(
-        (item: unknown) => isRecord(item) && item.script_id === config.scriptId
+        item => isRecord(item) && isRecord(item.info) && item.info.script_id === config.scriptId
       )
-      const users = Array.isArray(script?.userList) ? script.userList : []
-      const user = users.find((item: unknown) => isRecord(item) && item.user_id === config.userId)
-      if (readString(user?.status)?.startsWith('运行')) runningAccounts.add(message.id)
+      const users =
+        isRecord(script) && isRecord(script.users) && isRecord(script.users.data)
+          ? Object.values(script.users.data)
+          : []
+      const user = users.find(
+        item => isRecord(item) && isRecord(item.info) && item.info.user_id === config.userId
+      )
+      const info = isRecord(user) && isRecord(user.info) ? user.info : {}
+      if (readString(info.status)?.startsWith('运行')) runningAccounts.add(message.id)
     }
 
     if (message.id === 'TaskManager' && message.type === 'task.created') {
@@ -151,12 +161,9 @@ const createOperationObserver = async (page: Page, config: RealConfig) => {
     }
 
     if (message.type === 'task.completed' && typeof message.id === 'string') {
-      const scripts = Array.isArray(data.task_info) ? data.task_info : []
-      const script = scripts.find(
-        (item: unknown) => isRecord(item) && item.script_id === config.scriptId
-      )
-      const users = Array.isArray(script?.userList) ? script.userList : []
-      const user = users.find((item: unknown) => isRecord(item) && item.user_id === config.userId)
+      const scripts = isRecord(data.task) ? projectTaskTree(data.task as TaskItemDocument) : []
+      const script = scripts.find(item => item.config_id === config.scriptId)
+      const user = script?.userList.find(item => item.config_id === config.userId)
       const outcome = readString(data.outcome)
       const scriptStatus = readString(script?.status)
       const userStatus = readString(user?.status)
@@ -391,7 +398,7 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
         const users = isRecord(usersBody.data) ? usersBody.data : {}
         const user = users[config.userId]
         const info = isRecord(user) && isRecord(user.Info) ? user.Info : {}
-        // 全选时 UI 省略 userIds；只接受已隔离为唯一目标账号的配置。
+        // 全选时 UI 省略用户子树；只接受已隔离为唯一目标账号的配置。
         expect(Object.keys(users).length === 1 && isRecord(user)).toBe(true)
         expect(info.Status === true && info.RemainedDay !== 0).toBe(true)
         expect((readString(info.Name) ?? config.userId) === config.accountName).toBe(true)
@@ -426,16 +433,19 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
             .toBe(true)
         }
 
-        const taskOptionsResponse = await page.request.post(apiUrl('/api/info/combox/task'))
+        const taskOptionsResponse = await page.request.post(apiUrl('/api/scripts/get'), {
+          data: {},
+        })
         stage = 'selection'
         const taskOptionsBody = await readBody(taskOptionsResponse)
         expect(taskOptionsBody.code).toBe(200)
-        const taskOptions = Array.isArray(taskOptionsBody.data) ? taskOptionsBody.data : []
-        const scriptOption = taskOptions.find(
-          item => isRecord(item) && item.value === config.scriptId
-        )
-        expect(isRecord(scriptOption)).toBeTruthy()
-        const scriptLabel = readString(isRecord(scriptOption) ? scriptOption.label : undefined)
+        const scriptData = isRecord(taskOptionsBody.data)
+          ? taskOptionsBody.data[config.scriptId]
+          : undefined
+        const scriptLabel =
+          isRecord(scriptData) && isRecord(scriptData.Info)
+            ? readString(scriptData.Info.Name)
+            : undefined
         expect(scriptLabel).toBeTruthy()
 
         const goTo = async (name: string) =>
@@ -467,7 +477,7 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
         const saved = responseFor('/api/queue/item/update')
         await page
           .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
-          .getByText(scriptLabel!, { exact: true })
+          .filter({ hasText: scriptLabel! })
           .click()
         expect((await readBody(await saved)).code).toBe(200)
         await goTo('Scheduler')
@@ -475,20 +485,19 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
         const options = page.locator('.ant-select-dropdown:visible .ant-select-item-option-content')
         await options.filter({ hasText: queueName }).click()
 
-        // 「本次运行范围」收在浮层里：先展开，再按账号名勾选
+        // 「本次运行范围」收在弹窗里：先展开，再按账号名勾选
         const scopeTrigger = page.locator('.task-control .control-row button:has(.anticon-team)')
         await expect(scopeTrigger).toBeVisible()
         await scopeTrigger.click()
-        const scopePanel = page.locator('.ant-popover:visible .queue-scope')
+        const scopePanel = page.locator('.scheduler-scope-modal .ant-modal:visible')
         await expect(scopePanel).toBeVisible()
-        const accountRows = scopePanel.locator('.queue-scope-group label.ant-checkbox-wrapper')
+        const accountRows = scopePanel.locator('.scope-users label.ant-checkbox-wrapper')
         await expect(accountRows).toHaveCount(1)
         expect((await accountRows.first().innerText()).trim() === config.accountName).toBe(true)
         await accountRows.first().getByRole('checkbox').check()
-        await expect(scopePanel.locator('.ant-checkbox-checked')).toHaveCount(1)
-        // 浮层是 click 触发的，再点一次触发器收起，避免盖住启动按钮
-        await scopeTrigger.click()
-        await expect(page.locator('.ant-popover:visible .queue-scope')).toHaveCount(0)
+        await expect(accountRows.first().getByRole('checkbox')).toBeChecked()
+        await scopePanel.getByRole('button', { name: 'OK', exact: true }).click()
+        await expect(page.locator('.scheduler-scope-modal .ant-modal:visible')).toHaveCount(0)
         const beforeStart = await readBody(
           await page.request.get(apiUrl('/api/dispatch/runtime-snapshot'))
         )

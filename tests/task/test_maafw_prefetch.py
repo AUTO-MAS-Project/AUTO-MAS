@@ -119,10 +119,8 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
 
     import httpx
 
-    from app.core import script_update
-    from app.core.task_manager.manager import TaskInfo
     from app.models.config import GlobalConfig, MaaFWConfig
-    from app.models.task import ScriptItem
+    from app.models.task import TaskItem, TaskScriptItem
     from app.task.MaaFW import embedded_manager
     from app.task.MaaFW.tools.core.project_update import transport
     from app.task.MaaFW.tools.embedded import embedded_project
@@ -226,21 +224,25 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         GlobalConfig.model_validate({"Update": {"GitHubMirror": "Off"}}),
     )
     view = embedded_project.embedded_project_dir(script_id)
-    item = ScriptItem(script_id, "audit", "等待")
-    info = TaskInfo("AutoProxy", "audit", "queue", None, None)
-    monkeypatch.setattr(info, "schedule_on_change", lambda: None)
-    info.script_list = [item]
-    session = script_update.ScriptUpdateSession(
-        info,
-        make_manager=lambda item, *_args, **_kwargs: (
-            embedded_manager.MaaFWEmbeddedManager(item)
-        ),
-        resources=lambda _: ((view.resolve(),), None),
-        scheduled=lambda _: True,
-        config=isolated_app_paths,
+    info = TaskItem(mode="AutoProxy", name="audit")
+    await activate_config(info)
+    item_uid = info.scripts.add(
+        TaskScriptItem, payload={"info": {"script_id": script_id, "name": "audit"}}
     )
-    before = session._identity(0)
-    await session._prefetch(0)
+    await info.scripts.commit()
+    manager = embedded_manager.MaaFWEmbeddedManager(info.scripts[item_uid])
+    from app.core.update import download_observer
+
+    progress = []
+    token = download_observer.set(
+        lambda path, downloaded, total, speed: progress.append((downloaded, total))
+    )
+    try:
+        await manager.prefetch_script_update()
+    finally:
+        download_observer.reset(token)
+    assert any(downloaded == total and total > 0 for downloaded, total in progress)
+    assert info.scripts[item_uid].current.log == ""
     (source / "interface.json").write_text(json.dumps(replacement))
     second = await asyncio.to_thread(
         embedded_project.import_embedded_project, script_id, source
@@ -249,9 +251,6 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         MaaFWConfig.model_validate({"Embedded": imported_fields(second)})
     )
     assert first["report"] == second["report"]
-    assert session._identity(0) == before
-    manager = await session.take(0)
-    assert manager is not None
     assert json.loads((view / "interface.json").read_text()) == replacement
     marker_before = embedded_project.read_view_marker(view)
     before_consume = list(requests)
@@ -269,7 +268,7 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
         lambda *_args, **_kwargs: True,
     )
     if stop_build:
-        from app.core.task_manager.manager import Task
+        from tests.task_stop_support import StopTask
 
         entered, release = threading.Event(), threading.Event()
         building = []
@@ -286,18 +285,18 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
 
         monkeypatch.setattr(updater, "build_from_package", blocked_build)
 
-        class AutoUpdateTask(Task):
-            async def _run_main_task(self):
+        class AutoUpdateTask(StopTask):
+            async def main_task(self):
+                self._stop_scope.checks[0].timeout = 0.03
                 await manager._run_project_update("BeforeRun")
 
-        task = AutoUpdateTask(info, [], manager_factories={})
-        task._stop_scope.checks[0].timeout = 0.03
-        task.execute()
+        task = AutoUpdateTask(info)
+        task.start()
         try:
             async with asyncio.timeout(3):
                 while not entered.is_set():
                     await asyncio.sleep(0.01)
-            task.cancel()
+            task.request_stop()
             await asyncio.wait_for(task.accomplish.wait(), 2)
             unpacked, staging = building[0]
             assert unpacked.is_dir(), "构建线程尚未结束时，解压输入不能被清理"
@@ -314,8 +313,8 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
             assert json.loads((view / "interface.json").read_text())["version"] == "1.0"
         finally:
             release.set()
-            task.cancel()
-            await asyncio.gather(task._execution_root, return_exceptions=True)
+            task.request_stop()
+            await asyncio.gather(task._task, return_exceptions=True)
             async with asyncio.timeout(3):
                 await task._stop_scope._updates_idle.wait()
         return
@@ -654,3 +653,42 @@ async def test_waiting_for_busy_artifact_cache_observes_stop(
         if download is not None:
             download.cancel()
             await asyncio.gather(download, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "owned,attempt,notified",
+    [(True, 1, True), (False, 1, False), (True, 3, False)],
+)
+async def test_owned_maafw_retry_notifies_before_client_shutdown(
+    owned, attempt, notified
+):
+    """仅在还有下一轮、且需要重启 MAS 自有客户端时撤销预下载。"""
+    from app.core.script_update_queue import script_task_retrying
+    from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
+
+    runner = object.__new__(MaaFWPluginAutoProxyTask)
+    runner.script_config = SimpleNamespace(Run=SimpleNamespace(RunTimesLimit=3))
+    runner._extra_attempts = 0
+    runner.opened_game = owned
+    runner.opened_emulator = False
+    runner._append_log = lambda _text: None
+    order = []
+
+    async def close_game():
+        order.append("close")
+        return True
+
+    runner._close_emulator = AsyncMock(return_value=True)
+    runner._close_game = close_game
+
+    async def on_retry():
+        order.append("notify")
+
+    token = script_task_retrying.set(on_retry)
+    try:
+        result = await runner._restart_client_before_retry(attempt)
+    finally:
+        script_task_retrying.reset(token)
+    assert result is notified
+    assert order == (["notify", "close"] if notified else [])

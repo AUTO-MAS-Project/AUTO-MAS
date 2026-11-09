@@ -36,8 +36,7 @@ from app.core.ws import protocol
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
-from app.utils import ProcessInfo, ProcessManager, get_logger
+from app.utils import ProcessInfo, ProcessManager, get_logger, process
 
 from .AutoProxy import (
     inject_user_fields,
@@ -208,7 +207,7 @@ class ScriptConfigTask(TaskExecuteBase):
                             f"{self._original_active_idx} → {self._session_native_idx}"
                         )
             logger.info(f"启动 zzz-od 原生设置: {self.exe_path}")
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         # 无参数启动 = GUI 模式；启动器要求管理员权限，elevated 避免二次 UAC
         await self.process_manager.open_process(
             self.exe_path,
@@ -327,7 +326,7 @@ class ScriptConfigTask(TaskExecuteBase):
             return
         if readback_failed:
             # GUI 改动没能写回 MAS 字段：两侧已不一致，不能报成功
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -341,11 +340,11 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.success("zzz-od 原生查看结束（只读，不回读字段）")
         else:
             logger.success("zzz-od 原生配置已由 GUI 保存")
-        self.cur_user_item.status = "完成"
+        await self.cur_user_item.set_state(status="完成")
 
     async def on_crash(self, e: Exception) -> None:
         self.crashed = True
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"zzz-od 设置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_processes()
@@ -367,6 +366,6 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.opt(exception=True).warning(f"通过进程管理器中止 zzz-od 失败: {e}")
 
         try:
-            await System.kill_process(self.exe_path)
+            await process.kill_process(self.exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 zzz-od 进程失败: {e}")

@@ -641,42 +641,18 @@
           <div class="section-header">
             <h3>{{ t('core.edit.runConfiguration') }}</h3>
           </div>
-          <ScriptHardTimeoutField
-            v-model:value="generalConfig.Run.HardTimeLimit"
-            @save="handleChange('Run', 'HardTimeLimit', generalConfig.Run.HardTimeLimit)"
+          <ScriptRunLimitsSection
+            v-model:hard-time-limit="generalConfig.Run.HardTimeLimit"
+            v-model:daily-limit="generalConfig.Run.ProxyTimesLimit"
+            v-model:retry-limit="generalConfig.Run.RunTimesLimit"
+            v-model:timeout="generalConfig.Run.RunTimeLimit"
+            :daily-hint="t('core.edit.skipRunOnceThis')"
+            :retry-label="t('core.edit.retryLimit')"
+            enhanced
+            :retry-hint="t('core.edit.ifRunStillUnfinished')"
+            :timeout-hint="t('core.edit.treatRunAsTimed')"
+            @save="key => handleChange('Run', key, generalConfig.Run[key])"
           />
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="generalConfig.Run.ProxyTimesLimit"
-                kind="daily"
-                :label="t('core.edit.runsPerDay')"
-                :hint="t('core.edit.skipRunOnceThis')"
-                enhanced
-                @save="handleChange('Run', 'ProxyTimesLimit', generalConfig.Run.ProxyTimesLimit)"
-              />
-            </a-col>
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="generalConfig.Run.RunTimesLimit"
-                kind="retry"
-                :label="t('core.edit.retryLimit')"
-                :hint="t('core.edit.ifRunStillUnfinished')"
-                enhanced
-                @save="handleChange('Run', 'RunTimesLimit', generalConfig.Run.RunTimesLimit)"
-              />
-            </a-col>
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="generalConfig.Run.RunTimeLimit"
-                kind="timeout"
-                :label="t('core.edit.runTimeoutMinutes')"
-                :hint="t('core.edit.treatRunAsTimed')"
-                enhanced
-                @save="handleChange('Run', 'RunTimeLimit', generalConfig.Run.RunTimeLimit)"
-              />
-            </a-col>
-          </a-row>
         </div>
       </a-form>
     </a-card>
@@ -685,13 +661,12 @@
 
 <script setup lang="ts">
 import PathPickerField from '@/components/PathPickerField.vue'
-import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
 import EmulatorInstanceField from './components/EmulatorInstanceField.vue'
 import EmulatorSelectField from './components/EmulatorSelectField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import GeneralTemplateUpload from './components/GeneralTemplateUpload.vue'
 import { createGeneralScriptDraft } from './generalScriptDraft'
-import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref, watch, nextTick } from 'vue'

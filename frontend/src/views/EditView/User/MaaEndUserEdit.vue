@@ -266,7 +266,7 @@ const loading = computed(() => isInitializing.value)
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 const scriptName = ref('')
 const scriptPath = ref('')
 const controllerType = ref<string | null>(null)

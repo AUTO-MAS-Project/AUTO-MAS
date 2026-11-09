@@ -312,6 +312,13 @@ QQ 高级手动配置复用 `notification_binding_finished`，`action=manual_bin
 
 - 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。
 
+
+任务树迁移沿用 `useTaskApi.ts` 的请求受理观察和 `taskAnalytics.ts` 的创建/完成观察。
+`ScriptView` 是有限模式类别；队列/托管/用户运行 UUID 只用于本地关联，不进入事件属性。
+只读查看的打开请求仍使用 `native_config_action_finished` 的 `view` 操作；恢复快照不新增执行样本。
+独立维护请求沿用历史 `Update` 统计类别，仅表示受理，不把它加入公共调度模式或将受理记成完成。
+
+队列触发设置复用 queue_schedule_changed：启动、定时、循环可独立启用；队列级间隔保存记录 interval，重置计时请求记录 reset。重置只表示请求受理，不表示新任务启动或完成。队列项星期保存记录 queue_time/days；不采集具体间隔、日期或时间。
 HSR 运行前更新复用公共更新入口和 `script_run_finished` 的任务终态观察；更新选项保存沿用 `useScriptApi.updateScript`，不新增逐包、逐引擎或进度事件，不采集安装路径、版本及 CDK。
 
 ## 渲染进程恢复

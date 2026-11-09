@@ -17,22 +17,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-from app.config import ConfigEntry
 from app.models.config import OkwwConfig
 from app.models.script_contracts import ScriptConfigHandler
-from app.models.task import ScriptTaskResources
-from app.task.registration import ManagerBuildContext, ScriptRegistration
+from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
     from app.models.task import ScriptItem, TaskExecuteBase
     from app.utils.common.config.restore import ConfigRestorePool
 
 
-def build_manager(
-    script_item: ScriptItem, context: ManagerBuildContext
-) -> TaskExecuteBase:
+def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
     from .manager import OkwwManager
 
     return OkwwManager(script_item)
@@ -47,14 +43,7 @@ def build_config_handler() -> ScriptConfigHandler:
         user_config_class=OkwwUserConfig,
         initialize_user=initialize_okww_user,
         import_config=import_okww_config,
-        task_resources=declare_task_resources,
     )
-
-
-def declare_task_resources(script: ConfigEntry) -> ScriptTaskResources:
-    """预约 OK-WW 安装目录，防止不同配置同时操作同一份安装。"""
-    root = cast(OkwwConfig, script).Info.RootPath
-    return ScriptTaskResources(root_paths=(root,) if root is not None else ())
 
 
 def load_restore_pools() -> list[ConfigRestorePool]:

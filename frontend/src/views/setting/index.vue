@@ -7,18 +7,10 @@ import type { SelectValue } from 'ant-design-vue/es/select'
 import type { GlobalConfig } from '@/api'
 import type { CursorEffect } from '@/types/cursorEffect'
 import { normalizeCursorEffect } from '@/types/cursorEffect'
-import type { PressSoundPhase, PressSoundPreset } from '@/types/pressSound'
-import { MAX_PRESS_SOUND_BYTES } from '@/types/pressSound'
-import {
-  clearCustomSoundCache,
-  playPressSound,
-  previewPressSound,
-} from '@/components/satellite/pressSound'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { useCursorEffectStore } from '@/stores/cursorEffect'
 import { usePerformanceStore } from '@/stores/performance'
 import { useHomeSatelliteStore } from '@/stores/homeSatellite'
-import { usePressSoundStore } from '@/stores/pressSound'
 import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 import { Service, type VersionOut } from '@/api'
 import { useAppearanceSettings } from './useAppearanceSettings'
@@ -62,8 +54,6 @@ const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
 const homeSatelliteStore = useHomeSatelliteStore()
 void homeSatelliteStore.load()
-const pressSoundStore = usePressSoundStore()
-void pressSoundStore.load()
 const {
   restartPolling,
   updateVisible,
@@ -81,35 +71,6 @@ const backendUpdateInfo = ref<VersionOut | null>(null)
 // 设置数据 - 从API获取，不再使用硬编码初值
 const settings = reactive<GlobalConfig>({})
 
-// 下拉选项
-const historyRetentionOptions = computed(() => [
-  { label: t('core.setting.retention.d7'), value: 7 },
-  { label: t('core.setting.retention.d15'), value: 15 },
-  { label: t('core.setting.retention.d30'), value: 30 },
-  { label: t('core.setting.retention.d60'), value: 60 },
-  { label: t('core.setting.retention.d90'), value: 90 },
-  { label: t('core.setting.retention.d180'), value: 180 },
-  { label: t('core.setting.retention.d365'), value: 365 },
-  { label: t('core.setting.retention.forever'), value: 0 },
-])
-
-const updateSourceOptions = computed(() => [
-  { label: 'GitHub', value: 'GitHub' },
-  { label: t('core.setting.source.MirrorChyan'), value: 'MirrorChyan' },
-  { label: t('core.setting.source.AutoSite'), value: 'AutoSite' },
-  { label: t('core.setting.source.CNB'), value: 'CNB' },
-])
-
-const updateChannelOptions = computed(() => [
-  { label: t('core.setting.channel.stable'), value: 'stable' },
-  { label: t('core.setting.channel.beta'), value: 'beta' },
-])
-
-const voiceTypeOptions = computed(() => [
-  { label: t('core.setting.voice.simple'), value: 'simple' },
-  { label: t('core.setting.voice.noisy'), value: 'noisy' },
-])
-
 const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>(() => [
   { label: t('core.setting.cursor.none'), value: 'none' },
   { label: t('core.setting.cursor.sleekLine'), value: 'sleek-line' },
@@ -118,10 +79,8 @@ const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>((
 
 // 这几类配置 Electron 主进程也要用（托盘、自启、更新源等），保存后同步过去；
 // 保存链路已抽到 useSettingPersistence，这里只留页面装配
-const { loading, handleSettingChange, refreshSettings } = useSettingPersistence(
-  settings,
-  restartPolling
-)
+const { loading, handleSettingChange, handleDynamicSettingChange, refreshSettings } =
+  useSettingPersistence(settings, restartPolling)
 
 const confirmFluidCursor = () =>
   new Promise<boolean>(resolve => {
@@ -186,117 +145,6 @@ const handleHomeSatelliteStyleChange = async (style: HomeSatelliteStyle) => {
     logger.error(`保存主页卫星样式失败: ${errorMsg}`)
     message.error(t('core.setting.toast.homeSatelliteSaveFailed'))
   }
-}
-
-const reportPressSoundError = (action: string, error: unknown): void => {
-  const errorMsg = error instanceof Error ? error.message : String(error)
-  logger.error(`${action}失败: ${errorMsg}`)
-  message.error(t('core.setting.toast.pressSoundSaveFailed'))
-}
-
-const handlePressSoundEnabledChange = async (enabled: boolean) => {
-  try {
-    await pressSoundStore.persist({ enabled })
-  } catch (error) {
-    reportPressSoundError('保存按压音效开关', error)
-  }
-}
-
-const handlePressSoundPresetChange = async (value: SelectValue) => {
-  if (typeof value !== 'string') {
-    return
-  }
-
-  try {
-    await pressSoundStore.persist({ preset: value as PressSoundPreset })
-  } catch (error) {
-    reportPressSoundError('保存按压音效种类', error)
-  }
-}
-
-const handlePressSoundVolumeChange = async (volume: number) => {
-  try {
-    await pressSoundStore.persist({ volume })
-  } catch (error) {
-    reportPressSoundError('保存按压音效音量', error)
-  }
-}
-
-/** 导入自定义音频：单文件模式导一个，双文件模式分别导按下与松开 */
-const handlePressSoundImport = async (kind: 'single' | 'press' | 'release' = 'single') => {
-  try {
-    const files = await window.electronAPI.selectFile([
-      { name: '音频文件', extensions: ['wav', 'mp3', 'ogg', 'm4a', 'aac', 'flac'] },
-    ])
-    if (files.length === 0) {
-      return
-    }
-
-    const filePath = files[0]
-    // 上限交给主进程把关：超了它只回大小、不读内容，不会为了拒绝而先把整个文件读进内存。
-    // 大小用它 stat 出来的真实字节数，不拿 base64 长度反推——那样会把 padding 当成文件内容
-    const { base64, size } = await window.electronAPI.readFileBase64(
-      filePath,
-      MAX_PRESS_SOUND_BYTES
-    )
-    if (size > MAX_PRESS_SOUND_BYTES) {
-      message.error(t('core.setting.toast.pressSoundTooLarge'))
-      return
-    }
-    if (!base64) {
-      message.error(t('core.setting.toast.pressSoundReadFailed'))
-      return
-    }
-    // 同一个路径的文件可能被换过内容，缓存里的旧音频要作废
-    clearCustomSoundCache(filePath)
-
-    const name = filePath.split(/[\\/]/).pop() ?? filePath
-    if (kind === 'single') {
-      await pressSoundStore.persist({
-        preset: 'custom',
-        customPath: filePath,
-        customName: name,
-        enabled: true,
-      })
-    } else {
-      // 双文件模式：导完第二个才切过去，只有一个文件时先只记路径
-      const pressPath = kind === 'press' ? filePath : pressSoundStore.customPath
-      const releasePath = kind === 'release' ? filePath : pressSoundStore.customReleasePath
-      const ready = Boolean(pressPath && releasePath)
-      await pressSoundStore.persist({
-        ...(kind === 'press'
-          ? { customPath: filePath, customName: name }
-          : { customReleasePath: filePath, customReleaseName: name }),
-        ...(ready ? { preset: 'customPair' as const, enabled: true } : {}),
-      })
-    }
-    message.success(t('core.setting.toast.pressSoundImported'))
-  } catch (error) {
-    reportPressSoundError('导入按压音效', error)
-  }
-}
-
-const handlePressSoundPreview = (phase?: PressSoundPhase) => {
-  if (phase) {
-    const filePath =
-      phase === 'release' ? pressSoundStore.customReleasePath : pressSoundStore.customPath
-    if (filePath) {
-      void playPressSound({
-        preset: 'custom',
-        volume: pressSoundStore.volume,
-        customPath: filePath,
-      })
-    }
-    return
-  }
-
-  const options = {
-    preset: pressSoundStore.preset,
-    volume: pressSoundStore.volume,
-    customPath: pressSoundStore.customPath,
-    customReleasePath: pressSoundStore.customReleasePath,
-  }
-  void previewPressSound(options)
 }
 
 // 其他操作
@@ -384,19 +232,6 @@ onMounted(() => {
           :pause-home-effects-when-running-saving="performanceStore.saving"
           :home-satellite-style="homeSatelliteStore.style"
           :home-satellite-style-saving="homeSatelliteStore.saving"
-          :press-sound-enabled="pressSoundStore.enabled"
-          :press-sound-preset="pressSoundStore.preset"
-          :press-sound-custom-path="pressSoundStore.customPath"
-          :press-sound-custom-name="pressSoundStore.customName"
-          :press-sound-custom-release-path="pressSoundStore.customReleasePath"
-          :press-sound-custom-release-name="pressSoundStore.customReleaseName"
-          :press-sound-volume="pressSoundStore.volume"
-          :press-sound-saving="pressSoundStore.saving"
-          :handle-press-sound-enabled-change="handlePressSoundEnabledChange"
-          :handle-press-sound-preset-change="handlePressSoundPresetChange"
-          :handle-press-sound-volume-change="handlePressSoundVolumeChange"
-          :handle-press-sound-import="handlePressSoundImport"
-          :handle-press-sound-preview="handlePressSoundPreview"
           :handle-home-satellite-style-change="handleHomeSatelliteStyleChange"
           :handle-theme-mode-change="handleThemeModeChange"
           :handle-appearance-change="handleAppearanceChange"
@@ -411,17 +246,12 @@ onMounted(() => {
         />
       </template>
       <template #function>
-        <TabFunction
-          :settings="settings"
-          :history-retention-options="historyRetentionOptions"
-          :voice-type-options="voiceTypeOptions"
-          :handle-setting-change="handleSettingChange"
-        />
+        <TabFunction :settings="settings" :handle-setting-change="handleSettingChange" />
       </template>
       <template #notify>
         <TabNotify
           :settings="settings"
-          :handle-setting-change="handleSettingChange"
+          :handle-setting-change="handleDynamicSettingChange"
           :test-notify="testNotify"
           :testing-notify="testingNotify"
         />
@@ -434,8 +264,6 @@ onMounted(() => {
           :version="version"
           :backend-update-info="backendUpdateInfo"
           :settings="settings"
-          :update-source-options="updateSourceOptions"
-          :update-channel-options="updateChannelOptions"
           :handle-setting-change="handleSettingChange"
           :check-update="checkUpdate"
           @fluxdown-installed="refreshSettings"

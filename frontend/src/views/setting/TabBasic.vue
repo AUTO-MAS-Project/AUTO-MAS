@@ -17,8 +17,8 @@ import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { SUPPORTED_LOCALES, type AppLocale } from '@/i18n'
 import type { CursorEffect } from '@/types/cursorEffect'
 import type { HomeSatelliteStyle } from '@/types/homeSatellite'
-import type { PressSoundPhase, PressSoundPreset } from '@/types/pressSound'
 import type { GlobalConfig } from '@/api'
+import type { SettingChangeHandler } from './settingTypes'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
@@ -47,19 +47,6 @@ interface TabBasicProps {
   pauseHomeEffectsWhenRunningSaving: boolean
   homeSatelliteStyle: HomeSatelliteStyle
   homeSatelliteStyleSaving: boolean
-  pressSoundEnabled: boolean
-  pressSoundPreset: PressSoundPreset
-  pressSoundCustomPath: string
-  pressSoundCustomName: string
-  pressSoundCustomReleasePath: string
-  pressSoundCustomReleaseName: string
-  pressSoundVolume: number
-  pressSoundSaving: boolean
-  handlePressSoundEnabledChange(_enabled: boolean): Promise<void>
-  handlePressSoundPresetChange(value: SelectValue): Promise<void>
-  handlePressSoundVolumeChange(_volume: number): Promise<void>
-  handlePressSoundImport(kind?: 'single' | 'press' | 'release'): Promise<void>
-  handlePressSoundPreview(phase?: PressSoundPhase): void
   handleHomeSatelliteStyleChange(_style: HomeSatelliteStyle): Promise<void>
   handleThemeModeChange(value: SelectValue): Promise<void>
   handleAppearanceChange(value: SelectValue): Promise<void>
@@ -70,7 +57,7 @@ interface TabBasicProps {
   handleCursorEffectChange(value: SelectValue): Promise<void>
   handleLowPerformanceModeChange(_enabled: boolean): Promise<void>
   handlePauseHomeEffectsWhenRunningChange(_enabled: boolean): Promise<void>
-  handleSettingChange(category: keyof GlobalConfig, key: string, value: any): Promise<boolean>
+  handleSettingChange: SettingChangeHandler
 }
 
 const {
@@ -92,19 +79,6 @@ const {
   pauseHomeEffectsWhenRunningSaving,
   homeSatelliteStyle,
   homeSatelliteStyleSaving,
-  pressSoundEnabled,
-  pressSoundPreset,
-  pressSoundCustomPath,
-  pressSoundCustomName,
-  pressSoundCustomReleasePath,
-  pressSoundCustomReleaseName,
-  pressSoundVolume,
-  pressSoundSaving,
-  handlePressSoundEnabledChange,
-  handlePressSoundPresetChange,
-  handlePressSoundVolumeChange,
-  handlePressSoundImport,
-  handlePressSoundPreview,
   handleHomeSatelliteStyleChange,
   handleThemeModeChange,
   handleAppearanceChange,
@@ -280,21 +254,7 @@ const handleLocaleChange = (value: unknown): void => {
 
     <MascotSettings />
 
-    <PressSoundSettings
-      :enabled="pressSoundEnabled"
-      :preset="pressSoundPreset"
-      :volume="pressSoundVolume"
-      :saving="pressSoundSaving"
-      :custom-path="pressSoundCustomPath"
-      :custom-name="pressSoundCustomName"
-      :custom-release-path="pressSoundCustomReleasePath"
-      :custom-release-name="pressSoundCustomReleaseName"
-      @enabled-change="handlePressSoundEnabledChange"
-      @preset-change="handlePressSoundPresetChange"
-      @volume-change="handlePressSoundVolumeChange"
-      @import="handlePressSoundImport"
-      @preview="handlePressSoundPreview"
-    />
+    <PressSoundSettings />
 
     <!-- 光标效果：只有一个开关式选项，一行即可 -->
     <SectionCard :title="t('core.setting.basic.cursorSection')" :icon="AimOutlined">

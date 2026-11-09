@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 
 from app.models.config import ZzzOdConfig
 from app.models.script_contracts import ScriptConfigHandler
-from app.task.registration import ManagerBuildContext, ScriptRegistration
+from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
     from app.models.task import ScriptItem, TaskExecuteBase
@@ -31,9 +31,7 @@ if TYPE_CHECKING:
     from .recovery import ZzzOdRecovery
 
 
-def build_manager(
-    script_item: ScriptItem, context: ManagerBuildContext
-) -> TaskExecuteBase:
+def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
     from .manager import ZzzOdManager
 
     return ZzzOdManager(script_item)

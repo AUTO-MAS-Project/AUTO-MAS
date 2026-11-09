@@ -66,7 +66,7 @@ test.describe('@queue @scheduler user queue', () => {
       await expect(page.locator('.queue-title-text')).toHaveText(name)
 
       const startup = page
-        .locator('.form-item-vertical')
+        .locator('.queue-trigger-settings .ant-form-item')
         .filter({ hasText: 'Run at startup' })
         .locator('.ant-select')
       for (const label of ['Run every time', 'Never']) {
@@ -78,6 +78,7 @@ test.describe('@queue @scheduler user queue', () => {
           .click()
         expect((await (await saved).json()).code).toBe(200)
         await expect(startup.locator('.ant-select-selection-item')).toHaveText(label)
+        await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0)
       }
 
       for (const [index, script] of scripts.entries()) {
@@ -101,11 +102,14 @@ test.describe('@queue @scheduler user queue', () => {
           .click()
         expect((await (await saved).json()).code).toBe(200)
         await expect(selectedScripts.nth(index)).toHaveText(`MAA - ${script.name}`)
+        await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0)
       }
 
       // 七天全选只简化显示；原有星期选择器仍可编辑。
+      await post('/api/queue/update', { queueId, data: { Info: { TimeEnabled: true } } })
       await post('/api/queue/time/add', { queueId })
       await page.reload()
+      await page.locator('.queue-button').filter({ hasText: name }).click()
       await expect(page.locator('.time-set-card .days-select')).toHaveText('Every day')
       await expect(rows.locator('.days-select')).toHaveText(['Every day', 'Every day'])
 
@@ -129,11 +133,13 @@ test.describe('@queue @scheduler user queue', () => {
       await goTo('Home')
       await expect(page.locator('.home-title')).toBeVisible()
       await goTo('Queue')
+      await page.locator('.queue-button').filter({ hasText: name }).click()
       await expect(selectedScripts).toHaveText([
         `MAA - ${scripts[1]!.name}`,
         `MAA - ${scripts[0]!.name}`,
       ])
       await page.reload()
+      await page.locator('.queue-button').filter({ hasText: name }).click()
       await expect(page.locator('.queue-title-text')).toHaveText(name)
       await expect(selectedScripts).toHaveText([
         `MAA - ${scripts[1]!.name}`,
@@ -151,9 +157,9 @@ test.describe('@queue @scheduler user queue', () => {
       const scopeButton = page.getByRole('button', { name: /Run scope/ })
       await expect(scopeButton).toContainText('2/2')
       await scopeButton.click()
-      const scope = page.locator('.ant-popover:visible .queue-scope')
+      const scope = page.locator('.scheduler-scope-modal .ant-modal:visible')
       for (const script of scripts) {
-        await expect(scope.getByText(`MAA - ${script.name}`, { exact: true })).toBeVisible()
+        await expect(scope.getByText(script.name, { exact: true })).toBeVisible()
         await expect(
           scope.getByRole('checkbox', { name: script.account, exact: true })
         ).toBeChecked()
@@ -167,13 +173,14 @@ test.describe('@queue @scheduler user queue', () => {
       await scope.getByRole('checkbox', { name: scripts[1]!.account, exact: true }).check()
       await expect(scopeButton).toContainText('1/2')
       await expect(page.locator('.task-control .ant-btn-primary')).toBeEnabled()
-      await scopeButton.click()
+      await scope.getByRole('button', { name: 'OK', exact: true }).click()
       await app.evidence('queue-account-scope')
 
       await goTo('Queue')
+      await page.locator('.queue-button').filter({ hasText: name }).click()
       await rows.first().getByRole('button', { name: 'Delete' }).click()
       await page
-        .locator('.ant-popover:visible')
+        .locator('.ant-modal-confirm:visible')
         .getByRole('button', { name: 'Cancel', exact: true })
         .click()
       await expect(selectedScripts).toHaveText([
@@ -183,15 +190,15 @@ test.describe('@queue @scheduler user queue', () => {
       await rows.first().getByRole('button', { name: 'Delete' }).click()
       const removed = responseFor('/api/queue/item/delete')
       await page
-        .locator('.ant-popover:visible')
-        .getByRole('button', { name: 'OK', exact: true })
+        .locator('.ant-modal-confirm:visible')
+        .getByRole('button', { name: 'Delete', exact: true })
         .click()
       expect((await (await removed).json()).code).toBe(200)
       await expect(selectedScripts).toHaveText([`MAA - ${scripts[0]!.name}`])
 
       await page.getByRole('button', { name: 'Delete this queue' }).click()
       await page
-        .locator('.ant-popover:visible')
+        .locator('.ant-modal-confirm:visible')
         .getByRole('button', { name: 'Cancel', exact: true })
         .click()
       await expect(page.locator('.queue-title-text')).toHaveText(name)
@@ -204,15 +211,16 @@ test.describe('@queue @scheduler user queue', () => {
       ).toBeVisible()
       await page.keyboard.press('Escape')
       await goTo('Queue')
+      await page.locator('.queue-button').filter({ hasText: name }).click()
       await page.getByRole('button', { name: 'Delete this queue' }).click()
       const deleted = responseFor('/api/queue/delete')
       await page
-        .locator('.ant-popover:visible')
-        .getByRole('button', { name: 'OK', exact: true })
+        .locator('.ant-modal-confirm:visible')
+        .getByRole('button', { name: 'Delete', exact: true })
         .click()
       expect((await (await deleted).json()).code).toBe(200)
       queueId = undefined
-      await expect(page.getByText('No queues', { exact: true })).toBeVisible()
+      await expect(page.locator('.queue-button').filter({ hasText: name })).toHaveCount(0)
       await goTo('Scheduler')
       await page.locator('.task-control .ant-select').first().click()
       await expect(
@@ -266,6 +274,10 @@ test.describe('@queue @scheduler user queue', () => {
     try {
       scriptId = (await post('/api/scripts/add', { type: 'MAA' })).scriptId
       queueId = (await post('/api/queue/add')).queueId
+      await post('/api/queue/update', {
+        queueId,
+        data: { Info: { Name: 'E2E weekday queue', TimeEnabled: true } },
+      })
       const { queueItemId } = await post('/api/queue/item/add', { queueId })
       await post('/api/queue/item/update', {
         queueId,
@@ -274,6 +286,7 @@ test.describe('@queue @scheduler user queue', () => {
       })
 
       await app.goto('/queue')
+      await page.locator('.queue-button').filter({ hasText: 'E2E weekday queue' }).click()
       const timeRows = page.locator('.time-set-card .draggable-row')
       const timeIds: string[] = []
       for (const time of ['08:00', '10:00']) {
@@ -295,6 +308,7 @@ test.describe('@queue @scheduler user queue', () => {
         })
       }
       await page.reload()
+      await page.locator('.queue-button').filter({ hasText: 'E2E weekday queue' }).click()
       const timeDays = timeRows.locator('.days-select')
       const taskDays = page.locator('.queue-item-card .days-select')
       await expect(timeDays).toHaveText(['Every day', 'Every day'])
@@ -356,6 +370,7 @@ test.describe('@queue @scheduler user queue', () => {
       await toggleDays(taskDays, ['Mon', 'Wed', 'Fri'], '/api/queue/item/update')
 
       await page.reload()
+      await page.locator('.queue-button').filter({ hasText: 'E2E weekday queue' }).click()
       await expect(timeRows.first().locator('.ant-picker input')).toHaveValue('08:00')
       await expect(timeRows.last().locator('.ant-picker input')).toHaveValue('10:00')
       await expect(timeDays.first().locator('.ant-select-selection-item')).toHaveText([

@@ -1,9 +1,9 @@
+import { TaskMode } from '@/api'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 import { translate as t } from '@/i18n'
 import { computed, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import { Service } from '@/api/services/Service'
+import { configuredTaskRequest, fetchTaskTargets } from '@/composables/useTaskOptions'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getConfig, saveConfig } from '@/utils/config'
 import { navigateTo } from '@/router'
@@ -15,13 +15,13 @@ import {
   type HomeTaskOption,
 } from '@/views/home/homeQuickStartTasks'
 import { useHomeGreetingStore } from '@/stores/homeGreeting'
-import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
+import { useSchedulerStore } from '@/stores/scheduler'
 import { useTaskApi } from '@/composables/useTaskApi'
 
 export const useHomeQuickStart = () => {
   const logger = window.electronAPI.getLogger('首页')
   const { playSound } = useAudioPlayer()
-  const { trackStartedTask } = useSchedulerLogic()
+  const { trackStartedTask } = useSchedulerStore()
   const { startTask } = useTaskApi()
 
   const homeGreeting = useHomeGreetingStore()
@@ -36,7 +36,7 @@ export const useHomeQuickStart = () => {
 
   const schedulerTaskOptions = ref<HomeTaskOption[]>([])
   const selectedHomeTaskIds = ref<string[]>([])
-  const selectedHomeMode = ref<TaskCreateIn.mode>(TaskCreateIn.mode.AUTO_PROXY)
+  const selectedHomeMode = ref<TaskMode>(TaskMode.AUTO_PROXY)
   let savedSelectedTaskIds: string[] = []
   let selectionTouched = false
   let selectionSaveQueue = Promise.resolve()
@@ -109,10 +109,10 @@ export const useHomeQuickStart = () => {
     schedulerTasksLoading.value = true
 
     try {
-      const response = await Service.getTaskComboxApiInfoComboxTaskPost()
-      if (response.code === 200 && Array.isArray(response.data)) {
+      const targets = await fetchTaskTargets()
+      if (Array.isArray(targets)) {
         schedulerTasksUnavailable.value = false
-        applyRealTaskOptions(toHomeTaskOptions(response.data))
+        applyRealTaskOptions(toHomeTaskOptions(targets))
         return
       }
 
@@ -154,14 +154,10 @@ export const useHomeQuickStart = () => {
         options: schedulerTaskOptions.value,
         fallbackLabel: t('core.home.quickStart.fallbackLabel'),
         failureReason: t('core.home.quickStart.startFailed'),
-        startTask: taskId =>
-          startTask(
-            {
-              taskId,
-              mode: selectedHomeMode.value,
-            },
-            { source: 'home' }
-          ),
+        startTask: async taskId =>
+          startTask(await configuredTaskRequest(taskId, selectedHomeMode.value), {
+            source: 'home',
+          }),
         onTaskStarted: result => {
           trackStartedTask({
             taskId: result.taskId,

@@ -182,6 +182,18 @@ QQ 官方机器人私聊和群内提及重试托管、启动普通或循环队�
 
 - 新增 `taskboard_marking_finished`，不在 Issue #1605 的 84 项场景内：每周任务的全选/清空保存、单条打卡与撤销，以及版本主线的标记/取消标记，按真实接口结果各记一次。`target_kind` 只区分 `weekly_task` / `version`，`action` 只区分 `select` / `mark` / `unmark`，`count_bucket` 描述本次影响对象数量。不发送游戏 key、任务标题、版本号、版本名、时间或封面地址；本地已判定重复的保存不重复记录，接口返回非 200 记为 failure，请求异常记为 unknown，客户端周键过期被后端拒绝时记为 blocked。
 
+任务树迁移沿用 `useTaskApi.ts` 的请求受理观察和 `taskAnalytics.ts` 的创建/完成观察。
+`ScriptView` 是有限模式类别；队列/托管/用户运行 UUID 只用于本地关联，不进入事件属性。
+只读查看的打开请求仍使用 `native_config_action_finished` 的 `view` 操作；恢复快照不新增执行样本。
+独立维护请求沿用历史 `Update` 统计类别，仅表示受理，不把它加入公共调度模式或将受理记成完成。
+
+队列触发设置复用 queue_schedule_changed：启动、定时、循环可独立启用；队列级间隔保存记录 interval，重置计时请求记录 reset。重置只表示请求受理，不表示新任务启动或完成。队列项星期保存记录 queue_time/days；不采集具体间隔、日期或时间。
+
+任务分支整合复用既有观察：后端 `telemetry.observe_script_run` 统一记录一次托管运行，
+本地 started/finished 消息由 BackgroundTaskManager 的遥测任务组限制最多 32 个在途发送；
+started 未送达时不发送对应 finished。运行 UUID 只留在本机消息关联中，不进入指标属性。
+任务树快照和完成消息在前端统一生成展示投影，恢复快照不新增执行样本；
+维护派发合并、历史/OBS 会话和临时副本清理不增加统计事件或改变执行成功口径。
 - T010 补充：重载结果由主进程窗口恢复服务确认，页面加载完成和 Vue 挂载信号缺一不计成功；
   加载失败、再次退出、异常、超时及退出取消各有有限分类，一次尝试仅结算一次。
   Windows 会话结束不新建恢复尝试；取消关机后重新允许恢复。验证采用隔离窗口事件和本地采集器，

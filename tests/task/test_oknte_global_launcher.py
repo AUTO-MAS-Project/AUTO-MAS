@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
-from app.task.OkNte.AutoProxy import AutoProxyTask, System
+from app.task.OkNte.AutoProxy import AutoProxyTask, process
 from app.task.OkNte.tools import launcher_start
 from app.task.OkNte.tools.launcher_start import _action_items, _find_text
 
@@ -121,7 +121,7 @@ async def test_cleanup_uses_mas_launcher_not_script_config(
         kill=AsyncMock(), cleanup_executables=Mock(return_value=[])
     )
     kill_process = AsyncMock(return_value=True)
-    monkeypatch.setattr(System, "kill_process", kill_process)
+    monkeypatch.setattr(process, "kill_process", kill_process)
 
     await proxy.kill_managed_process(kill_game=False)
 

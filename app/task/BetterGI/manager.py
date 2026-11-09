@@ -66,14 +66,14 @@ class BetterGIManager(ScriptManagerBase):
         self.user_config: ConfigCollection[BetterGIUserConfig] | None = None
 
     async def check(self) -> str:
-        if self.task_info.mode not in ("AutoProxy", "ScriptConfig", "Update"):
+        if self.execution_mode not in ("AutoProxy", "ScriptConfig", "Update"):
             return "不支持的任务模式, 请检查任务配置！"
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if not isinstance(script_config, BetterGIConfig):
             return "托管配置类型错误, 不是 BetterGI 类型"
 
-        if self.task_info.mode == "ScriptConfig":
+        if self.execution_mode == "ScriptConfig":
             if not script_config.Info.RootPath:
                 return "请先设置有效的 BetterGI 脚本路径"
             root_path = script_config.Info.RootPath
@@ -89,7 +89,7 @@ class BetterGIManager(ScriptManagerBase):
                     return "BetterGI 账号不存在，请刷新后重试"
 
         # 「检查更新」必须落到具体账号：游戏客户端路径可能是账号级覆盖
-        if self.task_info.mode == "Update":
+        if self.execution_mode == "Update":
             try:
                 target_user_uid = uuid.UUID(self.task_info.user_id or "")
             except ValueError:
@@ -98,11 +98,13 @@ class BetterGIManager(ScriptManagerBase):
                 return "BetterGI 账号不存在，请刷新后重试"
 
         # AutoProxy 模式只做账号列表可用性校验；逐账号配置文件检查放到 AutoProxyTask.check()
-        if self.task_info.mode == "AutoProxy":
+        if self.execution_mode == "AutoProxy":
             script_uid = uuid.UUID(self.script_info.script_id)
             if not self.script_info.user_list:
-                self.script_info.user_list = self.build_proxy_user_list(
-                    Config.ScriptConfig[script_uid].UserData.items()
+                await self.script_info.set_users(
+                    self.build_proxy_user_list(
+                        Config.ScriptConfig[script_uid].UserData.items()
+                    )
                 )
             if not self.script_info.user_list:
                 return "当前没有可执行的账号，请先添加并启用账号"
@@ -113,7 +115,7 @@ class BetterGIManager(ScriptManagerBase):
         script_uid = uuid.UUID(self.script_info.script_id)
         self.config_locks[
             Config.ScriptConfig[script_uid].uid
-        ] = await Config.ScriptConfig[script_uid].lock_x()
+        ] = await self.lock_script_config(Config.ScriptConfig[script_uid])
         self.script_config = Config.ScriptConfig[script_uid]
         if not isinstance(self.script_config, BetterGIConfig):
             raise TypeError("托管配置类型错误")
@@ -128,37 +130,41 @@ class BetterGIManager(ScriptManagerBase):
         self.user_config = self.script_config.UserData
         logger.success(f"{self.script_info.script_id} 已锁定，BetterGI 账号配置已提取")
 
-        if self.task_info.mode == "Update":
+        if self.execution_mode == "Update":
             target_user_id = self.task_info.user_id or "Default"
             target_user_name = "BetterGI 更新"
             with suppress(ValueError):
                 target_user_uid = uuid.UUID(target_user_id)
                 if target_user_uid in self.user_config:
                     target_user_name = self.user_config[target_user_uid].Info.Name
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=target_user_id,
-                    name=target_user_name,
-                    status="等待",
-                )
-            ]
-        elif self.task_info.mode == "ScriptConfig":
+            await self.script_info.set_users(
+                [
+                    UserItem(
+                        user_id=target_user_id,
+                        name=target_user_name,
+                        status="等待",
+                    )
+                ]
+            )
+        elif self.execution_mode == "ScriptConfig":
             target_user_id = self.task_info.user_id or "Default"
             target_user_name = "BetterGI 设置"
             with suppress(ValueError):
                 target_user_uid = uuid.UUID(target_user_id)
                 if target_user_uid in self.user_config:
                     target_user_name = self.user_config[target_user_uid].Info.Name
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=target_user_id,
-                    name=target_user_name,
-                    status="等待",
-                )
-            ]
+            await self.script_info.set_users(
+                [
+                    UserItem(
+                        user_id=target_user_id,
+                        name=target_user_name,
+                        status="等待",
+                    )
+                ]
+            )
         else:
-            self.script_info.user_list = self.build_proxy_user_list(
-                self.user_config.items()
+            await self.script_info.set_users(
+                self.build_proxy_user_list(self.user_config.items())
             )
 
     async def _prepare_program_update(self) -> None:
@@ -172,10 +178,12 @@ class BetterGIManager(ScriptManagerBase):
             self.check_result = "Pass"
             return
         if self.script_config.Update.TakeoverEnabled:
-            self.script_info.log = "正在检查 BetterGI 本体更新…"
+            await self.script_info.set_log("正在检查 BetterGI 本体更新…")
 
             async def progress(downloaded: int, total: int, speed: float) -> None:
-                self.script_info.log = f"BetterGI 更新下载：{downloaded / 1024**2:.1f} / {total / 1024**2:.1f} MB"
+                await self.script_info.set_log(
+                    f"BetterGI 更新下载：{downloaded / 1024**2:.1f} / {total / 1024**2:.1f} MB"
+                )
 
             try:
                 result = await run_script_update(
@@ -197,7 +205,7 @@ class BetterGIManager(ScriptManagerBase):
                         type=protocol.TASK_NOTICE,
                         data=WSTaskNoticeData(level="warning", message=result),
                     )
-            self.script_info.log = result
+            await self.script_info.set_log(result)
             program_update.suppress_update_notice(root)
         else:
             # 关闭接管仍不能启动上轮未确认安装；不发远程请求。
@@ -212,7 +220,7 @@ class BetterGIManager(ScriptManagerBase):
     async def main_task(self):
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            self.script_info.status = "异常"
+            await self.script_info.set_state(status="异常")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -229,14 +237,14 @@ class BetterGIManager(ScriptManagerBase):
         # Update 只更新原神客户端，不启动 BetterGI；运行中的正常 BGI
         # 不应该阻断游戏更新，但未完成的本体安装必须阻断。
         root = self._update_root
-        if root is not None and self.task_info.mode == "Update":
+        if root is not None and self.execution_mode == "Update":
             await program_update.confirm_safe_game_update(root)
-        elif root is not None and self.task_info.mode == "ScriptConfig":
+        elif root is not None and self.execution_mode == "ScriptConfig":
             await program_update.confirm_current_install(root)
 
         # 「检查更新」不动 BetterGI 配置，不必归档，直接进更新任务
-        if self.task_info.mode == "Update":
-            self.script_info.current_index = 0
+        if self.execution_mode == "Update":
+            await self.script_info.set_current_index(0)
             await self.spawn(
                 BetterGIUpdateTask(
                     self.script_info,
@@ -256,8 +264,8 @@ class BetterGIManager(ScriptManagerBase):
             if root_path is not None:
                 archive_native_backup(root_path)
 
-        if self.task_info.mode == "ScriptConfig":
-            self.script_info.current_index = 0
+        if self.execution_mode == "ScriptConfig":
+            await self.script_info.set_current_index(0)
             await self.spawn(
                 ScriptConfigTask(
                     self.script_info,
@@ -269,10 +277,11 @@ class BetterGIManager(ScriptManagerBase):
             return
 
         has_run_user = False
-        for self.script_info.current_index in range(len(self.script_info.user_list)):
+        for _runtime_user_index in range(len(self.script_info.user_list)):
+            await self.script_info.set_current_index(_runtime_user_index)
             current_user = self.script_info.user_list[self.script_info.current_index]
             if (
-                self.task_info.mode == "AutoProxy"
+                self.execution_mode == "AutoProxy"
                 and not await self.check_user_before_run(
                     current_user, self.user_config[uuid.UUID(current_user.user_id)]
                 )
@@ -307,23 +316,23 @@ class BetterGIManager(ScriptManagerBase):
             if self.check_result != "Pass" and not any(
                 user.status in ("完成", "跳过") for user in self.script_info.user_list
             ):
-                if self.task_info.mode == "AutoProxy" and self.user_config is not None:
+                if self.execution_mode == "AutoProxy" and self.user_config is not None:
                     await config_manager.flush()
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
                 return
 
-            if self.task_info.mode == "AutoProxy" and self.user_config is not None:
+            if self.execution_mode == "AutoProxy" and self.user_config is not None:
                 await config_manager.flush()
 
             if self.script_info.status == "异常" or any(
                 user.status == "异常" for user in self.script_info.user_list
             ):
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
             else:
-                self.script_info.status = "完成"
+                await self.script_info.set_state(status="完成")
 
-            if self.task_info.mode == "AutoProxy":
-                task_mode = TASK_MODE_ZH[self.task_info.mode]
+            if self.execution_mode == "AutoProxy":
+                task_mode = TASK_MODE_ZH[self.execution_mode]
                 title = (
                     f"{datetime.now().strftime('%m-%d')} | "
                     f"{self.script_info.name or '空白'}的{task_mode}任务报告"
@@ -335,7 +344,7 @@ class BetterGIManager(ScriptManagerBase):
                 )
                 # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
                 if user_result_text:
-                    self.script_info.log = (
+                    await self.script_info.set_log(
                         f"{self.script_info.log}\n{user_result_text}"
                         if self.script_info.log
                         else user_result_text
@@ -363,7 +372,7 @@ class BetterGIManager(ScriptManagerBase):
                 if self._update_root is not None:
                     program_update.recover_update_notice(self._update_root)
             except Exception:
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
                 raise
             finally:
                 self._install_access.close()
@@ -374,7 +383,7 @@ class BetterGIManager(ScriptManagerBase):
                         await script_config.unlock(ticket)
 
     async def on_crash(self, e: Exception):
-        self.script_info.status = "异常"
+        await self.script_info.set_state(status="异常")
         logger.opt(exception=True).warning(f"BetterGI任务出现异常: {e}")
         script_uid = uuid.UUID(self.script_info.script_id)
 
@@ -385,7 +394,7 @@ class BetterGIManager(ScriptManagerBase):
 
         if script_cfg is not None:
             try:
-                if self.task_info.mode == "AutoProxy" and self.user_config is not None:
+                if self.execution_mode == "AutoProxy" and self.user_config is not None:
                     await config_manager.flush()
             except Exception:
                 logger.opt(exception=True).warning("on_crash 保存账号配置失败")
@@ -407,12 +416,12 @@ class BetterGIManager(ScriptManagerBase):
                 item
                 if isinstance(item, log_box.LogEntry)
                 else log_box.LogEntry.from_legacy(item)
-                for item in _report_user.push_log
+                for item in self.user_state(_report_user).push_log
                 if (item.log_type if isinstance(item, log_box.LogEntry) else item[0])
                 != LOG_TYPE_ERROR
                 or has_uncompleted
             ]
-            _mode = getattr(_report_user, "push_log_mode", "逐条")
+            _mode = self.user_state(_report_user).push_log_mode
             if _mode == "关闭":
                 _details = []
             elif _mode == "汇总":

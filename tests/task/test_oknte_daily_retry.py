@@ -1,12 +1,12 @@
 import asyncio
 from datetime import datetime
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 import app.task.OkNte.AutoProxy as oknte
 from app.task.OkNte.AutoProxy import SIGN_MODE_SPLIT, AutoProxyTask, compile_log_signs
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 @pytest.mark.parametrize(
@@ -68,9 +68,13 @@ def test_attempt_limit_controls_process_restarts(
         user = SimpleNamespace(
             name="测试账号", status="运行", maintenance_skipped=False, log_record={}
         )
-        user.add_log_record = lambda when, record: user.log_record.__setitem__(
-            when, record
-        )
+
+        async def add_log(when, record):
+            user.log_record[when] = record
+            return record
+
+        user.add_log_record = add_log
+        proxy.user_state = lambda _: user
         proxy.cur_user_item = user
         proxy.cur_user_uid = "test"
         proxy.script_info = SimpleNamespace(log="", log_first_line=0)
@@ -106,7 +110,7 @@ def test_attempt_limit_controls_process_restarts(
         ):
             setattr(proxy, name, AsyncMock())
         proxy.skip_on_game_maintenance = AsyncMock(return_value=False)
-        proxy.clear_maintenance_hit = lambda: None
+        proxy.clear_maintenance_hit = AsyncMock()
         proxy._mas_should_close_game_on_retry = lambda: False
         proxy._resolve_log_file_path = lambda: None
         proxy.oknte_process_manager = SimpleNamespace(open_oknte=AsyncMock())

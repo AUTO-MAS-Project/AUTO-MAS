@@ -11,10 +11,10 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.config import ConfigCollection
-from app.core.task_manager.manager import TaskInfo
+from app.core.script_update_queue import script_task_retrying
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceStatus
-from app.models.task import ScriptItem, UserItem
+from app.models.task import TaskItem, TaskMode
 from app.task.MAA.AutoProxy import AutoProxyTask
 from app.task.MAA.base_preset import get_maa_base_preset
 from app.task.MAA.constants import MAA_TASKS
@@ -28,6 +28,7 @@ from app.task.MAA.tools.cultivate.types import (
     Requirement,
 )
 from tests.config_support import activate_config
+from tests.task_stop_support import add_script
 
 
 @pytest.mark.asyncio
@@ -144,18 +145,17 @@ async def test_task_failure_retry_scope(
         },
     )
     await users.commit()
-    user = UserItem(str(uid), "test", "等待")
-    script = ScriptItem(
-        str(uuid.uuid4()), "MAA", "运行", user_list=[user], current_index=0
-    )
-    task_info = TaskInfo("AutoProxy", "test", "queue", None, None)
-    monkeypatch.setattr(task_info, "schedule_on_change", lambda: None)
-    task_info.script_list = [script]
+    task_info = TaskItem(info={"mode": TaskMode.AUTO_PROXY})
+    script = await add_script(task_info, str(uuid.uuid4()), str(uid))
+    user = script.user_list[0]
     emulator = SimpleNamespace(
         open=AsyncMock(return_value=DeviceInfo("test", DeviceStatus.ONLINE, "")),
         close=AsyncMock(return_value=True),
     )
     proxy = AutoProxyTask(script, config, users, emulator, capture_adb=AsyncMock())
+    from app.task.history_core import TaskHistorySession
+
+    proxy.history = TaskHistorySession(task_info)
     attempts = []
     queue = []
 
@@ -215,7 +215,7 @@ async def test_task_failure_retry_scope(
         "get_stage_info",
         AsyncMock(return_value={"Activity": [{"Value": "ACT-1", "Drop": "30013"}]}),
     )
-    monkeypatch.setattr(module.System, "kill_process", AsyncMock())
+    monkeypatch.setattr(module.process, "kill_process", AsyncMock())
     monkeypatch.setattr(module.Notify, "send_notice", AsyncMock())
     monkeypatch.setattr(module.Publisher, "send", AsyncMock())
     if cultivate:
@@ -278,9 +278,25 @@ async def test_task_failure_retry_scope(
             ),
         )
 
-    await proxy.main_task()
+    retried_modes = []
+
+    async def on_retry():
+        retried_modes.append(proxy.mode)
+
+    retry_token = script_task_retrying.set(on_retry)
+    try:
+        await proxy.main_task()
+    finally:
+        script_task_retrying.reset(retry_token)
+        await proxy.callbacks.close()
 
     assert [mode for mode, _ in attempts] == expected_modes
+    # 只有同一模式重新启动 MAA 才通知 L2；切到下一个模式不应重置成功信号。
+    assert retried_modes == [
+        mode
+        for index, (mode, _) in enumerate(attempts)
+        if index > 0 and attempts[index - 1][0] == mode
+    ]
     assert proxy.run_book["Annihilation"] is (not annihilation)
     assert proxy.run_book["Routine"] is routine_success
     records = [record for _, record in user.iter_history_logs()]

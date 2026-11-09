@@ -45,9 +45,6 @@
           >
             <div class="user-content">
               <span class="user-name">{{ user.name }}</span>
-              <span v-if="progressText(user)" class="user-progress" :title="progressText(user)">
-                {{ progressText(user) }}
-              </span>
               <a-tag :color="getStatusColor(user.status)" size="small" class="status-tag">
                 {{ statusLabel(user.status) }}
               </a-tag>
@@ -65,12 +62,7 @@ import { CaretDownOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'
 
 import { useStatusLabel } from '@/i18n/status'
-import {
-  isWaitingWithoutUsers,
-  type TaskTreeUserProgress,
-  userProgressMessageKey,
-  userProgressParams,
-} from './taskTreePresentation'
+import { isWaitingWithoutUsers } from './taskTreePresentation'
 
 const { t } = useI18n()
 
@@ -82,13 +74,6 @@ interface User {
   user_id: string
   status: string
   name: string
-  progress?: TaskTreeUserProgress | null
-}
-
-// MFW 用户正在跑的任务：「3/12 · 当前任务名」，其余专项没有进度、不显示
-const progressText = (user: User) => {
-  const params = userProgressParams(user.progress)
-  return params ? t(userProgressMessageKey(params), { ...params }) : ''
 }
 
 interface Script {
@@ -336,16 +321,6 @@ defineExpose({
   color: var(--ant-color-text);
   word-break: break-word;
   font-weight: 500;
-}
-
-.user-progress {
-  max-width: 50%;
-  margin: 0 8px;
-  overflow: hidden;
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* 响应式设计 */

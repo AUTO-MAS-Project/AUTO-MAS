@@ -681,6 +681,7 @@ import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestore
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ZzzOdPredefinedTeams from '@/components/ZzzOdPredefinedTeams.vue'
 import { useUserApi } from '@/composables/useUserApi'
+import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useZzzodGuiSession } from '@/composables/useZzzodGuiSession'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
@@ -710,7 +711,7 @@ const handleOpenFolder = async () => {
 }
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId: userId.value }))
 const scriptName = ref(t('core.edit.zzzodScriptFallbackName'))
 
 const pageLoading = ref(true)
@@ -942,14 +943,7 @@ let saveChain: Promise<boolean> = Promise.resolve(true)
 const saveField = (key: string, value: unknown): Promise<boolean> => {
   if (isInitializing.value || !userId.value) return Promise.resolve(false)
 
-  const parts = key.split('.')
-  const patch: Record<string, any> = {}
-  let current = patch
-  for (let i = 0; i < parts.length - 1; i += 1) {
-    current[parts[i]] = {}
-    current = current[parts[i]]
-  }
-  current[parts[parts.length - 1]] = value
+  const patch = buildFieldPatch(key, value)
 
   if (key === 'Info.Name') {
     formData.userName = String(value || '')

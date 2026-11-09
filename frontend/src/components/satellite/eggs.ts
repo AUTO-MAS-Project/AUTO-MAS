@@ -206,15 +206,6 @@ export function consumeFirstVisit(): boolean {
   return true
 }
 
-const launchedKeys = new Set<string>()
-
-/** 这颗卫星本次启动应用后第一次开跑返回 true（喊一句「××，启动！」），之后都是 false */
-export function consumeFirstLaunch(key: string): boolean {
-  if (launchedKeys.has(key)) return false
-  launchedKeys.add(key)
-  return true
-}
-
 // ==================== 转晕 ====================
 
 /** 转速超过这个值（弧度/秒）才算在猛转 */

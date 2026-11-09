@@ -43,7 +43,7 @@ from typing import Any
 
 import pyzipper
 
-from app.services import System
+from app.utils import process
 from app.utils import update_files as _utils_update_files
 
 from .checks import _resolve_within
@@ -460,7 +460,7 @@ async def _apply_delta(
         if now < next_busy_check:
             return
         next_busy_check = now + _APPLY_BUSY_RECHECK_SECONDS
-        if await System.is_process_running(game_exe):
+        if await process.is_process_running(game_exe):
             raise EndfieldUpdateError(
                 "落地期间游戏被重新启动，本轮不再覆盖，请退出游戏后重试"
             )

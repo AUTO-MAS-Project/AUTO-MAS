@@ -2,35 +2,33 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { WSTaskCyclePreviewData } from './WSTaskCyclePreviewData';
+import type { TaskItemDocument } from './TaskItemDocument';
+import type { TaskMode } from './TaskMode';
+import type { TaskTriggerReason } from './TaskTriggerReason';
 import type { WSTaskScriptIdentityData } from './WSTaskScriptIdentityData';
-import type { WSTaskScriptInfoData } from './WSTaskScriptInfoData';
 /**
  * 一个运行中任务的 HTTP 初始快照。
  */
 export type TaskRuntimeSnapshotItem = {
+    task: TaskItemDocument;
     /**
      * 任务 ID
      */
     taskId: string;
     /**
-     * 托管执行模式; 循环运行的托管同样按 AutoProxy 执行
+     * 脚本执行模式; 循环运行的脚本同样按 AutoProxy 执行
      */
-    mode: TaskRuntimeSnapshotItem.mode;
+    mode: TaskMode;
     /**
-     * 是否为循环运行任务
+     * 任务触发原因
      */
-    isCycle?: boolean;
+    trigger?: TaskTriggerReason;
     /**
-     * 调度队列 ID
-     */
-    queueId?: (string | null);
-    /**
-     * 托管 ID
+     * 脚本 ID
      */
     scriptId?: (string | null);
     /**
-     * 账号 ID
+     * 用户 ID
      */
     userId?: (string | null);
     /**
@@ -42,34 +40,16 @@ export type TaskRuntimeSnapshotItem = {
      */
     scripts?: Array<WSTaskScriptIdentityData>;
     /**
-     * 任务托管与账号状态
-     */
-    task_info?: Array<WSTaskScriptInfoData>;
-    /**
-     * 循环运行的待运行条目, 仅循环任务非空
-     */
-    cycleNextList?: Array<WSTaskCyclePreviewData>;
-    /**
-     * 已推送的托管日志, 与下一条增量推送衔接
+     * 任务当前日志
      */
     log?: string;
     /**
-     * 已推送日志对应的推送序号
+     * 日志基线序号，缺失时不能追加
      */
-    logSeq?: number;
+    logSeq?: (number | null);
     /**
-     * 快照日志首行在完整日志里的行号
+     * 快照日志在来源中的起始行号
      */
     logFirstLine?: number;
 };
-export namespace TaskRuntimeSnapshotItem {
-    /**
-     * 托管执行模式; 循环运行的托管同样按 AutoProxy 执行
-     */
-    export enum mode {
-        AUTO_PROXY = 'AutoProxy',
-        SCRIPT_CONFIG = 'ScriptConfig',
-        UPDATE = 'Update',
-    }
-}
 

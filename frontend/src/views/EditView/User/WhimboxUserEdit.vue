@@ -78,6 +78,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
+import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
@@ -120,7 +121,7 @@ const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 // 任务运行期锁定配置编辑（保存门禁在 useUserApi 内，这里只做界面提示与禁用）
-const { configLocked } = useScriptConfigLock(() => scriptId)
+const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 
 // 脚本信息
 const scriptName = ref('')
@@ -271,16 +272,7 @@ const handleTaskConfigSave = async (key: string, value: unknown) => {
 const handleFieldSave = async (key: string, value: any) => {
   if (isInitializing.value || !userId) return
 
-  // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
-  const parts = key.split('.')
-  let userData: Record<string, any> = {}
-  let current = userData
-
-  for (let i = 0; i < parts.length - 1; i++) {
-    current[parts[i]] = {}
-    current = current[parts[i]]
-  }
-  current[parts[parts.length - 1]] = value
+  let userData = buildFieldPatch(key, value)
 
   // 特殊处理：userName 需要同步到 Info.Name
   if (key === 'userName') {

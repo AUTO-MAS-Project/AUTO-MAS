@@ -2,11 +2,11 @@
 
 import asyncio
 import threading
-from types import SimpleNamespace
 
 import pytest
 
 from app.task.ZzzOd.AutoProxy import AutoProxyTask
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 def user(name, mode):
@@ -21,6 +21,8 @@ def test_late_mapping_routes_known_accounts_and_keeps_native_fallback(
 ):
     first, second = user("甲", mode_a), user("乙", mode_b)
     proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.user_state = lambda user: user
+    proxy.callbacks = SimpleNamespace()
     proxy.cur_user_item = first
     proxy._idx_names, proxy._push_user_book, proxy._app_name_book = {}, {}, {}
     path = tmp_path / "log.txt"
@@ -58,6 +60,8 @@ def test_late_mapping_routes_known_accounts_and_keeps_native_fallback(
 def test_single_account_unprefixed_node_keeps_trigger_fallback(tmp_path):
     first, mapped = user("触发用户", "逐条"), user("原生账号", "汇总")
     proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.user_state = lambda user: user
+    proxy.callbacks = SimpleNamespace()
     proxy.cur_user_item = first
     proxy._idx_names = {1: "原生账号"}
     proxy._push_user_book = {"原生账号": mapped}
@@ -74,6 +78,8 @@ def test_single_account_unprefixed_node_keeps_trigger_fallback(tmp_path):
 def test_mapping_is_copied_before_worker_reads(tmp_path):
     first, second = user("甲", "汇总"), user("乙", "汇总")
     proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.user_state = lambda user: user
+    proxy.callbacks = SimpleNamespace()
     proxy.cur_user_item = first
     proxy._idx_names = {1: "甲", 2: "乙"}
     proxy._push_user_book = {"甲": first, "乙": second}

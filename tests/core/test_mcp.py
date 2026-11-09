@@ -11,20 +11,16 @@ from fastapi import FastAPI
 
 import app.core.mcp as module
 from app.core import Publisher
-from app.core.runtime_tasks import OwnedTaskRegistry
 
 
 @pytest_asyncio.fixture
 async def service(monkeypatch):
-    registry = OwnedTaskRegistry()
-    monkeypatch.setattr(module, "RuntimeTasks", registry)
     monkeypatch.setenv("AUTO_MAS_ENABLE_MCP", "1")
     monkeypatch.setattr(module, "MCP_INCLUDED_OPERATIONS", ("read",))
     monkeypatch.setattr(Publisher, "send", AsyncMock(return_value=False))
     instance = module.McpService()
     yield instance
     await instance.shutdown()
-    await registry.shutdown()
 
 
 @pytest.fixture
@@ -252,9 +248,7 @@ async def test_full_application_whitelist_and_schema_guards(monkeypatch):
 
     import app.api as api
 
-    registry = OwnedTaskRegistry()
     monkeypatch.setenv("AUTO_MAS_ENABLE_MCP", "1")
-    monkeypatch.setattr(module, "RuntimeTasks", registry)
     monkeypatch.setattr(Publisher, "send", AsyncMock(return_value=False))
     service = module.McpService()
     app = FastAPI()
@@ -286,4 +280,3 @@ async def test_full_application_whitelist_and_schema_guards(monkeypatch):
         assert resolved
     finally:
         await service.shutdown()
-        await registry.shutdown()

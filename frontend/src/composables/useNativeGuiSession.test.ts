@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('ant-design-vue', () => ({ message: mocks }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('@/composables/useTaskApi', () => ({
-  requestTaskStart: mocks.start,
+  requestScriptConfigStart: mocks.start,
   stopNativeConfig: mocks.stop,
 }))
 vi.mock('@/api/services/Service', () => ({
@@ -35,7 +35,7 @@ const keys = {
   saveUnknown: 'saveUnknown',
 }
 
-describe('plan native configuration save', () => {
+describe('native configuration session during scheduler migration', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.stubGlobal('window', {
@@ -52,37 +52,22 @@ describe('plan native configuration save', () => {
     vi.clearAllMocks()
   })
 
-  it('reports an unconfirmed result when the HTTP query fails', async () => {
-    mocks.status.mockRejectedValue(new Error('offline'))
+  it('uses the requirement-tree entry for a native session', async () => {
     const session = useNativeGuiSession({ loggerName: 'test', keys })
-    await session.startSession('script', false, 'unknown', { planId: 'plan' })
+    expect(
+      await session.startSession('script', false, 'script', { params: { instance_idx: 2 } })
+    ).toBe(true)
+    expect(mocks.start).toHaveBeenCalledWith('script', false, 'script', { instance_idx: 2 })
+    await session.dispose()
+  })
+
+  it('does not query a deferred plan result when saving a normal session', async () => {
+    const session = useNativeGuiSession({ loggerName: 'test', keys })
+    await session.startSession('script')
     const saving = session.saveSession()
     await vi.advanceTimersByTimeAsync(300)
     await saving
-    expect(mocks.success).not.toHaveBeenCalledWith('saved')
-    expect(mocks.warning).toHaveBeenCalledWith('saveUnknown')
+    expect(mocks.status).not.toHaveBeenCalled()
+    expect(mocks.success).toHaveBeenCalledWith('saved')
   })
-
-  it.each([
-    ['saved', 'saved'],
-    ['failed', 'saveFailed'],
-    [null, 'saveUnknown'],
-  ])(
-    'reports %s from the HTTP result without a WebSocket notification',
-    async (result, expected) => {
-      mocks.status.mockResolvedValue({ code: 200, planSaveResult: result })
-      const session = useNativeGuiSession({ loggerName: 'test', keys })
-      await session.startSession('script', false, 'unknown', { planId: 'plan' })
-      const saving = session.saveSession()
-      await vi.advanceTimersByTimeAsync(300)
-      await saving
-      if (expected === 'saved') expect(mocks.success).toHaveBeenCalledWith('saved')
-      else {
-        expect(mocks.success).not.toHaveBeenCalledWith('saved')
-        expect(expected === 'saveFailed' ? mocks.error : mocks.warning).toHaveBeenCalledWith(
-          expected
-        )
-      }
-    }
-  )
 })

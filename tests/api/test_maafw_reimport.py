@@ -16,7 +16,6 @@ import pytest
 import pytest_asyncio
 
 from app.config import ConfigCollection
-from app.core.task_manager.manager import TaskInfo
 from app.models.config import (
     GlobalConfig,
     M9AConfig,
@@ -24,7 +23,7 @@ from app.models.config import (
     MaaFWConfig,
     MaaFWUserConfig,
 )
-from app.models.task import ScriptItem
+from app.models.task import TaskItem, TaskScriptItem
 from app.task.MaaFW import embedded_manager
 from app.task.MaaFW.api_service import embedded as api
 from app.task.MaaFW.registration import build_config_handler
@@ -167,12 +166,14 @@ async def project(tmp_path, monkeypatch, isolated_app_paths):
     )
     monkeypatch.setattr(api.Notify, "push_system_notice", AsyncMock())
 
-    def make_manager():
-        item = ScriptItem(script_id, "audit", "等待")
-        info = TaskInfo("AutoProxy", "audit", "queue", None, None)
-        monkeypatch.setattr(info, "schedule_on_change", lambda: None)
-        info.script_list = [item]
-        return embedded_manager.MaaFWEmbeddedManager(item)
+    async def make_manager():
+        info = TaskItem(mode="AutoProxy", name="audit")
+        await info.activate()
+        uid = info.scripts.add(
+            TaskScriptItem, payload={"info": {"script_id": script_id, "name": "audit"}}
+        )
+        await info.scripts.commit()
+        return embedded_manager.MaaFWEmbeddedManager(info.scripts[uid])
 
     worker_done = threading.Event()
     import_project = api.import_embedded_project
@@ -218,7 +219,7 @@ async def test_reimport_rechecks_busy_after_path_validation(project, monkeypatch
     importing = asyncio.create_task(
         api.reimport_embedded(project.script_id, str(project.source))
     )
-    manager = project.make_manager()
+    manager = await project.make_manager()
     project.allow_download.clear()
     updating = None
 
@@ -277,7 +278,7 @@ async def test_reimport_cannot_enter_between_run_preparation_and_config_lock(
     new_interface = json.loads((project.source / "interface.json").read_text())
     new_interface["name"] = "M9A"
     (project.source / "interface.json").write_text(json.dumps(new_interface))
-    manager = project.make_manager()
+    manager = await project.make_manager()
     checking = asyncio.create_task(manager.check())
     try:
         assert await asyncio.to_thread(reading.wait, 5)
@@ -337,7 +338,7 @@ async def test_reimport_owns_view_until_worker_and_metadata_finish(
     importing = asyncio.create_task(
         api.reimport_embedded(project.script_id, str(project.source))
     )
-    manager = project.make_manager()
+    manager = await project.make_manager()
     try:
         if stage == "commit_cancel":
             await asyncio.wait_for(committing.wait(), 5)

@@ -52,7 +52,7 @@ export interface SatelliteSceneModule {
 /** 指针下是什么：中心图标、第几颗卫星，或者什么都没点到 */
 export type SatellitePick = 'center' | number | null
 
-const IDLE_STATUS: SatelliteModuleStatus = { queued: false, running: false, lastFailed: false }
+const IDLE_STATUS: SatelliteModuleStatus = { scheduled: false, lastFailed: false }
 
 // ==================== 资源 ====================
 
@@ -573,7 +573,7 @@ export class SatelliteScene {
       const anchor = satellite.card.position
       applyGlow(
         satellite.activityGlow,
-        getActivityGlow(satellite.status, time),
+        getActivityGlow(satellite.status),
         anchor,
         C.activityGlowZOffset
       )

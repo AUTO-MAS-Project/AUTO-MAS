@@ -153,10 +153,15 @@ import type { ScriptCreateOut } from '../models/ScriptCreateOut';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
+import type { ScriptLockIn } from '../models/ScriptLockIn';
+import type { ScriptLockOut } from '../models/ScriptLockOut';
 import type { ScriptMirrorCdkIn } from '../models/ScriptMirrorCdkIn';
 import type { ScriptMirrorCdkOut } from '../models/ScriptMirrorCdkOut';
+import type { ScriptOperationIn } from '../models/ScriptOperationIn';
+import type { ScriptOperationOut } from '../models/ScriptOperationOut';
 import type { ScriptReorderIn } from '../models/ScriptReorderIn';
 import type { ScriptShareInspectIn } from '../models/ScriptShareInspectIn';
+import type { ScriptStatusOverviewOut } from '../models/ScriptStatusOverviewOut';
 import type { ScriptTemplateImportIn } from '../models/ScriptTemplateImportIn';
 import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
@@ -190,6 +195,8 @@ import type { TaskboardWeeklyIn } from '../models/TaskboardWeeklyIn';
 import type { TaskboardWeeklyOut } from '../models/TaskboardWeeklyOut';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { TaskGetIn } from '../models/TaskGetIn';
+import type { TaskGetOut } from '../models/TaskGetOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
 import type { TaskStatusOut } from '../models/TaskStatusOut';
 import type { TaygedoLoginIn } from '../models/TaygedoLoginIn';
@@ -562,17 +569,6 @@ export class Service {
         });
     }
     /**
-     * 获取可选任务下拉框信息
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static getTaskComboxApiInfoComboxTaskPost(): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/combox/task',
-        });
-    }
-    /**
      * 获取可选计划下拉框信息
      * @param requestBody
      * @returns ComboBoxOut Successful Response
@@ -641,6 +637,17 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/notice/confirm',
+        });
+    }
+    /**
+     * 查询托管排期配置与最近历史结果
+     * @returns ScriptStatusOverviewOut Successful Response
+     * @throws ApiError
+     */
+    public static getScriptStatusOverviewApiInfoScriptsStatusGet(): CancelablePromise<ScriptStatusOverviewOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/scripts/status',
         });
     }
     /**
@@ -845,6 +852,25 @@ export class Service {
         });
     }
     /**
+     * 查询配置锁状态
+     * @param requestBody
+     * @returns ScriptLockOut Successful Response
+     * @throws ApiError
+     */
+    public static getScriptLockApiScriptsLockPost(
+        requestBody: ScriptLockIn,
+    ): CancelablePromise<ScriptLockOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/lock',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 更新托管配置信息
      * @param requestBody
      * @returns OutBase Successful Response
@@ -913,6 +939,25 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/config/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Start Operation
+     * @param requestBody
+     * @returns ScriptOperationOut Successful Response
+     * @throws ApiError
+     */
+    public static startOperationApiScriptsOperationsStartPost(
+        requestBody: ScriptOperationIn,
+    ): CancelablePromise<ScriptOperationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/operations/start',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -3901,6 +3946,25 @@ export class Service {
             path: {
                 'task_id': taskId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Tasks
+     * @param requestBody
+     * @returns TaskGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getTasksApiDispatchGetPost(
+        requestBody: TaskGetIn,
+    ): CancelablePromise<TaskGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/dispatch/get',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

@@ -1,6 +1,6 @@
+import { configuredTaskRequest } from './useTaskOptions'
 import { onScopeDispose, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { TaskCreateIn } from '@/api'
 import { translate as t } from '@/i18n'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { useTaskApi } from '@/composables/useTaskApi'
@@ -24,7 +24,8 @@ export function useTrayTaskActions(options: TrayTaskActionsOptions): void {
       logger.warn('托盘启动任务缺少任务 ID，忽略')
       return
     }
-    void startTask({ taskId, mode: TaskCreateIn.mode.AUTO_PROXY }, { source: 'tray' })
+    void configuredTaskRequest(taskId)
+      .then(request => startTask(request, { source: 'tray' }))
       .then(response => {
         if (disposed) return
         options.onStarted({

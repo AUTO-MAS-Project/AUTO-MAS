@@ -36,7 +36,6 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
-from app.services import System
 from app.services import endfield_launcher as _service_endfield_launcher
 from app.services.common.maa_capture import AdbCapture, Win32Capture
 from app.task.base import ScriptAutoProxyBase
@@ -74,6 +73,7 @@ from app.utils import (
     get_logger,
     is_process_running,
     log_box,
+    process,
 )
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
@@ -879,7 +879,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 >= self.script_config.Run.ProxyTimesLimit
             )
         ):
-            self.cur_user_item.status = "跳过"
+            await self.cur_user_item.set_state(status="跳过")
             return "今日代理次数已达上限, 跳过该账号"
 
         account_id = str(self.cur_user_config.Info.Id).strip()
@@ -889,37 +889,37 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             and account_id
             and self.emulator_manager is not None
         ):
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             return "MAS 自建账号切换暂不支持模拟器，请改用 MAAEND 内置账号切换"
         if account_switch_method == "MAAEND" and account_id:
             if len(account_id) < 4 or not account_id[-4:].isdigit():
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
                 return "MAAEND 内置账号切换需要账号末四位为数字，请检查账号ID"
 
         if self.emulator_manager is None:
             root_path = self._maaend_root_path()
             if root_path is None:
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
                 return "MaaEnd 路径未配置"
             try:
                 loader = MaaEndResourceLoader.get_loaded(root_path)
             except ValueError as error:
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
                 return f"MaaEnd 资源加载失败: {error}"
             if not (
                 loader.has_pretask("GameSetting") or loader.has_pretask("LaunchGamePC")
             ) or not loader.has_task(_MAAEND_CLOSE_GAME_TASK):
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
                 return "当前 MaaEnd 版本不支持托管游戏启动，请更新 MaaEnd 后重试"
             if self._launch_mode() == "MaaEnd" and self._game_setting_pretask() is None:
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
                 return "当前 MaaEnd 或控制器不支持「MaaEnd 启动」，请选择启动器启动或 MAS 启动"
             if (
                 account_switch_method == "MAAEND"
                 and account_id
                 and not loader.has_task(_MAAEND_ACCOUNT_SWITCH_TASK)
             ):
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
                 return "当前 MaaEnd 版本不支持内置账号切换，请更新 MaaEnd 后重试"
 
         config_base = maaend_config_base(self.cur_user_config.Info.Base)
@@ -938,14 +938,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             )
         self.maaend_config_file = config_file
         if not config_file.exists():
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             return "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
 
         if self.cur_user_config.Info.IfQuickConfig:
             self._prepare_auto_collect_routes()
             daily_once_skip_reason = self._daily_once_skip_reason()
             if daily_once_skip_reason is not None:
-                self.cur_user_item.status = "跳过"
+                await self.cur_user_item.set_state(status="跳过")
                 return daily_once_skip_reason
 
         return "Pass"
@@ -1101,7 +1101,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         # ── 推送详情开关（在专项侧，不在 log_box）：关闭时不创建采集会话 ──
         # 该账号 push_log 保持为空，报告聚合自然只有结果行
-        self.cur_user_item.push_log_mode = self.cur_user_config.Notify.PushLogMode
+        self.user_state(
+            self.cur_user_item
+        ).push_log_mode = self.cur_user_config.Notify.PushLogMode
         self.push_log_enabled = self.cur_user_config.Notify.PushLogMode != "关闭"
 
         maaend_root_path = self.script_config.Info.Path
@@ -1354,7 +1356,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         """等待日志结果、进程退出或 MXU 队列结束，兜底完成后未退出的进程。"""
         process = self.maaend_process_manager.process
         if not isinstance(process, asyncio.subprocess.Process):
-            self.cur_user_log.status = "MaaEnd 未启动可监控的进程"
+            await self.cur_user_log.set_state(status="MaaEnd 未启动可监控的进程")
             return
 
         async def wait_exit() -> None:
@@ -1423,10 +1425,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             if launch_task in done:
                 error = launch_task.exception() or launch_task.result()
                 logger.error(f"终末地启动失败: {error}")
-                self.cur_user_log.status = f"游戏启动失败: {error}"
+                await self.cur_user_log.set_state(status=f"游戏启动失败: {error}")
             elif monitor.done() and not monitor.cancelled() and monitor.exception():
                 logger.warning(f"MaaEnd 日志读取失败: {monitor.exception()}")
-                self.cur_user_log.status = "MaaEnd 日志读取失败"
+                await self.cur_user_log.set_state(status="MaaEnd 日志读取失败")
             elif exit_task in done or monitor.done() or queue_completed:
                 await self.maaend_log_monitor.stop()
                 await self.check_log(
@@ -1469,14 +1471,19 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self._mxu_launch_count += 1
 
         def update_status(message: str) -> None:
-            nonlocal update_log
-            if update_log is None:
-                update_log = LogRecord(phase="Update", status="MaaEnd 正在更新")
-                self.cur_user_item.add_log_record(
-                    datetime.now().astimezone(), update_log
-                )
-            update_log.content.append(message + "\n")
-            self.script_info.log = message
+            user = self.cur_user_item
+
+            async def publish():
+                nonlocal update_log
+                if update_log is None:
+                    update_log = await user.add_log_record(
+                        datetime.now().astimezone(),
+                        LogRecord(phase="Update", status="MaaEnd 正在更新"),
+                    )
+                await update_log.append_content(message + "\n")
+                await self.script_info.set_log(message)
+
+            self.callbacks.submit(publish())
 
         try:
             version = await update_maaend_after_stage(
@@ -1500,18 +1507,20 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 await self._refresh_stage_plan(modes[next_index:])
                 self.task_dict = None
             if update_log is not None:
-                update_log.status = "Success!" if version is not None else "跳过更新"
+                await update_log.set_state(
+                    status="Success!" if version is not None else "跳过更新"
+                )
         except asyncio.CancelledError:
             self.update_failed = True
             if update_log is not None:
-                update_log.status = "MaaEnd 更新被中止"
+                await update_log.set_state(status="MaaEnd 更新被中止")
             raise
         except Exception as error:
             self.update_failed = True
             message = f"MaaEnd 更新失败，已停止后续任务: {error}"
             update_status(message)
             if update_log is not None:
-                update_log.status = message
+                await update_log.set_state(status=message)
             raise
 
     async def main_task(self):
@@ -1526,12 +1535,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            self.cur_user_item.add_log_record(
+            await self.cur_user_item.add_log_record(
                 datetime.now().astimezone(), LogRecord(status=self.check_result)
             )
             message = f"账号 {self.cur_user_item.name} 检查未通过: {self.check_result}"
-            self.script_info.log = message
-            self.script_info.log_first_line = 1
+            await self.script_info.set_log(message)
             if self.cur_user_item.status == "异常":
                 logger.warning(message)
                 await Publisher.send(
@@ -1546,7 +1554,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         await self.prepare()
 
         logger.info(f"开始代理账号 {self.cur_user_uid}")
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
@@ -1588,11 +1596,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self.cur_user_log = LogRecord(
                 phase=self.mode if if_quick_config else "Source"
             )
-            self.cur_user_item.add_log_record(
-                self.log_start_time, self.cur_user_log, retry=i > 1
+            self.cur_user_log = await self.cur_user_item.add_log_record(
+                self.log_start_time, self.cur_user_log
             )
 
-            self.script_info.log = "正在启动游戏..."
+            await self.script_info.set_log("正在启动游戏...")
             account_switch_method = self._account_switch_method()
             use_mas_account_switch = account_switch_method == "MAS"
             cloud_adb = str(self.script_config.Game.ControllerType) == "CloudADB"
@@ -1633,7 +1641,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 from .tools.login import LoginNotReadyError, login
 
                 try:
-                    self.script_info.log = "正在由 MAS 自建流程切换账号..."
+                    await self.script_info.set_log("正在由 MAS 自建流程切换账号...")
                     await login(
                         account_id,
                         self.emulator_info,
@@ -1652,17 +1660,17 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     continue
                 keep_game_for_login_retry = False
                 logger.info(f"账号 {self.cur_user_item.user_id} MAS 自建账号切换成功")
-                self.script_info.log = "MAS 自建账号切换完成"
+                await self.script_info.set_log("MAS 自建账号切换完成")
             elif account_id:
                 logger.info(
                     f"账号 {self.cur_user_item.user_id} 将由 MAAEND 内置任务切换账号"
                 )
-                self.script_info.log = "游戏已启动，等待 MaaEnd 执行账号切换"
+                await self.script_info.set_log("游戏已启动，等待 MaaEnd 执行账号切换")
             else:
                 logger.info(
                     f"账号 {self.cur_user_item.user_id} 未配置账号，跳过账号切换"
                 )
-                self.script_info.log = (
+                await self.script_info.set_log(
                     "等待 MaaEnd 启动游戏"
                     if cloud_adb
                     else "游戏已启动，未配置账号，跳过账号切换"
@@ -1724,13 +1732,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 )
 
             if self.cur_user_log.status == "Success!":
-                self.script_info.log = (
+                await self.script_info.set_log(
                     f"检测到 MaaEnd 完成{stage_label}任务\n正在等待相关程序结束"
                 )
 
                 # 中止相关程序
                 await self.maaend_process_manager.kill()
-                await System.kill_process(self.maaend_exe_path)
+                await process.kill_process(self.maaend_exe_path)
                 mode_index += 1
                 i = 0
                 self.task_dict = None
@@ -1739,7 +1747,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 logger.warning(
                     f"账号: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
-                self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
+                await self.script_info.set_log(
+                    f"{self.cur_user_log.status}\n正在中止相关程序"
+                )
 
                 # 中止相关程序
                 await self.kill_managed_process()
@@ -1786,8 +1796,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
             )
-        self.cur_user_log.content = [f"{error_message}, 无日志记录"]
-        self.cur_user_log.status = error_message
+        await self.cur_user_log.set_state(content=[f"{error_message}, 无日志记录"])
+        await self.cur_user_log.set_state(status=error_message)
 
         await self._take_failure_shot()
         await self.kill_managed_process(kill_game=kill_game)
@@ -1815,7 +1825,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         try:
             logger.info(f"中止 MaaEnd 进程: {self.maaend_exe_path}")
             await self.maaend_process_manager.kill()
-            await System.kill_process(self.maaend_exe_path)
+            await process.kill_process(self.maaend_exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
         if not kill_game:
@@ -1852,7 +1862,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             except Exception as error:
                 logger.opt(exception=True).warning(f"终末地进程管理器清理失败: {error}")
             try:
-                await System.kill_process(self.script_config.Game.Path)
+                await process.kill_process(self.script_config.Game.Path)
             except Exception as error:
                 logger.opt(exception=True).warning(f"关闭终末地客户端失败: {error}")
             await self._kill_launcher_process()
@@ -2226,7 +2236,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         # 配置前关闭可能未正常退出的脚本进程
         await self.maaend_process_manager.kill()
-        await System.kill_process(self.maaend_exe_path)
+        await process.kill_process(self.maaend_exe_path)
 
         maaend_local_config = None
         if (self.maaend_set_path / "mxu-MaaEnd.json").exists():
@@ -2837,13 +2847,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         """日志回调"""
 
         log = "".join(log_content)
-        self.cur_user_log.content = log_content
+        await self.cur_user_log.set_state(content=log_content)
         if any(re.search(r"任务完成:\s*[^\r\n]+", line) for line in log_content):
-            self.cur_user_item.mark_task_completed()
-        self.script_info.log = log
+            from app.core.script_update_queue import report_script_task_completed
+
+            report_script_task_completed()
+        await self.script_info.set_log(log)
         if "资源加载失败" in log:
             # 资源文件损坏/缺失，重启脚本也不会好：不再重试
-            self.cur_user_log.status = "MaaEnd 资源加载失败"
+            await self.cur_user_log.set_state(status="MaaEnd 资源加载失败")
             self.retryable = False
         elif any(
             message in log
@@ -2856,21 +2868,27 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 "没有可执行的任务",
             )
         ):
-            self.cur_user_log.status = "MaaEnd 没有可执行任务，请检查任务配置"
+            await self.cur_user_log.set_state(
+                status="MaaEnd 没有可执行任务，请检查任务配置"
+            )
             self.retryable = False
         elif "快捷键开始任务：失败" in log or "任务启动失败" in log:
-            self.cur_user_log.status = "MaaEnd 任务启动失败"
+            await self.cur_user_log.set_state(status="MaaEnd 任务启动失败")
         elif "resolution check failed" in log:
-            self.cur_user_log.status = "游戏分辨率设置错误，请重设分辨率比例为16:9"
+            await self.cur_user_log.set_state(
+                status="游戏分辨率设置错误，请重设分辨率比例为16:9"
+            )
             self.retryable = False
         elif self.color_match_failed_message and self.color_match_failed_message in log:
-            self.cur_user_log.status = "MaaEnd 颜色识别失败，请关闭滤镜或 HDR"
+            await self.cur_user_log.set_state(
+                status="MaaEnd 颜色识别失败，请关闭滤镜或 HDR"
+            )
             self.retryable = False
         elif f"任务失败: {self.account_switch_task_name}" in log:
-            self.cur_user_log.status = "MaaEnd 账号切换失败"
+            await self.cur_user_log.set_state(status="MaaEnd 账号切换失败")
         elif if_stream_end:
             if self.task_dict is None:
-                self.cur_user_log.status = "MaaEnd 未加载任何任务"
+                await self.cur_user_log.set_state(status="MaaEnd 未加载任何任务")
             else:
                 try:
                     task_name = ""
@@ -2918,23 +2936,25 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
                     if unfinished_tasks:
                         logger.info(f"MaaEnd 未完成任务列表: {unfinished_tasks}")
-                        self.cur_user_log.status = (
-                            f"MaaEnd 部分任务执行失败: {'、'.join(unfinished_tasks)}"
+                        await self.cur_user_log.set_state(
+                            status=f"MaaEnd 部分任务执行失败: {'、'.join(unfinished_tasks)}"
                         )
                     else:
-                        self.cur_user_log.status = "Success!"
+                        await self.cur_user_log.set_state(status="Success!")
                 except Exception as e:
                     logger.opt(exception=True).warning(
                         f"MaaEnd 任务执行情况解析失败: {e}"
                     )
-                    self.cur_user_log.status = "MaaEnd 任务执行情况解析失败"
+                    await self.cur_user_log.set_state(
+                        status="MaaEnd 任务执行情况解析失败"
+                    )
 
         elif self.is_log_stalled(
             latest_time, minutes=self.script_config.Run.RunTimeLimit
         ):
-            self.cur_user_log.status = "MaaEnd 进程超时"
+            await self.cur_user_log.set_state(status="MaaEnd 进程超时")
         else:
-            self.cur_user_log.status = "MaaEnd 正常运行中"
+            await self.cur_user_log.set_state(status="MaaEnd 正常运行中")
 
         logger.debug(f"MaaEnd 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "MaaEnd 正常运行中":
@@ -3125,7 +3145,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if self.check_result != "Pass":
             return
 
-        self.task_info.begin_user_history_capture(
+        self.history.begin_user_history_capture(
             self.script_info,
             self.cur_user_item,
             failed=bool(self.cur_user_item.log_record)
@@ -3146,7 +3166,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             try:
                 logger.info(f"中止 MaaEnd 进程: {self.maaend_exe_path}")
                 await self.maaend_process_manager.kill()
-                await System.kill_process(self.maaend_exe_path)
+                await process.kill_process(self.maaend_exe_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
         else:
@@ -3180,7 +3200,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 and log_item is self.cur_user_log
                 and log_item.status == "未开始监看日志"
             ):
-                log_item.status = "任务被用户手动中止"
+                await log_item.set_state(status="任务被用户手动中止")
             was_cancelled = (
                 self.stopped_manually
                 and log_item is self.cur_user_log
@@ -3188,9 +3208,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             ) or (log_item.phase == "Update" and log_item.status == "MaaEnd 更新被中止")
             was_skipped = log_item.phase == "Update" and log_item.status == "跳过更新"
             if not log_item.content:
-                log_item.content = ["未捕获到任何日志内容"]
+                await log_item.set_state(content=["未捕获到任何日志内容"])
                 if not was_cancelled and not was_skipped:
-                    log_item.status = "未捕获到日志"
+                    await log_item.set_state(status="未捕获到日志")
             data = {}
             message = log_item.status
             try:
@@ -3212,7 +3232,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             except Exception as error:
                 diagnostic = f"MaaEnd 统计解析失败：{error}"
                 logger.opt(exception=True).warning(diagnostic)
-                log_item.content.append(f"\n{diagnostic}\n")
+                await log_item.append_content(f"\n{diagnostic}\n")
             phase = (
                 "更新"
                 if log_item.phase == "Update"
@@ -3334,16 +3354,16 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             await self.cur_user_config.commit()
             self.cur_user_config.Data.LastProxyStatus = "成功"
             await self.cur_user_config.commit()
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             logger.success(f"账号 {self.cur_user_uid} 的自动代理任务已完成")
         else:
             self.cur_user_config.Data.LastProxyStatus = "失败"
             await self.cur_user_config.commit()
             logger.warning(f"账号 {self.cur_user_uid} 的自动代理任务未完成")
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
 
         if history_records:
-            await self.task_info.save_user_history(
+            await self.history.save_user_history(
                 history_records,
                 script=self.script_info,
                 user=self.cur_user_item,
@@ -3361,7 +3381,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             )
 
     async def on_crash(self, e: Exception):
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         await Publisher.send(
             id=self.task_info.task_id,
@@ -3385,7 +3405,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         def append_inventory(log_type: str, text: str, ts: float) -> None:
             lines.append(f"[{datetime.fromtimestamp(ts):%H:%M:%S}] {text}")
             if self.push_log_enabled:
-                append_push_log(self.cur_user_item, log_type, text, ts)
+                append_push_log(
+                    self.callbacks,
+                    self.user_state(self.cur_user_item),
+                    log_type,
+                    text,
+                    ts,
+                )
 
         pipeline = log_box.LogPipeline()
         pipeline.preprocessors.append(report.select)
@@ -3404,7 +3430,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
     async def _append_stage_log_details(self, paths: list[Path]) -> None:
         """阶段日志的读取、后台处理和用户交付归 MaaEnd 收尾流程。"""
-        if not self.push_log_enabled or self.cur_user_item.push_log_mode == "关闭":
+        if (
+            not self.push_log_enabled
+            or self.user_state(self.cur_user_item).push_log_mode == "关闭"
+        ):
             return
         user = self.cur_user_item
         paths = list(paths)
@@ -3426,7 +3455,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             try:
                 entries = await asyncio.to_thread(read)
                 for entry in entries:
-                    user.push_log.append((entry.log_type, entry.text, entry.timestamp))
+                    await self.user_state(user).append_push_log(
+                        (entry.log_type, entry.text, entry.timestamp)
+                    )
             except Exception:
                 logger.opt(exception=True).warning("MaaEnd 节点采集推送失败")
 

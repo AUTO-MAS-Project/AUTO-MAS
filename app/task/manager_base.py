@@ -5,11 +5,13 @@
 """常规专项的账号选择、运行检查、跳过处理与报告汇总。"""
 
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from functools import partial
 from typing import Literal, overload
 
+from app.core import Config, GameMaintenance
 from app.core.notify.lifecycle import NotificationTaskBase as NotificationTaskBase
 from app.core.notify.task_content import (
     push_maintenance_notice as push_maintenance_notice,
@@ -40,8 +42,9 @@ class UserRunSummary:
 
 
 class ScriptManagerBase(NotificationTaskBase):
+    """[兼容旧专项] 现有 task 专项 manager 基类；新插件托管与用户派发使用 UserExpander／ModeWorker。"""
+
     # 收尾仍持有配置 X 锁，取消后也须等待完成再让调度器切换任务。
-    wait_for_finalizer_on_cancel = True
 
     # 分组只消费专项已经给出的状态；成功口径可由专项声明。
     completed_user_statuses = frozenset({"完成"})
@@ -58,6 +61,7 @@ class ScriptManagerBase(NotificationTaskBase):
         self._executed_user_ids: set[str] = set()
 
     def is_user_selected(self, user_id: uuid.UUID | str, user: UserConfigType) -> bool:
+        """[兼容旧专项] 旧 manager 重展开用户时筛选；新 L3 按固定运行节点在锁内复核准入。"""
         return (
             bool(user.Info.Status)
             and user.Info.RemainedDay != 0
@@ -67,29 +71,38 @@ class ScriptManagerBase(NotificationTaskBase):
     @overload
     def selected_user_configs[U: UserConfigType](
         self, items: Iterable[tuple[uuid.UUID, U]]
-    ) -> list[tuple[uuid.UUID, U]]: ...
+    ) -> list[tuple[uuid.UUID, U]]:
+        """[兼容旧专项] 旧 manager 读取当前配置并重筛用户；新执行树不重新展开 L1 用户清单。"""
+        ...
 
     @overload
     def selected_user_configs(
         self, items: None = None
-    ) -> list[tuple[uuid.UUID, UserConfigType]]: ...
+    ) -> list[tuple[uuid.UUID, UserConfigType]]:
+        """[兼容旧专项] 旧 manager 读取当前配置并重筛用户；新执行树不重新展开 L1 用户清单。"""
+        ...
 
     def selected_user_configs(
         self, items: Iterable[tuple[uuid.UUID, UserConfigType]] | None = None
-    ) -> list[tuple[uuid.UUID, UserConfigType]]:
+    ) -> Sequence[tuple[uuid.UUID, UserConfigType]]:
+        """[兼容旧专项] 旧 manager 读取当前配置并重筛用户；新执行树不重新展开 L1 用户清单。"""
         if items is None:
             # prepare() 后复用已持有的配置；预检仍在调用时查询，不提前固定账号。
             items = (
                 self.script_config.UserData.items()
                 if self.script_config is not None
-                else self.task_info.get_script_user_configs(self.script_info.script_id)
+                else Config.ScriptConfig[
+                    uuid.UUID(self.script_info.script_id)
+                ].UserData.items()
             )
         return [(uid, user) for uid, user in items if self.is_user_selected(uid, user)]
 
     def build_proxy_user_list(
         self, items: Iterable[tuple[uuid.UUID, UserConfigType]] | None = None
     ) -> list[UserItem]:
-        """只筛选运行列表，原配置集合保留全部账号。"""
+        """[兼容旧专项] 旧用户列表构造；新代码保留 L1 已生成的用户运行 UUID 与参数。
+
+        只筛选运行列表，原配置集合保留全部账号。"""
         return [
             UserItem(str(uid), user.Info.Name, "等待")
             for uid, user in self.selected_user_configs(items)
@@ -116,7 +129,9 @@ class ScriptManagerBase(NotificationTaskBase):
     @property
     def all_users_maintenance_skipped(self) -> bool:
         users = self.script_info.user_list
-        return bool(users) and all(user.maintenance_skipped for user in users)
+        return bool(users) and all(
+            self.user_state(user).maintenance_skipped for user in users
+        )
 
     @property
     def has_proxy_run(self) -> bool:
@@ -126,10 +141,9 @@ class ScriptManagerBase(NotificationTaskBase):
         self._executed_user_ids.add(user.user_id)
 
     async def run_user_task(self, user: UserItem, task: TaskExecuteBase) -> None:
-        if self.task_info.mode == "AutoProxy":
+        if self.execution_mode == "AutoProxy":
             self.record_user_run_start(user)
         # 子任务收尾仍可能修改原配置，反复取消也须等待其结束后再释放脚本 X 锁。
-        task.wait_for_finalizer_on_cancel = True
         await self.spawn(task)
 
     def build_proxy_report(
@@ -139,7 +153,7 @@ class ScriptManagerBase(NotificationTaskBase):
     ) -> TaskResultData:
         """按专项的账号状态口径组织已有报告字段。"""
         summary = self.collect_user_results()
-        mode = TASK_MODE_ZH.get(self.task_info.mode, self.task_info.mode)
+        mode = TASK_MODE_ZH.get(self.execution_mode, self.execution_mode)
         return {
             "title": f"{mode}任务报告",
             "script_name": self.script_info.name or "空白",
@@ -153,30 +167,30 @@ class ScriptManagerBase(NotificationTaskBase):
     async def _record_user_result(
         self, user: UserItem, *, status: Literal["跳过", "异常"], reason: str
     ) -> None:
-        user.status = status
-        user.add_log_record(
+        await user.set_state(status=status)
+        await user.add_log_record(
             datetime.now().astimezone(), LogRecord(status=reason, content=[reason])
         )
         line = f"{self.script_info.name} - {user.name}: {reason}"
-        self.script_info.log = (
+        await self.script_info.set_log(
             f"{self.script_info.log}\n{line}" if self.script_info.log else line
         )
         logger.info(line)
-        await self.task_info.send_notice(
+        await self.send_notice(
             level="error" if status == "异常" else "info", message=line
         )
 
     async def skip_user(
         self, user: UserItem, reason: str, *, maintenance: bool = False
     ) -> None:
-        user.maintenance_skipped = maintenance
+        self.user_state(user).maintenance_skipped = maintenance
         await self._record_user_result(user, status="跳过", reason=reason)
 
     async def notify_user_check_failure(self, user: UserItem, reason: str) -> None:
         # 专项的 check() 已经标记为跳过时保留该状态，不能改成代理失败。
         if user.status == "等待":
-            user.status = "异常"
-        await self.task_info.send_notice(level="error", message=reason)
+            await user.set_state(status="异常")
+        await self.send_notice(level="error", message=reason)
 
     def maintenance_game(self, user_config: UserConfigType) -> str | None:
         """专项按账号区服声明公告对象；未接入公告的专项不查询。"""
@@ -190,7 +204,7 @@ class ScriptManagerBase(NotificationTaskBase):
     ) -> bool:
         window = await get_user_maintenance(
             self.maintenance_game(user_config),
-            lookup=self.task_info.get_active_maintenance,
+            lookup=partial(GameMaintenance.get_active, proxy=Config.proxy),
         )
         if window is None:
             return False
@@ -204,7 +218,7 @@ class ScriptManagerBase(NotificationTaskBase):
         *,
         game_update_result: _utils_game_update.GameUpdateResult | None = None,
     ) -> bool:
-        if self.task_info.mode != "AutoProxy":
+        if self.execution_mode != "AutoProxy":
             return True
         if await self.skip_maintenance_user(user, user_config):
             return False
@@ -227,23 +241,24 @@ class ScriptManagerBase(NotificationTaskBase):
             logger.opt(exception=True).warning(f"推送维护通知失败: {exc}")
 
     async def _run_main_task(self) -> None:
-        if self.task_info.mode == "AutoProxy":
+        """[兼容旧专项] 旧 manager 主流程转接；新执行层按 TaskBase.main_task 实现。"""
+        if self.execution_mode == "AutoProxy":
             await self.update_game_before_run()
             selected = self.selected_user_configs()
             windows = [
                 await get_user_maintenance(
                     self.maintenance_game(user),
-                    lookup=self.task_info.get_active_maintenance,
+                    lookup=partial(GameMaintenance.get_active, proxy=Config.proxy),
                 )
                 for _, user in selected
             ]
             if selected and all(window is not None for window in windows):
-                self.script_info.user_list = self.build_proxy_user_list(selected)
+                await self.script_info.set_users(self.build_proxy_user_list(selected))
                 for user, window in zip(self.script_info.user_list, windows):
                     if window is not None:
                         await self.skip_user(user, window.reason, maintenance=True)
                 self.maintenance_only = True
-                self.script_info.status = "跳过"
+                await self.script_info.set_state(status="跳过")
                 await self.notify_maintenance()
                 return
         await super()._run_main_task()

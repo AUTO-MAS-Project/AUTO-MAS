@@ -11,7 +11,7 @@ import { useI18n } from 'vue-i18n'
 import type { SatelliteModuleStatus } from '@/composables/useSatelliteStatus'
 import type { ScreenPoint } from './satelliteScene'
 
-/** 悬停在卫星上时的标签：脚本名（通用 MFW 是项目名），有运行状态时带上状态 */
+/** 悬停在卫星上时的标签：脚本名（通用 MFW 是项目名），带上配置排期与最近历史结果 */
 const props = defineProps<{
   name: string | null
   status?: SatelliteModuleStatus
@@ -23,15 +23,8 @@ const element = ref<HTMLDivElement | null>(null)
 const statusText = computed(() => {
   const status = props.status
   if (!status) return ''
-  if (status.lastFailed) {
-    return t(
-      status.running
-        ? 'core.home.satelliteStatus.failedRunning'
-        : 'core.home.satelliteStatus.failed'
-    )
-  }
-  if (status.running) return t('core.home.satelliteStatus.running')
-  if (status.queued) return t('core.home.satelliteStatus.queued')
+  if (status.lastFailed) return t('core.home.satelliteStatus.failed')
+  if (status.scheduled) return t('core.home.satelliteStatus.scheduled')
   return ''
 })
 

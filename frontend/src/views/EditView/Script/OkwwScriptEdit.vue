@@ -340,39 +340,15 @@
           <div class="section-header">
             <h3>{{ t('core.edit.runConfiguration') }}</h3>
           </div>
-          <ScriptHardTimeoutField
-            v-model:value="okwwConfig.Run.HardTimeLimit"
-            @save="handleChange('Run', 'HardTimeLimit', okwwConfig.Run.HardTimeLimit)"
+          <ScriptRunLimitsSection
+            v-model:hard-time-limit="okwwConfig.Run.HardTimeLimit"
+            v-model:daily-limit="okwwConfig.Run.ProxyTimesLimit"
+            v-model:retry-limit="okwwConfig.Run.RunTimesLimit"
+            v-model:timeout="okwwConfig.Run.RunTimeLimit"
+            :retry-hint="t('core.edit.giveUpAfterThis')"
+            :timeout-hint="t('core.edit.logThatStaysUnchanged')"
+            @save="key => handleChange('Run', key, okwwConfig.Run[key])"
           />
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="okwwConfig.Run.ProxyTimesLimit"
-                kind="daily"
-                :label="t('core.edit.runsPerDay')"
-                :hint="t('core.edit.k0MeansNoLimit')"
-                @save="handleChange('Run', 'ProxyTimesLimit', okwwConfig.Run.ProxyTimesLimit)"
-              />
-            </a-col>
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="okwwConfig.Run.RunTimesLimit"
-                kind="retry"
-                :label="t('core.edit.retryLimit2')"
-                :hint="t('core.edit.giveUpAfterThis')"
-                @save="handleChange('Run', 'RunTimesLimit', okwwConfig.Run.RunTimesLimit)"
-              />
-            </a-col>
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="okwwConfig.Run.RunTimeLimit"
-                kind="timeout"
-                :label="t('core.edit.runTimeoutMinutes')"
-                :hint="t('core.edit.logThatStaysUnchanged')"
-                @save="handleChange('Run', 'RunTimeLimit', okwwConfig.Run.RunTimeLimit)"
-              />
-            </a-col>
-          </a-row>
         </div>
       </a-form>
     </a-card>
@@ -435,10 +411,9 @@
 
 <script setup lang="ts">
 import PathPickerField from '@/components/PathPickerField.vue'
-import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { requestUserUpdateStart } from '@/composables/useTaskApi'
-import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useI18n } from 'vue-i18n'
@@ -451,7 +426,6 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
 import {
   WS_TASK_COMPLETED,
   WS_TASK_LOG_UPDATED,
@@ -653,7 +627,6 @@ const handleCheckUpdate = async () => {
     updateModal.users = users
     updateModal.selectedUserId = users[0].uid
     updateModal.log = ''
-    updateLogSeq = null
     updateModal.open = true
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
@@ -661,42 +634,10 @@ const handleCheckUpdate = async () => {
   }
 }
 
-// 任务日志增量协议：append 为假 → 整体替换并记 seq；append 为真且 seq 连续 → 追加；
-// 否则视为失步（订阅登记前已经错过首条整体替换、或漏了消息）：丢弃本条，拉一次运行
-// 快照用它的 log/logSeq 重建，重建期间到达的增量一并丢弃。缓冲上限 200,000 字符。
+// TODO(插件迁移，#1845)：当前全文覆盖会丢失增量前文；迁入后统一适配 append/seq 与快照恢复。
 const UPDATE_LOG_MAX_CHARS = 200_000
-let updateLogSeq: number | null = null
-let updateLogResyncing = false
-const resyncUpdateLog = async () => {
-  if (updateLogResyncing || !updateSession.taskId) return
-  updateLogResyncing = true
-  try {
-    const snapshot = await realtimeSnapshotApi.getRuntimeTasks()
-    const item = (snapshot.tasks ?? []).find(task => task.taskId === updateSession.taskId)
-    if (!item) return
-    updateModal.log = item.log ?? ''
-    updateLogSeq = item.logSeq ?? null
-  } catch (e) {
-    logger.warn(`重建鸣潮更新日志失败: ${e instanceof Error ? e.message : String(e)}`)
-  } finally {
-    updateLogResyncing = false
-  }
-}
-const applyUpdateLog = (data: { log: string; seq?: number; append?: boolean }) => {
-  if (!data.append) {
-    updateModal.log = data.log
-    updateLogSeq = data.seq ?? null
-  } else if (updateLogSeq !== null && data.seq === updateLogSeq + 1) {
-    updateModal.log += data.log
-    updateLogSeq = data.seq
-  } else {
-    updateLogSeq = null
-    void resyncUpdateLog()
-    return
-  }
-  if (updateModal.log.length > UPDATE_LOG_MAX_CHARS) {
-    updateModal.log = updateModal.log.slice(-UPDATE_LOG_MAX_CHARS)
-  }
+const applyUpdateLog = (data: WSTaskLogUpdatedData) => {
+  updateModal.log = data.log.slice(-UPDATE_LOG_MAX_CHARS)
 }
 
 const startUpdate = async () => {
@@ -711,9 +652,7 @@ const startUpdate = async () => {
     updateSession.taskId = response.taskId
     updateSession.subscriptionIds = [
       subscribe({ id: response.taskId, type: WS_TASK_LOG_UPDATED }, wsMessage => {
-        applyUpdateLog(
-          wsMessage.data as unknown as WSTaskLogUpdatedData & { seq?: number; append?: boolean }
-        )
+        applyUpdateLog(wsMessage.data)
       }),
       subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
         const data = wsMessage.data as unknown as WSTaskNoticeData

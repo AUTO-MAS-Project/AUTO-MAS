@@ -99,7 +99,6 @@ const {
   taskId,
   configLoading: starting,
   stopping,
-  startSession,
   saveSession,
   dispose: disposeSession,
 } = useNativeGuiSession({
@@ -113,7 +112,6 @@ const {
     timeoutWarn: 'core.plan.universal.sessionTimeoutWarn',
     saved: 'core.plan.universal.sessionSaved',
     saveFailed: 'core.plan.universal.saveFailed',
-    saveUnknown: 'core.plan.universal.saveUnknown',
   },
 })
 
@@ -147,14 +145,10 @@ async function saveTime(field: 'ResetHour' | 'ResetMinute', value: number | stri
   }
 }
 
-/** 拉起该脚本的配置界面：脚本侧把当天模板换入原生配置，保存后回写当天模板 */
-async function editDay(day: string) {
-  if (!info.value?.ScriptId) return
-  const started = await startSession(info.value.ScriptId, false, 'script', {
-    planId: props.planId,
-    planDay: planColumnGroup(day),
-  })
-  if (started) editingLabel.value = label(day)
+/** 计划日期编辑延期，当前不创建配置会话。 */
+function editDay(_day: string) {
+  // TODO(插件迁移，#1845)：计划日期编辑不接入旧平铺任务参数，保留计划配置与模板基础能力。
+  message.warning(t('core.plan.universal.migrationPending'))
 }
 
 async function finishSession() {

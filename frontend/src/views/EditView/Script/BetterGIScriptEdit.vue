@@ -175,39 +175,15 @@
           <div class="section-header">
             <h3>{{ t('core.edit.runConfiguration') }}</h3>
           </div>
-          <ScriptHardTimeoutField
-            v-model:value="bettergiConfig.Run.HardTimeLimit"
-            @save="handleChange('Run', 'HardTimeLimit', bettergiConfig.Run.HardTimeLimit)"
+          <ScriptRunLimitsSection
+            v-model:hard-time-limit="bettergiConfig.Run.HardTimeLimit"
+            v-model:daily-limit="bettergiConfig.Run.ProxyTimesLimit"
+            v-model:retry-limit="bettergiConfig.Run.RunTimesLimit"
+            v-model:timeout="bettergiConfig.Run.RunTimeLimit"
+            :retry-hint="t('core.edit.bettergiRetryLimitHint')"
+            :timeout-hint="t('core.edit.bettergiRunTimeoutHint')"
+            @save="key => handleChange('Run', key, bettergiConfig.Run[key])"
           />
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="bettergiConfig.Run.ProxyTimesLimit"
-                kind="daily"
-                :label="t('core.edit.runsPerDay')"
-                :hint="t('core.edit.k0MeansNoLimit')"
-                @save="handleChange('Run', 'ProxyTimesLimit', bettergiConfig.Run.ProxyTimesLimit)"
-              />
-            </a-col>
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="bettergiConfig.Run.RunTimesLimit"
-                kind="retry"
-                :label="t('core.edit.retryLimit2')"
-                :hint="t('core.edit.bettergiRetryLimitHint')"
-                @save="handleChange('Run', 'RunTimesLimit', bettergiConfig.Run.RunTimesLimit)"
-              />
-            </a-col>
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="bettergiConfig.Run.RunTimeLimit"
-                kind="timeout"
-                :label="t('core.edit.runTimeoutMinutes')"
-                :hint="t('core.edit.bettergiRunTimeoutHint')"
-                @save="handleChange('Run', 'RunTimeLimit', bettergiConfig.Run.RunTimeLimit)"
-              />
-            </a-col>
-          </a-row>
         </div>
       </a-form>
     </a-card>
@@ -217,9 +193,8 @@
 <script setup lang="ts">
 import BetterGIProgramUpdateSettings from './components/BetterGIProgramUpdateSettings.vue'
 import type { BetterGIConfig_Update } from '@/api'
-import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
-import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
