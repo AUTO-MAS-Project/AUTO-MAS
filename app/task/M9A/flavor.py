@@ -345,6 +345,7 @@ class M9AFlavor:
         adb_path: str | None,
         adb_address: str,
         progress: Callable[[str], Awaitable[None]] | None,
+        host_adb: Any = None,
     ) -> str:
         """引擎的可选运行前登录钩子：B 服登录由 MAS 完成，契约见 MaaFW 的 ``flavor.py``。"""
 
@@ -359,6 +360,7 @@ class M9AFlavor:
             adb_path=adb_path,
             adb_address=adb_address,
             progress=progress,
+            host_adb=host_adb,
         )
 
     async def ensure_game_updated(

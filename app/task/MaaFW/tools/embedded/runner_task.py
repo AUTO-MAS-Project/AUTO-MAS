@@ -587,7 +587,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._launched_package_name = ""
         # 游戏更新钩子每个账号每次运行只调一次，重试重新开模拟器时不再查
         self._game_update_checked = False
-        # 运行前登录钩子同样每个账号每次运行只调一次，重试重新开模拟器时不再登录
+        # 运行前登录在同一客户端会话内只完成一次；客户端重启后重新验证
         self._login_checked = False
         self.maafw_runtime_pool_root: Path | None = None
         self.maafw_runtime_pool_id: str | None = None
@@ -1430,6 +1430,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
 
         if plan.controllerType == "Win32":
+            await self._ensure_logged_in("", None)
             controller = _find_controller(interface_model, plan.controllerName)
             win32_config = controller.win32
             mouse = win32_config.mouse if win32_config else None
@@ -1668,6 +1669,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 adb_path=adb_path,
                 adb_address=address,
                 progress=report,
+                host_adb=await resolve_host_adb(self),
             )
         except MaaFWLoginRequired:
             raise

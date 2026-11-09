@@ -36,10 +36,11 @@
   重试关闭游戏 / 模拟器（客户端重启）后也会重新验证，不允许带着未登录状态下发任务。
   在事件循环里 ``await``。要不要真正做事由钩子自己按配置判断（返回空串表示没做事）。
 - **签名**：``async def ensure_logged_in(self, *, script_config, user_config, resource_name,
-  package_name, adb_path, adb_address, progress) -> str``。``user_config`` 是本次运行的账号配置
+  package_name, adb_path, adb_address, progress, host_adb=None) -> str``。``user_config`` 是本次运行的账号配置
   （账号字段在 ``Info.Account``）；``package_name`` 是这次随模拟器拉起的包名（空串表示没拉起，
-  钩子可自行按包名拉起）；``adb_path`` 为 ``None`` 时由钩子自己回退系统 adb；``progress`` 是写
+  钩子可自行按包名拉起）；``host_adb`` 非空时截图与命令必须使用该私有通道；否则按 ``adb_path`` 连接；``progress`` 是写
   用户运行日志的异步回调。返回值是写进运行日志的一句话，空串表示不写。
+- Win32 控制器以空 ``adb_address`` 调用，供钩子拒绝不支持的登录模式。
 - **失败**：抛 :class:`MaaFWLoginRequired`，文案直接给用户看；本账号本次尝试判失败，按普通失败
   走重试（不特殊处理退出条件）。抛其它异常同样按失败处理，原因会附在异常原文后面。
 - **取消**：用户停止（``CancelledError``）必须照常向上抛，不能吞掉。

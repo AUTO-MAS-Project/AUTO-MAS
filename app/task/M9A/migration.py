@@ -1461,7 +1461,7 @@ def repair_script_config_payload(
         )
         answer_users = _user_data_of(answer) or {}
         legacy_users = _user_data_of(legacy) or {}
-        official = supports_account_switch(
+        supports_switch = supports_account_switch(
             (payload.get("Info") or {}).get("Resource"), login_mode=_login_mode(payload)
         )
         for user_uid, user in user_data.items():
@@ -1482,7 +1482,7 @@ def repair_script_config_payload(
                 answer_user,
                 index,
                 keep_account=bool(account and account_changed),
-                supports_switch=official,
+                supports_switch=supports_switch,
                 label=label,
                 report=report,
             ):
@@ -1492,7 +1492,7 @@ def repair_script_config_payload(
             # 自己改过账号的，是有意要切，不提醒；实例文件里本来就配了切号的，「账号」
             # 已经是（或该是）那个切号的目标账号，也不提醒
             if (
-                official
+                supports_switch
                 and _truthy(info.get("Status", True))
                 and account
                 and not account_changed

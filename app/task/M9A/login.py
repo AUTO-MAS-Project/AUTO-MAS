@@ -52,8 +52,10 @@
 
 上游评估：当前上游 M9A 的 interface 已声明 B 服资源（运行任务可用），但「切换账号」任务仍只
 声明官服、也没有按 B 站昵称选号的入口，因此这里按**临时补位**处理并标注移除计划（上游提供等价
-入口后删除本模块的选号逻辑）。立项时未单独向上游提 PR，理由是本实现属于 MAS 侧的运行前编排，
-上游入口补齐前无法复用。
+入口后删除本模块的选号逻辑）。登录、登出与选号属于上游领域，运行前调用并不改变其归属。
+维护者已在 PR #1882 明确隐私协议不由 M9A 处理，且不再作为该 PR 的评审阻断：
+https://github.com/AUTO-MAS-Project/AUTO-MAS/pull/1882#issuecomment-6721059637
+该决定不扩大为其他游戏内能力的通用豁免；其余补位范围仍需上游评估依据或维护者明确接受。
 
 失败一律抛 :class:`MaaFWLoginRequired`（文案直接给用户看，本轮按普通失败重试）；
 用户停止（``CancelledError``）照常向上抛，不在截图 / 等帧里吞掉。
@@ -69,6 +71,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import cv2
 import numpy as np
 from PIL import Image
 
@@ -91,8 +94,8 @@ _AGREE_RE = re.compile(r"^同意$")
 _LOGIN_RE = re.compile(r"^登录$")
 _CONFIRM_RE = re.compile(r"^确认$")
 
-#: 标题页「START」按钮的 OCR 文字（偶尔只读到 TART / ERS 这类残词，放宽匹配）。
-_TITLE_HINTS = ("START", "TART", "ERS")
+#: 标题页「START」按钮的 OCR 文字（允许 OCR 漏掉首字母）。
+_TITLE_HINTS = ("START", "TART")
 #: 标题页右下角的退出图标位置（相对屏幕；实机 2560x1440 验证，点它弹「是否登出当前账号？」）。
 _EXIT_POINT = (0.956, 0.91)
 
@@ -108,7 +111,7 @@ _POLL_SECONDS = 1.0
 #: 冷启动到出现登录界面 / 标题页的上限（含模拟器内应用拉起）。
 _LAUNCH_TIMEOUT = 90.0
 #: 主循环（等登录界面 / 标题页）与登录后等面板关闭各自的上限。两处**分别计时**，不是共享
-#: 一个 240 秒总预算；整轮还受 ``Run.RunTimeLimit`` 的硬超时兜底。隐私提示循环也受本时限约束。
+#: 一个 240 秒总预算；隐私提示循环也受本时限约束。
 _LOGIN_TIMEOUT = 240.0
 #: 既没有登录界面、也认不出标题页时，持续多久就判「无法确认当前账号」并停止。
 #: 冷启动的加载页（只有版本号）也算认不出，所以给足加载时间，别在半路就判失败。
@@ -192,43 +195,64 @@ def _privacy_prompt(items: list[tuple[str, Box]]) -> bool:
 def _title_like(items: list[tuple[str, Box]]) -> bool:
     """标题页的样子：OCR 读到「START」这类按钮文字（登录面板与主界面都读不到）。"""
 
-    return any(any(hint in text.upper() for hint in _TITLE_HINTS) for text, _ in items)
+    return any(text.strip().upper() in _TITLE_HINTS for text, _ in items)
 
 
 class _Device:
     """一台 ADB 设备上的截图 / 点击 / 前台判断，全部走 ``adb`` 命令（不依赖 MaaFramework）。"""
 
-    def __init__(self, adb_path: str | None, address: str) -> None:
+    def __init__(
+        self, adb_path: str | None, address: str, host_adb: Any = None
+    ) -> None:
         self.program = str(adb_path or "adb")
         self.address = address
+        self.host_adb = host_adb
+        self._aspect_checked = False
 
-    def _run(
+    async def _run(
         self, *args: str, timeout: float = 20.0
     ) -> subprocess.CompletedProcess[bytes]:
-        return subprocess.run(
+        if self.host_adb is not None:
+            code, output = await self.host_adb(*args, timeout=timeout)
+            data = output.encode("utf-8")
+            return subprocess.CompletedProcess(args, code, data, data if code else b"")
+        return await asyncio.to_thread(
+            subprocess.run,
             [self.program, "-s", self.address, *args],
             capture_output=True,
             timeout=timeout,
             check=False,
         )
 
-    def screencap(self) -> np.ndarray:
+    async def screencap(self) -> np.ndarray:
         # exec-out 是二进制安全通道（与 shell 不同，不会把 \n 转成 \r\n），原样交给 PIL
-        result = self._run("exec-out", "screencap", "-p", timeout=20.0)
-        data = result.stdout
+        if self.host_adb is not None:
+            data = await self.host_adb.screencap_png(timeout=20.0)
+            result = subprocess.CompletedProcess([], 0, data, b"")
+        else:
+            result = await self._run("exec-out", "screencap", "-p", timeout=20.0)
+            data = result.stdout
         if result.returncode != 0 or not data:
             detail = result.stderr.decode("utf-8", "ignore").strip()
             suffix = f"（{detail}）" if detail else ""
             raise MaaFWLoginRequired(f"B 服登录失败：ADB 截图失败{suffix}")
         with Image.open(io.BytesIO(data)) as image:
-            return np.asarray(image.convert("RGB"))
+            frame = cv2.cvtColor(np.asarray(image.convert("RGB")), cv2.COLOR_RGB2BGR)
+        if not self._aspect_checked:
+            self._aspect_checked = True
+            height, width = frame.shape[:2]
+            if abs(width / height - 16 / 9) > 0.05:
+                logger.warning(
+                    "B 服登录坐标按 16:9 验证，当前宽高比可能导致点击偏移，请调整模拟器分辨率"
+                )
+        return frame
 
-    def tap(self, box: Box) -> None:
+    async def tap(self, box: Box) -> None:
         center_x, center_y = _center(box)
-        self.tap_point(center_x, center_y)
+        await self.tap_point(center_x, center_y)
 
-    def tap_point(self, x: float, y: float) -> None:
-        result = self._run(
+    async def tap_point(self, x: float, y: float) -> None:
+        result = await self._run(
             "shell", "input", "tap", str(int(x)), str(int(y)), timeout=15.0
         )
         if result.returncode != 0:
@@ -236,8 +260,10 @@ class _Device:
             suffix = f"（{detail}）" if detail else ""
             raise MaaFWLoginRequired(f"B 服登录失败：ADB 点击失败{suffix}")
 
-    def foreground(self, package: str) -> bool:
-        result = self._run("shell", "dumpsys", "activity", "activities", timeout=20.0)
+    async def foreground(self, package: str) -> bool:
+        result = await self._run(
+            "shell", "dumpsys", "activity", "activities", timeout=20.0
+        )
         text = result.stdout.decode("utf-8", "ignore")
         prefix = f"{package}/"
         return any(
@@ -245,11 +271,11 @@ class _Device:
             for line in (text or "").splitlines()
         )
 
-    def start(self, package: str) -> None:
+    async def start(self, package: str) -> None:
         """按包名拉起客户端；启动组件按 ``resolve-activity`` 取，取不到用 SDK 启动页兜底。"""
 
         component = ""
-        result = self._run(
+        result = await self._run(
             "shell", "cmd", "package", "resolve-activity", "--brief", package
         )
         for line in reversed(result.stdout.decode("utf-8", "ignore").splitlines()):
@@ -259,15 +285,17 @@ class _Device:
                 break
         if not component:
             component = f"{package}/{BILIBILI_START_ACTIVITY}"
-        self._run("shell", "am", "start", "-n", component, timeout=30.0)
+        result = await self._run("shell", "am", "start", "-n", component, timeout=30.0)
+        if result.returncode != 0:
+            raise MaaFWLoginRequired("B 服登录失败：ADB 无法拉起客户端")
 
 
 async def _ocr(device: _Device) -> tuple[np.ndarray, list[tuple[str, Box]]]:
-    """截图并 OCR；OCR 引擎与图像解码都放到线程里，别卡事件循环。"""
+    """异步截图并 OCR；OCR 引擎放到线程里，避免阻塞事件循环。"""
 
     from app.tools.common.ocr import ocr_image
 
-    frame = await asyncio.to_thread(device.screencap)
+    frame = await device.screencap()
     items = await asyncio.to_thread(ocr_image, frame)
     return frame, items
 
@@ -315,7 +343,7 @@ async def _agree_privacy(
     )
     if len(buttons) != 1:
         raise MaaFWLoginRequired("B 服登录失败：隐私政策提示中未找到唯一的「同意」按钮")
-    await asyncio.to_thread(device.tap, buttons[0])
+    await device.tap(buttons[0])
     await _progress(progress, "已同意 B 服隐私政策提示")
     logger.info("已同意 B 服隐私政策提示")
     await asyncio.sleep(1.0)
@@ -334,12 +362,12 @@ async def _wait_foreground(
     deadline = time.monotonic() + _LAUNCH_TIMEOUT
     started = False
     while True:
-        if await asyncio.to_thread(device.foreground, package):
+        if await device.foreground(package):
             return
         if not started:
             started = True
             logger.info(f"B 服客户端未在前台，正在拉起: {package}")
-            await asyncio.to_thread(device.start, package)
+            await device.start(package)
         if time.monotonic() > deadline:
             raise MaaFWLoginRequired(
                 f"B 服登录失败：等待游戏进入前台超时（{package}，请确认包名与模拟器内的客户端一致）"
@@ -367,9 +395,7 @@ async def _select_account(
     # 所以只在看见这行文字时才点，避免误触。
     if _has(items, _SWITCH_OTHER):
         height, width = frame.shape[:2]
-        await asyncio.to_thread(
-            device.tap_point, width * _EXPAND_POINT[0], height * _EXPAND_POINT[1]
-        )
+        await device.tap_point(width * _EXPAND_POINT[0], height * _EXPAND_POINT[1])
         await asyncio.sleep(1.0)
         frame, items = await _ocr(device)
         if _privacy_prompt(items):
@@ -392,7 +418,7 @@ async def _select_account(
         raise MaaFWLoginRequired(
             f"B 服登录失败：登录记录里未找到唯一的账号「{masked}」——{reason}"
         )
-    await asyncio.to_thread(device.tap, matches[0])
+    await device.tap(matches[0])
     await asyncio.sleep(1.0)
 
     frame, items = await _ocr(device)
@@ -410,7 +436,7 @@ async def _select_account(
     if len(selected) != 1 or len(login_buttons) != 1 or not _has(items, _SWITCH_OTHER):
         raise MaaFWLoginRequired("B 服登录失败：无法确认所选账号，已停止登录")
 
-    await asyncio.to_thread(device.tap, login_buttons[0])
+    await device.tap(login_buttons[0])
     await _progress(progress, f"已选择账号「{masked}」并点击登录")
     logger.info(f"B 服已选择账号 {masked} 并点击登录")
 
@@ -462,9 +488,7 @@ async def _logout_to_login_panel(
 
     height, width = frame.shape[:2]
     await _progress(progress, "B 服已登录：正在切换账号（先登出当前账号）")
-    await asyncio.to_thread(
-        device.tap_point, width * _EXIT_POINT[0], height * _EXIT_POINT[1]
-    )
+    await device.tap_point(width * _EXIT_POINT[0], height * _EXIT_POINT[1])
 
     deadline = time.monotonic() + _LOGOUT_DIALOG_SECONDS
     confirmed = False
@@ -473,7 +497,7 @@ async def _logout_to_login_panel(
         frame, items = await _ocr(device)
         confirms = _pick(items, lambda text: bool(_CONFIRM_RE.match(text)), frame)
         if len(confirms) == 1:
-            await asyncio.to_thread(device.tap, confirms[0])
+            await device.tap(confirms[0])
             confirmed = True
             break
     if not confirmed:
@@ -503,6 +527,7 @@ async def ensure_logged_in(
     adb_path: str | None,
     adb_address: str,
     progress: Progress | None,
+    host_adb: Any = None,
 ) -> str:
     """MAS 原生登录入口（契约见 MaaFW ``flavor.py`` 的 ``ensure_logged_in``）。
 
@@ -518,13 +543,18 @@ async def ensure_logged_in(
     if mode.strip() != "Mas":
         return ""
 
+    if not adb_address:
+        raise MaaFWLoginRequired(
+            "MAS B 服登录仅支持 ADB 控制器，请切换控制器或使用项目登录"
+        )
+
     account = str(getattr(getattr(user_config, "Info", None), "Account") or "").strip()
     if not account:
         raise MaaFWLoginRequired(
             "B 服登录失败：账号为空，请在本账号的「账号」里填写登录记录中显示的完整昵称"
         )
     package = str(package_name or "").strip() or BILIBILI_PACKAGE
-    device = _Device(adb_path, adb_address)
+    device = _Device(adb_path, adb_address, host_adb)
 
     await _progress(
         progress, f"B 服登录：使用账号「{_mask(account)}」，客户端 {package}"

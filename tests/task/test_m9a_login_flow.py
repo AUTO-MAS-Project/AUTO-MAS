@@ -86,19 +86,19 @@ class _FakeDevice:
         self.cursor += 1
         return items
 
-    def foreground(self, package: str) -> bool:  # noqa: ARG002 - 替身固定在前台
+    async def foreground(self, package: str) -> bool:  # noqa: ARG002 - 替身固定在前台
         return True
 
-    def start(self, package: str) -> None:  # noqa: ARG002 - 替身不拉起
+    async def start(self, package: str) -> None:  # noqa: ARG002 - 替身不拉起
         pass
 
-    def screencap(self) -> np.ndarray:
+    async def screencap(self) -> np.ndarray:
         return np.zeros((_FRAME_HEIGHT, _FRAME_WIDTH, 3), dtype=np.uint8)
 
-    def tap(self, box: Box) -> None:
+    async def tap(self, box: Box) -> None:
         self.taps.append(box)
 
-    def tap_point(self, x: float, y: float) -> None:
+    async def tap_point(self, x: float, y: float) -> None:
         self.taps.append((x, y))
 
 
@@ -123,7 +123,9 @@ class _Script:
 
 def _install_fake_device(monkeypatch, screens) -> _FakeDevice:
     device = _FakeDevice(screens)
-    monkeypatch.setattr(login_mod, "_Device", lambda adb_path, adb_address: device)
+    monkeypatch.setattr(
+        login_mod, "_Device", lambda adb_path, adb_address, host_adb=None: device
+    )
 
     async def fake_ocr(_device):
         return np.zeros(
@@ -283,3 +285,105 @@ def test_alternating_title_and_empty_frames_do_not_succeed(monkeypatch) -> None:
     )
     with pytest.raises(MaaFWLoginRequired, match="未确认回到游戏标题页"):
         asyncio.run(login_mod._wait_panel_closed(device, progress=None))
+
+
+@pytest.mark.parametrize("text", ["PLAYERS", "OTHERS", "ERS", "RESTART"])
+def test_unrelated_words_are_not_title(text):
+    assert not login_mod._title_like([(text, (0, 0, 10, 10))])
+
+
+def test_login_selects_target_after_logging_out(monkeypatch):
+    _fast(monkeypatch)
+    expanded = [(text, box) for text, box in _PANEL_SCREEN if text != "切换其他账号"]
+    device = _install_fake_device(
+        monkeypatch,
+        [
+            _TITLE_SCREEN,
+            _TITLE_SCREEN,
+            _TITLE_SCREEN,
+            [("确认", (40, 50, 10, 10))],
+            _PANEL_SCREEN,
+            _PANEL_SCREEN,
+            expanded,
+            _PANEL_SCREEN,
+            _TITLE_SCREEN,
+            _TITLE_SCREEN,
+        ],
+    )
+    # The real selection flow includes two one-second UI waits.
+    monkeypatch.setattr(login_mod, "_LOGIN_TIMEOUT", 5)
+    message = asyncio.run(_run_login())
+    assert "已确认回到游戏标题页" in message
+    assert device.taps == [
+        (95.6, 91.0),
+        (40, 50, 10, 10),
+        (60.8, 43.0),
+        (45, 45, 10, 10),
+        (45, 55, 10, 10),
+    ]
+
+
+def test_mas_login_rejects_non_adb_controller():
+    with pytest.raises(MaaFWLoginRequired, match="ADB"):
+        asyncio.run(
+            login_mod.ensure_logged_in(
+                script_config=_Script(),
+                user_config=_User("target"),
+                resource_name=None,
+                package_name=None,
+                adb_path=None,
+                adb_address="",
+                progress=None,
+            )
+        )
+
+
+def test_private_adb_transport_and_bgr_screenshot(monkeypatch):
+    import io
+
+    from PIL import Image
+
+    png = io.BytesIO()
+    Image.new("RGB", (16, 9), (255, 0, 0)).save(png, format="PNG")
+
+    class Host:
+        async def screencap_png(self, timeout):
+            return png.getvalue()
+
+        async def __call__(self, *args, timeout):
+            if args[:2] == ("shell", "dumpsys"):
+                return 0, "topResumedActivity= " + login_mod.BILIBILI_PACKAGE + "/Main"
+            return 0, ""
+
+    def no_subprocess(*args, **kwargs):
+        raise AssertionError("private ADB must not use the default server")
+
+    monkeypatch.setattr(login_mod.subprocess, "run", no_subprocess)
+
+    async def exercise():
+        device = login_mod._Device(None, "emulator-5554", Host())
+        frame = await device.screencap()
+        assert frame[0, 0].tolist() == [0, 0, 255]
+        await device.tap_point(10, 20)
+        assert await device.foreground(login_mod.BILIBILI_PACKAGE)
+        await device.start(login_mod.BILIBILI_PACKAGE)
+
+    asyncio.run(exercise())
+
+
+def test_win32_device_build_blocks_mas_login_before_window_access(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.task.M9A.flavor import FLAVOR
+
+    runner = _fake_runner()
+    runner.script_config = _Script()
+    runner.cur_user_config = _User("target")
+    monkeypatch.setattr(
+        runner_task, "resolve_login_hook", lambda config: FLAVOR.ensure_logged_in
+    )
+    with pytest.raises(MaaFWLoginRequired, match="ADB"):
+        asyncio.run(
+            runner._build_device_config(SimpleNamespace(controllerType="Win32"), None)
+        )
+    assert not runner._login_checked
