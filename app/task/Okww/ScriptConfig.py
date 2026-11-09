@@ -26,13 +26,13 @@ from app.core.ws import protocol
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
-from app.services import System
 from app.utils import (
     BASE_INDEPENDENT,
     BASE_NATIVE,
     BASE_SHARED,
     ProcessManager,
     get_logger,
+    process,
 )
 from app.utils import io as _utils_io
 
@@ -146,7 +146,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 script_id=self.script_info.script_id,
             )
         logger.info(f"启动 OK-WW 设置: {self.exe_path}")
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         await self.process_manager.open_process(self.exe_path)
         await self.wait_event.wait()
 
@@ -158,7 +158,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # 的任务前快照还原）；GUI 内的改动一律丢弃
         if self.view_only:
             logger.success("OK-WW 查看结束（只读，不回写配置）")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             return
 
         if not self.crashed and self.use_mas_config and self.mas_config_dir:
@@ -174,14 +174,14 @@ class ScriptConfigTask(TaskExecuteBase):
             self.mas_config_dir.parent.mkdir(parents=True, exist_ok=True)
             _utils_io.swap_in_dir(self.script_config_path, self.mas_config_dir)
             logger.success(f"OK-WW 配置已保存到: {self.mas_config_dir}")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
         elif not self.crashed:
             logger.success("OK-WW 原生来源配置已由脚本原生 GUI 保存")
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
 
     async def on_crash(self, e: Exception) -> None:
         self.crashed = True
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"OK-WW 设置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_processes()
@@ -201,6 +201,6 @@ class ScriptConfigTask(TaskExecuteBase):
 
         for path in (self.exe_path, self.root_path / _OKWW_REL_PYTHONW):
             try:
-                await System.kill_process(path)
+                await process.kill_process(path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-WW 进程失败 ({path}): {e}")

@@ -226,6 +226,14 @@ class ScriptGetOut(OutBase):
     ] = Field(..., description="托管数据字典, key来自于index列表的uid")
 
 
+class ScriptLockIn(UserInBase):
+    userId: str | None = Field(default=None, description="省略时查询托管本体")
+
+
+class ScriptLockOut(OutBase):
+    locked: bool = Field(default=False, description="目标配置当前是否被锁定")
+
+
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="托管ID")
     data: Union[
@@ -298,7 +306,8 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
             scriptId="",
             data=GeneralConfig(**{}),
         )
-    return ScriptCreateOut(scriptId=str(uid), data=data)
+    # 动态 ConfigPayload 按实际配置类生成，静态类型无法把泛型联合分配到响应联合。
+    return ScriptCreateOut(scriptId=str(uid), data=data)  # pyright: ignore[reportArgumentType]
 
 
 @router.post(
@@ -332,7 +341,21 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
             index=[],
             data={},
         )
-    return ScriptGetOut(index=index, data=data)
+    # 配置框架运行时生成具体投影类，保留现有联合响应的兼容契约。
+    return ScriptGetOut(index=index, data=data)  # pyright: ignore[reportArgumentType]
+
+
+@router.post(
+    "/lock", tags=["Get"], response_model=ScriptLockOut, summary="查询配置锁状态"
+)
+async def get_script_lock(target: ScriptLockIn) -> ScriptLockOut:
+    script = Config.ScriptConfig.get(target.scriptId)
+    if script is None:
+        return ScriptLockOut(code=404, status="error", message="托管配置不存在")
+    config = script if target.userId is None else script.UserData.get(target.userId)
+    if config is None:
+        return ScriptLockOut(code=404, status="error", message="用户配置不存在")
+    return ScriptLockOut(locked=config.is_locked)
 
 
 @router.post(

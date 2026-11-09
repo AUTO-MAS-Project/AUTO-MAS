@@ -132,7 +132,8 @@ def config_group_contract(
     """从分组字段派生无运行时状态的接口模型，不执行配置激活或字段校正。"""
     fields = {}
     for key, field in group_type.model_fields.items():
-        if is_trigger_model_field(field):
+        # 触发器没有输出状态，但配置更新必须能提交其动作值。
+        if mode == "output" and is_trigger_model_field(field):
             continue
         visibility = (
             entry_type._cfg_ui_visibility.get((group, key))

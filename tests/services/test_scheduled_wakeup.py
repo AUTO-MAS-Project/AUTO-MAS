@@ -12,8 +12,8 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
-from app.services.windows.startup import WindowsStartupManager
 from app.utils.common.process import runner
+from app.utils.windows import startup as windows_startup
 
 NS = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
 
@@ -50,7 +50,13 @@ async def test_login_task_preserves_install_path_and_normal_startup(
 ):
     # Windows 支持路径中含 &；任务 XML 必须原样还原路径，不能损坏定义。
     isolated_app_paths.work_path /= "MAS & tools"
-    await WindowsStartupManager().set_enabled(enabled=True)
+    await windows_startup.set_enabled(
+        enabled=True,
+        executable=isolated_app_paths.work_path / "AUTO-MAS.exe",
+        name="AUTO-MAS_AutoStart",
+        description="AUTO-MAS自启动服务",
+        arguments="--auto-start",
+    )
     task = scheduler["AUTO-MAS_AutoStart"]
     assert task.find("t:Triggers/t:LogonTrigger", NS) is not None
     assert task.findtext("t:Settings/t:WakeToRun", namespaces=NS) == "false"
@@ -70,8 +76,12 @@ async def test_wakeup_launcher_preserves_literal_install_paths(tmp_path, schedul
     executable = (
         tmp_path / "安装 %USERNAME% & O'Neil ‘左’ ‚低‛ $(Arg0)" / "AUTO-MAS.exe"
     )
-    await WindowsStartupManager().sync_wakeup(
-        executable=executable, times=((0, 7, 55),)
+    await windows_startup.sync_wakeup(
+        executable=executable,
+        times=((0, 7, 55),),
+        name_prefix="AUTO-MAS_Wakeup",
+        description="AUTO-MAS 定时唤醒",
+        arguments="--scheduled-wakeup",
     )
     task = next(iter(scheduler.values()))
     arguments = task.findtext("t:Actions/t:Exec/t:Arguments", namespaces=NS)
@@ -129,9 +139,9 @@ async def test_queue_edits_and_cancellation_update_only_wakeup_tasks(
     isolated_app_paths, scheduler, monkeypatch
 ):
     from app.config import ConfigCollection
+    from app.core import timer as system
     from app.models.config import GlobalConfig, QueueConfig
     from app.models.config.queue import TimeSet
-    from app.services.common import system
     from tests.config_support import activate_config
 
     config = isolated_app_paths
@@ -154,11 +164,17 @@ async def test_queue_edits_and_cancellation_update_only_wakeup_tasks(
     await queue.TimeSet.commit()
     monkeypatch.setattr(config, "setting", setting)
     monkeypatch.setattr(config, "QueueConfig", queues)
-    monkeypatch.setattr(system, "startup", WindowsStartupManager())
+    monkeypatch.setattr(system, "startup", windows_startup)
     monkeypatch.setenv("AUTO_MAS_ENV", "production")
     (config.work_path / "AUTO-MAS.exe").touch()
-    handler = system._SystemHandler()
-    await system.startup.set_enabled(enabled=True)
+    handler = system._MainTimer()
+    await system.startup.set_enabled(
+        enabled=True,
+        executable=config.work_path / "AUTO-MAS.exe",
+        name="AUTO-MAS_AutoStart",
+        description="AUTO-MAS自启动服务",
+        arguments="--auto-start",
+    )
 
     await handler.sync_scheduled_wakeup()
 
@@ -218,7 +234,8 @@ async def test_queue_edits_and_cancellation_update_only_wakeup_tasks(
     queue.Info.CycleEnabled = True
     await queue.commit()
     await handler.sync_scheduled_wakeup()
-    assert not wake_tasks()
+    # 定时与循环独立启用，循环开关不移除定时唤醒。
+    assert len(wake_tasks()) == 1
     queue.Info.CycleEnabled = False
     await queue.commit()
     await handler.sync_scheduled_wakeup()
@@ -240,17 +257,29 @@ async def test_queue_edits_and_cancellation_update_only_wakeup_tasks(
 async def test_many_timers_keep_every_trigger_and_cancel_without_touching_other_installs(
     tmp_path, scheduler
 ):
-    manager = WindowsStartupManager()
+    manager = windows_startup
     executable = tmp_path / "AUTO-MAS.exe"
     other = tmp_path / "other" / "AUTO-MAS.exe"
-    await manager.sync_wakeup(executable=other, times=((2, 10, 0),))
+    await manager.sync_wakeup(
+        executable=other,
+        times=((2, 10, 0),),
+        name_prefix="AUTO-MAS_Wakeup",
+        description="AUTO-MAS 定时唤醒",
+        arguments="--scheduled-wakeup",
+    )
     other_names = set(scheduler)
     times = (
         tuple((0, hour, 0) for hour in range(24))
         + tuple((0, hour, 30) for hour in range(24))
         + ((6, 23, 58),)
     )
-    await manager.sync_wakeup(executable=executable, times=times)
+    await manager.sync_wakeup(
+        executable=executable,
+        times=times,
+        name_prefix="AUTO-MAS_Wakeup",
+        description="AUTO-MAS 定时唤醒",
+        arguments="--scheduled-wakeup",
+    )
     tasks = [task for name, task in scheduler.items() if name not in other_names]
     assert (
         sum(len(task.findall("t:Triggers/t:CalendarTrigger", NS)) for task in tasks)
@@ -259,19 +288,31 @@ async def test_many_timers_keep_every_trigger_and_cancel_without_touching_other_
     assert all(
         len(task.findall("t:Triggers/t:CalendarTrigger", NS)) <= 48 for task in tasks
     )
-    await manager.sync_wakeup(executable=executable, times=((0, 7, 55),))
+    await manager.sync_wakeup(
+        executable=executable,
+        times=((0, 7, 55),),
+        name_prefix="AUTO-MAS_Wakeup",
+        description="AUTO-MAS 定时唤醒",
+        arguments="--scheduled-wakeup",
+    )
     assert len(scheduler) == len(other_names) + 1
-    await manager.sync_wakeup(executable=executable, times=())
+    await manager.sync_wakeup(
+        executable=executable,
+        times=(),
+        name_prefix="AUTO-MAS_Wakeup",
+        description="AUTO-MAS 定时唤醒",
+        arguments="--scheduled-wakeup",
+    )
     assert set(scheduler) == other_names
 
 
 @pytest.mark.asyncio
 async def test_wakeup_launch_skips_startup_queue_wait(monkeypatch):
-    from app.core import TaskManager
+    from app.core.timer import _MainTimer
 
-    # 连接建立后的普通启动会等十秒；唤醒启动应立即返回，留给原定时调度。
+    # 启动入口已归 timer；唤醒启动不等待旧队列会话。
     monkeypatch.setenv("AUTO_MAS_SCHEDULED_WAKEUP", "1")
-    await asyncio.wait_for(TaskManager.start_startup_queue(), timeout=0.5)
+    await asyncio.wait_for(_MainTimer().timed_start(startup=True), timeout=0.5)
 
 
 @pytest.mark.asyncio
@@ -280,21 +321,27 @@ async def test_disabled_wakeup_query_failure_is_quiet_and_cleanup_retries(
 ):
     from app.config import ConfigCollection
     from app.core import Publisher
+    from app.core import timer as system
     from app.core.ws import protocol
     from app.models.config import GlobalConfig, QueueConfig
-    from app.services.common import system
     from tests.config_support import activate_config
 
     setting = await activate_config(GlobalConfig())
     queues = await activate_config(ConfigCollection.build([QueueConfig]))
     monkeypatch.setattr(isolated_app_paths, "setting", setting)
     monkeypatch.setattr(isolated_app_paths, "QueueConfig", queues)
-    monkeypatch.setattr(system, "startup", WindowsStartupManager())
+    monkeypatch.setattr(system, "startup", windows_startup)
     monkeypatch.setenv("AUTO_MAS_ENV", "production")
     executable = isolated_app_paths.work_path / "AUTO-MAS.exe"
     executable.touch()
     # 上次退出前没能完成取消，关闭状态下的首次对账仍需移除遗留任务。
-    await system.startup.sync_wakeup(executable=executable, times=((0, 7, 55),))
+    await system.startup.sync_wakeup(
+        executable=executable,
+        times=((0, 7, 55),),
+        name_prefix="AUTO-MAS_Wakeup",
+        description="AUTO-MAS 定时唤醒",
+        arguments="--scheduled-wakeup",
+    )
     assert scheduler
     events = []
 
@@ -309,7 +356,7 @@ async def test_disabled_wakeup_query_failure_is_quiet_and_cleanup_retries(
         return subprocess.CompletedProcess(args, 1, "", "Access denied")
 
     monkeypatch.setattr(runner.ProcessRunner, "run_process", query_denied)
-    handler = system._SystemHandler()
+    handler = system._MainTimer()
     await handler.sync_scheduled_wakeup()
     assert protocol.SYSTEM_NOTICE not in events
     assert scheduler
@@ -321,7 +368,7 @@ async def test_disabled_wakeup_query_failure_is_quiet_and_cleanup_retries(
     await setting.commit()
     monkeypatch.setattr(runner.ProcessRunner, "run_process", query_denied)
     with pytest.raises(RuntimeError, match="Access denied"):
-        await system._SystemHandler().sync_scheduled_wakeup()
+        await system._MainTimer().sync_scheduled_wakeup()
     assert events == [protocol.SYSTEM_NOTICE]
 
 
@@ -331,10 +378,10 @@ async def test_wakeup_flush_failure_notifies_once_until_the_plan_changes(
 ):
     from app.config import ConfigCollection
     from app.core import Publisher
+    from app.core import timer as system
     from app.core.ws import protocol
     from app.models.config import GlobalConfig, QueueConfig
     from app.models.config.queue import TimeSet
-    from app.services.common import system
     from tests.config_support import activate_config
 
     setting = await activate_config(
@@ -350,7 +397,7 @@ async def test_wakeup_flush_failure_notifies_once_until_the_plan_changes(
     await queue.TimeSet.commit()
     monkeypatch.setattr(isolated_app_paths, "setting", setting)
     monkeypatch.setattr(isolated_app_paths, "QueueConfig", queues)
-    monkeypatch.setattr(system, "startup", WindowsStartupManager())
+    monkeypatch.setattr(system, "startup", windows_startup)
     monkeypatch.setenv("AUTO_MAS_ENV", "production")
     (isolated_app_paths.work_path / "AUTO-MAS.exe").touch()
     events = []
@@ -366,7 +413,7 @@ async def test_wakeup_flush_failure_notifies_once_until_the_plan_changes(
         return subprocess.CompletedProcess(args, 1, "", "Access denied")
 
     monkeypatch.setattr(Publisher, "send", send)
-    handler = system._SystemHandler()
+    handler = system._MainTimer()
     with monkeypatch.context() as storage:
         storage.setattr(isolated_app_paths, "flush", disk_full)
         with pytest.raises(OSError, match="Disk full"):

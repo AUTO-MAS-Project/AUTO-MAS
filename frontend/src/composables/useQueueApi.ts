@@ -4,16 +4,12 @@ import type { AnalyticsEventProps, AnalyticsQueueKind } from '@/types/analytics'
 
 // 只复用已读取的配置，在有界本机内存中关联类别，不为统计额外查询。
 const queueKinds = new Map<string, AnalyticsQueueKind>()
-const scheduleModes = new Map<string, 'fixed_time' | 'interval' | 'unknown'>()
 function remember<T>(cache: Map<string, T>, id: string, value: T): void {
   if (!cache.has(id) && cache.size >= 128) cache.delete(cache.keys().next().value!)
   cache.set(id, value)
 }
 const queueKind = (cycle: unknown): AnalyticsQueueKind =>
   typeof cycle === 'boolean' ? (cycle ? 'cycle' : 'normal') : 'unknown'
-const scheduleMode = (mode: unknown) =>
-  mode === 'fixed_time' || mode === 'interval' ? mode : 'unknown'
-
 async function manage<T extends { code?: number }>(
   action: AnalyticsEventProps['queue_manage_finished']['action'],
   kind: AnalyticsQueueKind | ((response: T) => AnalyticsQueueKind),
@@ -59,19 +55,6 @@ async function schedule<T extends { code?: number }>(
 type SchedulePatch = NonNullable<
   Parameters<typeof Service.updateItemApiQueueItemUpdatePost>[0]['data']['Schedule']
 >
-function scheduleAction(
-  data: SchedulePatch
-): AnalyticsEventProps['queue_schedule_changed']['action'] {
-  if (Object.keys(data).length !== 1) return 'configure'
-  if (data.Enabled !== undefined) return data.Enabled ? 'enable' : 'disable'
-  if (data.NextRunAt !== undefined) return 'run_once'
-  if (data.Mode !== undefined) return 'mode'
-  if (data.IntervalMinutes !== undefined || data.IntervalAnchor !== undefined) return 'interval'
-  if (data.Time !== undefined) return 'time'
-  if (data.Days !== undefined) return 'days'
-  return 'configure'
-}
-
 /** 保留生成 API 的原参数、响应与异常，页面继续拥有回读和提示流程。 */
 export const queueApi = {
   async getQueues(params: Parameters<typeof Service.getQueuesApiQueueGetPost>[0]) {
@@ -82,13 +65,8 @@ export const queueApi = {
     }
     return response
   },
-  async getItems(params: Parameters<typeof Service.getItemApiQueueItemGetPost>[0]) {
-    const response = await Service.getItemApiQueueItemGetPost(params)
-    if (response.code === 200) {
-      for (const [id, data] of Object.entries(response.data))
-        remember(scheduleModes, id, scheduleMode(data.Schedule?.Mode))
-    }
-    return response
+  getItems(params: Parameters<typeof Service.getItemApiQueueItemGetPost>[0]) {
+    return Service.getItemApiQueueItemGetPost(params)
   },
   async createQueue() {
     const response = await manage(
@@ -117,6 +95,11 @@ export const queueApi = {
         remember(queueKinds, params.queueId, queueKind(info.CycleEnabled))
       return response
     }
+    if (params.data.Cycle)
+      return schedule(
+        { schedule_kind: 'cycle', action: params.data.Cycle.ResetTimer ? 'reset' : 'interval' },
+        request
+      )
     if (typeof info?.TimeEnabled === 'boolean')
       return schedule(
         { schedule_kind: 'queue_time', action: info.TimeEnabled ? 'enable' : 'disable' },
@@ -132,24 +115,13 @@ export const queueApi = {
     return manage('update', queueKinds.get(params.queueId) ?? 'unknown', request)
   },
   async updateItem(params: Parameters<typeof Service.updateItemApiQueueItemUpdatePost>[0]) {
-    const data = params.data.Schedule
-    const request = async () => {
-      const response = await Service.updateItemApiQueueItemUpdatePost(params)
-      if (response.code === 200 && data?.Mode)
-        remember(scheduleModes, params.queueItemId, scheduleMode(data.Mode))
-      return response
-    }
-    if (data)
-      return schedule(
-        {
-          schedule_kind: data.Mode
-            ? scheduleMode(data.Mode)
-            : (scheduleModes.get(params.queueItemId) ?? 'unknown'),
-          action: scheduleAction(data),
-        },
-        request
+    if (params.data.Schedule)
+      return schedule({ schedule_kind: 'queue_time', action: 'days' }, () =>
+        Service.updateItemApiQueueItemUpdatePost(params)
       )
-    return manage('item_update', queueKinds.get(params.queueId) ?? 'unknown', request)
+    return manage('item_update', queueKinds.get(params.queueId) ?? 'unknown', () =>
+      Service.updateItemApiQueueItemUpdatePost(params)
+    )
   },
   updateSchedule(queueId: string, queueItemId: string, data: SchedulePatch) {
     return queueApi.updateItem({ queueId, queueItemId, data: { Schedule: data } })
@@ -167,7 +139,6 @@ export const queueApi = {
     const response = await manage('item_remove', queueKinds.get(params.queueId) ?? 'unknown', () =>
       Service.deleteItemApiQueueItemDeletePost(params)
     )
-    if (response.code === 200) scheduleModes.delete(params.queueItemId)
     return response
   },
   async reorderItems(params: Parameters<typeof Service.reorderItemApiQueueItemOrderPost>[0]) {

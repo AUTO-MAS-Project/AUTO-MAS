@@ -1,6 +1,6 @@
 ---
 name: mas-skills
-description: Use when a task needs AUTO-MAS engineering conventions across frontend, UI, code style, validation and failure handling, test design, schema naming, module boundaries, function design, API contracts, data modeling, script adapters (MAA, SRC, MaaEnd, General, ok-script family such as Okww and OkNte, multi-engine HSR), anonymous telemetry, E2E flows, plan schedules, or game community sign-in.
+description: Use when a task needs AUTO-MAS engineering conventions across frontend, UI, code style, validation and failure handling, test design, schema naming, module boundaries, function design, API contracts, data modeling, task scheduling, script adapters (MAA, SRC, MaaEnd, General, ok-script family such as Okww and OkNte, multi-engine HSR), anonymous telemetry, E2E flows, plan schedules, or game community sign-in.
 ---
 
 # MAS Skills
@@ -53,9 +53,10 @@ Use these skills as needed:
 12. `mas-game-community`: game community sign-in providers, credential encryption and login routes, sign-in locks and trigger paths, and result/notification contracts.
 13. `mas-ci-checks`: every gate that runs on a PR to `dev` (format, lint, typecheck, full pytest suite, changelog fragment, `uv.lock`, revert hints, CNB mirror, unsigned Windows build) and the exact local command for each.
 14. `mas-telemetry`: proactive anonymous telemetry for new or changed business workflows, safe field contracts, result ownership, operation deduplication and isolated validation.
-15. `mas-testing`: required before choosing verification or designing, adding, changing or reviewing tests; selects checks by reachable behavior and total cost, reuses automation and requires execution evidence.
-16. `mas-doc-tutorial`: documentation tutorials produced or refreshed from verified UI flows, versioned screenshots, and per-topic preview evidence.
-17. `mas-defensive-programming`: validation, guards, exception handling, fallbacks, retries and compatibility paths based on reachable inputs and existing guarantees.
+15. `mas-task-scheduler`: task requirements and runtime identities, L1-L4 dispatch, parent-owned locks, cancellation and finalization, task updates, queue triggers and legacy-manager boundaries; use its confirmed target design rather than treating migration code as the specification.
+16. `mas-testing`: required before choosing verification or designing, adding, changing or reviewing tests; selects checks by reachable behavior and total cost, reuses automation and requires execution evidence.
+17. `mas-doc-tutorial`: documentation tutorials produced or refreshed from verified UI flows, versioned screenshots, and per-topic preview evidence.
+18. `mas-defensive-programming`: validation, guards, exception handling, fallbacks, retries and compatibility paths based on reachable inputs and existing guarantees.
 
 ## Global Constraints
 
@@ -111,7 +112,9 @@ Use `mas-game-community`.
 Apply the cherry-pick rule in **Project Rule Areas** before touching git; confirm the commit is small and pure backend by inspecting the files it actually touches.
 15. Task mentions a red PR, a CI failure, GitHub Actions, format / lint / typecheck gates, the `skip-changelog` or `changelog-maintenance` labels, or editing `.github/workflows`, `.github/actions`, `scripts/changelog.py`, `scripts/check_reverts.py`:
 Use `mas-ci-checks`.
-16. Task creates or refreshes user tutorials, batches documentation screenshots, or corrects drift between article instructions and the application UI:
+16. Task mentions task creation or requirement trees, runtime task nodes, L1-L4 execution, TaskBase, scheduler locks or cancellation, task snapshots/WS updates, queue startup/timed/cycle triggers, or legacy-manager migration:
+Use [mas-task-scheduler](../mas-task-scheduler/SKILL.md). Combine data-model and API skills for model/contract changes; script-owned capabilities still follow the specialized-adapter boundary. Plan-type registration alone stays with `mas-plan-schedule`.
+17. Task creates or refreshes user tutorials, batches documentation screenshots, or corrects drift between article instructions and the application UI:
 Use `mas-doc-tutorial`; combine `mas-e2e` when defining or running its capture flows.
 
 ## Combined Execution Order
@@ -127,14 +130,15 @@ When multiple concerns appear, apply this order:
 6. `mas-schema-naming`
 7. `mas-function-design`
 8. `mas-api-contract`
-9. `mas-script-specialized-adapter` after architecture intake, when the task is a specialized adapter.
-10. `mas-plan-schedule`
-11. `mas-game-community`
-12. `mas-telemetry`, for new or changed observable workflows; establish the real result owner before observing it.
-13. `mas-e2e`, when the task requires an E2E flow or evidence.
-14. `mas-ci-checks`, when the work ends by making a PR pass CI.
+9. `mas-task-scheduler`, for execution-tree, lifecycle, dispatch or queue-trigger changes.
+10. `mas-script-specialized-adapter` after architecture intake, when the task is a specialized adapter.
+11. `mas-plan-schedule`
+12. `mas-game-community`
+13. `mas-telemetry`, for new or changed observable workflows; establish the real result owner before observing it.
+14. `mas-e2e`, when the task requires an E2E flow or evidence.
+15. `mas-ci-checks`, when the work ends by making a PR pass CI.
 
-Reason: frontend tasks need their engineering and UI constraints loaded before implementation decisions; then establish local conventions, place code correctly, stabilize model structure, then naming, function behavior, and transport contract. Specialized adapters add a mandatory architecture-intake step, plan schedule rules apply when the task touches scheduler registration, and game sign rules apply last among the implementation skills because they constrain credential handling and external request behavior inside an already-placed module. CI checks come after everything else because they only push finished work through the PR gates.
+Reason: frontend tasks need their engineering and UI constraints loaded before implementation decisions; then establish local conventions, place code correctly, stabilize model structure, then naming, function behavior, and transport contract. Runtime scheduler rules assign creation, locks, execution and finalization to their owning layers; specialized adapters add a mandatory architecture-intake step. Plan schedule rules cover plan-type registration, and game sign rules constrain credential handling and external request behavior inside an already-placed module. CI checks come after everything else because they only push finished work through the PR gates.
 
 ## Output Requirements
 

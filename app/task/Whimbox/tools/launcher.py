@@ -39,9 +39,9 @@ from pathlib import Path
 
 import psutil
 
-from app.services import System
 from app.task.Whimbox.tools.upstream import APP_EXE_NAME, REL_PYTHON_EXE
 from app.utils import IS_ELEVATED, ProcessInfo, ProcessManager, get_logger
+from app.utils import process as process_tools
 
 logger = get_logger("奇想盒 进程启动")
 
@@ -133,6 +133,6 @@ class EmbeddedPythonLauncher:
         except Exception as e:
             logger.opt(exception=True).warning(f"通过进程管理器中止奇想盒失败: {e}")
         try:
-            await System.kill_process(self.python_exe)
+            await process_tools.kill_process(self.python_exe)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止奇想盒后端进程失败: {e}")

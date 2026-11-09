@@ -25,8 +25,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-from app.services import System
-from app.utils import ProcessInfo, get_logger, is_process_running
+from app.utils import ProcessInfo, get_logger, is_process_running, process
 
 from ..task_mapping import engine_label
 from .cloud_browser import (
@@ -484,7 +483,7 @@ async def stop_external_processes(
         if m7a_path:
             m7a_exe_path = Path(m7a_path) / "March7th Assistant.exe"
             try:
-                await System.kill_process(m7a_exe_path)
+                await process.kill_process(m7a_exe_path)
                 path_checked = True
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"按路径清理三月七进程失败：{m7a_exe_path} - {e}")
@@ -494,7 +493,7 @@ async def stop_external_processes(
         if sra_path:
             sra_exe_path = Path(sra_path) / "SRA-cli.exe"
             try:
-                await System.kill_process(sra_exe_path)
+                await process.kill_process(sra_exe_path)
                 path_checked = True
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"按路径清理 SRA 进程失败：{sra_exe_path} - {e}")
@@ -535,7 +534,7 @@ async def close_game_if_needed(
     game_exe_path = runtime.game_exe_path or resolve_game_executable_path(script_config)
     append_log("任务结束，正在关闭由 MAS 启动的游戏")
     try:
-        await System.kill_process(game_exe_path)
+        await process.kill_process(game_exe_path)
         await runtime.game_process_manager.clear()
         append_log("游戏进程已关闭")
     except Exception as e:  # noqa: BLE001
@@ -709,7 +708,7 @@ class HSRAccountSwitcher:
         self.runtime.game_transitioning = True
 
         try:
-            await System.kill_process(game_exe_path)
+            await process.kill_process(game_exe_path)
             await self.runtime.game_process_manager.clear()
             self._append_log(
                 f"已请求关闭游戏，等待 {HSR_GAME_READY_DELAY_SECONDS}s 后重新启动"
@@ -826,7 +825,7 @@ class HSRAccountSwitcher:
                     f"正在关闭游戏并等待 {HSR_GAME_READY_DELAY_SECONDS}s 后重启"
                 )
                 try:
-                    await System.kill_process(game_exe_path)
+                    await process.kill_process(game_exe_path)
                     await self.runtime.game_process_manager.clear()
                     await asyncio.sleep(HSR_GAME_READY_DELAY_SECONDS)
                 except Exception as e:  # noqa: BLE001

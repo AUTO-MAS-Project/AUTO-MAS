@@ -1,7 +1,9 @@
+import asyncio
+
 """插件可选扩展不能破坏内置任务目录、运行监控或进度保护。"""
 
 from datetime import datetime
-from types import SimpleNamespace
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 import pytest
 
@@ -145,7 +147,7 @@ def test_plugin_sidecar_does_not_erase_failure_and_is_still_preserved(install, s
     proxy._app_name_book = {"mail": "邮件", "extra": "插件"}
     proxy._plugin_app_ids = frozenset({"extra"})
     # 缺少应用终态日志时仍应采信上游记录，不能被其他任务成功掩盖。
-    proxy._judge_final({"extra": 0}, after, "")
+    asyncio.run(proxy._judge_final({"extra": 0}, after, ""))
     assert not proxy.run_book
     assert proxy.cur_user_item.status == "异常"
     assert "插件" in proxy.cur_user_log.status
@@ -292,7 +294,7 @@ def test_plugin_failure_is_reported_without_retrying_completed_builtins():
     proxy.base = BASE_INDEPENDENT
     proxy.account_switch = "单实例切换"
     complete = "指令[ 插件 ] 执行失败\n指令[ 一条龙 ] 执行成功"
-    proxy._judge_final({}, {"mail": 1, "extra": 2}, complete)
+    asyncio.run(proxy._judge_final({}, {"mail": 1, "extra": 2}, complete))
     assert not proxy.run_book
     assert proxy.cur_user_item.status == "异常"
     assert "插件" in proxy.cur_user_log.status
@@ -307,6 +309,6 @@ def test_real_upstream_fatal_error_is_not_hidden_by_plugin_compatibility():
     proxy.cur_user_log = SimpleNamespace(status="Success!")
     proxy.cur_user_item = SimpleNamespace(status="运行")
     proxy.script_info = SimpleNamespace(log="")
-    proxy._judge_final({}, {"mail": 1}, "运行应用 one_dragon 失败")
+    asyncio.run(proxy._judge_final({}, {"mail": 1}, "运行应用 one_dragon 失败"))
     assert not proxy.run_book
     assert proxy.cur_user_item.status == "异常"

@@ -34,7 +34,7 @@ from app.models.notification import NotificationImage
 from app.models.notification.report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
-from app.services import System, capture_adb
+from app.services import capture_adb
 from app.task.emulator_core import close_emulator
 from app.task.game_update import EmulatorGameUpdateTask
 from app.task.MAA.stage import maa_stage_service
@@ -47,7 +47,7 @@ from app.task.proxy_helpers import (
 from app.utils import constants as _utils_constants
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
 from app.utils import game_update as _utils_game_update
-from app.utils import get_logger
+from app.utils import get_logger, process
 from app.utils import io as _utils_io
 from app.utils.common.config import archive as _utils_config_archive
 
@@ -123,8 +123,6 @@ class MaaManager(ScriptManagerBase):
             return "arknights"
         return None
 
-    wait_for_finalizer_on_cancel = True
-
     def __init__(
         self,
         script_info: ScriptItem,
@@ -174,7 +172,7 @@ class MaaManager(ScriptManagerBase):
                 try:
                     if self.prepared and not self.maintenance_only:
                         if self._updater_running:
-                            self.script_info.status = "异常"
+                            await self.script_info.set_state(status="异常")
                             # 官方写盘后的配置可能无法按注入指纹自动恢复，原始内容留进已有备份池。
                             backup_path = await _run_write_thread(
                                 _utils_config_archive.archive_files,
@@ -295,7 +293,7 @@ class MaaManager(ScriptManagerBase):
 
     async def check(self) -> str:
         """校验MAA配置是否可用"""
-        if self.task_info.mode not in METHOD_BOOK:
+        if self.execution_mode not in METHOD_BOOK:
             return "不支持的任务模式，请检查任务配置！"
         if not isinstance(
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], MaaConfig
@@ -315,7 +313,7 @@ class MaaManager(ScriptManagerBase):
         # 托管级存档仅在确实有用户选择共享来源时需要；独立来源使用各自的
         # 用户目录，原生来源则直接使用 MAA 安装目录的原生配置。
         if (
-            self.task_info.mode != "ScriptConfig"
+            self.execution_mode != "ScriptConfig"
             and self._has_script_config_user()
             and not (
                 Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
@@ -351,21 +349,28 @@ class MaaManager(ScriptManagerBase):
             install = script_config.Info.Path
             if install is None:
                 raise ValueError("Path未配置，请检查路径设置")
-            async with get_resource_write_lock(install):
-                access = await acquire_resource_access_lock(install)
+            write_lock = get_resource_write_lock(install)
+            if write_lock.locked():
+                await self.script_info.set_log("等待 MAA 安装资源写入完成。")
+            async with write_lock:
+                access = await acquire_resource_access_lock(
+                    install, progress=self.script_info.set_log
+                )
                 if access is not None:
                     self._resource_access.push(access)
                 # 等写入期间配置还未锁定，用户可能改了路径，须按当前安装重等。
                 if script_config.Info.Path != install:
                     self._resource_access.close()
                     continue
-                if await System.is_process_running(install / "MAA.Updater.exe"):
+                if await process.is_process_running(install / "MAA.Updater.exe"):
                     raise MaaUpdaterRunningError(
                         "MAA 官方更新器仍在运行，请等待更新结束后重试"
                     )
-                if not await System.kill_process(install / "MAA.exe"):
+                if not await process.kill_process(install / "MAA.exe"):
                     raise RuntimeError("无法关闭 MAA，暂不恢复或覆盖原生配置")
-                self.config_locks[script_config.uid] = await script_config.lock_x()
+                self.config_locks[script_config.uid] = await self.lock_script_config(
+                    script_config
+                )
                 self.config_lock_acquired = True
                 break
         self.script_config = script_config
@@ -411,22 +416,26 @@ class MaaManager(ScriptManagerBase):
             archive_native_backup(self.maa_set_path)
 
         # 构建账号列表
-        if self.task_info.mode == "ScriptConfig":
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=self.task_info.user_id or "Default", name="", status="等待"
-                )
-            ]
+        if self.execution_mode == "ScriptConfig":
+            await self.script_info.set_users(
+                [
+                    UserItem(
+                        user_id=self.task_info.user_id or "Default",
+                        name="",
+                        status="等待",
+                    )
+                ]
+            )
         else:
-            self.script_info.user_list = self.build_proxy_user_list(
-                self.user_config.items()
+            await self.script_info.set_users(
+                self.build_proxy_user_list(self.user_config.items())
             )
         logger.info(
             f"账号列表加载完成, 已筛选账号数: {len(self.script_info.user_list)}"
         )
 
         # 活动关卡信息整个任务只刷新一次, 各账号注入配置时直接用缓存
-        if self.task_info.mode == "AutoProxy":
+        if self.execution_mode == "AutoProxy":
             await maa_stage_service.get_stage(refresh=True)
 
     def _recover_previous_run(self) -> None:
@@ -480,7 +489,7 @@ class MaaManager(ScriptManagerBase):
         场改动，结束后也还原任务前快照。
         """
 
-        if self.task_info.mode != "ScriptConfig" or self.task_info.view_only:
+        if self.execution_mode != "ScriptConfig" or self.task_info.view_only:
             return False
         if not (
             self.script_info.user_list
@@ -521,8 +530,9 @@ class MaaManager(ScriptManagerBase):
         if not isinstance(self.script_config, MaaConfig):
             raise RuntimeError("托管配置类型错误, 不是MAA托管类型")
 
-        for self.script_info.current_index in range(len(self.script_info.user_list)):
-            if self.task_info.mode == "AutoProxy":
+        for _runtime_user_index in range(len(self.script_info.user_list)):
+            await self.script_info.set_current_index(_runtime_user_index)
+            if self.execution_mode == "AutoProxy":
                 current_user = self.script_info.user_list[
                     self.script_info.current_index
                 ]
@@ -559,13 +569,13 @@ class MaaManager(ScriptManagerBase):
                 user_config=self.user_config,
                 emulator_manager=self.emulator_manager,
             )
-            if self.task_info.mode == "ScriptConfig":
+            if self.execution_mode == "ScriptConfig":
                 # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
                 kwargs["view_only"] = self.task_info.view_only
             else:
                 kwargs["game_update_result"] = update_result
                 kwargs["capture_adb"] = capture_adb
-            task = METHOD_BOOK[self.task_info.mode](**kwargs)
+            task = METHOD_BOOK[self.execution_mode](**kwargs)
             if isinstance(task, AutoProxyTask):
                 self._active_proxy_task = task
                 await self._prepare_software_update_once(task)
@@ -624,7 +634,7 @@ class MaaManager(ScriptManagerBase):
     async def _check_software_update_safety(self) -> None:
         """后续账号只检查本地安装是否安全，避免重复更新请求。"""
         root = self.maa_set_path.parent
-        if self._updater_running or await System.is_process_running(
+        if self._updater_running or await process.is_process_running(
             root / "MAA.Updater.exe"
         ):
             self._updater_running = True
@@ -667,7 +677,7 @@ class MaaManager(ScriptManagerBase):
         except Exception as error:
             # 用户主动取消由 CancelledError 向上传播，不当作普通更新失败。
             root = self.maa_set_path.parent
-            if self._updater_running or await System.is_process_running(
+            if self._updater_running or await process.is_process_running(
                 root / "MAA.Updater.exe"
             ):
                 self._updater_running = True
@@ -692,7 +702,7 @@ class MaaManager(ScriptManagerBase):
                 "MAA 更新未完成，沿用当前本体和资源继续任务；本次托管运行仍禁用 MAA 自身更新。原因: "
                 + str(error)
             )
-            self.script_info.log = message
+            await self.script_info.set_log(message)
             logger.warning(message)
             # 通知发送失败不阻断沿用当前安装的任务。
             with suppress(Exception):
@@ -728,7 +738,7 @@ class MaaManager(ScriptManagerBase):
                 and clock >= target_clock
                 and not has_incomplete_resource_update(self.maa_set_path.parent)
             ):
-                self.script_info.log = "MAA 本体及资源均已是最新版本，开始运行"
+                await self.script_info.set_log("MAA 本体及资源均已是最新版本，开始运行")
                 return True
         raise RuntimeError("MAA 更新期间上游版本持续变化，请稍后重新运行")
 
@@ -758,7 +768,7 @@ class MaaManager(ScriptManagerBase):
             if total > 0:
                 amount = f"{downloaded * 100 / total:.1f}% ({amount}/{total / 1024**2:.1f} MB)"
             line = f"MAA 更新下载: {amount}，{speed / 1024**2:.1f} MB/s"
-            self.script_info.log = line
+            await self.script_info.set_log(line)
             if time.monotonic() - last_log >= 1 or downloaded == total:
                 logger.info(line)
                 last_log = time.monotonic()
@@ -789,7 +799,7 @@ class MaaManager(ScriptManagerBase):
         await self._install_pending_software_update(target=target)
 
         async def resource_progress(line: str) -> None:
-            self.script_info.log = line
+            await self.script_info.set_log(line)
 
         # 本体包可能覆盖 resource，资源必须在官方本体安装完成后再应用。
         await prepare_install_resources(
@@ -804,7 +814,7 @@ class MaaManager(ScriptManagerBase):
         self, *, target: str | None = None
     ) -> None:
         """复用官方安装入口；进程未退出或安装结果不明时阻止启动。"""
-        self.script_info.log = "正在等待 MAA 官方更新器处理本地更新包"
+        await self.script_info.set_log("正在等待 MAA 官方更新器处理本地更新包")
         try:
             await update_maa(
                 self.maa_set_path.parent,
@@ -849,23 +859,23 @@ class MaaManager(ScriptManagerBase):
                 # 此时收尾只应回报状态——主动停止不算异常，
                 # 而 prepare() 自身的失败则要保留异常
                 if not self.stopped_manually:
-                    self.script_info.status = "异常"
+                    await self.script_info.set_state(status="异常")
                 return self.check_result
 
             if self.check_result != "Pass":
-                self.script_info.status = "异常"
+                await self.script_info.set_state(status="异常")
                 return self.check_result
 
             logger.info("MAA 主任务已结束, 开始执行后续操作")
             self.config_lock_acquired = False
 
-            if self.task_info.mode in ["AutoProxy"]:
+            if self.execution_mode in ["AutoProxy"]:
                 # 准备期间才开始维护时，未实际代理任何账号，不关闭原有模拟器。
                 if self.has_proxy_run:
                     await close_emulator(self)
                 await config_manager.flush()
 
-                title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{_utils_constants.TASK_MODE_ZH[self.task_info.mode]}任务报告"
+                title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{_utils_constants.TASK_MODE_ZH[self.execution_mode]}任务报告"
                 result = self.build_proxy_report()
 
                 try:
@@ -894,8 +904,8 @@ class MaaManager(ScriptManagerBase):
                         ),
                     )
 
-            self.script_info.status = (
-                "跳过" if self.all_users_maintenance_skipped else "完成"
+            await self.script_info.set_state(
+                status="跳过" if self.all_users_maintenance_skipped else "完成"
             )
         finally:
             script_config = getattr(self, "script_config", None)
@@ -906,7 +916,7 @@ class MaaManager(ScriptManagerBase):
 
     async def on_crash(self, e: Exception):
 
-        self.script_info.status = "异常"
+        await self.script_info.set_state(status="异常")
         logger.opt(exception=True).warning(f"MAA任务出现异常: {e}")
         await Publisher.send(
             id=self.task_info.task_id,

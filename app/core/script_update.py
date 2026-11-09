@@ -62,6 +62,8 @@ _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
 class ScriptUpdateSession:
     """第二层公共入口：只负责调度预下载、候选所有权和消费前校验。
 
+    TODO(插件迁移，#1845)：保留 dev 的预取基础能力，当前 L2 不创建此会话；
+    旧 TaskItem 范围和目录预约接口需在插件接入时重新适配。
     第三层各脚本适配器仍负责版本检查、下载、原有安装锁、校验与恢复。
     """
 

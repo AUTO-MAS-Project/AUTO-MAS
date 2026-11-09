@@ -34,7 +34,6 @@ from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import System
 from app.services import wuthering_waves as _service_wuthering_waves
 from app.services.common.wuthering_waves import (
     updater as _service_wuthering_waves_updater,
@@ -54,6 +53,7 @@ from app.utils import (
     is_process_alive,
     is_process_running,
     log_box,
+    process,
 )
 from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
@@ -262,10 +262,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             and self.script_config.Run.ProxyTimesLimit != 0
             and proxy_times >= self.script_config.Run.ProxyTimesLimit
         ):
-            self.cur_user_item.status = "跳过"
+            await self.cur_user_item.set_state(status="跳过")
             return "今日代理次数已达上限, 跳过该账号"
         if self.cur_user_config.Info.RemainedDay == 0:
-            self.cur_user_item.status = "跳过"
+            await self.cur_user_item.set_state(status="跳过")
             return "账号剩余天数为 0, 跳过该账号"
 
         if self.script_config.Game.Enabled:
@@ -463,7 +463,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         """将 MAS 侧 OK-WW 任务配置下发到脚本 working 目录（对齐 General.set_general）。"""
 
         logger.info("开始配置 OK-WW 运行参数: 自动代理")
-        await System.kill_process(self.script_exe_path)
+        await process.kill_process(self.script_exe_path)
         _configure_okww_launcher(self.script_root_path)
 
         config_base = _okww_config_base(self.cur_user_config.Info.Base)
@@ -529,8 +529,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
             )
         error_detail = f"{error_message}: {e}" if e is not None else error_message
-        self.cur_user_log.content = [f"{error_detail}, 无日志记录"]
-        self.cur_user_log.status = error_detail
+        await self.cur_user_log.set_state(content=[f"{error_detail}, 无日志记录"])
+        await self.cur_user_log.set_state(status=error_detail)
 
         okww_stopped = await self.kill_managed_process(
             kill_game=self._game_management_enabled()
@@ -768,7 +768,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             self.cur_user_config.Data.ProxyTimes = 0
             await self.cur_user_config.commit()
 
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
@@ -781,11 +781,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             logger.info(
                 f"账号 {self.cur_user_item.name} - 尝试次数: {attempt}/{run_limit}"
             )
-            self.cur_user_item.status = "运行"
+            await self.cur_user_item.set_state(status="运行")
             self.log_start_time = datetime.now().astimezone()
-            self.cur_user_item.add_log_record(self.log_start_time, LogRecord())
+            await self.cur_user_item.add_log_record(self.log_start_time, LogRecord())
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
-            self.script_info.log = ""
+            await self.script_info.set_log("")
 
             # 启用游戏配置时始终由 MAS 拉起游戏
             if self.script_config.Game.Enabled and self.game_manager is not None:
@@ -793,8 +793,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     await self._mas_launch_game_before_task()
                 except Exception as e:
                     await self._push_dispatch_log(f"游戏启动失败: {e}")
-                    self.cur_user_log.status = f"游戏启动失败: {e}"
-                    self.cur_user_log.content = [f"游戏启动失败: {e}"]
+                    await self.cur_user_log.set_state(status=f"游戏启动失败: {e}")
+                    await self.cur_user_log.set_state(content=[f"游戏启动失败: {e}"])
                     await Publisher.send(
                         id=self.task_info.task_id,
                         type=protocol.TASK_NOTICE,
@@ -822,7 +822,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                         )
                         await asyncio.sleep(10)
                     else:
-                        self.cur_user_item.status = "异常"
+                        await self.cur_user_item.set_state(status="异常")
                     continue
 
             # 游戏窗口已就绪时先做画面维护检测（公告通道覆盖启动前，这里兜底
@@ -867,7 +867,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                             )
                             await asyncio.sleep(10)
                         else:
-                            self.cur_user_item.status = "异常"
+                            await self.cur_user_item.set_state(status="异常")
                         continue
 
             await self.set_okww()
@@ -891,9 +891,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                         "无法确认旧 OK-WW 进程已退出，停止重试，"
                         "请检查残留进程及结束进程的权限"
                     )
-                    self.cur_user_log.status += f"\n{message}"
-                    self.cur_user_log.content.append(message)
-                    self.cur_user_item.status = "异常"
+                    await self.cur_user_log.set_state(status=f"\n{message}")
+                    await self.cur_user_log.append_content(message)
+                    await self.cur_user_item.set_state(status="异常")
                     await self._push_dispatch_log(message)
                     break
                 if attempt < run_limit:
@@ -902,7 +902,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     )
                     await asyncio.sleep(10)
                 else:
-                    self.cur_user_item.status = "异常"
+                    await self.cur_user_item.set_state(status="异常")
                 continue
 
             # 启动日志监控（文件日志）
@@ -927,14 +927,16 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             # 运行期间命中维护弹窗：按维护跳过收尾，不再重试；结论与内容
             # 在日志监控停止后落笔，避免被 check_log 的末次轮询覆盖
             if (
-                self.cur_user_item.maintenance_skipped
+                self.user_state(self.cur_user_item).maintenance_skipped
                 and self._maintenance_reason
                 and self.cur_user_log.status != "Success!"
             ):
-                self.cur_user_log.status = self._maintenance_reason
-                self.cur_user_log.content.append(self._maintenance_reason)
-                self.cur_user_item.status = "跳过"
-                self.script_info.log = f"{self._maintenance_reason}\n正在中止相关程序"
+                await self.cur_user_log.set_state(status=self._maintenance_reason)
+                await self.cur_user_log.append_content(self._maintenance_reason)
+                await self.cur_user_item.set_state(status="跳过")
+                await self.script_info.set_log(
+                    f"{self._maintenance_reason}\n正在中止相关程序"
+                )
                 # 通知放在最终判定处推送，避免与随后的成功结论互相矛盾
                 await self.notify_maintenance_skip(self._maintenance_reason)
                 await self.kill_managed_process(
@@ -945,8 +947,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
                 # 成功结论晚于维护命中时优先成功，清除标记避免误报维护跳过
-                self.clear_maintenance_hit()
-                self.script_info.log = (
+                await self.clear_maintenance_hit()
+                await self.script_info.set_log(
                     "检测到 OK-WW 已完成任务\n正在等待 OK-WW 自行退出"
                 )
                 # 等待 OK-WW 自然退出（-e 标志使其任务完成后自行关闭游戏并退出）
@@ -957,7 +959,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             logger.warning(
                 f"账号 {self.cur_user_item.name} - OK-WW 代理异常: {self.cur_user_log.status}"
             )
-            self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
+            await self.script_info.set_log(
+                f"{self.cur_user_log.status}\n正在中止相关程序"
+            )
             await self.kill_managed_process(kill_game=self._game_management_enabled())
             try:
                 await Notify.send_notice(
@@ -971,7 +975,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             except Exception:
                 pass
             if attempt < run_limit:
-                self.script_info.log += f"\n将在稍后重试 ({attempt}/{run_limit})"
+                await self.script_info.append_log(
+                    f"\n将在稍后重试 ({attempt}/{run_limit})"
+                )
                 await asyncio.sleep(10)
             elif (
                 self.cur_user_log.status == _OKWW_GAME_UPDATED_MSG
@@ -983,7 +989,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 # 环境问题，继续盲重试大概率白跑，按异常收尾交用户排查
                 game_update_extended = True
                 run_limit = attempt + 1
-                self.script_info.log += (
+                await self.script_info.append_log(
                     f"\n游戏更新成功，将重启任务 ({attempt}/{run_limit})"
                 )
                 await asyncio.sleep(10)
@@ -994,9 +1000,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """按内置日志判定结果，未见成功日志便退出则视为异常。"""
         log = "".join(log_content)
-        self.cur_user_log.content = log_content
-        self.script_info.log_first_line = log[:-4000].count("\n") + 1
-        self.script_info.log = log[-4000:]
+        await self.cur_user_log.set_state(content=log_content)
+        await self.script_info.set_log(log)
 
         log_status = "OK-WW 正常运行中"
         user_item_status: str | None = None
@@ -1022,9 +1027,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 log_status = "OK-WW 运行超时"
                 user_item_status = "异常"
 
-        self.cur_user_log.status = log_status
+        await self.cur_user_log.set_state(status=log_status)
         if user_item_status is not None:
-            self.cur_user_item.status = user_item_status
+            await self.cur_user_item.set_state(status=user_item_status)
 
         logger.debug(f"OK-WW 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "OK-WW 正常运行中":
@@ -1032,12 +1037,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             self.wait_event.set()
 
     async def final_task(self):
-        self.task_info.begin_user_history_capture(
+        self.history.begin_user_history_capture(
             self.script_info,
             self.cur_user_item,
             failed=bool(self.cur_user_item.log_record)
             and not self.run_book
-            and not self.cur_user_item.maintenance_skipped
+            and not self.user_state(self.cur_user_item).maintenance_skipped
             and not self.stopped_manually,
         )
 
@@ -1059,7 +1064,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         history_records = []
         for t, log_item in self.cur_user_item.iter_history_logs():
             if log_item.status in {"未开始监看日志", "OK-WW 正常运行中"}:
-                log_item.status = "任务被用户手动中止"
+                await log_item.set_state(status="任务被用户手动中止")
 
             was_cancelled = (
                 self.stopped_manually
@@ -1067,7 +1072,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 and log_item.status == "任务被用户手动中止"
             )
             if not log_item.content:
-                log_item.content = [log_item.status]
+                await log_item.set_state(content=[log_item.status])
 
             history_records.append(
                 HistoryWrite(
@@ -1080,7 +1085,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                         else "skipped"
                         if (
                             log_item is self.cur_user_log
-                            and self.cur_user_item.maintenance_skipped
+                            and self.user_state(self.cur_user_item).maintenance_skipped
                         )
                         else "cancelled"
                         if was_cancelled
@@ -1092,7 +1097,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             )
 
         if history_records:
-            await self.task_info.save_user_history(
+            await self.history.save_user_history(
                 history_records,
                 script=self.script_info,
                 user=self.cur_user_item,
@@ -1122,7 +1127,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     "√"
                     if self.run_book
                     else "-"
-                    if self.cur_user_item.maintenance_skipped
+                    if self.user_state(self.cur_user_item).maintenance_skipped
                     else "X"
                 )
                 await Notify.push_statistics_report(
@@ -1159,10 +1164,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             await self.cur_user_config.commit()
             self.cur_user_config.Data.LastProxyStatus = "成功"
             await self.cur_user_config.commit()
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             logger.success(f"账号 {self.cur_user_uid} 的 OK-WW 自动代理任务已完成")
         else:
-            maintenance_skipped = self.cur_user_item.maintenance_skipped
+            maintenance_skipped = self.user_state(
+                self.cur_user_item
+            ).maintenance_skipped
             # 维护跳过不是失败：保留「跳过」状态并记录维护结果。
             self.cur_user_config.Data.LastProxyStatus = (
                 "维护中" if maintenance_skipped else "失败"
@@ -1170,14 +1177,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             await self.cur_user_config.commit()
             if maintenance_skipped:
                 if self.cur_user_item.status not in ("完成", "跳过"):
-                    self.cur_user_item.status = "异常"
+                    await self.cur_user_item.set_state(status="异常")
             elif self.cur_user_item.status != "完成":
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
 
     async def on_crash(self, e: Exception):
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         if self.cur_user_log is not None:
-            self.cur_user_log.status = f"OK-WW 运行异常: {e}"
+            await self.cur_user_log.set_state(status=f"OK-WW 运行异常: {e}")
         logger.opt(exception=True).warning(f"OK-WW 自动代理任务出现异常: {e}")
         if self.wait_event is not None:
             self.wait_event.set()
@@ -1233,14 +1240,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 )
         if self.script_exe_path is not None:
             try:
-                if not await System.kill_process(self.script_exe_path):
+                if not await process.kill_process(self.script_exe_path):
                     logger.warning("未能完整清理 OK-WW 主进程，将复核退出状态")
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-WW 主进程失败: {e}")
         if self.script_root_path is not None:
             track_exe = self.script_root_path / _OKWW_REL_PYTHONW
             try:
-                if not await System.kill_process(track_exe):
+                if not await process.kill_process(track_exe):
                     logger.warning("未能完整清理 OK-WW 追踪进程，将复核退出状态")
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-WW 追踪进程失败: {e}")
@@ -1254,7 +1261,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         stopped = True
         for path in paths:
             try:
-                if not await System.is_process_stopped(path):
+                if not await process.is_process_stopped(path):
                     stopped = False
                     logger.warning(f"无法确认进程已退出: {path}")
             except Exception as e:
@@ -1284,7 +1291,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 )
         if self.game_process_path is not None:
             try:
-                await System.kill_process(self.game_process_path)
+                await process.kill_process(self.game_process_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"兜底强杀鸣潮客户端失败: {e}")
         if (
@@ -1324,7 +1331,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 for pid in pids:
                     # 游戏清理在先，启动器进程树里只剩 webview 等子进程，
                     # 连树一并带走避免残留；游戏若意外仍在树内也属应关范围
-                    await System.kill_process_by_pid(pid, kill_tree=True)
+                    await process.kill_process_by_pid(pid, kill_tree=True)
                 # 清理后复核：exe 不可读（提权）的启动器进程不在上面的结果内，
                 # 用窗口定位口径再查一次，避免静默残留
                 if await asyncio.to_thread(has_launcher_window, self.launcher_path):
@@ -1374,7 +1381,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
     ) -> None:
         """本专项固定来源与账号；读取和交付时机由自身生命周期控制。"""
         self._log_user = self.cur_user_item
-        self._log_user.push_log_mode = mode
+        self.user_state(self._log_user).push_log_mode = mode
         self._log_source = None
         self._log_pipeline = None
         self._log_close_task = None
@@ -1429,13 +1436,17 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
                 entries = await asyncio.to_thread(read)
                 for entry in entries:
-                    user.push_log.append((entry.log_type, entry.text, entry.timestamp))
+                    await self.user_state(user).append_push_log(
+                        (entry.log_type, entry.text, entry.timestamp)
+                    )
             except Exception:
                 self._log_failed = True
                 logger.opt(exception=True).warning("节点采集或交付失败")
 
         if self._log_failed:
             try:
-                user.push_log.append((LOG_TYPE_NORMAL, "⚠️ 节点采集失败", time.time()))
+                await self.user_state(user).append_push_log(
+                    (LOG_TYPE_NORMAL, "⚠️ 节点采集失败", time.time())
+                )
             except Exception:
                 logger.opt(exception=True).warning("节点采集失败提示无法交付")

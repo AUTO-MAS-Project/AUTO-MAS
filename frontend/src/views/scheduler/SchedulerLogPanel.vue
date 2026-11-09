@@ -34,12 +34,12 @@
       :class="{ 'log-locked': logMode === 'follow', 'log-dark': logIsDark }"
       :style="{ backgroundColor: logBackground, color: logForeground }"
     >
-      <div v-if="!logContent" class="empty-state">
+      <div v-if="!displayLog" class="empty-state">
         <NoData :image-style="{ height: '80px' }" :description="false" />
       </div>
       <div v-else class="monaco-container">
         <vue-monaco-editor
-          :value="logContent"
+          :value="displayLog"
           language="logfile"
           :theme="editorTheme"
           :options="editorOptions"
@@ -55,15 +55,23 @@
 import { useI18n } from 'vue-i18n'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { useTheme } from '@/composables/useTheme'
-import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
+import { configureLocalMonaco } from '@/utils/monaco'
 import { useLocalStorage } from '@vueuse/core'
 import { message, theme } from 'ant-design-vue'
-import { computed, nextTick, onUnmounted, ref, toRefs, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onUnmounted, ref, shallowRef, watch } from 'vue'
+
+// 刷新后运行日志可能先于空闲预热恢复；先完成本地配置，防止编辑器退回 CDN。
+const VueMonacoEditor = defineAsyncComponent(async () => {
+  await configureLocalMonaco()
+  return (await import('@guolao/vue-monaco-editor')).VueMonacoEditor
+})
 
 const { t } = useI18n()
 
 interface Props {
   logContent: string
+  active?: boolean
+  runId?: string | null
   externalLogMode?: 'follow' | 'browse' // 外部控制的日志模式
   // 日志首行在完整日志里的行号。后端只推最近一段日志，行号得接着完整日志排。
   // 调用方（scheduler/index.vue）保证一定给值，这里不再做第二层兜底。
@@ -77,7 +85,52 @@ type LogThemeMode = 'theme' | 'dark' | 'light'
 const props = defineProps<Props>()
 
 // 解构 props 以便在模板中直接使用（保持响应性）
-const { logContent } = toRefs(props)
+const displayLog = shallowRef('')
+const displayFirstLine = ref(props.firstLine)
+let renderTimer: number | undefined
+let displayedRunId: string | null | undefined
+let wasActive = false
+const flushLog = () => {
+  displayedRunId = props.runId
+  const content = props.logContent
+  const dropped = Math.max(0, content.length - 120000)
+  let offset = dropped ? content.indexOf('\n', dropped) + 1 : 0
+  if (offset <= 0) offset = dropped
+  const notice = dropped ? t('core.scheduler.log.truncated') + '\n\n' : ''
+  displayLog.value = notice + content.slice(offset)
+  displayFirstLine.value =
+    props.firstLine + content.slice(0, offset).split('\n').length - 1 - (dropped ? 2 : 0)
+}
+watch(
+  () => [props.logContent, props.firstLine, props.active, props.externalLogMode, props.runId],
+  () => {
+    if (renderTimer !== undefined && props.active === false) {
+      window.clearTimeout(renderTimer)
+      renderTimer = undefined
+    }
+    if (props.active === false) {
+      wasActive = false
+      return
+    }
+    const immediate =
+      !wasActive ||
+      props.runId !== displayedRunId ||
+      !displayLog.value ||
+      props.externalLogMode === 'browse'
+    wasActive = true
+    if (immediate) {
+      if (renderTimer !== undefined) window.clearTimeout(renderTimer)
+      renderTimer = undefined
+      flushLog()
+    } else if (renderTimer === undefined) {
+      renderTimer = window.setTimeout(() => {
+        renderTimer = undefined
+        flushLog()
+      }, 200)
+    }
+  },
+  { immediate: true }
+)
 
 const { isDark } = useTheme()
 const { token } = theme.useToken()
@@ -154,7 +207,7 @@ const editorOptions = computed(() => ({
   lineHeight: editorConfig.value.lineHeight * editorConfig.value.fontSize,
   // 显示真实行号：后端只推最近一段日志，但编号要接着完整日志往下排，
   // 否则每轮都从 1 重数，和存下来的日志对不上
-  lineNumbers: (lineNumber: number) => String(lineNumber + props.firstLine - 1),
+  lineNumbers: (lineNumber: number) => String(lineNumber + displayFirstLine.value - 1),
   wordWrap: 'on' as const,
   automaticLayout: true,
   scrollbar: {
@@ -182,7 +235,7 @@ const editorOptions = computed(() => ({
 const handleEditorMount = (editor: any) => {
   editorInstance = editor
   // 初始滚动到底部
-  if (logMode.value === 'follow' && props.logContent) {
+  if (logMode.value === 'follow' && displayLog.value) {
     nextTick(() => scrollToBottom())
   }
 }
@@ -213,17 +266,15 @@ const scrollToBottom = () => {
 }
 
 // 只监听日志内容变化
-watch(
-  () => props.logContent,
-  () => {
-    if (logMode.value === 'follow') {
-      // 使用简单的延迟，避免nextTick可能导致的递归
-      setTimeout(scrollToBottom, 10)
-    }
+watch(displayLog, () => {
+  if (logMode.value === 'follow') {
+    // 使用简单的延迟，避免nextTick可能导致的递归
+    setTimeout(scrollToBottom, 10)
   }
-)
+})
 
 onUnmounted(() => {
+  if (renderTimer !== undefined) window.clearTimeout(renderTimer)
   editorInstance = null
   monacoInstance = null
 })

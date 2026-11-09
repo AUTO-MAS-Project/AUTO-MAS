@@ -72,7 +72,6 @@ from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
@@ -93,6 +92,7 @@ from app.utils import (
     get_logger,
     is_process_running,
     log_box,
+    process,
 )
 from app.utils.common.log import sources as log_source
 from app.utils.common.process.runner import create_subprocess
@@ -394,7 +394,6 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
     # 取消时等 final_task 完整收尾（SRC/MaaFW 同款）：不设此 flag 时外层取消会
     # 立刻打断 shield 的 final_task，导致 kill_managed_process 没跑——取消任务后
     # zzz-od 启动器/一行龙本体仍继续运行
-    wait_for_finalizer_on_cancel = True
 
     def __init__(
         self,
@@ -542,7 +541,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
     def _push_log_enabled(self) -> bool:
         """节点详情采集开关：触发用户或（多实例切换时）任一启用账号未关闭即采集。"""
 
-        if self.cur_user_item.push_log_mode != "关闭":
+        if self.user_state(self.cur_user_item).push_log_mode != "关闭":
             return True
         if not self._is_multi_account():
             return False
@@ -558,7 +557,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             )
         )
 
-    def _collect_inject_users(
+    async def _collect_inject_users(
         self,
     ) -> list[tuple[UserItem, ZzzOdUserConfig, list[dict]]]:
         """多实例切换的注入名单：启用且有任务编排的账号（按调度顺序）。
@@ -583,18 +582,18 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 )
                 continue
             if cfg.Info.RemainedDay == 0:
-                user_item.status = "跳过"
+                await user_item.set_state(status="跳过")
                 continue
             if limit != 0 and cfg.Data.ProxyTimes >= limit:
-                user_item.status = "跳过"
+                await user_item.set_state(status="跳过")
                 continue
             try:
                 apps = parse_user_apps(cfg)
             except ValueError:
-                user_item.status = "异常"
+                await user_item.set_state(status="异常")
                 continue
             if not apps:
-                user_item.status = "跳过"
+                await user_item.set_state(status="跳过")
                 continue
             candidates.append((user_item, cfg, apps))
 
@@ -608,7 +607,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 ):
                     guarded.append((user_item, cfg, apps))
                     continue
-                user_item.status = "异常"
+                await user_item.set_state(status="异常")
                 message = (
                     f"账号 {user_item.name} 缺少账号或密码, 多账号运行时无法完成"
                     f"账号切换, 已从本轮注入名单剔除"
@@ -705,7 +704,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             self._multi_uids.add(user_item.user_id)
             # 多实例切换共用一个 log_box：各账号的节点详情推送模式与归属
             # （sink 按「【账号名称】」前缀路由，idx→账号名称供后置处理器归属）
-            user_item.push_log_mode = str(cfg.Notify.PushLogMode or "汇总")
+            self.user_state(user_item).push_log_mode = str(
+                cfg.Notify.PushLogMode or "汇总"
+            )
             self._idx_names[slot] = str(cfg.Info.Name or "")
         self._push_user_book = {user_item.name: user_item for user_item, _, _ in users}
 
@@ -788,7 +789,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 )
             if self._is_multi_account():
                 # 多实例切换：cur_user 只是触发者，逐账号跳过条件在注入名单中施加
-                if not self._collect_inject_users():
+                if not await self._collect_inject_users():
                     return "没有可注入的用户, 请确认用户已启用且任务配置非空"
             else:
                 try:
@@ -801,10 +802,10 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     and self.cur_user_config.Data.ProxyTimes
                     >= self.script_config.Run.ProxyTimesLimit
                 ):
-                    self.cur_user_item.status = "跳过"
+                    await self.cur_user_item.set_state(status="跳过")
                     return "今日代理次数已达上限, 跳过该账号"
                 if self.cur_user_config.Info.RemainedDay == 0:
-                    self.cur_user_item.status = "跳过"
+                    await self.cur_user_item.set_state(status="跳过")
                     return "账号剩余天数为 0, 跳过该账号"
         else:
             # 原生来源=原生裸跑零注入，运行前先自愈上次注入模式残留的合成视图
@@ -875,14 +876,14 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             )
 
         # 账号级节点详情推送模式（build_user_result_text 按此渲染）
-        self.cur_user_item.push_log_mode = str(
+        self.user_state(self.cur_user_item).push_log_mode = str(
             self.cur_user_config.Notify.PushLogMode or "汇总"
         )
         # 目录和账号映射会在运行期变化：收尾时再固定快照，不能在 prepare 提前捕获。
         # 触发用户关闭但其他启用账号需要详情时仍采集，保留原有多账号开关语义。
         self._prepare_log_details(
             self.script_log_path,
-            mode=self.cur_user_item.push_log_mode,
+            mode=self.user_state(self.cur_user_item).push_log_mode,
             enabled=self._push_log_enabled(),
             rotated_name=f"{self.script_log_path.name}.%Y-%m-%d",
         )
@@ -900,7 +901,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         await self.prepare()
         # 跨日重置：check 入口已对全部用户完成日期+ProxyTimes 同步，main_task
         # 无需再就地重置触发用户
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
@@ -924,7 +925,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             else:
                 if self._is_multi_account():
                     # 多实例切换：全部启用账号 → 各自绑定槽，一条龙多账号一次跑
-                    inject_users = self._collect_inject_users()
+                    inject_users = await self._collect_inject_users()
                     if not inject_users:
                         raise RuntimeError(
                             "没有可注入的用户, 请确认用户已启用且任务配置非空"
@@ -993,12 +994,14 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     not self._is_multi_account()
                     or self.cur_user_item.user_id in self._multi_uids
                 ):
-                    self.cur_user_item.status = "运行"
+                    await self.cur_user_item.set_state(status="运行")
                 self.log_start_time = datetime.now().astimezone()
-                self.cur_user_item.add_log_record(self.log_start_time, LogRecord())
+                await self.cur_user_item.add_log_record(
+                    self.log_start_time, LogRecord()
+                )
                 self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
                 self._failed_app_ids = []
-                self.script_info.log = ""
+                await self.script_info.set_log("")
 
                 # 启用游戏配置 + 任务前启动游戏：由 MAS 拉起游戏本体后再跑一条龙
                 # （对齐 ok-ww/ok-nte；游戏已在运行时跳过，避免重复启动）
@@ -1007,9 +1010,11 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                         await self._mas_launch_game_before_task()
                     except Exception as e:
                         await self._push_dispatch_log(f"游戏启动失败: {e}")
-                        self.cur_user_log.status = f"游戏启动失败: {e}"
-                        self.cur_user_log.content = [f"游戏启动失败: {e}"]
-                        self.script_info.log = self.cur_user_log.status
+                        await self.cur_user_log.set_state(status=f"游戏启动失败: {e}")
+                        await self.cur_user_log.set_state(
+                            content=[f"游戏启动失败: {e}"]
+                        )
+                        await self.script_info.set_log(self.cur_user_log.status)
                         logger.opt(exception=True).warning(
                             f"账号 {self.cur_user_item.name} - MAS 启动游戏失败: {e}"
                         )
@@ -1028,12 +1033,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                         except Exception:
                             pass
                         if i + 1 < run_limit:
-                            self.script_info.log += (
+                            await self.script_info.append_log(
                                 f"\n将在稍后重试 ({i + 1}/{run_limit})"
                             )
                             await asyncio.sleep(10)
                         else:
-                            self.cur_user_item.status = "异常"
+                            await self.cur_user_item.set_state(status="异常")
                         continue
 
                 base_label = BASE_SOURCE_LABELS.get(self.base, self.base)
@@ -1078,7 +1083,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     await self._judge_multi(log)
                 elif self._is_bare_run():
                     records_after = _snapshot_all_run_records(self.script_root_path)
-                    self._judge_final(records_before, records_after, log)
+                    await self._judge_final(records_before, records_after, log)
                 else:
                     slot0 = self._injected_slots[0][0]
                     records_before = self._slot_records_before[slot0]
@@ -1087,7 +1092,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                         slot0,
                         self._slot_record_files.get(slot0, {}),
                     )
-                    self._judge_final(records_before, records_after, log)
+                    await self._judge_final(records_before, records_after, log)
 
                 if self.run_book:
                     # 终态成功（判定器设置）：统一为框架成功契约「Success!」
@@ -1103,7 +1108,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                             .LauncherLastGood
                         )
                         await self.cur_user_config.commit()
-                    self.script_info.log = (
+                    await self.script_info.set_log(
                         self.script_info.log or "检测到 ZZZ-OD 已完成任务"
                     )
                     break
@@ -1128,7 +1133,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     f"账号 {self.cur_user_item.name} - ZZZ-OD 代理异常: "
                     f"{failure_reason}"
                 )
-                self.script_info.log = f"{failure_reason}\n正在中止相关程序"
+                await self.script_info.set_log(f"{failure_reason}\n正在中止相关程序")
                 await self.kill_managed_process(kill_game=self._mas_should_close_game())
                 try:
                     await Notify.send_notice(
@@ -1147,7 +1152,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                             self._app_display_name(app_id)
                             for app_id in self._failed_app_ids
                         )
-                        self.script_info.log += f"\n失败的应用均无重试价值（{futile_names}），已跳过剩余重试"
+                        await self.script_info.append_log(
+                            f"\n失败的应用均无重试价值（{futile_names}），已跳过剩余重试"
+                        )
                         logger.info(
                             f"账号 {self.cur_user_item.name} - "
                             f"失败应用均无重试价值({futile_names}), 跳过剩余重试"
@@ -1156,7 +1163,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                             f"失败的应用均无重试价值（{futile_names}），跳过剩余重试"
                         )
                         break
-                    self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
+                    await self.script_info.append_log(
+                        f"\n将在稍后重试 ({i + 1}/{run_limit})"
+                    )
                     await asyncio.sleep(10)
         finally:
             # 无论成败/异常，注入现场立即恢复（MAS 不留痕迹，zzz-od 原生配置零接触）
@@ -1167,7 +1176,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
         return self._app_name_book.get(app_id, app_id)
 
-    def _judge_final(self, records_before: dict, records_after: dict, log: str) -> None:
+    async def _judge_final(
+        self, records_before: dict, records_after: dict, log: str
+    ) -> None:
         """进程退出后的终态判定（优先级：check_log 已标记的终态 > 致命日志 >
         失败任务 > 成功任务 > 无变化）。"""
 
@@ -1183,7 +1194,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         ):
             self.run_book = False
             if self.cur_user_item.status not in ("异常", "跳过"):
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
             return
 
         log_status = "ZZZ-OD 正常运行中"
@@ -1209,11 +1220,11 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 ]
                 log_status = "ZZZ-OD 部分任务执行失败: " + "、".join(failed_names)
                 user_status = "异常"
-                self.script_info.log = log_status
+                await self.script_info.set_log(log_status)
             elif any(new == RUN_STATUS_SUCCESS for _, _, new in diffs):
                 log_status = "Success!"
                 user_status = "完成"
-                self.script_info.log = "检测到 ZZZ-OD 已完成任务"
+                await self.script_info.set_log("检测到 ZZZ-OD 已完成任务")
             elif _ZZZOD_ONE_DRAGON_SUCCESS in log:
                 # 记录无变化但出现「整轮跑完」标志：原生态=今日任务均已完成
                 # （zzz-od 启动后按记录跳过全部任务，应用组执行完仍打标志）。
@@ -1223,7 +1234,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 # 归一，可读说明放到 script_info.log
                 log_status = "Success!"
                 user_status = "完成"
-                self.script_info.log = "今日任务均已完成"
+                await self.script_info.set_log("今日任务均已完成")
             elif self._launch_evidence(log, False):
                 # 有启动证据（框架初始化日志）但无记录变化、无整轮完成标志：
                 # 一条龙启动了却没跑完就退出（启动器接力换进程间隙被误判结束、
@@ -1236,11 +1247,11 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 log_status = "启动器未能启动一条龙"
                 user_status = "异常"
 
-        self.cur_user_log.status = log_status
+        await self.cur_user_log.set_state(status=log_status)
         # 仅成功或上游确认已完成的任务走成功分支，应用失败交给 main_task 重试。
         self.run_book = user_status == "完成"
         if user_status is not None:
-            self.cur_user_item.status = user_status
+            await self.cur_user_item.set_state(status=user_status)
 
     def _all_failures_futile(self, log: str) -> bool:
         """整轮正常走完且仅插件或白名单应用失败时，不再整轮重跑。
@@ -1358,7 +1369,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             )
             all_ok = all_ok and ok
 
-            user_item.status = "完成" if ok else "异常"
+            await user_item.set_state(status="完成" if ok else "异常")
             # 每个参与用户写一行终态 log_record：result 行不再显示「未开始
             # 运行」而节点有内容的矛盾。get-or-create：cur_user 的条目由
             # main_task 创建且 check_log 正在向其写 content，不能替换对象
@@ -1366,7 +1377,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 self.cur_user_log if user_item is self.cur_user_item else LogRecord()
             )
             if record is not self.cur_user_log:
-                user_item.add_log_record(self.log_start_time, record)
+                record = await user_item.add_log_record(self.log_start_time, record)
             if ok:
                 record_status = "Success!"
             elif runtime_failed:
@@ -1380,9 +1391,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 record_status = "ZZZ-OD 部分任务执行失败" + (
                     f": {failed_names}" if failed_names else ""
                 )
-            record.status = record_status
+            await record.set_state(status=record_status)
             if record is not self.cur_user_log:
-                record.content = list(self.cur_user_log.content)
+                await record.set_state(content=list(self.cur_user_log.content))
             # 节点详情由 log_box 统一采集（final_task 收尾时按账号路由）；
             # 每轮同步最终状态，成功计数在整个补跑期间每个账号只增加一次。
             await self._persist_multi_user_result(
@@ -1394,14 +1405,14 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         if runtime_failed:
             self._multi_run_status = runtime_status
             if self.cur_user_item.user_id in self._multi_uids:
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
         elif fatal is not None:
             self._multi_run_status = fatal
             if self.cur_user_item.user_id in self._multi_uids:
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
         elif all_ok:
             self._multi_run_status = "Success!"
-            self.script_info.log = "检测到 ZZZ-OD 已完成任务"
+            await self.script_info.set_log("检测到 ZZZ-OD 已完成任务")
         else:
             failed_users = "、".join(
                 user_item.name
@@ -1409,11 +1420,11 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 if user_item.status != "完成"
             )
             self._multi_run_status = f"ZZZ-OD 部分账号执行失败: {failed_users}"
-            self.script_info.log = self._multi_run_status
+            await self.script_info.set_log(self._multi_run_status)
 
         if self.cur_user_item.user_id not in self._multi_uids:
             # 非参与用户只承担本次启动与进度展示，其日志不作为账号历史保存。
-            self.cur_user_log.status = self._multi_run_status
+            await self.cur_user_log.set_state(status=self._multi_run_status)
 
         self.run_book = all_ok
         self._multi_ran = True
@@ -1516,7 +1527,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             # 失败槽里留着 MAS 注入内容：只标该槽对应的用户，不牵连已恢复成功的槽
             for slot, _ in failed:
                 user_item = slot_owner_items.get(slot) or self.cur_user_item
-                user_item.status = "异常"
+                await user_item.set_state(status="异常")
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -1533,9 +1544,8 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         """按内置日志监控运行；致命错误与超时立即终止，进程退出触发统一终判。"""
 
         log = "".join(log_content)
-        self.cur_user_log.content = log_content
-        self.script_info.log_first_line = log[:-4000].count("\n") + 1
-        self.script_info.log = log[-4000:]
+        await self.cur_user_log.set_state(content=log_content)
+        await self.script_info.set_log(log)
 
         log_status = "ZZZ-OD 正常运行中"
         user_item_status: str | None = None
@@ -1563,12 +1573,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 user_item_status = "异常"
                 need_stop = True
 
-        self.cur_user_log.status = log_status
+        await self.cur_user_log.set_state(status=log_status)
         if user_item_status is not None and (
             not self._is_multi_account()
             or self.cur_user_item.user_id in self._multi_uids
         ):
-            self.cur_user_item.status = user_item_status
+            await self.cur_user_item.set_state(status=user_item_status)
 
         logger.debug(f"ZZZ-OD 日志分析结果: {self.cur_user_log.status}")
         if need_stop:
@@ -1578,13 +1588,13 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
     async def final_task(self):
         if self._multi_ran:
             for user in self._history_users.values():
-                self.task_info.begin_user_history_capture(
+                self.history.begin_user_history_capture(
                     self.script_info,
                     user,
                     failed=user.status == "异常" and not self.stopped_manually,
                 )
         else:
-            self.task_info.begin_user_history_capture(
+            self.history.begin_user_history_capture(
                 self.script_info,
                 self.cur_user_item,
                 failed=bool(self.cur_user_item.log_record)
@@ -1616,7 +1626,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 and log_item is self.cur_user_log
                 and log_item.status == "未开始监看日志"
             ):
-                log_item.status = "任务被用户手动中止"
+                await log_item.set_state(status="任务被用户手动中止")
 
             was_cancelled = (
                 self.stopped_manually
@@ -1624,11 +1634,11 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 and log_item.status == "任务被用户手动中止"
             )
             if len(log_item.content) == 0:
-                log_item.content = ["未捕获到任何日志内容"]
+                await log_item.set_state(content=["未捕获到任何日志内容"])
                 # 未判定（进程异常退出/被中止）才标未捕获；已有终态判定时
                 # 保留判定状态（判定依据是运行记录 diff，不依赖日志内容）
                 if log_item.status in ("未开始监看日志", "ZZZ-OD 正常运行中"):
-                    log_item.status = "未捕获到日志"
+                    await log_item.set_state(status="未捕获到日志")
 
             history_records.append(
                 HistoryWrite(
@@ -1649,7 +1659,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
         if not self._multi_ran or self.cur_user_item.user_id in self._history_users:
             if history_records:
-                await self.task_info.save_user_history(
+                await self.history.save_user_history(
                     history_records,
                     script=self.script_info,
                     user=self.cur_user_item,
@@ -1671,7 +1681,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 for started_at, item in user.iter_history_logs()
             ]
             if records:
-                await self.task_info.save_user_history(
+                await self.history.save_user_history(
                     records,
                     script=self.script_info,
                     user=user,
@@ -1736,18 +1746,18 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
         if self.run_book:
             await self._apply_proxy_success(self.cur_user_config)
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
             logger.success(f"账号 {self.cur_user_uid} 的 ZZZ-OD 自动代理任务已完成")
         else:
             self.cur_user_config.Data.LastProxyStatus = "失败"
             await self.cur_user_config.commit()
             if self.cur_user_item.status != "完成":
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
 
     async def on_crash(self, e: Exception):
-        self.cur_user_item.status = "异常"
+        await self.cur_user_item.set_state(status="异常")
         if self.cur_user_log is not None:
-            self.cur_user_log.status = f"ZZZ-OD 运行异常: {e}"
+            await self.cur_user_log.set_state(status=f"ZZZ-OD 运行异常: {e}")
         logger.opt(exception=True).warning(f"ZZZ-OD 自动代理任务出现异常: {e}")
         if self.wait_event is not None:
             self.wait_event.set()
@@ -1805,7 +1815,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         fallback_path = exe_path if exe_path is not None else self.launcher_exe_path
         if fallback_path is not None:
             try:
-                await System.kill_process(fallback_path)
+                await process.kill_process(fallback_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 ZZZ-OD 主进程失败: {e}")
         if kill_game:
@@ -1872,7 +1882,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
     ) -> None:
         """本专项固定来源与账号；读取和交付时机由自身生命周期控制。"""
         self._log_user = self.cur_user_item
-        self._log_user.push_log_mode = mode
+        self.user_state(self._log_user).push_log_mode = mode
         self._log_source = None
         self._log_pipeline = None
         self._log_close_task = None
@@ -1937,12 +1947,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     match = _push_log.ACCOUNT_PREFIX_RE.match(entry.text)
                     if match is not None and match.group(1) in users:
                         target = users[match.group(1)]
-                        if target.push_log_mode != "关闭":
-                            target.push_log.append(
+                        if self.user_state(target).push_log_mode != "关闭":
+                            await self.user_state(target).append_push_log(
                                 (entry.log_type, match.group(2), entry.timestamp)
                             )
                     else:
-                        user.push_log.append(
+                        await self.user_state(user).append_push_log(
                             (entry.log_type, entry.text, entry.timestamp)
                         )
             except Exception:

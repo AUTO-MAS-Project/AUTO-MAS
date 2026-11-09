@@ -20,8 +20,6 @@ import {
 } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
-import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
-import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
 import { maafwScriptTypeByConfigType } from '@/composables/useMaaFWFlavor'
 import {
   analyticsConfigSection,
@@ -358,14 +356,6 @@ export function useScriptApi() {
       section_kind: analyticsConfigSection(data),
       script_type: getAnalyticsScriptType(scriptId),
     }
-    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
-      operation.finish({ ...dimensions, outcome: 'blocked' })
-      const errorMsg = t('core.edit.configLocked')
-      error.value = errorMsg
-      message.warning(errorMsg)
-      return false
-    }
-
     loading.value = true
     error.value = null
 

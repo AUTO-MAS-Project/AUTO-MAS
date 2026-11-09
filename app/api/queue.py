@@ -35,6 +35,7 @@ from pydantic import (
 )
 
 import app.models.config as _config_models
+from app.config.errors import ConfigAggregateError
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Commands, Config
 from app.core.config.manager import QueueItemNotFoundError, QueueNotFoundError
@@ -288,7 +289,12 @@ async def get_time_set(time: TimeSetGetIn = Body(...)) -> TimeSetGetOut:
 )
 async def add_time_set(time: QueueSetInBase = Body(...)) -> TimeSetCreateOut:
 
-    uid, config = await Config.add_time_set(time.queueId)
+    try:
+        uid, config = await Config.add_time_set(time.queueId)
+    except (ValueError, ConfigAggregateError) as error:
+        return TimeSetCreateOut(
+            code=409, status="error", message=str(error), timeSetId="", data=TimeSet()
+        )
     data = TimeSet(**config.model_dump(context={"audience": "api"}))
     return TimeSetCreateOut(timeSetId=str(uid), data=data)
 
@@ -306,6 +312,8 @@ async def update_time_set(time: TimeSetUpdateIn = Body(...)) -> OutBase:
         await Config.update_time_set(
             time.queueId, time.timeSetId, time.data.model_dump(exclude_unset=True)
         )
+    except (ValueError, ConfigAggregateError) as error:
+        return OutBase(code=409, status="error", message=str(error))
     except Exception as e:
         logger.opt(exception=True).warning(
             f"update_time_set失败: {type(e).__name__}: {e}"
@@ -327,6 +335,8 @@ async def delete_time_set(time: TimeSetDeleteIn = Body(...)) -> OutBase:
 
     try:
         await Config.del_time_set(time.queueId, time.timeSetId)
+    except (ValueError, ConfigAggregateError) as error:
+        return OutBase(code=409, status="error", message=str(error))
     except Exception as e:
         logger.opt(exception=True).warning(
             f"delete_time_set失败: {type(e).__name__}: {e}"
@@ -348,6 +358,8 @@ async def reorder_time_set(time: TimeSetReorderIn = Body(...)) -> OutBase:
 
     try:
         await Config.reorder_time_set(time.queueId, time.indexList)
+    except (ValueError, ConfigAggregateError) as error:
+        return OutBase(code=409, status="error", message=str(error))
     except Exception as e:
         logger.opt(exception=True).warning(
             f"reorder_time_set失败: {type(e).__name__}: {e}"

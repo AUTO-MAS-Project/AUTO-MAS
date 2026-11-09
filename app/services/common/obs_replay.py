@@ -48,7 +48,7 @@ _DRAIN_TIMEOUT = 30.0
 # internal/cli/backend.go 的 backendShutdownTimeoutDefault、
 # internal/backend/control.go 的 closeCtx），超时即强制回收进程树。这 5 秒要
 # 覆盖 main.py shutdown_services() 的全部步骤（停任务、DesktopGuard、本服务、
-# RuntimeTasks 等）和 uvicorn 退出，所以本服务只占 2 秒：前 1 秒等在途
+# BackgroundTaskManager 等）和 uvicorn 退出，所以本服务只占 2 秒：前 1 秒等在途
 # 保存完成，余下留给取消生效与关闭 OBS 连接。被放弃的线程是守护线程：能跑完就
 # 各自收尾，进程先退出留下的半成品由下次启动时的 cleanup_temporary 清理。
 _STOP_TIMEOUT = 2.0
@@ -334,6 +334,23 @@ class ObsReplayService:
         self._copy_operations: set[_CopyOperation] = set()
         self._connections: set[_ObsClient] = set()
         self._closing = False
+
+    async def discard_temporary(self, path: Path) -> bool:
+        """只清理由本服务管理的临时副本，不处理 OBS 原始输出。"""
+        try:
+            if (
+                self.directory.is_symlink()
+                or self.directory.is_junction()
+                or path.is_symlink()
+                or path.parent.resolve() != self.directory.resolve()
+            ):
+                logger.warning(f"拒绝清理回放临时目录外的文件：{path}")
+                return False
+            await asyncio.to_thread(path.unlink, missing_ok=True)
+            return True
+        except OSError as error:
+            logger.warning(f"未归档回放临时副本清理失败：{error}")
+            return False
 
     async def cleanup_temporary(self) -> None:
         """启动时仅清理本服务遗留的临时副本，OBS输出完全不参与。"""

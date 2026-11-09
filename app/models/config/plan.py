@@ -709,7 +709,17 @@ class UniversalPlanConfig(PlanDaysConfig):
         return super().current_group(shifted)
 
 
+type PlanConfigType = (
+    MaaPlanConfig
+    | MaaEndPlanConfig
+    | BAAHPlanConfig
+    | MSSPlanConfig
+    | UniversalPlanConfig
+)
+
+
 __all__ = [
+    "PlanConfigType",
     "UniversalPlanConfig",
     "WeeklyKeyPlan",
     "MaaPlanConfig",

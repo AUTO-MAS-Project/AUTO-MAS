@@ -5,7 +5,6 @@ import json
 import sys
 import threading
 import uuid
-import weakref
 from contextlib import suppress
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -13,14 +12,15 @@ from unittest.mock import AsyncMock
 import psutil
 import pytest
 
-from app.core.runtime_tasks import OwnedTaskRegistry
+from app.core.background_tasks import BackgroundTaskManager
 from app.core.script_update import ScriptUpdateRequest, run_script_update
-from app.core.task_manager.manager import Task, TaskInfo, _TaskManager
+from app.core.task_manager import _TaskManager
 from app.core.timer import _MainTimer
 from app.models.config import MaaConfig, MaaUserConfig
-from app.models.task import ScriptItem, UserItem
+from app.models.task import TaskItem, TaskMode
 from app.utils.common.process.runner import ProcessRunner, create_subprocess
 from app.utils.common.process.scope import TaskProcessScope, current_process_scope
+from tests.task_stop_support import StopTask, add_script
 
 
 @pytest.mark.asyncio
@@ -72,7 +72,7 @@ async def test_maa_config_stop_saves_before_kill_or_reports_timeout(
             return self.process.returncode is None
 
     monkeypatch.setattr(module, "ProcessManager", GuiProcess)
-    monkeypatch.setattr(module.System, "kill_process", AsyncMock())
+    monkeypatch.setattr(module.process, "kill_process", AsyncMock())
     monkeypatch.setattr(
         module.ScriptConfigTask,
         "GUI_CLOSE_TIMEOUT",
@@ -80,13 +80,8 @@ async def test_maa_config_stop_saves_before_kill_or_reports_timeout(
         raising=False,
     )
     user_id = uuid.uuid4()
-    script = ScriptItem(
-        str(uuid.uuid4()), "test", "运行", [UserItem(str(user_id), "test", "运行")], 0
-    )
-    info = TaskInfo(
-        "ScriptConfig", str(uuid.uuid4()), None, script.script_id, str(user_id)
-    )
-    object.__setattr__(script, "_task_item_ref", weakref.ref(info))
+    info = TaskItem(info={"mode": TaskMode.SCRIPT_CONFIG})
+    script = await add_script(info, str(uuid.uuid4()), str(user_id))
     config = MaaConfig.build(payload={"Info": {"Path": str(install)}})
     user = MaaUserConfig.build(payload={"Info": {"Base": base}})
     await config.activate()
@@ -95,15 +90,15 @@ async def test_maa_config_stop_saves_before_kill_or_reports_timeout(
     discarded = AsyncMock()
     monkeypatch.setattr(session, "_notify_config_discarded", discarded)
 
-    class ConfigTask(Task):
-        async def _run_main_task(self):
+    class ConfigTask(StopTask):
+        async def main_task(self):
             await self.spawn(session)
 
-    task = ConfigTask(info, [], manager_factories={})
-    task.execute()
+    task = ConfigTask(info)
+    task.start()
     try:
         await asyncio.wait_for(ready.wait(), 3)
-        task.cancel()
+        task.request_stop()
         await asyncio.wait_for(task.accomplish.wait(), 3)
         await asyncio.wait_for(session.accomplish.wait(), 3)
         await asyncio.wait_for(session.maa_process_manager.process.wait(), 3)
@@ -129,8 +124,8 @@ async def test_maa_config_stop_saves_before_kill_or_reports_timeout(
         check = next(c for c in task._stop_scope.checks if c.name == "maa_config_save")
         assert check.status == ("timed_out" if unresponsive else "passed")
     finally:
-        task.cancel()
-        await asyncio.gather(task._execution_root, return_exceptions=True)
+        task.request_stop()
+        await asyncio.gather(task._task, return_exceptions=True)
 
 
 @pytest.mark.asyncio
@@ -168,18 +163,18 @@ async def test_task_stop_during_display_insert_preserves_guard_ownership(monkeyp
     guard = module._DesktopGuard()
     monkeypatch.setattr(guard, "_sync_display_hold", lambda: None)
 
-    class DisplayTask(Task):
-        async def _run_main_task(self):
+    class DisplayTask(StopTask):
+        async def main_task(self):
             await guard._attach("test")
 
-    info = TaskInfo("AutoProxy", str(uuid.uuid4()), None, None, None)
-    task = DisplayTask(info, [], manager_factories={})
-    task.execute()
+    info = TaskItem(info={"mode": TaskMode.AUTO_PROXY})
+    task = DisplayTask(info)
+    task.start()
     try:
         async with asyncio.timeout(3):
             while not entered.is_set():
                 await asyncio.sleep(0.01)
-        task.cancel()
+        task.request_stop()
         await asyncio.wait_for(task.accomplish.wait(), 2)
         release.set()
         await asyncio.wait_for(guard._attaching, 2)
@@ -189,7 +184,7 @@ async def test_task_stop_during_display_insert_preserves_guard_ownership(monkeyp
         assert removed == [7]
     finally:
         release.set()
-        await asyncio.gather(task._execution_root, return_exceptions=True)
+        await asyncio.gather(task._task, return_exceptions=True)
         if guard._attaching is not None:
             await asyncio.gather(guard._attaching, return_exceptions=True)
 
@@ -333,8 +328,8 @@ async def test_task_stop_waits_for_update_then_force_closes_owned_processes(
     )
     finalized = asyncio.Event()
 
-    class ControlledTask(Task):
-        async def _run_main_task(self):
+    class ControlledTask(StopTask):
+        async def main_task(self):
             owned.append(
                 await create_subprocess(
                     sys.executable,
@@ -389,16 +384,12 @@ async def test_task_stop_waits_for_update_then_force_closes_owned_processes(
         ControlledTask, "STOP_CHECK_TIMEOUTS", {"update": 0.1 if times_out else 2}
     )
     uid = uuid.uuid4()
-    info = TaskInfo("AutoProxy", str(uid), None, None, None)
+    info = TaskItem(uid=uid, info={"mode": TaskMode.AUTO_PROXY})
 
-    async def blocked_history_cleanup():
-        await asyncio.Event().wait()
-
-    monkeypatch.setattr(info, "discard_history_captures", blocked_history_cleanup)
-    task = ControlledTask(info, [], manager_factories={})
+    task = ControlledTask(info)
     manager = _TaskManager()
-    manager.task_handler[uid] = task
-    task.execute()
+    manager._running[uid] = task.execution
+    task.start()
     stopping = None
     try:
         await asyncio.wait_for(ready.wait(), 3)
@@ -427,9 +418,9 @@ async def test_task_stop_waits_for_update_then_force_closes_owned_processes(
     finally:
         allow_exit.set()
         if not task.accomplish.is_set():
-            task.cancel()
-        if task._execution_root is not None:
-            await asyncio.gather(task._execution_root, return_exceptions=True)
+            task.request_stop()
+        if task._task is not None:
+            await asyncio.gather(task._task, return_exceptions=True)
         if stopping is not None:
             await asyncio.gather(stopping, return_exceptions=True)
         for process in [*owned, unrelated]:
@@ -441,7 +432,9 @@ async def test_task_stop_waits_for_update_then_force_closes_owned_processes(
 
 @pytest.mark.asyncio
 async def test_application_background_tasks_are_not_owned_by_stopped_task():
-    registry = OwnedTaskRegistry()
+    registry = BackgroundTaskManager.register_group(
+        "stop-test", max_running=1, max_retained=1
+    )
     entered = asyncio.Event()
     release = asyncio.Event()
     background = []
@@ -451,29 +444,29 @@ async def test_application_background_tasks_are_not_owned_by_stopped_task():
         await release.wait()
         return current_process_scope.get()
 
-    class BackgroundTask(Task):
-        async def _run_main_task(self):
-            background.append(registry.spawn(shared_work(), name="test-shared-work"))
+    class BackgroundTask(StopTask):
+        async def main_task(self):
+            background.append(registry.spawn(shared_work))
             await asyncio.Event().wait()
 
-    info = TaskInfo("AutoProxy", str(uuid.uuid4()), None, None, None)
-    task = BackgroundTask(info, [], manager_factories={})
-    task.execute()
+    info = TaskItem(info={"mode": TaskMode.AUTO_PROXY})
+    task = BackgroundTask(info)
+    task.start()
 
     try:
         await asyncio.wait_for(entered.wait(), 1)
         work = background[0]
         assert work is not None
-        task.cancel()
+        task.request_stop()
         await asyncio.wait_for(task.accomplish.wait(), 2)
         assert not work.done()
         release.set()
-        assert await work is None
+        assert (await work.wait_take()).value is None
     finally:
         release.set()
-        task.cancel()
-        await asyncio.gather(task._execution_root, return_exceptions=True)
-        await registry.shutdown()
+        task.request_stop()
+        await asyncio.gather(task._task, return_exceptions=True)
+        await BackgroundTaskManager.unregister_group(registry)
 
 
 @pytest.mark.asyncio

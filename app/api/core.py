@@ -40,13 +40,13 @@ from app.core import (
     Config,
     MainConnection,
     Notify,
+    Power,
     Publisher,
     ShutdownCoordinator,
     TaskManager,
 )
 from app.core.ws import protocol
 from app.models.schema import McpStatusData, OutBase
-from app.services import System
 from app.utils import get_logger, is_supervised, should_preserve_backend
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
@@ -166,8 +166,6 @@ async def get_ws_meta() -> WebSocketMetaOut:
     )
 
 
-# 主连接建立后触发启动时调度队列
-MainConnection.on_connect(TaskManager.start_startup_queue)
 # 启动期的系统通知（配置迁移结果之类）等主连接建立后再发，否则没人收。
 MainConnection.on_connect(Notify.flush_startup_notices)
 
@@ -192,7 +190,7 @@ async def _shutdown_backend() -> None:
         try:
             await TaskManager.stop_task("ALL")
             with suppress(RuntimeError):
-                await System.cancel_power_task()
+                await Power.cancel_power_task()
         except Exception as error:
             logger.opt(exception=True).error(
                 "开发模式轻量清理失败，取消发送退出信号: "

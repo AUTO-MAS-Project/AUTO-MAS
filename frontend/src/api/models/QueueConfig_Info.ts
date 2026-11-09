@@ -2,17 +2,18 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { PowerSignal } from './PowerSignal';
 export type QueueConfig_Info = {
     /**
      * 完成后操作
      */
-    AfterAccomplish?: ('NoAction' | 'Shutdown' | 'ShutdownForce' | 'Reboot' | 'Hibernate' | 'Sleep' | 'KillSelf' | 'RestartSelf' | 'Logoff' | null);
+    AfterAccomplish?: (PowerSignal | null);
     /**
-     * 完成后操作的延时时长, 单位分钟, 0 表示队列结束后直接进入倒计时
+     * 完成后操作倒计时，单位分钟，最少 1 分钟，不叠加其他等待
      */
     AfterAccomplishDelay?: (number | null);
     /**
-     * 是否为循环队列: 定时与循环互斥, 循环队列按队列项各自的周期持续运行
+     * 是否启用队列循环触发，可与定时和软件启动触发同时启用
      */
     CycleEnabled?: (boolean | null);
     /**
@@ -20,7 +21,7 @@ export type QueueConfig_Info = {
      */
     IfScriptAfterTask?: (boolean | null);
     /**
-     * 队列级运行前脚本: 一次运行只执行一次, 循环队列在整个运行期间不重复执行
+     * 队列级运行前脚本: 每次任务快照开始时执行一次
      */
     IfScriptBeforeTask?: (boolean | null);
     /**
@@ -44,4 +45,3 @@ export type QueueConfig_Info = {
      */
     TimeEnabled?: (boolean | null);
 };
-

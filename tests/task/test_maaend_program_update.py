@@ -6,10 +6,9 @@ import hashlib
 import json
 import shutil
 import threading
-import uuid
 import zipfile
 from pathlib import Path
-from types import SimpleNamespace
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import httpx
@@ -335,6 +334,7 @@ async def test_cancelled_cleanup_waits_for_worker(installation, monkeypatch):
 def scheduler(installation, monkeypatch):
     root, config = installation
     instance = object.__new__(manager.MaaEndManager)
+    instance.maintenance = False
     instance.script_config = config
     instance.script_info = SimpleNamespace(script_id="test-script", log="")
     instance.task_info = SimpleNamespace(mode="AutoProxy", task_id="test")
@@ -534,7 +534,8 @@ async def test_early_resource_rejection_restores_interface_and_releases_both_loc
     config = MaaEndConfig.model_validate(
         {"Info": {"Path": str(root)}, "Update": {"TakeoverEnabled": True}}
     )
-    script_id = uuid.uuid4()
+    await config.activate()
+    script_id = config.uid
     task = SimpleNamespace(mode="AutoProxy", task_id="test")
     info = SimpleNamespace(
         task_info=task, script_id=str(script_id), user_list=[], status="等待", log=""
@@ -542,11 +543,9 @@ async def test_early_resource_rejection_restores_interface_and_releases_both_loc
     instance = manager.MaaEndManager(info)
     instance.check = AsyncMock(return_value="unsupported controller")
     lock, unlock = AsyncMock(return_value="ticket"), AsyncMock()
-    monkeypatch.setattr(MaaEndConfig, "lock_x", lock)
+    monkeypatch.setattr(MaaEndConfig, "try_lock_x", lock)
     monkeypatch.setattr(MaaEndConfig, "unlock", unlock)
-    monkeypatch.setattr(
-        manager, "Config", SimpleNamespace(ScriptConfig={script_id: config})
-    )
+    monkeypatch.setattr(manager.Config, "ScriptConfig", {script_id: config})
     monkeypatch.setattr(manager.MaaEndResourceLoader, "get_cached", Mock())
     monkeypatch.setattr(
         manager, "load_maaend_controller_protocol", lambda *args: "Win32"

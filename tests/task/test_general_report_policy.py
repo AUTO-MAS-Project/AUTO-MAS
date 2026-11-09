@@ -1,12 +1,11 @@
-"""General 调用方的报告过滤、账号分组及与调度报告的一致性。"""
-
-from types import SimpleNamespace
+"""General 通知报告的过滤、账号分组与排版策略。"""
 
 import pytest
 
-from app.core.task_manager.manager import build_task_result_text
 from app.task.general.manager import GeneralManager
 from app.utils import LOG_TYPE_ERROR, LOG_TYPE_NORMAL
+from app.utils.common.log_box.results import LogEntry
+from tests.runtime_support import RuntimeStub as SimpleNamespace
 
 
 def build_user_result_text(users, has_uncompleted):
@@ -44,19 +43,20 @@ def test_off_keeps_summary_and_does_not_mutate_input():
     assert entries == [(LOG_TYPE_NORMAL, "✅ 成功: 邮件", 0.0)]
 
 
-def test_user_groups_and_dispatch_use_same_report():
+def test_typed_and_legacy_entries_render_identically():
+    entries = [(LOG_TYPE_NORMAL, "✅ 成功: 邮件", 0.0)]
+    typed = [LogEntry.from_legacy(entry) for entry in entries]
+    for mode in ("关闭", "逐条", "汇总"):
+        assert build_user_result_text([user(typed, mode)], False) == (
+            build_user_result_text([user(entries, mode)], False)
+        )
+
+
+def test_user_groups_keep_account_order():
     first = user([(LOG_TYPE_NORMAL, "✅ 成功: 邮件")])
     second = user([(LOG_TYPE_NORMAL, "❌ 失败: 刷本")])
     second.name, second.result, second.status = "账号 B", "未完成", "异常"
     report = build_user_result_text([first, second], True)
     assert report == (
         "账号 A: 全部完成\n✅ 成功: 邮件\n\n账号 B: 未完成\n❌ 失败: 刷本"
-    )
-    script = SimpleNamespace(
-        name="脚本", user_list=[first, second], log="原始日志", result="旧摘要"
-    )
-    assert build_task_result_text([script]) == (
-        "脚本：\n\n    已完成账号数：1；未完成账号数：1\n\n"
-        "    账号 A: 全部完成\n    ✅ 成功: 邮件\n\n"
-        "    账号 B: 未完成\n    ❌ 失败: 刷本"
     )

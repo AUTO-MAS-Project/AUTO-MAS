@@ -11,21 +11,28 @@ from datetime import date, datetime, timezone
 import pytest
 
 from app.core.script_update import ScriptUpdateRequest, run_script_update
-from app.core.task_manager.manager import Task, TaskInfo
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import (
+    LogRecord,
+    ScriptItem,
+    TaskExecuteBase,
+    TaskItem,
+    TaskMode,
+    UserItem,
+)
 from app.services import script_install
 from app.task.base import ScriptAutoProxyBase
 from app.utils.common.process import runner
+from tests.task_stop_support import StopTask, add_script
 
 
 def start_task(operation):
-    class ControlledTask(Task):
-        async def _run_main_task(self):
+    class ControlledTask(StopTask):
+        async def main_task(self):
             await operation(self)
 
-    info = TaskInfo("AutoProxy", str(uuid.uuid4()), None, None, None)
-    task = ControlledTask(info, [], manager_factories={})
-    task.execute()
+    info = TaskItem(info={"mode": TaskMode.AUTO_PROXY})
+    task = ControlledTask(info)
+    task.start()
     return task
 
 
@@ -46,8 +53,10 @@ async def test_task_stop_preserves_inflight_maintenance_until_thread_exits():
 
         def __init__(self):
             super().__init__()
-            self.script_info = ScriptItem(script_id, "test", "运行")
-            self.cur_user_item = UserItem("u", "test", "运行")
+            self.script_info = ScriptItem(
+                script_id=script_id, name="test", status="运行"
+            )
+            self.cur_user_item = UserItem(user_id="u", name="test", status="运行")
             self.cur_user_log = LogRecord()
 
         async def main_task(self):
@@ -69,7 +78,7 @@ async def test_task_stop_preserves_inflight_maintenance_until_thread_exits():
         async with asyncio.timeout(3):
             while not entered.is_set():
                 await asyncio.sleep(0.01)
-        task.cancel()
+        task.request_stop()
         await asyncio.wait_for(task.accomplish.wait(), 2)
         await asyncio.wait_for(proxy.accomplish.wait(), 2)
         assert await Proxy()._detect_game_maintenance(detect) is None
@@ -82,8 +91,8 @@ async def test_task_stop_preserves_inflight_maintenance_until_thread_exits():
         assert len(calls) == 2
     finally:
         release.set()
-        task.cancel()
-        await asyncio.gather(task._execution_root, return_exceptions=True)
+        task.request_stop()
+        await asyncio.gather(task._task, return_exceptions=True)
 
 
 @pytest.mark.asyncio
@@ -135,7 +144,7 @@ async def test_update_deadline_kills_installer_before_releasing_install_lock(
     task = start_task(run)
     try:
         await asyncio.wait_for(ready.wait(), 3)
-        task.cancel()
+        task.request_stop()
         if grace < 0.3:
             await asyncio.wait_for(update_ended.wait(), 1)
             assert owned[0].returncode is None
@@ -155,8 +164,8 @@ async def test_update_deadline_kills_installer_before_releasing_install_lock(
         with script_install.installation_access(tmp_path):
             pass
     finally:
-        task.cancel()
-        await asyncio.gather(task._execution_root, return_exceptions=True)
+        task.request_stop()
+        await asyncio.gather(task._task, return_exceptions=True)
         for process in owned:
             if process.returncode is None:
                 process.kill()
@@ -192,7 +201,7 @@ async def test_stop_deadline_keeps_late_creation_reapable(monkeypatch):
     task = start_task(run)
     try:
         await asyncio.wait_for(entered.wait(), 2)
-        task.cancel()
+        task.request_stop()
         await asyncio.wait_for(task.accomplish.wait(), 2)
         assert all(not item.done() for item in pending)
         release.set()
@@ -202,8 +211,8 @@ async def test_stop_deadline_keeps_late_creation_reapable(monkeypatch):
         assert created[0].returncode is not None
     finally:
         release.set()
-        task.cancel()
-        await asyncio.gather(task._execution_root, return_exceptions=True)
+        task.request_stop()
+        await asyncio.gather(task._task, return_exceptions=True)
         for process in created:
             if process.returncode is None:
                 process.kill()
@@ -295,13 +304,13 @@ async def test_force_stopped_modavd_does_not_restart_instance_cleanup(monkeypatc
     task = start_task(run)
     try:
         await asyncio.wait_for(ready.wait(), 3)
-        task.cancel()
+        task.request_stop()
         await asyncio.wait_for(task.accomplish.wait(), 2)
         assert not cleanup_calls
         await asyncio.wait_for(created[0].wait(), 2)
     finally:
-        task.cancel()
-        await asyncio.gather(task._execution_root, return_exceptions=True)
+        task.request_stop()
+        await asyncio.gather(task._task, return_exceptions=True)
 
 
 @pytest.mark.asyncio
@@ -400,7 +409,7 @@ async def test_file_worker_retains_lock_after_task_stop_until_thread_really_exit
         async with asyncio.timeout(2):
             while not entered.is_set():
                 await asyncio.sleep(0.01)
-        task.cancel()
+        task.request_stop()
         await asyncio.wait_for(task.accomplish.wait(), 2)
         assert not stopped.is_set()
         with pytest.raises(script_install.InstallUnsafeError):
@@ -418,8 +427,8 @@ async def test_file_worker_retains_lock_after_task_stop_until_thread_really_exit
             assert (tmp_path / "copied").read_text() == "complete"
     finally:
         release.set()
-        task.cancel()
-        await asyncio.gather(task._execution_root, return_exceptions=True)
+        task.request_stop()
+        await asyncio.gather(task._task, return_exceptions=True)
         assert await asyncio.to_thread(stopped.wait, 2)
 
 
@@ -456,8 +465,7 @@ async def test_maafw_prepare_retains_reservation_after_forced_stop(
     config = MaaFWConfig()
 
     async def run(task):
-        item = ScriptItem(str(uuid.uuid4()), "test", "运行")
-        task.task_info.script_list = [item]
+        item = await add_script(task.task_info, str(uuid.uuid4()))
         manager = module.MaaFWEmbeddedManager(item)
         manager.script_config = config
         await manager._ensure_project_environment("BeforeRun")
@@ -467,7 +475,7 @@ async def test_maafw_prepare_retains_reservation_after_forced_stop(
         async with asyncio.timeout(2):
             while not entered.is_set():
                 await asyncio.sleep(0.01)
-        task.cancel()
+        task.request_stop()
         await asyncio.wait_for(task.accomplish.wait(), 2)
         assert not stopped.is_set()
         key = await try_reserve_project_path(tmp_path)
@@ -481,8 +489,8 @@ async def test_maafw_prepare_retains_reservation_after_forced_stop(
         await release_project_path(key)
     finally:
         release.set()
-        task.cancel()
-        await asyncio.gather(task._execution_root, return_exceptions=True)
+        task.request_stop()
+        await asyncio.gather(task._task, return_exceptions=True)
         assert await asyncio.to_thread(stopped.wait, 2)
 
 
@@ -492,7 +500,7 @@ async def test_started_account_finalizer_saves_history_once_with_bounded_confirm
     monkeypatch, isolated_app_paths, times_out
 ):
     import app.core.history as history_module
-    import app.core.task_manager.manager as manager_module
+    import app.task.history_core as manager_module
     from app.models.schema import HistoryWrite
 
     store = history_module.HistoryStore()
@@ -510,7 +518,7 @@ async def test_started_account_finalizer_saves_history_once_with_bounded_confirm
         async def final_task(self):
             entered.set()
             await release.wait()
-            await self.info.save_user_history(
+            await self.history.save_user_history(
                 [
                     HistoryWrite(
                         time=datetime(2026, 1, 2, tzinfo=timezone.utc),
@@ -532,21 +540,21 @@ async def test_started_account_finalizer_saves_history_once_with_bounded_confirm
 
     async def run(task):
         account.info = task.task_info
-        account.user = UserItem("u", "u", "完成")
-        account.script = ScriptItem("s", "s", "完成", [account.user])
+        account.script = await add_script(task.task_info, "s", "u")
+        account.user = account.script.user_list[0]
         await task.spawn(account)
 
     task = start_task(run)
     try:
         await asyncio.wait_for(entered.wait(), 2)
-        task.cancel()
+        task.request_stop()
         if not times_out:
             # 让停止驱动真正开始，再完成账号本地收尾。
             await asyncio.sleep(0.02)
             release.set()
         await asyncio.wait_for(task.accomplish.wait(), 3)
         release.set()
-        await asyncio.gather(task._execution_root, return_exceptions=True)
+        await asyncio.gather(task._task, return_exceptions=True)
         result = await store.search(
             start_date=date(2026, 1, 1), end_date=date(2026, 1, 3), mode="DAILY"
         )
@@ -563,8 +571,8 @@ async def test_started_account_finalizer_saves_history_once_with_bounded_confirm
         assert check.status == ("timed_out" if times_out else "passed")
     finally:
         release.set()
-        task.cancel()
-        await asyncio.gather(task._execution_root, return_exceptions=True)
+        task.request_stop()
+        await asyncio.gather(task._task, return_exceptions=True)
         await store.close()
 
 
@@ -642,7 +650,7 @@ async def test_cancelled_runner_preparation_releases_successful_resource_once(
                 await asyncio.sleep(0.01)
             if not late_success:
                 await task._stop_scope._updates_idle.wait()
-        task.cancel()
+        task.request_stop()
         await asyncio.wait_for(task.accomplish.wait(), 2)
         if late_success:
             assert cancelled.is_set()
@@ -664,5 +672,5 @@ async def test_cancelled_runner_preparation_releases_successful_resource_once(
         assert not binding.retained_versions(tmp_path)
     finally:
         release.set()
-        task.cancel()
-        await asyncio.gather(task._execution_root, return_exceptions=True)
+        task.request_stop()
+        await asyncio.gather(task._task, return_exceptions=True)

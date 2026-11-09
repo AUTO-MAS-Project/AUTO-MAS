@@ -28,7 +28,7 @@ import threading
 from collections.abc import Sequence
 from pathlib import Path
 
-from app.services import System
+from app.utils import process
 from app.utils import update_files as _utils_update_files
 
 from .common import (
@@ -64,10 +64,10 @@ async def _release_install_dir(game_exe: Path) -> str | None:
     被关掉，也不会被当成占用者；游戏目录下别的进程挡路时由落地的 PermissionError 说。
     """
 
-    if not await System.is_process_running(game_exe):
+    if not await process.is_process_running(game_exe):
         return None
     logger.info(f"终末地客户端正在运行，先请求退出: {game_exe}")
-    if await System.kill_process(game_exe):
+    if await process.kill_process(game_exe):
         return None
     return "终末地客户端没能退出，请手动退出游戏后重试"
 

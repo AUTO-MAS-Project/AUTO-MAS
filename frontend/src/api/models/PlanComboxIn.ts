@@ -20,4 +20,3 @@ export namespace PlanComboxIn {
         UNIVERSAL = 'universal',
     }
 }
-

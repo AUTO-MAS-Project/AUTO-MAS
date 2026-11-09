@@ -182,7 +182,7 @@ async def test_execution_failure_logs_name_builtin_and_custom_tasks(
         )
 
         async def native_finished():
-            proxy.cur_user_log.status = "Success!"
+            await proxy.cur_user_log.set_state(status="Success!")
 
         proxy._wait_for_bgi_result = AsyncMock(side_effect=native_finished)
         monkeypatch.setattr(module, "ensure_game_updated", AsyncMock(return_value=True))

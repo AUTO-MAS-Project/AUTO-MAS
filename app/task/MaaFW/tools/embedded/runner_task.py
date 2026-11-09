@@ -42,7 +42,7 @@ from app.models.schema import (
     WSTaskNoticeData,
 )
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
-from app.services import execute_script_task, power
+from app.services import execute_script_task
 from app.task.emulator_core import close_emulator, resolve_host_adb
 from app.task.MaaFW.tools.core.controller_win32.service import (
     MaaFWWin32ControllerService,
@@ -122,7 +122,7 @@ from app.task.MaaFW.tools.core.worker_protocol import (
     forwards_to_ui,
     strip_ansi,
 )
-from app.utils import UTC4, ProcessInfo, ProcessManager, get_logger
+from app.utils import UTC4, ProcessInfo, ProcessManager, get_logger, power
 from app.utils import game_apk as _utils_game_apk
 from app.utils import io as _utils_io
 from app.utils.common.process.runner import create_subprocess
@@ -613,7 +613,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._extra_attempts = 0
         self._release_check_task: asyncio.Task[Any] | None = None
         # 结构化运行记录（每次尝试一份）：worker 推的阶段 / 任务起止 + 宿主自己的阶段，
-        # 进 history 的 data、调度台进度与推送里单列的原地打转 / 单任务超时。
+        # 进 history 的 data 与推送里单列的原地打转 / 单任务超时。
         self._run_record = MaaFWRunRecorder()
 
     async def check(self) -> str:
@@ -627,14 +627,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self.script_config.Run.ProxyTimesLimit != 0
             and proxy_times >= self.script_config.Run.ProxyTimesLimit
         ):
-            self.cur_user_item.status = "跳过"
+            await self.cur_user_item.set_state(status="跳过")
             return "今日代理次数已达上限，跳过该账号"
 
         if not await self._try_enter_project_path():
             # 项目被占着没跑成：记「异常」而不是「跳过」。「跳过」不进异常用户，
             # 脚本会记「完成」、汇总是 0 完成 / 0 未完成，「仅失败时」也不推送。
             # 与 manager 层「正在切换版本，已跳过」同一口径。
-            self.cur_user_item.status = "异常"
+            await self.cur_user_item.set_state(status="异常")
             self.project_busy_skipped = True
             if is_project_updating(self.project_path):
                 return "项目正在更新，本次未运行该账号"
@@ -677,11 +677,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     game_path_error,
                 ) = state
             except Exception as exc:
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
                 return f"无法构建 MaaFW 运行计划，请检查项目和任务配置: {exc}"
 
             if not self.run_plan.tasks:
-                self.cur_user_item.status = "跳过"
+                await self.cur_user_item.set_state(status="跳过")
                 return _period_all_done_message(self.run_plan)
 
             # 本轮前面的用户已经撞上同一资源的停服维护：不再拉起游戏 / 模拟器，
@@ -689,7 +689,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             maintenance = self.signal_tracker.maintenance(self.run_plan.resourceName)
             if maintenance is not None:
                 maintenance.add_user(str(self.cur_user_uid), self.cur_user_item.name)
-                self.cur_user_item.status = "跳过"
+                await self.cur_user_item.set_state(status="跳过")
                 self.maintenance_skipped = True
                 return MAINTENANCE_SKIP_MESSAGE
 
@@ -697,12 +697,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 emulator_id = self.script_config.Emulator.Id
                 emulator_index = self.script_config.Emulator.Index
                 if emulator_id == "-" or emulator_index in ("", "-"):
-                    self.cur_user_item.status = "异常"
+                    await self.cur_user_item.set_state(status="异常")
                     return (
                         "当前 MaaFW controller 需要 ADB，请在托管管理页选择模拟器和实例"
                     )
             elif game_path_error is not None:
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
                 return game_path_error
 
             # 项目自带的 MaaFramework 与本机架构不符时 worker 里必然加载失败；在这里先说清楚
@@ -711,7 +711,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._describe_runtime_architecture_mismatch
             )
             if architecture_error:
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
                 return architecture_error
 
             keep_reservation = True
@@ -731,18 +731,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.user_start_time = start_time
         self.cur_user_log_started_at = start_time
         self.cur_user_log = LogRecord()
-        self.cur_user_item.add_log_record(start_time, self.cur_user_log)
+        self.cur_user_log = await self.cur_user_item.add_log_record(
+            start_time, self.cur_user_log
+        )
+        await self.cur_user_log.append_content(
+            *self.project_update_logs, *self._pending_user_log
+        )
         content = self.cur_user_log.content
-        content.extend(self.project_update_logs)
-        content.extend(self._pending_user_log)
         self._pending_user_log.clear()
         if content:
-            self.script_info.log = "".join(content[-80:])
-        # 窗口在这里重建，行号也得跟着回到这份日志的开头；更新日志本身就超过 80 行时，
-        # 与 _append_log 用同一套算法把滑出去的行数补上。
-        self.script_info.log_first_line = (
-            sum(chunk.count("\n") for chunk in content[:-80]) + 1
-        )
+            await self.script_info.set_log("".join(content))
 
     async def main_task(self) -> None:
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -778,17 +776,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 await self.prepare()
                 self._append_log(self.check_result)
                 if self.cur_user_log is not None:
-                    self.cur_user_log.status = self.check_result
+                    await self.cur_user_log.set_state(status=self.check_result)
             else:
                 # 没有本账号的日志：窗口只剩检查结果这一行，行号回到 1，
                 # 不接着上一个账号的行号往下数
-                self.script_info.log_first_line = 1
-                self.script_info.log = self.check_result
+                await self.script_info.set_log(self.check_result)
             return
 
         await self._mark_run_started()
         await self.prepare()
-        self.cur_user_item.status = "运行"
+        await self.cur_user_item.set_state(status="运行")
         logger.info(f"开始代理 MaaFW 账号: {self.cur_user_uid}")
         if self.run_plan is not None:
             selected_preset = str(
@@ -841,7 +838,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 每次尝试单独一份日志（界面与 history 都分开）：第一次沿用 prepare()
             # 建的那份，开头有更新检查与运行总览；之后每次另起。
             if index > 0:
-                self._start_attempt_log()
+                await self._start_attempt_log()
 
             if rerun_note is not None:
                 header, current_label = rerun_note
@@ -895,7 +892,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     index + 1, [], message, category=CATEGORY_GAME_UPDATE_REQUIRED
                 )
                 if self.cur_user_log is not None:
-                    self.cur_user_log.status = message
+                    await self.cur_user_log.set_state(status=message)
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
@@ -945,7 +942,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         warning=True,
                     )
                 if self.cur_user_log is not None:
-                    self.cur_user_log.status = message
+                    await self.cur_user_log.set_state(status=message)
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
@@ -969,7 +966,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if result.success:
                 self.run_complete = True
                 if self.cur_user_log is not None:
-                    self.cur_user_log.status = "Success!"
+                    await self.cur_user_log.set_state(status="Success!")
                 completed_task_labels = _format_completed_task_labels(
                     self.run_plan,
                     result.completedTasks,
@@ -1010,7 +1007,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     if total > 1 and done > 0:
                         message += f"（共 {total} 个任务，完成 {done} 个）"
                 if self.cur_user_log is not None:
-                    self.cur_user_log.status = message
+                    await self.cur_user_log.set_state(status=message)
                 self._append_log(message, warning=True)
                 self._record_attempt(
                     index + 1,
@@ -1070,7 +1067,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self._user_finalized:
             return
         self._user_finalized = True
-        self.task_info.begin_user_history_capture(
+        self.history.begin_user_history_capture(
             self.script_info,
             self.cur_user_item,
             failed=self.check_result == "Pass"
@@ -1134,17 +1131,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await self.cur_user_config.commit()
             self.cur_user_config.Data.LastProxyStatus = "成功"
             await self.cur_user_config.commit()
-            self.cur_user_item.status = "完成"
+            await self.cur_user_item.set_state(status="完成")
         elif self.run_signal == SERVER_MAINTENANCE:
             # 维护是跳过不是失败：代理次数、剩余天数不动，下次定时照常再跑
             self.cur_user_config.Data.LastProxyStatus = MAINTENANCE_LAST_STATUS
             await self.cur_user_config.commit()
-            self.cur_user_item.status = "跳过"
+            await self.cur_user_item.set_state(status="跳过")
         else:
             self.cur_user_config.Data.LastProxyStatus = "失败"
             await self.cur_user_config.commit()
             if self.cur_user_item.status == "运行":
-                self.cur_user_item.status = "异常"
+                await self.cur_user_item.set_state(status="异常")
 
         await self._save_user_history()
         if self.run_complete:
@@ -1153,13 +1150,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         await self._release_project_path()
 
     async def on_crash(self, e: Exception) -> None:
-        self.cur_user_item.status = "异常"
-        self.cur_user_item.progress = None
+        await self.cur_user_item.set_state(status="异常")
         logger.exception(f"MaaFW 内置运行任务出现异常: {e}")
         # 还没进第一次尝试就崩了（prepare、脚本前任务出错）时推送靠它说原因
         self._crash_message = str(e)
         if self.cur_user_log is not None:
-            self.cur_user_log.status = f"MaaFW 内置运行任务出现异常: {e}"
+            await self.cur_user_log.set_state(status=f"MaaFW 内置运行任务出现异常: {e}")
             if self.cur_user_log_started_at is not None:
                 self._history_statuses[id(self.cur_user_log)] = "error"
         try:
@@ -2274,7 +2270,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 result_payload = event["data"]
                 result_received.set()
             elif event_type == RUN_RECORD_EVENT_TYPE:
-                # 结构化运行记录：只进记录与调度台进度，不进日志
+                # 结构化运行记录：只进专项记录，不进日志
                 self._on_run_record_event(event.get("data"))
             elif event_type == "error":
                 message = str(event.get("message") or "")
@@ -2426,8 +2422,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await drain_readers(propagate_errors=False)
             if event_server is not None:
                 event_server.close()
-            # worker 已退出：调度台不再显示「第几个任务」，重试时由新 worker 重新推
-            self.cur_user_item.progress = None
             if framework_log_writer is not None:
                 try:
                     await asyncio.to_thread(framework_log_writer.close)
@@ -3466,7 +3460,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         game_closed = await self._close_game()
         return emulator_closed and game_closed
 
-    def _start_attempt_log(self) -> None:
+    async def _start_attempt_log(self) -> None:
         """重试前另起一份日志记录，与 MAA 等专项一样每次尝试单独成段。
 
         界面日志从这一次重新显示；history 里的 ``.log`` / ``.json``、``.worker.log``、
@@ -3477,9 +3471,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         start_time = datetime.now().astimezone()
         self.cur_user_log_started_at = start_time
         self.cur_user_log = LogRecord()
-        self.cur_user_item.add_log_record(start_time, self.cur_user_log, retry=True)
+        self.cur_user_log = await self.cur_user_item.add_log_record(
+            start_time, self.cur_user_log
+        )
         # 这份日志从零开始，行号也要回到 1，否则会接着上一个账号的行号往下数
-        self.script_info.log_first_line = 1
 
     def _run_record_call(self, action: Callable[[], Any]) -> Any:
         """运行记录是旁路：记录这一侧出了错只记后端日志、返回 None，不影响运行与收尾。"""
@@ -3520,16 +3515,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return HistorySnapshotStatistic(value=value) if value is not None else None
 
     def _on_run_record_event(self, data: Any) -> None:
-        """worker 推来的阶段 / 任务起止：归进本次尝试的记录，任务开始时刷新调度台进度。"""
+        """将 worker 推来的阶段、任务起止事件归入本次尝试的专项记录。"""
 
-        progress = self._run_record_call(lambda: self._run_record.apply(data))
-        record = self._run_record.current
-        if record is not None and any(
-            task.outcome == "succeeded" for task in record.tasks
-        ):
-            self.cur_user_item.mark_task_completed()
-        if progress is not None:
-            self.cur_user_item.progress = progress
+        self._run_record_call(lambda: self._run_record.apply(data))
 
     def run_incident_notice(self) -> str:
         """本次运行里被原地打转检测或单任务时限停下的任务：进用户与脚本两份报告。
@@ -3591,7 +3579,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             signal=signal,
         )
         if self.cur_user_log is not None:
-            self.cur_user_log.status = message
+            await self.cur_user_log.set_state(status=message)
 
         project_name = ""
         if self.interface_model is not None:
@@ -3783,7 +3771,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             record.attachments.extend(self._history_attachments.get(id(log_item), []))
             records.append(record)
         if records:
-            await self.task_info.save_user_history(
+            await self.history.save_user_history(
                 records,
                 script=self.script_info,
                 user=self.cur_user_item,
@@ -4059,14 +4047,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self.cur_user_log is None:
             self._pending_user_log.append(_format_user_log_line(message))
             return
-        content = self.cur_user_log.content
-        content.append(_format_user_log_line(message))
-        kept = content[-80:]
-        self.script_info.log = "".join(kept)
-        # 滑出窗口的行仍然占着行号：界面据此从 81 接着往下数，而不是每轮都把
-        # 最后 80 条重新编号成 1-80。
-        dropped_lines = sum(chunk.count("\n") for chunk in content[:-80])
-        self.script_info.log_first_line = dropped_lines + 1
+        record = self.cur_user_log
+
+        async def publish():
+            await record.append_content(_format_user_log_line(message))
+            content = record.content
+            await self.script_info.set_log("".join(content))
+
+        self.callbacks.submit(publish())
 
 
 def _sweep_legacy_runner_jobs() -> None:

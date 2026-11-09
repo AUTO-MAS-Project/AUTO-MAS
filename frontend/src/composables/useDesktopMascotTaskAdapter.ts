@@ -1,4 +1,4 @@
-import { Service, TaskCreateIn } from '@/api'
+import { configuredTaskRequest, fetchTaskTargets } from './useTaskOptions'
 import { useTaskApi } from './useTaskApi'
 import {
   getTaskRuntimeStates,
@@ -37,15 +37,18 @@ export function useDesktopMascotTaskAdapter(): {
   return {
     control: {
       list() {
-        const request = Service.getTaskComboxApiInfoComboxTaskPost()
+        let cancelled = false
+        const request = fetchTaskTargets()
         return {
           result: request.then(response => {
-            if (response.code !== 200) throw new Error(response.message)
-            return response.data.flatMap(item =>
+            if (cancelled) throw new DOMException('Aborted', 'AbortError')
+            return response.flatMap(item =>
               item.value ? [{ taskId: item.value, label: item.label, enabled: true }] : []
             )
           }),
-          cancel: () => request.cancel(),
+          cancel: () => {
+            cancelled = true
+          },
         }
       },
       running: () =>
@@ -59,10 +62,9 @@ export function useDesktopMascotTaskAdapter(): {
             enabled: !task.stopping,
           })),
       start: async taskId => {
-        const response = await taskApi.startTask(
-          { taskId, mode: TaskCreateIn.mode.AUTO_PROXY },
-          { source: 'mascot' }
-        )
+        const response = await taskApi.startTask(await configuredTaskRequest(taskId), {
+          source: 'mascot',
+        })
         return { taskId: response.taskId }
       },
       stop: taskApi.stopTask,

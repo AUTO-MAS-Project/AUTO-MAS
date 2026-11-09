@@ -24,9 +24,13 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING
 
 from app.models.notification.channel import NotificationCommandAction
+
+if TYPE_CHECKING:
+    from app.config import ConfigCollection
+    from app.models.config import QueueConfig, ScriptConfigType
 
 
 async def execute_notification_command(
@@ -37,6 +41,7 @@ async def execute_notification_command(
 
     from app.core import Config, TaskManager
 
+    targets: ConfigCollection[ScriptConfigType] | ConfigCollection[QueueConfig]
     if action == "retry_script":
         targets = Config.ScriptConfig
         label = "托管"
@@ -51,15 +56,17 @@ async def execute_notification_command(
     if len(matches) > 1:
         return f"存在同名{label}，请先在 MAS 中改为不同名称后重试。"
     uid = matches[0]
-    mode: Literal["AutoProxy", "CycleRun"] = "AutoProxy"
-    if action == "start_queue" and Config.QueueConfig[uid].Info.CycleEnabled:
-        mode = "CycleRun"
+    from app.models.task import TaskMode
+
+    selection = (
+        {"uid": str(uid)}
+        if action == "start_queue"
+        else {"uid": "-", "children": {0: {"uid": str(uid)}}}
+    )
     try:
-        await TaskManager.add_task(mode=mode, id=str(uid))
+        await TaskManager.start(TaskMode.AUTO_PROXY, {0: selection})
     except (ValueError, RuntimeError):
         return f"暂时无法启动，请在 MAS 中检查{label}状态或等待当前任务结束。"
     if action == "retry_script":
-        return "已提交托管重试，将按当前自动代理配置运行。"
-    if mode == "CycleRun":
-        return "已提交循环队列启动，将按当前循环配置运行。"
+        return "已提交脚本重试，将按当前自动代理配置运行。"
     return "已提交队列启动，将按当前队列配置运行一次。"

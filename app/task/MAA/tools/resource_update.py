@@ -583,12 +583,15 @@ def _resource_access_lock(install: Path) -> _MachineLock:
     )
 
 
-async def acquire_resource_access_lock(install: Path) -> _MachineLock | None:
+async def acquire_resource_access_lock(
+    install: Path, *, progress: _Progress | None = None
+) -> _MachineLock | None:
     """取得本安装的跨进程访问锁；调用方负责在子任务结束后释放。
 
     运行与配置会话持有至 MAA 子任务结束，其他 MAS 更新器跳过被持有的安装。
     争用只作用于本安装，下载阶段不持有访问锁；锁不可用时更新器也不会写入。
     """
+    waiting = False
     while True:
         lock = _resource_access_lock(install)
         acquired = lock.__enter__()
@@ -596,6 +599,9 @@ async def acquire_resource_access_lock(install: Path) -> _MachineLock | None:
             return acquired
         if not lock.contended:
             return None
+        if not waiting:
+            await _report(progress, "等待 MAA 安装访问锁释放（占用者未知）。")
+            waiting = True
         await asyncio.sleep(0.1)
 
 

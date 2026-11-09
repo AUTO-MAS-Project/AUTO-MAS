@@ -24,4 +24,3 @@ export namespace PlanIndexItem {
         UNIVERSAL_PLAN_CONFIG = 'UniversalPlanConfig',
     }
 }
-

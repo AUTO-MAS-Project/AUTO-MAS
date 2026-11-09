@@ -20,35 +20,30 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.models.config import SrcConfig
-from app.models.script_contracts import ScriptConfigHandler
-from app.task.registration import ManagerBuildContext, ScriptRegistration
+from app.models.script_contracts import ScriptConfigHandler, ScriptEmulatorBinding
+from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
     from app.models.task import ScriptItem, TaskExecuteBase
     from app.utils.common.config.restore import ConfigRestorePool
 
 
-def build_manager(
-    script_item: ScriptItem, context: ManagerBuildContext
-) -> TaskExecuteBase:
-    from .manager import build_src_manager
+def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
+    from .manager import SrcManager
 
-    return build_src_manager(
-        script_item, root_paths=context.root_paths, reserve_root=context.reserve_root
-    )
+    return SrcManager(script_item)
 
 
 def build_config_handler() -> ScriptConfigHandler:
     from app.models.config import SrcUserConfig
-    from app.task.SRC.resources import EMULATOR_BINDING as src_emulator_binding
-    from app.task.SRC.resources import declare_task_resources as src_task_resources
     from app.task.SRC.user_update import prepare_user_update as prepare_src_user_update
 
     return ScriptConfigHandler(
         user_config_class=SrcUserConfig,
         prepare_user_update=prepare_src_user_update,
-        task_resources=src_task_resources,
-        emulator_binding=src_emulator_binding,
+        emulator_binding=ScriptEmulatorBinding(
+            group="Emulator", id_field="Id", index_field="Index"
+        ),
     )
 
 

@@ -1,6 +1,5 @@
 """唤醒冷启动迟到时按原有宽限补跑，普通启动不补过往定时。"""
 
-import asyncio
 from datetime import datetime, timedelta
 
 import pytest
@@ -26,10 +25,8 @@ from tests.config_support import activate_config
 async def test_first_timed_check_after_cold_start(
     isolated_app_paths, monkeypatch, launch_kind, delay, expected
 ):
-    import app.services as services
     from app.core import timer
-    from app.core.task_manager import manager
-    from app.services.common.system import _SystemHandler
+    from app.core.timer import _MainTimer
 
     planned = datetime(2026, 11, 2, 0, 3).astimezone()
     now = planned + timedelta(minutes=delay)
@@ -52,35 +49,24 @@ async def test_first_timed_check_after_cold_start(
         # 定时恢复发生在周日，计划属于周一；后端准备时间不改变恢复来源。
         resumed_at = planned - timedelta(minutes=5) if launch_kind == "resume" else now
         monkeypatch.setenv("AUTO_MAS_SYSTEM_RESUME", resumed_at.isoformat())
-    handler = _SystemHandler()
-    monkeypatch.setattr(services, "System", handler)
-    monkeypatch.setattr(manager, "System", handler)
+    handler = _MainTimer()
     monkeypatch.setattr(timer, "_local_now", lambda: now)
     dispatched = []
 
-    async def receive_task(mode, queue_id, **kwargs):
-        dispatched.append((mode, queue_id, kwargs["trigger_source"]))
+    async def receive_task(mode, tasks, **kwargs):
+        dispatched.append((mode, tasks[0]["uid"], kwargs["trigger"].value))
+        queue.Data.LastTimedStart = now
+        await queue.commit()
 
     # 调度器的结果是向任务管理器派发；不在这个边界启动脚本或游戏。
-    monkeypatch.setattr(timer.TaskManager, "add_task", receive_task)
-    main_timer = timer._MainTimer()
+    monkeypatch.setattr(timer.TaskManager, "start", receive_task)
+    main_timer = handler
     await main_timer.timed_start()
     await main_timer.timed_start()
     await timer._MainTimer().timed_start()
-    assert dispatched == [("AutoProxy", str(uid), "scheduled_task")] * expected
+    assert dispatched == [("AutoProxy", str(uid), "timed")] * expected
     if expected:
-        assert queue.Data.LastTimedStart == planned
-    if launch_kind == "resume":
-        # 定时派发写入 LastTimedStart 后，启动队列也必须共享原来的恢复判定。
-        await asyncio.wait_for(
-            manager._TaskManager().start_startup_queue(), timeout=0.5
-        )
-    elif launch_kind == "manual_resume":
-        # 普通恢复仍进入原有的十秒启动等待，而不是被唤醒分支提前跳过。
-        with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(
-                manager._TaskManager().start_startup_queue(), timeout=0.05
-            )
+        assert queue.Data.LastTimedStart == now
 
 
 @pytest.mark.asyncio
@@ -114,15 +100,17 @@ async def test_cold_wakeup_does_not_replay_slots_before_last_dispatch(
     monkeypatch.setattr(timer, "_local_now", lambda: now)
     dispatched = []
 
-    async def receive_task(mode, queue_id, **kwargs):
-        dispatched.append((mode, queue_id, kwargs["trigger_source"]))
+    async def receive_task(mode, tasks, **kwargs):
+        dispatched.append((mode, tasks[0]["uid"], kwargs["trigger"].value))
+        queue.Data.LastTimedStart = now
+        await queue.commit()
 
-    monkeypatch.setattr(timer.TaskManager, "add_task", receive_task)
+    monkeypatch.setattr(timer.TaskManager, "start", receive_task)
     main_timer = timer._MainTimer()
     await main_timer.timed_start()
     assert dispatched == []
     assert queue.Data.LastTimedStart == last_run
     now = last_run + timedelta(minutes=10)
     await main_timer.timed_start()
-    assert dispatched == [("AutoProxy", str(uid), "scheduled_task")]
+    assert dispatched == [("AutoProxy", str(uid), "timed")]
     assert queue.Data.LastTimedStart == now

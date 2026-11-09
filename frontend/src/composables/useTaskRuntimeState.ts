@@ -1,3 +1,6 @@
+import { TaskTriggerReason } from '@/api'
+import { applyTaskLogUpdate } from './taskLogBuffer'
+import { projectTaskTree } from './taskTreeProjection'
 import { computed, ref } from 'vue'
 import { realtimeSnapshotApi, type TaskRuntimeSnapshotItem } from '@/services/realtimeSnapshotApi'
 import { connectionState, onConnected } from '@/services/websocket/connection'
@@ -7,14 +10,16 @@ import {
   WS_TASK_COMPLETED,
   WS_TASK_CREATED,
   WS_TASK_INFO_UPDATED,
+  WS_TASK_LOG_UPDATED,
+  WS_TASK_NOTICE,
+  type WSTaskLogUpdatedData,
+  type WSTaskNoticeData,
   type WSTaskCompletedData,
   type WSTaskCreatedData,
-  type WSTaskCyclePreviewData,
   type WSTaskMode,
   type WSTaskScriptIdentityData,
   type WSTaskScriptInfoData,
 } from '@/services/websocket/types'
-import { FAILED_TASK_STATUSES, scriptHasStatus } from '@/utils/taskFailures'
 
 const logger = window.electronAPI.getLogger('任务运行状态')
 
@@ -26,22 +31,18 @@ const SNAPSHOT_MUTATION_RETRY_DELAY_MS = 500
 const SNAPSHOT_MUTATION_RETRY_LIMIT = 5
 // 快照拉取失败后延时重试一次，避免状态陈旧到下次重连
 const SNAPSHOT_FAILURE_RETRY_DELAY_MS = 3000
-const WAITING_STATUSES = new Set(['等待', '等待中'])
-const RUNNING_STATUSES = new Set(['运行', '运行中'])
 
 export interface TaskRuntimeState {
   taskId: string
   mode: WSTaskMode | null
-  queueId: string | null
   scriptId: string | null
   userId: string | null
   stopping: boolean
-  isCycle: boolean
+  trigger: TaskTriggerReason
   scripts: WSTaskScriptIdentityData[]
   taskInfo: WSTaskScriptInfoData[]
-  cycleNextList: WSTaskCyclePreviewData[]
+  /** 本轮日志的唯一缓冲与序号；标签页只绑定运行 UUID。 */
   log: string
-  /** 快照里日志对应的 seq，供调度台与后续 task.log.updated 增量衔接 */
   logSeq?: number
   logFirstLine?: number
   phase: 'created' | 'active' | 'completed'
@@ -53,37 +54,20 @@ export interface TaskRuntimeState {
   completedAt: number | null
 }
 
-export interface ScriptRuntimeStatus {
-  queued: boolean
-  running: boolean
-  lastFailed: boolean
-}
-
-/** 脚本运行状态按什么汇总：默认按脚本类型，主页卫星把通用 MFW 再按项目分开 */
-export type ScriptStatusKeyOf = (identity: WSTaskScriptIdentityData) => string
-
-/** 某个脚本最近一次结束的任务里有没有失败；seq 越大越新，同一个任务里的脚本 seq 相同 */
-export interface TerminalFailure {
-  scriptType: string
-  failed: boolean
-  seq: number
-}
-
 export type TaskRuntimeEvent =
   | { type: 'created' | 'info' | 'completed'; state: TaskRuntimeState }
   | { type: 'snapshot'; states: TaskRuntimeState[]; activeTaskIds: ReadonlySet<string> }
   | { type: 'removed'; taskId: string }
+  | { type: 'notice'; state: TaskRuntimeState; notice: WSTaskNoticeData }
 
 type TaskRuntimeListener = (event: TaskRuntimeEvent) => void | Promise<void>
 
 const taskStates = ref(new Map<string, TaskRuntimeState>())
-const scheduledScripts = ref<WSTaskScriptIdentityData[]>([])
-/** 按脚本 ID 记最近一次结束的任务有没有失败 */
-const lastTerminalFailures = ref(new Map<string, TerminalFailure>())
-let terminalFailureSeq = 0
 const listeners = new Set<TaskRuntimeListener>()
 const taskSubscriptionIds = new Map<string, string[]>()
 const residentSubscriptionIds: string[] = []
+const retainedTasks = new Set<string>()
+const resyncingLogs = new Set<string>()
 
 let bootstrapped = false
 let disposeConnectedListener: (() => void) | null = null
@@ -94,12 +78,6 @@ let mutationSequence = 0
 
 const cloneScripts = (scripts?: WSTaskScriptIdentityData[]) =>
   (scripts ?? []).map(script => ({ ...script }))
-
-const cloneTaskInfo = (taskInfo?: WSTaskScriptInfoData[]) =>
-  (taskInfo ?? []).map(script => ({
-    ...script,
-    userList: (script.userList ?? []).map(user => ({ ...user })),
-  }))
 
 const setTaskState = (state: TaskRuntimeState): void => {
   const next = new Map(taskStates.value)
@@ -134,16 +112,13 @@ const releaseTaskSubscriptions = (taskId: string): void => {
 const createUnknownTaskState = (taskId: string): TaskRuntimeState => ({
   taskId,
   mode: null,
-  queueId: null,
   scriptId: null,
   userId: null,
   stopping: false,
-  isCycle: false,
+  trigger: TaskTriggerReason.MANUAL,
   scripts: [],
   taskInfo: [],
-  cycleNextList: [],
   log: '',
-  logFirstLine: 1,
   phase: 'created',
   taskName: null,
   taskType: null,
@@ -153,17 +128,35 @@ const createUnknownTaskState = (taskId: string): TaskRuntimeState => ({
   completedAt: null,
 })
 
+const handleLogUpdated = (taskId: string, data: WSTaskLogUpdatedData): void => {
+  const state = taskStates.value.get(taskId)
+  if (!state || state.phase === 'completed') return
+  // 日志字段就地更新，不复制整张运行表，也不广播生命周期事件。
+  if (applyTaskLogUpdate(state, data) !== 'resync' || resyncingLogs.has(taskId)) return
+  resyncingLogs.add(taskId)
+  void refreshTaskRuntimeSnapshot().finally(() => resyncingLogs.delete(taskId))
+}
+
 const ensureTaskSubscriptions = (taskId: string): void => {
   if (taskSubscriptionIds.has(taskId)) return
   taskSubscriptionIds.set(taskId, [
+    subscribe({ id: taskId, type: WS_TASK_LOG_UPDATED }, message => {
+      handleLogUpdated(taskId, message.data)
+    }),
+    subscribe({ id: taskId, type: WS_TASK_NOTICE }, message => {
+      const state = taskStates.value.get(taskId)
+      if (state) emitRuntimeEvent({ type: 'notice', state, notice: message.data })
+    }),
     subscribe({ id: taskId, type: WS_TASK_INFO_UPDATED }, message => {
       mutationSequence++
       const current = taskStates.value.get(taskId)
       const state: TaskRuntimeState = {
         ...(current ?? createUnknownTaskState(taskId)),
         phase: 'active',
-        taskInfo: cloneTaskInfo(message.data.task_info),
-        cycleNextList: message.data.cycleNextList ?? [],
+        mode: message.data.info?.mode ?? null,
+        trigger: message.data.info?.trigger ?? current?.trigger ?? TaskTriggerReason.MANUAL,
+        taskInfo: projectTaskTree(message.data),
+        taskName: message.data.info?.name ?? current?.taskName ?? null,
       }
       setTaskState(state)
       emitRuntimeEvent({ type: 'info', state })
@@ -180,8 +173,7 @@ const handleTaskCreated = (data: WSTaskCreatedData): void => {
   const state: TaskRuntimeState = {
     ...(current ?? createUnknownTaskState(data.taskId)),
     mode: data.mode,
-    isCycle: data.mode === 'CycleRun',
-    queueId: data.queueId ?? null,
+    trigger: data.trigger ?? TaskTriggerReason.MANUAL,
     scriptId: data.scripts[0]?.scriptId ?? null,
     scripts: cloneScripts(data.scripts),
     phase: 'created',
@@ -203,14 +195,15 @@ const handleTaskCompleted = (taskId: string, data: WSTaskCompletedData): void =>
   const state: TaskRuntimeState = {
     ...(current ?? createUnknownTaskState(taskId)),
     phase: 'completed',
-    taskInfo: cloneTaskInfo(data.task_info),
+    taskInfo: projectTaskTree(data.task),
+    taskName: data.task.info?.name ?? current?.taskName ?? null,
+    log: current?.log ?? '',
     result: data.result,
     outcome: data.outcome,
     error: data.error ?? null,
     completedAt: Date.now(),
   }
   setTaskState(state)
-  updateLastTerminalFailures(state)
   releaseTaskSubscriptions(taskId)
   emitRuntimeEvent({ type: 'completed', state })
 }
@@ -218,27 +211,36 @@ const handleTaskCompleted = (taskId: string, data: WSTaskCompletedData): void =>
 const stateFromSnapshot = (
   item: TaskRuntimeSnapshotItem,
   current?: TaskRuntimeState
-): TaskRuntimeState => ({
-  ...(current ?? createUnknownTaskState(item.taskId)),
-  taskId: item.taskId,
-  mode: item.mode,
-  queueId: item.queueId,
-  scriptId: item.scriptId,
-  userId: item.userId,
-  stopping: item.stopping,
-  isCycle: item.isCycle,
-  scripts: cloneScripts(item.scripts),
-  taskInfo: cloneTaskInfo(item.task_info),
-  cycleNextList: item.cycleNextList ?? [],
-  log: item.log,
-  logSeq: item.logSeq,
-  logFirstLine: item.logFirstLine,
-  phase: 'active',
-  result: null,
-  outcome: null,
-  error: null,
-  completedAt: null,
-})
+): TaskRuntimeState => {
+  const state: TaskRuntimeState = {
+    ...(current ?? createUnknownTaskState(item.taskId)),
+    taskId: item.taskId,
+    mode: item.mode,
+    scriptId: item.scriptId ?? null,
+    userId: item.userId ?? null,
+    stopping: item.stopping ?? false,
+    trigger: item.trigger ?? item.task.info?.trigger ?? TaskTriggerReason.MANUAL,
+    scripts: cloneScripts(item.scripts),
+    taskInfo: projectTaskTree(item.task),
+    taskName: item.task.info?.name ?? current?.taskName ?? null,
+    phase: 'active',
+    result: null,
+    outcome: null,
+    error: null,
+    completedAt: null,
+  }
+  // 请求途中的日志增量不使整次快照失效；只拒绝较旧或过程态的日志基线。
+  if (current?.logSeq === undefined || (item.logSeq != null && item.logSeq >= current.logSeq)) {
+    applyTaskLogUpdate(state, {
+      log: item.log ?? item.task.current?.log ?? '',
+      seq: item.logSeq ?? 0,
+      append: false,
+      firstLine: item.logFirstLine ?? 1,
+    })
+    state.logSeq = item.logSeq ?? undefined
+  }
+  return state
+}
 
 const clearSnapshotRetryTimer = (): void => {
   if (snapshotRetryTimer !== null) {
@@ -288,8 +290,6 @@ const loadTaskRuntimeSnapshot = async (
     const activeStates: TaskRuntimeState[] = []
     const removedTaskIds: string[] = []
 
-    scheduledScripts.value = cloneScripts(snapshot.scheduledScripts)
-
     for (const item of snapshot.tasks ?? []) {
       const state = stateFromSnapshot(item, next.get(item.taskId))
       next.set(item.taskId, state)
@@ -299,14 +299,35 @@ const loadTaskRuntimeSnapshot = async (
 
     for (const [taskId, state] of next) {
       if (state.phase === 'completed' || activeTaskIds.has(taskId)) continue
-      next.delete(taskId)
+      // 无完成消息时只确认“不再运行”，保留已显示内容，不编造任务结果。
+      next.set(taskId, { ...state, phase: 'completed', completedAt: Date.now() })
       releaseTaskSubscriptions(taskId)
       removedTaskIds.push(taskId)
     }
 
+    // 刷新后仅保存过绑定的已结束标签，仍可确认“不再运行”；不伪造结果或日志。
+    retainedTasks.forEach(taskId => {
+      if (!next.has(taskId) && !activeTaskIds.has(taskId)) {
+        next.set(taskId, {
+          ...createUnknownTaskState(taskId),
+          phase: 'completed',
+          completedAt: Date.now(),
+        })
+      }
+    })
+
     taskStates.value = next
     emitRuntimeEvent({ type: 'snapshot', states: activeStates, activeTaskIds })
     removedTaskIds.forEach(taskId => emitRuntimeEvent({ type: 'removed', taskId }))
+    // 事务过程态可能已推送、尚未提交；复用已有重试以取得可追加的日志基线。
+    if (
+      (snapshot.tasks ?? []).some(item => item.logSeq === null) &&
+      mutationRetries < SNAPSHOT_MUTATION_RETRY_LIMIT
+    ) {
+      scheduleSnapshotRetry(SNAPSHOT_MUTATION_RETRY_DELAY_MS, () => {
+        void loadTaskRuntimeSnapshot(mutationRetries + 1, failureRetried)
+      })
+    }
   } catch (error) {
     logger.warn(
       `读取运行任务 HTTP 快照失败: ${error instanceof Error ? error.message : String(error)}`
@@ -325,104 +346,6 @@ export function refreshTaskRuntimeSnapshot(): Promise<void> {
   return loadTaskRuntimeSnapshot(0, false)
 }
 
-const getOrCreateScriptStatus = (statuses: Map<string, ScriptRuntimeStatus>, key: string) => {
-  let status = statuses.get(key)
-  if (!status) {
-    status = { queued: false, running: false, lastFailed: false }
-    statuses.set(key, status)
-  }
-  return status
-}
-
-const updateLastTerminalFailures = (task: TaskRuntimeState): void => {
-  if (task.mode === 'ScriptConfig' || task.scripts.length === 0) return
-
-  const failedScriptIds = new Set(
-    task.taskInfo
-      .filter(info => scriptHasStatus(info, FAILED_TASK_STATUSES))
-      .map(info => info.script_id)
-  )
-  const failAllScripts = task.outcome === 'error' && failedScriptIds.size === 0
-  const seq = ++terminalFailureSeq
-  const next = new Map(lastTerminalFailures.value)
-
-  for (const identity of task.scripts) {
-    const failed = failAllScripts || failedScriptIds.has(identity.scriptId)
-    // 同一个任务里同一个脚本出现多次时，有一次失败就算失败
-    const previous = next.get(identity.scriptId)
-    next.set(identity.scriptId, {
-      scriptType: identity.scriptType,
-      failed: (previous?.seq === seq && previous.failed) || failed,
-      seq,
-    })
-  }
-  lastTerminalFailures.value = next
-}
-
-/**
- * 把排队、运行中的任务和最近一次结束的结果按 keyOf 汇总成各组的状态。
- *
- * 「上次失败」看每组里最近结束的那个任务：那个任务里这组有脚本失败就算失败，
- * 更早的任务不管成败都被它盖掉。
- */
-export function collectScriptStatuses(
-  source: {
-    tasks: Iterable<TaskRuntimeState>
-    scheduled: readonly WSTaskScriptIdentityData[]
-    failures: ReadonlyMap<string, TerminalFailure>
-  },
-  keyOf: ScriptStatusKeyOf
-): Map<string, ScriptRuntimeStatus> {
-  const statuses = new Map<string, ScriptRuntimeStatus>()
-
-  for (const identity of source.scheduled) {
-    getOrCreateScriptStatus(statuses, keyOf(identity)).queued = true
-  }
-
-  for (const task of source.tasks) {
-    if (task.mode === 'ScriptConfig' || task.phase === 'completed') continue
-
-    const infoByScriptId = new Map(task.taskInfo.map(info => [info.script_id, info]))
-    for (const identity of task.scripts) {
-      const status = getOrCreateScriptStatus(statuses, keyOf(identity))
-      const scriptInfo = infoByScriptId.get(identity.scriptId)
-
-      if (!scriptInfo || scriptHasStatus(scriptInfo, WAITING_STATUSES)) status.queued = true
-      if (scriptInfo && scriptHasStatus(scriptInfo, RUNNING_STATUSES)) status.running = true
-    }
-  }
-
-  const latest = new Map<string, { seq: number; failed: boolean }>()
-  source.failures.forEach((failure, scriptId) => {
-    const key = keyOf({ scriptId, scriptType: failure.scriptType })
-    const current = latest.get(key)
-    if (!current || failure.seq > current.seq) {
-      latest.set(key, { seq: failure.seq, failed: failure.failed })
-    } else if (failure.seq === current.seq) {
-      current.failed ||= failure.failed
-    }
-  })
-  latest.forEach(({ failed }, key) => {
-    getOrCreateScriptStatus(statuses, key).lastFailed = failed
-  })
-
-  return statuses
-}
-
-const scriptStatusesBy = (keyOf: ScriptStatusKeyOf) =>
-  computed(() =>
-    collectScriptStatuses(
-      {
-        tasks: taskStates.value.values(),
-        scheduled: scheduledScripts.value,
-        failures: lastTerminalFailures.value,
-      },
-      keyOf
-    )
-  )
-
-const scriptStatusesByType = scriptStatusesBy(identity => identity.scriptType)
-
 const pruneCompletedStates = (): void => {
   const now = Date.now()
   const next = new Map(taskStates.value)
@@ -430,6 +353,7 @@ const pruneCompletedStates = (): void => {
 
   for (const [taskId, state] of next) {
     if (
+      !retainedTasks.has(taskId) &&
       state.phase === 'completed' &&
       state.completedAt !== null &&
       now - state.completedAt > COMPLETED_STATE_RETENTION_MS
@@ -470,8 +394,8 @@ export function disposeTaskRuntimeState(): void {
     completedStateCleanupTimer = null
   }
   taskStates.value = new Map()
-  scheduledScripts.value = []
-  lastTerminalFailures.value = new Map()
+  retainedTasks.clear()
+  resyncingLogs.clear()
   bootstrapped = false
 }
 
@@ -491,8 +415,30 @@ export function getTaskRuntimeStates(): TaskRuntimeState[] {
 export function useTaskRuntimeState() {
   return {
     tasks: computed(() => taskStates.value),
-    scriptStatusesByType,
-    scriptStatusesBy,
     refresh: refreshTaskRuntimeSnapshot,
   }
+}
+
+/** HTTP 受理只补齐订阅；早到的创建、日志、终态保持原对象数据。 */
+export function registerAcceptedTask(taskId: string, mode: WSTaskMode): void {
+  if (taskStates.value.has(taskId)) return
+  const state = { ...createUnknownTaskState(taskId), mode }
+  setTaskState(state)
+  ensureTaskSubscriptions(taskId)
+  emitRuntimeEvent({ type: 'created', state })
+  void refreshTaskRuntimeSnapshot()
+}
+
+export function retainTaskRuntime(taskId: string): void {
+  retainedTasks.add(taskId)
+}
+
+export function releaseTaskRuntime(taskId: string): void {
+  retainedTasks.delete(taskId)
+}
+
+/** stop 已等待服务端收尾；先留出完成事件窗口，断线时再通过快照确认。 */
+export async function reconcileStoppedTask(taskId: string): Promise<void> {
+  await new Promise<void>(resolve => window.setTimeout(resolve, 1500))
+  if (taskStates.value.get(taskId)?.phase !== 'completed') await refreshTaskRuntimeSnapshot()
 }

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { ref } from 'vue'
+import { TaskMode, TaskTriggerReason, type TaskItemDocument } from '@/api'
 
 // ==================== 全局桩 ====================
 
@@ -27,7 +28,7 @@ vi.mock('@/services/websocket/subscriptions', () => ({
   unsubscribe: vi.fn(),
 }))
 
-const EMPTY_SNAPSHOT = { tasks: [], scheduledScripts: [] }
+const EMPTY_SNAPSHOT = { tasks: [] }
 let createdTaskCounter = 0
 
 const pushTaskCreated = (): void => {
@@ -123,5 +124,228 @@ describe('useTaskRuntimeState 快照对账', () => {
     mod.disposeTaskRuntimeState()
     await vi.advanceTimersByTimeAsync(60000)
     expect(getRuntimeTasks).toHaveBeenCalledTimes(1)
+  })
+
+  it('显式无日志基线的过程态快照通过已有重试取得提交后的基线', async () => {
+    const task = {
+      taskId: 'transient',
+      mode: 'AutoProxy',
+      scripts: [],
+      task: { info: { mode: TaskMode.AUTO_PROXY } },
+      log: 'before',
+      logSeq: null,
+    }
+    getRuntimeTasks.mockResolvedValueOnce({ tasks: [task] })
+    getRuntimeTasks.mockResolvedValue({
+      tasks: [{ ...task, log: 'committed', logSeq: 4 }],
+    })
+    const mod = await loadRuntimeState()
+    await mod.refreshTaskRuntimeSnapshot()
+    expect(mod.getTaskRuntimeState('transient')?.logSeq).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(mod.getTaskRuntimeState('transient')?.logSeq).toBe(4)
+    expect(mod.getTaskRuntimeState('transient')?.log).toBe('committed')
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(getRuntimeTasks).toHaveBeenCalledTimes(2)
+    mod.disposeTaskRuntimeState()
+  })
+
+  it.each(['snapshot', 'websocket'])('新任务树通过 %s 保留重复运行身份', async source => {
+    const script = (status: string) => ({
+      info: { script_id: 's1', name: 'same script', status },
+      users: {
+        order: [{ uid: 'user-run', type: 'TaskUserItem' }],
+        data: { 'user-run': { info: { user_id: 'user-config', status } } },
+      },
+    })
+    const tree: TaskItemDocument = {
+      info: {
+        name: '受理时的队列名称',
+        mode: TaskMode.AUTO_PROXY,
+        status: 'running',
+        trigger: TaskTriggerReason.CYCLE,
+      },
+      current: { log: 'current log' },
+      scripts: {
+        order: [
+          { uid: 'run-1', type: 'TaskScriptItem' },
+          { uid: 'run-2', type: 'TaskScriptItem' },
+        ],
+        data: {
+          'run-2': script('运行'),
+          'run-1': script('完成'),
+        },
+      },
+    }
+    const mod = await loadRuntimeState()
+    let taskId: string
+    if (source === 'snapshot') {
+      taskId = 'restored'
+      getRuntimeTasks.mockResolvedValue({
+        tasks: [
+          {
+            taskId,
+            mode: 'AutoProxy',
+            trigger: TaskTriggerReason.CYCLE,
+            logSeq: 7,
+            logFirstLine: 9,
+            scripts: [{ scriptId: 's1', scriptType: 'MAA' }],
+            task: tree,
+          },
+        ],
+      })
+      await mod.refreshTaskRuntimeSnapshot()
+    } else {
+      pushTaskCreated()
+      taskId = `task_${createdTaskCounter}`
+      subscriptionHandlers.get(`${taskId}:task.info.updated`)!({
+        id: taskId,
+        type: 'task.info.updated',
+        data: tree,
+      })
+    }
+    const states = mod.getTaskRuntimeStates()
+    const state = states.find(item => item.taskId === taskId)!
+    expect(state.taskName).toBe('受理时的队列名称')
+    expect(state.trigger).toBe(TaskTriggerReason.CYCLE)
+    expect(state.log).toBe(source === 'snapshot' ? 'current log' : '')
+    expect(state.logSeq).toBe(source === 'snapshot' ? 7 : undefined)
+    expect(state.logFirstLine).toBe(source === 'snapshot' ? 9 : undefined)
+    expect(state.taskInfo.map(item => item.script_id)).toEqual(['run-1', 'run-2'])
+    expect(state.taskInfo.map(item => item.config_id)).toEqual(['s1', 's1'])
+    subscriptionHandlers.get(`${taskId}:task.completed`)!({
+      id: taskId,
+      type: 'task.completed',
+      data: { task: tree, result: 'failed', outcome: 'error' },
+    })
+    const completed = mod.getTaskRuntimeState(taskId)!
+    expect(completed.phase).toBe('completed')
+    expect(completed.log).toBe(state.log)
+    expect(completed.logSeq).toBe(state.logSeq)
+    expect(completed.taskInfo.map(item => item.script_id)).toEqual(['run-1', 'run-2'])
+    mod.disposeTaskRuntimeState()
+  })
+})
+
+describe('运行日志的唯一归属', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.clearAllMocks()
+    connectionStateRef.value = 'idle'
+    vi.stubGlobal('window', {
+      electronAPI: { getLogger: () => logger },
+      setTimeout,
+      clearTimeout,
+      setInterval,
+      clearInterval,
+    })
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  const snapshot = (taskId: string, log: string, logSeq: number) => ({
+    taskId,
+    mode: TaskMode.AUTO_PROXY,
+    trigger: TaskTriggerReason.MANUAL,
+    task: { info: { mode: TaskMode.AUTO_PROXY, name: 'snapshot name' } },
+    log,
+    logSeq,
+  })
+  const pushLog = (taskId: string, log: string, seq: number, append = false) =>
+    subscriptionHandlers.get(`${taskId}:task.log.updated`)!({
+      id: taskId,
+      type: 'task.log.updated',
+      data: { log, seq, append, firstLine: 1 },
+    })
+
+  it('HTTP 受理保留早到的日志和终态，日志不广播生命周期事件', async () => {
+    const mod = await loadRuntimeState()
+    const events: string[] = []
+    mod.onTaskRuntimeEvent(event => {
+      events.push(event.type)
+    })
+    pushTaskCreated()
+    const id = `task_${createdTaskCounter}`
+    const state = mod.getTaskRuntimeState(id)!
+    pushLog(id, '', 1)
+    pushLog(id, 'waiting for lock\n', 2, true)
+    mod.registerAcceptedTask(id, TaskMode.AUTO_PROXY)
+    expect(mod.getTaskRuntimeState(id)).toBe(state)
+    expect(state.log).toBe('waiting for lock\n')
+    expect(state.logSeq).toBe(2)
+    expect(events).toEqual(['created'])
+    subscriptionHandlers.get(`${id}:task.completed`)!({
+      id,
+      type: 'task.completed',
+      data: { outcome: 'success', result: 'done', task: { info: { mode: TaskMode.AUTO_PROXY } } },
+    })
+    mod.registerAcceptedTask(id, TaskMode.AUTO_PROXY)
+    expect(mod.getTaskRuntimeState(id)?.phase).toBe('completed')
+    expect(mod.getTaskRuntimeState(id)?.log).toBe('waiting for lock\n')
+    expect(mod.getTaskRuntimeState(id)?.result).toBe('done')
+    mod.disposeTaskRuntimeState()
+  })
+
+  it('日志漏包只发起一次补快照，恢复后继续追加', async () => {
+    const mod = await loadRuntimeState()
+    pushTaskCreated()
+    const id = `task_${createdTaskCounter}`
+    pushLog(id, 'one\n', 1)
+    let resolve = (_value: unknown) => {}
+    getRuntimeTasks.mockReturnValue(
+      new Promise(accept => {
+        resolve = accept
+      })
+    )
+    pushLog(id, 'lost\n', 3, true)
+    pushLog(id, 'lost too\n', 4, true)
+    expect(getRuntimeTasks).toHaveBeenCalledTimes(1)
+    resolve({ tasks: [snapshot(id, 'recovered\n', 4)] })
+    await vi.advanceTimersByTimeAsync(0)
+    pushLog(id, 'tail\n', 5, true)
+    expect(mod.getTaskRuntimeState(id)?.log).toBe('recovered\ntail\n')
+    expect(mod.getTaskRuntimeState(id)?.logSeq).toBe(5)
+    mod.disposeTaskRuntimeState()
+  })
+
+  it('快照请求途中的新日志不会被旧基线覆盖，也不会触发元数据重试', async () => {
+    const mod = await loadRuntimeState()
+    pushTaskCreated()
+    const id = `task_${createdTaskCounter}`
+    pushLog(id, 'one\n', 1)
+    let resolve = (_value: unknown) => {}
+    getRuntimeTasks.mockReturnValue(
+      new Promise(accept => {
+        resolve = accept
+      })
+    )
+    const refreshing = mod.refreshTaskRuntimeSnapshot()
+    pushLog(id, 'two\n', 2, true)
+    resolve({ tasks: [snapshot(id, 'one\n', 1)] })
+    await refreshing
+    expect(mod.getTaskRuntimeState(id)?.taskName).toBe('snapshot name')
+    expect(mod.getTaskRuntimeState(id)?.log).toBe('one\ntwo\n')
+    expect(getRuntimeTasks).toHaveBeenCalledTimes(1)
+    mod.disposeTaskRuntimeState()
+  })
+
+  it('标签绑定的完成任务保留结果，释放绑定后按原保留期清理', async () => {
+    const mod = await loadRuntimeState()
+    pushTaskCreated()
+    const id = `task_${createdTaskCounter}`
+    mod.retainTaskRuntime(id)
+    subscriptionHandlers.get(`${id}:task.completed`)!({
+      id,
+      type: 'task.completed',
+      data: { outcome: 'success', result: 'done', task: { info: { mode: TaskMode.AUTO_PROXY } } },
+    })
+    await vi.advanceTimersByTimeAsync(6 * 60 * 1000)
+    expect(mod.getTaskRuntimeState(id)?.result).toBe('done')
+    mod.releaseTaskRuntime(id)
+    await vi.advanceTimersByTimeAsync(30 * 1000)
+    expect(mod.getTaskRuntimeState(id)).toBeUndefined()
+    mod.disposeTaskRuntimeState()
   })
 })
