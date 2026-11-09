@@ -141,7 +141,7 @@ type PersistFn = (
  * 加载与 ADB 控制策略提示部分，去掉 managed / agent-env / progress-socket
  * 依赖，供 ControlConfigSection.vue 使用。
  *
- * 魔改 AVD 对所有 MFW 脚本（通用项目与各特调）放行，设备下拉原样列出它的实例。
+ * ModAVD 对所有 MFW 脚本（通用项目与各特调）放行，设备下拉原样列出它的实例。
  */
 export function useMaaFWControlConfig(
   maafwConfig: MaaFWScriptConfig,
@@ -306,7 +306,7 @@ export function useMaaFWControlConfig(
     const inputWithExtras = Boolean(capability?.input)
 
     // 只列截图与输入两行，值只给一个词：模拟器是上面刚选的，不必再重复；集合怎么组的不解释
-    // 魔改 AVD 的 EmulatorExtras（AVDExtras）截图走共享内存，不是 adb，不能套雷电 / MuMu 那句
+    // ModAVD 的 EmulatorExtras（AVDExtras）截图走共享内存，不是 adb，不能套雷电 / MuMu 那句
     const extrasText =
       selectedCapabilityType.value === 'avd'
         ? t('core.edit.adbStrategyAvdExtras')

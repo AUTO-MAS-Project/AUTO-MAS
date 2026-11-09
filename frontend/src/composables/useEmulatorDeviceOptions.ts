@@ -10,8 +10,8 @@ const DEVICE_QUERY_KEY = ['emulator-device-options'] as const
 export type EmulatorDeviceOption = ComboBoxItem & { disabled?: boolean }
 
 /**
- * 魔改 AVD 目前只支持 MFW 脚本和 MAA：不支持的脚本，设备下拉里的魔改 AVD 实例置灰并在名称后写明原因。
- * ``isModAvd`` 判断某个设备号是不是魔改 AVD；``allowed`` 为 true（MAA）时原样返回。MFW 脚本页不经过这里。
+ * ModAVD 目前只支持 MFW 脚本和 MAA：不支持的脚本，设备下拉里的 ModAVD 实例置灰并在名称后写明原因。
+ * ``isModAvd`` 判断某个设备号是不是 ModAVD；``allowed`` 为 true（MAA）时原样返回。MFW 脚本页不经过这里。
  * 后端保存与运行时也会拦，这里只是让用户选之前就看到。
  */
 const markModAvdOptions = <T extends ComboBoxItem>(
@@ -86,7 +86,7 @@ const deviceOptionsQuery = (emulatorId: string) =>
     },
   })
 
-/** 同一配置共享原始设备数据；是否允许魔改 AVD 由每个编辑页本地派生。 */
+/** 同一配置共享原始设备数据；是否允许 ModAVD 由每个编辑页本地派生。 */
 export const useEmulatorDeviceOptions = ({
   allowModAvd = false,
 }: { allowModAvd?: boolean } = {}) => {

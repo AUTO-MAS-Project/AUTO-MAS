@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""魔改 AVD 更新器：查更新，「更新」一键下载、拼新版、核对、换上，启动恢复。
+"""ModAVD 更新器：查更新，「更新」一键下载、拼新版、核对、换上，启动恢复。
 
 本模块是更新引擎，调用 ``status`` / ``update`` / ``startup`` 须显式传入 ``UpdateHost``；
 MAS 应用入口统一使用 :mod:`app.core.emulator_manager.update`，由宿主装配配置、实例查询和进度发布。
@@ -29,7 +29,7 @@ MAS 应用入口统一使用 :mod:`app.core.emulator_manager.update`，由宿主
    GitHub；MAS 设置的「更新源」选了 GitHub 时只问 GitHub），一律不带 CDK，只拿版本和 release_note。
    界面上点「检查更新」时强制查一次；结果缓存 4 小时，更新源设置一改就作废。失败写在状态里，不弹窗。
 2. **更新**（:func:`update`）：本根目录有实例开着或正在开机就直接拒绝、请用户先关掉，什么都不动；
-   界面在用户确认「更新期间不会启动用到这个魔改 AVD 的脚本和实例」后才调。开始以后到结束（成功、
+   界面在用户确认「更新期间不会启动用到这个 ModAVD 的脚本和实例」后才调。开始以后到结束（成功、
    失败都算）这个根目录一律不许开机（:func:`update_in_progress`，``manager._launch`` 据此拒绝），依次
    - 再查一次最新版本（不走缓存）；
    - 选包（:func:`_pick_package`），优先顺序：「更新源」不是 GitHub 又填了 Mirror 酱 CDK（MAS 全局的
@@ -115,7 +115,7 @@ from .update_source import (
     update_sources,
 )
 
-logger = get_logger("魔改 AVD 更新")
+logger = get_logger("ModAVD 更新")
 
 #: 查更新失败后多久之内不再自动重试（用户点「更新」不受限）。
 _CHECK_FAILURE_BACKOFF_SECONDS = 600.0
@@ -267,15 +267,15 @@ def _thread_progress(
 
 
 async def _managed(root: str, *, host: UpdateHost) -> Path:
-    """只认 Emulator 2.0 里已经加进来的魔改 AVD 根目录：更新会改名目录，不能对任意路径动手。"""
+    """只认 Emulator 2.0 里已经加进来的 ModAVD 根目录：更新会改名目录，不能对任意路径动手。"""
     text = str(root or "").strip()
     if not text or not Path(text).is_absolute():
-        raise ValueError("请给出魔改 AVD 根目录的完整路径")
+        raise ValueError("请给出 ModAVD 根目录的完整路径")
     key = root_key(text)
     for managed in await asyncio.to_thread(host.managed_roots):
         if root_key(managed) == key:
             return managed
-    raise ValueError(f"{text} 还没有作为魔改 AVD 加进模拟器管理，不能更新")
+    raise ValueError(f"{text} 还没有作为 ModAVD 加进模拟器管理，不能更新")
 
 
 def _not_updatable_reason(root: Path) -> str:
@@ -289,7 +289,7 @@ def _not_updatable_reason(root: Path) -> str:
     if not os.path.isfile(
         _utils_update_files.native_path(stage.emulator_dir(root) / "emulator.exe")
     ):
-        return "这个根目录里没有 sdk\\emulator，请先放好魔改 AVD"
+        return "这个根目录里没有 sdk\\emulator，请先放好 ModAVD"
     return ""
 
 
@@ -448,7 +448,7 @@ async def status(root: str, *, check: bool = False, host: UpdateHost) -> dict[st
             current = await asyncio.to_thread(local_version, path)
             await _latest(force=True, current=current, host=host)
         except Exception as e:  # noqa: BLE001 - 查不到不算接口失败
-            logger.warning(f"检查魔改 AVD 更新失败: {e}")
+            logger.warning(f"检查 ModAVD 更新失败: {e}")
     return await asyncio.to_thread(_snapshot_sync, path, _runtime(path), host=host)
 
 
@@ -1024,7 +1024,7 @@ async def _ensure_recovered(runtime: _Runtime) -> None:
     done = await asyncio.to_thread(stage.recover, runtime.root)
     runtime.recovered = True
     if done:
-        logger.warning(f"{runtime.root} 的魔改 AVD 更新：{done}")
+        logger.warning(f"{runtime.root} 的 ModAVD 更新：{done}")
 
 
 async def _update_job(
@@ -1081,7 +1081,7 @@ async def _run_update(
                 "不用重新下载",
             )
         except Exception as e:  # noqa: BLE001 - 失败如实交给界面
-            logger.opt(exception=True).warning(f"{root} 更新魔改 AVD 失败: {e}")
+            logger.opt(exception=True).warning(f"{root} 更新 ModAVD 失败: {e}")
             failed = f"更新失败：{e}"
             _set(
                 runtime,
@@ -1122,7 +1122,7 @@ async def update(root: str, *, host: UpdateHost) -> dict[str, Any]:
     try:
         release = await _latest(force=True, current=local, host=host)
     except Exception as e:  # noqa: BLE001 - 查不到时看有没有已经下好的
-        logger.warning(f"检查魔改 AVD 更新失败: {e}")
+        logger.warning(f"检查 ModAVD 更新失败: {e}")
         check_error = str(e)
     staged = await asyncio.to_thread(_staged_version, path)
     if release is not None and _newer(release, local):
@@ -1145,7 +1145,7 @@ async def update(root: str, *, host: UpdateHost) -> dict[str, Any]:
     if busy:
         return _action(
             "instances_running",
-            f"这个魔改 AVD 还有 {len(busy)} 台实例开着，请先关闭再更新",
+            f"这个 ModAVD 还有 {len(busy)} 台实例开着，请先关闭再更新",
             running=len(busy),
         )
     _updating.add(root_key(path))
@@ -1168,7 +1168,7 @@ async def startup(*, host: UpdateHost) -> None:
             async with runtime.lock:
                 await _ensure_recovered(runtime)
         except Exception as e:  # noqa: BLE001 - 一个根目录恢复失败不影响别的
-            logger.opt(exception=True).error(f"{root} 的魔改 AVD 更新恢复失败: {e}")
+            logger.opt(exception=True).error(f"{root} 的 ModAVD 更新恢复失败: {e}")
 
 
 __all__ = [

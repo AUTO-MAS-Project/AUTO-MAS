@@ -1,4 +1,4 @@
-"""魔改 AVD 旧根目录（没有 modavd.exe，走 Python 实现）关机的顺序与时限契约测试。"""
+"""ModAVD 旧根目录（没有 modavd.exe，走 Python 实现）关机的顺序与时限契约测试。"""
 
 from __future__ import annotations
 

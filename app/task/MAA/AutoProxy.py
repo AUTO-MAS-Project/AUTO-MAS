@@ -2749,7 +2749,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 来源存在(MAS 零写入, 安装目录原生配置即现场)。
 
     async def _resolve_avd_device(self) -> tuple[Path, int] | None:
-        """这次用的设备是魔改 AVD 实例时返回 ``(根目录, 控制台端口)``，否则 ``None``。
+        """这次用的设备是 ModAVD 实例时返回 ``(根目录, 控制台端口)``，否则 ``None``。
 
         控制台端口问 modavd（根目录可以设 ``portBase`` 换一段端口），假 MuMu 截图组件按它找共享内存。
         """
@@ -2766,7 +2766,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         )
 
     async def _maa_process_env(self) -> dict[str, str] | None:
-        """MAA 进程的环境变量。魔改 AVD 实例上把它（连同 MaaCore 起的 adb）指到脚本专用的 adb
+        """MAA 进程的环境变量。ModAVD 实例上把它（连同 MaaCore 起的 adb）指到脚本专用的 adb
         server（``scriptAdbServerPort``，默认 20049），不落到 5037；其余模拟器返回 ``None``，
         照旧继承 MAS 的环境。"""
         return await script_process_env(
@@ -2781,7 +2781,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
     ) -> None:
         """两种覆写常规配置状态均需的启动、模拟器和账号设置，不改任务选择。
 
-        ``avd`` 是 :meth:`_resolve_avd_device` 的结果：魔改 AVD 实例的 ``(根目录, 控制台端口)``。
+        ``avd`` 是 :meth:`_resolve_avd_device` 的结果：ModAVD 实例的 ``(根目录, 控制台端口)``。
         """
 
         current_gui = gui_new_set["Configurations"]["Default"]["Gui"]
@@ -2794,7 +2794,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         if emulator_info.adb_address != "Unknown":
             current_gui["ConnectSettings"]["Address"] = emulator_info.adb_address
 
-        # 魔改 AVD 实例：MAA 走假 MuMu 截图通道（MuMu 12 预设 + 桥接 + 实例号 = 控制台端口），
+        # ModAVD 实例：MAA 走假 MuMu 截图通道（MuMu 12 预设 + 桥接 + 实例号 = 控制台端口），
         # 雷电 / MuMu 实例不经过这里。这些键和上面的地址一样，由原生配置快照在任务结束后还原。
         self._avd_screencap_guard = avd is not None
         if avd is not None:
@@ -2804,7 +2804,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 avd_root, avd_console, current_gui.get("ConnectSettings")
             )
             logger.info(
-                f"魔改 AVD 实例（控制台端口 {avd_console}）：MAA 截图走假 MuMu 通道"
+                f"ModAVD 实例（控制台端口 {avd_console}）：MAA 截图走假 MuMu 通道"
             )
         else:
             # 先按所选实例解析安装，避免多安装管理器沿用上一次命中的 ADB。
@@ -3059,7 +3059,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         if self.cur_user_config.Info.IfQuickConfig:
             self._collect_cultivate_archive(log)
 
-        # 魔改 AVD 实例上截图不许回落到普通 adb（约 250 ms，账号 09-26 定「不如不做」）
+        # ModAVD 实例上截图不许回落到普通 adb（约 250 ms，账号 09-26 定「不如不做」）
         avd_fallback = (
             screencap_fallback_status(log)
             if getattr(self, "_avd_screencap_guard", False)
@@ -3208,7 +3208,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         )
         if shot is not None:
             return shot
-        # 魔改 AVD 实例：截图走 MAS 私有 server（它的 adb 不能落到 5037）。
+        # ModAVD 实例：截图走 MAS 私有 server（它的 adb 不能落到 5037）。
         host_adb = await resolve_host_adb(self)
         image = await capture_current_image(
             capture_adb=self.capture_adb,

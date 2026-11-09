@@ -35,7 +35,7 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
         checker: Callable[..., Awaitable[_utils_game_update.GameUpdateResult]],
         allow_mod_avd: bool = False,
     ) -> None:
-        """``allow_mod_avd``：调用方的脚本能用魔改 AVD（目前是 MAA）；不能时设备是魔改 AVD 就不开机。"""
+        """``allow_mod_avd``：调用方的脚本能用 ModAVD（目前是 MAA）；不能时设备是 ModAVD 就不开机。"""
         super().__init__()
         self.script_info = script_info
         self.script_config = script_config
@@ -68,7 +68,7 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
                     self.emulator_manager, allowed=self.allow_mod_avd
                 ),
             )
-            # 魔改 AVD 实例：宿主的 adb 走 MAS 私有 server，不落到 5037；其余模拟器不接管
+            # ModAVD 实例：宿主的 adb 走 MAS 私有 server，不落到 5037；其余模拟器不接管
             host_adb = await resolve_host_adb(self, index=self.emulator_index)
             with _utils_game_apk.adb_runner_scope(host_adb):
                 self.result = await self.checker(

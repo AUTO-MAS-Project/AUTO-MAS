@@ -134,7 +134,7 @@ class _EmulatorManager(EmulatorOperations, AvdUpdateOperations):
 
             if operate == "open":
                 if isinstance(temp_emulator, _utils_emulator2.facade.Emulator2Manager):
-                    # 模拟器页手动点的启动：魔改 AVD 据此带窗口开机（任务拉起跟静默模式走）
+                    # 模拟器页手动点的启动：ModAVD 据此带窗口开机（任务拉起跟静默模式走）
                     await temp_emulator.open(index, manual=True)
                 else:
                     await temp_emulator.open(index)

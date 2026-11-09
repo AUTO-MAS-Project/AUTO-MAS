@@ -1,4 +1,4 @@
-"""魔改 AVD 根目录 ``mas-avd.json`` 的读改写契约测试。"""
+"""ModAVD 根目录 ``mas-avd.json`` 的读改写契约测试。"""
 
 from __future__ import annotations
 

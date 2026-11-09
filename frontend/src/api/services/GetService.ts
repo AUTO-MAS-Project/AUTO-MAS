@@ -1041,7 +1041,7 @@ export class GetService {
         });
     }
     /**
-     * 查询魔改 AVD 根目录的组件状态
+     * 查询 ModAVD 根目录的组件状态
      * 组件清单与是否齐全（缺哪几项）、硬件加速（WHPX）是否可用、开机前电脑检查。
      * 组件随模拟器内测包提供，MAS 不下载。只读，不联网。``refresh`` 为 true 时检查不走缓存。
      * @param requestBody
@@ -1062,7 +1062,7 @@ export class GetService {
         });
     }
     /**
-     * 查询魔改 AVD 实例选项
+     * 查询 ModAVD 实例选项
      * 显示档位、内存、核数、数据盘、首次初始化与渲染器检测结果、端口。
      * @param requestBody
      * @returns Emulator2AvdInstanceOptionsOut Successful Response
@@ -1082,7 +1082,7 @@ export class GetService {
         });
     }
     /**
-     * 查询魔改 AVD 根目录的更新状态
+     * 查询 ModAVD 根目录的更新状态
      * 装着的版本、最新版本、已下载好的版本、更新进度。``check`` 为 true 时（「检查更新」）先强制问一次
      * 下载源（Mirror 酱、GitHub）最新版本，不带 CDK；查不到不算接口失败，原因写在 ``checkError``。
      * @param requestBody

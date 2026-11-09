@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""魔改 AVD 一条安装的设备管理器。
+"""ModAVD 一条安装的设备管理器。
 
 对门面暴露的方法与雷电 / MuMu 两家后端相同（``open`` / ``close`` / ``getStatus`` /
 ``getInfo`` / ``list_devices`` / 四项设置 / 稳定模式 / 新建删除实例），区别在于这里没有厂商
@@ -150,7 +150,7 @@ from .vulkanfix import (
     sha256,
 )
 
-logger = get_logger("魔改 AVD 管理")
+logger = get_logger("ModAVD 管理")
 
 #: ``{根目录键: 锁}``：同一条安装同时只生成一次客体驱动补丁库（几台实例一起开机时）。
 _VULKAN_PATCH_LOCKS: dict[str, asyncio.Lock] = {}
@@ -184,7 +184,7 @@ _ALLOW_INSTALL_SOURCES_SCRIPT = (
     ' else echo "failed: $p"; fail=1; fi;'
     " done; exit $fail"
 )
-#: 界面上「打开游戏中心」之类一次点击的上限（魔改 AVD 没有游戏中心，留作接口一致）。
+#: 界面上「打开游戏中心」之类一次点击的上限（ModAVD 没有游戏中心，留作接口一致）。
 _LAUNCH_TIMEOUT_CAP = 45.0
 _BOOT_TIMEOUT_CAP = 120.0
 
@@ -512,7 +512,7 @@ def _start_watchdog(root: Path, native_index: str, pid: int, *, serial: str) -> 
         _FROZEN[key] = reason
 
     watchdog = FreezeWatchdog(
-        f"魔改 AVD 实例 {avd_name(native_index)}",
+        f"ModAVD 实例 {avd_name(native_index)}",
         probe_adb=probe_adb,
         cpu_seconds=lambda: host.process_cpu_seconds(process),
         is_alive=is_alive,
@@ -676,7 +676,7 @@ class _AvdCore(DeviceBase):
 
     def _guest_script(self, name: str) -> Path:
         if self.resource_path is None:
-            raise ValueError("启动魔改 AVD 时必须提供内置资源目录")
+            raise ValueError("启动 ModAVD 时必须提供内置资源目录")
         return self.resource_path / "avd" / "guest" / name
 
     def _instances(self) -> dict[str, AvdInstance]:
@@ -685,7 +685,7 @@ class _AvdCore(DeviceBase):
     def _instance(self, idx: str) -> AvdInstance:
         instance = self._instances().get(str(idx))
         if instance is None:
-            raise RuntimeError(f"魔改 AVD 实例 {idx} 不存在")
+            raise RuntimeError(f"ModAVD 实例 {idx} 不存在")
         return instance
 
     def _raise_cli_error(self, error: modavd_cli.CLIError) -> NoReturn:
@@ -737,7 +737,7 @@ class _AvdCore(DeviceBase):
                 raise precheck.PrecheckFailed(
                     precheck.PrecheckItem(
                         str(item.get("id") or "precheck"),
-                        str(item.get("title") or "魔改 AVD 开机前检查"),
+                        str(item.get("title") or "ModAVD 开机前检查"),
                         False,
                         True,
                         str(item.get("reason") or message),
@@ -966,7 +966,7 @@ class _AvdCore(DeviceBase):
         if idx is not None:
             instance = instances.get(str(idx))
             if instance is None:
-                raise RuntimeError(f"魔改 AVD 实例 {idx} 不存在")
+                raise RuntimeError(f"ModAVD 实例 {idx} 不存在")
             instances = {str(idx): instance}
         processes = await asyncio.to_thread(self._scan_processes)
         result: dict[str, DeviceInfo] = {}
@@ -1074,16 +1074,16 @@ class _AvdCore(DeviceBase):
                 )
             except Exception as e:  # noqa: BLE001 - 见 docstring
                 logger.warning(
-                    f"魔改 AVD 实例 {idx} {'显示' if is_visible else '隐藏'}窗口失败: {e}"
+                    f"ModAVD 实例 {idx} {'显示' if is_visible else '隐藏'}窗口失败: {e}"
                 )
             else:
                 if count:
                     logger.info(
-                        f"魔改 AVD 实例 {idx} 已{'显示' if is_visible else '隐藏'}窗口"
+                        f"ModAVD 实例 {idx} 已{'显示' if is_visible else '隐藏'}窗口"
                     )
                 elif is_visible:
                     logger.info(
-                        f"魔改 AVD 实例 {idx} 是无头开机的，没有窗口可显示；"
+                        f"ModAVD 实例 {idx} 是无头开机的，没有窗口可显示；"
                         "要窗口请关机后在模拟器页手动启动"
                     )
         return await self.getStatus(idx)
@@ -1106,10 +1106,10 @@ class _AvdCore(DeviceBase):
         key = _instance_key(self.root, idx)
         max_wait = float(self.config.Info.MaxWaitTime)
         mine = await _claim_opening(
-            key, f"魔改 AVD 实例 {idx}", max_wait + _OPENING_WAIT_EXTRA_SECONDS
+            key, f"ModAVD 实例 {idx}", max_wait + _OPENING_WAIT_EXTRA_SECONDS
         )
         try:
-            await _wait_closing(key, f"魔改 AVD 实例 {idx}")
+            await _wait_closing(key, f"ModAVD 实例 {idx}")
             return await self._open(idx, instance, key, max_wait)
         finally:
             mine.set()
@@ -1122,17 +1122,17 @@ class _AvdCore(DeviceBase):
         _FROZEN.pop(key, None)
         if self._cli is not None:
             if updater.update_in_progress(self.root):
-                raise RuntimeError("魔改 AVD 正在更新，更新完再开机")
+                raise RuntimeError("ModAVD 正在更新，更新完再开机")
             if await self._cli_creating(idx):
                 raise RuntimeError(
-                    f"魔改 AVD 实例 {idx} 正在新建（后台开机做初始化），等新建完成再开机"
+                    f"ModAVD 实例 {idx} 正在新建（后台开机做初始化），等新建完成再开机"
                 )
             self._check_components()
             memory_mb = memory_for(instance_meta(self.root, idx))
             recommended = RECOMMENDED_MEMORY_MB.get(self._open_package or "")
             if recommended and memory_mb < recommended:
                 logger.warning(
-                    f"魔改 AVD 实例 {idx} 内存 {memory_mb} MB，低于 {self._open_package} 的推荐值 "
+                    f"ModAVD 实例 {idx} 内存 {memory_mb} MB，低于 {self._open_package} 的推荐值 "
                     f"{recommended} MB，可在实例设置里调大"
                 )
             async with _cli_start_lock(key):
@@ -1180,7 +1180,7 @@ class _AvdCore(DeviceBase):
                 ports = _ports_from_cli(self._cli_data_instance(raw_instance), idx)
                 _start_watchdog(self.root, idx, info.process_id, serial=ports.serial)
             logger.info(
-                f"魔改 AVD 实例 {idx} 已由 modavd start 启动"
+                f"ModAVD 实例 {idx} 已由 modavd start 启动"
                 f"（{'带窗口' if self._open_window else '静默'}）"
             )
             return info
@@ -1197,7 +1197,7 @@ class _AvdCore(DeviceBase):
                 await self._launch(idx, instance)
             else:
                 self._log_window_mode(idx, process)
-                logger.info(f"魔改 AVD 实例 {idx} 已在运行（pid {process.pid}）")
+                logger.info(f"ModAVD 实例 {idx} 已在运行（pid {process.pid}）")
             process = await self._wait_boot(idx, instance, launched, max_wait)
         finally:
             if launched:
@@ -1229,14 +1229,14 @@ class _AvdCore(DeviceBase):
                 return process
             if time.monotonic() >= deadline:
                 raise RuntimeError(
-                    f"魔改 AVD 实例 {idx} 启动超时（{max_wait:.0f} 秒内安卓没有启动完成）"
+                    f"ModAVD 实例 {idx} 启动超时（{max_wait:.0f} 秒内安卓没有启动完成）"
                     f"，日志见 {self._log_dir()}"
                 )
             if process is None and self._launcher is not None:
                 code = self._launcher.poll()
                 if code is not None:
                     raise RuntimeError(
-                        f"魔改 AVD 实例 {idx} 启动失败（emulator.exe 退出码 {code}）："
+                        f"ModAVD 实例 {idx} 启动失败（emulator.exe 退出码 {code}）："
                         f"{self._log_tail()}"
                     )
             await asyncio.sleep(_BOOT_POLL_SECONDS)
@@ -1259,7 +1259,7 @@ class _AvdCore(DeviceBase):
         running = "无头" if headless else "带窗口"
         wanted = "带窗口" if self._open_window else "无头"
         logger.info(
-            f"魔改 AVD 实例 {idx} 已在{running}运行，这次按{wanted}开机：运行中不切换，"
+            f"ModAVD 实例 {idx} 已在{running}运行，这次按{wanted}开机：运行中不切换，"
             f"接着用{running}的"
         )
 
@@ -1277,7 +1277,7 @@ class _AvdCore(DeviceBase):
             data = await self._cli.status(idx)
         except modavd_cli.CLIError as error:
             raise RuntimeError(
-                f"魔改 AVD 实例 {idx} 可能还在新建，但查不到 modavd 的状态（{error.message}），"
+                f"ModAVD 实例 {idx} 可能还在新建，但查不到 modavd 的状态（{error.message}），"
                 "稍后再试"
             ) from error
         return (
@@ -1302,14 +1302,14 @@ class _AvdCore(DeviceBase):
     async def _launch(self, idx: str, instance: AvdInstance) -> None:
         # 从点「更新」到更新结束都不许开机：sdk\emulator 会被换掉；用到它的脚本也就不会在更新中途启动
         if updater.update_in_progress(self.root):
-            raise RuntimeError("魔改 AVD 正在更新，更新完再开机")
+            raise RuntimeError("ModAVD 正在更新，更新完再开机")
         self._check_components()
         # 电脑检查用的内存就是下面 -memory 要传的值：实例自己设的，不按游戏推算
         memory_mb = memory_for(instance_meta(self.root, idx))
         recommended = RECOMMENDED_MEMORY_MB.get(self._open_package or "")
         if recommended and memory_mb < recommended:
             logger.warning(
-                f"魔改 AVD 实例 {idx} 内存 {memory_mb} MB，低于 {self._open_package} 的推荐值 "
+                f"ModAVD 实例 {idx} 内存 {memory_mb} MB，低于 {self._open_package} 的推荐值 "
                 f"{recommended} MB，可在实例设置里调大"
             )
         await precheck.check_before_launch(self.root, memory_mb)
@@ -1319,7 +1319,7 @@ class _AvdCore(DeviceBase):
         busy = await asyncio.to_thread(host.busy_ports, ports)
         if busy:
             raise RuntimeError(
-                f"魔改 AVD 实例 {idx} 要用的端口 {', '.join(map(str, busy))} 已被占用，"
+                f"ModAVD 实例 {idx} 要用的端口 {', '.join(map(str, busy))} 已被占用，"
                 "请先关闭占用它们的程序"
             )
 
@@ -1339,7 +1339,7 @@ class _AvdCore(DeviceBase):
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         self._log_path = self._log_dir() / f"{instance.name}-{stamp}.log"
         logger.info(
-            f"启动魔改 AVD 实例 {idx}（{'无头' if headless else '带窗口'}，"
+            f"启动 ModAVD 实例 {idx}（{'无头' if headless else '带窗口'}，"
             f"{resolution_for(instance.config)}p {instance.fps} Hz，{memory_mb} MB / {instance.cpu} 核，"
             "气球开，不带声卡，ANDROID_EMU_VK_HIDE_REBAR=1）: "
             f"emulator {' '.join(args)}"
@@ -1826,7 +1826,7 @@ class _AvdCore(DeviceBase):
 
     async def _first_boot_init(self, idx: str) -> None:
         """首次开机后的持久设置（重启后保持），做完记进 ``mas-avd.json``。"""
-        logger.info(f"魔改 AVD 实例 {idx} 首次开机，正在初始化")
+        logger.info(f"ModAVD 实例 {idx} 首次开机，正在初始化")
         failures: list[str] = []
 
         # WiFi 不在这里关：每次开机都开 WiFi + fastpath（用户 09-27 定，见 _setup_network）
@@ -1863,7 +1863,7 @@ class _AvdCore(DeviceBase):
         software = "swiftshader" in renderer.lower()
         if software:
             logger.warning(
-                f"魔改 AVD 实例 {idx} 正在用软件渲染（{renderer}）：没有可用的显卡驱动，"
+                f"ModAVD 实例 {idx} 正在用软件渲染（{renderer}）：没有可用的显卡驱动，"
                 "游戏会占满 CPU，请更新显卡驱动"
             )
 
@@ -1880,13 +1880,13 @@ class _AvdCore(DeviceBase):
             )
         except MetadataUnreadable as e:
             # 不开机失败，也不盖掉读不出的文件；没记下 initialized，下次开机再初始化一遍
-            logger.warning(f"魔改 AVD 实例 {idx} 的初始化结果没记进元数据: {e}")
+            logger.warning(f"ModAVD 实例 {idx} 的初始化结果没记进元数据: {e}")
         if failures:
             logger.warning(
-                f"魔改 AVD 实例 {idx} 初始化有失败项，下次开机重试: {failures}"
+                f"ModAVD 实例 {idx} 初始化有失败项，下次开机重试: {failures}"
             )
         else:
-            logger.info(f"魔改 AVD 实例 {idx} 初始化完成（桌面: {launcher}）")
+            logger.info(f"ModAVD 实例 {idx} 初始化完成（桌面: {launcher}）")
 
     async def _install_launcher(self, idx: str) -> str:
         """装轻量桌面、预置、设为默认，再按用户卸载原生桌面。内测包里没带轻量桌面就保留原生桌面。"""
@@ -2002,7 +2002,7 @@ class _AvdCore(DeviceBase):
         key = _instance_key(self.root, idx)
         lock = _CLOSING.setdefault(key, asyncio.Lock())
         if lock.locked():
-            logger.info(f"魔改 AVD 实例 {idx} 正由另一次关闭在关，等它关完再继续")
+            logger.info(f"ModAVD 实例 {idx} 正由另一次关闭在关，等它关完再继续")
         async with lock:
             return await self._close(idx, instance, key)
 
@@ -2019,7 +2019,7 @@ class _AvdCore(DeviceBase):
             # modavd stop 不拦新建中的实例，关了就把新建的初始化打断，留下一台「新建失败」
             if await self._cli_creating(idx):
                 raise RuntimeError(
-                    f"魔改 AVD 实例 {idx} 正在新建（后台开机做初始化），新建完成前不能关机"
+                    f"ModAVD 实例 {idx} 正在新建（后台开机做初始化），新建完成前不能关机"
                 )
             try:
                 await self._cli.stop(
@@ -2028,7 +2028,7 @@ class _AvdCore(DeviceBase):
                 )
             except modavd_cli.CLIError as error:
                 self._raise_cli_error(error)
-            logger.info(f"魔改 AVD 实例 {idx} 已由 modavd stop 关闭")
+            logger.info(f"ModAVD 实例 {idx} 已由 modavd stop 关闭")
             return DeviceStatus.OFFLINE
         assert instance is not None
         process = await asyncio.to_thread(host.find_qemu_process, instance.name, port)
@@ -2058,7 +2058,7 @@ class _AvdCore(DeviceBase):
         if self.config.Info.ForceKillOnClose:
             await self._sync_before_kill(idx, port, problem, SYNC_TIMEOUT_SECONDS)
             await self._force_kill(process, FORCE_KILL_WAIT_SECONDS)
-            logger.info(f"魔改 AVD 实例 {idx} 已强制关闭")
+            logger.info(f"ModAVD 实例 {idx} 已强制关闭")
             return DeviceStatus.OFFLINE
 
         if problem is None:
@@ -2072,19 +2072,19 @@ class _AvdCore(DeviceBase):
             )
             if reason is None:
                 logger.info(
-                    f"魔改 AVD 实例 {idx} 正常关机完成"
+                    f"ModAVD 实例 {idx} 正常关机完成"
                     f"（{time.monotonic() - started:.1f} s）"
                 )
                 return DeviceStatus.OFFLINE
             logger.warning(
-                f"魔改 AVD 实例 {idx} 正常关机没成（{reason}），退回 sync + 控制台 kill"
+                f"ModAVD 实例 {idx} 正常关机没成（{reason}），退回 sync + 控制台 kill"
             )
             await self._sync_before_kill(idx, port, None, FALLBACK_SYNC_TIMEOUT_SECONDS)
             kill_timeout = FALLBACK_KILL_TIMEOUT_SECONDS
             force_kill_wait = FALLBACK_FORCE_KILL_WAIT_SECONDS
         else:
             logger.warning(
-                f"魔改 AVD 实例 {idx} 私有 adb 用不了，不能正常关机也不能 sync，"
+                f"ModAVD 实例 {idx} 私有 adb 用不了，不能正常关机也不能 sync，"
                 f"直接用控制台关: {problem}"
             )
             kill_timeout = CONSOLE_KILL_TIMEOUT_SECONDS + CLOSE_TIMEOUT_SECONDS
@@ -2093,10 +2093,10 @@ class _AvdCore(DeviceBase):
         await self._console_kill(idx, port, process, kill_timeout)
         if process.is_running():
             logger.warning(
-                f"魔改 AVD 实例 {idx} 未在 {kill_timeout:.0f} 秒内退出，强制结束"
+                f"ModAVD 实例 {idx} 未在 {kill_timeout:.0f} 秒内退出，强制结束"
             )
             await self._force_kill(process, force_kill_wait)
-        logger.info(f"魔改 AVD 实例 {idx} 已关闭")
+        logger.info(f"ModAVD 实例 {idx} 已关闭")
         return DeviceStatus.OFFLINE
 
     async def _send_to_background(self, idx: str, port: int, game: str) -> None:
@@ -2112,12 +2112,10 @@ class _AvdCore(DeviceBase):
             total_timeout=True,
         )
         if code != 0:
-            logger.warning(
-                f"魔改 AVD 实例 {idx} 关机前按 HOME 失败，照常关机: {output}"
-            )
+            logger.warning(f"ModAVD 实例 {idx} 关机前按 HOME 失败，照常关机: {output}")
             return
         logger.info(
-            f"魔改 AVD 实例 {idx} 关机前已把 {game} 切到后台，等 "
+            f"ModAVD 实例 {idx} 关机前已把 {game} 切到后台，等 "
             f"{GO_HOME_SETTLE_SECONDS:.0f} 秒再关机"
         )
         await asyncio.sleep(GO_HOME_SETTLE_SECONDS)
@@ -2176,10 +2174,10 @@ class _AvdCore(DeviceBase):
             code, output = -1, problem
         if code == 0:
             logger.info(
-                f"魔改 AVD 实例 {idx} 关机前 sync 完成（{(time.monotonic() - started) * 1000:.0f} ms）"
+                f"ModAVD 实例 {idx} 关机前 sync 完成（{(time.monotonic() - started) * 1000:.0f} ms）"
             )
         else:
-            logger.warning(f"魔改 AVD 实例 {idx} 关机前 sync 失败，照常关机: {output}")
+            logger.warning(f"ModAVD 实例 {idx} 关机前 sync 失败，照常关机: {output}")
 
     async def _console_kill(
         self, idx: str, port: int, process: psutil.Process, timeout: float
@@ -2277,7 +2275,7 @@ class _AvdCore(DeviceBase):
     ) -> dict[str, int]:
         if self._cli is not None:
             if updater.update_in_progress(self.root):
-                raise RuntimeError("魔改 AVD 正在更新，更新完再改设置")
+                raise RuntimeError("ModAVD 正在更新，更新完再改设置")
             data_gb: int | None = None
             setting_changes = dict(changes)
             if "dataPartitionGb" in setting_changes:
@@ -2393,11 +2391,11 @@ class _AvdCore(DeviceBase):
             if k in ("cpu", "memoryMb", "fps", "width", "height", "dpi")
         }
         applied.update(display)
-        logger.info(f"已写入魔改 AVD 实例 {idx} 的设置: {applied}")
+        logger.info(f"已写入 ModAVD 实例 {idx} 的设置: {applied}")
         return applied
 
     async def read_stable_mode(self, idx: str) -> tuple[bool, list[str]]:
-        # 魔改 AVD 没有会干扰截图识别的厂商功能，天然就是「稳定」的
+        # ModAVD 没有会干扰截图识别的厂商功能，天然就是「稳定」的
         return True, []
 
     async def apply_stable_mode(self, idx: str) -> list[str]:
@@ -2426,13 +2424,13 @@ class _AvdCore(DeviceBase):
         preset = validate_resolution(resolution)
         if self._cli is not None:
             if updater.update_in_progress(self.root):
-                raise RuntimeError("魔改 AVD 正在更新，更新完再新建实例")
+                raise RuntimeError("ModAVD 正在更新，更新完再新建实例")
             self._check_components()
             try:
                 check_result = await self._cli.check(memory=memory)
             except modavd_cli.CLIError as error:
                 await self._raise_cli_precheck(error, memory)
-            self._raise_blocking_check_items(check_result, "魔改 AVD 开机前检查未通过")
+            self._raise_blocking_check_items(check_result, "ModAVD 开机前检查未通过")
             if native_index is None:
                 listing = await self._cli.list()
                 raw_items = (
@@ -2456,7 +2454,7 @@ class _AvdCore(DeviceBase):
                     raise ValueError(f"原生索引 {native_index} 不可用")
             # 上面的检查和选编号要等几个子进程，更新可能在这期间开始：起 create 之前再看一次
             if updater.update_in_progress(self.root):
-                raise RuntimeError("魔改 AVD 正在更新，更新完再新建实例")
+                raise RuntimeError("ModAVD 正在更新，更新完再新建实例")
             try:
                 data = await self._cli.create(
                     index=native_index,
@@ -2473,7 +2471,7 @@ class _AvdCore(DeviceBase):
             index = item.get("index", native_index)
             if index is None:
                 raise RuntimeError("modavd create 没有返回实例编号")
-            logger.info(f"已由 modavd create 新建魔改 AVD 实例 {index}")
+            logger.info(f"已由 modavd create 新建 ModAVD 实例 {index}")
             return str(index)
         existing = {int(idx) for idx in self._instances()}
         if native_index is None:
@@ -2491,7 +2489,7 @@ class _AvdCore(DeviceBase):
             resolution=preset,
         )
         logger.info(
-            f"已新建魔改 AVD 实例 {native_index}（内存 "
+            f"已新建 ModAVD 实例 {native_index}（内存 "
             f"{memory} MB / {cores} 核 / 数据盘 {data_gb} GB / 帧率 {refresh}）"
         )
         return str(native_index)
@@ -2505,18 +2503,18 @@ class _AvdCore(DeviceBase):
             if host.busy_ports([port, port + 1, port + 2]):
                 continue
             return index
-        raise RuntimeError("魔改 AVD 实例已满（端口段 20000–20100 最多 9 台）")
+        raise RuntimeError("ModAVD 实例已满（端口段 20000–20100 最多 9 台）")
 
     async def delete_instance(self, native_index: str) -> None:
         if self._cli is not None:
             if updater.update_in_progress(self.root):
-                raise RuntimeError("魔改 AVD 正在更新，更新完再删除实例")
+                raise RuntimeError("ModAVD 正在更新，更新完再删除实例")
             try:
                 await self._cli.delete(str(native_index))
             except modavd_cli.CLIError as error:
                 self._raise_cli_error(error)
             _FROZEN.pop(_instance_key(self.root, str(native_index)), None)
-            logger.info(f"已由 modavd delete 删除魔改 AVD 实例 {native_index}")
+            logger.info(f"已由 modavd delete 删除 ModAVD 实例 {native_index}")
             return
         status = await self.getStatus(native_index)
         if status not in (
@@ -2524,12 +2522,12 @@ class _AvdCore(DeviceBase):
             DeviceStatus.NOT_FOUND,
             DeviceStatus.ERROR,
         ):
-            raise RuntimeError(f"魔改 AVD 实例 {native_index} 未关闭，无法删除")
+            raise RuntimeError(f"ModAVD 实例 {native_index} 未关闭，无法删除")
         if status == DeviceStatus.ERROR:
             # 被看门狗强杀过的实例进程已经不在，只剩状态标记
             _FROZEN.pop(_instance_key(self.root, str(native_index)), None)
         await asyncio.to_thread(delete_instance_files, self.root, native_index)
-        logger.info(f"已删除魔改 AVD 实例 {native_index}")
+        logger.info(f"已删除 ModAVD 实例 {native_index}")
 
     # ---- 实例选项 ------------------------------------------------------
 
@@ -2556,7 +2554,7 @@ class _AvdCore(DeviceBase):
 
         只收单个 ``.apk``：``.xapk`` / 拆分包（``install-multiple``）不支持。返回 adb 的结果行。"""
         if updater.update_in_progress(self.root):
-            raise RuntimeError("魔改 AVD 正在更新，更新完再安装 APK")
+            raise RuntimeError("ModAVD 正在更新，更新完再安装 APK")
         if self._cli is not None:
             try:
                 data = await self._cli.install(str(idx), apk)
@@ -2570,8 +2568,8 @@ class _AvdCore(DeviceBase):
         self._instance(idx)
         status = await self.getStatus(idx)
         if status != DeviceStatus.ONLINE:
-            raise RuntimeError(f"魔改 AVD 实例 {idx} 没有开机，请先开机再安装 APK")
-        logger.info(f"魔改 AVD 实例 {idx} 安装 APK: {apk}")
+            raise RuntimeError(f"ModAVD 实例 {idx} 没有开机，请先开机再安装 APK")
+        logger.info(f"ModAVD 实例 {idx} 安装 APK: {apk}")
         code, output = await host.run_adb(
             self.root,
             "install",
@@ -2583,9 +2581,9 @@ class _AvdCore(DeviceBase):
         lines = [line.strip() for line in (output or "").splitlines() if line.strip()]
         last = lines[-1] if lines else ""
         if code != 0 or not last.startswith("Success"):
-            logger.warning(f"魔改 AVD 实例 {idx} 安装 {apk.name} 失败: {output}")
+            logger.warning(f"ModAVD 实例 {idx} 安装 {apk.name} 失败: {output}")
             raise RuntimeError(f"安装 {apk.name} 失败：{last or f'adb 返回 {code}'}")
-        logger.info(f"魔改 AVD 实例 {idx} 已安装 {apk.name}")
+        logger.info(f"ModAVD 实例 {idx} 已安装 {apk.name}")
         return last
 
 
@@ -2611,12 +2609,12 @@ def _display_settings(current: dict, changes: dict[str, int]) -> dict[str, int]:
         None,
     )
     if preset is None:
-        raise ValueError("魔改 AVD 的分辨率只能选 1920×1080 或 1280×720")
+        raise ValueError("ModAVD 的分辨率只能选 1920×1080 或 1280×720")
     if (
         not {"width", "height"} & changes.keys()
         and changes.get("dpi") != DISPLAY_PRESETS[preset][2]
     ):
-        raise ValueError("魔改 AVD 的 DPI 随分辨率档位切换，不能单独修改")
+        raise ValueError("ModAVD 的 DPI 随分辨率档位切换，不能单独修改")
     display = display_changes(
         {
             "hw.lcd.width": str(current.get("width") or 0),
@@ -2632,7 +2630,7 @@ def _display_settings(current: dict, changes: dict[str, int]) -> dict[str, int]:
 
 
 class AvdHostAdb:
-    """MAS 宿主进程对一台魔改 AVD 实例发 adb 命令的通道：私有 server ``-P <adbServerPort>
+    """MAS 宿主进程对一台 ModAVD 实例发 adb 命令的通道：私有 server ``-P <adbServerPort>
     -s emulator-<控制台端口>``。脚本的 adb server 杀不到它，丢设备时 :func:`host.run_adb` 会重新登记。
 
     调用约定同 :data:`~..applaunch.AdbRunner`：``await runner(*args, timeout=…)`` → ``(返回码, 输出)``。
@@ -2659,13 +2657,13 @@ class AvdHostAdb:
         )
         if code != 0 or not data.startswith(b"\x89PNG"):
             raise RuntimeError(
-                f"魔改 AVD 实例 {self.native_index} 截图失败（返回码 {code}）: {error[-200:]}"
+                f"ModAVD 实例 {self.native_index} 截图失败（返回码 {code}）: {error[-200:]}"
             )
         return data
 
 
 class AvdManager(AppLaunchMixin, _AvdCore):
-    """一条魔改 AVD 安装的管理器。
+    """一条 ModAVD 安装的管理器。
 
     ``AppLaunchMixin.open`` 先开机再拉应用；这里把拉应用改走私有 adb、先结束其它第三方游戏。
     """
@@ -2718,10 +2716,10 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         idx = str(idx)
         if self._cli is not None:
             if updater.update_in_progress(self.root):
-                raise RuntimeError("魔改 AVD 正在更新，更新完再重启")
+                raise RuntimeError("ModAVD 正在更新，更新完再重启")
             if await self._cli_creating(idx):
                 raise RuntimeError(
-                    f"魔改 AVD 实例 {idx} 正在新建（后台开机做初始化），等新建完成再重启"
+                    f"ModAVD 实例 {idx} 正在新建（后台开机做初始化），等新建完成再重启"
                 )
             self._check_components()
         await self.close(idx)
@@ -2873,7 +2871,7 @@ async def build_manager(
     if cli is None:
         exe = emulator_exe(root)
         if not exe.is_file():
-            raise RuntimeError(f"找不到魔改 AVD 程序 {exe}")
+            raise RuntimeError(f"找不到 ModAVD 程序 {exe}")
     return AvdManager(
         manager_exe=manager_exe,
         max_wait_time=max_wait_time,

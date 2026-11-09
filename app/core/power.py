@@ -119,7 +119,7 @@ class _PowerManager:
                         EmulatorManager.close_running_avd_instances(), 30
                     )
                 except Exception as error:
-                    logger.warning(f"关闭魔改 AVD 实例失败，继续电源操作: {error}")
+                    logger.warning(f"关闭 ModAVD 实例失败，继续电源操作: {error}")
             if mode in {PowerSignal.SHUTDOWN, PowerSignal.REBOOT, PowerSignal.LOGOFF}:
                 await EmulatorManager.kill_emulator_processes()
         if mode not in {PowerSignal.KILL_SELF, PowerSignal.RESTART_SELF}:

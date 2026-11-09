@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""魔改 AVD（Android Emulator）后端的固定参数。
+"""ModAVD（Android Emulator）后端的固定参数。
 
 模拟器、平台工具、系统镜像都随模拟器内测包提供，MAS 不下载；只有模拟器本体可以由 MAS 从 ModAVD 的
 GitHub Release 更新（:mod:`.updater`）。这里记它们在根目录里的位置。
@@ -26,24 +26,24 @@ GitHub Release 更新（:mod:`.updater`）。这里记它们在根目录里的�
 
 from dataclasses import dataclass
 
-#: 魔改 AVD 目前只给 MFW 脚本（MaaFW 引擎，通用项目与各特调）和 MAA 用：其它脚本选了魔改 AVD 设备时，
+#: ModAVD 目前只给 MFW 脚本（MaaFW 引擎，通用项目与各特调）和 MAA 用：其它脚本选了 ModAVD 设备时，
 #: 保存与运行时都用这句话拒绝，不走没测过的路。
-MOD_AVD_UNSUPPORTED_MESSAGE = "魔改 AVD 目前只支持 MFW 脚本和 MAA"
+MOD_AVD_UNSUPPORTED_MESSAGE = "ModAVD 目前只支持 MFW 脚本和 MAA"
 
 #: 端口段：原生索引 i → 控制台 ``20000 + 10*i``，adb ``+1``，gRPC ``+2``。
 #: 整段 20000–20100 由用户指定，避开雷电（5554 起）和 MuMu（16384 起）。
 PORT_BASE = 20000
 PORT_STEP = 10
-#: 所有魔改 AVD 实例共用的私有 adb server。模拟器只向它注册，**永远不碰 5037**：
+#: 所有 ModAVD 实例共用的私有 adb server。模拟器只向它注册，**永远不碰 5037**：
 #: 5037 是雷电 / MuMu / 生产 MAA 在用的，不同版本的 adb 抢 5037 会互相杀 server。
 ADB_SERVER_PORT = 20050
-#: 脚本（MAA、MaaFW）在魔改 AVD 实例上用的 adb server。脚本用 SDK 的新版 adb，放在 5037 上会和
+#: 脚本（MAA、MaaFW）在 ModAVD 实例上用的 adb server。脚本用 SDK 的新版 adb，放在 5037 上会和
 #: 雷电 / MuMu 自带的旧版 adb 互杀 server（用户定：单独一个端口）。``mas-avd.json`` 的
 #: ``scriptAdbServerPort`` 可改。
 SCRIPT_ADB_SERVER_PORT = 20049
 #: 我们起的 adb server（私有、脚本专用）都带这个环境变量：关掉 adb server 对 5555–5585 本地端口的
 #: 模拟器扫描。不关的话它们会自动连上同机的雷电等模拟器（10-04 实测 20058 / 20059 都挂上了生产雷电的
-#: ``emulator-5560``），和生产抢同一个 adbd。魔改 AVD 实例在 20000 段、靠 ``host:emulator`` 登记，
+#: ``emulator-5560``），和生产抢同一个 adbd。ModAVD 实例在 20000 段、靠 ``host:emulator`` 登记，
 #: 本来就不在扫描范围里，关掉不影响。值小于 5555 时 adb 一个端口都不扫。
 ADB_NO_LOCAL_SCAN_ENV = {"ADB_LOCAL_TRANSPORT_MAX_PORT": "5554"}
 #: 原生索引上限。i=5 的端口段 20050–20052 正好压在私有 adb server 上，不能用。
@@ -143,8 +143,8 @@ SYSTEM_IMAGE = Component(
 #: 内测包里除模拟器以外的必需组件（模拟器另外检查，见下）。
 REQUIRED_COMPONENTS: tuple[Component, ...] = (PLATFORM_TOOLS, SYSTEM_IMAGE)
 
-#: Android 模拟器只认我们的自编版（用户定：必须用魔改 AVD 内测包）。内测包解压出来就是一个
-#: 魔改 AVD 根目录，自带 ``sdk\emulator``；原版（谷歌发的）不支持，开机前检查直接拒绝。
+#: Android 模拟器只认我们的自编版（用户定：必须用 ModAVD 内测包）。内测包解压出来就是一个
+#: ModAVD 根目录，自带 ``sdk\emulator``；原版（谷歌发的）不支持，开机前检查直接拒绝。
 #: 认自编版的办法见 ``components.emulator_self_built``；还要内测包编号够新，见 :data:`MIN_MOD_AVD_BUILD`。
 #: 内测包的编号：自编模拟器在 ``sdk\emulator\source.properties`` 里写 ``Pkg.BuildId=mas-<编号>``，
 #: 每出一个新包加一。编号低于这个值（或读不到编号）的内测包开机前检查拒绝开机，要用户换新包。
@@ -166,7 +166,7 @@ MODAVD_RELEASE_API = f"https://api.github.com/repos/{MODAVD_REPOSITORY}/releases
 MODAVD_RELEASE_API_ENV = "AUTO_MAS_MODAVD_RELEASE_API"
 #: 包根上的逐文件清单（新写法版本 v0.32.1 起才有）。
 MODAVD_MANIFEST_FILE = "modavd-manifest.json"
-#: 本机要装的 ModAVD 平台（MAS 只在 Windows x64 上跑魔改 AVD）。主包的文件名和清单的 ``platform``
+#: 本机要装的 ModAVD 平台（MAS 只在 Windows x64 上跑 ModAVD）。主包的文件名和清单的 ``platform``
 #: 都带它：``ModAVD-<ver>-win-x64.zip``；源码包 ``ModAVD-<ver>-sources.zip`` 不带。以后可能有
 #: ``linux-x64``，更新器只装和这里一致的包。
 MODAVD_PLATFORM_OS = "win"
@@ -382,7 +382,7 @@ GRACEFUL_SHUTDOWN_DEADLINE_SECONDS = CLOSE_BUDGET_SECONDS - (
     + FALLBACK_KILL_TIMEOUT_SECONDS
     + FALLBACK_FORCE_KILL_WAIT_SECONDS
 )
-#: 关机 / 重启 / 注销前并发关魔改 AVD 实例的总时限（单台 28 秒以内，留一点余量）；到点不等，
+#: 关机 / 重启 / 注销前并发关 ModAVD 实例的总时限（单台 28 秒以内，留一点余量）；到点不等，
 #: 电源流程照常按进程名强杀。
 POWER_CLOSE_TIMEOUT_SECONDS = 30.0
 #: 「安装 APK」一次 `adb install` 的时限。游戏安装包常有 1–3 GB，推送加安装在慢盘上要几分钟。

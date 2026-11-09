@@ -1,4 +1,4 @@
-"""魔改 AVD 更新的宿主装配：读取当前配置、查询实例与发布进度。"""
+"""ModAVD 更新的宿主装配：读取当前配置、查询实例与发布进度。"""
 
 from dataclasses import asdict
 from pathlib import Path

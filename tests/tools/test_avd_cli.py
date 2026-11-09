@@ -981,7 +981,7 @@ async def test_restart_is_stop_then_start_and_running_mode_is_never_switched(
         start={
             "error": {
                 "code": "busy",
-                "message": "魔改 AVD 实例 7 正在无头运行",
+                "message": "ModAVD 实例 7 正在无头运行",
                 "advice": "先关机再换成带窗口",
             },
             "exit": 5,

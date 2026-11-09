@@ -672,13 +672,13 @@ class WSEmulatorOperationData(BaseModel):
 
 
 class WSAvdUpdateProgressData(BaseModel):
-    """魔改 AVD 更新进度 (type=emulator2.avd-update.progress, id=EmulatorManager)
+    """ModAVD 更新进度 (type=emulator2.avd-update.progress, id=EmulatorManager)
 
     下载、解包、核对、换上共用；``status`` 为 success / failed / idle 时这一次操作结束，
     界面据此重新取一次状态快照。
     """
 
-    root: str = Field(..., description="魔改 AVD 根目录")
+    root: str = Field(..., description="ModAVD 根目录")
     stage: str = Field(
         ...,
         description=(
