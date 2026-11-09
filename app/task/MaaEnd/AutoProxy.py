@@ -2848,6 +2848,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         log = "".join(log_content)
         await self.cur_user_log.set_state(content=log_content)
+        if any(re.search(r"任务完成:\s*[^\r\n]+", line) for line in log_content):
+            from app.core.script_update_queue import report_script_task_completed
+
+            report_script_task_completed()
         await self.script_info.set_log(log)
         if "资源加载失败" in log:
             # 资源文件损坏/缺失，重启脚本也不会好：不再重试

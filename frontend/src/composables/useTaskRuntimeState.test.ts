@@ -73,6 +73,63 @@ describe('useTaskRuntimeState 快照对账', () => {
     vi.unstubAllGlobals()
   })
 
+  it('重连恢复预下载状态，后续进度和清除事件不改写脚本日志基线', async () => {
+    const prefetch = { target: 'MaaEnd', method: 'FluxDown', progress: '50%' }
+    getRuntimeTasks.mockResolvedValue({
+      tasks: [
+        {
+          taskId: 'prefetch-task',
+          mode: 'AutoProxy',
+          queueId: null,
+          scriptId: 's1',
+          userId: null,
+          stopping: false,
+          isCycle: false,
+          scripts: [],
+          task: { info: { mode: TaskMode.AUTO_PROXY }, current: { prefetch } },
+          cycleNextList: [],
+          log: 'MAA running\n',
+          logSeq: 7,
+          logFirstLine: 1,
+        },
+      ],
+      scheduledScripts: [],
+    })
+    const mod = await loadRuntimeState()
+    await mod.refreshTaskRuntimeSnapshot()
+    expect(mod.getTaskRuntimeState('prefetch-task')?.prefetch).toEqual(prefetch)
+    const handler = subscriptionHandlers.get('prefetch-task:task.info.updated')!
+    handler({
+      id: 'prefetch-task',
+      type: 'task.info.updated',
+      data: {
+        current: { prefetch: { ...prefetch, progress: '75%' } },
+      },
+    })
+    expect(mod.getTaskRuntimeState('prefetch-task')).toMatchObject({
+      prefetch: { progress: '75%' },
+      log: 'MAA running\n',
+      logSeq: 7,
+    })
+    handler({
+      id: 'prefetch-task',
+      type: 'task.info.updated',
+      data: { current: { prefetch: null } },
+    })
+    expect(mod.getTaskRuntimeState('prefetch-task')?.prefetch).toBeNull()
+    expect(mod.getTaskRuntimeState('prefetch-task')?.logSeq).toBe(7)
+    handler({ id: 'prefetch-task', type: 'task.info.updated', data: { current: { prefetch } } })
+    getRuntimeTasks.mockResolvedValue({ tasks: [] })
+    await mod.refreshTaskRuntimeSnapshot()
+    expect(mod.getTaskRuntimeState('prefetch-task')).toMatchObject({
+      phase: 'completed',
+      prefetch: null,
+      log: 'MAA running\n',
+      logSeq: 7,
+    })
+    mod.disposeTaskRuntimeState()
+  })
+
   it('请求期间有增量事件时隔一拍再重取，不背靠背热请求，且重取次数有上限', async () => {
     // 每次快照请求期间都有新任务创建：模拟高频增量
     getRuntimeTasks.mockImplementation(async () => {
