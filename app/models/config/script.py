@@ -2909,6 +2909,10 @@ class OkwwUserConfig(DomainEntry):
     OKWW_TASK_BOOK: ClassVar = {1: "日常"}
 
     class DataFields(ConfigGroup):
+        LastTaskName: Literal["", "DailyTask", "MultiAccountConfigTask"] = Field(
+            default="", description="上次运行的 ok-ww 任务名称；空值沿用历史任务序号"
+        )
+
         LastProxyDate: Annotated[
             datetime, tz(_utils_constants.UTC4), ui(format="date")
         ] = Field(
@@ -3030,6 +3034,11 @@ class OkwwUserConfig(DomainEntry):
     Notify: NotifyFields = Field(default_factory=NotifyFields)
 
     class TaskFields(ConfigGroup):
+        TaskName: Literal["DailyTask", "MultiAccountConfigTask"] = Field(
+            default="DailyTask",
+            description="运行任务：日常任务或原生多账号配置；原生多账号由 ok-ww 切号、整批重试，不使用 MAS 日常覆写",
+        )
+
         AdditionalTasks: list[
             Literal[
                 "Check Weekly Garden",
@@ -3062,7 +3071,7 @@ class OkwwUserConfig(DomainEntry):
             "Tacet Suppression", "Forgery Challenge", "Simulation Challenge"
         ] = Field(
             default_factory=lambda: "Tacet Suppression",
-            description="MAS 仅接管 DailyTask 及 DailyTask 高频设置；账号切换由 MAS 侧 account_switch 实现，不再暴露上游 MultiAccountDailyTask。 每日任务体力用途",
+            description="每日任务体力用途（仅日常任务且开启覆写常规配置时生效）",
         )
 
     Task: TaskFields = Field(default_factory=TaskFields)
@@ -3076,6 +3085,8 @@ class OkwwUserConfig(DomainEntry):
         )
         last_task_index = int(self.Data.LastTaskIndex or 0)
         task_label = self.OKWW_TASK_BOOK.get(last_task_index, "未知")
+        if self.Data.LastTaskName == "MultiAccountConfigTask":
+            task_label = "原生多账号配置"
         tags.append({"text": f"任务：{task_label}", "color": "orange"})
         tags.append(_tag_remained_days(self))
         tags.append(_tag_notes(self))
@@ -3722,9 +3733,21 @@ class OkwwConfig(DomainEntry):
     "OK-WW 配置（ok-script 线）"
 
     class GameFields(ConfigGroup):
+        AccountSwitchMethod: Annotated[
+            Literal["NONE", "MAS", "OKWW"],
+            legacy(
+                group="Game",
+                name="AccountSwitch",
+                convert=lambda value: "MAS" if value else "NONE",
+            ),
+        ] = Field(
+            default="MAS",
+            description="账号切换方式：MAS 逐用户切换（推荐）；OKWW 打包本轮用户，由脚本切换并补跑未完成账号",
+        )
+
         AccountSwitch: bool = Field(
             default_factory=lambda: False,
-            description="运行前强制切换账号（依赖游戏配置启用；用户未填手机号时不切换）",
+            description="运行前由 MAS 切换账号（仅日常任务且游戏配置启用时生效；用户未填手机号时不切换）",
         )
 
         Arguments: CliArgumentString = Field(

@@ -204,88 +204,13 @@
           </a-button>
         </a-space>
       </a-flex>
-      <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <a-row :gutter="24">
-              <a-col :span="24">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.currentLaunchArguments')"
-                      :hint="t('core.edit.argumentsGeneratedFromTask')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input :value="currentStartupArguments" size="large" readonly />
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item :label="t('core.edit.spendSanityFarm')">
-                  <a-select
-                    v-model:value="formData.Task.WhichToFarm"
-                    size="large"
-                    :options="farmOptions"
-                    @change="saveTaskConfig"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col v-if="formData.Task.WhichToFarm === 'Tacet Suppression'" :span="12">
-                <a-form-item :label="t('core.edit.sonanceCasketNumberF2')">
-                  <a-input-number
-                    v-model:value="formData.Task.WhichTacetSuppressionToFarm"
-                    :min="1"
-                    :max="99"
-                    style="width: 100%"
-                    size="large"
-                    @blur="saveTaskConfig"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col v-else-if="formData.Task.WhichToFarm === 'Forgery Challenge'" :span="12">
-                <a-form-item :label="t('core.edit.echoDomainNumberF2')">
-                  <a-input-number
-                    v-model:value="formData.Task.WhichForgeryChallengeToFarm"
-                    :min="1"
-                    :max="99"
-                    style="width: 100%"
-                    size="large"
-                    @blur="saveTaskConfig"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col v-else :span="12">
-                <a-form-item :label="t('core.edit.simulatedUniverseMaterials')">
-                  <a-select
-                    v-model:value="formData.Task.MaterialSelection"
-                    size="large"
-                    :options="materialOptions"
-                    @change="saveTaskConfig"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <a-form-item :label="t('core.edit.useNightmareNestDaily')">
-              <a-switch
-                v-model:checked="formData.Task.FarmNightmareNestForDailyEcho"
-                @change="saveTaskConfig"
-              />
-            </a-form-item>
-
-            <a-form-item :label="t('core.edit.extraTasksThatRun')">
-              <a-checkbox-group
-                v-model:value="formData.Task.AdditionalTasks"
-                :options="additionalTaskOptions"
-                @change="saveTaskConfig"
-              />
-            </a-form-item>
-          </div>
-        </a-form>
-      </a-card>
+      <OkwwTaskConfigSection
+        v-model="formData.Task"
+        :quick-config="formData.Info.IfQuickConfig"
+        :disabled="configActionsDisabled"
+        @save="saveTaskConfig"
+        @task-change="handleTaskNameChange"
+      />
 
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
@@ -343,6 +268,7 @@
 </template>
 
 <script setup lang="ts">
+import OkwwTaskConfigSection from './components/OkwwTaskConfigSection.vue'
 import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
 import UserNotesField from '@/views/EditView/User/components/UserNotesField.vue'
 import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
@@ -460,25 +386,6 @@ const okwwConfigModeOptions: Array<{
   },
 ]
 
-const farmOptions = [
-  { label: '无音区', value: 'Tacet Suppression' },
-  { label: '凝素领域', value: 'Forgery Challenge' },
-  { label: '模拟领域', value: 'Simulation Challenge' },
-]
-
-const materialOptions = [
-  { label: '共鸣者经验', value: 'Resonator EXP' },
-  { label: '武器经验', value: 'Weapon EXP' },
-  { label: '贝币', value: 'Shell Credit' },
-]
-
-const additionalTaskOptions = [
-  { label: '检查每周乐园', value: 'Check Weekly Garden' },
-  { label: '自动刷所有梦魇巢穴', value: 'Auto Farm all Nightmare Nest' },
-  { label: '已弃置声骸超过 1000 时融合', value: 'Merge Echo If discarded > 1000' },
-  { label: '传送并刷取 4C 声骸', value: 'Teleport and Farm 4C Echo' },
-]
-
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
 type OkwwNotifyForm = FormSection<NonNullable<OkwwUserConfig['Notify']>>
@@ -508,6 +415,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Tag: '',
   },
   Task: {
+    TaskName: 'DailyTask',
     WhichToFarm: 'Tacet Suppression',
     WhichTacetSuppressionToFarm: 1,
     WhichForgeryChallengeToFarm: 1,
@@ -529,6 +437,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     ProxyTimes: 0,
     LastProxyStatus: '未知',
     LastTaskIndex: 0,
+    LastTaskName: '',
   },
 })
 
@@ -536,9 +445,6 @@ const formData = reactive<OkwwUserFormData>({
   userName: '',
   ...getDefaultUserData(),
 })
-
-// ok-ww 只调度日常任务（-t 1 = DailyTask）；账号切换由 MAS 侧实现
-const currentStartupArguments = '-t 1 -e'
 
 const handleConfigModeChange = async (value: boolean | string) => {
   if (configActionsDisabled.value) return
@@ -607,11 +513,19 @@ const handleQuickConfigChange = async (value: boolean) => {
   }
 }
 
+const handleTaskNameChange = async (value: OkwwUserFormData['Task']['TaskName']) => {
+  if (configActionsDisabled.value) return
+  const previous = formData.Task.TaskName
+  formData.Task.TaskName = value
+  if (!(await saveField('Task.TaskName', value))) formData.Task.TaskName = previous
+}
+
 const saveTaskConfig = async () => {
   if (isInitializing.value || !userId.value) return
   await enqueue(() =>
     updateUser(scriptId, userId.value, {
       Task: {
+        TaskName: formData.Task.TaskName,
         WhichToFarm: formData.Task.WhichToFarm,
         WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
         WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,

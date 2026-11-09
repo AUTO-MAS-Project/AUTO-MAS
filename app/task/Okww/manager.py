@@ -48,6 +48,7 @@ from .AutoProxy import (
     AutoProxyTask,
     _okww_config_base,
 )
+from .BatchProxy import BatchProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools.backup_archive import archive_native_backup
 from .Update import WuwaUpdateTask
@@ -286,6 +287,36 @@ class OkwwManager(ScriptManagerBase):
                     view_only=self.task_info.view_only,
                 )
             )
+            return
+
+        if self.script_config.Game.AccountSwitchMethod == "OKWW":
+            participants = []
+            for index, user in enumerate(self.script_info.user_list):
+                await self.script_info.set_current_index(index)
+                if await self.check_user_before_run(
+                    user, self.user_config[uuid.UUID(user.user_id)]
+                ):
+                    participants.append(user)
+            if participants:
+                await self.script_info.set_current_index(self.script_info.user_list.index(participants[0]))
+                method = BatchProxyTask(
+                    self.script_info,
+                    self.script_config,
+                    self.user_config,
+                    self.game_manager,
+                    participants=participants,
+                )
+                result = await method.check()
+                if result != "Pass":
+                    for user in participants:
+                        await self.notify_user_check_failure(user, result)
+                else:
+                    try:
+                        for user in participants:
+                            self.record_user_run_start(user)
+                        await self.spawn(method)
+                    finally:
+                        await self._restore_script_config_from_temp()
             return
 
         for _runtime_user_index in range(len(self.script_info.user_list)):

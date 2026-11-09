@@ -44,6 +44,8 @@ from app.task.Okww.AutoProxy import AutoProxyTask
 
 def make_proxy() -> AutoProxyTask:
     proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.task_name = "DailyTask"
+    proxy.script_config = SimpleNamespace(Run=SimpleNamespace(RunTimeLimit=30))
     proxy.cur_user_log = SimpleNamespace(content=[], status="")
     proxy.cur_user_item = SimpleNamespace(status="运行")
     proxy.script_info = SimpleNamespace(log="", log_first_line=0)
@@ -152,6 +154,25 @@ def test_localized_completion_text_without_exit_line_is_not_success():
         )
         assert proxy.cur_user_log.status == "OK-WW 未连接游戏客户端"
         assert proxy.cur_user_item.status == "异常"
+        assert proxy.wait_event.is_set()
+
+    asyncio.run(scenario())
+
+
+def test_native_multi_account_waits_for_whole_batch():
+    """单账号日常完成后仍运行，直到上游整批任务正常返回。"""
+
+    async def scenario():
+        proxy = make_proxy()
+        proxy.task_name = "MultiAccountConfigTask"
+        await proxy.check_log(["DailyTask:Daily Task Completed\n"], datetime.now())
+        assert proxy.cur_user_item.status == "运行"
+        assert not proxy.wait_event.is_set()
+        await proxy.check_log(
+            ["TaskExecutor:Successfully Executed Task, Exiting Game and App!\n"],
+            datetime.now(),
+        )
+        assert proxy.cur_user_item.status == "完成"
         assert proxy.wait_event.is_set()
 
     asyncio.run(scenario())

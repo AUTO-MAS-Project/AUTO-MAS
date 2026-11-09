@@ -1891,7 +1891,7 @@
   "core.edit.oknteViewingDesc": "The OK-NTE window shows the selected backup, for viewing only.",
   "core.edit.oknteViewingDesc2": "Viewing temporarily switches the config; click \"Close viewer\" when done.",
   "core.edit.oknteViewingTitle": "Viewing OK-NTE config",
-  "core.edit.okwwAccountSwitchHint": "When enabled, MAS switches to the login account matching the last four digits of the account's phone number after the game launches successfully and before running ok-ww; accounts without an account ID filled in are not switched",
+  "core.edit.okwwAccountSwitchHint": "MAS runs users separately. ok-ww runs the selected users together and retries users without confirmed completion. Full mainland China mobile numbers and masked mobile numbers are converted automatically for ok-ww. Enter emails as shown in the login list, or use the displayed account name. The last four phone digits alone are not supported.",
   "core.edit.okwwCheckUpdateTitle": "Check for Wuthering Waves updates",
   "core.edit.okwwConfigRestoreScriptDesc": "Backups of the ok-ww native config; restoring applies directly to ok-ww itself. Created automatically (dedup) when opening this edit page, before running ok-ww or opening its config UI, latest 10 kept",
   "core.edit.okwwSessionOpened": "ok-ww setup opened",
@@ -4877,5 +4877,13 @@
   "core.comp.april.floating5": "A little nonsense",
   "core.comp.april.floating6": "No bugs today",
   "core.comp.april.floating7": "Physics has gone wild",
-  "core.comp.april.floating8": "Randomness is art"
+  "core.comp.april.floating8": "Randomness is art",
+  "core.edit.okwwSwitchAccountBeforeRun": "Switch account with MAS before running",
+  "core.edit.okwwRunTask": "Run task",
+  "core.edit.okwwDailyTask": "Daily task",
+  "core.edit.okwwNativeMultiAccount": "Native multi-account configuration",
+  "core.edit.okwwNativeMultiAccountHint": "Runs existing ok-ww multi-account settings from the selected configuration source (the upstream configuration tab was removed in v3.7.17). MAS treats the batch as one user, skips MAS account switching and daily overrides, and reruns the whole batch on retry.",
+  "core.edit.okwwAccountSwitchMethod": "Account switching",
+  "core.edit.okwwMasRecommended": "MAS (recommended)",
+  "core.edit.okwwNativeSwitch": "ok-ww"
 }

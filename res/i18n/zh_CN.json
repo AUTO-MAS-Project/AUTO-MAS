@@ -1891,7 +1891,7 @@
   "core.edit.oknteViewingDesc": "ok-nte 界面显示的是所选备份的内容，仅供查看。",
   "core.edit.oknteViewingDesc2": "查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。",
   "core.edit.oknteViewingTitle": "正在查看 OK-NTE 配置",
-  "core.edit.okwwAccountSwitchHint": "开启后，游戏启动成功后在运行 ok-ww 前按账号手机号后 4 位强制切换登录账号；账号未填写账号则不切换",
+  "core.edit.okwwAccountSwitchHint": "MAS 逐用户运行；ok-ww 合并本轮用户运行，失败后只补跑未确认完成的账号。ok-ww 方式会将完整大陆手机号或带星号手机号转换为登录列表标识；邮箱按登录列表填写，其他账号填写显示名。只填手机号后四位不支持。",
   "core.edit.okwwCheckUpdateTitle": "检查鸣潮更新",
   "core.edit.okwwConfigRestoreScriptDesc": "ok-ww 原生配置的备份，恢复会直接作用于 ok-ww 本体；打开本编辑页、运行 ok-ww 或打开配置界面前会自动去重创建，保留最近 10 份",
   "core.edit.okwwSessionOpened": "已打开 ok-ww 设置",
@@ -4877,5 +4877,13 @@
   "core.comp.april.floating5": "就离谱一下",
   "core.comp.april.floating6": "今天没有 BUG",
   "core.comp.april.floating7": "物理引擎已失控",
-  "core.comp.april.floating8": "随机就是艺术"
+  "core.comp.april.floating8": "随机就是艺术",
+  "core.edit.okwwSwitchAccountBeforeRun": "运行前由 MAS 切换账号",
+  "core.edit.okwwRunTask": "运行任务",
+  "core.edit.okwwDailyTask": "日常任务",
+  "core.edit.okwwNativeMultiAccount": "原生多账号配置",
+  "core.edit.okwwNativeMultiAccountHint": "运行所选配置来源中已有的 ok-ww 多账号配置（上游 v3.7.17 起已移除配置页签）。MAS 将整批视为一个用户，跳过 MAS 切号与日常覆写；失败后整批重跑。",
+  "core.edit.okwwAccountSwitchMethod": "账号切换方式",
+  "core.edit.okwwMasRecommended": "MAS 切换（推荐）",
+  "core.edit.okwwNativeSwitch": "ok-ww 切换"
 }

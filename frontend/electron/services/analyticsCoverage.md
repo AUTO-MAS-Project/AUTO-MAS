@@ -204,3 +204,5 @@ started 未送达时不发送对应 finished。运行 UUID 只留在本机消息
 - BetterGI 本体托管更新：设置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；每批更新准备、普通失败后继续及安装未确认拦截沿用 `task_observed_finished`。安装阶段不另建事件，不采集版本、CDK 或路径。
 
 通用脚本计划表复用 `plan_manage_finished` 与原生配置会话事件（`task_start_result`、`native_config_action_finished` 的打开与保存）；计划类型新增有限值 `UniversalPlanConfig`，不采集计划、账号、脚本 ID 或配置内容。
+
+- Okww 原生多账号任务：任务选择保存复用 `useUserApi.updateUser` 的 `config_write_finished`；批次仍按 MAS 用户归属结果，运行结局沿用 `taskAnalytics.ts` 的现有观察边界，不拆分或采集上游账号、任务配置及日志。

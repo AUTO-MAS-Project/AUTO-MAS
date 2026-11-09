@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type OkwwUserConfig_Task = {
     /**
+     * 运行任务：日常任务或原生多账号配置；原生多账号由 ok-ww 切号、整批重试，不使用 MAS 日常覆写
+     */
+    TaskName?: ('DailyTask' | 'MultiAccountConfigTask' | null);
+    /**
      * 每日任务后运行的附加任务
      */
     AdditionalTasks?: (Array<'Check Weekly Garden' | 'Auto Farm all Nightmare Nest' | 'Merge Echo If discarded > 1000' | 'Teleport and Farm 4C Echo'> | null);
@@ -24,7 +28,7 @@ export type OkwwUserConfig_Task = {
      */
     WhichTacetSuppressionToFarm?: (number | null);
     /**
-     * MAS 仅接管 DailyTask 及 DailyTask 高频设置；账号切换由 MAS 侧 account_switch 实现，不再暴露上游 MultiAccountDailyTask。 每日任务体力用途
+     * 每日任务体力用途（仅日常任务且开启覆写常规配置时生效）
      */
     WhichToFarm?: ('Tacet Suppression' | 'Forgery Challenge' | 'Simulation Challenge' | null);
 };

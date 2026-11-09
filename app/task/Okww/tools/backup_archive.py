@@ -130,6 +130,7 @@ _OVERLAY_PREVIEW_ONLY_KEYS = {"Base"}
 恢复时以当前值为准，回填旧值会静默翻转 shared/independent 来源。"""
 
 _OVERLAY_TASK_KEYS = (
+    "TaskName",
     "WhichToFarm",
     "WhichTacetSuppressionToFarm",
     "WhichForgeryChallengeToFarm",
@@ -497,12 +498,14 @@ _FILE_TO_OVERLAY_KEY = {
 
 _OVERLAY_FIELD_LABELS = {
     "Id": "账号",
+    "TaskName": "运行任务",
     "Base": "配置文件来源",
     **{overlay: _FIELD_LABELS[file] for file, overlay in _FILE_TO_OVERLAY_KEY.items()},
 }
 """覆盖层字段（侧车键名）中文标签，文件字段词表派生 + 页面专属键补充"""
 
 _OVERLAY_ENUM_VALUE_LABELS = {
+    "TaskName": {"DailyTask": "日常任务", "MultiAccountConfigTask": "原生多账号配置"},
     "Base": BASE_SOURCE_LABELS,
     **{
         overlay: _ENUM_VALUE_LABELS[file]

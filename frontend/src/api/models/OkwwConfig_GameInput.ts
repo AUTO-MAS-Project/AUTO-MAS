@@ -4,7 +4,11 @@
 /* eslint-disable */
 export type OkwwConfig_GameInput = {
     /**
-     * 运行前强制切换账号（依赖游戏配置启用；用户未填手机号时不切换）
+     * 账号切换方式：MAS 逐用户切换（推荐）；OKWW 打包本轮用户，由脚本切换并补跑未完成账号
+     */
+    AccountSwitchMethod?: ('NONE' | 'MAS' | 'OKWW' | null);
+    /**
+     * 运行前由 MAS 切换账号（仅日常任务且游戏配置启用时生效；用户未填手机号时不切换）
      */
     AccountSwitch?: (boolean | null);
     /**
