@@ -125,7 +125,7 @@ from app.task.MaaFW.tools.core.worker_protocol import (
 from app.utils import UTC4, ProcessInfo, ProcessManager, get_logger, power
 from app.utils import game_apk as _utils_game_apk
 from app.utils import io as _utils_io
-from app.utils.common.process.runner import create_subprocess
+from app.utils.common.process.runner import create_subprocess, observe_process_exit
 from app.utils.common.process.scope import (
     current_process_scope,
     detached_process_context,
@@ -3338,6 +3338,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await self.game_process_manager.search_process(
                 ProcessInfo(exe=str(game_path.resolve())),
                 WINDOW_SEARCH_TIMEOUT_SECONDS,
+                owned=self.opened_game,
             )
         except Exception as exc:
             logger.warning(f"MaaFW 定位游戏进程窗口失败: {exc}")
@@ -3718,8 +3719,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if process is not None:
                     # pretask 的 stdout 可能由游戏继承，不能用 process.wait()
                     # 等其管道 EOF；只检查真正的进程退出状态。
-                    while process.returncode is None:
-                        await asyncio.sleep(0.05)
+                    await observe_process_exit(process)
                 if pending is not None:
                     try:
                         await asyncio.shield(pending)

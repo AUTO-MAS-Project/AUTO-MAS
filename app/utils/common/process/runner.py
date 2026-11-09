@@ -1,5 +1,6 @@
 import asyncio
 import locale
+import sys
 import time
 from collections.abc import Mapping
 from contextlib import suppress
@@ -66,13 +67,27 @@ def observe_process_exit(
     scope = current_process_scope.get()
 
     async def observe() -> int:
-        while process.returncode is None:
+        started = asyncio.get_running_loop().time()
+        native = process._transport.get_extra_info("subprocess")
+        while (code := process.returncode) is None:
+            if (
+                sys.platform == "win32"
+                and asyncio.get_running_loop().time() - started >= 1
+            ):
+                # 原生 Popen 持有本次进程的系统句柄；poll 不依赖管道 EOF，
+                # 也不会把后来复用同一 PID 的无关进程认成本次进程。
+                code = native.poll()
+                if code is not None:
+                    logger.warning(
+                        f"进程退出通知未更新（pid {process.pid}），原生句柄已确认退出: {code}"
+                    )
+                    break
             await asyncio.sleep(0.01)
         if after_task_cleanup and scope is not None and scope.requested:
             await scope.finished.wait()
             if scope.cleanup_failed:
                 raise ProcessCleanupUnconfirmed("任务强制清理失败，安装目录仍保持占用")
-        return process.returncode
+        return code
 
     return asyncio.create_task(observe(), context=detached_process_context())
 

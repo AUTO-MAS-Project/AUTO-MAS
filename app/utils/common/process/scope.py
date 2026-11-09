@@ -235,14 +235,36 @@ class TaskProcessScope:
             process.create_time()  # 缓存身份，避免命令退出后把复用 PID 当成本任务。
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             process = None
+        already_owned = process is not None and any(
+            known is not None
+            and known.pid == pid
+            and known.create_time() == process.create_time()
+            for _, known in self._processes.values()
+        )
         self._processes[id(handle)] = (handle, process)
         if writer:
             self._writers[id(handle)] = handle
-        if self._job is not None and suspended:
-            self._job.assign(pid, suspended=suspended, breakaway=breakaway)
-        else:
-            # 已存在的跟踪目标只登记归属，不改它原有的系统进程组。
+        if self._job is None:
             self._external_processes[id(handle)] = (handle, process)
+            return
+        # 登记失败仍保留已知身份供停止清理；成功标记后由 Job 接管。
+        self._external_processes[id(handle)] = (handle, process)
+        try:
+            if suspended:
+                self._job.assign(pid, suspended=True, breakaway=breakaway)
+            elif not already_owned:
+                if process is None:
+                    raise RuntimeError("无法核验接管进程的身份")
+                self._job.adopt(pid, process.create_time())
+            self._external_processes.pop(id(handle), None)
+        except BaseException as error:
+            from app.utils import get_logger
+
+            self.cleanup_failed = True
+            get_logger("进程管理").error(
+                f"任务进程归属登记失败（pid {pid}），保留资源占用: {error}"
+            )
+            raise
 
     def forget(self, handle: Any) -> None:
         self._processes.pop(id(handle), None)
@@ -305,18 +327,18 @@ class TaskProcessScope:
                         target.kill()
 
         try:
+            cleanups = []
             if self._job is not None:
-                self._job.kill()
+                cleanups.append(asyncio.to_thread(self._job.kill))
                 targets = tuple(self._external_processes.values())
             else:
                 targets = owned
-            results = await asyncio.gather(
-                *(
-                    asyncio.to_thread(kill, handle, process)
-                    for handle, process in targets
-                ),
-                return_exceptions=True,
+            cleanups.extend(
+                asyncio.to_thread(kill, handle, process) for handle, process in targets
             )
+            results = await asyncio.gather(*cleanups, return_exceptions=True)
+            if self._job is not None and isinstance(results[0], BaseException):
+                raise results[0]
             errors = [result for result in results if isinstance(result, BaseException)]
             if errors:
                 raise RuntimeError("部分任务进程未能强制终止") from errors[0]

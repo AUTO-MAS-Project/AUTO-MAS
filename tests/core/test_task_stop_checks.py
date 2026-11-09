@@ -341,7 +341,7 @@ async def test_task_stop_waits_for_update_then_force_closes_owned_processes(
                     stderr=asyncio.subprocess.PIPE,
                 )
             )
-            # 已有句柄也可以登记归属，不要求重新加入系统 Job。
+            # 已经启动的句柄也须登记到本任务的进程组。
             adopted = await asyncio.create_subprocess_exec(
                 sys.executable,
                 "-I",
@@ -532,3 +532,33 @@ async def test_explicit_cleanup_subprocess_is_allowed_after_task_scope_closes():
         assert not scope._processes
     finally:
         current_process_scope.reset(token)
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows 原生进程句柄退出核验")
+async def test_exit_observer_uses_native_handle_but_waits_for_cleanup(monkeypatch):
+    from app.utils.common.process.runner import observe_process_exit
+
+    scope = TaskProcessScope()
+    process = await asyncio.create_subprocess_exec(
+        sys._base_executable, "-I", "-c", "raise SystemExit(7)"
+    )
+    assert await process.wait() == 7
+    # 原生进程确已退出，模拟 asyncio 的退出通知未更新。
+    monkeypatch.setattr(process._transport, "get_returncode", lambda: None)
+    scope.requested = True
+    token = current_process_scope.set(scope)
+    try:
+        exited = observe_process_exit(process, after_task_cleanup=True)
+    finally:
+        current_process_scope.reset(token)
+    try:
+        await asyncio.sleep(1.1)
+        assert not exited.done(), "原生退出不能越过任务进程清理确认点"
+        scope.finished.set()
+        assert await asyncio.wait_for(exited, 1) == 7
+    finally:
+        scope.finished.set()
+        exited.cancel()
+        await asyncio.gather(exited, return_exceptions=True)
+        await scope.force_close()
