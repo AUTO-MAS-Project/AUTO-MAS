@@ -64,6 +64,11 @@ _TITLE_SCREEN = [
     ("START", (45, 50, 10, 10)),
     ("V4.1.0", (5, 2, 20, 5)),
 ]
+#: 登录成功后的标题页：START 被「<昵称> 欢迎回来」横幅盖住 / 淡化，只剩横幅可读
+_WELCOME_SCREEN = [
+    ("小逗芽呀 欢迎回来", (20, 4, 40, 8)),
+    ("切换账号", (80, 4, 10, 8)),
+]
 #: 认不出的画面（主界面截图里没有 START / 登录记录）
 _UNKNOWN_SCREEN = [
     ("邮件", (10, 10, 10, 10)),
@@ -387,3 +392,44 @@ def test_win32_device_build_blocks_mas_login_before_window_access(monkeypatch):
             runner._build_device_config(SimpleNamespace(controllerType="Win32"), None)
         )
     assert not runner._login_checked
+
+
+def test_welcome_banner_confirms_handover(monkeypatch) -> None:
+    """START 被「<昵称> 欢迎回来」横幅盖住时，横幅本身也算标题页的正向信号。"""
+    _fast(monkeypatch)
+    device = _install_fake_device(
+        monkeypatch, [_PANEL_SCREEN, _WELCOME_SCREEN, _WELCOME_SCREEN]
+    )
+    message = asyncio.run(login_mod._wait_panel_closed(device, progress=None))
+    assert "已确认回到游戏标题页" in message
+
+
+def test_health_warning_is_dismissed_before_login(monkeypatch) -> None:
+    """冷启动的健康警告页要先点掉，否则认不出画面会等到超时。"""
+    _fast(monkeypatch)
+    monkeypatch.setattr(login_mod, "_LOGIN_TIMEOUT", 3.0)
+    warning = [("警告：请在游戏前阅读", (20, 20, 60, 10))]
+    device = _install_fake_device(
+        monkeypatch,
+        [
+            warning,
+            _PANEL_SCREEN,
+            _PANEL_SCREEN,
+            _PANEL_SCREEN,
+            _TITLE_SCREEN,
+            _TITLE_SCREEN,
+        ],
+    )
+    message = asyncio.run(_run_login())
+    assert "已确认回到游戏标题页" in message
+    # 第一下点击是警告页中心（100x100 画布 → 50,50）
+    assert device.taps[0] == (50.0, 50.0)
+
+
+def test_title_logo_fragment_confirms_handover(monkeypatch) -> None:
+    """标题页只读到 logo 下的「ERSE」时也算标题页（START 太淡时 OCR 读不到）。"""
+    _fast(monkeypatch)
+    ers = [("ERSE", (55, 60, 15, 4)), ("V4.1.0-113.0.1421-180", (5, 2, 20, 5))]
+    device = _install_fake_device(monkeypatch, [_PANEL_SCREEN, ers, ers])
+    message = asyncio.run(login_mod._wait_panel_closed(device, progress=None))
+    assert "已确认回到游戏标题页" in message

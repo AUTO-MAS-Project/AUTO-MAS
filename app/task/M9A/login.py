@@ -32,8 +32,9 @@
    - 「隐私政策提示」弹层：找到唯一的「同意」按钮（中心点限定在屏幕中下部）就点它；
    - 「登录记录」面板：收起态先点右侧箭头展开列表，再按登录记录里显示的完整昵称精确匹配
      （中心点限定在列表区域），唯一命中后点击，复核「登录」按钮与仍可见的昵称，最后点「登录」；
-   - 已登录停在标题页（OCR 到「START」）：MAS 无法知道当前登录的是哪个账号，为了保证切到目标
-     账号，点标题页右下角退出图标 → 唯一的「确认」→ 等「登录记录」面板出现后按上一条选号；
+   - 已登录停在标题页（OCR 到「START」，或标题 logo 下的「REVERSE」副标题常只读到 `ERSE`，或登录成功后
+     顶栏的「<昵称> 欢迎回来」横幅；START 有时太淡读不到）：MAS 无法知道当前登录的是哪个账号，为了保证
+     切到目标账号，点标题页右下角退出图标 → 唯一的「确认」→ 等「登录记录」面板出现后按上一条选号；
 3. 登录后等哔哩哔哩面板消失（游戏回到标题页），把这之后的进游戏与任务执行交给 M9A 的
    ``StartUp`` 与用户任务队列。
 
@@ -88,14 +89,18 @@ BILIBILI_PACKAGE = "com.shenlan.m.reverse1999.bilibili"
 BILIBILI_START_ACTIVITY = "com.ssgame.mobile.gamesdk.frame.AppStartUpActivity"
 
 _PRIVACY_HINT = "隐私政策"
+_WELCOME_HINT = "欢迎回来"
+#: 冷启动的健康警告页标题（「警告：请在游戏前阅读」），点一下继续。
+_WARNING_HINT = "请在游戏前阅读"
 _LOGIN_RECORD = "登录记录"
 _SWITCH_OTHER = "切换其他账号"
 _AGREE_RE = re.compile(r"^同意$")
 _LOGIN_RE = re.compile(r"^登录$")
 _CONFIRM_RE = re.compile(r"^确认$")
 
-#: 标题页「START」按钮的 OCR 文字（允许 OCR 漏掉首字母）。
-_TITLE_HINTS = ("START", "TART")
+#: 标题页可读的 OCR 文字：「START」按钮（允许 OCR 漏掉首字母）与标题 logo 下的「REVERSE」
+#: 副标题（实机常只读到 ERSE）。登录面板与主界面都读不到这两处。
+_TITLE_HINTS = ("START", "TART", "ERSE")
 #: 标题页右下角的退出图标位置（相对屏幕；实机 2560x1440 验证，点它弹「是否登出当前账号？」）。
 _EXIT_POINT = (0.956, 0.91)
 
@@ -190,6 +195,26 @@ def _privacy_prompt(items: list[tuple[str, Box]]) -> bool:
     """隐私政策提示弹层：标题 OCR 常连成一整串（如「bilibili游戏隐私政策提示」），用包含匹配。"""
 
     return any(_PRIVACY_HINT in text for text, _ in items)
+
+
+def _welcome_like(items: list[tuple[str, Box]]) -> bool:
+    """标题页的「<昵称> 欢迎回来」横幅。
+
+    登录成功后标题页顶部会出现这条横幅，START 有时被它盖住或太淡 OCR 读不到；横幅本身
+    是「已登录并回到标题页」的正向信号。只在标题页出现，登录面板与主界面都读不到。
+    """
+
+    return any(_WELCOME_HINT in text for text, _ in items)
+
+
+def _warning_like(items: list[tuple[str, Box]]) -> bool:
+    """冷启动的健康警告页（「警告：请在游戏前阅读」）：点一下继续。
+
+    它会挡在标题页 / 登录面板前面，而 MAS 的登录钩子跑在 M9A ``StartUp`` 之前，不处理就
+    会在「认不出的画面」上等到超时。
+    """
+
+    return any(_WARNING_HINT in text for text, _ in items)
 
 
 def _title_like(items: list[tuple[str, Box]]) -> bool:
@@ -450,7 +475,8 @@ async def _wait_panel_closed(
 
     「一帧没有登录记录文字」不算完成：过渡黑屏、加载动画、OCR 漏字都可能满足；
     只有连续 ``_TITLE_CONFIRM_FRAMES`` 帧认出标题页才算成功，其余画面继续有界等待，
-    等满总时限仍没确认就失败。
+    等满总时限仍没确认就失败。标题页的正向信号有两种：OCR 读到「START」，或读到登录成功
+    后的「<昵称> 欢迎回来」横幅（横幅有时会盖住或淡化 START）。
     """
 
     deadline = time.monotonic() + _LOGIN_TIMEOUT
@@ -467,7 +493,7 @@ async def _wait_panel_closed(
             continue
         if _has(items, _LOGIN_RECORD, _SWITCH_OTHER):
             title_frames = 0
-        elif _title_like(items):
+        elif _title_like(items) or _welcome_like(items):
             title_frames += 1
             if title_frames >= _TITLE_CONFIRM_FRAMES:
                 await asyncio.sleep(_TITLE_SETTLE_SECONDS)
@@ -575,12 +601,21 @@ async def ensure_logged_in(
             await _agree_privacy(device, frame, items, progress=progress)
             unknown_since = None
             continue
+        if _warning_like(items):
+            # 冷启动的健康警告页：点一下继续（M9A 的 StartUp 也会处理，但登录跑在它前面）
+            height, width = frame.shape[:2]
+            await _progress(progress, "已关闭游戏健康警告页")
+            await device.tap_point(width * 0.5, height * 0.5)
+            await asyncio.sleep(1.0)
+            unknown_since = None
+            continue
         if _has(items, _LOGIN_RECORD):
             await _select_account(device, frame, items, account, progress=progress)
             return await _wait_panel_closed(device, progress=progress)
 
         # 标题页 = 已登录：MAS 不知道当前是哪个号，为了保证切到目标账号，登出后重选。
-        if not logout_tried and _title_like(items):
+        # 「START」与「<昵称> 欢迎回来」横幅都算标题页已登录。
+        if not logout_tried and (_title_like(items) or _welcome_like(items)):
             title_polls += 1
             if title_polls >= _TITLE_SETTLE_POLLS:
                 logout_tried = True
