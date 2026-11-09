@@ -7,8 +7,8 @@
             <a-form-item>
               <template #label>
                 <FieldLabelWithHint
-                  :text="t('core.edit.currentLaunchArguments')"
-                  :hint="t('core.edit.argumentsGeneratedFromTask')"
+                  :text="t('core.edit.okwwDailyArgumentsExample')"
+                  :hint="t('core.edit.okwwArgumentsExampleHint')"
                   variant="form"
                 />
               </template>

@@ -20,6 +20,159 @@ from tests.runtime_support import RuntimeStub
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("interruption", ["first_file", "before_mark", "after_mark"])
+async def test_interrupted_batch_injection_keeps_original_recoverable(
+    tmp_path, monkeypatch, interruption
+):
+    from pathlib import Path
+
+    from app.utils import io
+
+    monkeypatch.chdir(tmp_path)
+    uid, sid = uuid.uuid4(), str(uuid.uuid4())
+    live, snapshot = tmp_path / "configs", tmp_path / "data" / sid / "Temp"
+    live.mkdir()
+    original = '{"original":true}'
+    (live / "DailyTask.json").write_text(original)
+    io.commit_native_config_snapshot(snapshot, live, script_id=sid)
+    io.mark_native_config_injected(snapshot, live, script_id=sid)
+    user = UserItem(user_id=str(uid), name="user", status="等待")
+    info = RuntimeStub(
+        task_info=RuntimeStub(mode="AutoProxy"),
+        script_id=sid,
+        user_list=[user],
+        current_index=0,
+    )
+    task = BatchProxyTask(
+        info, OkwwConfig(), {uid: OkwwUserConfig()}, None, participants=[user]
+    )
+    task.script_config_path = live
+    task.accounts = [
+        {"account_key": "1306220", "enabled": True, "task": None, "config": {}}
+    ]
+    monkeypatch.setattr(AutoProxyTask, "set_okww", AsyncMock())
+    write = Path.write_text
+
+    def interrupted_write(path, *args, **kwargs):
+        if path.name == "MultiAccountConfig.json":
+            raise OSError("interrupted injection")
+        return write(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        if interruption == "first_file":
+            patch.setattr(Path, "write_text", interrupted_write)
+        elif interruption == "before_mark":
+            patch.setattr(
+                io,
+                "mark_native_config_injected",
+                lambda *a, **kw: (_ for _ in ()).throw(
+                    OSError("interrupted fingerprint")
+                ),
+            )
+        if interruption == "after_mark":
+            await task.set_okww()
+        else:
+            with pytest.raises(OSError):
+                await task.set_okww()
+    manager = OkwwManager(info)
+    manager.temp_path, manager.script_config_path = snapshot, live
+    manager._recover_previous_run()
+    if interruption == "after_mark":
+        assert list(live.iterdir()) == [live / "DailyTask.json"]
+        assert (live / "DailyTask.json").read_text() == original
+    else:
+        saved = list(snapshot.parent.glob("Temp.unresolved*"))
+        saved = [path for path in saved if path.is_dir()]
+        assert len(saved) == 1
+        assert (saved[0] / "DailyTask.json").read_text() == original
+        assert (live / "MultiAccountResults.json").exists()
+
+
+@pytest.mark.parametrize("count", [1, 3])
+def test_batch_timeout_preserves_per_account_budget(count):
+    ids = [uuid.uuid4() for _ in range(count)]
+    users = [UserItem(user_id=str(uid), name="user", status="等待") for uid in ids]
+    info = RuntimeStub(
+        task_info=RuntimeStub(mode="AutoProxy"), user_list=users, current_index=0
+    )
+    task = BatchProxyTask(
+        info,
+        OkwwConfig.model_validate({"Run": {"HardTimeLimit": 2}}),
+        {uid: OkwwUserConfig() for uid in ids},
+        None,
+        participants=users,
+    )
+    assert task.run_timeout_seconds == 120 * count
+
+
+@pytest.mark.asyncio
+async def test_batch_result_is_final_before_monitor_can_be_cancelled(
+    tmp_path, monkeypatch
+):
+    from app.utils import LogMonitor
+
+    ids = [uuid.uuid4(), uuid.uuid4()]
+    users = [UserItem(user_id=str(uid), name="user", status="运行") for uid in ids]
+    info = RuntimeStub(
+        task_info=RuntimeStub(mode="AutoProxy"),
+        user_list=users,
+        current_index=0,
+        log="",
+    )
+    task = BatchProxyTask(
+        info,
+        OkwwConfig(),
+        {uid: OkwwUserConfig() for uid in ids},
+        None,
+        participants=users,
+    )
+    task.task_name = "MultiAccountConfigTask"
+    task.script_config_path = tmp_path
+    task.pending = {"A", "B"}
+    task.account_users = dict(zip(["A", "B"], users))
+    task.cur_user_log = LogRecord()
+    task.wait_event = asyncio.Event()
+    task.okww_process_manager = SimpleNamespace(is_running=AsyncMock(return_value=True))
+    task.is_log_stalled = lambda *args, **kwargs: False
+    (tmp_path / "MultiAccountResults.json").write_text(
+        json.dumps({"A": {"status": "success"}, "B": {"status": "failed"}})
+    )
+    committing, release = asyncio.Event(), asyncio.Event()
+    original = type(users[0]).set_state
+
+    async def delayed_state(user, **fields):
+        if user is users[0] and fields.get("status") == "完成":
+            committing.set()
+            await release.wait()
+        await original(user, **fields)
+
+    monkeypatch.setattr(type(users[0]), "set_state", delayed_state)
+    monitor = LogMonitor((0, 23), "%Y-%m-%d %H:%M:%S,%f", task.check_log)
+    monitor.log_contents = ["Successfully Executed Task, Exiting Game and App!\n"]
+    monitor.latest_time = datetime.now()
+
+    async def consume():
+        await task.wait_event.wait()
+        await monitor.stop()
+
+    consumer = asyncio.create_task(consume())
+    monitor.task = asyncio.create_task(monitor.do_callback())
+    try:
+        await asyncio.wait_for(committing.wait(), 2)
+        await asyncio.sleep(0)
+        release.set()
+        await asyncio.wait_for(consumer, 2)
+        assert task.cur_user_log.status != "Success!"
+        assert task.succeeded == {"A"}
+        assert users[0].status == "完成"
+    finally:
+        release.set()
+        consumer.cancel()
+        await asyncio.gather(consumer, return_exceptions=True)
+        await monitor.stop()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("started", [False, True])
 async def test_report_after_check_failure_and_later_manual_stop(monkeypatch, started):
     from app.task.Okww.manager import Notify, config_manager

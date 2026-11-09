@@ -4,10 +4,12 @@ import json
 import uuid
 from contextlib import suppress
 from datetime import datetime
+from pathlib import Path
 
 from app.models.task import LogRecord, UserItem
 from app.utils import LOG_TYPE_NORMAL, get_logger, log_box
 from app.utils import constants as _utils_constants
+from app.utils import io as _utils_io
 
 from . import push_log
 from .AutoProxy import AutoProxyTask, _okww_mas_config_dir
@@ -27,6 +29,11 @@ logger = get_logger("OK-WW 批次")
 
 
 class BatchProxyTask(AutoProxyTask):
+    @property
+    def run_timeout_seconds(self) -> float:
+        # 总预算按原始参与人数计算，补跑时不缩短已分配的时限。
+        return super().run_timeout_seconds * len(self.participants)
+
     def __init__(
         self, script_info, script_config, user_config, game_manager, *, participants
     ):
@@ -146,6 +153,11 @@ class BatchProxyTask(AutoProxyTask):
             if account["account_key"] not in self.succeeded
         ]
         write_attempt(self.script_config_path, accounts)
+        _utils_io.mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.script_config_path,
+            script_id=self.script_info.script_id,
+        )
         self.pending = {account["account_key"] for account in accounts}
 
     async def check_log(self, log_content, latest_time):
@@ -160,7 +172,8 @@ class BatchProxyTask(AutoProxyTask):
             )
             self.wait_event.set()
             return
-        await super().check_log(log_content, latest_time)
+        # 完成账号归档和整批判定后再唤醒主流程，避免日志监控提前被取消。
+        await super().check_log(log_content, latest_time, signal_completion=False)
         # 失败原因独立于节点采集开关，关闭详情时仍须保留账号结论。
         for key, stage, line in account_log_context(log_content):
             if key in self.account_users:
@@ -173,13 +186,13 @@ class BatchProxyTask(AutoProxyTask):
             await self.account_users[key].set_state(status="完成")
         if "info_set 状态 执行失败" in "".join(log_content):
             await self.cur_user_log.set_state(status="OK-WW 部分账号执行失败")
-            self.wait_event.set()
         if self.cur_user_log.status == "Success!" and not self.pending.issubset(
             self.succeeded
         ):
             await self.cur_user_log.set_state(
                 status="OK-WW 未取得全部账号的本轮成功结果"
             )
+        if self.cur_user_log.status != "OK-WW 正常运行中":
             self.wait_event.set()
 
     async def _collect_log_details(self):

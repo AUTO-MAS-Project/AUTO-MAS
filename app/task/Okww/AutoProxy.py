@@ -1017,7 +1017,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
     def _game_management_enabled(self) -> bool:
         return bool(self.script_config.Game.Enabled)
 
-    async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
+    async def check_log(
+        self,
+        log_content: list[str],
+        latest_time: datetime,
+        *,
+        signal_completion: bool = True,
+    ) -> None:
         """按内置日志判定结果，未见成功日志便退出则视为异常。"""
         log = "".join(log_content)
         await self.cur_user_log.set_state(content=log_content)
@@ -1060,7 +1066,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         logger.debug(f"OK-WW 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "OK-WW 正常运行中":
             logger.info(f"OK-WW 任务结果: {self.cur_user_log.status}, 日志锁已释放")
-            self.wait_event.set()
+            if signal_completion:
+                self.wait_event.set()
 
     async def final_task(self):
         self.history.begin_user_history_capture(

@@ -232,6 +232,7 @@ class OkwwManager(ScriptManagerBase):
             self.temp_path,
             self.script_config_path,
             expected_script_id=self.script_info.script_id,
+            preserve_on_mismatch=True,
         )
         if result == "restored":
             logger.info("已恢复上次中断前的 OK-WW 原始配置")
@@ -241,7 +242,7 @@ class OkwwManager(ScriptManagerBase):
             )
         elif result == "skipped":
             logger.warning(
-                "检测到 OK-WW 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
+                "无法确认 OK-WW 中断后的配置归属，保留当前配置；原始快照已另存为 Temp.unresolved 副本，请核对后恢复"
             )
 
     def _cleanup_script_config_temp(self) -> None:

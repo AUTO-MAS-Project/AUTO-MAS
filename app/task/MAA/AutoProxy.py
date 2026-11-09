@@ -1460,6 +1460,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             for i in range(self.script_config.Run.RunTimesLimit):
                 if self.run_book[self.mode]:
                     break
+                if i:
+                    # 仅同一模式的真实失败重登触发；正常切号继续沿用首次
+                    # 成功时刻。必须先确认预下载停写，才能再次启动模拟器。
+                    from app.core.script_update_queue import report_script_task_retrying
+
+                    await report_script_task_retrying()
                 logger.info(
                     f"账号 {self.cur_user_item.name} - 模式: {self.mode} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
                 )
@@ -3060,7 +3066,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             else None
         )
         # 整份脚本日志可达数 MB，check_log 又每秒轮询一次，收尾判定只扫一遍。
-        # TODO(插件迁移，#1845)：预下载暂停接线，不向公共任务树写首节点计时。
+        if re.search(r"完成任务:\s*[^\r\n]+", log):
+            from app.core.script_update_queue import report_script_task_completed
+
+            report_script_task_completed()
         completed_log = "任务已全部完成！" in log
         failed_log = _has_maa_task_failure(log)
         if avd_fallback is not None:

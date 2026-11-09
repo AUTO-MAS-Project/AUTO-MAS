@@ -11,6 +11,7 @@ from uuid import UUID
 from weakref import ReferenceType
 
 from pydantic import (
+    BaseModel,
     Field,
     PrivateAttr,
     WithJsonSchema,
@@ -327,6 +328,18 @@ class TaskScriptItem(RuntimeEntry):
         return self.current.log
 
 
+class WSTaskPrefetchData(BaseModel):
+    """独立于脚本日志的临时预下载展示状态。"""
+
+    target: str = Field(default="", description="下一托管名称")
+    status: str = Field(default="", description="检查、下载或准备状态")
+    package: str = Field(default="", description="当前包名")
+    method: str = Field(default="", description="实际下载方式 httpx 或 FluxDown")
+    progress: str = Field(default="", description="当前文件进度，总大小未知时为空")
+    size: str = Field(default="", description="已下载量与总大小")
+    rate: str = Field(default="", description="当前下载速率")
+
+
 class TaskItem(RuntimeEntry):
     class Info(ConfigGroup):
         # L1 受理时生成的名称快照；查询与推送统一从这里读取。
@@ -353,6 +366,9 @@ class TaskItem(RuntimeEntry):
     class Current(ConfigGroup):
         index: UUID | None = None
         log: Virtual[str] = None
+        prefetch: WSTaskPrefetchData | None = Field(
+            default=None, description="下一托管预下载状态"
+        )
 
     info: Info = Field(default_factory=Info)
     execution: Execution = Field(default_factory=Execution)

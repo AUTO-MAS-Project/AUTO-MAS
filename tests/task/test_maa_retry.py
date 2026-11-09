@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.config import ConfigCollection
+from app.core.script_update_queue import script_task_retrying
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceStatus
 from app.models.task import TaskItem, TaskMode
@@ -277,12 +278,25 @@ async def test_task_failure_retry_scope(
             ),
         )
 
+    retried_modes = []
+
+    async def on_retry():
+        retried_modes.append(proxy.mode)
+
+    retry_token = script_task_retrying.set(on_retry)
     try:
         await proxy.main_task()
     finally:
+        script_task_retrying.reset(retry_token)
         await proxy.callbacks.close()
 
     assert [mode for mode, _ in attempts] == expected_modes
+    # 只有同一模式重新启动 MAA 才通知 L2；切到下一个模式不应重置成功信号。
+    assert retried_modes == [
+        mode
+        for index, (mode, _) in enumerate(attempts)
+        if index > 0 and attempts[index - 1][0] == mode
+    ]
     assert proxy.run_book["Annihilation"] is (not annihilation)
     assert proxy.run_book["Routine"] is routine_success
     records = [record for _, record in user.iter_history_logs()]
