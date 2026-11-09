@@ -46,6 +46,15 @@ jobs:
         with:
           node-version: '24'
 
+      - name: 检查组件尺寸
+        working-directory: frontend
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          node --test scripts/audit-baseline.check.mjs
+          node scripts/audit-baseline.mjs --check "$BASE_SHA"
+
       - name: 设置 Yarn
         run: |
           corepack enable
@@ -66,6 +75,10 @@ jobs:
       - name: 检查前端格式
         working-directory: frontend
         run: yarn format:check
+
+      - name: 运行前端单元测试
+        working-directory: frontend
+        run: yarn test
 
       # 词表门禁：缺译、占位符差异、源码在用但没有的 key、死词条、模板硬编码中文，
       # 全部按 0 判定；口径见 frontend/scripts/i18n-audit.mjs。

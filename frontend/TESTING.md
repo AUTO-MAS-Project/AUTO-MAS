@@ -60,3 +60,5 @@ yarn typecheck
 ```
 
 需要控制本机并发时使用 `yarn test --maxWorkers=4`。测试不代表真实安装包、模拟器或脚本运行验证。
+
+面向 `dev` 的 PR 会在 CI 中执行 `yarn test`；浏览器 E2E 和真实运行仍按上文在作者本机验证。

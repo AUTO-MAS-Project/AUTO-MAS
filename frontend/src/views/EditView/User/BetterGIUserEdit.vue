@@ -834,6 +834,7 @@ import {
 } from '@ant-design/icons-vue'
 import { BetterGiService, type ComboBoxItem, type BetterGIUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
+import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useBettergiGuiSession } from '@/composables/useBettergiGuiSession'
@@ -1021,14 +1022,7 @@ const { enqueue, isSaving } = useSaveQueue()
 const saveField = (key: string, value: unknown): Promise<boolean> => {
   if (isInitializing.value || !userId.value) return Promise.resolve(false)
 
-  const parts = key.split('.')
-  const patch: Record<string, any> = {}
-  let current = patch
-  for (let i = 0; i < parts.length - 1; i += 1) {
-    current[parts[i]] = {}
-    current = current[parts[i]]
-  }
-  current[parts[parts.length - 1]] = value
+  const patch = buildFieldPatch(key, value)
 
   if (key === 'Info.Name') {
     formData.userName = String(value || '')

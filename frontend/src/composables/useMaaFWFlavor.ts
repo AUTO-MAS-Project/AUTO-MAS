@@ -36,7 +36,7 @@
 //    然后起开发后端重新生成 OpenAPI（frontend/src/api 不手改）。
 // 2. 全应用的脚本类型登记（与任何新脚本类型相同，漏了 typecheck 会逐处报错）：
 //    ScriptType 由生成 API 的创建类型派生，不另抄一份类型联合；
-//    utils/scriptLogos.ts 的图标与展示名、
+//    utils/scriptMetadata.ts 的静态资料（图标、展示名、路由后缀与新建卡片）、
 //    词表 zh-CN.ts 的 scripts.type.X / scripts.create.typeDesc.X 与该特调自己的文案。
 // 3. maafwFlavorTypes.ts 的 MaaFWFlavorType 加上 'X'。
 // 4. 新建目录 views/EditView/MaaFWFlavor/x/：index.ts 用 defineMaaFWFlavor 导出描述对象

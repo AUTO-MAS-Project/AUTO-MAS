@@ -362,6 +362,7 @@ import {
 } from '@ant-design/icons-vue'
 import type { OkwwUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
+import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useOkwwGuiSession } from '@/composables/useOkwwGuiSession'
 import { useSaveQueue } from '@/composables/useSaveQueue'
@@ -583,14 +584,7 @@ const createUserImmediately = async (): Promise<boolean> => {
 const saveField = async (key: string, value: unknown) => {
   if (isInitializing.value || !userId.value) return
 
-  const parts = key.split('.')
-  const patch: Record<string, any> = {}
-  let current = patch
-  for (let i = 0; i < parts.length - 1; i += 1) {
-    current[parts[i]] = {}
-    current = current[parts[i]]
-  }
-  current[parts[parts.length - 1]] = value
+  const patch = buildFieldPatch(key, value)
 
   if (key === 'Info.Name') {
     formData.userName = String(value || '')

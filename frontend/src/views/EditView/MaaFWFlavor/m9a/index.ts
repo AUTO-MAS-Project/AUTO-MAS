@@ -1,26 +1,25 @@
 // M9A（重返未来：1999）特调：账号绑成切号任务；启动游戏、切换账号、关闭游戏由后端特调全权控制
 // （不能手动加）；脚本页控制方式里多一个「游戏更新」下拉（本目录 M9AGameUpdateField，按需加载）。
 import { MAS_DOC_URLS } from '@/utils/openExternal'
-import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
+import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 import { defineMaaFWLazyComponent } from '@/composables/maafwFlavorTypes'
 import { defineMaaFWFlavor } from '../defineFlavor'
+
+const metadata = SCRIPT_METADATA.M9A
 
 export const M9A_FLAVOR = defineMaaFWFlavor({
   type: 'M9A',
   scriptConfigType: 'M9AConfig',
   userConfigType: 'M9AUserConfig',
   defaultScriptName: '新 M9A 脚本',
-  typeTagLabel: 'M9A',
-  typeTagColor: 'cyan',
-  logo: SCRIPT_LOGOS.M9A,
+  typeTagLabel: metadata.label,
+  typeTagColor: metadata.typeTagColor,
+  logo: metadata.logo,
   docUrl: MAS_DOC_URLS.scriptTypes.M9A,
-  routes: { suffix: 'm9a' },
+  routes: { suffix: metadata.routeSuffix, titles: metadata.routeTitles },
   create: {
     card: {
-      titleKey: 'core.scripts.type.M9A',
-      descriptionKey: 'core.scripts.create.typeDesc.M9A',
-      keywords: ['m9a', '1999', '重返未来'],
-      group: 'specialized',
+      ...metadata.create,
       after: 'MaaEnd',
     },
   },

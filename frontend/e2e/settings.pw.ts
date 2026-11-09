@@ -99,6 +99,139 @@ test.describe('@settings user preferences', () => {
     }
   })
 
+  test('persists press sound preferences and rolls back a rejected save before retry', async ({
+    app,
+    page,
+  }) => {
+    await app.goto('/settings')
+    const section = page
+      .locator('.form-section')
+      .filter({ has: page.getByRole('heading', { name: 'Press sound', exact: true }) })
+    const enabled = section.getByRole('switch', { name: 'Play sound', exact: true })
+    const preset = section.locator('.preset-select')
+    const volume = section.getByRole('slider')
+    const readPreferences = () =>
+      page.evaluate(async () => {
+        const config = await window.electronAPI.loadConfig()
+        return {
+          enabled: config?.pressSoundEnabled,
+          preset: config?.pressSoundPreset,
+          volume: config?.pressSoundVolume,
+        }
+      })
+
+    await expect(enabled).not.toBeChecked()
+    await enabled.click()
+    await expect.poll(async () => (await readPreferences()).enabled).toBe(true)
+    await chooseOption(page, preset, 'Sound 1')
+    await expect.poll(async () => (await readPreferences()).preset).toBe('fx1')
+    await volume.press('Home')
+    await expect.poll(async () => (await readPreferences()).volume).toBe(0)
+    await expect(volume).toBeEnabled()
+    await volume.press('ArrowRight')
+    await expect.poll(async () => (await readPreferences()).volume).toBe(0.05)
+
+    await page.reload()
+    await expect(enabled).toBeChecked()
+    await expect(preset.locator('.ant-select-selection-item')).toHaveText('Sound 1')
+    await expect(volume).toHaveAttribute('aria-valuenow', '0.05')
+    await expect.poll(readPreferences).toEqual({ enabled: true, preset: 'fx1', volume: 0.05 })
+
+    // 保留浏览器桥接的配置存储，只在 IPC 写入边界拒绝一笔音效关闭。
+    await page.evaluate(() => {
+      const saveConfig = window.electronAPI.saveConfig
+      let rejectNextDisable = true
+      window.electronAPI.saveConfig = async (config, defaults) => {
+        if (
+          rejectNextDisable &&
+          config !== null &&
+          typeof config === 'object' &&
+          'pressSoundEnabled' in config &&
+          config.pressSoundEnabled === false
+        ) {
+          rejectNextDisable = false
+          throw new Error('E2E press sound write rejected')
+        }
+        await saveConfig(config, defaults)
+      }
+    })
+    await enabled.click()
+    await expect(page.locator('.ant-message-error')).toContainText(
+      'Could not save the press sound settings'
+    )
+    await expect(enabled).toBeChecked()
+    await expect(enabled).toBeEnabled()
+    expect(await readPreferences()).toEqual({ enabled: true, preset: 'fx1', volume: 0.05 })
+    await section.scrollIntoViewIfNeeded()
+    await app.evidence('press-sound-save-rejected')
+
+    await enabled.click()
+    await expect.poll(async () => (await readPreferences()).enabled).toBe(false)
+    await page.reload()
+    await expect(enabled).not.toBeChecked()
+    await expect(preset.locator('.ant-select-selection-item')).toHaveText('Sound 1')
+    await expect(volume).toHaveAttribute('aria-valuenow', '0.05')
+    await expect.poll(readPreferences).toEqual({ enabled: false, preset: 'fx1', volume: 0.05 })
+    await section.scrollIntoViewIfNeeded()
+    await app.evidence('press-sound-retry-reloaded')
+  })
+
+  test('reads existing custom-pair press sound fields and preserves zero volume after reload', async ({
+    app,
+    page,
+  }) => {
+    const saved = {
+      pressSoundEnabled: true,
+      pressSoundPreset: 'customPair',
+      pressSoundVolume: 0,
+      pressSoundCustomPath: 'C:\\AUTO-MAS-E2E\\legacy-audio\\press-original.wav',
+      pressSoundCustomName: 'saved-press.wav',
+      pressSoundCustomReleasePath: 'C:\\AUTO-MAS-E2E\\legacy-audio\\release-original.ogg',
+      pressSoundCustomReleaseName: 'saved-release.ogg',
+    }
+    await page.addInitScript(saved => {
+      const marker = 'auto-mas.e2e.press-sound-existing-config'
+      if (sessionStorage.getItem(marker)) return
+      localStorage.setItem('auto-mas.browser-dev.config', JSON.stringify(saved))
+      sessionStorage.setItem(marker, 'seeded')
+    }, saved)
+    await app.goto('/settings')
+    const section = page
+      .locator('.form-section')
+      .filter({ has: page.getByRole('heading', { name: 'Press sound', exact: true }) })
+
+    for (const reload of [false, true]) {
+      if (reload) await page.reload()
+      await expect(section.getByRole('switch', { name: 'Play sound', exact: true })).toBeChecked()
+      await expect(section.locator('.preset-select .ant-select-selection-item')).toHaveText(
+        'Custom audio'
+      )
+      await expect(
+        section.getByRole('radio', { name: 'Separate audio', exact: true })
+      ).toBeChecked()
+      await expect(section.getByRole('slider')).toHaveAttribute('aria-valuenow', '0')
+      await expect(section.getByRole('textbox', { name: 'Press', exact: true })).toHaveValue(
+        saved.pressSoundCustomName
+      )
+      await expect(section.getByRole('textbox', { name: 'Press', exact: true })).toHaveAttribute(
+        'title',
+        saved.pressSoundCustomPath
+      )
+      await expect(section.getByRole('textbox', { name: 'Release', exact: true })).toHaveValue(
+        saved.pressSoundCustomReleaseName
+      )
+      await expect(section.getByRole('textbox', { name: 'Release', exact: true })).toHaveAttribute(
+        'title',
+        saved.pressSoundCustomReleasePath
+      )
+      await expect
+        .poll(() => page.evaluate(() => window.electronAPI.loadConfig()))
+        .toMatchObject(saved)
+    }
+    await section.scrollIntoViewIfNeeded()
+    await app.evidence('existing-press-sound-preferences-reloaded')
+  })
+
   test('advanced settings keeps developer tools without a backend mode selector', async ({
     app,
     page,
@@ -311,6 +444,142 @@ test.describe('@settings user preferences', () => {
       await chooseSegment(theme, originalTheme)
       if (originalAccent)
         await page.getByRole('button', { name: originalAccent, exact: true }).click()
+    }
+  })
+
+  test('persists update choices and keeps the newer CDK draft through saves and retry', async ({
+    app,
+    page,
+  }) => {
+    await page.route('**/api/setting/mirror-cdk', async route => {
+      if (route.request().method() === 'OPTIONS') return route.continue()
+      await route.fulfill({
+        headers: { 'Access-Control-Allow-Origin': '*' },
+        json: { code: 200, status: 'success', data: { status: 'invalid', expiredTime: null } },
+      })
+    })
+    const loaded = settingsResponse(page, 'get')
+    await app.goto('/settings')
+    const initialResponse = await loaded
+    const initial = (await initialResponse.json()).data.Update
+    const original = {
+      Channel: initial.Channel,
+      Source: initial.Source,
+      MirrorChyanCDK: initial.MirrorChyanCDK,
+    }
+    const backend = new URL(initialResponse.url()).origin
+    const channelValue = original.Channel === 'beta' ? 'stable' : 'beta'
+    const channelLabel = channelValue === 'stable' ? 'Stable' : 'Beta'
+    const olderDraft = 'e2e-settings-older-cdk'
+    const newerDraft = 'e2e-settings-newer-cdk'
+    let releaseOlderSave!: () => void
+    const olderSaveGate = new Promise<void>(resolve => {
+      releaseOlderSave = resolve
+    })
+
+    try {
+      await page.getByRole('tab', { name: 'About', exact: true }).click()
+      const channel = page
+        .locator('.ui-row')
+        .filter({ has: page.getByText('Update channel', { exact: true }) })
+        .locator('.ant-segmented')
+      const channelSaved = settingsResponse(page, 'update')
+      await chooseSegment(channel, channelLabel)
+      const channelResponse = await channelSaved
+      expect(channelResponse.request().postDataJSON()).toEqual({
+        data: { Update: { Channel: channelValue } },
+      })
+      expect((await channelResponse.json()).code).toBe(200)
+
+      const source = page.locator('.source-cards')
+      const sources =
+        original.Source === 'MirrorChyan' ? ['GitHub', 'MirrorChyan'] : ['MirrorChyan']
+      for (const value of sources) {
+        const sourceSaved = settingsResponse(page, 'update')
+        await source.getByText(value, { exact: true }).click()
+        const sourceResponse = await sourceSaved
+        expect(sourceResponse.request().postDataJSON()).toEqual({
+          data: { Update: { Source: value } },
+        })
+        expect((await sourceResponse.json()).code).toBe(200)
+      }
+      const cdk = page.getByPlaceholder('Enter the MirrorChyan CDK to use the Mirror source', {
+        exact: true,
+      })
+      await expect(cdk).toBeEnabled()
+
+      let olderSaveStarted!: () => void
+      const olderSaving = new Promise<void>(resolve => {
+        olderSaveStarted = resolve
+      })
+      let rejectNextSave = true
+      await page.route('**/api/setting/update', async route => {
+        if (route.request().method() === 'OPTIONS') return route.continue()
+        const value = route.request().postDataJSON()?.data?.Update?.MirrorChyanCDK
+        if (value === olderDraft) {
+          const response = await route.fetch()
+          olderSaveStarted()
+          await olderSaveGate
+          return route.fulfill({ response })
+        }
+        if (value === newerDraft && rejectNextSave) {
+          rejectNextSave = false
+          return route.fulfill({
+            status: 503,
+            headers: { 'Access-Control-Allow-Origin': '*' },
+            json: { code: 500, status: 'error', message: 'E2E update settings unavailable' },
+          })
+        }
+        return route.continue()
+      })
+
+      const olderSaved = settingsResponse(page, 'update')
+      const olderRead = settingsResponse(page, 'get')
+      await cdk.fill(olderDraft)
+      await cdk.blur()
+      await olderSaving
+      await cdk.fill(newerDraft)
+      releaseOlderSave()
+      expect((await (await olderSaved).json()).code).toBe(200)
+      expect((await (await olderRead).json()).data.Update.MirrorChyanCDK).toBe(olderDraft)
+      await expect(cdk).toHaveValue(newerDraft)
+
+      const rejected = settingsResponse(page, 'update')
+      await cdk.blur()
+      expect((await rejected).status()).toBe(503)
+      await expect(page.locator('.ant-message-error')).toContainText(
+        'E2E update settings unavailable'
+      )
+      await expect(cdk).toHaveValue(newerDraft)
+      const unchanged = await page.request.post(`${backend}/api/setting/get`)
+      expect((await unchanged.json()).data.Update.MirrorChyanCDK).toBe(olderDraft)
+      await app.evidence('settings-update-draft-retained', ['.cdk-input input'])
+
+      const retried = settingsResponse(page, 'update')
+      const retryRead = settingsResponse(page, 'get')
+      await cdk.focus()
+      await cdk.blur()
+      expect((await (await retried).json()).code).toBe(200)
+      expect((await (await retryRead).json()).data.Update.MirrorChyanCDK).toBe(newerDraft)
+      const reloaded = settingsResponse(page, 'get')
+      await page.reload()
+      expect((await (await reloaded).json()).data.Update).toMatchObject({
+        Channel: channelValue,
+        Source: 'MirrorChyan',
+        MirrorChyanCDK: newerDraft,
+      })
+      await page.getByRole('tab', { name: 'About', exact: true }).click()
+      await expect(channel.getByRole('radio', { name: channelLabel, exact: true })).toBeChecked()
+      await expect(source.getByRole('radio', { name: /^MirrorChyan/ })).toBeChecked()
+      await expect(cdk).toHaveValue(newerDraft)
+      await app.evidence('settings-update-reloaded', ['.cdk-input input'])
+    } finally {
+      releaseOlderSave()
+      await page.unroute('**/api/setting/update')
+      const restored = await page.request.post(`${backend}/api/setting/update`, {
+        data: { data: { Update: original } },
+      })
+      expect((await restored.json()).code).toBe(200)
     }
   })
 

@@ -340,39 +340,15 @@
           <div class="section-header">
             <h3>{{ t('core.edit.runConfiguration') }}</h3>
           </div>
-          <ScriptHardTimeoutField
-            v-model:value="okwwConfig.Run.HardTimeLimit"
-            @save="handleChange('Run', 'HardTimeLimit', okwwConfig.Run.HardTimeLimit)"
+          <ScriptRunLimitsSection
+            v-model:hard-time-limit="okwwConfig.Run.HardTimeLimit"
+            v-model:daily-limit="okwwConfig.Run.ProxyTimesLimit"
+            v-model:retry-limit="okwwConfig.Run.RunTimesLimit"
+            v-model:timeout="okwwConfig.Run.RunTimeLimit"
+            :retry-hint="t('core.edit.giveUpAfterThis')"
+            :timeout-hint="t('core.edit.logThatStaysUnchanged')"
+            @save="key => handleChange('Run', key, okwwConfig.Run[key])"
           />
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="okwwConfig.Run.ProxyTimesLimit"
-                kind="daily"
-                :label="t('core.edit.runsPerDay')"
-                :hint="t('core.edit.k0MeansNoLimit')"
-                @save="handleChange('Run', 'ProxyTimesLimit', okwwConfig.Run.ProxyTimesLimit)"
-              />
-            </a-col>
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="okwwConfig.Run.RunTimesLimit"
-                kind="retry"
-                :label="t('core.edit.retryLimit2')"
-                :hint="t('core.edit.giveUpAfterThis')"
-                @save="handleChange('Run', 'RunTimesLimit', okwwConfig.Run.RunTimesLimit)"
-              />
-            </a-col>
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="okwwConfig.Run.RunTimeLimit"
-                kind="timeout"
-                :label="t('core.edit.runTimeoutMinutes')"
-                :hint="t('core.edit.logThatStaysUnchanged')"
-                @save="handleChange('Run', 'RunTimeLimit', okwwConfig.Run.RunTimeLimit)"
-              />
-            </a-col>
-          </a-row>
         </div>
       </a-form>
     </a-card>
@@ -435,10 +411,9 @@
 
 <script setup lang="ts">
 import PathPickerField from '@/components/PathPickerField.vue'
-import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { requestUserUpdateStart } from '@/composables/useTaskApi'
-import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useI18n } from 'vue-i18n'

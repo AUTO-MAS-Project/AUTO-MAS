@@ -1,13 +1,8 @@
 import type { ShareTemplateItem } from '@/composables/useTemplateApi'
 import type { MaaFWEmbeddedSourceItem } from '@/api'
-import {
-  MAAFW_FLAVORS,
-  isMaaFWFamily,
-  maafwRouteSuffix,
-  type MaaFWFlavorType,
-} from '@/composables/useMaaFWFlavor'
+import { MAAFW_FLAVORS, isMaaFWFamily, type MaaFWFlavorType } from '@/composables/useMaaFWFlavor'
 import type { ScriptType } from '@/types/script'
-import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
+import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 
 export type ConfigMode = 'template' | 'custom'
 /** MFW 家族新建时项目从哪来：进引导页选目录导入，还是直接复用已有脚本的副本 */
@@ -55,96 +50,10 @@ export type ScriptCreateRequest =
   | { kind: 'general-template'; template: ShareTemplateItem }
 
 // MaaFW 与各特调的卡片不在这里：由特调注册表提供，按各自的 create.card.after 插回原位
-const BASE_SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
-  {
-    value: 'General',
-    titleKey: 'core.scripts.type.General',
-    descriptionKey: 'core.scripts.create.typeDesc.General',
-    keywords: ['general', '通用', '自定义'],
-    group: 'general',
-    icon: SCRIPT_LOGOS.General,
-  },
-  {
-    value: 'MAA',
-    titleKey: 'core.scripts.type.MAA',
-    descriptionKey: 'core.scripts.create.typeDesc.MAA',
-    keywords: ['maa', '明日方舟'],
-    group: 'specialized',
-    icon: SCRIPT_LOGOS.MAA,
-  },
-  {
-    value: 'SRC',
-    titleKey: 'core.scripts.type.SRC',
-    descriptionKey: 'core.scripts.create.typeDesc.SRC',
-    keywords: ['src', '星穹铁道'],
-    group: 'specialized',
-    icon: SCRIPT_LOGOS.SRC,
-  },
-  {
-    value: 'MaaEnd',
-    titleKey: 'core.scripts.type.MaaEnd',
-    descriptionKey: 'core.scripts.create.typeDesc.MaaEnd',
-    keywords: ['maaend', 'maaframework', '终末地', 'endfield'],
-    group: 'specialized',
-    icon: SCRIPT_LOGOS.MaaEnd,
-  },
-  {
-    value: 'Okww',
-    titleKey: 'core.scripts.type.Okww',
-    descriptionKey: 'core.scripts.create.typeDesc.Okww',
-    keywords: ['okww', 'ok-ww', 'ok-script'],
-    group: 'specialized',
-    icon: SCRIPT_LOGOS.Okww,
-  },
-  {
-    value: 'OkNte',
-    titleKey: 'core.scripts.type.OkNte',
-    descriptionKey: 'core.scripts.create.typeDesc.OkNte',
-    keywords: ['oknte', 'ok-nte', '异环', 'ok-script'],
-    group: 'specialized',
-    icon: SCRIPT_LOGOS.OkNte,
-  },
-  {
-    value: 'HSR',
-    titleKey: 'core.scripts.type.HSR',
-    descriptionKey: 'core.scripts.create.typeDesc.HSR',
-    keywords: ['hsr', '三月七', 'sra'],
-    group: 'specialized',
-    icon: SCRIPT_LOGOS.HSR,
-  },
-  {
-    value: 'BetterGI',
-    titleKey: 'core.scripts.type.BetterGI',
-    descriptionKey: 'core.scripts.create.typeDesc.BetterGI',
-    keywords: ['bettergi', 'better-gi', '原神', 'genshin'],
-    group: 'specialized',
-    icon: SCRIPT_LOGOS.BetterGI,
-  },
-  {
-    value: 'ZzzOd',
-    titleKey: 'core.scripts.type.ZzzOd',
-    descriptionKey: 'core.scripts.create.typeDesc.ZzzOd',
-    keywords: ['zzz-od', 'zzz', '绝区零', 'zenless', '一条龙'],
-    group: 'specialized',
-    icon: SCRIPT_LOGOS.ZzzOd,
-  },
-  {
-    value: 'BAAH',
-    titleKey: 'core.scripts.type.BAAH',
-    descriptionKey: 'core.scripts.create.typeDesc.BAAH',
-    keywords: ['baah', '碧蓝档案', '蔚蓝档案', 'bluearchive', '爱丽丝助手'],
-    group: 'specialized',
-    icon: SCRIPT_LOGOS.BAAH,
-  },
-  {
-    value: 'Whimbox',
-    titleKey: 'core.scripts.type.Whimbox',
-    descriptionKey: 'core.scripts.create.typeDesc.Whimbox',
-    keywords: ['whimbox', '奇想盒', '无限暖暖', 'nikki'],
-    group: 'specialized',
-    icon: SCRIPT_LOGOS.Whimbox,
-  },
-]
+const BASE_SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = (Object.keys(SCRIPT_METADATA) as ScriptType[])
+  .sort((left, right) => SCRIPT_METADATA[left].createOrder - SCRIPT_METADATA[right].createOrder)
+  .filter(type => !isMaaFWFamily(type))
+  .map(type => ({ value: type, ...SCRIPT_METADATA[type].create, icon: SCRIPT_METADATA[type].logo }))
 
 const withMaaFWFlavorOptions = (base: readonly ScriptTypeOption[]): ScriptTypeOption[] => {
   const options = [...base]
@@ -250,24 +159,6 @@ export const splitScriptTypeOptions = <T extends Pick<ScriptTypeOption, 'group'>
   specialized: options.filter(option => option.group === 'specialized'),
   general: options.filter(option => option.group === 'general'),
 })
-
-// MaaFW 与各特调的路由后缀取自特调注册表
-const EDIT_SEGMENT_BY_TYPE: Record<Exclude<ScriptType, MaaFWFlavorType>, string> = {
-  MAA: 'maa',
-  SRC: 'src',
-  MaaEnd: 'maaend',
-  Okww: 'okww',
-  OkNte: 'oknte',
-  HSR: 'hsr',
-  BetterGI: 'bettergi',
-  ZzzOd: 'zzzod',
-  BAAH: 'baah',
-  Whimbox: 'whimbox',
-  General: 'general',
-}
-
-export const getScriptEditSegment = (type: ScriptType) =>
-  isMaaFWFamily(type) ? maafwRouteSuffix(type) : EDIT_SEGMENT_BY_TYPE[type]
 
 export const buildCreateRequest = (state: CreateRequestState): ScriptCreateRequest | null => {
   if (isMfwFamily(state.type) && state.mfwSourceMode === 'reuse') {
