@@ -35,6 +35,13 @@ runs:
         corepack enable
         corepack prepare yarn@4.18.1 --activate
         yarn install
+        # CI 只验收未签名 win-unpacked；生产安装器仍由发布工作流构建。
+        # 将前端与主进程编译各执行一次，只重试最后的 Electron 解压版打包。
+        # --dir 不创建 NSIS 安装器，避免为未使用的 NSIS 工具下载再触发 504。
+        yarn vp build
+        if ($LASTEXITCODE -ne 0) { throw '前端打包失败' }
+        yarn build:main
+        if ($LASTEXITCODE -ne 0) { throw 'Electron 主进程编译失败' }
         # electron-builder 下载 winCodeSign（编辑未签名 EXE 资源所需）时，
         # GitHub Release 偶尔返回 429/5xx；只重试这一类外部网络故障。
         # 其他失败立即抛出，不能让真实构建错误被重试掩盖。
@@ -43,7 +50,7 @@ runs:
         for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
           $logPath = Join-Path $env:RUNNER_TEMP "electron-build-attempt-$attempt.log"
           Write-Host "Electron 构建尝试 $attempt/$maxAttempts"
-          yarn build *>&1 | Tee-Object -FilePath $logPath
+          yarn electron-builder --dir --publish never *>&1 | Tee-Object -FilePath $logPath
           $exitCode = $LASTEXITCODE
           if ($exitCode -eq 0) {
             break
