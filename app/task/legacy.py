@@ -206,7 +206,12 @@ class _LegacyExecution(TaskBase):
                 self.request_stop_checks()
                 assert self._stop_request is not None
                 await asyncio.shield(self._stop_request)
-                self._execution_task.cancel()
+                # 停止确认点已请求过一次取消，避免重复 cancel 正在收尾的任务。
+                if (
+                    not self._execution_task.done()
+                    and not self._execution_task.cancelling()
+                ):
+                    self._execution_task.cancel()
                 try:
                     await self._execution_task
                 except asyncio.CancelledError:
@@ -226,7 +231,29 @@ class _LegacyExecution(TaskBase):
         scope = self._process_scope
         assert scope is not None
         try:
+            # 第一阶段：让已开始的更新按既有令牌停止，避免直接取消写入者。
             await scope.run_checks()
+            # 第二阶段：请求业务任务结束，让旧专项的 final_task 在强杀前
+            # 有机会保存配置、释放锁；它属于独立的限时确认点。
+            execution = self._execution_task
+            if execution is not None and not execution.done():
+                execution.cancel()
+                timeout = self.owner.stop_finalizer_timeout
+                if timeout is not None:
+                    async def finish_legacy() -> None:
+                        await asyncio.wait({execution})
+                        if self._finalizer is not None and self._finalizer.cancelled():
+                            raise RuntimeError("旧专项收尾超时或被取消")
+
+                    check = scope.add_check(
+                        "legacy_finalize", finish_legacy, timeout=timeout
+                    )
+                    await scope.run_checks(selected=(check,))
+                    if check.status != "passed":
+                        # 仅打断未确认的收尾等待；资源锁的安全兜底由专项负责。
+                        finalizer = self._finalizer
+                        if finalizer is not None and not finalizer.done():
+                            finalizer.cancel()
             for check in scope.checks:
                 if check.status in ("timed_out", "failed"):
                     logger.warning(
@@ -258,50 +285,47 @@ class _LegacyExecution(TaskBase):
         await self.owner._run_main_task()
 
     async def final_task(self):
-        """[兼容旧专项] 仅桥接旧收尾和回调排空；新执行器直接实现 TaskBase.final_task。"""
+        """旧专项收尾：停止确认有界，超时后只交接必要的资源释放。"""
         from app.utils.common.process.scope import current_process_scope
 
-        if self._stop_request is not None:
-            await asyncio.shield(self._stop_request)
         scope = current_process_scope.get()
         if scope is not None and self.owner.stop_finalizer_timeout is not None:
             finalizer = asyncio.current_task()
             assert finalizer is not None
             scope.watch_finalizer(finalizer, timeout=self.owner.stop_finalizer_timeout)
-        # The bounded stop confirmation may cancel this outer finalizer while
-        # callback work is still active.  Cancelling its wait must not abandon
-        # the owner's final_task: that is where MaaFW (and other legacy scripts)
-        # release their configuration locks.  Keep the *real* cleanup as an
-        # independently owned worker, while allowing stop to return on time.
-        async def finish_owner() -> None:
-            try:
-                await self.owner.callbacks.drain()
-                await self.owner._finalize_task()
-            finally:
-                await self.owner.callbacks.drain()
 
-        cleanup = asyncio.create_task(
-            finish_owner(), name=f"{type(self.owner).__name__}.owner-cleanup"
-        )
-        if scope is not None:
-            scope.retain_worker(cleanup)
+        draining = True
         try:
-            await asyncio.shield(cleanup)
+            await self.owner.callbacks.drain()
+            await self.owner._finalize_task()
         except asyncio.CancelledError:
-            # A timed-out stop must not cancel real cleanup.  Observe eventual
-            # errors even after the outer finalizer has already completed.
-            def observe(done: asyncio.Task) -> None:
-                if done.cancelled():
-                    return
-                try:
-                    done.result()
-                except Exception as error:
-                    logger.opt(exception=error).error(
-                        f"旧专项后台收尾失败: {type(self.owner).__name__}"
-                    )
+            draining = False
+            # 不能像第一版修复那样后台继续执行完整 final_task：
+            # 通知、账号后脚本和历史落盘均可能在强制停止后迟到执行。
+            # 仅专项明确提供的锁/项目预约恢复可以交接给真实完成者。
+            recover = getattr(self.owner, "cleanup_after_forced_stop", None)
+            if recover is not None and scope is not None and scope.requested:
+                async def late_release() -> None:
+                    await scope.finished.wait()
+                    if scope.cleanup_failed:
+                        logger.error("任务进程未确认清理，保留旧专项锁以防并发写入")
+                        return
+                    try:
+                        await self.owner.callbacks.drain()
+                        await recover()
+                    except Exception as error:
+                        logger.opt(exception=error).error(
+                            f"旧专项超时后释放资源失败: {type(self.owner).__name__}"
+                        )
 
-            cleanup.add_done_callback(observe)
+                pending = asyncio.create_task(
+                    late_release(), name=f"{type(self.owner).__name__}.stop-release"
+                )
+                scope.retain_worker(pending)
             raise
+        finally:
+            if draining:
+                await self.owner.callbacks.drain()
 
     async def on_crash(self, exc):
         """[兼容旧专项] 仅桥接旧异常处理；新执行器直接实现 TaskBase.on_crash。"""
