@@ -30,6 +30,28 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 破坏性变更
+
+- 【调度】重构任务调度与范围选择，完善日志恢复、独立触发、队列附加动作及电源收尾。 (#1845) by @DLmaster361
+
+### 新增
+
+- 【M9A】新增 MAS 登录 B 服：处理隐私协议并选择已保存账号后交给 M9A 运行 (#1882) by @Douya36
+- 【调度】在日志末尾显示预下载方式和进度，支持独立配色与连续渐变（仅公测） by @youngslin
+
+### 变更
+
+- 【模拟器】魔改 AVD 改名为 ModAVD，界面、提示和日志统一用新名称 (#1898) by @qiyinxi
+- 【设置】统一主要页面的标题、间距、卡片层次和日志按钮外观 (#1893) by @1w1w11w1
+
+### 修复
+
+- 【调度】修复停止任务后脚本及更新子进程残留、项目持续占用和结果未保存的问题 (#1892) by @youngslin
+- 【设置】修复模拟器管理和调度中心卡片外侧阴影显示不一致 (#1897) by @1w1w11w1
+- 【Runtime】修复回退旧版后再次升级时无法启动的问题 (#1889) by @jinghero
+
 ## [v5.8.0] - 2026-11-09
 
 ### 破坏性变更
@@ -754,6 +776,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0...dev
 [v5.8.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0...v5.8.0
 [v5.7.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0
 [v5.6.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.1...v5.6.2
