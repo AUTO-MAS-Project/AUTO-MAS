@@ -1087,11 +1087,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if not self._history_saved:
                     await self._save_user_history()
             finally:
-                try:
-                    # 停止后关闭设备也可能被进程作用域取消，项目预约仍须释放。
-                    await self._release_project_path()
-                finally:
-                    await asyncio.to_thread(self._history_temp.cleanup)
+                await asyncio.to_thread(self._history_temp.cleanup)
 
     async def _finalize_user(self) -> None:
         if self._user_teardown_pending:
@@ -1115,6 +1111,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 # 没跑成：统计信息写明原因；代理次数与上次状态不动。
                 await self._save_user_history()
                 await self._push_user_statistics()
+            await self._release_project_path()
             return
 
         await self._close_emulator()
@@ -1150,6 +1147,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self.run_complete:
             await self._send_success_notify()
         await self._push_user_statistics()
+        await self._release_project_path()
 
     async def on_crash(self, e: Exception) -> None:
         await self.cur_user_item.set_state(status="异常")

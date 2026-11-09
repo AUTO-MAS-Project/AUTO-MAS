@@ -1,6 +1,8 @@
 """停止已运行的 MFW 账号后，同一项目仍可再次运行。"""
 
 import asyncio
+import sys
+import threading
 import uuid
 
 import pytest
@@ -11,6 +13,7 @@ from app.task.MaaFW.tools.embedded.project_path import (
     try_reserve_project_path,
 )
 from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
+from app.utils.common.process.runner import create_subprocess, stop_process
 from app.utils.common.process.scope import current_process_scope
 from tests.config_support import activate_config
 from tests.task_stop_support import StopTask, add_script
@@ -26,15 +29,18 @@ async def test_stopped_account_releases_project_after_emulator_close_is_cancelle
     config = await activate_config(
         MaaFWConfig.build(payload={"Emulator": {"Index": "1"}})
     )
-    user = await activate_config(MaaFWUserConfig())
+    user = await activate_config(
+        MaaFWUserConfig.build(payload={"Notify": {"Enabled": False}})
+    )
 
     class Emulator:
         async def close(self, index):
-            # 关闭设备仍可能被收尾时限取消，不能因此漏掉项目预约的释放。
+            # 真实的设备关闭命令应在停止确认中执行完，再释放项目预约。
             scope = current_process_scope.get()
             assert scope is not None and scope.requested
             close_attempted.set()
-            raise asyncio.CancelledError
+            process = await create_subprocess(sys.executable, "-I", "-c", "pass")
+            await process.wait()
 
     class RunningAccount(MaaFWPluginAutoProxyTask):
         async def main_task(self):
@@ -75,3 +81,95 @@ async def test_stopped_account_releases_project_after_emulator_close_is_cancelle
         await task.stop()
         if account is not None:
             await account._release_project_path()
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_pretask_stop_keeps_project_reserved(
+    monkeypatch, isolated_app_paths
+):
+    from app.task.MaaFW.tools.embedded import runner_task as module
+
+    ready = asyncio.Event()
+    entered, release, thread_done = (
+        threading.Event(),
+        threading.Event(),
+        threading.Event(),
+    )
+    account = process = None
+    config = await activate_config(MaaFWConfig())
+    user = await activate_config(
+        MaaFWUserConfig.build(payload={"Notify": {"Enabled": False}})
+    )
+    user_id = uuid.uuid4()
+
+    def snapshot(pid):
+        entered.set()
+        try:
+            assert release.wait(5)
+            return []
+        finally:
+            thread_done.set()
+
+    def refuse_kill():
+        raise PermissionError("injected native termination failure")
+
+    monkeypatch.setattr(module, "_snapshot_pretask_script_descendants", snapshot)
+
+    class RunningAccount(MaaFWPluginAutoProxyTask):
+        async def main_task(self):
+            nonlocal process
+            assert await self._try_enter_project_path()
+            self.check_result = "Pass"
+            process = await create_subprocess(
+                sys.executable, "-I", "-c", "import time; time.sleep(30)"
+            )
+            self.pretask_process = process
+            ready.set()
+            await asyncio.Event().wait()
+
+    class Task(StopTask):
+        STOP_CHECK_TIMEOUTS = {"update": 1.0, "finalize": 0.05}
+
+        async def main_task(self):
+            nonlocal account
+            script = await add_script(
+                info=self.task_info, script_id=str(config.uid), user_id=str(user_id)
+            )
+            account = RunningAccount(
+                script_info=script,
+                script_config=config,
+                user_config={user_id: user},
+                emulator_manager=None,
+            )
+            await self.spawn(account)
+
+    task = Task()
+    task.start()
+    stopping = None
+    try:
+        await asyncio.wait_for(ready.wait(), timeout=3)
+        scope = task._stop_scope
+        with monkeypatch.context() as native:
+            if scope._job is not None:
+                native.setattr(scope._job, "kill", refuse_kill)
+            else:
+                native.setattr(scope._processes[process.pid][1], "kill", refuse_kill)
+            stopping = task.request_stop()
+            await asyncio.wait_for(task.accomplish.wait(), timeout=3)
+            assert scope.cleanup_failed
+            assert entered.is_set() and not thread_done.is_set()
+            assert process.returncode is None
+            key = await try_reserve_project_path(account.project_path)
+            try:
+                assert key is None, "尚未确认写进程停止，不能允许下一次操作项目"
+            finally:
+                await release_project_path(key)
+    finally:
+        release.set()
+        if process is not None:
+            await stop_process(process, kill_tree=True)
+        if stopping is not None:
+            await asyncio.gather(stopping, return_exceptions=True)
+        if account is not None:
+            await account._release_project_path()
+        await asyncio.to_thread(thread_done.wait, 2)

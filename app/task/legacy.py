@@ -217,7 +217,12 @@ class _LegacyExecution(TaskBase):
                 self.owner.stopped_manually = True
                 self.request_stop_checks()
                 assert self._stop_request is not None
-                await asyncio.shield(self._stop_request)
+                while not self._stop_request.done():
+                    try:
+                        await asyncio.shield(self._stop_request)
+                    except asyncio.CancelledError:
+                        pass
+                self._stop_request.result()
                 self._execution_task.cancel()
                 try:
                     await self._execution_task
