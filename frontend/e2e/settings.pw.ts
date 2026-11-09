@@ -176,17 +176,6 @@ test.describe('@settings user preferences', () => {
     await app.evidence('press-sound-retry-reloaded')
   })
 
-  test('advanced settings keeps developer tools without a backend mode selector', async ({
-    app,
-    page,
-  }) => {
-    await app.goto('/settings')
-    await page.getByRole('tab', { name: 'Advanced', exact: true }).click()
-    await expect(page.getByRole('button', { name: 'Open DevTools', exact: true })).toBeVisible()
-    await expect(page.getByText('Backend launch mode', { exact: true })).toHaveCount(0)
-    await app.evidence('advanced-runtime-settings')
-  })
-
   test('preserves appearance sidebar and title colors and restores the built-in theme', async ({
     app,
     page,
@@ -352,6 +341,12 @@ test.describe('@settings user preferences', () => {
         await page.getByRole('tab', { name: tab, exact: true }).click()
         await expect(header.getByRole('button')).toHaveCount(0)
         await expect(page.locator('html')).toHaveClass(/dark/)
+        if (tab === 'Advanced') {
+          await expect(
+            page.getByRole('button', { name: 'Open DevTools', exact: true })
+          ).toBeVisible()
+          await expect(page.getByText('Backend launch mode', { exact: true })).toHaveCount(0)
+        }
       }
       await page.getByRole('tab', { name: 'Interface', exact: true }).click()
       await chooseSegment(theme, 'Light')
