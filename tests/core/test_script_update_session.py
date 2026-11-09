@@ -212,9 +212,7 @@ async def test_real_session_retry_stops_download_before_relogin_and_restarts_clo
             )
 
             runner = object.__new__(MaaFWPluginAutoProxyTask)
-            runner.script_config = SimpleNamespace(
-                Run=SimpleNamespace(RunTimesLimit=3)
-            )
+            runner.script_config = SimpleNamespace(Run=SimpleNamespace(RunTimesLimit=3))
             runner._extra_attempts = 0
             runner.opened_game = True
             runner.opened_emulator = False
@@ -227,9 +225,7 @@ async def test_real_session_retry_stops_download_before_relogin_and_restarts_clo
 
             runner._close_emulator = AsyncMock(return_value=True)
             runner._close_game = close_game
-            retry_task = asyncio.create_task(
-                runner._reset_client_for_retry(1)
-            )
+            retry_task = asyncio.create_task(runner._reset_client_for_retry(1))
         else:
             retry_task = asyncio.create_task(report_script_task_retrying())
         await asyncio.wait_for(cleanup_started.wait(), 2)

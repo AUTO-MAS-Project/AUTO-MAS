@@ -668,9 +668,7 @@ async def test_owned_maafw_retry_notifies_before_client_shutdown(
     from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
 
     runner = object.__new__(MaaFWPluginAutoProxyTask)
-    runner.script_config = SimpleNamespace(
-        Run=SimpleNamespace(RunTimesLimit=3)
-    )
+    runner.script_config = SimpleNamespace(Run=SimpleNamespace(RunTimesLimit=3))
     runner._extra_attempts = 0
     runner.opened_game = owned
     runner.opened_emulator = False

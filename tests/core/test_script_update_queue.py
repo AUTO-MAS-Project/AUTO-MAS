@@ -381,9 +381,7 @@ async def test_unconfirmed_retry_stop_remains_blocking_at_outer_handoff(running)
             raise FluxdownCancelUnconfirmed("daemon stop unconfirmed")
 
     pipeline = queue.ScriptUpdateQueue()
-    pipeline.watch(
-        script, download, completed_at=lambda: user.first_task_completed_at
-    )
+    pipeline.watch(script, download, completed_at=lambda: user.first_task_completed_at)
     await asyncio.wait_for(started.wait(), 1)
     with pytest.raises(FluxdownCancelUnconfirmed):
         await pipeline.finish(cancelled=True)
