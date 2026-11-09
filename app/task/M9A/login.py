@@ -427,8 +427,8 @@ async def _agree_privacy(
 
     if not _if_agree_bilibili():
         raise MaaFWLoginRequired(
-            "B 服登录失败：检测到 bilibili 隐私政策提示，但未开启「同意哔哩哔哩用户协议」；"
-            "请手动同意，或在设置里打开该开关后重试"
+            "B 服登录失败：检测到 bilibili 隐私政策提示，但未开启「托管Bilibili游戏隐私政策」；"
+            "请手动同意，或在「设置 → 功能设置 → 神秘入口」里打开该开关后重试"
         )
     buttons = _pick(
         items,

@@ -126,11 +126,9 @@ class M9AFlavor:
     """满足 ``MaaFWFlavor`` 协议的 M9A 特调对象。"""
 
     type_key = TYPE_KEY
-    # 启动或切号失败就结束本轮、照常重试：游戏可能不在主界面，或者处在错的账号上。
-    abort_round_entries = {
-        STARTUP_ENTRY: "启动游戏失败",
-        SWITCH_ACCOUNT_ENTRY: "切换账号失败",
-    }
+    # 切换账号失败或超时就结束本轮、照常重试：切号没成功，后面的任务会跑在错的账号上。
+    # 不列 StartUp：它失败不代表游戏用不了（上游一直只声明切号），本轮照旧按普通失败继续。
+    abort_round_entries = {SWITCH_ACCOUNT_ENTRY: "切换账号失败"}
     # 关闭游戏失败、超时只记一行，不算本轮失败：收尾时 MAS 会关闭模拟器，重跑一整轮没有意义
     nonfatal_entries = {CLOSE_ENTRY: "MAS 收尾时会关闭游戏/模拟器，不影响本轮结果"}
     # 本次运行里完成过的任务重试时不再补跑（v4.11.3 全部非受管任务）：重跑已领完、已刷完的

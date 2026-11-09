@@ -39,8 +39,9 @@
   4a. `ensure_logged_in(...)`：引擎的**可选**运行前登录钩子（契约写在 MaaFW `flavor.py` 的模块
      说明里，不在协议里），转给 `login.py`。只有 `Run.LoginMode == "Mas"` 时真正做事，
      其余情况返回空串；失败抛 `MaaFWLoginRequired`（本轮按普通失败重试）。
-  5. `abort_round_entries` / `nonfatal_entries`：引擎的**可选**声明（契约同上）。启动游戏
-     （`StartUp`）或切换账号失败就结束本轮、照常重试；关闭游戏（`Close1999`）失败、超时或打转
+  5. `abort_round_entries` / `nonfatal_entries`：引擎的**可选**声明（契约同上）。切换账号失败就
+     结束本轮、照常重试；**启动游戏（`StartUp`）不在名单里**（上游一直只声明切号：它失败不代表
+     游戏用不了，按普通任务失败继续）；关闭游戏（`Close1999`）失败、超时或打转
      只截图记一行，不算本轮失败、不重试。
   6. `skip_on_retry_entries`：引擎的**可选**声明（契约同上）。列的是 v4.11.3 全部非受管任务的 entry，
      本次运行里完成过的重试时不再补跑；**逐个写出**，M9A 新增的任务默认照旧补跑，确认重跑无意义再加。
