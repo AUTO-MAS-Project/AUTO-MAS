@@ -268,11 +268,40 @@ class _LegacyExecution(TaskBase):
             finalizer = asyncio.current_task()
             assert finalizer is not None
             scope.watch_finalizer(finalizer, timeout=self.owner.stop_finalizer_timeout)
+        # The bounded stop confirmation may cancel this outer finalizer while
+        # callback work is still active.  Cancelling its wait must not abandon
+        # the owner's final_task: that is where MaaFW (and other legacy scripts)
+        # release their configuration locks.  Keep the *real* cleanup as an
+        # independently owned worker, while allowing stop to return on time.
+        async def finish_owner() -> None:
+            try:
+                await self.owner.callbacks.drain()
+                await self.owner._finalize_task()
+            finally:
+                await self.owner.callbacks.drain()
+
+        cleanup = asyncio.create_task(
+            finish_owner(), name=f"{type(self.owner).__name__}.owner-cleanup"
+        )
+        if scope is not None:
+            scope.retain_worker(cleanup)
         try:
-            await self.owner.callbacks.drain()
-            await self.owner._finalize_task()
-        finally:
-            await self.owner.callbacks.drain()
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            # A timed-out stop must not cancel real cleanup.  Observe eventual
+            # errors even after the outer finalizer has already completed.
+            def observe(done: asyncio.Task) -> None:
+                if done.cancelled():
+                    return
+                try:
+                    done.result()
+                except Exception as error:
+                    logger.opt(exception=error).error(
+                        f"旧专项后台收尾失败: {type(self.owner).__name__}"
+                    )
+
+            cleanup.add_done_callback(observe)
+            raise
 
     async def on_crash(self, exc):
         """[兼容旧专项] 仅桥接旧异常处理；新执行器直接实现 TaskBase.on_crash。"""
