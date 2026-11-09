@@ -46,7 +46,7 @@ from app.utils.common.process.scope import current_process_scope
 from .host import AdbPortConflict
 from .instances import config_path, read_ini, resolution_for
 
-logger = get_logger("魔改 AVD CLI")
+logger = get_logger("ModAVD CLI")
 
 #: MAS 认得的 modavd 协议版本。2 是 ModAVDManager 0.3.0 去掉 ``restart`` 命令时升的；MAS 重启本来就是
 #: 先 stop 再 start，两个都能用。逐个列出而不写成「≥1」，以后再升还能认出不兼容。
@@ -332,7 +332,7 @@ def map_cli_error(error: CLIError) -> RuntimeError:
         return PrecheckFailed(
             PrecheckItem(
                 "precheck",
-                "魔改 AVD 开机前检查",
+                "ModAVD 开机前检查",
                 False,
                 True,
                 error.message,

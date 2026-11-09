@@ -28,7 +28,7 @@ Emulator 2.0 只接受特定大版本，添加路径时必须先探测。探测�
 - 雷电：裸跑 ``ldconsole.exe``，首行形如
   ``dnplayer v14.0.25.1 Command Line Management Interface``
 - MuMu：``MuMuManager.exe version`` 输出 ``{"version": "6.5.9.0"}``
-- 魔改 AVD（avd）：没有厂商管理器，「安装路径」是用户选的根目录，主程序是
+- ModAVD（avd）：没有厂商管理器，「安装路径」是用户选的根目录，主程序是
   ``<根>/sdk/emulator/emulator.exe``；版本读 ``sdk/emulator/source.properties`` 的
   ``Pkg.Revision``，不起进程
 
@@ -78,9 +78,9 @@ class DetectResult:
     #: - ``unsupported``     暂不支持（MuMu 12、其他品牌）
     #: - ``not_found``       路径下没找到管理器程序
     #: - ``probe_failed``    管理器程序跑不起来或输出认不出
-    #: - ``components_missing`` 魔改 AVD 根目录里组件不全（用包里的「补全组件.bat」补齐）
-    #: - ``test_package_required`` 魔改 AVD 根目录里的模拟器不是内测包里的自编版
-    #: - ``test_package_outdated`` 魔改 AVD 内测包编号低于最低要求或读不到，要换新包
+    #: - ``components_missing`` ModAVD 根目录里组件不全（用包里的「补全组件.bat」补齐）
+    #: - ``test_package_required`` ModAVD 根目录里的模拟器不是内测包里的自编版
+    #: - ``test_package_outdated`` ModAVD 内测包编号低于最低要求或读不到，要换新包
 
 
 def parse_ldplayer_version(output: str) -> str | None:
@@ -177,10 +177,10 @@ def resolve_manager_exe(install_path: str, emulator_type: str) -> Path | None:
 
 
 def avd_root_of(install_path: str) -> Path:
-    """魔改 AVD 的「安装路径」可能是根目录，也可能是用户直接选的 ``<根>\\sdk\\emulator\\emulator.exe``。
+    """ModAVD 的「安装路径」可能是根目录，也可能是用户直接选的 ``<根>\\sdk\\emulator\\emulator.exe``。
 
     只有路径确实是这个布局时才往上退两层；别处的 ``emulator.exe``（层数不够、或不在
-    ``sdk\\emulator`` 下）原样返回，交给调用方按「不是魔改 AVD 根目录」处理。"""
+    ``sdk\\emulator`` 下）原样返回，交给调用方按「不是 ModAVD 根目录」处理。"""
     from .avd.constants import SDK_DIR
 
     path = Path(install_path)
@@ -195,7 +195,7 @@ def avd_root_of(install_path: str) -> Path:
 
 
 def is_avd_root(install_path: str) -> bool:
-    """根目录里有我们的元数据或 SDK 目录，就当魔改 AVD 根目录。"""
+    """根目录里有我们的元数据或 SDK 目录，就当 ModAVD 根目录。"""
     from .avd.constants import METADATA_FILE, SDK_DIR
 
     root = avd_root_of(install_path)
@@ -312,7 +312,7 @@ async def probe_install_path(
 
 
 def _probe_avd(install_path: str) -> DetectResult:
-    """魔改 AVD 根目录：组件齐了才可添加，版本取 ``source.properties``，不起进程。"""
+    """ModAVD 根目录：组件齐了才可添加，版本取 ``source.properties``，不起进程。"""
     from .avd.components import (
         emulator_build_ok,
         emulator_present,
@@ -326,7 +326,7 @@ def _probe_avd(install_path: str) -> DetectResult:
     version = read_emulator_version(root) or ""
     exe = resolve_manager_exe(str(root), "avd")
     if emulator_present(root) and not emulator_self_built(root):
-        # 只支持魔改 AVD 内测包里的自编版，谷歌原版不让加
+        # 只支持 ModAVD 内测包里的自编版，谷歌原版不让加
         return DetectResult(
             supported=False,
             reason="test_package_required",

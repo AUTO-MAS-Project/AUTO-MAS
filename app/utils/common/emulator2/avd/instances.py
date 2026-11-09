@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""魔改 AVD 实例（AVD）的配置文件。
+"""ModAVD 实例（AVD）的配置文件。
 
 一台实例 = ``avd\\mas_<i>.ini`` + ``avd\\mas_<i>.avd\\config.ini``；原生索引 i 就是名字里的
 数字，端口也按它算，所以枚举只要扫 ``avd\\mas_*.ini``。配置只在停机时由我们写，模拟器
@@ -248,7 +248,7 @@ def resolution_for(config: dict[str, str]) -> int:
 def validate_resolution(resolution: int | None) -> int:
     value = DEFAULT_RESOLUTION if resolution is None else resolution
     if value not in DISPLAY_PRESETS:
-        raise ValueError("魔改 AVD 的分辨率只能选 1080 或 720")
+        raise ValueError("ModAVD 的分辨率只能选 1080 或 720")
     return value
 
 
@@ -312,12 +312,12 @@ def validate_options(
     )
     if memory not in MEMORY_CHOICES_MB:
         raise ValueError(
-            "魔改 AVD 的内存只能选 "
+            "ModAVD 的内存只能选 "
             + " / ".join(f"{value // 1024} GB" for value in MEMORY_CHOICES_MB)
         )
     if cores not in CPU_CHOICES:
         raise ValueError(
-            "魔改 AVD 的 CPU 核数只能选 " + " / ".join(str(v) for v in CPU_CHOICES)
+            "ModAVD 的 CPU 核数只能选 " + " / ".join(str(v) for v in CPU_CHOICES)
         )
     low, high = DATA_PARTITION_RANGE_GB
     if not low <= data_gb <= high:
@@ -330,7 +330,7 @@ def validate_fps(fps: int | None) -> int:
     value = DEFAULT_FPS if fps is None else int(fps)
     if value not in FPS_CHOICES:
         raise ValueError(
-            "魔改 AVD 的帧率只能选 " + " / ".join(str(v) for v in FPS_CHOICES)
+            "ModAVD 的帧率只能选 " + " / ".join(str(v) for v in FPS_CHOICES)
         )
     return value
 

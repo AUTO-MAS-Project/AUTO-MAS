@@ -447,7 +447,7 @@ def main():
 
             async def init_avd_update() -> None:
 
-                # 收拾上次没做完的魔改 AVD 换上（几次改名，很快）
+                # 收拾上次没做完的 ModAVD 换上（几次改名，很快）
                 await EmulatorManager.startup_avd_update()
 
             async def init_stage_info() -> None:
@@ -492,7 +492,7 @@ def main():
                 # 空转一次巡检远比定时任务整夜不触发轻。
                 await run_optional_step("桌面显示输出守卫", start_desktop_guard)
                 # 要在主定时器之前：定时器可能马上拉起实例，而 sdk\emulator 可能正停在换到一半
-                await run_optional_step("魔改 AVD 更新恢复", init_avd_update)
+                await run_optional_step("ModAVD 更新恢复", init_avd_update)
                 timer_error = await run_step("主业务定时器", MainTimer.start)
                 startup_mark("后端/主定时器启动结束")
 

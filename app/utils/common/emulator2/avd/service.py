@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""魔改 AVD 的服务层：根目录状态与开机前检查、电源操作前关实例。
+"""ModAVD 的服务层：根目录状态与开机前检查、电源操作前关实例。
 
 添加流程：``status``（组件齐不齐、电脑检查）→ 齐了按普通路径纳管（Emulator 2.0 的 ``paths/add``）。
 组件全部随模拟器内测包提供，MAS 不下载；缺了只说缺哪一项。实例的新建 / 删除 / 启停走 Emulator 2.0
@@ -41,7 +41,7 @@ from . import cli as modavd_cli
 from . import components, precheck, updater
 from .constants import POWER_CLOSE_TIMEOUT_SECONDS
 
-logger = get_logger("魔改 AVD 服务")
+logger = get_logger("ModAVD 服务")
 
 
 def _cli_status_result(root: Path, data: object) -> dict[str, Any]:
@@ -104,7 +104,7 @@ def _cli_status_result(root: Path, data: object) -> dict[str, Any]:
 def _normalize_root(root: str) -> Path:
     path = Path(str(root or "").strip())
     if not str(path) or not path.is_absolute():
-        raise ValueError("请选择一个完整路径的文件夹作为魔改 AVD 根目录")
+        raise ValueError("请选择一个完整路径的文件夹作为 ModAVD 根目录")
     if path.exists() and not path.is_dir():
         raise ValueError(f"{path} 不是文件夹")
     return path
@@ -145,7 +145,7 @@ async def status(
 
 
 def managed_roots(configs: Iterable[EmulatorConfig]) -> list[Path]:
-    """Emulator 2.0 配置里纳管的全部魔改 AVD 根目录（去重）。"""
+    """Emulator 2.0 配置里纳管的全部 ModAVD 根目录（去重）。"""
     roots: dict[str, Path] = {}
     for config in configs:
         try:
@@ -184,19 +184,19 @@ async def close_instances(
             results[name] = "closed"
         else:
             results[name] = "failed"
-            logger.warning(f"魔改 AVD 实例 {name} 关机失败: {error}")
+            logger.warning(f"ModAVD 实例 {name} 关机失败: {error}")
     for task in pending:
         name = tasks[task]
         task.cancel()
         results[name] = "timeout"
-        logger.warning(f"魔改 AVD 实例 {name} 未在 {timeout:.0f} 秒内关完，放弃等待")
+        logger.warning(f"ModAVD 实例 {name} 未在 {timeout:.0f} 秒内关完，放弃等待")
     return results
 
 
 async def close_running_instances(
     configs: Iterable[EmulatorConfig], *, timeout: float = POWER_CLOSE_TIMEOUT_SECONDS
 ) -> dict[str, str]:
-    """关机 / 重启 / 注销前关闭所有魔改 AVD。
+    """关机 / 重启 / 注销前关闭所有 ModAVD。
 
     CLI 根目录一次调用 ``stop --all``，避免未登记实例被逐台 stop 时漏掉 sync；CLI 不可用时，
     按用户定的例外退回 Python 的 sync + emu kill 路径。
@@ -213,7 +213,7 @@ async def close_running_instances(
     if not targets:
         return {}
     logger.info(
-        f"关机前先正常关闭 {len(targets)} 个魔改 AVD 根目录的实例（安卓正常关机）"
+        f"关机前先正常关闭 {len(targets)} 个 ModAVD 根目录的实例（安卓正常关机）"
     )
     return await close_instances(targets, timeout=timeout)
 

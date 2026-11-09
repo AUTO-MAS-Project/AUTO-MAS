@@ -18,9 +18,9 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""魔改 AVD 根目录：路径、元数据（``mas-avd.json``）与组件检查。
+"""ModAVD 根目录：路径、元数据（``mas-avd.json``）与组件检查。
 
-模拟器和轻量桌面随魔改 AVD 发布包提供；平台工具、系统镜像是 Google 的，由包里的「补全组件.bat」从官方渠道
+模拟器和轻量桌面随 ModAVD 发布包提供；平台工具、系统镜像是 Google 的，由包里的「补全组件.bat」从官方渠道
 下载。MAS 不下载组件，只有模拟器本体（``sdk\\emulator``）可以由更新器（:mod:`.updater`）换成 GitHub 上的新版。
 这里只检查根目录里它们在不在：关键文件、模拟器是不是我们的自编版、内测包编号够不够新。
 缺了就明确说缺哪一项、怎么补。
@@ -58,7 +58,7 @@ from .constants import (
     valid_native_index,
 )
 
-logger = get_logger("魔改 AVD 组件")
+logger = get_logger("ModAVD 组件")
 
 #: 每个组件必须存在的文件——只看目录在不在不够，解压到一半的目录也是「在」的。
 _KEY_FILES = {
@@ -67,15 +67,15 @@ _KEY_FILES = {
     "system-image": ("system.img", "vendor.img", "kernel-ranchu", "ramdisk.img"),
 }
 
-#: 平台工具（adb）、系统镜像不全时给用户的指引（MAS 不下载组件）：Google 的组件不随魔改 AVD 发布包分发，
+#: 平台工具（adb）、系统镜像不全时给用户的指引（MAS 不下载组件）：Google 的组件不随 ModAVD 发布包分发，
 #: 由包里的「补全组件.bat」（``tools\fetch-components.ps1``）从官方渠道下载。
 FETCH_COMPONENTS_ADVICE = (
-    "双击魔改 AVD 根目录里的「补全组件.bat」：它会先显示《Android 软件开发套件许可协议》，输入 y 同意后"
+    "双击 ModAVD 根目录里的「补全组件.bat」：它会先显示《Android 软件开发套件许可协议》，输入 y 同意后"
     "从官方渠道下载 adb 和系统镜像（约 1.5 GB，中断了再运行会接着下），看到「完成」后回来点「检查」"
 )
 #: 模拟器本身缺着时：发布包要整个解压到这个根目录
 PACKAGE_ADVICE = (
-    "模拟器要用魔改 AVD 的发布包：从 https://github.com/ModAVD/ModAVD/releases 下载 "
+    "模拟器要用 ModAVD 的发布包：从 https://github.com/ModAVD/ModAVD/releases 下载 "
     "ModAVD-<版本>-win-x64.zip，整个解压到这个目录"
 )
 
@@ -144,7 +144,7 @@ def adb_server_port(root: str | Path) -> int:
 
 
 def script_adb_server_port(root: str | Path) -> int:
-    """脚本（MaaFW 的 worker / agent）在魔改 AVD 实例上用的 adb server 端口。
+    """脚本（MaaFW 的 worker / agent）在 ModAVD 实例上用的 adb server 端口。
 
     ``mas-avd.json`` 的 ``scriptAdbServerPort``，默认 20049。脚本用 SDK 的新版 adb，跑在 5037 上会和
     雷电 / MuMu 自带的旧版 adb 互杀 server、掉线（用户定：单独一个端口）。校验同 ``adbServerPort``，
@@ -394,7 +394,7 @@ def emulator_files_present(emulator_dir: str | Path) -> bool:
 
 
 def emulator_self_built(root: str | Path) -> bool:
-    """根目录里的模拟器是我们的自编版（魔改 AVD 内测包里的那份）。只有它才能用。"""
+    """根目录里的模拟器是我们的自编版（ModAVD 内测包里的那份）。只有它才能用。"""
     return emulator_present(root) and qemu_has_self_built_mark(qemu_headless_exe(root))
 
 

@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""魔改 AVD 更新的本机文件操作：解包、拼新版、核对、换上、崩溃恢复。不联网。
+"""ModAVD 更新的本机文件操作：解包、拼新版、核对、换上、崩溃恢复。不联网。
 
 根目录里更新器只用自己的 ``.update``（和根目录同一个盘，换上靠改名）::
 
@@ -96,7 +96,7 @@ from .update_source import (
     requires_manifest,
 )
 
-logger = get_logger("魔改 AVD 更新")
+logger = get_logger("ModAVD 更新")
 
 #: ``state.json`` 的 ``phase``：idle 没有待装的 / preparing 正在下载、拼新版（不可安装）/
 #: staged 新版已拼好核对过、可以安装 / swapping 换上中
@@ -435,7 +435,7 @@ def check_package_manifest(manifest: dict[str, Any], target: ModAvdVersion) -> N
 
 
 def check_emulator(source: Path, target: ModAvdVersion) -> None:
-    """``source`` 确是要装的那一版魔改 AVD 自编模拟器：关键文件齐、构建号对、有自编版标志。"""
+    """``source`` 确是要装的那一版 ModAVD 自编模拟器：关键文件齐、构建号对、有自编版标志。"""
     if not emulator_files_present(source):
         raise PackageError("包里的 sdk\\emulator 不完整（缺 emulator.exe 或 qemu）")
     build = read_mod_build_at(source)
@@ -447,7 +447,7 @@ def check_emulator(source: Path, target: ModAvdVersion) -> None:
     if not qemu_has_self_built_mark(
         source / "qemu" / "windows-x86_64" / "qemu-system-x86_64-headless.exe"
     ):
-        raise PackageError("包里的模拟器不是魔改 AVD 的自编版")
+        raise PackageError("包里的模拟器不是 ModAVD 的自编版")
 
 
 def verify_package(
@@ -1156,7 +1156,7 @@ def swap_in(root: str | Path) -> str:
         # 改过名之后出错（写 state.json、换包内文件……）：当场按崩溃恢复的规则补完或退回，不留半套
         raise PackageError(f"换上中途出错（{e}）；{_recover_now(root)}") from e
     logger.info(
-        f"{root} 的魔改 AVD 已从 {display_version(state.get('from')) or '旧版'} 换成 "
+        f"{root} 的 ModAVD 已从 {display_version(state.get('from')) or '旧版'} 换成 "
         f"{display_version(state['target']['version'])}"
     )
     return state["target"]["version"]

@@ -41,11 +41,11 @@ export type Emulator2DeviceItem = {
      */
     adbAddress?: string;
     /**
-     * 正在运行的实例是不是无头开机的(没有窗口, 显示 / 隐藏用不了); 只有魔改 AVD 给, 其余为空
+     * 正在运行的实例是不是无头开机的(没有窗口, 显示 / 隐藏用不了); 只有 ModAVD 给, 其余为空
      */
     headless?: (boolean | null);
     /**
-     * 状态为新建失败时的原因(魔改 AVD), 其余为空
+     * 状态为新建失败时的原因(ModAVD), 其余为空
      */
     creationError?: string;
     /**

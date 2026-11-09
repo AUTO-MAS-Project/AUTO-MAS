@@ -80,7 +80,7 @@ export const WS_EMULATOR_NOTICE = 'emulator.notice'
 // 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 export const WS_EMULATOR_OPERATION_FINISHED = 'emulator.operation.finished'
 
-// 魔改 AVD 更新（下载 / 解包 / 核对 / 换上）的进度（id=EmulatorManager，data 里带根目录）
+// ModAVD 更新（下载 / 解包 / 核对 / 换上）的进度（id=EmulatorManager，data 里带根目录）
 export const WS_AVD_UPDATE_PROGRESS = 'emulator2.avd-update.progress'
 
 // 虚拟显示器（id=Main）：真实显示器回来了但有任务在跑，问用户要不要拆；以及提示已作废
@@ -268,7 +268,7 @@ export interface WSEmulatorOperationData {
 }
 
 /**
- * 魔改 AVD 更新进度 (id=EmulatorManager, type=emulator2.avd-update.progress)
+ * ModAVD 更新进度 (id=EmulatorManager, type=emulator2.avd-update.progress)
  *
  * status 为 success / failed / idle 时这一次操作结束，界面据此重新取一次状态快照。
  */

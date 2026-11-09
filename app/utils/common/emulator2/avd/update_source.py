@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""魔改 AVD 更新：版本号与下载源。
+"""ModAVD 更新：版本号与下载源。
 
 **版本号**（ModAVD 发版规则）：版本号和 tag 都写成 ``v0.<N>.<P>``。第一段 0 表示内测阶段（转正式后
 是 1）；N 是构建号（与 ``Pkg.BuildId=mas-N`` 同一个数）；P 是不重编、只重新打包的次数。例如 mas32
@@ -75,7 +75,7 @@ from .constants import (
     UPDATE_API_TIMEOUT_SECONDS,
 )
 
-logger = get_logger("魔改 AVD 更新")
+logger = get_logger("ModAVD 更新")
 
 # ---- 版本号 ----------------------------------------------------------------
 

@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""魔改 AVD 更新：GitHub 的整包按区间只取变了的文件。
+"""ModAVD 更新：GitHub 的整包按区间只取变了的文件。
 
 做法同 MaaFW 项目更新的区间增量（``app/task/MaaFW/tools/core/project_update/range_delta.py``），但那是
 MaaFW 引擎自己的核心包、和它的载荷模型绑在一起（``app.utils`` 也不该依赖 ``app.task``），这里只用公共的
@@ -60,7 +60,7 @@ from app.utils import update_files as _utils_update_files
 from . import update_stage as stage
 from .update_source import RemoteAsset
 
-logger = get_logger("魔改 AVD 更新")
+logger = get_logger("ModAVD 更新")
 
 #: 要取回的条目压缩后合计超过包的这个比例，或条目数超过上限，就改下整包（同 MaaFW 的取值）。
 MAX_FETCH_RATIO = 0.4

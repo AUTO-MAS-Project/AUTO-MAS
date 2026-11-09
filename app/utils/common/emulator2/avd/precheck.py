@@ -18,14 +18,14 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""魔改 AVD 开机前的电脑检查：目录路径、组件、模拟器版本、硬件虚拟化、显卡 Vulkan、磁盘、内存。
+"""ModAVD 开机前的电脑检查：目录路径、组件、模拟器版本、硬件虚拟化、显卡 Vulkan、磁盘、内存。
 
 每项给 ``ok``、原因、建议，``/avd/status`` 原样交给前端显示；开机路径（``AvdInstanceManager._launch``）
 里不满足的拦截项直接拒绝开机并给出原因，不静默开下去。只读：不改系统设置、不装任何东西。
 
 - **目录路径**：根目录路径不能有中文等非 ASCII 字符（模拟器和 qemu 对这类路径不可靠），空格不拦。拦截。
 - **组件**：平台工具、系统镜像都要在（MAS 不下载，由包里的「补全组件.bat」补齐）；缺了写明缺哪一项、怎么补。拦截。
-- **模拟器版本**：只支持魔改 AVD 内测包里的自编版（``components.emulator_self_built``），且内测包编号
+- **模拟器版本**：只支持 ModAVD 内测包里的自编版（``components.emulator_self_built``），且内测包编号
   （``Pkg.BuildId=mas-<编号>``）不低于 ``MIN_MOD_AVD_BUILD``；谷歌原版
   与没有模拟器都拒绝。拦截。
 - **硬件虚拟化**：``emulator -accel-check``（WHPX）。拦截。
@@ -76,7 +76,7 @@ from .constants import (
 )
 from .update_source import ModAvdVersion, local_version_text
 
-logger = get_logger("魔改 AVD 电脑检查")
+logger = get_logger("ModAVD 电脑检查")
 
 PROBE_SCRIPT = emulator_native.vulkan_probe_path()
 #: ``VkPhysicalDeviceType``：4 = CPU（软件实现），其余（集成 / 独立 / 虚拟显卡）都算硬件。
@@ -165,19 +165,19 @@ async def acceleration_item(
         title,
         False,
         True,
-        f"硬件虚拟化（Windows 虚拟机监控程序平台）不可用，魔改 AVD 无法启动"
+        f"硬件虚拟化（Windows 虚拟机监控程序平台）不可用，ModAVD 无法启动"
         f"（检查结果：{summary or '无输出'}）",
         ACCEL_ADVICE,
     )
 
 
 TEST_PACKAGE_ADVICE = (
-    "请把魔改 AVD 内测包解压到这个目录（解压后目录里应有 sdk\\emulator）"
+    "请把 ModAVD 内测包解压到这个目录（解压后目录里应有 sdk\\emulator）"
 )
 
 
 def emulator_item(root: str | Path) -> PrecheckItem:
-    """模拟器必须是魔改 AVD 内测包里的自编版（用户定：不支持谷歌原版）。拦截。"""
+    """模拟器必须是 ModAVD 内测包里的自编版（用户定：不支持谷歌原版）。拦截。"""
     title = "模拟器版本"
     if not emulator_present(root):
         return PrecheckItem(
@@ -185,7 +185,7 @@ def emulator_item(root: str | Path) -> PrecheckItem:
             title,
             False,
             True,
-            "这个目录里还没有魔改 AVD 内测包",
+            "这个目录里还没有 ModAVD 内测包",
             TEST_PACKAGE_ADVICE,
         )
     version = read_emulator_version(root) or "版本未知"
@@ -204,7 +204,7 @@ def emulator_item(root: str | Path) -> PrecheckItem:
             False,
             True,
             f"内测包版本过旧（{shown or '未标版本号'}）",
-            f"请更新到 {minimum} 或更新的版本：在模拟器页这个魔改 AVD "
+            f"请更新到 {minimum} 或更新的版本：在模拟器页这个 ModAVD "
             "的「管理与更新」里点「更新」，实例和游戏数据不受影响",
         )
     return PrecheckItem(
@@ -212,7 +212,7 @@ def emulator_item(root: str | Path) -> PrecheckItem:
         title,
         False,
         True,
-        f"这里的模拟器（{version}）不是魔改 AVD 内测包里的版本，只支持内测包",
+        f"这里的模拟器（{version}）不是 ModAVD 内测包里的版本，只支持内测包",
         TEST_PACKAGE_ADVICE,
     )
 
@@ -304,7 +304,7 @@ def disk_item(root: str | Path, free_bytes: int | None = None) -> PrecheckItem:
         True,
         f"{text}，低于开机所需的 {MIN_FREE_DISK_GB_TO_BOOT} GB：数据盘随游戏写入增长，"
         "盘写满时实例数据会损坏",
-        f"清理 {drive} 的空间，或把魔改 AVD 根目录放到空间更大的盘",
+        f"清理 {drive} 的空间，或把 ModAVD 根目录放到空间更大的盘",
     )
 
 
@@ -454,10 +454,10 @@ async def check_before_launch(root: str | Path, memory_mb: int) -> list[Precheck
             raise PrecheckFailed(item)
     vulkan = await vulkan_item()
     if vulkan.ok is False:
-        logger.warning(f"魔改 AVD 开机前检查：{vulkan.message()}")
+        logger.warning(f"ModAVD 开机前检查：{vulkan.message()}")
     items.append(vulkan)
     logger.info(
-        "魔改 AVD 开机前检查："
+        "ModAVD 开机前检查："
         + "；".join(
             f"{item.title}{'通过' if item.ok else '未通过' if item.ok is False else '未查'}"
             f"（{item.reason}）"

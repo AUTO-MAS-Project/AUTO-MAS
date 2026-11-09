@@ -6,7 +6,7 @@ import type { Emulator2AvdUpdateActionOut, Emulator2AvdUpdateStatusOut } from '@
 import { t } from '@/i18n'
 
 /**
- * 魔改 AVD 更新客户端：状态快照（可顺带查更新）、一键更新。
+ * ModAVD 更新客户端：状态快照（可顺带查更新）、一键更新。
  *
  * 业务失败走 ``code !== 200`` + ``message``，HTTP 失败走 ``ApiError``，两种都抛带说明的 Error。
  * 更新「没开始」（如有实例开着、已是最新）不算接口失败，``ok=false`` 原样返回。

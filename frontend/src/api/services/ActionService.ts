@@ -245,7 +245,7 @@ export class ActionService {
         });
     }
     /**
-     * 在魔改 AVD 实例里安装 APK
+     * 在 ModAVD 实例里安装 APK
      * ``adb install -r`` 本机的一个 .apk，实例必须已开机；装完才返回。.xapk / 拆分安装包不支持。
      * @param requestBody
      * @returns Emulator2AvdApkInstallOut Successful Response
@@ -265,7 +265,7 @@ export class ActionService {
         });
     }
     /**
-     * 更新魔改 AVD
+     * 更新 ModAVD
      * 一键更新：查最新版本，下载（Mirror 酱或 GitHub，整包或增量）并核对，再换上。
      * 有实例开着或正在开机时什么都不动，返回 ``instances_running``；开始后到结束这个根目录不许开机。
      * 换上前发现还有程序开着模拟器文件时停在「已下载好」，下次直接换上。
