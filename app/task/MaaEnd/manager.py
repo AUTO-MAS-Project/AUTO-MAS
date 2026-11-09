@@ -496,7 +496,7 @@ class MaaEndManager(ScriptManagerBase):
                 self._recover_previous_run()
                 # 修复在原有资源预检之前，损坏的旧资源不能堵死恢复入口。
                 await self._prepare_program_update(root)
-            elif (script_install.workspace(root) / "installed.json").exists():
+            elif script_install.record_path(root, "installed.json").exists():
                 # 非接管模式沿用 MXU 自行更新的安装。恢复事务仍须完成，
                 # 但旧 MAS 回执不应阻断后续配置或运行，也不重算哈希冒充可信。
                 await script_update.confirm_current_install(root, verify_receipt=False)

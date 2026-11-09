@@ -14,6 +14,7 @@ from app.task.Whimbox import manager
 from app.task.Whimbox.tools import update
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from tests.runtime_support import RuntimeStub as SimpleNamespace
+from app.utils.common.process.runner import ProcessCleanupUnconfirmed
 
 
 @pytest.fixture
@@ -53,6 +54,30 @@ def installation(tmp_path, monkeypatch):
 
     monkeypatch.setattr(update, "download_file", AsyncMock(side_effect=download))
     return root
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wrapper", [asyncio.CancelledError, TimeoutError])
+async def test_unconfirmed_dependency_writer_retains_stage_through_outer_discard(
+    installation, wrapper
+):
+    candidate = await update.prepare_update(installation)
+    failure = wrapper()
+    failure.__cause__ = ProcessCleanupUnconfirmed("writer has not exited")
+
+    async def run_python(root, *args, **kwargs):
+        if "install" in args:
+            raise failure
+        return ""
+
+    update.run_python.side_effect = run_python
+    with pytest.raises(wrapper):
+        await update.apply_update(installation, candidate)
+    update.discard_update(candidate)
+    assert candidate.packages.is_dir()
+    assert update.pending_marker(installation).exists()
+    with pytest.raises(update.WhimboxUpdateUnsafeError):
+        await update.confirm_usable_installation(installation)
 
 
 @pytest.mark.asyncio

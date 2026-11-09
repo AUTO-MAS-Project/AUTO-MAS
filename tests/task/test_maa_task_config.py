@@ -8,7 +8,7 @@ from app.task.MAA.AutoProxy import (
     _build_cultivate_task,
     _build_depot_maintain_task,
     _build_stock_cultivate_task,
-    _should_retry_maa,
+    _failed_maa_sanity_tasks,
 )
 from app.task.MAA.tools.cultivate.types import CultivatePlan, FarmEntry, Requirement
 
@@ -226,25 +226,16 @@ def test_merge_keeps_closed_group_quota_closed(gate: str, count_key: str):
 
 
 @pytest.mark.parametrize(
-    "failure_summary",
+    ("log", "failed"),
     [
-        "任务已完成，但出现错误！",
-        "任务已结束，以下任务出现错误:\n理智作战",
+        ("任务已结束，以下任务出现错误:\n理智作战, 基建换班", {"Fight"}),
+        ("任务已结束，以下任务出现错误: 库存保持与干员养成 #2", {"DepotMaintain"}),
+        (
+            "任务已结束，以下任务出现错误: 活动关均衡理智 (仓库识别)",
+            {"EventDepotMaintain"},
+        ),
+        ("任务出错: 剿灭作战\n任务已完成，但出现错误！", {"Fight"}),
     ],
 )
-def test_maa_final_task_failure_is_not_retried(failure_summary: str):
-    log = f"干员培养完成：成功 0，失败 6，跳过 0\n{failure_summary}"
-
-    assert not _should_retry_maa("MAA 部分任务执行失败", log)
-
-
-@pytest.mark.parametrize(
-    "status",
-    ["MAA 的 ADB 连接异常", "MAA 进程超时", "MAA 在完成任务前退出"],
-)
-def test_maa_runtime_failures_remain_retryable(status: str):
-    assert _should_retry_maa(status, "连接异常")
-
-
-def test_maa_partial_result_without_final_failure_marker_remains_retryable():
-    assert _should_retry_maa("MAA 部分任务执行失败", "任务出错: 理智作战")
+def test_maa_failed_sanity_tasks_follow_upstream_result(log: str, failed: set[str]):
+    assert _failed_maa_sanity_tasks(log) == failed

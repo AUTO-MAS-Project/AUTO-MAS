@@ -20,14 +20,6 @@
  * ```
  */
 
-// 镜像源服务
-export {
-  MirrorService,
-  type MirrorSource,
-  type MirrorConfig,
-  type CloudMirrorConfig,
-} from './mirrorService'
-
 // 下载服务
 export { SmartDownloader, type DownloadProgress, type ProgressCallback } from './downloadService'
 
@@ -52,7 +44,6 @@ export {
   type RuntimeRetryMode,
   type RuntimeStageOutcome,
   mapDoctorChecksToCriticalFiles,
-  mapMirrorSelection,
   mapRuntimeStage,
   toRuntimeVersion,
 } from './runtimeInitializationService'

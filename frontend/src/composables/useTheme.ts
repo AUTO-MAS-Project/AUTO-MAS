@@ -159,6 +159,7 @@ const restorePersistedThemeSnapshot = () => {
 // 更新CSS变量
 const updateCSSVariables = () => {
   const root = document.documentElement
+  root.classList.toggle('appearance-custom', Boolean(activeAppearance.value))
   const cursorUrls = activeAppearance.value?.cursorUrls
   const cursors = activeAppearance.value?.cursors
   if (cursors && Object.keys(cursors).length > 0) {
@@ -223,9 +224,10 @@ const updateCSSVariables = () => {
   const baseDarkBg = '#141414'
   const baseMenuBg = isDark.value ? baseDarkBg : baseLightBg
 
-  // 改进：侧边栏背景使用 HSL 调整而不是简单线性混合，提高在不同主色下的可读性
-  const siderBg = deriveSiderBg(primaryColor, baseMenuBg, isDark.value)
-  const siderBorder = deriveSiderBorder(siderBg, primaryColor, isDark.value)
+  // 侧栏与卡片同属表面层，不跟随主题色：只保留"画布 / 表面"两级明度，
+  // 避免侧栏被染成既不是画布也不是卡片的第三种灰阶。
+  const siderBg = antTokens.colorBgContainer
+  const siderBorder = antTokens.colorBorderSecondary
 
   // 基础文字候选色
   const candidateTextLight = 'rgba(255,255,255,0.88)'
@@ -262,6 +264,9 @@ const updateCSSVariables = () => {
   root.style.setProperty('--ant-box-shadow-tertiary', antTokens.boxShadowTertiary)
   root.style.setProperty('--ant-color-border', antTokens.colorBorder)
   root.style.setProperty('--ant-color-border-secondary', antTokens.colorBorderSecondary)
+  root.style.setProperty('--ant-border-radius', `${antTokens.borderRadius}px`)
+  root.style.setProperty('--ant-border-radius-sm', `${antTokens.borderRadiusSM}px`)
+  root.style.setProperty('--ant-border-radius-lg', `${antTokens.borderRadiusLG}px`)
   root.style.setProperty('--ant-color-bg-container-disabled', antTokens.colorBgContainerDisabled)
   root.style.setProperty('--ant-color-bg-mask', antTokens.colorBgMask)
   root.style.setProperty('--ant-color-split', antTokens.colorSplit)
@@ -458,8 +463,6 @@ const hslAdjust = (hex: string, dl: number) => {
   return rgbToHex(nrgb.r, nrgb.g, nrgb.b)
 }
 
-const hslLighten = (hex: string, percent: number) => hslAdjust(hex, percent / 100)
-
 // 对比度 (WCAG)
 const contrastRatio = (hex1: string, hex2: string) => {
   const L1 = getLuminance(hex1)
@@ -491,18 +494,6 @@ const pickAccessibleColor = (c1: string, c2: string, bg: string, minRatio = 4.5)
   if (r1 >= minRatio) return c1
   if (r2 >= minRatio) return c2
   return r1 >= r2 ? c1 : c2
-}
-
-// 侧栏背景：深色模式贴住近黑（#080808 量级）只留极轻主色染色，浅色模式提高亮度轻度染色。
-// 深色下不再按 0.22 混主色，否则整条侧栏会被主色染成蓝色，与页面纯黑底割裂。
-const deriveSiderBg = (primary: string, base: string, dark: boolean) => {
-  if (dark) return blendColors('#080808', primary, 0.02)
-  return hslLighten(blendColors(base, primary, 0.18), 6)
-}
-
-const deriveSiderBorder = (siderBg: string, primary: string, dark: boolean) => {
-  // 深色下用极淡白色描边（≈#161616），跟随主色会变成一条蓝色分界线
-  return dark ? blendColors(siderBg, '#ffffff', 0.055) : blendColors('#d9d9d9', primary, 0.25)
 }
 
 // 监听系统主题变化

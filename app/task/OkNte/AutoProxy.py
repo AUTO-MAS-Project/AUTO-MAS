@@ -228,6 +228,40 @@ def _oknte_daily_task_success_error(
     *,
     daily_activity_required: bool,
 ) -> str | None:
+    # 临时复用上游可见日志；上游提供可靠的子任务结果及失败原因后移除此判定。
+    # 仅在同一子任务内读到正数且明确不足时豁免，0 可能是 OCR 未匹配。
+    task_start = None
+    task_lines: list[str] = []
+    for line in log.splitlines():
+        start = re.search(r"DailyRoutineTask:开始任务: (.+?)\s*$", line)
+        if start:
+            task_start = start.group(1)
+            task_lines = []
+            continue
+        failure = re.search(r"DailyRoutineTask:任务失败: (.+?)\s*$", line)
+        if failure:
+            name = failure.group(1)
+            segment = "\n".join(task_lines)
+            stamina = re.findall(r"info_set 当前体力 (\d+)", segment)
+            limits = {"异象追猎": 60, "异象界域": 40}
+            limit = limits.get(name)
+            insufficient = (
+                name == task_start
+                and limit is not None
+                and "体力不足，退出" in segment
+                and bool(stamina)
+                and 0 < int(stamina[-1]) < limit
+            )
+            claimed = name in _OKNTE_DAILY_ROUTINE_CLAIM_SUCCESS and (
+                _OKNTE_DAILY_CLAIM_NO_REWARD in segment
+            )
+            if not insufficient and not claimed:
+                return f"OK-NTE 日常任务失败: {name}"
+            task_start = None
+            task_lines = []
+        elif task_start is not None:
+            task_lines.append(line)
+
     routine_success_matches = _OKNTE_DAILY_ROUTINE_SUCCESS_RE.findall(log)
     if routine_success_matches:
         success_items = _parse_oknte_info_list(routine_success_matches[-1])
@@ -295,6 +329,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         self.curdate = ""
         self.user_run_result_persisted = False
         self.daily_activity_required = True
+        # final_task 第一行就读取 run_book；prepare() 中途抛错也会进入收尾，
+        # 因此必须在此初始化，否则收尾变成 AttributeError 并跳过进程清理。
+        self.run_book = False
         # log_box：prepare 绑定用户会话，关闭模式不创建底层采集器。
         self._log_source: log_source.LogSource | None = None
         self._log_pipeline: log_box.LogPipeline | None = None
@@ -321,6 +358,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             or not self.script_config.Script.ScriptPath.is_file()
         ):
             return "请设置 OK-NTE 脚本路径"
+        # prepare() 依赖以下路径，未配置时在启动前拦截，避免任务中途崩溃
+        if self.script_config.Script.LogPath is None:
+            return "请设置 OK-NTE 日志路径"
+        if self.script_config.Script.ConfigPath is None:
+            return "请设置 OK-NTE 配置文件路径"
 
         await self._reset_daily_proxy_count()
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束

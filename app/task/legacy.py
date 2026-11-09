@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from app.models.task import TaskItem, TaskUserItem
     from app.task.context import TaskContext
     from app.task.history_core import TaskHistorySession
+    from app.utils.common.process.scope import TaskProcessScope
 
 logger = get_logger("旧专项运行回调")
 
@@ -167,6 +168,90 @@ class _LegacyExecution(TaskBase):
         """[兼容旧专项] 仅关联旧执行器；新执行树直接初始化 TaskBase 子类。"""
         super().__init__()
         self.owner = owner
+        self._process_scope: TaskProcessScope | None = None
+        self._owns_scope = False
+        self._stop_request: asyncio.Task | None = None
+        self._execution_task: asyncio.Task | None = None
+        self._scope_owner_task: asyncio.Task | None = None
+
+    async def run(self):
+        """[兼容旧专项] 停止确认只属于旧专项分支，不改变 L1/L2 或来源生命周期。"""
+        from app.utils.common.process.scope import (
+            TaskProcessScope,
+            current_process_scope,
+        )
+
+        self._scope_owner_task = asyncio.current_task()
+        self._process_scope = current_process_scope.get()
+        self._owns_scope = self._process_scope is None
+        if self._owns_scope:
+            self._process_scope = TaskProcessScope()
+            self._process_scope.add_check(
+                "update",
+                self._process_scope.stop_updates,
+                timeout=self.owner.STOP_CHECK_TIMEOUTS["update"],
+            )
+        token = current_process_scope.set(self._process_scope)
+        try:
+            if not self._owns_scope:
+                await super().run()
+                return
+            # 只在旧专项根建立执行边界：先确认更新停写，再中止业务协程。
+            # 完整生命周期仍在同一子 Task 内，配置锁与收尾上下文照常继承。
+            self._execution_task = asyncio.create_task(super().run())
+            try:
+                await asyncio.shield(self._execution_task)
+            except asyncio.CancelledError:
+                self.owner.stopped_manually = True
+                self.request_stop_checks()
+                assert self._stop_request is not None
+                await asyncio.shield(self._stop_request)
+                self._execution_task.cancel()
+                try:
+                    await self._execution_task
+                except asyncio.CancelledError:
+                    pass
+                raise
+        finally:
+            current_process_scope.reset(token)
+
+    def request_stop_checks(self):
+        if self._owns_scope and self._stop_request is None:
+            self._stop_request = asyncio.create_task(self._stop_after_checks())
+
+    async def _stop_after_checks(self):
+        """[兼容旧专项] 先逐项限时确认，再清理本专项记录的进程和异步工作。"""
+        from app.utils.common.process.scope import current_process_scope
+
+        scope = self._process_scope
+        assert scope is not None
+        try:
+            await scope.run_checks()
+            for check in scope.checks:
+                if check.status in ("timed_out", "failed"):
+                    logger.warning(
+                        f"停止检查 {check.name} 未确认 ({check.status})，转入强制清理"
+                    )
+            await scope.force_close()
+        except Exception as error:
+            scope.cleanup_failed = True
+            await self.on_crash(error)
+        finally:
+            keep = {
+                self._execution_task,
+                self._scope_owner_task,
+                self._finalizer,
+                asyncio.current_task(),
+                *scope.pending_creations,
+                *scope.retained_workers,
+            }
+            for task in asyncio.all_tasks():
+                if (
+                    task not in keep
+                    and task.get_context().get(current_process_scope) is scope
+                ):
+                    task.cancel()
+            scope.finished.set()
 
     async def main_task(self):
         """[兼容旧专项] 仅桥接旧 _run_main_task；新执行器直接实现 TaskBase.main_task。"""
@@ -174,6 +259,15 @@ class _LegacyExecution(TaskBase):
 
     async def final_task(self):
         """[兼容旧专项] 仅桥接旧收尾和回调排空；新执行器直接实现 TaskBase.final_task。"""
+        from app.utils.common.process.scope import current_process_scope
+
+        if self._stop_request is not None:
+            await asyncio.shield(self._stop_request)
+        scope = current_process_scope.get()
+        if scope is not None and self.owner.stop_finalizer_timeout is not None:
+            finalizer = asyncio.current_task()
+            assert finalizer is not None
+            scope.watch_finalizer(finalizer, timeout=self.owner.stop_finalizer_timeout)
         try:
             await self.owner.callbacks.drain()
             await self.owner._finalize_task()
@@ -195,6 +289,9 @@ class TaskExecuteBase(ABC):
 
     task_info: TaskItem
     history: TaskHistorySession
+    # [兼容旧专项] 停止确认阶段限时等待已开始的收尾，不改变来源 TaskBase。
+    stop_finalizer_timeout: float | None = 10.0
+    STOP_CHECK_TIMEOUTS = {"update": 30.0}
 
     def __init__(self):
         """[兼容旧专项] 仅装配旧专项执行桥与私有状态；新执行树使用 TaskBase 和显式上下文。"""
@@ -253,6 +350,8 @@ class TaskExecuteBase(ABC):
     def stopped_manually(self, value):
         """[兼容旧专项] 旧停止标记写入；新代码通过 TaskBase.stop() 请求中止。"""
         self._stopped_manually = value
+        if value:
+            self.execution.request_stop_checks()
         if value and self._active_child is not None:
             self._active_child.stopped_manually = True
             self._active_child._on_finalize_cancel_requested()

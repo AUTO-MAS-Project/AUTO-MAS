@@ -171,7 +171,7 @@ async def test_failed_update_injects_runtime_config_and_restores_pending_package
     adb = root / "adb.exe"
     adb.touch()
     task.emulator_manager = SimpleNamespace(get_adb_path=lambda: adb)
-    monkeypatch.setattr(task, "_resolve_avd_device", lambda: None)
+    monkeypatch.setattr(task, "_resolve_avd_device", AsyncMock(return_value=None))
     monkeypatch.setattr(auto_proxy, "resolve_device_ref", lambda *args: None)
     monkeypatch.setattr(
         auto_proxy.process, "kill_process", AsyncMock(return_value=True)

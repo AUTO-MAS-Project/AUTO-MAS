@@ -141,7 +141,11 @@ class BackgroundTaskGroup:
         async def run() -> T:
             return await factory()
 
-        task = loop.create_task(run(), name=self.name)
+        from app.utils.common.process.scope import detached_process_context
+
+        task = loop.create_task(
+            run(), name=self.name, context=detached_process_context()
+        )
         self._records[handle.uid] = record
         self._running[handle.uid] = task
         task.add_done_callback(lambda done: self._finish(record, done))

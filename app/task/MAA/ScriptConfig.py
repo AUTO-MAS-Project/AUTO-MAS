@@ -36,6 +36,7 @@ from app.task.proxy_helpers import (
 )
 from app.utils import ProcessManager, get_logger, process
 from app.utils import io as _utils_io
+from app.utils.common.process.scope import current_process_scope
 
 from .AutoProxy import (
     _MAA_CONFIG_FILES,
@@ -175,6 +176,8 @@ class ScriptConfigTask(TaskExecuteBase):
     ) = None
     """配置会话强制过的启动编排项及其会话前原值，回写时逐项还原。"""
 
+    GUI_CLOSE_TIMEOUT = 10.0
+
     def __init__(
         self,
         script_info: ScriptItem,
@@ -195,6 +198,8 @@ class ScriptConfigTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         # 查看会话：只读预览（如「查看历史备份」），结束不回写 MAS 配置
         self.view_only = view_only
+        self._stop_scope = None
+        self._gui_closed_for_stop = False
 
     async def prepare(self):
 
@@ -216,7 +221,20 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.info(f"启动MAA进程: {self.maa_exe_path}")
         self.wait_event.clear()
         await self.maa_process_manager.open_process(self.maa_exe_path)
+        self._stop_scope = current_process_scope.get()
+        if self._stop_scope is not None:
+            self._stop_scope.add_check(
+                "maa_config_save",
+                self._close_gui_for_stop,
+                timeout=self.GUI_CLOSE_TIMEOUT,
+            )
         await self.wait_event.wait()
+
+    async def _close_gui_for_stop(self) -> None:
+        await self.maa_process_manager.close()
+        if await self.maa_process_manager.is_running():
+            raise RuntimeError("MAA 配置窗口未正常退出，无法确认保存")
+        self._gui_closed_for_stop = True
 
     def _mas_owner(self) -> str | None:
         """本会话的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
@@ -392,8 +410,15 @@ class ScriptConfigTask(TaskExecuteBase):
 
         # MAA 的改动只堆在内存里，退出时才批量落盘；先把关闭请求发出去等它
         # 自己走完保存流程，直接强杀会让本次设置丢失、下次启动恢复原样
-        await self.maa_process_manager.close()
-        await process.kill_process(self.maa_exe_path)
+        if self._stop_scope is not None and self._stop_scope.requested:
+            # 确认超时后不重新等待，也不把强杀后的旧文件当成保存成功。
+            if not self._gui_closed_for_stop:
+                if not self.view_only:
+                    await self._notify_config_discarded("not_written")
+                return
+        else:
+            await self.maa_process_manager.close()
+            await process.kill_process(self.maa_exe_path)
 
         # 查看会话：只读预览，不把安装 config/ 回写用户目录（安装现场由
         # manager 的任务前快照还原）；GUI 内的改动一律丢弃

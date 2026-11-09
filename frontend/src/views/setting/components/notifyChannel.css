@@ -2,7 +2,7 @@
   font-size: 12px;
   line-height: 18px;
   padding: 0 7px;
-  border-radius: 4px;
+  border-radius: var(--ant-border-radius-sm);
   background: var(--ant-color-fill-tertiary);
   color: var(--ant-color-text-secondary);
 }

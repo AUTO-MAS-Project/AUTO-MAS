@@ -785,7 +785,7 @@ class EmulatorOperations:
 
     async def avd_instance_options(self, emulator_id: str, slot: str) -> dict[str, Any]:
         backend, native_index = await self._avd_backend(emulator_id, slot)
-        return backend.instance_options(native_index)
+        return await backend.instance_options(native_index)
 
     async def install_avd_apk(
         self, emulator_id: str, slot: str, apk_path: str

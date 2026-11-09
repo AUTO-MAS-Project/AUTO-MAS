@@ -71,6 +71,9 @@ async def test_emulator_wait_is_published_before_native_log(runtime):
     proxy.run_book = {"GreenTicketStore": True, "Annihilation": True, "Routine": False}
     proxy._cultivate_archive_positions = {}
     proxy._cultivate_archive_versions = {}
+    proxy._failed_sanity_tasks = set()
+    proxy._failed_extra_tasks = set()
+    proxy._non_sanity_retry = False
     task = asyncio.create_task(proxy.main_task())
     try:
         await asyncio.wait_for(entered.wait(), 3)

@@ -203,7 +203,7 @@ const copyAllInfo = async () => {
   padding: 24px;
   margin-bottom: 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 10px;
+  border-radius: var(--ant-border-radius-lg);
   background: var(--app-appearance-surface-bg);
 }
 

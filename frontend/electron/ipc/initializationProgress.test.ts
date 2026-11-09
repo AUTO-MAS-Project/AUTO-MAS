@@ -69,7 +69,6 @@ vi.mock('../services', async () => ({
 vi.mock('../services/logger', () => ({
   getLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
-vi.mock('../services/mirrorService', () => ({ MirrorService: class {} }))
 vi.mock('../services/backendService', () => ({ BackendService: class {} }))
 vi.mock('../services/environmentService', () => ({
   getAppRoot: () => bridge.config.appRoot,
@@ -125,8 +124,6 @@ beforeEach(() => {
     electronAPI: {
       ...bridge.api!,
       getRuntimeInitContext: async () => ({ mode: 'managed' }),
-      initMirrors: async () => {},
-      getMirrors: async () => [],
       loadConfig: async () => ({}),
       getInitializedVersion: async () => '',
     },
@@ -142,6 +139,23 @@ afterEach(() => {
 })
 
 describe('Runtime alignment → InitializationService → IPC/preload → Vue display', () => {
+  it.each([
+    ['installPython', 'python'],
+    ['pullRepository', 'repository'],
+    ['installDependencies', 'dependency'],
+  ] as const)(
+    '%s keeps retry separate from rebuild through preload and IPC',
+    async (method, stage) => {
+      const retry = vi
+        .spyOn(InitializationService.prototype, 'retryStageViaRuntime')
+        .mockResolvedValue({ success: true })
+      await bridge.api![method](false)
+      expect(retry).toHaveBeenLastCalledWith(stage, expect.any(Function), 'sync')
+      await bridge.api![method](true)
+      expect(retry).toHaveBeenLastCalledWith(stage, expect.any(Function), 'rebuild')
+    }
+  )
+
   it.each(['initialize', 'installPython'] as const)(
     'preserves download metadata through %s',
     async entry => {
@@ -153,7 +167,6 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
       })
       const runtime = new RuntimeInitializationService({
         launchConfig: bridge.config,
-        mirrorService: { getMirrors: () => [] },
         alignRuntimeBinary: async options => {
           emit = progress => options.onProgress?.(progress)
           await completion
@@ -179,7 +192,7 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
       vi.clearAllTimers()
       const api = window.electronAPI
       const pending = entry === 'initialize' ? api.initialize('dev', false) : api.installPython()
-      const channel = entry === 'initialize' ? 'initialization-progress' : 'python-progress'
+      const channel = 'initialization-progress'
       const html = () =>
         renderToString(
           createSSRApp({
@@ -281,7 +294,6 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
       })
       const runtime = new RuntimeInitializationService({
         launchConfig: bridge.config,
-        mirrorService: { getMirrors: () => [] },
         alignRuntimeBinary: async () => ({ status: 'current', target: { version: 'v0.1.99' } }),
         createClient: () =>
           ({
@@ -336,7 +348,7 @@ describe('Runtime alignment → InitializationService → IPC/preload → Vue di
         entry === 'initialize'
           ? window.electronAPI.initialize('dev', false)
           : window.electronAPI.installDependencies()
-      const channel = entry === 'initialize' ? 'initialization-progress' : 'dependency-progress'
+      const channel = 'initialization-progress'
       const html = () =>
         renderToString(
           createSSRApp({

@@ -108,6 +108,9 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     strip_host_python_environment,
     subprocess_proxy_scope,
 )
+from app.task.MaaFW.tools.core.runtime_pool.installer import (
+    install_process_factory_scope,
+)
 from app.task.MaaFW.tools.core.worker_protocol import (
     AUDIENCE_UI,
     SIGNAL_SCREENSHOT_KINDS,
@@ -122,6 +125,8 @@ from app.task.MaaFW.tools.core.worker_protocol import (
 from app.utils import UTC4, ProcessInfo, ProcessManager, get_logger, power
 from app.utils import game_apk as _utils_game_apk
 from app.utils import io as _utils_io
+from app.utils.common.process.runner import create_subprocess
+from app.utils.common.process.scope import current_process_scope
 
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
@@ -377,6 +382,11 @@ async def _abandon_environment_preparation(
             await asyncio.to_thread(release, prepared_after_cancel)
 
     cleanup_task = asyncio.create_task(release_after_prepare())
+    scope = current_process_scope.get()
+    if scope is not None:
+        scope.retain_worker(cleanup_task)
+        if scope.closed:
+            grace_seconds = 0
     try:
         await asyncio.wait_for(asyncio.shield(cleanup_task), timeout=grace_seconds)
     except asyncio.TimeoutError:
@@ -1667,7 +1677,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             resolve_device = getattr(self.emulator_manager, "resolve_device", None)
             avd_ref = resolve_device(emulator_index) if resolve_device else None
         if avd_ref is not None and avd_ref.emulator_type == "avd":
-            self._cached_adb_profile = self._build_avd_adb_profile(avd_ref)
+            self._cached_adb_profile = await self._build_avd_adb_profile(
+                avd_ref, emulator_index
+            )
             return self._cached_adb_profile
 
         try:
@@ -1743,8 +1755,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return {"allow_mod_avd": True}
         return {}
 
-    def _build_avd_adb_profile(self, device_ref: Any) -> MaaFWAdbControlProfile:
-        """魔改 AVD：只给 AVDExtras 截图，推流开关走私有 adb server。任何一步不成立都抛错。"""
+    async def _build_avd_adb_profile(
+        self, device_ref: Any, emulator_index: str
+    ) -> MaaFWAdbControlProfile:
+        """魔改 AVD：只给 AVDExtras 截图，推流开关走私有 adb server。任何一步不成立都抛错。
+
+        控制台端口问 modavd（根目录可以设 ``portBase`` 换一段端口），截图共享内存按它命名。
+        """
         from app.utils import emulator2 as _utils_emulator2
 
         capability = build_adb_emulator_extra_capabilities().get("avd", {})
@@ -1759,7 +1776,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         root = _utils_emulator2.avd.components.root_from_manager_exe(
             device_ref.manager_path
         )
-        console = _utils_emulator2.avd.constants.console_port(device_ref.native_index)
+        console = (await self.emulator_manager.instance_ports(emulator_index)).console
         config = _utils_emulator2.avd.maafw_extras.build_maafw_avd_config(
             adb_path, _utils_emulator2.avd.components.adb_server_port(root), console
         )
@@ -2067,12 +2084,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 与运行前更新 / 预检同一份解析：托管级 Update.ProxyAddress 优先，留空跟随
         # 全局。运行时装依赖也走它，否则「更新能走代理、真跑时装不上」。
         proxy_url = resolve_update_proxy_url(self.script_config)
+        process_scope = current_process_scope.get()
 
         def _prepare_environment_with_proxy() -> MaaFWRunnerEnvironment:
             # 代理作用域按线程登记，要在 to_thread 的目标函数体内进入：池的 uv /
             # pip 子进程、以及这里派生出的 worker 环境（worker 内的 agent pip 与
             # 项目 agent 再从它继承）都从 strip_host_python_environment 拿到代理变量。
-            with subprocess_proxy_scope(proxy_url):
+            with (
+                subprocess_proxy_scope(proxy_url),
+                install_process_factory_scope(
+                    process_scope.popen if process_scope is not None else None
+                ),
+            ):
                 return service.prepare_environment(
                     self.project_path,
                     runtime_pool_root=runtime_pool_root,
@@ -2087,7 +2110,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
 
         prepare_environment_task = asyncio.create_task(
-            asyncio.to_thread(_prepare_environment_with_proxy)
+            process_scope.run_update_worker(
+                _prepare_environment_with_proxy,
+                cancel=prepare_cancel_event.set,
+                release_cancelled=service.release_environment,
+            )
+            if process_scope is not None
+            else asyncio.to_thread(_prepare_environment_with_proxy)
         )
         try:
             with self._run_record.stage(STAGE_ENVIRONMENT):
@@ -2162,7 +2191,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 # 不进项目视图），见 runner._inject_agent_pip_constraint。
                 AGENT_PIP_CONSTRAINT_DIR_ENV: str(_maafw_agent_constraints_dir()),
             }
-            process = await asyncio.create_subprocess_exec(
+            process = await create_subprocess(
                 str(runner_environment.python_executable),
                 "-m",
                 "app.task.MaaFW.tools.core.runner.worker",
@@ -2642,7 +2671,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
             self._append_log(f"开始应用运行前设置: {display_name}")
             started_at = loop.time()
-            process = await asyncio.create_subprocess_exec(
+            process = await create_subprocess(
                 pretask.executable,
                 *pretask.args,
                 cwd=self.run_plan.path,
