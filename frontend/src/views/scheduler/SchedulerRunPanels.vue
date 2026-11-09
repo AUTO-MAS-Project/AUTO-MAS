@@ -22,6 +22,7 @@ const firstLine = computed(() => (resultShown.value ? 1 : (props.runtime?.logFir
     <div class="log-panel-container">
       <SchedulerLogPanel
         :log-content="log"
+        :prefetch="resultShown ? null : runtime?.prefetch"
         :first-line="firstLine"
         :active="active"
         :run-id="runId"

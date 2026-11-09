@@ -1,0 +1,80 @@
+.color-group {
+  margin-bottom: 16px;
+}
+
+.color-group:last-child {
+  margin-bottom: 0;
+}
+
+.group-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ant-color-text-secondary);
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.color-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 6px;
+}
+
+.color-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.color-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ant-color-text);
+}
+
+.help-icon {
+  color: var(--ant-color-text-tertiary);
+  font-size: 11px;
+}
+
+.color-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.color-picker {
+  width: 28px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 3px;
+  cursor: pointer;
+  background: transparent;
+}
+
+.color-picker::-webkit-color-swatch-wrapper {
+  padding: 1px;
+}
+
+.color-picker::-webkit-color-swatch {
+  border: none;
+  border-radius: 2px;
+}
+
+.color-value {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--ant-color-text-secondary);
+  min-width: 55px;
+}
