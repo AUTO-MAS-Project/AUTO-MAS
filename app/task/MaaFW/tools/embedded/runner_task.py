@@ -2794,6 +2794,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 _kill_pretask_process(process, self._append_log)
             )
             self.pretask_cleanup = cleanup
+            # 进程核对可能仍在 to_thread() 中。统一取消仅可打断等待，
+            # 不能取消真正负责清理的任务，否则后续释放预约永远等不到。
+            scope = current_process_scope.get()
+            if scope is not None:
+                scope.retain_worker(cleanup)
         await asyncio.shield(cleanup)
 
     async def _terminate_runner_process(self) -> None:

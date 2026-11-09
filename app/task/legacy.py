@@ -223,11 +223,10 @@ class _LegacyExecution(TaskBase):
                     except asyncio.CancelledError:
                         pass
                 self._stop_request.result()
-                # 执行收尾确认可能已发出取消；不要在 finalizer 期间重复取消。
-                if (
-                    not self._execution_task.done()
-                    and not self._execution_task.cancelling()
-                ):
+                # 已请求停止的协程可能吞掉第一次取消，继续阻塞在
+                # 异步进程创建/文件线程。确认阶段结束后仍须推进取消，
+                # 不能仅凭 cancelling() > 0 就无限等待。
+                if not self._execution_task.done():
                     self._execution_task.cancel()
                 try:
                     await self._execution_task

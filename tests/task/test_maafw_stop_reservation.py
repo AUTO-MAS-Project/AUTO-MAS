@@ -179,3 +179,98 @@ async def test_unconfirmed_pretask_stop_keeps_project_reserved(
         if account is not None:
             await account._release_project_path()
         await asyncio.to_thread(thread_done.wait, 2)
+
+
+@pytest.mark.asyncio
+async def test_confirmed_force_stop_releases_project_after_pretask_snapshot_finishes(
+    monkeypatch, isolated_app_paths
+):
+    """A retained native cleanup must eventually release the reservation after force stop."""
+    from app.task.MaaFW.tools.embedded import runner_task as module
+
+    entered, unblock, snapshot_done = (
+        threading.Event(),
+        threading.Event(),
+        threading.Event(),
+    )
+    account = process = None
+    config = await activate_config(MaaFWConfig())
+    user = await activate_config(
+        MaaFWUserConfig.build(payload={"Notify": {"Enabled": False}})
+    )
+    user_id = uuid.uuid4()
+    running = asyncio.Event()
+
+    def snapshot(pid):
+        entered.set()
+        try:
+            assert unblock.wait(5)
+            return []
+        finally:
+            snapshot_done.set()
+
+    monkeypatch.setattr(module, "_snapshot_pretask_script_descendants", snapshot)
+
+    class RunningAccount(MaaFWPluginAutoProxyTask):
+        async def main_task(self):
+            nonlocal process
+            assert await self._try_enter_project_path()
+            self.check_result = "Pass"
+            process = await create_subprocess(
+                sys._base_executable, "-I", "-c", "import time; time.sleep(30)"
+            )
+            self.pretask_process = process
+            running.set()
+            await asyncio.Event().wait()
+
+    class Task(StopTask):
+        STOP_CHECK_TIMEOUTS = {"update": 1.0, "finalize": 0.05}
+
+        async def main_task(self):
+            nonlocal account
+            script = await add_script(
+                info=self.task_info, script_id=str(config.uid), user_id=str(user_id)
+            )
+            account = RunningAccount(
+                script_info=script,
+                script_config=config,
+                user_config={user_id: user},
+                emulator_manager=None,
+            )
+            await self.spawn(account)
+
+    task = Task()
+    task.start()
+    try:
+        await asyncio.wait_for(running.wait(), 3)
+        stopping = task.request_stop()
+        async with asyncio.timeout(3):
+            while not entered.is_set():
+                await asyncio.sleep(0.01)
+        await asyncio.wait_for(task.accomplish.wait(), 3)
+        assert task._stop_scope.finished.is_set()
+        assert not task._stop_scope.cleanup_failed
+        assert not snapshot_done.is_set()
+        assert process is not None and process.returncode is not None
+        assert account is not None
+        key = await try_reserve_project_path(account.project_path)
+        try:
+            assert key is None, "snapshot is still reading; reservation must stay held"
+        finally:
+            await release_project_path(key)
+        unblock.set()
+        async with asyncio.timeout(4):
+            while (key := await try_reserve_project_path(account.project_path)) is None:
+                await asyncio.sleep(0.01)
+        await release_project_path(key)
+        assert snapshot_done.is_set()
+        await asyncio.gather(stopping, return_exceptions=True)
+    finally:
+        unblock.set()
+        if process is not None and process.returncode is None:
+            await stop_process(process, kill_tree=True)
+        task.request_stop()
+        await asyncio.gather(task._task, return_exceptions=True)
+        if account is not None:
+            await account._release_project_path()
+        await asyncio.to_thread(snapshot_done.wait, 2)
