@@ -8,6 +8,7 @@
 html.appearance-background-custom
   :is(.content-area, .initialization-content, .standalone-container)
   :is(
+    .app-page-surface,
     .ant-card,
     .ant-collapse,
     .ant-table,
@@ -47,6 +48,7 @@ html.appearance-background-custom
 html.appearance-background-custom
   :is(.content-area, .initialization-content, .standalone-container)
   :is(
+    .app-page-surface,
     .ant-card,
     .ant-collapse,
     .ui-section-card,
@@ -64,6 +66,8 @@ html.appearance-background-custom
     .record-list-panel
   )
   :is(
+    .app-page-surface,
+    .banner-switcher,
     .ant-card,
     .ant-collapse,
     .ant-table,

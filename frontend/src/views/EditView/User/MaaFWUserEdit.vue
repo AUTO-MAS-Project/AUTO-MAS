@@ -291,8 +291,6 @@ const handleShellImported = (snapshot: Record<string, unknown>, info: Record<str
 
 <style scoped>
 .user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
   background: var(--ant-color-bg-layout);
 }
 
@@ -332,11 +330,5 @@ const handleShellImported = (snapshot: Record<string, unknown>, info: Record<str
 
 .maafw-preview-box {
   margin-bottom: 8px;
-}
-
-@media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
-  }
 }
 </style>

@@ -10,7 +10,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 20px;
+  padding: var(--app-page-content-padding);
   border-bottom: 1px solid var(--ant-color-border-secondary);
   min-height: 80px;
 }
@@ -171,8 +171,8 @@
 }
 @media (max-width: 768px) {
   .user-item {
-    padding-left: 16px;
-    padding-right: 16px;
+    padding-left: var(--app-page-content-padding);
+    padding-right: var(--app-page-content-padding);
   }
 
   .user-controls {

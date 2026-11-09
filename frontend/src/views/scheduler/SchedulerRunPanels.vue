@@ -37,7 +37,7 @@ const firstLine = computed(() => (resultShown.value ? 1 : (props.runtime?.logFir
   display: flex;
   flex: 1;
   overflow: hidden;
-  gap: 16px;
+  gap: var(--app-page-content-gap);
   padding: 0;
   margin: 0;
 }

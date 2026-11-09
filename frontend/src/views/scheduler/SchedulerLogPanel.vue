@@ -1,5 +1,5 @@
 <template>
-  <div class="scheduler-panel log-panel">
+  <div class="scheduler-panel log-panel app-page-section">
     <div class="scheduler-panel-header">
       <h3>{{ t('core.scheduler.log.title') }}</h3>
       <div class="log-controls">
@@ -16,11 +16,7 @@
             <a-select-option value="dark">{{ t('core.comp.darkTheme') }}</a-select-option>
             <a-select-option value="light">{{ t('core.comp.lightTheme') }}</a-select-option>
           </a-select>
-          <a-button
-            size="small"
-            :type="logMode === 'follow' ? 'primary' : 'default'"
-            @click="toggleLogMode"
-          >
+          <a-button size="small" :aria-pressed="logMode === 'follow'" @click="toggleLogMode">
             {{
               logMode === 'follow' ? t('core.scheduler.log.follow') : t('core.scheduler.log.browse')
             }}
@@ -288,13 +284,6 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-.scheduler-panel-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ant-color-text-heading);
-}
-
 .log-controls {
   flex-shrink: 0;
 }
@@ -347,14 +336,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 768px) {
-  .log-panel {
-    border-radius: 8px;
-  }
-
-  .scheduler-panel-header {
-    padding: 12px;
-  }
-
   .log-content {
     padding: 12px;
   }

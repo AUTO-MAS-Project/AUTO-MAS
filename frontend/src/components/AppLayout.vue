@@ -438,7 +438,7 @@ html.appearance-background-custom .app-body::before {
   overflow: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  padding: 32px;
+  padding: var(--app-page-gutter);
 }
 
 .content-area::-webkit-scrollbar {

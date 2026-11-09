@@ -1,5 +1,5 @@
 <template>
-  <a-card class="plan-selector-card" :bordered="false">
+  <a-card class="plan-selector-card app-page-surface" :bordered="false">
     <template #title>
       <div class="card-title">
         <span>{{ t('core.plan.selectLabel') }}</span>
@@ -163,22 +163,10 @@ const getPlanTypeLabel = (planType: PlanConfigType) => PLAN_TYPE_REGISTRY[planTy
 </script>
 
 <style scoped>
-.plan-selector-card {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
-}
-
 .card-title {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.plan-selection-container {
-  padding: 16px;
 }
 
 .plan-buttons-container {
@@ -285,11 +273,5 @@ const getPlanTypeLabel = (planType: PlanConfigType) => PLAN_TYPE_REGISTRY[planTy
 
 .plan-ghost {
   opacity: 0.35;
-}
-
-/* 深度样式 */
-.plan-selector-card :deep(.ant-card-head) {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  padding: 16px 24px;
 }
 </style>

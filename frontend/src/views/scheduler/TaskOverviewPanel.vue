@@ -1,5 +1,5 @@
 <template>
-  <div class="scheduler-panel overview-panel">
+  <div class="scheduler-panel overview-panel app-page-section">
     <div class="scheduler-panel-header">
       <h3>{{ t('core.scheduler.overview.title') }}</h3>
       <!--      <a-badge :count="totalTaskCount" :overflow-count="99" />-->
@@ -30,17 +30,10 @@ const taskData = computed(() =>
 <style scoped src="./schedulerPanel.css"></style>
 
 <style scoped>
-.scheduler-panel-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
 .overview-content {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: var(--app-page-content-padding);
 }
 
 /* 滚动条样式 - 浅色 */
@@ -66,16 +59,6 @@ const taskData = computed(() =>
   align-items: center;
   justify-content: center;
   height: 100%;
-}
-
-@media (max-width: 768px) {
-  .overview-panel {
-    border-radius: 8px;
-  }
-
-  .scheduler-panel-header {
-    padding: 12px;
-  }
 }
 </style>
 

@@ -1425,8 +1425,6 @@ onMounted(async () => {
   min-height: 240px;
 }
 .user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
   background: var(--ant-color-bg-layout);
 }
 
@@ -1455,10 +1453,6 @@ onMounted(async () => {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
-  }
-
   .user-edit-content {
     max-width: 100%;
   }
