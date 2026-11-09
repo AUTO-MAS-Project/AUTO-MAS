@@ -297,7 +297,6 @@ onDeactivated(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   background-color: transparent;
 }
 
