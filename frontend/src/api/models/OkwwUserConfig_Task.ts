@@ -4,10 +4,6 @@
 /* eslint-disable */
 export type OkwwUserConfig_Task = {
     /**
-     * 运行任务：日常任务或原生多账号配置；原生多账号由 ok-ww 切号、整批重试，不使用 MAS 日常覆写
-     */
-    TaskName?: ('DailyTask' | 'MultiAccountConfigTask' | null);
-    /**
      * 每日任务后运行的附加任务
      */
     AdditionalTasks?: (Array<'Check Weekly Garden' | 'Auto Farm all Nightmare Nest' | 'Merge Echo If discarded > 1000' | 'Teleport and Farm 4C Echo'> | null);

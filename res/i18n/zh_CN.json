@@ -1891,7 +1891,7 @@
   "core.edit.oknteViewingDesc": "ok-nte 界面显示的是所选备份的内容，仅供查看。",
   "core.edit.oknteViewingDesc2": "查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。",
   "core.edit.oknteViewingTitle": "正在查看 OK-NTE 配置",
-  "core.edit.okwwAccountSwitchHint": "MAS 逐用户运行；ok-ww 合并本轮用户运行，失败后只补跑未确认完成的账号。ok-ww 方式会将完整大陆手机号或带星号手机号转换为登录列表标识；邮箱按登录列表填写，其他账号填写显示名。只填手机号后四位不支持。",
+  "core.edit.okwwAccountSwitchHint": "选择账号切换方式，推荐 MAS。悬停下拉选项可查看各方式的说明。",
   "core.edit.okwwCheckUpdateTitle": "检查鸣潮更新",
   "core.edit.okwwConfigRestoreScriptDesc": "ok-ww 原生配置的备份，恢复会直接作用于 ok-ww 本体；打开本编辑页、运行 ok-ww 或打开配置界面前会自动去重创建，保留最近 10 份",
   "core.edit.okwwSessionOpened": "已打开 ok-ww 设置",
@@ -4885,5 +4885,14 @@
   "core.edit.okwwNativeMultiAccountHint": "运行所选配置来源中已有的 ok-ww 多账号配置（上游 v3.7.17 起已移除配置页签）。MAS 将整批视为一个用户，跳过 MAS 切号与日常覆写；失败后整批重跑。",
   "core.edit.okwwAccountSwitchMethod": "账号切换方式",
   "core.edit.okwwMasRecommended": "MAS 切换（推荐）",
-  "core.edit.okwwNativeSwitch": "ok-ww 切换"
+  "core.edit.okwwNativeSwitch": "ok-ww 批量切换",
+  "core.edit.okwwSingleSwitch": "ok-ww 逐账号切换",
+  "core.edit.okwwSwitchOff": "不切换",
+  "core.edit.okwwSwitchOffHint": "保持游戏当前登录的账号，仅运行任务。",
+  "core.edit.okwwMasSwitchHint": "由 MAS 在每个账号运行前切换登录，各账号分别运行和重试。",
+  "core.edit.okwwSingleSwitchHint": "由 ok-ww 切换登录，每个账号单独启动脚本并重试；失败后继续下一个账号。",
+  "core.edit.okwwBatchSwitchHint": "由 ok-ww 在同一脚本进程中依次切换账号，减少重复启动；重试仅补跑未完成账号。",
+  "core.edit.okwwLoginAccount": "登录账号",
+  "core.edit.okwwLoginAccountHint": "用于匹配游戏登录列表中已保存的账号。MAS 切换填写完整手机号；ok-ww 切换支持完整大陆手机号、138****1234 或列表显示的邮箱，不支持仅填后四位。不切换时可留空。",
+  "core.edit.okwwLoginAccountPlaceholder": "完整手机号或登录列表中的账号"
 }

@@ -2,9 +2,12 @@
 
 import json
 import uuid
+from contextlib import suppress
+from datetime import datetime
 
 from app.models.task import LogRecord, UserItem
-from app.utils import LOG_TYPE_NORMAL, log_box
+from app.utils import LOG_TYPE_NORMAL, get_logger, log_box
+from app.utils import constants as _utils_constants
 
 from . import push_log
 from .AutoProxy import AutoProxyTask, _okww_mas_config_dir
@@ -16,6 +19,8 @@ from .tools.batch_config import (
 )
 from .tools.batch_logs import account_log_context
 
+logger = get_logger("OK-WW 批次")
+
 
 class BatchProxyTask(AutoProxyTask):
     def __init__(
@@ -23,7 +28,9 @@ class BatchProxyTask(AutoProxyTask):
     ):
         super().__init__(script_info, script_config, user_config, game_manager)
         self.cur_user_item = UserItem(
-            user_id=self.cur_user_item.user_id, name="OK-WW 批次", status="等待"
+            user_id=self.cur_user_item.user_id,
+            name=self.cur_user_item.name if len(participants) == 1 else "OK-WW 批次",
+            status="等待",
         )
         self.participants = participants
         self.succeeded = set()
@@ -54,13 +61,18 @@ class BatchProxyTask(AutoProxyTask):
 
     async def prepare(self):
         await super().prepare()
+        today = datetime.now(tz=_utils_constants.UTC4)
+        for user in self.participants:
+            config = self.user_config[uuid.UUID(user.user_id)]
+            if config.Data.LastProxyDate.date() != today.date():
+                config.Data.LastProxyDate = today
+                config.Data.ProxyTimes = 0
+                await config.commit()
         self.task_name = "MultiAccountConfigTask"
         self.okww_args = ["-t", self.task_name, "-e"]
         self.task_index = 0
-        if self._log_source is None and any(
-            self.user_config[uuid.UUID(user.user_id)].Notify.PushLogMode != "关闭"
-            for user in self.participants
-        ):
+        # 原始账号历史独立于节点推送开关，关闭节点时也需保留日志。
+        if self._log_source is None:
             self._prepare_log_details(
                 self.script_log_path,
                 mode=self.cur_user_config.Notify.PushLogMode,
@@ -106,7 +118,7 @@ class BatchProxyTask(AutoProxyTask):
                 }
             )
             await user.set_state(status="运行")
-            user.push_log_mode = config.Notify.PushLogMode
+            self.user_state(user).push_log_mode = config.Notify.PushLogMode
             record = await user.add_log_record(self.log_start_time, LogRecord())
             self.batch_records[user.user_id] = record
 
@@ -121,14 +133,16 @@ class BatchProxyTask(AutoProxyTask):
             self.cur_user_config = original
 
     async def set_okww(self):
+        # 换入 base 或清空结果失败时，不得把旧文件当成本轮结果。
+        self.pending.clear()
         await super().set_okww()
         accounts = [
             account
             for account in self.accounts
             if account["account_key"] not in self.succeeded
         ]
-        self.pending = {account["account_key"] for account in accounts}
         write_attempt(self.script_config_path, accounts)
+        self.pending = {account["account_key"] for account in accounts}
 
     async def check_log(self, log_content, latest_time):
         await super().check_log(log_content, latest_time)
@@ -148,10 +162,20 @@ class BatchProxyTask(AutoProxyTask):
         if self.cur_user_log.status == "Success!" and not self.pending.issubset(
             self.succeeded
         ):
-            await self.cur_user_log.set_state(status="OK-WW 未取得全部账号的本轮成功结果")
+            await self.cur_user_log.set_state(
+                status="OK-WW 未取得全部账号的本轮成功结果"
+            )
             self.wait_event.set()
 
     async def _collect_log_details(self):
+        try:
+            await self._collect_batch_log_details()
+        except Exception:
+            logger.opt(exception=True).warning(
+                "批次节点采集失败，继续账号历史与配置收尾"
+            )
+
+    async def _collect_batch_log_details(self):
         if self.batch_nodes_collected:
             return
         self.batch_nodes_collected = True
@@ -175,33 +199,66 @@ class BatchProxyTask(AutoProxyTask):
                             (LOG_TYPE_NORMAL, f"❌ 失败: {stage}", None)
                         )
                     pipelines[current].feed(line, timestamp=None)
-                    await self.batch_records[self.account_users[current].user_id].append_content(line)
+                    await self.batch_records[
+                        self.account_users[current].user_id
+                    ].append_content(line)
         for key, pipeline in pipelines.items():
             user = self.account_users[key]
-            if user.push_log_mode != "关闭":
+            if self.user_state(user).push_log_mode != "关闭":
                 for entry in pipeline.finish():
-                    user.push_log.append((entry.log_type, entry.text, entry.timestamp))
+                    self.user_state(user).push_log.append(
+                        (entry.log_type, entry.text, entry.timestamp)
+                    )
 
     async def final_task(self):
         # 原始参与名单贯穿全部补跑；成功账号只在最终收尾计数一次。
+        maintenance_skipped = self.user_state(self.cur_user_item).maintenance_skipped
+        if self.log_monitor is not None:
+            with suppress(Exception):
+                await self.log_monitor.stop()
+        await self.kill_managed_process(kill_game=self._game_management_enabled())
+        # 中止可能发生在上游写回成功后、下一次日志回调前。
+        if self.pending:
+            try:
+                self.succeeded.update(
+                    completed_accounts(self.script_config_path, self.pending)
+                )
+            except (OSError, ValueError):
+                logger.opt(exception=True).warning(
+                    "无法读取本轮最终账号结果，保留已确认结果并继续收尾"
+                )
         await self._close_log_details()
         for user in self.participants:
             self.cur_user_item = user
             self.cur_user_uid = uuid.UUID(user.user_id)
             self.cur_user_config = self.user_config[self.cur_user_uid]
-            self.cur_user_log = self.batch_records.get(user.user_id, LogRecord())
+            self.cur_user_log = self.batch_records.get(user.user_id)
+            if self.cur_user_log is None:
+                self.cur_user_log = await user.add_log_record(
+                    datetime.now().astimezone(), LogRecord()
+                )
             self.run_book = (
                 normalize_account_key(self.cur_user_config.Info.Id) in self.succeeded
             )
-            await user.set_state(status="完成" if self.run_book else "异常")
-            await self.cur_user_log.set_state(status="Success!"
-                if self.run_book
-                else self.account_failures.get(
-                    normalize_account_key(self.cur_user_config.Info.Id),
+            skipped = maintenance_skipped and not self.run_book
+            self.user_state(user).maintenance_skipped = skipped
+            await user.set_state(
+                status="完成" if self.run_book else "跳过" if skipped else "异常"
+            )
+            if self.run_book:
+                status = "Success!"
+            elif skipped:
+                status = self._maintenance_reason or "鸣潮正在维护"
+            elif self.stopped_manually:
+                status = "任务被用户手动中止"
+            else:
+                key = normalize_account_key(self.cur_user_config.Info.Id)
+                status = self.account_failures.get(
+                    key,
                     "OK-WW 账号未完成"
-                    if normalize_account_key(self.cur_user_config.Info.Id)
-                    in self.attempted_accounts
+                    if key in self.attempted_accounts
                     else "OK-WW 账号尚未执行（批次提前结束）",
-                ))
+                )
+            await self.cur_user_log.set_state(status=status)
             self._user_scripts_started = user.user_id in self.before_started
             await super().final_task()

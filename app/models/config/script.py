@@ -3034,11 +3034,6 @@ class OkwwUserConfig(DomainEntry):
     Notify: NotifyFields = Field(default_factory=NotifyFields)
 
     class TaskFields(ConfigGroup):
-        TaskName: Literal["DailyTask", "MultiAccountConfigTask"] = Field(
-            default="DailyTask",
-            description="运行任务：日常任务或原生多账号配置；原生多账号由 ok-ww 切号、整批重试，不使用 MAS 日常覆写",
-        )
-
         AdditionalTasks: list[
             Literal[
                 "Check Weekly Garden",
@@ -3734,7 +3729,7 @@ class OkwwConfig(DomainEntry):
 
     class GameFields(ConfigGroup):
         AccountSwitchMethod: Annotated[
-            Literal["NONE", "MAS", "OKWW"],
+            Literal["NONE", "MAS", "OKWW_SINGLE", "OKWW"],
             legacy(
                 group="Game",
                 name="AccountSwitch",
@@ -3742,7 +3737,7 @@ class OkwwConfig(DomainEntry):
             ),
         ] = Field(
             default="MAS",
-            description="账号切换方式：MAS 逐用户切换（推荐）；OKWW 打包本轮用户，由脚本切换并补跑未完成账号",
+            description="账号切换方式：NONE 不切换；MAS 切换（推荐）；OKWW_SINGLE 由脚本逐账号切换、分别运行和重试；OKWW 批量切换并补跑未完成账号",
         )
 
         AccountSwitch: bool = Field(

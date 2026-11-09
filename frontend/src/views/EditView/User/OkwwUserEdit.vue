@@ -102,14 +102,14 @@
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
-                      :text="t('core.edit.account')"
-                      :hint="t('core.edit.usedSwitchAccountsLeave')"
+                      :text="t('core.edit.okwwLoginAccount')"
+                      :hint="t('core.edit.okwwLoginAccountHint')"
                       variant="form"
                     />
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
-                    :placeholder="t('core.edit.enterAccount')"
+                    :placeholder="t('core.edit.okwwLoginAccountPlaceholder')"
                     size="large"
                     @blur="saveField('Info.Id', formData.Info.Id)"
                   />
@@ -209,7 +209,6 @@
         :quick-config="formData.Info.IfQuickConfig"
         :disabled="configActionsDisabled"
         @save="saveTaskConfig"
-        @task-change="handleTaskNameChange"
       />
 
       <a-card class="config-card" style="margin-top: 24px">
@@ -415,7 +414,6 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Tag: '',
   },
   Task: {
-    TaskName: 'DailyTask',
     WhichToFarm: 'Tacet Suppression',
     WhichTacetSuppressionToFarm: 1,
     WhichForgeryChallengeToFarm: 1,
@@ -513,19 +511,11 @@ const handleQuickConfigChange = async (value: boolean) => {
   }
 }
 
-const handleTaskNameChange = async (value: OkwwUserFormData['Task']['TaskName']) => {
-  if (configActionsDisabled.value) return
-  const previous = formData.Task.TaskName
-  formData.Task.TaskName = value
-  if (!(await saveField('Task.TaskName', value))) formData.Task.TaskName = previous
-}
-
 const saveTaskConfig = async () => {
   if (isInitializing.value || !userId.value) return
   await enqueue(() =>
     updateUser(scriptId, userId.value, {
       Task: {
-        TaskName: formData.Task.TaskName,
         WhichToFarm: formData.Task.WhichToFarm,
         WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
         WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,

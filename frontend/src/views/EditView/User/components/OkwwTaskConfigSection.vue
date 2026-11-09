@@ -94,7 +94,7 @@ type TaskForm = {
 }
 const task = defineModel<TaskForm>({ required: true })
 defineProps<{ quickConfig: boolean; disabled: boolean }>()
-const emit = defineEmits<{ save: []; 'task-change': [value: TaskForm['TaskName']] }>()
+const emit = defineEmits<{ save: [] }>()
 const { t } = useI18n()
 const currentStartupArguments = '-t 1 -e'
 

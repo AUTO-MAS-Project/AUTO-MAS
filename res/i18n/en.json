@@ -1891,7 +1891,7 @@
   "core.edit.oknteViewingDesc": "The OK-NTE window shows the selected backup, for viewing only.",
   "core.edit.oknteViewingDesc2": "Viewing temporarily switches the config; click \"Close viewer\" when done.",
   "core.edit.oknteViewingTitle": "Viewing OK-NTE config",
-  "core.edit.okwwAccountSwitchHint": "MAS runs users separately. ok-ww runs the selected users together and retries users without confirmed completion. Full mainland China mobile numbers and masked mobile numbers are converted automatically for ok-ww. Enter emails as shown in the login list, or use the displayed account name. The last four phone digits alone are not supported.",
+  "core.edit.okwwAccountSwitchHint": "Choose how to switch accounts. MAS is recommended. Hover over an option for details.",
   "core.edit.okwwCheckUpdateTitle": "Check for Wuthering Waves updates",
   "core.edit.okwwConfigRestoreScriptDesc": "Backups of the ok-ww native config; restoring applies directly to ok-ww itself. Created automatically (dedup) when opening this edit page, before running ok-ww or opening its config UI, latest 10 kept",
   "core.edit.okwwSessionOpened": "ok-ww setup opened",
@@ -4885,5 +4885,14 @@
   "core.edit.okwwNativeMultiAccountHint": "Runs existing ok-ww multi-account settings from the selected configuration source (the upstream configuration tab was removed in v3.7.17). MAS treats the batch as one user, skips MAS account switching and daily overrides, and reruns the whole batch on retry.",
   "core.edit.okwwAccountSwitchMethod": "Account switching",
   "core.edit.okwwMasRecommended": "MAS (recommended)",
-  "core.edit.okwwNativeSwitch": "ok-ww"
+  "core.edit.okwwNativeSwitch": "ok-ww: batch switching",
+  "core.edit.okwwSingleSwitch": "ok-ww: one account per run",
+  "core.edit.okwwSwitchOff": "No switching",
+  "core.edit.okwwSwitchOffHint": "Run tasks with the account currently signed in to the game.",
+  "core.edit.okwwMasSwitchHint": "MAS switches accounts before each run. Each account runs and retries separately.",
+  "core.edit.okwwSingleSwitchHint": "ok-ww switches accounts. Each account starts a separate script run and retries independently; failures do not block the next account.",
+  "core.edit.okwwBatchSwitchHint": "ok-ww switches accounts within one script process to reduce restarts. Retries include only unfinished accounts.",
+  "core.edit.okwwLoginAccount": "Login account",
+  "core.edit.okwwLoginAccountHint": "Identifies an account saved in the game's login list. For MAS switching, enter the full phone number. For ok-ww switching, use a full mainland China phone number, a masked number such as 138****1234, or the email shown in the list; the last four digits alone are not supported. Leave blank if switching is disabled.",
+  "core.edit.okwwLoginAccountPlaceholder": "Full phone number or account shown in the login list"
 }

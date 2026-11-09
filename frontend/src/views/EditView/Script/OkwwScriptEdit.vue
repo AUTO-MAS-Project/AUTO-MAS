@@ -99,32 +99,10 @@
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.okwwAccountSwitchMethod')"
-                    :hint="t('core.edit.okwwAccountSwitchHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="okwwConfig.Game.AccountSwitchMethod"
-                  size="large"
-                  class="modern-input"
-                  @change="handleChange('Game', 'AccountSwitchMethod', $event)"
-                >
-                  <a-select-option value="NONE">{{ t('core.edit.no') }}</a-select-option>
-                  <a-select-option value="MAS">{{
-                    t('core.edit.okwwMasRecommended')
-                  }}</a-select-option>
-                  <a-select-option value="OKWW">{{
-                    t('core.edit.okwwNativeSwitch')
-                  }}</a-select-option>
-                </a-select>
-                <span class="control-hint">
-                  {{ t('core.edit.accountSwitch16x9ArgHint', { p0: '-Res=1920x1080' }) }}
-                </span>
-              </a-form-item>
+              <OkwwAccountSwitchField
+                v-model="okwwConfig.Game.AccountSwitchMethod"
+                @save="handleChange('Game', 'AccountSwitchMethod', $event)"
+              />
             </a-col>
           </a-row>
 
@@ -416,6 +394,7 @@
 <script setup lang="ts">
 import PathPickerField from '@/components/PathPickerField.vue'
 import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
+import OkwwAccountSwitchField from './components/OkwwAccountSwitchField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { requestUserUpdateStart } from '@/composables/useTaskApi'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
@@ -472,7 +451,7 @@ interface OkwwInfoForm {
 interface OkwwGameForm {
   Enabled: boolean
   AccountSwitch: boolean
-  AccountSwitchMethod: 'NONE' | 'MAS' | 'OKWW'
+  AccountSwitchMethod: 'NONE' | 'MAS' | 'OKWW_SINGLE' | 'OKWW'
   Type: 'Launcher' | 'Client'
   Path: string
   ClientPath: string

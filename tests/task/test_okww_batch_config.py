@@ -46,10 +46,10 @@ def test_invalid_and_duplicate_account_identifiers_fail_before_write(tmp_path):
 async def test_batch_log_keeps_confirmed_success_when_later_account_fails(tmp_path):
     import asyncio
     from datetime import datetime
-    from tests.runtime_support import RuntimeStub as SimpleNamespace
     from unittest.mock import AsyncMock
 
     from app.task.Okww.BatchProxy import BatchProxyTask
+    from tests.runtime_support import RuntimeStub as SimpleNamespace
 
     proxy = BatchProxyTask.__new__(BatchProxyTask)
     proxy.task_name = "MultiAccountConfigTask"
@@ -125,12 +125,12 @@ def test_invalid_account_identifiers_are_rejected(value):
 @pytest.mark.asyncio
 async def test_batch_check_rejects_normalized_duplicates(monkeypatch):
     import uuid
-    from tests.runtime_support import RuntimeStub as SimpleNamespace
     from unittest.mock import AsyncMock
 
     from app.models.config.script import OkwwUserConfig
     from app.task.Okww.AutoProxy import AutoProxyTask
     from app.task.Okww.BatchProxy import BatchProxyTask
+    from tests.runtime_support import RuntimeStub as SimpleNamespace
 
     ids = [uuid.uuid4(), uuid.uuid4()]
     proxy = BatchProxyTask.__new__(BatchProxyTask)
@@ -162,10 +162,9 @@ async def test_batch_check_rejects_normalized_duplicates(monkeypatch):
     ],
 )
 async def test_batch_nodes_route_terminal_failure_to_account(login, failure, expected):
-    from tests.runtime_support import RuntimeStub as SimpleNamespace
-
     from app.models.task import LogRecord
     from app.task.Okww.BatchProxy import BatchProxyTask
+    from tests.runtime_support import RuntimeStub as SimpleNamespace
 
     lines = [
         "MultiAccountConfigTask:info_set 状态 执行中\n",
@@ -183,6 +182,7 @@ async def test_batch_nodes_route_terminal_failure_to_account(login, failure, exp
     ]
     proxy = BatchProxyTask.__new__(BatchProxyTask)
     proxy.batch_nodes_collected = False
+    proxy.user_state = lambda user: user
     proxy.account_failures = {}
     proxy.attempted_accounts = set()
     proxy.account_users = {
