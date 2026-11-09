@@ -84,8 +84,11 @@ async def test_stopped_account_releases_project_after_emulator_close_is_cancelle
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "force_process_fallback", [False, True] if sys.platform == "win32" else [False]
+)
 async def test_unconfirmed_pretask_stop_keeps_project_reserved(
-    monkeypatch, isolated_app_paths
+    monkeypatch, isolated_app_paths, force_process_fallback
 ):
     from app.task.MaaFW.tools.embedded import runner_task as module
 
@@ -121,7 +124,7 @@ async def test_unconfirmed_pretask_stop_keeps_project_reserved(
             assert await self._try_enter_project_path()
             self.check_result = "Pass"
             process = await create_subprocess(
-                sys.executable, "-I", "-c", "import time; time.sleep(30)"
+                sys._base_executable, "-I", "-c", "import time; time.sleep(30)"
             )
             self.pretask_process = process
             ready.set()
@@ -149,11 +152,14 @@ async def test_unconfirmed_pretask_stop_keeps_project_reserved(
     try:
         await asyncio.wait_for(ready.wait(), timeout=3)
         scope = task._stop_scope
+        if force_process_fallback:
+            scope._job.close()
+            scope._job = None
         with monkeypatch.context() as native:
             if scope._job is not None:
                 native.setattr(scope._job, "kill", refuse_kill)
             else:
-                native.setattr(scope._processes[process.pid][1], "kill", refuse_kill)
+                native.setattr(scope._processes[id(process)][1], "kill", refuse_kill)
             stopping = task.request_stop()
             await asyncio.wait_for(task.accomplish.wait(), timeout=3)
             assert scope.cleanup_failed
