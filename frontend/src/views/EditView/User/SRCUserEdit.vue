@@ -740,16 +740,7 @@ onUnmounted(() => {
 
 <style scoped>
 .user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
   background: var(--ant-color-bg-layout);
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
-  }
 }
 
 /* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */

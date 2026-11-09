@@ -1,0 +1,37 @@
+/* 同层级正文使用同一表面；内部区域保留边框，不重复抬高层级。 */
+.app-page-surface,
+.ant-card.app-page-surface,
+.ant-card.app-page-surface:not(.ant-card-bordered) {
+  background-color: var(--app-appearance-surface-bg);
+  border: var(--app-page-surface-border-width) solid var(--app-page-surface-border-color);
+  border-radius: var(--app-page-surface-radius);
+  box-shadow: var(--app-page-surface-shadow);
+}
+
+.app-page-surface--tabs {
+  padding: var(--app-page-content-padding);
+}
+
+.ant-card:is(.app-page-surface, .app-page-section) > .ant-card-body {
+  padding: var(--app-page-content-padding);
+}
+
+.ant-card:is(.app-page-surface, .app-page-section) > .ant-card-head {
+  min-height: var(--app-page-card-header-height);
+  padding: var(--app-page-card-header-padding-block) var(--app-page-content-padding);
+  border-bottom: var(--app-page-surface-border-width) solid var(--app-page-surface-border-color);
+}
+
+.ant-card:is(.app-page-surface, .app-page-section) > .ant-card-head .ant-card-head-title {
+  font-size: var(--app-page-card-title-size);
+  font-weight: var(--app-page-card-title-weight);
+  line-height: var(--app-page-card-title-line-height);
+}
+
+.app-page-section,
+.ant-card.app-page-section {
+  background: transparent;
+  border: var(--app-page-surface-border-width) solid var(--app-page-surface-border-color);
+  border-radius: var(--app-page-surface-radius);
+  box-shadow: none;
+}

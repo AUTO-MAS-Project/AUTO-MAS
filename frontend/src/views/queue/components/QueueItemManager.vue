@@ -1,5 +1,5 @@
 <template>
-  <a-card :title="t('core.queue.item.cardTitle')" class="queue-manager-card queue-item-card">
+  <a-card :title="t('core.queue.item.cardTitle')" class="app-page-section queue-item-card">
     <template #extra>
       <a-space>
         <a-button type="primary" :loading="loading" :disabled="locked" @click="addQueueItem">

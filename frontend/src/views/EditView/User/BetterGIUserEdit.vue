@@ -1697,8 +1697,6 @@ const addProjects = (rows: unknown[]) =>
 
 @import './BetterGIUserEdit/bettergiFormControls.css';
 .user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
   background: var(--ant-color-bg-layout);
 }
 
@@ -1886,10 +1884,6 @@ const addProjects = (rows: unknown[]) =>
 }
 
 @media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
-  }
-
   .user-edit-header {
     flex-direction: column;
     gap: 16px;

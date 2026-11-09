@@ -7,7 +7,7 @@
   <!-- 主要内容 -->
   <div v-else class="queue-main">
     <!-- 页面头部 -->
-    <div class="queue-header">
+    <div class="queue-header app-page-header">
       <div class="header-left">
         <h1 class="page-title app-page-title">{{ t('core.queue.title') }}</h1>
       </div>
@@ -45,7 +45,7 @@
     <!-- 队列内容 -->
     <div v-else class="queue-content">
       <!-- 队列选择卡片 -->
-      <a-card class="queue-selector-card" :bordered="false">
+      <a-card class="queue-selector-card app-page-surface" :bordered="false">
         <template #title>
           <div class="card-title">
             <span>{{ t('core.queue.selectLabel') }}</span>
@@ -75,7 +75,7 @@
       </a-card>
 
       <!-- 队列配置卡片 -->
-      <a-card class="queue-config-card" :bordered="false">
+      <a-card class="queue-config-card app-page-surface" :bordered="false">
         <template #title>
           <div class="queue-title-container">
             <div v-if="!isEditingQueueName" class="queue-title-display">
@@ -656,12 +656,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.queue-container {
-  min-height: 100vh;
-  background: var(--ant-color-bg-layout);
-  padding: 24px;
-}
-
 .loading-container {
   display: flex;
   justify-content: center;
@@ -673,21 +667,8 @@ onUnmounted(() => {
   margin: 0 auto;
 }
 
-/* 页面头部 */
-.queue-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 24px;
-  padding: 0 4px;
-}
-
 .header-left {
   flex: 1;
-}
-
-.page-title {
-  margin: 0 0 8px 0;
 }
 
 .page-description {
@@ -718,26 +699,13 @@ onUnmounted(() => {
 .queue-content {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-}
-
-/* 队列选择卡片 */
-.queue-selector-card {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
+  gap: var(--app-page-content-gap);
 }
 
 .card-title {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.queue-selection-container {
-  padding: 16px;
 }
 
 /* 队列按钮组 */
@@ -756,9 +724,6 @@ onUnmounted(() => {
 
 /* 队列配置卡片 */
 .queue-config-card {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
   min-height: 600px;
 }
 
@@ -773,7 +738,6 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
 }
 
 .queue-title-display {
@@ -783,8 +747,6 @@ onUnmounted(() => {
 }
 
 .queue-title-text {
-  font-size: 18px;
-  font-weight: 600;
   color: var(--ant-color-text);
 }
 
@@ -812,39 +774,16 @@ onUnmounted(() => {
 }
 
 .queue-extra-settings :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: var(--app-page-card-title-size);
+  font-weight: var(--app-page-card-title-weight);
+  line-height: var(--app-page-card-title-line-height);
 }
 .queue-extra-settings :deep(.form-section) {
   margin-bottom: 0;
 }
 
 /* 响应式设计 */
-@media (max-width: 1200px) {
-  .queue-container {
-    padding: 16px;
-  }
-
-  .queue-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
-  }
-
-  .page-title {
-    font-size: 28px;
-  }
-}
-
 @media (max-width: 768px) {
-  .queue-container {
-    padding: 12px;
-  }
-
-  .page-title {
-    font-size: 24px;
-  }
-
   .page-description {
     font-size: 14px;
   }
@@ -858,22 +797,6 @@ onUnmounted(() => {
     display: flex;
     justify-content: center;
   }
-}
-
-/* 深度样式使用全局CSS变量 */
-.queue-selector-card :deep(.ant-card-head) {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  padding: 16px 24px;
-}
-
-.queue-config-card :deep(.ant-card-head) {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  padding: 16px 24px;
-}
-
-.queue-config-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
 }
 
 .queue-title-input :deep(.ant-input) {

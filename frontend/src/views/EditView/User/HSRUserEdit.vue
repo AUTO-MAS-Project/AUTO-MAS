@@ -1331,8 +1331,6 @@ const loadUserData = async () => {
 
 <style scoped>
 .user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
   background: var(--ant-color-bg-layout);
 }
 

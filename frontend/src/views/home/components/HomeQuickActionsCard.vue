@@ -1,5 +1,9 @@
 <template>
-  <a-card class="shortcut-card" :title="t('core.home.quick.title')">
+  <a-card
+    class="shortcut-card app-page-surface"
+    :title="t('core.home.quick.title')"
+    :body-style="{ padding: 0 }"
+  >
     <section class="quick-actions" :aria-label="t('core.home.quick.aria')">
       <button
         v-for="action in quickActions"
@@ -69,20 +73,6 @@ const quickActions = computed(() => [
 </script>
 
 <style scoped>
-.shortcut-card {
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-}
-
-.shortcut-card :deep(.ant-card-body) {
-  padding: 0;
-}
-
-.shortcut-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
-}
-
 .quick-actions {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

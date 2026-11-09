@@ -15,7 +15,11 @@
     >
       <template #item="{ element: script }">
         <div :key="script.id" class="script-wrapper">
-          <a-card :hoverable="false" class="script-card" :body-style="{ padding: '0' }">
+          <a-card
+            :hoverable="false"
+            class="script-card app-page-surface"
+            :body-style="{ padding: '0' }"
+          >
             <!-- 脚本头部信息 -->
             <ScriptCardHeader
               :script="script"
@@ -291,7 +295,7 @@ const handleCardAction = (action: ScriptCardAction, script: ScriptListItem) => {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--app-page-content-gap);
 }
 
 .script-wrapper {
@@ -358,14 +362,10 @@ const handleCardAction = (action: ScriptCardAction, script: ScriptListItem) => {
   background: var(--ant-color-primary-bg) !important;
 }
 .script-card {
-  border-radius: 16px;
-  border: 1px solid var(--ant-color-border-secondary);
-  background: var(--ant-color-bg-container);
   overflow: hidden;
   height: 100%;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .script-card:hover {

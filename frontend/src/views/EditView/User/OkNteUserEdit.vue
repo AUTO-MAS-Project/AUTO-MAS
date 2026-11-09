@@ -758,8 +758,6 @@ onUnmounted(() => {
 
 <style scoped>
 .user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
   background: var(--ant-color-bg-layout);
 }
 
@@ -805,10 +803,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
-  }
-
   .config-card :deep(.ant-card-body) {
     padding: 20px;
   }

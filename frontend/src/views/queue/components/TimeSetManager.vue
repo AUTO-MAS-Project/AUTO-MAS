@@ -1,7 +1,7 @@
 <template>
   <a-card
     :title="t('core.queue.time.cardTitle')"
-    class="queue-manager-card time-set-card"
+    class="app-page-section time-set-card"
     :class="{ 'time-set-disabled': props.disabled }"
   >
     <template #extra>

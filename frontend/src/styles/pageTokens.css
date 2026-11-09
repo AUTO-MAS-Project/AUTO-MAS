@@ -1,0 +1,26 @@
+/* 主页面的尺寸只在这里定义，表面颜色、圆角和阴影沿用主题 token。 */
+:root {
+  --app-page-gutter: 32px;
+  --app-page-title-size: 32px;
+  --app-page-title-line-height: 40px;
+  --app-page-title-weight: 700;
+  --app-page-header-height: 48px;
+  --app-page-header-gap: 16px;
+  --app-page-content-gap: 16px;
+  --app-page-content-padding: 16px;
+  --app-page-card-header-height: 56px;
+  --app-page-card-header-padding-block: 12px;
+  --app-page-card-title-size: 16px;
+  --app-page-card-title-line-height: 24px;
+  --app-page-card-title-weight: 600;
+  --app-page-surface-border-width: 1px;
+  --app-page-surface-border-color: var(--ant-color-border-secondary);
+  --app-page-surface-radius: var(--ant-border-radius-lg);
+  --app-page-surface-shadow: var(--ant-box-shadow-tertiary);
+}
+
+@media (max-width: 768px) {
+  :root {
+    --app-page-content-padding: 12px;
+  }
+}

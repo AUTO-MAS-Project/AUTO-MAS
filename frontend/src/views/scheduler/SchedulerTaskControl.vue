@@ -1,5 +1,5 @@
 <template>
-  <div class="task-control">
+  <div class="task-control app-page-section">
     <div class="control-card">
       <div class="control-row">
         <a-space size="middle">
@@ -117,16 +117,12 @@ const startDisabled = computed(() => {
 
 <style scoped>
 .task-control {
-  margin-bottom: 16px;
-  border-radius: 12px;
-  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid var(--ant-color-border-secondary);
+  margin-bottom: var(--app-page-content-gap);
   overflow: hidden;
 }
 
 .control-card {
-  padding: 16px;
+  padding: var(--app-page-content-padding);
 }
 
 .control-row {
@@ -152,7 +148,7 @@ const startDisabled = computed(() => {
   }
 
   .control-card {
-    padding: 12px;
+    padding: var(--app-page-content-padding);
   }
 }
 
