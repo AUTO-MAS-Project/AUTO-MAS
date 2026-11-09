@@ -40,6 +40,7 @@ import pytest
 from app.task.M9A.flavor import FLAVOR
 from app.task.M9A.managed import (
     LOGIN_MODE_MAS,
+    STARTUP_ENTRY,
     SWITCH_ACCOUNT_ENTRY,
     settle_snapshot,
     supports_account_switch,
@@ -138,9 +139,10 @@ def test_supports_account_switch_reads_login_mode() -> None:
     assert supports_account_switch("", login_mode=LOGIN_MODE_MAS) is False
 
 
-def test_startup_failure_aborts_round() -> None:
-    # Mas 模式下 StartUp 就是「从标题页进游戏」那一步，失败后继续跑任务只会跑在错的位置上
-    assert "StartUp" in FLAVOR.abort_round_entries
+def test_only_account_switch_aborts_round() -> None:
+    # 与上游口径一致：只把「切换账号」列为关键任务。StartUp 失败不代表游戏用不了，
+    # 仍按普通任务失败继续（评审指出这里不该自行加严）。
+    assert STARTUP_ENTRY not in FLAVOR.abort_round_entries
     assert SWITCH_ACCOUNT_ENTRY in FLAVOR.abort_round_entries
 
 
