@@ -3455,6 +3455,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return False
         if not self.opened_game and not self.opened_emulator:
             return False
+        # 只在真正要重启 MAS 自己启动的客户端时撤销预下载资格。
+        # 等待 FluxDown/HTTPX 确认停止后才关闭游戏或模拟器；AttachOnly、
+        # 最后一次尝试和不重登的资源换载荷路径不需要重置成功计时。
+        from app.core.script_update_queue import report_script_task_retrying
+
+        await report_script_task_retrying()
         self._append_log("本轮失败，关闭由 MAS 启动的游戏/模拟器，下一轮重新启动")
         emulator_closed = await self._close_emulator()
         game_closed = await self._close_game()

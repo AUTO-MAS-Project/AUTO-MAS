@@ -130,6 +130,76 @@ async def test_prefetch_follows_new_dispatch_and_waits_for_cancel_cleanup(
     assert not scripts[next_id].is_locked
 
 
+@pytest.mark.asyncio
+async def test_unconfirmed_prefetch_stop_survives_account_lifecycle(
+    scheduler, monkeypatch
+):
+    """账号 TaskBase.run 会记录并吞掉异常，外层仍必须阻断下一托管。"""
+    from app.core import script_update_queue
+    from app.task.lifecycle import TaskBase
+    from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+    manager, scripts, _, sid = scheduler
+    next_id = scripts.add(GeneralConfig, payload={"Info": {"Name": "next"}})
+    await scripts.commit()
+    scripts[next_id].UserData.add(
+        GeneralUserConfig,
+        payload={"Info": {"Name": "next-user", "Status": True, "RemainedDay": -1}},
+    )
+    await scripts[next_id].UserData.commit()
+    started = asyncio.Event()
+    next_started = asyncio.Event()
+    swallowed = []
+    monkeypatch.setattr(script_update_queue, "PREFETCH_GRACE_SECONDS", 0)
+    monkeypatch.setattr(script_update_queue, "PREFETCH_POLL_SECONDS", 0.001)
+
+    class RetryBuiltin(Builtin):
+        async def prefetch_script_update(self):
+            try:
+                started.set()
+                await asyncio.Event().wait()
+            finally:
+                raise FluxdownCancelUnconfirmed("daemon may still write")
+
+        async def discard_prefetched_update(self):
+            pass
+
+        async def main_task(self):
+            await self.script_info.set_state(status="运行")
+            if self.script_info.script_id == str(sid):
+                script_update_queue.report_script_task_completed()
+                await asyncio.wait_for(started.wait(), 2)
+
+                class Account(TaskBase):
+                    async def main_task(account):
+                        await script_update_queue.report_script_task_retrying()
+
+                    async def on_crash(account, error):
+                        swallowed.append(error)
+                        await self.script_info.user_list[0].set_state(status="异常")
+
+                # 真实账号生命周期捕获并记录失败，不会重新抛给 L2。
+                await Account().run()
+                await self.script_info.set_state(status="异常")
+            else:
+                next_started.set()
+                await super().main_task()
+
+    manager.manager_factories = {GeneralConfig: RetryBuiltin}
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY,
+        {0: {"uid": "-", "children": {0: {"uid": str(sid)}, 1: {"uid": str(next_id)}}}},
+    )
+    run = manager.task_handler[uid]
+    await asyncio.wait_for(run.accomplish.wait(), 5)
+    assert swallowed and isinstance(swallowed[0], FluxdownCancelUnconfirmed)
+    assert isinstance(run.error, FluxdownCancelUnconfirmed)
+    assert run.task_info.status == "error"
+    assert not next_started.is_set()
+    assert run.history.closed
+    assert not scripts[next_id].is_locked
+
+
 @pytest_asyncio.fixture
 async def scheduler():
     scripts = ConfigCollection[ScriptConfigType].build([GeneralConfig])

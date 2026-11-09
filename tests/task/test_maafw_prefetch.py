@@ -653,3 +653,44 @@ async def test_waiting_for_busy_artifact_cache_observes_stop(
         if download is not None:
             download.cancel()
             await asyncio.gather(download, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "owned,attempt,notified",
+    [(True, 1, True), (False, 1, False), (True, 3, False)],
+)
+async def test_owned_maafw_retry_notifies_before_client_shutdown(
+    owned, attempt, notified
+):
+    """仅在还有下一轮、且需要重启 MAS 自有客户端时撤销预下载。"""
+    from app.core.script_update_queue import script_task_retrying
+    from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
+
+    runner = object.__new__(MaaFWPluginAutoProxyTask)
+    runner.script_config = SimpleNamespace(
+        Run=SimpleNamespace(RunTimesLimit=3)
+    )
+    runner._extra_attempts = 0
+    runner.opened_game = owned
+    runner.opened_emulator = False
+    runner._append_log = lambda _text: None
+    order = []
+
+    async def close_game():
+        order.append("close")
+        return True
+
+    runner._close_emulator = AsyncMock(return_value=True)
+    runner._close_game = close_game
+
+    async def on_retry():
+        order.append("notify")
+
+    token = script_task_retrying.set(on_retry)
+    try:
+        result = await runner._restart_client_before_retry(attempt)
+    finally:
+        script_task_retrying.reset(token)
+    assert result is notified
+    assert order == (["notify", "close"] if notified else [])

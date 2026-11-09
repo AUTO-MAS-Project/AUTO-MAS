@@ -17,6 +17,7 @@ from app.services import execute_script_task
 from app.task.context import TaskContext
 from app.task.history_core import TaskHistorySession
 from app.task.lifecycle import TaskBase
+from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.utils.contracts.power import PowerSignal
 
 if TYPE_CHECKING:
@@ -313,11 +314,20 @@ class ScriptExpander(TaskBase):
 
     async def final_task(self) -> None:
         try:
-            await self._updates.close()
+            try:
+                await self._updates.close()
+            except FluxdownCancelUnconfirmed as error:
+                # 未确认停写必须保持为错误，但重复看到同一个失败不应
+                # 中断历史收尾和 TASK_COMPLETED 发布，也不重复发送通知。
+                if not isinstance(self.error, FluxdownCancelUnconfirmed):
+                    self.error = error
+                    await self.on_crash(error)
         finally:
             await self._release_script_lock()
         info = self.task_info
-        if self.cancelled:
+        if isinstance(self.error, FluxdownCancelUnconfirmed):
+            await info.set_state(status="error")
+        elif self.cancelled:
             await info.set_state(status="cancelled")
         elif self.error:
             await info.set_state(status="error")

@@ -144,8 +144,9 @@ async def test_other_task_holding_target_lock_skips_prefetch(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("retry_boundary", ["maa", "maafw"])
 async def test_real_session_retry_stops_download_before_relogin_and_restarts_clock(
-    monkeypatch,
+    monkeypatch, retry_boundary
 ):
     """首次成功 -> 预下载 -> MAA 重登边界 -> 停写确认 -> 重新成功计时。"""
     session, root, current, config, _, _, _ = await setup_session(monkeypatch)
@@ -197,6 +198,7 @@ async def test_real_session_retry_stops_download_before_relogin_and_restarts_clo
     completed_token = script_task_completed.set(session.mark_completed)
     retry_token = script_task_retrying.set(lambda: session.retry(current, 1))
     retry_task = None
+    client_closed = asyncio.Event()
     try:
         session.watch(current, 1)
         report_script_task_completed()
@@ -204,16 +206,43 @@ async def test_real_session_retry_stops_download_before_relogin_and_restarts_clo
         assert config.is_locked
         assert session._completed_at is not None
 
-        # 模拟 MAA 在开始下一次模拟器登录前调用生产的重试通知入口。
-        retry_task = asyncio.create_task(report_script_task_retrying())
+        if retry_boundary == "maafw":
+            from app.task.MaaFW.tools.embedded.runner_task import (
+                MaaFWPluginAutoProxyTask,
+            )
+
+            runner = object.__new__(MaaFWPluginAutoProxyTask)
+            runner.script_config = SimpleNamespace(
+                Run=SimpleNamespace(RunTimesLimit=3)
+            )
+            runner._extra_attempts = 0
+            runner.opened_game = True
+            runner.opened_emulator = False
+            runner._append_log = lambda _text: None
+
+            async def close_game():
+                client_closed.set()
+                runner.opened_game = False
+                return True
+
+            runner._close_emulator = AsyncMock(return_value=True)
+            runner._close_game = close_game
+            retry_task = asyncio.create_task(
+                runner._reset_client_for_retry(1)
+            )
+        else:
+            retry_task = asyncio.create_task(report_script_task_retrying())
         await asyncio.wait_for(cleanup_started.wait(), 2)
         assert not retry_task.done()
         assert session._completed_at is None
         assert config.is_locked
         assert not second_started.is_set()
+        assert not client_closed.is_set()
 
         allow_cleanup.set()
         await asyncio.wait_for(retry_task, 2)
+        if retry_boundary == "maafw":
+            assert client_closed.is_set()
         assert not config.is_locked
         assert root.current.prefetch is None
         assert managers[0].discard_prefetched_update.await_count == 1

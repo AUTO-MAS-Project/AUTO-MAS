@@ -68,6 +68,9 @@ class ScriptUpdateQueue:
         *,
         completed_at: Callable[[], float | None],
     ) -> None:
+        if self._watcher is not None:
+            # 未确认停止的下载必须一直阻断后续托管；不得覆盖其 watcher。
+            raise RuntimeError("上一次预下载未完成停止确认，禁止创建新预下载")
         self._watcher = asyncio.create_task(
             self._watch(script, prepare_next, completed_at=completed_at)
         )
@@ -117,7 +120,7 @@ class ScriptUpdateQueue:
             logger.opt(exception=True).warning("下一脚本预下载未完成，将在启动前处理")
 
     async def finish(self, *, cancelled: bool = False) -> None:
-        watcher, self._watcher = self._watcher, None
+        watcher = self._watcher
         if watcher is None:
             return
         owner = asyncio.current_task()
@@ -131,6 +134,10 @@ class ScriptUpdateQueue:
             except asyncio.CancelledError:
                 await _cancel_and_wait(watcher)
                 raise
+        # 只在确认 watcher 收敛后才清空。若 FluxDown 停止未确认抛出异常，
+        # 保留已完成但携带异常的 watcher，账号层即使吞掉该异常，
+        # 外层 ScriptExpander.finish() 仍会再次抛出，阻断下一托管。
+        self._watcher = None
         self._download = None
         # cancelled 也用于脚本失败后的普通收尾；等待停写期间新到的用户
         # 停止请求必须继续传播，不能因已在撤销预取而继续启动下一脚本。

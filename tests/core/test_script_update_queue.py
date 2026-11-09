@@ -364,3 +364,31 @@ async def test_unconfirmed_daemon_from_real_service_blocks_next_script(
         await handoff()
     assert not next_script_started
     assert cli._load_task_map(exe)[cli._map_key(url, target)]["task_id"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_retry_stop_remains_blocking_at_outer_handoff(running):
+    """账号层先消费失败也不能清掉 watcher，L2 结束时必须再次收到错误。"""
+    script, user, clock = running
+    user.first_task_completed_at, clock.now = 100, 200
+    started = asyncio.Event()
+
+    async def download():
+        try:
+            started.set()
+            await asyncio.Event().wait()
+        finally:
+            raise FluxdownCancelUnconfirmed("daemon stop unconfirmed")
+
+    pipeline = queue.ScriptUpdateQueue()
+    pipeline.watch(
+        script, download, completed_at=lambda: user.first_task_completed_at
+    )
+    await asyncio.wait_for(started.wait(), 1)
+    with pytest.raises(FluxdownCancelUnconfirmed):
+        await pipeline.finish(cancelled=True)
+    assert pipeline._watcher is not None
+    with pytest.raises(FluxdownCancelUnconfirmed):
+        await pipeline.finish(cancelled=True)
+    with pytest.raises(RuntimeError, match="未完成停止确认"):
+        pipeline.watch(script, AsyncMock(), completed_at=lambda: None)
