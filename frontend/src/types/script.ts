@@ -125,6 +125,9 @@ export type MaaFWAutoUpdateMode = 'Off' | 'BeforeRun' | 'AfterRun'
 /** 游戏客户端更新：不检查 / 只检查（落后时本次失败并提示手动更新）/ 自动下载安装。 */
 export type MaaFWGameUpdateMode = 'Off' | 'Check' | 'AutoInstall'
 
+/** B 服登录方式：Project 由脚本自己的启动任务登录；Mas 由 MAS 完成登录后交给脚本运行（仅 M9A）。 */
+export type MaaFWLoginMode = 'Project' | 'Mas'
+
 export interface MaaFWScriptConfig {
   Info: {
     Name: string
@@ -214,6 +217,8 @@ export interface MaaFWScriptConfig {
     LoopGuard: boolean
     /** 只有 flavor 支持游戏更新（M9A）时才在编辑页出现；通用 MaaFW 后端不读。 */
     GameUpdateMode: MaaFWGameUpdateMode
+    /** 只有 M9A 有：B 服登录方式；Mas 时登录由 MAS 完成，账号填登录记录里的完整昵称。 */
+    LoginMode?: MaaFWLoginMode
   }
   /**
    * 阶段性保留：manager.py 仍从 Selection.* 读取运行范围。

@@ -130,10 +130,12 @@ from app.utils.common.process.scope import current_process_scope
 
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
+    MaaFWLoginRequired,
     no_default_fallback_inputs,
     off_day_scope,
     resolve_flavor,
     resolve_game_update_hook,
+    resolve_login_hook,
     unselectable_entries,
 )
 from .game_package import resolve_game_package
@@ -585,6 +587,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._launched_package_name = ""
         # 游戏更新钩子每个账号每次运行只调一次，重试重新开模拟器时不再查
         self._game_update_checked = False
+        # 运行前登录在同一客户端会话内只完成一次；客户端重启后重新验证
+        self._login_checked = False
         self.maafw_runtime_pool_root: Path | None = None
         self.maafw_runtime_pool_id: str | None = None
         # 本轮（整个脚本）的信号账：同一资源已确认维护时后续账号直接跳过，收尾时由
@@ -911,7 +915,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             except Exception as exc:
                 message = (
                     str(exc)
-                    if isinstance(exc, MaaFWPretaskError)
+                    if isinstance(exc, (MaaFWPretaskError, MaaFWLoginRequired))
                     else f"MaaFW 运行异常: {exc}"
                 )
                 self._append_log(message, warning=True)
@@ -1407,6 +1411,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             address, device_info = await self._resolve_adb_address()
             adb_path = await self._resolve_adb_path(address, device_info)
             await self._ensure_game_updated(address, adb_path)
+            await self._ensure_logged_in(address, adb_path)
             adb_profile = await self._build_adb_control_profile()
             return MaaFWDeviceConfig(
                 type="Adb",
@@ -1421,6 +1426,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
 
         if plan.controllerType == "Win32":
+            await self._ensure_logged_in("", None)
             controller = _find_controller(interface_model, plan.controllerName)
             win32_config = controller.win32
             mouse = win32_config.mouse if win32_config else None
@@ -1592,6 +1598,30 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         )
         return None
 
+    def _resolve_adb_path_by_toolkit(self, address: str) -> str | None:
+        """按设备地址问 MaaFW Toolkit 要 adb 路径（与 worker 的发现规则同一套）。
+
+        ``_resolve_adb_path`` 只认脚本配置、模拟器管理器与安装目录；通用模拟器把 adb 放在
+        别的文件名下（BlueStacks 的 ``HD-Adb.exe``）时推不出来，而 MaaFW Runner 本来就会
+        按地址发现。登录钩子跑在 Runner 之前，先在这里补上，别让钩子退回 PATH 里的 ``adb``。
+        拿不到（没装 Toolkit、列表里没有这个地址）就返回 ``None``，调用方保持原行为。
+        """
+
+        if not address:
+            return None
+        try:
+            from maa.toolkit import Toolkit
+        except Exception:  # noqa: BLE001 - 没有 Toolkit 时交给 Runner 自己发现
+            return None
+        with suppress(Exception):
+            for device in Toolkit.find_adb_devices():
+                if str(getattr(device, "address", "")) != address:
+                    continue
+                path = Path(str(getattr(device, "adb_path", "") or ""))
+                if path.name and path.exists():
+                    return str(path)
+        return None
+
     async def _ensure_game_updated(self, address: str, adb_path: str | None) -> None:
         """模拟器启动后、第一个任务下发前，调特调的游戏更新钩子（契约见 flavor.py）。
 
@@ -1632,6 +1662,57 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._append_log(result.message)
         if result.status == "NeedManualUpdate":
             raise _MaaFWGameUpdateRequired(result.message)
+
+    async def _ensure_logged_in(self, address: str, adb_path: str | None) -> None:
+        """模拟器启动后、第一个任务下发前，调特调的运行前登录钩子（契约见 flavor.py）。
+
+        每个账号每次运行只调一次，紧跟游戏更新检查之后。钩子判定本次无法继续时抛
+        ``MaaFWLoginRequired``，按普通失败结算、照常重试；钩子实现里的其它异常同样按失败
+        处理，原因附在异常原文后面。没实现钩子（通用 MaaFW）时什么都不做。
+        """
+
+        if self._login_checked:
+            return
+        hook = resolve_login_hook(self.script_config)
+        if hook is None or self.run_plan is None:
+            return
+
+        if adb_path is None and address:
+            # 登录钩子跑在 worker 之前，用不到 Runner 的按地址发现；宿主先把这条兜上，
+            # 否则钩子只能拿 PATH 里的 ``adb``（通用模拟器自带的多半叫 HD-Adb.exe）。
+            adb_path = await asyncio.to_thread(
+                self._resolve_adb_path_by_toolkit, address
+            )
+            if adb_path:
+                self._append_log(
+                    f"ADB 路径选择: MaaFW Toolkit 按地址发现; 路径={adb_path}"
+                )
+
+        async def report(text: str) -> None:
+            self._append_log(text)
+
+        try:
+            message = await hook(
+                script_config=self.script_config,
+                user_config=self.cur_user_config,
+                resource_name=self.run_plan.resourceName,
+                package_name=self._launched_package_name,
+                adb_path=adb_path,
+                adb_address=address,
+                progress=report,
+                host_adb=await resolve_host_adb(self),
+            )
+        except MaaFWLoginRequired:
+            raise
+        except Exception as exc:
+            logger.opt(exception=True).warning(f"运行前登录钩子异常: {exc}")
+            raise MaaFWLoginRequired(f"运行前登录出错：{exc}") from exc
+
+        if message:
+            self._append_log(str(message))
+        # 登录成功才记「已登录」：失败时保持未完成，外层重试会重新走这个钩子，
+        # 不允许带着没登录（或登录到别的账号）的状态下发任务。
+        self._login_checked = True
 
     def _derive_adb_path_from_emulator_config(self) -> Path | None:
         emulator_id = self.script_config.Emulator.Id
@@ -3464,6 +3545,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._append_log("本轮失败，关闭由 MAS 启动的游戏/模拟器，下一轮重新启动")
         emulator_closed = await self._close_emulator()
         game_closed = await self._close_game()
+        # 客户端被重启了：登录会话可能变化（也可能回到别的账号），下一轮必须重新验证登录。
+        self._login_checked = False
         return emulator_closed and game_closed
 
     async def _start_attempt_log(self) -> None:

@@ -9,6 +9,7 @@ import pytest
 from app.models.emulator import DeviceStatus, EmulatorRuntimePolicy
 from app.utils.common.emulator2.applaunch import AppLaunchResult
 from app.utils.common.emulator2.avd import manager as manager_module
+from app.utils.common.emulator2.avd.constants import CLOSE_BUDGET_SECONDS
 from app.utils.common.emulator2.avd.instances import create_instance_files
 from app.utils.common.emulator2.avd.manager import AvdManager
 
@@ -141,4 +142,8 @@ async def test_close_waits_for_android_until_deadline_then_falls_back(
     # 宿主负载高时安卓关机实测要 14.5 秒，等它至少 20 秒
     assert android_wait >= 20
     # 调用方整体只给 30 秒，退回那几步也要做完：最坏不超过 28 秒
-    assert android_wait + fallback_sync + console_wait + force_wait <= 28
+    # 等待值来自 time.monotonic() 的浮点差值，会带上 1e-14 级零头；预算断言留 1 微秒余量
+    assert (
+        android_wait + fallback_sync + console_wait + force_wait
+        <= CLOSE_BUDGET_SECONDS + 1e-6
+    )

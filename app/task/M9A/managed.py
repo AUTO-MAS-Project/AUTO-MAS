@@ -36,11 +36,14 @@
    - 恰好 1 个：账号进 ``Info.Account``，从队列移除。``Info.Account`` 原来非空且不同时以
      队列里的为准（旧版与之前的运行实际切的都是它），原值记进备注。
    - 0 个（未勾选或账号为空）：直接移除，不动 ``Info.Account``。
-   - 2 个及以上、脚本资源是官服：队列原样保留（切号连同选项一个不动），备注与通知里写明要拆成
+   - 2 个及以上、脚本资源支持切号：队列原样保留（切号连同选项一个不动），备注与通知里写明要拆成
      几个账号；运行期拒绝运行该账号。M9A 一个账号对应一个账号，这种队列 MAS 没法替用户拆。
-   - 2 个及以上、资源不是官服：切号任务只在官服生效，它们从来没跑过，直接移除。
+   - 2 个及以上、资源不支持切号：切号任务从来没跑过，直接移除。
 
-这份保留状态的判据是**队列内容本身**（有效切号 ≥ 2 且官服），不是某个标记：普通保存把同一份
+「资源支持切号」的口径见 :func:`supports_account_switch`：官服沿用原有规则；``Run.LoginMode``
+为 ``Mas``（B 服登录由 MAS 完成，见 ``login.py``）时切号不再下发，所有切换账号按「不支持」处理。
+
+这份保留状态的判据是**队列内容本身**（有效切号 ≥ 2 且资源支持切号），不是某个标记：普通保存把同一份
 队列交回来，照样判成保留，不会被抹掉；用户删到只剩 1 个时下一次保存就把它收进「账号」。
 """
 
@@ -56,9 +59,26 @@ CLOSE_ENTRY = "Close1999"
 #: 由 MAS 控制、不许留在账号队列里的三类任务（按 entry）。
 MANAGED_ENTRIES = frozenset({STARTUP_ENTRY, SWITCH_ACCOUNT_ENTRY, CLOSE_ENTRY})
 OFFICIAL_RESOURCE_NAME = "官服"
+#: ``Run.LoginMode`` 的两种取值；``Mas`` 表示 B 服登录由 MAS 完成（见 ``login.py``）。
+LOGIN_MODE_PROJECT = "Project"
+LOGIN_MODE_MAS = "Mas"
 #: 写进用户备注的前缀，备注里有同一句就不再追加（启动整理幂等靠它）。
 NOTE_TAG = "[M9A]"
 _EMPTY_NOTES = ("", "无")
+
+
+def supports_account_switch(
+    resource: str | None, *, login_mode: str | None = None
+) -> bool:
+    """这个资源下 M9A 的切号任务能不能跑。
+
+    官服沿用原有规则；``Run.LoginMode`` 为 ``Mas`` 时登录（含选号）由 MAS 完成，
+    切号任务不再下发，队列里残留的切号按「资源不支持切号」的既有规则处理。
+    """
+
+    if str(login_mode or "").strip() == LOGIN_MODE_MAS:
+        return False
+    return str(resource or "").strip() == OFFICIAL_RESOURCE_NAME
 
 
 class M9ASplitRequiredError(ValueError):
@@ -106,12 +126,13 @@ def settle_snapshot(
     *,
     entry_of: Callable[[str], str],
     account_of: Callable[[str, Any], str],
-    official: bool,
+    supports_switch: bool,
 ) -> Settlement:
     """按模块说明的规则整理一份 ``{taskOrder, taskChecked, taskOptions}``，不改入参。
 
     ``entry_of(task_id)`` 给出实例的 entry（重复实例 id 由调用方还原成任务名）；
-    ``account_of(task_id, 该实例的选项)`` 给出切号实例的目标账号。
+    ``account_of(task_id, 该实例的选项)`` 给出切号实例的目标账号；
+    ``supports_switch`` 见 :func:`supports_account_switch`。
     """
 
     order = [str(task_id) for task_id in snapshot.get("taskOrder") or []]
@@ -130,7 +151,7 @@ def settle_snapshot(
         if account:
             switches.append((task_id, account))
 
-    keep_switches = official and len(switches) >= 2
+    keep_switches = supports_switch and len(switches) >= 2
     removed = [
         task_id
         for task_id in order
@@ -279,6 +300,8 @@ def first_text_value(value: Any) -> str:
 __all__ = [
     "CLOSE_ENTRY",
     "InfoChange",
+    "LOGIN_MODE_MAS",
+    "LOGIN_MODE_PROJECT",
     "M9ASplitRequiredError",
     "MANAGED_ENTRIES",
     "NOTE_TAG",
@@ -293,4 +316,5 @@ __all__ = [
     "settle_snapshot",
     "settle_user_info",
     "split_message",
+    "supports_account_switch",
 ]
