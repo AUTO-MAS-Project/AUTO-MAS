@@ -174,6 +174,18 @@ class _LegacyExecution(TaskBase):
         self._execution_task: asyncio.Task | None = None
         self._scope_owner_task: asyncio.Task | None = None
 
+    async def _confirm_execution_stop(self):
+        """[兼容旧专项] 在停止确认上下文中结束业务并等待原有收尾。"""
+        task = self._execution_task
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if not task.cancelled():
+                raise
+
     async def run(self):
         """[兼容旧专项] 停止确认只属于旧专项分支，不改变 L1/L2 或来源生命周期。"""
         from app.utils.common.process.scope import (
@@ -205,8 +217,13 @@ class _LegacyExecution(TaskBase):
                 self.owner.stopped_manually = True
                 self.request_stop_checks()
                 assert self._stop_request is not None
-                await asyncio.shield(self._stop_request)
-                # 停止确认点已请求过一次取消，避免重复 cancel 正在收尾的任务。
+                while not self._stop_request.done():
+                    try:
+                        await asyncio.shield(self._stop_request)
+                    except asyncio.CancelledError:
+                        pass
+                self._stop_request.result()
+                # 执行收尾确认可能已发出取消；不要在 finalizer 期间重复取消。
                 if (
                     not self._execution_task.done()
                     and not self._execution_task.cancelling()
@@ -231,29 +248,15 @@ class _LegacyExecution(TaskBase):
         scope = self._process_scope
         assert scope is not None
         try:
-            # 第一阶段：让已开始的更新按既有令牌停止，避免直接取消写入者。
             await scope.run_checks()
-            # 第二阶段：请求业务任务结束，让旧专项的 final_task 在强杀前
-            # 有机会保存配置、释放锁；它属于独立的限时确认点。
-            execution = self._execution_task
-            if execution is not None and not execution.done():
-                execution.cancel()
-                timeout = self.owner.stop_finalizer_timeout
-                if timeout is not None:
-                    async def finish_legacy() -> None:
-                        await asyncio.wait({execution})
-                        if self._finalizer is not None and self._finalizer.cancelled():
-                            raise RuntimeError("旧专项收尾超时或被取消")
-
-                    check = scope.add_check(
-                        "legacy_finalize", finish_legacy, timeout=timeout
-                    )
-                    await scope.run_checks(selected=(check,))
-                    if check.status != "passed":
-                        # 仅打断未确认的收尾等待；资源锁的安全兜底由专项负责。
-                        finalizer = self._finalizer
-                        if finalizer is not None and not finalizer.done():
-                            finalizer.cancel()
+            # 更新与配置保存先确认停写，再确认账号及托管的原有收尾。
+            if all(check.status == "passed" for check in scope.checks):
+                scope.add_check(
+                    "execution_finalize",
+                    self._confirm_execution_stop,
+                    timeout=self.owner.STOP_CHECK_TIMEOUTS["finalize"],
+                )
+                await scope.run_checks()
             for check in scope.checks:
                 if check.status in ("timed_out", "failed"):
                     logger.warning(
@@ -285,47 +288,27 @@ class _LegacyExecution(TaskBase):
         await self.owner._run_main_task()
 
     async def final_task(self):
-        """旧专项收尾：停止确认有界，超时后只交接必要的资源释放。"""
-        from app.utils.common.process.scope import current_process_scope
+        """[兼容旧专项] 仅桥接旧收尾和回调排空；新执行器直接实现 TaskBase.final_task。"""
+        from app.utils.common.process.scope import (
+            current_process_scope,
+            current_stop_check,
+        )
 
         scope = current_process_scope.get()
         if scope is not None and self.owner.stop_finalizer_timeout is not None:
             finalizer = asyncio.current_task()
             assert finalizer is not None
             scope.watch_finalizer(finalizer, timeout=self.owner.stop_finalizer_timeout)
-
-        draining = True
+        # 收尾属于已登记的停止确认点；命令仍登记在原作用域中，超时后统一回收。
+        check_token = current_stop_check.set(scope)
         try:
             await self.owner.callbacks.drain()
             await self.owner._finalize_task()
-        except asyncio.CancelledError:
-            draining = False
-            # 不能像第一版修复那样后台继续执行完整 final_task：
-            # 通知、账号后脚本和历史落盘均可能在强制停止后迟到执行。
-            # 仅专项明确提供的锁/项目预约恢复可以交接给真实完成者。
-            recover = getattr(self.owner, "cleanup_after_forced_stop", None)
-            if recover is not None and scope is not None and scope.requested:
-                async def late_release() -> None:
-                    await scope.finished.wait()
-                    if scope.cleanup_failed:
-                        logger.error("任务进程未确认清理，保留旧专项锁以防并发写入")
-                        return
-                    try:
-                        await self.owner.callbacks.drain()
-                        await recover()
-                    except Exception as error:
-                        logger.opt(exception=error).error(
-                            f"旧专项超时后释放资源失败: {type(self.owner).__name__}"
-                        )
-
-                pending = asyncio.create_task(
-                    late_release(), name=f"{type(self.owner).__name__}.stop-release"
-                )
-                scope.retain_worker(pending)
-            raise
         finally:
-            if draining:
+            try:
                 await self.owner.callbacks.drain()
+            finally:
+                current_stop_check.reset(check_token)
 
     async def on_crash(self, exc):
         """[兼容旧专项] 仅桥接旧异常处理；新执行器直接实现 TaskBase.on_crash。"""
@@ -344,7 +327,7 @@ class TaskExecuteBase(ABC):
     history: TaskHistorySession
     # [兼容旧专项] 停止确认阶段限时等待已开始的收尾，不改变来源 TaskBase。
     stop_finalizer_timeout: float | None = 10.0
-    STOP_CHECK_TIMEOUTS = {"update": 30.0}
+    STOP_CHECK_TIMEOUTS = {"update": 30.0, "finalize": 10.0}
 
     def __init__(self):
         """[兼容旧专项] 仅装配旧专项执行桥与私有状态；新执行树使用 TaskBase 和显式上下文。"""

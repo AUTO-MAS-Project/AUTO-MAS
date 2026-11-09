@@ -47,12 +47,10 @@ class TaskProcessScope:
 
     def add_check(
         self, name: str, run: Callable[[], Awaitable[None]], *, timeout: float
-    ) -> StopCheck:
+    ) -> None:
         if timeout <= 0:
             raise ValueError("停止检查超时必须大于 0")
-        check = StopCheck(name, run, timeout)
-        self.checks.append(check)
-        return check
+        self.checks.append(StopCheck(name, run, timeout))
 
     def retain_worker(self, task: asyncio.Task) -> None:
         """保留反映底层真实完成的句柄，不让统一取消制造假完成。"""
@@ -63,8 +61,8 @@ class TaskProcessScope:
         self._finalizers[task] = timeout
         task.add_done_callback(lambda done: self._finalizers.pop(done, None))
         if self.requested or self.closed:
-            # 停止已请求后才出现的收尾，也必须遵守自己的确认上限；
-            # 不能等强杀结束后才开始计时。
+            # 停止确认已启动的新收尾也必须有上限，不能卡在文件线程里。
+            # 确认点超时和这里的取消计时独立运行，避免根 finalizer 悬空。
             timer = asyncio.get_running_loop().call_later(timeout, task.cancel)
             task.add_done_callback(lambda done: timer.cancel())
 
@@ -165,20 +163,17 @@ class TaskProcessScope:
                     _consume_result(worker)
                 raise
 
-    async def run_checks(
-        self, *, selected: tuple[StopCheck, ...] | None = None
-    ) -> None:
+    async def run_checks(self) -> None:
         self.requested = True
-        if selected is None:
-            # 停止开始时已有的收尾；后到的旧专项收尾由独立的交接确认点处理。
-            for finalizer, timeout in tuple(self._finalizers.items()):
-                if finalizer.done():
-                    continue
+        # 只确认停止时已经开始的收尾；每项独立限时，到期后仍执行强制清理。
+        for finalizer, timeout in tuple(self._finalizers.items()):
+            if finalizer.done():
+                continue
 
-                async def finish(task=finalizer) -> None:
-                    await asyncio.shield(task)
+            async def finish(task=finalizer) -> None:
+                await asyncio.shield(task)
 
-                self.add_check(f"finalize:{finalizer.get_name()}", finish, timeout=timeout)
+            self.add_check(f"finalize:{finalizer.get_name()}", finish, timeout=timeout)
 
         async def run(check: StopCheck) -> None:
             scope_token = current_process_scope.set(self)
@@ -204,8 +199,9 @@ class TaskProcessScope:
                 except (asyncio.CancelledError, Exception):
                     check.status = "failed"
 
-        checks = tuple(self.checks) if selected is None else selected
-        await asyncio.gather(*(run(check) for check in checks))
+        await asyncio.gather(
+            *(run(check) for check in self.checks if check.status == "pending")
+        )
 
     def ensure_can_start(self) -> None:
         if self.closed or (
