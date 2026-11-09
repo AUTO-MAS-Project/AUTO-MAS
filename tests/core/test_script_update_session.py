@@ -8,13 +8,20 @@ from uuid import uuid4
 import pytest
 
 from app.core import Publisher, script_update
+from app.core import script_update_queue as update_queue
 from app.core.script_update import ScriptUpdateSession
+from app.core.script_update_queue import (
+    report_script_task_completed,
+    report_script_task_retrying,
+    script_task_completed,
+    script_task_retrying,
+)
 from app.core.task_manager import _TaskManager
 from app.core.update import download_observer
 from app.core.ws import protocol
 from app.models.config import MaaConfig
 from app.models.config.setting import GlobalConfig
-from app.models.task import WSTaskPrefetchData
+from app.models.task import TaskScriptItem, TaskUserItem, WSTaskPrefetchData
 from app.task.legacy import LegacyCallbacks
 from app.task.script_expander import ScriptExpander
 from tests.config_support import activate_config
@@ -134,3 +141,92 @@ async def test_other_task_holding_target_lock_skips_prefetch(monkeypatch):
     finally:
         await config.unlock(ticket)
         await manager.callbacks.close()
+
+
+@pytest.mark.asyncio
+async def test_real_session_retry_stops_download_before_relogin_and_restarts_clock(
+    monkeypatch,
+):
+    """首次成功 -> 预下载 -> MAA 重登边界 -> 停写确认 -> 重新成功计时。"""
+    session, root, current, config, _, _, _ = await setup_session(monkeypatch)
+    next_uid = uuid4()
+    next_run = root.scripts.add(
+        TaskScriptItem, payload={"info": {"script_id": str(next_uid), "name": "Next"}}
+    )
+    await root.scripts.commit()
+    following = root.scripts[next_run]
+    following.users.add(
+        TaskUserItem, payload={"info": {"user_id": str(uuid4()), "name": "User"}}
+    )
+    await following.users.commit()
+    session._config.ScriptConfig[next_uid] = config
+    await current.set_state(status="运行")
+
+    monkeypatch.setattr(update_queue, "PREFETCH_GRACE_SECONDS", 0)
+    monkeypatch.setattr(update_queue, "PREFETCH_POLL_SECONDS", 0.001)
+    first_started = asyncio.Event()
+    cleanup_started = asyncio.Event()
+    allow_cleanup = asyncio.Event()
+    second_started = asyncio.Event()
+    attempts = 0
+    managers = []
+
+    async def download():
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            first_started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cleanup_started.set()
+                await allow_cleanup.wait()
+        else:
+            second_started.set()
+
+    def make_manager(_item):
+        manager = SimpleNamespace(
+            prefetch_script_update=download,
+            discard_prefetched_update=AsyncMock(),
+            callbacks=LegacyCallbacks(),
+        )
+        managers.append(manager)
+        return manager
+
+    session._make_manager = make_manager
+    completed_token = script_task_completed.set(session.mark_completed)
+    retry_token = script_task_retrying.set(lambda: session.retry(current, 1))
+    retry_task = None
+    try:
+        session.watch(current, 1)
+        report_script_task_completed()
+        await asyncio.wait_for(first_started.wait(), 2)
+        assert config.is_locked
+        assert session._completed_at is not None
+
+        # 模拟 MAA 在开始下一次模拟器登录前调用生产的重试通知入口。
+        retry_task = asyncio.create_task(report_script_task_retrying())
+        await asyncio.wait_for(cleanup_started.wait(), 2)
+        assert not retry_task.done()
+        assert session._completed_at is None
+        assert config.is_locked
+        assert not second_started.is_set()
+
+        allow_cleanup.set()
+        await asyncio.wait_for(retry_task, 2)
+        assert not config.is_locked
+        assert root.current.prefetch is None
+        assert managers[0].discard_prefetched_update.await_count == 1
+        await asyncio.sleep(0.02)
+        assert attempts == 1  # 旧时间不会让重新登录期间再次启动预下载。
+
+        report_script_task_completed()
+        await asyncio.wait_for(second_started.wait(), 2)
+        assert attempts == 2
+    finally:
+        allow_cleanup.set()
+        if retry_task is not None:
+            await asyncio.gather(retry_task, return_exceptions=True)
+        await session.close()
+        script_task_retrying.reset(retry_token)
+        script_task_completed.reset(completed_token)

@@ -86,6 +86,7 @@ class ScriptUpdateSession:
         self._make_manager = make_manager
         self._process_scope = process_scope
         self._completed_at: float | None = None
+        self._retrying = False
         self._config = config
         self._queue = ScriptUpdateQueue()
         self._pending: tuple[UUID, object, TaskExecuteBase] | None = None
@@ -100,8 +101,21 @@ class ScriptUpdateSession:
 
     def mark_completed(self) -> None:
         """记录当前专项既有结果面的首次成功，不向公共树写专项子任务状态。"""
-        if self._completed_at is None:
+        if not self._retrying and self._completed_at is None:
             self._completed_at = time.monotonic()
+
+    async def retry(self, current: TaskScriptItem, next_index: int | None) -> None:
+        """专项失败重登：停写确认后重新等首次成功，不影响正常账号切换。"""
+        self._retrying = True
+        self._completed_at = None
+        try:
+            # 下载（含 FluxDown 和安装线程）的取消必须先确认；不能在重登时
+            # 遗留旧下载，也不能沿用上一次尝试已经完成的候选。
+            await self._queue.finish(cancelled=True)
+            await self.discard()
+            self.watch(current, next_index)
+        finally:
+            self._retrying = False
 
     def _eligible(self, index: int) -> bool:
         scripts = list(self._task.scripts.values())

@@ -117,16 +117,23 @@ class ScriptExpander(TaskBase):
             ):
                 await script.set_state(status="跳过")
                 continue
-            from app.core.script_update_queue import script_task_completed
+            from app.core.script_update_queue import (
+                script_task_completed,
+                script_task_retrying,
+            )
 
             self._updates.watch(script, index + 1)
             token = script_task_completed.set(self._updates.mark_completed)
+            retry_token = script_task_retrying.set(
+                lambda: self._updates.retry(script, index + 1)
+            )
             try:
                 with Notify.task_notification_batch(
                     task_id=info.task_id, coordinator=self.report_coordinator
                 ):
                     await self._run_script(script)
             finally:
+                script_task_retrying.reset(retry_token)
                 script_task_completed.reset(token)
                 await self._updates.finish(
                     cancelled=self.cancelled or script.info.status in ("异常", "已取消")

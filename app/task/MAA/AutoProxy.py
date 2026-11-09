@@ -1460,6 +1460,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             for i in range(self.script_config.Run.RunTimesLimit):
                 if self.run_book[self.mode]:
                     break
+                if i:
+                    # 仅同一模式的真实失败重登触发；正常切号继续沿用首次
+                    # 成功时刻。必须先确认预下载停写，才能再次启动模拟器。
+                    from app.core.script_update_queue import report_script_task_retrying
+
+                    await report_script_task_retrying()
                 logger.info(
                     f"账号 {self.cur_user_item.name} - 模式: {self.mode} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
                 )

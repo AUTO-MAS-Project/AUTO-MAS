@@ -20,6 +20,9 @@ PREFETCH_POLL_SECONDS = 0.5
 script_task_completed: ContextVar[Callable[[], None] | None] = ContextVar(
     "script_task_completed", default=None
 )
+script_task_retrying: ContextVar[Callable[[], Awaitable[None]] | None] = ContextVar(
+    "script_task_retrying", default=None
+)
 
 
 def report_script_task_completed() -> None:
@@ -27,6 +30,13 @@ def report_script_task_completed() -> None:
     callback = script_task_completed.get()
     if callback is not None:
         callback()
+
+
+async def report_script_task_retrying() -> None:
+    """真正重登前撤销旧成功时刻，等预下载停写再交还专项。"""
+    callback = script_task_retrying.get()
+    if callback is not None:
+        await callback()
 
 
 async def _cancel_and_wait(task: asyncio.Task) -> None:
