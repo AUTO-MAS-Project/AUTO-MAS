@@ -5,8 +5,9 @@ from pathlib import Path
 import pytest
 from pydantic import Field
 
-from app.config import ConfigEntry, ConfigGroup
+from app.config import ConfigCollection, ConfigEntry, ConfigGroup
 from app.core.config.upgrade import CONFIG_FILES, MIGRATION_RECORD, upgrade_json_configs
+from app.models.config import EmulatorConfig
 from app.utils import io as config_io
 
 
@@ -30,23 +31,39 @@ def migrated_profile(tmp_path):
     return tmp_path, nodes
 
 
-@pytest.mark.parametrize("interrupted", [False, True])
+@pytest.mark.parametrize("failure", [None, "replace", "checkpoint"])
 def test_remigration_uses_current_json_and_resumes(
-    migrated_profile, monkeypatch, interrupted
+    migrated_profile, monkeypatch, failure
 ):
     folder, nodes = migrated_profile
-    if interrupted:
-        unlink = Path.unlink
+    if failure:
+        replace = Path.replace
+        write_file = config_io.write_file
+        target = folder / "emulators.yaml"
+        original = target.read_bytes()
 
-        def fail_removal(path, *args, **kwargs):
-            if path == folder / "legacy-json" / "EmulatorConfig.json":
+        def fail_replace(path, destination):
+            if destination == target:
                 raise PermissionError("file is occupied")
-            return unlink(path, *args, **kwargs)
+            return replace(path, destination)
+
+        def fail_checkpoint(path, *args, **kwargs):
+            if (
+                path == folder / MIGRATION_RECORD
+                and not (folder / "EmulatorConfig.json").exists()
+            ):
+                raise PermissionError("progress cannot be saved")
+            return write_file(path, *args, **kwargs)
 
         with monkeypatch.context() as patch:
-            patch.setattr(Path, "unlink", fail_removal)
+            if failure == "replace":
+                patch.setattr(Path, "replace", fail_replace)
+            else:
+                patch.setattr(config_io, "write_file", fail_checkpoint)
             with pytest.raises(PermissionError):
                 upgrade_json_configs(folder, nodes)
+        if failure == "replace":
+            assert target.read_bytes() == original
 
     upgrade_json_configs(folder, nodes)
 
@@ -82,5 +99,23 @@ def test_invalid_remigration_keeps_existing_yaml(migrated_profile, invalid):
 
     with pytest.raises(ValueError):
         upgrade_json_configs(folder, nodes)
+
+    assert saved == {path: path.read_bytes() for path in paths}
+
+
+def test_unconvertible_collection_keeps_yaml_and_archive(tmp_path):
+    nodes = {key: _Profile.build() for _, _, key in CONFIG_FILES}
+    nodes["EmulatorConfig"] = ConfigCollection.build([EmulatorConfig])
+    for old, _, _ in CONFIG_FILES:
+        config_io.write_file(tmp_path / old, {})
+    upgrade_json_configs(tmp_path, nodes)
+    for old, _, _ in CONFIG_FILES:
+        config_io.write_file(tmp_path / old, {})
+    config_io.write_file(tmp_path / "EmulatorConfig.json", {"instances": "bad"})
+    paths = [tmp_path / "emulators.yaml", tmp_path / "legacy-json/EmulatorConfig.json"]
+    saved = {path: path.read_bytes() for path in paths}
+
+    with pytest.raises(ValueError):
+        upgrade_json_configs(tmp_path, nodes)
 
     assert saved == {path: path.read_bytes() for path in paths}
