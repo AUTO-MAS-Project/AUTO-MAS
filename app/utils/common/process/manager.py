@@ -320,6 +320,8 @@ class ProcessManager:
         target_process: ProcessInfo,
         timeout_seconds: float = 60.0,
         min_create_time: float | None = None,
+        *,
+        owned: bool = True,
     ) -> None:
         """查找目标进程
 
@@ -328,6 +330,7 @@ class ProcessManager:
             timeout_seconds: 搜索超时秒数，按单调时钟计量，不受系统时钟跳变影响
             min_create_time: 进程创建时间下限（epoch 秒），早于该时刻创建的同名进程视为
                 启动前的残留实例并跳过，避免错误跟踪旧进程（留 2 秒容差吸收时间戳偏差）
+            owned: 明确接管时登记任务清理归属；仅观察已有窗口时传 False。
         """
 
         def _scan() -> tuple[psutil.Process, float | None] | None:
@@ -352,7 +355,7 @@ class ProcessManager:
                 proc, create_time = found
                 self.target_process = proc
                 scope = current_process_scope.get()
-                if scope is not None:
+                if scope is not None and owned:
                     scope.track(proc)
                 # 记录目标信息与创建时间, 供 reseek_target 改绑后继进程。
                 # 创建时间取扫描阶段已读到的值, 不重新查询: 进程可能在扫描后

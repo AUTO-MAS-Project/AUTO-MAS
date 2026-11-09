@@ -125,8 +125,11 @@ from app.task.MaaFW.tools.core.worker_protocol import (
 from app.utils import UTC4, ProcessInfo, ProcessManager, get_logger, power
 from app.utils import game_apk as _utils_game_apk
 from app.utils import io as _utils_io
-from app.utils.common.process.runner import create_subprocess
-from app.utils.common.process.scope import current_process_scope
+from app.utils.common.process.runner import create_subprocess, observe_process_exit
+from app.utils.common.process.scope import (
+    current_process_scope,
+    detached_process_context,
+)
 
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
@@ -579,6 +582,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.pretask_process: asyncio.subprocess.Process | None = None
         # 正在进行的运行前设置清理（见 _terminate_pretask_process）
         self.pretask_cleanup: asyncio.Task[None] | None = None
+        # 即使清理入口先清空 pretask_process，也要保留退出观察句柄；
+        # 停止确认超时或 native 强杀失败时不能提前放开项目预约。
+        self._stopping_pretask_process: asyncio.subprocess.Process | None = None
         self._cached_adb_address: str | None = None
         self._cached_device_info: DeviceInfo | None = None
         self._cached_adb_path: str | None = None
@@ -1091,7 +1097,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if not self._history_saved:
                     await self._save_user_history()
             finally:
-                await asyncio.to_thread(self._history_temp.cleanup)
+                try:
+                    if self.stopped_manually:
+                        # 即使设备关闭或统计中断，也必须把预约交给安全释放检查。
+                        await self._release_project_path()
+                finally:
+                    await asyncio.to_thread(self._history_temp.cleanup)
 
     async def _finalize_user(self) -> None:
         if self._user_teardown_pending:
@@ -2859,10 +2870,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self.pretask_process = None
             if process is None or process.returncode is not None:
                 return
+            self._stopping_pretask_process = process
             cleanup = asyncio.create_task(
                 _kill_pretask_process(process, self._append_log)
             )
             self.pretask_cleanup = cleanup
+            # 进程核对可能仍在 to_thread() 中。统一取消仅可打断等待，
+            # 不能取消真正负责清理的任务，否则后续释放预约永远等不到。
+            scope = current_process_scope.get()
+            if scope is not None:
+                scope.retain_worker(cleanup)
         await asyncio.shield(cleanup)
 
     async def _terminate_runner_process(self) -> None:
@@ -3402,6 +3419,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await self.game_process_manager.search_process(
                 ProcessInfo(exe=str(game_path.resolve())),
                 WINDOW_SEARCH_TIMEOUT_SECONDS,
+                owned=self.opened_game,
             )
         except Exception as exc:
             logger.warning(f"MaaFW 定位游戏进程窗口失败: {exc}")
@@ -3761,6 +3779,52 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _release_project_path(self) -> None:
         if self.project_lock_key is None:
             return
+        scope = current_process_scope.get()
+        if scope is not None and scope.requested:
+            # #1871 的新收尾确认可能早于统一进程清理结束，不能此时
+            # 放开预约；后面的强杀若失败，还可能有旧 pretask 在写目录。
+            key, self.project_lock_key = self.project_lock_key, None
+            pending = self._release_check_task
+            cleanup = self.pretask_cleanup
+            process = self._stopping_pretask_process
+
+            async def release_after_confirmed_stop() -> None:
+                await scope.finished.wait()
+                if scope.cleanup_failed:
+                    logger.error("MaaFW 任务进程未确认停止，保留项目占用，拒绝并发修改")
+                    return
+                if cleanup is not None:
+                    try:
+                        await asyncio.shield(cleanup)
+                    except Exception as error:
+                        logger.warning(f"MaaFW 运行前设置清理未确认，保留占用: {error}")
+                        return
+                if process is not None:
+                    # pretask 的 stdout 可能由游戏继承，不能用 process.wait()
+                    # 等其管道 EOF；只检查真正的进程退出状态。
+                    await observe_process_exit(process)
+                if pending is not None:
+                    try:
+                        await asyncio.shield(pending)
+                    except asyncio.CancelledError:
+                        # 核对通过停止令牌退出也算完成；它由 scope 保留，
+                        # 不会在文件操作尚未结束时被统一取消。
+                        # 若只是当前释放任务被取消，核对仍在运行，则继续保留预约。
+                        if not pending.cancelled():
+                            raise
+                    except Exception as error:
+                        logger.warning(f"MaaFW 项目核对未确认，保留占用: {error}")
+                        return
+                release_project_path_sync(key)
+
+            worker = asyncio.create_task(
+                release_after_confirmed_stop(),
+                name="maafw-confirmed-project-release",
+                context=detached_process_context(),
+            )
+            scope.retain_worker(worker)
+            return
+
         pending = self._release_check_task
         if pending is not None and not pending.done():
             # 资源加载失败后的核对 / 清理还在工作线程里改视图（用户停止时）：等它收尾，等不到就
