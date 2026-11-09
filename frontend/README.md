@@ -14,59 +14,22 @@
 ## 项目结构
 
 ```
-frontend/
-├── src/
-│   ├── api/            # OpenAPI 生成的类型与客户端
-│   ├── components/     # 跨模块组件，ui/ 为共享界面基础
-│   ├── composables/    # 业务 API、请求和可复用能力
-│   ├── views/          # 路由页面与模块内部组件、流程
-│   │   ├── setting/    # 设置
-│   │   ├── plan/       # 计划
-│   │   ├── queue/      # 调度队列
-│   │   ├── scheduler/  # 调度中心
-│   │   ├── history/    # 历史记录
-│   │   └── EditView/   # 专项编辑
-│   ├── router/         # 路由装配与导航
-│   ├── services/       # 共享服务，如 QueryClient
-│   ├── stores/         # Pinia 客户端共享状态
-│   ├── styles/         # 全局布局与共享表面样式
-│   ├── types/          # 手写领域类型
-│   ├── i18n/           # 词表与语言加载
-│   └── main.ts         # 主渲染入口
-├── electron/           # 主进程、preload、IPC 与桌面服务
-├── e2e/                # 隔离启动器与用户流程
-└── scripts/            # 开发和审计命令
+src/
+├── components/          # 组件
+│   └── AppLayout.vue   # 主布局组件
+├── views/              # 页面
+│   ├── Home.vue        # 主页
+│   ├── Scripts.vue     # 脚本管理
+│   ├── Plans.vue       # 计划管理
+│   ├── Queue.vue       # 调度队列
+│   ├── Scheduler.vue   # 调度中心
+│   ├── History.vue     # 历史记录
+│   └── Settings.vue    # 设置页面
+├── router/             # 路由配置
+├── composables/        # 组合式函数
+│   └── useTheme.ts     # 主题管理
+└── main.ts            # 应用入口
 ```
-
-## 开发入口
-
-分支、提交和 PR 按[开发文档站](https://doc.auto-mas.top/developer/)执行。
-工程规则以[前端规范](../.agents/skills/mas-frontend-standards/SKILL.md)和
-[UI 规范](../.agents/skills/mas-frontend-ui/SKILL.md)为准；本文提供工作顺序和代码入口。
-
-1. 写清用户操作、成功条件和受影响范围；交互改动列出加载、失败、禁用及保存后的表现。
-2. 沿调用链找到已有实现，明确组件职责、状态所有者、HTTP/IPC 契约、保存时机和错误反馈归属。
-3. 复用对应入口完成一个可运行的改动。组件局部草稿、Pinia 客户端共享状态和后端查询缓存分别管理；生成 API 通过生成器更新。
-4. 按[测试规范](TESTING.md)复用能证明目标行为的检查，并完成下方静态检查。组件尺寸和候选审计见[AUDITING.md](AUDITING.md)。
-5. 自查差异并提供验收证据；评审同时确认行为、职责和复用边界。UI 改动检查相关状态，样式改动检查应用的深浅主题。
-
-开始前可按场景查找以下真实实现：
-
-| 场景 | 参考入口 | 关注的职责 |
-| --- | --- | --- |
-| 普通设置字段保存 | [useSettingPersistence.ts](src/views/setting/useSettingPersistence.ts) | 字段补丁、指定字段回读、Electron 同步及保存结果 |
-| 设置区域与控件 | [TabFunction.vue](src/views/setting/TabFunction.vue)、[UpdateSettingsSection.vue](src/views/setting/UpdateSettingsSection.vue) | 复用 SectionCard/SettingRow，组织业务选项和事件 |
-| 独立桌面偏好区域 | [PressSoundSettings.vue](src/views/setting/components/PressSoundSettings.vue) | 直接复用既有 store，在区域内处理保存、导入和反馈，避免页面逐层转发 |
-| 脚本通用运行限制 | [ScriptRunLimitsSection.vue](src/views/EditView/Script/components/ScriptRunLimitsSection.vue) | 组合四字段并发送保存字段键；父页读取自己的最新草稿，保留保存入口和专项提示 |
-| 用户字段补丁构造 | [fieldPatch.ts](src/utils/fieldPatch.ts) | 从字段路径构造最小补丁；别名、序列化、队列和回读仍由调用方拥有 |
-| 共享后端选项 | [useEmulatorOptions.ts](src/composables/useEmulatorOptions.ts) | 查询键、缓存、加载状态与失效；页面保留自己的选项显示 |
-| 脚本字段即时保存 | [useScriptSaveMutation.ts](src/composables/useScriptSaveMutation.ts) | 按脚本串行、待执行同字段合并、保存后回读及聚合保存状态 |
-
-设置的静态字段使用 [SettingChangeHandler](src/views/setting/settingTypes.ts)，组、字段和值从生成 API 类型派生；
-通知描述表使用独立动态入口，并复用同一保存链路。选项由实际使用它们的区域维护，避免经过页面逐层转发。
-
-保存入口按业务语义选择。备份恢复、用户编辑和其他显式提交流程沿用各自契约；
-接入前核对初始化、并发、失败恢复及离开页面的行为，保留原有输入和反馈责任。
 
 ## 开发
 
@@ -168,15 +131,12 @@ yarn build
 - **桌面端**: Electron
 - **包管理**: Yarn
 
-检查命令均在 `frontend/` 执行；格式化修复只针对本次改动文件，检查使用全量入口。
+Vite+ 检查与测试命令
 
 ```bash
-yarn lint          # Oxlint 代码检查
-yarn typecheck     # Vue renderer 类型检查
-yarn format:check  # Oxfmt 格式检查
-yarn audit:i18n    # 词表审计
-yarn test          # Vitest 单元测试；也可按受影响文件选择
+yarn lint          # 查看问题
+yarn lint:fix      # 自动修复
+yarn format        # Oxfmt 全量格式化（非必须）
+yarn typecheck     # 检查 Vue renderer 类型
+yarn test          # 运行 Vitest 测试
 ```
-
-修改 Electron main/preload 时另执行 `node node_modules/typescript/bin/tsc -p tsconfig.electron.json --noEmit`。
-浏览器 E2E、真实运行和证据范围按 [TESTING.md](TESTING.md) 选择；构建、类型、行为与视觉验证各自覆盖不同问题。

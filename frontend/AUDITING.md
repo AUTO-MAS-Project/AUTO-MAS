@@ -1,13 +1,11 @@
 # 前端本地治理工具
 
 从 `frontend/` 使用项目 Yarn 4 执行，先 `yarn install --immutable`。工具版本由
-`package.json` 和 `yarn.lock` 固定。统计、重复和未使用报告用于定位候选，不自动删除文件；
-`audit:baseline --check` 是逐文件组件尺寸门禁，CI 与本地复用同一个入口。
+`package.json` 和 `yarn.lock` 固定。报告用于定位候选，不是 CI 门槛，不自动删除文件。
 
 ```powershell
 yarn audit:baseline
 yarn audit:baseline <基线提交>
-yarn audit:baseline --check <基线提交>
 yarn audit:unused
 yarn audit:unused --reporter json > ../.dev/frontend-governance/knip.json
 yarn audit:duplicates
@@ -22,23 +20,6 @@ yarn audit:duplicates
 按物理行（含空行）统计 `.ts`、`.vue`、`.css`，排除 `.test.*` / `.spec.*`。
 渲染层、生成 API、词表、Electron 分开计算，构建产物不计入。
 比较业务实现时只看相同组，不把锁文件、生成物或文件搬迁算成代码治理收益。
-
-## 组件尺寸门禁
-
-`yarn audit:baseline --check <基线提交>` 检查 `src/` 下的全部 `.vue` 文件，包含未忽略的
-未跟踪新文件。新增组件和基线不超过 500 行的组件不得超过 500 行；原超限组件不得
-超过自己的基线行数。删除其他文件不能抵消增长。无效或不可访问的基线明确失败，
-脚本不自行拉取、不猜测 `HEAD~1`；CI 先获取 PR 事件的精确 base SHA 再比较。
-
-Git 识别的重命名沿用旧路径的基线。未暂存搬迁或内容大幅改写可能无法识别，此时按
-新增组件检查；先在正常提交流程中暂存搬迁，再复核，不通过修改配额绕过。
-
-尺寸检查只是必要条件，不能判断是否新增了独立业务职责。超限组件新增或扩展业务时
-仍须先提取受影响职责，并让原组件比基线更短；局部维护只需不增长。职责与状态归属
-按项目前端规范审查，不靠压缩代码或搬走整段 script 达标。
-
-独立验证门禁逻辑使用 `node --test scripts/audit-baseline.check.mjs`，只在临时 Git 仓库
-创建样本与提交，不改当前仓库索引，也不依赖前端运行环境。
 
 ## Knip 入口与候选解释
 
