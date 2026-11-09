@@ -42,8 +42,9 @@ runs:
         if ($LASTEXITCODE -ne 0) { throw '前端打包失败' }
         yarn build:main
         if ($LASTEXITCODE -ne 0) { throw 'Electron 主进程编译失败' }
-        # electron-builder 下载 winCodeSign（编辑未签名 EXE 资源所需）时，
-        # GitHub Release 偶尔返回 429/5xx；只重试这一类外部网络故障。
+        # electron-builder 需要从 GitHub Release 下载 Electron 本体及
+        # winCodeSign（编辑未签名 EXE 资源所需）。两者出现 429/5xx 才重试；
+        # 其它构建失败立即抛出，不能因为日志里有无关网络字样而掩盖错误。
         # 其他失败立即抛出，不能让真实构建错误被重试掩盖。
         $maxAttempts = 3
         $PSNativeCommandUseErrorActionPreference = $false
@@ -56,15 +57,15 @@ runs:
             break
           }
 
-          $transientCodeSignDownload = Select-String -LiteralPath $logPath `
-            -Pattern 'winCodeSign-\d+\.\d+\.\d+\.7z: status code (?:429|5\d\d)' `
+          $transientReleaseDownload = Select-String -LiteralPath $logPath `
+            -Pattern 'cannot resolve https://github\.com/(?:electron/electron/releases/download/[^/]+/electron-v[^/]+-win32-x64\.zip|electron-userland/electron-builder-binaries/releases/download/winCodeSign-[^/]+/winCodeSign-[^/]+\.7z): status code (?:429|5\d\d)' `
             -Quiet
-          if (-not $transientCodeSignDownload -or $attempt -eq $maxAttempts) {
+          if (-not $transientReleaseDownload -or $attempt -eq $maxAttempts) {
             throw "Electron 构建失败（exit=$exitCode，尝试 $attempt/$maxAttempts）"
           }
 
           $delaySeconds = 20 * $attempt
-          Write-Warning "winCodeSign 下载暂时失败，$delaySeconds 秒后重试"
+          Write-Warning "Electron 构建依赖从 GitHub Release 下载暂时失败，$delaySeconds 秒后重试"
           Start-Sleep -Seconds $delaySeconds
         }
         if (-not (Test-Path -LiteralPath 'dist/win-unpacked/AUTO-MAS.exe' -PathType Leaf)) {
