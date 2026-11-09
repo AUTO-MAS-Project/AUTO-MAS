@@ -177,6 +177,7 @@ import { message, Modal } from 'ant-design-vue'
 import { EyeOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
+import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
@@ -307,16 +308,7 @@ const handleFieldSave = async (key: string, value: any) => {
 
   await enqueue(async () => {
     try {
-      // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
-      const parts = key.split('.')
-      let userData: Record<string, any> = {}
-      let current = userData
-
-      for (let i = 0; i < parts.length - 1; i++) {
-        current[parts[i]] = {}
-        current = current[parts[i]]
-      }
-      current[parts[parts.length - 1]] = value
+      let userData = buildFieldPatch(key, value)
 
       // 特殊处理：userName 需要同步到 Info.Name
       if (key === 'userName') {

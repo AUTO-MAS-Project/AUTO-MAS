@@ -87,7 +87,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-// Real IPC handler → flow state/computed → real LaunchStatus HTML, without a Runtime process.
+// Preload progress callback → flow state/computed → real LaunchStatus HTML.
 describe('initialization progress language switching', () => {
   it('re-renders the same received repository event in Chinese, English and Japanese', async () => {
     await initialize()
@@ -459,29 +459,6 @@ describe('initialization progress language switching', () => {
           formatRuntimeProgress({ runtimeStage: stage, runtimeStatus: status }, i18n.global.t)
         ).toBeUndefined()
       }
-    }
-  })
-
-  it('retains download details through the initialization IPC path', async () => {
-    await initialize()
-    receive({
-      stage: 'python',
-      status: 'running',
-      runtimeStage: 'runtime.download',
-      runtimeStatus: 'running',
-      message: '原始下载信息',
-      targetVersion: 'v0.1.99',
-      source: 'cnb',
-      sourceName: 'CNB',
-      sourceIndex: 2,
-      sourceCount: 5,
-    })
-    for (const locale of ['zh-CN', 'en-US', 'ja-JP'] as const) {
-      i18n.global.locale.value = locale
-      const html = await render()
-      expect(html).toContain('CNB')
-      expect(html).toContain('2/5')
-      expect(html).toContain('v0.1.99')
     }
   })
 

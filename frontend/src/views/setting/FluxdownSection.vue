@@ -5,6 +5,7 @@ import { message } from 'ant-design-vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ApiError, GetService } from '@/api'
 import type { GlobalConfig, FluxdownReleaseOut } from '@/api'
+import type { SettingChangeHandler } from './settingTypes'
 import { useFluxdownInstallApi } from '@/composables/useFluxdownInstallApi'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
 import {
@@ -25,7 +26,7 @@ const emit = defineEmits<{ installed: [] }>()
 
 const props = defineProps<{
   settings: GlobalConfig
-  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<boolean>
+  handleSettingChange: SettingChangeHandler
 }>()
 
 // FluxDown 路径：只自动选中 CLI + Agent/Daemon 均在同一目录的安装。
@@ -123,10 +124,23 @@ const mirrorOptions = computed(() => [
   { label: t('core.setting.others.fluxdownMirrorGithub'), value: 'github' },
 ])
 // 下载器二选一：两项都短，用分段控件直接摊开，省一次下拉展开
-const downloaderOptions = computed(() => [
+type Downloader = NonNullable<NonNullable<GlobalConfig['Update']>['Downloader']>
+const downloaderOptions = computed<{ label: string; value: Downloader }[]>(() => [
   { label: t('core.setting.others.downloaderBuiltin'), value: 'builtin' },
   { label: t('core.setting.others.downloaderFluxdown'), value: 'fluxdown' },
 ])
+
+const handleDownloaderChange = (value: unknown) => {
+  const option = downloaderOptions.value.find(option => option.value === value)
+  if (option) void props.handleSettingChange('Update', 'Downloader', option.value)
+}
+
+const handleFluxdownPathBlur = (event: FocusEvent) => {
+  const input = event.target
+  if (input instanceof HTMLInputElement) {
+    void props.handleSettingChange('Update', 'FluxdownPath', input.value)
+  }
+}
 
 const installing = ref(false)
 const installProgress = ref<WSFluxdownInstallProgressData | null>(null)
@@ -225,7 +239,7 @@ const handleMasInstall = async () => {
     <a-segmented
       :value="settings.Update?.Downloader ?? 'builtin'"
       :options="downloaderOptions"
-      @change="(value: any) => handleSettingChange('Update', 'Downloader', value)"
+      @change="handleDownloaderChange"
     />
   </SettingRow>
 
@@ -239,7 +253,7 @@ const handleMasInstall = async () => {
           :value="settings.Update?.FluxdownPath ?? ''"
           :placeholder="t('core.setting.others.fluxdownPathPlaceholder')"
           class="path-input"
-          @blur="(e: any) => handleSettingChange('Update', 'FluxdownPath', e.target.value)"
+          @blur="handleFluxdownPathBlur"
         />
         <a-tooltip :title="t('core.setting.others.fluxdownBrowse')">
           <a-button

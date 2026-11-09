@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import { VideoCameraOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
+import type { SettingChangeHandler } from '../settingTypes'
 import { useObsReplayApi } from '@/composables/useObsReplayApi'
 import type { ObsReplayCheckResult } from '@/types/replay'
 import SectionCard from '@/components/ui/SectionCard.vue'
@@ -14,11 +15,7 @@ const { t } = useI18n()
 
 const props = defineProps<{
   settings: GlobalConfig
-  handleSettingChange: (
-    category: keyof GlobalConfig,
-    key: string,
-    value: unknown
-  ) => Promise<boolean>
+  handleSettingChange: SettingChangeHandler
 }>()
 
 const replaySettings = computed(() => props.settings.Replay ?? null)
@@ -54,7 +51,12 @@ watch(videoStorageLimit, (value, previousValue) => {
   if (videoStorageLimitDraft.value === previousValue) videoStorageLimitDraft.value = value
 })
 
-const updateReplaySetting = async (key: string, value: unknown) => {
+type ReplayConfig = NonNullable<GlobalConfig['Replay']>
+
+const updateReplaySetting = async <Key extends keyof ReplayConfig>(
+  key: Key,
+  value: ReplayConfig[Key]
+) => {
   try {
     await props.handleSettingChange('Replay', key, value)
     if (key === 'Port' || key === 'Password' || key === 'Enabled') checkResult.value = null

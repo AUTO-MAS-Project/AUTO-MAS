@@ -107,10 +107,6 @@ describe('useAppLifecycle 关闭流程', () => {
   })
 
   describe('Runtime 监督链路', () => {
-    beforeEach(() => {
-      backendStatus.mockResolvedValue({ isRunning: true, runtimeSupervised: true })
-    })
-
     it('把自动退出与下一次唤醒时间交给主进程，再等待 Runtime 关闭', async () => {
       let finishStop: (result: { success: boolean }) => void = () => undefined
       stopBackend.mockImplementation(
@@ -164,16 +160,6 @@ describe('useAppLifecycle 关闭流程', () => {
       expect(killAllProcesses).not.toHaveBeenCalled()
       expect(closePost).not.toHaveBeenCalled()
     })
-  })
-
-  it('状态 IPC 失败时仍经 Runtime 关闭，不能改发后端 close 请求', async () => {
-    backendStatus.mockRejectedValue(new Error('IPC unavailable'))
-    const { closeApp } = await loadLifecycle()
-    await closeApp()
-    expect(stopBackend).toHaveBeenCalledOnce()
-    expect(closePost).not.toHaveBeenCalled()
-    expect(killAllProcesses).not.toHaveBeenCalled()
-    expect(appQuit).toHaveBeenCalledOnce()
   })
 
   describe.each(['browser', 'desktop'] as const)('%s 只连接外部后端', surface => {

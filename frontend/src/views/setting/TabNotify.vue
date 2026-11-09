@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ApiOutlined, BellOutlined, FileTextOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import type { GlobalConfig, NotifyChannelOut } from '@/api'
+import type { DynamicSettingChangeHandler } from './settingTypes'
 import { Service } from '@/api'
 import { useClawBinding } from './useClawBinding'
 import NotifyChannelCard from './components/NotifyChannelCard.vue'
@@ -22,7 +23,7 @@ import { handleExternalLink } from '@/utils/openExternal'
 
 const props = defineProps<{
   settings: GlobalConfig
-  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<boolean>
+  handleSettingChange: DynamicSettingChangeHandler
   testNotify: () => Promise<void>
   testingNotify: boolean
 }>()

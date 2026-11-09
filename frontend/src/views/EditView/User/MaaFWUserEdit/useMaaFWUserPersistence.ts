@@ -1,6 +1,7 @@
 import type { Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUserApi } from '@/composables/useUserApi'
+import { buildFieldPatch } from '@/utils/fieldPatch'
 import type { MaaFWInterfacePreviewData, MaaFWTaskSnapshot, MaaFWUserConfig } from '@/types/script'
 import { normalizeTaskSnapshot } from './maafwTaskSnapshot'
 import type { MaaFWUserFormState } from './useMaaFWUserForm'
@@ -55,15 +56,7 @@ export function useMaaFWUserPersistence({
     if (isInitializing.value || !userIdHolder.value) return
 
     return await enqueueSave(async () => {
-      const parts = key.split('.')
-      let userData: Record<string, unknown> = {}
-      let current = userData
-
-      for (let i = 0; i < parts.length - 1; i++) {
-        current[parts[i]] = {}
-        current = current[parts[i]] as Record<string, unknown>
-      }
-      current[parts[parts.length - 1]] = value
+      let userData = buildFieldPatch(key, value)
 
       if (key === 'userName') {
         userData = { Info: { Name: value } }

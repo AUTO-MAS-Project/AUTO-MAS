@@ -6,11 +6,8 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import type { useTemplateApi } from '@/composables/useTemplateApi'
 import type { useMaaFWEmbeddedApi } from '@/composables/useMaaFWEmbeddedApi'
 import { maafwRouteLocation } from '@/router/maafwFlavorRoutes'
-import {
-  getScriptEditSegment,
-  isMfwFamily,
-  type ScriptCreateRequest,
-} from './components/scriptCreateFlow'
+import { scriptEditorLocation } from '@/router/scriptEditorRoutes'
+import { isMfwFamily, type ScriptCreateRequest } from './components/scriptCreateFlow'
 import type { ScriptType } from '@/types/script'
 import type { ScriptListItem } from './scriptListModel'
 import { analyticsScriptType, beginAnalyticsOperation } from '@/utils/analytics'
@@ -34,7 +31,7 @@ export function useScriptCreation(options: CreationOptions) {
     void router.push({
       ...(isMfwFamily(type)
         ? maafwRouteLocation(type, 'setup', { id: scriptId })
-        : { path: `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}` }),
+        : scriptEditorLocation(type, 'script', { id: scriptId })),
       ...(data
         ? {
             state: { scriptData: { id: scriptId, type, config: JSON.parse(JSON.stringify(data)) } },
