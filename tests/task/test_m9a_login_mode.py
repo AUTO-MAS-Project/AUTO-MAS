@@ -95,7 +95,7 @@ class _Script:
 
 
 def _decorate(
-    mode: str, account: str = "小逗芽呀"
+    mode: str, account: str = "示例账号"
 ) -> tuple[list[str], dict, list[str]]:
     logs: list[str] = []
     ids, options = FLAVOR.decorate_selection(
@@ -127,7 +127,7 @@ def test_project_mode_keeps_switch_account_with_nickname() -> None:
         for task_id, entry in ENTRY_BY_NAME.items()
         if entry == SWITCH_ACCOUNT_ENTRY
     )
-    assert options[switch_id] == {"目标账号": {"账号": "小逗芽呀"}}
+    assert options[switch_id] == {"目标账号": {"账号": "示例账号"}}
 
 
 def test_supports_account_switch_reads_login_mode() -> None:
@@ -179,7 +179,7 @@ def test_login_hook_skips_in_project_mode() -> None:
     message = asyncio.run(
         FLAVOR.ensure_logged_in(
             script_config=_Script("Project"),
-            user_config=_User("小逗芽呀"),
+            user_config=_User("示例账号"),
             resource_name="官服",
             package_name="",
             adb_path=None,

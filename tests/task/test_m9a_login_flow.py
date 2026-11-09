@@ -62,7 +62,7 @@ _PRIVACY_SCREEN = [
 #: 登录记录面板（收起态：当前昵称 + 登录 + 切换其他账号）
 _PANEL_SCREEN = [
     ("登录记录", (45, 30, 10, 10)),
-    ("小逗芽呀", (45, 45, 10, 10)),
+    ("示例账号", (45, 45, 10, 10)),
     ("登录", (45, 55, 10, 10)),
     ("切换其他账号", (45, 62, 10, 10)),
 ]
@@ -73,7 +73,7 @@ _TITLE_SCREEN = [
 ]
 #: 登录成功后的标题页：START 被「<昵称> 欢迎回来」横幅盖住 / 淡化，只剩横幅可读
 _WELCOME_SCREEN = [
-    ("小逗芽呀 欢迎回来", (20, 4, 40, 8)),
+    ("示例账号 欢迎回来", (20, 4, 40, 8)),
     ("切换账号", (80, 4, 10, 8)),
 ]
 #: 认不出的画面（主界面截图里没有 START / 登录记录）
@@ -163,7 +163,7 @@ def _fast(monkeypatch) -> None:
     monkeypatch.setattr(login_mod, "_LAUNCH_TIMEOUT", 0.3)
 
 
-def _run_login(account: str = "小逗芽呀"):
+def _run_login(account: str = "示例账号"):
     return login_mod.ensure_logged_in(
         script_config=_Script(),
         user_config=_User(account),
@@ -522,7 +522,7 @@ def test_mas_login_rejects_official_client() -> None:
         asyncio.run(
             login_mod.ensure_logged_in(
                 script_config=_Script(),
-                user_config=_User("小逗芽呀"),
+                user_config=_User("示例账号"),
                 resource_name="B 服",
                 package_name="com.shenlan.m.reverse1999",
                 adb_path="adb",
@@ -538,7 +538,7 @@ def test_mas_login_rejects_official_resource() -> None:
         asyncio.run(
             login_mod.ensure_logged_in(
                 script_config=_Script(),
-                user_config=_User("小逗芽呀"),
+                user_config=_User("示例账号"),
                 resource_name="官服",
                 package_name=None,
                 adb_path="adb",
@@ -554,7 +554,7 @@ def test_mas_login_rejects_other_server_resource() -> None:
         asyncio.run(
             login_mod.ensure_logged_in(
                 script_config=_Script(),
-                user_config=_User("小逗芽呀"),
+                user_config=_User("示例账号"),
                 resource_name="国际服（EN）",
                 package_name=None,
                 adb_path="adb",
