@@ -3723,6 +3723,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if pending is not None:
                     try:
                         await asyncio.shield(pending)
+                    except asyncio.CancelledError:
+                        # 核对通过停止令牌退出也算完成；它由 scope 保留，
+                        # 不会在文件操作尚未结束时被统一取消。
+                        # 若只是当前释放任务被取消，核对仍在运行，则继续保留预约。
+                        if not pending.cancelled():
+                            raise
                     except Exception as error:
                         logger.warning(f"MaaFW 项目核对未确认，保留占用: {error}")
                         return

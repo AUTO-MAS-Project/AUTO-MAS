@@ -279,3 +279,94 @@ async def test_confirmed_force_stop_releases_project_after_pretask_snapshot_fini
         if account is not None:
             await account._release_project_path()
         await asyncio.to_thread(snapshot_done.wait, 2)
+
+
+@pytest.mark.asyncio
+async def test_cancelled_release_check_releases_project_after_stop(
+    tmp_path, monkeypatch, isolated_app_paths
+):
+    """Stopping a real release check waiting on another update must permit rerun."""
+    import json
+
+    from app.task.MaaFW.tools.embedded import embedded_project, view_update
+
+    monkeypatch.chdir(tmp_path)
+    config = await activate_config(MaaFWConfig())
+    user = await activate_config(
+        MaaFWUserConfig.build(payload={"Notify": {"Enabled": False}})
+    )
+    user_id = uuid.uuid4()
+    source = tmp_path / "source"
+    (source / "resource").mkdir(parents=True)
+    (source / "interface.json").write_text(
+        json.dumps(
+            {
+                "interface_version": 2,
+                "name": "StopCheck",
+                "version": "1.0",
+                "github": "https://github.com/audit/stop-check",
+                "resource": [{"name": "Default", "path": ["resource"]}],
+                "task": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (source / "resource/data.json").write_text("{}", encoding="utf-8")
+    await asyncio.to_thread(
+        embedded_project.import_embedded_project,
+        str(config.uid),
+        source,
+        verify_release=False,
+    )
+    view = embedded_project.embedded_project_dir(str(config.uid))
+    marker = embedded_project.read_view_marker(view)
+    assert marker is not None
+    lock = view_update.lineage_update_lock(str(marker["lineage"]))
+    account = None
+
+    class RunningAccount(MaaFWPluginAutoProxyTask):
+        async def main_task(self):
+            assert await self._try_enter_project_path()
+            self.check_result = "Pass"
+            await self._recover_resource_failure("load_failed")
+
+    class Task(StopTask):
+        async def main_task(self):
+            nonlocal account
+            script = await add_script(
+                info=self.task_info, script_id=str(config.uid), user_id=str(user_id)
+            )
+            account = RunningAccount(
+                script_info=script,
+                script_config=config,
+                user_config={user_id: user},
+                emulator_manager=None,
+            )
+            await self.spawn(account)
+
+    await lock.acquire()
+    task = Task()
+    task.start()
+    try:
+        # Keep the other update's lock held until the check actually waits on it.
+        async with asyncio.timeout(3):
+            while not lock._waiters:
+                await asyncio.sleep(0.01)
+        await asyncio.wait_for(task.stop(), 3)
+        assert task._stop_scope.finished.is_set()
+        assert not task._stop_scope.cleanup_failed
+        assert account is not None
+        assert account._release_check_task.cancelled()
+        # Deferred release may finish on the next loop turn after stop returns.
+        key = None
+        try:
+            async with asyncio.timeout(1):
+                while (key := await try_reserve_project_path(view)) is None:
+                    await asyncio.sleep(0.01)
+        finally:
+            await release_project_path(key)
+    finally:
+        lock.release()
+        await task.stop()
+        if account is not None:
+            await account._release_project_path()
