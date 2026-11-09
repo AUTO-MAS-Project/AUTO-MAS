@@ -1354,15 +1354,14 @@ const handleBossKeyInputChange = (uuid: string) => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   background: var(--ant-color-bg-layout);
 }
 
 .page-content {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   background: transparent;
   padding: 0;
   border-radius: 0;
