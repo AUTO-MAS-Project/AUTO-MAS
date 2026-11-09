@@ -45,6 +45,91 @@ class Builtin(TaskExecuteBase):
         raise exc
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_prefetch_follows_new_dispatch_and_waits_for_cancel_cleanup(
+    scheduler, monkeypatch, cancel
+):
+    from app.core import script_update_queue
+    from app.models.task import TaskScriptItem
+
+    manager, scripts, _, sid = scheduler
+    next_id = scripts.add(GeneralConfig, payload={"Info": {"Name": "next"}})
+    await scripts.commit()
+    scripts[next_id].UserData.add(
+        GeneralUserConfig,
+        payload={"Info": {"Name": "next-user", "Status": True, "RemainedDay": -1}},
+    )
+    await scripts[next_id].UserData.commit()
+    downloaded, cleanup_started, release = (
+        asyncio.Event(),
+        asyncio.Event(),
+        asyncio.Event(),
+    )
+    consumed = []
+    main_cancelled = asyncio.Event()
+    monkeypatch.setattr(script_update_queue, "PREFETCH_GRACE_SECONDS", 0)
+    monkeypatch.setattr(script_update_queue, "PREFETCH_POLL_SECONDS", 0.001)
+
+    class PrefetchBuiltin(Builtin):
+        prepared = False
+
+        async def prefetch_script_update(self):
+            from app.utils.common.process.scope import current_process_scope
+
+            assert current_process_scope.get() is not None
+            assert scripts[next_id].is_locked
+            self.prepared = True
+            downloaded.set()
+            if cancel:
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cleanup_started.set()
+                    await release.wait()
+
+        async def discard_prefetched_update(self):
+            self.prepared = False
+
+        async def main_task(self):
+            assert isinstance(self.script_info, TaskScriptItem)
+            await self.script_info.set_state(status="运行")
+            if self.script_info.info.script_id == str(sid):
+                script_update_queue.report_script_task_completed()
+                await downloaded.wait()
+                if cancel:
+                    try:
+                        await asyncio.Event().wait()
+                    finally:
+                        main_cancelled.set()
+            else:
+                assert self.prepared
+                consumed.append(self.script_info.info.script_id)
+            await super().main_task()
+
+    manager.manager_factories = {GeneralConfig: PrefetchBuiltin}
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY,
+        {0: {"uid": "-", "children": {0: {"uid": str(sid)}, 1: {"uid": str(next_id)}}}},
+    )
+    run = manager.task_handler[uid]
+    if cancel:
+        await asyncio.wait_for(downloaded.wait(), 3)
+        stop = asyncio.create_task(run.stop())
+        await asyncio.wait_for(cleanup_started.wait(), 3)
+        assert not stop.done() and scripts[next_id].is_locked
+        assert not main_cancelled.is_set()
+        release.set()
+        await asyncio.wait_for(stop, 3)
+        assert not consumed and run.task_info.status == "cancelled"
+    else:
+        await asyncio.wait_for(run.accomplish.wait(), 4)
+        assert run.error is None and run.task_info.status == "success"
+        assert consumed == [str(next_id)]
+    assert run.task_info.current.prefetch is None
+    assert not scripts[next_id].is_locked
+
+
 @pytest_asyncio.fixture
 async def scheduler():
     scripts = ConfigCollection[ScriptConfigType].build([GeneralConfig])

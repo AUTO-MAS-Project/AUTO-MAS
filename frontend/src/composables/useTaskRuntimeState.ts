@@ -1,4 +1,4 @@
-import { TaskTriggerReason } from '@/api'
+import { type WSTaskPrefetchData, TaskTriggerReason } from '@/api'
 import { applyTaskLogUpdate } from './taskLogBuffer'
 import { projectTaskTree } from './taskTreeProjection'
 import { computed, ref } from 'vue'
@@ -43,6 +43,7 @@ export interface TaskRuntimeState {
   taskInfo: WSTaskScriptInfoData[]
   /** 本轮日志的唯一缓冲与序号；标签页只绑定运行 UUID。 */
   log: string
+  prefetch: WSTaskPrefetchData | null
   logSeq?: number
   logFirstLine?: number
   phase: 'created' | 'active' | 'completed'
@@ -119,6 +120,7 @@ const createUnknownTaskState = (taskId: string): TaskRuntimeState => ({
   scripts: [],
   taskInfo: [],
   log: '',
+  prefetch: null,
   phase: 'created',
   taskName: null,
   taskType: null,
@@ -156,6 +158,7 @@ const ensureTaskSubscriptions = (taskId: string): void => {
         mode: message.data.info?.mode ?? null,
         trigger: message.data.info?.trigger ?? current?.trigger ?? TaskTriggerReason.MANUAL,
         taskInfo: projectTaskTree(message.data),
+        prefetch: message.data.current?.prefetch ?? null,
         taskName: message.data.info?.name ?? current?.taskName ?? null,
       }
       setTaskState(state)
@@ -195,6 +198,7 @@ const handleTaskCompleted = (taskId: string, data: WSTaskCompletedData): void =>
   const state: TaskRuntimeState = {
     ...(current ?? createUnknownTaskState(taskId)),
     phase: 'completed',
+    prefetch: null,
     taskInfo: projectTaskTree(data.task),
     taskName: data.task.info?.name ?? current?.taskName ?? null,
     log: current?.log ?? '',
@@ -222,6 +226,7 @@ const stateFromSnapshot = (
     trigger: item.trigger ?? item.task.info?.trigger ?? TaskTriggerReason.MANUAL,
     scripts: cloneScripts(item.scripts),
     taskInfo: projectTaskTree(item.task),
+    prefetch: item.task.current?.prefetch ?? null,
     taskName: item.task.info?.name ?? current?.taskName ?? null,
     phase: 'active',
     result: null,
@@ -300,7 +305,7 @@ const loadTaskRuntimeSnapshot = async (
     for (const [taskId, state] of next) {
       if (state.phase === 'completed' || activeTaskIds.has(taskId)) continue
       // 无完成消息时只确认“不再运行”，保留已显示内容，不编造任务结果。
-      next.set(taskId, { ...state, phase: 'completed', completedAt: Date.now() })
+      next.set(taskId, { ...state, prefetch: null, phase: 'completed', completedAt: Date.now() })
       releaseTaskSubscriptions(taskId)
       removedTaskIds.push(taskId)
     }

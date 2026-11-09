@@ -231,8 +231,18 @@ async def test_prefetched_manager_rechecks_source_after_same_version_reimport(
     )
     await info.scripts.commit()
     manager = embedded_manager.MaaFWEmbeddedManager(info.scripts[item_uid])
-    # 基础候选能力独立验证；新调度按确认仍不创建 ScriptUpdateSession。
-    await manager.prefetch_script_update()
+    from app.core.update import download_observer
+
+    progress = []
+    token = download_observer.set(
+        lambda path, downloaded, total, speed: progress.append((downloaded, total))
+    )
+    try:
+        await manager.prefetch_script_update()
+    finally:
+        download_observer.reset(token)
+    assert any(downloaded == total and total > 0 for downloaded, total in progress)
+    assert info.scripts[item_uid].current.log == ""
     (source / "interface.json").write_text(json.dumps(replacement))
     second = await asyncio.to_thread(
         embedded_project.import_embedded_project, script_id, source

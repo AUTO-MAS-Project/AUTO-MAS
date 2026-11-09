@@ -7,6 +7,7 @@ import asyncio
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from contextvars import ContextVar
 
 from app.models.task import ScriptItem
 from app.utils import get_logger
@@ -16,23 +17,16 @@ logger = get_logger("脚本更新调度")
 PREFETCH_GRACE_SECONDS = 60
 PREFETCH_POLL_SECONDS = 0.5
 
+script_task_completed: ContextVar[Callable[[], None] | None] = ContextVar(
+    "script_task_completed", default=None
+)
 
-def _first_script_success(script: ScriptItem) -> float | None:
-    """跨账号查找本轮首次成功节点；兼容未绑定 TaskItem 的独立脚本对象。"""
-    if script.status != "运行":
-        return None
-    if script.first_task_completed_at is not None:
-        return script.first_task_completed_at
-    if not any(user.status == "运行" for user in script.user_list):
-        return None
-    return min(
-        (
-            user.first_task_completed_at
-            for user in script.user_list
-            if user.first_task_completed_at is not None
-        ),
-        default=None,
-    )
+
+def report_script_task_completed() -> None:
+    """由专项既有的成功结果面通知预下载调度。"""
+    callback = script_task_completed.get()
+    if callback is not None:
+        callback()
 
 
 async def _cancel_and_wait(task: asyncio.Task) -> None:
@@ -58,21 +52,35 @@ class ScriptUpdateQueue:
         self._download: asyncio.Task | None = None
 
     def watch(
-        self, script: ScriptItem, prepare_next: Callable[[], Awaitable[None]]
+        self,
+        script: ScriptItem,
+        prepare_next: Callable[[], Awaitable[None]],
+        *,
+        completed_at: Callable[[], float | None],
     ) -> None:
-        self._watcher = asyncio.create_task(self._watch(script, prepare_next))
+        self._watcher = asyncio.create_task(
+            self._watch(script, prepare_next, completed_at=completed_at)
+        )
 
     async def _watch(
-        self, script: ScriptItem, prepare_next: Callable[[], Awaitable[None]]
+        self,
+        script: ScriptItem,
+        prepare_next: Callable[[], Awaitable[None]],
+        *,
+        completed_at: Callable[[], float | None],
     ) -> None:
+        success = completed_at
         while True:
+            if script.status == "等待":
+                await asyncio.sleep(PREFETCH_POLL_SECONDS)
+                continue
             if script.status != "运行":
                 # 尚未满 60 秒，当前脚本已经结束/失败：不执行预下载。
                 return
-            completed_at = _first_script_success(script)
+            first_success = success()
             if (
-                completed_at is not None
-                and time.monotonic() - completed_at >= PREFETCH_GRACE_SECONDS
+                first_success is not None
+                and time.monotonic() - first_success >= PREFETCH_GRACE_SECONDS
             ):
                 break
             await asyncio.sleep(PREFETCH_POLL_SECONDS)
@@ -82,8 +90,7 @@ class ScriptUpdateQueue:
             while not self._download.done():
                 # 脚本内部正常切号不取消下载；失败或真正重试使成功信号失效。
                 if script.status in ("异常", "跳过") or (
-                    script.status == "运行"
-                    and _first_script_success(script) != completed_at
+                    script.status == "运行" and success() != first_success
                 ):
                     await _cancel_and_wait(self._download)
                     return

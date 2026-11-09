@@ -3518,6 +3518,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """将 worker 推来的阶段、任务起止事件归入本次尝试的专项记录。"""
 
         self._run_record_call(lambda: self._run_record.apply(data))
+        record = self._run_record.current
+        if record is not None and any(
+            task.outcome == "succeeded" for task in record.tasks
+        ):
+            from app.core.script_update_queue import report_script_task_completed
+
+            report_script_task_completed()
 
     def run_incident_notice(self) -> str:
         """本次运行里被原地打转检测或单任务时限停下的任务：进用户与脚本两份报告。

@@ -31,8 +31,8 @@
     <div
       ref="logContentRef"
       class="log-content"
-      :class="{ 'log-locked': logMode === 'follow', 'log-dark': logIsDark }"
-      :style="{ backgroundColor: logBackground, color: logForeground }"
+      :class="{ ...downloadClasses, 'log-locked': logMode === 'follow', 'log-dark': logIsDark }"
+      :style="{ ...downloadVariables, backgroundColor: logBackground, color: logForeground }"
     >
       <div v-if="!displayLog" class="empty-state">
         <NoData :image-style="{ height: '80px' }" :description="false" />
@@ -54,6 +54,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { useLogHighlight } from '@/composables/useLogHighlight'
+import { getDownloadParts, useDownloadLogStyle } from '@/composables/useDownloadLogStyle'
+import type { WSTaskPrefetchData } from '@/services/websocket/types'
 import { useTheme } from '@/composables/useTheme'
 import { configureLocalMonaco } from '@/utils/monaco'
 import { useLocalStorage } from '@vueuse/core'
@@ -70,6 +72,7 @@ const { t } = useI18n()
 
 interface Props {
   logContent: string
+  prefetch?: WSTaskPrefetchData | null
   active?: boolean
   runId?: string | null
   externalLogMode?: 'follow' | 'browse' // 外部控制的日志模式
@@ -85,24 +88,33 @@ type LogThemeMode = 'theme' | 'dark' | 'light'
 const props = defineProps<Props>()
 
 // 解构 props 以便在模板中直接使用（保持响应性）
-const displayLog = shallowRef('')
+const renderedLog = shallowRef('')
+const renderedPrefetch = shallowRef<WSTaskPrefetchData | null>(null)
 const displayFirstLine = ref(props.firstLine)
 let renderTimer: number | undefined
 let displayedRunId: string | null | undefined
 let wasActive = false
 const flushLog = () => {
   displayedRunId = props.runId
+  renderedPrefetch.value = props.prefetch ?? null
   const content = props.logContent
   const dropped = Math.max(0, content.length - 120000)
   let offset = dropped ? content.indexOf('\n', dropped) + 1 : 0
   if (offset <= 0) offset = dropped
   const notice = dropped ? t('core.scheduler.log.truncated') + '\n\n' : ''
-  displayLog.value = notice + content.slice(offset)
+  renderedLog.value = notice + content.slice(offset)
   displayFirstLine.value =
     props.firstLine + content.slice(0, offset).split('\n').length - 1 - (dropped ? 2 : 0)
 }
 watch(
-  () => [props.logContent, props.firstLine, props.active, props.externalLogMode, props.runId],
+  () => [
+    props.logContent,
+    props.prefetch,
+    props.firstLine,
+    props.active,
+    props.externalLogMode,
+    props.runId,
+  ],
   () => {
     if (renderTimer !== undefined && props.active === false) {
       window.clearTimeout(renderTimer)
@@ -115,7 +127,7 @@ watch(
     const immediate =
       !wasActive ||
       props.runId !== displayedRunId ||
-      !displayLog.value ||
+      !renderedLog.value ||
       props.externalLogMode === 'browse'
     wasActive = true
     if (immediate) {
@@ -163,6 +175,15 @@ const editorColors = computed(() => ({
   'editorGutter.background': logBackground.value,
 }))
 
+const { downloadClasses, downloadVariables } = useDownloadLogStyle(logIsDark)
+const downloadParts = computed(() => getDownloadParts(renderedPrefetch.value))
+const downloadText = computed(() => downloadParts.value.map(part => part.text).join(' · '))
+const displayLog = computed(() => {
+  if (!downloadText.value) return renderedLog.value
+  const separator = renderedLog.value && !renderedLog.value.endsWith('\n') ? '\n' : ''
+  return `${renderedLog.value}${separator}${downloadText.value}`
+})
+
 // 使用独立主题名，保留其他日志页面的配色。
 const { registerLogLanguage, editorTheme, editorConfig, lightColors, darkColors, styles } =
   useLogHighlight({ name: 'scheduler-log', isDark: logIsDark, colors: editorColors })
@@ -195,7 +216,31 @@ watch(
 )
 
 // Monaco Editor 实例
-let editorInstance: any = null
+let editorInstance: import('monaco-editor').editor.IStandaloneCodeEditor | null = null
+let downloadDecorations: import('monaco-editor').editor.IEditorDecorationsCollection | null = null
+let contentListener: import('monaco-editor').IDisposable | null = null
+const decorateDownload = () => {
+  const model = editorInstance?.getModel()
+  if (!model || !downloadDecorations || !downloadText.value) {
+    downloadDecorations?.clear()
+    return
+  }
+  const offset = displayLog.value.length - downloadText.value.length
+  let column = model.getPositionAt(offset).column
+  const line = model.getPositionAt(offset).lineNumber
+  downloadDecorations.set(
+    downloadParts.value.map(part => {
+      const range = {
+        startLineNumber: line,
+        startColumn: column,
+        endLineNumber: line,
+        endColumn: column + part.text.length,
+      }
+      column += part.text.length + 3
+      return { range, options: { inlineClassName: `download-log-${part.field}` } }
+    })
+  )
+}
 
 // Monaco Editor 配置
 const editorOptions = computed(() => ({
@@ -232,8 +277,12 @@ const editorOptions = computed(() => ({
 }))
 
 // 处理编辑器挂载
-const handleEditorMount = (editor: any) => {
+const handleEditorMount = (editor: import('monaco-editor').editor.IStandaloneCodeEditor) => {
   editorInstance = editor
+  contentListener?.dispose()
+  downloadDecorations = editor.createDecorationsCollection()
+  contentListener = editor.onDidChangeModelContent(decorateDownload)
+  decorateDownload()
   // 初始滚动到底部
   if (logMode.value === 'follow' && displayLog.value) {
     nextTick(() => scrollToBottom())
@@ -267,6 +316,7 @@ const scrollToBottom = () => {
 
 // 只监听日志内容变化
 watch(displayLog, () => {
+  void nextTick(decorateDownload)
   if (logMode.value === 'follow') {
     // 使用简单的延迟，避免nextTick可能导致的递归
     setTimeout(scrollToBottom, 10)
@@ -274,12 +324,15 @@ watch(displayLog, () => {
 })
 
 onUnmounted(() => {
+  contentListener?.dispose()
+  downloadDecorations?.clear()
   if (renderTimer !== undefined) window.clearTimeout(renderTimer)
   editorInstance = null
   monacoInstance = null
 })
 </script>
 
+<style src="@/components/downloadLog.css"></style>
 <style scoped src="./schedulerPanel.css"></style>
 
 <style scoped>
