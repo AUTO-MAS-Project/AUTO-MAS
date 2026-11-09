@@ -45,6 +45,7 @@ import pyzipper
 
 from app.utils import process
 from app.utils import update_files as _utils_update_files
+from app.utils.common.process.runner import popen_scoped
 
 from .checks import _resolve_within
 from .common import (
@@ -306,7 +307,7 @@ def _run_hpatchz(
     取消等待的话，它还攥着输出文件，本次收尾和下一轮都要跟它抢同一个名字。
     """
 
-    child = subprocess.Popen(
+    child = popen_scoped(
         [str(exe), str(base), str(diff), str(out)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

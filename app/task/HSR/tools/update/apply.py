@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from app.utils import get_logger
+from app.utils.common.process.runner import run_process_sync
 
 from ...task_mapping import engine_label
 from .discover import HSRUpdateError
@@ -309,7 +310,7 @@ def _extract_7z(package: Path, stage: Path, seven_zip: Path) -> None:
     # 解包前先列一遍：和 zip 路径同一套上限，外加拒绝符号链接。7za 只读头部，
     # 170MB 的包实测 0.03 秒。
     _inspect_7z(package, seven_zip)
-    completed = subprocess.run(
+    completed = run_process_sync(
         [str(seven_zip), "x", "-aoa", f"-o{stage}", str(package)],
         capture_output=True,
         text=True,
@@ -330,7 +331,7 @@ def _inspect_7z(package: Path, seven_zip: Path) -> None:
     符号链接必须在解包前就拒掉，不能指望之后再清。
     """
 
-    completed = subprocess.run(
+    completed = run_process_sync(
         [str(seven_zip), "l", "-slt", "-sccUTF-8", str(package)],
         capture_output=True,
         text=True,
