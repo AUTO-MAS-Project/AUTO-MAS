@@ -26,7 +26,12 @@ adb 截图 / 点击与 OCR 属于系统边界，这里用替身喂固定画面�
 2. 隐私政策提示 + 全局「同意哔哩哔哩用户协议」关闭 → 不点同意、失败并提示手动处理；
 3. 登录后只出现空帧 / 面板帧 → 不提前判成功（有界等待后失败）；
 4. 登录后连续两帧标题页 → 成功；
-5. 引擎侧：首次登录失败后重试必须重新调用登录钩子；客户端被重启后清掉「已登录」标记。
+5. 引擎侧：首次登录失败后重试必须重新调用登录钩子；客户端被重启后清掉「已登录」标记；
+6. 标题页信号：完整「REVERSE」、残词 `ERSE`、欢迎横幅都算，`PLAYERS` 这类词不算；
+7. 冷启动加载超过固定预算时服从 `Game.WaitTime`，不提前判「无法确认账号」；
+8. `Mas` 模式只接受 B 服资源与 B 服包名，配错客户端在碰模拟器之前就报错；
+9. 宿主推不出 ADB 路径时按地址用 MaaFW Toolkit 补上，钩子不再退回 PATH 的 `adb`；
+10. `adb` 子进程随任务停止被回收，缺可执行文件时给可处理的提示（而不是裸报错）。
 
 真机流程（MuMu + 真实客户端）仍按 ``docs/testing/e2e.md`` 在作者环境验证，不在 CI。
 """
@@ -34,6 +39,8 @@ adb 截图 / 点击与 OCR 属于系统边界，这里用替身喂固定画面�
 from __future__ import annotations
 
 import asyncio
+import sys
+import types
 
 import numpy as np
 import pytest
@@ -122,8 +129,15 @@ class _Run:
     LoginMode = "Mas"
 
 
+class _Game:
+    #: 默认不额外放宽「认不出画面」的预算，保持各用例原有的时限；
+    #: 需要验证「服从 Game.WaitTime」的用例自己改这一项。
+    WaitTime = 0
+
+
 class _Script:
     Run = _Run()
+    Game = _Game()
 
 
 def _install_fake_device(monkeypatch, screens) -> _FakeDevice:
@@ -153,7 +167,7 @@ def _run_login(account: str = "小逗芽呀"):
     return login_mod.ensure_logged_in(
         script_config=_Script(),
         user_config=_User(account),
-        resource_name="官服",
+        resource_name="B 服",
         package_name="com.shenlan.m.reverse1999.bilibili",
         adb_path="adb",
         adb_address="127.0.0.1:1",
@@ -207,7 +221,7 @@ def test_title_frames_confirm_handover(monkeypatch) -> None:
 
 
 class _Plan:
-    resourceName = "官服"
+    resourceName = "B 服"
 
 
 def _fake_runner() -> runner_task.MaaFWPluginAutoProxyTask:
@@ -237,6 +251,7 @@ def test_failed_login_is_retried_not_skipped(monkeypatch) -> None:
     runner = _fake_runner()
     hook, calls = _fake_hook(fail_first=True)
     monkeypatch.setattr(runner_task, "resolve_login_hook", lambda config: hook)
+    monkeypatch.setattr(runner, "_resolve_adb_path_by_toolkit", lambda address: None)
 
     with pytest.raises(MaaFWLoginRequired):
         asyncio.run(runner._ensure_logged_in("127.0.0.1:1", None))
@@ -433,3 +448,194 @@ def test_title_logo_fragment_confirms_handover(monkeypatch) -> None:
     device = _install_fake_device(monkeypatch, [_PANEL_SCREEN, ers, ers])
     message = asyncio.run(login_mod._wait_panel_closed(device, progress=None))
     assert "已确认回到游戏标题页" in message
+
+
+def test_title_logo_full_word_confirms_handover(monkeypatch) -> None:
+    """OCR 正确读出完整的「REVERSE」时同样是标题页（START 漏识、横幅已消失）。"""
+    _fast(monkeypatch)
+    reverse = [("REVERSE", (55, 60, 15, 4)), ("V4.1.0-113.0.1421-180", (5, 2, 20, 5))]
+    device = _install_fake_device(monkeypatch, [_PANEL_SCREEN, reverse, reverse])
+    message = asyncio.run(login_mod._wait_panel_closed(device, progress=None))
+    assert "已确认回到游戏标题页" in message
+
+
+def test_unknown_screen_budget_follows_game_wait_time(monkeypatch) -> None:
+    """认不出画面的预算取 Game.WaitTime，但不超过登录主循环的总时限。"""
+
+    class _Game120:
+        WaitTime = 120
+
+    class _Long:
+        Game = _Game120()
+
+    class _GameHuge:
+        WaitTime = 9999
+
+    class _Huge:
+        Game = _GameHuge()
+
+    class _GameTiny:
+        WaitTime = 5
+
+    class _Tiny:
+        Game = _GameTiny()
+
+    monkeypatch.setattr(login_mod, "_UNKNOWN_SCREEN_SECONDS", 60.0)
+    monkeypatch.setattr(login_mod, "_LOGIN_TIMEOUT", 240.0)
+    assert login_mod._unknown_screen_budget(_Long()) == 120.0
+    assert login_mod._unknown_screen_budget(_Huge()) == 240.0
+    assert login_mod._unknown_screen_budget(_Tiny()) == 60.0
+
+
+def test_slow_loading_is_not_cut_off_by_fixed_budget(monkeypatch) -> None:
+    """加载画面超过固定预算但仍在 Game.WaitTime 内时，继续等到登录记录，不提前判失败。"""
+    _fast(monkeypatch)
+    monkeypatch.setattr(login_mod, "_LOGIN_TIMEOUT", 30.0)
+    monkeypatch.setattr(login_mod, "_UNKNOWN_SCREEN_SECONDS", 0.2)
+    monkeypatch.setattr(_Script.Game, "WaitTime", 20)
+    expanded = [(text, box) for text, box in _PANEL_SCREEN if text != "切换其他账号"]
+    device = _install_fake_device(
+        monkeypatch,
+        [_UNKNOWN_SCREEN] * 60
+        + [
+            _TITLE_SCREEN,
+            _TITLE_SCREEN,
+            _TITLE_SCREEN,
+            [("确认", (40, 50, 10, 10))],
+            _PANEL_SCREEN,
+            _PANEL_SCREEN,
+            expanded,
+            _PANEL_SCREEN,
+            _TITLE_SCREEN,
+            _TITLE_SCREEN,
+        ],
+    )
+    # 固定 0.2 秒预算会先报「无法确认当前账号」；服从 WaitTime 后能等到 0.6 秒后的登录记录。
+    message = asyncio.run(_run_login())
+    assert "已确认回到游戏标题页" in message
+    assert device.taps
+
+
+def test_mas_login_rejects_official_client() -> None:
+    """Mas 模式配了官服包名时立刻报错，不拿官服客户端去走哔哩哔哩登录面板。"""
+    with pytest.raises(MaaFWLoginRequired, match="B 服客户端"):
+        asyncio.run(
+            login_mod.ensure_logged_in(
+                script_config=_Script(),
+                user_config=_User("小逗芽呀"),
+                resource_name="B 服",
+                package_name="com.shenlan.m.reverse1999",
+                adb_path="adb",
+                adb_address="127.0.0.1:1",
+                progress=None,
+            )
+        )
+
+
+def test_mas_login_rejects_official_resource() -> None:
+    """资源还是官服（包名留空、按 B 服包名兜底）时同样在启动客户端前拦下。"""
+    with pytest.raises(MaaFWLoginRequired, match="官服"):
+        asyncio.run(
+            login_mod.ensure_logged_in(
+                script_config=_Script(),
+                user_config=_User("小逗芽呀"),
+                resource_name="官服",
+                package_name=None,
+                adb_path="adb",
+                adb_address="127.0.0.1:1",
+                progress=None,
+            )
+        )
+
+
+def test_mas_login_rejects_other_server_resource() -> None:
+    """Mas 只允许 B 服资源：国际服等其它资源即使包名能兜底也要拦下。"""
+    with pytest.raises(MaaFWLoginRequired, match="B 服」资源"):
+        asyncio.run(
+            login_mod.ensure_logged_in(
+                script_config=_Script(),
+                user_config=_User("小逗芽呀"),
+                resource_name="国际服（EN）",
+                package_name=None,
+                adb_path="adb",
+                adb_address="127.0.0.1:1",
+                progress=None,
+            )
+        )
+
+
+def test_missing_adb_reports_actionable_error() -> None:
+    """ADB 可执行文件不存在时给出可处理的提示，而不是裸 FileNotFoundError。"""
+    device = login_mod._Device("/nonexistent/adb-does-not-exist", "127.0.0.1:1")
+    with pytest.raises(MaaFWLoginRequired, match="ADB 可执行文件"):
+        asyncio.run(device.tap_point(1, 1))
+
+
+def test_adb_command_is_stopped_when_task_is_cancelled(monkeypatch) -> None:
+    """停止任务时取消要真正回收 adb 子进程，不能只停协程。"""
+    stopped: list[bool] = []
+
+    class _SlowProcess:
+        returncode = None
+
+        async def communicate(self):
+            await asyncio.sleep(30)
+            return b"", b""
+
+    async def fake_create(*args, **kwargs):
+        return _SlowProcess()
+
+    async def fake_stop(process, *, kill_tree=False, deadline=None):
+        stopped.append(kill_tree)
+
+    monkeypatch.setattr(login_mod, "create_subprocess", fake_create)
+    monkeypatch.setattr(login_mod, "stop_process", fake_stop)
+
+    async def exercise():
+        device = login_mod._Device("adb", "127.0.0.1:1")
+        task = asyncio.create_task(device.tap_point(10, 20))
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(exercise())
+    assert stopped == [True]
+
+
+def test_login_hook_receives_toolkit_discovered_adb_path(monkeypatch) -> None:
+    """宿主推不出 ADB 路径时，钩子前按地址补上 Toolkit 发现的那条。"""
+    runner = _fake_runner()
+    hook, calls = _fake_hook(fail_first=False)
+    monkeypatch.setattr(runner_task, "resolve_login_hook", lambda config: hook)
+    monkeypatch.setattr(
+        runner, "_resolve_adb_path_by_toolkit", lambda address: "/opt/HD-Adb.exe"
+    )
+    asyncio.run(runner._ensure_logged_in("127.0.0.1:1", None))
+    assert calls[0]["adb_path"] == "/opt/HD-Adb.exe"
+
+
+def test_toolkit_discovery_matches_device_address(monkeypatch, tmp_path) -> None:
+    """按地址匹配 Toolkit 的发现结果；本机没有该地址时返回 None。"""
+    adb = tmp_path / "HD-Adb.exe"
+    adb.write_bytes(b"")
+
+    class _Found:
+        address = "127.0.0.1:5555"
+        adb_path = str(adb)
+
+    class _Toolkit:
+        @staticmethod
+        def find_adb_devices():
+            return [_Found()]
+
+    module = types.ModuleType("maa.toolkit")
+    module.Toolkit = _Toolkit
+    parent = types.ModuleType("maa")
+    parent.toolkit = module
+    monkeypatch.setitem(sys.modules, "maa", parent)
+    monkeypatch.setitem(sys.modules, "maa.toolkit", module)
+
+    runner = _fake_runner()
+    assert runner._resolve_adb_path_by_toolkit("127.0.0.1:5555") == str(adb)
+    assert runner._resolve_adb_path_by_toolkit("127.0.0.1:5556") is None

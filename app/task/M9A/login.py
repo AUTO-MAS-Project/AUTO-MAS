@@ -32,9 +32,10 @@
    - 「隐私政策提示」弹层：找到唯一的「同意」按钮（中心点限定在屏幕中下部）就点它；
    - 「登录记录」面板：收起态先点右侧箭头展开列表，再按登录记录里显示的完整昵称精确匹配
      （中心点限定在列表区域），唯一命中后点击，复核「登录」按钮与仍可见的昵称，最后点「登录」；
-   - 已登录停在标题页（OCR 到「START」，或标题 logo 下的「REVERSE」副标题常只读到 `ERSE`，或登录成功后
-     顶栏的「<昵称> 欢迎回来」横幅；START 有时太淡读不到）：MAS 无法知道当前登录的是哪个账号，为了保证
-     切到目标账号，点标题页右下角退出图标 → 唯一的「确认」→ 等「登录记录」面板出现后按上一条选号；
+   - 已登录停在标题页（OCR 到「START」，或标题 logo 下的「REVERSE」副标题——实机常只读到 `ERSE`，
+     或登录成功后顶栏的「<昵称> 欢迎回来」横幅；START 有时太淡读不到）：MAS 无法知道当前登录的是哪个
+     账号，为了保证切到目标账号，点标题页右下角退出图标 → 唯一的「确认」→ 等「登录记录」面板出现后按
+     上一条选号；
 3. 登录后等哔哩哔哩面板消失（游戏回到标题页），把这之后的进游戏与任务执行交给 M9A 的
    ``StartUp`` 与用户任务队列。
 
@@ -47,9 +48,13 @@
   不点「同意」，提示手动处理并停止本次登录，不新增第二份协议开关；
 - 既认不出登录记录、也认不出标题页（例如游戏停在别的账号的主界面）时，**明确停止**并让用户
   把游戏放到标题页——不能把"没认出登录页"当成"目标账号已登录"，否则任务会跑在错的账号上；
+  等待时长服从脚本的 `Game.WaitTime`（加载画面同样认不出，不能按固定 60 秒截断慢启动的客户端），
+  总时长仍受登录主循环的 240 秒约束；
 - 登录后必须连续若干帧认出标题页才算完成；过渡黑屏 / 加载 / OCR 漏字只算未知画面，继续
   有界等待，到点仍未确认就失败；
-- 所有循环都先检查总时限，``adb input tap`` 失败直接抛错，不让点击失败被静默吞掉。
+- 所有循环都先检查总时限，``adb input tap`` 失败直接抛错，不让点击失败被静默吞掉；
+- 只在 `Mas` 模式、资源是「B 服」、且实际要启动的客户端是 B 服包名时干活：配错客户端要立刻
+  报错，不能拿官服客户端去走哔哩哔哩登录面板。
 
 上游评估：当前上游 M9A 的 interface 已声明 B 服资源（运行任务可用），但「切换账号」任务仍只
 声明官服、也没有按 B 站昵称选号的入口，因此这里按**临时补位**处理并标注移除计划（上游提供等价
@@ -70,6 +75,7 @@ import re
 import subprocess
 import time
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from typing import Any
 
 import cv2
@@ -78,6 +84,7 @@ from PIL import Image
 
 from app.task.MaaFW.tools.embedded.flavor import MaaFWLoginRequired
 from app.utils import get_logger
+from app.utils.common.process.runner import create_subprocess, stop_process
 
 logger = get_logger("M9A B 服登录")
 
@@ -85,6 +92,8 @@ Progress = Callable[[str], Awaitable[None]]
 
 #: 官服包名是 ``com.shenlan.m.reverse1999``，B 服是 ``.bilibili`` 后缀的另一个客户端。
 BILIBILI_PACKAGE = "com.shenlan.m.reverse1999.bilibili"
+#: 上游 M9A interface 里 B 服资源的名字（实测写作「B 服」；比较时忽略空格）。
+_BILIBILI_RESOURCE_NAME = "B服"
 #: 哔哩哔哩 SDK 启动页 Activity；``resolve-activity`` 拿不到启动组件时兜底。
 BILIBILI_START_ACTIVITY = "com.ssgame.mobile.gamesdk.frame.AppStartUpActivity"
 
@@ -100,7 +109,7 @@ _CONFIRM_RE = re.compile(r"^确认$")
 
 #: 标题页可读的 OCR 文字：「START」按钮（允许 OCR 漏掉首字母）与标题 logo 下的「REVERSE」
 #: 副标题（实机常只读到 ERSE）。登录面板与主界面都读不到这两处。
-_TITLE_HINTS = ("START", "TART", "ERSE")
+_TITLE_HINTS = ("START", "TART", "REVERSE", "ERSE")
 #: 标题页右下角的退出图标位置（相对屏幕；实机 2560x1440 验证，点它弹「是否登出当前账号？」）。
 _EXIT_POINT = (0.956, 0.91)
 
@@ -118,8 +127,9 @@ _LAUNCH_TIMEOUT = 90.0
 #: 主循环（等登录界面 / 标题页）与登录后等面板关闭各自的上限。两处**分别计时**，不是共享
 #: 一个 240 秒总预算；隐私提示循环也受本时限约束。
 _LOGIN_TIMEOUT = 240.0
-#: 既没有登录界面、也认不出标题页时，持续多久就判「无法确认当前账号」并停止。
-#: 冷启动的加载页（只有版本号）也算认不出，所以给足加载时间，别在半路就判失败。
+#: 既没有登录界面、也认不出标题页时，**至少**等多久再判「无法确认当前账号」。
+#: 冷启动的加载页（只有版本号）也算认不出；上限由脚本的 ``Game.WaitTime`` 抬到用户愿意
+#: 为启动等的时间（见 ``_unknown_screen_budget``），不能按这个固定值截断慢启动的客户端。
 _UNKNOWN_SCREEN_SECONDS = 60.0
 #: 连续多少帧都认出标题页才判「已回到标题页」，避免过渡帧 / OCR 漏字误判。
 _TITLE_CONFIRM_FRAMES = 2
@@ -223,8 +233,36 @@ def _title_like(items: list[tuple[str, Box]]) -> bool:
     return any(text.strip().upper() in _TITLE_HINTS for text, _ in items)
 
 
+def _is_bilibili_resource(resource_name: str | None) -> bool:
+    """脚本资源是不是 B 服：上游 interface 里的名字是「B 服」（带空格），比较时忽略空格。"""
+
+    return str(resource_name or "").replace(" ", "").strip() == _BILIBILI_RESOURCE_NAME
+
+
+def _unknown_screen_budget(script_config: Any) -> float:
+    """认不出画面时最多等多久：服从脚本的「游戏启动等待」（``Game.WaitTime``）。
+
+    登录钩子跑在 worker 的启动等待之前，冷启动的加载画面在这里同样认不出；只看固定
+    60 秒会把加载慢的客户端在就绪前判成「无法确认当前账号」。``Game.WaitTime`` 正是
+    MAS 本来愿意为启动等的时间，取两者较大值；总时长仍不超过登录主循环的 ``_LOGIN_TIMEOUT``。
+    """
+
+    budget = _UNKNOWN_SCREEN_SECONDS
+    try:
+        wait = float(getattr(getattr(script_config, "Game", None), "WaitTime", 0) or 0)
+    except (AttributeError, TypeError, ValueError):  # 假配置对象缺项时用固定预算
+        return budget
+    if wait > budget:
+        budget = min(wait, _LOGIN_TIMEOUT)
+    return budget
+
+
 class _Device:
-    """一台 ADB 设备上的截图 / 点击 / 前台判断，全部走 ``adb`` 命令（不依赖 MaaFramework）。"""
+    """一台 ADB 设备上的截图 / 点击 / 前台判断，全部走 ``adb`` 命令（不依赖 MaaFramework）。
+
+    子进程走 MAS 的受管进程入口：任务被停止时命令随任务作用域一起结束，不会出现
+    「停止后迟到的点击 / 拉起还落在模拟器上」。
+    """
 
     def __init__(
         self, adb_path: str | None, address: str, host_adb: Any = None
@@ -234,6 +272,43 @@ class _Device:
         self.host_adb = host_adb
         self._aspect_checked = False
 
+    async def _exec(
+        self, *args: str, timeout: float = 20.0
+    ) -> tuple[int, bytes, bytes]:
+        """跑一条 adb 命令，返回 ``(返回码, 原始 stdout, 原始 stderr)``。
+
+        stdout 不能先解码：``exec-out screencap -p`` 是 PNG，一旦按文本解码就再也拼不回来。
+        超时或任务被停止时都先结束子进程再抛出，不留下还在跑的命令。
+        """
+
+        try:
+            process = await create_subprocess(
+                self.program,
+                "-s",
+                self.address,
+                *args,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError as exc:
+            raise MaaFWLoginRequired(
+                f"B 服登录失败：找不到 ADB 可执行文件「{self.program}」；"
+                "请在脚本设置里填写 ADB 路径（可执行文件名不一定是 adb.exe）"
+            ) from exc
+        try:
+            async with asyncio.timeout(timeout):
+                stdout, stderr = await process.communicate()
+        except (TimeoutError, asyncio.CancelledError):
+            with suppress(Exception):
+                await stop_process(process, kill_tree=True)
+            raise
+        return (
+            process.returncode if process.returncode is not None else -1,
+            stdout or b"",
+            stderr or b"",
+        )
+
     async def _run(
         self, *args: str, timeout: float = 20.0
     ) -> subprocess.CompletedProcess[bytes]:
@@ -241,24 +316,20 @@ class _Device:
             code, output = await self.host_adb(*args, timeout=timeout)
             data = output.encode("utf-8")
             return subprocess.CompletedProcess(args, code, data, data if code else b"")
-        return await asyncio.to_thread(
-            subprocess.run,
-            [self.program, "-s", self.address, *args],
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-        )
+        code, stdout, stderr = await self._exec(*args, timeout=timeout)
+        return subprocess.CompletedProcess(args, code, stdout, stderr)
 
     async def screencap(self) -> np.ndarray:
         # exec-out 是二进制安全通道（与 shell 不同，不会把 \n 转成 \r\n），原样交给 PIL
         if self.host_adb is not None:
             data = await self.host_adb.screencap_png(timeout=20.0)
-            result = subprocess.CompletedProcess([], 0, data, b"")
+            code, stderr = 0, b""
         else:
-            result = await self._run("exec-out", "screencap", "-p", timeout=20.0)
-            data = result.stdout
-        if result.returncode != 0 or not data:
-            detail = result.stderr.decode("utf-8", "ignore").strip()
+            code, data, stderr = await self._exec(
+                "exec-out", "screencap", "-p", timeout=20.0
+            )
+        if code != 0 or not data:
+            detail = stderr.decode("utf-8", "ignore").strip()
             suffix = f"（{detail}）" if detail else ""
             raise MaaFWLoginRequired(f"B 服登录失败：ADB 截图失败{suffix}")
         with Image.open(io.BytesIO(data)) as image:
@@ -560,7 +631,6 @@ async def ensure_logged_in(
     只在 ``Run.LoginMode == "Mas"`` 时做事；返回写进运行日志的一句话，没做事就是空串。
     """
 
-    del resource_name  # 资源名只用于引擎日志，登录只看登录模式
     mode = ""
     try:
         mode = str(getattr(getattr(script_config, "Run"), "LoginMode") or "")
@@ -580,6 +650,17 @@ async def ensure_logged_in(
             "B 服登录失败：账号为空，请在本账号的「账号」里填写登录记录中显示的完整昵称"
         )
     package = str(package_name or "").strip() or BILIBILI_PACKAGE
+    if package != BILIBILI_PACKAGE:
+        raise MaaFWLoginRequired(
+            f"B 服登录失败：登录方式选了「Mas」，但要启动的客户端是「{package}」；"
+            f"Mas 登录只能用于 B 服客户端（{BILIBILI_PACKAGE}）。"
+            "请把脚本资源与游戏包名都改成 B 服，或把登录方式改回「Project」"
+        )
+    if not _is_bilibili_resource(resource_name):
+        raise MaaFWLoginRequired(
+            f"B 服登录失败：登录方式选了「Mas」，但脚本资源是「{resource_name or '未选择'}」；"
+            "Mas 登录只支持「B 服」资源，请改选后再运行（或把登录方式改回「Project」）"
+        )
     device = _Device(adb_path, adb_address, host_adb)
 
     await _progress(
@@ -589,6 +670,7 @@ async def ensure_logged_in(
 
     deadline = time.monotonic() + _LOGIN_TIMEOUT
     unknown_since: float | None = None
+    unknown_budget = _unknown_screen_budget(script_config)
     title_polls = 0
     logout_tried = False
     while True:
@@ -628,11 +710,13 @@ async def ensure_logged_in(
 
         # 既不是登录界面、也认不出标题页（例如游戏停在别的账号的主界面）：
         # 无法确认当前账号，明确停止，不能把「没认出来」当成「目标账号已登录」。
+        # 冷启动的加载画面同样落在这里，所以预算服从 Game.WaitTime，不能按固定 60 秒截断。
         if unknown_since is None:
             unknown_since = time.monotonic()
-        elif time.monotonic() - unknown_since >= _UNKNOWN_SCREEN_SECONDS:
+        elif time.monotonic() - unknown_since >= unknown_budget:
             raise MaaFWLoginRequired(
-                "B 服登录失败：无法确认当前账号（画面既不是登录记录也不是游戏标题页）；"
+                "B 服登录失败：无法确认当前账号（画面既不是登录记录也不是游戏标题页，"
+                f"已等待 {int(unknown_budget)} 秒）；"
                 "请把游戏停在标题页或退出到登录界面后重试"
             )
         await asyncio.sleep(_POLL_SECONDS)

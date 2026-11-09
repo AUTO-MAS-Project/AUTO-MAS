@@ -1598,6 +1598,30 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         )
         return None
 
+    def _resolve_adb_path_by_toolkit(self, address: str) -> str | None:
+        """按设备地址问 MaaFW Toolkit 要 adb 路径（与 worker 的发现规则同一套）。
+
+        ``_resolve_adb_path`` 只认脚本配置、模拟器管理器与安装目录；通用模拟器把 adb 放在
+        别的文件名下（BlueStacks 的 ``HD-Adb.exe``）时推不出来，而 MaaFW Runner 本来就会
+        按地址发现。登录钩子跑在 Runner 之前，先在这里补上，别让钩子退回 PATH 里的 ``adb``。
+        拿不到（没装 Toolkit、列表里没有这个地址）就返回 ``None``，调用方保持原行为。
+        """
+
+        if not address:
+            return None
+        try:
+            from maa.toolkit import Toolkit
+        except Exception:  # noqa: BLE001 - 没有 Toolkit 时交给 Runner 自己发现
+            return None
+        with suppress(Exception):
+            for device in Toolkit.find_adb_devices():
+                if str(getattr(device, "address", "")) != address:
+                    continue
+                path = Path(str(getattr(device, "adb_path", "") or ""))
+                if path.name and path.exists():
+                    return str(path)
+        return None
+
     async def _ensure_game_updated(self, address: str, adb_path: str | None) -> None:
         """模拟器启动后、第一个任务下发前，调特调的游戏更新钩子（契约见 flavor.py）。
 
@@ -1652,6 +1676,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         hook = resolve_login_hook(self.script_config)
         if hook is None or self.run_plan is None:
             return
+
+        if adb_path is None and address:
+            # 登录钩子跑在 worker 之前，用不到 Runner 的按地址发现；宿主先把这条兜上，
+            # 否则钩子只能拿 PATH 里的 ``adb``（通用模拟器自带的多半叫 HD-Adb.exe）。
+            adb_path = await asyncio.to_thread(
+                self._resolve_adb_path_by_toolkit, address
+            )
+            if adb_path:
+                self._append_log(
+                    f"ADB 路径选择: MaaFW Toolkit 按地址发现; 路径={adb_path}"
+                )
 
         async def report(text: str) -> None:
             self._append_log(text)
