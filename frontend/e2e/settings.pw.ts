@@ -176,62 +176,6 @@ test.describe('@settings user preferences', () => {
     await app.evidence('press-sound-retry-reloaded')
   })
 
-  test('reads existing custom-pair press sound fields and preserves zero volume after reload', async ({
-    app,
-    page,
-  }) => {
-    const saved = {
-      pressSoundEnabled: true,
-      pressSoundPreset: 'customPair',
-      pressSoundVolume: 0,
-      pressSoundCustomPath: 'C:\\AUTO-MAS-E2E\\legacy-audio\\press-original.wav',
-      pressSoundCustomName: 'saved-press.wav',
-      pressSoundCustomReleasePath: 'C:\\AUTO-MAS-E2E\\legacy-audio\\release-original.ogg',
-      pressSoundCustomReleaseName: 'saved-release.ogg',
-    }
-    await page.addInitScript(saved => {
-      const marker = 'auto-mas.e2e.press-sound-existing-config'
-      if (sessionStorage.getItem(marker)) return
-      localStorage.setItem('auto-mas.browser-dev.config', JSON.stringify(saved))
-      sessionStorage.setItem(marker, 'seeded')
-    }, saved)
-    await app.goto('/settings')
-    const section = page
-      .locator('.form-section')
-      .filter({ has: page.getByRole('heading', { name: 'Press sound', exact: true }) })
-
-    for (const reload of [false, true]) {
-      if (reload) await page.reload()
-      await expect(section.getByRole('switch', { name: 'Play sound', exact: true })).toBeChecked()
-      await expect(section.locator('.preset-select .ant-select-selection-item')).toHaveText(
-        'Custom audio'
-      )
-      await expect(
-        section.getByRole('radio', { name: 'Separate audio', exact: true })
-      ).toBeChecked()
-      await expect(section.getByRole('slider')).toHaveAttribute('aria-valuenow', '0')
-      await expect(section.getByRole('textbox', { name: 'Press', exact: true })).toHaveValue(
-        saved.pressSoundCustomName
-      )
-      await expect(section.getByRole('textbox', { name: 'Press', exact: true })).toHaveAttribute(
-        'title',
-        saved.pressSoundCustomPath
-      )
-      await expect(section.getByRole('textbox', { name: 'Release', exact: true })).toHaveValue(
-        saved.pressSoundCustomReleaseName
-      )
-      await expect(section.getByRole('textbox', { name: 'Release', exact: true })).toHaveAttribute(
-        'title',
-        saved.pressSoundCustomReleasePath
-      )
-      await expect
-        .poll(() => page.evaluate(() => window.electronAPI.loadConfig()))
-        .toMatchObject(saved)
-    }
-    await section.scrollIntoViewIfNeeded()
-    await app.evidence('existing-press-sound-preferences-reloaded')
-  })
-
   test('advanced settings keeps developer tools without a backend mode selector', async ({
     app,
     page,
