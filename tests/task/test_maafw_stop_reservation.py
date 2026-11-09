@@ -251,7 +251,12 @@ async def test_confirmed_force_stop_releases_project_after_pretask_snapshot_fini
         assert task._stop_scope.finished.is_set()
         assert not task._stop_scope.cleanup_failed
         assert not snapshot_done.is_set()
-        assert process is not None and process.returncode is not None
+        assert process is not None
+        # Windows 的 Job 终止与 asyncio 退出通知不同步；保持快照屏障，
+        # 有界等待进程退出后再检查预约，不能把通知时序当作锁未释放。
+        async with asyncio.timeout(1):
+            while process.returncode is None:
+                await asyncio.sleep(0.01)
         assert account is not None
         key = await try_reserve_project_path(account.project_path)
         try:
