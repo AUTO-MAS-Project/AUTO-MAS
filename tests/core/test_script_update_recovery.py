@@ -155,7 +155,7 @@ async def test_common_entry_attaches_report_and_publishes_at_end(monkeypatch, tm
     notices = []
     task = SimpleNamespace(
         task_id="task-uuid",
-        current=SimpleNamespace(log="original log\n"),
+        current=SimpleNamespace(recovery_summary=""),
         commit=AsyncMock(),
     )
     session = object.__new__(script_update.ScriptUpdateSession)
@@ -194,5 +194,5 @@ async def test_common_entry_attaches_report_and_publishes_at_end(monkeypatch, tm
     assert notices[0][0] == "task-uuid"
     assert notices[0][2].level == "warning"
     assert "下载超时" in notices[0][2].message
-    assert "旧版" in task.current.log
+    assert "旧版" in task.current.recovery_summary
     task.commit.assert_awaited_once()
