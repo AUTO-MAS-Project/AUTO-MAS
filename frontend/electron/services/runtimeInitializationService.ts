@@ -401,6 +401,8 @@ function clampRunningPercent(percent: number): number {
 /** Runtime 的结构化失败详情，供初始化界面按需展示。 */
 export interface RuntimeStageOutcome {
   success: boolean
+  /** 仅当前 Runtime 对齐结果实际确认支持时存在。 */
+  bootstrapEnvironmentReuse?: true
   error?: string
   /** 第 0 步的全部线上来源均因网络失败。 */
   networkUnavailable?: true
@@ -715,14 +717,15 @@ export class RuntimeInitializationService {
     if (this.isBusy) return { success: false, error: '运行环境操作尚未结束，请稍后再试。' }
     this.operating = true
     try {
-      return await this.runBootstrap(onProgress)
+      return await this.runBootstrap(onProgress, { allowEnvironmentReuse: true })
     } finally {
       this.operating = false
     }
   }
 
   private async runBootstrap(
-    onProgress: (update: BootstrapProgressUpdate) => void
+    onProgress: (update: BootstrapProgressUpdate) => void,
+    options: { allowEnvironmentReuse: boolean }
   ): Promise<RuntimeStageOutcome> {
     if (this.shuttingDown) return cancelledOutcome()
     const version = this.targetVersion
@@ -745,6 +748,13 @@ export class RuntimeInitializationService {
     }
 
     const command = ['bootstrap', '--version', version]
+    if (
+      options.allowEnvironmentReuse &&
+      aligned.success &&
+      aligned.bootstrapEnvironmentReuse === true
+    ) {
+      command.push('--reuse-ready-environment')
+    }
     if (reuseEnvironment) {
       logger.warn('网络不可用，跳过 Runtime 更新检查，尝试复用本地运行环境启动')
       bridge.observe(RUNTIME_BINARY_CHECK_STAGE, '网络不可用，跳过更新检查，正在检查本地运行环境')
@@ -808,7 +818,7 @@ export class RuntimeInitializationService {
 
     const command = this.resolveRetryCommand(stage, mode)
     if (!command || command[0] === 'bootstrap') {
-      return this.runBootstrap(onProgress)
+      return this.runBootstrap(onProgress, { allowEnvironmentReuse: false })
     }
 
     const bridge = new BootstrapProgressBridge(onProgress)
@@ -837,7 +847,7 @@ export class RuntimeInitializationService {
     ) {
       logger.info('锁文件检查失败，自动恢复受管程序文件并重新准备环境')
       // bootstrap 自身不回到 retryStage，因此每次局部重试最多自动恢复一次。
-      return this.runBootstrap(onProgress)
+      return this.runBootstrap(onProgress, { allowEnvironmentReuse: false })
     }
     if (
       !outcome.success &&
@@ -1027,11 +1037,17 @@ export class RuntimeInitializationService {
         this.options.launchConfig.runtimePath = runtimePath
         logger.info(`Runtime 已更新到线上最新 ${result.target?.version}`)
         bridge.observe(RUNTIME_BINARY_CHECK_STAGE, `Runtime 已更新到 ${result.target?.version}`)
-        return { success: true }
+        return {
+          success: true,
+          ...(result.bootstrapEnvironmentReuse ? { bootstrapEnvironmentReuse: true } : {}),
+        }
       case 'current':
         this.options.launchConfig.runtimePath = runtimePath
         logger.info(`Runtime 已是线上最新 ${result.target?.version}`)
-        return { success: true }
+        return {
+          success: true,
+          ...(result.bootstrapEnvironmentReuse ? { bootstrapEnvironmentReuse: true } : {}),
+        }
       case 'skipped':
         return { success: true }
       case 'cancelled':
