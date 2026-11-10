@@ -508,8 +508,8 @@ async def test_src_running_process_does_not_hide_recovery_prompt(
     instance.script_config = SimpleNamespace(
         Update=SimpleNamespace(TakeoverEnabled=False)
     )
-    instance.task_info = SimpleNamespace(task_id="task-id")
-    instance.execution_mode = "AutoProxy"
+    instance.maintenance = False
+    instance.task_info = SimpleNamespace(task_id="task-id", mode="AutoProxy")
     monkeypatch.setattr(
         update,
         "assert_idle",
