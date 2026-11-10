@@ -66,11 +66,6 @@ TASK_CREATED = "task.created"
 TASK_SCRIPT_STARTED = "task.script.started"
 TASK_SCRIPT_FINISHED = "task.script.finished"
 
-# 奇想盒上轮 pip 安装未确认时的单次交互
-WHIMBOX_INSTALL_PROMPT = "whimbox.install.prompt"
-WHIMBOX_INSTALL_PROMPT_CLOSED = "whimbox.install.prompt.closed"
-WHIMBOX_INSTALL_DECISION = "whimbox.install.decision"
-
 # 应用生命周期与电源（id=Main）
 BACKEND_SHUTDOWN_READY = "backend.shutdown.ready"
 # 启动期攒下来、主连接建立后一次性发出的系统通知（id=Main）：配置迁移结果之类。

@@ -50,11 +50,6 @@ export const WS_TASK_CREATED = 'task.created'
 export const WS_TASK_SCRIPT_STARTED = 'task.script.started'
 export const WS_TASK_SCRIPT_FINISHED = 'task.script.finished'
 
-// 奇想盒未完成安装恢复：TaskManager 路由的单次请求、回应和关闭
-export const WS_WHIMBOX_INSTALL_PROMPT = 'whimbox.install.prompt'
-export const WS_WHIMBOX_INSTALL_PROMPT_CLOSED = 'whimbox.install.prompt.closed'
-export const WS_WHIMBOX_INSTALL_DECISION = 'whimbox.install.decision'
-
 // 应用生命周期与电源（id=Main）
 export const WS_BACKEND_SHUTDOWN_READY = 'backend.shutdown.ready'
 export const WS_FRONTEND_CLOSE_REQUESTED = 'frontend.close.requested'
@@ -163,22 +158,6 @@ export interface WSTaskScriptStartedData {
 export interface WSTaskScriptFinishedData extends WSTaskScriptStartedData {
   outcome: 'success' | 'failed' | 'skipped' | 'no_user' | 'incomplete' | 'error' | 'cancelled'
   partialFailure?: 'yes' | 'no' | 'unknown'
-}
-
-/** 奇想盒上轮后端安装未确认时的恢复请求 (id=TaskManager) */
-export interface WSWhimboxInstallPromptData {
-  requestId: string
-  taskId: string
-  managedName: string
-  installPath: string
-  takeoverEnabled: boolean
-  installedVersion: string
-  targetVersion: string
-  canOpenOfficialApp: boolean
-}
-
-export interface WSWhimboxInstallPromptClosedData {
-  requestId: string
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
@@ -350,8 +329,6 @@ interface WSMessageDataMap {
   [WS_TASK_CREATED]: WSTaskCreatedData
   [WS_TASK_SCRIPT_STARTED]: WSTaskScriptStartedData
   [WS_TASK_SCRIPT_FINISHED]: WSTaskScriptFinishedData
-  [WS_WHIMBOX_INSTALL_PROMPT]: WSWhimboxInstallPromptData
-  [WS_WHIMBOX_INSTALL_PROMPT_CLOSED]: WSWhimboxInstallPromptClosedData
   [WS_BACKEND_SHUTDOWN_READY]: WSEmptyData
   [WS_FRONTEND_CLOSE_REQUESTED]: FrontendCloseRequest
   [WS_FRONTEND_RESTART_REQUESTED]: FrontendCloseRequest
