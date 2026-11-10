@@ -223,7 +223,7 @@ async def test_unsafe_and_cancelled_preparation_never_runs_users(
 
 @pytest.mark.asyncio
 async def test_disabled_takeover_does_not_query_and_blocks_unfinished_install(
-    installation,
+    installation, monkeypatch
 ):
     root, config, _ = installation
     config.Update.TakeoverEnabled = False
@@ -237,10 +237,18 @@ async def test_disabled_takeover_does_not_query_and_blocks_unfinished_install(
     assert json.loads((root / "User/config.json").read_text()) == {"custom": True}
     marker = script_install.workspace(root) / "bgi-install.json"
     marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text("{}")
+    marker.write_text('{"target": "0.56.0"}')
     instance._program_update_prepared = False
+    instance.task_info = SimpleNamespace(task_id=str(uuid.uuid4()))
+    monkeypatch.setattr(
+        manager.install_recovery,
+        "ask_install_recovery",
+        AsyncMock(side_effect=script_install.InstallUnsafeError("用户界面未连接")),
+    )
     with pytest.raises(script_install.InstallUnsafeError):
         await instance._prepare_program_update()
+    assert marker.exists()
+    update.request_release.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -527,3 +535,229 @@ async def test_mirror_accepts_upstream_sevenzip_nested_installer(
 
     update.download_script_package.side_effect = download
     assert "已更新" in await update.update_before_run(root, config)
+
+
+def _recovery_instance(root, config):
+    instance = object.__new__(manager.BetterGIManager)
+    instance._update_root = root
+    instance._program_update_prepared = False
+    instance.script_config = config
+    instance.script_info = SimpleNamespace(script_id=str(uuid.uuid4()), log="")
+    instance.task_info = SimpleNamespace(task_id=str(uuid.uuid4()))
+    return instance
+
+
+@pytest.mark.asyncio
+async def test_skip_after_manual_repair_with_takeover_off(installation, monkeypatch):
+    root, config, _ = installation
+    config.Update.TakeoverEnabled = False
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('{"target": "0.56.0"}', encoding="utf-8")
+    monkeypatch.setattr(
+        manager.install_recovery,
+        "ask_install_recovery",
+        AsyncMock(return_value=("skip", marker.read_bytes())),
+    )
+    monkeypatch.setattr(manager.Publisher, "send", AsyncMock(return_value=True))
+    instance = _recovery_instance(root, config)
+    await instance._prepare_program_update()
+    await instance._prepare_program_update()
+    assert instance._program_update_prepared
+    assert instance.check_result == "Pass"
+    assert not marker.exists()
+    await update.confirm_current_install(root)
+    update.request_release.assert_not_awaited()
+    update.run_installer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_skip_with_takeover_on_does_not_install_again(installation, monkeypatch):
+    root, config, _ = installation
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('{"target": "0.56.0"}', encoding="utf-8")
+    monkeypatch.setattr(
+        manager.install_recovery,
+        "ask_install_recovery",
+        AsyncMock(return_value=("skip", marker.read_bytes())),
+    )
+    monkeypatch.setattr(manager.Publisher, "send", AsyncMock(return_value=True))
+    instance = _recovery_instance(root, config)
+    await instance._prepare_program_update()
+    assert not marker.exists()
+    update.request_release.assert_not_awaited()
+    assert json.loads((root / "User/config.json").read_text())[update.NOTICE_KEY] == update.IGNORED_VERSION
+    update.recover_update_notice(root)
+
+
+@pytest.mark.asyncio
+async def test_retry_explicitly_allowed_with_takeover_off(installation, monkeypatch):
+    root, config, _ = installation
+    config.Update.TakeoverEnabled = False
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('{"target": "0.56.0"}', encoding="utf-8")
+    monkeypatch.setattr(
+        manager.install_recovery,
+        "ask_install_recovery",
+        AsyncMock(return_value=("retry", marker.read_bytes())),
+    )
+    instance = _recovery_instance(root, config)
+    await instance._prepare_program_update()
+    await instance._prepare_program_update()
+    assert not marker.exists()
+    assert update.request_release.await_count == 1
+    assert update.run_installer.await_count == 1
+    assert instance.check_result == "Pass"
+
+
+@pytest.mark.asyncio
+async def test_retry_failure_preserves_marker_and_aborts(installation, monkeypatch):
+    root, config, _ = installation
+    config.Update.TakeoverEnabled = False
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('{"target": "0.56.0"}', encoding="utf-8")
+    monkeypatch.setattr(
+        manager.install_recovery,
+        "ask_install_recovery",
+        AsyncMock(return_value=("retry", marker.read_bytes())),
+    )
+    update.run_installer.side_effect = RuntimeError("official installer failed")
+    instance = _recovery_instance(root, config)
+    with pytest.raises(RuntimeError, match="official installer failed"):
+        await instance._prepare_program_update()
+    assert marker.exists()
+    assert not instance._program_update_prepared
+
+
+@pytest.mark.asyncio
+async def test_skip_changed_marker_is_rejected(installation):
+    from app.task.BetterGI.tools import install_recovery
+
+    root, _, _ = installation
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('{"target": "0.56.0"}')
+    snapshot = marker.read_bytes()
+    marker.write_text('{"target": "0.57.0"}')
+    with pytest.raises(script_install.InstallUnsafeError, match="变化"):
+        await install_recovery.skip_unconfirmed_install(root, snapshot)
+    assert marker.read_text() == '{"target": "0.57.0"}'
+
+
+@pytest.mark.asyncio
+async def test_skip_invalid_marker_or_unrecognized_install_stays_blocked(
+    installation, monkeypatch
+):
+    from app.task.BetterGI.tools import install_recovery
+
+    root, _, _ = installation
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("not valid json")
+    with pytest.raises(script_install.InstallUnsafeError, match="内容异常"):
+        await install_recovery.skip_unconfirmed_install(root, marker.read_bytes())
+    assert marker.exists()
+
+    marker.write_text('{"target": "0.56.0"}')
+    monkeypatch.setattr(script_install, "read_pe_architecture", lambda path: "x86")
+    with pytest.raises(script_install.InstallUnsafeError, match="版本或架构"):
+        await install_recovery.skip_unconfirmed_install(root, marker.read_bytes())
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_installer_outside_workspace_blocks_recovery(tmp_path, monkeypatch):
+    from app.task.BetterGI.tools import program_update
+
+    process = SimpleNamespace(
+        info={
+            "exe": str(tmp_path / "Downloads" / "BetterGI.Install.0.67.0.exe"),
+            "name": "BetterGI.Install.0.67.0.exe",
+        }
+    )
+    monkeypatch.setattr(program_update.psutil, "process_iter", lambda _: [process])
+    with pytest.raises(script_install.InstallUnsafeError, match="安装器仍在运行"):
+        program_update.assert_idle(tmp_path / "BetterGI")
+
+
+@pytest.mark.asyncio
+async def test_recovery_prompt_without_frontend_fails_closed(installation, monkeypatch):
+    from app.task.BetterGI.tools import install_recovery
+
+    root, _, _ = installation
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('{"target": "0.56.0"}')
+    send = AsyncMock(return_value=False)
+    monkeypatch.setattr(install_recovery.Publisher, "send", send)
+    with pytest.raises(script_install.InstallUnsafeError, match="未连接主界面"):
+        await install_recovery.ask_install_recovery(
+            "task1", root, channel="stable", takeover_enabled=False
+        )
+    assert marker.exists()
+    assert send.await_count == 2  # 提示发不出去仍发送关闭；没有默认跳过。
+
+
+@pytest.mark.asyncio
+async def test_recovery_prompt_accepts_only_matching_request(installation, monkeypatch):
+    from app.core import Dispatcher
+    from app.core.ws import protocol
+    from app.models.schema import WSEnvelope
+    from app.task.BetterGI.tools import install_recovery
+
+    root, _, _ = installation
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('{"target": "0.56.0"}')
+    outgoing = []
+
+    async def send(*, id, type, data):
+        outgoing.append(type)
+        if type == protocol.BETTERGI_INSTALL_PROMPT:
+            Dispatcher.dispatch(WSEnvelope(
+                id=id,
+                type=protocol.BETTERGI_INSTALL_DECISION,
+                data={"taskId": data["taskId"], "requestId": "wrong", "action": "skip"},
+            ))
+            Dispatcher.dispatch(WSEnvelope(
+                id=id,
+                type=protocol.BETTERGI_INSTALL_DECISION,
+                data={"taskId": "another-task", "requestId": data["requestId"], "action": "skip"},
+            ))
+            Dispatcher.dispatch(WSEnvelope(
+                id=id,
+                type=protocol.BETTERGI_INSTALL_DECISION,
+                data={"taskId": data["taskId"], "requestId": data["requestId"], "action": "retry"},
+            ))
+        return True
+
+    monkeypatch.setattr(install_recovery.Publisher, "send", send)
+    action, snapshot = await install_recovery.ask_install_recovery(
+        "task1", root, channel="stable", takeover_enabled=False
+    )
+    assert action == "retry"
+    assert snapshot == marker.read_bytes()
+    assert outgoing == [protocol.BETTERGI_INSTALL_PROMPT, protocol.BETTERGI_INSTALL_PROMPT_CLOSED]
+
+
+@pytest.mark.asyncio
+async def test_recovery_prompt_timeout_never_deletes_marker(installation, monkeypatch):
+    from app.task.BetterGI.tools import install_recovery
+    from app.core.ws import protocol
+
+    root, _, _ = installation
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('{"target": "0.56.0"}')
+    monkeypatch.setattr(install_recovery, "_PROMPT_TIMEOUT_SECONDS", 0.005)
+    send = AsyncMock(return_value=True)
+    monkeypatch.setattr(install_recovery.Publisher, "send", send)
+    with pytest.raises(script_install.InstallUnsafeError, match="超时"):
+        await install_recovery.ask_install_recovery(
+            "task1", root, channel="stable", takeover_enabled=False
+        )
+    assert marker.exists()
+    assert send.await_args_list[-1].kwargs["type"] == protocol.BETTERGI_INSTALL_PROMPT_CLOSED
