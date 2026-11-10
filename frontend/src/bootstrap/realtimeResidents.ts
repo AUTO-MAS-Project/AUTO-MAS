@@ -21,10 +21,6 @@ import {
   bootstrapVirtualDisplayPrompt,
   disposeVirtualDisplayPrompt,
 } from '@/services/virtualDisplayPrompt'
-import {
-  bootstrapBAAHInstallRecovery,
-  disposeBAAHInstallRecovery,
-} from '@/services/baahInstallRecovery'
 
 let registered = false
 
@@ -74,10 +70,6 @@ export function bootstrapRealtimeResidents(): void {
     registerResidentResource('virtual-display-prompt', {
       bootstrap: bootstrapVirtualDisplayPrompt,
       dispose: disposeVirtualDisplayPrompt,
-    })
-    registerResidentResource('baah-install-recovery', {
-      bootstrap: bootstrapBAAHInstallRecovery,
-      dispose: disposeBAAHInstallRecovery,
     })
     registered = true
   }
