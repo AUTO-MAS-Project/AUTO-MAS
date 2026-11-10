@@ -278,3 +278,132 @@ def test_real_idle_whitelist_rejects_baah_but_allows_known_adb(
     )
     with pytest.raises(script_install.InstallUnsafeError):
         REAL_ASSERT_IDLE(root, allow_background_adb=True)
+
+
+@pytest.mark.asyncio
+async def test_unreadable_baah_journal_can_be_explicitly_archived_after_health_check(
+    installation,
+):
+    from app.task.BAAH.tools import install_recovery
+
+    root, _, _, _ = installation
+    work = script_install.workspace(root)
+    work.mkdir(parents=True, exist_ok=True)
+    marker = work / "transaction.json"
+    marker.write_bytes(b"corrupt-interrupted-journal")
+    with script_install.installation_access(root):
+        result = await install_recovery.skip_stale_transaction(
+            root, marker.read_bytes()
+        )
+    assert result == "2.5.6"
+    assert not marker.exists()
+    copies = list(work.glob("baah-transaction-ack-*.json"))
+    assert len(copies) == 1
+    assert copies[0].read_bytes() == b"corrupt-interrupted-journal"
+    await update.confirm_current_install(root)
+
+
+@pytest.mark.asyncio
+async def test_baah_transaction_with_backup_is_never_skipped(installation):
+    from app.task.BAAH.tools import install_recovery
+
+    root, _, _, _ = installation
+    work = script_install.workspace(root)
+    work.mkdir(parents=True, exist_ok=True)
+    marker = work / "transaction.json"
+    marker.write_text("{}")
+    (work / "previous").mkdir()
+    with pytest.raises(script_install.InstallUnsafeError, match="备份"):
+        await install_recovery.skip_stale_transaction(root, marker.read_bytes())
+    assert marker.is_file()
+    assert (work / "previous").is_dir()
+
+
+@pytest.mark.asyncio
+async def test_baah_stale_marker_or_bad_receipt_refuses_skip(
+    installation, monkeypatch
+):
+    from app.task.BAAH.tools import install_recovery
+
+    root, _, _, _ = installation
+    work = script_install.workspace(root)
+    work.mkdir(parents=True, exist_ok=True)
+    marker = work / "transaction.json"
+    marker.write_bytes(b"first")
+    with pytest.raises(script_install.InstallUnsafeError, match="变化"):
+        await install_recovery.skip_stale_transaction(root, b"old")
+    assert marker.read_bytes() == b"first"
+
+    receipt = script_install.record_path(root, "installed.json")
+    receipt.parent.mkdir(parents=True, exist_ok=True)
+    receipt.write_text("{}")
+    monkeypatch.setattr(
+        script_install, "verify_installed_files", lambda *args: False
+    )
+    with pytest.raises(script_install.InstallUnsafeError, match="回执"):
+        await install_recovery.skip_stale_transaction(root, marker.read_bytes())
+    assert marker.is_file()
+
+
+@pytest.mark.asyncio
+async def test_baah_unconnected_frontend_preserves_install_journal(
+    installation, monkeypatch
+):
+    from app.task.BAAH.tools import install_recovery
+
+    root, _, _, _ = installation
+    work = script_install.workspace(root)
+    work.mkdir(parents=True, exist_ok=True)
+    marker = work / "transaction.json"
+    marker.write_bytes(b"unconfirmed")
+    monkeypatch.setattr(
+        install_recovery.Publisher, "send", AsyncMock(return_value=False)
+    )
+    with pytest.raises(script_install.InstallUnsafeError, match="主界面"):
+        await install_recovery.ask_install_recovery(
+            "task", root, managed_name="BAAH 多实例", takeover_enabled=False
+        )
+    assert marker.read_bytes() == b"unconfirmed"
+
+
+@pytest.mark.asyncio
+async def test_baah_recovery_prompt_identifies_target(
+    installation, monkeypatch
+):
+    from app.core import Dispatcher
+    from app.core.ws import protocol
+    from app.models.schema import WSEnvelope
+    from app.task.BAAH.tools import install_recovery
+
+    root, _, _, _ = installation
+    work = script_install.workspace(root)
+    work.mkdir(parents=True, exist_ok=True)
+    marker = work / "transaction.json"
+    marker.write_bytes(b"unconfirmed")
+    events = []
+
+    async def send(*, id, type, data):
+        if type == protocol.BAAH_INSTALL_PROMPT:
+            events.append(data)
+            Dispatcher.dispatch(
+                WSEnvelope(
+                    id=id,
+                    type=protocol.BAAH_INSTALL_DECISION,
+                    data={
+                        "requestId": data["requestId"],
+                        "taskId": data["taskId"],
+                        "action": "stop",
+                    },
+                )
+            )
+        return True
+
+    monkeypatch.setattr(install_recovery.Publisher, "send", send)
+    with pytest.raises(script_install.InstallUnsafeError, match="取消"):
+        await install_recovery.ask_install_recovery(
+            "task", root, managed_name="BAAH 测试托管", takeover_enabled=False
+        )
+    assert events[0]["managedName"] == "BAAH 测试托管"
+    assert events[0]["installPath"] == str(root.resolve())
+    assert events[0]["canSkip"] is True
+    assert marker.exists()
