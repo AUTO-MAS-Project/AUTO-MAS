@@ -89,7 +89,13 @@ async def confirm_current_install(root: Path) -> None:
     await asyncio.to_thread(assert_idle, root, allow_background_adb=True)
     if (script_install.workspace(root) / "transaction.json").exists():
         raise script_install.InstallUnsafeError("BAAH 安装尚未确认，请开启更新托管修复")
-    if script_install.read_pe_architecture(root / "BAAH.exe") != "x86_64":
+    try:
+        architecture = script_install.read_pe_architecture(root / "BAAH.exe")
+    except (OSError, ValueError) as error:
+        raise script_install.InstallUnsafeError(
+            "BAAH 主程序缺失或架构无法识别，需要修复"
+        ) from error
+    if architecture != "x86_64":
         raise script_install.InstallUnsafeError(
             "BAAH 安装架构不可识别，请使用官方包修复"
         )

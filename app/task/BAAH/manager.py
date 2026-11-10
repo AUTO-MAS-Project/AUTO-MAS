@@ -23,6 +23,7 @@
 按账号逐个拉起 BAAH 自动代理任务，结束时统一组装任务报告并推送。
 """
 
+import asyncio
 import uuid
 from contextlib import ExitStack, suppress
 from datetime import datetime
@@ -145,6 +146,10 @@ class BAAHManager(ScriptManagerBase):
             script_install.recover_install,
             root,
             lambda: program_update.assert_idle(root),
+        )
+        # 进程占用 / 权限不明属于停写门禁，不应误报为程序损坏。
+        await asyncio.to_thread(
+            program_update.assert_idle, root, allow_background_adb=True
         )
         try:
             await program_update.confirm_current_install(root)

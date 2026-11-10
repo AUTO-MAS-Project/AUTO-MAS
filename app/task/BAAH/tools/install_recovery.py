@@ -24,7 +24,9 @@ async def ask_install_recovery(
 ) -> tuple[str, bytes]:
     receipt = script_install.record_path(root, "installed.json")
     if receipt.is_symlink() or not receipt.is_file():
-        raise script_install.InstallUnsafeError("BAAH 校验回执缺失或不安全，拒绝自动修复")
+        raise script_install.InstallUnsafeError(
+            "BAAH 校验回执缺失或不安全，拒绝自动修复"
+        )
     snapshot = await asyncio.to_thread(receipt.read_bytes)
     program_update.verify_recovery_receipt(root, snapshot)
     try:

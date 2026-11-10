@@ -5,9 +5,9 @@ import { ref } from 'vue'
 import { onConnected, onDisconnected, send } from '@/services/websocket/connection'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
-  WS_BETTERGI_INSTALL_DECISION,
-  WS_BETTERGI_INSTALL_PROMPT,
-  WS_BETTERGI_INSTALL_PROMPT_CLOSED,
+  WS_BAAH_INSTALL_DECISION,
+  WS_BAAH_INSTALL_PROMPT,
+  WS_BAAH_INSTALL_PROMPT_CLOSED,
   WS_ID_TASK_MANAGER,
   type WSBAAHInstallPromptData,
 } from '@/services/websocket/types'
@@ -32,7 +32,7 @@ const forgetRequest = (requestId: string) => {
 export function bootstrapBAAHInstallRecovery(): void {
   if (subscriptionIds.length) return
   subscriptionIds = [
-    subscribe({ id: WS_ID_TASK_MANAGER, type: WS_BETTERGI_INSTALL_PROMPT }, message => {
+    subscribe({ id: WS_ID_TASK_MANAGER, type: WS_BAAH_INSTALL_PROMPT }, message => {
       const prompt = message.data
       if (
         !prompt.requestId ||
@@ -43,7 +43,7 @@ export function bootstrapBAAHInstallRecovery(): void {
       }
       baahInstallPrompts.value.push(prompt)
     }),
-    subscribe({ id: WS_ID_TASK_MANAGER, type: WS_BETTERGI_INSTALL_PROMPT_CLOSED }, message => {
+    subscribe({ id: WS_ID_TASK_MANAGER, type: WS_BAAH_INSTALL_PROMPT_CLOSED }, message => {
       forgetRequest(message.data.requestId)
     }),
   ]
@@ -62,7 +62,7 @@ export function bootstrapBAAHInstallRecovery(): void {
 export function respondToBAAHInstallRecovery(action: 'retry' | 'stop'): boolean {
   const prompt = baahInstallPrompts.value[0]
   if (!prompt || baahInstallDecisionPending.value) return false
-  const sent = send(WS_ID_TASK_MANAGER, WS_BETTERGI_INSTALL_DECISION, {
+  const sent = send(WS_ID_TASK_MANAGER, WS_BAAH_INSTALL_DECISION, {
     requestId: prompt.requestId,
     taskId: prompt.taskId,
     action,
