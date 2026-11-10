@@ -53,7 +53,11 @@ from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .tools import program_update
-from .tools.managed_recovery import BAAHInstallAdapter
+from .tools.managed_recovery import (
+    BAAHInstallAdapter,
+    acknowledge_stale_transaction,
+    inspect_stale_transaction,
+)
 from app.services.script_install_backup import ManagedInstallBackup
 
 logger = get_logger("BAAH 调度器")
@@ -153,11 +157,34 @@ class BAAHManager(ScriptManagerBase):
             root, script_id=request.script_id, script_type="BAAH"
         )
         # 原生事务未完成时不能通过清除 journal 绕过正在使用的备份。
-        await script_install.run_worker(
-            script_install.recover_install,
-            root,
-            lambda: program_update.assert_idle(root),
-        )
+        try:
+            await script_install.run_worker(
+                script_install.recover_install,
+                root,
+                lambda: program_update.assert_idle(root),
+            )
+        except (script_install.InstallUnsafeError, OSError, ValueError):
+            marker = script_install.workspace(root) / "transaction.json"
+            if marker.is_symlink() or not marker.is_file():
+                raise
+
+            async def retry_native_rollback():
+                await script_install.run_worker(
+                    script_install.recover_install,
+                    root,
+                    lambda: program_update.assert_idle(root),
+                )
+
+            outcome = await auto_recover_script_install(
+                request,
+                install_root=root,
+                inspect=lambda: inspect_stale_transaction(root),
+                acknowledge=lambda: acknowledge_stale_transaction(root),
+                reinstall=retry_native_rollback,
+            )
+            await self.script_info.set_log(
+                f"BAAH 原生安装事务由公共入口恢复：{outcome}"
+            )
         await asyncio.to_thread(program_update.assert_idle, root)
 
         if backup.read() is not None:
