@@ -17,7 +17,10 @@ _MAX_TRANSACTION_BYTES = 128 * 1024 * 1024
 
 
 def discard_uncommitted_staging(
-    root: Path, takeover_enabled: bool, cancelled: threading.Event
+    root: Path,
+    takeover_enabled: bool,
+    allow_damaged_repair: bool,
+    cancelled: threading.Event,
 ) -> bool:
     """只清理尚未写入事务日志的安装暂存，不接触已开始切换的目录。"""
     directory = script_install.workspace(root)
@@ -38,15 +41,28 @@ def discard_uncommitted_staging(
     script_install._check_cancel(cancelled)
     script_update.assert_idle(root)
     script_install._reject_link(root)
-    # 对原安装仍需实际版本/可执行文件/资源和已存在的 MAS 收据复核；
-    # 不能仅因没有 journal 就把可能损坏的旧版标记为健康。
-    script_update.read_install(root)
-    receipt = script_install.record_path(root, "installed.json")
-    if takeover_enabled and receipt.exists():
-        if not script_install.verify_installed_files(root, cancelled):
+    # 优先核验健康旧版；损坏本体或旧收据失效时只能在已授权的
+    # AutoProxy 托管修复路径里凭 MAS 自有可信身份清理未提交暂存。
+    # 清理不代表安装已健康；manager 后续仍须调用公共入口重装并验证。
+    try:
+        script_update.read_install(root)
+        receipt = script_install.record_path(root, "installed.json")
+        if takeover_enabled and receipt.exists():
+            if not script_install.verify_installed_files(root, cancelled):
+                raise script_install.InstallUnsafeError(
+                    "MaaEnd 原安装收据校验未通过"
+                )
+    except (OSError, ValueError, script_install.InstallUnsafeError) as error:
+        if not (takeover_enabled and allow_damaged_repair):
+            raise
+        identity = script_install.record_path(root, "program-identity.json")
+        if identity.is_symlink() or not identity.is_file():
             raise script_install.InstallUnsafeError(
-                "MaaEnd 原安装收据校验未通过，保留未提交暂存"
-            )
+                "MaaEnd 安装损坏且缺少可信 MAS 身份，保留未提交暂存"
+            ) from error
+        snapshot = identity.read_bytes()
+        script_update.verify_repair_identity(root, snapshot)
+        script_install._check_cancel(cancelled)
     # 删暂存前再检查一次：确认没有任何外部写入开始目录切换。
     script_install._check_cancel(cancelled)
     script_update.assert_idle(root)
@@ -63,10 +79,18 @@ def discard_uncommitted_staging(
 
 
 class MaaEndInstallAdapter:
-    def __init__(self, root: Path, config, *, takeover_enabled: bool) -> None:
+    def __init__(
+        self,
+        root: Path,
+        config,
+        *,
+        takeover_enabled: bool,
+        allow_damaged_repair: bool = False,
+    ) -> None:
         self.root = root
         self.config = config
         self.takeover_enabled = takeover_enabled
+        self.allow_damaged_repair = allow_damaged_repair
 
     async def ensure_idle(self) -> None:
         await asyncio.to_thread(script_update.assert_idle, self.root)
@@ -144,7 +168,10 @@ class MaaEndInstallAdapter:
         # 安装器在 ready 复制后、写 journal 前取消时，原安装未切换；
         # 仅清理这种未提交状态。任何 previous/journal 均不可触碰。
         await script_install.run_worker(
-            discard_uncommitted_staging, self.root, self.takeover_enabled
+            discard_uncommitted_staging,
+            self.root,
+            self.takeover_enabled,
+            self.allow_damaged_repair,
         )
 
     async def retry_native(self) -> None:
