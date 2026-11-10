@@ -334,9 +334,7 @@ class HSRManager(NotificationTaskBase):
                         raise RuntimeError("原生事务仍未完成，禁止启动")
 
                 outcome = await auto_recover_script_install(
-                    ScriptUpdateRequest(
-                        str(self.script_info.script_id), "HSR", engine
-                    ),
+                    ScriptUpdateRequest(str(self.script_info.script_id), "HSR", engine),
                     install_root=install,
                     inspect=inspect,
                     acknowledge=reinstall,
