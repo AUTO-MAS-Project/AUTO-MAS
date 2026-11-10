@@ -3,6 +3,8 @@
     "languageSaveFailed": "Failed to save the language setting; reverted to the previous one."
   },
   "comp": {
+    "bettergiRecoveryStable": "Stable",
+    "bettergiRecoveryBeta": "Beta",
     "bettergiRecoveryTitle": "Previous BetterGI installation is unconfirmed",
     "bettergiRecoveryMessage": "MAS found an unresolved BetterGI installation record. The release resources may not have finished publishing, or installation may have been interrupted. Choose how this task should proceed.",
     "bettergiRecoveryCurrent": "Installed version",

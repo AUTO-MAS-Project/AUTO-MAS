@@ -3,6 +3,8 @@
     "languageSaveFailed": "言語設定の保存に失敗しました。元の言語に戻しました。"
   },
   "comp": {
+    "bettergiRecoveryStable": "正式版",
+    "bettergiRecoveryBeta": "ベータ版",
     "bettergiRecoveryTitle": "BetterGI の前回インストールが未確認です",
     "bettergiRecoveryMessage": "前回の BetterGI 更新が完了したことを確認できません。配布ファイルの公開が遅れているか、インストールが中断された可能性があります。今回の処理を選択してください。",
     "bettergiRecoveryCurrent": "現在のバージョン",

@@ -3,6 +3,8 @@
     "languageSaveFailed": "语言设置保存失败，已恢复原语言"
   },
   "comp": {
+    "bettergiRecoveryStable": "正式版",
+    "bettergiRecoveryBeta": "公测版",
     "bettergiRecoveryTitle": "BetterGI 上次安装未完成",
     "bettergiRecoveryMessage": "检测到上一次 BetterGI 更新的未确认记录。可能是新版本安装资源尚未分发完成，或安装中途取消。请选择如何处理本次任务。",
     "bettergiRecoveryCurrent": "当前程序版本",

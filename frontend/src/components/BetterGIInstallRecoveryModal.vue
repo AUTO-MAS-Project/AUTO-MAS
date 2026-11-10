@@ -46,7 +46,7 @@ function decide(action: 'retry' | 'skip' | 'stop') {
           {{ prompt.targetVersion || t('bootstrap.comp.bettergiRecoveryUnknown') }}
         </a-descriptions-item>
         <a-descriptions-item :label="t('bootstrap.comp.bettergiRecoveryChannel')">
-          {{ prompt.channel === 'stable' ? t('bootstrap.comp.channelStable') : prompt.channel }}
+          {{ prompt.channel === 'stable' ? t('bootstrap.comp.bettergiRecoveryStable') : t('bootstrap.comp.bettergiRecoveryBeta') }}
         </a-descriptions-item>
         <a-descriptions-item :label="t('bootstrap.comp.bettergiRecoveryTakeover')">
           {{ t(prompt.takeoverEnabled ? 'bootstrap.comp.bettergiRecoveryEnabled' : 'bootstrap.comp.bettergiRecoveryDisabled') }}
