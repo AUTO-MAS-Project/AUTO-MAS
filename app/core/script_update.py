@@ -6,6 +6,7 @@
 
 import asyncio
 import time
+from contextvars import ContextVar
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -15,7 +16,15 @@ from uuid import UUID
 
 import httpx
 
-from app.core import Config
+from app.core import Config, Publisher
+from app.core.ws import protocol
+from app.models.schema import WSTaskNoticeData
+from app.core.script_update_recovery import (
+    DownloadRetryFailed,
+    InstallInspection,
+    RecoveryIncident,
+    reconcile_installation,
+)
 from app.core.script_update_queue import ScriptUpdateQueue
 from app.core.update import download_file, download_method, download_observer
 from app.models.config import CLASS_BOOK
@@ -42,6 +51,41 @@ class ScriptUpdateRequest:
     script_id: str
     script_type: str
     engine: str | None = None
+
+
+_current_recovery_session: ContextVar["ScriptUpdateSession | None"] = ContextVar(
+    "current_script_update_recovery_session", default=None
+)
+
+
+async def auto_recover_script_install(
+    request: ScriptUpdateRequest,
+    *,
+    install_root: Path,
+    inspect: Callable[[], Awaitable[InstallInspection]],
+    acknowledge: Callable[[], Awaitable[None]],
+    reinstall: Callable[[], Awaitable[None]],
+) -> str:
+    """公共脚本更新入口统一编排恢复，不在专项适配器内发通知。"""
+
+    def record(event: RecoveryIncident) -> None:
+        session = _current_recovery_session.get()
+        if session is not None:
+            session.record_recovery(event)
+        else:
+            logger.warning(
+                f"脚本恢复报告未附着运行队列：{event.script_type} {event.outcome}"
+            )
+
+    return await reconcile_installation(
+        script_id=request.script_id,
+        script_type=request.script_type,
+        install_root=install_root,
+        inspect=inspect,
+        acknowledge=acknowledge,
+        reinstall=reinstall,
+        report=record,
+    )
 
 
 async def run_script_update(
@@ -90,6 +134,58 @@ class ScriptUpdateSession:
         self._config = config
         self._queue = ScriptUpdateQueue()
         self._pending: tuple[UUID, object, TaskExecuteBase] | None = None
+        self._recovery_events: list[RecoveryIncident] = []
+        self._recovery_reported = False
+
+    def record_recovery(self, event: RecoveryIncident) -> None:
+        """只记录当前任务的恢复结果，去重重复确认与后续账号复检。"""
+        if event not in self._recovery_events:
+            self._recovery_events.append(event)
+
+    async def publish_recovery_summary(self) -> None:
+        """在整轮任务完成时集中发一份报告，非脚本级即时弹窗。"""
+        if self._recovery_reported:
+            return
+        self._recovery_reported = True
+        if not self._recovery_events:
+            return
+        outcomes = {
+            "verified": "已校验安装并自动清理残留记录",
+            "reinstalled": "自动重装修复完成",
+            "old_version": "重新下载失败，已验证旧版并继续运行",
+            "blocked": "恢复失败，已保护安装现场并阻止启动",
+        }
+        lines = ["[脚本安装恢复汇总]"]
+        for event in self._recovery_events:
+            detail = f"；原因：{event.reason}" if event.reason else ""
+            source = f"；来源：{event.source}" if event.source else ""
+            version = (
+                f"；当前版本：{event.installed_version}"
+                if event.installed_version
+                else ""
+            )
+            lines.append(
+                f"- {event.script_type} ({event.script_id})："
+                f"{outcomes[event.outcome]}{version}{source}{detail}"
+                f"；目录：{event.install_root}"
+            )
+        message = "\n".join(lines)
+        # 汇总先写入整轮日志，再向当前主界面发送一次；断线仍保留文字记录。
+        self._task.current.log = (self._task.current.log or "") + message + "\n"
+        await self._task.commit()
+        try:
+            await Publisher.send(
+                id=self._task.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="warning"
+                    if any(e.outcome in ("old_version", "blocked") for e in self._recovery_events)
+                    else "info",
+                    message=message,
+                ),
+            )
+        except Exception:
+            logger.warning("脚本恢复汇总已写入日志，但发送任务通知失败")
 
     async def _set_progress(
         self, text: str, details: WSTaskPrefetchData | None = None
