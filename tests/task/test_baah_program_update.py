@@ -278,3 +278,73 @@ def test_real_idle_whitelist_rejects_baah_but_allows_known_adb(
     )
     with pytest.raises(script_install.InstallUnsafeError):
         REAL_ASSERT_IDLE(root, allow_background_adb=True)
+
+
+@pytest.mark.asyncio
+async def test_explicit_repair_can_reinstall_missing_baah_exe(installation):
+    root, config, _, _ = installation
+    original = await update.prepare_update(root, config)
+    await update.apply_update(root, original)
+    receipt = script_install.record_path(root, "installed.json")
+    assert receipt.is_file()
+    snapshot = receipt.read_bytes()
+    (root / "BAAH.exe").unlink()
+    with pytest.raises(script_install.InstallUnsafeError):
+        await update.confirm_current_install(root)
+    with pytest.raises(OSError):
+        await update.prepare_update(root, config)
+    result = await update.update_before_run(root, config, recovery_receipt=snapshot)
+    assert "校验通过" in result
+    assert (root / "BAAH.exe").read_bytes() == pe(b"new")
+    assert not (script_install.workspace(root) / "transaction.json").exists()
+    await update.confirm_current_install(root)
+
+
+@pytest.mark.asyncio
+async def test_repair_refuses_changed_receipt(installation):
+    root, config, _, _ = installation
+    candidate = await update.prepare_update(root, config)
+    await update.apply_update(root, candidate)
+    receipt = script_install.record_path(root, "installed.json")
+    previous = receipt.read_bytes()
+    receipt.write_text('{"files":{}}')
+    with pytest.raises(script_install.InstallUnsafeError, match="已改变"):
+        await update.update_before_run(root, config, recovery_receipt=previous)
+    assert (root / "BAAH.exe").is_file()
+
+
+@pytest.mark.asyncio
+async def test_manager_without_takeover_checks_receipt_integrity(
+    installation, monkeypatch
+):
+    from app.task.BAAH.tools import install_recovery
+
+    root, config, _, _ = installation
+    prepared = await update.prepare_update(root, config)
+    await update.apply_update(root, prepared)
+    (root / "BAAH.exe").write_bytes(pe(b"corrupt"))
+    config.Update.TakeoverEnabled = False
+
+    instance = object.__new__(manager.BAAHManager)
+    instance._install_access = ExitStack()
+    instance._directory_lock = None
+    instance.script_config = SimpleNamespace(
+        Script=SimpleNamespace(BAAHPath=root / "BAAH.exe"),
+        Update=config.Update,
+    )
+    instance.script_info = SimpleNamespace(
+        script_id=str(uuid.uuid4()), name="BAAH A", set_log=AsyncMock()
+    )
+    instance.task_info = SimpleNamespace(task_id="task", mode="AutoProxy")
+    monkeypatch.setattr(
+        install_recovery,
+        "ask_install_recovery",
+        AsyncMock(side_effect=script_install.InstallUnsafeError("没有主界面")),
+    )
+    with pytest.raises(script_install.InstallUnsafeError, match="没有主界面"):
+        await instance._prepare_program_update()
+    install_recovery.ask_install_recovery.assert_awaited_once()
+    assert (script_install.record_path(root, "installed.json")).is_file()
+    instance._install_access.close()
+    if instance._directory_lock is not None:
+        instance._directory_lock.release()

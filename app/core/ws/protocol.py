@@ -65,6 +65,9 @@ TASK_CREATED = "task.created"
 # 逐脚本、逐轮的执行边界（id=TaskManager），不随任务快照重放。
 TASK_SCRIPT_STARTED = "task.script.started"
 TASK_SCRIPT_FINISHED = "task.script.finished"
+BAAH_INSTALL_PROMPT = "baah.install.prompt"
+BAAH_INSTALL_PROMPT_CLOSED = "baah.install.prompt.closed"
+BAAH_INSTALL_DECISION = "baah.install.decision"
 
 # 应用生命周期与电源（id=Main）
 BACKEND_SHUTDOWN_READY = "backend.shutdown.ready"

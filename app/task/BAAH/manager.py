@@ -44,7 +44,7 @@ from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box, update_
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
-from .tools import program_update
+from .tools import install_recovery, program_update
 
 logger = get_logger("BAAH 调度器")
 
@@ -99,7 +99,8 @@ class BAAHManager(ScriptManagerBase):
             return "未填写 BAAH 主程序路径, 请检查托管配置中的主程序路径设置！"
         if not path.is_file():
             directory = script_install.workspace(path.parent)
-            if not ((directory / "transaction.json").exists()):
+            receipt = script_install.record_path(path.parent, "installed.json")
+            if not (directory / "transaction.json").is_file() and not receipt.is_file():
                 return "BAAH 主程序不存在，且没有可信的中断安装记录，请检查安装路径"
 
         return "Pass"
@@ -139,6 +140,42 @@ class BAAHManager(ScriptManagerBase):
         await lock.acquire()
         self._directory_lock = lock
         self._install_access.enter_context(script_install.installation_access(root))
+        # 先恢复已记录的目录切换事务；这属于文件快照回滚，不等同于跳过安装。
+        await script_install.run_worker(
+            script_install.recover_install,
+            root,
+            lambda: program_update.assert_idle(root),
+        )
+        try:
+            await program_update.confirm_current_install(root)
+        except (script_install.InstallUnsafeError, OSError, ValueError) as error:
+            # 没有可信回执的目录不能猜成历史托管安装，也不允许向错误目录写入。
+            receipt = script_install.record_path(root, "installed.json")
+            if receipt.is_symlink() or not receipt.is_file():
+                raise script_install.InstallUnsafeError(
+                    "BAAH 当前安装不可确认且缺少 MAS 校验记录，请使用官方安装包修复"
+                ) from error
+            action, snapshot = await install_recovery.ask_install_recovery(
+                self.task_info.task_id,
+                root,
+                managed_name=getattr(self.script_info, "name", "BAAH"),
+                takeover_enabled=self.script_config.Update.TakeoverEnabled,
+            )
+            if action == "retry":
+                result = await run_script_update(
+                    ScriptUpdateRequest(str(self.script_info.script_id), "BAAH"),
+                    program_update.update_before_run,
+                    root,
+                    self.script_config,
+                    recovery_receipt=snapshot,
+                )
+                await program_update.confirm_current_install(root)
+                await self.script_info.set_log(f"BAAH 手动修复安装成功：{result}")
+                self.check_result = "Pass"
+                return
+            raise script_install.InstallUnsafeError(
+                "用户取消 BAAH 安装修复；仍保留原校验记录"
+            )
         if self.script_config.Update.TakeoverEnabled:
 
             async def progress(downloaded: int, total: int, speed: float) -> None:
@@ -169,13 +206,6 @@ class BAAHManager(ScriptManagerBase):
                         type=protocol.TASK_NOTICE,
                         data=WSTaskNoticeData(level="warning", message=message),
                     )
-        else:
-            # 即使关闭接管，上轮未确认安装也必须先恢复。
-            await script_install.run_worker(
-                script_install.recover_install,
-                root,
-                lambda: program_update.assert_idle(root),
-            )
         self.check_result = "Pass"
 
     async def main_task(self):
