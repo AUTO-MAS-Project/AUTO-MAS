@@ -244,7 +244,9 @@ class WhimboxManager(ScriptManagerBase):
             self.check_result = "奇想盒后端更新未完成"
             await push_dispatch_log(self.script_info, "正在检查奇想盒后端更新…")
 
-            async def prepare_without_installing() -> backend_update.PreparedUpdate | str:
+            async def prepare_without_installing() -> (
+                backend_update.PreparedUpdate | str
+            ):
                 try:
                     return await backend_update.prepare_update(root)
                 except (
