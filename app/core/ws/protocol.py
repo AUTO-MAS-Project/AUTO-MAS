@@ -66,10 +66,6 @@ TASK_CREATED = "task.created"
 TASK_SCRIPT_STARTED = "task.script.started"
 TASK_SCRIPT_FINISHED = "task.script.finished"
 
-MAA_INSTALL_PROMPT = "maa.install.prompt"
-MAA_INSTALL_PROMPT_CLOSED = "maa.install.prompt.closed"
-MAA_INSTALL_DECISION = "maa.install.decision"
-
 # 应用生命周期与电源（id=Main）
 BACKEND_SHUTDOWN_READY = "backend.shutdown.ready"
 # 启动期攒下来、主连接建立后一次性发出的系统通知（id=Main）：配置迁移结果之类。
