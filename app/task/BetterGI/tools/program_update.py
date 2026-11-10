@@ -29,7 +29,7 @@ from app.services.common.update.transport import (
     DownloadProgress,
     request_mirror_resource,
 )
-from app.utils import io as _utils_io
+from app.utils import get_logger, io as _utils_io
 from app.utils.common.process.runner import (
     create_subprocess,
     observe_process_exit,
@@ -41,6 +41,7 @@ NOTICE_KEY = "notShowNewVersionNoticeEndVersion"
 # BetterGI 使用严格 SemVer 比较，不能填通配符或空的版本号。
 IGNORED_VERSION = "2147483647.0.0"
 _INSTALLER_CLEANUP_SECONDS = 5
+logger = get_logger("BetterGI 本体更新")
 
 
 def assert_idle(root: Path) -> None:
@@ -49,10 +50,16 @@ def assert_idle(root: Path) -> None:
         try:
             executable = process.info["exe"]
             name = str(process.info.get("name", "")).casefold()
-            if not executable and (
-                name in {"bettergi.exe", "bettergi.update.exe"}
-                or name.startswith("bettergi.install.")
-            ):
+            # 安装器可以由用户从下载目录手动启动，不一定在 root/workspace 内。
+            # 只要存在同名安装器就不能在恢复时清除标记。
+            exe_name = Path(executable).name.casefold() if executable else ""
+            if (name == "bettergi.update.exe" or name.startswith("bettergi.install.")
+                    or exe_name == "bettergi.update.exe"
+                    or exe_name.startswith("bettergi.install.")):
+                raise script_install.InstallUnsafeError(
+                    "BetterGI 安装器仍在运行，请先结束安装或退出安装器"
+                )
+            if not executable and name == "bettergi.exe":
                 raise script_install.InstallUnsafeError(
                     "无法确认 BetterGI 更新器已退出，请以管理员身份重试"
                 )
@@ -318,6 +325,10 @@ async def update_before_run(
 
     directory = script_install.workspace(root)
     marker = directory / "bgi-install.json"
+    logger.info(
+        f"BetterGI 版本检查：当前={current}，目标={target}，"
+        f"通道={config.Update.Channel}，存在未确认标记={marker.exists()}"
+    )
     if target <= current and not marker.exists():
         return f"BetterGI 当前版本 {current} 无需更新"
     if target < current:
@@ -366,6 +377,8 @@ async def update_before_run(
             or not 0 < mirror_size <= 4 * 1024**3
         ):
             raise ValueError("Mirror 酱 BetterGI 安装包大小无效")
+    # 不记录带鉴权信息的 URL/CDK，只记录来源与目标版本。
+    logger.info(f"BetterGI 下载安装器：来源={source}，目标={target}，文件={name}")
     # 失败/取消时保留独立下载目标，不删除可能仍由 FluxDown 写入的文件。
     await download_script_package(
         url,
@@ -388,13 +401,19 @@ async def update_before_run(
         await asyncio.to_thread(verify_installer, installer, size, digest)
     await asyncio.to_thread(assert_idle, root)
     _utils_io.write_file(marker, {"target": str(target)})
-    await run_installer(installer, root)
+    logger.warning(f"BetterGI 官方安装器开始执行，安装标记已写入：目标={target}")
+    try:
+        await run_installer(installer, root)
+    except BaseException as error:
+        logger.warning(f"BetterGI 安装未确认，保留标记：{type(error).__name__}: {error}")
+        raise
     await asyncio.to_thread(assert_idle, root)
     if await asyncio.to_thread(read_version, root) != target:
         raise script_install.InstallUnsafeError(
             "BetterGI 安装后版本未确认，请使用官方安装器修复"
         )
     marker.unlink()
+    logger.info(f"BetterGI 官方安装结果确认成功，版本={target}，已清理安装标记")
     # 仅在确认安装器和全部子进程退出后回收；失败保留现场。
     import shutil
 

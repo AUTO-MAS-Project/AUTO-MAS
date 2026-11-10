@@ -33,6 +33,8 @@ async def ask_install_recovery(
 ) -> tuple[str, bytes]:
     """返回 (retry/skip, 原标记字节)，让后续操作对同一份安装记录做乐观校验。"""
     marker = script_install.workspace(root) / "bgi-install.json"
+    if marker.is_symlink() or not marker.is_file():
+        raise script_install.InstallUnsafeError("BetterGI 安装恢复记录不是普通文件，请保留现场")
     snapshot = await asyncio.to_thread(marker.read_bytes)
     if len(snapshot) > 64 * 1024:
         raise script_install.InstallUnsafeError("BetterGI 安装标记异常，请手动检查安装状态")
@@ -94,7 +96,8 @@ async def ask_install_recovery(
             raise script_install.InstallUnsafeError(
                 "用户取消 BetterGI 安装恢复，本次任务已停止；未修改安装标记"
             )
-        if not marker.is_file() or await asyncio.to_thread(marker.read_bytes) != snapshot:
+        if (marker.is_symlink() or not marker.is_file()
+                or await asyncio.to_thread(marker.read_bytes) != snapshot):
             raise script_install.InstallUnsafeError(
                 "BetterGI 安装状态在等待选择时发生变化，本次任务已停止，请重新检查"
             )
@@ -111,3 +114,61 @@ async def ask_install_recovery(
             )
         except Exception:
             logger.warning("发送 BetterGI 安装恢复弹窗关闭通知失败")
+
+
+async def skip_unconfirmed_install(root: Path, snapshot: bytes) -> str:
+    """在用户明确确认后跳过一次残留安装；先核查程序，最后清除同一份标记。
+
+    只允许拥有安装锁的 BetterGIManager 调用。无法证明进程停止、标记未变、
+    当前可执行文件版本/架构可识别时，不能清理标记。
+    """
+    from packaging.version import Version
+
+    marker = script_install.workspace(root) / "bgi-install.json"
+    try:
+        record = json.loads(snapshot)
+        if not isinstance(record, dict) or not isinstance(record.get("target"), str):
+            raise ValueError("安装标记格式不正确")
+        Version(record["target"])
+    except (ValueError, TypeError) as error:
+        raise script_install.InstallUnsafeError(
+            "BetterGI 安装标记内容异常，不能直接跳过，请使用官方安装器修复"
+        ) from error
+
+    # 不能只看安装目录：官方安装器可能从用户的下载文件夹启动。
+    await asyncio.to_thread(program_update.assert_idle, root)
+    if (marker.is_symlink() or not marker.is_file()
+            or await asyncio.to_thread(marker.read_bytes) != snapshot):
+        raise script_install.InstallUnsafeError(
+            "BetterGI 安装恢复记录已经变化，本次不清理，请重新检查"
+        )
+    try:
+        version = await asyncio.to_thread(program_update.read_version, root)
+        arch = await asyncio.to_thread(
+            script_install.read_pe_architecture, root / "BetterGI.exe"
+        )
+        if arch != "x86_64":
+            raise ValueError("程序架构不可识别")
+    except Exception as error:
+        raise script_install.InstallUnsafeError(
+            "BetterGI 当前程序版本或架构不可识别，不能跳过，请先手动修复"
+        ) from error
+
+    # 版本及架构检查不保证所有附属文件完整；这是用户主动接受的风险。
+    await asyncio.to_thread(program_update.assert_idle, root)
+    if (marker.is_symlink() or not marker.is_file()
+            or await asyncio.to_thread(marker.read_bytes) != snapshot):
+        raise script_install.InstallUnsafeError("BetterGI 安装记录已变化，拒绝跳过")
+    marker.unlink()
+    try:
+        await program_update.confirm_current_install(root)
+    except BaseException:
+        # 最后的退出/版本复核失败时，尽可能恢复原标记，避免失去安全门禁。
+        if not marker.exists():
+            try:
+                marker.write_bytes(snapshot)
+            except OSError as error:
+                logger.error(f"BetterGI 无法恢复安装保护标记：{error}")
+        raise
+    logger.warning(f"用户确认跳过 BetterGI 未完成安装，已清除原标记；当前版本={version}")
+    return str(version)

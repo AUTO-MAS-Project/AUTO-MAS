@@ -15,6 +15,7 @@
 #
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+import asyncio
 import uuid
 from contextlib import ExitStack, suppress
 from datetime import datetime
@@ -36,7 +37,7 @@ from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import _BGI_REL_EXE, AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-from .tools import archive_native_backup, program_update
+from .tools import archive_native_backup, install_recovery, program_update
 from .Update import BetterGIUpdateTask
 
 logger = get_logger("BetterGI 调度器")
@@ -167,6 +168,58 @@ class BetterGIManager(ScriptManagerBase):
                 self.build_proxy_user_list(self.user_config.items())
             )
 
+    async def _run_program_update(self, root: Path) -> str:
+        await self.script_info.set_log("正在检查 BetterGI 本体更新…")
+
+        async def progress(downloaded: int, total: int, speed: float) -> None:
+            await self.script_info.set_log(
+                f"BetterGI 更新下载：{downloaded / 1024**2:.1f} / {total / 1024**2:.1f} MB"
+            )
+
+        return await run_script_update(
+            ScriptUpdateRequest(self.script_info.script_id, "BetterGI"),
+            program_update.update_before_run,
+            root,
+            self.script_config,
+            progress=progress,
+        )
+
+    async def _recover_unconfirmed_install(self) -> bool:
+        """残留标记由用户明确决定；关闭自动接管时也允许主动重试一次。"""
+        root = self._update_root
+        if root is None:
+            return False
+        marker = script_install.workspace(root) / "bgi-install.json"
+        if not marker.exists() and not marker.is_symlink():
+            return False
+
+        # 持有安装锁，但还须排除 MAS 之外手工启动的安装器和运行中的 BGI。
+        await asyncio.to_thread(program_update.assert_idle, root)
+        action, snapshot = await install_recovery.ask_install_recovery(
+            self.task_info.task_id,
+            root,
+            channel=self.script_config.Update.Channel,
+            takeover_enabled=self.script_config.Update.TakeoverEnabled,
+        )
+        if action == "skip":
+            version = await install_recovery.skip_unconfirmed_install(root, snapshot)
+            result = f"用户确认跳过 BetterGI 未完成安装，当前版本 {version}，继续任务"
+            logger.warning(result)
+            await self.script_info.set_log(result)
+            with suppress(Exception):
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="warning", message=result),
+                )
+        else:
+            # 用户主动选择重试：即使 TakeoverEnabled=False，也只为本次恢复调用更新器。
+            # 不走普通更新失败的旧版回退：安装标记仍在时任何失败都必须停止。
+            result = await self._run_program_update(root)
+            await program_update.confirm_current_install(root)
+            await self.script_info.set_log(f"BetterGI 安装恢复成功：{result}")
+        return True
+
     async def _prepare_program_update(self) -> None:
         root = self._update_root
         if root is None:
@@ -175,24 +228,24 @@ class BetterGIManager(ScriptManagerBase):
         if self._program_update_prepared:
             if self.script_config.Update.TakeoverEnabled:
                 await program_update.confirm_current_install(root)
+            elif (script_install.workspace(root) / "bgi-install.json").exists():
+                raise script_install.InstallUnsafeError(
+                    "BetterGI 安装状态在任务期间发生变化，已停止启动"
+                )
             self.check_result = "Pass"
             return
+
+        if await self._recover_unconfirmed_install():
+            # 无论重试还是跳过，本轮已由用户确定更新动作；不能继续自动更新第二次。
+            if self.script_config.Update.TakeoverEnabled:
+                program_update.suppress_update_notice(root)
+            self._program_update_prepared = True
+            self.check_result = "Pass"
+            return
+
         if self.script_config.Update.TakeoverEnabled:
-            await self.script_info.set_log("正在检查 BetterGI 本体更新…")
-
-            async def progress(downloaded: int, total: int, speed: float) -> None:
-                await self.script_info.set_log(
-                    f"BetterGI 更新下载：{downloaded / 1024**2:.1f} / {total / 1024**2:.1f} MB"
-                )
-
             try:
-                result = await run_script_update(
-                    ScriptUpdateRequest(self.script_info.script_id, "BetterGI"),
-                    program_update.update_before_run,
-                    root,
-                    self.script_config,
-                    progress=progress,
-                )
+                result = await self._run_program_update(root)
             except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
                 raise
             except Exception as error:
@@ -208,11 +261,11 @@ class BetterGIManager(ScriptManagerBase):
             await self.script_info.set_log(result)
             program_update.suppress_update_notice(root)
         else:
-            # 关闭接管仍不能启动上轮未确认安装；不发远程请求。
+            # 关闭自动接管不等于自动忽略上次更新记录；状态变化时保守停止。
             marker = script_install.workspace(root) / "bgi-install.json"
             if marker.exists():
                 raise script_install.InstallUnsafeError(
-                    "BetterGI 上次安装未确认，请开启更新托管重试或手动修复"
+                    "BetterGI 上次安装未确认，无法直接启动"
                 )
         self._program_update_prepared = True
         self.check_result = "Pass"
@@ -237,10 +290,12 @@ class BetterGIManager(ScriptManagerBase):
         # Update 只更新原神客户端，不启动 BetterGI；运行中的正常 BGI
         # 不应该阻断游戏更新，但未完成的本体安装必须阻断。
         root = self._update_root
-        if root is not None and self.execution_mode == "Update":
-            await program_update.confirm_safe_game_update(root)
-        elif root is not None and self.execution_mode == "ScriptConfig":
-            await program_update.confirm_current_install(root)
+        if root is not None and self.execution_mode in ("Update", "ScriptConfig"):
+            await self._recover_unconfirmed_install()
+            if self.execution_mode == "Update":
+                await program_update.confirm_safe_game_update(root)
+            else:
+                await program_update.confirm_current_install(root)
 
         # 「检查更新」不动 BetterGI 配置，不必归档，直接进更新任务
         if self.execution_mode == "Update":
