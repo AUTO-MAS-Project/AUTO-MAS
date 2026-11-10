@@ -68,6 +68,56 @@ async def confirm_usable_installation(root: Path) -> None:
         ) from error
 
 
+async def skip_pending_installation(root: Path, snapshot: bytes) -> str:
+    """用户确认后仅在依赖完整、安装无进程占用且标记未变时跳过。
+
+    调用方必须持有奇想盒安装锁；最后仍重新执行正常安装健康检查。
+    """
+    marker = pending_marker(root)
+    if marker.is_symlink() or not marker.is_file() or marker.read_bytes() != snapshot:
+        raise WhimboxUpdateUnsafeError("奇想盒安装记录已变化，拒绝跳过")
+    try:
+        Version(snapshot.decode("utf-8").strip())
+    except (UnicodeDecodeError, ValueError) as error:
+        raise WhimboxUpdateUnsafeError(
+            "奇想盒安装记录内容不可识别，无法确认跳过目标，请重试安装"
+        ) from error
+
+    script_install.assert_no_pending_process(root)
+    if await asyncio.to_thread(find_upstream_pids, root):
+        raise WhimboxUpdateUnsafeError("奇想盒仍在运行，请关闭后重试")
+    error = WheelAssetsConfigSurface(root).check_install()
+    if error:
+        raise WhimboxUpdateUnsafeError(error)
+    try:
+        version = await installed_version(root)
+        await run_python(root, "-m", "pip", "check")
+        await run_python(
+            root, "-c", "import importlib.util as u; assert u.find_spec('whimbox.main')"
+        )
+    except Exception as error:
+        raise WhimboxUpdateUnsafeError(
+            "奇想盒当前后端或依赖检查失败，不允许跳过安装，请重新安装"
+        ) from error
+
+    script_install.assert_no_pending_process(root)
+    if await asyncio.to_thread(find_upstream_pids, root):
+        raise WhimboxUpdateUnsafeError("奇想盒在恢复确认期间已启动，拒绝跳过")
+    if marker.is_symlink() or not marker.is_file() or marker.read_bytes() != snapshot:
+        raise WhimboxUpdateUnsafeError("奇想盒安装记录在恢复期间发生变化，拒绝跳过")
+    marker.unlink()
+    try:
+        await confirm_usable_installation(root)
+    except BaseException:
+        if not marker.exists() and not marker.is_symlink():
+            try:
+                marker.write_bytes(snapshot)
+            except OSError:
+                pass
+        raise
+    return str(version)
+
+
 def pending_marker(root: Path) -> Path:
     return root / "python-embedded" / ".mas-update-pending"
 

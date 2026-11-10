@@ -272,10 +272,24 @@ async def test_disabled_takeover_cannot_bypass_partial_install(
 ):
     managed_batch.script_config.Update.TakeoverEnabled = False
     update.pending_marker(installation).touch()
-    with pytest.raises(RuntimeError):
-        await managed_batch._run_prepared(installation)
+    from app.task.Whimbox.tools import install_recovery
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        install_recovery,
+        "ask_install_recovery",
+        AsyncMock(side_effect=update.WhimboxUpdateUnsafeError("取消恢复")),
+    )
+    try:
+        with pytest.raises(RuntimeError):
+            await managed_batch._run_prepared(installation)
+    finally:
+        monkeypatch.undo()
     manager.ensure_backend_updated.assert_not_awaited()
     managed_batch.run_user_task.assert_not_awaited()
+
+    # 旧测试只断言开关关闭不能自动跳过；新行为由显式恢复测试单独覆盖。
+
 
 
 @pytest.mark.asyncio
@@ -426,3 +440,121 @@ async def test_python_probes_leave_cold_installation_modules_unchanged(
     )
     assert result.splitlines() == ["read-only", "read-only"]
     assert sorted(path.name for path in modules.iterdir()) == ["mas_prefetch_probe.py"]
+
+
+@pytest.mark.asyncio
+async def test_user_can_skip_verified_pending_backend(installation, monkeypatch):
+    marker = update.pending_marker(installation)
+    marker.write_text("3.1.1", encoding="utf-8")
+    update.installed_version.return_value = Version("3.1.1")
+    monkeypatch.setattr(
+        update.WheelAssetsConfigSurface, "check_install", lambda self: None
+    )
+    result = await update.skip_pending_installation(installation, marker.read_bytes())
+    assert result == "3.1.1"
+    assert not marker.exists()
+    update.run_python.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bad_marker_or_broken_dependencies_cannot_skip(installation, monkeypatch):
+    marker = update.pending_marker(installation)
+    marker.write_text("invalid")
+    with pytest.raises(update.WhimboxUpdateUnsafeError, match="内容"):
+        await update.skip_pending_installation(installation, marker.read_bytes())
+    assert marker.exists()
+
+    marker.write_text("3.1.1")
+    monkeypatch.setattr(
+        update.WheelAssetsConfigSurface, "check_install", lambda self: None
+    )
+    update.run_python.side_effect = OSError("pip dependency broken")
+    with pytest.raises(update.WhimboxUpdateUnsafeError, match="依赖"):
+        await update.skip_pending_installation(installation, marker.read_bytes())
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_manager_retry_pending_even_when_takeover_disabled(
+    managed_batch, installation, monkeypatch
+):
+    from app.task.Whimbox.tools import install_recovery
+
+    marker = update.pending_marker(installation)
+    marker.write_text("3.1.1", encoding="utf-8")
+    monkeypatch.setattr(
+        install_recovery,
+        "ask_install_recovery",
+        AsyncMock(return_value=("retry", marker.read_bytes())),
+    )
+    managed_batch.script_config.Update.TakeoverEnabled = False
+
+    async def repaired(_root):
+        marker.unlink()
+        return "奇想盒已修复"
+
+    manager.ensure_backend_updated.side_effect = repaired
+    await managed_batch._run_prepared(installation)
+    manager.ensure_backend_updated.assert_awaited_once_with(installation)
+    manager.confirm_usable_installation.assert_awaited_once_with(installation)
+    assert managed_batch.run_user_task.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_manager_skip_pending_does_not_run_auto_update(
+    managed_batch, installation, monkeypatch
+):
+    from app.task.Whimbox.tools import install_recovery
+
+    marker = update.pending_marker(installation)
+    marker.write_text("3.1.1", encoding="utf-8")
+    monkeypatch.setattr(
+        install_recovery,
+        "ask_install_recovery",
+        AsyncMock(return_value=("skip", marker.read_bytes())),
+    )
+    monkeypatch.setattr(
+        update.WheelAssetsConfigSurface, "check_install", lambda self: None
+    )
+    update.installed_version.return_value = Version("3.1.1")
+    await managed_batch._run_prepared(installation)
+    assert not marker.exists()
+    manager.ensure_backend_updated.assert_not_awaited()
+    assert managed_batch.run_user_task.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_whimbox_prompt_is_bound_to_installation(installation, monkeypatch):
+    from app.core import Dispatcher
+    from app.core.ws import protocol
+    from app.models.schema import WSEnvelope
+    from app.task.Whimbox.tools import install_recovery
+
+    marker = update.pending_marker(installation)
+    marker.write_text("3.1.1", encoding="utf-8")
+    seen = []
+
+    async def send(*, id, type, data):
+        if type == protocol.WHIMBOX_INSTALL_PROMPT:
+            seen.append(data)
+            Dispatcher.dispatch(
+                WSEnvelope(
+                    id=id,
+                    type=protocol.WHIMBOX_INSTALL_DECISION,
+                    data={
+                        "requestId": data["requestId"],
+                        "taskId": data["taskId"],
+                        "action": "stop",
+                    },
+                )
+            )
+        return True
+
+    monkeypatch.setattr(install_recovery.Publisher, "send", send)
+    with pytest.raises(update.WhimboxUpdateUnsafeError, match="取消"):
+        await install_recovery.ask_install_recovery(
+            "task", installation, managed_name="夜间奇想盒", takeover_enabled=False
+        )
+    assert seen[0]["managedName"] == "夜间奇想盒"
+    assert seen[0]["installPath"] == str(installation.resolve())
+    assert marker.exists()

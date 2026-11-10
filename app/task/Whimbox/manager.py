@@ -44,7 +44,7 @@ from app.utils.common.process.runner import is_process_cleanup_unconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-from .tools import update as backend_update
+from .tools import install_recovery, update as backend_update
 from .tools.update import (
     RECOVERY_HINT,
     WhimboxUpdateUnsafeError,
@@ -183,6 +183,36 @@ class WhimboxManager(ScriptManagerBase):
     async def _run_prepared(self, root: Path) -> None:
         assert self.user_config is not None
 
+        recovered = False
+        marker = pending_marker(root)
+        if marker.exists() or marker.is_symlink():
+            # 任何模式都会先处理上次写入失败，关闭自动更新也不能绕过。
+            await self.discard_prefetched_update()
+            action, snapshot = await install_recovery.ask_install_recovery(
+                self.task_info.task_id,
+                root,
+                managed_name=getattr(self.script_info, "name", "奇想盒"),
+                takeover_enabled=self.script_config.Update.TakeoverEnabled,
+            )
+            if action == "skip":
+                version = await backend_update.skip_pending_installation(root, snapshot)
+                result = f"用户确认跳过奇想盒上次未完成安装，当前后端版本 {version}"
+            else:
+                if (
+                    marker.is_symlink()
+                    or not marker.is_file()
+                    or marker.read_bytes() != snapshot
+                ):
+                    raise WhimboxUpdateUnsafeError("奇想盒安装记录发生变化，拒绝重试")
+                result = await run_script_update(
+                    ScriptUpdateRequest(str(self.script_info.script_id), "Whimbox"),
+                    ensure_backend_updated,
+                    root,
+                )
+                await confirm_usable_installation(root)
+            await push_dispatch_log(self.script_info, result)
+            recovered = True
+
         if self.execution_mode == "ScriptConfig":
             await self.script_info.set_current_index(0)
             await self.spawn(
@@ -193,7 +223,7 @@ class WhimboxManager(ScriptManagerBase):
             )
             return
 
-        if self.script_config.Update.TakeoverEnabled:
+        if self.script_config.Update.TakeoverEnabled and not recovered:
             self.check_result = "奇想盒后端更新未完成"
             await push_dispatch_log(self.script_info, "正在检查奇想盒后端更新…")
             try:
