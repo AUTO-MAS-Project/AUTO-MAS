@@ -80,9 +80,7 @@ async def ask_install_recovery(
         raise HSRRecoveryUnsafeError("HSR 外部脚本记录异常，拒绝恢复")
     stage = work_dir(root) / "stage"
     backup = work_dir(root) / "backup"
-    can_skip = not any(
-        item.exists() or item.is_symlink() for item in (stage, backup)
-    )
+    can_skip = not any(item.exists() or item.is_symlink() for item in (stage, backup))
     spec = get_spec(engine)
     try:
         installed = await asyncio.to_thread(read_installed_version, spec, root)
@@ -126,15 +124,11 @@ async def ask_install_recovery(
         try:
             action = await asyncio.wait_for(future, timeout=_TIMEOUT)
         except TimeoutError as error:
-            raise HSRRecoveryUnsafeError(
-                "HSR 恢复选择超时，未修改安装状态"
-            ) from error
+            raise HSRRecoveryUnsafeError("HSR 恢复选择超时，未修改安装状态") from error
         if action == "stop":
             raise HSRRecoveryUnsafeError("用户取消 HSR 更新恢复，原记录保留")
         if action == "skip" and not can_skip:
-            raise HSRRecoveryUnsafeError(
-                "HSR 更新仍有原始备份或暂存，禁止跳过回滚"
-            )
+            raise HSRRecoveryUnsafeError("HSR 更新仍有原始备份或暂存，禁止跳过回滚")
         await asyncio.to_thread(confirm_snapshot, root, snapshot)
         return action, snapshot
     finally:
@@ -157,13 +151,9 @@ async def skip_stale_journal(engine: str, root: Path, snapshot: bytes) -> str:
     _assert_idle(root)
     confirm_snapshot(root, snapshot)
     if any(p.exists() or p.is_symlink() for p in (stage, backup)):
-        raise HSRRecoveryUnsafeError(
-            "HSR 仍有更新备份或暂存目录，禁止跳过"
-        )
+        raise HSRRecoveryUnsafeError("HSR 仍有更新备份或暂存目录，禁止跳过")
     if not (root / spec.executable).is_file():
-        raise HSRRecoveryUnsafeError(
-            "HSR 外部脚本主程序缺失，必须重新安装"
-        )
+        raise HSRRecoveryUnsafeError("HSR 外部脚本主程序缺失，必须重新安装")
     try:
         version = await asyncio.to_thread(read_installed_version, spec, root)
     except Exception as error:
@@ -171,9 +161,7 @@ async def skip_stale_journal(engine: str, root: Path, snapshot: bytes) -> str:
             "HSR 外部脚本版本信息不可读，无法确认安装可用"
         ) from error
     if not version:
-        raise HSRRecoveryUnsafeError(
-            "HSR 外部脚本版本不可识别，不能跳过安装恢复"
-        )
+        raise HSRRecoveryUnsafeError("HSR 外部脚本版本不可识别，不能跳过安装恢复")
     _assert_idle(root)
     confirm_snapshot(root, snapshot)
     if any(p.exists() or p.is_symlink() for p in (stage, backup)):
