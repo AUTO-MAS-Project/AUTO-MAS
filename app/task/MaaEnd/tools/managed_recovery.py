@@ -3,6 +3,8 @@
 """MaaEnd 安装状态与修复适配器。公共 #1916 负责决定恢复策略。"""
 
 import asyncio
+import shutil
+import threading
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,6 +14,52 @@ from app.services import script_install
 from . import script_update
 
 _MAX_TRANSACTION_BYTES = 128 * 1024 * 1024
+
+
+def discard_uncommitted_staging(
+    root: Path, takeover_enabled: bool, cancelled: threading.Event
+) -> bool:
+    """只清理尚未写入事务日志的安装暂存，不接触已开始切换的目录。"""
+    directory = script_install.workspace(root)
+    if not directory.exists() and not directory.is_symlink():
+        return False
+    script_install._reject_link(directory)
+    journal = directory / "transaction.json"
+    previous = directory / "previous"
+    ready = directory / "ready"
+    package = directory / "package"
+    for path in (journal, previous, ready, package):
+        if path.exists() or path.is_symlink():
+            script_install._reject_link(path)
+    if journal.exists() or previous.exists() or not ready.exists():
+        return False
+    if not ready.is_dir():
+        raise script_install.InstallUnsafeError("MaaEnd 暂存目录类型异常")
+    script_install._check_cancel(cancelled)
+    script_update.assert_idle(root)
+    script_install._reject_link(root)
+    # 对原安装仍需实际版本/可执行文件/资源和已存在的 MAS 收据复核；
+    # 不能仅因没有 journal 就把可能损坏的旧版标记为健康。
+    script_update.read_install(root)
+    receipt = script_install.record_path(root, "installed.json")
+    if takeover_enabled and receipt.exists():
+        if not script_install.verify_installed_files(root, cancelled):
+            raise script_install.InstallUnsafeError(
+                "MaaEnd 原安装收据校验未通过，保留未提交暂存"
+            )
+    # 删暂存前再检查一次：确认没有任何外部写入开始目录切换。
+    script_install._check_cancel(cancelled)
+    script_update.assert_idle(root)
+    if journal.exists() or previous.exists():
+        raise script_install.InstallUnsafeError("MaaEnd 事务状态已变化，保留暂存")
+    for path in (ready, package):
+        if path.exists() or path.is_symlink():
+            script_install._reject_link(path)
+            if not path.is_dir():
+                raise script_install.InstallUnsafeError("MaaEnd 更新暂存类型异常")
+            script_install._check_cancel(cancelled)
+            shutil.rmtree(path)
+    return True
 
 
 class MaaEndInstallAdapter:
@@ -92,6 +140,11 @@ class MaaEndInstallAdapter:
             script_install.recover_install,
             self.root,
             lambda: script_update.assert_idle(self.root),
+        )
+        # 安装器在 ready 复制后、写 journal 前取消时，原安装未切换；
+        # 仅清理这种未提交状态。任何 previous/journal 均不可触碰。
+        await script_install.run_worker(
+            discard_uncommitted_staging, self.root, self.takeover_enabled
         )
 
     async def retry_native(self) -> None:
