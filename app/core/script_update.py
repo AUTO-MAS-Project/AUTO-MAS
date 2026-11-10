@@ -169,7 +169,6 @@ async def run_script_update_with_safe_fallback(
         raise
 
 
-
 async def run_script_update(
     request: ScriptUpdateRequest,
     operation: Callable[P, Awaitable[T]],
@@ -243,9 +242,7 @@ class ScriptUpdateSession:
             extra = f"；原因：{event.reason}" if event.reason else ""
             source = f"；来源：{event.source}" if event.source else ""
             version = (
-                f"；版本：{event.installed_version}"
-                if event.installed_version
-                else ""
+                f"；版本：{event.installed_version}" if event.installed_version else ""
             )
             lines.append(
                 f"- {event.script_type}（{event.script_id}）："

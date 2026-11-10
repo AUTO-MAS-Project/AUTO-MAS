@@ -183,9 +183,7 @@ class BAAHManager(ScriptManagerBase):
                 acknowledge=lambda: acknowledge_stale_transaction(root),
                 reinstall=retry_native_rollback,
             )
-            self.script_info.log = (
-                f"BAAH 原生安装事务由公共入口恢复：{outcome}"
-            )
+            self.script_info.log = f"BAAH 原生安装事务由公共入口恢复：{outcome}"
         # 检查旧安装不写目录，可以保留 BAAH 内置的 adb server。
         await asyncio.to_thread(
             program_update.assert_idle, root, allow_background_adb=True
@@ -203,7 +201,7 @@ class BAAHManager(ScriptManagerBase):
                 after_rollback=adapter.after_rollback,
             )
             await script_install.run_worker(cleanup_original_receipts, root)
-            self.script_info.log = (f"BAAH 上次安装恢复：{result}")
+            self.script_info.log = f"BAAH 上次安装恢复：{result}"
             self.check_result = "Pass"
             return
 
@@ -230,7 +228,7 @@ class BAAHManager(ScriptManagerBase):
                 acknowledge=adapter.acknowledge,
                 reinstall=adapter.install,
             )
-            self.script_info.log = (f"BAAH 自动修复：{result}")
+            self.script_info.log = f"BAAH 自动修复：{result}"
             self.check_result = "Pass"
             return
 
@@ -284,7 +282,7 @@ class BAAHManager(ScriptManagerBase):
             else:
                 await program_update.confirm_current_install(root)
                 result = candidate or "BAAH 当前无需更新"
-            self.script_info.log = (str(result))
+            self.script_info.log = str(result)
         self.check_result = "Pass"
 
     async def main_task(self):

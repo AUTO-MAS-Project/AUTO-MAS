@@ -541,7 +541,9 @@ class MaaEndManager(ScriptManagerBase):
                     raise script_install.InstallUnsafeError(
                         "MaaEnd 原生事务未完成，拒绝启动"
                     )
-                await push_dispatch_log(self.script_info, f"MaaEnd 原生事务自动恢复：{outcome}")
+                await push_dispatch_log(
+                    self.script_info, f"MaaEnd 原生事务自动恢复：{outcome}"
+                )
                 recovered_automatically = True
             # 关闭接管或配置会话不主动覆盖用户自行维护的 MaaEnd。
             # 仅在已开启托管且存在可信安装身份时才自动修复损坏的发行包。
@@ -569,8 +571,8 @@ class MaaEndManager(ScriptManagerBase):
                         raise script_install.InstallUnsafeError(
                             "MaaEnd 完整包自动修复尚未确认成功"
                         )
-                    await push_dispatch_log(self.script_info, 
-                        f"MaaEnd 官方完整包自动修复：{outcome}"
+                    await push_dispatch_log(
+                        self.script_info, f"MaaEnd 官方完整包自动修复：{outcome}"
                     )
                     recovered_automatically = True
             if self.task_info.mode == "AutoProxy" and config.Update.TakeoverEnabled:

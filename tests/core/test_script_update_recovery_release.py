@@ -538,6 +538,7 @@ async def test_new_public_entry_reports_only_through_current_session(tmp_path):
         root, script_id="one", script_type="MAA"
     ).record.exists()
 
+
 @pytest.mark.asyncio
 async def test_symlinked_backup_workspace_is_never_followed(tmp_path):
     from app.services import script_install
