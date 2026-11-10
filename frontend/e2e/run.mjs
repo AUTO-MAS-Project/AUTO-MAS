@@ -41,6 +41,7 @@ const planSelectionByScriptType = {
   MaaEndConfig: { field: 'SanityMode', type: 'MaaEndPlanConfig' },
   BAAHConfig: { field: 'StageMode', type: 'BAAHPlanConfig' },
   MSSConfig: { field: 'PlanMode', type: 'MSSPlanConfig' },
+  OkNteConfig: { field: 'PlanMode', type: 'OkNtePlanConfig' },
 }
 
 const defaultRealRunLockPath =
@@ -395,7 +396,9 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
           'GlobalDomain',
           'GlobalStygian',
         ]
-      : ['ConfigFile', 'Infrastructure']
+      : scriptType === 'OkNteConfig'
+        ? ['ConfigFile', 'Infrastructure', 'QuickConfig']
+        : ['ConfigFile', 'Infrastructure']
   for (const owner of dataOwners) {
     for (const directory of dataDirectories) {
       await copyDirectory(path.join('data', scriptId, owner, directory))

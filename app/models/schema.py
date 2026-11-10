@@ -370,7 +370,7 @@ class EmulatorDeleteIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
 
 
-PlanComboxConsumer = Literal["maa", "maaend", "baah", "mss", "universal"]
+PlanComboxConsumer = Literal["maa", "maaend", "baah", "mss", "universal", "oknte"]
 
 
 class MaaEndAutoEssencePlanKey(BaseModel):
@@ -1863,3 +1863,37 @@ __all__ = [
 PLAN_ROTATE_DAYS_DEFAULT = 7
 PLAN_ROTATE_DAYS_MAX = 31
 BAAH_PLAN_ROTATE_DAYS_DEFAULT = 3
+
+
+class OkNtePlanKey(BaseModel):
+    """当天日常配置覆写；快捷与详细编辑共享同一份原生参数。"""
+
+    Configs: dict[str, dict[str, Any]] = Field(
+        default_factory=lambda: {
+            "DailyRoutineTask.json": {
+                "Routine Items": [
+                    {"id": "daily_anomaly", "enabled": True},
+                    {"id": "daily_anomaly_hunter", "enabled": False},
+                ]
+            },
+            "DailyRoutineTaskConfigs.json": {
+                "daily_anomaly": {
+                    "目标消耗体力": 180,
+                    "任务类型": "经验与甲硬币",
+                    "具体奖励目标": "角色经验",
+                    "异能材料序号": 1,
+                    "弧盘材料序号": 1,
+                    "空幕序号": 1,
+                    "循环模式": "停用",
+                },
+                "daily_anomaly_hunter": {"目标消耗体力": 180, "追猎目标": "音霸魔王"},
+            },
+        }
+    )
+
+    @field_validator("Configs")
+    @classmethod
+    def validate_daily_files(cls, value):
+        if set(value) - {"DailyRoutineTask.json", "DailyRoutineTaskConfigs.json"}:
+            raise ValueError("日常计划仅支持日常任务配置")
+        return value

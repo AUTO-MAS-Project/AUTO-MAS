@@ -4,7 +4,13 @@
       <a-form-item>
         <template #label>
           <FieldLabelWithHint
-            :text="t('core.plan.type.universal')"
+            :text="
+              t(
+                planType === PLAN_CONFIG_TYPES.OKNTE
+                  ? 'core.plan.type.oknte'
+                  : 'core.plan.type.universal'
+              )
+            "
             :hint="t('core.plan.universal.priority')"
             variant="form"
           />
@@ -45,6 +51,7 @@ const props = defineProps<{
   userId: string
   planMode?: string | null
   disabled?: boolean
+  planType?: string
 }>()
 /** 保存成功后同步回页面表单，避免页面持有旧的 PlanMode */
 const emit = defineEmits<{ change: [value: string] }>()
@@ -83,12 +90,11 @@ watch(
       if (all.code !== 200) throw new Error(t('core.plan.universal.readFailed'))
       planOptions.value = all.index.flatMap(item => {
         const info = all.data[item.uid]?.Info
-        return item.type === PLAN_CONFIG_TYPES.UNIVERSAL &&
-          info &&
-          'ScriptId' in info &&
-          info.ScriptId === props.scriptId
-          ? [{ label: info.Name ?? t('core.plan.type.universal'), value: item.uid }]
-          : []
+        const matches = item.type === (props.planType ?? PLAN_CONFIG_TYPES.UNIVERSAL)
+        const ownerMatches =
+          props.planType === PLAN_CONFIG_TYPES.OKNTE ||
+          (info && 'ScriptId' in info && info.ScriptId === props.scriptId)
+        return matches && ownerMatches ? [{ label: info?.Name ?? '', value: item.uid }] : []
       })
     } catch (reason) {
       if (current === revision) error.value = String(reason)

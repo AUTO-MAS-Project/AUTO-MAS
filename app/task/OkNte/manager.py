@@ -68,6 +68,7 @@ class OkNteManager(ScriptManagerBase):
         self.game_manager: ProcessManager | None = None
         self.had_original_script_config = False
         self.crashed = False
+        self.plan_locks = []
 
     async def check(self) -> str:
         if self.execution_mode not in METHOD_BOOK:
@@ -124,6 +125,22 @@ class OkNteManager(ScriptManagerBase):
             raise TypeError("托管配置类型错误")
 
         self.script_config = script_config
+        from app.models.config import OkNtePlanConfig
+
+        if self.execution_mode == "AutoProxy":
+            ids = {
+                user.Info.PlanMode
+                for _, user in self.selected_user_configs(
+                    script_config.UserData.items()
+                )
+                if user.Info.PlanMode != "Fixed"
+            }
+            for plan_id in ids:
+                plan = Config.PlanConfig[plan_id]
+                if not isinstance(plan, OkNtePlanConfig):
+                    raise ValueError("所选计划不是 OkNte 计划表")
+                self.plan_locks.append((plan, await plan.lock_s()))
+
         # X 锁覆盖账号集合，运行时直接修改原配置。
         self.user_config = self.script_config.UserData
         logger.success(f"{self.script_info.script_id} 已锁定，OK-NTE 账号配置已提取")
@@ -364,6 +381,9 @@ class OkNteManager(ScriptManagerBase):
                         ),
                     )
         finally:
+            for plan, ticket in reversed(self.plan_locks):
+                await plan.unlock(ticket)
+            self.plan_locks.clear()
             script_config = getattr(self, "script_config", None)
             if script_config is not None:
                 ticket = self.config_locks.pop(script_config.uid, None)

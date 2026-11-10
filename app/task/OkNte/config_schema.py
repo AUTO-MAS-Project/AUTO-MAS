@@ -717,9 +717,10 @@ def build_fields_for_config(
             json_data,
         )
         fields: list[dict[str, Any]] = []
-        for item in DAILY_ROUTINE_ITEMS:
-            task_id = item["id"]
-            value = json_data.get(task_id, {})
+        known = {item["id"]: item["label"] for item in DAILY_ROUTINE_ITEMS}
+        for task_id, value in json_data.items():
+            if task_id.startswith("_"):
+                continue
             child_fields = build_fields_for_config(
                 f"{DAILY_ROUTINE_CONFIGS_FILE}::{task_id}",
                 value if isinstance(value, dict) else {},
@@ -731,7 +732,7 @@ def build_fields_for_config(
                 {
                     "name": task_id,
                     "type": "object",
-                    "label": item["label"],
+                    "label": known.get(task_id, _translate(task_id, option_labels)),
                     "description": "",
                     "value": value,
                     "options": None,
@@ -758,6 +759,22 @@ def build_fields_for_config(
 
         if real_filename == DAILY_ROUTINE_TASK_FILE and name == "Routine Items":
             value = _normalize_daily_routine_items(raw_value)
+            definitions = list(DAILY_ROUTINE_ITEM_DEFINITIONS)
+            known_ids = {item["id"] for item in definitions}
+            for item in raw_value if isinstance(raw_value, list) else []:
+                if (
+                    isinstance(item, dict)
+                    and isinstance(item.get("id"), str)
+                    and item["id"] not in known_ids
+                ):
+                    definitions.append(
+                        {
+                            "id": item["id"],
+                            "label": _translate(item["id"], option_labels),
+                        }
+                    )
+                    value.append(item)
+                    known_ids.add(item["id"])
             return {
                 "name": name,
                 "type": "routine_items",
@@ -766,7 +783,7 @@ def build_fields_for_config(
                 "value": value,
                 "options": None,
                 "children": None,
-                "itemDefinitions": DAILY_ROUTINE_ITEM_DEFINITIONS,
+                "itemDefinitions": definitions,
                 "min": None,
                 "max": None,
                 "step": None,
@@ -798,7 +815,11 @@ def build_fields_for_config(
             "description": "",
             "value": raw_value,
             "options": None,
-            "children": None,
+            "children": build_fields_for_config(
+                f"{filename}::{name}", raw_value, option_labels
+            )
+            if isinstance(raw_value, dict)
+            else None,
             "itemDefinitions": None,
             "min": None,
             "max": None,

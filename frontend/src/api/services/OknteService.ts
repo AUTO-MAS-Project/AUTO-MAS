@@ -3,6 +3,9 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
+import type { Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post } from '../models/Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post';
+import type { OkNtePlanConfigsOut } from '../models/OkNtePlanConfigsOut';
+import type { OutBase } from '../models/OutBase';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -60,6 +63,48 @@ export class OknteService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/oknte/configs/batch-update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Oknte Plan Configs
+     * @param planId
+     * @param day
+     * @returns OkNtePlanConfigsOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkntePlanConfigsApiScriptsOkntePlanConfigsPost(
+        planId: string,
+        day: string,
+    ): CancelablePromise<OkNtePlanConfigsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/oknte/plan/configs',
+            query: {
+                'plan_id': planId,
+                'day': day,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Save Oknte Plan Configs
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveOkntePlanConfigsApiScriptsOkntePlanSavePost(
+        requestBody: Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/oknte/plan/save',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

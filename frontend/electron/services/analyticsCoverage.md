@@ -204,3 +204,5 @@ started 未送达时不发送对应 finished。运行 UUID 只留在本机消息
 - BetterGI 本体托管更新：设置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；每批更新准备、普通失败后继续及安装未确认拦截沿用 `task_observed_finished`。安装阶段不另建事件，不采集版本、CDK 或路径。
 
 通用脚本计划表复用 `plan_manage_finished` 与原生配置会话事件（`task_start_result`、`native_config_action_finished` 的打开与保存）；计划类型新增有限值 `UniversalPlanConfig`，不采集计划、账号、脚本 ID 或配置内容。
+
+OkNte 日常计划的快捷表格与详细编辑共享当天字段覆写。快捷保存复用计划编辑事件，详细编辑按保存接口结果记录；不采集日常参数或计划标识。

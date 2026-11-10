@@ -62,6 +62,14 @@ class _PlanRegistration(TypedDict):
 
 
 PLAN_BOOK: dict[str, _PlanRegistration] = {
+    "OkNtePlanConfig": {
+        "create_type": "OkNtePlan",
+        "config_class": OkNtePlanConfig,
+        "consumer": PLAN_CONSUMER_VALUES[5],
+        "script_class": OkNteConfig,
+        "field_group": "Info",
+        "field_name": "PlanMode",
+    },
     "UniversalPlanConfig": {
         "create_type": "UniversalPlan",
         "config_class": UniversalPlanConfig,

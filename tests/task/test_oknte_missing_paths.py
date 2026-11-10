@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.models.config import OkNteUserConfig
 from app.task.OkNte.AutoProxy import AutoProxyTask
 
 
@@ -20,7 +21,7 @@ def test_run_book_initialized_before_prepare():
     proxy = AutoProxyTask(
         script_info=script_info,
         script_config=SimpleNamespace(),
-        user_config={uid: SimpleNamespace()},
+        user_config={uid: OkNteUserConfig()},
         game_manager=None,
     )
     assert proxy.run_book is False

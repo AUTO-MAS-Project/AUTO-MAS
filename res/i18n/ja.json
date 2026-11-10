@@ -4900,5 +4900,19 @@
   "core.comp.downloadFamilypurple": "紫系",
   "core.comp.downloadFamilypink": "ピンク系",
   "core.comp.downloadGradientSpeed": "変化速度",
-  "core.comp.downloadGradientContrast": "色差の強さ"
+  "core.comp.downloadGradientContrast": "色差の強さ",
+  "core.plan.type.oknte": "OkNte プラン",
+  "core.plan.oknte.priority": "当日プランはアカウント設定の後に適用します。詳細設定は当日のプランに保存します。",
+  "core.plan.oknte.detail": "詳細設定",
+  "core.plan.oknte.date": "日付",
+  "core.plan.oknte.inherit": "アカウント設定を継承",
+  "core.plan.oknte.overridden": "当日の上書き",
+  "core.plan.oknte.on": "有効",
+  "core.plan.oknte.off": "無効",
+  "core.plan.oknte.startOverride": "継承中・クリックして当日の設定を指定",
+  "core.plan.oknte.resetInherit": "継承に戻す",
+  "core.plan.oknte.inheritanceHint": "当日の上書きはこの日のみに適用され、それ以外はアカウント設定を使用します。",
+  "core.plan.oknte.configureOverride": "当日の上書きを設定",
+  "core.plan.oknte.invalidJson": "正しい型の有効な JSON を入力してください",
+  "core.plan.oknte.inheritShort": "継承"
 }

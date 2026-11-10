@@ -89,6 +89,7 @@ from app.models.config import (
     MSSPlanConfig,
     MSSUserConfig,
     OkNteConfig,
+    OkNtePlanConfig,
     OkNteUserConfig,
     OkwwConfig,
     OkwwUserConfig,
@@ -1630,7 +1631,7 @@ class AppConfig:
     async def add_plan(
         self,
         script: Literal[
-            "MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan", "UniversalPlan"
+            "MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan", "UniversalPlan", "OkNtePlan"
         ],
         *,
         payload: dict[str, Any] | None = None,
@@ -1641,7 +1642,8 @@ class AppConfig:
         | MaaEndPlanConfig
         | BAAHPlanConfig
         | MSSPlanConfig
-        | UniversalPlanConfig,
+        | UniversalPlanConfig
+        | OkNtePlanConfig,
     ]:
         """添加计划表"""
 
