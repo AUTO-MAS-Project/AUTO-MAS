@@ -51,7 +51,7 @@ from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from .AutoProxy import AutoProxyTask
 from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_base
-from .tools import script_update
+from .tools import install_recovery, script_update
 from .tools.backup_archive import archive_native_backup
 from .tools.update import ensure_game_updated
 from .Update import EndfieldUpdateTask
@@ -485,11 +485,51 @@ class MaaEndManager(ScriptManagerBase):
             if (script_install.workspace(root) / "runtime-interface.json").exists():
                 await asyncio.to_thread(script_update.assert_idle, root)
                 script_update.recover_runtime_interface(root)
-            await script_install.run_worker(
-                script_install.recover_install,
-                root,
-                lambda: script_update.assert_idle(root),
-            )
+            # 通用事务优先自动恢复；失败后必须以原安装目录为对象请求
+            # 用户选择。允许人工确认不代表可以忽略待切换目录或进程占用。
+            journal = script_install.workspace(root) / "transaction.json"
+            if journal.is_symlink():
+                raise script_install.InstallUnsafeError(
+                    "MaaEnd 事务记录是符号链接，拒绝恢复"
+                )
+            recovered_by_user = False
+            try:
+                await script_install.run_worker(
+                    script_install.recover_install,
+                    root,
+                    lambda: script_update.assert_idle(root),
+                )
+            except script_install.InstallUnsafeError:
+                if not journal.is_file():
+                    raise
+                action, snapshot = await install_recovery.ask_install_recovery(
+                    self.task_info.task_id,
+                    root,
+                    managed_name=getattr(self.script_info, "name", "MaaEnd"),
+                    takeover_enabled=config.Update.TakeoverEnabled,
+                )
+                if action == "skip":
+                    result = await install_recovery.skip_stale_transaction(
+                        root, snapshot
+                    )
+                    await self.script_info.set_log(
+                        f"用户确认跳过 MaaEnd 无法恢复的旧事务，当前版本 {result}"
+                    )
+                else:
+                    install_recovery.confirm_snapshot(root, snapshot)
+                    await script_install.run_worker(
+                        script_install.recover_install,
+                        root,
+                        lambda: script_update.assert_idle(root),
+                    )
+                    await script_update.confirm_current_install(
+                        root,
+                        verify_receipt=config.Update.TakeoverEnabled,
+                    )
+                    await self.script_info.set_log("MaaEnd 旧安装事务已重新恢复")
+                recovered_by_user = True
+                # 显式恢复操作本轮不再重复下载/覆盖新包。
+                self._program_update_prepared = True
             if self.execution_mode == "AutoProxy" and config.Update.TakeoverEnabled:
                 self.maaend_config_dir = root / "config"
                 self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
