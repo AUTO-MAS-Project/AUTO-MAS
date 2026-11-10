@@ -9,6 +9,7 @@ from pathlib import Path
 from app.core.script_update_recovery import InstallInspection
 from app.services import script_install
 from app.services.script_install_backup import ManagedInstallBackup
+from app.utils import io as io_utils
 
 from . import program_update
 
@@ -49,12 +50,30 @@ class SRCInstallAdapter:
             previous = record.get("version") if record else None
             if previous is None and not pending:
                 previous = commit
+        completed = script_install.workspace(self.root) / "src-native-install-complete.json"
+        if completed.is_symlink():
+            raise script_install.InstallUnsafeError("SRC 原生安装完成记录不可为链接")
+        completed_target = None
+        if completed.is_file():
+            try:
+                record = io_utils.read_dict_file(completed)
+                token = record.get("target")
+                if (
+                    record.get("root") == str(self.root.resolve())
+                    and isinstance(token, str)
+                    and re.fullmatch(r"[0-9a-f]{40}", token)
+                ):
+                    completed_target = token
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
         if pending:
             target = program_update.validate_install_marker(
                 self.root, marker.read_bytes()
             )
             if expected is None:
                 expected = target
+        elif expected is None:
+            expected = completed_target
         healthy = (self.root / "src.exe").is_file() and (
             self.root / "installer.py"
         ).is_file()
@@ -77,7 +96,14 @@ class SRCInstallAdapter:
             healthy=healthy,
             installed_version=commit,
             target_version=expected,
-            updated_confirmed=bool(healthy and expected and commit == expected),
+            # pending 不能仅靠 Git 目标 + pip check 推断原生 installer 已成功。
+            # 仅接受 installer 在 Git 验证之后写下的完成记录。
+            updated_confirmed=bool(
+                healthy
+                and not pending
+                and completed_target == expected == commit
+                and (previous is None or commit != previous)
+            ),
             previous_confirmed=bool(
                 healthy and not pending and previous and commit == previous
             ),
@@ -108,6 +134,10 @@ class SRCInstallAdapter:
 
     async def after_rollback(self) -> None:
         await self.ensure_idle()
+        completed = script_install.workspace(self.root) / "src-native-install-complete.json"
+        if completed.is_symlink():
+            raise script_install.InstallUnsafeError("SRC 原生安装完成记录路径异常")
+        completed.unlink(missing_ok=True)
         await asyncio.to_thread(program_update.recover_deploy, self.root)
         marker = script_install.workspace(self.root) / "src-install.json"
         if marker.is_symlink():
