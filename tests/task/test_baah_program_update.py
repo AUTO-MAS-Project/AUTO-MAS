@@ -356,6 +356,7 @@ async def test_baah_stale_journal_automatically_requires_verified_receipt(
     candidate = await update.prepare_update(root, config)
     await update.apply_update(root, candidate)
     marker = script_install.workspace(root) / "transaction.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_bytes(b'{"state":"completed"}')
     state = await inspect_stale_transaction(root)
     assert state.pending and state.healthy and state.updated_confirmed
