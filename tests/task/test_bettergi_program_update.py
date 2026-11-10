@@ -1052,9 +1052,11 @@ async def test_script_config_missing_executable_with_marker_reaches_recovery_gat
     monkeypatch.setattr(manager, "BetterGIConfig", type(config))
     monkeypatch.setattr(manager, "Config", SimpleNamespace(ScriptConfig={uid: config}))
     instance = object.__new__(manager.BetterGIManager)
-    instance.execution_mode = "ScriptConfig"
+    instance.maintenance = False
     instance.script_info = SimpleNamespace(script_id=str(uid), name="损坏 BGI")
-    instance.task_info = SimpleNamespace(user_id="Default", task_id="task-id")
+    instance.task_info = SimpleNamespace(
+        user_id="Default", task_id="task-id", mode="ScriptConfig"
+    )
     instance._update_root = root
     instance.script_config = config
     monkeypatch.setattr(
