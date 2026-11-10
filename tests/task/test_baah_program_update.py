@@ -244,6 +244,9 @@ async def test_second_baah_config_waits_for_same_directory(installation, monkeyp
             Update=config.Update,
         )
         instance.check_result = "Pass"
+        instance.script_info = SimpleNamespace(
+            script_id=str(uuid.uuid4()), log="", set_log=AsyncMock()
+        )
 
     # 第一个任务在整个用户运行期间独占目录；第二个任务要等待。
     await one._prepare_program_update()

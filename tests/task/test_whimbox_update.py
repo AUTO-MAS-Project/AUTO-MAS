@@ -223,74 +223,75 @@ def managed_batch(installation, monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("error", [TimeoutError(), ValueError(), OSError()])
-async def test_preparation_failure_warns_and_continues(
-    managed_batch, installation, error
+async def test_public_recovery_handles_legacy_pending_without_modal(
+    managed_batch, installation, monkeypatch
 ):
-    manager.ensure_backend_updated.side_effect = error
+    update.pending_marker(installation).write_text("3.1.1", encoding="utf-8")
+
+    async def recover_and_confirm(*args, **kwargs):
+        update.pending_marker(installation).unlink()
+        return "verified"
+
+    common_recover = AsyncMock(side_effect=recover_and_confirm)
+    monkeypatch.setattr(manager, "auto_recover_script_install", common_recover)
     await managed_batch._run_prepared(installation)
-    manager.confirm_usable_installation.assert_awaited_once_with(installation)
+    common_recover.assert_awaited_once()
     assert managed_batch.run_user_task.await_count == 2
-    assert managed_batch.check_result == "Pass"
-    manager.Publisher.send.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "error",
-    [
-        asyncio.CancelledError(),
-        FluxdownCancelUnconfirmed("active"),
-        update.WhimboxUpdateUnsafeError("partial"),
-    ],
-)
-async def test_unsafe_or_cancelled_update_never_falls_back(
-    managed_batch, installation, error
+async def test_new_update_uses_common_snapshot_entry(
+    managed_batch, installation, monkeypatch
 ):
-    manager.ensure_backend_updated.side_effect = error
-    with pytest.raises(type(error)):
-        await managed_batch._run_prepared(installation)
-    manager.confirm_usable_installation.assert_not_awaited()
-    managed_batch.run_user_task.assert_not_awaited()
+    candidate = await update.prepare_update(installation)
+    common_install = AsyncMock(return_value="installed")
+    monkeypatch.setattr(manager, "run_managed_script_install", common_install)
+    managed_batch._update_candidate = candidate
+    await managed_batch._run_prepared(installation)
+    common_install.assert_awaited_once()
+    assert managed_batch.run_user_task.await_count == 2
 
 
 @pytest.mark.asyncio
-async def test_fallback_rejects_unusable_installation(managed_batch, installation):
-    manager.ensure_backend_updated.side_effect = TimeoutError()
-    manager.confirm_usable_installation.side_effect = update.WhimboxUpdateUnsafeError(
-        "unusable"
+async def test_disabled_takeover_keeps_healthy_install_without_updating(
+    managed_batch, installation, monkeypatch
+):
+    managed_batch.script_config.Update.TakeoverEnabled = False
+    await managed_batch._run_prepared(installation)
+    manager.ensure_backend_updated.assert_not_awaited()
+    assert managed_batch.run_user_task.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_snapshot_recovery_runs_even_when_takeover_disabled(
+    managed_batch, installation, monkeypatch
+):
+    managed_batch.script_config.Update.TakeoverEnabled = False
+    common_install = AsyncMock(return_value="old_version")
+    monkeypatch.setattr(manager, "run_managed_script_install", common_install)
+    monkeypatch.setattr(
+        manager.ManagedInstallBackup,
+        "read",
+        lambda self: {"phase": "timed_out", "version": "3.1.0"},
+    )
+    await managed_batch._run_prepared(installation)
+    common_install.assert_awaited_once()
+    assert managed_batch.run_user_task.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_legacy_pending_failure_is_not_silently_bypassed(
+    managed_batch, installation, monkeypatch
+):
+    update.pending_marker(installation).write_text("3.1.1", encoding="utf-8")
+    monkeypatch.setattr(
+        manager,
+        "auto_recover_script_install",
+        AsyncMock(side_effect=update.WhimboxUpdateUnsafeError("unsafe")),
     )
     with pytest.raises(update.WhimboxUpdateUnsafeError):
         await managed_batch._run_prepared(installation)
     managed_batch.run_user_task.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_disabled_takeover_cannot_bypass_partial_install(
-    managed_batch, installation
-):
-    managed_batch.script_config.Update.TakeoverEnabled = False
-    update.pending_marker(installation).touch()
-    with pytest.raises(RuntimeError):
-        await managed_batch._run_prepared(installation)
-    manager.ensure_backend_updated.assert_not_awaited()
-    managed_batch.run_user_task.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_no_update_prefetch_is_rechecked_at_launch(managed_batch, installation):
-    managed_batch._update_candidate = "backend already up to date"
-    await managed_batch._run_prepared(installation)
-    manager.ensure_backend_updated.assert_awaited_once_with(installation)
-    assert managed_batch.run_user_task.await_count == 2
-
-
-@pytest.mark.asyncio
-async def test_disabled_takeover_keeps_existing_run(managed_batch, installation):
-    managed_batch.script_config.Update.TakeoverEnabled = False
-    await managed_batch._run_prepared(installation)
-    manager.ensure_backend_updated.assert_not_awaited()
-    assert managed_batch.run_user_task.await_count == 2
 
 
 @pytest.mark.asyncio
