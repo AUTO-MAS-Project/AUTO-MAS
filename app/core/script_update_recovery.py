@@ -222,7 +222,8 @@ async def run_managed_installation(
         )
 
     async def verify_new() -> InstallInspection:
-        """先证明新版本已完整就绪，才能确认原标记和删除备份。"""
+        """确认后台已停写且新安装健康，才可删除旧版备份。"""
+        await ensure_idle()
         result = await inspect()
         if not result.healthy or not result.updated_confirmed:
             raise InstallUnsafeError("新版本健康状态或安装完整性未确认")
@@ -231,6 +232,7 @@ async def run_managed_installation(
             result = await inspect()
         if result.pending or not result.healthy or not result.updated_confirmed:
             raise InstallUnsafeError("清理标记后新版本仍未通过完整性复核")
+        await ensure_idle()
         return result
 
     async def restore_previous(
