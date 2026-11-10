@@ -240,6 +240,7 @@ async def test_normal_download_failure_uses_verified_previous_and_defers_notice(
     session.record_recovery = reports.append
     token = script_update._current_recovery_session.set(session)
     try:
+
         async def download():
             raise DownloadRetryFailed(source="GitHub", reason="连接超时")
 
@@ -248,9 +249,7 @@ async def test_normal_download_failure_uses_verified_previous_and_defers_notice(
             download,
             tmp_path,
             AsyncMock(
-                return_value=inspection(
-                    pending=False, healthy=True, previous=True
-                )
+                return_value=inspection(pending=False, healthy=True, previous=True)
             ),
         )
         assert "继续任务" in result
@@ -275,9 +274,7 @@ async def test_normal_download_failure_never_bypasses_pending_marker(tmp_path):
                 download,
                 tmp_path,
                 AsyncMock(
-                    return_value=inspection(
-                        pending=True, healthy=True, previous=True
-                    )
+                    return_value=inspection(pending=True, healthy=True, previous=True)
                 ),
             )
         assert reports[0].outcome == "blocked"
@@ -299,8 +296,11 @@ async def test_recovery_check_exceptions_are_reported(tmp_path, failure):
             inspection(pending=True, healthy=True, updated=True),
             inspection(pending=False, healthy=True, updated=True),
         ]
-        check = AsyncMock(side_effect=checks if failure == "acknowledge" else
-                          [checks[0], OSError("recheck failed")])
+        check = AsyncMock(
+            side_effect=checks
+            if failure == "acknowledge"
+            else [checks[0], OSError("recheck failed")]
+        )
         acknowledge = AsyncMock(
             side_effect=OSError("journal moved") if failure == "acknowledge" else None
         )
@@ -387,7 +387,9 @@ async def test_installer_reported_failure_rolls_back_and_continues(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_timeout_keeps_backup_until_next_run_then_retries_and_rolls_back(tmp_path):
+async def test_timeout_keeps_backup_until_next_run_then_retries_and_rolls_back(
+    tmp_path,
+):
     root = tmp_path / "MAA"
     root.mkdir()
     exe = root / "program.exe"
@@ -519,4 +521,6 @@ async def test_uncertain_installer_does_not_rollback_while_still_running(tmp_pat
         await run_managed_installation(**args)
     assert exe.read_bytes() == b"not-finished"
     assert events[-1].outcome == "blocked"
-    assert ManagedInstallBackup(root, script_id="one", script_type="BAAH").record.exists()
+    assert ManagedInstallBackup(
+        root, script_id="one", script_type="BAAH"
+    ).record.exists()
