@@ -205,9 +205,7 @@ async def test_native_failure_marker_with_package_does_not_fake_automatic_retry(
     )
     instance = object.__new__(manager.MaaManager)
     instance.maa_set_path = maa_root / "config"
-    instance.script_info = SimpleNamespace(
-        script_id="test-script", set_log=AsyncMock()
-    )
+    instance.script_info = SimpleNamespace(script_id="test-script", set_log=AsyncMock())
     instance.script_config = SimpleNamespace(
         Update=SimpleNamespace(MirrorChyanCDK="", TakeoverEnabled=True)
     )
@@ -238,14 +236,15 @@ async def test_resource_failure_without_official_marker_keeps_automatic_repair(
 
     called.side_effect = prepared
     monkeypatch.setattr(
-        managed_recovery, "verify_resource_recovery_marker",
+        managed_recovery,
+        "verify_resource_recovery_marker",
         lambda root, snapshot: None,
     )
     monkeypatch.setattr(
-        managed_recovery, "has_incomplete_resource_update",
+        managed_recovery,
+        "has_incomplete_resource_update",
         lambda root: resource.exists(),
     )
     await adapter.reinstall(called)
     called.assert_awaited_once()
     assert not resource.exists()
-
