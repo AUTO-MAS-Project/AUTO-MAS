@@ -835,7 +835,9 @@ class SrcManager(ScriptManagerBase):
                 result = candidate or "SRC 当前已经是最新版本"
             await self.script_info.set_log(str(result))
         elif marker.exists() or marker.is_symlink():
-            raise script_install.InstallUnsafeError("SRC 有未确认更新标记，禁止继续启动")
+            raise script_install.InstallUnsafeError(
+                "SRC 有未确认更新标记，禁止继续启动"
+            )
         self._program_update_prepared = True
         self.check_result = "Pass"
 
