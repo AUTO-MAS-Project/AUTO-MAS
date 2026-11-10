@@ -238,9 +238,7 @@ async def test_maa_corrupted_executable_blocks_manual_acknowledge(
     flag.write_bytes(b"official error")
     (maa_root / "MAA.exe").write_bytes(b"")
     with pytest.raises(MaaUpdateUnsafeError, match="PE 架构"):
-        await recovery.skip_delegated_failure(
-            maa_root, {"software": flag.read_bytes()}
-        )
+        await recovery.skip_delegated_failure(maa_root, {"software": flag.read_bytes()})
     assert flag.read_bytes() == b"official error"
 
 
