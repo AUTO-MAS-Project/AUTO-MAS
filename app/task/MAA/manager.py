@@ -540,9 +540,7 @@ class MaaManager(ScriptManagerBase):
             cdk = resolve_takeover_cdk(
                 str(self.script_config.Update.MirrorChyanCDK or "")
             )
-            await prepare_install_resources(
-                root, cdk=cdk or None, github=not bool(cdk)
-            )
+            await prepare_install_resources(root, cdk=cdk or None, github=not bool(cdk))
 
         async def reinstall() -> None:
             await adapter.reinstall(install_software, install_resources)
