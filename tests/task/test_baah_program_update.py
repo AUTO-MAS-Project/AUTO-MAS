@@ -1,5 +1,6 @@
 """BAAH 下载/安装分离及配置保护；网络与真实程序进程在边界隔离。"""
 
+import asyncio
 import hashlib
 import json
 import shutil
@@ -391,3 +392,45 @@ async def test_baah_corrupt_install_has_no_gui_dependency(installation, monkeypa
     manager_mock._install_access.close()
     if manager_mock._directory_lock is not None:
         manager_mock._directory_lock.release()
+
+@pytest.mark.asyncio
+async def test_receipt_cleanup_cancellation_retains_installation_lock(
+    installation, monkeypatch
+):
+    from app.task.BAAH.tools import managed_recovery
+
+    root, _, _, _ = installation
+    managed_recovery.snapshot_original_receipts(root, threading.Event())
+    entered = threading.Event()
+    release = threading.Event()
+    original = managed_recovery.cleanup_original_receipts
+
+    def slow_cleanup(install_root, cancelled):
+        entered.set()
+        if not release.wait(5):
+            raise RuntimeError("test cleanup did not resume")
+        return original(install_root, cancelled)
+
+    with script_install.installation_access(root):
+        pending = asyncio.create_task(
+            script_install.run_worker(slow_cleanup, root)
+        )
+        await asyncio.wait_for(asyncio.to_thread(entered.wait, 2), 3)
+        pending.cancel()
+        # Second cancellation is possible while the first is waiting for
+        # worker termination. run_worker must still retain installation ownership.
+        pending.cancel()
+        await asyncio.sleep(0)
+    with pytest.raises(script_install.InstallUnsafeError):
+        with script_install.installation_access(root):
+            pass
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+    await asyncio.sleep(0)
+    assert managed_recovery.receipt_backup_path(root).exists()
+    with script_install.installation_access(root):
+        await script_install.run_worker(
+            managed_recovery.cleanup_original_receipts, root
+        )
+    assert not managed_recovery.receipt_backup_path(root).exists()
