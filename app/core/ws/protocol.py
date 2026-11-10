@@ -65,6 +65,9 @@ TASK_CREATED = "task.created"
 # 逐脚本、逐轮的执行边界（id=TaskManager），不随任务快照重放。
 TASK_SCRIPT_STARTED = "task.script.started"
 TASK_SCRIPT_FINISHED = "task.script.finished"
+MAA_RESOURCE_RECOVERY_PROMPT = "maa.resource.recovery.prompt"
+MAA_RESOURCE_RECOVERY_CLOSED = "maa.resource.recovery.closed"
+MAA_RESOURCE_RECOVERY_DECISION = "maa.resource.recovery.decision"
 
 # 应用生命周期与电源（id=Main）
 BACKEND_SHUTDOWN_READY = "backend.shutdown.ready"

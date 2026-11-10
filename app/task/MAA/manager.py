@@ -58,7 +58,7 @@ from .AutoProxy import (
 )
 from .constants import ARKNIGHTS_PACKAGE_NAME
 from .ScriptConfig import ScriptConfigTask
-from .tools import update_maa
+from .tools import resource_install_recovery, update_maa
 from .tools.backup_archive import (
     archive_native_backup,
     collect_native_files,
@@ -657,8 +657,43 @@ class MaaManager(ScriptManagerBase):
                 "MAA 当前安装或资源状态无法确认，不能安全启动后续账号任务"
             )
 
+    async def _recover_incomplete_resources(self) -> None:
+        """恢复上次部分覆盖，只有用户明确重试才重新下载并校验整包。"""
+        root = self.maa_set_path.parent
+        if not has_incomplete_resource_update(root):
+            return
+        action, snapshot = await resource_install_recovery.ask_resource_recovery(
+            self.task_info.task_id,
+            root,
+            managed_name=getattr(self.script_info, "name", "MAA"),
+            takeover_enabled=self.script_config.Update.TakeoverEnabled,
+        )
+        if action != "retry":
+            raise MaaUpdateUnsafeError("用户取消 MAA 资源修复，原记录已保留")
+        await self.script_info.set_log("用户选择修复 MAA 资源：准备官方完整资源包…")
+        await run_script_update(
+            ScriptUpdateRequest(str(self.script_info.script_id), "MAA", "Resource"),
+            prepare_install_resources,
+            root,
+            cdk=None,
+            github=True,
+            recovery_snapshot=snapshot,
+        )
+        if has_incomplete_resource_update(root) or read_resource_clock(root) is None:
+            raise MaaUpdateUnsafeError(
+                "MAA 资源修复未完成，覆盖记录保留，不能启动自动任务"
+            )
+        await self.script_info.set_log("MAA 中断的资源更新已完整验证并恢复")
+
     async def _prepare_software_update(self, task: AutoProxyTask) -> bool:
         """启动前尽力更新；普通准备失败时沿用当前安装继续任务。"""
+        root = self.maa_set_path.parent
+        if has_delegated_update_failure(root):
+            raise MaaUpdateUnsafeError(
+                "MAA 官方更新器上次安装失败，请先打开 MAA 官方 GUI 完成修复；"
+                "MAS 不会删除上游失败标志"
+            )
+        await self._recover_incomplete_resources()
         if not self.script_config.Update.TakeoverEnabled:
             if has_incomplete_resource_update(self.maa_set_path.parent):
                 raise MaaUpdateUnsafeError(
