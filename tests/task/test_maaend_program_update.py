@@ -936,3 +936,64 @@ async def test_no_update_prefetch_is_rechecked_at_script_start(
     await scheduler._prepare_program_update(root)
     check.assert_awaited_once()
     apply.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_explicit_repair_restores_broken_maaend_with_identity(installation):
+    root, config = installation
+    await update.update_before_run(root, config)
+    identity = script_install.record_path(root, "program-identity.json")
+    snapshot = identity.read_bytes()
+    (root / "MaaEnd.exe").unlink()
+    with pytest.raises(script_install.InstallUnsafeError):
+        await update.confirm_current_install(root)
+    result = await update.update_before_run(root, config, recovery_identity=snapshot)
+    assert "已更新" in result
+    assert update.read_install(root)[0] == Version("2.2.0")
+    assert script_install.verify_installed_files(root, threading.Event())
+
+
+@pytest.mark.asyncio
+async def test_maaend_recovery_refuses_changed_identity(installation):
+    root, config = installation
+    await update.update_before_run(root, config)
+    identity = script_install.record_path(root, "program-identity.json")
+    previous = identity.read_bytes()
+    (root / "MaaEnd.exe").unlink()
+    identity.write_text('{"arch":"aarch64","version":"v2.2.0"}')
+    with pytest.raises(script_install.InstallUnsafeError, match="已变化"):
+        await update.update_before_run(root, config, recovery_identity=previous)
+    assert not (root / "MaaEnd.exe").exists()
+
+
+@pytest.mark.asyncio
+async def test_maaend_missing_arch_identity_must_fail_without_prompt(
+    installation, monkeypatch
+):
+    from app.task.MaaEnd.tools import install_recovery
+
+    root, config = installation
+    (root / "MaaEnd.exe").unlink()
+    instance = object.__new__(manager.MaaEndManager)
+    instance.script_info = SimpleNamespace(script_id="test", name="MaaEnd")
+    instance.task_info = SimpleNamespace(task_id="task", mode="AutoProxy")
+    instance.discard_prefetched_update = AsyncMock()
+    ask = AsyncMock()
+    monkeypatch.setattr(install_recovery, "ask_install_recovery", ask)
+    with pytest.raises(script_install.InstallUnsafeError, match="官方安装器"):
+        await instance._recover_unusable_install(root, config)
+    ask.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_maaend_uncorrupted_install_needs_no_prompt(installation, monkeypatch):
+    from app.task.MaaEnd.tools import install_recovery
+
+    root, config = installation
+    instance = object.__new__(manager.MaaEndManager)
+    instance.script_info = SimpleNamespace(script_id="test", name="MaaEnd")
+    instance.task_info = SimpleNamespace(task_id="task", mode="AutoProxy")
+    ask = AsyncMock()
+    monkeypatch.setattr(install_recovery, "ask_install_recovery", ask)
+    assert await instance._recover_unusable_install(root, config) is False
+    ask.assert_not_awaited()

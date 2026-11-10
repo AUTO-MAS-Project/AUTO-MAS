@@ -363,13 +363,60 @@ async def apply_update(root: Path, candidate: PreparedUpdate | str) -> str:
         discard_update(candidate)
 
 
+def verify_repair_identity(root: Path, snapshot: bytes) -> None:
+    """只对用户授权的同一份既有 MAS 安装身份执行修复，拒绝换根/换架构。"""
+    path = script_install.record_path(root, "program-identity.json")
+    if (
+        path.is_symlink()
+        or not path.is_file()
+        or not snapshot
+        or len(snapshot) > 16 * 1024
+        or path.read_bytes() != snapshot
+    ):
+        raise script_install.InstallUnsafeError(
+            "MaaEnd 安装身份记录已变化，不允许继续旧修复请求"
+        )
+    try:
+        record = json.loads(snapshot)
+        if record.get("arch") not in ("x86_64", "aarch64"):
+            raise ValueError("untrusted architecture")
+    except (ValueError, TypeError, AttributeError) as error:
+        raise script_install.InstallUnsafeError(
+            "MaaEnd 安装身份缺少可信架构，必须由官方安装器手动修复"
+        ) from error
+
+
 async def update_before_run(
-    root: Path, config: MaaEndConfig, *, progress: DownloadProgress | None = None
+    root: Path,
+    config: MaaEndConfig,
+    *,
+    progress: DownloadProgress | None = None,
+    recovery_identity: bytes | None = None,
 ) -> str:
     """手动与无预取路径仍在安装锁下完整等待更新。"""
     await asyncio.to_thread(assert_idle, root)
+    if recovery_identity is not None:
+        verify_repair_identity(root, recovery_identity)
+        try:
+            await asyncio.to_thread(read_install, root)
+        except (OSError, ValueError):
+            pass
+        else:
+            raise script_install.InstallUnsafeError(
+                "MaaEnd 已由外部安装器修复，请重新检查，不再沿用旧请求"
+            )
     candidate = await prepare_update(root, config, progress=progress)
     try:
+        if recovery_identity is not None:
+            verify_repair_identity(root, recovery_identity)
+            try:
+                await asyncio.to_thread(read_install, root)
+            except (OSError, ValueError):
+                pass
+            else:
+                raise script_install.InstallUnsafeError(
+                    "MaaEnd 安装在下载期间已变化，请重新检查"
+                )
         return await apply_update(root, candidate)
     finally:
         discard_update(candidate)

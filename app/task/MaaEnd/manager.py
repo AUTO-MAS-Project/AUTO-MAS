@@ -51,7 +51,7 @@ from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from .AutoProxy import AutoProxyTask
 from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_base
-from .tools import script_update
+from .tools import install_recovery, script_update
 from .tools.backup_archive import archive_native_backup
 from .tools.update import ensure_game_updated
 from .Update import EndfieldUpdateTask
@@ -287,6 +287,41 @@ class MaaEndManager(ScriptManagerBase):
             f"账号列表加载完成, 已筛选账号数: {len(self.script_info.user_list)}"
         )
 
+    async def _recover_unusable_install(
+        self, root: Path, config: MaaEndConfig
+    ) -> bool:
+        """仅损坏原生安装且持有可靠 MAS 架构记录时，询问用户是否完整修复。"""
+        try:
+            await asyncio.to_thread(script_update.read_install, root)
+            return False
+        except (OSError, ValueError) as error:
+            identity = script_install.record_path(root, "program-identity.json")
+            if identity.is_symlink() or not identity.is_file():
+                raise script_install.InstallUnsafeError(
+                    "MaaEnd 当前安装损坏且缺少架构身份记录，请用官方安装器修复"
+                ) from error
+        action, snapshot = await install_recovery.ask_install_recovery(
+            self.task_info.task_id,
+            root,
+            managed_name=getattr(self.script_info, "name", "MaaEnd"),
+            takeover_enabled=config.Update.TakeoverEnabled,
+        )
+        if action != "retry":
+            raise script_install.InstallUnsafeError(
+                "用户取消 MaaEnd 修复，原安装记录仍保留"
+            )
+        await self.discard_prefetched_update()
+        result = await run_script_update(
+            ScriptUpdateRequest(str(self.script_info.script_id), "MaaEnd"),
+            script_update.update_before_run,
+            root,
+            config,
+            recovery_identity=snapshot,
+        )
+        await script_update.confirm_current_install(root)
+        await push_dispatch_log(self.script_info, f"用户明确修复 MaaEnd：{result}")
+        return True
+
     async def _prepare_program_update(self, root: Path) -> None:
         if self._program_update_prepared:
             return
@@ -490,6 +525,9 @@ class MaaEndManager(ScriptManagerBase):
                 root,
                 lambda: script_update.assert_idle(root),
             )
+            # 事务自动恢复后若安装仍损坏，不得被关闭托管或上游 MXU 的
+            # 校验回执宽松模式放行；可用原 MAS 架构身份执行单次授权修复。
+            await self._recover_unusable_install(root, config)
             if self.execution_mode == "AutoProxy" and config.Update.TakeoverEnabled:
                 self.maaend_config_dir = root / "config"
                 self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
