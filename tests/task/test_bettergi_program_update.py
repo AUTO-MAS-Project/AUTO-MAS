@@ -50,6 +50,11 @@ def installation(tmp_path, monkeypatch):
     monkeypatch.setattr(update, "read_version", lambda root: version[0])
     monkeypatch.setattr(update, "request_release", AsyncMock(return_value=release))
     monkeypatch.setattr(
+        update.resource_readiness,
+        "stable_resources_ready",
+        AsyncMock(return_value=(True, "")),
+    )
+    monkeypatch.setattr(
         update,
         "Config",
         SimpleNamespace(
@@ -522,3 +527,64 @@ async def test_mirror_accepts_upstream_sevenzip_nested_installer(
 
     update.download_script_package.side_effect = download
     assert "已更新" in await update.update_before_run(root, config)
+
+
+@pytest.mark.asyncio
+async def test_stable_dfs2_not_ready_skips_without_install_marker(installation):
+    root, config, _ = installation
+    update.resource_readiness.stable_resources_ready.return_value = (
+        False,
+        "官方资源元数据尚未发布",
+    )
+
+    result = await update.update_before_run(root, config)
+
+    assert "本轮跳过更新" in result
+    assert "0.55.0" in result
+    update.download_script_package.assert_not_awaited()
+    update.run_installer.assert_not_awaited()
+    assert not (script_install.workspace(root) / "bgi-install.json").exists()
+    await update.confirm_current_install(root)
+
+
+@pytest.mark.asyncio
+async def test_stable_dfs2_not_ready_keeps_existing_unsafe_marker(installation):
+    root, config, _ = installation
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('{"target":"0.56.0"}')
+    update.resource_readiness.stable_resources_ready.return_value = (
+        False,
+        "官方资源元数据尚未发布",
+    )
+
+    with pytest.raises(script_install.InstallUnsafeError, match="保留安装标记"):
+        await update.update_before_run(root, config)
+
+    assert marker.read_text() == '{"target":"0.56.0"}'
+    update.download_script_package.assert_not_awaited()
+    update.run_installer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stable_no_upgrade_does_not_query_dfs2(installation, monkeypatch):
+    root, config, _ = installation
+    monkeypatch.setattr(update, "read_version", lambda root: Version("0.56.0"))
+
+    result = await update.update_before_run(root, config)
+
+    assert "无需更新" in result
+    update.resource_readiness.stable_resources_ready.assert_not_awaited()
+    update.download_script_package.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stable_dfs2_ready_proceeds_with_verified_installer(installation):
+    root, config, _ = installation
+
+    result = await update.update_before_run(root, config)
+
+    assert "已更新" in result
+    update.resource_readiness.stable_resources_ready.assert_awaited_once()
+    update.download_script_package.assert_awaited_once()
+    update.run_installer.assert_awaited_once()

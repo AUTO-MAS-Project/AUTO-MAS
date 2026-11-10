@@ -36,6 +36,8 @@ from app.utils.common.process.runner import (
     wait_for_process_cleanup,
 )
 
+from . import resource_readiness
+
 REPOSITORY = "babalae/better-genshin-impact"
 NOTICE_KEY = "notShowNewVersionNoticeEndVersion"
 # BetterGI 使用严格 SemVer 比较，不能填通配符或空的版本号。
@@ -324,6 +326,25 @@ async def update_before_run(
         raise script_install.InstallUnsafeError(
             "BetterGI 上次安装未完成且高于所选通道，请切换通道或手动修复，不会自动降级"
         )
+
+    # GitHub 正式版可能早于上游 DFS2 资源分发完成。安装器虽可回退内嵌
+    # 资源，但在自动托管场景保守等待官方索引发布，避免上游发布窗口
+    # 内触发失败并留下未确认安装标记。MirrorChyan 和公测版各有独立来源。
+    if target > current and config.Update.Channel == "stable" and not cdk:
+        ready, reason = await resource_readiness.stable_resources_ready(
+            target, proxy=Config.proxy
+        )
+        if not ready:
+            if marker.exists():
+                raise script_install.InstallUnsafeError(
+                    f"BetterGI 上轮安装尚未确认，正式版 {target} 资源也未就绪"
+                    "；保留安装标记，请稍后重试或使用官方安装器修复"
+                )
+            return (
+                f"BetterGI 正式版 {target} 资源尚未就绪（{reason}），"
+                f"本轮跳过更新，沿用当前版本 {current}"
+            )
+
     directory.mkdir(parents=True, exist_ok=True)
     cache = Path(tempfile.mkdtemp(dir=directory, prefix="download-"))
     installer = cache / name
