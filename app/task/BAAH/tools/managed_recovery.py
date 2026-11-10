@@ -3,6 +3,9 @@
 """BAAH 官方完整包恢复适配器；公共入口负责恢复策略和任务末尾报告。"""
 
 import asyncio
+import base64
+import hashlib
+import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -11,6 +14,7 @@ from packaging.version import Version
 from app.core.script_update_recovery import InstallInspection
 from app.services import script_install
 from app.services.script_install_backup import ManagedInstallBackup
+from app.utils import io as io_utils
 
 from . import program_update
 
@@ -33,7 +37,10 @@ class BAAHInstallAdapter:
         await asyncio.to_thread(program_update.assert_idle, self.root)
 
     async def inspect(self) -> InstallInspection:
-        await self.ensure_idle()
+        # 只读健康检查允许 BAAH 自带 adb server 持续运行。
+        await asyncio.to_thread(
+            program_update.assert_idle, self.root, allow_background_adb=True
+        )
         pending_file = script_install.workspace(self.root) / "transaction.json"
         if pending_file.is_symlink():
             raise script_install.InstallUnsafeError("BAAH 原生事务标记为链接")
@@ -105,7 +112,8 @@ class BAAHInstallAdapter:
 
     async def after_rollback(self) -> None:
         await self.ensure_idle()
-        # 如果安装回执无法匹配已恢复旧版，则不能宣称回滚完成并启动任务。
+        await asyncio.to_thread(restore_original_receipts, self.root)
+        # 回退前的原 MAS 收据已同步恢复，仍要重新验证目录哈希。
         await program_update.confirm_current_install(self.root)
 
 
@@ -170,3 +178,94 @@ async def acknowledge_stale_transaction(root: Path) -> None:
         if not marker.exists() and archive.exists():
             archive.replace(marker)
         raise
+
+
+_RECEIPT_NAMES = ("installed.json", "baah-version.json")
+_RECEIPT_BACKUP = "baah-managed-receipts.json"
+
+
+def receipt_backup_path(root: Path) -> Path:
+    return script_install.workspace(root) / _RECEIPT_BACKUP
+
+
+def _read_receipt_backup(root: Path) -> dict:
+    marker = receipt_backup_path(root)
+    if marker.is_symlink() or not marker.is_file():
+        raise script_install.InstallUnsafeError("BAAH 更新前外置收据备份缺失或被替换")
+    data = io_utils.read_dict_file(marker)
+    if (
+        data.get("root") != str(root.resolve())
+        or data.get("schema") != 1
+        or not isinstance(data.get("receipts"), dict)
+        or set(data["receipts"]) != set(_RECEIPT_NAMES)
+    ):
+        raise script_install.InstallUnsafeError("BAAH 外置收据备份身份不匹配")
+    return data["receipts"]
+
+
+def snapshot_original_receipts(root: Path) -> None:
+    """必须在公共备份创建/任何原生安装写盘之前调用，且仅允许单次建立。"""
+    marker = receipt_backup_path(root)
+    if marker.exists() or marker.is_symlink():
+        raise script_install.InstallUnsafeError("BAAH 尚有未结算的外置收据备份")
+    receipts = {}
+    for name in _RECEIPT_NAMES:
+        path = script_install.record_path(root, name)
+        if path.is_symlink():
+            raise script_install.InstallUnsafeError("BAAH 收据目录包含链接")
+        content = path.read_bytes() if path.is_file() else None
+        if content is not None and len(content) > 32 * 1024 * 1024:
+            raise script_install.InstallUnsafeError("BAAH 原安装收据异常大")
+        receipts[name] = (
+            None
+            if content is None
+            else {
+                "data": base64.b64encode(content).decode("ascii"),
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+        )
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    io_utils.write_file(
+        marker,
+        {
+            "schema": 1,
+            "root": str(root.resolve()),
+            "receipts": receipts,
+        },
+    )
+
+
+def restore_original_receipts(root: Path) -> None:
+    """公共备份恢复原程序目录之后，再恢复 MAS 自有的两份外置收据。"""
+    receipts = _read_receipt_backup(root)
+    for name in _RECEIPT_NAMES:
+        path = script_install.record_path(root, name)
+        if path.is_symlink():
+            raise script_install.InstallUnsafeError("BAAH 收据目标是符号链接")
+        entry = receipts[name]
+        if entry is None:
+            path.unlink(missing_ok=True)
+            continue
+        try:
+            content = base64.b64decode(entry["data"], validate=True)
+            if hashlib.sha256(content).hexdigest() != entry["sha256"]:
+                raise ValueError("digest mismatch")
+        except (KeyError, TypeError, ValueError) as error:
+            raise script_install.InstallUnsafeError(
+                "BAAH 更新前原始收据校验失败，拒绝回滚"
+            ) from error
+        path.parent.mkdir(parents=True, exist_ok=True)
+        staged = path.with_name(f"{path.name}.restore-{os.getpid()}.tmp")
+        if staged.is_symlink():
+            raise script_install.InstallUnsafeError("BAAH 收据暂存路径不安全")
+        staged.write_bytes(content)
+        os.replace(staged, path)
+
+
+def cleanup_original_receipts(root: Path) -> None:
+    marker = receipt_backup_path(root)
+    if marker.is_symlink():
+        raise script_install.InstallUnsafeError("BAAH 备份文件被重定向")
+    if marker.exists():
+        _read_receipt_backup(root)
+        marker.unlink()
