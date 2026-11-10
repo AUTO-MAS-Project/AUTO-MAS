@@ -587,7 +587,10 @@ async def test_skip_with_takeover_on_does_not_install_again(installation, monkey
     await instance._prepare_program_update()
     assert not marker.exists()
     update.request_release.assert_not_awaited()
-    assert json.loads((root / "User/config.json").read_text())[update.NOTICE_KEY] == update.IGNORED_VERSION
+    assert (
+        json.loads((root / "User/config.json").read_text())[update.NOTICE_KEY]
+        == update.IGNORED_VERSION
+    )
     update.recover_update_notice(root)
 
 
@@ -717,21 +720,39 @@ async def test_recovery_prompt_accepts_only_matching_request(installation, monke
     async def send(*, id, type, data):
         outgoing.append(type)
         if type == protocol.BETTERGI_INSTALL_PROMPT:
-            Dispatcher.dispatch(WSEnvelope(
-                id=id,
-                type=protocol.BETTERGI_INSTALL_DECISION,
-                data={"taskId": data["taskId"], "requestId": "wrong", "action": "skip"},
-            ))
-            Dispatcher.dispatch(WSEnvelope(
-                id=id,
-                type=protocol.BETTERGI_INSTALL_DECISION,
-                data={"taskId": "another-task", "requestId": data["requestId"], "action": "skip"},
-            ))
-            Dispatcher.dispatch(WSEnvelope(
-                id=id,
-                type=protocol.BETTERGI_INSTALL_DECISION,
-                data={"taskId": data["taskId"], "requestId": data["requestId"], "action": "retry"},
-            ))
+            Dispatcher.dispatch(
+                WSEnvelope(
+                    id=id,
+                    type=protocol.BETTERGI_INSTALL_DECISION,
+                    data={
+                        "taskId": data["taskId"],
+                        "requestId": "wrong",
+                        "action": "skip",
+                    },
+                )
+            )
+            Dispatcher.dispatch(
+                WSEnvelope(
+                    id=id,
+                    type=protocol.BETTERGI_INSTALL_DECISION,
+                    data={
+                        "taskId": "another-task",
+                        "requestId": data["requestId"],
+                        "action": "skip",
+                    },
+                )
+            )
+            Dispatcher.dispatch(
+                WSEnvelope(
+                    id=id,
+                    type=protocol.BETTERGI_INSTALL_DECISION,
+                    data={
+                        "taskId": data["taskId"],
+                        "requestId": data["requestId"],
+                        "action": "retry",
+                    },
+                )
+            )
         return True
 
     monkeypatch.setattr(install_recovery.Publisher, "send", send)
@@ -740,7 +761,10 @@ async def test_recovery_prompt_accepts_only_matching_request(installation, monke
     )
     assert action == "retry"
     assert snapshot == marker.read_bytes()
-    assert outgoing == [protocol.BETTERGI_INSTALL_PROMPT, protocol.BETTERGI_INSTALL_PROMPT_CLOSED]
+    assert outgoing == [
+        protocol.BETTERGI_INSTALL_PROMPT,
+        protocol.BETTERGI_INSTALL_PROMPT_CLOSED,
+    ]
 
 
 @pytest.mark.asyncio
@@ -760,4 +784,7 @@ async def test_recovery_prompt_timeout_never_deletes_marker(installation, monkey
             "task1", root, channel="stable", takeover_enabled=False
         )
     assert marker.exists()
-    assert send.await_args_list[-1].kwargs["type"] == protocol.BETTERGI_INSTALL_PROMPT_CLOSED
+    assert (
+        send.await_args_list[-1].kwargs["type"]
+        == protocol.BETTERGI_INSTALL_PROMPT_CLOSED
+    )

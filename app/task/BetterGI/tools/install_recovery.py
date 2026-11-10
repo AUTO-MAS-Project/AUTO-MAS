@@ -34,13 +34,21 @@ async def ask_install_recovery(
     """返回 (retry/skip, 原标记字节)，让后续操作对同一份安装记录做乐观校验。"""
     marker = script_install.workspace(root) / "bgi-install.json"
     if marker.is_symlink() or not marker.is_file():
-        raise script_install.InstallUnsafeError("BetterGI 安装恢复记录不是普通文件，请保留现场")
+        raise script_install.InstallUnsafeError(
+            "BetterGI 安装恢复记录不是普通文件，请保留现场"
+        )
     snapshot = await asyncio.to_thread(marker.read_bytes)
     if len(snapshot) > 64 * 1024:
-        raise script_install.InstallUnsafeError("BetterGI 安装标记异常，请手动检查安装状态")
+        raise script_install.InstallUnsafeError(
+            "BetterGI 安装标记异常，请手动检查安装状态"
+        )
     try:
         content = json.loads(snapshot)
-        target = str(content.get("target", "未知"))[:64] if isinstance(content, dict) else "未知"
+        target = (
+            str(content.get("target", "未知"))[:64]
+            if isinstance(content, dict)
+            else "未知"
+        )
     except (ValueError, UnicodeDecodeError):
         target = "未知"
 
@@ -96,8 +104,11 @@ async def ask_install_recovery(
             raise script_install.InstallUnsafeError(
                 "用户取消 BetterGI 安装恢复，本次任务已停止；未修改安装标记"
             )
-        if (marker.is_symlink() or not marker.is_file()
-                or await asyncio.to_thread(marker.read_bytes) != snapshot):
+        if (
+            marker.is_symlink()
+            or not marker.is_file()
+            or await asyncio.to_thread(marker.read_bytes) != snapshot
+        ):
             raise script_install.InstallUnsafeError(
                 "BetterGI 安装状态在等待选择时发生变化，本次任务已停止，请重新检查"
             )
@@ -137,8 +148,11 @@ async def skip_unconfirmed_install(root: Path, snapshot: bytes) -> str:
 
     # 不能只看安装目录：官方安装器可能从用户的下载文件夹启动。
     await asyncio.to_thread(program_update.assert_idle, root)
-    if (marker.is_symlink() or not marker.is_file()
-            or await asyncio.to_thread(marker.read_bytes) != snapshot):
+    if (
+        marker.is_symlink()
+        or not marker.is_file()
+        or await asyncio.to_thread(marker.read_bytes) != snapshot
+    ):
         raise script_install.InstallUnsafeError(
             "BetterGI 安装恢复记录已经变化，本次不清理，请重新检查"
         )
@@ -156,8 +170,11 @@ async def skip_unconfirmed_install(root: Path, snapshot: bytes) -> str:
 
     # 版本及架构检查不保证所有附属文件完整；这是用户主动接受的风险。
     await asyncio.to_thread(program_update.assert_idle, root)
-    if (marker.is_symlink() or not marker.is_file()
-            or await asyncio.to_thread(marker.read_bytes) != snapshot):
+    if (
+        marker.is_symlink()
+        or not marker.is_file()
+        or await asyncio.to_thread(marker.read_bytes) != snapshot
+    ):
         raise script_install.InstallUnsafeError("BetterGI 安装记录已变化，拒绝跳过")
     marker.unlink()
     try:
@@ -170,5 +187,7 @@ async def skip_unconfirmed_install(root: Path, snapshot: bytes) -> str:
             except OSError as error:
                 logger.error(f"BetterGI 无法恢复安装保护标记：{error}")
         raise
-    logger.warning(f"用户确认跳过 BetterGI 未完成安装，已清除原标记；当前版本={version}")
+    logger.warning(
+        f"用户确认跳过 BetterGI 未完成安装，已清除原标记；当前版本={version}"
+    )
     return str(version)

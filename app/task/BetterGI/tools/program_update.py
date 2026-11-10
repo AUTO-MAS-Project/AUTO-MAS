@@ -53,9 +53,12 @@ def assert_idle(root: Path) -> None:
             # 安装器可以由用户从下载目录手动启动，不一定在 root/workspace 内。
             # 只要存在同名安装器就不能在恢复时清除标记。
             exe_name = Path(executable).name.casefold() if executable else ""
-            if (name == "bettergi.update.exe" or name.startswith("bettergi.install.")
-                    or exe_name == "bettergi.update.exe"
-                    or exe_name.startswith("bettergi.install.")):
+            if (
+                name == "bettergi.update.exe"
+                or name.startswith("bettergi.install.")
+                or exe_name == "bettergi.update.exe"
+                or exe_name.startswith("bettergi.install.")
+            ):
                 raise script_install.InstallUnsafeError(
                     "BetterGI 安装器仍在运行，请先结束安装或退出安装器"
                 )
@@ -405,7 +408,9 @@ async def update_before_run(
     try:
         await run_installer(installer, root)
     except BaseException as error:
-        logger.warning(f"BetterGI 安装未确认，保留标记：{type(error).__name__}: {error}")
+        logger.warning(
+            f"BetterGI 安装未确认，保留标记：{type(error).__name__}: {error}"
+        )
         raise
     await asyncio.to_thread(assert_idle, root)
     if await asyncio.to_thread(read_version, root) != target:
