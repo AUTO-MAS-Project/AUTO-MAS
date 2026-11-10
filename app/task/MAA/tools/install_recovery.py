@@ -82,9 +82,7 @@ async def ask_maa_recovery(
         target, package = read_pending_update(root)
     except (OSError, ValueError):
         target, package = "", ""
-    can_retry = "resource" in snapshot or bool(
-        package and (root / package).is_file()
-    )
+    can_retry = "resource" in snapshot or bool(package and (root / package).is_file())
     can_skip = "software" in snapshot and "resource" not in snapshot
 
     request_id = uuid4().hex
@@ -135,9 +133,7 @@ async def ask_maa_recovery(
                 "用户取消 MAA 安装恢复，本次任务停止，原记录已保留"
             )
         if action == "skip" and not can_skip:
-            raise MaaUpdateUnsafeError(
-                "MAA 资源可能处于半更新状态，禁止跳过安装校验"
-            )
+            raise MaaUpdateUnsafeError("MAA 资源可能处于半更新状态，禁止跳过安装校验")
         if action == "retry" and not can_retry:
             raise MaaUpdateUnsafeError(
                 "MAA 安装包已不存在，无法重试，请使用官方安装器修复"

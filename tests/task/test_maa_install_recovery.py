@@ -48,9 +48,7 @@ async def test_manual_repair_can_acknowledge_old_official_failure(maa_root):
     )
     assert version == "v6.2.0"
     assert not flag.exists()
-    backup = list(
-        script_install.workspace(maa_root).glob("maa-failure-ack-*.txt")
-    )
+    backup = list(script_install.workspace(maa_root).glob("maa-failure-ack-*.txt"))
     assert len(backup) == 1
     assert backup[0].read_bytes() == b"official install failed"
 
@@ -99,9 +97,7 @@ async def test_updater_running_or_marker_changed_never_skips(maa_root):
     assert flag.read_bytes() == b"new"
     recovery.process.is_process_running.return_value = True
     with pytest.raises(MaaUpdateUnsafeError, match="仍在写盘"):
-        await recovery.skip_delegated_failure(
-            maa_root, {"software": flag.read_bytes()}
-        )
+        await recovery.skip_delegated_failure(maa_root, {"software": flag.read_bytes()})
     assert flag.exists()
 
 
@@ -167,7 +163,9 @@ async def test_maa_resource_only_prompt_forbids_skip(maa_root, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_manager_can_repair_resource_when_takeover_disabled(maa_root, monkeypatch):
+async def test_manager_can_repair_resource_when_takeover_disabled(
+    maa_root, monkeypatch
+):
     resource = maa_root / ".automas-resource-update.json"
     resource.write_text('{"target":"2026-10-01T00:00:00+00:00"}')
     instance = object.__new__(manager.MaaManager)
