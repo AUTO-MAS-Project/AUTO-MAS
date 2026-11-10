@@ -341,15 +341,6 @@ _PRETASK_TAIL_NOISE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]?|[\x00-\x1f\x7f]")
 # worker 发事件时按它定 audience，宿主只对旧格式事件与 stdout 上的原生诊断再用它判。
 
 
-def _avd_adb_path(manager_path: str | Path) -> Path:
-    """ModAVD 这条安装的 adb：SDK 的 ``platform-tools\\adb.exe``（指定了本地 SDK 时取它的）。"""
-    from app.utils import emulator2 as _utils_emulator2
-
-    return _utils_emulator2.avd.components.adb_exe(
-        _utils_emulator2.avd.components.root_from_manager_exe(manager_path)
-    )
-
-
 @dataclass(frozen=True)
 class MaaFWAdbControlProfile:
     """描述某模拟器实例的 ADB EmulatorExtras 能力与 controller extras 配置。"""
@@ -1595,7 +1586,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         )
                         return self._cached_adb_path
 
-        derived_path = self._derive_adb_path_from_emulator_config()
+        derived_path = await self._derive_adb_path_from_emulator_config()
         if derived_path is not None and derived_path.exists():
             self._cached_adb_path = str(derived_path)
             self._append_log(
@@ -1653,7 +1644,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         self._append_log("正在检查游戏客户端更新")
         try:
-            # ModAVD 实例：钩子在宿主进程里调 adb（game_apk），改走 MAS 私有 server，
+            # ModAVD 实例：钩子在宿主进程里调 adb（game_apk），改走 ``modavd adb``（ModAVD 的私有 server），
             # 不落到 5037；其余模拟器不接管
             with _utils_game_apk.adb_runner_scope(await resolve_host_adb(self)):
                 result = await hook(
@@ -1725,7 +1716,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 不允许带着没登录（或登录到别的账号）的状态下发任务。
         self._login_checked = True
 
-    def _derive_adb_path_from_emulator_config(self) -> Path | None:
+    async def _derive_adb_path_from_emulator_config(self) -> Path | None:
         emulator_id = self.script_config.Emulator.Id
         if emulator_id == "-":
             return None
@@ -1738,8 +1729,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if resolve_device is not None and emulator_index not in ("", "-"):
                 device_ref = resolve_device(emulator_index)
                 if device_ref is not None and device_ref.emulator_type == "avd":
-                    # ModAVD 的 adb 在 SDK 的 platform-tools 里（认 sdkRoot），不在主程序旁边
-                    return _avd_adb_path(device_ref.manager_path)
+                    # ModAVD 的 adb 问 modavd（``modavd list`` 的 adb_exe），不在主程序旁边
+                    adb_info = await self.emulator_manager.avd_adb_info(emulator_index)
+                    return Path(adb_info.adb_exe)
                 if device_ref is not None and device_ref.manager_path:
                     return Path(device_ref.manager_path).parent / "adb.exe"
 
@@ -1852,7 +1844,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     ) -> MaaFWAdbControlProfile:
         """ModAVD：只给 AVDExtras 截图，推流开关走私有 adb server。任何一步不成立都抛错。
 
-        控制台端口问 modavd（根目录可以设 ``portBase`` 换一段端口），截图共享内存按它命名。
+        adb 程序、私有 server 端口、控制台端口都问 modavd（``modavd list``；根目录可以设 ``portBase``
+        换一段端口），截图共享内存按控制台端口命名。
         """
         from app.utils import emulator2 as _utils_emulator2
 
@@ -1862,15 +1855,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 "当前 MaaFW 运行时不带模拟器截图增强（MaaAdbControlUnit），"
                 "ModAVD 上截图不能回落到普通 adb，本次不运行"
             )
-        adb_path = _avd_adb_path(device_ref.manager_path)
+        adb_info = await self.emulator_manager.avd_adb_info(emulator_index)
+        if adb_info is None:
+            raise RuntimeError(f"设备 {emulator_index} 不是 ModAVD 实例")
+        adb_path = Path(adb_info.adb_exe)
         if not adb_path.is_file():
             raise RuntimeError(f"找不到 ModAVD 的 adb：{adb_path}")
-        root = _utils_emulator2.avd.components.root_from_manager_exe(
-            device_ref.manager_path
-        )
-        console = (await self.emulator_manager.instance_ports(emulator_index)).console
+        console = adb_info.ports.console
         config = _utils_emulator2.avd.maafw_extras.build_maafw_avd_config(
-            adb_path, _utils_emulator2.avd.components.adb_server_port(root), console
+            adb_path, adb_info.adb_server_port, console
         )
         self._append_log(
             f"ModAVD 截图走 AVDExtras（共享内存 SHM_videmulator{console}），不回落普通 adb"
@@ -1879,8 +1872,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     async def _script_adb_env(self) -> dict[str, str]:
         """ModAVD 实例上叠加给 worker（agent 与它们起的 adb 继承）和 pretask 的环境变量：
-        ``ANDROID_ADB_SERVER_PORT=<scriptAdbServerPort>``（默认 20049）。脚本用 SDK 的新版 adb，
-        放在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server。其余模拟器返回空字典。"""
+        ``ANDROID_ADB_SERVER_PORT=<script_adb_server_port>``（``modavd servers`` 报的，默认 20049）。
+        脚本用 SDK 的新版 adb，放在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server；端口问不到时报错。
+        其余模拟器返回空字典。"""
         emulator_index = self.script_config.Emulator.Index
         if self.script_config.Emulator.Id == "-" or emulator_index in ("", "-"):
             return {}
@@ -1895,14 +1889,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         root = _utils_emulator2.avd.components.root_from_manager_exe(
             device_ref.manager_path
         )
-        # 先由 MAS 以脱离方式起好：worker 里的 adb 顺手拉起的 server 会继承 worker 的输出管道
+        # 先由 modavd 以脱离方式起好：worker 里的 adb 顺手拉起的 server 会继承 worker 的输出管道
         try:
             await _utils_emulator2.avd.host.ensure_script_adb_server(root)
         except _utils_emulator2.avd.host.ScriptAdbPortConflict:
             raise  # 端口被别的程序占着，worker 里的 adb 连上去只会一直失败，直接报给用户
-        except Exception:  # noqa: BLE001 - 起不来就交给 worker 自己的 adb
-            pass
-        return _utils_emulator2.avd.components.script_adb_env(root)
+        except Exception as exc:  # noqa: BLE001 - 见下
+            # 这次没问成 modavd：之前问到过端口就接着用（server 交给 worker 的 adb 起），没问到过就把原因报出去
+            if not _utils_emulator2.avd.host.script_adb_port_known(root):
+                raise
+            logger.warning(
+                f"modavd servers 这次失败，沿用之前报的脚本专用 adb 端口: {exc}"
+            )
+        return _utils_emulator2.avd.host.script_adb_env(root)
 
     def _check_avd_runtime_version(self, maafw_version: str | None) -> None:
         """ModAVD 要 AVDExtras：运行环境的 MaaFramework 低于 5.7.0 时明确报错，不让它静默回落。"""

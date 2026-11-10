@@ -20,7 +20,7 @@
 
 """ModAVD 的服务层：根目录状态与开机前检查、电源操作前关实例。
 
-添加流程：``status``（组件齐不齐、电脑检查）→ 齐了按普通路径纳管（Emulator 2.0 的 ``paths/add``）。
+添加流程：``status``（``modavd check``：组件齐不齐、电脑检查）→ 齐了按普通路径纳管（Emulator 2.0 的 ``paths/add``）。
 组件全部随模拟器内测包提供，MAS 不下载；缺了只说缺哪一项。实例的新建 / 删除 / 启停走 Emulator 2.0
 原有接口。
 """
@@ -38,7 +38,7 @@ from app.utils import get_logger
 from ..detect import avd_root_of
 from ..facade import load_paths
 from . import cli as modavd_cli
-from . import components, precheck, updater
+from . import components, updater
 from .constants import POWER_CLOSE_TIMEOUT_SECONDS
 
 logger = get_logger("ModAVD 服务")
@@ -113,32 +113,30 @@ def _normalize_root(root: str) -> Path:
 async def status(
     root: str, *, check_acceleration: bool = True, refresh: bool = False
 ) -> dict[str, Any]:
-    """根目录现状：组件、硬件加速、开机前电脑检查。只读。"""
+    """根目录现状：组件、硬件加速、开机前电脑检查（``modavd check``）。只读。
+
+    根目录里没有命令行 ``tools\\modavd.exe`` 就报错。``check_acceleration`` / ``refresh`` 留着保持
+    接口不变，检查做不做、走不走缓存由 modavd 定。
+    """
     path = _normalize_root(root)
-    # 更新器换包时，任何 CLI 查询都会把 tools\\modavd.exe 算作占用；状态接口本身
-    # 不需要 CLI，直接返回文件组件快照，避免面板轮询挡住换包。
     if updater.update_in_progress(path):
-        result = await asyncio.to_thread(components.install_status, path)
-        result["accelerationOk"] = None
-        result["accelerationDetail"] = ""
-        result["prechecks"] = []
-        return result
+        # MAS 正在换上新版（modavd update install 要求没有别的 modavd 在跑）：不起 modavd，给中性结果，
+        # 界面上的更新进度照常显示
+        return {
+            "root": str(path),
+            "ready": True,
+            "components": [],
+            "missing": [],
+            "accelerationOk": None,
+            "accelerationDetail": "",
+            "prechecks": [],
+        }
     cli = await modavd_cli.resolve_cli(path)
-    if cli is not None:
-        return _cli_status_result(path, await cli.check())
-    result = await asyncio.to_thread(components.install_status, path)
-    result["accelerationOk"] = None
-    result["accelerationDetail"] = ""
-    result["prechecks"] = []
-    if check_acceleration:
-        # 内存按默认档实例估（各实例实际开机时按它要传的 -memory 再查一次）
-        items = await precheck.run_prechecks(path, refresh=refresh)
-        result["prechecks"] = [item.as_dict() for item in items]
-        accel = next(item for item in items if item.id == "acceleration")
-        result["accelerationOk"] = accel.ok
-        if accel.ok is not None:
-            result["accelerationDetail"] = accel.reason if accel.ok else accel.message()
-    return result
+    if cli is None:
+        raise RuntimeError(
+            f"找不到 ModAVD 命令行 {modavd_cli.ModAvdCli(path).exe}，不是可用的 ModAVD 根目录"
+        )
+    return _cli_status_result(path, await cli.check())
 
 
 # ---- 关机 / 重启 / 注销前 ---------------------------------------------------
@@ -198,10 +196,10 @@ async def close_running_instances(
 ) -> dict[str, str]:
     """关机 / 重启 / 注销前关闭所有 ModAVD。
 
-    CLI 根目录一次调用 ``stop --all``，避免未登记实例被逐台 stop 时漏掉 sync；CLI 不可用时，
-    按用户定的例外退回 Python 的 sync + emu kill 路径。
+    每个根目录一次调用 ``stop --all``，避免未登记实例被逐台 stop 时漏掉 sync；命令行用不了或
+    ``stop --all`` 失败时不另想办法关，这个根目录如实记 ``failed``。
 
-    每个根目录的「探测 CLI → stop --all / 退回 Python」整个放进一个并发动作，共用 ``timeout`` 秒：
+    每个根目录的「探测 CLI → stop --all」整个放进一个并发动作，共用 ``timeout`` 秒：
     某个根目录的 modavd 卡在 ``version`` 上，不会推迟别的根目录开始关机，也不会让关机多等。
     ``stop --all`` 有实例没关掉时这个根目录记 ``failed``，不报成 ``closed``。
     """
@@ -219,44 +217,19 @@ async def close_running_instances(
 
 
 async def _close_root(root: Path, *, timeout: float) -> object:
-    """一个根目录的关机前收尾，见 :func:`close_running_instances`。"""
+    """一个根目录的关机前收尾，见 :func:`close_running_instances`。
+
+    命令行用不了、``stop --all`` 失败都抛出，由 :func:`close_instances` 把这个根目录记成 ``failed``。
+    MAS 自己正在换上新版时实例本来就都关了（``modavd update install`` 的前提），直接跳过。
+    """
     if updater.update_in_progress(root):
-        # 换包期间不起 modavd（它会占着 tools\\modavd.exe）；这时本来就没有实例开着，只按进程扫一遍
-        return await _close_python_root(root, timeout=timeout)
-    try:
-        cli = await modavd_cli.resolve_cli(root)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(
-            f"{root} 的 modavd 不可用，关机前退回 Python sync + emu kill: {e}"
-        )
-        return await _close_python_root(root, timeout=timeout)
+        logger.info(f"{root} 正在换上新版，实例都已关闭，跳过")
+        return {"results": [], "failed": []}
+    cli = await modavd_cli.resolve_cli(root)
     if cli is None:
-        return await _close_python_root(root, timeout=timeout)
-    try:
-        result = await cli.stop_all()
-    except (modavd_cli.CLIError, modavd_cli.ModAvdUnavailable) as e:
-        logger.warning(
-            f"{root} 的 modavd stop --all 失败，退回 Python sync + emu kill: {e}"
-        )
-        return await _close_python_root(root, timeout=timeout)
+        raise RuntimeError(f"找不到 ModAVD 命令行 {modavd_cli.ModAvdCli(root).exe}")
+    result = await cli.stop_all()
     failed = result.get("failed", []) if isinstance(result, dict) else []
     if failed:
         raise RuntimeError(f"modavd stop --all 有 {len(failed)} 台没关掉: {failed}")
     return result
-
-
-async def _close_python_root(root: Path, *, timeout: float) -> dict[str, str]:
-    """单根目录的旧 Python 关机例外。"""
-    from .components import manager_key_exe
-    from .manager import _AvdCore
-
-    manager = _AvdCore(
-        manager_exe=manager_key_exe(root),
-        max_wait_time=60,
-        force_kill_on_close=False,
-    )
-    running = await asyncio.to_thread(manager._scan_processes)
-    targets = [
-        (f"{root}#{idx}", lambda m=manager, i=idx: m.close(i)) for idx in running
-    ]
-    return await close_instances(targets, timeout=timeout)

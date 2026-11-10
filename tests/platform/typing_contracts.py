@@ -18,7 +18,6 @@ from app.task.MaaEnd.push_log import maaend_resolve
 from app.task.OkNte.push_log import oknte_resolve
 from app.task.Okww.push_log import okww_resolve
 from app.task.ZzzOd.push_log import make_zzzod_resolve
-from app.utils.common import emulator_native as common_emulator
 from app.utils.common import host as common_host
 from app.utils.common import startup as common_startup
 from app.utils.common import update_native as common_update
@@ -28,7 +27,6 @@ from app.utils.common.power import CommonPowerController
 from app.utils.common.process import platform as common_process
 from app.utils.contracts.audio import AudioAPI
 from app.utils.contracts.display import DisplayAPI, MonitorInfo
-from app.utils.contracts.emulator_native import EmulatorNativeAPI
 from app.utils.contracts.file_lock import FileLockAPI
 from app.utils.contracts.host import HostAPI
 from app.utils.contracts.power import PowerController
@@ -49,7 +47,6 @@ from app.utils.unsupported import vdd as unsupported_vdd
 from app.utils.unsupported import window as unsupported_window
 from app.utils.windows import audio as windows_audio
 from app.utils.windows import display as windows_display
-from app.utils.windows import emulator_native as windows_emulator
 from app.utils.windows import file_lock as windows_file_lock
 from app.utils.windows import host as windows_host
 from app.utils.windows import process as windows_process
@@ -75,8 +72,6 @@ audio_windows: AudioAPI = windows_audio
 audio_unsupported: AudioAPI = unsupported_audio
 display_windows: DisplayAPI = windows_display
 display_unsupported: DisplayAPI = unsupported_display
-emulator_windows: EmulatorNativeAPI = windows_emulator
-emulator_common: EmulatorNativeAPI = common_emulator
 host_windows: HostAPI = windows_host
 host_common: HostAPI = common_host
 notification_windows: NotificationAPI = windows_notification
@@ -108,7 +103,6 @@ assert_type(utils.host, HostAPI)
 notification_entry: NotificationAPI = native
 assert_type(utils.registry, RegistryAPI)
 assert_type(utils.secret, SecretAPI)
-assert_type(utils.emulator_native, EmulatorNativeAPI)
 assert_type(utils.update_native, UpdateNativeAPI)
 assert_type(utils.vdd, VddAPI)
 assert_type(utils.window.get_window_handles(123), list[int])

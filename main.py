@@ -447,7 +447,7 @@ def main():
 
             async def init_avd_update() -> None:
 
-                # 收拾上次没做完的 ModAVD 换上（几次改名，很快）
+                # 每个纳管的根目录跑一次 modavd update status（不联网），上次换上被打断的再 recover
                 await EmulatorManager.startup_avd_update()
 
             async def init_stage_info() -> None:
