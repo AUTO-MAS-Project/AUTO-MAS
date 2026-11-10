@@ -21,10 +21,6 @@ import {
   bootstrapVirtualDisplayPrompt,
   disposeVirtualDisplayPrompt,
 } from '@/services/virtualDisplayPrompt'
-import {
-  bootstrapSrcInstallRecovery,
-  disposeSrcInstallRecovery,
-} from '@/services/srcInstallRecovery'
 
 let registered = false
 
@@ -74,10 +70,6 @@ export function bootstrapRealtimeResidents(): void {
     registerResidentResource('virtual-display-prompt', {
       bootstrap: bootstrapVirtualDisplayPrompt,
       dispose: disposeVirtualDisplayPrompt,
-    })
-    registerResidentResource('src-install-recovery', {
-      bootstrap: bootstrapSrcInstallRecovery,
-      dispose: disposeSrcInstallRecovery,
     })
     registered = true
   }

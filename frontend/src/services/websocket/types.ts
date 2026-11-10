@@ -50,11 +50,6 @@ export const WS_TASK_CREATED = 'task.created'
 export const WS_TASK_SCRIPT_STARTED = 'task.script.started'
 export const WS_TASK_SCRIPT_FINISHED = 'task.script.finished'
 
-// SRC 未完成原生安装恢复询问：TaskManager 路由的单次请求、回应及关闭
-export const WS_SRC_INSTALL_PROMPT = 'src.install.prompt'
-export const WS_SRC_INSTALL_PROMPT_CLOSED = 'src.install.prompt.closed'
-export const WS_SRC_INSTALL_DECISION = 'src.install.decision'
-
 // 应用生命周期与电源（id=Main）
 export const WS_BACKEND_SHUTDOWN_READY = 'backend.shutdown.ready'
 export const WS_FRONTEND_CLOSE_REQUESTED = 'frontend.close.requested'
@@ -163,21 +158,6 @@ export interface WSTaskScriptStartedData {
 export interface WSTaskScriptFinishedData extends WSTaskScriptStartedData {
   outcome: 'success' | 'failed' | 'skipped' | 'no_user' | 'incomplete' | 'error' | 'cancelled'
   partialFailure?: 'yes' | 'no' | 'unknown'
-}
-
-/** SRC 未完成 Git 和原生依赖安装的恢复请求 (id=TaskManager) */
-export interface WSSrcInstallPromptData {
-  requestId: string
-  taskId: string
-  managedName: string
-  installPath: string
-  takeoverEnabled: boolean
-  installedVersion: string
-  targetVersion: string
-}
-
-export interface WSSrcInstallPromptClosedData {
-  requestId: string
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
@@ -349,8 +329,6 @@ interface WSMessageDataMap {
   [WS_TASK_CREATED]: WSTaskCreatedData
   [WS_TASK_SCRIPT_STARTED]: WSTaskScriptStartedData
   [WS_TASK_SCRIPT_FINISHED]: WSTaskScriptFinishedData
-  [WS_SRC_INSTALL_PROMPT]: WSSrcInstallPromptData
-  [WS_SRC_INSTALL_PROMPT_CLOSED]: WSSrcInstallPromptClosedData
   [WS_BACKEND_SHUTDOWN_READY]: WSEmptyData
   [WS_FRONTEND_CLOSE_REQUESTED]: FrontendCloseRequest
   [WS_FRONTEND_RESTART_REQUESTED]: FrontendCloseRequest
