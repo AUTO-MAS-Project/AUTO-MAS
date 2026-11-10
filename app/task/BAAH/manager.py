@@ -44,7 +44,7 @@ from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box, update_
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from .AutoProxy import AutoProxyTask
-from .tools import program_update
+from .tools import install_recovery, program_update
 
 logger = get_logger("BAAH 调度器")
 
@@ -139,6 +139,47 @@ class BAAHManager(ScriptManagerBase):
         await lock.acquire()
         self._directory_lock = lock
         self._install_access.enter_context(script_install.installation_access(root))
+
+        # 正常事务先自动恢复；只有异常事务才需要用户确认。跳过或完成
+        # 恢复后，本轮不再自动启动一个新的安装，避免重复修改原现场。
+        directory = script_install.workspace(root)
+        marker = directory / "transaction.json"
+        if marker.exists() or marker.is_symlink():
+            try:
+                await script_install.run_worker(
+                    script_install.recover_install,
+                    root,
+                    lambda: program_update.assert_idle(root),
+                )
+            except script_install.InstallUnsafeError:
+                action, snapshot = await install_recovery.ask_install_recovery(
+                    self.task_info.task_id,
+                    root,
+                    managed_name=getattr(self.script_info, "name", "BAAH"),
+                    takeover_enabled=self.script_config.Update.TakeoverEnabled,
+                )
+                if action == "skip":
+                    result = await install_recovery.skip_stale_transaction(root, snapshot)
+                    await self.script_info.set_log(
+                        f"用户确认 BAAH 原安装已修复，已归档旧事务标记：{result}"
+                    )
+                else:
+                    install_recovery.confirm_snapshot(root, snapshot)
+                    await script_install.run_worker(
+                        script_install.recover_install,
+                        root,
+                        lambda: program_update.assert_idle(root),
+                    )
+                    await program_update.confirm_current_install(root)
+                    await self.script_info.set_log("BAAH 未完成安装事务已恢复")
+                self.check_result = "Pass"
+                return
+            else:
+                await program_update.confirm_current_install(root)
+                await self.script_info.set_log("BAAH 上轮安装已自动恢复")
+                self.check_result = "Pass"
+                return
+
         if self.script_config.Update.TakeoverEnabled:
 
             async def progress(downloaded: int, total: int, speed: float) -> None:
