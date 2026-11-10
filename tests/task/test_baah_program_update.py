@@ -245,6 +245,9 @@ async def test_second_baah_config_waits_for_same_directory(installation, monkeyp
             Update=config.Update,
         )
         instance.check_result = "Pass"
+        instance.script_info = SimpleNamespace(
+            script_id=str(uuid.uuid4()), set_log=AsyncMock()
+        )
 
     # 第一个任务在整个用户运行期间独占目录；第二个任务要等待。
     await one._prepare_program_update()
@@ -314,11 +317,9 @@ async def test_repair_refuses_changed_receipt(installation):
 
 
 @pytest.mark.asyncio
-async def test_manager_without_takeover_checks_receipt_integrity(
+async def test_manager_without_takeover_repairs_corrupt_receipt_via_common_entry(
     installation, monkeypatch
 ):
-    from app.task.BAAH.tools import install_recovery
-
     root, config, _, _ = installation
     prepared = await update.prepare_update(root, config)
     await update.apply_update(root, prepared)
@@ -336,15 +337,58 @@ async def test_manager_without_takeover_checks_receipt_integrity(
         script_id=str(uuid.uuid4()), name="BAAH A", set_log=AsyncMock()
     )
     instance.task_info = SimpleNamespace(task_id="task", mode="AutoProxy")
-    monkeypatch.setattr(
-        install_recovery,
-        "ask_install_recovery",
-        AsyncMock(side_effect=script_install.InstallUnsafeError("没有主界面")),
-    )
-    with pytest.raises(script_install.InstallUnsafeError, match="没有主界面"):
-        await instance._prepare_program_update()
-    install_recovery.ask_install_recovery.assert_awaited_once()
-    assert (script_install.record_path(root, "installed.json")).is_file()
+    common = AsyncMock(return_value="reinstalled")
+    monkeypatch.setattr(manager, "auto_recover_script_install", common)
+    await instance._prepare_program_update()
+    common.assert_awaited_once()
     instance._install_access.close()
     if instance._directory_lock is not None:
         instance._directory_lock.release()
+
+
+@pytest.mark.asyncio
+async def test_baah_stale_journal_automatically_requires_verified_receipt(
+    installation, monkeypatch
+):
+    from app.task.BAAH.tools.managed_recovery import inspect_stale_transaction
+
+    root, config, _, _ = installation
+    candidate = await update.prepare_update(root, config)
+    await update.apply_update(root, candidate)
+    marker = script_install.workspace(root) / "transaction.json"
+    marker.write_bytes(b'{"state":"completed"}')
+    state = await inspect_stale_transaction(root)
+    assert state.pending and state.healthy and state.updated_confirmed
+    (root / "BAAH.exe").write_bytes(b"bad")
+    unhealthy = await inspect_stale_transaction(root)
+    assert unhealthy.pending and not unhealthy.healthy
+
+
+@pytest.mark.asyncio
+async def test_baah_corrupt_install_has_no_gui_dependency(
+    installation, monkeypatch
+):
+    root, config, _, _ = installation
+    candidate = await update.prepare_update(root, config)
+    await update.apply_update(root, candidate)
+    (root / "BAAH.exe").unlink()
+    config.Update.TakeoverEnabled = False
+    manager_mock = object.__new__(manager.BAAHManager)
+    manager_mock._install_access = ExitStack()
+    manager_mock._directory_lock = None
+    manager_mock.script_config = SimpleNamespace(
+        Script=SimpleNamespace(BAAHPath=root / "BAAH.exe"),
+        Update=config.Update,
+    )
+    manager_mock.script_info = SimpleNamespace(
+        script_id=str(uuid.uuid4()), name="BAAH", set_log=AsyncMock()
+    )
+    manager_mock.task_info = SimpleNamespace(task_id="task", mode="AutoProxy")
+    monkeypatch.setattr(
+        manager, "auto_recover_script_install", AsyncMock(return_value="reinstalled")
+    )
+    await manager_mock._prepare_program_update()
+    manager.auto_recover_script_install.assert_awaited_once()
+    manager_mock._install_access.close()
+    if manager_mock._directory_lock is not None:
+        manager_mock._directory_lock.release()
