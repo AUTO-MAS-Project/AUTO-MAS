@@ -1,5 +1,6 @@
 """BAAH 下载/安装分离及配置保护；网络与真实程序进程在边界隔离。"""
 
+import asyncio
 import hashlib
 import json
 import shutil
@@ -288,3 +289,154 @@ async def test_invalid_baah_executable_is_reported_as_install_unsafe(installatio
     (root / "BAAH.exe").write_bytes(b"damaged executable")
     with pytest.raises(script_install.InstallUnsafeError, match="主程序"):
         await update.confirm_current_install(root)
+
+
+@pytest.mark.asyncio
+async def test_explicit_repair_can_reinstall_missing_baah_exe(installation):
+    root, config, _, _ = installation
+    original = await update.prepare_update(root, config)
+    await update.apply_update(root, original)
+    receipt = script_install.record_path(root, "installed.json")
+    assert receipt.is_file()
+    snapshot = receipt.read_bytes()
+    (root / "BAAH.exe").unlink()
+    with pytest.raises(script_install.InstallUnsafeError):
+        await update.confirm_current_install(root)
+    with pytest.raises(OSError):
+        await update.prepare_update(root, config)
+    result = await update.update_before_run(root, config, recovery_receipt=snapshot)
+    assert "校验通过" in result
+    assert (root / "BAAH.exe").read_bytes() == pe(b"new")
+    assert not (script_install.workspace(root) / "transaction.json").exists()
+    await update.confirm_current_install(root)
+
+
+@pytest.mark.asyncio
+async def test_repair_refuses_changed_receipt(installation):
+    root, config, _, _ = installation
+    candidate = await update.prepare_update(root, config)
+    await update.apply_update(root, candidate)
+    receipt = script_install.record_path(root, "installed.json")
+    previous = receipt.read_bytes()
+    receipt.write_text('{"files":{}}')
+    with pytest.raises(script_install.InstallUnsafeError, match="已改变"):
+        await update.update_before_run(root, config, recovery_receipt=previous)
+    assert (root / "BAAH.exe").is_file()
+
+
+@pytest.mark.asyncio
+async def test_manager_without_takeover_repairs_corrupt_receipt_via_common_entry(
+    installation, monkeypatch
+):
+    root, config, _, _ = installation
+    prepared = await update.prepare_update(root, config)
+    await update.apply_update(root, prepared)
+    (root / "BAAH.exe").write_bytes(pe(b"corrupt"))
+    config.Update.TakeoverEnabled = False
+
+    instance = object.__new__(manager.BAAHManager)
+    instance._install_access = ExitStack()
+    instance._directory_lock = None
+    instance.script_config = SimpleNamespace(
+        Script=SimpleNamespace(BAAHPath=root / "BAAH.exe"),
+        Update=config.Update,
+    )
+    instance.script_info = SimpleNamespace(
+        script_id=str(uuid.uuid4()), name="BAAH A", set_log=AsyncMock()
+    )
+    instance.task_info = SimpleNamespace(task_id="task", mode="AutoProxy")
+    common = AsyncMock(return_value="reinstalled")
+    monkeypatch.setattr(manager, "auto_recover_script_install", common)
+    await instance._prepare_program_update()
+    common.assert_awaited_once()
+    instance._install_access.close()
+    if instance._directory_lock is not None:
+        instance._directory_lock.release()
+
+
+@pytest.mark.asyncio
+async def test_baah_stale_journal_automatically_requires_verified_receipt(
+    installation, monkeypatch
+):
+    from app.task.BAAH.tools.managed_recovery import inspect_stale_transaction
+
+    root, config, _, _ = installation
+    candidate = await update.prepare_update(root, config)
+    await update.apply_update(root, candidate)
+    marker = script_install.workspace(root) / "transaction.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_bytes(b'{"state":"completed"}')
+    state = await inspect_stale_transaction(root)
+    assert state.pending and state.healthy and state.updated_confirmed
+    (root / "BAAH.exe").write_bytes(b"bad")
+    unhealthy = await inspect_stale_transaction(root)
+    assert unhealthy.pending and not unhealthy.healthy
+
+
+@pytest.mark.asyncio
+async def test_baah_corrupt_install_has_no_gui_dependency(installation, monkeypatch):
+    root, config, _, _ = installation
+    candidate = await update.prepare_update(root, config)
+    await update.apply_update(root, candidate)
+    (root / "BAAH.exe").unlink()
+    config.Update.TakeoverEnabled = False
+    manager_mock = object.__new__(manager.BAAHManager)
+    manager_mock._install_access = ExitStack()
+    manager_mock._directory_lock = None
+    manager_mock.script_config = SimpleNamespace(
+        Script=SimpleNamespace(BAAHPath=root / "BAAH.exe"),
+        Update=config.Update,
+    )
+    manager_mock.script_info = SimpleNamespace(
+        script_id=str(uuid.uuid4()), name="BAAH", set_log=AsyncMock()
+    )
+    manager_mock.task_info = SimpleNamespace(task_id="task", mode="AutoProxy")
+    monkeypatch.setattr(
+        manager, "auto_recover_script_install", AsyncMock(return_value="reinstalled")
+    )
+    await manager_mock._prepare_program_update()
+    manager.auto_recover_script_install.assert_awaited_once()
+    manager_mock._install_access.close()
+    if manager_mock._directory_lock is not None:
+        manager_mock._directory_lock.release()
+
+
+@pytest.mark.asyncio
+async def test_receipt_cleanup_cancellation_retains_installation_lock(
+    installation, monkeypatch
+):
+    from app.task.BAAH.tools import managed_recovery
+
+    root, _, _, _ = installation
+    managed_recovery.snapshot_original_receipts(root, threading.Event())
+    entered = threading.Event()
+    release = threading.Event()
+    original = managed_recovery.cleanup_original_receipts
+
+    def slow_cleanup(install_root, cancelled):
+        entered.set()
+        if not release.wait(5):
+            raise RuntimeError("test cleanup did not resume")
+        return original(install_root, cancelled)
+
+    with script_install.installation_access(root):
+        pending = asyncio.create_task(script_install.run_worker(slow_cleanup, root))
+        await asyncio.wait_for(asyncio.to_thread(entered.wait, 2), 3)
+        pending.cancel()
+        # Second cancellation is possible while the first is waiting for
+        # worker termination. run_worker must still retain installation ownership.
+        pending.cancel()
+        await asyncio.sleep(0)
+    with pytest.raises(script_install.InstallUnsafeError):
+        with script_install.installation_access(root):
+            pass
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+    await asyncio.sleep(0)
+    assert managed_recovery.receipt_backup_path(root).exists()
+    with script_install.installation_access(root):
+        await script_install.run_worker(
+            managed_recovery.cleanup_original_receipts, root
+        )
+    assert not managed_recovery.receipt_backup_path(root).exists()
