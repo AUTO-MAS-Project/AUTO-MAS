@@ -785,6 +785,10 @@ class SrcManager(ScriptManagerBase):
             )
         else:
             return False
+        # 公共入口已经确认并结算成功，此时清理安装器的自有完成证据。
+        (script_install.workspace(root) / "src-native-install-complete.json").unlink(
+            missing_ok=True
+        )
         await self.script_info.set_log(f"SRC 安装状态已自动恢复：{result}")
         if self.execution_mode == "AutoProxy":
             self._program_update_prepared = True
@@ -829,6 +833,9 @@ class SrcManager(ScriptManagerBase):
                 finally:
                     await adapter.ensure_idle()
                     program_update.remove_cached_git_objects(candidate.objects)
+                (script_install.workspace(root) / "src-native-install-complete.json").unlink(
+                    missing_ok=True
+                )
             else:
                 # 不更新或安全旧版回退时，也必须确认原生安装确实完整。
                 await program_update.confirm_current_install(root)
