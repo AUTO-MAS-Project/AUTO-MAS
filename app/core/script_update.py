@@ -151,11 +151,7 @@ async def run_script_update_with_safe_fallback(
                 )
             )
             raise
-        if (
-            not previous.pending
-            and previous.healthy
-            and previous.previous_confirmed
-        ):
+        if not previous.pending and previous.healthy and previous.previous_confirmed:
             _record_recovery_event(
                 RecoveryIncident(
                     script_id=request.script_id,
