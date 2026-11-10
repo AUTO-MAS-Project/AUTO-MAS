@@ -36,9 +36,9 @@ async def ask_install_recovery(
     try:
         deploy = await asyncio.to_thread(program_update.read_deploy, root)
         git = program_update.git_executable(root, deploy)
-        current = (
-            await program_update.command(git, "rev-parse", "HEAD", cwd=root)
-        )[:12]
+        current = (await program_update.command(git, "rev-parse", "HEAD", cwd=root))[
+            :12
+        ]
     except Exception:
         current = "未知"
 

@@ -487,16 +487,13 @@ async def skip_unconfirmed_install(root: Path, snapshot: bytes) -> str:
     await asyncio.to_thread(assert_idle, root, allow_background_adb=True)
     deploy = await asyncio.to_thread(read_deploy, root)
     git = git_executable(root, deploy)
-    if (
-        await command(git, "rev-parse", "HEAD", cwd=root) != target
-        or await command(
-            git,
-            "--no-optional-locks",
-            "status",
-            "--porcelain",
-            "--untracked-files=no",
-            cwd=root,
-        )
+    if await command(git, "rev-parse", "HEAD", cwd=root) != target or await command(
+        git,
+        "--no-optional-locks",
+        "status",
+        "--porcelain",
+        "--untracked-files=no",
+        cwd=root,
     ):
         raise script_install.InstallUnsafeError(
             "SRC Git 代码未完整到达上次更新目标或存在修改，不允许跳过"

@@ -378,7 +378,9 @@ async def test_src_skip_rejects_partial_git_update(installation):
     root, _ = installation
     marker = script_install.workspace(root) / "src-install.json"
     marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(json.dumps({"target": git(root.parent / "remote", "rev-parse", "HEAD")}))
+    marker.write_text(
+        json.dumps({"target": git(root.parent / "remote", "rev-parse", "HEAD")})
+    )
     with pytest.raises(script_install.InstallUnsafeError, match="Git 代码未完整"):
         await update.skip_unconfirmed_install(root, marker.read_bytes())
     assert marker.exists()
