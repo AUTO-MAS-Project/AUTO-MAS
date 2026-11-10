@@ -58,7 +58,8 @@ class ManagedInstallBackup:
             if (
                 not isinstance(state, dict)
                 or state.get("root") != str(self.root.resolve())
-                or state.get("script_id") != self.script_id
+                or not isinstance(state.get("script_id"), str)
+                or not state["script_id"]
                 or state.get("script_type") != self.script_type
                 or state.get("phase") not in self._PHASES
                 or not isinstance(state.get("files"), dict)
