@@ -833,9 +833,9 @@ class SrcManager(ScriptManagerBase):
                 finally:
                     await adapter.ensure_idle()
                     program_update.remove_cached_git_objects(candidate.objects)
-                (script_install.workspace(root) / "src-native-install-complete.json").unlink(
-                    missing_ok=True
-                )
+                (
+                    script_install.workspace(root) / "src-native-install-complete.json"
+                ).unlink(missing_ok=True)
             else:
                 # 不更新或安全旧版回退时，也必须确认原生安装确实完整。
                 await program_update.confirm_current_install(root)
