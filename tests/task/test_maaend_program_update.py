@@ -1224,4 +1224,3 @@ async def test_precommit_staging_repair_requires_trusted_identity(
         await adapter.recover_native()
     assert (script_install.workspace(root) / "ready").exists()
     assert (root / "MaaEnd.exe").read_bytes() == b"damaged"
-
