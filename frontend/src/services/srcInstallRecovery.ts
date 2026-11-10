@@ -20,9 +20,7 @@ let subscriptionIds: string[] = []
 let disposeDisconnect: (() => void) | null = null
 
 const forgetRequest = (requestId: string) => {
-  srcInstallPrompts.value = srcInstallPrompts.value.filter(
-    prompt => prompt.requestId !== requestId
-  )
+  srcInstallPrompts.value = srcInstallPrompts.value.filter(prompt => prompt.requestId !== requestId)
   if (srcInstallDecisionPending.value === requestId) {
     srcInstallDecisionPending.value = null
   }
