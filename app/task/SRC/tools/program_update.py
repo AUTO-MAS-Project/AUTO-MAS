@@ -451,6 +451,12 @@ async def apply_update(
             raise script_install.InstallUnsafeError(
                 "SRC 原生安装后提交或程序文件尚未确认，保留标记"
             )
+        # 原生 installer 与 Git 提交均完成后才写成功证据；
+        # 不能仅靠 pip check 猜测新 requirements 已安装。
+        io_utils.write_file(
+            script_install.workspace(root) / "src-native-install-complete.json",
+            {"root": str(root.resolve()), "target": prepared.target_commit},
+        )
         marker.unlink()
     finally:
         # 原生安装器已退出后撤销临时部署设置，失败标记不随配置恢复被删除。
