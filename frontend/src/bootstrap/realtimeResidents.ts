@@ -21,6 +21,10 @@ import {
   bootstrapVirtualDisplayPrompt,
   disposeVirtualDisplayPrompt,
 } from '@/services/virtualDisplayPrompt'
+import {
+  bootstrapHSRRollback,
+  disposeHSRRollback,
+} from '@/services/hsrRollback'
 
 let registered = false
 
@@ -70,6 +74,10 @@ export function bootstrapRealtimeResidents(): void {
     registerResidentResource('virtual-display-prompt', {
       bootstrap: bootstrapVirtualDisplayPrompt,
       dispose: disposeVirtualDisplayPrompt,
+    })
+    registerResidentResource('hsr-rollback-recovery', {
+      bootstrap: bootstrapHSRRollback,
+      dispose: disposeHSRRollback,
     })
     registered = true
   }

@@ -3,6 +3,17 @@
     "languageSaveFailed": "Failed to save the language setting; reverted to the previous one."
   },
   "comp": {
+    "hsrRollbackEngine": "Affected engine",
+    "hsrRollbackInstallPath": "Installation folder",
+    "hsrRollbackManagedName": "Managed profile",
+    "hsrRollbackMessage": "An M7A or SRA installation was interrupted and automatic rollback failed. Close related processes and verify the installation folder before retrying a guarded rollback, or cancel.",
+    "hsrRollbackReason": "Automatic rollback error",
+    "hsrRollbackRetry": "Retry safe rollback",
+    "hsrRollbackRisk": "Never delete .automas_update, backup files, or journal.json to bypass this gate. If the retry fails, preserve these files and repair manually before rerunning.",
+    "hsrRollbackSendFailed": "Unable to send rollback choice. Check connection.",
+    "hsrRollbackStop": "Cancel task",
+    "hsrRollbackTitle": "HSR external-script rollback failed",
+    "hsrRollbackUnknown": "Unknown",
     "backendAboutUpdateWhich": "The backend is about to update, which restarts it and interrupts whatever is running. Continue?",
     "backendStarting": "Starting the backend",
     "backendUpdateAvailableClick": "A backend update is available — click to update",

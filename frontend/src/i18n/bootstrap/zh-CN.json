@@ -3,6 +3,17 @@
     "languageSaveFailed": "语言设置保存失败，已恢复原语言"
   },
   "comp": {
+    "hsrRollbackEngine": "受影响的引擎",
+    "hsrRollbackInstallPath": "安装目录",
+    "hsrRollbackManagedName": "托管名称",
+    "hsrRollbackMessage": "上次 M7A 或 SRA 安装中断，自动回滚未成功。请先关闭相关程序，核对安装目录后再试一次安全回滚；失败时仍会保留备份并拒绝启动。",
+    "hsrRollbackReason": "自动回滚失败原因",
+    "hsrRollbackRetry": "重新尝试安全回滚",
+    "hsrRollbackRisk": "不能删除 .automas_update、备份或 journal.json 来跳过保护。再试一次仍失败时，请保留现场手工修复后重新运行。",
+    "hsrRollbackSendFailed": "无法发送回滚操作，请检查连接。",
+    "hsrRollbackStop": "取消本次任务",
+    "hsrRollbackTitle": "HSR 外部脚本更新回滚失败",
+    "hsrRollbackUnknown": "未知",
     "backendAboutUpdateWhich": "即将更新后端，这需要重启后端程序，你当前正在运行的任务将会被中断。确认继续？",
     "backendStarting": "正在启动后端",
     "backendUpdateAvailableClick": "检测到后端更新，点击以更新后端",

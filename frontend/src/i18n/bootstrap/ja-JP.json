@@ -3,6 +3,17 @@
     "languageSaveFailed": "言語設定の保存に失敗しました。元の言語に戻しました。"
   },
   "comp": {
+    "hsrRollbackEngine": "対象エンジン",
+    "hsrRollbackInstallPath": "インストール先",
+    "hsrRollbackManagedName": "管理設定名",
+    "hsrRollbackMessage": "前回の M7A または SRA インストールが中断し、自動復元に失敗しました。関連プロセスを閉じ、対象を確認して安全なロールバックを再試行するか中止してください。",
+    "hsrRollbackReason": "自動復元の失敗理由",
+    "hsrRollbackRetry": "安全なロールバックを再試行",
+    "hsrRollbackRisk": "保護を無効にする目的で .automas_update、バックアップや journal.json を削除しないでください。再試行が失敗した場合は現状を保存し手動で修復してください。",
+    "hsrRollbackSendFailed": "復元指示を送信できません。接続を確認してください。",
+    "hsrRollbackStop": "今回のタスクを中止",
+    "hsrRollbackTitle": "HSR 外部スクリプト更新のロールバックに失敗",
+    "hsrRollbackUnknown": "不明",
     "backendAboutUpdateWhich": "バックエンドを更新します。更新にはバックエンドの再起動が必要で、実行中のタスクは中断されます。続行しますか？",
     "backendStarting": "バックエンドを起動しています",
     "backendUpdateAvailableClick": "バックエンドの更新があります。クリックして更新してください",
