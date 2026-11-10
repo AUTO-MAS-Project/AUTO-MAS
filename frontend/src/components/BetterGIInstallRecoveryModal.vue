@@ -11,12 +11,17 @@ const { t } = useI18n()
 const prompt = computed(() => bettergiInstallPrompts.value[0] ?? null)
 const acknowledged = ref(false)
 const sendFailed = ref(false)
-const submitting = computed(() => bettergiInstallDecisionPending.value === prompt.value?.requestId)
+const submitting = computed(
+  () => bettergiInstallDecisionPending.value === prompt.value?.requestId
+)
 
-watch(() => prompt.value?.requestId, () => {
-  acknowledged.value = false
-  sendFailed.value = false
-})
+watch(
+  () => prompt.value?.requestId,
+  () => {
+    acknowledged.value = false
+    sendFailed.value = false
+  }
+)
 
 function decide(action: 'retry' | 'skip' | 'stop') {
   if (submitting.value || (action === 'skip' && !acknowledged.value)) return
@@ -34,6 +39,7 @@ function decide(action: 'retry' | 'skip' | 'stop') {
     :footer="null"
     :z-index="900"
     :width="560"
+    class="bettergi-recovery-modal"
     centered
   >
     <template v-if="prompt">
@@ -46,10 +52,20 @@ function decide(action: 'retry' | 'skip' | 'stop') {
           {{ prompt.targetVersion || t('bootstrap.comp.bettergiRecoveryUnknown') }}
         </a-descriptions-item>
         <a-descriptions-item :label="t('bootstrap.comp.bettergiRecoveryChannel')">
-          {{ prompt.channel === 'stable' ? t('bootstrap.comp.bettergiRecoveryStable') : t('bootstrap.comp.bettergiRecoveryBeta') }}
+          {{
+            prompt.channel === 'stable'
+              ? t('bootstrap.comp.bettergiRecoveryStable')
+              : t('bootstrap.comp.bettergiRecoveryBeta')
+          }}
         </a-descriptions-item>
         <a-descriptions-item :label="t('bootstrap.comp.bettergiRecoveryTakeover')">
-          {{ t(prompt.takeoverEnabled ? 'bootstrap.comp.bettergiRecoveryEnabled' : 'bootstrap.comp.bettergiRecoveryDisabled') }}
+          {{
+            t(
+              prompt.takeoverEnabled
+                ? 'bootstrap.comp.bettergiRecoveryEnabled'
+                : 'bootstrap.comp.bettergiRecoveryDisabled'
+            )
+          }}
         </a-descriptions-item>
       </a-descriptions>
       <a-alert
@@ -58,7 +74,11 @@ function decide(action: 'retry' | 'skip' | 'stop') {
         show-icon
         :message="t('bootstrap.comp.bettergiRecoveryRisk')"
       />
-      <a-checkbox v-model:checked="acknowledged" :disabled="submitting" class="recovery-check">
+      <a-checkbox
+        v-model:checked="acknowledged"
+        :disabled="submitting"
+        class="recovery-check"
+      >
         {{ t('bootstrap.comp.bettergiRecoveryAcknowledgement') }}
       </a-checkbox>
       <a-alert
@@ -84,17 +104,25 @@ function decide(action: 'retry' | 'skip' | 'stop') {
 </template>
 
 <style scoped>
+:global(.bettergi-recovery-modal .ant-modal-body) {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
 .recovery-details {
   margin: 16px 0;
 }
+
 .recovery-warning,
 .recovery-check,
 .recovery-error {
   margin-top: 12px;
 }
+
 .recovery-check {
   display: block;
 }
+
 .recovery-actions {
   display: flex;
   flex-wrap: wrap;

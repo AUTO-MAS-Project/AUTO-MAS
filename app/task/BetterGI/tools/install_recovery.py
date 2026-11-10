@@ -54,7 +54,9 @@ async def ask_install_recovery(
 
     try:
         installed = str(await asyncio.to_thread(program_update.read_version, root))
-    except (OSError, ValueError, ImportError, IndexError, KeyError):
+    except Exception as error:
+        # 元数据不可读时仍允许用户选择重试；跳过阶段才严格校验。
+        logger.warning(f"读取 BetterGI 当前版本失败，恢复提示显示未知：{error}")
         installed = "未知"
 
     request_id = uuid4().hex

@@ -33,14 +33,21 @@ export function bootstrapBetterGIInstallRecovery(): void {
   subscriptionIds = [
     subscribe({ id: WS_ID_TASK_MANAGER, type: WS_BETTERGI_INSTALL_PROMPT }, message => {
       const prompt = message.data
-      if (!prompt.requestId || !prompt.taskId || bettergiInstallPrompts.value.some(
-        previous => previous.requestId === prompt.requestId
-      )) return
+      if (
+        !prompt.requestId ||
+        !prompt.taskId ||
+        bettergiInstallPrompts.value.some(previous => previous.requestId === prompt.requestId)
+      ) {
+        return
+      }
       bettergiInstallPrompts.value.push(prompt)
     }),
-    subscribe({ id: WS_ID_TASK_MANAGER, type: WS_BETTERGI_INSTALL_PROMPT_CLOSED }, message => {
-      forgetRequest(message.data.requestId)
-    }),
+    subscribe(
+      { id: WS_ID_TASK_MANAGER, type: WS_BETTERGI_INSTALL_PROMPT_CLOSED },
+      message => {
+        forgetRequest(message.data.requestId)
+      }
+    ),
   ]
   disposeDisconnect = onDisconnected(() => {
     bettergiInstallPrompts.value = []
@@ -48,7 +55,9 @@ export function bootstrapBetterGIInstallRecovery(): void {
   })
 }
 
-export function respondToBetterGIInstallRecovery(action: 'retry' | 'skip' | 'stop'): boolean {
+export function respondToBetterGIInstallRecovery(
+  action: 'retry' | 'skip' | 'stop'
+): boolean {
   const prompt = bettergiInstallPrompts.value[0]
   if (!prompt || bettergiInstallDecisionPending.value) return false
   const sent = send(WS_ID_TASK_MANAGER, WS_BETTERGI_INSTALL_DECISION, {
