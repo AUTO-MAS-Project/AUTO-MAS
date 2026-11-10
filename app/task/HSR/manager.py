@@ -68,7 +68,6 @@ from .tools.account_switch import (
     user_needs_account_switch,
 )
 from .tools.backup_archive import archive_native_backup
-from .tools.update import install_recovery
 from .tools.cloud_browser import DEFAULT_DEBUG_PORT, is_port_free
 from .tools.external_locks import (
     HSRExternalPathLockLease,
@@ -94,6 +93,7 @@ from .tools.sra_runtime import (
     sra_cloud_game_enabled,
 )
 from .tools.stage_runtime import resolve_configured_daily_stages
+from .tools.update import install_recovery
 
 logger = get_logger("HSR 调度器")
 
@@ -197,6 +197,7 @@ class HSRManager(NotificationTaskBase):
         self._external_path_lock: HSRExternalPathLockLease | None = None
         # 旧 dev 没有插件 registry；由调度器独占本轮原生来源会话并在停止时取消。
         self._direct_sessions: dict[str, Any] = {}
+        self._recovered_update_engines: set[str] = set()
         self._direct_user_log: LogRecord | None = None
 
     def _release_external_path_lock(self) -> None:
@@ -314,7 +315,8 @@ class HSRManager(NotificationTaskBase):
                 continue
             install = Path(root)
             try:
-                await rollback_pending(install, send_log=self._append_log)
+                if await rollback_pending(install, send_log=self._append_log):
+                    self._recovered_update_engines.add(engine)
             except asyncio.CancelledError:
                 raise
             except Exception as error:  # noqa: BLE001 - 原生事务不可凭版本号跳过
@@ -428,6 +430,9 @@ class HSRManager(NotificationTaskBase):
         download_dir = Path.cwd() / "data" / "hsr_update"
 
         for engine in ("M7A", "SRA"):
+            if engine in self._recovered_update_engines:
+                self._append_log(f"{engine_label(engine)} 本轮已恢复安装，跳过重复更新")
+                continue
             if self._update_aborted():
                 raise asyncio.CancelledError
             root = resolve_script_path(script_config, engine)

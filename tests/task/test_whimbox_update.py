@@ -13,7 +13,6 @@ from packaging.version import Version
 
 from app.task.Whimbox import manager
 from app.task.Whimbox.tools import update
-from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.utils.common.process.runner import ProcessCleanupUnconfirmed
 
 
@@ -426,3 +425,94 @@ async def test_python_probes_leave_cold_installation_modules_unchanged(
     )
     assert result.splitlines() == ["read-only", "read-only"]
     assert sorted(path.name for path in modules.iterdir()) == ["mas_prefetch_probe.py"]
+
+
+@pytest.mark.asyncio
+async def test_user_can_skip_verified_pending_backend(installation, monkeypatch):
+    marker = update.pending_marker(installation)
+    marker.write_text("3.1.1", encoding="utf-8")
+    update.installed_version.return_value = Version("3.1.1")
+    monkeypatch.setattr(
+        update.WheelAssetsConfigSurface, "check_install", lambda self: None
+    )
+    result = await update.skip_pending_installation(installation, marker.read_bytes())
+    assert result == "3.1.1"
+    assert not marker.exists()
+    update.run_python.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bad_marker_or_broken_dependencies_cannot_skip(installation, monkeypatch):
+    marker = update.pending_marker(installation)
+    marker.write_text("invalid")
+    with pytest.raises(update.WhimboxUpdateUnsafeError, match="内容"):
+        await update.skip_pending_installation(installation, marker.read_bytes())
+    assert marker.exists()
+
+    marker.write_text("3.1.1")
+    monkeypatch.setattr(
+        update.WheelAssetsConfigSurface, "check_install", lambda self: None
+    )
+    update.run_python.side_effect = OSError("pip dependency broken")
+    with pytest.raises(update.WhimboxUpdateUnsafeError, match="依赖"):
+        await update.skip_pending_installation(installation, marker.read_bytes())
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_pending_marker_rejected_when_snapshot_changes(installation):
+    marker = update.pending_marker(installation)
+    marker.write_text("3.1.1", encoding="utf-8")
+    with pytest.raises(update.WhimboxUpdateUnsafeError, match="已变化"):
+        await update.skip_pending_installation(installation, b"3.1.0")
+
+
+@pytest.mark.asyncio
+async def test_whimbox_main_task_acquires_installation_lock_only_once(
+    managed_batch, installation
+):
+    managed_batch.script_config.Info = SimpleNamespace(RootPath=installation)
+    managed_batch.check = AsyncMock(return_value="Pass")
+    managed_batch.prepare = AsyncMock()
+    managed_batch._run_prepared = AsyncMock()
+    await managed_batch.main_task()
+    managed_batch._run_prepared.assert_awaited_once_with(installation)
+    # 生命周期结束后锁必须可再次取得。
+    with update.installation_access(installation):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_whimbox_prepare_download_failure_uses_verified_old_version(
+    managed_batch, installation, monkeypatch
+):
+    managed_batch._update_candidate = None
+    monkeypatch.setattr(
+        update, "prepare_update", AsyncMock(side_effect=OSError("network offline"))
+    )
+    monkeypatch.setattr(
+        update, "installed_version", AsyncMock(return_value=Version("3.1.0"))
+    )
+    await managed_batch._run_prepared(installation)
+    manager.confirm_usable_installation.assert_awaited()
+    assert managed_batch.run_user_task.await_count == 2
+    assert "旧版" in str(manager.push_dispatch_log.await_args)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure", [OSError("no disk space"), asyncio.CancelledError()]
+)
+async def test_whimbox_cached_wheel_cleaned_if_backup_cannot_start(
+    managed_batch, installation, monkeypatch, failure
+):
+    candidate = await update.prepare_update(installation)
+    assert candidate.packages.parent.exists()
+    managed_batch._update_candidate = candidate
+    monkeypatch.setattr(
+        manager, "run_managed_script_install", AsyncMock(side_effect=failure)
+    )
+    with pytest.raises(type(failure)):
+        await managed_batch._run_prepared(installation)
+    assert not candidate.packages.parent.exists()
+    managed_batch.run_user_task.assert_not_awaited()
