@@ -7,6 +7,8 @@
     "bettergiRecoveryBeta": "ベータ版",
     "bettergiRecoveryTitle": "BetterGI の前回インストールが未確認です",
     "bettergiRecoveryMessage": "前回の BetterGI 更新が完了したことを確認できません。配布ファイルの公開が遅れているか、インストールが中断された可能性があります。今回の処理を選択してください。",
+    "bettergiRecoveryManagedName": "管理設定名",
+    "bettergiRecoveryInstallPath": "インストール先",
     "bettergiRecoveryCurrent": "現在のバージョン",
     "bettergiRecoveryTarget": "前回の更新先",
     "bettergiRecoveryChannel": "更新チャネル",

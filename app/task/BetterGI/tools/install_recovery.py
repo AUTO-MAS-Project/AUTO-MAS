@@ -30,6 +30,7 @@ async def ask_install_recovery(
     *,
     channel: str,
     takeover_enabled: bool,
+    managed_name: str = "BetterGI",
 ) -> tuple[str, bytes]:
     """返回 (retry/skip, 原标记字节)，让后续操作对同一份安装记录做乐观校验。"""
     marker = script_install.workspace(root) / "bgi-install.json"
@@ -86,6 +87,8 @@ async def ask_install_recovery(
                 "takeoverEnabled": takeover_enabled,
                 "installedVersion": installed,
                 "targetVersion": target,
+                "managedName": managed_name,
+                "installPath": str(root.resolve()),
             },
         )
         if not sent:

@@ -173,6 +173,8 @@ export interface WSBetterGIInstallPromptData {
   takeoverEnabled: boolean
   installedVersion: string
   targetVersion: string
+  managedName: string
+  installPath: string
 }
 
 export interface WSBetterGIInstallPromptClosedData {

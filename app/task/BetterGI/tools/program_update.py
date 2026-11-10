@@ -10,6 +10,7 @@
 
 import asyncio
 import hashlib
+import json
 import re
 import tempfile
 import zipfile
@@ -289,12 +290,48 @@ async def run_installer(installer: Path, root: Path) -> None:
 
 
 async def update_before_run(
-    root: Path, config: BetterGIConfig, *, progress: DownloadProgress | None = None
+    root: Path,
+    config: BetterGIConfig,
+    *,
+    progress: DownloadProgress | None = None,
+    recovery_snapshot: bytes | None = None,
 ) -> str:
     await asyncio.to_thread(assert_idle, root)
-    current = await asyncio.to_thread(read_version, root)
-    if script_install.read_pe_architecture(root / "BetterGI.exe") != "x86_64":
-        raise script_install.InstallUnsafeError("BetterGI 当前安装架构不支持自动更新")
+    directory = script_install.workspace(root)
+    marker = directory / "bgi-install.json"
+
+    # 只有用户在恢复对话框中明确选择的那份记录，才可触发损坏本体修复。
+    # 普通自动更新仍然必须先确认旧版程序存在、版本与架构均可识别。
+    recorded_target = None
+    if recovery_snapshot is not None:
+        if (
+            marker.is_symlink()
+            or not marker.is_file()
+            or await asyncio.to_thread(marker.read_bytes) != recovery_snapshot
+        ):
+            raise script_install.InstallUnsafeError(
+                "BetterGI 安装恢复记录已变化，拒绝重试安装"
+            )
+        try:
+            record = json.loads(recovery_snapshot)
+            if not isinstance(record, dict) or not isinstance(record.get("target"), str):
+                raise ValueError("无效的安装目标")
+            recorded_target = Version(record["target"])
+        except (ValueError, TypeError) as error:
+            raise script_install.InstallUnsafeError(
+                "BetterGI 安装恢复记录异常，请使用官方安装器修复"
+            ) from error
+
+    try:
+        current = await asyncio.to_thread(read_version, root)
+        if script_install.read_pe_architecture(root / "BetterGI.exe") != "x86_64":
+            raise script_install.InstallUnsafeError("BetterGI 当前安装架构不支持自动更新")
+    except Exception:
+        if recovery_snapshot is None:
+            raise
+        current = None
+        logger.warning("BetterGI 恢复安装：当前程序缺失或损坏，将校验并重新安装完整安装包")
+
     cdk = (
         config.Update.MirrorChyanCDK.strip()
         or Config.setting.Update.MirrorChyanCDK.strip()
@@ -326,17 +363,17 @@ async def update_before_run(
             await request_release(config.Update.Channel)
         )
 
-    directory = script_install.workspace(root)
-    marker = directory / "bgi-install.json"
     logger.info(
-        f"BetterGI 版本检查：当前={current}，目标={target}，"
+        f"BetterGI 版本检查：当前={current or '无法识别'}，目标={target}，"
         f"通道={config.Update.Channel}，存在未确认标记={marker.exists()}"
     )
-    if target <= current and not marker.exists():
+    if current is not None and target <= current and not marker.exists():
         return f"BetterGI 当前版本 {current} 无需更新"
-    if target < current:
+    if (current is not None and target < current) or (
+        recorded_target is not None and target < recorded_target
+    ):
         raise script_install.InstallUnsafeError(
-            "BetterGI 上次安装未完成且高于所选通道，请切换通道或手动修复，不会自动降级"
+            "BetterGI 更新目标低于当前或上次安装的版本，拒绝自动降级；请切换通道或手动修复"
         )
     directory.mkdir(parents=True, exist_ok=True)
     cache = Path(tempfile.mkdtemp(dir=directory, prefix="download-"))
@@ -403,6 +440,14 @@ async def update_before_run(
     else:
         await asyncio.to_thread(verify_installer, installer, size, digest)
     await asyncio.to_thread(assert_idle, root)
+    if recovery_snapshot is not None and (
+        marker.is_symlink()
+        or not marker.is_file()
+        or await asyncio.to_thread(marker.read_bytes) != recovery_snapshot
+    ):
+        raise script_install.InstallUnsafeError(
+            "BetterGI 安装恢复记录在下载期间发生变化，禁止覆盖标记"
+        )
     _utils_io.write_file(marker, {"target": str(target)})
     logger.warning(f"BetterGI 官方安装器开始执行，安装标记已写入：目标={target}")
     try:

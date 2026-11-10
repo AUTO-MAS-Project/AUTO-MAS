@@ -168,7 +168,9 @@ class BetterGIManager(ScriptManagerBase):
                 self.build_proxy_user_list(self.user_config.items())
             )
 
-    async def _run_program_update(self, root: Path) -> str:
+    async def _run_program_update(
+        self, root: Path, *, recovery_snapshot: bytes | None = None
+    ) -> str:
         await self.script_info.set_log("正在检查 BetterGI 本体更新…")
 
         async def progress(downloaded: int, total: int, speed: float) -> None:
@@ -182,6 +184,7 @@ class BetterGIManager(ScriptManagerBase):
             root,
             self.script_config,
             progress=progress,
+            recovery_snapshot=recovery_snapshot,
         )
 
     async def _recover_unconfirmed_install(self) -> bool:
@@ -198,6 +201,7 @@ class BetterGIManager(ScriptManagerBase):
         action, snapshot = await install_recovery.ask_install_recovery(
             self.task_info.task_id,
             root,
+            managed_name=getattr(self.script_info, "name", "BetterGI"),
             channel=self.script_config.Update.Channel,
             takeover_enabled=self.script_config.Update.TakeoverEnabled,
         )
@@ -215,7 +219,9 @@ class BetterGIManager(ScriptManagerBase):
         else:
             # 用户主动选择重试：即使 TakeoverEnabled=False，也只为本次恢复调用更新器。
             # 不走普通更新失败的旧版回退：安装标记仍在时任何失败都必须停止。
-            result = await self._run_program_update(root)
+            result = await self._run_program_update(
+                root, recovery_snapshot=snapshot
+            )
             await program_update.confirm_current_install(root)
             await self.script_info.set_log(f"BetterGI 安装恢复成功：{result}")
         return True

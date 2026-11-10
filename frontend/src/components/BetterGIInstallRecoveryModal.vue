@@ -43,6 +43,12 @@ function decide(action: 'retry' | 'skip' | 'stop') {
     <template v-if="prompt">
       <p>{{ t('bootstrap.comp.bettergiRecoveryMessage') }}</p>
       <a-descriptions bordered :column="1" size="small" class="recovery-details">
+        <a-descriptions-item :label="t('bootstrap.comp.bettergiRecoveryManagedName')">
+          {{ prompt.managedName || t('bootstrap.comp.bettergiRecoveryUnknown') }}
+        </a-descriptions-item>
+        <a-descriptions-item :label="t('bootstrap.comp.bettergiRecoveryInstallPath')">
+          <span class="recovery-path">{{ prompt.installPath || t('bootstrap.comp.bettergiRecoveryUnknown') }}</span>
+        </a-descriptions-item>
         <a-descriptions-item :label="t('bootstrap.comp.bettergiRecoveryCurrent')">
           {{ prompt.installedVersion || t('bootstrap.comp.bettergiRecoveryUnknown') }}
         </a-descriptions-item>
@@ -105,6 +111,11 @@ function decide(action: 'retry' | 'skip' | 'stop') {
 
 .recovery-details {
   margin: 16px 0;
+}
+
+.recovery-path {
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
 .recovery-warning,
