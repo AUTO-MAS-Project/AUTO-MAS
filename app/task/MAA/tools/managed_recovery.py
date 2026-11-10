@@ -15,7 +15,12 @@ from .resource_update import (
     verify_resource_recovery_marker,
 )
 from .software_package import read_pending_update
-from .software_update import _read_pe_machine, compare_versions, read_installed_release
+from .software_update import (
+    _read_pe_machine,
+    compare_versions,
+    parse_version,
+    read_installed_release,
+)
 from .update_errors import MaaUpdateUnsafeError
 
 _SOFTWARE_MARKER = "pending-update-failure.txt"
@@ -64,8 +69,12 @@ class MAAInstallAdapter:
         updated = False
         if software_pending and not resource_pending and healthy and target:
             try:
-                updated = (
-                    compare_versions(version, target) >= 0
+                parsed_version = parse_version(version)
+                parsed_target = parse_version(target)
+                updated = bool(
+                    parsed_version is not None
+                    and parsed_target is not None
+                    and compare_versions(parsed_version, parsed_target) >= 0
                     and not (package and (self.root / package).is_file())
                 )
             except (TypeError, ValueError):
