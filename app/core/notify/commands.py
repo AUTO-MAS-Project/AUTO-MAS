@@ -24,6 +24,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import TYPE_CHECKING
 
 from app.models.notification.channel import NotificationCommandAction
@@ -37,25 +38,48 @@ async def execute_notification_command(
     action: NotificationCommandAction,
     name: str,
 ) -> str:
-    """将渠道传入的名称解析为 ID，复用现有托管和队列启动入口。"""
+    """查询配置名称，或按完整名称复用现有托管和队列启动入口。"""
 
-    from app.core import Config, TaskManager
+    from app.core import Config
 
     targets: ConfigCollection[ScriptConfigType] | ConfigCollection[QueueConfig]
-    if action == "retry_script":
+    if action in {"retry_script", "list_scripts"}:
         targets = Config.ScriptConfig
         label = "托管"
-    elif action == "start_queue":
+        command = "retry"
+    elif action in {"start_queue", "list_queues"}:
         targets = Config.QueueConfig
         label = "队列"
+        command = "start"
     else:
         return "不支持该指令。"
+    if action in {"list_scripts", "list_queues"}:
+        names = [target.Info.Name for target in targets.values()]
+        if not names:
+            return f"尚未配置{label}，请先在 MAS 中添加。"
+        counts = Counter(names)
+        lines = [f"已配置的{label}（{len(names)}）："]
+        lines.extend(
+            f"- {name}" + ("（同名，请先重命名）" if counts[name] > 1 else "")
+            for name in names
+        )
+        lines.append(f"使用：{command} <{label}完整名称>；名称须与 MAS 中完全一致。")
+        lines.append(
+            "名称与帮助或列表指令冲突时，在名称前加 --，"
+            f"如 {command} -- help、{command} -- list 2；"
+            f"名称为 -- help 时用 {command} -- -- help。"
+        )
+        return "\n".join(lines)
     matches = [uid for uid, target in targets.items() if target.Info.Name == name]
     if not matches:
-        return f"未找到该{label}，请使用 MAS 中显示的完整{label}名称。"
+        return (
+            f"未找到该{label}，请使用 MAS 中显示的完整{label}名称。"
+            f"发送 {command} list 查看名称。"
+        )
     if len(matches) > 1:
         return f"存在同名{label}，请先在 MAS 中改为不同名称后重试。"
     uid = matches[0]
+    from app.core import TaskManager
     from app.models.task import TaskMode
 
     selection = (

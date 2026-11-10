@@ -73,8 +73,38 @@ MESSAGE_SEQUENCE_MAX = 0xFFFFFFFF
 USER_AGENT = "AUTO-MAS QQ Official Bot"
 _COMMAND_ACTIONS: dict[str, NotificationCommandAction] = {
     "重试": "retry_script",
+    "retry": "retry_script",
     "启动队列": "start_queue",
+    "start": "start_queue",
 }
+_HELP_COMMANDS = {"帮助", "help"}
+_LIST_COMMANDS = {"列表", "list"}
+_COMMAND_HELP: dict[NotificationCommandAction, str] = {
+    "retry_script": (
+        "重试 / retry <托管完整名称>：按当前自动代理配置重试脚本。\n"
+        "重试 help / retry help：查看帮助。\n"
+        "重试 list / retry list [页码]：查看已配置的托管名称。\n"
+        "名称须与 MAS 中完全一致；与帮助或列表指令冲突时，在名称前加 --。\n"
+        "示例：retry -- help、retry -- list 2；名称为 -- help 时用 retry -- -- help。"
+    ),
+    "start_queue": (
+        "启动队列 / start <队列完整名称>：按当前队列配置运行一次。\n"
+        "启动队列 help / start help：查看帮助。\n"
+        "启动队列 list / start list [页码]：查看已配置的队列名称。\n"
+        "名称须与 MAS 中完全一致；与帮助或列表指令冲突时，在名称前加 --。\n"
+        "示例：start -- help、start -- list 2；名称为 -- help 时用 start -- -- help。"
+    ),
+}
+_GLOBAL_HELP = (
+    "QQ 机器人指令：\n"
+    "帮助 / help：查看全部指令。\n"
+    f"{_COMMAND_HELP['retry_script']}\n"
+    f"{_COMMAND_HELP['start_queue']}\n"
+    "我的ID / myid：在群内查询自己的群控制 ID。\n"
+    "所有指令可加 / 前缀，英文关键字不区分大小写；help/list 也可写帮助/列表。\n"
+    "私聊仅接受绑定用户；群内须 @机器人，并遵守群控制成员白名单。"
+    "白名单为空时，该群所有成员均可使用。"
+)
 GATEWAY_READY_TIMEOUT_SECONDS = 30
 GATEWAY_RECONNECT_DELAYS = (2, 5, 10, 30)
 GATEWAY_INTENTS = 1 << 25  # C2C_GROUP_AT_MESSAGES
@@ -346,11 +376,25 @@ class Sender:
             # GROUP_AT_MESSAGE_CREATE 已由平台确认 @机器人；兼容正文保留的提及段。
             content = re.sub(r"^\s*<@!?[^>]+>\s*", "", content)
         parts = content.strip().removeprefix("/").split(maxsplit=1)
-        identity_query = group and parts == ["我的ID"]
-        if not parts or (parts[0] not in _COMMAND_ACTIONS and not identity_query):
+        if not parts:
             return
-        action = _COMMAND_ACTIONS.get(parts[0])
+        command = parts[0].casefold()
+        identity_query = group and command in {"我的id", "myid"} and len(parts) == 1
+        help_query = command in _HELP_COMMANDS
+        action = _COMMAND_ACTIONS.get(command)
+        if action is None and not identity_query and not help_query:
+            return
         name = parts[1].strip() if len(parts) == 2 else ""
+        # 只转义关键字或 -- 前缀，避免把原本名为“-- alpha”的对象错选成 alpha。
+        arguments = name.split(maxsplit=1)
+        literal_name = (
+            len(arguments) == 2
+            and arguments[0] == "--"
+            and arguments[1].split(maxsplit=1)[0].casefold()
+            in (_HELP_COMMANDS | _LIST_COMMANDS | {"--"})
+        )
+        if literal_name:
+            name = arguments[1].strip()
         # 过期事件不可在重连或重启后再次触发任务。
         try:
             timestamp = datetime.fromisoformat(str(data.get("timestamp", "")))
@@ -397,13 +441,26 @@ class Sender:
             self._command_ids[message_id] = None
             if len(self._command_ids) > 1024:
                 self._command_ids.popitem(last=False)
-            reply = (
-                "请发送：重试 托管名称，或：启动队列 队列名称。"
-                "名称须与 MAS 中一致，循环队列将按循环配置运行。"
-            )
+            reply = _GLOBAL_HELP
             if identity_query:
                 reply = f"你的群控制 ID：{member_openid}\n请将此 ID 填入 MAS 的群控制成员白名单。"
-            elif name and action is not None:
+            elif action is not None and (
+                not name
+                or (
+                    not literal_name
+                    and name.split(maxsplit=1)[0].casefold() in _HELP_COMMANDS
+                )
+            ):
+                reply = _COMMAND_HELP[action]
+            elif action is not None:
+                list_arguments = name.split(maxsplit=1)
+                list_page = None
+                if not literal_name and list_arguments[0].casefold() in _LIST_COMMANDS:
+                    action = (
+                        "list_scripts" if action == "retry_script" else "list_queues"
+                    )
+                    list_page = list_arguments[1] if len(list_arguments) == 2 else "1"
+                    name = ""
                 if self.dependencies.notification_command_executor is None:
                     reply = "当前无法执行指令，请检查 MAS 是否已完成启动。"
                 else:
@@ -411,6 +468,22 @@ class Sender:
                         reply = await self.dependencies.notification_command_executor(
                             action, name
                         )
+                        if list_page is not None:
+                            # 每个入站消息只回一页，避免超过 QQ 被动回复条数配额。
+                            pages = split_text(reply, TEXT_CHUNK_LIMIT - 120)
+                            try:
+                                page = int(list_page)
+                            except ValueError:
+                                page = 0
+                            list_command = (
+                                "retry" if action == "list_scripts" else "start"
+                            )
+                            if not 1 <= page <= len(pages):
+                                reply = f"页码无效，请使用 {list_command} list 1 至 {len(pages)}。"
+                            else:
+                                reply = f"第 {page}/{len(pages)} 页\n{pages[page - 1]}"
+                                if page < len(pages):
+                                    reply += f"\n下一页：{list_command} list {page + 1}"
                     except Exception as exc:
                         logger.warning(f"QQ 指令执行失败：{type(exc).__name__}")
                         reply = "指令处理异常，请在 MAS 中检查任务状态。"
