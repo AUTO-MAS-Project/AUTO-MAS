@@ -20,7 +20,12 @@ from app.task.MAA.tools.update_errors import MaaUpdateUnsafeError
 def maa_root(tmp_path, monkeypatch):
     root = tmp_path / "maa"
     (root / "config").mkdir(parents=True)
-    (root / "MAA.exe").touch()
+    # 真实 PE 头：MZ -> e_lfanew=64 -> PE\0\0 + Machine=x64。
+    executable = bytearray(128)
+    executable[:2] = b"MZ"
+    executable[60:64] = (64).to_bytes(4, "little")
+    executable[64:70] = b"PE\x00\x00\x64\x86"
+    (root / "MAA.exe").write_bytes(executable)
     (root / "MAA.dll").touch()
     monkeypatch.setattr(
         recovery,
@@ -223,3 +228,55 @@ async def test_maa_stop_on_change_during_prompt(maa_root, monkeypatch):
             "task", maa_root, managed_name="MAA", takeover_enabled=True
         )
     assert flag.read_bytes() == b"other install failure"
+
+
+@pytest.mark.asyncio
+async def test_maa_corrupted_executable_blocks_manual_acknowledge(
+    maa_root, monkeypatch
+):
+    flag = maa_root / "pending-update-failure.txt"
+    flag.write_bytes(b"official error")
+    (maa_root / "MAA.exe").write_bytes(b"")
+    with pytest.raises(MaaUpdateUnsafeError, match="PE 架构"):
+        await recovery.skip_delegated_failure(
+            maa_root, {"software": flag.read_bytes()}
+        )
+    assert flag.read_bytes() == b"official error"
+
+
+@pytest.mark.asyncio
+async def test_maa_missing_exe_disallows_native_retry_even_with_pending_zip(
+    maa_root, monkeypatch
+):
+    flag = maa_root / "pending-update-failure.txt"
+    flag.write_bytes(b"official error")
+    (maa_root / "MAA.exe").unlink()
+    (maa_root / "pending.zip").write_bytes(b"archive")
+    monkeypatch.setattr(
+        recovery, "read_pending_update", lambda root: ("v6.3.0", "pending.zip")
+    )
+    shown = []
+
+    async def send(*, id, type, data):
+        if type == protocol.MAA_INSTALL_PROMPT:
+            shown.append(data)
+            Dispatcher.dispatch(
+                WSEnvelope(
+                    id=id,
+                    type=protocol.MAA_INSTALL_DECISION,
+                    data={
+                        "taskId": data["taskId"],
+                        "requestId": data["requestId"],
+                        "action": "stop",
+                    },
+                )
+            )
+        return True
+
+    monkeypatch.setattr(recovery.Publisher, "send", send)
+    with pytest.raises(MaaUpdateUnsafeError, match="取消"):
+        await recovery.ask_maa_recovery(
+            "task", maa_root, managed_name="MAA", takeover_enabled=True
+        )
+    assert shown[0]["canRetry"] is False
+    assert flag.exists()
