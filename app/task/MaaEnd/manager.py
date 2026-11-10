@@ -24,7 +24,11 @@ import app.core.notify.report as _node_report
 from app.config import ConfigCollection, config_manager
 from app.core import Config, EmulatorManager, Notify, Publisher
 from app.core.notify.task_content import screenshot_entries as screenshot_entries
-from app.core.script_update import ScriptUpdateRequest, run_script_update
+from app.core.script_update import (
+    ScriptUpdateRequest,
+    auto_recover_script_install,
+    run_script_update,
+)
 from app.core.ws import protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
@@ -52,6 +56,7 @@ from .AutoProxy import AutoProxyTask
 from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_base
 from .tools import script_update
+from .tools.managed_recovery import MaaEndInstallAdapter
 from .tools.backup_archive import archive_native_backup
 from .tools.update import ensure_game_updated
 from .Update import EndfieldUpdateTask
@@ -335,6 +340,11 @@ class MaaEndManager(ScriptManagerBase):
                 )
         else:
             await push_dispatch_log(self.script_info, result)
+        await self._refresh_after_program_install(root)
+        self._program_update_prepared = True
+
+    async def _refresh_after_program_install(self, root: Path) -> None:
+        """不重复安装，但必须照常校验资源并清理过时的 MXU 缓存包。"""
         await asyncio.to_thread(
             MaaEndResourceLoader.get_cached, root, force_reload=True
         )
@@ -349,7 +359,6 @@ class MaaEndManager(ScriptManagerBase):
                 self.script_info,
                 f"已移除 {len(removed)} 个过期 MXU 更新包；MXU 启动时将清除对应的待安装记录",
             )
-        self._program_update_prepared = True
 
     async def _restore_script_config_from_temp(self) -> None:
         """恢复任务开始前的 MaaEnd working 配置。"""
@@ -485,17 +494,82 @@ class MaaEndManager(ScriptManagerBase):
             if (script_install.workspace(root) / "runtime-interface.json").exists():
                 await asyncio.to_thread(script_update.assert_idle, root)
                 script_update.recover_runtime_interface(root)
-            await script_install.run_worker(
-                script_install.recover_install,
+            journal = script_install.workspace(root) / "transaction.json"
+            if journal.is_symlink():
+                raise script_install.InstallUnsafeError("MaaEnd 原生事务路径不安全")
+            adapter = MaaEndInstallAdapter(
                 root,
-                lambda: script_update.assert_idle(root),
+                config,
+                takeover_enabled=config.Update.TakeoverEnabled,
+                allow_damaged_repair=(
+                    self.execution_mode == "AutoProxy" and config.Update.TakeoverEnabled
+                ),
             )
+            request = ScriptUpdateRequest(str(self.script_info.script_id), "MaaEnd")
+            recovered_automatically = False
+            try:
+                # 原生事务恢复不能以旧 MAS 收据校验作为前置门槛；
+                # MXU 独立更新后的收据可能旧，但本体仍可正确修复。
+                await adapter.recover_native()
+            except script_install.InstallUnsafeError:
+                if not journal.is_file():
+                    raise
+            if journal.is_file():
+                # 只有无可回滚目录、原生安装完整且身份可信时，公共层
+                # 才允许清理过期 journal；否则重新尝试原生恢复。
+                outcome = await auto_recover_script_install(
+                    request,
+                    install_root=root,
+                    inspect=adapter.inspect,
+                    acknowledge=adapter.acknowledge,
+                    reinstall=adapter.retry_native,
+                )
+                if outcome not in {"verified", "reinstalled"}:
+                    raise script_install.InstallUnsafeError(
+                        "MaaEnd 原生事务未完成，拒绝启动"
+                    )
+                await self.script_info.set_log(f"MaaEnd 原生事务自动恢复：{outcome}")
+                recovered_automatically = True
+            # 关闭接管或配置会话不主动覆盖用户自行维护的 MaaEnd。
+            # 仅在已开启托管且存在可信安装身份时才自动修复损坏的发行包。
+            identity = script_install.record_path(root, "program-identity.json")
+            if (
+                self.execution_mode == "AutoProxy"
+                and config.Update.TakeoverEnabled
+                and identity.is_file()
+                and not identity.is_symlink()
+            ):
+                state = await adapter.inspect()
+                if not state.healthy:
+                    if state.pending:
+                        raise script_install.InstallUnsafeError(
+                            "MaaEnd 尚有未完成原生事务，不能重新安装"
+                        )
+                    outcome = await auto_recover_script_install(
+                        request,
+                        install_root=root,
+                        inspect=adapter.inspect_repair,
+                        acknowledge=adapter.acknowledge,
+                        reinstall=adapter.repair_program,
+                    )
+                    if outcome != "reinstalled":
+                        raise script_install.InstallUnsafeError(
+                            "MaaEnd 完整包自动修复尚未确认成功"
+                        )
+                    await self.script_info.set_log(
+                        f"MaaEnd 官方完整包自动修复：{outcome}"
+                    )
+                    recovered_automatically = True
             if self.execution_mode == "AutoProxy" and config.Update.TakeoverEnabled:
                 self.maaend_config_dir = root / "config"
                 self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
                 self._recover_previous_run()
                 # 修复在原有资源预检之前，损坏的旧资源不能堵死恢复入口。
-                await self._prepare_program_update(root)
+                if recovered_automatically:
+                    await self._refresh_after_program_install(root)
+                    self._program_update_prepared = True
+                else:
+                    await self._prepare_program_update(root)
             elif script_install.record_path(root, "installed.json").exists():
                 # 非接管模式沿用 MXU 自行更新的安装。恢复事务仍须完成，
                 # 但旧 MAS 回执不应阻断后续配置或运行，也不重算哈希冒充可信。
