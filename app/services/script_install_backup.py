@@ -35,14 +35,20 @@ class ManagedInstallBackup:
         self.root = root
         self.script_id = script_id
         self.script_type = script_type
-        self.directory = script_install.workspace(root) / "managed-install"
+        self.workspace = script_install.workspace(root)
+        self.directory = self.workspace / "managed-install"
         self.record = self.directory / "state.json"
         self.snapshot = self.directory / "snapshot"
         self.staging = self.directory / "staging"
         self.failed = self.directory / "failed-install"
 
+    def _assert_workspace(self) -> None:
+        if self.workspace.exists() or self.workspace.is_symlink():
+            script_install._reject_link(self.workspace)
+
     def read(self) -> dict | None:
         """记录异常或存在无主备份时拒绝继续，不能猜测状态。"""
+        self._assert_workspace()
         if not self.directory.exists():
             return None
         script_install._reject_link(self.directory)
@@ -77,6 +83,7 @@ class ManagedInstallBackup:
             ) from error
 
     def _write(self, state: dict) -> None:
+        self._assert_workspace()
         self.directory.mkdir(parents=True, exist_ok=True)
         script_install._reject_link(self.directory)
         script_install._write_state(self.directory, state, "state.json")
