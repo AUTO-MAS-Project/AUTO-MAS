@@ -82,15 +82,15 @@ class WhimboxInstallAdapter:
             installed_version=str(version) if version else None,
             target_version=str(target) if target else None,
             updated_confirmed=bool(
-                healthy and version is not None
+                healthy
+                and version is not None
                 and (
                     (target is not None and version >= target)
                     or (previous is not None and version > previous)
                 )
             ),
             previous_confirmed=bool(
-                healthy and not pending and previous is not None
-                and version == previous
+                healthy and not pending and previous is not None and version == previous
             ),
         )
 
