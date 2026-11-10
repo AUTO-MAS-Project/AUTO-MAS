@@ -193,8 +193,17 @@ class WhimboxManager(ScriptManagerBase):
                 root,
                 managed_name=getattr(self.script_info, "name", "奇想盒"),
                 takeover_enabled=self.script_config.Update.TakeoverEnabled,
+                can_open_official_app=self.execution_mode == "ScriptConfig",
             )
-            if action == "skip":
+            if action == "repair_gui":
+                # 配置会话原本就是官方 app 的修复入口。只允许打开这个
+                # 界面，不移除安装标记，也不运行需要已修复依赖的自动任务。
+                if self.execution_mode != "ScriptConfig":
+                    raise WhimboxUpdateUnsafeError(
+                        "只有原生配置会话允许打开官方界面修复"
+                    )
+                result = "正在打开奇想盒官方界面以手动修复；安装标记仍保留"
+            elif action == "skip":
                 version = await backend_update.skip_pending_installation(root, snapshot)
                 result = f"用户确认跳过奇想盒上次未完成安装，当前后端版本 {version}"
             else:

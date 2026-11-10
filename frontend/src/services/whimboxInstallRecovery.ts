@@ -52,7 +52,9 @@ export function bootstrapWhimboxInstallRecovery(): void {
   })
 }
 
-export function respondToWhimboxInstallRecovery(action: 'retry' | 'skip' | 'stop'): boolean {
+export function respondToWhimboxInstallRecovery(
+  action: 'retry' | 'skip' | 'stop' | 'repair_gui'
+): boolean {
   const prompt = whimboxInstallPrompts.value[0]
   if (!prompt || whimboxInstallDecisionPending.value) return false
   const sent = send(WS_ID_TASK_MANAGER, WS_WHIMBOX_INSTALL_DECISION, {

@@ -174,6 +174,7 @@ export interface WSWhimboxInstallPromptData {
   takeoverEnabled: boolean
   installedVersion: string
   targetVersion: string
+  canOpenOfficialApp: boolean
 }
 
 export interface WSWhimboxInstallPromptClosedData {

@@ -21,7 +21,7 @@ watch(
   }
 )
 
-function decide(action: 'retry' | 'skip' | 'stop') {
+function decide(action: 'retry' | 'skip' | 'stop' | 'repair_gui') {
   if (submitting.value || (action === 'skip' && !acknowledged.value)) return
   sendFailed.value = !respondToWhimboxInstallRecovery(action)
 }
@@ -84,6 +84,13 @@ function decide(action: 'retry' | 'skip' | 'stop') {
         :message="t('bootstrap.comp.whimboxRecoverySendFailed')"
       />
       <div class="recovery-actions">
+        <a-button
+          v-if="prompt.canOpenOfficialApp"
+          :disabled="submitting"
+          @click="decide('repair_gui')"
+        >
+          {{ t('bootstrap.comp.whimboxRecoveryRepairGui') }}
+        </a-button>
         <a-button :disabled="submitting" @click="decide('stop')">
           {{ t('bootstrap.comp.whimboxRecoveryStop') }}
         </a-button>

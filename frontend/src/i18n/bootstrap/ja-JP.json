@@ -10,6 +10,7 @@
     "whimboxRecoveryInstallPath": "インストール先",
     "whimboxRecoveryManagedName": "管理設定名",
     "whimboxRecoveryMessage": "前回のインストールは完了していません。対象の管理設定とインストール先を確認して操作を選択してください。",
+    "whimboxRecoveryRepairGui": "公式アプリで修復（記録を保持）",
     "whimboxRecoveryRetry": "インストールを再試行",
     "whimboxRecoveryRisk": "スキップできるのはバックエンドと依存パッケージの検査に合格し、関連プロセスが終了した場合のみです。すべてのファイルの完全性は保証されません。",
     "whimboxRecoverySendFailed": "送信に失敗しました。バックエンド接続を確認してください。",

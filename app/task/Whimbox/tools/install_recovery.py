@@ -22,6 +22,7 @@ async def ask_install_recovery(
     *,
     managed_name: str,
     takeover_enabled: bool,
+    can_open_official_app: bool = False,
 ) -> tuple[str, bytes]:
     marker = pending_marker(root)
     if marker.is_symlink() or not marker.is_file():
@@ -46,7 +47,12 @@ async def ask_install_recovery(
         if (
             data.get("requestId") == request_id
             and data.get("taskId") == task_id
-            and data.get("action") in ("retry", "skip", "stop")
+            and data.get("action") in (
+                "retry",
+                "skip",
+                "stop",
+                *(("repair_gui",) if can_open_official_app else ()),
+            )
             and not future.done()
         ):
             future.set_result(data["action"])
@@ -66,6 +72,7 @@ async def ask_install_recovery(
                 "takeoverEnabled": takeover_enabled,
                 "installedVersion": installed,
                 "targetVersion": target,
+                "canOpenOfficialApp": can_open_official_app,
             },
         )
         if not sent:

@@ -10,6 +10,7 @@
     "whimboxRecoveryInstallPath": "安装目录",
     "whimboxRecoveryManagedName": "托管名称",
     "whimboxRecoveryMessage": "检测到上次奇想盒后端安装未确认完成。请先核对托管与安装目录，再选择重试、确认跳过或取消本次任务。",
+    "whimboxRecoveryRepairGui": "打开官方 app 修复（保留标记）",
     "whimboxRecoveryRetry": "重试安装",
     "whimboxRecoveryRisk": "跳过仅在 Python 后端与依赖检查通过且进程已经退出后生效；即使通过检查，MAS 也无法保证所有程序文件完整。",
     "whimboxRecoverySendFailed": "恢复决定发送失败，请检查后端连接。",

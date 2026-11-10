@@ -597,3 +597,75 @@ async def test_whimbox_prompt_timeout_keeps_marker(installation, monkeypatch):
             "task", installation, managed_name="奇想盒", takeover_enabled=False
         )
     assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_script_config_can_open_official_gui_with_pending_install(
+    managed_batch, installation, monkeypatch
+):
+    from app.task.Whimbox.tools import install_recovery
+
+    marker = update.pending_marker(installation)
+    marker.write_text("3.1.1")
+    managed_batch.task_info.mode = "ScriptConfig"
+    managed_batch.spawn = AsyncMock()
+    monkeypatch.setattr(
+        manager,
+        "ScriptConfigTask",
+        lambda *args, **kwargs: SimpleNamespace(),
+    )
+
+    async def choose(_task_id, _root, **kwargs):
+        assert kwargs["can_open_official_app"]
+        return "repair_gui", marker.read_bytes()
+
+    monkeypatch.setattr(
+        install_recovery,
+        "ask_install_recovery",
+        AsyncMock(side_effect=choose),
+    )
+    await managed_batch._run_prepared(installation)
+    managed_batch.spawn.assert_awaited_once()
+    assert marker.exists(), "修复界面不能直接清除未确认安装"
+    manager.ensure_backend_updated.assert_not_awaited()
+    managed_batch.run_user_task.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_repair_gui_decision_not_accepted_for_background_task(
+    installation, monkeypatch
+):
+    from app.task.Whimbox.tools import install_recovery
+    from app.core import Dispatcher
+    from app.core.ws import protocol
+    from app.models.schema import WSEnvelope
+
+    marker = update.pending_marker(installation)
+    marker.write_text("3.1.1")
+    responses = []
+
+    async def send(*, id, type, data):
+        if type == protocol.WHIMBOX_INSTALL_PROMPT:
+            assert not data["canOpenOfficialApp"]
+            Dispatcher.dispatch(
+                WSEnvelope(
+                    id=id,
+                    type=protocol.WHIMBOX_INSTALL_DECISION,
+                    data={
+                        "requestId": data["requestId"],
+                        "taskId": data["taskId"],
+                        "action": "repair_gui",
+                    },
+                )
+            )
+            responses.append(type)
+        return True
+
+    monkeypatch.setattr(install_recovery.Publisher, "send", send)
+    monkeypatch.setattr(install_recovery, "_TIMEOUT_SECONDS", 0.005)
+    with pytest.raises(update.WhimboxUpdateUnsafeError, match="超时"):
+        await install_recovery.ask_install_recovery(
+            "task", installation, managed_name="奇想盒", takeover_enabled=True
+        )
+    assert marker.exists()
+    assert len(responses) == 1
