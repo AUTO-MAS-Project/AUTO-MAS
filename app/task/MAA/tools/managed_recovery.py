@@ -99,27 +99,20 @@ class MAAInstallAdapter:
         await skip_delegated_failure(self.root, {"software": software.read_bytes()})
 
     async def reinstall(self, install_software, install_resources) -> None:
-        """专项执行上游安装器和完整资源修复，不独立决定是否继续任务。"""
+        """仅自动修复 MAS 自有资源半更新；原生本体失败交官方恢复。"""
         software = self.root / _SOFTWARE_MARKER
         resource = self.root / _RESOURCE_MARKER
-        if software.exists():
-            version, package = await asyncio.to_thread(read_pending_update, self.root)
-            if (
-                not package
-                or not (self.root / package).is_file()
-                or await asyncio.to_thread(_read_pe_machine, self.root / "MAA.exe")
-                is None
-            ):
-                raise MaaUpdateUnsafeError(
-                    "MAA 官方安装包或可执行更新入口缺失，不能自动重试"
-                )
-            self.previous_target = version or None
-            await install_software(version or None)
-            # 官方安装确认成功后仍可能留下一条过期失败标记。
-            if software.exists():
-                state = await self.inspect()
-                if state.updated_confirmed:
-                    await self.acknowledge()
+        if software.exists() or software.is_symlink():
+            # 官方 MAA 启动时首先消费旧失败状态，并清空 UpdatePackage。
+            # 配置中重新写入包路径不等于调用其私有 RegisterPendingUpdatePackage；
+            # 直接拉起 MAA.exe 只会空转，绝不能误报自动恢复成功。
+            await self.ensure_idle()
+            raise MaaUpdateUnsafeError(
+                "MAA 官方本体更新已报告失败：当前版本的官方启动流程会"
+                "清除待安装包登记，MAS 无法直接进行无人值守重试。"
+                "请在 MAA 官方界面使用更新修复或重新登记完整包；"
+                "完成后再启动 MAS，原失败标记和更新包已保留。"
+            )
         if resource.exists():
             snapshot = resource.read_bytes()
             await asyncio.to_thread(
