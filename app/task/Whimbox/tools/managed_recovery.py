@@ -8,7 +8,8 @@ from pathlib import Path
 
 from packaging.version import Version
 
-from app.core.script_update_recovery import InstallInspection
+from app.core.script_update_recovery import DownloadRetryFailed, InstallInspection
+from app.services.script_install_backup import ManagedInstallBackup
 from app.services import script_install
 
 from . import update
@@ -44,6 +45,13 @@ class WhimboxInstallAdapter:
             raise script_install.InstallUnsafeError("奇想盒安装标记是符号链接")
         pending = marker.exists()
         target = self.target
+        previous = self.previous
+        if not pending and previous is None:
+            state = ManagedInstallBackup(
+                self.root, script_id="", script_type="Whimbox"
+            ).read()
+            if state and state.get("version"):
+                previous = Version(state["version"])
         if pending:
             try:
                 marked = Version(marker.read_text(encoding="utf-8").strip())
@@ -74,12 +82,15 @@ class WhimboxInstallAdapter:
             installed_version=str(version) if version else None,
             target_version=str(target) if target else None,
             updated_confirmed=bool(
-                healthy and target is not None and version is not None
-                and version >= target
+                healthy and version is not None
+                and (
+                    (target is not None and version >= target)
+                    or (previous is not None and version > previous)
+                )
             ),
             previous_confirmed=bool(
-                healthy and not pending and self.previous is not None
-                and version == self.previous
+                healthy and not pending and previous is not None
+                and version == previous
             ),
         )
 
@@ -94,7 +105,17 @@ class WhimboxInstallAdapter:
             await update.apply_update(self.root, self.candidate)
             self.candidate = None
         else:
-            await update.ensure_backend_updated(self.root)
+            try:
+                candidate = await update.prepare_update(self.root)
+            except (TimeoutError, ConnectionError, OSError) as error:
+                raise DownloadRetryFailed(
+                    source="GitHub",
+                    reason=f"奇想盒恢复下载失败（{type(error).__name__}）",
+                ) from error
+            try:
+                await update.apply_update(self.root, candidate)
+            finally:
+                update.discard_update(candidate)
 
     async def after_rollback(self) -> None:
         # 公共层恢复的是完整的安装前目录；正常快照不包含本次安装标记。
