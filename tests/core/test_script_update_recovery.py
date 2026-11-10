@@ -675,4 +675,6 @@ async def test_new_public_entry_reports_only_through_current_session(tmp_path):
     assert result == "installed"
     assert len(incidents) == 1
     assert incidents[0].outcome == "installed"
-    assert not ManagedInstallBackup(root, script_id="one", script_type="MAA").record.exists()
+    assert not ManagedInstallBackup(
+        root, script_id="one", script_type="MAA"
+    ).record.exists()
