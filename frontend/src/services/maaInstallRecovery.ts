@@ -21,9 +21,7 @@ let disposeDisconnect: (() => void) | null = null
 let disposeConnect: (() => void) | null = null
 
 const forgetRequest = (requestId: string) => {
-  maaInstallPrompts.value = maaInstallPrompts.value.filter(
-    prompt => prompt.requestId !== requestId
-  )
+  maaInstallPrompts.value = maaInstallPrompts.value.filter(prompt => prompt.requestId !== requestId)
   if (maaInstallDecisionPending.value === requestId) {
     maaInstallDecisionPending.value = null
   }
