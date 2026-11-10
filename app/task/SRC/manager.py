@@ -50,6 +50,7 @@ from .tools import (
     is_src_config_available,
     kill_src_processes,
     program_update,
+    install_recovery,
     read_src_config_snapshot_state,
     read_src_installation_id,
     read_src_process_state,
@@ -742,6 +743,38 @@ class SrcManager(ScriptManagerBase):
         self.src_process_state_path.unlink(missing_ok=True)
         shutil.rmtree(discarded_path, ignore_errors=True)
 
+    async def _recover_unconfirmed_install(self) -> bool:
+        """SRC 安装锁由 _recover_previous_run 持有；所有模式均可恢复旧标记。"""
+        root = self.src_root_path
+        marker = script_install.workspace(root) / "src-install.json"
+        if not marker.exists() and not marker.is_symlink():
+            return False
+        program_update.recover_deploy(root)
+        await asyncio.to_thread(
+            program_update.assert_idle, root, allow_background_adb=True
+        )
+        action, snapshot = await install_recovery.ask_install_recovery(
+            self.task_info.task_id,
+            root,
+            managed_name=getattr(self.script_info, "name", "SRC"),
+            takeover_enabled=self.script_config.Update.TakeoverEnabled,
+        )
+        if action == "skip":
+            commit = await program_update.skip_unconfirmed_install(root, snapshot)
+            result = f"用户确认跳过 SRC 上轮未完成安装，当前 Git 提交 {commit}"
+        else:
+            result = await run_script_update(
+                ScriptUpdateRequest(self.script_info.script_id, "SRC"),
+                program_update.update_before_run,
+                root,
+                recovery_snapshot=snapshot,
+            )
+            await program_update.confirm_current_install(root)
+        await self.script_info.set_log(result)
+        if self.execution_mode == "AutoProxy":
+            self._program_update_prepared = True
+        return True
+
     async def _prepare_program_update(self) -> None:
         if self.execution_mode != "AutoProxy" or self._program_update_prepared:
             return
@@ -794,11 +827,16 @@ class SrcManager(ScriptManagerBase):
             )
             return
 
+        # 已有安装标记的用户须在清理/校验原安装前得到恢复选择；
+        # 只恢复本轮被显式授权的标记，不能自动清除。
+        await self._recover_unconfirmed_install()
         if self.execution_mode == "AutoProxy":
             await self._cleanup_current_src_root()
         if self.execution_mode != "AutoProxy":
             program_update.assert_safe_to_launch(self.src_root_path)
         await self._prepare_program_update()
+        # 任务执行前最后一次确认；恢复后也不容许新标记悄悄出现。
+        program_update.assert_safe_to_launch(self.src_root_path)
         await self.prepare()
 
         if not isinstance(self.script_config, SrcConfig):

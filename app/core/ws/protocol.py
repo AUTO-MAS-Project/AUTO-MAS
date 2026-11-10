@@ -66,6 +66,11 @@ TASK_CREATED = "task.created"
 TASK_SCRIPT_STARTED = "task.script.started"
 TASK_SCRIPT_FINISHED = "task.script.finished"
 
+# SRC 未完成 Git/原生依赖安装的用户恢复决定
+SRC_INSTALL_PROMPT = "src.install.prompt"
+SRC_INSTALL_PROMPT_CLOSED = "src.install.prompt.closed"
+SRC_INSTALL_DECISION = "src.install.decision"
+
 # 应用生命周期与电源（id=Main）
 BACKEND_SHUTDOWN_READY = "backend.shutdown.ready"
 # 启动期攒下来、主连接建立后一次性发出的系统通知（id=Main）：配置迁移结果之类。

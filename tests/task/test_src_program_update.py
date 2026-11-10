@@ -1,6 +1,7 @@
 """SRC 的只读预取、快进安装和失败保护，使用本地 Git 仓库替代网络。"""
 
 import asyncio
+import json
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -347,3 +348,139 @@ async def test_cn_unconfirmed_download_does_not_delete_active_archive(
     archives = list((update.Config.data_path / "src_update").glob("git-*.zip"))
     assert len(archives) == 1
     assert archives[0].read_bytes() == b"partial FluxDown output"
+
+
+@pytest.mark.asyncio
+async def test_src_skip_requires_complete_git_and_native_dependencies(
+    installation, monkeypatch
+):
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
+    recorded = marker.read_bytes()
+    original_command = update.command
+
+    async def pip_check(*args, **kwargs):
+        if args[-3:] == ("-m", "pip", "check"):
+            return "No broken requirements found."
+        return await original_command(*args, **kwargs)
+
+    monkeypatch.setattr(update, "command", pip_check)
+    result = await update.skip_unconfirmed_install(root, recorded)
+    assert result == git(root, "rev-parse", "HEAD")[:12]
+    assert not marker.exists()
+    await update.confirm_current_install(root)
+
+
+@pytest.mark.asyncio
+async def test_src_skip_rejects_partial_git_update(installation):
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root.parent / "remote", "rev-parse", "HEAD")}))
+    with pytest.raises(script_install.InstallUnsafeError, match="Git 代码未完整"):
+        await update.skip_unconfirmed_install(root, marker.read_bytes())
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_skip_rejects_changed_marker(installation):
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    old = json.dumps({"target": git(root, "rev-parse", "HEAD")}).encode()
+    marker.write_text('{"target":"0000000000000000000000000000000000000000"}')
+    with pytest.raises(script_install.InstallUnsafeError, match="变化"):
+        await update.skip_unconfirmed_install(root, old)
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_retry_same_commit_only_reruns_native_installer(
+    installation, monkeypatch
+):
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
+    head = git(root, "rev-parse", "HEAD")
+    assert not (root / "native-finished").exists()
+    await update.update_before_run(root, recovery_snapshot=marker.read_bytes())
+    assert git(root, "rev-parse", "HEAD") == head
+    assert (root / "native-finished").read_text() == "done"
+    assert not marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_normal_update_cannot_overwrite_existing_marker(installation):
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
+    with pytest.raises(script_install.InstallUnsafeError, match="用户决定"):
+        await update.update_before_run(root)
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_prompt_reports_correct_installation_and_fails_closed(
+    installation, monkeypatch
+):
+    from app.task.SRC.tools import install_recovery
+
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
+    captured = []
+
+    async def send(*, id, type, data):
+        from app.core import Dispatcher
+        from app.core.ws import protocol
+        from app.models.schema import WSEnvelope
+
+        if type == protocol.SRC_INSTALL_PROMPT:
+            captured.append(data)
+            Dispatcher.dispatch(
+                WSEnvelope(
+                    id=id,
+                    type=protocol.SRC_INSTALL_DECISION,
+                    data={
+                        "requestId": data["requestId"],
+                        "taskId": data["taskId"],
+                        "action": "stop",
+                    },
+                )
+            )
+        return True
+
+    monkeypatch.setattr(install_recovery.Publisher, "send", send)
+    with pytest.raises(script_install.InstallUnsafeError, match="用户取消"):
+        await install_recovery.ask_install_recovery(
+            "task",
+            root,
+            managed_name="SRC 第二安装",
+            takeover_enabled=False,
+        )
+    assert captured[0]["installPath"] == str(root.resolve())
+    assert captured[0]["managedName"] == "SRC 第二安装"
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_no_frontend_retains_install_marker(installation, monkeypatch):
+    from app.task.SRC.tools import install_recovery
+
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
+    monkeypatch.setattr(
+        install_recovery.Publisher, "send", AsyncMock(return_value=False)
+    )
+    with pytest.raises(script_install.InstallUnsafeError, match="主界面"):
+        await install_recovery.ask_install_recovery(
+            "task", root, managed_name="SRC", takeover_enabled=False
+        )
+    assert marker.exists()
