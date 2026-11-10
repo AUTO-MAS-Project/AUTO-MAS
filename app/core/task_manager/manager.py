@@ -763,6 +763,7 @@ class Task(TaskExecuteBase):
         )
 
     async def main_task(self):
+        from app.core.script_update import _current_recovery_session
         from app.services import telemetry as _service_telemetry
 
         attributes = {
@@ -771,6 +772,7 @@ class Task(TaskExecuteBase):
         }
         started_at = time.perf_counter()
         outcome = "success"
+        recovery_token = _current_recovery_session.set(self._script_updates)
 
         try:
             with _service_telemetry.observe_span(
@@ -798,6 +800,7 @@ class Task(TaskExecuteBase):
                 unit="millisecond",
                 attributes=metric_attributes,
             )
+            _current_recovery_session.reset(recovery_token)
 
     @contextmanager
     def _observe_script_run(
@@ -1605,6 +1608,7 @@ class Task(TaskExecuteBase):
             )
 
         logger.info(f"任务结束: {self.task_info.task_id}")
+        await self._script_updates.publish_recovery_summary()
 
         if self.task_info.community_sign_notification is not None:
             self.task_info.community_sign_notification.finish()
