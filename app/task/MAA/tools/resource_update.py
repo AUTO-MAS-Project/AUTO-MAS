@@ -62,6 +62,7 @@ from __future__ import annotations
 import asyncio
 import errno
 import hashlib
+import json
 import os
 import shutil
 import time
@@ -583,12 +584,15 @@ def _resource_access_lock(install: Path) -> _MachineLock:
     )
 
 
-async def acquire_resource_access_lock(install: Path) -> _MachineLock | None:
+async def acquire_resource_access_lock(
+    install: Path, *, progress: _Progress | None = None
+) -> _MachineLock | None:
     """取得本安装的跨进程访问锁；调用方负责在子任务结束后释放。
 
     运行与配置会话持有至 MAA 子任务结束，其他 MAS 更新器跳过被持有的安装。
     争用只作用于本安装，下载阶段不持有访问锁；锁不可用时更新器也不会写入。
     """
+    waiting = False
     while True:
         lock = _resource_access_lock(install)
         acquired = lock.__enter__()
@@ -596,6 +600,9 @@ async def acquire_resource_access_lock(install: Path) -> _MachineLock | None:
             return acquired
         if not lock.contended:
             return None
+        if not waiting:
+            await _report(progress, "等待 MAA 安装访问锁释放（占用者未知）。")
+            waiting = True
         await asyncio.sleep(0.1)
 
 
@@ -619,8 +626,39 @@ def has_incomplete_resource_update(install: Path) -> bool:
     return (install / ".automas-resource-update.json").exists()
 
 
-def _apply_stage(install: Path, stage_clock: datetime, cdk: str) -> bool:
+def verify_resource_recovery_marker(install: Path, snapshot: bytes) -> str:
+    """只允许明确授权的同一份资源覆盖记录继续合并；拒绝链接与替换。"""
+    marker = install / ".automas-resource-update.json"
+    if (
+        marker.is_symlink()
+        or not marker.is_file()
+        or not snapshot
+        or len(snapshot) > 4096
+        or marker.read_bytes() != snapshot
+    ):
+        raise MaaUpdateUnsafeError("MAA 资源恢复标记已变化，拒绝执行旧恢复操作")
+    try:
+        state = json.loads(snapshot)
+        target = state["target"]
+        if not isinstance(target, str) or parse_iso(target) is None:
+            raise ValueError("invalid target")
+    except (ValueError, KeyError, TypeError) as error:
+        raise MaaUpdateUnsafeError(
+            "MAA 资源覆盖标记目标无效，不能忽略，请使用官方工具修复"
+        ) from error
+    return target
+
+
+def _apply_stage(
+    install: Path,
+    stage_clock: datetime,
+    cdk: str,
+    *,
+    recovery_snapshot: bytes | None = None,
+) -> bool:
     """合并前复读版本并检查暂存有效，写完核对时钟；跳过返回 False。"""
+    if recovery_snapshot is not None:
+        verify_resource_recovery_marker(install, recovery_snapshot)
     current = read_resource_clock(install)
     incomplete = has_incomplete_resource_update(install)
     if current is None or (current >= stage_clock and not incomplete):
@@ -1014,6 +1052,7 @@ async def prepare_install_resources(
     github: bool,
     progress: _Progress | None = None,
     download_only: bool = False,
+    recovery_snapshot: bytes | None = None,
 ) -> None:
     """本体安装之后、账号启动之前补齐资源；调用方已持有安装访问锁。
 
@@ -1023,6 +1062,8 @@ async def prepare_install_resources(
     """
     if not github and cdk is None:
         return
+    if recovery_snapshot is not None:
+        verify_resource_recovery_marker(install, recovery_snapshot)
     try:
         async with asyncio.timeout(_RESOURCE_LOCK_TIMEOUT):
             if _prepare_install_lock.locked():
@@ -1136,7 +1177,13 @@ async def prepare_install_resources(
             if stage_clock is None or stage_clock < target:
                 raise RuntimeError("MAA 资源缓存未达到目标版本，请重新运行")
             try:
-                await _run_write_thread(_apply_stage, install, stage_clock, cdk or "")
+                await _run_write_thread(
+                    _apply_stage,
+                    install,
+                    stage_clock,
+                    cdk or "",
+                    recovery_snapshot=recovery_snapshot,
+                )
                 installed = await asyncio.to_thread(read_resource_clock, install)
                 if (
                     installed is None
