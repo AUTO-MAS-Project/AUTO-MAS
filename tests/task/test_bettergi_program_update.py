@@ -654,7 +654,6 @@ async def test_unready_release_does_not_bypass_existing_unconfirmed_install(
     update.run_installer.assert_not_awaited()
 
 
-
 @pytest.mark.asyncio
 async def test_installer_launched_from_downloads_blocks_managed_recovery(
     tmp_path, monkeypatch
