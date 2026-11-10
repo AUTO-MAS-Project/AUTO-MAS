@@ -467,3 +467,52 @@ async def test_pending_marker_rejected_when_snapshot_changes(installation):
     marker.write_text("3.1.1", encoding="utf-8")
     with pytest.raises(update.WhimboxUpdateUnsafeError, match="已变化"):
         await update.skip_pending_installation(installation, b"3.1.0")
+
+@pytest.mark.asyncio
+async def test_whimbox_main_task_acquires_installation_lock_only_once(
+    managed_batch, installation
+):
+    managed_batch.script_config.Info = SimpleNamespace(RootPath=installation)
+    managed_batch.check = AsyncMock(return_value="Pass")
+    managed_batch.prepare = AsyncMock()
+    managed_batch._run_prepared = AsyncMock()
+    await managed_batch.main_task()
+    managed_batch._run_prepared.assert_awaited_once_with(installation)
+    # 生命周期结束后锁必须可再次取得。
+    with update.installation_access(installation):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_whimbox_prepare_download_failure_uses_verified_old_version(
+    managed_batch, installation, monkeypatch
+):
+    managed_batch._update_candidate = None
+    monkeypatch.setattr(
+        update, "prepare_update", AsyncMock(side_effect=OSError("network offline"))
+    )
+    monkeypatch.setattr(
+        update, "installed_version", AsyncMock(return_value=Version("3.1.0"))
+    )
+    await managed_batch._run_prepared(installation)
+    manager.confirm_usable_installation.assert_awaited()
+    assert managed_batch.run_user_task.await_count == 2
+    assert "旧版" in str(manager.push_dispatch_log.await_args)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [OSError("no disk space"), asyncio.CancelledError()])
+async def test_whimbox_cached_wheel_cleaned_if_backup_cannot_start(
+    managed_batch, installation, monkeypatch, failure
+):
+    candidate = await update.prepare_update(installation)
+    assert candidate.packages.parent.exists()
+    managed_batch._update_candidate = candidate
+    monkeypatch.setattr(
+        manager, "run_managed_script_install", AsyncMock(side_effect=failure)
+    )
+    with pytest.raises(type(failure)):
+        await managed_batch._run_prepared(installation)
+    assert not candidate.packages.parent.exists()
+    managed_batch.run_user_task.assert_not_awaited()
+
