@@ -664,3 +664,136 @@ def test_offroot_bettergi_installer_is_not_treated_as_idle(tmp_path, monkeypatch
     )
     with pytest.raises(script_install.InstallUnsafeError, match="官方安装器"):
         update.assert_idle(root)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("damage", ["missing", "invalid_pe", "invalid_version"])
+async def test_pending_install_retries_official_package_after_executable_damage(
+    installation, monkeypatch, damage
+):
+    root, config, _ = installation
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('{"target":"0.56.0"}')
+    executable = root / "BetterGI.exe"
+    if damage == "missing":
+        executable.unlink()
+    elif damage == "invalid_pe":
+        executable.write_bytes(b"partial executable")
+    else:
+        executable.write_bytes(pe() + b"invalid version")
+    original_version = update.read_version
+    original_install = update.run_installer.side_effect
+
+    def read_actual_version(path):
+        script_install.read_pe_architecture(path / "BetterGI.exe")
+        if (path / "BetterGI.exe").read_bytes().endswith(b"invalid version"):
+            raise ValueError("invalid product version")
+        return original_version(path)
+
+    async def reinstall(installer, path):
+        executable.write_bytes(pe())
+        await original_install(installer, path)
+
+    monkeypatch.setattr(update, "read_version", read_actual_version)
+    update.run_installer.side_effect = reinstall
+    with script_install.installation_access(root):
+        await update.update_before_run(root, config)
+        await update.confirm_current_install(root)
+    assert update.read_version(root) == Version("0.56.0")
+    assert not marker.exists()
+    assert json.loads((root / "User/config.json").read_text()) == {"custom": True}
+
+
+@pytest.mark.asyncio
+async def test_pending_target_prevents_downgrade_even_when_old_exe_is_readable(
+    installation,
+):
+    root, config, _ = installation
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    snapshot = b'{"target":"0.57.0"}'
+    marker.write_bytes(snapshot)
+    with pytest.raises(script_install.InstallUnsafeError):
+        await update.update_before_run(root, config)
+    update.run_installer.assert_not_awaited()
+    assert marker.read_bytes() == snapshot
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "snapshot", [b"{}", b'{"target":null}', b'{"target":"invalid"}', b"[]"]
+)
+async def test_invalid_pending_identity_blocks_before_network(installation, snapshot):
+    root, config, _ = installation
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_bytes(snapshot)
+    with pytest.raises(script_install.InstallUnsafeError):
+        await update.update_before_run(root, config)
+    update.request_release.assert_not_awaited()
+    update.run_installer.assert_not_awaited()
+    assert marker.read_bytes() == snapshot
+
+
+@pytest.mark.asyncio
+async def test_pending_identity_change_during_download_cannot_be_overwritten(
+    installation,
+):
+    root, config, _ = installation
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_bytes(b'{"target":"0.56.0"}')
+    changed = b'{"target":"0.57.0"}'
+    original_download = update.download_script_package.side_effect
+
+    async def download_then_change(*args, **kwargs):
+        await original_download(*args, **kwargs)
+        marker.write_bytes(changed)
+
+    update.download_script_package.side_effect = download_then_change
+    with pytest.raises(script_install.InstallUnsafeError):
+        await update.update_before_run(root, config)
+    update.run_installer.assert_not_awaited()
+    assert marker.read_bytes() == changed
+
+
+@pytest.mark.asyncio
+async def test_success_exit_with_invalid_executable_keeps_pending_record(installation):
+    root, config, _ = installation
+    original_install = update.run_installer.side_effect
+
+    async def corrupt_after_install(installer, path):
+        await original_install(installer, path)
+        (path / "BetterGI.exe").write_bytes(b"invalid executable")
+
+    update.run_installer.side_effect = corrupt_after_install
+    with pytest.raises(script_install.InstallUnsafeError):
+        await update.update_before_run(root, config)
+    assert (script_install.workspace(root) / "bgi-install.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_native_upgrade_during_download_is_not_downgraded(
+    installation, monkeypatch
+):
+    root, config, _ = installation
+    original_download = update.download_script_package.side_effect
+    original_version = update.read_version
+    upgraded = False
+
+    def version(path):
+        return Version("0.57.0") if upgraded else original_version(path)
+
+    async def download_then_upgrade(*args, **kwargs):
+        nonlocal upgraded
+        await original_download(*args, **kwargs)
+        upgraded = True
+
+    monkeypatch.setattr(update, "read_version", version)
+    update.download_script_package.side_effect = download_then_upgrade
+    with pytest.raises(script_install.InstallUnsafeError):
+        await update.update_before_run(root, config)
+    update.run_installer.assert_not_awaited()
+    assert update.read_version(root) == Version("0.57.0")
+    assert not (script_install.workspace(root) / "bgi-install.json").exists()

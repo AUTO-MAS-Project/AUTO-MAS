@@ -10,6 +10,7 @@
 
 import asyncio
 import hashlib
+import json
 import re
 import tempfile
 import zipfile
@@ -118,20 +119,45 @@ def assert_no_active_installer(root: Path) -> None:
 
 def read_version(root: Path) -> Version:
     """读取官方程序版本资源，不以 MAS 的上次版本记录代替实际安装版本。"""
+    import pywintypes
     import win32api
 
     path = str(root / "BetterGI.exe")
-    translations = win32api.GetFileVersionInfo(path, r"\VarFileInfo\Translation")
-    language, codepage = translations[0]
-    value = win32api.GetFileVersionInfo(
-        path, f"\\StringFileInfo\\{language:04x}{codepage:04x}\\ProductVersion"
-    )
-    return Version(value.split("+", 1)[0])
+    try:
+        translations = win32api.GetFileVersionInfo(path, r"\VarFileInfo\Translation")
+        language, codepage = translations[0]
+        value = win32api.GetFileVersionInfo(
+            path, f"\\StringFileInfo\\{language:04x}{codepage:04x}\\ProductVersion"
+        )
+        return Version(value.split("+", 1)[0])
+    except (pywintypes.error, IndexError, TypeError, ValueError) as error:
+        raise ValueError("BetterGI 程序版本资源不可识别") from error
+
+
+def read_pending_install(root: Path) -> tuple[bytes | None, Version | None]:
+    """校验 MAS 自有安装标记；快照用于下载和安装后的身份复核。"""
+    directory = script_install.workspace(root)
+    marker = directory / "bgi-install.json"
+    for path in (directory, marker):
+        if path.exists() or path.is_symlink():
+            script_install._reject_link(path)
+    if not marker.exists():
+        return None, None
+    try:
+        snapshot = marker.read_bytes()
+        state = json.loads(snapshot)
+        if not isinstance(state, dict) or not isinstance(state.get("target"), str):
+            raise ValueError("missing target")
+        return snapshot, Version(state["target"])
+    except (OSError, ValueError, TypeError) as error:
+        raise script_install.InstallUnsafeError(
+            "BetterGI 上次安装记录损坏，已保留现场，不能自动选择修复版本"
+        ) from error
 
 
 async def confirm_current_install(root: Path) -> None:
     await asyncio.to_thread(assert_idle, root)
-    if (script_install.workspace(root) / "bgi-install.json").exists():
+    if read_pending_install(root)[0] is not None:
         raise script_install.InstallUnsafeError(
             "BetterGI 上次安装尚未确认，请开启更新托管重试或使用官方安装器修复"
         )
@@ -358,9 +384,19 @@ async def update_before_run(
     root: Path, config: BetterGIConfig, *, progress: DownloadProgress | None = None
 ) -> str:
     await asyncio.to_thread(assert_idle, root)
-    current = await asyncio.to_thread(read_version, root)
-    if script_install.read_pe_architecture(root / "BetterGI.exe") != "x86_64":
-        raise script_install.InstallUnsafeError("BetterGI 当前安装架构不支持自动更新")
+    pending_snapshot, pending_target = read_pending_install(root)
+    try:
+        current = await asyncio.to_thread(read_version, root)
+        if script_install.read_pe_architecture(root / "BetterGI.exe") != "x86_64":
+            raise ValueError("unsupported architecture")
+    except (OSError, ValueError) as error:
+        if pending_snapshot is None:
+            raise script_install.InstallUnsafeError(
+                "BetterGI 当前安装不可识别且无可信修复记录，请使用官方安装器修复"
+            ) from error
+        # 上轮官方安装可能已删除或损坏 EXE；仅凭 MAS 自有目标记录重下
+        # 经校验的完整官方安装器，不把残留版本号当作安装成功。
+        current = None
     cdk = (
         config.Update.MirrorChyanCDK.strip()
         or Config.setting.Update.MirrorChyanCDK.strip()
@@ -394,9 +430,11 @@ async def update_before_run(
 
     directory = script_install.workspace(root)
     marker = directory / "bgi-install.json"
-    if target <= current and not marker.exists():
+    if current is not None and target <= current and pending_snapshot is None:
         return f"BetterGI 当前版本 {current} 无需更新"
-    if target < current:
+    if (current is not None and target < current) or (
+        pending_target is not None and target < pending_target
+    ):
         raise script_install.InstallUnsafeError(
             "BetterGI 上次安装未完成且高于所选通道，请切换通道或手动修复，不会自动降级"
         )
@@ -472,12 +510,37 @@ async def update_before_run(
     else:
         await asyncio.to_thread(verify_installer, installer, size, digest)
     await asyncio.to_thread(assert_idle, root)
+    if read_pending_install(root)[0] != pending_snapshot:
+        raise script_install.InstallUnsafeError("BetterGI 安装记录在下载期间发生变化")
+    try:
+        live_version = await asyncio.to_thread(read_version, root)
+    except (OSError, ValueError) as error:
+        if pending_snapshot is None:
+            raise script_install.InstallUnsafeError(
+                "BetterGI 当前安装在下载期间损坏，停止更新并保留现场"
+            ) from error
+    else:
+        if live_version > target:
+            raise script_install.InstallUnsafeError(
+                "BetterGI 下载期间已升级到更高版本，拒绝覆盖或降级"
+            )
     _utils_io.write_file(marker, {"target": str(target)})
+    installed_snapshot = marker.read_bytes()
     await run_installer(installer, root)
     await asyncio.to_thread(assert_idle, root)
-    if await asyncio.to_thread(read_version, root) != target:
+    try:
+        if (
+            await asyncio.to_thread(read_version, root) != target
+            or script_install.read_pe_architecture(root / "BetterGI.exe") != "x86_64"
+        ):
+            raise ValueError("installed identity mismatch")
+    except (OSError, ValueError) as error:
         raise script_install.InstallUnsafeError(
-            "BetterGI 安装后版本未确认，请使用官方安装器修复"
+            "BetterGI 安装后版本或程序完整性未确认，请使用官方安装器修复"
+        ) from error
+    if read_pending_install(root)[0] != installed_snapshot:
+        raise script_install.InstallUnsafeError(
+            "BetterGI 安装确认记录发生变化，保留现场"
         )
     marker.unlink()
     # 仅在确认安装器和全部子进程退出后回收；失败保留现场。

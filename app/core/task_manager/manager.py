@@ -676,8 +676,16 @@ class Task(TaskExecuteBase):
             current_process_scope.reset(token)
 
     async def _execute_task(self, parent_tg: asyncio.TaskGroup):
+        from app.core.script_update import _current_recovery_session
+
         self._execution_task = asyncio.current_task()
-        await super()._execute_task(parent_tg)
+        # 旧基类直接调用 _run_main_task；会话须覆盖真实执行及子任务收尾，
+        # 不能放在未经过的 main_task 包装入口。
+        recovery_token = _current_recovery_session.set(self._script_updates)
+        try:
+            await super()._execute_task(parent_tg)
+        finally:
+            _current_recovery_session.reset(recovery_token)
 
     async def _finalize_task(self) -> None:
         self._finalizer_task = asyncio.current_task()
@@ -763,7 +771,6 @@ class Task(TaskExecuteBase):
         )
 
     async def main_task(self):
-        from app.core.script_update import _current_recovery_session
         from app.services import telemetry as _service_telemetry
 
         attributes = {
@@ -772,8 +779,6 @@ class Task(TaskExecuteBase):
         }
         started_at = time.perf_counter()
         outcome = "success"
-        recovery_token = _current_recovery_session.set(self._script_updates)
-
         try:
             with _service_telemetry.observe_span(
                 name="AUTO-MAS task",
@@ -800,7 +805,6 @@ class Task(TaskExecuteBase):
                 unit="millisecond",
                 attributes=metric_attributes,
             )
-            _current_recovery_session.reset(recovery_token)
 
     @contextmanager
     def _observe_script_run(

@@ -1,7 +1,6 @@
 """公共脚本安装恢复状态机：拒绝半安装，允许安全旧版并延后报告。"""
 
 import asyncio
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -580,3 +579,70 @@ async def test_release_task_summary_uses_existing_notification_interface(tmp_pat
     assert "BAAH" in session._task.send_notice.await_args.kwargs["message"]
     await session.publish_recovery_summary()
     session._task.send_notice.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stop", [False, True])
+async def test_legacy_task_delivers_one_recovery_summary_at_terminal_boundary(
+    tmp_path, monkeypatch, stop
+):
+    from uuid import uuid4
+
+    from app.core.task_manager.manager import Task, TaskInfo
+    from app.core.ws import protocol
+
+    notices = []
+    ready, release = asyncio.Event(), asyncio.Event()
+
+    async def send(**event):
+        notices.append(event)
+
+    from app.core import Publisher
+
+    monkeypatch.setattr(Publisher, "send", send)
+
+    async def download():
+        raise DownloadRetryFailed(source="GitHub", reason="network unavailable")
+
+    class RecoveryTask(Task):
+        async def _run_main_task(self):
+            result = await script_update.run_script_update_with_safe_fallback(
+                script_update.ScriptUpdateRequest("script-one", "BAAH"),
+                download,
+                tmp_path,
+                AsyncMock(
+                    return_value=inspection(pending=False, healthy=True, previous=True)
+                ),
+            )
+            assert result
+            ready.set()
+            await release.wait()
+
+    info = TaskInfo("AutoProxy", str(uuid4()), None, None, None)
+    task = RecoveryTask(info, [], manager_factories={})
+    task.execute()
+    try:
+        await asyncio.wait_for(ready.wait(), 3)
+        assert not [event for event in notices if event["type"] == protocol.TASK_NOTICE]
+        if stop:
+            task.cancel()
+        else:
+            release.set()
+        await asyncio.wait_for(task.accomplish.wait(), 3)
+        await asyncio.gather(task._execution_root, return_exceptions=True)
+        await task._script_updates.publish_recovery_summary()
+        reports = [event for event in notices if event["type"] == protocol.TASK_NOTICE]
+        assert len(reports) == 1
+        assert reports[0]["id"] == info.task_id
+        assert reports[0]["data"].level == "warning"
+        assert "network unavailable" in reports[0]["data"].message
+        terminal = [
+            event for event in notices if event["type"] == protocol.TASK_COMPLETED
+        ]
+        assert len(terminal) == 1
+        assert notices.index(reports[0]) < notices.index(terminal[0])
+        assert script_update._current_recovery_session.get() is None
+    finally:
+        release.set()
+        task.cancel()
+        await asyncio.gather(task._execution_root, return_exceptions=True)

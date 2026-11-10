@@ -1,5 +1,9 @@
 name: Release Backend Backport Validation
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - release-v5.8.0-backport-verify
   push:
     branches:
       - release-v5.8.0-backport-verify
@@ -9,35 +13,39 @@ jobs:
   format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: "0.12.3"
           python-version: "3.12"
       - run: uv sync --locked --group dev
+      - run: uv lock --check
       - run: uv run --no-sync python -m compileall -q app tests
       - run: uv run --no-sync ruff format --check .
   tests-ubuntu:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: "0.12.3"
           python-version: "3.12"
       - run: uv sync --locked --group dev
       - run: uv run --no-sync python -m pytest tests -q
+      - run: uv run --no-sync mypy --config-file mypy-platform.ini --platform win32
+      - run: uv run --no-sync mypy --config-file mypy-platform.ini --platform linux
+      - run: uv run --no-sync mypy --config-file mypy-platform.ini --platform darwin
   tests-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: "0.12.3"
           python-version: "3.12"
