@@ -72,14 +72,15 @@ class BAAHInstallAdapter:
                 healthy
                 and (
                     (target is not None and version == target)
-                    or (previous is not None and version is not None and version > previous)
+                    or (
+                        previous is not None
+                        and version is not None
+                        and version > previous
+                    )
                 )
             ),
             previous_confirmed=bool(
-                healthy
-                and not pending
-                and previous is not None
-                and version == previous
+                healthy and not pending and previous is not None and version == previous
             ),
         )
 
