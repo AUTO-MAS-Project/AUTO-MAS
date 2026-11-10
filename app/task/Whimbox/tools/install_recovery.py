@@ -47,7 +47,8 @@ async def ask_install_recovery(
         if (
             data.get("requestId") == request_id
             and data.get("taskId") == task_id
-            and data.get("action") in (
+            and data.get("action")
+            in (
                 "retry",
                 "skip",
                 "stop",
