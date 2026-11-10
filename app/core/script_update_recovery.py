@@ -41,7 +41,9 @@ class RecoveryIncident:
     script_id: str
     script_type: str
     install_root: str
-    outcome: Literal["verified", "reinstalled", "old_version", "blocked", "installed", "deferred"]
+    outcome: Literal[
+        "verified", "reinstalled", "old_version", "blocked", "installed", "deferred"
+    ]
     installed_version: str | None = None
     source: str | None = None
     reason: str = ""
@@ -91,7 +93,8 @@ async def reconcile_installation(
                 script_type=script_type,
                 install_root=str(install_root.resolve()),
                 outcome=outcome,
-                installed_version=version or (before.installed_version if before else None),
+                installed_version=version
+                or (before.installed_version if before else None),
                 source=source,
                 reason=reason,
             )
@@ -280,7 +283,11 @@ async def run_managed_installation(
             if observed.healthy and observed.updated_confirmed:
                 verified = await verify_new()
                 await backup.finish_success()
-                emit("verified", "上次安装实际已成功，清理残留备份", verified.installed_version)
+                emit(
+                    "verified",
+                    "上次安装实际已成功，清理残留备份",
+                    verified.installed_version,
+                )
                 return "verified"
             if current["phase"] == "installed":
                 raise InstallUnsafeError("已提交的安装未通过复核，保留恢复现场")
@@ -288,7 +295,9 @@ async def run_managed_installation(
             await install()
             verified = await verify_new()
             await backup.finish_success()
-            emit("installed", "上次未确认安装已自动重试成功", verified.installed_version)
+            emit(
+                "installed", "上次未确认安装已自动重试成功", verified.installed_version
+            )
             return "installed"
         except asyncio.CancelledError:
             raise
@@ -327,8 +336,13 @@ async def run_managed_installation(
         raise
     except (TimeoutError, InstallTimedOut) as error:
         backup.set_phase("timed_out")
-        emit("deferred", f"本次安装超时，结果尚未确认（{type(error).__name__}）；保留备份")
-        raise InstallUnsafeError("安装超时，已保留旧版备份，下一次运行自动检查") from error
+        emit(
+            "deferred",
+            f"本次安装超时，结果尚未确认（{type(error).__name__}）；保留备份",
+        )
+        raise InstallUnsafeError(
+            "安装超时，已保留旧版备份，下一次运行自动检查"
+        ) from error
     except InstallReportedFailure:
         return await restore_previous("安装器明确报告失败")
     except DownloadRetryFailed as error:
@@ -363,6 +377,7 @@ async def script_install_backup_verified(backup: ManagedInstallBackup) -> bool:
     from app.services import script_install
 
     return await script_install.run_worker(
-        lambda cancelled: backup._hashes(backup.root, cancelled)
-        == backup.read()["files"]
+        lambda cancelled: (
+            backup._hashes(backup.root, cancelled) == backup.read()["files"]
+        )
     )
