@@ -201,7 +201,6 @@ async def run_managed_installation(
     backup = ManagedInstallBackup(
         install_root, script_id=script_id, script_type=script_type
     )
-    state = backup.read()
 
     def emit(
         outcome: Literal["installed", "verified", "old_version", "blocked", "deferred"],
@@ -220,6 +219,14 @@ async def run_managed_installation(
                 reason=reason,
             )
         )
+
+    try:
+        state = backup.read()
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        emit("blocked", f"安装备份状态读取异常（{type(error).__name__}）")
+        raise
 
     async def verify_new() -> InstallInspection:
         """确认后台已停写且新安装健康，才可删除旧版备份。"""
