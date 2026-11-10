@@ -1122,18 +1122,16 @@ async def test_hsr_existing_stage_or_backup_cannot_be_discarded(tmp_path, monkey
     for dirname in ("backup", "stage"):
         directory = marker.parent / dirname
         directory.mkdir()
-        with pytest.raises(
-            install_recovery.HSRRecoveryUnsafeError, match="备份或暂存"
-        ):
-            await install_recovery.skip_stale_journal(
-                "M7A", root, marker.read_bytes()
-            )
+        with pytest.raises(install_recovery.HSRRecoveryUnsafeError, match="备份或暂存"):
+            await install_recovery.skip_stale_journal("M7A", root, marker.read_bytes())
         assert marker.exists()
         directory.rmdir()
 
 
 @pytest.mark.asyncio
-async def test_hsr_invalid_executable_or_changed_journal_cannot_skip(tmp_path, monkeypatch):
+async def test_hsr_invalid_executable_or_changed_journal_cannot_skip(
+    tmp_path, monkeypatch
+):
     from app.task.HSR.tools.update import install_recovery
 
     root = tmp_path / "sra"
@@ -1161,9 +1159,7 @@ async def test_hsr_unconnected_frontend_preserves_journal(tmp_path, monkeypatch)
     monkeypatch.setattr(
         install_recovery.Publisher, "send", AsyncMock(return_value=False)
     )
-    with pytest.raises(
-        install_recovery.HSRRecoveryUnsafeError, match="主界面"
-    ):
+    with pytest.raises(install_recovery.HSRRecoveryUnsafeError, match="主界面"):
         await install_recovery.ask_install_recovery(
             "task", "SRA", root, managed_name="HSR 双引擎托管"
         )
