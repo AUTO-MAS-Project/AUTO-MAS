@@ -6,8 +6,8 @@
 
 import asyncio
 import time
-from contextvars import ContextVar
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -17,8 +17,7 @@ from uuid import UUID
 import httpx
 
 from app.core import Config, Publisher
-from app.core.ws import protocol
-from app.models.schema import WSTaskNoticeData
+from app.core.script_update_queue import ScriptUpdateQueue
 from app.core.script_update_recovery import (
     DownloadRetryFailed,
     InstallInspection,
@@ -26,9 +25,10 @@ from app.core.script_update_recovery import (
     reconcile_installation,
     run_managed_installation,
 )
-from app.core.script_update_queue import ScriptUpdateQueue
 from app.core.update import download_file, download_method, download_observer
+from app.core.ws import protocol
 from app.models.config import CLASS_BOOK
+from app.models.schema import WSTaskNoticeData
 from app.models.task import (
     TaskExecuteBase,
     TaskItem,
