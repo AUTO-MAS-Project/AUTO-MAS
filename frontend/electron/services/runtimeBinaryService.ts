@@ -370,8 +370,10 @@ export const RUNTIME_VERSION_PROBE_TIMEOUT_MS = 15_000
  */
 async function readInstalledRuntimeVersion(
   runtimePath: string,
-  appRoot: string
+  appRoot: string,
+  onEnvironmentReuse?: (supported: boolean) => void
 ): Promise<string | null> {
+  onEnvironmentReuse?.(false)
   let timer: ReturnType<typeof setTimeout> | undefined
   let control: RuntimeRunControl | undefined
   let timedOut = false
@@ -397,6 +399,7 @@ async function readInstalledRuntimeVersion(
     ])
     if (!outcome?.success) return null
 
+    onEnvironmentReuse?.(outcome.result.details.bootstrapEnvironmentReuse === true)
     const reported = outcome.result.details.runtimeVersion ?? outcome.hello?.runtimeVersion
     return typeof reported === 'string' && reported.trim() !== '' ? reported.trim() : null
   } catch (error) {
@@ -434,6 +437,8 @@ export interface RuntimeBinarySyncResult {
    */
   status: RuntimeBinarySyncStatus
   target: RuntimeBinaryTarget
+  /** 从本次实际 exe 的 version 查询确认，不由发布标签推断。 */
+  bootstrapEnvironmentReuse?: true
   error?: string
   code?: string
 }
@@ -611,7 +616,13 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
     return { status: 'skipped', target }
   }
 
-  const readVersion = options.readVersion ?? readInstalledRuntimeVersion
+  let bootstrapEnvironmentReuse = false
+  const readVersion =
+    options.readVersion ??
+    ((probePath: string, appRoot: string) =>
+      readInstalledRuntimeVersion(probePath, appRoot, supported => {
+        if (probePath === runtimePath) bootstrapEnvironmentReuse = supported
+      }))
   const backupPath = `${runtimePath}${BACKUP_SUFFIX}`
 
   // 上次替换半途而废（新文件没挪进来、旧文件也改不回去）会只剩 `.old`：先把它找回来。
@@ -688,7 +699,11 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
     } else {
       logger.warn(`本地 Runtime ${installedVersion} 高于线上最新 ${target.version}，保留本地版本`)
     }
-    return { status: 'current', target }
+    return {
+      status: 'current',
+      target,
+      ...(bootstrapEnvironmentReuse ? { bootstrapEnvironmentReuse: true } : {}),
+    }
   }
   if (options.isCancelled?.())
     return { status: 'cancelled', target, code: RUNTIME_BINARY_CANCELLED }
@@ -786,7 +801,11 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
     progress: 100,
     message: `Runtime 已更新到 ${target.version}`,
   })
-  return { status: 'upgraded', target }
+  return {
+    status: 'upgraded',
+    target,
+    ...(bootstrapEnvironmentReuse ? { bootstrapEnvironmentReuse: true } : {}),
+  }
 }
 
 // ==================== 给人看的失败原因 ====================
@@ -1165,6 +1184,8 @@ export interface RuntimeBinaryAlignResult {
   status: RuntimeBinaryAlignStatus
   /** 本次对齐到的目标版本；解析失败时没有。 */
   target?: RuntimeBinaryTarget
+  /** 已由实际 exe 的 version 结果确认支持健康环境复用。 */
+  bootstrapEnvironmentReuse?: true
   /** 目标版本来自哪个发布来源的 key（`cnb` / `github`）。 */
   targetSource?: string
   /** 给用户看的一句话。 */
