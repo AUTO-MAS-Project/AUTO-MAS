@@ -215,9 +215,10 @@ def build_adb_runner(adb_path: Path | None, adb_address: str) -> AdbRunner:
     """
     program: Path | str = adb_path if adb_path is not None else "adb"
     need_connect = ":" in adb_address
+    failed_once = False
 
     async def run(*args: str, timeout: float = _ADB_TIMEOUT) -> tuple[int, str]:
-        nonlocal need_connect
+        nonlocal need_connect, failed_once
         if need_connect:
             # 连不上也照样往下走: 设备可能本来就连着, 真没连上后面的命令会自己报错
             need_connect = False
@@ -239,6 +240,11 @@ def build_adb_runner(adb_path: Path | None, adb_address: str) -> AdbRunner:
                 if_merge_std=True,
             )
         except Exception as e:  # noqa: BLE001 - 见 docstring: 转成返回码, 不抛
+            # 只记第一次: adb 路径失效这类连子进程都没起来的失败没有别的日志可查,
+            # 而这里是每秒轮询, 全记会把日志刷满
+            if not failed_once:
+                failed_once = True
+                logger.warning(f"adb 命令执行失败，期间不再重复记录: {e}")
             return -1, str(e)
         return result.returncode, result.stdout.strip()
 
@@ -250,18 +256,22 @@ def build_adb_runner(adb_path: Path | None, adb_address: str) -> AdbRunner:
 
 async def _wait_boot_completed(
     run_adb: AdbRunner, deadline: float, poll_seconds: float
-) -> bool:
-    """等 Android 起完。
+) -> tuple[bool, str]:
+    """等 Android 起完, 返回 (是否起完, 最后一次 adb 的「返回码 输出」)。
 
     模拟器进程在线不等于系统可用: 各家原生 ``launch`` 一返回就报在线, 此时 adb 常常
     还连不上。这里等 ``sys.boot_completed`` 变成 ``1``, 顺带把「adb 通了没」一起等了。
+
+    超时要把最后一次 adb 返回带出去: 「系统还没起完」和「adb 命令根本执行不了」
+    (路径失效之类) 都会走到这里, 只报一句超时分不出是哪种。
     """
+    code, output = -1, ""
     while True:
         code, output = await run_adb("shell", "getprop", "sys.boot_completed")
         if code == 0 and output.strip() == "1":
-            return True
+            return True, f"{code} {output.strip()}"
         if time.monotonic() >= deadline:
-            return False
+            return False, f"{code} {output.strip()}"
         await asyncio.sleep(poll_seconds)
 
 
@@ -321,11 +331,15 @@ async def ensure_app_running(
     """
     prefix = f"设备 #{label} " if label else ""
 
-    if not await _wait_boot_completed(
+    booted, boot_detail = await _wait_boot_completed(
         run_adb, time.monotonic() + boot_timeout, poll_seconds
-    ):
-        logger.warning(f"{prefix}等待系统启动完成超时，跳过启动 {package_name}")
-        return AppLaunchResult(False, "boot-timeout")
+    )
+    if not booted:
+        logger.warning(
+            f"{prefix}等待系统启动完成超时，跳过启动 {package_name}"
+            f"（最后一次 adb 返回: {boot_detail}）"
+        )
+        return AppLaunchResult(False, "boot-timeout", boot_detail)
 
     # 没装就别白试一轮 monkey 再等一轮前台，直接给出能照做的结论。
     # 判据见 is_package_missing：只认「输出为空」，返回码分不开没装和掉线。
