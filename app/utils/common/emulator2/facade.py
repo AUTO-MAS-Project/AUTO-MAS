@@ -49,7 +49,6 @@ from app.models.emulator import (
 from app.utils import get_logger
 
 from .applaunch import AppLaunchResult
-from .avd import updater as avd_updater
 from .avd.constants import MOD_AVD_UNSUPPORTED_MESSAGE, InstancePorts
 from .avd.manager import AvdManager
 from .avd.manager import build_manager as build_avd_manager
@@ -271,10 +270,6 @@ class Emulator2Manager(DeviceBase):
         manager, native_index = await self._dispatch(idx)
         if isinstance(manager, AvdManager) and not (manual or allow_mod_avd):
             raise RuntimeError(MOD_AVD_UNSUPPORTED_MESSAGE)
-        if isinstance(manager, AvdManager) and avd_updater.update_in_progress(
-            manager.root
-        ):
-            raise RuntimeError("ModAVD 正在更新，更新完再开机")
 
         self._apply_host_mode()
 

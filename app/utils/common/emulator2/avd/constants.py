@@ -20,8 +20,8 @@
 
 """ModAVD（Android Emulator）后端的固定参数。
 
-模拟器、平台工具、系统镜像都随模拟器内测包提供，MAS 不下载；只有模拟器本体可以由 MAS 从 ModAVD 的
-GitHub Release 更新（:mod:`.updater`）。这里记它们在根目录里的位置。
+模拟器、平台工具、系统镜像都随模拟器内测包提供，MAS 不下载；整个 ModAVD 包可以在 MAS 里经
+``modavd update`` 更新（:mod:`.updater`）。这里记它们在根目录里的位置。
 """
 
 from dataclasses import dataclass
@@ -64,10 +64,6 @@ LOGS_DIR = "logs"
 LOG_KEEP_PER_INSTANCE = 10
 #: 整个日志目录（只算上面两种日志）的总大小上限，超了从最旧的删起，不分实例。
 LOGS_DIR_MAX_BYTES = 1024**3
-#: 宿主显卡驱动给这条安装的模拟器用的着色器缓存（更新器不碰）。
-SHADER_CACHE_DIR = "shader-cache"
-#: 旧版 MAS 在本机生成的客体驱动补丁库目录（更新器不碰）。
-GUEST_PATCH_DIR = "guest-patches"
 
 
 def console_port(native_index: int | str) -> int:
@@ -150,42 +146,10 @@ EMULATOR_COMPONENT_ID = "emulator"
 EMULATOR_COMPONENT_NAME = "Android 模拟器（emulator）"
 
 
-# ---- 更新 -----------------------------------------------------------------
+# ---- 更新（交给 modavd update，见 updater.py） --------------------------------
 
-#: ModAVD 公开发布的仓库，以及查最新一版的 GitHub 接口。
-MODAVD_REPOSITORY = "ModAVD/ModAVD"
-MODAVD_RELEASE_API = f"https://api.github.com/repos/{MODAVD_REPOSITORY}/releases/latest"
-#: 只供测试：把上面的查询地址换成本地模拟服务（不进配置、不上界面）。
-MODAVD_RELEASE_API_ENV = "AUTO_MAS_MODAVD_RELEASE_API"
-#: 包根上的逐文件清单（新写法版本 v0.32.1 起才有）。
+#: 包根上的逐文件清单（新写法版本 v0.32.1 起才有），组件列表据它显示本地版本。
 MODAVD_MANIFEST_FILE = "modavd-manifest.json"
-#: 本机要装的 ModAVD 平台（MAS 只在 Windows x64 上跑 ModAVD）。主包的文件名和清单的 ``platform``
-#: 都带它：``ModAVD-<ver>-win-x64.zip``；源码包 ``ModAVD-<ver>-sources.zip`` 不带。以后可能有
-#: ``linux-x64``，更新器只装和这里一致的包。
-MODAVD_PLATFORM_OS = "win"
-MODAVD_PLATFORM_ARCH = "x64"
-MODAVD_PLATFORM = f"{MODAVD_PLATFORM_OS}-{MODAVD_PLATFORM_ARCH}"
-#: Mirror 酱上 ModAVD 的资源 ID、请求带的 ``os`` / ``arch`` 与更新通道。10-24 实测：服务端把 os/arch
-#: 存成 windows/amd64，请求带 win/x64 或 windows/amd64 都认，不带 os/arch 返回 8001。
-MODAVD_MIRROR_RID = "ModAVD"
-MODAVD_MIRROR_OS = MODAVD_PLATFORM_OS
-MODAVD_MIRROR_ARCH = MODAVD_PLATFORM_ARCH
-MODAVD_MIRROR_CHANNEL = "stable"
-#: 只供测试：把 Mirror 酱的查询根地址（``https://mirrorchyan.com/api/resources``）换成本地模拟服务。
-MODAVD_MIRROR_API_ENV = "AUTO_MAS_MODAVD_MIRROR_API"
-#: 更新器在根目录里的工作目录：下载、解包、暂存、上一版都在这里。和根目录同一个盘，换上靠改名。
-UPDATE_DIR = ".update"
-#: 查更新的结果缓存多久（秒），和 MAS 自己检查更新一样 4 小时；用户点「更新」时不走缓存。
-UPDATE_CHECK_CACHE_SECONDS = 4 * 3600
-UPDATE_API_TIMEOUT_SECONDS = 15.0
-#: 下载前根目录所在盘至少要剩这么多：暂存约 0.7 GB、下载约 0.3 GB，再留出余量（旧版是改名过去的，
-#: 不另占空间）。
-UPDATE_MIN_FREE_BYTES = int(1.7 * 1024**3)
-#: 包里条目数与解压后总大小的上限，挡坏包和压缩炸弹（现在约 330 个条目、0.7 GB）。
-UPDATE_MAX_ENTRIES = 20_000
-UPDATE_MAX_UNPACKED_BYTES = 4 * 1024**3
-#: ``mas-avd.json`` 的 ``updateHistory`` 只留最近这么多条。
-UPDATE_HISTORY_KEEP = 20
 
 
 @dataclass(frozen=True)

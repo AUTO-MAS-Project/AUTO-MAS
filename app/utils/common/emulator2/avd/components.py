@@ -21,7 +21,7 @@
 """ModAVD 根目录：路径、元数据（``mas-avd.json``）与组件检查。
 
 模拟器和轻量桌面随 ModAVD 发布包提供；平台工具、系统镜像是 Google 的，由包里的「补全组件.bat」从官方渠道
-下载。MAS 不下载组件，只有模拟器本体（``sdk\\emulator``）可以由更新器（:mod:`.updater`）换成 GitHub 上的新版。
+下载。MAS 不下载组件，整个 ModAVD 包可以在 MAS 里经 ``modavd update`` 更新（:mod:`.updater`）。
 这里只检查根目录里它们在不在：关键文件、模拟器是不是我们的自编版、内测包编号够不够新。
 缺了就明确说缺哪一项、怎么补。
 """
@@ -50,6 +50,7 @@ from .constants import (
     METADATA_FILE,
     MIN_MOD_AVD_BUILD,
     MOD_AVD_BUILD_PREFIX,
+    MODAVD_MANIFEST_FILE,
     REQUIRED_COMPONENTS,
     SCRIPT_ADB_SERVER_PORT,
     SDK_DIR,
@@ -388,7 +389,7 @@ def emulator_present(root: str | Path) -> bool:
 
 
 def emulator_files_present(emulator_dir: str | Path) -> bool:
-    """给定的 ``emulator`` 目录里模拟器的关键文件都在（更新时核对暂存的新版也用它）。"""
+    """给定的 ``emulator`` 目录里模拟器的关键文件都在。"""
     target = Path(emulator_dir)
     return all((target / name).is_file() for name in _KEY_FILES[EMULATOR_COMPONENT_ID])
 
@@ -409,7 +410,7 @@ def read_mod_build(root: str | Path) -> int | None:
 
 
 def read_mod_build_at(emulator_dir: str | Path) -> int | None:
-    """同 :func:`read_mod_build`，但直接看给定的 ``emulator`` 目录（更新时核对暂存的新版用）。"""
+    """同 :func:`read_mod_build`，但直接看给定的 ``emulator`` 目录。"""
     props = _read_properties(Path(emulator_dir) / "source.properties")
     match = _MOD_BUILD_ID.fullmatch((props.get("Pkg.BuildId") or "").strip())
     return int(match.group(1)) if match else None
@@ -426,11 +427,33 @@ def emulator_ready(root: str | Path) -> bool:
     return emulator_self_built(root) and emulator_build_ok(root)
 
 
+_MANIFEST_VERSION = re.compile(r"v?(\d+)\.(\d+)\.(\d+)")
+
+
+def local_version_text(root: str | Path) -> str | None:
+    """组件列表、电脑检查里显示的本地版本 ``0.32.1``（和 modavd ``update status`` 的规则一样）。
+
+    根上的 ``modavd-manifest.json`` 写的版本和 ``sdk\\emulator`` 实际的内测包编号对得上就用它，否则按
+    编号算成 ``0.N.0``。模拟器的 ``Pkg.BuildId`` 读不到时返回 ``None``：光凭清单写的不算。
+    """
+    build = read_mod_build(root)
+    if build is None:
+        return None
+    try:
+        manifest = json.loads(
+            (Path(root) / MODAVD_MANIFEST_FILE).read_text(encoding="utf-8-sig")
+        )
+    except (OSError, ValueError):
+        manifest = None
+    declared = manifest.get("version") if isinstance(manifest, dict) else None
+    match = _MANIFEST_VERSION.fullmatch(str(declared or "").strip())
+    if match and int(match.group(2)) == build:
+        return ".".join(str(int(part)) for part in match.groups())
+    return f"0.{build}.0"
+
+
 def _emulator_item(root: Path, local: bool) -> dict[str, Any]:
     """组件清单里的「Android 模拟器」一项：根目录里有没有够新的内测包自编版。"""
-    # update_source 要引用本模块的 read_mod_build，放在这里引用，免得循环引用
-    from .update_source import local_version_text
-
     self_built = emulator_self_built(root)
     ready = self_built and emulator_build_ok(root)
     return {

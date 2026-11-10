@@ -119,14 +119,18 @@ async def status(
     接口不变，检查做不做、走不走缓存由 modavd 定。
     """
     path = _normalize_root(root)
-    # 更新器换包时，任何 CLI 查询都会把 tools\\modavd.exe 算作占用；状态接口本身
-    # 不需要 CLI，直接返回文件组件快照，避免面板轮询挡住换包。
     if updater.update_in_progress(path):
-        result = await asyncio.to_thread(components.install_status, path)
-        result["accelerationOk"] = None
-        result["accelerationDetail"] = ""
-        result["prechecks"] = []
-        return result
+        # MAS 正在换上新版（modavd update install 要求没有别的 modavd 在跑）：不起 modavd，给中性结果，
+        # 界面上的更新进度照常显示
+        return {
+            "root": str(path),
+            "ready": True,
+            "components": [],
+            "missing": [],
+            "accelerationOk": None,
+            "accelerationDetail": "",
+            "prechecks": [],
+        }
     cli = await modavd_cli.resolve_cli(path)
     if cli is None:
         raise RuntimeError(
@@ -216,14 +220,12 @@ async def _close_root(root: Path, *, timeout: float) -> object:
     """一个根目录的关机前收尾，见 :func:`close_running_instances`。
 
     命令行用不了、``stop --all`` 失败都抛出，由 :func:`close_instances` 把这个根目录记成 ``failed``。
+    MAS 自己正在换上新版时实例本来就都关了（``modavd update install`` 的前提），直接跳过。
     """
     if updater.update_in_progress(root):
-        # 换包期间不做版本检查（不多起一次 version），和 build_manager 在更新中的做法一致
-        cli: modavd_cli.ModAvdCli | None = modavd_cli.ModAvdCli(root)
-        if not cli.executable_available:
-            cli = None
-    else:
-        cli = await modavd_cli.resolve_cli(root)
+        logger.info(f"{root} 正在换上新版，实例都已关闭，跳过")
+        return {"results": [], "failed": []}
+    cli = await modavd_cli.resolve_cli(root)
     if cli is None:
         raise RuntimeError(f"找不到 ModAVD 命令行 {modavd_cli.ModAvdCli(root).exe}")
     result = await cli.stop_all()

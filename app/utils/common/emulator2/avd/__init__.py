@@ -22,7 +22,7 @@
 
 和雷电 / MuMu 不同，这里没有厂商的管理器程序可调。MAS 不下载组件：用户把 ModAVD 发布包解压到一个
 根目录（模拟器只认里面 ``sdk\\emulator`` 的自编版），平台工具和系统镜像由包里的「补全组件.bat」补齐；缺了
-说缺哪一项、怎么补。模拟器本体可以在 MAS 里一键更新（:mod:`.updater`）。实例的启动 / 关机 / 状态 /
+说缺哪一项、怎么补。整个 ModAVD 包可以在 MAS 里一键更新（:mod:`.updater`，调 ``modavd update``）。实例的启动 / 关机 / 状态 /
 设置 / 增删都交给根目录里的命令行 ``tools\\modavd.exe``（:mod:`.cli`）；没有它的根目录不支持。
 宿主侧另有一个私有 adb server（默认端口 20050）给拉起应用、截图等用。
 
@@ -34,10 +34,7 @@
 - :mod:`.precheck`       开机前检查项的数据类型（检查本身由 modavd 做）
 - :mod:`.manager`        ``DeviceBase`` 实现（走 modavd，冻结看门狗）
 - :mod:`.service`        给 API 用的业务入口
-- :mod:`.update_source`  版本号、下载源（Mirror 酱、GitHub）
-- :mod:`.update_range`   GitHub 的整包按区间只取变了的文件
-- :mod:`.update_stage`   更新的本机文件操作：解包、核对、换上、崩溃恢复
-- :mod:`.updater`        更新流程：查更新，「更新」一键下载、核对、换上，启动恢复
+- :mod:`.updater`        更新：查更新、「更新」（准备、换上）、启动恢复，都交给 ``modavd update``
 """
 
 
@@ -47,16 +44,13 @@ def _get_public_export(name):
 
 _SUBMODULES = {
     "service": ".service",
-    "update_range": ".update_range",
     "host": ".host",
     "instances": ".instances",
-    "update_source": ".update_source",
     "constants": ".constants",
     "updater": ".updater",
     "precheck": ".precheck",
     "maafw_extras": ".maafw_extras",
     "components": ".components",
-    "update_stage": ".update_stage",
     "manager": ".manager",
 }
 

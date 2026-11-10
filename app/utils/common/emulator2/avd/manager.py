@@ -55,7 +55,7 @@ from ..applaunch import (
 from ..settings import FieldValue, InstanceSettings, SettingsConflictError
 from ..settings import validate_changes as validate_setting_changes
 from . import cli as modavd_cli
-from . import host, precheck, update_stage, updater
+from . import host, precheck, updater
 from .components import (
     component_installed,
     emulator_exe,
@@ -476,7 +476,7 @@ class _AvdCore(DeviceBase):
                 Path=str(manager_exe),
             )
         )
-        #: 根目录的 ModAVD 命令行（:func:`build_manager` 给的；更新中是没做版本检查的那个，不起进程）。
+        #: 根目录的 ModAVD 命令行（:func:`build_manager` 给的，做过版本检查）。
         self._cli = cli
 
     # ---- 查询 -----------------------------------------------------------
@@ -558,7 +558,7 @@ class _AvdCore(DeviceBase):
 
         问一次 ``modavd info``，用它给的 ``ports`` / ``serial``（根目录可能设了 ``portBase``，
         规则在 modavd 里）；一次操作里问一次，结果在这次操作里接着用，不要每算一个端口起一次进程。
-        更新中（不起 CLI）时按默认端口段算。
+        MAS 正在换上新版（:func:`.updater.update_in_progress`）时不起 modavd，按默认端口段给个中性结果。
         """
         idx = str(idx)
         if updater.update_in_progress(self.root):
@@ -616,60 +616,27 @@ class _AvdCore(DeviceBase):
             ),
         )
 
-    def _scan_processes(self) -> dict[str, psutil.Process]:
-        """一次扫描把这条安装所有实例的 qemu 进程找齐，别每台扫一遍进程表。"""
-        found: dict[str, psutil.Process] = {}
-        wanted = {idx: (avd_name(idx), console_port(idx)) for idx in self._instances()}
-        if not wanted:
-            return found
-        for process in psutil.process_iter(["name", "cmdline"]):
-            try:
-                name = (process.info.get("name") or "").lower()
-                if not name.startswith("qemu-system"):
-                    continue
-                cmdline = process.info.get("cmdline") or []
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+    def _updating_snapshot(self, idx: str | None = None) -> dict[str, DeviceInfo]:
+        """MAS 正在换上新版时的中性结果：换上前最后一次 ``modavd list`` 的实例，都算没在运行
+        （``modavd update install`` 的前提就是全关了）。不起 modavd。"""
+        result: dict[str, DeviceInfo] = {}
+        for item in updater.instances_snapshot(self.root):
+            key = str(item.get("index", ""))
+            if not key or (idx is not None and key != str(idx)):
                 continue
-            for idx, (avd, port) in wanted.items():
-                if host._cmdline_matches(cmdline, avd, port):
-                    found[idx] = process
-        return found
-
-    def _device_info(
-        self,
-        idx: str,
-        title: str,
-        status: DeviceStatus,
-        process: psutil.Process | None = None,
-    ) -> DeviceInfo:
-        # 给脚本的是 adb 端口的 TCP 地址：脚本用自己的 adb connect 过去，与雷电 / MuMu 一致。
-        # 不给 emulator-<端口> 这个序列号——它只在我们的私有 server（20050）上存在。
-        started_at = None
-        if process is not None:
-            with suppress(psutil.Error):
-                started_at = process.create_time()
-        return DeviceInfo(
-            title,
-            status,
-            f"127.0.0.1:{adb_port(idx)}",
-            process_id=process.pid if process is not None else None,
-            process_started_at=started_at,
-            # 认不出是不是无头时按无头算（显示置灰），和命令行路径一致
-            headless=(_qemu_headless(process) is not False)
-            if process is not None
-            else None,
-        )
+            address = item.get("adb_address")
+            if not isinstance(address, str) or not address:
+                address = f"127.0.0.1:{adb_port(key)}"
+            result[key] = DeviceInfo(
+                str(item.get("title") or item.get("name") or key),
+                DeviceStatus.OFFLINE,
+                address,
+            )
+        return result
 
     async def getStatus(self, idx: str) -> DeviceStatus:
         if updater.update_in_progress(self.root):
-            if str(idx) not in self._instances():
-                return DeviceStatus.NOT_FOUND
-            process = await asyncio.to_thread(
-                host.find_qemu_process, avd_name(idx), console_port(idx)
-            )
-            return (
-                DeviceStatus.STARTING if process is not None else DeviceStatus.OFFLINE
-            )
+            return DeviceStatus.OFFLINE
         if _instance_key(self.root, str(idx)) in _FROZEN:
             return DeviceStatus.ERROR
         try:
@@ -683,25 +650,7 @@ class _AvdCore(DeviceBase):
 
     async def getInfo(self, idx: str | None) -> dict[str, DeviceInfo]:
         if updater.update_in_progress(self.root):
-            instances = self._instances()
-            processes = await asyncio.to_thread(self._scan_processes)
-            selected = [str(idx)] if idx is not None else sorted(instances)
-            snapshot: dict[str, DeviceInfo] = {}
-            for item_idx in selected:
-                instance = instances.get(item_idx)
-                if instance is None:
-                    continue
-                status = (
-                    DeviceStatus.STARTING
-                    if item_idx in processes
-                    else DeviceStatus.OFFLINE
-                )
-                if _instance_key(self.root, item_idx) in _FROZEN:
-                    status = DeviceStatus.ERROR
-                snapshot[item_idx] = self._device_info(
-                    item_idx, instance.title, status, processes.get(item_idx)
-                )
-            return snapshot
+            return self._updating_snapshot(idx)
         try:
             if idx is not None:
                 data = await self._cli.info(str(idx))
@@ -729,7 +678,7 @@ class _AvdCore(DeviceBase):
 
     async def list_devices(self) -> dict[str, str]:
         if updater.update_in_progress(self.root):
-            return {idx: instance.title for idx, instance in self._instances().items()}
+            return {key: info.title for key, info in self._updating_snapshot().items()}
         try:
             data = await self._cli.list()
         except modavd_cli.CLIError as error:
@@ -962,52 +911,27 @@ class _AvdCore(DeviceBase):
     # ---- 设置 -----------------------------------------------------------
 
     async def read_instance_settings(self, idx: str) -> InstanceSettings:
-        if not updater.update_in_progress(self.root):
-            try:
-                raw = self._cli_data_instance(await self._cli.info(str(idx)))
-            except modavd_cli.CLIError as error:
-                self._raise_cli_error(error)
-            config = raw.get("config")
-            config = config if isinstance(config, dict) else {}
-
-            def value(name: str) -> int | None:
-                item = config.get({"memoryMb": "memory_mb"}.get(name, name))
-                return (
-                    item
-                    if isinstance(item, int) and not isinstance(item, bool)
-                    else None
-                )
-
+        names = ("width", "height", "dpi", "cpu", "memoryMb", "fps")
+        if updater.update_in_progress(self.root):
+            # MAS 正在换上新版：不起 modavd，各项都按读不到给
             return InstanceSettings(
-                fields={
-                    name: FieldValue(value(name), "saved")
-                    for name in ("width", "height", "dpi", "cpu", "memoryMb", "fps")
-                }
+                fields={name: FieldValue(None, "unreadable") for name in names}
             )
-        # 更新中不起 CLI，直接读实例文件
-        instance = self._instances().get(str(idx))
-        if instance is None:
-            return InstanceSettings(
-                fields={
-                    name: FieldValue(None, "unreadable")
-                    for name in ("width", "height", "dpi", "cpu", "memoryMb", "fps")
-                }
+        try:
+            raw = self._cli_data_instance(await self._cli.info(str(idx)))
+        except modavd_cli.CLIError as error:
+            self._raise_cli_error(error)
+        config = raw.get("config")
+        config = config if isinstance(config, dict) else {}
+
+        def value(name: str) -> int | None:
+            item = config.get({"memoryMb": "memory_mb"}.get(name, name))
+            return (
+                item if isinstance(item, int) and not isinstance(item, bool) else None
             )
-        # 读取当前档位，下次开机前按相同档位写回。
-        meta = instance_meta(self.root, idx)
-        display = display_changes(instance.config)
-        # 报开机实际传的 -memory（实例元数据里的值；以前「按游戏自动」的旧实例按默认 6 GB）
-        memory = FieldValue(memory_for(meta), "saved")
+
         return InstanceSettings(
-            fields={
-                "width": FieldValue(_int(display["hw.lcd.width"]), "saved"),
-                "height": FieldValue(_int(display["hw.lcd.height"]), "saved"),
-                "dpi": FieldValue(_int(display["hw.lcd.density"]), "saved"),
-                "cpu": FieldValue(instance.cpu, "saved"),
-                "memoryMb": memory,
-                # 刷新率 hw.lcd.vsync（30 / 60，下次开机生效）
-                "fps": FieldValue(instance.fps, "saved"),
-            }
+            fields={name: FieldValue(value(name), "saved") for name in names}
         )
 
     async def read_instance_overview(
@@ -1232,13 +1156,6 @@ class _AvdCore(DeviceBase):
         output = str(data.get("output") or "Success")
         logger.info(f"已由 modavd install 给实例 {idx} 安装 {apk.name}")
         return output
-
-
-def _int(raw: object) -> int | None:
-    try:
-        return int(str(raw).strip())
-    except (TypeError, ValueError):
-        return None
 
 
 def _display_settings(current: dict, changes: dict[str, int]) -> dict[str, int]:
@@ -1467,34 +1384,6 @@ def opening_instances(root: Path) -> list[str]:
     )
 
 
-def running_instances(root: Path) -> list[str]:
-    """这个根目录下开着的实例（原生索引）。
-
-    只算 qemu 可执行文件就在这个根目录 ``sdk\\emulator`` 下的，免得把另一个根目录的同名实例算进来；
-    限定了根目录，实例就只按命令行里的 ``-avd mas_<i>`` 认，不比端口：根目录可以设 ``portBase``
-    换一段端口（由 modavd 决定）。
-    """
-    ours = {item["pid"] for item in update_stage.processes_using(root)}
-    wanted = {avd_name(idx): idx for idx in list_instances(root)}
-    found: set[str] = set()
-    for process in psutil.process_iter(["pid", "name", "cmdline"]):
-        try:
-            if process.info.get("pid") not in ours:
-                continue
-            name = (process.info.get("name") or "").lower()
-            cmdline = process.info.get("cmdline") or []
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-        if not name.startswith("qemu-system"):
-            continue
-        found.update(
-            wanted[avd]
-            for flag, avd in zip(cmdline, cmdline[1:])
-            if flag == "-avd" and avd in wanted
-        )
-    return sorted(found)
-
-
 async def build_manager(
     manager_exe: str,
     max_wait_time: int,
@@ -1504,21 +1393,12 @@ async def build_manager(
 ) -> AvdManager:
     """与雷电 / MuMu 的 ``build_manager`` 同签名。``manager_exe`` 是 ``sdk\\emulator\\emulator.exe``。
 
-    根目录里没有命令行 ``tools\\modavd.exe`` 就报错。更新中只看它在不在，给一个没做版本检查的
-    客户端（不起进程，查询都退到文件 / 进程快照）；平常先做版本检查（:func:`~.cli.resolve_cli`）。
+    根目录里没有命令行 ``tools\\modavd.exe`` 就报错；有就先做版本检查（:func:`~.cli.resolve_cli`）。
     """
     root = root_from_manager_exe(manager_exe)
-    probe = modavd_cli.ModAvdCli(root)
-    if not probe.executable_available:
-        raise RuntimeError(f"找不到 ModAVD 命令行 {probe.exe}")
-    if updater.update_in_progress(root):
-        cli = probe
-    else:
-        resolved = await modavd_cli.resolve_cli(root)
-        if resolved is None:
-            # 两次检查之间命令行被删了
-            raise RuntimeError(f"找不到 ModAVD 命令行 {probe.exe}")
-        cli = resolved
+    cli = await modavd_cli.resolve_cli(root)
+    if cli is None:
+        raise RuntimeError(f"找不到 ModAVD 命令行 {modavd_cli.ModAvdCli(root).exe}")
     return AvdManager(
         manager_exe=manager_exe,
         max_wait_time=max_wait_time,
@@ -1533,6 +1413,5 @@ __all__ = [
     "FreezeWatchdog",
     "build_manager",
     "opening_instances",
-    "running_instances",
     "emulator_exe",
 ]

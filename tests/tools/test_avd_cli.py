@@ -11,13 +11,13 @@ from types import SimpleNamespace
 from typing import Sequence
 
 import pytest
+from loguru import logger as loguru_logger
 
 from app.core.emulator_manager.operations import EmulatorOperations
 from app.models.emulator import DeviceStatus, EmulatorRuntimePolicy
 from app.utils.common.emulator2.avd import cli as cli_module
 from app.utils.common.emulator2.avd import manager as manager_module
 from app.utils.common.emulator2.avd import service as service_module
-from app.utils.common.emulator2.avd import update_stage as stage_module
 from app.utils.common.emulator2.avd import updater as updater_module
 from app.utils.common.emulator2.avd.cli import (
     CREATE_PROCESS_MARGIN_SECONDS,
@@ -281,7 +281,8 @@ async def test_manager_create_timeout_preserves_cli_error_cause(
 # ---- 真的假 modavd 程序 -----------------------------------------------------------
 
 #: 按 ``--json`` 约定输出的假 modavd：经 ``sys.executable`` 当子进程起，调用记进状态目录的
-#: 独立的 ``call-*.json``；``plan.json`` 按命令给出数据、错误、原样输出、退出码，``sleep`` 先干等这么多秒，
+#: 独立的 ``call-*.json``；``plan.json`` 按命令（或 ``命令:第一个参数``，如 ``update:install``）给出数据、
+#: 错误、原样输出、退出码，``stderr`` 是先打到 stderr 的几行，``sleep`` 先干等这么多秒，
 #: ``hold`` 让进程活着直到收到 ``stop``，``bridge_seconds`` 先起一个命令行带 ``modavd-bridge.ps1`` 的
 #: 子进程（装桥）。
 _FAKE_MODAVD = r"""
@@ -310,8 +311,10 @@ pending.write_text(
 pending.replace(state / ("call-" + call_id + ".json"))
 plan_file = state / "plan.json"
 plan = json.loads(plan_file.read_text(encoding="utf-8")) if plan_file.exists() else {}
-spec = plan.get(command, {})
+spec = plan.get(command + ":" + rest[0], plan.get(command, {})) if rest else plan.get(command, {})
 print("fake modavd log line", file=sys.stderr)
+for line in spec.get("stderr", []):
+    print(line, file=sys.stderr, flush=True)
 if command == "stop":
     (state / "stopped").write_text("1", encoding="utf-8")
 if spec.get("bridge_seconds"):
@@ -569,9 +572,6 @@ async def test_broken_modavd_is_reported_and_never_falls_back_to_python(
     assert await service_module.close_running_instances([], timeout=10) == {
         str(root): "failed"
     }
-
-    # 更新器只按进程判断开着的实例，不起 modavd
-    assert manager_module.running_instances(root) == []
     assert set(fake.commands()) == {"version"}
 
 
@@ -623,17 +623,23 @@ async def test_protocols_1_and_2_use_the_cli_and_others_are_reported(
 
 
 @pytest.mark.asyncio
-async def test_update_in_progress_refuses_and_never_starts_modavd(
+async def test_own_install_refuses_changes_and_queries_never_start_modavd(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = _FakeModavd(tmp_path, monkeypatch)
     root = _root_with_exe(tmp_path)
-    monkeypatch.setattr(updater_module, "update_in_progress", lambda path: True)
-    manager_exe = root / "sdk" / "emulator" / "emulator.exe"
-
+    fake.plan(version={"data": {"version": "0.7.0", "protocol": 2}})
     manager = await manager_module.build_manager(
-        str(manager_exe), 60, runtime_policy=_policy()
+        str(root / "sdk" / "emulator" / "emulator.exe"), 60, runtime_policy=_policy()
     )
+    # MAS 自己起的 modavd update install 在跑：换上前那次 list 记着一台实例
+    key = updater_module.root_key(root)
+    monkeypatch.setattr(updater_module, "_installing", {key})
+    monkeypatch.setattr(
+        updater_module, "_instance_snapshots", {key: [{"index": 7, "title": "七"}]}
+    )
+    before = len(fake.calls())
+
     with pytest.raises(RuntimeError, match="正在更新"):
         await manager.open("7")
     with pytest.raises(RuntimeError, match="正在更新"):
@@ -644,102 +650,149 @@ async def test_update_in_progress_refuses_and_never_starts_modavd(
         await manager.delete_instance("7")
     with pytest.raises(RuntimeError, match="正在更新"):
         await manager.write_instance_settings("7", {"memoryMb": 4096})
-    # 面板轮询用到的查询改走文件和进程快照
-    assert await manager.getStatus("7") == DeviceStatus.NOT_FOUND
-    assert await manager.getInfo(None) == {}
-    assert await manager.list_devices() == {}
+    # 只读查询不起 modavd：实例都算没在运行，列表用换上前那次 list
+    assert await manager.getStatus("7") == DeviceStatus.OFFLINE
+    info = await manager.getInfo(None)
+    assert {k: (v.title, v.status) for k, v in info.items()} == {
+        "7": ("七", DeviceStatus.OFFLINE)
+    }
+    assert await manager.list_devices() == {"7": "七"}
     assert await manager.close("7") == DeviceStatus.OFFLINE
-    snapshot = await service_module.status(str(root))
-    assert snapshot["prechecks"] == []
-    assert fake.calls() == []
-    assert fake.launched == []
-
-    # 关机前收尾在更新中也只交给 modavd：不做版本检查，直接 stop --all
-    fake.plan(stop={"data": {"results": [], "failed": []}})
+    assert (await service_module.status(str(root)))["prechecks"] == []
+    # 关机前收尾：实例本来就都关了，跳过这个根目录
     monkeypatch.setattr(service_module, "managed_roots", lambda configs: [root])
     assert await service_module.close_running_instances([], timeout=10) == {
         str(root): "closed"
     }
-    assert [(item["command"], item["args"]) for item in fake.calls()] == [
-        ("stop", ["--all"])
+    assert len(fake.calls()) == before
+
+
+_UPDATE_HELP = {
+    "data": {
+        "commands": [
+            {
+                "options": [
+                    {"flag": "--source github|mirrorchyan"},
+                    {"flag": "--cdk-dpapi B64"},
+                ]
+            }
+        ]
+    }
+}
+
+
+@pytest.mark.asyncio
+async def test_update_passes_source_and_cdk_cipher_as_is_and_never_logs_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    cli = ModAvdCli(_root_with_exe(tmp_path))
+    monkeypatch.setattr(cli_module, "CALLER_UPDATE_OPTIONS_PLATFORM", True)
+    secret = "AQAAANCMnd8BFdERjHoAwE/Cl+s="
+    fake.plan(
+        help=_UPDATE_HELP,
+        update={"error": {"code": "invalid_argument", "message": "解不开"}, "exit": 2},
+    )
+    lines: list[str] = []
+    sink = loguru_logger.add(lambda message: lines.append(str(message)), level="DEBUG")
+    try:
+        with pytest.raises(CLIError) as error:
+            await cli.update(
+                "check",
+                automas_version="v5.8.0",
+                source="mirrorchyan",
+                cdk_dpapi=secret,
+            )
+        fake.plan(help=_UPDATE_HELP, update={"data": {}})
+        await cli.update("prepare", source="github", cdk_dpapi="")
+    finally:
+        loguru_logger.remove(sink)
+
+    assert [c["args"] for c in fake.calls() if c["command"] == "update"] == [
+        ["check", "--automas-version", "v5.8.0", "--source", "mirrorchyan"]
+        + ["--cdk-dpapi", secret],
+        # 没有 CDK 也显式传空串，免得 modavd 用图形管理器里存的那份
+        ["prepare", "--source", "github", "--cdk-dpapi", ""],
+    ]
+    assert fake.commands().count("help") == 1  # 选项探测按 exe 缓存
+    assert secret not in "".join(lines) + str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_old_update_cli_gets_neither_source_nor_cdk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    cli = ModAvdCli(_root_with_exe(tmp_path))
+    monkeypatch.setattr(cli_module, "CALLER_UPDATE_OPTIONS_PLATFORM", True)
+    fake.plan(
+        help={"data": {"commands": [{"options": [{"flag": "--automas-version V"}]}]}},
+        update={"data": {}},
+    )
+
+    await cli.update(
+        "install", automas_version="v5.8.0", source="github", cdk_dpapi="x"
+    )
+    await cli.update("recover", source="github", cdk_dpapi="x")
+
+    assert [c["args"] for c in fake.calls() if c["command"] == "update"] == [
+        ["install", "--automas-version", "v5.8.0"],
+        ["recover"],
     ]
 
 
-def _fake_processes(monkeypatch: pytest.MonkeyPatch, items: list[dict]) -> None:
-    class _Process:
-        def __init__(self, info: dict) -> None:
-            self.info = info
-
-    monkeypatch.setattr(
-        stage_module.psutil,
-        "process_iter",
-        lambda attrs=None: [_Process(item) for item in items],
-    )
-
-
-def test_processes_using_counts_any_modavd_process_of_this_root(
+@pytest.mark.asyncio
+async def test_update_streams_progress_and_shows_busy_from_modavd_as_is(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    root = tmp_path / "root"
-    other = tmp_path / "other"
-    _fake_processes(
-        monkeypatch,
-        [
-            {
-                "pid": 11,
-                "name": "modavd.exe",
-                "exe": str(root / "tools" / "modavd.exe"),
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    root = _root_with_exe(tmp_path)
+    monkeypatch.setattr(cli_module, "CALLER_UPDATE_OPTIONS_PLATFORM", False)
+    monkeypatch.setattr(updater_module, "_PUBLISH_INTERVAL_SECONDS", 0)
+    progress = {"stage": "downloading", "percent": 50.0, "done_bytes": 5}
+    line = {"msg": "下载", "progress": {**progress, "total_bytes": 10, "new": 1}}
+    fake.plan(
+        version={"data": {"version": "0.7.0", "protocol": 2}},
+        list={"data": {"instances": [{"index": 7, "status": "offline"}]}},
+        **{
+            "update:status": {"data": {"updatable": True, "phase": "idle"}},
+            "update:prepare": {
+                "stderr": ["不是 JSON 的行", json.dumps(line, ensure_ascii=False)],
+                "data": {"updatable": True, "prepared_version": "v0.8.0"},
             },
-            {"pid": 12, "name": "ModAVD.exe", "exe": str(root / "ModAVD.exe")},
-            {
-                "pid": 13,
-                "name": "modavd.exe",
-                "exe": str(other / "tools" / "modavd.exe"),
+            "update:install": {
+                "error": {
+                    "code": "busy",
+                    "message": "0.8.0 已下载并核对好，但现在不能换上：ModAVD.exe 开着",
+                    "advice": "关掉管理器",
+                    "details": {"reason": "running"},
+                },
+                "exit": 5,
             },
-            {"pid": 14, "name": "notepad.exe", "exe": str(tmp_path / "notepad.exe")},
-        ],
+        },
     )
-    assert [item["pid"] for item in stage_module.processes_using(root)] == [11, 12]
+    published: list[updater_module.UpdateProgress] = []
 
+    async def publish(path: Path, item: updater_module.UpdateProgress) -> None:
+        published.append(item)
 
-def test_swap_in_refuses_before_renaming_when_modavd_holds_the_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    root = tmp_path / "root"
-    (root / "sdk" / "emulator").mkdir(parents=True)
-    _fake_processes(
-        monkeypatch,
-        [{"pid": 21, "name": "modavd.exe", "exe": str(root / "tools" / "modavd.exe")}],
-    )
-    monkeypatch.setattr(stage_module, "read_state", lambda path: {})
-    monkeypatch.setattr(stage_module, "_check_staged", lambda path, state: None)
-    monkeypatch.setattr(stage_module, "ensure_metadata_readable", lambda path: None)
-    renamed: list[tuple[Path, Path]] = []
-    monkeypatch.setattr(
-        stage_module, "_rename", lambda src, dst: renamed.append((src, dst))
+    host = updater_module.UpdateHost(
+        settings=lambda: updater_module.UpdateSettings("github", "v5.8.0", ""),
+        environment=lambda: None,
+        managed_roots=lambda: [root],
+        opening_instances=lambda path: [],
+        publish_progress=publish,
     )
 
-    with pytest.raises(stage_module.SwapBlocked, match="modavd.exe"):
-        stage_module.swap_in(root)
-    assert renamed == []
+    assert (await updater_module.update(str(root), host=host))["reason"] == "started"
+    await updater_module._runtime(root).job  # type: ignore[misc]
 
-
-def test_lingering_netsimd_asks_to_wait_instead_of_failing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    root = tmp_path / "root"
-    _fake_processes(
-        monkeypatch,
-        [
-            {
-                "pid": 31,
-                "name": "netsimd.exe",
-                "exe": str(root / "sdk" / "emulator" / "netsimd.exe"),
-            }
-        ],
-    )
-    with pytest.raises(stage_module.SwapBlocked, match="稍等再装"):
-        stage_module.ensure_not_in_use(root, "装")
+    downloading = [p for p in published if p.stage == "downloading"]
+    assert (downloading[-1].percent, downloading[-1].totalBytes) == (50.0, 10)
+    final = published[-1]
+    assert (final.stage, final.status) == ("staged", "failed")
+    assert "ModAVD.exe 开着" in final.message and "关掉管理器" in final.message
+    assert not updater_module.update_in_progress(root)
 
 
 @pytest.mark.asyncio
@@ -759,9 +812,6 @@ async def test_open_retries_start_when_guest_script_push_failed(
             }
 
     monkeypatch.setattr(_AvdCore, "_check_components", lambda self: None)
-    monkeypatch.setattr(
-        manager_module.host, "find_qemu_process", lambda avd, port: None
-    )
     cli = StartCli()
     manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
     manager = _AvdCore(manager_exe, 60, False, cli=cli)  # type: ignore[arg-type]
@@ -951,10 +1001,6 @@ async def test_restart_is_stop_then_start_and_running_mode_is_never_switched(
         status={"data": {"index": 7, "status": "online"}},
     )
     monkeypatch.setattr(_AvdCore, "_check_components", lambda self: None)
-    running: dict[str, object] = {"qemu": None}
-    monkeypatch.setattr(
-        manager_module.host, "find_qemu_process", lambda avd, port: running["qemu"]
-    )
     # 静默模式开着：任务拉起无头，模拟器页手动启动带窗口
     manager = await manager_module.build_manager(
         str(root / "sdk" / "emulator" / "emulator.exe"), 60, runtime_policy=_policy()
@@ -976,7 +1022,6 @@ async def test_restart_is_stop_then_start_and_running_mode_is_never_switched(
     assert "--window" in starts[1]
 
     # 实例正无头运行：旧版 modavd 再要窗口也只是接着用，不重启、不切换；脚本每轮调的显示照旧不抛
-    running["qemu"] = _Qemu("qemu-system-x86_64-headless.exe", "-no-window")
     before = len(fake.calls())
     assert (await manager.open("7", manual=True)).status == DeviceStatus.ONLINE
     await manager.setVisible("7", True)

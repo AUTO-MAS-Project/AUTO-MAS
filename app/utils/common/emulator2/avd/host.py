@@ -541,36 +541,6 @@ async def _run_adb_raw(
 # ---- 进程 -----------------------------------------------------------------
 
 
-def _cmdline_matches(cmdline: list[str], avd: str, console_port: int) -> bool:
-    """按 ``-avd <名>`` 与 ``-ports <控制台>,`` 同时精确匹配，绝不误认别的模拟器。
-
-    只看 AVD 名不够：另一个根目录里也可能有同名的 ``mas_0``；只看端口也不够。
-    """
-    has_avd = has_port = False
-    for position, token in enumerate(cmdline[:-1]):
-        following = cmdline[position + 1]
-        if token == "-avd" and following == avd:
-            has_avd = True
-        elif token == "-ports" and following.split(",", 1)[0] == str(console_port):
-            has_port = True
-    return has_avd and has_port
-
-
-def find_qemu_process(avd: str, console_port: int) -> psutil.Process | None:
-    """找这台实例的 qemu 进程（``qemu-system-x86_64[-headless].exe``）。没有返回 ``None``。"""
-    for process in psutil.process_iter(["name", "cmdline"]):
-        try:
-            name = (process.info.get("name") or "").lower()
-            if not name.startswith("qemu-system"):
-                continue
-            cmdline = process.info.get("cmdline") or []
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-        if _cmdline_matches(cmdline, avd, console_port):
-            return process
-    return None
-
-
 def process_cpu_seconds(process: psutil.Process) -> float | None:
     try:
         times = process.cpu_times()
