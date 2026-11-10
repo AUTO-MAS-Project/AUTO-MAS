@@ -49,6 +49,9 @@ export const WS_TASK_CREATED = 'task.created'
 // 每次脚本执行（含循环中的每轮），不随快照重放（id=TaskManager）。
 export const WS_TASK_SCRIPT_STARTED = 'task.script.started'
 export const WS_TASK_SCRIPT_FINISHED = 'task.script.finished'
+export const WS_MAAEND_INSTALL_PROMPT = 'maaend.install.prompt'
+export const WS_MAAEND_INSTALL_PROMPT_CLOSED = 'maaend.install.prompt.closed'
+export const WS_MAAEND_INSTALL_DECISION = 'maaend.install.decision'
 
 // 应用生命周期与电源（id=Main）
 export const WS_BACKEND_SHUTDOWN_READY = 'backend.shutdown.ready'
@@ -158,6 +161,21 @@ export interface WSTaskScriptStartedData {
 export interface WSTaskScriptFinishedData extends WSTaskScriptStartedData {
   outcome: 'success' | 'failed' | 'skipped' | 'no_user' | 'incomplete' | 'error' | 'cancelled'
   partialFailure?: 'yes' | 'no' | 'unknown'
+}
+
+/** MaaEnd 原生本体无法确认时的明确修复选择 */
+export interface WSMaaEndInstallPromptData {
+  requestId: string
+  taskId: string
+  managedName: string
+  installPath: string
+  takeoverEnabled: boolean
+  installedVersion: string
+  targetVersion: string
+}
+
+export interface WSMaaEndInstallPromptClosedData {
+  requestId: string
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
@@ -329,6 +347,8 @@ interface WSMessageDataMap {
   [WS_TASK_CREATED]: WSTaskCreatedData
   [WS_TASK_SCRIPT_STARTED]: WSTaskScriptStartedData
   [WS_TASK_SCRIPT_FINISHED]: WSTaskScriptFinishedData
+  [WS_MAAEND_INSTALL_PROMPT]: WSMaaEndInstallPromptData
+  [WS_MAAEND_INSTALL_PROMPT_CLOSED]: WSMaaEndInstallPromptClosedData
   [WS_BACKEND_SHUTDOWN_READY]: WSEmptyData
   [WS_FRONTEND_CLOSE_REQUESTED]: FrontendCloseRequest
   [WS_FRONTEND_RESTART_REQUESTED]: FrontendCloseRequest
