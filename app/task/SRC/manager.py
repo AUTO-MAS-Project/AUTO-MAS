@@ -754,10 +754,8 @@ class SrcManager(ScriptManagerBase):
         marker = script_install.workspace(root) / "src-install.json"
         if not marker.exists() and not marker.is_symlink():
             return False
-        program_update.recover_deploy(root)
-        await asyncio.to_thread(
-            program_update.assert_idle, root, allow_background_adb=True
-        )
+        # 询问本身只读，不需要 SRC 已退出。未知归属的手工启动进程
+        # 不应被 MAS 擅自终止；用户选择后的安装/跳过操作会严格检查停写状态。
         action, snapshot = await install_recovery.ask_install_recovery(
             self.task_info.task_id,
             root,

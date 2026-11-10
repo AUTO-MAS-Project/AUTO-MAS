@@ -487,3 +487,35 @@ async def test_src_no_frontend_retains_install_marker(installation, monkeypatch)
             "task", root, managed_name="SRC", takeover_enabled=False
         )
     assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_running_process_does_not_hide_recovery_prompt(
+    installation, monkeypatch
+):
+    from app.task.SRC import manager
+    from app.task.SRC.tools import install_recovery
+
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
+    instance = object.__new__(manager.SrcManager)
+    instance.src_root_path = root
+    instance.script_info = SimpleNamespace(script_id="test-script", name="SRC", set_log=AsyncMock())
+    instance.script_config = SimpleNamespace(Update=SimpleNamespace(TakeoverEnabled=False))
+    instance.task_info = SimpleNamespace(task_id="task-id")
+    instance.execution_mode = "AutoProxy"
+    monkeypatch.setattr(
+        update,
+        "assert_idle",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            script_install.InstallUnsafeError("SRC still running")
+        ),
+    )
+    ask = AsyncMock(side_effect=script_install.InstallUnsafeError("用户取消恢复"))
+    monkeypatch.setattr(install_recovery, "ask_install_recovery", ask)
+    with pytest.raises(script_install.InstallUnsafeError, match="用户取消恢复"):
+        await instance._recover_unconfirmed_install()
+    ask.assert_awaited_once()
+    assert marker.exists()
