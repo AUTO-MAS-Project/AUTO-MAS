@@ -11,11 +11,34 @@ from app.core.emulator_manager.operations import EmulatorOperations
 from app.models.config import EmulatorConfig
 from app.models.emulator import EmulatorRuntimePolicy
 from app.utils.common.emulator2 import facade
-from app.utils.common.emulator2.avd.instances import config_path, read_ini, write_ini
+from app.utils.common.emulator2.avd.constants import DISPLAY_PRESETS
 from app.utils.common.emulator2.avd.manager import _AvdCore
 from app.utils.common.emulator2.guard import dump_baselines
 from app.utils.common.emulator2.slots import PathRecord, SlotTable
 from tests.config_support import activate_config
+
+
+class _FakeCli:
+    """modavd 的最小替身：``info`` 报各实例的显示，``set --resolution`` 换档位、保持方向。"""
+
+    def __init__(self, displays: dict[str, tuple[int, int, int]]) -> None:
+        self.displays = displays
+
+    async def info(self, index: str) -> dict:
+        width, height, dpi = self.displays[str(index)]
+        return {
+            "index": int(index),
+            "config": {"width": width, "height": height, "dpi": dpi},
+        }
+
+    async def set(self, index: str, *, resolution: int | None = None, **_) -> dict:
+        if resolution is not None:
+            width, height, dpi = DISPLAY_PRESETS[resolution]
+            old_width, old_height, _ = self.displays[str(index)]
+            if old_height > old_width:
+                width, height = height, width
+            self.displays[str(index)] = (width, height, dpi)
+        return {"applied": {}}
 
 
 @pytest.mark.asyncio
@@ -25,13 +48,9 @@ async def test_batch_baseline_keeps_applied_dpi_and_orientation(
     exe = tmp_path / "avd/sdk/emulator/emulator.exe"
     exe.parent.mkdir(parents=True)
     exe.touch()
-    backend = _AvdCore(exe, 60, False)
-    for index in (7, 8):
-        await backend.create_instance(native_index=index, resolution=720)
-    portrait_path = config_path(backend.root, 8)
-    portrait = read_ini(portrait_path)
-    portrait.update({"hw.lcd.width": "720", "hw.lcd.height": "1280"})
-    write_ini(portrait_path, portrait)
+    # 两台 720p 实例，8 号是竖屏
+    cli = _FakeCli({"7": (1280, 720, 240), "8": (720, 1280, 240)})
+    backend = _AvdCore(exe, 60, False, cli=cli)  # type: ignore[arg-type]
 
     path = PathRecord.create(str(backend.root), "AVD", "avd", "0.37.1")
     slots = SlotTable()

@@ -510,11 +510,6 @@ async def test_power_close_uses_stop_all_and_reports_partial_failure(
     )
     monkeypatch.setattr(service_module, "managed_roots", lambda configs: [root])
 
-    async def python_close(root_path: Path, *, timeout: float) -> dict:
-        raise AssertionError("modavd 可用时不该退回 Python 关机")
-
-    monkeypatch.setattr(service_module, "_close_python_root", python_close)
-
     result = await service_module.close_running_instances([], timeout=10)
 
     # stop --all 回 ok 但有实例没关掉：这个根目录不能报成已关完
@@ -540,11 +535,6 @@ async def test_power_close_probe_shares_the_deadline_and_does_not_hold_up_other_
     monkeypatch.setattr(
         service_module, "managed_roots", lambda configs: [stuck, healthy]
     )
-
-    async def python_close(root_path: Path, *, timeout: float) -> dict:
-        raise AssertionError("两个根目录都有可用的 modavd，不该退回 Python")
-
-    monkeypatch.setattr(service_module, "_close_python_root", python_close)
 
     started = time.monotonic()
     result = await service_module.close_running_instances([], timeout=3)
@@ -574,21 +564,35 @@ async def test_broken_modavd_is_reported_and_never_falls_back_to_python(
     with pytest.raises(ModAvdUnavailable, match="modavd 不可用"):
         await service_module.status(str(root))
 
-    # 用户定的例外：关机前 modavd 坏了，退回 Python 的 sync + emu kill，不能不 sync 就被结束
-    closed: list[Path] = []
-
-    async def python_close(root_path: Path, *, timeout: float) -> dict:
-        closed.append(root_path)
-        return {}
-
+    # 关机前 modavd 坏了：不另想办法关，这个根目录如实记失败
     monkeypatch.setattr(service_module, "managed_roots", lambda configs: [root])
-    monkeypatch.setattr(service_module, "_close_python_root", python_close)
-    await service_module.close_running_instances([], timeout=10)
-    assert closed == [root]
+    assert await service_module.close_running_instances([], timeout=10) == {
+        str(root): "failed"
+    }
 
     # 更新器只按进程判断开着的实例，不起 modavd
     assert manager_module.running_instances(root) == []
     assert set(fake.commands()) == {"version"}
+
+
+@pytest.mark.asyncio
+async def test_root_without_modavd_cli_is_not_a_usable_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    root = tmp_path / "root"
+    emulator = root / "sdk" / "emulator" / "emulator.exe"
+    root.mkdir()
+
+    with pytest.raises(RuntimeError, match="找不到 ModAVD 命令行"):
+        await manager_module.build_manager(str(emulator), 60, runtime_policy=_policy())
+    with pytest.raises(RuntimeError, match="找不到 ModAVD 命令行"):
+        await service_module.status(str(root))
+    monkeypatch.setattr(service_module, "managed_roots", lambda configs: [root])
+    assert await service_module.close_running_instances([], timeout=10) == {
+        str(root): "failed"
+    }
+    assert fake.launched == []
 
 
 @pytest.mark.asyncio
@@ -647,12 +651,18 @@ async def test_update_in_progress_refuses_and_never_starts_modavd(
     assert await manager.close("7") == DeviceStatus.OFFLINE
     snapshot = await service_module.status(str(root))
     assert snapshot["prechecks"] == []
-
-    monkeypatch.setattr(service_module, "managed_roots", lambda configs: [root])
-    await service_module.close_running_instances([], timeout=10)
-
     assert fake.calls() == []
     assert fake.launched == []
+
+    # 关机前收尾在更新中也只交给 modavd：不做版本检查，直接 stop --all
+    fake.plan(stop={"data": {"results": [], "failed": []}})
+    monkeypatch.setattr(service_module, "managed_roots", lambda configs: [root])
+    assert await service_module.close_running_instances([], timeout=10) == {
+        str(root): "closed"
+    }
+    assert [(item["command"], item["args"]) for item in fake.calls()] == [
+        ("stop", ["--all"])
+    ]
 
 
 def _fake_processes(monkeypatch: pytest.MonkeyPatch, items: list[dict]) -> None:
