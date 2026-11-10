@@ -49,12 +49,21 @@ def assert_idle(root: Path) -> None:
         try:
             executable = process.info["exe"]
             name = str(process.info.get("name", "")).casefold()
-            if not executable and (
-                name in {"bettergi.exe", "bettergi.update.exe"}
+            # 官方安装器可能在下载目录启动，而不是在安装目录内。
+            # 无论安装器路径如何，未停写时都不能进行恢复与目录切换。
+            exe_name = Path(executable).name.casefold() if executable else ""
+            if (
+                name == "bettergi.update.exe"
                 or name.startswith("bettergi.install.")
+                or exe_name == "bettergi.update.exe"
+                or exe_name.startswith("bettergi.install.")
             ):
                 raise script_install.InstallUnsafeError(
-                    "无法确认 BetterGI 更新器已退出，请以管理员身份重试"
+                    "BetterGI 官方安装器仍在运行，请先结束安装器"
+                )
+            if not executable and name == "bettergi.exe":
+                raise script_install.InstallUnsafeError(
+                    "无法确认 BetterGI 程序已退出，请以管理员身份重试"
                 )
             if executable and any(
                 Path(executable).resolve().is_relative_to(path.resolve())
