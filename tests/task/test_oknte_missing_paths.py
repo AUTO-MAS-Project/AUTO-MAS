@@ -102,3 +102,39 @@ def test_close_policy_is_independent_of_game_launch(enabled, launch, close, retr
     )
     assert proxy._mas_should_close_game_after_success() is close
     assert proxy._mas_should_close_game_on_retry() is retry
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("game", "expected"),
+    [
+        ({"Enabled": False, "LaunchBeforeTask": False, "CloseOnFinish": True}, False),
+        ({"Enabled": True, "CloseOnFinish": True}, True),
+        ({"Enabled": True, "CloseOnFinish": False}, False),
+        ({}, False),
+    ],
+)
+async def test_legacy_close_choice_survives_upgrade_and_later_opt_in(
+    tmp_path, game, expected
+):
+    import json
+
+    from app.models.config import OkNteConfig
+    from tests.config_support import activate_config
+
+    path = tmp_path / "oknte.yaml"
+    path.write_text(json.dumps({"Game": game}), encoding="utf-8")
+    config = await activate_config(OkNteConfig(), path)
+    proxy = AutoProxyTask.__new__(AutoProxyTask)
+    proxy.script_config = config
+    assert proxy._mas_should_close_game_after_success() is expected
+    assert proxy._mas_should_close_game_on_retry() is expected
+
+    config.Game.Enabled = False
+    config.Game.CloseOnFinish = True
+    await config.commit()
+    reloaded = await activate_config(OkNteConfig(), path)
+    proxy.script_config = reloaded
+    assert reloaded.Game.Enabled is False
+    assert proxy._mas_should_close_game_after_success() is True
+    assert proxy._mas_should_close_game_on_retry() is True

@@ -3827,6 +3827,10 @@ class OkNteConfig(DomainEntry):
             description="任务结束后是否关闭游戏", default_factory=lambda: True
         )
 
+        ClosePolicyMigrationVersion: Annotated[
+            int, Field(ge=0, le=1), ui(visibility=UiVisibility.HIDE)
+        ] = Field(default=1, description="独立关闭游戏策略迁移版本")
+
         Enabled: bool = Field(
             description="游戏相关功能是否启用", default_factory=lambda: False
         )
@@ -3983,9 +3987,14 @@ class OkNteConfig(DomainEntry):
 
     @classmethod
     def normalize_payload(cls, data):
-        data = deepcopy(data)
-        migrated_data, migrated = _migrate_oknte_launch_mode_default(data)
-        return migrated_data
+        data, _ = _migrate_oknte_launch_mode_default(data)
+        game = data.get("Game")
+        if isinstance(game, dict) and not game.get("ClosePolicyMigrationVersion"):
+            # 旧版关闭受托管总开关限制；只转换一次，后续保留用户独立开启的选择。
+            if not game.get("Enabled", False):
+                game["CloseOnFinish"] = False
+            game["ClosePolicyMigrationVersion"] = 1
+        return data
 
 
 class BetterGIConfig(DomainEntry):
