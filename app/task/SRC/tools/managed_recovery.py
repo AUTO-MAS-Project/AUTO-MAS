@@ -6,7 +6,7 @@ import asyncio
 import re
 from pathlib import Path
 
-from app.core.script_update_recovery import DownloadRetryFailed, InstallInspection
+from app.core.script_update_recovery import InstallInspection
 from app.services import script_install
 from app.services.script_install_backup import ManagedInstallBackup
 
@@ -47,6 +47,8 @@ class SRCInstallAdapter:
                 self.root, script_id="", script_type="SRC"
             ).read()
             previous = record.get("version") if record else None
+            if previous is None and not pending:
+                previous = commit
         if pending:
             target = program_update.validate_install_marker(
                 self.root, marker.read_bytes()
@@ -93,15 +95,9 @@ class SRCInstallAdapter:
         if self.prepared is None:
             marker = script_install.workspace(self.root) / "src-install.json"
             snapshot = marker.read_bytes() if marker.exists() else None
-            try:
-                await program_update.update_before_run(
-                    self.root, recovery_snapshot=snapshot
-                )
-            except (OSError, ValueError) as error:
-                raise DownloadRetryFailed(
-                    source="SRC Git/CDN",
-                    reason=f"SRC 更新准备失败（{type(error).__name__}）",
-                ) from error
+            await program_update.update_before_run(
+                self.root, recovery_snapshot=snapshot
+            )
             return
         try:
             await program_update.apply_update(self.root, self.prepared)
