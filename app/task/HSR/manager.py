@@ -64,6 +64,7 @@ from .tools.account_switch import (
     user_needs_account_switch,
 )
 from .tools.backup_archive import archive_native_backup
+from .tools.update import install_recovery
 from .tools.cloud_browser import DEFAULT_DEBUG_PORT, is_port_free
 from .tools.external_locks import (
     HSRExternalPathLockLease,
@@ -188,6 +189,7 @@ class HSRManager(NotificationTaskBase):
         self._external_config_targets: list[tuple[str, Path, Path, bool]] = []
         # 同一上游 M7A/SRA 路径可能被多个 HSR 脚本共享；持有至恢复完成。
         self._external_path_lock: HSRExternalPathLockLease | None = None
+        self._recovered_update_engines: set[str] = set()
         # 旧 dev 没有插件 registry；由调度器独占本轮原生来源会话并在停止时取消。
         self._direct_sessions: dict[str, Any] = {}
         self._direct_user_log: LogRecord | None = None
@@ -305,15 +307,37 @@ class HSRManager(NotificationTaskBase):
             root = resolve_script_path(self.script_config, engine)
             if not root:
                 continue
+            install = Path(root)
             try:
-                await rollback_pending(Path(root), send_log=self._append_log)
-            except Exception as e:  # noqa: BLE001 - 未完成安装必须阻止任务启动
-                name = engine_label(engine, left=False)
-                logger.opt(exception=True).warning(
-                    f"HSR 更新：回滚{engine_label(engine)}残留失败"
+                await rollback_pending(install, send_log=self._append_log)
+            except Exception as error:  # noqa: BLE001 - 不确定状态继续保护现场
+                journal = install_recovery.journal_path(install)
+                if not journal.is_file() or journal.is_symlink():
+                    raise
+                action, snapshot = await install_recovery.ask_install_recovery(
+                    self.task_info.task_id,
+                    engine,
+                    install,
+                    managed_name=getattr(self.script_info, "name", "HSR"),
                 )
-                self._append_log(f"{name}未完成更新的回滚失败，已停止任务：{e}")
-                raise RuntimeError(f"{name}更新状态无法恢复，不能开始任务") from e
+                if action == "skip":
+                    version = await install_recovery.skip_stale_journal(
+                        engine, install, snapshot
+                    )
+                    self._append_log(
+                        f"{engine_label(engine)} 上轮安装已确认手动修复；"
+                        f"当前版本 {version}，原日志已归档"
+                    )
+                else:
+                    install_recovery.confirm_snapshot(install, snapshot)
+                    await rollback_pending(install, send_log=self._append_log)
+                    if install_recovery.journal_path(install).exists():
+                        raise RuntimeError(
+                            f"{engine_label(engine)} 上轮更新回滚后仍有安装记录"
+                        )
+                    self._append_log(f"{engine_label(engine)} 上次安装已重新回滚")
+                # 用户恢复的引擎本轮不再触发新的自动升级，其他引擎可正常检查。
+                self._recovered_update_engines.add(engine)
 
     def _update_aborted(self) -> bool:
         """用户是否已经要求停止——下载途中每收一块问一次。
@@ -397,6 +421,9 @@ class HSRManager(NotificationTaskBase):
         for engine in ("M7A", "SRA"):
             if self._update_aborted():
                 raise asyncio.CancelledError
+            if engine in getattr(self, "_recovered_update_engines", set()):
+                self._append_log(f"{engine_label(engine)} 已恢复本轮不重复更新")
+                continue
             root = resolve_script_path(script_config, engine)
             if not root:
                 continue

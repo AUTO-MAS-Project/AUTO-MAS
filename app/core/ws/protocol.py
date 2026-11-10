@@ -66,6 +66,10 @@ TASK_CREATED = "task.created"
 TASK_SCRIPT_STARTED = "task.script.started"
 TASK_SCRIPT_FINISHED = "task.script.finished"
 
+HSR_INSTALL_PROMPT = "hsr.install.prompt"
+HSR_INSTALL_PROMPT_CLOSED = "hsr.install.prompt.closed"
+HSR_INSTALL_DECISION = "hsr.install.decision"
+
 # 应用生命周期与电源（id=Main）
 BACKEND_SHUTDOWN_READY = "backend.shutdown.ready"
 # 启动期攒下来、主连接建立后一次性发出的系统通知（id=Main）：配置迁移结果之类。
