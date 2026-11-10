@@ -498,7 +498,13 @@ class MaaEndManager(ScriptManagerBase):
             if journal.is_symlink():
                 raise script_install.InstallUnsafeError("MaaEnd 原生事务路径不安全")
             adapter = MaaEndInstallAdapter(
-                root, config, takeover_enabled=config.Update.TakeoverEnabled
+                root,
+                config,
+                takeover_enabled=config.Update.TakeoverEnabled,
+                allow_damaged_repair=(
+                    self.execution_mode == "AutoProxy"
+                    and config.Update.TakeoverEnabled
+                ),
             )
             request = ScriptUpdateRequest(str(self.script_info.script_id), "MaaEnd")
             recovered_automatically = False
