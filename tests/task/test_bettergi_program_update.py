@@ -608,9 +608,8 @@ async def test_stable_distribution_precheck_requires_announced_complete_resource
         assert result is None
     else:
         assert expected in result
-    assert len(requests) == (1 if notice.get("gray", notice.get("Gray", 10)) < 10
-                             or notice.get("version", notice.get("Version")) == "0.66.0"
-                             else 2)
+    checked_notice_only = expected in ("尚未进入官方更新公告", "灰度推送")
+    assert len(requests) == (1 if checked_notice_only else 2)
 
 
 @pytest.mark.asyncio
