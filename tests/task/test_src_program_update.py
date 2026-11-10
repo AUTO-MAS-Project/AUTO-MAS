@@ -512,6 +512,16 @@ async def test_src_native_completion_record_survives_adapter_recreation(
     if candidate is None:
         pytest.skip("SRC 测试代码源无新目标提交")
     await update.apply_update(root, candidate)
+    # 安装器在夹具中仅写 native-finished，未创建真实 SRC requirements 环境；
+    # 将 pip check 固定为健康，只校验安装完成证据跨 adapter 重建的传递。
+    original_command = update.command
+
+    async def command_with_test_python(*args, **kwargs):
+        if len(args) >= 4 and args[1:4] == ("-m", "pip", "check"):
+            return "No broken requirements found."
+        return await original_command(*args, **kwargs)
+
+    monkeypatch.setattr(update, "command", command_with_test_python)
     adapter = SRCInstallAdapter(root)
     state = await adapter.inspect()
     assert state.updated_confirmed
