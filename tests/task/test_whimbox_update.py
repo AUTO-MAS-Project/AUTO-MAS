@@ -468,6 +468,7 @@ async def test_pending_marker_rejected_when_snapshot_changes(installation):
     with pytest.raises(update.WhimboxUpdateUnsafeError, match="已变化"):
         await update.skip_pending_installation(installation, b"3.1.0")
 
+
 @pytest.mark.asyncio
 async def test_whimbox_main_task_acquires_installation_lock_only_once(
     managed_batch, installation
@@ -501,7 +502,9 @@ async def test_whimbox_prepare_download_failure_uses_verified_old_version(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure", [OSError("no disk space"), asyncio.CancelledError()])
+@pytest.mark.parametrize(
+    "failure", [OSError("no disk space"), asyncio.CancelledError()]
+)
 async def test_whimbox_cached_wheel_cleaned_if_backup_cannot_start(
     managed_batch, installation, monkeypatch, failure
 ):
@@ -515,4 +518,3 @@ async def test_whimbox_cached_wheel_cleaned_if_backup_cannot_start(
         await managed_batch._run_prepared(installation)
     assert not candidate.packages.parent.exists()
     managed_batch.run_user_task.assert_not_awaited()
-
