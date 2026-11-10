@@ -32,12 +32,14 @@ from app.config import ConfigCollection, config_manager
 from app.core import Config, Notify, Publisher
 from app.core.script_update import (
     ScriptUpdateRequest,
+    run_script_update_with_safe_fallback,
     auto_recover_script_install,
     run_managed_script_install,
     run_script_update,
 )
 from app.services import script_install
 from app.services.script_install_backup import ManagedInstallBackup
+from app.core.script_update_recovery import DownloadRetryFailed, InstallInspection
 from app.core.ws import protocol
 from app.models.config import WhimboxConfig, WhimboxUserConfig
 from app.models.notification.report import TaskResultReport
@@ -184,7 +186,7 @@ class WhimboxManager(ScriptManagerBase):
         root = self.script_config.Info.RootPath
         if root is None:
             raise RuntimeError("请先设置奇想盒安装目录")
-        with installation_access(root), script_install.installation_access(root):
+        with installation_access(root):
             self.check_result = "Pass"
             await self._run_prepared(root)
 
@@ -241,33 +243,71 @@ class WhimboxManager(ScriptManagerBase):
         if self.script_config.Update.TakeoverEnabled and not recovered:
             self.check_result = "奇想盒后端更新未完成"
             await push_dispatch_log(self.script_info, "正在检查奇想盒后端更新…")
+
+            async def prepare_without_installing() -> backend_update.PreparedUpdate | str:
+                try:
+                    return await backend_update.prepare_update(root)
+                except (
+                    WhimboxUpdateUnsafeError,
+                    script_install.InstallUnsafeError,
+                    FluxdownCancelUnconfirmed,
+                ):
+                    raise
+                except Exception as error:
+                    if is_process_cleanup_unconfirmed(error):
+                        raise
+                    # 准备阶段只写隔离下载缓存，不更改安装；由公共入口
+                    # 检查旧版健康后决定是否继续并纳入队列最终报告。
+                    raise DownloadRetryFailed(
+                        source="GitHub/PyPI",
+                        reason=f"奇想盒更新包准备失败（{type(error).__name__}）",
+                    ) from error
+
+            async def inspect_healthy_previous() -> InstallInspection:
+                if backup.read() is not None:
+                    raise script_install.InstallUnsafeError("仍有待处理的旧版备份")
+                await confirm_usable_installation(root)
+                version = await backend_update.installed_version(root)
+                return InstallInspection(
+                    pending=False,
+                    healthy=True,
+                    installed_version=str(version),
+                    previous_confirmed=True,
+                )
+
             candidate = getattr(self, "_update_candidate", None)
             self._update_candidate = None
             if not isinstance(candidate, backend_update.PreparedUpdate):
-                candidate = await run_script_update(
-                    request, backend_update.prepare_update, root
-                )
-            if isinstance(candidate, str):
-                # 没有更新也必须重新检查原安装，无需建立无意义的快照。
-                await confirm_usable_installation(root)
-                result = candidate
-            else:
-                adapter = WhimboxInstallAdapter(
-                    root,
-                    target=candidate.target,
-                    previous=candidate.current,
-                    candidate=candidate,
-                )
-                result = await run_managed_script_install(
+                candidate = await run_script_update_with_safe_fallback(
                     request,
-                    install_root=root,
-                    inspect=adapter.inspect,
-                    acknowledge=adapter.acknowledge,
-                    install=adapter.install,
-                    ensure_idle=adapter.ensure_idle,
-                    after_rollback=adapter.after_rollback,
+                    prepare_without_installing,
+                    root,
+                    inspect_healthy_previous,
                 )
-                # 如果安装在创建备份之前失败，也必须清理未消费的缓存。
+            try:
+                if isinstance(candidate, str):
+                    # 包准备失败已在公共入口校验、汇报；正常无更新也须核验。
+                    await confirm_usable_installation(root)
+                    result = candidate
+                else:
+                    adapter = WhimboxInstallAdapter(
+                        root,
+                        target=candidate.target,
+                        previous=candidate.current,
+                        candidate=candidate,
+                    )
+                    result = await run_managed_script_install(
+                        request,
+                        install_root=root,
+                        inspect=adapter.inspect,
+                        acknowledge=adapter.acknowledge,
+                        install=adapter.install,
+                        ensure_idle=adapter.ensure_idle,
+                        after_rollback=adapter.after_rollback,
+                    )
+            finally:
+                # 备份建立失败与取消也要清理已下载包，保留未停写缓存
+                # 的安全规则仍由 discard_update 统一控制。
                 backend_update.discard_update(candidate)
             await push_dispatch_log(self.script_info, str(result))
             self.check_result = "Pass"
