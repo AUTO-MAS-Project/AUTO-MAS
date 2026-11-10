@@ -1007,3 +1007,87 @@ async def test_maaend_repaired_native_build_can_ignore_stale_receipt_without_tak
     assert state.pending and state.healthy
     await adapter.acknowledge()
     assert not marker.exists()
+
+
+async def _start_real_maaend_manager_for_repair(root: Path, monkeypatch):
+    """保留真实 main_task / adapter / #1916 公共恢复层，只截断游戏任务。"""
+    from app.models.config import MaaEndConfig
+
+    home = root.parent / "mas-home"
+    home.mkdir(exist_ok=True)
+    monkeypatch.chdir(home)
+    config = MaaEndConfig.model_validate(
+        {"Info": {"Path": str(root)}, "Update": {"TakeoverEnabled": True}}
+    )
+    await config.activate()
+    script_id = config.uid
+    info = SimpleNamespace(
+        task_info=SimpleNamespace(mode="AutoProxy", task_id="test"),
+        script_id=str(script_id),
+        user_list=[],
+        status="等待",
+        log="",
+        set_log=AsyncMock(),
+    )
+    instance = manager.MaaEndManager(info)
+    instance.check = AsyncMock(return_value="test stop before game startup")
+    lock, unlock = AsyncMock(return_value="ticket"), AsyncMock()
+    monkeypatch.setattr(MaaEndConfig, "try_lock_x", lock)
+    monkeypatch.setattr(MaaEndConfig, "unlock", unlock)
+    monkeypatch.setattr(manager.Config, "ScriptConfig", {script_id: config})
+    monkeypatch.setattr(manager.MaaEndResourceLoader, "get_cached", Mock())
+    monkeypatch.setattr(
+        manager, "load_maaend_controller_protocol", lambda *args: "Win32"
+    )
+    monkeypatch.setattr(manager, "push_dispatch_log", AsyncMock())
+    monkeypatch.setattr(manager.Publisher, "send", AsyncMock())
+    return instance, lock, unlock
+
+
+@pytest.mark.asyncio
+async def test_manager_repairs_damaged_exe_with_no_native_journal_via_common_entry(
+    installation, monkeypatch
+):
+    root, existing_config = installation
+    await update.update_before_run(root, existing_config)
+    (root / "MaaEnd.exe").write_bytes(b"damaged executable")
+    assert not (script_install.workspace(root) / "transaction.json").exists()
+    instance, lock, unlock = await _start_real_maaend_manager_for_repair(
+        root, monkeypatch
+    )
+    await instance.main_task()
+    assert update.read_install(root) == (Version("2.2.0"), "x86_64")
+    assert script_install.verify_installed_files(root, threading.Event())
+    assert any("reinstalled" in str(call) for call in instance.script_info.set_log.await_args_list)
+    lock.assert_awaited_once()
+    await instance.final_task()
+    unlock.assert_awaited_once_with("ticket")
+
+
+@pytest.mark.asyncio
+async def test_manager_repairs_native_upgrade_receipt_at_exact_newer_version(
+    installation, tmp_path, monkeypatch
+):
+    root, existing_config = installation
+    await update.update_before_run(root, existing_config)
+    native_tag = "v2.3.0-beta.1"
+    (root / "interface.json").write_text(
+        json.dumps(
+            {"name": "MaaEnd", "version": native_tag, "mirrorchyan_rid": "MaaEnd"}
+        )
+    )
+    archive, release = _official_release_for_test(tmp_path, native_tag)
+    exact = AsyncMock(return_value=release)
+    monkeypatch.setattr(update, "request_release_for_version", exact)
+
+    async def download_exact(_url, destination, **_kwargs):
+        shutil.copyfile(archive, destination)
+
+    monkeypatch.setattr(update, "download_file", AsyncMock(side_effect=download_exact))
+    instance, _, _ = await _start_real_maaend_manager_for_repair(root, monkeypatch)
+    await instance.main_task()
+    assert update.read_install(root) == (Version(native_tag), "x86_64")
+    assert script_install.verify_installed_files(root, threading.Event())
+    exact.assert_awaited_once_with(Version(native_tag), native_tag)
+    await instance.final_task()
+
