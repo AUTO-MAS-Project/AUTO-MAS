@@ -108,4 +108,3 @@ class MaaEndInstallAdapter:
             self.root, self.config, recovery_identity=snapshot
         )
         await script_update.confirm_current_install(self.root)
-
