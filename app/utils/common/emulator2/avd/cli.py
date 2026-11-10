@@ -45,9 +45,6 @@ from app.utils import get_logger
 from app.utils.common.process import runner as _utils_process_runner
 from app.utils.common.process.scope import current_process_scope
 
-from .host import AdbPortConflict
-from .instances import config_path, read_ini, resolution_for
-
 logger = get_logger("ModAVD CLI")
 
 #: MAS 认得的 modavd 协议版本。2 是 ModAVDManager 0.3.0 去掉 ``restart`` 命令时升的；MAS 重启本来就是
@@ -86,6 +83,9 @@ UPDATE_LONG_TIMEOUT_SECONDS = 6 * 3600
 CALLER_UPDATE_OPTIONS_PLATFORM = sys.platform == "win32"
 #: 边读边回调 stderr 时单行的上限（进度行很短；超长的行丢掉，不影响结果）。
 _STREAM_LINE_LIMIT = 1024 * 1024
+#: ``modavd adb`` 在跑 adb 之前先确保私有 server 在跑（最多 20 秒）、必要时替模拟器重新登记，
+#: 进程时限在 adb 命令本身的时限上再加这么多秒。
+ADB_PASSTHROUGH_MARGIN_SECONDS = 25.0
 _next_start_at = 0.0
 
 
@@ -167,6 +167,9 @@ ProcessTimeoutHandler = Callable[[asyncio.subprocess.Process], Awaitable[None]]
 #: 按位置收 ``(参数, 时限, 超时收尾, 脱离任务组)``；要边读 stderr 或换环境时另带关键字
 #: ``env`` / ``on_stderr_line``（只在用到时传，别的调用点照旧四个位置参数）。
 Runner = Callable[..., Awaitable[ProcessOutput]]
+#: ``modavd adb`` 透传用：收 ``(参数, 时限, 是否把 stderr 并进 stdout)``，返回
+#: ``(退出码, stdout 原始字节, stderr 原始字节)``；起不来、超时抛 :class:`CLIError`。
+RawRunner = Callable[[Sequence[str], float, bool], Awaitable[tuple[int, bytes, bytes]]]
 
 
 async def _collect(
@@ -286,6 +289,34 @@ async def _run_process(
         _utils_process_runner.decode_bytes(stdout),
         _utils_process_runner.decode_bytes(stderr),
     )
+
+
+async def _run_raw_process(
+    args: Sequence[str], timeout: float, merge_stderr: bool
+) -> tuple[int, bytes, bytes]:
+    """跑一次不带 ``--json`` 的 modavd（``adb`` 透传）：stdout 原样按字节交回，退出码是 adb 的。
+
+    超时或被取消时连同它起的 adb 一起结束（modavd 退出不会带走子进程）。"""
+    try:
+        process = await _utils_process_runner.create_subprocess(
+            *args,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+            if merge_stderr
+            else asyncio.subprocess.PIPE,
+        )
+    except (OSError, ValueError) as exc:
+        raise CLIError("internal", f"启动 modavd 失败: {exc}") from exc
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
+    except (asyncio.CancelledError, TimeoutError) as exc:
+        with suppress(Exception):
+            await _utils_process_runner.stop_process(process, kill_tree=True)
+        if isinstance(exc, asyncio.CancelledError):
+            raise
+        raise CLIError("timeout", f"modavd adb 超过 {timeout:.0f} 秒未结束") from exc
+    return process.returncode or 0, stdout or b"", stderr or b""
 
 
 def _as_text(value: object) -> str:
@@ -441,6 +472,8 @@ def map_cli_error(error: CLIError) -> RuntimeError:
     if error.code == "invalid_argument":
         return ValueError(message)
     if error.code == "port_conflict":
+        from .host import AdbPortConflict
+
         return AdbPortConflict(message)
     if error.code == "precheck_failed":
         from .precheck import PrecheckFailed, PrecheckItem
@@ -467,10 +500,12 @@ class ModAvdCli:
         *,
         exe: str | Path | None = None,
         runner: Runner | None = None,
+        raw_runner: RawRunner | None = None,
     ) -> None:
         self.root = Path(root)
         self.exe = Path(exe) if exe is not None else self.root / CLI_EXE_RELATIVE_PATH
         self._runner = runner or _run_process
+        self._raw_runner = raw_runner or _run_raw_process
 
     @property
     def executable_available(self) -> bool:
@@ -784,9 +819,11 @@ class ModAvdCli:
         *,
         window: bool = False,
         timeout: int | float | None = None,
+        resolution: int | None = None,
     ) -> Any:
-        if resolution_for(read_ini(config_path(self.root, index))) == 1080:
-            # Old CLIs rewrite 1080p to 720p on start. Refuse before they can write.
+        """``resolution`` 是调用方从 ``info`` 拿到的这台实例的分辨率档位（不知道就不传）。"""
+        if resolution == 1080:
+            # 没有 --resolution 的命令行（ModAVDManager 0.4.0 以前）开机时会把 1080p 改回 720p：先拒绝
             await self._resolution_args(1080)
         boot_timeout = int(timeout or DEFAULT_START_TIMEOUT_SECONDS)
         args = [str(index)]
@@ -842,6 +879,37 @@ class ModAvdCli:
     ) -> Any:
         args = [str(index), "--timeout", str(int(timeout)), "--", *command]
         return await self._call("shell", *args, timeout=float(timeout) + 10)
+
+    async def servers(self) -> Any:
+        """``modavd servers``：确保私有和脚本用的两个 adb server 在跑，报两个端口和在不在听。"""
+        return await self._call("servers")
+
+    async def adb(
+        self,
+        index: str | int,
+        *args: str,
+        timeout: float = 20.0,
+        merge_stderr: bool = False,
+    ) -> tuple[int, bytes, bytes]:
+        """``modavd --root <根> --quiet adb <i> -- <参数…>``：在私有 server 上对这台实例跑 adb。
+
+        不带 ``--json``：stdout 是 adb 的原始字节（截图就是 PNG），退出码是 adb 的；modavd 自己的错误
+        和日志只写 stderr（``--quiet`` 只留警告）。``timeout`` 管 adb 命令本身，modavd 先起私有 server、
+        补登记的等待另加 :data:`ADB_PASSTHROUGH_MARGIN_SECONDS`。返回 ``(退出码, stdout, stderr)``，
+        ``merge_stderr`` 时 stderr 并进 stdout、第三项为空；起不来、超时抛 :class:`CLIError`。"""
+        command = [
+            str(self.exe),
+            "--root",
+            str(self.root),
+            "--quiet",
+            "adb",
+            str(index),
+            "--",
+            *args,
+        ]
+        return await self._raw_runner(
+            command, float(timeout) + ADB_PASSTHROUGH_MARGIN_SECONDS, merge_stderr
+        )
 
     async def window(self, index: str | int, *, visible: bool) -> Any:
         """显示或隐藏一个已带窗口开机的实例。"""
@@ -934,6 +1002,7 @@ class ModAvdCli:
 
 
 __all__ = [
+    "ADB_PASSTHROUGH_MARGIN_SECONDS",
     "CLIError",
     "CLI_EXE_RELATIVE_PATH",
     "COMMAND_TIMEOUT_SECONDS",

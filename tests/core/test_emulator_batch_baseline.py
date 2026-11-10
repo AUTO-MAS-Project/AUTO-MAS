@@ -48,6 +48,9 @@ async def test_batch_baseline_keeps_applied_dpi_and_orientation(
     exe = tmp_path / "avd/sdk/emulator/emulator.exe"
     exe.parent.mkdir(parents=True)
     exe.touch()
+    # 添加过的 ModAVD 根目录要有命令行 tools\modavd.exe（门面只看它在不在，不运行它）
+    (exe.parents[2] / "tools").mkdir()
+    (exe.parents[2] / "tools" / "modavd.exe").touch()
     # 两台 720p 实例，8 号是竖屏
     cli = _FakeCli({"7": (1280, 720, 240), "8": (720, 1280, 240)})
     backend = _AvdCore(exe, 60, False, cli=cli)  # type: ignore[arg-type]

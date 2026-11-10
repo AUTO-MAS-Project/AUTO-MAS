@@ -23,7 +23,8 @@
 对门面暴露的方法与雷电 / MuMu 两家后端相同（``open`` / ``close`` / ``getStatus`` /
 ``getInfo`` / ``list_devices`` / 四项设置 / 稳定模式 / 新建删除实例）。开关机、状态、实例设置与
 增删都交给根目录里的 ModAVD 命令行 ``tools\\modavd.exe``（:mod:`.cli`），怎么开机、怎么关机由
-modavd 决定。没有命令行的根目录不支持（:func:`build_manager` 直接报错）。
+modavd 决定。没有命令行的根目录不支持（:func:`build_manager` 直接报错）。MAS 在客体里发的命令
+（清后台、拉起应用、截图、看门狗探活）也走命令行（``modavd shell`` / ``modavd adb``）。
 """
 
 from __future__ import annotations
@@ -31,10 +32,9 @@ from __future__ import annotations
 import asyncio
 import time
 from contextlib import suppress
-from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, NoReturn
+from typing import Any, Awaitable, Callable, NoReturn
 
 import psutil
 
@@ -46,6 +46,7 @@ from app.models.emulator import (
     EmulatorRuntimePolicy,
 )
 from app.utils import get_logger
+from app.utils.common.process import runner as _utils_process_runner
 
 from ..applaunch import (
     AppLaunchMixin,
@@ -56,38 +57,21 @@ from ..settings import FieldValue, InstanceSettings, SettingsConflictError
 from ..settings import validate_changes as validate_setting_changes
 from . import cli as modavd_cli
 from . import host, precheck, updater
-from .components import (
-    component_installed,
-    emulator_exe,
-    missing_components_message,
-    root_from_manager_exe,
-    root_key,
-)
+from .components import root_from_manager_exe, root_key
 from .constants import (
     DISPLAY_PRESETS,
     KEEP_PACKAGES,
-    LOGS_DIR,
-    MAX_NATIVE_INDEX,
-    PORT_BASE,
-    PORT_STEP,
     RECOMMENDED_MEMORY_MB,
-    REQUIRED_COMPONENTS,
     WATCHDOG_INTERVAL_SECONDS,
     WATCHDOG_PROBE_TIMEOUT_SECONDS,
     WATCHDOG_STRIKES,
+    AvdAdbInfo,
     InstancePorts,
-    adb_port,
     avd_name,
-    console_port,
-    default_instance_ports,
     valid_native_index,
 )
 from .instances import (
-    AvdInstance,
     display_changes,
-    instance_meta,
-    list_instances,
-    memory_for,
     validate_fps,
     validate_options,
     validate_resolution,
@@ -226,24 +210,24 @@ def _instance_key(root: Path, native_index: str) -> str:
 
 
 class FreezeWatchdog:
-    """定期探活：adb 不通 **且** qemu 进程 CPU 时间不动，连续 N 次判冻结，强杀并记 ERROR。
+    """定期探活：adb 不通 **且** qemu 进程 CPU 时间不动，连续 N 次判冻结，强制关机并记 ERROR。
 
     两个条件缺一不可：游戏加载时 adb 偶尔会慢（CPU 在跑），模拟器空闲时 CPU 也可能很低
     （adb 仍通）；只有两者同时成立才是预研 §6.6 / §6.20 里那种整机停摆——qemu CPU 归零、
-    adb 与控制台全无响应、``emu kill`` 也没用，只能强杀。
+    adb 与控制台全无响应、``emu kill`` 也没用，只能强制结束（交给 ``modavd stop --force``）。
 
-    探测函数都可注入，单元测试不需要真实模拟器。
+    探测函数都可注入，单元测试不需要真实模拟器；``kill`` 是协程函数。
     """
 
     def __init__(
         self,
         label: str,
         *,
-        probe_adb,
-        cpu_seconds,
-        is_alive,
-        kill,
-        on_frozen,
+        probe_adb: Callable[[], Awaitable[bool]],
+        cpu_seconds: Callable[[], float | None],
+        is_alive: Callable[[], bool],
+        kill: Callable[[], Awaitable[object]],
+        on_frozen: Callable[[str], None],
         interval: float = WATCHDOG_INTERVAL_SECONDS,
         strikes: int = WATCHDOG_STRIKES,
     ) -> None:
@@ -257,7 +241,7 @@ class FreezeWatchdog:
         self.strikes = strikes
 
     async def run(self) -> str:
-        """一直看到实例退出（返回 ``"exited"``）或判冻结并强杀（返回 ``"frozen"``）。"""
+        """一直看到实例退出（返回 ``"exited"``）或判冻结并强制关机（返回 ``"frozen"``）。"""
         misses = 0
         last_cpu = self._cpu_seconds()
         while True:
@@ -284,12 +268,16 @@ class FreezeWatchdog:
                     f"{self.interval * self.strikes:.0f} 秒），已强制结束"
                 )
                 logger.error(f"{self.label} {reason}")
-                self._kill()
+                await self._kill()
                 self._on_frozen(reason)
                 return "frozen"
 
 
-def _start_watchdog(root: Path, native_index: str, pid: int, *, serial: str) -> None:
+def _start_watchdog(
+    root: Path, native_index: str, pid: int, *, cli: modavd_cli.ModAvdCli
+) -> None:
+    """给 modavd 报的 qemu 进程（``pid``）挂看门狗：探活走 ``modavd shell``，判冻结后
+    ``modavd stop --force``。读进程 CPU 时间只是观察，用 psutil。"""
     key = _instance_key(root, native_index)
     existing = _WATCHDOGS.get(key)
     if existing is not None and not existing.done():
@@ -300,20 +288,26 @@ def _start_watchdog(root: Path, native_index: str, pid: int, *, serial: str) -> 
         return
 
     async def probe_adb() -> bool:
-        code, output = await host.run_adb(
-            root,
-            "shell",
-            "echo",
-            "ok",
-            serial=serial,
-            timeout=WATCHDOG_PROBE_TIMEOUT_SECONDS,
+        try:
+            result = await cli.shell(
+                native_index, "echo", "ok", timeout=WATCHDOG_PROBE_TIMEOUT_SECONDS
+            )
+        except modavd_cli.CLIError:
+            return False
+        return (
+            isinstance(result, dict)
+            and result.get("exit_code") == 0
+            and str(result.get("output") or "").strip().endswith("ok")
         )
-        ok = code == 0 and output.strip().endswith("ok")
-        if ok:
-            # 顺带巡检客体日志落盘：私有 server 重启等原因让它退出了就续上
-            with suppress(Exception):
-                await ensure_logcat(root, native_index, serial=serial)
-        return ok
+
+    async def kill() -> None:
+        try:
+            await cli.stop(native_index, force=True)
+        except modavd_cli.CLIError as error:
+            logger.warning(
+                f"ModAVD 实例 {native_index} 判冻结后 modavd stop --force 失败: "
+                f"{error.message}"
+            )
 
     def is_alive() -> bool:
         try:
@@ -329,7 +323,7 @@ def _start_watchdog(root: Path, native_index: str, pid: int, *, serial: str) -> 
         probe_adb=probe_adb,
         cpu_seconds=lambda: host.process_cpu_seconds(process),
         is_alive=is_alive,
-        kill=lambda: host.kill_process_tree(process),
+        kill=kill,
         on_frozen=on_frozen,
     )
     task = asyncio.create_task(watchdog.run(), name=f"avd-watchdog-{key}")
@@ -343,116 +337,49 @@ def _stop_watchdog(root: Path, native_index: str) -> None:
         task.cancel()
 
 
-# ---- 客体日志落盘 ---------------------------------------------------------
-
-
-async def prune_logs(root: Path, idx: str) -> None:
-    """建新日志前清一次这台实例的旧日志（:func:`~.host.prune_logs`）。清理失败不影响开机。"""
-    try:
-        await asyncio.to_thread(host.prune_logs, root, idx)
-    except Exception as e:  # noqa: BLE001 - 清日志失败不能挡住开机
-        logger.warning(f"实例 {idx} 清理旧日志失败: {e}")
-
-
-async def ensure_logcat(root: Path, idx: str, *, serial: str | None = None) -> bool:
-    """这台实例没有在落盘的 logcat 就起一个（文件 ``<根>\\logs\\logcat-mas_<i>-<时间>.txt``），返回起没起。
-
-    按宿主进程表判断（:func:`~.host.find_logcat_processes`），不按本进程的记录：后端重启后上一个
-    进程起的还在跑，不能再起第二份；私有 server 重启时 logcat 客户端会跟着退出，要能重新起来。
-    开机后、重新登记成功后、冻结看门狗每轮巡检时都会调。``serial`` 不传时按默认端口段算。
-    """
-    if serial is None:
-        serial = host.serial_of(console_port(idx))
-    if await asyncio.to_thread(host.find_logcat_processes, root, serial):
-        return False
-    await prune_logs(root, idx)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = Path(root) / LOGS_DIR / f"logcat-{avd_name(idx)}-{stamp}.txt"
-    try:
-        await asyncio.to_thread(host.start_logcat, root, serial, path)
-    except OSError as e:
-        logger.warning(f"实例 {idx} 客体日志落盘没起来: {e}")
-        return False
-    logger.info(f"实例 {idx} 客体日志 → {path}")
-    return True
-
-
-async def _logcat_after_reregister(root: Path, serial: str) -> None:
-    """设备重新登记回来后把落盘续上。
-
-    要重新登记，说明私有 server 换过了：之前起的 logcat 客户端连的是已经没了的 server，不会再出
-    数据，但不一定马上退出（10-04 实测重新登记 7 秒后还在），留着它会让 :func:`ensure_logcat`
-    以为还在落盘。所以先结束这些旧客户端，再起一个新的。
-    """
-    idx = await _index_of_serial(root, serial)
-    if idx is None or idx not in list_instances(root):
-        return
-    stale = await asyncio.to_thread(host.find_logcat_processes, root, serial)
-    for process in stale:
-        with suppress(psutil.Error):
-            process.kill()
-    if stale:
-        await asyncio.to_thread(psutil.wait_procs, stale, 5)
-    await ensure_logcat(root, idx, serial=serial)
-
-
-async def _index_of_serial(root: Path, serial: str) -> str | None:
-    """私有 server 上的序列号 → 实例编号。
-
-    按 CLI ``list`` 返回的各实例 ``serial`` 对应（端口段由 modavd 定，根目录可以设 ``portBase``）；
-    CLI 太老不带 ``serial``、或这次没问到时，按默认端口段反推（那时的 CLI 还不支持 ``portBase``）。
-    根目录没有命令行时不认。
-    """
-    cli = modavd_cli.ModAvdCli(root)
-    if not cli.executable_available:
-        return None
-    data: object = None
-    with suppress(modavd_cli.CLIError):
-        data = await cli.list()
-    raw = data.get("instances") if isinstance(data, dict) else None
-    items = (
-        [item for item in raw if isinstance(item, dict)]
-        if isinstance(raw, list)
-        else []
-    )
-    if any("serial" in item for item in items):
-        return next(
-            (str(item.get("index")) for item in items if item.get("serial") == serial),
-            None,
-        )
-    console = host._console_port_of(serial)
-    if console is None:
-        return None
-    return str((console - PORT_BASE) // PORT_STEP)
-
-
-host.add_reregister_hook(_logcat_after_reregister)
-
-
 # ---- 管理器 ---------------------------------------------------------------
+
+
+def _int_field(data: object, key: str) -> int | None:
+    value = data.get(key) if isinstance(data, dict) else None
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _ports_from_cli(item: dict[str, Any], idx: str) -> InstancePorts:
     """``modavd list/info/status`` 的实例对象 → 端口与序列号。
 
-    ``ports``、``serial`` 是 ModAVDManager v0.3.1（ModAVDManager#39，``portBase``）起才有的字段；
-    更老的 CLI 不带，那时也还不支持 ``portBase``，按默认端口段算。
+    端口段由 modavd 定（根目录可以设 ``portBase``），MAS 不算：``ports`` 不全时报错（ModAVDManager
+    v0.3.1 起才带）。``serial`` 缺着时按 modavd 报的控制台端口写成 ``emulator-<控制台端口>``。
     """
     ports = item.get("ports")
-    values = (
-        [ports.get(key) for key in ("console", "adb", "grpc")]
-        if isinstance(ports, dict)
-        else []
-    )
-    if len(values) != 3 or not all(
-        isinstance(value, int) and not isinstance(value, bool) for value in values
-    ):
-        return default_instance_ports(idx)
+    values = [_int_field(ports, key) for key in ("console", "adb", "grpc")]
     console, adb, grpc = values
+    if console is None or adb is None or grpc is None:
+        raise RuntimeError(f"modavd 没有给出 ModAVD 实例 {idx} 的端口")
     serial = item.get("serial")
     if not isinstance(serial, str) or not serial:
-        serial = host.serial_of(console)
+        serial = f"emulator-{console}"
     return InstancePorts(console, adb, grpc, serial)
+
+
+def _adb_address(item: dict[str, Any]) -> str:
+    """modavd 给的 ``adb_address``；没给时用它报的 adb 端口，都没有时是 ``"Unknown"``。"""
+    address = item.get("adb_address")
+    if isinstance(address, str) and address:
+        return address
+    adb = _int_field(item.get("ports"), "adb")
+    return f"127.0.0.1:{adb}" if adb is not None else "Unknown"
+
+
+def _resolution_of(config: object) -> int | None:
+    """``info`` 的 ``config`` 里这台实例的分辨率档位；旧命令行没有 ``resolution`` 时按宽高认。"""
+    resolution = _int_field(config, "resolution")
+    if resolution is not None:
+        return resolution
+    size = (_int_field(config, "width"), _int_field(config, "height"))
+    if None in size:
+        return None
+    return 1080 if size in ((1920, 1080), (1080, 1920)) else 720
 
 
 class _AvdCore(DeviceBase):
@@ -476,26 +403,17 @@ class _AvdCore(DeviceBase):
                 Path=str(manager_exe),
             )
         )
-        #: 根目录的 ModAVD 命令行（:func:`build_manager` 给的，做过版本检查）。
+        #: 根目录的 ModAVD 命令行（:func:`build_manager` 给的，平时做过版本检查）。
         self._cli = cli
 
     # ---- 查询 -----------------------------------------------------------
-
-    def _instances(self) -> dict[str, AvdInstance]:
-        return list_instances(self.root)
-
-    def _instance(self, idx: str) -> AvdInstance:
-        instance = self._instances().get(str(idx))
-        if instance is None:
-            raise RuntimeError(f"ModAVD 实例 {idx} 不存在")
-        return instance
 
     def _raise_cli_error(self, error: modavd_cli.CLIError) -> NoReturn:
         """把 modavd 的机读错误还原成旧管理器的异常类型。"""
         raise modavd_cli.map_cli_error(error) from error
 
     async def _raise_cli_precheck(
-        self, error: modavd_cli.CLIError, memory_mb: int
+        self, error: modavd_cli.CLIError, memory_mb: int | None
     ) -> NoReturn:
         """用一次 check 找回 CLI 错误信封没有携带的具体阻断项。"""
         if error.code != "precheck_failed":
@@ -553,32 +471,45 @@ class _AvdCore(DeviceBase):
             raise RuntimeError("modavd 返回的实例数据不是对象")
         return data
 
-    async def instance_ports(self, idx: str) -> InstancePorts:
-        """这台实例的端口与序列号（:class:`~.constants.InstancePorts`）。
-
-        问一次 ``modavd info``，用它给的 ``ports`` / ``serial``（根目录可能设了 ``portBase``，
-        规则在 modavd 里）；一次操作里问一次，结果在这次操作里接着用，不要每算一个端口起一次进程。
-        MAS 正在换上新版（:func:`.updater.update_in_progress`）时不起 modavd，按默认端口段给个中性结果。
-        """
+    async def adb_info(self, idx: str) -> AvdAdbInfo:
+        """给脚本配 adb 用的数据（:class:`~.constants.AvdAdbInfo`）：问一次 ``modavd list``，取根目录的
+        ``adb_exe``、``adb_server_port`` 和这台实例的端口。MAS 正在换上新版时不起 modavd，直接报错。"""
         idx = str(idx)
         if updater.update_in_progress(self.root):
-            return default_instance_ports(idx)
+            raise RuntimeError("ModAVD 正在更新，更新完再用")
         try:
-            data = await self._cli.info(idx)
+            data = await self._cli.list()
         except modavd_cli.CLIError as error:
             self._raise_cli_error(error)
-        return _ports_from_cli(self._cli_data_instance(data), idx)
+        if not isinstance(data, dict):
+            raise RuntimeError("modavd list 返回的数据不是对象")
+        adb_exe = data.get("adb_exe")
+        server_port = _int_field(data, "adb_server_port")
+        if not isinstance(adb_exe, str) or not adb_exe or not server_port:
+            raise RuntimeError("modavd list 没有给出 adb_exe / adb_server_port")
+        instances = data.get("instances")
+        item = next(
+            (
+                raw
+                for raw in (instances if isinstance(instances, list) else [])
+                if isinstance(raw, dict) and str(raw.get("index", "")) == idx
+            ),
+            None,
+        )
+        if item is None:
+            raise RuntimeError(f"ModAVD 实例 {idx} 不存在")
+        return AvdAdbInfo(adb_exe, server_port, _ports_from_cli(item, idx))
 
     def _device_info_from_cli(self, data: object) -> DeviceInfo:
-        """把 ``list/info/status/start`` 的实例对象映射成公共设备信息。"""
+        """把 ``list/info/status/start`` 的实例对象映射成公共设备信息。
+
+        ``pid`` 是 modavd 报的 qemu 进程；用 psutil 只读它的启动时刻、看它是不是无头开的（观察）。"""
         item = self._cli_data_instance(data)
         index = str(item.get("index", ""))
         status = map_status(item.get("status"), item.get("busy"))
-        address = item.get("adb_address")
-        if not isinstance(address, str) or not address:
-            address = f"127.0.0.1:{adb_port(index)}" if index else ""
+        address = _adb_address(item)
         pid = item.get("pid")
-        if not isinstance(pid, int) or pid <= 0:
+        if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
             pid = None
         running = item.get("running") is True or pid is not None
         started_at: float | None = None
@@ -586,13 +517,8 @@ class _AvdCore(DeviceBase):
         if pid is not None:
             try:
                 process = psutil.Process(pid)
-                process_exe = Path(process.exe()).resolve()
-                emulator_dir = Path(emulator_exe(self.root)).resolve().parent
-                if emulator_dir not in process_exe.parents:
-                    pid = None
-                else:
-                    started_at = process.create_time()
-                    headless = _qemu_headless(process)
+                started_at = process.create_time()
+                headless = _qemu_headless(process)
             except (OSError, psutil.Error):
                 pid = None
         window = item.get("window")
@@ -624,13 +550,10 @@ class _AvdCore(DeviceBase):
             key = str(item.get("index", ""))
             if not key or (idx is not None and key != str(idx)):
                 continue
-            address = item.get("adb_address")
-            if not isinstance(address, str) or not address:
-                address = f"127.0.0.1:{adb_port(key)}"
             result[key] = DeviceInfo(
                 str(item.get("title") or item.get("name") or key),
                 DeviceStatus.OFFLINE,
-                address,
+                _adb_address(item),
             )
         return result
 
@@ -727,13 +650,6 @@ class _AvdCore(DeviceBase):
 
     # ---- 启动 -----------------------------------------------------------
 
-    def _check_components(self) -> None:
-        missing = [
-            c.name for c in REQUIRED_COMPONENTS if not component_installed(self.root, c)
-        ]
-        if missing:
-            raise RuntimeError(missing_components_message(missing))
-
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         """开机（``modavd start``）。同一台实例上的 open 排队：前一次还没做完，后一次先等它，免得两次
         同时开同一台。等太久（:data:`_OPENING_WAIT_EXTRA_SECONDS` 加最长启动等待）就记日志、顶替前一次
@@ -756,14 +672,22 @@ class _AvdCore(DeviceBase):
         _FROZEN.pop(key, None)
         if updater.update_in_progress(self.root):
             raise RuntimeError("ModAVD 正在更新，更新完再开机")
-        if await self._cli_creating(idx):
+        # 开机前问一次 info：新建中不开机；内存只用来对照推荐值记日志、拦截时查检查项；分辨率给 start
+        # 判断旧命令行会不会把 1080p 改回 720p。问不到不拦，交给 start 自己报
+        current = await self._instance_info(idx)
+        if (
+            current is not None
+            and map_status(current.get("status"), current.get("busy"))
+            == DeviceStatus.CREATING
+        ):
             raise RuntimeError(
                 f"ModAVD 实例 {idx} 正在新建（后台开机做初始化），等新建完成再开机"
             )
-        self._check_components()
-        memory_mb = memory_for(instance_meta(self.root, idx))
+        config = current.get("config") if current is not None else None
+        memory_mb = _int_field(config, "memory_mb")
+        resolution = _resolution_of(config)
         recommended = RECOMMENDED_MEMORY_MB.get(self._open_package or "")
-        if recommended and memory_mb < recommended:
+        if recommended and memory_mb is not None and memory_mb < recommended:
             logger.warning(
                 f"ModAVD 实例 {idx} 内存 {memory_mb} MB，低于 {self._open_package} 的推荐值 "
                 f"{recommended} MB，可在实例设置里调大"
@@ -774,6 +698,7 @@ class _AvdCore(DeviceBase):
                     idx,
                     window=self._open_window,
                     timeout=max_wait,
+                    resolution=resolution,
                 )
             except modavd_cli.CLIError as error:
                 await self._raise_cli_precheck(error, memory_mb)
@@ -798,6 +723,7 @@ class _AvdCore(DeviceBase):
                     idx,
                     window=self._open_window,
                     timeout=max_wait,
+                    resolution=resolution,
                 )
             if not isinstance(data, dict):
                 raise RuntimeError("modavd start 重试返回的数据不是对象")
@@ -807,9 +733,7 @@ class _AvdCore(DeviceBase):
             # 运行中不切换有没有窗口：开机后方式和这次要的不一样，就是本来就开着
             with suppress(psutil.Error):
                 self._log_window_mode(idx, psutil.Process(info.process_id))
-            # 端口段由 modavd 定（根目录可以设 portBase），看门狗用 start 返回的序列号
-            ports = _ports_from_cli(self._cli_data_instance(raw_instance), idx)
-            _start_watchdog(self.root, idx, info.process_id, serial=ports.serial)
+            _start_watchdog(self.root, idx, info.process_id, cli=self._cli)
         logger.info(
             f"ModAVD 实例 {idx} 已由 modavd start 启动"
             f"（{'带窗口' if self._open_window else '静默'}）"
@@ -836,21 +760,25 @@ class _AvdCore(DeviceBase):
             f"接着用{running}的"
         )
 
-    async def _cli_creating(self, idx: str) -> bool:
-        """这台是不是正在新建（modavd v0.2.0 起 create 建完文件还要在后台开机做初始化）。
+    async def _instance_info(self, idx: str) -> dict[str, Any] | None:
+        """``modavd info <i>`` 的实例对象；问不到（命令行报错、返回的不是对象）返回 ``None``。"""
+        try:
+            data = await self._cli.info(idx)
+        except modavd_cli.CLIError as error:
+            logger.debug(f"ModAVD 实例 {idx} 的 modavd info 失败: {error.message}")
+            return None
+        return data if isinstance(data, dict) else None
 
-        先看 ``mas-avd.json`` 里的 ``creationState``（modavd 自己写的），记着 ``creating`` 再问 modavd：
-        新建程序中途被结束的也留着 ``creating``，modavd 按新建失败报，不算新建中。平常一次子进程都不起。
-        记着 ``creating`` 却问不到 modavd 时不放行：这时贸然关机可能正好打断新建。"""
-        if instance_meta(self.root, idx).get("creationState") != "creating":
-            return False
+    async def _cli_creating(self, idx: str) -> bool:
+        """这台是不是正在新建（modavd v0.2.0 起 create 建完文件还要在后台开机做初始化）：问 ``modavd status``。
+
+        新建程序中途被结束的，modavd 按新建失败报，不算新建中。问不到 modavd 时当作不是：modavd 的
+        ``stop`` / ``start`` 自己也拒绝新建中的实例（报 busy），不会把新建打断。"""
         try:
             data = await self._cli.status(idx)
         except modavd_cli.CLIError as error:
-            raise RuntimeError(
-                f"ModAVD 实例 {idx} 可能还在新建，但查不到 modavd 的状态（{error.message}），"
-                "稍后再试"
-            ) from error
+            logger.debug(f"ModAVD 实例 {idx} 的 modavd status 失败: {error.message}")
+            return False
         return (
             isinstance(data, dict)
             and map_status(data.get("status"), data.get("busy"))
@@ -860,21 +788,18 @@ class _AvdCore(DeviceBase):
     # ---- 客体命令 -------------------------------------------------------
 
     async def _shell(
-        self,
-        idx: str,
-        command: str,
-        timeout: float = 30.0,
-        *,
-        serial: str | None = None,
+        self, idx: str, command: str, timeout: float = 30.0
     ) -> tuple[int, str]:
-        """``serial`` 传 :meth:`instance_ports` 给的；不传时按默认端口段算。"""
-        return await host.run_adb(
-            self.root,
-            "shell",
-            command,
-            serial=serial or host.serial_of(console_port(idx)),
-            timeout=timeout,
-        )
+        """在客体里跑一条 shell 命令（``modavd shell``），返回 ``(退出码, 合并输出)``。**不抛异常**：
+        命令行报错时退出码为 -1、输出是它的说明。"""
+        try:
+            result = await self._cli.shell(idx, command, timeout=timeout)
+        except modavd_cli.CLIError as error:
+            return -1, error.message
+        if not isinstance(result, dict):
+            return -1, "modavd shell 返回的数据不是对象"
+        code = _int_field(result, "exit_code")
+        return (-1 if code is None else code), str(result.get("output") or "").strip()
 
     # ---- 关机 -----------------------------------------------------------
 
@@ -1043,42 +968,27 @@ class _AvdCore(DeviceBase):
         fps: int | None = None,
         resolution: int | None = None,
     ) -> str:
-        """新建实例，返回原生索引。不给索引就取最小的、端口也空着的那个。
+        """新建实例，返回原生索引。不给索引就交给 modavd 挑（最小的、端口也空着的那个）。
 
         内存、核数、帧率不给就用默认 6 GB / 6 核 / 60（:data:`~.constants.DEFAULT_MEMORY_MB` /
-        ``DEFAULT_CPU`` / ``DEFAULT_FPS``）；分辨率默认 1080p / DPI 280。
+        ``DEFAULT_CPU`` / ``DEFAULT_FPS``）；分辨率默认 1080p / DPI 280。组件齐不齐、电脑能不能开机
+        由 ``modavd check`` 回答，有拦截项就不建。
         """
         memory, cores, data_gb = validate_options(memory_mb, cpu, data_partition_gb)
         refresh = validate_fps(fps)
         preset = validate_resolution(resolution)
         if updater.update_in_progress(self.root):
             raise RuntimeError("ModAVD 正在更新，更新完再新建实例")
-        self._check_components()
         try:
             check_result = await self._cli.check(memory=memory)
         except modavd_cli.CLIError as error:
             await self._raise_cli_precheck(error, memory)
         self._raise_blocking_check_items(check_result, "ModAVD 开机前检查未通过")
-        if native_index is None:
-            listing = await self._cli.list()
-            raw_items = (
-                listing.get("instances", []) if isinstance(listing, dict) else []
-            )
-            existing = {
-                int(raw["index"])
-                for raw in raw_items
-                if isinstance(raw, dict) and str(raw.get("index", "")).isdigit()
-            }
-            # 根目录换了端口段（portBase，modavd 0.3.1 起 list 带 port_base）时，空闲编号由
-            # modavd 按它自己的端口段挑；下面 _free_index 只认得默认端口段
-            port_base = listing.get("port_base") if isinstance(listing, dict) else None
-            if port_base in (None, PORT_BASE):
-                native_index = await asyncio.to_thread(self._free_index, existing)
-        else:
+        if native_index is not None:
             native_index = int(native_index)
             if not valid_native_index(native_index):
                 raise ValueError(f"原生索引 {native_index} 不可用")
-        # 上面的检查和选编号要等几个子进程，更新可能在这期间开始：起 create 之前再看一次
+        # 上面的检查要等子进程，更新可能在这期间开始：起 create 之前再看一次
         if updater.update_in_progress(self.root):
             raise RuntimeError("ModAVD 正在更新，更新完再新建实例")
         try:
@@ -1100,17 +1010,6 @@ class _AvdCore(DeviceBase):
         logger.info(f"已由 modavd create 新建 ModAVD 实例 {index}")
         return str(index)
 
-    @staticmethod
-    def _free_index(existing: set[int]) -> int:
-        for index in range(0, MAX_NATIVE_INDEX + 1):
-            if not valid_native_index(index) or index in existing:
-                continue
-            port = console_port(index)
-            if host.busy_ports([port, port + 1, port + 2]):
-                continue
-            return index
-        raise RuntimeError("ModAVD 实例已满（端口段 20000–20100 最多 9 台）")
-
     async def delete_instance(self, native_index: str) -> None:
         if updater.update_in_progress(self.root):
             raise RuntimeError("ModAVD 正在更新，更新完再删除实例")
@@ -1124,18 +1023,25 @@ class _AvdCore(DeviceBase):
     # ---- 实例选项 ------------------------------------------------------
 
     async def instance_options(self, idx: str) -> dict[str, Any]:
-        instance = self._instance(idx)
-        meta = instance_meta(self.root, idx)
-        ports = await self.instance_ports(idx)
+        """``/avd/instance/options``：一次 ``modavd info`` 的设置、首次开机记下的渲染器和端口。"""
+        idx = str(idx)
+        if updater.update_in_progress(self.root):
+            raise RuntimeError("ModAVD 正在更新，更新完再看")
+        try:
+            item = self._cli_data_instance(await self._cli.info(idx))
+        except modavd_cli.CLIError as error:
+            self._raise_cli_error(error)
+        config = item.get("config")
+        ports = _ports_from_cli(item, idx)
         return {
-            "memoryMb": memory_for(meta),
-            "cpu": instance.cpu,
-            "fps": instance.fps,
-            "dataPartitionGb": instance.data_partition_gb,
-            "initialized": bool(meta.get("initialized", False)),
-            "launcher": meta.get("launcher") or "",
-            "renderer": meta.get("renderer") or "",
-            "softwareRenderer": bool(meta.get("softwareRenderer", False)),
+            "memoryMb": _int_field(config, "memory_mb"),
+            "cpu": _int_field(config, "cpu"),
+            "fps": _int_field(config, "fps"),
+            "dataPartitionGb": _int_field(config, "data_partition_gb"),
+            "initialized": item.get("initialized") is True,
+            "launcher": str(item.get("launcher") or ""),
+            "renderer": str(item.get("renderer") or ""),
+            "softwareRenderer": item.get("software_renderer") is True,
             "consolePort": ports.console,
             "adbPort": ports.adb,
             "grpcPort": ports.grpc,
@@ -1194,34 +1100,41 @@ def _display_settings(current: dict, changes: dict[str, int]) -> dict[str, int]:
 
 
 class AvdHostAdb:
-    """MAS 宿主进程对一台 ModAVD 实例发 adb 命令的通道：私有 server ``-P <adbServerPort>
-    -s emulator-<控制台端口>``。脚本的 adb server 杀不到它，丢设备时 :func:`host.run_adb` 会重新登记。
+    """MAS 宿主进程对一台 ModAVD 实例发 adb 命令的通道：``modavd adb <i> -- <参数…>``（私有 server，
+    脚本的 adb server 杀不到它；server 没在跑、设备丢了由 modavd 起好、重新登记）。
 
-    调用约定同 :data:`~..applaunch.AdbRunner`：``await runner(*args, timeout=…)`` → ``(返回码, 输出)``。
-    给游戏更新检查（:func:`app.utils.common.game_apk.adb_runner_scope`）与失败截图（:meth:`screencap_png`）用。
+    调用约定同 :data:`~..applaunch.AdbRunner`：``await runner(*args, timeout=…)`` → ``(返回码, 输出)``，
+    **不抛异常**（命令行起不来、超时时返回码 -1、输出是说明）。给拉起应用、游戏更新检查
+    （:func:`app.utils.common.game_apk.adb_runner_scope`）与失败截图（:meth:`screencap_png`）用。
     """
 
-    def __init__(self, root: Path, native_index: str, *, serial: str) -> None:
-        self.root = Path(root)
+    def __init__(self, cli: modavd_cli.ModAvdCli, native_index: str) -> None:
+        self._cli = cli
         self.native_index = str(native_index)
-        self.serial = serial
 
     async def __call__(self, *args: str, timeout: float = 20.0) -> tuple[int, str]:
-        return await host.run_adb(self.root, *args, serial=self.serial, timeout=timeout)
+        try:
+            code, output, _ = await self._cli.adb(
+                self.native_index, *args, timeout=timeout, merge_stderr=True
+            )
+        except modavd_cli.CLIError as error:
+            return -1, error.message
+        return code, _utils_process_runner.decode_bytes(output).strip()
 
     async def screencap_png(self, timeout: float = 30.0) -> bytes:
         """``exec-out screencap -p`` 的 PNG 字节；失败抛 ``RuntimeError``。"""
-        code, data, error = await host.run_adb_bytes(
-            self.root,
-            "exec-out",
-            "screencap",
-            "-p",
-            serial=self.serial,
-            timeout=timeout,
-        )
-        if code != 0 or not data.startswith(b"\x89PNG"):
+        try:
+            code, data, error = await self._cli.adb(
+                self.native_index, "exec-out", "screencap", "-p", timeout=timeout
+            )
+        except modavd_cli.CLIError as exc:
             raise RuntimeError(
-                f"ModAVD 实例 {self.native_index} 截图失败（返回码 {code}）: {error[-200:]}"
+                f"ModAVD 实例 {self.native_index} 截图失败: {exc.message}"
+            ) from exc
+        if code != 0 or not data.startswith(b"\x89PNG"):
+            detail = _utils_process_runner.decode_bytes(error).strip()
+            raise RuntimeError(
+                f"ModAVD 实例 {self.native_index} 截图失败（返回码 {code}）: {detail[-200:]}"
             )
         return data
 
@@ -1229,7 +1142,7 @@ class AvdHostAdb:
 class AvdManager(AppLaunchMixin, _AvdCore):
     """一条 ModAVD 安装的管理器。
 
-    ``AppLaunchMixin.open`` 先开机再拉应用；这里把拉应用改走私有 adb、先结束其它第三方游戏。
+    ``AppLaunchMixin.open`` 先开机再拉应用；这里把拉应用改走 ``modavd adb``、先结束其它第三方游戏。
     """
 
     store_package = None
@@ -1252,10 +1165,12 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         self.runtime_policy = runtime_policy
 
     async def host_adb(self, idx: str) -> AvdHostAdb:
-        """宿主进程对这台实例发 adb 命令的通道（走私有 server，见 :class:`AvdHostAdb`）。"""
-        self._instance(idx)
-        ports = await self.instance_ports(idx)
-        return AvdHostAdb(self.root, str(idx), serial=ports.serial)
+        """宿主进程对这台实例发 adb 命令的通道（``modavd adb``，见 :class:`AvdHostAdb`）。
+
+        不先问实例在不在（省一个进程）：不在时每条命令由 modavd 报错。MAS 正在换上新版时报错。"""
+        if updater.update_in_progress(self.root):
+            raise RuntimeError("ModAVD 正在更新，更新完再用")
+        return AvdHostAdb(self._cli, str(idx))
 
     async def open(
         self, idx: str, package_name: str = "", *, manual: bool = False
@@ -1274,16 +1189,11 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         """重启 = 先关机再开机（modavd 0.3.0 起没有 ``restart`` 命令）。
 
         开机照 :meth:`open` 按这次的入口定有没有窗口；关机和开机之间不算运行中切换。看门狗、开机错开、
-        开机超时和取消的收尾都由 :meth:`close` / :meth:`open` 各自做。先把更新中、新建中、
-        组件不全这几种开不了机的情况拦在关机之前，免得关掉了再开不起来。"""
+        开机超时和取消的收尾都由 :meth:`close` / :meth:`open` 各自做。更新中在这里拦；新建中由
+        :meth:`close` 在关机之前拦（``modavd status``），免得关掉了再开不起来。"""
         idx = str(idx)
         if updater.update_in_progress(self.root):
             raise RuntimeError("ModAVD 正在更新，更新完再重启")
-        if await self._cli_creating(idx):
-            raise RuntimeError(
-                f"ModAVD 实例 {idx} 正在新建（后台开机做初始化），等新建完成再重启"
-            )
-        self._check_components()
         await self.close(idx)
         return await self.open(idx, manual=manual)
 
@@ -1295,13 +1205,8 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         *,
         launch_timeout: float | None = None,
     ) -> AppLaunchResult:
-        serial = (await self.instance_ports(idx)).serial
-        root = self.root
-
-        async def run_adb(*args: str, timeout: float = 20.0) -> tuple[int, str]:
-            return await host.run_adb(root, *args, serial=serial, timeout=timeout)
-
-        await self.stop_background_games(idx, keep=package_name, serial=serial)
+        guest_adb = AvdHostAdb(self._cli, str(idx))
+        await self.stop_background_games(idx, keep=package_name)
         deadline = time.monotonic() + 30.0
         while time.monotonic() < deadline:
             try:
@@ -1329,23 +1234,21 @@ class AvdManager(AppLaunchMixin, _AvdCore):
             )
         max_wait = float(self.config.Info.MaxWaitTime)
         return await ensure_app_running(
-            run_adb,
+            guest_adb,
             package_name,
             boot_timeout=min(max_wait, _BOOT_TIMEOUT_CAP),
             launch_timeout=launch_timeout or min(max_wait, _LAUNCH_TIMEOUT_CAP),
             label=str(idx),
         )
 
-    async def stop_background_games(
-        self, idx: str, keep: str, *, serial: str | None = None
-    ) -> list[str]:
+    async def stop_background_games(self, idx: str, keep: str) -> list[str]:
         """前台只留要跑的那个游戏，其余第三方应用直接结束（用户 09-26 定）。
 
         只动 ``pm list packages -3``（用户装的应用）；系统包、谷歌服务不在其中。桌面与当前
         输入法另外排除。冻结不释放内存，低内存下后台游戏应当直接结束（预研 §6.11）。
-        ``serial`` 是调用方这次已经问到的序列号（:meth:`instance_ports`）。
+        客体命令走 ``modavd shell``（:meth:`_shell`）。
         """
-        code, output = await self._shell(idx, "pm list packages -3", serial=serial)
+        code, output = await self._shell(idx, "pm list packages -3")
         if code != 0:
             logger.warning(f"实例 {idx} 列第三方应用失败，跳过后台清理: {output}")
             return []
@@ -1354,9 +1257,7 @@ class AvdManager(AppLaunchMixin, _AvdCore):
             for line in output.splitlines()
             if line.startswith("package:")
         ]
-        _, ime = await self._shell(
-            idx, "settings get secure default_input_method", serial=serial
-        )
+        _, ime = await self._shell(idx, "settings get secure default_input_method")
         ime_package = ime.strip().split("/", 1)[0]
         targets = [
             package
@@ -1368,9 +1269,7 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         if not targets:
             return []
         await self._shell(
-            idx,
-            " ; ".join(f"am force-stop {package}" for package in targets),
-            serial=serial,
+            idx, " ; ".join(f"am force-stop {package}" for package in targets)
         )
         logger.info(f"实例 {idx} 已结束后台应用: {targets}")
         return targets
@@ -1394,9 +1293,15 @@ async def build_manager(
     """与雷电 / MuMu 的 ``build_manager`` 同签名。``manager_exe`` 是 ``sdk\\emulator\\emulator.exe``。
 
     根目录里没有命令行 ``tools\\modavd.exe`` 就报错；有就先做版本检查（:func:`~.cli.resolve_cli`）。
+    MAS 自己的换上正在跑（:func:`.updater.update_in_progress`）时 ``modavd.exe`` 可能正被换掉，不起它做
+    版本检查，直接给一个不验版本的客户端：这期间只读查询本来就不起 modavd，会改东西的操作一律拒绝。
     """
     root = root_from_manager_exe(manager_exe)
-    cli = await modavd_cli.resolve_cli(root)
+    cli: modavd_cli.ModAvdCli | None
+    if updater.update_in_progress(root):
+        cli = modavd_cli.ModAvdCli(root)
+    else:
+        cli = await modavd_cli.resolve_cli(root)
     if cli is None:
         raise RuntimeError(f"找不到 ModAVD 命令行 {modavd_cli.ModAvdCli(root).exe}")
     return AvdManager(
@@ -1409,9 +1314,9 @@ async def build_manager(
 
 
 __all__ = [
+    "AvdHostAdb",
     "AvdManager",
     "FreezeWatchdog",
     "build_manager",
     "opening_instances",
-    "emulator_exe",
 ]

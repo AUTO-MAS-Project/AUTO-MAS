@@ -15,7 +15,9 @@ from loguru import logger as loguru_logger
 
 from app.core.emulator_manager.operations import EmulatorOperations
 from app.models.emulator import DeviceStatus, EmulatorRuntimePolicy
+from app.utils.common.emulator2 import detect
 from app.utils.common.emulator2.avd import cli as cli_module
+from app.utils.common.emulator2.avd import host as host_module
 from app.utils.common.emulator2.avd import manager as manager_module
 from app.utils.common.emulator2.avd import service as service_module
 from app.utils.common.emulator2.avd import updater as updater_module
@@ -29,7 +31,6 @@ from app.utils.common.emulator2.avd.cli import (
     _run_process,
     resolve_cli,
 )
-from app.utils.common.emulator2.avd.instances import config_path, write_ini
 from app.utils.common.emulator2.avd.manager import _AvdCore
 
 
@@ -266,7 +267,6 @@ class _FakeManagerCli:
 async def test_manager_create_timeout_preserves_cli_error_cause(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(_AvdCore, "_check_components", lambda self: None)
     manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
     cli = _FakeManagerCli()
     cli.create_error = CLIError("timeout", "超时", "查看日志")
@@ -803,6 +803,9 @@ async def test_open_retries_start_when_guest_script_push_failed(
         def __init__(self) -> None:
             self.starts = 0
 
+        async def info(self, index: str) -> dict:
+            return {"index": int(index), "status": "offline"}
+
         async def start(self, index: str, **kwargs: object) -> dict:
             self.starts += 1
             warnings = ["写客体脚本 mas-idlepoll.sh 失败: 文件被占用"]
@@ -811,7 +814,6 @@ async def test_open_retries_start_when_guest_script_push_failed(
                 "instance": {"index": int(index), "status": "online"},
             }
 
-    monkeypatch.setattr(_AvdCore, "_check_components", lambda self: None)
     cli = StartCli()
     manager_exe = tmp_path / "sdk" / "emulator" / "emulator.exe"
     manager = _AvdCore(manager_exe, 60, False, cli=cli)  # type: ignore[arg-type]
@@ -828,10 +830,6 @@ async def test_creating_instance_shows_creating_and_is_never_stopped_or_started(
 ) -> None:
     fake = _FakeModavd(tmp_path, monkeypatch)
     root = _root_with_exe(tmp_path)
-    (root / "mas-avd.json").write_text(
-        json.dumps({"instances": {"7": {"creationState": "creating"}}}),
-        encoding="utf-8",
-    )
     version = {"data": {"version": "0.2.0", "protocol": 1}}
     creating = {
         "index": 7,
@@ -843,15 +841,15 @@ async def test_creating_instance_shows_creating_and_is_never_stopped_or_started(
     fake.plan(
         version=version,
         status={"data": creating},
+        info={"data": creating},
         list={"data": {"instances": [creating]}},
     )
-    monkeypatch.setattr(_AvdCore, "_check_components", lambda self: None)
     manager = await manager_module.build_manager(
         str(root / "sdk" / "emulator" / "emulator.exe"), 60, runtime_policy=_policy()
     )
 
     assert (await manager.getInfo(None))["7"].status == DeviceStatus.CREATING
-    # modavd stop 不拦新建中的实例，MAS 自己拦：关机、重启会打断后台初始化
+    # MAS 先问 modavd 的状态再拦：关机、重启会打断后台初始化，开机要等新建完成
     with pytest.raises(RuntimeError, match="正在新建"):
         await manager.close("7")
     with pytest.raises(RuntimeError, match="正在新建"):
@@ -860,17 +858,7 @@ async def test_creating_instance_shows_creating_and_is_never_stopped_or_started(
         await manager.open("7", manual=True)
     assert not {"stop", "start", "restart"} & set(fake.commands())
 
-    # 记着新建中、却问不到 modavd 的状态：不放行，免得正好打断新建
-    fake.plan(
-        version=version,
-        status={"error": {"code": "internal", "message": "状态读不出"}, "exit": 1},
-    )
-    with pytest.raises(RuntimeError, match="查不到 modavd 的状态"):
-        await manager.close("7")
-    assert "stop" not in fake.commands()
-
-    # 新建程序中途被结束：mas-avd.json 还记着 creating，modavd 按新建失败报；列表显示新建失败和原因，
-    # 照常能关、能删
+    # 新建程序中途被结束：modavd 按新建失败报；列表显示新建失败和原因，照常能关、能删
     failed = {
         **creating,
         "status": "create_failed",
@@ -1000,7 +988,6 @@ async def test_restart_is_stop_then_start_and_running_mode_is_never_switched(
         window={"data": {"index": 7, "windows": 0}},
         status={"data": {"index": 7, "status": "online"}},
     )
-    monkeypatch.setattr(_AvdCore, "_check_components", lambda self: None)
     # 静默模式开着：任务拉起无头，模拟器页手动启动带窗口
     manager = await manager_module.build_manager(
         str(root / "sdk" / "emulator" / "emulator.exe"), 60, runtime_policy=_policy()
@@ -1010,11 +997,16 @@ async def test_restart_is_stop_then_start_and_running_mode_is_never_switched(
     await manager.restart("7")
     await manager.restart("7", manual=True)
     calls = [(item["command"], item["args"]) for item in fake.calls()]
+    # 关机前问一次 status（新建中不关），开机前问一次 info（新建中不开、分辨率给 start 判断）
     assert [command for command, _ in calls] == [
         "version",
+        "status",
         "stop",
+        "info",
         "start",
+        "status",
         "stop",
+        "info",
         "start",
     ]
     starts = [args for command, args in calls if command == "start"]
@@ -1026,6 +1018,7 @@ async def test_restart_is_stop_then_start_and_running_mode_is_never_switched(
     assert (await manager.open("7", manual=True)).status == DeviceStatus.ONLINE
     await manager.setVisible("7", True)
     assert [item["command"] for item in fake.calls()[before:]] == [
+        "info",
         "start",
         "window",
         "status",
@@ -1045,7 +1038,7 @@ async def test_restart_is_stop_then_start_and_running_mode_is_never_switched(
     before = len(fake.calls())
     with pytest.raises(RuntimeError, match="正在无头运行（建议：先关机再换成带窗口）"):
         await manager.open("7", manual=True)
-    assert [item["command"] for item in fake.calls()[before:]] == ["start"]
+    assert [item["command"] for item in fake.calls()[before:]] == ["info", "start"]
 
 
 async def _until(predicate, timeout: float = 10.0) -> None:
@@ -1257,19 +1250,156 @@ async def test_resolution_flags_and_old_cli_compatibility(
                 assert ("--resolution" in command) == supports_presets
                 if supports_presets:
                     assert command[command.index("--resolution") + 1] == str(resolution)
-    path = config_path(tmp_path, 7)
-    path.parent.mkdir(parents=True)
-    for width, height in ((1280, 720), (1920, 1080), (1080, 1920)):
-        write_ini(path, {"hw.lcd.width": str(width), "hw.lcd.height": str(height)})
-        before = path.read_bytes()
+    # start 的分辨率由调用方从 info 拿来：1080p 的实例碰上没有 --resolution 的旧命令行先拒绝
+    for resolution in (None, 720, 1080):
         writes.clear()
-        if not supports_presets and max(width, height) == 1920:
+        if not supports_presets and resolution == 1080:
             with pytest.raises(CLIError) as caught:
-                await cli.start(7)
+                await cli.start(7, resolution=resolution)
             assert caught.value.code == "unsupported"
             assert writes == []
         else:
-            await cli.start(7)
+            await cli.start(7, resolution=resolution)
             assert len(writes) == 1
             assert "start" in writes[0]
-        assert path.read_bytes() == before
+
+
+# ---- MAS 自己不再碰 adb、进程和 ModAVD 的文件 ------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_host_adb_goes_through_modavd_adb_and_keeps_png_bytes(
+    tmp_path: Path,
+) -> None:
+    png = b"\x89PNG\r\n\x1a\n\x00\xff\r\n"
+    calls: list[tuple[list[str], bool]] = []
+
+    async def raw_runner(
+        args: Sequence[str], timeout: float, merge_stderr: bool
+    ) -> tuple[int, bytes, bytes]:
+        calls.append((list(args), merge_stderr))
+        if "screencap" in args:
+            return 0, png, b""
+        return 0, b"package:a\r\n", b""
+
+    cli = ModAvdCli(tmp_path, exe="modavd.exe", raw_runner=raw_runner)
+    adb = manager_module.AvdHostAdb(cli, "7")
+
+    # 截图的字节原样交回（不解码、不换行转换），其余命令的输出合并 stderr 后解码
+    assert await adb.screencap_png() == png
+    assert await adb("shell", "pm", "path", "a", timeout=5) == (0, "package:a")
+    head = ["modavd.exe", "--root", str(tmp_path), "--quiet", "adb", "7", "--"]
+    assert calls == [
+        (head + ["exec-out", "screencap", "-p"], False),
+        (head + ["shell", "pm", "path", "a"], True),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_script_adb_server_comes_from_modavd_servers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    root = _root_with_exe(tmp_path)
+    servers = {
+        "adb_server_port": 21050,
+        "adb_server_up": True,
+        "script_adb_server_port": 21049,
+        "script_adb_server_up": True,
+    }
+    fake.plan(version={"data": {"protocol": 2}}, servers={"data": servers})
+
+    assert await host_module.ensure_script_adb_server(root) is True
+    # 脚本的端口用 modavd 报的，不读 mas-avd.json、不按端口段算
+    assert host_module.script_adb_env(root)["ANDROID_ADB_SERVER_PORT"] == "21049"
+
+    fake.plan(
+        servers={
+            "error": {"code": "port_conflict", "message": "端口 21049 被 x.exe 占用"},
+            "exit": 5,
+        }
+    )
+    with pytest.raises(host_module.ScriptAdbPortConflict, match="21049"):
+        await host_module.ensure_script_adb_server(root)
+    assert fake.commands() == ["version", "servers", "servers"]
+
+
+@pytest.mark.asyncio
+async def test_frozen_instance_is_ended_with_modavd_stop_force(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Cli:
+        def __init__(self) -> None:
+            self.calls: list[tuple] = []
+
+        async def shell(self, index: str, *command: str, timeout: float = 5) -> dict:
+            self.calls.append(("shell", index, command))
+            raise CLIError("timeout", "adb 不通")
+
+        async def stop(self, index: str, *, force: bool = False) -> dict:
+            self.calls.append(("stop", index, force))
+            return {}
+
+    class Qemu:
+        def __init__(self, pid: int) -> None:
+            self.pid = pid
+
+        def is_running(self) -> bool:
+            return True
+
+        def status(self) -> str:
+            return "running"
+
+    class FastWatchdog(manager_module.FreezeWatchdog):
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            super().__init__(*args, interval=0.01, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(manager_module.psutil, "Process", Qemu)
+    monkeypatch.setattr(manager_module.host, "process_cpu_seconds", lambda _: 1.0)
+    monkeypatch.setattr(manager_module, "FreezeWatchdog", FastWatchdog)
+    cli = Cli()
+    key = manager_module._instance_key(tmp_path, "7")
+
+    manager_module._start_watchdog(tmp_path, "7", 4242, cli=cli)  # type: ignore[arg-type]
+    try:
+        assert await asyncio.wait_for(manager_module._WATCHDOGS[key], 5) == "frozen"
+    finally:
+        reason = manager_module._FROZEN.pop(key, "")
+    # adb 不通、CPU 时间不动：交给 modavd 强制关机，MAS 自己不结束进程
+    assert [call for call in cli.calls if call[0] == "stop"] == [("stop", "7", True)]
+    assert "已强制结束" in reason
+
+
+@pytest.mark.asyncio
+async def test_adding_a_root_only_needs_modavd_exe_and_a_usable_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    # 没有命令行的旧根目录（只有 sdk）：不认，也不起进程
+    old = tmp_path / "old"
+    (old / "sdk" / "emulator").mkdir(parents=True)
+    (old / "sdk" / "emulator" / "emulator.exe").touch()
+    assert not detect.is_avd_root(str(old))
+    assert (await detect.probe_install_path(str(old), "avd")).reason == "not_found"
+    assert fake.launched == []
+
+    # 有 modavd.exe、协议认识：可添加，版本是 modavd list 报的包版本；组件齐不齐不在这里看
+    root = _root_with_exe(tmp_path)
+    fake.plan(
+        version={"data": {"protocol": 2}},
+        list={"data": {"version": "0.38.2", "instances": []}},
+    )
+    result = await detect.probe_install_path(str(root))
+    assert (result.supported, result.reason, result.type, result.version) == (
+        True,
+        "ok",
+        "avd",
+        "0.38.2",
+    )
+    assert result.manager_exe.endswith("sdk/emulator/emulator.exe")
+    assert fake.commands() == ["version", "list"]
+
+    # 命令行用不了（协议不认识）：不能添加
+    fake.plan(version={"data": {"protocol": 99}})
+    result = await detect.probe_install_path(str(_root_with_exe(tmp_path, "new")))
+    assert (result.supported, result.reason) == (False, "probe_failed")

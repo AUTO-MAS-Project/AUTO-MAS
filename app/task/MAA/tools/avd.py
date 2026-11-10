@@ -55,7 +55,6 @@ from pathlib import Path
 from typing import Any
 
 from app.core import Config
-from app.utils import emulator2 as _utils_emulator2
 from app.utils import get_logger
 
 logger = get_logger("ModAVD MAA 截图")
@@ -107,12 +106,15 @@ def ensure_mumu_shim(root: str | Path) -> Path:
 
 
 def build_maa_connect_settings(
-    root: str | Path, console_port: int, current: dict[str, Any] | None
+    root: str | Path,
+    console_port: int,
+    current: dict[str, Any] | None,
+    adb_path: str | Path,
 ) -> dict[str, Any]:
     """在 ``gui.new.json`` 当前配置的 ``Gui.ConnectSettings`` 上叠加 ModAVD 需要的项。
 
     ``current`` 原样保留其余键（``AdbPath``、``AddressHistory`` 等），只改下面这几项；
-    返回新字典，不改入参。
+    返回新字典，不改入参。``adb_path`` 是 modavd 报的这条安装的 adb（``modavd list`` 的 ``adb_exe``）。
     """
     settings = dict(current or {})
     extras = dict(settings.get("Extras") or {})
@@ -129,7 +131,7 @@ def build_maa_connect_settings(
     if not str(settings.get("AdbPath") or "").strip():
         # 用户的 MAA 从没配过 adb（只装了 ModAVD 的新账号）时才补 SDK 自带的 adb；
         # 已经配了的不动——换 adb 可能和雷电 / MuMu 自带的 adb 抢 5037
-        settings["AdbPath"] = str(_utils_emulator2.avd.components.adb_exe(root))
+        settings["AdbPath"] = str(adb_path)
     settings.update(
         {
             "AutoDetect": False,

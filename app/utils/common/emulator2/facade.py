@@ -49,7 +49,7 @@ from app.models.emulator import (
 from app.utils import get_logger
 
 from .applaunch import AppLaunchResult
-from .avd.constants import MOD_AVD_UNSUPPORTED_MESSAGE, InstancePorts
+from .avd.constants import MOD_AVD_UNSUPPORTED_MESSAGE, AvdAdbInfo
 from .avd.manager import AvdManager
 from .avd.manager import build_manager as build_avd_manager
 from .guard import drift, load_baselines
@@ -322,7 +322,7 @@ class Emulator2Manager(DeviceBase):
         return await manager.launch_app(native_index, package_name)
 
     async def host_adb(self, idx: str):
-        """设备是 ModAVD 实例时，返回宿主进程对它发 adb 命令的通道（走 MAS 的私有 server，
+        """设备是 ModAVD 实例时，返回宿主进程对它发 adb 命令的通道（``modavd adb``，
         见 :class:`~.avd.manager.AvdHostAdb`）；雷电 / MuMu 返回 ``None``，调用方照旧用
         ``get_adb_path()`` 与设备地址。"""
         manager, native_index = await self._dispatch(idx)
@@ -330,12 +330,13 @@ class Emulator2Manager(DeviceBase):
             return await manager.host_adb(native_index)
         return None
 
-    async def instance_ports(self, idx: str) -> InstancePorts | None:
-        """设备是 ModAVD 实例时，返回它的端口与序列号（:meth:`~.avd.manager.AvdManager.instance_ports`，
-        端口段由 modavd 定）；雷电 / MuMu 返回 ``None``。"""
+    async def avd_adb_info(self, idx: str) -> AvdAdbInfo | None:
+        """设备是 ModAVD 实例时，返回给脚本配 adb 用的数据（这条安装的 adb 程序、私有 server 端口、
+        这台实例的端口，都是 ``modavd list`` 报的，见 :meth:`~.avd.manager.AvdManager.adb_info`）；
+        雷电 / MuMu 返回 ``None``。"""
         manager, native_index = await self._dispatch(idx)
         if isinstance(manager, AvdManager):
-            return await manager.instance_ports(native_index)
+            return await manager.adb_info(native_index)
         return None
 
     async def open_store(self, idx: str) -> AppLaunchResult:

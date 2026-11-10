@@ -18,24 +18,15 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""ModAVD 实例（AVD）的配置文件。
+"""ModAVD 实例选项的校验：新建 / 改设置共用。
 
-一台实例 = ``avd\\mas_<i>.ini`` + ``avd\\mas_<i>.avd\\config.ini``；原生索引 i 就是名字里的
-数字，默认端口也按它算，所以枚举只要扫 ``avd\\mas_*.ini``。这些文件由 ModAVD 命令行写，
-MAS 这里只读；另外放着新建 / 改设置共用的选项校验。
-
-实例的其它设置（内存、新建状态等）不放进 ``config.ini``，而是放在根目录的 ``mas-avd.json`` 里。
+实例的配置文件（``avd\\*.ini``、``config.ini``、``mas-avd.json``）由 ModAVD 命令行读写，MAS 不碰；
+这里只做参数校验和分辨率档位的换算，都不读文件。
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
-
-from .components import avd_home, read_metadata
 from .constants import (
-    AVD_NAME_PREFIX,
     CPU_CHOICES,
     DATA_PARTITION_RANGE_GB,
     DEFAULT_CPU,
@@ -46,35 +37,7 @@ from .constants import (
     DISPLAY_PRESETS,
     FPS_CHOICES,
     MEMORY_CHOICES_MB,
-    avd_name,
 )
-
-
-@dataclass(frozen=True)
-class AvdInstance:
-    native_index: str
-    name: str
-    title: str
-    config: dict[str, str]
-
-    @property
-    def cpu(self) -> int | None:
-        return _int_or_none(self.config.get("hw.cpu.ncore"))
-
-    @property
-    def fps(self) -> int:
-        """刷新率（``hw.lcd.vsync``）；没写这一项时模拟器按 60 Hz 开机。"""
-        return _int_or_none(self.config.get("hw.lcd.vsync")) or DEFAULT_FPS
-
-    @property
-    def data_partition_gb(self) -> int | None:
-        raw = (self.config.get("disk.dataPartition.size") or "").strip().upper()
-        if raw.endswith("G"):
-            return _int_or_none(raw[:-1])
-        if raw.endswith("M"):
-            value = _int_or_none(raw[:-1])
-            return None if value is None else value // 1024
-        return None
 
 
 def _int_or_none(raw: object) -> int | None:
@@ -82,68 +45,6 @@ def _int_or_none(raw: object) -> int | None:
         return int(str(raw).strip())
     except (TypeError, ValueError):
         return None
-
-
-def read_ini(path: Path) -> dict[str, str]:
-    """AVD 的 ini 是扁平的 ``key=value``，保持文件里的顺序。"""
-    result: dict[str, str] = {}
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return result
-    for line in text.splitlines():
-        key, sep, value = line.partition("=")
-        if sep and key.strip():
-            result[key.strip()] = value.strip()
-    return result
-
-
-def write_ini(path: Path, data: dict[str, str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(path.suffix + ".tmp")
-    temp.write_text(
-        "".join(f"{key}={value}\n" for key, value in data.items()), encoding="utf-8"
-    )
-    temp.replace(path)
-
-
-def ini_path(root: str | Path, native_index: int | str) -> Path:
-    return avd_home(root) / f"{avd_name(native_index)}.ini"
-
-
-def avd_dir(root: str | Path, native_index: int | str) -> Path:
-    return avd_home(root) / f"{avd_name(native_index)}.avd"
-
-
-def config_path(root: str | Path, native_index: int | str) -> Path:
-    return avd_dir(root, native_index) / "config.ini"
-
-
-def list_instances(root: str | Path) -> dict[str, AvdInstance]:
-    """``{原生索引: 实例}``，按原生索引排序。"""
-    home = avd_home(root)
-    found: dict[int, AvdInstance] = {}
-    if not home.is_dir():
-        return {}
-    for ini in home.glob(f"{AVD_NAME_PREFIX}*.ini"):
-        suffix = ini.stem[len(AVD_NAME_PREFIX) :]
-        if not suffix.isdecimal():
-            continue
-        index = int(suffix)
-        config_file = avd_dir(root, index) / "config.ini"
-        if not config_file.is_file():
-            continue
-        config = read_ini(config_file)
-        name = avd_name(index)
-        title = config.get("avd.ini.displayname") or name
-        found[index] = AvdInstance(str(index), name, title, config)
-    return {str(index): found[index] for index in sorted(found)}
-
-
-def instance_meta(root: str | Path, native_index: int | str) -> dict[str, Any]:
-    instances = read_metadata(root).get("instances") or {}
-    meta = instances.get(str(native_index)) if isinstance(instances, dict) else None
-    return dict(meta) if isinstance(meta, dict) else {}
 
 
 def resolution_for(config: dict[str, str]) -> int:
@@ -163,7 +64,7 @@ def validate_resolution(resolution: int | None) -> int:
 def display_changes(
     config: dict[str, str], resolution: int | None = None
 ) -> dict[str, str]:
-    """按所选档位写宽、高、DPI，保持方向并关闭导航栏。省略档位时识别现有宽高。"""
+    """按所选档位给出宽、高、DPI，保持方向并关闭导航栏。省略档位时识别现有宽高。"""
     preset = (
         resolution_for(config)
         if resolution is None
@@ -180,17 +81,6 @@ def display_changes(
         "hw.lcd.density": str(density),
         "hw.mainKeys": "yes",
     }
-
-
-def memory_for(meta: dict[str, Any]) -> int:
-    """实例的内存，每次开机原样传 ``-memory``。
-
-    以前有过「按游戏自动」（``mas-avd.json`` 里不存 ``memoryMb``），已经取消：这类旧实例和存了
-    不在档位里的值的，一律按默认 :data:`~.constants.DEFAULT_MEMORY_MB`。"""
-    explicit = meta.get("memoryMb")
-    if isinstance(explicit, int) and explicit in MEMORY_CHOICES_MB:
-        return explicit
-    return DEFAULT_MEMORY_MB
 
 
 def validate_options(

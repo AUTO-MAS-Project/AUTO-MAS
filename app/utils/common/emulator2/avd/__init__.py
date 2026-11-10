@@ -20,17 +20,16 @@
 
 """Emulator 2.0 的第三种后端：ModAVD（基于 Android Emulator 的自编版，随内测包发）。
 
-和雷电 / MuMu 不同，这里没有厂商的管理器程序可调。MAS 不下载组件：用户把 ModAVD 发布包解压到一个
-根目录（模拟器只认里面 ``sdk\\emulator`` 的自编版），平台工具和系统镜像由包里的「补全组件.bat」补齐；缺了
-说缺哪一项、怎么补。整个 ModAVD 包可以在 MAS 里一键更新（:mod:`.updater`，调 ``modavd update``）。实例的启动 / 关机 / 状态 /
-设置 / 增删都交给根目录里的命令行 ``tools\\modavd.exe``（:mod:`.cli`）；没有它的根目录不支持。
-宿主侧另有一个私有 adb server（默认端口 20050）给拉起应用、截图等用。
+MAS 只通过根目录里的 ModAVD 命令行 ``tools\\modavd.exe``（:mod:`.cli`）控制 ModAVD：实例的启动 / 关机 /
+状态 / 设置 / 增删、客体里的命令（``modavd shell`` / ``modavd adb``）、adb server（``modavd servers``）、
+组件与电脑检查（``modavd check``）、整包更新（:mod:`.updater`，``modavd update``）都交给它；没有它的
+根目录不支持。MAS 不读写 ModAVD 自己的文件，端口、adb 路径都取命令行报的。
 
-- :mod:`.constants`      端口、组件位置、实例档位参数
-- :mod:`.components`     组件检查（关键文件、自编版探测、内测包编号）、元数据
-- :mod:`.instances`      AVD 配置文件的读取与选项校验
+- :mod:`.constants`      实例档位参数、看门狗与关机时限
+- :mod:`.components`     根目录的路径换算（规范化键、实例锁的键）
+- :mod:`.instances`      实例选项校验
 - :mod:`.cli`            ModAVD 命令行 ``modavd`` 的客户端
-- :mod:`.host`           宿主侧：进程查找、私有 adb、客体日志落盘
+- :mod:`.host`           宿主侧：脚本用的 adb server（``modavd servers``）、端口冲突
 - :mod:`.precheck`       开机前检查项的数据类型（检查本身由 modavd 做）
 - :mod:`.manager`        ``DeviceBase`` 实现（走 modavd，冻结看门狗）
 - :mod:`.service`        给 API 用的业务入口

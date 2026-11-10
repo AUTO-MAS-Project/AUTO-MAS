@@ -2748,21 +2748,25 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 生息演算、用户自定义任务等)不透传带回——用户自定义任务队列只在原生
         # 来源存在(MAS 零写入, 安装目录原生配置即现场)。
 
-    async def _resolve_avd_device(self) -> tuple[Path, int] | None:
-        """这次用的设备是 ModAVD 实例时返回 ``(根目录, 控制台端口)``，否则 ``None``。
+    async def _resolve_avd_device(self) -> tuple[Path, int, str] | None:
+        """这次用的设备是 ModAVD 实例时返回 ``(根目录, 控制台端口, SDK 的 adb)``，否则 ``None``。
 
-        控制台端口问 modavd（根目录可以设 ``portBase`` 换一段端口），假 MuMu 截图组件按它找共享内存。
+        控制台端口和 adb 都问 modavd（``modavd list``；根目录可以设 ``portBase`` 换一段端口），假 MuMu
+        截图组件按控制台端口找共享内存。
         """
         index = self.script_config.Emulator.Index
         device_ref = resolve_device_ref(self.emulator_manager, index)
         if device_ref is None or device_ref.emulator_type != "avd":
             return None
-        ports = await self.emulator_manager.instance_ports(index)
+        adb_info = await self.emulator_manager.avd_adb_info(index)
+        if adb_info is None:
+            raise RuntimeError(f"设备 {index} 不是 ModAVD 实例")
         return (
             _utils_emulator2.avd.components.root_from_manager_exe(
                 device_ref.manager_path
             ),
-            ports.console,
+            adb_info.ports.console,
+            adb_info.adb_exe,
         )
 
     async def _maa_process_env(self) -> dict[str, str] | None:
@@ -2777,11 +2781,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self,
         gui_new_set: dict,
         emulator_info: DeviceInfo,
-        avd: tuple[Path, int] | None = None,
+        avd: tuple[Path, int, str] | None = None,
     ) -> None:
         """两种覆写常规配置状态均需的启动、模拟器和账号设置，不改任务选择。
 
-        ``avd`` 是 :meth:`_resolve_avd_device` 的结果：ModAVD 实例的 ``(根目录, 控制台端口)``。
+        ``avd`` 是 :meth:`_resolve_avd_device` 的结果：ModAVD 实例的 ``(根目录, 控制台端口, SDK 的 adb)``。
         """
 
         current_gui = gui_new_set["Configurations"]["Default"]["Gui"]
@@ -2798,10 +2802,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 雷电 / MuMu 实例不经过这里。这些键和上面的地址一样，由原生配置快照在任务结束后还原。
         self._avd_screencap_guard = avd is not None
         if avd is not None:
-            avd_root, avd_console = avd
+            avd_root, avd_console, avd_adb = avd
             ensure_mumu_shim(avd_root)
             current_gui["ConnectSettings"] = build_maa_connect_settings(
-                avd_root, avd_console, current_gui.get("ConnectSettings")
+                avd_root, avd_console, current_gui.get("ConnectSettings"), avd_adb
             )
             logger.info(
                 f"ModAVD 实例（控制台端口 {avd_console}）：MAA 截图走假 MuMu 通道"

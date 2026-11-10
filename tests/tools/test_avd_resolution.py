@@ -33,7 +33,6 @@ class _FakeCli:
 def _manager(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cli: _FakeCli
 ) -> _AvdCore:
-    monkeypatch.setattr(_AvdCore, "_check_components", lambda self: None)
     exe = tmp_path / "sdk/emulator/emulator.exe"
     return _AvdCore(exe, 60, False, cli=cli)  # type: ignore[arg-type]
 
