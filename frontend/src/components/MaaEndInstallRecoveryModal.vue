@@ -54,7 +54,7 @@ function decide(action: 'retry' | 'skip' | 'stop') {
         <a-descriptions-item :label="t('bootstrap.comp.maaendRecoveryCurrent')">
           {{ prompt.installedVersion || t('bootstrap.comp.maaendRecoveryUnknown') }}
         </a-descriptions-item>
-                        <a-descriptions-item :label="t('bootstrap.comp.maaendRecoveryTakeover')">
+        <a-descriptions-item :label="t('bootstrap.comp.maaendRecoveryTakeover')">
           {{
             t(
               prompt.takeoverEnabled
