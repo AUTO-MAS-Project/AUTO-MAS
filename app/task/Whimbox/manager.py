@@ -30,7 +30,14 @@ from pathlib import Path
 
 from app.config import ConfigCollection, config_manager
 from app.core import Config, Notify, Publisher
-from app.core.script_update import ScriptUpdateRequest, run_script_update
+from app.core.script_update import (
+    ScriptUpdateRequest,
+    auto_recover_script_install,
+    run_managed_script_install,
+    run_script_update,
+)
+from app.services import script_install
+from app.services.script_install_backup import ManagedInstallBackup
 from app.core.ws import protocol
 from app.models.config import WhimboxConfig, WhimboxUserConfig
 from app.models.notification.report import TaskResultReport
@@ -44,7 +51,8 @@ from app.utils.common.process.runner import is_process_cleanup_unconfirmed
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-from .tools import install_recovery, update as backend_update
+from .tools import update as backend_update
+from .tools.managed_recovery import WhimboxInstallAdapter
 from .tools.update import (
     RECOVERY_HINT,
     WhimboxUpdateUnsafeError,
@@ -176,104 +184,95 @@ class WhimboxManager(ScriptManagerBase):
         root = self.script_config.Info.RootPath
         if root is None:
             raise RuntimeError("请先设置奇想盒安装目录")
-        with installation_access(root):
+        with installation_access(root), script_install.installation_access(root):
             self.check_result = "Pass"
             await self._run_prepared(root)
 
     async def _run_prepared(self, root: Path) -> None:
         assert self.user_config is not None
 
-        recovered = False
+        request = ScriptUpdateRequest(str(self.script_info.script_id), "Whimbox")
         marker = pending_marker(root)
-        if marker.exists() or marker.is_symlink():
-            # 任何模式都会先处理上次写入失败，关闭自动更新也不能绕过。
+        backup = ManagedInstallBackup(
+            root, script_id=request.script_id, script_type="Whimbox"
+        )
+        if self.execution_mode == "ScriptConfig":
             await self.discard_prefetched_update()
-            action, snapshot = await install_recovery.ask_install_recovery(
-                self.task_info.task_id,
-                root,
-                managed_name=getattr(self.script_info, "name", "奇想盒"),
-                takeover_enabled=self.script_config.Update.TakeoverEnabled,
-                can_open_official_app=self.execution_mode == "ScriptConfig",
-            )
-            if action == "repair_gui":
-                # 配置会话原本就是官方 app 的修复入口。只允许打开这个
-                # 界面，不移除安装标记，也不运行需要已修复依赖的自动任务。
-                if self.execution_mode != "ScriptConfig":
-                    raise WhimboxUpdateUnsafeError(
-                        "只有原生配置会话允许打开官方界面修复"
-                    )
-                result = "正在打开奇想盒官方界面以手动修复；安装标记仍保留"
-            elif action == "skip":
-                version = await backend_update.skip_pending_installation(root, snapshot)
-                result = f"用户确认跳过奇想盒上次未完成安装，当前后端版本 {version}"
-            else:
-                if (
-                    marker.is_symlink()
-                    or not marker.is_file()
-                    or marker.read_bytes() != snapshot
-                ):
-                    raise WhimboxUpdateUnsafeError("奇想盒安装记录发生变化，拒绝重试")
-                result = await run_script_update(
-                    ScriptUpdateRequest(str(self.script_info.script_id), "Whimbox"),
-                    ensure_backend_updated,
-                    root,
-                )
-                await confirm_usable_installation(root)
-            await push_dispatch_log(self.script_info, result)
-            recovered = True
 
         if self.execution_mode == "ScriptConfig":
+            # 保留官方 app 的原生修复入口，未确认后端不能启动一条龙，
+            # 但不应阻断用户进入 GUI 自己修复 pip 环境。
             await self.script_info.set_current_index(0)
-            await self.spawn(
-                ScriptConfigTask(
-                    self.script_info,
-                    self.script_config,
-                )
-            )
+            await self.spawn(ScriptConfigTask(self.script_info, self.script_config))
             return
+
+        recovered = False
+        if backup.read() is not None:
+            # 新公共事务优先：下一轮先验证是否成功，否则重试安装，
+            # 必要时由公共层执行快照回滚与任务末尾汇总。
+            await self.discard_prefetched_update()
+            adapter = WhimboxInstallAdapter(root)
+            result = await run_managed_script_install(
+                request,
+                install_root=root,
+                inspect=adapter.inspect,
+                acknowledge=adapter.acknowledge,
+                install=adapter.install,
+                ensure_idle=adapter.ensure_idle,
+                after_rollback=adapter.after_rollback,
+            )
+            await push_dispatch_log(self.script_info, f"奇想盒自动恢复：{result}")
+            recovered = True
+        elif marker.exists() or marker.is_symlink():
+            # 兼容升级前留下的旧安装标记。这类记录没有旧版完整快照，
+            # 只能强健康检查后确认或重新安装，不得伪造自动回滚。
+            await self.discard_prefetched_update()
+            adapter = WhimboxInstallAdapter(root)
+            result = await auto_recover_script_install(
+                request,
+                install_root=root,
+                inspect=adapter.inspect,
+                acknowledge=adapter.acknowledge,
+                reinstall=adapter.install,
+            )
+            await push_dispatch_log(self.script_info, f"奇想盒上次安装恢复：{result}")
+            recovered = True
 
         if self.script_config.Update.TakeoverEnabled and not recovered:
             self.check_result = "奇想盒后端更新未完成"
             await push_dispatch_log(self.script_info, "正在检查奇想盒后端更新…")
-            try:
-                result = await run_script_update(
-                    ScriptUpdateRequest(str(self.script_info.script_id), "Whimbox"),
-                    backend_update.apply_update
-                    if getattr(self, "_update_candidate", None) is not None
-                    and not isinstance(self._update_candidate, str)
-                    else ensure_backend_updated,
-                    root,
-                    *(
-                        [self._update_candidate]
-                        if getattr(self, "_update_candidate", None) is not None
-                        and not isinstance(self._update_candidate, str)
-                        else []
-                    ),
+            candidate = getattr(self, "_update_candidate", None)
+            self._update_candidate = None
+            if not isinstance(candidate, backend_update.PreparedUpdate):
+                candidate = await run_script_update(
+                    request, backend_update.prepare_update, root
                 )
-            except (
-                WhimboxUpdateUnsafeError,
-                FluxdownCancelUnconfirmed,
-            ):
-                raise
-            except Exception as error:
-                if is_process_cleanup_unconfirmed(error):
-                    raise
+            if isinstance(candidate, str):
+                # 没有更新也必须重新检查原安装，无需建立无意义的快照。
                 await confirm_usable_installation(root)
-                result = f"奇想盒更新未完成，沿用当前后端继续任务。原因：{error}"
-                await self.script_info.set_log(result)
-                logger.warning(result)
-                with suppress(Exception):
-                    await Publisher.send(
-                        id=self.task_info.task_id,
-                        type=protocol.TASK_NOTICE,
-                        data=WSTaskNoticeData(level="warning", message=result),
-                    )
+                result = candidate
             else:
-                await push_dispatch_log(self.script_info, result)
+                adapter = WhimboxInstallAdapter(
+                    root,
+                    target=candidate.target,
+                    previous=candidate.current,
+                    candidate=candidate,
+                )
+                result = await run_managed_script_install(
+                    request,
+                    install_root=root,
+                    inspect=adapter.inspect,
+                    acknowledge=adapter.acknowledge,
+                    install=adapter.install,
+                    ensure_idle=adapter.ensure_idle,
+                    after_rollback=adapter.after_rollback,
+                )
+                # 如果安装在创建备份之前失败，也必须清理未消费的缓存。
+                backend_update.discard_update(candidate)
+            await push_dispatch_log(self.script_info, str(result))
             self.check_result = "Pass"
-        elif pending_marker(root).exists():
-            self.check_result = RECOVERY_HINT
-            raise RuntimeError(self.check_result)
+        elif marker.exists() or marker.is_symlink():
+            raise WhimboxUpdateUnsafeError(RECOVERY_HINT)
 
         for _runtime_user_index in range(len(self.script_info.user_list)):
             await self.script_info.set_current_index(_runtime_user_index)
