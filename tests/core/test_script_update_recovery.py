@@ -265,6 +265,7 @@ async def test_normal_download_failure_never_bypasses_pending_marker(tmp_path):
     session.record_recovery = reports.append
     token = script_update._current_recovery_session.set(session)
     try:
+
         async def download():
             raise DownloadRetryFailed(source="GitHub", reason="连接超时")
 
@@ -280,7 +281,6 @@ async def test_normal_download_failure_never_bypasses_pending_marker(tmp_path):
         assert reports[0].outcome == "blocked"
     finally:
         script_update._current_recovery_session.reset(token)
-
 
 
 @pytest.mark.asyncio
@@ -524,7 +524,6 @@ async def test_uncertain_installer_does_not_rollback_while_still_running(tmp_pat
     assert ManagedInstallBackup(
         root, script_id="one", script_type="BAAH"
     ).record.exists()
-
 
 
 @pytest.mark.asyncio
