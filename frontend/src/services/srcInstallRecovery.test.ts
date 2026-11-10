@@ -8,7 +8,10 @@ const boundary = vi.hoisted(() => ({
 }))
 
 vi.mock('@/services/websocket/subscriptions', () => ({
-  subscribe: (criteria: { id: string; type: string }, handler: (message: { data: Record<string, unknown> }) => void) => {
+  subscribe: (
+    criteria: { id: string; type: string },
+    handler: (message: { data: Record<string, unknown> }) => void
+  ) => {
     const key = `${criteria.id}:${criteria.type}`
     boundary.subscriptions.set(key, handler)
     return key
@@ -54,7 +57,12 @@ it('drops stale SRC install prompt after active websocket reconnect without clos
   expect(prompt).toBeTruthy()
 
   prompt!({
-    data: { requestId: 'old-request', taskId: 'task-one', managedName: 'Example', installPath: '/sandbox/one' },
+    data: {
+      requestId: 'old-request',
+      taskId: 'task-one',
+      managedName: 'Example',
+      installPath: '/sandbox/one',
+    },
   })
   expect(module.srcInstallPrompts.value).toHaveLength(1)
   expect(boundary.connected).toHaveLength(1)
