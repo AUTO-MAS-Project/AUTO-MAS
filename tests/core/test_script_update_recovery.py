@@ -678,3 +678,23 @@ async def test_new_public_entry_reports_only_through_current_session(tmp_path):
     assert not ManagedInstallBackup(
         root, script_id="one", script_type="MAA"
     ).record.exists()
+
+
+@pytest.mark.asyncio
+async def test_symlinked_backup_workspace_is_never_followed(tmp_path):
+    from app.services import script_install
+
+    root = tmp_path / "script"
+    root.mkdir()
+    (root / "bin").write_bytes(b"old")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    workspace = script_install.workspace(root)
+    try:
+        workspace.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("当前系统未允许创建目录符号链接")
+    backup = ManagedInstallBackup(root, script_id="one", script_type="MAA")
+    with pytest.raises(InstallUnsafeError, match="链接|重解析"):
+        await backup.create("1.0.0")
+    assert not any(outside.iterdir())
