@@ -796,6 +796,67 @@ async def test_update_streams_progress_and_shows_busy_from_modavd_as_is(
 
 
 @pytest.mark.asyncio
+async def test_update_cdk_is_used_once_retried_empty_when_unreadable_and_notices_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(updater_module, "_PUBLISH_INTERVAL_SECONDS", 0)
+    fallback = "Mirror 酱出错，这次改从 GitHub 下载"
+
+    class Cli:
+        root = tmp_path
+
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str | None]] = []
+            self.error = "invalid_argument"
+
+        async def update(self, action: str, *, cdk_dpapi=None, **_: object) -> dict:
+            self.calls.append((action, cdk_dpapi))
+            if cdk_dpapi == "bad":
+                raise CLIError(self.error, "--cdk-dpapi 解不开")
+            if action == "prepare":
+                return {"prepared_version": "v0.39.0", "notices": [fallback]}
+            return {"updated": action == "install", "notices": [fallback]}
+
+        async def list(self) -> dict:
+            return {"instances": []}
+
+    published: list[updater_module.UpdateProgress] = []
+
+    async def publish(path: Path, item: updater_module.UpdateProgress) -> None:
+        published.append(item)
+
+    def host(cdk: str) -> updater_module.UpdateHost:
+        return updater_module.UpdateHost(
+            settings=lambda: updater_module.UpdateSettings(
+                "mirrorchyan", "v5.8.0", cdk
+            ),
+            environment=lambda: None,
+            managed_roots=lambda: [tmp_path],
+            opening_instances=lambda path: [],
+            publish_progress=publish,
+        )
+
+    # 已经准备好一版：install 传空 CDK，Mirror 酱只计 prepare 那一次；两次的 notices 去重后进最终消息
+    cli = Cli()
+    runtime = updater_module._runtime(tmp_path)
+    await updater_module._run_update(runtime, cli, host("good"))  # type: ignore[arg-type]
+    assert cli.calls == [("prepare", "good"), ("install", "")]
+    assert published[-1].message == f"已更新；{fallback}"
+
+    # 解不开：同一步用空 CDK 重试一次，提示带上「CDK 读不出」；别的错误码不重试
+    cli.calls.clear()
+    settings = host("bad").settings()
+    _, notices = await updater_module._caller_update(cli, "check", settings, env=None)  # type: ignore[arg-type]
+    assert cli.calls == [("check", "bad"), ("check", "")]
+    assert notices == [updater_module.CDK_UNREADABLE_NOTICE, fallback]
+    cli.calls.clear()
+    cli.error = "busy"
+    with pytest.raises(CLIError):
+        await updater_module._caller_update(cli, "check", settings, env=None)  # type: ignore[arg-type]
+    assert cli.calls == [("check", "bad")]
+
+
+@pytest.mark.asyncio
 async def test_open_retries_start_when_guest_script_push_failed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

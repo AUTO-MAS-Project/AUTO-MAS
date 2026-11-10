@@ -73,6 +73,8 @@ _NUMBERS = re.compile(r"\d+")
 #: 传了 Mirror 酱 CDK 的密文、modavd 却报 ``invalid_argument``（密文在这台机器上解不开）时，用空 CDK 再跑
 #: 一次（更新源照旧，没有 CDK 时 modavd 从 GitHub 下），结果的提示里加上这一句。
 CDK_UNREADABLE_NOTICE = "Mirror 酱 CDK 读不出，这次改从 GitHub 下载"
+#: 启动时收拾上次没做完的换上（:func:`startup`）总共最多等这么久。
+STARTUP_TIMEOUT_SECONDS = 30.0
 
 
 @dataclass
@@ -217,6 +219,14 @@ def _caller_options(settings: UpdateSettings) -> dict[str, str]:
     }
 
 
+def _notices(data: Mapping[str, Any]) -> list[str]:
+    """modavd 结果里的 ``notices``（比如 Mirror 酱出错改走 GitHub 的原因）。"""
+    raw = data.get("notices")
+    if not isinstance(raw, list):
+        return []
+    return [item for item in raw if isinstance(item, str) and item.strip()]
+
+
 async def _caller_update(
     cli: ModAvdCli,
     action: str,
@@ -224,29 +234,40 @@ async def _caller_update(
     *,
     env: Mapping[str, str] | None,
     on_progress: Callable[[UpdateProgressEvent], None] | None = None,
-) -> tuple[dict[str, Any], str]:
+    with_cdk: bool = True,
+) -> tuple[dict[str, Any], list[str]]:
     """带上 MAS 的更新源和 CDK 跑 ``modavd update <action>``，返回 ``(状态, 提示)``。
 
-    传了 CDK 而 modavd 报 ``invalid_argument``（解不开）时用空 CDK 重试一次，提示是
-    :data:`CDK_UNREADABLE_NOTICE`；别的错误、或重试又失败都原样抛。"""
+    提示是 modavd 结果里的 ``notices``；传了 CDK 而 modavd 报 ``invalid_argument``（解不开）时用空 CDK
+    重试一次，提示前面加上 :data:`CDK_UNREADABLE_NOTICE`；别的错误、或重试又失败都原样抛。
+    ``with_cdk=False`` 时这一步传空 CDK（更新源照旧）：已经准备好的版本换上时不用再要下载链接，
+    带着 CDK 会让 Mirror 酱多计一次。"""
     options = _caller_options(settings)
+    if not with_cdk:
+        options["cdk_dpapi"] = ""
     try:
-        data = await cli.update(action, **options, env=env, on_progress=on_progress)
-        return _as_status(data), ""
+        data = _as_status(
+            await cli.update(action, **options, env=env, on_progress=on_progress)
+        )
+        return data, _notices(data)
     except CLIError as error:
-        if error.code != "invalid_argument" or not settings.cdk_dpapi:
+        if error.code != "invalid_argument" or not options["cdk_dpapi"]:
             raise
         logger.warning(
             f"{cli.root} 的 modavd 解不开 MAS 设置里的 Mirror 酱 CDK（update {action}），"
             "这次用空 CDK 重试"
         )
-    data = await cli.update(
-        action, **{**options, "cdk_dpapi": ""}, env=env, on_progress=on_progress
+    data = _as_status(
+        await cli.update(
+            action, **{**options, "cdk_dpapi": ""}, env=env, on_progress=on_progress
+        )
     )
-    return _as_status(data), CDK_UNREADABLE_NOTICE
+    return data, [CDK_UNREADABLE_NOTICE, *_notices(data)]
 
 
-def _with_notice(message: str, notice: str) -> str:
+def _with_notice(message: str, notices: list[str]) -> str:
+    """把提示（去重、保持顺序）接在消息后面。"""
+    notice = "；".join(dict.fromkeys(item.strip() for item in notices if item.strip()))
     return f"{message}；{notice}" if message and notice else (message or notice)
 
 
@@ -399,12 +420,12 @@ async def status(root: str, *, check: bool = False, host: UpdateHost) -> dict[st
     data: dict[str, Any] | None = None
     if check:
         try:
-            data, notice = await _caller_update(
+            data, notices = await _caller_update(
                 cli, "check", settings, env=host.environment()
             )
             _remember_check(runtime, data, settings.source)
-            if notice:
-                runtime.progress = UpdateProgress(message=notice)
+            if notices:
+                runtime.progress = UpdateProgress(message=_with_notice("", notices))
         except CLIError as e:
             logger.warning(f"检查 ModAVD 更新失败: {e.message}")
             runtime.checked = _Checked(settings.source, check_error=_error_text(e))
@@ -502,10 +523,10 @@ async def _prepare(
     settings: UpdateSettings,
     env: Mapping[str, str] | None,
     reporter: _Reporter,
-) -> tuple[dict[str, Any], str]:
+) -> tuple[dict[str, Any], list[str]]:
     """``update prepare``，返回 ``(状态, 提示)``；查不了新版本但之前已经准备好一版时，照样拿那一版去换上。"""
     try:
-        data, notice = await _caller_update(
+        data, notices = await _caller_update(
             cli, "prepare", settings, env=env, on_progress=reporter
         )
     except CLIError as error:
@@ -516,10 +537,10 @@ async def _prepare(
                     f"{runtime.root} 这次没准备成（{error.message}），换上之前准备好的 "
                     f"{_display(local['prepared_version'])}"
                 )
-                return local, ""
+                return local, []
         raise
     _remember_check(runtime, data, settings.source)
-    return data, notice
+    return data, notices
 
 
 async def _run_update(runtime: _Runtime, cli: ModAvdCli, host: UpdateHost) -> None:
@@ -528,11 +549,13 @@ async def _run_update(runtime: _Runtime, cli: ModAvdCli, host: UpdateHost) -> No
     env = host.environment()
     reporter = _Reporter(runtime, host)
     step = "prepare"
-    notice = ""
+    notices: list[str] = []
     try:
         reporter.set("checking", "正在查最新版本")
-        data, notice = await _prepare(runtime, cli, settings, env, reporter)
+        data, notices = await _prepare(runtime, cli, settings, env, reporter)
         prepared = _text(data.get("prepared_version"))
+        # 已经准备好一版：install 不用再要带 CDK 的下载链接，传空 CDK，免得 Mirror 酱多计一次
+        staged = bool(prepared) or data.get("phase") == "staged"
         if not prepared:
             _finish(
                 runtime, "idle", "idle", _text(data.get("message")) or "已经是最新版本"
@@ -557,10 +580,15 @@ async def _run_update(runtime: _Runtime, cli: ModAvdCli, host: UpdateHost) -> No
                 return
             step = "install"
             reporter.set("installing", "正在换上新版")
-            data, install_notice = await _caller_update(
-                cli, "install", settings, env=env, on_progress=reporter
+            data, install_notices = await _caller_update(
+                cli,
+                "install",
+                settings,
+                env=env,
+                on_progress=reporter,
+                with_cdk=not staged,
             )
-            notice = notice or install_notice
+            notices += install_notices
         finally:
             _installing.discard(key)
             _instance_snapshots.pop(key, None)
@@ -589,8 +617,8 @@ async def _run_update(runtime: _Runtime, cli: ModAvdCli, host: UpdateHost) -> No
         _finish(runtime, "failed", "failed", f"更新失败：{e}")
     finally:
         await reporter.close()
-        if notice:
-            runtime.progress.message = _with_notice(runtime.progress.message, notice)
+        if notices:
+            runtime.progress.message = _with_notice(runtime.progress.message, notices)
         with suppress(Exception):
             await host.publish_progress(root, runtime.progress)
 
@@ -657,7 +685,10 @@ async def _recover_root(root: Path) -> None:
 
 
 async def startup(*, host: UpdateHost) -> None:
-    """MAS 启动时收拾上次没做完的换上（要在定时器拉起实例之前）。各根目录一起做，失败只记日志。"""
+    """MAS 启动时收拾上次没做完的换上（要在定时器拉起实例之前）。各根目录一起做，失败只记日志。
+
+    总共最多 :data:`STARTUP_TIMEOUT_SECONDS` 秒：到点没做完的取消（modavd 子进程按 ``_run_process`` 的
+    取消收尾结束），只记日志，不挡 MAS 启动。"""
     roots = await asyncio.to_thread(host.managed_roots)
 
     async def one(root: Path) -> None:
@@ -666,7 +697,14 @@ async def startup(*, host: UpdateHost) -> None:
         except Exception as e:  # noqa: BLE001 - 一个根目录恢复失败不影响别的
             logger.opt(exception=True).error(f"{root} 的 ModAVD 更新恢复失败: {e}")
 
-    await asyncio.gather(*(one(root) for root in roots))
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*(one(root) for root in roots)), STARTUP_TIMEOUT_SECONDS
+        )
+    except TimeoutError:
+        logger.warning(
+            f"ModAVD 更新恢复 {STARTUP_TIMEOUT_SECONDS:.0f} 秒内没做完，不再等"
+        )
 
 
 __all__ = [
