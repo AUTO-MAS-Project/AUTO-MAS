@@ -178,7 +178,6 @@ if TYPE_CHECKING:
     from .common.websocket import WebSocketClient as WebSocketClient
     from .contracts.audio import AudioAPI
     from .contracts.display import DisplayAPI
-    from .contracts.emulator_native import EmulatorNativeAPI
     from .contracts.file_lock import FileLockAPI
     from .contracts.host import HostAPI, HostPredicate
     from .contracts.process import ProcessAPI
@@ -190,7 +189,6 @@ if TYPE_CHECKING:
 
     audio: AudioAPI
     display: DisplayAPI
-    emulator_native: EmulatorNativeAPI
     file_lock: FileLockAPI
     host: HostAPI
     process_platform: ProcessAPI
@@ -335,7 +333,6 @@ _COMMON_MODULES = {
     "log_box": ".common.log_box",
     "file_lock": ".unsupported.file_lock",
     "update_native": ".common.update_native",
-    "emulator_native": ".common.emulator_native",
     "registry": ".unsupported.registry",
     "audio": ".unsupported.audio",
     "update_files": ".common.update_files",
@@ -374,7 +371,6 @@ _PLATFORM_MODULES = {
         "startup": ".windows.startup",
         "file_lock": ".windows.file_lock",
         "update_native": ".windows.update_native",
-        "emulator_native": ".windows.emulator_native",
         "registry": ".windows.registry",
         "integrity": ".windows.integrity",
         "host": ".windows.host",
@@ -555,7 +551,6 @@ __all__ = [
     "LEGACY_BASE_SOURCES",
     "BASE_SOURCE_LABELS",
     "update_native",
-    "emulator_native",
     "registry",
     "integrity",
     "audio",
