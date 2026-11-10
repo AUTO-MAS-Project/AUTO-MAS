@@ -49,6 +49,9 @@ export const WS_TASK_CREATED = 'task.created'
 // 每次脚本执行（含循环中的每轮），不随快照重放（id=TaskManager）。
 export const WS_TASK_SCRIPT_STARTED = 'task.script.started'
 export const WS_TASK_SCRIPT_FINISHED = 'task.script.finished'
+export const WS_MAA_RESOURCE_RECOVERY_PROMPT = 'maa.resource.recovery.prompt'
+export const WS_MAA_RESOURCE_RECOVERY_CLOSED = 'maa.resource.recovery.closed'
+export const WS_MAA_RESOURCE_RECOVERY_DECISION = 'maa.resource.recovery.decision'
 
 // 应用生命周期与电源（id=Main）
 export const WS_BACKEND_SHUTDOWN_READY = 'backend.shutdown.ready'
@@ -158,6 +161,21 @@ export interface WSTaskScriptStartedData {
 export interface WSTaskScriptFinishedData extends WSTaskScriptStartedData {
   outcome: 'success' | 'failed' | 'skipped' | 'no_user' | 'incomplete' | 'error' | 'cancelled'
   partialFailure?: 'yes' | 'no' | 'unknown'
+}
+
+/** MAA 上轮资源覆盖失败且未验证完成时的主动修复请求 */
+export interface WSMAAResourceRecoveryPromptData {
+  requestId: string
+  taskId: string
+  managedName: string
+  installPath: string
+  takeoverEnabled: boolean
+  installedVersion: string
+  targetVersion: string
+}
+
+export interface WSMAAResourceRecoveryClosedData {
+  requestId: string
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
@@ -329,6 +347,8 @@ interface WSMessageDataMap {
   [WS_TASK_CREATED]: WSTaskCreatedData
   [WS_TASK_SCRIPT_STARTED]: WSTaskScriptStartedData
   [WS_TASK_SCRIPT_FINISHED]: WSTaskScriptFinishedData
+  [WS_MAA_RESOURCE_RECOVERY_PROMPT]: WSMAAResourceRecoveryPromptData
+  [WS_MAA_RESOURCE_RECOVERY_CLOSED]: WSMAAResourceRecoveryClosedData
   [WS_BACKEND_SHUTDOWN_READY]: WSEmptyData
   [WS_FRONTEND_CLOSE_REQUESTED]: FrontendCloseRequest
   [WS_FRONTEND_RESTART_REQUESTED]: FrontendCloseRequest

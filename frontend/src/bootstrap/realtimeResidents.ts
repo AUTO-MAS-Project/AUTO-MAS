@@ -21,6 +21,10 @@ import {
   bootstrapVirtualDisplayPrompt,
   disposeVirtualDisplayPrompt,
 } from '@/services/virtualDisplayPrompt'
+import {
+  bootstrapMAAResourceRecovery,
+  disposeMAAResourceRecovery,
+} from '@/services/maaResourceRecovery'
 
 let registered = false
 
@@ -70,6 +74,10 @@ export function bootstrapRealtimeResidents(): void {
     registerResidentResource('virtual-display-prompt', {
       bootstrap: bootstrapVirtualDisplayPrompt,
       dispose: disposeVirtualDisplayPrompt,
+    })
+    registerResidentResource('maa-resource-recovery', {
+      bootstrap: bootstrapMAAResourceRecovery,
+      dispose: disposeMAAResourceRecovery,
     })
     registered = true
   }
