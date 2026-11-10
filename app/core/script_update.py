@@ -180,7 +180,10 @@ class ScriptUpdateSession:
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(
                     level="warning"
-                    if any(e.outcome in ("old_version", "blocked") for e in self._recovery_events)
+                    if any(
+                        e.outcome in ("old_version", "blocked")
+                        for e in self._recovery_events
+                    )
                     else "info",
                     message=message,
                 ),

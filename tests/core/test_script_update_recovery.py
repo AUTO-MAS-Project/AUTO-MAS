@@ -37,16 +37,22 @@ def inspection(
 @pytest.mark.asyncio
 async def test_verified_finished_install_is_acknowledged_without_download(tmp_path):
     states = iter(
-        [inspection(pending=True, healthy=True, updated=True),
-         inspection(pending=False, healthy=True, updated=True)]
+        [
+            inspection(pending=True, healthy=True, updated=True),
+            inspection(pending=False, healthy=True, updated=True),
+        ]
     )
     events: list[RecoveryIncident] = []
     ack = AsyncMock()
     retry = AsyncMock()
     result = await reconcile_installation(
-        script_id="one", script_type="SRC", install_root=tmp_path,
+        script_id="one",
+        script_type="SRC",
+        install_root=tmp_path,
         inspect=AsyncMock(side_effect=lambda: next(states)),
-        acknowledge=ack, reinstall=retry, report=events.append,
+        acknowledge=ack,
+        reinstall=retry,
+        report=events.append,
     )
     assert result == "verified"
     ack.assert_awaited_once()
@@ -57,15 +63,21 @@ async def test_verified_finished_install_is_acknowledged_without_download(tmp_pa
 @pytest.mark.asyncio
 async def test_retries_only_when_a_pending_install_needs_repair(tmp_path):
     states = iter(
-        [inspection(pending=True, healthy=False),
-         inspection(pending=False, healthy=True)]
+        [
+            inspection(pending=True, healthy=False),
+            inspection(pending=False, healthy=True),
+        ]
     )
     events: list[RecoveryIncident] = []
     retry = AsyncMock()
     result = await reconcile_installation(
-        script_id="two", script_type="BAAH", install_root=tmp_path,
+        script_id="two",
+        script_type="BAAH",
+        install_root=tmp_path,
         inspect=AsyncMock(side_effect=lambda: next(states)),
-        acknowledge=AsyncMock(), reinstall=retry, report=events.append,
+        acknowledge=AsyncMock(),
+        reinstall=retry,
+        report=events.append,
     )
     assert result == "reinstalled"
     retry.assert_awaited_once()
@@ -75,12 +87,16 @@ async def test_retries_only_when_a_pending_install_needs_repair(tmp_path):
 @pytest.mark.asyncio
 async def test_download_failure_with_trusted_previous_version_can_continue(tmp_path):
     states = iter(
-        [inspection(pending=True, healthy=False),
-         inspection(pending=False, healthy=True, previous=True)]
+        [
+            inspection(pending=True, healthy=False),
+            inspection(pending=False, healthy=True, previous=True),
+        ]
     )
     events: list[RecoveryIncident] = []
     result = await reconcile_installation(
-        script_id="three", script_type="MaaEnd", install_root=tmp_path,
+        script_id="three",
+        script_type="MaaEnd",
+        install_root=tmp_path,
         inspect=AsyncMock(side_effect=lambda: next(states)),
         acknowledge=AsyncMock(),
         reinstall=AsyncMock(
@@ -95,23 +111,30 @@ async def test_download_failure_with_trusted_previous_version_can_continue(tmp_p
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("pending,healthy,previous", [
-    (True, True, True),
-    (False, True, False),
-    (False, False, True),
-    (True, False, False),
-])
+@pytest.mark.parametrize(
+    "pending,healthy,previous",
+    [
+        (True, True, True),
+        (False, True, False),
+        (False, False, True),
+        (True, False, False),
+    ],
+)
 async def test_download_failure_never_bypasses_unconfirmed_install(
     tmp_path, pending, healthy, previous
 ):
     states = iter(
-        [inspection(pending=True, healthy=False),
-         inspection(pending=pending, healthy=healthy, previous=previous)]
+        [
+            inspection(pending=True, healthy=False),
+            inspection(pending=pending, healthy=healthy, previous=previous),
+        ]
     )
     events: list[RecoveryIncident] = []
     with pytest.raises(InstallUnsafeError, match="禁止启动"):
         await reconcile_installation(
-            script_id="unsafe", script_type="BetterGI", install_root=tmp_path,
+            script_id="unsafe",
+            script_type="BetterGI",
+            install_root=tmp_path,
             inspect=AsyncMock(side_effect=lambda: next(states)),
             acknowledge=AsyncMock(),
             reinstall=AsyncMock(
@@ -127,7 +150,9 @@ async def test_install_error_does_not_masquerade_as_download_failure(tmp_path):
     events: list[RecoveryIncident] = []
     with pytest.raises(RuntimeError, match="installer failed"):
         await reconcile_installation(
-            script_id="unsafe", script_type="Whimbox", install_root=tmp_path,
+            script_id="unsafe",
+            script_type="Whimbox",
+            install_root=tmp_path,
             inspect=AsyncMock(return_value=inspection(pending=True, healthy=False)),
             acknowledge=AsyncMock(),
             reinstall=AsyncMock(side_effect=RuntimeError("installer failed")),
@@ -141,7 +166,9 @@ async def test_cancel_is_not_converted_into_old_version_fallback(tmp_path):
     events: list[RecoveryIncident] = []
     with pytest.raises(asyncio.CancelledError):
         await reconcile_installation(
-            script_id="cancel", script_type="MAA", install_root=tmp_path,
+            script_id="cancel",
+            script_type="MAA",
+            install_root=tmp_path,
             inspect=AsyncMock(return_value=inspection(pending=True, healthy=False)),
             acknowledge=AsyncMock(),
             reinstall=AsyncMock(side_effect=asyncio.CancelledError()),
@@ -171,8 +198,10 @@ async def test_common_entry_attaches_report_and_publishes_at_end(monkeypatch, tm
     token = script_update._current_recovery_session.set(session)
     try:
         states = iter(
-            [inspection(pending=True, healthy=False),
-             inspection(pending=False, healthy=True, previous=True)]
+            [
+                inspection(pending=True, healthy=False),
+                inspection(pending=False, healthy=True, previous=True),
+            ]
         )
         outcome = await script_update.auto_recover_script_install(
             script_update.ScriptUpdateRequest("script", "SRC"),

@@ -1,2 +1,2 @@
-project: mas
+project: update
 统一脚本安装恢复入口及队列结束时的下载异常汇总

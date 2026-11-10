@@ -80,7 +80,9 @@ async def reconcile_installation(
 
     def emit(
         outcome: Literal["verified", "reinstalled", "old_version", "blocked"],
-        *, reason: str = "", source: str | None = None,
+        *,
+        reason: str = "",
+        source: str | None = None,
         version: str | None = None,
     ) -> None:
         report(
