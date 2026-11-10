@@ -30,7 +30,11 @@ from typing import Any
 from app.config import ConfigCollection
 from app.core import Config, Notify, Publisher
 from app.core.notify.lifecycle import NotificationTaskBase as NotificationTaskBase
-from app.core.script_update import ScriptUpdateRequest, run_script_update
+from app.core.script_update import (
+    ScriptUpdateRequest,
+    auto_recover_script_install,
+    run_script_update,
+)
 from app.core.ws import protocol
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.notification.report import TaskResultData, TaskResultReport
@@ -64,6 +68,7 @@ from .tools.account_switch import (
     user_needs_account_switch,
 )
 from .tools.backup_archive import archive_native_backup
+from .tools.update import install_recovery
 from .tools.cloud_browser import DEFAULT_DEBUG_PORT, is_port_free
 from .tools.external_locks import (
     HSRExternalPathLockLease,
@@ -188,6 +193,7 @@ class HSRManager(NotificationTaskBase):
         self._external_config_targets: list[tuple[str, Path, Path, bool]] = []
         # 同一上游 M7A/SRA 路径可能被多个 HSR 脚本共享；持有至恢复完成。
         self._external_path_lock: HSRExternalPathLockLease | None = None
+        self._recovered_update_engines: set[str] = set()
         # 旧 dev 没有插件 registry；由调度器独占本轮原生来源会话并在停止时取消。
         self._direct_sessions: dict[str, Any] = {}
         self._direct_user_log: LogRecord | None = None
@@ -305,15 +311,41 @@ class HSRManager(NotificationTaskBase):
             root = resolve_script_path(self.script_config, engine)
             if not root:
                 continue
+            install = Path(root)
             try:
-                await rollback_pending(Path(root), send_log=self._append_log)
-            except Exception as e:  # noqa: BLE001 - 未完成安装必须阻止任务启动
-                name = engine_label(engine, left=False)
-                logger.opt(exception=True).warning(
-                    f"HSR 更新：回滚{engine_label(engine)}残留失败"
+                await rollback_pending(install, send_log=self._append_log)
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:  # noqa: BLE001 - 原生事务不可凭版本号跳过
+                journal = install_recovery.journal_path(install)
+                if journal.is_symlink() or not journal.is_file():
+                    raise
+                self._append_log(
+                    f"{engine_label(engine)} 原生回滚未确认，调用公共恢复入口："
+                    f"{type(error).__name__}"
                 )
-                self._append_log(f"{name}未完成更新的回滚失败，已停止任务：{e}")
-                raise RuntimeError(f"{name}更新状态无法恢复，不能开始任务") from e
+
+                async def inspect():
+                    return await install_recovery.inspect_installation(engine, install)
+
+                async def reinstall():
+                    await rollback_pending(install, send_log=self._append_log)
+                    if journal.exists() or journal.is_symlink():
+                        raise RuntimeError("原生事务仍未完成，禁止启动")
+
+                outcome = await auto_recover_script_install(
+                    ScriptUpdateRequest(str(self.script_info.script_id), "HSR", engine),
+                    install_root=install,
+                    inspect=inspect,
+                    acknowledge=reinstall,
+                    reinstall=reinstall,
+                )
+                if outcome not in {"reinstalled", "verified"}:
+                    raise RuntimeError("未确认原生更新事务已经安全恢复")
+                self._append_log(
+                    f"{engine_label(engine)} 原生事务已由公共入口验证恢复：{outcome}"
+                )
+                self._recovered_update_engines.add(engine)
 
     def _update_aborted(self) -> bool:
         """用户是否已经要求停止——下载途中每收一块问一次。
@@ -397,6 +429,9 @@ class HSRManager(NotificationTaskBase):
         for engine in ("M7A", "SRA"):
             if self._update_aborted():
                 raise asyncio.CancelledError
+            if engine in getattr(self, "_recovered_update_engines", set()):
+                self._append_log(f"{engine_label(engine)} 已恢复本轮不重复更新")
+                continue
             root = resolve_script_path(script_config, engine)
             if not root:
                 continue
