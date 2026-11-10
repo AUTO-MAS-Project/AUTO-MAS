@@ -223,7 +223,6 @@ def managed_batch(installation, monkeypatch):
     return instance
 
 
-
 @pytest.mark.asyncio
 async def test_public_recovery_handles_legacy_pending_without_modal(
     managed_batch, installation, monkeypatch
@@ -282,7 +281,8 @@ async def test_legacy_pending_failure_is_not_silently_bypassed(
 ):
     update.pending_marker(installation).write_text("3.1.1", encoding="utf-8")
     monkeypatch.setattr(
-        manager, "auto_recover_script_install",
+        manager,
+        "auto_recover_script_install",
         AsyncMock(side_effect=update.WhimboxUpdateUnsafeError("unsafe")),
     )
     with pytest.raises(update.WhimboxUpdateUnsafeError):
