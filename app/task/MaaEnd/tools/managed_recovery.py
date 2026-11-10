@@ -86,14 +86,31 @@ class MaaEndInstallAdapter:
                 archive.replace(marker)
             raise
 
-    async def retry_native(self) -> None:
+    async def recover_native(self) -> None:
+        """仅恢复原生目录事务；安装健康验证留给后续公共恢复入口。"""
         await script_install.run_worker(
             script_install.recover_install,
             self.root,
             lambda: script_update.assert_idle(self.root),
         )
+
+    async def retry_native(self) -> None:
+        await self.recover_native()
         await script_update.confirm_current_install(
             self.root, verify_receipt=self.takeover_enabled
+        )
+
+    async def inspect_repair(self) -> InstallInspection:
+        """将无 journal、但有可信身份的损坏安装表达为公共待恢复态。"""
+        state = await self.inspect()
+        if state.pending or state.healthy:
+            return state
+        return InstallInspection(
+            pending=True,
+            healthy=False,
+            installed_version=state.installed_version,
+            previous_confirmed=False,
+            updated_confirmed=False,
         )
 
     async def repair_program(self) -> None:
@@ -104,7 +121,15 @@ class MaaEndInstallAdapter:
             )
         snapshot = identity.read_bytes()
         script_update.verify_repair_identity(self.root, snapshot)
-        await script_update.update_before_run(
-            self.root, self.config, recovery_identity=snapshot
-        )
+        # 可识别的 MXU 原生升级不应被当作损坏 EXE，更不能降低版本。
+        # 仅在原生安装身份本身无法读取时走带身份绑定的强制修复；
+        # 旧 MAS 回执失效时保留正常更新器的精确版本官方包复核。
+        try:
+            await asyncio.to_thread(script_update.read_install, self.root)
+        except (OSError, ValueError):
+            await script_update.update_before_run(
+                self.root, self.config, recovery_identity=snapshot
+            )
+        else:
+            await script_update.update_before_run(self.root, self.config)
         await script_update.confirm_current_install(self.root)
