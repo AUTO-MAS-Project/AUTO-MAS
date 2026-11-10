@@ -1107,7 +1107,9 @@ def test_hsr_sra_gui_without_readable_exe_path_blocks_recovery(monkeypatch, tmp_
     monkeypatch.setattr(
         install_recovery.psutil, "process_iter", lambda attributes: [fake]
     )
-    with pytest.raises(install_recovery.script_install.InstallUnsafeError, match="无法确认"):
+    with pytest.raises(
+        install_recovery.script_install.InstallUnsafeError, match="无法确认"
+    ):
         install_recovery.assert_idle(tmp_path)
 
 
