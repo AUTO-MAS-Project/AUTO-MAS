@@ -24,7 +24,11 @@ import app.core.notify.report as _node_report
 from app.config import ConfigCollection, config_manager
 from app.core import Config, EmulatorManager, Notify, Publisher
 from app.core.notify.task_content import screenshot_entries as screenshot_entries
-from app.core.script_update import ScriptUpdateRequest, run_script_update
+from app.core.script_update import (
+    ScriptUpdateRequest,
+    auto_recover_script_install,
+    run_script_update,
+)
 from app.core.ws import protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
@@ -51,7 +55,8 @@ from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from .AutoProxy import AutoProxyTask
 from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_base
-from .tools import install_recovery, script_update
+from .tools import script_update
+from .tools.managed_recovery import MaaEndInstallAdapter
 from .tools.backup_archive import archive_native_backup
 from .tools.update import ensure_game_updated
 from .Update import EndfieldUpdateTask
@@ -489,57 +494,55 @@ class MaaEndManager(ScriptManagerBase):
             if (script_install.workspace(root) / "runtime-interface.json").exists():
                 await asyncio.to_thread(script_update.assert_idle, root)
                 script_update.recover_runtime_interface(root)
-            # 通用事务优先自动恢复；失败后必须以原安装目录为对象请求
-            # 用户选择。允许人工确认不代表可以忽略待切换目录或进程占用。
             journal = script_install.workspace(root) / "transaction.json"
             if journal.is_symlink():
-                raise script_install.InstallUnsafeError(
-                    "MaaEnd 事务记录是符号链接，拒绝恢复"
-                )
-            recovered_by_user = False
+                raise script_install.InstallUnsafeError("MaaEnd 原生事务路径不安全")
+            adapter = MaaEndInstallAdapter(
+                root, config, takeover_enabled=config.Update.TakeoverEnabled
+            )
+            request = ScriptUpdateRequest(str(self.script_info.script_id), "MaaEnd")
+            recovered_automatically = False
             try:
-                await script_install.run_worker(
-                    script_install.recover_install,
-                    root,
-                    lambda: script_update.assert_idle(root),
-                )
+                await adapter.retry_native()
             except script_install.InstallUnsafeError:
                 if not journal.is_file():
                     raise
-                action, snapshot = await install_recovery.ask_install_recovery(
-                    self.task_info.task_id,
-                    root,
-                    managed_name=getattr(self.script_info, "name", "MaaEnd"),
-                    takeover_enabled=config.Update.TakeoverEnabled,
+                # 不再等待用户选择：只有已验证发行文件与安装回执才可
+                # 清理过期 journal；否则重做原生事务回滚，失败保留现场。
+                outcome = await auto_recover_script_install(
+                    request,
+                    install_root=root,
+                    inspect=adapter.inspect,
+                    acknowledge=adapter.acknowledge,
+                    reinstall=adapter.retry_native,
                 )
-                if action == "skip":
-                    result = await install_recovery.skip_stale_transaction(
-                        root, snapshot, takeover_enabled=config.Update.TakeoverEnabled
+                await self.script_info.set_log(
+                    f"MaaEnd 原生事务自动恢复：{outcome}"
+                )
+                recovered_automatically = True
+            # 仅在已经存在 MAS 身份回执时允许自动修复损坏的本体。
+            # 用户自选构建与手动模式不使用猜测的架构覆盖安装。
+            identity = script_install.record_path(root, "program-identity.json")
+            if identity.is_file() and not identity.is_symlink():
+                state = await adapter.inspect()
+                if not state.healthy and not state.pending:
+                    outcome = await auto_recover_script_install(
+                        request,
+                        install_root=root,
+                        inspect=adapter.inspect,
+                        acknowledge=adapter.acknowledge,
+                        reinstall=adapter.repair_program,
                     )
                     await self.script_info.set_log(
-                        f"用户确认跳过 MaaEnd 无法恢复的旧事务，当前版本 {result}"
+                        f"MaaEnd 官方完整包自动修复：{outcome}"
                     )
-                else:
-                    install_recovery.confirm_snapshot(root, snapshot)
-                    await script_install.run_worker(
-                        script_install.recover_install,
-                        root,
-                        lambda: script_update.assert_idle(root),
-                    )
-                    await script_update.confirm_current_install(
-                        root,
-                        verify_receipt=config.Update.TakeoverEnabled,
-                    )
-                    await self.script_info.set_log("MaaEnd 旧安装事务已重新恢复")
-                # 显式恢复操作本轮不再重复下载/覆盖新包，但仍须完成
-                # 原有资源加载与 MXU 旧包清理阶段。
-                recovered_by_user = True
+                    recovered_automatically = True
             if self.execution_mode == "AutoProxy" and config.Update.TakeoverEnabled:
                 self.maaend_config_dir = root / "config"
                 self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
                 self._recover_previous_run()
                 # 修复在原有资源预检之前，损坏的旧资源不能堵死恢复入口。
-                if recovered_by_user:
+                if recovered_automatically:
                     await self._refresh_after_program_install(root)
                     self._program_update_prepared = True
                 else:
