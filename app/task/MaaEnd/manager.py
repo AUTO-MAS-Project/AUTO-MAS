@@ -516,9 +516,7 @@ class MaaEndManager(ScriptManagerBase):
                     acknowledge=adapter.acknowledge,
                     reinstall=adapter.retry_native,
                 )
-                await self.script_info.set_log(
-                    f"MaaEnd 原生事务自动恢复：{outcome}"
-                )
+                await self.script_info.set_log(f"MaaEnd 原生事务自动恢复：{outcome}")
                 recovered_automatically = True
             # 仅在已经存在 MAS 身份回执时允许自动修复损坏的本体。
             # 用户自选构建与手动模式不使用猜测的架构覆盖安装。
