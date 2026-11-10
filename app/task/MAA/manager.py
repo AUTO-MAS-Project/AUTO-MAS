@@ -26,7 +26,11 @@ from app.core.notify.task_content import (
     NOTIFY_SCREENSHOT_LIMIT as NOTIFY_SCREENSHOT_LIMIT,
 )
 from app.core.notify.task_content import screenshot_entries as screenshot_entries
-from app.core.script_update import ScriptUpdateRequest, run_script_update
+from app.core.script_update import (
+    ScriptUpdateRequest,
+    auto_recover_script_install,
+    run_script_update,
+)
 from app.core.ws import protocol
 from app.models.config import MaaConfig, MaaUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
@@ -58,7 +62,8 @@ from .AutoProxy import (
 )
 from .constants import ARKNIGHTS_PACKAGE_NAME
 from .ScriptConfig import ScriptConfigTask
-from .tools import install_recovery, update_maa
+from .tools import update_maa
+from .tools.managed_recovery import MAAInstallAdapter
 from .tools.backup_archive import (
     archive_native_backup,
     collect_native_files,
@@ -515,50 +520,42 @@ class MaaManager(ScriptManagerBase):
         return base == CONFIG_BASE_NATIVE
 
     async def _recover_unconfirmed_update(self) -> None:
-        """由用户明确决定如何恢复上次 MAA 官方安装或 MAS 资源写入。"""
+        """公共入口核验官方本体和资源标记，自动选择安全恢复路径。"""
         root = self.maa_set_path.parent
         software_flag = root / "pending-update-failure.txt"
         resource_flag = root / ".automas-resource-update.json"
-        if not (
-            software_flag.exists()
-            or software_flag.is_symlink()
-            or resource_flag.exists()
-            or resource_flag.is_symlink()
+        if not any(
+            path.exists() or path.is_symlink()
+            for path in (software_flag, resource_flag)
         ):
             return
 
-        # prepare() 已拿到本安装的资源访问锁并关闭 MAA；此后才允许恢复或放行。
-        action, snapshot = await install_recovery.ask_maa_recovery(
-            self.task_info.task_id,
-            root,
-            managed_name=getattr(self.script_info, "name", "MAA"),
-            takeover_enabled=self.script_config.Update.TakeoverEnabled,
+        # prepare() 已拿到资源写入锁并确认官方更新器停写。
+        adapter = MAAInstallAdapter(root)
+
+        async def install_software(target: str | None) -> None:
+            await self._install_pending_software_update(target=target)
+
+        async def install_resources() -> None:
+            cdk = resolve_takeover_cdk(
+                str(self.script_config.Update.MirrorChyanCDK or "")
+            )
+            await prepare_install_resources(
+                root, cdk=cdk or None, github=not bool(cdk)
+            )
+
+        async def reinstall() -> None:
+            await adapter.reinstall(install_software, install_resources)
+
+        outcome = await auto_recover_script_install(
+            ScriptUpdateRequest(str(self.script_info.script_id), "MAA"),
+            install_root=root,
+            inspect=adapter.inspect,
+            acknowledge=adapter.acknowledge,
+            reinstall=reinstall,
         )
-        if action == "skip":
-            version = await install_recovery.skip_delegated_failure(root, snapshot)
-            message = f"用户确认沿用手动修复的 MAA {version}；原失败记录已归档"
-        else:
-            install_recovery.confirm_snapshot(root, snapshot)
-            if software_flag.exists():
-                version, package = read_pending_update(root)
-                if not package or not (root / package).is_file():
-                    raise MaaUpdateUnsafeError(
-                        "MAA 原安装包不在，无法自动重试；请先通过官方 MAA 安装器手动修复"
-                    )
-                await self._install_pending_software_update(target=version or None)
-            if resource_flag.exists():
-                cdk = resolve_takeover_cdk(
-                    str(self.script_config.Update.MirrorChyanCDK or "")
-                )
-                # 用户明确选择了本次重试：即使关闭了日常自动接管也允许
-                # 单次通过公开 GitHub 资源或已有 CDK 修复中断的资源合并。
-                await prepare_install_resources(
-                    root, cdk=cdk or None, github=not bool(cdk)
-                )
-            install_recovery.confirm_recovery_finished(root)
-            message = "MAA 本体与资源恢复已完成，允许继续运行"
-        await self.script_info.set_log(message)
-        # 本次用户已明确选择，避免刚恢复后又自动执行第二轮版本升级。
+        await self.script_info.set_log(f"MAA 官方安装/资源状态已自动恢复：{outcome}")
+        # 避免刚恢复后同一轮又执行二次升级，异常留给任务结束统一报告。
         self._maa_update_checked = True
 
     async def main_task(self):
