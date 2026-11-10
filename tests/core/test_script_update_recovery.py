@@ -524,3 +524,43 @@ async def test_uncertain_installer_does_not_rollback_while_still_running(tmp_pat
     assert ManagedInstallBackup(
         root, script_id="one", script_type="BAAH"
     ).record.exists()
+
+
+
+@pytest.mark.asyncio
+async def test_repeated_download_failure_is_only_notified_after_queue_completion(
+    monkeypatch, tmp_path
+):
+    events = [
+        RecoveryIncident(
+            script_id="bgi-one",
+            script_type="BetterGI",
+            install_root=str(tmp_path),
+            outcome="old_version",
+            installed_version="1.0.0",
+            source="GitHub",
+            reason="恢复时再次下载失败：连接超时；已从更新前备份恢复旧版",
+        )
+    ]
+    task = SimpleNamespace(
+        task_id="task-done",
+        current=SimpleNamespace(recovery_summary=""),
+        commit=AsyncMock(),
+    )
+    session = object.__new__(script_update.ScriptUpdateSession)
+    session._task = task
+    session._recovery_events = events
+    session._recovery_reported = False
+    notices = []
+    monkeypatch.setattr(
+        script_update.Publisher,
+        "send",
+        AsyncMock(side_effect=lambda **kwargs: notices.append(kwargs)),
+    )
+    assert not notices
+    await session.publish_recovery_summary()
+    assert len(notices) == 1
+    assert "再次下载失败" in notices[0]["data"].message
+    assert "GitHub" in notices[0]["data"].message
+    assert "旧版" in task.current.recovery_summary
+    assert notices[0]["data"].level == "warning"
