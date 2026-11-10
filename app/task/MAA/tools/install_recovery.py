@@ -20,7 +20,7 @@ from app.utils import get_logger, process
 
 from .resource_update import has_incomplete_resource_update, read_resource_clock
 from .software_package import has_delegated_update_failure, read_pending_update
-from .software_update import parse_version, read_installed_release
+from .software_update import _read_pe_machine, parse_version, read_installed_release
 from .update_errors import MaaUpdateUnsafeError
 
 logger = get_logger("MAA 更新恢复")
@@ -82,7 +82,12 @@ async def ask_maa_recovery(
         target, package = read_pending_update(root)
     except (OSError, ValueError):
         target, package = "", ""
-    can_retry = "resource" in snapshot or bool(package and (root / package).is_file())
+    # 官方恢复入口仍需启动 MAA.exe，只有 ZIP 并不意味着可自动修复。
+    can_retry = "resource" in snapshot or bool(
+        package
+        and (root / package).is_file()
+        and _read_pe_machine(root / "MAA.exe") is not None
+    )
     can_skip = "software" in snapshot and "resource" not in snapshot
 
     request_id = uuid4().hex
@@ -157,6 +162,10 @@ async def _check_current_install(root: Path) -> str:
         raise MaaUpdateUnsafeError("MAA 官方更新器仍在写盘，禁止跳过")
     if not (root / "MAA.exe").is_file() or not (root / "MAA.dll").is_file():
         raise MaaUpdateUnsafeError("MAA 主程序或核心程序集缺失，不能跳过安装失败")
+    if await asyncio.to_thread(_read_pe_machine, root / "MAA.exe") is None:
+        raise MaaUpdateUnsafeError(
+            "MAA.exe 文件已损坏或 PE 架构不可识别，不能确认安装健康"
+        )
     release = await asyncio.to_thread(read_installed_release, root)
     if release is None or parse_version(release[0]) is None:
         raise MaaUpdateUnsafeError("MAA 版本或架构不可识别，不能跳过安装失败")
