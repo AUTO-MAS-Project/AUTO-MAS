@@ -563,3 +563,116 @@ async def test_repeated_download_failure_is_only_notified_after_queue_completion
     assert "GitHub" in notices[0]["data"].message
     assert "旧版" in task.current.recovery_summary
     assert notices[0]["data"].level == "warning"
+
+
+@pytest.mark.asyncio
+async def test_install_snapshot_recovers_across_different_profiles(tmp_path):
+    root = tmp_path / "shared-BetterGI"
+    root.mkdir()
+    (root / "program.exe").write_bytes(b"before")
+    first = ManagedInstallBackup(root, script_id="profile-one", script_type="BetterGI")
+    await first.create("1.0.0")
+    second = ManagedInstallBackup(root, script_id="profile-two", script_type="BetterGI")
+    assert second.read()["script_id"] == "profile-one"
+    assert second.read()["files"]["program.exe"]
+    other_type = ManagedInstallBackup(root, script_id="profile-two", script_type="MAA")
+    with pytest.raises(InstallUnsafeError, match="身份变化"):
+        other_type.read()
+
+
+@pytest.mark.asyncio
+async def test_restore_journal_can_finish_after_crash_during_directory_swap(tmp_path):
+    root = tmp_path / "script"
+    root.mkdir()
+    (root / "bin").write_bytes(b"old")
+    backup = ManagedInstallBackup(root, script_id="one", script_type="SRC")
+    await backup.create("1.0.0")
+    backup.set_phase("installing")
+    (root / "bin").write_bytes(b"broken")
+    backup.set_phase("restoring")
+    root.replace(backup.failed)
+    backup.snapshot.replace(root)
+    reinstall = AsyncMock()
+
+    async def inspect():
+        return InstallInspection(
+            pending=False,
+            healthy=True,
+            installed_version="1.0.0",
+            previous_confirmed=True,
+        )
+
+    events = []
+    result = await run_managed_installation(
+        script_id="one",
+        script_type="SRC",
+        install_root=root,
+        inspect=inspect,
+        acknowledge=AsyncMock(),
+        install=reinstall,
+        ensure_idle=AsyncMock(),
+        after_rollback=AsyncMock(),
+        report=events.append,
+    )
+    assert result == "old_version"
+    reinstall.assert_not_awaited()
+    assert (root / "bin").read_bytes() == b"old"
+    assert not backup.record.exists()
+
+
+@pytest.mark.asyncio
+async def test_corrupt_backup_does_not_overwrite_current_install(tmp_path):
+    root = tmp_path / "script"
+    root.mkdir()
+    (root / "bin").write_bytes(b"old")
+    backup = ManagedInstallBackup(root, script_id="one", script_type="MAA")
+    await backup.create("1.0.0")
+    backup.set_phase("installing")
+    (root / "bin").write_bytes(b"broken-install")
+    (backup.snapshot / "bin").write_bytes(b"tampered-backup")
+    with pytest.raises(InstallUnsafeError, match="备份文件不完整"):
+        await backup.restore()
+    assert (root / "bin").read_bytes() == b"broken-install"
+    assert backup.record.exists()
+
+
+@pytest.mark.asyncio
+async def test_new_public_entry_reports_only_through_current_session(tmp_path):
+    root = tmp_path / "script"
+    root.mkdir()
+    exe = root / "bin"
+    exe.write_bytes(b"old")
+    incidents = []
+    session = object.__new__(script_update.ScriptUpdateSession)
+    session.record_recovery = incidents.append
+    token = script_update._current_recovery_session.set(session)
+
+    async def inspect():
+        updated = exe.read_bytes() == b"new"
+        return InstallInspection(
+            pending=False,
+            healthy=True,
+            installed_version="1.1.0" if updated else "1.0.0",
+            updated_confirmed=updated,
+            previous_confirmed=not updated,
+        )
+
+    async def install():
+        exe.write_bytes(b"new")
+
+    try:
+        result = await script_update.run_managed_script_install(
+            script_update.ScriptUpdateRequest("one", "MAA"),
+            install_root=root,
+            inspect=inspect,
+            acknowledge=AsyncMock(),
+            install=install,
+            ensure_idle=AsyncMock(),
+            after_rollback=AsyncMock(),
+        )
+    finally:
+        script_update._current_recovery_session.reset(token)
+    assert result == "installed"
+    assert len(incidents) == 1
+    assert incidents[0].outcome == "installed"
+    assert not ManagedInstallBackup(root, script_id="one", script_type="MAA").record.exists()
