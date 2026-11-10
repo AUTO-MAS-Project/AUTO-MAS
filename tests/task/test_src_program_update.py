@@ -478,3 +478,42 @@ async def test_src_missing_frontend_never_blocks_common_recovery(
     )
     assert await instance._recover_unconfirmed_install()
     assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_git_head_at_target_does_not_prove_native_dependencies_complete(
+    installation, monkeypatch
+):
+    from app.task.SRC.tools.managed_recovery import SRCInstallAdapter
+
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
+    adapter = SRCInstallAdapter(root)
+    state = await adapter.inspect()
+    # 即使 pip check 成功也不能跳过本提交的原生 installer。
+    assert state.pending and not state.updated_confirmed
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_native_completion_record_survives_adapter_recreation(
+    installation, monkeypatch
+):
+    from app.task.SRC.tools.managed_recovery import SRCInstallAdapter
+    from app.services.script_install_backup import ManagedInstallBackup
+
+    root, _ = installation
+    old_commit = git(root, "rev-parse", "HEAD")
+    backup = ManagedInstallBackup(root, script_id="test", script_type="SRC")
+    await backup.create(old_commit)
+    candidate = await update.prepare_update(root)
+    if candidate is None:
+        pytest.skip("SRC 测试代码源无新目标提交")
+    await update.apply_update(root, candidate)
+    adapter = SRCInstallAdapter(root)
+    state = await adapter.inspect()
+    assert state.updated_confirmed
+    assert state.installed_version == candidate.target_commit
+    assert backup.read()["version"] == old_commit
