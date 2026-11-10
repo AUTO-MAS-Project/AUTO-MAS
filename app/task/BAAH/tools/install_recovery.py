@@ -53,7 +53,10 @@ async def ask_install_recovery(
     if len(snapshot) > 64 * 1024:
         raise script_install.InstallUnsafeError("BAAH 事务标记过大，拒绝修改")
     can_skip = not (
-        previous.exists() or previous.is_symlink() or ready.exists() or ready.is_symlink()
+        previous.exists()
+        or previous.is_symlink()
+        or ready.exists()
+        or ready.is_symlink()
     )
     try:
         current = str(await asyncio.to_thread(program_update.read_version, root))
@@ -131,9 +134,10 @@ async def skip_stale_transaction(root: Path, snapshot: bytes) -> str:
         raise script_install.InstallUnsafeError(
             "BAAH 仍保留安装备份或暂存目录，禁止跳过事务恢复"
         )
-    if await asyncio.to_thread(
-        script_install.read_pe_architecture, root / "BAAH.exe"
-    ) != "x86_64":
+    if (
+        await asyncio.to_thread(script_install.read_pe_architecture, root / "BAAH.exe")
+        != "x86_64"
+    ):
         raise script_install.InstallUnsafeError(
             "BAAH 主程序架构不可识别，无法确认手动修复已完成"
         )

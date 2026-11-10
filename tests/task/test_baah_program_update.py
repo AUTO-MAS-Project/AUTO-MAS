@@ -320,9 +320,7 @@ async def test_baah_transaction_with_backup_is_never_skipped(installation):
 
 
 @pytest.mark.asyncio
-async def test_baah_stale_marker_or_bad_receipt_refuses_skip(
-    installation, monkeypatch
-):
+async def test_baah_stale_marker_or_bad_receipt_refuses_skip(installation, monkeypatch):
     from app.task.BAAH.tools import install_recovery
 
     root, _, _, _ = installation
@@ -337,9 +335,7 @@ async def test_baah_stale_marker_or_bad_receipt_refuses_skip(
     receipt = script_install.record_path(root, "installed.json")
     receipt.parent.mkdir(parents=True, exist_ok=True)
     receipt.write_text("{}")
-    monkeypatch.setattr(
-        script_install, "verify_installed_files", lambda *args: False
-    )
+    monkeypatch.setattr(script_install, "verify_installed_files", lambda *args: False)
     with pytest.raises(script_install.InstallUnsafeError, match="回执"):
         await install_recovery.skip_stale_transaction(root, marker.read_bytes())
     assert marker.is_file()
@@ -367,9 +363,7 @@ async def test_baah_unconnected_frontend_preserves_install_journal(
 
 
 @pytest.mark.asyncio
-async def test_baah_recovery_prompt_identifies_target(
-    installation, monkeypatch
-):
+async def test_baah_recovery_prompt_identifies_target(installation, monkeypatch):
     from app.core import Dispatcher
     from app.core.ws import protocol
     from app.models.schema import WSEnvelope

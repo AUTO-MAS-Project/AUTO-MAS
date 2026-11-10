@@ -159,7 +159,9 @@ class BAAHManager(ScriptManagerBase):
                     takeover_enabled=self.script_config.Update.TakeoverEnabled,
                 )
                 if action == "skip":
-                    result = await install_recovery.skip_stale_transaction(root, snapshot)
+                    result = await install_recovery.skip_stale_transaction(
+                        root, snapshot
+                    )
                     await self.script_info.set_log(
                         f"用户确认 BAAH 原安装已修复，已归档旧事务标记：{result}"
                     )
