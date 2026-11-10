@@ -1090,7 +1090,12 @@ async def test_hsr_skip_only_after_manual_repair_and_no_backup(tmp_path, monkeyp
     monkeypatch.chdir(tmp_path)
     root = tmp_path / "m7a"
     root.mkdir()
-    (root / "March7th Assistant.exe").write_bytes(b"manual repair")
+    # 可解析的 PE64 文件头，保持真实安全检查而不是 mock 掉它。
+    executable = bytearray(128)
+    executable[:2] = b"MZ"
+    executable[60:64] = (64).to_bytes(4, "little")
+    executable[64:70] = b"PE\x00\x00\x64\x86"
+    (root / "March7th Assistant.exe").write_bytes(executable)
     marker = install_recovery.journal_path(root)
     marker.parent.mkdir()
     marker.write_bytes(b"broken journal")
@@ -1246,3 +1251,51 @@ async def test_hsr_manager_gives_user_decision_after_failed_automatic_rollback(
     await scheduler._rollback_pending_updates()
     skip.assert_awaited_once()
     assert scheduler._recovered_update_engines == {"M7A"}
+
+
+@pytest.mark.asyncio
+async def test_hsr_m7a_damaged_executable_does_not_acknowledge_old_journal(
+    tmp_path, monkeypatch
+):
+    from app.task.HSR.tools.update import install_recovery
+
+    root = tmp_path / "m7a"
+    root.mkdir()
+    (root / "March7th Assistant.exe").write_bytes(b"")
+    marker = install_recovery.journal_path(root)
+    marker.parent.mkdir()
+    marker.write_bytes(b"old journal")
+    monkeypatch.setattr(install_recovery, "_assert_idle", lambda root: None)
+    monkeypatch.setattr(
+        install_recovery, "read_installed_version", lambda spec, root: "v1.2.3"
+    )
+    with pytest.raises(install_recovery.HSRRecoveryUnsafeError, match="PE 文件已损坏"):
+        await install_recovery.skip_stale_journal("M7A", root, marker.read_bytes())
+    assert marker.exists()
+
+
+def test_hsr_sra_gui_without_readable_exe_path_blocks_recovery(monkeypatch, tmp_path):
+    from app.task.HSR.tools.update import install_recovery
+
+    fake = SimpleNamespace(info={"exe": None, "name": "SRA.exe"})
+    monkeypatch.setattr(install_recovery, "check_no_process_running", lambda root: None)
+    monkeypatch.setattr(
+        install_recovery.psutil, "process_iter", lambda attributes: [fake]
+    )
+    with pytest.raises(install_recovery.HSRRecoveryUnsafeError, match="无法确认"):
+        install_recovery._assert_idle(tmp_path)
+
+
+def test_hsr_large_journal_snapshot_is_accepted_and_changes_are_rejected(tmp_path):
+    from app.task.HSR.tools.update import install_recovery
+
+    root = tmp_path / "m7a"
+    root.mkdir()
+    marker = install_recovery.journal_path(root)
+    marker.parent.mkdir()
+    payload = b"{" + b" " * (72 * 1024) + b"}"
+    marker.write_bytes(payload)
+    install_recovery.confirm_snapshot(root, payload)
+    marker.write_bytes(payload[:-1] + b"x")
+    with pytest.raises(install_recovery.HSRRecoveryUnsafeError, match="变化"):
+        install_recovery.confirm_snapshot(root, payload)
