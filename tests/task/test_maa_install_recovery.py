@@ -107,127 +107,48 @@ async def test_updater_running_or_marker_changed_never_skips(maa_root):
 
 
 @pytest.mark.asyncio
-async def test_unattended_maaupdate_does_not_clear_failure(maa_root, monkeypatch):
+async def test_maa_managed_recovery_does_not_depend_on_frontend(maa_root, monkeypatch):
+    from app.task.MAA.tools import managed_recovery
+
     flag = maa_root / "pending-update-failure.txt"
-    flag.write_bytes(b"MAA repair failed")
-    monkeypatch.setattr(recovery.Publisher, "send", AsyncMock(return_value=False))
-    with pytest.raises(MaaUpdateUnsafeError, match="主界面"):
-        await recovery.ask_maa_recovery(
-            "task", maa_root, managed_name="MAA 定时托管", takeover_enabled=False
+    flag.write_bytes(b"native installer failed")
+    monkeypatch.setattr(
+        managed_recovery, "read_installed_release", lambda root: ("v6.2.0", "x64")
+    )
+    monkeypatch.setattr(
+        managed_recovery, "read_resource_clock", lambda root: datetime(
+            2026, 10, 1, tzinfo=timezone.utc
         )
-    assert flag.read_bytes() == b"MAA repair failed"
-
-
-@pytest.mark.asyncio
-async def test_prompt_shows_correct_installation_and_software_actions(
-    maa_root, monkeypatch
-):
-    flag = maa_root / "pending-update-failure.txt"
-    flag.write_bytes(b"failure")
-    shown = []
-
-    async def send(*, id, type, data):
-        if type == protocol.MAA_INSTALL_PROMPT:
-            shown.append(data)
-            Dispatcher.dispatch(
-                WSEnvelope(
-                    id=id,
-                    type=protocol.MAA_INSTALL_DECISION,
-                    data={
-                        "taskId": data["taskId"],
-                        "requestId": data["requestId"],
-                        "action": "stop",
-                    },
-                )
-            )
-        return True
-
-    monkeypatch.setattr(recovery.Publisher, "send", send)
-    with pytest.raises(MaaUpdateUnsafeError, match="取消"):
-        await recovery.ask_maa_recovery(
-            "task", maa_root, managed_name="测试专用 MAA", takeover_enabled=False
-        )
-    assert shown[0]["managedName"] == "测试专用 MAA"
-    assert shown[0]["installPath"] == str(maa_root.resolve())
-    assert shown[0]["canSkip"] is True
-    assert shown[0]["canRetry"] is False
+    )
+    adapter = managed_recovery.MAAInstallAdapter(maa_root)
+    state = await adapter.inspect()
+    assert state.pending
+    assert not state.updated_confirmed
     assert flag.exists()
 
 
 @pytest.mark.asyncio
-async def test_maa_resource_only_prompt_forbids_skip(maa_root, monkeypatch):
-    flag = maa_root / ".automas-resource-update.json"
-    flag.write_text("{}")
-    monkeypatch.setattr(recovery.Publisher, "send", AsyncMock(return_value=True))
-    monkeypatch.setattr(recovery, "_PROMPT_TIMEOUT", 0.003)
-    with pytest.raises(MaaUpdateUnsafeError, match="超时"):
-        await recovery.ask_maa_recovery(
-            "task", maa_root, managed_name="MAA", takeover_enabled=False
-        )
-    assert flag.exists()
-
-
-@pytest.mark.asyncio
-async def test_manager_can_repair_resource_when_takeover_disabled(
+async def test_maa_manager_resource_recovery_goes_through_common_entry(
     maa_root, monkeypatch
 ):
     resource = maa_root / ".automas-resource-update.json"
     resource.write_text('{"target":"2026-10-01T00:00:00+00:00"}')
     instance = object.__new__(manager.MaaManager)
     instance.maa_set_path = maa_root / "config"
-    instance.script_info = SimpleNamespace(name="MAA", set_log=AsyncMock())
+    instance.script_info = SimpleNamespace(
+        name="MAA", script_id="test-script", set_log=AsyncMock()
+    )
     instance.task_info = SimpleNamespace(task_id="task")
     instance.script_config = SimpleNamespace(
         Update=SimpleNamespace(TakeoverEnabled=False, MirrorChyanCDK="")
     )
     instance._maa_update_checked = False
-    monkeypatch.setattr(
-        recovery,
-        "ask_maa_recovery",
-        AsyncMock(return_value=("retry", {"resource": resource.read_bytes()})),
-    )
-    monkeypatch.setattr(manager, "resolve_takeover_cdk", lambda cdk: "")
-    called = []
-
-    async def repair(root, **kwargs):
-        called.append(kwargs)
-        resource.unlink()
-
-    monkeypatch.setattr(manager, "prepare_install_resources", repair)
+    common = AsyncMock(return_value="reinstalled")
+    monkeypatch.setattr(manager, "auto_recover_script_install", common)
     await instance._recover_unconfirmed_update()
-    assert called == [{"cdk": None, "github": True}]
-    assert instance._maa_update_checked is True
+    common.assert_awaited_once()
+    assert instance._maa_update_checked
     instance.script_info.set_log.assert_awaited_once()
-    assert not resource.exists()
-
-
-@pytest.mark.asyncio
-async def test_maa_stop_on_change_during_prompt(maa_root, monkeypatch):
-    flag = maa_root / "pending-update-failure.txt"
-    flag.write_bytes(b"original")
-
-    async def send(*, id, type, data):
-        if type == protocol.MAA_INSTALL_PROMPT:
-            flag.write_bytes(b"other install failure")
-            Dispatcher.dispatch(
-                WSEnvelope(
-                    id=id,
-                    type=protocol.MAA_INSTALL_DECISION,
-                    data={
-                        "taskId": data["taskId"],
-                        "requestId": data["requestId"],
-                        "action": "skip",
-                    },
-                )
-            )
-        return True
-
-    monkeypatch.setattr(recovery.Publisher, "send", send)
-    with pytest.raises(MaaUpdateUnsafeError, match="变化"):
-        await recovery.ask_maa_recovery(
-            "task", maa_root, managed_name="MAA", takeover_enabled=True
-        )
-    assert flag.read_bytes() == b"other install failure"
 
 
 @pytest.mark.asyncio
@@ -243,38 +164,23 @@ async def test_maa_corrupted_executable_blocks_manual_acknowledge(
 
 
 @pytest.mark.asyncio
-async def test_maa_missing_exe_disallows_native_retry_even_with_pending_zip(
+async def test_maa_missing_executable_never_becomes_healthy(
     maa_root, monkeypatch
 ):
+    from app.task.MAA.tools import managed_recovery
+
     flag = maa_root / "pending-update-failure.txt"
     flag.write_bytes(b"official error")
     (maa_root / "MAA.exe").unlink()
-    (maa_root / "pending.zip").write_bytes(b"archive")
     monkeypatch.setattr(
-        recovery, "read_pending_update", lambda root: ("v6.3.0", "pending.zip")
+        managed_recovery, "read_installed_release", lambda root: ("v6.2.0", "x64")
     )
-    shown = []
-
-    async def send(*, id, type, data):
-        if type == protocol.MAA_INSTALL_PROMPT:
-            shown.append(data)
-            Dispatcher.dispatch(
-                WSEnvelope(
-                    id=id,
-                    type=protocol.MAA_INSTALL_DECISION,
-                    data={
-                        "taskId": data["taskId"],
-                        "requestId": data["requestId"],
-                        "action": "stop",
-                    },
-                )
-            )
-        return True
-
-    monkeypatch.setattr(recovery.Publisher, "send", send)
-    with pytest.raises(MaaUpdateUnsafeError, match="取消"):
-        await recovery.ask_maa_recovery(
-            "task", maa_root, managed_name="MAA", takeover_enabled=True
+    monkeypatch.setattr(
+        managed_recovery, "read_resource_clock", lambda root: datetime(
+            2026, 10, 1, tzinfo=timezone.utc
         )
-    assert shown[0]["canRetry"] is False
+    )
+    adapter = managed_recovery.MAAInstallAdapter(maa_root)
+    state = await adapter.inspect()
+    assert state.pending and not state.healthy
     assert flag.exists()
