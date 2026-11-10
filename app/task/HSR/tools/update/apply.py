@@ -166,6 +166,11 @@ def rollback(install_root: Path) -> bool:
     """按 journal 回滚。返回是否真的做了事（无 journal 时返回 ``False``）。"""
 
     journal_file = journal_path(install_root)
+    work = work_dir(install_root)
+    backup = work / "backup"
+    if work.is_symlink() or backup.is_symlink() or journal_file.is_symlink():
+        logger.warning("HSR 更新：回滚目录或 journal 是符号链接，保留现场")
+        return False
     try:
         journal = json.loads(journal_file.read_text(encoding="utf-8"))
     except (OSError, ValueError):

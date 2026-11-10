@@ -1079,3 +1079,22 @@ async def test_prefetch_success_follows_final_module_verdict(
         )
     assert (user.first_task_completed_at is not None) is completed
     assert (script.first_task_completed_at is not None) is completed
+
+def test_hsr_rollback_refuses_linked_workdir_before_reading_journal(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "HSR"
+    root.mkdir()
+    work = installer.work_dir(root)
+    work.mkdir()
+    journal = installer.journal_path(root)
+    journal.write_text("original journal", encoding="utf-8")
+    real_is_symlink = type(work).is_symlink
+    monkeypatch.setattr(
+        type(work),
+        "is_symlink",
+        lambda path: path == work or real_is_symlink(path),
+    )
+    assert installer.rollback(root) is False
+    assert journal.read_text(encoding="utf-8") == "original journal"
+
