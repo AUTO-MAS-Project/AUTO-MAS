@@ -277,7 +277,7 @@ async def run_managed_installation(
             current = backup.read()
             if current is None:
                 raise InstallUnsafeError("安装备份已被外部修改")
-            if current["phase"] == "restored":
+            if current["phase"] in {"restoring", "restored"}:
                 return await restore_previous("上次安装回退中断")
             observed = await inspect()
             if observed.healthy and observed.updated_confirmed:
