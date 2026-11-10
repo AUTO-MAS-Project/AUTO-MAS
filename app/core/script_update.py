@@ -24,6 +24,7 @@ from app.core.script_update_recovery import (
     InstallInspection,
     RecoveryIncident,
     reconcile_installation,
+    run_managed_installation,
 )
 from app.core.script_update_queue import ScriptUpdateQueue
 from app.core.update import download_file, download_method, download_observer
@@ -85,6 +86,36 @@ async def auto_recover_script_install(
         inspect=inspect,
         acknowledge=acknowledge,
         reinstall=reinstall,
+        report=_record_recovery_event,
+    )
+
+
+async def run_managed_script_install(
+    request: ScriptUpdateRequest,
+    *,
+    install_root: Path,
+    inspect: Callable[[], Awaitable[InstallInspection]],
+    acknowledge: Callable[[], Awaitable[None]],
+    install: Callable[[], Awaitable[None]],
+    ensure_idle: Callable[[], Awaitable[None]],
+    after_rollback: Callable[[], Awaitable[None]],
+) -> str:
+    """统一收发安装事务，决定备份、重试、回退、清理并汇总结果。
+
+    专项只负责提供真实的健康证据、执行原生安装以及确认没有后台写盘。
+    安装锁由调用方从开始到整个结果收束时一直持有。
+    """
+    return await run_script_update(
+        request,
+        run_managed_installation,
+        script_id=request.script_id,
+        script_type=request.script_type,
+        install_root=install_root,
+        inspect=inspect,
+        acknowledge=acknowledge,
+        install=install,
+        ensure_idle=ensure_idle,
+        after_rollback=after_rollback,
         report=_record_recovery_event,
     )
 
@@ -216,6 +247,8 @@ class ScriptUpdateSession:
             return
         outcomes = {
             "verified": "已校验安装并自动清理残留记录",
+            "installed": "更新成功，已验证并删除更新前备份",
+            "deferred": "安装结果尚未确认，保留备份等待下次恢复",
             "reinstalled": "自动重装修复完成",
             "old_version": "重新下载失败，已验证旧版并继续运行",
             "blocked": "恢复失败，已保护安装现场并阻止启动",
@@ -246,7 +279,7 @@ class ScriptUpdateSession:
                 data=WSTaskNoticeData(
                     level="warning"
                     if any(
-                        e.outcome in ("old_version", "blocked")
+                        e.outcome in ("old_version", "blocked", "deferred")
                         for e in self._recovery_events
                     )
                     else "info",
