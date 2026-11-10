@@ -22,14 +22,17 @@
 
 和雷电 / MuMu 不同，这里没有厂商的管理器程序可调。MAS 不下载组件：用户把 ModAVD 发布包解压到一个
 根目录（模拟器只认里面 ``sdk\\emulator`` 的自编版），平台工具和系统镜像由包里的「补全组件.bat」补齐；缺了
-说缺哪一项、怎么补。模拟器本体可以在 MAS 里一键更新（:mod:`.updater`）。实例（AVD）由我们
-自己写配置文件管理，启动 / 关机 / 状态全部直接驱动 ``emulator.exe`` 和一个私有 adb server（默认端口 20050）。
+说缺哪一项、怎么补。模拟器本体可以在 MAS 里一键更新（:mod:`.updater`）。实例的启动 / 关机 / 状态 /
+设置 / 增删都交给根目录里的命令行 ``tools\\modavd.exe``（:mod:`.cli`）；没有它的根目录不支持。
+宿主侧另有一个私有 adb server（默认端口 20050）给拉起应用、截图等用。
 
-- :mod:`.constants`      端口、组件位置、实例模板参数
+- :mod:`.constants`      端口、组件位置、实例档位参数
 - :mod:`.components`     组件检查（关键文件、自编版探测、内测包编号）、元数据
-- :mod:`.instances`      AVD 配置文件的增删改查
-- :mod:`.host`           宿主侧：硬件加速检查、内存预检、进程查找、控制台、私有 adb
-- :mod:`.manager`        ``DeviceBase`` 实现（启动调优、首次初始化、冻结看门狗）
+- :mod:`.instances`      AVD 配置文件的读取与选项校验
+- :mod:`.cli`            ModAVD 命令行 ``modavd`` 的客户端
+- :mod:`.host`           宿主侧：进程查找、私有 adb、客体日志落盘
+- :mod:`.precheck`       开机前检查项的数据类型（检查本身由 modavd 做）
+- :mod:`.manager`        ``DeviceBase`` 实现（走 modavd，冻结看门狗）
 - :mod:`.service`        给 API 用的业务入口
 - :mod:`.update_source`  版本号、下载源（Mirror 酱、GitHub）
 - :mod:`.update_range`   GitHub 的整包按区间只取变了的文件
@@ -49,7 +52,6 @@ _SUBMODULES = {
     "instances": ".instances",
     "update_source": ".update_source",
     "constants": ".constants",
-    "vulkanfix": ".vulkanfix",
     "updater": ".updater",
     "precheck": ".precheck",
     "maafw_extras": ".maafw_extras",

@@ -21,22 +21,19 @@
 """ModAVD 实例（AVD）的配置文件。
 
 一台实例 = ``avd\\mas_<i>.ini`` + ``avd\\mas_<i>.avd\\config.ini``；原生索引 i 就是名字里的
-数字，端口也按它算，所以枚举只要扫 ``avd\\mas_*.ini``。配置只在停机时由我们写，模拟器
-自己不回写（不像雷电），所以没有回写冲突。
+数字，默认端口也按它算，所以枚举只要扫 ``avd\\mas_*.ini``。这些文件由 ModAVD 命令行写，
+MAS 这里只读；另外放着新建 / 改设置共用的选项校验。
 
-实例的 MAS 侧设置（内存、首次初始化做没做、渲染器）不放进 ``config.ini``——
-模拟器不认识的键会被它自己的工具当成垃圾——而是放在根目录的 ``mas-avd.json`` 里。
+实例的其它设置（内存、新建状态等）不放进 ``config.ini``，而是放在根目录的 ``mas-avd.json`` 里。
 """
 
 from __future__ import annotations
 
-import shutil
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .components import avd_home, read_metadata, read_metadata_strict, write_metadata
+from .components import avd_home, read_metadata
 from .constants import (
     AVD_NAME_PREFIX,
     CPU_CHOICES,
@@ -49,55 +46,7 @@ from .constants import (
     DISPLAY_PRESETS,
     FPS_CHOICES,
     MEMORY_CHOICES_MB,
-    SYSTEM_IMAGE_SYSDIR,
     avd_name,
-    valid_native_index,
-)
-
-#: 实例配置模板，取自预研里调好的 ``mas_p0``（``pixel_tablet`` 模板改横屏 / 显卡直通），去掉了
-#: 设备外框与设备型号——型号只影响窗口外框，外框也关了。显示使用 1080p / 720p 两档，
-#: 每次开机前再核对一次。客体不带声卡（用户 10-04 定），声卡两项都写 no；真正去掉声卡的是启动参数
-#: ``-feature -VirtioSndCard``（本镜像的客体声卡是 virtio-snd，模拟器不看这两项，10-04 实测）。
-#: ``hw.mainKeys=yes`` 不显示屏幕导航栏，返回、回桌面用侧边工具栏：手势横条的上滑和最近任务由
-#: 系统桌面里的 Quickstep 处理，装 µLauncher 时卸掉了它，横条上滑没有反应（ModAVD #1）。
-_CONFIG_TEMPLATE: tuple[tuple[str, str], ...] = (
-    ("PlayStore.enabled", "no"),
-    ("abi.type", "x86_64"),
-    ("avd.ini.encoding", "UTF-8"),
-    ("disk.cachePartition", "yes"),
-    ("disk.cachePartition.size", "66MB"),
-    ("fastboot.forceColdBoot", "yes"),
-    ("fastboot.forceFastBoot", "no"),
-    ("hw.accelerometer", "yes"),
-    ("hw.arc", "false"),
-    ("hw.audioInput", "no"),
-    ("hw.audioOutput", "no"),
-    ("hw.battery", "yes"),
-    ("hw.camera.back", "none"),
-    ("hw.camera.front", "none"),
-    ("hw.cpu.arch", "x86_64"),
-    ("hw.dPad", "no"),
-    ("hw.gps", "no"),
-    ("hw.gpu.enabled", "yes"),
-    ("hw.gpu.mode", "host"),
-    ("hw.gsmModem", "yes"),
-    ("hw.gyroscope", "yes"),
-    ("hw.initialOrientation", "landscape"),
-    ("hw.keyboard", "yes"),
-    ("hw.keyboard.lid", "yes"),
-    ("hw.lcd.depth", "32"),
-    ("hw.lcd.vsync", "60"),
-    ("hw.mainKeys", "yes"),
-    ("hw.sdCard", "no"),
-    ("hw.sensors.orientation", "yes"),
-    ("hw.sensors.proximity", "no"),
-    ("hw.trackBall", "no"),
-    ("hw.useext4", "yes"),
-    ("showDeviceFrame", "no"),
-    ("tag.display", "Google APIs"),
-    ("tag.id", "google_apis"),
-    ("target", "android-34"),
-    ("vm.heapSize", "192M"),
 )
 
 
@@ -107,10 +56,6 @@ class AvdInstance:
     name: str
     title: str
     config: dict[str, str]
-
-    @property
-    def memory_mb(self) -> int | None:
-        return parse_memory_mb(self.config.get("hw.ramSize"))
 
     @property
     def cpu(self) -> int | None:
@@ -137,19 +82,6 @@ def _int_or_none(raw: object) -> int | None:
         return int(str(raw).strip())
     except (TypeError, ValueError):
         return None
-
-
-def parse_memory_mb(raw: object) -> int | None:
-    """``hw.ramSize`` 可能写成 ``4096`` / ``4096M`` / ``4G``。"""
-    text = str(raw or "").strip().upper()
-    if not text:
-        return None
-    if text.endswith("G"):
-        value = _int_or_none(text[:-1])
-        return None if value is None else value * 1024
-    if text.endswith("M") or text.endswith("MB"):
-        return _int_or_none(text.rstrip("B").rstrip("M"))
-    return _int_or_none(text)
 
 
 def read_ini(path: Path) -> dict[str, str]:
@@ -214,30 +146,6 @@ def instance_meta(root: str | Path, native_index: int | str) -> dict[str, Any]:
     return dict(meta) if isinstance(meta, dict) else {}
 
 
-def update_instance_meta(
-    root: str | Path, native_index: int | str, **changes: Any
-) -> dict[str, Any]:
-    data = read_metadata_strict(root)
-    instances = data.get("instances")
-    if not isinstance(instances, dict):
-        instances = {}
-    meta = instances.get(str(native_index))
-    meta = dict(meta) if isinstance(meta, dict) else {}
-    meta.update(changes)
-    instances[str(native_index)] = meta
-    data["instances"] = instances
-    write_metadata(root, data)
-    return meta
-
-
-def remove_instance_meta(root: str | Path, native_index: int | str) -> None:
-    data = read_metadata(root)
-    instances = data.get("instances")
-    if isinstance(instances, dict) and str(native_index) in instances:
-        del instances[str(native_index)]
-        write_metadata(root, data)
-
-
 def resolution_for(config: dict[str, str]) -> int:
     """按已有宽高识别档位，非 1080p 的旧配置保持 720p。"""
     width = _int_or_none(config.get("hw.lcd.width"))
@@ -272,20 +180,6 @@ def display_changes(
         "hw.lcd.density": str(density),
         "hw.mainKeys": "yes",
     }
-
-
-def apply_display(root: str | Path, native_index: int | str) -> bool:
-    """停机时规范化当前档位的宽高和 DPI，返回是否改了文件。"""
-    path = config_path(root, native_index)
-    config = read_ini(path)
-    if not config:
-        raise RuntimeError(f"实例 {avd_name(native_index)} 的配置读不出")
-    changes = display_changes(config)
-    if all(config.get(key) == value for key, value in changes.items()):
-        return False
-    config.update(changes)
-    write_ini(path, config)
-    return True
 
 
 def memory_for(meta: dict[str, Any]) -> int:
@@ -333,84 +227,3 @@ def validate_fps(fps: int | None) -> int:
             "ModAVD 的帧率只能选 " + " / ".join(str(v) for v in FPS_CHOICES)
         )
     return value
-
-
-def create_instance_files(
-    root: str | Path,
-    native_index: int,
-    *,
-    title: str | None,
-    memory_mb: int,
-    cpu: int,
-    data_partition_gb: int,
-    fps: int = DEFAULT_FPS,
-    resolution: int = DEFAULT_RESOLUTION,
-) -> AvdInstance:
-    """写 ``mas_<i>.ini`` 与 ``mas_<i>.avd\\config.ini``。实例已存在时拒绝。
-
-    内存同时记进 ``hw.ramSize`` 和实例元数据；开机用元数据里的值传 ``-memory``。
-    刷新率写 ``hw.lcd.vsync``，模拟器开机时读。
-    """
-    if not valid_native_index(native_index):
-        raise ValueError(f"原生索引 {native_index} 不可用")
-    if ini_path(root, native_index).exists() or avd_dir(root, native_index).exists():
-        raise RuntimeError(f"实例 {avd_name(native_index)} 已存在")
-
-    display = display_changes({}, validate_resolution(resolution))
-    name = avd_name(native_index)
-    directory = avd_dir(root, native_index)
-    config = dict(_CONFIG_TEMPLATE)
-    config.update(
-        {
-            "avd.id": name,
-            "avd.name": name,
-            "avd.ini.displayname": title or name,
-            "disk.dataPartition.size": f"{data_partition_gb}G",
-            "hw.cpu.ncore": str(cpu),
-            "hw.ramSize": f"{memory_mb}M",
-            "hw.lcd.width": display["hw.lcd.width"],
-            "hw.lcd.height": display["hw.lcd.height"],
-            "hw.lcd.density": display["hw.lcd.density"],
-            "hw.lcd.vsync": str(fps),
-            "image.sysdir.1": SYSTEM_IMAGE_SYSDIR,
-        }
-    )
-    directory.mkdir(parents=True)
-    write_ini(directory / "config.ini", config)
-    write_ini(
-        ini_path(root, native_index),
-        {
-            "avd.ini.encoding": "UTF-8",
-            "path": str(directory),
-            "path.rel": f"avd\\{name}.avd",
-            "target": "android-34",
-        },
-    )
-    update_instance_meta(
-        root,
-        native_index,
-        memoryMb=memory_mb,
-        initialized=False,
-        createdAt=datetime.now().isoformat(timespec="seconds"),
-    )
-    return AvdInstance(str(native_index), name, title or name, config)
-
-
-def write_instance_config(
-    root: str | Path, native_index: int | str, changes: dict[str, str]
-) -> None:
-    path = config_path(root, native_index)
-    config = read_ini(path)
-    if not config:
-        raise RuntimeError(f"实例 {avd_name(native_index)} 的配置读不出")
-    config.update(changes)
-    write_ini(path, config)
-
-
-def delete_instance_files(root: str | Path, native_index: int | str) -> None:
-    """删 ``mas_<i>.ini`` 与 ``mas_<i>.avd\\``（含数据盘）。调用方负责先确认已停止。"""
-    directory = avd_dir(root, native_index)
-    if directory.exists():
-        shutil.rmtree(directory)
-    ini_path(root, native_index).unlink(missing_ok=True)
-    remove_instance_meta(root, native_index)

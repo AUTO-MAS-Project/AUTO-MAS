@@ -18,8 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""ModAVD 的宿主侧操作：私有 adb、控制台、进程、硬件加速检查（开机前的整套电脑检查见
-:mod:`.precheck`）。
+"""ModAVD 的宿主侧操作：私有 adb、进程、客体日志落盘与保留。
 
 两个实测出来的硬约束（预研 §6.1、§6.14）：
 
@@ -41,19 +40,17 @@ import threading
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from dataclasses import dataclass
 from pathlib import Path
 
 import psutil
 
-from app.utils import emulator_native, get_logger, process_platform
+from app.utils import get_logger, process_platform
 from app.utils.common.process import runner as _utils_process_runner
 
 from .components import (
     adb_exe,
     adb_server_port,
     avd_home,
-    emulator_exe,
     runtime_sdk_dir,
     script_adb_server_port,
 )
@@ -64,7 +61,6 @@ from .constants import (
     LOGS_DIR,
     LOGS_DIR_MAX_BYTES,
     METADATA_FILE,
-    SHADER_CACHE_DIR,
     avd_name,
     valid_native_index,
 )
@@ -73,9 +69,6 @@ logger = get_logger("ModAVD 宿主")
 
 #: 单条 adb 命令的默认超时。
 ADB_TIMEOUT = 20.0
-#: 硬件加速检查结果缓存多久：每次启动前都查，但几秒内连开几台不必重复起进程。
-_ACCEL_CACHE_SECONDS = 120.0
-_accel_cache: dict[str, tuple[float, bool, str]] = {}
 
 
 def serial_of(console_port: int) -> str:
@@ -279,56 +272,6 @@ async def ensure_adb_server(root: str | Path, *, timeout: float = 20.0) -> bool:
     return await asyncio.to_thread(_wait_listening, port, timeout, process)
 
 
-async def prepare_adb_for_close(
-    root: str | Path, console: int, *, timeout: float
-) -> str | None:
-    """关机前让私有 server 能对这台实例发 adb 命令（正常关机命令、``shell sync``），最多 ``timeout`` 秒。
-    可以发返回 ``None``，否则返回不能发的原因。
-
-    server 本来就在听：直接返回（server 认不认识这台实例由后面那条命令的结果说话）。server 不在：起它，
-    等它开始监听；新起的 server 不认识模拟器（模拟器只在开机时登记一次），确认 adb 端口确实是这台
-    实例自己的 qemu 在听之后直接替它登记，再等它回到 ``device``。不走 :func:`reregister_emulator`：
-    那里的开机期保护（qemu 起来不到 60 秒不登记）和 5 秒等待都不适合关机。
-    """
-    started = time.monotonic()
-    port = adb_server_port(root)
-    listening, pid, name = await asyncio.to_thread(_port_listener, port)
-    if listening:
-        if name is not None and not _is_adb_process_name(name):
-            return _private_port_conflict(root, port, pid, name)
-        return None
-    if not await ensure_adb_server(root, timeout=timeout):
-        return f"私有 adb server（端口 {port}）{timeout:.0f} 秒内没起来"
-    if await asyncio.to_thread(instance_qemu_on_adb_port, console) is None:
-        return f"adb 端口 {console + 1} 上不是这台实例的模拟器，不替它登记"
-    serial = serial_of(console)
-    # 登记和等上线都从同一个 timeout 里扣，不另给时间
-    remaining = timeout - (time.monotonic() - started)
-    if remaining <= 0:
-        return f"私有 adb server（端口 {port}）{timeout:.0f} 秒内没来得及登记 {serial}"
-    try:
-        await register_emulator(port, console + 1, timeout=remaining)
-    except (OSError, asyncio.TimeoutError, TimeoutError) as e:
-        return f"向新起的私有 adb server 登记 {serial} 失败: {e}"
-    while True:
-        remaining = timeout - (time.monotonic() - started)
-        if remaining <= 0:
-            return f"新起的私有 adb server 上 {serial} 在 {timeout:.0f} 秒内没有上线"
-        code, output = await _run_adb_once(
-            root, "get-state", serial=serial, timeout=remaining, total_timeout=True
-        )
-        if code == 0 and output.strip() == "device":
-            logger.info(
-                f"关机前私有 adb server 已重新起好并登记 {serial}（用时 "
-                f"{(time.monotonic() - started) * 1000:.0f} ms）"
-            )
-            return None
-        await asyncio.sleep(0.1)
-
-
-#: ``open`` 正在等开机的实例（序列号）。这段时间模拟器还没向私有 server 登记是正常的，
-#: 任何路径（含面板每秒的状态轮询）都不替它登记。
-BOOTING: set[str] = set()
 #: qemu 起来不到这么久也不替它登记：开机还没走到登记那一步（MAS 重启后接管、别处起的都算）。
 _REREGISTER_MIN_QEMU_AGE_SECONDS = 60.0
 
@@ -427,11 +370,11 @@ async def reregister_emulator(root: str | Path, serial: str) -> bool:
     """私有 server 丢了 ``emulator-<控制台端口>`` 时把它登记回来，返回是否恢复。
 
     只在这台模拟器的 adb 端口确实由它自己的 qemu 在听（模拟器还活着）时才发，不往空端口登记。
-    开机期间不登记（模拟器自己会来登记，替它登记只会白等 5 秒）：``open`` 正在等开机的实例
-    （:data:`BOOTING`），以及 qemu 起来不到 60 秒的实例，都直接返回 ``False``。
+    开机期间不登记（模拟器自己会来登记，替它登记只会白等 5 秒）：qemu 起来不到 60 秒的实例
+    直接返回 ``False``。
     """
     console = _console_port_of(serial)
-    if console is None or serial in BOOTING:
+    if console is None:
         return False
     process = await asyncio.to_thread(instance_qemu_on_adb_port, console)
     if process is None:
@@ -595,81 +538,6 @@ async def _run_adb_raw(
     )
 
 
-# ---- 控制台 ---------------------------------------------------------------
-
-
-class ConsoleError(RuntimeError):
-    """模拟器控制台命令失败。"""
-
-
-def _console_token() -> str:
-    """控制台鉴权 token。模拟器首次启动时写到用户目录。"""
-    path = Path(os.environ.get("USERPROFILE") or Path.home()) / (
-        ".emulator_console_auth_token"
-    )
-    try:
-        return path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return ""
-
-
-async def _read_until_status(reader: asyncio.StreamReader) -> tuple[bool, str]:
-    lines: list[str] = []
-    while True:
-        raw = await reader.readline()
-        if not raw:
-            return False, "\n".join(lines)
-        line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-        if line == "OK":
-            return True, "\n".join(lines)
-        if line.startswith("KO"):
-            lines.append(line)
-            return False, "\n".join(lines)
-        lines.append(line)
-
-
-async def console_command(port: int, command: str, *, timeout: float = 10.0) -> str:
-    """直接连模拟器控制台（``telnet 127.0.0.1 <控制台端口>``）发一条命令。
-
-    与 ``adb emu`` 等价，但不依赖 adb server：私有 server 万一被别人杀掉，模拟器不会重新
-    注册，``adb emu`` 就再也找不到它，而控制台一直在。
-    """
-
-    async def talk() -> str:
-        reader, writer = await asyncio.open_connection("127.0.0.1", port)
-        try:
-            ok, text = await _read_until_status(reader)
-            if not ok:
-                raise ConsoleError(f"控制台 {port} 没有就绪: {text}")
-            token = _console_token()
-            if token:
-                writer.write(f"auth {token}\r\n".encode())
-                await writer.drain()
-                ok, text = await _read_until_status(reader)
-                if not ok:
-                    raise ConsoleError(f"控制台 {port} 鉴权失败: {text}")
-            writer.write(f"{command}\r\n".encode())
-            await writer.drain()
-            ok, text = await _read_until_status(reader)
-            if not ok:
-                raise ConsoleError(f"控制台命令 {command!r} 失败: {text}")
-            with suppress(Exception):
-                writer.write(b"quit\r\n")
-                await writer.drain()
-            return text
-        finally:
-            writer.close()
-            with suppress(Exception):
-                await writer.wait_closed()
-
-    try:
-        return await asyncio.wait_for(talk(), timeout=timeout)
-    except (asyncio.TimeoutError, TimeoutError) as e:
-        raise ConsoleError(f"控制台 {port} 命令 {command!r} 超时") from e
-    except OSError as e:
-        raise ConsoleError(f"连不上控制台 {port}: {e}") from e
-
-
 # ---- 进程 -----------------------------------------------------------------
 
 
@@ -718,43 +586,6 @@ def kill_process_tree(process: psutil.Process) -> None:
             with suppress(psutil.NoSuchProcess):
                 child.kill()
         process.kill()
-
-
-def shader_cache_dir(root: str | Path) -> Path:
-    return Path(root) / SHADER_CACHE_DIR
-
-
-def launch_emulator(
-    root: str | Path, args: list[str], log_path: Path
-) -> subprocess.Popen:
-    """起 ``emulator.exe``，输出写到 ``log_path``。
-
-    宿主显卡驱动的着色器缓存放 ``<根>\\shader-cache``（``__GL_SHADER_DISK_CACHE_PATH``，
-    照启动器 ``-ShaderCache``）：和用户的其它程序分开，需要时我们能自己清。
-
-    ``ANDROID_EMU_VK_HIDE_REBAR=1``（固定开）：宿主 Vulkan 里「显存 + 主机可见」的内存类型（NVIDIA
-    ReBAR）对客体只报成显存。终末地往 ReBAR 显存里写顶点时每帧都要等写合并排空，标题页 14.6 → 60 fps
-    （aemu-lab 修复队列「终末地帧率与稳定性」）；不碰这类内存的游戏不受影响。mas-27 起的内测包才认它，
-    更早的包没人读，无害。
-    """
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    env = emulator_env(root)
-    cache = shader_cache_dir(root)
-    cache.mkdir(parents=True, exist_ok=True)
-    env.update(
-        {
-            "__GL_SHADER_DISK_CACHE": "1",
-            "__GL_SHADER_DISK_CACHE_PATH": str(cache),
-            "__GL_SHADER_DISK_CACHE_SKIP_CLEANUP": "1",
-            "ANDROID_EMU_VK_HIDE_REBAR": "1",
-        }
-    )
-    with log_path.open("ab") as log_file:
-        return _popen_detached(
-            [str(emulator_exe(root)), *args],
-            env=env,
-            stdout=log_file,
-        )
 
 
 def find_logcat_processes(root: str | Path, serial: str) -> list[psutil.Process]:
@@ -950,99 +781,3 @@ def _prune_logs_locked(log_dir: Path, idx: int | str) -> tuple[int, int]:
             f"{freed / 1024 / 1024:.1f} MB（{log_dir}）"
         )
     return removed, freed
-
-
-# ---- 宿主调度 -------------------------------------------------------------
-
-
-def _l3_groups() -> list[tuple[int, int]]:
-    """每个 L3 缓存的 (容量字节, 处理器掩码)。只读 ``GetLogicalProcessorInformationEx``。"""
-    raw = emulator_native.cpu_cache_topology()
-    groups: list[tuple[int, int]] = []
-    offset = 0
-    while offset + 48 <= len(raw):
-        size = int.from_bytes(raw[offset + 4 : offset + 8], "little")
-        if size <= 0:
-            break
-        # CACHE_RELATIONSHIP：Level 在 +8，CacheSize 在 +12，GroupMask.Mask 在 +40
-        if raw[offset + 8] == 3:
-            groups.append(
-                (
-                    int.from_bytes(raw[offset + 12 : offset + 16], "little"),
-                    int.from_bytes(raw[offset + 40 : offset + 48], "little"),
-                )
-            )
-        offset += size
-    return groups
-
-
-def big_l3_cpus() -> list[int] | None:
-    """X3D 处理器上大 L3 那组核心的编号；L3 不分大小（普通处理器）返回 ``None``。"""
-    groups = sorted(_l3_groups(), reverse=True)
-    if len(groups) < 2 or groups[0][0] <= groups[-1][0]:
-        return None
-    mask = groups[0][1]
-    return [cpu for cpu in range(64) if mask >> cpu & 1]
-
-
-def tune_host_scheduling(process: psutil.Process) -> str:
-    """qemu 提到「高于正常」优先级；X3D 处理器上绑到大 L3 那组核心。返回说明给日志。
-
-    09-28 在 7950X3D 上 A/B（崩坏三）：绑到 3D V-cache 那组核心，qemu CPU 降约 20%、游戏主线程
-    每帧 CPU 降约 25%；高频那组不比默认好。只在 L3 大小不一（X3D）时绑，其余交给 Windows。
-    """
-    notes: list[str] = []
-    try:
-        process.nice(psutil.ABOVE_NORMAL_PRIORITY_CLASS)
-        notes.append("优先级高于正常")
-    except (psutil.Error, AttributeError, OSError) as e:
-        notes.append(f"设优先级失败（{e}）")
-    cpus = big_l3_cpus()
-    if cpus:
-        try:
-            process.cpu_affinity(cpus)
-            notes.append(f"绑定大 L3 核心 {cpus[0]}–{cpus[-1]}")
-        except (psutil.Error, OSError, ValueError) as e:
-            notes.append(f"绑核失败（{e}）")
-    return "，".join(notes)
-
-
-# ---- 电脑检查 -------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class AccelCheck:
-    ok: bool
-    detail: str
-
-
-def parse_accel_check(returncode: int, output: str) -> AccelCheck:
-    """``emulator -accel-check`` 的判定：返回码 0 且说「usable」才算可用。"""
-    text = (output or "").strip()
-    usable = returncode == 0 and "usable" in text.lower()
-    return AccelCheck(usable, text)
-
-
-async def check_acceleration(root: str | Path, *, use_cache: bool = True) -> AccelCheck:
-    """``emulator.exe -accel-check``：WHPX 是否可用。"""
-    key = str(Path(root))
-    cached = _accel_cache.get(key)
-    if use_cache and cached and time.monotonic() - cached[0] < _ACCEL_CACHE_SECONDS:
-        return AccelCheck(cached[1], cached[2])
-    try:
-        process = await _utils_process_runner.create_subprocess(
-            emulator_exe(root),
-            "-accel-check",
-            env=emulator_env(root),
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=60)
-        result = parse_accel_check(
-            process.returncode or 0, _utils_process_runner.decode_bytes(stdout)
-        )
-    except Exception as e:  # noqa: BLE001 - 查不了当不可用，原因给用户
-        result = AccelCheck(False, f"{type(e).__name__}: {e}")
-    _accel_cache[key] = (time.monotonic(), result.ok, result.detail)
-    return result

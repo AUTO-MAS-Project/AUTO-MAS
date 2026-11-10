@@ -64,9 +64,9 @@ LOGS_DIR = "logs"
 LOG_KEEP_PER_INSTANCE = 10
 #: 整个日志目录（只算上面两种日志）的总大小上限，超了从最旧的删起，不分实例。
 LOGS_DIR_MAX_BYTES = 1024**3
-#: 宿主显卡驱动给这条安装的模拟器用的着色器缓存。
+#: 宿主显卡驱动给这条安装的模拟器用的着色器缓存（更新器不碰）。
 SHADER_CACHE_DIR = "shader-cache"
-#: 在本机生成的客体驱动补丁库（见 ``vulkanfix.py``），生成一次，之后各实例直接用。
+#: 旧版 MAS 在本机生成的客体驱动补丁库目录（更新器不碰）。
 GUEST_PATCH_DIR = "guest-patches"
 
 
@@ -78,17 +78,13 @@ def adb_port(native_index: int | str) -> int:
     return console_port(native_index) + 1
 
 
-def grpc_port(native_index: int | str) -> int:
-    return console_port(native_index) + 2
-
-
 @dataclass(frozen=True)
 class InstancePorts:
     """一台实例的控制台 / adb / gRPC 端口与私有 server 上的序列号（``emulator-<控制台端口>``）。
 
     根目录可以在 ``mas-avd.json`` 里用 ``portBase`` 换一段端口（ModAVD/ModAVD#75），合不合规、怎么算
-    由 modavd 决定，MAS 不重写这套规则：有 CLI 时取它 ``info`` / ``list`` 返回的 ``ports``、``serial``
-    （ModAVDManager v0.3.1 起才有，见 ``manager._ports_from_cli``）；没有 CLI 的旧根目录、或 CLI 太老
+    由 modavd 决定，MAS 不重写这套规则：取 CLI ``info`` / ``list`` 返回的 ``ports``、``serial``
+    （ModAVDManager v0.3.1 起才有，见 ``manager._ports_from_cli``）；更新中不起 CLI、或 CLI 太老
     不带这两项时，按默认端口段 :func:`default_instance_ports` 算（那些版本本来就不支持 ``portBase``）。
     截图共享内存 ``SHM_videmulator<控制台端口>`` 跟着控制台端口走。
     """
@@ -153,9 +149,6 @@ MOD_AVD_BUILD_PREFIX = "mas-"
 EMULATOR_COMPONENT_ID = "emulator"
 EMULATOR_COMPONENT_NAME = "Android 模拟器（emulator）"
 
-#: 实例配置里的 ``image.sysdir.1``，相对 SDK 根。
-SYSTEM_IMAGE_SYSDIR = "system-images\\android-34\\google_apis\\x86_64\\"
-
 
 # ---- 更新 -----------------------------------------------------------------
 
@@ -219,34 +212,6 @@ LIGHT_LAUNCHER = LauncherComponent(
     home_activity="de.jrpie.android.launcher/.ui.HomeActivity",
 )
 
-# 第一次打开 µLauncher 之前预置的东西，见 ``manager._preset_light_launcher``。
-# 固定 µLauncher 0.2.12，换版本要对着它的源码重新核对下面这些键、文件和版本号。
-#: 它的偏好文件（``PreferenceManager.getDefaultSharedPreferences``）。
-LIGHT_LAUNCHER_PREFS_FILE = (
-    "/data/data/de.jrpie.android.launcher/shared_prefs/"
-    "de.jrpie.android.launcher_preferences.xml"
-)
-#: 它第一次启动时自己写出默认偏好（桌面时钟、上滑打开应用列表等），同时写进去的偏好版本号
-#: （源码 ``Preferences.kt`` 的 ``PREFERENCE_VERSION``，不是 versionCode 57）。
-LIGHT_LAUNCHER_PREFS_VERSION = 101
-#: 预置的偏好（布尔值写成 ``<boolean>``，字符串写成 ``<string>``）。键名取 ``res/values/donottranslate.xml``
-#: 里的字符串值，不是 ``LauncherPreferences$Config`` 里的字段名：``internal.started_before`` 是「引导已走完」，
-#: ``functionality.search_auto_keyboard`` 是「打开应用列表时自动弹键盘」（横屏下输入法全屏，把列表整个挡住）。
-#: 手势存成 ``action.<手势>`` → 动作的 JSON：双击桌面默认是锁屏，要设备管理员权限，没有就弹「添加设备管理员」
-#: 页面，改成它自带的「不做任何事」（``LauncherAction.NOP``）。不能直接删掉这个键：删了它会弹「无法打开」的提示条。
-LIGHT_LAUNCHER_PRESET_PREFS: tuple[tuple[str, bool | str], ...] = (
-    ("internal.started_before", True),
-    ("functionality.search_auto_keyboard", False),
-    ("action.double_click", '{"type":"action:launcher","value":"nop"}'),
-)
-#: 只为在后台拉起它的进程、让它写出默认偏好：给这个接收器发一个空广播（接收器不认这个广播，什么也不做）。
-LIGHT_LAUNCHER_WAKE_RECEIVER = (
-    "de.jrpie.android.launcher/.actions.lock.LauncherDeviceAdmin"
-)
-
-#: 被轻量桌面替掉的原生桌面。
-PIXEL_LAUNCHER_PACKAGE = "com.google.android.apps.nexuslauncher"
-
 
 # ---- 实例 -----------------------------------------------------------------
 
@@ -275,68 +240,6 @@ DEFAULT_RESOLUTION = 1080
 FPS_CHOICES = (30, 60)
 DEFAULT_FPS = 60
 
-#: 空闲页上报（气球，固定开启），开机后把客体 ``page_reporting_order`` 设成这个值（2 MiB 块，
-#: 与 Hyper-V / WSL2 一致；驱动绑定时内核会把它重置成 pageblock_order 10）。
-BALLOON_PAGE_REPORTING_ORDER = 9
-#: 客体脏页回写（``/proc/sys/vm/dirty_expire_centisecs`` / ``dirty_writeback_centisecs``，单位 1/100 秒），
-#: 每次开机都设（不持久）。依据 10-04 硬杀实测（32 次冷启动）：「先删旧文件
-#: 再把临时文件改名过去」这种写法，在默认 3000/500 下写完 2–34 秒内被硬杀会变成 0 字节；200/100 把窗口缩到
-#: 约 5 秒，代价是普通负载多写约 14%。AOSP 自己在低内存设备上也用 200。控制台 kill / 强杀前仍要先
-#: ``sync``；安卓正常关机由客体自己写回。
-GUEST_DIRTY_EXPIRE_CENTISECS = 200
-GUEST_DIRTY_WRITEBACK_CENTISECS = 100
-
-#: 客体脚本（``res/avd/guest/``）推到客体的位置。
-GUEST_TMP_DIR = "/data/local/tmp"
-#: 客体 Vulkan 驱动（编码器）库，补丁挂在它上面（见 ``vulkanfix.py``）。
-VULKAN_ENC_GUEST_PATH = "/vendor/lib64/libvulkan_enc.so"
-#: 客体驱动补丁的上传位置：挂上之后客体里那份改好的库标签变成 ``/vendor`` 的，adb 写不了，所以另起名字。
-#: 和 ``res/avd/guest/vulkanfix.sh`` 里的 ``u=`` 一致。
-VULKAN_FIX_UPLOAD_PATH = "/data/local/tmp/vulkanfix-upload.so"
-#: logcat 落盘前把客体日志缓冲调到这么大（默认 256 KB，游戏一跑几分钟就滚掉）。
-LOGCAT_BUFFER_SIZE = "16M"
-
-#: 估宿主内存占用：客体内存 + 这么多（预研 §6.15：3 GB 客体工作集 3.0–3.9 GB，
-#: 4 GB 客体 4.6–5.0 GB）。宿主可用内存不够就拒绝启动，不让系统开始换页。
-HOST_MEMORY_OVERHEAD_MB = 1536
-
-#: 开机前实例所在盘至少要剩这么多（GB）：数据盘是稀疏文件，随游戏写入增长（崩坏三一款 36 GB），
-#: 盘写满时客体写失败、实例数据会损坏。低于这个值拒绝开机。
-MIN_FREE_DISK_GB_TO_BOOT = 8
-#: 电脑检查里 Vulkan「可用」的结果缓存多久（秒）：显卡驱动不会频繁变，免得每次开机都起一次子进程。
-#: 「没有 Vulkan」不缓存：用户装好驱动后再查马上就能看到。
-VULKAN_PROBE_CACHE_SECONDS = 600.0
-#: 探测超时的结果缓存多久（秒）：驱动挂住时不必每次查状态、每次开机都等满超时。
-VULKAN_PROBE_TIMEOUT_CACHE_SECONDS = 60.0
-#: Vulkan 探测子进程的超时（秒）。
-VULKAN_PROBE_TIMEOUT_SECONDS = 30.0
-
-#: 首次开机后禁用的手机预装应用（``pm disable-user --user 0``，``pm enable`` 可逆）。
-#: 谷歌服务、WebView、Chrome、键盘、文件选择器、安装器、网络与电话组件都保留（预研 §6.11）。
-DEBLOAT_PACKAGES: tuple[str, ...] = (
-    "com.google.android.googlequicksearchbox",
-    "com.google.android.youtube",
-    "com.google.android.apps.youtube.music",
-    "com.google.android.gm",
-    "com.google.android.apps.messaging",
-    "com.google.android.dialer",
-    "com.google.android.contacts",
-    "com.google.android.apps.photos",
-    "com.google.android.apps.maps",
-    "com.google.android.apps.docs",
-    "com.google.android.calendar",
-    "com.google.android.deskclock",
-    "com.google.android.apps.wellbeing",
-    "com.google.android.as",
-    "com.google.android.as.oss",
-    "com.google.android.projection.gearhead",
-    "com.google.android.marvin.talkback",
-    "com.google.android.apps.restore",
-    "com.google.android.feedback",
-    "com.google.android.printservice.recommendation",
-    "com.google.android.markup",
-)
-
 #: 后台游戏清理时永远不动的第三方包（桌面本身、宿主输入法由 modavd 管理）。
 KEEP_PACKAGES = frozenset({LIGHT_LAUNCHER.package, "org.modavd.ime"})
 
@@ -345,45 +248,6 @@ WATCHDOG_INTERVAL_SECONDS = 30.0
 WATCHDOG_PROBE_TIMEOUT_SECONDS = 10.0
 WATCHDOG_STRIKES = 2
 
-#: 关机各步的上限。调用方（``app/task/emulator_core.close_emulator``）整体只给 30 秒，超时后连强杀
-#: 都执行不到，所以最坏情况要压在 :data:`CLOSE_BUDGET_SECONDS` 以内。三条路径（见 ``AvdManager.close``）：
-#:
-#: - 正常关机（默认）：私有 server 没在跑时起它并替实例登记 4 + 这次拉起过游戏时按 HOME 2、等游戏
-#:   退到后台 2 + 关机前 sync 2，然后发 ``svc power shutdown`` 等 qemu 自己退出，最晚等到开始关机后
-#:   第 :data:`GRACEFUL_SHUTDOWN_DEADLINE_SECONDS` 秒（22）；没退出就退回：sync 1 + 控制台 kill 连同等
-#:   qemu 退出 3 + 强杀后等 2，最坏 22 + 1 + 3 + 2 = 28。前面几步用得少，等安卓关机的时间就多：
-#:   起 server 不用等、按 HOME 0.5 秒时约 19 秒，这次没拉起游戏时约 22 秒。
-#: - 私有 adb 用不了（发不了关机命令，也发不了 sync）：4 + 控制台 kill 3 + 等 qemu 退出 12 + 强杀后
-#:   等 5 = 24。
-#: - 强制关闭（``ForceKillOnClose``）：4 + sync 3 + 强杀后等 5 = 12。
-#:
-#: SDK adb 的 ``start-server`` 客户端要 2.08–2.12 秒才返回，所以起 server 只等端口开始监听、不等客户端
-#: 退出（第三轮复核：给 2 秒时 server 起来了 sync 却被跳过）。sync 正常几十毫秒（实测 46–93 ms），
-#: qemu 收到控制台 kill 后 2–3 秒退出。``svc power shutdown`` 到 qemu 自己退出平时约 6.5 秒，宿主负载
-#: 高时实测到过 14.5 秒；安卓的 ShutdownThread 最坏要等关机广播 10 秒、停 Activity 10 秒。
-CLOSE_BUDGET_SECONDS = 28.0
-ADB_SERVER_START_TIMEOUT_ON_CLOSE_SECONDS = 4.0
-GO_HOME_TIMEOUT_SECONDS = 2.0
-GO_HOME_SETTLE_SECONDS = 2.0
-SYNC_TIMEOUT_SECONDS = 3.0
-PRE_SHUTDOWN_SYNC_TIMEOUT_SECONDS = 2.0
-CONSOLE_KILL_TIMEOUT_SECONDS = 3.0
-CLOSE_TIMEOUT_SECONDS = 12.0
-FORCE_KILL_WAIT_SECONDS = 5.0
-#: 正常关机没成、退回 sync + kill 时各步的上限。这时安卓多半已经关到一半，adbd 和控制台都没了，
-#: sync、控制台 kill 会马上失败，用不满各自的上限。
-#: 控制台 kill 那一步是「发 kill 连同等 qemu 退出」合计 3 秒，发命令本身也最多 3 秒。
-FALLBACK_SYNC_TIMEOUT_SECONDS = 1.0
-FALLBACK_KILL_TIMEOUT_SECONDS = 3.0
-FALLBACK_FORCE_KILL_WAIT_SECONDS = 2.0
-#: 等安卓自己关机最晚等到开始关机后的第几秒：给退回那三步留够时间，整次关机不超过预算。
-GRACEFUL_SHUTDOWN_DEADLINE_SECONDS = CLOSE_BUDGET_SECONDS - (
-    FALLBACK_SYNC_TIMEOUT_SECONDS
-    + FALLBACK_KILL_TIMEOUT_SECONDS
-    + FALLBACK_FORCE_KILL_WAIT_SECONDS
-)
-#: 关机 / 重启 / 注销前并发关 ModAVD 实例的总时限（单台 28 秒以内，留一点余量）；到点不等，
+#: 关机 / 重启 / 注销前并发关 ModAVD 实例（每个根目录一次 ``modavd stop --all``）的总时限；到点不等，
 #: 电源流程照常按进程名强杀。
 POWER_CLOSE_TIMEOUT_SECONDS = 30.0
-#: 「安装 APK」一次 `adb install` 的时限。游戏安装包常有 1–3 GB，推送加安装在慢盘上要几分钟。
-APK_INSTALL_TIMEOUT_SECONDS = 900.0

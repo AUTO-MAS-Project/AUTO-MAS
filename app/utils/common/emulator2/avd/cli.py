@@ -21,9 +21,9 @@
 """调用发布包里的 ``tools\\modavd.exe``。
 
 这个模块只负责一次 CLI 调用：构造参数、隔离 stdout/stderr、解析 ``--json`` 信封，交回 modavd
-原样的状态字符串，不依赖 MAS 的业务模型。状态值怎么翻译成 AUTO-MAS 的设备状态、根目录是否应该走
-CLI、业务异常如何和旧实现对齐，由 ``manager.py`` 决定：根目录没有 ``tools\\modavd.exe`` 时继续用原来的 Python 实现；exe 在但不可用时抛
-:class:`ModAvdUnavailable`，不回退，免得同一台实例两套开关机混用。
+原样的状态字符串，不依赖 MAS 的业务模型。状态值怎么翻译成 AUTO-MAS 的设备状态、业务异常怎么还原，
+由 ``manager.py`` 决定：根目录没有 ``tools\\modavd.exe`` 时不支持；exe 在但不可用时抛
+:class:`ModAvdUnavailable`。
 """
 
 from __future__ import annotations
@@ -133,7 +133,7 @@ class CLIError(RuntimeError):
 
 
 class ModAvdUnavailable(RuntimeError):
-    """根目录有 modavd.exe，但它不可用；不允许悄悄切回 Python 实现。"""
+    """根目录有 modavd.exe，但它不可用。"""
 
 
 ProcessTimeoutHandler = Callable[[asyncio.subprocess.Process], Awaitable[None]]
@@ -274,7 +274,7 @@ def _exe_cache_key(exe: Path) -> tuple[str, int, int]:
 
 
 async def resolve_cli(root: str | Path) -> "ModAvdCli | None":
-    """按 exe 是否存在选择 CLI；存在但检测失败就抛，不回退 Python。"""
+    """exe 不在返回 ``None``；在就做版本检查，检测失败抛 :class:`ModAvdUnavailable`。"""
     cli = ModAvdCli(root)
     if not cli.executable_available:
         return None
