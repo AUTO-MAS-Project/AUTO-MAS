@@ -10,7 +10,9 @@ import {
 const { t } = useI18n()
 const prompt = computed(() => maaResourceRecoveryPrompts.value[0] ?? null)
 const sendFailed = ref(false)
-const submitting = computed(() => maaResourceRecoveryDecisionPending.value === prompt.value?.requestId)
+const submitting = computed(
+  () => maaResourceRecoveryDecisionPending.value === prompt.value?.requestId
+)
 
 watch(
   () => prompt.value?.requestId,
