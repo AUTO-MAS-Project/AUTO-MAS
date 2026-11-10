@@ -21,6 +21,10 @@ import {
   bootstrapVirtualDisplayPrompt,
   disposeVirtualDisplayPrompt,
 } from '@/services/virtualDisplayPrompt'
+import {
+  bootstrapBetterGIInstallRecovery,
+  disposeBetterGIInstallRecovery,
+} from '@/services/bettergiInstallRecovery'
 
 let registered = false
 
@@ -70,6 +74,10 @@ export function bootstrapRealtimeResidents(): void {
     registerResidentResource('virtual-display-prompt', {
       bootstrap: bootstrapVirtualDisplayPrompt,
       dispose: disposeVirtualDisplayPrompt,
+    })
+    registerResidentResource('bettergi-install-recovery', {
+      bootstrap: bootstrapBetterGIInstallRecovery,
+      dispose: disposeBetterGIInstallRecovery,
     })
     registered = true
   }
