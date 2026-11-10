@@ -421,6 +421,7 @@ async def test_src_normal_update_cannot_overwrite_existing_marker(installation):
     with pytest.raises(script_install.InstallUnsafeError, match="用户决定"):
         await update.update_before_run(root)
     assert marker.exists()
+    assert not (script_install.workspace(root) / "src-deploy.json").exists()
 
 
 @pytest.mark.asyncio

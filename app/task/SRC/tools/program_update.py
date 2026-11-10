@@ -403,11 +403,8 @@ async def apply_update(
     }
     if "AutoUpdate" not in injected:
         raise ValueError("SRC 部署配置缺少原生 AutoUpdate 开关，不能安全接管")
-    io_utils.write_file(
-        journal, {"root": str(root.resolve()), "original": deploy, "injected": injected}
-    )
     marker = directory / "src-install.json"
-    # 不能用普通自动更新覆盖上轮的安全标记，只有明确回复的同一标记可被重试。
+    # 检查必须先于写配置恢复日志；无授权时不能遗留额外的待恢复状态。
     if marker.exists() or marker.is_symlink():
         if recovery_snapshot is None:
             raise script_install.InstallUnsafeError(
@@ -416,6 +413,9 @@ async def apply_update(
         validate_install_marker(root, recovery_snapshot)
     elif recovery_snapshot is not None:
         raise script_install.InstallUnsafeError("SRC 安装记录已消失，拒绝旧恢复请求")
+    io_utils.write_file(
+        journal, {"root": str(root.resolve()), "original": deploy, "injected": injected}
+    )
 
     try:
         poor_yaml_write(injected, root / "config/deploy.yaml")

@@ -119,7 +119,12 @@ class SrcManager(ScriptManagerBase):
         ].Emulator.Index in ("", "-"):
             return "未完成模拟器配置, 请检查托管配置中的模拟器设置！"
         root_path = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Info.Path
-        if root_path is None or not (root_path / "src.exe").exists():
+        if root_path is None or not root_path.is_dir():
+            return "src.exe文件不存在, 请检查SRC路径设置！"
+        marker = script_install.workspace(root_path) / "src-install.json"
+        # 仅存在上轮安装记录时允许损坏的原生 exe 进入显式恢复入口；
+        # 无记录时仍按正常安装完整性检查拒绝任务。
+        if not (root_path / "src.exe").is_file() and not marker.is_file():
             return "src.exe文件不存在, 请检查SRC路径设置！"
         src_set_path = root_path / "config"
         temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
