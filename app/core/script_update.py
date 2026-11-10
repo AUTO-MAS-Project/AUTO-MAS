@@ -58,6 +58,16 @@ _current_recovery_session: ContextVar["ScriptUpdateSession | None"] = ContextVar
 )
 
 
+def _record_recovery_event(event: RecoveryIncident) -> None:
+    session = _current_recovery_session.get()
+    if session is not None:
+        session.record_recovery(event)
+    else:
+        logger.warning(
+            f"脚本恢复报告未附着运行队列：{event.script_type} {event.outcome}"
+        )
+
+
 async def auto_recover_script_install(
     request: ScriptUpdateRequest,
     *,
@@ -68,15 +78,6 @@ async def auto_recover_script_install(
 ) -> str:
     """公共脚本更新入口统一编排恢复，不在专项适配器内发通知。"""
 
-    def record(event: RecoveryIncident) -> None:
-        session = _current_recovery_session.get()
-        if session is not None:
-            session.record_recovery(event)
-        else:
-            logger.warning(
-                f"脚本恢复报告未附着运行队列：{event.script_type} {event.outcome}"
-            )
-
     return await reconcile_installation(
         script_id=request.script_id,
         script_type=request.script_type,
@@ -84,8 +85,72 @@ async def auto_recover_script_install(
         inspect=inspect,
         acknowledge=acknowledge,
         reinstall=reinstall,
-        report=record,
+        report=_record_recovery_event,
     )
+
+
+async def run_script_update_with_safe_fallback(
+    request: ScriptUpdateRequest,
+    operation: Callable[P, Awaitable[str]],
+    install_root: Path,
+    inspect_previous: Callable[[], Awaitable[InstallInspection]],
+    /,
+    *args: P.args,
+    **kwargs: P.kwargs,
+) -> str:
+    """更新下载失败时由公共层验证旧安装；结果汇总留到任务结束。
+
+    专项只允许在任何安装写盘开始前的下载/包准备错误处抛
+    DownloadRetryFailed。未知/已开始安装的错误不允许回退。
+    """
+    try:
+        return await run_script_update(request, operation, *args, **kwargs)
+    except DownloadRetryFailed as error:
+        try:
+            previous = await inspect_previous()
+        except Exception as check_error:
+            _record_recovery_event(
+                RecoveryIncident(
+                    script_id=request.script_id,
+                    script_type=request.script_type,
+                    install_root=str(install_root.resolve()),
+                    outcome="blocked",
+                    source=error.source,
+                    reason=f"下载失败且旧版健康检查异常（{type(check_error).__name__}）",
+                )
+            )
+            raise
+        if (
+            not previous.pending
+            and previous.healthy
+            and previous.previous_confirmed
+        ):
+            _record_recovery_event(
+                RecoveryIncident(
+                    script_id=request.script_id,
+                    script_type=request.script_type,
+                    install_root=str(install_root.resolve()),
+                    outcome="old_version",
+                    installed_version=previous.installed_version,
+                    source=error.source,
+                    reason=error.reason,
+                )
+            )
+            return (
+                f"脚本 {request.script_type} 下载失败，但旧版"
+                f" {previous.installed_version or '未知'} 已验证可用，继续任务"
+            )
+        _record_recovery_event(
+            RecoveryIncident(
+                script_id=request.script_id,
+                script_type=request.script_type,
+                install_root=str(install_root.resolve()),
+                outcome="blocked",
+                source=error.source,
+                reason=f"下载失败：{error.reason}；旧安装未确认安全",
+            )
+        )
+        raise
 
 
 async def run_script_update(

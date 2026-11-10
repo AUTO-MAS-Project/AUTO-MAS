@@ -225,3 +225,57 @@ async def test_common_entry_attaches_report_and_publishes_at_end(monkeypatch, tm
     assert "下载超时" in notices[0][2].message
     assert "旧版" in task.current.recovery_summary
     task.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_normal_download_failure_uses_verified_previous_and_defers_notice(
+    monkeypatch, tmp_path
+):
+    reports = []
+    session = object.__new__(script_update.ScriptUpdateSession)
+    session.record_recovery = reports.append
+    token = script_update._current_recovery_session.set(session)
+    try:
+        async def download():
+            raise DownloadRetryFailed(source="GitHub", reason="连接超时")
+
+        result = await script_update.run_script_update_with_safe_fallback(
+            script_update.ScriptUpdateRequest("bgi-one", "BetterGI"),
+            download,
+            tmp_path,
+            AsyncMock(
+                return_value=inspection(
+                    pending=False, healthy=True, previous=True
+                )
+            ),
+        )
+        assert "继续任务" in result
+        assert len(reports) == 1 and reports[0].outcome == "old_version"
+    finally:
+        script_update._current_recovery_session.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_normal_download_failure_never_bypasses_pending_marker(tmp_path):
+    reports = []
+    session = object.__new__(script_update.ScriptUpdateSession)
+    session.record_recovery = reports.append
+    token = script_update._current_recovery_session.set(session)
+    try:
+        async def download():
+            raise DownloadRetryFailed(source="GitHub", reason="连接超时")
+
+        with pytest.raises(DownloadRetryFailed):
+            await script_update.run_script_update_with_safe_fallback(
+                script_update.ScriptUpdateRequest("bgi-two", "BetterGI"),
+                download,
+                tmp_path,
+                AsyncMock(
+                    return_value=inspection(
+                        pending=True, healthy=True, previous=True
+                    )
+                ),
+            )
+        assert reports[0].outcome == "blocked"
+    finally:
+        script_update._current_recovery_session.reset(token)
