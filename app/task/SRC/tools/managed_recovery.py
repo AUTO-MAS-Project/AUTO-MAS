@@ -1,0 +1,127 @@
+# Copyright © 2025-2026 AUTO-MAS Team
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""SRC 原生 Git/installer 的健康证据，恢复决策统一交给公共入口。"""
+
+import asyncio
+import re
+from pathlib import Path
+
+from app.core.script_update_recovery import DownloadRetryFailed, InstallInspection
+from app.services import script_install
+from app.services.script_install_backup import ManagedInstallBackup
+
+from . import program_update
+
+
+class SRCInstallAdapter:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        prepared: program_update.PreparedUpdate | None = None,
+    ) -> None:
+        self.root = root
+        self.prepared = prepared
+
+    async def ensure_idle(self) -> None:
+        await asyncio.to_thread(
+            program_update.assert_idle, self.root, allow_background_adb=True
+        )
+
+    async def inspect(self) -> InstallInspection:
+        await self.ensure_idle()
+        marker = script_install.workspace(self.root) / "src-install.json"
+        if marker.is_symlink():
+            raise script_install.InstallUnsafeError("SRC 更新标记为符号链接")
+        pending = marker.exists()
+        await asyncio.to_thread(program_update.recover_deploy, self.root)
+        deploy = await asyncio.to_thread(program_update.read_deploy, self.root)
+        git = program_update.git_executable(self.root, deploy)
+        commit = await program_update.command(git, "rev-parse", "HEAD", cwd=self.root)
+        if not re.fullmatch(r"[0-9a-f]{40}", commit):
+            raise script_install.InstallUnsafeError("SRC 当前 Git HEAD 不可识别")
+        expected = self.prepared.target_commit if self.prepared else None
+        previous = self.prepared.base_commit if self.prepared else None
+        if previous is None:
+            record = ManagedInstallBackup(
+                self.root, script_id="", script_type="SRC"
+            ).read()
+            previous = record.get("version") if record else None
+        if pending:
+            target = program_update.validate_install_marker(
+                self.root, marker.read_bytes()
+            )
+            if expected is None:
+                expected = target
+        healthy = (
+            (self.root / "src.exe").is_file()
+            and (self.root / "installer.py").is_file()
+        )
+        if healthy:
+            try:
+                python = self.root / str(
+                    deploy.get("PythonExecutable") or "./toolkit/python.exe"
+                )
+                if not python.is_file():
+                    healthy = False
+                else:
+                    await program_update.command(
+                        str(python.resolve()), "-m", "pip", "check", cwd=self.root
+                    )
+            except (OSError, ValueError, RuntimeError):
+                healthy = False
+        await self.ensure_idle()
+        return InstallInspection(
+            pending=pending,
+            healthy=healthy,
+            installed_version=commit,
+            target_version=expected,
+            updated_confirmed=bool(healthy and expected and commit == expected),
+            previous_confirmed=bool(
+                healthy and not pending and previous and commit == previous
+            ),
+        )
+
+    async def acknowledge(self) -> None:
+        marker = script_install.workspace(self.root) / "src-install.json"
+        if not marker.exists():
+            return
+        snapshot = marker.read_bytes()
+        await program_update.skip_unconfirmed_install(self.root, snapshot)
+
+    async def install(self) -> None:
+        if self.prepared is None:
+            marker = script_install.workspace(self.root) / "src-install.json"
+            snapshot = marker.read_bytes() if marker.exists() else None
+            try:
+                await program_update.update_before_run(
+                    self.root, recovery_snapshot=snapshot
+                )
+            except (OSError, ValueError) as error:
+                raise DownloadRetryFailed(
+                    source="SRC Git/CDN",
+                    reason=f"SRC 更新准备失败（{type(error).__name__}）",
+                ) from error
+            return
+        try:
+            await program_update.apply_update(self.root, self.prepared)
+        finally:
+            # 原生安装器是否停写由公共恢复入口和 SRC 安装锁最终确认。
+            # Git 对象删除仅在安全的进程收尾之后执行。
+            await self.ensure_idle()
+            program_update.remove_cached_git_objects(self.prepared.objects)
+
+    async def after_rollback(self) -> None:
+        await self.ensure_idle()
+        await asyncio.to_thread(program_update.recover_deploy, self.root)
+        marker = script_install.workspace(self.root) / "src-install.json"
+        if marker.is_symlink():
+            raise script_install.InstallUnsafeError("SRC 回退标记异常")
+        if marker.exists():
+            # 只允许公共备份证明的本次 MAS 安装清理其自有标记。
+            record = ManagedInstallBackup(
+                self.root, script_id="", script_type="SRC"
+            ).read()
+            if record is None:
+                raise script_install.InstallUnsafeError("缺失 SRC 公共备份所有权记录")
+            marker.unlink()
