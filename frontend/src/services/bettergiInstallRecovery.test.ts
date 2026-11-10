@@ -6,8 +6,11 @@ import {
   WS_ID_TASK_MANAGER,
 } from './websocket/types'
 
+type RecoveryMessage = { data: Record<string, unknown> }
+type RecoveryHandler = (message: RecoveryMessage) => void
+
 const boundary = vi.hoisted(() => ({
-  callbacks: new Map<string, (event: { data: Record<string, unknown> }) => void>(),
+  callbacks: new Map<string, RecoveryHandler>(),
   send: vi.fn(),
   warn: vi.fn(),
   connected: true,
@@ -15,10 +18,7 @@ const boundary = vi.hoisted(() => ({
 }))
 
 vi.mock('@/services/websocket/subscriptions', () => ({
-  subscribe: (
-    key: { id: string; type: string },
-    handler: (event: { data: Record<string, unknown> }) => void
-  ) => {
+  subscribe: (key: { id: string; type: string }, handler: RecoveryHandler) => {
     const id = key.id + ':' + key.type
     boundary.callbacks.set(id, handler)
     return id
