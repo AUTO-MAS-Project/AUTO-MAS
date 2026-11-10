@@ -128,7 +128,7 @@ class ManagedInstallBackup:
             raise
 
     async def create(self, version: str | None) -> None:
-        await script_install.run_worker(self._create, version)
+        await script_install.run_worker(self._create, version=version)
 
     def set_phase(self, phase: str) -> None:
         if phase not in self._PHASES:
@@ -156,7 +156,7 @@ class ManagedInstallBackup:
             script_install._reject_link(self.snapshot)
             if self._hashes(self.snapshot, cancelled) != expected:
                 raise script_install.InstallUnsafeError("安装备份文件不完整，拒绝覆盖")
-            if self.failed.exists():
+            if self.failed.exists() and self.root.exists():
                 raise script_install.InstallUnsafeError(
                     "恢复工作目录尚有冲突，已保护现场"
                 )
