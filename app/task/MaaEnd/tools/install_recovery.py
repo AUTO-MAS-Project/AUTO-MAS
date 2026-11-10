@@ -21,6 +21,8 @@ from . import script_update
 
 logger = get_logger("MaaEnd 安装恢复")
 _TIMEOUT = 120
+# 完整事务包含三份路径哈希清单；64 KiB 不是实际安装的有效上限。
+_MAX_TRANSACTION_BYTES = 128 * 1024 * 1024
 
 
 def _state(root: Path) -> tuple[Path, Path, Path]:
@@ -37,7 +39,7 @@ def confirm_snapshot(root: Path, snapshot: bytes) -> None:
     if (
         journal.is_symlink()
         or not journal.is_file()
-        or len(snapshot) > 64 * 1024
+        or len(snapshot) > _MAX_TRANSACTION_BYTES
         or journal.read_bytes() != snapshot
     ):
         raise script_install.InstallUnsafeError(
@@ -56,7 +58,7 @@ async def ask_install_recovery(
     if journal.is_symlink() or not journal.is_file():
         raise script_install.InstallUnsafeError("MaaEnd 事务记录异常，禁止恢复")
     snapshot = await asyncio.to_thread(journal.read_bytes)
-    if len(snapshot) > 64 * 1024:
+    if len(snapshot) > _MAX_TRANSACTION_BYTES:
         raise script_install.InstallUnsafeError("MaaEnd 事务记录过大，禁止自动恢复")
     can_skip = not (
         previous.exists()
