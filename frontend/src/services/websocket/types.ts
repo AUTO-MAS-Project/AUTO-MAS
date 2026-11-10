@@ -49,6 +49,9 @@ export const WS_TASK_CREATED = 'task.created'
 // 每次脚本执行（含循环中的每轮），不随快照重放（id=TaskManager）。
 export const WS_TASK_SCRIPT_STARTED = 'task.script.started'
 export const WS_TASK_SCRIPT_FINISHED = 'task.script.finished'
+export const WS_HSR_INSTALL_PROMPT = 'hsr.install.prompt'
+export const WS_HSR_INSTALL_PROMPT_CLOSED = 'hsr.install.prompt.closed'
+export const WS_HSR_INSTALL_DECISION = 'hsr.install.decision'
 
 // 应用生命周期与电源（id=Main）
 export const WS_BACKEND_SHUTDOWN_READY = 'backend.shutdown.ready'
@@ -158,6 +161,21 @@ export interface WSTaskScriptStartedData {
 export interface WSTaskScriptFinishedData extends WSTaskScriptStartedData {
   outcome: 'success' | 'failed' | 'skipped' | 'no_user' | 'incomplete' | 'error' | 'cancelled'
   partialFailure?: 'yes' | 'no' | 'unknown'
+}
+
+/** HSR M7A/SRA 更新回滚无法完成时的用户恢复请求 */
+export interface WSHSRInstallPromptData {
+  requestId: string
+  taskId: string
+  managedName: string
+  installPath: string
+  installedVersion: string
+  engine: string
+  canSkip: boolean
+}
+
+export interface WSHSRInstallPromptClosedData {
+  requestId: string
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
@@ -329,6 +347,8 @@ interface WSMessageDataMap {
   [WS_TASK_CREATED]: WSTaskCreatedData
   [WS_TASK_SCRIPT_STARTED]: WSTaskScriptStartedData
   [WS_TASK_SCRIPT_FINISHED]: WSTaskScriptFinishedData
+  [WS_HSR_INSTALL_PROMPT]: WSHSRInstallPromptData
+  [WS_HSR_INSTALL_PROMPT_CLOSED]: WSHSRInstallPromptClosedData
   [WS_BACKEND_SHUTDOWN_READY]: WSEmptyData
   [WS_FRONTEND_CLOSE_REQUESTED]: FrontendCloseRequest
   [WS_FRONTEND_RESTART_REQUESTED]: FrontendCloseRequest
