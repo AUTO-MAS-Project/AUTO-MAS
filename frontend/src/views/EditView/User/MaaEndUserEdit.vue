@@ -37,8 +37,6 @@
       :script-name="scriptName"
       :is-edit="isEdit"
       :user-id="userId"
-      :user-name="formData.userName"
-      :saving="isSaving"
       @cancel="handleCancel"
     />
 
@@ -78,8 +76,8 @@
           </a-card>
 
           <a-card id="section-basic" class="section-card">
-            <template #title>{{ t('core.edit.basicInfo') }}</template>
             <BasicInfoSection
+              :heading="{ isEdit, saveStatus: isSaving ? 'saving' : 'idle' }"
               v-model:form-data="formData"
               :loading="loading"
               :resource-options="resourceOptions"

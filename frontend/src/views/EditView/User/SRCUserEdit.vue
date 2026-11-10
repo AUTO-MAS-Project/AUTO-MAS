@@ -60,6 +60,7 @@
         >
           <!-- 基本信息组件 -->
           <BasicInfoSection
+            :heading="{ isEdit }"
             v-model:form-data="formData"
             :loading="loading"
             :server-options="serverOptions"
@@ -739,10 +740,6 @@ onUnmounted(() => {
 <style scoped src="@/styles/userEditForm.css"></style>
 
 <style scoped>
-.user-edit-container {
-  background: var(--ant-color-bg-layout);
-}
-
 /* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */
 .src-preview-title {
   font-size: 15px;

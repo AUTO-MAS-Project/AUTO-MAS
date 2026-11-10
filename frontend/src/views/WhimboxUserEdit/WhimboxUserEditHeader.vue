@@ -7,7 +7,7 @@
     @cancel="emit('cancel')"
   >
     <template #extra-actions>
-      <a-button size="large" class="cancel-button" @click="emit('restore')">
+      <a-button size="middle" class="cancel-button" @click="emit('restore')">
         <template #icon>
           <HistoryOutlined />
         </template>

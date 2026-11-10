@@ -1,35 +1,20 @@
 <template>
   <div class="user-edit-container">
-    <div class="user-edit-header">
-      <div class="header-nav">
-        <a-breadcrumb class="breadcrumb">
-          <a-breadcrumb-item>
-            <router-link to="/scripts">{{ t('core.edit.scripts') }}</router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            <router-link :to="`/scripts/${scriptId}/edit/zzzod`" class="breadcrumb-link">
-              {{ scriptName }}
-            </router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            {{ isEdit ? t('core.comp.editUser') : t('core.comp.addUser2') }}
-          </a-breadcrumb-item>
-        </a-breadcrumb>
-      </div>
-
-      <a-space size="middle">
-        <a-button v-if="!!userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
-          <template #icon>
-            <FolderOpenOutlined />
-          </template>
-          {{ t('core.comp.openConfigFolder') }}
-        </a-button>
+    <UserEditHeader
+      :script-id="scriptId"
+      :script-name="scriptName"
+      :is-edit="isEdit"
+      script-edit-segment="zzzod"
+      :user-id="userId"
+      @cancel="handleCancel"
+    >
+      <template #extra-actions>
         <a-tooltip :title="t('core.edit.zzzodOpenNativeConfigHint')">
           <a-button
             v-if="!showZzzodConfigMask && !showZzzodViewMask"
             type="primary"
             ghost
-            size="large"
+            size="middle"
             :loading="zzzodConfigLoading"
             :disabled="pageLoading || nativeLoading || !userId || configLocked"
             @click="handleZzzodConfig"
@@ -43,7 +28,7 @@
         <a-button
           v-if="showZzzodConfigMask"
           type="default"
-          size="large"
+          size="middle"
           disabled
           class="configuring-button"
         >
@@ -52,14 +37,8 @@
           </template>
           {{ t('core.edit.configuring') }}
         </a-button>
-        <a-button size="large" class="cancel-button" @click="handleCancel">
-          <template #icon>
-            <ArrowLeftOutlined />
-          </template>
-          {{ t('core.edit.back') }}
-        </a-button>
-      </a-space>
-    </div>
+      </template>
+    </UserEditHeader>
 
     <GuiSessionMask
       :open="showZzzodConfigMask"
@@ -102,28 +81,25 @@
         <a-card class="config-card" :loading="pageLoading">
           <a-form :model="formData" layout="vertical" class="config-form">
             <div class="form-section">
+              <UserAccountHeading
+                :user-name="formData.userName"
+                :options="{ isEdit, logoSrc: accountIcon }"
+              />
               <div class="section-header">
                 <h3>{{ t('core.edit.basicInfo') }}</h3>
               </div>
 
-              <a-row :gutter="24">
-                <a-col :span="12">
-                  <UserNameField
-                    v-model="formData.userName"
-                    :hint="t('core.edit.zzzodUserNameHint')"
-                    :placeholder="t('core.edit.enterUsername')"
-                    enhanced
-                    @save="handleNameBlur"
-                  />
-                </a-col>
-                <a-col :span="12">
-                  <UserStatusField
-                    v-model="formData.Info.Status"
-                    :hint="t('core.edit.whetherThisUserEnabled')"
-                    @save="saveField('Info.Status', formData.Info.Status)"
-                  />
-                </a-col>
-              </a-row>
+              <UserBasicInfoFields
+                v-model:user-name="formData.userName"
+                v-model:status="formData.Info.Status"
+                v-model:remained-day="formData.Info.RemainedDay"
+                v-model:notes="formData.Info.Notes"
+                :disabled="pageLoading"
+                @save-name="handleNameBlur"
+                @save-status="saveField('Info.Status', formData.Info.Status)"
+                @save-days="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
+                @save-notes="saveField('Info.Notes', formData.Info.Notes)"
+              />
 
               <a-row :gutter="24">
                 <a-col :span="24">
@@ -415,34 +391,6 @@
 
               <a-row :gutter="24">
                 <a-col :span="12">
-                  <UserRemainedDayField
-                    v-model="formData.Info.RemainedDay"
-                    :hint="t('core.edit.daysLeftAccount1')"
-                    @save="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
-                  />
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <FieldLabelWithHint
-                        :text="t('core.edit.note')"
-                        :hint="t('core.edit.addNoteAboutThis')"
-                        variant="form"
-                      />
-                    </template>
-                    <a-input
-                      v-model:value="formData.Info.Notes"
-                      :placeholder="t('core.edit.enterNote')"
-                      size="large"
-                      class="modern-input"
-                      @blur="saveField('Info.Notes', formData.Info.Notes)"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-
-              <a-row :gutter="24">
-                <a-col :span="12">
                   <a-form-item>
                     <template #label>
                       <span class="form-label">
@@ -644,11 +592,12 @@
 </template>
 
 <script setup lang="ts">
+import UserAccountHeading from '@/components/UserAccountHeading.vue'
+import UserEditHeader from '@/components/UserEditHeader.vue'
+import accountIcon from '@/assets/zzz-od.ico'
+import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import ZzzodLaunchArgumentFields from './ZzzOdUserEdit/ZzzodLaunchArgumentFields.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
-import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
-import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
-import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useZzzodTaskConfig } from './ZzzOdUserEdit/useZzzodTaskConfig'
 import ZzzodTaskBoard from './ZzzOdUserEdit/ZzzodTaskBoard.vue'
@@ -667,13 +616,7 @@ import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } f
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  EyeOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
+import { EyeOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { Service, type ZzzOdInstanceOut, type ZzzOdUserConfig } from '@/api'
 import { importZzzodInstance } from '@/composables/useAdapterSetupApi'
 import { buildCorruptedForceConfirm, corruptedForceConfirmContent } from '@/utils/configRestoreMode'
@@ -693,22 +636,11 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('ZZZ-OD用户编辑')
 const route = useRoute()
 const router = useRouter()
-const {
-  addUser,
-  getUsers,
-  updateUser,
-  error: userApiError,
-  openUserConfigFolder,
-  loading: folderLoading,
-} = useUserApi()
+const { addUser, getUsers, updateUser, error: userApiError } = useUserApi()
 const { getScript, error: scriptApiError } = useScriptApi()
 
 const scriptId = route.params.scriptId as string
 
-const handleOpenFolder = async () => {
-  if (!userId.value) return
-  await openUserConfigFolder(scriptId, userId.value)
-}
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
 const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId: userId.value }))
@@ -1667,29 +1599,6 @@ const clearDeletedInstance = (idx: number) => {
   min-height: 0;
 }
 
-.user-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-}
-
 .user-edit-content {
   display: flex;
   flex-direction: column;
@@ -1788,12 +1697,6 @@ const clearDeletedInstance = (idx: number) => {
 /* 遮罩样式已抽至通用组件 GuiSessionMask */
 
 @media (max-width: 768px) {
-  .user-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
   .config-card :deep(.ant-card-body) {
     padding: 20px;
   }

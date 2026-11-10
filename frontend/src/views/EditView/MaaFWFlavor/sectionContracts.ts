@@ -1,3 +1,4 @@
+import type { UserAccountHeadingOptions } from '@/types/userEditor'
 // MFW 页面分节的契约：每个分节收什么 props、发什么事件。MFW 的默认分节直接用这里的接口
 // defineProps / defineEmits，所以这里就是唯一的事实来源；特调替换某个分节时（descriptor 的
 // scriptPage.sections / userPage.sections / create.sections，用 defineMaaFWSection 声明），替换组件
@@ -186,7 +187,7 @@ export interface MaaFWScriptSectionContracts {
 
 // ════════════════════════════ 用户页 ════════════════════════════
 
-/** 用户页 `header`：面包屑、保存状态、打开配置目录、返回 */
+/** 用户页 `header`：面包屑、打开配置目录、返回（保留既有保存状态入参） */
 export interface MaaFWUserHeaderSectionProps {
   saveStatus: 'idle' | 'saving' | 'saved' | 'error'
   saveErrorMessage: string
@@ -204,8 +205,9 @@ export interface MaaFWUserHeaderSectionEmits {
   cancel: []
 }
 
-/** 用户页 `basicInfo`：用户名、启用状态、账号密码、备注 */
+/** 用户页 `basicInfo`：账号标题、用户名、启用状态、账号密码、备注 */
 export interface MaaFWUserBasicInfoSectionProps {
+  heading?: UserAccountHeadingOptions
   formData: MaaFWUserFormData
   interfaceDependentDisabled: boolean
   accountRecordTooltip: string

@@ -15,17 +15,14 @@
           </a-breadcrumb-item>
           <a-breadcrumb-item>
             <span class="breadcrumb-current">
-              <img v-if="logoSrc" :src="logoSrc" :alt="scriptEditSegment" class="breadcrumb-logo" />
-              {{ currentLabel ?? (isEdit ? t('core.comp.editUser') : t('core.comp.addUser2')) }}
+              {{ t(isEdit ? 'core.comp.editUser' : 'core.comp.addUser2') }}
             </span>
           </a-breadcrumb-item>
         </a-breadcrumb>
-        <slot name="breadcrumb-extra" />
       </div>
-      <slot name="below-breadcrumb" />
     </div>
 
-    <a-space :size="actionsSize">
+    <a-space class="header-actions" :size="actionsSize" wrap>
       <slot name="extra-actions" />
 
       <a-button
@@ -103,10 +100,6 @@ const props = withDefaults(
     scriptEditSegment?: string
     /** 脚本页命名路由；提供时优先于 scriptEditSegment */
     scriptRoute?: RouteLocationRaw
-    /** 覆盖第三级面包屑文字，默认按 isEdit 显示「编辑用户」「添加用户」 */
-    currentLabel?: string
-    /** 第三级面包屑前的脚本图标，省略则不显示 */
-    logoSrc?: string
     /** 配置按钮文字，省略则不渲染配置按钮 */
     configLabel?: string
     /** 配置按钮 loading 态 */
@@ -121,7 +114,7 @@ const props = withDefaults(
     userId?: string
     /** 返回按钮 loading 态，用于离开前等待保存或确认 */
     cancelLoading?: boolean
-    /** 操作按钮尺寸，默认大号 */
+    /** 操作按钮尺寸，默认标准尺寸 */
     buttonSize?: 'small' | 'middle' | 'large'
     /** 操作按钮间距，默认中等 */
     actionsSize?: 'small' | 'middle' | 'large'
@@ -129,8 +122,6 @@ const props = withDefaults(
   {
     scriptEditSegment: undefined,
     scriptRoute: undefined,
-    currentLabel: undefined,
-    logoSrc: undefined,
     configLabel: undefined,
     configLoading: false,
     configActive: false,
@@ -138,7 +129,7 @@ const props = withDefaults(
     configVisible: true,
     userId: undefined,
     cancelLoading: false,
-    buttonSize: 'large',
+    buttonSize: 'middle',
     actionsSize: 'middle',
   }
 )
@@ -172,8 +163,9 @@ const handleOpenFolder = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
+  margin-bottom: 24px;
+  gap: 24px;
+  flex-wrap: wrap;
 }
 
 .header-nav {
@@ -190,6 +182,7 @@ const handleOpenFolder = async () => {
 
 .breadcrumb {
   margin: 0;
+  font-size: 12px;
 }
 
 .breadcrumb-current {
@@ -198,10 +191,11 @@ const handleOpenFolder = async () => {
   gap: 8px;
 }
 
-.breadcrumb-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
+.header-actions {
+  flex-shrink: 0;
+}
+.breadcrumb-link {
+  overflow-wrap: anywhere;
 }
 
 .cancel-button {

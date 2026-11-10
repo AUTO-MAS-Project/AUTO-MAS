@@ -55,27 +55,25 @@
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
+            <UserAccountHeading
+              :user-name="formData.userName"
+              :options="{ isEdit, logoSrc: accountIcon }"
+            />
             <div class="section-header">
               <h3>{{ t('core.edit.basicInfo') }}</h3>
             </div>
 
-            <a-row :gutter="24">
-              <a-col :span="12">
-                <UserNameField
-                  v-model="formData.userName"
-                  :hint="t('core.edit.nameUsedTellUsers')"
-                  :placeholder="t('core.edit.enterUsername')"
-                  @save="saveField('Info.Name', formData.userName)"
-                />
-              </a-col>
-              <a-col :span="12">
-                <UserStatusField
-                  v-model="formData.Info.Status"
-                  :hint="t('core.edit.whetherThisUserEnabled')"
-                  @save="saveField('Info.Status', formData.Info.Status)"
-                />
-              </a-col>
-            </a-row>
+            <UserBasicInfoFields
+              v-model:user-name="formData.userName"
+              v-model:status="formData.Info.Status"
+              v-model:remained-day="formData.Info.RemainedDay"
+              v-model:notes="formData.Info.Notes"
+              :disabled="pageLoading"
+              @save-name="saveField('Info.Name', formData.userName)"
+              @save-status="saveField('Info.Status', formData.Info.Status)"
+              @save-days="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
+              @save-notes="saveField('Info.Notes', formData.Info.Notes)"
+            />
 
             <a-row :gutter="24">
               <a-col :span="12">
@@ -150,13 +148,6 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="12">
-                <UserRemainedDayField
-                  v-model="formData.Info.RemainedDay"
-                  :hint="t('core.edit.daysLeftAccount1')"
-                  @save="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
-                />
-              </a-col>
             </a-row>
 
             <a-row :gutter="24">
@@ -183,14 +174,6 @@
                 </a-form-item>
               </a-col>
             </a-row>
-
-            <UserNotesField
-              v-model="formData.Info.Notes"
-              :hint="t('core.edit.addNoteAboutThis')"
-              :placeholder="t('core.edit.enterNote')"
-              :rows="4"
-              @save="saveField('Info.Notes', formData.Info.Notes)"
-            />
           </div>
 
           <div class="form-section">
@@ -307,10 +290,9 @@
 </template>
 
 <script setup lang="ts">
-import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
-import UserNotesField from '@/views/EditView/User/components/UserNotesField.vue'
-import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
-import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
+import UserAccountHeading from '@/components/UserAccountHeading.vue'
+import accountIcon from '@/assets/ok-nte.ico'
+import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
