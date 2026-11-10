@@ -49,9 +49,7 @@ def discard_uncommitted_staging(
         receipt = script_install.record_path(root, "installed.json")
         if takeover_enabled and receipt.exists():
             if not script_install.verify_installed_files(root, cancelled):
-                raise script_install.InstallUnsafeError(
-                    "MaaEnd 原安装收据校验未通过"
-                )
+                raise script_install.InstallUnsafeError("MaaEnd 原安装收据校验未通过")
     except (OSError, ValueError, script_install.InstallUnsafeError) as error:
         if not (takeover_enabled and allow_damaged_repair):
             raise
