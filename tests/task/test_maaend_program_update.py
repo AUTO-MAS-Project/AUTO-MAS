@@ -1093,3 +1093,79 @@ async def test_manager_repairs_native_upgrade_receipt_at_exact_newer_version(
     assert script_install.verify_installed_files(root, threading.Event())
     exact.assert_awaited_once_with(Version(native_tag), native_tag)
     await instance.final_task()
+
+
+@pytest.mark.asyncio
+async def test_manager_recovers_ready_left_before_native_journal(
+    installation, monkeypatch
+):
+    """真实安装器完成 ready 复制后异常，下一轮真实 manager 可安全清理重跑。"""
+    root, config = installation
+    await update.update_before_run(root, config)
+    original_version = update.read_install(root)
+    archive = root.parent / "official.zip"
+    candidate = update.PreparedUpdate(
+        root.resolve(),
+        original_version,
+        original_version[0],
+        original_version[1],
+        archive,
+        archive.stat().st_size,
+        hashlib.sha256(archive.read_bytes()).hexdigest(),
+    )
+    original_copytree = script_install.shutil.copytree
+
+    def fail_after_ready(*args, **kwargs):
+        result = original_copytree(*args, **kwargs)
+        if Path(args[1]).name == "ready":
+            raise OSError("interrupted after ready copy, before transaction")
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(script_install.shutil, "copytree", fail_after_ready)
+        with pytest.raises(OSError, match="before transaction"):
+            await update.apply_update(root, candidate)
+
+    work = script_install.workspace(root)
+    assert (work / "ready").is_dir()
+    assert (work / "package").is_dir()
+    assert not (work / "transaction.json").exists()
+    assert not (work / "previous").exists()
+    assert update.read_install(root) == original_version
+    assert script_install.verify_installed_files(root, threading.Event())
+    instance, _, unlock = await _start_real_maaend_manager_for_repair(
+        root, monkeypatch
+    )
+    await instance.main_task()
+    assert not (work / "ready").exists()
+    assert not (work / "package").exists()
+    assert update.read_install(root) == original_version
+    assert script_install.verify_installed_files(root, threading.Event())
+    await instance.final_task()
+    unlock.assert_awaited_once_with("ticket")
+
+
+@pytest.mark.asyncio
+async def test_maaend_precommit_cleanup_preserves_previous_and_invalid_original(
+    installation,
+):
+    from app.task.MaaEnd.tools.managed_recovery import MaaEndInstallAdapter
+
+    root, config = installation
+    await update.update_before_run(root, config)
+    work = script_install.workspace(root)
+    work.mkdir(parents=True, exist_ok=True)
+    (work / "ready").mkdir()
+    (work / "previous").mkdir()
+    adapter = MaaEndInstallAdapter(root, config, takeover_enabled=True)
+    with pytest.raises(script_install.InstallUnsafeError, match="备份存在"):
+        await adapter.recover_native()
+    assert (work / "ready").exists() and (work / "previous").exists()
+
+    (work / "previous").rmdir()
+    (root / "MaaEnd.exe").write_bytes(b"damaged")
+    with pytest.raises((OSError, ValueError, script_install.InstallUnsafeError)):
+        await adapter.recover_native()
+    assert (work / "ready").exists()
+    assert not (work / "transaction.json").exists()
+
