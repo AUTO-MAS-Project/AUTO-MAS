@@ -186,9 +186,10 @@ class ManagedInstallBackup:
         if state is None:
             raise script_install.InstallUnsafeError("安装事务记录已丢失")
         if restored:
-            if state["phase"] != "restored" or not self._hashes(
-                self.root, cancelled
-            ) == state["files"]:
+            if (
+                state["phase"] != "restored"
+                or not self._hashes(self.root, cancelled) == state["files"]
+            ):
                 raise script_install.InstallUnsafeError(
                     "原版还原尚未确认，不能清理恢复记录"
                 )
