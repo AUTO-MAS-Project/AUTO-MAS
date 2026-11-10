@@ -2,7 +2,7 @@
 // 一次只能处理一个弹窗，后续请求排队；断线或后端关闭请求时立即清除旧选择。
 
 import { ref } from 'vue'
-import { onDisconnected, send } from '@/services/websocket/connection'
+import { onConnected, onDisconnected, send } from '@/services/websocket/connection'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
   WS_BETTERGI_INSTALL_DECISION,
@@ -18,6 +18,7 @@ export const bettergiInstallDecisionPending = ref<string | null>(null)
 
 let subscriptionIds: string[] = []
 let disposeDisconnect: (() => void) | null = null
+let disposeConnect: (() => void) | null = null
 
 const forgetRequest = (requestId: string) => {
   bettergiInstallPrompts.value = bettergiInstallPrompts.value.filter(
@@ -50,6 +51,12 @@ export function bootstrapBetterGIInstallRecovery(): void {
     bettergiInstallPrompts.value = []
     bettergiInstallDecisionPending.value = null
   })
+  // reconnectNow 在切换连接代次时不会触发 onDisconnected。
+  // 新连接建立后，旧连接的关闭帧可能已丢失；绝不可沿用旧确认请求。
+  disposeConnect = onConnected(() => {
+    bettergiInstallPrompts.value = []
+    bettergiInstallDecisionPending.value = null
+  })
 }
 
 export function respondToBetterGIInstallRecovery(action: 'retry' | 'skip' | 'stop'): boolean {
@@ -72,6 +79,8 @@ export function disposeBetterGIInstallRecovery(): void {
   for (const id of subscriptionIds.splice(0)) unsubscribe(id)
   disposeDisconnect?.()
   disposeDisconnect = null
+  disposeConnect?.()
+  disposeConnect = null
   bettergiInstallPrompts.value = []
   bettergiInstallDecisionPending.value = null
 }
