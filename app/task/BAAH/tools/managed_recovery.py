@@ -4,6 +4,7 @@
 
 import asyncio
 from pathlib import Path
+from uuid import uuid4
 
 from packaging.version import Version
 
@@ -105,3 +106,66 @@ class BAAHInstallAdapter:
         await self.ensure_idle()
         # 如果安装回执无法匹配已恢复旧版，则不能宣称回滚完成并启动任务。
         await program_update.confirm_current_install(self.root)
+
+
+async def inspect_stale_transaction(root: Path) -> InstallInspection:
+    """只接受原安装回执已验证、目录切换已结束的遗留事务。"""
+    await asyncio.to_thread(program_update.assert_idle, root)
+    directory = script_install.workspace(root)
+    marker = directory / "transaction.json"
+    previous = directory / "previous"
+    ready = directory / "ready"
+    if any(path.is_symlink() for path in (marker, previous, ready)):
+        raise script_install.InstallUnsafeError("BAAH 恢复目录包含符号链接")
+    pending = marker.exists()
+    if previous.exists() or ready.exists():
+        return InstallInspection(pending=pending, healthy=False)
+    receipt = script_install.record_path(root, "installed.json")
+    if not receipt.is_file() or receipt.is_symlink():
+        return InstallInspection(pending=pending, healthy=False)
+    try:
+        arch = await asyncio.to_thread(
+            script_install.read_pe_architecture, root / "BAAH.exe"
+        )
+        version = await asyncio.to_thread(program_update.read_version, root)
+        verified = await script_install.run_worker(
+            script_install.verify_installed_files, root
+        )
+    except (OSError, ValueError, KeyError):
+        return InstallInspection(pending=pending, healthy=False)
+    healthy = arch == "x86_64" and verified
+    return InstallInspection(
+        pending=pending,
+        healthy=healthy,
+        installed_version=str(version),
+        updated_confirmed=healthy,
+        previous_confirmed=healthy and not pending,
+    )
+
+
+async def acknowledge_stale_transaction(root: Path) -> None:
+    """经公共入口确认后归档旧 journal，不接受有 backup/ready 的回滚事务。"""
+    state = await inspect_stale_transaction(root)
+    if not (state.pending and state.healthy and state.updated_confirmed):
+        raise script_install.InstallUnsafeError("旧 BAAH 安装事务无法确认完整")
+    directory = script_install.workspace(root)
+    marker = directory / "transaction.json"
+    snapshot = marker.read_bytes()
+    if not snapshot or len(snapshot) > 128 * 1024 * 1024:
+        raise script_install.InstallUnsafeError("旧 BAAH 事务内容无效")
+    await asyncio.to_thread(program_update.assert_idle, root)
+    if marker.is_symlink() or marker.read_bytes() != snapshot:
+        raise script_install.InstallUnsafeError("BAAH 事务记录已变化")
+    if any(
+        path.exists() or path.is_symlink()
+        for path in (directory / "previous", directory / "ready")
+    ):
+        raise script_install.InstallUnsafeError("BAAH 仍有可恢复的旧版目录")
+    archive = marker.with_name(f"baah-transaction-ack-{uuid4().hex}.json")
+    marker.replace(archive)
+    try:
+        await program_update.confirm_current_install(root)
+    except BaseException:
+        if not marker.exists() and archive.exists():
+            archive.replace(marker)
+        raise
