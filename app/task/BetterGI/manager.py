@@ -78,8 +78,14 @@ class BetterGIManager(ScriptManagerBase):
             if not script_config.Info.RootPath:
                 return "请先设置有效的 BetterGI 脚本路径"
             root_path = script_config.Info.RootPath
-            if not root_path.is_dir() or not (root_path / _BGI_REL_EXE).is_file():
+            if not root_path.is_dir():
                 return "请先设置有效的 BetterGI 脚本路径"
+            if not (root_path / _BGI_REL_EXE).is_file():
+                marker = script_install.workspace(root_path) / "bgi-install.json"
+                # 唯有上轮安装保护标记存在时，允许进入完整安装恢复询问。
+                # 无标记的失效路径仍然拒绝，不能直接打开损坏程序。
+                if marker.is_symlink() or not marker.is_file():
+                    return "请先设置有效的 BetterGI 脚本路径"
             target_user_id = self.task_info.user_id or "Default"
             if target_user_id != "Default":
                 try:

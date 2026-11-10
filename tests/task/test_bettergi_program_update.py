@@ -1035,3 +1035,38 @@ async def test_unready_release_does_not_bypass_existing_unconfirmed_install(
         await update.update_before_run(root, config)
     assert marker.exists()
     update.run_installer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_script_config_missing_executable_with_marker_reaches_recovery_gate(
+    installation, monkeypatch
+):
+    root, config, _ = installation
+    (root / "BetterGI.exe").unlink()
+    marker = script_install.workspace(root) / "bgi-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('{"target": "0.56.0"}')
+    uid = uuid.uuid4()
+    config.Info = SimpleNamespace(RootPath=root)
+    config.UserData = {}
+    monkeypatch.setattr(manager, "BetterGIConfig", type(config))
+    monkeypatch.setattr(
+        manager, "Config", SimpleNamespace(ScriptConfig={uid: config})
+    )
+    instance = object.__new__(manager.BetterGIManager)
+    instance.execution_mode = "ScriptConfig"
+    instance.script_info = SimpleNamespace(script_id=str(uid), name="损坏 BGI")
+    instance.task_info = SimpleNamespace(user_id="Default", task_id="task-id")
+    instance._update_root = root
+    instance.script_config = config
+    monkeypatch.setattr(
+        manager.install_recovery,
+        "ask_install_recovery",
+        AsyncMock(side_effect=script_install.InstallUnsafeError("用户取消恢复")),
+    )
+    assert await instance.check() == "Pass"
+    with pytest.raises(script_install.InstallUnsafeError, match="用户取消恢复"):
+        await instance._recover_unconfirmed_install()
+    assert marker.exists()
+    marker.unlink()
+    assert "有效" in await instance.check()
