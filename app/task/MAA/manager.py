@@ -35,7 +35,6 @@ from app.models.notification.report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.services import capture_adb
-from app.services import script_install
 from app.task.emulator_core import close_emulator
 from app.task.game_update import EmulatorGameUpdateTask
 from app.task.MAA.stage import maa_stage_service
