@@ -936,3 +936,145 @@ async def test_no_update_prefetch_is_rechecked_at_script_start(
     await scheduler._prepare_program_update(root)
     check.assert_awaited_once()
     apply.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_maaend_failed_transaction_can_be_confirmed_after_manual_repair(
+    installation,
+):
+    from app.task.MaaEnd.tools import install_recovery
+
+    root, _ = installation
+    work = script_install.workspace(root)
+    work.mkdir(parents=True)
+    marker = work / "transaction.json"
+    marker.write_bytes(b"stale-invalid-install-record")
+    with script_install.installation_access(root):
+        result = await install_recovery.skip_stale_transaction(
+            root, marker.read_bytes()
+        )
+    assert result == "2.1.0"
+    assert not marker.exists()
+    backups = list(work.glob("maaend-transaction-ack-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_bytes() == b"stale-invalid-install-record"
+    await update.confirm_current_install(root)
+
+
+@pytest.mark.asyncio
+async def test_maaend_backup_and_ready_prevent_any_skip(installation):
+    from app.task.MaaEnd.tools import install_recovery
+
+    root, _ = installation
+    work = script_install.workspace(root)
+    work.mkdir(parents=True)
+    marker = work / "transaction.json"
+    marker.write_bytes(b"stale-invalid-install-record")
+    original = marker.read_bytes()
+    (work / "previous").mkdir()
+    with pytest.raises(script_install.InstallUnsafeError, match="备份"):
+        await install_recovery.skip_stale_transaction(root, original)
+    (work / "previous").rmdir()
+    (work / "ready").mkdir()
+    with pytest.raises(script_install.InstallUnsafeError, match="暂存"):
+        await install_recovery.skip_stale_transaction(root, original)
+    assert marker.read_bytes() == original
+
+
+@pytest.mark.asyncio
+async def test_maaend_corrupt_executable_or_changed_marker_cannot_skip(installation):
+    from app.task.MaaEnd.tools import install_recovery
+
+    root, _ = installation
+    work = script_install.workspace(root)
+    work.mkdir(parents=True)
+    marker = work / "transaction.json"
+    marker.write_bytes(b"original")
+    with pytest.raises(script_install.InstallUnsafeError, match="变化"):
+        await install_recovery.skip_stale_transaction(root, b"old marker")
+    (root / "MaaEnd.exe").write_bytes(b"damage")
+    with pytest.raises(script_install.InstallUnsafeError, match="不完整"):
+        await install_recovery.skip_stale_transaction(root, marker.read_bytes())
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_maaend_recovery_prompt_fails_closed_without_frontend(
+    installation, monkeypatch
+):
+    from app.task.MaaEnd.tools import install_recovery
+
+    root, _ = installation
+    work = script_install.workspace(root)
+    work.mkdir(parents=True)
+    marker = work / "transaction.json"
+    marker.write_bytes(b"stale")
+    monkeypatch.setattr(
+        install_recovery.Publisher, "send", AsyncMock(return_value=False)
+    )
+    with pytest.raises(script_install.InstallUnsafeError, match="主界面"):
+        await install_recovery.ask_install_recovery(
+            "task", root, managed_name="MaaEnd 实例 B", takeover_enabled=False
+        )
+    assert marker.read_bytes() == b"stale"
+
+
+@pytest.mark.asyncio
+async def test_maaend_recovery_prompt_identifies_target_and_cancellation(
+    installation, monkeypatch
+):
+    from app.core import Dispatcher
+    from app.core.ws import protocol
+    from app.models.schema import WSEnvelope
+    from app.task.MaaEnd.tools import install_recovery
+
+    root, _ = installation
+    work = script_install.workspace(root)
+    work.mkdir(parents=True)
+    marker = work / "transaction.json"
+    marker.write_bytes(b"stale")
+    notices = []
+
+    async def send(*, id, type, data):
+        if type == protocol.MAAEND_INSTALL_PROMPT:
+            notices.append(data)
+            Dispatcher.dispatch(
+                WSEnvelope(
+                    id=id,
+                    type=protocol.MAAEND_INSTALL_DECISION,
+                    data={
+                        "requestId": data["requestId"],
+                        "taskId": data["taskId"],
+                        "action": "stop",
+                    },
+                )
+            )
+        return True
+
+    monkeypatch.setattr(install_recovery.Publisher, "send", send)
+    with pytest.raises(script_install.InstallUnsafeError, match="取消"):
+        await install_recovery.ask_install_recovery(
+            "task", root, managed_name="MaaEnd B", takeover_enabled=False
+        )
+    assert notices[0]["managedName"] == "MaaEnd B"
+    assert notices[0]["installPath"] == str(root.resolve())
+    assert notices[0]["canSkip"] is True
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_maaend_invalid_receipt_cannot_be_manually_bypassed(
+    installation, monkeypatch
+):
+    from app.task.MaaEnd.tools import install_recovery
+
+    root, config = installation
+    await update.update_before_run(root, config)
+    work = script_install.workspace(root)
+    work.mkdir(parents=True)
+    marker = work / "transaction.json"
+    marker.write_bytes(b"unconfirmed")
+    (root / "resource/data.json").write_bytes(b"damaged")
+    with pytest.raises(script_install.InstallUnsafeError, match="回执"):
+        await install_recovery.skip_stale_transaction(root, marker.read_bytes())
+    assert marker.is_file()
