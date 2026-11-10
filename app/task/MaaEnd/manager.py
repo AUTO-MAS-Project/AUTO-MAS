@@ -503,12 +503,15 @@ class MaaEndManager(ScriptManagerBase):
             request = ScriptUpdateRequest(str(self.script_info.script_id), "MaaEnd")
             recovered_automatically = False
             try:
-                await adapter.retry_native()
+                # 原生事务恢复不能以旧 MAS 收据校验作为前置门槛；
+                # MXU 独立更新后的收据可能旧，但本体仍可正确修复。
+                await adapter.recover_native()
             except script_install.InstallUnsafeError:
                 if not journal.is_file():
                     raise
-                # 不再等待用户选择：只有已验证发行文件与安装回执才可
-                # 清理过期 journal；否则重做原生事务回滚，失败保留现场。
+            if journal.is_file():
+                # 只有无可回滚目录、原生安装完整且身份可信时，公共层
+                # 才允许清理过期 journal；否则重新尝试原生恢复。
                 outcome = await auto_recover_script_install(
                     request,
                     install_root=root,
@@ -516,21 +519,38 @@ class MaaEndManager(ScriptManagerBase):
                     acknowledge=adapter.acknowledge,
                     reinstall=adapter.retry_native,
                 )
+                if outcome not in {"verified", "reinstalled"}:
+                    raise script_install.InstallUnsafeError(
+                        "MaaEnd 原生事务未完成，拒绝启动"
+                    )
                 await self.script_info.set_log(f"MaaEnd 原生事务自动恢复：{outcome}")
                 recovered_automatically = True
-            # 仅在已经存在 MAS 身份回执时允许自动修复损坏的本体。
-            # 用户自选构建与手动模式不使用猜测的架构覆盖安装。
+            # 关闭接管或配置会话不主动覆盖用户自行维护的 MaaEnd。
+            # 仅在已开启托管且存在可信安装身份时才自动修复损坏的发行包。
             identity = script_install.record_path(root, "program-identity.json")
-            if identity.is_file() and not identity.is_symlink():
+            if (
+                self.execution_mode == "AutoProxy"
+                and config.Update.TakeoverEnabled
+                and identity.is_file()
+                and not identity.is_symlink()
+            ):
                 state = await adapter.inspect()
-                if not state.healthy and not state.pending:
+                if not state.healthy:
+                    if state.pending:
+                        raise script_install.InstallUnsafeError(
+                            "MaaEnd 尚有未完成原生事务，不能重新安装"
+                        )
                     outcome = await auto_recover_script_install(
                         request,
                         install_root=root,
-                        inspect=adapter.inspect,
+                        inspect=adapter.inspect_repair,
                         acknowledge=adapter.acknowledge,
                         reinstall=adapter.repair_program,
                     )
+                    if outcome != "reinstalled":
+                        raise script_install.InstallUnsafeError(
+                            "MaaEnd 完整包自动修复尚未确认成功"
+                        )
                     await self.script_info.set_log(
                         f"MaaEnd 官方完整包自动修复：{outcome}"
                     )
