@@ -25,6 +25,7 @@ import SettingRow from '@/components/ui/SettingRow.vue'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
 import MascotSettings from './components/MascotSettings.vue'
 import CustomBackgroundSettings from './components/CustomBackgroundSettings.vue'
+import CursorSizeSetting from './components/CursorSizeSetting.vue'
 import PressSoundSettings from './components/PressSoundSettings.vue'
 import StartupWindowSettings from './components/StartupWindowSettings.vue'
 
@@ -256,7 +257,6 @@ const handleLocaleChange = (value: unknown): void => {
 
     <PressSoundSettings />
 
-    <!-- 光标效果：只有一个开关式选项，一行即可 -->
     <SectionCard :title="t('core.setting.basic.cursorSection')" :icon="AimOutlined">
       <SettingRow
         :label="t('core.setting.basic.cursorAnim')"
@@ -269,6 +269,7 @@ const handleLocaleChange = (value: unknown): void => {
           @change="(value: any) => handleCursorEffectChange(value)"
         />
       </SettingRow>
+      <CursorSizeSetting />
     </SectionCard>
 
     <!-- 性能配置：三个开关/分段，全部单行 -->

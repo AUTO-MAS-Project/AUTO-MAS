@@ -3,7 +3,7 @@ import { observeFeature } from '@/utils/featureAnalytics'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { theme } from 'ant-design-vue'
 import { getConfig, saveConfig, type FrontendConfig } from '@/utils/config'
-import { createAppearanceCursorValue } from '@/components/appearanceCursor'
+import { createAppearanceCursorApplier, normalizeCursorSize } from '@/components/appearanceCursor'
 import { createAppearanceBackgroundApplier } from './appearanceBackground'
 import { createAppearanceSurfaceColor, getAppearanceSurfaceOpacity } from './appearanceSurfaces'
 import type { InstalledAppearance, OnlineAppearanceInstallResult } from '@/types/appearance'
@@ -37,6 +37,30 @@ const themeMode = ref<ThemeMode>('system')
 const themeColor = ref<ThemeColor>('blue')
 const appearanceId = ref<string | null>(null)
 const activeAppearance = ref<InstalledAppearance | null>(null)
+const cursorSizePx = ref<number | null>(null)
+let savedCursorSizePx: number | null = null
+let cursorSizeSaveTimer: ReturnType<typeof setTimeout> | undefined
+let cursorSizeRevision = 0
+const applyAppearanceCursor = createAppearanceCursorApplier()
+
+const previewCursorSize = (value: number | null, onError: () => void) => {
+  cursorSizePx.value = normalizeCursorSize(value)
+  const next = cursorSizePx.value
+  const revision = ++cursorSizeRevision
+  clearTimeout(cursorSizeSaveTimer)
+  cursorSizeSaveTimer = setTimeout(async () => {
+    try {
+      await observePreference('cursor_size', next === null ? 'auto' : 'custom', () =>
+        saveConfig({ cursorSizePx: next })
+      )
+      savedCursorSizePx = next
+    } catch {
+      if (revision === cursorSizeRevision) cursorSizePx.value = savedCursorSizePx
+      onError()
+    }
+  }, 300)
+}
+
 const appearances = ref<InstalledAppearance[]>([])
 const customBackgroundPath = ref('')
 const customBackgroundUrl = ref('')
@@ -160,26 +184,6 @@ const restorePersistedThemeSnapshot = () => {
 const updateCSSVariables = () => {
   const root = document.documentElement
   root.classList.toggle('appearance-custom', Boolean(activeAppearance.value))
-  const cursorUrls = activeAppearance.value?.cursorUrls
-  const cursors = activeAppearance.value?.cursors
-  if (cursors && Object.keys(cursors).length > 0) {
-    root.classList.add('appearance-cursor-custom')
-  } else {
-    root.classList.remove('appearance-cursor-custom')
-  }
-  // 光标变量独立于 AntD token bridge，确保首屏、清除和回退立即恢复浏览器默认语义。
-  root.style.setProperty(
-    '--app-appearance-cursor-default',
-    createAppearanceCursorValue('default', cursorUrls, cursors)
-  )
-  root.style.setProperty(
-    '--app-appearance-cursor-pointer',
-    createAppearanceCursorValue('pointer', cursorUrls, cursors)
-  )
-  root.style.setProperty(
-    '--app-appearance-cursor-text',
-    createAppearanceCursorValue('text', cursorUrls, cursors)
-  )
   const backgroundSource =
     activeAppearance.value?.backgroundUrl ?? (customBackgroundUrl.value || undefined)
   const surfaceOpacity =
@@ -504,6 +508,19 @@ const handleSystemThemeChange = () => {
 mediaQuery.addEventListener('change', handleSystemThemeChange)
 
 // 监听主题模式和颜色变化
+watch(
+  [activeAppearance, cursorSizePx],
+  ([appearance, size]) => {
+    const root = document.documentElement
+    root.classList.toggle(
+      'appearance-cursor-custom',
+      Boolean(Object.keys(appearance?.cursors ?? {}).length)
+    )
+    applyAppearanceCursor(root.style, appearance?.cursorUrls, appearance?.cursors, size)
+  },
+  { immediate: true }
+)
+
 watch(themeMode, updateTheme, { immediate: true })
 watch(themeColor, updateTheme)
 
@@ -1034,6 +1051,8 @@ export function useTheme() {
     initAppearanceChangedListener()
     initThemeConfigListener()
     const config = preloadedConfig ?? (await getConfig())
+    savedCursorSizePx = normalizeCursorSize(config.cursorSizePx)
+    cursorSizePx.value = savedCursorSizePx
     if (
       config.themeMode === 'system' ||
       config.themeMode === 'light' ||
@@ -1058,6 +1077,8 @@ export function useTheme() {
   }
 
   return {
+    cursorSizePx: computed(() => cursorSizePx.value),
+    previewCursorSize,
     themeMode: computed(() => themeMode.value),
     themeColor: computed(() => themeColor.value),
     isDark: computed(() => isDark.value),

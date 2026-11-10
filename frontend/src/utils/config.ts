@@ -29,6 +29,7 @@ export interface FrontendConfig {
   desktopMascotAnimationPaused?: boolean
   desktopMascotIdleMessagePaused?: boolean
   desktopMascotPosition?: { x: number; y: number }
+  cursorSizePx?: number | null
   cursorEffect?: CursorEffect
   lowPerformanceMode?: boolean
   /** 有脚本任务运行时自动暂停主页卫星动效；旧配置缺省按开启算 */
