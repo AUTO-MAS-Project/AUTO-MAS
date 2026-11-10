@@ -47,9 +47,7 @@ class MAAInstallAdapter:
         pending = software_pending or resource_pending
         try:
             release = await asyncio.to_thread(read_installed_release, self.root)
-            exe_ok = await asyncio.to_thread(
-                _read_pe_machine, self.root / "MAA.exe"
-            )
+            exe_ok = await asyncio.to_thread(_read_pe_machine, self.root / "MAA.exe")
             clock = await asyncio.to_thread(read_resource_clock, self.root)
         except (OSError, ValueError):
             release, exe_ok, clock = None, None, None
@@ -98,9 +96,7 @@ class MAAInstallAdapter:
             raise MaaUpdateUnsafeError("MAA 原生失败标记已变化")
         from .install_recovery import skip_delegated_failure
 
-        await skip_delegated_failure(
-            self.root, {"software": software.read_bytes()}
-        )
+        await skip_delegated_failure(self.root, {"software": software.read_bytes()})
 
     async def reinstall(self, install_software, install_resources) -> None:
         """专项执行上游安装器和完整资源修复，不独立决定是否继续任务。"""
@@ -111,9 +107,8 @@ class MAAInstallAdapter:
             if (
                 not package
                 or not (self.root / package).is_file()
-                or await asyncio.to_thread(
-                    _read_pe_machine, self.root / "MAA.exe"
-                ) is None
+                or await asyncio.to_thread(_read_pe_machine, self.root / "MAA.exe")
+                is None
             ):
                 raise MaaUpdateUnsafeError(
                     "MAA 官方安装包或可执行更新入口缺失，不能自动重试"
