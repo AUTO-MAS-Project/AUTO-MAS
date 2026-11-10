@@ -204,6 +204,7 @@ async def run_managed_installation(
         outcome: Literal["installed", "verified", "old_version", "blocked", "deferred"],
         reason: str = "",
         version: str | None = None,
+        source: str | None = None,
     ) -> None:
         report(
             RecoveryIncident(
@@ -212,6 +213,7 @@ async def run_managed_installation(
                 install_root=str(install_root.resolve()),
                 outcome=outcome,
                 installed_version=version,
+                source=source,
                 reason=reason,
             )
         )
@@ -228,7 +230,9 @@ async def run_managed_installation(
             raise InstallUnsafeError("清理标记后新版本仍未通过完整性复核")
         return result
 
-    async def restore_previous(reason: str) -> Literal["old_version"]:
+    async def restore_previous(
+        reason: str, *, source: str | None = None
+    ) -> Literal["old_version"]:
         try:
             await ensure_idle()
             current = backup.read()
@@ -259,6 +263,7 @@ async def run_managed_installation(
             "old_version",
             f"{reason}；已从更新前备份恢复旧版，继续执行原有任务",
             previous.installed_version,
+            source=source,
         )
         return "old_version"
 
@@ -287,6 +292,10 @@ async def run_managed_installation(
             return "installed"
         except asyncio.CancelledError:
             raise
+        except DownloadRetryFailed as error:
+            return await restore_previous(
+                f"恢复时再次下载失败：{error.reason}", source=error.source
+            )
         except Exception as error:
             # 仅当恢复所依赖的写盘者已经确认停止，才有资格还原快照。
             # 超时重试即使抛 TimeoutError，也不能假设安装进程退出。
@@ -322,6 +331,10 @@ async def run_managed_installation(
         raise InstallUnsafeError("安装超时，已保留旧版备份，下一次运行自动检查") from error
     except InstallReportedFailure:
         return await restore_previous("安装器明确报告失败")
+    except DownloadRetryFailed as error:
+        return await restore_previous(
+            f"更新包下载失败：{error.reason}", source=error.source
+        )
     except Exception as error:
         backup.set_phase("timed_out")
         emit("deferred", f"安装结果无法判断（{type(error).__name__}），保留备份")
