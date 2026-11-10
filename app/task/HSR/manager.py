@@ -30,7 +30,11 @@ from typing import Any
 from app.config import ConfigCollection
 from app.core import Config, Notify, Publisher
 from app.core.notify.lifecycle import NotificationTaskBase as NotificationTaskBase
-from app.core.script_update import ScriptUpdateRequest, run_script_update
+from app.core.script_update import (
+    ScriptUpdateRequest,
+    auto_recover_script_install,
+    run_script_update,
+)
 from app.core.ws import protocol
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.notification.report import TaskResultData, TaskResultReport
@@ -310,33 +314,39 @@ class HSRManager(NotificationTaskBase):
             install = Path(root)
             try:
                 await rollback_pending(install, send_log=self._append_log)
-            except Exception as error:  # noqa: BLE001 - 不确定状态继续保护现场
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:  # noqa: BLE001 - 原生事务不可凭版本号跳过
                 journal = install_recovery.journal_path(install)
-                if not journal.is_file() or journal.is_symlink():
+                if journal.is_symlink() or not journal.is_file():
                     raise
-                action, snapshot = await install_recovery.ask_install_recovery(
-                    self.task_info.task_id,
-                    engine,
-                    install,
-                    managed_name=getattr(self.script_info, "name", "HSR"),
+                self._append_log(
+                    f"{engine_label(engine)} 原生回滚未确认，调用公共恢复入口："
+                    f"{type(error).__name__}"
                 )
-                if action == "skip":
-                    version = await install_recovery.skip_stale_journal(
-                        engine, install, snapshot
-                    )
-                    self._append_log(
-                        f"{engine_label(engine)} 上轮安装已确认手动修复；"
-                        f"当前版本 {version}，原日志已归档"
-                    )
-                else:
-                    install_recovery.confirm_snapshot(install, snapshot)
+
+                async def inspect():
+                    return await install_recovery.inspect_installation(engine, install)
+
+                async def reinstall():
                     await rollback_pending(install, send_log=self._append_log)
-                    if install_recovery.journal_path(install).exists():
-                        raise RuntimeError(
-                            f"{engine_label(engine)} 上轮更新回滚后仍有安装记录"
-                        )
-                    self._append_log(f"{engine_label(engine)} 上次安装已重新回滚")
-                # 用户恢复的引擎本轮不再触发新的自动升级，其他引擎可正常检查。
+                    if journal.exists() or journal.is_symlink():
+                        raise RuntimeError("原生事务仍未完成，禁止启动")
+
+                outcome = await auto_recover_script_install(
+                    ScriptUpdateRequest(
+                        str(self.script_info.script_id), "HSR", engine
+                    ),
+                    install_root=install,
+                    inspect=inspect,
+                    acknowledge=reinstall,
+                    reinstall=reinstall,
+                )
+                if outcome not in {"reinstalled", "verified"}:
+                    raise RuntimeError("未确认原生更新事务已经安全恢复")
+                self._append_log(
+                    f"{engine_label(engine)} 原生事务已由公共入口验证恢复：{outcome}"
+                )
                 self._recovered_update_engines.add(engine)
 
     def _update_aborted(self) -> bool:
