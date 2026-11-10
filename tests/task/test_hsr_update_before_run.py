@@ -1081,3 +1081,172 @@ async def test_module_verdict_remains_independent_of_deferred_prefetch(
     assert "first_task_completed_at" not in user.info.model_dump()
     assert "first_task_completed_at" not in script.info.model_dump()
     await proxy.callbacks.close()
+
+
+@pytest.mark.asyncio
+async def test_hsr_skip_only_after_manual_repair_and_no_backup(tmp_path, monkeypatch):
+    from app.task.HSR.tools.update import install_recovery
+
+    monkeypatch.chdir(tmp_path)
+    root = tmp_path / "m7a"
+    root.mkdir()
+    (root / "March7th Assistant.exe").write_bytes(b"manual repair")
+    marker = install_recovery.journal_path(root)
+    marker.parent.mkdir()
+    marker.write_bytes(b"broken journal")
+    monkeypatch.setattr(install_recovery, "_assert_idle", lambda root: None)
+    monkeypatch.setattr(
+        install_recovery, "read_installed_version", lambda spec, root: "v1.2.3"
+    )
+    installed = await install_recovery.skip_stale_journal(
+        "M7A", root, marker.read_bytes()
+    )
+    assert installed == "v1.2.3"
+    assert not marker.exists()
+    stored = list((tmp_path / "data/hsr_update/recovery").rglob("M7A-*.json"))
+    assert len(stored) == 1
+    assert stored[0].read_bytes() == b"broken journal"
+
+
+@pytest.mark.asyncio
+async def test_hsr_existing_stage_or_backup_cannot_be_discarded(tmp_path, monkeypatch):
+    from app.task.HSR.tools.update import install_recovery
+
+    root = tmp_path / "m7a"
+    root.mkdir()
+    (root / "March7th Assistant.exe").touch()
+    marker = install_recovery.journal_path(root)
+    marker.parent.mkdir()
+    marker.write_bytes(b"broken journal")
+    monkeypatch.setattr(install_recovery, "_assert_idle", lambda root: None)
+    for dirname in ("backup", "stage"):
+        directory = marker.parent / dirname
+        directory.mkdir()
+        with pytest.raises(
+            install_recovery.HSRRecoveryUnsafeError, match="备份或暂存"
+        ):
+            await install_recovery.skip_stale_journal(
+                "M7A", root, marker.read_bytes()
+            )
+        assert marker.exists()
+        directory.rmdir()
+
+
+@pytest.mark.asyncio
+async def test_hsr_invalid_executable_or_changed_journal_cannot_skip(tmp_path, monkeypatch):
+    from app.task.HSR.tools.update import install_recovery
+
+    root = tmp_path / "sra"
+    root.mkdir()
+    marker = install_recovery.journal_path(root)
+    marker.parent.mkdir()
+    marker.write_bytes(b"broken journal")
+    monkeypatch.setattr(install_recovery, "_assert_idle", lambda root: None)
+    with pytest.raises(install_recovery.HSRRecoveryUnsafeError, match="变化"):
+        await install_recovery.skip_stale_journal("SRA", root, b"old")
+    with pytest.raises(install_recovery.HSRRecoveryUnsafeError, match="主程序缺失"):
+        await install_recovery.skip_stale_journal("SRA", root, marker.read_bytes())
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_hsr_unconnected_frontend_preserves_journal(tmp_path, monkeypatch):
+    from app.task.HSR.tools.update import install_recovery
+
+    root = tmp_path / "sra"
+    root.mkdir()
+    marker = install_recovery.journal_path(root)
+    marker.parent.mkdir()
+    marker.write_bytes(b"broken journal")
+    monkeypatch.setattr(
+        install_recovery.Publisher, "send", AsyncMock(return_value=False)
+    )
+    with pytest.raises(
+        install_recovery.HSRRecoveryUnsafeError, match="主界面"
+    ):
+        await install_recovery.ask_install_recovery(
+            "task", "SRA", root, managed_name="HSR 双引擎托管"
+        )
+    assert marker.read_bytes() == b"broken journal"
+
+
+@pytest.mark.asyncio
+async def test_hsr_prompt_binds_engine_and_installation(tmp_path, monkeypatch):
+    from app.core import Dispatcher
+    from app.core.ws import protocol
+    from app.models.schema import WSEnvelope
+    from app.task.HSR.tools.update import install_recovery
+
+    root = tmp_path / "m7a"
+    root.mkdir()
+    marker = install_recovery.journal_path(root)
+    marker.parent.mkdir()
+    marker.write_bytes(b"broken journal")
+    seen = []
+
+    async def send(*, id, type, data):
+        if type == protocol.HSR_INSTALL_PROMPT:
+            seen.append(data)
+            Dispatcher.dispatch(
+                WSEnvelope(
+                    id=id,
+                    type=protocol.HSR_INSTALL_DECISION,
+                    data={
+                        "taskId": data["taskId"],
+                        "requestId": data["requestId"],
+                        "action": "stop",
+                    },
+                )
+            )
+        return True
+
+    monkeypatch.setattr(install_recovery.Publisher, "send", send)
+    with pytest.raises(install_recovery.HSRRecoveryUnsafeError, match="取消"):
+        await install_recovery.ask_install_recovery(
+            "task", "M7A", root, managed_name="HSR 另一条队列"
+        )
+    assert seen[0]["managedName"] == "HSR 另一条队列"
+    assert seen[0]["installPath"] == str(root.resolve())
+    assert seen[0]["engine"] == "M7A"
+    assert seen[0]["canSkip"] is True
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_hsr_recovered_engine_is_not_auto_updated_again(scheduler):
+    scheduler._recovered_update_engines = {"M7A"}
+    assert await scheduler._update_external_scripts() is None
+    assert update.update_engine_if_needed.await_count == 1
+    assert scheduler._append_log.called
+
+
+@pytest.mark.asyncio
+async def test_hsr_manager_gives_user_decision_after_failed_automatic_rollback(
+    scheduler, tmp_path, monkeypatch
+):
+    from app.task.HSR.tools.update import install_recovery
+
+    root = tmp_path / "M7A"
+    root.mkdir()
+    marker = install_recovery.journal_path(root)
+    marker.parent.mkdir()
+    marker.write_bytes(b"broken journal")
+    scheduler.task_info = SimpleNamespace(task_id="task-id")
+    scheduler._recovered_update_engines = set()
+
+    async def rollback(root, **kwargs):
+        if root.name == "M7A":
+            raise update.HSRUpdateError("cannot rollback")
+        return False
+
+    monkeypatch.setattr(update, "rollback_pending", AsyncMock(side_effect=rollback))
+    monkeypatch.setattr(
+        install_recovery,
+        "ask_install_recovery",
+        AsyncMock(return_value=("skip", marker.read_bytes())),
+    )
+    skip = AsyncMock(return_value="v1.2.3")
+    monkeypatch.setattr(install_recovery, "skip_stale_journal", skip)
+    await scheduler._rollback_pending_updates()
+    skip.assert_awaited_once()
+    assert scheduler._recovered_update_engines == {"M7A"}
