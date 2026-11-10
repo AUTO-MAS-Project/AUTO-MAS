@@ -502,8 +502,7 @@ class MaaEndManager(ScriptManagerBase):
                 config,
                 takeover_enabled=config.Update.TakeoverEnabled,
                 allow_damaged_repair=(
-                    self.execution_mode == "AutoProxy"
-                    and config.Update.TakeoverEnabled
+                    self.execution_mode == "AutoProxy" and config.Update.TakeoverEnabled
                 ),
             )
             request = ScriptUpdateRequest(str(self.script_info.script_id), "MaaEnd")
