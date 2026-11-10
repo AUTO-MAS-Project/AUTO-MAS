@@ -427,74 +427,37 @@ async def test_src_normal_update_cannot_overwrite_existing_marker(installation):
 
 
 @pytest.mark.asyncio
-async def test_src_prompt_reports_correct_installation_and_fails_closed(
-    installation, monkeypatch
-):
-    from app.task.SRC.tools import install_recovery
-
-    root, _ = installation
-    marker = script_install.workspace(root) / "src-install.json"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
-    captured = []
-
-    async def send(*, id, type, data):
-        from app.core import Dispatcher
-        from app.core.ws import protocol
-        from app.models.schema import WSEnvelope
-
-        if type == protocol.SRC_INSTALL_PROMPT:
-            captured.append(data)
-            Dispatcher.dispatch(
-                WSEnvelope(
-                    id=id,
-                    type=protocol.SRC_INSTALL_DECISION,
-                    data={
-                        "requestId": data["requestId"],
-                        "taskId": data["taskId"],
-                        "action": "stop",
-                    },
-                )
-            )
-        return True
-
-    monkeypatch.setattr(install_recovery.Publisher, "send", send)
-    with pytest.raises(script_install.InstallUnsafeError, match="用户取消"):
-        await install_recovery.ask_install_recovery(
-            "task",
-            root,
-            managed_name="SRC 第二安装",
-            takeover_enabled=False,
-        )
-    assert captured[0]["installPath"] == str(root.resolve())
-    assert captured[0]["managedName"] == "SRC 第二安装"
-    assert marker.exists()
-
-
-@pytest.mark.asyncio
-async def test_src_no_frontend_retains_install_marker(installation, monkeypatch):
-    from app.task.SRC.tools import install_recovery
-
-    root, _ = installation
-    marker = script_install.workspace(root) / "src-install.json"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
-    monkeypatch.setattr(
-        install_recovery.Publisher, "send", AsyncMock(return_value=False)
-    )
-    with pytest.raises(script_install.InstallUnsafeError, match="主界面"):
-        await install_recovery.ask_install_recovery(
-            "task", root, managed_name="SRC", takeover_enabled=False
-        )
-    assert marker.exists()
-
-
-@pytest.mark.asyncio
-async def test_src_running_process_does_not_hide_recovery_prompt(
+async def test_src_legacy_marker_uses_common_recovery_without_frontend(
     installation, monkeypatch
 ):
     from app.task.SRC import manager
-    from app.task.SRC.tools import install_recovery
+
+    root, _ = installation
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
+    instance = object.__new__(manager.SrcManager)
+    instance.src_root_path = root
+    instance.script_info = SimpleNamespace(
+        script_id="test-script", name="SRC", set_log=AsyncMock()
+    )
+    instance.script_config = SimpleNamespace(
+        Update=SimpleNamespace(TakeoverEnabled=False)
+    )
+    instance.maintenance = False
+    instance.task_info = SimpleNamespace(task_id="task-id", mode="AutoProxy")
+    common = AsyncMock(return_value="reinstalled")
+    monkeypatch.setattr(manager, "auto_recover_script_install", common)
+    assert await instance._recover_unconfirmed_install()
+    common.assert_awaited_once()
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_src_missing_frontend_never_blocks_common_recovery(
+    installation, monkeypatch
+):
+    from app.task.SRC import manager
 
     root, _ = installation
     marker = script_install.workspace(root) / "src-install.json"
@@ -511,15 +474,7 @@ async def test_src_running_process_does_not_hide_recovery_prompt(
     instance.maintenance = False
     instance.task_info = SimpleNamespace(task_id="task-id", mode="AutoProxy")
     monkeypatch.setattr(
-        update,
-        "assert_idle",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            script_install.InstallUnsafeError("SRC still running")
-        ),
+        manager, "auto_recover_script_install", AsyncMock(return_value="verified")
     )
-    ask = AsyncMock(side_effect=script_install.InstallUnsafeError("用户取消恢复"))
-    monkeypatch.setattr(install_recovery, "ask_install_recovery", ask)
-    with pytest.raises(script_install.InstallUnsafeError, match="用户取消恢复"):
-        await instance._recover_unconfirmed_install()
-    ask.assert_awaited_once()
+    assert await instance._recover_unconfirmed_install()
     assert marker.exists()
