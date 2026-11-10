@@ -652,3 +652,17 @@ async def test_unready_release_does_not_bypass_existing_unconfirmed_install(
         await update.update_before_run(root, config)
     assert marker.exists()
     update.run_installer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_installer_launched_from_downloads_blocks_managed_recovery(
+    tmp_path, monkeypatch
+):
+    """迁移 #1900 有效的进程防护，不依赖弹窗或安装目录路径。"""
+    installer = tmp_path / "Downloads" / "BetterGI.Install.0.67.0.exe"
+    process = SimpleNamespace(
+        info={"exe": str(installer), "name": "BetterGI.Install.0.67.0.exe"}
+    )
+    monkeypatch.setattr(update.psutil, "process_iter", lambda _: [process])
+    with pytest.raises(script_install.InstallUnsafeError, match="安装器仍在运行"):
+        update.assert_idle(tmp_path / "BetterGI")

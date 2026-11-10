@@ -366,6 +366,9 @@ class TaskItem(RuntimeEntry):
     class Current(ConfigGroup):
         index: UUID | None = None
         log: Virtual[str] = None
+        recovery_summary: str = Field(
+            default="", description="整轮脚本安装恢复与下载失败结算摘要"
+        )
         prefetch: WSTaskPrefetchData | None = Field(
             default=None, description="下一托管预下载状态"
         )

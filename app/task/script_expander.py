@@ -70,16 +70,22 @@ class ScriptExpander(TaskBase):
         from app.services import telemetry
 
         info = self.task_info
-        with telemetry.observe_span(
-            name="AUTO-MAS task",
-            op="auto_mas.task.run",
-            attributes={
-                "mode": "Update" if self.maintenance else info.mode,
-                "trigger": telemetry.task_trigger_category(info.info.trigger),
-            },
-            force_transaction=True,
-        ):
-            await self._run_task()
+        from app.core.script_update import _current_recovery_session
+
+        token = _current_recovery_session.set(self._updates)
+        try:
+            with telemetry.observe_span(
+                name="AUTO-MAS task",
+                op="auto_mas.task.run",
+                attributes={
+                    "mode": "Update" if self.maintenance else info.mode,
+                    "trigger": telemetry.task_trigger_category(info.info.trigger),
+                },
+                force_transaction=True,
+            ):
+                await self._run_task()
+        finally:
+            _current_recovery_session.reset(token)
 
     async def _run_task(self) -> None:
         info = self.task_info
@@ -333,6 +339,8 @@ class ScriptExpander(TaskBase):
             await info.set_state(status="error")
         self.history.cancelled |= self.cancelled
         await self.history.close()
+        # 在 task.completed 之前只发一份公共更新汇总。
+        await self._updates.publish_recovery_summary()
         if self.report_coordinator is not None:
             self.report_coordinator.finish()
         if (
