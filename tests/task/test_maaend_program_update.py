@@ -1133,9 +1133,7 @@ async def test_manager_recovers_ready_left_before_native_journal(
     assert not (work / "previous").exists()
     assert update.read_install(root) == original_version
     assert script_install.verify_installed_files(root, threading.Event())
-    instance, _, unlock = await _start_real_maaend_manager_for_repair(
-        root, monkeypatch
-    )
+    instance, _, unlock = await _start_real_maaend_manager_for_repair(root, monkeypatch)
     await instance.main_task()
     assert not (work / "ready").exists()
     assert not (work / "package").exists()
@@ -1168,4 +1166,3 @@ async def test_maaend_precommit_cleanup_preserves_previous_and_invalid_original(
         await adapter.recover_native()
     assert (work / "ready").exists()
     assert not (work / "transaction.json").exists()
-
