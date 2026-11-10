@@ -456,8 +456,6 @@ async def test_bad_marker_or_broken_dependencies_cannot_skip(installation, monke
     assert marker.exists()
 
 
-
-
 @pytest.mark.asyncio
 async def test_pending_marker_rejected_when_snapshot_changes(installation):
     marker = update.pending_marker(installation)
