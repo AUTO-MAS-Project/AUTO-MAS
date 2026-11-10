@@ -54,7 +54,7 @@ function decide(action: 'retry' | 'skip' | 'stop') {
         <a-descriptions-item :label="t('bootstrap.comp.baahRecoveryCurrent')">
           {{ prompt.installedVersion || t('bootstrap.comp.baahRecoveryUnknown') }}
         </a-descriptions-item>
-                        <a-descriptions-item :label="t('bootstrap.comp.baahRecoveryTakeover')">
+        <a-descriptions-item :label="t('bootstrap.comp.baahRecoveryTakeover')">
           {{
             t(
               prompt.takeoverEnabled
@@ -99,7 +99,12 @@ function decide(action: 'retry' | 'skip' | 'stop') {
         <a-button type="primary" :loading="submitting" @click="decide('retry')">
           {{ t('bootstrap.comp.baahRecoveryRetry') }}
         </a-button>
-        <a-button v-if="prompt.canSkip" danger :disabled="!acknowledged || submitting" @click="decide('skip')">
+        <a-button
+          v-if="prompt.canSkip"
+          danger
+          :disabled="!acknowledged || submitting"
+          @click="decide('skip')"
+        >
           {{ t('bootstrap.comp.baahRecoverySkip') }}
         </a-button>
       </div>
