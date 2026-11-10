@@ -21,9 +21,7 @@ let disposeDisconnect: (() => void) | null = null
 let disposeConnect: (() => void) | null = null
 
 const forgetRequest = (requestId: string) => {
-  hsrInstallPrompts.value = hsrInstallPrompts.value.filter(
-    prompt => prompt.requestId !== requestId
-  )
+  hsrInstallPrompts.value = hsrInstallPrompts.value.filter(prompt => prompt.requestId !== requestId)
   if (hsrInstallDecisionPending.value === requestId) {
     hsrInstallDecisionPending.value = null
   }
