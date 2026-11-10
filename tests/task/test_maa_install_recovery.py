@@ -116,9 +116,9 @@ async def test_maa_managed_recovery_does_not_depend_on_frontend(maa_root, monkey
         managed_recovery, "read_installed_release", lambda root: ("v6.2.0", "x64")
     )
     monkeypatch.setattr(
-        managed_recovery, "read_resource_clock", lambda root: datetime(
-            2026, 10, 1, tzinfo=timezone.utc
-        )
+        managed_recovery,
+        "read_resource_clock",
+        lambda root: datetime(2026, 10, 1, tzinfo=timezone.utc),
     )
     adapter = managed_recovery.MAAInstallAdapter(maa_root)
     state = await adapter.inspect()
@@ -164,9 +164,7 @@ async def test_maa_corrupted_executable_blocks_manual_acknowledge(
 
 
 @pytest.mark.asyncio
-async def test_maa_missing_executable_never_becomes_healthy(
-    maa_root, monkeypatch
-):
+async def test_maa_missing_executable_never_becomes_healthy(maa_root, monkeypatch):
     from app.task.MAA.tools import managed_recovery
 
     flag = maa_root / "pending-update-failure.txt"
@@ -176,9 +174,9 @@ async def test_maa_missing_executable_never_becomes_healthy(
         managed_recovery, "read_installed_release", lambda root: ("v6.2.0", "x64")
     )
     monkeypatch.setattr(
-        managed_recovery, "read_resource_clock", lambda root: datetime(
-            2026, 10, 1, tzinfo=timezone.utc
-        )
+        managed_recovery,
+        "read_resource_clock",
+        lambda root: datetime(2026, 10, 1, tzinfo=timezone.utc),
     )
     adapter = managed_recovery.MAAInstallAdapter(maa_root)
     state = await adapter.inspect()
