@@ -533,9 +533,6 @@ class MaaManager(ScriptManagerBase):
         # prepare() 已拿到资源写入锁并确认官方更新器停写。
         adapter = MAAInstallAdapter(root)
 
-        async def install_software(target: str | None) -> None:
-            await self._install_pending_software_update(target=target)
-
         async def install_resources() -> None:
             cdk = resolve_takeover_cdk(
                 str(self.script_config.Update.MirrorChyanCDK or "")
@@ -543,7 +540,7 @@ class MaaManager(ScriptManagerBase):
             await prepare_install_resources(root, cdk=cdk or None, github=not bool(cdk))
 
         async def reinstall() -> None:
-            await adapter.reinstall(install_software, install_resources)
+            await adapter.reinstall(install_resources)
 
         outcome = await auto_recover_script_install(
             ScriptUpdateRequest(str(self.script_info.script_id), "MAA"),
