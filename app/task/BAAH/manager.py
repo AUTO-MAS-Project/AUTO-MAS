@@ -204,7 +204,7 @@ class BAAHManager(ScriptManagerBase):
                 ensure_idle=adapter.ensure_idle,
                 after_rollback=adapter.after_rollback,
             )
-            await asyncio.to_thread(cleanup_original_receipts, root)
+            await script_install.run_worker(cleanup_original_receipts, root)
             await self.script_info.set_log(f"BAAH 上次安装恢复：{result}")
             self.check_result = "Pass"
             return
@@ -212,7 +212,7 @@ class BAAHManager(ScriptManagerBase):
         try:
             await program_update.confirm_current_install(root)
             if receipt_backup_path(root).exists():
-                await asyncio.to_thread(cleanup_original_receipts, root)
+                await script_install.run_worker(cleanup_original_receipts, root)
         except (script_install.InstallUnsafeError, OSError, ValueError) as error:
             # 损坏本体只能在已核验的 MAS 安装身份下自动完整重装。
             receipt = script_install.record_path(root, "installed.json")
@@ -266,7 +266,7 @@ class BAAHManager(ScriptManagerBase):
                 adapter = BAAHInstallAdapter(
                     root, self.script_config, prepared=candidate
                 )
-                await asyncio.to_thread(snapshot_original_receipts, root)
+                await script_install.run_worker(snapshot_original_receipts, root)
                 try:
                     result = await run_managed_script_install(
                         request,
@@ -282,7 +282,7 @@ class BAAHManager(ScriptManagerBase):
                     if candidate.archive.parent.exists():
                         shutil.rmtree(candidate.archive.parent)
                     if backup.read() is None:
-                        await asyncio.to_thread(cleanup_original_receipts, root)
+                        await script_install.run_worker(cleanup_original_receipts, root)
             else:
                 await program_update.confirm_current_install(root)
                 result = candidate or "BAAH 当前无需更新"
