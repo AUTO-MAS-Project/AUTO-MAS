@@ -1078,3 +1078,31 @@ async def test_maaend_invalid_receipt_cannot_be_manually_bypassed(
     with pytest.raises(script_install.InstallUnsafeError, match="回执"):
         await install_recovery.skip_stale_transaction(root, marker.read_bytes())
     assert marker.is_file()
+
+
+@pytest.mark.asyncio
+async def test_maaend_manual_mxu_repair_can_ignore_old_mas_receipt_when_takeover_off(
+    installation,
+):
+    from app.task.MaaEnd.tools import install_recovery
+
+    root, config = installation
+    await update.update_before_run(root, config)
+    (root / "interface.json").write_text(
+        json.dumps({"name": "MaaEnd", "version": "v2.3.0", "mirrorchyan_rid": "MaaEnd"})
+    )
+    work = script_install.workspace(root)
+    work.mkdir(parents=True, exist_ok=True)
+    marker = work / "transaction.json"
+    marker.write_bytes(b"old-transaction")
+    assert not script_install.verify_installed_files(root, threading.Event())
+    with pytest.raises(script_install.InstallUnsafeError, match="回执"):
+        await install_recovery.skip_stale_transaction(
+            root, marker.read_bytes(), takeover_enabled=True
+        )
+    result = await install_recovery.skip_stale_transaction(
+        root, marker.read_bytes(), takeover_enabled=False
+    )
+    assert result == "2.3.0"
+    assert not marker.exists()
+    await update.confirm_current_install(root, verify_receipt=False)

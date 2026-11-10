@@ -131,7 +131,9 @@ async def ask_install_recovery(
             logger.warning("MaaEnd 安装恢复弹窗关闭通知失败")
 
 
-async def skip_stale_transaction(root: Path, snapshot: bytes) -> str:
+async def skip_stale_transaction(
+    root: Path, snapshot: bytes, *, takeover_enabled: bool = True
+) -> str:
     """只归档没有备份/待切换目录的旧 journal；核对原安装与版本回执。"""
     marker, previous, ready = _state(root)
     await asyncio.to_thread(script_update.assert_idle, root)
@@ -149,8 +151,12 @@ async def skip_stale_transaction(root: Path, snapshot: bytes) -> str:
             "MaaEnd 当前主程序、资源或版本不完整，无法确认手动恢复"
         ) from error
     receipt = script_install.record_path(root, "installed.json")
-    if receipt.exists() and not await script_install.run_worker(
-        script_install.verify_installed_files, root
+    if (
+        takeover_enabled
+        and receipt.exists()
+        and not await script_install.run_worker(
+            script_install.verify_installed_files, root
+        )
     ):
         raise script_install.InstallUnsafeError(
             "MaaEnd 当前文件与 MAS 校验回执不符，不允许跳过；请手动修复"
@@ -164,7 +170,9 @@ async def skip_stale_transaction(root: Path, snapshot: bytes) -> str:
     backup = marker.with_name(f"maaend-transaction-ack-{uuid4().hex}.json")
     marker.replace(backup)
     try:
-        await script_update.confirm_current_install(root)
+        await script_update.confirm_current_install(
+            root, verify_receipt=takeover_enabled
+        )
     except BaseException:
         if not marker.exists() and backup.exists():
             backup.replace(marker)

@@ -335,6 +335,11 @@ class MaaEndManager(ScriptManagerBase):
                 )
         else:
             await push_dispatch_log(self.script_info, result)
+        await self._refresh_after_program_install(root)
+        self._program_update_prepared = True
+
+    async def _refresh_after_program_install(self, root: Path) -> None:
+        """不重复安装，但必须照常校验资源并清理过时的 MXU 缓存包。"""
         await asyncio.to_thread(
             MaaEndResourceLoader.get_cached, root, force_reload=True
         )
@@ -349,7 +354,6 @@ class MaaEndManager(ScriptManagerBase):
                 self.script_info,
                 f"已移除 {len(removed)} 个过期 MXU 更新包；MXU 启动时将清除对应的待安装记录",
             )
-        self._program_update_prepared = True
 
     async def _restore_script_config_from_temp(self) -> None:
         """恢复任务开始前的 MaaEnd working 配置。"""
@@ -492,6 +496,7 @@ class MaaEndManager(ScriptManagerBase):
                 raise script_install.InstallUnsafeError(
                     "MaaEnd 事务记录是符号链接，拒绝恢复"
                 )
+            recovered_by_user = False
             try:
                 await script_install.run_worker(
                     script_install.recover_install,
@@ -509,7 +514,7 @@ class MaaEndManager(ScriptManagerBase):
                 )
                 if action == "skip":
                     result = await install_recovery.skip_stale_transaction(
-                        root, snapshot
+                        root, snapshot, takeover_enabled=config.Update.TakeoverEnabled
                     )
                     await self.script_info.set_log(
                         f"用户确认跳过 MaaEnd 无法恢复的旧事务，当前版本 {result}"
@@ -526,14 +531,19 @@ class MaaEndManager(ScriptManagerBase):
                         verify_receipt=config.Update.TakeoverEnabled,
                     )
                     await self.script_info.set_log("MaaEnd 旧安装事务已重新恢复")
-                # 显式恢复操作本轮不再重复下载/覆盖新包。
-                self._program_update_prepared = True
+                # 显式恢复操作本轮不再重复下载/覆盖新包，但仍须完成
+                # 原有资源加载与 MXU 旧包清理阶段。
+                recovered_by_user = True
             if self.execution_mode == "AutoProxy" and config.Update.TakeoverEnabled:
                 self.maaend_config_dir = root / "config"
                 self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
                 self._recover_previous_run()
                 # 修复在原有资源预检之前，损坏的旧资源不能堵死恢复入口。
-                await self._prepare_program_update(root)
+                if recovered_by_user:
+                    await self._refresh_after_program_install(root)
+                    self._program_update_prepared = True
+                else:
+                    await self._prepare_program_update(root)
             elif script_install.record_path(root, "installed.json").exists():
                 # 非接管模式沿用 MXU 自行更新的安装。恢复事务仍须完成，
                 # 但旧 MAS 回执不应阻断后续配置或运行，也不重算哈希冒充可信。
