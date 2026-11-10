@@ -62,11 +62,6 @@ class BAAHInstallAdapter:
                 )
             except (OSError, ValueError, KeyError):
                 previous = None
-        if healthy and self.recovery_receipt is not None:
-            # 损坏安装只有真正完成新安装、旧记录已被更新后才算恢复。
-            receipt = script_install.record_path(self.root, "installed.json")
-            if receipt.read_bytes() == self.recovery_receipt:
-                healthy = False
         return InstallInspection(
             pending=pending or (not healthy and self.recovery_receipt is not None),
             healthy=healthy,
