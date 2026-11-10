@@ -502,8 +502,12 @@ async def test_src_running_process_does_not_hide_recovery_prompt(
     marker.write_text(json.dumps({"target": git(root, "rev-parse", "HEAD")}))
     instance = object.__new__(manager.SrcManager)
     instance.src_root_path = root
-    instance.script_info = SimpleNamespace(script_id="test-script", name="SRC", set_log=AsyncMock())
-    instance.script_config = SimpleNamespace(Update=SimpleNamespace(TakeoverEnabled=False))
+    instance.script_info = SimpleNamespace(
+        script_id="test-script", name="SRC", set_log=AsyncMock()
+    )
+    instance.script_config = SimpleNamespace(
+        Update=SimpleNamespace(TakeoverEnabled=False)
+    )
     instance.task_info = SimpleNamespace(task_id="task-id")
     instance.execution_mode = "AutoProxy"
     monkeypatch.setattr(
