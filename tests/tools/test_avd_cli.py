@@ -32,6 +32,7 @@ from app.utils.common.emulator2.avd.cli import (
     resolve_cli,
 )
 from app.utils.common.emulator2.avd.manager import _AvdCore
+from app.utils.common.process.scope import TaskProcessScope, current_process_scope
 
 
 @pytest.mark.asyncio
@@ -465,6 +466,38 @@ async def test_start_error_only_stops_when_start_may_have_left_it_running(
     with pytest.raises(CLIError):
         await cli.start(7, timeout=60)
     assert fake.commands()[1:] == ["start", "status", "stop"]
+
+
+@pytest.mark.asyncio
+async def test_task_stop_cancels_start_gracefully_and_force_close_spares_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # modavd start 起的模拟器会跟着 start 留在它所在的进程组里：手动停止任务的强制清理不能结束它，
+    # 取消开机只能走 start 自己的收尾（请求 stop，等 start 自己退出）
+    fake = _FakeModavd(tmp_path, monkeypatch)
+    fake.plan(
+        start={"hold": 20},
+        status={"data": {"index": 7, "status": "online", "busy": "", "running": True}},
+    )
+    scope = TaskProcessScope()
+    token = current_process_scope.set(scope)
+    try:
+        starting = asyncio.create_task(ModAvdCli(tmp_path).start(7, timeout=60))
+    finally:
+        current_process_scope.reset(token)
+    try:
+        await _until(lambda: "start" in fake.commands())
+        starting.cancel()
+        # 停止任务时取消和强制清理之间只隔约 10 秒，开机收尾常常还没完
+        await scope.force_close()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(asyncio.shield(starting), 10)
+        # 取消抛回来之前，start 已经收到 stop 自己退出，而不是被强制清理结束
+        assert (fake.state / "start-exited").exists()
+        assert "stop" in fake.commands()
+    finally:
+        if not scope.closed:
+            await scope.force_close()
 
 
 @pytest.mark.asyncio

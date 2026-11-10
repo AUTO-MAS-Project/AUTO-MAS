@@ -843,11 +843,20 @@ class ModAvdCli:
 
         await _wait_start_turn()
         try:
-            return await self._call(
-                "start",
-                *args,
-                timeout=process_timeout,
-                timeout_handler=stop_started_cli,
+            if (scope := current_process_scope.get()) is not None:
+                # 任务已在停止：和放进进程组时一样不再开机
+                scope.ensure_can_start()
+            # 和 servers() 一样不放进调用方任务的进程组：modavd 起的模拟器会跟着留在任务的 Job 里，
+            # 手动停止任务时连同任务进程一起被强制结束，等于强杀模拟器。外层被取消时直接 await 的
+            # task 会一并被取消，_run_process 的取消收尾（请求 stop、回收 CLI）跑完后才把取消抛回来
+            return await asyncio.create_task(
+                self._call(
+                    "start",
+                    *args,
+                    timeout=process_timeout,
+                    timeout_handler=stop_started_cli,
+                ),
+                context=detached_process_context(),
             )
         except CLIError as error:
             if error.code in _STOP_AFTER_START_ERRORS:
