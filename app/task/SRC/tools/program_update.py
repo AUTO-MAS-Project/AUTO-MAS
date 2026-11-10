@@ -3,6 +3,7 @@
 """SRC Git 更新：独立对象库预取，停机后快进代码并复用原生安装器准备依赖。"""
 
 import asyncio
+import json
 import re
 import shutil
 import stat
@@ -216,7 +217,9 @@ async def prepare_cn_objects(root: Path, git: str, objects: Path, base: str) -> 
             archive.unlink(missing_ok=True)
 
 
-async def prepare_update(root: Path) -> PreparedUpdate | None:
+async def prepare_update(
+    root: Path, *, recovery_snapshot: bytes | None = None
+) -> PreparedUpdate | None:
     """只读部署偏好和当前提交，网络对象下载到 MAS 缓存，不修改原安装的 .git。"""
     root = root.resolve()
     deploy = await asyncio.to_thread(read_deploy, root)
@@ -252,6 +255,16 @@ async def prepare_update(root: Path) -> PreparedUpdate | None:
         raise ValueError("SRC 原生 Python 或安装器缺失，请先完成官方安装")
     cache = Config.data_path / "src_update"
     cache.mkdir(parents=True, exist_ok=True)
+
+    # 用户主动重试时，若上轮 Git 已快进到目标，仅重新运行原生安装器即可。
+    # 不应要求再次从 CDN 获取相同提交（特别是未提供差量包时）。
+    if recovery_snapshot is not None:
+        record = validate_install_marker(root, recovery_snapshot)
+        if record == base:
+            objects = Path(tempfile.mkdtemp(prefix="native-repair-", dir=cache))
+            return PreparedUpdate(
+                root, base, base, repository, branch, git, objects, python.resolve()
+            )
     objects = Path(tempfile.mkdtemp(prefix="git-", dir=cache))
     await command(git, "init", "--bare", str(objects), cwd=cache)
     if cn_source:
@@ -348,7 +361,12 @@ async def confirm_current_install(root: Path) -> None:
         raise script_install.InstallUnsafeError("SRC 当前安装不完整，请先完成官方安装")
 
 
-async def apply_update(root: Path, prepared: PreparedUpdate) -> None:
+async def apply_update(
+    root: Path,
+    prepared: PreparedUpdate,
+    *,
+    recovery_snapshot: bytes | None = None,
+) -> None:
     """持安装锁调用。预下载失效或存在本地修改时不覆盖用户程序。"""
     if root.resolve() != prepared.root:
         raise ValueError("SRC 预下载属于另一个安装目录")
@@ -385,36 +403,60 @@ async def apply_update(root: Path, prepared: PreparedUpdate) -> None:
     }
     if "AutoUpdate" not in injected:
         raise ValueError("SRC 部署配置缺少原生 AutoUpdate 开关，不能安全接管")
+    marker = directory / "src-install.json"
+    # 检查必须先于写配置恢复日志；无授权时不能遗留额外的待恢复状态。
+    if marker.exists() or marker.is_symlink():
+        if recovery_snapshot is None:
+            raise script_install.InstallUnsafeError(
+                "SRC 上轮安装尚未确认，必须由用户决定重试或跳过"
+            )
+        validate_install_marker(root, recovery_snapshot)
+    elif recovery_snapshot is not None:
+        raise script_install.InstallUnsafeError("SRC 安装记录已消失，拒绝旧恢复请求")
     io_utils.write_file(
         journal, {"root": str(root.resolve()), "original": deploy, "injected": injected}
     )
-    marker = directory / "src-install.json"
+
     try:
         poor_yaml_write(injected, root / "config/deploy.yaml")
-        # 从本地对象库导入，不重新访问远端；失败前尚未切换工作区。
-        await command(
-            prepared.git,
-            "fetch",
-            "--no-tags",
-            str(prepared.objects),
-            prepared.target_commit,
-            cwd=root,
-        )
+        if prepared.base_commit != prepared.target_commit:
+            # 从本地对象库导入并快进；当前 HEAD 已是目标时只重跑原生安装器。
+            await command(
+                prepared.git,
+                "fetch",
+                "--no-tags",
+                str(prepared.objects),
+                prepared.target_commit,
+                cwd=root,
+            )
+        if recovery_snapshot is not None:
+            validate_install_marker(root, recovery_snapshot)
         io_utils.write_file(marker, {"target": prepared.target_commit})
-        await command(
-            prepared.git,
-            "merge",
-            "--ff-only",
-            prepared.target_commit,
-            cwd=root,
-            writing=True,
-        )
+        if prepared.base_commit != prepared.target_commit:
+            await command(
+                prepared.git,
+                "merge",
+                "--ff-only",
+                prepared.target_commit,
+                cwd=root,
+                writing=True,
+            )
         await command(str(prepared.python), "installer.py", cwd=root, writing=True)
         if (
             await command(prepared.git, "rev-parse", "HEAD", cwd=root)
             != prepared.target_commit
+            or not (root / "src.exe").is_file()
+            or not (root / "installer.py").is_file()
         ):
-            raise script_install.InstallUnsafeError("SRC 安装后提交未确认，请手动修复")
+            raise script_install.InstallUnsafeError(
+                "SRC 原生安装后提交或程序文件尚未确认，保留标记"
+            )
+        # 原生 installer 与 Git 提交均完成后才写成功证据；
+        # 不能仅靠 pip check 猜测新 requirements 已安装。
+        io_utils.write_file(
+            script_install.workspace(root) / "src-native-install-complete.json",
+            {"root": str(root.resolve()), "target": prepared.target_commit},
+        )
         marker.unlink()
     finally:
         # 原生安装器已退出后撤销临时部署设置，失败标记不随配置恢复被删除。
@@ -422,10 +464,85 @@ async def apply_update(root: Path, prepared: PreparedUpdate) -> None:
     remove_cached_git_objects(prepared.objects)
 
 
-async def update_before_run(root: Path) -> str:
+def validate_install_marker(root: Path, snapshot: bytes) -> str:
+    """拒绝符号链接、标记替换和未知 Git commit，避免旧弹窗误授权新安装。"""
+    marker = script_install.workspace(root) / "src-install.json"
+    if (
+        marker.is_symlink()
+        or not marker.is_file()
+        or len(snapshot) > 64 * 1024
+        or marker.read_bytes() != snapshot
+    ):
+        raise script_install.InstallUnsafeError("SRC 安装标记已经变化，拒绝恢复")
+    try:
+        record = json.loads(snapshot)
+        target = record["target"]
+        if not isinstance(target, str) or not re.fullmatch(r"[0-9a-f]{40}", target):
+            raise ValueError("not a Git commit")
+    except (ValueError, TypeError, KeyError) as error:
+        raise script_install.InstallUnsafeError(
+            "SRC 安装标记不是有效的 Git 提交记录，无法自动恢复"
+        ) from error
+    return target
+
+
+async def skip_unconfirmed_install(root: Path, snapshot: bytes) -> str:
+    """仅 Git 提交已达标、工作区干净、Python 依赖可用时允许用户跳过。"""
     recover_deploy(root)
-    candidate = await prepare_update(root)
+    target = validate_install_marker(root, snapshot)
+    await asyncio.to_thread(assert_idle, root, allow_background_adb=True)
+    deploy = await asyncio.to_thread(read_deploy, root)
+    git = git_executable(root, deploy)
+    if await command(git, "rev-parse", "HEAD", cwd=root) != target or await command(
+        git,
+        "--no-optional-locks",
+        "status",
+        "--porcelain",
+        "--untracked-files=no",
+        cwd=root,
+    ):
+        raise script_install.InstallUnsafeError(
+            "SRC Git 代码未完整到达上次更新目标或存在修改，不允许跳过"
+        )
+    python = root / str(deploy.get("PythonExecutable") or "./toolkit/python.exe")
+    if not (
+        (root / "src.exe").is_file()
+        and (root / "installer.py").is_file()
+        and python.is_file()
+    ):
+        raise script_install.InstallUnsafeError(
+            "SRC 当前程序或原生依赖安装器缺失，不允许跳过"
+        )
+    try:
+        await command(str(python.resolve()), "-m", "pip", "check", cwd=root)
+    except Exception as error:
+        raise script_install.InstallUnsafeError(
+            "SRC Python 依赖检查失败，不允许跳过，请重试原生安装"
+        ) from error
+    await asyncio.to_thread(assert_idle, root, allow_background_adb=True)
+    validate_install_marker(root, snapshot)
+    marker = script_install.workspace(root) / "src-install.json"
+    marker.unlink()
+    try:
+        await confirm_current_install(root)
+    except BaseException:
+        if not marker.exists() and not marker.is_symlink():
+            try:
+                marker.write_bytes(snapshot)
+            except OSError:
+                pass
+        raise
+    return target[:12]
+
+
+async def update_before_run(
+    root: Path, *, recovery_snapshot: bytes | None = None
+) -> str:
+    recover_deploy(root)
+    if recovery_snapshot is not None:
+        validate_install_marker(root, recovery_snapshot)
+    candidate = await prepare_update(root, recovery_snapshot=recovery_snapshot)
     if candidate is not None:
-        await apply_update(root, candidate)
+        await apply_update(root, candidate, recovery_snapshot=recovery_snapshot)
     await confirm_current_install(root)
     return "SRC 本体更新准备完成，原生依赖安装器已处理或当前无需更新"
