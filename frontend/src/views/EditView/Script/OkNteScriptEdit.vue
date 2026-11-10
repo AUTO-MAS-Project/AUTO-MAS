@@ -118,7 +118,6 @@
                   v-model:value="oknteConfig.Game.CloseOnFinish"
                   size="large"
                   class="modern-input"
-                  :disabled="!oknteConfig.Game.Enabled"
                   @change="handleChange('Game', 'CloseOnFinish', $event)"
                 >
                   <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>

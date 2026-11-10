@@ -388,6 +388,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         if (
             self.script_config.Game.Enabled
             and self.script_config.Game.Type == "Client"
+            and self.script_config.Game.LaunchBeforeTask
             and (
                 not self.script_config.Game.Path
                 or not self.script_config.Game.Path.is_file()
@@ -1114,15 +1115,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         return bool(self.script_config.Game.Enabled)
 
     def _mas_should_close_game_after_success(self) -> bool:
-        return self._game_management_enabled() and bool(
-            self.script_config.Game.CloseOnFinish
-        )
+        return bool(self.script_config.Game.CloseOnFinish)
 
     def _mas_should_close_game_on_retry(self) -> bool:
-        """失败/重试/启动游戏失败：总开关开启且任一生周期子项启用时结束游戏"""
-        return self._game_management_enabled() and bool(
-            self.script_config.Game.LaunchBeforeTask
-            or self.script_config.Game.CloseOnFinish
+        """独立关闭开启，或由 MAS 启动游戏需要重试时结束游戏。"""
+        return bool(self.script_config.Game.CloseOnFinish) or (
+            self._game_management_enabled()
+            and bool(self.script_config.Game.LaunchBeforeTask)
         )
 
     def _resolve_log_file_path(self) -> Path:
