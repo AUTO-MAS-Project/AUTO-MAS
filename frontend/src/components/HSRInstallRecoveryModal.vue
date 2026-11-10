@@ -54,10 +54,10 @@ function decide(action: 'retry' | 'skip' | 'stop') {
         <a-descriptions-item :label="t('bootstrap.comp.hsrRecoveryCurrent')">
           {{ prompt.installedVersion || t('bootstrap.comp.hsrRecoveryUnknown') }}
         </a-descriptions-item>
-                <a-descriptions-item :label="t('bootstrap.comp.hsrRecoveryEngine')">
+        <a-descriptions-item :label="t('bootstrap.comp.hsrRecoveryEngine')">
           {{ prompt.engine }}
         </a-descriptions-item>
-                      </a-descriptions>
+      </a-descriptions>
       <a-alert
         class="recovery-warning"
         type="warning"
