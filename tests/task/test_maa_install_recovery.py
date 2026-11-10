@@ -1,4 +1,4 @@
-"""MAA 官方安装失败与中断资源合并：用户恢复选择必须显式且 fail-closed。"""
+"""MAA 官方本体失败与资源半更新：统一自动恢复且保持 fail-closed。"""
 
 import asyncio
 from datetime import datetime, timezone
@@ -7,9 +7,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.core import Dispatcher
-from app.core.ws import protocol
-from app.models.schema import WSEnvelope
 from app.services import script_install
 from app.task.MAA import manager
 from app.task.MAA.tools import install_recovery as recovery
@@ -182,3 +179,73 @@ async def test_maa_missing_executable_never_becomes_healthy(maa_root, monkeypatc
     state = await adapter.inspect()
     assert state.pending and not state.healthy
     assert flag.exists()
+
+
+@pytest.mark.asyncio
+async def test_native_failure_marker_with_package_does_not_fake_automatic_retry(
+    maa_root, monkeypatch
+):
+    """真实公共入口必须在原生启动前阻断无效重试，保留原始失败现场。"""
+    from app.task.MAA.tools import managed_recovery
+
+    flag = maa_root / "pending-update-failure.txt"
+    flag.write_bytes(b"official updater failed")
+    package = maa_root / "pending.zip"
+    package.write_bytes(b"official archive")
+    monkeypatch.setattr(
+        managed_recovery, "read_pending_update", lambda root: ("v6.3.0", "pending.zip")
+    )
+    monkeypatch.setattr(
+        managed_recovery, "read_installed_release", lambda root: ("v6.2.0", "x64")
+    )
+    monkeypatch.setattr(
+        managed_recovery,
+        "read_resource_clock",
+        lambda root: datetime(2026, 10, 1, tzinfo=timezone.utc),
+    )
+    instance = object.__new__(manager.MaaManager)
+    instance.maa_set_path = maa_root / "config"
+    instance.script_info = SimpleNamespace(
+        script_id="test-script", set_log=AsyncMock()
+    )
+    instance.script_config = SimpleNamespace(
+        Update=SimpleNamespace(MirrorChyanCDK="", TakeoverEnabled=True)
+    )
+    instance._maa_update_checked = False
+    native = AsyncMock()
+    monkeypatch.setattr(instance, "_install_pending_software_update", native)
+    with pytest.raises(MaaUpdateUnsafeError, match="官方界面"):
+        await instance._recover_unconfirmed_update()
+    native.assert_not_awaited()
+    assert flag.read_bytes() == b"official updater failed"
+    assert package.read_bytes() == b"official archive"
+    assert not instance._maa_update_checked
+
+
+@pytest.mark.asyncio
+async def test_resource_failure_without_official_marker_keeps_automatic_repair(
+    maa_root, monkeypatch
+):
+    from app.task.MAA.tools import managed_recovery
+
+    resource = maa_root / ".automas-resource-update.json"
+    resource.write_bytes(b'{"target": "2026-11-10T00:00:00+00:00"}')
+    adapter = managed_recovery.MAAInstallAdapter(maa_root)
+    called = AsyncMock()
+
+    async def prepared():
+        resource.unlink()
+
+    called.side_effect = prepared
+    monkeypatch.setattr(
+        managed_recovery, "verify_resource_recovery_marker",
+        lambda root, snapshot: None,
+    )
+    monkeypatch.setattr(
+        managed_recovery, "has_incomplete_resource_update",
+        lambda root: resource.exists(),
+    )
+    await adapter.reinstall(called)
+    called.assert_awaited_once()
+    assert not resource.exists()
+
