@@ -393,6 +393,7 @@ async def test_baah_corrupt_install_has_no_gui_dependency(installation, monkeypa
     if manager_mock._directory_lock is not None:
         manager_mock._directory_lock.release()
 
+
 @pytest.mark.asyncio
 async def test_receipt_cleanup_cancellation_retains_installation_lock(
     installation, monkeypatch
@@ -412,9 +413,7 @@ async def test_receipt_cleanup_cancellation_retains_installation_lock(
         return original(install_root, cancelled)
 
     with script_install.installation_access(root):
-        pending = asyncio.create_task(
-            script_install.run_worker(slow_cleanup, root)
-        )
+        pending = asyncio.create_task(script_install.run_worker(slow_cleanup, root))
         await asyncio.wait_for(asyncio.to_thread(entered.wait, 2), 3)
         pending.cancel()
         # Second cancellation is possible while the first is waiting for
