@@ -1058,7 +1058,10 @@ async def test_manager_repairs_damaged_exe_with_no_native_journal_via_common_ent
     await instance.main_task()
     assert update.read_install(root) == (Version("2.2.0"), "x86_64")
     assert script_install.verify_installed_files(root, threading.Event())
-    assert any("reinstalled" in str(call) for call in instance.script_info.set_log.await_args_list)
+    assert any(
+        "reinstalled" in str(call)
+        for call in instance.script_info.set_log.await_args_list
+    )
     lock.assert_awaited_once()
     await instance.final_task()
     unlock.assert_awaited_once_with("ticket")
@@ -1090,4 +1093,3 @@ async def test_manager_repairs_native_upgrade_receipt_at_exact_newer_version(
     assert script_install.verify_installed_files(root, threading.Event())
     exact.assert_awaited_once_with(Version(native_tag), native_tag)
     await instance.final_task()
-
