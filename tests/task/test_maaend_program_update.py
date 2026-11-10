@@ -979,6 +979,7 @@ async def test_maaend_bad_exe_stays_blocked_without_frontend(installation):
 
     root, config = installation
     marker = script_install.workspace(root) / "transaction.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_bytes(b"stale-journal")
     (root / "MaaEnd.exe").write_bytes(b"damaged")
     adapter = MaaEndInstallAdapter(root, config, takeover_enabled=False)
@@ -999,6 +1000,7 @@ async def test_maaend_repaired_native_build_can_ignore_stale_receipt_without_tak
         json.dumps({"name": "MaaEnd", "version": "v2.3.0", "mirrorchyan_rid": "MaaEnd"})
     )
     marker = script_install.workspace(root) / "transaction.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_bytes(b"stale-journal")
     adapter = MaaEndInstallAdapter(root, config, takeover_enabled=False)
     state = await adapter.inspect()
