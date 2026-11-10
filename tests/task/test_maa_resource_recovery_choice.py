@@ -59,6 +59,7 @@ async def test_maa_repair_reuses_verified_full_resource_pipeline(partial, monkey
     snapshot = marker.read_bytes()
     prompt = AsyncMock(return_value=("retry", snapshot))
     monkeypatch.setattr(resource_install_recovery, "ask_resource_recovery", prompt)
+
     async def install_resources(root, **kwargs):
         assert kwargs["github"] is True
         assert kwargs["recovery_snapshot"] == snapshot
