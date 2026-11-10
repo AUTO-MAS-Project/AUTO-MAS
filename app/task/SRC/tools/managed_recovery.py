@@ -50,7 +50,9 @@ class SRCInstallAdapter:
             previous = record.get("version") if record else None
             if previous is None and not pending:
                 previous = commit
-        completed = script_install.workspace(self.root) / "src-native-install-complete.json"
+        completed = (
+            script_install.workspace(self.root) / "src-native-install-complete.json"
+        )
         if completed.is_symlink():
             raise script_install.InstallUnsafeError("SRC 原生安装完成记录不可为链接")
         completed_target = None
@@ -134,7 +136,9 @@ class SRCInstallAdapter:
 
     async def after_rollback(self) -> None:
         await self.ensure_idle()
-        completed = script_install.workspace(self.root) / "src-native-install-complete.json"
+        completed = (
+            script_install.workspace(self.root) / "src-native-install-complete.json"
+        )
         if completed.is_symlink():
             raise script_install.InstallUnsafeError("SRC 原生安装完成记录路径异常")
         completed.unlink(missing_ok=True)
